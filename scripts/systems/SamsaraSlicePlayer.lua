@@ -1,4 +1,4 @@
--- SamsaraSlicePlayer.lua — 五段无奖切片数据层；由主仲裁器决定何时开始展示。
+-- SamsaraSlicePlayer.lua — 七段无奖切片数据层；由主仲裁器决定何时开始展示。
 -- 不show、不订阅无ID完成广播、不调用任何领奖/教程/经济协议。
 local Config = require("config.SamsaraSliceConfig")
 local Schema = require("shared.session.SamsaraStorySchema")
@@ -35,6 +35,8 @@ local Player = {}
 ---@field referenceOnly boolean?
 ---@field referenceSteps SamsaraSliceStep[]?
 ---@field manualOnly boolean?
+---@field eligibilitySource string?
+---@field eventTrusted boolean?
 
 ---@type SamsaraSliceOptions?
 local options_ = nil
@@ -55,6 +57,24 @@ local retryElapsed_ = 0
 local FIRST_READ, REPLAY = "samsara_first_read", "samsara_replay"
 local CARGO, ORDER, PEOPLE = "samsara.cargo_match", "samsara.gray_order", "samsara.people_record"
 local MANIFEST = "samsara.returned_manifest"
+local DOG_MIRROR, BELL_MIRROR = "samsara.dog_mirror", "samsara.bell_mirror"
+local MIRRORS = {
+    [DOG_MIRROR] = { stage = 2505, legacyId = 64, source = "live_clear_2505", evidenceId = "E03-A" },
+    [BELL_MIRROR] = { stage = 2905, legacyId = 67, source = "live_clear_2905", evidenceId = "E03-C" },
+}
+
+local function mirrorHistorySupported(story)
+    local version = tonumber(story.mirrorHistoryVersion)
+    return not version or version <= 1
+end
+
+-- CLEAR与带ID的遭遇结果分开保存；preclaim/raw历史不能替代这两份来源。
+local function mirrorEventTrusted(node, key)
+    local spec = MIRRORS[key]
+    return spec ~= nil and node ~= nil and node.eligible == true and node.eligibilitySource == spec.source
+        and (node.legacyContext == "live_finished" or node.legacyContext == "live_skipped"
+            or node.legacyContext == "live_interrupted")
+end
 
 local function keys()
     return Config.KEYS or { Config.NODE_KEY }
@@ -64,6 +84,12 @@ end
 function Player.cancel()
     epoch_ = epoch_ + 1
     lease_, request_, takenKey_ = nil, nil, nil
+end
+
+--- 旧结果桥捕获当前进程代次，清档/Stop后的迟到遭遇不能污染新档。
+---@return number
+function Player.getContextEpoch()
+    return epoch_
 end
 
 ---@param key string?
@@ -101,6 +127,7 @@ end
 ---@return SamsaraStoryNode?
 ---@return boolean supported
 local function nodeState(story, key)
+    if MIRRORS[key] and not mirrorHistorySupported(story) then return nil, false end
     local node = story.nodes[key or Config.NODE_KEY] --[[@as SamsaraStoryNode?]]
     if node == nil then return nil, true end
     if type(node) ~= "table" then return nil, false end
@@ -151,6 +178,7 @@ local function persist()
 end
 
 local function selectedLegacyId(key)
+    if MIRRORS[key] then return MIRRORS[key].legacyId end
     local initialId = session_ and tonumber(session_.initialHeroId)
     local firstId = key == MANIFEST and 44 or 17
     return firstId + ((initialId == 2 and 1) or (initialId == 3 and 2) or 0)
@@ -169,7 +197,7 @@ end
 
 local function captureLegacyContext(node, key)
     if node.legacyContext == "live_finished" or node.legacyContext == "live_skipped"
-        or (key == MANIFEST and node.legacyContext == "live_interrupted") then return false end
+        or ((key == MANIFEST or MIRRORS[key]) and node.legacyContext == "live_interrupted") then return false end
     local context = legacyClaimed(key) and "legacy_claimed_unknown" or (not legacyConfigAvailable(key) and "unavailable" or nil)
     if node.legacyContext == context then return false end
     node.legacyContext = context
@@ -180,6 +208,9 @@ local function captureLegacyContext(node, key)
 end
 
 local function legacyReady(node, key)
+    if MIRRORS[key] then
+        return mirrorEventTrusted(node, key) and node.legacyContext ~= "live_interrupted"
+    end
     if key == MANIFEST and node.legacyContext == "live_interrupted" then return false end
     return node.legacyContext == "live_finished" or node.legacyContext == "live_skipped"
         or legacyClaimed(key) or not legacyConfigAvailable(key)
@@ -277,6 +308,26 @@ function Player.init(options, rawBattle)
         story.cargoHistoryCaptured, changed = true, true
         print("[SamsaraSlicePlayer] 征用案件历史捕获完成")
     end
+    -- 镜像旧raw精确true可能已被旧版本max补齐，只记参考，不制造战斗/凭片。
+    if mirrorHistorySupported(story) and story.mirrorHistoryCaptured ~= true then
+        for _, key in ipairs({ DOG_MIRROR, BELL_MIRROR }) do
+            local mirror, mirrorSupported = nodeState(story, key)
+            if mirrorSupported and strictClear(rawBattle, MIRRORS[key].stage) then
+                if not mirror then
+                    mirror = { contentVersion = Config.CONTENT_VERSION, eligibilitySource = "legacy_raw_clear_unknown" }
+                    story.nodes[key] = mirror
+                elseif not mirror.eligibilitySource then
+                    mirror.eligibilitySource = "legacy_raw_clear_unknown"
+                end
+            end
+        end
+        story.mirrorHistoryCaptured, story.mirrorHistoryVersion, changed = true, 1, true
+        print("[SamsaraSlicePlayer] 镜像历史一次性捕获完成，raw仅作亲历未知参考")
+    end
+    for _, key in ipairs({ DOG_MIRROR, BELL_MIRROR }) do
+        local mirror, mirrorSupported = nodeState(story, key)
+        if mirrorSupported and mirror and captureLegacyContext(mirror, key) then changed = true end
+    end
     local manifestNode, manifestSupported = nodeState(story, MANIFEST)
     if not sameSession and manifestSupported and manifestNode and manifestNode.legacyContext == "live_interrupted" then
         -- 重启不能把旧preclaim称为已读，仅恢复“历史阅读未知”的独立补读政策。
@@ -309,6 +360,23 @@ end
 ---@param id number|string
 ---@return boolean changed
 function Player.onStageCleared(id)
+    local mirrorKey = (id == 2505 or id == "2505") and DOG_MIRROR
+        or ((id == 2905 or id == "2905") and BELL_MIRROR or nil)
+    if mirrorKey then
+        local story = currentStory()
+        if not story or not definition(mirrorKey) then return false end
+        local node, supported = nodeState(story, mirrorKey)
+        if not supported then return false end
+        if node and node.eligible == true and node.eligibilitySource == MIRRORS[mirrorKey].source then return false end
+        if not node then node = { contentVersion = Config.CONTENT_VERSION }; story.nodes[mirrorKey] = node end
+        node.eligible, node.eligibilitySource = true, MIRRORS[mirrorKey].source
+        -- 旧未知参考不能留下伪处理结果；只保留独立记录的遭遇结果。
+        node.resolution = nil
+        captureLegacyContext(node, mirrorKey)
+        print("[SamsaraSlicePlayer] 镜像正式首通待阅 key=" .. mirrorKey .. " context=" .. tostring(node.legacyContext))
+        persist()
+        return true
+    end
     if id ~= 104 and id ~= "104" and id ~= 204 and id ~= "204" and id ~= 4905 and id ~= "4905" then return false end
     local story = currentStory()
     if not story then return false end
@@ -329,8 +397,28 @@ end
 --- N02与N03分别保留旧日志/铁匠道歉依赖；征用三段仍独立于它们。
 ---@param id number|string
 ---@param reason string
+---@param contextEpoch number? 宿主捕获的代次；测试/同步调用可省略
 ---@return boolean changed
-function Player.noteLegacyResult(id, reason)
+function Player.noteLegacyResult(id, reason, contextEpoch)
+    if contextEpoch ~= nil and contextEpoch ~= epoch_ then return false end
+    local mirrorKey = (id == 64 or id == "64") and DOG_MIRROR or ((id == 67 or id == "67") and BELL_MIRROR or nil)
+    if mirrorKey then
+        local context = (reason == "finished" or reason == "dismissed") and "live_finished"
+            or (reason == "skipped" and "live_skipped"
+                or ((reason == "reset" or reason == "replaced" or reason == "failed") and "live_interrupted" or nil))
+        if not context then return false end
+        local story = currentStory()
+        if not story or not definition(mirrorKey) then return false end
+        local node, supported = nodeState(story, mirrorKey)
+        if not supported then return false end
+        -- ENTER对白一般先于CLEAR结束，不能因尚无资格而丢失带ID处理来源。
+        if not node then node = { contentVersion = Config.CONTENT_VERSION }; story.nodes[mirrorKey] = node end
+        if node.legacyContext == context then return false end
+        node.legacyContext = context
+        print("[SamsaraSlicePlayer] 镜像遭遇结果 key=" .. mirrorKey .. " context=" .. context)
+        persist()
+        return true
+    end
     local key = Config.NODE_KEY
     if id == selectedLegacyId(MANIFEST) or id == tostring(selectedLegacyId(MANIFEST)) then
         key = MANIFEST
@@ -353,7 +441,7 @@ function Player.noteLegacyResult(id, reason)
 end
 
 local function readyFor(story, key, node)
-    local requiresLegacy = key == Config.NODE_KEY or key == MANIFEST
+    local requiresLegacy = key == Config.NODE_KEY or key == MANIFEST or MIRRORS[key] ~= nil
     return dependencyReady(story, key) and (not requiresLegacy or legacyReady(node, key))
 end
 
@@ -362,7 +450,7 @@ function Player.peekReady()
     if lease_ then return nil end
     local story = currentStory()
     if not story then return nil end
-    local autoKeys = { Config.NODE_KEY, MANIFEST, CARGO, ORDER, PEOPLE }
+    local autoKeys = { Config.NODE_KEY, MANIFEST, DOG_MIRROR, BELL_MIRROR, CARGO, ORDER, PEOPLE }
     for _, key in ipairs(autoKeys) do
         local node, supported = nodeState(story, key)
         if supported and node and node.eligible == true and not processed(node) and node.manualOnly ~= true
@@ -379,6 +467,7 @@ local function allowed(kind, key)
     if not story then return false end
     local node, supported = nodeState(story, key)
     if not supported or not node or node.eligible ~= true then return false end
+    if MIRRORS[key] and not mirrorEventTrusted(node, key) then return false end
     if kind == FIRST_READ then return not processed(node) and dependencyReady(story, key) end
     if kind == REPLAY then return processed(node) and dependencyReady(story, key) end
     return false
@@ -395,7 +484,7 @@ function Player.begin(kind, key)
     local node = nodeState(story, key)
     if kind == FIRST_READ and (not node or not readyFor(story, key, node)) then
         -- 显式记录页补读可处理已知旧道歉中断，但不伪装其完整结束，也不自动抢播。
-        local explicitInterrupted = key == MANIFEST and node and node.legacyContext == "live_interrupted"
+        local explicitInterrupted = (key == MANIFEST or MIRRORS[key]) and node and node.legacyContext == "live_interrupted"
             and takenKey_ == key
         if not explicitInterrupted then return nil end
     end
@@ -411,7 +500,12 @@ function Player.begin(kind, key)
 end
 
 local function revealEvidence(story, key)
-    if key == CARGO then
+    if MIRRORS[key] then
+        local node = nodeState(story, key)
+        if mirrorEventTrusted(node, key) then
+            unlockEvidence(story, MIRRORS[key].evidenceId, MIRRORS[key].source)
+        end
+    elseif key == CARGO then
         unlockEvidence(story, "E02", "case_archive")
         story.evidence.E02.annotationUnlocked = true
     elseif key == ORDER then
@@ -431,6 +525,7 @@ function Player.onResult(result)
         or result.nodeKey ~= lease_.nodeKey then return false end
     local node, supported = nodeState(story, lease_.nodeKey)
     if not supported or not node or node.eligible ~= true or not dependencyReady(story, lease_.nodeKey) then return false end
+    if MIRRORS[lease_.nodeKey] and not mirrorEventTrusted(node, lease_.nodeKey) then return false end
     local reason = result.reason
     if reason == "reset" or reason == "replaced" or reason == "failed" then Player.cancel(); return true end
     if reason ~= "finished" and reason ~= "dismissed" and reason ~= "skipped" then return false end
@@ -470,6 +565,17 @@ function Player.takeRequest()
 end
 
 local function evidenceFor(story, id)
+    local mirrorKey = id == "E03-A" and DOG_MIRROR or (id == "E03-C" and BELL_MIRROR or nil)
+    if mirrorKey then
+        local node, supported = nodeState(story, mirrorKey)
+        local saved = story.evidence[id] --[[@as SamsaraStoryEvidenceState?]]
+        if not supported or not mirrorEventTrusted(node, mirrorKey) or not processed(node)
+            or type(saved) ~= "table" or saved.unlocked ~= true or saved.source ~= MIRRORS[mirrorKey].source then return nil end
+        local cfg = Config.getEvidence(id)
+        if not cfg then return nil end
+        -- 不返回任何后续核验，即使未知档案含有提前置true的批注标记。
+        return { id = id, title = cfg.title, text = cfg.text, source = saved.source }
+    end
     local saved = story.evidence[id] --[[@as SamsaraStoryEvidenceState?]]
     if not saved or saved.unlocked ~= true or not Config.getEvidence then return nil end
     local cfg = Config.getEvidence(id)
@@ -498,11 +604,23 @@ function Player.getRecord(key)
     if not supported then return record end
     record.status = "locked"
     if node then
+        record.eligibilitySource = node.eligibilitySource
         record.legacyContext = node.legacyContext
         record.manualOnly = node.manualOnly
         if node.eligible == true and dependencyReady(story, key) then
             record.status = processed(node) and node.resolution or "pending"
         end
+    end
+    if MIRRORS[key] then
+        record.eventTrusted = mirrorEventTrusted(node, key) == true
+        if not record.eventTrusted then
+            record.referenceOnly, record.referenceSteps = true, cfg.steps
+        end
+        local evidence = evidenceFor(story, MIRRORS[key].evidenceId)
+        if evidence then
+            record.evidence, record.evidences[1], record.evidenceVisible = evidence, evidence, true
+        end
+        return record
     end
     if key == Config.NODE_KEY then
         local saved = story.evidence.E01 --[[@as SamsaraStoryEvidenceState?]]
@@ -536,7 +654,9 @@ end
 
 ---@return boolean
 function Player.hasPendingRecords()
-    for _, record in ipairs(Player.getRecords()) do if record.status == "pending" then return true end end
+    for _, record in ipairs(Player.getRecords()) do
+        if record.status == "pending" and not record.referenceOnly then return true end
+    end
     return false
 end
 

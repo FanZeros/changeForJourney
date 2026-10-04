@@ -1,5 +1,6 @@
--- SamsaraSliceConfig.lua — N02/N03与N12–N14无奖切片；不注册旧情景编号或经济奖励。
+-- SamsaraSliceConfig.lua — N02/N03、N12–N14与N07/N09无奖切片；不注册旧情景编号或经济奖励。
 -- 正文来源：未寄出的撤离令-剧情正文普通至炼狱-1003.md；N14采用接线方案独立语境。
+-- N07/N09仅提供E03-A/C初片，后续批注未开放，不补造E03-B。
 -- 已核对人物映射：1=大狗嚼，2=黄桃龙，3=叮咚鸡，10=铁匠，21=圣女。
 
 ---@class SamsaraSliceStep
@@ -30,15 +31,21 @@ local Config = {
     ORDER_KEY = "samsara.gray_order",
     PEOPLE_KEY = "samsara.people_record",
     MANIFEST_KEY = "samsara.returned_manifest",
+    DOG_MIRROR_KEY = "samsara.dog_mirror",
+    BELL_MIRROR_KEY = "samsara.bell_mirror",
     CONTENT_VERSION = 1,
 }
-Config.KEYS = { Config.NODE_KEY, Config.CARGO_KEY, Config.ORDER_KEY, Config.PEOPLE_KEY, Config.MANIFEST_KEY }
+-- 旧五项顺序不变；镜像两项追加，不建立N08或其他处理前置。
+Config.KEYS = { Config.NODE_KEY, Config.CARGO_KEY, Config.ORDER_KEY, Config.PEOPLE_KEY, Config.MANIFEST_KEY,
+    Config.DOG_MIRROR_KEY, Config.BELL_MIRROR_KEY }
 
 local E02_TEXT = "商队药箱十二。\n内装药、夹板、干粮。箱底补铆一次。\n押运：城镇医所支队。\n遇截地点：林道路标外。\n截取方口令：“先救人。”\n回收：货牌。箱体未回。\n\n铁匠手注：\n图中歪铆是箱底修补位置，不是货牌铆钉。货能认，人别再认错。"
 local E02_ANNOTATION = "货牌位置与保全库十二号箱底拓片吻合。同物件跨两次交接有完整编号，未发现复制箱体。受害押运者另记人员卷，不并入“物资损失”。"
 local E05_TEXT = "急救物资征用令。\n调取：商队药箱十二。\n送达：城镇登记接驳处。\n目的：保全三名受援人。\n签发：第三十七任远征长〔旧登记页〕。\n手令：“先救人，回来再结。”"
 local E05_CONTINUATION = "先期物资不足。允许拦截护送支队，缴械接驳。\n遇阻待签发方答复。\n〔“停止拦截”栏：空白〕"
 local E05_PEOPLE = "物资卷与人员卷分列。\n旧远征护送支队失踪：有登记名单。\n找回胸牌、外衣标识及两封未送达的家书。\n幸存者证言已保存；遗物不得换算成可交付的救援配额。"
+local E03_A_TEXT = "请先护送远征长离开。\n若他还没到，就让我守在接驳处。\n到了，请告诉我下一次该守谁。\n申请人：大狗嚼〔旧登记页〕。\n答复：任务续征。撤离未结。"
+local E03_C_TEXT = "出征通知：已发。\n死亡通知：已发。\n请求结束通知。\n撤离收件人：〔空白〕。\n答复：收到。下一任务续征。"
 
 --- 静态原件返回副本；没有首次处理标记时展示方不得公开后续核验/续令。
 ---@param id string
@@ -49,6 +56,10 @@ function Config.getEvidence(id)
     elseif id == "E05" then
         return { id = id, title = "灰印征用令与人员卷", text = E05_TEXT,
             continuation = E05_CONTINUATION, people = E05_PEOPLE }
+    elseif id == "E03-A" then
+        return { id = id, title = "大狗嚼的申请", text = E03_A_TEXT }
+    elseif id == "E03-C" then
+        return { id = id, title = "叮咚鸡的申请", text = E03_C_TEXT }
     end
     return nil
 end
@@ -140,6 +151,40 @@ function Config.get(key, source)
                 { characterId = 10, name = "铁匠", text = "货牌拿着。别只看它烧黑了。图上这处歪铆，是我给箱底补的。" },
             },
             evidence = evidence,
+        }
+    elseif key == Config.DOG_MIRROR_KEY then
+        return {
+            title = "狗留下的绳结", mode = "small", requiredStage = 2505,
+            unlockText = "通关2505并处理旧遭遇后开放",
+            steps = {
+                -- 凭片由当前页载体生成，不是旧页实体在非接驳关跨页掉落。
+                { name = "旁白", text = "镜像投影败退，当前页既有登记载体根据回声生成一张本地抄片。绳结画成三股，中间的一股被收得最紧。" },
+                { characterId = 1, name = "大狗嚼", text = "叫！我不会那样绑人。" },
+                { name = "远征长", text = "这里写着“请先带远征长走”。" },
+                { characterId = 1, name = "大狗嚼", text = "……是我会说的话。" },
+                { characterId = 3, name = "叮咚鸡", text = "名字是你的。抄的是别页的申请。留下。" },
+                { name = "旁白", text = "大狗嚼指甲已划开纸角。听见“请先带远征长走”，他松开了手。" },
+                { characterId = 1, name = "大狗嚼", text = "本狗没说它就是真的。" },
+                { name = "远征长", text = "我也没说。先让它把话留下。" },
+            },
+            evidence = assert(Config.getEvidence("E03-A")),
+        }
+    elseif key == Config.BELL_MIRROR_KEY then
+        return {
+            title = "停不了的第三声", mode = "small", requiredStage = 2905,
+            unlockText = "通关2905并处理旧遭遇后开放",
+            steps = {
+                { name = "旁白", text = "凭片上有“请求结束通知”。下方的处理结果只有“收到”，没有“批准”。镜像退去后，远处又响两声铃。" },
+                { characterId = 3, name = "叮咚鸡", text = "死亡通知：收到。回程那行，还是空的。" },
+                { name = "远征长", text = "我们照她说的做了。为什么还响？" },
+                { characterId = 3, name = "叮咚鸡", text = "也许她请求的是另一件事。" },
+                { characterId = 1, name = "大狗嚼", text = "叫……她说不想再走。" },
+                { characterId = 2, name = "黄桃龙", text = "那为什么每张纸都叫她继续？" },
+                -- 无尸体复活镜头；不把普通死亡统统改成投影。
+                { name = "旁白", text = "第三声迟到。" },
+                { characterId = 3, name = "叮咚鸡", text = "这次把铃声也记下来。" },
+            },
+            evidence = assert(Config.getEvidence("E03-C")),
         }
     end
     return nil

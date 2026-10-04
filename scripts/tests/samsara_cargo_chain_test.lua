@@ -8,6 +8,7 @@ local N02, N12, N13, N14 = "samsara.log_leaf", "samsara.cargo_match", "samsara.g
 local FIRST, REPLAY = "samsara_first_read", "samsara_replay"
 local N03 = "samsara.returned_manifest"
 local KEYS = { N02, N12, N13, N14, N03 }
+local INDEX_KEYS = { N02, N12, N13, N14, N03, "samsara.dog_mirror", "samsara.bell_mirror" }
 
 local function check(ok, label)
     assertions = assertions + 1
@@ -125,9 +126,9 @@ local function expectDialogue(cfg, lines, label)
 end
 
 local function configCases()
-    runCase("原四KEY索引保留/末尾N03/独立配置/精修原文及最小语境适配", function()
+    runCase("旧五KEY严格前缀/末尾两镜像/独立配置/精修原文及最小语境适配", function()
         local f = fixture()
-        check(same(f.Config.KEYS, KEYS), "Config.KEYS保留N02,N12,N13,N14顺序并末尾追加N03")
+        check(same(f.Config.KEYS, INDEX_KEYS), "Config.KEYS保留旧五KEY顺序为严格前缀，末尾仅追加两镜像")
         eq(f.Config.NODE_KEY, N02, "NODE_KEY保留N02兼容")
         for _, key in ipairs(KEYS) do
             local cfg = assert(f.Config.get(key))
@@ -288,8 +289,8 @@ local function chainCases()
         local before = copy(f.session)
         eq(f.Player.hasPendingRecords(), true, "有待阅")
         local records = f.Player.getRecords()
-        eq(#records, 5, "记录末尾追加第五条，原四索引不变")
-        for i, record in ipairs(records) do eq(record.key, KEYS[i], "getRecords顺序" .. i) end
+        eq(#records, 7, "七记录保留旧五索引，末尾仅追加两镜像")
+        for i, record in ipairs(records) do eq(record.key, INDEX_KEYS[i], "getRecords顺序" .. i) end
         records[1].title = "覆盖"
         check(same(f.session, before), "peek/getRecords不写入或取消待阅")
         eq(f.Player.requestRead(N12), true, "显式已解锁N12可跨过N02")
@@ -457,7 +458,7 @@ local function preservationCases()
             eq(f.supported, false, "未来schema不兼容")
             eq(f.Player.peekReady(), nil, "未来schema无待播")
             eq(f.Player.hasPendingRecords(), false, "未来schema无可处理待阅")
-            eq(#f.Player.getRecords(), 5, "不兼容仍安全返回五记录")
+            eq(#f.Player.getRecords(), 7, "不兼容仍安全返回七记录")
             for _, key in ipairs(KEYS) do
                 eq(f.Player.getRecord(key).status, "unsupported", "未来schema记录不兼容 " .. key)
                 eq(f.Player.requestRead(key), false, "未来schema不排请求 " .. key)

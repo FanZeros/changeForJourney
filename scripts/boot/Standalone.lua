@@ -666,6 +666,7 @@ local function tryPlayPendingStory_()
     end
     print("[Standalone] play pending story id=" .. tostring(scenarioId)
         .. " steps=" .. #cfg.steps .. " mode=" .. tostring(cfg.mode))
+    local legacyEpoch = SamsaraSlicePlayer.getContextEpoch()
     ScenarioDialogue.show({
         mode = cfg.mode or "small",
         background = cfg.background,
@@ -674,7 +675,7 @@ local function tryPlayPendingStory_()
         steps = cfg.steps,
         completionToken = { nodeKey = "legacy." .. tostring(scenarioId) },
         onResult = function(result)
-            SamsaraSlicePlayer.noteLegacyResult(scenarioId, result.reason)
+            SamsaraSlicePlayer.noteLegacyResult(scenarioId, result.reason, legacyEpoch)
         end,
         onFinish = function()
             if scenarioId then

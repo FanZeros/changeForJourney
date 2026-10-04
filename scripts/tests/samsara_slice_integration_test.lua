@@ -532,8 +532,12 @@ local function schemaCases()
                     unknown_evidence = { opaque = "preserve" } },
             }
             local expected = copy(session)
+            expected.samsaraStory.mirrorHistoryCaptured = false
+            expected.samsaraStory.mirrorHistoryVersion = 1
             f[loader].applyOnLoad("session", session) -- 每条路径独立运行，不串两种onLoad掩盖漏接
-            check(same(session, expected), loader .. " old and valid new fields intact independently")
+            check(same(session, expected), loader .. " old/unknown fields intact，镜像域仅补独立默认值")
+            eq(session.samsaraStory.mirrorHistoryCaptured, false, "onLoad不捕获镜像历史")
+            eq(session.samsaraStory.mirrorHistoryVersion, 1, "独立镜像来源版本")
             for _ = 1, 5 do
                 local story, supported = f.Schema.normalize(session)
                 check(supported and story == session.samsaraStory, "normalize idempotent identity")
@@ -1222,7 +1226,7 @@ local function cargoCases()
             noRewards(f, old, "cargo真实保存恢复 " .. fault)
         end)
     end
-    runCase("记录五标签KEY选择只展示不播/批注分层/显式N12优先", function()
+    runCase("记录七标签中的旧五KEY选择只展示不播/批注分层/显式N12优先", function()
         local session = freshSession()
         local f = fixture({ clearedStages = { [104] = true, [4905] = true, [204] = true } }, session); f.init()
         local old, readCalls, before = legacySession(f.session()), 0, copy(f.session())
@@ -1264,7 +1268,7 @@ local function cargoCases()
         eq(f.Player.takeRequest(), nil, "保存中没有新请求")
         f.fail = ""; f.Player.update(2)
         eq(f.Player.isSavePending(), false, "成功后恢复回看")
-        noRewards(f, old, "五标签展示/读取/保存中")
+        noRewards(f, old, "七标签中的旧五KEY展示/读取/保存中")
     end)
     runCase("N12显式请求在所有门禁保留，JSON合法重附不重扫", function()
         local f = cargoFixture("case_archive"); f.init()

@@ -1,5 +1,5 @@
 -- ============================================================================
--- SamsaraRecordPanel - 日志/货牌与征用三段的轻量剧情记录，无奖励与新选择
+-- SamsaraRecordPanel - 七项轻量剧情记录：日志/货牌、征用三段与两段镜像，无奖励与新选择
 -- 基于 scaffold-2d 的生命周期分离；复用项目 raw NanoVG 管线，不创建上下文/帧。
 -- draw / handleInput / drag 的 x,y,w,h 均为主渲染器的窗口逻辑坐标。
 -- 1920×1080 CONTAIN 字号 + 全窗响应式布局；字体 sans 由主初始化创建。
@@ -15,11 +15,35 @@ local DESIGN_W, DESIGN_H = 1920.0, 1080.0
 local RECORD_ICON, DOT_ICON = "nav_log", "reddot"
 local BODY_FONT, BODY_LINE_HEIGHT = 38, 1.5
 local BLOCK_GAP = 26
+---@type table<string, string>
+local TAB_LABELS = {
+    ["samsara.log_leaf"] = "日志夹页",
+    ["samsara.cargo_match"] = "货牌核验",
+    ["samsara.gray_order"] = "灰印令",
+    ["samsara.people_record"] = "人员卷",
+    ["samsara.returned_manifest"] = "十二号箱",
+    ["samsara.dog_mirror"] = "狗的绳结",
+    ["samsara.bell_mirror"] = "第三声铃",
+}
+---@class SamsaraMirrorRecordSpec
+---@field evidenceId string
+---@field stage string
+---@field liveSource string
+---@field legacyName string
+---@type table<string, SamsaraMirrorRecordSpec>
+local MIRROR_RECORDS = {
+    ["samsara.dog_mirror"] = { evidenceId = "E03-A", stage = "2505", liveSource = "live_clear_2505", legacyName = "旧64遭遇" },
+    ["samsara.bell_mirror"] = { evidenceId = "E03-C", stage = "2905", liveSource = "live_clear_2905", legacyName = "旧67遭遇" },
+}
 
 ---@class SamsaraRecordViewEvidence
 ---@field id string
 ---@field title string
 ---@field text string
+---@field source string|nil
+---@field annotation string|nil
+---@field continuation string|nil
+---@field people string|nil
 ---@class SamsaraRecordView
 ---@field key string
 ---@field title string
@@ -27,7 +51,9 @@ local BLOCK_GAP = 26
 ---@field evidenceVisible boolean
 ---@field evidence SamsaraRecordViewEvidence|nil
 ---@field legacyContext string|nil
----@field evidences table[]
+---@field eligibilitySource string|nil
+---@field eventTrusted boolean|nil
+---@field evidences SamsaraRecordViewEvidence[]
 ---@field unlockText string|nil
 ---@field referenceOnly boolean|nil
 ---@field referenceSteps SamsaraSliceStep[]|nil
@@ -69,7 +95,7 @@ local state = {
 }
 
 -- 均以“扩展设计屏幕”定位，宽高比变化时不拉伸文字/图标。
-local function layout(w, h)
+local function layout(w, h, recordCount)
     local fw = (type(w) == "number" and w > 0) and w or DESIGN_W --[[@as number]]
     local fh = (type(h) == "number" and h > 0) and h or DESIGN_H --[[@as number]]
     local scale = math.min(fw / DESIGN_W, fh / DESIGN_H) --[[@as number]]
@@ -83,7 +109,8 @@ local function layout(w, h)
         closeX = px + pw - 220, closeY = py + 36, closeW = 176, closeH = 84,
         contentX = px + 64, contentY = py + 352,
         contentW = pw - 148, contentH = ph - 506,
-        tabsY = py + 150, tabsW = (pw - 148) / math.max(1, #SamsaraSlicePlayer.getRecords()),
+        tabsY = py + 150, tabsH = 64, tabsGap = 12,
+        tabsW = (pw - 148) / math.max(1, recordCount or #SamsaraSlicePlayer.getRecords()),
         actionX = px + pw - 360, actionY = py + ph - 120, actionW = 296, actionH = 84,
     }
 end
@@ -117,6 +144,7 @@ end
 
 ---@param record SamsaraRecordView
 local function statusText(record)
+    if MIRROR_RECORDS[record.key] and record.referenceOnly then return "亲历未确认 · 原文参考" end
     if record.status == "pending" then return "待阅" end
     if record.status == "finished" then return "已读" end
     if record.status == "skipped" then return "已跳过" end
@@ -126,13 +154,20 @@ end
 
 ---@param record SamsaraRecordView
 local function canRead(record)
-    return (record.status == "pending" or record.status == "finished" or record.status == "skipped")
-        and not SamsaraSlicePlayer.isSavePending()
+    if record.referenceOnly or SamsaraSlicePlayer.isSavePending() then return false end
+    local mirror = MIRROR_RECORDS[record.key]
+    if mirror and record.status == "pending" then
+        -- eventTrusted包含带ID的旧段中断；只允许显式补读，不把中断写成旧段已读。
+        return record.eventTrusted == true and record.eligibilitySource == mirror.liveSource
+    end
+    return record.status == "pending" or record.status == "finished" or record.status == "skipped"
 end
 
 ---@param record SamsaraRecordView
 local function actionText(record)
+    if MIRROR_RECORDS[record.key] and record.referenceOnly then return "仅供查阅" end
     if SamsaraSlicePlayer.isSavePending() then return "保存中" end
+    if MIRROR_RECORDS[record.key] and record.status == "pending" and not canRead(record) then return "亲历未确认" end
     if record.status == "pending" then return "待阅" end
     if record.status == "finished" or record.status == "skipped" then return "回看" end
     return "暂未开放"
@@ -143,6 +178,78 @@ local function contentBlocks(record)
     local blocks = {}
     local function add(text, font, muted)
         blocks[#blocks + 1] = { text = text, font = font or BODY_FONT, muted = muted == true }
+    end
+
+    local mirror = MIRROR_RECORDS[record.key]
+    if mirror then
+        -- 镜像独立分区；静态参考不进入播放器，也不混入E02/E05或后阶段批注。
+        if record.status == "unsupported" then
+            add("这份剧情记录尚未开放。")
+            return blocks
+        end
+        local reference = record.referenceOnly == true
+        if reference then
+            add("剧情原文／亲历状态未确认", 40)
+            add("以下仅供静态查阅，不标已读、不领取奖励、不获得事件凭片；原文中的战斗与申请不代表本队已亲历或已执行。", 32, true)
+        elseif record.status == "pending" then
+            if record.eventTrusted == true and record.eligibilitySource == mirror.liveSource then
+                add("有一段镜像剧情待阅。点击下方“待阅”进入。")
+                add("成功通关只建立待阅资格；处理本段后才公开自身初片。", 32, true)
+            else
+                add("亲历来源尚未确认，暂不进入事件切片。", 32, true)
+            end
+        elseif record.status == "finished" or record.status == "skipped" then
+            add(record.status == "skipped" and "此前已跳过本段，可点击“回看”重新阅读。"
+                or "此前已读本段，可点击“回看”重新阅读。", 32, true)
+        else
+            add((record.unlockText or "暂未开放") .. "。")
+        end
+
+        if record.eligibilitySource == "legacy_raw_clear_unknown" then
+            add("来源：原始旧档通关标记；实际战斗来源未知，不能据此取得事件凭片。", 32, true)
+        elseif record.eligibilitySource == mirror.liveSource then
+            add("资格来源：" .. mirror.stage .. "成功CLEAR记录；不等于本段已处理。", 32, true)
+        else
+            add("资格来源尚未确认，不从入场、最高关或旧防重播标记推断成功。", 32, true)
+        end
+        if record.legacyContext == "live_finished" then
+            add(mirror.legacyName .. "已在实时带ID结果中完成；不代替本段阅读记录。", 32, true)
+        elseif record.legacyContext == "live_skipped" then
+            add(mirror.legacyName .. "已在实时带ID结果中跳过；跳过与已读分开记录。", 32, true)
+        elseif record.legacyContext == "live_interrupted" then
+            add(mirror.legacyName .. "曾中断；有可信成功来源时可从下方手动补读本段，不补写旧段已读。", 32, true)
+        elseif record.legacyContext == "legacy_claimed_unknown" then
+            add(mirror.legacyName .. "仅有旧防重播标记，阅读状态未知；仅供原文参考。", 32, true)
+        elseif record.legacyContext == "unavailable" then
+            add(mirror.legacyName .. "来源暂不可用；不能据此确认遭遇已处理。", 32, true)
+        end
+
+        if reference then
+            for _, step in ipairs(record.referenceSteps or {}) do
+                add(step.name .. "：" .. step.text)
+            end
+            add("没有事件凭片取得记录。", 32, true)
+        else
+            local ownCount = 0
+            if (record.status == "finished" or record.status == "skipped") and record.evidenceVisible == true then
+                for _, item in ipairs(record.evidences or {}) do
+                    if item.id == mirror.evidenceId then
+                        add(item.id .. " · " .. item.title .. "（初片）", 40)
+                        -- 只读物证自身冻结的source，回看不借当前资格换写来源。
+                        local source = item.source == mirror.liveSource
+                            and (mirror.stage .. "成功CLEAR · 当前页回声本地抄片（冻结来源）")
+                            or "来源未确认"
+                        add("来源：" .. source, 32, true)
+                        add(item.text)
+                        ownCount = ownCount + 1
+                    end
+                end
+            end
+            if ownCount == 0 then add("本段初片正文暂不公开。", 32, true) end
+        end
+        add("仅本段初片，不表示三份申请齐全，也不证明撤离获批或申请已执行。", 32, true)
+        add("后续核验未开放。", 32, true)
+        return blocks
     end
 
     if record.status == "unsupported" then
@@ -240,9 +347,9 @@ function Panel.isOpen()
     return state.open
 end
 
-local function drawButton(vg, x, y, w, h, text, enabled)
+local function drawButton(vg, x, y, w, h, text, enabled, fontSize)
     DarkIcon.drawNine(vg, "btn", x, y, w, h, { accent = "gold", alpha = enabled and 1 or 0.45 })
-    DrawUtil.drawTextStroke(vg, x + w * 0.5, y + h * 0.5, text, 36,
+    DrawUtil.drawTextStroke(vg, x + w * 0.5, y + h * 0.5, text, fontSize or 36,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         enabled and 244 or 150, enabled and 237 or 138, enabled and 224 or 110, 2)
 end
@@ -256,7 +363,8 @@ function Panel.draw(vg, w, h)
     local ctx = vg or context_
     if not ctx then return end
     state.frameW, state.frameH = w, h
-    local l = layout(w, h)
+    local records = SamsaraSlicePlayer.getRecords()
+    local l = layout(w, h, #records)
     local record = getRecord()
     local blocks = contentBlocks(record)
 
@@ -270,12 +378,12 @@ function Panel.draw(vg, w, h)
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
     drawButton(ctx, l.closeX, l.closeY, l.closeW, l.closeH, "关闭", true)
 
-    local labels = { "日志夹页", "货牌核验", "灰印征用令", "人员卷", "十二号箱" }
-    for index, item in ipairs(SamsaraSlicePlayer.getRecords()) do
+    -- 标签按key绑定，七项最窄时四字×30px仍留有边距；点击和绘制同用layout。
+    for index, item in ipairs(records) do
         local tabX = l.contentX + (index - 1) * l.tabsW
-        drawButton(ctx, tabX, l.tabsY, l.tabsW - 12, 64, labels[index] or item.title,
-            item.key == state.selectedKey)
-        if item.status == "pending" then
+        drawButton(ctx, tabX, l.tabsY, l.tabsW - l.tabsGap, l.tabsH, TAB_LABELS[item.key] or "剧情记录",
+            item.key == state.selectedKey, 30)
+        if item.status == "pending" and not item.referenceOnly then
             DarkIcon.draw(ctx, DOT_ICON, tabX + l.tabsW - 30, l.tabsY + 10, 18, 1)
         end
     end
@@ -284,7 +392,7 @@ function Panel.draw(vg, w, h)
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 238, 216, 161, 2)
     DrawUtil.drawTextStroke(ctx, l.contentX, l.y + 320, statusText(record), 32,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
-    if record.status == "pending" then
+    if record.status == "pending" and not record.referenceOnly then
         DarkIcon.draw(ctx, DOT_ICON, l.x + l.w - 84, l.y + 226, 28, 1)
     end
 
@@ -351,15 +459,16 @@ function Panel.handleInput(x, y, w, h)
         state.dragged = false
         return true
     end
-    local l = layout(w, h)
+    local records = SamsaraSlicePlayer.getRecords()
+    local l = layout(w, h, #records)
     local dx, dy = x / l.scale, y / l.scale
     if inRect(dx, dy, l.closeX, l.closeY, l.closeW, l.closeH) then
         Panel.close()
         return true
     end
-    for index, record in ipairs(SamsaraSlicePlayer.getRecords()) do
+    for index, record in ipairs(records) do
         local tabX = l.contentX + (index - 1) * l.tabsW
-        if inRect(dx, dy, tabX, l.tabsY, l.tabsW - 12, 64) then
+        if inRect(dx, dy, tabX, l.tabsY, l.tabsW - l.tabsGap, l.tabsH) then
             Panel.selectRecord(record.key)
             return true
         end

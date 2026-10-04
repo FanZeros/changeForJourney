@@ -146,6 +146,14 @@ function Start()
         banners = draw()
         check(banners[1].paint.path == firstPath and loads[firstPath] == 1,
             "困难首章复用普通首章图片缓存")
+        Dialog.handleInput(175, 880)
+        draw()
+        local hardCaptions = {}
+        for _, text in ipairs(texts) do hardCaptions[text] = true end
+        check(hardCaptions["24 章"] and hardCaptions["24-4"],
+            "困难选关章节与第四关保持连续编号24-4")
+        check(currentStage == 101 and maxStage == 305 and jumps == 0,
+            "查看困难编号不改变实际进度或解锁")
         Dialog.handleScroll(24, 175, 900)
         Dialog.handleInput(175, 970)
         check(jumps == 0, "点背景卡片仅切章节，不跳关")

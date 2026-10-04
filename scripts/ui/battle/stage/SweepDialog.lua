@@ -190,11 +190,6 @@ local function hitTestCircle(dx, dy, cx, cy, r)
     return ddx * ddx + ddy * ddy <= r * r
 end
 
---- 难度内的相对章节号
-local function getRelativeChapter(chapter)
-    return SC.getRelativeChapter(chapter)
-end
-
 --- 难度中文名
 local DIFF_NAMES = {
     [SC.DIFFICULTY_NORMAL]    = "普通",
@@ -237,7 +232,7 @@ local function getCurrentStageName()
 
     local diff = SC.getDifficulty(entry.id)
     local diffName = DIFF_NAMES[diff] or "普通"
-    return diffName .. " " .. getRelativeChapter(entry.chapter) .. "-" .. entry.stage
+    return diffName .. " " .. entry.chapter .. "-" .. entry.stage
 end
 
 --- 获取弹窗动画缩放系数（打开/关闭）

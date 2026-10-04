@@ -31,7 +31,7 @@ function M.load(ctx, stageId, skipBattleStart)
     end
 
     ctx.currentStageId = stageId
-    ctx.stageName = entry.name
+    ctx.stageName = stageConfig.getStageDisplayName(stageId)
     -- 解锁进度兜底：能被加载的关卡必然已解锁。此前手动"前进"按钮在未通关时
     -- 直接 loadStage(nextId) 不推进 ctx.maxStageId_，导致当前关进度与解锁进度脱节
     -- （选关列表只显示到旧进度、扫荡弹窗识别不了当前关卡）

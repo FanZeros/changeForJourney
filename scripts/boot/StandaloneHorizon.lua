@@ -377,6 +377,7 @@ local function seamBackList()
                 id = "character", generation = ot, closing = ct > 0 and ct >= ot,
                 cx = (logicalW() - 486 * psL) - barW * 0.5 + oxWin,
                 sw = barW, sh = barH, top = barY, bw = 0, bh = 0, dir = "right",
+                key = "character", openedAt = ot,
                 close = function() CharacterDetail.close() end,
             }
         end
@@ -394,6 +395,7 @@ local function seamBackList()
             id = "smith", generation = ot, closing = ct > 0 and ct >= ot,
             cx = seamX + barW * 0.5 + oxWin,
             sw = barW, sh = barH, top = barY, bw = 0, bh = 0, dir = "left",
+            key = "smith", openedAt = ot,
             close = function() BlacksmithPage.close() end,
         }
     end
@@ -426,9 +428,7 @@ local function seamBackList()
             leftAnim = { ChurchPage.getSeamAnim() }
         elseif tri and TavernPage.isOpen() then
             leftId = "tavern"
-            leftClose = function()
-                if not TavernPage.isRecruitBusy() then TavernPage.close() end
-            end
+            leftClose = function() TavernPage.close() end
             leftAnim = { TavernPage.getSeamAnim() }
         elseif tri and MarketPage.isOpen() then
             leftId = "market"
@@ -447,6 +447,7 @@ local function seamBackList()
                 closing = leftAnim[2] > 0 and leftAnim[2] >= leftAnim[1],
                 cx = leftEdge + barW * 0.5 + oxWin,
                 sw = barW, sh = barH, top = barY, bw = 0, bh = 0, dir = "left",
+                key = leftId == "loot" and "lootbox" or leftId, openedAt = leftAnim[1],
                 close = leftClose,
             }
         end
@@ -475,56 +476,25 @@ local function seamHitAt(sx, sy)
     return nil
 end
 
--- 返回条独占从箭头开始的手势；从其它栏拖到箭头的释放不算返回。
-local seamPress = nil ---@type table|nil
-local seamGesture = {}
 local function seamFrame()
     return { logicalW(), logicalH(), dpr(), RT.frameScale or 1, RT.frameOx or 0,
         RT.frameOy or 0, BattleTriPage.isOpen(), H_ox, H_oy, H_s, windowW(), windowH() }
 end
-local function seamPressValid(sx, sy, blocked)
-    if not seamPress or blocked then return false end
-    local hit = seamHitAt(sx, sy)
-    if not hit or hit.closing or hit.id ~= seamPress.id or hit.generation ~= seamPress.generation then
-        return false
-    end
-    local frame = seamFrame()
-    for i, value in ipairs(seamPress.frame) do
-        if frame[i] ~= value then return false end
-    end
-    return math.abs(sx - seamPress.x) + math.abs(sy - seamPress.y) < 15
-end
-function seamGesture.down(sx, sy, blocked)
-    seamPress = nil
-    if blocked then return false end
-    local hit = seamHitAt(sx, sy)
-    if not hit then return false end
-    seamPress = { id = hit.id, generation = hit.generation, x = sx, y = sy,
-        frame = seamFrame(), cancelled = hit.closing }
-    return true
-end
-function seamGesture.move(sx, sy, blocked)
-    if not seamPress then return false end
-    if not seamPressValid(sx, sy, blocked) then seamPress.cancelled = true end
-    return true
-end
-function seamGesture.up(sx, sy, blocked)
-    if not seamPress then return false end
-    local close = not seamPress.cancelled and seamPressValid(sx, sy, blocked)
-    local hit = close and seamHitAt(sx, sy)
-    seamPress = nil
-    if hit then
+local horizonInputContext = {} ---@type table
+local seamGesture = require("boot.SeamBackGesture").bind({
+    RT = RT, width = logicalW, height = logicalH, dpr = dpr, hit = seamHitAt,
+    threshold = 15, bootReady = bootReady_, pageModal = function() return false end,
+    extraBlocked = seamInputBlocked, layoutSnapshot = seamFrame,
+    tapInterval = 0.12,
+    getLastTap = function() return horizonInputContext.getLastTap and horizonInputContext.getLastTap() or 0 end,
+    setLastTap = function(t) if horizonInputContext.setLastTap then horizonInputContext.setLastTap(t) end end,
+    source = function() return horizonInputContext.pointerSource and horizonInputContext.pointerSource() or "mouse" end,
+    onClose = function(hit)
         local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
         if EquipmentDetail.isCompactCorner() then EquipmentDetail.close() end
         print("[SeamBack] close id=" .. tostring(hit.id))
-        hit.close()
-    end
-    return true
-end
-function seamGesture.cancel()
-    if seamPress then seamPress.cancelled = true end -- 保留所有权，直到旧手势释放。
-end
-function seamGesture.hasPress() return seamPress ~= nil end
+    end,
+})
 
 local function equipmentOwnerPanel(owner)
     if owner == "character" or owner == "bag" then return "right" end
@@ -569,7 +539,7 @@ end
 
 function HandleNanoVGRenderHorizon()
     if not vg() then return end
-    if seamPress and seamInputBlocked() then seamGesture.cancel() end
+    seamGesture.cancelIfBlocked()
     TutorialManager.clearHotspots()
     HorizonUpdateTransform()
     nvgBeginFrame(vg(), windowW(), windowH(), dpr())
@@ -920,7 +890,7 @@ function HandleNanoVGRenderHorizon()
     finishFrame()
 end
 
-require('boot.StandaloneHorizonInput').bind({
+horizonInputContext = {
     vg = vg,
     logicalW = logicalW,
     logicalH = logicalH,
@@ -942,4 +912,5 @@ require('boot.StandaloneHorizonInput').bind({
     Viewport = Viewport,
     artifactGesture = artifactOverlay,
     OfflineRewardOverlay = OfflineRewardOverlay,
-})
+}
+require('boot.StandaloneHorizonInput').bind(horizonInputContext)

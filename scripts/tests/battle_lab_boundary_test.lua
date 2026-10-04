@@ -305,17 +305,53 @@ local function testSetCoverage()
         { "starless", 20, 85, { weapon="W80", offhand="O18", armor="A65", helmet="H65", shoes="S65", accessory="C32" } },
         { "gambler", 14, 85, { weapon="W81", offhand="O37", armor="A66", helmet="H66", shoes="S66", accessory="C33" } },
     }
-    check(EC.TOTAL_COUNT == 353 and EC.SLOT_COUNT.weapon == 81
-        and EC.SLOT_COUNT.offhand == 37 and EC.SLOT_COUNT.armor == 66
+    check(EC.TOTAL_COUNT == 357 and EC.SLOT_COUNT.weapon == 84
+        and EC.SLOT_COUNT.offhand == 38 and EC.SLOT_COUNT.armor == 66
         and EC.SLOT_COUNT.helmet == 66 and EC.SLOT_COUNT.shoes == 66
         and EC.SLOT_COUNT.accessory == 37,
-        "原模板 ID 不变，当前共 353 个模板")
+        "原模板 ID 不变，四件高阶续号后共 357 个模板")
     check(SC.getSetIdForTemplate(EC.ITEMS.W36) == "riftcrystal"
         and SC.getSetIdForTemplate(EC.ITEMS.W48) == "riftcrystal"
         and SC.getSetIdForTemplate(EC.ITEMS.W5) == "carapace"
         and SC.getSetIdForTemplate(EC.ITEMS.O11) == "bonehunger"
         and SC.getSetIdForTemplate(EC.ITEMS.O5) == "faceless",
         "原装备套装归属保持不变")
+
+    local additions = {
+        { id="W82", ref="W6", icon="W1", setId="carapace", heroId=1, slot="weapon", grip="onehand" },
+        { id="W83", ref="W12", icon="W7", setId="carapace", heroId=1, slot="weapon", grip="twohand" },
+        { id="O38", ref="O12", icon="O7", setId="carapace", heroId=1, slot="offhand" },
+        { id="W84", ref="W60", icon="W55", setId="faceless", heroId=18, slot="weapon", grip="onehand" },
+    }
+    for _, addition in ipairs(additions) do
+        local tpl = assert(EC.ITEMS[addition.id], "高阶续号模板缺失") --[[@as table]]
+        local reference = assert(EC.ITEMS[addition.ref], "同档数值参考缺失") --[[@as table]]
+        local statsMatch = #tpl.stats == #reference.stats
+        for index, stat in ipairs(tpl.stats) do
+            local expected = reference.stats[index]
+            if not expected or stat[1] ~= expected[1] or stat[2] ~= expected[2] then statsMatch = false end
+        end
+        check(tpl.id == addition.id and tpl.slot == addition.slot and tpl.grip == addition.grip
+            and tpl.type == reference.type and tpl.setId == addition.setId
+            and SC.getSetIdForTemplate(tpl) == addition.setId and statsMatch,
+            addition.id .. " 续号/握持/显式归属正确，基础数值与同档旧模板一致")
+        check(tpl.levelRange[1] == 81 and tpl.levelRange[2] == 9999
+            and EC.getIconPath(addition.id) == EC.getIconPath(addition.icon),
+            addition.id .. " 只补81+档并复用正式图标")
+        local indexed = false
+        for _, id in ipairs(EC.BY_SLOT[addition.slot]) do if id == addition.id then indexed = true end end
+        check(indexed, addition.id .. " 自动加入真实随机部位池")
+        expectReject(baseConfig({ heroes = { { id = addition.heroId, level = 80 } }, loadouts = {
+            A = { [tostring(addition.heroId)] = { [addition.slot] = { templateId=addition.id, level=80 } } }, B = {},
+        } }), "不在模板掉落范围", addition.id .. " 不允许80级提前出现")
+    end
+    check(EC.ITEMS.W5.name == "叠甲战神之剑" and EC.ITEMS.W5.levelRange[2] == 80
+        and EC.ITEMS.W11.name == "叠甲战神巨剑" and EC.ITEMS.W11.levelRange[2] == 80
+        and EC.ITEMS.W59.name == "刺客之刃" and EC.ITEMS.W59.levelRange[2] == 80
+        and SC.getSetIdForTemplate(EC.ITEMS.W60) == "riftcrystal"
+        and SC.getSetIdForTemplate(EC.ITEMS.W12) == "swordgate"
+        and SC.getSetIdForTemplate(EC.ITEMS.O12) == "ironwall",
+        "旧叠甲/夜行早档和水晶旧模板名称、范围及归属全部保留")
 
     -- 脏档：双手武器搭副手、同一装备数字/字符串序号重复时不得虚增件数。
     local invalid = { inventory = {}, equipped = { [16] = {} } }
@@ -394,7 +430,277 @@ local function testSetCoverage()
     end
 end
 
--- ── 10) CombatPowerEstimate 分项计价原型：同官方战力下按职业区分适配 ──
+-- ── 10) 全套真实选路：不是掉率统计，更不承诺短时间保底 ──
+local function testSetAcquisition()
+    local assertionCount, passedCount, attempted = 0, 0, 0
+    local reportCheck = check
+    -- 专项独立计数，只打印失败与每套选路；旧边界测试日志保持不变。
+    local function check(cond, message)
+        assertionCount = assertionCount + 1
+        if cond then passedCount = passedCount + 1 else reportCheck(false, message) end
+    end
+    local EC = require("config.EquipmentConfig")
+    local SC = require("config.EquipmentSetConfig")
+    local ES = require("systems.EquipmentSystem")
+    local Sets = require("systems.EquipmentSetSystem")
+    local Drop = require("systems.DropSystem")
+    local Loot = require("systems.LootBoxSystem")
+    local Stage = require("config.StageConfig")
+    local HC = require("config.HeroConfig")
+    local ordered, visited = SC.orderedSetIds(), {}
+    local definitionCount, completed = 0, 0
+    for setId in pairs(SC.SETS) do
+        definitionCount = definitionCount + 1
+        local found = false
+        for _, id in ipairs(ordered) do if id == setId then found = true end end
+        check(found, setId .. " 在 orderedSetIds 中，未漏 SETS 定义")
+    end
+    check(#ordered == 12 and definitionCount == 12, "集齐专项遍历全部 12 套")
+
+    -- 只读真实配置关卡；每件装备都有对应怪物等级、非零掉率和怪物池。
+    ---@type table<number, StageEntry>
+    local stages = {}
+    for _, stage in ipairs(Stage.STAGES) do
+        if stage.dropRate > 0 and #stage.monsters > 0 and not Stage.isTerminalTemple(stage.id) then
+            local old = stages[stage.monsterLevel]
+            if not old or stage.id < old.id then stages[stage.monsterLevel] = stage end
+        end
+    end
+    local function levelPool(slot, level)
+        local pool = {}
+        for _, tid in ipairs(EC.BY_SLOT[slot]) do
+            local tpl = EC.ITEMS[tid]
+            if level >= tpl.levelRange[1] and level <= tpl.levelRange[2] then
+                pool[#pool + 1] = tid
+            end
+        end
+        return pool
+    end
+
+    -- 不启用转职/双持。优先同级模板，跨档时只回溯实际可掉落等级，不改配置。
+    local function findLoadout(setId, heroLevel, grip, history)
+        for _, heroId in ipairs(HC.getAllIds()) do
+            local loadout, valid = {}, true
+            for _, slot in ipairs(EC.SLOTS) do
+                if slot ~= "offhand" or grip ~= "twohand" then
+                    local wearable = ES.getWearableTypeSet(heroId, slot)
+                    ---@type table|nil
+                    local best = nil
+                    for _, tid in ipairs(EC.BY_SLOT[slot]) do
+                        local tpl = EC.ITEMS[tid]
+                        local level = history and math.min(heroLevel, tpl.levelRange[2]) or heroLevel
+                        if SC.getSetIdForTemplate(tpl) == setId and stages[level]
+                            and level >= tpl.levelRange[1] and level <= tpl.levelRange[2]
+                            and (slot == "accessory" or (wearable and wearable[tpl.type]))
+                            and (slot ~= "weapon" or tpl.grip == grip)
+                            and (not best or level > best.level) then
+                            best = { templateId = tid, level = level }
+                        end
+                    end
+                    loadout[slot] = best
+                    if not best then valid = false end
+                end
+            end
+            if valid then return heroId, loadout end
+        end
+        return nil, nil
+    end
+
+    -- 只控制选路：Drop 第1次命中掉率、第4/5次选槽/模板；怪物/品质/词缀仍真随机。
+    -- ES.generateRandom 第1/2次选槽/模板。两项选完立即恢复，异常也必恢复。
+    local function acquire(spec, slot, quality, fromDrop, fromLoot)
+        local pool = levelPool(slot, spec.level)
+        local templateIndex, slotIndex = 0, 0
+        for i, tid in ipairs(pool) do if tid == spec.templateId then templateIndex = i end end
+        for i, key in ipairs(EC.SLOTS) do if key == slot then slotIndex = i end end
+        check(templateIndex > 0 and slotIndex > 0,
+            spec.templateId .. " Lv" .. spec.level .. " 确在 BY_SLOT 等级候选中（无 fallback）")
+        assert(templateIndex > 0 and slotIndex > 0, "指定模板不在真实候选池")
+        local original, calls = math.random, 0
+        local slotCall, templateCall = fromDrop and 4 or 1, fromDrop and 5 or 2
+        local stage = assert(stages[spec.level], "没有真实可掉落关卡")
+        math.random = function(...)
+            calls = calls + 1
+            local a, b = ...
+            if fromDrop and calls == 1 then
+                assert(select("#", ...) == 0, "Drop 掉率调用顺序改变")
+                return stage.dropRate * 0.5
+            end
+            if calls == slotCall or calls == templateCall then
+                local size = calls == slotCall and #EC.SLOTS or #pool
+                assert(select("#", ...) == 2 and a == 1 and b == size, "模板选路调用顺序改变")
+                if calls == templateCall then math.random = original end
+                return calls == slotCall and slotIndex or templateIndex
+            end
+            return original(...)
+        end
+        local ok, equip = pcall(function()
+            if fromDrop then return Drop.generateKillDrop(stage) end
+            if fromLoot then
+                local box = { seeds = {} }
+                assert(Loot.addSeed(box, stage.id, quality, spec.level), "真实入遗匣失败")
+                local saved = box.seeds[1].equip
+                local claimed = Loot.claimOne(box, 1)
+                check(claimed == saved and #box.seeds == 0 and math.random == original,
+                    spec.templateId .. " 真实addSeed→claimOne，无领取重骰")
+                return claimed
+            end
+            return ES.generateRandom(spec.level, quality)
+        end)
+        math.random = original
+        if not ok then error(equip) end
+        check(calls == templateCall and math.random == original, "选路消费完毕并恢复 math.random")
+        check(equip and equip.templateId == spec.templateId and equip.slot == slot
+            and equip.level == spec.level and (fromDrop or equip.quality == quality),
+            (fromDrop and "真实击杀掉落关卡" .. stage.id
+                or (fromLoot and "真实遗匣领取 Q" or "真实 generateRandom Q") .. quality)
+                .. " → " .. spec.templateId .. " Lv" .. spec.level)
+        return assert(equip, "真实获得函数返回空装备")
+    end
+
+    local function equipLoadout(heroId, heroLevel, loadout, source, ascend)
+        local data = { inventory = {}, equipped = {}, nextSeq = 1 }
+        local roster = { roster = { [tostring(heroId)] = { level = heroLevel } } }
+        for _, slot in ipairs(EC.SLOTS) do
+            if loadout[slot] then
+                local equip = source[slot]
+                equip.ascendLevel, equip.enhanceLevel = ascend, ascend
+                local seq = ES.addToInventory(data, equip)
+                local ok, err = ES.applyEquip(data, seq, heroId, slot, roster)
+                check(ok and ES.getHeroSlots(data, heroId)[slot] == seq,
+                    "真实入包/穿戴 " .. slot .. " " .. equip.templateId .. "：" .. tostring(err))
+            end
+        end
+        return data, roster
+    end
+    local function verifyHigh(data, unit, setId, expected, label)
+        local counts = Sets.countSets(data, unit.heroId, ES.getFromInventory, ES.getHeroSlots)
+        local rows = Sets.applyToUnit(unit.attrs, data, unit.heroId, ES.getFromInventory, ES.getHeroSlots)
+        local four, six = Sets.activeHighSets(unit)
+        check(counts[setId] == expected and #rows == 1 and rows[1].count == expected
+            and rows[1].twoActive and rows[1].fourActive and rows[1].sixActive == (expected == 6)
+            and four == setId and six == (expected == 6 and setId or nil)
+            and unit.attrs.modifiers["set2_" .. setId] ~= nil, label .. " 计数/摘要/真实 attrs 最高档一致")
+    end
+    local function runFull(setId, heroLevel, grip)
+        attempted = attempted + 1
+        local failuresBefore = #failures
+        local heroId, loadout = findLoadout(setId, heroLevel, grip, false)
+        local sameLevel = heroId ~= nil
+        -- 高阶补件后，全部12套在81/200必须同级可得，不允许跨档兜底掩盖缺口。
+        check(sameLevel, setId .. " Lv" .. heroLevel .. " 必须有同级合法全套")
+        local label = setId .. " 英雄Lv" .. heroLevel .. " " .. grip
+        check(heroId ~= nil, label .. " 自动枚举基础英雄同级可集齐")
+        if not heroId then return end
+        local physical, parts = 0, {}
+        for _, slot in ipairs(EC.SLOTS) do
+            local spec = loadout[slot]
+            if spec then
+                physical = physical + 1
+                parts[#parts + 1] = slot .. "=" .. spec.templateId .. "@Lv" .. spec.level
+            else parts[#parts + 1] = slot .. "=无" end
+        end
+        print("[套装选路] " .. label .. " heroId=" .. heroId .. " 实体=" .. physical
+            .. (sameLevel and " 同级" or " 跨档（同级无合法全套）") .. " " .. table.concat(parts, " "))
+        check(physical == (grip == "twohand" and 5 or 6)
+            and (grip ~= "twohand" or SC.SETS[setId].twoHandCountsAsSix == true), label .. " 实体数与配置特例一致")
+        -- Drop先实生成；遗匣用其真实rollKillDrop品质，只控制槽/模板，自动分解不在本专项。
+        local sources = { {}, {}, {}, {} }
+        for _, slot in ipairs(EC.SLOTS) do
+            if loadout[slot] then
+                sources[1][slot] = acquire(loadout[slot], slot, nil, true)
+                sources[2][slot] = acquire(loadout[slot], slot, 1, false)
+                sources[3][slot] = acquire(loadout[slot], slot, 6, false)
+                sources[4][slot] = acquire(loadout[slot], slot, sources[1][slot].quality, false, true)
+            end
+        end
+        for sourceIndex, source in ipairs(sources) do
+            for _, ascend in ipairs({ 0, 100 }) do
+                local variant = label .. " 来源" .. sourceIndex .. " 升阶" .. ascend
+                local data, roster = equipLoadout(heroId, heroLevel, loadout, source, ascend)
+                local unit = assert(HC.createHero(heroId, heroLevel, nil, nil, false))
+                verifyHigh(data, unit, setId, 6, variant)
+                local counts, twoHand = Sets.countSets(data, heroId, ES.getFromInventory, ES.getHeroSlots)
+                check(counts[setId] == 6 and twoHand == (grip == "twohand"), variant .. " 双手状态正确")
+                local restored = cjson.decode(cjson.encode({ inventory = ES.dehydrateInventory(data.inventory),
+                    equipped = { [tostring(heroId)] = ES.getHeroSlots(data, heroId) }, nextSeq = data.nextSeq }))
+                ES.hydrateInventory(restored.inventory)
+                for _, slot in ipairs(EC.SLOTS) do
+                    if loadout[slot] then
+                        local seq = ES.getHeroSlots(restored, tostring(heroId))[slot]
+                        local equip = ES.getFromInventory(restored, seq)
+                        check(equip and equip.templateId == loadout[slot].templateId
+                            and equip.quality == source[slot].quality and ES.getAscendLevel(equip) == ascend
+                            and equip.grip == source[slot].grip, variant .. " JSON水合还原 " .. slot)
+                    end
+                end
+                verifyHigh(restored, unit, setId, 6, variant .. " 脱水/JSON/水合后")
+                -- 从满套逐一卸每个实体槽（每次复穿），不是只测副手/饰品。
+                for _, slot in ipairs(EC.SLOTS) do
+                    if loadout[slot] then
+                        local seq = ES.getHeroSlots(restored, heroId)[slot]
+                        check(ES.applyUnequip(restored, heroId, slot), variant .. " 卸下 " .. slot)
+                        local fewer = Sets.countSets(restored, heroId, ES.getFromInventory, ES.getHeroSlots)
+                        Sets.applyToUnit(unit.attrs, restored, heroId, ES.getFromInventory, ES.getHeroSlots)
+                        local _, six = Sets.activeHighSets(unit)
+                        check(fewer[setId] == physical - 1 and six == nil and unit.attrs._setSix == nil,
+                            variant .. " 卸 " .. slot .. " 后最高档失效")
+                        check(ES.applyEquip(restored, seq, heroId, slot, roster), variant .. " 复穿 " .. slot)
+                        verifyHigh(restored, unit, setId, 6, variant .. " 复穿 " .. slot)
+                    end
+                end
+            end
+        end
+        if #failures == failuresBefore then completed = completed + 1 end
+    end
+
+    for _, setId in ipairs(ordered) do
+        check(SC.SETS[setId] ~= nil and not visited[setId], setId .. " 定义存在且无重复遍历")
+        visited[setId] = true
+        for _, level in ipairs({ 81, 200 }) do
+            local grip = setId == "swordgate" and "twohand" or "onehand"
+            runFull(setId, level, grip)
+            if setId == "carapace" then runFull(setId, level, "twohand") end
+        end
+    end
+    check(completed == 26, "12套×英雄Lv81/200，加carapace两档双手，共26条完整获得/穿戴路径")
+
+    -- 未开启五算六：同套真双手W30 + 四槽只有5；再换同套单手W36仍只有5。
+    local heroId, loadout = findLoadout("riftcrystal", 81, "twohand", false)
+    check(heroId ~= nil and not SC.SETS.riftcrystal.twoHandCountsAsSix, "裂晶双手负例存在且未开特例")
+    if heroId then
+        for _, tid in ipairs({ "W30", "W36" }) do
+            loadout.weapon = { templateId = tid, level = 81 }
+            local source = {}
+            for _, slot in ipairs(EC.SLOTS) do
+                if loadout[slot] then source[slot] = acquire(loadout[slot], slot, nil, true) end
+            end
+            local data = equipLoadout(heroId, 81, loadout, source, 0)
+            verifyHigh(data, assert(HC.createHero(heroId, 81, nil, nil, false)), "riftcrystal", 5,
+                "未开启特例 " .. tid .. " 五实体不得补六")
+        end
+    end
+    -- 特例开启也不能借别套主手：门扉W12双手 + 虫壳其余四槽，虫壳只能4。
+    local carHero, carLoadout = findLoadout("carapace", 200, "onehand", true)
+    if carHero then
+        carLoadout.weapon, carLoadout.offhand = { templateId = "W12", level = 200 }, nil
+        local source = {}
+        for _, slot in ipairs(EC.SLOTS) do
+            if carLoadout[slot] then source[slot] = acquire(carLoadout[slot], slot, nil, true) end
+        end
+        local data = equipLoadout(carHero, 200, carLoadout, source, 0)
+        local counts, twoHand = Sets.countSets(data, carHero, ES.getFromInventory, ES.getHeroSlots)
+        local unit = assert(HC.createHero(carHero, 200, nil, nil, false))
+        Sets.applyToUnit(unit.attrs, data, carHero, ES.getFromInventory, ES.getHeroSlots)
+        local four, six = Sets.activeHighSets(unit)
+        check(twoHand and counts.carapace == 4 and counts.swordgate == 1
+            and four == "carapace" and six == nil, "别套双手主手不得给虫壳虚增件数或激活最高档")
+    else check(false, "别套主手负例缺少合法基础英雄") end
+    print(string.format("[套装专项汇总] 断言=%d 通过=%d 失败=%d 完整路径=%d/%d（目标26）",
+        assertionCount, passedCount, assertionCount - passedCount, completed, attempted))
+end
+
+-- ── 11) CombatPowerEstimate 分项计价原型：同官方战力下按职业区分适配 ──
 local function testEstimate()
     local HC = require("config.HeroConfig")
     local EC = require("config.EquipmentConfig")
@@ -485,6 +791,7 @@ function Start()
         testAscendAndDeterminism()
         testMode()
         testSetCoverage()
+        testSetAcquisition()
         testEstimate()
     end)
     if not ok then

@@ -71,6 +71,9 @@ function Input.bind(ctx)
     local function pointerPosition()
         return touchPosition or input:GetMousePosition()
     end
+    ctx.pointerSource = function() return touchPosition and touchPosition.id or "mouse" end
+    ctx.getLastTap = function() return lastTapTime end
+    ctx.setLastTap = function(t) lastTapTime = t end
     -- 遗匣按压由左栏捕获；移出左栏后不再把同次拖拽转交右栏/战斗。
     local lootPress = false
 
@@ -234,16 +237,23 @@ function Input.bind(ctx)
 
     local equipOverlayPress = false
     local equipOverlayStartX, equipOverlayStartY = 0, 0
-    -- [浮选详情修复] 本次按下刚顺手关掉了浮选详情：按下继续下放给底层页面（恢复拖拽），
-    -- 但松开时不按 tap 派发点击，避免"点空白关详情"误触页面按钮。
+    -- 关浮选详情后按下可继续拖拽，但同次松开不派发按钮点击。
     local detailDismissPress = false
     local equipmentPressPanel = nil
+    if not seamGesture then
+        seamGesture = require("boot.SeamBackGesture").bind({
+            RT = RT, width = logicalW, height = logicalH, dpr = dpr, hit = seamHitAt,
+            threshold = TAP_THRESHOLD, bootReady = bootReady_, pageModal = HorizonPageModalActive,
+            tapInterval = MIN_TAP_INTERVAL, getLastTap = function() return lastTapTime end,
+            setLastTap = function(t) lastTapTime = t end, source = ctx.pointerSource,
+        })
+    end
     ---@type integer|nil
     local offlineTouchId = nil
 
     --- 离线弹窗接管时仅释放下层按压，不派发点击或装备落点。
     local function cancelUnderlyingPress()
-        if seamGesture then seamGesture.cancel() end
+        seamGesture.cancel()
         artifactGesture.cancel()
         if EquipCrossDrag.isArmed() then EquipCrossDrag.cancel() end
         if equipOverlayPress then
@@ -356,7 +366,7 @@ function Input.bind(ctx)
     local tutorialStartX, tutorialStartY = 0, 0
 
     function HandleMouseButtonDownHorizon(eventType, eventData)
-        if seamGesture and seamGesture.hasPress() then seamGesture.down(-1, -1, true) end
+        if seamGesture.hasPress() then seamGesture.reset() end
         tutorialPress, tutorialBlockedPress = false, false
         if OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() then cancelUnderlyingPress() end
         equipmentPressPanel = nil
@@ -390,7 +400,8 @@ function Input.bind(ctx)
         if button == MOUSEB_LEFT and seamGesture then
             local mp = pointerPosition()
             local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
-            if seamHitAt(sx, sy) and not seamInputBlocked() then
+            if seamHitAt(sx, sy) and (not seamInputBlocked or not seamInputBlocked())
+                and not equipOverlayDesign(sx, sy) then
                 cancelUnderlyingPress()
                 seamGesture.down(sx, sy, false)
                 return
@@ -446,9 +457,6 @@ function Input.bind(ctx)
                 print("[Horizon] 详情浮层按下")
                 return
             end
-            -- [浮选详情修复] 详情开着时按下空白：关掉详情，但不再吞掉这次按下——
-            -- 继续走下方正常路由，让底层页面收到 handleDragBegin（列表拖拽/装备拖拽可用）。
-            -- 松开时由 detailDismissPress 抑制 tap 派发，保留“第一次点击只关详情、不误触按钮”语义。
             local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
             local preserveComparison = false
             if EquipmentDetail.isPinned() and CharacterDetail.isEquipTab() then
@@ -505,14 +513,12 @@ function Input.bind(ctx)
             return
         end
         equipmentPressPanel = pid
-        -- 玩家信息全窗模态：按下也走设计坐标，避免抬起位移判定串栏
         if pid == 'playerinfo' then
             pressStartDX, pressStartDY = dx or 0, dy or 0
             pressValid = true
             PlayerInfoPanel.handleDragBegin(dx, dy)
             return
         end
-        -- [三栏并行] 三栏页自管输入（返回按钮等）
         if pid == 'tri' then
             pressStartDX, pressStartDY = dx or 0, dy or 0
             pressValid = true
@@ -604,10 +610,10 @@ function Input.bind(ctx)
     end
 
     function HandleMouseMoveHorizon(eventType, eventData)
-        if seamGesture and seamGesture.hasPress() then
+        if seamGesture.hasPress() then
             local mp = pointerPosition()
             local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
-            seamGesture.move(sx, sy, seamInputBlocked())
+            seamGesture.move(sx, sy, seamInputBlocked and seamInputBlocked())
             return
         end
         if UpdateNoticePopup.isOpen() then return end  -- 全窗模态：屏蔽下层 hover
@@ -788,11 +794,12 @@ function Input.bind(ctx)
     end
 
     function HandleMouseButtonUpHorizon(eventType, eventData)
-        if seamGesture and seamGesture.hasPress() then
+        seamGesture.cancelIfBlocked()
+        if seamGesture.hasPress() then
             if eventData["Button"]:GetInt() ~= MOUSEB_LEFT then return end
             local mp = pointerPosition()
             local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
-            seamGesture.up(sx, sy, seamInputBlocked())
+            seamGesture.up(sx, sy, seamInputBlocked and seamInputBlocked())
             pressValid = false
             return
         end
@@ -983,8 +990,6 @@ function Input.bind(ctx)
             local detail = require("ui.character.detail.CharacterDetail")
             if detail.handleEquipmentSlotTap then detail.handleEquipmentSlotTap(dx, dy) end
         end
-        -- [浮选详情修复] 这次按下用于关闭浮选详情：拖拽已下放给页面，但松开不派发点击，
-        -- 避免“点空白关详情”顺手触发页面按钮（领取/回收/筛选等）。
         if detailDismissPress then
             if isTap and not RewardPopup.isOpen() and not TutorialManager.isActive()
                 and (pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1)) then
@@ -1243,7 +1248,7 @@ function Input.bind(ctx)
 
     local activeTouchId = nil ---@type integer|nil
     local function dispatchTouch(eventType, eventData, handler)
-        touchPosition = { x = eventData["X"]:GetInt(), y = eventData["Y"]:GetInt() }
+        touchPosition = { x = eventData["X"]:GetInt(), y = eventData["Y"]:GetInt(), id = eventData["TouchID"]:GetInt() }
         local proxy = { Button = { GetInt = function() return MOUSEB_LEFT end } }
         local ok, err = pcall(handler, eventType, proxy)
         touchPosition = nil
@@ -1251,7 +1256,6 @@ function Input.bind(ctx)
     end
 
     function HandleTouchBeginHorizon(eventType, eventData)
-        if activeTouchId == nil and seamGesture and seamGesture.hasPress() then seamGesture.down(-1, -1, true) end
         if handleTopTouch(eventData, false) then return end
         if levelUpInputActive() then
             cancelUnderlyingPress()

@@ -62,23 +62,9 @@ function M.bind(deps)
         -- 单机存档里的当前关卡。变量名沿用旧联机字段，不是真正的服务端。
         local savedStageId = data.currentStageId and tonumber(data.currentStageId)
 
-        -- 🔴 修复中间状态：通关消息已落盘但推进消息未到（两条消息间掉线/存档）
-        -- 表现：currentStageId == maxStageId 且 clearedStages[maxStageId] == true
-        -- 此时客户端误判为挂机模式（isFirstClear=false），实际应为首通模式
-        -- 修复：从本地 clearedStages 中移除该标记，让 isFirstClear 正确计算为 true
-        -- 安全性：服务端 clearedStages 不变，不会重复发放首通奖励
-        -- ⚠️ 守卫：如果 maxStageId 的下一关是终焉神殿，说明玩家已打到难度末关并从神殿
-        --   返回/重连，此时应保持挂机模式（显示前进按钮→进入终焉神殿确认框），不触发修复
-        local stageConfig = getStageConfig()
-        local nextOfMax = maxSId and stageConfig.getNextStageId(maxSId)
-        local isAtTerminalEntrance = nextOfMax and stageConfig.isTerminalTemple(nextOfMax)
-        local clearedStages = get("clearedStages")
-        if maxSId and savedStageId and savedStageId == maxSId and clearedStages[maxSId]
-           and not isAtTerminalEntrance then
-            clearedStages[maxSId] = nil
-            print("[BattleScene] 修复中间状态: 关卡" .. tostring(maxSId)
-                .. "已标记通关但未推进(currentStageId==maxStageId)，恢复为首通模式")
-        end
+        -- 已通关账本是永久事实；当前关等于最高关不代表首通尚未完成。
+        -- 最高关没有后继，普通关也可主动重打，不能通过删标恢复推进状态。
+        -- 保留有效当前关，由下方按已通账本恢复挂机／首通模式。
 
         -- currentStageId 是一队当前关，maxStageId 是所有队共享的解锁上限。
         -- 二三队可以在前方推关，一队也可以主动选择旧关；读档时保留有效的

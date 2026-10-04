@@ -45,6 +45,7 @@ local function drawImageCentered(vg, img, cx, cy, w, h)
     local x = cx - w * 0.5
     local y = cy - h * 0.5
     local paint = nvgImagePattern(vg, x, y, w, h, 0, img, 1.0)
+    ---@cast paint NVGpaint
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
@@ -179,32 +180,37 @@ local PAGE_TABS = {
     [5] = { index = 5, nameKey = "tab_dungeon", icon = "nav_dungeon", hotspot = "tab_dungeon" },
 }
 local PAGE_TAB_ORDER = { 3, 5 }
+local TRI_PAGE_TAB_ORDER = { 5 } -- 城镇/战斗/角色已常驻，三行左栏只保留副本入口
+local HIDDEN_PAGE_TAB_ORDER = {}
 local PAGE_BTN_W, PAGE_BTN_H = 196, 64
 local PAGE_BTN_GAP = 12
 local PAGE_BTN_CY = 244
 local PAGE_BTN_START_CX = 108
-local PAGE_HOTSPOT_KEYS = {
-    tab_battle = 3,
-    tab_dungeon = 5,
-}
 
 local function pageBtnCenterX(i)
     return PAGE_BTN_START_CX + (i - 1) * (PAGE_BTN_W + PAGE_BTN_GAP)
 end
 
---- 横屏三联已常驻城镇/战斗/角色，页签条不再显示
-local function shouldHidePageTabs(hidePageTabs)
-    if hidePageTabs then return true end
+--- 绘制、输入和引导共用可见顺序；显式隐藏优先于三行布局。
+local function getVisiblePageTabOrder(hidePageTabs)
+    if hidePageTabs then return HIDDEN_PAGE_TAB_ORDER end
     local ok, BTP = pcall(require, "ui.battle.tri.BattleTriPage")
-    if not ok or not BTP or not BTP.isOpen then return false end
-    return BTP.isOpen() == true
+    if ok and BTP and BTP.isOpen and BTP.isOpen() == true then
+        return TRI_PAGE_TAB_ORDER
+    end
+    return PAGE_TAB_ORDER
+end
+
+--- i 是可见按钮序号，不是页码（3/5）；坐标与 offsetY 在所有入口同源。
+local function pageBtnRect(i, offsetY)
+    return pageBtnCenterX(i), PAGE_BTN_CY + (tonumber(offsetY) or 0), PAGE_BTN_W, PAGE_BTN_H
 end
 
 function TopBar.draw(vg, offsetY, hidePageTabs)
     -- 可选纵向偏移：三行并行左面板调用时上移头像区（热区同步用 TopBar.hitTestAvatar）
-    -- hidePageTabs：横屏三联布局下城镇/战斗/角色已常驻，不再画旧页签条
+    -- hidePageTabs=true：明确隐藏全部页签；默认三行只保留副本入口。
     local oy = tonumber(offsetY) or 0
-    hidePageTabs = shouldHidePageTabs(hidePageTabs)
+    local pageTabOrder = getVisiblePageTabOrder(hidePageTabs)
     -- #1 头像背景框: center(239,139+oy), 382x136, black 70%, r=36
     drawRoundedRectCentered(vg, 239, 139 + oy, 382, 136, 36, 0, 0, 0, 178)
 
@@ -221,13 +227,13 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
         state = "owned",
     })
 
-    -- #2e 页面入口：非三联旧布局才画战斗/副本；横屏三联已常驻，不再画
-    if not hidePageTabs then
+    -- #2e 页面入口：三行左栏只画副本，非三行保留战斗/副本旧入口。
+    if #pageTabOrder > 0 then
         local selectedTab = BottomNav.getSelectedIndex()
         local allLocked = BottomNav.isAllLocked()
-        for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
-            local cx = pageBtnCenterX(i)
-            local cy = PAGE_BTN_CY + oy
+        for i, idx in ipairs(pageTabOrder) do
+            local tab = PAGE_TABS[idx]
+            local cx, cy = pageBtnRect(i, oy)
             local x = cx - PAGE_BTN_W * 0.5
             local y = cy - PAGE_BTN_H * 0.5
             local locked = allLocked or BottomNav.isTabLocked(tab.index)
@@ -257,9 +263,10 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
         local TM = require("systems.TutorialManager")
         if TM.isActive() then
             -- 三行模式TopBar位于左栏(oy=-30)，普通横屏位于中栏。
-            for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
-                TM.registerHotspot(tab.hotspot, pageBtnCenterX(i), PAGE_BTN_CY + oy,
-                    PAGE_BTN_W, PAGE_BTN_H, oy == -30 and "left" or "center")
+            for i, idx in ipairs(pageTabOrder) do
+                local tab = PAGE_TABS[idx]
+                local cx, cy, w, h = pageBtnRect(i, oy)
+                TM.registerHotspot(tab.hotspot, cx, cy, w, h, oy == -30 and "left" or "center")
             end
         end
     end
@@ -295,6 +302,7 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
         nvgSave(vg)
         nvgScissor(vg, fillX, fillY, clipW, fillH)
         local paint = nvgImagePattern(vg, fillX, fillY, fillW, fillH, 0, imgExpFill, 1.0)
+        ---@cast paint NVGpaint
         nvgBeginPath(vg)
         nvgRect(vg, fillX, fillY, fillW, fillH)
         nvgFillPaint(vg, paint)
@@ -369,13 +377,13 @@ end
 ---@param offsetY number|nil 面板纵向偏移（横屏三联时与绘制一致）
 ---@return boolean
 function TopBar.handleInput(x, y, offsetY, hidePageTabs)
-    if shouldHidePageTabs(hidePageTabs) then return false end
+    local pageTabOrder = getVisiblePageTabOrder(hidePageTabs)
+    if #pageTabOrder == 0 then return false end
     if BottomNav.isAllLocked() then return false end
-    local oy2 = tonumber(offsetY) or 0
-    local cy = PAGE_BTN_CY + oy2
-    for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
-        local cx = pageBtnCenterX(i)
-        local halfW, halfH = PAGE_BTN_W * 0.5, PAGE_BTN_H * 0.5
+    for i, idx in ipairs(pageTabOrder) do
+        local tab = PAGE_TABS[idx]
+        local cx, cy, w, h = pageBtnRect(i, offsetY)
+        local halfW, halfH = w * 0.5, h * 0.5
         if x >= cx - halfW and x <= cx + halfW
            and y >= cy - halfH and y <= cy + halfH then
             if BottomNav.isTabLocked(tab.index) then
@@ -393,16 +401,19 @@ function TopBar.handleInput(x, y, offsetY, hidePageTabs)
     return false
 end
 
---- 引导热点矩形（供外部查询）
+--- 引导热点矩形（供外部查询；隐藏入口返回 nil）
 ---@param key string
+---@param offsetY number|nil 与 draw/handleInput 一致的面板纵向偏移
+---@param hidePageTabs boolean|nil 显式隐藏全部页签
 ---@return number|nil cx
 ---@return number|nil cy
 ---@return number|nil w
 ---@return number|nil h
-function TopBar.getPageTabHotspot(key)
-    local i = PAGE_HOTSPOT_KEYS[key]
-    if not i then return nil end
-    return pageBtnCenterX(i), PAGE_BTN_CY, PAGE_BTN_W, PAGE_BTN_H
+function TopBar.getPageTabHotspot(key, offsetY, hidePageTabs)
+    for i, idx in ipairs(getVisiblePageTabOrder(hidePageTabs)) do
+        if PAGE_TABS[idx].hotspot == key then return pageBtnRect(i, offsetY) end
+    end
+    return nil
 end
 
 function TopBar.hitTestAvatar(x, y, offsetY)

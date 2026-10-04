@@ -1,5 +1,5 @@
--- 普通副本选队回归：真实页面、编队、英雄属性、神器桥和 GameAction 门面。
--- 仅以 require 替身隔离存档、动作传输和场景出口；不初始化存档，不运行随机战斗。
+-- 副本入口/选队回归：真实页面、Entry门槛/绘制、编队、英雄属性、神器桥和GameAction。
+-- 仅在存档读取、动作传输、绘图终端和场景出口隔离；不初始化存档、不落盘、不运行随机战斗。
 local assertions = 0
 local TAG = "[dungeon_team_selection_test]"
 
@@ -43,40 +43,93 @@ function Start()
             file:Dispose()
             return assert(load(table.concat(lines, "\n"), "@" .. name, "t", env))()
         end
+        local clock = { elapsedTime = 100 }
+        env.time = clock
+        -- 绘图终端记录器只隔离GPU：Page/Entry/DrawUtil的布局和文字选择仍执行真代码。
+        local drawnTexts, drawnPanels = {}, {}
+        local renderState = { fontSize = 30 }
+        for _, name in ipairs({
+            "nvgBeginPath", "nvgRect", "nvgRoundedRect", "nvgFill", "nvgFillColor",
+            "nvgFillPaint", "nvgSave", "nvgRestore", "nvgScissor", "nvgIntersectScissor",
+            "nvgTranslate", "nvgScale", "nvgSkewX", "nvgFontFace", "nvgTextAlign", "nvgGlobalAlpha",
+        }) do env[name] = noop end
+        env.nvgCreateImage = function() return -1 end
+        env.nvgFontSize = function(_, size) renderState.fontSize = size end
+        env.nvgTextBounds = function(_, _, _, text)
+            return (utf8.len(text) or #text) * renderState.fontSize * 0.7
+        end
+        env.nvgText = function(_, x, y, text)
+            drawnTexts[#drawnTexts + 1] = { x = x, y = y, text = text, size = renderState.fontSize }
+            return x
+        end
         local modules = {
             player = { level = 100 },
             battle = { currentStageId = 101, maxStageId = 2501, clearedStages = {} },
             dungeon = {
                 gold_mine = { floor = 7, dailyUsed = 0 },
                 ancient_ruin = { floor = 11, dailyUsed = 0 },
+                babel_tower = { floor = 7, dailyUsed = 0 },
             },
             artifacts = { bag = {}, equipped = {}, equippedByTeam = {} },
         }
-        local toasts, sends, opens = {}, {}, {}
+        local toasts, sends, opens, towerOpens, navChanges = {}, {}, {}, {}, {}
         local transport = { mode = "deferred" }
+        local navState = { tab = 5, allLocked = false }
+        local tutorialState = { active = false }
+        local sceneState = { dungeon = false, tower = false }
         local sceneExit = {
             init = noop,
-            open = function(options) opens[#opens + 1] = options end,
+            isOpen = function() return sceneState.dungeon end,
+            open = function(options)
+                sceneState.dungeon = true
+                opens[#opens + 1] = options
+            end,
         }
         local mocks = {
             ["core.PlayerStore"] = { Get = function(key) return modules[key] end },
             ["runtime.ClientDispatcher"] = { get = function(key) return modules[key] end },
             ["core.GameState"] = { getLevel = function() return modules.player.level end, setPower = noop },
-            ["systems.ButtonFeedback"] = { trigger = noop },
-            ["core.DarkIcon"] = {},
+            ["core.I18n"] = {
+                lookup = function(text) return text end,
+                format = function(text, ...) return string.format(text, ...) end,
+                t = function(key) return key == "tab_dungeon" and "副本" or key end,
+            },
+            ["systems.ButtonFeedback"] = { trigger = noop, begin = noop, finish = noop },
+            ["core.DarkIcon"] = {
+                drawNine = function(_, kind, x, y, w, h, options)
+                    drawnPanels[#drawnPanels + 1] = { kind = kind, x = x, y = y, w = w, h = h, options = options }
+                end,
+                drawQualityBg = noop,
+            },
             ["ui.character.detail.CharacterDetail"] = {
                 markPowerDirty = noop,
                 hasAnyUpgradeForHero = function() return false end,
                 hasAwakeningUpgrade = function() return false end,
             },
-            ["ui.hud.BottomNav"] = { setBadge = noop, refreshTownBadge = noop },
+            ["ui.hud.BottomNav"] = {
+                state = navState,
+                setBadge = noop, refreshTownBadge = noop,
+                getSelectedIndex = function() return navState.tab end,
+                isAllLocked = function() return navState.allLocked end,
+                setSelectedIndex = function(tab)
+                    navState.tab = tab
+                    navChanges[#navChanges + 1] = tab
+                end,
+            },
             ["ui.church.ChurchPage"] = { hasAdvanceForHero = function() return false end },
-            ["systems.TutorialManager"] = {},
+            ["systems.TutorialManager"] = { isActive = function() return tutorialState.active end },
             ["ui.widget.HeroFrame"] = {},
             ["ui.battle.tri.BattleTriPage"] = { invalidateTeams = noop },
             ["ui.hud.popup.OfflineRewardPanel"] = { isOpen = function() return false end },
             ["ui.loot.LootBoxPage"] = { showToast = function(message) toasts[#toasts + 1] = message end },
             ["ui.dungeon.DungeonBattleScene"] = sceneExit,
+            ["ui.tower.TowerBattleScene"] = {
+                isActive = function() return sceneState.tower end,
+                open = function(options)
+                    sceneState.tower = true
+                    towerOpens[#towerOpens + 1] = options
+                end,
+            },
         }
         local realNames = {
             ["core.DrawUtil"] = true, ["core.BattleLayout"] = true,
@@ -96,7 +149,8 @@ function Start()
             ["ui.character.panel.CharacterHeroSync"] = true,
             ["ui.character.panel.CharacterPower"] = true,
             ["ui.character.panel.CharacterProgress"] = true,
-            ["ui.dungeon.DungeonPage"] = true, ["runtime.GameAction"] = true,
+            ["ui.dungeon.DungeonPage"] = true, ["ui.dungeon.DungeonEntry"] = true,
+            ["runtime.GameAction"] = true,
         }
         local real, loading = {}, {}
         replace(_G, "require", function(name)
@@ -113,6 +167,13 @@ function Start()
 
         local CP = require("ui.character.panel.CharacterPanel")
         local Page = require("ui.dungeon.DungeonPage")
+        local Entry = require("ui.dungeon.DungeonEntry")
+        local TowerConfig = require("config.TowerConfig")
+        local nativeShowMessage = Entry.showMessage
+        replace(Entry, "showMessage", function(message)
+            toasts[#toasts + 1] = message
+            nativeShowMessage(message)
+        end)
         local Protocol = require("shared.Protocol")
         local HC = require("config.HeroConfig")
         local AD = require("systems.AttributeDef")
@@ -158,6 +219,9 @@ function Start()
             end
         end
         modules.heroes = heroData()
+        local loadingDisabled, loadingReason = Entry.getTowerChallengeState(7)
+        eq(loadingDisabled, true, "真实Entry未水合编队不可挑战")
+        eq(loadingReason, "编队数据加载中", "真实Entry显示加载提示")
         CP.setHeroesData(modules.heroes)
         eq(CP.isHeroesDataApplied(), true, "真实英雄同步完成")
         eq(CP.getUnlockedTeamCount(), 3, "真实进度解锁三队")
@@ -169,6 +233,12 @@ function Start()
             eq(upvalue(Page.update, "pendingChallenge"), false, label .. "解除等待")
             eq(upvalue(Page.update, "pendingChallengeTeam"), nil, label .. "清除队伍快照")
             eq(upvalue(Page.update, "pendingChallengeTime"), 0, label .. "清除等待计时")
+            eq(upvalue(Page.update, "pendingChallengeId"), nil, label .. "清除请求编号")
+        end
+        local function waiting(request, label)
+            eq(upvalue(Page.update, "pendingChallenge"), true, label .. "仍在等待")
+            eq(upvalue(Page.update, "pendingChallengeId"), request.params.requestId, label .. "保留当前请求编号")
+            eq(upvalue(Page.update, "pendingChallengeTeam"), request.capturedTeam, label .. "保留当前队伍快照")
         end
         local function verifyTeam(allies, team, label)
             eq(#allies, #fixtures[team].occupied, label .. "人数")
@@ -196,28 +266,38 @@ function Start()
         end
         local function response(request, success)
             return {
-                action = ACTION, success = success, reason = success and nil or "测试拒绝",
-                dungeonId = request.params.dungeonId, floor = request.params.floor,
-                monsterLevel = 25, monsters = {},
+                action = request.action, success = success, reason = success and nil or "测试拒绝",
+                requestId = request.params.requestId,
+                dungeonId = request.params.dungeonId, floor = request.params.floor or modules.dungeon.babel_tower.floor,
+                wave = 1, monsterLevel = 25, monsters = {},
             }
         end
         -- 保留真实 GameAction.sendAction；替身只占据传输边界，不走规则层或玩家存档。
         mocks["runtime.LocalActionBridge"] = {
             dispatch = function(action, params)
-                eq(action, ACTION, "真实 GameAction 转发普通副本动作")
+                check(action == ACTION or action == Protocol.ACTION_TYPES.TOWER_CHALLENGE,
+                    "真实GameAction只转发声明的普通/塔挑战")
                 eq(upvalue(Page.update, "pendingChallenge"), true, "发送前等待标志已写入")
+                check(type(params.requestId) == "number" and params.requestId > 0, "动作附带正请求编号")
+                eq(params.requestId, upvalue(Page.update, "pendingChallengeId"), "发送编号与页面等待一致")
+                for _, previous in ipairs(sends) do
+                    check(previous.params.requestId ~= params.requestId, "每次挑战使用新请求编号")
+                end
                 local request = {
                     action = action, params = params,
                     capturedTeam = upvalue(Page.update, "pendingChallengeTeam"),
                     settled = false,
                 }
-                eq(request.capturedTeam, CP.getActiveTeamIdx(), "发送前锁定所选队伍")
-                eq(params.teamIdx, nil, "保持现有普通副本协议参数")
+                if action == ACTION then
+                    eq(request.capturedTeam, CP.getActiveTeamIdx(), "发送前锁定所选队伍")
+                    eq(params.teamIdx, nil, "保持现有普通副本协议参数")
+                end
                 sends[#sends + 1] = request
                 if transport.mode == "sync_success" or transport.mode == "sync_failure" then
                     request.settled = true
                     Page.onActionResult(response(request, transport.mode == "sync_success"))
                 end
+                if transport.mode == "send_false" then return false end
                 return true
             end,
         }
@@ -226,6 +306,8 @@ function Start()
             { id = "ancient_ruin", y = 932, floor = 11, title = "遗迹" },
         }
         local function detail(case)
+            sceneState.dungeon, sceneState.tower = false, false
+            navState.tab = 5
             Page.handleInput(0, 0)
             Page.refreshFromStore()
             eq(Page.handleInput(540, case.y), true, case.title .. "真实卡片点击")
@@ -286,8 +368,23 @@ function Start()
                 Page.handleInput(750, 1633)
                 eq(#sends, count, "等待期间连点不重复发送")
                 eq(#opens, before, "未回包不提前打开战斗")
+                local wrongAction = response(request, true)
+                wrongAction.action = Protocol.ACTION_TYPES.TOWER_CHALLENGE
+                local towerBefore = #towerOpens
+                Page.onActionResult(wrongAction)
+                waiting(request, "相同编号塔动作不消费普通挑战")
+                eq(#towerOpens, towerBefore, "动作错配不可打开塔")
+                eq(#opens, before, "动作错配不可打开普通副本")
+                navState.tab = 3
+                Page.onActionResult(response(request, true))
+                waiting(request, "非副本tab不消费挑战")
+                eq(#opens, before, "非副本tab收到成功不open")
+                navState.tab = 5
                 local data = resolve(request, true)
                 opened(case, team, before, data, case.title .. "延迟队" .. team)
+                Page.onActionResult(data)
+                eq(#opens, before + 1, "重复成功回包不重复打开场景")
+                cleared("重复成功回包")
                 print(TAG .. " PASS " .. case.title .. "延迟切队" .. team)
             end
         end
@@ -336,12 +433,23 @@ function Start()
             Page.update(1)
             cleared(case.title .. "五秒超时")
             eq(#opens, before, "超时不打开场景")
-            -- 传输替身丢弃无响应请求；不伪造已超时动作的迟到回包。
-            timedOut.settled = true
             local retry = challenge(case)
             eq(retry.capturedTeam, 3, "超时重试重新捕获队3")
-            opened(case, 3, before, resolve(retry, true), case.title .. "超时重试")
-            print(TAG .. " PASS " .. case.title .. "超时重试")
+            check(timedOut.params.requestId ~= retry.params.requestId, "同副本同楼层重试使用不同编号")
+            local elapsed = upvalue(Page.update, "pendingChallengeTime")
+            resolve(timedOut, true)
+            eq(#opens, before, "A超时迟到成功不可提前开B战斗")
+            waiting(retry, "A迟到不消费B")
+            eq(upvalue(Page.update, "pendingChallengeTime"), elapsed, "A迟到不重置B计时")
+            Page.onActionResult(response(timedOut, false))
+            waiting(retry, "A迟到失败不消费B")
+            local noId = response(retry, true)
+            noId.requestId = nil
+            Page.onActionResult(noId)
+            waiting(retry, "无编号成功回包不消费B")
+            eq(#opens, before, "旧无编号回包不打开战斗")
+            opened(case, 3, before, resolve(retry, true), case.title .. "超时B成功重试")
+            print(TAG .. " PASS " .. case.title .. "超时A/重试B/迟到隔离")
         end
 
         -- 选队之后进度退回锁定态：不允许陈旧 activeTeamIdx 绕过资格校验。
@@ -390,17 +498,213 @@ function Start()
             end
         end
 
-        -- 主线旧调用不带队号必须仍是队1；绝不能为修副本而改变 CP 的默认值。
+        -- 返回是授权撤销：详情先退列表，列表再退tab3，不调用战斗关闭/发奖接口。
+        transport.mode = "deferred"
+        for _, case in ipairs(dungeonCases) do
+            selected(2)
+            detail(case)
+            local before, navBefore = #opens, #navChanges
+            Entry.showMessage("返回测试")
+            eq(Page.handleBack(), true, "真实handleBack消费详情返回")
+            eq(upvalue(Page.handleInput, "detailOpen"), false, "详情返回列表")
+            eq(upvalue(Page.handleInput, "detailDungeon"), nil, "详情副本引用清理")
+            eq(navState.tab, 5, "详情返回仍留副本tab5")
+            eq(#navChanges, navBefore, "详情返回不跳页")
+            cleared("详情返回")
+            eq(Page.handleBack(), true, "真实handleBack消费列表返回")
+            eq(navState.tab, 3, "列表返回主界面tab3")
+            eq(#navChanges, navBefore + 1, "列表只跳页一次")
+            eq(Entry.getMessage(), "", "列表返回清理页面反馈")
+            eq(#opens, before, "返回不打开战斗")
+
+            detail(case)
+            local cancelled = challenge(case)
+            eq(Page.handleInput(540, 225), true, "真实Entry按钮触发pending返回")
+            eq(upvalue(Page.handleInput, "detailOpen"), false, "pending返回也退出详情")
+            cleared("pending返回")
+            resolve(cancelled, true)
+            eq(#opens, before, "详情返回后的迟到成功包不open")
+            cleared("返回迟到包")
+            Page.handleBack()
+            eq(navState.tab, 3, "pending撤销后列表仍可返回tab3")
+            Page.onActionResult(response(cancelled, true))
+            eq(#opens, before, "主界面收到重复迟到包不open")
+
+            -- 同tuple返页重试，旧请求编号不能消费新授权。
+            detail(case)
+            local retry = challenge(case)
+            Page.onActionResult(response(cancelled, true))
+            waiting(retry, "返页旧包不消费新请求")
+            eq(#opens, before, "返页旧包不open")
+            opened(case, 2, before, resolve(retry, true), case.title .. "返页新授权")
+            print(TAG .. " PASS " .. case.title .. "真实返回与撤销迟到隔离")
+        end
+
+        -- 发送false必须释放所有等待字段，下一次真实点击即可重试。
+        for _, case in ipairs(dungeonCases) do
+            selected(3)
+            detail(case)
+            transport.mode = "send_false"
+            local before, toastBefore = #opens, #toasts
+            local rejected = challenge(case)
+            eq(#opens, before, "传输返回false不打开战斗")
+            cleared("发送false")
+            eq(#toasts, toastBefore + 1, "发送false产生真实Entry反馈")
+            eq(Entry.getMessage(), "挑战发送失败，请重试", "发送false页面提示正确")
+            transport.mode = "deferred"
+            local retry = challenge(case)
+            Page.onActionResult(response(rejected, true))
+            waiting(retry, "发送false旧包不消费重试")
+            opened(case, 3, before, resolve(retry, true), case.title .. "发送false重试")
+        end
+
+        -- 独占门禁消费返回但不得取消pending、退出详情或切tab。
+        local guardCases = {
+            { state = navState, key = "allLocked", label = "全局锁" },
+            { state = tutorialState, key = "active", label = "教程独占" },
+            { state = sceneState, key = "tower", label = "塔战斗独占" },
+            { state = sceneState, key = "dungeon", label = "副本战斗独占" },
+        }
+        for _, guard in ipairs(guardCases) do
+            selected(2)
+            detail(dungeonCases[1])
+            local request = challenge(dungeonCases[1])
+            local before, navBefore = #opens, #navChanges
+            guard.state[guard.key] = true
+            eq(Page.handleBack(), true, guard.label .. "消费直接返回")
+            eq(Page.handleInput(540, 225), true, guard.label .. "消费按钮返回")
+            eq(Page.handleInput(0, 0), true, guard.label .. "消费背景返回")
+            eq(upvalue(Page.handleInput, "detailOpen"), true, guard.label .. "不退出详情")
+            eq(navState.tab, 5, guard.label .. "不切tab")
+            eq(#navChanges, navBefore, guard.label .. "无导航副作用")
+            eq(#opens, before, guard.label .. "无场景副作用")
+            waiting(request, guard.label .. "不撤销等待")
+            guard.state[guard.key] = false
+            Page.handleBack()
+            cleared(guard.label .. "释放后返回")
+            resolve(request, true)
+            eq(#opens, before, guard.label .. "释放后已撤销回包不open")
+        end
+        print(TAG .. " PASS 返回独占门禁与发送失败恢复")
+
+        -- 真实Entry门槛及绘图选择；配置只读，不用假Entry绕过页面逻辑。
+        local towerCase = { id = "babel_tower", y = 1360, floor = 7, title = "通天塔" }
+        local function hasText(text, y)
+            for _, draw in ipairs(drawnTexts) do
+                if draw.text == text and (not y or draw.y == y) then return true end
+            end
+            return false
+        end
+        local function render()
+            drawnTexts, drawnPanels = {}, {}
+            Page.update(0.2)
+            Page.draw({})
+        end
+        local exportCalls = 0
+        local nativeExport = CP.getDeployedTeam
+        replace(CP, "getDeployedTeam", function(...)
+            exportCalls = exportCalls + 1
+            return nativeExport(...)
+        end)
+        allUnlocked()
+        detail(towerCase)
+        local readyDisabled, readyReason = Entry.getTowerChallengeState(7)
+        eq(readyDisabled, false, "真实Entry三队就绪放行")
+        render()
+        check(hasText("副本", 110), "真实Page调用Entry标题绘制")
+        check(hasText("返回列表", 225), "真实详情返回文案")
+        check(hasText(readyReason, 1710), "真实塔详情三队规则提示")
+        local first, sweep = Entry.getTowerRewards(7)
+        eq(first, 550, "配置第7层首通钻石")
+        eq(sweep, 250, "配置第6层扫荡钻石")
+        check(hasText("本层首通 550 · 上层扫荡 250", 1465), "真实塔奖励绘图")
+        eq(exportCalls, 0, "逐帧门槛绘制不创建战斗英雄")
+        check(Entry.hitBack(540, 225), "真实返回按钮中心命中")
+        check(not Entry.hitBack(359, 225), "返回按钮左外缘不命中")
+        check(not Entry.hitBack(721, 225), "返回按钮右外缘不命中")
+        check(not Entry.hitBack(540, 179), "返回按钮上外缘不命中")
+        check(not Entry.hitBack(540, 271), "返回按钮下外缘不命中")
+        local beforeTower, sentBefore = #towerOpens, #sends
+        eq(Page.handleInput(750, 1633), true, "真实塔挑战按钮")
+        eq(#sends, sentBefore + 1, "塔三队就绪只发送一次")
+        local towerRequest = sends[#sends]
+        eq(towerRequest.action, Protocol.ACTION_TYPES.TOWER_CHALLENGE, "真实塔动作类型")
+        local wrongTowerAction = response(towerRequest, true)
+        wrongTowerAction.action = ACTION
+        local ordinaryBefore = #opens
+        Page.onActionResult(wrongTowerAction)
+        waiting(towerRequest, "相同编号普通动作不消费塔挑战")
+        eq(#opens, ordinaryBefore, "塔动作错配不可打开普通副本")
+        Page.handleBack()
+        cleared("塔pending返回")
+        resolve(towerRequest, true)
+        eq(#towerOpens, beforeTower, "塔返回后迟到回包不open")
+
+        local function towerRejected(reason, label)
+            detail(towerCase)
+            render()
+            check(hasText(reason, 1710), label .. "详情绘制真实拒绝提示")
+            local sent, openedCount = #sends, #towerOpens
+            eq(Page.handleInput(750, 1633), true, label .. "拒绝点击被消费")
+            eq(#sends, sent, label .. "不发送动作")
+            eq(#towerOpens, openedCount, label .. "不打开塔")
+            eq(Entry.getMessage(), reason, label .. "真实Entry页面反馈")
+            cleared(label)
+        end
+        modules.battle = { currentStageId = 101, maxStageId = 1905, clearedStages = {} }
+        local lockedDisabled, lockedReason = Entry.getTowerChallengeState(7)
+        eq(lockedDisabled, true, "真实配置三队锁定门槛")
+        towerRejected(lockedReason, "三队未解锁")
+        allUnlocked()
+        for team = 1, 3 do
+            modules.heroes = heroData(team)
+            CP.setHeroesData(modules.heroes)
+            local disabled, reason = Entry.getTowerChallengeState(7)
+            eq(disabled, true, "真实Entry拒绝空队" .. team)
+            eq(reason, "队伍" .. team .. "为空，请在右侧部署队员", "空队编号准确")
+            towerRejected(reason, "塔空队" .. team)
+        end
+        modules.heroes = heroData()
+        CP.setHeroesData(modules.heroes)
+        modules.dungeon.babel_tower.floor = TowerConfig.MAX_FLOOR + 1
+        local completeDisabled, completeReason = Entry.getTowerChallengeState(TowerConfig.MAX_FLOOR + 1)
+        eq(completeDisabled, true, "完成全部塔层禁用挑战")
+        towerRejected(completeReason, "全部塔层已完成")
+        modules.dungeon.babel_tower.floor = towerCase.floor
+        Page.handleBack()
+        render()
+        check(hasText("返回主界面", 225), "真实列表返回文案")
+        check(hasText("三队就绪，可挑战"), "真实塔卡片就绪提示")
+        local beforeMessagePanels = #drawnPanels
+        Entry.showMessage(string.rep("反馈", 80))
+        Entry.drawMessage({})
+        eq(#drawnPanels, beforeMessagePanels + 1, "真实反馈绘制面板")
+        local lastText = drawnTexts[#drawnTexts]
+        check(lastText.size < 36, "长反馈真实缩字号避免溢出")
+        clock.elapsedTime = 103
+        eq(Entry.getMessage(), "", "真实反馈三秒到期消失")
+        local expiredDraws = #drawnTexts
+        Entry.drawMessage({})
+        eq(#drawnTexts, expiredDraws, "到期反馈不绘制")
+        eq(exportCalls > 0, true, "实际挑战仍使用真实英雄导出")
+        print(TAG .. " PASS 真实Entry门槛/绘制/只读配置")
+
+        -- 主线旧调用不带队号必须仍是队1；绝不能为修副本而改变CP的默认值。
         selected(3)
         verifyTeam(CP.getDeployedTeam(), 1, "主线缺省队1")
         verifyTeam(CP.getDeployedTeam(nil), 1, "主线显式nil仍队1")
         eq(CP.getActiveTeamIdx(), 3, "主线取队不会改变正在编辑的队3")
-        -- 无 pending 的旧调用兼容回落队1，同时证明前次快照已完全清除。
+        -- 授权返页抑制的新契约：无pending旧成功包一律忽略，不再兼容打开队1。
+        detail(dungeonCases[1])
+        eq(upvalue(Page.handleBack, "pageClosed"), false, "重新进入副本页而非借已关闭标志拒包")
         local beforeFallback = #opens
         local legacy = { action = ACTION, success = true, dungeonId = "gold_mine", floor = 7, monsters = {} }
         Page.onActionResult(legacy)
-        opened(dungeonCases[1], 1, beforeFallback, legacy, "无等待回包缺省队1")
-        print(TAG .. " PASS 主线默认与旧回包保持队1")
+        eq(#opens, beforeFallback, "无等待旧成功回包忽略")
+        Page.onActionResult(response(sends[1], true))
+        eq(#opens, beforeFallback, "无等待有编号旧成功回包也忽略")
+        cleared("无等待旧成功回包")
+        print(TAG .. " PASS 主线默认队1与无授权旧回包拒绝")
 
         eq(cjson.encode(modules.heroes), stableHeroes, "测试未改输入英雄数据")
         eq(cjson.encode(modules.artifacts), stableArtifacts, "真实神器桥未改装配数据")

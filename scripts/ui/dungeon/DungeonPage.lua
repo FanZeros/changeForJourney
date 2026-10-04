@@ -12,6 +12,7 @@ local DungeonIdleConfig = require("config.DungeonIdleConfig")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local ExpTable      = require("config.ExpTable")
 local ClientDispatcher = require("runtime.ClientDispatcher")
+local Entry = require("ui.dungeon.DungeonEntry")
 
 local DungeonPage = {}
 
@@ -24,6 +25,12 @@ local pendingIdleClaim     = false
 local pendingIdleClaimTime = 0
 local pendingChallengeTime = 0  -- 超时安全阀（秒）
 local PENDING_TIMEOUT = 5.0     -- 5秒无响应自动重置
+local requestSerial = 0
+---@type integer|nil
+local pendingChallengeId = nil
+---@type string|nil
+local pendingChallengeAction = nil
+local pageClosed = false
 
 -- ======================== 图片句柄 ========================
 
@@ -244,6 +251,9 @@ local function getFloorRewards(dungeonId, floor)
         if floorData then
             return floorData.sweepDust, floorData.firstDust or 0
         end
+    elseif dungeonId == "babel_tower" then
+        local first = Entry.getTowerRewards(floor)
+        return first, 0
     end
     return 0, 0
 end
@@ -405,16 +415,25 @@ local function getGem()
     return 0
 end
 
+local function displayedDailyUsed(sub)
+    local today = math.floor((os.time() + 28800) / 86400)
+    if sub.dailyDay ~= nil and sub.dailyDay ~= today then return 0 end
+    return sub.dailyUsed or 0
+end
+
 --- 获取副本数据（从 PlayerStore 读取）
 local function getDungeonData()
     local dungeon = PlayerStore.Get("dungeon")
     if not dungeon then return end
+    dungeonState.gold_mine = { floor = 1, dailyUsed = 0, dailyMax = 2, idleAccumSec = 0 }
+    dungeonState.ancient_ruin = { floor = 1, dailyUsed = 0, dailyMax = 2, idleAccumSec = 0 }
+    dungeonState.babel_tower = { floor = 1, dailyUsed = 0, dailyMax = 2, idleAccumSec = 0 }
 
     -- 金币矿洞
     if dungeon.gold_mine then
         local gm = dungeon.gold_mine
         dungeonState.gold_mine.floor         = gm.floor or 1
-        dungeonState.gold_mine.dailyUsed     = gm.dailyUsed or 0
+        dungeonState.gold_mine.dailyUsed     = displayedDailyUsed(gm)
         dungeonState.gold_mine.dailyMax      = dungeon.dailyMax or 2
         dungeonState.gold_mine.idleAccumSec  = gm.idleAccumSec or 0
     end
@@ -423,7 +442,7 @@ local function getDungeonData()
     if dungeon.ancient_ruin then
         local ar = dungeon.ancient_ruin
         dungeonState.ancient_ruin.floor         = ar.floor or 1
-        dungeonState.ancient_ruin.dailyUsed     = ar.dailyUsed or 0
+        dungeonState.ancient_ruin.dailyUsed     = displayedDailyUsed(ar)
         dungeonState.ancient_ruin.dailyMax      = dungeon.dailyMax or 2
         dungeonState.ancient_ruin.idleAccumSec  = ar.idleAccumSec or 0
     end
@@ -432,7 +451,7 @@ local function getDungeonData()
     if dungeon.babel_tower then
         local bt = dungeon.babel_tower
         dungeonState.babel_tower.floor         = bt.floor or 1
-        dungeonState.babel_tower.dailyUsed     = bt.dailyUsed or 0
+        dungeonState.babel_tower.dailyUsed     = displayedDailyUsed(bt)
         dungeonState.babel_tower.dailyMax      = 2
         dungeonState.babel_tower.idleAccumSec  = bt.idleAccumSec or 0
     end
@@ -446,11 +465,28 @@ local function getDungeonData()
 end
 
 local function toast(msg)
-    local ok, LootBoxPage = pcall(require, "ui.loot.LootBoxPage")
-    if ok and LootBoxPage and LootBoxPage.showToast then
-        LootBoxPage.showToast(msg)
+    Entry.showMessage(msg)
+end
+
+local function sendChallenge(action, params)
+    pendingChallengeAction = action
+    params.requestId = pendingChallengeId
+    local ok, handled = pcall(require("runtime.GameAction").sendAction, action, params)
+    if not ok or handled == false then
+        pendingChallenge, pendingChallengeTime, pendingChallengeTeam = false, 0, nil
+        pendingChallengeId = nil
+        toast(require("core.I18n").lookup("挑战发送失败，请重试"))
     end
-    print("[DungeonPage] " .. tostring(msg))
+end
+
+local function acceptChallengeResult(data)
+    if pageClosed or not pendingChallenge or data.requestId ~= pendingChallengeId
+        or data.action ~= pendingChallengeAction
+        or require("ui.hud.BottomNav").getSelectedIndex() ~= 5 then
+        print("[DungeonPage] 忽略已返回、超时或过期挑战回执")
+        return false
+    end
+    return true
 end
 
 --- 通天塔三军攻坚：三队均需解锁且各至少 1 人
@@ -509,6 +545,27 @@ end
 
 function DungeonPage.refreshFromStore()
     getDungeonData()
+end
+
+--- 详情退列表，列表退主界面；返回不调用战斗关闭或发奖接口。
+function DungeonPage.handleBack()
+    local Nav = require("ui.hud.BottomNav")
+    if Nav.isAllLocked() then return true end
+    if require("systems.TutorialManager").isActive() then return true end
+    if require("ui.tower.TowerBattleScene").isActive()
+        or require("ui.dungeon.DungeonBattleScene").isOpen() then return true end
+    pageClosed = true
+    pendingChallenge, pendingChallengeTime, pendingChallengeTeam = false, 0, nil
+    pendingChallengeId = nil
+    pendingSweep, pendingIdleClaim, pendingIdleClaimTime = false, false, 0
+    if detailOpen then
+        detailOpen, detailDungeon = false, nil
+    else
+        Entry.clearMessage()
+        Nav.setSelectedIndex(3)
+        print("[DungeonPage] 返回主界面，取消等待中的挑战显示")
+    end
+    return true
 end
 
 function DungeonPage.draw(vg)
@@ -589,7 +646,8 @@ function DungeonPage.draw(vg)
             drawRoundedRect(vg, BADGE_X, BADGE_Y + yOff, BADGE_W, BADGE_H, BADGE_ROUND, 0, 0, 0, 128)
 
             -- 层级文字
-            local levelText = "第" .. cardFloor .. "层"
+            local levelText = dungeon.id == "babel_tower" and cardFloor > require("config.TowerConfig").MAX_FLOOR
+                and require("core.I18n").lookup("全部通关") or "第" .. cardFloor .. "层"
             DrawUtil.drawTextStroke(vg, BADGE_X + BADGE_W * 0.5, BADGE_Y + yOff + BADGE_H * 0.5, levelText,
                 TEXT_SIZE_MD, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
                 255, 255, 255, STROKE_W)
@@ -654,7 +712,7 @@ function DungeonPage.draw(vg)
             -- 今日次数（右对齐 X=993，显示剩余次数，耗尽变红）
             local cardRemain = cardDailyMax - cardDailyUsed
             if cardRemain < 0 then cardRemain = 0 end
-            local dailyTxt = "今日次数：" .. cardRemain .. "/" .. cardDailyMax
+            local dailyTxt = require("core.I18n").format("今日扫荡次数:%d/%d", cardRemain, cardDailyMax)
             local cardDR, cardDG, cardDB = DAILY_R, DAILY_G, DAILY_B
             if cardRemain <= 0 then
                 cardDR, cardDG, cardDB = 0xFF, 0x44, 0x44
@@ -663,8 +721,11 @@ function DungeonPage.draw(vg)
                 TEXT_SIZE_MD, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
                 cardDR, cardDG, cardDB, STROKE_W)
 
+            if dungeon.id == "babel_tower" then
+                Entry.drawTowerCardHint(vg, cardY + CARD_H - 24, cardFloor)
+            end
             -- 红点：有剩余扫荡次数时，在卡片右上角显示
-            if cardRemain > 0 and imgRedDot >= 0 then
+            if cardRemain > 0 and cardFloor > 1 and imgRedDot >= 0 then
                 local rdSz = 44
                 local rdX = CARD_X + CARD_W - 30
                 local rdY = cardY + 30
@@ -693,11 +754,14 @@ function DungeonPage.draw(vg)
     if detailOpen and detailDungeon then
         DungeonPage.drawDetailPanel(vg)
     end
+    Entry.drawHeader(vg, detailOpen)
+    Entry.drawMessage(vg)
 end
 
 -- ======================== 详情面板绘制 ========================
 
 function DungeonPage.drawDetailPanel(vg)
+    if not detailDungeon then return end
     -- easeOutBack 缓动函数
     local function easeOutBack(t)
         local c1 = 1.70158
@@ -784,7 +848,8 @@ function DungeonPage.drawDetailPanel(vg)
     -- ==================== 下半部分 ====================
 
     -- 14. "当前层数" 文本（白色 + 黑色描边5）
-    local curLvlText = "当前层数"
+    local towerComplete = detailDungeon.id == "babel_tower" and currentFloor > require("config.TowerConfig").MAX_FLOOR
+    local curLvlText = towerComplete and require("core.I18n").lookup("全部通关") or "当前层数"
     DrawUtil.drawTextStroke(vg, DT.CURLVL_X, DT.CURLVL_Y, curLvlText,
         DT.CURLVL_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, DT.CURLVL_SW)
@@ -853,7 +918,7 @@ function DungeonPage.drawDetailPanel(vg)
     -- 17. 剩余次数文本（有剩余=#8dff88，耗尽=红色 + 黑色描边5）
     local dailyRemain = dailyMax - dailyUsed
     if dailyRemain < 0 then dailyRemain = 0 end
-    local dailyText = "今日次数:" .. dailyRemain .. "/" .. dailyMax
+    local dailyText = require("core.I18n").format("今日扫荡次数:%d/%d", dailyRemain, dailyMax)
     local dtR, dtG, dtB = DT.DAILY_R, DT.DAILY_G, DT.DAILY_B
     if dailyRemain <= 0 then
         dtR, dtG, dtB = 0x8b, 0x95, 0xa5  -- 耗尽=灰蓝色
@@ -882,17 +947,22 @@ function DungeonPage.drawDetailPanel(vg)
     nvgText(vg, DT.SWEEP_CX, DT.SWEEP_CY, "扫荡上一层", nil)
 
     -- 20. 挑战按钮背景 UI_AN_LV（九宫格）
+    local tower = detailDungeon.id == "babel_tower"
+    local fightDisabled, fightReason = false, ""
+    if tower then fightDisabled, fightReason = Entry.getTowerChallengeState(currentFloor) end
     local _bfFight = BF.begin(vg, "dt_fight_btn", DT.FIGHT_CX, DT.FIGHT_CY, DT.FIGHT_W, DT.FIGHT_H)
-    DarkIcon.drawNine(vg, "btn", DT.FIGHT_CX - DT.FIGHT_W * 0.5, DT.FIGHT_CY - DT.FIGHT_H * 0.5, DT.FIGHT_W, DT.FIGHT_H, { accent = "green" })
+    DarkIcon.drawNine(vg, "btn", DT.FIGHT_CX - DT.FIGHT_W * 0.5, DT.FIGHT_CY - DT.FIGHT_H * 0.5, DT.FIGHT_W, DT.FIGHT_H,
+        { accent = fightDisabled and "gold" or "green", alpha = fightDisabled and 0.4 or 1 })
     BF.finish(vg, _bfFight)
 
     -- 21. 挑战按钮文本 "挑战"
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, DT.FIGHT_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))  -- 纯黑不透明度75%
-    local fightLabel = (detailDungeon and detailDungeon.id == "babel_tower") and "三军攻坚" or "挑战"
-    nvgText(vg, DT.FIGHT_CX, DT.FIGHT_CY, fightLabel, nil)
+    nvgFillColor(vg, fightDisabled and nvgRGBA(139, 149, 165, 255) or nvgRGBA(0, 0, 0, 191))
+    local fightLabel = tower and (currentFloor > require("config.TowerConfig").MAX_FLOOR and "全部通关" or "三军攻坚") or "挑战"
+    nvgText(vg, DT.FIGHT_CX, DT.FIGHT_CY, require("core.I18n").lookup(fightLabel), nil)
+    if tower then Entry.drawTowerInfo(vg, currentFloor, fightDisabled, fightReason) end
 
     -- 22. 挂机宝箱（面板正下方）
     local idleAmount = 0
@@ -947,6 +1017,8 @@ function DungeonPage.update(dt)
             pendingChallenge = false
             pendingChallengeTime = 0
             pendingChallengeTeam = nil
+            pendingChallengeId = nil
+            toast(require("core.I18n").lookup("挑战响应超时，请重试"))
         end
     end
 
@@ -965,8 +1037,10 @@ function DungeonPage.handleInput(dx, dy)
         DungeonPage.init(dungeonVg_)
     end
     if not dungeonInited_ then return true end
+    getDungeonData()
+    if Entry.hitBack(dx, dy) then return DungeonPage.handleBack() end
     -- 详情面板打开时，优先处理面板内交互
-    if detailOpen then
+    if detailOpen and detailDungeon then
         -- 挂机宝箱绘制在详情面板外侧，必须先于“点击背景外关闭面板”处理
         if DrawUtil.hitTest(dx, dy, DT.CHEST_CX, DT.CHEST_CY, DT.CHEST_SIZE, DT.CHEST_SIZE) then
             BF.trigger("dt_idle_chest")
@@ -993,9 +1067,7 @@ function DungeonPage.handleInput(dx, dy)
 
         -- 点击九宫格背景外区域 → 关闭面板
         if not DrawUtil.hitTest(dx, dy, DT.BG_CX, DT.BG_CY, DT.BG_W, DT.BG_H) then
-            detailOpen = false
-            detailDungeon = nil
-            return true
+            return DungeonPage.handleBack()
         end
 
         -- 扫荡按钮
@@ -1032,34 +1104,41 @@ function DungeonPage.handleInput(dx, dy)
             if pendingChallenge then
                 print("[DungeonPage] challenge request pending, skip")
             else
+                local dId = detailDungeon.id
+                if dId == "babel_tower" then
+                    local disabled, reason = Entry.getTowerChallengeState(currentFloor)
+                    if disabled then toast(reason); return true end
+                end
                 pendingChallenge = true
                 pendingChallengeTime = 0
-                local dId = detailDungeon.id
+                requestSerial = requestSerial + 1
+                pendingChallengeId = requestSerial
                 if dId == "babel_tower" then
                     local teams, err = collectTowerTeams()
                     if not teams then
                         pendingChallenge = false
+                        pendingChallengeId = nil
                         pendingChallengeTime = 0
                         toast(err or "三军攻坚条件未满足")
                         return true
                     end
                     print("[DungeonPage] sending TOWER_CHALLENGE floor=" .. currentFloor
                         .. " teams=" .. #teams[1] .. "/" .. #teams[2] .. "/" .. #teams[3])
-                    require("runtime.GameAction").sendAction(
-                        Protocol.ACTION_TYPES.TOWER_CHALLENGE, {}
-                    )
+                    sendChallenge(Protocol.ACTION_TYPES.TOWER_CHALLENGE, {})
                 else
                     local CharacterPanel = require("ui.character.panel.CharacterPanel")
                     local teamIdx = CharacterPanel.getActiveTeamIdx()
                     local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
                     if teamIdx < 1 or teamIdx > unlocked then
                         pendingChallenge = false
+                        pendingChallengeId = nil
                         pendingChallengeTeam = nil
                         toast(ExpTable.getTeamUnlockText(teamIdx))
                         return true
                     end
                     if #(CharacterPanel.getDeployedTeam(teamIdx) or {}) == 0 then
                         pendingChallenge = false
+                        pendingChallengeId = nil
                         pendingChallengeTeam = nil
                         toast("未编队，请在右侧部署队员")
                         return true
@@ -1068,10 +1147,8 @@ function DungeonPage.handleInput(dx, dy)
                     pendingChallengeTeam = teamIdx
                     print("[DungeonPage] sending DUNGEON_CHALLENGE dungeon=" .. dId
                         .. " floor=" .. currentFloor .. " team=" .. teamIdx)
-                    require("runtime.GameAction").sendAction(
-                        Protocol.ACTION_TYPES.DUNGEON_CHALLENGE,
-                        { dungeonId = dId, floor = currentFloor }
-                    )
+                    sendChallenge(Protocol.ACTION_TYPES.DUNGEON_CHALLENGE,
+                        { dungeonId = dId, floor = currentFloor })
                 end
             end
             return true
@@ -1092,6 +1169,8 @@ function DungeonPage.handleInput(dx, dy)
             if not unlocked then return true end
 
             detailDungeon = dungeon
+            pageClosed = false
+            Entry.clearMessage()
             -- 更新快捷引用到该副本的状态
             local s = dungeonState[dungeon.id] or dungeonState.gold_mine
             currentFloor = s.floor
@@ -1188,8 +1267,10 @@ function DungeonPage.onActionResult(data)
 
     -- 挑战结果（服务端返回战斗配置，进入副本战斗场景）
     if action == Protocol.ACTION_TYPES.DUNGEON_CHALLENGE then
+        if not acceptChallengeResult(data) then return end
         local teamIdx = pendingChallengeTeam or 1
         pendingChallenge = false
+        pendingChallengeId = nil
         pendingChallengeTime = 0
         pendingChallengeTeam = nil
         if data.success then
@@ -1216,6 +1297,7 @@ function DungeonPage.onActionResult(data)
                 end,
             })
         else
+            toast(data.reason or require("core.I18n").lookup("挑战失败，请重试"))
             print("[DungeonPage] CHALLENGE FAIL: " .. tostring(data.reason))
         end
         return
@@ -1225,7 +1307,9 @@ function DungeonPage.onActionResult(data)
 
     -- 通天塔挑战结果 → 打开 TowerBattleScene
     if action == Protocol.ACTION_TYPES.TOWER_CHALLENGE then
-        pendingChallenge = false
+        if not acceptChallengeResult(data) then return end
+        pendingChallenge, pendingChallengeTime, pendingChallengeTeam = false, 0, nil
+        pendingChallengeId = nil
         if data.success then
             print("[DungeonPage] TOWER_CHALLENGE OK: floor=" .. tostring(data.floor)
                 .. " wave=" .. tostring(data.wave) .. " monsterLv=" .. tostring(data.monsterLevel))
@@ -1253,6 +1337,7 @@ function DungeonPage.onActionResult(data)
                 end,
             })
         else
+            toast(data.reason or require("core.I18n").lookup("挑战失败，请重试"))
             print("[DungeonPage] TOWER_CHALLENGE FAIL: " .. tostring(data.reason))
         end
         return

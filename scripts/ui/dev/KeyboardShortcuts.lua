@@ -124,6 +124,11 @@ local function handleEscape()
         print("[KeyboardShortcuts] 关闭说明")
         return
     end
+    local UpdateNotice = require("ui.hud.popup.UpdateNoticePopup")
+    if UpdateNotice.isOpen() then
+        UpdateNotice.close()
+        return
+    end
     local IntroCutscene = require("ui.story.gate.IntroCutscene")
     if IntroCutscene.isActive() then
         IntroCutscene.skip()
@@ -159,6 +164,16 @@ local function handleEscape()
         PlayerInfoPanel.close()
         return
     end
+    local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
+    if OfflineRewardPanel.isOpen() then
+        toast("按空格领取离线收益")
+        return
+    end
+    local Nav = require("ui.hud.BottomNav")
+    if Nav.getSelectedIndex() == 5 and not battleLocked() then
+        require("ui.dungeon.DungeonPage").handleBack()
+        return
+    end
     local CharacterDetail = require("ui.character.detail.CharacterDetail")
     if CharacterDetail.isOpen() then
         CharacterDetail.close()
@@ -170,11 +185,6 @@ local function handleEscape()
         return
     end
     if closeLeftPages() then return end
-    local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
-    if OfflineRewardPanel.isOpen() then
-        toast("按空格领取离线收益")
-        return
-    end
     toast("按 H 查看快捷键")
 end
 

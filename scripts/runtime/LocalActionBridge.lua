@@ -424,6 +424,10 @@ function M.dispatch(action, params)
         end
     end
 
+    -- 页面返程／超时后用原请求标识拒绝迟到挑战，规则层不依赖此显示令牌。
+    if action == AT.DUNGEON_CHALLENGE or action == AT.TOWER_CHALLENGE then
+        result.requestId = params.requestId
+    end
     deliverActionResult(result)
     print("[LocalActionBridge] action=" .. tostring(action)
         .. " success=" .. tostring(result.success)

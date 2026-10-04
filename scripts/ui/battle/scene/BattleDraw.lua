@@ -131,7 +131,9 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
     local stripMode = (BattleLayout.MODE == "strip")
     local stripCardScale = stripMode and BattleLayout.CARD_SCALE or 1.0
 
-    for idx = 1, count do
+    -- 槽位1最靠前：后排先画、前排后画，敌我出框重叠时前排在上层。
+    -- 只反转遍历顺序，不重排units，站位、动画和攻击索引保持不变。
+    for idx = count, 1, -1 do
         local unit = units[idx]
         local animOff = combat.getCardAnimOffsetY(unit) + combat.getChargeOffsetY(unit, isAllyGroup)
         local arcY = combat.getCardAnimArcY(unit, isAllyGroup)

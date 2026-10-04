@@ -61,20 +61,43 @@ local CACHE_LIMIT     = 16   -- 布局缓存条数上限
 ---@param vg any
 ---@param fontSize number
 ---@param s string
----@return number
+---@return number width, number inkLeft, number inkTop, number inkHeight
 local function measure(vg, fontSize, s)
     if vg and nvgTextBounds then
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, fontSize)
-        local w = I18n.displayBounds(vg, 0, 0, s, nil)
-        return tonumber(w) or 0
+        nvgTextLetterSpacing(vg, 0)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+        local bounds = {}
+        local measured = I18n.displayBounds(vg, 0, 0, s, bounds)
+        local advance = tonumber(measured) or 0
+        local left = math.min(0, bounds[1] or 0)
+        local right = math.max(advance, bounds[3] or advance)
+        return right - left, left, bounds[2] or 0,
+            math.max(0, (bounds[4] or fontSize) - (bounds[2] or 0))
     end
     -- 无绘制上下文时的确定性估算；不调用任何引擎绘制API。
     local w = 0
     for _, c in utf8.codes(s) do
         w = w + (c > 0x7F and fontSize or fontSize * 0.55)
     end
-    return w
+    return w, 0, 0, fontSize
+end
+
+-- 字体栅格测量依赖当前缩放；同一上下文缩放后不能继续用旧片段宽高。
+local function measurementScale(vg, fontSize)
+    if not vg then return "" end
+    local transform = {}
+    if nvgCurrentTransform then
+        local ok, returned = pcall(nvgCurrentTransform, vg, transform)
+        if type(returned) == "table" then transform = returned end
+        if not ok then transform = {} end
+    end
+    -- frame 的 pixelRatio 不在矩阵内；真实字形探针同时区分 DPR 与字体栅格变化。
+    local width, left, top, height = measure(vg, fontSize, "Ag国0123456789%")
+    return table.concat({ tostring(transform[1]), tostring(transform[2]),
+        tostring(transform[3]), tostring(transform[4]),
+        tostring(width), tostring(left), tostring(top), tostring(height) }, ":")
 end
 
 -- ======================== 文本拆段 ========================
@@ -156,8 +179,9 @@ local function layoutSegments(vg, segs, width, fontSize)
     end
     local function addPiece(s, key)
         if s == "" then return end
-        local w = measure(vg, fontSize, s)
-        cur.pieces[#cur.pieces + 1] = { text = s, keyword = key ~= nil, key = key, w = w }
+        local w, inkLeft, inkTop, inkHeight = measure(vg, fontSize, s)
+        cur.pieces[#cur.pieces + 1] = { text = s, keyword = key ~= nil, key = key, w = w,
+            inkLeft = inkLeft, inkTop = inkTop, inkHeight = inkHeight }
         cur.width = cur.width + w
     end
     local function addToken(token, key)
@@ -210,10 +234,11 @@ local function layoutSegments(vg, segs, width, fontSize)
             if previous and not previous.keyword and not piece.keyword then
                 -- 普通文字可以合并，关键词不合并（相邻不同出现次数仍有独立热区）。
                 local combined = previous.text .. piece.text
-                local combinedW = measure(vg, fontSize, combined)
+                local combinedW, inkLeft, inkTop, inkHeight = measure(vg, fontSize, combined)
                 if line.width - previous.w - piece.w + combinedW <= width then
                     line.width = line.width - previous.w - piece.w + combinedW
                     previous.text, previous.w = combined, combinedW
+                    previous.inkLeft, previous.inkTop, previous.inkHeight = inkLeft, inkTop, inkHeight
                 else
                     pieces[#pieces + 1] = piece
                 end
@@ -224,6 +249,18 @@ local function layoutSegments(vg, segs, width, fontSize)
         line.pieces = pieces
     end
     return { lines = lines, fontSize = fontSize }
+end
+
+local function layoutMetrics(layout, fontSize, lineHeight)
+    local lh = lineHeight or math.floor(fontSize * 1.35 + 0.5)
+    local inkHeight = fontSize
+    for _, line in ipairs(layout.lines) do
+        for _, piece in ipairs(line.pieces) do
+            inkHeight = math.max(inkHeight, piece.inkHeight or fontSize)
+        end
+    end
+    lh = math.max(lh, inkHeight)
+    return lh, math.max(#layout.lines * lh, (#layout.lines - 1) * lh + inkHeight)
 end
 
 local function layoutText(vg, text, width, fontSize)
@@ -289,6 +326,7 @@ function KeywordText:_layout(vg, text, width, fontSize)
         self._drawIdentities = {}
     end
     local key = I18n.get() .. "\0" .. text .. "\0" .. width .. "\0" .. fontSize
+        .. "\0" .. measurementScale(vg, fontSize)
     local hit = self._cache[key]
     if hit then return hit end
     local layout = layoutText(vg, text, width, fontSize)
@@ -314,7 +352,7 @@ end
 ---@return number 总高度
 function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX, keepHotspots)
     local layout = self:_layout(vg, text, width, fontSize)
-    local lh = lineHeight or math.floor(fontSize * 1.35 + 0.5)
+    local lh, height = layoutMetrics(layout, fontSize, lineHeight)
 
     if not keepHotspots then
         self.hotspots = {}
@@ -342,25 +380,26 @@ function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX,
         for _, p in ipairs(line.pieces) do
             if p.keyword then
                 local idx = #self.hotspots + 1
-                self.hotspots[idx] = { x1 = cx, y1 = ly, x2 = cx + p.w, y2 = ly + fontSize,
+                self.hotspots[idx] = { x1 = cx, y1 = ly, x2 = cx + p.w,
+                    y2 = ly + math.max(fontSize, p.inkHeight or fontSize),
                     name = p.key, key = p.key, text = p.text }
                 if vg then
                     local col = self.hoverIdx == idx and KEYWORD_HOVER or KEYWORD_COLOR
                     nvgFontSize(vg, fontSize)
                     nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
-                    I18n.displayText(vg, cx, ly, p.text, nil)
+                    I18n.displayText(vg, cx - (p.inkLeft or 0), ly - (p.inkTop or 0), p.text, nil)
                 end
             elseif vg then
                 nvgFontSize(vg, fontSize)
                 local tc = self.textColor
                 nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], tc[4] or 255))
-                I18n.displayText(vg, cx, ly, p.text, nil)
+                I18n.displayText(vg, cx - (p.inkLeft or 0), ly - (p.inkTop or 0), p.text, nil)
             end
             cx = cx + p.w
         end
     end
 
-    self._lastLayoutH = #layout.lines * lh
+    self._lastLayoutH = height
     return self._lastLayoutH
 end
 
@@ -389,11 +428,11 @@ end
 ---@return number height, integer lineCount
 function KeywordText:measureHeight(vg, text, width, fontSize, lineHeight)
     local layout = self:_layout(vg, text, width, fontSize)
-    local lh = lineHeight or math.floor(fontSize * 1.35 + 0.5)
+    local _, height = layoutMetrics(layout, fontSize, lineHeight)
     ---@type any[]
     local lines = layout.lines
     local lineCount = #lines
-    return lineCount * lh, lineCount
+    return height, lineCount
 end
 
 --- 设置热区坐标变换：把输入坐标映射到热区空间（热区在缩放/平移变换内绘制时用）

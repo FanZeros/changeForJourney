@@ -1126,6 +1126,10 @@ function BattleTriPage.handleDragBegin(wx, wy)
         EquipmentBag.handleDragBegin(dx, dy)
         return true
     end
+    if RewardPopup.currentRowTag() then
+        local rx, ry, rw, rh = interiorRect(1, region.w, region.h)
+        return RewardPopup.handleDragRegion("begin", wx, wy, rx, ry, rw, rh)
+    end
     return false
 end
 
@@ -1147,6 +1151,10 @@ function BattleTriPage.handleDragMove(wx, wy)
         EquipmentBag.handleDragMove(dx, dy)
         return true
     end
+    if RewardPopup.currentRowTag() then
+        local rx, ry, rw, rh = interiorRect(1, region.w, region.h)
+        return RewardPopup.handleDragRegion("move", wx, wy, rx, ry, rw, rh)
+    end
     return false
 end
 
@@ -1161,6 +1169,10 @@ function BattleTriPage.handleDragEnd(wx, wy)
         local dx, dy = EquipmentBag.overlayToDesign(wx, wy)
         EquipmentBag.handleDragEnd(dx, dy)
         return true
+    end
+    if RewardPopup.currentRowTag() then
+        local rx, ry, rw, rh = interiorRect(1, region.w, region.h)
+        return RewardPopup.handleDragRegion("end", wx, wy, rx, ry, rw, rh)
     end
     return false
 end
@@ -1177,6 +1189,10 @@ function BattleTriPage.handleScroll(wheel, wx, wy)
             return StageSelectDialog.handleScroll(wheel, dx, dy)
         end
         return true
+    end
+    if RewardPopup.currentRowTag() then
+        local rx, ry, rw, rh = interiorRect(1, region.w, region.h)
+        return RewardPopup.handleScrollRegion(wheel, wx, wy, rx, ry, rw, rh)
     end
     if not (EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion()) then
         return false

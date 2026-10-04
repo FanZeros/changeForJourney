@@ -141,7 +141,7 @@ function Start()
             ["core.DarkIcon"] = originalRequire("core.DarkIcon"),
         }
         for _, name in ipairs({ "config.GameConfig", "config.EquipmentConfig", "config.HeroConfig", "core.NumberUtil",
-            "ui.widget.ImageCache", "config.ResourceDefs", "ui.widget.HeroFrame", "config.StageConfig", "core.I18n",
+            "ui.widget.ImageCache", "config.ResourceDefs", "ui.widget.HeroFrame", "ui.widget.BattleRewardQueue", "config.StageConfig", "core.I18n",
             "shared.artifact.ArtifactDefs", "shared.Protocol" }) do mods[name] = originalRequire(name) end
         -- cache:GetFile 是只读项目资源，不走玩家存档 File；load 创建独立实例，不操作 package.loaded。
         local function source(name)

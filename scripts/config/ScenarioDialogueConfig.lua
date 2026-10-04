@@ -41,6 +41,7 @@ ScenarioDialogueConfig.OPENING = {
     mode = "large",
     title = "",
     background = "image/剧情/开场三人CG.png",
+    backgroundIsCg = true,
     steps = {
         { characterId = 1, name = "大狗嚼", text = "叫！信拆完了？门外三条命都在等你签字。再磨蹭，我先把门牌啃了。" },
         { characterId = 2, name = "黄桃龙", text = "黄桃龙带了火把，也带了烤肠。塔底下那些山海怪，保证只烧怪！……大概。" },
@@ -968,5 +969,16 @@ ScenarioDialogueConfig.SCENARIO_82 = {
         { type = "shard", heroId = 1, amount = 10 },
     },
 }
+
+-- 同一地点的英雄分支共用环境；只补显示资源，不改台词、模式或奖励。
+local StoryBackground = require("config.StoryBackgroundConfig")
+for id = 1, 82 do
+    local cfg = ScenarioDialogueConfig["SCENARIO_" .. id]
+    if cfg then cfg.background = StoryBackground.forScenario(id) end
+end
+for _, cfg in ipairs(ScenarioDialogueConfig.OPENING_JOINS) do
+    cfg.background = StoryBackground.HALL
+end
+-- OPENING 继续使用现有三人 CG，人物层不重复叠加。
 
 return ScenarioDialogueConfig

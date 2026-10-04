@@ -11,6 +11,8 @@ local StoryPlayer = {}
 
 ---@type number[]
 local queue_ = {}
+---@type table<number, string>
+local queuedBackgrounds_ = {}
 
 local PLACE = {
     town = { enter = 23 },
@@ -159,9 +161,13 @@ function StoryPlayer.onStage(stageId, phase)
     enqueueSpec(spec)
 end
 
-function StoryPlayer.onWipe()
+---@param stageId number|string|nil 失败瞬间的战场，延迟播放后仍使用原地点。
+function StoryPlayer.onWipe(stageId)
     print("[StoryPlayer] wipe hero=" .. tostring(heroId()))
-    enqueueSpec(WIPE)
+    local id = resolve(WIPE)
+    if id and StoryPlayer.enqueue(id) then
+        queuedBackgrounds_[id] = require("config.StoryBackgroundConfig").forStage(stageId)
+    end
 end
 
 --- 当前情景播完后要接的下一句（如城镇 23 → 24）
@@ -206,9 +212,17 @@ end
 function StoryPlayer.take()
     while #queue_ > 0 do
         local id = table.remove(queue_, 1)
+        local background = id and queuedBackgrounds_[id]
+        if id then queuedBackgrounds_[id] = nil end
         if id and not isClaimed(id) then
             local cfg = ScenarioDialogueConfig["SCENARIO_" .. tostring(id)]
             if cfg and cfg.steps and #cfg.steps > 0 then
+                if background then
+                    local visual = {}
+                    for key, value in pairs(cfg) do visual[key] = value end
+                    visual.background = background
+                    cfg = visual
+                end
                 print("[StoryPlayer] take scenario " .. tostring(id)
                     .. " steps=" .. #cfg.steps .. " mode=" .. tostring(cfg.mode))
                 return { scenarioId = id, config = cfg }

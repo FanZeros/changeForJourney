@@ -13,6 +13,9 @@
 - 终检阶段提交 `6681e153` 已正常push同一新分支，远端一致；目标workspace930仍本轮基础 `d618ee25`。最终交互测试及PR结果待本轮后续补记，不写未经执行的完成状态。
 - 最终交互测试提交 `feeb850a` 已正常push并核验远端一致，12份本轮Lua全部与正式构建产物逐字节一致，临时入口不在包中。已按用户本轮允许提交PR的范围创建正式 **PR #65**：https://github.com/FanZeros/changeForJourney/pull/65，head=`feat1004a/expedition-reward-track@feeb850a`、base=`workspace930@d618ee25`，返回open、draft=false、merged=false，mergeable尚未计算。说明完整披露九套回归、真实绘图/帧尖峰限制，不宣称CI通过、不自动合并。交接补记仅push同一功能分支，完成后实际AskUserQuestion给下一步选项。
 
+- 用户通过实际AskUserQuestion选择“加强领奖验收”。下一阶段继续同一功能分支与PR65，只补完整Page→GameAction→Bridge→Service→Save→ClientMessageHandler→RewardPopup链路测试，不改真实玩家档、不扩大经济/玩法范围；覆盖连续点击、满级209奖励展示、失败Toast不假成功、重建隔离会话只从JSON恢复后不重领。执行结果完成后补记。
+- 继续验收前只读查PR65仍open/未合并，GitHub返回mergeable=true/clean，当前`be9e7fd0`的repository-policy检查completed/success；仅此仓库规范CI通过，不冒称游戏设备验收。每次完成测试/文档阶段正常push同一feat1004a分支，完成后继续实际AskUserQuestion。
+
 ## 选关敌人横向拖动与终焉说明协作要求（2026-10-04）
 
 - 用户本轮指定从 `workspace930` 拉取到 `/workspace` 根；基线为 `5678b740d4d40e9501c734a2ae64e4e07e9ad18e`，新任务分支为 `fix/workspace930-stage-enemy-scroll-temple-help`。只正常提交并 push 当前任务分支，不推任何 `workspace` 系列或原基线，不强推，不自动创建或合并 PR。

@@ -9,7 +9,7 @@ local FIRST, REPLAY, SOURCE = "samsara_first_read", "samsara_replay", "live_clea
 local OLD_KEYS = { "samsara.log_leaf", "samsara.cargo_match", "samsara.gray_order", "samsara.people_record",
     "samsara.returned_manifest", DOG, BELL, OPENING }
 local KEYS = { "samsara.log_leaf", "samsara.cargo_match", "samsara.gray_order", "samsara.people_record",
-    "samsara.returned_manifest", DOG, BELL, OPENING, KEY }
+    "samsara.returned_manifest", DOG, BELL, OPENING, KEY, "samsara.nightmare_afterimage" }
 local CHAIN = { "letter", "opening", "join.1", "join.2", "join.3" }
 local B_TEXT = "我们说好胜利以后一起庆祝。\n留给三人的罐头，先别开。\n人不齐，我先等。\n申请人：黄桃龙〔旧登记页〕。\n答复：庆祝待交接。撤离未结。"
 local STEPS = {
@@ -153,6 +153,10 @@ local function fixture(suppliedSession, raw, config, legacy, noInit)
     f.Registry = isolated("shared/ModuleRegistry.lua", {
         ["shared.session.SamsaraStorySchema"] = f.Schema,
         ["config.AwakeningConfig"] = isolated("config/AwakeningConfig.lua", {}),
+        -- 宿主新建的装备模块为空；明确水合隔离边界，不允许Registry吞掉缺依赖异常。
+        ["systems.EquipmentSystem"] = { hydrateInventory = function(inventory)
+            f.count("boundary.hydrateEmpty"); check(type(inventory) == "table" and next(inventory) == nil, "隔离水合只接受空库存")
+        end },
     }, nil, function(name)
         assert(name:match("^shared%..+Schema$") or name == "shared.heroes.TeamSlots", "unexpected Registry dependency " .. name)
         return { Fields = {}, normalize = function() end }
@@ -363,7 +367,7 @@ local function configurationCases()
     runCase("exact ninth key/text/front-night chronology/copies", function()
         local cfg = isolated("config/SamsaraSliceConfig.lua", {})
         eq(cfg.DRAGON_MIRROR_KEY, KEY, "DRAGON_MIRROR_KEY")
-        check(same(cfg.KEYS, KEYS), "old eight keys strict prefix plus ninth only")
+        check(same(cfg.KEYS, KEYS), "旧九KEY严格前缀，N11仅追加第十")
         eq(cfg.get("N08"), nil, "planner id not module key")
         local node = assert(cfg.get(KEY))
         eq(node.title, "龙没有打开的罐头", "N08 exact title")
@@ -394,7 +398,7 @@ local function configurationCases()
         eq(cfg.get(BELL).dependency, nil, "C not given opening prerequisite")
         eq(cfg.get(OPENING).evidence, nil, "N01 stays evidence-free")
         local f = fixture(nil, nil, nil, nil, true)
-        eq(#f.Player.getRecords(), 9, "nine safe records before init")
+        eq(#f.Player.getRecords(), 10, "未init十条记录安全返回")
         for index, record in ipairs(f.Player.getRecords()) do eq(record.key, KEYS[index], "actual record order " .. index) end
         eq(f.Player.getRecord().key, OLD_KEYS[1], "default record remains N02")
         eq(f.Player.onStageCleared(2705), false, "uninitialized CLEAR safe")
@@ -870,9 +874,9 @@ local function presentationCases()
             local w, h = size[1], size[2]
             eq(f.Panel.selectRecord(KEY), true, "select ninth key")
             f.Panel.open(); local text = f.draw(w, h)
-            eq(#f.tabs, 9, "nine actual tabs")
+            eq(#f.tabs, 10, "十个实际标签，N08仍第九")
             check(includes(text, "龙的罐头"), "ninth compact label")
-            for index = 2, 9 do
+            for index = 2, 10 do
                 check(f.tabs[index].x > f.tabs[index - 1].x, "tabs centers increase")
                 check(f.tabs[index].x - f.tabs[index - 1].x > f.tabs[index].width, "tabs non-overlap")
             end
@@ -884,6 +888,13 @@ local function presentationCases()
                 eq(f.Panel.handleInput(tab.x * scale, tab.y * scale, w, h), true, "real tab input consumed")
                 check(includes(f.draw(w, h), f.Config.get(spec[2]).title), "exact slot " .. spec[1] .. " selects own key")
             end
+            local nightmareTab = f.tabs[10]
+            f.Panel.selectRecord(OLD_KEYS[1]); f.Panel.handleInput(nightmareTab.x * scale, nightmareTab.y * scale, w, h)
+            local nightmareText = f.draw(w, h)
+            check(includes(nightmareText, f.Config.get("samsara.nightmare_afterimage").title), "第十标签精确选择N11")
+            check(includes(nightmareText, "亲历未确认"), "N11不借龙来源补造旧70经历")
+            eq(f.session().samsaraStory.nodes["samsara.nightmare_afterimage"], nil, "点击N11无资格写入")
+            f.Panel.selectRecord(KEY); f.draw(w, h)
             local action = f.action("仅供查阅")
             eq(f.Panel.handleInput(action.x * scale, action.y * scale, w, h), true, "reference action consumed")
             eq(f.Panel.handleInput(0, 0, w, h), true, "full mask consumes outside")

@@ -7,7 +7,7 @@ local assertions, failures, cases, passed = 0, 0, 0, 0
 local N02, N03 = "samsara.log_leaf", "samsara.returned_manifest"
 local N12, N13, N14 = "samsara.cargo_match", "samsara.gray_order", "samsara.people_record"
 local FIRST, REPLAY = "samsara_first_read", "samsara_replay"
-local KEYS = { N02, N12, N13, N14, N03, "samsara.dog_mirror", "samsara.bell_mirror", "samsara.opening_roster", "samsara.dragon_mirror" }
+local KEYS = { N02, N12, N13, N14, N03, "samsara.dog_mirror", "samsara.bell_mirror", "samsara.opening_roster", "samsara.dragon_mirror", "samsara.nightmare_afterimage" }
 local ORIGINALS = {
     { "旁白", "铁匠整理被砸坏的货牌。焦黑的一片上还能辨认“药箱十二”，下角画着箱底补铆的位置图，其中一枚打歪。" },
     { "铁匠", "认错你们，我道歉。丢了什么，我记得。", 10 },
@@ -173,13 +173,13 @@ local function expectOriginal(steps, label)
 end
 
 local function configAndSourceCases()
-    runCase("旧八KEY严格前缀/九记录末尾N08/八步正文/E02无附页/默认getRecord不变", function()
+    runCase("旧九KEY严格前缀/十记录末尾N11/八步正文/E02无附页/默认getRecord不变", function()
         local f = fixture()
         eq(f.Config.MANIFEST_KEY, N03, "MANIFEST_KEY命名空间")
-        check(same(f.Config.KEYS, KEYS), "旧八索引严格前缀，末尾仅追加N08")
+        check(same(f.Config.KEYS, KEYS), "旧九索引严格前缀，末尾仅追加N11")
         eq(f.Player.getRecord().key, N02, "省参仍N02")
         local records = f.Player.getRecords()
-        eq(#records, 9, "九条记录")
+        eq(#records, 10, "十条记录")
         for index, key in ipairs(KEYS) do eq(records[index].key, key, "稳定索引" .. index) end
         local cfg = assert(f.Config.get(N03))
         eq(cfg.title, "十二号箱", "不另编标题")
@@ -531,7 +531,9 @@ local function resultsAndPreservationCases()
     end)
     runCase("两独立schema路径规范N03 manualOnly/未知字段与未来保全", function()
         local schema = isolated("shared/session/SamsaraStorySchema.lua", {})
-        local registry = isolated("shared/ModuleRegistry.lua", { ["shared.session.SamsaraStorySchema"] = schema })
+        -- 与Character一样明确无关schema空字段边界；不让真实Registry吞掉未声明依赖异常。
+        local registry = isolated("shared/ModuleRegistry.lua", { ["shared.session.SamsaraStorySchema"] = schema }, nil,
+            function(name) assert(name:match("^shared%..+Schema$"), "意外Registry依赖 " .. name); return { Fields = {} } end)
         local sessionSchema = isolated("shared/session/SessionSchema.lua", { ["shared.session.SamsaraStorySchema"] = schema })
         local character = isolated("shared/schemas/CharacterSchema.lua", { ["shared.session.SessionSchema"] = sessionSchema }, nil,
             function(name) assert(name:match("^shared%..+Schema$")); return { Fields = {} } end)
@@ -564,7 +566,9 @@ local function integration(session, battle)
     function f.count(name) f.calls[name] = (f.calls[name] or 0) + 1 end
     function f.n(name) return f.calls[name] or 0 end
     local schema = isolated("shared/session/SamsaraStorySchema.lua", {})
-    local registry = isolated("shared/ModuleRegistry.lua", { ["shared.session.SamsaraStorySchema"] = schema })
+    -- RestoreData会经过currency/player的onLoad；这些非剧情schema仍使用明确空字段边界。
+    local registry = isolated("shared/ModuleRegistry.lua", { ["shared.session.SamsaraStorySchema"] = schema }, nil,
+        function(name) assert(name:match("^shared%..+Schema$"), "意外Registry依赖 " .. name); return { Fields = {} } end)
     local sessionSchema = isolated("shared/session/SessionSchema.lua", { ["shared.session.SamsaraStorySchema"] = schema })
     local character = isolated("shared/schemas/CharacterSchema.lua", { ["shared.session.SessionSchema"] = sessionSchema }, nil,
         function(name) assert(name:match("^shared%..+Schema$")); return { Fields = {} } end)
@@ -710,7 +714,7 @@ local function noRewards(f, before)
 end
 
 local function integrationCases()
-    runCase("locked N03静态原文Panel仅展示/九列响应式/不request-lease-save", function()
+    runCase("locked N03静态原文Panel仅展示/十列响应式/不request-lease-save", function()
         local f = integration(); f.init()
         local old, before, flushes = outsideStory(f.session()), copy(f.session()), f.n("flush")
         local read, begin, show = f.Player.requestRead, f.Player.begin, f.Dialogue.show
@@ -726,19 +730,21 @@ local function integrationCases()
             check(not includes(text, "回看"), "locked无回看action")
             local centers, tabY = {}, 0
             local labels = { ["日志夹页"] = true, ["货牌核验"] = true, ["灰印令"] = true, ["人员卷"] = true, ["十二号箱"] = true,
-                ["狗的绳结"] = true, ["第三声铃"] = true, ["名册末页"] = true, ["龙的罐头"] = true }
-            local dragonLabel = false
+                ["狗的绳结"] = true, ["第三声铃"] = true, ["名册末页"] = true, ["龙的罐头"] = true, ["刚才的梦"] = true }
+            local dragonLabel, nightmareLabel = false, false
             for _, button in ipairs(f.buttons) do
                 if labels[button.text] and button.y < 300 then
                     centers[#centers + 1] = button.x; tabY = button.y
                     if button.text == "龙的罐头" then dragonLabel = true end
+                    if button.text == "刚才的梦" then nightmareLabel = true end
                 end
             end
-            check(dragonLabel, "新增第九标签为龙的罐头")
-            eq(#centers, 9, "真实绘制九个标签")
+            check(dragonLabel, "第九标签仍为龙的罐头")
+            check(nightmareLabel, "第十标签为刚才的梦")
+            eq(#centers, 10, "真实绘制十个标签")
             for index = 2, #centers do
-                check(centers[index] > centers[index - 1], "九标签中心递增")
-                if index > 2 then check(math.abs((centers[index] - centers[index - 1]) - (centers[2] - centers[1])) < 0.001, "九列等宽") end
+                check(centers[index] > centers[index - 1], "十标签中心递增")
+                if index > 2 then check(math.abs((centers[index] - centers[index - 1]) - (centers[2] - centers[1])) < 0.001, "十列等宽") end
             end
             local scale = math.min(w / 1920, h / 1080)
             local action = {}
@@ -747,7 +753,7 @@ local function integrationCases()
             f.Panel.handleInput(action.x * scale, action.y * scale, w, h)
             eq(f.Panel.isOpen(), true, "locked点action不关闭不读完成")
             eq(f.n("request"), 0, "locked action不request")
-            -- 点击旧第五项N03验证真实handleInput使用同一动态九列，而非私有状态检查。
+            -- 点击旧第五项N03验证真实handleInput使用同一动态十列，而非私有状态检查。
             f.Panel.selectRecord(N02)
             f.Panel.handleInput(centers[5] * scale, tabY * scale, w, h)
             f.drawings = {}; f.Panel.draw({}, w, h)

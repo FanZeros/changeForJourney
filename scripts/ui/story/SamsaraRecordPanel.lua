@@ -1,5 +1,5 @@
 -- ============================================================================
--- SamsaraRecordPanel - 九项轻量剧情记录：既有八项与龙的初片，无奖励与新选择
+-- SamsaraRecordPanel - 十项轻量剧情记录：既有九项与噩梦补段，无奖励与新选择
 -- 基于 scaffold-2d 的生命周期分离；复用项目 raw NanoVG 管线，不创建上下文/帧。
 -- draw / handleInput / drag 的 x,y,w,h 均为主渲染器的窗口逻辑坐标。
 -- 1920×1080 CONTAIN 字号 + 全窗响应式布局；字体 sans 由主初始化创建。
@@ -26,8 +26,10 @@ local TAB_LABELS = {
     ["samsara.bell_mirror"] = "第三声铃",
     ["samsara.opening_roster"] = "名册末页",
     ["samsara.dragon_mirror"] = "龙的罐头",
+    ["samsara.nightmare_afterimage"] = "刚才的梦",
 }
 local OPENING_KEY = "samsara.opening_roster"
+local NIGHTMARE_KEY = "samsara.nightmare_afterimage"
 local DRAGON_KEY = "samsara.dragon_mirror"
 ---@class SamsaraMirrorRecordSpec
 ---@field evidenceId string
@@ -151,6 +153,7 @@ end
 ---@param record SamsaraRecordView
 local function statusText(record)
     if record.key == OPENING_KEY and record.referenceOnly then return "开场经历未确认 · 原文参考" end
+    if record.key == NIGHTMARE_KEY and record.referenceOnly then return "亲历未确认 · 原文参考" end
     if MIRROR_RECORDS[record.key] and record.referenceOnly then return "亲历未确认 · 原文参考" end
     if record.status == "pending" then return "待阅" end
     if record.status == "finished" then return "已读" end
@@ -162,7 +165,7 @@ end
 ---@param record SamsaraRecordView
 local function canRead(record)
     if record.referenceOnly or SamsaraSlicePlayer.isSavePending() then return false end
-    if record.key == OPENING_KEY and record.eventTrusted ~= true then return false end
+    if (record.key == OPENING_KEY or record.key == NIGHTMARE_KEY) and record.eventTrusted ~= true then return false end
     local mirror = MIRROR_RECORDS[record.key]
     if mirror and record.status == "pending" then
         -- eventTrusted包含带ID的旧段中断；只允许显式补读，不把中断写成旧段已读。
@@ -173,7 +176,7 @@ end
 
 ---@param record SamsaraRecordView
 local function actionText(record)
-    if record.key == OPENING_KEY and record.referenceOnly then return "仅供查阅" end
+    if (record.key == OPENING_KEY or record.key == NIGHTMARE_KEY) and record.referenceOnly then return "仅供查阅" end
     if MIRROR_RECORDS[record.key] and record.referenceOnly then return "仅供查阅" end
     if SamsaraSlicePlayer.isSavePending() then return "保存中" end
     if MIRROR_RECORDS[record.key] and record.status == "pending" and not canRead(record) then return "亲历未确认" end
@@ -206,6 +209,36 @@ local function contentBlocks(record)
         if record.eventTrusted then add("来源：当前开场链逐段完成记录。", 32, true) end
         add("名册与罐头是当前队纪念物；本段不授予物证编号或镜像凭片。", 32, true)
         add("龙的罐头初片另见对应记录；本段不证明镜像胜利、申请执行或撤离获批。", 32, true)
+        return blocks
+    end
+
+    if record.key == NIGHTMARE_KEY then
+        if record.status == "unsupported" then
+            add("这份剧情记录尚未开放。")
+            return blocks
+        elseif record.referenceOnly then
+            add("剧情原文／亲历状态未确认", 40)
+            add("旧防重播标记、最高关和通关记录不足以确认旧70梦境经历。以下只供静态查阅，不标已读，不补造听闻或纪念罐经历。", 32, true)
+            for _, step in ipairs(record.referenceSteps or {}) do add(step.name .. "：" .. step.text) end
+        elseif record.status == "pending" then
+            add("旧70梦境已处理；有一段醒后的话待阅。")
+            add("点击“待阅”阅读本段，不重新领取旧剧情奖励。", 32, true)
+            if record.manualOnly then add("本段作为历史补读，不倒插或重置已处理的征用调查。", 32, true) end
+        else
+            add(record.status == "skipped" and "此前已跳过本段，可点击“回看”阅读原文。"
+                or "此前已读本段，可点击“回看”阅读原文。", 32, true)
+        end
+        if record.eligibilitySource == "live_legacy_70" and record.legacyContext == "live_skipped" then
+            add("来源：旧70已在实时带ID结果中跳过；跳过不等于看过，亦不代替本段阅读。", 32, true)
+        elseif record.eligibilitySource == "live_legacy_70" and record.legacyContext == "live_finished" then
+            add("来源：旧70的实时带ID完成记录；不代替本段阅读。", 32, true)
+        else
+            add("旧70实际处理来源尚未确认。", 32, true)
+        end
+        add(record.historyReady and "名册前史已处理；已读与跳过仍按原记录区分。"
+            or "名册前史尚未可信处理；静态参考不替代纪念罐经历。", 32, true)
+        add("分食的是另开的口粮罐，名册旁的纪念罐仍未开封。", 32, true)
+        add("这里只记录听见的话，不裁定梦中事件已发生，不认定当前队杀人；本段不授物证、奖励或新选择。", 32, true)
         return blocks
     end
 
@@ -412,7 +445,7 @@ function Panel.draw(vg, w, h)
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
     drawButton(ctx, l.closeX, l.closeY, l.closeW, l.closeH, "关闭", true)
 
-    -- 标签按key绑定，九项最窄时四字×30px仍留有边距；点击和绘制同用layout。
+    -- 标签按key绑定，十项最窄时四字×30px仍留有边距；点击和绘制同用layout。
     for index, item in ipairs(records) do
         local tabX = l.contentX + (index - 1) * l.tabsW
         drawButton(ctx, tabX, l.tabsY, l.tabsW - l.tabsGap, l.tabsH, TAB_LABELS[item.key] or "剧情记录",

@@ -8,7 +8,7 @@ local N02, N12, N13, N14 = "samsara.log_leaf", "samsara.cargo_match", "samsara.g
 local FIRST, REPLAY = "samsara_first_read", "samsara_replay"
 local N03 = "samsara.returned_manifest"
 local KEYS = { N02, N12, N13, N14, N03 }
-local INDEX_KEYS = { N02, N12, N13, N14, N03, "samsara.dog_mirror", "samsara.bell_mirror", "samsara.opening_roster", "samsara.dragon_mirror" }
+local INDEX_KEYS = { N02, N12, N13, N14, N03, "samsara.dog_mirror", "samsara.bell_mirror", "samsara.opening_roster", "samsara.dragon_mirror", "samsara.nightmare_afterimage" }
 
 local function check(ok, label)
     assertions = assertions + 1
@@ -126,9 +126,9 @@ local function expectDialogue(cfg, lines, label)
 end
 
 local function configCases()
-    runCase("旧八KEY严格前缀/末尾N08/独立配置/精修原文及最小语境适配", function()
+    runCase("旧九KEY严格前缀/末尾N11/独立配置/精修原文及最小语境适配", function()
         local f = fixture()
-        check(same(f.Config.KEYS, INDEX_KEYS), "Config.KEYS保留旧八KEY顺序为严格前缀，末尾仅追加N08")
+        check(same(f.Config.KEYS, INDEX_KEYS), "Config.KEYS保留旧九KEY顺序为严格前缀，末尾仅追加N11")
         eq(f.Config.NODE_KEY, N02, "NODE_KEY保留N02兼容")
         eq(assert(f.Config.getEvidence("E03-B")).id, "E03-B", "B为合法静态初片，原调查链不授予B")
         eq(f.session.samsaraStory.evidence["E03-B"], nil, "本原链夹具未取得B")
@@ -294,7 +294,7 @@ local function chainCases()
         local before = copy(f.session)
         eq(f.Player.hasPendingRecords(), true, "有待阅")
         local records = f.Player.getRecords()
-        eq(#records, 9, "九记录保留旧八索引，末尾仅追加N08")
+        eq(#records, 10, "十记录保留旧九索引，末尾仅追加N11")
         for i, record in ipairs(records) do eq(record.key, INDEX_KEYS[i], "getRecords顺序" .. i) end
         records[1].title = "覆盖"
         check(same(f.session, before), "peek/getRecords不写入或取消待阅")
@@ -464,7 +464,7 @@ local function preservationCases()
             eq(f.supported, false, "未来schema不兼容")
             eq(f.Player.peekReady(), nil, "未来schema无待播")
             eq(f.Player.hasPendingRecords(), false, "未来schema无可处理待阅")
-            eq(#f.Player.getRecords(), 9, "不兼容仍安全返回九记录")
+            eq(#f.Player.getRecords(), 10, "不兼容仍安全返回十记录")
             for _, key in ipairs(KEYS) do
                 eq(f.Player.getRecord(key).status, "unsupported", "未来schema记录不兼容 " .. key)
                 eq(f.Player.requestRead(key), false, "未来schema不排请求 " .. key)

@@ -7,7 +7,7 @@ local assertions, failures, cases, passed = 0, 0, 0, 0
 local DOG, BELL = "samsara.dog_mirror", "samsara.bell_mirror"
 local N02, N12, N13, N14, N03 = "samsara.log_leaf", "samsara.cargo_match", "samsara.gray_order", "samsara.people_record", "samsara.returned_manifest"
 local OLD_KEYS = { N02, N12, N13, N14, N03 }
-local KEYS = { N02, N12, N13, N14, N03, DOG, BELL, "samsara.opening_roster", "samsara.dragon_mirror" }
+local KEYS = { N02, N12, N13, N14, N03, DOG, BELL, "samsara.opening_roster", "samsara.dragon_mirror", "samsara.nightmare_afterimage" }
 local FIRST, REPLAY = "samsara_first_read", "samsara_replay"
 local JSON = cjson
 local MIRRORS = {
@@ -249,13 +249,13 @@ local function finish(f, item, reason)
 end
 
 local function configAndHistoryCases()
-    runCase("旧八KEY严格前缀/末尾N08/默认N02/正文与初片逐字/配置副本", function()
+    runCase("旧九KEY严格前缀/末尾N11/默认N02/正文与初片逐字/配置副本", function()
         local f = fixture()
         eq(f.Config.DOG_MIRROR_KEY, DOG, "DOG_MIRROR_KEY")
         eq(f.Config.BELL_MIRROR_KEY, BELL, "BELL_MIRROR_KEY")
-        check(same(f.Config.KEYS, KEYS), "旧八KEY索引严格前缀，末尾仅追加N08")
+        check(same(f.Config.KEYS, KEYS), "旧九KEY索引严格前缀，末尾仅追加N11")
         eq(f.Player.getRecord().key, N02, "省参仍N02")
-        local records = f.Player.getRecords(); eq(#records, 9, "九记录")
+        local records = f.Player.getRecords(); eq(#records, 10, "十记录")
         for index, key in ipairs(KEYS) do eq(records[index].key, key, "索引" .. index) end
         for _, item in ipairs(MIRRORS) do
             local cfg = assert(f.Config.get(item.key))
@@ -658,6 +658,8 @@ local function resultAndVersionCases()
     end)
     for _, version in ipairs({ 2, "99" }) do
         runCase("未来schema全只读保全 " .. tostring(version), function()
+            -- 未来/损坏档刻意使用异形字段，测试输入容器不收窄为当前字面量结构。
+            ---@type table
             local session = fresh(); session.samsaraStory = { schemaVersion = version, nodes = "future", evidence = false,
                 mirrorHistoryVersion = 9, mirrorHistoryCaptured = "future", unknown = { keep = 9 } }
             local before = copy(session); local f = fixture(session, { clearedStages = { [2505] = true, [2905] = true } })
@@ -677,7 +679,8 @@ local function resultAndVersionCases()
     end
     for _, item in ipairs(MIRRORS) do
         runCase("未来镜像content及活动中升级拒绝 " .. item.key, function()
-            local session = fresh(); session.samsaraStory.mirrorHistoryCaptured, session.samsaraStory.mirrorHistoryVersion = true, 1
+            ---@type any
+            local session = copy(fresh()); session.samsaraStory.mirrorHistoryCaptured, session.samsaraStory.mirrorHistoryVersion = true, 1
             session.samsaraStory.nodes[item.key] = { contentVersion = 99, eligible = "future", resolution = "future", unknown = { keep = 7 } }
             session.samsaraStory.evidence[item.id] = { source = { future = "tagged_source" }, unlocked = "tagged_true",
                 annotationUnlocked = { tagged = true }, continuationUnlocked = "tagged_continuation", peopleUnlocked = 7, unknown = { keep = 8 } }
@@ -707,7 +710,8 @@ local function resultAndVersionCases()
     end
     for _, version in ipairs({ 2, "99" }) do
         runCase("未来mirrorHistoryVersion只禁镜像/原五节点仍工作 " .. tostring(version), function()
-            local session = fresh({ ["17"] = true })
+            ---@type any
+            local session = copy(fresh({ ["17"] = true }))
             session.samsaraStory.mirrorHistoryVersion, session.samsaraStory.mirrorHistoryCaptured = version, "future"
             session.samsaraStory.nodes[DOG] = { eligible = "future", contentVersion = 1, resolution = "future", unknown = { keep = 3 } }
             session.samsaraStory.evidence["E03-A"] = { unlocked = "future", source = "future", unknown = { keep = 4 } }
@@ -822,27 +826,27 @@ end
 
 local function presentationCases()
     for _, item in ipairs(MIRRORS) do
-        runCase("真实Panel九tab/静态参考无请求/长文滚动touch " .. item.key, function()
+        runCase("真实Panel十tab/静态参考无请求/长文滚动touch " .. item.key, function()
             local f = presentation(fixture(fresh(), { clearedStages = { [item.stage] = true } }))
             local before, flushes = copy(f.session), f.flushes
             for _, size in ipairs({ { 1920, 1080 }, { 2340, 1080 }, { 1280, 800 } }) do
                 local w, h = size[1], size[2]
-                eq(f.Panel.selectRecord(item.key), true, "九tab可select镜像")
+                eq(f.Panel.selectRecord(item.key), true, "十tab可select镜像")
                 f.Panel.open(); local text = f.draw(w, h)
                 check(includes(text, "亲历状态未确认"), "静态参考标亲历未知")
                 for _, line in ipairs(item.dialogue) do check(includes(text, line[2]), "参考展示逐字对白") end
                 check(not includes(text, item.text), "参考不公开初片")
                 check(not includes(text, assert(f.Config.getEvidence("E03-B")).text), "A/C静态Panel不泄B正文")
-                eq(#f.tabs, 9, "真实绘制九tab")
+                eq(#f.tabs, 10, "真实绘制十tab")
                 local dragonLabel = false
                 for _, button in ipairs(f.buttons) do
                     if button.text == "龙的罐头" and button.y < 300 then dragonLabel = true end
                 end
                 check(dragonLabel, "第九项使用精确龙的罐头标签")
                 for index = 2, #f.tabs do
-                    check(f.tabs[index].x > f.tabs[index - 1].x, "九列中心递增")
-                    check(f.tabs[index].x - f.tabs[index - 1].x > f.tabs[index].width, "九列不重叠")
-                    if index > 2 then check(math.abs((f.tabs[index].x - f.tabs[index - 1].x) - (f.tabs[2].x - f.tabs[1].x)) < 0.001, "九列动态等宽") end
+                    check(f.tabs[index].x > f.tabs[index - 1].x, "十列中心递增")
+                    check(f.tabs[index].x - f.tabs[index - 1].x > f.tabs[index].width, "十列不重叠")
+                    if index > 2 then check(math.abs((f.tabs[index].x - f.tabs[index - 1].x) - (f.tabs[2].x - f.tabs[1].x)) < 0.001, "十列动态等宽") end
                 end
                 local scale = math.min(w / 1920, h / 1080)
                 local bellTab = f.tabs[7]
@@ -859,6 +863,12 @@ local function presentationCases()
                 check(includes(dragonText, f.Config.get("samsara.dragon_mirror").title), "第九tab实际选N08")
                 check(includes(dragonText, "亲历状态未确认"), "N08点击仅查阅不补造亲历")
                 eq(f.session.samsaraStory.nodes["samsara.dragon_mirror"], nil, "点击N08不创造资格或来源")
+                local nightmareTab = f.tabs[10]
+                f.Panel.selectRecord(N02); f.Panel.handleInput(nightmareTab.x * scale, nightmareTab.y * scale, w, h)
+                local nightmareText = f.draw(w, h)
+                check(includes(nightmareText, f.Config.get("samsara.nightmare_afterimage").title), "第十tab实际选N11")
+                check(includes(nightmareText, "亲历未确认"), "N11仅查阅，不借A/C来源确认噩梦")
+                eq(f.session.samsaraStory.nodes["samsara.nightmare_afterimage"], nil, "点击N11不创造旧70来源")
                 noExtraEvidence(f)
                 f.Panel.selectRecord(item.key); f.draw(w, h)
                 local action = f.action("仅供查阅")

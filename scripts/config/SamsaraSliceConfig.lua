@@ -1,4 +1,4 @@
--- SamsaraSliceConfig.lua — 九段无奖切片；不注册旧情景编号或经济奖励。
+-- SamsaraSliceConfig.lua — 十段无奖切片；不注册旧情景编号或经济奖励。
 -- 正文来源：未寄出的撤离令-剧情正文普通至炼狱-1003.md；N14采用接线方案独立语境。
 -- N01建立名册/纪念罐前史；N07/N08/N09分别提供E03-A/B/C初片，不开放后续核验。
 -- 已核对人物映射：1=大狗嚼，2=黄桃龙，3=叮咚鸡，10=铁匠，21=圣女。
@@ -35,11 +35,13 @@ local Config = {
     BELL_MIRROR_KEY = "samsara.bell_mirror",
     OPENING_KEY = "samsara.opening_roster",
     DRAGON_MIRROR_KEY = "samsara.dragon_mirror",
+    NIGHTMARE_KEY = "samsara.nightmare_afterimage",
     CONTENT_VERSION = 1,
 }
--- 旧八项顺序不变；龙的初片追加，其他事件的前置仍不变。
+-- 旧九项顺序不变；无物证的噩梦补段追加，不反锁既有调查。
 Config.KEYS = { Config.NODE_KEY, Config.CARGO_KEY, Config.ORDER_KEY, Config.PEOPLE_KEY, Config.MANIFEST_KEY,
-    Config.DOG_MIRROR_KEY, Config.BELL_MIRROR_KEY, Config.OPENING_KEY, Config.DRAGON_MIRROR_KEY }
+    Config.DOG_MIRROR_KEY, Config.BELL_MIRROR_KEY, Config.OPENING_KEY, Config.DRAGON_MIRROR_KEY,
+    Config.NIGHTMARE_KEY }
 
 local E02_TEXT = "商队药箱十二。\n内装药、夹板、干粮。箱底补铆一次。\n押运：城镇医所支队。\n遇截地点：林道路标外。\n截取方口令：“先救人。”\n回收：货牌。箱体未回。\n\n铁匠手注：\n图中歪铆是箱底修补位置，不是货牌铆钉。货能认，人别再认错。"
 local E02_ANNOTATION = "货牌位置与保全库十二号箱底拓片吻合。同物件跨两次交接有完整编号，未发现复制箱体。受害押运者另记人员卷，不并入“物资损失”。"
@@ -87,6 +89,20 @@ function Config.get(key, source)
                 { name = "远征长", text = "那就把这页留好。" },
                 { characterId = 2, name = "黄桃龙", text = "我也留好罐头。回来庆祝用，路上……只吃一点点。" },
                 { name = "旁白", text = "她把一只未开封的罐头放在名册旁。盒盖已有两道浅刻痕，第三道只刻了一半。" },
+            },
+        }
+    elseif key == Config.NIGHTMARE_KEY then
+        return {
+            title = "还记得刚才吗", mode = "small", dependency = Config.OPENING_KEY,
+            unlockText = "处理名册前史与旧70梦境后开放",
+            steps = {
+                -- 口粮罐与纪念罐分开；不把主角听见的话认定为已经发生的事。
+                { name = "旁白", text = "黄桃龙把分给远征长的半罐黄桃放下。分食的是另开的口粮罐；名册旁的纪念罐仍未开封。视线里没有旧伙伴的身体。" },
+                { characterId = 2, name = "黄桃龙", text = "这半边是你的。不是梦里的。" },
+                { name = "远征长", text = "刚才有人说物资里全是队员的遗物。" },
+                { characterId = 1, name = "大狗嚼", text = "我没说。叫！我就在这里。" },
+                { characterId = 3, name = "叮咚鸡", text = "我记你听见了什么。先不写“发生过”。" },
+                { name = "远征长", text = "去找能对照的东西。不能只凭我脑子里的话。" },
             },
         }
     elseif key == Config.NODE_KEY then

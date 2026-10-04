@@ -1,4 +1,4 @@
--- SamsaraSlicePlayer.lua — 九段无奖切片数据层；由主仲裁器决定何时开始展示。
+-- SamsaraSlicePlayer.lua — 十段无奖切片数据层；由主仲裁器决定何时开始展示。
 -- 不show、不订阅无ID完成广播、不调用任何领奖/教程/经济协议。
 local Config = require("config.SamsaraSliceConfig")
 local Schema = require("shared.session.SamsaraStorySchema")
@@ -61,11 +61,18 @@ local MANIFEST = "samsara.returned_manifest"
 local DOG_MIRROR, BELL_MIRROR = "samsara.dog_mirror", "samsara.bell_mirror"
 local OPENING = "samsara.opening_roster"
 local DRAGON_MIRROR = "samsara.dragon_mirror"
+local NIGHTMARE = "samsara.nightmare_afterimage"
 local OPENING_STEPS = { "letter", "opening", "join.1", "join.2", "join.3" }
 ---@type number?
 local openingIndex_ = nil
 local function openingEventTrusted(node)
     return node ~= nil and node.eligible == true and node.eligibilitySource == "live_opening_chain"
+end
+
+-- 旧70的首份带身份处理结果独立留存，不借claimed或入场反推。
+local function nightmareEventTrusted(node)
+    return node ~= nil and node.eligible == true and node.eligibilitySource == "live_legacy_70"
+        and (node.legacyContext == "live_finished" or node.legacyContext == "live_skipped")
 end
 local MIRRORS = {
     [DOG_MIRROR] = { stage = 2505, legacyId = 64, source = "live_clear_2505", evidenceId = "E03-A" },
@@ -115,8 +122,8 @@ local function definition(key)
         or type(cfg.title) ~= "string" or type(cfg.steps) ~= "table" or #cfg.steps == 0 then
         return nil
     end
-    -- N01是无物证的队伍前史；只对这一已知节点放行，不放宽旧七段证据契约。
-    if key == OPENING then
+    -- 无物证只放行名册前史与噩梦补段，不放宽其他节点的证据契约。
+    if key == OPENING or key == NIGHTMARE then
         if cfg.evidence ~= nil or cfg["rewards"] ~= nil then return nil end
     elseif type(cfg.evidence) ~= "table" or type(cfg.evidence.id) ~= "string"
         or type(cfg.evidence.title) ~= "string" or type(cfg.evidence.text) ~= "string" then
@@ -166,8 +173,16 @@ local function processed(node)
     return node ~= nil and (node.resolution == "finished" or node.resolution == "skipped")
 end
 
+local function investigationProcessed(story)
+    for _, key in ipairs({ CARGO, ORDER, PEOPLE }) do
+        local node = story.nodes[key]
+        if type(node) == "table" and processed(node) then return true end
+    end
+    return false
+end
+
 local function dependencyReady(story, key)
-    if key == DRAGON_MIRROR then
+    if key == DRAGON_MIRROR or key == NIGHTMARE then
         local opening, supported = nodeState(story, OPENING)
         return supported and openingEventTrusted(opening) and processed(opening)
     end
@@ -274,6 +289,11 @@ local function releaseChain(story)
             and dependencyReady(story, pair[1]) then
             if makeEligible(story, pair[2], "previous_processed") then changed = true end
         end
+    end
+    local nightmare, supported = nodeState(story, NIGHTMARE)
+    if supported and nightmareEventTrusted(nightmare) and not processed(nightmare)
+        and investigationProcessed(story) and nightmare.manualOnly ~= true then
+        nightmare.manualOnly, changed = true, true
     end
     return changed
 end
@@ -494,6 +514,26 @@ end
 ---@return boolean changed
 function Player.noteLegacyResult(id, reason, contextEpoch)
     if contextEpoch ~= nil and contextEpoch ~= epoch_ then return false end
+    if id == 70 or id == "70" then
+        -- 新锚点必须来自宿主捕获的明确代次，不接纳无身份的完成广播。
+        if contextEpoch ~= epoch_ then return false end
+        local context = (reason == "finished" or reason == "dismissed") and "live_finished"
+            or (reason == "skipped" and "live_skipped" or nil)
+        if not context then return false end
+        local story = currentStory()
+        if not story or not definition(NIGHTMARE) then return false end
+        local node, supported = nodeState(story, NIGHTMARE)
+        if not supported or nightmareEventTrusted(node) then return false end
+        if not node then node = {}; story.nodes[NIGHTMARE] = node end
+        node.eligible, node.eligibilitySource, node.contentVersion = true, "live_legacy_70", Config.CONTENT_VERSION
+        node.legacyContext, node.resolution = context, nil
+        -- 较晚补到的梦境只能手动查阅，不倒插已经展开的征用调查。
+        if investigationProcessed(story) then node.manualOnly = true end
+        print("[SamsaraSlicePlayer] 旧70来源确认，N11待阅 context=" .. context
+            .. " manual=" .. tostring(node.manualOnly == true))
+        persist()
+        return true
+    end
     local mirrorKey = (id == 64 or id == "64") and DOG_MIRROR
         or ((id == 67 or id == "67") and BELL_MIRROR
             or ((id == 65 or id == "65") and DRAGON_MIRROR or nil))
@@ -537,6 +577,7 @@ end
 
 local function readyFor(story, key, node)
     if key == OPENING then return openingEventTrusted(node) end
+    if key == NIGHTMARE then return nightmareEventTrusted(node) and dependencyReady(story, key) end
     local requiresLegacy = key == Config.NODE_KEY or key == MANIFEST or MIRRORS[key] ~= nil
     return dependencyReady(story, key) and (not requiresLegacy or legacyReady(node, key))
 end
@@ -546,10 +587,11 @@ function Player.peekReady()
     if lease_ then return nil end
     local story = currentStory()
     if not story then return nil end
-    local autoKeys = { OPENING, Config.NODE_KEY, MANIFEST, DOG_MIRROR, DRAGON_MIRROR, BELL_MIRROR, CARGO, ORDER, PEOPLE }
+    local autoKeys = { OPENING, Config.NODE_KEY, MANIFEST, DOG_MIRROR, DRAGON_MIRROR, BELL_MIRROR, NIGHTMARE, CARGO, ORDER, PEOPLE }
     for _, key in ipairs(autoKeys) do
         local node, supported = nodeState(story, key)
         if supported and node and node.eligible == true and not processed(node) and node.manualOnly ~= true
+            and not (key == NIGHTMARE and investigationProcessed(story))
             and definition(key) and readyFor(story, key, node) then return key end
     end
     return nil
@@ -564,6 +606,7 @@ local function allowed(kind, key)
     local node, supported = nodeState(story, key)
     if not supported or not node or node.eligible ~= true then return false end
     if key == OPENING and not openingEventTrusted(node) then return false end
+    if key == NIGHTMARE and not nightmareEventTrusted(node) then return false end
     if MIRRORS[key] and not mirrorEventTrusted(node, key) then return false end
     if kind == FIRST_READ then return not processed(node) and dependencyReady(story, key) end
     if kind == REPLAY then return processed(node) and dependencyReady(story, key) end
@@ -623,6 +666,7 @@ function Player.onResult(result)
     local node, supported = nodeState(story, lease_.nodeKey)
     if not supported or not node or node.eligible ~= true or not dependencyReady(story, lease_.nodeKey) then return false end
     if lease_.nodeKey == OPENING and not openingEventTrusted(node) then return false end
+    if lease_.nodeKey == NIGHTMARE and not nightmareEventTrusted(node) then return false end
     if MIRRORS[lease_.nodeKey] and not mirrorEventTrusted(node, lease_.nodeKey) then return false end
     local reason = result.reason
     if reason == "reset" or reason == "replaced" or reason == "failed" then Player.cancel(); return true end
@@ -717,6 +761,16 @@ function Player.getRecord(key)
             record.status, record.referenceOnly, record.referenceSteps = "locked", true, cfg.steps
         end
         -- 名册与纪念罐是当前队前史，不借E01/E02/E05填成物证。
+        return record
+    end
+    if key == NIGHTMARE then
+        record.manualOnly = record.manualOnly == true or (not processed(node) and investigationProcessed(story))
+        record.historyReady = dependencyReady(story, key)
+        record.eventTrusted = nightmareEventTrusted(node) and record.historyReady
+        if not record.eventTrusted then
+            record.status, record.referenceOnly, record.referenceSteps = "locked", true, cfg.steps
+        end
+        -- 听见梦里的话不是取得遗物；这段不返回任何物证或后续核验。
         return record
     end
     if MIRRORS[key] then

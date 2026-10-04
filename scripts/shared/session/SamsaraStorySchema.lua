@@ -28,7 +28,7 @@
 ---@field evidence table<string, SamsaraStoryEvidenceState>
 
 local Schema = {}
-local NODE_KEYS = { "samsara.log_leaf", "samsara.cargo_match", "samsara.gray_order", "samsara.people_record", "samsara.returned_manifest", "samsara.dog_mirror", "samsara.bell_mirror", "samsara.opening_roster", "samsara.dragon_mirror" }
+local NODE_KEYS = { "samsara.log_leaf", "samsara.cargo_match", "samsara.gray_order", "samsara.people_record", "samsara.returned_manifest", "samsara.dog_mirror", "samsara.bell_mirror", "samsara.opening_roster", "samsara.dragon_mirror", "samsara.nightmare_afterimage" }
 local DRAGON_KEY = "samsara.dragon_mirror"
 local MIRROR_KEYS = { ["samsara.dog_mirror"] = true, ["samsara.bell_mirror"] = true }
 

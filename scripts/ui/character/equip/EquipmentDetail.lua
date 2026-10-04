@@ -132,6 +132,7 @@ local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
     local x = cx - w * 0.5
     local y = cy - h * 0.5
     local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
+    ---@cast paint NVGpaint
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)

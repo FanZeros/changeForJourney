@@ -49,11 +49,10 @@ local SLICES = {
     V_BIAS = 0.0,
 }
 
-local NODE_FILL = {
-    { 0xe8, 0x6a, 0x4a },
-    { 0x72, 0xe9, 0xff },
-    { 0xe0, 0x72, 0xff },
-}
+local SLICE_DARK = { 8, 10, 18 }
+local SLICE_FRAME = { 0xe8, 0xc9, 0x6a }
+local SLICE_FRAME_ALPHA = 190
+local SLICE_SELECTED = { 0xff, 0xef, 0x67 }
 
 -- 底栏（切片底 = SY+H = 1812，文字区紧跟其下）
 local SUB_TITLE_CX, SUB_TITLE_CY = 540, 1860
@@ -128,17 +127,16 @@ local function sliceEdges(i, t)
 end
 
 --- 斜切条路径
-local function slicePath(vg, i, expand)
-    local e = expand or 0
-    local y0 = sliceY(i) - e
-    local y1 = sliceY(i) + SLICES.H + e
+local function slicePath(vg, i)
+    local y0 = sliceY(i)
+    local y1 = sliceY(i) + SLICES.H
     local l0, r0 = sliceEdges(i, 0)
     local l1, r1 = sliceEdges(i, 1)
     nvgBeginPath(vg)
-    nvgMoveTo(vg, l0 - e, y0)
-    nvgLineTo(vg, r0 + e, y0)
-    nvgLineTo(vg, r1 + e, y1)
-    nvgLineTo(vg, l1 - e, y1)
+    nvgMoveTo(vg, l0, y0)
+    nvgLineTo(vg, r0, y0)
+    nvgLineTo(vg, r1, y1)
+    nvgLineTo(vg, l1, y1)
     nvgClosePath(vg)
 end
 
@@ -272,18 +270,15 @@ end
 ---@param state string "active" 已嵌合 | "next" 可嵌合 | "locked" 未解锁
 ---@param isSelected boolean
 local function drawSlice(vg, i, state, isSelected, cgImg, dw, dh, v0, sw)
-    local col = NODE_FILL[i] or { 180, 180, 180 }
-    local t = time.elapsedTime
-    local breathe = (math.sin(t * 2.4 + i * 0.9) + 1.0) * 0.5
-
-    -- 1) 深底
+    -- 三片使用同一暗色底层与统一色调染色；解锁状态沿用原有明暗区分。
     slicePath(vg, i)
-    nvgFillColor(vg, nvgRGBA(8, 10, 18, 235))
+    nvgFillColor(vg, nvgRGBA(SLICE_DARK[1], SLICE_DARK[2], SLICE_DARK[3], 235))
     nvgFill(vg)
 
     -- 2) CG 片：解锁=彩色，未解锁=绘制时染灰（两态共用斜切取样几何）
     local paint = slicePaint(vg, cgImg, i, dw, dh, v0, sw, 1.0, state ~= "active")
     if paint then
+        ---@cast paint NVGpaint
         slicePath(vg, i)
         nvgFillPaint(vg, paint)
         nvgFill(vg)
@@ -291,53 +286,25 @@ local function drawSlice(vg, i, state, isSelected, cgImg, dw, dh, v0, sw)
 
     if state == "active" then
         slicePath(vg, i)
-        nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 22))
+        nvgFillColor(vg, nvgRGBA(SLICE_FRAME[1], SLICE_FRAME[2], SLICE_FRAME[3], 22))
         nvgFill(vg)
     else
-        -- 未解锁：压暗 + 轻灰罩，保证灰片可读
+        -- 未解锁状态保留轻微压暗，但三阶共用相同透明度和暗色。
         slicePath(vg, i)
-        if cgImg and cgImg >= 0 then
-            nvgFillColor(vg, nvgRGBA(8, 10, 20, 110))
-        else
-            nvgFillColor(vg, nvgRGBA(14, 14, 18, 200))
-        end
+        nvgFillColor(vg, nvgRGBA(SLICE_DARK[1], SLICE_DARK[2], SLICE_DARK[3], 110))
         nvgFill(vg)
     end
 
-    -- 3) 边框
+    -- 3) 三个切片统一单层金色边框；选中只增强亮度和线宽，不再叠多层框。
+    slicePath(vg, i)
     if isSelected then
-        if state == "active" then
-            for g = 3, 1, -1 do
-                slicePath(vg, i, g * 5)
-                nvgStrokeColor(vg, nvgRGBA(0xe8, 0xc9, 0x6a, math.floor(40 + breathe * 40)))
-                nvgStrokeWidth(vg, 3)
-                nvgStroke(vg)
-            end
-        end
-        slicePath(vg, i)
-        nvgStrokeColor(vg, nvgRGBA(0xff, 0xef, 0x67, 235))
+        nvgStrokeColor(vg, nvgRGBA(SLICE_SELECTED[1], SLICE_SELECTED[2], SLICE_SELECTED[3], 245))
         nvgStrokeWidth(vg, 4)
-        nvgStroke(vg)
-    elseif state == "active" then
-        slicePath(vg, i)
-        nvgStrokeColor(vg, nvgRGBA(0xe8, 0xc9, 0x6a, 210))
-        nvgStrokeWidth(vg, 3)
-        nvgStroke(vg)
-    elseif state == "next" then
-        slicePath(vg, i, 3 + breathe * 5)
-        nvgStrokeColor(vg, nvgRGBA(0x72, 0xe9, 0xff, math.floor(70 + breathe * 110)))
-        nvgStrokeWidth(vg, 2)
-        nvgStroke(vg)
-        slicePath(vg, i)
-        nvgStrokeColor(vg, nvgRGBA(0x72, 0xe9, 0xff, 190))
-        nvgStrokeWidth(vg, 3)
-        nvgStroke(vg)
     else
-        slicePath(vg, i)
-        nvgStrokeColor(vg, nvgRGBA(70, 78, 98, 140))
-        nvgStrokeWidth(vg, 3)
-        nvgStroke(vg)
+        nvgStrokeColor(vg, nvgRGBA(SLICE_FRAME[1], SLICE_FRAME[2], SLICE_FRAME[3], SLICE_FRAME_ALPHA))
+        nvgStrokeWidth(vg, 2)
     end
+    nvgStroke(vg)
 
     -- 4) 顶部阶段铭牌：罗马数字 + 名称（上移到切片上方，不压 CG）
     local l0, r0 = sliceEdges(i, 0)

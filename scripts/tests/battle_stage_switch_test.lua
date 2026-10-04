@@ -321,46 +321,134 @@ local function testArtifactTeamSchema()
     check(ArtifactSchema.getEquippedId(legacy, 1, 1, 2) == nil, "旧档装配不会泄漏到队2")
     check(ArtifactSchema.getEquippedId(legacy, 1, 1, 3) == nil, "旧档装配不会泄漏到队3")
 
-    -- 同一实例可跨队复用（实例可复用方案）
-    local data = { bag = { { id = "7", artifactId = 5, quality = 2, value = 50 } }, nextId = 8 }
+    -- 同类型的独立实例分队合法；同一实例跨队必须由正式服务拒绝。
+    -- Schema setter只维护引用唯一性，不是装配权限入口，不能用它伪造跨队成功。
+    local data = {
+        bag = {
+            { id = "7", artifactId = 5, quality = 2, value = 50 },
+            { id = "8", artifactId = 5, quality = 2, value = 60 },
+            { id = "9", artifactId = 5, quality = 2, value = 70 },
+        },
+        nextId = 10,
+    }
     ArtifactSchema.normalizeModule(data)
-    ArtifactSchema.setEquippedId(data, 2, 1, "7", 1)
-    ArtifactSchema.setEquippedId(data, 2, 1, "7", 2)
-    ArtifactSchema.setEquippedId(data, 3, 2, "7", 3)
-    check(ArtifactSchema.getEquippedId(data, 2, 1, 1) == "7"
-        and ArtifactSchema.getEquippedId(data, 2, 1, 2) == "7"
-        and ArtifactSchema.getEquippedId(data, 3, 2, 3) == "7", "同一实例可同时装到三支队伍")
+    local function countRefs(module, id)
+        local count = 0
+        for team = 1, ArtifactSchema.TEAM_COUNT do
+            for slot = 1, ArtifactSchema.SLOT_COUNT do
+                for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
+                    if tostring(ArtifactSchema.getEquippedId(module, slot, subSlot, team) or "") == id then
+                        count = count + 1
+                    end
+                end
+            end
+        end
+        return count
+    end
 
-    -- 各队独立查找/卸下
-    check((ArtifactSchema.findEquippedSlot(data, "7", 1)) == 2, "队1 查找命中本队槽位")
-    local teamAny, slotAny = ArtifactSchema.findEquippedSlotAnyTeam(data, "7")
-    check(teamAny == 1 and slotAny == 2, "任意队查找优先命中队1")
+    local Service = require("rules.artifact.ArtifactService")
+    local PDM = require("rules.character.PlayerDataManager")
+    local uid = 984219
+    -- 独立内存玩家，正式满足三队/双格门槛；不启动主入口或加载存档。
+    PDM.AttachLocalModules(uid, { artifacts = data, player = { level = 60 }, battle = { maxStageId = 1906 } })
+    local ok, err = pcall(function()
+        check(Service.Equip(uid, "7", 2, 1, 1) == true, "队1 装配独立实例7")
+        check(Service.Equip(uid, "8", 2, 1, 2) == true, "队2 同类型独立实例8 可装配")
+        check(Service.Equip(uid, "9", 3, 2, 3) == true, "队3 同类型独立实例9 可装配")
+        for team = 2, 3 do
+            local before = cjson.encode(data)
+            local bagRef, equippedRef = data.bag, data.equippedByTeam
+            local targetSlot, targetSubSlot = team == 2 and 2 or 3, team == 2 and 1 or 2
+            local accepted, reason = Service.Equip(uid, "7", targetSlot, targetSubSlot, team)
+            check(accepted == false and tostring(reason or ""):find("先卸下", 1, true) ~= nil,
+                "同一实例7 跨队" .. team .. " 被正式服务拒绝，要求先卸下")
+            check(cjson.encode(data) == before and data.bag == bagRef and data.equippedByTeam == equippedRef,
+                "跨队" .. team .. " 拒绝不卸原队、不覆盖目标、不修改数据")
+        end
+        check(ArtifactSchema.getEquippedId(data, 2, 1, 1) == "7"
+            and ArtifactSchema.getEquippedId(data, 2, 1, 2) == "8"
+            and ArtifactSchema.getEquippedId(data, 3, 2, 3) == "9", "三队保留各自独立instance ID")
+        check(countRefs(data, "7") == 1 and countRefs(data, "8") == 1 and countRefs(data, "9") == 1,
+            "三个神器实例均为全队唯一占用")
+
+        -- 同队内重装依然允许移动，且不会改变其他队独立实例。
+        check(Service.Equip(uid, "8", 1, 1, 2) == true
+            and ArtifactSchema.getEquippedId(data, 2, 1, 2) == nil
+            and ArtifactSchema.getEquippedId(data, 1, 1, 2) == "8", "同队内重装实例8 自动移出旧位")
+        check(ArtifactSchema.getEquippedId(data, 2, 1, 1) == "7"
+            and ArtifactSchema.getEquippedId(data, 3, 2, 3) == "9", "队2 同队移位不影响队1/3")
+    end)
+    PDM.RemovePlayer(uid, true)
+    if not ok then error(err) end
+
+    -- 各队独立查找/卸下，不再期待同一实例在别队有副本。
+    for _, position in ipairs({ { "7", 1, 2, 1 }, { "8", 2, 1, 1 }, { "9", 3, 3, 2 } }) do
+        local slot, subSlot = ArtifactSchema.findEquippedSlot(data, position[1], position[2])
+        check(slot == position[3] and subSlot == position[4], "队" .. position[2] .. " 查找只命中本队实例" .. position[1])
+        local teamAny, slotAny, subAny = ArtifactSchema.findEquippedSlotAnyTeam(data, position[1])
+        check(teamAny == position[2] and slotAny == position[3] and subAny == position[4],
+            "任意队查找返回实例" .. position[1] .. " 的唯一实际位置")
+    end
+    check(ArtifactSchema.findEquippedSlot(data, "8", 1) == nil
+        and ArtifactSchema.findEquippedSlot(data, "7", 2) == nil
+        and ArtifactSchema.findEquippedSlot(data, "8", 3) == nil, "本队查找不泄漏其他队实例")
     ArtifactSchema.setEquippedId(data, 2, 1, nil, 1)
-    check(ArtifactSchema.getEquippedId(data, 2, 1, 1) == nil, "卸下队1 装配")
-    check(ArtifactSchema.getEquippedId(data, 2, 1, 2) == "7", "卸队1 不影响队2 装配")
-    local t2 = ArtifactSchema.findEquippedSlotAnyTeam(data, "7")
-    check(t2 == 2, "队1 卸下后任意队查找命中队2")
+    check(ArtifactSchema.getEquippedId(data, 2, 1, 1) == nil
+        and ArtifactSchema.findEquippedSlotAnyTeam(data, "7") == nil, "卸下队1 后实例7 全队无占用")
+    check(ArtifactSchema.getEquippedId(data, 1, 1, 2) == "8"
+        and ArtifactSchema.getEquippedId(data, 3, 2, 3) == "9", "卸队1 不影响队2/3 独立实例")
+    local t2 = ArtifactSchema.findEquippedSlotAnyTeam(data, "8")
+    check(t2 == 2, "队1 卸下后实例8 仍唯一属于队2")
 
-    -- 同队内实例唯一：队2 再装到别处应清掉旧位
-    ArtifactSchema.setEquippedId(data, 1, 1, "7", 2)
-    check(ArtifactSchema.getEquippedId(data, 2, 1, 2) == nil
-        and ArtifactSchema.getEquippedId(data, 1, 1, 2) == "7", "同队内重装实例自动移出旧位")
-
-    -- 非法 teamIdx 回落 1
+    -- 非法 teamIdx 回落 1，使用已卸下实例7，不挪走其他队已占用实例。
     ArtifactSchema.setEquippedId(data, 4, 1, "7", nil)
     check(ArtifactSchema.getEquippedId(data, 4, 1, 1) == "7", "teamIdx 缺省回落队1")
     ArtifactSchema.setEquippedId(data, 4, 1, "7", 99)
     check(ArtifactSchema.getEquippedId(data, 4, 1, 1) == "7", "teamIdx 越界回落队1")
 
-    -- 存档 roundtrip：dehydrate → normalize 后三队装配保持
+    -- 存档 JSON roundtrip：三队独立实例和正式唯一占用一并保持。
     local lean = ArtifactSchema.dehydrateModule(data)
     check(lean.e == nil and type(lean.et) == "table", "dehydrate 输出 et 分队结构且不再输出旧 e")
-    local restored = { bag = { { id = "7", artifactId = 5, quality = 2, value = 50 } } }
-    for k, v in pairs(lean) do restored[k] = v end
+    local restored = cjson.decode(cjson.encode(lean))
     ArtifactSchema.normalizeModule(restored)
-    check(ArtifactSchema.getEquippedId(restored, 1, 1, 2) == "7"
-        and ArtifactSchema.getEquippedId(restored, 3, 2, 3) == "7"
-        and ArtifactSchema.getEquippedId(restored, 4, 1, 1) == "7", "存档 roundtrip 后各队装配一致")
+    check(ArtifactSchema.getEquippedId(restored, 1, 1, 2) == "8"
+        and ArtifactSchema.getEquippedId(restored, 3, 2, 3) == "9"
+        and ArtifactSchema.getEquippedId(restored, 4, 1, 1) == "7", "存档 JSON roundtrip 后三队独立装配一致")
+    check(#restored.bag == 3 and countRefs(restored, "7") == 1
+        and countRefs(restored, "8") == 1 and countRefs(restored, "9") == 1,
+        "存档 JSON roundtrip 保留背包三个实例且全队唯一")
+
+    -- 旧跨队复用档按队/号位/子格保留首次引用；后续重复只卸引用，不删实体。
+    local reused = {
+        bag = {
+            { id = "7", artifactId = 5, quality = 2, value = 50 },
+            { id = "8", artifactId = 5, quality = 2, value = 60 },
+            { id = "9", artifactId = 5, quality = 2, value = 70 },
+        },
+        equippedByTeam = {
+            ["1"] = { ["2"] = { ["1"] = 7 } },
+            ["2"] = { ["1"] = { ["1"] = "7", ["2"] = "8" } },
+            ["3"] = { ["3"] = { ["1"] = "7", ["2"] = "9" } },
+        },
+        nextId = 10,
+    }
+    ArtifactSchema.normalizeModule(reused)
+    check(ArtifactSchema.getEquippedId(reused, 2, 1, 1) == "7"
+        and ArtifactSchema.getEquippedId(reused, 1, 1, 2) == nil
+        and ArtifactSchema.getEquippedId(reused, 3, 1, 3) == nil
+        and countRefs(reused, "7") == 1, "旧跨队重复引用归一：只保留队1 首个占用")
+    check(ArtifactSchema.getEquippedId(reused, 1, 2, 2) == "8"
+        and ArtifactSchema.getEquippedId(reused, 3, 2, 3) == "9"
+        and #reused.bag == 3, "旧档迁移保留三队独立实例及全部背包实体")
+    ArtifactSchema.normalizeModule(reused)
+    check(countRefs(reused, "7") == 1 and countRefs(reused, "8") == 1 and countRefs(reused, "9") == 1,
+        "重复归一不会重新产生跨队复用")
+    local reusedRestored = cjson.decode(cjson.encode(ArtifactSchema.dehydrateModule(reused)))
+    ArtifactSchema.normalizeModule(reusedRestored)
+    check(countRefs(reusedRestored, "7") == 1
+        and ArtifactSchema.getEquippedId(reusedRestored, 1, 2, 2) == "8"
+        and ArtifactSchema.getEquippedId(reusedRestored, 3, 2, 3) == "9"
+        and #reusedRestored.bag == 3, "旧重复档存档往返后保持归一结果与三队隔离")
 
     -- [双格改版] 解锁等级：Lv30 第1格、Lv60 第2格，30 级前 0 格
     check(ArtifactSchema.SUB_SLOT_COUNT == 2, "SUB_SLOT_COUNT 改为 2（双格）")

@@ -574,7 +574,8 @@ local function drawLandscape(w, h)
     if resultSlot_ and (resultSlot_.kind == "samsara_first_read" or resultSlot_.kind == "samsara_replay") then
         -- 只有无奖切片展示跳过入口；旧情景的视觉和输入保持原样。
         nvgFontSize(vg_, math.max(18, h * 0.024))
-        nvgText(vg_, w * 0.96, h * 0.12, "跳过 · 保留夹页", nil)
+        local skipLabel = resultSlot_.nodeKey == "samsara.opening_roster" and "跳过 · 保留记录" or "跳过 · 保留夹页"
+        nvgText(vg_, w * 0.96, h * 0.12, skipLabel, nil)
     end
 
     if typingDone_ and not dismissing_ then

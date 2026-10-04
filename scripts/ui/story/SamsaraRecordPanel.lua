@@ -1,5 +1,5 @@
 -- ============================================================================
--- SamsaraRecordPanel - 七项轻量剧情记录：日志/货牌、征用三段与两段镜像，无奖励与新选择
+-- SamsaraRecordPanel - 八项轻量剧情记录：既有七项与名册前史，无奖励与新选择
 -- 基于 scaffold-2d 的生命周期分离；复用项目 raw NanoVG 管线，不创建上下文/帧。
 -- draw / handleInput / drag 的 x,y,w,h 均为主渲染器的窗口逻辑坐标。
 -- 1920×1080 CONTAIN 字号 + 全窗响应式布局；字体 sans 由主初始化创建。
@@ -24,7 +24,9 @@ local TAB_LABELS = {
     ["samsara.returned_manifest"] = "十二号箱",
     ["samsara.dog_mirror"] = "狗的绳结",
     ["samsara.bell_mirror"] = "第三声铃",
+    ["samsara.opening_roster"] = "名册末页",
 }
+local OPENING_KEY = "samsara.opening_roster"
 ---@class SamsaraMirrorRecordSpec
 ---@field evidenceId string
 ---@field stage string
@@ -144,6 +146,7 @@ end
 
 ---@param record SamsaraRecordView
 local function statusText(record)
+    if record.key == OPENING_KEY and record.referenceOnly then return "开场经历未确认 · 原文参考" end
     if MIRROR_RECORDS[record.key] and record.referenceOnly then return "亲历未确认 · 原文参考" end
     if record.status == "pending" then return "待阅" end
     if record.status == "finished" then return "已读" end
@@ -155,6 +158,7 @@ end
 ---@param record SamsaraRecordView
 local function canRead(record)
     if record.referenceOnly or SamsaraSlicePlayer.isSavePending() then return false end
+    if record.key == OPENING_KEY and record.eventTrusted ~= true then return false end
     local mirror = MIRROR_RECORDS[record.key]
     if mirror and record.status == "pending" then
         -- eventTrusted包含带ID的旧段中断；只允许显式补读，不把中断写成旧段已读。
@@ -165,6 +169,7 @@ end
 
 ---@param record SamsaraRecordView
 local function actionText(record)
+    if record.key == OPENING_KEY and record.referenceOnly then return "仅供查阅" end
     if MIRROR_RECORDS[record.key] and record.referenceOnly then return "仅供查阅" end
     if SamsaraSlicePlayer.isSavePending() then return "保存中" end
     if MIRROR_RECORDS[record.key] and record.status == "pending" and not canRead(record) then return "亲历未确认" end
@@ -178,6 +183,26 @@ local function contentBlocks(record)
     local blocks = {}
     local function add(text, font, muted)
         blocks[#blocks + 1] = { text = text, font = font or BODY_FONT, muted = muted == true }
+    end
+
+    if record.key == OPENING_KEY then
+        if record.status == "unsupported" then
+            add("这份剧情记录尚未开放。")
+        elseif record.referenceOnly then
+            add("剧情原文／开场经历未确认", 40)
+            add("旧档的开场完成标记和三人入队记录不足以确认本段经历。以下只供静态查阅，不标已读，不补造名册或纪念罐取得史。", 32, true)
+            for _, step in ipairs(record.referenceSteps or {}) do add(step.name .. "：" .. step.text) end
+        elseif record.status == "pending" then
+            add("开场来信、门厅点卯与三段入队已在本次播放中结束；名册最末页待阅。")
+            add("点击“待阅”阅读队伍前史，不再次入队，不领取奖励。", 32, true)
+        else
+            add(record.status == "skipped" and "此前已跳过本段，可点击“回看”阅读原文。"
+                or "此前已读本段，可点击“回看”阅读原文。", 32, true)
+        end
+        if record.eventTrusted then add("来源：当前开场链逐段完成记录。", 32, true) end
+        add("名册与罐头是当前队纪念物；本段不授予物证编号或镜像凭片。", 32, true)
+        add("后续龙的罐头剧情与刻痕核验尚未开放。", 32, true)
+        return blocks
     end
 
     local mirror = MIRROR_RECORDS[record.key]
@@ -378,7 +403,7 @@ function Panel.draw(vg, w, h)
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
     drawButton(ctx, l.closeX, l.closeY, l.closeW, l.closeH, "关闭", true)
 
-    -- 标签按key绑定，七项最窄时四字×30px仍留有边距；点击和绘制同用layout。
+    -- 标签按key绑定，八项最窄时四字×30px仍留有边距；点击和绘制同用layout。
     for index, item in ipairs(records) do
         local tabX = l.contentX + (index - 1) * l.tabsW
         drawButton(ctx, tabX, l.tabsY, l.tabsW - l.tabsGap, l.tabsH, TAB_LABELS[item.key] or "剧情记录",

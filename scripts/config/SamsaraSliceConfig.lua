@@ -1,6 +1,6 @@
--- SamsaraSliceConfig.lua — N02/N03、N12–N14与N07/N09无奖切片；不注册旧情景编号或经济奖励。
+-- SamsaraSliceConfig.lua — 八段无奖切片；不注册旧情景编号或经济奖励。
 -- 正文来源：未寄出的撤离令-剧情正文普通至炼狱-1003.md；N14采用接线方案独立语境。
--- N07/N09仅提供E03-A/C初片，后续批注未开放，不补造E03-B。
+-- N01仅建立当前队名册/纪念罐前史；N07/N09仍不补造E03-B或后续核验。
 -- 已核对人物映射：1=大狗嚼，2=黄桃龙，3=叮咚鸡，10=铁匠，21=圣女。
 
 ---@class SamsaraSliceStep
@@ -20,7 +20,7 @@
 ---@field title string
 ---@field mode string
 ---@field steps SamsaraSliceStep[]
----@field evidence SamsaraSliceEvidence
+---@field evidence SamsaraSliceEvidence? 无物证的队伍前史不编造E编号
 ---@field requiredStage number?
 ---@field dependency string?
 ---@field unlockText string?
@@ -33,11 +33,12 @@ local Config = {
     MANIFEST_KEY = "samsara.returned_manifest",
     DOG_MIRROR_KEY = "samsara.dog_mirror",
     BELL_MIRROR_KEY = "samsara.bell_mirror",
+    OPENING_KEY = "samsara.opening_roster",
     CONTENT_VERSION = 1,
 }
--- 旧五项顺序不变；镜像两项追加，不建立N08或其他处理前置。
+-- 旧七项顺序不变；N01追加，其他事件的前置仍不变。
 Config.KEYS = { Config.NODE_KEY, Config.CARGO_KEY, Config.ORDER_KEY, Config.PEOPLE_KEY, Config.MANIFEST_KEY,
-    Config.DOG_MIRROR_KEY, Config.BELL_MIRROR_KEY }
+    Config.DOG_MIRROR_KEY, Config.BELL_MIRROR_KEY, Config.OPENING_KEY }
 
 local E02_TEXT = "商队药箱十二。\n内装药、夹板、干粮。箱底补铆一次。\n押运：城镇医所支队。\n遇截地点：林道路标外。\n截取方口令：“先救人。”\n回收：货牌。箱体未回。\n\n铁匠手注：\n图中歪铆是箱底修补位置，不是货牌铆钉。货能认，人别再认错。"
 local E02_ANNOTATION = "货牌位置与保全库十二号箱底拓片吻合。同物件跨两次交接有完整编号，未发现复制箱体。受害押运者另记人员卷，不并入“物资损失”。"
@@ -69,7 +70,22 @@ end
 ---@param source string? N12原件来源：player_record / case_archive
 ---@return SamsaraSliceDefinition?
 function Config.get(key, source)
-    if key == Config.NODE_KEY then
+    if key == Config.OPENING_KEY then
+        return {
+            title = "名册最末页", mode = "small",
+            unlockText = "开场经历尚未确认",
+            steps = {
+                { name = "旁白", text = "叮咚鸡整理名册。出征页已有三人的名字，背面是没有填过的回程页。" },
+                { characterId = 3, name = "叮咚鸡", text = "叮咚。出征人数：三。回来人数：待填。" },
+                { characterId = 2, name = "黄桃龙", text = "为什么待填？现在填三，不就好了？" },
+                { characterId = 3, name = "叮咚鸡", text = "回来以后填。" },
+                { characterId = 1, name = "大狗嚼", text = "叫！本狗负责把“三”带回来。一个都不少！" },
+                { name = "远征长", text = "那就把这页留好。" },
+                { characterId = 2, name = "黄桃龙", text = "我也留好罐头。回来庆祝用，路上……只吃一点点。" },
+                { name = "旁白", text = "她把一只未开封的罐头放在名册旁。盒盖已有两道浅刻痕，第三道只刻了一半。" },
+            },
+        }
+    elseif key == Config.NODE_KEY then
         return {
             title = "夹在日志里的回程页", mode = "small", requiredStage = 104,
             unlockText = "通关普通1-4后开放",

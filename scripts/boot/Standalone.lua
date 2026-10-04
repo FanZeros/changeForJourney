@@ -69,6 +69,8 @@ local SamsaraSlicePlayer = require("systems.SamsaraSlicePlayer")
 local SamsaraSlicePlayback = require("systems.SamsaraSlicePlayback")
 local SamsaraRecordPanel = require("ui.story.SamsaraRecordPanel")
 local introChainActive_ = false
+---@type number?
+local introEpoch_ = nil
 ---@type fun()|nil
 local introNext_ = nil
 
@@ -458,6 +460,7 @@ function Standalone.Start()
 end
 
 function Standalone.Stop()
+    introChainActive_, introEpoch_, introNext_ = false, nil, nil
     SamsaraSlicePlayer.cancel()
     StandaloneSave.Flush()  -- [单机存档] 退出前立即落盘
     SpinePowerUpEffect.destroy()
@@ -552,10 +555,34 @@ end
 --- 信件结束后的门厅点卯（横屏第二幕），再接三人入队
 local function finishIntro_()
     introChainActive_ = false
+    introEpoch_ = nil
     print("[Standalone] intro chain finished, unlock game")
     GameBGM.setScene("battle", { fromStart = true })
     markIntroCompleted_()
     showOfflineRewardPanel_()
+end
+
+-- 开场结果逐段带代次记录；不是旧预写introCompleted，也不是无ID广播。
+local function showOpeningPart_(key, cfg, nextPart)
+    local epoch = introEpoch_
+    local ok, shown = pcall(ScenarioDialogue.show, {
+        mode = cfg.mode or "large", background = cfg.background,
+        title = cfg.title, steps = cfg.steps,
+        completionToken = { nodeKey = "opening." .. key, contextEpoch = epoch },
+        onResult = function(result)
+            if not introChainActive_ or epoch ~= introEpoch_ then return end
+            SamsaraSlicePlayer.noteOpeningResult(key, result.reason, epoch)
+            if result.reason == "finished" or result.reason == "dismissed" or result.reason == "skipped" then
+                print("[Standalone] opening part handled key=" .. key .. " reason=" .. result.reason)
+                introNext_ = nextPart
+            end
+        end,
+    })
+    if not ok or shown ~= true then
+        SamsaraSlicePlayer.noteOpeningResult(key, "failed", epoch)
+        print("[Standalone] opening part unavailable key=" .. key .. " result=" .. tostring(shown))
+        introNext_ = nextPart
+    end
 end
 
 local function playJoinAt_(index)
@@ -568,21 +595,13 @@ local function playJoinAt_(index)
     local cfg = joins[index]
     if not cfg or not cfg.steps or #cfg.steps == 0 then
         print("[Standalone] starter join missing index=" .. tostring(index))
-        playJoinAt_(index + 1)
+        SamsaraSlicePlayer.noteOpeningResult("join." .. tostring(index), "failed", introEpoch_)
+        introNext_ = function() playJoinAt_(index + 1) end
         return
     end
     print("[Standalone] play starter join " .. index .. "/" .. #joins
         .. " title=" .. tostring(cfg.title) .. " steps=" .. #cfg.steps)
-    ScenarioDialogue.show({
-        mode = cfg.mode or "large",
-        background = cfg.background,
-        title = cfg.title,
-        steps = cfg.steps,
-        onFinish = function()
-            print("[Standalone] starter join finished index=" .. tostring(index))
-            introNext_ = function() playJoinAt_(index + 1) end
-        end,
-    })
+    showOpeningPart_("join." .. tostring(index), cfg, function() playJoinAt_(index + 1) end)
 end
 
 local function startStarterJoins_()
@@ -591,9 +610,10 @@ end
 
 local function startOpeningBriefing_()
     local cfg = ScenarioDialogueConfig.OPENING
-    if not cfg or not cfg.steps then
+    if not cfg or not cfg.steps or #cfg.steps == 0 then
         print("[Standalone] OPENING missing, go straight to joins")
-        startStarterJoins_()
+        SamsaraSlicePlayer.noteOpeningResult("opening", "failed", introEpoch_)
+        introNext_ = startStarterJoins_
         return
     end
     print("[Standalone] letter finished, play opening briefing steps=" .. #cfg.steps)
@@ -603,16 +623,10 @@ local function startOpeningBriefing_()
         for k, v in pairs(step) do openingSteps[i][k] = v end
         openingSteps[i].background = cfg.background
     end
-    ScenarioDialogue.show({
-        mode = cfg.mode or "large",
-        background = cfg.background,
-        title = cfg.title,
-        steps = openingSteps,
-        onFinish = function()
-            print("[Standalone] opening briefing finished, start joins")
-            introNext_ = startStarterJoins_
-        end,
-    })
+    showOpeningPart_("opening", {
+        mode = cfg.mode, background = cfg.background,
+        title = cfg.title, steps = openingSteps,
+    }, startStarterJoins_)
 end
 
 --- 首通/入场排队的情景，等奖励弹窗关掉后再用横屏对话条播放
@@ -703,7 +717,15 @@ local function startIntroChain_()
     local handled = localSendAction("grant_starter_trio", {})
     print("[Standalone] grant starter trio at intro start handled=" .. tostring(handled))
     GameBGM.setScene("letter", { fromStart = true })
-    LetterIntro.start(startOpeningBriefing_)
+    -- 预写标记会替换session；在其完成后才捕获本次开场的实际来源代次。
+    local epoch = SamsaraSlicePlayer.beginOpening() or SamsaraSlicePlayer.getContextEpoch()
+    introEpoch_ = epoch
+    introNext_ = nil
+    LetterIntro.start(function()
+        if not introChainActive_ or epoch ~= introEpoch_ then return end
+        SamsaraSlicePlayer.noteOpeningResult("letter", "finished", epoch)
+        startOpeningBriefing_()
+    end)
 end
 
 --- 清除存档后重置客户端状态并回到开始界面
@@ -718,6 +740,7 @@ function Standalone.requestResetToStartScreen()
     SamsaraRecordPanel.close()
     ScenarioDialogue.reset()
     introChainActive_ = false
+    introEpoch_ = nil
     introNext_ = nil
 
     -- 1. 停止 BGM & SFX

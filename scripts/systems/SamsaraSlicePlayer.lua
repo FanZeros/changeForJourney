@@ -1,4 +1,4 @@
--- SamsaraSlicePlayer.lua — 七段无奖切片数据层；由主仲裁器决定何时开始展示。
+-- SamsaraSlicePlayer.lua — 八段无奖切片数据层；由主仲裁器决定何时开始展示。
 -- 不show、不订阅无ID完成广播、不调用任何领奖/教程/经济协议。
 local Config = require("config.SamsaraSliceConfig")
 local Schema = require("shared.session.SamsaraStorySchema")
@@ -58,6 +58,13 @@ local FIRST_READ, REPLAY = "samsara_first_read", "samsara_replay"
 local CARGO, ORDER, PEOPLE = "samsara.cargo_match", "samsara.gray_order", "samsara.people_record"
 local MANIFEST = "samsara.returned_manifest"
 local DOG_MIRROR, BELL_MIRROR = "samsara.dog_mirror", "samsara.bell_mirror"
+local OPENING = "samsara.opening_roster"
+local OPENING_STEPS = { "letter", "opening", "join.1", "join.2", "join.3" }
+---@type number?
+local openingIndex_ = nil
+local function openingEventTrusted(node)
+    return node ~= nil and node.eligible == true and node.eligibilitySource == "live_opening_chain"
+end
 local MIRRORS = {
     [DOG_MIRROR] = { stage = 2505, legacyId = 64, source = "live_clear_2505", evidenceId = "E03-A" },
     [BELL_MIRROR] = { stage = 2905, legacyId = 67, source = "live_clear_2905", evidenceId = "E03-C" },
@@ -83,7 +90,7 @@ end
 --- 取消只失效进程租约，不清待存结果、不标完成、不递归播放。
 function Player.cancel()
     epoch_ = epoch_ + 1
-    lease_, request_, takenKey_ = nil, nil, nil
+    lease_, request_, takenKey_, openingIndex_ = nil, nil, nil, nil
 end
 
 --- 旧结果桥捕获当前进程代次，清档/Stop后的迟到遭遇不能污染新档。
@@ -97,8 +104,13 @@ end
 local function definition(key)
     local ok, cfg = pcall(Config.get, key or Config.NODE_KEY)
     if not ok or type(cfg) ~= "table" or cfg.mode ~= "small"
-        or type(cfg.title) ~= "string" or type(cfg.steps) ~= "table" or #cfg.steps == 0
-        or type(cfg.evidence) ~= "table" or type(cfg.evidence.id) ~= "string"
+        or type(cfg.title) ~= "string" or type(cfg.steps) ~= "table" or #cfg.steps == 0 then
+        return nil
+    end
+    -- N01是无物证的队伍前史；只对这一已知节点放行，不放宽旧七段证据契约。
+    if key == OPENING then
+        if cfg.evidence ~= nil or cfg["rewards"] ~= nil then return nil end
+    elseif type(cfg.evidence) ~= "table" or type(cfg.evidence.id) ~= "string"
         or type(cfg.evidence.title) ~= "string" or type(cfg.evidence.text) ~= "string" then
         return nil
     end
@@ -356,6 +368,56 @@ function Player.onSessionUpdated(session)
     session_, story_ = session, story
 end
 
+--- 只跟踪当前进程实际播放的开场；旧introCompleted与角色拥有史不能替代逐段结果。
+---@return number? contextEpoch
+function Player.beginOpening()
+    local story = currentStory()
+    if not story or not definition(OPENING) then return nil end
+    local node, supported = nodeState(story, OPENING)
+    if not supported or openingEventTrusted(node) then return nil end
+    Player.cancel()
+    openingIndex_ = 1
+    print("[SamsaraSlicePlayer] 开场来源跟踪开始 epoch=" .. tostring(epoch_))
+    return epoch_
+end
+
+--- 前四段仅保留进程顺序；最后一段真实结束才建立N01待阅并落盘。
+---@param step string
+---@param reason string
+---@param contextEpoch number?
+---@return boolean changed
+function Player.noteOpeningResult(step, reason, contextEpoch)
+    if contextEpoch ~= epoch_ or not openingIndex_ then return false end
+    local story = currentStory()
+    if not story then return false end
+    local node, supported = nodeState(story, OPENING)
+    if not supported or not definition(OPENING) then openingIndex_ = nil; return false end
+    local handled = reason == "finished" or reason == "dismissed" or reason == "skipped"
+    if not handled then
+        openingIndex_ = nil
+        print("[SamsaraSlicePlayer] 开场来源中断 step=" .. tostring(step) .. " reason=" .. tostring(reason))
+        return false
+    end
+    -- 已接收结果的重复通知不能破坏正在播放的下一段，也不能再次授予资格。
+    for index = 1, openingIndex_ - 1 do
+        if OPENING_STEPS[index] == step then return false end
+    end
+    if OPENING_STEPS[openingIndex_] ~= step then
+        openingIndex_ = nil
+        print("[SamsaraSlicePlayer] 开场来源顺序不完整 step=" .. tostring(step))
+        return false
+    end
+    print("[SamsaraSlicePlayer] 开场来源确认 step=" .. step .. " reason=" .. reason)
+    if openingIndex_ < #OPENING_STEPS then openingIndex_ = openingIndex_ + 1; return false end
+    openingIndex_ = nil
+    if openingEventTrusted(node) then return false end
+    if not node then node = {}; story.nodes[OPENING] = node end
+    node.eligible, node.eligibilitySource, node.contentVersion = true, "live_opening_chain", Config.CONTENT_VERSION
+    node.resolution, node.manualOnly = nil, nil
+    persist()
+    return true
+end
+
 --- 只由真实首通通知调用，不在这里启动展示或改旧队列。
 ---@param id number|string
 ---@return boolean changed
@@ -441,6 +503,7 @@ function Player.noteLegacyResult(id, reason, contextEpoch)
 end
 
 local function readyFor(story, key, node)
+    if key == OPENING then return openingEventTrusted(node) end
     local requiresLegacy = key == Config.NODE_KEY or key == MANIFEST or MIRRORS[key] ~= nil
     return dependencyReady(story, key) and (not requiresLegacy or legacyReady(node, key))
 end
@@ -450,7 +513,7 @@ function Player.peekReady()
     if lease_ then return nil end
     local story = currentStory()
     if not story then return nil end
-    local autoKeys = { Config.NODE_KEY, MANIFEST, DOG_MIRROR, BELL_MIRROR, CARGO, ORDER, PEOPLE }
+    local autoKeys = { OPENING, Config.NODE_KEY, MANIFEST, DOG_MIRROR, BELL_MIRROR, CARGO, ORDER, PEOPLE }
     for _, key in ipairs(autoKeys) do
         local node, supported = nodeState(story, key)
         if supported and node and node.eligible == true and not processed(node) and node.manualOnly ~= true
@@ -467,6 +530,7 @@ local function allowed(kind, key)
     if not story then return false end
     local node, supported = nodeState(story, key)
     if not supported or not node or node.eligible ~= true then return false end
+    if key == OPENING and not openingEventTrusted(node) then return false end
     if MIRRORS[key] and not mirrorEventTrusted(node, key) then return false end
     if kind == FIRST_READ then return not processed(node) and dependencyReady(story, key) end
     if kind == REPLAY then return processed(node) and dependencyReady(story, key) end
@@ -525,6 +589,7 @@ function Player.onResult(result)
         or result.nodeKey ~= lease_.nodeKey then return false end
     local node, supported = nodeState(story, lease_.nodeKey)
     if not supported or not node or node.eligible ~= true or not dependencyReady(story, lease_.nodeKey) then return false end
+    if lease_.nodeKey == OPENING and not openingEventTrusted(node) then return false end
     if MIRRORS[lease_.nodeKey] and not mirrorEventTrusted(node, lease_.nodeKey) then return false end
     local reason = result.reason
     if reason == "reset" or reason == "replaced" or reason == "failed" then Player.cancel(); return true end
@@ -610,6 +675,14 @@ function Player.getRecord(key)
         if node.eligible == true and dependencyReady(story, key) then
             record.status = processed(node) and node.resolution or "pending"
         end
+    end
+    if key == OPENING then
+        record.eventTrusted = openingEventTrusted(node)
+        if not record.eventTrusted then
+            record.status, record.referenceOnly, record.referenceSteps = "locked", true, cfg.steps
+        end
+        -- 名册与纪念罐是当前队前史，不借E01/E02/E05填成物证。
+        return record
     end
     if MIRRORS[key] then
         record.eventTrusted = mirrorEventTrusted(node, key) == true

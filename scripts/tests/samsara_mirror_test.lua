@@ -7,7 +7,7 @@ local assertions, failures, cases, passed = 0, 0, 0, 0
 local DOG, BELL = "samsara.dog_mirror", "samsara.bell_mirror"
 local N02, N12, N13, N14, N03 = "samsara.log_leaf", "samsara.cargo_match", "samsara.gray_order", "samsara.people_record", "samsara.returned_manifest"
 local OLD_KEYS = { N02, N12, N13, N14, N03 }
-local KEYS = { N02, N12, N13, N14, N03, DOG, BELL }
+local KEYS = { N02, N12, N13, N14, N03, DOG, BELL, "samsara.opening_roster" }
 local FIRST, REPLAY = "samsara_first_read", "samsara_replay"
 local JSON = cjson
 local MIRRORS = {
@@ -249,13 +249,13 @@ local function finish(f, item, reason)
 end
 
 local function configAndHistoryCases()
-    runCase("七KEY末尾追加/默认N02/正文与初片逐字/配置副本", function()
+    runCase("旧七KEY严格前缀/末尾N01/默认N02/正文与初片逐字/配置副本", function()
         local f = fixture()
         eq(f.Config.DOG_MIRROR_KEY, DOG, "DOG_MIRROR_KEY")
         eq(f.Config.BELL_MIRROR_KEY, BELL, "BELL_MIRROR_KEY")
-        check(same(f.Config.KEYS, KEYS), "旧五KEY索引原样追加")
+        check(same(f.Config.KEYS, KEYS), "旧七KEY索引严格前缀，末尾仅追加N01")
         eq(f.Player.getRecord().key, N02, "省参仍N02")
-        local records = f.Player.getRecords(); eq(#records, 7, "七记录")
+        local records = f.Player.getRecords(); eq(#records, 8, "八记录")
         for index, key in ipairs(KEYS) do eq(records[index].key, key, "索引" .. index) end
         for _, item in ipairs(MIRRORS) do
             local cfg = assert(f.Config.get(item.key))
@@ -800,26 +800,31 @@ end
 
 local function presentationCases()
     for _, item in ipairs(MIRRORS) do
-        runCase("真实Panel七tab/静态参考无请求/长文滚动touch " .. item.key, function()
+        runCase("真实Panel八tab/静态参考无请求/长文滚动touch " .. item.key, function()
             local f = presentation(fixture(fresh(), { clearedStages = { [item.stage] = true } }))
             local before, flushes = copy(f.session), f.flushes
             for _, size in ipairs({ { 1920, 1080 }, { 2340, 1080 }, { 1280, 800 } }) do
                 local w, h = size[1], size[2]
-                eq(f.Panel.selectRecord(item.key), true, "七tab可select镜像")
+                eq(f.Panel.selectRecord(item.key), true, "八tab可select镜像")
                 f.Panel.open(); local text = f.draw(w, h)
                 check(includes(text, "亲历状态未确认"), "静态参考标亲历未知")
                 for _, line in ipairs(item.dialogue) do check(includes(text, line[2]), "参考展示逐字对白") end
                 check(not includes(text, item.text), "参考不公开初片")
-                eq(#f.tabs, 7, "真实绘制七tab")
+                eq(#f.tabs, 8, "真实绘制八tab")
                 for index = 2, #f.tabs do
-                    check(f.tabs[index].x > f.tabs[index - 1].x, "七列中心递增")
-                    check(f.tabs[index].x - f.tabs[index - 1].x > f.tabs[index].width, "七列不重叠")
-                    if index > 2 then check(math.abs((f.tabs[index].x - f.tabs[index - 1].x) - (f.tabs[2].x - f.tabs[1].x)) < 0.001, "七列动态等宽") end
+                    check(f.tabs[index].x > f.tabs[index - 1].x, "八列中心递增")
+                    check(f.tabs[index].x - f.tabs[index - 1].x > f.tabs[index].width, "八列不重叠")
+                    if index > 2 then check(math.abs((f.tabs[index].x - f.tabs[index - 1].x) - (f.tabs[2].x - f.tabs[1].x)) < 0.001, "八列动态等宽") end
                 end
                 local scale = math.min(w / 1920, h / 1080)
-                local last = f.tabs[7]
-                f.Panel.selectRecord(N02); f.Panel.handleInput(last.x * scale, last.y * scale, w, h)
-                check(includes(f.draw(w, h), MIRRORS[2].title), "最后tab实际选N09")
+                local bellTab = f.tabs[7]
+                f.Panel.selectRecord(N02); f.Panel.handleInput(bellTab.x * scale, bellTab.y * scale, w, h)
+                check(includes(f.draw(w, h), MIRRORS[2].title), "第七tab实际选N09")
+                local openingTab = f.tabs[8]
+                f.Panel.selectRecord(N02); f.Panel.handleInput(openingTab.x * scale, openingTab.y * scale, w, h)
+                local openingText = f.draw(w, h)
+                check(includes(openingText, f.Config.get("samsara.opening_roster").title), "第八tab实际选N01")
+                check(includes(openingText, "开场经历未确认"), "N01点击仅查阅不补造亲历")
                 f.Panel.selectRecord(item.key); f.draw(w, h)
                 local action = f.action("仅供查阅")
                 eq(f.Panel.handleInput(action.x * scale, action.y * scale, w, h), true, "参考按钮吞点击")

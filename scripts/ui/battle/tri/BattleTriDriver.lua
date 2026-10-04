@@ -220,6 +220,7 @@ function BattleTriDriver.new(teamIdx, options)
         self.marchNotice = false
         self.kills = 0
         self._clearReported = false
+        self._wipeReported = false
         self._labDefeated = false
         self._labTimedOut = false
         self._labElapsed = 0
@@ -539,12 +540,12 @@ function BattleTriDriver.new(teamIdx, options)
         self.marchNotice = #self.allies > 0
     end
 
-    --- 战斗 tick（须已 mount）
-    function drv:tick(dt)
+    --- 战斗tick使用显式逻辑时钟；单参调用仍由调用方持有原时钟。
+    function drv:tick(realDt, logicDt)
         if not self.active then return end
+        local dt = logicDt or realDt
         self._tickDt = dt
-        self._timeoutElapsed = (self._timeoutElapsed or 0) + dt   -- 超时增伤计时
-        self:tickRewards(dt)
+        self:tickRewards(realDt)
         -- 共享池可以由另一条战线打空：先分发本线死亡，再走失守/胜利早返。
         self:reportDefeatedEnemies()
         if self.terminalRaid and self.terminalRaid.defeated[self.teamIdx] then return end
@@ -556,14 +557,18 @@ function BattleTriDriver.new(teamIdx, options)
             return
         end
         if (self.introTimer or 0) > 0 then
-            self.introTimer = self.introTimer - dt
-            BattleCombat.updateCardAnims(dt)
-            BattleCombat.updateFloatingTexts(dt)
-            BattleCombat.updateHitFlashes(dt)
+            self.introTimer = self.introTimer - realDt
+            BattleCombat.updateCardAnims(realDt)
+            BattleCombat.updateFloatingTexts(realDt)
+            BattleCombat.updateHitFlashes(realDt)
             if self.introTimer <= 0 then self.marchNotice = false end
             return
         end
         if (self.marchTimer or 0) <= 0 then self.marchNotice = false end
+        -- 入场和行军不计入战斗增伤时长，避免纯动画消耗挑战时钟。
+        if (self.marchTimer or 0) <= 0 and (#enemies > 0 or #self.enemyQueue > 0) then
+            self._timeoutElapsed = (self._timeoutElapsed or 0) + dt
+        end
         if self.battleLab then
             self._labElapsed = self._labElapsed + dt
             if self._labElapsed >= self._labTimeLimit then
@@ -659,7 +664,7 @@ function BattleTriDriver.new(teamIdx, options)
             if (self.marchTimer or 0) <= 0 then
                 self:beginMarch()
             end
-            self.marchTimer = self.marchTimer - dt
+            self.marchTimer = self.marchTimer - realDt
             for _, unit in ipairs(allies) do
                 if unit.hp > 0 then
                     local step = math.sin(self.marchTimer * 10) * MARCH_STEP
@@ -668,9 +673,9 @@ function BattleTriDriver.new(teamIdx, options)
                     })
                 end
             end
-            BattleCombat.updateCardAnims(dt)
-            BattleCombat.updateFloatingTexts(dt)
-            BattleCombat.updateHitFlashes(dt)
+            BattleCombat.updateCardAnims(realDt)
+            BattleCombat.updateFloatingTexts(realDt)
+            BattleCombat.updateHitFlashes(realDt)
             if self.marchTimer <= 0 then
                 self:advanceStage()
             end
@@ -682,6 +687,10 @@ function BattleTriDriver.new(teamIdx, options)
                 self._labDefeated = true
                 self.active = false
                 return
+            end
+            if not self._wipeReported then
+                self._wipeReported = true
+                if self.onAllDead then self.onAllDead(self.teamIdx, self.stageId) end
             end
             self:retreatStage()
             return
@@ -782,14 +791,14 @@ function BattleTriDriver.new(teamIdx, options)
         self:reportDefeatedEnemies()
 
         -- 纯视觉层
-        BattleEffects.update(dt)
-        BattleCombat.updateCardAnims(dt)
-        BattleCombat.updateFloatingTexts(dt)
-        BattleCombat.updateHitFlashes(dt)
+        BattleEffects.update(realDt)
+        BattleCombat.updateCardAnims(realDt)
+        BattleCombat.updateFloatingTexts(realDt)
+        BattleCombat.updateHitFlashes(realDt)
     end
 
     --- 便捷: mount + tick
-    function drv:update(dt)
+    function drv:update(dt, logicDt)
         if not self.battleLab then
             require("ui.battle.stage.StageEntryEvents").retry(self.teamIdx)
             self._sigTick = (self._sigTick or 0) + 1
@@ -804,7 +813,7 @@ function BattleTriDriver.new(teamIdx, options)
             end
         end
         self:activate()
-        self:tick(dt)
+        self:tick(dt, logicDt)
     end
 
     return drv

@@ -127,6 +127,7 @@ function Start()
             ["ui.battle.scene.BattleDataRestore"] = true,
             ["ui.battle.scene.BattleMountScope"] = true,
             ["ui.battle.stage.StageEntryEvents"] = true,
+            ["ui.battle.stage.BattleSpeed"] = true,
             ["systems.StoryPlayer"] = true,
             ["boot.StandaloneSave"] = true,
         }

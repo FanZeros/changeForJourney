@@ -11,6 +11,8 @@ local StoryPlayer = {}
 
 ---@type number[]
 local queue_ = {}
+local wipeReserved = false -- 同进程已入队/已take未领取期间仍保留
+local wipePending = false -- 开场未完成时保留真实全灭通知
 
 local PLACE = {
     town = { enter = 23 },
@@ -153,8 +155,36 @@ function StoryPlayer.onStage(stageId, phase)
 end
 
 function StoryPlayer.onWipe()
-    print("[StoryPlayer] wipe hero=" .. tostring(heroId()))
-    enqueueSpec(WIPE)
+    if wipeReserved then return false end
+    for _, id in pairs(WIPE) do
+        if isClaimed(id) then
+            wipePending = false
+            return false
+        end
+    end
+    if session().introCompleted ~= true then
+        wipePending = true
+        return false
+    end
+    wipePending = false
+    local id = resolve(WIPE)
+    if id and StoryPlayer.enqueue(id) then
+        wipeReserved = true
+        print("[StoryPlayer] 首次普通全灭 hero=" .. tostring(heroId()))
+        return true
+    end
+    return false
+end
+
+--- 仅清档重置运行期全灭预留；不覆盖持久化领取账本。
+function StoryPlayer.resetWipe()
+    wipeReserved = false
+    wipePending = false
+    for i = #queue_, 1, -1 do
+        if queue_[i] == 38 or queue_[i] == 39 or queue_[i] == 40 then
+            table.remove(queue_, i)
+        end
+    end
 end
 
 --- 当前情景播完后要接的下一句（如城镇 23 → 24）
@@ -197,6 +227,7 @@ end
 --- 取出下一段可播放情景。没有则返回 nil。
 ---@return table|nil
 function StoryPlayer.take()
+    if wipePending then StoryPlayer.onWipe() end
     while #queue_ > 0 do
         local id = table.remove(queue_, 1)
         if id and not isClaimed(id) then

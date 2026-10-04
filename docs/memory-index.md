@@ -1,5 +1,7 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+> **最新（2026-10-04，三队共有倍速/全灭剧情）**：按用户选项完成全局倍率接三队真实双时钟、普通首次全灭Driver→Page→Boot→Story通知和全局去重；终焉失守、空队及实验室不误报，经济/副本未改。倍速最终15例423检查、全灭53例236检查及20份组合保护通过，官方build成功、491Lua与产物一致、修改Lua LSP无Error。原失败/夹具入场63干扰、新依赖异常及lootbox断言全过但超时、主入口headless超时环境错误均如实记录于审查方案与WORKFLOW_RULES。继续只push `feat1004a/team-parity-fixes` 不推workspace/旧audit、不自动合并，每轮真实AskUserQuestion交接；凭据/生成配置不提交。
+
 > **最新（2026-10-04，账户收益T11/T12完成）**：已按用户选项在 `feat1004a/team-parity-fixes` 实施账户收益两项；6～12有效英雄沿用3倍最大档池，1～5不变，金币/远征经验不倍增；账户收益和掉落不读队一旧关/模式，严格双键首通、跨难度/终焉按实际前驱。补Scene独立收益凭据及读档→周期Sync污染闭环。原专项1951失败后修复，最终430例8861断言全过，17份保护PASS，官方build成功，修改Lua LSP无Error（全仓仍既有诊断）。详情见审查方案本次实施及项目工作流记忆；缺账本保守回退、无头环境错误和未设备验收均披露。普通副本及共有缺陷未改。只push新分支不推workspace/旧audit、不自动合并；每轮真正AskUserQuestion交接，凭据/生成配置不提交。
 
 > **最新（2026-10-04，feat1004a 续开发部署）**：本次从 `audit/team-parity-20261004@a4c80377` 建立 `feat1004a/team-parity-fixes`，游戏和 Git 已部署到 `/workspace` 根，官方 build 成功。只正常推送新任务分支，不推 workspace 系列或旧 audit 分支，不自动合并 PR。T01～T10 为来源分支既有修复；T11/T12 与普通副本规则需下一步选项确认，本轮尚未修改生产 Lua。协作要求继续强化于 `memory/WORKFLOW_RULES.md`，每轮如实简报后实际调用 AskUserQuestion；全局记忆写入 Internal error，不虚称成功。凭据与本地生成配置不提交。

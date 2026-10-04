@@ -30,6 +30,7 @@ local BattleStats       = require("systems.BattleStats")
 local I18n              = require("core.I18n")
 local RCH               = require("systems.RelicConditionHandler")
 local BattleMountScope  = require("ui.battle.scene.BattleMountScope")
+local BattleSpeed       = require("ui.battle.stage.BattleSpeed")
 
 -- 只在显示边界翻译；驱动进度、源关卡名和地图缓存仍使用原始配置。
 local function stageDisplayName(stageId)
@@ -54,6 +55,7 @@ local l1RowImages = {}    -- 跨章图尚未就绪时保留本行最近成功加
 local triOnKill = nil     -- function(data)（由宿主注入，与 BattleScene.onEnemyKill 同构）
 local triOnDrop = nil     -- function(data)（击杀掉落，与 BattleScene.onEnemyDrop 同构）
 local triOnStageClear = nil -- function(teamIdx, clearedStageId)
+local triOnAllDead = nil -- 普通全灭剧情通知，不结算或展示额外掉落
 local region = { x = 486, y = 0, w = 948, h = 1080 }  -- 战斗区（窗口坐标）
 
 local function dialogToDesign(wx, wy)
@@ -66,9 +68,49 @@ end
 function BattleTriPage.setOnKill(cb) triOnKill = cb end
 function BattleTriPage.setOnDrop(cb) triOnDrop = cb end
 function BattleTriPage.setOnStageClear(cb) triOnStageClear = cb end
+function BattleTriPage.setOnAllDead(cb) triOnAllDead = cb end
 
 function BattleTriPage.isOpen() return isOpen_ end
 function BattleTriPage.setBattleReady(ready) battleReady = ready == true end
+
+--- 全局倍速按账户最高难度解锁，不被某一战线选择旧关降低。
+function BattleTriPage.getMaxUnlockedBattleSpeed()
+    local Scene = require("ui.battle.scene.BattleScene")
+    local battle = ClientDispatcher.get("battle")
+    local savedMax = type(battle) == "table" and (tonumber(battle.maxStageId) or 0) or 0
+    -- 终焉关号不按难度递增，分别解析上限后合并，不能先比较数字关号。
+    local liveSpeed = BattleSpeed.getMaxUnlocked(StageConfig.getDifficulty(Scene.getMaxStageId() or 0))
+    local savedSpeed = BattleSpeed.getMaxUnlocked(StageConfig.getDifficulty(savedMax))
+    return math.max(liveSpeed, savedSpeed)
+end
+
+--- 显示和输入共用真实驱动资格，不读取旧Scene寻怪/战斗阶段。
+function BattleTriPage.isSpeedButtonVisible()
+    if not battleReady or not isOpen_ or terminalRaid
+        or BattleTriPage.getMaxUnlockedBattleSpeed() <= 1
+        or SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
+        or TerminalConfirmDialog.isOpen() or RewardPopup.currentRowTag()
+        or EquipmentBag.shouldBattleOverlay()
+        or require("ui.story.gate.LetterIntro").isOpen()
+        or require("ui.story.gate.IntroCutscene").isActive()
+        or require("ui.story.ScenarioDialogue").isActive() then return false end
+    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
+    for row = 1, math.min(COL_COUNT, unlocked) do
+        local drv = drivers[row]
+        if drv and drv.active and #drv.allies > 0
+            and (drv.introTimer or 0) <= 0 and (drv.marchTimer or 0) <= 0 then return true end
+    end
+    return false
+end
+
+--- 每帧只解析一次全局时钟；隐藏操作按钮不改变已经选择的战斗倍率。
+function BattleTriPage.getBattleLogicDt(dt)
+    local Scene = require("ui.battle.scene.BattleScene")
+    local logicDt, speed = BattleSpeed.getLogicDt(dt, Scene.battleSpeed,
+        BattleTriPage.getMaxUnlockedBattleSpeed(), true)
+    Scene.battleSpeed = speed
+    return logicDt
+end
 
 --- 存档阵容晚于战斗页到达时，清掉已记住的编队，下一帧按真实槽位重建。
 ---@param onlyTeams table<number, boolean>|nil 仅失效指定队伍；nil=全部（旧行为）
@@ -121,6 +163,9 @@ local function ensureDrivers()
                 end
             end
             drv.onStageChanged = recordTeamStage
+            drv.onAllDead = function(teamIdx, stageId)
+                if triOnAllDead then triOnAllDead(teamIdx, stageId) end
+            end
             local battle = ClientDispatcher.get("battle")
             local savedStages = restoredStageIds or (type(battle) == "table" and battle.teamCurrentStageIds) or {}
             local startStage = (t == 1) and BattleScene.getStageId()
@@ -383,12 +428,13 @@ local function updateRows(dt)
     BattleLayout.setMode("strip")
     require("ui.battle.scene.BattleScene").pumpBattleCards()
     local unlocked = ensureDrivers()
+    local logicDt = BattleTriPage.getBattleLogicDt(dt)
     for t = 1, math.min(COL_COUNT, unlocked) do
         local drv = drivers[t]
-        if drv then drv:update(dt) end
+        if drv then drv:update(dt, logicDt) end
     end
     if terminalRaid and not terminalRaid.finished then
-        terminalRaid.elapsed = terminalRaid.elapsed + dt
+        terminalRaid.elapsed = terminalRaid.elapsed + logicDt
         if terminalRaid.hp <= 0 then
             terminalRaid:finish(true)
         elseif terminalRaid.elapsed >= require("config.GameConfig").Battle.TIME_LIMIT_SEC then

@@ -311,10 +311,14 @@ local updateHitFlashes    = BattleCombat.updateHitFlashes
 local updateComboQueue    = BattleCombat.updateComboQueue
 
 function BattleScene.getMaxUnlockedBattleSpeed()
+    local Page = require("ui.battle.tri.BattleTriPage")
+    if Page.isOpen() then return Page.getMaxUnlockedBattleSpeed() end
     return BattleSpeed.getMaxUnlocked(getStageConfig().getDifficulty(currentStageId))
 end
 
 function BattleScene.isSpeedButtonVisible()
+    local Page = require("ui.battle.tri.BattleTriPage")
+    if Page.isOpen() then return Page.isSpeedButtonVisible() end
     return isFirstClear and battleActive and not isPaused
         and BattleScene.getMaxUnlockedBattleSpeed() > 1.0
         and not BattleResultPanel.isOpen()
@@ -324,6 +328,8 @@ function BattleScene.isSpeedButtonVisible()
 end
 
 function BattleScene.getBattleLogicDt(dt)
+    local Page = require("ui.battle.tri.BattleTriPage")
+    if Page.isOpen() then return Page.getBattleLogicDt(dt) end
     local logicDt, speed = BattleSpeed.getLogicDt(
         dt, BattleScene.battleSpeed, BattleScene.getMaxUnlockedBattleSpeed(),
         BattleScene.isSpeedButtonVisible())
@@ -1761,6 +1767,7 @@ end
 --- 重置战斗场景到初始默认状态（清除存档后调用）
 function BattleScene.resetToDefault()
     require("ui.battle.stage.StageEntryEvents").reset()
+    require("systems.StoryPlayer").resetWipe()
     BattleMountScope.mountDefault()
     currentStageId = 0101
     clearedStages = {}

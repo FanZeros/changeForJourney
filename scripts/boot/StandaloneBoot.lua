@@ -400,9 +400,13 @@ function M.run(rt)
         showKeptDrops("战斗掉落")
     end)
 
+    local function notifyWipe()
+        require("systems.StoryPlayer").onWipe()
+    end
+    BattleTriPage.setOnAllDead(notifyWipe)
     BattleScene.setOnAllDead(function()
         showKeptDrops("战斗掉落")
-        require("systems.StoryPlayer").onWipe()
+        notifyWipe()
     end)
 
     BattleScene.setOnStageLoaded(function(stageId, _)

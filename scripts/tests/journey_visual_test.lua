@@ -44,6 +44,7 @@ local mainStage, mainMax = 101, 101
 local cleared = {}
 local battle = { maxStageId = 101, clearedStages = {} }
 local scene = {
+    battleSpeed = 1,
     pumpBattleCards = noop,
     getStageId = function() return mainStage end,
     getMaxStageId = function() return mainMax end,

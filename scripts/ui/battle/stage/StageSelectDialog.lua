@@ -407,8 +407,9 @@ local function drawChapterBackground(vg, stageId, x, y, hue, isSel, locked)
         -- 等比cover并居中裁切，圆角路径保持现有卡片热区与动画变换。
         local scale = math.max(D.CH_W / srcW, D.CH_BTN_H / srcH)
         local w, h = srcW * scale, srcH * scale
-        nvgFillPaint(vg, nvgImagePattern(vg, x + (D.CH_W - w) * 0.5,
-            y + (D.CH_BTN_H - h) * 0.5, w, h, 0, image, 1.0))
+        local paint = nvgImagePattern(vg, x + (D.CH_W - w) * 0.5,
+            y + (D.CH_BTN_H - h) * 0.5, w, h, 0, image, 1.0)
+        nvgFillPaint(vg, paint --[[@as NVGpaint]])
         nvgFill(vg)
         nvgBeginPath(vg)
         nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
@@ -856,9 +857,9 @@ function StageSelectDialog.handleInput(x, y)
                 local ok
                 if SC.isTerminalTemple(id) then
                     ok = require("ui.battle.tri.BattleTriPage").gotoTeamStage(1, id)
-                elseif state.targetTeam then
+                elseif state.targetTeam or require("ui.battle.tri.BattleTriPage").isOpen() then
                     local BattleTriPage = require("ui.battle.tri.BattleTriPage")
-                    ok = BattleTriPage.gotoTeamStage(state.targetTeam, id)
+                    ok = BattleTriPage.gotoTeamStage(state.targetTeam or 1, id)
                 else
                     ok = BS.gotoStage(id)
                 end

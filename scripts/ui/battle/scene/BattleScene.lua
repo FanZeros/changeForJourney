@@ -42,6 +42,7 @@ local BattleSceneTick = require("ui.battle.scene.BattleSceneTick")
 local BattleScenePhases = require("ui.battle.scene.BattleScenePhases")
 local BattleStageNavLogic = require("ui.battle.stage.BattleStageNavLogic")
 local BattleDataRestore = require("ui.battle.scene.BattleDataRestore")
+local BattleMountScope = require("ui.battle.scene.BattleMountScope")
 
 local BattleScene = {}
 BattleScene.GameState = require("core.GameState")
@@ -516,6 +517,8 @@ end
 ---@param stageId number 4位关卡ID, 如 0101
 ---@param skipBattleStart? boolean 跳过 TAL/TM 战斗启动（调用方自行在 resetAllyUnit 后调用 startBattleTalents）
 local function loadStage(stageId, skipBattleStart)
+    -- 旧单场入口只重置自己的默认容器，不能清掉最后绘制的三行战线。
+    BattleMountScope.mountDefault()
     local ctx = {
         currentStageId = currentStageId, stageName = stageName, maxStageId_ = maxStageId_,
         isFirstClear = isFirstClear, idleRangeText_ = idleRangeText_,
@@ -554,6 +557,13 @@ local function loadStage(stageId, skipBattleStart)
     battleActive = ctx.battleActive
     firstClearTimeLeft = ctx.firstClearTimeLeft
     battleTimeoutElapsed = ctx.battleTimeoutElapsed or 0
+    local battle = require("runtime.ClientDispatcher").get("battle")
+    if type(battle) == "table" then
+        battle.currentStageId = currentStageId
+        battle.teamCurrentStageIds = battle.teamCurrentStageIds or { currentStageId, 101, 101 }
+        battle.teamCurrentStageIds[1] = currentStageId
+        battle.battleMode = isFirstClear and "firstClear" or "idle"
+    end
     print("[BattleScene] stage loaded id=" .. tostring(stageId))
     require("systems.StoryPlayer").onStage(stageId, "enter")
 end
@@ -1138,6 +1148,7 @@ end
 
 --- 重置战斗状态（新单位加入时调用）
 local function resetBattle()
+    BattleMountScope.mountDefault()
     battleActive = true
     battleTimeoutElapsed = 0
     if isFirstClear then
@@ -1297,7 +1308,14 @@ function BattleScene.adoptStageProgress(stageId)
         maxStageId_ = stageId
     end
     currentStageId = stageId
-    isFirstClear = not clearedStages[stageId]
+    isFirstClear = not (clearedStages[stageId] or clearedStages[tostring(stageId)])
+    local battle = require("runtime.ClientDispatcher").get("battle")
+    if type(battle) == "table" then
+        battle.currentStageId = stageId
+        battle.teamCurrentStageIds = battle.teamCurrentStageIds or { stageId, 101, 101 }
+        battle.teamCurrentStageIds[1] = stageId
+        battle.battleMode = isFirstClear and "firstClear" or "idle"
+    end
 end
 
 --- 三行普通关通关：三队共享解锁与首通账本，各队保留独立的当前关卡。
@@ -1332,6 +1350,8 @@ function BattleScene.completeTriStageClear(stageId, teamIdx)
         battle.maxStageId = maxStageId_
         if teamIdx == 1 then
             battle.currentStageId = currentStageId
+            battle.teamCurrentStageIds = battle.teamCurrentStageIds or { currentStageId, 101, 101 }
+            battle.teamCurrentStageIds[1] = currentStageId
             battle.battleMode = isFirstClear and "firstClear" or "idle"
         end
     end
@@ -1366,6 +1386,8 @@ function BattleScene.completeTriTerminal(stageId)
     local battle = ClientDispatcher.get("battle")
     if type(battle) == "table" then
         battle.currentStageId = targetId
+        battle.teamCurrentStageIds = battle.teamCurrentStageIds or { targetId, 101, 101 }
+        battle.teamCurrentStageIds[1] = targetId
         battle.maxStageId = math.max(tonumber(battle.maxStageId) or 0, targetId)
         battle.clearedStages = battle.clearedStages or {}
         battle.clearedStages[tostring(stageId)] = true
@@ -1726,6 +1748,7 @@ end
 
 --- 重置战斗场景到初始默认状态（清除存档后调用）
 function BattleScene.resetToDefault()
+    BattleMountScope.mountDefault()
     currentStageId = 0101
     clearedStages = {}
     isFirstClear = true

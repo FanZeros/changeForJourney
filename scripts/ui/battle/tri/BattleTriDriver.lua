@@ -114,6 +114,7 @@ function BattleTriDriver.new(teamIdx, options)
         talRefs     = TAL.newBattleRefs(),
         beState     = BattleEffects.newFxState(),
         semState    = SEM.newSemState(),
+        rchState    = RCH.newState(),
         onKill      = nil,  -- function(data) 由 TriPage/宿主注入
         onStageChanged = nil,
     }
@@ -127,6 +128,7 @@ function BattleTriDriver.new(teamIdx, options)
         TAL.mount(drv.talRefs)
         BattleEffects.mount(drv.beState)
         SEM.mount(drv.semState)
+        RCH.mount(drv.rchState)
     end
 
     --- 注入 BattleCombat ctx（在 mounted 状态上）
@@ -187,11 +189,12 @@ function BattleTriDriver.new(teamIdx, options)
                 local cleared = battle.clearedStages
                 local nextCleared = type(cleared) == "table" and cleared[tostring(prevId)] == true
                 battle.battleMode = nextCleared and "idle" or "firstClear"
-                require("boot.StandaloneSave").Flush()
             end
         end
         self._syncedMainStage = prevId
         self:start(prevId)
+        -- 驱动和兼容字段完成切换后再采集，不能把刚写入的退关覆盖成旧关。
+        require("boot.StandaloneSave").Flush()
         BattleCombat.addFloatingText("退回上一关", BattleLayout.STRIP_W * 0.5, BattleLayout.STRIP_CY,
             { 255, 140, 120 }, false)
     end
@@ -212,6 +215,7 @@ function BattleTriDriver.new(teamIdx, options)
             self:queuePendingKills()
         end
         self.stageId = stageId
+        self.pendingStageId = nil
         self.marchTimer = 0
         self.marchNotice = false
         self.kills = 0
@@ -325,6 +329,9 @@ function BattleTriDriver.new(teamIdx, options)
         self.active = true
         print(string.format("[TriDriver] 队%d 开战 stage=%s allies=%d enemies=%d",
             self.teamIdx, tostring(stageId), #self.allies, #self.enemies))
+        if not self.battleLab and self.onStageChanged then
+            self.onStageChanged(self.teamIdx, self.stageId)
+        end
     end
 
     --- 死亡只记账。经验、金币和掉落等本关结束再一次性结算。

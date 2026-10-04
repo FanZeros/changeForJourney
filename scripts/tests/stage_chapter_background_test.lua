@@ -46,6 +46,7 @@ function Start()
                 getClearedStages = function() return {} end,
                 gotoStage = function(id) currentStage = id; jumps = jumps + 1; return true end,
             },
+            ["ui.battle.tri.BattleTriPage"] = { isOpen = function() return false end },
             ["config.MonsterConfig"] = { getCardArtId = function(id) return id end, getName = function() return "怪物" end },
             ["config.StageRecommendPower"] = { get = function() return nil end },
             ["ui.battle.stage.BattleEnemySpawn"] = { getFirstClearBonusMonsterIds = function() return {} end },

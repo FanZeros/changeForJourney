@@ -241,6 +241,108 @@ local function testCompleteTriTerminal()
     BattleScene.setOnFirstClear = oldSetOnFirstClear
 end
 
+-- ── 6) 真实Page终焉结算：Flush早于重建战线时也应保存全队退出目标 ──
+local function testPageTerminalSnapshots()
+    local nativeRequire = require
+    local restores = {}
+    local function replace(owner, key, value)
+        local previous = owner[key]
+        restores[#restores + 1] = function() owner[key] = previous end
+        owner[key] = value
+    end
+    local ok, err = pcall(function()
+        local Scene = nativeRequire("ui.battle.scene.BattleScene")
+        local Dispatcher = nativeRequire("runtime.ClientDispatcher")
+        local Scope = nativeRequire("ui.battle.scene.BattleMountScope")
+        local Schema = nativeRequire("shared.battle.BattleSchema")
+        local last = SC.getTerminalPrevStageId(TERMINAL)
+        local target = SC.getReincarnationTarget(SC.getDifficulty(TERMINAL))
+        local modules = { battle = { currentStageId = last, maxStageId = last,
+            teamCurrentStageIds = { last, last, last }, clearedStages = { [tostring(last)] = true }, battleMode = "idle" } }
+        replace(Dispatcher, "get", function(key) return modules[key] end)
+        replace(Dispatcher, "notifySubscribers", function() end)
+        replace(Scene, "pumpBattleCards", function() end)
+        local raid = nil ---@type table|nil
+        local created = {}
+        local makeRaid, makeDriver = TerminalRaid.new, Driver.new
+        replace(TerminalRaid, "new", function(id, drivers)
+            raid = makeRaid(id, drivers)
+            return raid
+        end)
+        replace(Driver, "new", function(team)
+            local drv = makeDriver(team)
+            -- 创建/开战/结算使用真实Driver，唯独不随机模拟伤害时钟。
+            drv.update = function() end
+            created[team] = drv
+            return drv
+        end)
+        local mocks = {
+            ["ui.battle.scene.BattleScene"] = Scene,
+            ["ui.battle.tri.BattleTriDriver"] = Driver,
+            ["ui.battle.tri.TerminalRaid"] = TerminalRaid,
+            ["ui.battle.scene.BattleMountScope"] = Scope,
+            ["shared.battle.BattleSchema"] = Schema,
+            ["runtime.ClientDispatcher"] = Dispatcher,
+            ["ui.character.panel.CharacterPanel"] = { getTeamSignature = function(t) return "terminal" .. t end,
+                getDeployedTeam = function(t) return { mkAlly("page" .. t, 100) } end },
+            ["ui.hud.BottomNav"] = { setAllLocked = function() end },
+            ["systems.GameBGM"] = { setScene = function() end },
+            ["ui.story.gate.LetterIntro"] = { isOpen = function() return false end },
+            ["ui.story.gate.IntroCutscene"] = { isActive = function() return false end },
+            ["ui.story.ScenarioDialogue"] = { isActive = function() return false end },
+            ["ui.battle.popup.TerminalConfirmDialog"] = { update = function() end },
+        }
+        replace(_G, "require", function(name) return mocks[name] or nativeRequire(name) end)
+        local function compile(name)
+            local f = assert(cache:GetFile(name:gsub("%.", "/") .. ".lua"))
+            local lines = {}
+            while not f:IsEof() do lines[#lines + 1] = f:ReadLine() end
+            f:Dispose()
+            return assert(load(table.concat(lines, "\n"), "@" .. name, "t", _G))()
+        end
+        local Save = compile("boot.StandaloneSave")
+        local snapshots, snapshotWindows = {}, {}
+        Save.Flush = function()
+            snapshotWindows[#snapshotWindows + 1] = created[2] and created[3]
+                and created[2].stageId == TERMINAL and created[3].stageId == TERMINAL
+                and created[2].pendingStageId == target and created[3].pendingStageId == target
+            snapshots[#snapshots + 1] = Save.CaptureBattleProgress(modules.battle)
+            return true
+        end
+        mocks["boot.StandaloneSave"] = Save
+        local Page = compile("ui.battle.tri.BattleTriPage")
+        mocks["ui.battle.tri.BattleTriPage"] = Page
+        Save.SetBattlePage(Page)
+        Scene.adoptStageProgress(last)
+        Scene.getClearedStages()[last] = true
+        Page.setTeamStageIds({ last, last, last })
+        Page.open()
+        check(created[1] and created[2] and created[3], "真实Scope执行Page.open创建三条终焉参战线")
+        Scene.adoptStageProgress(TERMINAL)
+        Page.close()
+        Page.open()
+        assert(raid, "Page必须创建真实TerminalRaid")
+        check(created[2].stageId == TERMINAL and created[3].stageId == TERMINAL,
+            "Page接管终焉后三条真实驱动均停挑战关")
+        raid.hp = 0
+        raid:sync()
+        Page.update(0)
+        check(#snapshots > 0, "真实Page胜利结算调用Flush出口")
+        local snapshot = snapshots[#snapshots]
+        check(snapshotWindows[#snapshots] and snapshot and snapshot.currentStageId == target
+            and snapshot.teamCurrentStageIds[1] == target
+            and snapshot.teamCurrentStageIds[2] == target and snapshot.teamCurrentStageIds[3] == target,
+            "终焉Flush在旧驱动尚未start时采集全队pending轮回目标")
+        check(snapshot and snapshot.clearedStages[tostring(TERMINAL)] == true and snapshot.maxStageId == target,
+            "终焉快照共享首通和max与退出目标一致")
+        check(created[2].stageId == target and created[3].stageId == target,
+            "即时快照后队二三真实start落实轮回目标")
+        Page.close()
+    end)
+    for i = #restores, 1, -1 do restores[i]() end
+    if not ok then error(err, 0) end
+end
+
 function Start()
     local ok, err = pcall(function()
         testRaidPoolBasics()
@@ -248,6 +350,7 @@ function Start()
         testAllTeamsDefeated()
         testTerminalStartSingleBoss()
         testCompleteTriTerminal()
+        testPageTerminalSnapshots()
     end)
     if not ok then
         check(false, "测试抛异常: " .. tostring(err))

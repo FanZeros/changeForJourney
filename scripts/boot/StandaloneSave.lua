@@ -11,17 +11,30 @@
 -- 数据双源说明（单机模式）:
 --   - GameState.state       货币/等级/经验的真实源（setter 写本地表）
 --   - ClientDispatcher      heroes/equipment/lootbox/session/battle 等模块
---   - BattleScene 本地进度  maxStageId_/clearedStages，经 SyncBattleState
---                           每秒镜像进 dispatcher 的 battle 模块；恢复时用
---                           setBattleData 回灌（含 string→number key 修正）
+--   - BattleScene 本地进度  maxStageId_/clearedStages，每秒镜像进 dispatcher
+--   - BattleTriPage 三队关  teamCurrentStageIds[1..3]，currentStageId 为队一镜像；
+--                           每次快照/退出采集实时值，读档后分别回灌Scene/Page
 -- ============================================================================
 
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local GameState        = require("core.GameState")
 local BattleScene      = require("ui.battle.scene.BattleScene")
+local BattleSchema     = require("shared.battle.BattleSchema")
 local OfflineService   = require("rules.offline.OfflineService")
 
 local StandaloneSave = {}
+
+---@class TeamStagePersistencePage
+---@field getTeamStageIds fun(): table|nil
+---@field setTeamStageIds fun(stageIds: table)
+---@type TeamStagePersistencePage|nil
+local battlePage = nil
+
+--- 宿主注入战斗页；Save 不主动加载UI，纯数据读档/规则事务也可独立使用。
+---@param page TeamStagePersistencePage
+function StandaloneSave.SetBattlePage(page)
+    battlePage = page
+end
 
 local SAVE_FILE         = "standalone_save.json"
 local TEMP_SAVE_FILE    = "standalone_save.pending.json"
@@ -52,6 +65,27 @@ local function rosterForSave(roster)
     return out
 end
 
+--- 从三行驱动采集即时选择；副本归一化，不能在快照时回灌/重置战斗。
+--- Page 未初始化返回 nil，此时使用已恢复的 Dispatcher 值，不能被默认101覆盖。
+---@param battle table
+---@return table
+function StandaloneSave.CaptureBattleProgress(battle)
+    local copy = {}
+    for key, value in pairs(battle) do copy[key] = value end
+    local live = battlePage and battlePage.getTeamStageIds()
+    if type(live) == "table" then
+        local saved = type(battle.teamCurrentStageIds) == "table" and battle.teamCurrentStageIds or {}
+        local ids = {}
+        for teamIdx = 1, 3 do
+            ids[teamIdx] = live[teamIdx] or live[tostring(teamIdx)]
+                or saved[teamIdx] or saved[tostring(teamIdx)]
+        end
+        copy.teamCurrentStageIds = ids
+    end
+    BattleSchema.normalizeTeamStageIds(copy, false)
+    return copy
+end
+
 --- 收集当前全部可持久化数据 → 存档表
 local function buildSaveData()
     local all = ClientDispatcher.snapshotAll()
@@ -62,6 +96,8 @@ local function buildSaveData()
             for k, v in pairs(data) do copy[k] = v end
             copy.roster = rosterForSave(data.roster)
             modules[name] = copy
+        elseif name == "battle" and type(data) == "table" then
+            modules[name] = StandaloneSave.CaptureBattleProgress(data)
         else
             modules[name] = data
         end
@@ -162,6 +198,12 @@ function StandaloneSave.RestoreData()
     end
     saveData.modules.player = player
 
+    -- 三队归一化只依赖共享进度，不依赖模块迭代顺序或尚未初始化的UI/阵容。
+    local savedBattle = saveData.modules.battle
+    if type(savedBattle) == "table" then
+        BattleSchema.Fields.battle.onLoad(savedBattle)
+    end
+
     -- 2. 恢复各模块（经 handleStateUpdate 统一走 onLoad 修正 + 订阅通知）
     local names = {}
     for name, data in pairs(saveData.modules) do
@@ -216,8 +258,11 @@ function StandaloneSave.ApplyBattleProgress()
     if battle.maxStageId == nil and battle.currentStageId == nil and battle.clearedStages == nil then
         return
     end
+    BattleSchema.normalizeTeamStageIds(battle, true)
     BattleScene.setBattleData(battle)
-    print("[StandaloneSave] 战斗进度已回灌 maxStageId=" .. tostring(battle.maxStageId))
+    if battlePage then battlePage.setTeamStageIds(battle.teamCurrentStageIds) end
+    print("[StandaloneSave] 战斗进度已回灌 maxStageId=" .. tostring(battle.maxStageId)
+        .. " teams=" .. table.concat(battle.teamCurrentStageIds, ","))
 end
 
 --- 主循环更新（由 Standalone.HandleUpdate 调用）

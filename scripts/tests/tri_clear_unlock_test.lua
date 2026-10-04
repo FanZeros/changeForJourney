@@ -27,6 +27,8 @@ function Start()
         local DataRestore = nativeRequire("ui.battle.scene.BattleDataRestore")
         local Dungeon = nativeRequire("rules.dungeon.DungeonService")
         local PDM = nativeRequire("rules.character.PlayerDataManager")
+        local MountScope = nativeRequire("ui.battle.scene.BattleMountScope")
+        local BattleSchema = nativeRequire("shared.battle.BattleSchema")
         local modules = {
             battle = { currentStageId = 1001, maxStageId = 1001, battleMode = "firstClear",
                 clearedStages = { ["905"] = true }, idleAccumSec = 17 },
@@ -36,6 +38,7 @@ function Start()
             dungeon = { ancient_ruin = { floor = 1, dailyUsed = 0 } },
         }
         local flushes, notifications, popups, firstCalls = 0, 0, {}, 0
+        local snapshots = {}
         local wallet = { gold = 0, gems = 0, essence = 0, arcaneDust = 0, goldenKey = 0,
             corruptStone = 0, sacredStone = 0, exp = 0 }
         local function noop() end
@@ -78,6 +81,8 @@ function Start()
             ["shared.StageProvider"] = { Get = function() return SC end },
             ["config.DungeonConfig"] = nativeRequire("config.DungeonConfig"),
             ["ui.battle.scene.BattleScene"] = Scene, ["ui.battle.tri.BattleTriDriver"] = Driver,
+            ["ui.battle.scene.BattleMountScope"] = MountScope,
+            ["shared.battle.BattleSchema"] = BattleSchema,
             ["runtime.ClientDispatcher"] = Dispatcher, ["core.PlayerStore"] = Store,
             ["config.StageConfig"] = SC, ["config.ExpTable"] = ExpTable,
             ["systems.StoryPlayer"] = Story, ["core.GameState"] = gameState,
@@ -98,6 +103,14 @@ function Start()
             return mocks[name]
         end)
         replace(_G, "time", { elapsedTime = 100 })
+        -- 真正执行Save采集/Schema，只替换落盘出口，不访问玩家文件。
+        local Save = compile("boot.StandaloneSave")
+        Save.Flush = function()
+            flushes = flushes + 1
+            snapshots[#snapshots + 1] = Save.CaptureBattleProgress(modules.battle)
+            return true
+        end
+        mocks["boot.StandaloneSave"] = Save
         replace(Scene, "pumpBattleCards", noop)
         Scene.adoptStageProgress(1001)
         Scene.getClearedStages()[905] = true
@@ -114,11 +127,13 @@ function Start()
             local drv = makeDriver(team)
             drv.start = function(self, id)
                 self.stageId, self.active = id, true
+                self.pendingStageId = nil -- 与真实start一致，预约关在实际进入后清掉
                 self.allies, self.enemies, self.enemyQueue = { { hp = 100, heroId = team } }, {}, {}
                 self.teamSignature = "team" .. team
                 self.marchTimer, self.marchNotice, self.introTimer = 0, false, 0
                 self._clearReported = false
                 self.starts = (self.starts or 0) + 1
+                if self.onStageChanged then self.onStageChanged(self.teamIdx, id) end
             end
             -- 本测试使用真实胜利判定和行军，跳过伤害、绘图及单位资源初始化。
             drv.reportDefeatedEnemies = noop
@@ -129,6 +144,7 @@ function Start()
         end)
         local Page = compile("ui.battle.tri.BattleTriPage")
         mocks["ui.battle.tri.BattleTriPage"] = Page
+        Save.SetBattlePage(Page)
         Page.open()
         check(drivers[1] and drivers[2] and not drivers[3], "905通关后只有前两队存在")
         local combat = nativeRequire("ui.battle.combat.BattleCombat")
@@ -150,6 +166,9 @@ function Start()
         local story = Story.take()
         check(story and story.scenarioId == 55 and Story.take() == nil, "二队1305触发真实首通情景55")
         check(drivers[2].marchTimer > 0 and drivers[2].stageId == 1305, "登记首通不截断二秒行军")
+        check(#snapshots > 0 and snapshots[#snapshots].teamCurrentStageIds[2] == 1401
+            and snapshots[#snapshots].currentStageId == 1001,
+            "首通即时快照保存Page预约下一关而非尚在行军的旧关")
         drivers[2]:tick(2)
         check(drivers[2].stageId == 1401 and drivers[1].stageId == firstStage
             and drivers[1].starts == firstStarts, "二队自行前进且一队不重开")
@@ -189,9 +208,14 @@ function Start()
             and not Scene.completeTriStageClear(1305.5, 2) and not Scene.completeTriStageClear(1305, 2.5)
             and firstCalls == calls, "普通入口拒绝终焉与无效参数")
         check(notifications > 0 and flushes > 0, "首通实际通知数据镜像并请求持久化")
+        -- 上述直接调用首通回调模拟结算，末尾以正式恢复API落实预约关再执行周期镜像。
+        Page.setTeamStageIds({ 1001, 2305, 2004 })
+        check(Page.getTeamStageIds()[1] == 1001 and Page.getTeamStageIds()[2] == 2305
+            and Page.getTeamStageIds()[3] == 2004, "真实Page恢复三队独立当前关并清除旧预约")
         -- 执行正式每秒镜像函数，证明不是只验证手抄同步逻辑。
         local syncSource = assert(source("boot.Standalone"):match("(local battleSync =.-)\nlocal physW"))
-        local env = setmetatable({ BattleScene = Scene, ClientDispatcher = Dispatcher, cjson = cjson }, { __index = _G })
+        local env = setmetatable({ BattleScene = Scene, ClientDispatcher = Dispatcher,
+            StandaloneSave = Save, cjson = cjson }, { __index = _G })
         local sync = assert(load(syncSource .. "\nreturn SyncBattleState", "@正式SyncBattleState", "t", env))()
         sync(1.1)
         check(modules.battle.clearedStages["1905"] and modules.battle.clearedStages["2305"],
@@ -217,7 +241,9 @@ function Start()
     for i = #restores, 1, -1 do restores[i]() end
     rawset(_G, "require", nativeRequire)
     rawset(_G, "time", nativeTime)
-    if not ok then log:Write(LOG_ERROR, "[tri_clear_unlock_test] " .. tostring(err))
+    if not ok then
+        print("[tri_clear_unlock_test] FAIL " .. tostring(err))
+        log:Write(LOG_ERROR, "[tri_clear_unlock_test] " .. tostring(err))
     else print("[tri_clear_unlock_test] ALL PASS: " .. assertions .. " assertions") end
     engine:Exit()
 end

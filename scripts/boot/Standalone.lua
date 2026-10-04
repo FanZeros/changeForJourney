@@ -68,6 +68,7 @@ local StandaloneBoot     = require("boot.StandaloneBoot")
 local StandaloneRT       = require("boot.StandaloneRT")
 
 local Standalone = {}
+StandaloneSave.SetBattlePage(BattleTriPage)
 
 local localBridgeReady_ = false
 
@@ -193,41 +194,43 @@ local DESIGN_H = GameConfig.Design.HEIGHT
 
 -- 全窗口底色。UI_WORLD_BG / UI_CZ_BJ 已被三行石框、关卡图和各页底板盖住，不再加载。
 
--- [Standalone] battle 状态本地同步：无 Server 推送时，把 BattleScene 本地进度
--- （maxStageId_/clearedStages）每秒比对一次，变化才经 handleStateUpdate 写入，
--- 供 TutorialManager / BottomNav / DungeonBattleScene 的建筑与页签解锁判定使用
-local battleSync = { lastMax = -1, lastCleared = -1, acc = 0 }
+-- [Standalone] 每秒镜像共享进度及三队当前关。选择旧关也必须同步，不能仅检测首通变化。
+---@type { lastMax: number, lastCleared: number, lastStages: string, acc: number }
+local battleSync = { lastMax = -1, lastCleared = -1, lastStages = "", acc = 0 }
 local function SyncBattleState(dt)
+    -- 标题提前解锁早于 firstStage 回灌；开机默认101不能抢写已恢复的旧关。
+    if bootQueue_ and bootIdx_ < #bootQueue_ then return end
     battleSync.acc = battleSync.acc + (dt or 0)
     if battleSync.acc < 1.0 then return end
     battleSync.acc = 0
     local maxId = BattleScene.getMaxStageId()
     local cleared = BattleScene.getClearedStages()
-    local clearedN = 0
-    for _ in pairs(cleared) do clearedN = clearedN + 1 end
-    if maxId == battleSync.lastMax and clearedN == battleSync.lastCleared then return end
-    if battleSync.lastMax == -1 then
-        print("[Standalone] battle 状态首次同步: maxStageId=" .. tostring(maxId) .. ", cleared=" .. clearedN)
-    end
-    battleSync.lastMax = maxId
-    battleSync.lastCleared = clearedN
-    local clearedStr = {}
-    for k in pairs(cleared) do clearedStr[tostring(k)] = true end
-    -- 模块更新是整表替换。只带这两个字段会把 currentStageId 清掉，
-    -- 读档时被补回 1-1，首通奖励就能重复领，进度也像丢了。
     local battle = ClientDispatcher.get("battle")
-    if type(battle) ~= "table" then battle = {} end
-    local liveStage = tonumber(BattleScene.getStageId()) or 0
-    local savedStage = tonumber(battle.currentStageId) or 0
-    local savedMax = tonumber(battle.maxStageId) or 0
-    battle.maxStageId = math.max(maxId or 0, savedMax)
-    battle.clearedStages = clearedStr
-    if liveStage > savedStage then
-        battle.currentStageId = liveStage
+    if type(battle) ~= "table" then return end
+    local clearedStr = {}
+    for k, v in pairs(battle.clearedStages or {}) do clearedStr[tostring(k)] = v end
+    for k, v in pairs(cleared) do
+        if v == true then clearedStr[tostring(k)] = true end
     end
-    ClientDispatcher.handleStateUpdate(cjson.encode({
-        modules = { battle = battle }
-    }))
+    local clearedN = 0
+    for _ in pairs(clearedStr) do clearedN = clearedN + 1 end
+    battle.maxStageId = math.max(maxId or 0, tonumber(battle.maxStageId) or 0)
+    battle.clearedStages = clearedStr
+    local progress = StandaloneSave.CaptureBattleProgress(battle)
+    local stagesKey = table.concat(progress.teamCurrentStageIds, ",")
+    if battle.maxStageId == battleSync.lastMax and clearedN == battleSync.lastCleared
+        and stagesKey == battleSync.lastStages then return end
+    if battleSync.lastMax == -1 then
+        print("[Standalone] battle 状态首次同步: maxStageId=" .. tostring(battle.maxStageId)
+            .. ", cleared=" .. clearedN .. ", teams=" .. stagesKey)
+    end
+    battleSync.lastMax = battle.maxStageId
+    battleSync.lastCleared = clearedN
+    battleSync.lastStages = stagesKey
+    battle.teamCurrentStageIds = progress.teamCurrentStageIds
+    battle.currentStageId = progress.currentStageId
+    -- 同表通知，不经 JSON/onLoad：onLoad 的终焉回退只用于真正读档，不能打断实时挑战。
+    ClientDispatcher.notifySubscribers("battle")
 end
 
 local physW, physH, dpr, logicalW, logicalH
@@ -338,6 +341,7 @@ function Standalone.Start()
     DrawUtil.initShardAssets(vg)
 
     -- 4.8 [单机存档] 恢复本地存档（GameState + Dispatcher 各模块）
+    BattleTriPage.setBattleReady(false)
     -- ⚠️ 须在一切 UI/数据初始化之前：各系统初始化均为 "if not get(x)" 守卫
     StandaloneSave.RestoreData()
 
@@ -384,6 +388,7 @@ function Standalone.Start()
                 BattleScene.reloadStage({ startSearching = true })
                 print("[Standalone] 初始阵容同步: " .. #initialTeam .. " 个英雄（寻怪模式）")
             end
+            BattleTriPage.setBattleReady(true)
         end },
     }
     bootIdx_ = 0

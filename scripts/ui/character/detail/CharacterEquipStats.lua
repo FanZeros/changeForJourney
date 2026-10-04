@@ -232,17 +232,10 @@ end
 M.drawLegacyTitle = AttributeView.drawTitle
 
 function M.drawHeader(vg, attributeMode)
+    local equipmentMode = attributeMode == "equipment"
+    local title = require("core.I18n").lookup(equipmentMode and "装备加成" or "角色属性")
     AttributeView.drawTitle(vg, 540, M.LAYOUT.titleY,
-        attributeMode == "equipment" and "装备加成" or "角色属性")
-    ink(vg, COLOR.gold)
-    for _, arrow in ipairs({ { x = 420, dir = -1 }, { x = 660, dir = 1 } }) do
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, arrow.x + arrow.dir * 6, M.LAYOUT.titleY)
-        nvgLineTo(vg, arrow.x - arrow.dir * 5, M.LAYOUT.titleY - 7)
-        nvgLineTo(vg, arrow.x - arrow.dir * 5, M.LAYOUT.titleY + 7)
-        nvgClosePath(vg)
-        nvgFill(vg)
-    end
+        "【" .. title .. (equipmentMode and "▲】" or "▼】"))
     AttributeView.drawDivider(vg, M.LAYOUT.attrs.y - 20)
     AttributeView.drawDivider(vg, M.LAYOUT.setTitleY - 28)
     drawTextStroke(vg, M.LAYOUT.sets.x + 20, M.LAYOUT.setTitleY + 4,

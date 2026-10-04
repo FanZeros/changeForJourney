@@ -581,6 +581,12 @@ function HandleCharacterDetailLayoutRender()
                 check(name and value and name.bounds[3] + 15 <= value.bounds[1]
                     and fits(value, 150, 520), "多尺寸名称/数值墨迹间隔 " .. size[1])
                 check(#hits == 1 and hits[1].row == row, "多尺寸测量不改变属性及命中")
+                local shortRow = { name = "生命", key = "hp", value = "42" }
+                View.drawAttributeRows(canvas, { shortRow }, 0, nil, { style = View.ATTRIBUTE_STYLE })
+                local shortValue = textAt(calls, "42", 1109)
+                check(shortValue and shortValue.font == 40 and fits(shortValue, 150, 520),
+                    "多尺寸普通值保持40号且不无效循环缩字 " .. size[1])
+                print(PREFIX .. " SHORT_FONT scale=" .. scale .. " font=" .. tostring(shortValue and shortValue.font))
                 for _, sample in ipairs({ { text = "Lv.70  123456789012345/987654321098765", x = 710, left = 415, right = 1005, size = 28 },
                     { text = "The exceptionally translated master of eternal silent shadow guardians", x = 244, left = 136, right = 352, size = 34 } }) do
                     local font, _, bounds = View.fitText(canvas, sample.text, sample.size,

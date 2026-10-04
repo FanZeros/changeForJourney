@@ -107,10 +107,10 @@ function M.fitText(vg, text, fontSize, align, x, y, left, right, padding)
     nvgFontFace(vg, "sans")
     nvgTextLetterSpacing(vg, 0)
     nvgTextAlign(vg, align)
-    for _ = 1, 24 do
+    for iteration = 1, 24 do
         nvgFontSize(vg, size)
         advance = nvgTextBounds(vg, x, y, text, bounds)
-        if bounds[1] >= left + inset and bounds[3] <= right - inset then break end
+        if (bounds[1] >= left + inset and bounds[3] <= right - inset) or iteration == 24 then break end
         local actual = math.max(x - bounds[1], bounds[3] - x)
         local available = math.max(1, math.min(x - left - inset, right - inset - x))
         if align == NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE then
@@ -162,7 +162,7 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
             local valueX = style.valueX - style.stroke - 2
             local valueFont, _, valueBounds = M.fitText(vg, value, style.fontSize,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, valueX, baseline,
-                style.nameX + nameReserve + style.nameValueGap, style.valueX, style.stroke)
+                style.nameX + nameReserve + style.nameValueGap, style.valueX + style.stroke, style.stroke)
             M.fitText(vg, name, style.fontSize, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
                 style.nameX, baseline, rect.x, valueBounds[1] - style.stroke - style.nameValueGap, 0)
             local nc = style.nameColor

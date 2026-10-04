@@ -11,6 +11,8 @@
 - 真实main完成150帧，Lua错误0、资源错误0、无缺失资源；原始FAIL仅6条运行环境帧耗时尖峰（106–1179ms），不宣称性能或设备触控验收通过。修改的五份Lua逐文件LSP无Error；只提交本轮三份生产Lua、两份既有回归与本记忆，不提交.project、存档、截图或日志。
 - 功能提交 `f56dfabfb08484f6f1675209e461a57909b91e6d` 已正常push当前独立修复分支，远端SHA与本地一致；推送时 `workspace930` 已由外部推进到 `1af17ac9`，本会话未推基线、未自动混入未经联合验收的新改动、未创建或合并PR。最终官方构建清单五份源码一致且无临时入口；交接补记只push同一任务分支，简报后真正AskUserQuestion继续。
 - 用户通过 `AskUserQuestion` 明确选择“创建修复 PR（推荐）”后，先核验源提交 `1c6a33c`、同源open PR为0，再实际创建 **PR #63**：https://github.com/FanZeros/changeForJourney/pull/63，head=`fix/workspace930-stage-enemy-scroll-temple-help`、base=`workspace930@1af17ac9`，返回open、draft=false、merged=false，mergeable尚未计算。说明完整披露544/368专项、9套回归、构建/截图及帧耗时与设备验收限制；不声称CI通过，不自动合并，不推workspace系列。交接记忆仅push当前任务分支，继续实际AskUserQuestion给选项。
+- 用户通过 `AskUserQuestion` 选择“检查 PR 兼容性（推荐）”后只读核查：PR63仍open、未合并，GitHub返回mergeable=false/dirty；`git merge-tree --write-tree`唯一冲突为本记忆首段双方新增记录，**三份本轮生产Lua无文本冲突**，模拟合并保留本轮源码及目标情景82修复逐字一致。目标 `1af17ac9` 相对本轮基线新增5提交，仅改本记忆、Standalone起播、StoryPlayer领奖判断及scenario82既有测试。
+- GitHub check-runs为0、独立status为0，combined状态pending不代表有CI正在执行或已通过。兼容检查未修改工作树/合并目标、未跑合并态回归，文本无冲突不等于联合Runtime已通过；下一步需用户选择授权“同步最新基线并双保留记忆冲突后联合验证”。本轮仅补交接记忆并push当前任务分支，不推workspace系列、不自动合并PR。
 
 ## 截图任务收尾：固定副词条与觉醒单框（2026-10-04）
 

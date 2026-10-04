@@ -71,7 +71,14 @@ end
 ---@param id number
 ---@return boolean
 local function isClaimed(id)
-    local claimed = session().claimedScenarios
+    local data = session()
+    -- 82带实体碎片奖励：有发奖台账时，起播预标记不能代替真正领取。
+    -- 无台账的更早旧档仍尊重原claimed记录，避免已花掉碎片后重复补发。
+    if id == 82 and type(data.scenarioRewardsGranted) == "table" then
+        local granted = data.scenarioRewardsGranted
+        return granted[tostring(id)] == true or granted[id] == true
+    end
+    local claimed = data.claimedScenarios
     if type(claimed) ~= "table" then return false end
     return claimed[tostring(id)] == true or claimed[id] == true
 end

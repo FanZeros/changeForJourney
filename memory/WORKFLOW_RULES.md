@@ -10,6 +10,7 @@
 - 真实字体/贴图离屏选关截图已内部查看，滚底敌人、轨道及终焉行下方说明清晰完整；第一次临时夹具用 package.loaded 未拦截引擎 require 导致右图仍普通关，修夹具后重新截图终焉正确，不改生产逻辑。临时Lua/meta已检查并删除，最终官方Build成功；五份修改源码与正式部署清单产物逐字节一致，最终清单须无临时入口。
 - 真实main完成150帧，Lua错误0、资源错误0、无缺失资源；原始FAIL仅6条运行环境帧耗时尖峰（106–1179ms），不宣称性能或设备触控验收通过。修改的五份Lua逐文件LSP无Error；只提交本轮三份生产Lua、两份既有回归与本记忆，不提交.project、存档、截图或日志。
 - 功能提交 `f56dfabfb08484f6f1675209e461a57909b91e6d` 已正常push当前独立修复分支，远端SHA与本地一致；推送时 `workspace930` 已由外部推进到 `1af17ac9`，本会话未推基线、未自动混入未经联合验收的新改动、未创建或合并PR。最终官方构建清单五份源码一致且无临时入口；交接补记只push同一任务分支，简报后真正AskUserQuestion继续。
+- 用户通过 `AskUserQuestion` 明确选择“创建修复 PR（推荐）”后，先核验源提交 `1c6a33c`、同源open PR为0，再实际创建 **PR #63**：https://github.com/FanZeros/changeForJourney/pull/63，head=`fix/workspace930-stage-enemy-scroll-temple-help`、base=`workspace930@1af17ac9`，返回open、draft=false、merged=false，mergeable尚未计算。说明完整披露544/368专项、9套回归、构建/截图及帧耗时与设备验收限制；不声称CI通过，不自动合并，不推workspace系列。交接记忆仅push当前任务分支，继续实际AskUserQuestion给选项。
 
 ## 截图任务收尾：固定副词条与觉醒单框（2026-10-04）
 

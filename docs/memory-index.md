@@ -1,5 +1,111 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+## 最新未合分支复核（2026-10-04，feat1004b）
+
+### 快照与结论
+
+- 仓库：`FanZeros/changeForJourney`，项目直接部署在 `/workspace` 根。审核分支：`feat1004b/unmerged-branch-audit`；不向任何 `workspace` 系列分支推送，不直接合并待审候选。
+- 最终基准：`workspace930@9725abbee100f07f6185c37b54c8fff1844ba448`。核查期间外部先合入PR69、再合入PR70，已刷新，不能沿用此前33／37条清单。最终快照时间为北京时间2026-10-04 16:57，远端仍在持续开发。
+- 范围：北京时间2026-10-03 00:00起至快照，按tip日期及该分支独有提交筛选；补查从2026-10-02 16:47起的48小时窗口，未增加额外遗漏分支。分支创建时间不能从Git提交日期反推，本统计是近期活动分支。
+- 244个远端分支（含本轮审核分支）；排除基准及本轮分支后，**102条其他近期分支：66条祖先已合入，36条未祖先合入**。后36条有17条文档链、8条剧情链、3条同内容三队链、3条美术候选、5条功能已迁移／剩探针的分支，不能等同36项待发功能。
+- 完整历史已拉取，非浅克隆；blob按需获取。判断同时采用祖先关系、实际路径/blob/限定生产路径patch-id、PR目标、依赖及`merge-tree`，不凭`git cherry`正号或分支名判断缺功能。
+- 当前没有可不经融合验收就直接整支合入的新增生产候选。优先建议三队分支的未覆盖修复；剧情／卡面／奖励框按条件分批整合。以下均为建议，未在本任务实施。
+
+### 应整合的去重清单
+
+| 优先级 | 来源分支／审核tip | 建议合入内容 | 合入方式及前提 |
+|---|---|---|---|
+| 优先 | `feat1004a/team-parity-fixes@f95eb0811b` | RCH战线状态隔离、养成刷新、账户人数收益、全局倍速双时钟、首次全灭剧情去重 | 与`audit/team-parity-20261004@781010daa3`整树相同，仅选一个来源。按hunk重实现到最新基准，分小PR验收，不能整支merge或完整cherry-pick旧生产提交 |
+| 条件 | `plan1003/samsara-mirror-slices-20261003@f7515444b9` | 最新轮回剧情实装，N01/N02/N03/N07/N08/N09/N11/N12/N13/N14共10节点 | 已包含其他7条剧情线的实际内容，只以本条为来源；先解决新旧奖励覆盖层依赖、5个文本冲突、滚轮坐标兼容，并确认旧档静态参考政策及四语正文补译 |
+| 条件 | `art/hero-cards-928@3826379158` | 25张新角色卡面 | 只择`KP_YX_1..25.png`、保留合法已有meta并做实际界面视觉验收；不是透明出框立绘。不要带回旧AssetManifest、绘图代码或3张无meta参考图 |
+| 条件 | `feat930/reward-frame-bw-20261004@b38232ee0f` | 奖励暗金框透明外缘候选 | 与`workspace928@888b2f2475`的同路径另一版本二选一；只择PNG、保留原meta，先视觉对比。bw是双底差分抠透明方法，不是改黑白配色 |
+| 可选归档 | `audit/original-vs-journey-rules-20261003@a5d46eb967` | 源码相似度及规则差异报告 | 只择`docs/reports/lua-similarity-20261003/`并明确历史快照；已包含4条相似度报告及原创玩法计划链，无生产代码，不应当作游戏更新合并 |
+
+#### 三队修复必须拆分的范围
+
+1. `11757ef`的RCH独立容器／挂载：最新`RelicConditionHandler.lua`仍全局保存、init/reset单位状态；三队Driver没有RCH作用域。当前`resetBattle`已迁至`BattleAllyLifecycle.lua`，要适配真实入口，不能只抄旧Scene的重置hunk。
+2. `054c946`的独立养成刷新：`CharacterProgress.lua`转职／重置仍固定`onTeamChanged(1)`，须按真实所属队更新，不把养成回执当队一编队变动。扫荡队号、三队存档与副本选队已由主线覆盖，不重复迁移。
+3. `d892daa`的账户收益：`ExpTable.getPartyExpMult`人数超过5仍回1倍；`OfflineCalc`账户收益锚点仍被队一current／firstClear控制。产品已有多人收益档，建议钳制最大档并分离共享最高进度与严格首通凭据，保留PR70账本合并。
+4. `b9bfff0`的双时钟与全灭：Page仍传原dt，Driver单时钟，普通全灭未接共享首次剧情台账。要一起明确战斗模拟时间和寻怪／展示时间；不要把全局倍速应用到领取／保存等真实时间契约。
+
+最新三队整支检测有**15个冲突（13 scripts、2文档）**。旧分支只读`teamCurrentStageIds`，主线已用`teamStageIds`；整块覆盖会丢二三队进度。保留当前终焉三个编号共享生命池、九Boss对象、失败延迟退场、`not self.terminalRaid`防签名重建、神器全队唯一与真实partySlot。旧Page的`raid.lines[row]`不能覆盖当前`raid.lines[row][row]`。不能把仅RCH容器修复宣称为TAL／ETS全部可变状态已完全隔离。
+
+#### 剧情分支不是可直接合的完成版
+
+- `mirror@f7515444b9`包含其他剧情链实际内容；`wiring@362cdb4`只多PR49合并壳，tree与`n03@3421acf`相同，无额外功能。PR45／49合到wiring侧线，不是workspace930。
+- 现为10／25节点实装，N04/N05/N06/N10/N15–N25尚未接；全篇设计／正文存在不等于全篇已接线。
+- **融合缺依赖**：mirror删除`ui.story.gate.IntroCutscene`，但最新基准的`boot/BattleRewardOverlay.lua:20`仍顶层require它，`StandaloneBoot.lua:113`实际加载Overlay。自动合并不会为这处报文本冲突，必须改为新剧情／记录页阻断源，保留PR57奖励等待；否则启动接线会中断。单独grep剧情分支无引用不能证明融合安全。
+- 最新merge-tree仍5个冲突；Stop要同时保留主线`clearBattleRewards`和新取消／开场状态清理。滚轮抽取要保留主线`csx/csy`坐标，而非回退旧`sx/sy`。
+- 旧档N01无可信live开场链时，N08/N11只能静态原文参考，没有亲历记录／pending红点。这是防伪造历史的有意政策；需用户确认接受，或另做无奖可信重演，不能假造前史或重发首通奖励。
+- 新正文／记录／证据未补英日韩俄四语，五语UI文案不等于五语正文完整。历史21套回归不能代替当前融合后的启动、奖励延期、存档和设备验收。
+
+#### 美术完整性
+
+- 新卡25张均600×1010 RGB不透明，共14,042,248字节；另3张参考图无meta，不应进入生产资源。卡面分支文本合并虽无冲突，旧锚定算法按396宽框体放大整张600宽图，198宽战斗槽会绘成300宽，相邻槽中心距205，产生约95宽矩形重叠；必须先适配卡面取样／锚定并视觉确认，不能只凭clean合并就发布，也不能直接只换PNG便声称完整框体显示正确。
+- 整支卡面会复活已废弃`AssetManifest`：616项／615唯一路径，核对有62条不存在、72条字节数不符、1条重复。当前无实际清单消费者，属于潜在错误清单，不是本次已证运行阻断；仍不应带回。
+- 两奖励图都RGBA：bw版本852,345字节，workspace928版本888,875字节，争用`assets/image/界面底板/弹窗奖励/UI_GXHD_1_dark.png`；与红装备品质框不是同资源。不能整支合旧workspace928，也不能把新奖励图和红装测试说成互斥玩法。
+
+### 36条未祖先合入分支逐条处置
+
+| 分支 | tip（快照） | 实际状态／建议 |
+|---|---|---|
+| `feat1004a/team-parity-fixes` | `f95eb0811b` | 优先取未覆盖hunk，按上文拆分；不直接合整支 |
+| `audit/team-parity-20261004` | `781010daa3` | PR68已合入此侧线，tree同上；只选一个来源 |
+| `feat1004a/merge-readiness-1004` | `6c79f91ce6` | 带同一三队代码及旧报告，没有第四份新修复；不重复合 |
+| `plan1003/samsara-mirror-slices-20261003` | `f7515444b9` | 剧情唯一最新来源，先处理依赖／旧档／翻译／冲突 |
+| `feat1003/samsara-story-wiring-plan` | `362cdb480d` | 被mirror内容代表；PR合并壳不需要单独合 |
+| `feat1003/samsara-n03-20261003` | `3421acfe61` | N03实现已在mirror，不逐支合 |
+| `feat1003/samsara-n12-n14-20261003` | `da60770251` | N12–N14实现已在mirror，不逐支合 |
+| `feat1003/samsara-story-polish` | `bc85ac6bec` | 精修内容已在mirror；不是纯文档整支 |
+| `feat1003/samsara-story-script` | `8f8d1e92ec` | 正文已在mirror；继承旧过场退役代码，不单合 |
+| `feat1003/samsara-loop-story-plan` | `faf5129d8a` | 计划＋旧过场删除已在mirror；不能按名称当纯计划 |
+| `plan1003/samsara-next-slice-20261003` | `1b6d8bdb24` | 规划＋继承剧情代码已在mirror，不单合 |
+| `art/hero-cards-928` | `3826379158` | 25卡PNG可专项视觉确认后择取 |
+| `feat930/reward-frame-bw-20261004` | `b38232ee0f` | 奖励透明框候选；与下一行二选一 |
+| `workspace928` | `888b2f2475` | 另一奖励透明框版本，仅择资源，不合旧工作分支 |
+| `fix930/right-roster-compact-20261004` | `7a6adbe672` | 生产hunk＋测试已由90b9f05经PR69迁移；不重复合 |
+| `fix930/ascend-fixed-secondary-preview-20261004` | `cad7315072` | scripts与39928c7限定patch-id一致，经PR60进入；9／10blob相同，第10仅类型注释；不重复合 |
+| `feat930/stage-select-chapter-background-1003` | `48a6cf333c` | 已由1f09ce81经PR40重写迁移并保留后续滚轮／终焉逻辑；不重复合 |
+| `fix/red-equipment-rarity-20261004` | `ed305ec4f2` | 测试blob与6d9296a迁移后主线完全相同，生产无改；不重复合 |
+| `audit930/character-awakening-sets-1002` | `33e4a4fc0b` | 262bfb6／754f009生产修复已经e0e3767、PR69进入；剩2个观察probe不是修复，不当通过版合入 |
+| `audit/original-vs-journey-rules-20261003` | `a5d46eb967` | 可选择报告归档，历史取证不当功能更新 |
+| `audit/lua-similarity-20261003` | `936e37aaf5` | 已被original-vs链包含，不单合 |
+| `audit/lua-similarity-top-files-20261003` | `303d5f5f39` | 同上 |
+| `audit/lua-similarity-over80-20261003` | `b6631a6956` | 同上 |
+| `audit/lua-similarity-functions-20261003` | `110ad77cb9` | 同上 |
+| `plan/own-gameplay-horizontal-20261003` | `16f2a24685` | 已被报告链包含的设计，无生产实装；不当玩法更新 |
+| `audit/workspace930-merge-readiness-20261003-2323` | `9dc24d2530` | 旧合并清单，仅历史参考 |
+| `audit/workspace930-remaining-branches-20261004` | `f0e07d0389` | 包含上一旧清单，当前状态已变化；不再合旧记忆覆盖最新 |
+| `audit/workspace930-unmerged-20261003` | `a96c9b3ea5` | 历史清单，不能沿用未合结论 |
+| `audit/stage-select-background-20261003` | `01d5a19dc6` | 当时未合报告；功能现已PR40进入 |
+| `audit/story-horror-cruise-merge-20261003` | `41e65e2d02` | 历史剧情合入状态参考，无生产增量 |
+| `audit930/three-team-followup-20261004` | `3275d3ec02` | 仅缺陷清单，部分已由后续修复覆盖；需逐项复现，不当修复合 |
+| `chore930/equipment-preview-pr-1003` | `e8a150170f` | 仅PR交接，装备功能已有，不单合 |
+| `feat/awakening-support-review-20261003` | `a212327fa7` | 仅2文档约79行设计，明确未实施；旧治疗不可达描述已过时，只择更新后的设计 |
+| `feat1004a/battle-tower-fix-plan` | `42b92ef7c4` | 主要任务文档已被PR70带入，当前只剩记忆8行；不重复合 |
+| `fix1004/docs` | `3453baa999` | 旧B01／R01状态报告已被更新清单替代；不覆盖新文档 |
+| `review/workspace930-local-art-audit-20261003` | `68e9a14243` | 历史迁移核查，无生产增量，不单合 |
+
+### 已合入，不再列候选
+
+- PR69 `feat1004a/recent-branch-integration`：名册首屏、治疗／套装生命周期、扫荡队号及红装回归测试均已进主线，原来源不一定成为祖先。
+- PR70 `feat1004a/economic-firstclear-tower-singlewrite`：**只交付B01最高关首通账本**，已进主线；B04塔选卡同表双写没有生产修复，不能按分支名称说已修。
+- PR65／66／67：远征逐级奖励、满包转匣、领奖链加强验收已进主线。PR45／49／68则只合到侧线，分别由剧情／三队唯一来源代表。
+- 仍存在的个别后续问题（如塔强化双写、终焉选关特例图、满员普通词条单阶预告）没有可直接合入的完成版候选，另立小修复，不靠重复合旧分支解决。本任务不扩大实施这些修复。
+
+### 本轮实际验证与交接
+
+- 最新主线源码已同步到本审核分支，只处理双方记忆文本冲突；`scripts/`及`assets/`与9725abb完全相同，本任务没有新增玩法／美术改动。
+- 官方Build两次成功，最终含PR70；PR70三份变动Lua逐文件LSP无Error。完整LSP缓存仍有48个既有Error（326文件摘要），不宣称全仓静态清零。
+- 本轮分支审核为Git对象／实际代码及合并树取证；未重跑候选Runtime回归、未做设备触控／掉电／GPU视觉验收。代理报告引用的历史测试数字不是本次融合后运行结果。
+- 2个damage观察probe按SUMMARY记录确认偏差，甚至可engine:Exit为0，不能把exit0当契约已修或测试通过。现有仓库CI只验证文件规范，不是全部游戏回归通过证明。
+- 已完成阶段及时push `feat1004b/unmerged-branch-audit`，不push任何workspace系列；本地`.project`、`.gitignore`环境变动不提交，凭据不写文件／remote／持久配置。全局记忆工具失败，交接偏好实际加强在已有`memory/WORKFLOW_RULES.md`。
+- 完成后先真实简报，再实际调用`AskUserQuestion`给下一步选择；尊重后续停止、权限拒绝和安全边界。报告PR如创建仅用于审核，不自动合入基准。
+
+---
+
+> **历史快照（下方近期分支选择性整合记录已于PR69进入主线）**
+
 > **最新（2026-10-04，近期分支选择性整合）**：基线 `workspace930@d618ee2562`，任务分支 `feat1004a/recent-branch-integration`；源码与资源在 `/workspace` 根。排除基线和本轮新分支，UTC 2026-10-02 起的近期 101 条分支中，68 条已祖先合入、33 条未祖先合入；后者含 16 条纯文档、7 条被最新镜像代表的旧剧情链、2 条功能已替代、3 条美术、4 条新生产代码候选和1条测试。已分四批正常提交并push名册完整首屏、哈基米治疗隔离与套装生命周期、扫荡队号及红装回归测试。最新组合验收和完整剩余清单见下方 §近期分支整合核查及 `memory/WORKFLOW_RULES.md`，不重复合入 cad7315 固定副或旧章节背景。
 > **本轮边界**：不整支合三队审计旧字段/共享池回退，不机械合剧情线删除旧过场；剧情缺五语、旧档前史/镜像正式补读政策及最新覆盖层依赖需专项。25张新卡与两版奖励透明底图待视觉选择；黑白是双底差分方法，不是去掉暗金颜色。只push新功能分支，不push任何workspace系列；可以创建PR但未追加授权不合入基线；阶段完成后真正AskUserQuestion选项继续，凭据和本地构建身份不入提交。
 

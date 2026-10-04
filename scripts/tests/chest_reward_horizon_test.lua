@@ -355,6 +355,15 @@ function Start()
         end
         run("row只对照真实drawRegion/handleInputRegion", function()
             fixture("tri", 3, true)
+            -- 前一 shared global 仍展示：新规则 row 排队不抢占，先完成实际关闭及保护期。
+            if Reward.isOpen() then
+                Reward.close()
+                clock.elapsedTime = clock.elapsedTime + 0.26
+                Reward.update(0.26)
+                clock.elapsedTime = clock.elapsedTime + 0.16
+                Reward.update(0.16)
+            end
+            check(not Reward.isOpen(), "row对照前完成global关闭与0.15秒guard")
             H_focusPanel = nil
             local item = { type = "artifact", id = "row", artifactId = 1, quality = 1,
                 name = Defs.getName({ artifactId = 1, quality = 1 }) }

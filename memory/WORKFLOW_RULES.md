@@ -8,6 +8,7 @@
 - 专项配装Runtime361断言全通过，覆盖稳定分组/两模式/负间隔/长delta/tooltip/排序缓存与候选重排，新增同序markDirty、本英雄level、其他英雄level、enhance刷新保持滚底及精确0.9惯性；另预览118、属性稳定55、雷达几何49、横屏手势44、仓库联动268、真实配装接线与生命周期全部通过。四份改动Lua逐文件LSP无Error；仓库36单测与2661路径规范0错误0警告。独立只读终检确认无关数据刷新滚动问题已解决。
 - 最终官方Build成功，四份修改Lua与正式部署产物逐字节4/4一致，临时视觉入口不在清单；提交仅三份生产UI、现有专项测试与本记忆，本地.project、日志、截图与凭据不入库。
 - 已正常push功能提交 `c70d08d4ab32f4ffff4f58559e55706f80ddfe2e` 至 `fix/equip-delta-priority-20261004`，远端SHA与本地一致；目标workspace930由外部前进到e16fe137，本轮未向其推送，未混入未经联合验收的新基线，未创建或合并PR。鉴权仅临时请求头，不写Git配置/remote或文件；交接追加只push同一任务分支。
+- 用户再次经AskUserQuestion明确选择“创建配装修复 PR（推荐）”，查重同源open PR为0并核对9d2187e后创建正式 **PR #59**：https://github.com/FanZeros/changeForJourney/pull/59，head=`fix/equip-delta-priority-20261004`、base=`workspace930`，返回open/draft=false/merged=false，mergeable尚未计算。说明披露361专项/相关回归、正式构建与真实截图不可用及既有长文本2失败；不声称CI通过，不自动合并，交接记忆仅push同一任务分支。
 - **持续强化**：推进已授权任务，尊重停止/权限/安全边界；每次完成先真实简报，再实际AskUserQuestion提供下一步选项。完成后正常push当轮新分支并核验远端SHA，凭据不存文件、Git配置、源码、日志或记忆；本地.project身份和构建设置不提交。
 
 ## 困难关卡连续编号修复（2026-10-04）

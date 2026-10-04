@@ -7,6 +7,7 @@
 - 九份本轮Lua逐文件LSP无Error；全工作区仍有70个其他诊断，不宣称全仓清零。36个仓库规范单测全通过，2651已跟踪路径0错误0警告。独立只读复核未确认新增问题。真实main完成150帧且Lua错误0，但原始验收FAIL：无头Shader字节码报错、运行时缺内置MiSans字体，不能宣称图形/字体或设备交互验收通过；正式构建与显示spy回归另行通过。
 - 最终官方Build成功，九份修改Lua与最新部署清单对应产物逐字节9/9一致；未直接写dist。提交仅含五份生产Lua、四份已有回归与本记忆，不含本地.project身份/设置、存档、日志或凭据。
 - 已正常push功能提交 `9a86c7785879314412c2f917afc34406c2589138` 至 `fix/hard-stage-display-20261004`，远端SHA与本地核验一致。首次临时helper转义报错exit128未推送，随后临时请求头鉴权push成功；PAT未落Git配置或remote。远端workspace930由外部前进到a0ae4767，本会话没有向其推送，也未混入未联合验收的新基线；未创建或合并PR。
+- 用户通过 `AskUserQuestion` 明确选择“创建修复 PR（推荐）”后，先查询同源open PR为0并核对源提交，再创建正式 **PR #56**：https://github.com/FanZeros/changeForJourney/pull/56，head=`fix/hard-stage-display-20261004`、base=`workspace930`、source=`c5ae5e58`，返回open、draft=false、merged=false；mergeable尚未计算，不声称CI已通过。说明已披露八套回归/正式构建与无头Shader/字体验收限制。没有自动合并，没有推workspace系列；记忆补充后仅push当前任务分支，仍用AskUserQuestion交接。
 - 全局记忆工具写入失败；本次偏好实际强化在此已有项目记忆，不声称全局保存成功。
 
 ## 三队进度、副本选队和入关剧情修复（2026-10-04）

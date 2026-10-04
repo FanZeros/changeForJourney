@@ -49,6 +49,7 @@ function Start()
             ["ui.battle.tri.BattleTriDriver"] = Driver,
             ["config.StageConfig"] = SC,
             ["config.ExpTable"] = nativeRequire("config.ExpTable"),
+            ["ui.battle.stage.BattleSpeed"] = nativeRequire("ui.battle.stage.BattleSpeed"),
             ["core.BattleLayout"] = nativeRequire("core.BattleLayout"),
             ["runtime.ClientDispatcher"] = Dispatcher,
             ["ui.battle.combat.BattleCombat"] = BC,

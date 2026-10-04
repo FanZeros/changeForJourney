@@ -311,10 +311,14 @@ local updateHitFlashes    = BattleCombat.updateHitFlashes
 local updateComboQueue    = BattleCombat.updateComboQueue
 
 function BattleScene.getMaxUnlockedBattleSpeed()
+    local Page = require("ui.battle.tri.BattleTriPage")
+    if Page.isOpen() then return Page.getMaxUnlockedBattleSpeed() end
     return BattleSpeed.getMaxUnlocked(getStageConfig().getDifficulty(currentStageId))
 end
 
 function BattleScene.isSpeedButtonVisible()
+    local Page = require("ui.battle.tri.BattleTriPage")
+    if Page.isOpen() then return Page.isSpeedButtonVisible() end
     return isFirstClear and battleActive and not isPaused
         and BattleScene.getMaxUnlockedBattleSpeed() > 1.0
         and not BattleResultPanel.isOpen()
@@ -324,6 +328,8 @@ function BattleScene.isSpeedButtonVisible()
 end
 
 function BattleScene.getBattleLogicDt(dt)
+    local Page = require("ui.battle.tri.BattleTriPage")
+    if Page.isOpen() then return Page.getBattleLogicDt(dt) end
     local logicDt, speed = BattleSpeed.getLogicDt(
         dt, BattleScene.battleSpeed, BattleScene.getMaxUnlockedBattleSpeed(),
         BattleScene.isSpeedButtonVisible())
@@ -393,11 +399,17 @@ local function recalcIdleIncome()
     local heroCount = #allies
     local prevGold = cachedGoldPerMin
     local prevExp  = cachedExpPerMin
+    -- 读档为重开战斗可能移除本地max首通标记，不能据此降低账户收益。
+    -- 仅采纳同一最高节点的保存凭据，独立快照不回写战斗模式账本。
+    local maxCleared = clearedStages[maxStageId_] == true or clearedStages[tostring(maxStageId_)] == true
+    local savedBattle = require("runtime.ClientDispatcher").get("battle")
+    if type(savedBattle) == "table" and tonumber(savedBattle.maxStageId) == maxStageId_ then
+        local ledger = type(savedBattle.clearedStages) == "table" and savedBattle.clearedStages or {}
+        maxCleared = ledger[maxStageId_] == true or ledger[tostring(maxStageId_)] == true
+    end
     local battleSnapshot = {
-        currentStageId = currentStageId,
-        maxStageId     = maxStageId_,
-        clearedStages  = clearedStages,
-        battleMode     = isFirstClear and "firstClear" or "idle",
+        maxStageId    = maxStageId_,
+        clearedStages = { [maxStageId_] = maxCleared },
     }
     local stageConfig = getStageConfig()
     local incomeStageId, dropStageId = OfflineCalc.resolveIdleStageAnchors(battleSnapshot, stageConfig)
@@ -1755,6 +1767,7 @@ end
 --- 重置战斗场景到初始默认状态（清除存档后调用）
 function BattleScene.resetToDefault()
     require("ui.battle.stage.StageEntryEvents").reset()
+    require("systems.StoryPlayer").resetWipe()
     BattleMountScope.mountDefault()
     currentStageId = 0101
     clearedStages = {}

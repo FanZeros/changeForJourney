@@ -616,11 +616,17 @@ local function tryPlayPendingStory_()
     local scenarioId = pending.scenarioId
     if scenarioId then
         local sessionData = ClientDispatcher.get("session") or {}
-        local claimed = sessionData.claimedScenarios or {}
-        claimed[tostring(scenarioId)] = true
         local updated = {}
         for k, v in pairs(sessionData) do updated[k] = v end
-        updated.claimedScenarios = claimed
+        if scenarioId == 82 then
+            -- 奖励剧情未播完退出应可重播；只有真实领奖成功才写claimed。
+            -- 先建立台账，兼容首次播放时尚未有任何领奖记录的新档。
+            updated.scenarioRewardsGranted = sessionData.scenarioRewardsGranted or {}
+        else
+            local claimed = sessionData.claimedScenarios or {}
+            claimed[tostring(scenarioId)] = true
+            updated.claimedScenarios = claimed
+        end
         ClientDispatcher.handleStateUpdate(cjson.encode({ modules = { session = updated } }))
     end
     print("[Standalone] play pending story id=" .. tostring(scenarioId)
@@ -636,9 +642,8 @@ local function tryPlayPendingStory_()
                 print("[Standalone] claim scenario reward id=" .. tostring(scenarioId))
                 -- [横屏接线 0928] 恢复引导触发链: claim 结果处理时 fireTutorial → onScenarioClaimed
                 ClientMsgHandler.setPendingTutorialNotify(scenarioId)
-                -- [预标记冲突修复 2026-10-01] 播放前已预写 claimedScenarios（13df6a95 防中途退出重播），
-                -- 单机 PDM 与 ClientDispatcher 共享同一张 session 表 → 不跳过防重复会拒发奖励。
-                -- preClaimed=true 告知服务端"这是播完后的首次真实领取"。
+                -- 其他情景仍沿用起播预标记；82也兼容旧中断档的预标记。
+                -- 真正发奖仍由scenarioRewardsGranted台账防重，不以起播标记代替领取。
                 localSendAction("claim_scenario_reward", { scenarioId = scenarioId, preClaimed = true })
                 local followId = require("systems.StoryPlayer").followOf(scenarioId)
                 if followId then

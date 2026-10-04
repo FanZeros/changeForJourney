@@ -11,6 +11,23 @@
 - 最新官方Build成功，六份本轮Lua与正式清单产物逐字节6/6一致。主入口60帧、boot18/18完成、标题解锁、Lua/资源错误0、missing_resources空；原始验收exit1，四条默认100ms帧尖峰（最大274.738ms），无头音频/Shader错误另存在，不宣称图形、性能或设备触控全通过。验证日志与运行器只在本地忽略路径；仅提交五生产Lua、专项与meta、本记忆，.project/环境配置不提交。
 - 功能提交 `b475b21f099120c2cbe8cabcdb9039cafc74b6c9` 已正常push到 `feat1004a/fix-full-bag-equipment`，远端SHA与本地一致；核验时 `workspace930` 仍为原基线d618ee25，本会话未推workspace系列、未创建或合并PR。提交树相对原基线2669路径规范0错误0警告，最终部署源码6/6一致。交接补记仅正常push当前新分支，完成后真正AskUserQuestion下一步。
 - 用户随后通过AskUserQuestion明确选择创建修复PR。查重同源open为0、核对源e18aea2f与目标d618ee25后，正式创建 **PR #66**：https://github.com/FanZeros/changeForJourney/pull/66，head=`feat1004a/fix-full-bag-equipment`、base=`workspace930`，返回open、draft=false、merged=false、mergeable=null/unknown（尚未计算）。说明包含162327专项、八套回归、36规范单测、真实构建/部署一致及无头帧尖峰/音频Shader/替身验收限制；不声称CI通过，不自动合并。交接记录仅push当前新分支，不推workspace系列，创建授权不延伸为合并授权。
+## 功绩远征逐级奖励与圆球轨道（2026-10-04）
+
+- 用户指定从 GitHub `workspace930` 拉取并部署到 `/workspace` 根，本轮新分支 `feat1004a/expedition-reward-track`；仅正常提交并push本轮新分支，禁止推任何workspace系列或原基线，不强推、不自动合并PR。
+- 本轮范围：通关/远征/队员页签增加间距；远征奖励按1–200级一球一节点竖向相连，当前等级发光；上方保留等级/经验/可领数，不显示已解锁列表。
+- “每级额外100黑金”接项目已有黑晶 `diamond → currency.gems`，保留原九项里程碑与a_plv_N永久台账；新增独立 `a_plv_bonus_v1_N`，旧已达等级可以补领，不重发旧奖励。Lv.1含一份奖励，新增总计20000黑晶；不改变通关和队员轮换奖励。
+- **再次强化协作要求**：持续推进已授权任务，不擅自取消或退出；每次完成、提交交接或真实需要用户决策的阻塞，先如实简报，再实际调用 `AskUserQuestion` 给2–4个明确下一步选项，不以普通文本问题中断对话。尊重用户后续停止指令、权限拒绝与安全边界。
+- 凭据仅即时环境请求头鉴权，不保存到文件、源码、Git配置/remote、日志或记忆；本地.project构建身份与环境配置、日志/验收截图不提交。本轮验收和推送状态完成后补记，不把历史通过当成本轮验证。
+- 初版提交 `7638f100` 已正常push `feat1004a/expedition-reward-track`，远端SHA与本地核验一致；本会话未推workspace930。专项等级模型22619断言、真实内存领取事务18用例17325断言、升级联动110断言通过；后续UI终检与部署验收继续推进。
+- 真实英文Lv100发现合并奖励文字折行丢掉100/840数量，按实图修为资源名/数量独立行；名称和状态用宿主真实字体测宽显式缩字，不依赖无效单控件autoFit属性。最终英文图全名、×840、×100及状态完整，中文Lv33已领仍发光。两份真实绘图90帧Lua/资源0、缺图空；原始FAIL只有默认100ms软件渲染尖峰，不宣称性能/手机触控全过。
+- 当前等级页只建可见9–10行UI树，红点计数不构造200级快照，真实等级解锁缓存防止逐帧平方扫描；升级弹窗不再引导到已经删除的顶部解锁区。临时截图夹具与meta已经移出scripts至.git内部，正式入口保持main.lua。全局记忆工具本次写入失败，协作规则实际保存在此已有项目记忆，不宣称全局成功。
+- 最终九套官方Runtime回归全部通过：轨道7284断言、模型22619、事务17325（18用例）、升级110、Horizon368、离线覆盖994、掉落3036、I18n基础177及6956组合、队伍门槛115；音频/Shader启动警告不冒称图形通过。独立终检无剩余确认新增缺陷，36套仓库规范回归通过，2667路径0错误0警告。
+- 正式main完成150帧、boot18/18、Lua/资源0且无缺图；原始FAIL仅149次默认100ms软件渲染尖峰，不宣称性能/实机交互验收通过。最终官方Build成功，已提交11份源码与正式清单产物逐字节一致；最终轨道测试提交后再核验全部12份。本地.project、环境技能挂载变化、Runtime档、日志和截图不提交。
+- 终检阶段提交 `6681e153` 已正常push同一新分支，远端一致；目标workspace930仍本轮基础 `d618ee25`。最终交互测试及PR结果待本轮后续补记，不写未经执行的完成状态。
+- 最终交互测试提交 `feeb850a` 已正常push并核验远端一致，12份本轮Lua全部与正式构建产物逐字节一致，临时入口不在包中。已按用户本轮允许提交PR的范围创建正式 **PR #65**：https://github.com/FanZeros/changeForJourney/pull/65，head=`feat1004a/expedition-reward-track@feeb850a`、base=`workspace930@d618ee25`，返回open、draft=false、merged=false，mergeable尚未计算。说明完整披露九套回归、真实绘图/帧尖峰限制，不宣称CI通过、不自动合并。交接补记仅push同一功能分支，完成后实际AskUserQuestion给下一步选项。
+
+- 用户通过实际AskUserQuestion选择“加强领奖验收”。下一阶段继续同一功能分支与PR65，只补完整Page→GameAction→Bridge→Service→Save→ClientMessageHandler→RewardPopup链路测试，不改真实玩家档、不扩大经济/玩法范围；覆盖连续点击、满级209奖励展示、失败Toast不假成功、重建隔离会话只从JSON恢复后不重领。执行结果完成后补记。
+- 继续验收前只读查PR65仍open/未合并，GitHub返回mergeable=true/clean，当前`be9e7fd0`的repository-policy检查completed/success；仅此仓库规范CI通过，不冒称游戏设备验收。每次完成测试/文档阶段正常push同一feat1004a分支，完成后继续实际AskUserQuestion。
 
 ## 选关敌人横向拖动与终焉说明协作要求（2026-10-04）
 

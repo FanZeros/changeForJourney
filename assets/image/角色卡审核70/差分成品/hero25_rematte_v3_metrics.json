@@ -1,0 +1,27 @@
+{
+  "hero_id": 25,
+  "source": "hero25_B_selected.png",
+  "version": "rematte_v3",
+  "method": "白底单图完整轮廓重抠；前景不受黑底图错位影响；去除外轮廓杂点",
+  "native_size": [
+    768,
+    1365
+  ],
+  "exact_9_16_size": [
+    720,
+    1280
+  ],
+  "exact_9_16_verified": true,
+  "black_reference_used": false,
+  "foreground_bounds_ltrb": [
+    28,
+    205,
+    654,
+    1164
+  ],
+  "repaired_opaque_pixels": 25382,
+  "skin_at_460_745_alpha": 255,
+  "frame_interior_fully_opaque": true,
+  "exterior_alpha_zero": true,
+  "official_assets_replaced": false
+}

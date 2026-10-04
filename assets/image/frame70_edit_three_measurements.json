@@ -1,0 +1,62 @@
+[
+  {
+    "label": "70%原底板",
+    "image_size": [
+      768,
+      1365
+    ],
+    "estimated_frame_bounds": [
+      115,
+      205,
+      653,
+      1160
+    ],
+    "frame_width_percent": 70.05,
+    "frame_height_percent": 69.96
+  },
+  {
+    "label": "A",
+    "image_size": [
+      768,
+      1365
+    ],
+    "estimated_frame_bounds": [
+      107,
+      173,
+      659,
+      1125
+    ],
+    "frame_width_percent": 71.88,
+    "frame_height_percent": 69.74
+  },
+  {
+    "label": "B",
+    "image_size": [
+      768,
+      1365
+    ],
+    "estimated_frame_bounds": [
+      116,
+      173,
+      659,
+      1109
+    ],
+    "frame_width_percent": 70.7,
+    "frame_height_percent": 68.57
+  },
+  {
+    "label": "C",
+    "image_size": [
+      768,
+      1365
+    ],
+    "estimated_frame_bounds": [
+      117,
+      198,
+      654,
+      1165
+    ],
+    "frame_width_percent": 69.92,
+    "frame_height_percent": 70.84
+  }
+]

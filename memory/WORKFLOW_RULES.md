@@ -9,6 +9,7 @@
 - 临时视觉Lua/meta先读后删除，最终官方build成功；4生产＋6适配旧测试＋1新专项 **11Lua与最新正式清单产物逐字节一致**，临时入口不入包。旧Standalone/StandaloneBoot/StoryPlayer/Playback/Dialogue/ScenarioDialogueConfig六链文件逐字节未改；不碰战斗、经济、旧正文或玩家存档。修改Lua单文件LSP无Error，有Warning；不声称整个缓存81旧Error清零。
 - 现有接线方案§17/索引已更新，剩16场N04、N05/06、N10、N11与N15–25；有A/B/C初片不等于申请已执行或撤离获批，N15及救援/灰印身份/后半段/四语全译仍独立后续。
 - **持续强化协作要求**：已授权工作持续推进，每次交付与commit+push先真实简报，再真正AskUserQuestion选项继续，尊重停止/权限拒绝。不推workspace或自动合并，PAT仅即时环境鉴权、不进Git配置/remote/源码/日志/文件/记忆；本地.project、截图/运行档/日志/引擎工具不提交。最终push与远端SHA随后记实。
+- **推送完成**：功能提交`0257212c596e5349572a8e60d10c64995faae0b8`已正常push指定剧情分支，远端SHA与本地一致；仓库规范2664路径0错误0警告。930由外部前进`677af353`，本会话唯一push目标仍指定剧情分支，无workspace推送或PR操作。只剩本地.project预览绑定未提交；补交接仅push同一分支，然后实际AskUserQuestion。
 
 ## N01名册前史接入与本轮交接（2026-10-04）
 

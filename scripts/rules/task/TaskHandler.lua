@@ -31,7 +31,7 @@ end
 
 handlers[Protocol.ACTION_TYPES.CLAIM_ALL_TASKS] = function(uid, params)
     local scope = params and params.scope
-    local ok, err, result = TaskService.ClaimAll(uid, scope)
+    local ok, err, result = TaskService.ClaimAll(uid, scope, params and params.level)
     if not ok then
         return { success = false, reason = err }
     end

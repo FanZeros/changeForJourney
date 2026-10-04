@@ -9,7 +9,8 @@
 - 增强已有 `scripts/tests/battle_lab_boundary_test.lua`，全12套×英雄81/200及叠甲双手加测共26完整路径；真实Drop生成、generateRandom品质1/6、遗匣addSeed→claimOne、真实背包/穿戴门槛、attrs最高档、升阶0/100、JSON脱水水合、逐槽卸装失效/复穿均验证。专项 **10058断言全部通过、失败0、26/26**；独立最终复跑同样ALL PASS/exit0，独立只读反证未发现阻塞。可控随机是数学可达性，不代表自然掉率/短期保底或12套战斗被动强度；未跑整套Boot全交互。
 - 五套联合回归实际通过：切关、装备预览118、套装生命周期41、治疗184、背包穿戴接线268。遗匣18例第一轮缺退出超时，不计成功；后续官方60帧有限验收exit0、Lua/资源/引擎错误0且18例终结标志再次出现。36个仓库规范黑盒单测通过，提交树2676路径0错误0警告。
 - 最新修改测试单文件LSP无Error（有Warning），官方Build成功493Lua；专项源码与 `manifest-origin.b4` 部署产物逐字节一致。main实际完成18/18启动并解锁标题、无Lua异常，持续游戏被25秒外部超时结束exit124，音频/Shader无头错误仍存在；不宣称画面、设备触控或性能全过。
-- 阶段提交 `93aabe8`（协作记忆）、`18cb000`（静态组合文档）、`bf99253`（专项/实跑结果）均正常push `feat1004b/equipment-set-collectibility`并核验远端一致；核验时 `workspace930` 仍为固定基线9725abb，未推基线、未创建或合并PR。报告更新在已有 `docs/装备套装效果规划.md` 文首，最终交接继续只正常push本任务分支；完成后先如实简报再真正AskUserQuestion选下一步。
+- 阶段提交 `93aabe8`（协作记忆）、`18cb000`（静态组合文档）、`bf99253`（专项/实跑结果）及最终交接`bf04de9`均正常push `feat1004b/equipment-set-collectibility`并核验远端一致；核验时 `workspace930` 仍为固定基线9725abb，未推基线。报告更新在已有 `docs/装备套装效果规划.md` 文首，最终交接继续只正常push本任务分支；完成后先如实简报再真正AskUserQuestion选下一步。
+- 用户随后通过实际`AskUserQuestion`明确选择“创建核查PR”。同源open查重为0、核验源bf04de9与目标9725abb后，已创建正式 **PR #73**：https://github.com/FanZeros/changeForJourney/pull/73，head=`feat1004b/equipment-set-collectibility`、base=`workspace930`，返回open、draft=false、merged=false、mergeable=null（尚未计算）。PR包含完整集齐结论、早档限制、10058/26路径及联合回归、构建/无头验收边界；不声称CI通过、不自动合并。创建授权不延伸为合并授权，交接补记仍只push当前新分支，完成后继续实际AskUserQuestion选项。
 
 ## 经济P1首通账本与塔强化修复（2026-10-04）
 

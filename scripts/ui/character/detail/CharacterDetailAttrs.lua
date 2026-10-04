@@ -26,17 +26,26 @@ local function deepCopy(value, seen)
     return copy
 end
 
--- 神器装配按队读取，不能只反查槽位后默认读队1。
-local function findArtifactPosition(heroesData, heroId)
-    for teamIdx = 1, 3 do
-        local team = heroesData and heroesData.teams
-            and (heroesData.teams[teamIdx] or heroesData.teams[tostring(teamIdx)])
-        for slot, id in ipairs((team and team.slots) or {}) do
-            if tonumber(id) == tonumber(heroId) then return slot, teamIdx end
-        end
+-- 原始存档保留固定槽位；有 teams 时不借陈旧 deployed 队1数据。
+local function getTeamSlotIds(heroesData, teamIdx)
+    if heroesData and type(heroesData.teams) == "table" then
+        local team = heroesData.teams[teamIdx] or heroesData.teams[tostring(teamIdx)]
+        return (team and team.slots) or {}
     end
-    for slot, id in ipairs((heroesData and heroesData.deployed) or {}) do
-        if tonumber(id) == tonumber(heroId) then return slot, 1 end
+    if teamIdx == 1 then return (heroesData and heroesData.deployed) or {} end
+    return {}
+end
+
+-- 神器与星门共用所属队解析；只有无 teams 的旧档才兼容 deployed。
+local function findArtifactPosition(heroesData, heroId)
+    local targetId = tonumber(heroId)
+    if not targetId or targetId <= 0 then return nil, nil end
+    for teamIdx = 1, 3 do
+        local ids = getTeamSlotIds(heroesData, teamIdx)
+        for slot = 1, 4 do
+            local id = ids[slot] or ids[tostring(slot)]
+            if tonumber(id) == targetId then return slot, teamIdx end
+        end
     end
     return nil, nil
 end
@@ -245,22 +254,22 @@ local function calcMelissaStarGatePanelInfo(heroId, level, attrs, heroesData, eq
         }
     end
 
-    local deployed = (heroesData and heroesData.deployed) or {}
-    if options then
-        local _, teamIdx = findArtifactPosition(heroesData, heroId)
-        local team = heroesData and heroesData.teams and
-            (heroesData.teams[teamIdx] or heroesData.teams[tostring(teamIdx)])
-        if team and team.slots then deployed = team.slots end
-    end
-    for _, deployedHeroId in ipairs(deployed) do
-        local sourceId = tonumber(deployedHeroId) or deployedHeroId
-        if tonumber(sourceId) == tonumber(heroId) then
-            addContribution(sourceId, attrs, HC.get(sourceId))
-        else
-            local hd2 = getHeroRuntimeData(heroesData, sourceId)
-            local level2 = (hd2 and hd2.level) or level or 1
-            local unit2, cfg2 = buildHeroAttrsForDetail(sourceId, level2, heroesData, eqData, options)
-            addContribution(sourceId, unit2 and unit2.attrs or nil, cfg2)
+    -- 普通属性与配装快照只计所属队；未编队展示自身，不借其他队贡献。
+    local _, teamIdx = findArtifactPosition(heroesData, heroId)
+    local deployed = teamIdx and getTeamSlotIds(heroesData, teamIdx) or { heroId }
+    local seen = {}
+    for slot = 1, 4 do
+        local sourceId = tonumber(deployed[slot] or deployed[tostring(slot)])
+        if sourceId and sourceId > 0 and not seen[sourceId] then
+            seen[sourceId] = true
+            if sourceId == tonumber(heroId) then
+                addContribution(sourceId, attrs, HC.get(sourceId))
+            else
+                local hd2 = getHeroRuntimeData(heroesData, sourceId)
+                local level2 = (hd2 and hd2.level) or level or 1
+                local unit2, cfg2 = buildHeroAttrsForDetail(sourceId, level2, heroesData, eqData, options)
+                addContribution(sourceId, unit2 and unit2.attrs or nil, cfg2)
+            end
         end
     end
 

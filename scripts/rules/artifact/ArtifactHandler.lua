@@ -21,9 +21,18 @@ end
 handlers[Protocol.ACTION_TYPES.ARTIFACT_EQUIP] = function(uid, params)
     local ok, err, result = ArtifactService.Equip(uid, params and params.artifactId, params and params.slot, params and params.subSlot, params and params.teamIdx)
     if not ok then
-        return { success = false, reason = err, action = Protocol.ACTION_TYPES.ARTIFACT_EQUIP }
+        result = {
+            success = false, reason = err,
+            artifactId = params and params.artifactId,
+            teamIdx = params and params.teamIdx,
+            slot = params and params.slot,
+            subSlot = params and params.subSlot,
+        }
+    else
+        result.success = true
     end
-    result.success = true
+    -- 成功/失败都回显身份，同实体同槽位超时重试也能识别迟到回执。
+    result.requestId = params and params.requestId
     result.action = Protocol.ACTION_TYPES.ARTIFACT_EQUIP
     return result
 end

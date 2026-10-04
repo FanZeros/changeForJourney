@@ -32,6 +32,10 @@ function M.bind(deps)
     local function onActionResult(data)
         -- 转职结果与教堂开关无关（转职页在右侧栏角色详情）
         local ProtocolEarly = getProtocol()
+        -- 闭页仅停止展示；先按请求身份收尾，迟到/不匹配回执不得解锁或盖新提示。
+        if data.action == ProtocolEarly.ACTION_TYPES.ARTIFACT_EQUIP then
+            if ArtifactPanel.onArtifactEquipResult(data.success, data) == false then return end
+        end
         if data.action == ProtocolEarly.ACTION_TYPES.ADVANCE_CLASS
             or data.action == ProtocolEarly.ACTION_TYPES.RESET_CLASS
             or (data.branchId and data.advLevel) then
@@ -58,7 +62,6 @@ function M.bind(deps)
 
         if data.action == Protocol.ACTION_TYPES.ARTIFACT_EQUIP and data.success then
             setFloat("神器安装成功，下波战斗生效")
-            ArtifactPanel.onArtifactEquipResult(true)
         elseif data.action == Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP and data.success then
             setFloat("神器已卸下，下波战斗生效")
         elseif data.action == Protocol.ACTION_TYPES.ARTIFACT_MERGE and data.success then
@@ -80,9 +83,6 @@ function M.bind(deps)
             or data.action == Protocol.ACTION_TYPES.ARTIFACT_MERGE
             or data.action == Protocol.ACTION_TYPES.ARTIFACT_REROLL
             or data.action == Protocol.ACTION_TYPES.ARTIFACT_REFINE_VALUE) and not data.success then
-            if data.action == Protocol.ACTION_TYPES.ARTIFACT_EQUIP then
-                ArtifactPanel.onArtifactEquipResult(false)
-            end
             setFloat(data.reason or "神器操作失败")
         end
 

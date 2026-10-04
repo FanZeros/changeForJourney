@@ -182,16 +182,20 @@ function Start()
         power.refreshPowerCache()
         check(rosterPowerCache[3] == p1 and gamePower == p1, "清空天赋回到原有正式战力")
 
-        -- 神器桥替身区分队伍固定加成，验证名册不借用第二队缓存口径。
+        -- 名册和队伍缓存共用英雄所属队神器，不能因活动队改变计价。
         local secondHeroBefore = power.calcHeroPower(2)
         artifactBonuses[1][1] = 37
         artifactBonuses[2][3] = 89
         power.refreshPowerCache()
         check(rosterPowerCache[3] == p1 + 37 and rosterPowerCache[3] == power.calcHeroPower(1),
-            "神器变更仅刷新即可同步名册，沿用 calcHeroPower 缺省队口径")
+            "神器变更刷新名册，英雄1按队1真实槽计价")
         check(teamPowerCaches[2][3] == secondHeroBefore + 89
-            and rosterPowerCache[1] == secondHeroBefore,
-            "三队缓存保留各自神器装配，名册不混入非缺省队加成")
+            and rosterPowerCache[1] == secondHeroBefore + 89,
+            "英雄2名册和队伍缓存都计入所属队2槽3神器")
+        teamSlots = teams[2].slots
+        power.refreshPowerCache()
+        check(rosterPowerCache[1] == secondHeroBefore + 89 and rosterPowerCache[3] == p1 + 37,
+            "活动队切到队2不改变各英雄所属队战力")
         check(gamePower == p1 + 37 and runtimeOnlyPower == 0 and rosterPowerCache[2] == 0,
             "神器刷新不把全名册或其他队战力加进总战力")
 

@@ -9,7 +9,7 @@ ArtifactSchema.SLOT_COUNT = 4
 --- [双格改版] 每号位 2 个神器格（原 3 个）：Lv30 解锁第1格、Lv60 解锁第2格。
 --- 旧档第3格装配在 normalizeModule 时自动卸下（实例仍留在背包，不丢失）。
 ArtifactSchema.SUB_SLOT_COUNT = 2
---- [三队适配] 装配表按队伍隔离；同一实例可同时装到多支队伍
+--- 装配表按队伍隔离；同一实例全队唯一，不同实例同类型可分队
 ArtifactSchema.TEAM_COUNT = 3
 ArtifactSchema.FIRST_SLOT_UNLOCK_LEVEL = 30
 ArtifactSchema.SECOND_SLOT_UNLOCK_LEVEL = 60
@@ -48,17 +48,53 @@ function ArtifactSchema.normalizeTeamIdx(teamIdx)
     return teamIdx
 end
 
-local function getTeamEquipped(data, teamIdx, create)
+-- 混合键旧档按格合并，不用整队/整行的 `or` 丢掉互补装配。
+-- 数字team > 字符串team；各team内数字slot > 字符串slot；数字subslot优先。
+local function getTeamEquipped(data, teamIdx)
     teamIdx = ArtifactSchema.normalizeTeamIdx(teamIdx)
-    data.equippedByTeam = data.equippedByTeam or {}
-    local team = data.equippedByTeam[teamIdx] or data.equippedByTeam[tostring(teamIdx)]
-    if type(team) ~= "table" then
-        if not create then return nil end
-        team = {}
-        data.equippedByTeam[teamIdx] = team
-        data.equippedByTeam[tostring(teamIdx)] = nil
+    local byTeam = data.et or data.equippedByTeam
+    local numeric = type(byTeam) == "table" and byTeam[teamIdx] or nil
+    local textual = type(byTeam) == "table" and byTeam[tostring(teamIdx)] or nil
+    if type(numeric) ~= "table" then numeric = nil end
+    if type(textual) ~= "table" then textual = nil end
+    if not numeric and not textual and teamIdx == 1 then
+        local legacy = data.e or data.equipped
+        if type(legacy) == "table" then numeric = legacy end
     end
-    return team
+    return numeric, textual
+end
+
+local function readRowId(row, subSlot)
+    if type(row) == "table" then
+        local id = row[subSlot]
+        if id ~= nil and tostring(id) ~= "" then return id end
+        id = row[tostring(subSlot)]
+        if id ~= nil and tostring(id) ~= "" then return id end
+    elseif subSlot == 1 and row ~= nil and tostring(row) ~= "" then
+        return row
+    end
+    return nil
+end
+
+local function readEquippedCell(numeric, textual, slot, subSlot)
+    local function fromTeam(team)
+        if type(team) ~= "table" then return nil end
+        return readRowId(team[slot], subSlot) or readRowId(team[tostring(slot)], subSlot)
+    end
+    return fromTeam(numeric) or fromTeam(textual)
+end
+
+local function mergeTeamEquipped(numeric, textual)
+    local equipped = {}
+    for slot = 1, ArtifactSchema.SLOT_COUNT do
+        local row = {}
+        for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
+            local id = readEquippedCell(numeric, textual, slot, subSlot)
+            if id ~= nil then row[subSlot] = tostring(id) end
+        end
+        if next(row) then equipped[slot] = row end
+    end
+    return equipped
 end
 
 local function isValidIndex(value, maxValue)
@@ -72,111 +108,77 @@ end
 --- [三队适配] 读取指定队伍的装配（teamIdx 缺省 1，旧调用兼容）
 function ArtifactSchema.getEquippedId(data, slot, subSlot, teamIdx)
     if type(data) ~= "table" then return nil end
-    local ti = ArtifactSchema.normalizeTeamIdx(teamIdx)
-    -- 旧档兼容回落：仅队1 允许回落到未迁移的全局 equipped；队2/3 无独立装配即为空
-    local equipped = getTeamEquipped(data, ti, false)
-        or (ti == 1 and type(data.equipped) == "table" and data.equipped)
-        or nil
-    if type(equipped) ~= "table" then return nil end
+    local numeric, textual = getTeamEquipped(data, teamIdx)
     slot = tonumber(slot)
     subSlot = tonumber(subSlot) or 1
     if not isValidIndex(slot, ArtifactSchema.SLOT_COUNT)
         or not isValidIndex(subSlot, ArtifactSchema.SUB_SLOT_COUNT) then
         return nil
     end
-    local row = equipped[slot] or equipped[tostring(slot)]
-    if type(row) == "table" then
-        return row[subSlot] or row[tostring(subSlot)]
-    end
-    if subSlot == 1 then
-        return row
-    end
-    return nil
+    return readEquippedCell(numeric, textual, slot, subSlot)
 end
 
---- [三队适配] 写入指定队伍的装配（teamIdx 缺省 1）
+--- 写入装配引用，新位置优先去重；服务层必须先拒绝跨队占用。
 function ArtifactSchema.setEquippedId(data, slot, subSlot, artifactId, teamIdx)
     if type(data) ~= "table" then return end
-    local equipped = getTeamEquipped(data, teamIdx, true)
     slot = tonumber(slot)
     subSlot = tonumber(subSlot) or 1
     if not isValidIndex(slot, ArtifactSchema.SLOT_COUNT)
         or not isValidIndex(subSlot, ArtifactSchema.SUB_SLOT_COUNT) then
         return
     end
-    local row = {}
-    local function mergeRow(src)
-        if type(src) == "table" then
-            for i = 1, ArtifactSchema.SUB_SLOT_COUNT do
-                local id = src[i] or src[tostring(i)]
-                if id ~= nil and tostring(id) ~= "" then
-                    row[i] = tostring(id)
-                end
-            end
-        elseif src ~= nil and tostring(src) ~= "" then
-            row[1] = row[1] or tostring(src)
-        end
-    end
-    mergeRow(equipped[slot])
-    mergeRow(equipped[tostring(slot)])
-    equipped[slot] = row
-    equipped[tostring(slot)] = nil
-    if artifactId == nil or tostring(artifactId) == "" then
-        row[subSlot] = nil
-        if not next(row) then
-            equipped[slot] = nil
-        end
-    else
-        local idStr = tostring(artifactId)
-        -- 先写入新位置，再做同队唯一性清理。
-        -- ⚠️ 顺序不能反：row 就是 equipped[slot] 本身，若先清理，
-        -- 空 row 会被当成旧位删除，导致装配写入丢失。
-        row[subSlot] = idStr
-        -- [三队适配] 同一队内实例唯一：清掉本队其他位置的同一实例
-        -- （只影响本队；该实例在其他队伍的装配保持不变）
-        for s = 1, ArtifactSchema.SLOT_COUNT do
-            local other = equipped[s]
-            if type(other) == "table" then
-                for ss = 1, ArtifactSchema.SUB_SLOT_COUNT do
-                    if not (s == slot and ss == subSlot)
-                        and tostring(other[ss] or "") == idStr then
-                        other[ss] = nil
-                    end
-                end
-                if s ~= slot and not next(other) then equipped[s] = nil end
-            end
-        end
-    end
     local ti = ArtifactSchema.normalizeTeamIdx(teamIdx)
-    if not next(equipped) then
-        data.equippedByTeam[ti] = nil
+    local idStr = artifactId ~= nil and tostring(artifactId) or ""
+    local fixedByTeam = {}
+    -- 只整理装配引用，不改bag实体或roll；保留混合键旧档的互补格子。
+    for t = 1, ArtifactSchema.TEAM_COUNT do
+        local numeric, textual = getTeamEquipped(data, t)
+        local equipped = mergeTeamEquipped(numeric, textual)
+        if next(equipped) then fixedByTeam[t] = equipped end
     end
-    -- data.equipped 是队1 的兼容视图，保持引用一致
-    if ti == 1 then
-        data.equipped = data.equippedByTeam[1] or {}
+    local equipped = fixedByTeam[ti] or {}
+    fixedByTeam[ti] = equipped
+    local row = equipped[slot] or {}
+    equipped[slot] = row
+    row[subSlot] = idStr ~= "" and idStr or nil
+    -- 先写入新位置再清理，避免空row被当作旧位删除后写入丢失。
+    for t = 1, ArtifactSchema.TEAM_COUNT do
+        local team = fixedByTeam[t]
+        if team then
+            for s = 1, ArtifactSchema.SLOT_COUNT do
+                local other = team[s]
+                if other then
+                    if idStr ~= "" then
+                        for ss = 1, ArtifactSchema.SUB_SLOT_COUNT do
+                            if not (t == ti and s == slot and ss == subSlot)
+                                and other[ss] == idStr then
+                                other[ss] = nil
+                            end
+                        end
+                    end
+                    if not next(other) then team[s] = nil end
+                end
+            end
+            if not next(team) then fixedByTeam[t] = nil end
+        end
     end
+    data.equippedByTeam = fixedByTeam
+    data.equipped = fixedByTeam[1] or {}
+    data.et = nil
+    data.e = nil
 end
 
---- [三队适配] 在指定队伍中查找装配位置（teamIdx 缺省 1）
+--- 在指定队伍中查找装配位置（teamIdx缺省1），读取不迁移/修改旧档。
 function ArtifactSchema.findEquippedSlot(data, artifactId, teamIdx)
     artifactId = tostring(artifactId or "")
     if artifactId == "" or type(data) ~= "table" then return nil, nil end
-    local ti = ArtifactSchema.normalizeTeamIdx(teamIdx)
-    local equipped = getTeamEquipped(data, ti, false)
-        or (ti == 1 and type(data.equipped) == "table" and data.equipped)
-        or nil
-    if type(equipped) ~= "table" then return nil, nil end
+    local numeric, textual = getTeamEquipped(data, teamIdx)
     for slot = 1, ArtifactSchema.SLOT_COUNT do
-        local row = equipped[slot] or equipped[tostring(slot)]
-        if type(row) == "table" then
-            for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
-                local id = row[subSlot] or row[tostring(subSlot)]
-                if tostring(id or "") == artifactId then
-                    return slot, subSlot
-                end
+        for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
+            local id = readEquippedCell(numeric, textual, slot, subSlot)
+            if tostring(id or "") == artifactId then
+                return slot, subSlot
             end
-        elseif tostring(row or "") == artifactId then
-            return slot, 1
         end
     end
     return nil, nil
@@ -311,14 +313,14 @@ function ArtifactSchema.normalizeModule(data)
         end
     end
 
-    -- [三队适配] 逐队归一化装配：实例 ID 必须存在于背包；
-    -- 同一队内同槽位类型不重复；同一实例在同一队内只能出现一次。
-    -- 实例允许跨队复用，因此 usedEquippedIds 按队重置。
+    -- 按队/号位/子格保留首次有效引用；全队唯一且同号位类型不重复。
+    -- 重复装配只卸引用，不删bag实体；长字段/et/e共享同一迁移顺序。
     local fixedByTeam = {}
+    local usedEquippedIds = {}
     for teamIdx = 1, ArtifactSchema.TEAM_COUNT do
-        local teamSrc = data.equippedByTeam[teamIdx] or data.equippedByTeam[tostring(teamIdx)]
-        if type(teamSrc) == "table" and next(teamSrc) ~= nil then
-            local usedEquippedIds = {}
+        local numeric, textual = getTeamEquipped(data, teamIdx)
+        local teamSrc = mergeTeamEquipped(numeric, textual)
+        if next(teamSrc) ~= nil then
             local fixedEquipped = {}
             for slot = 1, ArtifactSchema.SLOT_COUNT do
                 local v = teamSrc[slot] or teamSrc[tostring(slot)]

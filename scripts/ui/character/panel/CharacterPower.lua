@@ -79,21 +79,41 @@ function M.bind(deps)
         return ownData and ownData.level or 1
     end
 
-    -- 构建一个已应用真实存档管线（装备/遗物/神器）的英雄单位。
-    -- calcHeroPower 与 calcHeroEstimate 共用，避免两条管线漂移。
-    -- teamIdx 指定按哪支队伍的装配表应用神器（缺省 1）。
-    ---@return table|nil hero 含 attrs/classId/awakening 的单位；失败返回 nil
-    local function buildHeroAttrs(heroId, partySlot, teamIdx)
-        local teamSlots = get("teamSlots")
-        if not partySlot then
+    -- 槽位只在所属队里有意义；名册和详情缺省查全队，不读取活动视图。
+    ---@param heroId number|string
+    ---@param teamIdx? number
+    ---@return number|nil slot
+    ---@return number|nil team
+    local function findHeroDeployPosition(heroId, teamIdx)
+        local targetId = tonumber(heroId)
+        if not targetId or targetId <= 0 then return nil, nil end
+        local firstTeam, lastTeam = 1, TEAM_COUNT
+        if teamIdx ~= nil then
+            local requestedTeam = tonumber(teamIdx)
+            if not requestedTeam or requestedTeam < 1 or requestedTeam > TEAM_COUNT
+                or requestedTeam ~= math.floor(requestedTeam) then return nil, nil end
+            firstTeam, lastTeam = requestedTeam, requestedTeam
+        end
+        local teams = get("teams") or {}
+        for t = firstTeam, lastTeam do
+            local team = teams[t] or teams[tostring(t)]
+            local slots = team and team.slots or {}
             for i = 1, MAX_SLOTS do
-                local slot = teamSlots[i]
-                if slot.state == "occupied" and slot.heroId == heroId then
-                    partySlot = i
-                    break
+                local slot = slots[i]
+                if slot and slot.state == "occupied" and tonumber(slot.heroId) == targetId then
+                    return i, t
                 end
             end
         end
+        return nil, nil
+    end
+
+    -- 正式战力与预估共用真实属性管线；槽位提示必须匹配英雄所属队。
+    ---@return table|nil hero 含 attrs/classId/awakening 的单位；失败返回 nil
+    local function buildHeroAttrs(heroId, partySlot, teamIdx)
+        heroId = tonumber(heroId) or heroId
+        local deployedSlot, deployedTeam = findHeroDeployPosition(heroId, teamIdx)
+        local matchesSlot = partySlot == nil or tonumber(partySlot) == deployedSlot
         local level = getHeroLevel(heroId)
         local ownedSet = get("ownedSet")
         local ownData = ownedSet[heroId]
@@ -103,9 +123,9 @@ function M.bind(deps)
         if not hero or not hero.attrs then return nil end
         local a = hero.attrs
 
-        applyEquippedItems(a, heroId, partySlot)
-        if partySlot then
-            ArtifactBridge.applyToUnit(a, partySlot, nil, teamIdx)
+        applyEquippedItems(a, heroId, deployedSlot)
+        if deployedSlot and matchesSlot then
+            ArtifactBridge.applyToUnit(a, deployedSlot, nil, deployedTeam)
         end
 
         hero.awakening = awakening
@@ -171,42 +191,37 @@ function M.bind(deps)
             end
         end
 
-        local teams = get("teams")
+        local teams = get("teams") or {}
+        local ownedSet = get("ownedSet") or {}
         local teamPowerCaches = get("teamPowerCaches")
-        local deployedCount = 0
+        local runtimeOnlyPowerCaches = {}
+        local runtimePerHero = litNodes and TalentEffect.calcRuntimeOnlyPower(litNodes) or 0
         for t = 1, TEAM_COUNT do
-            local slots = teams[t] and teams[t].slots
+            local team = teams[t] or teams[tostring(t)]
+            local slots = team and team.slots or {}
             local cache = teamPowerCaches[t]
-            if slots and cache then
-                for i = 1, MAX_SLOTS do
-                    local slot = slots[i]
-                    if slot.state == "occupied" and slot.heroId then
-                        -- [三队适配] 每队战力按本队神器装配计算
-                        cache[i] = calcHeroPower(slot.heroId, i, t)
-                        if t == 1 then deployedCount = deployedCount + 1 end
-                    else
-                        cache[i] = 0
-                    end
+            local deployedCount = 0
+            for i = 1, MAX_SLOTS do
+                local slot = slots[i]
+                local heroId = slot and tonumber(slot.heroId)
+                if slot and slot.state == "occupied" and heroId and ownedSet[heroId] then
+                    if cache then cache[i] = calcHeroPower(heroId, i, t) end
+                    deployedCount = deployedCount + 1
+                elseif cache then
+                    cache[i] = 0
                 end
             end
+            runtimeOnlyPowerCaches[t] = runtimePerHero * deployedCount
         end
+        set("runtimeOnlyPowerCaches", runtimeOnlyPowerCaches)
+        set("runtimeOnlyPowerCache", runtimeOnlyPowerCaches[1] or 0)
 
-        local total = 0
-        do
-            local mainCache = teamPowerCaches[1]
-            for i = 1, MAX_SLOTS do
-                total = total + (mainCache[i] or 0)
-            end
+        -- 顶栏保持队1口径；各队标题和当前队接口使用对应队的缓存。
+        local total = runtimeOnlyPowerCaches[1] or 0
+        local mainCache = teamPowerCaches[1] or {}
+        for i = 1, MAX_SLOTS do
+            total = total + (mainCache[i] or 0)
         end
-
-        local runtimeOnlyPowerCache
-        if litNodes and deployedCount > 0 then
-            runtimeOnlyPowerCache = TalentEffect.calcRuntimeOnlyPower(litNodes) * deployedCount
-        else
-            runtimeOnlyPowerCache = 0
-        end
-        set("runtimeOnlyPowerCache", runtimeOnlyPowerCache)
-        total = total + runtimeOnlyPowerCache
 
         GameState.setPower(total)
         CharacterDetail.markPowerDirty()
@@ -247,6 +262,7 @@ function M.bind(deps)
     return {
         applyEquippedItems = applyEquippedItems,
         getHeroLevel = getHeroLevel,
+        findHeroDeployPosition = findHeroDeployPosition,
         calcHeroPower = calcHeroPower,
         calcHeroEstimate = calcHeroEstimate,
         refreshPowerCache = refreshPowerCache,

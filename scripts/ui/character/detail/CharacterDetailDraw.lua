@@ -14,6 +14,7 @@ local EquipmentConfig   = require("config.EquipmentConfig")
 local DetailAttrs       = require("ui.character.detail.CharacterDetailAttrs")
 local EquipStats        = require("ui.character.detail.CharacterEquipStats")
 local AttributeView     = require("ui.character.detail.CharacterAttributeView")
+local BattleLayout      = require("core.BattleLayout")
 local DrawUtil          = require("core.DrawUtil")
 local HeroFrame         = require("ui.widget.HeroFrame")
 local HeroAssetUtil     = require("config.HeroAssetUtil")
@@ -224,9 +225,8 @@ M.SWITCH_SLIDE_DIST    = 180                 -- 水平滑动距离（适中，�
 
 -- 卡片渲染常量（打包为 table，节省 local 变量槽位）
 local CARD = {
-    -- [复用角色展示/编队页卡片] 同尺寸 198x350 + 卡底锚定（战力上83/等级38/经验36），随卡高联动
-    -- （卡 272..622：头盔槽底 265 / 鞋子槽顶 629，各留 7px；名牌不画——MID 名称行两页均显示）
-    W=198, H=350, CY=544,
+    -- 可见卡框统一按538:955，卡底信息随高度联动；中心/侧卡宽度与缩放不变。
+    W=BattleLayout.CARD_W, H=BattleLayout.CARD_H, CY=544,
     SIDE_SCALE=0.92, SIDE_DX=250, CENTER_SCALE=1.18, YAW_SQUASH=0.86,
     TAG_SIZE=60, TAG_DX=63,  -- 职业标识右下角，与等级徽章(-63)左右对应
     POWER_BOTTOM_UP=83, POWER_ICON_SIZE=36,
@@ -716,7 +716,7 @@ function M.draw(vg)
         nvgScale(vg, scale * yaw, scale)
         nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
         local owned = heroOwned(id)
-        DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, owned and 1.0 or 0.45)
+        DrawUtil.drawCardImage(vg, imgCard, 0, 0, CARD.W, CARD.H, owned and 1.0 or 0.45)
         if not owned then
             nvgBeginPath(vg)
             nvgRect(vg, -CARD.W * 0.5, -CARD.H * 0.5, CARD.W, CARD.H)
@@ -1393,7 +1393,7 @@ function M.draw(vg)
             nvgScale(vg, scale * yaw, scale)
             nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
             local owned = heroOwned(id)
-            DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, owned and 1.0 or 0.45)
+            DrawUtil.drawCardImage(vg, imgCard, 0, 0, CARD.W, CARD.H, owned and 1.0 or 0.45)
             if not owned then
                 nvgBeginPath(vg)
                 nvgRect(vg, -CARD.W * 0.5, -CARD.H * 0.5, CARD.W, CARD.H)

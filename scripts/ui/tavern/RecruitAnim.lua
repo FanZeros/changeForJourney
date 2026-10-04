@@ -7,6 +7,7 @@
 local HC = require("config.HeroConfig")
 local CC = require("config.ClassConfig")
 local GameConfig = require("config.GameConfig")
+local BattleLayout = require("core.BattleLayout")
 local DrawUtil = require("core.DrawUtil")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质框/卡底矢量绘制
 local ResourceDefs = require("config.ResourceDefs")
@@ -52,7 +53,9 @@ local CLASS_NUM = {
 
 -- ======================== 卡片布局常量 ========================
 
+-- 资源卡保留原高度；只有英雄展示按可见卡框比例缩高。
 local CARD_W, CARD_H = 198, 438
+local HERO_CARD_H = BattleLayout.cardHeightForWidth(CARD_W)
 local QUALITY_BADGE_W, QUALITY_BADGE_H = 107, 47
 
 -- 资源类卡片
@@ -172,9 +175,9 @@ local function drawPortraitFit(vg, heroId, cx, cy, alpha)
     local nameArea = 90
     local iw, ih = nvgImageSize(vg, portrait)
     if not iw or iw <= 0 or not ih or ih <= 0 then
-        iw, ih = CARD_W, CARD_H
+        iw, ih = CARD_W, HERO_CARD_H
     end
-    local scale = math.min(CARD_W / iw, (CARD_H - nameArea) / ih)
+    local scale = math.min(CARD_W / iw, (HERO_CARD_H - nameArea) / ih)
     local w, h = iw * scale, ih * scale
     drawImageCentered(vg, portrait, cx, cy - nameArea * 0.5, w, h, alpha)
 end
@@ -475,7 +478,7 @@ local function drawDupeToShardCard(vg, cx, cy, item, alpha)
 
     -- 英雄名
     local heroName = heroCfg and heroCfg.name or ("英雄" .. heroId)
-    local nameCY = cy + CARD_H * 0.5 - CHAR_NAME_OFFSET_BOTTOM
+    local nameCY = cy + HERO_CARD_H * 0.5 - CHAR_NAME_OFFSET_BOTTOM
     drawTextStroke(vg,
         cx, nameCY,
         heroName,
@@ -520,7 +523,7 @@ local function drawDecomposeCard(vg, cx, cy, item, alpha)
 
     -- 英雄名
     local heroName = heroCfg and heroCfg.name or ("英雄" .. heroId)
-    local nameCY = cy + CARD_H * 0.5 - CHAR_NAME_OFFSET_BOTTOM
+    local nameCY = cy + HERO_CARD_H * 0.5 - CHAR_NAME_OFFSET_BOTTOM
     drawTextStroke(vg,
         cx, nameCY,
         heroName,
@@ -541,7 +544,7 @@ local function drawCharacterCard(vg, cx, cy, item, alpha)
     drawPortraitFit(vg, heroId, cx, cy, alpha)
     -- [统一角色框] 招募英雄卡叠加品质色描边（feat926 侧，frameOnly 不画底板）
     HeroFrame.draw(vg, {
-        cx = cx, cy = cy, w = CARD_W, h = CARD_H,
+        cx = cx, cy = cy, w = CARD_W, h = HERO_CARD_H,
         heroId = heroId,
         state = "owned",
         frameOnly = true,
@@ -553,7 +556,7 @@ local function drawCharacterCard(vg, cx, cy, item, alpha)
     nvgSave(vg)
     nvgGlobalAlpha(vg, combinedAlpha)
     local heroName = heroCfg and heroCfg.name or ("英雄" .. heroId)
-    local nameCY = cy + CARD_H * 0.5 - CHAR_NAME_OFFSET_BOTTOM
+    local nameCY = cy + HERO_CARD_H * 0.5 - CHAR_NAME_OFFSET_BOTTOM
     drawTextStroke(vg,
         cx, nameCY,
         heroName,
@@ -568,7 +571,7 @@ local function drawCharacterCard(vg, cx, cy, item, alpha)
         local classIdx = CLASS_NUM[heroCfg.classId]
         local classIconImg = classIdx and img.classIcons[classIdx]
         if classIconImg and classIconImg >= 0 then
-            local classIconCY = cy - CARD_H * 0.5
+            local classIconCY = cy - HERO_CARD_H * 0.5
             drawImageCentered(vg, classIconImg, cx, classIconCY, CLASS_ICON_W, CLASS_ICON_H, alpha)
         end
     end

@@ -28,6 +28,8 @@ function BattleView.init(vg)
     img.loaded   = true
     img.map      = nvgCreateImage(vg, "image/关卡地图/MAP_1.png", 0)
     img.enemyTag = nvgCreateImage(vg, "image/通用图标/ICON_ZY_XG.png", 0)
+    print(string.format("[BattleView] 敌我卡框 %.2fx%.2f，参考比例538:955，宽度/间距不变",
+        BattleLayout.CARD_W, BattleLayout.CARD_H))
 end
 
 --- 绘制一条战斗条带（b = { allies, enemies }；条带设计坐标 948x360）
@@ -59,11 +61,12 @@ function BattleView.draw(vg, b, bgImg, skipBg)
 
     -- 2) 两侧阵营底影已移除——L1 战区背景自带暗调与晕影
 
-    -- 3) 卡组（我左单线 / 敌右单线；卡内 UI 偏移沿用 BattleScene 常量）
+    -- 3) 卡组（我左单线 / 敌右单线；卡内UI保持距卡顶/卡底的原间距）
+    local halfH = BattleLayout.CARD_H * 0.5
     BattleDraw.drawCardGroup(vg, enemies, nil,
-        -215, 90, 153, 135, 181, 215, img.enemyTag, false)
+        -halfH + 4, halfH - 129, halfH - 66, halfH - 84, 181, halfH - 4, img.enemyTag, false)
     BattleDraw.drawCardGroup(vg, allies, nil,
-        -215, 85, 153, 135, 181, 215, nil, true)
+        -halfH + 4, halfH - 134, halfH - 66, halfH - 84, 181, halfH - 4, nil, true)
     require("systems.ExtraTalentSystem").drawIceStatues(vg)
 
     -- 4) 飘字 / 特效 / 投射物 / 星门（均为 mounted 状态内容；坐标即条带坐标）

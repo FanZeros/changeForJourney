@@ -3,6 +3,7 @@
 -- 统一 drawTextStroke，避免各 UI 模块重复定义
 -- ============================================================================
 
+local BattleLayout = require("core.BattleLayout")
 local DrawUtil = {}
 
 -- ============================================================================
@@ -106,6 +107,31 @@ function DrawUtil.drawImageCentered(vg, img, cx, cy, w, h, alpha)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
     nvgFill(vg)
+end
+
+--- 完整卡面映射到可见框槽位，不用cover裁掉上下框。
+--- 930满幅卡面完整缩高；70%源图按已知框位置映射，出框元素保留。
+---@param vg any
+---@param img number
+---@param cx number
+---@param cy number
+---@param w number
+---@param h number
+---@param alpha number|nil
+function DrawUtil.drawCardImage(vg, img, cx, cy, w, h, alpha)
+    alpha = alpha or 1.0
+    if img < 0 or alpha <= 0.01 or w <= 0 or h <= 0 then return end
+    local srcW, srcH = nvgImageSize(vg, img)
+    if srcW == BattleLayout.CARD_SOURCE_W and srcH == BattleLayout.CARD_SOURCE_H then
+        local sx = w / BattleLayout.FRAME_REFERENCE_W
+        local sy = h / BattleLayout.FRAME_REFERENCE_H
+        local dw, dh = srcW * sx, srcH * sy
+        local x = cx - w * 0.5 - BattleLayout.FRAME_SOURCE_X * sx
+        local y = cy - h * 0.5 - BattleLayout.FRAME_SOURCE_Y * sy
+        DrawUtil.drawImageCentered(vg, img, x + dw * 0.5, y + dh * 0.5, dw, dh, alpha)
+        return
+    end
+    DrawUtil.drawImageCentered(vg, img, cx, cy, w, h, alpha)
 end
 
 --- 程序化双 chevron 箭头「》」：替代深色位图箭头（nvgImagePatternTinted 为相乘混合，

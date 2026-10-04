@@ -360,6 +360,7 @@ local function seamBackList()
             list[#list + 1] = {
                 cx = (logicalW() - 486 * psL) - barW * 0.5 + oxWin,
                 sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "right",
+                key = "character", openedAt = ot,
                 close = function() CharacterDetail.close() end,
             }
         end
@@ -376,6 +377,7 @@ local function seamBackList()
         list[#list + 1] = {
             cx = seamX + barW * 0.5 + oxWin,
             sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "left",
+            key = "smith", openedAt = ot,
             close = function() BlacksmithPage.close() end,
         }
     end
@@ -383,25 +385,36 @@ local function seamBackList()
     -- 左框柱 ‹：左栏二级页（仓库/教堂/酒馆/市场）——条贴页面右缘(前缘),同步推进
     -- [锻炉双页 0929] 锻炉打开时仓库左栏条不画（双页整体由锻炉右侧竖栏一键关闭）
     if tri then
-        local leftClose, leftAnim, leftScale
+        local leftClose, leftAnim, leftScale, leftKey
         if LootBoxPage.isOpen() then
+            leftKey = "lootbox"
             leftClose = function() LootBoxPage.close() end
             leftAnim = { LootBoxPage.getSeamAnim() }
         elseif TaskPage.isOpen() then
+            leftKey = "task"
             leftClose = function() TaskPage.close() end
             leftAnim = { TaskPage.getSeamAnim() }
         elseif BackpackPanel.isOpen() and BackpackPanel.isLeftMode()
             and not BlacksmithPage.isOpen() then
+            leftKey = "backpack"
             leftClose = function() BackpackPanel.close() end
             leftAnim = { BackpackPanel.getSeamAnim() }
-        elseif TalentPage.isOpen()     then leftClose = function() TalentPage.close() end
+        elseif TalentPage.isOpen() then
+            leftKey = "talent"
+            leftClose = function() TalentPage.close() end
             leftAnim = { TalentPage.getSeamAnim() }
             leftScale = TalentPage.getHorizonWidthScale()
-        elseif ChurchPage.isOpen()     then leftClose = function() ChurchPage.close() end
+        elseif ChurchPage.isOpen() then
+            leftKey = "church"
+            leftClose = function() ChurchPage.close() end
             leftAnim = { ChurchPage.getSeamAnim() }
-        elseif TavernPage.isOpen()      then leftClose = function() TavernPage.close() end
+        elseif TavernPage.isOpen() then
+            leftKey = "tavern"
+            leftClose = function() TavernPage.close() end
             leftAnim = { TavernPage.getSeamAnim() }
-        elseif MarketPage.isOpen()      then leftClose = function() MarketPage.close() end
+        elseif MarketPage.isOpen() then
+            leftKey = "market"
+            leftClose = function() MarketPage.close() end
             leftAnim = { MarketPage.getSeamAnim() }
         end
         if leftClose then
@@ -414,6 +427,7 @@ local function seamBackList()
             list[#list + 1] = {
                 cx = leftEdge + barW * 0.5 + oxWin,
                 sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "left",
+                key = leftKey, openedAt = leftAnim[1],
                 close = leftClose,
             }
         end

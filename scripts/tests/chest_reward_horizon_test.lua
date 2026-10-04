@@ -137,6 +137,9 @@ function Start()
             ["ui.character.panel.CharacterPanel"] = mock({ getTotalPower = function() return 0 end }),
             ["ui.battle.tri.BattleTriPage"] = mock({ isOpen = function() return mode == "tri" end }),
             ["ui.tower.TowerBattleScene"] = mock({ isActive = function() return mode == "tower" end }),
+            ["ui.battle.popup.TerminalConfirmDialog"] = page(),
+            ["ui.tavern.TargetRecruitPanel"] = page(),
+            ["ui.tavern.TavernPopups"] = page(),
             ["core.DrawUtil"] = originalRequire("core.DrawUtil"),
             ["core.DarkIcon"] = originalRequire("core.DarkIcon"),
         }
@@ -147,7 +150,9 @@ function Start()
         local function source(name)
             local path = name:gsub("%.", "/") .. ".lua"
             local f = assert(cache:GetFile(path), "缺少真实Lua资源 " .. path)
-            check(f:IsOpen(), "打开项目源码 " .. path)
+            -- 新依赖只验证源码可用，不改变既有业务断言计数。
+            if name == "boot.SeamBackGesture" then assert(f:IsOpen(), "打开项目源码 " .. path)
+            else check(f:IsOpen(), "打开项目源码 " .. path) end
             local lines = {}
             while not f:IsEof() do lines[#lines + 1] = f:ReadLine() end
             f:Dispose()
@@ -167,6 +172,7 @@ function Start()
         local DrawPanel = compile("ui.church.ChurchArtifactDrawPanel")
         local Results = compile("ui.church.ChurchResults")
         local Defs, Protocol = mods["shared.artifact.ArtifactDefs"], mods["shared.Protocol"]
+        mods["boot.SeamBackGesture"] = compile("boot.SeamBackGesture")
         mods["boot.StandaloneHorizonInput"] = compile("boot.StandaloneHorizonInput")
         mods["boot.OfflineRewardOverlay"] = compile("boot.OfflineRewardOverlay")
         local horizonSource = source("boot.StandaloneHorizon")

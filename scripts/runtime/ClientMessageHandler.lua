@@ -653,7 +653,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      -- 离线领取完成后说明溢出装备的实际去向；仅展示，不再次发奖。
      if data.action == Protocol.ACTION_TYPES.CLAIM_OFFLINE_REWARDS
          and data.lootboxEquips and #data.lootboxEquips > 0 then
-         RewardPopup.show("离线装备已入遗匣", data.lootboxEquips)
+         RewardPopup.show("离线装备已入遗匣", data.lootboxEquips, { panel = "left" })
      end
 
      -- 扫荡结果

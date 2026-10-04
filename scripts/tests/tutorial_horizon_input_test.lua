@@ -69,6 +69,9 @@ function Start()
             ["boot.OfflineRewardOverlay"] = { bind = function() return mock() end },
             ["ui.hud.BottomNav"] = mock({ getSelectedIndex = function() return 3 end }),
             ["ui.story.ScenarioDialogue"] = mock(),
+            ["ui.battle.popup.TerminalConfirmDialog"] = page("terminalConfirm"),
+            ["ui.tavern.TargetRecruitPanel"] = page("targetRecruit"),
+            ["ui.tavern.TavernPopups"] = page("tavernPopups"),
             ["ui.battle.tri.BattleTriPage"] = page("tri", { isOpen = function() return state.tri end }),
             ["ui.backpack.BackpackPanel"] = page("backpack", {
                 isOpen = function() return state.warehouse end,
@@ -123,7 +126,8 @@ function Start()
         local capturing = true
         require = function(name)
             if name == "systems.TutorialManager" or name == "ui.tutorial.TutorialOverlay"
-                or name == "config.TutorialConfig" or name == "config.GameConfig" then
+                or name == "config.TutorialConfig" or name == "config.GameConfig"
+                or name == "boot.SeamBackGesture" then
                 return nativeRequire(name)
             end
             if name == "boot.StandaloneHorizonInput" then

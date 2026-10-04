@@ -42,6 +42,7 @@ function Start()
         local blockerSource = source("boot.BattleRewardOverlay")
         local triSource = source("ui.battle.tri.BattleTriPage", true)
         local horizonInputSource = source("boot.StandaloneHorizonInput", true)
+        local seamGestureSource = source("boot.SeamBackGesture", true)
         ---@type any
         local env = setmetatable({}, { __index = _G })
         local clock = { elapsedTime = 100 }
@@ -1063,7 +1064,8 @@ function Start()
                 "ui.battle.combat.BattleEffects", "systems.StatusEffectManager", "ui.battle.tri.TerminalRaid",
                 "systems.BattleStats", "ui.hud.TopBar", "ui.character.panel.CharacterPanel", "ui.dev.CEPanel",
                 "ui.character.hero.HeroRosterPanel", "ui.town.TownScene", "ui.blacksmith.BlacksmithPage",
-                "ui.church.ChurchPage", "ui.church.talent.TalentPage", "ui.tavern.TavernPage", "ui.market.MarketPage",
+                "ui.church.ChurchPage", "ui.church.talent.TalentPage", "ui.tavern.TavernPage",
+                "ui.tavern.TavernPopups", "ui.tavern.TargetRecruitPanel", "ui.market.MarketPage",
                 "ui.dungeon.DungeonBattleScene", "ui.tower.TowerBattleScene", "ui.dungeon.DungeonPage",
                 "ui.backpack.BackpackPanel", "ui.loot.LootBox", "ui.loot.LootBoxPage", "ui.story.task.TaskPage",
                 "ui.hud.popup.LevelUpPopup", "ui.hud.popup.OfflineRewardPanel", "ui.hud.popup.UpdateNoticePopup",
@@ -1118,6 +1120,9 @@ function Start()
                 return routeMods[name]
             end
             routeEnv.nvgScissor = noop
+            -- 返回条也编译真实 helper，页面状态沿用上面的显式 spy 白名单；不 mock 手势。
+            local seamChunk = assert(load(seamGestureSource, "@boot.SeamBackGesture", "t", routeEnv))
+            routeMods["boot.SeamBackGesture"] = seamChunk()
             local triChunk = assert(load(triSource, "@ui.battle.tri.BattleTriPage", "t", routeEnv))
             local Tri = triChunk()
             routeMods["ui.battle.tri.BattleTriPage"] = Tri
@@ -1252,9 +1257,9 @@ function Start()
             end
             equal(seamCloses, 0, "tri网格拖到seam松手不伪装成返回按钮点击")
         end)
-        run("隔离边界：四份核心和两份路由源码，只允许 spy 依赖", function()
+        run("隔离边界：四份核心和三份路由源码，只允许 spy 依赖", function()
             equal(sourceReads, 4, "只读 Popup/Queue/Cascade/Blocker 四份实际核心源码")
-            equal(routingSourceReads, 2, "额外只读TriPage/HorizonInput路由源码")
+            equal(routingSourceReads, 3, "额外只读TriPage/HorizonInput/SeamBackGesture路由源码")
             equal(forbiddenRequires, 0, "无 main、玩家存档、网络模块加载")
         end)
     end)

@@ -253,11 +253,13 @@ function Start()
         -- 真实消息路由保留装备和destination，复用既有“已入遗匣”显示。
         local Msg = require("runtime.ClientMessageHandler")
         local shown = {}
+        local shownOpts = {}
         local popupCount = 0
         local routedPopup = false
         local replacements = {
-            RewardPopup = { show = function(_, rewards)
+            RewardPopup = { show = function(_, rewards, opts)
                 shown = rewards
+                shownOpts = opts or {}
                 popupCount = popupCount + 1
             end },
             TutorialManager = { onScenarioClaimed = function() end },
@@ -297,16 +299,23 @@ function Start()
             eq(shown[1].equip, equip, "情景UI不丢完整实例")
             eq(shown[1].destination, destination, "情景UI不丢去向")
         end
-        shown = {}
-        local beforePopup = popupCount
-        Msg.handleActionResult({ action = Protocol.ACTION_TYPES.CLAIM_OFFLINE_REWARDS, success = true,
-            lootboxEquips = { { type = "equip", equip = equip, destination = "lootbox" } } })
-        eq(popupCount, beforePopup + 1, "离线转存实际提示")
-        eq(shown[1].equip, equip, "离线提示完整实例")
-        eq(shown[1].destination, "lootbox", "离线提示去向")
-        Msg.handleActionResult({ action = Protocol.ACTION_TYPES.CLAIM_OFFLINE_REWARDS, success = true,
-            lootboxEquips = {} })
-        eq(popupCount, beforePopup + 1, "无溢出不多弹提示")
+        local offlineEquips = { { type = "equip", equip = equip, destination = "lootbox" } }
+        for _, case in ipairs({ { focus = "center" }, { focus = "right" }, {} }) do
+            patch(_G, "H_focusPanel", case.focus)
+            shown, shownOpts = {}, {}
+            local beforePopup = popupCount
+            Msg.handleActionResult({ action = Protocol.ACTION_TYPES.CLAIM_OFFLINE_REWARDS, success = true,
+                lootboxEquips = offlineEquips })
+            eq(popupCount, beforePopup + 1, "离线转存实际提示")
+            eq(shownOpts.panel, "left", "离线提示固定左栏 focus=" .. tostring(case.focus))
+            eq(H_focusPanel, case.focus, "离线提示不修改全局焦点")
+            eq(shown, offlineEquips, "离线提示复用完整回执列表")
+            eq(shown[1].equip, equip, "离线提示完整实例")
+            eq(shown[1].destination, "lootbox", "离线提示去向")
+            Msg.handleActionResult({ action = Protocol.ACTION_TYPES.CLAIM_OFFLINE_REWARDS, success = true,
+                lootboxEquips = {} })
+            eq(popupCount, beforePopup + 1, "无溢出不多弹提示")
+        end
         -- 真实PDM推送→Dispatcher双onLoad→StandaloneSave原子写档→恢复→领取。
         -- File/Rename只用内存，不接触当前玩家存档。
         reset(200)

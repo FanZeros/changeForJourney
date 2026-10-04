@@ -73,7 +73,10 @@ local state = {
     open = false,
     floor = 1,
     choices = {},     -- { {id, quality, name, desc}, ... } 最多3个
-    onPick = nil,     -- function(buffId) 回调
+    onPick = nil,     -- function(buffId) 请求前锁定Scene；不代表选择成功
+    request = {},    -- runId/selectionId/floor/wave
+    pending = false,
+    onError = nil,
 }
 
 -- NanoVG 上下文
@@ -83,6 +86,7 @@ local vg_ = nil
 
 ---@type fun(action: string, params: table)|nil
 local sendAction_ = nil
+local requestSerial = 0
 
 function Panel.setSendAction(fn)
     sendAction_ = fn
@@ -104,8 +108,10 @@ end
 --- 打开面板，展示三选一
 ---@param floor number 当前层数
 ---@param choices table[] 强化选项列表 { {id, quality, name, desc}, ... }
----@param onPick function|nil 选择后的回调 function(buffId)
-function Panel.open(floor, choices, onPick)
+---@param onPick function|nil 请求前回调 function(buffId)，返回false阻止发送
+---@param request table|nil 当次选择身份，由Service签发
+---@param onError function|nil 无可交付回执的发送失败回调
+function Panel.open(floor, choices, onPick, request, onError)
     if not towerBuffInited_ and vg_ then
         Panel.init(vg_)
     end
@@ -113,6 +119,9 @@ function Panel.open(floor, choices, onPick)
     state.floor = floor or 1
     state.choices = choices or {}
     state.onPick = onPick
+    state.onError = onError
+    state.request = request or {}
+    state.pending = false
     for i = 1, 3 do kwCards[i]:clear() end   -- 清上次打开的关键词状态
     print("[TowerBuffPick] open floor=" .. state.floor .. " choices=" .. #state.choices)
 end
@@ -121,7 +130,15 @@ function Panel.close()
     state.open = false
     state.choices = {}
     state.onPick = nil
+    state.onError = nil
+    state.request = {}
+    state.pending = false
     for i = 1, 3 do kwCards[i]:clear() end
+end
+
+-- 只有Scene接受匹配回执后才能释放pending；失败保留面板供重试。
+function Panel.setPending(pending)
+    state.pending = pending == true
 end
 
 function Panel.isOpen()
@@ -214,6 +231,7 @@ end
 
 function Panel.handleClick(dx, dy)
     if not state.open then return false end
+    if state.pending then return true end
 
     -- 关键词优先：任一卡片解释气泡开着 → 任意点击先关气泡（不选卡）
     for i = 1, 3 do
@@ -236,21 +254,34 @@ function Panel.handleClick(dx, dy)
             BF.trigger("tower_buff_" .. i)
             print("[TowerBuffPick] picked #" .. i .. " buffId=" .. (choice.id or "nil") .. " name=" .. (choice.name or ""))
 
-            -- 先保存回调引用，然后立即关闭面板（防止回调出错时面板卡死）
-            local pickFn = state.onPick
-            Panel.close()
-
-            -- 发送选择请求
-            if sendAction_ then
-                sendAction_(Protocol.ACTION_TYPES.TOWER_PICK_BUFF, { buffId = choice.id })
+            if not sendAction_ then
+                print("[TowerBuffPick] no action sender, keep selection open")
+                return true
             end
-
-            -- 回调（即使出错也不影响面板关闭）
-            if pickFn then
-                local ok, err = pcall(pickFn, choice.id)
-                if not ok then
-                    print("[TowerBuffPick] ERROR in onPick callback: " .. tostring(err))
+            -- 本地桥同步回包：必须先锁Panel/Scene，禁止请求后再执行成功逻辑。
+            state.pending = true
+            local errorFn = state.onError
+            local request = {}
+            for key, value in pairs(state.request) do request[key] = value end
+            request.buffId = choice.id
+            requestSerial = requestSerial + 1
+            request.requestId = requestSerial
+            if state.onPick then
+                local ok, accepted = pcall(state.onPick, choice.id, request.requestId)
+                if not ok or accepted == false then
+                    state.pending = false
+                    print("[TowerBuffPick] request rejected: " .. tostring(accepted))
+                    return true
                 end
+            end
+            local sent, result = pcall(sendAction_, Protocol.ACTION_TYPES.TOWER_PICK_BUFF, request)
+            if not sent or result == false then
+                request.success = false
+                request.reason = "强化请求发送失败，请重试"
+                if errorFn then pcall(errorFn, request) end
+                -- 同步成功可能已经关闭/重开面板，不覆盖新状态。
+                if state.open and state.request.selectionId == request.selectionId then state.pending = false end
+                print("[TowerBuffPick] send failed: " .. tostring(result))
             end
 
             return true

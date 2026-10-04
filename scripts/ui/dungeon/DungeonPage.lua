@@ -1287,6 +1287,15 @@ function DungeonPage.onActionResult(data)
         return
     end
 
+    -- 通天塔选卡回执（成功才同步强化并换波，失败释放待选请求）
+    if action == Protocol.ACTION_TYPES.TOWER_PICK_BUFF then
+        local TowerBattleScene = require("ui.tower.TowerBattleScene")
+        if TowerBattleScene.isActive() then
+            TowerBattleScene.onPickBuffResult(data)
+        end
+        return
+    end
+
     -- 通天塔整层通关 → 转发给 TowerBattleScene + 更新本地层数
     if action == Protocol.ACTION_TYPES.TOWER_FLOOR_WIN then
         if data.success then

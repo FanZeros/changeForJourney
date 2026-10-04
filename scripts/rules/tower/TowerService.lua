@@ -12,6 +12,17 @@ local CurrencyService = require("rules.currency.CurrencyService")
 
 local TowerService = {}
 
+-- 当局选择事务仅存内存；旧档仍由 Challenge 从第一波建立新局。
+-- buffs 的唯一写入方是 Service，所有回执均为副本。
+local runs = {}
+local runSerial = 0
+local function copy(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for key, item in pairs(value) do result[key] = copy(item) end
+    return result
+end
+
 -- ======================== 内部工具 ========================
 
 --- 获取今日天编号（UTC+8）
@@ -80,6 +91,10 @@ function TowerService.Challenge(uid)
 
     -- 重置当局强化（每次挑战从头开始）
     bt.buffs = {}
+    runSerial = runSerial + 1
+    local run = { id = tostring(uid) .. ":" .. runSerial, bt = bt, floor = floor,
+        wave = 1, phase = "battle", selections = {}, waveResults = {} }
+    runs[uid] = run
     PDM.MarkDirty(uid, "dungeon")
 
     -- 生成第一波怪物
@@ -96,7 +111,8 @@ function TowerService.Challenge(uid)
         monsters     = monsters,
         rageTime     = TowerConfig.RAGE_TIME,
         superRageTime = TowerConfig.SUPER_RAGE_TIME,
-        buffs        = bt.buffs,
+        runId        = run.id,
+        buffs        = copy(bt.buffs),
         battleBg     = TowerConfig.BATTLE_BG,
     }
 end
@@ -127,6 +143,16 @@ function TowerService.WaveWin(uid, floor, wave)
     if not floorCfg then
         return false, "层配置不存在"
     end
+    local run = runs[uid]
+    if not run or run.bt ~= bt or run.floor ~= floor then
+        return false, "挑战未开始"
+    end
+    if type(wave) ~= "number" or wave ~= math.floor(wave) or wave < 1
+        or wave > TowerConfig.WAVES_PER_FLOOR then return false, "无效的波次" end
+    if run.waveResults[wave] then
+        return true, nil, copy(run.waveResults[wave])
+    end
+    if run.phase ~= "battle" or run.wave ~= wave then return false, "波次不匹配" end
 
     -- 每波胜利后提供三选一强化选项（由客户端展示，玩家选择后调 PickBuff）
     local buffChoices = TowerConfig.rollBuffs(3, bt.buffs)
@@ -145,10 +171,11 @@ function TowerService.WaveWin(uid, floor, wave)
         -- 整层通关
         print(string.format("[TowerService] WaveWin uid=%s floor=%d wave=%d → FLOOR CLEARED",
             tostring(uid), floor, wave))
-        return true, nil, {
-            floorCleared = true,
-            buffChoices  = choices,
-        }
+        run.phase = "floor_win"
+        local result = { success = true, runId = run.id, floor = floor, wave = wave,
+            floorCleared = true, buffChoices = choices }
+        run.waveResults[wave] = result
+        return true, nil, copy(result)
     end
 
     -- 生成下一波怪物
@@ -158,13 +185,23 @@ function TowerService.WaveWin(uid, floor, wave)
     print(string.format("[TowerService] WaveWin uid=%s floor=%d wave=%d → next=%d",
         tostring(uid), floor, wave, nextWave))
 
-    return true, nil, {
+    local selectionId = run.id .. ":" .. wave
+    local result = {
+        success      = true,
+        runId        = run.id,
+        selectionId  = selectionId,
+        floor        = floor,
+        wave         = wave,
         floorCleared = false,
         nextWave     = nextWave,
         monsters     = monsters,
         monsterLevel = floorCfg.monsterLevel,
         buffChoices  = choices,
     }
+    run.phase = "buff_pick"
+    run.pending = { id = selectionId, wave = wave, result = result }
+    run.waveResults[wave] = result
+    return true, nil, copy(result)
 end
 
 -- ======================== 整层通关 ========================
@@ -233,8 +270,9 @@ end
 ---@param buffId number 选择的强化ID
 ---@return boolean ok
 ---@return string|nil err
----@return table|nil result { buffId, buffName, totalBuffs }
-function TowerService.PickBuff(uid, buffId)
+---@param request table|nil 正式请求携带 runId/selectionId/floor/wave
+---@return table|nil result { buffId, buffName, totalBuffs, buffs, runId, selectionId, floor, wave }
+function TowerService.PickBuff(uid, buffId, request)
     local unlocked, unlockErr = checkTeamUnlocks(uid)
     if not unlocked then return false, unlockErr end
     local dungeon = PDM.GetModule(uid, "dungeon")
@@ -248,18 +286,52 @@ function TowerService.PickBuff(uid, buffId)
         return false, "无效的强化ID"
     end
 
-    -- 记录已选强化
+    local run = runs[uid]
+    if not run or run.bt ~= bt or run.floor ~= bt.floor then return false, "挑战未开始" end
+    request = request or {}
+    if request.runId ~= nil and request.runId ~= run.id then return false, "挑战已过期" end
+    if request.floor ~= nil and request.floor ~= run.floor then return false, "层数不匹配" end
+    -- 旧无 token 调用只兼容当前待选；不能在未 Challenge/清波时创造选择。
+    local pending = run.pending
+    local selectionId = request.selectionId or (pending and pending.id)
+    local accepted = selectionId and run.selections[selectionId]
+    if accepted then
+        if accepted.buffId ~= buffId or (request.wave ~= nil and request.wave ~= accepted.wave) then
+            return false, "本次强化已选择"
+        end
+        return true, nil, copy(accepted)
+    end
+    if run.phase ~= "buff_pick" or not pending or selectionId ~= pending.id
+        or (request.wave ~= nil and request.wave ~= pending.wave) then return false, "强化选择已过期" end
+    local offered = false
+    for _, choice in ipairs(pending.result.buffChoices) do
+        if choice.id == buffId then offered = true; break end
+    end
+    if not offered then return false, "强化不在本次选项中" end
+
+    -- 消费一次选择，不按 buffId 全局去重；其它波合法同卡仍可叠加。
     bt.buffs[#bt.buffs + 1] = buffId
+    local result = {
+        success    = true,
+        runId      = run.id,
+        selectionId = selectionId,
+        floor      = run.floor,
+        wave       = pending.wave,
+        nextWave   = pending.result.nextWave,
+        buffId     = buffId,
+        buffName   = buff.name,
+        totalBuffs = #bt.buffs,
+        buffs      = copy(bt.buffs),
+    }
+    run.selections[selectionId] = result
+    run.pending = nil
+    run.wave = result.nextWave
+    run.phase = "battle"
     PDM.MarkDirty(uid, "dungeon")
 
     print(string.format("[TowerService] PickBuff uid=%s buffId=%d name=%s total=%d",
         tostring(uid), buffId, buff.name, #bt.buffs))
-
-    return true, nil, {
-        buffId     = buffId,
-        buffName   = buff.name,
-        totalBuffs = #bt.buffs,
-    }
+    return true, nil, copy(result)
 end
 
 -- ======================== 扫荡 ========================

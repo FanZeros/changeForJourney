@@ -22,6 +22,7 @@ handlers[Protocol.ACTION_TYPES.TOWER_CHALLENGE] = function(uid, params)
         monsters     = result.monsters,
         rageTime     = result.rageTime,
         superRageTime = result.superRageTime,
+        runId        = result.runId,
         buffs        = result.buffs,
         battleBg     = result.battleBg,
     }
@@ -37,10 +38,14 @@ handlers[Protocol.ACTION_TYPES.TOWER_WAVE_WIN] = function(uid, params)
 
     local ok, err, result = TowerService.WaveWin(uid, floor, wave)
     if not ok then
-        return { success = false, reason = err }
+        return { success = false, reason = err, floor = floor, wave = wave }
     end
     return {
         success      = true,
+        runId        = result.runId,
+        selectionId  = result.selectionId,
+        floor        = floor,
+        wave         = wave,
         floorCleared = result.floorCleared,
         nextWave     = result.nextWave,
         monsters     = result.monsters,
@@ -77,16 +82,14 @@ handlers[Protocol.ACTION_TYPES.TOWER_PICK_BUFF] = function(uid, params)
         return { success = false, reason = "缺少参数" }
     end
 
-    local ok, err, result = TowerService.PickBuff(uid, buffId)
+    local ok, err, result = TowerService.PickBuff(uid, buffId, params)
     if not ok then
-        return { success = false, reason = err }
+        return { success = false, reason = err, buffId = buffId,
+            runId = params.runId, selectionId = params.selectionId,
+            floor = params.floor, wave = params.wave, requestId = params.requestId }
     end
-    return {
-        success    = true,
-        buffId     = result.buffId,
-        buffName   = result.buffName,
-        totalBuffs = result.totalBuffs,
-    }
+    result.requestId = params.requestId
+    return result
 end
 
 -- ── 扫荡 ──

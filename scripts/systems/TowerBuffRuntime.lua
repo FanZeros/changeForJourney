@@ -10,6 +10,22 @@ local CC          = require("config.ClassConfig")
 
 local TBR = {}
 
+-- 跨波单位保留引用，20/28必须从上次未乘塔倍率的基准重新应用。
+-- 弱键表不保活单位；属性重算已经改写间隔时，以新基准为准，不盲除旧倍率。
+local intervalApplications = setmetatable({}, { __mode = "k" })
+local function applyIntervalMultiplier(unit, multiplier)
+    local previous = intervalApplications[unit]
+    local base = unit.atkInterval
+    local attrInterval = unit.attrs and unit.attrs:getActualInterval() or nil
+    local recalculated = previous and attrInterval ~= previous.attrInterval and base == attrInterval
+    if previous and base == previous.output and not recalculated then
+        base = previous.base
+    end
+    local output = base * multiplier
+    unit.atkInterval = output
+    intervalApplications[unit] = { base = base, output = output, attrInterval = attrInterval }
+end
+
 -- ======================== stat 属性映射 ========================
 
 local STAT_APPLY = {
@@ -143,6 +159,23 @@ function TBR.applyMechanicInit(allies, enemies)
     if not M then return end
     M.allies = allies
 
+    -- 合并20/28的现行列表倍率后一次应用；保留跨波同卡的合法乘法叠加。
+    local intervalMult, mageIntervalMult = 1, 1
+    for _, buffId in ipairs(M.buffIds) do
+        local buff = TowerConfig.BUFFS_BY_ID[buffId]
+        if buff and buff.mechanicId == "interval_reduce" then
+            intervalMult = intervalMult * (1 - ((buff.params or {}).reduce or 25) / 100)
+        elseif buff and buff.mechanicId == "mage_charge_burst" then
+            mageIntervalMult = mageIntervalMult * (1 + ((buff.params or {}).intervalMult or 100) / 100)
+        end
+    end
+    for _, unit in ipairs(allies) do
+        if unit.hp > 0 and unit.atkInterval then
+            local multiplier = intervalMult * (unit.classId == CC.MAGE and mageIntervalMult or 1)
+            applyIntervalMultiplier(unit, multiplier)
+        end
+    end
+
     for _, buffId in ipairs(M.buffIds) do
         local buff = TowerConfig.BUFFS_BY_ID[buffId]
         if not buff then goto continue end
@@ -162,14 +195,8 @@ function TBR.applyMechanicInit(allies, enemies)
                 end
             end
 
-        -- #20 迅雷之势：全体攻击间隔-25%（乘法）
+        -- #20 迅雷之势：在上方统一应用，避免换波对保留单位重乘。
         elseif mid == "interval_reduce" then
-            local reduce = (params.reduce or 25) / 100
-            for _, unit in ipairs(allies) do
-                if unit.hp > 0 and unit.atkInterval then
-                    unit.atkInterval = unit.atkInterval * (1 - reduce)
-                end
-            end
 
         -- #24 守护誓约：骑士仇恨倍率+200%+初始仇恨2000（通过 ThreatManager 处理）
         -- 注：仇恨初始值在 TowerBattleScene.startWave 中通过 ThreatManager.onBattleStart 后追加
@@ -191,14 +218,8 @@ function TBR.applyMechanicInit(allies, enemies)
 
         -- #27 狂战之魂：战士每损5%→攻速+10%（动态，在 getAtkIntervalMult 中处理）
 
-        -- #28 蓄能爆裂：法师间隔×2（初始化时修改）
+        -- #28 蓄能爆裂：在上方统一应用法师间隔倍率。
         elseif mid == "mage_charge_burst" then
-            local intervalMult = (params.intervalMult or 100) / 100
-            for _, unit in ipairs(allies) do
-                if unit.hp > 0 and unit.classId == CC.MAGE and unit.atkInterval then
-                    unit.atkInterval = unit.atkInterval * (1 + intervalMult)
-                end
-            end
 
         -- #29 奥术聚能：法师蓄力初始化
         elseif mid == "mage_accumulate" then

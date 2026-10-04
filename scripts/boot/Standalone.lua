@@ -196,31 +196,52 @@ local DESIGN_H = GameConfig.Design.HEIGHT
 -- [Standalone] battle 状态本地同步：无 Server 推送时，把 BattleScene 本地进度
 -- （maxStageId_/clearedStages）每秒比对一次，变化才经 handleStateUpdate 写入，
 -- 供 TutorialManager / BottomNav / DungeonBattleScene 的建筑与页签解锁判定使用
-local battleSync = { lastMax = -1, lastCleared = -1, acc = 0 }
+local battleSync = { lastMax = -1, lastCleared = {}, acc = 0 }
 local function SyncBattleState(dt)
     battleSync.acc = battleSync.acc + (dt or 0)
     if battleSync.acc < 1.0 then return end
     battleSync.acc = 0
     local maxId = BattleScene.getMaxStageId()
     local cleared = BattleScene.getClearedStages()
-    local clearedN = 0
-    for _ in pairs(cleared) do clearedN = clearedN + 1 end
-    if maxId == battleSync.lastMax and clearedN == battleSync.lastCleared then return end
-    if battleSync.lastMax == -1 then
-        print("[Standalone] battle 状态首次同步: maxStageId=" .. tostring(maxId) .. ", cleared=" .. clearedN)
-    end
-    battleSync.lastMax = maxId
-    battleSync.lastCleared = clearedN
-    local clearedStr = {}
-    for k in pairs(cleared) do clearedStr[tostring(k)] = true end
-    -- 模块更新是整表替换。只带这两个字段会把 currentStageId 清掉，
-    -- 读档时被补回 1-1，首通奖励就能重复领，进度也像丢了。
+    -- 模块更新是整表替换。先取两源永久事实的并集，不能以局部运行表
+    -- 覆盖持久账本；JSON数字/字符串键归一，任一true优先于false/缺失。
     local battle = ClientDispatcher.get("battle")
     if type(battle) ~= "table" then battle = {} end
+    local savedCleared = type(battle.clearedStages) == "table" and battle.clearedStages or {}
+    local clearedStr = {}
+    local function mergeCleared(source)
+        if type(source) ~= "table" then return end
+        for k, v in pairs(source) do
+            local id = tonumber(k)
+            if id and v == true then clearedStr[tostring(id)] = true end
+        end
+    end
+    mergeCleared(savedCleared)
+    mergeCleared(cleared)
+    local savedMax = tonumber(battle.maxStageId) or 0
+    local mergedMax = math.max(maxId or 0, savedMax)
+    local changed = mergedMax ~= battleSync.lastMax
+    local clearedN = 0
+    for k in pairs(clearedStr) do
+        clearedN = clearedN + 1
+        -- 相同数量也可能换成不同关；任一源丢键时必须回灌修补，不能被缓存拦住。
+        if not battleSync.lastCleared[k] or savedCleared[k] ~= true
+            or cleared[tonumber(k)] ~= true then changed = true end
+    end
+    for k in pairs(battleSync.lastCleared) do
+        if not clearedStr[k] then changed = true end
+    end
+    if not changed then return end
+    if battleSync.lastMax == -1 then
+        print("[Standalone] battle 状态首次同步: maxStageId=" .. tostring(mergedMax) .. ", cleared=" .. clearedN)
+    end
+    -- 缓存只用于比对，不是事实来源；明确清档清空两源后不会复活旧键。
+    battleSync.lastMax = mergedMax
+    battleSync.lastCleared = clearedStr
+    -- 保留一队当前关、挂机等完整字段；共享最高只负责解锁，不强制一队跳最高。
     local liveStage = tonumber(BattleScene.getStageId()) or 0
     local savedStage = tonumber(battle.currentStageId) or 0
-    local savedMax = tonumber(battle.maxStageId) or 0
-    battle.maxStageId = math.max(maxId or 0, savedMax)
+    battle.maxStageId = mergedMax
     battle.clearedStages = clearedStr
     if liveStage > savedStage then
         battle.currentStageId = liveStage

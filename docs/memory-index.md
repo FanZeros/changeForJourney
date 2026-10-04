@@ -1,5 +1,87 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+## 2026-10-04 两日分支合入核查（固定workspace930@f6f542a1）
+
+### 口径与总数
+
+- 截取北京时间2026-10-03 00:00至本次远端刷新，按分支tip的提交时间筛选，不将它等同于分支创建时间；排除origin默认HEAD与目标workspace930。
+- 共101条近期分支：64条已在目标祖先链，37条不在。37中17条仅docs/memory，20条含代码/测试/资源；不在祖先链不等于功能未覆盖。
+- 已拉取68条PR状态；本时间范围47条PR合到workspace930。PR45/49仅合到剧情侧线，不能算主线已上线；当前唯一开放PR68目标为audit/team-parity-20261004，亦不是930。
+- 本轮仅Git对象、差异、补丁、meta和merge-tree只读核验，没有整合、build或运行融合态。merge-tree只写Git对象不改用户源码，文本无冲突不是Runtime验证通过。工作区仍部署此前三队修复，不冒称最新930已部署。
+
+### 建议继续整合的四组代码及一个视觉候选
+
+| 优先级 | 单一候选 | 真实价值 | 对固定930的冲突/前置 |
+|---|---|---|---|
+| 第一批 | `feat1004a/recent-branch-integration@f59216fc` | 正式治疗接线、套装死亡/跨场临时池清理、五行名册、扫荡点击队号及对应成熟回归 | 仅WORKFLOW_RULES文档冲突；7份生产无文本冲突。需重新跑930融合态，不机械带旧审查代码 |
+| 第一批 | `feat1004a/economic-firstclear-tower-singlewrite@9c07c8fd` | B01：最高关首通事实保留、严格双源账本并集、同数量不同成员的同步检测 | 仅WORKFLOW_RULES文档冲突，生产/测试无文本冲突；与T12互补，分支名含tower不代表已做塔单写 |
+| 第二批 | `feat1004a/team-parity-fixes@f95eb081` | 未覆盖的挂载/免疫隔离、养成刷新、T11/T12、双时钟倍速、首次全灭剧情 | 11冲突文件（生产8/测试2/文档1）；按930适配增量，不能整文件取旧分支。PR68只向audit，不会让代码自动进入930 |
+| 独立剧情批 | `plan1003/samsara-mirror-slices-20261003@f7515444` | 已接N01/N02/N03/N07/N08/N09/N11/N12/N13/N14及无奖记录/来源/租约守卫，覆盖旧剧情七分支有效内容 | 4冲突文件：Standalone、HorizonInput及2文档。需确认包含旧过场退役的范围，保留930滚轮坐标/奖励守卫，补融合回归；剩余十五场未接线，不能称全剧情完成 |
+| 视觉候选 | `feat930/reward-frame-bw-20261004@b38232ee` | 唯一正式资源增量为1080×685 RGBA奖励框PNG，现有meta/UUID不变 | 只迁PNG，先验收底部关闭/跳过提示；图片y621提示区域为透明，不能仅按尺寸/UUID称视觉通过 |
+
+**推荐顺序：先第一批两支，再按930适配三队增量；剧情与奖励框单独确认，不把所有37条分支机械合并。**
+
+### 三队与剧情整合必须保留的边界
+
+- 930已用`teamStageIds`，旧三队分支用`teamCurrentStageIds`且无930旧字段迁移；直接取旧Schema可能把队二三恢复到101。需迁移兼容，不重复替换已有保存方案。
+- 930的PR55神器防跨队上下文/唯一性与PR53终焉同编号共享池、失守退场、编队签名守卫必须保留；旧三队卡面显式参数和旧单Boss实现不能覆盖新规则。
+- B01移除有效首通标记的错误删除，与T12“真实账本决定收益”互补；当前T12保留战斗模式修正，不能因此宣布B01重复。
+- 三队11冲突文件：BattleSchema、BattleScene、StageSelectDialog、BattleTriDriver、BattleTriPage、CharacterDetailAttrs、CharacterPanel、CharacterPower、character_power_estimate_test、terminal_raid_test、WORKFLOW_RULES。
+- 轮回最新候选与story-wiring-plan不是祖先包含，但后者整棵树与latest已包含的N03提交3421acfe一致；用树等价去重，不误写成祖先合入。
+- 轮回滚轮抽到StandaloneHorizonWheel后仍传sx/sy，930现传toDesign后的csx/csy；直接选候选冲突侧会回退缩放/letterbox命中修复。Stop要双保留930清奖励队列和新剧情取消token/epoch；Boot自动合并树的setBattleBlocked不可被整文件覆盖丢失。
+- 历史仓内记录明确用户曾要求“保留对话，移除旧过场”，不能无证据称删除未授权；本轮只有审查权限，历史记录不替代本轮接受退役范围的确认。
+
+### 不要重复合的13条代码/资源侧线
+
+| 原分支 | 核验结果 |
+|---|---|
+| `audit/team-parity-20261004@a4c80377` | team-parity-fixes真实祖先，选新候选适配即可 |
+| `audit930/character-awakening-sets-1002@33e4a4fc` | 已完成治疗/套装修复及成熟测试被recent候选完整覆盖；尾部两份失败契约探针不是完成修复，不另合 |
+| `fix/red-equipment-rarity-20261004@ed305ec4` | 无生产修复；红装获取/自动分解回归已被recent候选覆盖，尚非930已覆盖 |
+| `fix930/right-roster-compact-20261004@7a6adbe6` | 名册生产与回归被recent候选覆盖，模拟合到930的结果一致 |
+| `fix930/ascend-fixed-secondary-preview-20261004@cad73150` | 等价补丁39928c7e随PR60进入930；七份生产稳定patch-id一致，三测试与基线一致，不必重合 |
+| `feat930/stage-select-chapter-background-1003@48a6cf33` | PR40/迁移整合已在930，23章背景及测试存在；旧终焉映射不能覆盖930特殊背景 |
+| `feat1003/samsara-loop-story-plan@faf5129d` | latest祖先，包含在剧情单一候选 |
+| `feat1003/samsara-story-script@8f8d1e92` | latest祖先 |
+| `feat1003/samsara-story-polish@bc85ac6b` | latest祖先 |
+| `feat1003/samsara-n12-n14-20261003@da607702` | latest祖先，PR45仅合剧情侧线 |
+| `plan1003/samsara-next-slice-20261003@1b6d8bdb` | latest祖先 |
+| `feat1003/samsara-n03-20261003@3421acfe` | latest祖先，PR49仅合剧情侧线 |
+| `feat1003/samsara-story-wiring-plan@362cdb48` | 与已包含N03树等价，勿再叠一遍 |
+
+### 暂缓的两条美术分支
+
+- `art/hero-cards-928@38263791`：25张卡面均与930不同，25meta保持，但930已有ab29d9a0正式新版。候选同时带旧AssetManifest、3张缺meta的参考PNG和锚定绘制改动；样本1/21从396×876变600×1010，仅迁图片会改变cover裁切。先逐角色审图及显示适配，排除旧manifest/无meta参考，不整支合。
+- `workspace928@888b2f24`：只把218e0050同路径奖励框当备选，绝不整旧workspace928合到930。此阈值版与黑白差分版互相覆盖，是二选一，不是两项可叠加功能；两者底部提示透明均需视觉确认。
+
+### 仅文档/审查的17条未合分支
+
+以下保留作归档/依据，不把它们视为待上线修复；需要时选择搬运最新文档，不整支历史记忆覆盖主线。
+
+- `audit/lua-similarity-20261003`
+- `audit/lua-similarity-top-files-20261003`
+- `audit/lua-similarity-over80-20261003`
+- `audit/lua-similarity-functions-20261003`
+- `plan/own-gameplay-horizontal-20261003`
+- `audit/original-vs-journey-rules-20261003`（覆盖上述相似度/原创玩法文档递进提交）
+- `audit/stage-select-background-20261003`
+- `audit/story-horror-cruise-merge-20261003`
+- `audit/workspace930-unmerged-20261003`
+- `audit/workspace930-merge-readiness-20261003-2323`
+- `audit/workspace930-remaining-branches-20261004`（覆盖前述merge-readiness文档提交）
+- `audit930/three-team-followup-20261004`
+- `chore930/equipment-preview-pr-1003`
+- `feat/awakening-support-review-20261003`（辅助觉醒候选规划，不是已实装能力）
+- `fix1004/docs`
+- `feat1004a/battle-tower-fix-plan`（更新B01～B11清单，不等于修复完成）
+- `review/workspace930-local-art-audit-20261003`
+
+**当前930已覆盖的例子**：PR53终焉、PR54三队进度/普通副本选队、PR55神器上下文、PR60副词条/边框、PR61剧情82中断补领、PR62掉落展示合批、PR63/64选关拖动说明、PR65/67远征领奖、PR66满包装备。不能沿旧审计文档再次认定这些功能尚未进入主线。
+
+**提交纪律**：本次记录仅更新已有文档并push `feat1004a/merge-readiness-1004`；该审查分支派生自之前三队修复，不是可直接合930的纯文档分支。未改生产或部署、未自动合并、未删除远端分支。后续范围由实际AskUserQuestion选项确认。
+
+
+
 > **最新（2026-10-04，三队共有倍速/全灭剧情）**：按用户选项完成全局倍率接三队真实双时钟、普通首次全灭Driver→Page→Boot→Story通知和全局去重；终焉失守、空队及实验室不误报，经济/副本未改。倍速最终15例423检查、全灭53例236检查及20份组合保护通过，官方build成功、491Lua与产物一致、修改Lua LSP无Error。原失败/夹具入场63干扰、新依赖异常及lootbox断言全过但超时、主入口headless超时环境错误均如实记录于审查方案与WORKFLOW_RULES。继续只push `feat1004a/team-parity-fixes` 不推workspace/旧audit、不自动合并，每轮真实AskUserQuestion交接；凭据/生成配置不提交。
 
 > **最新（2026-10-04，账户收益T11/T12完成）**：已按用户选项在 `feat1004a/team-parity-fixes` 实施账户收益两项；6～12有效英雄沿用3倍最大档池，1～5不变，金币/远征经验不倍增；账户收益和掉落不读队一旧关/模式，严格双键首通、跨难度/终焉按实际前驱。补Scene独立收益凭据及读档→周期Sync污染闭环。原专项1951失败后修复，最终430例8861断言全过，17份保护PASS，官方build成功，修改Lua LSP无Error（全仓仍既有诊断）。详情见审查方案本次实施及项目工作流记忆；缺账本保守回退、无头环境错误和未设备验收均披露。普通副本及共有缺陷未改。只push新分支不推workspace/旧audit、不自动合并；每轮真正AskUserQuestion交接，凭据/生成配置不提交。

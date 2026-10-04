@@ -4,6 +4,27 @@
 - 持续推进授权范围，不擅自退出；完成后仍实际 AskUserQuestion 交接。代码/文档完成及时正常提交并显式 push 本功能分支，不推 workspace 系列、不强推。凭据、本地构建身份、存档、日志和截图不提交。
 - 两份显示模块改为最终变换/对齐下复测墨迹，给描边留空间；数值右锚内收6设计像素，名称/数值联合拟合，不再按字符数估宽或把目标宽当实测宽。真实原214断言已通过；扩展五个缩放专项及描边/普通40号保护后248断言通过，配装362、雷达49、生命周期及侧栏11435均通过，官方build成功。多尺寸完整Draw额外发现小缩放天赋/雷达边界，未扩展本轮修复；新增专项仅聚焦已授权两项，不删原214。
 
+## 角色详情左右滚动卡比例核查（2026-10-04）
+
+- 用户在PR78后通过实际AskUserQuestion要求检查角色详情左右侧滚动卡是否更新为新版角色卡比例。本轮仅核查共享比例、左右绘制/裁剪/点击区域及必要回归，不擅自改布局。
+- 新分支`feat1004b/detail-side-card-ratio-audit`基于最新`workspace930@cee85080`，外部已合PR78/77，本会话未合并。只push新分支、不pushworkspace系列、不自动合并；凭据/本地身份/存档/截图不入提交。
+- 核查结论：左右详情轮播卡均由BattleLayout.CARD_W/H=198×351.4684、538:955推导，属性/转职都用DrawUtil.drawCardImage完整对框。25卡实际PNG均768×1365，已更新源图/可见框，不靠主名册头像旧常量判断。
+- 左右仍SIDE_SCALE0.92及YAW_SQUASH0.86横压：可见156.6576×323.3509（约0.48448），中央233.64×414.7327（0.56335）。这是旧转向效果，未擅自移除。attr左右点击同步SIDE尺寸×0.78；class只拖/轮切，拖/轮范围740×460仍固定。无生产改动，官方Build成功，未做实际截图/触控或全详情回归，不夸大静态结论。
+- 当前结果写入已有docs/changeForJourney-gameplay.md顶部，记忆范围0fce2ab2已正常push。下一步由用户选保留转向或移除侧卡横压，完成后实际AskUserQuestion，不自行扩大布局修改范围。
+- 继续强化：授权任务持续推进，阶段完成及时commit/push；最终或确需用户决策先如实简报，再真正AskUserQuestion提供下一步选项，尊重停止与权限边界。
+
+## 分解页稀有度多选修复（2026-10-04）
+
+- 用户在掉落核查后以实际AskUserQuestion提出修分解稀有度单选：希望和装备选择一样可同时选择多个稀有度。本轮转向该明确修复，不继续擅改离线锚点；前序核查保存于`feat1004b/enemy-drop-level-audit`。
+- 从最新`workspace930@4bea0ee2`新建`feat1004b/decompose-rarity-multiselect`，不夹带未合的掉落核查测试/文档。只正常push新分支，不pushworkspace系列、不强推、不自动合并；凭据/本地身份/存档/日志不入提交。
+- 已确认顶部bsd_filter是批量勾选不是隐藏网格过滤器；修复为每品质独立toggle、保留其他品质及手动勾选，全部eligible选中才亮顶部对勾，空品质不亮。只改实际手动分解选择，不改自动分解popup的autoQuality“及以下”阈值、装备页qualitySet或遗匣过滤规则。
+- 生产仅改BlacksmithDecompose：品质独立toggle、顶部40px居中对勾，按tostring(seq)归一已穿戴/旧勾选映射；品质点击和发分解请求前refresh防最新锁装混入，不自动补选新掉落。自动popup、装备页/遗匣规则和服务端经济不改。
+- 实际专项已通过 **1682断言、失败0、exit0**，两profile真实handleInput/drawPanel捕获六档top和格子勾选、独立多品质并集、重复取消/部分补选、手动异品质保留、red、排序/新引用/锁装刷新、成功失败/无关回执/pending门控与自动popup单阈值。两次真实BS.DecomposeEquip只删四件q1/q2，保留其他/锁定/数字字符串穿戴，精粹/标脏/任务严格对账。首次夹具and/or nil误期望、package.loaded隔离在实跑前修正，不放宽断言；原测试补engine:Exit后不超时。
+- 四套联合Runtime回归ALL PASS/exit0：角标146、背包穿戴268、快捷装备86、切关。独立复核发现新tostring键会区分9102.0与"9102"而把浮点穿戴seq误加候选，服务端会拒绝整批而不是误拆；已用tonumber+math.tointeger统一seqKey，并补数值浮点/小数字符串及发送前新穿戴回归。最终专项 **1776断言全过、失败0、exit0**，不把初版1682当最终覆盖。
+- 两份最终Lua单文件LSP无Error（有Warning），最新官方Build成功；生产与测试和manifest-origin.b11逐字节2/2一致。36规范单测全过、2678路径0错误0警告。最终序号修复后四套联合回归再次全部ALL PASS/exit0，独立只读复核确认float seq问题已解决、本次无阻塞。测试是绘图spy与真实业务，不称手机触控/GPU截图验收。
+- 已正常push范围49fa3e46、功能97d017ea、测试4552d483、浮点保护139ae6e3及终检bdfd267a到`feat1004b/decompose-rarity-multiselect`并核验一致。远端workspace930随后外部前进，本轮固定4bea0ee2、不混入未验证新功能、不push基线。最终交接继续只push同一分支。
+- 用户完成后通过实际AskUserQuestion选择“创建修复PR”。同源open查重0、源bdfd267a一致后已创建正式 **PR #78**：https://github.com/FanZeros/changeForJourney/pull/78，head=`feat1004b/decompose-rarity-multiselect`、base=`workspace930`，返回open、draft=false、merged=false、mergeable=null（尚未计算），创建时目标9cd444e4。说明包含多选行为/浮点保护/1776断言/四套回归/部署一致，以及最新主线未融合与旧切页pending边界；不称CI通过、不自动合并，创建授权不等于合并授权，交接补记仍只push当前新分支。
+- 持续推进授权修复，不擅自放弃；阶段完成及时commit/push，最终或真正用户决策阻塞先如实简报再实际AskUserQuestion给选项，尊重后续停止及权限边界。
 ## 侧栏交互修复协作要求（2026-10-04）
 
 - 用户授权从 `workspace930` 拉取并直接部署到 `/workspace` 根目录，本轮新分支为 `feat1004b/fix-sidebar-interaction`，排查并修复所有带返回操作的侧栏偶发无法交互问题。

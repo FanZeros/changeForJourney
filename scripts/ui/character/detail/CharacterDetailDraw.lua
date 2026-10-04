@@ -16,7 +16,6 @@ local EquipStats        = require("ui.character.detail.CharacterEquipStats")
 local AttributeView     = require("ui.character.detail.CharacterAttributeView")
 local BattleLayout      = require("core.BattleLayout")
 local DrawUtil          = require("core.DrawUtil")
-local HeroFrame         = require("ui.widget.HeroFrame")
 local HeroAssetUtil     = require("config.HeroAssetUtil")
 local AwakeningPanel    = require("ui.character.hero.AwakeningPanel")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
@@ -723,17 +722,7 @@ function M.draw(vg)
             nvgFillColor(vg, nvgRGBA(28, 28, 28, 120))
             nvgFill(vg)
         end
-        -- [统一角色框] 卡面叠加品质描边（frameOnly：不画底与头像）
-        ---@type number
-        local cardW = CARD.W
-        ---@type number
-        local cardH = CARD.H
-        HeroFrame.draw(vg, {
-            cx = 0, cy = 0, w = cardW, h = cardH,
-            heroId = id,
-            state = owned and "owned" or "unowned",
-            frameOnly = true,
-        })
+        -- 新卡面自带美术边框，保留出框；只叠加等级、职业和战力信息。
         drawCardBadges(id)
         nvgRestore(vg)
     end
@@ -1394,17 +1383,7 @@ function M.draw(vg)
                 nvgFillColor(vg, nvgRGBA(28, 28, 28, 120))
                 nvgFill(vg)
             end
-            -- [统一角色框] 卡面叠加品质描边
-            ---@type number
-            local cardW2 = CARD.W
-            ---@type number
-            local cardH2 = CARD.H
-            HeroFrame.draw(vg, {
-                cx = 0, cy = 0, w = cardW2, h = cardH2,
-                heroId = id,
-                state = owned and "owned" or "unowned",
-                frameOnly = true,
-            })
+            -- 转职页重绘同样不加稀有度框，避免边框压在出框角色上。
             drawCardBadges(id)
             nvgRestore(vg)
         end

@@ -267,6 +267,12 @@ end
 
 -- ======================== 背包数据管理 ========================
 
+-- 整数/浮点数/JSON字符串序号使用同一键，避免9102.0与"9102"漏匹配。
+local function seqKey(seq)
+    local number = tonumber(seq)
+    return tostring(number and (math.tointeger(number) or number) or seq)
+end
+
 --- 刷新背包数据：从 ClientDispatcher 获取最新装备数据，筛选出未穿戴的装备
 function M.refreshBackpackItems()
     -- 记录刷新前选中的装备 seq（用于刷新后重映射）
@@ -274,7 +280,7 @@ function M.refreshBackpackItems()
     for idx in pairs(fjState.selectedItems) do
         local item = backpackItems[idx]
         if item and item.seq then
-            oldSelectedSeqs[item.seq] = true
+            oldSelectedSeqs[seqKey(item.seq)] = true
         end
     end
 
@@ -290,7 +296,7 @@ function M.refreshBackpackItems()
     if equipData.equipped then
         for _, slots in pairs(equipData.equipped) do
             for _, eqSeq in pairs(slots) do
-                equippedSeqs[eqSeq] = true
+                equippedSeqs[seqKey(eqSeq)] = true
             end
         end
     end
@@ -298,7 +304,7 @@ function M.refreshBackpackItems()
     -- 筛选未穿戴的装备（seq 从 key 恢复，dehydrate 不保存 seq 字段）
     for seqStr, equip in pairs(equipData.inventory) do
         local seq = tonumber(seqStr)
-        if seq and not equippedSeqs[seq] then
+        if seq and not equippedSeqs[seqKey(seq)] then
             equip.seq = seq
             backpackItems[#backpackItems + 1] = equip
         end
@@ -312,10 +318,22 @@ function M.refreshBackpackItems()
     -- 基于 seq 重映射选中状态（锁定的装备不保留勾选）
     fjState.selectedItems = {}
     for idx, item in ipairs(backpackItems) do
-        if oldSelectedSeqs[item.seq] and not item.locked then
+        if oldSelectedSeqs[seqKey(item.seq)] and not item.locked then
             fjState.selectedItems[idx] = true
         end
     end
+end
+
+-- 品质按钮只管理该品质的批量勾选，不过滤网格；其他品质和手动勾选保持。
+local function qualityFullySelected(quality)
+    local hasSelectable = false
+    for idx, item in ipairs(backpackItems) do
+        if (item.quality or 1) == quality and not item.locked then
+            hasSelectable = true
+            if not fjState.selectedItems[idx] then return false end
+        end
+    end
+    return hasSelectable
 end
 
 -- ======================== 打开/关闭/重置 ========================
@@ -562,6 +580,9 @@ function M.drawPanel(vg)
         local cx = FJ.PZSX_FIRST_CX + (i - 1) * (FJ.PZSX_SIZE + FJ.PZSX_GAP)
         local didScale = BF.begin(vg, "bsd_filter_" .. i, cx, FJ.PZSX_CY, FJ.PZSX_SIZE, FJ.PZSX_SIZE)
         QualityMark.draw(vg, i, cx, FJ.PZSX_CY, FJ.PZSX_SIZE, 1.0)
+        if qualityFullySelected(i) and imgCheckmark and imgCheckmark >= 0 then
+            drawImageCentered(vg, imgCheckmark, cx, FJ.PZSX_CY, 40, 40, 1.0)
+        end
         BF.finish(vg, didScale)
     end
 
@@ -983,14 +1004,15 @@ function M.handleInput(dx, dy)
         local cx = FJ.PZSX_FIRST_CX + (i - 1) * (FJ.PZSX_SIZE + FJ.PZSX_GAP)
         if hitTest(dx, dy, cx, FJ.PZSX_CY, FJ.PZSX_SIZE, FJ.PZSX_SIZE) then
             BF.trigger("bsd_filter_" .. i)
-            fjState.selectedItems = {}
+            M.refreshBackpackItems()
+            local deselect = qualityFullySelected(i)
             for idx, item in ipairs(backpackItems) do
-                -- 锁定的装备不参与一键选择；仅选中当前品质
                 if (item.quality or 1) == i and not item.locked then
-                    fjState.selectedItems[idx] = true
+                    fjState.selectedItems[idx] = not deselect or nil
                 end
             end
-            print("[BlacksmithDecompose] 品质筛选点击: =" .. QUALITY_CONFIG[i].name)
+            print("[BlacksmithDecompose] 品质批量勾选: " .. QUALITY_CONFIG[i].name
+                .. " selected=" .. tostring(not deselect))
             return true
         end
     end
@@ -1003,6 +1025,8 @@ function M.handleInput(dx, dy)
             print("[BlacksmithDecompose] 分解请求等待中，忽略重复点击")
             return true
         end
+        -- 发请求前同步最新锁定/穿戴状态，按seq保留勾选，不把新入包装备自动选中。
+        M.refreshBackpackItems()
         local selectedSeqs = {}
         for idx, selected in pairs(fjState.selectedItems) do
             if selected and backpackItems[idx] then
@@ -1189,7 +1213,7 @@ function M.handleHover(dx, dy)
         if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover(FJ.DETAIL_OWNER) end
         return
     end
-    local seq = tostring(item.seq)
+    local seq = seqKey(item.seq)
     if fjState.hoverSeq ~= seq then
         fjState.hoverSeq = seq
         fjState.hoverSince = time.elapsedTime

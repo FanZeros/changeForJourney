@@ -470,49 +470,116 @@ function Start()
 
         case("终焉最后战线即时致死收尾", function()
             clear()
-            local Page = require("ui.battle.tri.BattleTriPage")
-            local teams, drivers = {}, {}
-            teams[1], teams[2], teams[3] = { hero(2) }, { hero(3) }, { hero(1, true) }
             local restoreIndex = #restores
-            patch(CP, "getDeployedTeam", function(i) return teams[i] end)
-            patch(CP, "getTeamSignature", function(i) return "enemydeath-team" .. i end)
-            patch(require("config.ExpTable"), "getUnlockedTeamCount", function() return 3 end)
-            patch(BattleScene, "getStageId", function() return SC.TERMINAL_NORMAL end)
-            patch(BattleScene, "pumpBattleCards", function() end)
-            patch(require("ui.story.gate.LetterIntro"), "isOpen", function() return false end)
-            patch(require("ui.story.ScenarioDialogue"), "isActive", function() return false end)
-            local oldNew = Driver.new
-            patch(Driver, "new", function(i, opts)
-                local drv = oldNew(i, opts)
-                drivers[i] = drv
-                return drv
+            local terminalOk, terminalErr = pcall(function()
+                -- UrhoX require 有引擎缓存；只读编译独立生产 Page，隔离私有 drivers/raid。
+                local file = assert(cache:GetFile("ui/battle/tri/BattleTriPage.lua"))
+                local readOk, source = pcall(function()
+                    local lines = {}
+                    while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+                    return table.concat(lines, "\n")
+                end)
+                file:Dispose()
+                assert(readOk, source)
+                local Page = assert(load(source, "@ui.battle.tri.BattleTriPage", "t", _G))()
+                local teams, drivers = {}, {}
+                teams[1], teams[2], teams[3] = { hero(2) }, { hero(3) }, { hero(1, true) }
+                patch(CP, "getDeployedTeam", function(i) return teams[i] end)
+                patch(CP, "getTeamSignature", function(i) return "enemydeath-team" .. i end)
+                patch(require("config.ExpTable"), "getUnlockedTeamCount", function() return 3 end)
+                local mainStage = SC.TERMINAL_NORMAL
+                patch(BattleScene, "getStageId", function() return mainStage end)
+                patch(BattleScene, "pumpBattleCards", function() end)
+                patch(require("ui.story.gate.LetterIntro"), "isOpen", function() return false end)
+                patch(require("ui.story.ScenarioDialogue"), "isActive", function() return false end)
+                patch(require("ui.battle.popup.TerminalConfirmDialog"), "update", function() end)
+                local oldNew = Driver.new
+                patch(Driver, "new", function(i, opts)
+                    local drv = oldNew(i, opts)
+                    drivers[i] = drv
+                    return drv
+                end)
+                restores[#restores + 1] = function()
+                    Page.close()
+                    for _, drv in ipairs(drivers) do
+                        if drv.terminalRaid then drv.terminalRaid:release(); drv.terminalRaid = nil end
+                    end
+                end
+                local finishCalls = 0
+                local bossRefs, allBosses = {}, {}
+                patch(BattleScene, "completeTriTerminal", function()
+                    finishCalls = finishCalls + 1
+                    local allOnce, eventCount = #allBosses == 9, 0
+                    for _, e in ipairs(allBosses) do
+                        if events[e] ~= 1 then allOnce = false end
+                        eventCount = eventCount + (events[e] or 0)
+                    end
+                    check(allOnce and eventCount == 9,
+                        "终焉完成/解绑前，九个 Boss 实例死亡事件恰好各一次")
+                    mainStage = SC.getReincarnationTarget(SC.getDifficulty(SC.TERMINAL_NORMAL))
+                    return true
+                end)
+                Page.open()
+                local raid = assert(drivers[1].terminalRaid)
+                for row = 1, 3 do
+                    drivers[row].introTimer = 0
+                    bossRefs[row] = {}
+                    for index = 1, 3 do
+                        local boss = assert(drivers[row].enemies[index])
+                        bossRefs[row][index] = boss
+                        allBosses[#allBosses + 1] = boss
+                    end
+                end
+                check(#raid.pools == 3 and #allBosses == 9, "真实 Page 终焉为九实例三个同编号池")
+                -- 最后一线 update 结束时才打空一个编号池；本帧前两线已完成扫描。
+                -- 分三帧打空三池，覆盖单池/双池空不能收尾，最后一池触发兜底扫描。
+                local nextPool = 1
+                local oldUpdate = drivers[3].update
+                patch(drivers[3], "update", function(self, dt)
+                    oldUpdate(self, dt)
+                    if nextPool > 3 then return end
+                    self:activate()
+                    local target = bossRefs[3][nextPool]
+                    target.attrs.energyShield, target.attrs.tempEnergyShield = 0, 0
+                    BC.dealDamageToUnit(target, target.maxHp * 100, false, "", nil, teams[3][1])
+                    nextPool = nextPool + 1
+                end)
+                for index = 1, 2 do
+                    Page.update(0)
+                    check(raid.pools[index].hp == 0 and raid.hp > 0 and finishCalls == 0 and not raid.finished,
+                        "仅打空前" .. index .. "个池，真实 Page 不提前胜利/解绑")
+                    check(own[1].extraTalent.stacks == index,
+                        "每个编号池只有末击实际命中实例给予大狗一层成长")
+                end
+                Page.update(0)
+                check(finishCalls == 1 and raid.finished and raid.won == true and raid.hp == 0,
+                    "所有三池空时真实 Page 同帧胜利收尾一次")
+                local noFakeSource, actualSources, allOnce, eventCount = true, true, true, 0
+                for row = 1, 3 do
+                    for index = 1, 3 do
+                        local boss = bossRefs[row][index]
+                        if row < 3 and boss._killedBy ~= nil then noFakeSource = false end
+                        if row == 3 and boss._killedBy ~= teams[3][1] then actualSources = false end
+                        if events[boss] ~= 1 then allOnce = false end
+                        eventCount = eventCount + (events[boss] or 0)
+                    end
+                    check(drivers[row].terminalRaid == nil, "胜利真实宿主解除共享池绑定，队" .. row)
+                end
+                check(noFakeSource and actualSources, "同步死亡不伪造六个未命中实例杀手，三次实杀保留末击源")
+                check(allOnce and eventCount == 9, "九个死亡事件总数恰好9，不因三次跨线扫描重复")
+                check(own[1].extraTalent.stacks == 3
+                    and own[2].extraTalent.stacks == 0 and own[3].extraTalent.stacks == 0,
+                    "三个实际末击只给大狗三层成长，未命中战线不串成长")
+                Page.update(0)
+                check(finishCalls == 1 and own[1].extraTalent.stacks == 3,
+                    "胜利后再次更新不重复完成或实际杀手成长")
             end)
-            local finished = false
-            local bossRefs = {}
-            patch(BattleScene, "completeTriTerminal", function()
-                finished = true
-                local allOnce = true
-                for _, e in ipairs(bossRefs) do if events[e] ~= 1 then allOnce = false end end
-                check(allOnce, "终焉完成/解绑前，三路 Boss 同步死亡各事件一次")
-                return true
-            end)
-            Page.open()
-            for i = 1, 3 do bossRefs[i] = drivers[i].enemies[1]; drivers[i].introTimer = 0 end
-            -- 最后一线 update 结束时才击穿共享池，前两线本帧已经完成扫描。
-            local oldUpdate = drivers[3].update
-            drivers[3].update = function(self, dt)
-                oldUpdate(self, dt)
-                self:activate()
-                bossRefs[3].attrs.energyShield = 0
-                bossRefs[3].attrs.tempEnergyShield = 0
-                BC.dealDamageToUnit(bossRefs[3], bossRefs[3].maxHp * 100, false, "", nil, teams[3][1])
+            for i = #restores, restoreIndex + 1, -1 do
+                local restoreOk, restoreErr = pcall(restores[i])
+                table.remove(restores, i)
+                if not restoreOk then check(false, "终焉 restore 异常: " .. tostring(restoreErr)) end
             end
-            Page.update(0)
-            check(finished and bossRefs[1]._killedBy == nil and bossRefs[2]._killedBy == nil,
-                "终焉真实 Page 收尾可达，未命中两线不伪造杀手")
-            check(own[1].extraTalent.stacks == 1, "终焉三路同步仅实际末击源的大狗成长一次")
-            Page.close()
-            for i = #restores, restoreIndex + 1, -1 do restores[i](); table.remove(restores, i) end
+            if not terminalOk then error(terminalErr) end
         end)
         ETS.flush() -- 仍在测试存档/网络边界内，不将 dirty 队列留给还原后的生产边界。
     end)

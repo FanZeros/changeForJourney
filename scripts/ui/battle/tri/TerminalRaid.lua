@@ -1,44 +1,51 @@
 -- ============================================================================
--- TerminalRaid - 终焉神殿三队协同战（共享生命池）
--- 三支小队各面对一个独立攻击的终焉 Boss，三 Boss 共用一个生命池：
---   任一路造成伤害 → 池扣血 → sync 回写三路 Boss 的显示 HP
--- 胜利条件：池被打空（任一队达成即全队胜利）
--- 失败条件：三队全部失守，或超过 GameConfig.Battle.TIME_LIMIT_SEC
--- 单队失守不退关：该队停摆（defeated[row]=true），其余队继续作战
+-- TerminalRaid - 终焉神殿三队协同战（同编号共享生命）
+-- 每队面对全部三名 Boss；只有同编号 Boss 共用生命，攻击/护盾/状态各线独立。
+--   队1/2/3 的敌人1 → 生命池1；敌人2 → 生命池2；敌人3 → 生命池3
+-- 任一生命池归零，该编号的三路 Boss 同时死亡；全部生命池归零才胜利。
+-- 单队失守后停止攻击，但退场视觉仍由驱动推进；全灭收尾不冻结死亡动画。
 -- ============================================================================
 local AD = require("systems.AttributeDef")
 
 local TerminalRaid = {}
+TerminalRaid.FAILURE_HOLD_SEC = 1.0
 
 function TerminalRaid.new(stageId, drivers)
-    local raid = { stageId = stageId, hp = 0, maxHp = 0, enemies = {}, elapsed = 0, lines = {} }
+    local raid = {
+        stageId = stageId, hp = 0, maxHp = 0, enemies = {}, pools = {}, lines = {},
+        elapsed = 0, defeated = {}, finished = false, finishElapsed = 0, originalDamage = {},
+    }
     for row = 1, 3 do
         local drv = drivers[row]
-        if drv and drv.stageId == stageId and #drv.allies > 0 then
-            local enemy = drv.enemies[1]
-            if enemy and enemy.attrs then
-                raid.enemies[#raid.enemies + 1] = enemy
-                raid.lines[row] = enemy   -- 行归属：胜利时按队结算 Boss 击杀奖励
-                raid.maxHp = raid.maxHp + enemy.hp
+        if drv and drv.stageId == stageId then
+            raid.lines[row] = {}
+            if #drv.allies == 0 then raid.defeated[row] = true end
+            for index, enemy in ipairs(drv.enemies) do
+                if enemy.attrs then
+                    local pool = raid.pools[index]
+                    if not pool then
+                        pool = { hp = enemy.hp, maxHp = enemy.maxHp, enemies = {} }
+                        raid.pools[index] = pool
+                    end
+                    pool.enemies[#pool.enemies + 1] = enemy
+                    raid.enemies[#raid.enemies + 1] = enemy
+                    raid.lines[row][index] = enemy
+                end
             end
         end
     end
-    raid.hp = raid.maxHp
-    raid.defeated = {}
-    raid.finished = false
-    raid.originalDamage = {}
 
     function raid:onTeamDefeated(teamIdx)
         if self.defeated[teamIdx] or self.finished then return end
         self.defeated[teamIdx] = true
-        print(string.format("[TerminalRaid] 小队%d 失守，其他小队继续作战", teamIdx))
+        print(string.format("[TerminalRaid] 小队%d 失守，停止战斗并完成退场", teamIdx))
         local fighting = false
         for row = 1, 3 do
             local drv = drivers[row]
             if drv and drv.terminalRaid == self and not self.defeated[row] then
-                for _, ally in ipairs(drv.allies) do
-                    if ally.hp > 0 then fighting = true break end
-                end
+                -- 后更新的战线必须先获得神器/天赋瞬时复活机会，再确认全灭。
+                fighting = true
+                break
             end
         end
         if not fighting then self:finish(false) end
@@ -48,7 +55,8 @@ function TerminalRaid.new(stageId, drivers)
         if self.finished then return end
         self.finished = true
         self.won = won
-        print(string.format("[TerminalRaid] %s stage=%d", won and "胜利" or "失败", self.stageId))
+        self.finishElapsed = 0
+        print(string.format("[TerminalRaid] %s stage=%d", won and "胜利" or "失败待退场", self.stageId))
     end
 
     function raid:release()
@@ -59,40 +67,51 @@ function TerminalRaid.new(stageId, drivers)
     end
 
     function raid:sync()
-        for _, enemy in ipairs(self.enemies) do
-            enemy.hp = self.hp
-            enemy.maxHp = self.maxHp
-            enemy.attrs.final[AD.HP] = self.hp
-            enemy.attrs.final[AD.MAX_HP] = self.maxHp
+        local hp, maxHp = 0, 0
+        for _, pool in ipairs(self.pools) do
+            hp = hp + pool.hp
+            maxHp = maxHp + pool.maxHp
+            for _, enemy in ipairs(pool.enemies) do
+                enemy.hp = pool.hp
+                enemy.maxHp = pool.maxHp
+                enemy.attrs.final[AD.HP] = pool.hp
+                enemy.attrs.final[AD.MAX_HP] = pool.maxHp
+            end
         end
+        -- 汇总仅供进度条/胜负判定；不能作为任何单只 Boss 的生命上限。
+        self.hp, self.maxHp = hp, maxHp
     end
 
-    for _, enemy in ipairs(raid.enemies) do
-        local attrs = enemy.attrs
-        local takeDamage = attrs.takeDamage
-        local heal = attrs.heal
-        raid.originalDamage[enemy] = { takeDamage = takeDamage, heal = heal }
-        attrs.takeDamage = function(self, amount, resistance)
-            if raid.hp <= 0 then return 0 end
-            local before = raid.hp
-            raid:sync()
-            local actual = takeDamage(self, amount, resistance)
-            raid.hp = math.max(0, before - actual)
-            raid:sync()
-            return actual
-        end
-        attrs.heal = function(self, amount)
-            if raid.hp <= 0 then return 0 end
-            raid:sync()
-            local actual = heal(self, amount)
-            raid.hp = math.min(raid.maxHp, raid.hp + actual)
-            raid:sync()
-            return actual
+    for _, pool in ipairs(raid.pools) do
+        for _, enemy in ipairs(pool.enemies) do
+            local attrs = enemy.attrs
+            local takeDamage = attrs.takeDamage
+            local heal = attrs.heal
+            raid.originalDamage[enemy] = { takeDamage = takeDamage, heal = heal }
+            attrs.takeDamage = function(self, amount, resistance)
+                if pool.hp <= 0 or raid.finished then return 0 end
+                raid:sync()
+                local actual = takeDamage(self, amount, resistance)
+                pool.hp = math.max(0, pool.hp - actual)
+                raid:sync()
+                return actual
+            end
+            attrs.heal = function(self, amount)
+                if pool.hp <= 0 or raid.finished then return 0 end
+                raid:sync()
+                local actual = heal(self, amount)
+                pool.hp = math.min(pool.maxHp, pool.hp + actual)
+                raid:sync()
+                return actual
+            end
         end
     end
     raid:sync()
-    print(string.format("[TerminalRaid] 三队协同开始 stage=%d 敌方战线=%d 共享生命=%.0f",
-        stageId, #raid.enemies, raid.maxHp))
+    if raid.maxHp <= 0 or (raid.defeated[1] and raid.defeated[2] and raid.defeated[3]) then
+        raid:finish(false)
+    end
+    print(string.format("[TerminalRaid] 协同开始 stage=%d 生命池=%d 敌人实例=%d 总生命=%.0f",
+        stageId, #raid.pools, #raid.enemies, raid.maxHp))
     return raid
 end
 

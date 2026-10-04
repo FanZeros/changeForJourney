@@ -198,12 +198,13 @@ startTerminalRaid = function(stageId)
     end
 end
 
---- 胜利时按战线结算 Boss 击杀奖励（经验/金币）。
---- 共享池被打空 = 三路 Boss 同时死亡，与主线「敌人死亡即上报击杀」等价；
---- 每路取该队当时存活英雄作为经验分配名单（全灭队只计金币/玩家经验）。
+--- 胜利时三个编号各结算一次 Boss 击杀奖励（经验/金币），不按战线副本重复发奖。
+--- 沿用原编号归属队伍的存活英雄名单，全灭队只计金币/玩家经验。
 local function settleRaidKillRewards(raid)
     for row = 1, COL_COUNT do
-        local enemy = raid.lines[row]
+        -- 三只真实 Boss 各结算一次，保持原有敌人1/2/3分配队1/2/3的奖励口径。
+        -- 九张卡只是三只 Boss 的战线表现，不能按九个实例重复发经验/金币。
+        local enemy = raid.lines[row] and raid.lines[row][row]
         local drv = drivers[row]
         if enemy and drv and triOnKill then
             local heroIds = {}
@@ -397,7 +398,28 @@ function BattleTriPage.update(dt)
         end
     end
     if terminalRaid and terminalRaid.finished then
-        finishTerminalRaid(terminalRaid.won)
+        if terminalRaid.won then
+            finishTerminalRaid(true)
+        else
+            -- 全灭/超时先停止战斗，至少留一秒让角色退场，不同帧立即重开。
+            -- 首次观察到失败不累计当前战斗帧；即使大 dt 也不能同帧直接退关。
+            if terminalRaid.finishObserved then
+                terminalRaid.finishElapsed = terminalRaid.finishElapsed + dt
+            else
+                terminalRaid.finishObserved = true
+            end
+            local pendingExit = false
+            for _, drv in pairs(drivers) do
+                if drv.terminalRaid == terminalRaid then
+                    for _, ally in ipairs(drv.allies) do
+                        if ally._fallenPending then pendingExit = true break end
+                    end
+                end
+            end
+            if not pendingExit and terminalRaid.finishElapsed >= TerminalRaid.FAILURE_HOLD_SEC then
+                finishTerminalRaid(false)
+            end
+        end
     end
     TerminalConfirmDialog.update()
     -- 三行结束后恢复默认状态，避免后续单场界面读到最后一队的数据。
@@ -551,8 +573,8 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             local drv = drivers[row]
             if drv then
                 drv:activate()
-                -- 无编队时完全不显示敌人（血条/名字等），只留空行提示
-                local enemiesShown = (#drv.allies > 0) and drv.enemies or {}
+                -- 普通空编队隐藏敌人；终焉仍展示三只 Boss，包括空队/失守战线。
+                local enemiesShown = (terminalRaid or #drv.allies > 0) and drv.enemies or {}
                 BattleView.draw(vg, { allies = drv.allies, enemies = enemiesShown }, nil, true)
             end
             nvgRestore(vg)

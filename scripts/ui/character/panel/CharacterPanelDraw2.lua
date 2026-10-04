@@ -101,7 +101,7 @@ local MY_HEROES_CY   = 680
 -- 下方名册：图标网格，点图标才打开角色卡面
 local ROSTER_ICON = 148
 local ROSTER_GAP = 24
-local ROW1_CY        = 1186
+local ROW1_CY        = 1122
 local MAX_PER_ROW    = 5
 local ROSTER_POWER_DY = ROSTER_ICON * 0.5 + 49
 local ROSTER_BOTTOM_DY = ROSTER_ICON * 0.5 + 70
@@ -124,7 +124,7 @@ local DEPLOYED_TXT_DY = -120  -- [卡高4/5] 原-149
 
 -- ======================== 滚动区域 ========================
 
-local SCROLL_TOP     = 1108   -- 三队战力行底框下方，名册不盖住队三。
+local SCROLL_TOP     = 1044   -- 缩小队三与名册的空档，五行名册首屏保留完整名字与战力。
 local SCROLL_BOTTOM  = DESIGN_H - DESIGN_H * 0.06 -- 扣除内容下移量，战力行滚到底时仍在屏幕内。
 local SCROLL_LEFT    = 0
 local SCROLL_RIGHT   = DESIGN_W

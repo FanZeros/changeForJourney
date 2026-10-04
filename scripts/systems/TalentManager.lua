@@ -799,6 +799,12 @@ end
 function TAL.onBattleStart(allies, enemies)
     TAL_BCS.bAllies  = allies
     TAL_BCS.bEnemies = enemies
+    -- 先清双方本场套装残留，避免开战天赋把旧临时属性折算到新场。
+    for _, units in ipairs({ allies or {}, enemies or {} }) do
+        for _, u in ipairs(units) do
+            EquipmentSetRuntime.resetBattleState(u)
+        end
+    end
 
     --- 为一组单位应用战斗开始天赋（转职天赋 + 英雄专属）
     ---@param units table[] 要处理的单位列表
@@ -1060,7 +1066,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
         local r = _after.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
         ClassGateRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, attackerAllies)
         EquipmentSetRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, targetList)
-        if result and result.totalDamage then
+        if result and result.category ~= "healing" and result.totalDamage then
             EquipmentSetRuntime.addSwordWindowDamage(attacker, result.totalDamage)
         end
         return r

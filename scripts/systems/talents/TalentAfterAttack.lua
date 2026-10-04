@@ -437,11 +437,14 @@ function M.bind(deps)
             onFatFishAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn)
         end
 
-        -- #18/#19/#24/#25
-        if onFourNewAfterAttack then
-            onFourNewAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn)
-        end
+    end
 
+    -- 四角色后处理包含哈基米治疗；保留伤害分支原顺序，每个落地目标仅分发一次。
+    if onFourNewAfterAttack then
+        onFourNewAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn)
+    end
+
+    if result and result.category ~= "healing" and not result.isMiss then
         -- #16 万剑归宗 灵月飞剑：累计实际造成伤害（含护盾吸收、暴击与各类增伤）
         if heroId == 16 and result and not result.isMiss and result.category ~= "healing" then
             addLuoxingWindowDamage(attacker, getLuoxingAccumAmount(result, 0), nil, nil)

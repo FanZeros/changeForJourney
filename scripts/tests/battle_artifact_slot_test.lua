@@ -86,6 +86,7 @@ function Start()
             ["systems.TalentEffect"] = true, ["systems.ArtifactBridge"] = true,
             ["systems.ArtifactRuntime"] = true, ["systems.CombatFormula"] = true,
             ["systems.EquipmentSystem"] = true, ["systems.EquipmentSetSystem"] = true,
+            ["systems.EquipmentSetRuntime"] = true,
             ["systems.CombatPowerEstimate"] = true, ["systems.ExtraTalentSystem"] = true,
             ["systems.AwakeningGrowth"] = true, ["systems.StatusEffectManager"] = true,
             ["ui.character.panel.CharacterPanel"] = true,

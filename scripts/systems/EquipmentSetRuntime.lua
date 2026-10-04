@@ -20,14 +20,32 @@ local function six(unit)
     return s
 end
 
+--- 清理本场套装运行态；不移除装备属性、永久成长或英雄库存。
 ---@param unit table
-function ESR.onBattleStart(unit, allies)
+function ESR.resetBattleState(unit)
     if not unit then return end
     unit._setShell = 0
     unit._setFacelessT = 0
+    unit._crystal = 0
     unit._setCrystal = 0
     unit._setSwordWin = 0
+    unit._setSwordDmgWin = 0
     unit._setStarCd = 8
+    unit._setNitroT = 0
+    unit._setGamble = 0
+    unit._setEmber = nil
+    unit._setEmberSrc = nil
+    if unit.attrs then
+        unit.attrs:removeModifier("set6_nitros_spd")
+        unit.attrs:removeModifier("set4_gamble")
+        unit.attrs:removeModifier("set4_bonehunger")
+    end
+end
+
+---@param unit table
+function ESR.onBattleStart(unit, allies)
+    if not unit then return end
+    ESR.resetBattleState(unit)
     if six(unit) == "last_rite" and unit.attrs then
         -- 6 件不改死亡：全队护盾加成
         for _, a in ipairs(allies or { unit }) do
@@ -46,8 +64,6 @@ function ESR.onBattleStart(unit, allies)
     if four(unit) == "starless" and unit.attrs then
         unit.attrs:addModifier("set4_starless", { { key = AD.MAG_PEN, flat = 8 } })
     end
-    unit._setGamble = 0
-    unit._setEmber = nil
 end
 
 --- 叠甲虫壳 4 件减伤
@@ -94,7 +110,7 @@ end
 ---@param dealDmgFn function|nil
 ---@param targetList table[]|nil
 function ESR.onAfterAttack(attacker, defender, result, isAlly, dealDmgFn, targetList)
-    if not attacker or not result or result.isMiss then return end
+    if not attacker or not result or result.isMiss or result.category == "healing" then return end
     local f, s = four(attacker), six(attacker)
 
     if f == "faceless" and defender and defender.maxHp and defender.hp then
@@ -244,6 +260,24 @@ function ESR.onEnemyDeath(deadEnemy, allies, enemies)
         end
         deadEnemy._setEmber = nil
     end
+    if deadEnemy then
+        deadEnemy._setEmber = nil
+        deadEnemy._setEmberSrc = nil
+    end
+end
+
+local function tickEmber(unit, dt)
+    if unit._setEmber then
+        local left = unit._setEmber - dt
+        if left <= 0 then
+            unit._setEmber = nil
+            unit._setEmberSrc = nil
+        else
+            unit._setEmber = left
+        end
+    else
+        unit._setEmberSrc = nil
+    end
 end
 
 ---@param dt number
@@ -252,6 +286,15 @@ end
 ---@param ctx table|nil
 function ESR.update(dt, allies, enemies, ctx)
     local dealDmg = ctx and ctx.dealDamage
+    local seen = {}
+    for _, list in ipairs({ allies or {}, enemies or {} }) do
+        for _, u in ipairs(list) do
+            if not seen[u] then
+                seen[u] = true
+                tickEmber(u, dt)
+            end
+        end
+    end
     for _, u in ipairs(allies or {}) do
         if (u._setNitroT or 0) > 0 then
             u._setNitroT = u._setNitroT - dt
@@ -262,10 +305,8 @@ function ESR.update(dt, allies, enemies, ctx)
         if (u._setFacelessT or 0) > 0 then
             u._setFacelessT = u._setFacelessT - dt
         end
-        if (u._setEmber or 0) > 0 then
-            u._setEmber = u._setEmber - dt
-            if u._setEmber <= 0 then u._setEmber = nil end
-        end
+        -- 死亡期间仅暂停周期输出；限时增益和目标减益仍按本场时间清理。
+        if (u.hp or 0) <= 0 then goto continue_unit end
         -- 万剑门扉：光环给队友，穿套本人不飞
         if four(u) == "swordgate" then
             u._setSwordWin = (u._setSwordWin or 0) + dt
@@ -313,6 +354,7 @@ function ESR.update(dt, allies, enemies, ctx)
                 end
             end
         end
+        ::continue_unit::
     end
 end
 

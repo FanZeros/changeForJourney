@@ -12,6 +12,8 @@ function Start()
         return setmetatable(values or {}, { __index = function() return noop end })
     end
     local mods = {
+        -- 宿主中缝命中依赖数值尺寸常量，不能用默认返回函数的页面替身代替。
+        ["core.DrawUtil"] = originalRequire("core.DrawUtil"),
         ["ui.character.panel.CharacterPanel"] = mock({
             isDraggingCard = function() return dragging end,
             handleDragBegin = function() armed = true end,

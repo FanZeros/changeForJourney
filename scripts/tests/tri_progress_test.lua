@@ -278,14 +278,21 @@ function Start()
         drivers[1].terminalRaid:finish(false)
         Page.update(0)
         for t = 1, 3 do
+            check(drivers[t].stageId == 999 and modules.battle.teamStageIds[tostring(t)] == 2305,
+                "队" .. t .. "终焉失败先保留战场，存档仍是末关回退点")
+        end
+        check(not Page.gotoTeamStage(1, 999), "失败退场期间不能提前重进终焉")
+        Page.update(nativeRequire("ui.battle.tri.TerminalRaid").FAILURE_HOLD_SEC)
+        for t = 1, 3 do
             check(drivers[t].stageId == 2305 and modules.battle.teamStageIds[tostring(t)] == 2305,
-                "队" .. t .. "终焉失败后回退点已入档")
+                "队" .. t .. "终焉失败展示结束后回退点已入档")
         end
         check(Page.gotoTeamStage(1, 999), "失败后仍可重新进入终焉")
         local raid = drivers[1].terminalRaid
-        raid.hp = 0
+        check(#raid.pools == 3 and #raid.enemies == 9, "重进终焉仍绑定九实例和三个编号池")
+        for _, pool in ipairs(raid.pools) do pool.hp = 0 end
         raid:sync()
-        raid:finish(true)
+        check(raid.hp == 0, "全部编号池归零才汇总为胜利血量")
         Page.update(0)
         Page.update(0)
         for t = 1, 3 do

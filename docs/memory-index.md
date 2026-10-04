@@ -1,5 +1,7 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+> **最新（2026-10-04，觉醒闭环规划，尚未实施）**：用户通过AskUserQuestion选择规划，不授权本轮改Lua或数值。方案补在 `docs/changeForJourney-gameplay.md` 第23节：正式治疗接线与攻击套装过滤优先，套装双方计时／存活／本场池随后，伤害契约和资源隔离分批补齐；超额盾、易伤叠加、复活概率及晶蚀新增收益需另行决定。已验证工作树仍`e0957c79`；规划期间930由外部合入PR54到`9d4a51e3`，本轮未再次合入，实施前需核对宿主兼容。不得重复把已修三阶／连射／成长HP列为未做；规划不等于机制已修或平衡已验收，只推当前任务分支，完成后仍实际AskUserQuestion交接。
+
 > **最新（2026-10-04，用户授权同步930）**：用户通过AskUserQuestion选择同步最新代码，当前 `audit930/character-awakening-sets-1002` 已合入 `origin/workspace930@c47c2ec3`；原审查完整保留为玩法文档21A节，最新21节复查／22节首批实施记录保留。2537个scripts/assets文件与930逐字节一致，官方Build成功479Lua，11套重点回归全部实跑ALL PASS，审计对照10/7/0；主入口40秒boot18/18、无观察到的Lua异常、实际保存成功。全仓LSP缓存仍74个既有Error，不声称全仓／画面／触控验收通过。只推当前任务分支，不推workspace系列；PR53/54与支援觉醒方案未额外合入；本地构建身份不提交，交接仍真正调用AskUserQuestion。详见 `memory/WORKFLOW_RULES.md` 顶部本轮同步记录。
 
 > **历史（2026-10-04，同步前的指定审查分支进度核查与部署）**：`audit930/character-awakening-sets-1002@35c9cb0` 已拉取到 `/workspace` 根并官方构建；未切换或合并其他分支。原审查提交没有被其他远端分支直接包含；最新集成线 `workspace930@c47c2ec` 停在10月4日08:59的PR52，后续战斗PR53（`55b4a177`）／PR54（`6f6540b6`）仍open且未合入。原审查探针本轮复跑仍 `confirmed=17 healthy=0 harnessErrors=0`，不代表17个独立bug或回归通过；主入口40秒无头采样完成boot18/18、无观察到的Lua异常，未做视觉／触控验收。详细交接见 `memory/WORKFLOW_RULES.md` 的2026-10-04章节。**用户要求持续推进授权任务，每轮先汇报后用AskUserQuestion选项交接；只推当前指定任务分支，不推任何workspace分支，不保存凭据。**

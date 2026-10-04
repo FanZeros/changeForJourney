@@ -1211,8 +1211,9 @@ function BattleService._claimEquipReward(uid, sessionData, scenarioKey, rewardDe
     if not equipData then
         return false, "数据未加载"
     end
-    if EquipmentSystem.isInventoryFull(equipData) then
-        return false, "背包已满"
+    local lootboxData = PDM.GetModule(uid, "lootbox")
+    if EquipmentSystem.isInventoryFull(equipData) and not lootboxData then
+        return false, "遗匣数据未加载"
     end
 
     local equip = EquipmentSystem.generate(rewardDef.templateId, rewardDef.level, rewardDef.quality)
@@ -1220,15 +1221,17 @@ function BattleService._claimEquipReward(uid, sessionData, scenarioKey, rewardDe
         return false, "装备生成失败"
     end
 
-    local seq = EquipmentSystem.addToInventory(equipData, equip)
+    local destination = LootBoxSystem.deliverEquipment(lootboxData, equipData, equip)
+    local seq = equip.seq
 
     sessionData.claimedScenarios[scenarioKey] = true
 
-    PDM.MarkDirty(uid, "equipment")
+    PDM.MarkDirty(uid, destination == "lootbox" and "lootbox" or "equipment")
     PDM.MarkDirty(uid, "session")
 
     print("[BattleService] scenario equip uid=" .. tostring(uid)
-        .. " templateId=" .. rewardDef.templateId .. " seq=" .. tostring(seq))
+        .. " templateId=" .. rewardDef.templateId .. " seq=" .. tostring(seq)
+        .. " destination=" .. destination)
 
     return true, nil, {
         rewardType = "equip",
@@ -1238,6 +1241,9 @@ function BattleService._claimEquipReward(uid, sessionData, scenarioKey, rewardDe
             quality = rewardDef.quality,
             level = rewardDef.level,
             name = equip.name,
+            slot = equip.slot,
+            equip = equip,
+            destination = destination,
         },
     }
 end

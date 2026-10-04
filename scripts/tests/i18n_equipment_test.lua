@@ -62,11 +62,25 @@ local function run()
             setSourceCount = setSourceCount + 1
         end
     end
-    check(#ids == 353, "353个真实装备模板")
+    check(#ids == 357, "357个真实装备模板")
     check(typeCount == 25, "25个真实装备子类型")
     check(#affixes == 57 and #AC.AFFIXES == 44 and #AC.CORRUPT_AFFIXES == 13, "44普通+13魔化词缀")
     check(setSourceCount == 48, "12套名称及36条2/4/6说明")
-    check(#sources == 483, "483个源文覆盖组合")
+    check(#sources == 487, "487个源文覆盖组合")
+    local newEquipment = {
+        W82 = { name = "虫壳战刃", type = "单手剑", slot = "weapon", setId = "carapace" },
+        W83 = { name = "虫壳巨刃", type = "双手剑", slot = "weapon", setId = "carapace" },
+        O38 = { name = "虫壳重盾", type = "重盾", slot = "offhand", setId = "carapace" },
+        W84 = { name = "无面影刃", type = "匕首", slot = "weapon", setId = "faceless" },
+    }
+    local newEquipmentCount = 0
+    for id, expected in pairs(newEquipment) do
+        newEquipmentCount = newEquipmentCount + 1
+        local tpl = EC.ITEMS[id]
+        check(tpl ~= nil and tpl.id == id and tpl.name == expected.name and tpl.type == expected.type
+            and tpl.slot == expected.slot and tpl.setId == expected.setId and tpl.levelRange[1] == 81,
+            id .. "追加模板ID/原名/类型/81+等级/套装归属保持")
+    end
 
     local calls = {} ---@type table
     local currentFont = 24
@@ -170,6 +184,18 @@ local function run()
     local combinations = 0
     for _, lang in ipairs(langs) do
         I18n.set(lang)
+        for id, expected in pairs(newEquipment) do
+            local translated = D[lang][expected.name]
+            -- 繁体必须转换字形；英/日/韩必须是对应译名，不能退回简体原文。
+            check(type(translated) == "string" and translated ~= "" and translated ~= expected.name
+                and I18n.lookup(expected.name) == translated,
+                lang .. id .. "新装备有独立译名而非简体回退")
+            if lang ~= "zh_TW" then
+                check(translated ~= D.zh_TW[expected.name], lang .. id .. "新装备不沿用中文译名")
+            end
+            check(EC.ITEMS[id] ~= nil and EC.ITEMS[id].id == id and EC.ITEMS[id].name == expected.name,
+                lang .. id .. "译名查找不改变模板ID与源名")
+        end
         for _, source in ipairs(sources) do
             local expected = D[lang][source]
             check(type(expected) == "string" and expected ~= "", lang .. "字典缺口:" .. source)
@@ -278,7 +304,7 @@ local function run()
     state.selectedEquip, state.selectedEquipSlot = equip, "weapon"
     Enhance.updateEnhanceData(equip)
     I18n.set("zh_CN")
-    check(combinations == 1932, "四语1932个全量覆盖组合")
+    check(combinations == #sources * #langs and combinations == 1948, "四语1948个全量覆盖组合")
     -- 正图片句柄覆盖锁图标实际绘制和热区；直接调用真实Draw入口，省掉业务输入副作用。
     local DetailDraw = require("ui.character.equip.EquipmentDetailDraw")
     local headerState = { heroId = nil, slot = nil, descScrollY = 0, descScrollMax = 0 }
@@ -326,16 +352,18 @@ local function run()
             REF_ICON_CX = 903, REF_ICON_CY = 809, REF_ICON_SIZE = 290,
             REF_BTN_CX = 807, REF_BTN_W = 410, REF_BTN_H = 100, REF_BTN_FONT = 40 },
     })
-    local headerCases, realMinimum = 0, 100
-    for _, metricMode in ipairs({ "spy", "Noto" }) do
+    local headerCases, realHeaderCases, newRealHeaderCases, realMinimum = 0, 0, 0, 100
+    local metricModes = { "spy", "Noto" }
+    local headerLangs = { "zh_CN", "zh_TW", "en", "ja", "ko" }
+    for _, metricMode in ipairs(metricModes) do
     realMetrics = metricMode == "Noto"
     if realMetrics then
         check(measuredWidth("mmmm", 20) > 0 and math.abs(measuredWidth("mmmm", 20) - 48) > 0.01,
             "Noto真实测宽出口不走等宽/spy估算")
     end
-    for _, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+    for _, lang in ipairs(headerLangs) do
         I18n.set(lang)
-        -- W11为报告的长英语反例；再扫353模板，宽字/CJK压力且不修改配置。
+        -- W11为报告的长英语反例；再扫全部357模板，宽字/CJK压力且不修改配置。
         local headerIds = { "W11" }
         for _, id in ipairs(ids) do if id ~= "W11" then headerIds[#headerIds + 1] = id end end
         for _, id in ipairs(headerIds) do
@@ -355,15 +383,18 @@ local function run()
                 local nameY, typeY = compact and 34 or 625, compact and 78 or 706
                 local panelLeft, panelRight = compact and 505 or 375, compact and 1105 or 1235
                 local rebuilt, minFont, titleRight, rows = {}, 100, 0, 0
+                local titleWithinBand = true
                 for _, call in ipairs(titleCalls) do
                     if call.title and math.abs(call.y - nameY) < 45 then
                         rebuilt[#rebuilt + 1] = call.text
                         minFont = math.min(minFont, call.font)
                         titleRight = math.max(titleRight, call.x + call.width + call.stroke)
                         rows = rows + 1
-                        check(call.x - call.stroke >= panelLeft and call.y - call.font * 0.5 - call.stroke >= (compact and 0 or 430)
-                            and call.y + call.font * 0.5 + call.stroke < typeY - (compact and 13 or 15),
-                            lang .. id .. "标题字框在标题带内")
+                        local withinBand = call.x - call.stroke >= panelLeft
+                            and call.y - call.font * 0.5 - call.stroke >= (compact and 0 or 430)
+                            and call.y + call.font * 0.5 + call.stroke < typeY - (compact and 13 or 15)
+                        titleWithinBand = titleWithinBand and withinBand
+                        check(withinBand, lang .. id .. "标题字框在标题带内")
                     end
                 end
                 local lock = nil ---@type table?
@@ -387,6 +418,19 @@ local function run()
                     end
                 end
                 check(stable(testEquip) == originalHeader, label .. "source名/ID/锁业务不变")
+                if realMetrics then
+                    realHeaderCases = realHeaderCases + 1
+                    if newEquipment[id] and lang ~= "zh_CN" then
+                        -- 四个新名四语逐项使用生产Noto测宽验证，不只依赖spy或全量总数。
+                        check(table.concat(rebuilt) == D[lang][tpl.name] and rows >= 1 and rows <= 2
+                            and minFont >= 20 and titleWithinBand and titleRight <= panelRight,
+                            label .. "追加译名真实Noto字框不越板/不越标题带")
+                        check(EC.ITEMS[id].id == id and EC.ITEMS[id].name == newEquipment[id].name
+                            and testEquip.templateId == id and stable(testEquip) == originalHeader,
+                            label .. "追加译名真实绘制后ID/源名保持")
+                        newRealHeaderCases = newRealHeaderCases + 1
+                    end
+                end
                 headerCases = headerCases + 1
             end
         end
@@ -395,8 +439,13 @@ local function run()
     I18n.displayText = rawDisplayText
     realMetrics = false
     nativeDelete(metricContext)
-    print(string.format("[equipment-Noto-metrics] cases=3530 minimum_title_font=%.1f", realMinimum))
-    check(headerCases == 7060, "五语353模板×compact/full×spy/Noto共7060布局回归")
+    print(string.format("[equipment-Noto-metrics] cases=%d new_translation_cases=%d minimum_title_font=%.1f",
+        realHeaderCases, newRealHeaderCases, realMinimum))
+    check(realHeaderCases == #ids * #headerLangs * 2, "五语357模板×compact/full共3570真实Noto布局回归")
+    check(newRealHeaderCases == newEquipmentCount * #langs * 2 and newRealHeaderCases == 32,
+        "四个追加装备×四语×compact/full共32真实字体译名回归")
+    check(headerCases == #ids * #headerLangs * 2 * #metricModes,
+        "五语357模板×compact/full×spy/Noto共7140布局回归")
     check(stable(equip) == displaySnapshot, "绘制/切语不修改装备实例数值与原名")
     for _, text in ipairs({ "未知装备 升阶", "image/练习用剑.png", "练习用剑 升阶奖励",
         "词缀「未知词缀」品级 C → B", "词条倍率 ×1.2", "将新增 力量、未知词条",
@@ -408,7 +457,7 @@ local function run()
     I18n.set("zh_CN")
     for _, source in ipairs(sources) do check(I18n.lookup(source) == source, "简体显示保持:" .. source) end
     check(stable({ EC.ITEMS, AC.AFFIXES, AC.CORRUPT_AFFIXES, SC.SETS }) == original,
-        "353模板ID/名称/归属/业务数值/词缀/套装配置全部未变")
+        "357模板ID/名称/归属/业务数值/词缀/套装配置全部未变")
     clearCalls()
     Enhance.drawPanel(nil)
     check(contains(EC.ITEMS.W1.name .. " 升阶"), "切回简体升阶标题保持原文")

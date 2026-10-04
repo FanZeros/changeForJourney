@@ -764,6 +764,20 @@ addGroup("shoes", "皮甲", nil, {"dodge", "agi"}, {
     { n = "走桌软靴", lv = {81,9999}, v = {3.00, 2.40} },
 }, "gambler", "S7")
 
+-- 叠甲虫壳与夜行无面补齐81+档；仅续号新增，旧模板归属和数值不变。
+addGroup("weapon", "单手剑", "onehand", {"physAtk", "hitValue", "atkSpeed"}, {
+    { n = "虫壳战刃", lv = {81,9999}, v = {18.86, 2.41, 4.9} },
+}, "carapace", "W1")
+addGroup("weapon", "双手剑", "twohand", {"physAtk", "physPen", "physDmgBonus"}, {
+    { n = "虫壳巨刃", lv = {81,9999}, v = {37.72, 7.71, 12.9} },
+}, "carapace", "W7")
+addGroup("offhand", "重盾", nil, {"armor", "physBlockRate", "magBlockRate"}, {
+    { n = "虫壳重盾", lv = {81,9999}, v = {13.47, 3.8, 3.8} },
+}, "carapace", "O7")
+addGroup("weapon", "匕首", "onehand", {"magAtk", "atkSpeed", "comboRate"}, {
+    { n = "无面影刃", lv = {81,9999}, v = {18.86, 4.9, 6.4} },
+}, "faceless", "W55")
+
 -- ======================== 索引构建 ========================
 
 --- 按槽位分组的模板 ID 列表（用于随机掉落）

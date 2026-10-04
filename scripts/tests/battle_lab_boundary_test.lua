@@ -305,17 +305,53 @@ local function testSetCoverage()
         { "starless", 20, 85, { weapon="W80", offhand="O18", armor="A65", helmet="H65", shoes="S65", accessory="C32" } },
         { "gambler", 14, 85, { weapon="W81", offhand="O37", armor="A66", helmet="H66", shoes="S66", accessory="C33" } },
     }
-    check(EC.TOTAL_COUNT == 353 and EC.SLOT_COUNT.weapon == 81
-        and EC.SLOT_COUNT.offhand == 37 and EC.SLOT_COUNT.armor == 66
+    check(EC.TOTAL_COUNT == 357 and EC.SLOT_COUNT.weapon == 84
+        and EC.SLOT_COUNT.offhand == 38 and EC.SLOT_COUNT.armor == 66
         and EC.SLOT_COUNT.helmet == 66 and EC.SLOT_COUNT.shoes == 66
         and EC.SLOT_COUNT.accessory == 37,
-        "原模板 ID 不变，当前共 353 个模板")
+        "原模板 ID 不变，四件高阶续号后共 357 个模板")
     check(SC.getSetIdForTemplate(EC.ITEMS.W36) == "riftcrystal"
         and SC.getSetIdForTemplate(EC.ITEMS.W48) == "riftcrystal"
         and SC.getSetIdForTemplate(EC.ITEMS.W5) == "carapace"
         and SC.getSetIdForTemplate(EC.ITEMS.O11) == "bonehunger"
         and SC.getSetIdForTemplate(EC.ITEMS.O5) == "faceless",
         "原装备套装归属保持不变")
+
+    local additions = {
+        { id="W82", ref="W6", icon="W1", setId="carapace", heroId=1, slot="weapon", grip="onehand" },
+        { id="W83", ref="W12", icon="W7", setId="carapace", heroId=1, slot="weapon", grip="twohand" },
+        { id="O38", ref="O12", icon="O7", setId="carapace", heroId=1, slot="offhand" },
+        { id="W84", ref="W60", icon="W55", setId="faceless", heroId=18, slot="weapon", grip="onehand" },
+    }
+    for _, addition in ipairs(additions) do
+        local tpl = assert(EC.ITEMS[addition.id], "高阶续号模板缺失") --[[@as table]]
+        local reference = assert(EC.ITEMS[addition.ref], "同档数值参考缺失") --[[@as table]]
+        local statsMatch = #tpl.stats == #reference.stats
+        for index, stat in ipairs(tpl.stats) do
+            local expected = reference.stats[index]
+            if not expected or stat[1] ~= expected[1] or stat[2] ~= expected[2] then statsMatch = false end
+        end
+        check(tpl.id == addition.id and tpl.slot == addition.slot and tpl.grip == addition.grip
+            and tpl.type == reference.type and tpl.setId == addition.setId
+            and SC.getSetIdForTemplate(tpl) == addition.setId and statsMatch,
+            addition.id .. " 续号/握持/显式归属正确，基础数值与同档旧模板一致")
+        check(tpl.levelRange[1] == 81 and tpl.levelRange[2] == 9999
+            and EC.getIconPath(addition.id) == EC.getIconPath(addition.icon),
+            addition.id .. " 只补81+档并复用正式图标")
+        local indexed = false
+        for _, id in ipairs(EC.BY_SLOT[addition.slot]) do if id == addition.id then indexed = true end end
+        check(indexed, addition.id .. " 自动加入真实随机部位池")
+        expectReject(baseConfig({ heroes = { { id = addition.heroId, level = 80 } }, loadouts = {
+            A = { [tostring(addition.heroId)] = { [addition.slot] = { templateId=addition.id, level=80 } } }, B = {},
+        } }), "不在模板掉落范围", addition.id .. " 不允许80级提前出现")
+    end
+    check(EC.ITEMS.W5.name == "叠甲战神之剑" and EC.ITEMS.W5.levelRange[2] == 80
+        and EC.ITEMS.W11.name == "叠甲战神巨剑" and EC.ITEMS.W11.levelRange[2] == 80
+        and EC.ITEMS.W59.name == "刺客之刃" and EC.ITEMS.W59.levelRange[2] == 80
+        and SC.getSetIdForTemplate(EC.ITEMS.W60) == "riftcrystal"
+        and SC.getSetIdForTemplate(EC.ITEMS.W12) == "swordgate"
+        and SC.getSetIdForTemplate(EC.ITEMS.O12) == "ironwall",
+        "旧叠甲/夜行早档和水晶旧模板名称、范围及归属全部保留")
 
     -- 脏档：双手武器搭副手、同一装备数字/字符串序号重复时不得虚增件数。
     local invalid = { inventory = {}, equipped = { [16] = {} } }
@@ -551,12 +587,10 @@ local function testSetAcquisition()
         local failuresBefore = #failures
         local heroId, loadout = findLoadout(setId, heroLevel, grip, false)
         local sameLevel = heroId ~= nil
-        -- 仅已定位的早档主手套允许保留旧装备；其他套必须在81/200同级集齐。
-        local crossTier = setId == "carapace" or setId == "faceless"
-        if not crossTier then check(sameLevel, setId .. " Lv" .. heroLevel .. " 必须有同级合法全套") end
-        if not heroId and crossTier then heroId, loadout = findLoadout(setId, heroLevel, grip, true) end
+        -- 高阶补件后，全部12套在81/200必须同级可得，不允许跨档兜底掩盖缺口。
+        check(sameLevel, setId .. " Lv" .. heroLevel .. " 必须有同级合法全套")
         local label = setId .. " 英雄Lv" .. heroLevel .. " " .. grip
-        check(heroId ~= nil, label .. " 自动枚举基础英雄可集齐（优先同级，允许保留早档装备）")
+        check(heroId ~= nil, label .. " 自动枚举基础英雄同级可集齐")
         if not heroId then return end
         local physical, parts = 0, {}
         for _, slot in ipairs(EC.SLOTS) do

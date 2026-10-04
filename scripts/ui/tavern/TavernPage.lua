@@ -28,7 +28,7 @@ local I18n = require("core.I18n")
 local TavernPage = {}
 
 --- 网络发送函数注入点（多人模式由 Client.lua 调用 setSendAction 注入）
----@type fun(action:string, params:table)|nil
+---@type fun(action:string, params:table):boolean?|nil
 local _sendAction = nil
 
 ---@type any
@@ -468,7 +468,21 @@ end
 --- 等待服务端返回的抽卡请求（防止重复发送）
 local pendingGachaPull = false
 local pendingGachaPullTime = 0       -- 发送时间戳
+---@type number|nil
+local pendingGachaCount = nil
 local GACHA_PULL_TIMEOUT   = 8       -- 超时秒数（缩短至8秒，更快恢复）
+
+local function notifyRecruitStarted(count)
+    local tutorial = require("systems.TutorialManager")
+    tutorial.setNewHeroId(nil)
+    if count == 10 then tutorial.notifyEvent("gacha10_started") end
+end
+
+local function failPendingRecruit()
+    local count = pendingGachaCount
+    pendingGachaPull, pendingGachaCount = false, nil
+    if count == 10 then require("systems.TutorialManager").notifyEvent("gacha10_failed") end
+end
 
 --- 打开酒馆
 function TavernPage.open()
@@ -482,7 +496,7 @@ function TavernPage.open()
     -- 打开时检查是否有遗留的僵尸锁（WiFi 僵尸连接场景：请求发出但无响应，无断线事件）
     -- 若已超过超时时长，说明上次请求已死，直接清除避免玩家进来就看到锁死状态
     if pendingGachaPull and (time.elapsedTime - pendingGachaPullTime) >= GACHA_PULL_TIMEOUT then
-        pendingGachaPull = false
+        failPendingRecruit()
         print("[TavernPage] open: 清除遗留僵尸锁（超时 " .. GACHA_PULL_TIMEOUT .. "s）")
     end
 
@@ -499,6 +513,51 @@ function TavernPage.open()
     -- 同步资源与保底数据
     syncDisplayData()
     print("[TavernPage] 打开酒馆")
+end
+
+--- 招募业务在途（只读查询，不处理超时、不释放请求锁）。
+---@return boolean
+function TavernPage.isRecruitConfirmOpen()
+    return TavernPopups.isRecruitConfirmOpen and TavernPopups.isRecruitConfirmOpen() or false
+end
+
+function TavernPage.isRecruitBusy()
+    return pendingGachaPull or RecruitAnim.isPlaying() or TavernPage.isRecruitConfirmOpen()
+end
+
+--- 教程恢复招募页/首池；业务在途时绝不重开或中断招募动画。
+---@param vg any|nil 未初始化时可提供 NanoVG 上下文
+---@return boolean changed
+function TavernPage.prepareTutorial(vg)
+    if TavernPage.isRecruitBusy() then return false end
+    local changed = false
+    if not tavernInited_ then
+        local context = vg or vg_
+        if not context then return false end
+        TavernPage.init(context)
+        changed = true
+    end
+    if not state.open or state.closing then
+        TavernPage.open()
+        state.tabSwitchTime = 0
+        changed = true
+    elseif state.tab ~= "recruit" or state.selectedPool ~= 1 or state.tabFrom ~= "recruit"
+        or state.tabSwitchTime ~= 0 then
+        state.tab, state.tabFrom, state.tabSwitchTime = "recruit", "recruit", 0
+        state.selectedPool = 1
+        refreshPoolMeta()
+        syncDisplayData()
+        changed = true
+    end
+    if TargetRecruitPanel.isOpen() then
+        TargetRecruitPanel.close()
+        changed = true
+    end
+    if TavernPopups.isBlocking() then
+        TavernPopups.resetAll()
+        changed = true
+    end
+    return changed
 end
 
 --- 关闭酒馆（启动关闭动画）
@@ -579,7 +638,15 @@ local function doRecruitDirect(count, forcePayType)
         end
         pendingGachaPull = true
         pendingGachaPullTime = time.elapsedTime
-        _sendAction(Protocol.ACTION_TYPES.GACHA_PULL, { count = count, payType = payType, poolId = poolId })
+        pendingGachaCount = count
+        -- 单机桥可同步回执，必须先进入等待步骤，再发送实际请求。
+        notifyRecruitStarted(count)
+        local handled = _sendAction(Protocol.ACTION_TYPES.GACHA_PULL,
+            { count = count, payType = payType, poolId = poolId })
+        if handled == false and pendingGachaPull then
+            failPendingRecruit()
+            TavernPopups.showFloatText("招募请求未处理，请重试", DESIGN_W * 0.5, DESIGN_H * 0.42)
+        end
         print("[TavernPage] 发送招募请求 pool=" .. poolId .. " count=" .. count .. " payType=" .. payType)
         return
     end
@@ -601,9 +668,13 @@ local function doRecruitDirect(count, forcePayType)
         print("[TavernPage] 星辉招募仅支持联网模式")
         return
     else
+        notifyRecruitStarted(count)
         results, _ = GachaSystem.pull(count, payType)
     end
-    if not results then return end
+    if not results then
+        if count == 10 then require("systems.TutorialManager").notifyEvent("gacha10_failed") end
+        return
+    end
 
     -- 记录历史
     TavernPopups.recordHistory(results, getSelectedPoolId())
@@ -615,13 +686,14 @@ local function doRecruitDirect(count, forcePayType)
         print("[TavernPage] 招募动画结束")
         -- 新手引导：单机模式在动画结束后通知 gacha10_complete
         local _TM = require("systems.TutorialManager")
+        _TM.setNewHeroId(nil)
         for _, r in ipairs(results) do
             if r.type == "hero" and r.heroId then
                 _TM.setNewHeroId(r.heroId)
                 break
             end
         end
-        _TM.notifyEvent("gacha10_complete")
+        if count == 10 then _TM.notifyEvent("gacha10_complete") end
         require("ui.character.hero.HeroScenario").onRecruitResults(results)
     end, count, getSelectedPoolId())
 end
@@ -980,9 +1052,9 @@ local function drawPageImpl(vg)
             nvgFillColor(vg, nvgRGBA(BTN_TEXT_R, BTN_TEXT_G, BTN_TEXT_B, 255))
             nvgText(vg, x, cy, label, nil)
             x = x + labelW + GAP
-            -- 按钮内消耗：够=亮白，不够=棕色
+            -- 按钮内消耗：够=亮白，不够=灰蓝色
             local r, g, b = 255, 255, 255
-            if not enough then r, g, b = 0x8d, 0x5f, 0x41 end
+            if not enough then r, g, b = 0x8b, 0x95, 0xa5 end
             for i = 1, #parts do
                 if i > 1 then x = x + gap end
                 drawImageCentered(vg, parts[i].icon, x + iconSize * 0.5, cy, iconSize, iconSize, 1.0)
@@ -1226,7 +1298,7 @@ function TavernPage.update(dt)
     -- 若页面关闭时发生断线重连，锁不会被 onServerDisconnect 之外的路径释放，
     -- 放在保护外确保任何情况下都不会永久卡死。
     if pendingGachaPull and (time.elapsedTime - pendingGachaPullTime) >= GACHA_PULL_TIMEOUT then
-        pendingGachaPull = false
+        failPendingRecruit()
         print("[TavernPage] 招募请求超时，已释放锁（等待" .. GACHA_PULL_TIMEOUT .. "秒无响应）")
         if state.open then
             TavernPopups.showFloatText("网络超时，请重试", DESIGN_W * 0.5, DESIGN_H * 0.42)
@@ -1266,18 +1338,23 @@ function TavernPage.onActionResult(data)
         return
     end
 
-    pendingGachaPull = false
+    local requestCount = pendingGachaCount
+    pendingGachaPull, pendingGachaCount = false, nil
     print("[TavernPage] pendingGachaPull released (action=" .. tostring(data.action) .. " success=" .. tostring(data.success) .. ")")
 
     if not data.success then
+        if requestCount == 10 then require("systems.TutorialManager").notifyEvent("gacha10_failed") end
         local msg = TavernPopups.formatGachaFailReason(data.reason)
         TavernPopups.showFloatText(msg, DESIGN_W * 0.5, DESIGN_H * 0.42)
         print("[TavernPage] 招募失败: " .. tostring(data.reason))
         return
     end
 
-    -- 只处理包含 gachaResults 的成功响应
-    if not data.gachaResults then return end
+    -- 只处理包含有效结果的成功响应；缺结果不能让教程永久等待。
+    if type(data.gachaResults) ~= "table" or #data.gachaResults == 0 then
+        if requestCount == 10 then require("systems.TutorialManager").notifyEvent("gacha10_failed") end
+        return
+    end
 
     -- 记录历史
     TavernPopups.recordHistory(data.gachaResults, data.poolId or getSelectedPoolId())
@@ -1304,6 +1381,7 @@ function TavernPage.onActionResult(data)
     -- 但 newHeroId_ 需要在此处提前记录，否则激活时已拿不到数据
     do
         local _TM2 = require("systems.TutorialManager")
+        _TM2.setNewHeroId(nil)
         for _, r in ipairs(data.gachaResults) do
             if r.type == "hero" and r.heroId then
                 _TM2.setNewHeroId(r.heroId)
@@ -1311,7 +1389,7 @@ function TavernPage.onActionResult(data)
             end
         end
         -- 通知引导组8的 invisible 步骤：招募结果已返回，可结束引导
-        _TM2.notifyEvent("gacha10_complete")
+        if requestCount == 10 then _TM2.notifyEvent("gacha10_complete") end
     end
 
     -- 播放招募动画
@@ -1420,7 +1498,7 @@ end
 --- 可前往背包查看。
 function TavernPage.onServerDisconnect()
     if pendingGachaPull then
-        pendingGachaPull = false
+        failPendingRecruit()
         print("[TavernPage] 服务器断线，释放招募锁（如招募已完成请查看背包）")
         if state.open then
             TavernPopups.showFloatText("网络断开，如已招募请查看背包", DESIGN_W * 0.5, DESIGN_H * 0.42)

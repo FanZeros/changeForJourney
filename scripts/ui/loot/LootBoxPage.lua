@@ -1,6 +1,6 @@
 -- ============================================================================
 -- LootBoxPage - 城镇遗匣左栏页。模式 A：1080×2400，沿用 TownPageChrome。
--- sourceSummary 保留 seeds 原顺序；summary 仅作筛选显示，动作转发 sourceIndex。
+-- sourceSummary 保留 seeds 原顺序；summary 仅作筛选/战力降序显示，动作转发 sourceIndex。
 -- ============================================================================
 local DrawUtil = require("core.DrawUtil")
 local TownPageChrome = require("ui.town.TownPageChrome")
@@ -8,6 +8,7 @@ local DarkIcon = require("core.DarkIcon")
 local EquipmentConfig = require("config.EquipmentConfig")
 local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local ImageCache = require("ui.widget.ImageCache")
+local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 local QualityMark = require("ui.widget.QualityMark")
 local SetFilterDialog = require("ui.widget.SetFilterDialog")
 local BF = require("systems.ButtonFeedback")
@@ -148,6 +149,22 @@ local function setIdOfEquip(equip)
     return EquipmentSetConfig.getSetIdForTemplate(tpl) or SetFilterDialog.NONE_KEY
 end
 
+--- 套装行数量仅统计已确定装备，忽略套装勾选；待整理项不能冒充无套装。
+---@return table<string, integer>
+local function getSetCounts()
+    local counts = { none = 0 }
+    for _, setId in ipairs(EquipmentSetConfig.orderedSetIds()) do counts[setId] = 0 end
+    local allQuality = not next(state.qualitySet)
+    for _, entry in ipairs(state.sourceSummary) do
+        local equip = entry.equip
+        if equip and (allQuality or state.qualitySet[equip.quality] == true) then
+            local setId = setIdOfEquip(equip)
+            counts[setId] = (counts[setId] or 0) + 1
+        end
+    end
+    return counts
+end
+
 --- 套装筛选范围描述（已翻译）：未勾选=全部套装；单套=套装名；多套=「共 N 种套装」。
 local function setFilterName()
     local picked = {}
@@ -194,6 +211,9 @@ local function rebuildSummary()
             local display = {}
             for key, value in pairs(entry) do display[key] = value end
             display.sourceIndex = entry.sourceIndex or sourceIndex
+            display.displayOrder = sourceIndex
+            -- 与行内战力同口径，重建时计算一次；不改装备实例或 seeds 顺序。
+            display.power = equip and EquipmentDetail.calcEquipPower(equip, nil) or 0
             state.summary[#state.summary + 1] = display
             if equip then
                 state.count = state.count + 1
@@ -202,6 +222,12 @@ local function rebuildSummary()
             end
         end
     end
+    -- 确定装备按战力降序；同战力与待整理项保持原相对顺序，避免刷新抖动。
+    table.sort(state.summary, function(a, b)
+        if (a.equip ~= nil) ~= (b.equip ~= nil) then return a.equip ~= nil end
+        if a.power ~= b.power then return a.power > b.power end
+        return a.displayOrder < b.displayOrder
+    end)
     local height = #state.summary * (LIST.rowH + LIST.gap) - LIST.gap
     state.maxScrollY = math.max(0, height - LIST.h)
     clampScroll()
@@ -333,9 +359,9 @@ local function drawButton(vg, id, cx, cy, w, h, label, accent, enabled)
     nvgFontSize(vg, 38)
     local captionWidth = nvgTextBounds(vg, 0, 0, caption)
     local fontSize = math.min(38, 38 * (w - 20) / math.max(1, captionWidth))
-    -- 按钮文字：可用=亮骨白，禁用=棕色
+    -- 按钮文字：可用=亮骨白，禁用=灰蓝色
     local tr, tg, tb = 244, 237, 224
-    if not enabled then tr, tg, tb = 0x8d, 0x5f, 0x41 end
+    if not enabled then tr, tg, tb = 0x8b, 0x95, 0xa5 end
     text(vg, cx, cy, caption, fontSize, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 3)
     BF.finish(vg, feedback)
 end
@@ -350,7 +376,7 @@ local function drawSetFilterButton(vg)
     local feedback = BF.begin(vg, "lbp_set_filter", SET_BTN.cx, SET_BTN.cy, SET_BTN.w, SET_BTN.h)
     DarkIcon.drawNine(vg, "btn", SET_BTN.cx - SET_BTN.w * 0.5, SET_BTN.cy - SET_BTN.h * 0.5,
         SET_BTN.w, SET_BTN.h, { accent = selected > 0 and "green" or "gold" })
-    local label = selected > 0 and ("套装 · " .. selected) or "套装"
+    local label = selected > 0 and I18n.format("套装 · %d", selected) or I18n.lookup("套装")
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 34)
     text(vg, SET_BTN.cx, SET_BTN.cy, label, 34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -398,9 +424,18 @@ local function drawEntry(vg, entry, index, cy)
             DarkIcon.drawIconDark(vg, icon, 181, cy, 160, 160, 1.0)
         end
         if equip.level then
-            text(vg, 181, cy + 69, "Lv." .. tostring(equip.level), 32,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+            local lvl = EquipmentSetIcon.levelLayout(equip, 181, cy, 174)
+            local lvlText = "Lv." .. tostring(equip.level)
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 32)
+            local badge = EquipmentSetIcon.badgeLayout(181, cy, 174)
+            local availableW = lvl.x - (badge.x + badge.size) - 8
+            local textW = nvgTextBounds(vg, 0, 0, lvlText)
+            local font = textW > availableW and 32 * availableW / textW or 32
+            text(vg, lvl.x, cy + 69, lvlText, font,
+                NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
         end
+        EquipmentSetIcon.drawBadge(vg, equip, 181, cy, 174, 1.0)
     else
         text(vg, 181, cy, "待整理", 32, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 181, 166, 143, 3)
     end
@@ -420,7 +455,7 @@ local function drawEntry(vg, entry, index, cy)
     end
     -- 第三行：确定装备显示战力（与装备详情同口径）；待整理条目保留不可操作提示。
     if equip then
-        local powerStr = NumberUtil.format(EquipmentDetail.calcEquipPower(equip, nil))
+        local powerStr = NumberUtil.format(entry.power)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 30)
         DrawUtil.drawImageCentered(vg, imgPower, 294 + 15, cy + 59, 30, 30, 1)
@@ -609,6 +644,7 @@ function LootBoxPage.handleInput(dx, dy)
         BF.trigger("lbp_set_filter")
         clearDetail()
         SetFilterDialog.open(state.setFilter, {
+            getCounts = getSetCounts,
             onChange = function()
                 state.scrollY = 0
                 state.dragging, state.confirm = false, false

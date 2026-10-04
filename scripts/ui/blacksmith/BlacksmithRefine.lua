@@ -15,6 +15,7 @@ local EquipmentConfig  = require("config.EquipmentConfig")
 local BlacksmithConfig = require("config.BlacksmithConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local AD               = require("systems.AttributeDef")
+local I18n             = require("core.I18n")
 
 local drawImageCentered = DrawUtil.drawImageCentered
 local hitTest           = DrawUtil.hitTest
@@ -524,15 +525,18 @@ local function drawRefineAttrRows(vg, attrs, firstY, panelLeft, offsetX, alpha, 
         -- 属性名（左对齐，超长缩字号）
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, XL.ATTR_FONT_SIZE)
-        local nameW = nvgTextBounds(vg, 0, 0, attr.name)
-        if nameW > XL.ATTR_NAME_MAX_W then
-            nvgFontSize(vg, XL.ATTR_NAME_FONT_SMALL)
-            nameW = nvgTextBounds(vg, 0, 0, attr.name)
+        local name = I18n.lookup(attr.name)
+        local nameW = nvgTextBounds(vg, 0, 0, name)
+        local nameFont = XL.ATTR_FONT_SIZE
+        while nameW > XL.ATTR_NAME_MAX_W and nameFont > 16 do
+            nameFont = nameFont - 1
+            nvgFontSize(vg, nameFont)
+            nameW = nvgTextBounds(vg, 0, 0, name)
         end
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         local nameRGB = attr.nameColor or { XL.ATTR_NAME_R, XL.ATTR_NAME_G, XL.ATTR_NAME_B }
         nvgFillColor(vg, nvgRGBA(nameRGB[1], nameRGB[2], nameRGB[3], a))
-        nvgText(vg, panelLeft + XL.ATTR_NAME_X + offsetX, rowY, attr.name, nil)
+        nvgText(vg, panelLeft + XL.ATTR_NAME_X + offsetX, rowY, name, nil)
 
         -- 腐化标签已移除（2026-09-30）：魔化/弱化状态只通过名称与数值颜色表达
 
@@ -634,10 +638,9 @@ function M.drawPanel(vg)
         nvgFontSize(vg, XL.CORRUPT_TEXT_FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0xef, 0x79, 0xff, 255))
-        local corruptText = string.format("腐化状态：诅咒 %d/%d 层", corruptCount, MAX_CORRUPT_COUNT)
-        if corruptCount >= MAX_CORRUPT_COUNT then
-            corruptText = corruptText .. "（需神圣石洗除）"
-        end
+        local source = corruptCount >= MAX_CORRUPT_COUNT
+            and "腐化状态：诅咒 %d/%d 层（需神圣石洗除）" or "腐化状态：诅咒 %d/%d 层"
+        local corruptText = I18n.format(source, corruptCount, MAX_CORRUPT_COUNT)
         nvgText(vg, XL.CORRUPT_TEXT_CX, XL.CORRUPT_TEXT_Y, corruptText, nil)
     end
 
@@ -753,7 +756,16 @@ function M.drawPanel(vg)
 
         nvgFontSize(vg, 28)
         nvgFillColor(vg, nvgRGBA(CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B, alpha))
-        nvgText(vg, XL.RIGHT_HALF_CX, XL.FRAME_CY - 174, ci.effectName or "魔化完成", nil)
+        local effectText = ci.effectName or "魔化完成"
+        if ci.affixGradeChange then
+            local change = ci.affixGradeChange
+            effectText = I18n.format("词缀「%s」品级 %s → %s", I18n.lookup(change.name), change.from, change.to)
+        elseif ci.remainingCurses then
+            effectText = I18n.format("已洗除 1 层诅咒，剩余 %d 层", ci.remainingCurses)
+        else
+            effectText = I18n.lookup(effectText)
+        end
+        nvgText(vg, XL.RIGHT_HALF_CX, XL.FRAME_CY - 174, effectText, nil)
 
         local afterRows = ci.afterRows
         if afterRows and #afterRows > 0 then
@@ -842,7 +854,7 @@ local function drawResCount(vg, cx, ownedVal, costVal)
     if enough then
         oR, oG, oB = XL.ENOUGH_R, XL.ENOUGH_G, XL.ENOUGH_B
     else
-        oR, oG, oB = 0x8d, 0x5f, 0x41  -- 不足=棕色（全局统一）
+        oR, oG, oB = 0x8b, 0x95, 0xa5  -- 不足=灰蓝色（全局统一）
     end
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 30)
@@ -1150,6 +1162,7 @@ function M.onActionResult(data)
             corruptResultInfo = {
                 title = "提品",
                 effectName = string.format("词缀「%s」品级 %s → %s", beforeName, beforeGrade, afterGrade),
+                affixGradeChange = { name = beforeName, from = beforeGrade, to = afterGrade },
                 hint = "装备品质已达进度上限，点金石转为提升词缀品级",
                 startTime = time.elapsedTime,
             }
@@ -1268,6 +1281,7 @@ function M.onActionResult(data)
             qualityUpgradeInfo = nil
             corruptResultInfo = {
                 title = "洗除诅咒",
+                remainingCurses = remaining > 0 and remaining or nil,
                 effectName = remaining > 0
                     and ("已洗除 1 层诅咒，剩余 " .. remaining .. " 层")
                     or "腐化诅咒已全部洗除",

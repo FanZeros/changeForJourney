@@ -243,7 +243,7 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
             if isSel then
                 tr, tg, tb = 240, 199, 94
             elseif locked then
-                tr, tg, tb = 0x8d, 0x5f, 0x41  -- 锁定=棕色
+                tr, tg, tb = 0x8b, 0x95, 0xa5  -- 锁定=灰蓝色
             end
             drawTextStroke(vg, cx, cy + 20, I18n.t(tab.nameKey), 20,
                 NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 3,
@@ -256,10 +256,10 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
 
         local TM = require("systems.TutorialManager")
         if TM.isActive() then
-            -- [横屏接线 0928] 页签条仅在非 tri 模式绘制(此时 TopBar 位于中栏 viewport)，
-            -- 故热点固定归属 'center'（tri 模式页签隐藏，不注册）
+            -- 三行模式TopBar位于左栏(oy=-30)，普通横屏位于中栏。
             for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
-                TM.registerHotspot(tab.hotspot, pageBtnCenterX(i), PAGE_BTN_CY + oy, PAGE_BTN_W, PAGE_BTN_H, "center")
+                TM.registerHotspot(tab.hotspot, pageBtnCenterX(i), PAGE_BTN_CY + oy,
+                    PAGE_BTN_W, PAGE_BTN_H, oy == -30 and "left" or "center")
             end
         end
     end

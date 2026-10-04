@@ -28,25 +28,53 @@ local CharacterPower = require("ui.character.panel.CharacterPower")
 
 function Start()
     print("[character_power_estimate_test] start")
+    local savedLitNodes = HC._getSavedLitNodes()
+    HC.setDefaultLitNodes(nil)
     local ok, err = pcall(function()
-        -- 最小存档替身：单英雄、无装备（applyEquippedItems 读到 nil inventory 会安全返回）
-        local ownedSet = { [1] = { level = 1 }, [2] = { level = 1 } }
+        -- 最小存档替身：真实英雄、无装备；第三名已拥有英雄不在任何队伍。
+        local ownedSet = { [1] = { level = 1 }, [2] = { level = 1 }, [3] = { level = 1 } }
         local teamSlots = {
             { state = "occupied", heroId = 1 },
             { state = "empty" }, { state = "empty" }, { state = "empty" },
         }
-        local modules = {}
+        local teams = {
+            { slots = teamSlots },
+            { slots = {
+                { state = "empty" }, { state = "empty" },
+                { state = "occupied", heroId = 2 }, { state = "empty" },
+            } },
+            { slots = {
+                { state = "empty" }, { state = "empty" },
+                { state = "empty" }, { state = "empty" },
+            } },
+        }
+        local teamPowerCaches = { {}, {}, {} }
+        -- 故意打乱 heroId 顺序，并让未拥有项夹在已拥有项之间。
+        local heroRoster = {
+            { heroId = 2, owned = true }, { heroId = 999, owned = false },
+            { heroId = 1, owned = true }, { heroId = 3, owned = true },
+        }
+        local rosterPowerCache = { -1, -1, -1, -1 }
+        local storeData = { talents = { litNodes = {} } }
+        local artifactBonuses = { {}, {}, {} }
+        local gamePower = 0
+        local runtimeOnlyPower = 0
+        local dirtyCount = 0
         local noop = function() end
         local power = CharacterPower.bind({
             AD = AD, HC = HC,
-            ClientDispatcher = { get = function() return nil end },
+            ClientDispatcher = { get = function(k) return storeData[k] end },
             PlayerStore = { Get = function() return nil end },
             EquipmentSystem = EquipmentSystem, EquipmentConfig = EquipmentConfig,
             RelicBridge = { applyToUnit = noop },
-            ArtifactBridge = { applyToUnit = noop },
+            ArtifactBridge = { applyToUnit = function(attrs, slot, _data, teamIdx)
+                local bonuses = artifactBonuses[teamIdx or 1]
+                attrs.artifactPowerBonus = bonuses and bonuses[slot] or 0
+            end },
             AwakeningConfig = AwakeningConfig, TalentEffect = TalentEffect,
-            GameState = { setPower = noop },
-            CharacterDetail = { markPowerDirty = noop, hasAnyUpgradeForHero = function() return false end,
+            GameState = { setPower = function(v) gamePower = v end },
+            CharacterDetail = { markPowerDirty = function() dirtyCount = dirtyCount + 1 end,
+                hasAnyUpgradeForHero = function() return false end,
                 hasAwakeningUpgrade = function() return false end },
             CharacterPanel = { isHeroDeployed = function() return false end },
             BottomNav = { setBadge = noop, refreshTownBadge = noop },
@@ -54,11 +82,15 @@ function Start()
             get = function(k)
                 if k == "ownedSet" then return ownedSet
                 elseif k == "teamSlots" then return teamSlots
-                elseif k == "teams" then return {}
-                elseif k == "teamPowerCaches" then return {} end
+                elseif k == "teams" then return teams
+                elseif k == "teamPowerCaches" then return teamPowerCaches
+                elseif k == "heroRoster" then return heroRoster
+                elseif k == "rosterPowerCache" then return rosterPowerCache end
                 return nil
             end,
-            set = noop,
+            set = function(k, v)
+                if k == "runtimeOnlyPowerCache" then runtimeOnlyPower = v end
+            end,
         })
 
         check(type(power.calcHeroPower) == "function", "calcHeroPower 已导出")
@@ -92,8 +124,80 @@ function Start()
         local p1b = power.calcHeroPower(1, 1)
         check(p1b == p1, "buildHeroAttrs 重构后战力可重复（" .. p1b .. " == " .. p1 .. "）")
 
+        -- 7) 单件六维饰品在无角色视角也按派生属性折算，升阶投入只计算一次。
+        local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
+        local function derivedPower(key, value)
+            local vm = 0
+            for _, derivative in ipairs(AD.DERIVATIVES[key] or {}) do
+                local meta = AD.META[derivative.attr]
+                if meta and meta.valueModel and meta.valueModel > 0 then
+                    local divisor = meta.dataType == AD.TYPE_PCT and 100 or 1
+                    vm = vm + derivative.perPoint * meta.valueModel / divisor
+                end
+            end
+            return value * vm
+        end
+        for _, key in ipairs(AD.BASE_STATS) do
+            local item = { baseStats = { { key, 4.28 } }, affixes = {}, ascendLevel = 0 }
+            check(EquipmentDetail.calcEquipPower(item, nil) == math.floor(derivedPower(key, 4.28)),
+                "无角色视角 " .. key .. " 按派生折算")
+        end
+        local bonusItem = {
+            baseStats = { { "str", 4.28 } }, ascendLevel = 0, affixMult = 1.2,
+            affixes = { { key = "str", value = 10, ascBonus = 40, affixId = 1 } },
+        }
+        local expectedBonus = math.floor(derivedPower("str", 4.28 + 10 * 1.2 + 40))
+        check(EquipmentDetail.calcEquipPower(bonusItem, nil) == expectedBonus,
+            "单件战力包含栏位倍率和升阶投入且不重复放大")
+
+        -- 8) 不重建名册，仅 refreshPowerCache 就同步每个列表索引。
+        power.refreshPowerCache()
+        check(rosterPowerCache[1] == power.calcHeroPower(2)
+            and rosterPowerCache[3] == p1 and rosterPowerCache[4] == power.calcHeroPower(3),
+            "刷新全部已拥有名册，缓存按列表索引而非 heroId")
+        check(rosterPowerCache[2] == 0, "未拥有项的旧缓存清为 0")
+        check(teamPowerCaches[1][1] == p1 and teamPowerCaches[2][3] == power.calcHeroPower(2, 3, 2)
+            and teamPowerCaches[3][1] == 0, "三队原有槽位缓存继续刷新")
+        check(gamePower == p1 and runtimeOnlyPower == 0 and dirtyCount == 1,
+            "总战力仍仅主队，保留 runtimeOnly 与详情脏标记")
+
+        local benchBefore = rosterPowerCache[4]
+        ownedSet[3].level = 50
+        power.refreshPowerCache()
+        check(rosterPowerCache[4] > benchBefore and rosterPowerCache[4] == power.calcHeroPower(3),
+            "未出战角色成长后，仅刷新即可更新名册战力")
+        check(gamePower == p1, "未出战角色战力不计入 GameState 总战力")
+        ownedSet[3].level = 1
+        power.refreshPowerCache()
+
+        -- 使用真实刚力节点，覆盖 talents 订阅仅调用 refreshPowerCache 的路径。
+        local talentBefore = { rosterPowerCache[1], rosterPowerCache[3], rosterPowerCache[4] }
+        storeData.talents.litNodes = { 2 }
+        power.refreshPowerCache()
+        check(rosterPowerCache[1] > talentBefore[1] and rosterPowerCache[3] > talentBefore[2]
+            and rosterPowerCache[4] > talentBefore[3], "真实天赋变更同步出战与未出战名册战力")
+        check(rosterPowerCache[1] == power.calcHeroPower(2) and rosterPowerCache[2] == 0,
+            "天赋刷新仍沿用正式公式，未拥有项不产生战力")
+        storeData.talents.litNodes = {}
+        power.refreshPowerCache()
+        check(rosterPowerCache[3] == p1 and gamePower == p1, "清空天赋回到原有正式战力")
+
+        -- 神器桥替身区分队伍固定加成，验证名册不借用第二队缓存口径。
+        local secondHeroBefore = power.calcHeroPower(2)
+        artifactBonuses[1][1] = 37
+        artifactBonuses[2][3] = 89
+        power.refreshPowerCache()
+        check(rosterPowerCache[3] == p1 + 37 and rosterPowerCache[3] == power.calcHeroPower(1),
+            "神器变更仅刷新即可同步名册，沿用 calcHeroPower 缺省队口径")
+        check(teamPowerCaches[2][3] == secondHeroBefore + 89
+            and rosterPowerCache[1] == secondHeroBefore,
+            "三队缓存保留各自神器装配，名册不混入非缺省队加成")
+        check(gamePower == p1 + 37 and runtimeOnlyPower == 0 and rosterPowerCache[2] == 0,
+            "神器刷新不把全名册或其他队战力加进总战力")
+
         print(string.format("[summary] 战士 Lv1 官方战力=%d 预估=%d | 法师 Lv1 预估=%d", p1, e1, e2))
     end)
+    HC.setDefaultLitNodes(savedLitNodes)
     if not ok then
         print("[FAIL] 测试抛异常: " .. tostring(err))
         failures[#failures + 1] = "exception"

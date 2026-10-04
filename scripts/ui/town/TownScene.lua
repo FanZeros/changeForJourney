@@ -5,10 +5,8 @@
 
 local GameState  = require("core.GameState")
 
--- [教堂30级开放] 缄默礼拜堂/终焉古树 需远征等级 30 才可进入；
--- 引导豁免：新手引导组5-7 发生在低等级（点击教堂/古树推进），
--- 因此引导进行中、或引导组5 已领取（早期玩家已走过该引导）时不受等级限制。
-local CHURCH_UNLOCK_LEVEL = 30
+-- 礼拜堂正式 Lv30 开放，仅引导进行中豁免；古树仍使用独立引导门控。
+local CHURCH_UNLOCK_LEVEL = require("config.ExpTable").CHURCH_UNLOCK_LEVEL
 local function isChurchAccessible()
     -- 豁免仅限引导进行中（组5-7 连续链：点教堂→入堂→离堂，全程 isActive）；
     -- 引导链结束后恢复等级门控，30 级正式开放。
@@ -169,6 +167,11 @@ end
 --- 延迟回调队列：点击动画播放一段后再触发页面打开
 local CLICK_CALLBACK_DELAY = 0.15  -- 回调延迟（秒），让闪白+缩放可见
 local deferredActions = {}         -- { { fireAt=number, fn=function }, ... }
+
+--- 引导换步接管页面时，取消尚未执行的旧建筑打开回调，避免延迟重开覆盖目标。
+function TownScene.cancelPendingPageOpen()
+    deferredActions = {}
+end
 
 local function deferAction(delay, fn)
     table.insert(deferredActions, { fireAt = time.elapsedTime + delay, fn = fn })
@@ -605,12 +608,11 @@ function TownScene.draw(vg)
 
     -- 第7个地点：遗匣（没有等级/引导门槛）。立绘与名牌图标分开，名牌沿用地点图标尺寸。
     local lootFeedback = BF.begin(vg, "town_lootbox", LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H)
-    DarkIcon.drawNine(vg, "plain", 390 + LOOT_SHIFT_X, 2010, 300, 64)
     drawImageDarkTint(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, 1.0)
     drawFlashOverlay(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, getClickFlashAlpha("lootbox"))
     drawBuildingLabel(vg, 540 + LOOT_SHIFT_X, LOOT_LBL_CY, 361, 113,
-        450 + LOOT_SHIFT_X, LOOT_LBL_CY - 6, 64, -1, 585 + LOOT_SHIFT_X, LOOT_LBL_CY - 6, "遗匣")
-    DarkIcon.draw(vg, "relicbox", 450 + LOOT_SHIFT_X + 32, LOOT_LBL_CY - 6, 64, 1.0)
+        467 + LOOT_SHIFT_X, LOOT_LBL_CY, 64, -1, 574 + LOOT_SHIFT_X, LOOT_LBL_CY, "遗匣")
+    DarkIcon.draw(vg, "relicbox", 467 + LOOT_SHIFT_X, LOOT_LBL_CY, 64, 1.0)
     local count = LootBox.getCount()
     if count > 0 then
         -- 数量文字已经说明有待领取，不再额外画红点
@@ -624,8 +626,8 @@ function TownScene.draw(vg)
     drawImageDarkTint(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, 1.0)
     drawFlashOverlay(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, getClickFlashAlpha("task"))
     drawBuildingLabel(vg, TASK_CX, TASK_LBL_CY, 361, 113,
-        TASK_CX - 90, TASK_LBL_CY - 6, 64, -1, TASK_CX + 45, TASK_LBL_CY - 6, "功绩")
-    DarkIcon.draw(vg, "merit", TASK_CX - 58, TASK_LBL_CY - 6, 64, 1.0)
+        TASK_CX - 73, TASK_LBL_CY, 64, -1, TASK_CX + 34, TASK_LBL_CY, "功绩")
+    DarkIcon.draw(vg, "merit", TASK_CX - 73, TASK_LBL_CY, 64, 1.0)
     local taskOk, TaskPage = pcall(require, "ui.story.task.TaskPage")
     if taskOk and TaskPage.hasClaimable and TaskPage.hasClaimable() then
         DarkIcon.draw(vg, "reddot", TASK_CX + 169, TASK_LBL_CY - 45, 36, 1.0)

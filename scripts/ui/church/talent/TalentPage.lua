@@ -178,6 +178,7 @@ function TalentPage.open()
     end
     state.open = true
     state.closing = false
+    state.closeTime = 0
     state.openTime = time.elapsedTime
     require("systems.GameSFX").playUIMove(1)
     state.tab = "tianfu"
@@ -271,8 +272,11 @@ function TalentPage.handleInput(dx, dy)
         end
         return true
     end
+    -- 详情绘制在页面滑入平移内，点击坐标要扣掉同一偏移
     if state.tfDetailOpen then
-        return TalentPanel.handleDetailInput(dx, dy)
+        local ot, ct, od, cd = TalentPage.getSeamAnim()
+        local ox = DrawUtil.seamSlideX(-1, ot, ct, od, cd, TalentPage.getSlideDistance())
+        return TalentPanel.handleDetailInput(dx - ox, dy)
     end
     if TownPageChrome.hitBack(dx, dy, { cx = 958 + (TalentPanel.getPageWidth() - DESIGN_W) }) then
         TalentPage.close()

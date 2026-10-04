@@ -87,7 +87,7 @@ nvgFontFace = function(_, _) end
 nvgFontSize = function(_, _) end
 nvgTextAlign = function(_, _) end
 nvgText = function(_, _, _, _) end
-nvgRGBA = function(r, g, b, a) return (a or 255) * 16777216 + b * 65536 + g * 256 + r end
+-- 颜色构造沿用引擎实现，避免数字 mock 污染全项目的 NVGcolor 类型推导。
 NVG_ALIGN_RIGHT = 4; NVG_ALIGN_BOTTOM = 8
 NVG_ALIGN_CENTER = 2; NVG_ALIGN_MIDDLE = 16
 NVG_ALIGN_LEFT = 1; NVG_ALIGN_TOP = 32
@@ -145,6 +145,24 @@ end
 
 -- ======================== 绑定被测模块 ========================
 
+-- 本测试 fakeVG 只模拟裁剪；角标由独立测试覆盖，避免真实helper用fakeVG加载纹理。
+local originalRequire = require
+local legacySetIcon = {
+    drawBadge = function() return false end,
+    hasBadge = function() return false end,
+    badgeLayout = function(cx, cy, size)
+        return { x = cx - size * 0.5 + size * 0.025,
+            y = cy + size * 0.5 - size * 0.3, size = size * 0.275 }
+    end,
+    levelLayout = function(_, cx, cy, size)
+        return { x = cx + size * 0.5 - 8, y = cy + size * 0.5 - 6,
+            fontSize = 40, align = NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM }
+    end,
+}
+require = function(name)
+    if name == "ui.widget.EquipmentSetIcon" then return legacySetIcon end
+    return originalRequire(name)
+end
 local BackpackGrids = require("ui.backpack.BackpackGrids")
 
 local GRID = {

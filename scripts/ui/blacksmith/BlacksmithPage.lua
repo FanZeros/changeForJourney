@@ -28,6 +28,7 @@ local HeroAssetUtil    = require("config.HeroAssetUtil")
 local HeroConfig       = require("config.HeroConfig")
 local HeroFrame        = require("ui.widget.HeroFrame")
 local I18n             = require("core.I18n")
+local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 
 -- 子模块（[锻炉双页 0929] BlacksmithDecompose 已迁至仓库分解 tab，不再由本页驱动）
 local BlacksmithEnhance   = require("ui.blacksmith.BlacksmithEnhance")
@@ -111,8 +112,7 @@ local OPEN_STAGGER        = 0.12
 
 local onCloseCallback_ = nil  -- 关闭动画完成后的回调
 local onOpenCallback_  = nil  -- 打开动画完成后的回调
---- [锻炉双页 0929] 打开锻炉时是否自动打开了左栏仓库（关闭时联动关闭）
-local autoOpenedWarehouse_ = false
+-- 仓库持有统一由 BackpackPanel 管理（owner="blacksmith"）；不保存自动开仓 bool。
 
 local state = {
     open       = false,
@@ -405,7 +405,7 @@ local function drawWorkbenchSlot(vg)
         local enhLv = EquipmentSystem.getAscendLevel(equip) or 0
         if enhLv > 0 then
             local lvX = slotCX + slotSize * 0.5 - 8
-            local lvY = slotCY - slotSize * 0.5 + 8
+            local lvY = slotCY - slotSize * 0.5 - 4
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 36)
             nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
@@ -423,11 +423,17 @@ local function drawWorkbenchSlot(vg)
         local eqLv = equip.level or 1
         if eqLv >= 1 then
             local lvlText = "Lv." .. eqLv
-            local lvlX = slotCX + slotSize * 0.5 - 10
-            local lvlY = slotCY + slotSize * 0.5 - 8
+            local lvl = EquipmentSetIcon.levelLayout(equip, slotCX, slotCY, slotSize)
+            local lvlX, lvlY = lvl.x, lvl.y
             nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 40)
-            nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
+            nvgFontSize(vg, lvl.fontSize)
+            local badge = EquipmentSetIcon.badgeLayout(slotCX, slotCY, slotSize)
+            local availableW = lvlX - (badge.x + badge.size) - 8
+            local textW = nvgTextBounds(vg, 0, 0, lvlText)
+            if textW > availableW then
+                nvgFontSize(vg, lvl.fontSize * availableW / textW)
+            end
+            nvgTextAlign(vg, lvl.align)
             nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
             local sStep = math.pi * 2 / 16
             for si = 0, 15 do
@@ -466,9 +472,13 @@ local function drawWorkbenchSlot(vg)
             local ownerIcon = imgHeroIcons[ownerHeroId]
             if ownerIcon and ownerIcon >= 0 then
                 local badgeSize = 66
+                local hasSetBadge = EquipmentSetIcon.hasBadge(equip)
+                local ownerCY = hasSetBadge
+                    and (slotCY - slotSize * 0.5 + badgeSize * 0.5 + 1)
+                    or (slotCY + slotSize * 0.5 - badgeSize * 0.5 - 1)
                 HeroFrame.draw(vg, {
                     cx = slotCX - slotSize * 0.5 + badgeSize * 0.5 + 1,
-                    cy = slotCY + slotSize * 0.5 - badgeSize * 0.5 - 1,
+                    cy = ownerCY,
                     size = badgeSize, radius = 6,
                     heroId = ownerHeroId,
                     iconHandle = ownerIcon,
@@ -477,6 +487,8 @@ local function drawWorkbenchSlot(vg)
                 })
             end
         end
+
+        EquipmentSetIcon.drawBadge(vg, equip, slotCX, slotCY, slotSize, 1.0)
 
         -- 选中高亮边框
         nvgBeginPath(vg)
@@ -678,26 +690,71 @@ function BlacksmithPage.open(preSelectEquip, initialTab)
     end
     BlacksmithEnhance.onOpen()
 
-    -- [锻炉双页 0929] 左栏自动打开仓库（装备 tab，供拖拽）
-    local BackpackPanel = require("ui.backpack.BackpackPanel")
-    if not BackpackPanel.isOpen() then
-        BackpackPanel.open("left")
-        autoOpenedWarehouse_ = true
-        print("[BlacksmithPage] 双页联动：自动打开左栏仓库")
-    else
-        autoOpenedWarehouse_ = false
+    -- 仅打开边沿持有，已开的仓库不反复 open/reset；配装与锻炉可无缝交接。
+    require("ui.backpack.BackpackPanel").acquireWarehouse("blacksmith")
+end
+
+--- 教程恢复强化页，只选择库存内模板有效且未满阶的装备，不发送强化/穿戴操作。
+---@param vg any|nil 未初始化时提供 NanoVG 上下文
+---@return boolean changed
+function BlacksmithPage.prepareTutorial(vg)
+    local changed = false
+    if not blacksmithInited_ then
+        local context = vg or blacksmithVg_
+        if not context then return false end
+        BlacksmithPage.init(context)
+        changed = true
     end
+    local config = require("config.BlacksmithConfig")
+    local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
+    local inventory = eqData and eqData.inventory or {}
+    local function isValid(equip)
+        return type(equip) == "table" and equip.templateId ~= nil
+            and EquipmentConfig.ITEMS[equip.templateId] ~= nil
+            and EquipmentSystem.getAscendLevel(equip) < config.MAX_ENHANCE_LEVEL
+    end
+    local seq = tonumber(state.selectedSeq or (state.selectedEquip and state.selectedEquip.seq))
+    local selected = seq and (inventory[tostring(seq)] or inventory[seq]) or nil
+    if not isValid(selected) then
+        seq, selected = nil, nil
+        for key, equip in pairs(inventory) do
+            local candidateSeq = tonumber(key)
+            if candidateSeq and isValid(equip) and (not seq or candidateSeq < seq) then
+                seq, selected = candidateSeq, equip
+            end
+        end
+    end
+
+    local opening = not state.open or state.closing
+    local switching = state.tab ~= "qianghua" or state.tabFrom ~= "qianghua" or state.tabSwitchTime ~= 0
+    if opening then
+        closeOtherLeftPages()
+        state.open, state.closing, state.closeTime = true, false, 0
+        state.openTime = time.elapsedTime
+        _enhanceCache.dirty = true
+        require("systems.GameSFX").playUIMove(1)
+        BlacksmithEnhance.onOpen()
+        require("ui.backpack.BackpackPanel").acquireWarehouse("blacksmith")
+        changed = true
+    end
+    if opening or switching then
+        state.tab, state.tabFrom, state.tabSwitchTime = "qianghua", "qianghua", 0
+        changed = true
+    end
+    if selected ~= state.selectedEquip or seq ~= state.selectedSeq then
+        if selected then selected.seq = seq end
+        applySelectedEquip(selected)
+        if not selected then state.selectedEquipSlot = nil end
+        changed = true
+    elseif switching and selected then
+        BlacksmithEnhance.updateEnhanceData(selected)
+    end
+    return changed
 end
 
 --- [锻炉双页 0929] 联动关闭自动打开的仓库
 local function closeAutoWarehouse()
-    if not autoOpenedWarehouse_ then return end
-    autoOpenedWarehouse_ = false
-    local BackpackPanel = require("ui.backpack.BackpackPanel")
-    if BackpackPanel.isOpen() then
-        BackpackPanel.close()
-        print("[BlacksmithPage] 双页联动：关闭左栏仓库")
-    end
+    require("ui.backpack.BackpackPanel").releaseWarehouse("blacksmith")
 end
 
 --- 关闭铁匠铺（启动关闭动画；动画完成后联动关闭仓库）

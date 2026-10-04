@@ -344,6 +344,19 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      if not data.success then
          print("[Client] action failed: action=" .. tostring(data.action)
              .. " reason=" .. tostring(data.reason))
+         if data.action == Protocol.ACTION_TYPES.CLAIM_TASK
+             or data.action == Protocol.ACTION_TYPES.CLAIM_ALL_TASKS then
+             local reasons = {
+                 save_failed = "存档失败，奖励未领取，请重试",
+                 invalid_reward = "奖励配置异常，本次未发放",
+                 reward_failed = "奖励发放失败，请重试",
+                 already_claimed = "该奖励已经领取",
+                 not_complete = "尚未达到领奖条件",
+                 nothing_to_claim = "当前没有可领取奖励",
+             }
+             require("core.UiToast").show(reasons[data.reason] or "领取失败，请重试")
+             return
+         end
          if data.action == Protocol.ACTION_TYPES.SELECT_INITIAL_HERO then
              print("[Client][SAVE-BROKEN] initial hero selection blocked: " .. tostring(data.reason))
              if LootBoxPage and LootBoxPage.showToast then LootBoxPage.showToast(data.reason or "存档异常，请联系客服") end
@@ -353,6 +366,10 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
              print("[Client][SAVE-BROKEN] battle reward blocked by invalid hero data: " .. tostring(data.reason))
              if LootBoxPage and LootBoxPage.showToast then LootBoxPage.showToast("角色数据异常，奖励未发放，请联系客服") end
              return
+         end
+         if data.action == Protocol.ACTION_TYPES.CLAIM_SCENARIO_REWARD then
+             -- 失败领取不启动教程，也不让这次通知串到后续成功情景。
+             M.pendingTutorialNotify_ = nil
          end
          if TavernPage.onActionResult then TavernPage.onActionResult(data) end
          if MarketPage.onActionResult then MarketPage.onActionResult(data) end
@@ -374,8 +391,9 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          end
              if data.action == Protocol.ACTION_TYPES.CONVERT_UR_SHARD
              or data.action == Protocol.ACTION_TYPES.RESTORE_UR_SHARD_CONVERT
-             or data.action == Protocol.ACTION_TYPES.DECOMPOSE_EQUIP then
-             -- [分解入仓 0929] 分解失败也要转发仓库（BlacksmithDecompose 释放门控）
+             or data.action == Protocol.ACTION_TYPES.DECOMPOSE_EQUIP
+             or data.action == Protocol.ACTION_TYPES.EQUIP_ITEM then
+             -- 穿戴/分解失败也转发仓库，释放自己的待响应状态并显示拒绝原因。
              local BackpackPanel = require("ui.backpack.BackpackPanel")
              if BackpackPanel.onActionResult then BackpackPanel.onActionResult(data) end
          end
@@ -468,6 +486,11 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          return
      end
 
+     -- 实际一键穿戴成功后才结束教程，不把按钮点击等同于业务完成。
+     if data.action == Protocol.ACTION_TYPES.EQUIP_ALL_BEST and data.success == true then
+         TutorialManager.notifyEvent("equipment_equipped")
+     end
+
      -- 各页面 onActionResult 分发
      if BlacksmithPage.onActionResult then pcall(BlacksmithPage.onActionResult, data) end
      if BackpackPanel.onActionResult then pcall(BackpackPanel.onActionResult, data) end
@@ -539,9 +562,15 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      if data.action == Protocol.ACTION_TYPES.CLAIM_SCENARIO_REWARD then
          local tutorialNotify = M.pendingTutorialNotify_
          M.pendingTutorialNotify_ = nil
+         local tutorialNotified = false
          local function fireTutorial()
-             if tutorialNotify then TutorialManager.onScenarioClaimed(tutorialNotify.scenarioId) end
+             if tutorialNotify and not tutorialNotified then
+                 tutorialNotified = true
+                 TutorialManager.onScenarioClaimed(tutorialNotify.scenarioId)
+             end
          end
+         -- 成功回执即持久化待触发组；实际启动由TM等窗口关闭和安静期，避免关窗前退出丢教程。
+         if data.success then fireTutorial() end
          if data.success and data.rewardType == "none" then
              fireTutorial()
          elseif data.success and data.rewardType == "currency" and data.reward then

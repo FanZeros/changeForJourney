@@ -5,8 +5,8 @@
 ---@diagnostic disable: undefined-global
 
 local GameConfig          = require("config.GameConfig")
-local GameState           = require("core.GameState")
 local ExpTable            = require("config.ExpTable")
+local ClientDispatcher    = require("runtime.ClientDispatcher")
 local DrawUtil            = require("core.DrawUtil")
 local PlayerStore         = require("core.PlayerStore")
 local ArtifactDefs        = require("shared.artifact.ArtifactDefs")
@@ -113,6 +113,26 @@ local SCROLL_WHEEL_STEP = 60
 local BAG_DISPLAY_SLOTS = 20
 
 local ctx_ = nil
+local HOVER_DELAY = 0.3
+local DRAG_THRESHOLD = 15
+
+---@class ArtifactPick : ArtifactDetailAnchor
+---@field artifact table|nil
+---@field location string|nil
+---@field index number|nil
+---@field teamIdx number|nil
+---@field slot number|nil
+---@field subSlot number|nil
+---@field x number
+---@field y number
+---@field w number
+---@field h number
+
+-- 输入与绘制共享槽位/背包命中；拖动期间只持有实例 ID，不提前改装配数据。
+---@type {armed: boolean, dragging: boolean, startX: number, startY: number, x: number, y: number, source: ArtifactPick|nil, target: ArtifactPick|nil}
+local pointer = { armed = false, dragging = false, startX = 0, startY = 0, x = 0, y = 0 }
+---@type {key: string|nil, since: number, leaveSince: number|nil}
+local hover = { key = nil, since = 0 }
 
 -- ======================== 图片句柄 ========================
 
@@ -178,9 +198,9 @@ end
 
 local isArtifactEquippedId = isArtifactEquippedAnyTeam
 
---- 已解锁队伍数（远征等级门槛）
+--- 已解锁队伍数（普通通关门槛，与神器子格等级门槛独立）
 local function getUnlockedTeamCount()
-    return ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    return ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
 end
 
 local function getVisibleBag()
@@ -242,6 +262,68 @@ local function hasSameTypeInSlot(slot, artifact, ignoreSubSlot, team)
         end
     end
     return false
+end
+
+-- 命中区域：装配格为 160×160，格间 10/64 像素不命中；背包只命中裁剪内可见部分。
+-- [槽位] 3 队 × 4 号位 × 2 子格 → 安装/移位；[背包] 图标 → 拖放，空隙 → 滚动。
+---@return ArtifactPick|nil
+local function hitSlot(dx, dy)
+    for team = 1, ArtifactSchema.TEAM_COUNT do
+        for slot = 1, ArtifactSchema.SLOT_COUNT do
+            for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
+                local cx, cy, size = getSlotCell(slot, subSlot, team)
+                if hitTest(dx, dy, cx, cy, size, size) then
+                    return { teamIdx = team, slot = slot, subSlot = subSlot,
+                        x = cx - size * 0.5, y = cy - size * 0.5, w = size, h = size }
+                end
+            end
+        end
+    end
+    return nil
+end
+
+---@return ArtifactPick|nil
+local function hitBag(dx, dy)
+    if not isInGridScrollArea(dx, dy) then return nil end
+    local bag = getVisibleBag()
+    for idx, artifact in ipairs(bag) do
+        local col = ((idx - 1) % GRID.COLS) + 1
+        local row = math.floor((idx - 1) / GRID.COLS)
+        local cx = CELL_COL_CX[col]
+        local cy = GRID.FIRST_ROW_TOP + row * (GRID.CELL_SIZE + GRID.GAP)
+            + GRID.CELL_SIZE * 0.5 - state.scrollY
+        if hitTest(dx, dy, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE) then
+            return { artifact = artifact, index = idx, location = "bag",
+                x = cx - GRID.CELL_SIZE * 0.5, y = cy - GRID.CELL_SIZE * 0.5,
+                w = GRID.CELL_SIZE, h = GRID.CELL_SIZE }
+        end
+    end
+    return nil
+end
+
+local function itemAt(dx, dy)
+    local target = hitSlot(dx, dy)
+    if target and target.teamIdx <= getUnlockedTeamCount()
+        and target.subSlot <= getUnlockedSubSlotCount() then
+        target.artifact = getEquippedArtifact(target.slot, target.subSlot, target.teamIdx)
+        target.location = "slot"
+        return target.artifact and target or nil
+    end
+    return hitBag(dx, dy)
+end
+
+local function canInstall(artifact, target)
+    if not artifact or not target then return false, "请选择神器槽位" end
+    if target.teamIdx > getUnlockedTeamCount() then
+        return false, ExpTable.getTeamUnlockText(target.teamIdx) .. "队伍" .. target.teamIdx
+    end
+    if target.subSlot > getUnlockedSubSlotCount() then
+        return false, "远征等级达到" .. tostring(ArtifactSchema.getSubSlotUnlockLevel(target.subSlot)) .. "级解锁"
+    end
+    if hasSameTypeInSlot(target.slot, artifact, target.subSlot, target.teamIdx) then
+        return false, "同一槽位不能佩戴相同类型神器"
+    end
+    return true
 end
 
 local function getBagSlotCount()
@@ -411,11 +493,44 @@ end
 
 local function sendAction(action, params)
     if ctx_ and ctx_.getClient then
-        ctx_.getClient().sendAction(action, params or {})
-        return true
+        local client = ctx_.getClient()
+        if client and client.sendAction then
+            local ok, err = pcall(client.sendAction, action, params or {})
+            if ok then return true end
+            print("[ChurchArtifactPanel] 操作发送失败: " .. tostring(err))
+        end
     end
-    showFloat("网络未连接")
+    showFloat("神器操作未发送")
     return false
+end
+
+local function installArtifact(artifact, target)
+    local allowed, reason = canInstall(artifact, target)
+    if not allowed then
+        showFloat(reason, target and (target.x + target.w * 0.5) or 540,
+            target and (target.y - 20) or 1330)
+        return false
+    end
+    if state.equipRequestPending then
+        showFloat("正在安装神器", 540, 1330)
+        return false
+    end
+    local Protocol = ctx_ and ctx_.getProtocol and ctx_.getProtocol()
+    if not Protocol then showFloat("神器操作未发送") return false end
+    -- 本地桥同步回执：必须在 sendAction 之前登记，之后不能覆盖回执清锁或成功提示。
+    state.equipRequestPending = true
+    state.selectedTeam, state.selectedSlot, state.selectedSubSlot = target.teamIdx, target.slot, target.subSlot
+    state.selectedBagIdx = findBagIndexById(artifact.id)
+    showFloat("正在安装神器", target.x + target.w * 0.5, target.y - 20)
+    print("[ChurchArtifactPanel] 请求安装 id=" .. tostring(artifact.id)
+        .. " team=" .. target.teamIdx .. " slot=" .. target.slot .. ":" .. target.subSlot)
+    if not sendAction(Protocol.ACTION_TYPES.ARTIFACT_EQUIP, {
+        artifactId = artifact.id, slot = target.slot, subSlot = target.subSlot, teamIdx = target.teamIdx,
+    }) then
+        state.equipRequestPending = false
+        return false
+    end
+    return true
 end
 
 local function drawArtifactIcon(vg, artifact, cx, cy, size, selected)
@@ -458,10 +573,10 @@ function M.init(vg)
             if Protocol and slot then
                 -- [行式布局] 详情面板回传所在队伍行，卸下精确到该队
                 local team = teamIdx or 1
-                sendAction(Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP, { slot = slot, subSlot = subSlot or 1, teamIdx = team })
                 local fx = TEAM_ROW.CX_LIST[slot] or 540
                 local fy = (TEAM_ROW.ROW_CY[team] or TEAM_ROW.ROW_CY[1]) - 130
                 showFloat("正在卸下神器", fx, fy)
+                sendAction(Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP, { slot = slot, subSlot = subSlot or 1, teamIdx = team })
             end
             clearPendingEquip()
             state.selectedTeam = nil
@@ -484,8 +599,8 @@ function M.init(vg)
             showFloat("网络未连接", 540, 1700)
             return
         end
-        sendAction(Protocol.ACTION_TYPES.ARTIFACT_REFINE_VALUE, { artifactId = artifact.id })
         showFloat("正在洗练神器数值", 540, 1700)
+        sendAction(Protocol.ACTION_TYPES.ARTIFACT_REFINE_VALUE, { artifactId = artifact.id })
     end)
 
     print("[ChurchArtifactPanel] init OK")
@@ -503,7 +618,8 @@ function M.reset()
     state.rerollMode = false
     clearRerollSelection()
     clearPendingEquip()
-    ArtifactDetailPanel.hide()
+    M.cancelPointer()
+    ArtifactDetailPanel.closeImmediate()
 end
 
 --- 绘制神器 Tab 全屏背景（在 Tab 内容下层）
@@ -584,10 +700,13 @@ function M.drawContent(vg)
                 nvgFontSize(vg, TEAM_ROW.LABEL_FONT)
                 nvgFillColor(vg, nvgRGBA(190, 190, 190, 255))
                 nvgText(vg, lx, rowCy - 24, "队伍" .. t, nil)
-                local lv = ExpTable.getTeamUnlockLevel(t)
                 nvgFontSize(vg, TEAM_ROW.LOCK_FONT)
                 nvgFillColor(vg, nvgRGBA(160, 160, 160, 255))
-                nvgText(vg, lx, rowCy + 20, tostring(lv) .. "级解锁", nil)
+                -- 竖标签宽 100：把统一文案拆两行，避免 19-5 文本横向溢出。
+                local unlockText = ExpTable.getTeamUnlockText(t)
+                local stageText = unlockText:gsub("解锁$", "")
+                nvgText(vg, lx, rowCy + 12, stageText, nil)
+                nvgText(vg, lx, rowCy + 40, "解锁", nil)
             else
                 nvgFontSize(vg, TEAM_ROW.LABEL_FONT + 6)
                 nvgFillColor(vg, nvgRGBA(255, 240, 200, 255))
@@ -734,7 +853,7 @@ function M.drawContent(vg)
     if enabled then
         nvgFillColor(vg, nvgRGBA(MERGE_BTN.TEXT_R, MERGE_BTN.TEXT_G, MERGE_BTN.TEXT_B, 255))
     else
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
     end
     local label
     if state.rerollMode then
@@ -810,8 +929,7 @@ function M.handleTabInput(dx, dy)
                 local cx, cy, size = getSlotCell(i, subSlot, t)
                 if hitTest(dx, dy, cx, cy, size, size) then
                     if t > unlockedTeams then
-                        local lv = ExpTable.getTeamUnlockLevel(t)
-                        showFloat("远征等级达到" .. tostring(lv) .. "级解锁队伍" .. t, cx, cy - 70)
+                        showFloat(ExpTable.getTeamUnlockText(t) .. "队伍" .. t, cx, cy - 70)
                         return true
                     end
                     local pendingArtifact = getPendingEquipArtifact()
@@ -826,29 +944,13 @@ function M.handleTabInput(dx, dy)
                     elseif pendingArtifact and hasSameTypeInSlot(i, pendingArtifact, subSlot, t) then
                         showFloat("同一槽位不能佩戴相同类型神器", cx, cy - 70)
                     elseif pendingArtifact and Protocol then
-                        if state.equipRequestPending then
-                            showFloat("正在安装神器", cx, cy - 70)
-                        else
-                            local sent = sendAction(Protocol.ACTION_TYPES.ARTIFACT_EQUIP, {
-                                artifactId = pendingArtifact.id,
-                                slot = i,
-                                subSlot = subSlot,
-                                teamIdx = t,  -- [行式布局] 直接按所在行安装
-                            })
-                            if sent then
-                                showFloat("正在安装神器", cx, cy - 70)
-                                state.equipRequestPending = true
-                                state.selectedTeam = t
-                                state.selectedSlot = i
-                                state.selectedSubSlot = subSlot
-                                state.selectedBagIdx = findBagIndexById(pendingArtifact.id)
-                            end
-                        end
+                        installArtifact(pendingArtifact, hitSlot(dx, dy))
                     elseif pendingArtifact then
                         showFloat("网络未连接", cx, cy - 70)
                     elseif equipped then
                         -- 点击已装配格子 → 详情（带队伍，供"取下"用）
-                        ArtifactDetailPanel.show(equipped, "slot", i, subSlot, t)
+                        ArtifactDetailPanel.show(equipped, "slot", i, subSlot, t,
+                            { anchor = hitSlot(dx, dy) })
                         state.selectedTeam = t
                         state.selectedSlot = i
                         state.selectedSubSlot = subSlot
@@ -902,7 +1004,8 @@ function M.handleTabInput(dx, dy)
                 state.selectedTeam = nil
                 state.selectedSlot = nil
                 state.selectedSubSlot = nil
-                ArtifactDetailPanel.show(artifact, "bag", nil, nil, nil)
+                ArtifactDetailPanel.show(artifact, "bag", nil, nil, nil,
+                    { anchor = hitBag(dx, dy) })
                 print("[ChurchArtifactPanel] bag click " .. idx)
                 return true
             end
@@ -917,6 +1020,7 @@ function M.onArtifactEquipResult(success)
     state.equipRequestPending = false
     if success then
         clearPendingEquip()
+        state.selectedBagIdx = nil
     end
 end
 
@@ -943,9 +1047,75 @@ function M.onArtifactRefineValueResult(success, artifactId)
     end
 end
 
+function M.cancelPointer()
+    if pointer.dragging then print("[ChurchArtifactPanel] 拖放取消") end
+    pointer.armed, pointer.dragging, pointer.source = false, false, nil
+    pointer.target = nil
+    state.dragging, state.scrollVel = false, 0
+    hover.key, hover.leaveSince = nil, nil
+    ArtifactDetailPanel.dismissHover()
+end
+
+function M.hasPointer()
+    return pointer.armed or state.dragging
+end
+
+function M.isItemDragging()
+    return pointer.dragging
+end
+
+function M.handleHover(dx, dy)
+    if pointer.armed or state.dragging or state.rerollMode or state.pendingEquipArtifactId then
+        hover.key = nil
+        ArtifactDetailPanel.dismissHover()
+        return
+    end
+    if ArtifactDetailPanel.isPinned() or ArtifactDetailPanel.containsPoint(dx, dy) then
+        hover.leaveSince = nil
+        return
+    end
+    local item = itemAt(dx, dy)
+    local key = item and (tostring(item.artifact.id) .. ":" .. item.location
+        .. ":" .. tostring(item.teamIdx) .. ":" .. tostring(item.slot) .. ":" .. tostring(item.subSlot))
+    if dx < 0 or dy < 0 then
+        hover.key, hover.leaveSince = nil, nil
+        ArtifactDetailPanel.dismissHover()
+        return
+    end
+    if key ~= hover.key then
+        if not key and dx >= 0 and dy >= 0 and ArtifactDetailPanel.isVisible() then
+            hover.leaveSince = hover.leaveSince or time.elapsedTime
+            if time.elapsedTime - hover.leaveSince < 0.15 then return end
+        end
+        hover.key, hover.since, hover.leaveSince = key, time.elapsedTime, nil
+        ArtifactDetailPanel.dismissHover()
+        return
+    end
+    hover.leaveSince = nil
+    if item and time.elapsedTime - hover.since >= HOVER_DELAY then
+        ArtifactDetailPanel.show(item.artifact, item.location, item.slot, item.subSlot, item.teamIdx,
+            { hover = true, anchor = item })
+    end
+end
+
 ---@return boolean consumed
 function M.handleDragBegin(dx, dy)
-    if ArtifactDetailPanel.isVisible() then return false end
+    local item = itemAt(dx, dy)
+    local selection = ArtifactDetailPanel.getSelection()
+    local onDetail = ArtifactDetailPanel.containsPoint(dx, dy)
+    -- 原格子在边界夹紧的浮层下仍可拖；其它被浮层覆盖的格子不得穿透。
+    local onSource = item and selection and tostring(item.artifact.id) == selection.artifactId
+        and item.location == selection.location and item.teamIdx == selection.teamIdx
+        and item.slot == selection.slot and item.subSlot == selection.subSlot
+    if onDetail and not onSource then return false end
+    M.cancelPointer()
+    ArtifactDetailPanel.closeImmediate()
+    if item and not state.rerollMode and not state.equipRequestPending then
+        pointer.armed, pointer.dragging, pointer.source = true, false, item
+        pointer.startX, pointer.startY, pointer.x, pointer.y = dx, dy, dx, dy
+        state.scrollVel = 0
+        return true
+    end
     if not isInGridScrollArea(dx, dy) then return false end
     state.dragging = true
     state.lastDragY = dy
@@ -955,6 +1125,18 @@ end
 
 ---@return boolean consumed
 function M.handleDragMove(dx, dy)
+    if pointer.armed then
+        pointer.x, pointer.y = dx, dy
+        if not pointer.dragging
+            and math.abs(dx - pointer.startX) + math.abs(dy - pointer.startY) >= DRAG_THRESHOLD then
+            pointer.dragging = true
+            clearPendingEquip()
+            ArtifactDetailPanel.closeImmediate()
+            print("[ChurchArtifactPanel] 开始拖放 id=" .. tostring(pointer.source.artifact.id))
+        end
+        if pointer.dragging then pointer.target = hitSlot(dx, dy) end
+        return true
+    end
     if not state.dragging then return false end
     local delta = state.lastDragY - dy
     state.scrollY = state.scrollY + delta
@@ -964,18 +1146,65 @@ function M.handleDragMove(dx, dy)
     return true
 end
 
-function M.handleDragEnd(_dx, _dy)
-    if not state.dragging then return end
-    state.dragging = false
+-- 松手先清手势，再发动作；失败/锁定/格缝/面板外都不改变数据，也不派发点击。
+---@return boolean dragged
+function M.handleDragEnd(dx, dy)
+    if not pointer.armed then state.dragging = false return false end
+    M.handleDragMove(dx, dy)
+    local source, dragged, target = pointer.source, pointer.dragging, hitSlot(dx, dy)
+    pointer.armed, pointer.dragging, pointer.source, pointer.target = false, false, nil, nil
+    if not dragged then return false end
+    local artifact = findArtifactById(source.artifact.id)
+    if not artifact then showFloat("神器不存在") return true end
+    if source.location == "slot" and tostring(ArtifactSchema.getEquippedId(getArtifactData(),
+        source.slot, source.subSlot, source.teamIdx)) ~= tostring(artifact.id) then
+        showFloat("神器装配已变化，请重试")
+        return true
+    end
+    if source.location == "bag" and not findBagIndexById(artifact.id) then
+        showFloat("神器装配已变化，请重试")
+        return true
+    end
+    if target then
+        installArtifact(artifact, target)
+    elseif source.location == "slot" and isInGridScrollArea(dx, dy) then
+        local Protocol = ctx_ and ctx_.getProtocol and ctx_.getProtocol()
+        if Protocol then
+            showFloat("正在卸下神器", 540, 1330)
+            sendAction(Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP,
+                { slot = source.slot, subSlot = source.subSlot, teamIdx = source.teamIdx })
+        end
+    else
+        print("[ChurchArtifactPanel] 无有效落点，保留神器")
+    end
+    return true
+end
+
+-- 宿主末层在同一个 Viewport note 内调用，避免图标被背包裁剪或其它战斗层盖住。
+function M.drawDragOverlay(vg)
+    if not pointer.dragging or not pointer.source then return end
+    local target = pointer.target
+    if target then
+        local allowed = canInstall(findArtifactById(pointer.source.artifact.id), target)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, target.x, target.y, target.w, target.h, GRID.CELL_RADIUS)
+        nvgStrokeColor(vg, allowed and nvgRGBA(100, 230, 130, 255) or nvgRGBA(240, 90, 80, 255))
+        nvgStrokeWidth(vg, 6)
+        nvgStroke(vg)
+    end
+    drawArtifactIcon(vg, pointer.source.artifact, pointer.x, pointer.y, GRID.CELL_SIZE, true)
 end
 
 ---@param wheel number
 ---@param dx number|nil
 ---@param dy number|nil
 function M.handleScroll(wheel, dx, dy)
+    if pointer.armed then return end
     if ArtifactDetailPanel.isVisible() then
         if dx == nil or ArtifactDetailPanel.containsPoint(dx, dy) then return end
+        ArtifactDetailPanel.closeImmediate()
     end
+    hover.key = nil
     state.scrollY = state.scrollY - wheel * SCROLL_WHEEL_STEP
     state.scrollVel = 0
     clampScroll()

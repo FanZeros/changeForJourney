@@ -28,6 +28,15 @@ local drawNineSlice      = DrawUtil.drawNineSlice
 local hitTest            = DrawUtil.hitTest
 
 local PlayerInfoPanel = {}
+---@type fun()?
+local onExpeditionRewards = nil
+---@type Button?
+local expeditionRewardsWidget = nil
+local EXPEDITION_REWARDS = { cx = 540, cy = 990, w = 470, h = 64 }
+
+function PlayerInfoPanel.setOnExpeditionRewards(callback)
+    onExpeditionRewards = callback
+end
 
 -- ======================== 状态 ========================
 
@@ -70,7 +79,7 @@ local MASK_ALPHA = 0
 
 -- 弹窗背景（九宫格）
 local BG = {
-    CX = 540, CY = 1067, W = 950, H = 1747,
+    CX = 540, CY = 1132, W = 950, H = 1877,
     IT = 180, IL = 40, IR = 40, IB = 50,
 }
 
@@ -311,15 +320,15 @@ local function formatPlayTime(secs)
     local hours = math.floor((total % 86400) / 3600)
     local mins = math.floor((total % 3600) / 60)
     if days > 0 then
-        return string.format("游玩时间 %d天%d小时", days, hours)
+        return string.format("远征时间 %d天%d小时", days, hours)
     end
     if hours > 0 then
-        return string.format("游玩时间 %d小时%d分", hours, mins)
+        return string.format("远征时间 %d小时%d分", hours, mins)
     end
     if mins > 0 then
-        return string.format("游玩时间 %d分", mins)
+        return string.format("远征时间 %d分", mins)
     end
-    return "游玩时间 不足1分"
+    return "远征时间 不足1分"
 end
 
 --- 判断当前玩家是否为 GM（完全由服务端鉴权，客户端无白名单）
@@ -334,6 +343,7 @@ end
 
 --- 初始化（加载图片资源，仅调用一次）
 function PlayerInfoPanel.init(vg)
+    require("ui.widget.DesignWidgetSurface").init()
     cachedVg = vg
     -- 上半部分
     -- [清理 0929] UI_TY_EJQRK.png 加载已移除：本面板背景改由 DarkIcon.drawNine 矢量绘制，贴图从未使用
@@ -541,6 +551,14 @@ function PlayerInfoPanel.handleInput(dx, dy)
         BF.trigger("pip_gm")
         print("[PlayerInfoPanel] GM 按钮被点击 → 打开 GM 控制台")
         GMConsolePanel.open()
+        return true
+    end
+
+    -- 等级区直达奖励：在任何面板留白关闭分支之前消费。
+    if onExpeditionRewards and hitTest(dx, dy, EXPEDITION_REWARDS.cx, EXPEDITION_REWARDS.cy,
+        EXPEDITION_REWARDS.w, EXPEDITION_REWARDS.h) then
+        BF.trigger("pip_expedition_rewards")
+        onExpeditionRewards()
         return true
     end
 
@@ -934,6 +952,29 @@ function PlayerInfoPanel.draw(vg)
         nvgRect(vg, barLeft, barTop, barW, barH)
         nvgFillPaint(vg, paint)
         nvgFill(vg)
+        nvgRestore(vg)
+    end
+
+    -- 远征奖励入口沿用宿主设计坐标；与绘制采用同一个矩形。
+    if onExpeditionRewards then
+        local count = require("ui.story.task.TaskPage").getExpeditionClaimableCount()
+        local label = count > 0 and ("远征奖励 · 可领 " .. count .. " 项") or "查看远征奖励"
+        local UI = require("urhox-libs/UI")
+        if not expeditionRewardsWidget then
+            expeditionRewardsWidget = UI.Button {
+                text = label, fontSize = 22.5, fontWeight = "normal",
+                width = EXPEDITION_REWARDS.w, height = EXPEDITION_REWARDS.h,
+                backgroundColor = {110, 78, 24, 255}, borderColor = {201, 151, 59, 255},
+                borderWidth = 1, borderRadius = 8, textColor = {244, 232, 204, 255},
+                pointerEvents = "none",
+            }
+        end
+        expeditionRewardsWidget:SetText(label)
+        nvgSave(vg)
+        nvgTranslate(vg, EXPEDITION_REWARDS.cx - EXPEDITION_REWARDS.w * 0.5,
+            EXPEDITION_REWARDS.cy - EXPEDITION_REWARDS.h * 0.5)
+        require("ui.widget.DesignWidgetSurface").draw(expeditionRewardsWidget, vg,
+            EXPEDITION_REWARDS.w, EXPEDITION_REWARDS.h)
         nvgRestore(vg)
     end
 

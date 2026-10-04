@@ -1,6 +1,8 @@
 -- 角色/觉醒/套装只读审计探针：复用正式模块，不修改玩法数值。
 -- 跑法：./.cli/UrhoXRuntime tests/skill_balance_audit_test.lua -tapcode_dir=. -tool_mode -graphicsheadless
--- CONFIRMED 表示已复现偏离健康行为；不是正常回归测试通过。
+-- CONFIRMED 表示探针偏离原观察基准；不是正常回归测试通过。
+-- 兼容查询与晶蚀四件项分别是接口误用风险、设计缺口，不计为两个独立逻辑缺陷。
+-- 保留2026-10-02的观察条件，便于与最新基线逐项对照；运行结束不表示机制已修复。
 local AD = require("systems.AttributeDef")
 local UA = require("systems.UnitAttributes")
 local HC = require("config.HeroConfig")

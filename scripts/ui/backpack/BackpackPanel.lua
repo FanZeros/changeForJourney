@@ -8,6 +8,7 @@ local GameConfig       = require("config.GameConfig")
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local DrawUtil         = require("core.DrawUtil")
+local I18n             = require("core.I18n")
 local TownPageChrome   = require("ui.town.TownPageChrome")
 local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1] 矢量九宫格
 local GameState        = require("core.GameState")
@@ -27,6 +28,7 @@ local Protocol         = require("shared.Protocol")
 local BF               = require("systems.ButtonFeedback")
 local BackpackDialogs  = require("ui.backpack.BackpackDialogs")
 local BackpackGrids    = require("ui.backpack.BackpackGrids")
+local BackpackEquipLink = require("ui.backpack.BackpackEquipLink")
 local HeroFrame        = require("ui.widget.HeroFrame")
 
 local Panel = {}
@@ -88,13 +90,10 @@ local GRID = {
     -- 总宽 = 5*160 + 4*30 = 920, 左边距 = (1080-920)/2 = 80
     MARGIN_LEFT = 80,
     -- 第一行顶部 Y
-    FIRST_ROW_TOP = 670,
+    FIRST_ROW_TOP = 740, -- 品质/套装条下留出独立部位提示行
     -- 裁剪底部（上移为按钮留出空间）
     CLIP_BOTTOM = 2020,
 }
-
--- 6b. [分解入仓 0929] 旧"确认分解/取消分解/批量分解"按钮常量已移除
--- （分解功能迁移到独立"分解"tab，按钮由 BlacksmithDecompose warehouse profile 绘制）
 
 -- 预计算列中心 X
 local CELL_COL_CX = {}
@@ -435,6 +434,7 @@ local function bindBackpackGrids()
         getImgLock = function() return imgLock end,
         qualityChecked = qualityChecked,
         setChecked = setChecked,
+        getEquipmentSlotFilter = function() return Panel.getEquipmentSlotFilter() end,
         getImgHeroIcons = function() return imgHeroIcons end,
         calcScrollMax = calcScrollMax,
         clampScroll = clampScroll,
@@ -454,22 +454,10 @@ local function getEquipList()
     return ensureGrids().getEquipList()
 end
 
--- [分解入仓 0929] previewDecomposeScrollHint 已移除：
--- 卷轴返还预览由 BlacksmithDecompose.drawUpperSlot（warehouse 图标行模式）负责
-
--- ======================== 绘制: 装备 / 道具 tab ========================
-
-local function drawEquipGrid(vg)
-    ensureGrids().drawEquipGrid(vg)
-end
-
-local function buildItemList()
-    return ensureGrids().buildItemList()
-end
-
-local function drawItemGrid(vg)
-    ensureGrids().drawItemGrid(vg)
-end
+-- 网格绘制来自 BackpackGrids，命中/hover/拖拽来自 BackpackEquipLink。
+local function drawEquipGrid(vg) ensureGrids().drawEquipGrid(vg) end
+local function buildItemList() return ensureGrids().buildItemList() end
+local function drawItemGrid(vg) ensureGrids().drawItemGrid(vg) end
 
 -- ======================== 道具详情弹窗 ========================
 
@@ -730,9 +718,9 @@ local function drawItemDetail(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, UR_CONVERT_BTN.FONT_SIZE)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        -- 按钮文字：可转化=亮深棕，处理中=棕色禁用色
+        -- 按钮文字：可转化=亮深棕，处理中=灰蓝色禁用色
         if itemDetState.urConvertPending then
-            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+            nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
         else
             nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
         end
@@ -834,7 +822,7 @@ end
 --- 打开面板
 ---@param mode? boolean|"left" true=全窗居中模态；"left"=横屏左栏页；nil/false=内嵌
 ---@param initialTab? string "equip"|"item"|"decompose"，默认 "equip"
-function Panel.open(mode, initialTab)
+local function openPage(mode, initialTab)
     if mode == "left" then
         hostMode_ = "left"
     elseif mode then
@@ -871,18 +859,74 @@ function Panel.open(mode, initialTab)
     print("[BackpackPanel] open tab=" .. tab)
 end
 
---- 关闭面板
-function Panel.close()
-    if state.closing then return end
+-- 动画操作与持有操作分离：自动 release 不冒充玩家手动关闭。
+local function closePage()
+    if not state.open or state.closing then return end
     state.closing = true
     state.closeTime = time.elapsedTime
     state.dragging = false
     SetFilterDialog.close()
-    Panel._hoverSeq = nil
-    Panel._hoverSince = nil
-    if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
     print("[BackpackPanel] close")
 end
+
+local equipLink = BackpackEquipLink.bind({
+    state = state, GRID = GRID, CELL_COL_CX = CELL_COL_CX,
+    itemDetState = itemDetState, getEquipList = getEquipList, buildItemList = buildItemList,
+    getHostMode = function() return hostMode_ end,
+    setLeftMode = function() hostMode_ = "left"; applyLayout(true) end,
+    openPage = openPage, closePage = closePage,
+    clearTutorialFilters = function()
+        local changed = next(decomposeState.qualitySet) ~= nil or next(decomposeState.setFilter) ~= nil
+        if changed then decomposeState.qualitySet, decomposeState.setFilter = {}, {} end
+        return changed
+    end,
+    selectEquipTab = function()
+        if state.tab == "equip" then return end
+        state.tab, state.tabFrom, state.tabSwitchTime = "equip", "equip", 0
+        state.scrollY, state.scrollMax, state.scrollVel = 0, 0, 0
+        itemDetState.open, itemDetState.def = false, nil
+        SetFilterDialog.close()
+    end,
+    restoreView = function(view)
+        hostMode_ = view.mode
+        applyLayout(isCompact())
+        state.tab, state.tabFrom, state.tabSwitchTime = view.tab, view.tab, 0
+        state.scrollY, state.scrollMax, state.scrollVel = view.scrollY, view.scrollMax, 0
+    end,
+    ensureDecomposeReady = ensureDecomposeReady,
+    BlacksmithDecompose = BlacksmithDecompose,
+    clampScroll = clampScroll, SCROLL_WHEEL_STEP = SCROLL_WHEEL_STEP,
+})
+
+--- 显式打开默认是用户持有，也可将自动仓库转为手动仓库。
+function Panel.open(mode, initialTab)
+    openPage(mode, initialTab)
+    equipLink.onManualOpen()
+end
+function Panel.close()
+    equipLink.onManualClose()
+    closePage()
+end
+function Panel.acquireWarehouse(owner, heroId, slotOrNil)
+    return equipLink.acquireWarehouse(owner, heroId, slotOrNil)
+end
+function Panel.releaseWarehouse(owner) equipLink.releaseWarehouse(owner) end
+function Panel.acquireForEquipment(heroId, slotOrNil)
+    return Panel.acquireWarehouse("equipment", heroId, slotOrNil)
+end
+--- 仅教程显式恢复左栏配装仓库；普通 acquire 保持不自动重开契约。
+---@param heroId number|string|nil
+---@param slot string|nil
+---@return boolean changed
+function Panel.ensureTutorialEquipment(heroId, slot)
+    return equipLink.ensureTutorialEquipment(heroId, slot)
+end
+function Panel.releaseForEquipment() Panel.releaseWarehouse("equipment") end
+function Panel.setEquipmentSlotFilter(slotOrNil, heroId)
+    equipLink.setEquipmentSlotFilter(slotOrNil, heroId)
+end
+--- 第一返回值为有效部位，第二返回值为当前英雄；nil 部位表示全部。
+function Panel.getEquipmentSlotFilter() return equipLink.getEquipmentSlotFilter() end
 
 --- 是否打开
 ---@return boolean
@@ -907,6 +951,7 @@ end
 
 --- 更新（惯性滚动 + 关闭动画）
 function Panel.update(dt)
+    equipLink.update()
     if not state.open then return end
     -- 关闭动画结束后真正关闭
     if state.closing then
@@ -1026,7 +1071,7 @@ local function drawBody(vg)
             local didScale = BF.begin(vg, "bp_set_filter", SET_BTN.CX, SET_BTN.CY, SET_BTN.W, SET_BTN.H)
             DarkIcon.drawNine(vg, "btn", SET_BTN.CX - SET_BTN.W * 0.5, SET_BTN.CY - SET_BTN.H * 0.5,
                 SET_BTN.W, SET_BTN.H, { accent = selected > 0 and "green" or "gold" })
-            local label = selected > 0 and ("套装 · " .. selected) or "套装"
+            local label = selected > 0 and I18n.format("套装 · %d", selected) or I18n.lookup("套装")
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 34)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -1035,6 +1080,8 @@ local function drawBody(vg)
             BF.finish(vg, didScale)
         end
     end
+
+    equipLink.drawFilterHint(vg)
 
     -- 6. 网格内容（根据 tab）
     -- [分解入仓 0929] 分解 tab：整体委托给 BlacksmithDecompose（warehouse profile），
@@ -1320,40 +1367,41 @@ function Panel.handleInput(dx, dy)
         return true
     end
 
+    -- 分解设置弹窗模态，不让后面的页签切换穿透。
+    if state.tab == "decompose" and BlacksmithDecompose.isPopupOpen() then
+        return BlacksmithDecompose.handlePopupInput(dx, dy)
+    end
+
+    -- 页签是非模态导航，仓库 hover/pinned 不得吃掉它（只关闭本仓库候选）。
+    local tabHit = TownPageChrome.hitTab(dx, dy, TAB_ITEMS, TAB.SLIDER_W, TAB.SLIDER_H)
+    if tabHit then
+        local item = TAB_ITEMS[tabHit]
+        equipLink.clearCandidate(true)
+        if state.tab ~= item.key then
+            state.tabFrom, state.tabSwitchTime = state.tab, time.elapsedTime
+            state.tab, state.scrollY, state.scrollVel = item.key, 0, 0
+            equipLink.onManualTabChange()
+            if item.key == "decompose" then
+                ensureDecomposeReady()
+                BlacksmithDecompose.onTabSwitch()
+            end
+        end
+        return true
+    end
+    if equipLink.handleFilterInput(dx, dy) then return true end
+    -- 装备格优先识别双击；已钉住的详情不能拦截同格快捷装备。
+    if equipLink.handleEquipClick(dx, dy) then return true end
+
     -- 装备详情优先处理
     if EquipmentDetail.isOpen() then
-        return EquipmentDetail.handleInput(dx, dy)
+        local consumed = EquipmentDetail.handleInput(dx, dy)
+        if consumed then return true end
     end
 
     -- 返回按钮（[横屏左栏] 窗口/左栏模式由宿主中缝侧边返回条接管）
     if TownPageChrome.hitBack(dx, dy, { skip = isCompact(), cx = BTN_BACK.CX, cy = BTN_BACK.CY, w = BTN_BACK.W, h = BTN_BACK.H }) then
         Panel.close()
         return true
-    end
-
-    -- [分解入仓 0929] 自动分解弹窗最优先（模态）
-    if state.tab == "decompose" and BlacksmithDecompose.isPopupOpen() then
-        return BlacksmithDecompose.handlePopupInput(dx, dy)
-    end
-
-    -- Tab 切换
-    do
-        local i = TownPageChrome.hitTab(dx, dy, TAB_ITEMS, TAB.SLIDER_W, TAB.SLIDER_H)
-        if i then
-            local item = TAB_ITEMS[i]
-            if state.tab ~= item.key then
-                state.tabFrom = state.tab
-                state.tabSwitchTime = time.elapsedTime
-                state.tab = item.key
-                state.scrollY = 0
-                if item.key == "decompose" then
-                    ensureDecomposeReady()
-                    BlacksmithDecompose.onTabSwitch()
-                end
-                print("[BackpackPanel] 切换到 " .. item.name)
-            end
-            return true
-        end
     end
 
     -- [分解入仓 0929] 分解 tab：其余输入全部委托 BlacksmithDecompose
@@ -1369,6 +1417,7 @@ function Panel.handleInput(dx, dy)
         if DrawUtil.hitTest(dx, dy, SET_BTN.CX, SET_BTN.CY, SET_BTN.W, SET_BTN.H) then
             BF.trigger("bp_set_filter")
             SetFilterDialog.open(decomposeState.setFilter, {
+                getCounts = ensureGrids().getSetCounts,
                 onChange = function() state.scrollY = 0 end,
             })
             print("[BackpackPanel] 打开套装筛选弹窗")
@@ -1391,61 +1440,7 @@ function Panel.handleInput(dx, dy)
         end
     end
 
-    -- 道具 tab 网格区域点击 → 打开道具详情
-    if state.tab == "item" and dy >= CLIP_TOP and dy <= GRID.CLIP_BOTTOM then
-        local itemList = buildItemList()
-        local totalRows = math.ceil(#itemList / GRID.COLS)
-        for row = 1, totalRows do
-            for col = 1, GRID.COLS do
-                local idx = (row - 1) * GRID.COLS + col
-                local def = itemList[idx]
-                if def then
-                    local cx = CELL_COL_CX[col]
-                    local rawCY = GRID.FIRST_ROW_TOP + (row - 1) * (GRID.CELL_SIZE + GRID.GAP) + GRID.CELL_SIZE * 0.5
-                    local cy = rawCY - state.scrollY
-                    if cy >= CLIP_TOP - GRID.CELL_SIZE * 0.5
-                       and cy <= GRID.CLIP_BOTTOM + GRID.CELL_SIZE * 0.5
-                       and DrawUtil.hitTest(dx, dy, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE) then
-                        itemDetState.open = true
-                        itemDetState.def = def
-                        itemDetState.openTime = time.elapsedTime
-                        print("[BackpackPanel] 打开道具详情: " .. (def.name or "?"))
-                        return true
-                    end
-                end
-            end
-        end
-    end
-
-    -- 装备 tab 网格区域点击 → 打开装备详情
-    if state.tab == "equip" and dy >= CLIP_TOP and dy <= GRID.CLIP_BOTTOM then
-        local equipList = getEquipList()
-        local totalSlots = math.max(#equipList, 35)
-        local totalRows = math.ceil(totalSlots / GRID.COLS)
-
-        for row = 1, totalRows do
-            for col = 1, GRID.COLS do
-                local idx = (row - 1) * GRID.COLS + col
-                local equip = equipList[idx]
-                if equip then
-                    local cx = CELL_COL_CX[col]
-                    local rawCY = GRID.FIRST_ROW_TOP + (row - 1) * (GRID.CELL_SIZE + GRID.GAP) + GRID.CELL_SIZE * 0.5
-                    local cy = rawCY - state.scrollY
-                    -- 检查点击在可见区域内且命中格子
-                    if cy >= CLIP_TOP - GRID.CELL_SIZE * 0.5
-                       and cy <= GRID.CLIP_BOTTOM + GRID.CELL_SIZE * 0.5
-                       and DrawUtil.hitTest(dx, dy, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE) then
-                        -- 背包模式：slot=nil, heroId=nil → 显示"前往强化"按钮
-                        EquipmentDetail.open(equip.seq, nil, nil, true, "backpack",
-                            cx + GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5)
-                        if EquipmentDetail.pin then EquipmentDetail.pin() end
-                        print("[BackpackPanel] 打开装备详情 seq=" .. tostring(equip.seq))
-                        return true
-                    end
-                end
-            end
-        end
-    end
+    if equipLink.clickItem(dx, dy) then return true end
 
     return true  -- 面板打开时消费所有事件
 end
@@ -1456,202 +1451,20 @@ end
 ---@param dx number
 ---@param dy number
 ---@return table|nil
-function Panel.peekEquipAt(dx, dy)
-    if not state.open or state.tab ~= "equip" then return nil end
-    if SetFilterDialog.isOpen() then return nil end  -- 套装弹窗打开时禁止拖拽装备
-    if dy < CLIP_TOP or dy > GRID.CLIP_BOTTOM then return nil end
-    local equipList = getEquipList()
-    for idx, equip in ipairs(equipList) do
-        local col = ((idx - 1) % GRID.COLS) + 1
-        local row = math.floor((idx - 1) / GRID.COLS)
-        local cx = CELL_COL_CX[col]
-        local cy = GRID.FIRST_ROW_TOP + row * (GRID.CELL_SIZE + GRID.GAP) + GRID.CELL_SIZE * 0.5 - state.scrollY
-        if cy >= CLIP_TOP - GRID.CELL_SIZE * 0.5 and cy <= GRID.CLIP_BOTTOM + GRID.CELL_SIZE * 0.5
-            and DrawUtil.hitTest(dx, dy, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE) then
-            local equipData = PlayerStore.Get("equipment")
-            local inventory = equipData and equipData.inventory
-            ---@class BpEquipRaw
-            ---@field slot string|nil
-            ---@field grip string|nil
-            ---@field type string|nil
-            ---@type BpEquipRaw|nil
-            local raw = nil
-            if inventory then
-                raw = inventory[tostring(equip.seq)] --[[@as BpEquipRaw|nil]]
-            end
-            if raw and (not raw.slot or not raw.type) then
-                EquipmentSystem.hydrate(raw)
-            end
-            local slotName = raw and raw.slot or nil
-            local gripName = raw and raw.grip or nil
-            local typeName = raw and raw.type or equip.type
-            return {
-                seq = equip.seq,
-                templateId = equip.templateId,
-                quality = equip.quality or 1,
-                slot = slotName,
-                grip = gripName,
-                equipType = typeName,
-            }
-        end
-    end
-    return nil
-end
+function Panel.peekEquipAt(dx, dy) return equipLink.peekEquipAt(dx, dy) end
+function Panel.haltScroll() equipLink.haltScroll() end
+function Panel.handleHover(dx, dy) equipLink.handleHover(dx, dy) end
+function Panel.handleRightClick(dx, dy) return equipLink.handleRightClick(dx, dy) end
 
-function Panel.haltScroll()
-    state.dragging = false
-    state.scrollVel = 0
-end
-
-function Panel.handleHover(dx, dy)
-    if not state.open then
-        Panel._hoverSeq = nil
-        Panel._hoverSince = nil
-        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
-        return
-    end
-    -- 套装筛选弹窗打开时禁止网格悬停详情（弹窗只在装备 tab 打开）
-    if SetFilterDialog.isOpen() then
-        Panel._hoverSeq = nil
-        Panel._hoverSince = nil
-        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
-        return
-    end
-    -- [0930] 分解 tab：委托 BlacksmithDecompose 悬停浮选详情
-    if state.tab == "decompose" then
-        ensureDecomposeReady()
-        BlacksmithDecompose.handleHover(dx, dy)
-        return
-    end
-    if state.tab ~= "equip" then
-        Panel._hoverSeq = nil
-        Panel._hoverSince = nil
-        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
-        return
-    end
-    if dy < CLIP_TOP or dy > GRID.CLIP_BOTTOM then
-        Panel._hoverSeq = nil
-        Panel._hoverSince = nil
-        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
-        return
-    end
-    local equipList = getEquipList()
-    for idx, equip in ipairs(equipList) do
-        local col = ((idx - 1) % GRID.COLS) + 1
-        local row = math.floor((idx - 1) / GRID.COLS)
-        local cx = CELL_COL_CX[col]
-        local cy = GRID.FIRST_ROW_TOP + row * (GRID.CELL_SIZE + GRID.GAP) + GRID.CELL_SIZE * 0.5 - state.scrollY
-        if cy >= CLIP_TOP - GRID.CELL_SIZE * 0.5 and cy <= GRID.CLIP_BOTTOM + GRID.CELL_SIZE * 0.5
-            and DrawUtil.hitTest(dx, dy, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE) then
-            local seq = tostring(equip.seq)
-            if Panel._hoverSeq ~= seq then
-                Panel._hoverSeq = seq
-                Panel._hoverSince = time.elapsedTime
-                if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
-                return
-            end
-            if (time.elapsedTime - (Panel._hoverSince or 0)) < 0.3 then
-                return
-            end
-            if EquipmentDetail.isOpen and EquipmentDetail.isOpen() then
-                if EquipmentDetail.getOwner and EquipmentDetail.getOwner() ~= "backpack" then return end
-                if EquipmentDetail.isPinned and EquipmentDetail.isPinned() then return end
-                if EquipmentDetail.setAnchor then
-                    EquipmentDetail.setAnchor(cx + GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5)
-                end
-                return
-            end
-            EquipmentDetail.open(equip.seq, nil, nil, true, "backpack",
-                cx + GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5)
-            print("[BackpackPanel] 悬停详情 seq=" .. seq)
-            return
-        end
-    end
-    Panel._hoverSeq = nil
-    Panel._hoverSince = nil
-    if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
-end
-
-function Panel.handleDragBegin(dx, dy)
-    if not state.open then return false end
-    if SetFilterDialog.isOpen() then return true end  -- 套装弹窗打开时禁止列表拖拽
-    if itemDetState.open then return true end
-    if EquipmentDetail.isOpen() then
-        return EquipmentDetail.handleDragBegin(dx, dy)
-    end
-    -- [分解入仓 0929] 分解 tab：滚动+长按委托 BlacksmithDecompose
-    if state.tab == "decompose" then
-        BlacksmithDecompose.handleDragBegin(dx, dy)
-        return true
-    end
-    -- 检查是否在网格区域内
-    if dy >= CLIP_TOP and dy <= GRID.CLIP_BOTTOM then
-        state.dragging = true
-        state.lastDragY = dy
-        state.scrollVel = 0
-        return true
-    end
-    return true  -- 面板打开时消费
-end
-
-function Panel.handleDragMove(dx, dy)
-    if not state.open then return false end
-    if SetFilterDialog.isOpen() then return true end
-    if itemDetState.open then return true end
-    if EquipmentDetail.isOpen() then
-        return EquipmentDetail.handleDragMove(dx, dy)
-    end
-    if state.tab == "decompose" then
-        BlacksmithDecompose.handleDragMove(dx, dy)
-        return true
-    end
-    if state.dragging then
-        local delta = state.lastDragY - dy
-        state.scrollY = state.scrollY + delta
-        state.scrollVel = delta
-        state.lastDragY = dy
-        clampScroll()
-        return true
-    end
-    return true
-end
-
-function Panel.handleDragEnd(dx, dy)
-    if not state.open then return false end
-    if SetFilterDialog.isOpen() then return true end
-    if itemDetState.open then return true end
-    if EquipmentDetail.isOpen() then
-        return EquipmentDetail.handleDragEnd(dx, dy)
-    end
-    if state.tab == "decompose" then
-        BlacksmithDecompose.handleDragEnd(dx, dy)
-        return true
-    end
-    state.dragging = false
-    return true
-end
-
-function Panel.handleScroll(wheel, dx, dy)
-    if not state.open then return false end
-    if SetFilterDialog.isOpen() then return true end  -- 套装弹窗打开时消费但不滚动列表
-    if itemDetState.open then return true end
-    if EquipmentDetail.isOpen() then
-        if dx == nil or EquipmentDetail.containsPoint(dx, dy) then
-            return EquipmentDetail.handleScroll(wheel, dx, dy)
-        end
-    end
-    if state.tab == "decompose" then
-        BlacksmithDecompose.handleScroll(wheel, dx, dy)
-        return true
-    end
-    state.scrollY = state.scrollY - wheel * SCROLL_WHEEL_STEP
-    clampScroll()
-    return true
-end
+function Panel.handleDragBegin(dx, dy) return equipLink.handleDragBegin(dx, dy) end
+function Panel.handleDragMove(dx, dy) return equipLink.handleDragMove(dx, dy) end
+function Panel.handleDragEnd(dx, dy) return equipLink.handleDragEnd(dx, dy) end
+function Panel.handleScroll(wheel, dx, dy) return equipLink.handleScroll(wheel, dx, dy) end
 
 --- 服务端操作结果回调
 ---@param data table
 function Panel.onActionResult(data)
+    equipLink.onActionResult(data)
     if data.action == Protocol.ACTION_TYPES.DECOMPOSE_EQUIP then
         -- [分解入仓 0929] 分解请求由 BlacksmithDecompose（仓库分解 tab）发出，
         -- 回执转发给它（内部 pendingDecompose 门控保证只处理自己发起的请求，

@@ -231,7 +231,6 @@ local function SyncBattleState(dt)
 end
 
 local physW, physH, dpr, logicalW, logicalH
-local scale, screenDesignW, screenDesignH, designOffsetX, designOffsetY
 
 local function RecalcLayout()
     physW  = graphics:GetWidth()
@@ -265,11 +264,6 @@ local function RecalcLayout()
     StandaloneRT.DESIGN_H = DESIGN_H
     StandaloneRT.DrawPreloadOverlay = DrawPreloadOverlay
     StandaloneRT.preload_ = preload_
-    scale = math.min(logicalW / DESIGN_W, logicalH / DESIGN_H)
-    screenDesignW = logicalW / scale
-    screenDesignH = logicalH / scale
-    designOffsetX = (screenDesignW - DESIGN_W) / 2
-    designOffsetY = (screenDesignH - DESIGN_H) / 2
 end
 
 -- ============================================================================
@@ -368,7 +362,12 @@ function Standalone.Start()
         { "UpdateNoticePopup", function() UpdateNoticePopup.init(vg) end },
         { "PlayerInfoPanel", function() PlayerInfoPanel.init(vg) end },
         { "SpinePowerUp", function() SpinePowerUpEffect.init() end },
-        { "TutorialManager", function() TutorialManager.init(vg, PlayerStore) end },
+        { "TutorialManager", function()
+            TutorialManager.init(vg, PlayerStore, function(progress)
+                local session = ClientDispatcher.get("session")
+                if session then session.tutorialProgress = progress end
+            end)
+        end },
         { "bootWiring", function() Standalone._bootWiring() end },
         { "firstStage", function()
             -- [启动优化] 初始阵容同步 + 关卡重载：独立一帧执行
@@ -405,9 +404,10 @@ function Standalone.Start()
 
     -- 5.05 远征等级提升弹窗：监听 PLAYER_LEVEL_UP 事件，并刷新解锁状态
     EventBus.on(GameEvents.PLAYER_LEVEL_UP, function(data)
-        local newLevel = data.level
-        local unlocks = ExpTable.getLevelUnlocks(newLevel)
-        LevelUpPopup.show(newLevel, unlocks)
+        local newLevel = data.toLevel or data.level
+        local fromLevel = data.fromLevel or math.max(1, newLevel - 1)
+        local unlocks = require("config.ExpeditionProgress").getRangeUnlocks(fromLevel, newLevel)
+        LevelUpPopup.show(newLevel, unlocks, fromLevel)
         -- 刷新各模块解锁状态
         CharacterPanel.refreshSlotUnlocks()
         BottomNav.refreshUnlockState(vg)
@@ -439,6 +439,8 @@ end
 function Standalone.Stop()
     StandaloneSave.Flush()  -- [单机存档] 退出前立即落盘
     SpinePowerUpEffect.destroy()
+    LevelUpPopup.destroy()
+    require("ui.widget.DesignWidgetSurface").shutdown()
     if vg then
         nvgDelete(vg)
         vg = nil
@@ -592,6 +594,7 @@ end
 
 --- 首通/入场排队的情景，等奖励弹窗关掉后再用横屏对话条播放
 local function tryPlayPendingStory_()
+    if not TutorialManager.canPlayPendingStory() then return end
     if ScenarioDialogue.isActive() or LetterIntro.isOpen() or IntroCutscene.isActive() then
         return
     end
@@ -904,8 +907,7 @@ function HandleUpdate(eventType, eventData)
     BottomNav.update(dt)
 
     -- [横屏接线 0928] 新手引导每帧驱动（原 ClientUpdate 接线，重构时丢失）
-    -- clearHotspots: 每帧清空热点缓存，本帧渲染时各 UI 模块重新注册
-    TutorialManager.clearHotspots()
+    -- 热点在绘制帧开始时清空，输入始终可读取最近一次实际渲染的坐标。
     TutorialManager.update(dt)
     -- 通知引导当前所在面板（enter_panel_* 类步骤推进；tab2 日志页已移除不再通知）
     do

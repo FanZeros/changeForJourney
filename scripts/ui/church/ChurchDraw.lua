@@ -278,7 +278,7 @@ function M.bind(deps)
                 if clipW > 0 and img.expBarFill >= 0 then
                     nvgSave(vg)
                     nvgIntersectScissor(vg, fillX, fillY, clipW, fillH)
-                    local paint = nvgImagePattern(vg, fillX, fillY, fillW, fillH, 0, img.expBarFill, 1.0)
+                    local paint = nvgImagePattern(vg, fillX, fillY, fillW, fillH, 0, img.expBarFill, 1.0) --[[@as NVGpaint]]
                     nvgBeginPath(vg)
                     nvgRect(vg, fillX, fillY, fillW, fillH)
                     nvgFillPaint(vg, paint)
@@ -451,25 +451,6 @@ function M.bind(deps)
             textCX = CHURCH.NAME_TEXT_CX, textCY = CHURCH.NAME_TEXT_CY, font = CHURCH.NAME_FONT_SIZE,
         })
         nvgRestore(vg)
-
-        -- ================== 角色列表浮层（独立绘制，不被下半部分遮盖） ==================
-        -- 仅在展开状态（slotExpanded）时绘制；选中远征队员后 slotExpanded=false 但 slotLiftProgress 保持1.0
-        if false and (state.slotExpanded or state.rosterSlideProgress > 0.01) and state.slotLiftProgress > 0.01 then
-            local rosterAlpha = state.slotLiftProgress * state.rosterSlideProgress
-            nvgSave(vg)
-            nvgGlobalAlpha(vg, rosterAlpha)
-
-            -- 列表滑入/滑出偏移（从下方滑入/向下滑出）
-            local slideOY = ANIM.ROSTER_SLIDE_DIST * (1.0 - state.rosterSlideProgress)
-            nvgTranslate(vg, 0, slideOY)
-
-            -- 直接绘制列表（无黑色遮罩，列表背景图自带底色）
-            -- 列表背景底部不截断，直接显示到设计分辨率底部
-            drawRosterList(vg)
-
-            nvgGlobalAlpha(vg, 1.0)
-            nvgRestore(vg)
-        end
 
         -- ================== 卡片飞行动画 ==================
         if state.selectAnim and state.selectedHeroId then

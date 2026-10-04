@@ -57,7 +57,8 @@ local NODE_FILL = {
 
 -- 底栏（切片底 = SY+H = 1812，文字区紧跟其下）
 local SUB_TITLE_CX, SUB_TITLE_CY = 540, 1860
-local EFFECT_CX, EFFECT_CY = 540, 1930
+-- 效果说明下移约 2/3 行（36 字号默认行高 49，取整为 33），避免首行压住阶段标题。
+local EFFECT_CX, EFFECT_CY = 540, 1963
 local EFFECT_W, EFFECT_H   = 910, 139
 local EFFECT_FONT           = 36
 -- 底栏操作：碎片标识在左、嵌合按钮在右（放大）
@@ -454,8 +455,8 @@ function M.draw(vg, heroId)
     local costText = selectedCost > 0 and ("/" .. selectedCost) or ""
     local fullText = shardNumText .. costText
     DrawUtil.drawShardIcon(vg, heroId, SHARD_ICON_CX, SHARD_ROW_CY, SHARD_ICON_SIZE, 1.0)
-    -- 碎片数量：够=亮青，不够=棕色
-    local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0x8d, 0x5f, 0x41 }
+    -- 碎片数量：够=亮青，不够=灰蓝色
+    local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0x8b, 0x95, 0xa5 }
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 66)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
@@ -483,10 +484,10 @@ function M.draw(vg, heroId)
     end
     local _bfAct = BF.begin(vg, "awp_activate", BTN_CX, BTN_CY, BTN_W, BTN_H)
     drawImageCentered(vg, imgActivateBtn, BTN_CX, BTN_CY, BTN_W, BTN_H, btnAlpha)
-    -- 按钮文字：可嵌合/已嵌合=亮骨白；条件未满足才用棕色。
+    -- 按钮文字：可嵌合/已嵌合=亮骨白；条件未满足才用灰蓝色。
     local tr, tg, tb = 244, 237, 224
     if btnDisabled and not currentNodeActive then
-        tr, tg, tb = 0x8d, 0x5f, 0x41
+        tr, tg, tb = 0x8b, 0x95, 0xa5
     end
     drawTextStroke(vg, BTN_CX, BTN_CY, btnText, BTN_TEXT_FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 4,

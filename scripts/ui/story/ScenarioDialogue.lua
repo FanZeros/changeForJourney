@@ -8,16 +8,13 @@ local DrawUtil = require("core.DrawUtil")
 local GameConfig = require("config.GameConfig")
 local HeroFrame = require("ui.widget.HeroFrame")
 local EventBus = require("core.EventBus")
+local I18n = require("core.I18n")
+local Story = require("core.I18nStory")
+local Display = require("ui.story.StoryDisplay")
+local ScenarioConfig = require("config.ScenarioDialogueConfig")
+local HeroAssetUtil = require("config.HeroAssetUtil")
 
 local ScenarioDialogue = {}
-
---- 对话真正结束（自然播完/跳过）时广播。
---- 排队类调用方（如 HeroScenario.pending_）订阅此事件及时补播，
---- 避免"积压请求要等下次交互才被消化"的延迟补播体感。
---- reset()（硬清场）不广播。
-local function emitFinished_(reason)
-    EventBus.emit("scenario_dialogue_finished", { reason = reason, mode = mode_ })
-end
 
 -- ======================== 设计常量 ========================
 local DW = GameConfig.Design.WIDTH   -- 1080
@@ -49,6 +46,13 @@ local active_     = false
 
 -- 对话配置
 local mode_       = "large"     -- "large" | "small"
+
+--- 对话真正结束（自然播完/跳过）时广播；硬重置不广播。
+--- 必须放在 mode_ 声明之后，闭包才能读取当前对话模式。
+local function emitFinished_(reason)
+    EventBus.emit("scenario_dialogue_finished", { reason = reason, mode = mode_ })
+end
+
 local steps_      = {}          -- { {characterId, name, text}, ... }
 local stepIndex_  = 0
 local onFinishCb_ = nil
@@ -59,6 +63,26 @@ local textElapsed_ = 0
 local typingDone_  = false
 local totalChars_  = 0
 local prevCharsShown_ = 0  -- 上一帧已显示字符数，用于检测新字符触发 blip
+local displayText_ = ""
+local displaySource_ = ""
+local displayLanguage_ = ""
+local displayStep_ = 0
+
+-- 当前句全文先翻译；语言变化清显示缓存，不推进步骤或触发奖励。
+local function syncDisplay()
+    local step = steps_[stepIndex_]
+    local source = step and step.text or ""
+    local lang = I18n.get()
+    if displayStep_ ~= stepIndex_ or displaySource_ ~= source or displayLanguage_ ~= lang then
+        local sameStep = displayStep_ == stepIndex_ and displaySource_ == source
+        local wasDone = sameStep and typingDone_
+        displayText_ = Display.text(source)
+        displaySource_, displayLanguage_, displayStep_ = source, lang, stepIndex_
+        totalChars_ = Story.length(displayText_)
+        textElapsed_ = wasDone and (totalChars_ / TYPEWRITER_CPS + 1) or 0
+        typingDone_, prevCharsShown_ = wasDone, wasDone and totalChars_ or 0
+    end
+end
 
 -- 图片句柄
 local imgBG_      = -1   -- 大情景全屏背景图
@@ -69,7 +93,8 @@ local portraitCache_ = {}
 -- 立绘动画状态
 local portraitAnimState_ = "idle"    -- "idle" | "exiting" | "entering"
 local portraitAnimT_     = 0
-local exitCharId_        = nil       -- 正在退出的角色 ID
+---@type table|nil
+local exitStep_ = nil           -- 固定持有退出步骤，快速连点不能替换正在退出的立绘
 
 -- 睁眼入场状态
 local eyeOpenActive_   = false
@@ -153,9 +178,10 @@ local function getCachedImage(cache, key, path)
     return cache[key]
 end
 
-local function getAvatarImage(characterId)
-    return getCachedImage(avatarCache_, characterId,
-        require("config.HeroAssetUtil").getIconPath(characterId))
+local function getAvatarImage(step)
+    local appearance = ScenarioConfig.getAppearance(step)
+    local path = appearance.iconPath or (appearance.heroId and HeroAssetUtil.getIconPath(appearance.heroId))
+    return getCachedImage(avatarCache_, path, path)
 end
 
 local function getCgImage(step)
@@ -169,16 +195,14 @@ local function getCgImage(step)
     return getCachedImage(cgCache_, path, path)
 end
 
-local function getPortraitImage(characterId)
-    if not characterId then return -1 end
-    local cached = portraitCache_[characterId]
-    if cached then return cached end
-
-    local path = require("config.HeroAssetUtil").getPortraitPath(characterId) or ""
-    local handle = nvgCreateImage(vg_, path, 0)
-    portraitCache_[characterId] = handle
-    print("[ScenarioDialogue] loadPortrait: id=" .. characterId .. " handle=" .. handle)
-    return handle or -1
+local function getPortraitImage(step)
+    local appearance = ScenarioConfig.getAppearance(step)
+    local path = appearance.portraitPath or (appearance.heroId and HeroAssetUtil.getPortraitPath(appearance.heroId))
+    if not path then return -1 end
+    if portraitCache_[path] ~= nil then return portraitCache_[path] end
+    local handle = getCachedImage(portraitCache_, path, path)
+    print("[ScenarioDialogue] loadPortrait: name=" .. tostring(step.name) .. " path=" .. path .. " handle=" .. handle)
+    return handle
 end
 
 -- ======================== 公开接口 ========================
@@ -224,8 +248,10 @@ function ScenarioDialogue.show(config)
     stepIndex_      = 1
     textElapsed_    = 0
     typingDone_     = false
-    totalChars_     = utf8.len(steps_[1].text) or 0
+    totalChars_     = 0
     prevCharsShown_ = 0
+    displayStep_    = 0
+    syncDisplay()
     active_         = true
 
     -- 睁眼入场：眼皮从全闭缓缓打开，背后是完整的情景画面
@@ -248,8 +274,7 @@ function ScenarioDialogue.show(config)
         portraitAnimT_     = 0
     end
 
-    exitCharId_ = nil
-
+    exitStep_ = nil
     print("[ScenarioDialogue] show: mode=" .. mode_ .. " steps=" .. #steps_
         .. " title=" .. tostring(title_))
 end
@@ -258,6 +283,7 @@ end
 ---@param dt number 帧间隔
 function ScenarioDialogue.update(dt)
     if not active_ then return end
+    syncDisplay()
 
     -- 消失动画推进
     if dismissing_ then
@@ -324,7 +350,7 @@ function ScenarioDialogue.update(dt)
         if charsShown > prevCharsShown_ then
             local step = steps_[stepIndex_]
             if step and step.text then
-                local ch = utf8sub(step.text, charsShown, charsShown)
+                local ch = utf8sub(displayText_, charsShown, charsShown)
                 if isChinese(ch) then
                     playBlip()
                 end
@@ -338,17 +364,26 @@ function ScenarioDialogue.update(dt)
 end
 
 --- 横屏立绘（逻辑坐标，不走 1080×2400）
----@param characterId number|nil
+---@param step table|nil
 ---@param alpha number
 ---@param cx number
 ---@param cy number
 ---@param pw number
 ---@param ph number
 ---@param offsetX number|nil
-local function drawPortraitAt(characterId, alpha, cx, cy, pw, ph, offsetX)
-    if not characterId or alpha <= 0.01 then return end
-    local img = getPortraitImage(characterId)
+local function drawPortraitAt(step, alpha, cx, cy, pw, ph, offsetX)
+    if not step or alpha <= 0.01 then return end
+    local img = getPortraitImage(step)
     if img < 0 then return end
+    local appearance = ScenarioConfig.getAppearance(step)
+    if appearance.contain then
+        local srcW, srcH = nvgImageSize(vg_, img)
+        if srcW > 0 and srcH > 0 then
+            local scale = math.min(pw / srcW, ph / srcH)
+            DrawUtil.drawImageCentered(vg_, img, cx + (offsetX or 0), cy, srcW * scale, srcH * scale, alpha)
+            return
+        end
+    end
     DrawUtil.drawImageCover(vg_, img, cx + (offsetX or 0), cy, pw, ph, alpha)
 end
 
@@ -357,6 +392,7 @@ end
 ---@param h number
 local function drawLandscape(w, h)
     if not active_ or stepIndex_ < 1 or stepIndex_ > #steps_ then return end
+    syncDisplay()
     local step = steps_[stepIndex_]
 
     local dismissAlpha = 1.0
@@ -405,20 +441,20 @@ local function drawLandscape(w, h)
         local slide = w * 0.045
         local offsetX = 0
         local alpha = dismissAlpha
-        local drawId = step.characterId
+        local drawStep = step
         if not dismissing_ and portraitAnimState_ == "exiting" then
             local prog = math.min(1, portraitAnimT_ / PORTRAIT_ANIM_DUR)
             local ease = easeInCubic(prog)
             alpha = dismissAlpha * (1.0 - ease)
             offsetX = -slide * ease
-            drawId = exitCharId_ or step.characterId
+            drawStep = exitStep_ or step
         elseif not dismissing_ and portraitAnimState_ == "entering" then
             local prog = math.min(1, portraitAnimT_ / PORTRAIT_ANIM_DUR)
             local ease = easeOutCubic(prog)
             alpha = dismissAlpha * ease
             offsetX = slide * (1.0 - ease)
         end
-        drawPortraitAt(drawId, alpha, portraitCx, portraitCy, portraitW, portraitH, offsetX)
+        drawPortraitAt(drawStep, alpha, portraitCx, portraitCy, portraitW, portraitH, offsetX)
     end
 
     if showDialogue then
@@ -438,17 +474,18 @@ local function drawLandscape(w, h)
     nvgStrokeWidth(vg_, math.max(1.5, h * 0.002))
     nvgStroke(vg_)
 
-    local showAvatar = step.characterId ~= nil
+    local appearance = ScenarioConfig.getAppearance(step)
+    local showAvatar = appearance.heroId ~= nil or appearance.iconPath ~= nil
     local avatarSize = showAvatar and math.max(54, h * 0.078) or 0
     local avatarX = barX + w * 0.018
     local avatarY = barY - avatarSize * 0.34
-    local avatarImg = showAvatar and getAvatarImage(step.characterId) or -1
-    -- [统一角色框] 剧情头像：CG 句也保留角色头像，不再只留名字。旁白没有角色则不画空框。
+    local avatarImg = showAvatar and getAvatarImage(step) or -1
+    -- [统一角色框] 头像与立绘共用剧情美术映射；独立NPC卡图不伪造英雄ID。
     if showAvatar then
         HeroFrame.draw(vg_, {
             cx = avatarX + avatarSize * 0.5, cy = avatarY + avatarSize * 0.5,
             size = avatarSize, radius = (avatarSize + 6) * 0.18,
-            heroId = step.characterId,
+            heroId = appearance.heroId,
             iconHandle = avatarImg,
             state = "owned",
             alpha = dismissAlpha,
@@ -467,8 +504,14 @@ local function drawLandscape(w, h)
     nvgStrokeWidth(vg_, 1.5)
     nvgStroke(vg_)
     if step.name then
-        DrawUtil.drawTextStroke(vg_, chipX + chipW * 0.5, chipY + chipH * 0.52, step.name,
-            math.max(20, h * 0.028),
+        local name = Display.text(step.name)
+        local nameSize = math.max(20, h * 0.028)
+        nvgFontFace(vg_, "sans")
+        nvgFontSize(vg_, nameSize)
+        local nameWidth = I18n.displayBounds(vg_, 0, 0, name)
+        if nameWidth > chipW - 16 then nameSize = nameSize * (chipW - 16) / nameWidth end
+        DrawUtil.drawTextStroke(vg_, chipX + chipW * 0.5, chipY + chipH * 0.52, name,
+            nameSize,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 236, 196, 3,
             { alpha = dismissAlpha, strokeColor = { 0x31, 0x24, 0x24 } })
@@ -478,25 +521,24 @@ local function drawLandscape(w, h)
     local textY = barY + barH * 0.22
     local textW = barW - w * 0.07
     if step.text and textElapsed_ > 0 and dismissAlpha > 0.01 then
-        local charCount = utf8.len(step.text) or 0
-        local charsToShow = math.min(charCount, math.floor(textElapsed_ * TYPEWRITER_CPS))
+        local charsToShow = math.min(totalChars_, math.floor(textElapsed_ * TYPEWRITER_CPS))
         if charsToShow > 0 then
             nvgFontFace(vg_, "sans")
-            nvgFontSize(vg_, math.max(20, h * 0.030))
             nvgTextLineHeight(vg_, 1.35)
             nvgTextAlign(vg_, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+            local availableH = barY + barH - h * 0.055 - textY
+            local font, rows = Display.fitLayout(vg_, displayText_, textW, availableH,
+                math.max(20, h * 0.030), math.max(12, h * 0.018), 1.35)
+            nvgFontSize(vg_, font)
             nvgFillColor(vg_, nvgRGBA(232, 220, 196, math.floor(255 * dismissAlpha)))
-            nvgTextBox(vg_, textX, textY, textW, utf8sub(step.text, 1, charsToShow), nil)
+            Display.drawRows(vg_, textX, textY, rows, charsToShow, font * 1.35)
         end
     end
 
     nvgFontFace(vg_, "sans")
     nvgFontSize(vg_, math.max(14, h * 0.020))
-    nvgTextAlign(vg_, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg_, nvgRGBA(232, 200, 120, math.floor(170 * dismissAlpha)))
-    local chapter = title_ or (mode_ == "large" and "情景" or "闲谈")
-    nvgText(vg_, w * 0.04, h * 0.055, chapter, nil)
     nvgTextAlign(vg_, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg_, nvgRGBA(232, 200, 120, math.floor(170 * dismissAlpha)))
     nvgText(vg_, w * 0.96, h * 0.055, string.format("%d / %d", stepIndex_, #steps_), nil)
 
     if typingDone_ and not dismissing_ then
@@ -504,7 +546,7 @@ local function drawLandscape(w, h)
         nvgFontSize(vg_, math.max(16, h * 0.022))
         nvgTextAlign(vg_, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg_, nvgRGBA(232, 200, 120, math.floor(220 * blink)))
-        nvgText(vg_, barX + barW - w * 0.02, barY + barH - h * 0.028, "轻触继续", nil)
+        Display.draw(vg_, barX + barW - w * 0.02, barY + barH - h * 0.028, "轻触继续")
     end
     end
 
@@ -530,6 +572,7 @@ end
 ---@param frameW number|nil
 ---@param frameH number|nil
 function ScenarioDialogue.draw(frameW, frameH)
+    if active_ then syncDisplay() end
     local w = frameW
     local h = frameH
     if type(w) ~= "number" or type(h) ~= "number" or w <= 0 or h <= 0 then
@@ -544,6 +587,7 @@ end
 --- 打字已完成：进入下一步
 function ScenarioDialogue.advance()
     if not active_ then return end
+    syncDisplay()
 
     -- 睁眼期间点击 → 跳过睁眼，直接进入对话
     if eyeOpenActive_ or eyeHoldActive_ then
@@ -562,8 +606,9 @@ function ScenarioDialogue.advance()
         return
     end
 
-    -- 保存当前角色 ID
-    local prevCharId = steps_[stepIndex_] and steps_[stepIndex_].characterId
+    -- 保存当前美术来源；旧剧情编号相同，也可能是不同的说话人。
+    local prevStep = steps_[stepIndex_]
+    local prevAppearance = ScenarioConfig.getAppearance(prevStep)
 
     -- 消失动画期间忽略点击
     if dismissing_ then return end
@@ -592,15 +637,15 @@ function ScenarioDialogue.advance()
         -- 重置为新步骤
         textElapsed_    = 0
         typingDone_     = false
-        totalChars_     = utf8.len(steps_[stepIndex_].text) or 0
+        syncDisplay()
         prevCharsShown_ = 0
 
-        -- 立绘动画：角色变化时触发退出→进入
-        local newCharId = steps_[stepIndex_].characterId
-        if prevCharId and newCharId and prevCharId ~= newCharId then
-            exitCharId_        = prevCharId
-            portraitAnimState_  = "exiting"
-            portraitAnimT_      = 0
+        -- 立绘动画按实际美术来源切换，不把镜像和本体误判为其他英雄。
+        local newAppearance = ScenarioConfig.getAppearance(steps_[stepIndex_])
+        if prevAppearance.heroId ~= newAppearance.heroId or prevAppearance.portraitPath ~= newAppearance.portraitPath then
+            exitStep_ = prevStep
+            portraitAnimState_ = "exiting"
+            portraitAnimT_ = 0
         end
 
         print("[ScenarioDialogue] step " .. stepIndex_ .. "/" .. #steps_)
@@ -654,13 +699,14 @@ function ScenarioDialogue.reset()
     imgBG_       = -1
     portraitAnimState_ = "idle"
     portraitAnimT_     = 0
-    exitCharId_        = nil
+    exitStep_          = nil
     eyeOpenActive_     = false
     eyeOpenT_          = 0
     eyeOpenness_       = 0
     dismissing_        = false
     dismissT_          = 0
     title_             = nil
+    displayText_, displaySource_, displayLanguage_, displayStep_ = "", "", "", 0
 end
 
 return ScenarioDialogue

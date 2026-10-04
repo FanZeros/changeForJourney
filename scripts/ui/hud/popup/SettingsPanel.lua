@@ -31,6 +31,7 @@ local state = {
     muted = false,
     showDamageNumbers = true,
     showEffects = true,
+    showSetIcons = true,  -- 装备格左下角套装徽记
     -- 滑块拖拽
     draggingSlider = nil,  -- nil / "bgm" / "sfx"
 }
@@ -112,8 +113,16 @@ local CODE_TXT = {
     A = 179,  -- 纯黑 70%
 }
 
-local LANG_CHIP_W, LANG_CHIP_H, LANG_CHIP_GAP = 150, 44, 8
-local LANG_ROW_GAP = 52
+local LANG_CHIP_W, LANG_CHIP_H, LANG_CHIP_GAP = 150, 44, 10
+local LANG_ROW_GAP = 10
+local LANG_PER_ROW = 2
+local LANG_ROWS = math.ceil(#I18n.LANGS / LANG_PER_ROW)
+-- 三行从原语言条目向下排，首行不侵入特效开关的点击区。
+local LANG_EXTRA_H = (LANG_ROWS - 1) * (LANG_CHIP_H + LANG_ROW_GAP)
+local LANGUAGE_CY = ITEM5_CY + LANG_EXTRA_H * 0.5
+-- 保持背景顶边，向下覆盖兑换码按钮及底部留白；绘制和命中共用尺寸。
+local PANEL_EXTRA_H = math.max(LANG_EXTRA_H,
+    CODE_BTN.CY + LANG_EXTRA_H + CODE_BTN.H * 0.5 + BG.IB - (BG.CY + BG.H * 0.5))
 
 -- ======================== 本地设置持久化 ========================
 
@@ -129,6 +138,7 @@ local function saveSettings()
             muted = state.muted == true,
             showDamageNumbers = state.showDamageNumbers ~= false,
             showEffects = state.showEffects ~= false,
+            showSetIcons = state.showSetIcons ~= false,
             language = I18n.get(),
         })
         if ok then
@@ -162,6 +172,7 @@ local function loadSettings()
         if type(data.showEffects) == "boolean" then
             state.showEffects = data.showEffects
         end
+        if type(data.showSetIcons) == "boolean" then state.showSetIcons = data.showSetIcons end
         if type(data.language) == "string" then
             I18n.set(data.language)
         end
@@ -256,6 +267,16 @@ function SettingsPanel.isDamageNumbersEnabled()
     return state.showDamageNumbers ~= false
 end
 
+function SettingsPanel.isSetIconsEnabled()
+    return state.showSetIcons ~= false
+end
+
+function SettingsPanel.setSetIconsEnabled(enabled)
+    state.showSetIcons = enabled == true
+    saveSettings()
+    print("[SettingsPanel] 套装角标显示：" .. tostring(state.showSetIcons))
+end
+
 function SettingsPanel.isEffectsEnabled()
     return state.showEffects ~= false
 end
@@ -300,17 +321,20 @@ end
 ---@param itemCY number
 ---@return table[]
 local function langChipRects(itemCY)
-    local perRow = 3
-    local rowW = perRow * LANG_CHIP_W + (perRow - 1) * LANG_CHIP_GAP
+    local n = #I18n.LANGS
+    local rows = math.ceil(n / LANG_PER_ROW)
     local right = ITEM1_BG.CX + ITEM1_BG.W * 0.5 - 12
-    local x0 = right - rowW
     local rects = {}
     for i, lang in ipairs(I18n.LANGS) do
-        local row = math.floor((i - 1) / perRow)
-        local col = (i - 1) % perRow
+        local row = math.floor((i - 1) / LANG_PER_ROW)
+        local col = (i - 1) % LANG_PER_ROW
+        local inRow = math.min(LANG_PER_ROW, n - row * LANG_PER_ROW)
+        local rowW = inRow * LANG_CHIP_W + (inRow - 1) * LANG_CHIP_GAP
+        local x0 = right - rowW
+        local y0 = itemCY - (rows - 1) * (LANG_CHIP_H + LANG_ROW_GAP) * 0.5
         rects[i] = {
             x = x0 + col * (LANG_CHIP_W + LANG_CHIP_GAP),
-            y = itemCY - LANG_CHIP_H * 0.5 + row * LANG_ROW_GAP,
+            y = y0 + row * (LANG_CHIP_H + LANG_ROW_GAP) - LANG_CHIP_H * 0.5,
             w = LANG_CHIP_W,
             h = LANG_CHIP_H,
             id = lang.id,
@@ -381,8 +405,8 @@ function SettingsPanel.handleInput(dx, dy)
     -- 同帧保护：防止 open() 同帧的点击事件立即关闭弹窗
     if time.elapsedTime - state.animTime < 0.05 then return true end
 
-    -- 点击弹窗外部 → 关闭
-    if not hitTest(dx, dy, BG.CX, BG.CY, BG.W, BG.H) then
+    -- 点击弹窗外部 → 关闭（语言三行后背景向下加高）
+    if not hitTest(dx, dy, BG.CX, BG.CY + PANEL_EXTRA_H * 0.5, BG.W, BG.H + PANEL_EXTRA_H) then
         SettingsPanel.close()
         return true
     end
@@ -419,12 +443,12 @@ function SettingsPanel.handleInput(dx, dy)
         return true
     end
 
-    if hitLanguageChips(dx, dy, ITEM5_CY) then
+    if hitLanguageChips(dx, dy, LANGUAGE_CY) then
         return true
     end
 
     -- 兑换码按钮
-    if hitTest(dx, dy, CODE_BTN.CX, CODE_BTN.CY, CODE_BTN.W, CODE_BTN.H) then
+    if hitTest(dx, dy, CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H, CODE_BTN.W, CODE_BTN.H) then
         BF.trigger("set_code")
         print("[SettingsPanel] 兑换码按钮被点击 → 打开兑换码面板")
         RedeemCodePanel.open()
@@ -631,8 +655,9 @@ function SettingsPanel.draw(vg)
     nvgScale(vg, animProgress, animProgress)
     nvgTranslate(vg, -BG.CX, -BG.CY)
 
-    -- ── 2. 弹窗背景框（九宫格）──
-    DarkIcon.drawNine(vg, "panel", BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5, BG.W, BG.H, { titleH = BG.IT })
+    -- ── 2. 弹窗背景框（九宫格，语言三行后加高）──
+    DarkIcon.drawNine(vg, "panel", BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5,
+        BG.W, BG.H + PANEL_EXTRA_H, { titleH = BG.IT })
 
     -- ── 3. 标题 "设置" ──
     drawTextStroke(vg, TTL.X, TTL.Y, I18n.t("settings"),
@@ -653,12 +678,12 @@ function SettingsPanel.draw(vg)
     drawToggleItem(vg, ITEM4_CY, I18n.t("show_effects"), state.showEffects ~= false)
 
     -- ── 8.3 语言 ──
-    drawLanguageItem(vg, ITEM5_CY)
+    drawLanguageItem(vg, LANGUAGE_CY)
 
     -- ── 9. 兑换码按钮（暖金，不再用绿色贴图）──
-    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY, CODE_BTN.W, CODE_BTN.H)
+    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H, CODE_BTN.W, CODE_BTN.H)
     DarkIcon.drawNine(vg, "btn",
-        CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY - CODE_BTN.H * 0.5,
+        CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY + LANG_EXTRA_H - CODE_BTN.H * 0.5,
         CODE_BTN.W, CODE_BTN.H, { accent = "gold" })
 
     -- ── 10. "兑换码" 文本 ──
@@ -666,7 +691,7 @@ function SettingsPanel.draw(vg)
     nvgFontSize(vg, CODE_TXT.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-    nvgText(vg, CODE_TXT.X, CODE_TXT.Y, I18n.t("redeem_code"), nil)
+    nvgText(vg, CODE_TXT.X, CODE_TXT.Y + LANG_EXTRA_H, I18n.t("redeem_code"), nil)
     BF.finish(vg, _bf1)
 
     nvgRestore(vg)
@@ -689,16 +714,16 @@ function SettingsPanel.drawEmbedded(vg, yOffset)
     drawSettingsItem(vg, ITEM2_CY, I18n.t("sfx"), state.sfxVolume)
     drawToggleItem(vg, ITEM3_CY, I18n.t("damage_numbers"), state.showDamageNumbers ~= false)
     drawToggleItem(vg, ITEM4_CY, I18n.t("show_effects"), state.showEffects ~= false)
-    drawLanguageItem(vg, ITEM5_CY)
-    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + oy, CODE_BTN.W, CODE_BTN.H)
+    drawLanguageItem(vg, LANGUAGE_CY)
+    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H + oy, CODE_BTN.W, CODE_BTN.H)
     DarkIcon.drawNine(vg, "btn",
-        CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY - CODE_BTN.H * 0.5,
+        CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY + LANG_EXTRA_H - CODE_BTN.H * 0.5,
         CODE_BTN.W, CODE_BTN.H, { accent = "gold" })
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, CODE_TXT.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-    nvgText(vg, CODE_TXT.X, CODE_TXT.Y, I18n.t("redeem_code"), nil)
+    nvgText(vg, CODE_TXT.X, CODE_TXT.Y + LANG_EXTRA_H, I18n.t("redeem_code"), nil)
     BF.finish(vg, _bf1)
     nvgRestore(vg)
     RedeemCodePanel.draw(vg)
@@ -738,10 +763,10 @@ function SettingsPanel.handleEmbeddedInput(dx, dy, yOffset)
         toggleEffects()
         return true
     end
-    if hitLanguageChips(dx, ly, ITEM5_CY) then
+    if hitLanguageChips(dx, ly, LANGUAGE_CY) then
         return true
     end
-    if hitTest(dx, ly, CODE_BTN.CX, CODE_BTN.CY, CODE_BTN.W, CODE_BTN.H) then
+    if hitTest(dx, ly, CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H, CODE_BTN.W, CODE_BTN.H) then
         BF.trigger("set_code")
         RedeemCodePanel.open()
         return true

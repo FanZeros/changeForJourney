@@ -9,6 +9,7 @@ local DarkIcon = require("core.DarkIcon")
 local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local BF = require("systems.ButtonFeedback")
 local I18n = require("core.I18n")
+local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 
 local SetFilterDialog = {}
 local text = DrawUtil.drawTextStroke
@@ -21,6 +22,7 @@ local ROW = { top = 566, h = 88, x = 70, w = 940 }
 local DOT = { cx = 140, r = 18 }
 local NAME_X = 186
 local CHECK = { cx = 938, size = 54 }
+local COUNT_X = CHECK.cx - CHECK.size * 0.5 - 32
 local BTN = { cy = 1836, w = 300, h = 96, clearCX = 330, doneCX = 750 }
 
 local imgCheck = -1
@@ -33,6 +35,8 @@ local sel_ = nil
 local onChange_ = nil
 ---@type (fun()|nil)
 local onDone_ = nil
+---@type (fun(): table<string, integer>)|nil
+local getCounts_ = nil
 
 local function ensureInit(vg)
     if inited or not vg then return end
@@ -61,11 +65,12 @@ end
 
 --- 打开弹窗。sel 为调用方持有的集合表引用，勾选直接改写该表。
 ---@param sel table<string, boolean> 勾选集合：键=套装id 或 "none"（无套装）；空集合=全部
----@param opts? { onChange?: fun(), onDone?: fun() }
+---@param opts? { onChange?: fun(), onDone?: fun(), getCounts?: fun(): table<string, integer> }
 function SetFilterDialog.open(sel, opts)
     sel_ = sel
     onChange_ = opts and opts.onChange or nil
     onDone_ = opts and opts.onDone or nil
+    getCounts_ = opts and opts.getCounts or nil
     open_ = true
     require("systems.GameSFX").playUIMove(1)
     print("[SetFilterDialog] open")
@@ -74,7 +79,7 @@ end
 function SetFilterDialog.close()
     if not open_ then return end
     open_ = false
-    sel_, onChange_, onDone_ = nil, nil, nil
+    sel_, onChange_, onDone_, getCounts_ = nil, nil, nil, nil
     print("[SetFilterDialog] close")
 end
 
@@ -142,6 +147,8 @@ function SetFilterDialog.draw(vg)
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 4)
 
     local rows = buildRows()
+    -- 每帧只统计一次，掉落/分解/领取后不必重开弹窗即可看到最新数量。
+    local counts = getCounts_ and getCounts_() or nil
     for index, row in ipairs(rows) do
         local cy = rowCY(index)
         local checked = sel_ and sel_[row.key] == true
@@ -151,24 +158,34 @@ function SetFilterDialog.draw(vg)
         nvgRoundedRect(vg, ROW.x + 24, cy - ROW.h * 0.5 + 6, ROW.w - 48, ROW.h - 12, 12)
         nvgFillColor(vg, nvgRGBA(255, 244, 214, checked and 26 or 12))
         nvgFill(vg)
-        -- 套装色圆点（无套装=空心灰圈）
-        nvgBeginPath(vg)
-        nvgCircle(vg, DOT.cx + 24, cy, DOT.r)
-        if row.color then
-            nvgFillColor(vg, nvgRGBA(row.color[1], row.color[2], row.color[3], 255))
-            nvgFill(vg)
-            nvgStrokeColor(vg, nvgRGBA(20, 16, 12, 200))
-        else
-            nvgFillColor(vg, nvgRGBA(90, 84, 74, 255))
+        -- 套装徽记取代色点；无套装或加载失败保持灰圈/配色兜底。
+        if not row.color or not EquipmentSetIcon.draw(vg, row.key, DOT.cx + 24, cy, 58, 1) then
+            nvgBeginPath(vg)
+            nvgCircle(vg, DOT.cx + 24, cy, DOT.r)
+            local color = row.color or { 90, 84, 74 }
+            nvgFillColor(vg, nvgRGBA(color[1], color[2], color[3], 255))
             nvgFill(vg)
             nvgStrokeColor(vg, nvgRGBA(160, 150, 130, 200))
+            nvgStrokeWidth(vg, 2)
+            nvgStroke(vg)
         end
-        nvgStrokeWidth(vg, 2)
-        nvgStroke(vg)
-        -- 名称
-        text(vg, NAME_X + 24, cy, row.name, 36, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        -- 名称与数量分列，译名过长时裁在名称区，不能遮住数量/勾选框。
+        nvgSave(vg)
+        if counts then nvgIntersectScissor(vg, NAME_X + 34, cy - 30, 470, 60) end
+        text(vg, NAME_X + 34, cy, row.name, 36, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
             row.color and row.color[1] or 181, row.color and row.color[2] or 166,
             row.color and row.color[3] or 143, 3)
+        nvgRestore(vg)
+        if counts then
+            local count = counts[row.key] or 0
+            local countText = tostring(count)
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 34)
+            local countWidth = nvgTextBounds(vg, 0, 0, countText)
+            local fontSize = math.min(34, 34 * 164 / math.max(1, countWidth))
+            text(vg, COUNT_X, cy, countText, fontSize, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
+                count > 0 and 244 or 140, count > 0 and 237 or 132, count > 0 and 224 or 116, 2)
+        end
         -- 勾选框
         nvgBeginPath(vg)
         nvgRoundedRect(vg, CHECK.cx - CHECK.size * 0.5, cy - CHECK.size * 0.5,

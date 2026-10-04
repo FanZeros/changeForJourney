@@ -241,11 +241,12 @@ end
 ---@return table
 local function copyAffixInstance(affix)
     return {
-        affixId = affix.affixId,
-        quality = affix.quality,
-        value   = affix.value,
-        key     = affix.key,
-        name    = affix.name,
+        affixId  = affix.affixId,
+        quality  = affix.quality,
+        value    = affix.value,
+        key      = affix.key,
+        name     = affix.name,
+        ascBonus = (tonumber(affix.ascBonus) or 0) > 0 and affix.ascBonus or nil,
     }
 end
 
@@ -545,6 +546,63 @@ end
 
 -- ======================== 槽位强化加成 ========================
 
+--- 无角色过滤的静态价值：六围按完整派生表，百分比按每个百分点折算。
+--- 不改既有计价/存档；只用于今后洗练更换属性时换算固定升阶投入。
+---@param key string
+---@return number
+local function ascendStatValue(key)
+    local isBaseStat = false
+    for _, baseKey in ipairs(AD.BASE_STATS) do
+        if key == baseKey then isBaseStat = true break end
+    end
+    if isBaseStat then
+        local derivatives = AD.DERIVATIVES[key]
+        if type(derivatives) ~= "table" or #derivatives == 0 then
+            error("洗练升阶加成缺少六围派生配置: " .. tostring(key))
+        end
+        local value = 0
+        for _, entry in ipairs(derivatives) do
+            local meta = AD.META[entry.attr]
+            if not meta or type(meta.valueModel) ~= "number" or meta.valueModel < 0
+                or meta.valueModel ~= meta.valueModel or meta.valueModel == math.huge
+                or type(entry.perPoint) ~= "number" or entry.perPoint < 0
+                or entry.perPoint ~= entry.perPoint or entry.perPoint == math.huge then
+                error("洗练升阶加成缺少有效派生价值: " .. tostring(key) .. "/" .. tostring(entry.attr))
+            end
+            local weight = meta.dataType == AD.TYPE_PCT and meta.valueModel / 100 or meta.valueModel
+            value = value + entry.perPoint * weight
+        end
+        return value
+    end
+    local meta = AD.META[key]
+    if not meta or not meta.valueModel or meta.valueModel <= 0 then return 0 end
+    return meta.dataType == AD.TYPE_PCT and meta.valueModel / 100 or meta.valueModel
+end
+
+--- 洗练时按价值转移固定升阶加成，不修改旧词条或已有装备。
+--- 同属性保留原量；跨属性不取整，避免整数目标反复换算产生套利或丢失零头。
+---@param oldAffix table|nil
+---@param newAffix table|nil
+---@return number|nil
+function EquipmentSystem.convertAscBonusForRefine(oldAffix, newAffix)
+    if not oldAffix or not newAffix or AffixConfig.isCorruptAffix(oldAffix)
+        or AffixConfig.isCorruptAffix(newAffix) then return nil end
+    local bonus = tonumber(oldAffix.ascBonus)
+    if not bonus or bonus ~= bonus or bonus <= 0 or bonus == math.huge then return nil end
+    if oldAffix.key == newAffix.key then return bonus end
+    local oldWeight, newWeight = ascendStatValue(oldAffix.key), ascendStatValue(newAffix.key)
+    -- 正式普通词条全部具有正价值；缺失配置不能把原单位复制到新属性。
+    if oldWeight <= 0 or newWeight <= 0 or oldWeight ~= oldWeight or newWeight ~= newWeight
+        or oldWeight == math.huge or newWeight == math.huge then
+        error("洗练升阶加成缺少属性价值配置: " .. tostring(oldAffix.key) .. " -> " .. tostring(newAffix.key))
+    end
+    local converted = bonus * (oldWeight / newWeight)
+    if converted ~= converted or converted == math.huge then
+        error("洗练升阶加成换算超出有效数值范围")
+    end
+    return converted
+end
+
 local BlacksmithConfig = require("config.BlacksmithConfig")
 
 --- 装备自身升阶等级。不读槽位表。
@@ -575,14 +633,17 @@ function EquipmentSystem.getAffixMult(equip)
     return m
 end
 
---- 词条生效值：普通词条吃栏位倍率，魔化词条不吃（与"魔化不吃品质增幅"同原则）。
+--- 词条生效值：普通词条吃栏位倍率 + 升阶副属性加成（ascBonus，固定量不被倍率放大），
+--- 魔化词条两者都不吃（与"魔化不吃品质增幅"同原则）。
 ---@param equip table|nil
 ---@param affix table|nil
 ---@return number
 function EquipmentSystem.effectiveAffixValue(equip, affix)
-    local v = tonumber(affix and affix.value) or 0
-    if not affix or AffixConfig.isCorruptAffix(affix) then return v end
-    return v * EquipmentSystem.getAffixMult(equip)
+    if not affix or AffixConfig.isCorruptAffix(affix) then
+        return tonumber(affix and affix.value) or 0
+    end
+    local v = (tonumber(affix.value) or 0) * EquipmentSystem.getAffixMult(equip)
+    return v + (tonumber(affix.ascBonus) or 0)
 end
 
 --- 通过 deployed 数组反查 heroId 所在的 partySlot 索引
@@ -1106,15 +1167,18 @@ function EquipmentSystem.ensureAffixValue(affix, equip)
     if not affix then return end
     local affixId = tonumber(affix.affixId) or affix.affixId
     local tplAffix = affixId and getAffixById()[affixId] or nil
-    -- 魔化词条：强制回正，清除历史错误写入的 C~S 品质增幅
+    -- 魔化词条：修正旧档品质增幅，但保留新转换实例已经确定的数值。
     if AffixConfig.isCorruptAffix(affix) or (tplAffix and AffixConfig.isCorruptAffix(tplAffix)) then
         tplAffix = tplAffix or getAffixById()[affixId]
         if tplAffix then
+            local numeric = EquipmentSystem.normalizeAffixNumericValue(affix.value)
+            local convertedValue = tonumber(affix.quality) == 0 and numeric
+                and numeric > 0 and numeric == numeric and numeric < math.huge
             affix.affixId = tonumber(affix.affixId) or affix.affixId
             affix.key = tplAffix.key
             affix.name = tplAffix.name
             affix.quality = 0
-            affix.value = EquipmentSystem.calcCorruptAffixValue(tplAffix, equip)
+            affix.value = convertedValue and numeric or EquipmentSystem.calcCorruptAffixValue(tplAffix, equip)
         end
         return
     end
@@ -1181,6 +1245,18 @@ function EquipmentSystem.normalizeCorruptRevert(equip)
     rev.affixCount = math.max(0, math.floor(tonumber(rev.affixCount) or 0))
     if not rev.patches then
         rev.patches = {}
+    end
+    -- 带 layer 的混合表经 JSON 编解码后，数字索引会成为字符串键。
+    for _, patch in ipairs(rev.patches) do
+        for i = 1, 3 do
+            local key = tostring(i)
+            if patch[i] == nil and patch[key] ~= nil then
+                patch[i] = patch[key]
+            end
+            patch[key] = nil
+        end
+        if patch[2] ~= nil then patch[2] = tonumber(patch[2]) or patch[2] end
+        if patch.layer ~= nil then patch.layer = tonumber(patch.layer) or patch.layer end
     end
 end
 
@@ -1274,6 +1350,14 @@ function EquipmentSystem.hydrate(equip)
                 affix.name = tplAffix.name
             end
             EquipmentSystem.ensureAffixValue(affix, equip)
+            -- 升阶投入按槽位保留，洗练可能换成低值词条，不能按当前 value 裁剪固定加成。
+            local ab = tonumber(affix.ascBonus)
+            if not ab or ab ~= ab or ab == math.huge or ab == -math.huge
+                or ab <= 0 or AffixConfig.isCorruptAffix(affix) then
+                affix.ascBonus = nil
+            else
+                affix.ascBonus = ab
+            end
         end
     end
 
@@ -1324,14 +1408,15 @@ function EquipmentSystem.dehydrate(equip)
         lean.refineCount = refineCount
     end
 
-    -- 词缀精简：只保留 affixId, quality, value
+    -- 词缀精简：保留 affixId, quality, value；升阶副属性加成 ascBonus>0 时持久化
     if equip.affixes then
         local leanAffixes = {}
         for i, affix in ipairs(equip.affixes) do
             leanAffixes[i] = {
-                affixId = affix.affixId,
-                quality = affix.quality,
-                value   = affix.value,
+                affixId  = affix.affixId,
+                quality  = affix.quality,
+                value    = affix.value,
+                ascBonus = (tonumber(affix.ascBonus) or 0) > 0 and tonumber(affix.ascBonus) or nil,
             }
         end
         lean.affixes = leanAffixes

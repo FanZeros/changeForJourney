@@ -214,7 +214,24 @@ local function initLaneUnits(lane)
     bindLaneContext(lane)
 end
 
+-- 先扫描整行死亡，再允许延迟补位和最后敌人清波早返。
+-- 套装/ETS/职业天赋统一走 TAL 的幂等入口，不依赖塔击杀机制账本。
+local function reportDefeatedEnemies(lane)
+    for _, unit in ipairs(lane.enemies) do
+        if unit.hp <= 0 then
+            TAL.onEnemyDeath(unit, lane.allies, lane.enemies)
+        else
+            TAL.resetEnemyDeath(unit)
+            if unit.reviveTimer then
+                unit.reviveTimer = nil
+                BattleCombat.clearCardAnim(unit)
+            end
+        end
+    end
+end
+
 local function tickTombstones(lane, dt)
+    reportDefeatedEnemies(lane)
     for i, unit in ipairs(lane.enemies) do
         if unit.hp <= 0 then
             if not unit.reviveTimer then
@@ -359,6 +376,7 @@ local function tickLane(lane, dt)
     BattleCombat.updateHpBuffers(lane.allies, dt)
     BattleCombat.updateHpBuffers(lane.enemies, dt)
     TM.update(dt)
+    reportDefeatedEnemies(lane)
     SEM.update(dt, {
         onDot = function(unit, source, dmg)
             local isUnitAlly = false
@@ -444,6 +462,7 @@ local function tickLane(lane, dt)
 
     ProjectileSystem.update(dt)
     BattleCombat.updateComboQueue(dt)
+    reportDefeatedEnemies(lane)
     BattleEffects.update(dt)
     BattleCombat.updateCardAnims(dt)
     BattleCombat.updateFloatingTexts(dt)
@@ -693,7 +712,7 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
     TowerTriBattle.init(vg)
     BattleLayout.setMode("strip")
 
-    BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)
+    BattleTriPage.drawL1Underlay(vg, logicalW, logicalH, "image/战斗背景/通天塔.png")
     BattleTriPage.drawL0(vg, logicalW, logicalH)
 
     local contentScale = 1.0

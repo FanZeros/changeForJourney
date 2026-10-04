@@ -18,6 +18,25 @@ local LOCAL_UID = 1
 local inited_ = false
 local handlers_ = {}
 local pdmAttached_ = false
+---@type table<string, table>|nil
+local deferredTaskPushes_ = nil
+
+--- GameState 单机提交钩子；这里只镜像 player，不反向调用 syncPlayerData。
+--- init 前也可使用，确保升级事件观察者的 PDM 与 Dispatcher 已同源。
+---@param player table|nil
+function M.syncPlayerIntoPdm(player)
+    local data = ClientDispatcher.get("player") or {}
+    player = player or { name = GameState.getName(), level = GameState.getLevel(),
+        exp = GameState.getExp(), maxExp = GameState.getMaxExp(), power = GameState.getPower() }
+    for _, field in ipairs({ "name", "level", "exp", "maxExp", "power" }) do
+        data[field] = player[field]
+    end
+    if not pdmAttached_ then
+        ClientDispatcher.getAll().player = data
+        PDM.AttachLocalModules(LOCAL_UID, ClientDispatcher.getAll())
+    end
+    ClientDispatcher.set("player", data)
+end
 
 local function registerHandlers(handlers)
     if type(handlers) ~= "table" then return end
@@ -217,11 +236,18 @@ local function attachPdm()
         serverDispatcher = {
             pushModule = function(_uid, fieldKey, moduleData)
                 if fieldKey and moduleData then
-                    ClientDispatcher.set(fieldKey, moduleData)
-                    if fieldKey == "currency" then
-                        GameState.syncFromCurrency(moduleData)
-                    elseif fieldKey == "player" then
+                    if deferredTaskPushes_ then
+                        deferredTaskPushes_[fieldKey] = moduleData
+                        return
+                    end
+                    if fieldKey == "player" then
+                        -- syncPlayerData 自己先发布 player 再发升级，不能提前/重复 set。
                         GameState.syncPlayerData(moduleData)
+                    else
+                        ClientDispatcher.set(fieldKey, moduleData)
+                        if fieldKey == "currency" then
+                            GameState.syncFromCurrency(moduleData)
+                        end
                     end
                 end
             end,
@@ -234,7 +260,12 @@ local function attachPdm()
             deliverActionResult(payload)
         elseif eventName == Protocol.RES_STATE_UPDATE and payload.modules then
             for name, data in pairs(payload.modules) do
-                ClientDispatcher.set(name, data)
+                if name == "player" then
+                    GameState.syncPlayerData(data)
+                else
+                    ClientDispatcher.set(name, data)
+                    if name == "currency" then GameState.syncFromCurrency(data) end
+                end
             end
         end
     end)
@@ -322,6 +353,24 @@ function M.init()
     ensureModule("quotas", defaultQuotas)
 
     attachPdm()
+    GameState.setLocalPlayerSync(function(player) M.syncPlayerIntoPdm(player) end)
+    M.syncPlayerIntoPdm()
+    require("rules.task.TaskService").SetPersistCallback(function(uid)
+        GameState.syncFromCurrency(PDM.GetModule(uid, "currency"), { silent = true })
+        return require("boot.StandaloneSave").Flush()
+    end, {
+        begin = function() deferredTaskPushes_ = {} end,
+        finish = function(_uid, success)
+            local pushes = deferredTaskPushes_ or {}
+            deferredTaskPushes_ = nil
+            if not success then return end
+            -- 只在持久化成功后通知最终奖励/台账，失败不触发领成功视觉。
+            for name, data in pairs(pushes) do
+                ClientDispatcher.set(name, data)
+                if name == "currency" then GameState.syncFromCurrency(data) end
+            end
+        end,
+    })
     print("[LocalActionBridge] init uid=" .. LOCAL_UID)
 end
 
@@ -347,6 +396,7 @@ function M.dispatch(action, params)
     end
 
     syncCurrencyIntoPdm()
+    M.syncPlayerIntoPdm()
 
     local AT = Protocol.ACTION_TYPES
     if action == AT.GUILD_ENTER then
@@ -388,11 +438,11 @@ function M.setTeams(teamLayouts)
     if not inited_ then M.init() end
     local heroes = ClientDispatcher.get("heroes")
     if not heroes then return false, "英雄数据未加载" end
-    local player = ClientDispatcher.get("player")
-    local playerLevel = player and (player.level or 1) or 1
+    local battleProgress = PDM.GetModule(LOCAL_UID, "battle")
     local teamCount = ExpTable.TEAM_COUNT
     for teamIdx, ids in pairs(teamLayouts) do
-        if type(teamIdx) ~= "number" or teamIdx < 1 or teamIdx > teamCount or type(ids) ~= "table" then
+        if type(teamIdx) ~= "number" or teamIdx ~= math.floor(teamIdx)
+            or teamIdx < 1 or teamIdx > teamCount or type(ids) ~= "table" then
             return false, "无效的队伍编号或阵容"
         end
     end
@@ -419,7 +469,7 @@ function M.setTeams(teamLayouts)
     end
     if teamLayouts[1] then copy.deployed = {} end
     for teamIdx, ids in pairs(teamLayouts) do
-        local ok, reason = TeamSlots.validate(copy, teamIdx, ids, playerLevel)
+        local ok, reason = TeamSlots.validate(copy, teamIdx, ids, battleProgress)
         if not ok then return false, reason end
     end
     for teamIdx, ids in pairs(teamLayouts) do

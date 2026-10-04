@@ -354,6 +354,12 @@ function OfflineService.ClaimRewards(uid)
     if not equipData.inventory then
         equipData.inventory = {}
     end
+    local lootboxData = PDM.GetModule(uid, "lootbox")
+    local equipCount = #(rewards.grantedEquips or {})
+    if not lootboxData and EquipmentSystem.getInventoryCount(equipData) + equipCount
+        > EquipmentSystem.MAX_INVENTORY then
+        return false, "遗匣数据未加载"
+    end
 
     -- 1) 金币
     local goldAmount = rewards.gold
@@ -412,22 +418,27 @@ function OfflineService.ClaimRewards(uid)
         HeroService.SyncHeroLevelsToPlayerLevel(uid, playerData.level)
     end
 
-    -- 4) 展示时已生成的真实装备 → 背包
-    local grantedCount = 0
-    local skippedFull = 0
+    -- 4) 展示时已生成的真实装备 → 背包；满包转入遗匣，不重骰或丢弃。
+    local inventoryCount, lootboxCount = 0, 0
+    local lootboxEquips = {}
     for _, equip in ipairs(rewards.grantedEquips or {}) do
-        if EquipmentSystem.isInventoryFull(equipData) then
-            skippedFull = skippedFull + 1
+        local destination = LootBoxSystem.deliverEquipment(lootboxData, equipData, equip)
+        if destination == "lootbox" then
+            lootboxCount = lootboxCount + 1
+            lootboxEquips[#lootboxEquips + 1] = {
+                type = "equip", templateId = equip.templateId, quality = equip.quality,
+                level = equip.level, slot = equip.slot, equip = equip, destination = destination,
+            }
         else
-            EquipmentSystem.addToInventory(equipData, equip)
-            grantedCount = grantedCount + 1
+            inventoryCount = inventoryCount + 1
         end
     end
-    if grantedCount > 0 then
+    if inventoryCount > 0 then
         PDM.MarkDirty(uid, "equipment")
     end
-    if skippedFull > 0 then
-        print("[OfflineService][WARN] inventory full, skipped equips=" .. skippedFull
+    if lootboxCount > 0 then
+        PDM.MarkDirty(uid, "lootbox")
+        print("[OfflineService] 满包装备已入遗匣=" .. lootboxCount
             .. " uid=" .. tostring(uid))
     end
 
@@ -462,6 +473,7 @@ function OfflineService.ClaimRewards(uid)
         gold      = goldAmount,
         heroExp   = perHeroExp,
         playerExp = playerExp,
+        lootboxEquips = lootboxEquips,
     }
 end
 

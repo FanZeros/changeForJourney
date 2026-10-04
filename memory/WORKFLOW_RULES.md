@@ -10,6 +10,13 @@
 - 用户通过 `AskUserQuestion` 明确选择“创建修复 PR（推荐）”后，先查询同源open PR为0并核对源提交，再创建正式 **PR #56**：https://github.com/FanZeros/changeForJourney/pull/56，head=`fix/hard-stage-display-20261004`、base=`workspace930`、source=`c5ae5e58`，返回open、draft=false、merged=false；mergeable尚未计算，不声称CI已通过。说明已披露八套回归/正式构建与无头Shader/字体验收限制。没有自动合并，没有推workspace系列；记忆补充后仅push当前任务分支，仍用AskUserQuestion交接。
 - 全局记忆工具写入失败；本次偏好实际强化在此已有项目记忆，不声称全局保存成功。
 
+## 升阶固定副词条修复（2026-10-04）
+
+- 用户截图明确固定副属性才是每阶轮转目标，随机词条不新增每阶投入。基线aeb08d20，新分支 `fix930/ascend-fixed-secondary-preview-20261004`；修复baseStats[2..]按模板顺序每次+5%原值，从ascendLevel派生；主词条boost保留、旧ascBonus及每+5随机/倍率规则兼容，不删已得投入。
+- ES统一有效基础值覆盖属性、双端战力、详情及前后预览；固定副洗练/JSON水合不丢、不累加，float/pct保留小数，整数副不每次至少+1。预览相同格式时增加精度。真实魔典护甲14.02→14.48、魔伤5.29%→5.5%、下一阶穿透3.3→3.43，离屏125帧PASS0错误，实际截图已查看。
+- 九套回归通过，含旧ascBonus价值守恒6756/1936属性组合、配装试穿118、升阶/腐化/战力/洗练/配装216/切关/装备五语；原错误第11段改为固定副增长，保留旧档校验。独立复核发现新增英文一键长摘要越框，已800宽测量缩字裁剪，追加测试最后复跑PASS。
+- 临时入口和meta已清理；前期官方Build成功，最后Build平台拒绝PLATFORM_OPERATION_FORBIDDEN，不能绕过，也不宣称最终预览更新。修改LSP无Error，最终测试通过；需恢复权限后官方重建。只推新分支、不推workspace系列、不自动创建/合并PR；本地.project/截图/日志不提交，凭据不持久化。完成或阻塞先如实简报，再真正AskUserQuestion选项继续。
+
 ## 三队进度、副本选队和入关剧情修复（2026-10-04）
 
 - 用户本轮指定从 `workspace930` 拉取并部署到 `/workspace` 根；基线为 `c47c2ec3`，新任务分支 `fix930/three-team-progression-20261004`。功能提交 `8b3636fa` 已正常push，远端SHA核验一致；远端 `workspace930` 仍为原基线 `c47c2ec3`，没有推送或修改。只推新分支，禁止推 `workspace` 系列或原基线；不自动创建或合并 PR。

@@ -291,7 +291,7 @@ function Start()
             local strGain = (bare.current.stats[AD.STR] + 2.25 * 1.5 + 0.75 * 2) * 1.017
                 - bare.current.stats[AD.STR]
             local expected = {
-                [AD.STR] = strGain, [AD.AGI] = 0.5 + 1.25 * 2, [AD.INT] = 0.625 * 2,
+                [AD.STR] = strGain, [AD.AGI] = 0.5 * 1.5 + 1.25 * 2, [AD.INT] = 0.625 * 2,
                 [AD.VIT] = 1.125 * 2, [AD.LUK] = 0.875 * 2, [AD.SPI] = 0.375 * 2,
             }
             for _, key in ipairs(AD.BASE_STATS) do
@@ -321,8 +321,8 @@ function Start()
             unascended.equipment.inventory["1"].ascendLevel = 0
             local lower = Preview.build(1, 70, nil, nil, unascended).equipmentBonuses
             check(close(net.current.stats[AD.STR] - lower.current.stats[AD.STR], 2.25 * 0.5 * 1.017)
-                and close(net.current.stats[AD.AGI], lower.current.stats[AD.AGI]),
-                "升阶只增强第一条基础属性，额外贡献也吃最终力量乘区")
+                and close(net.current.stats[AD.AGI] - lower.current.stats[AD.AGI], 0.5 * 0.5),
+                "升阶提升主属性和固定副属性，随机词条保持且最终力量乘区生效")
             local penalized = copy(bonus)
             put(penalized, 2, "C1", nil, { { AD.STR, -2 } })
             local penalty = Preview.build(1, 70, 2, nil, penalized).equipmentBonuses

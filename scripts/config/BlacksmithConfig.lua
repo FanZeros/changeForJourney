@@ -12,8 +12,8 @@ BlacksmithConfig.ASCEND_AFFIX_INTERVAL = 5
 BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT = 4
 --- 普通词条满员后，每个升阶里程碑的栏位倍率增量（+10%/层）
 BlacksmithConfig.ASCEND_AFFIX_MULT_STEP = 0.10
---- 升阶副属性递增：每升 1 阶按词条顺序轮转 1 条普通词条，追加其当前 value 的该比例加成
---- （独立 ascBonus 字段，洗练不丢；整数属性每次至少 +1）
+--- 固定副词条（baseStats第2条起）每阶按模板顺序轮转，追加基础值的5%；
+--- 小数不取整，数值从ascendLevel派生，与随机词条及洗练解耦。
 BlacksmithConfig.ASCEND_SUB_STAT_RATIO = 0.05
 
 --- 槽位强化配置（100 级）

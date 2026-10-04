@@ -54,28 +54,8 @@ local function rollAscendAffixes(equip, fromLevel, toLevel)
         if affix.key then exclude[affix.key] = true end
     end
     local qDef = EquipmentConfig.QUALITY[equip.quality]
-    local subRatio = BlacksmithConfig.ASCEND_SUB_STAT_RATIO or 0
+    -- 每阶固定副词条由EquipmentSystem按升阶等级派生，随机词条不再写入新ascBonus。
     for level = fromLevel + 1, toLevel do
-        -- 升阶副属性递增：每阶按"第 N 条普通词条"序轮转 1 条（魔化槽不占轮转位），
-        -- 追加其当前 value × 比例的固定加成；每阶现取位置，里程碑新增词条随即入轮转
-        if subRatio > 0 then
-            local cur = {}
-            for i, affix in ipairs(affixes) do
-                if not AffixConfig.isCorruptAffix(affix) then
-                    cur[#cur + 1] = i
-                end
-            end
-            local target = #cur > 0 and affixes[cur[((level - 1) % #cur) + 1]] or nil
-            if target then
-                local tv = tonumber(target.value) or 0
-                local meta = AD and AD.META and AD.META[target.key]
-                local inc = tv * subRatio
-                if meta and meta.dataType == AD.TYPE_INT then
-                    inc = math.max(1, math.floor(inc + 0.5))
-                end
-                target.ascBonus = (tonumber(target.ascBonus) or 0) + inc
-            end
-        end
         if level % BlacksmithConfig.ASCEND_AFFIX_INTERVAL == 0 then
             if normalCount < BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT then
                 local rolled = EquipmentSystem.rollAffixes(1,

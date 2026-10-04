@@ -11,6 +11,16 @@
 - 已正常push功能提交 `b57d281589dac3f53a3265a1a6972e590d545ebd` 到 `fix/scenario82-interrupted-reward-20261004`，远端SHA与本地一致；远端workspace930仍677af353，未被本会话推送，未创建或合并PR。鉴权只用临时请求头，不写文件/Git配置/remote；交接追加仅push此任务分支。
 - 用户经AskUserQuestion明确选择“创建情景82修复 PR（推荐）”，查重同源open为0、核对源6083106后创建正式 **PR #61**：https://github.com/FanZeros/changeForJourney/pull/61，head=`fix/scenario82-interrupted-reward-20261004`、base=`workspace930`，open、draft=false、merged=false；mergeable尚未计算，不声称CI通过。目标由外部前进到5678b740，验证基线仍677af353+本修复，未擅自混入新基线；PR说明完整披露1050专项、12套周边、旧神器六失败、旧台账歧义与设备验收限制。未自动合并或推workspace系列，交接记忆仅push同一任务分支，完成后仍真正AskUserQuestion。
 - **持续强化**：已授权修复持续推进，尊重后续停止、权限拒绝和安全边界；每次完成先如实简报，再实际用AskUserQuestion给下一步选项。提交仅本轮源码/既有测试/此记忆，本地.project身份/设置、存档、日志和凭据不提交；正常push新分支并核验SHA。
+## 截图任务收尾：固定副词条与觉醒单框（2026-10-04）
+
+- 用户明确要求完成截图遗留并提PR；本轮新交付分支 `fix930/awakening-slice-border-20261004` 从当前环境分支保留觉醒WIP，快进到最新930@e16fe137，再移植未开PR的固定副修复cad73150为39928c7e，仅记忆冲突双保留，不混入名册上移等旁支。
+- 三片共用暗底、active金罩及单层金框，next/locked同暗罩；选中只增强亮度/线宽，删除expand和呼吸框。原固定CG取样、三片几何、分割线唯一命中、嵌合业务与正文锚点保持。20224专项断言/899真实draw通过，覆盖0/1/2/3觉醒、有无CG、不同时间和选择、边缘热区；逐文件LSP无Error，既有paint联合类型仅补cast。
+- 升阶/旧投入6756、预览118、配装216、五语、腐化、洗练、神器上下文60/总战力15、奖励延迟706与行军354回归均通过；自动分解首次缺退出timeout不算通过，官方validate重跑60帧PASS。切关旧神器跨队复用6失败已纯基线复现，仅适配旧测试到PR55正式唯一占用规则，不回退生产契约。
+- 真实觉醒三组离屏页面已内部查看，150帧Lua/资源0、无缺图；原始FAIL仅1条8900.68ms软件渲染帧尖峰。main150帧Lua/资源0、原始FAIL仅4条默认100ms尖峰，不宣称性能或设备交互全过。临时视觉入口及meta已读后清理，截图/日志在.git内部不提交。
+- 最终切关适配93断言ALL PASS，共18套官方Runtime回归全过。最终官方Build成功（488Lua），13份修改Lua与manifest-origin.b2部署产物逐字节一致，临时入口未入包；修改逐文件LSP无Error，36套规范单测通过。创建PR已授权，但当前无已配置GitHub API鉴权，只有SSH连接正常；若无法创建需先如实说明并以AskUserQuestion由用户选安全授权或手动创建，不把预填链接说成已开PR。
+- 初次push34afaf86已核验一致；930外部合入PR58/59到677af353，随后本分支合入a38bf3a2，仅记忆文本冲突双保留。最新配装标题/差值绿色优先与排序滚动规则完整保留，八套融合回归全过（配装361、预览118、觉醒20224、神器60等），最终再次官方Build成功，17/17本轮及新基线源码产物一致，2665路径规范0错误0警告，临时入口未入包。PR仍需当前会话可用API安全鉴权，不把SSH push成功说成PR已创建。
+- 正式PR #60已创建：https://github.com/FanZeros/changeForJourney/pull/60，源fix930/awakening-slice-border-20261004@86ab8084、目标workspace930@677af353，open、draft=false、merged=false；中文标题及完整验证/性能限制说明已更新成功。此前工具写请求超时逐次查重0条，未将超时说成创建成功。用户即时API授权仅临时请求使用，不持久化；提醒撤销聊天公开令牌。未自动合并，交接仅push同一任务分支，不推workspace系列。
+- 持续强化：完成已授权范围，不擅自放弃，尊重后续停止/权限拒绝；只正常push本轮新分支、不推workspace系列/旧基线、不自动合并。完成或真实用户决策阻塞先简报再真正AskUserQuestion给选项。凭据不进源码/文件/Git配置/日志/记忆，本地.project、存档、未审核候选和环境工具不提交。
 
 ## 配装变化字放大与绿色优先排序（2026-10-04）
 
@@ -36,6 +46,13 @@
 - 已正常push功能提交 `9a86c7785879314412c2f917afc34406c2589138` 至 `fix/hard-stage-display-20261004`，远端SHA与本地核验一致。首次临时helper转义报错exit128未推送，随后临时请求头鉴权push成功；PAT未落Git配置或remote。远端workspace930由外部前进到a0ae4767，本会话没有向其推送，也未混入未联合验收的新基线；未创建或合并PR。
 - 用户通过 `AskUserQuestion` 明确选择“创建修复 PR（推荐）”后，先查询同源open PR为0并核对源提交，再创建正式 **PR #56**：https://github.com/FanZeros/changeForJourney/pull/56，head=`fix/hard-stage-display-20261004`、base=`workspace930`、source=`c5ae5e58`，返回open、draft=false、merged=false；mergeable尚未计算，不声称CI已通过。说明已披露八套回归/正式构建与无头Shader/字体验收限制。没有自动合并，没有推workspace系列；记忆补充后仅push当前任务分支，仍用AskUserQuestion交接。
 - 全局记忆工具写入失败；本次偏好实际强化在此已有项目记忆，不声称全局保存成功。
+
+## 升阶固定副词条修复（2026-10-04）
+
+- 用户截图明确固定副属性才是每阶轮转目标，随机词条不新增每阶投入。基线aeb08d20，新分支 `fix930/ascend-fixed-secondary-preview-20261004`；修复baseStats[2..]按模板顺序每次+5%原值，从ascendLevel派生；主词条boost保留、旧ascBonus及每+5随机/倍率规则兼容，不删已得投入。
+- ES统一有效基础值覆盖属性、双端战力、详情及前后预览；固定副洗练/JSON水合不丢、不累加，float/pct保留小数，整数副不每次至少+1。预览相同格式时增加精度。真实魔典护甲14.02→14.48、魔伤5.29%→5.5%、下一阶穿透3.3→3.43，离屏125帧PASS0错误，实际截图已查看。
+- 九套回归通过，含旧ascBonus价值守恒6756/1936属性组合、配装试穿118、升阶/腐化/战力/洗练/配装216/切关/装备五语；原错误第11段改为固定副增长，保留旧档校验。独立复核发现新增英文一键长摘要越框，已800宽测量缩字裁剪，追加测试最后复跑PASS。
+- 临时入口和meta已清理；前期官方Build成功，最后Build平台拒绝PLATFORM_OPERATION_FORBIDDEN，不能绕过，也不宣称最终预览更新。修改LSP无Error，最终测试通过；需恢复权限后官方重建。只推新分支、不推workspace系列、不自动创建/合并PR；本地.project/截图/日志不提交，凭据不持久化。完成或阻塞先如实简报，再真正AskUserQuestion选项继续。
 
 ## 三队进度、副本选队和入关剧情修复（2026-10-04）
 

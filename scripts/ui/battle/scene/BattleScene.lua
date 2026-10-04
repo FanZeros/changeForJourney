@@ -393,11 +393,17 @@ local function recalcIdleIncome()
     local heroCount = #allies
     local prevGold = cachedGoldPerMin
     local prevExp  = cachedExpPerMin
+    -- 读档为重开战斗可能移除本地max首通标记，不能据此降低账户收益。
+    -- 仅采纳同一最高节点的保存凭据，独立快照不回写战斗模式账本。
+    local maxCleared = clearedStages[maxStageId_] == true or clearedStages[tostring(maxStageId_)] == true
+    local savedBattle = require("runtime.ClientDispatcher").get("battle")
+    if type(savedBattle) == "table" and tonumber(savedBattle.maxStageId) == maxStageId_ then
+        local ledger = type(savedBattle.clearedStages) == "table" and savedBattle.clearedStages or {}
+        maxCleared = ledger[maxStageId_] == true or ledger[tostring(maxStageId_)] == true
+    end
     local battleSnapshot = {
-        currentStageId = currentStageId,
-        maxStageId     = maxStageId_,
-        clearedStages  = clearedStages,
-        battleMode     = isFirstClear and "firstClear" or "idle",
+        maxStageId    = maxStageId_,
+        clearedStages = { [maxStageId_] = maxCleared },
     }
     local stageConfig = getStageConfig()
     local incomeStageId, dropStageId = OfflineCalc.resolveIdleStageAnchors(battleSnapshot, stageConfig)

@@ -319,6 +319,14 @@ local function verifyDraw(vg, fixture, label)
         local expText = textAt(calls, exp, 990)
         check(fits(classText, 94, 394) and fits(expText, 415, 1005),
             label .. " 最终墨迹边界留在分开的职业/经验框内")
+        local framedTextFits = true
+        for _, c in ipairs(calls.texts) do
+            if c.text == exp or (classText and c.text == classText.text and math.abs(c.y - 990) <= 5) then
+                local left, right = c.text == exp and 415 or 94, c.text == exp and 1005 or 394
+                framedTextFits = framedTextFits and fits(c, left, right)
+            end
+        end
+        check(framedTextFits, label .. " 职业与经验所有描边墨迹也不越界")
         if fixture.longClass then check(classText.font < 34, label .. " 超长职业翻译确实缩字") end
         if fixture.own.exp > 100000 then check(expText.font < 28, label .. " 超长经验确实缩字") end
         local center = matching(calls.circles, function(c) return near(c.x, 800) and near(c.y, 1507) and near(c.r, 5) end)
@@ -556,6 +564,42 @@ function HandleCharacterDetailLayoutRender()
     safeRun("滚动", function() verifyScroll(canvas) end)
     safeRun("主动失败恢复", function() verifyFailureRestoration(canvas) end)
     M.endFrame(canvas)
+    local renderSizes = { { 1920, 1080 }, { 1280, 720 }, { 2560, 1440 }, { 1200, 1080 }, { 1080, 2400 } }
+    for _, size in ipairs(renderSizes) do
+        nvgBeginFrame(canvas, size[1], size[2], 1)
+        local scale = math.min(size[1] / 1080, size[2] / 2400)
+        nvgSave(canvas)
+        nvgScale(canvas, scale, scale)
+        safeRun("多尺寸长文本", function()
+            local fixture = M.fixture(shortHero(), { longExp = true, longClass = true, longValues = true })
+            local ok, err = isolated(fixture, function(_, patch)
+                local calls = probe(canvas, patch)
+                local row = { name = "最大生命值", key = "hp", value = "123456789012345678901234567890%" }
+                local _, hits = View.drawAttributeRows(canvas, { row }, 0, nil, { style = View.ATTRIBUTE_STYLE })
+                local name = textAt(calls, row.name, 1109)
+                local value = textAt(calls, row.value, 1109)
+                check(name and value and name.bounds[3] + 15 <= value.bounds[1]
+                    and fits(value, 150, 520), "多尺寸名称/数值墨迹间隔 " .. size[1])
+                check(#hits == 1 and hits[1].row == row, "多尺寸测量不改变属性及命中")
+                local shortRow = { name = "生命", key = "hp", value = "42" }
+                View.drawAttributeRows(canvas, { shortRow }, 0, nil, { style = View.ATTRIBUTE_STYLE })
+                local shortValue = textAt(calls, "42", 1109)
+                check(shortValue and shortValue.font == 40 and fits(shortValue, 150, 520),
+                    "多尺寸普通值保持40号且不无效循环缩字 " .. size[1])
+                print(PREFIX .. " SHORT_FONT scale=" .. scale .. " font=" .. tostring(shortValue and shortValue.font))
+                for _, sample in ipairs({ { text = "Lv.70  123456789012345/987654321098765", x = 710, left = 415, right = 1005, size = 28 },
+                    { text = "The exceptionally translated master of eternal silent shadow guardians", x = 244, left = 136, right = 352, size = 34 } }) do
+                    local font, _, bounds = View.fitText(canvas, sample.text, sample.size,
+                        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, sample.x, 990, sample.left, sample.right, 7)
+                    check(font > 0 and bounds[1] >= sample.left + 7 and bounds[3] <= sample.right - 7,
+                        "多尺寸经验/职业复测含描边 " .. size[1])
+                end
+            end)
+            check(ok, "多尺寸两项专项成功 " .. size[1] .. (ok and "" or tostring(err)))
+        end)
+        nvgRestore(canvas)
+        nvgEndFrame(canvas)
+    end
     report()
 end
 

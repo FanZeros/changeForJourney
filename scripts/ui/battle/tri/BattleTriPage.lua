@@ -113,9 +113,8 @@ local function ensureDrivers()
                 if triOnDrop then triOnDrop(data) end
             end
             drv.onStageCleared = function(teamIdx, clearedStageId)
-                local nextId = StageConfig.getNextStageId(clearedStageId)
-                -- 首通先落盘、行军后才开新关；快照必须保存已预约的普通下一关。
-                drv.pendingStageId = nextId and not StageConfig.isTerminalTemple(nextId) and nextId or clearedStageId
+                -- 首通先落盘、行军后才开新关；预约与背景、真实推进共用解析。
+                drv.pendingStageId = drv:resolveAdvanceStage()
                 local firstClear = BattleScene.completeTriStageClear(clearedStageId, teamIdx)
                 if not firstClear and triOnStageClear then
                     triOnStageClear(teamIdx, clearedStageId)
@@ -801,7 +800,7 @@ local function gotoTeamStage(teamIdx, stageId)
             or not (cleared[previous] or cleared[tostring(previous)]) then
             return false
         end
-        if not BattleScene.gotoStage(stageId) then return false end
+        if not BattleScene.gotoStage(stageId, { deferEnter = true }) then return false end
         startTerminalRaid(stageId)
         require("systems.GameBGM").setScene("samsara", { fromStart = true })
         return true
@@ -811,7 +810,7 @@ local function gotoTeamStage(teamIdx, stageId)
     local drv = drivers[teamIdx]
     if not drv then return false end
     if teamIdx == 1 then
-        if not BattleScene.gotoStage(stageId) then return false end
+        if not BattleScene.gotoStage(stageId, { deferEnter = true }) then return false end
     end
     drv:start(stageId)
     recordTeamStage(teamIdx, stageId)
@@ -1034,7 +1033,7 @@ function BattleTriPage.handleInput(wx, wy)
         return true
     end
     if math.abs(wx - hudSweepX) <= hitW and math.abs(wy - hudY) <= hitH then
-        SweepDialog.handleButtonInput(971 + (wx - hudSweepX) / hudScale, 2115 + (wy - hudY) / hudScale)
+        SweepDialog.handleButtonInput(971 + (wx - hudSweepX) / hudScale, 2115 + (wy - hudY) / hudScale, 1)
         return true
     end
     if math.abs(wx - hudStatsX) <= hitW and math.abs(wy - hudY) <= hitH then
@@ -1073,7 +1072,7 @@ function BattleTriPage.handleInput(wx, wy)
             return true
         end
         if math.abs(wx - rowSweepX) <= hitW and math.abs(wy - rowY) <= hitH then
-            SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale)
+            SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale, row)
             return true
         end
         if math.abs(wx - rowStatsX) <= hitW and math.abs(wy - rowY) <= hitH then

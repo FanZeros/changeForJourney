@@ -154,6 +154,18 @@ function M.run(rt)
         end
     end)
 
+    -- 转职/重置只失效真实所属队的属性，不提交编队、不清累计、不重载默认战场。
+    -- 三行关闭时队一仍由默认 Scene 使用，沿用待定属性快照，保留当前战斗状态。
+    CharacterPanel.setOnHeroProgressChanged(function(heroId, teamIdx)
+        local _, actualTeamIdx = CharacterPanel.findHeroDeployment(heroId)
+        if not actualTeamIdx or actualTeamIdx ~= teamIdx then return end
+        BattleTriPage.invalidateTeams({ [actualTeamIdx] = true })
+        if actualTeamIdx == 1 and not BattleTriPage.isOpen() then
+            BattleScene.refreshAllyStats()
+        end
+        print("[Standalone] 英雄养成刷新 hero=" .. tostring(heroId) .. " team=" .. actualTeamIdx)
+    end)
+
     -- 5.2 击杀奖励回调：经验平分给每个上场远征队员，金币/远征等级经验照常
     -- [三栏并行] 提取为局部函数，BattleScene（栏1）与 BattleTriPage（栏2/3）共用
     -- 三行战斗在入场时把本关经验和金币加总后一次发放。

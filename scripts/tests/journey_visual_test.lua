@@ -210,6 +210,8 @@ local function testPage()
         function drv:start(id) self.stageId = id self.starts = self.starts + 1 end
         function drv:update() end
         function drv:activate() end
+        -- Page首通预约新增纯解析契约；保留真实Driver方法，不复制推进规则。
+        drv.resolveAdvanceStage = newDriver(idx).resolveAdvanceStage
         function drv:getMarchBackground() return self.zoom or 1, self.alpha or 1, self.nextBgStageId end
         drivers[idx] = drv
         return drv

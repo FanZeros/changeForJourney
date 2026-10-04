@@ -4,6 +4,37 @@
 
 local M = {}
 
+--- 只读查询英雄真实出战位置，兼容面板槽对象与存档 ID 槽（含 0 空位/字符串键）。
+--- 已提供的 teams[t].slots 是该队权威布局；仅队1缺布局时兼容旧 deployed。
+--- 显式快照绝不回读存档，未上阵返回 nil,nil，不借用编辑队或旧镜像槽。
+---@param heroId number|string
+---@param heroesData table|nil
+---@return number|nil partySlot
+---@return number|nil teamIdx
+function M.findHeroDeployment(heroId, heroesData)
+    local id = tonumber(heroId)
+    if not id or id <= 0 or id ~= math.floor(id) then return nil, nil end
+    local teams = heroesData and heroesData.teams
+    for teamIdx = 1, 3 do
+        local team = teams and (teams[teamIdx] or teams[tostring(teamIdx)])
+        local slots = team and team.slots
+        if type(slots) ~= "table" then
+            slots = teamIdx == 1 and heroesData and heroesData.deployed or nil
+        end
+        if type(slots) == "table" then
+            for partySlot = 1, 4 do
+                local slot = slots[partySlot] or slots[tostring(partySlot)]
+                local sourceId = slot
+                if type(slot) == "table" then
+                    sourceId = slot.state == "occupied" and slot.heroId or nil
+                end
+                if tonumber(sourceId) == id then return partySlot, teamIdx end
+            end
+        end
+    end
+    return nil, nil
+end
+
 function M.bind(deps)
     local AD = deps.AD
     local HC = deps.HC
@@ -79,20 +110,16 @@ function M.bind(deps)
         return ownData and ownData.level or 1
     end
 
-    -- 构建一个已应用真实存档管线（装备/遗物/神器）的英雄单位。
-    -- calcHeroPower 与 calcHeroEstimate 共用，避免两条管线漂移。
-    -- teamIdx 指定按哪支队伍的装配表应用神器（缺省 1）。
+    -- 构建真实存档管线的英雄单位；普通卡面/名册从全部队伍查询，不受编辑队影响。
+    -- 显式队/槽仍供正式槽位缓存使用；未上阵英雄不应用任何队槽神器。
     ---@return table|nil hero 含 attrs/classId/awakening 的单位；失败返回 nil
     local function buildHeroAttrs(heroId, partySlot, teamIdx)
-        local teamSlots = get("teamSlots")
-        if not partySlot then
-            for i = 1, MAX_SLOTS do
-                local slot = teamSlots[i]
-                if slot.state == "occupied" and slot.heroId == heroId then
-                    partySlot = i
-                    break
-                end
-            end
+        local realSlot, realTeam = M.findHeroDeployment(heroId, { teams = get("teams") })
+        if realSlot then
+            partySlot = partySlot or realSlot
+            teamIdx = teamIdx or realTeam
+        else
+            partySlot, teamIdx = nil, nil
         end
         local level = getHeroLevel(heroId)
         local ownedSet = get("ownedSet")
@@ -150,6 +177,18 @@ function M.bind(deps)
         return math.floor(base + extra + 0.5)
     end
 
+    local runtimeOnlyPowerByTeam = {}
+
+    local function getTotalPower(teamIdx)
+        teamIdx = tonumber(teamIdx) or 1
+        if teamIdx ~= math.floor(teamIdx) or teamIdx < 1 or teamIdx > TEAM_COUNT then return 0 end
+        local teamPowerCaches = get("teamPowerCaches")
+        local cache = teamPowerCaches[teamIdx] or {}
+        local total = 0
+        for i = 1, MAX_SLOTS do total = total + (cache[i] or 0) end
+        return total + (runtimeOnlyPowerByTeam[teamIdx] or 0)
+    end
+
     local function refreshPowerCache()
         local talentsData = ClientDispatcher.get("talents") or PlayerStore.Get("talents")
         local litNodes = talentsData and talentsData.litNodes or nil
@@ -157,8 +196,7 @@ function M.bind(deps)
             HC.setDefaultLitNodes(litNodes)
         end
 
-        -- 名册缓存与列表索引一致；订阅刷新也覆盖未出战的已拥有英雄。
-        -- 沿用 rebuildRoster 的正式战力缺省队口径，不受当前视图影响。
+        -- 名册与卡面共用英雄真实归属；切换编辑队不改变固定构筑的战力。
         local heroRoster = get("heroRoster")
         local rosterPowerCache = get("rosterPowerCache")
         if heroRoster and rosterPowerCache then
@@ -173,42 +211,29 @@ function M.bind(deps)
 
         local teams = get("teams")
         local teamPowerCaches = get("teamPowerCaches")
-        local deployedCount = 0
+        local runtimePerHero = litNodes and TalentEffect.calcRuntimeOnlyPower(litNodes) or 0
         for t = 1, TEAM_COUNT do
             local slots = teams[t] and teams[t].slots
             local cache = teamPowerCaches[t]
+            local deployedCount = 0
             if slots and cache then
                 for i = 1, MAX_SLOTS do
                     local slot = slots[i]
-                    if slot.state == "occupied" and slot.heroId then
-                        -- [三队适配] 每队战力按本队神器装配计算
+                    if slot and slot.state == "occupied" and slot.heroId then
                         cache[i] = calcHeroPower(slot.heroId, i, t)
-                        if t == 1 then deployedCount = deployedCount + 1 end
+                        deployedCount = deployedCount + 1
                     else
                         cache[i] = 0
                     end
                 end
             end
+            -- 空队也覆盖为0，不能保留队一人数或上一份缓存。
+            runtimeOnlyPowerByTeam[t] = runtimePerHero * deployedCount
         end
 
-        local total = 0
-        do
-            local mainCache = teamPowerCaches[1]
-            for i = 1, MAX_SLOTS do
-                total = total + (mainCache[i] or 0)
-            end
-        end
-
-        local runtimeOnlyPowerCache
-        if litNodes and deployedCount > 0 then
-            runtimeOnlyPowerCache = TalentEffect.calcRuntimeOnlyPower(litNodes) * deployedCount
-        else
-            runtimeOnlyPowerCache = 0
-        end
-        set("runtimeOnlyPowerCache", runtimeOnlyPowerCache)
-        total = total + runtimeOnlyPowerCache
-
-        GameState.setPower(total)
+        -- 旧 scalar 保留给兼容绑定；正式总战力/顶栏仍只计队一，不改产品口径。
+        set("runtimeOnlyPowerCache", runtimeOnlyPowerByTeam[1] or 0)
+        GameState.setPower(getTotalPower(1))
         CharacterDetail.markPowerDirty()
     end
 
@@ -249,6 +274,7 @@ function M.bind(deps)
         getHeroLevel = getHeroLevel,
         calcHeroPower = calcHeroPower,
         calcHeroEstimate = calcHeroEstimate,
+        getTotalPower = getTotalPower,
         refreshPowerCache = refreshPowerCache,
         refreshUpgradeBadgeCache = refreshUpgradeBadgeCache,
         refreshNavBadge = refreshNavBadge,

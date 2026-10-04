@@ -54,8 +54,9 @@ function M.bind(deps)
     local function beginVictoryMarch()
         if get("victoryMarch") then return end
         local stageConfig = getStageConfig()
-        local nextId = stageConfig.getNextStageId(get("currentStageId"))
-        if not nextId then
+        local nextId, waitingTerminalId = stageConfig.resolveAutoAdvance(
+            get("currentStageId"), get("maxStageId_"), get("clearedStages"))
+        if nextId == get("currentStageId") and not waitingTerminalId then
             nextStage()
             return
         end
@@ -93,29 +94,17 @@ function M.bind(deps)
         end
     end
 
-    local function nextStage()
+    nextStage = function()
         local stageConfig = getStageConfig()
         local currentStageId = get("currentStageId")
-        local nextId = stageConfig.getNextStageId(currentStageId)
-        if nextId then
-            -- 终焉神殿：只有历史最高关卡已进入下一难度时才跳过
-            if stageConfig.isTerminalTemple(nextId) then
-                local skipToId, shouldSkip = stageConfig.shouldSkipTerminal(
-                    currentStageId, get("maxStageId_"), get("clearedStages"))
-                if skipToId and shouldSkip then
-                    print("[BattleScene] 终焉神殿已跳过(maxStage=" .. get("maxStageId_")
-                        .. " upper=" .. tostring(stageConfig.getProgressUpperBound(get("maxStageId_"), get("clearedStages"), nil))
-                        .. " skipTo=" .. tostring(skipToId) .. ") → " .. tostring(skipToId))
-                    nextId = skipToId
-                else
-                    TerminalConfirmDialog.open(nextId)
-                    return
-                end
-            end
-            applyStageSwitch(nextId, get("BG_ZOOM_FWD_TARGET"), "前进")
-        else
-            print("[BattleScene] 已是最后一关")
+        local nextId, waitingTerminalId = stageConfig.resolveAutoAdvance(
+            currentStageId, get("maxStageId_"), get("clearedStages"))
+        if waitingTerminalId then
+            TerminalConfirmDialog.open(waitingTerminalId)
+            return
         end
+        -- 最高难度没有终焉，原地重开，不能停止在空波次。
+        applyStageSwitch(nextId, get("BG_ZOOM_FWD_TARGET"), nextId == currentStageId and "重开" or "前进")
     end
 
     local function prevStage()
@@ -133,14 +122,15 @@ function M.bind(deps)
         end
     end
 
-    local function gotoStage(stageId)
+    local function gotoStage(stageId, opts)
         local stageConfig = getStageConfig()
         stageId = tonumber(stageId)
         if not stageId or stageId < 1 then return false, "无效关卡" end
         if stageConfig.isTerminalTemple(stageId) then
             local prevId = stageConfig.getTerminalPrevStageId(stageId)
             local cleared = get("clearedStages")
-            if not prevId or get("maxStageId_") < prevId or not cleared[prevId] then
+            if not prevId or get("maxStageId_") < prevId
+                or not (cleared[prevId] or cleared[tostring(prevId)]) then
                 return false, "终焉尚未解锁"
             end
         elseif stageId > get("maxStageId_") then
@@ -154,7 +144,7 @@ function M.bind(deps)
         set("reincarnationTimer", nil)
         set("pendingReincarnation", nil)
         set("bgTransAnim", { timer = 0, zoomTarget = get("BG_ZOOM_FWD_TARGET") })
-        loadStage(stageId, true)
+        loadStage(stageId, true, opts and opts.deferEnter == true)
         set("regenAccum", 0)
         restoreAllies(getAllies, resetAllyUnit)
         startBattleTalents()

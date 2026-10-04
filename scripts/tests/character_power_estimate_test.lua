@@ -182,16 +182,28 @@ function Start()
         power.refreshPowerCache()
         check(rosterPowerCache[3] == p1 and gamePower == p1, "清空天赋回到原有正式战力")
 
-        -- 神器桥替身区分队伍固定加成，验证名册不借用第二队缓存口径。
-        local secondHeroBefore = power.calcHeroPower(2)
+        -- T06 原断言把队2名册固定为裸英雄，固化了漏本队神器的旧缺陷。
+        -- 正确真值独立来自 HC 裸英雄和官方 valueModel，名册/槽缓存都应加本队89。
+        local bareSecond = HC.createHero(2, 1, nil, {}, {})
+        local skipped = { [AD.STR] = true, [AD.AGI] = true, [AD.INT] = true,
+            [AD.VIT] = true, [AD.LUK] = true, [AD.SPI] = true, [AD.HP] = true,
+            [AD.ATK_INTERVAL] = true, [AD.PHYS_RES] = true, [AD.MAG_RES] = true }
+        local bareValue = 0
+        for key, meta in pairs(AD.META) do
+            if not skipped[key] and meta.valueModel and meta.valueModel > 0 then
+                local divisor = meta.dataType == AD.TYPE_PCT and 100 or 1
+                bareValue = bareValue + bareSecond.attrs:get(key) * meta.valueModel / divisor
+            end
+        end
+        local secondHeroBefore = math.floor(bareValue + 0.5)
         artifactBonuses[1][1] = 37
         artifactBonuses[2][3] = 89
         power.refreshPowerCache()
         check(rosterPowerCache[3] == p1 + 37 and rosterPowerCache[3] == power.calcHeroPower(1),
-            "神器变更仅刷新即可同步名册，沿用 calcHeroPower 缺省队口径")
+            "神器变更仅刷新即可同步名册，沿用 calcHeroPower 真实归属口径")
         check(teamPowerCaches[2][3] == secondHeroBefore + 89
-            and rosterPowerCache[1] == secondHeroBefore,
-            "三队缓存保留各自神器装配，名册不混入非缺省队加成")
+            and rosterPowerCache[1] == secondHeroBefore + 89,
+            "三队缓存与名册都包含本队神器，不漏队2或借队1加成")
         check(gamePower == p1 + 37 and runtimeOnlyPower == 0 and rosterPowerCache[2] == 0,
             "神器刷新不把全名册或其他队战力加进总战力")
 

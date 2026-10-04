@@ -13,6 +13,18 @@ function M.bind(deps)
     local rebuildRoster = deps.rebuildRoster
     local refreshPowerCache = deps.refreshPowerCache
     local refreshNavBadge = deps.refreshNavBadge
+    local findHeroDeployment = deps.findHeroDeployment
+
+    -- 养成回执不是编队交易：更新 UI 后，仅让英雄真实所属战线重建属性。
+    -- 未上阵英雄不借用当前编辑队，也不失效任何战线/累计统计。
+    local function refreshHeroProgress(heroId)
+        rebuildRoster()
+        refreshPowerCache()
+        refreshNavBadge()
+        local _, teamIdx = findHeroDeployment(heroId)
+        local callback = get("onHeroProgressChangedCallback")
+        if teamIdx and callback then callback(heroId, teamIdx) end
+    end
 
     local function addHeroExp(heroId, amount)
         local ownedSet = get("ownedSet")
@@ -75,8 +87,7 @@ function M.bind(deps)
         elseif advLevel == 2 then
             ownData.advBranch.second = branchId
         end
-        local onTeamChangedCallback = get("onTeamChangedCallback")
-        if onTeamChangedCallback then onTeamChangedCallback(1) end
+        refreshHeroProgress(heroId)
     end
 
     local function resetHeroAdvBranch(heroId)
@@ -84,8 +95,7 @@ function M.bind(deps)
         local ownData = ownedSet[heroId]
         if not ownData then return end
         ownData.advBranch = nil
-        local onTeamChangedCallback = get("onTeamChangedCallback")
-        if onTeamChangedCallback then onTeamChangedCallback(1) end
+        refreshHeroProgress(heroId)
     end
 
     return {

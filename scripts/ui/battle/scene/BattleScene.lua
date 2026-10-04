@@ -516,7 +516,8 @@ end
 --- 加载关卡
 ---@param stageId number 4位关卡ID, 如 0101
 ---@param skipBattleStart? boolean 跳过 TAL/TM 战斗启动（调用方自行在 resetAllyUnit 后调用 startBattleTalents）
-local function loadStage(stageId, skipBattleStart)
+---@param deferEnter? boolean 三行宿主仅加载兼容Scene，入场由真实Driver.start通知
+local function loadStage(stageId, skipBattleStart, deferEnter)
     -- 旧单场入口只重置自己的默认容器，不能清掉最后绘制的三行战线。
     BattleMountScope.mountDefault()
     local ctx = {
@@ -565,7 +566,9 @@ local function loadStage(stageId, skipBattleStart)
         battle.battleMode = isFirstClear and "firstClear" or "idle"
     end
     print("[BattleScene] stage loaded id=" .. tostring(stageId))
-    require("systems.StoryPlayer").onStage(stageId, "enter")
+    if not deferEnter and currentStageId == stageId then
+        require("ui.battle.stage.StageEntryEvents").notify(stageId, 1)
+    end
 end
 
 local _navLogic
@@ -923,6 +926,7 @@ function BattleScene.pumpBattleCards()
 end
 
 function BattleScene.update(dt)
+    require("ui.battle.stage.StageEntryEvents").retry(1)
     pumpBattleCards()
     for _, list in ipairs({ enemies, enemyQueue }) do
         for _, unit in ipairs(list) do
@@ -1336,10 +1340,13 @@ function BattleScene.completeTriStageClear(stageId, teamIdx)
     local wasCleared = clearedStages[id] == true or clearedStages[tostring(id)] == true
         or savedCleared[id] == true or savedCleared[tostring(id)] == true
     clearedStages[id] = true
-    -- 末关仅解锁终焉入口，不能把终焉当普通下一关或直接跳到轮回目标。
+    -- 三队同源推进：未通终焉只解锁入口，已通/已跨难度才预约轮回首关。
     local nextId = SC.getNextStageId(id)
-    local progressId = nextId and not SC.isTerminalTemple(nextId) and nextId or id
+    local liveTerminalCleared = nextId and (clearedStages[nextId] == true or clearedStages[tostring(nextId)] == true)
+    local savedTerminalCleared = nextId and (savedCleared[nextId] == true or savedCleared[tostring(nextId)] == true)
+    local sharedCleared = nextId and { [nextId] = liveTerminalCleared or savedTerminalCleared } or {}
     local savedMax = type(battle) == "table" and tonumber(battle.maxStageId) or 0
+    local progressId = SC.resolveAutoAdvance(id, math.max(maxStageId_, savedMax or 0), sharedCleared)
     maxStageId_ = math.max(maxStageId_, savedMax or 0, progressId)
     if teamIdx == 1 then
         BattleScene.adoptStageProgress(progressId)
@@ -1376,7 +1383,8 @@ function BattleScene.completeTriTerminal(stageId)
     local wasFirstClear = not (clearedStages[stageId] or clearedStages[tostring(stageId)])
     clearedStages[stageId] = true
     maxStageId_ = math.max(maxStageId_, targetId)
-    loadStage(targetId, true)
+    -- 三行宿主的实际入场由Driver完成；旧单场路径保留load入场通知。
+    loadStage(targetId, true, require("ui.battle.tri.BattleTriPage").isOpen())
     for _, u in ipairs(allies) do resetAllyUnit(u) end
     startBattleTalents()
     BottomNav.setAllLocked(false)
@@ -1440,9 +1448,10 @@ function BattleScene.getClearedStages()
 end
 
 --- [三行并行] 选关页面: 跳转到指定关卡（仅允许 ≤ 已解锁最大关卡）
-function BattleScene.gotoStage(stageId)
+---@param opts? { deferEnter?: boolean } 三行宿主由Driver实际入场通知
+function BattleScene.gotoStage(stageId, opts)
     if not _navLogic then bindBattleExtracts() end
-    return _navLogic.gotoStage(stageId)
+    return _navLogic.gotoStage(stageId, opts)
 end
 
 --- 当前是否处于终焉神殿关卡
@@ -1641,12 +1650,9 @@ function BattleScene.refreshAllyStats()
                     if newUnit.awakeningNodes then
                         u.awakeningNodes = newUnit.awakeningNodes
                     end
-                    if newUnit.advBranch then
-                        u.advBranch = newUnit.advBranch
-                    end
-                    if newUnit.advTalentIds then
-                        u.advTalentIds = newUnit.advTalentIds
-                    end
+                    -- 重置职业的新值为nil，也必须清掉旧运行时转职节点。
+                    u.advBranch = newUnit.advBranch
+                    u.advTalentIds = newUnit.advTalentIds
                     -- 等级变化时记录待定等级（使用有效等级，含共鸣加成）
                     local currentStatLevel = u._pendingLevel or u.level
                     if heroLevel > currentStatLevel then
@@ -1748,6 +1754,7 @@ end
 
 --- 重置战斗场景到初始默认状态（清除存档后调用）
 function BattleScene.resetToDefault()
+    require("ui.battle.stage.StageEntryEvents").reset()
     BattleMountScope.mountDefault()
     currentStageId = 0101
     clearedStages = {}

@@ -172,6 +172,10 @@ local rosterPowerCache = {}  -- rosterPowerCache[i] = number
 ---@type fun()|nil
 local onTeamChangedCallback = nil
 
+-- 养成变化不伪装成编队提交；只通知英雄真实所属队，未上阵允许 nil。
+---@type fun(heroId: number, teamIdx: number|nil)|nil
+local onHeroProgressChangedCallback = nil
+
 -- ======================== 初始角色配置 ========================
 
 --- 初始英雄 ID 列表（默认为空，由服务端数据推送填充）
@@ -250,16 +254,16 @@ local function getHeroLevel(heroId)
     return ensurePower().getHeroLevel(heroId)
 end
 
---- [三队适配] teamIdx 透传：按该队伍的装配表计算神器加成战力（缺省 1）
+--- teamIdx 透传；未提供时从英雄真实所属队/槽位读取神器，不随编辑队变化。
 local function calcHeroPower(heroId, partySlot, teamIdx)
     return ensurePower().calcHeroPower(heroId, partySlot, teamIdx)
 end
 
 -- 实战预估（分项计价原型，见 systems/CombatPowerEstimate.lua）：
 -- 官方战力不受影响；预估仅在详情页可选副行展示（默认关闭，验收后开启）
-local function calcHeroEstimate(heroId, partySlot)
+local function calcHeroEstimate(heroId, partySlot, teamIdx)
     local power = ensurePower()
-    return power.calcHeroEstimate and power.calcHeroEstimate(heroId, partySlot) or 0
+    return power.calcHeroEstimate and power.calcHeroEstimate(heroId, partySlot, teamIdx) or 0
 end
 
 local function refreshPowerCache()
@@ -422,6 +426,42 @@ local function hitTestRosterCard(dx, dy)
     return nil
 end
 
+-- 英雄数据 push 常为服务端原地修改；比较前先取值快照，不能只比 table 引用。
+-- 转职/重置由独立养成回执刷新真实队，订阅只承担等级/觉醒/追加技/布局的旧兼容刷新。
+local function copyRefreshValue(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for k, v in pairs(value) do result[k] = copyRefreshValue(v) end
+    return result
+end
+
+local function sameRefreshValue(a, b)
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return a == b end
+    for k, v in pairs(a) do if not sameRefreshValue(v, b[k]) then return false end end
+    for k in pairs(b) do if a[k] == nil then return false end end
+    return true
+end
+
+local function mainTeamRefreshSnapshot()
+    local result = {}
+    local slots = teams[1] and teams[1].slots or {}
+    for i = 1, MAX_SLOTS do
+        local slot = slots[i]
+        local heroId = slot and slot.state == "occupied" and slot.heroId or nil
+        local own = heroId and ownedSet[heroId]
+        result[i] = { heroId = heroId,
+            level = own and own.level,
+            awakening = copyRefreshValue(own and own.awakening or {}),
+            extraTalent = copyRefreshValue(own and own.extraTalent or {}) }
+    end
+    return result
+end
+
+-- 持有上次已应用数据的值快照：服务端可能在通知前原地修改共享 awakening 表。
+---@type table|nil
+local mainTeamRefreshBaseline = nil
+
 -- ======================== Public API ========================
 
 function CharacterPanel.init(vg)
@@ -490,14 +530,19 @@ function CharacterPanel.init(vg)
 
     -- 监听英雄数据变更 → 碎片/拥有状态变化时刷新列表
     ClientDispatcher.subscribe("heroes", function()
+        local previousMain = mainTeamRefreshBaseline or mainTeamRefreshSnapshot()
         local heroesData = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
         if heroesData then
             CharacterPanel.setHeroesData(heroesData)
         end
         refreshPowerCache()
-        local ok, BS = pcall(require, "ui.battle.scene.BattleScene")
-        if ok and BS and BS.refreshAllyStats then
-            BS.refreshAllyStats()
+        local okTri, TriPage = pcall(require, "ui.battle.tri.BattleTriPage")
+        local triOpen = okTri and TriPage.isOpen and TriPage.isOpen()
+        if not triOpen and not sameRefreshValue(previousMain, mainTeamRefreshSnapshot()) then
+            local ok, BS = pcall(require, "ui.battle.scene.BattleScene")
+            if ok and BS and BS.refreshAllyStats then
+                BS.refreshAllyStats()
+            end
         end
     end)
 
@@ -535,6 +580,7 @@ function CharacterPanel.init(vg)
     -- 构建 roster
     rebuildRoster()
     refreshNavBadge()
+    mainTeamRefreshBaseline = mainTeamRefreshSnapshot()
 
     print("[CharacterPanel] init OK, roster count: " .. #heroRoster
         .. ", initial heroes: " .. #INITIAL_HERO_IDS
@@ -832,6 +878,15 @@ function CharacterPanel.getShards(heroId)
     return shardMap[heroId] or 0
 end
 
+--- 英雄真实出战位置：不依赖当前编辑队。显式快照查询仅使用该快照。
+---@param heroId number|string
+---@param heroesData? table
+---@return number|nil partySlot
+---@return number|nil teamIdx
+function CharacterPanel.findHeroDeployment(heroId, heroesData)
+    return CharacterPower.findHeroDeployment(heroId, heroesData or { teams = teams })
+end
+
 --- 判断某英雄是否已出战（轻量版，不创建 hero 实例）
 --- [三队并行] 扫描全部队伍（同一英雄同一时刻只能在一队）
 ---@param heroId number
@@ -964,6 +1019,12 @@ function CharacterPanel.setOnTeamChanged(callback)
     onTeamChangedCallback = callback
 end
 
+--- 养成属性刷新回调，不清编队累计统计，不提交编队或重开旁队战斗。
+---@param callback fun(heroId: number, teamIdx: number|nil)|nil
+function CharacterPanel.setOnHeroProgressChanged(callback)
+    onHeroProgressChangedCallback = callback
+end
+
 --- 设置初始英雄列表（新手引导"三选一"后调用）
 --- 会解锁这些英雄并自动部署到出战槽位
 ---@param heroIds number[] 英雄 ID 列表
@@ -1002,14 +1063,11 @@ function CharacterPanel.setInitialHeroes(heroIds, level)
     if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
 end
 
---- 获取当前队伍总战斗力（各出战槽位战斗力之和）
+--- 获取指定队伍总战斗力；无参保留资料页当前编辑队语义，runtime份额按该队人数。
+---@param teamIdx? number
 ---@return number
-function CharacterPanel.getTotalPower()
-    local total = 0
-    for i = 1, MAX_SLOTS do
-        total = total + (slotPowerCache[i] or 0)
-    end
-    return total + runtimeOnlyPowerCache
+function CharacterPanel.getTotalPower(teamIdx)
+    return ensurePower().getTotalPower(teamIdx or activeTeamIdx)
 end
 
 --- 强制重新计算所有槽位战力缓存并刷新 TopBar（供外部模块触发，如槽位强化后）
@@ -1198,11 +1256,15 @@ local function ensureHeroSync()
 end
 
 function CharacterPanel.setHeroesData(data)
-    return ensureHeroSync().setHeroesData(data)
+    local result = ensureHeroSync().setHeroesData(data)
+    mainTeamRefreshBaseline = mainTeamRefreshSnapshot()
+    return result
 end
 
 function CharacterPanel.resetSessionData()
-    return ensureHeroSync().resetSessionData()
+    local result = ensureHeroSync().resetSessionData()
+    mainTeamRefreshBaseline = mainTeamRefreshSnapshot()
+    return result
 end
 
 --- 获取当前共鸣等级（全队前 5 高等级中的最低值）
@@ -1226,9 +1288,12 @@ local function bindProgress()
             if k == "ownedSet" then return ownedSet
             elseif k == "teamSlots" then return teamSlots
             elseif k == "onTeamChangedCallback" then return onTeamChangedCallback
+            elseif k == "onHeroProgressChangedCallback" then return onHeroProgressChangedCallback
+            elseif k == "teams" then return teams
             end
             return nil
         end,
+        findHeroDeployment = CharacterPanel.findHeroDeployment,
         applyResonanceSync = applyResonanceSync,
         syncTeamSlotsFromOwned = syncTeamSlotsFromOwned,
         rebuildRoster = rebuildRoster,

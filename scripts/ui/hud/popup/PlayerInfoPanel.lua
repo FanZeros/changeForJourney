@@ -131,7 +131,7 @@ local TOAST = {
 
 -- 战力背景框
 local PWR_BG = {
-    CX = 455, CY = 560, W = 200, H = 50, R = 17,
+    CX = 480, CY = 560, W = 250, H = 50, R = 17,
     CR = 0x64, CG = 0x35, CB = 0x16,  -- 643516
     A = 128,  -- 50%
 }
@@ -713,7 +713,7 @@ local function drawTeamCard(vg, cx, cy, slot, power)
             local clipW = fillW * expProgress
             nvgSave(vg)
             nvgScissor(vg, fillX, fillY, clipW, fillH)
-            local paint = nvgImagePattern(vg, fillX, fillY, fillW, fillH, 0, img.expBarFillS, 1.0)
+            local paint = nvgImagePattern(vg, fillX, fillY, fillW, fillH, 0, img.expBarFillS, 1.0) --[[@as NVGpaint]]
             nvgBeginPath(vg)
             nvgRect(vg, fillX, fillY, fillW, fillH)
             nvgFillPaint(vg, paint)
@@ -881,14 +881,22 @@ function PlayerInfoPanel.draw(vg)
     nvgFill(vg)
 
     -- ── 12. 战力图标 + 战力数值（组合居中在战力背景框内）──
-    local displayPower = CharacterPanel.getTotalPower()
-    local powerStr = tostring(displayPower)
+    -- 保留资料显示当前编辑队的产品语义；队号和该队人数战力在同一帧明确读取。
+    local displayTeamIdx = CharacterPanel.getActiveTeamIdx()
+    local displayPower = CharacterPanel.getTotalPower(displayTeamIdx)
+    local powerStr = I18n.format("【小队%d】%s", displayTeamIdx, tostring(displayPower))
 
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, PWR.FONT)
+    local powerFont = PWR.FONT
+    nvgFontSize(vg, powerFont)
     local textW = nvgTextBounds(vg, 0, 0, powerStr)
     local iconW = PWR.ICON_W
     local gap = 4
+    while textW + iconW + gap > PWR_BG.W - 12 and powerFont > 18 do
+        powerFont = powerFont - 1
+        nvgFontSize(vg, powerFont)
+        textW = nvgTextBounds(vg, 0, 0, powerStr)
+    end
     local totalW = iconW + gap + textW
     local startX = PWR_BG.CX - totalW * 0.5
 
@@ -897,7 +905,7 @@ function PlayerInfoPanel.draw(vg)
         iconW, PWR.ICON_H, 1.0)
 
     drawTextStroke(vg, startX + iconW + gap, PWR_BG.CY, powerStr,
-        PWR.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        powerFont, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         PWR.FR, PWR.FG, PWR.FB, PWR.SW,
         { strokeColor = { PWR.SR, PWR.SG, PWR.SB } })
 
@@ -947,7 +955,7 @@ function PlayerInfoPanel.draw(vg)
     if fillW > 0 and img.expFill >= 0 then
         nvgSave(vg)
         nvgScissor(vg, barLeft, barTop, fillW, barH)
-        local paint = nvgImagePattern(vg, barLeft, barTop, barW, barH, 0, img.expFill, 1.0)
+        local paint = nvgImagePattern(vg, barLeft, barTop, barW, barH, 0, img.expFill, 1.0) --[[@as NVGpaint]]
         nvgBeginPath(vg)
         nvgRect(vg, barLeft, barTop, barW, barH)
         nvgFillPaint(vg, paint)

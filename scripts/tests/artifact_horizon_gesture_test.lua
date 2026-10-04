@@ -150,6 +150,8 @@ function Start()
             ["ui.hud.popup.OfflineRewardPanel"] = "offline", ["ui.hud.popup.LevelUpPopup"] = "level",
             ["ui.hud.popup.UpdateNoticePopup"] = "notice", ["ui.battle.stage.SweepDialog"] = "sweep",
             ["ui.battle.popup.DamageStatsPanel"] = "damage", ["ui.battle.stage.StageSelectDialog"] = "stage",
+            ["ui.battle.popup.TerminalConfirmDialog"] = "terminal",
+            ["ui.tavern.TavernPopups"] = "tavernPopups", ["ui.tavern.TargetRecruitPanel"] = "targetRecruit",
             ["systems.TutorialManager"] = "tutorial", ["ui.story.gate.DarkTitleScreenGate"] = "title",
             ["ui.story.gate.StartScreen"] = "start", ["ui.story.gate.LetterIntro"] = "letter",
             ["ui.story.gate.IntroCutscene"] = "intro", ["ui.story.ScenarioDialogue"] = "scenario",
@@ -178,6 +180,7 @@ function Start()
         local realPaths = {
             ["boot.ArtifactGesture"] = true, ["boot.StandaloneHorizon"] = true,
             ["boot.StandaloneHorizonInput"] = true, ["boot.OfflineRewardOverlay"] = true,
+            ["boot.SeamBackGesture"] = true,
         }
         ---@type any
         local realModules = {}

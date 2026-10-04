@@ -237,7 +237,7 @@ function Input.bind(ctx)
         RT = RT, width = logicalW, height = logicalH, dpr = dpr, hit = seamHitAt,
         threshold = TAP_THRESHOLD, bootReady = bootReady_, pageModal = HorizonPageModalActive,
         tapInterval = MIN_TAP_INTERVAL, getLastTap = function() return lastTapTime end,
-        setLastTap = function(t) lastTapTime = t end,
+        setLastTap = function(t) lastTapTime = t end, source = function() return touchPosition and touchPosition.id or "mouse" end,
     })
     ---@type integer|nil
     local offlineTouchId = nil
@@ -1244,7 +1244,7 @@ function Input.bind(ctx)
 
     local activeTouchId = nil ---@type integer|nil
     local function dispatchTouch(eventType, eventData, handler)
-        touchPosition = { x = eventData["X"]:GetInt(), y = eventData["Y"]:GetInt() }
+        touchPosition = { x = eventData["X"]:GetInt(), y = eventData["Y"]:GetInt(), id = eventData["TouchID"]:GetInt() }
         local proxy = { Button = { GetInt = function() return MOUSEB_LEFT end } }
         local ok, err = pcall(handler, eventType, proxy)
         touchPosition = nil

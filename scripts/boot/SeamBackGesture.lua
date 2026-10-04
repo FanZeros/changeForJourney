@@ -53,11 +53,12 @@ function Gesture.bind(ctx)
         local button = ctx.hit(x, y)
         if not button then return false end
         press = { key = button.key, openedAt = button.openedAt, x = x, y = y,
-            layout = layout(), moved = false }
+            layout = layout(), moved = false, source = ctx.source() }
         return true
     end
     function api.move(x, y)
         if not press then return false end
+        if press.source ~= ctx.source() then return true end
         if not eligible() or not sameLayout(press.layout, layout())
             or math.abs(x - press.x) + math.abs(y - press.y) >= ctx.threshold then
             press.moved = true
@@ -66,6 +67,7 @@ function Gesture.bind(ctx)
     end
     function api.up(x, y)
         if not press then return false end
+        if press.source ~= ctx.source() then return true end
         local start = press
         press = nil
         local button = eligible() and ctx.hit(x, y)

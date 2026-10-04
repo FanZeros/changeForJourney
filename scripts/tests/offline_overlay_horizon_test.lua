@@ -1422,6 +1422,30 @@ function Start()
                 check(n("tavern.close") == 2, "距上次tap超过.12恢复")
             end)
         end
+        for _, owner in ipairs({ "mouse", "touch" }) do
+            local other = owner == "mouse" and "touch" or "mouse"
+            for _, moving in ipairs({ false, true }) do
+                for _, dpr in ipairs({ 1, 2, 3 }) do
+                    runCase("seam混合owner=" .. owner .. " foreignMove=" .. tostring(moving) .. " DPR=" .. dpr, function()
+                        local x, y = seamFixture("tavern", dpr, true)
+                        pointer(other, "down", 960, y)
+                        check(n("tri.handleDragBegin") == 1, "非owner先按tri，真实主指/鼠标链已建立")
+                        pointer(owner, "down", x, y)
+                        clearCalls()
+                        if moving then
+                            pointer(other, "move", x + 40, y); pointer(other, "move", x, y)
+                        end
+                        clock.elapsedTime = clock.elapsedTime + 0.2
+                        pointer(other, "up", x, y)
+                        noSeam("非owner Up不结算仍按住的seam捕获")
+                        check(state.tavern, "另一输入结束后酒馆仍打开")
+                        pointer(owner, "up", x, y)
+                        check(n("tavern.close") == 1 and not state.tavern, "owner Up正常关闭，非owner往返不标moved")
+                        noTri("混合捕获后的非owner Move/Up均消费，不下放tri")
+                    end)
+                end
+            end
+        end
         runCase("Tavern seam副指/右键不夺主指capture", function()
             local x, y = seamFixture("tavern", 3, true)
             positionWindow(x, y)

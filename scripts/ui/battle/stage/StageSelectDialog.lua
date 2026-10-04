@@ -570,6 +570,16 @@ function StageSelectDialog.handleScroll(wheel, x, y)
         and y >= top - 70 and y <= bottom + 70 then
         local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
         state.chScroll = math.max(0, math.min(maxScroll, state.chScroll - wheel))
+    else
+        local id, cards = cardRowAt(groups, x, y)
+        if id and cards then
+            local limit = cardScrollLimit(cards)
+            local offset = math.max(0, math.min(limit,
+                (state.cardScroll[id] or 0) - wheel * (D.CARD_W + D.CARD_GAP)))
+            state.cardScroll[id] = offset
+            -- 增量拖动直接使用当前偏移；滚轮混用后不回到按下时的旧位置。
+            if state.cardDragId == id then state.cardDragScroll = offset end
+        end
     end
     return true
 end

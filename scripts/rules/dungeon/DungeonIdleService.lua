@@ -6,6 +6,7 @@
 local PDM               = require("rules.character.PlayerDataManager")
 local DungeonConfig     = require("config.DungeonConfig")
 local DungeonIdleConfig = require("config.DungeonIdleConfig")
+local DungeonService    = require("rules.dungeon.DungeonService")
 local CurrencyService   = require("rules.currency.CurrencyService")
 
 local DungeonIdleService = {}
@@ -25,6 +26,9 @@ end
 -- ======================== 工具 ========================
 
 local function isDungeonUnlocked(uid, dungeonId)
+    if not DungeonIdleConfig.REWARD_TYPE[dungeonId] then return false end
+    -- 隐藏旧遗迹仅结清已经累积的粉尘，不用新装备解锁条件阻挡旧存量。
+    if dungeonId == "ancient_ruin" then return true end
     local req = DungeonConfig.UNLOCK_CONDITIONS[dungeonId] or 0
     if req <= 0 then return true end
     local battle = PDM.GetModule(uid, "battle")
@@ -33,14 +37,18 @@ local function isDungeonUnlocked(uid, dungeonId)
 end
 
 local function getSub(dungeon, dungeonId)
-    if not dungeon[dungeonId] then
+    if type(dungeon[dungeonId]) ~= "table" then
         dungeon[dungeonId] = {
             floor = 1, cleared = {}, dailyUsed = 0, dailyDay = 0,
             idleAccumSec = 0,
         }
     end
     local sub = dungeon[dungeonId]
-    sub.idleAccumSec = math.floor(tonumber(sub.idleAccumSec) or 0)
+    sub.idleAccumSec = math.max(0, math.floor(tonumber(sub.idleAccumSec) or 0))
+    if dungeonId == "equipment_vault" then
+        sub.idleConsumedSec = math.max(0, math.floor(tonumber(sub.idleConsumedSec) or 0))
+        if sub.idleAccumSec == 0 then sub.idleConsumedSec = 0 end
+    end
     return sub
 end
 
@@ -53,9 +61,14 @@ local function capAccumSec(sec)
     return sec
 end
 
-local function addAccumSec(sub, addSec)
+local function addAccumSec(sub, addSec, dungeonId)
     if addSec <= 0 then return end
-    sub.idleAccumSec = capAccumSec(sub.idleAccumSec + addSec)
+    if dungeonId == "equipment_vault" then
+        local cursor = math.min(DungeonIdleConfig.HARD_CAP_SEC, sub.idleConsumedSec or 0)
+        sub.idleAccumSec = math.max(0, capAccumSec(cursor + sub.idleAccumSec + addSec) - cursor)
+    else
+        sub.idleAccumSec = capAccumSec(sub.idleAccumSec + addSec)
+    end
 end
 
 -- ======================== 生命周期 ========================
@@ -82,10 +95,10 @@ function DungeonIdleService.SyncOfflineOnEnter(uid)
     for _, dungeonId in ipairs(DUNGEON_IDS) do
         if isDungeonUnlocked(uid, dungeonId) then
             local sub = getSub(dungeon, dungeonId)
-            local idleFloor = DungeonIdleConfig.getIdleFloorFromSub(sub)
+            local idleFloor = DungeonIdleConfig.getIdleFloorFromSub(sub, dungeonId)
             if idleFloor > 0 and DungeonIdleConfig.getIdlePerMin(dungeonId, idleFloor) > 0 then
                 local before = sub.idleAccumSec
-                addAccumSec(sub, offlineSec)
+                addAccumSec(sub, offlineSec, dungeonId)
                 if sub.idleAccumSec ~= before then
                     dirty = true
                     print(string.format(
@@ -121,7 +134,7 @@ function DungeonIdleService.HandleIdleAccum(uid, dt)
     for _, dungeonId in ipairs(DUNGEON_IDS) do
         if isDungeonUnlocked(uid, dungeonId) then
             local sub = getSub(dungeon, dungeonId)
-            local idleFloor = DungeonIdleConfig.getIdleFloorFromSub(sub)
+            local idleFloor = DungeonIdleConfig.getIdleFloorFromSub(sub, dungeonId)
             if idleFloor > 0 and DungeonIdleConfig.getIdlePerMin(dungeonId, idleFloor) > 0 then
                 do
                     local before = sub.idleAccumSec
@@ -129,7 +142,7 @@ function DungeonIdleService.HandleIdleAccum(uid, dt)
                     local whole = math.floor(frac)
                     fracByDungeon[dungeonId] = frac - whole
                     if whole > 0 then
-                        addAccumSec(sub, whole)
+                        addAccumSec(sub, whole, dungeonId)
                         if sub.idleAccumSec ~= before then
                             dirty = true
                         end
@@ -161,10 +174,10 @@ function DungeonIdleService.Preview(uid, dungeonId)
     if not dungeon then return nil end
 
     local sub = getSub(dungeon, dungeonId)
-    local idleFloor = DungeonIdleConfig.getIdleFloorFromSub(sub)
+    local idleFloor = DungeonIdleConfig.getIdleFloorFromSub(sub, dungeonId)
     local accumSec = sub.idleAccumSec or 0
-    local amount, minutes = DungeonIdleConfig.calcReward(dungeonId, idleFloor, accumSec)
-    local rewardType = DungeonIdleConfig.REWARD_TYPE[dungeonId] or "gold"
+    local amount, minutes = DungeonIdleConfig.calcReward(dungeonId, idleFloor, accumSec, sub.idleConsumedSec)
+    local rewardType = DungeonIdleConfig.REWARD_TYPE[dungeonId]
 
     return {
         amount     = amount,
@@ -186,6 +199,9 @@ end
 function DungeonIdleService.Claim(uid, dungeonId)
     if not dungeonId or dungeonId == "" then
         return false, "缺少dungeonId参数", nil
+    end
+    if not DungeonIdleConfig.REWARD_TYPE[dungeonId] then
+        return false, "未知副本", nil
     end
     if not isDungeonUnlocked(uid, dungeonId) then
         return false, "副本未解锁", nil
@@ -209,15 +225,30 @@ function DungeonIdleService.Claim(uid, dungeonId)
     local claimMinutes = preview.minutes or 0
     local claimSec = claimMinutes * 60
 
-    local okGrant = CurrencyService.GrantReward(uid, {
-        type   = preview.rewardType,
-        amount = preview.amount,
-    })
-    if not okGrant then
-        return false, "奖励发放失败", nil
+    local equipmentResult = {} ---@type table
+    if preview.rewardType == "equip" then
+        -- 生成、容量检查与交付必须全部成功；失败不消耗任何挂机积累。
+        local okGrant, grantErr, result = DungeonService.GrantEquipment(
+            uid, dungeonId, preview.idleFloor, preview.amount)
+        if not okGrant then
+            return false, grantErr or "装备奖励发放失败", nil
+        end
+        equipmentResult = result or {}
+    else
+        local okGrant = CurrencyService.GrantReward(uid, {
+            type   = preview.rewardType,
+            amount = preview.amount,
+        })
+        if not okGrant then
+            return false, "奖励发放失败", nil
+        end
     end
 
     sub.idleAccumSec = math.max(0, (sub.idleAccumSec or 0) - claimSec)
+    if preview.rewardType == "equip" then
+        -- 保留不足一件的原始余时与尾段位置；本轮清空后允许下一轮重新开始。
+        sub.idleConsumedSec = sub.idleAccumSec > 0 and ((sub.idleConsumedSec or 0) + claimSec) or 0
+    end
     PDM.MarkDirty(uid, "dungeon")
     PDM.FlushImmediate(uid)
 
@@ -232,6 +263,10 @@ function DungeonIdleService.Claim(uid, dungeonId)
         idleFloor  = preview.idleFloor,
         minutes    = claimMinutes,
         accumSec   = sub.idleAccumSec,
+        equips     = equipmentResult.equips,
+        inventoryCount = equipmentResult.inventoryCount,
+        lootboxCount = equipmentResult.lootboxCount,
+        idleConsumedSec = sub.idleConsumedSec,
     }
 end
 

@@ -1,4 +1,4 @@
--- DungeonCompat.lua — 副本/通天塔存档兼容（层数回退等）
+-- DungeonCompat.lua — 副本/通天塔存档兼容（新结构补全与旧难度迁移）
 local DungeonConfig = require("config.DungeonConfig")
 
 local DungeonCompat = {}
@@ -22,11 +22,12 @@ end
 ---@param cleared table|nil
 ---@return table
 local function normalizeCleared(cleared)
-    if not cleared then return {} end
+    if type(cleared) ~= "table" then return {} end
     local fixed = {}
     for k, v in pairs(cleared) do
-        local numK = tonumber(k)
-        if numK and v then
+        local numK = math.tointeger(tonumber(k) or 0)
+        -- 只接受整数层号；false 不能成为已通关记录，也不将小数层截断成别的层。
+        if numK and numK >= 1 and v then
             fixed[numK] = true
         end
     end
@@ -47,7 +48,7 @@ end
 ---@param data table mod_dungeon
 ---@return boolean migrated
 function DungeonCompat.migrateMonsterBuffV1(data)
-    data.compat = data.compat or {}
+    if type(data.compat) ~= "table" then data.compat = {} end
     if data.compat.monsterBuffV1 then
         return false
     end
@@ -62,6 +63,7 @@ function DungeonCompat.migrateMonsterBuffV1(data)
         end
     end
 
+    -- 此迁移只覆盖当年的旧副本；新装备/黑钻的独立进度绝不能回退。
     apply(data.gold_mine, "gold_mine")
     apply(data.ancient_ruin, "ancient_ruin")
     apply(data.babel_tower, "babel_tower")
@@ -71,57 +73,36 @@ function DungeonCompat.migrateMonsterBuffV1(data)
     return true
 end
 
---- 加载/接收：结构补全 + cleared 修正 + 卡层修复；层数回退迁移仅由服务端 PDM 显式开启
+--- 加载/接收：幂等补全结构、修正 key 和日计数；不复制、清空或回退旧副本进度。
+--- 旧难度迁移仍只由服务端或显式 runMigration 开启，不扩展到新 ID。
 ---@param data table mod_dungeon
 ---@param opts table|nil { runMigration?: boolean }
 function DungeonCompat.onLoad(data, opts)
-    if not data.gold_mine then
-        data.gold_mine = { floor = 1, cleared = {}, dailyUsed = 0, dailyDay = 0, idleAccumSec = 0 }
-    end
-    local gm = data.gold_mine
-    gm.floor         = math.max(1, math.floor(tonumber(gm.floor) or 1))
-    gm.dailyUsed     = math.floor(tonumber(gm.dailyUsed) or 0)
-    gm.dailyDay      = math.floor(tonumber(gm.dailyDay) or 0)
-    gm.idleAccumSec  = math.max(0, math.floor(tonumber(gm.idleAccumSec) or 0))
-    gm.cleared       = normalizeCleared(gm.cleared)
-
-    if not data.ancient_ruin then
-        data.ancient_ruin = { floor = 1, cleared = {}, dailyUsed = 0, dailyDay = 0, idleAccumSec = 0 }
-    end
-    local ar = data.ancient_ruin
-    ar.floor         = math.max(1, math.floor(tonumber(ar.floor) or 1))
-    ar.dailyUsed     = math.floor(tonumber(ar.dailyUsed) or 0)
-    ar.dailyDay      = math.floor(tonumber(ar.dailyDay) or 0)
-    ar.idleAccumSec  = math.max(0, math.floor(tonumber(ar.idleAccumSec) or 0))
-    ar.cleared       = normalizeCleared(ar.cleared)
-
-    if not data.babel_tower then
-        data.babel_tower = { floor = 1, cleared = {}, dailyUsed = 0, dailyDay = 0, buffs = {}, idleAccumSec = 0 }
-    end
-    local bt = data.babel_tower
-    bt.floor         = math.max(1, math.floor(tonumber(bt.floor) or 1))
-    bt.dailyUsed     = math.floor(tonumber(bt.dailyUsed) or 0)
-    bt.dailyDay      = math.floor(tonumber(bt.dailyDay) or 0)
-    bt.idleAccumSec  = math.max(0, math.floor(tonumber(bt.idleAccumSec) or 0))
-    bt.cleared       = normalizeCleared(bt.cleared)
-    if not bt.buffs then bt.buffs = {} end
-
     local today = math.floor((os.time() + 28800) / 86400)
-    if (gm.dailyDay or 0) ~= today then
-        gm.dailyUsed = 0
-        gm.dailyDay  = today
+    for _, id in ipairs({ "gold_mine", "ancient_ruin", "equipment_vault", "black_diamond", "babel_tower" }) do
+        if type(data[id]) ~= "table" then
+            data[id] = {}
+        end
+        local sub = data[id]
+        sub.floor        = math.max(1, math.floor(tonumber(sub.floor) or 1))
+        sub.dailyUsed    = math.max(0, math.floor(tonumber(sub.dailyUsed) or 0))
+        sub.dailyDay     = math.max(0, math.floor(tonumber(sub.dailyDay) or 0))
+        sub.idleAccumSec = math.max(0, math.floor(tonumber(sub.idleAccumSec) or 0))
+        sub.cleared      = normalizeCleared(sub.cleared)
+        if id == "equipment_vault" then
+            sub.idleConsumedSec = math.max(0, math.floor(tonumber(sub.idleConsumedSec) or 0))
+            if sub.idleAccumSec == 0 then sub.idleConsumedSec = 0 end
+        end
+        if sub.dailyDay ~= today then
+            sub.dailyUsed = 0
+            sub.dailyDay  = today
+        end
+        if id == "babel_tower" then
+            if type(sub.buffs) ~= "table" then sub.buffs = {} end
+        elseif id == "ancient_ruin" or DungeonConfig.isResourceDungeon(id) then
+            advanceIfStuck(sub, DungeonConfig.MAX_FLOOR[id])
+        end
     end
-    if (ar.dailyDay or 0) ~= today then
-        ar.dailyUsed = 0
-        ar.dailyDay  = today
-    end
-    if (bt.dailyDay or 0) ~= today then
-        bt.dailyUsed = 0
-        bt.dailyDay  = today
-    end
-
-    advanceIfStuck(gm, DungeonConfig.MAX_FLOOR.gold_mine or 83)
-    advanceIfStuck(ar, DungeonConfig.MAX_FLOOR.ancient_ruin or 77)
 
     if opts and opts.runMigration then
         DungeonCompat.migrateMonsterBuffV1(data)

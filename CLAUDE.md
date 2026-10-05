@@ -12,6 +12,25 @@
 4. **分支纪律**：以当轮指定基线新建任务分支，完成后只 push 新分支；本轮基线为 `workspace930@c47c2ec3`，任务分支为 `fix/final-temple-shared-hp-20261004`，**绝不推送到任何 `workspace` 系列或原基线分支**，不自动创建或合并 PR。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-05，资源副本收尾 PR86 已创建）
+
+- 用户本轮明确授权“提个PR”，即时鉴权已验证；仅正常推送 `feat1004b/resource-dungeons-stage-select-followup`，两个收尾提交 `c9a3e5f5`、`4d0e4ef1` 已上传并核对远端一致。此前规则阶段 PR85 已外部合并，本次 PR 仅包含未合入的 UI、独立战斗、真实持久化与交接，不重复提交已合规则。
+- 正式 **PR #86**：https://github.com/FanZeros/changeForJourney/pull/86，head=`feat1004b/resource-dungeons-stage-select-followup`、base=`workspace930`；创建时源 `4d0e4ef1a42c46e850ceba7afea5333d2abf4d67`、目标 `b38f419deb57a5c771f0947e6a5691e9b50865aa`，返回 open、draft=false、merged=false，mergeable 尚未计算，不宣称 CI 通过或已合并。
+- PR 说明保留官方 b15、30/30 源码产物一致、事务861／冷恢复37／规则3327／兼容289，以及冷恢复前两次夹具失败、全仓旧静态诊断、性能与 WASM 持久化边界。相对当前远端目标的仓库规范2747路径零错误零警告；本轮不修改 Lua，不重复构建。
+- 初次即时 credential helper 被命令转义导致 push exit128、没有推送；修正仅进程内 helper 后正常 push exit0。凭据不保存到源码、文件、Git 配置或记忆，提醒撤销更换聊天公开令牌。未推任何 workspace 系列、未自动合并；本地 .project／上传／validation 不提交。完成后如实简报，需要用户选择下一项时实际使用 AskUserQuestion。
+
+## 上次做了什么（2026-10-05，三类资源副本选关续作，源码完成）
+
+- 固定基准 `workspace930@32fca2c65351d4626da99b283229e6deb5d46348`，功能分支 `feat1004b/resource-dungeons-stage-select-followup`。只正常push该分支，不推任何workspace系列、不自动合并。已推41b73f5a（范围）、3b5db0cc（属性标题）、376a7aaf（三资源规则）；最终41文件源码/meta提交为 `c9a3e5f5`，本次push实际exit128：无法读取GitHub Username、terminal prompts disabled，未上传最终提交、未创建PR，需安全恢复鉴权。
+- 选关“主线／副本”分类新增金币／装备／黑钻，通天塔独立；资源锁定选关行队号，不改变activeTeam、主线进度/首通账本。复用主线StageEntry加2名敌人，四槽逐名死亡退场补位；黑钻复用现有diamond/gems（显示黑晶），旧遗迹仅隐藏兼容、不迁移其积累。
+- Scope隔离公共战斗容器、TAL单位表、ETS、统计桶101..103及独立RCH/地图/Boss/狂暴实例；副本全页classic，退出/异常还原宿主strip。木桩绑定独立桶、退出关旧统计面板；失败/异常回执保留请求身份，过期成功不放行。ETS保存最新owned，旧dirty不能回退成长或复活已消费库存。
+- 宿主tab5详情/战斗关闭后暂停默认场景，返回tab3首帧只重开三队页面、下一帧再推进，绝不重建driver清状态。战斗专项11183实际ALL PASS，包含正式宿主分流抽取、等待4秒和TAL/ETS原引用/值不变；首跑夹具匹配到较早tabIndex导致多余end，只修锚点复跑通过。
+- 联合Runtime十二套实际全过：battle11183、选队2079、选关1780、三队账本69、三队进度227、队解锁115、终焉940、满包162475、额外生命39、连射54、切关、配装362。三队账本旧stub遗漏CARD_H导致8失败，改用真实Layout，原断言保留。误输不存在的sera_machinegun_test入口外层超时，不算通过；正确sera_machinegun_progress_test已复跑54/0。
+- 奖励事务接真实StandaloneSave.Flush布尔结果；奖励/首通/楼层/扫荡日次/挂机扣时及session候选同事务，失败原位恢复外部table别名和GameState、延后通知不发布候选，成功才消费pending。最新b15真实四套全部ALL PASS/exit0：事务861（false/nil/异常/真实File打开/写入/Rename失败与交付中途异常）、冷进程恢复37、规则3327、兼容289。冷恢复先后因expected稀疏键与二次JSON浮点尾差失败；夹具精确复现正式JSON/双onLoad，逐条首通/计数与全表strict equality，不加epsilon、不改生产水合/掉落。跨进程原生File通过不等于WASM刷新持久化或掉电级可靠性。
+- 官方最终Build成功，manifest-origin.b15含511Lua；30份本轮修改Lua与实际dist/assets逐字节30/30一致；修改Lua逐文件LSP无Error（有Warning），全仓缓存仍60项其他Error，不宣称全仓清零。36规范单测全过，最终暂存树2747路径0错误0警告。测试专用目录文件已清理，.project身份/设置、上传参考、日志、截图不提交。
+- 已内部读三类真实战斗及中英选关图，确认上下四卡/队号/后备计数；首版漏imgAllyTags导致全透明，仅验收上下文修正后成功。最后正式main150帧启动18/18，Lua/资源0、无项目缺图，rawFAIL仅2次默认100ms环境帧尖峰，不称性能/手机触控/发布端cache动态加载已验收。
+- 共享会话已限定所有权并完成规则事务/冷恢复，未覆盖彼此源码、未借同伴鉴权代推。持续推进已授权范围，尊重停止与权限边界；确需鉴权决策先如实简报再实际AskUserQuestion，凭据不进入源码、Git配置、日志或记忆。
+
 ## 上次做了什么（2026-10-04，古树星图剪枝修复直接合入930）
 
 - 用户澄清需移除的是“连线剪枝”，边缘渐隐属于原效果应保留；随后明确授权“合入远程930”。基线最初9c2cd5cd，期间跟进远端到de5eb060（PR81），确认最新主线未改TalentStarMap/覆盖测试，已快进整合；不覆盖其他最新PR。

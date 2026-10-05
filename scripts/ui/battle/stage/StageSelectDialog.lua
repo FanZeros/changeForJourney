@@ -18,6 +18,7 @@ local DarkIcon          = require("core.DarkIcon")
 local GameState         = require("core.GameState")
 local I18n              = require("core.I18n")
 local BF                = require("systems.ButtonFeedback")
+local ResourceList      = require("ui.battle.stage.StageSelectResources")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -87,6 +88,13 @@ local function drawFittedTitle(vg, x, y, source, width, fontSize, maxLines, alig
 end
 
 local StageSelectDialog = {}
+local onDungeonSelect = nil ---@type fun(dungeonId: string, teamIdx: number): boolean|nil
+local TAB_Y, TAB_W, TAB_H = 686, 150, 46
+local MAIN_TAB_X, DUNGEON_TAB_X = 445, 635
+
+function StageSelectDialog.setOnDungeonSelect(callback)
+    onDungeonSelect = callback
+end
 
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
 local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
@@ -147,6 +155,7 @@ local imgAct = -1
 local imgLock = -1
 
 local state = {
+    section   = "main",
     open      = false,
     openTime  = 0,
     selKey    = nil,   -- 选中章节 key（chapter number 或 "T<神殿id>"=单难度终焉组）
@@ -498,6 +507,7 @@ end
 
 ---@param vg any
 function StageSelectDialog.init(vg)
+    ResourceList.release(vg)
     for _, image in pairs(chapterBackgrounds) do nvgDeleteImage(vg, image) end
     chapterBackgrounds, chapterBackgroundRetry = {}, {}
     imgBtn = nvgCreateImage(vg, "image/通用图标/UI_ICON_XG.png", 0)
@@ -511,6 +521,7 @@ end
 ---@param teamIdx number|nil 多队战斗行号；大于 1 时确认后切该队自己的关卡
 function StageSelectDialog.open(teamIdx)
     if state.open then return end
+    state.section = "main"
     state.open     = true
     state.openTime = time.elapsedTime
     state.chDragY = nil
@@ -563,6 +574,7 @@ end
 
 function StageSelectDialog.handleScroll(wheel, x, y)
     if not state.open then return false end
+    if state.section ~= "main" then return true end
     local groups = ensureCache()
     local top, bottom = chapterListBounds(groups)
     -- 覆盖整列章节和上下箭头，不要求正好落在按钮高度内。
@@ -591,6 +603,13 @@ function StageSelectDialog.handleDragBegin(x, y)
     state.cardDragId = nil
     state.cardDragHorizontal = false
     state.cardDragMoved = false
+    if state.section ~= "main" then
+        if ResourceList.hit(x, y) then
+            state.cardDragId = -1
+            state.cardDragX, state.cardDragY = x, y
+        end
+        return true
+    end
     local groups = ensureCache()
     local top, bottom = chapterListBounds(groups)
     if x >= D.CH_X and x <= D.CH_X + D.CH_W and y >= top and y <= bottom then
@@ -611,6 +630,11 @@ end
 
 function StageSelectDialog.handleDragMove(x, y)
     if not state.open then return false end
+    if state.section ~= "main" then
+        if state.cardDragId and math.max(math.abs(x - state.cardDragX),
+            math.abs(y - state.cardDragY)) >= 15 then state.cardDragMoved = true end
+        return true
+    end
     if state.chDragY then
         local delta = state.chDragY - y
         if math.abs(delta) >= 15 then state.chDragMoved = true end
@@ -698,6 +722,24 @@ function StageSelectDialog.draw(vg)
         D.TT_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, D.TT_SW,
         { strokeColor = { D.TT_SR, D.TT_SG, D.TT_SB } })
+
+    -- 顶部分类不挪动主线章节、敌人及既有滚动热区。
+    for _, tab in ipairs({ { x = MAIN_TAB_X, key = "main", text = "主线" },
+        { x = DUNGEON_TAB_X, key = "dungeon", text = "副本" } }) do
+        local active = state.section == tab.key
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, tab.x - TAB_W * 0.5, TAB_Y - TAB_H * 0.5, TAB_W, TAB_H, 10)
+        nvgFillColor(vg, nvgRGBA(active and 106 or 37, active and 78 or 33, active and 36 or 29, 240))
+        nvgFill(vg)
+        drawFittedTitle(vg, tab.x, TAB_Y, tab.text, TAB_W - 12, 28, 1,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 235, 194, 2)
+    end
+    if state.section == "dungeon" then
+        ResourceList.draw(vg, state.targetTeam or 1,
+            require("ui.battle.scene.BattleScene").getMaxStageId() or 0)
+        nvgRestore(vg)
+        return
+    end
 
     -- ===================== 左栏：章节列表 =====================
     local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
@@ -939,6 +981,24 @@ function StageSelectDialog.handleInput(x, y)
     if state.chDragMoved or state.cardDragMoved then
         state.chDragMoved = false
         state.cardDragMoved = false
+        return true
+    end
+    if hitTestRect(x, y, MAIN_TAB_X, TAB_Y, TAB_W, TAB_H)
+        or hitTestRect(x, y, DUNGEON_TAB_X, TAB_Y, TAB_W, TAB_H) then
+        state.section = x < (MAIN_TAB_X + DUNGEON_TAB_X) * 0.5 and "main" or "dungeon"
+        resetCardScroll()
+        BF.trigger("stage_sel_section")
+        return true
+    end
+    if state.section == "dungeon" then
+        local dungeonId = ResourceList.hit(x, y)
+        if dungeonId and onDungeonSelect then
+            local teamIdx = state.targetTeam or 1
+            if onDungeonSelect(dungeonId, teamIdx) then StageSelectDialog.close() end
+            print("[StageSelectDialog] 查看副本: " .. dungeonId .. " 队伍=" .. teamIdx)
+        elseif not hitTestRect(x, y, D.BG_CX, D.BG_CY, D.BG_W, D.BG_H) then
+            StageSelectDialog.close()
+        end
         return true
     end
     local maxScroll = math.max(0, #groups - D.CH_VISIBLE)

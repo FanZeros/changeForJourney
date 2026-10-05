@@ -57,6 +57,19 @@ function Start()
         patch(PDM, "GetModule", function(_, key) return modules[key] end)
         patch(PDM, "MarkDirty", function(_, key) dirty[key] = (dirty[key] or 0) + 1 end)
         patch(os, "time", function() return 100000 end)
+        -- 本测试仅验证规则；保存/双onLoad仍使用隔离替身，不是实际File验收。
+        Service.SetPersistCallback(function() return true end)
+        restores[#restores + 1] = function() Service.SetPersistCallback(nil) end
+        local Registry = require("shared.ModuleRegistry")
+        local Schema = require("shared.schemas.CharacterSchema")
+        for _, name in ipairs({ "dungeon", "currency", "equipment", "lootbox" }) do
+            local registered = assert(Registry.find(name))
+            patch(registered, "onLoad", function() end)
+            patch(Schema.Fields[name], "onLoad", function() end)
+        end
+        local GameState = require("core.GameState")
+        patch(GameState, "exportSave", function() return {} end)
+        patch(GameState, "syncFromCurrency", function() end)
 
         eq(#DC.RESOURCE_IDS, 3, "三类资源副本")
         for _, id in ipairs(DC.RESOURCE_IDS) do

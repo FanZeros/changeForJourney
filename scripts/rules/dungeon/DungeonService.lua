@@ -8,8 +8,140 @@ local EquipmentSystem = require("systems.EquipmentSystem")
 local LootBoxSystem = require("systems.LootBoxSystem")
 local ExpTable = require("config.ExpTable")
 local TeamSlots = require("shared.heroes.TeamSlots")
+local GameState = require("core.GameState")
+local ModuleRegistry = require("shared.ModuleRegistry")
+local CharacterSchema = require("shared.schemas.CharacterSchema")
 
 local DungeonService = {}
+
+---@type (fun(uid: number): boolean|nil)|nil
+local persist_ = nil
+local persistHooks_ = {} ---@type table
+---@type table<string, table>
+local transactions = {}
+-- Flush 会推进在线边界；它异常时 session 也属于本次候选快照。
+local TRANSACTION_MODULES = { "dungeon", "currency", "equipment", "lootbox", "session" }
+
+--- 单机桥注入唯一写档入口的布尔结果；PDM.FlushImmediate 只是日志，不能代替。
+--- hooks 延后 Save 内 MarkOnline 的 session 通知，不承担奖励发放。
+---@param callback (fun(uid: number): boolean|nil)|nil
+---@param hooks table|nil { begin=function(uid), finish=function(uid,success) }
+function DungeonService.SetPersistCallback(callback, hooks)
+    persist_ = callback
+    persistHooks_ = hooks or {}
+end
+
+--- 快照保存原 table 的边，不以 JSON/重建表替换；onLoad 换子表也能恢复外部别名。
+local function captureTables(value, records, seen)
+    if type(value) ~= "table" or seen[value] then return end
+    seen[value] = true
+    local fields = {}
+    records[#records + 1] = { target = value, fields = fields }
+    for key, child in pairs(value) do
+        fields[key] = child
+        captureTables(child, records, seen)
+    end
+end
+
+local function restoreTables(records)
+    for _, record in ipairs(records) do
+        for key in pairs(record.target) do record.target[key] = nil end
+        for key, value in pairs(record.fields) do record.target[key] = value end
+    end
+end
+
+local function markDirty(uid, name)
+    local transaction = transactions[tostring(uid)]
+    if transaction then transaction.dirty[name] = true
+    else PDM.MarkDirty(uid, name) end
+end
+
+--- 奖励、计数、积累一起提交；异常/false/nil 均回滚，成功后才通知和消费挑战。
+---@param uid number
+---@param operation fun(): boolean, string|nil, table|nil
+---@param onCommitted function|nil 仅用于消费本事务的运行时挑战，不承担发奖
+---@return boolean, string|nil, table|nil
+function DungeonService.CommitRewardTransaction(uid, operation, onCommitted)
+    local key = tostring(uid)
+    if transactions[key] then return false, "副本结算处理中" end
+    if type(persist_) ~= "function" then return false, "副本持久化未接线" end
+    local records, seen = {}, {}
+    for _, name in ipairs(TRANSACTION_MODULES) do
+        captureTables(PDM.GetModule(uid, name), records, seen)
+    end
+    local stateBefore = GameState.exportSave()
+    local transaction = { dirty = {} }
+    transactions[key] = transaction
+    local reason = "奖励发放失败"
+    local called, success, err, result = pcall(function()
+        if persistHooks_.begin then persistHooks_.begin(uid) end
+        local ok, operationErr, rewards = operation()
+        if ok ~= true then return false, operationErr end
+        -- 与正式 Dispatcher 同一双 onLoad 顺序，先规范化候选，再写入完整快照。
+        -- 错误不吞掉，否则会把半规范化的候选当成成功提交。
+        for _, name in ipairs(TRANSACTION_MODULES) do
+            if transaction.dirty[name] then
+                local data = PDM.GetModule(uid, name)
+                local registered = ModuleRegistry.find(name)
+                if registered and registered.onLoad then registered.onLoad(data) end
+                local schema = CharacterSchema.Fields[name]
+                if schema and schema.onLoad then schema.onLoad(data) end
+            end
+        end
+        if transaction.dirty.currency then
+            GameState.syncFromCurrency(PDM.GetModule(uid, "currency"), { silent = true })
+        end
+        reason = "副本存档失败，可重试"
+        if persist_(uid) ~= true then return false, reason end
+        return true, nil, rewards
+    end)
+    if not called or success ~= true then
+        restoreTables(records)
+        GameState.syncFromCurrency(stateBefore, { silent = true })
+        if persistHooks_.finish then
+            local finished, finishErr = pcall(persistHooks_.finish, uid, false)
+            if not finished then print("[DungeonService] 回滚通知清理失败: " .. tostring(finishErr)) end
+        end
+        transactions[key] = nil
+        print("[DungeonService] 事务回滚 uid=" .. key .. " reason=" .. tostring(called and err or success))
+        return false, called and (err or reason) or reason
+    end
+    -- 在任何订阅者执行前消费；尤其末层不推进时不能被同步回调重复结算。
+    if onCommitted then onCommitted() end
+    for _, name in ipairs(TRANSACTION_MODULES) do
+        if transaction.dirty[name] then
+            local notified, notifyErr = pcall(PDM.MarkDirty, uid, name)
+            if not notified then print("[DungeonService] 已提交，通知失败 " .. name .. ": " .. tostring(notifyErr)) end
+        end
+    end
+    if persistHooks_.finish then
+        local finished, finishErr = pcall(persistHooks_.finish, uid, true)
+        if not finished then print("[DungeonService] 已提交，通知释放失败: " .. tostring(finishErr)) end
+    end
+    if transaction.dirty.currency and not persistHooks_.finish then
+        local notified, notifyErr = pcall(GameState.syncFromCurrency, PDM.GetModule(uid, "currency"))
+        if not notified then print("[DungeonService] 已提交，余额通知失败: " .. tostring(notifyErr)) end
+    end
+    transactions[key] = nil
+    return true, nil, result
+end
+
+--- 挂机货币只允许已有三类资源，不走会立即通知的 CurrencyService.GrantReward。
+---@return boolean
+function DungeonService.GrantIdleCurrency(uid, rewardType, amount)
+    local field = ({ gold = "gold", diamond = "gems", arcane_dust = "arcaneDust" })[rewardType]
+    local currency = PDM.GetModule(uid, "currency")
+    if not field or not currency or type(amount) ~= "number" or amount ~= amount
+        or amount <= 0 or amount == math.huge or amount ~= math.floor(amount) then return false end
+    currency[field] = (currency[field] or 0) + amount
+    markDirty(uid, "currency")
+    return true
+end
+
+--- 挂机扣时也参加同一事务的延后通知。
+function DungeonService.MarkRewardDirty(uid, name)
+    markDirty(uid, name)
+end
 
 -- 单机每位玩家只持有一场资源战斗；不写进存档，重启/退出后必须重新 Challenge。
 local pendingChallenges = {} ---@type table<string, table>
@@ -117,8 +249,8 @@ function DungeonService.GrantEquipment(uid, dungeonId, floor, count)
             level = equip.level, slot = equip.slot, equip = equip, destination = destination,
         }
     end
-    if result.inventoryCount > 0 then PDM.MarkDirty(uid, "equipment") end
-    if result.lootboxCount > 0 then PDM.MarkDirty(uid, "lootbox") end
+    if result.inventoryCount > 0 then markDirty(uid, "equipment") end
+    if result.lootboxCount > 0 then markDirty(uid, "lootbox") end
     return true, nil, result
 end
 
@@ -135,7 +267,7 @@ local function grantRewards(uid, id, floorData, firstClear)
     if gold > 0 then currency.gold = (currency.gold or 0) + gold end
     if diamond > 0 then currency.gems = (currency.gems or 0) + diamond end
     if dust > 0 then currency.arcaneDust = (currency.arcaneDust or 0) + dust end
-    if gold > 0 or diamond > 0 or dust > 0 then PDM.MarkDirty(uid, "currency") end
+    if gold > 0 or diamond > 0 or dust > 0 then markDirty(uid, "currency") end
     return true, nil, { gold = gold, diamond = diamond, dust = dust }
 end
 
@@ -150,12 +282,16 @@ function DungeonService.Sweep(uid, dungeonId)
     if floor < 1 then return false, "暂无可扫荡层" end
     local floorData = DC.getFloor(dungeonId, floor)
     if not floorData then return false, "层配置不存在" end
-    local ok, grantErr, result = grantRewards(uid, dungeonId, floorData, false)
+    local ok, grantErr, result = DungeonService.CommitRewardTransaction(uid, function()
+        local granted, rewardErr, rewards = grantRewards(uid, dungeonId, floorData, false)
+        if not granted then return false, rewardErr end
+        sub.dailyUsed, sub.dailyDay = used + 1, today
+        markDirty(uid, "dungeon")
+        rewards.dungeonId, rewards.sweepFloor = dungeonId, floor
+        rewards.dailyUsed, rewards.dailyMax = sub.dailyUsed, limit
+        return true, nil, rewards
+    end)
     if not ok then return false, grantErr end
-    sub.dailyUsed, sub.dailyDay = used + 1, today
-    PDM.MarkDirty(uid, "dungeon")
-    result.dungeonId, result.sweepFloor = dungeonId, floor
-    result.dailyUsed, result.dailyMax = sub.dailyUsed, limit
     print(string.format("[DungeonService] 扫荡 %s 层=%d 次数=%d/%d", dungeonId, floor, sub.dailyUsed, limit))
     return true, nil, result
 end
@@ -230,20 +366,25 @@ function DungeonService.Win(uid, dungeonId, floor, teamIdx, challengeId)
     end
     local cleared = sub.cleared or {}
     local firstClear = cleared[floor] ~= true and cleared[tostring(floor)] ~= true
-    local result = { gold = 0, diamond = 0, dust = 0, equips = {} } ---@type table
-    if firstClear then
-        local ok, grantErr, rewards = grantRewards(uid, dungeonId, floorData, true)
-        if not ok or not rewards then return false, grantErr end
-        result = rewards
-        cleared[floor] = true
-        sub.cleared = cleared
-    end
-    if sub.floor < DC.MAX_FLOOR[dungeonId] then sub.floor = sub.floor + 1 end
-    if DC.isResourceDungeon(dungeonId) then pendingChallenges[key] = nil end
-    PDM.MarkDirty(uid, "dungeon")
-    result.dungeonId, result.floor, result.teamIdx = dungeonId, floor, team
-    result.challengeId = challengeId
-    result.firstClear, result.nextFloor = firstClear, sub.floor
+    local ok, commitErr, result = DungeonService.CommitRewardTransaction(uid, function()
+        local rewards = { gold = 0, diamond = 0, dust = 0, equips = {} } ---@type table
+        if firstClear then
+            local granted, grantErr, generated = grantRewards(uid, dungeonId, floorData, true)
+            if not granted or not generated then return false, grantErr end
+            rewards = generated
+            cleared[floor] = true
+            sub.cleared = cleared
+        end
+        if sub.floor < DC.MAX_FLOOR[dungeonId] then sub.floor = sub.floor + 1 end
+        markDirty(uid, "dungeon")
+        rewards.dungeonId, rewards.floor, rewards.teamIdx = dungeonId, floor, team
+        rewards.challengeId = challengeId
+        rewards.firstClear, rewards.nextFloor = firstClear, sub.floor
+        return true, nil, rewards
+    end, function()
+        if DC.isResourceDungeon(dungeonId) then pendingChallenges[key] = nil end
+    end)
+    if not ok then return false, commitErr end
     print(string.format("[DungeonService] 通关 %s 层=%d 首通=%s 下一层=%d", dungeonId, floor, tostring(firstClear), sub.floor))
     return true, nil, result
 end

@@ -295,21 +295,23 @@ function Start()
             ["老板娘"] = 13, ["？？？"] = 14,
             ["大狗嚼？"] = 1, ["黄桃龙？"] = 2, ["叮咚鸡？"] = 3,
         }
-        local blacksmithPath = "image/怪物卡牌/KP_GW_1004.png"
+        local wrongBlacksmithPath = "image/怪物卡牌/KP_GW_1004.png"
         local configs = { Config.OPENING }
         for _, config in ipairs(Config.OPENING_JOINS) do configs[#configs + 1] = config end
         for id = 1, 82 do
             local config = Config["SCENARIO_" .. id] --[[@as table?]]
             if config then configs[#configs + 1] = config end
         end
-        local allSteps, specialSteps = 0, 0
+        local allSteps, specialSteps, blacksmithSteps = 0, 0, 0
         for _, config in ipairs(configs) do
             for _, step in ipairs(config.steps) do
                 local appearance = Config.getAppearance(step)
                 if step.name == "铁匠" or step.name == "愤怒的铁匠" then
-                    check(appearance.heroId == nil and appearance.portraitPath == blacksmithPath
-                        and appearance.iconPath == blacksmithPath and appearance.contain,
-                        "铁匠两种称呼共用昆吾且不伪造英雄ID")
+                    check(appearance.heroId == nil and appearance.portraitPath == nil
+                        and appearance.iconPath == nil and appearance.contain == nil,
+                        "铁匠两种称呼暂无专用美术，不借敌人或英雄编号")
+                    check(step.characterId == 10 and step.text ~= "", "铁匠历史编号与原对白保留")
+                    blacksmithSteps = blacksmithSteps + 1
                     specialSteps = specialSteps + 1
                 else
                     check(appearance.heroId == (expectedIds[step.name] or step.characterId),
@@ -321,6 +323,10 @@ function Start()
         end
         check(#configs == 84 and allSteps == 196, "开场和全部80编号情景共196句已核对")
         check(specialSteps > 50, "所有特殊说话人覆盖")
+        check(blacksmithSteps == 13, "铁匠求救、误会、道歉与入店全部13句已核对")
+        check(Config.getAppearance({ characterId = 10, name = "铁匠" })
+            == Config.getAppearance({ characterId = 10, name = "愤怒的铁匠" }),
+            "两种铁匠称呼共享明确的无图映射，不回退英雄10")
         check(HC.get(21).name == "雷电麦坤" and HC.get(4).name == "接化发掌门"
             and HC.get(6).name == "阿姨压" and HC.get(7).name == "信光机兵"
             and HC.get(8).name == "愤怒的小雀", "英雄本体名字及编号未被剧情映射改写")
@@ -336,7 +342,7 @@ function Start()
             return nextImage
         end)
         replace("nvgImageSize", function(_, image)
-            if imagePaths[image] == blacksmithPath then return 572, 1024 end
+            if imagePaths[image] == wrongBlacksmithPath then return 572, 1024 end
             return 832, 1248
         end)
         replace("nvgImagePattern", function(_, x, y, width, height, _, image, alpha)
@@ -366,18 +372,72 @@ function Start()
             { characterId = 21, name = "雷电麦坤", text = "发车！" } }) do
             drawStep(sample, "small", 1920, 1080)
             local appearance = Config.getAppearance(sample)
-            check(hasImage(appearance.portraitPath or HeroAssets.getPortraitPath(appearance.heroId)),
-                sample.name .. "最终立绘路径")
-            check(hasImage(appearance.iconPath or HeroAssets.getIconPath(appearance.heroId)),
-                sample.name .. "最终头像路径")
-            check(contains(sample.name) and contains(sample.text), sample.name .. "原称呼和全文保留")
             if sample.name == "铁匠" or sample.name == "愤怒的铁匠" then
-                local card = imageDraws[1]
-                check(math.abs(card.width / card.height - 572 / 1024) < 0.001,
-                    "昆吾卡图等比contain，不按透明立绘裁切")
-                check(#imageDraws == 2, "无英雄ID时昆吾立绘和头像都实际绘制")
+                check(not hasImage(wrongBlacksmithPath), "铁匠不再绘制昆吾敌人卡图")
+                check(not hasImage(HeroAssets.getPortraitPath(10))
+                    and not hasImage(HeroAssets.getIconPath(10)), "无图铁匠不回退铁憨憨")
+                check(#imageDraws == 0, "无专用素材只保留对白，不伪造立绘或头像")
+            else
+                check(hasImage(appearance.portraitPath or HeroAssets.getPortraitPath(appearance.heroId)),
+                    sample.name .. "最终立绘路径")
+                check(hasImage(appearance.iconPath or HeroAssets.getIconPath(appearance.heroId)),
+                    sample.name .. "最终头像路径")
+            end
+            check(contains(sample.name) and contains(sample.text), sample.name .. "原称呼和全文保留")
+        end
+        -- 所有13句在大小情景、小屏/桌面都正常展示；空映射不借历史角色10。
+        Scenario.init(metricContext, nil)
+        local blacksmithFrames = 0
+        for _, config in ipairs(configs) do
+            for _, sample in ipairs(config.steps) do
+                if sample.name == "铁匠" or sample.name == "愤怒的铁匠" then
+                    for _, mode in ipairs({ "small", "large" }) do
+                        for _, size in ipairs({ { 844, 390 }, { 1920, 1080 } }) do
+                            drawStep(sample, mode, size[1], size[2])
+                            local renderedBody = {}
+                            local textLeft = size[1] * (0.035 + 0.028)
+                            local barHeight = math.max(150, size[2] * 0.26)
+                            local textTop = size[2] - barHeight - size[2] * 0.04 + barHeight * 0.22
+                            for _, call in ipairs(drawCalls) do
+                                if math.abs(call.x - textLeft) < 0.001 and call.y >= textTop - 0.001
+                                    and (call.align & NVG_ALIGN_LEFT) ~= 0 and (call.align & NVG_ALIGN_TOP) ~= 0 then
+                                    renderedBody[#renderedBody + 1] = call.text
+                                end
+                            end
+                            check(contains(sample.name) and table.concat(renderedBody) == sample.text,
+                                "铁匠全部原句仍可完整阅读（按实际折行顺序还原）")
+                            check(not hasImage(wrongBlacksmithPath)
+                                and not hasImage(HeroAssets.getPortraitPath(10))
+                                and not hasImage(HeroAssets.getIconPath(10)), "铁匠无误图且不回退历史英雄")
+                            check(#imageDraws == (mode == "large" and 1 or 0),
+                                "铁匠只保留原背景规则，不叠加虚构角色")
+                            local current, total = Scenario.getProgress()
+                            check(current == 1 and total == 1 and Scenario.isActive(), "无铁匠图不改变对话推进")
+                            blacksmithFrames = blacksmithFrames + 1
+                        end
+                    end
+                end
             end
         end
+        check(blacksmithFrames == 52, "13句×大小情景×两尺寸全部绘制")
+        -- 自定义NPC美术能力仍保留；测试专用路径不替代实际铁匠，也不需要英雄ID。
+        local getAppearance = Config.getAppearance
+        local customStep = { characterId = 10, name = "测试NPC", text = "自定义头像与等比立绘" }
+        Config.getAppearance = function(sample)
+            if sample == customStep then
+                return { portraitPath = "test/npc-portrait.png", iconPath = "test/npc-icon.png", contain = true }
+            end
+            return getAppearance(sample)
+        end
+        local customOk, customErr = pcall(function()
+            drawStep(customStep, "small", 1920, 1080)
+            check(hasImage("test/npc-portrait.png") and hasImage("test/npc-icon.png"),
+                "无英雄ID自定义NPC立绘与真实HeroFrame头像仍实际绘制")
+            check(#imageDraws == 2 and math.abs(imageDraws[1].width / imageDraws[1].height - 832 / 1248) < 0.001,
+                "自定义NPC仍按图片原比例contain，不按透明立绘裁切")
+        end)
+        Config.getAppearance = getAppearance
+        check(customOk, "自定义NPC能力回归: " .. tostring(customErr))
         -- 圣女和雷电麦坤旧编号同为21：按路径缓存，不能互相污染。
         drawStep(Config.SCENARIO_27.steps[1], "small", 844, 390)
         check(hasImage(HeroAssets.getPortraitPath(15)) and not hasImage(HeroAssets.getPortraitPath(21)),

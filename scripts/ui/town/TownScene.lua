@@ -604,8 +604,11 @@ function TownScene.draw(vg)
     end
     BF.finish(vg, _bfTavern)
     if _tmActive and not tavernLocked then _TM.registerHotspot("building_tavern", TAVERN_CX, TAVERN_CY, TAVERN_W, TAVERN_H, "left") end
-    -- 城镇总览热点（引导组4）：左栏顶部空白带，不与建筑点击重叠
-    if _tmActive then _TM.registerHotspot("town_overview", 540, 150, 900, 220, "left") end
+    -- 城镇总览高亮完整左栏；继续点击仍只用顶部空白带，不放大建筑命中区。
+    if _tmActive then
+        _TM.registerHotspot("town_overview", 540, 150, 900, 220, "left",
+            { cx = 540, cy = 1200, w = 1080, h = 2400 })
+    end
 
     -- 第7个地点：遗匣（没有等级/引导门槛）。立绘与名牌图标分开，名牌沿用地点图标尺寸。
     local lootFeedback = BF.begin(vg, "town_lootbox", LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H)

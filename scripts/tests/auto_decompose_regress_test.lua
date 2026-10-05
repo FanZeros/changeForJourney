@@ -61,6 +61,10 @@ local function testRarityMultiselect()
         local BF = require("systems.ButtonFeedback")
         local QualityMark = require("ui.widget.QualityMark")
         local SetIcon = require("ui.widget.EquipmentSetIcon")
+        local ResourceDefs = require("config.ResourceDefs")
+        local EquipmentConfig = require("config.EquipmentConfig")
+        local I18n = require("core.I18n")
+        local EquipmentText = require("core.I18nEquipmentText")
         local actions, rewards, dirty, progress = {}, {}, {}, {}
         local testPDM = { equipment = {}, currency = { essence = 0 } }
         patch(PlayerStore, "Get", function(name) return testPDM[name] end)
@@ -83,29 +87,48 @@ local function testRarityMultiselect()
         patch(BF, "finish", function() end)
         patch(SetIcon, "isEnabled", function() return false end)
         patch(QualityMark, "get", function(quality) return 72000 + math.floor(quality) end)
+        patch(QualityMark, "init", function() end)
+        patch(Detail, "init", function() end)
         patchGlobal("time", { elapsedTime = 100 })
         local checkImage = 73000
-        local paints = {}
+        local paints, texts, imagePaths, imageHandles = {}, {}, {}, {}
+        local imageCount = 0
         local function noop() end
         for _, name in ipairs({ "nvgBeginPath", "nvgRect", "nvgRoundedRect", "nvgRoundedRectVarying",
             "nvgFill", "nvgStroke", "nvgStrokeColor", "nvgStrokeWidth", "nvgMoveTo", "nvgLineTo",
             "nvgClosePath", "nvgCircle", "nvgEllipse", "nvgBezierTo", "nvgQuadTo", "nvgArc",
             "nvgSave", "nvgRestore", "nvgIntersectScissor", "nvgTranslate", "nvgScale", "nvgRotate",
-            "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgFillColor", "nvgText", "nvgLineCap" }) do
+            "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgFillColor", "nvgLineCap" }) do
             patchGlobal(name, noop)
         end
+        patchGlobal("nvgText", function(_, x, y, text)
+            texts[#texts + 1] = { x = x, y = y, text = text }
+            return x
+        end)
+        patchGlobal("nvgCreateImage", function(_, path)
+            if not imageHandles[path] then
+                imageCount = imageCount + 1
+                local handle = 75000 + imageCount
+                imageHandles[path] = handle
+                imagePaths[handle] = path
+            end
+            return imageHandles[path]
+        end)
+        imagePaths[74002] = ResourceDefs.DEFS.essence.iconPath
         patchGlobal("nvgRGBA", function(r, g, b, a) return { r = r, g = g, b = b, a = a } end)
         patchGlobal("nvgLinearGradient", function() return {} end)
         patchGlobal("nvgRadialGradient", function() return {} end)
         patchGlobal("nvgTextBounds", function(_, _, _, text) return #text * 14 end)
         patchGlobal("nvgImagePattern", function(_, x, y, w, h, _, image, alpha)
-            return { image = image, cx = x + w * 0.5, cy = y + h * 0.5, alpha = alpha }
+            return { image = image, cx = x + w * 0.5, cy = y + h * 0.5, w = w, h = h, alpha = alpha }
         end)
         patchGlobal("nvgFillPaint", function(_, paint)
             if paint.image then paints[#paints + 1] = paint end
         end)
+        -- NanoVG 边界替身先于模块加载；不替换被局部缓存的 DrawUtil 绘制函数。
         -- 同一真实模块实例通过 onOpen/resetFixture 重置，不依赖加载缓存隔离。
         local M = require("ui.blacksmith.BlacksmithDecompose")
+        M.init({})  -- 设置真实 vgHandle/懒加载图标缓存，详情与品质图初始化仅替换边界。
         M.setContext({
             imgGoldQBg = 74001, imgEssenceIcon = 74002, imgEnhBtn = 74003,
             imgReplaceBtn = 74004, imgCheckmark = checkImage, imgQualityBg = {},
@@ -231,12 +254,105 @@ local function testRarityMultiselect()
             local function failure()
                 M.onActionResult({ action = Protocol.ACTION_TYPES.DECOMPOSE_EQUIP, success = false })
             end
+            -- 单独绘制真实奖励区域：不把背包等级文字/品质对勾混入预览捕获。
+            local originalEmpty = ""
+            local function preview(seqs, text)
+                local essence, scrolls = 0, {}
+                for _, seq in ipairs(seqs) do
+                    local item = assert(testPDM.equipment.inventory[tostring(seq)])
+                    essence = essence + BC.calcAutoDecomposeEssence(item.quality, item.level)
+                    local tpl = EquipmentConfig.ITEMS[item.templateId]
+                    local field = BC.SLOT_SCROLL_MAP[item.slot or (tpl and tpl.slot)]
+                    local refund = BC.calcAscendScrollRefund(EquipmentSystem.getAscendLevel(item))
+                    if field and refund > 0 then scrolls[field] = (scrolls[field] or 0) + refund end
+                end
+                local entries = {}
+                if essence > 0 then entries[1] = { type = "essence", amount = essence } end
+                BC.appendScrollRewardItems(entries, scrolls)
+                paints, texts = {}, {}
+                M.drawUpperSlot({})
+                local imageTokens, textTokens, uniqueText, resourceImages = {}, {}, {}, {}
+                for _, paint in ipairs(paints) do
+                    local path = imagePaths[paint.image]
+                    check(path ~= nil, label .. text .. " 预览图像由真实资源路径解析")
+                    resourceImages[#resourceImages + 1] = path or tostring(paint.image)
+                    imageTokens[#imageTokens + 1] = table.concat({ path or tostring(paint.image),
+                        tostring(paint.cx), tostring(paint.cy), tostring(paint.w), tostring(paint.h) }, "@")
+                end
+                for _, drawn in ipairs(texts) do
+                    uniqueText[drawn.text] = true
+                    textTokens[#textTokens + 1] = table.concat({ drawn.text,
+                        tostring(drawn.x), tostring(drawn.y) }, "@")
+                end
+                local actualTexts = {}
+                for value in pairs(uniqueText) do actualTexts[#actualTexts + 1] = value end
+                local expectedTexts, expectedImages = {}, {}
+                if profile == "warehouse" then
+                    if #seqs == 0 then
+                        expectedTexts[1] = "勾选装备预览分解所得"
+                    else
+                        expectedTexts[1] = "当前分解可获得"
+                        local firstCX = 540 - (#entries - 1) * 106 * 0.5
+                        for index, entry in ipairs(entries) do
+                            local path = ResourceDefs.DEFS[entry.type].iconPath
+                            expectedImages[#expectedImages + 1] = path
+                            expectedTexts[#expectedTexts + 1] = tostring(entry.amount)
+                            local cx = firstCX + (index - 1) * 106
+                            local iconCount, amountCount = 0, 0
+                            for _, paint in ipairs(paints) do
+                                if imagePaths[paint.image] == path and math.abs(paint.cx - cx) < 0.001
+                                    and math.abs(paint.cy - 2056) < 0.001 and paint.w == 64 and paint.h == 64 then
+                                    iconCount = iconCount + 1
+                                end
+                            end
+                            for _, drawn in ipairs(texts) do
+                                if drawn.text == tostring(entry.amount) and math.abs(drawn.x - (cx + 36)) < 0.001
+                                    and math.abs(drawn.y - 2094) < 0.001 then amountCount = amountCount + 1 end
+                            end
+                            eq(iconCount, 1, label .. text .. " 真实图标居中且不重复 " .. entry.type)
+                            eq(amountCount, 1, label .. text .. " 真实数量角标 " .. entry.type)
+                        end
+                    end
+                else
+                    -- smith 原空态本来有静态精粹槽图；只禁止历史奖励数和卷轴 hint，不删该图。
+                    expectedImages[1] = ResourceDefs.DEFS.essence.iconPath
+                    expectedTexts[1] = #seqs > 0 and I18n.format("精粹 +%s", tostring(essence)) or "分解奖励"
+                    local hint = BC.formatScrollRefund(scrolls)
+                    if hint then expectedTexts[#expectedTexts + 1] = EquipmentText.lookup(hint, I18n.get()) or hint end
+                end
+                local uniqueExpected, wantedTexts = {}, {}
+                for _, value in ipairs(expectedTexts) do uniqueExpected[value] = true end
+                for value in pairs(uniqueExpected) do wantedTexts[#wantedTexts + 1] = value end
+                eq(signature(resourceImages), signature(expectedImages),
+                    label .. text .. " 真实预览资源完整且无旧金币/卷轴图")
+                eq(signature(actualTexts), signature(wantedTexts),
+                    label .. text .. " 真实预览文字完整且无历史数量/卷轴hint")
+                if #seqs == 0 then
+                    local capture = signature(imageTokens) .. "|" .. signature(textTokens)
+                    if originalEmpty == "" then originalEmpty = capture end
+                    eq(capture, originalEmpty, label .. text .. " 恢复原空态图文及坐标")
+                end
+            end
+            local function popup(expected, index, text)
+                local reward = rewards[index]
+                check(reward ~= nil, label .. text .. " 捕获真实RewardPopup入口")
+                if not reward then return end
+                eq(reward.title, "分解奖励", label .. text .. " 弹奖标题不变")
+                eq(#reward.items, #expected, label .. text .. " 弹奖完整资源数量")
+                for position, item in ipairs(expected) do
+                    local actual = reward.items[position] or {}
+                    eq(actual.type, item.type, label .. text .. " 弹奖有序type " .. position)
+                    eq(actual.amount, item.amount, label .. text .. " 弹奖完整amount " .. position)
+                end
+            end
             resetFixture()
             selected({}, "打开清空")
+            preview({}, "打开原空态")
             local rewardBefore = #rewards
             quality(1); selected({ 9101, 9102 }, "q1选择全部未锁未装")
             quality(2); selected({ 9101, 9102, 9201, 9202 }, "q2保留q1")
             local union = { 9101, 9102, 9201, 9202 }
+            preview(union, "有选中基础精粹预览")
             request(union, "首次并集发送")
             local pendingCount = #actions
             click(773, layout.by, "pending重复分解")
@@ -244,10 +360,12 @@ local function testRarityMultiselect()
             M.onActionResult({ action = Protocol.ACTION_TYPES.TOGGLE_EQUIP_LOCK,
                 decomposed = true, essenceReward = 99 })
             selected(union, "无关成功回执保留")
+            preview(union, "无关回执预览仍由选择派生")
             eq(#rewards, rewardBefore, label .. "无关回执不弹分解奖励")
             click(773, layout.by, "无关回执后重复分解")
             eq(#actions, pendingCount, label .. "无关回执不提前释放pending")
             failure(); selected(union, "失败回执保留勾选")
+            preview(union, "失败回执保留基础预览")
             eq(#rewards, rewardBefore, label .. "失败回执不弹奖励")
             local retry = request(union, "失败释放pending可重试")
             check(retry ~= nil, label .. "服务端使用真实多品质payload")
@@ -286,13 +404,141 @@ local function testRarityMultiselect()
                     result.action = Protocol.ACTION_TYPES.DECOMPOSE_EQUIP
                     M.onActionResult(result)
                     selected({}, "成功回执清所有品质勾选")
+                    preview({}, "基础奖励成功后无历史回显")
                     eq(#rewards, rewardBefore + 1, label .. "成功奖励仅弹一次")
+                    popup({ { type = "essence", amount = essence } }, rewardBefore + 1, "基础成功弹奖内容不变")
                     cell(9301); selected({ 9301 }, "成功后可手选其他品质")
                     M.onActionResult(result)
                     selected({ 9301 }, "非pending重复成功不误清新选择")
+                    preview({ 9301 }, "重复回执不回显旧奖励")
                     eq(#rewards, rewardBefore + 1, label .. "重复回执不重复弹奖")
                 end
             end
+            -- 升阶返卷轴用真实不同部位装备与 BC 成本计算；服务真实入账，弹奖不能被清预览吞掉。
+            resetFixture()
+            for _, row in ipairs({ { 9101, "W1", 1, 3, 2 }, { 9102, "W1", 1, 1, 0 },
+                { 9201, "A1", 2, 5, 1 }, { 9301, "O1", 3, 7, 0 } }) do
+                local item = assert(EquipmentSystem.generate(row[2], 10, row[3]))
+                item.seq, item.ascendLevel, item.enhanceLevel, item.refineCount = row[1], row[4], row[4], row[5]
+                testPDM.equipment.inventory[tostring(row[1])] = item
+            end
+            testPDM.currency = { essence = 123, gold = 456789, weaponScroll = 11, offhandScroll = 13,
+                armorScroll = 17, helmetScroll = 19, shoesScroll = 23, accessoryScroll = 29 }
+            M.onEquipmentDataUpdate()
+            local ascended = { 9101, 9102, 9201, 9301 }
+            quality(1); cell(9201); cell(9301)
+            selected(ascended, "不同部位升阶装备多选")
+            preview(ascended, "升阶精粹及不同部位卷轴预览")
+            local ascRewardsBefore = #rewards
+            request(ascended, "升阶多部位首次发送")
+            M.onActionResult({ action = Protocol.ACTION_TYPES.DECOMPOSE_EQUIP, success = false,
+                essenceReward = 777, goldReward = 888, scrollRewards = { weaponScroll = 999 } })
+            selected(ascended, "升阶失败保留所有选择")
+            preview(ascended, "升阶失败不回显回执资源")
+            eq(#rewards, ascRewardsBefore, label .. "升阶失败不弹奖")
+            local ascendRetry = request(ascended, "升阶失败可重试")
+            if ascendRetry then
+                local inventoryBefore, currencyBefore = copy(testPDM.equipment.inventory), copy(testPDM.currency)
+                local expectedEssence, expectedRefine, expectedScrolls, expectedScrollTotal = 0, 0, {}, 0
+                for _, seq in ipairs(ascended) do
+                    local item = inventoryBefore[tostring(seq)]
+                    expectedEssence = expectedEssence + BC.calcAutoDecomposeEssence(item.quality, item.level)
+                    expectedRefine = expectedRefine
+                        + math.floor(BC.calcTotalRefineSpent(item.quality, item.level, item.refineCount, item.grip) * 0.5)
+                    local field = BC.SLOT_SCROLL_MAP[item.slot]
+                    local amount = BC.calcAscendScrollRefund(EquipmentSystem.getAscendLevel(item))
+                    expectedScrolls[field] = (expectedScrolls[field] or 0) + amount
+                    expectedScrollTotal = expectedScrollTotal + amount
+                end
+                expectedEssence = expectedEssence + expectedRefine
+                check(expectedScrolls.weaponScroll > 0 and expectedScrolls.offhandScroll > 0
+                    and expectedScrolls.armorScroll > 0, label .. "真实BC配置覆盖三部位且同部位累计")
+                local equipDirty, currencyDirty = dirty.equipment or 0, dirty.currency or 0
+                local taskBefore = progress.decompose or 0
+                local serviceOk, serviceErr, result = BS.DecomposeEquip(1, ascendRetry.params.seqs)
+                check(serviceOk == true, label .. "真实升阶多部位分解成功 " .. tostring(serviceErr))
+                if serviceOk and result then
+                    eq(result.decomposeCount, #ascended, label .. "升阶实际分解数量")
+                    eq(result.essenceReward, expectedEssence, label .. "升阶实际精粹包含洗练返还")
+                    eq(result.refineReturn, expectedRefine, label .. "升阶实际洗练返还不变")
+                    eq(result.scrollReward, expectedScrollTotal, label .. "升阶实际卷轴返还总量")
+                    eq(result.goldReward or 0, 0, label .. "升阶实际服务金币不退")
+                    local actualScrolls, wantedScrolls = {}, {}
+                    for field, amount in pairs(result.scrollRewards or {}) do
+                        actualScrolls[#actualScrolls + 1] = field .. ":" .. amount
+                    end
+                    for field, amount in pairs(expectedScrolls) do wantedScrolls[#wantedScrolls + 1] = field .. ":" .. amount end
+                    eq(signature(actualScrolls), signature(wantedScrolls), label .. "升阶实际卷轴完整部位及数量")
+                    for field, amount in pairs(currencyBefore) do
+                        local added = field == "essence" and expectedEssence or (expectedScrolls[field] or 0)
+                        eq(testPDM.currency[field], amount + added, label .. "升阶真实资源入账/未涉及资源保留 " .. field)
+                    end
+                    eq(dirty.equipment, equipDirty + 1, label .. "升阶服务装备标脏一次")
+                    eq(dirty.currency, currencyDirty + 1, label .. "升阶服务货币标脏一次")
+                    eq(progress.decompose, taskBefore + #ascended, label .. "升阶服务任务计数不变")
+                    for _, seq in ipairs(ascended) do
+                        eq(testPDM.equipment.inventory[tostring(seq)], nil, label .. "升阶实际库存删除 seq=" .. seq)
+                    end
+                    result.action = Protocol.ACTION_TYPES.DECOMPOSE_EQUIP
+                    M.onActionResult(result)
+                    selected({}, "升阶成功清所有选择")
+                    preview({}, "升阶成功无历史数量卷轴hint及金币")
+                    for index = 1, 25 do
+                        local item = M.peekCellAt(layout.gx + ((index - 1) % 5) * layout.gs,
+                            layout.gy + math.floor((index - 1) / 5) * layout.gs)
+                        if item then
+                            for _, seq in ipairs(ascended) do
+                                check(tostring(item.seq) ~= tostring(seq), label .. "升阶成功真实背包刷新排除 seq=" .. seq)
+                            end
+                        end
+                    end
+                    eq(#rewards, ascRewardsBefore + 1, label .. "升阶成功仍弹奖一次")
+                    local expectedPopup = { { type = "essence", amount = expectedEssence } }
+                    BC.appendScrollRewardItems(expectedPopup, expectedScrolls)
+                    popup(expectedPopup, ascRewardsBefore + 1, "升阶实际完整精粹及三部位卷轴弹奖")
+                    cell(9302); selected({ 9302 }, "升阶成功后新选其他装备")
+                    M.onActionResult(result)
+                    selected({ 9302 }, "升阶重复回执不误清新选择")
+                    preview({ 9302 }, "升阶重复回执仅显示新选择精粹")
+                    M.onActionResult({ action = Protocol.ACTION_TYPES.TOGGLE_EQUIP_LOCK,
+                        decomposed = true, essenceReward = expectedEssence, goldReward = 99999,
+                        scrollRewards = expectedScrolls })
+                    selected({ 9302 }, "升阶无关回执不误清新选择")
+                    preview({ 9302 }, "升阶无关回执不混旧资源")
+                    eq(#rewards, ascRewardsBefore + 1, label .. "升阶重复及无关回执不重复弹奖")
+                    cell(9302); selected({}, "手动取消全部选择")
+                    preview({}, "取消全部不回落上次升阶奖励")
+                    request({}, "取消全部不发送")
+                    cell(9501); M.onTabSwitch(); selected({}, "升阶奖励后切tab清空")
+                    preview({}, "升阶奖励后切tab保持原空态")
+                    cell(9401); M.onOpen(); selected({}, "升阶奖励后重开清空")
+                    preview({}, "升阶奖励后重开保持原空态")
+                end
+            end
+
+            -- 兼容旧 goldReward 回执仍完整弹窗显示，但不成为新的预览来源，也不重复入账。
+            M.onOpen(); cell(9501)
+            preview({ 9501 }, "兼容金币回执前正常选择预览")
+            local legacyRequest = request({ 9501 }, "兼容金币回执请求")
+            if legacyRequest then
+                local legacyBefore, currencyBefore = #rewards, copy(testPDM.currency)
+                local scrolls = { weaponScroll = BC.calcAscendScrollRefund(3), armorScroll = BC.calcAscendScrollRefund(5) }
+                M.onActionResult({ action = Protocol.ACTION_TYPES.DECOMPOSE_EQUIP, decomposed = true,
+                    essenceReward = 987, goldReward = 4321, scrollRewards = scrolls })
+                selected({}, "兼容金币成功回执清选择")
+                preview({}, "兼容金币成功无旧金币图及数量")
+                eq(#rewards, legacyBefore + 1, label .. "兼容金币成功仍弹窗")
+                local expectedPopup = { { type = "essence", amount = 987 }, { type = "gold", amount = 4321 } }
+                BC.appendScrollRewardItems(expectedPopup, scrolls)
+                popup(expectedPopup, legacyBefore + 1, "兼容金币与精粹卷轴完整弹奖不变")
+                for field, amount in pairs(currencyBefore) do
+                    eq(testPDM.currency[field], amount, label .. "UI兼容回执不重复发资源 " .. field)
+                end
+                cell(9501); cell(9501); preview({}, "兼容奖励后取消全部保持空态")
+                M.onTabSwitch(); preview({}, "兼容奖励后切tab保持空态")
+                M.onOpen(); preview({}, "兼容奖励后重开保持空态")
+            end
+
             resetFixture()
             cell(9301); cell(9101)
             selected({ 9101, 9301 }, "手选两种品质但各自部分选不亮")

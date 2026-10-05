@@ -1,3 +1,17 @@
+## 分解后清空收益预览协作要求（2026-10-05）
+
+- 用户指定从 `workspace930` 拉取到 `/workspace` 根，本轮创建 `feat1005b/clear-decompose-preview`；只正常提交并显式 push 本功能分支，不推任何 `workspace` 系列、不强推、不自动合并 PR。
+- 本轮范围仅为分解完成后刷新、清空“可以获得”的显示；保持资源发放、自动分解与其他装备操作原规则，补对应回归并调用官方 build 验证。
+- 持续推进已授权任务，不擅自取消或退出；每个完成阶段或确需用户决策时，先如实简报，再实际调用 `AskUserQuestion` 提供 2–4 个下一步选项，不能只用普通文本结束。尊重后续停止指令、权限拒绝和安全边界。
+- 每批完成的代码或文档及时 commit/push 新功能分支，避免中断丢失。凭据不进源码、Git remote/config、日志或记忆；本地生成配置、存档、验证日志和截图不提交。全局记忆写工具失败，本轮要求实际强化在此已有项目记忆，不宣称全局保存成功。
+- 实际检出基线为 `workspace930@b816568e920d112aee049a2e956d51894539b3be`；大型资源下载首次检出超时后保留已下载对象并恢复索引，用户代码/资源无缺失。只改 `BlacksmithDecompose` 的历史奖励回显，预览完全由当前勾选派生，成功清选择/刷新库存、失败保留与实际弹奖规则不变，旧 smith 静态槽图仍保留。
+- 官方 Runtime 专项实际 **2516断言全部通过、失败0、exit0**，包含两profile真实drawUpperSlot图文捕获、不同部位及同部位累计卷轴、洗练精粹返还、完整Popup与入账、无关/重复回执、取消全部/切tab/重开；原断言全部保留。仓库268、角标146、洗练14、切关93回归均ALL PASS/exit0。逻辑绘图spy不等于手机触控/GPU分解页视觉验收；headless Shader 缓存报错为环境噪音，不把exit0单独当通过依据。
+- 最新官方Build成功，498Lua入包；生产与测试两份源码和实际dist资源逐字节2/2一致，单文件LSP无Error（有Warning）。36规范单测全过，2721路径0错误0警告。真实主入口150帧完成18/18启动，Lua/资源错误0、无缺图；原始报告FAIL仅148次默认100ms的软件渲染帧尖峰，不宣称性能通过，标题截图不替代分解页真实交互验收。
+- 已分阶段正常push `96b4bd05`（记忆范围）、`7648c4d6`（生产）、`b5d8082e`（专项）到 `feat1005b/clear-decompose-preview`。初次credential helper转义错误未发生推送，改为临时请求头后成功，Git配置与remote无凭据；未推workspace系列、未创建或合并PR。远端基线持续并行开发，不把本轮固定检出宣称最新主线融合，交接仍实际AskUserQuestion选下一步。
+
+- 用户通过实际 `AskUserQuestion` 明确要求“PR，然后下一步”，已创建正式 **PR #84**：https://github.com/FanZeros/changeForJourney/pull/84，head=`feat1005b/clear-decompose-preview`、base=`workspace930`，返回open、draft=false、merged=false，未自动合并。
+- 下一项已授权：角色属性标题去方括号，以及删除战斗倍速、加速卡与收益的功能/逻辑；另建 `feat1005b/remove-speed-card-features` 从已验证分解修复继续开发，不回退分解修复，保持基础战斗/攻击速度、动画时序与正常离线收益。
+
 ## 极长文本布局修复协作要求（2026-10-04）
 
 - 用户在 PR74 已解决冲突并合入后通过实际 AskUserQuestion 选择“修极长文本布局”，本轮从合并提交 `9c2cd5cd` 新建 `feat1004b/long-text-layout`，仅修角色详情职业/经验墨迹越框和属性名称/数值重叠，不改变经济、属性值、卡框比例或战斗规则；上一轮合并授权不延伸到本分支。

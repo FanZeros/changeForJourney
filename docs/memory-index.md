@@ -1,5 +1,14 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+## 横屏适配核查（2026-10-05，独立记录分支）
+
+- 本轮工作目录 `/workspace/game01`，固定基线 `workspace930@7b93bceeaa9948b599e4d428e7eb322777af860f`；新分支 `audit1005/portrait-landscape-followup-20261005`。用户明确授权新分支记录、确认问题，每个完成阶段及时正常提交并推送；不推workspace系列、不强推、不自动创建或合并PR。
+- 完整报告：[横屏适配核查-20261005.md](横屏适配核查-20261005.md)。当前是1920×1080横屏宿主＋1080×2400子页契约，不能全局替换；副本classic仍实际切入恢复，StartScreen是空兼容模块，升级窗已是横卡。
+- 源码与数学确认五类待修：H01塔异常页正文y1160/1240/1330直画出横屏；H02整个竖版轮回过场cover，眼皮p≥0.253125即无遮挡，一秒睁眼0.355756秒已全露；H03更新提醒mask仅x717..1203但全窗输入阻断；H04黑边滚轮仍派发右栏名册；H05塔功绩特定left奖励note与旧分栏不一致，非row奖励滚轮下放下层或中心幽灵命中。
+- H05必须保留tower＋TaskPage＋tri关闭＋奖励left的条件，不声称所有塔领奖失败，不把普通轻点关闭夸大成无法领取；功绩不传panel会取旧焦点，正常center/right在1920帧未确认相同错位。玩家信息、离线及奖励主动取消mask是策略，不误报缺遮罩。
+- 本轮只读Lua，未改生产/测试/资源/存档；216组多尺寸/DPR数学往返通过，但不是Runtime或设备验收。没有Lua/lupa，不安装依赖；未跑LSP、官方build、截图或现有Lua回归，不沿用历史PASS。
+- 范围记忆提交 `4cbe87c581d0afc8f6e6bbe277beac7c231d5d99` 已正常push本核查分支并核对远端一致；报告阶段继续独立提交push。凭据只即时进程鉴权，不落文件/Git配置/日志/记忆，需撤销更换聊天公开令牌。
+
 ## 升阶修复 PR87 交接（2026-10-05）
 
 - 用户明确授权提交PR；https://github.com/FanZeros/changeForJourney/pull/87，head=`fix930/equipment-ascend-freeze-20261005`，base=`workspace930`。创建源39f32c370954b41c7d38c275d4af40c798d0a46b、目标372f4506a6f55342f28964b73ee60312e3c96c59；返回open、draft=false、merged=false，未自动合并，不宣称CI通过。

@@ -89,7 +89,12 @@ local function runBattleLedgerCases(nativeRequire)
             ctx.isFirstClear = not ctx.clearedStages[id]
         end }
         modules["ui.battle.stage.BattleStageNavLogic"] = { bind = function() return stub() end }
-        modules["ui.battle.scene.BattleAllyLifecycle"] = { bind = function() return stub() end }
+        modules["ui.battle.scene.BattleAllyLifecycle"] = { bind = function(deps)
+            -- 常规战斗叶子仍用替身；显式清档必须走本地真实 resetToDefault，不能手抄清表。
+            local lifecycle = assert(load(source("ui.battle.scene.BattleAllyLifecycle"),
+                "@真实清档/BattleAllyLifecycle", "t", env))().bind(deps)
+            return stub({ resetToDefault = lifecycle.resetToDefault })
+        end }
         modules["systems.OfflineCalc"] = { resolveIdleStageAnchors = function() return stageId, stageId end,
             calcOnlineIdleRewards = function() return {} end }
         modules["systems.BattleTimeout"] = { calcMult = function() return 1 end }
@@ -312,9 +317,16 @@ local function runBattleLedgerCases(nativeRequire)
         check(#f.outgoing == before + 1 and marked(sent, 104) and marked(sent, 105),
             "已缓存数量2后换成另外两键不能被数量相等跳过")
         check(marked(sent, 102) and marked(sent, 103), "同数量内容变更保留镜像已通事实")
-        -- 两份账本同时清空模拟真实reset的结果；Sync不能从内部缓存复活旧通关。
+        -- 普通空快照不是reset：即使max回到第一关，也不能擦掉已确认的账本。
         f.scene.setBattleData({ currentStageId = 101, maxStageId = 101, clearedStages = {} })
-        f.dispatcher.get("battle").clearedStages = {}
+        check(f.scene.getClearedStages()[102] and f.scene.getClearedStages()[103]
+            and f.scene.getClearedStages()[104] and f.scene.getClearedStages()[105],
+            "普通空快照无max后备仍保留四个已通事实")
+        -- 沿真实reset入口清两源；Sync不能从内部缓存复活旧通关。
+        f.scene.resetToDefault()
+        f.dispatcher.reset()
+        f.env.require("runtime.ClientMessageHandler").setupDataSubscriptions()
+        f.dispatcher.set("battle", { currentStageId = 101, maxStageId = 101, clearedStages = {} })
         f.sync(1.1)
         check(next(f.scene.getClearedStages()) == nil
             and next(f.dispatcher.get("battle").clearedStages) == nil, "双源显式清空后不复活旧标记")

@@ -19,18 +19,22 @@ function M.bind(deps)
     local function setBattleData(data)
         if not data then return end
 
-        -- 恢复已通关关卡集合
-        if data.clearedStages then
-            local clearedStages = {}
-            for k, v in pairs(data.clearedStages) do
-                -- 服务端以 tostring(stageId) 为 key 存储，本地以 number 为 key
-                local numKey = tonumber(k)
-                if numKey and v then
+        -- cleared 是永久首通事实，不是当前战斗模式。回灌可能只含部分账本，
+        -- 合并两源并归一数字/字符串键；false/缺失不能撤销已经确认的 true。
+        -- 清档需先走 resetToDefault，不能借一次普通恢复清除历史首通。
+        local clearedStages = {}
+        local function mergeCleared(source)
+            if type(source) ~= "table" then return end
+            for k, v in pairs(source) do
+                local numKey = math.tointeger(tonumber(k) or 0)
+                if numKey and numKey > 0 and v == true then
                     clearedStages[numKey] = true
                 end
             end
-            set("clearedStages", clearedStages)
         end
+        mergeCleared(get("clearedStages"))
+        mergeCleared(data.clearedStages)
+        set("clearedStages", clearedStages)
 
         -- 用 maxStageId 补全 clearedStages（后备推断：低于 maxStageId 的关卡必定已通关）
         local maxSId = data.maxStageId and tonumber(data.maxStageId)

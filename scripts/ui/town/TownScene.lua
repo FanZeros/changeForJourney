@@ -423,13 +423,14 @@ local function ensureTownImages(vg)
     imgIconLoot    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_YX.png", 0) or -1
     imgTask        = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_GJ.png", 0) or -1
     imgIconTask    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_GJ.png", 0) or -1
-    imgSmith       = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_TJP.png", 0)
+    -- 这两张建筑立绘的旧文件名与实际内容相反；图标仍按功能名引用。
+    imgSmith       = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_CK.png", 0)
     imgIconSmith   = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_TJP.png", 0)
     imgChurch      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JT.png", 0)
     imgTree        = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_TREE.png", 0)
     imgTavern      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JG.png", 0)
     imgMarket      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_SJ.png", 0)
-    imgWarehouse   = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_CK.png", 0)
+    imgWarehouse   = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_TJP.png", 0)
     imgIconWarehouse = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_CK.png", 0)
     imgIconChurch  = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_JT.png", 0)
     imgIconTree    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_TREE.png", 0)

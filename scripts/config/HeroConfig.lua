@@ -504,6 +504,10 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
     -- 创建 UnitAttributes
     local attrs = UnitAttributes.create(cfg)
 
+    -- 老六觉醒Ⅲ独占暴击溢出转换；只读传入觉醒，预览/对手不借本地存档。
+    local AC = require("config.AwakeningConfig")
+    attrs.critOverflowRatio = (heroId == 18 and AC.hasStage(awakening, 3)) and 1.0 or 0
+
     -- 应用职业基础属性加成
     CC.applyStatBonus(hero.classId, attrs)
 

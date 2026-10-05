@@ -233,7 +233,21 @@ function Start()
         check(close(row(ar, "_artifactExtraDamage").currentValue, 1.6), "神器额外伤害特殊行原始倍率正确")
         local crit = row(ar, "_effCritRate")
         check(close(crit.delta, 130), "合并通用/物理暴击后计神器半率倍率")
-        check(row(ar, "_effCritDmg").previewValue > row(ar, "_effCritDmg").currentValue, "溢出暴击率转暴伤沿用当前管线")
+        check(close(row(ar, "_effCritDmg").previewValue, row(ar, "_effCritDmg").currentValue),
+            "普通英雄溢出暴击率不再转暴伤，神器暴伤倍率仍保留")
+        local laoliu = copy(art)
+        laoliu.heroes.roster = { ["18"] = { level = 70,
+            awakening = { [1] = true, [2] = true, [3] = true, _awk3Migrated = true }, extraTalent = {} } }
+        laoliu.heroes.teams[2].slots = { 18 }
+        laoliu.equipment.equipped = { ["18"] = {} }
+        put(laoliu, 1, "C1", { { affixId = 19, value = 250 } }, {})
+        local awakened = Preview.build(18, 70, 1, nil, laoliu)
+        local previewRate = row(awakened, "_effCritRate").previewValue
+        check(previewRate > 100 and close(row(awakened, "_effCritDmg").previewValue,
+            row(awakened, "_effCritDmg").currentValue * previewRate / 100),
+            "老六觉醒Ⅲ预览先计神器半率再转暴伤，与实战一致")
+        check(awakened.current.attrs.critOverflowRatio == 1 and awakened.preview.attrs.critOverflowRatio == 1,
+            "当前与预览重建均保留老六觉醒Ⅲ能力")
         check(equal(art.artifacts, artBefore.artifacts), "神器 Schema 读取/规范化只触及副本")
         check(equal(owned, ownedBefore) and ownedReads == 0, "显式快照缺 extraTalent 不回退 Owned、不规范化真实数据")
         check(equal(HC.HEROES, configBefore), "预览不改 HeroConfig 全局配置")

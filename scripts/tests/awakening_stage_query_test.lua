@@ -8,6 +8,9 @@ local TAL = require("systems.TalentManager")
 local SEM = require("systems.StatusEffectManager")
 local Fish = require("systems.talents.TalentFatFish")
 local Four = require("systems.talents.TalentFourNew")
+local CF = require("systems.CombatFormula")
+local Attrs = require("ui.character.detail.CharacterDetailAttrs")
+local Reset = require("ui.battle.scene.BattleAllyReset")
 
 local assertions, failures = 0, 0
 local function check(condition, message)
@@ -234,6 +237,89 @@ local function testRealBindings()
     end
 end
 
+local function testCritOverflow()
+    -- 两参数旧调用默认关闭；只有显式传入已解锁的属性才能转换。
+    for _, rate in ipairs({ 0, 25, 100, 150, 1000 }) do
+        local effective, damage = CF.applyCritOverflow(rate, 200)
+        check(near(effective, math.min(100, rate)) and near(damage, 200),
+            "默认暴击溢出不增加暴伤 rate=" .. rate)
+    end
+    local target = UA.create({ [AD.MAX_HP] = 100000, [AD.DODGE] = 0 })
+    target:fillHp()
+    for _, id in ipairs(HC.getAllIds()) do
+        for stage = 0, 3 do
+            local nodes = awake(stage)
+            local a = assert(HC.createHero(id, 70, nil, nodes, {}))
+            local enabled = id == 18 and stage == 3
+            check(a.attrs.critOverflowRatio == (enabled and 1 or 0),
+                "专属转换仅老六Ⅲ开启 id=" .. id .. " stage=" .. stage)
+            local effective, damage = CF.applyCritOverflow(150, 200, a.attrs)
+            check(near(effective, 100) and near(damage, enabled and 300 or 200),
+                "角色阶段门控实际转换 id=" .. id .. " stage=" .. stage)
+        end
+    end
+    for _, entry in ipairs({
+        { nodes = { [1] = true, [2] = true, [3] = true }, enabled = false },
+        { nodes = { [7] = true }, enabled = true },
+        { nodes = { ["1"] = true, ["2"] = true, ["3"] = true, _awk3Migrated = true }, enabled = true },
+    }) do
+        local a = assert(HC.createHero(18, 70, nil, entry.nodes, false))
+        check(a.attrs.critOverflowRatio == (entry.enabled and 1 or 0), "转换兼容旧七阶与原生字符串三阶")
+    end
+
+    -- 正式普攻/连击读取属性：神器先调整暴击参数，再消费觉醒能力。
+    for _, id in ipairs({ 1, 18 }) do
+        for stage = 0, 3 do
+            local a = assert(HC.createHero(id, 70, nil, awake(stage), {}))
+            a.attrs:setBases({ [AD.CRIT_RATE] = 300, [AD.LUK] = 0,
+                [AD.CRIT_DMG] = 200, [AD.PHYS_CRIT_RATE] = 0, [AD.MAG_CRIT_RATE] = 0,
+                [AD.PHYS_CRIT_DMG] = 0, [AD.MAG_CRIT_DMG] = 0, [AD.HIT_VALUE] = 100000 })
+            a.attrs.artifactCritRateMult, a.attrs.artifactCritDmgMult = 0.5, 2
+            for _, comboIndex in ipairs({ 0, 1 }) do
+                local result = CF.calcAttack(a.attrs, target, nil, comboIndex)
+                check(result.isCrit and near(result.hits[1].critMult, id == 18 and stage == 3 and 6 or 4),
+                    "实战先计神器倍率后按觉醒转换 id=" .. id .. " stage=" .. stage .. " combo=" .. comboIndex)
+            end
+            check(a.attrs:clone():clone().critOverflowRatio == a.attrs.critOverflowRatio,
+                "连续克隆保留专属觉醒能力")
+        end
+    end
+
+    -- 战中解锁只在新波提交 pending 快照，不能提前借即时觉醒数据生效。
+    local locked = assert(HC.createHero(18, 70, nil, awake(2), {}))
+    local unlocked = assert(HC.createHero(18, 70, nil, awake(3), {}))
+    Reset.createSnapshot(locked)
+    locked._pendingSnapshot = unlocked.attrs
+    check(locked.attrs.critOverflowRatio == 0, "pending觉醒不提前影响当前波")
+    check(Reset.restoreFromSnapshot(locked) and locked.attrs.critOverflowRatio == 1,
+        "下波恢复新快照后转换生效")
+    locked._pendingSnapshot = assert(HC.createHero(18, 70, nil, awake(2), {})).attrs
+    check(Reset.restoreFromSnapshot(locked) and locked.attrs.critOverflowRatio == 0,
+        "新快照撤销能力不残留转换")
+
+    local function panelRow(data, key)
+        for _, r in ipairs(data.right) do if r.key == key then return r end end
+        error("缺少属性行：" .. key)
+    end
+    for stage = 0, 3 do
+        local nodes = awake(stage)
+        local options = { heroes = { roster = { ["18"] = { level = 70,
+            awakening = nodes, extraTalent = { stacks = 10000 } } } },
+            equipment = { inventory = {}, equipped = {} }, artifacts = { bag = {} } }
+        local data = Attrs.collectAttributes(18, assert(HC.get(18)), 70, options)
+        local rawRate = data.attrs:get(AD.CRIT_RATE) + data.attrs:get(AD.MAG_CRIT_RATE)
+        local rawDmg = data.attrs:get(AD.CRIT_DMG) + data.attrs:get(AD.MAG_CRIT_DMG)
+        local _, converted = CF.applyCritOverflow(rawRate, rawDmg, data.attrs)
+        check(near(panelRow(data, "_effCritRate").numericValue, rawRate), "面板保留原始暴击率 stage=" .. stage)
+        check(near(panelRow(data, "_effCritDmg").numericValue, converted), "面板暴伤与实战转换一致 stage=" .. stage)
+        if stage == 1 or stage == 2 then
+            check(rawRate > 1000 and near(converted, rawDmg), "历史万层成长保留，但未到Ⅲ不转暴伤")
+        elseif stage == 3 then
+            check(converted > 2000, "老六Ⅲ解锁后历史成长正常转暴伤")
+        end
+    end
+end
+
 function Start()
     print("[三阶回归] 开始；旧接口兼容、新阶段查询及五角色门槛")
     local ok, err = pcall(function()
@@ -241,6 +327,7 @@ function Start()
         testFish()
         testFour()
         testRealBindings()
+        testCritOverflow()
     end)
     if not ok then
         failures = failures + 1

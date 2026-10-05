@@ -632,7 +632,7 @@ function HandleNanoVGRenderHorizon()
         if not talentPageUsesWideLayout() then TalentPage.draw(vg()) end
         TavernPage.draw(vg())
         MarketPage.draw(vg())
-        -- [0930 穿帮修复] 锻炉打开时仓库下铺锻炉背景垫底（城镇组之上、仓库之下）
+        -- 锻炉打开时左栏只铺不透明底；仓库自带背景与标题，不复用锻炉图。
         BlacksmithPage.drawUnderlay(vg())
         if not backpackAboveForge then
             BackpackPanel.draw(vg())
@@ -754,7 +754,7 @@ function HandleNanoVGRenderHorizon()
         if not talentPageUsesWideLayout() then TalentPage.draw(vg()) end
         TavernPage.draw(vg())
         MarketPage.draw(vg())
-        -- [0930 穿帮修复] 锻炉打开时仓库下铺锻炉背景垫底（城镇组之上、仓库之下）
+        -- 锻炉打开时左栏只铺不透明底；仓库自带背景与标题，不复用锻炉图。
         BlacksmithPage.drawUnderlay(vg())
         if not backpackAboveForge then
             BackpackPanel.draw(vg())

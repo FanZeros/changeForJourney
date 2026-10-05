@@ -696,6 +696,7 @@ function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner, anchorX, 
     detState.anchorX = tonumber(anchorX)
     detState.anchorY = tonumber(anchorY)
     detState.pinned = false
+    detState.equippedView = false
     detState.descScrollY = 0
     detState.descScrollMax = 0
     detState.descDragging = false
@@ -707,12 +708,19 @@ function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner, anchorX, 
         .. " anchor=" .. tostring(detState.anchorX) .. "," .. tostring(detState.anchorY))
 end
 
+--- 已装备槽位的悬停说明；不是试穿候选，不改变配装比较的目标槽。
+function EquipmentDetail.openEquipped(seq, slot, heroId, anchorX, anchorY)
+    EquipmentDetail.open(seq, slot, heroId, true, "character", anchorX, anchorY)
+    detState.equippedView = true
+end
+
 function EquipmentDetail.setAnchor(anchorX, anchorY)
     detState.anchorX = tonumber(anchorX)
     detState.anchorY = tonumber(anchorY)
 end
 
 function EquipmentDetail.pin()
+    if detState.equippedView then return end -- 当前装备悬停不占用仓库候选的钉住状态。
     detState.pinned = true
 end
 
@@ -734,6 +742,7 @@ function EquipmentDetail.close()
         detState.compactCorner = false
         detState.snapshot = nil
         detState.pinned = false
+        detState.equippedView = false
         detState.layoutEquip = nil
         detState.lockHotspot = nil
         for i = 1, 3 do setKw[i]:clear() end
@@ -1374,6 +1383,7 @@ function EquipmentDetail.getSelection()
     return {
         seq = detState.equipSeq, slot = detState.slot, heroId = detState.heroId,
         owner = detState.owner, pinned = detState.pinned == true,
+        equipped = detState.equippedView == true,
     }
 end
 

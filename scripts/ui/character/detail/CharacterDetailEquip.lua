@@ -1,7 +1,7 @@
 -- ============================================================================
 -- CharacterDetailEquip - 配装下部属性预览面板（纯 NanoVG / 暗金）
 -- 不再显示装备网格，不再创建网格装备热区/hover/快速穿装/拖拽 ghost。
--- 上部六槽由 CharacterDetailDraw 管理；这里只保留 peekSlotEquipAt 协作拖拽。
+-- 上部六槽由 CharacterDetailDraw 管理；此处负责当前装备悬停与拖拽读取。
 -- ============================================================================
 
 local PlayerStore = require("core.PlayerStore")
@@ -17,6 +17,13 @@ local M = {}
 local CACHE_SECONDS = 0.2
 local SCROLL_FRICTION = 0.90
 local SCROLL_MIN_VEL = 0.5
+local slotHover = { key = nil, since = 0 }
+
+local function clearSlotHover()
+    slotHover.key, slotHover.since = nil, 0
+    local detail = require("ui.character.equip.EquipmentDetail")
+    if detail.dismissHover then detail.dismissHover("character") end
+end
 
 -- 独立滚动区：上左属性、下方完整套装。绝不复用旧侧栏命中表。
 local panelState = {
@@ -72,7 +79,7 @@ local function getSelection()
     -- 主模块升级前安全退化为 current；不会从私有 state 猜候选。
     if type(detail.getSelection) ~= "function" then return nil end
     local selected = detail.getSelection()
-    if not selected or selected.seq == nil then return nil end
+    if not selected or selected.seq == nil or selected.equipped == true then return nil end
     local owner = selected.owner
     if owner ~= "backpack" and owner ~= "character" and owner ~= "bag" then return nil end
     return selected
@@ -308,6 +315,7 @@ end
 
 --- clear/reset 都废弃候选缓存和属性说明，不遗留上一位角色热区。
 function M.clear()
+    clearSlotHover()
     panelState.data = nil
     panelState.cacheKey = nil
     panelState.cacheTime = -1
@@ -373,10 +381,16 @@ function M.handleInput(dx, dy, heroId, detailState)
     return true
 end
 
---- 只管理下部属性说明，不再通过装备 grid 触发/关闭 EquipmentDetail。
+--- 六槽当前装备说明与下部属性说明独立，悬停不发送穿戴操作。
 function M.handleHover(dx, dy, heroId)
-    if dx == nil or dy == nil or dx < 0 or dy < 0 then clearTip(); return false end
-    if panelState.dragging or panelState.hoverPinned then return false end
+    if dx == nil or dy == nil or dx < 0 or dy < 0 then
+        clearSlotHover()
+        clearTip()
+        return false
+    end
+    if panelState.dragging then clearSlotHover(); return false end
+    if M.handleSlotHover(dx, dy, heroId) then clearTip(); return true end
+    if panelState.hoverPinned then return false end
     local row = rowAt(dx, dy)
     if not row then clearTip(); return false end
     local key = tostring(row.key)
@@ -485,9 +499,9 @@ function M.drawSetCodex(vg)
 end
 
 --- 保留上部六槽拖拽读取，不得查已删除的配装 grid。
-function M.peekSlotEquipAt(dx, dy)
+function M.peekSlotEquipAt(dx, dy, heroId)
     local Draw = require("ui.character.detail.CharacterDetailDraw")
-    local heroId = panelState.heroId
+    heroId = heroId or panelState.heroId
     if not heroId then return nil end
     for _, slot in ipairs(Draw.DT_SLOTS) do
         local half = Draw.DT_SLOT_SIZE * 0.5
@@ -510,10 +524,41 @@ function M.peekSlotEquipAt(dx, dy)
             return {
                 seq = seq, templateId = equip.templateId, quality = equip.quality or 1,
                 slot = equip.slot, grip = equip.grip, equipType = equip.type,
+                hitSlot = slot.slot, cx = slot.cx, cy = slot.cy,
             }
         end
     end
     return nil
+end
+
+function M.handleSlotHover(dx, dy, heroId)
+    local peek = M.peekSlotEquipAt(dx, dy, heroId)
+    if not peek then clearSlotHover(); return false end
+    local detail = require("ui.character.equip.EquipmentDetail")
+    -- 已钉住候选优先，不因查看已装备槽位丢失左栏试穿选择。
+    if detail.isPinned and detail.isPinned() then
+        slotHover.key, slotHover.since = nil, 0
+        return true
+    end
+    local key = table.concat({ tostring(heroId), peek.hitSlot, tostring(peek.seq) }, "|")
+    if slotHover.key ~= key then
+        clearSlotHover()
+        slotHover.key, slotHover.since = key, now()
+        return true
+    end
+    if now() - slotHover.since < 0.3 then return true end
+    local half = require("ui.character.detail.CharacterDetailDraw").DT_SLOT_SIZE * 0.5
+    local anchorX, anchorY = peek.cx - half, peek.cy - half
+    if detail.isOpen() then
+        local selected = detail.getSelection()
+        if selected and selected.equipped and selected.owner == "character"
+            and tostring(selected.seq) == tostring(peek.seq) and selected.heroId == heroId then
+            detail.setAnchor(anchorX, anchorY)
+        end
+        return true
+    end
+    detail.openEquipped(peek.seq, peek.hitSlot, heroId, anchorX, anchorY)
+    return true
 end
 
 return M

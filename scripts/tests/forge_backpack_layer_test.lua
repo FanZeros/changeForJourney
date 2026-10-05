@@ -175,6 +175,11 @@ function Start()
             easeInOutCubic = function(t) return t end,
             closeAutoWarehouse = function() closed = closed + 1 end,
         })
+        nvgBeginFrame()
+        clips = {}
+        impl.drawUnderlay({})
+        check(#clips == 0, "左栏垫底不再复制中栏锻炉图片")
+        check(#ctx.stack == 0, "纯色垫底不污染NanoVG状态")
         for _, offset in ipairs({ -1080, -800, -400, 0 }) do
             nvgBeginFrame()
             VP.begin({}, VP.PANELS.center, 0, 0, 1)

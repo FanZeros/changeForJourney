@@ -137,8 +137,8 @@ function M.bind(deps)
         end
     end
 
-    --- [0930 穿帮修复] 左栏垫底：锻炉打开时仓库面板是半透明的，城镇会透出；
-    --- 在左栏先铺锻炉同款不透明底+背景图，仓库内容叠在其上。仅画背景，不含 UI。
+    --- 左栏仅铺不透明底防止城镇穿透；仓库自己的背景与标题随其滑入绘制。
+    --- 不复用锻炉背景，避免双页出现两个锻炉。
     ---@param vg any
     local function drawUnderlay(vg)
         if not state.open then return end
@@ -146,11 +146,6 @@ function M.bind(deps)
         nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
         nvgFillColor(vg, nvgRGBA(0x14, 0x12, 0x10, 255))
         nvgFill(vg)
-        nvgSave(vg)
-        nvgIntersectScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
-        DrawUtil.drawImageCentered(vg, imgBg, DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_W, DESIGN_H, 1.0)
-        nvgResetScissor(vg)
-        nvgRestore(vg)
     end
 
     return { drawPageImpl = drawPageImpl, drawUnderlay = drawUnderlay }

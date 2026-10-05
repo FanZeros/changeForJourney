@@ -388,8 +388,8 @@ local function calcTalentFixedDamage(attacker, target, baseDmg, opts)
     if attacker.attrs.artifactCritDmgMult then
         critDmg = critDmg * attacker.attrs.artifactCritDmgMult
     end
-    -- 与普攻一致：暴击率溢出转为暴击伤害（forceCrit 分支同样受益）
-    critRate, critDmg = CF.applyCritOverflow(critRate, critDmg)
+    -- 与普攻一致：仅专属觉醒解锁溢出转换，forceCrit 不绕过觉醒门控。
+    critRate, critDmg = CF.applyCritOverflow(critRate, critDmg, attacker.attrs)
 
     local armorType = target.armorType or AD.ARMOR_LEATHER
     local resistance = 0

@@ -85,7 +85,10 @@ local function syncDisplay()
 end
 
 -- 图片句柄
-local imgBG_      = -1   -- 大情景全屏背景图
+local imgBG_      = -1   -- 剧情独立环境；small保留原对白和关闭时序。
+local backgroundIsCg_ = false
+local backgroundCache_ = {}
+local backgroundFailures_ = {}
 
 --- 立绘缓存: [characterId] = nvgImage handle
 local portraitCache_ = {}
@@ -178,6 +181,23 @@ local function getCachedImage(cache, key, path)
     return cache[key]
 end
 
+local function getBackgroundImage(path)
+    if not vg_ or not path or path == "" then return -1 end
+    local cached = backgroundCache_[path]
+    if cached ~= nil then return cached end
+    local handle = nvgCreateImage(vg_, path, 0) or -1
+    if handle >= 0 then
+        backgroundCache_[path] = handle
+        backgroundFailures_[path] = nil
+        print("[ScenarioDialogue] loaded bg: " .. path .. " handle=" .. handle)
+    elseif not backgroundFailures_[path] then
+        backgroundFailures_[path] = true
+        print("[ScenarioDialogue] background unavailable: " .. path)
+    end
+    -- 缺图不缓存失败；后续恢复后可以重开，不影响剧情结束或领奖。
+    return handle
+end
+
 local function getAvatarImage(step)
     local appearance = ScenarioConfig.getAppearance(step)
     local path = appearance.iconPath or (appearance.heroId and HeroAssetUtil.getIconPath(appearance.heroId))
@@ -211,6 +231,9 @@ end
 ---@param vg any NanoVG context
 ---@param sceneRef Scene 场景引用，用于创建 SoundSource
 function ScenarioDialogue.init(vg, sceneRef)
+    if vg_ ~= vg then
+        backgroundCache_, backgroundFailures_ = {}, {}
+    end
     vg_ = vg
     scene_ = sceneRef
     print("[ScenarioDialogue] init")
@@ -219,7 +242,8 @@ end
 --- 开始情景对话
 ---@param config table 配置表
 ---   config.mode       string "large"|"small" （默认 "large"）
----   config.background string|nil 大情景背景图路径（默认 "image/关卡地图/MAP_1.png"）
+---   config.background string|nil 独立环境；small仅显式给出时加载，large默认黑棘林道。
+---   config.backgroundIsCg boolean|nil 背景已含人物时跳过立绘，不按文件名猜。
 ---   config.eyeOpen    boolean|nil 是否以睁眼动画入场（默认 false）
 ---   config.steps      table  对话步骤列表:
 ---       { characterId = 1, name = "角色名", text = "对话内容" }
@@ -235,13 +259,16 @@ function ScenarioDialogue.show(config)
     onFinishCb_ = config.onFinish
     title_      = config.title
 
-    -- 加载大情景全屏背景图
-    if mode_ == "large" then
-        local bgPath = config.background or "image/关卡地图/MAP_1.png"
-        imgBG_ = nvgCreateImage(vg_, bgPath, 0)
-        print("[ScenarioDialogue] loaded bg: " .. bgPath .. " handle=" .. imgBG_)
+    -- 显式环境同样适用于small，不改变其模式、人物比例、门控或0.3秒关闭动画。
+    local defaultPath = require("config.StoryBackgroundConfig").DEFAULT
+    local bgPath = config.background
+    if mode_ == "large" and not bgPath then bgPath = defaultPath end
+    imgBG_ = getBackgroundImage(bgPath)
+    if mode_ == "large" and imgBG_ < 0 and bgPath ~= defaultPath then
+        imgBG_ = getBackgroundImage(defaultPath)
+        backgroundIsCg_ = false
     else
-        imgBG_ = -1
+        backgroundIsCg_ = config.backgroundIsCg == true and imgBG_ >= 0
     end
 
     -- 初始化第一步
@@ -293,8 +320,9 @@ function ScenarioDialogue.update(dt)
             active_     = false
             print("[ScenarioDialogue] dismiss animation finished")
             if onFinishCb_ then
-                onFinishCb_()
+                local callback = onFinishCb_
                 onFinishCb_ = nil
+                callback()
             end
             -- 先跑 onFinish（可能链播下一段），再广播结束供排队方消化
             emitFinished_("dismissed")
@@ -387,7 +415,7 @@ local function drawPortraitAt(step, alpha, cx, cy, pw, ph, offsetX)
     DrawUtil.drawImageCover(vg_, img, cx + (offsetX or 0), cy, pw, ph, alpha)
 end
 
---- 横屏情景：左立绘 + 底部宽对话条。大情景铺满背景，小情景只压暗底层。
+--- 横屏情景：左立绘 + 底部宽对话条；显式背景独立铺底，无背景small继续压暗宿主页。
 ---@param w number
 ---@param h number
 local function drawLandscape(w, h)
@@ -409,13 +437,13 @@ local function drawLandscape(w, h)
         nvgTranslate(vg_, 0, dismissSlideY)
     end
 
-    if mode_ == "large" then
+    if mode_ == "large" or imgBG_ >= 0 then
         nvgBeginPath(vg_)
         nvgRect(vg_, 0, 0, w, h)
-        nvgFillColor(vg_, nvgRGBA(0, 0, 0, 255))
+        nvgFillColor(vg_, nvgRGBA(0, 0, 0, math.floor(255 * dismissAlpha)))
         nvgFill(vg_)
         if imgBG_ >= 0 then
-            DrawUtil.drawImageCover(vg_, imgBG_, w * 0.5, h * 0.5, w, h, 1.0)
+            DrawUtil.drawImageCover(vg_, imgBG_, w * 0.5, h * 0.5, w, h, dismissAlpha)
         end
     else
         nvgBeginPath(vg_)
@@ -430,10 +458,10 @@ local function drawLandscape(w, h)
     local barW = w - barX * 2
     local barY = h - barH - h * 0.04
     local cgImage = getCgImage(step)
-    local cgOnly = cgImage >= 0
-    if cgOnly then
+    local cgOnly = backgroundIsCg_ or cgImage >= 0
+    if cgImage >= 0 then
         DrawUtil.drawImageCover(vg_, cgImage, w * 0.5, h * 0.5, w, h, dismissAlpha)
-    else
+    elseif not cgOnly then
         local portraitH = mode_ == "small" and h * 0.72 or h * 0.92
         local portraitW = portraitH * 0.72
         local portraitCx = w * 0.30
@@ -628,8 +656,9 @@ function ScenarioDialogue.advance()
             active_ = false
             print("[ScenarioDialogue] finished all steps")
             if onFinishCb_ then
-                onFinishCb_()
+                local callback = onFinishCb_
                 onFinishCb_ = nil
+                callback()
             end
             emitFinished_("finished")
         end
@@ -673,8 +702,9 @@ function ScenarioDialogue.skip()
     stepIndex_ = 0
     print("[ScenarioDialogue] skipped")
     if onFinishCb_ then
-        onFinishCb_()
+        local callback = onFinishCb_
         onFinishCb_ = nil
+        callback()
     end
     emitFinished_("skipped")
 end

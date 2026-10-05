@@ -1,5 +1,5 @@
 -- 屏幕逻辑坐标的新手引导绘制；帧变换、DPR 与字体由宿主负责。
--- hs 是实际可点击矩形；hole 仅提供外扩光环，不能用于点击命中。
+-- hs 是实际可点击矩形；spotlight 可单独指定视觉范围，hole 不能用于点击命中。
 local TutorialOverlay = {}
 
 ---@class TutorialOverlayRect
@@ -7,6 +7,7 @@ local TutorialOverlay = {}
 ---@field cy number
 ---@field w number
 ---@field h number
+---@field spotlight TutorialOverlayRect? 仅视觉范围，不参与命中。
 
 ---@class TutorialOverlayLayout
 ---@field bubble TutorialOverlayRect
@@ -71,10 +72,12 @@ local function makeLayout(width, height, hs, textWidth, desiredHeight)
     ---@type TutorialOverlayRect?
     local hole = nil
     if target then
-        local left = math.max(0, target.cx - target.w * 0.5 - VISUAL_PAD)
-        local top = math.max(0, target.cy - target.h * 0.5 - VISUAL_PAD)
-        local right = math.min(widthSafe, target.cx + target.w * 0.5 + VISUAL_PAD)
-        local bottom = math.min(heightSafe, target.cy + target.h * 0.5 + VISUAL_PAD)
+        local visual = visibleTarget(widthSafe, heightSafe, hs.spotlight) or target
+        local pad = hs.spotlight and 0 or VISUAL_PAD
+        local left = math.max(0, visual.cx - visual.w * 0.5 - pad)
+        local top = math.max(0, visual.cy - visual.h * 0.5 - pad)
+        local right = math.min(widthSafe, visual.cx + visual.w * 0.5 + pad)
+        local bottom = math.min(heightSafe, visual.cy + visual.h * 0.5 + pad)
         hole = rect((left + right) * 0.5, (top + bottom) * 0.5, right - left, bottom - top)
     end
     local skipW = math.min(120, widthSafe - margin * 2)

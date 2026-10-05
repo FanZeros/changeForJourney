@@ -12,6 +12,12 @@
 4. **分支纪律**：以当轮指定基线新建任务分支，完成后只 push 新分支；本轮基线为 `workspace930@c47c2ec3`，任务分支为 `fix/final-temple-shared-hp-20261004`，**绝不推送到任何 `workspace` 系列或原基线分支**，不自动创建或合并 PR。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-05，升阶修复 PR87 已创建）
+
+- 用户明确授权“去提PR”，即时鉴权验证可写；正式PR #87：https://github.com/FanZeros/changeForJourney/pull/87，head=`fix930/equipment-ascend-freeze-20261005`、base=`workspace930`。创建时源39f32c370954b41c7d38c275d4af40c798d0a46b、目标372f4506a6f55342f28964b73ee60312e3c96c59，返回open、draft=false、merged=false，mergeable尚未计算，不宣称CI已通过或已合并。
+- 11文件修复及测试/交接提交39f32c37已正常推送并核验远端SHA一致。保留b19七份载荷一致、十二套回归、1220特效断言、四组150帧及设备/性能/原生释放边界；未重改Lua，不重复构建。本地.project、上传、validation和技能未提交；暂存树2751路径0错误0警告。
+- 初次commit因沙箱无作者身份exit128未生成提交，改命令级Maker身份后成功；首次credential helper被shell转义push exit128无推送，改进程内鉴权后正常push exit0。写请求不确定时查重0条后才创建，成功后不重发创建。凭据不落源码、Git配置、日志或记忆；聊天公开令牌需撤销轮换。只推任务分支，不推workspace系列、不自动合并；需用户决定下一步时先简报再真正AskUserQuestion。
+
 ## 上次做了什么（2026-10-05，装备升阶卡顿修复，独立分支）
 
 - 用户要求升阶后左栏/战斗卡死，基于已外部合入PR86的 `workspace930@372f4506` 新建 `fix930/equipment-ascend-freeze-20261005`，仅此任务分支工作，不推workspace系列、不自动创建或合并新PR。未使用历史聊天凭据；本地.project、上传、技能和validation保留不提交。

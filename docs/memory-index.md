@@ -1,5 +1,11 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+## 升阶修复 PR87 交接（2026-10-05）
+
+- 用户明确授权提交PR；https://github.com/FanZeros/changeForJourney/pull/87，head=`fix930/equipment-ascend-freeze-20261005`，base=`workspace930`。创建源39f32c370954b41c7d38c275d4af40c798d0a46b、目标372f4506a6f55342f28964b73ee60312e3c96c59；返回open、draft=false、merged=false，未自动合并，不宣称CI通过。
+- 功能11文件提交39f32c37已正常推送、远端SHA一致；2751路径规范0错误0警告，b19七份源/载荷与十二套回归证据再次核验。下方修复轮的“不自动创建PR”是当时授权范围，本轮用户另行授权后仅创建PR，未推workspace系列。
+- 本轮未修改Lua、不重复build，不提交.project/上传/日志/截图/validation。初次提交缺本地作者身份、credential helper转义导致推送失败均已如实核实；最终命令级身份与进程内鉴权成功。凭据不保存，需撤销聊天公开令牌；后续合并需另行授权。
+
 ## 装备升阶卡顿修复（2026-10-05）
 
 - 用户要求升阶后左栏/战斗卡死，新建 `fix930/equipment-ascend-freeze-20261005`；基于 `workspace930@372f4506`（PR86已外部合并），没有推送 workspace 系列、没有自动创建或合并新PR。本地 `.project`、上传、validation及已有技能不提交。

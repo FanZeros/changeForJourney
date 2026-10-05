@@ -424,6 +424,7 @@ local function setupBattleCombatContext()
 end
 
 -- [卡牌分帧加载] 英雄卡/怪物卡/投射物图，首次进战斗时构建队列，由 update 分帧消化
+---@type table[]|nil
 local battleCardQueue = nil
 local function ensureBattleCards(vg)
     battleCardQueue = BattleStageFlow.ensureBattleCards({
@@ -563,6 +564,12 @@ end
 -- ======================== Public API ========================
 
 function BattleScene.init(vg)
+    -- 新NanoVG上下文不能复用旧卡牌句柄或已完成队列；同上下文切关不失效。
+    if vg_ ~= vg then
+        battleCardQueue = nil
+        for id in pairs(imgHeroCards) do imgHeroCards[id] = nil end
+        for id in pairs(imgMonsterCards) do imgMonsterCards[id] = nil end
+    end
     vg_ = vg  -- 缓存，供 loadStage 切换地图背景
     -- 地图背景延后到 loadStage / 首次绘制，避免启动解码 1MB+ MAP_1
     currentChapter = 1

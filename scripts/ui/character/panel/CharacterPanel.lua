@@ -517,8 +517,8 @@ function CharacterPanel.init(vg)
     -- refreshNavBadge() 里 PlayerStore.Get("equipment") 拿到旧数据，角标不刷新。
     -- PlayerStore.Subscribe 的回调在 PlayerStore 更新缓存后才触发，保证数据最新。
     PlayerStore.Subscribe("equipment", function()
+        -- 装备不改变名册拥有/等级/排序；刷新已覆盖名册与三队缓存，勿重复建英雄。
         refreshPowerCache()
-        rebuildRoster()
         refreshNavBadge()
         -- 装备晚于 heroes 到达时，setAllies 快照不含词缀；需刷新战斗 pending 快照
         local ok, BS = pcall(require, "ui.battle.scene.BattleScene")

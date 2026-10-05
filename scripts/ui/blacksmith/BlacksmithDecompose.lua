@@ -173,9 +173,6 @@ local fjState = {
     autoQuality = 0,
     autoLevel = 0,
     levelSliderDragging = false,  -- 等级滑条是否正在拖拽
-    -- 分解结果展示
-    lastRewardEssence = nil,
-    lastRewardGold = nil,
     -- 长按检测状态
     longPressStartTime = 0,     -- 按下时间戳
     longPressStartX = 0,        -- 按下时设计空间坐标
@@ -342,9 +339,6 @@ end
 function M.onOpen()
     fjState.scrollY = 0
     fjState.selectedItems = {}
-    fjState.lastRewardEssence = nil
-    fjState.lastRewardGold = nil
-    fjState.lastScrolls = nil
     fjState.autoPopupOpen = false
     fjState.levelSliderDragging = false
     pendingDecompose = false   -- 重置门控
@@ -423,26 +417,12 @@ local function calcRewardPreview()
         end
     end
     local scrollHint = BlacksmithConfig.formatScrollRefund(previewScrolls)
-    -- 未选中时回落到上一次分解结果（图标行与文本提示同口径）
-    local scrolls = previewScrolls
-    if selCount == 0 and fjState.lastScrolls then
-        scrolls = fjState.lastScrolls
-        if not scrollHint then scrollHint = fjState.lastScrollHint end
-    end
-    local essenceShown = previewEssence
-    local goldShown = 0
-    if selCount == 0 then
-        essenceShown = fjState.lastRewardEssence or 0
-        goldShown = fjState.lastRewardGold or 0
-    end
+    -- 预览只由当前勾选派生；成功清空选择后不再回显已到账的奖励。
     local entries = {}
-    if essenceShown > 0 then
-        entries[#entries + 1] = { type = "essence", amount = essenceShown }
+    if previewEssence > 0 then
+        entries[#entries + 1] = { type = "essence", amount = previewEssence }
     end
-    if goldShown > 0 then
-        entries[#entries + 1] = { type = "gold", amount = goldShown }
-    end
-    for _, e in ipairs(BlacksmithConfig.collectScrollRefundEntries(scrolls)) do
+    for _, e in ipairs(BlacksmithConfig.collectScrollRefundEntries(previewScrolls)) do
         entries[#entries + 1] = e
     end
     return previewEssence, selCount, scrollHint, entries
@@ -459,7 +439,7 @@ end
 --- [分解预览图标化 0930] 绘制锻炉样式奖励图标行（品质框+图标+数量角标，居中一行）
 ---@param vg any
 ---@param entries table[] { type: string, amount: number }
----@param showLabel boolean 选中预览时画「当前分解可获得」字样；回落上次结果时不画
+---@param showLabel boolean 选中预览时画「当前分解可获得」字样
 local function drawRewardIconRow(vg, entries, showLabel)
     local n = #entries
     if n > FJ.RW_MAX_ICONS then n = FJ.RW_MAX_ICONS end
@@ -516,8 +496,6 @@ function M.drawUpperSlot(vg)
     local rewardText
     if selCount > 0 then
         rewardText = I18n.format("精粹 +%s", tostring(previewEssence))
-    elseif fjState.lastRewardEssence then
-        rewardText = I18n.format("精粹 +%s", tostring(fjState.lastRewardEssence))
     else
         rewardText = "分解奖励"
     end
@@ -1286,9 +1264,6 @@ function M.onActionResult(data)
     if not data.decomposed then return end
     local essenceReward = data.essenceReward or 0
     local goldReward = data.goldReward or 0
-    fjState.lastRewardEssence = essenceReward
-    fjState.lastRewardGold = goldReward
-    fjState.lastScrolls = data.scrollRewards
     fjState.selectedItems = {}
     M.refreshBackpackItems()
     -- 弹出奖励提示框
@@ -1300,8 +1275,6 @@ function M.onActionResult(data)
         rewards[#rewards + 1] = { type = "gold", amount = goldReward }
     end
     BlacksmithConfig.appendScrollRewardItems(rewards, data.scrollRewards)
-    local entries = BlacksmithConfig.collectScrollRefundEntries(data.scrollRewards)
-    fjState.lastScrollEntries = #entries > 0 and entries or nil
     if #rewards > 0 then
         RewardPopup.show("分解奖励", rewards)
     end

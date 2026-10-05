@@ -954,7 +954,7 @@ function BlacksmithPage.draw(vg)
     end
 end
 
---- [0930 穿帮修复] 左栏垫底：锻炉打开时在仓库面板下铺同款不透明背景
+--- 左栏不透明纯色垫底；仓库背景/标题由 BackpackPanel 自身绘制
 ---@param vg any
 function BlacksmithPage.drawUnderlay(vg)
     bindPageDraw()

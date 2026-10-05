@@ -10,6 +10,11 @@ local EquipPanel = require("ui.character.detail.CharacterDetailEquip")
 local Preview = require("ui.character.detail.EquipmentPreview")
 
 function Start()
+    local screenshotReview, equippedReview = false, false
+    for _, arg in ipairs(GetArguments()) do
+        if arg == "-forge-review" then screenshotReview = true end
+        if arg == "-equipped-review" then equippedReview = true end
+    end
     local ok, err = pcall(function()
         Store.Init()
         local heroes = { roster = { [1] = { level = 60, exp = 0, shards = 0, awakening = {}, extraTalent = {} },
@@ -78,6 +83,116 @@ function Start()
             "副手新中心peek未读取已装备实例")
         assert(Dispatcher.get("equipment").equipped[1].weapon == 1
             and Dispatcher.get("equipment").equipped[1].offhand == 3, "部位命中/peek意外改写穿戴映射")
+        -- 六个已穿戴槽位悬停均读取真装备；只看信息，不改部位筛选或穿戴映射。
+        local runtimeClock = time
+        time = { elapsedTime = runtimeClock.elapsedTime }
+        local function hoverFor(slot)
+            Detail.handleHover(slot.cx, slot.cy)
+            time.elapsedTime = time.elapsedTime + 0.31
+            Detail.handleHover(slot.cx, slot.cy)
+        end
+        hoverFor(slots.weapon)
+        assert(ED.getSelection().seq == "1" and ED.getSelection().heroId == 1
+            and ED.getSelection().equipped and ED.getOwner() == "character", "主手悬停未显示当前装备")
+        assert(Backpack.getEquipmentSlotFilter() == nil, "悬停不得改变已选部位")
+        local oldBuild, requestedCandidate = Preview.build, false
+        Preview.build = function(heroId, level, seq, ...)
+            requestedCandidate = seq
+            return oldBuild(heroId, level, seq, ...)
+        end
+        local previewOK, previewErr = pcall(function()
+            EquipPanel.markDirty()
+            nvgBeginFrame(vg, 1080, 2400, 1)
+            EquipPanel.draw(vg, 1, { equipSlot = "offhand" })
+            ED.draw(vg)
+            nvgEndFrame(vg)
+            assert(requestedCandidate == nil, "已装备悬停被误当成副手试穿候选")
+        end)
+        Preview.build = oldBuild
+        assert(previewOK, tostring(previewErr))
+        hoverFor(slots.offhand)
+        assert(ED.getSelection().seq == "3" and ED.getSelection().slot == "offhand",
+            "副手悬停未切换当前副手装备")
+        Detail.handleHover(slots.helmet.cx, slots.helmet.cy)
+        assert(not ED.isOpen(), "空槽未收起当前装备悬停")
+        local eqData = Dispatcher.get("equipment")
+        local equipped = eqData.equipped[1]
+        local EC = require("config.EquipmentConfig")
+        local added = {}
+        for _, slot in ipairs(Draw.DT_SLOTS) do
+            if not equipped[slot.slot] then
+                local ids = {}
+                for id, template in pairs(EC.ITEMS) do
+                    if template.slot == slot.slot then ids[#ids + 1] = id end
+                end
+                table.sort(ids)
+                local seq = tostring(100 + #added)
+                eqData.inventory[seq] = Eq.generate(assert(ids[1]), 1, 1)
+                equipped[slot.slot] = tonumber(seq)
+                added[#added + 1] = { slot = slot.slot, seq = seq }
+            end
+            hoverFor(slot)
+            local selection = assert(ED.getSelection())
+            assert(selection.seq == tostring(equipped[slot.slot]) and selection.slot == slot.slot
+                and selection.equipped, "六槽悬停当前装备来源错误：" .. slot.slot)
+        end
+        for _, addedSlot in ipairs(added) do
+            equipped[addedSlot.slot], eqData.inventory[addedSlot.seq] = nil, nil
+        end
+        Detail.handleHover(-1, -1)
+        assert(not ED.isOpen(), "离开配装栏未收起悬停")
+        equipped.weapon, equipped.offhand = 2, nil
+        hoverFor(slots.offhand)
+        assert(ED.getSelection().seq == "2" and ED.getSelection().slot == "offhand",
+            "双手武器占用副槽时未显示实际武器信息")
+        equipped.weapon, equipped.offhand = 1, 3
+        Detail.handleHover(slots.weapon.cx, slots.weapon.cy)
+        assert(not ED.isOpen(), "原地更换装备未清掉旧悬停")
+        hoverFor(slots.weapon)
+        Detail.open(2)
+        assert(not ED.isOpen(), "切角色未清掉上个角色的装备说明")
+        Detail.open(1)
+        hoverFor(slots.weapon)
+        Detail.handleInput(255, 2308)
+        assert(not ED.isOpen(), "离开配装页未清掉当前装备说明")
+        Detail.open(1, "equip")
+        hoverFor(slots.weapon)
+        if equippedReview then
+            -- 固定角色/时间，使用生产右栏坐标验证当前装备悬停，不启动游戏存档。
+            local VP = require("core.Viewport")
+            local selection = assert(ED.getSelection())
+            SubscribeToEvent(vg, "NanoVGRender", function()
+                local dpr = graphics:GetDPR()
+                local logicalW = graphics:GetWidth() / dpr
+                local logicalH = graphics:GetHeight() / dpr
+                local ox, oy, scale = VP.layout(logicalW, logicalH)
+                nvgBeginFrame(vg, logicalW, logicalH, dpr)
+                VP.begin(vg, VP.PANELS.left, ox, oy, scale)
+                Backpack.draw(vg)
+                VP.finish(vg)
+                VP.begin(vg, VP.PANELS.right, ox, oy, scale)
+                Detail.draw(vg)
+                VP.finish(vg)
+                nvgSave(vg)
+                nvgTranslate(vg, ox + VP.PANELS.right.bx * scale, oy)
+                nvgScale(vg, scale * VP.DS, scale * VP.DS)
+                ED.draw(vg)
+                nvgRestore(vg)
+                nvgEndFrame(vg)
+            end)
+            assert(selection.equipped and selection.seq == "1", "截图未停在当前主手装备")
+            return
+        end
+        Detail.forceClose()
+        assert(not ED.isOpen(), "强制关闭未清掉当前装备说明")
+        Detail.open(1, "equip")
+        ED.open(2, nil, nil, true, "backpack", 500, 900)
+        ED.pin()
+        hoverFor(slots.weapon)
+        assert(ED.getSelection().seq == "2" and ED.getSelection().pinned
+            and not ED.getSelection().equipped, "当前装备悬停覆盖了钉住的仓库候选")
+        ED.close()
+        time = runtimeClock
         Detail.clearEquipmentSlot()
         assert(Backpack.getEquipmentSlotFilter() == nil, "取消部位不同步")
         ED.open(2, nil, nil, true, "backpack", 500, 900)
@@ -134,10 +249,60 @@ function Start()
         Detail.forceClose()
         Backpack.update(1)
         assert(Backpack.isOpen(), "手动仓库被配装离开误关闭")
+        -- 真仓库绘制：左栏头图与名称恢复，锻炉仍只有中栏本体。
+        local Forge = require("ui.blacksmith.BlacksmithPage")
+        local Chrome = require("ui.town.TownPageChrome")
+        local DrawUtil = require("core.DrawUtil")
+        Forge.init(vg)
+        Forge.open()
+        time.elapsedTime = time.elapsedTime + 2
+        local oldNamePlate, oldImage = Chrome.drawNamePlate, DrawUtil.drawImageCentered
+        local titles, topImageCount = {}, 0
+        Chrome.drawNamePlate = function(ctx, image, title, opts)
+            titles[#titles + 1] = title
+            return oldNamePlate(ctx, image, title, opts)
+        end
+        DrawUtil.drawImageCentered = function(ctx, image, cx, cy, w, h, alpha)
+            if w == 1080 and h == 728 and image >= 0 then topImageCount = topImageCount + 1 end
+            return oldImage(ctx, image, cx, cy, w, h, alpha)
+        end
+        local visualOK, visualErr = pcall(function()
+            nvgBeginFrame(vg, 1080, 2400, 1)
+            Backpack.draw(vg)
+            Forge.draw(vg)
+            nvgEndFrame(vg)
+            assert(titles[1] == "尘封仓库" and titles[2] == "狱火锻炉" and #titles == 2,
+                "双页未分别显示仓库与锻炉名称")
+            assert(topImageCount == 1, "左栏仓库顶部背景未恢复或重复绘制")
+        end)
+        Chrome.drawNamePlate, DrawUtil.drawImageCentered = oldNamePlate, oldImage
+        assert(visualOK, tostring(visualErr))
+        if screenshotReview then
+            -- 固定时间冻结双页，使用生产 Viewport 与模式A；不写玩家存档。
+            local VP = require("core.Viewport")
+            SubscribeToEvent(vg, "NanoVGRender", function()
+                local dpr = graphics:GetDPR()
+                local logicalW = graphics:GetWidth() / dpr
+                local logicalH = graphics:GetHeight() / dpr
+                local ox, oy, scale = VP.layout(logicalW, logicalH)
+                nvgBeginFrame(vg, logicalW, logicalH, dpr)
+                VP.begin(vg, VP.PANELS.left, ox, oy, scale)
+                Forge.drawUnderlay(vg)
+                Backpack.draw(vg)
+                VP.finish(vg)
+                VP.begin(vg, VP.PANELS.center, ox, oy, scale)
+                Forge.draw(vg)
+                VP.finish(vg)
+                nvgEndFrame(vg)
+            end)
+            return
+        end
+        Forge.forceClose()
         time = runtimeTime
         nvgDelete(vg)
     end)
     if ok then print("[equipment_workspace_smoke_test] ALL PASS")
     else print("[equipment_workspace_smoke_test] FAIL: " .. tostring(err)) end
+    if (screenshotReview or equippedReview) and ok then return end
     engine:Exit()
 end

@@ -175,6 +175,7 @@ function UnitAttributes:clone()
     copy.unitLevel = self.unitLevel
     copy.atkCoeff  = self.atkCoeff
     copy.dmgSpread = self.dmgSpread
+    copy.critOverflowRatio = self.critOverflowRatio
     copy._healFrac = self._healFrac
     copy.energyShield = self.energyShield
     copy.tempEnergyShield = self.tempEnergyShield

@@ -1013,9 +1013,9 @@ local function drawBody(vg)
     nvgFill(vg)
     end
 
-    -- === 上半部分（从屏幕上方滑入）：顶部背景 + 标题 ===
-    -- [横屏左栏紧凑] 窗口模式不画顶部大图，网格从面板顶部开始
-    if not isCompact() then
+    -- === 上半部分：顶部背景 + 标题 ===
+    -- 左栏保留仓库标识；仅窗口模态隐藏大图，紧凑网格坐标不变。
+    if not isCompact() or hostMode_ == "left" then
     nvgSave(vg)
     nvgTranslate(vg, 0, upperOY)
 

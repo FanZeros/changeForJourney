@@ -67,18 +67,20 @@ end
 
 -- ======================== 暴击判定 ========================
 
---- 暴击溢出转化：超过 100% 的暴击率按比例转为暴击伤害
---- 例: 150% 暴击率、200% 暴击伤害 → 必定暴击，暴击伤害 200×1.5 = 300%
---- 治疗暴击不走这里（治疗没有「堆暴击率换爆发」的构建）
-local CRIT_OVERFLOW_RATIO = 1.0
-
+--- 暴击概率最多 100%；仅已解锁专属觉醒的单位可将溢出暴击率转为暴伤。
+--- 老六觉醒Ⅲ：150% 暴击率、200% 暴伤 → 必暴、300% 暴伤；未解锁仍为 200%。
+--- 治疗暴击不走这里。
 ---@param critRate number 暴击率（百分比）
 ---@param critDmg number 暴击伤害（百分比）
+---@param attrs table|nil 攻击方属性；critOverflowRatio 缺省为 0，不自带转换
 ---@return number effectiveRate 封顶 100 的暴击率
 ---@return number effectiveDmg 转化后的暴击伤害
-function CF.applyCritOverflow(critRate, critDmg)
+function CF.applyCritOverflow(critRate, critDmg, attrs)
     if critRate > 100 then
-        critDmg = critDmg * (1 + (critRate - 100) / 100 * CRIT_OVERFLOW_RATIO)
+        local ratio = math.max(0, tonumber(attrs and attrs.critOverflowRatio) or 0)
+        if ratio > 0 then
+            critDmg = critDmg * (1 + (critRate - 100) / 100 * ratio)
+        end
         critRate = 100
     end
     return critRate, critDmg
@@ -278,8 +280,8 @@ function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
     if shockedEffect and shockedEffect.data and shockedEffect.data.critVuln then
         critRate = critRate + shockedEffect.data.critVuln
     end
-    -- 暴击溢出：超过 100% 的暴击率转为暴击伤害（必须在全部暴击率修正之后）
-    critRate, critDmg = CF.applyCritOverflow(critRate, critDmg)
+    -- 全部修正之后封顶判定概率；暴伤转换需专属觉醒解锁。
+    critRate, critDmg = CF.applyCritOverflow(critRate, critDmg, attacker)
 
     -- ---- 5. 穿透 → 有效护甲（抗性）+ 溢出穿透（独立乘区增伤）----
     -- 溢出穿透 = 穿透超出护甲的部分，按对称公式计算独立增伤倍率

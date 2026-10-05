@@ -74,6 +74,14 @@ local function isolated(path, overrides, globals, fallback)
     for key, value in pairs(globals or {}) do env[key] = value end
     env.require = function(name)
         if overrides[name] ~= nil then return overrides[name] end
+        if name:match("^config%.StageConfig_") then
+            return isolated(name:gsub("%.", "/") .. ".lua", {})
+        end
+        if name == "config.StoryBackgroundConfig" then
+            return isolated("config/StoryBackgroundConfig.lua", {
+                ["config.StageConfig"] = isolated("config/StageConfig.lua", {}),
+            })
+        end
         if fallback then return fallback(name) end
         error("未声明依赖/经济路径 " .. path .. ": " .. tostring(name))
     end
@@ -690,8 +698,8 @@ local function integration(session, battle)
         ["core.DarkIcon"] = { draw = function() end, drawNine = function() end }, ["systems.SamsaraSlicePlayer"] = f.Player }, graphics)
     return f
 end
-local function gates()
-    return { ready = true, blocked = false, legacyPending = false, pointerBusy = false }
+local function gates(f)
+    return { ready = true, blocked = f.Panel.isOpen(), legacyPending = false, pointerBusy = false }
 end
 local function finishDialogue(dialogue)
     local _, total = dialogue.getProgress()
@@ -759,7 +767,7 @@ local function integrationCases()
             f.drawings = {}; f.Panel.draw({}, w, h)
             check(includes(table.concat(f.drawings, "\n"), "剧情原文／亲历状态未确认"), "第五标签实际点选N03")
         end
-        eq(f.Playback.tryPlay(gates()), false, "locked静态查看不进入Playback")
+        eq(f.Playback.tryPlay(gates(f)), false, "locked静态查看不进入Playback")
         eq(f.n("begin"), 0, "静态查看不发租约")
         eq(f.n("show"), 0, "静态查看不show")
         eq(f.n("flush"), flushes, "静态查看不保存")
@@ -788,10 +796,10 @@ local function integrationCases()
             eq(f.Panel.handleInput(1588, 928, 1920, 1080), true, "action正常排待阅")
             eq(f.Dialogue.isActive(), false, "Panel action不同步show")
             for _, name in ipairs({ "ready", "legacyPending", "blocked", "pointerBusy" }) do
-                local gate = gates(); gate[name] = name ~= "ready"
+                local gate = gates(f); gate[name] = name ~= "ready"
                 eq(f.Playback.tryPlay(gate), false, "真实门禁不消费请求 " .. name)
             end
-            eq(f.Playback.tryPlay(gates()), ending ~= "failed", "后帧真实Playback展示或失败")
+            eq(f.Playback.tryPlay(gates(f)), ending ~= "failed", "后帧真实Playback展示或失败")
             if ending ~= "failed" then
                 f.Dialogue.update(100); f.Dialogue.draw(1920, 1080)
                 eq(f.Display.text(ORIGINALS[1][2]), ORIGINALS[1][2], "中文显示全文原样")
@@ -816,7 +824,7 @@ local function integrationCases()
                 check(includes(text, f.Config.get(N03).evidence.text), "已处理显示E02原件")
                 local before, flushes = copy(f.session()), f.n("flush")
                 f.Panel.handleInput(1588, 928, 1920, 1080)
-                eq(f.Playback.tryPlay(gates()), true, "真实回看Playback")
+                eq(f.Playback.tryPlay(gates(f)), true, "真实回看Playback")
                 eq(configs[2].completionToken.kind, REPLAY, "真实回看kind")
                 f.Dialogue.skip()
                 check(same(f.session(), before), "回看保持首次结果来源")
@@ -838,18 +846,18 @@ local function integrationCases()
         cfg.completionToken = { nodeKey = "legacy.44", kind = "legacy_reference" }
         cfg.onResult = function(value) f.Player.noteLegacyResult(44, value.reason) end
         eq(f.Dialogue.show(cfg), true, "真实旧铁匠占用")
-        eq(f.Playback.tryPlay(gates()), false, "旧剧情占用不抢N03或N02")
+        eq(f.Playback.tryPlay(gates(f)), false, "旧剧情占用不抢N03或N02")
         f.Dialogue.skip()
         eq(f.Player.getRecord(N03).legacyContext, "live_skipped", "真实旧skip桥写入N03语境")
         check(same(f.session().samsaraStory.nodes[N02], n02), "旧44桥不覆盖N02")
         local show, keys = f.Dialogue.show, {}
         f.Dialogue.show = function(value) keys[#keys + 1] = value.completionToken.nodeKey; return show(value) end
         for _, key in ipairs({ N02, N03, N12, N13, N14 }) do
-            eq(f.Playback.tryPlay(gates()), true, "真实自动顺序 " .. key)
+            eq(f.Playback.tryPlay(gates(f)), true, "真实自动顺序 " .. key)
             eq(keys[#keys], key, "真实送入Dialogue顺序")
             f.Dialogue.skip()
         end
-        eq(f.Playback.tryPlay(gates()), false, "自动全处理不重播")
+        eq(f.Playback.tryPlay(gates(f)), false, "自动全处理不重播")
         noRewards(f, old)
     end)
     for _, fault in ipairs({ "open", "write", "encode", "rename" }) do
@@ -857,7 +865,7 @@ local function integrationCases()
             local f = integration(nil, { clearedStages = { [204] = true } }); f.init()
             local old = outsideStory(f.session())
             local before, renames = f.disk, f.n("rename")
-            f.Playback.tryPlay(gates()); f.fail = fault; f.Dialogue.skip()
+            f.Playback.tryPlay(gates(f)); f.fail = fault; f.Dialogue.skip()
             eq(f.n("rename"), renames + (fault == "rename" and 1 or 0), "仅完整临时写入后尝试Rename")
             eq(f.temp, nil, "故障清理临时缓冲")
             eq(f.Player.getRecord(N03).status, "skipped", "写失败保内存结果")
@@ -889,13 +897,13 @@ local function integrationCases()
     end
     runCase("真实JSON合法重附接受当前N03租约、未来更新拒绝", function()
         local f = integration(nil, { clearedStages = { [204] = true } }); f.init()
-        f.Playback.tryPlay(gates())
+        f.Playback.tryPlay(gates(f))
         local replacement = copy(f.session())
         f.Dispatcher.handleStateUpdate(cjson.encode({ modules = { session = replacement } }))
         f.Dialogue.skip()
         eq(f.Player.getRecord(N03).status, "skipped", "合法同游戏JSON重附当前精确租约")
         eq(f.Player.requestRead(N03), true, "重附后正常回看")
-        f.Playback.tryPlay(gates())
+        f.Playback.tryPlay(gates(f))
         replacement = copy(f.session()); replacement.samsaraStory.schemaVersion = 2
         f.Dispatcher.handleStateUpdate(cjson.encode({ modules = { session = replacement } }))
         local before, flushes = copy(f.session()), f.n("flush")

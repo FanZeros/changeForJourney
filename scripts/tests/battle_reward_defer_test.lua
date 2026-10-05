@@ -23,7 +23,7 @@ end
 
 function Start()
     -- cache:GetFile 仅打开项目源码；这里从不使用 File 写文件或加载存档模块。
-    local sourceReads, routingSourceReads, forbiddenRequires = 0, 0, 0
+    local sourceReads, routingSourceReads, helperSourceReads, forbiddenRequires = 0, 0, 0, 0
     local function source(name, routing)
         local path = name:gsub("%.", "/") .. ".lua"
         local f = assert(cache:GetFile(path), "缺少真实源码 " .. path)
@@ -31,7 +31,8 @@ function Start()
         local lines = {}
         while not f:IsEof() do lines[#lines + 1] = f:ReadLine() end
         f:Dispose()
-        if routing then routingSourceReads = routingSourceReads + 1
+        if routing == "helper" then helperSourceReads = helperSourceReads + 1
+        elseif routing then routingSourceReads = routingSourceReads + 1
         else sourceReads = sourceReads + 1 end
         return table.concat(lines, "\n")
     end
@@ -43,6 +44,8 @@ function Start()
         local triSource = source("ui.battle.tri.BattleTriPage", true)
         local horizonInputSource = source("boot.StandaloneHorizonInput", true)
         local seamGestureSource = source("boot.SeamBackGesture", true)
+        local terminalInputSource = source("boot.TerminalInput", "helper")
+        local wheelSource = source("boot.StandaloneHorizonWheel", "helper")
         ---@type any
         local env = setmetatable({}, { __index = _G })
         local clock = { elapsedTime = 100 }
@@ -176,7 +179,7 @@ function Start()
         local flags = { sweep = false, stats = false, select = false, terminal = false, equipment = false,
             forge = false, talent = false, talentWidth = 1, backpack = false, leftBackpack = true,
             dungeon = false, tower = false, nav = 3, info = false, offline = false, level = false,
-            update = false, start = false, title = false, letter = false, intro = false, story = false,
+            update = false, start = false, title = false, letter = false, intro = false, story = false, record = false,
             church = false, tavern = false, market = false, task = false, loot = false, rightDetail = false }
         local function pageFlag(key)
             return { isOpen = function() return flags[key] end, isActive = function() return flags[key] end }
@@ -189,11 +192,14 @@ function Start()
             ["ui.hud.popup.OfflineRewardPanel"] = "offline", ["ui.hud.popup.LevelUpPopup"] = "level",
             ["ui.hud.popup.UpdateNoticePopup"] = "update", ["ui.story.gate.StartScreen"] = "start",
             ["ui.story.gate.DarkTitleScreenGate"] = "title", ["ui.story.gate.LetterIntro"] = "letter",
-            ["ui.story.gate.IntroCutscene"] = "intro", ["ui.story.ScenarioDialogue"] = "story",
+            ["ui.story.ScenarioDialogue"] = "story",
+            ["ui.story.SamsaraRecordPanel"] = "record",
             ["ui.church.ChurchPage"] = "church", ["ui.tavern.TavernPage"] = "tavern",
             ["ui.market.MarketPage"] = "market", ["ui.story.task.TaskPage"] = "task",
             ["ui.loot.LootBox"] = "loot", ["ui.character.detail.CharacterDetailPanel"] = "rightDetail",
         }) do mods[name] = pageFlag(key) end
+        -- 旧 intro oracle 对应现有真实开场 ScenarioDialogue；不再伪造已删除的 IntroCutscene。
+        mods["ui.story.ScenarioDialogue"].isActive = function() return flags.story or flags.intro end
         mods["ui.character.equip.EquipmentBag"] = { shouldBattleOverlay = function() return flags.equipment end }
         mods["ui.church.talent.TalentPage"] = { isOpen = function() return flags.talent end,
             getHorizonWidthScale = function() return flags.talentWidth end }
@@ -1071,9 +1077,9 @@ function Start()
                 "ui.hud.popup.LevelUpPopup", "ui.hud.popup.OfflineRewardPanel", "ui.hud.popup.UpdateNoticePopup",
                 "ui.hud.popup.PlayerInfoPanel", "ui.story.gate.StartScreen", "ui.story.gate.DarkTitleScreenGate",
                 "ui.battle.stage.SweepDialog", "ui.battle.popup.DamageStatsPanel", "ui.battle.stage.StageSelectDialog",
-                "ui.battle.popup.TerminalConfirmDialog", "ui.story.gate.IntroCutscene", "ui.story.gate.LetterIntro",
+                "ui.battle.popup.TerminalConfirmDialog", "ui.story.gate.LetterIntro",
                 "ui.character.detail.CharacterDetail", "ui.character.equip.EquipmentBag", "ui.character.EquipCrossDrag",
-                "ui.story.ScenarioDialogue", "systems.TutorialManager", "boot.ArtifactGesture" }) do
+                "ui.story.ScenarioDialogue", "ui.story.SamsaraRecordPanel", "systems.TutorialManager", "boot.ArtifactGesture" }) do
                 routeMods[name] = closedPage()
             end
             routeMods["core.BattleLayout"] = { STRIP_W = 1600, STRIP_H = 600, setMode = noop }
@@ -1123,9 +1129,12 @@ function Start()
             -- 返回条也编译真实 helper，页面状态沿用上面的显式 spy 白名单；不 mock 手势。
             local seamChunk = assert(load(seamGestureSource, "@boot.SeamBackGesture", "t", routeEnv))
             routeMods["boot.SeamBackGesture"] = seamChunk()
+            routeMods["boot.StandaloneHorizonWheel"] = assert(load(wheelSource, "@boot.StandaloneHorizonWheel", "t", routeEnv))()
+            routeMods["ui.story.ScenarioDialogue"].isSliceActive = function() return false end
             local triChunk = assert(load(triSource, "@ui.battle.tri.BattleTriPage", "t", routeEnv))
             local Tri = triChunk()
             routeMods["ui.battle.tri.BattleTriPage"] = Tri
+            routeMods["boot.TerminalInput"] = assert(load(terminalInputSource, "@boot.TerminalInput", "t", routeEnv))()
             -- open只走空Battle/零解锁spy，不生成驱动、不调用真实存档/结算。
             Tri.open()
             equal(pumps, 1, "真实open只调用spy pump")
@@ -1260,6 +1269,7 @@ function Start()
         run("隔离边界：四份核心和三份路由源码，只允许 spy 依赖", function()
             equal(sourceReads, 4, "只读 Popup/Queue/Cascade/Blocker 四份实际核心源码")
             equal(routingSourceReads, 3, "额外只读TriPage/HorizonInput/SeamBackGesture路由源码")
+            equal(helperSourceReads, 2, "新增Wheel/TerminalInput真实helper独立计数")
             equal(forbiddenRequires, 0, "无 main、玩家存档、网络模块加载")
         end)
     end)

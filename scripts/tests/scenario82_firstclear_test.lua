@@ -109,6 +109,7 @@ local function productionCases()
         ["systems.StoryPlayer"] = true, ["ui.story.ScenarioDialogue"] = true,
         ["runtime.ClientDispatcher"] = true, ["core.GameState"] = true,
         ["core.EventBus"] = true, ["ui.story.StoryDisplay"] = true,
+        ["systems.SamsaraSlicePlayer"] = true, ["systems.SamsaraSlicePlayback"] = true,
     }
     local sources = {}
     for name in pairs(allowedSources) do
@@ -232,20 +233,40 @@ local function productionCases()
         ctx.story = deps["systems.StoryPlayer"]
         deps["ui.battle.scene.BattleScene"] = { setBattleData = noop }
         deps["rules.offline.OfflineService"] = {
-            HasPendingRewards = function() error("未OfflineChecked不能进入离线奖励分支") end,
+            HasPendingRewards = function(team)
+                if team == 1 then return false end -- 新空队列门禁的只读查询；Restore未经OfflineChecked仍禁止。
+                error("未OfflineChecked不能进入离线奖励分支")
+            end,
             MarkOnline = function() error("专项禁止推进在线/离线时间") end,
         }
         deps["boot.StandaloneSave"] = compile("boot.StandaloneSave")
         ctx.save = deps["boot.StandaloneSave"]
+        deps["systems.SamsaraSlicePlayer"] = compile("systems.SamsaraSlicePlayer")
+        deps["systems.SamsaraSlicePlayback"] = compile("systems.SamsaraSlicePlayback")
+        env.SamsaraSlicePlayer, env.SamsaraSlicePlayback = deps["systems.SamsaraSlicePlayer"], deps["systems.SamsaraSlicePlayback"]
+        deps["boot.StandaloneHorizonInput"] = { isPointerBusy = closed }
+        -- 摘取的宿主已包含空队列后的切片门禁；页面叶子均显式关闭，不加载真实存档/页面。
+        for _, name in ipairs({ "DarkTitleScreen", "StartScreen", "SamsaraRecordPanel", "UpdateNoticePopup",
+            "LevelUpPopup", "PlayerInfoPanel", "RedeemCodePanel", "HeroRosterPanel", "SweepDialog",
+            "StageSelectDialog", "DamageStatsPanel", "SpinePowerUpEffect", "TowerBuffPick",
+            "DungeonBattleScene", "TowerBattleScene" }) do
+            env[name] = { isOpen = closed, isVisible = closed, isPlaying = closed, isActive = closed }
+        end
+        for _, name in ipairs({ "ui.battle.popup.TerminalConfirmDialog", "ui.dev.CEPanel", "ui.character.equip.EquipmentDetail" }) do
+            deps[name] = { isOpen = closed }
+        end
+        env.BattleScene = { isStoryTransitionBusy = closed }
+        env.postStartFlowDone_, env.storyBackfilled_ = false, false
         env.ClientDispatcher, env.ScenarioDialogue = ctx.dispatcher, ctx.dialogue
-        env.TutorialManager = { canPlayPendingStory = function() return ctx.allowStory end }
-        env.LetterIntro, env.IntroCutscene = { isOpen = closed }, { isActive = closed }
+        env.TutorialManager = { canPlayPendingStory = function() return ctx.allowStory end, isActive = closed }
+        env.LetterIntro = { isOpen = closed }
         env.RewardPopup = { isOpen = function() return ctx.rewardOpen end, hasPendingBattleRewards = closed }
         env.OfflineRewardPanel = { isOpen = closed }
         env.ClientMsgHandler = {
             consumePendingScenarioDialogue = function() return table.remove(ctx.pending, 1) end,
             consumePendingFollowUpDialogue = function() return table.remove(ctx.follow or {}, 1) end,
             setPendingTutorialNotify = function(sid) ctx.notices[#ctx.notices + 1] = sid end,
+            hasPendingScenarioDialogue = closed, hasPendingFollowUpDialogue = closed,
         }
         -- 直接桥的叶子出口计数；完整参数透传真实Handler，真实Service执行资格/去重/发奖。
         env.localSendAction = function(action, params)

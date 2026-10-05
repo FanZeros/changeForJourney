@@ -105,6 +105,14 @@ local function isolated(path, overrides, globals)
     for key, value in pairs(globals or {}) do env[key] = value end
     env.require = function(name)
         if overrides[name] ~= nil then return overrides[name] end
+        if name:match("^config%.StageConfig_") then
+            return isolated(name:gsub("%.", "/") .. ".lua", {})
+        end
+        if name == "config.StoryBackgroundConfig" then
+            return isolated("config/StoryBackgroundConfig.lua", {
+                ["config.StageConfig"] = isolated("config/StageConfig.lua", {}),
+            })
+        end
         error("未声明依赖/奖励路径 " .. path .. ": " .. tostring(name))
     end
     env._G = env
@@ -818,7 +826,7 @@ local function presentation(f)
     end
     return f
 end
-local function gates() return { ready = true, blocked = false, legacyPending = false, pointerBusy = false } end
+local function gates(f) return { ready = true, blocked = f.Panel.isOpen(), legacyPending = false, pointerBusy = false } end
 local function finishDialogue(dialogue)
     local _, total = dialogue.getProgress()
     for _ = 1, total do dialogue.update(100); dialogue.advance() end
@@ -890,7 +898,7 @@ local function presentationCases()
             f.draw(); check(f.boxes[1].y < firstY, "touch实际移动正文")
             eq(f.n("request"), 0, "拖动不误请求")
             f.Panel.selectRecord(item.key); f.draw(); eq(f.boxes[1].y, firstY, "换tab重置滚动")
-            eq(f.Playback.tryPlay(gates()), false, "静态阅读无Playback")
+            eq(f.Playback.tryPlay(gates(f)), false, "静态阅读无Playback")
             eq(f.n("begin"), 0, "静态不租约")
             eq(f.n("show"), 0, "静态不show")
             eq(f.flushes, flushes, "选取/滚动不保存")
@@ -906,13 +914,13 @@ local function presentationCases()
                 local action = f.action("待阅"); f.Panel.handleInput(action.x, action.y, 1920, 1080)
                 eq(f.Dialogue.isActive(), false, "Panel不立即show")
                 for _, name in ipairs({ "ready", "legacyPending", "blocked", "pointerBusy" }) do
-                    local gate = gates(); gate[name] = name ~= "ready"
+                    local gate = gates(f); gate[name] = name ~= "ready"
                     eq(f.Playback.tryPlay(gate), false, "门禁不消费请求 " .. name)
                 end
                 local show = f.Dialogue.show
                 if ending == "failed" then f.Dialogue.show = function() f.count("show"); return false end
                 elseif ending == "throw" then f.Dialogue.show = function() f.count("show"); error("injected show failure") end end
-                eq(f.Playback.tryPlay(gates()), ending ~= "failed" and ending ~= "throw", "后帧真实Playback")
+                eq(f.Playback.tryPlay(gates(f)), ending ~= "failed" and ending ~= "throw", "后帧真实Playback")
                 if ending ~= "failed" and ending ~= "throw" then
                     eq(f.shown.mode, "small", "镜像small")
                     eq(f.shown.onFinish, nil, "无旧领奖收尾")
@@ -939,7 +947,7 @@ local function presentationCases()
                     check(not includes(text, assert(f.Config.getEvidence("E03-B")).text), "A/C Panel不泄B正文")
                     local saved, count = copy(f.session), f.flushes
                     action = f.action("回看"); f.Panel.handleInput(action.x, action.y, 1920, 1080)
-                    eq(f.Playback.tryPlay(gates()), true, "真实回看")
+                    eq(f.Playback.tryPlay(gates(f)), true, "真实回看")
                     eq(f.shown.completionToken.kind, REPLAY, "回看kind")
                     f.Dialogue.skip(); check(same(f.session, saved), "真实回看不改首次来源结果")
                     eq(f.flushes, count, "真实回看不保存")
@@ -955,16 +963,17 @@ local function presentationCases()
             local action = f.action("仅供查阅")
             f.Panel.handleInput(action.x, action.y, 1920, 1080)
             eq(f.n("request"), 0, "pending但referenceOnly不request")
-            eq(f.Playback.tryPlay(gates()), false, "缺可信旧结果无自动")
+            eq(f.Playback.tryPlay(gates(f)), false, "缺可信旧结果无自动")
             local legacy = isolated("config/ScenarioDialogueConfig.lua", {})
             local cfg = copy(legacy["SCENARIO_" .. item.legacy]); cfg.onFinish = nil
             cfg.completionToken = { nodeKey = "legacy." .. item.legacy, kind = "legacy_reference" }
             local legacyEpoch = f.Player.getContextEpoch()
             cfg.onResult = function(value) f.Player.noteLegacyResult(item.legacy, value.reason, legacyEpoch) end
             eq(f.Dialogue.show(cfg), true, "旧64/67原对白独立show")
-            eq(f.Playback.tryPlay(gates()), false, "真实旧active阻镜像")
+            eq(f.Playback.tryPlay(gates(f)), false, "真实旧active阻镜像")
             f.Dialogue.skip(); eq(record(f, item).eventTrusted, true, "真实旧skip桥可信")
-            eq(f.Playback.tryPlay(gates()), true, "旧结束后下一帧镜像")
+            f.Panel.close() -- 记录页仍打开时宿主必须等待；关闭静态查看后才是安全播放帧。
+            eq(f.Playback.tryPlay(gates(f)), true, "旧结束后下一帧镜像")
             f.save = false; f.Dialogue.skip()
             f.Panel.selectRecord(item.key); f.Panel.open(); f.draw()
             action = f.action("保存中"); local count = f.n("request")

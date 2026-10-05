@@ -75,6 +75,14 @@ local function isolated(path, overrides, globals, fallback)
     local env = {}; for key, value in pairs(globals or {}) do env[key] = value end
     env.require = function(name)
         if overrides[name] ~= nil then return overrides[name] end
+        if name:match("^config%.StageConfig_") then
+            return isolated(name:gsub("%.", "/") .. ".lua", {})
+        end
+        if name == "config.StoryBackgroundConfig" then
+            return isolated("config/StoryBackgroundConfig.lua", {
+                ["config.StageConfig"] = isolated("config/StageConfig.lua", {}),
+            })
+        end
         if fallback then return fallback(name) end
         error("未声明依赖/经济路径 " .. path .. " " .. tostring(name))
     end
@@ -125,7 +133,7 @@ end
 local function result(lease, reason)
     return { playToken = lease.playToken, contextEpoch = lease.contextEpoch, nodeKey = lease.nodeKey, reason = reason }
 end
-local function gates() return { ready = true, legacyPending = false, blocked = false, pointerBusy = false } end
+local function gates(f) return { ready = true, legacyPending = false, blocked = f.Panel.isOpen(), pointerBusy = false } end
 
 -- 真onLoad/Dispatcher/Save链；其余schema仅返回空字段，File只读写此夹具字符串。
 ---@return any
@@ -253,7 +261,8 @@ local function fixture(supplied, raw, config, legacyConfig, noInit)
     f.Display = isolated("ui/story/StoryDisplay.lua", { ["core.I18n"] = f.I18n, ["core.I18nStory"] = f.Story }, f.graphics)
     f.Bus = isolated("core/EventBus.lua", {})
     f.GameConfig = isolated("config/GameConfig.lua", {})
-    f.Draw = isolated("core/DrawUtil.lua", { ["config.HeroAssetUtil"] = {} }, f.graphics)
+    f.Draw = isolated("core/DrawUtil.lua", { ["config.HeroAssetUtil"] = {},
+        ["core.BattleLayout"] = isolated("core/BattleLayout.lua", {}), }, f.graphics)
     local realText = f.Draw.drawTextStroke
     f.Draw.drawTextStroke = function(vg, x, y, text, ...)
         f.buttons[#f.buttons + 1] = { x = x, y = y, text = text }; return realText(vg, x, y, text, ...)
@@ -884,11 +893,11 @@ local function presentationCases()
             local action = f.action("待阅"); f.Panel.handleInput(action.x, action.y, 1920, 1080)
             eq(f.Dialogue.isActive(), false, "Panel只排请求不同步show")
             for _, name in ipairs({ "ready", "legacyPending", "blocked", "pointerBusy" }) do
-                local g = gates(); g[name] = name ~= "ready"
+                local g = gates(f); g[name] = name ~= "ready"
                 eq(f.Playback.tryPlay(g), false, "各门禁保留请求 " .. name)
             end
             if ending == "false" or ending == "throw" then f.showFault = ending end
-            eq(f.Playback.tryPlay(gates()), ending ~= "false" and ending ~= "throw", "下帧真实展示")
+            eq(f.Playback.tryPlay(gates(f)), ending ~= "false" and ending ~= "throw", "下帧真实展示")
             local cfg = assert(f.shown[1]); check(same(cfg.steps, STEPS), "真实show精修六步")
             eq(cfg.completionToken.nodeKey, KEY, "show带N11独立租约")
             eq(cfg.onFinish, nil, "N11无经济完成回调")
@@ -915,7 +924,7 @@ local function presentationCases()
                 for _, id in ipairs({ "E02", "E05", "E03" }) do check(not includes(text, id), "处理后不混入物证 " .. id) end
                 local before, writes = copy(f.session()), f.n("flush")
                 action = f.action("回看"); f.Panel.handleInput(action.x, action.y, 1920, 1080)
-                eq(f.Playback.tryPlay(gates()), true, "真实回看播放")
+                eq(f.Playback.tryPlay(gates(f)), true, "真实回看播放")
                 eq(f.shown[2].completionToken.kind, REPLAY, "真实回看kind")
                 f.Dialogue.skip(); check(same(f.session(), before), "回看零持久变化")
                 eq(f.n("flush"), writes, "回看零保存")

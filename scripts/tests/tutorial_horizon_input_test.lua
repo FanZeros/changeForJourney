@@ -127,7 +127,8 @@ function Start()
         require = function(name)
             if name == "systems.TutorialManager" or name == "ui.tutorial.TutorialOverlay"
                 or name == "config.TutorialConfig" or name == "config.GameConfig"
-                or name == "boot.SeamBackGesture" then
+                or name == "boot.SeamBackGesture" or name == "boot.TerminalInput"
+                or name == "boot.StandaloneHorizonWheel" then
                 return nativeRequire(name)
             end
             if name == "boot.StandaloneHorizonInput" then

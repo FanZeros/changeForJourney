@@ -211,13 +211,19 @@ function Start()
             ["ui.hud.popup.OfflineRewardPanel"] = "offline", ["ui.hud.popup.PlayerInfoPanel"] = "playerinfo",
             ["ui.hud.popup.UpdateNoticePopup"] = "notice", ["ui.battle.popup.TerminalConfirmDialog"] = "terminal",
             ["ui.story.gate.DarkTitleScreenGate"] = "title", ["ui.story.gate.StartScreen"] = "start",
-            ["ui.story.gate.LetterIntro"] = "letter", ["ui.story.gate.IntroCutscene"] = "intro",
+            ["ui.story.gate.LetterIntro"] = "letter",
             ["ui.story.ScenarioDialogue"] = "scenario", ["ui.tower.TowerBattleScene"] = "tower",
             ["ui.dungeon.DungeonBattleScene"] = "dungeon", ["ui.character.hero.HeroRosterPanel"] = "roster",
             ["ui.battle.stage.SweepDialog"] = "sweep", ["ui.battle.popup.DamageStatsPanel"] = "damage",
             ["ui.battle.stage.StageSelectDialog"] = "stage",
         }
         for path, id in pairs(gatePaths) do mods[path] = gate(id) end
+        -- 保留旧 intro 门禁断言，映射到现有真实开场入口；不 mock 已删 IntroCutscene。
+        mods["ui.story.ScenarioDialogue"].isActive = function()
+            return state.gates.scenario == true or state.gates.intro == true or state.gates.slice == true
+        end
+        mods["ui.story.ScenarioDialogue"].isSliceActive = function() return state.gates.slice == true end
+        mods["ui.story.SamsaraRecordPanel"] = gate("record")
         ---@type any
         local realBoot = {}
         if loaded then
@@ -516,7 +522,7 @@ function Start()
         end
 
         local blockers = { "reward", "terminal", "offline", "level", "playerinfo", "notice", "title", "start",
-            "letter", "intro", "scenario", "tutorial", "tower", "dungeon", "ce", "roster", "sweep", "damage", "stage" }
+            "letter", "intro", "scenario", "tutorial", "tower", "dungeon", "ce", "roster", "sweep", "damage", "stage", "record", "slice" }
         for _, blocker in ipairs(blockers) do
             reset("church")
             state.pages.character.open = true

@@ -17,7 +17,6 @@ local UpdateNoticePopup = require("ui.hud.popup.UpdateNoticePopup")
 local StartScreen = require("ui.story.gate.StartScreen")
 local DarkTitleScreen = require("ui.story.gate.DarkTitleScreenGate")
 local LetterIntro = require("ui.story.gate.LetterIntro")
-local IntroCutscene = require("ui.story.gate.IntroCutscene")
 local ScenarioDialogue = require("ui.story.ScenarioDialogue")
 local SamsaraRecordPanel = require("ui.story.SamsaraRecordPanel")
 
@@ -33,7 +32,7 @@ function M.isBlocked()
         or DungeonBattleScene.isOpen() or TowerBattleScene.isActive()
         or PlayerInfoPanel.isOpen() or OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen()
         or UpdateNoticePopup.isOpen() or StartScreen.isOpen() or DarkTitleScreen.isOpen()
-        or LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()
+        or LetterIntro.isOpen() or ScenarioDialogue.isActive()
         or SamsaraRecordPanel.isOpen()
 end
 

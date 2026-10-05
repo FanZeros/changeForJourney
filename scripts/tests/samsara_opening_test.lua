@@ -66,6 +66,14 @@ local function isolated(path, overrides, globals, fallback)
     for key, value in pairs(globals or {}) do env[key] = value end
     env.require = function(name)
         if overrides[name] ~= nil then return overrides[name] end
+        if name:match("^config%.StageConfig_") then
+            return isolated(name:gsub("%.", "/") .. ".lua", {})
+        end
+        if name == "config.StoryBackgroundConfig" then
+            return isolated("config/StoryBackgroundConfig.lua", {
+                ["config.StageConfig"] = isolated("config/StageConfig.lua", {}),
+            })
+        end
         if fallback then return fallback(name) end
         error("undeclared dependency/economic path in " .. path .. ": " .. tostring(name))
     end
@@ -105,8 +113,8 @@ end
 local function resultFor(lease, reason)
     return { playToken = lease.playToken, contextEpoch = lease.contextEpoch, nodeKey = lease.nodeKey, reason = reason }
 end
-local function gates()
-    return { ready = true, legacyPending = false, blocked = false, pointerBusy = false }
+local function gates(f)
+    return { ready = true, legacyPending = false, blocked = f.Panel ~= nil and f.Panel.isOpen(), pointerBusy = false }
 end
 
 -- 同现有 integration fixture：真正的 onLoad/Dispatcher/Save，只替换无关 schema 注册、
@@ -538,7 +546,7 @@ local function playbackCases()
             local f = fixture(trustedSession()); f.init()
             local old, evidence = outsideStory(f.session()), copy(f.session().samsaraStory.evidence)
             eq(f.Player.peekReady(), KEY, "trusted pending auto candidate")
-            eq(f.Playback.tryPlay(gates()), true, "real Player/Config/Playback starts N01")
+            eq(f.Playback.tryPlay(gates(f)), true, "real Player/Config/Playback starts N01")
             local cfg = assert(f.shown[1])
             eq(cfg.completionToken.nodeKey, KEY, "real show receives N01 lease")
             eq(cfg.completionToken.kind, FIRST, "real show first-read kind")
@@ -546,7 +554,7 @@ local function playbackCases()
             check(same(cfg.steps, f.Config.get(KEY).steps), "real show gets eight genuine steps")
             eq(cfg.onFinish, nil, "N01 has no legacy reward onFinish")
             check(type(cfg.onResult) == "function", "N01 uses independent token result")
-            eq(f.Playback.tryPlay(gates()), false, "active dialogue gates second lease")
+            eq(f.Playback.tryPlay(gates(f)), false, "active dialogue gates second lease")
             if ending == "dismissed" then
                 finishDialogue(f.Dialogue)
                 eq(f.Player.getRecord(KEY).status, "pending", "dismiss animation not completion")
@@ -566,7 +574,7 @@ local function playbackCases()
                 eq(f.Player.peekReady(), nil, "processed not automatic replay")
                 for _, replayReason in ipairs({ "finished", "dismissed", "skipped", "reset", "replaced", "failed" }) do
                     eq(f.Player.requestRead(KEY), true, "processed queues replay " .. replayReason)
-                    eq(f.Playback.tryPlay(gates()), true, "real replay boundary " .. replayReason)
+                    eq(f.Playback.tryPlay(gates(f)), true, "real replay boundary " .. replayReason)
                     local replayCfg = assert(f.shown[#f.shown])
                     eq(replayCfg.completionToken.kind, REPLAY, "replay kind")
                     -- 仅failed需直接模拟展示边界；其他结束通过真实Dialogue。
@@ -609,12 +617,12 @@ local function playbackCases()
             local f = fixture(trustedSession()); f.init()
             local before, writes = copy(f.session()), f.n("flush")
             f.showFault = fault
-            eq(f.Playback.tryPlay(gates()), false, "show failure caught")
+            eq(f.Playback.tryPlay(gates(f)), false, "show failure caught")
             eq(f.Player.getRecord(KEY).status, "pending", "failed show not first-read completed")
             eq(f.n("flush"), writes, "failed show not persisted")
             check(same(f.session(), before), "failed show keeps source/result/legacy fields")
             f.showFault = ""
-            eq(f.Playback.tryPlay(gates()), true, "next arbitration can retry pending N01")
+            eq(f.Playback.tryPlay(gates(f)), true, "next arbitration can retry pending N01")
             f.Dialogue.skip()
             eq(f.Player.getRecord(KEY).status, "skipped", "only successful retry handles N01")
         end)
@@ -625,7 +633,7 @@ local function playbackCases()
             eq(f.Player.requestRead(KEY), true, "pending request queued")
             local takes, take = 0, f.Player.takeRequest
             f.Player.takeRequest = function() takes = takes + 1; return take() end
-            local g = gates()
+            local g = gates(f)
             if name == "dialogueActive" then f.realShow({ mode = "small", steps = f.Config.get(KEY).steps })
             else g[name] = name ~= "ready" end
             eq(f.Playback.tryPlay(g), false, "gate blocks")
@@ -782,7 +790,7 @@ local function saveCases()
                 if fault == "nil" or fault == "throw" then f.flushMode = fault else f.fail = fault end
                 if phase == "eligibility" then eq(f.Player.noteOpeningResult("join.3", "finished", epoch), true, "qualification retained despite save failure")
                 else
-                    eq(f.Playback.tryPlay(gates()), true, "real first-read before failed write")
+                    eq(f.Playback.tryPlay(gates(f)), true, "real first-read before failed write")
                     f.Dialogue.skip()
                 end
                 eq(f.Player.getRecord(KEY).status, phase == "eligibility" and "pending" or "skipped", "memory result remains correct")

@@ -166,6 +166,7 @@ local function newContext()
             or name == "ui.story.StoryDisplay" or name == "ui.story.ScenarioDialogue"
             or name == "ui.story.gate.LetterIntro" or name == "ui.story.gate.DarkTitleScreenGate"
             or name == "systems.StoryPlayer" or name == "ui.character.hero.HeroScenario"
+            or name == "systems.SamsaraSlicePlayer" or name == "shared.session.SamsaraStorySchema"
         assert(permitted, "unexpected dependency blocked: " .. tostring(name))
         local chunk, why = load(source(name), "@" .. name:gsub("%.", "/") .. ".lua", "t", env)
         assert(chunk, why)
@@ -187,11 +188,13 @@ local function newContext()
     local originalShow = ctx.dialogue.show
     ctx.dialogue.show = function(cfg)
         ctx.shown[#ctx.shown + 1] = cfg
-        originalShow(cfg)
+        return originalShow(cfg)
     end
     ctx.modules.session = { introCompleted = true, initialHeroId = 1, claimedScenarios = {} }
     ctx.modules.battle = { currentStageId = 201, clearedStages = {} }
     ctx.modules.heroes = { roster = {} }
+    ctx.player = env.require("systems.SamsaraSlicePlayer")
+    env.SamsaraSlicePlayer = ctx.player
     function ctx.draw(w, h)
         ctx.calls, ctx.stack, ctx.tx, ctx.ty = {}, {}, 0, 0
         ctx.dialogue.draw(w or 1920, h or 1080)
@@ -255,6 +258,7 @@ end
 
 local function configCases()
     local ctx = newContext()
+    ---@type table<number, number|boolean>
     local expected = { 2,2,2,2,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,5,5,5,5,6,5,5,5,
         7,5,5,5,9,9,9,3,3,3,9,9,9,9,9,9,8,5,5,5,10,10,10,false,13,13,13,12,12,12,
         14,14,3,10,15,false,16,14,14,3,3,10,11,17,17,17,17,17,17,17,17,10 }
@@ -616,7 +620,11 @@ local function pendingBoot(ctx)
     ctx.env.ScenarioDialogue = ctx.dialogue
     ctx.env.TutorialManager = { canPlayPendingStory = function() return not ctx.tutorialBlocked end }
     ctx.env.LetterIntro = { isOpen = function() return ctx.letterOpen end }
-    ctx.env.IntroCutscene = { isActive = function() return ctx.introActive end }
+    -- 旧 introActive oracle 使用现有真实Dialogue的活动状态，不伪造已删 IntroCutscene。
+    local active = ctx.dialogue.isActive
+    ctx.env.ScenarioDialogue = setmetatable({ isActive = function()
+        return ctx.introActive or active()
+    end }, { __index = ctx.dialogue })
     ctx.env.RewardPopup = { isOpen = function() return ctx.rewardOpen end,
         hasPendingBattleRewards = function() return ctx.rewardPending end }
     ctx.env.OfflineRewardPanel = { isOpen = function() return ctx.offlineOpen end }
@@ -755,7 +763,10 @@ local function bootChainCases()
     ctx.env.localSendAction = function(action, params)
         ctx.actions[#ctx.actions + 1] = { action = action, params = params }; return true
     end
-    local openingText = section("boot.Standalone", "local function playJoinAt_(index)", "\n--- 首通/入场排队")
+    ctx.player.init({ getSession = function() return ctx.modules.session end,
+        setSession = function(session) ctx.modules.session = session end,
+        flush = ctx.deps["boot.StandaloneSave"].Flush }, ctx.modules.battle)
+    local openingText = section("boot.Standalone", "local function showOpeningPart_(key, cfg, nextPart)", "\n--- 首通/入场排队")
     local opening = ctx.compile(openingText .. "\nreturn startOpeningBriefing_", "production-opening-chain")
     ctx.env.startOpeningBriefing_ = opening
     local introText = section("boot.Standalone", "local function startIntroChain_()", "\n--- 清除存档后")
@@ -771,13 +782,21 @@ local function bootChainCases()
     check(same(ctx.shown[1].steps, ctx.config.OPENING.steps), "Boot cloned steps preserve original fields, no hidden bg injection")
     ctx.dialogue.update(0.3); ctx.draw()
     eq(#images(ctx), 1, "Boot opening draws CG once, no portrait")
+    local function nextHostFrame()
+        local nextPart = ctx.env.introNext_
+        ctx.env.introNext_ = nil
+        if nextPart then nextPart() end
+    end
     finish(ctx)
+    eq(#ctx.shown, 1, "opening result only queues next host frame")
+    nextHostFrame()
     eq(#ctx.shown, 2, "opening completion chains first join")
     eq(ctx.shown[2].background, bg(2), "Boot first join HALL")
-    finish(ctx)
+    finish(ctx); nextHostFrame()
     eq(#ctx.shown, 3, "first join completion must chain second join (onFinish cannot be clobbered)")
-    finish(ctx); eq(#ctx.shown, 4, "second join chains third join")
-    finish(ctx); eq(completed, 1, "whole letter/opening/three-join chain finishes once")
+    finish(ctx); nextHostFrame(); eq(#ctx.shown, 4, "second join chains third join")
+    finish(ctx); nextHostFrame(); eq(completed, 1, "whole letter/opening/three-join chain finishes once")
+    eq(ctx.player.getRecord("samsara.opening_roster").eligibilitySource, "live_opening_chain", "N01 source requires true letter/opening/three-join results")
     eq(#ctx.actions, 1, "background change adds no extra reward dispatch")
     ctx.assertSafe()
 end

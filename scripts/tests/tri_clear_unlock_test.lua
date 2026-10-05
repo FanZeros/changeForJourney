@@ -41,6 +41,7 @@ local function runBattleLedgerCases(nativeRequire)
         ["boot.StandaloneBoot"] = true,
         ["runtime.ClientDispatcher"] = true,
         ["runtime.ClientMessageHandler"] = true,
+        ["core.BattleLayout"] = true, ["core.DrawUtil"] = true,
     }
     local function fixture(stageId, maxId, cleared, preserveNumericKeys)
         local env = setmetatable({}, { __index = _G })
@@ -75,7 +76,8 @@ local function runBattleLedgerCases(nativeRequire)
         modules["shared.schemas.CharacterSchema"] = { applyOnLoad = noop }
         modules["core.GameState"] = gameState
         modules["core.I18n"] = { lookup = function(text) return text end }
-        modules["core.BattleLayout"] = stub({ MAX_PER_SIDE = 4, FIELD_CY = 180, STRIP_W = 948, STRIP_CY = 180 })
+        -- 卡框尺寸由真实BattleLayout提供，不让未知mock方法被当成CARD_H数字。
+        modules["core.BattleLayout"] = assert(load(source("core.BattleLayout"), "@core.BattleLayout", "t", env))()
         modules["config.MonsterConfig"] = { createMonster = function(id) return unit(id, false) end }
         modules["ui.character.panel.CharacterPanel"] = stub({
             getTeamSignature = function() return "ledger-team-1" end,
@@ -97,7 +99,6 @@ local function runBattleLedgerCases(nativeRequire)
         modules["systems.LootBoxSystem"] = stub({ getTotalCount = function() return 0 end })
         modules["boot.StandaloneSave"] = { Flush = function() saves = saves + 1 end }
         modules["ui.story.gate.LetterIntro"] = { isOpen = function() return false end }
-        modules["ui.story.gate.IntroCutscene"] = { isActive = function() return false end }
         modules["ui.story.ScenarioDialogue"] = { isActive = function() return false end }
         for _, name in ipairs({ "ui.battle.combat.BattleCombat", "ui.battle.combat.ProjectileSystem",
             "systems.ThreatManager", "systems.TalentManager", "ui.battle.combat.BattleEffects",

@@ -415,6 +415,8 @@ local function testBlacksmithPreparation()
 end
 
 local function testTaskForceClose()
+    -- CharacterTab 用过空ExpTable；功绩仅测forceClose时恢复真实纯配置常量。
+    testStubs["config.ExpTable"] = originalRequire("config.ExpTable")
     testStubs["ui.story.task.TaskPage"], package.loaded["ui.story.task.TaskPage"] = nil, nil
     package.preload["ui.story.task.TaskPage"] = nil
     local task = require("ui.story.task.TaskPage")

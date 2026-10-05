@@ -88,6 +88,14 @@ local function isolated(path, overrides, globals, fallback)
     for key, value in pairs(globals or {}) do env[key] = value end
     env.require = function(name)
         if overrides[name] ~= nil then return overrides[name] end
+        if name:match("^config%.StageConfig_") then
+            return isolated(name:gsub("%.", "/") .. ".lua", {})
+        end
+        if name == "config.StoryBackgroundConfig" then
+            return isolated("config/StoryBackgroundConfig.lua", {
+                ["config.StageConfig"] = isolated("config/StageConfig.lua", {}),
+            })
+        end
         if fallback then return fallback(name) end
         error("undeclared dependency/economic path in " .. path .. ": " .. tostring(name))
     end
@@ -138,7 +146,7 @@ end
 local function result(lease, reason)
     return { playToken = lease.playToken, contextEpoch = lease.contextEpoch, nodeKey = lease.nodeKey, reason = reason }
 end
-local function gates() return { ready = true, legacyPending = false, blocked = false, pointerBusy = false } end
+local function gates(f) return { ready = true, legacyPending = false, blocked = f.Panel.isOpen(), pointerBusy = false } end
 
 -- opening fixture的真实onLoad/Dispatcher/Save链，仅替换无关schema、File和经济边界。
 ---@return any
@@ -564,7 +572,7 @@ local function prerequisiteCases()
             eq(legacy(f), false, "bad config no old65 registration")
             eq(f.Player.requestRead(KEY), false, "bad config no request")
             eq(f.Player.begin(FIRST, KEY), nil, "bad config no lease")
-            eq(f.Playback.tryPlay(gates()), false, "bad config no show")
+            eq(f.Playback.tryPlay(gates(f)), false, "bad config no show")
             hidden(f, "bad config")
             noRewards(f, outside, "bad config")
         end)
@@ -913,7 +921,7 @@ local function presentationCases()
         f.draw(); check(f.boxes[1].y < firstY, "touch actually scrolls")
         f.Panel.selectRecord(KEY); f.draw(); eq(f.boxes[1].y, firstY, "reselect resets scroll")
         eq(requests, 0, "reference or drag never requests")
-        eq(f.Playback.tryPlay(gates()), false, "no N08 presentation without N01")
+        eq(f.Playback.tryPlay(gates(f)), false, "no N08 presentation without N01")
         eq(#f.shown, 0, "reference no Dialogue")
         eq(f.n("flush"), flushes, "all static UI no save")
         check(same(f.session(), before), "all static UI no mutation")
@@ -926,11 +934,11 @@ local function presentationCases()
             local action = f.action("待阅"); f.Panel.handleInput(action.x, action.y, 1920, 1080)
             eq(f.Dialogue.isActive(), false, "Panel request never synchronous show")
             for _, name in ipairs({ "ready", "legacyPending", "blocked", "pointerBusy" }) do
-                local g = gates(); g[name] = name ~= "ready"
+                local g = gates(f); g[name] = name ~= "ready"
                 eq(f.Playback.tryPlay(g), false, "gate preserves request " .. name)
             end
             if ending == "false" or ending == "throw" then f.showFault = ending end
-            eq(f.Playback.tryPlay(gates()), ending ~= "false" and ending ~= "throw", "next arbitration actual show")
+            eq(f.Playback.tryPlay(gates(f)), ending ~= "false" and ending ~= "throw", "next arbitration actual show")
             local cfg = assert(f.shown[1]); check(same(cfg.steps, STEPS), "real show exact eight steps")
             eq(cfg.completionToken.nodeKey, KEY, "own completion token")
             eq(cfg.onFinish, nil, "no old economic finish callback")
@@ -958,7 +966,7 @@ local function presentationCases()
                 check(not includes(text, f.Config.getEvidence("E05").text), "no E05 in B record")
                 local all, writes = copy(f.session()), f.n("flush")
                 action = f.action("回看"); f.Panel.handleInput(action.x, action.y, 1920, 1080)
-                eq(f.Playback.tryPlay(gates()), true, "real replay")
+                eq(f.Playback.tryPlay(gates(f)), true, "real replay")
                 eq(f.shown[2].completionToken.kind, REPLAY, "real replay kind")
                 f.Dialogue.skip(); check(same(f.session(), all), "real replay zero mutation")
                 eq(f.n("flush"), writes, "real replay zero save")

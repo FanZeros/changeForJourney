@@ -72,6 +72,14 @@ local function isolated(path, overrides, globals, fallback)
     for key, value in pairs(globals or {}) do env[key] = value end
     env.require = function(name)
         if overrides[name] ~= nil then return overrides[name] end
+        if name:match("^config%.StageConfig_") then
+            return isolated(name:gsub("%.", "/") .. ".lua", {})
+        end
+        if name == "config.StoryBackgroundConfig" then
+            return isolated("config/StoryBackgroundConfig.lua", {
+                ["config.StageConfig"] = isolated("config/StageConfig.lua", {}),
+            })
+        end
         if fallback then return fallback(name) end
         error("unexpected dependency in " .. path .. ": " .. name)
     end
@@ -333,8 +341,8 @@ local function noRewards(f, before, label)
     eq(f.n("battle.apply"), 0, label .. " no battle restore side effect")
 end
 
-local function gates()
-    return { ready = true, legacyPending = false, blocked = false, pointerBusy = false }
+local function gates(f)
+    return { ready = true, legacyPending = false, blocked = f.Panel.isOpen(), pointerBusy = false }
 end
 
 -- 用真实打字机与进度驱动结束；不复制结束逻辑、不用 Player.onResult 代替
@@ -476,7 +484,7 @@ local function playbackCases()
             local take, realShow = f.Player.takeRequest, f.Dialogue.show
             f.Player.takeRequest = function() f.count("request.take"); return take() end
             f.Dialogue.show = function(cfg) f.count("dialogue.show"); return realShow(cfg) end
-            local gate = gates()
+            local gate = gates(f)
             if gateName == "notReady" then gate.ready = false
             elseif gateName == "dialogueActive" then realShow({ mode = "small", steps = assert(f.Config.get(f.Config.NODE_KEY)).steps })
             elseif gateName ~= "nilGates" then gate[gateName] = true end
@@ -504,9 +512,9 @@ local function playbackCases()
             end
             f.Bus.on("scenario_dialogue_finished", function() broadcasts = broadcasts + 1 end)
             check(not f.Player.getRecord().evidenceVisible, "eligible E01 not yet visible")
-            eq(f.Playback.tryPlay(gates()), true, "true Player+Config+Dialogue start")
+            eq(f.Playback.tryPlay(gates(f)), true, "true Player+Config+Dialogue start")
             eq(f.Player.peekReady(), nil, "lease prevents another ready node")
-            eq(f.Playback.tryPlay(gates()), false, "active display is arbitration gate")
+            eq(f.Playback.tryPlay(gates(f)), false, "active display is arbitration gate")
             eq(shows, 1, "active display cannot show again")
             if ending == "dismissed" then
                 finishDialogue(f.Dialogue)
@@ -525,7 +533,7 @@ local function playbackCases()
                 local storyBefore = copy(f.session().samsaraStory)
                 local flushBefore = f.n("flush")
                 eq(f.Player.requestRead(f.Config.NODE_KEY), true, "processed record queues replay")
-                eq(f.Playback.tryPlay(gates()), true, "replay begins on a later explicit arbitration")
+                eq(f.Playback.tryPlay(gates(f)), true, "replay begins on a later explicit arbitration")
                 f.Dialogue.skip()
                 check(same(f.session().samsaraStory, storyBefore), "replay skipped cannot rewrite first resolution/evidence/history")
                 eq(f.n("flush"), flushBefore, "replay no persistent write")
@@ -546,14 +554,14 @@ local function playbackCases()
                 if fault == "false" then return realShow({ steps = {} }) end
                 error("injected presentation-boundary exception")
             end
-            eq(f.Playback.tryPlay(gates()), false, "presentation failure handled")
+            eq(f.Playback.tryPlay(gates(f)), false, "presentation failure handled")
             eq(f.Player.getRecord().status, "pending", "failure not a completion")
             check(not f.Player.getRecord().evidenceVisible, "failed show no original evidence")
             eq(f.Player.peekReady(), f.Config.NODE_KEY, "failure cancels only lease")
             eq(f.n("flush"), before, "failed display no persistence")
             noRewards(f, old, fault)
             f.Dialogue.show = realShow
-            eq(f.Playback.tryPlay(gates()), true, "next host frame can recover")
+            eq(f.Playback.tryPlay(gates(f)), true, "next host frame can recover")
             f.Dialogue.skip()
             eq(f.Player.getRecord().status, "skipped", "only recovery completion processes node")
         end)
@@ -680,7 +688,7 @@ local function saveCases()
             local previousDisk, old = f.disk, legacySession(f.session())
             local oldModules = copy(f.Dispatcher.snapshotAll())
             local stateBefore = copy(f.gameState)
-            eq(f.Playback.tryPlay(gates()), true, "actual display before fault")
+            eq(f.Playback.tryPlay(gates(f)), true, "actual display before fault")
             f.fail = fault
             local flushBefore, openBefore, renameBefore = f.n("flush"), f.n("openWrite"), f.n("rename")
             f.Dialogue.skip()
@@ -796,16 +804,26 @@ local function bindInput(f, scale, dpr)
         hit = function(x, y) return "center", x, y end }
     local overlay = page("offlineOverlay", { hasPress = function() return false end,
         toDesign = function(x, y) return x, y end })
+    local function dependency(name)
+        if not modules[name] then
+            if name == "boot.SeamBackGesture" or name == "boot.TerminalInput"
+                or name == "boot.ArtifactGesture" then
+                modules[name] = isolated(name:gsub("%.", "/") .. ".lua", modules,
+                    { time = b.clock }, dependency)
+            else
+                assert(not name:match("^boot%."), "unexpected boot helper " .. name)
+                modules[name] = page(name)
+            end
+        end
+        return modules[name]
+    end
     local realInput, env = isolated("boot/StandaloneHorizonInput.lua", modules, {
         input = {
             GetMousePosition = function() return b.cursor end,
             GetMouseButtonDown = function(_, button) return b.buttons[button] == true end,
         },
         time = b.clock,
-    }, function(name)
-        if not modules[name] then modules[name] = page(name) end
-        return modules[name]
-    end)
+    }, dependency)
     b.Input, b.env = realInput, env
     realInput.bind({
         vg = function() return {} end,
@@ -859,7 +877,7 @@ local function inputCases()
             local f = fixture(); f.init()
             local old = legacySession(f.session())
             local b = bindInput(f, 0.8, dpr)
-            eq(f.Playback.tryPlay(gates()), true, "真实切片已开始")
+            eq(f.Playback.tryPlay(gates(f)), true, "真实切片已开始")
             f.Dialogue.update(100)
             local step = f.Dialogue.getProgress()
             b.position(960, 800)
@@ -885,7 +903,7 @@ local function inputCases()
         runCase("真实Input切片" .. kind .. "拖出回点与关闭后up", function()
             local f = fixture(); f.init()
             local b = bindInput(f)
-            f.Playback.tryPlay(gates()); f.Dialogue.update(100)
+            f.Playback.tryPlay(gates(f)); f.Dialogue.update(100)
             local step = f.Dialogue.getProgress()
             if kind == "mouse" then
                 b.position(960, 800); b.down(MOUSEB_LEFT)
@@ -909,7 +927,7 @@ local function inputCases()
     runCase("真实touch切片捕获/副指/skip/离线覆盖共存", function()
         local f = fixture(); f.init()
         local b = bindInput(f, 0.8, 3)
-        f.Playback.tryPlay(gates()); f.Dialogue.update(100)
+        f.Playback.tryPlay(gates(f)); f.Dialogue.update(100)
         b.state.offline = true -- 已开始切片后出现奖励，绝不转走旧任意抬起advance
         local step = f.Dialogue.getProgress()
         b.position(0, 0)
@@ -942,7 +960,7 @@ local function inputCases()
         for _, button in ipairs({ MOUSEB_LEFT, MOUSEB_RIGHT, MOUSEB_MIDDLE }) do
             b.buttons[button] = true
             eq(b.Input.isPointerBusy(), true, "真实button held门禁")
-            local g = gates(); g.pointerBusy = b.Input.isPointerBusy()
+            local g = gates(f); g.pointerBusy = b.Input.isPointerBusy()
             eq(f.Playback.tryPlay(g), false, "按下不能开始切片")
             b.buttons[button] = false
         end
@@ -951,13 +969,13 @@ local function inputCases()
         b.state.notice = true -- 模态spy吞down，仍可验证独立touch id capture门禁
         b.invoke("HandleTouchBeginHorizon", b.touch(11, 960, 800))
         eq(b.Input.isPointerBusy(), true, "真实touch id busy")
-        local g = gates(); g.pointerBusy = b.Input.isPointerBusy()
+        local g = gates(f); g.pointerBusy = b.Input.isPointerBusy()
         eq(f.Playback.tryPlay(g), false, "触摸按下不能开始")
         eq(f.n("input.request.take"), 0, "触摸不消费请求")
         b.invoke("HandleTouchEndHorizon", b.touch(11, 960, 800))
         b.state.notice = false
         eq(b.Input.isPointerBusy(), false, "触摸up释放id门禁")
-        eq(f.Playback.tryPlay(gates()), true, "释放后原请求正常展示")
+        eq(f.Playback.tryPlay(gates(f)), true, "释放后原请求正常展示")
         eq(f.n("input.request.take"), 1, "释放后只取一次")
     end)
     runCase("真实记录Panel draw/E01/保存禁用和Input模态吞", function()
@@ -979,7 +997,7 @@ local function inputCases()
         check(f.Panel.isOpen() and not f.Dialogue.isActive(), "记录down不关窗、不show")
         b.up(MOUSEB_LEFT)
         check(not f.Panel.isOpen() and not f.Dialogue.isActive(), "记录up只排请求，N02不同步show")
-        eq(f.Playback.tryPlay(gates()), true, "后帧仲裁才show")
+        eq(f.Playback.tryPlay(gates(f)), true, "后帧仲裁才show")
         f.fail = "write"; f.Dialogue.skip()
         check(f.Player.isSavePending(), "真实write故障保存中")
         f.drawings = {}; f.Panel.open(); f.Panel.draw({}, 1920, 1080)
@@ -1074,7 +1092,7 @@ local function keyboardAndTerminalCases()
         local f = fixture(); f.init()
         local old = legacySession(f.session())
         local k = bindKeyboard(f)
-        eq(f.Playback.tryPlay(gates()), true, "真实切片开始供键盘输入")
+        eq(f.Playback.tryPlay(gates(f)), true, "真实切片开始供键盘输入")
         f.Dialogue.update(100)
         local step, flushBefore = f.Dialogue.getProgress(), f.n("flush")
         for _, key in ipairs({ KEY_I, KEY_B, KEY_F, KEY_H }) do
@@ -1116,7 +1134,7 @@ local function keyboardAndTerminalCases()
         terminal.open(999)
         eq(terminal.isOpen(), true, "真实open立即门禁")
         local function blocked(label)
-            local g = gates(); g.blocked = terminal.isOpen()
+            local g = gates(f); g.blocked = terminal.isOpen()
             eq(f.Playback.tryPlay(g), false, label .. " 实际isOpen禁止Playback")
             eq(f.n("terminal.take"), 0, label .. " 不take请求")
             eq(f.n("terminal.show"), 0, label .. " 不show")
@@ -1135,7 +1153,7 @@ local function keyboardAndTerminalCases()
         terminal.update()
         eq(terminal.isOpen(), false, "关闭动画完成才释放门禁")
         eq(confirmations, 0, "取消不调用进入终焉确认回调")
-        local g = gates(); g.blocked = terminal.isOpen()
+        local g = gates(f); g.blocked = terminal.isOpen()
         eq(f.Playback.tryPlay(g), true, "门禁释放后原请求展示")
         eq(f.n("terminal.take"), 1, "释放后只取原请求一次")
         eq(f.n("terminal.show"), 1, "释放后只show一次")
@@ -1184,7 +1202,7 @@ local function cargoCases()
             eq(f.Player.getRecord().status, "locked", "无raw104不借高max解锁N02")
             eq(f.Player.getRecord(CARGO).status, "pending", "raw4905成立但无旧73也可进入")
             eq(cargoEvidence(f, CARGO, "E02") ~= nil, source == "player_record", "case_archive不在init抢先造原件")
-            eq(f.Playback.tryPlay(gates()), true, "后帧仲裁开始N12")
+            eq(f.Playback.tryPlay(gates(f)), true, "后帧仲裁开始N12")
             eq(cfgs[1].completionToken.nodeKey, CARGO, "真实展示token为N12")
             local opening = {}
             for _, step in ipairs(cfgs[1].steps) do opening[#opening + 1] = step.text end
@@ -1200,7 +1218,7 @@ local function cargoCases()
             eq(shows, 1, "N12结果回调不递归show后段")
             eq(cargoEvidence(f, CARGO, "E02").annotation, f.Config.get(CARGO).evidence.annotation, "N12核验批注公开")
             eq(cargoEvidence(f, GRAY, "E05"), nil, "N12处理仍不公开E05")
-            eq(f.Playback.tryPlay(gates()), true, "下一次宿主仲裁开始N13")
+            eq(f.Playback.tryPlay(gates(f)), true, "下一次宿主仲裁开始N13")
             eq(cfgs[2].completionToken.nodeKey, GRAY, "N13真实token")
             f.Dialogue.skip()
             eq(f.Player.getRecord(GRAY).status, "skipped", "真实skip不写finished")
@@ -1210,7 +1228,7 @@ local function cargoCases()
             eq(e05.text, f.Config.get(GRAY).evidence.text, "N13公开初始抄件")
             eq(e05.continuation, nil, "N13之后未处理N14不公开续令")
             eq(e05.people, nil, "N13之后不公开人员卷")
-            eq(f.Playback.tryPlay(gates()), true, "后帧仲裁开始N14")
+            eq(f.Playback.tryPlay(gates(f)), true, "后帧仲裁开始N14")
             eq(cfgs[3].completionToken.nodeKey, PEOPLE, "N14真实token")
             finishDialogue(f.Dialogue); f.Dialogue.update(0.31)
             eq(f.Player.getRecord(PEOPLE).status, "finished", "N14自然结束")
@@ -1219,7 +1237,7 @@ local function cargoCases()
             eq(e05.continuation, f.Config.get(PEOPLE).evidence.continuation, "N14续令开放")
             eq(e05.people, f.Config.get(PEOPLE).evidence.people, "N14人员卷开放")
             check(not includes(e05.text .. e05.continuation .. e05.people, "本人承认一致"), "未接N17不提前定罪")
-            eq(f.Playback.tryPlay(gates()), false, "全部处理后不自动重播")
+            eq(f.Playback.tryPlay(gates(f)), false, "全部处理后不自动重播")
             eq(f.session().samsaraStory.evidence["E03-B"], nil, "原cargo串行完成仍不授予B")
             eq(f.Player.hasPendingRecords(), source == "player_record", "原cargo全处理后仅可信E02留下独立N03待阅")
             local saved = cjson.decode(assert(f.disk))
@@ -1228,7 +1246,7 @@ local function cargoCases()
                 eq(saved.modules.session.samsaraStory.nodes[key].resolution, f.Player.getRecord(key).status, "真实磁盘保留首次结果 " .. key)
                 local before, flushes = copy(f.session().samsaraStory), f.n("flush")
                 eq(f.Player.requestRead(key), true, "三记录均可显式回看 " .. key)
-                eq(f.Playback.tryPlay(gates()), true, "回看也走真实Playback " .. key)
+                eq(f.Playback.tryPlay(gates(f)), true, "回看也走真实Playback " .. key)
                 eq(cfgs[#cfgs].completionToken.kind, "samsara_replay", "回看kind不变首次")
                 f.Dialogue.skip()
                 check(same(f.session().samsaraStory, before), "回看不改原始结果/物证/来源 " .. key)
@@ -1241,14 +1259,14 @@ local function cargoCases()
         runCase("真实N13中断不释放N14 " .. ending, function()
             local f = cargoFixture("player_record"); f.init()
             local old = legacySession(f.session())
-            f.Playback.tryPlay(gates()); f.Dialogue.skip()
+            f.Playback.tryPlay(gates(f)); f.Dialogue.skip()
             local show, count = f.Dialogue.show, 0
             f.Dialogue.show = function(cfg)
                 count = count + 1
                 if ending == "failed" then return show({ steps = {} }) end
                 return show(cfg)
             end
-            eq(f.Playback.tryPlay(gates()), ending ~= "failed", "实际N13展示/失败")
+            eq(f.Playback.tryPlay(gates(f)), ending ~= "failed", "实际N13展示/失败")
             if ending == "reset" then f.Dialogue.reset()
             elseif ending == "replaced" then show({ mode = "small", steps = f.Config.get(CARGO).steps }) end
             eq(f.Player.getRecord(GRAY).status, "pending", "中断不写首次结果")
@@ -1257,12 +1275,12 @@ local function cargoCases()
             eq(f.Player.requestRead(PEOPLE), false, "N14不可越过依赖")
             eq(count, 1, "失败/中断没有同步补播")
             show({ mode = "small", steps = f.Config.get(CARGO).steps })
-            eq(f.Playback.tryPlay(gates()), false, "其他合法旧闲聊占用下一帧，新链等待")
+            eq(f.Playback.tryPlay(gates(f)), false, "其他合法旧闲聊占用下一帧，新链等待")
             eq(f.Player.getRecord(GRAY).status, "pending", "旧show/broadcast不得误完成N13")
             f.Dialogue.skip() -- 无token旧段的广播不能释放新链。
             eq(f.Player.getRecord(PEOPLE).status, "locked", "旧完成广播不能解锁N14")
             f.Dialogue.show = show
-            eq(f.Playback.tryPlay(gates()), true, "空闲下一帧从N13重新开始")
+            eq(f.Playback.tryPlay(gates(f)), true, "空闲下一帧从N13重新开始")
             f.Dialogue.skip()
             eq(f.Player.getRecord(PEOPLE).status, "pending", "只有真实N13重试skip才释放")
             noRewards(f, old, "中断恢复 " .. ending)
@@ -1272,9 +1290,9 @@ local function cargoCases()
         runCase("征用N13真实Save失败/重启/节流恢复 " .. fault, function()
             local f = cargoFixture("player_record"); f.init()
             local old = legacySession(f.session())
-            f.Playback.tryPlay(gates()); f.Dialogue.skip()
+            f.Playback.tryPlay(gates(f)); f.Dialogue.skip()
             local beforeDisk, renameBefore = assert(f.disk), f.n("rename")
-            f.Playback.tryPlay(gates()); f.fail = fault; f.Dialogue.skip()
+            f.Playback.tryPlay(gates(f)); f.fail = fault; f.Dialogue.skip()
             eq(f.n("rename"), renameBefore + (fault == "rename" and 1 or 0), "征用仅完整临时写入后尝试Rename")
             eq(f.temp, nil, "征用失败清理临时缓冲")
             eq(f.Player.getRecord(GRAY).status, "skipped", "失败仍保留内存首次skip")
@@ -1324,17 +1342,17 @@ local function cargoCases()
         eq(f.Panel.handleInput(1588, 928, 1920, 1080), true, "点击N12待阅只排请求")
         eq(readCalls, 1, "action才调用一次requestRead")
         eq(f.Dialogue.isActive(), false, "Panel action不在回调内播")
-        eq(f.Playback.tryPlay(gates()), true, "已解锁N12显式请求优先于自动N02")
+        eq(f.Playback.tryPlay(gates(f)), true, "已解锁N12显式请求优先于自动N02")
         f.Dialogue.skip()
         eq(f.Player.getRecord().status, "pending", "读N12不代读N02")
         text = cargoContent(f, CARGO)
         check(includes(text, f.Config.get(CARGO).evidence.annotation), "N12处理后分区显示批注")
-        f.Panel.close(); f.Player.requestRead(GRAY); f.Playback.tryPlay(gates()); f.Dialogue.skip()
+        f.Panel.close(); f.Player.requestRead(GRAY); f.Playback.tryPlay(gates(f)); f.Dialogue.skip()
         text = cargoContent(f, PEOPLE)
         check(includes(text, f.Config.get(GRAY).evidence.text), "N14待阅能看E05初始")
         check(not includes(text, f.Config.get(PEOPLE).evidence.continuation), "N14待阅续令不泄露")
         check(not includes(text, f.Config.get(PEOPLE).evidence.people), "N14待阅人员卷不泄露")
-        f.Panel.close(); f.Player.requestRead(PEOPLE); f.Playback.tryPlay(gates()); f.fail = "write"; f.Dialogue.skip()
+        f.Panel.close(); f.Player.requestRead(PEOPLE); f.Playback.tryPlay(gates(f)); f.fail = "write"; f.Dialogue.skip()
         text = cargoContent(f, PEOPLE)
         check(includes(text, f.Config.get(PEOPLE).evidence.continuation), "N14处理后续令显示")
         check(includes(text, f.Config.get(PEOPLE).evidence.people), "N14处理后人员卷显示")
@@ -1354,11 +1372,11 @@ local function cargoCases()
         local take, takes = f.Player.takeRequest, 0
         f.Player.takeRequest = function() takes = takes + 1; return take() end
         for _, name in ipairs({ "ready", "legacyPending", "blocked", "pointerBusy" }) do
-            local gate = gates(); gate[name] = name ~= "ready"
+            local gate = gates(f); gate[name] = name ~= "ready"
             eq(f.Playback.tryPlay(gate), false, "征用门禁不开始 " .. name)
             eq(takes, 0, "征用门禁不取请求 " .. name)
         end
-        eq(f.Playback.tryPlay(gates()), true, "释放门禁只取原N12请求")
+        eq(f.Playback.tryPlay(gates(f)), true, "释放门禁只取原N12请求")
         eq(takes, 1, "放行一次取请求")
         local replacement = copy(f.session())
         f.Dispatcher.handleStateUpdate(cjson.encode({ modules = { session = replacement } }))

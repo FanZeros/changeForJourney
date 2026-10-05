@@ -59,6 +59,14 @@ local function isolated(path, overrides)
     file:Dispose()
     local env = setmetatable({ require = function(name)
         if overrides[name] ~= nil then return overrides[name] end
+        if name:match("^config%.StageConfig_") then
+            return isolated(name:gsub("%.", "/") .. ".lua", {})
+        end
+        if name == "config.StoryBackgroundConfig" then
+            return isolated("config/StoryBackgroundConfig.lua", {
+                ["config.StageConfig"] = isolated("config/StageConfig.lua", {}),
+            })
+        end
         error("未声明依赖/经济路径: " .. name)
     end }, { __index = _G })
     return assert(load(table.concat(lines, "\n"), "@" .. path, "t", env))()

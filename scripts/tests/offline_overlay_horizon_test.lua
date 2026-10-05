@@ -280,7 +280,8 @@ function Start()
                 draw = function() if state.notice then snapshot("notice") end end,
             }),
             ["ui.story.ScenarioDialogue"] = mock({
-                isActive = function() return state.story end,
+                -- 开场现由真实 ScenarioDialogue 承载，旧 intro 覆盖用例仍逐个验证。
+                isActive = function() return state.story or state.intro end,
                 advance = function() count("story.advance") end,
             }),
             ["ui.story.gate.DarkTitleScreenGate"] = mock({
@@ -291,7 +292,6 @@ function Start()
                 isOpen = function() return state.letter end,
                 handleTap = function() count("letter.tap") end,
             }),
-            ["ui.story.gate.IntroCutscene"] = mock({ isActive = function() return state.intro end }),
             ["ui.tavern.TavernPage"] = page("tavern", {
                 isOpen = function() return state.tavern end,
                 getSeamAnim = function() return seamAnim("tavern") end,

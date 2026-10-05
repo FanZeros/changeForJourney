@@ -591,6 +591,7 @@ local function showOpeningPart_(key, cfg, nextPart)
     local epoch = introEpoch_
     local ok, shown = pcall(ScenarioDialogue.show, {
         mode = cfg.mode or "large", background = cfg.background,
+        backgroundIsCg = cfg.backgroundIsCg,
         title = cfg.title, steps = cfg.steps,
         completionToken = { nodeKey = "opening." .. key, contextEpoch = epoch },
         onResult = function(result)

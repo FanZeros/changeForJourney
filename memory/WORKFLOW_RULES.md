@@ -1,3 +1,11 @@
+## 资源副本选关续作（2026-10-05）
+
+- 本轮用户明确指定拉取 `workspace930` 并丢弃旧本地代码改动；已检出固定基准 `32fca2c65351d4626da99b283229e6deb5d46348`，新分支 `feat1004b/resource-dungeons-stage-select-followup`。上传参考图片及本地存档保留，不进入提交。
+- 已查到 `feat1004b/resource-dungeons` 与 `feat1004b/resource-dungeons-stage-select` 两个相关远端分支，先核对实际代码和基准覆盖范围再择取，不整支回退旧主线。
+- 授权范围：选关页增加金币、装备、黑钻副本；复用主线式战斗并适度增加敌人数；通天塔独立保留；“角色属性”标题去掉方括号。基础属性、主线首通账本、终焉与通天塔规则不因副本而改写。
+- 每完成代码或文档阶段及时正常提交并显式 push 本功能分支；不推任何 `workspace` 系列，不强推。允许完成后创建目标为 `workspace930` 的 PR，不自动合并。
+- 凭据只用于临时内存鉴权，不写源码、Git remote/config、文档或记忆。本地构建身份、存档、日志、截图不提交。最终如实汇报测试与构建结果；需要用户决定下一步时才调用 `AskUserQuestion`。
+
 ## 分解后清空收益预览协作要求（2026-10-05）
 
 - 用户指定从 `workspace930` 拉取到 `/workspace` 根，本轮创建 `feat1005b/clear-decompose-preview`；只正常提交并显式 push 本功能分支，不推任何 `workspace` 系列、不强推、不自动合并 PR。

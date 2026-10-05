@@ -294,11 +294,11 @@ function Start()
         return count
     end
     clearDraw(); Stats.drawHeader({}, "character")
-    check(rendered("【角色属性▼】") and toggleTriangles() == 0 and not rendered("‹") and not rendered("›"),
-        "角色属性标题包含括号与向下箭头，不叠加旧左右三角")
+    check(rendered("角色属性") and toggleTriangles() == 0 and not rendered("‹") and not rendered("›"),
+        "角色属性标题仅文字，不叠加括号、箭头或旧左右三角")
     clearDraw(); Stats.drawHeader({}, "equipment")
-    check(rendered("【装备加成▲】") and toggleTriangles() == 0,
-        "装备加成标题包含括号与向上箭头，不叠加旧左右三角")
+    check(rendered("装备加成") and toggleTriangles() == 0,
+        "装备加成标题仅文字，切换热区仍保留")
     local sample = { { key = "a", name = "同样属性", value = "42" } }
     clearDraw(); Draw.drawAttributeRows({}, sample, 0, Shared.ATTRIBUTE_LAYOUT, { style = Draw.ATTRIBUTE_STYLE })
     local originalName, originalValue = requiredText("同样属性"), requiredText("42")
@@ -777,7 +777,7 @@ function Start()
     draw()
     check(Panel.getAttributeMode() == "equipment" and requestedBonuses and buildCount == toggleBuilds + 1,
         "切换装备加成触发一次按需重建")
-    check(rendered("【装备加成▲】") and rendered("装备净增益") and rendered("+5.5") and not rendered("属性1"),
+    check(rendered("装备加成") and rendered("装备净增益") and rendered("+5.5") and not rendered("属性1"),
         "装备模式标题/列表/雷达只显示净贡献，不回退角色总属性")
     local cachedBuilds = buildCount
     draw(); check(buildCount == cachedBuilds, "装备模式后续帧继续命中缓存")
@@ -787,7 +787,7 @@ function Start()
     Panel.handleInput(toggleX, toggleY, 1, {})
     clearDraw(); Panel.drawSetCodex({})
     check(#textCalls == 0 and Panel.getAttributeMode() == "character", "切回角色属性清理旧说明和热区")
-    draw(); check(rendered("【角色属性▼】") and rendered("属性1") and not requestedBonuses,
+    draw(); check(rendered("角色属性") and rendered("属性1") and not requestedBonuses,
         "切回后恢复总属性且滚动归顶")
     Panel.handleInput(toggleX, toggleY, 1, {})
     local oldBonusRows = bonuses.rows

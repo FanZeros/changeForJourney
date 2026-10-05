@@ -240,8 +240,7 @@ M.drawLegacyTitle = AttributeView.drawTitle
 function M.drawHeader(vg, attributeMode)
     local equipmentMode = attributeMode == "equipment"
     local title = require("core.I18n").lookup(equipmentMode and "装备加成" or "角色属性")
-    AttributeView.drawTitle(vg, 540, M.LAYOUT.titleY,
-        "【" .. title .. (equipmentMode and "▲】" or "▼】"))
+    AttributeView.drawTitle(vg, 540, M.LAYOUT.titleY, title)
     AttributeView.drawDivider(vg, M.LAYOUT.attrs.y - 20)
     AttributeView.drawDivider(vg, M.LAYOUT.setTitleY - 28)
     drawTextStroke(vg, M.LAYOUT.sets.x + 20, M.LAYOUT.setTitleY + 4,

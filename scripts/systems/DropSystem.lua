@@ -6,8 +6,44 @@
 local EquipmentSystem = require("systems.EquipmentSystem")
 local MC = require("config.MonsterConfig")
 local StageConfig     = require("config.StageConfig")
+local AD              = require("systems.AttributeDef")
 
 local DropSystem = {}
+
+--- 有效幸运值：非法/负数归零，按本队合计封顶，避免异常值污染随机区间。
+---@param value number|nil
+---@return number
+function DropSystem.normalizeLuck(value)
+    if type(value) ~= "number" or value ~= value or value <= 0 or value == math.huge then return 0 end
+    return math.min(value, AD.DROP_LUCK_CAP)
+end
+
+--- 从本场出战属性获取幸运快照，不借编辑队、不重建英雄、不排除本场阵亡成员。
+---@param allies table[]|nil
+---@return number
+function DropSystem.captureTeamLuck(allies)
+    local total = 0
+    local seen = {}
+    for _, unit in ipairs(allies or {}) do
+        local heroId = tonumber(unit.heroId)
+        local attrs = unit._baseSnapshot or unit.attrs
+        if heroId and heroId > 0 and not seen[heroId] then
+            seen[heroId] = true
+            if attrs and type(attrs.get) == "function" then
+                total = total + DropSystem.normalizeLuck(attrs:get(AD.DROP_LUCK))
+            end
+        end
+    end
+    return DropSystem.normalizeLuck(total)
+end
+
+--- 只接受主线来源的明确队号和已经确定的幸运值；旧调用保持零幸运。
+local function getDropLuck(stageEntry, context)
+    if type(context) ~= "table" or stageEntry.mode == "resource_dungeon" or stageEntry.mode == "terminal" then return 0 end
+    local teamIdx = context.teamIdx
+    if type(teamIdx) ~= "number" or teamIdx % 1 ~= 0 or teamIdx < 1 or teamIdx > 3 then return 0 end
+    return DropSystem.normalizeLuck(context.dropLuck)
+end
 
 --- 地狱难度击杀掉落：传说/至臻装备权重倍率（仅 rollKillDrop 生效，不影响首通 fcMinQ）
 local HELL_EQUIP_WEIGHT_BOOST = {
@@ -43,8 +79,9 @@ end
 --- 根据怪物品质加权随机选取装备品质 (1-6)，用于击杀掉落
 ---@param monsterQuality number 怪物品质 1~6
 ---@param difficulty string|nil 关卡难度（地狱时提升 Q5/Q6 权重）
+---@param luck number|nil 本队幸运快照
 ---@return number quality 1~6
-local function rollQualityByMonster(monsterQuality, difficulty)
+local function rollQualityByMonster(monsterQuality, difficulty, luck)
     local qualityData = MC.QUALITY[monsterQuality] or MC.QUALITY[1]
     local dw = qualityData.dropWeights
     local isHighDiff = difficulty == StageConfig.DIFFICULTY_HELL
@@ -67,16 +104,20 @@ local function rollQualityByMonster(monsterQuality, difficulty)
             ---@diagnostic disable-next-line: assign-type-mismatch
             w = w * HELL_EQUIP_WEIGHT_BOOST[i]
         end
+        -- 只放大已有的高品质权重；零幸运沿用原整数抽样和 RNG 调用次数。
+        if (luck or 0) > 0 then w = w * (1 + (i - 1) * luck / 500) end
         weights[i] = w
         total = total + w
     end
     if total <= 0 then return 1 end
 
-    local r = math.random(1, total)
+    local r
+    if (luck or 0) > 0 then r = math.random() * total
+    else r = math.random(1, total) end
     local acc = 0
     for i = 1, 6 do
         acc = acc + weights[i]
-        if r <= acc then return i end
+        if weights[i] > 0 and r <= acc then return i end
     end
     return 1
 end
@@ -109,13 +150,16 @@ end
 
 --- 判定一次击杀是否掉落装备，装备品质由怪物品质决定
 ---@param stageEntry StageEntry 关卡配置条目
----@return number|nil quality 掉落装备品质 (1-5)，nil=未掉落
-function DropSystem.rollKillDrop(stageEntry)
+---@param context table|nil {teamIdx, dropLuck}，只用于主线击杀，缺省为旧规则
+---@return number|nil quality 掉落装备品质 (1-6)，nil=未掉落
+function DropSystem.rollKillDrop(stageEntry, context)
     local rate = stageEntry.dropRate or 0
     if rate <= 0 then
         return nil
     end
 
+    local luck = getDropLuck(stageEntry, context)
+    if luck > 0 then rate = math.min(1, rate * (1 + luck / 100)) end
     local roll = math.random()
     if roll > rate then
         return nil
@@ -124,19 +168,20 @@ function DropSystem.rollKillDrop(stageEntry)
     -- 命中掉落：服务端随机选取一个怪物品质，再按其权重决定装备品质
     local monsterQ = pickMonsterQuality(stageEntry)
     local difficulty = StageConfig.getDifficulty(stageEntry.id)
-    local quality = rollQualityByMonster(monsterQ, difficulty)
+    local quality = rollQualityByMonster(monsterQ, difficulty, luck)
     -- 品质上限：普通最高 4，困难 5，噩梦/地狱/炼狱/折磨(I/II/III) 6
     local maxQ = StageConfig.getMaxDropQuality(stageEntry)
     if quality > maxQ then quality = maxQ end
-    print(string.format("[DropSystem] rollKillDrop: HIT roll=%.4f monsterQ=%d → equipQ=%d (cap=%d)", roll, monsterQ, quality, maxQ))
+    print(string.format("[DropSystem] rollKillDrop: HIT roll=%.4f monsterQ=%d → equipQ=%d (cap=%d luck=%.2f)", roll, monsterQ, quality, maxQ, luck))
     return quality
 end
 
 --- 为一次击杀掉落生成装备实例
 ---@param stageEntry StageEntry
+---@param context table|nil 主线小队幸运快照
 ---@return table|nil equip 装备实例，nil=未掉落
-function DropSystem.generateKillDrop(stageEntry)
-    local quality = DropSystem.rollKillDrop(stageEntry)
+function DropSystem.generateKillDrop(stageEntry, context)
+    local quality = DropSystem.rollKillDrop(stageEntry, context)
     if not quality then return nil end
 
     local level = stageEntry.monsterLevel or 1

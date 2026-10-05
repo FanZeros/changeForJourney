@@ -1,5 +1,19 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+## game02 副本横屏与装备拖动引导进行中（2026-10-05）
+
+- 用户已明确停止旧Maker迁移追查，授权在game02从 `workspace1005@de12a692` 建立 `feat/game02-dungeon-landscape-equip-guide-20261005` 完成副本全量横屏与真实装备拖动引导；每批完成commit/push同一功能分支，不推基线、不强推、不自动创建或合并PR。
+- 基线实际已包含PR88–91四项：三队状态/经济与回归、卡牌预加载/升阶、主线击杀幸运、塔选卡回执/永久首通账本。它们不是副本全套横屏UI；现存窄竖屏门户/资源战斗、塔选卡/异常/结算覆盖、错误栏坐标输入需本轮补齐，保留上述规则修复。
+- 实施由副本布局、宿主输入与装备教程分别负责；测试包括逻辑宽高/DPR、全窗覆盖与作用域恢复、长奖励/12英雄、拖动和真实穿戴回执失败边界。本轮尚未完成，不引用历史验证当作当前结果。
+- 持续推进与选项式AskUserQuestion交接要求已强化 `memory/WORKFLOW_RULES.md`；全局记忆目录不可用。凭据、存档、构建配置与内部证据不提交。
+
+## game02 workspace1005 迁移前核查（2026-10-05）
+
+- 本轮已fetch并检出 `workspace1005@de12a692`，建立独立任务分支 `integrate/game02-workspace1005-migration-20261005`；仅允许正常push新分支，不推基线、不强推、不自动创建或合并PR。
+- Maker父仓库 `main@82380d7` 的 `game01` Gitlink=`de12a692`，与本轮基线整树相同；`game03` Gitlink=`7b93bcee`，是基线祖先，落后10提交。两个目录均为空，无可直接迁移的文件。基线已包含PR88–91，回退到game03将撤销这些已合修改；差异共65文件、5760新增/467删除，是基线相对旧game03的变化，不是新增待迁移功能。
+- 精确来源分支 `feat/game03-dungeon-landscape-equip-guide-20261005`、`fix/game01-pr88-rule-boundaries-20261005` 尚未在本轮抓取的GitHub与Maker远端发现；不可凭分支名称推定已合入或恢复缺失代码。当前没有修改玩法、运行回归、构建、提交或push，迁移需要实际源仓库/提交。
+- 用户再次要求已授权任务持续推进，完成或必要阻塞后实际调用 `AskUserQuestion` 选项交接；已强化现有 `memory/WORKFLOW_RULES.md`，全局记忆目录不可用，不宣称全局保存成功。尊重后续停止/权限边界，凭据、存档、本地构建配置和内部证据不提交。
+
 ## 升阶修复 PR87 交接（2026-10-05）
 
 - 用户明确授权提交PR；https://github.com/FanZeros/changeForJourney/pull/87，head=`fix930/equipment-ascend-freeze-20261005`，base=`workspace930`。创建源39f32c370954b41c7d38c275d4af40c798d0a46b、目标372f4506a6f55342f28964b73ee60312e3c96c59；返回open、draft=false、merged=false，未自动合并，不宣称CI通过。

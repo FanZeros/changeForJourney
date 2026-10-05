@@ -80,6 +80,8 @@ AffixConfig.AFFIXES = {
     { id = 42, key = "dodgeBonus",   dataType = "pct",   baseValue = 1.7,   weight = 100, name = "闪避加成" },
     { id = 43, key = "esBonus",      dataType = "pct",   baseValue = 1.7,   weight = 100, name = "护盾加成" },
     { id = 44, key = "armorBonus",   dataType = "pct",   baseValue = 1.7,   weight = 100, name = "护甲加成" },
+    -- 探索词条沿用普通生成/洗练/升阶与存档管线，不改变命数或魔化词条池。
+    { id = 45, key = "dropLuck",     dataType = "float", baseValue = 1.0,   weight = 100, name = "幸运值" },
 }
 
 -- ======================== 魔化词缀模板表 ========================

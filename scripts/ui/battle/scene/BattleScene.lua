@@ -25,6 +25,7 @@ local DarkIcon = require("core.DarkIcon")  -- [暗黑化] 地图压暗滤镜
 
 local BattleResultPanel = require("ui.battle.popup.BattleResultPanel")
 local OfflineCalc = require("systems.OfflineCalc")
+local DropSystem = require("systems.DropSystem")
 local TerminalConfirmDialog = require("ui.battle.popup.TerminalConfirmDialog")
 local MonsterInfoPopup = require("ui.battle.popup.MonsterInfoPopup")
 local BattleSpeed = require("ui.battle.stage.BattleSpeed")
@@ -136,6 +137,7 @@ local enemyQueue = {}
 
 -- 己方单位列表（由 setAllies 填充，init 不再预填占位数据）
 local allies = {}
+local dropLuck_ = 0  -- 单战线本场固定幸运值，阵亡紧凑和待更新配装不追溯改写
 
 -- [EnemyGuard] 检测逻辑与己方生命周期同职责提取。
 local _enemyGuardFired = false
@@ -413,7 +415,12 @@ local function generateIdleEnemyList()
     return BattleEnemySpawn.generateIdleEnemyList(getStageConfig(), maxStageId_, currentStageId)
 end
 
+local function captureDropLuck()
+    dropLuck_ = DropSystem.captureTeamLuck(allies)
+end
+
 local function startBattleTalents()
+    captureDropLuck()
     BattleStageFlow.startBattleTalents(allies, enemies)
 end
 
@@ -424,6 +431,7 @@ local function setupBattleCombatContext()
 end
 
 -- [卡牌分帧加载] 英雄卡/怪物卡/投射物图，首次进战斗时构建队列，由 update 分帧消化
+---@type table[]|nil
 local battleCardQueue = nil
 local function ensureBattleCards(vg)
     battleCardQueue = BattleStageFlow.ensureBattleCards({
@@ -520,7 +528,8 @@ bindBattleExtracts = function()
         end
     end
     local function setLifecycle(key, value)
-        if key == "reincarnationTimer" then reincarnationTimer = value
+        if key == "dropLuck" then dropLuck_ = value
+        elseif key == "reincarnationTimer" then reincarnationTimer = value
         elseif key == "allies" then allies = value
         elseif key == "enemies" then enemies = value
         elseif key == "enemyQueue" then enemyQueue = value
@@ -563,6 +572,12 @@ end
 -- ======================== Public API ========================
 
 function BattleScene.init(vg)
+    -- 新NanoVG上下文不能复用旧卡牌句柄或已完成队列；同上下文切关不失效。
+    if vg_ ~= vg then
+        battleCardQueue = nil
+        for id in pairs(imgHeroCards) do imgHeroCards[id] = nil end
+        for id in pairs(imgMonsterCards) do imgMonsterCards[id] = nil end
+    end
     vg_ = vg  -- 缓存，供 loadStage 切换地图背景
     -- 地图背景延后到 loadStage / 首次绘制，避免启动解码 1MB+ MAP_1
     currentChapter = 1
@@ -900,7 +915,8 @@ function BattleScene.update(dt)
         updateCardAnims = updateCardAnims, updateFloatingTexts = updateFloatingTexts,
         updateHitFlashes = updateHitFlashes, updateComboQueue = updateComboQueue,
         getStageConfig = getStageConfig, loadStage = loadStage, resetAllyUnit = resetAllyUnit,
-        startBattleTalents = startBattleTalents, onStageChangedCallback = onStageChangedCallback,
+        startBattleTalents = startBattleTalents, captureDropLuck = captureDropLuck,
+        onStageChangedCallback = onStageChangedCallback,
         onReincarnateCallback = onReincarnateCallback, recalcIdleIncome = recalcIdleIncome,
         generateIdleEnemyList = generateIdleEnemyList, assignEnemiesToField = assignEnemiesToField,
         BattleScene = BattleScene,
@@ -993,6 +1009,7 @@ function BattleScene.update(dt)
         onEnemyKillCallback = onEnemyKillCallback, onEnemyDropCallback = onEnemyDropCallback,
         onFirstClearCallback = onFirstClearCallback, onAllDeadCallback = onAllDeadCallback,
         stageKillCount = stageKillCount_, isFirstClear = isFirstClear, clearedStages = clearedStages,
+        dropLuck = dropLuck_,
         reincarnationTimer = reincarnationTimer, battleActive = battleActive,
         searchingTimer = searchingTimer, defeatTimer = defeatTimer,
         terminalDefeatPending = terminalDefeatPending, defeatByTimeout = defeatByTimeout,

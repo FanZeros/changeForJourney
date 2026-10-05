@@ -25,6 +25,7 @@ local NumberUtil        = require("core.NumberUtil")
 local BattleLayout      = require("core.BattleLayout")
 local BattleStats       = require("systems.BattleStats")
 local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
+local DropSystem        = require("systems.DropSystem")
 
 local BattleTriDriver = {}
 
@@ -103,6 +104,7 @@ function BattleTriDriver.new(teamIdx, options)
         pendingKills = {},
         rewardQueue = {},
         rewardTimer = 0,
+        dropLuck = 0,
         introTimer = 0,
         marchTimer = 0,
         marchNotice = false,
@@ -237,6 +239,8 @@ function BattleTriDriver.new(teamIdx, options)
             self.teamSignature = CharacterPanel.getTeamSignature(self.teamIdx)
             self.allies = CharacterPanel.getDeployedTeam(self.teamIdx) or {}
         end
+        -- 本场固定幸运值：队伍重开才更新，阵亡、换装和延迟领奖不追溯改写。
+        self.dropLuck = self.battleLab and 0 or DropSystem.captureTeamLuck(self.allies)
         -- 敌方：首通实验使用正式首通敌人列表，其余沿用当前三行战斗的出怪规则
         local entry = SC.getStage(stageId)
         local isTerminal = not self.battleLab and SC.isTerminalTemple(stageId)
@@ -342,6 +346,8 @@ function BattleTriDriver.new(teamIdx, options)
         local pending = self.pendingKills
         pending[#pending + 1] = {
             stageId = self.stageId,
+            teamIdx = self.teamIdx,
+            dropLuck = self.dropLuck,
             expReward = unit.expReward or 0,
             goldReward = unit.goldReward or 0,
         }
@@ -366,7 +372,8 @@ function BattleTriDriver.new(teamIdx, options)
             local kill = pending[i]
             expReward = expReward + (kill.expReward or 0)
             goldReward = goldReward + (kill.goldReward or 0)
-            queue[#queue + 1] = { stageId = kill.stageId, dropOnly = true }
+            queue[#queue + 1] = { stageId = kill.stageId, dropOnly = true,
+                teamIdx = kill.teamIdx, dropLuck = kill.dropLuck }
         end
         if self.onKill and (expReward > 0 or goldReward > 0) then
             self.onKill({

@@ -15,6 +15,11 @@ AD.VIT = "vit"   -- 体质
 AD.LUK = "luk"   -- 运气
 AD.SPI = "spi"   -- 精神
 
+-- 探索属性：独立于命数，不派生战斗属性，也不计入战斗战力。
+AD.DROP_LUCK = "dropLuck"  -- 幸运值（仅主线击杀装备掉落）
+AD.DROP_LUCK_CAP = 200     -- 本队有效幸运值上限
+AD.DROP_LUCK_DESC = "本队出战成员的幸运值相加，开战时确定，本场阵亡不扣除。每1点使主线击杀装备掉落概率相对提高1%；品质Q1至Q6的原有权重分别乘以1、1+幸运值/500、1+2×幸运值/500、1+3×幸运值/500、1+4×幸运值/500、1+幸运值/100。本队有效幸运值最多200，掉落概率最多100%，不突破关卡品质上限或开启原权重为0的品质。不影响离线、扫荡、副本固定奖励、卷轴或词条品级。"
+
 -- 防御属性
 AD.MAX_HP           = "maxHp"           -- 生命值上限
 AD.HP               = "hp"              -- 当前生命值（运行时）
@@ -136,6 +141,7 @@ AD.META = {
     [AD.VIT] = { name = "体质",   valueModel = 5,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.LUK] = { name = "命数",   valueModel = 5,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.SPI] = { name = "魂火",   valueModel = 5,  dataType = AD.TYPE_FLOAT, default = 0 },
+    [AD.DROP_LUCK] = { name = "幸运值", valueModel = 0, refineValueModel = 1, dataType = AD.TYPE_FLOAT, default = 0, desc = AD.DROP_LUCK_DESC },
 
     -- 防御属性
     [AD.MAX_HP]           = { name = "生命值",       valueModel = 0.03, dataType = AD.TYPE_INT,   default = 0 },
@@ -211,6 +217,7 @@ AD.META = {
 -- ======================== 属性说明（用于 UI 气泡提示） ========================
 
 AD.DESC = {
+    [AD.DROP_LUCK] = AD.DROP_LUCK_DESC,
     -- 基础属性（六围）
     [AD.STR] = "每1点增加1物理攻击力、0.5%物理伤害加成、1.0护甲、5生命值",
     [AD.AGI] = "每1点增加0.5物理攻击力、0.5魔法攻击力、0.4%攻击速度、0.15护甲、0.1%闪避加成、0.4命中值、0.35闪避值",

@@ -342,7 +342,7 @@ function M.run(rt)
     local function applyKillDrop(data)
         local stageEntry = StageConfig.getStage(data.stageId)
         if not stageEntry then return end
-        local quality = DropSystem.rollKillDrop(stageEntry)
+        local quality = DropSystem.rollKillDrop(stageEntry, data)
         local scrollType = DropSystem.rollScrollDrop(stageEntry)
         if data.isFirstClear then
             if quality then
@@ -400,10 +400,12 @@ function M.run(rt)
     -- 第 2/3 队不记首通，只按挂机掉落叠加
     BattleTriPage.setOnDrop(function(data)
         if data.dropOnly then
-            applyKillDrop({ stageId = data.stageId, isFirstClear = true })
+            applyKillDrop({ stageId = data.stageId, isFirstClear = true,
+                teamIdx = data.teamIdx, dropLuck = data.dropLuck })
             return
         end
-        applyKillDrop({ stageId = data.stageId, isFirstClear = false })
+        applyKillDrop({ stageId = data.stageId, isFirstClear = false,
+            teamIdx = data.teamIdx, dropLuck = data.dropLuck })
     end)
     BattleTriPage.setOnStageClear(function(_, _)
         showKeptDrops("战斗掉落")

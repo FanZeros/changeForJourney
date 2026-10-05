@@ -1,5 +1,49 @@
 # 《宿命旅途 · 终焉之门》玩法文档（按实际实现）
 
+## 2026-10-05 game03 永久首通与塔选卡选择性整合
+
+用户在对比后通过实际AskUserQuestion选择“先合账本与塔”，随后明确“先push分支，严格只改”。本批不引入三队首通/上下文重构，不修改共享根构建配置、其他game目录或本地项目身份。
+
+- **账本**：`BattleDataRestore` 只合并本地及输入的有效正整数true键；部分、空和false快照不擦除永久事实，显式清档使用真实Scene/Dispatcher reset。保留本地排序签名同步、max后备推断、终焉门禁、一队旧关与原奖励逻辑。
+- **塔选卡**：Service唯一append，回执为独立快照，run/selection/floor/wave/requestId匹配；Scene仅在完整成功回执后应用新强化并换波。Panel发送前锁请求，发送false/抛错、Service异常和丢回执均有匹配释放/重试；结果未知只允许同卡新requestId重试，迟到旧回执不能消费新请求。20/28从基准计算总攻速倍率，避免换波/重入重复乘算；原波间满血规则未改。
+- **兼容边界**：DungeonPage仅增量转发塔选卡回执并透传sender结果；三资源副本配置、结算/持久化事务、导航、五语文案、纯文字标题及TalentManager单位表API保持原样。没有复制远端删除列表或夹带玩家档、上传ZIP、缓存。
+- **本轮真实Runtime验证**：最终塔229/0、永久账本101/0、共享首通70/0；相关回归资源规则3327、兼容289、资源战斗11183、选队2079、选关背景1780、奖励32用例3036、三队进度227、终焉940、剧情82恢复1050断言均ALL PASS，切关入口也ALL PASS。测试在game03脚本根运行，使用明确内存夹具及必要外围替身，不读取真实玩家档；不据此宣称实机图形、性能或触控全通过。
+- **静态与构建**：修改Lua逐文件LSP请求items=[]，但workspace摘要files=0且官方构建日志daemon unavailable/skip gate，不宣称全仓静态清零。官方build已调用 `scriptsPath=game03/scripts`，入口校验成功，但日志实际扫描根配置的game04资源，不能算game03打包成功；用户未授权临时改根配置，正确game03构建/预览仍未验证。不手工写dist，不把别项目产物冒充本批。
+- **提交与推送**：保持独立分支 `feat1005/game03-maker-compare`，对比提交c7255da、修复提交6ed1ef6（14文件）。2751路径规范检查0错误/0警告，规范校验器36测试全部通过；独立只读复核未发现本批新增确定性阻塞，旧FloorWin终波事务校验不在本批。正常push同名分支到原origin GitHub返回128，原因缺用户名/即时认证；Maker PAT不发送给GitHub。代码完整保存本地，推送目标/认证待实际AskUserQuestion确认，不推workspace系列、不强推、未创建或合并PR。
+
+## 2026-10-05 game03 与 Maker 仓库对比
+
+以下是本批实施前的对比快照（c7255da），不是实施后的当前状态。
+
+本轮仅在 `/workspace/game03` 做源码对比，未修改玩法、资源或本地运行身份，未推送远端、未创建或合并 PR。
+
+- 本地固定基线为 `workspace930@372f4506a6f55342f28964b73ee60312e3c96c59`（已包含资源副本 PR86）；独立任务分支为 `feat1005/game03-maker-compare`，原分支保持不变。
+- 指定 Maker 仓库默认分支为 `main@be24a1eac718acb164dd63866c519af90a93a35b`。其可见历史为独立初始化提交及两次上传同步，当前本地为浅克隆，已取得历史中未找到共同祖先；不宜直接使用无关历史整包合并。
+- 大包拉取超过工具等待窗口后，从已下载对象校验恢复提交与目录树，并定向取得差异源码、测试及配置。最新快照共2681路径，源码与既有正式资源内容均可读；仅上传ZIP及玩家存档两个内容对象未下载，因此不宣称完整仓库clone/fetch成功。
+- HEAD到远端快照共148路径差异：新增15、修改52、删除81（包含meta及工具目录）；其中64份Lua脚本为新增5、修改46、删除13。删除列表代表远端缺失，不代表本轮应删除。
+
+### 值得选择性迁移的内容
+
+1. **永久首通恢复**：`BattleDataRestore` 把有效正整数键、值为true的当前账本与输入账本取并集，部分/空快照不再抹掉历史事实。保留本地已有排序签名同步和显式清档边界，并配套新 `battle_cleared_monotonic_test`。
+2. **通天塔单次选卡事务**：`TowerService/TowerHandler/TowerBuffPick/TowerBattleScene` 增加当局、波次、选择及请求身份，Service单一写入，匹配成功回执后应用并换波，失败保持待选、重复回执幂等；`TowerBuffRuntime` 避免20/28攻击间隔换波重复乘算。应完整迁移塔链路，并在本地新版 `DungeonPage` 增量接入回执转发，不能覆盖整页。
+3. **三队首通与状态隔离**：远端Driver按开场账本快照选择正式首通敌表，增加附加怪、词缀/狂暴及合法复活与死亡收尾计时边界；RCH/TAL和冰雕增加战线作用域，Lab恢复进入前上下文。新 `BattleRuntimeContext` 需要词缀、StageBerserk、Driver、Scene、塔及副本宿主完整配套，不能只复制单文件。
+4. **追加天赋待持久化队列**：可以融合跨战线共享dirty/persistAcc，但必须保留本地保存时读取最新owned.extraTalent的保护，防止旧整表覆盖后续成长/消耗。
+
+### 必须保留或排除的内容
+
+- 保留本地金币、装备、黑钻副本配置、独立战斗/结算/冷恢复、选关入口、五语文案及既有专项。远端缺少 `StageSelectResources`、`DungeonBattleScope`、`DungeonCombatRuntime`、`DungeonEnemyLifecycle`、`DungeonRewards`、`I18nDungeons` 与资源副本测试，不可照搬删除。
+- 本地副本已通过独立脚本实例及函数桥接隔离词缀/RCH/狂暴。远端 `TalentManager` 删除本地副本使用的单位表挂载API，直接覆盖会破坏现有 `DungeonBattleScope`；迁移时保留或兼容这组接口。
+- 保留本地 `Standalone` 副本页暂停/返回重开与离页清理守卫；远端恢复默认战斗持续更新的写法会撤回这些新保护。
+- 保留当前“角色属性/装备加成”纯文字标题。远端 `CharacterEquipStats` 重新加上方括号与上下箭头，其对应测试也改回旧标题，不属于本轮建议修复。
+- 不带入 `standalone_save.json`、Python `__pycache__`、`assets/archive/changeForJourney-web-upload-9ae0d3f0.zip`及其meta，不覆盖本地 `.project` 绑定身份，不删除本地发布工具和协作目录。
+- 远端第二次同步中的角色卡、标题背景、剧情背景及大部分其他修复已经与当前game03逐对象一致；当前正式图片/音频不存在新的内容差异，不应重复迁移。
+
+### 验证状态与建议
+
+本轮未实施生产或测试修改，未运行玩法专项或构建；文档改动 `git diff --check` 通过。远端交接中历史测试和build结果不计作本轮验证。子项目官方build完整隔离行为仍需在实施阶段核实，不通过将game03同步到workspace根的方式绕过。
+
+**建议：保留当前game03，使用独立功能分支逐块迁移经过确认的修复，先永久账本与通天塔，再三队首通/状态隔离；不整包覆盖、不做无关历史全树合并。** 合并范围由实际AskUserQuestion确认，完成每一阶段后继续选项式交接。
+
 ## 2026-10-04 角色详情左右轮播卡比例核查
 
 核查基线`workspace930@cee85080`，独立分支`feat1004b/detail-side-card-ratio-audit`；本轮只核查，不修改生产布局。

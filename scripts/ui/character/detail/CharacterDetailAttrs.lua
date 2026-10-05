@@ -76,6 +76,7 @@ M.ATTR_LEFT_PRIORITY = {
     AD.FINAL_ARMOR_BONUS,
     AD.FINAL_ENERGY_SHIELD_BONUS,
     AD.FINAL_DODGE_BONUS,
+    AD.DROP_LUCK,
 }
 
 --- 右列候选属性（前3个为特殊显示：攻击类型/攻击间隔/攻击目标，不走 AD.META）
@@ -143,6 +144,8 @@ M.ATTR_DISPLAY_ORDER = {
     AD.HEAL_BONUS, AD.HEAL_CRIT_RATE, AD.HEAL_CRIT_DMG,
     AD.FINAL_STR_BONUS, AD.FINAL_AGI_BONUS, AD.FINAL_INT_BONUS,
     AD.FINAL_VIT_BONUS, AD.FINAL_LUK_BONUS, AD.FINAL_SPI_BONUS,
+    -- 探索属性独立展示，不混入六围或战斗伤害。
+    AD.DROP_LUCK,
     -- 基础信息
     "_atkType", AD.ATK_INTERVAL, "_atkTargets",
     -- 特殊机制/神器

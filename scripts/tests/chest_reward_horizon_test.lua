@@ -137,17 +137,22 @@ function Start()
             ["ui.character.panel.CharacterPanel"] = mock({ getTotalPower = function() return 0 end }),
             ["ui.battle.tri.BattleTriPage"] = mock({ isOpen = function() return mode == "tri" end }),
             ["ui.tower.TowerBattleScene"] = mock({ isActive = function() return mode == "tower" end }),
+            ["ui.battle.popup.TerminalConfirmDialog"] = page(),
+            ["ui.tavern.TargetRecruitPanel"] = page(),
+            ["ui.tavern.TavernPopups"] = page(),
             ["core.DrawUtil"] = originalRequire("core.DrawUtil"),
             ["core.DarkIcon"] = originalRequire("core.DarkIcon"),
         }
         for _, name in ipairs({ "config.GameConfig", "config.EquipmentConfig", "config.HeroConfig", "core.NumberUtil",
-            "ui.widget.ImageCache", "config.ResourceDefs", "ui.widget.HeroFrame", "config.StageConfig", "core.I18n",
+            "ui.widget.ImageCache", "config.ResourceDefs", "ui.widget.HeroFrame", "ui.widget.BattleRewardQueue", "config.StageConfig", "core.I18n",
             "shared.artifact.ArtifactDefs", "shared.Protocol" }) do mods[name] = originalRequire(name) end
         -- cache:GetFile 是只读项目资源，不走玩家存档 File；load 创建独立实例，不操作 package.loaded。
         local function source(name)
             local path = name:gsub("%.", "/") .. ".lua"
             local f = assert(cache:GetFile(path), "缺少真实Lua资源 " .. path)
-            check(f:IsOpen(), "打开项目源码 " .. path)
+            -- 新依赖只验证源码可用，不改变既有业务断言计数。
+            if name == "boot.SeamBackGesture" then assert(f:IsOpen(), "打开项目源码 " .. path)
+            else check(f:IsOpen(), "打开项目源码 " .. path) end
             local lines = {}
             while not f:IsEof() do lines[#lines + 1] = f:ReadLine() end
             f:Dispose()
@@ -167,6 +172,7 @@ function Start()
         local DrawPanel = compile("ui.church.ChurchArtifactDrawPanel")
         local Results = compile("ui.church.ChurchResults")
         local Defs, Protocol = mods["shared.artifact.ArtifactDefs"], mods["shared.Protocol"]
+        mods["boot.SeamBackGesture"] = compile("boot.SeamBackGesture")
         mods["boot.StandaloneHorizonInput"] = compile("boot.StandaloneHorizonInput")
         mods["boot.OfflineRewardOverlay"] = compile("boot.OfflineRewardOverlay")
         local horizonSource = source("boot.StandaloneHorizon")
@@ -355,6 +361,15 @@ function Start()
         end
         run("row只对照真实drawRegion/handleInputRegion", function()
             fixture("tri", 3, true)
+            -- 前一 shared global 仍展示：新规则 row 排队不抢占，先完成实际关闭及保护期。
+            if Reward.isOpen() then
+                Reward.close()
+                clock.elapsedTime = clock.elapsedTime + 0.26
+                Reward.update(0.26)
+                clock.elapsedTime = clock.elapsedTime + 0.16
+                Reward.update(0.16)
+            end
+            check(not Reward.isOpen(), "row对照前完成global关闭与0.15秒guard")
             H_focusPanel = nil
             local item = { type = "artifact", id = "row", artifactId = 1, quality = 1,
                 name = Defs.getName({ artifactId = 1, quality = 1 }) }

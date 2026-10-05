@@ -154,6 +154,14 @@ local state = {
     chDragY   = nil,   -- 左栏按下位置
     chDragScroll = 0, -- 按下时滚动起点
     chDragMoved = false,
+    cardScroll = {},       ---@type table<number, number> 各关敌人列表独立偏移
+    cardDragId = nil,      ---@type number|nil 当前捕获的关卡
+    cardDragX = 0,
+    cardDragY = 0,
+    cardDragLastX = 0,
+    cardDragScroll = 0,
+    cardDragHorizontal = false,
+    cardDragMoved = false, -- 锁存整次手势，拖回起点也不能误切关
 
     -- [选关 v3] 全链数据缓存（ensureCache 维护, 随 maxStage 变化重建）
     cacheGroups   = nil,  ---@type table[] 章节组列表
@@ -314,11 +322,15 @@ local function ensureMonsterCard(vg, monsterId)
 end
 
 --- 一关实际出场的敌人 id：常规怪 + 首领 + 首通附加怪
+---@class StageSelectEnemyCard
+---@field id number
+---@field count number
 ---@param entry table|nil
----@return number[]
+---@return StageSelectEnemyCard[]
 local function stageMonsterCards(entry)
-    local cards = {}
-    local counts = {}
+    local cards = {} ---@type StageSelectEnemyCard[]
+    local counts = {} ---@type table<number, number>
+    local seen = {} ---@type table<number, boolean>
     if not entry then return cards end
     local total = entry.firstCount or entry.idleCount or 0
     local types = entry.monsters or {}
@@ -338,8 +350,8 @@ local function stageMonsterCards(entry)
         counts[monsterId] = (counts[monsterId] or 0) + 1
     end
     local function push(monsterId)
-        if monsterId and counts[monsterId] and not cards["_" .. monsterId] then
-            cards["_" .. monsterId] = true
+        if monsterId and counts[monsterId] and not seen[monsterId] then
+            seen[monsterId] = true
             cards[#cards + 1] = { id = monsterId, count = counts[monsterId] }
         end
     end
@@ -370,6 +382,68 @@ local function chapterListBounds(groups)
     local top = D.CH_Y0 + (needScroll and 30 or 0)
     local bottom = top + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
     return top, bottom
+end
+
+-- 标签区 | 敌人视口 [卡面 + 名称 + xN] | 行右缘
+--         CARD_X=455 <---------------> MID_X+MID_W-4=891
+-- 仅敌人内容平移；裁剪先在行坐标设置，避免滚动后侵入标签或相邻关卡。
+local function cardViewport(rowY)
+    return D.CARD_X, rowY + 6, D.MID_X + D.MID_W - D.CARD_X - 4, D.ROW_H - 12
+end
+
+local function cardScrollLimit(cards)
+    local _, _, width = cardViewport(0)
+    -- 两端各留2像素，包含居中描边和抗锯齿，首末卡边框不会被裁掉。
+    local contentW = #cards * D.CARD_W + math.max(0, #cards - 1) * D.CARD_GAP + 4
+    return math.max(0, contentW - width), contentW
+end
+
+local function resetCardScroll()
+    state.cardScroll = {}
+    state.cardDragId = nil
+    state.cardDragHorizontal = false
+    state.cardDragMoved = false
+end
+
+local function cardRowAt(groups, x, y)
+    local sel = selectedGroup(groups)
+    if not sel then return nil end
+    for i, id in ipairs(sel.ids) do
+        local rowY = D.ROW_Y0 + (i - 1) * (D.ROW_H + D.ROW_GAP)
+        local vx, vy, vw, vh = cardViewport(rowY)
+        if x >= vx and x <= vx + vw and y >= vy and y <= vy + vh then
+            return id, stageMonsterCards(SC.getStage(id))
+        end
+    end
+    return nil
+end
+
+local function drawTerminalGuide(vg, rowY, locked)
+    local x, width = D.MID_X + 16, D.MID_W - 32
+    local cursorY = rowY + D.ROW_H + 34
+    local sources = {
+        "最多三队一起上场，不必三队全部存活。",
+        "同编号敌人跨队共享生命，击败全部三名敌人即可通关。",
+        I18n.format("限时 %d 秒；全部参战队伍失守或超时则失败。",
+            (GameConfig.Battle and GameConfig.Battle.TIME_LIMIT_SEC) or 300),
+        "胜利进入下一难度，失败退回本难度最后一关。",
+    }
+    for index, source in ipairs(sources) do
+        -- 开窗缩放很小时字体会被运行时最小像素字号放大；按稳定设计空间测宽，
+        -- 不把动画首帧的窄折行缓存到后续帧。
+        nvgSave(vg)
+        nvgResetTransform(vg)
+        local lines = titleLines(vg, source, width, 24)
+        nvgRestore(vg)
+        for _, line in ipairs(lines) do
+            drawTextStroke(vg, x, cursorY, line, 24,
+                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+                index == 1 and 201 or 236, index == 1 and 151 or 226,
+                index == 1 and 59 or 198, 2, { alpha = locked and 0.65 or 1 })
+            cursorY = cursorY + 30
+        end
+        cursorY = cursorY + 14
+    end
 end
 
 -- ======================== Public API ========================
@@ -407,8 +481,9 @@ local function drawChapterBackground(vg, stageId, x, y, hue, isSel, locked)
         -- 等比cover并居中裁切，圆角路径保持现有卡片热区与动画变换。
         local scale = math.max(D.CH_W / srcW, D.CH_BTN_H / srcH)
         local w, h = srcW * scale, srcH * scale
-        nvgFillPaint(vg, nvgImagePattern(vg, x + (D.CH_W - w) * 0.5,
-            y + (D.CH_BTN_H - h) * 0.5, w, h, 0, image, 1.0))
+        local imagePaint = nvgImagePattern(vg, x + (D.CH_W - w) * 0.5,
+            y + (D.CH_BTN_H - h) * 0.5, w, h, 0, image, 1.0) --[[@as NVGpaint]]
+        nvgFillPaint(vg, imagePaint)
         nvgFill(vg)
         nvgBeginPath(vg)
         nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
@@ -440,6 +515,7 @@ function StageSelectDialog.open(teamIdx)
     state.openTime = time.elapsedTime
     state.chDragY = nil
     state.chDragMoved = false
+    resetCardScroll()
     state.targetTeam = teamIdx
     local BS = require("ui.battle.scene.BattleScene")
     local curStage = BS.getStageId()
@@ -469,6 +545,8 @@ end
 function StageSelectDialog.close()
     state.open = false
     state.chDragY = nil
+    state.chDragMoved = false
+    resetCardScroll()
 end
 
 function StageSelectDialog.isOpen()
@@ -492,24 +570,46 @@ function StageSelectDialog.handleScroll(wheel, x, y)
         and y >= top - 70 and y <= bottom + 70 then
         local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
         state.chScroll = math.max(0, math.min(maxScroll, state.chScroll - wheel))
+    else
+        local id, cards = cardRowAt(groups, x, y)
+        if id and cards then
+            local limit = cardScrollLimit(cards)
+            local offset = math.max(0, math.min(limit,
+                (state.cardScroll[id] or 0) - wheel * (D.CARD_W + D.CARD_GAP)))
+            state.cardScroll[id] = offset
+            -- 增量拖动直接使用当前偏移；滚轮混用后不回到按下时的旧位置。
+            if state.cardDragId == id then state.cardDragScroll = offset end
+        end
     end
     return true
 end
 
 function StageSelectDialog.handleDragBegin(x, y)
     if not state.open then return false end
+    state.chDragY = nil
     state.chDragMoved = false
+    state.cardDragId = nil
+    state.cardDragHorizontal = false
+    state.cardDragMoved = false
     local groups = ensureCache()
     local top, bottom = chapterListBounds(groups)
     if x >= D.CH_X and x <= D.CH_X + D.CH_W and y >= top and y <= bottom then
         state.chDragY = y
         state.chDragScroll = state.chScroll
-        state.chDragMoved = false
+    else
+        local id, cards = cardRowAt(groups, x, y)
+        if id and cards then
+            local limit = cardScrollLimit(cards)
+            state.cardDragId = id
+            state.cardDragX, state.cardDragY = x, y
+            state.cardDragLastX = x
+            state.cardDragScroll = math.max(0, math.min(limit, state.cardScroll[id] or 0))
+        end
     end
     return true
 end
 
-function StageSelectDialog.handleDragMove(_, y)
+function StageSelectDialog.handleDragMove(x, y)
     if not state.open then return false end
     if state.chDragY then
         local delta = state.chDragY - y
@@ -519,6 +619,25 @@ function StageSelectDialog.handleDragMove(_, y)
         local step = D.CH_BTN_H + D.CH_GAP
         state.chScroll = math.max(0, math.min(maxScroll,
             state.chDragScroll + math.floor(delta / step + 0.5)))
+    elseif state.cardDragId then
+        local deltaX, deltaY = state.cardDragX - x, state.cardDragY - y
+        if math.max(math.abs(deltaX), math.abs(deltaY)) >= 15 then
+            if not state.cardDragMoved then
+                state.cardDragHorizontal = math.abs(deltaX) >= math.abs(deltaY)
+                state.cardDragLastX = state.cardDragX
+                print("[StageSelectDialog] 拖动敌人列表: " .. tostring(state.cardDragId))
+            end
+            state.cardDragMoved = true
+        end
+        if state.cardDragMoved and state.cardDragHorizontal then
+            local cards = stageMonsterCards(SC.getStage(state.cardDragId))
+            local limit = cardScrollLimit(cards)
+            local delta = state.cardDragLastX - x
+            state.cardDragScroll = math.max(0, math.min(limit, state.cardDragScroll + delta))
+            state.cardScroll[state.cardDragId] = state.cardDragScroll
+            -- 每步消化端点外位移，反向拖动立即响应，不必先走回按下位置。
+            state.cardDragLastX = x
+        end
     end
     return true
 end
@@ -526,6 +645,9 @@ end
 function StageSelectDialog.handleDragEnd()
     if not state.open then return false end
     state.chDragY = nil
+    state.cardDragId = nil
+    state.cardDragHorizontal = false
+    -- moved 留到点击消费或下一次按下；宿主可能把往返拖动误判为短点击。
     return true
 end
 
@@ -708,16 +830,6 @@ function StageSelectDialog.draw(vg)
         end
         nvgText(vg, x + 16, y + D.ROW_H - 34, sub, nil)
 
-        -- 终焉神殿额外说明：三队协同战（TerminalRaid 三队共池机制）
-        -- 单独一行放在 sub 下方：卡面与 xN 计数占满行右侧，同行放不下
-        if SC.isTerminalTemple(id) then
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 18)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, locked and 140 or 220))
-            nvgText(vg, x + 16, y + D.ROW_H - 14, "可三队一起上场", nil)
-        end
-
         -- 推荐战力（行左中，v2.61 接线 / v2.63 图标化）：
         -- 口径 = battle-lab 开荒三人组无养成实测阈值（ml≤46 实测 / ml≤92 保守外推），
         -- 带装备养成的玩家实际需求更低，因此只做「达标提示」不做硬性门槛。
@@ -751,12 +863,18 @@ function StageSelectDialog.draw(vg)
                 rr, rg, rb, 2, { alpha = iconAlpha })
         end
 
-        -- 敌人卡面（行右侧横排）
+        -- 敌人卡面（行右侧横排；名称和数量随卡面一起滚动）
         local mids = stageMonsterCards(entry)
+        local maxOffset, contentW = cardScrollLimit(mids)
+        local offset = math.max(0, math.min(maxOffset, state.cardScroll[id] or 0))
+        state.cardScroll[id] = offset
+        local vx, vy, vw, vh = cardViewport(y)
         local cardCY = y + 62
+        nvgSave(vg)
+        nvgIntersectScissor(vg, vx, vy, vw, vh)
         for ci, info in ipairs(mids) do
             local monsterId = info.id
-            local cardCX = D.CARD_X + (ci - 1) * (D.CARD_W + D.CARD_GAP) + D.CARD_W * 0.5
+            local cardCX = D.CARD_X + 2 + (ci - 1) * (D.CARD_W + D.CARD_GAP) + D.CARD_W * 0.5 - offset
             local card = ensureMonsterCard(vg, monsterId)
             if card >= 0 then
                 drawImageCover(vg, card, cardCX, cardCY, D.CARD_W, D.CARD_H, locked and 0.4 or 1.0)
@@ -786,6 +904,22 @@ function StageSelectDialog.draw(vg)
                 NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 214, 120, 2,
                 { alpha = locked and 0.55 or 1 })
         end
+        nvgRestore(vg)
+        if maxOffset > 0 then
+            local thumbW = vw * vw / contentW
+            local thumbX = vx + (vw - thumbW) * offset / maxOffset
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, vx, y + D.ROW_H - 6, vw, 3, 1.5)
+            nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 60))
+            nvgFill(vg)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, thumbX, y + D.ROW_H - 6, thumbW, 3, 1.5)
+            nvgFillColor(vg, nvgRGBA(201, 151, 59, locked and 110 or 220))
+            nvgFill(vg)
+            drawFittedTitle(vg, vx + vw * 0.5, y + D.ROW_H - 22, "左右拖动查看敌人", vw - 8, 18, 1,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 201, 151, 59, 2)
+        end
+        if SC.isTerminalTemple(id) then drawTerminalGuide(vg, y, locked) end
     end
     nvgRestore(vg)
 
@@ -802,8 +936,9 @@ function StageSelectDialog.handleInput(x, y)
 
     local BS = require("ui.battle.scene.BattleScene")
     local groups, maxOrder = ensureCache()
-    if state.chDragMoved then
+    if state.chDragMoved or state.cardDragMoved then
         state.chDragMoved = false
+        state.cardDragMoved = false
         return true
     end
     local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
@@ -836,6 +971,7 @@ function StageSelectDialog.handleInput(x, y)
         local by = listTop + (vi - 1) * (D.CH_BTN_H + D.CH_GAP)
         if x >= bx and x <= bx + D.CH_W and y >= by and y <= by + D.CH_BTN_H then
             BF.trigger("stage_sel_ch")
+            if tostring(state.selKey) ~= tostring(g.key) then resetCardScroll() end
             state.selKey = g.key
             return true
         end

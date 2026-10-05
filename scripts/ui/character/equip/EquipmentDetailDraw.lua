@@ -362,9 +362,8 @@ function EquipmentDetailDraw.create(ctx)
                 nvgText(vg, REF_STAT_TEXT_X + offsetX, statCY, sName, nil)
 
                 -- 属性值含装备升阶加成
-                local rawVal = s[2]
-                if i == 1 then rawVal = rawVal * (1 + ascendBoost) end
-                local sVal = formatStatValue(s[1], rawVal)
+                local rawVal = EquipmentSystem.effectiveBaseStatValue(equip, i, ascendBoost)
+                local sVal = EquipmentSystem.formatBaseStatValue(s[1], rawVal)
                 drawTextStroke(vg, REF_STAT_VAL_X + offsetX, statCY, sVal,
                     REF_STAT_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
                     255, 255, 255, 4)
@@ -607,14 +606,13 @@ function EquipmentDetailDraw.create(ctx)
             local boost = EquipmentSystem.getAscendBoost(equip)
             for i, stat in ipairs(equip.baseStats) do
                 local y = COMPACT_STAT_Y0 + (i - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
-                local raw = stat[2]
-                if i == 1 then raw = raw * (1 + boost) end
+                local raw = EquipmentSystem.effectiveBaseStatValue(equip, i, boost)
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, 36)
                 nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
                 nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
                 nvgText(vg, leftX, y, getStatName(stat[1]), nil)
-                drawTextStroke(vg, rightX, y, formatStatValue(stat[1], raw), 36,
+                drawTextStroke(vg, rightX, y, EquipmentSystem.formatBaseStatValue(stat[1], raw), 36,
                     NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
                 bottom = y + REF_STAT_BG_H * 0.5
             end

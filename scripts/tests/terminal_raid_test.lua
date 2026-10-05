@@ -439,7 +439,7 @@ end
 
 -- UrhoX 的 require 有引擎侧缓存，不靠 package.loaded 清缓存隔离私有状态。
 -- 从已有生产资源只读编译独立模块；模块代码与真实依赖不替换。
-local function compileModule(name)
+local function compileModule(name, env)
     local file = assert(cache:GetFile(name:gsub("%.", "/") .. ".lua"))
     local ok, text = pcall(function()
         local lines = {}
@@ -448,10 +448,10 @@ local function compileModule(name)
     end)
     file:Dispose()
     assert(ok, text)
-    return assert(load(text, "@" .. name, "t", _G))()
+    return assert(load(text, "@" .. name, "t", env or _G))()
 end
 
-local function openTestPage()
+local function openTestPage(env)
     local CP = require("ui.character.panel.CharacterPanel")
     local BS = require("ui.battle.scene.BattleScene")
     local drivers, teams = {}, {}
@@ -483,7 +483,7 @@ local function openTestPage()
         drivers[row] = drv
         return drv
     end)
-    local Page = compileModule("ui.battle.tri.BattleTriPage")
+    local Page = compileModule("ui.battle.tri.BattleTriPage", env)
     defer(function()
         Page.close()
         for _, drv in ipairs(drivers) do
@@ -623,6 +623,182 @@ local function testPageImmediateVictoryAndRewards()
     check(observed.victories == 1 and #observed.rewards == 3, "胜利后再次 Page.update 不重复完成或奖励")
 end
 
+-- 图形/SFX/时钟只是叶子 spy；Page、RewardPopup、Cascade、BattleView、
+-- BattleDraw 均只读编译真实源码，避免私有状态污染其他用例或改玩家存档。
+local function openTerminalUIFixture()
+    ---@type any
+    local env = setmetatable({}, { __index = _G })
+    local clock = { elapsedTime = 100 }
+    env.time = clock
+    local modules = {}
+    env.require = function(name) return modules[name] or require(name) end
+    local texts, rectangles, fills = {}, {}, {}
+    local shape = {}
+    local color = {}
+    local function noop() end
+    for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgScissor", "nvgIntersectScissor",
+        "nvgTranslate", "nvgScale", "nvgFontFace", "nvgFontSize", "nvgTextAlign",
+        "nvgFillPaint", "nvgStrokeColor", "nvgStrokeWidth", "nvgStroke", "nvgMoveTo",
+        "nvgLineTo", "nvgClosePath", "nvgGlobalAlpha", "nvgRotate", "nvgCircle" }) do
+        patch(_G, name, noop)
+    end
+    patch(_G, "nvgCreateImage", function() return -1 end)
+    patch(_G, "nvgRGBA", function(r, g, b, a) return { r = r, g = g, b = b, a = a } end)
+    patch(_G, "nvgTextBounds", function(_, _, _, text) return utf8.len(text) * 12 end)
+    patch(_G, "nvgText", function(_, x, y, text) texts[#texts + 1] = { x = x, y = y, text = text } end)
+    patch(_G, "nvgTextBox", function(_, x, y, _, text) texts[#texts + 1] = { x = x, y = y, text = text } end)
+    patch(_G, "nvgBeginPath", function() shape = {} end)
+    patch(_G, "nvgRect", function(_, x, y, w, h) shape = { x = x, y = y, w = w, h = h } end)
+    patch(_G, "nvgRoundedRect", function(_, x, y, w, h, r)
+        shape = { x = x, y = y, w = w, h = h, radius = r }
+        rectangles[#rectangles + 1] = shape
+    end)
+    patch(_G, "nvgFillColor", function(_, value) color = value end)
+    patch(_G, "nvgFill", function() fills[#fills + 1] = { shape = shape, color = color } end)
+    patch(require("systems.GameSFX"), "play", noop)
+    for _, name in ipairs({ "ui.battle.stage.SweepDialog", "ui.battle.popup.DamageStatsPanel",
+        "ui.battle.stage.StageSelectDialog", "ui.battle.popup.TerminalConfirmDialog" }) do
+        patch(require(name), "isOpen", function() return false end)
+    end
+    patch(require("ui.character.equip.EquipmentBag"), "shouldBattleOverlay", function() return false end)
+    local Cascade = compileModule("ui.widget.RewardCascade", env)
+    modules["ui.widget.RewardCascade"] = Cascade
+    local timeline = {}
+    local oldNew = Cascade.new
+    patch(Cascade, "new", function(count, opts)
+        local result = oldNew(count, opts)
+        timeline.current = result
+        return result
+    end)
+    local Popup = compileModule("ui.hud.popup.RewardPopup", env)
+    modules["ui.hud.popup.RewardPopup"] = Popup
+    local Draw = compileModule("ui.battle.scene.BattleDraw", env)
+    Draw.setContext({ combat = BC, imgHpBg = -1, imgAllyTags = { -1, -1, -1, -1, -1, -1 } })
+    modules["ui.battle.scene.BattleDraw"] = Draw
+    modules["ui.battle.scene.BattleView"] = compileModule("ui.battle.scene.BattleView", env)
+    local Page, drivers, raid, observed = openTestPage(env)
+    return Page, drivers, raid, observed, Popup, clock, timeline, texts, rectangles, fills
+end
+
+local function testPageRowRewardInput()
+    local Page, drivers, raid, observed, Popup, clock, timeline = openTerminalUIFixture()
+    local closed, routes = 0, 0
+    local oldInput = Popup.handleInputRegion
+    patch(Popup, "handleInputRegion", function(...)
+        routes = routes + 1
+        return oldInput(...)
+    end)
+    Popup.show("终焉首通奖励", { { type = "gold", amount = 1 }, { type = "diamond", amount = 1 } },
+        { row = 1, cascade = true, onClose = function() closed = closed + 1 end })
+    -- 真实 draw 写入当前窗口尺寸；输入必须使用同一 row1 矩形。
+    patch(Popup, "drawContent", function() end) -- 本例只测输入，渲染用例独立覆盖。
+    Page.draw({}, 1920, 1080)
+    local x, y, w, h = Page.getInteriorRect(1)
+    local wx, wy = x + w * 0.5, y + h * 0.48
+    local cascade = assert(timeline.current)
+    check(Popup.currentRowTag() == 1 and not cascade:finished(), "真实终焉 row1 奖励仍在逐件出场")
+    check(Page.handleInput(wx, wy) and routes == 1 and not cascade:finished() and closed == 0,
+        "show 同帧点击消费但保留真实奖励同帧保护")
+    clock.elapsedTime = clock.elapsedTime + 0.06
+    check(Page.handleInput(wx, wy) and routes == 2 and cascade:finished()
+        and Popup.currentRowTag() == 1 and closed == 0, "终焉 row1 首次有效点击只 skip，不 close")
+    clock.elapsedTime = clock.elapsedTime + 0.3
+    Popup.update(0.3)
+    check(Popup.currentRowTag() == 1 and closed == 0, "skip 后超过关闭动画时长仍保持打开")
+
+    -- 确认、扫荡、装备覆盖层保持既有优先级，不得将点击转交奖励。
+    for _, name in ipairs({ "ui.battle.popup.TerminalConfirmDialog", "ui.battle.stage.SweepDialog" }) do
+        case("终焉奖励上方覆盖层 " .. name, function()
+            local overlay, calls = require(name), 0
+            patch(overlay, "isOpen", function() return true end)
+            patch(overlay, "handleInput", function() calls = calls + 1; return true end)
+            check(Page.handleInput(wx, wy) and calls == 1 and routes == 2 and closed == 0,
+                "既有覆盖层先消费，不抢关闭终焉奖励: " .. name)
+        end)
+    end
+    case("终焉装备覆盖层优先", function()
+        local bag, calls = require("ui.character.equip.EquipmentBag"), 0
+        patch(bag, "shouldBattleOverlay", function() return true end)
+        patch(bag, "hasOverlayRegion", function() return true end)
+        patch(require("ui.character.equip.EquipmentDetail"), "isOpen", function() return false end)
+        patch(bag, "overlayToDesign", function(a, b) return a, b end)
+        patch(bag, "handleInput", function() calls = calls + 1; return true end)
+        check(Page.handleInput(wx, wy) and calls == 1 and routes == 2 and closed == 0,
+            "装备覆盖层先消费，不抢关闭终焉奖励")
+    end)
+    check(Page.handleInput(wx, wy) and routes == 3 and closed == 0, "skip 后后续点击启动真实 close 动画")
+    clock.elapsedTime = clock.elapsedTime + 0.26
+    Popup.update(0.26)
+    check(Popup.currentRowTag() == nil and closed == 1, "close 动画结束恰一次关闭回调")
+    local battleInputs = 0
+    local function forbiddenInput() battleInputs = battleInputs + 1 end
+    local BS = require("ui.battle.scene.BattleScene")
+    patch(BS, "isSpeedButtonVisible", function() return true end)
+    patch(BS, "handleSpeedButtonInput", forbiddenInput)
+    for _, name in ipairs({ "ui.battle.stage.SweepDialog", "ui.battle.popup.DamageStatsPanel",
+        "ui.battle.stage.StageSelectDialog", "ui.widget.SoundToggle" }) do
+        patch(require(name), "handleButtonInput", forbiddenInput)
+    end
+    patch(require("ui.character.detail.CharacterDetail"), "open", forbiddenInput)
+    -- 密扫三行框内所有按钮/卡牌候选坐标：无奖励后仍不能触达真实战斗操作。
+    for row = 1, 3 do
+        local rx, ry, rw, rh = Page.getInteriorRect(row)
+        for gx = 0, 20 do
+            for gy = 0, 10 do
+                check(Page.handleInput(rx + rw * gx / 20, ry + rh * gy / 10), "终焉战斗输入锁持续消费")
+            end
+        end
+    end
+    Page.update(0)
+    check(battleInputs == 0 and routes == 3 and closed == 1, "奖励关闭后 HUD/角色操作不穿透，也不重复关闭")
+    check(not raid.finished and observed.retreats == 0 and observed.victories == 0 and #observed.rewards == 0,
+        "奖励交互不误退关、不轮回、不结算击杀奖励")
+    for row = 1, 3 do
+        check(drivers[row].terminalRaid == raid and drivers[row].stageId == TERMINAL,
+            "奖励交互保留真实终焉共享绑定，队" .. row)
+    end
+end
+
+local function testPageTerminalDraw()
+    local Page, drivers, raid, observed, _, _, _, texts, rectangles, fills = openTerminalUIFixture()
+    local limit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
+    local I18n = require("core.I18n")
+    -- 真实卡牌绘制执行（不是替换 BattleView.draw）；每一活卡仍有绿色生命填充。
+    for _, elapsed in ipairs({ 0, limit - 29, limit + 1 }) do
+        raid.elapsed = elapsed
+        local textStart, rectStart, fillStart = #texts, #rectangles, #fills
+        Page.draw({}, 1920, 1080)
+        local left = math.max(0, math.ceil(limit - elapsed))
+        local expected = I18n.format("限时 %d:%02d", left // 60, left % 60)
+        local timeCount, sharedText, cardHp = 0, 0, 0
+        local x, y = Page.getInteriorRect(1)
+        for i = textStart + 1, #texts do
+            local record = texts[i]
+            if record.text == expected and record.x == x + 28 and record.y == y + 55 then
+                timeCount = timeCount + 1
+            end
+            if record.text:find(I18n.lookup("共享生命"), 1, true) then sharedText = sharedText + 1 end
+        end
+        check(timeCount == 1, "终焉 row1 倒计时保留正确文本/位置并钳制至零 elapsed=" .. elapsed)
+        check(sharedText == 0, "终焉不绘制额外共享生命文字 elapsed=" .. elapsed)
+        check(#rectangles == rectStart, "终焉三行不绘制额外共享总血条圆角矩形 elapsed=" .. elapsed)
+        for i = fillStart + 1, #fills do
+            local fill = fills[i]
+            if fill.shape.w == 160 and fill.shape.h == 20 and fill.color.r == 0x3d
+                and fill.color.g == 0xc4 and fill.color.b == 0x4a then cardHp = cardHp + 1 end
+        end
+        check(cardHp == 12, "真实 BattleView/BattleDraw 仍绘制九 Boss 与三英雄各自血条 elapsed=" .. elapsed)
+    end
+    check(not raid.finished and observed.retreats == 0 and observed.victories == 0,
+        "draw 不改变终焉结算/退关状态")
+    for row = 1, 3 do
+        for index = 1, 3 do
+            check(drivers[row].enemies[index].hp == raid.pools[index].hp,
+                "draw 保留卡牌同编号共享生命，队" .. row .. "编号" .. index)
+        end
+    end
+end
+
 -- 保留原有 completeTriTerminal 基线：真实轮回推进、存档镜像、首通去重。
 -- 隔离 BattleScene 私有进度和持久化边界，不写玩家真实存档。
 local function testCompleteTriTerminal()
@@ -666,6 +842,8 @@ function Start()
         case("真实 Page 失败延迟", testPageFailureHold)
         case("真实 Page 超时/大dt首次失败边界", testPageTimeoutAndLargeDt)
         case("真实 Page 即时胜利和奖励口径", testPageImmediateVictoryAndRewards)
+        case("真实终焉 row1 奖励输入/覆盖层/战斗锁", testPageRowRewardInput)
+        case("真实终焉 draw 无额外共享血条且保留卡牌生命/倒计时", testPageTerminalDraw)
         case("真实主线轮回/首通去重", testCompleteTriTerminal)
     end)
     if not ok then check(false, "测试初始化/收尾异常: " .. tostring(err)) end

@@ -336,123 +336,76 @@ function Start()
         check(okC12b, "洗除诅咒成功")
         eq(EquipmentSystem.getAffixMult(e12), 1.2, "洗除诅咒不丢倍率")
 
-        -- ========== 11) 升阶副属性递增（每阶轮转 1 条普通词条 +5% 当前 value） ==========
-        eq(BlacksmithConfig.ASCEND_SUB_STAT_RATIO, 0.05, "副属性步长比例=5%")
-
-        -- 11a) q4 双词条轮转顺序：+1→词条1, +2→词条2, +3→词条1, +4→词条2
+        -- ========== 11) 固定副词条轮转；随机词条不再新增每阶投入 ==========
+        eq(BlacksmithConfig.ASCEND_SUB_STAT_RATIO, 0.05, "固定副词条步长=5%")
         newModules()
-        local s1 = putEquip(makeWeapon(4))
-        local v1 = s1.affixes[1].value
-        local v2 = s1.affixes[2].value
-        BS.AscendEquipToLevel(UID, s1.seq, 4)
-        eq(s1.affixes[1].ascBonus, v1 * 0.05 * 2, "词条1 轮转 2 次=+10%")
-        eq(s1.affixes[2].ascBonus, v2 * 0.05 * 2, "词条2 轮转 2 次=+10%")
-
-        -- 11b) 生效值 = value×倍率 + ascBonus（倍率=1 时即 value+ascBonus）
-        local effS1 = EquipmentSystem.effectiveAffixValue(s1, s1.affixes[1])
-        check(math.abs(effS1 - (v1 + v1 * 0.1)) < 1e-9, "生效值含 ascBonus")
-        local entriesS = EquipmentSystem.computeModifierEntries(s1, 0)
-        local foundAsc = false
-        for _, en in ipairs(entriesS) do
-            if en.key == s1.affixes[1].key and math.abs(en.flat - effS1) < 1e-9 then
-                foundAsc = true
-            end
+        local fixed = putEquip(EquipmentSystem.generate("O13", 12, 4))
+        local raw = fixed.baseStats
+        local oldRandom = {}
+        for i, affix in ipairs(fixed.affixes) do oldRandom[i] = affix.value end
+        check(BS.AscendEquip(UID, fixed.seq), "固定副+1成功")
+        eq(EquipmentSystem.getSecondaryAscendCount(fixed, 2), 1, "+1轮到固定副1")
+        eq(EquipmentSystem.getSecondaryAscendCount(fixed, 3), 0, "+1固定副2未轮到")
+        check(math.abs(EquipmentSystem.effectiveBaseStatValue(fixed, 2) - raw[2][2] * 1.05) < 1e-9,
+            "固定穿透保留5%小数增量")
+        check(BS.AscendEquip(UID, fixed.seq), "固定副+2成功")
+        eq(EquipmentSystem.getSecondaryAscendCount(fixed, 2), 1, "+2固定副1不重复加")
+        eq(EquipmentSystem.getSecondaryAscendCount(fixed, 3), 1, "+2轮到固定副2")
+        check(BS.AscendEquipToLevel(UID, fixed.seq, 4), "固定副+4成功")
+        for i, affix in ipairs(fixed.affixes) do
+            eq(affix.value, oldRandom[i], "非里程碑不改随机value")
+            eq(affix.ascBonus, nil, "随机词条不新增每阶ascBonus")
         end
-        check(foundAsc, "computeModifierEntries 输出含 ascBonus 加成")
-
-        -- 11c) 单阶与一键同种子等价（轮转确定性，无随机）
+        local entries = EquipmentSystem.computeModifierEntries(fixed, EquipmentSystem.getAscendBoost(fixed))
+        check(math.abs(entries[2].flat - raw[2][2] * 1.1) < 1e-9
+            and math.abs(entries[3].flat - raw[3][2] * 1.1) < 1e-9,
+            "实际属性管线两条固定副词条均提升")
+        check(fixed.baseStats == raw and raw[2][2] == EquipmentSystem.recalcBaseStats("O13", 12, EquipmentConfig.QUALITY[4].baseStrength)[2][2],
+            "升阶不改写模板基础值")
+        local lean = EquipmentSystem.dehydrate(fixed)
+        eq(lean.baseStats, nil, "固定增长不存重复派生数组")
+        local restored = EquipmentSystem.hydrate(cjson.decode(cjson.encode(lean)))
+        check(math.abs(EquipmentSystem.effectiveBaseStatValue(restored, 2) - entries[2].flat) < 1e-9,
+            "固定副增长JSON往返不丢失也不叠加")
+        check(BS.RefineEquip(UID, fixed.seq, "enhanceStone"), "洗练石成功")
+        check(BS.RefineReplace(UID, fixed.seq), "洗练替换成功")
+        check(math.abs(EquipmentSystem.effectiveBaseStatValue(fixed, 2) - entries[2].flat) < 1e-9,
+            "随机洗练不会改变固定副升阶")
         newModules()
-        local sX = putEquip(makeWeapon(3))
-        local sY = putEquip(makeWeapon(3))
-        sY.affixes = {}
-        for _, a in ipairs(sX.affixes) do
-            sY.affixes[#sY.affixes + 1] = {
-                affixId = a.affixId, quality = a.quality, value = a.value,
-                key = a.key, name = a.name,
-            }
-        end
+        local single = putEquip(EquipmentSystem.generate("O13", 12, 1))
+        local batch = putEquip(EquipmentSystem.generate("O13", 12, 1))
         math.randomseed(931)
-        BS.AscendEquipToLevel(UID, sX.seq, 6)
+        for _ = 1, 6 do BS.AscendEquip(UID, single.seq) end
         math.randomseed(931)
-        for _ = 1, 6 do BS.AscendEquip(UID, sY.seq) end
-        local sameAsc = #sX.affixes == #sY.affixes
-        for i = 1, #sX.affixes do
-            if (tonumber(sX.affixes[i].ascBonus) or 0) ~= (tonumber(sY.affixes[i].ascBonus) or 0) then
-                sameAsc = false
-            end
+        BS.AscendEquipToLevel(UID, batch.seq, 6)
+        for i = 1, #single.baseStats do
+            check(math.abs(EquipmentSystem.effectiveBaseStatValue(single, i)
+                - EquipmentSystem.effectiveBaseStatValue(batch, i)) < 1e-9, "单阶与一键固定属性一致")
         end
-        check(sameAsc, "单阶与一键 ascBonus 逐条一致")
-
-        -- 11d) 洗练换属性按价值保留投入，同属性洗练石保留固定量
         newModules()
-        local s2 = putEquip(makeWeapon(4))
-        BS.AscendEquipToLevel(UID, s2.seq, 4)
-        local oldAffixes = s2.affixes
-        local okR2a = BS.RefineEquip(UID, s2.seq, nil)
-        check(okR2a, "带 ascBonus 可洗练")
-        local okR2b = BS.RefineReplace(UID, s2.seq)
-        check(okR2b, "洗练替换成功")
-        for i = 1, 2 do
-            local expected = EquipmentSystem.convertAscBonusForRefine(oldAffixes[i], s2.affixes[i])
-            check(math.abs((s2.affixes[i].ascBonus or 0) - (expected or 0)) < 1e-9,
-                "替换后槽" .. i .. "升阶投入按价值换算")
-        end
-        local bonusAfter = s2.affixes[1].ascBonus
-        local okR2c = BS.RefineEquip(UID, s2.seq, "enhanceStone")
-        check(okR2c, "洗练石可用")
-        BS.RefineReplace(UID, s2.seq)
-        eq(s2.affixes[1].ascBonus, bonusAfter, "同属性洗练石路径 ascBonus 保留")
-
-        -- 11e) 魔化词条不轮转不持有；净化后普通槽位保留
-        newModules()
-        local s3 = putEquip(makeWeapon(5))
-        s3.affixes = {
-            { affixId = 1, quality = 3, value = 10, key = "str", name = "力量" },
-            { affixId = 1001, quality = 0, value = 5, key = "finalPhysAtkBonus", name = "最终物攻" },
-            { affixId = 2, quality = 3, value = 10, key = "agi", name = "敏捷" },
-        }
-        BS.AscendEquipToLevel(UID, s3.seq, 3)
-        eq(s3.affixes[2].ascBonus, nil, "魔化词条不持有 ascBonus")
-        eq(s3.affixes[1].ascBonus, 10 * 0.05 * 2, "普通槽1 轮转 2 次（跳过魔化槽）")
-        eq(s3.affixes[3].ascBonus, 10 * 0.05 * 1, "普通槽2 轮转 1 次")
-
-        -- 11f) q1 零词条阶段跳过不补债；出词条后开始轮转
-        newModules()
-        local s4 = putEquip(makeWeapon(1))
-        BS.AscendEquipToLevel(UID, s4.seq, 4)
-        eq(#s4.affixes, 0, "+4 仍无词条")
-        BS.AscendEquipToLevel(UID, s4.seq, 5)
-        eq(#s4.affixes, 1, "+5 里程碑出首条")
-        eq(s4.affixes[1].ascBonus, nil, "首条当阶起轮转：+5 阶轮转到槽1 得 1 次? 见下验证")
-        -- +5 阶：轮转在里程碑新增之前执行（normalCount=0 跳过），故首条 +5 阶当阶无加成
-        BS.AscendEquipToLevel(UID, s4.seq, 6)
-        check((tonumber(s4.affixes[1].ascBonus) or 0) > 0, "+6 阶首条获得 ascBonus")
-
-        -- 11g) 存档往返保留 ascBonus
-        newModules()
-        local s5 = putEquip(makeWeapon(4))
-        BS.AscendEquipToLevel(UID, s5.seq, 6)
-        local b5 = s5.affixes[1].ascBonus
-        local lean5 = EquipmentSystem.dehydrate(s5)
-        check(lean5.affixes[1].ascBonus ~= nil, "脱水持久化 ascBonus")
-        local restored5 = cjson.decode(cjson.encode(lean5))
-        EquipmentSystem.hydrate(restored5)
-        -- cjson 默认 14 位有效数字序列化，用容差比较
-        check(math.abs((tonumber(restored5.affixes[1].ascBonus) or -1) - b5) < 1e-9,
-            "JSON 往返 ascBonus 保真")
-
-        -- 11h) 洗练换成低值属性后，读档和再次升阶不裁掉之前的固定投入
-        newModules()
-        local sLow = putEquip(makeWeapon(4))
-        sLow.affixes = {
-            { affixId = 1, quality = 3, value = 1, key = "str", name = "力量", ascBonus = 40 },
-        }
-        local lowRestored = cjson.decode(cjson.encode(EquipmentSystem.dehydrate(sLow)))
-        EquipmentSystem.hydrate(lowRestored)
-        eq(lowRestored.affixes[1].ascBonus, 40, "低值词条读档保留历史升阶投入")
-        sLow.affixes = lowRestored.affixes
-        BS.AscendEquip(UID, sLow.seq)
-        check((tonumber(sLow.affixes[1].ascBonus) or 0) > 40, "再次升阶不裁掉旧投入")
+        local legacy = putEquip(makeWeapon(4))
+        legacy.affixes = { { affixId = 1, quality = 3, value = 1, key = "str", name = "力量", ascBonus = 40 } }
+        local old = EquipmentSystem.hydrate(cjson.decode(cjson.encode(EquipmentSystem.dehydrate(legacy))))
+        eq(old.affixes[1].ascBonus, 40, "旧随机升阶投入兼容保留")
+        legacy.affixes = old.affixes
+        BS.AscendEquip(UID, legacy.seq)
+        eq(legacy.affixes[1].ascBonus, 40, "再次升阶不增不删旧随机投入")
+        local fractional = { ascendLevel = 1, baseStats = { { "armor", 4 }, { "maxHp", 1 } }, affixes = {} }
+        check(math.abs(EquipmentSystem.effectiveBaseStatValue(fractional, 2) - 1.05) < 1e-9,
+            "整数类型固定副保留小数，不强制至少加1")
+        eq(EquipmentSystem.computeModifierEntries(fractional, 0)[1].flat, 4,
+            "显式主属性倍率0兼容保留")
+        check(math.abs(EquipmentSystem.computeModifierEntries(fractional, 0)[2].flat - 1.05) < 1e-9,
+            "主倍率override不抹掉固定副升阶")
+        local noFixed = { ascendLevel = 99, baseStats = { { "armor", 4 } }, affixes = { { value = 10 } } }
+        eq(EquipmentSystem.getSecondaryAscendCount(noFixed, 2), 0, "没有固定副词条不转向随机补偿")
+        local beforeRepeated = EquipmentSystem.effectiveBaseStatValue(restored, 2)
+        for _ = 1, 3 do EquipmentSystem.hydrate(restored) end
+        eq(EquipmentSystem.effectiveBaseStatValue(restored, 2), beforeRepeated, "重复水合不重复叠加固定副")
+        local corruptRaw = EquipmentSystem.recalcBaseStats("O13", 12, EquipmentConfig.QUALITY[4].baseStrength * 0.9)
+        local corruptFixed = { ascendLevel = 4, baseStats = corruptRaw, affixes = {} }
+        check(math.abs(EquipmentSystem.effectiveBaseStatValue(corruptFixed, 2) - entries[2].flat * 0.9) < 1e-9,
+            "腐化基础缩放与固定副提升组合只乘一次")
 
         -- 11i) hydrate 清理非有限值，有限正值不依赖当前词条数值
         newModules()

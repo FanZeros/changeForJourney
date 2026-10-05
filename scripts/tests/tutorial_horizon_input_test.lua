@@ -69,6 +69,9 @@ function Start()
             ["boot.OfflineRewardOverlay"] = { bind = function() return mock() end },
             ["ui.hud.BottomNav"] = mock({ getSelectedIndex = function() return 3 end }),
             ["ui.story.ScenarioDialogue"] = mock(),
+            ["ui.battle.popup.TerminalConfirmDialog"] = page("terminalConfirm"),
+            ["ui.tavern.TargetRecruitPanel"] = page("targetRecruit"),
+            ["ui.tavern.TavernPopups"] = page("tavernPopups"),
             ["ui.battle.tri.BattleTriPage"] = page("tri", { isOpen = function() return state.tri end }),
             ["ui.backpack.BackpackPanel"] = page("backpack", {
                 isOpen = function() return state.warehouse end,
@@ -123,7 +126,8 @@ function Start()
         local capturing = true
         require = function(name)
             if name == "systems.TutorialManager" or name == "ui.tutorial.TutorialOverlay"
-                or name == "config.TutorialConfig" or name == "config.GameConfig" then
+                or name == "config.TutorialConfig" or name == "config.GameConfig"
+                or name == "boot.SeamBackGesture" then
                 return nativeRequire(name)
             end
             if name == "boot.StandaloneHorizonInput" then
@@ -234,8 +238,8 @@ function Start()
                         for sx = 0, RT.logicalW do
                             if captured.seamHitAt(sx, seamY) then seamX = sx; break end
                         end
-                        check(seamX ~= nil, "真实返回条命中存在")
-                        if seamX then click(seamX, seamY) end
+                        check(seamX == nil, "教程期间下层返回条不绘制也不命中")
+                        click(RT.logicalW * 0.5, seamY)
                         noBusiness("非目标返回条")
                         check(TM.getProgress().step == before and state.detail, "返回条 down/up 不推进或dismiss")
                     end)
@@ -443,6 +447,29 @@ function Start()
             check(TM.getProgress().step == before + 1 and n("character.handleInput") == 1,
                 "取消后新指tap恢复，不遗留capture")
         end)
+        for _, transformed in ipairs({ false, true }) do
+            for _, ratio in ipairs({ 1, 2, 3 }) do
+                runCase("选关滚轮 frame=" .. tostring(transformed) .. " DPR=" .. ratio, function()
+                    fixture(true, transformed, ratio)
+                    TM.skipCurrentGroup()
+                    TM.update(1)
+                    mods["ui.battle.stage.StageSelectDialog"].isOpen = function() return true end
+                    mods["ui.battle.tri.BattleTriPage"].handleScroll = function(wheel, x, y)
+                        record("stageWheel", x, y)
+                        check(wheel == -1, "滚轮增量保持不变")
+                        return true
+                    end
+                    screenPosition(650, 350)
+                    invoke("HandleMouseWheelHorizon", { Wheel = { GetInt = function() return -1 end } })
+                    local event = events[#events]
+                    check(n("stageWheel") == 1 and event.name == "stageWheel"
+                        and math.abs(event.x - 650) < 0.00001 and math.abs(event.y - 350) < 0.00001,
+                        "选关滚轮与点击共用逆外帧及DPR坐标，不传屏幕逻辑坐标")
+                    mods["ui.battle.stage.StageSelectDialog"].isOpen = function() return false end
+                    mods["ui.battle.tri.BattleTriPage"].handleScroll = noop
+                end)
+            end
+        end
     end)
     if not ok then check(false, "Start exception: " .. tostring(err)) end
     require, input, time = nativeRequire, originalInput, originalTime

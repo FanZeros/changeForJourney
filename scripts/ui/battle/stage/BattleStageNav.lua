@@ -61,8 +61,8 @@ function M.drawStageTitle(vg, ctx)
                 local first = stages[1]
                 local diffName = stageConfig.getDifficultyDisplayName(stageConfig.getDifficulty(first.id))
                 idleRangeText = string.format("%s %d-%d 至 %d-%d",
-                    diffName, ctx.getRelativeChapter(last.chapter), last.stage,
-                    ctx.getRelativeChapter(first.chapter), first.stage)
+                    diffName, last.chapter, last.stage,
+                    first.chapter, first.stage)
             else
                 idleRangeText = "挂机中"
             end

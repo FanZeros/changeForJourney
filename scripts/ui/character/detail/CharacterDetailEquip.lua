@@ -27,6 +27,8 @@ local panelState = {
     cacheKey = nil,
     cacheTime = -1,
     cacheSignature = nil,
+    orderKey = nil,
+    orderedRows = {},
     data = nil,
     scrollTarget = nil,
     dragging = false,
@@ -208,6 +210,30 @@ local function refreshData(heroId, slot)
         result = currentFallback(heroId, level)
         if selection or failure then result.error = "属性预览暂不可用，当前装备未改变" end
     end
+    result.displayRows = Stats.sortComparisonRows(result.rows)
+    if result.equipmentBonuses then
+        result.equipmentBonuses.displayRows = Stats.sortComparisonRows(result.equipmentBonuses.rows)
+    end
+    local equipmentMode = panelState.attributeMode == "equipment"
+    local displayRows = equipmentMode and result.equipmentBonuses and result.equipmentBonuses.displayRows
+        or (not equipmentMode and result.displayRows) or {}
+    local orderKey = table.concat({ tostring(heroId), tostring(slot),
+        tostring(selection and selection.seq), tostring(selection and selection.slot),
+        tostring(selection and selection.owner), tostring(selection and selection.heroId),
+        tostring(selection and selection.pinned), panelState.attributeMode }, "|")
+    local orderChanged = panelState.orderKey ~= orderKey or #panelState.orderedRows ~= #displayRows
+    local orderedKeys = {}
+    for i, row in ipairs(displayRows) do
+        orderedKeys[i] = row.key
+        if panelState.orderedRows[i] ~= row.key then orderChanged = true end
+    end
+    -- 新候选或排序变化归顶；只刷新数值时保留用户滚动位置。
+    if orderChanged then
+        panelState.scroll.attrs = { y = 0, max = 0, velocity = 0 }
+    end
+    panelState.orderKey, panelState.orderedRows = orderKey, orderedKeys
+    panelState.attrHits = {}
+    clearTip()
     panelState.data = result
     panelState.cacheKey = key
     panelState.cacheTime = elapsed
@@ -253,7 +279,7 @@ function M.draw(vg, heroId, detailState)
     if equipmentMode and not data.equipmentBonuses then display = { rows = {}, current = { stats = {} } } end
     local sets = Stats.unionSets(data.currentSets, preview and data.previewSets or nil)
     Stats.drawHeader(vg, panelState.attributeMode)
-    local displayRows = display.rows or {}
+    local displayRows = display.displayRows or display.rows or {}
     local maxAttrs, hits = Stats.drawRows(vg, displayRows, panelState.scroll.attrs.y)
     if equipmentMode and #displayRows == 0 then
         Stats.drawEmptyBonuses(vg, data.equipmentBonuses ~= nil)
@@ -286,6 +312,8 @@ function M.clear()
     panelState.cacheKey = nil
     panelState.cacheTime = -1
     panelState.cacheSignature = nil
+    panelState.orderKey = nil
+    panelState.orderedRows = {}
     panelState.dirty = true
     panelState.attrHits = {}
     panelState.scrollTarget = nil

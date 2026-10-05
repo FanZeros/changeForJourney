@@ -5,8 +5,28 @@
 
 local AD = require("systems.AttributeDef")
 local BattleCombat = require("ui.battle.combat.BattleCombat")
+local EquipmentSetRuntime = require("systems.EquipmentSetRuntime")
 
 local M = {}
+
+-- 显示序号会因空槽压缩、阵亡紧凑而变化；属性和神器只能取真实编队号位。
+---@param u table
+---@param characterPanel table
+---@return number|nil
+function M.getPartySlot(u, characterPanel)
+    local slot = tonumber(u.partySlot)
+    local validSlot = slot and slot == math.floor(slot) and slot >= 1 and slot <= 4
+    if validSlot and u.artifactTeamIdx then return slot end
+    if u.heroId and characterPanel.getHeroDeployPosition then
+        local realSlot, teamIdx = characterPanel.getHeroDeployPosition(u.heroId, u.artifactTeamIdx)
+        if realSlot then
+            u.partySlot = realSlot
+            u.artifactTeamIdx = teamIdx
+            return realSlot
+        end
+    end
+    return nil
+end
 
 --- 为单位创建基线快照（调用时机：setAllies / fallback 重建后）
 ---@param u table
@@ -17,6 +37,7 @@ function M.createSnapshot(u)
     u._baseArmorType = u.armorType
     u._pendingSnapshot = nil
     u._pendingArmorType = nil
+    u._pendingArtifactEffects = nil
 end
 
 --- 从快照恢复单位属性
@@ -27,6 +48,10 @@ function M.restoreFromSnapshot(u)
         u._hadPendingSnapshot = true
         u._baseSnapshot = u._pendingSnapshot
         u._pendingSnapshot = nil
+        if u._pendingArtifactEffects ~= nil then
+            u.artifactEffects = #u._pendingArtifactEffects > 0 and u._pendingArtifactEffects or nil
+            u._pendingArtifactEffects = nil
+        end
     else
         u._hadPendingSnapshot = false
     end
@@ -42,6 +67,8 @@ function M.restoreFromSnapshot(u)
         u.armorType = u._baseArmorType
     end
     if u._baseSnapshot then
+        -- 旧波临时倍率必须从旧 attrs 撤销，不能在新干净快照上再做一次除法。
+        require("systems.ArtifactRuntime").reset({ u })
         u.attrs = u._baseSnapshot:clone()
         if u.attrs and AD.getAtkCategory(u.attrs.atkType) == "healing" then
             local snapHeal = u._baseSnapshot:get(AD.HEAL_AMOUNT)
@@ -88,10 +115,7 @@ function M.resetAllyUnit(u, allies, syncUnitHp)
                     owned and owned.awakening,
                     owned and owned.extraTalent)
                 if newUnit and newUnit.attrs then
-                    local partySlot = nil
-                    for ai, a in ipairs(allies) do
-                        if a == u then partySlot = ai; break end
-                    end
+                    local partySlot = M.getPartySlot(u, CP)
                     if CP.applyEquippedItems then
                         local eqArmorType = CP.applyEquippedItems(newUnit.attrs, u.heroId, partySlot)
                         if eqArmorType then
@@ -106,6 +130,7 @@ function M.resetAllyUnit(u, allies, syncUnitHp)
                     else
                         u.artifactEffects = nil
                     end
+                    require("systems.ArtifactRuntime").reset({ u })
                     u.attrs = newUnit.attrs
                     u.armorType = newUnit.armorType
                     u.level = newUnit.level
@@ -116,12 +141,14 @@ function M.resetAllyUnit(u, allies, syncUnitHp)
             end
             M.createSnapshot(u)
         end
+        EquipmentSetRuntime.resetBattleState(u)
         u.attrs:fillHp()
         u.maxHp       = u.attrs.final[AD.MAX_HP]
         u.hp          = u.attrs.final[AD.HP]
         u.atkInterval = u.attrs:getActualInterval()
         u._lastAttrInterval = u.atkInterval
     else
+        EquipmentSetRuntime.resetBattleState(u)
         print("[BattleDiag] RESET_NO_ATTRS name=" .. tostring(u.name)
             .. " id=" .. tostring(u.heroId or u.instanceId or "?")
             .. " hp=" .. tostring(u.hp) .. "/" .. tostring(u.maxHp)

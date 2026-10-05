@@ -190,11 +190,6 @@ local function hitTestCircle(dx, dy, cx, cy, r)
     return ddx * ddx + ddy * ddy <= r * r
 end
 
---- 难度内的相对章节号
-local function getRelativeChapter(chapter)
-    return SC.getRelativeChapter(chapter)
-end
-
 --- 难度中文名
 local DIFF_NAMES = {
     [SC.DIFFICULTY_NORMAL]    = "普通",
@@ -237,7 +232,7 @@ local function getCurrentStageName()
 
     local diff = SC.getDifficulty(entry.id)
     local diffName = DIFF_NAMES[diff] or "普通"
-    return diffName .. " " .. getRelativeChapter(entry.chapter) .. "-" .. entry.stage
+    return diffName .. " " .. entry.chapter .. "-" .. entry.stage
 end
 
 --- 获取弹窗动画缩放系数（打开/关闭）
@@ -307,18 +302,28 @@ function SweepDialog.init(vg)
     print("[SweepDialog] init OK")
 end
 
---- 打开弹窗
-function SweepDialog.open()
+--- 打开弹窗；战线显式指定小队，泛入口默认右栏激活小队。
+---@param teamIdx number|nil 扫荡经验目标队伍（1~3）
+function SweepDialog.open(teamIdx)
     if state.open then return end
+    if teamIdx == nil then
+        local CharacterPanel = require("ui.character.panel.CharacterPanel")
+        teamIdx = CharacterPanel.getActiveTeamIdx() or 1
+    end
+    local selectedTeam = math.tointeger(tonumber(teamIdx) or 0)
+    if not selectedTeam or selectedTeam < 1 or selectedTeam > ExpTable.TEAM_COUNT then
+        print("[SweepDialog] open blocked: 无效的队伍编号 " .. tostring(teamIdx))
+        return
+    end
     state.open     = true
     state.openTime = time.elapsedTime
     state.count    = 1
     state.sliderDragging = false
-    -- 默认扫当前激活小队
-    local CharacterPanel = require("ui.character.panel.CharacterPanel")
-    state.teamIdx = math.min(unlockedTeams(), CharacterPanel.getActiveTeamIdx() or 1)
+    -- 锁队/空队保留明确选择，由确认门禁拒绝；不得静默改扫队一。
+    state.teamIdx = selectedTeam
     _sweepRewardCache = nil
-    print("[SweepDialog] open, tickets=" .. tostring(GameState.getSweepTicket() or 0)
+    print("[SweepDialog] open, team=" .. state.teamIdx
+        .. ", tickets=" .. tostring(GameState.getSweepTicket() or 0)
         .. ", maxCount=" .. getMaxCount())
     -- 重新打开时清除预估奖励缓存，确保数据最新
     _sweepRewardCache = nil
@@ -751,13 +756,14 @@ SweepDialog.onSweep = nil
 --- 处理入口按钮点击（由 BattleScene 在 lootBox 之后调用）
 ---@param x number
 ---@param y number
+---@param teamIdx number|nil 战线队号；泛入口省略时默认激活队
 ---@return boolean consumed
-function SweepDialog.handleButtonInput(x, y)
+function SweepDialog.handleButtonInput(x, y, teamIdx)
     if state.open then return false end
     -- 命中检测：点击是否在扫荡按钮区域内
     if math.abs(x - BTN_CX) <= BTN_W * 0.5 and math.abs(y - BTN_CY) <= BTN_H * 0.5 then
         BF.trigger("sweep_btn")
-        SweepDialog.open()
+        SweepDialog.open(teamIdx)
         return true
     end
     return false

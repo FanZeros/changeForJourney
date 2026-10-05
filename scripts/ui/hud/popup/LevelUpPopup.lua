@@ -155,7 +155,7 @@ local function updateContent()
     end
     if #state.unlocks > 3 then
         unlockPanel:AddChild(UI.Label {
-            text = I18n.format("另有 %d 项解锁，可前往奖励页查看", #state.unlocks - 3),
+            text = I18n.format("另有 %d 项成长解锁", #state.unlocks - 3),
             fontSize = 11, height = 22, width = "100%", textAlign = "center",
             fontColor = {150, 138, 110, 255},
         })

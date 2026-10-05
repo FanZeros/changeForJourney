@@ -224,17 +224,22 @@ end
 --- 一键领取指定页签下全部可领功绩
 ---@param uid number
 ---@param scope string
+---@param level number? 指定远征节点时只领取该级未领项，旧单领与整页批领接口保持兼容。
 ---@return boolean, string|nil, table|nil
-function TaskService.ClaimAll(uid, scope)
+function TaskService.ClaimAll(uid, scope, level)
     if scope ~= "clear" and scope ~= "level" and scope ~= "hero" then
         return false, "invalid_scope"
+    end
+    if level ~= nil and (scope ~= "level" or type(level) ~= "number" or level ~= level
+        or level < 1 or level > require("config.ExpTable").PLAYER_MAX_LEVEL or level ~= math.floor(level)) then
+        return false, "invalid_params"
     end
     TaskService.RefreshAchievements(uid)
     local taskData = PDM.GetModule(uid, "task")
     if not taskData then return false, "no_data" end
     local entries, claimed, rewards = {}, {}, {}
     for _, task in ipairs(achievementsInScope(scope)) do
-        if not taskData.achClaimed[task.id]
+        if (level == nil or task.target == level) and not taskData.achClaimed[task.id]
             and (taskData.achProg[task.condKey] or 0) >= task.target then
             entries[#entries + 1] = { task = task, claimed = taskData.achClaimed }
             claimed[#claimed + 1] = task.id

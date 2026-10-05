@@ -11,6 +11,7 @@ local SEM = require("systems.StatusEffectManager")
 local TAL = require("systems.TalentManager")
 local MapAffixSystem    = require("systems.MapAffixSystem")
 
+local BattleLayout      = require("core.BattleLayout")
 local BattleCombat      = require("ui.battle.combat.BattleCombat")
 local BattleStats       = require("systems.BattleStats")
 local BattleDraw        = require("ui.battle.scene.BattleDraw")
@@ -70,21 +71,21 @@ local ALLY_SHADOW_W, ALLY_SHADOW_H   = 1080, 556
 
 -- 敌方卡片组基准坐标
 local ENEMY_CARD_CY      = 804
-local ENEMY_TAG_OFFSET_Y  = -215
-local ENEMY_NAME_OFFSET_Y = 90
-local ENEMY_HP_BG_OFFSET_Y = 153
-local ENEMY_HP_VAL_OFFSET_Y = 135
+local ENEMY_TAG_OFFSET_Y  = -BattleLayout.CARD_H * 0.5 + 4
+local ENEMY_NAME_OFFSET_Y = BattleLayout.CARD_H * 0.5 - 129
+local ENEMY_HP_BG_OFFSET_Y = BattleLayout.CARD_H * 0.5 - 66
+local ENEMY_HP_VAL_OFFSET_Y = BattleLayout.CARD_H * 0.5 - 84
 local ENEMY_ATK_BG_OFFSET_Y = 181
-local ENEMY_LVL_OFFSET_Y = 215
+local ENEMY_LVL_OFFSET_Y = BattleLayout.CARD_H * 0.5 - 4
 
 -- 己方卡片组基准坐标
 local ALLY_CARD_CY       = 1760
-local ALLY_TAG_OFFSET_Y   = -215
-local ALLY_NAME_OFFSET_Y  = 85
-local ALLY_HP_BG_OFFSET_Y = 153
-local ALLY_HP_VAL_OFFSET_Y = 135
+local ALLY_TAG_OFFSET_Y   = -BattleLayout.CARD_H * 0.5 + 4
+local ALLY_NAME_OFFSET_Y  = BattleLayout.CARD_H * 0.5 - 134
+local ALLY_HP_BG_OFFSET_Y = BattleLayout.CARD_H * 0.5 - 66
+local ALLY_HP_VAL_OFFSET_Y = BattleLayout.CARD_H * 0.5 - 84
 local ALLY_ATK_BG_OFFSET_Y = 181
-local ALLY_LVL_OFFSET_Y  = 215
+local ALLY_LVL_OFFSET_Y  = BattleLayout.CARD_H * 0.5 - 4
 
 -- 副本标题区域
 local DB = {

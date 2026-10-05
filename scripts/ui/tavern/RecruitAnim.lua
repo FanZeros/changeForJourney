@@ -7,6 +7,7 @@
 local HC = require("config.HeroConfig")
 local CC = require("config.ClassConfig")
 local GameConfig = require("config.GameConfig")
+local BattleLayout = require("core.BattleLayout")
 local DrawUtil = require("core.DrawUtil")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质框/卡底矢量绘制
 local ResourceDefs = require("config.ResourceDefs")
@@ -14,7 +15,6 @@ local GachaConfig = require("config.GachaConfig")
 local UrGachaConfig = require("config.UrGachaConfig")
 local GameState = require("core.GameState")
 local HeroAssetUtil = require("config.HeroAssetUtil")
-local HeroFrame = require("ui.widget.HeroFrame")
 local drawTextStroke = DrawUtil.drawTextStroke
 local drawImageCenteredUtil = DrawUtil.drawImageCentered
 
@@ -52,7 +52,9 @@ local CLASS_NUM = {
 
 -- ======================== 卡片布局常量 ========================
 
+-- 资源卡保留原高度；只有英雄展示按可见卡框比例缩高。
 local CARD_W, CARD_H = 198, 438
+local HERO_CARD_H = BattleLayout.cardHeightForWidth(CARD_W)
 local QUALITY_BADGE_W, QUALITY_BADGE_H = 107, 47
 
 -- 资源类卡片
@@ -118,7 +120,6 @@ local img = {
     classIcons   = {},
     heroCards    = {},
     resIcons     = {},
-    portraits    = {},
     shardIcon    = -1,
     ticketIcon        = -1,
     ticketIconStellar = -1,
@@ -140,7 +141,7 @@ local function drawImageCentered(vg, imgH, cx, cy, w, h, alpha)
     if imgH < 0 or alpha <= 0.01 then return end
     local x = cx - w * 0.5
     local y = cy - h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, imgH, alpha)
+    local paint = nvgImagePattern(vg, x, y, w, h, 0, imgH, alpha) --[[@as NVGpaint]]
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
@@ -148,35 +149,14 @@ local function drawImageCentered(vg, imgH, cx, cy, w, h, alpha)
 end
 
 local function getHeroCardImage(vg, heroId)
-    if img.heroCards[heroId] then return img.heroCards[heroId] end
-    local cardImg = nvgCreateImage(vg, "image/角色卡牌/KP_YX_" .. heroId .. ".png", 0)
-    img.heroCards[heroId] = cardImg
-    return cardImg
+    return HeroAssetUtil.ensureCard(vg, img.heroCards, heroId)
 end
 
---- 透明立绘懒加载；缺失时回退卡面
-local function getPortraitImage(vg, heroId)
-    if img.portraits[heroId] ~= nil then return img.portraits[heroId] end
-    local h = nvgCreateImage(vg, HeroAssetUtil.getPortraitPath(heroId), 0)
-    if not h or h < 0 then
-        h = getHeroCardImage(vg, heroId)
-    end
-    img.portraits[heroId] = h or -1
-    return img.portraits[heroId]
-end
-
---- 无底板立绘：按卡片槽高度适配，底部留出名字区
-local function drawPortraitFit(vg, heroId, cx, cy, alpha)
-    local portrait = getPortraitImage(vg, heroId)
-    if not portrait or portrait < 0 then return end
-    local nameArea = 90
-    local iw, ih = nvgImageSize(vg, portrait)
-    if not iw or iw <= 0 or not ih or ih <= 0 then
-        iw, ih = CARD_W, CARD_H
-    end
-    local scale = math.min(CARD_W / iw, (CARD_H - nameArea) / ih)
-    local w, h = iw * scale, ih * scale
-    drawImageCentered(vg, portrait, cx, cy - nameArea * 0.5, w, h, alpha)
+--- 招募结果与战斗/详情共用新整卡：边框对槽，保留出框和自然重叠。
+local function drawHeroCard(vg, heroId, cx, cy, alpha)
+    local card = getHeroCardImage(vg, heroId)
+    if not card or card < 0 then return end
+    DrawUtil.drawCardImage(vg, card, cx, cy, CARD_W, HERO_CARD_H, alpha)
 end
 
 local function getResIcon(vg, resType)
@@ -229,7 +209,7 @@ function RecruitAnim.init(vg)
     img.ticketIcon        = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_X.png", 0)
     img.ticketIconStellar = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ2_X.png", 0)
     img.diamondIcon       = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
-    print("[RecruitAnim] init OK")
+    print("[RecruitAnim] init OK：新角色卡按可见边框对槽，出框保留")
 end
 
 local againFn_ = nil
@@ -447,8 +427,8 @@ local function drawDupeToShardCard(vg, cx, cy, item, alpha)
     local heroId  = item.heroId
     local heroCfg = HC.get(heroId)
 
-    -- 无底板：透明立绘（dupe_to_shard）
-    drawPortraitFit(vg, heroId, cx, cy, alpha)
+    -- 重复英雄仍使用同一新卡面。
+    drawHeroCard(vg, heroId, cx, cy, alpha)
 
     -- [稀有度显示] 烧字徽章不再显示
 
@@ -475,7 +455,7 @@ local function drawDupeToShardCard(vg, cx, cy, item, alpha)
 
     -- 英雄名
     local heroName = heroCfg and heroCfg.name or ("英雄" .. heroId)
-    local nameCY = cy + CARD_H * 0.5 - CHAR_NAME_OFFSET_BOTTOM
+    local nameCY = cy + HERO_CARD_H * 0.5 - CHAR_NAME_OFFSET_BOTTOM
     drawTextStroke(vg,
         cx, nameCY,
         heroName,
@@ -493,8 +473,8 @@ local function drawDecomposeCard(vg, cx, cy, item, alpha)
     local heroId  = item.heroId
     local heroCfg = HC.get(heroId)
 
-    -- 无底板：透明立绘（decompose）
-    drawPortraitFit(vg, heroId, cx, cy, alpha)
+    -- 分解英雄仍使用同一新卡面。
+    drawHeroCard(vg, heroId, cx, cy, alpha)
 
     -- [稀有度显示] 烧字徽章不再显示
 
@@ -520,7 +500,7 @@ local function drawDecomposeCard(vg, cx, cy, item, alpha)
 
     -- 英雄名
     local heroName = heroCfg and heroCfg.name or ("英雄" .. heroId)
-    local nameCY = cy + CARD_H * 0.5 - CHAR_NAME_OFFSET_BOTTOM
+    local nameCY = cy + HERO_CARD_H * 0.5 - CHAR_NAME_OFFSET_BOTTOM
     drawTextStroke(vg,
         cx, nameCY,
         heroName,
@@ -537,23 +517,15 @@ local function drawCharacterCard(vg, cx, cy, item, alpha)
     local heroId = item.heroId
     local heroCfg = HC.get(heroId)
 
-    -- 无底板：透明立绘（928 侧视觉）
-    drawPortraitFit(vg, heroId, cx, cy, alpha)
-    -- [统一角色框] 招募英雄卡叠加品质色描边（feat926 侧，frameOnly 不画底板）
-    HeroFrame.draw(vg, {
-        cx = cx, cy = cy, w = CARD_W, h = CARD_H,
-        heroId = heroId,
-        state = "owned",
-        frameOnly = true,
-        alpha = alpha,
-    })
+    -- 新整卡自带美术边框，直接对槽绘制；不再叠加第二层品质框。
+    drawHeroCard(vg, heroId, cx, cy, alpha)
 
     -- 角色名称（上移25px：OFFSET从44增到69）
     local combinedAlpha = alpha * _fadeAlpha
     nvgSave(vg)
     nvgGlobalAlpha(vg, combinedAlpha)
     local heroName = heroCfg and heroCfg.name or ("英雄" .. heroId)
-    local nameCY = cy + CARD_H * 0.5 - CHAR_NAME_OFFSET_BOTTOM
+    local nameCY = cy + HERO_CARD_H * 0.5 - CHAR_NAME_OFFSET_BOTTOM
     drawTextStroke(vg,
         cx, nameCY,
         heroName,
@@ -568,7 +540,7 @@ local function drawCharacterCard(vg, cx, cy, item, alpha)
         local classIdx = CLASS_NUM[heroCfg.classId]
         local classIconImg = classIdx and img.classIcons[classIdx]
         if classIconImg and classIconImg >= 0 then
-            local classIconCY = cy - CARD_H * 0.5
+            local classIconCY = cy - HERO_CARD_H * 0.5
             drawImageCentered(vg, classIconImg, cx, classIconCY, CLASS_ICON_W, CLASS_ICON_H, alpha)
         end
     end

@@ -622,7 +622,12 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
                      end,
                  })
              else
-                 RewardPopup.show("远征奖励", { { type = "equip", templateId = data.reward.templateId, quality = data.reward.quality or 1, level = data.reward.level or 1 } }, { onClose = fireTutorial })
+                 RewardPopup.show("远征奖励", { {
+                     type = "equip", templateId = data.reward.templateId,
+                     quality = data.reward.quality or 1, level = data.reward.level or 1,
+                     slot = data.reward.slot, equip = data.reward.equip,
+                     destination = data.reward.destination,
+                 } }, { onClose = fireTutorial })
              end
          else
              fireTutorial()
@@ -654,6 +659,12 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
              { type = "shard", heroId = data.toHeroId, amount = data.amount or 0 },
          })
      end
+     -- 离线领取完成后说明溢出装备的实际去向；仅展示，不再次发奖。
+     if data.action == Protocol.ACTION_TYPES.CLAIM_OFFLINE_REWARDS
+         and data.lootboxEquips and #data.lootboxEquips > 0 then
+         RewardPopup.show("离线装备已入遗匣", data.lootboxEquips, { panel = "left" })
+     end
+
      -- 扫荡结果
      if data.action == Protocol.ACTION_TYPES.SWEEP and data.success then
          local rewards = {}
@@ -664,6 +675,9 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
                  templateId = equip.templateId,
                  quality = equip.quality,
                  level = equip.level,
+                 slot = equip.slot,
+                 equip = equip.equip,
+                 destination = equip.destination,
              }
          end
          for scrollField, count in pairs(data.scrollDrops or {}) do

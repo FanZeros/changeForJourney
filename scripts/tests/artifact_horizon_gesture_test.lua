@@ -150,6 +150,8 @@ function Start()
             ["ui.hud.popup.OfflineRewardPanel"] = "offline", ["ui.hud.popup.LevelUpPopup"] = "level",
             ["ui.hud.popup.UpdateNoticePopup"] = "notice", ["ui.battle.stage.SweepDialog"] = "sweep",
             ["ui.battle.popup.DamageStatsPanel"] = "damage", ["ui.battle.stage.StageSelectDialog"] = "stage",
+            ["ui.battle.popup.TerminalConfirmDialog"] = "terminal",
+            ["ui.tavern.TavernPopups"] = "tavernPopups", ["ui.tavern.TargetRecruitPanel"] = "targetRecruit",
             ["systems.TutorialManager"] = "tutorial", ["ui.story.gate.DarkTitleScreenGate"] = "title",
             ["ui.story.gate.StartScreen"] = "start", ["ui.story.gate.LetterIntro"] = "letter",
             ["ui.story.SamsaraRecordPanel"] = "record", ["ui.story.ScenarioDialogue"] = "scenario",
@@ -177,7 +179,9 @@ function Start()
         mods["ui.hud.popup.RewardPopup"].currentRowTag = function() return nil end
         local realPaths = {
             ["boot.ArtifactGesture"] = true, ["boot.StandaloneHorizon"] = true,
-            ["boot.StandaloneHorizonInput"] = true, ["boot.StandaloneHorizonWheel"] = true, ["boot.OfflineRewardOverlay"] = true,
+            ["boot.StandaloneHorizonInput"] = true, ["boot.StandaloneHorizonWheel"] = true,
+            ["boot.OfflineRewardOverlay"] = true, ["boot.SeamBackGesture"] = true,
+            ["boot.TerminalInput"] = true,
         }
         ---@type any
         local realModules = {}
@@ -497,6 +501,7 @@ function Start()
     if ok then
         print("[artifact_horizon_gesture_test] ALL PASS: " .. assertions .. " assertions")
     else
+        print("[artifact_horizon_gesture_test] FAIL after " .. assertions .. " assertions: " .. tostring(err))
         log:Write(LOG_ERROR, "[artifact_horizon_gesture_test] FAIL after " .. assertions .. " assertions: " .. tostring(err))
     end
     engine:Exit()

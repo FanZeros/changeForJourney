@@ -21,7 +21,8 @@ M.LAYOUT = {
     attrs = { x = AttributeView.ATTRIBUTE_LAYOUT.x, y = 1050,
         w = AttributeView.ATTRIBUTE_LAYOUT.w, h = 718 },
     radar = { x = 550, y = 1050, w = 530, h = 718, cx = 800, cy = 1403,
-        r = AttributeView.RADAR.r, labelR = AttributeView.RADAR.labelR },
+        r = AttributeView.RADAR.r, labelR = AttributeView.RADAR.labelR,
+        deltaFontSize = 32, deltaOffset = 58 },
     sets = { x = 54, y = 1866, w = 972, h = 348 },
     attrTitleY = 1010,
     setTitleY = 1818,
@@ -48,14 +49,6 @@ local function text(vg, x, y, str, size, color, align)
     nvgTextAlign(vg, align or (NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE))
     ink(vg, color or COLOR.text)
     nvgText(vg, x, y, tostring(str or ""), nil)
-end
-
-local function fitText(vg, x, y, str, size, minSize, maxW, color, align)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, size)
-    local width = nvgTextBounds(vg, 0, 0, tostring(str or ""))
-    local fitted = width > maxW and math.max(minSize, size * maxW / width) or size
-    text(vg, x, y, str, fitted, color, align)
 end
 
 local function plate(vg, rect)
@@ -113,6 +106,19 @@ end
 M.drawAttributeRows = AttributeView.drawAttributeRows
 M.ATTRIBUTE_STYLE = AttributeView.STYLE
 M.rowAt = AttributeView.rowAt
+
+--- 只复制显示数组：绿色改善、红色下降、无变化；同组保留原属性顺序。
+function M.sortComparisonRows(rows)
+    local groups, sorted = { {}, {}, {} }, {}
+    for _, row in ipairs(rows or {}) do
+        local group = groups[AttributeView.changePriority(row)]
+        group[#group + 1] = row
+    end
+    for _, group in ipairs(groups) do
+        for _, row in ipairs(group) do sorted[#sorted + 1] = row end
+    end
+    return sorted
+end
 
 function M.drawRows(vg, rows, scroll)
     local rect = M.LAYOUT.attrs
@@ -232,17 +238,10 @@ end
 M.drawLegacyTitle = AttributeView.drawTitle
 
 function M.drawHeader(vg, attributeMode)
+    local equipmentMode = attributeMode == "equipment"
+    local title = require("core.I18n").lookup(equipmentMode and "装备加成" or "角色属性")
     AttributeView.drawTitle(vg, 540, M.LAYOUT.titleY,
-        attributeMode == "equipment" and "装备加成" or "角色属性")
-    ink(vg, COLOR.gold)
-    for _, arrow in ipairs({ { x = 420, dir = -1 }, { x = 660, dir = 1 } }) do
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, arrow.x + arrow.dir * 6, M.LAYOUT.titleY)
-        nvgLineTo(vg, arrow.x - arrow.dir * 5, M.LAYOUT.titleY - 7)
-        nvgLineTo(vg, arrow.x - arrow.dir * 5, M.LAYOUT.titleY + 7)
-        nvgClosePath(vg)
-        nvgFill(vg)
-    end
+        "【" .. title .. (equipmentMode and "▲】" or "▼】"))
     AttributeView.drawDivider(vg, M.LAYOUT.attrs.y - 20)
     AttributeView.drawDivider(vg, M.LAYOUT.setTitleY - 28)
     drawTextStroke(vg, M.LAYOUT.sets.x + 20, M.LAYOUT.setTitleY + 4,
@@ -384,6 +383,14 @@ local function radarCenter(vg, cx, cy)
     nvgStroke(vg)
 end
 
+-- 数字在真实字体/缩放下复测，描边也留在右列内；普通值保留原字号。
+local function radarNumberFont(vg, label, size, x, y, maxWidth, margin, stroke)
+    local left = math.max(540 + margin, x - maxWidth * 0.5)
+    local right = math.min(1080 - margin, x + maxWidth * 0.5)
+    return AttributeView.fitText(vg, label, size, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        x, y, left, right, stroke or 0)
+end
+
 --- 属性页独立放大雷达；归一化与数据口径不变，不接收或读取预览。
 function M.drawLegacy(vg, statValues)
     local layout = M.LEGACY
@@ -400,10 +407,7 @@ function M.drawLegacy(vg, statValues)
         local lx, ly = hexPoint(layout.HEX_CX, layout.HEX_CY, i, layout.HEX_LABEL_R)
         text(vg, lx, ly - 26, name, 30, color, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         local valueText = tostring(values[HEX_KEYS[i]] or 0)
-        nvgFontSize(vg, 38)
-        local valueW = nvgTextBounds(vg, 0, 0, valueText) or 0
-        local maxW = math.min(160, (1080 - lx - 12) * 2, (lx - 540 - 12) * 2)
-        local font = valueW > maxW and 38 * maxW / valueW or 38
+        local font = radarNumberFont(vg, valueText, 38, lx, ly + 18, 160, 12, 3)
         drawTextStroke(vg, lx, ly + 18, valueText,
             font, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color[1], color[2], color[3], 3)
     end
@@ -475,14 +479,7 @@ function M.drawRadar(vg, current, preview, equipmentMode)
             valueText = amount:gsub("0+$", ""):gsub("%.$", "")
             if currentValue > 0 then valueText = "+" .. valueText end
         end
-        local valueFont = 34
-        if equipmentMode then
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, valueFont)
-            local width = nvgTextBounds(vg, 0, 0, valueText) or 0
-            local maxWidth = math.min(150, (1080 - lx - 5) * 2)
-            if width > maxWidth then valueFont = valueFont * maxWidth / width end
-        end
+        local valueFont = radarNumberFont(vg, valueText, 34, lx, ly + 16, 150, 5, 3)
         drawTextStroke(vg, lx, ly + 16, valueText,
             valueFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color[1], color[2], color[3], 3)
         local delta = nextValue - currentValue
@@ -497,7 +494,9 @@ function M.drawRadar(vg, current, preview, equipmentMode)
                 amount = string.format("%.1f", delta)
             end
             local deltaText = (delta > 0 and "+" or "") .. amount
-            fitText(vg, lx, ly - 51, deltaText, 25, 19, 110,
+            local deltaFont = radarNumberFont(vg, deltaText, layout.deltaFontSize,
+                lx, ly - layout.deltaOffset, 150, 5, 0)
+            text(vg, lx, ly - layout.deltaOffset, deltaText, deltaFont,
                 delta > 0 and COLOR.green or COLOR.red, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         end
     end

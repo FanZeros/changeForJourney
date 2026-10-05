@@ -31,8 +31,7 @@ local I18n              = require("core.I18n")
 
 -- 只在显示边界翻译；驱动进度、源关卡名和地图缓存仍使用原始配置。
 local function stageDisplayName(stageId)
-    local entry = stageId and StageConfig.getStage(tonumber(stageId))
-    return I18n.lookup((entry and entry.name) or tostring(stageId or "?"))
+    return I18n.lookup(StageConfig.getStageDisplayName(stageId))
 end
 
 local BattleTriPage = {}
@@ -639,41 +638,16 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgRestore(vg)
         end
 
-        -- [终焉协同] 每行底部进度条替换为共享生命池（绯红），行1 附加数值与倒计时
-        if terminalRaid and row <= unlocked and terminalRaid.maxHp > 0 then
-            local ratio = math.max(0, math.min(1, terminalRaid.hp / terminalRaid.maxHp))
-            local barW = math.min(iw * 0.62, 280)
-            local barH = 10
-            local barX = ix + (iw - barW) * 0.5
-            local barY = iy + ih - 8
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, barX, barY, barW, barH, 5)
-            nvgFillColor(vg, nvgRGBA(8, 8, 14, 170))
-            nvgFill(vg)
-            if ratio > 0 then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, barX, barY, math.max(barH, barW * ratio), barH, 5)
-                nvgFillColor(vg, nvgRGBA(196, 62, 62, 235))
-                nvgFill(vg)
-            end
-            if row == 1 then
-                -- 行1 显示共享池数值 + 剩余时限（行2/3 只显示同步血条，避免文字堆叠）
-                local NumberUtil = require("core.NumberUtil")
-                nvgFontSize(vg, 16)
-                nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(255, 205, 195, 255))
-                nvgText(vg, ix + iw * 0.5, barY - 12,
-                    I18n.format("共享生命 %s / %s",
-                        NumberUtil.format(terminalRaid.hp), NumberUtil.format(terminalRaid.maxHp)), nil)
-                local timeLimit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
-                local left = math.max(0, math.ceil(timeLimit - terminalRaid.elapsed))
-                nvgFontSize(vg, 22)
-                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, left <= 30 and nvgRGBA(255, 120, 110, 255)
-                    or nvgRGBA(236, 226, 198, 255))
-                nvgText(vg, ix + 28, iy + 55,
-                    I18n.format("限时 %d:%02d", left // 60, left % 60), nil)
-            end
+        -- [终焉协同] 生命由各 Boss 卡牌血条展示，行1 只保留协同倒计时。
+        if terminalRaid and row == 1 and row <= unlocked then
+            local timeLimit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
+            local left = math.max(0, math.ceil(timeLimit - terminalRaid.elapsed))
+            nvgFontSize(vg, 22)
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, left <= 30 and nvgRGBA(255, 120, 110, 255)
+                or nvgRGBA(236, 226, 198, 255))
+            nvgText(vg, ix + 28, iy + 55,
+                I18n.format("限时 %d:%02d", left // 60, left % 60), nil)
         end
 
         local killed, total
@@ -941,7 +915,6 @@ function BattleTriPage.handleInput(wx, wy)
         end)
         return true
     end
-    if terminalRaid then return true end
 
     -- 全窗扫荡弹窗优先于装备背包覆盖层处理
     if SweepDialog.isOpen() then
@@ -987,6 +960,9 @@ function BattleTriPage.handleInput(wx, wy)
         return true
     end
 
+    -- 终焉只锁战斗操作；上方覆盖层和行1 奖励仍沿用各自的输入保护。
+    if terminalRaid then return true end
+
     local hudScale = 0.44  -- 与 drawHud 一致，约原尺寸 80%
     local hudPad = 4
     local hudHalf = 29
@@ -1013,7 +989,7 @@ function BattleTriPage.handleInput(wx, wy)
         return true
     end
     if math.abs(wx - hudSweepX) <= hitW and math.abs(wy - hudY) <= hitH then
-        SweepDialog.handleButtonInput(971 + (wx - hudSweepX) / hudScale, 2115 + (wy - hudY) / hudScale)
+        SweepDialog.handleButtonInput(971 + (wx - hudSweepX) / hudScale, 2115 + (wy - hudY) / hudScale, 1)
         return true
     end
     if math.abs(wx - hudStatsX) <= hitW and math.abs(wy - hudY) <= hitH then
@@ -1052,7 +1028,7 @@ function BattleTriPage.handleInput(wx, wy)
             return true
         end
         if math.abs(wx - rowSweepX) <= hitW and math.abs(wy - rowY) <= hitH then
-            SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale)
+            SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale, row)
             return true
         end
         if math.abs(wx - rowStatsX) <= hitW and math.abs(wy - rowY) <= hitH then
@@ -1126,6 +1102,10 @@ function BattleTriPage.handleDragBegin(wx, wy)
         EquipmentBag.handleDragBegin(dx, dy)
         return true
     end
+    if RewardPopup.currentRowTag() then
+        local rx, ry, rw, rh = interiorRect(1, region.w, region.h)
+        return RewardPopup.handleDragRegion("begin", wx, wy, rx, ry, rw, rh)
+    end
     return false
 end
 
@@ -1147,6 +1127,10 @@ function BattleTriPage.handleDragMove(wx, wy)
         EquipmentBag.handleDragMove(dx, dy)
         return true
     end
+    if RewardPopup.currentRowTag() then
+        local rx, ry, rw, rh = interiorRect(1, region.w, region.h)
+        return RewardPopup.handleDragRegion("move", wx, wy, rx, ry, rw, rh)
+    end
     return false
 end
 
@@ -1161,6 +1145,10 @@ function BattleTriPage.handleDragEnd(wx, wy)
         local dx, dy = EquipmentBag.overlayToDesign(wx, wy)
         EquipmentBag.handleDragEnd(dx, dy)
         return true
+    end
+    if RewardPopup.currentRowTag() then
+        local rx, ry, rw, rh = interiorRect(1, region.w, region.h)
+        return RewardPopup.handleDragRegion("end", wx, wy, rx, ry, rw, rh)
     end
     return false
 end
@@ -1177,6 +1165,10 @@ function BattleTriPage.handleScroll(wheel, wx, wy)
             return StageSelectDialog.handleScroll(wheel, dx, dy)
         end
         return true
+    end
+    if RewardPopup.currentRowTag() then
+        local rx, ry, rw, rh = interiorRect(1, region.w, region.h)
+        return RewardPopup.handleScrollRegion(wheel, wx, wy, rx, ry, rw, rh)
     end
     if not (EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion()) then
         return false

@@ -132,6 +132,7 @@ local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
     local x = cx - w * 0.5
     local y = cy - h * 0.5
     local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
+    ---@cast paint NVGpaint
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
@@ -243,8 +244,7 @@ local function calcEquipPower(equip, heroId)
     local ascendBoost = EquipmentSystem.getAscendBoost(equip)
 
     for i, s in ipairs(equip.baseStats or {}) do
-        local val = s[2]
-        if i == 1 then val = val * (1 + ascendBoost) end
+        local val = EquipmentSystem.effectiveBaseStatValue(equip, i, ascendBoost)
         power = power + calcStatPower(s[1], val, excluded)
     end
 

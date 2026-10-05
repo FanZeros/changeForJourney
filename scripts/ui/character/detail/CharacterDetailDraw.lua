@@ -14,8 +14,8 @@ local EquipmentConfig   = require("config.EquipmentConfig")
 local DetailAttrs       = require("ui.character.detail.CharacterDetailAttrs")
 local EquipStats        = require("ui.character.detail.CharacterEquipStats")
 local AttributeView     = require("ui.character.detail.CharacterAttributeView")
+local BattleLayout      = require("core.BattleLayout")
 local DrawUtil          = require("core.DrawUtil")
-local HeroFrame         = require("ui.widget.HeroFrame")
 local HeroAssetUtil     = require("config.HeroAssetUtil")
 local AwakeningPanel    = require("ui.character.hero.AwakeningPanel")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
@@ -224,10 +224,9 @@ M.SWITCH_SLIDE_DIST    = 180                 -- 水平滑动距离（适中，�
 
 -- 卡片渲染常量（打包为 table，节省 local 变量槽位）
 local CARD = {
-    -- [复用角色展示/编队页卡片] 同尺寸 198x350 + 卡底锚定（战力上83/等级38/经验36），随卡高联动
-    -- （卡 272..622：头盔槽底 265 / 鞋子槽顶 629，各留 7px；名牌不画——MID 名称行两页均显示）
-    W=198, H=350, CY=544,
-    SIDE_SCALE=0.92, SIDE_DX=250, CENTER_SCALE=1.18, YAW_SQUASH=0.86,
+    -- 可见卡框统一按538:955，中心与侧卡只做等比大小变化，卡底信息随高度联动。
+    W=BattleLayout.CARD_W, H=BattleLayout.CARD_H, CY=544,
+    SIDE_SCALE=0.92, SIDE_DX=250, CENTER_SCALE=1.18,
     TAG_SIZE=60, TAG_DX=63,  -- 职业标识右下角，与等级徽章(-63)左右对应
     POWER_BOTTOM_UP=83, POWER_ICON_SIZE=36,
     LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BOTTOM_UP=38,
@@ -235,7 +234,7 @@ local CARD = {
 }
 M.ARROW_BG_LEFT_CX  = DT_CARD_CX - CARD.SIDE_DX
 M.ARROW_BG_RIGHT_CX = DT_CARD_CX + CARD.SIDE_DX
-M.SIDE_CARD_W = CARD.W * CARD.SIDE_SCALE * CARD.YAW_SQUASH
+M.SIDE_CARD_W = CARD.W * CARD.SIDE_SCALE
 M.SIDE_CARD_H = CARD.H * CARD.SIDE_SCALE
 M.SIDE_CARD_STEP = CARD.SIDE_DX
 M.CARD_TOP_CY = CARD.CY
@@ -291,7 +290,7 @@ local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
     if img < 0 or alpha <= 0.01 then return end
     local x = cx - w * 0.5
     local y = cy - h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
+    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha) --[[@as NVGpaint]]
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
@@ -674,7 +673,7 @@ function M.draw(vg)
     nvgGlobalAlpha(vg, 1)
 
     if not isAwakenTab and not isClassTab then
-    -- === 4) 角色卡片：X 轴排列，绕竖直 Y 轴转向，不做画面旋转 ===
+    -- === 4) 角色卡片：横向轮播始终等比缩放，不挤窄卡面和徽章 ===
     local function neighborId(dir)
         local roster = CharacterDetailRef and CharacterDetailRef._getHeroRoster and CharacterDetailRef._getHeroRoster()
         if not roster then return nil end
@@ -709,31 +708,20 @@ function M.draw(vg)
         local pos = slot + slide
         local ax = math.min(1, math.abs(pos))
         local scale = CARD.CENTER_SCALE - (CARD.CENTER_SCALE - CARD.SIDE_SCALE) * ax
-        local yaw = 1 - (1 - CARD.YAW_SQUASH) * ax
         nvgSave(vg)
         local cardY = CARD.CY - ((detailState.tab == "equip") and 70 or 0)
         nvgTranslate(vg, DT_CARD_CX + pos * CARD.SIDE_DX, cardY)
-        nvgScale(vg, scale * yaw, scale)
+        nvgScale(vg, scale, scale)
         nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
         local owned = heroOwned(id)
-        DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, owned and 1.0 or 0.45)
+        DrawUtil.drawCardImage(vg, imgCard, 0, 0, CARD.W, CARD.H, owned and 1.0 or 0.45)
         if not owned then
             nvgBeginPath(vg)
             nvgRect(vg, -CARD.W * 0.5, -CARD.H * 0.5, CARD.W, CARD.H)
             nvgFillColor(vg, nvgRGBA(28, 28, 28, 120))
             nvgFill(vg)
         end
-        -- [统一角色框] 卡面叠加品质描边（frameOnly：不画底与头像）
-        ---@type number
-        local cardW = CARD.W
-        ---@type number
-        local cardH = CARD.H
-        HeroFrame.draw(vg, {
-            cx = 0, cy = 0, w = cardW, h = cardH,
-            heroId = id,
-            state = owned and "owned" or "unowned",
-            frameOnly = true,
-        })
+        -- 新卡面自带美术边框，保留出框；只叠加等级、职业和战力信息。
         drawCardBadges(id)
         nvgRestore(vg)
     end
@@ -999,12 +987,8 @@ function M.draw(vg)
     local curExp = math.floor(exp or 0)
     local needExp = math.floor(maxExp or 0)
     local lvlText = "Lv." .. tostring(heroLevel) .. "  " .. tostring(curExp) .. "/" .. tostring(needExp)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 28)
-    local lvlWidth = nvgTextBounds(vg, 0, 0, lvlText) or 0
-    local lvlFont = lvlWidth > MID_EXP_W - 24 and 28 * (MID_EXP_W - 24) / lvlWidth or 28
-    nvgFontSize(vg, lvlFont)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    AttributeView.fitText(vg, lvlText, 28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        MID_EXP_CX, MID_EXP_CY, MID_EXP_CX - MID_EXP_W * 0.5, MID_EXP_CX + MID_EXP_W * 0.5, 7)
     local lvlSW = 5
     nvgFillColor(vg, nvgRGBA(0x31, 0x24, 0x24, 255))
     for i = 0, 15 do
@@ -1029,14 +1013,12 @@ function M.draw(vg)
     local classIconIdx = CLASS_ICON_MAP[heroCfg.classId]
     local classIcon = classIconIdx and imgClassIcons[classIconIdx] or -1
 
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 34)
-    local classTextW = nvgTextBounds(vg, 0, 0, className) or 0
     local classGap = 8
     local iconW = classIcon >= 0 and MID_CLASS_ICON_SIZE or 0
     local maxClassW = MID_CLASS_BOX_W - 20 - iconW - (iconW > 0 and classGap or 0)
-    local classFont = classTextW > maxClassW and 34 * maxClassW / classTextW or 34
-    classTextW = math.min(classTextW, maxClassW)
+    local classFont, classTextW = AttributeView.fitText(vg, className, 34,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 0, MID_CLASS_LABEL_Y,
+        -maxClassW * 0.5, maxClassW * 0.5, 4)
     local comboW = iconW + (iconW > 0 and classGap or 0) + classTextW
     local comboLeftX = MID_CLASS_BOX_CX - comboW * 0.5
     local classIconCX = comboLeftX + iconW * 0.5
@@ -1387,30 +1369,19 @@ function M.draw(vg)
             local pos = slot + slide
             local ax = math.min(1, math.abs(pos))
             local scale = CARD.CENTER_SCALE - (CARD.CENTER_SCALE - CARD.SIDE_SCALE) * ax
-            local yaw = 1 - (1 - CARD.YAW_SQUASH) * ax
             nvgSave(vg)
             nvgTranslate(vg, DT_CARD_CX + pos * CARD.SIDE_DX, CARD.CY)
-            nvgScale(vg, scale * yaw, scale)
+            nvgScale(vg, scale, scale)
             nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
             local owned = heroOwned(id)
-            DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, owned and 1.0 or 0.45)
+            DrawUtil.drawCardImage(vg, imgCard, 0, 0, CARD.W, CARD.H, owned and 1.0 or 0.45)
             if not owned then
                 nvgBeginPath(vg)
                 nvgRect(vg, -CARD.W * 0.5, -CARD.H * 0.5, CARD.W, CARD.H)
                 nvgFillColor(vg, nvgRGBA(28, 28, 28, 120))
                 nvgFill(vg)
             end
-            -- [统一角色框] 卡面叠加品质描边
-            ---@type number
-            local cardW2 = CARD.W
-            ---@type number
-            local cardH2 = CARD.H
-            HeroFrame.draw(vg, {
-                cx = 0, cy = 0, w = cardW2, h = cardH2,
-                heroId = id,
-                state = owned and "owned" or "unowned",
-                frameOnly = true,
-            })
+            -- 转职页重绘同样不加稀有度框，避免边框压在出框角色上。
             drawCardBadges(id)
             nvgRestore(vg)
         end

@@ -4,14 +4,11 @@
 -- ============================================================================
 
 local AD  = require("systems.AttributeDef")
-local TM  = require("systems.ThreatManager")
-local SEM = require("systems.StatusEffectManager")
-local TAL = require("systems.TalentManager")
-local RCH = require("systems.RelicConditionHandler")
 local ART = require("systems.ArtifactRuntime")
 local MAS = require("systems.MapAffixSystem")
 local SC  = require("config.StageConfig")
 
+local BattleLayout      = require("core.BattleLayout")
 local BattleCombat      = require("ui.battle.combat.BattleCombat")
 local StageBerserk     = require("ui.battle.stage.StageBerserk")
 local BattleDraw        = require("ui.battle.scene.BattleDraw")
@@ -35,6 +32,7 @@ local BattleEnemySpawn = require("ui.battle.stage.BattleEnemySpawn")
 local BattleTransitionHud = require("ui.battle.stage.BattleTransitionHud")
 local BattleStageFlow = require("ui.battle.stage.BattleStageFlow")
 local BattleAllyReset = require("ui.battle.scene.BattleAllyReset")
+local BattleAllyLifecycle = require("ui.battle.scene.BattleAllyLifecycle")
 local BattleStageNav = require("ui.battle.stage.BattleStageNav")
 local BattleCasualty = require("ui.battle.combat.BattleCasualty")
 local BattleStageLoad = require("ui.battle.stage.BattleStageLoad")
@@ -57,8 +55,8 @@ local DESIGN_W = 1080
 local MAP_W, MAP_H = 1080, 2400
 local MAP_CX, MAP_CY = 540, 1200
 
--- 卡片尺寸（BattleDraw/BattleCombat 各自有副本，此处仅供本文件布局引用）
-local CARD_W, CARD_H = 198, 438
+-- 卡片尺寸与敌我绘制共用同一事实源
+local CARD_W, CARD_H = BattleLayout.CARD_W, BattleLayout.CARD_H
 
 -- 敌方战场阴影
 local ENEMY_SHADOW_CX, ENEMY_SHADOW_CY = 540, 804
@@ -70,21 +68,21 @@ local ALLY_SHADOW_W, ALLY_SHADOW_H   = 1080, 556
 
 -- 敌方卡片组 基准坐标（单卡时的 X=540）
 local ENEMY_CARD_CY      = 804
-local ENEMY_TAG_OFFSET_Y  = -215
-local ENEMY_NAME_OFFSET_Y = 102
-local ENEMY_HP_BG_OFFSET_Y = 165
-local ENEMY_HP_VAL_OFFSET_Y = 147
+local ENEMY_TAG_OFFSET_Y  = -CARD_H * 0.5 + 4
+local ENEMY_NAME_OFFSET_Y = CARD_H * 0.5 - 117
+local ENEMY_HP_BG_OFFSET_Y = CARD_H * 0.5 - 54
+local ENEMY_HP_VAL_OFFSET_Y = CARD_H * 0.5 - 72
 local ENEMY_ATK_BG_OFFSET_Y = 181
-local ENEMY_LVL_OFFSET_Y = 215
+local ENEMY_LVL_OFFSET_Y = CARD_H * 0.5 - 4
 
 -- 己方卡片组 基准坐标
 local ALLY_CARD_CY       = 1760
-local ALLY_TAG_OFFSET_Y   = -215
-local ALLY_NAME_OFFSET_Y  = 85
-local ALLY_HP_BG_OFFSET_Y = 153
-local ALLY_HP_VAL_OFFSET_Y = 135
+local ALLY_TAG_OFFSET_Y   = -CARD_H * 0.5 + 4
+local ALLY_NAME_OFFSET_Y  = CARD_H * 0.5 - 134
+local ALLY_HP_BG_OFFSET_Y = CARD_H * 0.5 - 66
+local ALLY_HP_VAL_OFFSET_Y = CARD_H * 0.5 - 84
 local ALLY_ATK_BG_OFFSET_Y = 181
-local ALLY_LVL_OFFSET_Y  = 215
+local ALLY_LVL_OFFSET_Y  = CARD_H * 0.5 - 4
 
 -- 关卡名 / 按钮坐标（合并到 table 减少 local 占用）
 local NAV = BattleStageNav.NAV
@@ -139,31 +137,18 @@ local enemyQueue = {}
 -- 己方单位列表（由 setAllies 填充，init 不再预填占位数据）
 local allies = {}
 
--- [EnemyGuard] 检测 enemies 列表是否被英雄数据污染（一次性报警）
+-- [EnemyGuard] 检测逻辑与己方生命周期同职责提取。
 local _enemyGuardFired = false
+---@type table|nil
+local _allyLifecycle = nil
+---@type fun()
+local bindBattleExtracts
+local function getAllyLifecycle()
+    if not _allyLifecycle then bindBattleExtracts() end
+    return _allyLifecycle
+end
 local function checkEnemiesCorruption(tag)
-    if _enemyGuardFired then return end
-    for i, u in ipairs(enemies) do
-        if u.heroId and not u.monsterId then
-            _enemyGuardFired = true
-            local parts = { "[EnemyGuard] CORRUPTION_DETECTED tag=" .. tag
-                .. " enemies contains HERO data! len=" .. #enemies }
-            for j, e in ipairs(enemies) do
-                parts[#parts + 1] = string.format("  [%d] heroId=%s monsterId=%s instId=%s hp=%s name=%s",
-                    j, tostring(e.heroId), tostring(e.monsterId),
-                    tostring(e.instanceId), tostring(e.hp), tostring(e.name))
-            end
-            parts[#parts + 1] = "  allies_len=" .. #allies
-            for j, a in ipairs(allies) do
-                parts[#parts + 1] = string.format("  ally[%d] heroId=%s hp=%s name=%s",
-                    j, tostring(a.heroId), tostring(a.hp), tostring(a.name))
-            end
-            parts[#parts + 1] = "  enemies_ref=" .. tostring(enemies) .. " allies_ref=" .. tostring(allies)
-            print(table.concat(parts, "\n"))
-            return true
-        end
-    end
-    return false
+    return getAllyLifecycle().checkEnemiesCorruption(tag)
 end
 
 -- 当前关卡 ID
@@ -330,19 +315,7 @@ function BattleScene.getBattleLogicDt(dt)
     return logicDt
 end
 
-local function getLiveAttackInterval(unit, fallback)
-    if unit and unit.attrs and unit.attrs.getActualInterval then
-        local attrInterval = unit.attrs:getActualInterval()
-        local cachedAttrInterval = unit._lastAttrInterval
-        local currentInterval = unit.atkInterval
-        if not currentInterval or not cachedAttrInterval
-            or math.abs(currentInterval - cachedAttrInterval) <= 0.0001 then
-            unit.atkInterval = attrInterval
-        end
-        unit._lastAttrInterval = attrInterval
-    end
-    return unit.atkInterval or fallback
-end
+local getLiveAttackInterval = BattleAllyLifecycle.getLiveAttackInterval
 
 function BattleScene.getSpeedText()
     return BattleSpeed.getSpeedText(BattleScene.battleSpeed)
@@ -365,10 +338,6 @@ function BattleScene.handleSpeedButtonInput(dx, dy)
 end
 
 -- ======================== 属性快照隔离（委托 BattleAllyReset） ========================
-local function createSnapshot(u)
-    BattleAllyReset.createSnapshot(u)
-end
-
 local function resetAllyUnit(u)
     BattleAllyReset.resetAllyUnit(u, allies, syncUnitHp)
 end
@@ -451,51 +420,7 @@ end
 --- 恢复主战斗的 BattleCombat 上下文（副本/竞技场关闭后必须调用）
 --- 将 ctx.getAllies / ctx.getEnemies 重新指向主战斗的 allies/enemies
 local function setupBattleCombatContext()
-    BattleCombat.setContext({
-        getAllies    = function() return allies end,
-        getEnemies  = function() return enemies end,
-        ALLY_CARD_CY  = ALLY_CARD_CY,
-        ENEMY_CARD_CY = ENEMY_CARD_CY,
-        globalDmgMult = 1.0,   -- 战斗超时增伤倍率（update 每帧按 battleTimeoutElapsed 回写）
-        -- 暴击回调：触发暴击台词
-        onCrit = function(attacker, isAlly)
-            if isAlly then
-                SpeechBubble.trigger(attacker, "crit")
-            end
-        end,
-        onAttackHit = function(attacker, target, atkCX, atkCY, tgtCX, tgtCY, result, applyHit)
-            local hasHeroEffect = attacker.heroId
-                                  and ProjectileSystem.hasHeroEffect(attacker.heroId)
-            local hasMonsterEffect = attacker.atkEffect
-                                     and ProjectileSystem.hasMonsterProjectile(attacker.atkEffect)
-
-            local hitCallback = function()
-                if result.category == "healing" and Diag.logEnabled then
-                    print(string.format("[HealDiag4] hitCallback FIRED healer=%s target=%s hp=%.0f applyHit=%s",
-                        tostring(attacker.name), tostring(target.name), target.hp or -1, tostring(applyHit ~= nil)))
-                end
-                if applyHit then applyHit() end
-                if result.category ~= "healing" and target.attrs then
-                    local armorType = target.attrs.armorType or 1
-                    BattleEffects.spawn(armorType, tgtCX, tgtCY)
-                end
-            end
-
-            local projOpts = result.category == "healing" and { target = target, forceBezier = true } or nil
-
-            if hasHeroEffect then
-                ProjectileSystem.spawn(attacker.heroId, atkCX, atkCY, tgtCX, tgtCY, hitCallback, projOpts)
-            elseif hasMonsterEffect then
-                local isMelee = (attacker.isRanged ~= true)
-                ProjectileSystem.spawnByKey(attacker.atkEffect, atkCX, atkCY, tgtCX, tgtCY, hitCallback, isMelee, projOpts)
-            else
-                hitCallback()
-            end
-        end,
-        onTalentDealDamage = function(attacker, target, tgtCX, tgtCY, pfx, applyDamage, projOpts)
-            BattleCombat.onTalentDealDamage(attacker, target, tgtCX, tgtCY, pfx, applyDamage, projOpts, allies, enemies)
-        end,
-    })
+    return getAllyLifecycle().setupBattleCombatContext()
 end
 
 -- [卡牌分帧加载] 英雄卡/怪物卡/投射物图，首次进战斗时构建队列，由 update 分帧消化
@@ -560,7 +485,7 @@ end
 
 local _navLogic
 local _dataRestore
-local function bindBattleExtracts()
+bindBattleExtracts = function()
     local getters = {
         currentStageId = function() return currentStageId end,
         maxStageId_ = function() return maxStageId_ end,
@@ -576,6 +501,7 @@ local function bindBattleExtracts()
         defeatTimer = function() return defeatTimer end,
         reincarnationTimer = function() return reincarnationTimer end,
         isFirstClear = function() return isFirstClear end,
+        _enemyGuardFired = function() return _enemyGuardFired end,
     }
     local function get(key)
         return getters[key]()
@@ -593,6 +519,25 @@ local function bindBattleExtracts()
         elseif key == "isFirstClear" then isFirstClear = value
         end
     end
+    local function setLifecycle(key, value)
+        if key == "reincarnationTimer" then reincarnationTimer = value
+        elseif key == "allies" then allies = value
+        elseif key == "enemies" then enemies = value
+        elseif key == "enemyQueue" then enemyQueue = value
+        elseif key == "_enemyGuardFired" then _enemyGuardFired = value
+        elseif key == "battleTimeoutElapsed" then battleTimeoutElapsed = value
+        elseif key == "firstClearTimeLeft" then firstClearTimeLeft = value
+        elseif key == "waveStartTime" then waveStartTime = value
+        elseif key == "waveKillCount" then waveKillCount = value
+        elseif key == "waveGoldEarned" then waveGoldEarned = value
+        elseif key == "waveExpEarned" then waveExpEarned = value
+        elseif key == "currentStageId" then currentStageId = value
+        elseif key == "isPaused" then isPaused = value
+        elseif key == "bgAnimTimer" then bgAnimTimer = value
+        elseif key == "currentChapter" then currentChapter = value
+        else set(key, value)
+        end
+    end
     local shared = {
         getStageConfig = getStageConfig,
         loadStage = loadStage,
@@ -605,6 +550,14 @@ local function bindBattleExtracts()
     }
     _navLogic = BattleStageNavLogic.bind(shared)
     _dataRestore = BattleDataRestore.bind(shared)
+    _allyLifecycle = BattleAllyLifecycle.bind({
+        getStageConfig = getStageConfig, getStageMaxFieldEnemies = getStageMaxFieldEnemies,
+        loadStage = loadStage, resetAllyUnit = resetAllyUnit,
+        startBattleTalents = startBattleTalents, recalcIdleIncome = recalcIdleIncome,
+        getAllies = function() return allies end, getEnemies = function() return enemies end,
+        getEnemyQueue = function() return enemyQueue end, get = get, set = setLifecycle,
+        MAX_FIELD_ALLIES = MAX_FIELD_ALLIES, ALLY_CARD_CY = ALLY_CARD_CY, ENEMY_CARD_CY = ENEMY_CARD_CY,
+    })
 end
 
 -- ======================== Public API ========================
@@ -1150,126 +1103,14 @@ function BattleScene.setMapBackground(vg, path)
     pendingMapBgPath_ = path
 end
 
---- 重置战斗状态（新单位加入时调用）
-local function resetBattle()
-    battleActive = true
-    battleTimeoutElapsed = 0
-    if isFirstClear then
-        firstClearTimeLeft = require("config.GameConfig").Battle.TIME_LIMIT_SEC
-    else
-        firstClearTimeLeft = nil
-    end
-    Diag.reset()
-    BattleCombat.reset()
-    BattleEffects.reset()
-    ProjectileSystem.reset()
-    SpeechBubble.reset()  -- 清空台词气泡
-    TM.reset()   -- 清空仇恨表
-    SEM.reset()  -- 清空状态效果
-    TAL.reset()  -- 清空天赋运行时状态
-    RCH.reset()  -- 清空条件词条运行时状态
-    ART.reset(allies)  -- 只清理当前战斗单位的神器条件状态
-    -- 重置所有己方单位（清除Buff → 重新应用装备 → 填满血）& 初始化天赋
-    for _, u in ipairs(allies) do
-        Diag.installSentinel(u)
-        resetAllyUnit(u)
-        TAL.initUnit(u)
-    end
-    RCH.initBattle(allies)  -- 重新初始化条件词条运行时
-    ART.initBattle(allies)  -- 重新初始化神器条件效果
-    for _, u in ipairs(enemies) do
-        Diag.installSentinel(u)
-        u.atkProgress = 0
-        TAL.initUnit(u)
-    end
-    -- 触发战斗开始仇恨（骑士"阵前叫嚣"等）
-    TM.onBattleStart(allies, enemies)
-    TAL.onBattleStart(allies, enemies)
-    -- [EnemyGuard] resetBattle 出口检查
-    checkEnemiesCorruption("RESET_BATTLE_EXIT")
-end
-
 --- 设置敌方单位列表（DebugPanel 用）
 function BattleScene.setEnemies(list)
-    -- 限制场上上限（使用当前关卡的敌方场地上限）
-    local maxField = getStageMaxFieldEnemies()
-    enemies = {}
-    enemyQueue = {}
-    for i, u in ipairs(list) do
-        if i <= maxField then
-            enemies[#enemies + 1] = u
-        else
-            enemyQueue[#enemyQueue + 1] = u
-        end
-    end
-    resetBattle()
+    return getAllyLifecycle().setEnemies(list)
 end
 
 --- 设置己方单位列表（DebugPanel 用）
 function BattleScene.setAllies(list)
-    -- [EnemyGuard] setAllies 入口检查：此时 enemies 是否已被污染
-    checkEnemiesCorruption("setAllies_ENTRY")
-    print(string.format("[EnemyGuard] setAllies called listLen=%d enemies_ref=%s enemies_len=%d allies_ref=%s",
-        #list, tostring(enemies), #enemies, tostring(allies)))
-
-    -- 限制场上上限
-    if #list > MAX_FIELD_ALLIES then
-        local trimmed = {}
-        for i = 1, MAX_FIELD_ALLIES do
-            trimmed[i] = list[i]
-        end
-        allies = trimmed
-    else
-        allies = list
-    end
-    -- [站位顺序] 记录编队槽位序号：战斗中途「阵亡紧凑」会打乱数组顺序，
-    -- 切关时用 _slotOrder 还原，避免角色站位与编队不一致（见 BattleAllyReset.restoreOrder）
-    for i, u in ipairs(allies) do
-        u._slotOrder = i
-    end
-    -- 为所有 ally 创建初始基线快照（此时 unit 已含全部持久性 modifier + 装备）
-    for _, u in ipairs(allies) do
-        createSnapshot(u)
-    end
-    -- [HealDiag2] setAllies时记录所有治疗者属性
-    for i, u in ipairs(allies) do
-        if u.attrs and AD.getAtkCategory(u.attrs.atkType) == "healing" then
-            u._diagInitHealer = true  -- [HealDiag3] 永久标记初始治疗者
-            local healAmt = u.attrs:get(AD.HEAL_AMOUNT)
-            local baseHealAmt = u.attrs:getBase(AD.HEAL_AMOUNT)
-            local hp = u.attrs:get(AD.HP)
-            local maxHp = u.attrs:get(AD.MAX_HP)
-            local snapHealAmt = u._baseSnapshot and u._baseSnapshot:get(AD.HEAL_AMOUNT) or -1
-            print(string.format(
-                "[HealDiag2] INIT_HEALER [%d] name=%s id=%s lv=%s"
-                .. " healAmt_final=%.1f healAmt_base=%.1f snap_healAmt=%.1f"
-                .. " hp=%d/%d atkType=%s atkCoeff=%.2f",
-                i, tostring(u.name), tostring(u.heroId), tostring(u.level),
-                healAmt, baseHealAmt, snapHealAmt,
-                hp, maxHp,
-                tostring(u.attrs.atkType), u.attrs.atkCoeff or 1.0
-            ))
-        end
-    end
-    -- 保存 searching 状态：setBattleData 首次加载时已设置 searchingTimer，
-    -- resetBattle 会将 battleActive 置 true 覆盖寻怪状态，需在之后恢复
-    local wasSearching = (searchingTimer ~= nil) and (not battleActive)
-    resetBattle()
-    if wasSearching then
-        battleActive = false
-        -- searchingTimer 未被 resetBattle 修改，无需恢复
-        print("[BattleScene] setAllies: 恢复寻怪状态 searchingTimer=" .. tostring(searchingTimer))
-    end
-    -- [EnemyGuard] setAllies 出口检查：enemies 是否变成了 allies 的引用
-    if enemies == allies then
-        print("[EnemyGuard] CRITICAL: enemies === allies (same table ref!) after setAllies+resetBattle")
-    end
-    checkEnemiesCorruption("setAllies_EXIT")
-    print(string.format("[EnemyGuard] setAllies EXIT enemies_ref=%s allies_ref=%s enemies_len=%d allies_len=%d",
-        tostring(enemies), tostring(allies), #enemies, #allies))
-    -- [诊断] setAllies 后即时扫描（首次加载走此路径）
-    Diag.scanNow(allies, enemies, "setAllies_postReset")
-    recalcIdleIncome()
+    return getAllyLifecycle().setAllies(list)
 end
 
 --- 获取默认攻击间隔（供 DebugPanel 等外部模块使用）
@@ -1594,178 +1435,29 @@ end
 
 --- 轻量级属性刷新：英雄升级后更新场上 ally 的属性，不重置战斗状态
 function BattleScene.refreshAllyStats()
-    local HC = require("config.HeroConfig")
-    local CharacterPanel = require("ui.character.panel.CharacterPanel")
-    for _, u in ipairs(allies) do
-        -- 跳过已死亡的单位
-        if u.heroId and u.hp > 0 then
-            local owned = CharacterPanel.getOwnedHero and CharacterPanel.getOwnedHero(u.heroId)
-            if owned and owned.level then
-                local heroLevel = CharacterPanel.getEffectiveLevel
-                    and CharacterPanel.getEffectiveLevel(u.heroId) or owned.level
-                -- 重建完整属性（含最新等级/觉醒/转职/装备），存入 _pendingSnapshot 延迟生效
-                -- 当前战斗中 u.attrs / u.hp / u.maxHp / u.atkInterval 保持不变
-                local newUnit = HC.createHero(u.heroId, heroLevel, owned.advBranch, owned.awakening, owned.extraTalent)
-                if newUnit and newUnit.attrs then
-                    local partySlot = nil
-                    for ai, a in ipairs(allies) do
-                        if a == u then partySlot = ai; break end
-                    end
-                    -- 应用已穿戴装备属性（含槽位强化加成）
-                    if CharacterPanel.applyEquippedItems then
-                        local eqArmorType = CharacterPanel.applyEquippedItems(newUnit.attrs, u.heroId, partySlot)
-                        if eqArmorType then
-                            newUnit.armorType = eqArmorType
-                        end
-                    end
-                    -- [927 遗物后端移除] RelicBridge 已删除，不再应用遗物词条
-                    -- [928 三队并行] ArtifactBridge 保留 teamIdx 参数（多队神器数据隔离）
-                    local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot, nil, u.artifactTeamIdx or 1)
-                    if artifactEffects and #artifactEffects > 0 then
-                        u.artifactEffects = artifactEffects
-                    else
-                        u.artifactEffects = nil
-                    end
-                    -- 存入待定快照，下次波次切换时生效
-                    u._pendingSnapshot = newUnit.attrs
-                    u._pendingArmorType = newUnit.armorType
-                    -- 觉醒/转职变更需立即同步运行时节点，否则 TalentManager.hasAwaken 仍按旧阶判定
-                    if newUnit.awakeningNodes then
-                        u.awakeningNodes = newUnit.awakeningNodes
-                    end
-                    if newUnit.advBranch then
-                        u.advBranch = newUnit.advBranch
-                    end
-                    if newUnit.advTalentIds then
-                        u.advTalentIds = newUnit.advTalentIds
-                    end
-                    -- 等级变化时记录待定等级（使用有效等级，含共鸣加成）
-                    local currentStatLevel = u._pendingLevel or u.level
-                    if heroLevel > currentStatLevel then
-                        u._pendingLevel = heroLevel
-                        print(string.format("[BattleScene] refreshAllyStats: hero %s statLv %d→%d stored as pending",
-                            tostring(u.heroId), currentStatLevel, heroLevel))
-
-                        -- 升级 Spine 特效：立即播放作为视觉反馈
-                        local idx = 1
-                        for ai, a in ipairs(allies) do
-                            if a == u then idx = ai; break end
-                        end
-                        local cx = BattleCombat.getCardCX(allies, idx)
-                        require("ui.fx.SpineCardEffect").playLevelUp(cx, ALLY_CARD_CY)
-                    else
-                        print(string.format("[BattleScene] refreshAllyStats: hero %s attrs refreshed (equip/awaken change), pending",
-                            tostring(u.heroId)))
-                    end
-                end
-            end
-        end
-    end
-    recalcIdleIncome()
+    return getAllyLifecycle().refreshAllyStats()
 end
 
 --- [Debug] 立即通关当前关卡（杀死所有敌人 + 清空队列，让胜利检测自然触发）
 function BattleScene.debugInstantClear()
-    -- 清空待出场队列
-    for i = #enemyQueue, 1, -1 do enemyQueue[i] = nil end
-    -- 击杀场上所有敌人
-    for _, e in ipairs(enemies) do
-        if e.hp > 0 then e.hp = 0 end
-    end
-    -- 重置波次计时，避免秒杀数据污染效率缓冲区
-    waveStartTime = nil
-    waveKillCount = 0
-    waveGoldEarned = 0
-    waveExpEarned = 0
-    print("[BattleScene][Debug] 立即通关: 已清除所有敌人")
+    return getAllyLifecycle().debugInstantClear()
 end
 
 --- [DEBUG] 跳转到指定关卡（调试面板用，同步本地进度；持久化由 GM_JUMP_STAGE 负责）
 ---@param stageId number 目标关卡 ID
 function BattleScene.debugJumpToStage(stageId)
-    local stageConfig = getStageConfig()
-    local stage = stageConfig.getStage(stageId)
-    if not stage then
-        print("[BattleScene][Debug] 无效关卡 ID: " .. tostring(stageId))
-        return
-    end
-    searchingTimer = nil
-    defeatTimer = nil
-    reincarnationTimer = nil
-    regenAccum = 0
-    bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_FWD_TARGET }
-    BottomNav.setAllLocked(false)
-
-    -- 重建进度：含此前所有难度与终焉神殿，不含当前难度终焉
-    maxStageId_ = stageId
-    clearedStages = {}
-    for k, v in pairs(stageConfig.buildClearedStagesUpTo(stageId)) do
-        local numKey = tonumber(k)
-        if numKey and v then
-            clearedStages[numKey] = true
-        end
-    end
-    isFirstClear = not clearedStages[stageId]
-    recalcIdleIncome()
-
-    loadStage(stageId, true)
-    for _, u in ipairs(allies) do resetAllyUnit(u) end
-    startBattleTalents()
-    print("[BattleScene][Debug] 跳转到关卡 " .. stageId .. " (" .. stage.name .. ")")
+    return getAllyLifecycle().debugJumpToStage(stageId)
 end
 
 --- 重新加载当前关卡
 ---@param opts? { startSearching?: boolean }  startSearching=true 时以"寻怪中"进度条启动（首次进入用）
 function BattleScene.reloadStage(opts)
-    searchingTimer = nil
-    defeatTimer = nil
-    regenAccum = 0
-
-    if opts and opts.startSearching then
-        -- 首次进入：loadStage 做完整初始化（不需 resetAllyUnit）
-        loadStage(currentStageId)
-        -- 进入寻怪状态，等服务端装备/天赋数据同步完毕
-        -- searchingTimer 到期后会自动 resetAllyUnit + 重新生成敌人 + startBattleTalents
-        battleActive = false
-        searchingTimer = 0
-        print("[BattleScene] 首次进入，以寻怪模式启动")
-    else
-        -- 常规重载：skipBattleStart → 还原站位顺序 → resetAllyUnit → startBattleTalents
-        loadStage(currentStageId, true)
-        BattleAllyReset.restoreOrder(allies)
-        for _, u in ipairs(allies) do resetAllyUnit(u) end
-        startBattleTalents()
-    end
+    return getAllyLifecycle().reloadStage(opts)
 end
 
 --- 重置战斗场景到初始默认状态（清除存档后调用）
 function BattleScene.resetToDefault()
-    currentStageId = 0101
-    clearedStages = {}
-    isFirstClear = true
-    initialBattleDataLoaded = false
-    battleActive = false  -- 等 setBattleData 首次到达后再启动（与 init 一致）
-    isPaused = false
-    searchingTimer = nil
-    defeatTimer = nil
-    reincarnationTimer = nil
-    regenAccum = 0
-    bgAnimTimer = 0
-    bgTransAnim = nil
-    currentChapter = 0
-    maxStageId_ = SC.NORMAL_FIRST_STAGE or 101
-    enemies = {}
-    enemyQueue = {}
-    SEM.reset()
-    TAL.reset()
-    RCH.reset()
-    ART.reset(allies)
-    BattleCombat.reset()
-    ProjectileSystem.reset()
-    -- 解锁导航（防止终焉神殿锁定残留）
-    BottomNav.setAllLocked(false)
-    -- 不再在此调用 loadStage：initialBattleDataLoaded=false 会让 setBattleData 统一处理
-    print("[BattleScene] resetToDefault OK (deferred loadStage)")
+    return getAllyLifecycle().resetToDefault()
 end
 
 --- 暂停战斗（切离战斗页面时调用）

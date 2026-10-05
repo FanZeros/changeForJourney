@@ -1,5 +1,5 @@
 -- 三阶查询回归：新I/II/III与旧七节点查询分离，仅验证解锁门槛、不调整倍率。
--- 哈基米只在正式helper验证阶段；当前TAL治疗路由未修，不声称治疗闭环已恢复。
+-- 本入口的哈基米阶段用例只验证helper；正式治疗链见healing_awaken_pipeline_test.lua。
 local AC = require("config.AwakeningConfig")
 local AD = require("systems.AttributeDef")
 local UA = require("systems.UnitAttributes")

@@ -4,6 +4,7 @@
 -- 护甲类型: 1=皮甲 2=轻甲 3=重甲 4=板甲 5=布甲
 -- ============================================================================
 
+local BattleLayout = require("core.BattleLayout")
 local BattleEffects = {}
 -- [多实例] 活动特效列表随战斗 mount 切换; fxPool/particlePool 对象池全局共享
 local function newFxState()
@@ -599,8 +600,8 @@ EFFECT_TYPES[5] = {
 -- 银光闪光（雷电麦坤 #21 天赋触发）
 -- 银白色斜向长线切割怪物卡片
 -- ============================================================================
-local SILVER_FLASH_CARD_HW = 99
-local SILVER_FLASH_CARD_HH = 219
+local SILVER_FLASH_CARD_HW = BattleLayout.CARD_W * 0.5
+local SILVER_FLASH_CARD_HH = BattleLayout.CARD_H * 0.5
 
 local SILVER_FLASH_EFFECT = {
     duration = 0.48,
@@ -615,14 +616,15 @@ local SILVER_FLASH_EFFECT = {
 
     draw = function(fx, vg, t)
         local tx, ty = fx.tgtX, fx.tgtY
-        local hw, hh = fx._halfW, fx._halfH
+        local cardScale = BattleLayout.MODE == "strip" and BattleLayout.CARD_SCALE or 1.0
+        local hw, hh = fx._halfW * cardScale, fx._halfH * cardScale
         local angle = fx._slashAngle
         local cosA, sinA = math.cos(angle), math.sin(angle)
         local slashLen = math.sqrt(hw * hw + hh * hh) * 2.4
 
         -- 卡片范围内裁剪
         nvgSave(vg)
-        nvgScissor(vg, tx - hw, ty - hh, hw * 2, hh * 2)
+        nvgIntersectScissor(vg, tx - hw, ty - hh, hw * 2, hh * 2)
 
         -- 1) 斜向银光切割线（0.02~0.38，由短变长扫过卡片）
         if t >= 0.02 and t < 0.42 then

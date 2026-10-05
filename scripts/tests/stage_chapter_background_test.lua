@@ -58,21 +58,55 @@ function Start()
         local shape, paint = {}, nil
         local nextImage = 0
         local failPath, zeroSizePath, zeroHandlePath = nil, nil, nil
-        local texts = {}
+        local texts, textRecords, cardDraws = {}, {}, {}
+        local clip, clipStack = nil, {}
+        local fontSize, transformScale = 24, 1
+        local function copyClip(value)
+            if not value then return nil end
+            return { x = value.x, y = value.y, w = value.w, h = value.h }
+        end
         fixtures["core.DrawUtil"] = {
-            drawImageCentered = noop, drawImageCover = noop, drawNineSlice = noop,
-            drawTextStroke = function(_, _, _, text)
+            drawImageCentered = noop, drawNineSlice = noop,
+            drawImageCover = function(_, image, x, y, w, h)
+                cardDraws[#cardDraws + 1] = { path = images[image], x = x, y = y, w = w, h = h,
+                    clip = copyClip(clip) }
+            end,
+            drawTextStroke = function(_, x, y, text, size)
                 -- 绘图spy模拟生产文字出口的翻译hook；标题排版仍走真实I18n接口。
                 local caption = I18n.lookup(text)
                 texts[#texts + 1] = caption
+                textRecords[#textRecords + 1] = { text = caption, x = x, y = y, size = size,
+                    clip = copyClip(clip) }
                 events[#events + 1] = { text = caption }
             end,
         }
         require = function(name) return fixtures[name] or originalRequire(name) end
         time = { elapsedTime = 20 }
-        for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgTranslate", "nvgScale", "nvgIntersectScissor",
-            "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgStrokeColor", "nvgStrokeWidth" }) do hook(name, noop) end
-        hook("nvgTextBounds", function(_, _, _, text) return utf8.len(text) * 12 end)
+        for _, name in ipairs({ "nvgTranslate",
+            "nvgFontFace", "nvgTextAlign", "nvgStrokeColor", "nvgStrokeWidth" }) do hook(name, noop) end
+        hook("nvgScale", function(_, x) transformScale = transformScale * x end)
+        hook("nvgResetTransform", function() transformScale = 1 end)
+        hook("nvgSave", function()
+            clipStack[#clipStack + 1] = { clip = copyClip(clip), scale = transformScale }
+        end)
+        hook("nvgRestore", function()
+            local saved = table.remove(clipStack)
+            check(saved ~= nil, "绘制状态成对恢复")
+            clip, transformScale = saved.clip, saved.scale
+        end)
+        hook("nvgIntersectScissor", function(_, x, y, w, h)
+            if clip then
+                local right, bottom = math.min(x + w, clip.x + clip.w), math.min(y + h, clip.y + clip.h)
+                x, y = math.max(x, clip.x), math.max(y, clip.y)
+                w, h = math.max(0, right - x), math.max(0, bottom - y)
+            end
+            clip = { x = x, y = y, w = w, h = h }
+        end)
+        hook("nvgFontSize", function(_, size) fontSize = size end)
+        hook("nvgTextBounds", function(_, _, _, text)
+            local minPixelScale = math.max(1, 0.3 / transformScale)
+            return utf8.len(text) * fontSize * 0.75 * minPixelScale
+        end)
         hook("nvgCreateImage", function(_, path)
             loads[path] = (loads[path] or 0) + 1
             if path == failPath then return -1 end
@@ -101,8 +135,9 @@ function Start()
         hook("nvgText", function(_, _, _, text) texts[#texts + 1] = text end)
         local Dialog = originalRequire("ui.battle.stage.StageSelectDialog")
         local function draw()
-            events, texts = {}, {}
+            events, texts, textRecords, cardDraws = {}, {}, {}, {}
             Dialog.draw({})
+            check(#clipStack == 0 and clip == nil, "弹窗绘制不泄漏裁剪状态")
             local banners = {}
             for _, e in ipairs(events) do
                 if e.paint and e.shape.x == 105 and e.shape.w == 190 then banners[#banners + 1] = e end
@@ -146,6 +181,14 @@ function Start()
         banners = draw()
         check(banners[1].paint.path == firstPath and loads[firstPath] == 1,
             "困难首章复用普通首章图片缓存")
+        Dialog.handleInput(175, 880)
+        draw()
+        local hardCaptions = {}
+        for _, text in ipairs(texts) do hardCaptions[text] = true end
+        check(hardCaptions["24 章"] and hardCaptions["24-4"],
+            "困难选关章节与第四关保持连续编号24-4")
+        check(currentStage == 101 and maxStage == 305 and jumps == 0,
+            "查看困难编号不改变实际进度或解锁")
         Dialog.handleScroll(24, 175, 900)
         Dialog.handleInput(175, 970)
         check(jumps == 0, "点背景卡片仅切章节，不跳关")
@@ -183,6 +226,205 @@ function Start()
         Dialog.close()
         Dialog.init({})
         check(deleted[0] == true, "重新初始化也释放句柄0")
+
+        -- 用正式首通附加怪规则覆盖4/5/6种敌人，不改关卡配置或存档。
+        local capturedSpawn = fixtures["ui.battle.stage.BattleEnemySpawn"]
+        local spawn = originalRequire("ui.battle.stage.BattleEnemySpawn")
+        -- 模块已捕获旧替身；转发正式方法，避免重载页面或修改生产配置。
+        capturedSpawn.getFirstClearBonusMonsterIds = spawn.getFirstClearBonusMonsterIds
+        zeroHandlePath = nil
+        maxStage = 32305
+        local function openAt(id)
+            Dialog.close()
+            currentStage = id
+            Dialog.open()
+            time.elapsedTime = time.elapsedTime + 1
+            draw()
+        end
+        local function rowCards(row)
+            local result = {}
+            local cy = 790 + (row - 1) * 178 + 62
+            for _, card in ipairs(cardDraws) do
+                if near(card.y, cy) then result[#result + 1] = card end
+            end
+            return result
+        end
+        local function drag(x0, y0, x1, y1)
+            Dialog.handleDragBegin(x0, y0)
+            Dialog.handleDragMove(x1, y1)
+            Dialog.handleDragEnd()
+            -- 宿主可能误判往返/慢拖为tap，页面本身也必须消费。
+            Dialog.handleInput(x1, y1)
+            draw()
+        end
+        openAt(32301)
+        local rows = rowCards(5)
+        check(#rows == 6, "32305普通怪/Boss/两名附加怪共六种")
+        check(#rowCards(3) == 4 and #rowCards(1) == 3, "四种和三种敌人完整保留")
+        local initialX, beforeJumps = rows[1].x, jumps
+        local countsBefore = {}
+        for _, text in ipairs(textRecords) do
+            if text.text:match("^x%d+$") then countsBefore[#countsBefore + 1] = text.text end
+        end
+        local row5Y = 790 + 4 * 178
+        Dialog.handleDragBegin(700, row5Y + 62)
+        Dialog.handleScroll(-1, 700, row5Y + 62)
+        Dialog.handleDragMove(680, row5Y + 62)
+        draw()
+        check(near(rowCards(5)[1].x, initialX - 120), "按住后滚轮与首次左拖累加")
+        Dialog.handleScroll(1, 680, row5Y + 62)
+        Dialog.handleDragMove(670, row5Y + 62)
+        draw()
+        check(near(rowCards(5)[1].x, initialX - 30), "拖动中滚轮与增量拖动不跳回")
+        Dialog.handleScroll(-99, 670, row5Y + 62)
+        Dialog.handleDragMove(690, row5Y + 62)
+        draw()
+        check(near(rowCards(5)[1].x, initialX - 140), "滚轮到右端后反向拖动立即响应")
+        Dialog.handleScroll(-1, 700, 790 + 62)
+        Dialog.handleScroll(-1, 400, row5Y + 62)
+        draw()
+        check(near(rowCards(1)[1].x, initialX) and near(rowCards(5)[1].x, initialX - 140),
+            "滚短列表或标签不改变被拖行偏移")
+        Dialog.handleDragEnd()
+        Dialog.handleInput(690, row5Y + 62)
+        check(jumps == beforeJumps and Dialog.isOpen(), "混用滚轮拖动松手不误选关")
+        Dialog.handleScroll(99, 700, row5Y + 62)
+        draw()
+        check(near(rowCards(5)[1].x, initialX), "滚轮左端钳制不产生空白")
+        drag(700, row5Y + 62, 630, row5Y + 62)
+        rows = rowCards(5)
+        check(near(rows[1].x, initialX - 70), "横拖按实际X位移滚动")
+        check(rowCards(3)[1].x == initialX and rowCards(1)[1].x == initialX,
+            "每行偏移独立，邻行不被平移")
+        check(jumps == beforeJumps and Dialog.isOpen(), "横拖不切关也不关闭弹窗")
+        for _, card in ipairs(rows) do
+            check(card.clip.x == 455 and card.clip.w == 436 and card.clip.y == row5Y + 6,
+                "卡片固定裁剪不侵入左标签或邻行")
+        end
+        local countsAfter = {}
+        for _, text in ipairs(textRecords) do
+            if text.text:match("^x%d+$") then
+                countsAfter[#countsAfter + 1] = text.text
+                check(text.clip.x == 455 and text.clip.w == 436, "数量共用卡片区裁剪")
+            end
+        end
+        check(table.concat(countsBefore, ",") == table.concat(countsAfter, ","), "滚动不改变敌人计数")
+        drag(700, row5Y + 62, -1000, row5Y + 62)
+        rows = rowCards(5)
+        check(near(rows[1].x, initialX - 160) and near(rows[6].x + 46, 889),
+            "右端夹紧，末卡及右边框完整留在视口内")
+        drag(600, row5Y + 62, 2000, row5Y + 62)
+        check(near(rowCards(5)[1].x, initialX), "左端夹紧，无空白过拖")
+        Dialog.handleDragBegin(700, row5Y + 62)
+        Dialog.handleDragMove(550, row5Y + 62)
+        Dialog.handleDragMove(700, row5Y + 62)
+        Dialog.handleDragEnd()
+        Dialog.handleInput(700, row5Y + 62)
+        check(jumps == beforeJumps and Dialog.isOpen(), "往返拖回原点仍消费误tap")
+        draw()
+        check(near(rowCards(5)[1].x, initialX), "往返拖回原偏移")
+        drag(700, row5Y + 62, 702, row5Y - 30)
+        check(near(rowCards(5)[1].x, initialX) and jumps == beforeJumps,
+            "纵向拖出敌人区不滚横轴、不误切关")
+        drag(700, 790 + 62, 550, 790 + 62)
+        check(near(rowCards(1)[1].x, initialX), "不足视口宽度的敌人行不滚动")
+        drag(700, row5Y + 62, 630, row5Y + 62)
+        Dialog.handleInput(175, 836 + 94 + 40)
+        draw()
+        Dialog.handleInput(175, 880)
+        draw()
+        check(near(rowCards(5)[1].x, initialX), "切换章节再返回清零横向偏移")
+        drag(700, row5Y + 62, 630, row5Y + 62)
+        openAt(32301)
+        check(near(rowCards(5)[1].x, initialX), "关闭重开清零横向偏移")
+        maxStage = 101
+        draw()
+        drag(700, row5Y + 62, 630, row5Y + 62)
+        check(near(rowCards(5)[1].x, initialX - 70) and jumps == beforeJumps,
+            "未解锁关卡仍能查看完整敌人但不能切关")
+        maxStage = 32305
+        Dialog.handleDragBegin(700, row5Y + 62)
+        Dialog.handleDragMove(704, row5Y + 63)
+        Dialog.handleDragEnd()
+        Dialog.handleInput(704, row5Y + 63)
+        check(currentStage == 32305 and jumps == beforeJumps + 1 and not Dialog.isOpen(),
+            "下一次短点击正常切关，不被上次拖动锁存吞掉")
+
+        -- 真实配置自动找到五种敌人的行，验证宽度计算不只适配六张。
+        local fiveStage
+        for _, entry in ipairs(SC.STAGES) do
+            if not SC.isTerminalTemple(entry.id) then
+                local seen = {}
+                for _, id in ipairs(entry.monsters or {}) do seen[id] = true end
+                if entry.bossId and entry.bossId > 0 then seen[entry.bossId] = true end
+                for _, id in ipairs(spawn.getFirstClearBonusMonsterIds(entry) or {}) do seen[id] = true end
+                local count = 0
+                for _ in pairs(seen) do count = count + 1 end
+                if count == 5 then fiveStage = entry; break end
+            end
+        end
+        check(fiveStage ~= nil, "存在五种敌人的正式关卡夹具")
+        openAt(fiveStage.id)
+        local row = fiveStage.stage
+        local rowY = 790 + (row - 1) * 178
+        check(#rowCards(row) == 5, "五种敌人全部参与横排")
+        drag(700, rowY + 62, -1000, rowY + 62)
+        check(near(rowCards(row)[1].x, initialX - 60), "五张卡含描边右端精确夹紧60像素")
+        Dialog.handleDragBegin(700, rowY + 62)
+        Dialog.handleDragMove(400, rowY + 62)
+        Dialog.handleDragMove(420, rowY + 62)
+        Dialog.handleDragEnd()
+        Dialog.handleInput(420, rowY + 62)
+        draw()
+        check(near(rowCards(row)[1].x, initialX - 40), "超出端点后回拖20像素立即响应")
+        local fiveJumps = jumps
+        Dialog.handleDragBegin(600, 790 + 62)
+        Dialog.handleDragMove(500, 790 + 62)
+        Dialog.handleDragMove(600, 790 + 62)
+        Dialog.handleDragEnd()
+        Dialog.handleInput(600, 790 + 62)
+        check(jumps == fiveJumps and Dialog.isOpen(), "短列表往返拖动也不误选关")
+
+        -- 完整五语说明必须在终焉行下方、使用宽栏折行且不进入敌人clip。
+        local sources = {
+            "最多三队一起上场，不必三队全部存活。",
+            "同编号敌人跨队共享生命，击败全部三名敌人即可通关。",
+            "限时 %d 秒；全部参战队伍失守或超时则失败。",
+            "胜利进入下一难度，失败退回本难度最后一关。",
+        }
+        for _, language in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+            I18n.set(language)
+            Dialog.close()
+            currentStage = 999
+            Dialog.open()
+            -- 动画首帧先测宽；若缓存受最小像素字号影响，后面稳定帧会窄折行/越底。
+            time.elapsedTime = time.elapsedTime + 0.005
+            draw()
+            time.elapsedTime = time.elapsedTime + 1
+            draw()
+            local joined = ""
+            for _, text in ipairs(textRecords) do
+                if text.y > 958 and text.x >= 315 then
+                    check(text.x == 331 and text.y + text.size * 0.5 < 1680,
+                        language .. "说明放行下且完整位于面板内")
+                    check(text.clip.x == 315 and text.clip.w == 580,
+                        language .. "说明不受敌人窄栏裁剪")
+                    check(utf8.len(text.text) * text.size * 0.75 <= 548,
+                        language .. "每行测宽不越栏")
+                    joined = joined .. text.text
+                end
+            end
+            joined = joined:gsub("%s", "")
+            for i, source in ipairs(sources) do
+                local translated = i == 3 and I18n.format(source, 300) or I18n.lookup(source)
+                check(joined:find(translated:gsub("%s", ""), 1, true) ~= nil,
+                    language .. "完整呈现规则段" .. i)
+                if language ~= "zh_CN" then
+                    check(I18n.lookup(source) ~= source, language .. "规则有正式翻译" .. i)
+                end
+            end
+            check(not joined:find("可三队一起上场", 1, true), "移除旧窄行说明")
+        end
         I18n.set(initialLanguage)
         print("[stage_chapter_background_test] ALL PASS: " .. assertions .. " assertions")
     end)

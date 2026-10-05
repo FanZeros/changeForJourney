@@ -109,7 +109,7 @@ function Start()
         RT.vg, RT.logicalW, RT.logicalH, RT.windowW, RT.windowH = {}, 1920, 1080, 1920, 1080
         RT.dpr, RT.bootReady_, RT.preload_ = 1, true, { active = false }
         require = function(name)
-            if name == "boot.StandaloneHorizonInput" or name == "boot.OfflineRewardOverlay" then
+            if name == "boot.StandaloneHorizonInput" or name == "boot.OfflineRewardOverlay" or name == "boot.SeamBackGesture" then
                 return originalRequire(name)
             end
             if not mods[name] then mods[name] = mock() end
@@ -204,6 +204,7 @@ function Start()
     if ok then
         print("[forge_backpack_layer_test] ALL PASS: " .. assertions .. " assertions")
     else
+        print("[forge_backpack_layer_test] FAIL: " .. tostring(err))
         log:Write(LOG_ERROR, "[forge_backpack_layer_test] " .. tostring(err))
     end
     engine:Exit()

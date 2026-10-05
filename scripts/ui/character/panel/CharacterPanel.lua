@@ -105,7 +105,9 @@ local SCROLL_MIN_VEL  = 0.5   -- 速度低于此值停止惯性
 local SCROLL_WHEEL_STEP = 80  -- 鼠标滚轮每格滚动像素
 
 -- 缓存每个槽位的战斗力（避免每帧 createHero）——见上方 teamPowerCaches
-local runtimeOnlyPowerCache = 0  -- RUNTIME_ONLY 天赋节点的固定战力总额
+local runtimeOnlyPowerCache = 0  -- 队1兼容值；各队展示读取逐队缓存
+---@type table<number, number>
+local runtimeOnlyPowerCaches = { 0, 0, 0 }
 
 -- 缓存"可提升"角标状态（避免每帧全量扫描背包计算装备战力）
 -- upgradeBadgeCache[heroId] = boolean
@@ -232,6 +234,7 @@ local function bindPower()
         end,
         set = function(k, v)
             if k == "runtimeOnlyPowerCache" then runtimeOnlyPowerCache = v
+            elseif k == "runtimeOnlyPowerCaches" then runtimeOnlyPowerCaches = v
             elseif k == "upgradeBadgeCache" then upgradeBadgeCache = v
             end
         end,
@@ -257,9 +260,14 @@ end
 
 -- 实战预估（分项计价原型，见 systems/CombatPowerEstimate.lua）：
 -- 官方战力不受影响；预估仅在详情页可选副行展示（默认关闭，验收后开启）
-local function calcHeroEstimate(heroId, partySlot)
+local function calcHeroEstimate(heroId, partySlot, teamIdx)
     local power = ensurePower()
-    return power.calcHeroEstimate and power.calcHeroEstimate(heroId, partySlot) or 0
+    return power.calcHeroEstimate and power.calcHeroEstimate(heroId, partySlot, teamIdx) or 0
+end
+
+--- 实际所属队与槽位，不受编辑队和战斗显示顺序影响。
+function CharacterPanel.getHeroDeployPosition(heroId, teamIdx)
+    return ensurePower().findHeroDeployPosition(heroId, teamIdx)
 end
 
 local function refreshPowerCache()
@@ -441,6 +449,7 @@ function CharacterPanel.init(vg)
         getTeamOccupiedCounts = function() return CharacterPanel.getTeamOccupiedCounts() end,
         getTeams = function() return teams end,
         getTeamPowerCaches = function() return teamPowerCaches end,
+        getTeamTotalPower = function(t) return CharacterPanel.getTotalPower(t) end,
     })
     Draw.initImages(vg)
 
@@ -941,6 +950,8 @@ function CharacterPanel.getDeployedTeam(teamIdx)
                         unit.artifactEffects = artifactEffects
                     end
                     unit.artifactTeamIdx = teamIdx
+                    unit.partySlot = i
+                    unit._slotOrder = i
                     -- 装备可能增加 maxHp，recalc 不会自动抬升 HP，需重新满血
                     unit.attrs:fillHp()
                     -- 重新同步 flat 字段
@@ -1002,14 +1013,18 @@ function CharacterPanel.setInitialHeroes(heroIds, level)
     if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
 end
 
---- 获取当前队伍总战斗力（各出战槽位战斗力之和）
+--- 获取指定队伍总战力；缺省为当前编辑队，顶栏独立保持队1口径。
+---@param teamIdx? number
 ---@return number
-function CharacterPanel.getTotalPower()
+function CharacterPanel.getTotalPower(teamIdx)
+    teamIdx = tonumber(teamIdx) or activeTeamIdx
+    local cache = teamPowerCaches[teamIdx]
+    if not cache then return 0 end
     local total = 0
     for i = 1, MAX_SLOTS do
-        total = total + (slotPowerCache[i] or 0)
+        total = total + (cache[i] or 0)
     end
-    return total + runtimeOnlyPowerCache
+    return total + (runtimeOnlyPowerCaches[teamIdx] or 0)
 end
 
 --- 强制重新计算所有槽位战力缓存并刷新 TopBar（供外部模块触发，如槽位强化后）
@@ -1177,6 +1192,7 @@ local function bindHeroSync()
             elseif k == "slotPowerCache" then slotPowerCache = v
             elseif k == "activeTeamIdx" then activeTeamIdx = v
             elseif k == "runtimeOnlyPowerCache" then runtimeOnlyPowerCache = v
+            elseif k == "runtimeOnlyPowerCaches" then runtimeOnlyPowerCaches = v
             elseif k == "heroRoster" then heroRoster = v
             elseif k == "rosterPowerCache" then rosterPowerCache = v
             elseif k == "upgradeBadgeCache" then upgradeBadgeCache = v

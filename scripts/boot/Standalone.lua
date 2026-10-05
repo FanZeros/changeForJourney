@@ -212,32 +212,55 @@ local DESIGN_H = GameConfig.Design.HEIGHT
 -- [Standalone] battle 状态本地同步：无 Server 推送时，把 BattleScene 本地进度
 -- （maxStageId_/clearedStages）每秒比对一次，变化才经 handleStateUpdate 写入，
 -- 供 TutorialManager / BottomNav / DungeonBattleScene 的建筑与页签解锁判定使用
-local battleSync = { lastMax = -1, lastCleared = -1, acc = 0 }
+local battleSync = { lastMax = -1, lastCleared = "", acc = 0 }
+local function clearedSnapshot(entries)
+    local normalized, ids = {}, {}
+    if type(entries) == "table" then
+        for key, value in pairs(entries) do
+            local id = math.tointeger(tonumber(key) or 0)
+            if value == true and id and id > 0 then
+                local savedKey = tostring(id)
+                if not normalized[savedKey] then
+                    normalized[savedKey] = true
+                    ids[#ids + 1] = id
+                end
+            end
+        end
+    end
+    table.sort(ids)
+    local keys = {}
+    for i, id in ipairs(ids) do keys[i] = tostring(id) end
+    return normalized, table.concat(keys, ","), #ids
+end
+
 local function SyncBattleState(dt)
     battleSync.acc = battleSync.acc + (dt or 0)
     if battleSync.acc < 1.0 then return end
     battleSync.acc = 0
-    local maxId = BattleScene.getMaxStageId()
-    local cleared = BattleScene.getClearedStages()
-    local clearedN = 0
-    for _ in pairs(cleared) do clearedN = clearedN + 1 end
-    if maxId == battleSync.lastMax and clearedN == battleSync.lastCleared then return end
-    if battleSync.lastMax == -1 then
-        print("[Standalone] battle 状态首次同步: maxStageId=" .. tostring(maxId) .. ", cleared=" .. clearedN)
-    end
-    battleSync.lastMax = maxId
-    battleSync.lastCleared = clearedN
-    local clearedStr = {}
-    for k in pairs(cleared) do clearedStr[tostring(k)] = true end
-    -- 模块更新是整表替换。只带这两个字段会把 currentStageId 清掉，
-    -- 读档时被补回 1-1，首通奖励就能重复领，进度也像丢了。
+    local maxId = tonumber(BattleScene.getMaxStageId()) or 0
+    local clearedStr, liveSignature = clearedSnapshot(BattleScene.getClearedStages())
+    -- 模块更新是整表替换。合并双源永久账本，不能把场景缺项回写成删档。
+    -- 显式清档入口会同时重置两源；这里不缓存旧账本，也不阻止合法清档。
     local battle = ClientDispatcher.get("battle")
     if type(battle) ~= "table" then battle = {} end
+    local savedCleared, savedSignature = clearedSnapshot(battle.clearedStages)
+    for key in pairs(savedCleared) do clearedStr[key] = true end
+    local mergedCleared, signature, clearedN = clearedSnapshot(clearedStr)
+    local savedMax = tonumber(battle.maxStageId) or 0
+    local mergedMax = math.max(maxId, savedMax)
+    if mergedMax == battleSync.lastMax and signature == battleSync.lastCleared
+        and liveSignature == signature and savedSignature == signature then return end
+    if battleSync.lastMax == -1 then
+        print("[Standalone] battle 状态首次同步: maxStageId=" .. tostring(mergedMax) .. ", cleared=" .. clearedN)
+    elseif liveSignature ~= savedSignature then
+        print("[Standalone] battle 通关账本合并: cleared=" .. clearedN)
+    end
+    battleSync.lastMax = mergedMax
+    battleSync.lastCleared = signature
     local liveStage = tonumber(BattleScene.getStageId()) or 0
     local savedStage = tonumber(battle.currentStageId) or 0
-    local savedMax = tonumber(battle.maxStageId) or 0
-    battle.maxStageId = math.max(maxId or 0, savedMax)
-    battle.clearedStages = clearedStr
+    battle.maxStageId = mergedMax
+    battle.clearedStages = mergedCleared
     if liveStage > savedStage then
         battle.currentStageId = liveStage
     end
@@ -462,6 +485,7 @@ end
 function Standalone.Stop()
     introChainActive_, introEpoch_, introNext_ = false, nil, nil
     SamsaraSlicePlayer.cancel()
+    RewardPopup.clearBattleRewards()
     StandaloneSave.Flush()  -- [单机存档] 退出前立即落盘
     SpinePowerUpEffect.destroy()
     LevelUpPopup.destroy()
@@ -635,7 +659,7 @@ local function tryPlayPendingStory_()
     if ScenarioDialogue.isActive() or LetterIntro.isOpen() then
         return
     end
-    if RewardPopup.isOpen() or OfflineRewardPanel.isOpen() then
+    if RewardPopup.isOpen() or RewardPopup.hasPendingBattleRewards() or OfflineRewardPanel.isOpen() then
         return
     end
     local pending = ClientMsgHandler.consumePendingScenarioDialogue()
@@ -669,11 +693,17 @@ local function tryPlayPendingStory_()
     local scenarioId = pending.scenarioId
     if scenarioId then
         local sessionData = ClientDispatcher.get("session") or {}
-        local claimed = sessionData.claimedScenarios or {}
-        claimed[tostring(scenarioId)] = true
         local updated = {}
         for k, v in pairs(sessionData) do updated[k] = v end
-        updated.claimedScenarios = claimed
+        if scenarioId == 82 then
+            -- 奖励剧情未播完退出应可重播；只有真实领奖成功才写claimed。
+            -- 先建立台账，兼容首次播放时尚未有任何领奖记录的新档。
+            updated.scenarioRewardsGranted = sessionData.scenarioRewardsGranted or {}
+        else
+            local claimed = sessionData.claimedScenarios or {}
+            claimed[tostring(scenarioId)] = true
+            updated.claimedScenarios = claimed
+        end
         ClientDispatcher.handleStateUpdate(cjson.encode({ modules = { session = updated } }))
     end
     print("[Standalone] play pending story id=" .. tostring(scenarioId)
@@ -694,9 +724,8 @@ local function tryPlayPendingStory_()
                 print("[Standalone] claim scenario reward id=" .. tostring(scenarioId))
                 -- [横屏接线 0928] 恢复引导触发链: claim 结果处理时 fireTutorial → onScenarioClaimed
                 ClientMsgHandler.setPendingTutorialNotify(scenarioId)
-                -- [预标记冲突修复 2026-10-01] 播放前已预写 claimedScenarios（13df6a95 防中途退出重播），
-                -- 单机 PDM 与 ClientDispatcher 共享同一张 session 表 → 不跳过防重复会拒发奖励。
-                -- preClaimed=true 告知服务端"这是播完后的首次真实领取"。
+                -- 其他情景仍沿用起播预标记；82也兼容旧中断档的预标记。
+                -- 真正发奖仍由scenarioRewardsGranted台账防重，不以起播标记代替领取。
                 localSendAction("claim_scenario_reward", { scenarioId = scenarioId, preClaimed = true })
                 local followId = require("systems.StoryPlayer").followOf(scenarioId)
                 if followId then
@@ -749,6 +778,7 @@ function Standalone.requestResetToStartScreen()
     print(string.format("%s step1: BGM/SFX stopped clock=%.4f", TAG, os.clock()))
 
     -- 2. 关闭所有打开的面板/弹窗
+    RewardPopup.clearBattleRewards()
     if MarketPage.isOpen()          then MarketPage.close()          end
     if TavernPage.isOpen()          then TavernPage.close()          end
     -- [锻炉双页 0929] 锻炉强制关闭（联动仓库由其 closeAutoWarehouse 处理，这里再兜底关仓库）

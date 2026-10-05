@@ -110,6 +110,7 @@ end
 
 ---@param rt table { vg: userdata, localSendAction: fun(action:string, params:table|nil), setLocalBridgeReady: fun() }
 function M.run(rt)
+    RewardPopup.setBattleBlocked(require("boot.BattleRewardOverlay").isBlocked)
     local vg = rt.vg
     local localSendAction = rt.localSendAction
     local localBridgeReady_ = false

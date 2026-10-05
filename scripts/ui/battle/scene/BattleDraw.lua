@@ -18,7 +18,7 @@ local BattleDraw = {}
 local DESIGN_W = 1080
 
 -- 卡片尺寸
-local CARD_W, CARD_H = 198, 438
+local CARD_W, CARD_H = BattleLayout.CARD_W, BattleLayout.CARD_H
 local CARD_SPACING   = 7
 
 -- 职业标签
@@ -131,7 +131,9 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
     local stripMode = (BattleLayout.MODE == "strip")
     local stripCardScale = stripMode and BattleLayout.CARD_SCALE or 1.0
 
-    for idx = 1, count do
+    -- 槽位1最靠前：后排先画、前排后画，敌我出框重叠时前排在上层。
+    -- 只反转遍历顺序，不重排units，站位、动画和攻击索引保持不变。
+    for idx = count, 1, -1 do
         local unit = units[idx]
         local animOff = combat.getCardAnimOffsetY(unit) + combat.getChargeOffsetY(unit, isAllyGroup)
         local arcY = combat.getCardAnimArcY(unit, isAllyGroup)
@@ -179,7 +181,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             -- [阵亡紧凑] 已退场英雄不渲染（保留在队尾供复活/关卡重置）
         elseif isDying then
             -- 死亡淡出：显示原卡牌向上/向下滑出
-            DrawUtil.drawImageCover(vg, cardImage(vg, unit), cx, cy, CARD_W, CARD_H, transAlpha)
+            DrawUtil.drawCardImage(vg, cardImage(vg, unit), cx, cy, CARD_W, CARD_H, transAlpha)
 
         elseif isDead or isGone then
             -- 死亡单位不留黄条。下一只敌人由战斗驱动补上。
@@ -188,7 +190,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             local alpha = (isReviving or isEntering) and transAlpha or 1.0
 
             -- 1) 卡片背景
-            DrawUtil.drawImageCover(vg, cardImage(vg, unit), cx, cy, CARD_W, CARD_H, alpha)
+            DrawUtil.drawCardImage(vg, cardImage(vg, unit), cx, cy, CARD_W, CARD_H, alpha)
 
             -- 受击闪烁
             if not isReviving and not isEntering then

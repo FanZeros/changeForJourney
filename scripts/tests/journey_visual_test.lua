@@ -448,6 +448,26 @@ local function testPage()
     check(#paths == 0 and imagePaths[paints[1].image] == chapterBg,
         "从终焉和塔返回主线复用有效旧图")
     check(next(deletedImages) == nil, "背景切换不删除其他场景共用句柄")
+    local savedStages = { drivers[1].stageId, drivers[2].stageId, drivers[3].stageId }
+    local displayIds = { 104, 2404, 4704 }
+    local displayNames = { "黑棘林道1-4", "困难·黑棘林道24-4", "噩梦·黑棘林道47-4" }
+    for row, id in ipairs(displayIds) do drivers[row].stageId = id end
+    for _, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+        I18n.set(lang)
+        texts = {}
+        Page.draw({}, 1920, 1080)
+        for row, name in ipairs(displayNames) do
+            local expected = I18n.format("【小队%d】%s", row, I18n.lookup(name))
+            local foundLabel = false
+            for _, text in ipairs(texts) do
+                if text.text == expected then foundLabel = true end
+            end
+            check(foundLabel, lang .. "小队" .. row .. "显示连续关卡编号")
+            check(drivers[row].stageId == displayIds[row], lang .. "绘制不修改小队" .. row .. "内部ID")
+        end
+    end
+    I18n.set("zh_CN")
+    for row, id in ipairs(savedStages) do drivers[row].stageId = id end
     Driver.new = newDriver
 end
 

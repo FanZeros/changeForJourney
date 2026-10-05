@@ -51,6 +51,7 @@ local ArtifactAssetUtil = require("config.ArtifactAssetUtil")
 local ResourceDefs      = require("config.ResourceDefs")
 local GameSFX           = require("systems.GameSFX")
 local RewardCascade     = require("ui.widget.RewardCascade")
+local BattleRewardQueue = require("ui.widget.BattleRewardQueue")
 local HeroFrame = require("ui.widget.HeroFrame")
 
 local RewardPopup = {}
@@ -107,10 +108,10 @@ end
 -- 第一行顶部 Y
 local FIRST_ROW_TOP = CLIP_TOP
 
--- 底部提示放在奖励框下方背景上，离开框边一行文字
+-- 底部提示上收至面板内，位于两行网格下方，避免横屏战斗框裁掉文字。
 local HINT_CX = 540
 local HINT_FONT = 40
-local HINT_CY = PANEL_CY + PANEL_H * 0.5 + HINT_FONT + 8
+local HINT_CY = PANEL_CY + PANEL_H * 0.5 - HINT_FONT - 24
 local HINT_TEXT = "点击空白处关闭"
 
 -- 数量/等级角标（统一右下角角标样式）
@@ -157,7 +158,10 @@ local state = {
     sfxPlayed   = 0,
     -- 物品点击回调
     onItemClick = nil,    -- function(item, index) 点击某个物品时触发
+    battleHoldStart = nil, -- 逐件动画结束后，开始累计无遮挡的战斗展示停留时间
 }
+
+local BATTLE_HOLD_DURATION = 3.0 -- 仅自动战斗奖励自动收起，主动领取仍手动关闭
 
 -- 滚动参数
 local SCROLL_FRICTION  = 0.90
@@ -200,6 +204,82 @@ end
 
 -- 关闭保护时间戳（关闭完成时记录，保护期内 isOpen() 仍返回 true 以吞噬事件）
 local closedAt_ = 0
+
+---@type fun(): boolean
+local battleBlocked_ = function() return false end
+local pendingBattle_ = BattleRewardQueue.new(RESOURCE_DEFS)
+---@type number|nil
+local battlePausedAt_ = nil
+local battleResumedAt_ = 0
+local blockerError_ = false
+
+local function battleBlocked()
+    local ok, blocked = pcall(battleBlocked_)
+    if not ok then
+        if not blockerError_ then print("[RewardPopup] 遮挡查询失败: " .. tostring(blocked)) end
+        blockerError_ = true
+        return true
+    end
+    blockerError_ = false
+    return blocked == true
+end
+
+local function syncBattleVisibility()
+    if not state.open or not state.rowTag then return true end
+    local now = time.elapsedTime
+    if battleBlocked() then
+        if not battlePausedAt_ then
+            battlePausedAt_ = now
+            state.dragging = false
+            state.dragMoved = 0
+            state.scrollVel = 0
+            print("[RewardPopup] 中栏覆盖，暂停战斗奖励")
+        end
+        return false
+    end
+    if battlePausedAt_ then
+        local paused = math.max(0, now - battlePausedAt_)
+        state.animStart = state.animStart + paused
+        if cascade then cascade.revealStart = cascade.revealStart + paused end
+        if state.battleHoldStart then state.battleHoldStart = state.battleHoldStart + paused end
+        battlePausedAt_ = nil
+        battleResumedAt_ = now
+        print("[RewardPopup] 中栏关闭，恢复战斗奖励")
+    end
+    return true
+end
+
+local function copyRewardData(value, seen)
+    if type(value) ~= "table" then return value end
+    seen = seen or {}
+    if seen[value] then return seen[value] end
+    local result = {}
+    seen[value] = result
+    for k, v in pairs(value) do result[k] = copyRewardData(v, seen) end
+    return result
+end
+
+function RewardPopup.setBattleBlocked(predicate)
+    battleBlocked_ = predicate or function() return false end
+end
+
+function RewardPopup.hasPendingBattleRewards()
+    return pendingBattle_:hasPending() or (state.open and state.rowTag ~= nil)
+end
+
+-- 会话重置只清战斗展示，不重发奖励，也不触发旧的关闭回调。
+function RewardPopup.clearBattleRewards()
+    pendingBattle_:clear()
+    battlePausedAt_ = nil
+    battleResumedAt_ = 0
+    if state.rowTag then
+        state.open, state.rowTag, state.animPhase = false, nil, "none"
+        state.items, state.onClose, state.onItemClick = {}, nil, nil
+        state.dragging, state.scrollVel = false, 0
+        cascade = nil
+        closedAt_ = 0
+    end
+end
 
 local easeOutBack = RewardCascade.easeOutBack
 
@@ -306,6 +386,7 @@ local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
     local x = cx - w * 0.5
     local y = cy - h * 0.5
     local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
+    ---@cast paint NVGpaint
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
@@ -441,7 +522,9 @@ end
 ---@param title string 奖励类型标题（如 "首通奖励"、"宝箱奖励"）
 ---@param rewards table[] 奖励列表，每项格式见文件头部注释
 ---@param opts table|nil 可选参数 { onItemClick = function(item, index), onClose = function(), subtitle = string }
-function RewardPopup.show(title, rewards, opts)
+local function showNow(title, rewards, opts)
+    battlePausedAt_ = nil
+    battleResumedAt_ = 0
     state.title    = title or "奖励"
     state.rowTag   = opts and opts.row or nil
     state.subtitle = (opts and opts.subtitle) or ""
@@ -453,6 +536,7 @@ function RewardPopup.show(title, rewards, opts)
     state.followScroll = false
     state.onItemClick = opts and opts.onItemClick or nil
     state.onClose     = opts and opts.onClose     or nil
+    state.battleHoldStart = nil
     -- 跟随触发面板：显式 opts.panel 优先，否则取横屏当前焦点面板（全局 H_focusPanel）
     state.panel = (opts and opts.panel) or (H_focusPanel or nil)
 
@@ -523,6 +607,7 @@ function RewardPopup.show(title, rewards, opts)
     state.animStart = time.elapsedTime
     closedAt_ = 0  -- 重置关闭保护（重新打开时清除残留）
     state.cascade = wantsCascade(state.title, opts)
+    state.followScroll = state.rowTag ~= nil and state.cascade
     -- 非逐件弹出（整屏立即显示）且内容超出一屏时：开屏自动平滑滚到最底部，
     -- 让玩家直接看到最新（最下方）的奖励；手动拖拽/滚轮会取消该动画。
     state.autoScroll = nil
@@ -551,8 +636,53 @@ function RewardPopup.show(title, rewards, opts)
     end
 end
 
+local function queueBattle(title, rewards, opts)
+    local queueOpts = copyRewardData(opts or {})
+    queueOpts.cascade = wantsCascade(title, opts)
+    queueOpts.panel = queueOpts.panel or "center" -- 行内奖励不随侧栏焦点拆成多个队列
+    pendingBattle_:push(title, rewards, queueOpts)
+end
+
+function RewardPopup.show(title, rewards, opts)
+    if opts and opts.row then
+        if battleBlocked() or state.open or pendingBattle_:hasPending() or RewardPopup.isOpen() then
+            queueBattle(title, rewards, opts)
+            return
+        end
+    elseif state.open and state.rowTag then
+        -- 主动领奖优先，保留完整展示进度；关闭中的行也要完成原回调。
+        ---@type table<string, any>
+        local snapshot = {}
+        for key, value in pairs(state) do rawset(snapshot, key, value) end
+        snapshot.dragging, snapshot.dragMoved, snapshot.scrollVel = false, 0, 0
+        pendingBattle_:prepend({
+            state = snapshot, cascade = cascade, pausedAt = battlePausedAt_ or time.elapsedTime,
+        })
+    end
+    showNow(title, rewards, opts)
+end
+
+local function pumpBattleRewards()
+    if state.open or not pendingBattle_:hasPending() or battleBlocked() or RewardPopup.isOpen() then return end
+    local entry = pendingBattle_:pop()
+    if entry.state then
+        for key in pairs(state) do state[key] = nil end
+        for key, value in pairs(entry.state) do state[key] = value end
+        cascade = entry.cascade
+        local paused = math.max(0, time.elapsedTime - entry.pausedAt)
+        state.animStart = state.animStart + paused
+        if cascade then cascade.revealStart = cascade.revealStart + paused end
+        if state.battleHoldStart then state.battleHoldStart = state.battleHoldStart + paused end
+        battlePausedAt_, battleResumedAt_, closedAt_ = nil, time.elapsedTime, 0
+        print("[RewardPopup] 主动领奖结束，恢复战斗奖励进度")
+    else
+        showNow(entry.title, entry.rewards, entry.opts)
+    end
+end
+
 --- 关闭奖励弹窗（启动关闭动画）
 function RewardPopup.close()
+    if not syncBattleVisibility() then return end
     if state.animPhase == "closing" then return end
     state.animPhase = "closing"
     state.animStart = time.elapsedTime
@@ -563,6 +693,7 @@ end
 ---@param dy number
 ---@return boolean
 function RewardPopup.hitPanel(dx, dy)
+    if not syncBattleVisibility() then return false end
     if not state.open then return false end
     dx = invLayoutX(dx)
     dy = invLayoutY(dy)
@@ -574,6 +705,7 @@ end
 --- 是否打开（含关闭后保护期，防止点击穿透）
 ---@return boolean
 function RewardPopup.isOpen()
+    if not syncBattleVisibility() then return false end
     if state.open then return true end
     -- 关闭后保护期：吞噬残留事件，防止穿透到下层界面
     if closedAt_ > 0 and (time.elapsedTime - closedAt_) < CLOSE_GUARD_DURATION then
@@ -609,7 +741,11 @@ end
 --- 更新（惯性滚动 + 动画状态机）
 ---@param dt number
 function RewardPopup.update(dt)
-    if not state.open then return end
+    if not syncBattleVisibility() then return end
+    if not state.open then
+        pumpBattleRewards()
+        return
+    end
 
     -- 动画状态机
     if state.animPhase == "opening" then
@@ -648,6 +784,24 @@ function RewardPopup.update(dt)
         syncCascadeScroll()
     end
 
+    -- 自动战斗掉落只在完整出场后停留三秒；遮挡和主动领奖会平移起点。
+    -- 等待队列不追加到当前动画，避免持续掉落反复重开、永远无法收起。
+    if state.rowTag and not state.onItemClick and state.animPhase == "open" and cascadeFinished() then
+        if not state.battleHoldStart then
+            local readyAt = state.animStart + ANIM_OPEN_DURATION
+            if state.cascade and cascade then
+                readyAt = math.max(readyAt, cascade.revealStart + cascade:startAt(cascade.count) + cascade.popDur)
+            end
+            state.battleHoldStart = readyAt
+        end
+        if state.dragging then state.battleHoldStart = time.elapsedTime end
+        if time.elapsedTime - state.battleHoldStart >= BATTLE_HOLD_DURATION then
+            print("[RewardPopup] 战斗掉落展示完成，自动收起")
+            RewardPopup.close()
+            return
+        end
+    end
+
     -- 非逐件弹出：开屏平滑滚到底部（显示最下方的最新奖励）
     local as = state.autoScroll
     if as and not state.dragging then
@@ -674,6 +828,7 @@ end
 --- 刚滑过奖励列表时，这次松开不算点击
 ---@return boolean
 function RewardPopup.consumedDrag()
+    if not syncBattleVisibility() then return false end
     return (state.dragMoved or 0) > 12
 end
 
@@ -683,6 +838,9 @@ end
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
 function RewardPopup.handleInput(dx, dy)
+    if not syncBattleVisibility() then return false end
+    if state.open and state.rowTag and battleResumedAt_ > 0
+        and time.elapsedTime - battleResumedAt_ < 0.05 then return true end
     if not state.open then
         -- 关闭保护期内：吞噬事件，防止穿透
         if closedAt_ > 0 and (time.elapsedTime - closedAt_) < CLOSE_GUARD_DURATION then
@@ -763,6 +921,7 @@ end
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
 function RewardPopup.handleDragBegin(dx, dy)
+    if not syncBattleVisibility() then return false end
     if not state.open then
         -- 关闭保护期内：吞噬事件，防止穿透
         if closedAt_ > 0 and (time.elapsedTime - closedAt_) < CLOSE_GUARD_DURATION then
@@ -794,6 +953,7 @@ end
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
 function RewardPopup.handleDragMove(dx, dy)
+    if not syncBattleVisibility() then return false end
     if not state.open then
         if closedAt_ > 0 and (time.elapsedTime - closedAt_) < CLOSE_GUARD_DURATION then
             return true
@@ -820,6 +980,7 @@ end
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
 function RewardPopup.handleDragEnd(dx, dy)
+    if not syncBattleVisibility() then return false end
     if not state.open then
         if closedAt_ > 0 and (time.elapsedTime - closedAt_) < CLOSE_GUARD_DURATION then
             return true
@@ -827,6 +988,7 @@ function RewardPopup.handleDragEnd(dx, dy)
         return false
     end
 
+    if state.rowTag and state.battleHoldStart then state.battleHoldStart = time.elapsedTime end
     if state.dragging then
         state.dragging = false
     end
@@ -837,7 +999,9 @@ end
 --- 处理滚轮
 ---@param wheel number
 function RewardPopup.handleScroll(wheel)
+    if not syncBattleVisibility() then return end
     if not state.open then return end
+    if state.rowTag and state.battleHoldStart then state.battleHoldStart = time.elapsedTime end
     state.scrollY = state.scrollY - wheel * 60
     state.followScroll = false
     state.autoScroll = nil  -- 手动滚轮取消开屏自动滚动
@@ -858,6 +1022,11 @@ local function regionTransform(rx, ry, rw, rh)
     return rx + rw * 0.5, ry + rh * 0.48, fit
 end
 
+local function regionToDesign(wx, wy, rx, ry, rw, rh)
+    local ox, oy, fit = regionTransform(rx, ry, rw, rh)
+    return (wx - ox) / fit + PANEL_CX, (wy - oy) / fit + PANEL_CY
+end
+
 --- [三行并行] 行内绘制: 遮罩只盖本行, 弹窗等比缩放嵌入行内
 ---@param vg any NanoVG 上下文
 ---@param rx number
@@ -866,26 +1035,29 @@ end
 ---@param rh number
 ---@param rowTag number 归属行（1..3）; 不匹配则不绘制
 function RewardPopup.drawRegion(vg, rx, ry, rw, rh, rowTag)
+    if not syncBattleVisibility() then return end
     if not state.open or state.rowTag ~= rowTag then return end
 
     -- [暗黑化] 不再画行内黑色叠加层，弹窗直接嵌入行内
-    -- 弹窗内容等比嵌入: 设计锚点(540, GLOW_CY=1044) → 行中心
+    -- 按面板中心嵌入真实战斗行，不再以偏上的旧光晕中心定位。
     local ox, oy, fit = regionTransform(rx, ry, rw, rh)
     nvgSave(vg)
     nvgTranslate(vg, ox, oy)
     nvgScale(vg, fit, fit)
-    nvgTranslate(vg, -540, -GLOW_CY)
+    nvgTranslate(vg, -PANEL_CX, -PANEL_CY)
     RewardPopup.drawContent(vg)
     nvgRestore(vg)
 end
 
 --- [三行并行] 当前归属行（nil=全局）
 function RewardPopup.currentRowTag()
+    if not syncBattleVisibility() then return nil end
     return state.open and state.rowTag or nil
 end
 
 --- [三面板] 当前归属面板 'left'|'center'|'right'（nil=全屏居中）
 function RewardPopup.currentPanel()
+    if not syncBattleVisibility() then return nil end
     return state.open and state.panel or nil
 end
 
@@ -900,15 +1072,32 @@ end
 ---@param rh number
 ---@return boolean 是否消费事件
 function RewardPopup.handleInputRegion(wx, wy, rx, ry, rw, rh)
+    if not syncBattleVisibility() then return false end
     if not state.open or state.rowTag == nil then return false end
-    local ox, oy, fit = regionTransform(rx, ry, rw, rh)
-    local dx = (wx - ox) / fit + 540
-    local dy = (wy - oy) / fit + GLOW_CY
+    local dx, dy = regionToDesign(wx, wy, rx, ry, rw, rh)
     return RewardPopup.handleInput(dx, dy)
+end
+
+-- 行内滚动与点击复用同一逆变换，布局缩放仍由原输入函数处理。
+function RewardPopup.handleDragRegion(phase, wx, wy, rx, ry, rw, rh)
+    if not syncBattleVisibility() or not state.open or not state.rowTag then return false end
+    local dx, dy = regionToDesign(wx, wy, rx, ry, rw, rh)
+    if phase == "begin" then return RewardPopup.handleDragBegin(dx, dy) end
+    if phase == "move" then return RewardPopup.handleDragMove(dx, dy) end
+    if phase == "end" then return RewardPopup.handleDragEnd(dx, dy) end
+    return false
+end
+
+function RewardPopup.handleScrollRegion(wheel, wx, wy, rx, ry, rw, rh)
+    if not syncBattleVisibility() or not state.open or not state.rowTag then return false end
+    if not wx or not wy or wx < rx or wx > rx + rw or wy < ry or wy > ry + rh then return false end
+    RewardPopup.handleScroll(wheel)
+    return true
 end
 
 --- 全局绘制（无行归属时走原全屏路径；归属左/右面板时由 drawRegion 在面板视口内绘制）
 function RewardPopup.draw(vg)
+    if not syncBattleVisibility() then return end
     if not state.open or state.rowTag then return end
     if state.panel and state.panel ~= 'center' then return end
 
@@ -918,6 +1107,7 @@ end
 
 --- 弹窗内容（无遮罩; 由 draw/drawRegion 包裹）
 function RewardPopup.drawContent(vg)
+    if not state.open or not syncBattleVisibility() then return end
 
     -- === 动画进度计算 ===
     local animAlpha = 1.0   -- 整体透明度
@@ -958,9 +1148,11 @@ function RewardPopup.drawContent(vg)
             if phase < 0 then phase = 0 end
             if phase > 1 then phase = 1 end
             local pulse = (1 - phase) * (1 - phase)
-            local halo = nvgRadialGradient(vg, GLOW_CX, GLOW_CY, 30, 380,
-                nvgRGBA(255, 210, 90, math.floor(90 * pulse)),
-                nvgRGBA(255, 170, 40, 0))
+            local haloInner = nvgRGBA(255, 210, 90, math.floor(90 * pulse))
+            local haloOuter = nvgRGBA(255, 170, 40, 0)
+            ---@cast haloInner NVGcolor
+            ---@cast haloOuter NVGcolor
+            local halo = nvgRadialGradient(vg, GLOW_CX, GLOW_CY, 30, 380, haloInner, haloOuter)
             nvgBeginPath(vg)
             nvgCircle(vg, GLOW_CX, GLOW_CY, 380)
             nvgFillPaint(vg, halo)

@@ -509,62 +509,6 @@ do
     print("[TalentStarMap] 边数: " .. #EDGES)
 end
 
--- [视觉降噪 + 保连通] 长边过滤：网格距离 > LONG_EDGE_DIST 的连线不绘制。
--- 仅影响视觉层——邻接数据（NODES.adj）与服务端解锁校验（TalentNodeDefs）不变。
--- 连通性保证：过滤后用并查集检查，若星图分裂成多个连通分量，
--- 按距离升序恢复最短的桥接长边，直到全图视觉连通（消除断线/悬空节点）。
-local LONG_EDGE_DIST = 3.0
-do
-    local function edgeDist(a, b)
-        local na, nb = NODES[a], NODES[b]
-        if not na or not nb then return 0 end
-        local dx, dy = na.gx - nb.gx, na.gy - nb.gy
-        return math.sqrt(dx * dx + dy * dy)
-    end
-
-    -- 并查集
-    local parent = {}
-    for id = 0, NODE_MAX do
-        if NODES[id] then parent[id] = id end
-    end
-    local function find(x)
-        while parent[x] ~= x do
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        end
-        return x
-    end
-    local function union(a, b)
-        local ra, rb = find(a), find(b)
-        if ra ~= rb then parent[ra] = rb end
-    end
-
-    local kept, dropped = {}, {}
-    for _, e in ipairs(EDGES) do
-        local d = edgeDist(e[1], e[2])
-        if d <= LONG_EDGE_DIST then
-            kept[#kept + 1] = e
-            union(e[1], e[2])
-        else
-            dropped[#dropped + 1] = { e[1], e[2], d }
-        end
-    end
-
-    -- 按距离升序恢复桥接边，直至全图连通
-    table.sort(dropped, function(x, y) return x[3] < y[3] end)
-    for _, drop in ipairs(dropped) do
-        local a, b = drop[1], drop[2]
-        if find(a) ~= find(b) then
-            kept[#kept + 1] = { a, b }
-            union(a, b)
-        end
-    end
-
-    print("[TalentStarMap] 视觉连线: " .. #kept .. " / 邻接边 " .. #EDGES
-        .. "（长边过滤 > " .. LONG_EDGE_DIST .. " 格，已保连通）")
-    EDGES = kept
-end
-
 -- 密集节点列表（跳过空洞 id，避免每帧 0..NODE_MAX 空扫）
 local NODE_LIST = {}
 for id = 0, NODE_MAX do
@@ -644,7 +588,7 @@ end
 
 -- ======================== 绘制函数 ========================
 
---- 星图区边缘淡出系数：外圈 10% 带内完全透明（节点/连线不画），
+--- 星图区边缘淡出系数：外圈 10% 带内完全透明，
 --- 其后 12% 过渡带线性渐显到不透明；背景不受影响（仅作用于星图元素）
 ---@param sx number 屏幕坐标 X
 ---@param sy number 屏幕坐标 Y
@@ -704,7 +648,7 @@ local function drawEdges(vg)
                 r, g, b, a = 46, 38, 28, 210
             end
 
-            -- 边缘淡出：取两端中更靠边者的系数
+            -- 按连线完整保留邻接线，仅应用原有边缘渐隐效果；不参与边长筛选。
             local fade = math.min(edgeFade(sax, say), edgeFade(sbx, sby))
             if fade <= 0.01 then goto continue_edge end
             a = math.floor(a * fade + 0.5)

@@ -645,10 +645,10 @@ local function startOpeningBriefing_()
     for i, step in ipairs(cfg.steps) do
         openingSteps[i] = {}
         for k, v in pairs(step) do openingSteps[i][k] = v end
-        openingSteps[i].background = cfg.background
     end
     showOpeningPart_("opening", {
-        mode = cfg.mode, background = cfg.background,
+        mode = cfg.mode or "large", background = cfg.background,
+        backgroundIsCg = cfg.backgroundIsCg,
         title = cfg.title, steps = openingSteps,
     }, startStarterJoins_)
 end

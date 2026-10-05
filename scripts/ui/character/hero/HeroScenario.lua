@@ -106,6 +106,7 @@ local function showScenario(id, onFinish)
     end
     ScenarioDialogue.show({
         mode = cfg.mode or "small",
+        background = cfg.background,
         steps = cfg.steps,
         onFinish = onFinish,
     })

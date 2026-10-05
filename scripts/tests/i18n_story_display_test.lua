@@ -396,13 +396,15 @@ function Start()
         Scenario.advance()
         captures, imageDraws = {}, {}
         Scenario.draw(1920, 1080)
-        check(imageDraws[2].path == HeroAssets.getPortraitPath(1), "快速连点仍绘制固定退出步骤")
+        check(hasImage(HeroAssets.getPortraitPath(1)) and not hasImage(HeroAssets.getPortraitPath(15)),
+            "快速连点仍绘制固定退出步骤，不把背景图片顺序当立绘")
         check(hasImage(HeroAssets.getIconPath(15)), "快速连点头像跟随当前神秘少女")
         Scenario.update(0.2)
         Scenario.update(0.1)
         captures, imageDraws = {}, {}
         Scenario.draw(1920, 1080)
-        check(imageDraws[2].path == HeroAssets.getPortraitPath(15), "退出后新修女按动画入场")
+        check(hasImage(HeroAssets.getPortraitPath(15)) and not hasImage(HeroAssets.getPortraitPath(1)),
+            "退出后新修女按动画入场，旧人物不残留")
         for _, lang in ipairs({ "zh_CN", "en" }) do
             I18n.set(lang)
             for _, mode in ipairs({ "small", "large" }) do

@@ -3,7 +3,7 @@
 -- 玩法：暗色横信逐行显墨（4 段）→ 火漆印「终」→ 交给门厅点卯（ScenarioDialogue.OPENING）。
 -- 绘制：全窗口逻辑坐标。横屏信笺偏左、矮而宽，右边留出书斋桌案。
 -- 素材（本地路径，不走 URL）：
---   image/界面底板/剧情日记/GF_KF06.png  书斋桌案（信封+帽），全程不切火漆特写
+--   image/剧情/背景/STORY_BG_01.png  已审核书斋桌案（帽、印鉴、名册），全程不切火漆特写
 -- ============================================================================
 
 ---@class LetterIntro
@@ -165,9 +165,9 @@ end
 local function ensureLetterImages()
     if not vg_ then return end
     if imgDesk_ < 0 then
-        imgDesk_ = nvgCreateImage(vg_, "image/界面底板/剧情日记/GF_KF06.png", 0)
+        imgDesk_ = nvgCreateImage(vg_, "image/剧情/背景/STORY_BG_01.png", 0)
         if imgDesk_ < 0 then
-            print("[LetterIntro] WARN: GF_KF06 load failed")
+            print("[LetterIntro] WARN: STORY_BG_01 load failed")
         else
             print("[LetterIntro] desk relics loaded")
         end

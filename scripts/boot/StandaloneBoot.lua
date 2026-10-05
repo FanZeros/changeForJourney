@@ -392,8 +392,9 @@ function M.run(rt)
     end)
 
     BattleScene.setOnAllDead(function()
+        local failedStageId = BattleScene.getCurrentStageId()
         showKeptDrops("战斗掉落")
-        require("systems.StoryPlayer").onWipe()
+        require("systems.StoryPlayer").onWipe(failedStageId)
     end)
 
     BattleScene.setOnStageLoaded(function(stageId, _)

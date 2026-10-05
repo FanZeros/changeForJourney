@@ -10,6 +10,8 @@ local EC = require("config.EquipmentConfig")
 local ES = require("systems.EquipmentSystem")
 local Sets = require("systems.EquipmentSetSystem")
 local CPE = require("systems.CombatPowerEstimate")
+local RuntimeContext = require("ui.battle.scene.BattleRuntimeContext")
+local StageBerserk = require("ui.battle.stage.StageBerserk")
 
 local POWER_SKIP = {
     [AD.STR] = true, [AD.AGI] = true, [AD.INT] = true,
@@ -168,8 +170,18 @@ local function copyHeroStats(stats)
     return result
 end
 
+-- 只退出本次实验自己持有的狂暴；progress可切回正式战线，不能exit当前挂载对象。
+local function cleanupLabBattle(cfg)
+    if cfg.runtimeState then
+        RuntimeContext.mount(cfg.runtimeState)
+        StageBerserk.exit()
+        cfg.runtimeState = nil
+    end
+end
+
 -- 一局按 1/60 秒固定步长模拟；UI 的多局同步执行期间会暂时停止重绘。
 local function runOne(cfg, index, loadout)
+    cleanupLabBattle(cfg)
     math.randomseed(cfg.seed + index - 1)
     local drv = Driver.new(926, {
         battleLab = true,
@@ -183,6 +195,8 @@ local function runOne(cfg, index, loadout)
             return team
         end,
     })
+    -- cfg由prepare创建，不写调用方配置；保存容器以覆盖初始化/模拟/progress异常。
+    cfg.runtimeState = drv
     drv:start(cfg.stageId)
     if #drv.allies == 0 or drv.stageTotal == 0 then
         error("战斗初始化失败: 英雄或怪物列表为空")
@@ -315,6 +329,7 @@ end
 function Lab.runSingle(config, progress)
     local cfg, errorMessage = Lab.prepare(config)
     if not cfg then return nil, errorMessage end
+    local priorContext = RuntimeContext.capture()
     local oldLayout = Layout.MODE
     local oldBucket = Stats.mountedTeam()
     local SFX = require("systems.GameSFX")
@@ -325,7 +340,8 @@ function Lab.runSingle(config, progress)
     local ok, err = xpcall(function()
         report = runPrepared(cfg, cfg.loadouts and cfg.loadouts.A or nil, progress)
     end, debug.traceback)
-    require("ui.battle.stage.StageBerserk").exit()
+    cleanupLabBattle(cfg)
+    RuntimeContext.mount(priorContext)
     SFX.setTeamMuted(926, oldSound)
     Stats.mount(oldBucket or 0)
     Layout.setMode(oldLayout or "strip")
@@ -336,6 +352,7 @@ end
 function Lab.run(config, progress)
     local cfg, errorMessage = Lab.prepare(config)
     if not cfg then return nil, errorMessage end
+    local priorContext = RuntimeContext.capture()
     local oldLayout = Layout.MODE
     local oldBucket = Stats.mountedTeam()
     local SFX = require("systems.GameSFX")
@@ -373,7 +390,8 @@ function Lab.run(config, progress)
             report = runPrepared(cfg, nil, progress)
         end
     end, debug.traceback)
-    require("ui.battle.stage.StageBerserk").exit()
+    cleanupLabBattle(cfg)
+    RuntimeContext.mount(priorContext)
     SFX.setTeamMuted(926, oldSound)
     Stats.mount(oldBucket or 0)
     Layout.setMode(oldLayout or "strip")

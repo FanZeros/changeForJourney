@@ -28,9 +28,24 @@ local function makeCondModEntry(adKey, value, isPercent)
     return { key = adKey, flat = value }
 end
 
--- 每个 unit 的条件状态存储
--- unitStates[unit] = { activeModIds = {}, triggered = {}, immunityCount = 0, ... }
-local unitStates = {}
+-- 每条战线拥有独立容器，所有查询/追加/条件更新只访问当前 mounted 容器。
+-- unit 是战斗实例，不按 heroId 共享；默认容器兼容旧单场 BattleScene。
+---@class RelicBattleState
+---@field unitStates table<table, table>
+local function newBattleState()
+    return { unitStates = {} }
+end
+local RCH_DEFAULT = newBattleState()
+local RCH_BCS = RCH_DEFAULT
+
+---@return RelicBattleState
+function RCH.newState() return newBattleState() end
+
+---@param state RelicBattleState|nil nil 恢复旧单场默认容器，不清状态
+function RCH.mount(state) RCH_BCS = state or RCH_DEFAULT end
+
+---@return RelicBattleState
+function RCH.mountedState() return RCH_BCS end
 
 local function newUnitState(unit)
     return {
@@ -55,10 +70,10 @@ end
 ---@return table|nil
 local function ensureUnitState(unit)
     if not unit then return nil end
-    local state = unitStates[unit]
+    local state = RCH_BCS.unitStates[unit]
     if not state then
         state = newUnitState(unit)
-        unitStates[unit] = state
+        RCH_BCS.unitStates[unit] = state
     end
     return state
 end
@@ -76,11 +91,11 @@ end
 --- 在战斗开始时初始化所有己方单位的条件词条
 ---@param allies table[] 己方单位列表（含 unit.relicConditions）
 function RCH.initBattle(allies)
-    unitStates = {}
+    RCH.reset()
     for _, unit in ipairs(allies) do
         if unit.relicConditions and #unit.relicConditions > 0 then
             local state = newUnitState(unit)
-            unitStates[unit] = state
+            RCH_BCS.unitStates[unit] = state
             RCH._applyBattleStartEffects(unit, state)
         end
     end
@@ -142,7 +157,7 @@ end
 ---@param battleTime number 当前战斗已经过时间（秒）
 function RCH.update(allies, battleTime)
     for _, unit in ipairs(allies) do
-        local state = unitStates[unit]
+        local state = RCH_BCS.unitStates[unit]
         if state and unit.hp > 0 and unit.attrs then
             RCH._checkHpConditions(unit, state)
             RCH._checkTimedBuffs(unit, state, battleTime)
@@ -246,7 +261,7 @@ end
 ---@param attacker table 攻击者
 ---@return number damageMultiplier 额外伤害乘数（1.0 = 无加成）
 function RCH.onBeforeAttack(attacker)
-    local state = unitStates[attacker]
+    local state = RCH_BCS.unitStates[attacker]
     if not state then return 1.0 end
 
     local mult = 1.0
@@ -264,7 +279,7 @@ end
 ---@param attacker table 攻击者
 ---@param threatGained number 本次攻击实际获得的基础仇恨
 function RCH.onAfterAttack(attacker, threatGained)
-    local state = unitStates[attacker]
+    local state = RCH_BCS.unitStates[attacker]
     if not state then return end
 
     for _, cond in ipairs(state.conditions) do
@@ -286,7 +301,7 @@ end
 ---@return number adjustedDamage 调整后的伤害（0 = 免疫）
 function RCH.onBeforeTakeDamage(target, damage)
     if (tonumber(damage) or 0) <= 0 then return damage end
-    local state = unitStates[target]
+    local state = RCH_BCS.unitStates[target]
     if not state then return damage end
 
     -- 免疫伤害次数（affix 67）
@@ -317,7 +332,7 @@ end
 ---@param attacker table
 ---@return boolean
 function RCH.shouldSkipThreat(attacker)
-    local state = unitStates[attacker]
+    local state = RCH_BCS.unitStates[attacker]
     if not state then return false end
     if state.yinYang then
         local CC = require("config.ClassConfig")
@@ -340,7 +355,7 @@ end
 function RCH.onOverheal(healer, target, overheal, allies)
     overheal = tonumber(overheal) or 0
     if overheal <= 0 then return end
-    local state = unitStates[healer] or unitStates[target]
+    local state = RCH_BCS.unitStates[healer] or RCH_BCS.unitStates[target]
     if not state then return end
 
     if (state.overhealShieldPct or 0) > 0 then
@@ -361,7 +376,7 @@ end
 ---@param target table 被攻击目标
 ---@return boolean executed 是否触发了终结
 function RCH.onAfterHit(attacker, target)
-    local state = unitStates[attacker]
+    local state = RCH_BCS.unitStates[attacker]
     if not state then return false end
 
     for _, cond in ipairs(state.conditions) do
@@ -383,7 +398,7 @@ end
 --- 闪避触发回调：处理"触发闪避时仇恨值-N"（affix 70）
 ---@param unit table 触发闪避的单位
 function RCH.onDodge(unit)
-    local state = unitStates[unit]
+    local state = RCH_BCS.unitStates[unit]
     if not state then return end
 
     for _, cond in ipairs(state.conditions) do
@@ -399,7 +414,7 @@ end
 ---@param target table 目标
 ---@return number bonusPct 增伤百分比（0 = 无加成）
 function RCH.getDamageBonus(attacker, target)
-    local state = unitStates[attacker]
+    local state = RCH_BCS.unitStates[attacker]
     if not state then return 0 end
 
     local bonus = 0
@@ -417,22 +432,29 @@ function RCH.getDamageBonus(attacker, target)
     return bonus
 end
 
---- 清理战斗状态
-function RCH.reset()
-    -- 移除所有活跃修饰符
-    for unit, state in pairs(unitStates) do
-        if unit.attrs then
-            for modId, _ in pairs(state.activeModIds) do
-                unit.attrs:removeModifier(modId)
-            end
+--- 注销当前战线单位；死亡后仍可能合法复活的单位应保留状态，真正退场才注销。
+---@param unit table
+function RCH.removeUnit(unit)
+    local state = RCH_BCS.unitStates[unit]
+    if not state then return end
+    if unit.attrs then
+        for modId in pairs(state.activeModIds) do
+            unit.attrs:removeModifier(modId)
         end
     end
-    unitStates = {}
+    RCH_BCS.unitStates[unit] = nil
+end
+
+--- 只清理当前战线，原位删除以保留容器/单位表句柄。
+function RCH.reset()
+    for unit in pairs(RCH_BCS.unitStates) do
+        RCH.removeUnit(unit)
+    end
 end
 
 --- 获取单位是否有免疫状态（供 UI 显示）
 function RCH.getImmunityCount(unit)
-    local state = unitStates[unit]
+    local state = RCH_BCS.unitStates[unit]
     return state and state.immunityCount or 0
 end
 

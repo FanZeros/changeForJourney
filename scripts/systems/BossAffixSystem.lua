@@ -22,17 +22,20 @@ local AD              = require("systems.AttributeDef")
 
 local BossAffixSystem = {}
 
---- 当前激活的 Boss 词缀（onStageLoad 设置）
----@type table[]|nil
-local activeAffixes_ = nil
-
---- 运行时状态
-local runtime_ = {
-    regenAccum = 0,       -- 再生回血秒累积
-    enraged = {},         -- [bossInstance] = true 已触发暴怒
-    bannerText = nil,     ---@type string|nil
-    bannerTimer = 0,
-}
+--- 每条战线独占配置、再生余量、暴怒幂等表和提示。
+---@class BossAffixState
+---@field activeAffixes table[]|nil
+---@field runtime table
+local function newState()
+    return { activeAffixes = nil,
+        runtime = { regenAccum = 0, enraged = {}, bannerText = nil, bannerTimer = 0 } }
+end
+local defaultState = newState()
+local state_ = defaultState
+function BossAffixSystem.newState() return newState() end
+function BossAffixSystem.mount(state) state_ = state or defaultState end
+function BossAffixSystem.getState() return state_ end
+function BossAffixSystem.restoreDefault() state_ = defaultState end
 local BANNER_DURATION = 2.5
 
 --- 重算实际攻击间隔（改 ATK_SPEED 后调用）
@@ -62,8 +65,8 @@ end
 ---@param id string
 ---@return table|nil
 local function getP(id)
-    if not activeAffixes_ then return nil end
-    for _, a in ipairs(activeAffixes_) do
+    if not state_.activeAffixes then return nil end
+    for _, a in ipairs(state_.activeAffixes) do
         if a.id == id then return a.params end
     end
     return nil
@@ -77,36 +80,36 @@ end
 ---@param chapter number 全局章节号
 ---@param difficulty string 难度字符串（SC.getDifficulty）
 function BossAffixSystem.onStageLoad(chapter, difficulty)
-    runtime_.regenAccum = 0
-    runtime_.enraged = {}
-    runtime_.bannerText = nil
-    runtime_.bannerTimer = 0
-    activeAffixes_ = BossAffixConfig.getAffixesForBoss(chapter, difficulty)
+    state_.runtime.regenAccum = 0
+    state_.runtime.enraged = {}
+    state_.runtime.bannerText = nil
+    state_.runtime.bannerTimer = 0
+    state_.activeAffixes = BossAffixConfig.getAffixesForBoss(chapter, difficulty)
 end
 
 --- 清空（挂机/Normal/离开战斗）
 function BossAffixSystem.clear()
-    activeAffixes_ = nil
-    runtime_.regenAccum = 0
-    runtime_.enraged = {}
-    runtime_.bannerText = nil
-    runtime_.bannerTimer = 0
+    state_.activeAffixes = nil
+    state_.runtime.regenAccum = 0
+    state_.runtime.enraged = {}
+    state_.runtime.bannerText = nil
+    state_.runtime.bannerTimer = 0
 end
 
 ---@return boolean
 function BossAffixSystem.hasAffixes()
-    return activeAffixes_ ~= nil and #activeAffixes_ > 0
+    return state_.activeAffixes ~= nil and #state_.activeAffixes > 0
 end
 
 ---@return table[]|nil
 function BossAffixSystem.getActiveAffixes()
-    return activeAffixes_
+    return state_.activeAffixes
 end
 
 --- 把 static 类词缀应用到 Boss 单位（出场后一次性）
 ---@param enemies table[] 全部敌方（场上+队列），内部筛 isBoss
 function BossAffixSystem.applyToBosses(enemies)
-    if not activeAffixes_ then return end
+    if not state_.activeAffixes then return end
     for _, enemy in ipairs(enemies or {}) do
         if enemy.isBoss and enemy.attrs and enemy.attrs.final then
             local fin = enemy.attrs.final
@@ -152,11 +155,11 @@ end
 ---@param dt number
 ---@param enemies table[]
 function BossAffixSystem.tick(dt, enemies)
-    if not activeAffixes_ then return end
+    if not state_.activeAffixes then return end
 
     -- 暴怒提示横幅计时
-    if runtime_.bannerTimer > 0 then
-        runtime_.bannerTimer = math.max(0, runtime_.bannerTimer - dt)
+    if state_.runtime.bannerTimer > 0 then
+        state_.runtime.bannerTimer = math.max(0, state_.runtime.bannerTimer - dt)
     end
 
     local enrageP = getP("enrage")
@@ -165,9 +168,9 @@ function BossAffixSystem.tick(dt, enemies)
 
     -- 再生：每秒回血累积
     if regenP then
-        runtime_.regenAccum = runtime_.regenAccum + dt
-        while runtime_.regenAccum >= 1.0 do
-            runtime_.regenAccum = runtime_.regenAccum - 1.0
+        state_.runtime.regenAccum = state_.runtime.regenAccum + dt
+        while state_.runtime.regenAccum >= 1.0 do
+            state_.runtime.regenAccum = state_.runtime.regenAccum - 1.0
             for _, enemy in ipairs(enemies or {}) do
                 if enemy.isBoss and enemy.hp and enemy.hp > 0 and enemy.attrs then
                     local maxHp = enemy.attrs.final[AD.MAX_HP] or 0
@@ -184,16 +187,16 @@ function BossAffixSystem.tick(dt, enemies)
     if enrageP then
         for _, enemy in ipairs(enemies or {}) do
             if enemy.isBoss and enemy.hp and enemy.hp > 0 and enemy.attrs
-               and not runtime_.enraged[enemy] then
+               and not state_.runtime.enraged[enemy] then
                 local maxHp = enemy.attrs.final[AD.MAX_HP] or 0
                 if maxHp > 0 and (enemy.hp / maxHp) <= (enrageP.threshold or 0) then
-                    runtime_.enraged[enemy] = true
+                    state_.runtime.enraged[enemy] = true
                     local fin = enemy.attrs.final
                     fin[AD.DMG_BONUS] = (fin[AD.DMG_BONUS] or 0) + (enrageP.dmgPct or 0) * 100
                     fin[AD.ATK_SPEED] = (fin[AD.ATK_SPEED] or 0) + (enrageP.atkSpeedPct or 0) * 100
                     recalcInterval(enemy)
-                    runtime_.bannerText = "⚠ " .. (enemy.name or "Boss") .. " 进入暴怒！"
-                    runtime_.bannerTimer = BANNER_DURATION
+                    state_.runtime.bannerText = "⚠ " .. (enemy.name or "Boss") .. " 进入暴怒！"
+                    state_.runtime.bannerTimer = BANNER_DURATION
                     print(string.format("[BossAffix] 暴怒触发 boss=%s hp%%=%.0f%% dmg+%.0f%% spd+%.0f%%",
                         tostring(enemy.name), enemy.hp / maxHp * 100,
                         (enrageP.dmgPct or 0) * 100, (enrageP.atkSpeedPct or 0) * 100))
@@ -214,7 +217,7 @@ end
 ---@param dealDamageFn function|nil 可选伤害函数注入（测试用）；缺省走 BattleCombat.dealDamageToUnit
 ---@return boolean reflected 是否发生了反弹（调用方避免二次处理）
 function BossAffixSystem.onBossDamaged(boss, attacker, actualDamage, dealDamageFn)
-    if not activeAffixes_ then return false end
+    if not state_.activeAffixes then return false end
     local thornsP = getP("thorns")
     if not thornsP then return false end
     if not boss or not boss.isBoss or boss.hp <= 0 then return false end
@@ -243,10 +246,10 @@ end
 
 ---@return string|nil text, number|nil alpha
 function BossAffixSystem.getBanner()
-    if runtime_.bannerTimer <= 0 or not runtime_.bannerText then return nil end
+    if state_.runtime.bannerTimer <= 0 or not state_.runtime.bannerText then return nil end
     local alpha = 1.0
-    if runtime_.bannerTimer < 0.6 then alpha = runtime_.bannerTimer / 0.6 end
-    return runtime_.bannerText, alpha
+    if state_.runtime.bannerTimer < 0.6 then alpha = state_.runtime.bannerTimer / 0.6 end
+    return state_.runtime.bannerText, alpha
 end
 
 return BossAffixSystem

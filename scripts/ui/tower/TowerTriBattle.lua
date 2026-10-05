@@ -26,6 +26,7 @@ local BF               = require("systems.ButtonFeedback")
 local DrawUtil         = require("core.DrawUtil")
 local StageConfig      = require("config.StageConfig")
 local PlayerStore      = require("core.PlayerStore")
+local RuntimeContext   = require("ui.battle.scene.BattleRuntimeContext")
 
 local TowerTriBattle = {}
 
@@ -53,6 +54,10 @@ local BATTLE_LOSE   = "lose"
 ---@field talRefs table
 ---@field beState table
 ---@field semState table
+---@field rchState RelicBattleState
+---@field mapAffixState table
+---@field bossAffixState table
+---@field berserkState table
 ---@field regenAccum number
 
 local state = {
@@ -72,6 +77,8 @@ local state = {
 }
 
 local inited = false
+---@type BattleRuntimeState|nil
+local priorContext = nil
 
 local function getMainProgressStageId()
     local battleData = PlayerStore.Get("battle")
@@ -127,12 +134,20 @@ local function collectFieldEnemies()
 end
 
 local function mountLane(lane)
-    BattleCombat.mount(lane.combatState)
-    ProjectileSystem.mount(lane.psState)
-    TM.mount(lane.tmState)
-    TAL.mount(lane.talRefs)
-    BattleEffects.mount(lane.beState)
-    SEM.mount(lane.semState)
+    RuntimeContext.mount(lane)
+end
+
+local function cleanupLanes()
+    for _, lane in ipairs(state.lanes) do
+        mountLane(lane)
+        RCH.reset()
+        local units = {}
+        for _, list in ipairs({ lane.allies, lane.enemies, lane.queue }) do
+            for _, unit in ipairs(list) do units[#units + 1] = unit end
+        end
+        TAL.reset(units)
+        ART.reset(lane.allies)
+    end
 end
 
 local function bindLaneContext(lane)
@@ -192,6 +207,12 @@ end
 local function initLaneUnits(lane)
     mountLane(lane)
     resetLaneVisuals()
+    local allUnits = {}
+    for _, list in ipairs({ lane.allies, lane.enemies }) do
+        for _, unit in ipairs(list) do allUnits[#allUnits + 1] = unit end
+    end
+    RCH.initBattle(allUnits)
+    TAL.reset(allUnits)
     for _, u in ipairs(lane.allies) do
         u.atkProgress = 0
         u._artifactDeathHandled = nil
@@ -256,6 +277,7 @@ local function tickTombstones(lane, dt)
                     TAL.initUnit(newUnit)
                     newUnit.atkProgress = 0
                     newUnit.reviveTimer = nil
+                    RCH.removeUnit(unit)
                     lane.enemies[i] = newUnit
                     BattleCombat.clearCardAnim(unit)
                     BattleCombat.clearHitFlash(unit)
@@ -491,6 +513,12 @@ end
 ---@param opts table { teamAllies = { [1]=table[], [2]=table[], [3]=table[] }, data = table, onClose = function }
 function TowerTriBattle.open(opts)
     opts = opts or {}
+    if state.open then
+        cleanupLanes()
+    else
+        priorContext = RuntimeContext.capture()
+    end
+    local okOpen, openErr = pcall(function()
     state.open = true
     state.phase = BATTLE_ACTIVE
     state.resultTimer = 0
@@ -525,6 +553,10 @@ function TowerTriBattle.open(opts)
             psState = ProjectileSystem.newState(),
             tmState = TM.newState(),
             talRefs = TAL.newBattleRefs(),
+            rchState = RCH.newState(),
+            mapAffixState = require("systems.MapAffixSystem").newState(),
+            bossAffixState = require("systems.BossAffixSystem").newState(),
+            berserkState = require("ui.battle.stage.StageBerserk").newState(),
             beState = BattleEffects.newFxState(),
             semState = SEM.newSemState(),
             regenAccum = 0,
@@ -544,18 +576,8 @@ function TowerTriBattle.open(opts)
     state.allAllies = combinedAllies
     DungeonBattle.enter(data, combinedAllies)
 
-    RCH.reset()
     ART.reset(combinedAllies)
-    TAL.reset()
     BattleStats.reset()
-    local allForRCH = {}
-    for _, u in ipairs(combinedAllies) do allForRCH[#allForRCH + 1] = u end
-    for t = 1, TEAM_COUNT do
-        for _, u in ipairs(state.lanes[t].enemies) do
-            allForRCH[#allForRCH + 1] = u
-        end
-    end
-    RCH.initBattle(allForRCH)
     ART.initBattle(combinedAllies)
 
     for t = 1, TEAM_COUNT do
@@ -572,6 +594,19 @@ function TowerTriBattle.open(opts)
 
     print(string.format("[TowerTriBattle] open floor=%d wave=%d allies=%d",
         state.floor, state.wave, #combinedAllies))
+    end)
+    if not okOpen then
+        cleanupLanes()
+        DungeonBattle.exit()
+        RuntimeContext.mount(priorContext)
+        priorContext = nil
+        state.open = false
+        state.onClose = nil
+        state.lanes = {}
+        state.allAllies = {}
+        print("[TowerTriBattle] open failed: " .. tostring(openErr))
+        error(openErr)
+    end
 end
 
 function TowerTriBattle.close()
@@ -579,15 +614,11 @@ function TowerTriBattle.close()
     state.open = false
     state.phase = BATTLE_ACTIVE
     state.confirmOpen = false
+    cleanupLanes()
     DungeonBattle.exit()
-    RCH.reset()
-    ART.reset(state.allAllies)
-    BattleCombat.mount(nil)
-    ProjectileSystem.mount(nil)
-    TM.mount(nil)
-    TAL.mount(nil)
-    BattleEffects.mount(nil)
-    SEM.mount(nil)
+    RuntimeContext.mount(priorContext)
+    priorContext = nil
+    state.lanes = {}
     BattleLayout.setMode("strip")
     local cb = state.onClose
     state.onClose = nil

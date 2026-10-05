@@ -28,36 +28,39 @@ local function recalcUnitAttackInterval(unit)
     end
 end
 
---- 当前激活的词缀列表（loadStage 时设置）
-local activeAffixes_ = nil  ---@type table[]|nil
+--- 每条战线独占词缀列表、计时和腐蚀层；默认容器兼容旧 BattleScene。
+---@class MapAffixState
+---@field activeAffixes table[]|nil
+---@field runtime table
+local function newState()
+    return {
+        activeAffixes = nil,
+        runtime = {
+            decayElapsed = 0, decayStacks = 0,
+            periodicTimer = 0, fogActive = false, fogTimer = 0,
+            riftActive = false, riftTimer = 0,
+            corrodeStacks = {}, frostLotusTimer = 0,
+        },
+    }
+end
+local defaultState = newState()
+local state_ = defaultState
 
---- 动态词缀运行时状态
-local runtimeState_ = {
-    -- 衰败之地
-    decayElapsed = 0,
-    decayStacks = 0,
-    -- 远古之雾 / 时空裂隙
-    periodicTimer = 0,
-    fogActive = false,
-    fogTimer = 0,
-    riftActive = false,
-    riftTimer = 0,
-    -- 蚀甲之触：每个己方单位的腐蚀层 { [unitInstanceId] = { {expireTime, pct}, ... } }
-    corrodeStacks = {},
-    -- 冰冻之莲
-    frostLotusTimer = 0,
-}
+function MapAffixSystem.newState() return newState() end
+function MapAffixSystem.mount(state) state_ = state or defaultState end
+function MapAffixSystem.getState() return state_ end
+function MapAffixSystem.restoreDefault() state_ = defaultState end
 
 local function resetRuntimeState()
-    runtimeState_.decayElapsed = 0
-    runtimeState_.decayStacks = 0
-    runtimeState_.periodicTimer = 0
-    runtimeState_.fogActive = false
-    runtimeState_.fogTimer = 0
-    runtimeState_.riftActive = false
-    runtimeState_.riftTimer = 0
-    runtimeState_.corrodeStacks = {}
-    runtimeState_.frostLotusTimer = 0
+    state_.runtime.decayElapsed = 0
+    state_.runtime.decayStacks = 0
+    state_.runtime.periodicTimer = 0
+    state_.runtime.fogActive = false
+    state_.runtime.fogTimer = 0
+    state_.runtime.riftActive = false
+    state_.runtime.riftTimer = 0
+    state_.runtime.corrodeStacks = {}
+    state_.runtime.frostLotusTimer = 0
 end
 
 -- ======================== 公开 API ========================
@@ -94,7 +97,7 @@ end
 ---@param allies table[]|nil
 function MapAffixSystem.reset(allies)
     MapAffixSystem.clearDebuffsFromAllies(allies)
-    activeAffixes_ = nil
+    state_.activeAffixes = nil
     resetRuntimeState()
 end
 
@@ -107,15 +110,15 @@ function MapAffixSystem.onStageLoad(chapter, allies, mode)
     MapAffixSystem.clearDebuffsFromAllies(allies)
 
     if mode == "challenger_s1" then
-        activeAffixes_ = MapAffixConfig.getAffixesForChallengerS1(chapter)
+        state_.activeAffixes = MapAffixConfig.getAffixesForChallengerS1(chapter)
     else
-        activeAffixes_ = MapAffixConfig.getAffixesForChapter(chapter)
+        state_.activeAffixes = MapAffixConfig.getAffixesForChapter(chapter)
     end
     resetRuntimeState()
-    if activeAffixes_ then
+    if state_.activeAffixes then
         local names = {}
-        for _, a in ipairs(activeAffixes_) do names[#names + 1] = a.name end
-        print("[MapAffix] 加载词缀 chapter=" .. chapter .. " count=" .. #activeAffixes_
+        for _, a in ipairs(state_.activeAffixes) do names[#names + 1] = a.name end
+        print("[MapAffix] 加载词缀 chapter=" .. chapter .. " count=" .. #state_.activeAffixes
             .. " [" .. table.concat(names, ", ") .. "]")
     end
 end
@@ -123,13 +126,13 @@ end
 --- 获取当前激活的词缀列表（UI 展示用）
 ---@return table[]|nil
 function MapAffixSystem.getActiveAffixes()
-    return activeAffixes_
+    return state_.activeAffixes
 end
 
 --- 是否有激活词缀
 ---@return boolean
 function MapAffixSystem.hasAffixes()
-    return activeAffixes_ ~= nil and #activeAffixes_ > 0
+    return state_.activeAffixes ~= nil and #state_.activeAffixes > 0
 end
 
 -- ======================== 静态词缀：应用到怪物 ========================
@@ -137,9 +140,9 @@ end
 --- 在怪物生成后调用，应用静态属性修改
 ---@param enemies table[] 怪物列表
 function MapAffixSystem.applyStaticAffixes(enemies)
-    if not activeAffixes_ or #enemies == 0 then return end
+    if not state_.activeAffixes or #enemies == 0 then return end
 
-    for _, affix in ipairs(activeAffixes_) do
+    for _, affix in ipairs(state_.activeAffixes) do
         local id = affix.id
         local p = affix.params
 
@@ -210,8 +213,8 @@ end
 ---@param id string
 ---@return table|nil
 local function getAffixParams(id)
-    if not activeAffixes_ then return nil end
-    for _, a in ipairs(activeAffixes_) do
+    if not state_.activeAffixes then return nil end
+    for _, a in ipairs(state_.activeAffixes) do
         if a.id == id then return a.params end
     end
     return nil
@@ -229,10 +232,10 @@ end
 ---@param allies table[] 己方单位列表
 ---@param enemies table[] 敌方单位列表
 function MapAffixSystem.tick(dt, allies, enemies)
-    if not activeAffixes_ then return end
+    if not state_.activeAffixes then return end
 
-    local now = runtimeState_.decayElapsed + dt
-    runtimeState_.decayElapsed = now
+    local now = state_.runtime.decayElapsed + dt
+    state_.runtime.decayElapsed = now
 
     -- ---- 衰败之地：每10秒怪物伤害+4%，上限40% ----
     local decayP = getAffixParams("decay_land")
@@ -240,7 +243,7 @@ function MapAffixSystem.tick(dt, allies, enemies)
         local interval = decayP.tickInterval or 10
         local newStacks = math.floor(now / interval)
         local maxStacks = math.floor((decayP.maxBonus or 0.40) / (decayP.perTick or 0.04) + 0.5)
-        runtimeState_.decayStacks = math.min(newStacks, maxStacks)
+        state_.runtime.decayStacks = math.min(newStacks, maxStacks)
     end
 
     -- ---- 工具：计算单位的异常抗性减持续比例 ----
@@ -251,18 +254,18 @@ function MapAffixSystem.tick(dt, allies, enemies)
     end
 
     -- ---- 远古之雾 / 时空裂隙：周期性 debuff（逐单位追踪到期时间） ----
-    runtimeState_.periodicTimer = runtimeState_.periodicTimer + dt
+    state_.runtime.periodicTimer = state_.runtime.periodicTimer + dt
 
     local fogP = getAffixParams("ancient_fog")
     if fogP then
         local interval = fogP.interval or 15
         local duration = fogP.duration or 8
         local cycle = interval + duration
-        local phase = runtimeState_.periodicTimer % cycle
-        local wasActive = runtimeState_.fogActive
-        runtimeState_.fogActive = (phase >= interval)
+        local phase = state_.runtime.periodicTimer % cycle
+        local wasActive = state_.runtime.fogActive
+        state_.runtime.fogActive = (phase >= interval)
         -- 施加
-        if runtimeState_.fogActive and not wasActive then
+        if state_.runtime.fogActive and not wasActive then
             for _, ally in ipairs(allies) do
                 if ally.attrs and ally.attrs.final and ally.hp > 0 then
                     local personalDur = duration * getResistMult(ally)
@@ -281,7 +284,7 @@ function MapAffixSystem.tick(dt, allies, enemies)
             end
         end
         -- 全局结束时兜底清理（防残留）
-        if not runtimeState_.fogActive and wasActive then
+        if not state_.runtime.fogActive and wasActive then
             for _, ally in ipairs(allies) do
                 if ally._fogHitDebuff and ally.attrs and ally.attrs.final then
                     ally.attrs.final[AD.HIT_VALUE] = (ally.attrs.final[AD.HIT_VALUE] or 0) + ally._fogHitDebuff
@@ -297,14 +300,14 @@ function MapAffixSystem.tick(dt, allies, enemies)
         local interval = riftP.interval or 15
         local duration = riftP.duration or 8
         local cycle = interval + duration
-        local offsetTimer = math.max(0, runtimeState_.periodicTimer - interval * 0.5)
+        local offsetTimer = math.max(0, state_.runtime.periodicTimer - interval * 0.5)
         local phase = offsetTimer % cycle
-        local wasActive = runtimeState_.riftActive
-        runtimeState_.riftActive = (phase >= interval)
+        local wasActive = state_.runtime.riftActive
+        state_.runtime.riftActive = (phase >= interval)
         -- atkSpeedReduce 配置是小数形式（0.20 = 20%），ATK_SPEED 存储单位为百分比整数，需要 ×100
         local reduceValue = riftP.atkSpeedReduce * 100
         -- 施加
-        if runtimeState_.riftActive and not wasActive then
+        if state_.runtime.riftActive and not wasActive then
             for _, ally in ipairs(allies) do
                 if ally.attrs and ally.attrs.final and ally.hp > 0 then
                     local personalDur = duration * getResistMult(ally)
@@ -336,7 +339,7 @@ function MapAffixSystem.tick(dt, allies, enemies)
             end
         end
         -- 全局结束时兜底清理
-        if not runtimeState_.riftActive and wasActive then
+        if not state_.runtime.riftActive and wasActive then
             for _, ally in ipairs(allies) do
                 if ally._riftAtkDebuff and ally.attrs and ally.attrs.final then
                     if ally.attrs.removeModifier then
@@ -355,7 +358,7 @@ function MapAffixSystem.tick(dt, allies, enemies)
     -- ---- 蚀甲之触：清理过期层 + 更新 attrs 缓存 ----
     local corrP = getAffixParams("corrode_armor")
     if corrP then
-        for uid, stacks in pairs(runtimeState_.corrodeStacks) do
+        for uid, stacks in pairs(state_.runtime.corrodeStacks) do
             local i = 1
             while i <= #stacks do
                 if now >= stacks[i].expire then
@@ -365,14 +368,14 @@ function MapAffixSystem.tick(dt, allies, enemies)
                 end
             end
             if #stacks == 0 then
-                runtimeState_.corrodeStacks[uid] = nil
+                state_.runtime.corrodeStacks[uid] = nil
             end
         end
         -- 同步缓存到 allies 的 attrs 对象
         for _, ally in ipairs(allies) do
             local uid = getUnitKey(ally)
             if uid and ally.attrs then
-                local stacks = runtimeState_.corrodeStacks[uid]
+                local stacks = state_.runtime.corrodeStacks[uid]
                 if stacks and #stacks > 0 then
                     ally.attrs._corrodeArmorPct = math.min(#stacks * corrP.perHitPct, corrP.maxPct)
                 else
@@ -385,10 +388,10 @@ function MapAffixSystem.tick(dt, allies, enemies)
     -- ---- 冰冻之莲：每隔N秒冰冻一个随机己方角色 ----
     local frostP = getAffixParams("frost_lotus")
     if frostP then
-        runtimeState_.frostLotusTimer = runtimeState_.frostLotusTimer + dt
+        state_.runtime.frostLotusTimer = state_.runtime.frostLotusTimer + dt
         local interval = frostP.interval or 7
-        if runtimeState_.frostLotusTimer >= interval then
-            runtimeState_.frostLotusTimer = runtimeState_.frostLotusTimer - interval
+        if state_.runtime.frostLotusTimer >= interval then
+            state_.runtime.frostLotusTimer = state_.runtime.frostLotusTimer - interval
             -- 随机选一个存活且未被冰冻的己方单位
             local candidates = {}
             for _, ally in ipairs(allies) do
@@ -410,7 +413,7 @@ end
 --- 在每次怪物受伤后调用
 ---@param enemy table 受伤的怪物
 function MapAffixSystem.onEnemyDamaged(enemy)
-    if not activeAffixes_ then return end
+    if not state_.activeAffixes then return end
     local p = getAffixParams("berserk_low_hp")
     if not p then return end
     if enemy._berserkApplied then return end  -- 已触发过
@@ -432,14 +435,14 @@ end
 --- 返回 true 表示需要触发额外攻击回合
 ---@return boolean
 function MapAffixSystem.onEnemyKilled()
-    if not activeAffixes_ then return false end
+    if not state_.activeAffixes then return false end
     return getAffixParams("vengeance_oath") ~= nil
 end
 
 --- 蚀甲之触：怪物攻击命中时调用
 ---@param target table 被命中的己方 battle unit
 function MapAffixSystem.onAllyHit(target)
-    if not activeAffixes_ then return end
+    if not state_.activeAffixes then return end
     local p = getAffixParams("corrode_armor")
     if not p then return end
     if not target.attrs or not target.attrs.final then return end
@@ -447,7 +450,7 @@ function MapAffixSystem.onAllyHit(target)
     local uid = getUnitKey(target)
     if not uid then return end
 
-    local stacks = runtimeState_.corrodeStacks[uid] or {}
+    local stacks = state_.runtime.corrodeStacks[uid] or {}
     -- 检查是否达到上限
     local currentPct = #stacks * p.perHitPct
     if currentPct >= p.maxPct then return end
@@ -457,8 +460,8 @@ function MapAffixSystem.onAllyHit(target)
     local actualDuration = p.layerDuration * (1 - res / 100)
 
     -- 添加新层
-    stacks[#stacks + 1] = { expire = runtimeState_.decayElapsed + actualDuration }
-    runtimeState_.corrodeStacks[uid] = stacks
+    stacks[#stacks + 1] = { expire = state_.runtime.decayElapsed + actualDuration }
+    state_.runtime.corrodeStacks[uid] = stacks
 
     -- 同步蚀甲比例到 attrs 对象上（供 CombatFormula 读取）
     local newPct = math.min(#stacks * p.perHitPct, p.maxPct)
@@ -475,12 +478,12 @@ function MapAffixSystem.getCorrodeArmorPct(target)
         return target._corrodeArmorPct
     end
     -- 慢路径：通过 uid 查找（兼容 battle unit 直接调用）
-    if not activeAffixes_ then return 0 end
+    if not state_.activeAffixes then return 0 end
     local p = getAffixParams("corrode_armor")
     if not p then return 0 end
     local uid = getUnitKey(target)
     if not uid then return 0 end
-    local stacks = runtimeState_.corrodeStacks[uid]
+    local stacks = state_.runtime.corrodeStacks[uid]
     if not stacks or #stacks == 0 then return 0 end
     return math.min(#stacks * p.perHitPct, p.maxPct)
 end
@@ -488,7 +491,7 @@ end
 --- 厚重鳞甲：判断本次暴击是否被免疫
 ---@return boolean true=暴击被压制为普通伤害
 function MapAffixSystem.shouldSuppressCrit()
-    if not activeAffixes_ then return false end
+    if not state_.activeAffixes then return false end
     local p = getAffixParams("thick_scales")
     if not p then return false end
     return math.random() < p.chance
@@ -497,16 +500,16 @@ end
 --- 衰败之地：获取当前怪物伤害加成倍率
 ---@return number 加成值（如0.12 = +12%）
 function MapAffixSystem.getDecayDamageBonus()
-    if not activeAffixes_ then return 0 end
+    if not state_.activeAffixes then return 0 end
     local p = getAffixParams("decay_land")
     if not p then return 0 end
-    return runtimeState_.decayStacks * (p.perTick or 0.04)
+    return state_.runtime.decayStacks * (p.perTick or 0.04)
 end
 
 --- 格挡压制：获取格挡率削减值
 ---@return number 削减值（如0.30 = -30 个百分点）
 function MapAffixSystem.getBlockReduce()
-    if not activeAffixes_ then return 0 end
+    if not state_.activeAffixes then return 0 end
     local p = getAffixParams("block_suppress")
     if not p then return 0 end
     return p.blockReduce
@@ -537,7 +540,7 @@ end
 --- 生命猎手：获取对HP部分的额外伤害加成
 ---@return number 加成值（如0.12 = +12%）
 function MapAffixSystem.getLifeHunterBonus()
-    if not activeAffixes_ then return 0 end
+    if not state_.activeAffixes then return 0 end
     local p = getAffixParams("life_hunter")
     if not p then return 0 end
     return p.hpDmgBonus
@@ -546,7 +549,7 @@ end
 --- 治疗荒漠：获取治疗削减值
 ---@return number 削减值（如0.40 = -40%）
 function MapAffixSystem.getHealReduce()
-    if not activeAffixes_ then return 0 end
+    if not state_.activeAffixes then return 0 end
     local p = getAffixParams("heal_desert")
     if not p then return 0 end
     return MapAffixConfig.clampHealReduce(p.healReduce)
@@ -565,13 +568,13 @@ end
 --- 远古之雾是否激活中
 ---@return boolean
 function MapAffixSystem.isFogActive()
-    return runtimeState_.fogActive
+    return state_.runtime.fogActive
 end
 
 --- 时空裂隙是否激活中
 ---@return boolean
 function MapAffixSystem.isRiftActive()
-    return runtimeState_.riftActive
+    return state_.runtime.riftActive
 end
 
 return MapAffixSystem

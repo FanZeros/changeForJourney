@@ -246,7 +246,11 @@ function M.process(ctx, dt)
                 ProjectileSystem.reset()
                 TM.reset()
                 SEM.reset()
-                TAL.reset()
+                local units = {}
+                for _, list in ipairs({ allies, enemies, enemyQueue }) do
+                    for _, unit in ipairs(list) do units[#units + 1] = unit end
+                end
+                TAL.reset(units)
                 RCH.reset()
                 ART.reset(allies)
                 RCH.initBattle(allies)

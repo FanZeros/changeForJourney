@@ -81,11 +81,14 @@ function Start()
             deps["ui.battle.combat.BattleCombat"] = stub({ newState = function() return {} end,
                 DEATH_ANIM_DURATION = 0.3, REVIVE_ANIM_DURATION = 0.3 })
             for _, name in ipairs({ "ui.battle.combat.ProjectileSystem", "systems.ThreatManager",
-                "systems.TalentManager", "ui.battle.combat.BattleEffects", "systems.StatusEffectManager" }) do
+                "systems.TalentManager", "ui.battle.combat.BattleEffects", "systems.StatusEffectManager",
+                "systems.RelicConditionHandler", "systems.MapAffixSystem", "systems.BossAffixSystem" }) do
                 deps[name] = stub({ newState = function() return {} end, newBattleRefs = function() return {} end,
                     newFxState = function() return {} end, newSemState = function() return {} end })
             end
-            deps["ui.battle.stage.StageBerserk"] = { isActive = function() return false end, enter = noop, exit = noop }
+            deps["ui.battle.stage.StageBerserk"] = stub({ newState = function() return {} end,
+                isActive = function() return false end, getAttackInterval = function(_, interval) return interval end })
+            deps["ui.battle.scene.BattleRuntimeContext"] = compile("ui.battle.scene.BattleRuntimeContext")
             deps["ui.battle.stage.BattleStageNav"] = { NAV = {} }
             deps["ui.battle.scene.BattleAllyLifecycle"] = compile("ui.battle.scene.BattleAllyLifecycle")
             deps["ui.battle.stage.BattleEnemySpawn"] = {
@@ -96,6 +99,7 @@ function Start()
                     return { { hp = 1, monsterId = 1, atkProgress = 0, expReward = 0, goldReward = 0 } }, 1
                 end,
                 assignEnemiesToField = function(list) return list, {} end,
+                getFirstClearBonusMonsterIds = function() return nil end,
             }
             deps["ui.character.panel.CharacterPanel"] = stub({
                 getTeamSignature = function(team) return "syntheticTeam" .. team end,

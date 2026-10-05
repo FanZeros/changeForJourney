@@ -60,7 +60,8 @@ function TAL.mountedState() return TAL_BCS end
 
 -- ======================== 每单位状态========================
 
-local state = {}
+-- 活单位由战线持有；不让共享天赋表永久强持已退场单位。
+local state = setmetatable({}, { __mode = "k" })
 
 -- 模块级引用（onBattleStart 时缓存）
 
@@ -775,10 +776,15 @@ bindTalentUpdate()
 
 -- ======================== 核心 API ========================
 
---- 重置所有天赋状态（关卡切换时调用）
-function TAL.reset()
+--- 重置天赋状态；并行宿主传本线单位，无参仅兼容明确的全局重置。
+---@param units table[]|nil
+function TAL.reset(units)
     ETS.flush()
-    state = {}
+    if units then
+        for _, unit in ipairs(units) do state[unit] = nil end
+    else
+        state = setmetatable({}, { __mode = "k" })
+    end
     TAL_BCS.bAllies  = {}
     TAL_BCS.bEnemies = {}
 end

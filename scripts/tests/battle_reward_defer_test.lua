@@ -41,6 +41,7 @@ function Start()
         local queueSource = source("ui.widget.BattleRewardQueue")
         local blockerSource = source("boot.BattleRewardOverlay")
         local triSource = source("ui.battle.tri.BattleTriPage", true)
+        local runtimeContextSource = source("ui.battle.scene.BattleRuntimeContext", true)
         local horizonInputSource = source("boot.StandaloneHorizonInput", true)
         ---@type any
         local env = setmetatable({}, { __index = _G })
@@ -1074,6 +1075,12 @@ function Start()
                 "ui.story.ScenarioDialogue", "systems.TutorialManager", "boot.ArtifactGesture" }) do
                 routeMods[name] = closedPage()
             end
+            for _, name in ipairs({ "ui.battle.combat.BattleCombat", "ui.battle.combat.ProjectileSystem",
+                "systems.ThreatManager", "systems.TalentManager", "ui.battle.combat.BattleEffects",
+                "systems.StatusEffectManager", "systems.RelicConditionHandler", "systems.MapAffixSystem",
+                "systems.BossAffixSystem", "ui.battle.stage.StageBerserk", "systems.BattleStats" }) do
+                routeMods[name] = { mount = noop }
+            end
             routeMods["core.BattleLayout"] = { STRIP_W = 1600, STRIP_H = 600, setMode = noop }
             routeMods["ui.widget.SoundToggle"] = { initImages = noop }
             routeMods["core.I18n"] = { lookup = function(text) return text end, format = string.format }
@@ -1118,6 +1125,8 @@ function Start()
                 return routeMods[name]
             end
             routeEnv.nvgScissor = noop
+            routeMods["ui.battle.scene.BattleRuntimeContext"] = assert(load(runtimeContextSource,
+                "@ui.battle.scene.BattleRuntimeContext", "t", routeEnv))()
             local triChunk = assert(load(triSource, "@ui.battle.tri.BattleTriPage", "t", routeEnv))
             local Tri = triChunk()
             routeMods["ui.battle.tri.BattleTriPage"] = Tri
@@ -1252,9 +1261,9 @@ function Start()
             end
             equal(seamCloses, 0, "tri网格拖到seam松手不伪装成返回按钮点击")
         end)
-        run("隔离边界：四份核心和两份路由源码，只允许 spy 依赖", function()
+        run("隔离边界：四份核心和三份路由源码，只允许 spy 依赖", function()
             equal(sourceReads, 4, "只读 Popup/Queue/Cascade/Blocker 四份实际核心源码")
-            equal(routingSourceReads, 2, "额外只读TriPage/HorizonInput路由源码")
+            equal(routingSourceReads, 3, "额外只读TriPage/RuntimeContext/HorizonInput路由源码")
             equal(forbiddenRequires, 0, "无 main、玩家存档、网络模块加载")
         end)
     end)

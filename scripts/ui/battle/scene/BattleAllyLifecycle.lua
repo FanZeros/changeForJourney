@@ -48,6 +48,16 @@ function M.bind(deps)
     local set = deps.set
     local MAX_FIELD_ALLIES = deps.MAX_FIELD_ALLIES
     local ALLY_CARD_CY = deps.ALLY_CARD_CY
+    local function mountBattleState()
+        if deps.mountBattleState then deps.mountBattleState() end
+    end
+    local function resetLocalTalents()
+        local units = {}
+        for _, list in ipairs({ getAllies(), getEnemies(), getEnemyQueue() }) do
+            for _, unit in ipairs(list) do units[#units + 1] = unit end
+        end
+        TAL.reset(units)
+    end
 
     -- [EnemyGuard] 检测 enemies 列表是否被英雄数据污染（一次性报警）
     local function checkEnemiesCorruption(tag)
@@ -78,6 +88,7 @@ function M.bind(deps)
 
     --- 恢复主战斗的 BattleCombat 上下文（副本/竞技场关闭后必须调用）
     local function setupBattleCombatContext()
+        mountBattleState()
         BattleCombat.setContext({
             getAllies = getAllies,
             getEnemies = getEnemies,
@@ -123,6 +134,7 @@ function M.bind(deps)
 
     --- 重置战斗状态（新单位加入时调用）
     local function resetBattle()
+        mountBattleState()
         set("battleActive", true)
         set("battleTimeoutElapsed", 0)
         if get("isFirstClear") then
@@ -137,7 +149,7 @@ function M.bind(deps)
         SpeechBubble.reset()
         TM.reset()
         SEM.reset()
-        TAL.reset()
+        resetLocalTalents()
         RCH.reset()
         ART.reset(getAllies())
         for _, u in ipairs(getAllies()) do
@@ -176,6 +188,9 @@ function M.bind(deps)
 
     --- 设置己方单位列表（DebugPanel 用）
     local function setAllies(list)
+        mountBattleState()
+        resetLocalTalents()
+        RCH.reset()
         checkEnemiesCorruption("setAllies_ENTRY")
         print(string.format("[EnemyGuard] setAllies called listLen=%d enemies_ref=%s enemies_len=%d allies_ref=%s",
             #list, tostring(getEnemies()), #getEnemies(), tostring(getAllies())))
@@ -341,6 +356,8 @@ function M.bind(deps)
     end
 
     local function resetToDefault()
+        mountBattleState()
+        resetLocalTalents()
         set("currentStageId", 0101)
         set("clearedStages", {})
         set("isFirstClear", true)
@@ -358,7 +375,7 @@ function M.bind(deps)
         set("enemies", {})
         set("enemyQueue", {})
         SEM.reset()
-        TAL.reset()
+        resetLocalTalents()
         RCH.reset()
         ART.reset(getAllies())
         BattleCombat.reset()

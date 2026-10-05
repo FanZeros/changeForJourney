@@ -41,6 +41,8 @@ local BattleStageNavLogic = require("ui.battle.stage.BattleStageNavLogic")
 local BattleDataRestore = require("ui.battle.scene.BattleDataRestore")
 
 local BattleScene = {}
+local RuntimeContext = require("ui.battle.scene.BattleRuntimeContext")
+function BattleScene.mountBattleState() RuntimeContext.mount(nil) end
 BattleScene.GameState = require("core.GameState")
 
 -- 己方场地上限（固定）
@@ -413,6 +415,7 @@ local function generateIdleEnemyList()
 end
 
 local function startBattleTalents()
+    BattleScene.mountBattleState()
     BattleStageFlow.startBattleTalents(allies, enemies)
 end
 
@@ -440,6 +443,7 @@ end
 ---@param stageId number 4位关卡ID, 如 0101
 ---@param skipBattleStart? boolean 跳过 TAL/TM 战斗启动（调用方自行在 resetAllyUnit 后调用 startBattleTalents）
 local function loadStage(stageId, skipBattleStart)
+    BattleScene.mountBattleState()
     local ctx = {
         currentStageId = currentStageId, stageName = stageName, maxStageId_ = maxStageId_,
         isFirstClear = isFirstClear, idleRangeText_ = idleRangeText_,
@@ -550,6 +554,7 @@ bindBattleExtracts = function()
     _navLogic = BattleStageNavLogic.bind(shared)
     _dataRestore = BattleDataRestore.bind(shared)
     _allyLifecycle = BattleAllyLifecycle.bind({
+        mountBattleState = BattleScene.mountBattleState,
         getStageConfig = getStageConfig, getStageMaxFieldEnemies = getStageMaxFieldEnemies,
         loadStage = loadStage, resetAllyUnit = resetAllyUnit,
         startBattleTalents = startBattleTalents, recalcIdleIncome = recalcIdleIncome,
@@ -865,6 +870,7 @@ function BattleScene.pumpBattleCards()
 end
 
 function BattleScene.update(dt)
+    BattleScene.mountBattleState()
     pumpBattleCards()
     for _, list in ipairs({ enemies, enemyQueue }) do
         for _, unit in ipairs(list) do
@@ -1464,8 +1470,8 @@ end
 --- 恢复主战斗上下文（副本/竞技场关闭后调用，无论是否 paused）
 --- 同时恢复 BattleCombat 上下文 + TAL/TM 天赋系统
 function BattleScene.restoreContext()
+    BattleScene.mountBattleState()
     setupBattleCombatContext()
-    startBattleTalents()
     print("[BattleScene] restoreContext - 主战斗上下文已恢复 (allies=" .. #allies .. " enemies=" .. #enemies .. ")")
 end
 

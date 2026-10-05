@@ -65,6 +65,7 @@ function Start()
         mocks["runtime.ClientDispatcher"] = dispatcher
         mocks["ui.battle.scene.BattleScene"] = scene
         mocks["config.StageConfig"] = SC
+        mocks["config.GameConfig"] = nativeRequire("config.GameConfig")
         mocks["core.BattleLayout"] = nativeRequire("core.BattleLayout")
         mocks["systems.AttributeDef"] = nativeRequire("systems.AttributeDef")
         mocks["config.MonsterConfig"] = nativeRequire("config.MonsterConfig")
@@ -79,14 +80,18 @@ function Start()
         }
         mocks["ui.battle.combat.BattleCombat"] = stub({ newState = function() return {} end })
         for _, name in ipairs({ "ui.battle.combat.ProjectileSystem", "systems.ThreatManager",
-            "systems.TalentManager", "ui.battle.combat.BattleEffects", "systems.StatusEffectManager" }) do
+            "systems.TalentManager", "ui.battle.combat.BattleEffects", "systems.StatusEffectManager",
+            "systems.RelicConditionHandler", "systems.MapAffixSystem", "systems.BossAffixSystem" }) do
             mocks[name] = stub({ newState = function() return {} end,
                 newBattleRefs = function() return {} end, newFxState = function() return {} end,
                 newSemState = function() return {} end })
         end
+        mocks["ui.battle.stage.StageBerserk"] = stub({ newState = function() return {} end,
+            getAttackInterval = function(_, interval) return interval end })
         mocks["ui.battle.stage.BattleEnemySpawn"] = {
             generateEnemyList = function() return { { hp = 1 } } end,
             assignEnemiesToField = function(list) return list, {} end,
+            getFirstClearBonusMonsterIds = function() return nil end,
         }
         rawset(_G, "require", function(name)
             if mocks[name] then return mocks[name] end
@@ -111,6 +116,7 @@ function Start()
         end }
         local Story = compile("systems.StoryPlayer")
         mocks["systems.StoryPlayer"] = Story
+        mocks["ui.battle.scene.BattleRuntimeContext"] = compile("ui.battle.scene.BattleRuntimeContext")
         local Driver = compile("ui.battle.tri.BattleTriDriver")
         local drivers = {}
         mocks["ui.battle.tri.BattleTriDriver"] = { new = function(t)

@@ -25,6 +25,7 @@ function M.refillEnemies(enemies, enemyQueue, maxField)
         else
             TM.removeUnit(u)
             SEM.removeUnit(u)
+            RCH.removeUnit(u)
         end
     end
 
@@ -46,7 +47,11 @@ function M.startBattleTalents(allies, enemies)
     RCH.initBattle(allies)
     ART.reset(allies)
     ART.initBattle(allies)
-    TAL.reset()
+    local units = {}
+    for _, list in ipairs({ allies, enemies }) do
+        for _, unit in ipairs(list) do units[#units + 1] = unit end
+    end
+    TAL.reset(units)
     for _, u in ipairs(allies) do
         TAL.initUnit(u)
     end

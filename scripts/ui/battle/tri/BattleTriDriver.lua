@@ -25,6 +25,9 @@ local NumberUtil        = require("core.NumberUtil")
 local BattleLayout      = require("core.BattleLayout")
 local BattleStats       = require("systems.BattleStats")
 local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
+local MAS               = require("systems.MapAffixSystem")
+local BAS               = require("systems.BossAffixSystem")
+local StageBerserk      = require("ui.battle.stage.StageBerserk")
 
 local BattleTriDriver = {}
 
@@ -40,13 +43,14 @@ local MARCH_ZOOM = 1.06
 local MARCH_ZOOM_END = 0.65
 local MARCH_STEP = 7
 
---- 单位攻击间隔（魔改 buff 感知的最小实现：直接取 attrs 的实际间隔）
+--- 实时属性攻速叠加本线首通狂暴乘区，不能被attrs直取绕过。
 local function getLiveAttackInterval(unit, fallback)
+    local interval = fallback
     if unit and unit.attrs and unit.attrs.getActualInterval then
-        local v = unit.attrs:getActualInterval()
-        if v and v > 0.05 then return v end
+        local live = unit.attrs:getActualInterval()
+        if live and live > 0.05 then interval = live end
     end
-    return fallback
+    return StageBerserk.getAttackInterval(unit, interval)
 end
 
 --- 按关卡配置生成一波敌人（上限 4 = 列阵每侧上限）
@@ -92,6 +96,7 @@ function BattleTriDriver.new(teamIdx, options)
         battleLab = options.battleLab == true,
         allyFactory = options.allyFactory,
         firstClear = options.firstClear == true,
+        firstClearTimeLeft = nil, ---@type number|nil
         stageId  = SC.NORMAL_FIRST_STAGE,
         allies   = {},
         enemies  = {},
@@ -112,6 +117,10 @@ function BattleTriDriver.new(teamIdx, options)
         psState     = ProjectileSystem.newState(),
         tmState     = TM.newState(),
         talRefs     = TAL.newBattleRefs(),
+        rchState    = RCH.newState(),
+        mapAffixState = MAS.newState(),
+        bossAffixState = BAS.newState(),
+        berserkState = StageBerserk.newState(),
         beState     = BattleEffects.newFxState(),
         semState    = SEM.newSemState(),
         onKill      = nil,  -- function(data) 由 TriPage/宿主注入
@@ -125,6 +134,10 @@ function BattleTriDriver.new(teamIdx, options)
         ProjectileSystem.mount(drv.psState)
         TM.mount(drv.tmState)
         TAL.mount(drv.talRefs)
+        RCH.mount(drv.rchState)
+        MAS.mount(drv.mapAffixState)
+        BAS.mount(drv.bossAffixState)
+        StageBerserk.mount(drv.berserkState)
         BattleEffects.mount(drv.beState)
         SEM.mount(drv.semState)
     end
@@ -224,8 +237,34 @@ function BattleTriDriver.new(teamIdx, options)
         self._labTimeLimit = options.timeLimit or 300
         self._timeoutElapsed = 0   -- 战斗超时增伤计时（每场重开清零）
         self._terminalStopped = false
+        -- 永久账本双源真值合并仅在开战取快照；别队胜利不重写本场模式/敌表。
+        local entry = SC.getStage(stageId)
+        local isTerminal = not self.battleLab and SC.isTerminalTemple(stageId)
+        if self.battleLab then
+            self.firstClear = options.firstClear == true
+        else
+            local BattleScene = require("ui.battle.scene.BattleScene")
+            local cleared = BattleScene.getClearedStages() or {}
+            local battle = require("runtime.ClientDispatcher").get("battle")
+            local saved = type(battle) == "table" and battle.clearedStages or {}
+            saved = type(saved) == "table" and saved or {}
+            local wasCleared = cleared[stageId] == true or cleared[tostring(stageId)] == true
+                or saved[stageId] == true or saved[tostring(stageId)] == true
+            self.firstClear = not wasCleared
+        end
+        self.firstClearTimeLeft = not self.battleLab and not isTerminal and self.firstClear
+            and require("config.GameConfig").Battle.TIME_LIMIT_SEC or nil
         self:activate()
-        if self.battleLab then TAL.reset() end
+        -- 旧单位尚未替换时释放本战线词缀/狂暴；不清别队state或单位。
+        StageBerserk.exit()
+        MAS.reset(self.allies)
+        BAS.clear()
+        RCH.reset()
+        local oldUnits = {}
+        for _, list in ipairs({ self.allies, self.enemies, self.enemyQueue }) do
+            for _, unit in ipairs(list) do oldUnits[#oldUnits + 1] = unit end
+        end
+        TAL.reset(oldUnits)
         -- 清理旧战线单位的临时效果，不触碰其他队的神器状态
         ART.reset(self.allies)
         -- 己方: 正常战斗从编队页构建；战斗实验室由测试配置创建独立单位
@@ -237,9 +276,7 @@ function BattleTriDriver.new(teamIdx, options)
             self.teamSignature = CharacterPanel.getTeamSignature(self.teamIdx)
             self.allies = CharacterPanel.getDeployedTeam(self.teamIdx) or {}
         end
-        -- 敌方：首通实验使用正式首通敌人列表，其余沿用当前三行战斗的出怪规则
-        local entry = SC.getStage(stageId)
-        local isTerminal = not self.battleLab and SC.isTerminalTemple(stageId)
+        -- 正式普通关与Lab共用本场快照；终焉三Boss独立分支不变。
         local allEnemies
         if isTerminal then
             allEnemies = {}
@@ -251,9 +288,9 @@ function BattleTriDriver.new(teamIdx, options)
                 end
             end
         else
-            allEnemies = entry and BattleEnemySpawn.generateEnemyList(entry, self.battleLab and self.firstClear) or {}
+            allEnemies = entry and BattleEnemySpawn.generateEnemyList(entry, self.firstClear) or {}
         end
-        if self.battleLab and self.firstClear and entry then
+        if not isTerminal and self.firstClear and entry then
             -- 生成顺序为普通怪后接附加怪；首/末附加怪使用正式出场阶段标记。
             local bonusIds = BattleEnemySpawn.getFirstClearBonusMonsterIds(entry)
             if bonusIds then
@@ -274,30 +311,13 @@ function BattleTriDriver.new(teamIdx, options)
         BattleEffects.reset()
         ProjectileSystem.reset()
         TM.reset()
-        if self.battleLab then
-            SEM.reset()
-            -- 仅在独立测试入口使用全局词缀状态，不能与游戏内战斗交错运行
-            local MAS = require("systems.MapAffixSystem")
-            MAS.onStageLoad(self.firstClear and (entry.chapter or 0) or 0, self.allies)
-            if MAS.hasAffixes() then
-                local wave = {}
-                for _, u in ipairs(self.enemies) do wave[#wave + 1] = u end
-                for _, u in ipairs(self.enemyQueue) do wave[#wave + 1] = u end
-                MAS.applyStaticAffixes(wave)
-            end
-            -- Boss 词缀（v2.64）：battle-lab 首通同样模拟 Hard+ Boss 强化
-            local BAS = require("systems.BossAffixSystem")
-            if self.firstClear and entry then
-                BAS.onStageLoad(entry.chapter or 0, SC.getDifficulty(stageId))
-                if BAS.hasAffixes() then
-                    local wave = {}
-                    for _, u in ipairs(self.enemies) do wave[#wave + 1] = u end
-                    for _, u in ipairs(self.enemyQueue) do wave[#wave + 1] = u end
-                    BAS.applyToBosses(wave)
-                end
-            else
-                BAS.clear()
-            end
+        SEM.reset()
+        -- 静态词缀在整批生成后应用（含后备Boss/附加怪），补位时不重复叠加。
+        if self.firstClear and not isTerminal then
+            MAS.onStageLoad(entry.chapter or 0, self.allies)
+            MAS.applyStaticAffixes(allEnemies)
+            BAS.onStageLoad(entry.chapter or 0, SC.getDifficulty(stageId))
+            BAS.applyToBosses(allEnemies)
         end
         -- 单位初始化
         for _, u in ipairs(self.allies) do
@@ -312,9 +332,8 @@ function BattleTriDriver.new(teamIdx, options)
         ART.initBattle(self.allies)
         TM.onBattleStart(self.allies, self.enemies)
         TAL.onBattleStart(self.allies, self.enemies)
-        if self.battleLab then
-            local Berserk = require("ui.battle.stage.StageBerserk")
-            if self.firstClear then Berserk.enter(self.enemies, self.allies) else Berserk.exit() end
+        if self.firstClear and not isTerminal then
+            StageBerserk.enter(self.enemies, self.allies)
         end
         local skipAllyEnter = self._skipAllyEnter == true
         self._skipAllyEnter = nil
@@ -436,6 +455,7 @@ function BattleTriDriver.new(teamIdx, options)
                 end
                 unit.reviveTimer = unit.reviveTimer + (self._tickDt or 0)
                 if unit.reviveTimer >= RESPAWN_DELAY and self.reinforceCd <= 0 then
+                    RCH.removeUnit(unit) -- 永久退场才释放本线条件状态，复活等待期保留。
                     self.reinforceCd = REINFORCE_INTERVAL
                     for j = i, #enemies - 1 do
                         local moved = enemies[j + 1]
@@ -556,6 +576,10 @@ function BattleTriDriver.new(teamIdx, options)
         if not self.active then return end
         self._tickDt = dt
         self._timeoutElapsed = (self._timeoutElapsed or 0) + dt   -- 超时增伤计时
+        local combat = BattleCombat.mountedState()
+        if combat and combat.ctx then
+            combat.ctx.globalDmgMult = require("systems.BattleTimeout").calcMult(self._timeoutElapsed)
+        end
         self:tickRewards(dt)
         -- 共享池可以由另一条战线打空：先分发本线死亡，再走失守/胜利早返。
         if self.terminalRaid then self.terminalRaid:sync() end
@@ -635,6 +659,20 @@ function BattleTriDriver.new(teamIdx, options)
             if u.hp > 0 then hasAliveAlly = true break end
         end
 
+        if not self.battleLab and not self.terminalRaid and not self._clearReported and self.firstClearTimeLeft then
+            -- 正式失败决策必须晚于合法死亡拦截，不能把待复活的暂时全灭判为超时。
+            -- 限时前打空敌人后只等尸体退场，不提前clear/发奖；敌人复活则恢复计时。
+            local awaitingVictory = not hasAliveEnemy and #self.enemyQueue == 0 and hasAliveAlly
+            if not awaitingVictory then
+                self.firstClearTimeLeft = math.max(0, self.firstClearTimeLeft - dt)
+                if self.firstClearTimeLeft <= 0 then
+                    print(string.format("[TriDriver] 队%d 首通超时 stage=%s", self.teamIdx, tostring(self.stageId)))
+                    self:retreatStage()
+                    return
+                end
+            end
+        end
+
         self:reportDefeatedEnemies()
         self.reinforceCd = math.max(0, (self.reinforceCd or 0) - dt)
         self:reinforceDeadEnemies()
@@ -712,6 +750,10 @@ function BattleTriDriver.new(teamIdx, options)
             return
         end
 
+        -- 狂暴先推进本线阶段，让本帧普攻（含刚补位单位）实际使用加速。
+        if self.firstClear and not self.terminalRaid then
+            StageBerserk.update(dt, enemies, allies)
+        end
         -- 攻击推进
         for _, unit in ipairs(allies) do
             if self.terminalRaid and self.terminalRaid.hp <= 0 then break end
@@ -735,16 +777,9 @@ function BattleTriDriver.new(teamIdx, options)
         -- 状态子系统 tick（mount 作用域内）
         ART.update(dt, allies)
         RCH.update(allies, 0)
-        if self.battleLab then
-            ART.update(dt)
-            require("systems.MapAffixSystem").tick(dt, allies, enemies)
-            local BAS = require("systems.BossAffixSystem")
-            if self.firstClear and BAS.hasAffixes() then
-                BAS.tick(dt, enemies)
-            end
-            if self.firstClear then
-                require("ui.battle.stage.StageBerserk").update(dt, enemies, allies)
-            end
+        if self.firstClear and not self.terminalRaid then
+            MAS.tick(dt, allies, enemies)
+            if BAS.hasAffixes() then BAS.tick(dt, enemies) end
         end
         BattleCombat.updateHpBuffers(allies, dt)
         BattleCombat.updateHpBuffers(enemies, dt)

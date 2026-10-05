@@ -32,6 +32,7 @@ local BF                = require("systems.ButtonFeedback")
 local BattleScene       = require("ui.battle.scene.BattleScene")
 local DamageStatsPanel  = require("ui.battle.popup.DamageStatsPanel")
 local SettingsPanel     = require("ui.hud.popup.SettingsPanel")
+local RuntimeContext   = require("ui.battle.scene.BattleRuntimeContext")
 
 local drawTextStroke    = BattleDraw.drawTextStroke
 local drawImageCentered = BattleDraw.drawImageCentered
@@ -191,11 +192,33 @@ local state = {
 
 -- 背景动效
 local bgAnimTimer = 0
+---@type BattleRuntimeState|nil
+local battleContext = nil
+---@type BattleRuntimeState|nil
+local priorContext = nil
+local function mountBattleState()
+    RuntimeContext.mount(battleContext)
+end
+local function cleanupBattleUnits()
+    mountBattleState()
+    RCH.reset()
+    local units = {}
+    for _, list in ipairs({ state.allies, state.enemies, state.enemyQueue }) do
+        for _, unit in ipairs(list) do units[#units + 1] = unit end
+    end
+    TAL.reset(units)
+    ART.reset(state.allies)
+end
+local function restorePriorContext()
+    RuntimeContext.mount(priorContext)
+    priorContext = nil
+end
 
 -- HP回复累计
 local regenAccum = 0
 
 local function resetOpenFailureState()
+    cleanupBattleUnits()
     MapAffixSystem.reset(state.allies)
     state.open = false
     state.allies = {}
@@ -207,8 +230,7 @@ local function resetOpenFailureState()
     state.confirmOpen = false
     state.confirmClosing = false
     pcall(DungeonBattle.exit)
-    pcall(RCH.reset)
-    pcall(BattleScene.restoreContext)
+    restorePriorContext()
 end
 
 -- ======================== 工具函数 ========================
@@ -524,6 +546,14 @@ function DungeonScene.open(opts)
     if not dungeonBattleInited_ and dungeonBattleVg_ then
         DungeonScene.init(dungeonBattleVg_)
     end
+    if state.open then
+        cleanupBattleUnits()
+    else
+        priorContext = RuntimeContext.capture()
+        battleContext = RuntimeContext.newState("dungeon")
+    end
+    mountBattleState()
+    MapAffixSystem.reset(state.allies)
     MapAffixSystem.reset(opts and opts.allies)
     print("[DungeonBattleScene] open() called, opts=" .. tostring(opts))
     opts = opts or {}
@@ -564,14 +594,12 @@ function DungeonScene.open(opts)
     end
 
     -- 重置战斗子系统
+    cleanupBattleUnits()
     BattleCombat.reset()
     BattleEffects.reset()
     ProjectileSystem.reset()
     TM.reset()
     SEM.reset()
-    TAL.reset()
-    RCH.reset()
-    ART.reset(state.allies)
 
     -- 初始化所有单位
     for _, u in ipairs(state.allies) do
@@ -670,15 +698,12 @@ function DungeonScene.open(opts)
 end
 
 function DungeonScene.close()
+    if not state.open then return end
+    cleanupBattleUnits()
     state.open = false
     MapAffixSystem.reset(state.allies)
     DungeonBattle.exit()
-    RCH.reset()
-    ART.reset(state.allies)
-    -- 恢复主战斗的 BattleCombat 上下文和 TAL/TM 天赋状态
-    -- 修复: 副本 open 时覆盖了 ctx.getAllies/getEnemies 指向副本单位，
-    -- 导致主战斗恢复后治疗者遍历的是副本的满血单位列表，治疗量计算为 0
-    BattleScene.restoreContext()
+    restorePriorContext()
     print("[DungeonBattleScene] close")
 end
 
@@ -686,6 +711,7 @@ end
 --- 由 TowerBattleScene 在波次结束时调用，用于关闭当前波次战斗
 function DungeonScene.forceClose()
     if not state.open then return end
+    cleanupBattleUnits()
     state.open = false
     MapAffixSystem.reset(state.allies)
     state.battleState = BATTLE_ACTIVE
@@ -694,9 +720,7 @@ function DungeonScene.forceClose()
     state.confirmOpen = false
     state.confirmClosing = false
     DungeonBattle.exit()
-    RCH.reset()
-    ART.reset(state.allies)
-    BattleScene.restoreContext()
+    restorePriorContext()
     print("[DungeonBattleScene] forceClose (tower wave transition)")
 end
 
@@ -717,6 +741,7 @@ end
 
 function DungeonScene.draw(vg)
     if not state.open then return end
+    mountBattleState()
 
     -- 1. 地图背景（副本对应地图，带漂移）[暗黑化 P1: 压暗 tint + 边缘晕影]
     local driftY = -BG_DRIFT_Y_AMP * (1.0 - math.cos(bgAnimTimer * 2 * math.pi / BG_DRIFT_Y_PERIOD)) * 0.5
@@ -859,6 +884,7 @@ end
 
 function DungeonScene.update(dt)
     if not state.open then return end
+    mountBattleState()
 
     -- 确认弹窗关闭动画
     if state.confirmClosing then
@@ -1020,6 +1046,7 @@ function DungeonScene.update(dt)
                         local newUnit = table.remove(state.enemyQueue, 1)
                         TAL.initUnit(newUnit)
                         newUnit.atkProgress = 0
+                        RCH.removeUnit(unit)
                         state.enemies[i] = newUnit
                         BattleCombat.clearCardAnim(unit)
                         BattleCombat.clearHitFlash(unit)
@@ -1080,7 +1107,8 @@ function DungeonScene.update(dt)
             if #state.enemyQueue > 0 then
                 local alive = {}
                 for _, u in ipairs(state.enemies) do
-                    if u.hp > 0 then alive[#alive + 1] = u end
+                    if u.hp > 0 then alive[#alive + 1] = u
+                    else RCH.removeUnit(u) end
                 end
                 state.enemies = alive
                 refillEnemies()

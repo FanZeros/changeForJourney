@@ -7,6 +7,7 @@ local TM  = require("systems.ThreatManager")
 local TAL = require("systems.TalentManager")
 local SEM = require("systems.StatusEffectManager")
 local ART = require("systems.ArtifactRuntime")
+local RCH = require("systems.RelicConditionHandler")
 local BattleCombat = require("ui.battle.combat.BattleCombat")
 local SpeechBubble = require("ui.widget.SpeechBubble")
 local StageBerserk = require("ui.battle.stage.StageBerserk")
@@ -139,6 +140,7 @@ function M.process(ctx, logicDt)
                 TAL.initUnit(newUnit)
                 TAL.checkMarkTarget(allies, enemies)
                 newUnit.atkProgress = 0
+                RCH.removeUnit(unit)
                 enemies[#enemies] = newUnit
                 -- 清理旧单位残留的动画状态
                 BattleCombat.clearCardAnim(unit)
@@ -157,6 +159,7 @@ function M.process(ctx, logicDt)
                     BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = -1,
                         advanceDist = require("core.BattleLayout").STRIP_PITCH })
                 end
+                RCH.removeUnit(unit)
                 table.remove(enemies)
                 BattleCombat.clearCardAnim(unit)
                 BattleCombat.clearHitFlash(unit)

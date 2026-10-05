@@ -424,12 +424,7 @@ function BattleTriPage.update(dt)
     TerminalConfirmDialog.update()
     -- 三行结束后恢复默认状态，避免后续单场界面读到最后一队的数据。
     BattleStats.mount(0)
-    BattleCombat.mount(nil)
-    ProjectileSystem.mount(nil)
-    TM.mount(nil)
-    TAL.mount(nil)
-    BattleEffects.mount(nil)
-    SEM.mount(nil)
+    require("ui.battle.scene.BattleRuntimeContext").mount(nil)
 end
 -- [暗黑替换 v2] L0 框体图（用户素材, 1672x941, 三个透明内矩形）+ 分层渲染
 local PLATE_AR = 1672 / 941
@@ -755,6 +750,8 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
     else
         EquipmentBag.setOverlayRegion(nil)
     end
+    BattleStats.mount(0)
+    require("ui.battle.scene.BattleRuntimeContext").mount(nil)
 end
 
 --- 某队当前关卡（供选关弹窗定位章节）

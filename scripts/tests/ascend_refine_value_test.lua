@@ -73,6 +73,8 @@ local function unitWeight(key)
         end
         return result
     end
+    -- 幸运不计战力，但本轮规则明确其洗练投入每点价值为1；独立预期不调用生产换算。
+    if key == AD.DROP_LUCK then return 1 end
     local meta = assert(AD.META[key], "missing affix meta")
     return meta.dataType == AD.TYPE_PCT and meta.valueModel / 100 or meta.valueModel
 end
@@ -160,7 +162,10 @@ local function assertEntry(equip, index, expected, msg)
 end
 
 local function testHelper()
-    eq(#AC.AFFIXES, 44, "covers all 44 ordinary keys")
+    eq(#AC.AFFIXES, 45, "覆盖原44种普通词条及新增幸运值")
+    eq(AC.AFFIXES[45].key, AD.DROP_LUCK, "新增词条追加在旧44种之后")
+    eq(AD.META[AD.DROP_LUCK].valueModel, 0, "幸运不计战斗战力")
+    eq(AD.META[AD.DROP_LUCK].refineValueModel, 1, "幸运投入独立洗练价值为1")
     local expectedBaseWeights = { str = 1.5, agi = 1.495, int = 1.49, vit = 1.49, luk = 1.5, spi = 1.5 }
     for _, key in ipairs(AD.BASE_STATS) do
         near(unitWeight(key), expectedBaseWeights[key], key .. " full derivative static weight")
@@ -197,7 +202,7 @@ local function testHelper()
     eq(ES.convertAscBonusForRefine(affix("str", 5, 7), affix("finalStrBonus")), nil,
         "corrupt target does not receive ordinary bonus")
 
-    local pairsChecked = 0
+    local pairsChecked, legacyPairsChecked = 0, 0
     for i, oldTpl in ipairs(AC.AFFIXES) do
         for j, newTpl in ipairs(AC.AFFIXES) do
             local bonus = 0.013 + i * 0.37 + j * 0.001
@@ -212,9 +217,11 @@ local function testHelper()
             near(back, bonus, tag .. " roundtrip", true)
             check(same(old, oldCopy) and same(target, targetCopy), tag .. " helper does not mutate inputs", true)
             pairsChecked = pairsChecked + 1
+            if i <= 44 and j <= 44 then legacyPairsChecked = legacyPairsChecked + 1 end
         end
     end
-    eq(pairsChecked, 44 * 44, "all 1936 ordered ordinary-key pairs checked")
+    eq(legacyPairsChecked, 44 * 44, "原1936组普通词条往返与守恒覆盖全部保留")
+    eq(pairsChecked, 45 * 45, "含幸运值的2025组普通词条组合全部覆盖")
 
     -- 若 INT 目标取整，str 0.013 -> HP 0.65 -> str 0.02 会产生往返套利。
     local current = 0.013
@@ -556,7 +563,7 @@ function Start()
         check(false, "exception: " .. tostring(err))
     end
     if #failures == 0 then
-        print(PREFIX .. "RESULT ALL PASS assertions=" .. assertionCount .. " pairs=1936")
+        print(PREFIX .. "RESULT ALL PASS assertions=" .. assertionCount .. " pairs=2025 legacyPairs=1936")
     else
         print(PREFIX .. "RESULT FAIL failures=" .. #failures .. " assertions=" .. assertionCount)
         for _, failure in ipairs(failures) do print(PREFIX .. "  - " .. failure) end

@@ -298,19 +298,24 @@ local function HorizonDrawTutorialOverlay()
     local hs = TutorialManager.getCurrentHotspot()
     local screen = nil
     if hs then
+        local function project(rect, ox, oy, sx, sy)
+            return { cx = ox + rect.cx * sx, cy = oy + rect.cy * sy,
+                w = rect.w * sx, h = rect.h * sy }
+        end
         if hs.panel == "modal" then
             local fit = math.min(logicalW() / DESIGN_W(), logicalH() / DESIGN_H())
-            screen = { cx = (logicalW() - DESIGN_W() * fit) * 0.5 + hs.cx * fit,
-                cy = (logicalH() - DESIGN_H() * fit) * 0.5 + hs.cy * fit,
-                w = hs.w * fit, h = hs.h * fit }
+            local ox = (logicalW() - DESIGN_W() * fit) * 0.5
+            local oy = (logicalH() - DESIGN_H() * fit) * 0.5
+            screen = project(hs, ox, oy, fit, fit)
+            if hs.spotlight then screen.spotlight = project(hs.spotlight, ox, oy, fit, fit) end
         else
             local note, panel = Viewport.getNote(hs.panel), Viewport.PANELS[hs.panel]
             if note and panel then
                 local cs = note.s * Viewport.DS
                 local sx = note.scaleX or cs
-                screen = { cx = note.ox + panel.bx * note.s + hs.cx * sx,
-                    cy = note.oy + panel.by * note.s + hs.cy * cs,
-                    w = hs.w * sx, h = hs.h * cs }
+                local ox, oy = note.ox + panel.bx * note.s, note.oy + panel.by * note.s
+                screen = project(hs, ox, oy, sx, cs)
+                if hs.spotlight then screen.spotlight = project(hs.spotlight, ox, oy, sx, cs) end
             end
         end
     end

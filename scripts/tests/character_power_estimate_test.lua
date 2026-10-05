@@ -61,8 +61,14 @@ function Start()
         local runtimeOnlyPower = 0
         local dirtyCount = 0
         local noop = function() end
+        local createCount = 0
+        -- 不覆写全局HC：仅此bind统计真实属性容器创建次数。
+        local countedHC = setmetatable({ createHero = function(...)
+            createCount = createCount + 1
+            return HC.createHero(...)
+        end }, { __index = HC })
         local power = CharacterPower.bind({
-            AD = AD, HC = HC,
+            AD = AD, HC = countedHC,
             ClientDispatcher = { get = function(k) return storeData[k] end },
             PlayerStore = { Get = function() return nil end },
             EquipmentSystem = EquipmentSystem, EquipmentConfig = EquipmentConfig,
@@ -151,7 +157,9 @@ function Start()
             "单件战力包含栏位倍率和升阶投入且不重复放大")
 
         -- 8) 不重建名册，仅 refreshPowerCache 就同步每个列表索引。
+        createCount = 0
         power.refreshPowerCache()
+        check(createCount == 3, "单轮三个已拥有英雄各建一次，名册与队槽不重复计算")
         check(rosterPowerCache[1] == power.calcHeroPower(2)
             and rosterPowerCache[3] == p1 and rosterPowerCache[4] == power.calcHeroPower(3),
             "刷新全部已拥有名册，缓存按列表索引而非 heroId")
@@ -163,7 +171,9 @@ function Start()
 
         local benchBefore = rosterPowerCache[4]
         ownedSet[3].level = 50
+        createCount = 0
         power.refreshPowerCache()
+        check(createCount == 3, "下次通知重新计算三个英雄，不复用旧属性结果")
         check(rosterPowerCache[4] > benchBefore and rosterPowerCache[4] == power.calcHeroPower(3),
             "未出战角色成长后，仅刷新即可更新名册战力")
         check(gamePower == p1, "未出战角色战力不计入 GameState 总战力")
@@ -186,7 +196,12 @@ function Start()
         local secondHeroBefore = power.calcHeroPower(2)
         artifactBonuses[1][1] = 37
         artifactBonuses[2][3] = 89
+        createCount = 0
         power.refreshPowerCache()
+        check(createCount == 3, "正确所属队/槽的名册与编队战力共用本轮计算")
+        check(power.calcHeroPower(2, 1, 2) == secondHeroBefore
+            and power.calcHeroPower(2, 3, 1) == secondHeroBefore,
+            "显式错误槽或错误队不借用所属队神器结果")
         check(rosterPowerCache[3] == p1 + 37 and rosterPowerCache[3] == power.calcHeroPower(1),
             "神器变更刷新名册，英雄1按队1真实槽计价")
         check(teamPowerCaches[2][3] == secondHeroBefore + 89

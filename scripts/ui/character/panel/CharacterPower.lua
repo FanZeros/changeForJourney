@@ -177,6 +177,24 @@ function M.bind(deps)
             HC.setDefaultLitNodes(litNodes)
         end
 
+        -- 仅在本轮刷新复用同英雄、同实际神器队/槽的计算，不跨通知缓存属性。
+        -- 显式队/槽不匹配时仍走独立口径，不能拿名册的神器结果覆盖它。
+        local refreshedPowers = {}
+        local function powerForRefresh(heroId, partySlot, teamIdx)
+            local id = tonumber(heroId) or heroId
+            local deployedSlot, deployedTeam = findHeroDeployPosition(id, teamIdx)
+            local matchesSlot = partySlot == nil or tonumber(partySlot) == deployedSlot
+            local context = deployedSlot and matchesSlot
+                and (tostring(deployedTeam) .. ":" .. tostring(deployedSlot)) or "none"
+            local key = tostring(id) .. ":" .. context
+            local value = refreshedPowers[key]
+            if value == nil then
+                value = calcHeroPower(id, partySlot, teamIdx)
+                refreshedPowers[key] = value
+            end
+            return value
+        end
+
         -- 名册缓存与列表索引一致；订阅刷新也覆盖未出战的已拥有英雄。
         -- 沿用 rebuildRoster 的正式战力缺省队口径，不受当前视图影响。
         local heroRoster = get("heroRoster")
@@ -184,7 +202,7 @@ function M.bind(deps)
         if heroRoster and rosterPowerCache then
             for i, entry in ipairs(heroRoster) do
                 if entry.owned then
-                    rosterPowerCache[i] = calcHeroPower(entry.heroId)
+                    rosterPowerCache[i] = powerForRefresh(entry.heroId)
                 else
                     rosterPowerCache[i] = 0
                 end
@@ -205,7 +223,7 @@ function M.bind(deps)
                 local slot = slots[i]
                 local heroId = slot and tonumber(slot.heroId)
                 if slot and slot.state == "occupied" and heroId and ownedSet[heroId] then
-                    if cache then cache[i] = calcHeroPower(heroId, i, t) end
+                    if cache then cache[i] = powerForRefresh(heroId, i, t) end
                     deployedCount = deployedCount + 1
                 elseif cache then
                     cache[i] = 0

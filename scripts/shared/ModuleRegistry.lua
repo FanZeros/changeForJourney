@@ -544,29 +544,9 @@ ModuleRegistry.modules = {
         key  = "mod_dungeon",
         scope = "server",
         getDefault = function()
-            return {
-                -- gold_mine: 黄金矿洞进度
-                gold_mine = {
-                    floor     = 1,   -- 当前挑战层（已通关层+1，首次为1）
-                    cleared   = {},  -- { [floor]=true } 已首通的层
-                    dailyUsed = 0,   -- 今日已扫荡次数
-                    dailyDay  = 0,   -- 上次扫荡的天编号（用于每日重置）
-                },
-                ancient_ruin = {
-                    floor     = 1,
-                    cleared   = {},
-                    dailyUsed = 0,
-                    dailyDay  = 0,
-                },
-                -- babel_tower: 通天塔进度
-                babel_tower = {
-                    floor     = 1,   -- 当前可挑战层
-                    cleared   = {},  -- { [floor]=true } 已首通的层
-                    dailyUsed = 0,   -- 今日已扫荡次数
-                    dailyDay  = 0,   -- 上次扫荡的天编号
-                    buffs     = {},  -- 当前局内已选强化ID列表 { buffId, ... }
-                },
-            }
+            -- 两个存档入口共用工厂，避免新资源副本/挂机字段漏补。
+            local DungeonSchema = require("shared.dungeon.DungeonSchema")
+            return DungeonSchema.Fields.dungeon.getDefault()
         end,
         onLoad = function(data)
             local DungeonCompat = require("shared.dungeon.DungeonCompat")

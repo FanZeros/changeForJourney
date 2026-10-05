@@ -1,329 +1,251 @@
 -- ============================================================================
--- DungeonService - 副本业务逻辑
--- 职责: 副本扫荡/挑战/胜利结算，通过 PDM 读写数据
--- 层级: server/dungeon  |  禁止网络 IO
+-- DungeonService - 资源副本挑战、首通与每日扫荡
+-- 奖励在规则层一次结算；副本不推进主线，旧遗迹仅保留兼容。
 -- ============================================================================
-
-local PDM           = require("rules.character.PlayerDataManager")
-local DungeonConfig = require("config.DungeonConfig")
+local PDM = require("rules.character.PlayerDataManager")
+local DC = require("config.DungeonConfig")
+local EquipmentSystem = require("systems.EquipmentSystem")
+local LootBoxSystem = require("systems.LootBoxSystem")
+local ExpTable = require("config.ExpTable")
+local TeamSlots = require("shared.heroes.TeamSlots")
 
 local DungeonService = {}
 
--- ======================== 工具函数 ========================
+-- 单机每位玩家只持有一场资源战斗；不写进存档，重启/退出后必须重新 Challenge。
+local pendingChallenges = {} ---@type table<string, table>
+local nextChallengeId = 0
 
---- 获取今天的日期标识（用于每日重置，UTC+8）
----@return number 日序号 ((os.time() + 28800) / 86400 取整)
-local function getTodaySeq()
-    return math.floor((os.time() + 28800) / 86400)
+function DungeonService.Cleanup(uid)
+    pendingChallenges[tostring(uid)] = nil
 end
 
---- 检查并重置每日次数（如果跨天了）
----@param subData table 副本子结构（gold_mine 或 ancient_ruin）
-local function checkDailyReset(subData)
-    local today = getTodaySeq()
-    if (subData.dailyDay or 0) ~= today then
-        subData.dailyUsed = 0
-        subData.dailyDay  = today
+local function isKnown(id)
+    return DC.isResourceDungeon(id) or id == "ancient_ruin"
+end
+
+local function getSub(dungeon, id)
+    if not dungeon[id] then
+        dungeon[id] = { floor = 1, cleared = {}, dailyUsed = 0, dailyDay = 0, idleAccumSec = 0 }
     end
+    return dungeon[id]
 end
 
--- ======================== 获取副本子数据 ========================
+local function getUnlockedData(uid, id)
+    if not isKnown(id) then return nil, nil, "未知副本" end
+    local dungeon = PDM.GetModule(uid, "dungeon")
+    local battle = PDM.GetModule(uid, "battle")
+    if not dungeon or not battle then return nil, nil, "数据未加载" end
+    if (tonumber(battle.maxStageId or battle.currentStageId) or 0) < (DC.UNLOCK_CONDITIONS[id] or 0) then
+        return nil, nil, "副本未解锁"
+    end
+    return getSub(dungeon, id), battle, nil
+end
 
---- 获取指定副本的子结构（兼容初始化）
----@param dungeon table dungeon 模块
----@param dungeonId string
----@return table|nil subData
-local function getDungeonSubData(dungeon, dungeonId)
-    if not dungeon[dungeonId] then
-        dungeon[dungeonId] = {
-            floor     = 1,
-            dailyUsed = 0,
-            dailyDay  = 0,
-            cleared   = {},
+local function checkTeam(uid, battle, teamIdx, legacy)
+    -- 旧遗迹未传队号保留原 API；资源缺省队1必须照常校验，不能用 nil 绕过。
+    if teamIdx == nil and legacy then return true, nil, nil, nil end
+    local team = math.tointeger(tonumber(teamIdx == nil and 1 or teamIdx) or 0)
+    if not team or team < 1 or team > ExpTable.TEAM_COUNT then return false, "无效的队伍编号" end
+    if team > ExpTable.getUnlockedTeamCount(battle) then return false, "该队伍尚未解锁" end
+    local heroes = PDM.GetModule(uid, "heroes")
+    if type(heroes) ~= "table" then return false, "队伍数据未加载" end
+    -- 校验只读：在副本里不能顺带改写主线编队/镜像。
+    local snapshot = { deployed = heroes.deployed, teams = {} }
+    for i = 1, ExpTable.TEAM_COUNT do
+        local source = type(heroes.teams) == "table" and heroes.teams[i]
+        snapshot.teams[i] = { slots = type(source) == "table" and type(source.slots) == "table" and source.slots or {} }
+    end
+    local rawSlots = snapshot.teams[team].slots
+    if team == 1 and #rawSlots == 0 and type(heroes.deployed) == "table" then rawSlots = heroes.deployed end
+    if type(rawSlots) ~= "table" or #rawSlots > ExpTable.TEAM_MAX_SLOTS then
+        return false, "无效的队伍槽位"
+    end
+    local seen = {}
+    for _, heroId in ipairs(rawSlots) do
+        local id = math.tointeger(tonumber(heroId) or -1)
+        if not id or id < 0 then return false, "无效的出战英雄" end
+        if id > 0 then
+            if seen[id] then return false, "重复的出战英雄" end
+            seen[id] = true
+        end
+    end
+    TeamSlots.normalize(snapshot)
+    local slots = snapshot.teams[team].slots
+    local owned = 0
+    for _, heroId in ipairs(slots) do
+        local id = math.tointeger(tonumber(heroId) or 0)
+        if not id or id < 0 then return false, "无效的出战英雄" end
+        if id > 0 then
+            local roster = heroes.roster
+            if type(roster) ~= "table" or not (roster[id] or roster[tostring(id)]) then
+                return false, "未拥有出战英雄"
+            end
+            owned = owned + 1
+        end
+    end
+    if owned == 0 then return false, "该队伍未出战英雄" end
+    return true, nil, team, table.concat(slots, ":")
+end
+
+--- 批量先生成、检查安全容器，再交付；失败不消耗日次或首通记录。
+---@return boolean, string|nil, table|nil
+function DungeonService.GrantEquipment(uid, dungeonId, floor, count)
+    if dungeonId ~= "equipment_vault" then return false, "非装备副本" end
+    count = math.tointeger(tonumber(count) or 0)
+    local floorData = DC.getFloor(dungeonId, floor)
+    local equipment = PDM.GetModule(uid, "equipment")
+    local lootbox = PDM.GetModule(uid, "lootbox")
+    if not count or count < 0 or not floorData then return false, "装备奖励配置无效" end
+    if not equipment then return false, "装备数据未加载" end
+    if EquipmentSystem.getInventoryCount(equipment) + count > EquipmentSystem.MAX_INVENTORY and not lootbox then
+        return false, "遗匣数据未加载"
+    end
+    local generated = {}
+    for i = 1, count do
+        local quality = math.random(floorData.equipMinQuality, floorData.equipMaxQuality)
+        local equip = EquipmentSystem.generateRandom(floorData.equipLevel, quality)
+        if not equip then return false, "装备生成失败" end
+        generated[i] = equip
+    end
+    local result = { equips = {}, inventoryCount = 0, lootboxCount = 0 }
+    for _, equip in ipairs(generated) do
+        local destination = LootBoxSystem.deliverEquipment(lootbox, equipment, equip)
+        if destination == "lootbox" then result.lootboxCount = result.lootboxCount + 1
+        else result.inventoryCount = result.inventoryCount + 1 end
+        result.equips[#result.equips + 1] = {
+            type = "equip", templateId = equip.templateId, quality = equip.quality,
+            level = equip.level, slot = equip.slot, equip = equip, destination = destination,
         }
     end
-    return dungeon[dungeonId]
-end
-
--- ======================== 扫荡 ========================
-
---- 执行副本扫荡（扫荡上一层）
----@param uid number
----@param dungeonId string "gold_mine" | "ancient_ruin"
----@return boolean ok
----@return string|nil err
----@return table|nil result
-function DungeonService.Sweep(uid, dungeonId)
-    if dungeonId ~= "gold_mine" and dungeonId ~= "ancient_ruin" then
-        return false, "未知副本"
-    end
-
-    local dungeon  = PDM.GetModule(uid, "dungeon")
-    local currency = PDM.GetModule(uid, "currency")
-    local battleData = PDM.GetModule(uid, "battle")
-
-    if not dungeon or not currency or not battleData then
-        return false, "数据未加载"
-    end
-
-    -- 解锁检查
-    local maxStageId = battleData.maxStageId or battleData.currentStageId or 0
-    local unlockReq = DungeonConfig.UNLOCK_CONDITIONS[dungeonId] or 0
-    if maxStageId < unlockReq then
-        return false, "副本未解锁"
-    end
-
-    local subData = getDungeonSubData(dungeon, dungeonId)
-
-    -- 每日重置检查
-    checkDailyReset(subData)
-
-    -- 每日次数检查
-    local dailyLimit = DungeonConfig.DAILY_SWEEP_LIMIT[dungeonId] or 2
-    if subData.dailyUsed >= dailyLimit then
-        return false, "今日扫荡次数已用完"
-    end
-
-    -- 扫荡层 = 当前层 - 1（必须有已通关的层才能扫荡）
-    local sweepFloor = (subData.floor or 1) - 1
-    if sweepFloor < 1 then
-        return false, "暂无可扫荡层"
-    end
-
-    -- 扣除每日次数
-    subData.dailyUsed = (subData.dailyUsed or 0) + 1
-    PDM.MarkDirty(uid, "dungeon")
-
-    -- ── 分副本奖励逻辑 ──
-    if dungeonId == "gold_mine" then
-        local floorData = DungeonConfig.getGoldMineFloor(sweepFloor)
-        if not floorData then
-            return false, "层配置不存在"
-        end
-
-        local goldReward = floorData.sweepGold or 0
-        if goldReward > 0 then
-            currency.gold = (currency.gold or 0) + goldReward
-            PDM.MarkDirty(uid, "currency")
-        end
-
-        print(string.format("[DungeonService] uid=%s sweep gold_mine floor=%d gold=%d dailyUsed=%d/%d",
-            tostring(uid), sweepFloor, goldReward, subData.dailyUsed, dailyLimit))
-
-        return true, nil, {
-            dungeonId  = dungeonId,
-            sweepFloor = sweepFloor,
-            gold       = goldReward,
-            dailyUsed  = subData.dailyUsed,
-            dailyMax   = dailyLimit,
-        }
-
-    else -- ancient_ruin
-        local floorData = DungeonConfig.getAncientRuinFloor(sweepFloor)
-        if not floorData then
-            return false, "层配置不存在"
-        end
-
-        -- 奥术粉尘奖励
-        local dustReward = floorData.sweepDust or 0
-        if dustReward > 0 then
-            currency.arcaneDust = (currency.arcaneDust or 0) + dustReward
-            PDM.MarkDirty(uid, "currency")
-        end
-
-        print(string.format("[DungeonService] uid=%s sweep ancient_ruin floor=%d dust=%d dailyUsed=%d/%d",
-            tostring(uid), sweepFloor, dustReward, subData.dailyUsed, dailyLimit))
-
-        return true, nil, {
-            dungeonId  = dungeonId,
-            sweepFloor = sweepFloor,
-            dust       = dustReward,
-            dailyUsed  = subData.dailyUsed,
-            dailyMax   = dailyLimit,
-        }
-    end
-end
-
--- ======================== 挑战（进入战斗） ========================
-
---- 验证挑战请求，返回战斗所需配置
----@param uid number
----@param dungeonId string
----@param floor number
----@return boolean ok
----@return string|nil err
----@return table|nil result  { floor, monsterLevel, monsters, classBonus, ... }
-function DungeonService.Challenge(uid, dungeonId, floor)
-    if dungeonId ~= "gold_mine" and dungeonId ~= "ancient_ruin" then
-        return false, "未知副本"
-    end
-
-    local dungeon    = PDM.GetModule(uid, "dungeon")
-    local battleData = PDM.GetModule(uid, "battle")
-
-    if not dungeon or not battleData then
-        return false, "数据未加载"
-    end
-
-    -- 解锁检查
-    local maxStageId = battleData.maxStageId or battleData.currentStageId or 0
-    local unlockReq = DungeonConfig.UNLOCK_CONDITIONS[dungeonId] or 0
-    if maxStageId < unlockReq then
-        return false, "副本未解锁"
-    end
-
-    local subData = getDungeonSubData(dungeon, dungeonId)
-
-    -- 只能挑战当前层
-    local currentFloor = subData.floor or 1
-    if floor ~= currentFloor then
-        return false, "只能挑战当前层(" .. currentFloor .. ")"
-    end
-
-    -- 检查层上限
-    local maxFloor = DungeonConfig.MAX_FLOOR[dungeonId] or 35
-    if floor > maxFloor then
-        return false, "已通关所有层"
-    end
-
-    -- 获取层配置
-    local floorData
-    if dungeonId == "gold_mine" then
-        floorData = DungeonConfig.getGoldMineFloor(floor)
-    else
-        floorData = DungeonConfig.getAncientRuinFloor(floor)
-    end
-    if not floorData then
-        return false, "层配置不存在"
-    end
-
-    -- 职业增益
-    local classBonus = DungeonConfig.getClassBonus(floor)
-
-    print(string.format("[DungeonService] uid=%s challenge %s floor=%d monsterLv=%d classBonus=%s",
-        tostring(uid), dungeonId, floor, floorData.monsterLevel, classBonus))
-
-    local result = {
-        dungeonId    = dungeonId,
-        floor        = floor,
-        monsterLevel = floorData.monsterLevel,
-        monsters     = floorData.monsters,
-        classBonus   = classBonus,
-        classBonusValue  = DungeonConfig.CLASS_BONUS_VALUE,
-        rageTime         = DungeonConfig.RAGE_TIME,
-        rageAtkBonus     = DungeonConfig.RAGE_ATK_BONUS,
-        superRageTime    = DungeonConfig.SUPER_RAGE_TIME,
-        superRageAtkBonus = DungeonConfig.SUPER_RAGE_ATK_BONUS,
-        superRageDmgBonus = DungeonConfig.SUPER_RAGE_DMG_BONUS,
-        allyRageDmgBonus  = DungeonConfig.ALLY_RAGE_DMG_BONUS,
-        allySuperRageDmgBonus = DungeonConfig.ALLY_SUPER_RAGE_DMG_BONUS,
-    }
-
-    -- 副本特定字段
-    if dungeonId == "gold_mine" then
-        result.firstGold = floorData.firstGold
-    else
-        result.firstDust       = floorData.firstDust
-    end
-
+    if result.inventoryCount > 0 then PDM.MarkDirty(uid, "equipment") end
+    if result.lootboxCount > 0 then PDM.MarkDirty(uid, "lootbox") end
     return true, nil, result
 end
 
--- ======================== 胜利结算 ========================
-
---- 挑战胜利后结算奖励、推进楼层
----@param uid number
----@param dungeonId string
----@param floor number
----@return boolean ok
----@return string|nil err
----@return table|nil result
-function DungeonService.Win(uid, dungeonId, floor)
-    if dungeonId ~= "gold_mine" and dungeonId ~= "ancient_ruin" then
-        return false, "未知副本"
+local function grantRewards(uid, id, floorData, firstClear)
+    if id == "equipment_vault" then
+        local count = firstClear and floorData.firstEquip or floorData.sweepEquip
+        return DungeonService.GrantEquipment(uid, id, floorData.floor, count)
     end
-
-    local dungeon  = PDM.GetModule(uid, "dungeon")
     local currency = PDM.GetModule(uid, "currency")
+    if not currency then return false, "数据未加载" end
+    local gold = id == "gold_mine" and (firstClear and floorData.firstGold or floorData.sweepGold) or 0
+    local diamond = id == "black_diamond" and (firstClear and floorData.firstDiamond or floorData.sweepDiamond) or 0
+    local dust = id == "ancient_ruin" and (firstClear and floorData.firstDust or floorData.sweepDust) or 0
+    if gold > 0 then currency.gold = (currency.gold or 0) + gold end
+    if diamond > 0 then currency.gems = (currency.gems or 0) + diamond end
+    if dust > 0 then currency.arcaneDust = (currency.arcaneDust or 0) + dust end
+    if gold > 0 or diamond > 0 or dust > 0 then PDM.MarkDirty(uid, "currency") end
+    return true, nil, { gold = gold, diamond = diamond, dust = dust }
+end
 
-    if not dungeon or not currency then
-        return false, "数据未加载"
-    end
-
-    local subData = getDungeonSubData(dungeon, dungeonId)
-
-    local currentFloor = subData.floor or 1
-    if floor ~= currentFloor then
-        return false, "楼层不匹配"
-    end
-
-    -- 判断是否首次通关
-    local cleared = subData.cleared or {}
-    local isFirstClear = not cleared[floor]
-
-    -- 推进楼层
-    local maxFloor = DungeonConfig.MAX_FLOOR[dungeonId] or 35
-    if currentFloor < maxFloor then
-        subData.floor = currentFloor + 1
-    end
-
-    if isFirstClear then
-        cleared[floor] = true
-        subData.cleared = cleared
-    end
-
+function DungeonService.Sweep(uid, dungeonId)
+    local sub, _, err = getUnlockedData(uid, dungeonId)
+    if not sub then return false, err end
+    local today = math.floor((os.time() + 28800) / 86400)
+    local used = sub.dailyDay == today and (sub.dailyUsed or 0) or 0
+    local limit = DC.DAILY_SWEEP_LIMIT[dungeonId] or 2
+    if used >= limit then return false, "今日扫荡次数已用完" end
+    local floor = DC.getHighestClearedFloor(sub, dungeonId)
+    if floor < 1 then return false, "暂无可扫荡层" end
+    local floorData = DC.getFloor(dungeonId, floor)
+    if not floorData then return false, "层配置不存在" end
+    local ok, grantErr, result = grantRewards(uid, dungeonId, floorData, false)
+    if not ok then return false, grantErr end
+    sub.dailyUsed, sub.dailyDay = used + 1, today
     PDM.MarkDirty(uid, "dungeon")
+    result.dungeonId, result.sweepFloor = dungeonId, floor
+    result.dailyUsed, result.dailyMax = sub.dailyUsed, limit
+    print(string.format("[DungeonService] 扫荡 %s 层=%d 次数=%d/%d", dungeonId, floor, sub.dailyUsed, limit))
+    return true, nil, result
+end
 
-    -- ── 分副本奖励逻辑 ──
-    if dungeonId == "gold_mine" then
-        local floorData = DungeonConfig.getGoldMineFloor(floor)
-        if not floorData then
-            return false, "层配置不存在"
+function DungeonService.Challenge(uid, dungeonId, floor, teamIdx)
+    local sub, battle, err = getUnlockedData(uid, dungeonId)
+    if not sub then return false, err end
+    floor = math.tointeger(tonumber(floor) or 0)
+    if not floor or floor ~= sub.floor then return false, "只能挑战当前层" end
+    local floorData = DC.getFloor(dungeonId, floor)
+    if not floorData then return false, "层配置不存在" end
+    local teamOk, teamErr, team, teamSignature = checkTeam(uid, battle, teamIdx, dungeonId == "ancient_ruin")
+    if not teamOk then return false, teamErr end
+    local entry = DC.getCombatEntry(dungeonId, floor)
+    local challengeId
+    if entry then
+        local key = tostring(uid)
+        local pending = pendingChallenges[key]
+        -- 相同请求幂等复用；重新选层/队伍会替换旧战斗，旧回执不能结算新挑战。
+        if not pending or pending.dungeonId ~= dungeonId or pending.floor ~= floor
+            or pending.teamIdx ~= team or pending.teamSignature ~= teamSignature then
+            nextChallengeId = nextChallengeId + 1
+            pending = { dungeonId = dungeonId, floor = floor, teamIdx = team,
+                teamSignature = teamSignature, challengeId = nextChallengeId }
+            pendingChallenges[key] = pending
         end
-
-        local goldReward = 0
-        if isFirstClear then
-            goldReward = floorData.firstGold
-            currency.gold = (currency.gold or 0) + goldReward
-            PDM.MarkDirty(uid, "currency")
-        end
-
-        print(string.format("[DungeonService] uid=%s win gold_mine floor=%d firstClear=%s gold=%d nextFloor=%d",
-            tostring(uid), floor, tostring(isFirstClear), goldReward, subData.floor))
-
-        return true, nil, {
-            dungeonId  = dungeonId,
-            floor      = floor,
-            firstClear = isFirstClear,
-            gold       = goldReward,
-            nextFloor  = subData.floor,
-        }
-
-    else -- ancient_ruin
-        local floorData = DungeonConfig.getAncientRuinFloor(floor)
-        if not floorData then
-            return false, "层配置不存在"
-        end
-
-        local dustReward = 0
-
-        if isFirstClear then
-            dustReward = floorData.firstDust
-            currency.arcaneDust = (currency.arcaneDust or 0) + dustReward
-            PDM.MarkDirty(uid, "currency")
-        end
-
-        print(string.format("[DungeonService] uid=%s win ancient_ruin floor=%d firstClear=%s dust=%d nextFloor=%d",
-            tostring(uid), floor, tostring(isFirstClear), dustReward, subData.floor))
-
-        return true, nil, {
-            dungeonId  = dungeonId,
-            floor      = floor,
-            firstClear = isFirstClear,
-            dust       = dustReward,
-            nextFloor  = subData.floor,
-        }
+        challengeId = pending.challengeId
     end
+    local result = {
+        dungeonId = dungeonId, floor = floor, teamIdx = team, challengeId = challengeId,
+        monsterLevel = floorData.monsterLevel, monsters = floorData.monsters,
+        resourceCombat = entry ~= nil, stageEntry = entry,
+        maxFieldEnemies = entry and entry.maxFieldEnemies or 5,
+        firstGold = floorData.firstGold, firstDust = floorData.firstDust,
+        firstDiamond = floorData.firstDiamond, firstEquip = floorData.firstEquip,
+        classBonus = entry and "" or DC.getClassBonus(floor),
+        classBonusValue = entry and 0 or DC.CLASS_BONUS_VALUE,
+        rageTime = entry and 120 or DC.RAGE_TIME,
+        rageAtkBonus = DC.RAGE_ATK_BONUS,
+        superRageTime = entry and 210 or DC.SUPER_RAGE_TIME,
+        superRageAtkBonus = DC.SUPER_RAGE_ATK_BONUS,
+        superRageDmgBonus = DC.SUPER_RAGE_DMG_BONUS,
+        allyRageDmgBonus = DC.ALLY_RAGE_DMG_BONUS,
+        allySuperRageDmgBonus = DC.ALLY_SUPER_RAGE_DMG_BONUS,
+    }
+    print(string.format("[DungeonService] 挑战 %s 层=%d 队伍=%s 主线复用=%s", dungeonId, floor, tostring(team), tostring(entry ~= nil)))
+    return true, nil, result
+end
+
+function DungeonService.Win(uid, dungeonId, floor, teamIdx, challengeId)
+    local sub, battle, err = getUnlockedData(uid, dungeonId)
+    if not sub then return false, err end
+    floor = math.tointeger(tonumber(floor) or 0)
+    if not floor or floor ~= sub.floor then return false, "楼层不匹配" end
+    local floorData = DC.getFloor(dungeonId, floor)
+    if not floorData then return false, "层配置不存在" end
+    local teamOk, teamErr, team, teamSignature = checkTeam(uid, battle, teamIdx, dungeonId == "ancient_ruin")
+    if not teamOk then return false, teamErr end
+    local key = tostring(uid)
+    if DC.isResourceDungeon(dungeonId) then
+        local pending = pendingChallenges[key]
+        if not pending or pending.dungeonId ~= dungeonId or pending.floor ~= floor then
+            return false, "没有匹配的副本挑战"
+        end
+        if pending.teamIdx ~= team or pending.teamSignature ~= teamSignature then
+            return false, "挑战队伍已变更"
+        end
+        -- 新入口传 challengeId 防过期回执；老调用省略时仍必须匹配当前 pending。
+        if challengeId ~= nil and math.tointeger(tonumber(challengeId) or 0) ~= pending.challengeId then
+            return false, "副本挑战已过期"
+        end
+    end
+    local cleared = sub.cleared or {}
+    local firstClear = cleared[floor] ~= true and cleared[tostring(floor)] ~= true
+    local result = { gold = 0, diamond = 0, dust = 0, equips = {} } ---@type table
+    if firstClear then
+        local ok, grantErr, rewards = grantRewards(uid, dungeonId, floorData, true)
+        if not ok or not rewards then return false, grantErr end
+        result = rewards
+        cleared[floor] = true
+        sub.cleared = cleared
+    end
+    if sub.floor < DC.MAX_FLOOR[dungeonId] then sub.floor = sub.floor + 1 end
+    if DC.isResourceDungeon(dungeonId) then pendingChallenges[key] = nil end
+    PDM.MarkDirty(uid, "dungeon")
+    result.dungeonId, result.floor, result.teamIdx = dungeonId, floor, team
+    result.challengeId = challengeId
+    result.firstClear, result.nextFloor = firstClear, sub.floor
+    print(string.format("[DungeonService] 通关 %s 层=%d 首通=%s 下一层=%d", dungeonId, floor, tostring(firstClear), sub.floor))
+    return true, nil, result
 end
 
 return DungeonService

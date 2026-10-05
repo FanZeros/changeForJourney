@@ -255,13 +255,15 @@ function M.bind(deps)
                         u._pendingArtifactEffects = artifactEffects or {}
                         u._pendingSnapshot = newUnit.attrs
                         u._pendingArmorType = newUnit.armorType
-                        -- 保持原有觉醒/转职节点即时同步语义。
-                        if newUnit.awakeningNodes then u.awakeningNodes = newUnit.awakeningNodes end
-                        if newUnit.advBranch then u.advBranch = newUnit.advBranch end
-                        if newUnit.advTalentIds then u.advTalentIds = newUnit.advTalentIds end
+                        -- 必须无条件写回，nil 也代表明确重置，不能保留上一职业/觉醒节点。
+                        u.classId = newUnit.classId
+                        u.classBranchId = newUnit.classBranchId
+                        u.awakeningNodes = newUnit.awakeningNodes
+                        u.advBranch = newUnit.advBranch
+                        u.advTalentIds = newUnit.advTalentIds
                         local currentStatLevel = u._pendingLevel or u.level
+                        u._pendingLevel = heroLevel
                         if heroLevel > currentStatLevel then
-                            u._pendingLevel = heroLevel
                             print(string.format("[BattleScene] refreshAllyStats: hero %s statLv %d→%d stored as pending",
                                 tostring(u.heroId), currentStatLevel, heroLevel))
                             if u.hp > 0 then
@@ -341,6 +343,8 @@ function M.bind(deps)
     end
 
     local function resetToDefault()
+        require("ui.battle.stage.StageEntryEvents").reset()
+        require("systems.StoryPlayer").resetWipe()
         set("currentStageId", 0101)
         set("clearedStages", {})
         set("isFirstClear", true)

@@ -420,9 +420,13 @@ function ExpTable.getUnlockedTeamCount(battleProgress)
     if type(battleProgress) ~= "table" then return 1 end
     local cleared = type(battleProgress.clearedStages) == "table" and battleProgress.clearedStages or {}
     local maxStageId = tonumber(battleProgress.maxStageId) or 0
+    -- 终焉编号不是普通关链序；999 实际已抵达普通 2305 之后。
+    -- 用同难度末关判断旧档的严格越界，不把刚抵达 905/1905 当成已通。
+    local StageConfig = require("config.StageConfig")
+    local maxProgress = StageConfig.getTerminalPrevStageId(maxStageId) or maxStageId
     local count = 1
     for i, stageId in ipairs(ExpTable.TEAM_UNLOCK_STAGES) do
-        if cleared[stageId] == true or cleared[tostring(stageId)] == true or maxStageId > stageId then
+        if cleared[stageId] == true or cleared[tostring(stageId)] == true or maxProgress > stageId then
             count = i + 1
         end
     end
@@ -529,11 +533,13 @@ function ExpTable.isPlayerMaxLevel(lv)
     return lv >= ExpTable.PLAYER_MAX_LEVEL
 end
 
---- 根据上场远征队员数量获取经验倍率
----@param count number 上场远征队员数量（1~5）
----@return number 倍率（默认 1.0）
+--- 根据有效远征队员数量获取账户英雄经验池倍率
+--- 多队合计超过已配置人数时沿用最大档；不增加金币或远征经验倍率。
+---@param count number 上场远征队员数量（0~12）
+---@return number 倍率（0人兼容默认1.0）
 function ExpTable.getHeroCountExpMult(count)
-    return ExpTable.heroCountExpMult[count] or 1.0
+    local effectiveCount = math.max(1, math.min(math.floor(count), #ExpTable.heroCountExpMult))
+    return ExpTable.heroCountExpMult[effectiveCount] or 1.0
 end
 
 --- 获取指定等级的基础战斗属性成长（HP + ATK）

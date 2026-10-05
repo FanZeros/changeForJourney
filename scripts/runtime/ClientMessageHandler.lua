@@ -165,6 +165,8 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      -- 注意：此回调在 CharacterPanel.setHeroesData 之后执行（subscribe 先于 onAnyUpdate），
      -- 因此 CharacterPanel 内部的 ownedSet/teamSlots 已经是最新数据。
      local deployed = data.deployed
+     local triPage = require("ui.battle.tri.BattleTriPage")
+     local triActive = triPage.isOpen()
      if deployed and type(deployed) == "table" and #deployed > 0 then
          local snapshot = M.deployedToString(deployed)
          if snapshot ~= (lastDeployedSnapshot or "") then
@@ -179,8 +181,8 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
                      snapshot, table.concat(teamIds, ","), #team))
              end
              if #team > 0 then
-                 BattleScene.setAllies(team)
-                 local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+                 if not triActive then BattleScene.setAllies(team) end
+                 local BattleTriPage = triPage
                  if BattleTriPage.invalidateTeams then
                      -- [三队隔离] deployed 仅代表 team1；只失效 team1，
                      -- 避免无参调用把三队全部签名清 nil 导致未变动队也重启。
@@ -189,18 +191,16 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
                  end
              else
                  print("[DIAG-HERO] WARNING: getDeployedTeam returned EMPTY! deployed=" .. snapshot)
-                 BattleScene.setAllies({})
+                 if not triActive then BattleScene.setAllies({}) end
              end
          else
-             -- 阵容 ID 未变但等级/属性可能变化（英雄升级/装备/觉醒）：
-             -- 调用 refreshAllyStats 让变化以 _pendingSnapshot 存入，下次波次切换时生效
-             if BattleScene.refreshAllyStats then
-                 BattleScene.refreshAllyStats()
-             end
+             -- CharacterPanel 订阅已按冻结差异做过一次轻刷新，不能在全局路由重复刷新。
          end
-     else
+     elseif type(deployed) == "table" then
+         local wasDeployed = lastDeployedSnapshot ~= nil and lastDeployedSnapshot ~= ""
          lastDeployedSnapshot = ""
-         BattleScene.setAllies({})
+         if wasDeployed and triPage.invalidateTeams then triPage.invalidateTeams({ [1] = true }) end
+         if not triActive then BattleScene.setAllies({}) end
          TopBar.setTotalPower(0)
          print("[DIAG-HERO] onHeroesDataUpdate empty deployed/roster, cleared battle allies")
      end
@@ -227,7 +227,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
  end
 
  function M.setupDataSubscriptions()
-     ClientDispatcher.setOnAnyUpdate(function(modules)
+     ClientDispatcher.setOnAnyUpdate(function(modules, context)
          if not modules then return end
          for moduleName, data in pairs(modules) do
              if data then
@@ -239,7 +239,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
                      elseif moduleName == "heroes" then
                          M.onHeroesDataUpdate(data, moduleName)
                      elseif moduleName == "battle" then
-                         M.onBattleDataUpdate(data, moduleName)
+                         if not (context and context.live) then M.onBattleDataUpdate(data, moduleName) end
                      elseif moduleName == "privilege" then
                          MarketPage.setPrivilegeData(data)
                      end

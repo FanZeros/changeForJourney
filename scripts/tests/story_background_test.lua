@@ -1,6 +1,6 @@
 -- 专项回归：仅只读生产源码/图片，通过 cache.GetFile + load(env) 创建独立真实模块。
--- /workspace/.cli/UrhoXRuntime tests/story_background_test.lua
---   -tapcode_dir=/workspace/changeForJourney-story-plan -tool_mode -graphicsheadless -nosound
+-- /home/Maker/game04-runtime/UrhoXRuntime tests/story_background_test.lua
+--   -tapcode_dir=/workspace/game04 -tool_mode -graphicsheadless -validate -validateframes=90
 -- 不启动完整Boot、不读取玩家档、不dispatch cloud；绘制出口是语义spy，不冒充截图。
 local PREFIX = "[story_background] "
 local checks, groups = 0, 0
@@ -255,6 +255,7 @@ end
 
 local function configCases()
     local ctx = newContext()
+    ---@type (number|boolean)[]
     local expected = { 2,2,2,2,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,5,5,5,5,6,5,5,5,
         7,5,5,5,9,9,9,3,3,3,9,9,9,9,9,9,8,5,5,5,10,10,10,false,13,13,13,12,12,12,
         14,14,3,10,15,false,16,14,14,3,3,10,11,17,17,17,17,17,17,17,17,10 }
@@ -580,6 +581,9 @@ local function wipeCases()
     local story = ctx.env.require("systems.StoryPlayer")
     story.onWipe(999)
     eq(story.take().config.background, bg(14), "terminal wipe gets terminal background")
+    eq(story.onWipe(nil), false, "同会话首次团灭已take但未领取时仍阻止重复排队")
+    eq(story.take(), nil, "重复团灭不覆盖首次失败地点")
+    story.resetWipe()
     story.onWipe(nil)
     eq(story.take().config.background, bg(3), "unknown wipe does not consult saved battle stage")
     ctx.modules.session.scenarioRewardsGranted = { [82] = true }
@@ -804,7 +808,7 @@ function Start()
             log:Write(LOG_ERROR, PREFIX .. message)
         end
     end
-    if #failures == 0 then print(PREFIX .. "RESULT ALLPASS groups=" .. groups .. " checks=" .. checks)
+    if #failures == 0 then print(PREFIX .. "RESULT ALL PASS groups=" .. groups .. " checks=" .. checks)
     else print(PREFIX .. "RESULT FAIL groups=" .. groups .. " checks=" .. checks .. " failures=" .. #failures) end
     engine:Exit()
 end

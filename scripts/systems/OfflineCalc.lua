@@ -45,72 +45,39 @@ function OfflineCalc.effectiveOfflineSeconds(seconds)
     return full + (raw - full) * OfflineCalc.TAIL_RATIO
 end
 
---- 解析挂机收益锚点关卡（金币/经验查表 + 前 5 关掉落混合）
---- 规则：常规挂机用 maxStageId；首通进行中（当前关未 cleared）用上一关（已通关最高关）
---- 例：在 10-1 首通且 maxStageId=1001 时 → 905（9-5），collectPrevStages 得到 9-5…9-1
----@param battleData table|nil  battle 模块（currentStageId / maxStageId / clearedStages / battleMode）
----@param stageConfig table|nil 关卡配置模块，默认 config.StageConfig
+--- 解析账户挂机收益锚点；队伍当前关与模式不代表账户最高节点是否已通。
+--- 最高普通节点有首通凭据时用本关，否则保守回前关；难度首关跨回上一难度。
+--- 终焉不在普通收益表中，无论是否已通都使用同难度末关。
+---@param battleData table|nil
+---@param stageConfig table|nil
 ---@return number stageId
 function OfflineCalc.resolveIdleIncomeStageId(battleData, stageConfig)
     local cfg = stageConfig or SC
     if not battleData then return 101 end
+    local maxId = tonumber(battleData.maxStageId) or tonumber(battleData.currentStageId) or 101
 
-    local current = tonumber(battleData.currentStageId)
-    local maxId   = tonumber(battleData.maxStageId) or current or 101
-
-    local function usePrevIfAny(stageId)
-        if not stageId then return nil end
-        local prev = cfg.getPrevStageId(stageId)
-        return prev or stageId
+    if cfg.isTerminalTemple and cfg.isTerminalTemple(maxId) then
+        return cfg.getTerminalPrevStageId(maxId) or maxId
     end
-
-    -- 首通进行中：current == max 且该关尚未写入 clearedStages
-    if current and current == maxId then
-        local key = tostring(current)
-        local cleared = battleData.clearedStages and battleData.clearedStages[key]
-        if not cleared then
-            local anchor = usePrevIfAny(current)
-            if anchor then return anchor end
-        end
-    end
-
-    -- 在线实时路径：battleMode 标记（断线存盘后会变成 offline，由上一条覆盖）
-    if battleData.battleMode == "firstClear" and current then
-        local anchor = usePrevIfAny(current)
-        if anchor then return anchor end
-    end
-
-    -- 推进中但 max 尚未更新（兼容极端时序）
-    if current and current > maxId then
+    local ledger = type(battleData.clearedStages) == "table" and battleData.clearedStages or {}
+    if ledger[maxId] == true or ledger[tostring(maxId)] == true then
         return maxId
     end
-
-    return maxId
+    local previous = cfg.getPrevStageId(maxId)
+    if not previous and cfg.getLastStageOfPrevDifficulty then
+        previous = cfg.getLastStageOfPrevDifficulty(maxId)
+    end
+    return previous or maxId
 end
 
---- 解析挂机掉落混合锚点（collectPrevStages 用）
---- 首通进行中用 currentStageId（如 1001 → 9-5…9-1）；常规挂机用 income 锚点
+--- 掉落采用账户最高节点的排除式边界，collectPrevStages负责取前五关。
+--- 不读取队一旧关或模式；终焉的同难度前驱在核心计算中单独处理。
 ---@param battleData table|nil
 ---@param stageConfig table|nil
 ---@return number stageId
 function OfflineCalc.resolveIdleDropStageId(battleData, stageConfig)
     if not battleData then return 101 end
-
-    local current = tonumber(battleData.currentStageId)
-    local maxId   = tonumber(battleData.maxStageId) or current or 101
-
-    if current and current == maxId then
-        local cleared = battleData.clearedStages and battleData.clearedStages[tostring(current)]
-        if not cleared then
-            return current
-        end
-    end
-
-    if battleData.battleMode == "firstClear" and current then
-        return current
-    end
-
-    return OfflineCalc.resolveIdleIncomeStageId(battleData, stageConfig)
+    return tonumber(battleData.maxStageId) or tonumber(battleData.currentStageId) or 101
 end
 
 --- 统一入口：解析 battle 模块上的双锚点
@@ -263,7 +230,7 @@ function OfflineCalc.calcRewardsFromKills(kills, stageEntry, heroCount, stageCon
     local totalExp  = expPerKill  * kills
 
     -- 英雄经验乘以出战人数系数
-    local heroCountMult = ET.heroCountExpMult[heroCount] or 1.0
+    local heroCountMult = ET.getHeroCountExpMult(heroCount)
     local totalHeroExp = math.floor(totalExp * heroCountMult)
 
     -- 装备掉落种子（按 dropRate 概率，装备品质由怪物品质决定）
@@ -464,8 +431,14 @@ local function _calcIdleCore(seconds, incomeStageId, heroCount, dropStageId, sta
     local totalKills = math.floor((dropSeconds or seconds) * OfflineCalc.IDLE_KILL_RATE)
     if totalKills <= 0 then return nil end
 
-    -- 取 dropStageId 前 N 关（跨难度安全）
-    local stages = StageUtils.collectPrevStages(dropStageId, OfflineCalc.SWEEP_STAGE_COUNT, cfg)
+    -- 终焉关号不是普通关序号；下一难度首关仅作排除式遍历边界，
+    -- 使掉落来自同难度末关起的前五关，不授予下一难度收益或解锁。
+    local dropBoundary = dropStageId
+    if cfg.isTerminalTemple and cfg.isTerminalTemple(dropStageId) then
+        local target = cfg.getReincarnationTarget(cfg.getDifficulty(dropStageId))
+        if target then dropBoundary = target end
+    end
+    local stages = StageUtils.collectPrevStages(dropBoundary, OfflineCalc.SWEEP_STAGE_COUNT, cfg)
     if #stages == 0 then
         -- fallback: 如果前面无关卡（刚开始游戏），尝试用 dropStageId 本身
         local entry = cfg.getStage(dropStageId)
@@ -501,7 +474,7 @@ local function _calcIdleCore(seconds, incomeStageId, heroCount, dropStageId, sta
     local minutes = seconds / 60
     local newGold = math.floor(cfgGoldPerMin * minutes + 0.5)
     local newExp  = math.floor(cfgExpPerMin * minutes + 0.5)
-    local heroCountMult = ET.heroCountExpMult[heroCount] or 1.0
+    local heroCountMult = ET.getHeroCountExpMult(heroCount)
     local newHeroExp = math.floor(newExp * heroCountMult + 0.5)
 
     return {

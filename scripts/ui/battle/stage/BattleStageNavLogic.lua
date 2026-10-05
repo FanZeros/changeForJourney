@@ -50,6 +50,7 @@ function M.bind(deps)
         require("systems.GameBGM").setScene("samsara", { fromStart = true })
     end
 
+    ---@type fun()
     local nextStage
     local function beginVictoryMarch()
         if get("victoryMarch") then return end
@@ -93,7 +94,7 @@ function M.bind(deps)
         end
     end
 
-    local function nextStage()
+    nextStage = function()
         local stageConfig = getStageConfig()
         local currentStageId = get("currentStageId")
         local nextId = stageConfig.getNextStageId(currentStageId)

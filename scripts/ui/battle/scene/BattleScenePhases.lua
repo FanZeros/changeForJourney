@@ -57,7 +57,11 @@ function M.process(ctx, dt)
     -- （失败回退/轮回/寻怪开始都走这条），若用进入 process 时缓存的旧值覆盖，
     -- 会让回退重开后 battleActive 永远停在 false，下一帧 update 直接早退 → 战斗卡死。
     -- 本文件确实需要改 battleActive 的地方（寻怪开始）直接写 ctx.battleActive。
+    local function sourceCurrent()
+        return not ctx.rescueTracker or ctx.rescueTracker:isCurrent(ctx.rescueGeneration)
+    end
     local function writeback()
+        if not sourceCurrent() then return end
         ctx.defeatTimer = defeatTimer
         ctx.reincarnationTimer = reincarnationTimer
         ctx.searchingTimer = searchingTimer
@@ -119,17 +123,30 @@ function M.process(ctx, dt)
                 print("[BattleScene] 战斗失败，自动后退 → " .. tostring(targetId))
             end
             bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_BACK_TARGET }
-            loadStage(targetId, true)  -- skipBattleStart
+            -- 用尚未清零的 ctx 失败标记验票；普通超时/终焉没有票。
+            if not sourceCurrent() then return true end
+            local ticket = ctx.rescueTracker and ctx.rescueTracker:prepareRecovery(ctx, targetId)
+            local loaded = loadStage(targetId, true, ticket)  -- skipBattleStart
+            if loaded == false then return true end
+            -- Scene 的 loadStage 已回灌：只取新场景，不能用本帧旧敌阵/关卡覆盖它。
+            if type(loaded) == "table" then
+                currentStageId, stageName, maxStageId_ = loaded.currentStageId, loaded.stageName, loaded.maxStageId_
+                isFirstClear, enemies, enemyQueue, allies = loaded.isFirstClear, loaded.enemies, loaded.enemyQueue, loaded.allies
+                ctx.battleActive, ctx.allies, ctx.rescueGeneration = loaded.battleActive, allies, loaded.rescueGeneration
+            end
             regenAccum = 0
             -- 阵亡紧凑会打乱 allies 顺序（全灭时尤其明显），先还原再重置
             BattleAllyReset.restoreOrder(allies)
             for _, u in ipairs(allies) do
                 resetAllyUnit(u)
+                if not sourceCurrent() then return true end
                 -- 开战天赋会 addModifier 并重算属性。先满血，重算才能保留满血，
                 -- 否则死亡时的 0 血会被 recalc 写回，回退后立刻再次全灭并卡死。
                 if u.attrs then u.attrs:fillHp() end
+                if not sourceCurrent() then return true end
             end
             startBattleTalents()
+            if not sourceCurrent() then return true end
             local AD = require("systems.AttributeDef")
             local revived = 0
             for _, u in ipairs(allies) do
@@ -143,6 +160,8 @@ function M.process(ctx, dt)
             if onStageChangedCallback then
                 onStageChangedCallback(targetId)
             end
+            if not sourceCurrent() then return true end
+            if ctx.rescueTracker then ctx.rescueReady = ctx.rescueTracker:readyRecovery(ticket) end
         end
         writeback(); return true
     end

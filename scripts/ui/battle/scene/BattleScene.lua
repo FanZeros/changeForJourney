@@ -40,6 +40,7 @@ local BattleSceneTick = require("ui.battle.scene.BattleSceneTick")
 local BattleScenePhases = require("ui.battle.scene.BattleScenePhases")
 local BattleStageNavLogic = require("ui.battle.stage.BattleStageNavLogic")
 local BattleDataRestore = require("ui.battle.scene.BattleDataRestore")
+local BattleRescueTracker = require("ui.battle.scene.BattleRescueTracker")
 
 local BattleScene = {}
 BattleScene.GameState = require("core.GameState")
@@ -157,7 +158,6 @@ local currentStageId = 0101
 local function getStageConfig()
     return require("shared.StageProvider").Get()
 end
-
 --- 获取当前关卡的敌方场地上限
 ---@return number
 local function getStageMaxFieldEnemies()
@@ -214,8 +214,6 @@ local reincarnationTimer = nil       -- nil=未触发; number=已过秒数
 -- 首通战斗限时（秒，nil=不限时/挂机模式）
 local firstClearTimeLeft = nil
 
-
-
 -- 击杀回调: function(data) 其中 data = { expReward, goldReward, allyCount, expMult }
 local onEnemyKillCallback = nil
 
@@ -238,6 +236,8 @@ local onAllDeadCallback = nil
 -- 待完成的轮回（阶段处理回灌后消费；外部回调可延后完成）
 ---@type {targetStageId:number, terminalStageId:number, fromDifficulty:string, toDifficulty:string}|nil
 local pendingReincarnation = nil
+---@type {nextId:number, timer:number}|nil
+local victoryMarch = nil
 
 -- (战斗动画状态: floatingTexts/cardAnims/hitFlashes/hpBuffers 已移至 BattleCombat)
 
@@ -263,6 +263,14 @@ local battleActive = false
 -- 战斗超时增伤计时（秒，战斗逻辑时间；随每场战斗/每波重开清零）
 local battleTimeoutElapsed = 0
 local BattleTimeout = require("systems.BattleTimeout")
+local rescueTracker = BattleRescueTracker.new(function()
+    return {
+        allies = allies, enemies = enemies, enemyQueue = enemyQueue,
+        currentStageId = currentStageId, isFirstClear = isFirstClear,
+        battleActive = battleActive, defeatTimer = defeatTimer, defeatByTimeout = defeatByTimeout,
+        terminalDefeatPending = terminalDefeatPending, getStageConfig = getStageConfig,
+    }
+end)
 
 -- 挂机收益缓存（每分钟）—— 直接由 OfflineCalc 统一公式计算
 local cachedGoldPerMin = 0
@@ -280,8 +288,6 @@ local drawImageCentered = BattleDraw.drawImageCentered
 ---@type fun(vg, img, cx, cy, w, h, alpha)
 local drawImageMirrored = BattleDraw.drawImageMirrored
 local drawTextStroke    = BattleDraw.drawTextStroke
-
-
 -- ======================== BattleCombat 本地别名 ========================
 local getAliveUnits       = BattleCombat.getAliveUnits
 local getCardCX           = BattleCombat.getCardCX
@@ -385,14 +391,12 @@ local function recalcIdleIncome()
         tag, prevGold, cachedGoldPerMin, goldDelta, prevExp, cachedExpPerMin, expDelta,
         incomeStageId, dropStageId, maxStageId_, heroCount, tostring(currentStageId), tostring(isFirstClear)))
 end
-
 --- 结算当前波次（仅统计用，不再影响收益显示）
 local function settleWaveEfficiency()
     if not waveStartTime or waveKillCount <= 0 then return end
     -- 波次统计仅用于战斗日志/调试，收益显示完全由 OfflineCalc 驱动
     waveStartTime = nil
 end
-
 --- 重置波次计时状态
 local function resetWaveTimers()
     waveStartTime = time.elapsedTime
@@ -416,7 +420,6 @@ end
 local function startBattleTalents()
     BattleStageFlow.startBattleTalents(allies, enemies)
 end
-
 --- 恢复主战斗的 BattleCombat 上下文（副本/竞技场关闭后必须调用）
 --- 将 ctx.getAllies / ctx.getEnemies 重新指向主战斗的 allies/enemies
 local function setupBattleCombatContext()
@@ -436,11 +439,13 @@ end
 local function pumpBattleCards()
     battleCardQueue = BattleStageFlow.pumpBattleCards(battleCardQueue, vg_)
 end
-
 --- 加载关卡
 ---@param stageId number 4位关卡ID, 如 0101
 ---@param skipBattleStart? boolean 跳过 TAL/TM 战斗启动（调用方自行在 resetAllyUnit 后调用 startBattleTalents）
-local function loadStage(stageId, skipBattleStart)
+---@param rescueTicket? table 仅失败恢复分支持有的一次性来源票
+local function loadStage(stageId, skipBattleStart, rescueTicket)
+    local loadMarker = rescueTracker:beginLoad(stageId, skipBattleStart, rescueTicket)
+    victoryMarch = nil
     local ctx = {
         currentStageId = currentStageId, stageName = stageName, maxStageId_ = maxStageId_,
         isFirstClear = isFirstClear, idleRangeText_ = idleRangeText_,
@@ -459,7 +464,15 @@ local function loadStage(stageId, skipBattleStart)
         assignEnemiesToField = assignEnemiesToField, startBattleTalents = startBattleTalents,
         setMapBackground = BattleScene.setMapBackground,
     }
-    BattleStageLoad.load(ctx, stageId, skipBattleStart)
+    local loaded, err = pcall(BattleStageLoad.load, ctx, stageId, skipBattleStart)
+    if not loaded then
+        rescueTracker:finishLoad(loadMarker, false)
+        error(err, 0) -- 观察器不吞掉原有加载错误；中途失败不能保票。
+    end
+    if not rescueTracker:isCurrent(loadMarker.generation) then
+        rescueTracker:finishLoad(loadMarker, false)
+        return false -- 加载回调重入换关/换队后，不再回灌旧 ctx。
+    end
     currentStageId = ctx.currentStageId
     stageName = ctx.stageName
     maxStageId_ = ctx.maxStageId_
@@ -480,7 +493,9 @@ local function loadStage(stageId, skipBattleStart)
     firstClearTimeLeft = ctx.firstClearTimeLeft
     battleTimeoutElapsed = ctx.battleTimeoutElapsed or 0
     print("[BattleScene] stage loaded id=" .. tostring(stageId))
-    require("systems.StoryPlayer").onStage(stageId, "enter")
+    local entered, enterError = pcall(function() require("systems.StoryPlayer").onStage(stageId, "enter") end)
+    if not entered then rescueTracker:finishLoad(loadMarker, false); error(enterError, 0) end
+    return rescueTracker:finishLoad(loadMarker, ctx.currentStageId == stageId)
 end
 
 local _navLogic
@@ -492,6 +507,7 @@ bindBattleExtracts = function()
         clearedStages = function() return clearedStages end,
         stageName = function() return stageName end,
         pendingReincarnation = function() return pendingReincarnation end,
+        victoryMarch = function() return victoryMarch end,
         onStageChangedCallback = function() return onStageChangedCallback end,
         BG_ZOOM_FWD_TARGET = function() return BG_ZOOM_FWD_TARGET end,
         BG_ZOOM_BACK_TARGET = function() return BG_ZOOM_BACK_TARGET end,
@@ -512,6 +528,7 @@ bindBattleExtracts = function()
         elseif key == "bgTransAnim" then bgTransAnim = value
         elseif key == "regenAccum" then regenAccum = value
         elseif key == "pendingReincarnation" then pendingReincarnation = value
+        elseif key == "victoryMarch" then victoryMarch = value
         elseif key == "maxStageId_" then maxStageId_ = value
         elseif key == "clearedStages" then clearedStages = value
         elseif key == "battleActive" then battleActive = value
@@ -563,6 +580,8 @@ end
 -- ======================== Public API ========================
 
 function BattleScene.init(vg)
+    victoryMarch = nil
+    rescueTracker:resetSource()
     vg_ = vg  -- 缓存，供 loadStage 切换地图背景
     -- 地图背景延后到 loadStage / 首次绘制，避免启动解码 1MB+ MAP_1
     currentChapter = 1
@@ -858,11 +877,18 @@ function BattleScene.draw(vg)
     -- ---- 长按怪物属性弹窗（最最顶层） ----
     MonsterInfoPopup.draw(vg)
 end
-
 --- 三队页面不再走 BattleScene.update，但仍要分帧加载角色/怪物卡面。
 function BattleScene.pumpBattleCards()
     if vg_ then ensureBattleCards(vg_) end
     pumpBattleCards()
+end
+
+local function applyPhaseState(ctx)
+    defeatTimer, reincarnationTimer, searchingTimer = ctx.defeatTimer, ctx.reincarnationTimer, ctx.searchingTimer
+    terminalDefeatPending, defeatByTimeout, battleActive = ctx.terminalDefeatPending, ctx.defeatByTimeout, ctx.battleActive
+    pendingReincarnation, bgTransAnim, regenAccum = ctx.pendingReincarnation, ctx.bgTransAnim, ctx.regenAccum
+    enemies, enemyQueue, maxStageId_ = ctx.enemies, ctx.enemyQueue, ctx.maxStageId_
+    stageName, isFirstClear, currentStageId = ctx.stageName, ctx.isFirstClear, ctx.currentStageId
 end
 
 function BattleScene.update(dt)
@@ -887,6 +913,7 @@ function BattleScene.update(dt)
 
     -- ---- 暂停 / 失败延迟 / 轮回 / 寻怪（委托 BattleScenePhases） ----
     local _phCtx = {
+        rescueTracker = rescueTracker, rescueGeneration = rescueTracker.generation,
         isPaused = isPaused, defeatTimer = defeatTimer, reincarnationTimer = reincarnationTimer,
         searchingTimer = searchingTimer, terminalDefeatPending = terminalDefeatPending,
         defeatByTimeout = defeatByTimeout, isFirstClear = isFirstClear,
@@ -899,28 +926,23 @@ function BattleScene.update(dt)
         BG_ZOOM_BACK_TARGET = BG_ZOOM_BACK_TARGET, BG_ZOOM_FWD_TARGET = BG_ZOOM_FWD_TARGET,
         updateCardAnims = updateCardAnims, updateFloatingTexts = updateFloatingTexts,
         updateHitFlashes = updateHitFlashes, updateComboQueue = updateComboQueue,
-        getStageConfig = getStageConfig, loadStage = loadStage, resetAllyUnit = resetAllyUnit,
+        getStageConfig = getStageConfig, loadStage = function(stageId, skip, ticket)
+            local loaded = loadStage(stageId, skip, ticket)
+            if loaded == false then return false end
+            return { currentStageId = currentStageId, stageName = stageName, maxStageId_ = maxStageId_,
+                isFirstClear = isFirstClear, battleActive = battleActive, enemies = enemies,
+                enemyQueue = enemyQueue, allies = allies, rescueGeneration = rescueTracker.generation }
+        end, resetAllyUnit = resetAllyUnit,
         startBattleTalents = startBattleTalents, onStageChangedCallback = onStageChangedCallback,
         onReincarnateCallback = onReincarnateCallback, recalcIdleIncome = recalcIdleIncome,
         generateIdleEnemyList = generateIdleEnemyList, assignEnemiesToField = assignEnemiesToField,
         BattleScene = BattleScene,
     }
-    if BattleScenePhases.process(_phCtx, dt) then
-        defeatTimer = _phCtx.defeatTimer
-        reincarnationTimer = _phCtx.reincarnationTimer
-        searchingTimer = _phCtx.searchingTimer
-        terminalDefeatPending = _phCtx.terminalDefeatPending
-        defeatByTimeout = _phCtx.defeatByTimeout
-        battleActive = _phCtx.battleActive
-        pendingReincarnation = _phCtx.pendingReincarnation
-        bgTransAnim = _phCtx.bgTransAnim
-        regenAccum = _phCtx.regenAccum
-        enemies = _phCtx.enemies
-        enemyQueue = _phCtx.enemyQueue
-        maxStageId_ = _phCtx.maxStageId_
-        stageName = _phCtx.stageName
-        isFirstClear = _phCtx.isFirstClear
-        currentStageId = _phCtx.currentStageId
+    local phasesConsumed = BattleScenePhases.process(_phCtx, dt)
+    if not rescueTracker:isCurrent(_phCtx.rescueGeneration) then return end
+    applyPhaseState(_phCtx)
+    rescueTracker:commitRecovery(_phCtx.rescueReady)
+    if phasesConsumed then
         if _phCtx.reincarnationReady then
             local pending = pendingReincarnation
             if pending then
@@ -937,20 +959,15 @@ function BattleScene.update(dt)
         end
         return
     end
-    defeatTimer = _phCtx.defeatTimer
-    reincarnationTimer = _phCtx.reincarnationTimer
-    searchingTimer = _phCtx.searchingTimer
-    terminalDefeatPending = _phCtx.terminalDefeatPending
-    defeatByTimeout = _phCtx.defeatByTimeout
-    battleActive = _phCtx.battleActive
-    pendingReincarnation = _phCtx.pendingReincarnation
-    bgTransAnim = _phCtx.bgTransAnim
-    regenAccum = _phCtx.regenAccum
-    enemies = _phCtx.enemies
-    enemyQueue = _phCtx.enemyQueue
-    maxStageId_ = _phCtx.maxStageId_
-    stageName = _phCtx.stageName
 
+    if victoryMarch then
+        BattleEffects.update(dt); updateCardAnims(dt); updateFloatingTexts(dt)
+        updateHitFlashes(dt); SpeechBubble.update(dt)
+        bgAnimTimer = bgAnimTimer + dt
+        if bgTransAnim then bgTransAnim.timer = bgTransAnim.timer + dt end
+        _navLogic.tickVictoryMarch(dt) -- 暂停已由 Phases 拦截；行军期间不推进攻击/限时。
+        return
+    end
     if not battleActive then return end
 
     local logicDt = BattleScene.getBattleLogicDt(dt)
@@ -994,10 +1011,9 @@ function BattleScene.update(dt)
     end
 
     ART.update(logicDt, allies)
-
-
     -- ---- 敌人死亡处理 / 己方阵亡紧凑 / 胜负判定（委托 BattleCasualty） ----
     local _casCtx = {
+        rescueTracker = rescueTracker, rescueGeneration = rescueTracker.generation,
         enemies = enemies, allies = allies, enemyQueue = enemyQueue,
         getCardCX = getCardCX, getAliveUnits = getAliveUnits, syncUnitHp = syncUnitHp,
         RESPAWN_DELAY = RESPAWN_DELAY, reinforceCdByList = reinforceCdByList,
@@ -1016,6 +1032,8 @@ function BattleScene.update(dt)
     }
     local stageIdBeforeCas = currentStageId
     local _casConsumed = BattleCasualty.process(_casCtx, logicDt)
+    if not rescueTracker:isCurrent(_casCtx.rescueGeneration) then return end
+    if victoryMarch then _casCtx.battleActive = false end -- beginVictoryMarch 已停战，不用旧 ctx 重开。
     waveKillCount = _casCtx.waveKillCount
     waveGoldEarned = _casCtx.waveGoldEarned
     waveExpEarned = _casCtx.waveExpEarned
@@ -1080,18 +1098,13 @@ function BattleScene.update(dt)
             bgTransAnim = nil
         end
     end
-    if _navLogic and _navLogic.tickVictoryMarch then
-        _navLogic.tickVictoryMarch(dt)
-    end
 end
-
 -- ======================== 外部接口 ========================
 
 --- 设置关卡名
 function BattleScene.setStageName(name)
     stageName = name
 end
-
 --- 切换地图背景（后续随关卡变化调用）
 function BattleScene.setMapBackground(vg, path)
     if imgMap >= 0 then
@@ -1102,17 +1115,16 @@ function BattleScene.setMapBackground(vg, path)
     -- 同步解码数 MB 关卡地图会撑爆单帧预算（预览判引擎异常，加载条 97-98% 卡死）
     pendingMapBgPath_ = path
 end
-
 --- 设置敌方单位列表（DebugPanel 用）
 function BattleScene.setEnemies(list)
+    rescueTracker:disableSource()
     return getAllyLifecycle().setEnemies(list)
 end
-
 --- 设置己方单位列表（DebugPanel 用）
 function BattleScene.setAllies(list)
+    rescueTracker:cancel()
     return getAllyLifecycle().setAllies(list)
 end
-
 --- 获取默认攻击间隔（供 DebugPanel 等外部模块使用）
 function BattleScene.getDefaultAllyInterval()
     return DEFAULT_ALLY_INTERVAL
@@ -1121,31 +1133,27 @@ end
 function BattleScene.getDefaultEnemyInterval()
     return DEFAULT_ENEMY_INTERVAL
 end
-
 --- 获取己方场地上限
 function BattleScene.getMaxFieldUnits()
     return MAX_FIELD_ALLIES
 end
-
 --- 获取当前己方单位列表（引用，非副本）
 function BattleScene.getAllies()
     return allies
 end
-
 --- 获取当前敌方单位列表（引用，非副本）[修复] BattleTriPage 依赖此接口，此前缺失导致每帧 nil 调用
 function BattleScene.getEnemies()
     return enemies
 end
-
 --- 获取当前关卡 ID [修复] BattleTriPage 依赖（此前仅暴露 getCurrentStageId）
 function BattleScene.getStageId()
     return currentStageId
 end
-
 --- 三行第一队通关后，只同步主线关卡号，不重开 BattleScene 自己的战斗。
 --- 否则存档已到下一关，BattleScene 仍停在旧关，下一帧会把第一队拉回去。
 ---@param stageId number
 function BattleScene.adoptStageProgress(stageId)
+    rescueTracker:cancel()
     stageId = tonumber(stageId)
     if not stageId or not getStageConfig().getStage(stageId) then return end
     if stageId > maxStageId_ then
@@ -1154,7 +1162,6 @@ function BattleScene.adoptStageProgress(stageId)
     currentStageId = stageId
     isFirstClear = not clearedStages[stageId]
 end
-
 --- 三行普通关通关：三队共享解锁与首通账本，各队保留独立的当前关卡。
 --- 一队追赶已被其他队通关的节点时仍要同步当前关，不能被奖励去重拦住。
 ---@param stageId number
@@ -1200,7 +1207,6 @@ function BattleScene.completeTriStageClear(stageId, teamIdx)
     end
     return not wasCleared
 end
-
 --- [终焉协同] 三队共享生命池打空后调用：等价主线「终焉胜利 → 轮回」。
 --- 奖励去重：只有该终焉关此前未通关时才触发首通回调（重打已通关的终焉
 --- 不再重复发 fcExp/首通奖励，与主线 BattleCasualty 的 isFirstClear 门槛一致）。
@@ -1231,7 +1237,6 @@ function BattleScene.completeTriTerminal(stageId)
     if wasFirstClear and onFirstClearCallback then onFirstClearCallback(stageId) end
     return true
 end
-
 --- 触发敌方击杀回调 [修复] BattleTriPage 三队战斗驱动依赖（与主战斗内部调用同构）
 ---@param data table { expReward, goldReward, allyCount, expMult, heroIds, stageId }
 function BattleScene.onEnemyKill(data)
@@ -1239,23 +1244,19 @@ function BattleScene.onEnemyKill(data)
         onEnemyKillCallback(data)
     end
 end
-
 --- 获取当前关卡敌方场地上限
 function BattleScene.getMaxFieldEnemies()
     return getStageMaxFieldEnemies()
 end
-
 --- 获取当前关卡 ID
 function BattleScene.getCurrentStageId()
     return currentStageId
 end
-
 --- [Standalone 状态同步] 本地最远抵达关卡（Client 模式以服务端推送为准）
 ---@return number
 function BattleScene.getMaxStageId()
     return maxStageId_
 end
-
 --- 当关击杀进度（死亡怪/总怪）；挂机模式返回 nil（进度无意义）
 ---@return number|nil killed
 ---@return number total
@@ -1265,30 +1266,25 @@ function BattleScene.getStageKillProgress()
     if stageKillCount_ > stageEnemyTotal_ then stageKillCount_ = stageEnemyTotal_ end
     return stageKillCount_, stageEnemyTotal_
 end
-
 --- [Standalone 状态同步] 本地已通关表（key 可能为 number，写入状态前需 tostring）
 ---@return table
 function BattleScene.getClearedStages()
     return clearedStages
 end
-
 --- [三行并行] 选关页面: 跳转到指定关卡（仅允许 ≤ 已解锁最大关卡）
 function BattleScene.gotoStage(stageId)
     if not _navLogic then bindBattleExtracts() end
     return _navLogic.gotoStage(stageId)
 end
-
 --- 当前是否处于终焉神殿关卡
 function BattleScene.isInTerminalTemple()
     return getStageConfig().isTerminalTemple(currentStageId)
 end
-
 --- 实际执行进入终焉神殿（确认后调用）
 local function doEnterTerminalTemple(nextId)
     if not _navLogic then bindBattleExtracts() end
     return _navLogic.doEnterTerminalTemple(nextId)
 end
-
 --- 前进到下一关
 function BattleScene.nextStage()
     if not _navLogic then bindBattleExtracts() end
@@ -1303,13 +1299,11 @@ function BattleScene.beginVictoryMarch()
     if not _navLogic then bindBattleExtracts() end
     return _navLogic.beginVictoryMarch()
 end
-
 --- 后退到上一关
 function BattleScene.prevStage()
     if not _navLogic then bindBattleExtracts() end
     return _navLogic.prevStage()
 end
-
 --- 处理设计空间内的点击（由 Standalone 调用）
 ---@param dx number 设计空间X (0~1080)
 ---@param dy number 设计空间Y (0~2400)
@@ -1359,7 +1353,6 @@ function BattleScene.handleInput(dx, dy)
 
     return false
 end
-
 --- 重新加载当前关卡（DebugPanel 用）
 --- 注册敌方击杀回调
 --- callback(data): data = { expReward, goldReward, allyCount, expMult, heroIds }
@@ -1372,13 +1365,11 @@ end
 function BattleScene.setOnEnemyKill(callback)
     onEnemyKillCallback = callback
 end
-
 --- 注册首通回调（关卡首次通关时触发）
 ---@param callback function|nil  function(clearedStageId)
 function BattleScene.setOnFirstClear(callback)
     onFirstClearCallback = callback
 end
-
 --- 三行战斗通关后复用首通奖励弹窗。
 ---@param clearedStageId number
 ---@param teamIdx number|nil 缺省为一队；其他队只推进共享解锁，不切一队当前关
@@ -1387,79 +1378,79 @@ function BattleScene.onFirstClear(clearedStageId, teamIdx)
         onFirstClearCallback(clearedStageId, teamIdx)
     end
 end
-
 --- 注册关卡加载完成回调（每次 loadStage 结束时触发）
 ---@param callback function|nil  function(stageId, isFirstClear)
 function BattleScene.setOnStageLoaded(callback)
     onStageLoadedCallback = callback
 end
-
 --- 注册关卡切换回调（前进/后退时触发）
 ---@param callback function|nil  function(newStageId)
 function BattleScene.setOnStageChanged(callback)
     onStageChangedCallback = callback
 end
-
 --- 注册敌方掉落回调（每次击杀敌人时触发）
 --- callback(data): data = { stageId, enemyCX, enemyCY, isFirstClear }
 ---@param callback function|nil
 function BattleScene.setOnEnemyDrop(callback)
     onEnemyDropCallback = callback
 end
-
 --- 注册轮回回调（终焉神殿战斗结束轮回时触发）
 --- callback(data): data = { fromDifficulty, toDifficulty, newStageId }
 ---@param callback function|nil
 function BattleScene.setOnReincarnate(callback)
     onReincarnateCallback = callback
 end
-
 --- 注册全体阵亡回调（非终焉神殿全员阵亡战败时触发，每次阵亡仅触发一次）
 ---@param callback function|nil
 function BattleScene.setOnAllDead(callback)
     onAllDeadCallback = callback
 end
 
+--- 透明单场恢复回执桥；更换/撤销回调立即使旧票失效（Stop 可传 nil,nil）。
+---@param capture (fun():table|nil)|nil
+---@param commit fun(context:table, receipt:table)|nil
+function BattleScene.setRescueCallbacks(capture, commit)
+    rescueTracker:setCallbacks(capture, commit)
+end
 --- 完成轮回：默认在阶段状态回灌后调用，执行实际的关卡加载
 function BattleScene.completeReincarnation()
     if not _navLogic then bindBattleExtracts() end
     return _navLogic.completeReincarnation()
 end
-
 --- 从服务端推送的战斗数据恢复状态
 ---@param data table  { currentStageId, maxStageId, clearedStages, autoBattle }
 function BattleScene.setBattleData(data)
+    rescueTracker:cancel()
     if not _dataRestore then bindBattleExtracts() end
     return _dataRestore.setBattleData(data)
 end
-
 --- 轻量级属性刷新：英雄升级后更新场上 ally 的属性，不重置战斗状态
 function BattleScene.refreshAllyStats()
     return getAllyLifecycle().refreshAllyStats()
 end
-
 --- [Debug] 立即通关当前关卡（杀死所有敌人 + 清空队列，让胜利检测自然触发）
 function BattleScene.debugInstantClear()
+    rescueTracker:disableSource()
     return getAllyLifecycle().debugInstantClear()
 end
-
 --- [DEBUG] 跳转到指定关卡（调试面板用，同步本地进度；持久化由 GM_JUMP_STAGE 负责）
 ---@param stageId number 目标关卡 ID
 function BattleScene.debugJumpToStage(stageId)
+    rescueTracker:disableSource()
     return getAllyLifecycle().debugJumpToStage(stageId)
 end
-
 --- 重新加载当前关卡
 ---@param opts? { startSearching?: boolean }  startSearching=true 时以"寻怪中"进度条启动（首次进入用）
 function BattleScene.reloadStage(opts)
+    rescueTracker:cancel()
     return getAllyLifecycle().reloadStage(opts)
 end
-
 --- 重置战斗场景到初始默认状态（清除存档后调用）
 function BattleScene.resetToDefault()
+    victoryMarch = nil
+    rescueTracker:resetSource()
     return getAllyLifecycle().resetToDefault()
 end
-
 --- 暂停战斗（切离战斗页面时调用）
 function BattleScene.pause()
     if not isPaused then
@@ -1467,7 +1458,6 @@ function BattleScene.pause()
         print("[BattleScene] 战斗暂停")
     end
 end
-
 --- 恢复战斗（切回战斗页面时调用）
 function BattleScene.resume()
     if isPaused then
@@ -1475,21 +1465,19 @@ function BattleScene.resume()
         print("[BattleScene] 战斗恢复")
     end
 end
-
 --- 恢复主战斗上下文（副本/竞技场关闭后调用，无论是否 paused）
 --- 同时恢复 BattleCombat 上下文 + TAL/TM 天赋系统
 function BattleScene.restoreContext()
+    rescueTracker:cancel()
     setupBattleCombatContext()
     startBattleTalents()
     print("[BattleScene] restoreContext - 主战斗上下文已恢复 (allies=" .. #allies .. " enemies=" .. #enemies .. ")")
 end
-
 --- 只读故事门禁：不改变战斗计时/暂停，不在结算或轮回换关期间弹新切片。
 function BattleScene.isStoryTransitionBusy()
     return defeatTimer ~= nil or reincarnationTimer ~= nil or pendingReincarnation ~= nil
         or bgTransAnim ~= nil
 end
-
 --- 查询暂停状态
 function BattleScene.isPaused()
     return isPaused
@@ -1501,7 +1489,6 @@ end
 function BattleScene.handlePressBegin(dx, dy)
     MonsterInfoPopup.handlePressBegin(dx, dy)
 end
-
 --- 按下结束（由 ClientInput dispatchDragEnd 调用）
 function BattleScene.handlePressEnd()
     MonsterInfoPopup.handlePressEnd()

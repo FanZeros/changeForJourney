@@ -288,6 +288,8 @@ function M.process(ctx, logicDt)
         return true
     end
     if ctx.defeatTimer == nil then
+        -- 只从真实失败点发起观察（胜利优先，神器/天赋拦截已结束）；旧通知保持原样。
+        if ctx.rescueTracker then ctx.rescueTracker:captureWipe(ctx) end
         ctx.defeatTimer = 0
         ctx.battleActive = false
         ctx.defeatByTimeout = false

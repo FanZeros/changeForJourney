@@ -66,6 +66,7 @@ local LocalActionBridge  = require("runtime.LocalActionBridge")
 local StandaloneBoot     = require("boot.StandaloneBoot")
 local StandaloneRT       = require("boot.StandaloneRT")
 local SamsaraSlicePlayer = require("systems.SamsaraSlicePlayer")
+local SamsaraRescueLedger = require("systems.SamsaraRescueLedger")
 local SamsaraSlicePlayback = require("systems.SamsaraSlicePlayback")
 local SamsaraRecordPanel = require("ui.story.SamsaraRecordPanel")
 local introChainActive_ = false
@@ -385,8 +386,15 @@ function Standalone.Start()
         setSession = function(data) ClientDispatcher.set("session", data) end,
         flush = function() return StandaloneSave.Flush() end,
     }, ClientDispatcher.get("battle"))
+    SamsaraRescueLedger.init({
+        getSession = function() return ClientDispatcher.get("session") end,
+        setSession = function(data) ClientDispatcher.set("session", data) end,
+        flush = function() return StandaloneSave.Flush() end,
+    })
+    BattleScene.setRescueCallbacks(SamsaraRescueLedger.capture, SamsaraRescueLedger.commit)
     SamsaraRecordPanel.init(vg)
     ClientDispatcher.subscribe("session", SamsaraSlicePlayer.onSessionUpdated)
+    ClientDispatcher.subscribe("session", SamsaraRescueLedger.onSessionUpdated)
 
     -- 5. 先出标题：只加载标题必要贴图，其余模块分帧补 init，避免预览首帧卡死
     StartScreen.init(vg, scene)
@@ -485,6 +493,8 @@ end
 function Standalone.Stop()
     introChainActive_, introEpoch_, introNext_ = false, nil, nil
     SamsaraSlicePlayer.cancel()
+    SamsaraRescueLedger.cancel()
+    BattleScene.setRescueCallbacks(nil, nil)
     RewardPopup.clearBattleRewards()
     StandaloneSave.Flush()  -- [单机存档] 退出前立即落盘
     SpinePowerUpEffect.destroy()
@@ -939,6 +949,7 @@ function HandleUpdate(eventType, eventData)
     -- [单机存档] 变更检测 + 防抖落盘
     StandaloneSave.Update(dt)
     SamsaraSlicePlayer.update(dt)
+    SamsaraRescueLedger.update(dt)
 
     -- 开始界面打开时只更新它
     if StartScreen.isOpen() then

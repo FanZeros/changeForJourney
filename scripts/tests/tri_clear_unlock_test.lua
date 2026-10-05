@@ -30,9 +30,12 @@ local function runBattleLedgerCases(nativeRequire)
     end
     local SC = nativeRequire("config.StageConfig")
     local AD = nativeRequire("systems.AttributeDef")
+    local HC = nativeRequire("config.HeroConfig")
     local schema = nativeRequire("shared.battle.BattleSchema")
     local real = {
         ["ui.battle.scene.BattleScene"] = true,
+        -- 每个fixture私有编译真实观察器，保留cancel与来源生命周期，不用fallback吞新API。
+        ["ui.battle.scene.BattleRescueTracker"] = true,
         ["ui.battle.scene.BattleDataRestore"] = true,
         ["ui.battle.tri.BattleTriDriver"] = true,
         ["ui.battle.tri.BattleTriPage"] = true,
@@ -68,6 +71,8 @@ local function runBattleLedgerCases(nativeRequire)
         end
         modules["config.StageConfig"] = SC
         modules["systems.AttributeDef"] = AD
+        -- Tracker只读HC.get核验真实英雄；先注入真实依赖，再由Scene.require私有load Tracker。
+        modules["config.HeroConfig"] = HC
         modules["config.ExpTable"] = stub({ TEAM_COUNT = 3, getUnlockedTeamCount = function() return 1 end })
         modules["shared.StageProvider"] = { Get = function() return SC end }
         modules["shared.ModuleRegistry"] = { applyOnLoad = function(name, data)

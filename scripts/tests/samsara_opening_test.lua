@@ -850,6 +850,10 @@ local function bindStandalone(f)
         return note(step, reason, epoch)
     end
     local modules = h.modules
+    h.RescueLedger = isolated("systems/SamsaraRescueLedger.lua", {
+        ["config.StageConfig"] = isolated("config/StageConfig.lua", {}),
+    })
+    modules["systems.SamsaraRescueLedger"] = h.RescueLedger
     modules["config.GameConfig"], modules["config.SamsaraSliceConfig"] = f.GameConfig, f.Config
     modules["config.ScenarioDialogueConfig"], modules["runtime.ClientDispatcher"] = f.Legacy, f.Dispatcher
     modules["shared.session.SessionSchema"] = f.SessionSchema
@@ -874,6 +878,9 @@ local function bindStandalone(f)
     modules["ui.battle.scene.BattleScene"] = setmetatable({
         getMaxStageId = function() return 101 end, getStageId = function() return 101 end,
         getClearedStages = function() return {} end,
+        setRescueCallbacks = function(capture, commit)
+            h.rescueCapture, h.rescueCommit = capture, commit
+        end,
     }, { __index = function() return function() return false end end })
     modules["runtime.ClientMessageHandler"] = setmetatable({
         consumePendingScenarioDialogue = function() return nil end, consumePendingFollowUpDialogue = function() return nil end,
@@ -909,6 +916,11 @@ local function bindStandalone(f)
     end)
     -- dialogue.init仍执行真实方法，但声源cache隔离；标题/Letter也真实init。
     h.Standalone.Start()
+    eq(h.rescueCapture, h.RescueLedger.capture, "真实宿主注册救援失败端捕获")
+    eq(h.rescueCommit, h.RescueLedger.commit, "真实宿主注册恢复端提交")
+    eq(h.RescueLedger.getReceipt(), nil, "开场不补造救援回执")
+    eq(h.RescueLedger.getExperience(), "unknown", "未救援不推断从未获救")
+    eq(h.RescueLedger.isSavePending(), false, "无回执不增加待存")
     function h.frame(dt)
         h.frames = h.frames + 1
         h.env.time.elapsedTime = h.env.time.elapsedTime + (dt or 0.016)
@@ -1095,7 +1107,15 @@ local function hostCases()
         local f, h = hostFixture()
         h.enter()
         eq(h.Letter.isOpen(), true, "Letter started before Stop")
+        local rescueTicket = assert(h.rescueCapture())
         h.Standalone.Stop()
+        eq(h.rescueCapture, nil, "真实Stop清除救援失败端捕获")
+        eq(h.rescueCommit, nil, "真实Stop清除救援恢复端提交")
+        eq(h.RescueLedger.commit(rescueTicket, { schemaVersion = 1,
+            source = "live_nonterminal_wipe_recovery", scope = "single_scene",
+            failedStageId = 101, recoveredStageId = 101, heroIds = { 1 }, recoveryComplete = true }), false,
+            "真实Stop使旧救援票失效，不落迟到回执")
+        eq(h.RescueLedger.getExperience(), "unknown", "Stop后不补造救援经历")
         h.finishLetter()
         -- 即使宿主的旧回调还运行，失效epoch不可赋资格。
         for _ = 1, 8 do

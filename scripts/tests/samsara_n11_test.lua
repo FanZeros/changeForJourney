@@ -969,6 +969,10 @@ local function bindStandalone(f, realStory)
         end })
     end
     local modules = h.modules
+    h.RescueLedger = isolated("systems/SamsaraRescueLedger.lua", {
+        ["config.StageConfig"] = isolated("config/StageConfig.lua", {}),
+    })
+    modules["systems.SamsaraRescueLedger"] = h.RescueLedger
     modules["config.GameConfig"], modules["config.SamsaraSliceConfig"] = f.GameConfig, f.Config
     modules["config.ScenarioDialogueConfig"], modules["runtime.ClientDispatcher"] = f.Legacy, f.Dispatcher
     modules["shared.session.SessionSchema"], modules["systems.SamsaraSlicePlayer"] = f.SessionSchema, f.Player
@@ -989,6 +993,9 @@ local function bindStandalone(f, realStory)
         getStageId = function() return 101 end, getClearedStages = function() return {} end,
         isStoryTransitionBusy = function() return h.transitionBusy == true end,
         setOnFirstClear = function(fn) h.clearHooks[#h.clearHooks + 1] = fn end,
+        setRescueCallbacks = function(capture, commit)
+            h.rescueCapture, h.rescueCommit = capture, commit
+        end,
     }, { __index = function() return function() return false end end })
     modules["runtime.ClientMessageHandler"] = setmetatable({
         consumePendingScenarioDialogue = function() return table.remove(h.clientQueue, 1) end,
@@ -1050,6 +1057,11 @@ local function bindStandalone(f, realStory)
         HandleEquipmentHoverTickHorizon = function() end, H_AUTO_OPEN_TRI = false, H_AUTO_TAB = false, H_AUTO_OPEN_PANEL = false }
     h.Standalone, h.env = isolated("boot/Standalone.lua", modules, globals, fallback)
     h.Standalone.Start()
+    eq(h.rescueCapture, h.RescueLedger.capture, "真实宿主注册救援失败端捕获")
+    eq(h.rescueCommit, h.RescueLedger.commit, "真实宿主注册恢复端提交")
+    eq(h.RescueLedger.getReceipt(), nil, "噩梦宿主不补造救援回执")
+    eq(h.RescueLedger.getExperience(), "unknown", "未救援不推断从未获救")
+    eq(h.RescueLedger.isSavePending(), false, "无回执不增加待存")
     function h.frame(dt)
         local step = dt or 0.016; h.env.time.elapsedTime = h.env.time.elapsedTime + step
         h.env.HandleUpdate("Update", { TimeStep = { GetFloat = function() return step end } })

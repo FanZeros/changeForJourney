@@ -995,6 +995,10 @@ local function bindStandalone(f)
     eq(f.Dispatcher.hasData(), true, "host core data complete; missing=" .. f.Dispatcher.getMissingRequiredModules())
     local function page() return setmetatable({}, { __index = function() return function() return false end end }) end
     local modules = h.modules
+    h.RescueLedger = isolated("systems/SamsaraRescueLedger.lua", {
+        ["config.StageConfig"] = isolated("config/StageConfig.lua", {}),
+    })
+    modules["systems.SamsaraRescueLedger"] = h.RescueLedger
     modules["config.GameConfig"], modules["config.SamsaraSliceConfig"] = f.GameConfig, f.Config
     modules["config.ScenarioDialogueConfig"], modules["runtime.ClientDispatcher"] = f.Legacy, f.Dispatcher
     modules["shared.session.SessionSchema"], modules["systems.SamsaraSlicePlayer"] = f.SessionSchema, f.Player
@@ -1014,6 +1018,9 @@ local function bindStandalone(f)
     modules["ui.battle.scene.BattleScene"] = setmetatable({ getMaxStageId = function() return 101 end,
         getStageId = function() return 101 end, getClearedStages = function() return {} end,
         setOnFirstClear = function(fn) h.clearHooks[#h.clearHooks + 1] = fn end,
+        setRescueCallbacks = function(capture, commit)
+            h.rescueCapture, h.rescueCommit = capture, commit
+        end,
     }, { __index = function() return function() return false end end })
     modules["runtime.ClientMessageHandler"] = setmetatable({ consumePendingScenarioDialogue = function() return nil end,
         consumePendingFollowUpDialogue = function() return nil end,
@@ -1061,6 +1068,11 @@ local function bindStandalone(f)
         HandleEquipmentHoverTickHorizon = function() end, H_AUTO_OPEN_TRI = false, H_AUTO_TAB = false, H_AUTO_OPEN_PANEL = false }
     h.Standalone, h.env = isolated("boot/Standalone.lua", modules, globals, fallback)
     h.Standalone.Start()
+    eq(h.rescueCapture, h.RescueLedger.capture, "真实宿主注册救援失败端捕获")
+    eq(h.rescueCommit, h.RescueLedger.commit, "真实宿主注册恢复端提交")
+    eq(h.RescueLedger.getReceipt(), nil, "镜像宿主不补造救援回执")
+    eq(h.RescueLedger.getExperience(), "unknown", "未救援不推断从未获救")
+    eq(h.RescueLedger.isSavePending(), false, "无回执不增加待存")
     function h.frame(dt)
         local step = dt or 0.016; h.env.time.elapsedTime = h.env.time.elapsedTime + step
         h.env.HandleUpdate("Update", { TimeStep = { GetFloat = function() return step end } })

@@ -1281,7 +1281,7 @@ function DungeonPage.onActionResult(data)
                 allies     = teamAllies[1],
                 data       = data,
                 sendAction = function(act, params)
-                    require("runtime.GameAction").sendAction(act, params)
+                    return require("runtime.GameAction").sendAction(act, params)
                 end,
                 onClose    = function()
                     print("[DungeonPage] TowerBattleScene closed")
@@ -1318,6 +1318,15 @@ function DungeonPage.onActionResult(data)
         local TowerBattleScene = require("ui.tower.TowerBattleScene")
         if TowerBattleScene.isActive() then
             TowerBattleScene.onWaveWinResult(data)
+        end
+        return
+    end
+
+    -- 通天塔选卡回执：Scene 自行验证全部请求身份，失败也必须转发以释放对应 pending。
+    if action == Protocol.ACTION_TYPES.TOWER_PICK_BUFF then
+        local TowerBattleScene = require("ui.tower.TowerBattleScene")
+        if TowerBattleScene.isActive() then
+            TowerBattleScene.onPickBuffResult(data)
         end
         return
     end

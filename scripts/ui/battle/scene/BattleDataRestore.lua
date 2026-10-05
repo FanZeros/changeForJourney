@@ -19,22 +19,28 @@ function M.bind(deps)
     local function setBattleData(data)
         if not data then return end
 
-        -- 每次回灌都重建本地账本；缺账本不能保留旧最高节点的推断记录。
-        -- 首通只接受严格true，避免字符串"false"等宽松值被周期同步洗成已通。
-        local restoredCleared = {}
-        for k, v in pairs(type(data.clearedStages) == "table" and data.clearedStages or {}) do
-            local numKey = math.tointeger(tonumber(k) or 0)
-            if numKey and numKey > 0 and v == true then
-                restoredCleared[numKey] = true
+        -- cleared 是永久首通事实，不是当前战斗模式。回灌可能只含部分账本，
+        -- 合并本地与输入账本并归一数字/字符串键；只接受严格true。
+        -- 清档需先走 resetToDefault，不能借一次普通恢复清除历史首通。
+        local clearedStages = {}
+        local function mergeCleared(source)
+            if type(source) ~= "table" then return end
+            for k, v in pairs(source) do
+                local numKey = math.tointeger(tonumber(k) or 0)
+                if numKey and numKey > 0 and v == true then
+                    clearedStages[numKey] = true
+                end
             end
         end
-        set("clearedStages", restoredCleared)
+        mergeCleared(get("clearedStages"))
+        mergeCleared(data.clearedStages)
+        set("clearedStages", clearedStages)
 
         -- 旧档后备推断只补真实关链中最高节点之前的关卡，不补最高节点。
         -- 终焉ID非单调（999在2305之后），不能按 sid < maxStageId 数值比较。
         local maxSId = math.tointeger(tonumber(data.maxStageId) or 0)
         if maxSId and maxSId > 0 then
-            -- 与存档对齐（Debug 跳回低进度时允许降低本地最高节点）
+            -- 与存档对齐（Debug 跳回低进度时允许降低 maxStageId_）
             set("maxStageId_", maxSId)
             local stageConfig = getStageConfig()
             local sid = stageConfig.getFirstStageId
@@ -52,10 +58,10 @@ function M.bind(deps)
                 end
                 sid = nextSid
             end
-            -- 找不到目标时不把整条关链误认作已通，保留输入中的严格凭据即可。
+            -- 找不到目标时不把整条关链误认作已通，保留已确认的账本即可。
             if sid == maxSId then
-                local clearedStages = get("clearedStages")
-                for _, passedId in ipairs(prefix) do clearedStages[passedId] = true end
+                local restoredStages = get("clearedStages")
+                for _, passedId in ipairs(prefix) do restoredStages[passedId] = true end
             end
             -- 最高节点和账本到位后立即刷新，不等下一关加载。
             recalcIdleIncome()

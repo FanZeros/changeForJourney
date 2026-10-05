@@ -9,6 +9,9 @@
 - 最新官方Build成功，498Lua入包；生产与测试两份源码和实际dist资源逐字节2/2一致，单文件LSP无Error（有Warning）。36规范单测全过，2721路径0错误0警告。真实主入口150帧完成18/18启动，Lua/资源错误0、无缺图；原始报告FAIL仅148次默认100ms的软件渲染帧尖峰，不宣称性能通过，标题截图不替代分解页真实交互验收。
 - 已分阶段正常push `96b4bd05`（记忆范围）、`7648c4d6`（生产）、`b5d8082e`（专项）到 `feat1005b/clear-decompose-preview`。初次credential helper转义错误未发生推送，改为临时请求头后成功，Git配置与remote无凭据；未推workspace系列、未创建或合并PR。远端基线持续并行开发，不把本轮固定检出宣称最新主线融合，交接仍实际AskUserQuestion选下一步。
 
+- 用户通过实际 `AskUserQuestion` 明确要求“PR，然后下一步”，已创建正式 **PR #84**：https://github.com/FanZeros/changeForJourney/pull/84，head=`feat1005b/clear-decompose-preview`、base=`workspace930`，返回open、draft=false、merged=false，未自动合并。
+- 下一项已授权：角色属性标题去方括号，以及删除战斗倍速、加速卡与收益的功能/逻辑；另建 `feat1005b/remove-speed-card-features` 从已验证分解修复继续开发，不回退分解修复，保持基础战斗/攻击速度、动画时序与正常离线收益。
+
 ## 极长文本布局修复协作要求（2026-10-04）
 
 - 用户在 PR74 已解决冲突并合入后通过实际 AskUserQuestion 选择“修极长文本布局”，本轮从合并提交 `9c2cd5cd` 新建 `feat1004b/long-text-layout`，仅修角色详情职业/经验墨迹越框和属性名称/数值重叠，不改变经济、属性值、卡框比例或战斗规则；上一轮合并授权不延伸到本分支。

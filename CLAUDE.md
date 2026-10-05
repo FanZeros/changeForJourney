@@ -12,6 +12,13 @@
 4. **分支纪律**：以当轮指定基线新建任务分支，完成后只 push 新分支；本轮基线为 `workspace930@c47c2ec3`，任务分支为 `fix/final-temple-shared-hp-20261004`，**绝不推送到任何 `workspace` 系列或原基线分支**，不自动创建或合并 PR。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-05，资源副本收尾 PR86 已创建）
+
+- 用户本轮明确授权“提个PR”，即时鉴权已验证；仅正常推送 `feat1004b/resource-dungeons-stage-select-followup`，两个收尾提交 `c9a3e5f5`、`4d0e4ef1` 已上传并核对远端一致。此前规则阶段 PR85 已外部合并，本次 PR 仅包含未合入的 UI、独立战斗、真实持久化与交接，不重复提交已合规则。
+- 正式 **PR #86**：https://github.com/FanZeros/changeForJourney/pull/86，head=`feat1004b/resource-dungeons-stage-select-followup`、base=`workspace930`；创建时源 `4d0e4ef1a42c46e850ceba7afea5333d2abf4d67`、目标 `b38f419deb57a5c771f0947e6a5691e9b50865aa`，返回 open、draft=false、merged=false，mergeable 尚未计算，不宣称 CI 通过或已合并。
+- PR 说明保留官方 b15、30/30 源码产物一致、事务861／冷恢复37／规则3327／兼容289，以及冷恢复前两次夹具失败、全仓旧静态诊断、性能与 WASM 持久化边界。相对当前远端目标的仓库规范2747路径零错误零警告；本轮不修改 Lua，不重复构建。
+- 初次即时 credential helper 被命令转义导致 push exit128、没有推送；修正仅进程内 helper 后正常 push exit0。凭据不保存到源码、文件、Git 配置或记忆，提醒撤销更换聊天公开令牌。未推任何 workspace 系列、未自动合并；本地 .project／上传／validation 不提交。完成后如实简报，需要用户选择下一项时实际使用 AskUserQuestion。
+
 ## 上次做了什么（2026-10-05，三类资源副本选关续作，源码完成）
 
 - 固定基准 `workspace930@32fca2c65351d4626da99b283229e6deb5d46348`，功能分支 `feat1004b/resource-dungeons-stage-select-followup`。只正常push该分支，不推任何workspace系列、不自动合并。已推41b73f5a（范围）、3b5db0cc（属性标题）、376a7aaf（三资源规则）；最终41文件源码/meta提交为 `c9a3e5f5`，本次push实际exit128：无法读取GitHub Username、terminal prompts disabled，未上传最终提交、未创建PR，需安全恢复鉴权。

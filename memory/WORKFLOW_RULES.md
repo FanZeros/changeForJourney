@@ -8,6 +8,8 @@
 - 2026-10-05收尾：源码41文件/meta已提交 `c9a3e5f5`，官方b15成功511Lua，修改源码与产物30/30一致；十二套战斗/界面联合回归全过，另事务861/跨进程冷恢复37/规则3327/兼容289全过。冷恢复夹具修正稀疏键及正式二次JSON口径，严格值比较，无epsilon、不改生产掉落；原生File验证不等于WASM刷新持久化/设备触控/性能。主入口150帧Lua/资源0，原始FAIL仅2次100ms环境尖峰，36规范单测与2747路径规范均通过。
 - 最终push实际exit128，原因GitHub HTTPS缺Username且禁止终端提示；未向workspace系列推送、未创建PR，不从旧日志或同伴借凭据绕过。源码及交接先本地提交保存，鉴权恢复后只正常push本功能分支，再按原授权创建PR；不自动合并。当前用户要求直接继续、不额外提问，收尾按最新明确指令如实说明阻塞，不扩大授权。
 
+- 2026-10-05本轮新增授权“提个PR”后，即时鉴权验证并正常push两个收尾提交至同一任务分支，正式PR86已创建：https://github.com/FanZeros/changeForJourney/pull/86（base=workspace930，open、draft=false、merged=false）。规则PR85此前已外部合并，本次只提交剩余UI/独立战斗/事务与交接；不推workspace系列、不自动合并，不宣称CI通过。令牌仅即时进程使用，不落盘，提醒撤销更换；交付后需要下一项决策时实际AskUserQuestion。
+
 ## 分解后清空收益预览协作要求（2026-10-05）
 
 - 用户指定从 `workspace930` 拉取到 `/workspace` 根，本轮创建 `feat1005b/clear-decompose-preview`；只正常提交并显式 push 本功能分支，不推任何 `workspace` 系列、不强推、不自动合并 PR。

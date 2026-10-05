@@ -366,7 +366,7 @@ function Input.bind(ctx)
     local tutorialStartX, tutorialStartY = 0, 0
 
     function HandleMouseButtonDownHorizon(eventType, eventData)
-        if seamGesture.hasPress() then seamGesture.reset() end
+        if not seamGesture.prepareDown(eventData["Button"]:GetInt()) then return end -- 原来源primary租约独占
         tutorialPress, tutorialBlockedPress = false, false
         if OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() then cancelUnderlyingPress() end
         equipmentPressPanel = nil

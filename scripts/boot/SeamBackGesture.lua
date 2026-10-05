@@ -47,8 +47,17 @@ function Gesture.bind(ctx)
     end
     function api.reset() press = nil end
     function api.hasPress() return press ~= nil end
+    function api.ownsCurrentSource() return press ~= nil and press.source == ctx.source() end
     function api.cancelIfBlocked()
         if not eligible() then api.cancel() end
+    end
+    --- 返回是否允许宿主继续处理Down；只有同来源新primary可重置失Up残留。
+    function api.prepareDown(button)
+        if not press then return true end
+        api.cancelIfBlocked()
+        if button ~= MOUSEB_LEFT or not api.ownsCurrentSource() then return false end
+        api.reset()
+        return true
     end
     function api.down(x, y, blocked)
         local source = ctx.source()

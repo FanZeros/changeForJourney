@@ -366,6 +366,107 @@ function Start()
             released(label)
         end
 
+        -- 捕获已成立后才加入其它按钮/来源；不能用“foreign先Down”替代此顺序。
+        for _, owner in ipairs({ "mouse", "touch" }) do
+            for _, foreign in ipairs({ "right", "middle", owner == "mouse" and "touch" or "mouse" }) do
+                for _, originalFirst in ipairs({ false, true }) do
+                    for _, dpi in ipairs({ 1, 2, 3 }) do
+                        for _, frame in ipairs({ { s = 1, x = 0, y = 0 }, { s = 0.75, x = 37, y = 19 } }) do
+                            reset("church", true, 1920, 1080, dpi, frame.s, frame.x, frame.y)
+                            state.pages.character.open = true
+                            render(); events = {}
+                            local a, b = arrow("church", 2), arrow("character", 2)
+                            local label = "captured " .. owner .. " then " .. foreign
+                                .. " originalFirst=" .. tostring(originalFirst) .. " DPR=" .. dpi .. "/" .. frame.s
+                            if owner == "touch" then touch(11, a.x, a.y, HandleTouchBeginHorizon)
+                            else down(a.x, a.y) end
+                            owns(label)
+                            events = {}
+                            local foreignButton = { Button = { GetInt = function()
+                                if foreign == "right" then return MOUSEB_RIGHT end
+                                if foreign == "middle" then return MOUSEB_MIDDLE end
+                                return MOUSEB_LEFT
+                            end } }
+                            if foreign == "touch" then
+                                touch(12, b.x, b.y, HandleTouchBeginHorizon)
+                                touch(13, b.x, b.y, HandleTouchBeginHorizon)
+                                touch(13, b.x + 40, b.y, HandleTouchMoveHorizon)
+                                touch(13, b.x, b.y, HandleTouchEndHorizon)
+                            else
+                                position(b.x, b.y)
+                                HandleMouseButtonDownHorizon("MouseButtonDown", foreignButton)
+                            end
+                            owns(label .. " foreign Down keeps lease")
+                            check(count("tri.down") == 0 and count("character.down") == 0,
+                                label .. " foreign Down cannot begin business drag")
+                            if foreign == "touch" then
+                                touch(12, b.x + 40, b.y, HandleTouchMoveHorizon)
+                                touch(12, b.x, b.y, HandleTouchMoveHorizon)
+                            elseif owner == "touch" then
+                                move(b.x + 40, b.y); move(b.x, b.y)
+                            end
+                            owns(label .. " foreign Move keeps lease")
+                            local function originalUp()
+                                if owner == "touch" then touch(11, a.x, a.y, HandleTouchEndHorizon, 0.2)
+                                else up(a.x, a.y) end
+                            end
+                            local function foreignUp()
+                                if foreign == "touch" then touch(12, b.x, b.y, HandleTouchEndHorizon)
+                                else position(b.x, b.y); HandleMouseButtonUpHorizon("MouseButtonUp", foreignButton) end
+                            end
+                            if originalFirst then originalUp(); foreignUp()
+                            else foreignUp(); owns(label .. " foreign Up keeps lease"); originalUp() end
+                            check(count("church.close") == 1 and count("character.close") == 0 and closeCount() == 1,
+                                label .. " only original Up closes original owner")
+                            released(label); noBusinessTap(label)
+                            recover("character", label .. " next pointer")
+                        end
+                    end
+                end
+            end
+        end
+        print("[seam_back_horizon_test] captured foreign/secondary Down matrix PASS")
+
+        -- 同来源新primary Down仍可清理遗留失Up，并从新箭头建立捕获。
+        reset("church")
+        state.pages.character.open = true
+        render(); events = {}
+        local stale, fresh = arrow("church", 2), arrow("character", 2)
+        down(stale.x, stale.y); owns("missing mouse Up")
+        events = {}
+        down(fresh.x, fresh.y); up(fresh.x, fresh.y)
+        check(count("church.close") == 0 and count("character.close") == 1 and closeCount() == 1,
+            "same-source primary Down replaces stale lease with new owner")
+        released("same-source stale recovery"); noBusinessTap("same-source stale recovery")
+
+        -- foreign Down不能夺租约，但其间出现的覆盖层必须取消原点击并保留原Up释放。
+        for _, owner in ipairs({ "mouse", "touch" }) do
+            for _, blocker in ipairs({ "record", "slice", "notice" }) do
+                reset("church", true, 1920, 1080, 3, 0.75, 37, 19)
+                local a = arrow("church", 1)
+                local label = "captured " .. owner .. " foreign Down during " .. blocker
+                if owner == "touch" then touch(11, a.x, a.y, HandleTouchBeginHorizon)
+                else down(a.x, a.y) end
+                state.gates[blocker] = true
+                if owner == "touch" then
+                    position(a.x, a.y)
+                    HandleMouseButtonDownHorizon("MouseButtonDown", button)
+                else touch(12, a.x, a.y, HandleTouchBeginHorizon) end
+                owns(label)
+                state.gates[blocker] = false
+                if owner == "touch" then
+                    touch(11, a.x, a.y, HandleTouchEndHorizon)
+                    position(a.x, a.y); HandleMouseButtonUpHorizon("MouseButtonUp", button)
+                else
+                    touch(12, a.x, a.y, HandleTouchEndHorizon)
+                    up(a.x, a.y)
+                end
+                cancelled(label); released(label)
+                recover("church", label)
+            end
+        end
+        print("[seam_back_horizon_test] foreign Down blocker/stale recovery PASS")
+
         for _, id in ipairs(ids) do
             reset(id)
             local a = arrow(id, 1)

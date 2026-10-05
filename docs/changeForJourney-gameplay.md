@@ -1,5 +1,36 @@
 # 《宿命旅途 · 终焉之门》玩法文档（按实际实现）
 
+## 2026-10-05 game03 与 Maker 仓库对比
+
+本轮仅在 `/workspace/game03` 做源码对比，未修改玩法、资源或本地运行身份，未推送远端、未创建或合并 PR。
+
+- 本地固定基线为 `workspace930@372f4506a6f55342f28964b73ee60312e3c96c59`（已包含资源副本 PR86）；独立任务分支为 `feat1005/game03-maker-compare`，原分支保持不变。
+- 指定 Maker 仓库默认分支为 `main@be24a1eac718acb164dd63866c519af90a93a35b`。其可见历史为独立初始化提交及两次上传同步，当前本地为浅克隆，已取得历史中未找到共同祖先；不宜直接使用无关历史整包合并。
+- 大包拉取超过工具等待窗口后，从已下载对象校验恢复提交与目录树，并定向取得差异源码、测试及配置。最新快照共2681路径，源码与既有正式资源内容均可读；仅上传ZIP及玩家存档两个内容对象未下载，因此不宣称完整仓库clone/fetch成功。
+- HEAD到远端快照共148路径差异：新增15、修改52、删除81（包含meta及工具目录）；其中64份Lua脚本为新增5、修改46、删除13。删除列表代表远端缺失，不代表本轮应删除。
+
+### 值得选择性迁移的内容
+
+1. **永久首通恢复**：`BattleDataRestore` 把有效正整数键、值为true的当前账本与输入账本取并集，部分/空快照不再抹掉历史事实。保留本地已有排序签名同步和显式清档边界，并配套新 `battle_cleared_monotonic_test`。
+2. **通天塔单次选卡事务**：`TowerService/TowerHandler/TowerBuffPick/TowerBattleScene` 增加当局、波次、选择及请求身份，Service单一写入，匹配成功回执后应用并换波，失败保持待选、重复回执幂等；`TowerBuffRuntime` 避免20/28攻击间隔换波重复乘算。应完整迁移塔链路，并在本地新版 `DungeonPage` 增量接入回执转发，不能覆盖整页。
+3. **三队首通与状态隔离**：远端Driver按开场账本快照选择正式首通敌表，增加附加怪、词缀/狂暴及合法复活与死亡收尾计时边界；RCH/TAL和冰雕增加战线作用域，Lab恢复进入前上下文。新 `BattleRuntimeContext` 需要词缀、StageBerserk、Driver、Scene、塔及副本宿主完整配套，不能只复制单文件。
+4. **追加天赋待持久化队列**：可以融合跨战线共享dirty/persistAcc，但必须保留本地保存时读取最新owned.extraTalent的保护，防止旧整表覆盖后续成长/消耗。
+
+### 必须保留或排除的内容
+
+- 保留本地金币、装备、黑钻副本配置、独立战斗/结算/冷恢复、选关入口、五语文案及既有专项。远端缺少 `StageSelectResources`、`DungeonBattleScope`、`DungeonCombatRuntime`、`DungeonEnemyLifecycle`、`DungeonRewards`、`I18nDungeons` 与资源副本测试，不可照搬删除。
+- 本地副本已通过独立脚本实例及函数桥接隔离词缀/RCH/狂暴。远端 `TalentManager` 删除本地副本使用的单位表挂载API，直接覆盖会破坏现有 `DungeonBattleScope`；迁移时保留或兼容这组接口。
+- 保留本地 `Standalone` 副本页暂停/返回重开与离页清理守卫；远端恢复默认战斗持续更新的写法会撤回这些新保护。
+- 保留当前“角色属性/装备加成”纯文字标题。远端 `CharacterEquipStats` 重新加上方括号与上下箭头，其对应测试也改回旧标题，不属于本轮建议修复。
+- 不带入 `standalone_save.json`、Python `__pycache__`、`assets/archive/changeForJourney-web-upload-9ae0d3f0.zip`及其meta，不覆盖本地 `.project` 绑定身份，不删除本地发布工具和协作目录。
+- 远端第二次同步中的角色卡、标题背景、剧情背景及大部分其他修复已经与当前game03逐对象一致；当前正式图片/音频不存在新的内容差异，不应重复迁移。
+
+### 验证状态与建议
+
+本轮未实施生产或测试修改，未运行玩法专项或构建；文档改动 `git diff --check` 通过。远端交接中历史测试和build结果不计作本轮验证。子项目官方build完整隔离行为仍需在实施阶段核实，不通过将game03同步到workspace根的方式绕过。
+
+**建议：保留当前game03，使用独立功能分支逐块迁移经过确认的修复，先永久账本与通天塔，再三队首通/状态隔离；不整包覆盖、不做无关历史全树合并。** 合并范围由实际AskUserQuestion确认，完成每一阶段后继续选项式交接。
+
 ## 2026-10-04 角色详情左右轮播卡比例核查
 
 核查基线`workspace930@cee85080`，独立分支`feat1004b/detail-side-card-ratio-audit`；本轮只核查，不修改生产布局。

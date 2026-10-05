@@ -45,6 +45,7 @@ local state = {
     corruptStone = GameConfig.Currency.START_CORRUPT_STONE,
     sacredStone = GameConfig.Currency.START_SACRED_STONE,
     speedCardExpireAt = 0,
+    privilegeCardOwned = 0,
 }
 
 --- PlayerStore 引用（延迟获取，避免循环依赖）
@@ -585,6 +586,11 @@ function GameState.reset()
     state.helmetScroll    = GameConfig.Currency.START_HELMET_SCROLL
     state.shoesScroll     = GameConfig.Currency.START_SHOES_SCROLL
     state.recruitTicket = GameConfig.Currency.START_RECRUIT_TICKET
+    state.stellarRecruitTicket = 0
+    state.goldenKey = 0
+    state.arcaneDust = 0
+    state.speedCardExpireAt = 0
+    state.privilegeCardOwned = 0
     state.sweepTicket   = GameConfig.Currency.START_SWEEP_TICKET
     state.tavernCoin    = GameConfig.Currency.START_TAVERN_COIN
     state.privilegePoint = GameConfig.Currency.START_PRIVILEGE_POINT
@@ -599,6 +605,10 @@ function GameState.reset()
         armorScroll = state.armorScroll, accessoryScroll = state.accessoryScroll,
         helmetScroll = state.helmetScroll, shoesScroll = state.shoesScroll,
         recruitTicket = state.recruitTicket,
+        stellarRecruitTicket = state.stellarRecruitTicket,
+        goldenKey = state.goldenKey, arcaneDust = state.arcaneDust,
+        speedCardExpireAt = state.speedCardExpireAt,
+        privilegeCardOwned = state.privilegeCardOwned,
         sweepTicket = state.sweepTicket,
         tavernCoin = state.tavernCoin,
         privilegePoint = state.privilegePoint,

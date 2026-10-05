@@ -167,6 +167,24 @@ function TowerScene.close()
     end
 end
 
+--- 清档专用硬清理，不结算旧波次，也不执行旧会话退出回调。
+function TowerScene.resetToDefault()
+    state.active = false
+    state.phase = "idle"
+    state.onClose, state.sendAction = nil, nil
+    state.allies, state.teamAllies = nil, nil
+    state.buffIds, state.floorHeroDamage = {}, {}
+    state.pendingBuffChoices, state.serverFloorResult = nil, nil
+    state.errorMessage, state.errorLogged = nil, false
+    state.floor, state.wave, state.monsterLevel = 1, 1, 1
+    state.totalElapsedSecs, state.currentWaveStartTime = 0, 0
+    TowerBuffPick.close()
+    TowerBuffPick.setSendAction(nil)
+    TowerTriBattle.forceClose()
+    TowerBuffRuntime.cleanup()
+    print("[TowerBattleScene] resetToDefault: discarded battle/buffs/callbacks")
+end
+
 --- 内部：用指定怪物列表打开一波战斗
 function TowerScene._openWaveBattle(monsters)
     state.currentWaveStartTime = time.elapsedTime or 0

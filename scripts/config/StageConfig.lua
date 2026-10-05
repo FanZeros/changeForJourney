@@ -596,7 +596,7 @@ end
 --- 是否应跳过终焉神殿（已进入下一难度或神殿已通关）
 ---@param currentStageId number 当前难度末关 ID
 ---@param maxStageId number
----@param clearedStages table<number, boolean>
+---@param clearedStages table|nil
 ---@return number|nil skipToId
 ---@return boolean shouldSkip
 function SC.shouldSkipTerminal(currentStageId, maxStageId, clearedStages)
@@ -604,13 +604,29 @@ function SC.shouldSkipTerminal(currentStageId, maxStageId, clearedStages)
     local skipToId = SC.getReincarnationTarget(diff)
     if not skipToId then return nil, false end
     local terminalId = SC.getTerminalTempleId(diff)
-    local terminalCleared = false
-    if terminalId then
-        terminalCleared = not not (clearedStages[terminalId] or clearedStages[tostring(terminalId)])
-    end
-    -- 不能用 getProgressUpperBound 代替 maxStageId：9205 通关后 upper=9301，但尚未挑战终焉时不应跳过
-    ---@diagnostic disable-next-line: return-type-mismatch
-    return skipToId, (maxStageId >= skipToId) or terminalCleared
+    local ledger = type(clearedStages) == "table" and clearedStages or {}
+    local terminalCleared = terminalId ~= nil
+        and (ledger[terminalId] == true or ledger[tostring(terminalId)] == true)
+    -- 尚未挑战的末关不能仅凭解锁上界跳过终焉。
+    local maxId = tonumber(maxStageId) or 0
+    local terminalPrevious = SC.getTerminalPrevStageId(maxId)
+    local rank = terminalPrevious and terminalPrevious + 0.5 or maxId
+    return skipToId, rank >= skipToId or terminalCleared
+end
+
+--- 预约、行军背景、保存与真实推进共用同一目标；首次终焉只等确认。
+---@param currentStageId number
+---@param maxStageId number|nil
+---@param clearedStages table|nil
+---@return number destinationId
+---@return number|nil waitingTerminalId
+function SC.resolveAutoAdvance(currentStageId, maxStageId, clearedStages)
+    local nextId = SC.getNextStageId(currentStageId)
+    if not nextId then return currentStageId, nil end
+    if not SC.isTerminalTemple(nextId) then return nextId, nil end
+    local destination, shouldSkip = SC.shouldSkipTerminal(currentStageId, maxStageId or 0, clearedStages)
+    if shouldSkip and destination then return destination, nil end
+    return currentStageId, nextId
 end
 
 ---@param currentStageId number

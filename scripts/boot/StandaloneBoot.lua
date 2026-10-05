@@ -38,6 +38,12 @@ local M = {}
 local pendingFcSeeds = {}
 local pendingFcScrolls = {}
 
+--- 正式清档丢弃旧运行态待结算掉落；普通失败/离关仍走 showKeptDrops。
+function M.resetPendingBattleRewards()
+    pendingFcSeeds = {}
+    pendingFcScrolls = {}
+end
+
 local SCROLL_DROP_TO_REWARD = {
     weaponScroll    = "weapon_scroll",
     offhandScroll   = "offhand_scroll",
@@ -175,6 +181,14 @@ function M.run(rt)
         end
     end)
 
+    -- 养成刷新由 CharacterPanel 冻结差异检测唯一负责；此回调只保留归属诊断。
+    -- 不再次失效编队/刷新默认 Scene，避免同一次成长重复重开战斗。
+    CharacterPanel.setOnHeroProgressChanged(function(heroId, teamIdx)
+        local _, actualTeamIdx = CharacterPanel.getHeroDeployPosition(heroId)
+        if not actualTeamIdx or actualTeamIdx ~= teamIdx then return end
+        print("[Standalone] 英雄养成刷新 hero=" .. tostring(heroId) .. " team=" .. actualTeamIdx)
+    end)
+
     -- 5.2 击杀奖励回调：经验平分给每个上场远征队员，金币/远征等级经验照常
     -- [三栏并行] 提取为局部函数，BattleScene（栏1）与 BattleTriPage（栏2/3）共用
     -- 三行战斗在入场时把本关经验和金币加总后一次发放。
@@ -200,11 +214,9 @@ function M.run(rt)
             local totalExp = baseExp * expMult
             local perHeroExp = math.floor(totalExp / #heroIds + 0.5)
             if perHeroExp > 0 then
+                -- addHeroExp 内按有效等级/共鸣差异刷新；旁队及开页不碰默认 Scene。
                 for _, hid in ipairs(heroIds) do
                     CharacterPanel.addHeroExp(hid, perHeroExp)
-                end
-                if BattleScene.refreshAllyStats then
-                    BattleScene.refreshAllyStats()
                 end
             end
         end
@@ -409,6 +421,10 @@ function M.run(rt)
         showKeptDrops("战斗掉落")
     end)
 
+    -- 三行死亡携带失败关卡；默认 Scene 原有失败地点背景与掉落出口保持不变。
+    BattleTriPage.setOnAllDead(function(_, failedStageId)
+        require("systems.StoryPlayer").onWipe(failedStageId)
+    end)
     BattleScene.setOnAllDead(function()
         local failedStageId = BattleScene.getCurrentStageId()
         showKeptDrops("战斗掉落")

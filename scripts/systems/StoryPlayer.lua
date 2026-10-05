@@ -13,6 +13,10 @@ local StoryPlayer = {}
 local queue_ = {}
 ---@type table<number, string>
 local queuedBackgrounds_ = {}
+local wipeReserved_ = false
+local wipePending_ = false
+---@type number|string|nil
+local pendingWipeStage_ = nil
 
 local PLACE = {
     town = { enter = 23 },
@@ -163,11 +167,49 @@ end
 
 ---@param stageId number|string|nil 失败瞬间的战场，延迟播放后仍使用原地点。
 function StoryPlayer.onWipe(stageId)
-    print("[StoryPlayer] wipe hero=" .. tostring(heroId()))
-    local id = resolve(WIPE)
-    if id and StoryPlayer.enqueue(id) then
-        queuedBackgrounds_[id] = require("config.StoryBackgroundConfig").forStage(stageId)
+    -- 三个英雄分支属于同一次首次全灭；take 后到领取前仍保留运行态预留。
+    for _, scenarioId in pairs(WIPE) do
+        if isClaimed(scenarioId) then
+            wipePending_ = false
+            pendingWipeStage_ = nil
+            return false
+        end
     end
+    if wipeReserved_ then return false end
+    if session().introCompleted ~= true then
+        if not wipePending_ then pendingWipeStage_ = stageId end
+        wipePending_ = true
+        return false
+    end
+    local originalStage = wipePending_ and pendingWipeStage_ or stageId
+    local id = resolve(WIPE)
+    if not id or not StoryPlayer.enqueue(id) then return false end
+    wipeReserved_ = true
+    wipePending_ = false
+    pendingWipeStage_ = nil
+    queuedBackgrounds_[id] = require("config.StoryBackgroundConfig").forStage(originalStage)
+    print("[StoryPlayer] first wipe reserved scenario=" .. tostring(id))
+    return true
+end
+
+function StoryPlayer.resetWipe()
+    wipeReserved_ = false
+    wipePending_ = false
+    pendingWipeStage_ = nil
+    for i = #queue_, 1, -1 do
+        local id = queue_[i]
+        if id == 38 or id == 39 or id == 40 then
+            table.remove(queue_, i)
+            queuedBackgrounds_[id] = nil
+        end
+    end
+end
+
+--- 清档只清运行态，不改持久领取及情景82发奖账本。
+function StoryPlayer.resetAll()
+    queue_ = {}
+    queuedBackgrounds_ = {}
+    StoryPlayer.resetWipe()
 end
 
 --- 当前情景播完后要接的下一句（如城镇 23 → 24）
@@ -187,9 +229,9 @@ function StoryPlayer.backfillCleared()
     local cleared = battle.clearedStages
     if type(cleared) ~= "table" then return 0 end
     local ids = {}
-    for k in pairs(cleared) do
+    for k, value in pairs(cleared) do
         local n = tonumber(k)
-        if n then ids[#ids + 1] = math.floor(n) end
+        if value == true and n then ids[#ids + 1] = math.floor(n) end
     end
     table.sort(ids)
     local added = 0
@@ -210,6 +252,7 @@ end
 --- 取出下一段可播放情景。没有则返回 nil。
 ---@return table|nil
 function StoryPlayer.take()
+    if wipePending_ then StoryPlayer.onWipe(pendingWipeStage_) end
     while #queue_ > 0 do
         local id = table.remove(queue_, 1)
         local background = id and queuedBackgrounds_[id]

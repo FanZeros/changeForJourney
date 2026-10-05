@@ -10,6 +10,12 @@ local TM  = require("systems.ThreatManager")
 local SEM = require("systems.StatusEffectManager")
 local TAL = require("systems.TalentManager")
 local MapAffixSystem    = require("systems.MapAffixSystem")
+local BossAffixSystem = require("systems.BossAffixSystem")
+local EnemySpawn = require("ui.battle.stage.BattleEnemySpawn")
+local CombatRuntime = require("ui.dungeon.DungeonCombatRuntime")
+local DungeonRewards = require("ui.dungeon.DungeonRewards")
+local DungeonScope = require("ui.dungeon.DungeonBattleScope")
+local DungeonConfig = require("config.DungeonConfig")
 
 local BattleLayout      = require("core.BattleLayout")
 local BattleCombat      = require("ui.battle.combat.BattleCombat")
@@ -30,7 +36,6 @@ local PlayerStore = require("core.PlayerStore")
 local DungeonBattle     = require("ui.dungeon.DungeonBattle")
 local BattleResultPanel = require("ui.battle.popup.BattleResultPanel")
 local BF                = require("systems.ButtonFeedback")
-local BattleScene       = require("ui.battle.scene.BattleScene")
 local DamageStatsPanel  = require("ui.battle.popup.DamageStatsPanel")
 local SettingsPanel     = require("ui.hud.popup.SettingsPanel")
 
@@ -118,7 +123,7 @@ local BATTLE_LOSE   = "lose"
 local RESULT_DELAY = 1.5
 
 -- 最大同屏敌人数
-local MAX_FIELD = 5
+local MAX_FIELD = BattleLayout.MAX_PER_SIDE
 
 -- 通天塔补位等待常量（死亡滑出后空位等待，已删除墓碑图）
 local TOMBSTONE_REVIVE_TIME = 2.0
@@ -153,7 +158,7 @@ local CDL = {
 -- ======================== 图片句柄 ========================
 
 local imgMapGoldMine  = -1   -- 黄金矿洞地图
-local imgMapAncientRuin = -1 -- 上古遗迹地图
+local imgMapEquipment = -1 -- 装备副本地图
 local imgMapBabelTower = -1  -- 通天塔地图
 local imgShadow       = -1
 local imgRetreatBtn   = -1
@@ -209,7 +214,7 @@ local function resetOpenFailureState()
     state.confirmClosing = false
     pcall(DungeonBattle.exit)
     pcall(RCH.reset)
-    pcall(BattleScene.restoreContext)
+    pcall(BossAffixSystem.clear)
 end
 
 -- ======================== 工具函数 ========================
@@ -318,6 +323,7 @@ local function drawNineSlice(vg, imgH, dx, dy, dw, dh, iTop, iRight, iBottom, iL
     local dB = math.min(iBottom, dh * 0.5)
     if sMW <= 0 or sMH <= 0 then
         local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, imgH, 1.0)
+        ---@cast paint NVGpaint
         nvgBeginPath(vg); nvgRect(vg, dx, dy, dw, dh); nvgFillPaint(vg, paint); nvgFill(vg)
         return
     end
@@ -349,6 +355,7 @@ local function drawNineSlice(vg, imgH, dx, dy, dw, dh, iTop, iRight, iBottom, iL
             local scX, scY = pw / sw, ph / sh
             local paint = nvgImagePattern(vg, px - sx * scX, py - sy * scY,
                 srcW * scX, srcH * scY, 0, imgH, 1.0)
+            ---@cast paint NVGpaint
             nvgBeginPath(vg); nvgRect(vg, px, py, pw, ph); nvgFillPaint(vg, paint); nvgFill(vg)
         end
     end
@@ -433,9 +440,9 @@ local function getMapImage()
     local cfg = DungeonBattle.getConfig()
     if cfg.dungeonId == "training_dummy" then
         return imgMapGoldMine
-    elseif cfg.dungeonId == "ancient_ruin" then
-        return imgMapAncientRuin
-    elseif cfg.dungeonId == "babel_tower" then
+    elseif cfg.dungeonId == "equipment_vault" then
+        return imgMapEquipment
+    elseif cfg.dungeonId == "black_diamond" or cfg.dungeonId == "babel_tower" then
         return imgMapBabelTower
     end
     return imgMapGoldMine  -- 默认黄金矿洞
@@ -446,12 +453,11 @@ local function getDungeonTitle()
     local cfg = DungeonBattle.getConfig()
     if cfg.dungeonId == "training_dummy" then
         return "测试木桩 · DPS测试"
-    elseif cfg.dungeonId == "ancient_ruin" then
-        return string.format("上古遗迹 第%d层", cfg.floor)
     elseif cfg.dungeonId == "babel_tower" then
         return string.format("通天塔 第%d层", cfg.floor)
     end
-    return string.format("黄金矿洞 第%d层", cfg.floor)
+    local def = DungeonConfig.DEFINITIONS[cfg.dungeonId]
+    return string.format("%s 第%d层 · 队伍%d", def and def.name or "副本", cfg.floor, cfg.teamIdx or 1)
 end
 
 --- 职业名称映射
@@ -499,7 +505,7 @@ function DungeonScene.init(vg)
     dungeonBattleInited_ = true
     dungeonBattleVg_ = vg
     imgMapGoldMine   = nvgCreateImage(vg, "image/关卡地图/MAP_FB1.png", 0)
-    imgMapAncientRuin = nvgCreateImage(vg, "image/关卡地图/MAP_FB2.png", 0)
+    imgMapEquipment = nvgCreateImage(vg, "image/关卡地图/MAP_FB2.png", 0)
     imgMapBabelTower = nvgCreateImage(vg, "image/关卡地图/MAP_FB3.png", 0)
     -- 阴影板绘制为 1080x556（源图 1080x610 压扁），使用 SHADOW 副本，调整原图不影响其他用法
     imgShadow        = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY_SHADOW.png", 0)
@@ -537,6 +543,8 @@ function DungeonScene.open(opts)
         state.battleState = BATTLE_ACTIVE
         state.resultTimer = 0
         state.resultPanelShown = false
+        state.rewardOverflow = nil
+        state.reinforceCd = 0
         bgAnimTimer = 0
         regenAccum = 0
         state.confirmOpen = false
@@ -552,17 +560,9 @@ function DungeonScene.open(opts)
 
     -- 生成副本敌人
     local allEnemies = DungeonBattle.generateEnemies()
-    state.enemies = {}
-    state.enemyQueue = {}
-    local fieldCount = 0
-    for _, u in ipairs(allEnemies) do
-        if fieldCount < MAX_FIELD then
-            state.enemies[#state.enemies + 1] = u
-            fieldCount = fieldCount + 1
-        else
-            state.enemyQueue[#state.enemyQueue + 1] = u
-        end
-    end
+    state.enemies, state.enemyQueue = EnemySpawn.assignEnemiesToField(
+        allEnemies, DungeonBattle.getConfig().maxFieldEnemies or MAX_FIELD)
+    if #allEnemies == 0 then error("副本敌人列表为空") end
 
     -- 重置战斗子系统
     BattleCombat.reset()
@@ -571,6 +571,7 @@ function DungeonScene.open(opts)
     TM.reset()
     SEM.reset()
     TAL.reset()
+    BattleStats.reset()
     RCH.reset()
     ART.reset(state.allies)
 
@@ -588,15 +589,26 @@ function DungeonScene.open(opts)
         end
         TAL.initUnit(u)
     end
-    for _, u in ipairs(state.enemies) do
+    for _, u in ipairs(allEnemies) do
         u.atkProgress = 0
         TAL.initUnit(u)
+    end
+    local combatCfg = DungeonBattle.getConfig()
+    if combatCfg.resourceCombat then
+        local entry = combatCfg.stageEntry
+        MapAffixSystem.onStageLoad(entry.chapter, state.allies, entry.mode)
+        MapAffixSystem.applyStaticAffixes(allEnemies)
+        BossAffixSystem.onStageLoad(entry.chapter, StageConfig.getDifficulty(entry.id))
+        BossAffixSystem.applyToBosses(allEnemies)
+        CombatRuntime.getBerserk().enter(state.enemies, state.allies)
+    else
+        BossAffixSystem.clear()
     end
 
     -- 初始化条件词条运行时（免疫/增伤，由天赋等系统消费）
     local allUnitsForRCH = {}
     for _, u in ipairs(state.allies) do allUnitsForRCH[#allUnitsForRCH + 1] = u end
-    for _, u in ipairs(state.enemies) do allUnitsForRCH[#allUnitsForRCH + 1] = u end
+    for _, u in ipairs(allEnemies) do allUnitsForRCH[#allUnitsForRCH + 1] = u end
     RCH.initBattle(allUnitsForRCH)
     ART.initBattle(state.allies)
 
@@ -671,15 +683,21 @@ function DungeonScene.open(opts)
 end
 
 function DungeonScene.close()
+    if DungeonBattle.isTrainingDummy() then DamageStatsPanel.close() end
     state.open = false
     MapAffixSystem.reset(state.allies)
     DungeonBattle.exit()
     RCH.reset()
     ART.reset(state.allies)
-    -- 恢复主战斗的 BattleCombat 上下文和 TAL/TM 天赋状态
-    -- 修复: 副本 open 时覆盖了 ctx.getAllies/getEnemies 指向副本单位，
-    -- 导致主战斗恢复后治疗者遍历的是副本的满血单位列表，治疗量计算为 0
-    BattleScene.restoreContext()
+    -- 作用域包装器还原宿主挂载，无需重置主线天赋/计时。
+    BossAffixSystem.clear()
+    state.enemies, state.enemyQueue, state.allies = {}, {}, {}
+    state.onClose = nil
+    state.confirmOpen, state.confirmClosing = false, false
+    state.rewardOverflow = nil
+    BattleCombat.reset()
+    ProjectileSystem.reset()
+    BattleEffects.reset()
     print("[DungeonBattleScene] close")
 end
 
@@ -687,17 +705,10 @@ end
 --- 由 TowerBattleScene 在波次结束时调用，用于关闭当前波次战斗
 function DungeonScene.forceClose()
     if not state.open then return end
-    state.open = false
-    MapAffixSystem.reset(state.allies)
+    DungeonScene.close()
     state.battleState = BATTLE_ACTIVE
     state.resultTimer = 0
     state.resultPanelShown = false
-    state.confirmOpen = false
-    state.confirmClosing = false
-    DungeonBattle.exit()
-    RCH.reset()
-    ART.reset(state.allies)
-    BattleScene.restoreContext()
     print("[DungeonBattleScene] forceClose (tower wave transition)")
 end
 
@@ -707,13 +718,8 @@ end
 
 --- 处理服务器返回的 DUNGEON_WIN 结果
 function DungeonScene.onActionResult(data)
-    if data and data.dungeonId then
-        DungeonBattle.setServerResult(data)
-        print("[DungeonBattleScene] 收到副本结算数据: dungeonId=" .. tostring(data.dungeonId)
-            .. " gold=" .. tostring(data.gold)
-            .. " dust=" .. tostring(data.dust)
-            .. " firstClear=" .. tostring(data.firstClear))
-    end
+    if not state.open then return false end
+    return DungeonBattle.setServerResult(data)
 end
 
 function DungeonScene.draw(vg)
@@ -796,7 +802,22 @@ function DungeonScene.draw(vg)
         end
     end
 
-    -- 6. 职业加成提示（带描边）
+    -- 敌人计数适用于三资源，不仅是塔。
+    if #state.enemyQueue > 0 and DungeonBattle.getConfig().resourceCombat then
+        drawTextStroke(vg, 540, 525, "后备敌人 " .. tostring(#state.enemyQueue), 36,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+    end
+    if DungeonBattle.getConfig().resourceCombat then
+        local names = {}
+        for _, affix in ipairs(MapAffixSystem.getActiveAffixes() or {}) do names[#names + 1] = affix.name end
+        for _, affix in ipairs(BossAffixSystem.getActiveAffixes() or {}) do names[#names + 1] = "首领·" .. affix.name end
+        if #names > 0 then
+            drawTextStroke(vg, 540, 1350, table.concat(names, " · "), 26,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 210, 160, 3)
+        end
+    end
+
+    -- 6. 职业加成提示（资源模式强制无旧职业增益）
     local classId, bonusVal = DungeonBattle.getClassBonus()
     if classId and classId ~= "" then
         local className = CLASS_NAMES[classId] or classId
@@ -849,6 +870,10 @@ function DungeonScene.draw(vg)
 
     -- 13. 战斗结算面板
     BattleResultPanel.draw(vg)
+    if state.resultPanelShown and state.rewardOverflow then
+        drawTextStroke(vg, 540, 1655, state.rewardOverflow, 32,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 220, 140, 3)
+    end
 
     if DungeonBattle.isTrainingDummy() then
         DamageStatsPanel.draw(vg)
@@ -875,8 +900,10 @@ function DungeonScene.update(dt)
 
     -- 投射物与连击队列跟随战斗 logicDt；纯视觉用真实 dt（2 倍速时不叠加算力）
     local logicDtForFx = (state.battleState == BATTLE_ACTIVE) and getBattleLogicDt(dt) or dt
-    ProjectileSystem.update(logicDtForFx)
-    BattleCombat.updateComboQueue(logicDtForFx)
+    if state.battleState == BATTLE_ACTIVE then
+        ProjectileSystem.update(logicDtForFx)
+        BattleCombat.updateComboQueue(logicDtForFx)
+    end
 
     BattleEffects.update(dt)
     BattleCombat.updateCardAnims(dt)
@@ -899,21 +926,12 @@ function DungeonScene.update(dt)
                 local heroStats = BattleStats.buildHeroDamageStats(state.allies, HeroConfig.HEROES)
 
                 -- 构建奖励列表
-                local rewards = {}
-                if isWin and srvResult then
-                    if srvResult.gold and srvResult.gold > 0 then
-                        rewards[#rewards + 1] = { type = "gold", amount = srvResult.gold }
-                    end
-                    if srvResult.dust and srvResult.dust > 0 then
-                        rewards[#rewards + 1] = { type = "arcane_dust", amount = srvResult.dust }
-                    end
-                    -- firstClear 仅是标记，不作为独立奖励项显示
-                    -- （首通奖励已计入对应货币数量中）
-                end
+                local rewards = (isWin and srvResult) and DungeonRewards.build(srvResult) or {}
+                state.rewardOverflow = isWin and DungeonRewards.overflowText(srvResult) or nil
 
                 -- 展示结算面板
                 BattleResultPanel.show({
-                    isWin       = isWin,
+                    isWin       = isWin and (not srvResult or srvResult.success ~= false),
                     elapsedSecs = elapsedSecs,
                     heroStats   = heroStats,
                     rewards     = rewards,
@@ -940,6 +958,12 @@ function DungeonScene.update(dt)
         if _bcs and _bcs.ctx then
             _bcs.ctx.globalDmgMult = _toMult
         end
+    end
+
+    -- 地图/Boss词缀与主线同一公共链，队列的静态加成已在开场应用。
+    if DungeonBattle.getConfig().resourceCombat then
+        MapAffixSystem.tick(logicDt, state.allies, state.enemies)
+        BossAffixSystem.tick(logicDt, state.enemies)
     end
 
     ART.update(logicDt, state.allies)
@@ -1063,8 +1087,16 @@ function DungeonScene.update(dt)
                 return
             end
         end
+    elseif DungeonBattle.getConfig().resourceCombat then
+        local complete = require("ui.dungeon.DungeonEnemyLifecycle").tick(state, logicDt)
+        if complete then
+            state.battleState = BATTLE_WIN
+            state.resultTimer = 0
+            DungeonBattle.onVictory()
+            return
+        end
     else
-        -- ════ 普通副本模式：全灭后批量补充 ══════
+        -- ════ 木桩/兼容副本模式 ══════
         if DungeonBattle.isTrainingDummy() then
             -- 木桩被打空时立刻回满，不进入胜利结算，保证 DPS 测试连续进行。
             for _, unit in ipairs(state.enemies) do
@@ -1343,7 +1375,8 @@ function DungeonScene.handleInput(dx, dy)
 
     -- 战斗统计面板
     if DungeonBattle.isTrainingDummy() and DamageStatsPanel.handleInput(dx, dy) then return true end
-    if DungeonBattle.isTrainingDummy() and DamageStatsPanel.handleButtonInput(dx, dy) then return true end
+    if DungeonBattle.isTrainingDummy() and DamageStatsPanel.handleButtonInput(
+        dx, dy, 100 + (DungeonBattle.getConfig().teamIdx or 1)) then return true end
 
     -- 倍速按钮
     if handleSpeedButtonInput(dx, dy) then return true end
@@ -1388,6 +1421,19 @@ end
 function DungeonScene.handleScroll(wheel)
     if not state.open then return false end
     return false
+end
+
+-- 所有访问公共战斗状态的入口都在独立挂载内运行；即使异常也还原宿主。
+for _, name in ipairs({ "open", "close", "forceClose", "update", "draw", "handleInput" }) do
+    local implementation = DungeonScene[name]
+    DungeonScene[name] = function(...)
+        local teamIdx = DungeonBattle.getConfig().teamIdx
+        if name == "open" then
+            local opts = select(1, ...)
+            teamIdx = opts and opts.data and opts.data.teamIdx or 1
+        end
+        return DungeonScope.run(teamIdx, implementation, ...)
+    end
 end
 
 return DungeonScene

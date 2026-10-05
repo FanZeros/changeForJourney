@@ -116,6 +116,26 @@ function M.run(rt)
     local localSendAction = rt.localSendAction
     local localBridgeReady_ = false
 
+    -- 选关只负责导航，副本保留自己的详情、队伍快照及奖励回执链。
+    require("ui.battle.stage.StageSelectDialog").setOnDungeonSelect(function(dungeonId, teamIdx)
+        BottomNav.refreshUnlockState()
+        if BottomNav.isTabLocked(5) then
+            require("core.UiToast").show(I18n.format("通关 %d-%d 解锁", 3, 5))
+            return false
+        end
+        local DungeonPage = require("ui.dungeon.DungeonPage")
+        local opened
+        if dungeonId == "babel_tower" then
+            opened = DungeonPage.openTower()
+        else
+            opened = DungeonPage.openResource(dungeonId, teamIdx)
+        end
+        if not opened then return false end
+        BattleTriPage.close()
+        BottomNav.setSelectedIndex(5)
+        return true
+    end)
+
     -- 5.1 阵容变更回调：角色面板出战变动 → 同步战斗画面 → 重载关卡 → 更新 TopBar 战力
     -- [三队并行] 回调携带 teamIdx：队1 同步战斗画面；队2/3 编队先本地生效（并行战斗 Phase 3 接入）
     CharacterPanel.setOnTeamChanged(function(teamIdx, otherTeamIdx)

@@ -1025,8 +1025,9 @@ function HandleUpdate(eventType, eventData)
         elseif BattleTriPage.isOpen() then
             -- [三栏并行] 三栏页内部会以 default 状态驱动 BattleScene.update（栏1 引擎）
             BattleTriPage.update(dt)
-        else
-            -- 战斗场景始终更新（挂机持续进行）
+        elseif BottomNav.getSelectedIndex() ~= 5 and BottomNav.getSelectedIndex() ~= 3 then
+            -- 副本详情/结算退出仍暂停原三队；不能启动默认战场清掉其天赋状态。
+            -- 返回tab3的首帧由下方守卫重开三队，不抢先驱动默认场景。
             BattleScene.update(dt)
         end
     end
@@ -1071,6 +1072,10 @@ function HandleUpdate(eventType, eventData)
         CharacterPanel.update(dt)
     elseif tabIndex == 5 then
         DungeonPage.update(dt)
+    end
+    if tabIndex ~= 5 and not DungeonBattleScene.isOpen() and not TowerBattleScene.isActive() then
+        -- 从副本页导航离开时释放旧详情/请求，迟到挑战不能再抢回战斗界面。
+        DungeonPage.close()
     end
     if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
         BackpackPanel.update(dt)

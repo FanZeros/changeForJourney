@@ -198,6 +198,18 @@ function Start()
             end,
         }
         mocks["rules.dungeon.DungeonService"] = {
+            -- 此旧测试的提交出口仍是内存替身；实际File由独立事务/冷恢复测试验证。
+            CommitRewardTransaction = function(_, operation)
+                local success, failure, receipt = operation()
+                if success then state.flushed = state.flushed + 1 end
+                return success, failure, receipt
+            end,
+            MarkRewardDirty = function() state.dirty = state.dirty + 1 end,
+            GrantIdleCurrency = function(_, rewardType, amount)
+                state.currencyGrants = state.currencyGrants + 1
+                state.lastCurrency = { type = rewardType, amount = amount }
+                return true
+            end,
             GrantEquipment = function(uid, id, floor, count)
                 eq(uid, 0, "装备调用UID")
                 eq(id, "equipment_vault", "装备调用ID")

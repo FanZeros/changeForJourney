@@ -7,7 +7,6 @@ local PDM               = require("rules.character.PlayerDataManager")
 local DungeonConfig     = require("config.DungeonConfig")
 local DungeonIdleConfig = require("config.DungeonIdleConfig")
 local DungeonService    = require("rules.dungeon.DungeonService")
-local CurrencyService   = require("rules.currency.CurrencyService")
 
 local DungeonIdleService = {}
 
@@ -173,7 +172,12 @@ function DungeonIdleService.Preview(uid, dungeonId)
     local dungeon = PDM.GetModule(uid, "dungeon")
     if not dungeon then return nil end
 
-    local sub = getSub(dungeon, dungeonId)
+    -- 只读预览：旧档数值在局部副本归一化，失败领奖不能先补写游标/子表。
+    local source = type(dungeon[dungeonId]) == "table" and dungeon[dungeonId] or {}
+    local sub = {}
+    for key, value in pairs(source) do sub[key] = value end
+    sub.idleAccumSec = math.max(0, math.floor(tonumber(sub.idleAccumSec) or 0))
+    sub.idleConsumedSec = math.max(0, math.floor(tonumber(sub.idleConsumedSec) or 0))
     local idleFloor = DungeonIdleConfig.getIdleFloorFromSub(sub, dungeonId)
     local accumSec = sub.idleAccumSec or 0
     local amount, minutes = DungeonIdleConfig.calcReward(dungeonId, idleFloor, accumSec, sub.idleConsumedSec)
@@ -221,53 +225,46 @@ function DungeonIdleService.Claim(uid, dungeonId)
     local dungeon = PDM.GetModule(uid, "dungeon")
     if not dungeon then return false, "数据未加载", nil end
 
-    local sub = getSub(dungeon, dungeonId)
     local claimMinutes = preview.minutes or 0
     local claimSec = claimMinutes * 60
 
-    local equipmentResult = {} ---@type table
-    if preview.rewardType == "equip" then
-        -- 生成、容量检查与交付必须全部成功；失败不消耗任何挂机积累。
-        local okGrant, grantErr, result = DungeonService.GrantEquipment(
-            uid, dungeonId, preview.idleFloor, preview.amount)
-        if not okGrant then
-            return false, grantErr or "装备奖励发放失败", nil
+    local ok, commitErr, receipt = DungeonService.CommitRewardTransaction(uid, function()
+        local sub = getSub(dungeon, dungeonId)
+        local equipmentResult = {} ---@type table
+        if preview.rewardType == "equip" then
+            -- 生成、容量检查、实际交付与扣时在一个保存事务内。
+            local okGrant, grantErr, result = DungeonService.GrantEquipment(
+                uid, dungeonId, preview.idleFloor, preview.amount)
+            if not okGrant then return false, grantErr or "装备奖励发放失败" end
+            equipmentResult = result or {}
+        elseif not DungeonService.GrantIdleCurrency(uid, preview.rewardType, preview.amount) then
+            return false, "奖励发放失败"
         end
-        equipmentResult = result or {}
-    else
-        local okGrant = CurrencyService.GrantReward(uid, {
-            type   = preview.rewardType,
-            amount = preview.amount,
-        })
-        if not okGrant then
-            return false, "奖励发放失败", nil
+
+        sub.idleAccumSec = math.max(0, (sub.idleAccumSec or 0) - claimSec)
+        if preview.rewardType == "equip" then
+            -- 保留不足一件的原始余时与尾段位置；本轮清空后允许下一轮重新开始。
+            sub.idleConsumedSec = sub.idleAccumSec > 0 and ((sub.idleConsumedSec or 0) + claimSec) or 0
         end
-    end
-
-    sub.idleAccumSec = math.max(0, (sub.idleAccumSec or 0) - claimSec)
-    if preview.rewardType == "equip" then
-        -- 保留不足一件的原始余时与尾段位置；本轮清空后允许下一轮重新开始。
-        sub.idleConsumedSec = sub.idleAccumSec > 0 and ((sub.idleConsumedSec or 0) + claimSec) or 0
-    end
-    PDM.MarkDirty(uid, "dungeon")
-    PDM.FlushImmediate(uid)
-
+        DungeonService.MarkRewardDirty(uid, "dungeon")
+        return true, nil, {
+            dungeonId  = dungeonId,
+            amount     = preview.amount,
+            rewardType = preview.rewardType,
+            idleFloor  = preview.idleFloor,
+            minutes    = claimMinutes,
+            accumSec   = sub.idleAccumSec,
+            equips     = equipmentResult.equips,
+            inventoryCount = equipmentResult.inventoryCount,
+            lootboxCount = equipmentResult.lootboxCount,
+            idleConsumedSec = sub.idleConsumedSec,
+        }
+    end)
+    if not ok then return false, commitErr end
     print(string.format(
         "[DungeonIdle] claim uid=%s %s floor=%d amount=%d sec=%d remain=%d",
-        tostring(uid), dungeonId, preview.idleFloor, preview.amount, claimSec, sub.idleAccumSec))
-
-    return true, nil, {
-        dungeonId  = dungeonId,
-        amount     = preview.amount,
-        rewardType = preview.rewardType,
-        idleFloor  = preview.idleFloor,
-        minutes    = claimMinutes,
-        accumSec   = sub.idleAccumSec,
-        equips     = equipmentResult.equips,
-        inventoryCount = equipmentResult.inventoryCount,
-        lootboxCount = equipmentResult.lootboxCount,
-        idleConsumedSec = sub.idleConsumedSec,
-    }
+        tostring(uid), dungeonId, preview.idleFloor, preview.amount, claimSec, receipt.accumSec))
+    return true, nil, receipt
 end
 
 --- 断线/切服清理当前区服的会话标记

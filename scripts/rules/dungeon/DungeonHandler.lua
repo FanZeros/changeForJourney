@@ -19,14 +19,35 @@ handlers[Protocol.ACTION_TYPES.DUNGEON_SWEEP] = function(uid, params)
     return response(DungeonService.Sweep(uid, id))
 end
 
+local function battleResponse(params, ok, err, result)
+    local reply = response(ok, err, result)
+    -- 失败也带回请求身份，UI才能释放本次pending而不是等超时。
+    if not ok and params then
+        reply.dungeonId = params.dungeonId or "gold_mine"
+        reply.floor = tonumber(params.floor)
+        reply.teamIdx = tonumber(params.teamIdx) or 1
+        reply.challengeId = params.challengeId
+    end
+    return reply
+end
+
+local function callBattle(params, operation, ...)
+    local called, ok, err, result = pcall(operation, ...)
+    if not called then
+        print("[DungeonHandler] 战斗动作异常: " .. tostring(ok))
+        return battleResponse(params, false, "本地处理失败")
+    end
+    return battleResponse(params, ok, err, result)
+end
+
 handlers[Protocol.ACTION_TYPES.DUNGEON_CHALLENGE] = function(uid, params)
-    if not params or params.floor == nil then return { success = false, reason = "缺少floor参数" } end
-    return response(DungeonService.Challenge(uid, params.dungeonId or "gold_mine", params.floor, params.teamIdx))
+    if not params or params.floor == nil then return battleResponse(params, false, "缺少floor参数") end
+    return callBattle(params, DungeonService.Challenge, uid, params.dungeonId or "gold_mine", params.floor, params.teamIdx)
 end
 
 handlers[Protocol.ACTION_TYPES.DUNGEON_WIN] = function(uid, params)
-    if not params or params.floor == nil then return { success = false, reason = "缺少floor参数" } end
-    return response(DungeonService.Win(uid, params.dungeonId or "gold_mine", params.floor, params.teamIdx, params.challengeId))
+    if not params or params.floor == nil then return battleResponse(params, false, "缺少floor参数") end
+    return callBattle(params, DungeonService.Win, uid, params.dungeonId or "gold_mine", params.floor, params.teamIdx, params.challengeId)
 end
 
 handlers[Protocol.ACTION_TYPES.DUNGEON_IDLE_CLAIM] = function(uid, params)

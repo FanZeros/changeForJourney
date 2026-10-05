@@ -75,7 +75,9 @@ local function runBattleLedgerCases(nativeRequire)
         modules["shared.schemas.CharacterSchema"] = { applyOnLoad = noop }
         modules["core.GameState"] = gameState
         modules["core.I18n"] = { lookup = function(text) return text end }
-        modules["core.BattleLayout"] = stub({ MAX_PER_SIDE = 4, FIELD_CY = 180, STRIP_W = 948, STRIP_CY = 180 })
+        -- 布局常量与坐标使用独立编译的真实事实源，缺字段不能回退成 noop 函数。
+        modules["core.BattleLayout"] = assert(load(source("core.BattleLayout"),
+            "@core.BattleLayout", "t", env))()
         modules["config.MonsterConfig"] = { createMonster = function(id) return unit(id, false) end }
         modules["ui.character.panel.CharacterPanel"] = stub({
             getTeamSignature = function() return "ledger-team-1" end,

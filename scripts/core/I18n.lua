@@ -94,6 +94,12 @@ local function dict()
     else
         print("[I18n] 远征词典加载失败: " .. tostring(expedition))
     end
+    local ok7, dungeons = pcall(require, "core.I18nDungeons")
+    if ok7 and type(dungeons) == "table" then
+        mergeLang(dict_, dungeons)
+    else
+        print("[I18n] 副本词典加载失败: " .. tostring(dungeons))
+    end
     return dict_
 end
 

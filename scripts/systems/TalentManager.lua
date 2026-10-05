@@ -62,6 +62,11 @@ function TAL.mountedState() return TAL_BCS end
 
 local state = {}
 
+-- 单位状态与双方引用分开挂载：主线三队仍共享默认表，副本使用独立表。
+function TAL.newUnitStates() return {} end
+function TAL.mountUnitStates(states) state = states end
+function TAL.mountedUnitStates() return state end
+
 -- 模块级引用（onBattleStart 时缓存）
 
 -- ======================== 辅助 ========================

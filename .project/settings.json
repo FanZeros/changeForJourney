@@ -18,7 +18,9 @@
       "../assets",
       "../scripts"
     ],
-    "asset_ignores": []
+    "asset_ignores": [
+      "../assets/backup/**"
+    ]
   },
   "@runtime": {
     "multiplayer": {

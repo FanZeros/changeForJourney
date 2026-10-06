@@ -1,5 +1,6 @@
 -- 装备显示词典聚合：只存简体原文→繁/英/日/韩，不触碰模板、存档和资源名。
 -- 子词典按原配置分区；I18n 只需 merge 本模块返回的四个语言包。
+local AD = require("systems.AttributeDef")
 ---@type table<string, table<string, string>>
 local D = { zh_TW = {}, en = {}, ja = {}, ko = {} }
 
@@ -33,7 +34,7 @@ add("秘识", "秘識", "INT", "知力", "지력")
 add("体质", "體質", "VIT", "体力", "체질")
 add("命数", "命數", "LUK", "運", "운")
 add("幸运值", "幸運值", "Drop Luck", "ドロップ運", "드롭 행운")
-add(require("systems.AttributeDef").DROP_LUCK_DESC,
+add(AD.DROP_LUCK_DESC,
     "本隊出戰成員的幸運值相加，開戰時確定，本場陣亡不扣除。每1點使主線擊殺裝備掉落機率相對提高1%；品質Q1至Q6的原有權重分別乘以1、1+幸運值/500、1+2×幸運值/500、1+3×幸運值/500、1+4×幸運值/500、1+幸運值/100。本隊有效幸運值最多200，掉落機率最多100%，不突破關卡品質上限或開啟原權重為0的品質。不影響離線、掃蕩、副本固定獎勵、卷軸或詞條品級。",
     "Adds the Drop Luck of this team's deployed heroes at battle start; deaths do not reduce it. Each point raises the main-story kill equipment drop chance by 1% relative to its base chance. Original Q1-Q6 rarity weights are multiplied by 1, 1+Luck/500, 1+2*Luck/500, 1+3*Luck/500, 1+4*Luck/500, and 1+Luck/100. Effective team Luck caps at 200 and drop chance at 100%. Stage rarity caps and zero-weight rarities remain unchanged. Offline income, sweeps, fixed dungeon rewards, scrolls, and affix grades are unaffected.",
     "戦闘開始時に、この隊の出撃メンバーのドロップ運を合算します。戦闘中の死亡では減りません。1点につきメインストーリー討伐の装備ドロップ率が元の確率に対して1%上昇。Q1～Q6の元の抽選重みをそれぞれ1、1+運/500、1+2×運/500、1+3×運/500、1+4×運/500、1+運/100倍にします。有効な隊の運は最大200、ドロップ率は最大100%。ステージのレア度上限と重み0のレア度は変わりません。オフライン、掃討、ダンジョン固定報酬、巻物、効果等級には影響しません。",
@@ -66,8 +67,21 @@ add("物理伤害加成", "物理傷害加成", "Phys DMG bonus", "物理ダメ�
 add("魔法伤害加成", "魔法傷害加成", "Magic DMG bonus", "魔法ダメージ補正", "마법 피해 보너스")
 add("连击概率", "連擊機率", "Combo chance", "連撃率", "연격 확률")
 add("连击增伤", "連擊增傷", "Combo DMG bonus", "連撃ダメージ補正", "연격 피해 보너스")
+-- 旧名称保留兼容；新名称与描述按基础护甲相性判定，百分比加成整体结算。
 add("最大伤害加成", "最大傷害加成", "Max DMG bonus", "最大ダメージ補正", "최대 피해 보너스")
 add("最小伤害加成", "最小傷害加成", "Min DMG bonus", "最小ダメージ補正", "최소 피해 보너스")
+add("优势伤害", "優勢傷害", "Advantage DMG", "有利ダメージ", "상성 우위 피해")
+add("劣势伤害", "劣勢傷害", "Disadvantage DMG", "不利ダメージ", "상성 열위 피해")
+add(AD.ADVANTAGE_DAMAGE_DESC,
+    "攻擊類型對目標護甲的基礎倍率大於1時，額外提高本次傷害，倍率為1+優勢傷害/100。中立、劣勢、治療及無視剋制的混沌傷害不生效。",
+    "When the base multiplier for the attack type against the target's armor type is greater than 1, multiply the full damage of this instance by 1+Advantage DMG/100. Does not apply to neutral or unfavorable matchups, healing, or chaos damage that ignores armor matchups.",
+    "攻撃タイプと対象の装甲タイプで決まる基本倍率が1より大きい時、今回のダメージ全体に1+有利ダメージ/100を掛けます。中立・不利な相性、回復、相性を無視する混沌ダメージには適用されません。",
+    "공격 유형과 대상의 방어구 유형에 따른 기본 배율이 1보다 클 때, 이번 피해 전체에 1+상성 우위 피해/100을 곱합니다. 중립·불리한 상성, 치유 및 상성을 무시하는 혼돈 피해에는 적용되지 않습니다.")
+add(AD.DISADVANTAGE_DAMAGE_DESC,
+    "攻擊類型對目標護甲的基礎倍率大於0且小於1時，額外提高本次傷害，倍率為1+劣勢傷害/100。中立、優勢、治療及無視剋制的混沌傷害不生效。",
+    "When the base multiplier for the attack type against the target's armor type is greater than 0 and less than 1, multiply the full damage of this instance by 1+Disadvantage DMG/100. Does not apply to neutral or favorable matchups, healing, or chaos damage that ignores armor matchups.",
+    "攻撃タイプと対象の装甲タイプで決まる基本倍率が0より大きく1より小さい時、今回のダメージ全体に1+不利ダメージ/100を掛けます。中立・有利な相性、回復、相性を無視する混沌ダメージには適用されません。",
+    "공격 유형과 대상의 방어구 유형에 따른 기본 배율이 0보다 크고 1보다 작을 때, 이번 피해 전체에 1+상성 열위 피해/100을 곱합니다. 중립·유리한 상성, 치유 및 상성을 무시하는 혼돈 피해에는 적용되지 않습니다.")
 add("命中值", "命中值", "Accuracy", "命中値", "명중 수치")
 add("治疗量", "治療量", "Healing", "回復量", "회복량")
 add("治疗暴击加成", "治療暴擊加成", "Heal crit bonus", "回復会心補正", "회복 치명타 보너스")

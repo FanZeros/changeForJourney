@@ -368,15 +368,22 @@ end
 
 -- 各层沿主线普通关卡顺序前进，跳过终焉神殿，不把副本写进主线关卡链。
 local sourceStages = {} ---@type table<string, number[]>
+local sourceEnemyCounts = {} ---@type table<string, number[]>
 local function getSourceStage(id, floor)
     local def = DungeonConfig.DEFINITIONS[id]
     if not def then return nil end
     if not sourceStages[id] then
-        local ids = {}
+        local ids, counts = {}, {}
+        local highestCount = 0
         ---@type number|nil
         local stageId = def.unlockStage
         while #ids < def.maxFloor and stageId do
-            if not StageConfig.isTerminalTemple(stageId) then ids[#ids + 1] = stageId end
+            if not StageConfig.isTerminalTemple(stageId) then
+                local source = StageConfig.getStage(stageId)
+                highestCount = math.max(highestCount, source.firstCount or source.idleCount or 4)
+                ids[#ids + 1] = stageId
+                counts[#ids] = highestCount
+            end
             local nextId = StageConfig.getNextStageId(stageId)
             if not nextId and StageConfig.isTerminalTemple(stageId) then
                 nextId = StageConfig.getReincarnationTarget(StageConfig.getDifficulty(stageId))
@@ -384,6 +391,7 @@ local function getSourceStage(id, floor)
             stageId = nextId
         end
         sourceStages[id] = ids
+        sourceEnemyCounts[id] = counts
     end
     return StageConfig.getStage(sourceStages[id][floor])
 end
@@ -417,8 +425,10 @@ function DungeonConfig.getCombatEntry(id, floor)
         entry.firstClearBonusMonster, entry.firstClearBonusMonsters = nil, nil
     end
     entry.name = def.name
-    entry.firstCount = (source.firstCount or source.idleCount or 4) + DungeonConfig.EXTRA_ENEMIES
+    -- 资源连续关不应在借用主线下一章首关时从28/32名敌人骤降至12名。
+    entry.firstCount = sourceEnemyCounts[id][floor] + DungeonConfig.EXTRA_ENEMIES
     entry.idleCount = entry.firstCount
+    entry.firstClearBonusMonster, entry.firstClearBonusMonsters = nil, nil
     entry.maxFieldEnemies = 4
     entry.mode = "resource_dungeon"
     entry.dropRate, entry.scrollDropRate = 0, 0
@@ -493,8 +503,8 @@ function DungeonConfig.getStage(stageId)
     entry.sourceStageId = entry.id
     entry.id = stageId
     entry.resourceDungeonId, entry.resourceFloor = id, floor
-    entry.displayChapter = math.ceil(floor / 5)
-    entry.stage = (floor - 1) % 5 + 1
+    entry.displayChapter = 1
+    entry.stage = floor
     entry.name = DungeonConfig.DEFINITIONS[id].name .. " " .. entry.displayChapter .. "-" .. entry.stage
     entry.firstClearBonusMonster, entry.firstClearBonusMonsters = nil, nil
     entry.mapBg = DungeonConfig.DEFINITIONS[id].cardImage

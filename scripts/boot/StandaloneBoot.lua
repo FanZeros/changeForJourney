@@ -123,19 +123,10 @@ function M.run(rt)
     local localSendAction = rt.localSendAction
     local localBridgeReady_ = false
 
-    -- 资源关由选关页直接切换三队关卡；这里只保留通天塔独立详情入口。
-    require("ui.battle.stage.StageSelectDialog").setOnDungeonSelect(function(dungeonId, _teamIdx)
+    -- 塔层与资源关共用选关列表；点击层直接请求挑战，成功回执再打开战斗。
+    require("ui.battle.stage.StageSelectDialog").setOnDungeonSelect(function(dungeonId, _teamIdx, floor)
         if dungeonId ~= "babel_tower" then return false end
-        BottomNav.refreshUnlockState()
-        if BottomNav.isTabLocked(5) then
-            require("core.UiToast").show(I18n.format("通关 %d-%d 解锁", 3, 5))
-            return false
-        end
-        local DungeonPage = require("ui.dungeon.DungeonPage")
-        if not DungeonPage.openTower() then return false end
-        BattleTriPage.close()
-        BottomNav.setSelectedIndex(5)
-        return true
+        return require("ui.dungeon.DungeonPage").requestTowerChallenge(floor)
     end)
 
     -- 5.1 阵容变更回调：角色面板出战变动 → 同步战斗画面 → 重载关卡 → 更新 TopBar 战力

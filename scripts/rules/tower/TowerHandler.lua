@@ -10,9 +10,10 @@ local handlers = {}
 
 -- ── 挑战（进入通天塔） ──
 handlers[Protocol.ACTION_TYPES.TOWER_CHALLENGE] = function(uid, params)
-    local ok, err, result = TowerService.Challenge(uid)
+    local floor = params and params.floor
+    local ok, err, result = TowerService.Challenge(uid, floor)
     if not ok then
-        return { success = false, reason = err }
+        return { success = false, reason = err, floor = floor }
     end
     return {
         success      = true,
@@ -63,7 +64,7 @@ handlers[Protocol.ACTION_TYPES.TOWER_FLOOR_WIN] = function(uid, params)
 
     local ok, err, result = TowerService.FloorWin(uid, floor)
     if not ok then
-        return { success = false, reason = err }
+        return { success = false, reason = err, floor = floor }
     end
     return {
         success       = true,

@@ -805,10 +805,11 @@ function HandleNanoVGRenderHorizon()
             LootBox.drawPage(vg())
             TaskPage.draw(vg())
         end
-        -- [三行并行] 头像/金币/宝石 显示到左侧面板（城镇主视图时顶层绘制，优先级高于场景）
+        -- [三行并行] 头像/金币/宝石显示在左侧面板；仓库打开时由仓库面板覆盖左上HUD。
         -- oy=-30：头像框/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
-        if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TalentPage.isOpen() or TavernPage.isOpen()
-            or MarketPage.isOpen() or LootBoxPage.isOpen() or TaskPage.isOpen()) then
+        if not ((BackpackPanel.isOpen() and BackpackPanel.isLeftMode())
+            or BlacksmithPage.isOpen() or ChurchPage.isOpen() or TalentPage.isOpen()
+            or TavernPage.isOpen() or MarketPage.isOpen() or LootBoxPage.isOpen() or TaskPage.isOpen()) then
             TopBar.draw(vg(), -30)
         end
         -- 三行战斗的玩家信息在后面全窗居中重画，这里不画，避免左栏裁切出半个面板。

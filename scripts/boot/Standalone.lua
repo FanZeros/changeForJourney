@@ -825,11 +825,13 @@ end
 ---@param eventType string
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
+    local dt = eventData["TimeStep"]:GetFloat()
+    -- 等待回执使用真实帧时间；标题/暂停不阻断超时，也不另订阅 Update 覆盖主循环。
+    PlayerStore.Update(dt)
     require("ui.dev.CEPanel").pollHotkey()
     -- 分帧启动：每帧 1 个模块 init，标题可先画出来
     pumpBootQueue_()
     if not bootReady_ then
-        local dt = eventData["TimeStep"]:GetFloat()
         if StartScreen.isOpen() then StartScreen.update(dt) end
         if DarkTitleScreen.isOpen() then DarkTitleScreen.update(dt) end
         return
@@ -840,7 +842,6 @@ function HandleUpdate(eventType, eventData)
     --   2) 下载完成后解锁标题点击；超时后仍解锁，避免永久卡死
     --   3) 主线程全程不做任何同步加载
     if preload_.active then
-        local dt = eventData["TimeStep"]:GetFloat()
         if StartScreen.isOpen() then
             StartScreen.update(dt)
         end
@@ -875,8 +876,6 @@ function HandleUpdate(eventType, eventData)
             return
         end
     end
-
-    local dt = eventData["TimeStep"]:GetFloat()
 
     -- 鼠标静止时也检查装备悬停计时，移到其他格子则由命中检测立即收起旧说明。
     HandleEquipmentHoverTickHorizon()
@@ -1099,11 +1098,12 @@ function HandleUpdate(eventType, eventData)
     end
     if tabIndex == 1 then
         CharacterPanel.update(dt)
-    elseif tabIndex == 5 then
+    elseif tabIndex == 5 or (tabIndex == 3 and DungeonPage.isTowerChallengePending()) then
         DungeonPage.update(dt)
     end
-    if tabIndex ~= 5 and not DungeonBattleScene.isOpen() and not TowerBattleScene.isActive() then
-        -- 从副本页导航离开时释放旧详情/请求，迟到挑战不能再抢回战斗界面。
+    if tabIndex ~= 5 and not DungeonBattleScene.isOpen() and not TowerBattleScene.isActive()
+        and not (tabIndex == 3 and DungeonPage.isTowerChallengePending()) then
+        -- 选关发出的塔请求在tab3继续等回执/超时；导航离开仍取消迟到挑战。
         DungeonPage.close()
     end
     if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then

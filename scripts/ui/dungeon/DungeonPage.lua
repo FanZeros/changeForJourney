@@ -508,24 +508,6 @@ end
 local dungeonInited_ = false
 local dungeonVg_ = nil
 
---- 仅打开详情，不发挑战，不改 CharacterPanel.activeTeam。
-local function openDetail(dungeonId, teamIdx)
-    if pendingChallenge then toast("挑战请求处理中") return false end
-    local unlocked, lockText = isDungeonUnlocked(dungeonId)
-    if not unlocked then toast(lockText or "副本未解锁") return false end
-    for _, dungeon in ipairs(dungeonList) do
-        if dungeon.id == dungeonId then
-            detailDungeon = dungeon
-            detailTeamIdx = teamIdx
-            getDungeonData()
-            detailOpen = true
-            detailAnimT = 0
-            return true
-        end
-    end
-    return false
-end
-
 ---@param dungeonId string
 ---@param teamIdx number 选关行的显式队号，必须保存而非读取activeTeam
 ---@return boolean
@@ -549,8 +531,76 @@ function DungeonPage.isDetailOpen()
     return detailOpen
 end
 
-function DungeonPage.openTower()
-    return openDetail("babel_tower", nil)
+--- 兼容旧塔入口：只定位同一张选关表的塔分组，不再打开详情或挑战当前层。
+---@param teamIdx number|nil
+---@return boolean
+function DungeonPage.openTower(teamIdx)
+    if pendingChallenge then toast("挑战请求处理中") return false end
+    local unlocked, lockText = isDungeonUnlocked("babel_tower")
+    if not unlocked then toast(lockText or "通天塔未解锁") return false end
+    local team = math.tointeger(tonumber(teamIdx or 1) or 0)
+    if not team or team < 1 or team > ExpTable.TEAM_COUNT then toast("无效的队伍编号") return false end
+    if team > ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle")) then
+        toast(ExpTable.getTeamUnlockText(team))
+        return false
+    end
+    DungeonPage.close()
+    require("ui.hud.BottomNav").setSelectedIndex(3)
+    require("ui.battle.tri.BattleTriPage").open()
+    require("ui.battle.stage.StageSelectDialog").openDungeon(team, "babel_tower")
+    return true
+end
+
+--- 选关点击只发起请求；本地桥可同步回执，必须先记录 pending 再 send。
+---@param requestedFloor number|nil
+---@return boolean
+function DungeonPage.requestTowerChallenge(requestedFloor)
+    if pendingChallenge or pendingSweep or pendingIdleClaim
+        or require("ui.tower.TowerBattleScene").isActive()
+        or require("ui.dungeon.DungeonBattleScene").isOpen() then
+        toast("挑战请求处理中或战斗尚未结束")
+        return false
+    end
+    local unlocked, lockText = isDungeonUnlocked("babel_tower")
+    if not unlocked then toast(lockText or "通天塔未解锁") return false end
+    local TowerConfig = require("config.TowerConfig")
+    local bt = (PlayerStore.Get("dungeon") or {}).babel_tower or {}
+    local maxFloor = math.min(tonumber(bt.floor) or 1, TowerConfig.MAX_FLOOR)
+    local floor = requestedFloor == nil and math.tointeger(maxFloor)
+        or math.tointeger(tonumber(requestedFloor) or 0)
+    if not floor or floor < 1 or floor > TowerConfig.MAX_FLOOR then
+        toast("无效的层数")
+        return false
+    end
+    if floor > maxFloor then toast("层数未解锁") return false end
+    local teams, err = collectTowerTeams()
+    if not teams then toast(err or "三军攻坚条件未满足") return false end
+
+    local request = { dungeonId = "babel_tower", floor = floor }
+    pendingChallenge = true
+    pendingChallengeTime = 0
+    pendingChallengeTeam = nil
+    pendingChallengeRequest = request
+    print("[DungeonPage] sending TOWER_CHALLENGE floor=" .. floor
+        .. " teams=" .. #teams[1] .. "/" .. #teams[2] .. "/" .. #teams[3])
+    local called, sent = pcall(function()
+        return require("runtime.GameAction").sendAction(
+            Protocol.ACTION_TYPES.TOWER_CHALLENGE, { floor = floor })
+    end)
+    if not called or sent == false then
+        if pendingChallengeRequest == request then clearPendingChallenge() end
+        print("[DungeonPage] TOWER_CHALLENGE send failed: " .. tostring(sent))
+        toast("通天塔挑战发送失败，请重试")
+        return false
+    end
+    -- 旧 send 无返回值也兼容；同步失败回执则留在选关表，不误关闭。
+    return request.accepted ~= false
+end
+
+---@return boolean
+function DungeonPage.isTowerChallengePending()
+    return pendingChallenge and pendingChallengeRequest ~= nil
+        and pendingChallengeRequest.dungeonId == "babel_tower"
 end
 
 --- 宿主离开tab5/关闭详情时调用；迟到CHALLENGE不可重新打开场景。
@@ -1138,27 +1188,17 @@ function DungeonPage.handleInput(dx, dy)
         -- 挑战按钮
         if DrawUtil.hitTest(dx, dy, DT.FIGHT_CX, DT.FIGHT_CY, DT.FIGHT_W, DT.FIGHT_H) then
             BF.trigger("dt_fight_btn")
+            if detailDungeon.id == "babel_tower" then
+                DungeonPage.requestTowerChallenge(currentFloor)
+                return true
+            end
             if pendingChallenge then
                 print("[DungeonPage] challenge request pending, skip")
             else
                 pendingChallenge = true
                 pendingChallengeTime = 0
                 local dId = detailDungeon.id
-                if dId == "babel_tower" then
-                    local teams, err = collectTowerTeams()
-                    if not teams then
-                        pendingChallenge = false
-                        pendingChallengeTime = 0
-                        toast(err or "三军攻坚条件未满足")
-                        return true
-                    end
-                    pendingChallengeRequest = { dungeonId = "babel_tower", floor = currentFloor }
-                    print("[DungeonPage] sending TOWER_CHALLENGE floor=" .. currentFloor
-                        .. " teams=" .. #teams[1] .. "/" .. #teams[2] .. "/" .. #teams[3])
-                    require("runtime.GameAction").sendAction(
-                        Protocol.ACTION_TYPES.TOWER_CHALLENGE, {}
-                    )
-                else
+                do
                     local CharacterPanel = require("ui.character.panel.CharacterPanel")
                     local teamIdx = detailTeamIdx or CharacterPanel.getActiveTeamIdx()
                     local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
@@ -1189,14 +1229,14 @@ function DungeonPage.handleInput(dx, dy)
         return true  -- 消费所有点击，阻止穿透
     end
 
-    -- 卡片点击检测；塔入口独立，资源旧列表入口不锁activeTeam。
+    -- 卡片点击统一进入选关表，不再打开旧详情。
     for cardIdx, dungeon in ipairs(dungeonList) do
         local cardCX, cardCY, cardScale = cardRect(cardIdx)
         if DrawUtil.hitTest(dx, dy, cardCX, cardCY, CARD_W * cardScale, CARD_H * cardScale) then
             if DungeonConfig.isResourceDungeon(dungeon.id) then
                 DungeonPage.openResource(dungeon.id, 1)
             else
-                openDetail(dungeon.id, nil)
+                DungeonPage.openTower()
             end
             return true
         end
@@ -1330,14 +1370,23 @@ function DungeonPage.onActionResult(data)
 
     -- 通天塔挑战结果 → 打开 TowerBattleScene
     if action == Protocol.ACTION_TYPES.TOWER_CHALLENGE then
-        if not pendingChallenge or not pendingChallengeRequest
-            or pendingChallengeRequest.dungeonId ~= "babel_tower" then return end
+        local request = pendingChallengeRequest
+        if not pendingChallenge or not request or request.dungeonId ~= "babel_tower"
+            or data.floor ~= request.floor then
+            print("[DungeonPage] ignored stale/mismatched TOWER_CHALLENGE")
+            return
+        end
+        if data.success and (not data.runId or data.wave ~= 1
+            or type(data.monsters) ~= "table" or not data.monsterLevel) then
+            print("[DungeonPage] ignored incomplete TOWER_CHALLENGE")
+            return
+        end
+        request.accepted = false
         clearPendingChallenge()
         if data.success then
             print("[DungeonPage] TOWER_CHALLENGE OK: floor=" .. tostring(data.floor)
                 .. " wave=" .. tostring(data.wave) .. " monsterLv=" .. tostring(data.monsterLevel))
-            detailOpen = false
-            detailDungeon = nil
+            detailOpen, detailDungeon, detailTeamIdx = false, nil, nil
             local TowerBattleScene = require("ui.tower.TowerBattleScene")
             if dungeonVg_ then
                 require("ui.tower.TowerTriBattle").init(dungeonVg_)
@@ -1359,8 +1408,16 @@ function DungeonPage.onActionResult(data)
                     print("[DungeonPage] TowerBattleScene closed")
                 end,
             })
+            if TowerBattleScene.isActive() then
+                require("ui.hud.BottomNav").setSelectedIndex(3)
+                require("ui.battle.tri.BattleTriPage").close()
+                request.accepted = true
+            else
+                toast("通天塔战斗未能打开，请重试")
+            end
         else
             print("[DungeonPage] TOWER_CHALLENGE FAIL: " .. tostring(data.reason))
+            toast(data.reason or "通天塔挑战失败")
         end
         return
     end

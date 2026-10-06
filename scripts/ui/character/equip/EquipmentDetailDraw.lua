@@ -21,7 +21,6 @@ local I18nEquipmentText = require("core.I18nEquipmentText")
 ---@field arrowUp integer
 ---@field arrowDown integer
 ---@field btnGreen integer
----@field btnYellow integer
 ---@field btnRed integer
 ---@field lock integer
 ---@field affixBadge table<string, integer>
@@ -155,11 +154,10 @@ function EquipmentDetailDraw.create(ctx)
     local REF_BTN_FONT = ctx.layout.REF_BTN_FONT
     local REF_BTN_H = ctx.layout.REF_BTN_H
     local REF_BTN_W = ctx.layout.REF_BTN_W
+    local REF_DEC_BTN_FONT = ctx.layout.REF_DEC_BTN_FONT
     local REF_DEC_BTN_GAP = ctx.layout.REF_DEC_BTN_GAP
-    local REF_ENH_BTN_FONT = ctx.layout.REF_ENH_BTN_FONT
-    local REF_ENH_BTN_GAP = ctx.layout.REF_ENH_BTN_GAP
-    local REF_ENH_BTN_H = ctx.layout.REF_ENH_BTN_H
-    local REF_ENH_BTN_W = ctx.layout.REF_ENH_BTN_W
+    local REF_DEC_BTN_H = ctx.layout.REF_DEC_BTN_H
+    local REF_DEC_BTN_W = ctx.layout.REF_DEC_BTN_W
     local REF_ICON_CX = ctx.layout.REF_ICON_CX
     local REF_ICON_CY = ctx.layout.REF_ICON_CY
     local REF_ICON_SIZE = ctx.layout.REF_ICON_SIZE
@@ -192,14 +190,14 @@ function EquipmentDetailDraw.create(ctx)
     ---@param powerDiff number|nil 战斗力差值（nil=不显示）
     ---@param showButton boolean 是否显示穿戴按钮
     ---@param btnText string 按钮文本
-    ---@param showEnhanceOnly boolean|nil 仅显示前往洗练按钮（隐藏穿戴按钮）
+    ---@param backpackOnly boolean|nil 背包模式隐藏穿戴按钮
     ---@param showLock boolean|nil 是否在名称右侧显示锁定图标（仅背包装备）
-    ---@param showDecompose boolean|nil 是否在前往洗练按钮下方显示「立即分解」按钮（仅背包未穿戴装备）
-    local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDiff, showButton, btnText, showEnhanceOnly, showLock, showDecompose)
+    ---@param showDecompose boolean|nil 是否显示「立即分解」按钮（仅未穿戴且未锁定装备）
+    local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDiff, showButton, btnText, backpackOnly, showLock, showDecompose)
         if not equip then return end
         local images = ctx.getImages()
         local imgPowerIcon, imgArrowUp, imgArrowDown = images.powerIcon, images.arrowUp, images.arrowDown
-        local imgBtnGreen, imgBtnYellow, imgBtnRed = images.btnGreen, images.btnYellow, images.btnRed
+        local imgBtnGreen, imgBtnRed = images.btnGreen, images.btnRed
         local imgLock, imgAffixBadge = images.lock, images.affixBadge
 
         local q = equip.quality or 1
@@ -450,7 +448,7 @@ function EquipmentDetailDraw.create(ctx)
         -- 19-20) 穿戴按钮钉在框内，说明超出部分用滚动看
         if showButton then
             local btnCY = pinnedCY
-            if not showEnhanceOnly then
+            if not backpackOnly then
                 -- 19) 按钮背景 UI_AN_LV.png - X807 Y1461 410*100
                 local _bf1 = BF.begin(vg, "ed_equip", REF_BTN_CX + offsetX, btnCY, REF_BTN_W, REF_BTN_H)
                 drawImageCentered(vg, imgBtnGreen,
@@ -468,53 +466,32 @@ function EquipmentDetailDraw.create(ctx)
                 if _TM.isActive() then _TM.registerHotspot("equip_btn_equip", REF_BTN_CX + offsetX, btnCY, REF_BTN_W, REF_BTN_H, "right") end
             end
 
-            -- 21-22) 前往洗练按钮（仅铁匠铺已解锁时显示）
-            if TutorialManager.isBuildingUnlocked("smith") then
-                local enhBtnCY
-                if showEnhanceOnly then
-                    -- 背包模式：前往洗练按钮顶替穿戴按钮的位置
-                    enhBtnCY = btnCY
-                else
-                    enhBtnCY = bgCY + bgH * 0.5 + REF_ENH_BTN_GAP + REF_ENH_BTN_H * 0.5
-                end
-                local _bf2 = BF.begin(vg, "ed_enhance", REF_BTN_CX + offsetX, enhBtnCY, REF_ENH_BTN_W, REF_ENH_BTN_H)
-                drawImageCentered(vg, imgBtnYellow,
-                    REF_BTN_CX + offsetX, enhBtnCY,
-                    REF_ENH_BTN_W, REF_ENH_BTN_H, 1.0)
-
+            -- 立即分解保留原门槛，收至移除强化按钮后腾出的位置。
+            if showDecompose and TutorialManager.isBuildingUnlocked("smith") then
+                local decBtnCY = backpackOnly and btnCY
+                    or (bgCY + bgH * 0.5 + REF_DEC_BTN_GAP + REF_DEC_BTN_H * 0.5)
+                local _bf3 = BF.begin(vg, "ed_decompose", REF_BTN_CX + offsetX, decBtnCY, REF_DEC_BTN_W, REF_DEC_BTN_H)
+                drawImageCentered(vg, imgBtnRed,
+                    REF_BTN_CX + offsetX, decBtnCY,
+                    REF_DEC_BTN_W, REF_DEC_BTN_H, 1.0)
                 nvgFontFace(vg, "sans")
-                nvgFontSize(vg, REF_ENH_BTN_FONT)
+                nvgFontSize(vg, REF_DEC_BTN_FONT)
                 nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
                 nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
-                nvgText(vg, REF_BTN_CX + offsetX, enhBtnCY, "强化", nil)
-                BF.finish(vg, _bf2)
-
-                -- 23-24) 立即分解按钮（背包未穿戴装备，前往洗练下方）
-                if showDecompose then
-                    local decBtnCY = enhBtnCY + REF_ENH_BTN_H * 0.5 + REF_DEC_BTN_GAP + REF_ENH_BTN_H * 0.5
-                    local _bf3 = BF.begin(vg, "ed_decompose", REF_BTN_CX + offsetX, decBtnCY, REF_ENH_BTN_W, REF_ENH_BTN_H)
-                    drawImageCentered(vg, imgBtnRed,
-                        REF_BTN_CX + offsetX, decBtnCY,
-                        REF_ENH_BTN_W, REF_ENH_BTN_H, 1.0)
-                    nvgFontFace(vg, "sans")
-                    nvgFontSize(vg, REF_ENH_BTN_FONT)
-                    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-                    nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
-                    nvgText(vg, REF_BTN_CX + offsetX, decBtnCY, "立即分解", nil)
-                    BF.finish(vg, _bf3)
-                    local slot = equip.slot
-                    local field = slot and BlacksmithConfig.SLOT_SCROLL_MAP[slot]
-                    local refund = field and BlacksmithConfig.calcAscendScrollRefund(
-                        EquipmentSystem.getAscendLevel(equip)) or 0
-                    if refund > 0 and field then
-                        local hint = BlacksmithConfig.formatScrollRefund({ [field] = refund })
-                        if hint then
-                            hint = I18nEquipmentText.lookup(hint, I18n.get()) or hint
-                            drawTextStroke(vg, REF_BTN_CX + offsetX,
-                                decBtnCY + REF_ENH_BTN_H * 0.5 + 28, hint,
-                                28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                                255, 214, 102, 3)
-                        end
+                nvgText(vg, REF_BTN_CX + offsetX, decBtnCY, "立即分解", nil)
+                BF.finish(vg, _bf3)
+                local slot = equip.slot
+                local field = slot and BlacksmithConfig.SLOT_SCROLL_MAP[slot]
+                local refund = field and BlacksmithConfig.calcAscendScrollRefund(
+                    EquipmentSystem.getAscendLevel(equip)) or 0
+                if refund > 0 and field then
+                    local hint = BlacksmithConfig.formatScrollRefund({ [field] = refund })
+                    if hint then
+                        hint = I18nEquipmentText.lookup(hint, I18n.get()) or hint
+                        drawTextStroke(vg, REF_BTN_CX + offsetX,
+                            decBtnCY + REF_DEC_BTN_H * 0.5 + 28, hint,
+                            28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                            255, 214, 102, 3)
                     end
                 end
             end
@@ -529,7 +506,7 @@ function EquipmentDetailDraw.create(ctx)
     local function drawCompactPanel(vg, equip, btnText, showActions)
         local images = ctx.getImages()
         local imgPowerIcon, imgArrowUp, imgArrowDown = images.powerIcon, images.arrowUp, images.arrowDown
-        local imgBtnGreen, imgBtnYellow, imgBtnRed = images.btnGreen, images.btnYellow, images.btnRed
+        local imgBtnGreen, imgBtnRed = images.btnGreen, images.btnRed
         local imgLock, imgAffixBadge = images.lock, images.affixBadge
         local q = equip.quality or 1
         local qColor = QUALITY_COLOR[q] or QUALITY_COLOR[1]
@@ -690,9 +667,8 @@ function EquipmentDetailDraw.create(ctx)
         end
 
         if showActions == false then return end
-        local smithOn = TutorialManager.isBuildingUnlocked("smith")
         local showWear = detState.slot ~= nil
-        local wearCY, refineCY, cx, bw, bh = compactButtonRow()
+        local wearCY, cx, bw, bh = compactButtonRow()
         if showWear then
             local feedback = BF.begin(vg, "ed_equip", cx, wearCY, bw, bh)
             drawImageCentered(vg, imgBtnGreen, cx, wearCY, bw, bh, 1.0)
@@ -701,16 +677,6 @@ function EquipmentDetailDraw.create(ctx)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
             nvgText(vg, cx, wearCY, btnText, nil)
-            BF.finish(vg, feedback)
-        end
-        if smithOn then
-            local feedback = BF.begin(vg, "ed_enhance", cx, refineCY, bw, bh)
-            drawImageCentered(vg, imgBtnYellow, cx, refineCY, bw, bh, 1.0)
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 30)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-            nvgText(vg, cx, refineCY, "强化", nil)
             BF.finish(vg, feedback)
         end
     end

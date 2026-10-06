@@ -94,6 +94,7 @@ function M.bind(deps)
                             -- 跨队交换必须一次性提交两队，逐队同步会在第一轮刷新时覆盖第二队槽位。
                             onTeamChangedCallback(srcTeam, dropTeam ~= srcTeam and dropTeam or nil)
                         end
+                        require("systems.TutorialManager").notifyHeroDeployed(draggedHeroId, dropTeam, dropSlot)
                     end
                 else
                     -- 从名册拖上来：编入目标队（跨队唯一性由部署函数处理）

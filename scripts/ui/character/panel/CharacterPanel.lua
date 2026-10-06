@@ -1128,11 +1128,14 @@ function CharacterPanel.refreshPower()
 end
 
 --- 获取队伍槽位数据（只读，供 PlayerInfoPanel 显示队伍配置）
---- 返回当前激活队的 teamSlots 数组和 slotPowerCache 数组
+--- 默认返回当前编辑队；指定队伍时不切换编辑队。
+---@param teamIdx? number
 ---@return table[] teamSlots
 ---@return table slotPowerCache
-function CharacterPanel.getTeamSlotsData()
-    return teamSlots, slotPowerCache
+function CharacterPanel.getTeamSlotsData(teamIdx)
+    if teamIdx == nil then return teamSlots, slotPowerCache end
+    local team = teams[teamIdx]
+    return (team and team.slots) or {}, teamPowerCaches[teamIdx] or {}
 end
 
 -- ======================== [三队并行] 队伍页签 ========================

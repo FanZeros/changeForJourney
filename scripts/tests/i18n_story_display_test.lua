@@ -65,6 +65,8 @@ function Start()
         local Intro = require("ui.story.gate.IntroCutscene")
         local Config = require("config.ScenarioDialogueConfig")
         local EventBus = require("core.EventBus")
+        local TutorialOverlay = require("ui.tutorial.TutorialOverlay")
+        local TutorialConfig = require("config.TutorialConfig")
         -- 使用已安装的 raw 出口录制；不依赖 require 命中 package.loaded 的特殊行为。
         local rawText, rawBounds = I18n.displayText, I18n.displayBounds
         originalFunctions.__displayText = rawText
@@ -75,6 +77,10 @@ function Start()
             return textWidth(text, fontSize)
         end
         replace("nvgText", record)
+        replace("nvgTextBounds", function(_, _, _, text)
+            measured[#measured + 1] = text
+            return textWidth(text, fontSize)
+        end)
         replace("nvgFontSize", function(_, value) fontSize = value end)
         replace("nvgCreateImage", function() return -1 end)
         replace("nvgImageSize", function() return 1, 1 end)
@@ -82,7 +88,7 @@ function Start()
             "nvgIntersectScissor", "nvgTranslate", "nvgBeginPath", "nvgRect", "nvgRoundedRect",
             "nvgFillColor", "nvgFill", "nvgStrokeColor", "nvgStrokeWidth", "nvgStroke",
             "nvgFontFace", "nvgTextAlign", "nvgTextLineHeight", "nvgMoveTo", "nvgLineTo",
-            "nvgFillPaint" }) do replace(name, noOp) end
+            "nvgFillPaint", "nvgPathWinding" }) do replace(name, noOp) end
 
         replace("nvgTextAlign", function(_, value) textAlign = value end)
         replace("nvgRoundedRect", function(_, x, y, width, height)
@@ -275,6 +281,92 @@ function Start()
         end
         realMetrics = false
         check(letterCases == 30, "信件五语×三分辨率×spy/Noto共30布局回归（非实机截图）")
+
+        -- compact是新档独立模式；默认FULL12行/30布局/原84配置196句上面的断言一项不删。
+        local compactSources = { letterSources[1],
+            "帽子、印鉴、名册都在桌上，三位伙伴已在门外等你。",
+            "先带队出门，路上的故事，我们稍后再说。" }
+        local compactCases = 0
+        check(#Story.LETTER == 12, "compact新增词条不改默认FULL12行数组")
+        for _, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+            I18n.set(lang)
+            local expected = {}
+            for _, sourceLine in ipairs(compactSources) do
+                check(Story.lookup(sourceLine, lang) ~= nil, lang .. "compact三行真实词典覆盖")
+                expected[#expected + 1] = Display.text(sourceLine)
+            end
+            check(Story.lookup("· 轻触出发 ·", lang) ~= nil, lang .. "compact出口真实词典覆盖")
+            for _, size in ipairs({ { 844, 390 }, { 1280, 720 }, { 1920, 1080 } }) do
+                local width, height = size[1], size[2]
+                local label = lang .. " compact " .. width .. "x" .. height
+                Letter.reset()
+                local completed = 0
+                Letter.start(function() completed = completed + 1 end, { compact = true })
+                Letter.handleTap()
+                captures, drawCalls, panelRects = {}, {}, {}
+                Letter.draw(nil, width, height)
+                local footer = Display.text("· 轻触出发 ·")
+                local rebuilt, body = {}, {}
+                for _, call in ipairs(drawCalls) do
+                    if call.text ~= footer then
+                        rebuilt[#rebuilt + 1] = call.text
+                        body[#body + 1] = call
+                    end
+                end
+                check(table.concat(rebuilt) == table.concat(expected), label .. "三行完整译文先翻译后折行")
+                local panel = panelRects[1]
+                check(panel and panel.x >= 0 and panel.y >= 0
+                    and panel.x + panel.w <= width and panel.y + panel.h <= height, label .. "信板仍在窗口内")
+                local bottom = 0
+                for _, call in ipairs(body) do
+                    local left = call.x - ((call.align & NVG_ALIGN_RIGHT) ~= 0 and call.width or 0)
+                    bottom = math.max(bottom, call.y + call.font * 1.38)
+                    check(call.font >= 14 and left >= panel.x and left + call.width <= panel.x + panel.w + 0.01
+                        and call.y >= panel.y and call.y + call.font * 1.38 <= panel.y + panel.h,
+                        label .. "标题及每行字框完整在信板内")
+                end
+                local footerSeen = false
+                for _, call in ipairs(drawCalls) do
+                    if call.text == footer then
+                        footerSeen = true
+                        check(call.y - call.font * 0.5 > bottom and call.y + call.font * 0.5 <= height
+                            and call.x - call.width * 0.5 >= 0 and call.x + call.width * 0.5 <= width,
+                            label .. "短出口完整且可达")
+                    end
+                end
+                check(footerSeen, label .. "使用短出口而非FULL翻阅提示")
+                Letter.handleTap(); Letter.update(0.3)
+                check(completed == 0 and Letter.isOpen(), label .. "单段之后直接淡出但0.3秒不提前finish")
+                Letter.update(0.31); Letter.handleTap(); Letter.update(1)
+                check(completed == 1 and not Letter.isOpen(), label .. "不等火漆阶段，finish仍只一次")
+                compactCases = compactCases + 1
+            end
+        end
+        check(compactCases == 15, "compact五语×三尺寸完整译文布局回归")
+
+        local targetText = TutorialConfig[4].steps[1].text
+        check(TutorialConfig[4].steps[1].highlight == "building_tavern"
+            and TutorialConfig[4].steps[1].advanceOn == "enter_tavern"
+            and TutorialConfig[4].steps[1].pointerTarget == true, "组4明确酒馆目标且只认真实开页事件")
+        for _, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+            I18n.set(lang)
+            local translated = Story.lookup(targetText, lang)
+            check(translated ~= nil, lang .. "组4完整入口真实词典覆盖")
+            captures, drawCalls, panelRects, measured = {}, {}, {}, {}
+            local hs = { cx = 832 * 0.45, cy = 1400 * 0.45, w = 397 * 0.45, h = 387 * 0.45 }
+            local layout = TutorialOverlay.draw(nil, 1920, 1080, hs, targetText, 2, 2, 1)
+            check(table.concat(layout.lines) == translated, lang .. "Overlay先整句翻译后折行不丢译文")
+            local rebuilt, measuredWhole = {}, false
+            for _, call in ipairs(drawCalls) do if call.text ~= "跳过 >" then rebuilt[#rebuilt + 1] = call.text end end
+            for _, candidate in ipairs(measured) do if candidate == translated then measuredWhole = true end end
+            check(table.concat(rebuilt) == translated and measuredWhole,
+                lang .. "最终Overlay绘制和测宽都使用完整译文而非源文片段")
+            check(layout.bubble.cx - layout.bubble.w * 0.5 >= 0
+                and layout.bubble.cy - layout.bubble.h * 0.5 >= 0
+                and layout.bubble.cx + layout.bubble.w * 0.5 <= 1920
+                and layout.bubble.cy + layout.bubble.h * 0.5 <= 1080, lang .. "入口译文提示仍在窗口内")
+        end
+        I18n.set("zh_CN")
 
         -- 旧过场不启音频也可独立验证：第一阶段先停留；用skip保证生命周期出口。
         Intro.init(nil, nil)

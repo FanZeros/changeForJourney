@@ -26,7 +26,17 @@ local tutorial = {
     isActive = function() return tutorialState.active end,
     getPreferredCharacterTab = function() return tutorialState.preferred end,
     setNewHeroId = function(id) tutorialState.heroId = id end,
-    notifyEvent = function(event) events[#events + 1] = event end,
+    notifyEvent = function(event)
+        events[#events + 1] = event
+        if event == "gacha10_started" or event == "gacha_started" then tutorialState.heroId = nil end
+    end,
+    onRecruitCompleted = function(results)
+        tutorialState.heroId = nil
+        for _, result in ipairs(results) do
+            if result.type == "hero" and result.isNew == true then tutorialState.heroId = result.heroId; break end
+        end
+        events[#events + 1] = "gacha10_complete"
+    end,
     registerHotspot = function(key, cx, cy, w, h, panel)
         hotspots[#hotspots + 1] = { key = key, cx = cx, cy = cy, w = w, h = h, panel = panel }
     end,
@@ -291,7 +301,7 @@ local function testRecruitEvents()
         if recruitState.mode == "unhandled" then return false end
         if recruitState.mode == "sync" then
             tavern.onActionResult({ action = action, success = true,
-                gachaResults = { { type = "hero", heroId = 6 } } })
+                gachaResults = { { type = "hero", heroId = 6, isNew = true } } })
         end
         return true
     end)
@@ -333,9 +343,9 @@ local function testRecruitEvents()
     -- Direct path uses the same confirmed request entry supplied to popups.
     resetEvents(); tavern.setSendAction(function() return true end)
     popupContext.doRecruitDirect(1)
-    tavern.onActionResult({ action = action, success = true, gachaResults = { { type = "hero", heroId = 7 } } })
-    check(eventCount("gacha10_started") == 0 and eventCount("gacha10_complete") == 0,
-        "single pull does not masquerade as ten-pull tutorial event")
+    tavern.onActionResult({ action = action, success = true, gachaResults = { { type = "hero", heroId = 7, isNew = true } } })
+    check(eventCount("gacha_started") == 1 and eventCount("gacha10_complete") == 1
+        and tutorialState.heroId == 7, "single pull also records the new target and completes recruitment teaching")
     recruitState.playing = true
     recruitState.popup, recruitState.target = true, true
     local resetBefore = recruitState.resetCount

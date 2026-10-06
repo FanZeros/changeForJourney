@@ -46,12 +46,27 @@ local SOURCE_FILES = {
     ["ui.battle.stage.BattleEnemySpawn"] = "ui/battle/stage/BattleEnemySpawn.lua",
     ["ui.battle.stage.StageSelectDialog"] = "ui/battle/stage/StageSelectDialog.lua",
     ["ui.battle.stage.StageSelectResources"] = "ui/battle/stage/StageSelectResources.lua",
+    ["ui.battle.stage.StageSelectRewardPreview"] = "ui/battle/stage/StageSelectRewardPreview.lua",
+    ["ui.battle.scene.BattleScene"] = "ui/battle/scene/BattleScene.lua", -- 只提取完整completeTriStageClear
+    ["core.NumberUtil"] = "core/NumberUtil.lua",
     ["ui.battle.tri.BattleTriPage"] = "ui/battle/tri/BattleTriPage.lua", -- 只提取背景常量+纯resolver
     ["core.DrawUtil"] = "core/DrawUtil.lua", ["core.DarkIcon"] = "core/DarkIcon.lua",
 }
 local nativeFile, nativeCreateImage, nativeFS = File, nvgCreateImage, fileSystem
 local sources, reads, contexts, initialLoaded = {}, {}, {}, {} ---@type any
-local checks, groups, failures, floorCoverage, towerCoverage = 0, 0, 0, 0, 0
+local checks, groups, failures, floorCoverage, towerCoverage, chapterCoverage = 0, 0, 0, 0, 0, 0
+-- 需求给定的独立锚点oracle，不从DC.getChapterFloors/getChapterIndex反推期望。
+local ANCHORS = {
+    gold_mine={1,6,11,16,21,26,31,36,41,46,51,56,61,66,71,76,81,86,91,96,101,106,111,115},
+    equipment_vault={1,6,11,16,21,26,31,36,41,46,51,56,61,66,71,76,81,86,91,96,101,106,109},
+    black_diamond={1,6,11,16,21,26,31,36,41,46,51,56,61,66,71,76,81,86,91,96,101,106,111,115},
+}
+local function expectedChapter(id,floor)
+    for index,anchor in ipairs(ANCHORS[id]) do if floor<=anchor then return index,anchor end end
+end
+local function anchorIndex(id,floor)
+    for index,anchor in ipairs(ANCHORS[id]) do if floor==anchor then return index end end
+end
 for name in pairs(SOURCE_FILES) do initialLoaded[name] = package.loaded[name] end
 local function check(ok, label) checks = checks + 1; assert(ok, label) end
 local function eq(a,b,label) check(a == b,label .. " actual=" .. tostring(a) .. " expected=" .. tostring(b)) end
@@ -328,7 +343,7 @@ local NVG = {
     "nvgStroke", "nvgStrokeColor", "nvgStrokeWidth", "nvgText", "nvgTextAlign", "nvgTranslate", "nvgResetTransform",
 }
 local function newContext(legacy,review,vg)
-    local c = { env={}, modules={}, loading={}, denied={}, calls={}, events={}, loads={}, handles={}, deleted={},
+    local c = { env={}, modules={}, loading={}, denied={}, calls={}, events={}, tutorialEvents={}, loads={}, handles={}, deleted={},
         clock={elapsedTime=100}, teams={101,201,301}, maxStage=34505, accepts=true, selections={}, towerSelections={},
         vg=vg or {}, nextHandle=1, review=review==true, randomValue=0.5, randomCalls=0, imageResult={}, badSize={},
         memory={currency={gold=1234,diamond=567,ticket=8},battle={maxStageId=34505,activeTeam=2,
@@ -366,7 +381,25 @@ local function newContext(legacy,review,vg)
     mock("core.BattleLayout",{})
     mock("core.I18n",{get=function() return "zh_CN" end,lookup=function(s) return s end,
         difficulty=function(s) return s end,format=function(s,...) return string.format(s,...) end})
+    mock("systems.TutorialManager",{
+        registerHotspot=function(key,cx,cy,w,h,panel)
+            assert(key=="dungeon_gold_mine" and panel=="tri_modal" and w>0 and h>0,
+                "explicit gold team1 tutorial hotspot only")
+            c.tutorialHotspot={key=key,cx=cx,cy=cy,w=w,h=h,panel=panel}
+        end,
+        notifyEvent=function(name)
+            assert(name=="enter_gold_mine","explicit gold entered event only")
+            c.tutorialEvents[#c.tutorialEvents+1]=name
+        end,
+    })
     mock("systems.ButtonFeedback",{trigger=function(k) c.events[#c.events+1]=k end,begin=function() return false end,finish=noop})
+    local qualityImages={}
+    mock("ui.widget.ImageCache",{getQualityBg=function(quality)
+        if type(quality)~="number" or quality%1~=0 or quality<1 or quality>6 then return deny("quality image invalid") end
+        local h=qualityImages[quality]
+        if h==nil then h=e.nvgCreateImage(c.vg,"image/品质框/UI_icon_ZBBJ_" .. quality .. ".png",0); qualityImages[quality]=h end
+        return h
+    end}) -- 仅共享品质图片缓存mock，不装载装备业务；绘制DarkIcon仍真实。
     mock("config.StageRecommendPower",{get=function() return nil end})
     mock("systems.AttributeDef",{DODGE="dodge",MAG_ARMOR="energyShield",HIT_VALUE="hitValue",CRIT_RATE="critRate",
         PHYS_ARMOR="armor",PHYS_PEN="physPen",MAG_PEN="magPen",ATK_HEAL="atkHeal",COMBO_RATE="comboRate",
@@ -431,8 +464,11 @@ local function newContext(legacy,review,vg)
     e.nvgLinearGradient,e.nvgRadialGradient=function() return {} end,function() return {} end
     local allowedImages={
         ["image/通用图标/UI_ICON_XG.png"]=true,["image/界面底板/通用面板/UI_TY_EJQRK.png"]=true,
+        ["image/货币道具/UI_icon_JB_X.png"]=true,["image/货币道具/UI_icon_FBBX.png"]=true,
+        ["image/货币道具/UI_icon_SJ_X.png"]=true,
         ["image/按钮/UI_AN_HUANG.png"]=true,["image/通用图标/UI_ICON_SUO.png"]=true,["image/通用图标/ICON_ZDL.png"]=true,
     }
+    for quality=1,6 do allowedImages["image/品质框/UI_icon_ZBBJ_" .. quality .. ".png"]=true end
     for _,p in pairs(PATHS) do allowedImages[p]=true end
     local sc=c.require("config.StageConfig")
     for ch=1,23 do allowedImages[sc.getBattleBackground(ch*100+1)]=true end
@@ -461,6 +497,8 @@ local function newContext(legacy,review,vg)
     end
     c.clipBalanced=function() check(#stack==0 and clip==nil,"真实Dialog/DrawUtil save/scissor无泄漏") end
     c.prepareDialog=function()
+        local dc=c.require("config.DungeonConfig")
+        dc.getStageRewards=function() return deny("preview called random getStageRewards") end
         local du=c.require("core.DrawUtil")
         if not c.review then
             local realText,realCover=du.drawTextStroke,du.drawImageCover
@@ -479,7 +517,11 @@ local function newContext(legacy,review,vg)
         end)
         return c.dialog
     end
-    c.draw=function() c.calls={}; c.clock.elapsedTime=c.clock.elapsedTime+1; c.dialog.draw(c.vg); if not c.review then c.clipBalanced() end end
+    c.draw=function()
+        local random=c.randomCalls
+        c.calls={}; c.clock.elapsedTime=c.clock.elapsedTime+1; c.dialog.draw(c.vg)
+        if not c.review then c.clipBalanced(); eq(c.randomCalls,random,"每次真实Dialog.draw不消耗RNG") end
+    end
     return c
 end
 local function idle(c,before) check(same(c.memory,before),"查看/选择没有货币、解锁、收益、扫荡次数或activeTeam消费") end
@@ -496,20 +538,29 @@ local function rowLabel(c,floor)
         if v.kind=="text" and v.x==331 and v.text=="1-" .. floor then return v end
     end
 end
+local function rowGeometry(c)
+    return c.viewKind=="resource" and 140 or 168, c.viewKind=="resource" and 28 or 34,
+        c.viewKind=="resource" and 78 or 100
+end
 local function visibleRow(c,floor)
     local label=assert(rowLabel(c,floor),"real Dialog row missing 1-" .. floor)
-    local top=label.y-34
-    local y=(math.max(786,top)+math.min(1676,top+168))*0.5
+    local height,labelOffset=rowGeometry(c)
+    local top=label.y-labelOffset
+    local y=(math.max(786,top)+math.min(1676,top+height))*0.5
     check(y>=786 and y<1676,"实际可视行点击位于真实裁剪内")
     return 340,y,top
 end
-local function currentRow(c,floor)
+local function currentRow(c,floor,status)
     local label=assert(rowLabel(c,floor),"current row label missing")
-    check(label.y-34>=786 and label.y-34+168<=1676,"reveal完整当前关落入右栏")
-    check(textAt(c,"当前",331,label.y+100),"真实当前状态与当前层标签同一行")
+    local height,labelOffset,statusOffset=rowGeometry(c)
+    local top=label.y-labelOffset
+    check(top>=786 and top+height<=1676,"reveal完整当前行落入右栏")
+    local stateText=textAt(c,status or "当前",331,top+statusOffset)
+    check(stateText,"真实当前/当前章节状态与章标签同一行")
+    if c.viewKind~="resource" then check(stateText.y+stateText.size*0.5+2<top+130,"塔状态22号字下缘含描边不碰奖励带130") end
 end
 local function openMain(c,team)
-    c.dialog.close(); c.dialog.open(team or 1); c.draw()
+    c.viewKind="main"; c.dialog.close(); c.dialog.open(team or 1); c.draw()
 end
 local function configCases()
     local c,old=newContext(),newContext(true)
@@ -535,9 +586,11 @@ local function configCases()
             previousCount=a.firstCount
             check(a.firstClearBonusMonster==nil and a.firstClearBonusMonsters==nil,"全层combat无首通附加怪")
             local stage,original=dc.getStage(sid),od.getStage(sid)
-            eq(stage.displayChapter,1,"扁平副本永远第1章"); eq(stage.stage,floor,"扁平副本1-N实际层号")
-            eq(stage.name,dc.DEFINITIONS[id].name .. " 1-" .. floor,"扁平副本完整名字")
-            local stageExcept=copy(exception); stageExcept.mapBg=true
+            local chapter=expectedChapter(id,floor)
+            eq(stage.displayChapter,1,"资源永远第1显示章"); eq(stage.stage,chapter,"旧floor只映射章序号")
+            eq(stage.resourceFloor,floor,"旧floor真实资源索引保留")
+            eq(stage.name,dc.DEFINITIONS[id].name .. " 1-" .. chapter,"资源章序完整名字")
+            local stageExcept=copy(exception); stageExcept.mapBg=true; stageExcept.stage=true; stageExcept.name=true
             compareExcept(stage,original,stageExcept,"stage全部非允许字段不变 " .. sid)
             eq(stage.mapBg,PATHS[id],"339层背景正确")
             eq(stage.sourceStageId,b.id,"sourceStage不能被1-2覆盖")
@@ -590,7 +643,18 @@ local function economyCases()
             for _,rank in ipairs({dc.UNLOCK_CONDITIONS[id]-1,dc.UNLOCK_CONDITIONS[id],34505,999}) do
                 for _,sub in ipairs({{}, {floor=f}, {floor=1,cleared={[tostring(f)]=true}}, {floor=999,cleared={}}}) do
                     local ledger={[id]=sub}; local saved=copy(ledger)
-                    eq(dc.isStageUnlocked(sid,{maxStageId=rank},ledger),od.isStageUnlocked(sid,{maxStageId=rank},ledger),"解锁oracle " .. sid)
+                    local legacyUnlocked=od.isStageUnlocked(sid,{maxStageId=rank},ledger)
+                    local index=anchorIndex(id,f)
+                    if not index then
+                        eq(dc.isStageUnlocked(sid,{maxStageId=rank},ledger),legacyUnlocked,"旧非锚点highest+1解锁oracle " .. sid)
+                    else
+                        -- 门槛rank沿真实主线终焉规则，floor账本沿冻结旧oracle；仅锚点跳进允许变。
+                        local sc=c.require("config.StageConfig")
+                        local previous=sc.getTerminalPrevStageId(rank)
+                        local expected=(previous and previous+0.5 or rank)>=dc.UNLOCK_CONDITIONS[id]
+                            and (index==1 or od.getHighestClearedFloor(sub,id)>=ANCHORS[id][index-1])
+                        eq(dc.isStageUnlocked(sid,{maxStageId=rank},ledger),expected,"锚点前章已通解锁 " .. sid)
+                    end
                     check(same(ledger,saved),"解锁查询不写账本")
                 end
             end
@@ -611,6 +675,188 @@ local function economyCases()
             end
         end
     end
+end
+local function chapterCases()
+    local c,old=newContext(),newContext(true)
+    local dc,sc=c.require("config.DungeonConfig"),c.require("config.StageConfig")
+    local od,os=old.require("config.DungeonConfig"),old.require("config.StageConfig")
+    -- ca609d7导航逐字冻结；封闭local难度表按原常量提供，不取合并后getNext/getPrev作为oracle。
+    compile([==[
+local SC = require("config.StageConfig")
+local diffToFirstStage,diffToLastStage={},{}
+for _,name in ipairs({'NORMAL','HARD','NIGHTMARE','HELL','PURGATORY','TORMENT','TORMENT2','TORMENT3','TORMENT4','TORMENT5','ANNIHILATION','ANNIHILATION2','ANNIHILATION3','ANNIHILATION4','ANNIHILATION5'}) do
+    diffToFirstStage[SC['DIFFICULTY_' .. name]]=SC[name .. '_FIRST_STAGE']
+    diffToLastStage[SC['DIFFICULTY_' .. name]]=SC[name .. '_LAST_STAGE']
+end
+function SC.getNextStageId(id)
+    if SC.isResourceStage(id) then
+        local DC = require("config.DungeonConfig")
+        local dungeonId, floor = DC.decodeStageId(id)
+        return DC.getStageId(dungeonId, floor + 1)
+    end
+    if SC.isTerminalTemple(id) then
+        return nil
+    end
+    local s = SC.getStage(id)
+    if not s then return nil end
+    if s.stage < 5 then
+        return s.chapter * 100 + (s.stage + 1)
+    end
+    local difficulty = SC.getDifficulty(id)
+    local lastStage = diffToLastStage[difficulty]
+    if id == lastStage then
+        return SC.getTerminalTempleId(difficulty)
+    end
+    return (s.chapter + 1) * 100 + 1
+end
+function SC.getPrevStageId(id)
+    if SC.isResourceStage(id) then
+        local DC = require("config.DungeonConfig")
+        local dungeonId, floor = DC.decodeStageId(id)
+        return DC.getStageId(dungeonId, floor - 1)
+    end
+    if SC.isTerminalTemple(id) then
+        return nil
+    end
+    local s = SC.getStage(id)
+    if not s then return nil end
+    if s.stage > 1 then
+        return s.chapter * 100 + (s.stage - 1)
+    end
+    local difficulty = SC.getDifficulty(id)
+    local firstStage = diffToFirstStage[difficulty]
+    if id == firstStage then
+        return nil
+    end
+    return (s.chapter - 1) * 100 + 5
+end
+]==],"ca609d7-navigation-oracle-adapted-local-difficulty-tables",old.env)
+    for sid in pairs(sc.STAGES) do
+        check(not sc.isResourceStage(sid),"STAGES只含真实主线")
+        eq(sc.getNextStageId(sid),os.getNextStageId(sid),"全主线next冻结 " .. sid)
+        eq(sc.getPrevStageId(sid),os.getPrevStageId(sid),"全主线prev冻结 " .. sid)
+    end
+    local saved=copy(c.memory)
+    for _,id in ipairs(dc.RESOURCE_IDS) do
+        local expected=ANCHORS[id]
+        check(same(dc.getChapterFloors(id),expected),"固定全部章末锚点 " .. id)
+        eq(dc.getChapterCount(id),#expected,"24/23/24章数 " .. id)
+        local selected={}; for _,f in ipairs(expected) do selected[#selected+1]=od.getStageId(id,f) end
+        check(same(dc.getChapterStageIds(id),selected),"可选章全部旧ID " .. id)
+        local a,b=dc.getChapterFloors(id),dc.getChapterStageIds(id)
+        a[1],b[1]=-1,-2
+        check(same(dc.getChapterFloors(id),expected) and same(dc.getChapterStageIds(id),selected),"章数组独立返回不污染缓存")
+        for f=1,od.MAX_FLOOR[id] do
+            local sid=od.getStageId(id,f)
+            local index,anchor=expectedChapter(id,f)
+            local nextFloor,prevFloor=nil,nil ---@type number|nil, number|nil
+            for _,v in ipairs(expected) do
+                if v<f then prevFloor=v elseif v>f and not nextFloor then nextFloor=v end
+            end
+            local nextId=nextFloor and od.getStageId(id,nextFloor) or nil
+            local prevId=prevFloor and od.getStageId(id,prevFloor) or nil
+            for _,input in ipairs({sid,tostring(sid)}) do
+                eq(dc.getChapterIndex(id,tostring(f)),index,"旧floor/string→章序")
+                eq(dc.getChapterStageId(input),od.getStageId(id,anchor),"旧中间ID→同章末")
+                eq(dc.getNextChapterStageId(input),nextId,"next严格下一锚点含末层")
+                eq(dc.getPrevChapterStageId(input),prevId,"prev严格前锚点含首层")
+                eq(sc.getNextStageId(input),nextId,"SC仅资源next章推进")
+                eq(sc.getPrevStageId(input),prevId,"SC仅资源prev章退关")
+            end
+            if anchorIndex(id,f) then
+                if nextId then eq(sc.getPrevStageId(nextId),sid,"章锚点next/prev往返") end
+                if prevId then eq(sc.getNextStageId(prevId),sid,"章锚点prev/next往返") end
+            end
+        end
+        for _,fixture in ipairs({
+            {sub={floor=1,cleared={}},highest=0,anchor6=false,anchor11=false,old8=false},
+            {sub={floor=2,cleared={}},highest=1,anchor6=true,anchor11=false,old8=false},
+            {sub={floor=7,cleared={}},highest=6,anchor6=true,anchor11=true,old8=false},
+            {sub={floor=1,cleared={[6]=true}},highest=6,anchor6=true,anchor11=true,old8=false},
+            {sub={floor="1",cleared={["6"]=true}},highest=6,anchor6=true,anchor11=true,old8=false},
+            {sub={floor="9",cleared={["8"]=true}},highest=8,anchor6=true,anchor11=true,old8=true},
+            {sub={floor=1,cleared={[6]=false,["8"]="true",[999]=true}},highest=0,anchor6=false,anchor11=false,old8=false},
+        }) do
+            local ledger={[id]=copy(fixture.sub)}; local before=copy(ledger)
+            eq(dc.getHighestClearedFloor(ledger[id],id),fixture.highest,"固定旧账本最高层不隐含章末")
+            eq(dc.isStageUnlocked(od.getStageId(id,6),{maxStageId=34505},ledger),fixture.anchor6,"固定6锚点解锁")
+            eq(dc.isStageUnlocked(od.getStageId(id,11),{maxStageId=34505},ledger),fixture.anchor11,"固定11跨章解锁")
+            eq(dc.isStageUnlocked(od.getStageId(id,8),{maxStageId=34505},ledger),fixture.old8,"旧8仍highest+1")
+            eq(dc.isStageUnlocked(od.getStageId(id,11),{maxStageId=dc.UNLOCK_CONDITIONS[id]-1},ledger),false,"跨章仍需主线门槛")
+            check(same(ledger,before),"映射解锁不迁移floor/cleared")
+        end
+        local max=od.MAX_FLOOR[id]
+        for _,sub in ipairs({{floor=max+1},{floor=1,cleared={[max]=true}},{floor="1",cleared={[tostring(max)]=true}}}) do
+            eq(dc.getHighestClearedFloor(sub,id),max,"末层旧数字/string账本保留")
+            eq(c.require("config.DungeonIdleConfig").getIdleFloorFromSub(sub,id),max,"末层挂机仍实际旧floor")
+            check(dc.isStageUnlocked(od.getStageId(id,max),{maxStageId=34505},{[id]=sub}),"已通末章仍可重打")
+        end
+        for _,f in ipairs({0,-1,max+1,1.5,"invalid"}) do eq(dc.getChapterIndex(id,f),nil,"非法chapter floor拒绝") end
+    end
+    check(same(dc.getChapterFloors("ancient_ruin"),{}),"旧遗迹不挪用资源章节")
+    eq(dc.getChapterCount("ancient_ruin"),0,"旧遗迹章数0")
+    for f=1,od.MAX_FLOOR.ancient_ruin do
+        check(same(dc.getFloor("ancient_ruin",f),od.getFloor("ancient_ruin",f)),"旧遗迹逐层完全冻结")
+    end
+    for _,sid in ipairs({101,999,400001,100000,100116,200110,300116,100001.5,"bad"}) do
+        eq(dc.getChapterStageId(sid),nil,"非资源/越界映射拒绝")
+        eq(dc.getNextChapterStageId(sid),nil,"非资源next拒绝")
+        eq(dc.getPrevChapterStageId(sid),nil,"非资源prev拒绝")
+    end
+    idle(c,saved)
+end
+local function triClearCases()
+    local c=newContext(); local sc,dc=c.require("config.StageConfig"),c.require("config.DungeonConfig")
+    local text=source("ui.battle.scene.BattleScene")
+    local first=assert(text:find("function BattleScene.completeTriStageClear(stageId, teamIdx)",1,true))
+    local last=assert(text:find("\n--- [终焉协同]",first,true))
+    local block=text:sub(first,last-1)
+    local flushes,firstRewards,adopted=0,0,{} ---@type any
+    local scene={adoptStageProgress=function(id) adopted[#adopted+1]=id end,
+        onFirstClear=function() firstRewards=firstRewards+1 end}
+    c.modules["runtime.ClientDispatcher"].notifySubscribers=function(key)
+        check(key=="battle" or key=="dungeon","真实通关仅内存通知")
+    end
+    -- 仅本fixture的Flush是显式内存计数mock；通用安全env仍拒绝真实save模块和File。
+    c.modules["boot.StandaloneSave"]={Flush=function() flushes=flushes+1 end}
+    c.env.BattleScene=scene
+    compile("local SC = require('config.StageConfig')\nlocal clearedStages={}\nlocal maxStageId_=34505\nlocal currentStageId=101\nlocal isFirstClear=false\n" .. block,
+        "actual-BattleScene-completeTriStageClear-full-function",c.env)
+    for _,id in ipairs(dc.RESOURCE_IDS) do
+        for _,fixture in ipairs({{floor=6,sub={floor=2,cleared={["1"]=true}},nextFloor=11,highest=6},
+            {floor=8,sub={floor=8,cleared={[7]=true}},nextFloor=11,highest=8},
+            {floor=dc.MAX_FLOOR[id],sub={floor=dc.MAX_FLOOR[id],cleared={}},nextFloor=dc.MAX_FLOOR[id],highest=dc.MAX_FLOOR[id]}}) do
+            for team=1,3 do
+                c.memory.battle={maxStageId=34505,currentStageId=101,battleMode="firstClear",activeTeam=2,
+                    teamStageIds={["1"]=101,["2"]=201,["3"]=301},clearedStages={["101"]=true}}
+                c.memory.dungeon[id]=copy(fixture.sub)
+                local before=copy(c.memory); local sid=dc.getStageId(id,fixture.floor)
+                local n=flushes
+                eq(scene.completeTriStageClear(sid,team),false,"资源通关返回false无主线首通")
+                eq(flushes,n+1,"真实通关Flush仅一次内存mock")
+                local sub=c.memory.dungeon[id]
+                eq(sub.floor,math.min(dc.MAX_FLOOR[id],fixture.floor+1),"真实通关sub.floor仍旧floor+1不写next锚点")
+                eq(sub.cleared[tostring(fixture.floor)],true,"仅完成的旧floor cleared写string key")
+                eq(dc.getHighestClearedFloor(sub,id),fixture.highest,"真实旧账本最高6/8/末层不隐含10")
+                eq(c.memory.battle.teamStageIds[tostring(team)],dc.getStageId(id,fixture.nextFloor),"真实通关队伍推进章锚点")
+                eq(c.memory.battle.maxStageId,before.battle.maxStageId,"真实资源通关不推高主线maxStage")
+                eq(c.memory.battle.activeTeam,2,"真实资源通关不改activeTeam")
+                check(same(c.memory.battle.clearedStages,before.battle.clearedStages),"资源clear不污染主线首通账本")
+                check(same(c.memory.currency,before.currency),"资源clear不伪发首通奖")
+                for other=1,3 do if other~=team then eq(c.memory.battle.teamStageIds[tostring(other)],before.battle.teamStageIds[tostring(other)],"另两队不动") end end
+                if team==1 then eq(adopted[#adopted],dc.getStageId(id,fixture.nextFloor),"队1采用章进度")
+                else eq(c.memory.battle.currentStageId,101,"队2/3不改队1主场景") end
+                local cleared=copy(sub)
+                eq(scene.completeTriStageClear(tostring(sid),team),false,"已cleared重打不首奖")
+                check(same(sub,cleared),"重打旧账本不重复填跳过层")
+            end
+        end
+    end
+    eq(firstRewards,0,"执行真实完整通关函数未触发onFirstClear")
+    local saved=copy(c.memory); local n=flushes
+    c.memory.battle.maxStageId=304; saved=copy(c.memory)
+    eq(scene.completeTriStageClear(100006,1),false,"主线门槛不足真实资源clear拒绝")
+    eq(flushes,n,"拒绝不Flush"); check(same(c.memory,saved),"拒绝不动内存ledger")
 end
 local function resolverCases()
     local c=newContext(); local sc=c.require("config.StageConfig")
@@ -689,8 +935,8 @@ local function resourceGroupCases()
     local dc,tc,sc=c.require("config.DungeonConfig"),c.require("config.TowerConfig"),c.require("config.StageConfig")
     local saved=copy(c.memory); local gs=r.getGroups()
     local ids={"gold_mine","equipment_vault","black_diamond","babel_tower"}
-    local sizes={115,109,115,112}
-    eq(#gs,4,"副本恰为四扁平分类，不是68章节加独立tower")
+    local sizes={24,23,24,112}
+    eq(#gs,4,"副本恰为四分类，71资源章行+112塔")
     check(gs==r.getGroups(),"四分类缓存复用")
     local seen={}
     for i,id in ipairs(ids) do
@@ -700,12 +946,13 @@ local function resourceGroupCases()
         eq(g.subLabel,"","副本无伪章节副标题"); eq(#g.ids,sizes[i],"分类含全部层")
         if id=="babel_tower" then check(g.isTower==true and g.resourceDungeonId==nil,"塔不是三资源组")
         else eq(g.resourceDungeonId,id,"资源组种类准确"); eq(g.name,dc.DEFINITIONS[id].name,"组名冻结") end
-        for f,sid in ipairs(g.ids) do
+        for index,sid in ipairs(g.ids) do
+            local f=i==4 and index or ANCHORS[id][index]
             check(not seen[sid],"四分类独立ID不重叠"); seen[sid]=true
-            eq(sid,(i==4 and 400000 or i*100000)+f,"四组完整顺序ID")
-            eq(r.getGroupKey(sid),g.key,"完整层key不按5层切章")
+            eq(sid,(i==4 and 400000 or i*100000)+f,"资源仅章末旧ID/塔完整顺序ID")
+            eq(r.getGroupKey(sid),g.key,"完整层key不按5层切分类")
             local e=r.getStageEntry(sid)
-            eq(e.displayChapter,1,"分类entry第1章"); eq(e.stage,f,"分类entry完整1-N")
+            eq(e.displayChapter,1,"分类entry第1显示章"); eq(e.stage,index,"资源章序/塔层序")
             if i==4 then
                 check(r.isTowerStage(sid) and r.isTowerStage(tostring(sid)),"塔数字/字符串身份")
                 eq(e.monsterLevel,tc.getFloor(f).monsterLevel,"塔预览等级来自真实TowerConfig")
@@ -717,6 +964,14 @@ local function resourceGroupCases()
             else check(e==dc.getStage(sid),"资源entry真实配置对象") end
         end
     end
+    eq(#gs[1].ids+#gs[2].ids+#gs[3].ids,71,"71资源可选章不删除339旧ID")
+    for _,id in ipairs(dc.RESOURCE_IDS) do for f=1,dc.MAX_FLOOR[id] do
+        local sid=dc.getStageId(id,f); local _,anchor=expectedChapter(id,f)
+        eq(r.getDisplayStageId(sid),dc.getStageId(id,anchor),"339旧队伍ID只映射可见章末")
+        eq(r.getDisplayStageId(tostring(sid)),dc.getStageId(id,anchor),"339字符串旧队伍显示映射")
+        check(r.getStageEntry(sid)==dc.getStage(sid),"339旧ID仍有效非锚点不删")
+    end end
+    for _,sid in ipairs({101,999,400001,400112}) do eq(r.getDisplayStageId(sid),sid,"主线神殿塔display不挪位置") end
     for _,sid in ipairs({400000,400113,400001.5,"invalid"}) do check(not r.isTowerStage(sid),"塔ID越界拒绝") end
     for _,f in ipairs({-1,0,1,53,112,999}) do
         eq(r.getCurrentTowerStageId({babel_tower={floor=f}}),400000+math.max(1,math.min(112,f)),"塔UI当前层上下界")
@@ -779,7 +1034,10 @@ local function selectionCases()
             for t=1,3 do if t~=team then eq(c.teams[t],before[t],"其他两队位置不变") end end
             idle(c,saved)
             d.open(team); c.draw(); local n=#c.selections; d.handleInput(340,820)
-            eq(#c.selections,n,"当前关不重复路由"); check(d.isOpen(),"当前关保留Dialog")
+            eq(#c.selections,n,"当前关不重复路由")
+            check(d.isOpen() == (not (team==1 and id=="gold_mine")),
+                "已在金币关的小队1确认教学后关闭，其他当前关保留Dialog")
+            if not d.isOpen() then d.open(team); c.draw() end
             d.handleInput(340,998); eq(#c.selections,n,"锁定1-2资源守卫不调用业务"); check(d.isOpen(),"锁关不关闭")
             idle(c,saved)
         end
@@ -816,10 +1074,10 @@ local function towerDialogCases()
         local saved=copy(c.memory)
         d.close(); d.openDungeon(team,"babel_tower"); c.draw(); currentRow(c,f)
         local _,_,top=visibleRow(c,f)
-        check(textAt(c,"怪物 Lv." .. tc.getFloor(f).monsterLevel,673,top+36),"真实塔行显示实际等级")
-        local rule=textAt(c,"每层10波，敌人随机生成",673,top+82)
+        check(textAt(c,"怪物 Lv." .. tc.getFloor(f).monsterLevel,673,top+28),"真实塔行显示实际等级")
+        local rule=textAt(c,"每层10波，敌人随机生成",673,top+64)
         check(rule and rule.clip and rule.clip.x==455 and rule.clip.w==436,"真实随机塔规则及敌人栏裁剪")
-        check(textAt(c,"三队攻坚，共同推进",673,top+128),"真实塔三队规则")
+        check(textAt(c,"三队攻坚，共同推进",673,top+98),"真实塔三队规则")
         local cards=0; for _,v in ipairs(c.calls) do if v.kind=="card" then cards=cards+1 end end
         eq(cards,0,"塔行不绘制固定敌人卡牌")
         local n=#c.towerSelections; local x,y=visibleRow(c,f); d.handleInput(x,y)
@@ -830,7 +1088,7 @@ local function towerDialogCases()
         if f<112 then
             d.handleScroll(-1,340,900); c.draw(); x,y=visibleRow(c,f+1)
             local label=rowLabel(c,f+1)
-            check(textAt(c,"未解锁",331,label.y+100),"下一塔层真实未解锁状态")
+            check(textAt(c,"未解锁",331,label.y+66),"下一塔层状态y100不叠奖励带130")
             d.handleInput(x,y); eq(#c.towerSelections,n+1,"下一塔层锁定不调用业务mock")
         end
         idle(c,saved); check(same(c.teams,teams),"塔伪ID不写任一主线队伍位置")
@@ -838,6 +1096,10 @@ local function towerDialogCases()
     end
     eq(towerCoverage,112,"112塔层真实Dialog覆盖一次")
     eq(c.randomCalls,0,"塔预览不生成随机怪/rollBuff")
+    c.memory.dungeon.babel_tower.floor=113
+    d.close(); d.openDungeon(1,"babel_tower"); c.draw(); currentRow(c,112)
+    local _,_,top=visibleRow(c,112)
+    check(textAt(c,"首次 ×5800 / 重打 ×2900",503,top+147),"塔全通floor113真实行仍112且重打扫荡2900")
     c.maxStage=604; c.memory.battle.maxStageId=604; c.memory.dungeon.babel_tower.floor=112
     local saved=copy(c.memory); d.close(); d.openDungeon(3,"babel_tower"); c.draw()
     local n=#c.towerSelections; local x,y=visibleRow(c,112); d.handleInput(x,y)
@@ -850,18 +1112,22 @@ local function continuousRowCases()
         local max=dc.MAX_FLOOR[id]
         c.memory.dungeon[id]={floor=max,cleared={[tostring(max)]=true},sweepsToday=1}
         c.teams={101,201,301}; c.teams[i]=dc.getStageId(id,60)
-        local saved=copy(c.memory); d.close(); d.open(i); c.draw(); currentRow(c,60)
-        local n=#c.selections; local x,y=visibleRow(c,60); d.handleInput(x,y)
-        eq(#c.selections,n,"资源60当前关不重复路由")
-        d.handleScroll(-999,340,900); c.draw()
-        local label=assert(rowLabel(c,max)); check(label.y-34+168<=1676,"资源尾层完整露出")
-        check(rowLabel(c,max+1)==nil,"资源没有越界尾层")
-        x,y=visibleRow(c,max); d.handleInput(x,y)
-        eq(#c.selections,n+1,"真实资源尾层可选")
-        eq(c.selections[#c.selections].id,dc.getStageId(id,max),"尾层正确资源ID")
-        eq(c.selections[#c.selections].team,i,"尾层保留队号")
-        d.handleScroll(999,340,900); c.draw(); check(textAt(c,"1-1",331,824),"资源纵滚回第1层")
-        d.handleScroll(-1,340,900); c.draw(); check(textAt(c,"1-2",331,824),"资源wheel连续一层非切分类")
+        local chapter=expectedChapter(id,60); c.viewKind="resource"
+        local saved=copy(c.memory); d.close(); d.open(i); c.draw(); currentRow(c,chapter,"当前章节")
+        local n=#c.selections; local x,y=visibleRow(c,chapter); d.handleInput(x,y)
+        eq(#c.selections,n+1,"旧60仅显示定位61，允许主动切真实章末")
+        eq(c.selections[#c.selections].id,dc.getStageId(id,61),"旧中间关点击切正确锚点")
+        eq(c.teams[i],dc.getStageId(id,60),"拒绝切章不改真实旧队伍ID")
+        n=#c.selections; d.handleScroll(-999,340,900); c.draw()
+        local lastChapter=#ANCHORS[id]
+        local label=assert(rowLabel(c,lastChapter)); check(label.y-28+140<=1676,"资源尾章完整露出")
+        check(rowLabel(c,lastChapter+1)==nil,"资源没有越界尾章")
+        x,y=visibleRow(c,lastChapter); d.handleInput(x,y)
+        eq(#c.selections,n+1,"真实资源尾章可选")
+        eq(c.selections[#c.selections].id,dc.getStageId(id,max),"尾章正确旧末层资源ID")
+        eq(c.selections[#c.selections].team,i,"尾章保留队号")
+        d.handleScroll(999,340,900); c.draw(); check(textAt(c,"1-1",331,818),"资源纵滚回第1章")
+        d.handleScroll(-1,340,900); c.draw(); check(textAt(c,"1-2",331,818),"资源wheel150一章非切分类")
         idle(c,saved)
     end
     local z=newContext(); local zd=z.prepareDialog(); z.memory.dungeon.babel_tower.floor=112
@@ -894,17 +1160,212 @@ local function continuousRowCases()
     zd.handleDragBegin(700,900); zd.handleDragMove(500,900); zd.handleDragEnd(); zd.handleInput(340,820); z.draw()
     check(textAt(z,"1-3",331,824),"塔无固定卡牌横拖不串纵轴"); eq(#z.towerSelections,n,"塔横拖消费tap")
     check(#before>0,"横拖前真实draw存在")
-    zd.handleInput(200,1002); zd.handleScroll(-2,340,900); z.draw(); check(textAt(z,"1-3",331,824),"装备独立纵scroll")
+    zd.handleInput(200,1002); zd.handleScroll(-2,340,900); z.draw(); check(textAt(z,"1-3",331,818),"装备独立150步纵scroll")
     zd.handleInput(200,1190); z.draw(); check(textAt(z,"1-3",331,824),"切回塔保留自身纵scroll")
     zd.handleInput(150,782); z.draw(); zd.handleInput(250,782); z.draw()
     check(textAt(z,"1-3",331,824),"主线副本tabs切回塔仍保留纵scroll")
-    zd.handleInput(200,1002); z.draw(); check(textAt(z,"1-3",331,824),"装备scroll不被塔/tabs覆盖")
+    zd.handleInput(200,1002); z.draw(); check(textAt(z,"1-3",331,818),"装备scroll不被塔/tabs覆盖")
     zd.handleInput(200,1190); zd.handleScroll(-999,340,900); z.draw(); currentRow(z,112)
     local x,y=visibleRow(z,112); zd.handleInput(x,y)
     eq(z.towerSelections[#z.towerSelections].floor,112,"塔纵滚末层命中112")
     check(zd.isOpen(),"末层mock拒绝不关闭")
     zd.handleScroll(999,340,900); z.draw(); check(textAt(z,"1-1",331,824),"塔wheel上下界均安全")
     idle(z,saved)
+end
+local function rewardCases()
+    local c=newContext(); local dc=c.require("config.DungeonConfig")
+    local di,tc=c.require("config.DungeonIdleConfig"),c.require("config.TowerConfig")
+    local r=c.require("ui.battle.stage.StageSelectResources")
+    dc.getStageRewards=function() return c.deny("preview called getStageRewards") end
+    local saved=copy(c.memory); local random=c.randomCalls
+    -- 固定数值锚点，不仅把实现乘法再做一次；覆盖首层、跨章和小于一件。
+    for _,fixture in ipairs({
+        {id="gold_mine",floor=1,count=28,expected=8.4},
+        {id="gold_mine",floor=6,count=32,expected=176},
+        {id="equipment_vault",floor=1,count=32,expected=1/150},
+        {id="equipment_vault",floor=6,count=32,expected=1/150},
+        {id="black_diamond",floor=1,count=32,expected=3.2},
+        {id="black_diamond",floor=6,count=32,expected=3.2},
+    }) do
+        local sid=dc.getStageId(fixture.id,fixture.floor); local entry=dc.getStage(sid)
+        eq(entry.firstCount,fixture.count,"固定奖励fixture累计敌数")
+        near(r.getRewardPreview(sid,entry).amount,fixture.expected,"固定纯期望奖数 " .. sid)
+    end
+    for _,id in ipairs(dc.RESOURCE_IDS) do for f=1,dc.MAX_FLOOR[id] do
+        local sid=dc.getStageId(id,f); local entry=dc.getStage(sid); local before=copy(entry)
+        local reward=r.getRewardPreview(sid,entry)
+        local rate=di.getIdlePerMin(id,f)
+        near(reward.amount,rate*(id=="equipment_vault" and 1 or di.REWARD_MULT)*entry.firstCount/20,"339真实旧floor纯数学期望")
+        eq(reward.iconPath,dc.DEFINITIONS[id].rewardIcon,"奖励真实资源图标")
+        eq(reward.quality,dc.DEFINITIONS[id].quality,"奖励配置底框品质")
+        eq(reward.isEstimate,true,"资源期望不伪称保证奖")
+        check(reward.firstAmount==nil and reward.repeatAmount==nil,"无firstGold/firstEquip额外首通伪奖")
+        if id=="equipment_vault" then
+            local data=dc.getFloor(id,f)
+            near(rate,1/240,"装备每分钟6件/1440分钟，无货币2倍")
+            eq(reward.equipLevel,data.equipLevel,"装备实际旧floor等级")
+            eq(reward.equipMinQuality,data.equipMinQuality,"装备最低品质真实")
+            eq(reward.equipMaxQuality,data.equipMaxQuality,"装备最高品质真实")
+        end
+        check(same(entry,before),"preview不改真实DC缓存entry")
+    end end
+    local drawing=c.require("ui.battle.stage.StageSelectRewardPreview")
+    for _,fixture in ipairs({{0,"—"},{0.00001,"≈<0.0001"},{1/150,"≈0.0067"},{0.2,"≈0.2"},{3.2,"≈3.2"},{8.4,"≈8.4"},{176,"≈176"},{10000,"≈10k"}}) do
+        eq(drawing.formatEstimate(fixture[1]),fixture[2],"期望小数格式固定fixture")
+    end
+    for f=1,112 do
+        local reward=r.getRewardPreview(400000+f,r.getStageEntry(400000+f))
+        local fixed=f==1 and 150 or (f==2 and 300 or 300+(f-2)*50)
+        eq(tc.getFloor(f).firstDiamond,fixed,"TC112首通配置固定oracle")
+        eq(reward.firstAmount,fixed,"塔首通来自TC非DC黑钻")
+        eq(reward.repeatAmount,math.floor(fixed/2),"塔重打TC扫荡量")
+        eq(reward.isEstimate,false,"塔分列确定奖励不期望")
+    end
+    eq(r.getCurrentTowerStageId({babel_tower={floor=113}}),400112,"塔floor113全通显示112不越界")
+    eq(r.getRewardPreview(101),nil,"主线预览不添加资源奖")
+    eq(r.getRewardPreview(999),nil,"神殿预览不变")
+    eq(c.randomCalls,random,"339+112纯preview没有随机调用")
+    for _,path in ipairs({"image/货币道具/UI_icon_JB_X.png","image/货币道具/UI_icon_FBBX.png","image/货币道具/UI_icon_SJ_X.png"}) do
+        for _,response in ipairs({0,-1}) do
+            local z=newContext(); z.imageResult[path]=response; z.prepareDialog()
+            local preview=z.require("ui.battle.stage.StageSelectRewardPreview")
+            local data={iconPath=path,quality=5,amount=0.2,isEstimate=true}
+            preview.draw(z.vg,data,323,894,564,34,false)
+            local found=false; for _,v in ipairs(z.calls) do if v.kind=="fill" and v.paint and v.paint.path==path then found=true end end
+            eq(found,response==0,"奖励图标handle0合法/-1安全fallback")
+            local n=z.loads[path]; preview.draw(z.vg,data,323,894,564,34,false)
+            eq(z.loads[path],n,"奖励0缓存/失败限频")
+            if response==-1 then
+                z.imageResult[path]=0; z.clock.elapsedTime=z.clock.elapsedTime+3; preview.draw(z.vg,data,323,894,564,34,false)
+                eq(z.loads[path],n+1,"奖励失败恢复重试")
+            end
+            preview.init(z.vg); check(z.deleted[0],"奖励图片0重新init可释放")
+            z.clipBalanced(); eq(z.randomCalls,0,"独立奖励绘制不随机")
+        end
+    end
+    idle(c,saved)
+end
+local function resourceDialogCases()
+    local c=newContext(); local d=c.prepareDialog(); local dc=c.require("config.DungeonConfig")
+    local r=c.require("ui.battle.stage.StageSelectResources")
+    local estimate=c.require("ui.battle.stage.StageSelectRewardPreview")
+    c.accepts=false; c.viewKind="resource"
+    for resourceIndex,id in ipairs(dc.RESOURCE_IDS) do
+        c.memory.dungeon[id]={floor=dc.MAX_FLOOR[id]+1,cleared={[tostring(dc.MAX_FLOOR[id])]=true},sweepsToday=1}
+        for chapter,floor in ipairs(ANCHORS[id]) do
+            c.teams={101,201,301}; c.teams[resourceIndex]=dc.getStageId(id,floor)
+            local saved,teams=copy(c.memory),copy(c.teams); local random=c.randomCalls
+            d.close(); d.open(resourceIndex); c.draw(); currentRow(c,chapter)
+            local _,_,top=visibleRow(c,chapter)
+            local rowFound=false; local cards={}
+            for _,v in ipairs(c.calls) do
+                if v.kind=="fill" and v.shape.x==315 and v.shape.y==top and v.shape.w==580 then
+                    eq(v.shape.h,140,"三资源章行140实际形状"); rowFound=true
+                elseif v.kind=="card" and v.y==top+44 then
+                    cards[#cards+1]=v
+                    eq(v.w,76,"三资源真实敌卡宽76"); eq(v.h,72,"三资源真实敌卡高72")
+                    check(v.clip and v.clip.x==455 and v.clip.w==436 and v.clip.y>=786 and v.clip.y+v.clip.h<=1676,"真实敌卡裁剪只在固定右视窗")
+                end
+            end
+            check(rowFound and #cards>0,"71资源每章真实绘制非mock Dialog")
+            local label=rowLabel(c,chapter)
+            check(label.clip and label.clip.x==315 and label.clip.y==786 and label.clip.w==580 and label.clip.h==890,"资源章标签固定890视窗")
+            local sid=dc.getStageId(id,floor); local reward=r.getRewardPreview(sid,dc.getStage(sid))
+            check(textAt(c,"通关收益预估",327,top+121),"每章实际奖励预估标题独立带")
+            local amount=textAt(c,estimate.formatEstimate(reward.amount),503,top+121)
+            check(amount and amount.clip and amount.clip.y>=top+104 and amount.clip.y+amount.clip.h<=top+138,"≈小数位于行内奖励区不越底")
+            if id=="equipment_vault" then
+                check(textAt(c,string.format("随机Lv.%d · 品质%d-%d",reward.equipLevel,reward.equipMinQuality,reward.equipMaxQuality),615,top+121),"装备真实等级品质说明")
+            end
+            check(textAt(c,"按击杀结算",200,1320) and textAt(c,"非额外通关奖励",200,1346),"资源收益说明完整左列不撞右栏底边")
+            if id=="equipment_vault" then
+                check(textAt(c,"装备随机掉落",200,1390) and textAt(c,"按设置入包/分解",200,1416)
+                    and textAt(c,"或进入遗匣",200,1442),"装备去向说明左列完整可读")
+            else check(textAt(c,"一关约主线一章",200,1390) and textAt(c,"末关保留原跨度",200,1416),"章跨度说明左列完整可读") end
+            for _,v in ipairs(c.calls) do
+                if v.kind=="text" then check(not v.text:find("首次 ×",1,true),"资源不画firstGold/firstEquip保证奖") end
+            end
+            local n=#c.selections; local x,y=visibleRow(c,chapter); d.handleInput(x,y)
+            eq(#c.selections,n,"真实当前锚点不能重复路由")
+            eq(c.randomCalls,random,"71每章render不随机发奖")
+            check(same(c.teams,teams),"查看71章不写真实队伍ID"); idle(c,saved)
+            chapterCoverage=chapterCoverage+1
+        end
+        -- 旧中间ID数字/string自动reveal至章末，仅当前章节高亮，不谎称同一任务。
+        for _,oldFloor in ipairs({3,8,60,dc.MAX_FLOOR[id]-1}) do
+            for _,asString in ipairs({false,true}) do
+                local sid=dc.getStageId(id,oldFloor); local chapter,anchor=expectedChapter(id,oldFloor)
+                c.teams={101,201,301}; c.teams[resourceIndex]=asString and tostring(sid) or sid
+                local before=copy(c.teams); d.close(); d.open(resourceIndex); c.draw(); currentRow(c,chapter,"当前章节")
+                local label=rowLabel(c,chapter)
+                check(not textAt(c,"当前",331,label.y+50),"旧中间队伍不标假当前关")
+                local n=#c.selections; local x,y=visibleRow(c,chapter); d.handleInput(x,y)
+                eq(#c.selections,n+1,"允许旧中间队伍主动选择章末")
+                eq(c.selections[#c.selections].id,dc.getStageId(id,anchor),"旧中间点击真实旧锚点ID")
+                check(same(c.teams,before),"业务拒绝只读定位不改旧真实ID")
+            end
+        end
+    end
+    eq(chapterCoverage,71,"71资源章真实Dialog全覆盖")
+end
+local function compactGestureCases()
+    -- 命中设计：标签315..455 | 敌人455..891,y+6..94 | 奖励323..887,y+104..138。
+    -- 行140 + gap10，视窗786..1676；奖励横拖不能进入敌卡横轴，纵拖仍滚行。
+    local c=newContext(); local d=c.prepareDialog(); c.viewKind="resource"; c.accepts=false
+    local dc=c.require("config.DungeonConfig")
+    c.memory.dungeon.equipment_vault={floor=110,cleared={["109"]=true},sweepsToday=1}
+    c.teams={101,200006,301}; d.open(2); d.handleScroll(999,340,900); c.draw()
+    check(textAt(c,"1-1",331,818) and textAt(c,"1-2",331,968),"compact row step150真实章间距")
+    local saved=copy(c.memory); local n=#c.selections
+    local function firstCard(chapter)
+        local top=assert(rowLabel(c,chapter)).y-28
+        for _,v in ipairs(c.calls) do if v.kind=="card" and v.y==top+44 then return v end end
+        error("compact first card missing")
+    end
+    local first=firstCard(2); eq(first.x,495,"compact第一卡center495")
+    -- 装备第二章有4怪型，内容宽332小于436，不假造横滚；后面显式找真实5+怪型主线。
+    d.handleDragBegin(700,940+121); d.handleDragMove(480,940+121); d.handleDragMove(480,940-50); d.handleDragEnd(); d.handleInput(340,970); c.draw()
+    eq(firstCard(2).x,first.x,"奖励区横拖即便转纵也不横滚敌卡")
+    check(textAt(c,"1-1",331,818),"奖励横锁轴不串纵"); eq(#c.selections,n,"奖励横拖消费误tap")
+    d.handleDragBegin(700,911); d.handleDragMove(700,761); d.handleDragMove(500,761); d.handleDragEnd(); d.handleInput(340,820); c.draw()
+    check(textAt(c,"1-2",331,818),"奖励区先纵越阈值后横走仍滚150")
+    eq(#c.selections,n,"奖励纵drag消费tap")
+    d.handleScroll(999,340,900); c.draw()
+    for _,point in ipairs({{340,930.001},{340,939.999},{340,785.999},{340,1676},{314.999,900},{895.001,900}}) do
+        d.handleInput(point[1],point[2]); eq(#c.selections,n,"compact gap/裁剪外不选隐藏锚点")
+    end
+    d.handleInput(340,940); eq(#c.selections,n,"当前第二锚点边缘命中但不路由")
+    d.handleDragBegin(340,900); d.handleDragMove(340,600); d.handleDragMove(340,900); d.handleDragEnd(); d.handleInput(340,820); c.draw()
+    check(textAt(c,"1-1",331,818),"compact往返纵drag回位")
+    eq(#c.selections,n,"compact往返drag仍消费tap")
+    d.handleScroll(-1,700,911); c.draw(); check(textAt(c,"1-2",331,818),"奖励区wheel按group step150")
+    d.handleScroll(999,340,900); d.handleDragBegin(340,900); d.handleDragMove(340,600); d.handleScroll(1,340,900); d.handleDragMove(340,590); d.handleDragEnd(); d.handleInput(340,820); c.draw()
+    check(rowLabel(c,2)~=nil,"wheel和drag混用仍有正确可见章")
+    idle(c,saved)
+    -- 不改/伪造怪池：真实湮灭V首章末关有3普通+boss+2首通怪，横滚必溢出。
+    local z=newContext(); local zd=z.prepareDialog(); z.teams={32305,201,301}; openMain(z)
+    local function firstMainCard()
+        for _,v in ipairs(z.calls) do if v.kind=="card" and v.y==1564 then return v end end
+        error("actual main 323-5 card missing")
+    end
+    local card=firstMainCard(); eq(card.w,92,"主线横滚卡宽92未压缩"); eq(card.h,104,"主线卡高104未压缩")
+    eq(card.x,503,"主线首卡center503原几何")
+    zd.handleDragBegin(700,1564); zd.handleDragMove(500,1564); zd.handleDragMove(500,1750); zd.handleDragEnd(); zd.handleInput(340,1536); z.draw()
+    eq(firstMainCard().x,343,"真实6卡横滚限位160且转纵锁轴不串行")
+    check(textAt(z,"323-5",331,1536),"主线横拖不改纵scroll")
+    eq(#z.selections,0,"主线横拖松手不选关")
+    local amountBefore={}; for _,v in ipairs(z.calls) do if v.kind=="text" and v.y==1628 and v.text:match("^x%d+$") then amountBefore[#amountBefore+1]=v.x end end
+    check(#amountBefore==6,"真实横滚全部6怪型含首通怪数量")
+    zd.handleDragBegin(500,1564); zd.handleDragMove(900,1564); zd.handleDragEnd(); zd.handleInput(340,1536); z.draw()
+    eq(firstMainCard().x,503,"主线反向横拖立即回上界")
+    for _,v in ipairs(z.calls) do if v.kind=="text" and v.text:match("^x%d+$") and v.y==1628 then
+        check(v.clip and v.clip.x==455 and v.clip.w==436,"主线横滚数量同敌人裁剪")
+    end end
+    z.teams={999,201,301}; zd.close(); zd.open(1); z.draw()
+    check(textAt(z,"神殿",331,924) or textAt(z,"当前",331,924),"神殿原168行状态不压缩")
+    local guide=0; for _,v in ipairs(z.calls) do if v.kind=="text" and v.x==331 and v.y>958 and v.text~="" then guide=guide+1 end end
+    check(guide>=4,"神殿四段说明继续绘制")
+    eq(#z.selections,0,"神殿查看不路由")
 end
 local function safetyCases()
     for _,c in ipairs(contexts) do eq(#c.denied,0,"生产执行无未知require/save/action/IO尝试") end
@@ -919,7 +1380,9 @@ local function safetyCases()
     end
     for name in pairs(SOURCE_FILES) do eq(package.loaded[name],initialLoaded[name],"全局package cache不污染 " .. name) end
     eq(File,nativeFile,"全局File不覆写"); eq(nvgCreateImage,nativeCreateImage,"全局绘图API不覆写")
-    eq(#reads,26,"固定26份源码白名单，Tri只取纯背景段")
+    local expectedReads=0; for _ in pairs(SOURCE_FILES) do expectedReads=expectedReads+1 end
+    eq(expectedReads,29,"固定29份源码安全白名单")
+    eq(#reads,expectedReads,"全部固定源码读取，Tri/Scene只取纯函数段")
     print(TAG .. "LIMIT: source/File=read-only allowlist; real GameState/save/File-write/cloud/runtime-action/main/Boot.run denied.")
     print(TAG .. "LIMIT: spawn unit factory, I18n, BF, progress/gotoTeamStage mocked; no full main, live combat, persistence or mobile-input claim.")
 end
@@ -950,18 +1413,24 @@ function Start()
         return
     end
     for _,test in ipairs({{"all339-floors-frozen-oracle-and-source-safety",configCases},
-        {"unlock-and-deterministic-economy-preserved",economyCases},{"actual-Tri-background-pure-resolver",resolverCases},
+        {"unlock-and-deterministic-economy-preserved",economyCases},
+        {"chapter-fixed-anchors-next-prev-ledger-legacy-ruin",chapterCases},
+        {"actual-completeTriStageClear-floor-ledger-no-first-rewards",triClearCases},
+        {"actual-Tri-background-pure-resolver",resolverCases},
         {"actual-new-tabs-and-old-tabs-dead",layoutCases},{"shared-chapter-bounds-wheel-arrows-drag",scrollCases},
-        {"four-flat-groups-339-resource-112-tower-entries",resourceGroupCases},
+        {"four-flat-groups-71-resource-chapters-112-tower-339-old-ids",resourceGroupCases},
         {"four-preview-path-cache-zero-missing",imageCases},{"teams123-lock-guards-no-consumption",selectionCases},
         {"actual-Dialog-all112-tower-floor-routing-reveal-locks",towerDialogCases},
         {"actual-continuous-rows-scroll-clip-gesture-section-memory",continuousRowCases},
+        {"pure-reward-expectation-all339-and-tower112",rewardCases},
+        {"actual-all71-chapter-rows-rewards-old-team-readonly-map",resourceDialogCases},
+        {"compact-140-row-scroll-gap-locked-axis-reward-gestures",compactGestureCases},
         {"allowlist-read-only-no-main-save-action",safetyCases}}) do
         groups=groups+1; local ok,why=pcall(test[2])
         if ok then print(TAG .. "PASS " .. test[1])
         else failures=failures+1; log:Write(LOG_ERROR,TAG .. "FAIL " .. test[1] .. " " .. tostring(why)) end
     end
-    print(TAG .. "RESULT " .. (failures==0 and "ALL PASS" or "FAIL") .. " groups=" .. groups .. " checks=" .. checks .. " floors=" .. floorCoverage .. " towerFloors=" .. towerCoverage .. " failures=" .. failures)
+    print(TAG .. "RESULT " .. (failures==0 and "ALL PASS" or "FAIL") .. " groups=" .. groups .. " checks=" .. checks .. " floors=" .. floorCoverage .. " chapterRows=" .. chapterCoverage .. " towerFloors=" .. towerCoverage .. " failures=" .. failures)
     -- 保持validate生命周期，由官方runtime帧预算退出并写隔离报告，不自行engine:Exit。
 end
 function Stop()

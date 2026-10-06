@@ -2,18 +2,26 @@
 function Start()
     local nativeRequire = require
     local story, reward, blocked, busy = false, false, false, false
-    local leaves, prepared, persisted = 0, 0, 0
+    local leaves, prepared, persisted, talentCloses = 0, 0, 0, 0
+    local talentOpen = false
     local data = { session = { claimedScenarios = {}, tutorialProgress = { version = 1, completed = {} } },
         heroes = { roster = { [1] = { level = 10 } } } }
     local mocks = {
         ["ui.story.ScenarioDialogue"] = { isActive = function() return story end },
         ["ui.hud.popup.RewardPopup"] = { isOpen = function() return reward end },
         ["ui.tavern.TavernPage"] = { isRecruitBusy = function() return busy end },
+        ["ui.church.talent.TalentPage"] = { isOpen = function() return talentOpen end,
+            close = function() talentOpen = false; talentCloses = talentCloses + 1 end },
         ["ui.hud.BottomNav"] = { setTabLocked = function() end },
         ["ui.tutorial.TutorialPageRecovery"] = { isBlocked = function() return blocked end,
             prepare = function() prepared = prepared + 1; return false end },
         ["systems.StoryPlayer"] = { followOf = function(id) return id == 23 and 24 or nil end,
-            onPlace = function(place, phase) if place == "church" and phase == "leave" then leaves = leaves + 1 end end },
+            onPlace = function(place, phase)
+                if place == "church" and phase == "leave" then
+                    assert(not talentOpen, "古树目标页必须先关闭再排离场剧情")
+                    leaves = leaves + 1
+                end
+            end },
     }
     require = function(name) return mocks[name] or nativeRequire(name) end
     local TM = nativeRequire("systems.TutorialManager")
@@ -21,7 +29,7 @@ function Start()
     local count = 0
     local function check(value, label) count = count + 1; assert(value, label) end
     local function reset()
-        story, reward, blocked, busy = false, false, false, false
+        story, reward, blocked, busy, talentOpen = false, false, false, false, false
         data.session = { claimedScenarios = {}, tutorialProgress = { version = 1, completed = {} } }
         TM.init({}, store, function(progress) data.session.tutorialProgress = progress; persisted = persisted + 1 end)
         TM.update(0)
@@ -50,8 +58,10 @@ function Start()
         TM.onScenarioClaimed(8); TM.onScenarioClaimed(8)
         check(#TM.getProgress().queue == 1 and TM.getProgress().queue[1] == 2,
             "后续教程排队去重，不覆盖当前")
-        stop()
-        check(TM.canPlayPendingStory() and not TM.isActive(), "组结束允许后续剧情")
+        TM.skipCurrentGroup()
+        check(not TM.canPlayPendingStory() and TM.isActive(), "淡出期间不让剧情插队")
+        TM.update(0.2)
+        check(not TM.canPlayPendingStory() and not TM.isActive(), "已释放当前组但queue未空仍不允许剧情")
         reward = true; TM.update(1)
         check(not TM.isActive() and #TM.getProgress().queue == 1, "queued教程仍等奖励结束")
         reward = false; TM.update(0.25)
@@ -75,13 +85,18 @@ function Start()
             "完成古树后立即退出重启，补回尚未播放的教堂离场剧情")
         TM.update(1)
         check(leaves == restoredLeaves + 1, "离场恢复只初始化补一次，不每帧排队")
-        reset(); TM.startGroup(6)
-        local before = leaves
+        reset(); TM.startGroup(6); talentOpen = true
+        local before, beforeCloses = leaves, talentCloses
         TM.skipCurrentGroup(); TM.skipCurrentGroup()
         check(leaves == before + 1 and TM.isGroupCompleted(6), "古树完成或跳过只补一次教堂离场剧情")
-        check(TM.canPlayPendingStory(), "古树淡出已允许播放离场剧情")
-        TM.update(0.3)
+        check(not talentOpen and talentCloses == beforeCloses + 1, "古树目标页只关闭一次")
+        check(not TM.canPlayPendingStory(), "古树淡出期间仍不允许离场剧情抢输入")
+        TM.update(0.19)
+        check(TM.isActive() and not TM.canPlayPendingStory(), "0.2秒淡出未满仍持有教程")
+        TM.update(0.01)
         check(not TM.isActive(), "古树结束释放引导，不自动伪造酒馆完成")
+        check(TM.canPlayPendingStory() and #TM.getProgress().queue == 0,
+            "淡出完成且queue为空才允许离场剧情")
         TM.onScenarioClaimed(28); TM.update(0.25)
         check(TM.getCurrentGroup() == 7, "真实离场对话领取后才触发去酒馆组")
 
@@ -106,10 +121,18 @@ function Start()
             "等待触发期间真实十连完成不要求再次消费招募券")
         TM.update(1)
         check(not TM.isActive(), "已完成queued十连不再启动")
-        mocks["ui.character.panel.CharacterPanel"] = { getTeamSlotLayout = function() return { 0, 0, 1, 0 } end }
+        mocks["ui.character.panel.CharacterPanel"] = {
+            getTeamSlotLayout = function(teamIdx) return teamIdx == 1 and { 0, 0, 0, 1 } or {} end,
+            getTeamSlotsData = function() return { {}, {}, {}, { state = "occupied", heroId = 1 } } end,
+            isOwned = function() return true end,
+            isHeroesDataApplied = function() return true end,
+        }
         TM.onScenarioClaimed(32); TM.update(0.25)
-        check(TM.isGroupCompleted(9) and not TM.isActive(), "新角色已在队一第三槽时免重复拖放")
-        mocks["ui.character.panel.CharacterPanel"].getTeamSlotLayout = function() return { 1, 0, 0, 0 } end
+        check(TM.isGroupCompleted(9) and not TM.isActive(), "新角色已在队一第四槽时免重复拖放")
+        mocks["ui.character.panel.CharacterPanel"].getTeamSlotLayout = function() return { 0, 0, 0, 0 } end
+        mocks["ui.character.panel.CharacterPanel"].getTeamSlotsData = function()
+            return { { state = "empty" }, { state = "empty" }, { state = "empty" }, { state = "empty" } }
+        end
         reset(); TM.setNewHeroId(1); TM.onScenarioClaimed(32); TM.update(0.25)
         check(TM.getCurrentGroup() == 9, "角色存在但未在目标槽时仍正常上阵教学")
 

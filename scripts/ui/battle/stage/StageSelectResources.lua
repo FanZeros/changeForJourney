@@ -3,10 +3,32 @@
 local DC = require("config.DungeonConfig")
 local SC = require("config.StageConfig")
 local TC = require("config.TowerConfig")
+local IdleConfig = require("config.DungeonIdleConfig")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 
+---@class StageSelectGroup
+---@field key number|string
+---@field name string
+---@field ids number[]
+---@field subLabel string|nil
+---@field resourceDungeonId string|nil
+---@field isTower boolean|nil
+---@field hueIndex number|nil
+---@field background string|nil
+
+---@class StageSelectRewardData
+---@field iconPath string
+---@field quality number
+---@field amount number
+---@field isEstimate boolean
+---@field firstAmount number|nil
+---@field repeatAmount number|nil
+---@field equipLevel number|nil
+---@field equipMinQuality number|nil
+---@field equipMaxQuality number|nil
+
 local M = {}
-local groups = {} ---@type table[]
+local groups = {} ---@type StageSelectGroup[]
 local TOWER_STAGE_BASE = 400000
 
 function M.isTowerStage(stageId)
@@ -14,14 +36,13 @@ function M.isTowerStage(stageId)
     return id ~= nil and id > TOWER_STAGE_BASE and id <= TOWER_STAGE_BASE + TC.MAX_FLOOR
 end
 
+---@return StageSelectGroup[]
 function M.getGroups()
     if #groups > 0 then return groups end
     for resourceIndex, id in ipairs(DC.RESOURCE_IDS) do
         local def = DC.DEFINITIONS[id]
-        local ids = {}
-        for floor = 1, DC.MAX_FLOOR[id] do
-            ids[#ids + 1] = DC.getStageId(id, floor)
-        end
+        -- 配置层提供章跨度旧ID锚点；UI不压缩/重写实际队伍任务和旧账本。
+        local ids = DC.getChapterStageIds(id)
         groups[#groups + 1] = {
             key = "R:" .. id, name = def.name, subLabel = "",
             resourceDungeonId = id, hueIndex = resourceIndex,
@@ -42,6 +63,50 @@ function M.getGroupKey(stageId)
     if M.isTowerStage(stageId) then return "R:babel_tower" end
     local id = DC.decodeStageId(stageId)
     return id and "R:" .. id or nil
+end
+
+--- 显示定位映射只影响选中行；currentStageId仍保存真实旧ID。
+---@param stageId number|nil
+---@return number|nil
+function M.getDisplayStageId(stageId)
+    if stageId and SC.isResourceStage(stageId) then return DC.getChapterStageId(stageId) end
+    return stageId
+end
+
+--- 纯静态收益预览：整行击杀收益的数学期望，不调用随机/发奖接口。
+--- 资源沿用旧resourceFloor收益基准；塔明确分别列出整层首通与重打。
+---@param stageId number
+---@param entry table|nil
+---@return StageSelectRewardData|nil
+function M.getRewardPreview(stageId, entry)
+    if M.isTowerStage(stageId) then
+        local floorData = TC.getFloor(stageId - TOWER_STAGE_BASE)
+        if not floorData then return nil end
+        local def = DC.DEFINITIONS.black_diamond
+        return {
+            iconPath = def.rewardIcon, quality = def.quality, amount = floorData.firstDiamond,
+            isEstimate = false, firstAmount = floorData.firstDiamond, repeatAmount = floorData.sweepDiamond,
+        }
+    end
+    local id, floor = DC.decodeStageId(stageId)
+    if not id then return nil end
+    local combat = entry or SC.getStage(stageId)
+    if not combat then return nil end
+    local legacyFloor = combat.resourceFloor or floor
+    local def = DC.DEFINITIONS[id]
+    local rate = IdleConfig.getIdlePerMin(id, legacyFloor)
+    local perMinute = id == "equipment_vault" and rate or rate * IdleConfig.REWARD_MULT
+    local amount = perMinute * math.max(0, combat.firstCount or 0) / 20
+    local result = {
+        iconPath = def.rewardIcon, quality = def.quality, amount = amount, isEstimate = true,
+    } ---@type StageSelectRewardData
+    if id == "equipment_vault" then
+        local floorData = DC.getFloor(id, legacyFloor)
+        if not floorData then return nil end
+        result.equipLevel = floorData.equipLevel
+        result.equipMinQuality, result.equipMaxQuality = floorData.equipMinQuality, floorData.equipMaxQuality
+    end
+    return result
 end
 
 function M.getStageEntry(stageId)

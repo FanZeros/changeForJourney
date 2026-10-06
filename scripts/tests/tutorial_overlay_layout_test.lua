@@ -1,5 +1,13 @@
 -- 纯布局与 NanoVG mock 回归，可由 Runtime Start() 或独立 Lua 执行。
-local Overlay = require("ui.tutorial.TutorialOverlay")
+-- 只验证几何/绘制；新翻译依赖显式identity，五语完整译文由i18n_story_display_test覆盖。
+local nativeRequire = require
+require = function(name)
+    if name == "core.I18n" then return { lookup = function(text) return text end } end
+    return nativeRequire(name)
+end
+local loaded, Overlay = pcall(nativeRequire, "ui.tutorial.TutorialOverlay")
+require = nativeRequire
+assert(loaded, Overlay)
 
 local function overlaps(a, b)
     return b and math.abs(a.cx - b.cx) < (a.w + b.w) * 0.5
@@ -53,7 +61,7 @@ local function run()
         check(missing.hs == nil and not overlaps(missing.bubble, missing.skip), "missing target recoverable")
         local outside = Overlay.layout(width, height, { cx = -200, cy = -200, w = 20, h = 20 })
         check(outside.hs == nil, "fully offscreen target uses recovery")
-        -- 城镇总览视觉展示完整左栏，实际继续区域仍只有顶部空白带。
+        -- 兼容能力：显式spotlight可独立于小热点覆盖左栏，不代表组4主流程仍点击空白继续。
         local scale = math.min(width / 1458, height / 1080)
         local leftX, topY = (width - 1458 * scale) * 0.5, (height - 1080 * scale) * 0.5
         local spotlight = { cx = leftX + 243 * scale, cy = topY + 540 * scale,
@@ -67,7 +75,7 @@ local function run()
                 "显式总览洞精确覆盖全左栏，不外扩到中栏")
             check(result.hs and result.hs.cx == overview.cx and result.hs.cy == overview.cy
                 and result.hs.w == overview.w and result.hs.h == overview.h,
-                "总览视觉扩大不扩大点击继续的热点")
+                "兼容spotlight视觉扩大不扩大原小热点")
             inScreen(result.bubble, width, height, "总览提示")
             inScreen(result.skip, width, height, "总览跳过")
             check(not overlaps(result.bubble, result.hole) and not overlaps(result.skip, result.hole),
@@ -153,7 +161,7 @@ local function run()
                 w = 486 * scale, h = 1080 * scale }
             local target = { cx = leftX + 243 * scale, cy = topY + 67.5 * scale,
                 w = 405 * scale, h = 99 * scale, spotlight = spotlight }
-            for _, text in ipairs({ "左侧就是城镇，各类功能建筑都在这里，点击空白处继续", longText }) do
+            for _, text in ipairs({ "兼容spotlight几何：视觉整栏独立于小热点", longText }) do
                 local before = #holes
                 local result = Overlay.draw({}, width, height, target, text, 0.7, 2, 1)
                 check(#holes == before + 1 and result.hole ~= nil, "整栏实际遮罩仅开一个洞")
@@ -162,7 +170,7 @@ local function run()
                     and math.abs(path[4] - spotlight.w) < 0.001 and math.abs(path[5] - spotlight.h) < 0.001,
                     "测量后最终NanoVG洞路径精确覆盖左栏")
                 check(result.hs and result.hs.w == target.w and result.hs.h == target.h,
-                    "draw保留原空白带点击尺寸")
+                    "draw保留原小热点尺寸，兼容视觉区域不扩大命中")
                 check(not overlaps(result.bubble, result.hole) and not overlaps(result.skip, result.hole),
                     "实测长短文本提示和跳过都不遮总览")
             end

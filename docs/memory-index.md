@@ -1,5 +1,13 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+## workspace1005 仓库背景与司仪转职两图（2026-10-06）
+
+- 基准workspace1005@487027ae，分支feat1005/class-advancement-icons-20261006。用户暂缓副本，仅111/112且底板全程序绘制，两个实际提交，不改其他图标或生产Lua，不推基线、不合并/发布；PR目标workspace1005，远端状态须实时核查。
+- 背景仅UI_BB_BJ.png审核B兼容稿1080×728，原meta不动，真实仓库compact顶部250叠盖正常；111延祷双盾/沙漏、112领忏断债链/祷光，共用全新十二面暗铁铜边底板，280RGBA与原UUID不变。默认生成器仅输出内部审核，-install仅两图。
+- 本轮真实Runtime通过图标34、成长1697、仓库268、滚动10；独立预乘像素核验各78400点一致。四组真实页面各150帧、Lua/资源0、缺图0，原始FAIL仅帧尖峰；已内部查看截图，不冒充设备性能/完整生产交互验收。首次两项夹具错误修正后重建重跑，不改生产规则。
+- 规范36单测通过；基线20个旧meta问题与本轮同一集合，不混修。临时入口/母图/截图/日志、构建身份及无关自动meta不提交。详细交接边界与用户AskUserQuestion偏好见memory/WORKFLOW_RULES.md；本次最新指令不再提问，尊重停止/权限边界，凭据不进源码、remote、日志或记忆。
+
+
 ## 升阶修复 PR87 交接（2026-10-05）
 
 - 用户明确授权提交PR；https://github.com/FanZeros/changeForJourney/pull/87，head=`fix930/equipment-ascend-freeze-20261005`，base=`workspace930`。创建源39f32c370954b41c7d38c275d4af40c798d0a46b、目标372f4506a6f55342f28964b73ee60312e3c96c59；返回open、draft=false、merged=false，未自动合并，不宣称CI通过。

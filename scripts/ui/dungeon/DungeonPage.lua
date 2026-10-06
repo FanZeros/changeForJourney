@@ -201,6 +201,47 @@ DT.CHEST_CY = DT.PANEL_BOTTOM + DT.CHEST_GAP + 70
 DT.CHEST_HINT_Y = DT.CHEST_CY + 70 + 24
 DT.CHEST_REWARD_Y = DT.CHEST_HINT_Y + 42
 
+-- 横屏采用1920×1080设计空间；旧入口仍保留原布局。
+local portraitDetail = {}
+for key, value in pairs(DT) do portraitDetail[key] = value end
+local landscapeMode = false
+local pageWidth, pageHeight = 1080, 2400
+
+function DungeonPage.setLandscapeMode(enabled)
+    if landscapeMode == enabled then return end
+    landscapeMode = enabled == true
+    for key, value in pairs(portraitDetail) do DT[key] = value end
+    pageWidth, pageHeight = 1080, 2400
+    if not landscapeMode then return end
+    pageWidth, pageHeight = 1920, 1080
+    local layout = {
+        BG_CX = 960, BG_CY = 550, BG_W = 1760, BG_H = 860, BG_IT = 130,
+        TITLE_X = 960, TITLE_Y = 185, TYPE_X = 960, TYPE_Y = 260,
+        CONTENT_CX = 540, CONTENT_CY = 460, CONTENT_W = 780, CONTENT_H = 330,
+        FLOOR_PREV_CX = 260, FLOOR_PREV_CY = 440,
+        FLOOR_CURR_CX = 540, FLOOR_CURR_CY = 440,
+        FLOOR_NEXT_CX = 820, FLOOR_NEXT_CY = 440,
+        ARROW1_CX = 400, ARROW1_CY = 440, ARROW2_CX = 680, ARROW2_CY = 440,
+        CURLVL_X = 540, CURLVL_Y = 570,
+        REW_BG_CX = 1370, REW_BG_CY = 430, REW_BG_W = 720, REW_BG_H = 220,
+        DAILY_X = 1370, DAILY_Y = 590,
+        SWEEP_CX = 1150, SWEEP_CY = 700, FIGHT_CX = 1580, FIGHT_CY = 700,
+        CHEST_CX = 540, CHEST_CY = 760, CHEST_HINT_Y = 865, CHEST_REWARD_Y = 915,
+    }
+    for key, value in pairs(layout) do DT[key] = value end
+    print("[DungeonPage] 横屏选关布局已启用 1920x1080")
+end
+
+local function cardRect(cardIdx)
+    if landscapeMode then
+        local col = (cardIdx - 1) % 2
+        local row = math.floor((cardIdx - 1) / 2)
+        return 490 + col * 940, 340 + row * 390, 0.84
+    end
+    return CARD_X + CARD_W * 0.5,
+        CARD_Y + (cardIdx - 1) * CARD_STEP + CARD_H * CARD_SCALE * 0.5, CARD_SCALE
+end
+
 
 local dungeonList = {}
 for _, id in ipairs(DungeonConfig.RESOURCE_IDS) do
@@ -546,23 +587,27 @@ function DungeonPage.draw(vg)
 
     -- 1. 全屏背景色
     nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, 1080, 2400)
+    nvgRect(vg, 0, 0, pageWidth, pageHeight)
     nvgFillColor(vg, nvgRGBA(BG_R, BG_G, BG_B, 255))
     nvgFill(vg)
 
     -- 2. 顶部花纹
     drawImageTopLeft(vg, imgTopPattern, TOP_X, TOP_Y, TOP_W, TOP_H, 1.0)
 
-    -- 3. 页面标题 / 资源栏改由 TopBar 统一绘制（副本页也显示 TopBar）
+    -- 3. 横屏标题；竖版资源栏仍由 TopBar 绘制。
+    if landscapeMode then
+        DrawUtil.drawTextStroke(vg, pageWidth * 0.5, 60, "副本秘境", 60,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 5)
+    end
 
     -- 6. 副本卡片（循环绘制所有副本）
     local cardImages = { imgCard1, imgCard2, imgCard3, imgCard3 }
 
     for cardIdx, dungeon in ipairs(dungeonList) do
-        local actualY = CARD_Y + (cardIdx - 1) * CARD_STEP
+        local cardCX, cardCY, cardScale = cardRect(cardIdx)
+        local actualY = cardCY - CARD_H * cardScale * 0.5
         local cardY = CARD_Y
-        local cardCX = CARD_X + CARD_W * 0.5
-        local cardCY = actualY + CARD_H * CARD_SCALE * 0.5
+        local sourceCX = CARD_X + CARD_W * 0.5
 
         -- 获取该副本的状态
         local st = dungeonState[dungeon.id] or dungeonState.gold_mine
@@ -570,13 +615,13 @@ function DungeonPage.draw(vg)
         local cardDailyUsed = st.dailyUsed
         local cardDailyMax = st.dailyMax
 
-        local _bf = (not detailOpen) and BF.begin(vg, "dungeon_card_" .. cardIdx, cardCX, cardCY, CARD_W * CARD_SCALE, CARD_H * CARD_SCALE)
+        local _bf = (not detailOpen) and BF.begin(vg, "dungeon_card_" .. cardIdx, cardCX, cardCY, CARD_W * cardScale, CARD_H * cardScale)
 
-        -- 模式A：宿主已转换到1080x2400，本页仅缩放四卡内部，不重复应用DPR。
+        -- 只变换卡片内部，绘制/命中共用cardRect，不重复应用DPR。
         nvgSave(vg)
         nvgTranslate(vg, cardCX, actualY)
-        nvgScale(vg, CARD_SCALE, CARD_SCALE)
-        nvgTranslate(vg, -cardCX, -CARD_Y)
+        nvgScale(vg, cardScale, cardScale)
+        nvgTranslate(vg, -sourceCX, -CARD_Y)
         nvgIntersectScissor(vg, CARD_X, cardY, CARD_W, CARD_H)
         local cardImg = cardImages[cardIdx] or imgCard1
         drawImageTopLeft(vg, cardImg, CARD_X, cardY, CARD_W, CARD_H, 1.0)
@@ -711,16 +756,18 @@ function DungeonPage.draw(vg)
     do
         local TM = require("systems.TutorialManager")
         if TM.isActive() then
-            local cardCX = CARD_X + CARD_W * 0.5  -- 540
-            local cardY = CARD_Y  -- 210 (gold_mine)
-            local cardCY = cardY + CARD_H * CARD_SCALE * 0.5
-            -- [横屏接线 0928] 副本页横屏走全窗 letterbox 模态，热点归属 'modal' 上下文
-            TM.registerHotspot("dungeon_gold_mine", cardCX, cardCY, CARD_W * CARD_SCALE, CARD_H * CARD_SCALE, "modal")
+            local cardCX, cardCY, cardScale = cardRect(1)
+            TM.registerHotspot("dungeon_gold_mine", cardCX, cardCY, CARD_W * cardScale, CARD_H * cardScale, "modal")
         end
     end
 
     if detailOpen and detailDungeon then
         DungeonPage.drawDetailPanel(vg)
+    end
+    if landscapeMode then
+        DarkIcon.drawNine(vg, "btn", 40, 35, 190, 75, { accent = "gold" })
+        DrawUtil.drawTextStroke(vg, 135, 72, "返回", 36,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
     end
 end
 
@@ -740,7 +787,7 @@ function DungeonPage.drawDetailPanel(vg)
 
     -- 1. 全屏遮罩（透明度跟随动画）
     nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, 1080, 2400)
+    nvgRect(vg, 0, 0, pageWidth, pageHeight)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, maskAlpha))
     nvgFill(vg)
 
@@ -1001,6 +1048,11 @@ function DungeonPage.handleInput(dx, dy)
         DungeonPage.init(dungeonVg_)
     end
     if not dungeonInited_ then return true end
+    if landscapeMode and DrawUtil.hitTest(dx, dy, 135, 72, 190, 75) then
+        if detailOpen then DungeonPage.close()
+        else require("ui.hud.BottomNav").setSelectedIndex(3) end
+        return true
+    end
     -- 详情面板打开时，优先处理面板内交互
     if detailOpen then
         -- 挂机宝箱绘制在详情面板外侧，必须先于“点击背景外关闭面板”处理
@@ -1120,11 +1172,9 @@ function DungeonPage.handleInput(dx, dy)
     end
 
     -- 卡片点击检测；塔入口独立，资源旧列表入口不锁activeTeam。
-    local cardCX = CARD_X + CARD_W * 0.5
     for cardIdx, dungeon in ipairs(dungeonList) do
-        local cardY = CARD_Y + (cardIdx - 1) * CARD_STEP
-        local cardCY = cardY + CARD_H * CARD_SCALE * 0.5
-        if DrawUtil.hitTest(dx, dy, cardCX, cardCY, CARD_W * CARD_SCALE, CARD_H * CARD_SCALE) then
+        local cardCX, cardCY, cardScale = cardRect(cardIdx)
+        if DrawUtil.hitTest(dx, dy, cardCX, cardCY, CARD_W * cardScale, CARD_H * cardScale) then
             openDetail(dungeon.id, nil)
             return true
         end

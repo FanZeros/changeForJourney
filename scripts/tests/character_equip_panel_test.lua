@@ -91,7 +91,10 @@ function Start()
     local description = string.rep("完整套装效果不会截断，", 28)
     local heroes = { roster = { [1] = { level = 10 } } }
     local equipment = { inventory = { ["7"] = { enhanceLevel = 1 } }, equipped = {} }
-    local AD = { META = {}, formatAttrDisplayValue = function(key, value) return tostring(value) end }
+    local actualAD = originalRequire("systems.AttributeDef")
+    local AD = { META = {}, getDesc = actualAD.getDesc,
+        formatAttrDisplayValue = function(key, value) return tostring(value) end }
+    local tooltipDrawn = nil
     local cfg = { name = "测试套装", desc2 = description, desc4 = description, desc6 = description }
     local mods = {
         ["systems.AttributeDef"] = AD,
@@ -138,6 +141,10 @@ function Start()
         sortComparisonRows = function(input)
             sortCount = sortCount + 1
             return Stats.sortComparisonRows(input)
+        end,
+        drawTooltip = function(vg, tip)
+            tooltipDrawn = tip
+            return Stats.drawTooltip(vg, tip)
         end,
     }, { __index = Stats })
     local Shared = originalRequire("ui.character.detail.CharacterAttributeView")
@@ -934,6 +941,60 @@ function Start()
             mode .. "刷新后首行tooltip对应新排序，不遗留旧hit")
     end
     rows, bonuses.rows = savedRows, savedBonusRows
+    Panel.clear()
+
+    -- 真实属性说明通过公开点击/悬停链取出；原布局探针仍绘制完整浮层。
+    if Panel.getAttributeMode() ~= "character" then Panel.toggleAttributeMode() end
+    local definitionKeys = {}
+    for key in pairs(actualAD.META) do
+        if key ~= actualAD.HP then definitionKeys[#definitionKeys + 1] = key end
+    end
+    table.sort(definitionKeys)
+    for _, key in ipairs(definitionKeys) do
+        local expected = actualAD.getDesc(key)
+        check(type(expected) == "string" and expected ~= "", "可显示属性有词条解释：" .. key)
+        local row = { key = key, name = actualAD.META[key].name, currentValue = 1, value = "1" }
+        rows = { row }
+        Panel.reset(1, nil); draw()
+        check(Panel.handleInput(ax, firstRowY, 1, {}), "无预填desc属性点击命中：" .. key)
+        Panel.drawSetCodex({})
+        check(tooltipDrawn and tooltipDrawn.key == key and tooltipDrawn.name == row.name
+            and tooltipDrawn.desc == expected, "点击显示属性定义而非最终数值占位：" .. key)
+        Panel.reset(1, nil); draw()
+        local _, hits = Shared.drawAttributeRows({}, rows, 0)
+        check(#hits == 1 and hits[1].desc == expected
+            and Shared.rowAt(hits, hits[1].x + 1, hits[1].y + 1) == row,
+            "共享行说明同源且不改变命中返回契约：" .. key)
+        Panel.handleHover(ax, firstRowY, 1)
+        Panel.drawSetCodex({})
+        check(tooltipDrawn == nil, "悬停仍遵守延时：" .. key)
+        time.elapsedTime = time.elapsedTime + 0.31
+        Panel.handleHover(ax, firstRowY, 1)
+        Panel.drawSetCodex({})
+        check(tooltipDrawn and tooltipDrawn.desc == expected, "悬停显示属性本身内容：" .. key)
+    end
+    check(actualAD.getDesc(actualAD.MAX_HP) == "生命上限。生命归零则死亡。",
+        "生命值截图正文使用生命上限与死亡规则")
+    check(actualAD.getDesc(actualAD.ARMOR_BONUS) == "百分比增加护甲。",
+        "护甲加成补齐已有关键词说明")
+    for _, supplied in ipairs({ "装备来源说明", "动态暴击与神器说明", "" }) do
+        local row = { key = actualAD.MAX_HP, name = "生命值", value = "100", desc = supplied }
+        local expected = supplied ~= "" and supplied or actualAD.getDesc(actualAD.MAX_HP)
+        rows = { row }
+        Panel.reset(1, nil); draw()
+        Panel.handleInput(ax, firstRowY, 1, {})
+        Panel.drawSetCodex({})
+        check(tooltipDrawn and tooltipDrawn.desc == expected,
+            "自定义说明优先、空说明回退属性定义：" .. supplied)
+        local _, hits = Shared.drawAttributeRows({}, rows, 0)
+        check(hits[1].desc == expected and row.desc == supplied, "共享说明不改写原始行")
+    end
+    rows = { { key = "_unknownStat", name = "未知属性", value = "0" } }
+    Panel.reset(1, nil); draw()
+    Panel.handleInput(ax, firstRowY, 1, {})
+    Panel.drawSetCodex({})
+    check(tooltipDrawn and tooltipDrawn.desc == "", "未知属性不伪造最终结果说明")
+    rows = savedRows
     Panel.clear()
     end
 

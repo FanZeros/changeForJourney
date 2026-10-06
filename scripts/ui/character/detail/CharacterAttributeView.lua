@@ -174,12 +174,11 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
             if delta ~= "" then
                 changes[#changes + 1] = { y = cy - style.deltaOffset, text = delta, color = deltaColor }
             end
-            ---@type table
-            local meta = AD.META[row.key]
+            local desc = row.desc
+            if type(desc) ~= "string" or desc == "" then desc = AD.getDesc(row.key) end
             hits[#hits + 1] = { x = rect.x, y = math.max(rect.y, top), w = rect.w,
                 h = math.min(rect.y + rect.h, rowBottom) - math.max(rect.y, top),
-                row = row, index = i, key = row.key, name = name,
-                desc = row.desc or (meta and meta.desc) or "该属性为当前角色的最终面板数值。" }
+                row = row, index = i, key = row.key, name = name, desc = desc }
         end
     end
     nvgRestore(vg)

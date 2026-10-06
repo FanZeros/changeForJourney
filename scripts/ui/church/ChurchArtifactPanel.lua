@@ -36,16 +36,18 @@ local HINT = {
 }
 
 -- [三队行式布局] 队伍1/2/3 各占一行同时显示（替代原页签切换）
--- 每行 = 队标签 + 4 个号位列（每列 3 个子格纵向堆叠）
+-- 每行 = 队标签 + 4 个站位列（每列 2 个子格纵向堆叠）
+-- 与右侧编队一致：从左到右为后卫/中卫/中锋/前锋，实际槽号仍为 4/3/2/1。
+local SLOT_POS_NAME = { "前锋", "中锋", "中卫", "后卫" }
 local TEAM_ROW = {
-    HEADER_Y   = 252,                       -- 号位表头（1号位~4号位，只画一行，三队共用）
+    HEADER_Y   = 252,                       -- 站位表头，只画一行，三队共用
     HEADER_FONT = 28,
     ROW_CY     = { 465, 807, 1149 },        -- [双格改版] 每队行 y 中心（行距 342，行3底 1314 < 背包面板顶 1330）
     LABEL_X    = 76,                        -- 队标签中心 x
     LABEL_W    = 100, LABEL_H = 330,        -- 队标签底板（行高 = 2×160 子格 + 10 间距 = 330，用户指定）
     LABEL_FONT = 26,
     LOCK_FONT  = 20,
-    CX_LIST    = { 252, 476, 700, 924 },    -- 4 个号位列中心 x（间距 224，格 160 列间留 64）
+    CX_LIST    = { 924, 700, 476, 252 },    -- 按实际槽号索引；1号前锋在右，4号后卫在左
     SUB_SIZE   = 160,                       -- 子格边长（与下方背包格一致，用户要求）
     SUB_GAP    = 10,                        -- [双格改版] 两层子格间距 10（用户指定）
     CELL_LOCK_FONT = 28,
@@ -535,7 +537,7 @@ local function getEquipActionState(artifact, location, slot, subSlot, teamIdx)
         return {
             label = unchanged and "取下" or "位置已变",
             enabled = unchanged and not state.equipRequestPending,
-            hint = unchanged and ("队伍" .. team .. " · " .. currentSlot .. "号位 · 第" .. currentSub .. "格")
+            hint = unchanged and ("队伍" .. team .. " · " .. SLOT_POS_NAME[currentSlot] .. " · 第" .. currentSub .. "格")
                 or "装配位置已变，请重新打开详情",
         }
     end
@@ -714,7 +716,7 @@ function M.drawContent(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(235, 230, 220, 255))
         for i = 1, ArtifactSchema.SLOT_COUNT do
-            nvgText(vg, TEAM_ROW.CX_LIST[i], TEAM_ROW.HEADER_Y, i .. "号位", nil)
+            nvgText(vg, TEAM_ROW.CX_LIST[i], TEAM_ROW.HEADER_Y, SLOT_POS_NAME[i], nil)
         end
     end
 

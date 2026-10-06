@@ -825,11 +825,13 @@ end
 ---@param eventType string
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
+    local dt = eventData["TimeStep"]:GetFloat()
+    -- 等待回执使用真实帧时间；标题/暂停不阻断超时，也不另订阅 Update 覆盖主循环。
+    PlayerStore.Update(dt)
     require("ui.dev.CEPanel").pollHotkey()
     -- 分帧启动：每帧 1 个模块 init，标题可先画出来
     pumpBootQueue_()
     if not bootReady_ then
-        local dt = eventData["TimeStep"]:GetFloat()
         if StartScreen.isOpen() then StartScreen.update(dt) end
         if DarkTitleScreen.isOpen() then DarkTitleScreen.update(dt) end
         return
@@ -840,7 +842,6 @@ function HandleUpdate(eventType, eventData)
     --   2) 下载完成后解锁标题点击；超时后仍解锁，避免永久卡死
     --   3) 主线程全程不做任何同步加载
     if preload_.active then
-        local dt = eventData["TimeStep"]:GetFloat()
         if StartScreen.isOpen() then
             StartScreen.update(dt)
         end
@@ -875,8 +876,6 @@ function HandleUpdate(eventType, eventData)
             return
         end
     end
-
-    local dt = eventData["TimeStep"]:GetFloat()
 
     -- 鼠标静止时也检查装备悬停计时，移到其他格子则由命中检测立即收起旧说明。
     HandleEquipmentHoverTickHorizon()

@@ -89,7 +89,7 @@ end
 
 local StageSelectDialog = {}
 local onDungeonSelect = nil ---@type fun(dungeonId: string, teamIdx: number, floor: number): boolean|nil
-local TAB_Y, TAB_W, TAB_H = 772, 90, 46
+local TAB_Y, TAB_W, TAB_H = 782, 90, 46
 local MAIN_TAB_X, DUNGEON_TAB_X = 150, 250
 
 function StageSelectDialog.setOnDungeonSelect(callback)
@@ -125,7 +125,7 @@ local D = {
     CH_W      = 190,
     CH_BTN_H  = 84,
     CH_GAP    = 10,
-    CH_Y0     = 866,     -- 第一个章节按钮顶边（给上箭头和弹窗标题留空）
+    CH_Y0     = 876,     -- 第一个章节按钮顶边（主线/副本导航整体下移，留出更舒展的顶部间距）
     CH_VISIBLE = 7,      -- 可视章节数（下移后仍留在弹窗内，超出滚动）
 
     -- 中栏：关卡竖排（5-1 在上，5-5 在下），每行直接展示敌人卡面
@@ -875,7 +875,7 @@ function StageSelectDialog.draw(vg)
         255, 255, 255, D.TT_SW,
         { strokeColor = { D.TT_SR, D.TT_SG, D.TT_SB } })
 
-    -- 顶部分类不挪动主线章节、敌人及既有滚动热区。
+    -- 顶部分类与章节列表整体下移一点，按钮组在左栏仍水平居中；右侧关卡及敌人区不动。
     for _, tab in ipairs({ { x = MAIN_TAB_X, key = "main", text = "主线" },
         { x = DUNGEON_TAB_X, key = "dungeon", text = "副本" } }) do
         local active = state.section == tab.key

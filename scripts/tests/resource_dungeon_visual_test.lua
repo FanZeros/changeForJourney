@@ -634,52 +634,52 @@ end
 local function layoutCases()
     local c=newContext(); local d=c.prepareDialog(); local saved=copy(c.memory); openMain(c)
     check(textAt(c,"选择关卡",540,732),"实际标题未上移")
-    check(textAt(c,"主线",150,772) and textAt(c,"副本",250,772),"tab文本真实新中心")
+    check(textAt(c,"主线",150,782) and textAt(c,"副本",250,782),"tab文本真实新中心")
     local tabShapes=0
-    for _,v in ipairs(c.calls) do if v.kind=="fill" and v.shape.y==749 and v.shape.w==90 and v.shape.h==46 then
+    for _,v in ipairs(c.calls) do if v.kind=="fill" and v.shape.y==759 and v.shape.w==90 and v.shape.h==46 then
         check(v.shape.x==105 or v.shape.x==205,"tab新90x46矩形"); tabShapes=tabShapes+1 end end
     eq(tabShapes,2,"两新tab形状")
     local bs=banners(c); eq(#bs,7,"主线可见7章")
-    for i,v in ipairs(bs) do eq(v.shape.y,866+(i-1)*94,"CH_Y0及step不照搬旧836"); eq(v.shape.radius,12,"章节圆角") end
+    for i,v in ipairs(bs) do eq(v.shape.y,876+(i-1)*94,"CH_Y0及step整体下移10"); eq(v.shape.radius,12,"章节圆角") end
     check(textAt(c,"1-1",331,824),"右栏ROW_Y0=790不移")
     local cards={}; for _,v in ipairs(c.calls) do if v.kind=="card" and v.y==852 then cards[#cards+1]=v end end
     check(#cards>0 and cards[1].x==503 and cards[1].w==92 and cards[1].h==104,"实际右栏卡片旧布局")
-    for _,p in ipairs({{445,686},{635,686},{350,772},{500,772}}) do
+    for _,p in ipairs({{445,686},{635,686},{350,782},{500,782}}) do
         local n=#c.events; d.handleInput(p[1],p[2]); c.draw(); eq(#c.events,n,"旧tabs/右栏新同行空白不响应")
         eq(banners(c)[1].paint.path,bs[1].paint.path,"旧tab不能切分类"); check(d.isOpen(),"旧tab点不关闭")
     end
-    for _,x in ipairs({205,250,295}) do for _,y in ipairs({749,772,795}) do
-        d.handleInput(150,772); d.handleInput(x,y); c.draw(); eq(c.events[#c.events],"stage_sel_section","副本tab端点热区")
+    for _,x in ipairs({205,250,295}) do for _,y in ipairs({759,782,805}) do
+        d.handleInput(150,782); d.handleInput(x,y); c.draw(); eq(c.events[#c.events],"stage_sel_section","副本tab端点热区")
         eq(banners(c)[1].paint.path,PATHS.gold_mine,"新副本tab实际切分类")
     end end
-    for _,x in ipairs({105,150,195}) do for _,y in ipairs({749,772,795}) do
-        d.handleInput(250,772); d.handleInput(x,y); c.draw(); eq(banners(c)[1].paint.path,bs[1].paint.path,"主线tab端点热区")
+    for _,x in ipairs({105,150,195}) do for _,y in ipairs({759,782,805}) do
+        d.handleInput(250,782); d.handleInput(x,y); c.draw(); eq(banners(c)[1].paint.path,bs[1].paint.path,"主线tab端点热区")
     end end
-    for _,p in ipairs({{204.999,772},{295.001,772},{250,748.999},{250,795.001},{200,772}}) do
-        d.handleInput(150,772); local n=#c.events; d.handleInput(p[1],p[2]); eq(#c.events,n,"tab边外0.001/gap不响应")
+    for _,p in ipairs({{204.999,782},{295.001,782},{250,758.999},{250,805.001},{200,782}}) do
+        d.handleInput(150,782); local n=#c.events; d.handleInput(p[1],p[2]); eq(#c.events,n,"tab边外0.001/gap不响应")
     end
     eq(#c.selections,0,"查看tabs不跳主线/副本关"); eq(#c.towerSelections,0,"不碰tower"); idle(c,saved)
 end
 local function scrollCases()
     local c=newContext(); local d=c.prepareDialog(); local saved=copy(c.memory); openMain(c)
     local first=banners(c)[1].paint.path
-    d.handleScroll(-1,200,900); c.draw(); eq(banners(c)[1].paint.path,c.require("config.StageConfig").getBattleBackground(201),"chapter滚轮一章")
-    check(textAt(c,"▲",133,832),"up箭头与统一bounds")
-    d.handleInput(133,832); c.draw(); eq(banners(c)[1].paint.path,first,"up箭头点击")
-    check(textAt(c,"▼",133,1548),"down箭头y1514+34")
-    d.handleInput(133,1548); c.draw(); eq(banners(c)[1].paint.path,c.require("config.StageConfig").getBattleBackground(201),"down箭头点击")
-    d.handleScroll(999,200,900); c.draw(); eq(banners(c)[1].paint.path,first,"wheel上界")
-    d.handleDragBegin(200,866); d.handleDragMove(200,772); d.handleDragEnd(); d.handleInput(200,772); c.draw()
+    d.handleScroll(-1,200,910); c.draw(); eq(banners(c)[1].paint.path,c.require("config.StageConfig").getBattleBackground(201),"chapter滚轮一章")
+    check(textAt(c,"▲",133,842),"up箭头与统一bounds")
+    d.handleInput(133,842); c.draw(); eq(banners(c)[1].paint.path,first,"up箭头点击")
+    check(textAt(c,"▼",133,1558),"down箭头y1524+34")
+    d.handleInput(133,1558); c.draw(); eq(banners(c)[1].paint.path,c.require("config.StageConfig").getBattleBackground(201),"down箭头点击")
+    d.handleScroll(999,200,910); c.draw(); eq(banners(c)[1].paint.path,first,"wheel上界")
+    d.handleDragBegin(200,876); d.handleDragMove(200,782); d.handleDragEnd(); d.handleInput(200,782); c.draw()
     eq(banners(c)[1].paint.path,c.require("config.StageConfig").getBattleBackground(201),"chapter顶部边界drag94px")
     eq(c.events[#c.events],"stage_sel_chdown","drag松手误tap被消费，没切tab")
-    d.handleScroll(999,200,900); d.handleDragBegin(200,1514); d.handleDragMove(200,1326); d.handleDragEnd(); d.handleInput(200,1326); c.draw()
+    d.handleScroll(999,200,910); d.handleDragBegin(200,1524); d.handleDragMove(200,1336); d.handleDragEnd(); d.handleInput(200,1336); c.draw()
     eq(banners(c)[1].paint.path,c.require("config.StageConfig").getBattleBackground(301),"chapter下边界drag188px")
-    d.handleScroll(999,200,900); d.handleDragBegin(200,865.999); d.handleDragMove(200,700); d.handleDragEnd(); c.draw()
+    d.handleScroll(999,200,910); d.handleDragBegin(200,875.999); d.handleDragMove(200,710); d.handleDragEnd(); c.draw()
     eq(banners(c)[1].paint.path,first,"CH上边外不捕获drag")
-    d.handleDragBegin(200,1514.001); d.handleDragMove(200,1300); d.handleDragEnd(); c.draw()
+    d.handleDragBegin(200,1524.001); d.handleDragMove(200,1310); d.handleDragEnd(); c.draw()
     eq(banners(c)[1].paint.path,first,"CH下边外不捕获drag")
-    local n=#c.events; d.handleInput(200,955); eq(#c.events,n,"章卡gap不点章")
-    d.handleInput(200,960); c.draw(); check(textAt(c,"2-1",331,824),"第二章新顶边960点击实际右栏")
+    local n=#c.events; d.handleInput(200,965); eq(#c.events,n,"章卡gap不点章")
+    d.handleInput(200,970); c.draw(); check(textAt(c,"2-1",331,824),"第二章新顶边970点击实际右栏")
     d.handleScroll(-999,200,900); c.draw(); eq(#banners(c),7,"滚到底仍完整7章无越底")
     d.handleScroll(999,200,900); c.draw(); eq(banners(c)[1].paint.path,first,"滚回首章")
     eq(#c.selections,0,"chapter拖滚箭头不跳关"); idle(c,saved)
@@ -742,11 +742,11 @@ local function imageCases()
         for i,g in ipairs(gs) do
             local v=bs[i]
             eq(v.paint.path,g.background,"真实四preview顺序")
-            eq(v.shape.y,866+(i-1)*94,"四分类CH_Y0/step含塔1148")
+            eq(v.shape.y,876+(i-1)*94,"四分类CH_Y0/step含塔1158")
             near(v.paint.w/v.paint.h,1896/720,"真实preview cover保持比例")
             check(v.paint.w>=190 and v.paint.h>=84,"cover铺满卡片")
         end
-        check(not textAt(c,"▲",133,832) and not textAt(c,"▼",133,1548),"四分类无左列滚动箭头")
+        check(not textAt(c,"▲",133,842) and not textAt(c,"▼",133,1558),"四分类无左列滚动箭头")
         local loads=copy(c.loads); c.draw(); check(same(c.loads,loads),"重复draw命中缓存")
     end
     for _,p in pairs(PATHS) do eq(c.loads[p],1,"4路径全缓存恰一次") end
@@ -896,7 +896,7 @@ local function continuousRowCases()
     check(#before>0,"横拖前真实draw存在")
     zd.handleInput(200,1002); zd.handleScroll(-2,340,900); z.draw(); check(textAt(z,"1-3",331,824),"装备独立纵scroll")
     zd.handleInput(200,1190); z.draw(); check(textAt(z,"1-3",331,824),"切回塔保留自身纵scroll")
-    zd.handleInput(150,772); z.draw(); zd.handleInput(250,772); z.draw()
+    zd.handleInput(150,782); z.draw(); zd.handleInput(250,782); z.draw()
     check(textAt(z,"1-3",331,824),"主线副本tabs切回塔仍保留纵scroll")
     zd.handleInput(200,1002); z.draw(); check(textAt(z,"1-3",331,824),"装备scroll不被塔/tabs覆盖")
     zd.handleInput(200,1190); zd.handleScroll(-999,340,900); z.draw(); currentRow(z,112)
@@ -942,7 +942,7 @@ function Start()
         reviewVG=assert(nvgCreate(1)); check(nvgCreateFont(reviewVG,"sans","Fonts/MiSans-Regular.ttf")>=0,"真实字体")
         reviewContext=newContext(false,true,reviewVG); local d=reviewContext.prepareDialog()
         if REVIEW=="main" then d.open(1)
-        elseif REVIEW=="resources" then d.open(1); d.handleInput(250,772)
+        elseif REVIEW=="resources" then d.open(1); d.handleInput(250,782)
         else d.openDungeon(1,({gold="gold_mine",equipment="equipment_vault",diamond="black_diamond",tower="babel_tower"})[REVIEW]) end
         reviewContext.clock.elapsedTime=101
         SubscribeToEvent(reviewVG,"NanoVGRender","HandleResourceDungeonVisualReview")

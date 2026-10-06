@@ -20,6 +20,7 @@ local TowerBattleScene = require("ui.tower.TowerBattleScene")
 local TavernPage = require("ui.tavern.TavernPage")
 local TavernPopups = require("ui.tavern.TavernPopups")
 local TargetRecruitPanel = require("ui.tavern.TargetRecruitPanel")
+local RecruitAnim = require("ui.tavern.RecruitAnim")
 
 ---@param ctx table
 function Gesture.bind(ctx)
@@ -84,8 +85,18 @@ function Gesture.bind(ctx)
             and (button.openedAt or button.generation) == start.openedAt
             and not start.moved and sameLayout(start.layout, layout())
             and math.abs(x - start.x) + math.abs(y - start.y) < ctx.threshold then
-            if (button.key or button.id) == "tavern" and (TavernPage.isRecruitBusy()
-                or TargetRecruitPanel.isOpen() or TavernPopups.isBlocking()) then return true end
+            if (button.key or button.id) == "tavern" then
+                -- 抽卡结果页：返回条等价于"任意点击"——先跳过/结束本次结果，不直接离开招募页。
+                -- 必须早于 isRecruitBusy()（后者也包含动画播放态），否则本分支永远到不了。
+                if RecruitAnim.isPlaying() then
+                    RecruitAnim.dismiss()
+                    return true
+                end
+                -- 招募弹窗/请求中：返回条不抢输入（原行为）
+                if TavernPage.isRecruitBusy() or TavernPopups.isBlocking() then return true end
+                -- 指定UP面板：面板自身有关闭按钮，返回条不叠一层关闭
+                if TargetRecruitPanel.isOpen() then return true end
+            end
             local now = time.elapsedTime
             if not ctx.getLastTap or now - ctx.getLastTap() >= ctx.tapInterval then
                 if ctx.setLastTap then ctx.setLastTap(now) end

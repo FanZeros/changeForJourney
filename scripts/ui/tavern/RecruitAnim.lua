@@ -214,6 +214,8 @@ function RecruitAnim.init(vg)
 end
 
 local againFn_ = nil
+-- 上一次输入是否落在"继续招募"按钮上：中缝返回条此时不能顺手关页。
+local lastInputWasRepeat_ = false
 local closeCallbacks_ = {}
 
 local function notifyClosed()
@@ -254,6 +256,7 @@ function RecruitAnim.start(results, onClose, count, poolId)
         end
     end
     state.results = ordered
+    lastInputWasRepeat_ = false
     if state.onClose then closeCallbacks_[#closeCallbacks_ + 1] = state.onClose end
     state.onClose = onClose
     state.pullCount = (count == 10 or count == 1) and count or ((#ordered > 1) and 10 or 1)
@@ -320,10 +323,12 @@ function RecruitAnim.handleInput(dx, dy)
         if elapsed > 0.4 and againFn_
             and math.abs(dx - DESIGN_W * 0.5) <= 240
             and math.abs(dy - (DESIGN_H - 230)) <= 44 then
+            lastInputWasRepeat_ = true
             againFn_(state.pullCount or 1)
             return true
         end
         -- 点击触发淡出
+        lastInputWasRepeat_ = false
         state.phase = "fadeOut"
         state.fadeOutStartT = time.elapsedTime
         return true
@@ -333,11 +338,22 @@ function RecruitAnim.handleInput(dx, dy)
     return true
 end
 
+--- 中缝返回条落在结果页时，等价于"任意点击"：跳过或结束本次结果展示。
+---@return boolean 是否消费
+function RecruitAnim.dismiss()
+    if state.phase ~= "cards" or lastInputWasRepeat_ then return false end
+    lastInputWasRepeat_ = false
+    state.phase = "fadeOut"
+    state.fadeOutStartT = time.elapsedTime
+    return true
+end
+
 function RecruitAnim.close()
     state.glowStartT  = 0
     state.fadeOutStartT = 0
     state.phase = "idle"
     state.results = {}
+    lastInputWasRepeat_ = false
     notifyClosed()
     print("[RecruitAnim] 关闭")
 end

@@ -85,6 +85,10 @@ local CONFIRM_W, CONFIRM_H   = 410, 100
 local CONFIRM_FONT = 40
 local BTN_INSET_TOP, BTN_INSET_RIGHT, BTN_INSET_BOTTOM, BTN_INSET_LEFT = 10, 40, 10, 40
 
+-- 右上角关闭按钮（面板内，避免与中缝返回条叠在一起）
+local CLOSE_CX, CLOSE_CY = 952, 545
+local CLOSE_SIZE = 76
+
 -- ======================== 状态 ========================
 local state = {
     open = false,
@@ -232,6 +236,19 @@ function M.draw(vg)
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255,
         TITLE_STROKE_W, { strokeColor = { TITLE_STROKE_R, TITLE_STROKE_G, TITLE_STROKE_B } })
 
+    -- 右上角关闭按钮
+    local _bfClose = BF.begin(vg, "target_close", CLOSE_CX, CLOSE_CY, CLOSE_SIZE, CLOSE_SIZE)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, CLOSE_CX - CLOSE_SIZE * 0.5, CLOSE_CY - CLOSE_SIZE * 0.5, CLOSE_SIZE, CLOSE_SIZE, 10)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 90))
+    nvgFill(vg)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 44)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(236, 228, 210, 255))
+    nvgText(vg, CLOSE_CX, CLOSE_CY, "X", nil)
+    BF.finish(vg, _bfClose)
+
     -- 说明文本（带高亮数字）
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, DESC_FONT)
@@ -376,6 +393,13 @@ end
 function M.handleInput(dx, dy)
     if not state.open then return false end
     local activeHeroes = getActiveHeroes()
+
+    -- 右上角关闭按钮
+    if hitTest(dx, dy, CLOSE_CX, CLOSE_CY, CLOSE_SIZE, CLOSE_SIZE) then
+        BF.trigger("target_close")
+        M.close()
+        return true
+    end
 
     -- 确定按钮
     if hitTest(dx, dy, CONFIRM_CX, CONFIRM_CY, CONFIRM_W, CONFIRM_H) then

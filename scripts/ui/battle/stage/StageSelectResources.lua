@@ -33,7 +33,7 @@ function M.getGroups()
     groups[#groups + 1] = {
         key = "R:babel_tower", name = "通天塔", subLabel = "",
         isTower = true, hueIndex = 5,
-        background = "image/界面底板/副本秘境/UI_FBRK_3.png", ids = ids,
+        background = "image/战斗背景/通天塔.png", ids = ids,
     }
     return groups
 end

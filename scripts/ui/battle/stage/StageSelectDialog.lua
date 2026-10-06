@@ -89,8 +89,8 @@ end
 
 local StageSelectDialog = {}
 local onDungeonSelect = nil ---@type fun(dungeonId: string, teamIdx: number, floor: number): boolean|nil
-local TAB_Y, TAB_W, TAB_H = 686, 150, 46
-local MAIN_TAB_X, DUNGEON_TAB_X = 445, 635
+local TAB_Y, TAB_W, TAB_H = 772, 90, 46
+local MAIN_TAB_X, DUNGEON_TAB_X = 150, 250
 
 function StageSelectDialog.setOnDungeonSelect(callback)
     onDungeonSelect = callback
@@ -125,7 +125,7 @@ local D = {
     CH_W      = 190,
     CH_BTN_H  = 84,
     CH_GAP    = 10,
-    CH_Y0     = 836,     -- 第一个章节按钮顶边（给上箭头和弹窗标题留空）
+    CH_Y0     = 866,     -- 第一个章节按钮顶边（给上箭头和弹窗标题留空）
     CH_VISIBLE = 7,      -- 可视章节数（下移后仍留在弹窗内，超出滚动）
 
     -- 中栏：关卡竖排（5-1 在上，5-5 在下），每行直接展示敌人卡面
@@ -659,7 +659,9 @@ function StageSelectDialog.init(vg)
     imgBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     imgAct = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgLock = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
-    print("[StageSelectDialog] init OK")
+    print(string.format("[StageSelectDialog] init OK; layout TAB_Y=%d TAB_W=%d TAB_H=%d "
+        .. "MAIN_TAB_X=%d DUNGEON_TAB_X=%d CH_Y0=%d ROW_Y0=%d",
+        TAB_Y, TAB_W, TAB_H, MAIN_TAB_X, DUNGEON_TAB_X, D.CH_Y0, D.ROW_Y0))
 end
 
 ---@param teamIdx number|nil 多队战斗行号；大于 1 时确认后切该队自己的关卡
@@ -893,8 +895,7 @@ function StageSelectDialog.draw(vg)
 
     local needScroll = maxScroll > 0
     local arrowCX = D.CH_X + 28
-    local listTop = D.CH_Y0
-    local listBottom = listTop + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
+    local listTop, listBottom = chapterListBounds(groups)
     if needScroll and state.chScroll > 0 then
         drawImageCentered(vg, imgAct, arrowCX, listTop - 34, 52, 32, 1.0)
         drawTextStroke(vg, arrowCX, listTop - 34, "▲", 22,
@@ -1162,8 +1163,7 @@ function StageSelectDialog.handleInput(x, y)
     local needScroll = maxScroll > 0
 
     local arrowCX = D.CH_X + 28
-    local listTop = D.CH_Y0
-    local listBottom = listTop + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
+    local listTop, listBottom = chapterListBounds(groups)
 
     -- 左栏滚动箭头（列表外侧，不压章节名）
     if needScroll and state.chScroll > 0

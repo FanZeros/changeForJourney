@@ -341,17 +341,17 @@ DungeonConfig.EXTRA_ENEMIES = 2
 DungeonConfig.DEFINITIONS = {
     gold_mine = {
         name = "金币副本", unlockStage = 305, maxFloor = 115,
-        cardImage = "image/界面底板/副本秘境/UI_FBRK_1.png",
+        cardImage = "image/战斗背景/金币副本.png",
         rewardType = "gold", rewardIcon = "image/货币道具/UI_icon_JB_X.png", quality = 2,
     },
     equipment_vault = {
         name = "装备副本", unlockStage = 1305, maxFloor = 109,
-        cardImage = "image/界面底板/副本秘境/UI_FBRK_2.png",
+        cardImage = "image/战斗背景/装备副本.png",
         rewardType = "equip", rewardIcon = "image/货币道具/UI_icon_FBBX.png", quality = 4,
     },
     black_diamond = {
         name = "黑钻副本", unlockStage = 605, maxFloor = 115,
-        cardImage = "image/界面底板/副本秘境/UI_FBRK_3.png",
+        cardImage = "image/战斗背景/黑钻副本.png",
         rewardType = "diamond", rewardIcon = "image/货币道具/UI_icon_SJ_X.png", quality = 5,
     },
 }
@@ -414,6 +414,15 @@ function DungeonConfig.getCombatEntry(id, floor)
         else
             entry[key] = value
         end
+    end
+    -- 首层只借下一层的普通怪池，起点/等级/数量/奖励仍沿用解锁关卡。
+    if floor == 1 then
+        local normalSource = getSourceStage(id, 2)
+        if not normalSource then return nil end
+        entry.monsters = {}
+        for k, v in pairs(normalSource.monsters) do entry.monsters[k] = v end
+        entry.bossId = 0 -- 出怪器直接比较 > 0，不能设 nil。
+        entry.firstClearBonusMonster, entry.firstClearBonusMonsters = nil, nil
     end
     entry.name = def.name
     -- 资源连续关不应在借用主线下一章首关时从28/32名敌人骤降至12名。
@@ -498,7 +507,7 @@ function DungeonConfig.getStage(stageId)
     entry.stage = floor
     entry.name = DungeonConfig.DEFINITIONS[id].name .. " " .. entry.displayChapter .. "-" .. entry.stage
     entry.firstClearBonusMonster, entry.firstClearBonusMonsters = nil, nil
-    entry.mapBg = "image/关卡地图/" .. (id == "gold_mine" and "MAP_FB1.png" or (id == "equipment_vault" and "MAP_FB2.png" or "MAP_FB3.png"))
+    entry.mapBg = DungeonConfig.DEFINITIONS[id].cardImage
     resourceStages[stageId] = entry
     return entry
 end

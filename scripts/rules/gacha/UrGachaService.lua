@@ -1,5 +1,5 @@
 -- ============================================================================
--- UrGachaService.lua - 星辉招募（UR 卡池）抽卡逻辑
+-- UrGachaService.lua - 星辰招募（UR 卡池）抽卡逻辑
 -- ============================================================================
 
 local PDM            = require("rules.character.PlayerDataManager")
@@ -187,7 +187,7 @@ local function grantHeroResult(uid, heroes, currency, poolItem, index, results)
     end
 end
 
---- 星辉招募抽卡
+--- 星辰招募抽卡
 ---@param uid number
 ---@param count number|nil
 ---@param payType string|nil "ticket"|"diamond"
@@ -202,7 +202,7 @@ function UrGachaService.Pull(uid, count, payType)
 
     local unlocked, unlockReason = UrGachaConfig.checkPoolUnlocked(currency, heroes.roster, battle)
     if not unlocked then
-        return false, unlockReason or "星辉招募尚未开放"
+        return false, unlockReason or "星辰招募尚未开放"
     end
 
     count = tonumber(count) or 1
@@ -216,7 +216,7 @@ function UrGachaService.Pull(uid, count, payType)
 
     if payType == "ticket" then
         if (currency.stellarRecruitTicket or 0) < ticketCost then
-            return false, "星辉招募券不足（需要 " .. ticketCost .. "）"
+            return false, "星辰招募券不足（需要 " .. ticketCost .. "）"
         end
         ticketsToUse = ticketCost
     else
@@ -298,7 +298,7 @@ function UrGachaService.SetTargetUp(uid, heroId)
         return false, "只能指定UR角色"
     end
     if not findItemInQuality(UrGachaConfig.QUALITY_UR, heroId) then
-        return false, "该UR角色不在星辉卡池中"
+        return false, "该UR角色不在星辰卡池中"
     end
 
     currency.stellarTargetUpHeroId = heroId

@@ -259,7 +259,9 @@ local QUOTA_FAIL_TEXT = "剩余购买次数不足"
 function M.formatGachaFailReason(reason)
     if not reason then return "招募失败" end
     local text = tostring(reason)
-    if text:find("黑晶购买星辉") or text:find("钻石购买星辉") or text:find("购买上限") or text == QUOTA_FAIL_TEXT then
+    if text:find("黑晶购买星辰") or text:find("钻石购买星辰")
+        or text:find("黑晶购买星辉") or text:find("钻石购买星辉")
+        or text:find("购买上限") or text == QUOTA_FAIL_TEXT then
         return QUOTA_FAIL_TEXT
     end
     return text
@@ -516,6 +518,7 @@ local function drawInfoRuleText(vg, poolId)
     local lineH = 46
     local tr, tg, tb = INFO.RULE_TEXT_R, INFO.RULE_TEXT_G, INFO.RULE_TEXT_B
     local hr, hg, hb = INFO.RULE_HL_R, INFO.RULE_HL_G, INFO.RULE_HL_B
+    local teamSuffix = isStellarPoolId(poolId) and "级星辰远征队员" or "级远征队员"
 
     local ruleLines
     if isStellarPoolId(poolId) then
@@ -525,17 +528,17 @@ local function drawInfoRuleText(vg, poolId)
               { text = tostring(pity.SR_THRESHOLD), r = hr, g = hg, b = hb },
               { text = "次招募必定获得", r = tr, g = tg, b = tb },
               { text = "稀有", r = hr, g = hg, b = hb },
-              { text = "级远征队员", r = tr, g = tg, b = tb } },
+              { text = teamSuffix, r = tr, g = tg, b = tb } },
             { { text = "每", r = tr, g = tg, b = tb },
               { text = tostring(pity.SSR_THRESHOLD), r = hr, g = hg, b = hb },
               { text = "次招募必定获得", r = tr, g = tg, b = tb },
               { text = "史诗", r = hr, g = hg, b = hb },
-              { text = "级远征队员", r = tr, g = tg, b = tb } },
+              { text = teamSuffix, r = tr, g = tg, b = tb } },
             { { text = "每", r = tr, g = tg, b = tb },
               { text = tostring(pity.UR_THRESHOLD), r = hr, g = hg, b = hb },
               { text = "次招募必定获得", r = tr, g = tg, b = tb },
               { text = "传说", r = hr, g = hg, b = hb },
-              { text = "级远征队员", r = tr, g = tg, b = tb } },
+              { text = teamSuffix, r = tr, g = tg, b = tb } },
             {},
             { { text = "各品质基础概率：", r = tr, g = tg, b = tb } },
             { { text = "普通: ", r = tr, g = tg, b = tb },
@@ -557,7 +560,7 @@ local function drawInfoRuleText(vg, poolId)
               { text = "80", r = hr, g = hg, b = hb },
               { text = "次招募必定获得", r = tr, g = tg, b = tb },
               { text = "史诗", r = hr, g = hg, b = hb },
-              { text = "级远征队员", r = tr, g = tg, b = tb } },
+              { text = teamSuffix, r = tr, g = tg, b = tb } },
             { { text = "第", r = tr, g = tg, b = tb },
               { text = "61", r = hr, g = hg, b = hb },
               { text = "抽起史诗概率逐抽提升", r = tr, g = tg, b = tb } },
@@ -856,7 +859,7 @@ function M.drawAll(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(INFO.RULE_TEXT_R, INFO.RULE_TEXT_G, INFO.RULE_TEXT_B, 255))
         local infoPoolId = getActivePoolId()
-        local subTitle = isStellarPoolId(infoPoolId) and "星辉招募卡池" or "常规招募卡池"
+        local subTitle = isStellarPoolId(infoPoolId) and "星辰招募卡池" or "常规招募卡池"
         nvgText(vg, INFO.SUB_CX, INFO.SUB_CY, subTitle, nil)
 
         drawRoundedRectCentered(vg,
@@ -897,7 +900,7 @@ function M.drawAll(vg)
 
         drawTextStroke(vg,
             HIST.TITLE_CX, HIST.TITLE_CY,
-            isStellarPoolId(getActivePoolId()) and "星辉招募历史" or "常规招募历史",
+            isStellarPoolId(getActivePoolId()) and "星辰招募历史" or "常规招募历史",
             HIST.TITLE_SIZE,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 255, 255,

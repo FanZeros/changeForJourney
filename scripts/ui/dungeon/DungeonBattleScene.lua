@@ -157,9 +157,11 @@ local CDL = {
 
 -- ======================== 图片句柄 ========================
 
-local imgMapGoldMine  = -1   -- 黄金矿洞地图
-local imgMapEquipment = -1 -- 装备副本地图
+local imgMapGoldMine  = -1   -- 金币副本地图
+local imgMapEquipment = -1  -- 装备副本地图
+local imgMapBlackDiamond = -1 -- 黑钻副本地图
 local imgMapBabelTower = -1  -- 通天塔地图
+local imgMapLegacy    = -1  -- 旧遗迹/木桩保留原 MAP_FB1
 local imgShadow       = -1
 local imgRetreatBtn   = -1
 local imgSpeedIcon    = -1
@@ -438,14 +440,16 @@ end
 --- 获取副本地图图片
 local function getMapImage()
     local cfg = DungeonBattle.getConfig()
-    if cfg.dungeonId == "training_dummy" then
+    if cfg.dungeonId == "gold_mine" then
         return imgMapGoldMine
     elseif cfg.dungeonId == "equipment_vault" then
         return imgMapEquipment
-    elseif cfg.dungeonId == "black_diamond" or cfg.dungeonId == "babel_tower" then
+    elseif cfg.dungeonId == "black_diamond" then
+        return imgMapBlackDiamond
+    elseif cfg.dungeonId == "babel_tower" then
         return imgMapBabelTower
     end
-    return imgMapGoldMine  -- 默认黄金矿洞
+    return imgMapLegacy -- 旧遗迹、木桩与旧默认背景不变。
 end
 
 --- 获取副本标题文字
@@ -504,9 +508,11 @@ function DungeonScene.init(vg)
     if dungeonBattleInited_ then return end
     dungeonBattleInited_ = true
     dungeonBattleVg_ = vg
-    imgMapGoldMine   = nvgCreateImage(vg, "image/关卡地图/MAP_FB1.png", 0)
-    imgMapEquipment = nvgCreateImage(vg, "image/关卡地图/MAP_FB2.png", 0)
-    imgMapBabelTower = nvgCreateImage(vg, "image/关卡地图/MAP_FB3.png", 0)
+    imgMapGoldMine   = nvgCreateImage(vg, DungeonConfig.DEFINITIONS.gold_mine.cardImage, 0)
+    imgMapEquipment = nvgCreateImage(vg, DungeonConfig.DEFINITIONS.equipment_vault.cardImage, 0)
+    imgMapBlackDiamond = nvgCreateImage(vg, DungeonConfig.DEFINITIONS.black_diamond.cardImage, 0)
+    imgMapBabelTower = nvgCreateImage(vg, "image/战斗背景/通天塔.png", 0)
+    imgMapLegacy     = nvgCreateImage(vg, "image/关卡地图/MAP_FB1.png", 0)
     -- 阴影板绘制为 1080x556（源图 1080x610 压扁），使用 SHADOW 副本，调整原图不影响其他用法
     imgShadow        = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY_SHADOW.png", 0)
     imgRetreatBtn    = nvgCreateImage(vg, "image/按钮/UI_AN_HONG.png", 0)

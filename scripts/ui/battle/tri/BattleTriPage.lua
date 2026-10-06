@@ -71,6 +71,11 @@ function BattleTriPage.setOnStageClear(cb) triOnStageClear = cb end
 function BattleTriPage.setOnAllDead(cb) triOnAllDead = cb end
 
 function BattleTriPage.isOpen() return isOpen_ end
+
+--- 与 HUD 同源：终焉失败退场仍被接管，直到共享协同战正式清理才允许选关。
+---@return boolean
+function BattleTriPage.isTerminalRaidActive() return terminalRaid ~= nil end
+
 function BattleTriPage.setBattleReady(ready) battleReady = ready == true end
 
 --- 全局倍率以账户最高难度解锁，不随某队选旧关/模态按钮隐藏而降速。
@@ -430,6 +435,7 @@ function BattleTriPage.resolveBackgroundPath(stageId)
     local id = tonumber(stageId) or 0
     if StageConfig.isTerminalTemple(id) then return TERMINAL_BG end
     local entry = StageConfig.getStage(id)
+    if entry and entry.mode == "resource_dungeon" and entry.mapBg then return entry.mapBg end
     local chapter = (entry and entry.chapter) or 1
     return CHAPTER_BG[((chapter - 1) % 23) + 1] or CHAPTER_BG[1]
 end

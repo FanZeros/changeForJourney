@@ -64,8 +64,13 @@ AD.PHYS_DMG_BONUS = "physDmgBonus"  -- 物理伤害加成（%）
 AD.MAG_DMG_BONUS  = "magDmgBonus"   -- 魔法伤害加成（%）
 AD.COMBO_RATE     = "comboRate"     -- 连击概率（%）
 AD.COMBO_DMG_UP   = "comboDmgUp"    -- 连击增伤（%）
-AD.MAX_DMG_BONUS  = "maxDmgBonus"   -- 最大伤害加成（%）
-AD.MIN_DMG_BONUS  = "minDmgBonus"   -- 最小伤害加成（%）
+-- 沿用旧存档 key；新语义不再改变随机伤害端点。
+AD.ADVANTAGE_DMG_BONUS    = "maxDmgBonus" -- 优势伤害（%）
+AD.DISADVANTAGE_DMG_BONUS = "minDmgBonus" -- 劣势伤害（%）
+AD.MAX_DMG_BONUS = AD.ADVANTAGE_DMG_BONUS       -- 旧代码兼容别名
+AD.MIN_DMG_BONUS = AD.DISADVANTAGE_DMG_BONUS    -- 旧代码兼容别名
+AD.ADVANTAGE_DAMAGE_DESC = "攻击类型对目标护甲的基础倍率大于1时，额外提高本次伤害，倍率为1+优势伤害/100。中立、劣势、治疗及无视克制的混沌伤害不生效。"
+AD.DISADVANTAGE_DAMAGE_DESC = "攻击类型对目标护甲的基础倍率大于0且小于1时，额外提高本次伤害，倍率为1+劣势伤害/100。中立、优势、治疗及无视克制的混沌伤害不生效。"
 AD.HIT_VALUE      = "hitValue"      -- 命中值
 AD.PHYS_ATK_BONUS = "physAtkBonus"  -- 物理攻击加成（%）
 AD.MAG_ATK_BONUS  = "magAtkBonus"   -- 魔法攻击加成（%）
@@ -182,8 +187,8 @@ AD.META = {
     [AD.MAG_DMG_BONUS]  = { name = "魔法伤害加成", valueModel = 30,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.COMBO_RATE]     = { name = "连击概率",     valueModel = 30,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.COMBO_DMG_UP]   = { name = "连击增伤",     valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.MAX_DMG_BONUS]  = { name = "最大伤害加成", valueModel = 12,   dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.MIN_DMG_BONUS]  = { name = "最小伤害加成", valueModel = 10,   dataType = AD.TYPE_PCT,   default = 0 },
+    [AD.ADVANTAGE_DMG_BONUS]    = { name = "优势伤害", valueModel = 12,   dataType = AD.TYPE_PCT,   default = 0 },
+    [AD.DISADVANTAGE_DMG_BONUS] = { name = "劣势伤害", valueModel = 10,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.HIT_VALUE]      = { name = "命中值",       valueModel = 0.8,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.PHYS_ATK_BONUS] = { name = "物理攻击加成", valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.MAG_ATK_BONUS]  = { name = "魔法攻击加成", valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
@@ -223,7 +228,7 @@ AD.DESC = {
     [AD.AGI] = "每1点增加0.5物理攻击力、0.5魔法攻击力、0.4%攻击速度、0.15护甲、0.1%闪避加成、0.4命中值、0.35闪避值",
     [AD.INT] = "每1点增加1魔法攻击力、0.5%魔法伤害加成、3.0护盾、0.5%护盾加成、8生命值",
     [AD.VIT] = "每1点增加33生命值、0.5%护甲加成、2.0护盾",
-    [AD.LUK] = "每1点增加0.5物理攻击力、0.5魔法攻击力、0.5%最大伤害加成、0.3%暴击概率、1.5%暴击伤害、0.34闪避值",
+    [AD.LUK] = "每1点增加0.5物理攻击力、0.5魔法攻击力、0.5%优势伤害、0.3%暴击概率、1.5%暴击伤害、0.34闪避值",
     [AD.SPI] = "每1点增加2.5护盾、0.5%护盾加成、0.1%异常状态抗性、1治疗量、0.4%治疗加成、10生命值",
 
     -- 防御属性
@@ -263,8 +268,8 @@ AD.DESC = {
     [AD.MAG_DMG_BONUS]  = "所有伤害加成为加法关系，造成魔法伤害时计入",
     [AD.COMBO_RATE]     = "有概率在0.1秒后额外攻击一次，超过100%仍有效",
     [AD.COMBO_DMG_UP]   = "每次连击后增加的额外伤害，逐次递增",
-    [AD.MAX_DMG_BONUS]  = "影响角色能造成的最大伤害加成",
-    [AD.MIN_DMG_BONUS]  = "影响角色能造成的最小伤害加成",
+    [AD.ADVANTAGE_DMG_BONUS]    = AD.ADVANTAGE_DAMAGE_DESC,
+    [AD.DISADVANTAGE_DMG_BONUS] = AD.DISADVANTAGE_DAMAGE_DESC,
     [AD.HIT_VALUE]      = "影响命中概率，命中率=(命中值+150)/(闪避值+150)",
     [AD.PHYS_ATK_BONUS] = "百分比增加物理攻击力",
     [AD.MAG_ATK_BONUS]  = "百分比增加魔法攻击力",
@@ -375,7 +380,7 @@ AD.DERIVATIVES = {
     [AD.LUK] = {
         { attr = AD.PHYS_ATK,      perPoint = 0.5 },  -- +0.5 物理攻击力 (0.25)
         { attr = AD.MAG_ATK,       perPoint = 0.5 },  -- +0.5 魔法攻击力 (0.25)
-        { attr = AD.MAX_DMG_BONUS, perPoint = 0.5 },  -- +0.5% 最大伤害加成 (0.06)
+        { attr = AD.ADVANTAGE_DMG_BONUS, perPoint = 0.5 }, -- +0.5% 优势伤害 (0.06)
         { attr = AD.CRIT_RATE,     perPoint = 0.3 },  -- +0.3% 暴击概率 (0.30)
         { attr = AD.CRIT_DMG,      perPoint = 1.5 },  -- +1.5% 暴击伤害 (0.30)
         { attr = AD.DODGE,         perPoint = 0.34 }, -- +0.34 闪避值 (0.34) = 1.500

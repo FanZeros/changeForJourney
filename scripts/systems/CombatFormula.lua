@@ -145,12 +145,30 @@ function CF.rollBlock(blockRate, blockRatio)
     return true, survive ^ blockCount
 end
 
+-- ======================== 克制伤害 ========================
+
+--- 独立伤害只应用一次：按基础克制表分类，不受临时倍率改变优势/劣势归属。
+--- 英雄与敌人共用；治疗、中立和绕过克制的混沌不吃这两个属性。
+---@param attrs table 攻击方 UnitAttributes
+---@param baseTypeMult number 攻击类型对目标护甲的基础倍率
+---@return number
+function CF.getMatchupDamageMult(attrs, baseTypeMult)
+    if not attrs or attrs.artifactChaosDamageMult then return 1.0 end
+    local bonus = 0
+    if baseTypeMult > 1 then
+        bonus = attrs:get(AD.ADVANTAGE_DMG_BONUS)
+    elseif baseTypeMult > 0 and baseTypeMult < 1 then
+        bonus = attrs:get(AD.DISADVANTAGE_DMG_BONUS)
+    end
+    return math.max(0, 1 + bonus / 100)
+end
+
 -- ======================== 伤害浮动 ========================
 
---- 计算伤害浮动范围
+--- 计算独立的固有伤害波动；端点不读取优势/劣势属性。
 ---@param baseDmg number 基础伤害
----@param minBonus number 最小伤害加成百分比
----@param maxBonus number 最大伤害加成百分比
+---@param minBonus number 下端点相对偏移百分比
+---@param maxBonus number 上端点相对偏移百分比
 ---@return number 浮动后的伤害
 function CF.rollDamageRange(baseDmg, minBonus, maxBonus)
     local minMult = 1 + minBonus / 100
@@ -329,8 +347,11 @@ function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
     end
 
     -- ---- 7. 类型倍率 ----
-    local typeMult = AD.getTypeMult(atkType, armorType)
-    typeMult = getCGR().adjustTypeMult(attacker, defender, typeMult)
+    local baseTypeMult = AD.getTypeMult(atkType, armorType)
+    local typeMult = getCGR().adjustTypeMult(attacker, defender, baseTypeMult)
+    local matchupMult = CF.getMatchupDamageMult(attacker, baseTypeMult)
+    result.matchup = baseTypeMult > 1 and "advantage" or (baseTypeMult < 1 and "disadvantage" or "neutral")
+    result.matchupDamageMult = matchupMult
 
     -- ---- 8. 连击次数（仅普通攻击时 roll，连击额外攻击不再触发连击） ----
     local comboCount = 0
@@ -343,14 +364,9 @@ function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
     local comboDmgUp = attacker:get(AD.COMBO_DMG_UP)
     local hit = {}
 
-    -- 伤害浮动
-    -- 伤害波动：角色固有波动 dmgSpread（如 10% → ±10%）+ 装备 MIN/MAX_DMG_BONUS
-    local spread = (attacker.dmgSpread or 0) * 100   -- 0.10 → 10
-    local dmg = CF.rollDamageRange(
-        baseAtk,
-        attacker:get(AD.MIN_DMG_BONUS) - spread,
-        attacker:get(AD.MAX_DMG_BONUS) + spread
-    )
+    -- 固有波动与克制属性独立；两项加成不再成为随机区间端点。
+    local spread = (attacker.dmgSpread or 0) * 100
+    local dmg = CF.rollDamageRange(baseAtk, -spread, spread) * matchupMult
 
     -- 伤害加成
     dmg = dmg * (1 + dmgBonusPct / 100)

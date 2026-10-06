@@ -70,6 +70,8 @@ function M.bind(deps)
         EquipmentSetSystem.applyToUnit(
             attrs, eqData, heroId,
             EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
+        -- 普攻读 attrs，天赋读战斗单位；让两条管线使用同一件装备的护甲类型。
+        if equippedArmorType then attrs.armorType = equippedArmorType end
         return equippedArmorType
     end
 

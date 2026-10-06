@@ -1,11 +1,12 @@
 -- 职业一转：CPU 多边形/贝塞尔绘制，主体和底板全部程序生成。
 -- 基于既有转职试稿与 procedural-lua-headless 的 Start/pcall/Exit 模板。
--- 默认审核111/112；-seal-review仅生成101/102审核，禁止安装。
--- 显式 -install 仍只替换111/112，绝不修改其他正式图标或.meta。
+-- 默认审核111/112；-seal-review审核101/102，-first-review审核103–110。
+-- 两个-review模式均禁止安装；显式-install仍只替换111/112。
 -- UrhoXRuntime _proc/generate_advancement_trials.lua -tapcode_dir=/workspace -tool_mode -graphicsheadless -seal-review
 local ROOT = "/workspace/assets/image/职业图标/"
 local OUT = "/workspace/.git/advancement-icons-validation/generated/"
 local SEAL_OUT = "/workspace/assets/image/审核_职业转职_20261006_封门人/"
+local FIRST_OUT = "/workspace/assets/image/审核_职业转职_20261006_其余一转/"
 local BACKUP = "/workspace/.git/advancement-icons-validation/originals/"
 local SIZE, SCALE = 560, 2
 local CENTER = 139.5
@@ -14,12 +15,16 @@ local GOLD = { 161, 121, 64 }
 local BONE = { 220, 206, 170 }
 local SHADE = { 77, 55, 30 }
 local ORDER = { 111, 112 }
-local install, sealReview = false, false
+local install, sealReview, firstReview = false, false, false
 for _, argument in ipairs(GetArguments()) do
     if argument == "-install" then install = true end
     if argument == "-seal-review" then sealReview = true end
+    if argument == "-first-review" then firstReview = true end
 end
 if sealReview then ORDER = { 101, 102 } end
+if firstReview then ORDER = { 103, 104, 105, 106, 107, 108, 109, 110 } end
+---@type table<number, fun(d: table, branchId: integer)>
+local reviewDrawers = {}
 ---@type Image[]
 local images = {}
 
@@ -155,7 +160,12 @@ local function render(branchId)
         line(p[1] - 1.5, p[2] - 1.2, p[1] + 0.8, p[2] - 1.2, 0.9, BONE, 0.6)
     end
 
-    if branchId == 101 or branchId == 102 then
+    local drawReview = reviewDrawers[branchId]
+    if drawReview then
+        drawReview({ polygon = polygon, line = line, stroke = stroke, ellipse = ellipse,
+            arc = arc, curve = curve, emblem = emblem, star = star,
+            DARK = DARK, GOLD = GOLD, BONE = BONE, SHADE = SHADE }, branchId)
+    elseif branchId == 101 or branchId == 102 then
         -- 封门人共享门盾轮廓：双层旧铜门框、骨白铁甲、暗色负空间。
         -- 门闩以横向锁杆蓄住伤害；闸门以抬起的栅齿和侧向泄压区分。
         local frame = { { 79, 218 }, { 79, 88 }, { 88, 68 }, { 111, 53 },
@@ -366,8 +376,18 @@ end
 function Start()
     local ok, err = pcall(function()
         -- 审核模式没有安装权限，即便误传-install也在任何写盘前拒绝。
-        assert(not (sealReview and install), "-seal-review只生成审核图，禁止同时安装")
-        local output = sealReview and SEAL_OUT or OUT
+        assert(not (sealReview and firstReview), "只能选择一种审核运行模式")
+        assert(not ((sealReview or firstReview) and install), "审核模式只生成审核图，禁止同时安装")
+        -- 审核模块的加载也纳入pcall；缺模块时失败日志和Image清理仍会收尾。
+        if firstReview then
+            local spoil = require("_proc.advancement.ReviewSpoil")
+            local rift = require("_proc.advancement.ReviewRift")
+            local echo = require("_proc.advancement.ReviewEcho")
+            local mask = require("_proc.advancement.ReviewMask")
+            reviewDrawers = { [103] = spoil, [104] = spoil, [105] = rift, [106] = rift,
+                [107] = echo, [108] = echo, [109] = mask, [110] = mask }
+        end
+        local output = firstReview and FIRST_OUT or (sealReview and SEAL_OUT or OUT)
         assert(fileSystem:CreateDir(output), "创建转职审核目录失败")
         if install then assert(fileSystem:CreateDir(BACKUP), "创建转职原图备份目录失败") end
         -- 两图都成功生成后才进入安装阶段；审核运行绝不触碰正式图。
@@ -393,7 +413,8 @@ function Start()
                 print("[adv-trial] 已安装 " .. name .. "，原.meta保持不变")
             end
         end
-        print("[adv-trial] ALL PASS：2枚" .. (sealReview and "封门人一转" or "司仪一转")
+        print("[adv-trial] ALL PASS：" .. #ORDER .. "枚"
+            .. (firstReview and "其余一转" or (sealReview and "封门人一转" or "司仪一转"))
             .. "，模式=" .. (install and "安装" or "仅审核"))
     end)
     -- 成功与失败都立即释放所有已创建Image，退出不依赖GC。

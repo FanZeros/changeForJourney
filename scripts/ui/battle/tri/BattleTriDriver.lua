@@ -232,6 +232,8 @@ function BattleTriDriver.new(teamIdx, options)
         end
         local previousStageId = self.stageId
         local wasStarted = self._started == true
+        -- 只有真正换关才允许再次提示终焉；门禁处原地循环重开不重复弹窗。
+        if previousStageId ~= stageId then self._terminalPrompted = false end
         if self.pendingKills and #self.pendingKills > 0 then
             self:queuePendingKills()
         end
@@ -566,12 +568,17 @@ function BattleTriDriver.new(teamIdx, options)
         if waitingTerminalId then
             local BattleScene = require("ui.battle.scene.BattleScene")
             self._syncedMainStage = self.stageId
-            self.active = false
-            if self.teamIdx == 1 and BattleScene.getStageId() == self.stageId then
+            -- 终焉需玩家确认：未确认时原地继续刷本关，整队不能停摆；
+            -- 只提示一次，取消后仍可由前进按钮或选关再次进入终焉。
+            if self.teamIdx == 1 and BattleScene.getStageId() == self.stageId
+                and not self._terminalPrompted then
+                self._terminalPrompted = true
                 BattleScene.nextStage()
             end
-            print(string.format("[TriDriver] 队%d 通关 %s，等待玩家在选关页进入终焉 %s",
+            print(string.format("[TriDriver] 队%d 通关 %s，等待确认终焉 %s，继续原地刷本关",
                 self.teamIdx, tostring(self.stageId), tostring(waitingTerminalId)))
+            self._skipAllyEnter = true
+            self:start(self.stageId)
             return
         end
         local clearedId = self.stageId

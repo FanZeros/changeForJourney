@@ -53,37 +53,6 @@ local function run()
         check(missing.hs == nil and not overlaps(missing.bubble, missing.skip), "missing target recoverable")
         local outside = Overlay.layout(width, height, { cx = -200, cy = -200, w = 20, h = 20 })
         check(outside.hs == nil, "fully offscreen target uses recovery")
-        -- 城镇总览视觉展示完整左栏，实际继续区域仍只有顶部空白带。
-        local scale = math.min(width / 1458, height / 1080)
-        local leftX, topY = (width - 1458 * scale) * 0.5, (height - 1080 * scale) * 0.5
-        local spotlight = { cx = leftX + 243 * scale, cy = topY + 540 * scale,
-            w = 486 * scale, h = 1080 * scale }
-        local overview = { cx = leftX + 540 * 0.45 * scale, cy = topY + 150 * 0.45 * scale,
-            w = 900 * 0.45 * scale, h = 220 * 0.45 * scale, spotlight = spotlight }
-        for _, textWidth in ipairs({ 180, 620, 2400 }) do
-            local result = Overlay.layout(width, height, overview, textWidth)
-            check(result.hole and result.hole.cx == spotlight.cx and result.hole.cy == spotlight.cy
-                and result.hole.w == spotlight.w and result.hole.h == spotlight.h,
-                "显式总览洞精确覆盖全左栏，不外扩到中栏")
-            check(result.hs and result.hs.cx == overview.cx and result.hs.cy == overview.cy
-                and result.hs.w == overview.w and result.hs.h == overview.h,
-                "总览视觉扩大不扩大点击继续的热点")
-            inScreen(result.bubble, width, height, "总览提示")
-            inScreen(result.skip, width, height, "总览跳过")
-            check(not overlaps(result.bubble, result.hole) and not overlaps(result.skip, result.hole),
-                "总览提示与跳过避开完整左栏")
-        end
-        local invisibleTarget = { cx = -200, cy = -200, w = 20, h = 20, spotlight = spotlight }
-        local recovery = Overlay.layout(width, height, invisibleTarget, 400)
-        check(recovery.hs == nil and recovery.hole == nil, "仅视觉区域存在不能伪造可见目标")
-        local clipped = Overlay.layout(width, height, { cx = 20, cy = 50, w = 20, h = 20,
-            spotlight = { cx = 0, cy = height * 0.5, w = 100, h = height + 100 } }, 180)
-        check(clipped.hole and math.abs(clipped.hole.cx - 25) < 0.001
-            and clipped.hole.w == 50 and clipped.hole.h == height,
-            "部分出屏视觉区域按屏幕裁切，不丢实际热点")
-        local normal = Overlay.layout(width, height, { cx = width * 0.5, cy = height * 0.5, w = 40, h = 30 })
-        check(normal.hole and normal.hole.w == 56 and normal.hole.h == 46,
-            "切回普通步骤仍仅默认8像素光环，无总览区域残留")
     end
     -- 矮屏幕中目标接近全高时，提示应改放侧边，不可强制夹入目标。
     local side = Overlay.layout(360, 160, { cx = 180, cy = 80, w = 44, h = 130 }, 200)
@@ -143,29 +112,6 @@ local function run()
             check(result.skip.cx == later.skip.cx and result.skip.cy == later.skip.cy,
                 "draw skip never floats or changes with text")
             check(later.bubble.h < result.bubble.h, "height follows measured wrapped text")
-        end
-        -- 实际draw的三轮测量布局都必须保留显式spotlight；捕获最终洞路径而非只看layout。
-        for _, size in ipairs(resolutions) do
-            local width, height = size[1], size[2]
-            local scale = math.min(width / 1458, height / 1080)
-            local leftX, topY = (width - 1458 * scale) * 0.5, (height - 1080 * scale) * 0.5
-            local spotlight = { cx = leftX + 243 * scale, cy = topY + 540 * scale,
-                w = 486 * scale, h = 1080 * scale }
-            local target = { cx = leftX + 243 * scale, cy = topY + 67.5 * scale,
-                w = 405 * scale, h = 99 * scale, spotlight = spotlight }
-            for _, text in ipairs({ "左侧就是城镇，各类功能建筑都在这里，点击空白处继续", longText }) do
-                local before = #holes
-                local result = Overlay.draw({}, width, height, target, text, 0.7, 2, 1)
-                check(#holes == before + 1 and result.hole ~= nil, "整栏实际遮罩仅开一个洞")
-                local path = holes[#holes]
-                check(math.abs(path[2] - leftX) < 0.001 and math.abs(path[3] - topY) < 0.001
-                    and math.abs(path[4] - spotlight.w) < 0.001 and math.abs(path[5] - spotlight.h) < 0.001,
-                    "测量后最终NanoVG洞路径精确覆盖左栏")
-                check(result.hs and result.hs.w == target.w and result.hs.h == target.h,
-                    "draw保留原空白带点击尺寸")
-                check(not overlaps(result.bubble, result.hole) and not overlaps(result.skip, result.hole),
-                    "实测长短文本提示和跳过都不遮总览")
-            end
         end
         local missing = Overlay.draw({}, 844, 390, nil, "", 1, 2, 1)
         check(missing.skipVisible and missing.lines and #missing.lines > 0, "missing target displays recovery and skip")

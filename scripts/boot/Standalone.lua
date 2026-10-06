@@ -194,13 +194,9 @@ local DESIGN_H = GameConfig.Design.HEIGHT
 -- 全窗口底色。UI_WORLD_BG / UI_CZ_BJ 已被三行石框、关卡图和各页底板盖住，不再加载。
 
 -- [Standalone] battle 状态本地同步：无 Server 推送时，把 BattleScene 本地进度
--- （maxStageId_/clearedStages）每秒比对一次，变化才发布实时镜像，
+-- （maxStageId_/clearedStages）每秒比对一次，变化才经 handleStateUpdate 写入，
 -- 供 TutorialManager / BottomNav / DungeonBattleScene 的建筑与页签解锁判定使用
-local battleSync = { lastMax = -1, lastCleared = "", lastStages = "", acc = 0 }
-local function progressRank(id)
-    local previous = StageConfig.getTerminalPrevStageId(id)
-    return previous and previous + 0.5 or id
-end
+local battleSync = { lastMax = -1, lastCleared = "", acc = 0 }
 local function clearedSnapshot(entries)
     local normalized, ids = {}, {}
     if type(entries) == "table" then
@@ -222,7 +218,6 @@ local function clearedSnapshot(entries)
 end
 
 local function SyncBattleState(dt)
-    if not bootReady_ then return end
     battleSync.acc = battleSync.acc + (dt or 0)
     if battleSync.acc < 1.0 then return end
     battleSync.acc = 0
@@ -235,20 +230,9 @@ local function SyncBattleState(dt)
     local savedCleared, savedSignature = clearedSnapshot(battle.clearedStages)
     for key in pairs(savedCleared) do clearedStr[key] = true end
     local mergedCleared, signature, clearedN = clearedSnapshot(clearedStr)
-    -- 合并永久事实只更新原账本，不回灌场景、重开驱动或清战斗状态。
-    local liveLedger = BattleScene.getClearedStages()
-    if type(liveLedger) == "table" then
-        for key in pairs(mergedCleared) do liveLedger[tonumber(key)] = true end
-    end
     local savedMax = tonumber(battle.maxStageId) or 0
-    local mergedMax = progressRank(maxId) >= progressRank(savedMax) and maxId or savedMax
-    battle.maxStageId = mergedMax
-    battle.clearedStages = mergedCleared
-    local captured = StandaloneSave.CaptureBattleProgress(battle)
-    local teams = captured.teamStageIds
-    local stageSignature = table.concat({ tostring(teams["1"]), tostring(teams["2"]), tostring(teams["3"]) }, ",")
+    local mergedMax = math.max(maxId, savedMax)
     if mergedMax == battleSync.lastMax and signature == battleSync.lastCleared
-        and stageSignature == battleSync.lastStages
         and liveSignature == signature and savedSignature == signature then return end
     if battleSync.lastMax == -1 then
         print("[Standalone] battle 状态首次同步: maxStageId=" .. tostring(mergedMax) .. ", cleared=" .. clearedN)
@@ -257,8 +241,16 @@ local function SyncBattleState(dt)
     end
     battleSync.lastMax = mergedMax
     battleSync.lastCleared = signature
-    battleSync.lastStages = stageSignature
-    ClientDispatcher.publishLive("battle", captured)
+    local liveStage = tonumber(BattleScene.getStageId()) or 0
+    local savedStage = tonumber(battle.currentStageId) or 0
+    battle.maxStageId = mergedMax
+    battle.clearedStages = mergedCleared
+    if liveStage > savedStage then
+        battle.currentStageId = liveStage
+    end
+    ClientDispatcher.handleStateUpdate(cjson.encode({
+        modules = { battle = battle }
+    }))
 end
 
 local physW, physH, dpr, logicalW, logicalH
@@ -313,8 +305,6 @@ function Standalone._bootWiring()
 end
 
 function Standalone.Start()
-    BattleTriPage.setBattleReady(false)
-    StandaloneSave.SetBattlePage(BattleTriPage)
     -- 0. PlayerStore 初始化：单机模式下此前从未调用（仅多人 Client.lua 调），
     --    导致 SyncBattleState 写入的 battle 模块不会落到 PlayerStore 缓存，
     --    扫荡/选关弹窗读 PlayerStore.Get("battle") 恒为 nil → "未知关卡"
@@ -417,7 +407,6 @@ function Standalone.Start()
                 BattleScene.reloadStage({ startSearching = true })
                 print("[Standalone] 初始阵容同步: " .. #initialTeam .. " 个英雄（寻怪模式）")
             end
-            BattleTriPage.setBattleReady(true)
         end },
     }
     bootIdx_ = 0
@@ -730,23 +719,6 @@ function Standalone.requestResetToStartScreen()
     if LootBoxPage.isVisible()      then LootBoxPage.hide()          end
     print(string.format("%s step2: panels closed clock=%.4f", TAG, os.clock()))
 
-    -- 清档先硬关闭资源战斗，不触发旧结算/onClose；详情和规则pending也归旧会话。
-    TowerBattleScene.resetToDefault()
-    DungeonBattleScene.forceClose()
-    DungeonPage.close()
-    require("rules.dungeon.DungeonService").Cleanup(1)
-    require("rules.dungeon.DungeonIdleService").Cleanup(1)
-
-    -- 清档先丢弃旧驱动、终焉及待发奖励；不能把旧队预约关写回新档。
-    BattleTriPage.resetToDefault()
-    StandaloneBoot.resetPendingBattleRewards()
-    -- 离线待领包属于旧会话；新档不能重发或领取旧账户收益。
-    require("rules.offline.OfflineService").Cleanup(1)
-    require("systems.StoryPlayer").resetAll()
-    ClientMsgHandler.resetSessionBridgeState()
-    ScenarioDialogue.reset()
-    battleSync = { lastMax = -1, lastCleared = "", lastStages = "", acc = 0 }
-
     -- 3. 重置 GameState（货币、经验等缓存）
     GameState.reset()
     print(string.format("%s step3: GameState.reset done clock=%.4f", TAG, os.clock()))
@@ -804,7 +776,6 @@ function Standalone.requestResetToStartScreen()
 
     -- 12. 回到标题。不能重跑 Start，否则事件重复注册并把页面叠坏。
     local BattleTriPage = require("ui.battle.tri.BattleTriPage")
-    BattleTriPage.setBattleReady(true)
     if not BattleTriPage.isOpen() then
         BattleTriPage.open()
     end
@@ -1054,9 +1025,8 @@ function HandleUpdate(eventType, eventData)
         elseif BattleTriPage.isOpen() then
             -- [三栏并行] 三栏页内部会以 default 状态驱动 BattleScene.update（栏1 引擎）
             BattleTriPage.update(dt)
-        elseif BottomNav.getSelectedIndex() ~= 5 and BottomNav.getSelectedIndex() ~= 3 then
-            -- 副本详情/结算退出仍暂停原三队；不能启动默认战场清掉其天赋状态。
-            -- 返回tab3的首帧由下方守卫重开三队，不抢先驱动默认场景。
+        else
+            -- 战斗场景始终更新（挂机持续进行）
             BattleScene.update(dt)
         end
     end
@@ -1101,10 +1071,6 @@ function HandleUpdate(eventType, eventData)
         CharacterPanel.update(dt)
     elseif tabIndex == 5 then
         DungeonPage.update(dt)
-    end
-    if tabIndex ~= 5 and not DungeonBattleScene.isOpen() and not TowerBattleScene.isActive() then
-        -- 从副本页导航离开时释放旧详情/请求，迟到挑战不能再抢回战斗界面。
-        DungeonPage.close()
     end
     if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
         BackpackPanel.update(dt)

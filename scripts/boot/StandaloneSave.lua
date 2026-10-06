@@ -19,60 +19,9 @@
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local GameState        = require("core.GameState")
 local BattleScene      = require("ui.battle.scene.BattleScene")
-local BattleSchema     = require("shared.battle.BattleSchema")
 local OfflineService   = require("rules.offline.OfflineService")
 
 local StandaloneSave = {}
-
----@class TeamStagePersistencePage
----@field getTeamStageIds fun(): number[]|nil
----@field setTeamStageIds fun(stageIds: table)
----@type TeamStagePersistencePage|nil
-local battlePage = nil
-
----@param page TeamStagePersistencePage
-function StandaloneSave.SetBattlePage(page)
-    battlePage = page
-end
-
---- 即时快照只采集，不把旧存档回灌到仍在战斗的驱动。
----@param battle table
----@return table
-function StandaloneSave.CaptureBattleProgress(battle)
-    local copy = {}
-    for key, value in pairs(battle) do copy[key] = value end
-    local live = battlePage and battlePage.getTeamStageIds()
-    if type(live) == "table" then
-        local sceneMax = tonumber(BattleScene.getMaxStageId()) or 0
-        local savedMax = tonumber(battle.maxStageId) or 0
-        local SC = require("config.StageConfig")
-        local function rank(id)
-            local previous = SC.getTerminalPrevStageId(id)
-            return previous and previous + 0.5 or id
-        end
-        copy.maxStageId = rank(sceneMax) > rank(savedMax) and sceneMax or savedMax
-        local cleared = {}
-        for _, ledger in ipairs({ battle.clearedStages or {}, BattleScene.getClearedStages() or {} }) do
-            if type(ledger) == "table" then
-                for key, value in pairs(ledger) do
-                    local id = math.tointeger(tonumber(key) or 0)
-                    if value == true and id and id > 0 then cleared[tostring(id)] = true end
-                end
-            end
-        end
-        copy.clearedStages = cleared
-        local saved = type(battle.teamStageIds) == "table" and battle.teamStageIds or {}
-        local ids = {}
-        for team = 1, 3 do
-            ids[tostring(team)] = live[team] or live[tostring(team)]
-                or saved[tostring(team)] or saved[team]
-        end
-        copy.teamStageIds = ids
-        copy.currentStageId = ids["1"] or battle.currentStageId
-    end
-    BattleSchema.normalizeTeamStageIds(copy, false)
-    return copy
-end
 
 local SAVE_FILE         = "standalone_save.json"
 local TEMP_SAVE_FILE    = "standalone_save.pending.json"
@@ -113,8 +62,6 @@ local function buildSaveData()
             for k, v in pairs(data) do copy[k] = v end
             copy.roster = rosterForSave(data.roster)
             modules[name] = copy
-        elseif name == "battle" and type(data) == "table" then
-            modules[name] = StandaloneSave.CaptureBattleProgress(data)
         else
             modules[name] = data
         end
@@ -129,8 +76,7 @@ end
 
 --- 编码存档 JSON；成功返回字符串，失败返回 nil
 local function encodeSave()
-    -- 采集/构建也可能失败（页面尚未就绪或坏数据），必须在 pcall 内求值。
-    local ok, json = pcall(function() return cjson.encode(buildSaveData()) end)
+    local ok, json = pcall(cjson.encode, buildSaveData())
     if not ok or type(json) ~= "string" then
         print("[StandaloneSave] encode 失败: " .. tostring(json))
         return nil
@@ -216,13 +162,6 @@ function StandaloneSave.RestoreData()
     end
     saveData.modules.player = player
 
-    -- 先规范战斗位置，避免模块遍历顺序影响三队解锁；只有真正读档回退终焉。
-    local savedBattle = saveData.modules.battle
-    if type(savedBattle) == "table" then
-        BattleSchema.Fields.battle.onLoad(savedBattle)
-        BattleSchema.normalizeTeamStageIds(savedBattle, true)
-    end
-
     -- 2. 恢复各模块（经 handleStateUpdate 统一走 onLoad 修正 + 订阅通知）
     local names = {}
     for name, data in pairs(saveData.modules) do
@@ -277,9 +216,7 @@ function StandaloneSave.ApplyBattleProgress()
     if battle.maxStageId == nil and battle.currentStageId == nil and battle.clearedStages == nil then
         return
     end
-    BattleSchema.normalizeTeamStageIds(battle, true)
     BattleScene.setBattleData(battle)
-    if battlePage then battlePage.setTeamStageIds(battle.teamStageIds) end
     print("[StandaloneSave] 战斗进度已回灌 maxStageId=" .. tostring(battle.maxStageId))
 end
 

@@ -18,7 +18,6 @@ local DarkIcon          = require("core.DarkIcon")
 local GameState         = require("core.GameState")
 local I18n              = require("core.I18n")
 local BF                = require("systems.ButtonFeedback")
-local ResourceList      = require("ui.battle.stage.StageSelectResources")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -88,14 +87,6 @@ local function drawFittedTitle(vg, x, y, source, width, fontSize, maxLines, alig
 end
 
 local StageSelectDialog = {}
-local onDungeonSelect = nil ---@type fun(dungeonId: string, teamIdx: number): boolean|nil
-local TAB_Y, TAB_W, TAB_H = 686, 150, 46
-local MAIN_TAB_X, DUNGEON_TAB_X = 445, 635
-local TOWER_CX, TOWER_CY, TOWER_W, TOWER_H = 200, 1620, 190, 84
-
-function StageSelectDialog.setOnDungeonSelect(callback)
-    onDungeonSelect = callback
-end
 
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
 local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
@@ -156,8 +147,6 @@ local imgAct = -1
 local imgLock = -1
 
 local state = {
-    section   = "main",
-    sectionPositions = {}, ---@type table<string, table> 各分类保留选中章与滚动位置
     open      = false,
     openTime  = 0,
     selKey    = nil,   -- 选中章节 key（chapter number 或 "T<神殿id>"=单难度终焉组）
@@ -283,25 +272,11 @@ local function ensureCache()
     return state.cacheGroups, state.cacheMaxOrder
 end
 
-local function currentGroups()
-    if state.section == "dungeon" then return ResourceList.getGroups(), nil end
-    return ensureCache()
-end
-
--- 资源进度是副本独立账本，不能用主线链序 cacheMaxOrder 代替。
-local function stageLocked(id, maxOrder, battleData, dungeonData)
-    if SC.isResourceStage(id) then
-        return not ResourceList.isStageUnlocked(id, battleData, dungeonData)
-    end
-    local ord = state.cacheOrder and state.cacheOrder[id]
-    return ord == nil or maxOrder == nil or ord > maxOrder
-end
-
-local function chapterHue(key, hueIndex)
+local function chapterHue(key)
     -- 终焉组 key 形如 "T999"，提取神殿 id 参与取色，让各难度终焉色调互异
-    local n = hueIndex or key
-    if type(n) == "string" then
-        n = tonumber(n:match("^T(%d+)$")) or 23
+    local n = key
+    if type(key) == "string" then
+        n = tonumber(key:match("^T(%d+)$")) or 23
     end
     return CH_HUES[((n - 1) % #CH_HUES) + 1]
 end
@@ -311,8 +286,7 @@ end
 ---@param id number
 ---@return number
 local function displayChapter(id)
-    local entry = SC.getStage(id)
-    return entry and entry.displayChapter or math.floor(id / 100)
+    return math.floor(id / 100)
 end
 
 local function shortStageLabel(id)
@@ -388,9 +362,12 @@ local function stageMonsterCards(entry)
 end
 
 local function currentStageId()
-    local BattleTriPage = require("ui.battle.tri.BattleTriPage")
-    return BattleTriPage.getTeamStageId(state.targetTeam or 1)
-        or require("ui.battle.scene.BattleScene").getStageId()
+    if state.targetTeam then
+        local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+        return BattleTriPage.getTeamStageId(state.targetTeam)
+            or require("ui.battle.scene.BattleScene").getStageId()
+    end
+    return require("ui.battle.scene.BattleScene").getStageId()
 end
 
 local function selectedGroup(groups)
@@ -401,7 +378,8 @@ local function selectedGroup(groups)
 end
 
 local function chapterListBounds(groups)
-    local top = D.CH_Y0
+    local needScroll = #groups > D.CH_VISIBLE
+    local top = D.CH_Y0 + (needScroll and 30 or 0)
     local bottom = top + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
     return top, bottom
 end
@@ -425,43 +403,6 @@ local function resetCardScroll()
     state.cardDragId = nil
     state.cardDragHorizontal = false
     state.cardDragMoved = false
-end
-
-local function stageGroupKey(stageId)
-    if not stageId then return nil end
-    if SC.isResourceStage(stageId) then return ResourceList.getGroupKey(stageId) end
-    if SC.isTerminalTemple(stageId) then return "T" .. tostring(stageId) end
-    return math.floor(stageId / 100)
-end
-
-local function locateGroup(groups, key)
-    local gi = 1
-    for i, g in ipairs(groups) do
-        if tostring(g.key) == tostring(key) then gi = i; break end
-    end
-    state.selKey = groups[gi] and groups[gi].key or nil
-    state.chScroll = math.min(gi - 1, math.max(0, #groups - D.CH_VISIBLE))
-end
-
-local function switchSection(section)
-    if state.section == section then return end
-    state.sectionPositions[state.section] = { key = state.selKey, scroll = state.chScroll }
-    state.section = section
-    state.chDragY = nil
-    state.chDragMoved = false
-    resetCardScroll()
-    local groups = currentGroups()
-    local saved = state.sectionPositions[section]
-    if saved then
-        locateGroup(groups, saved.key)
-        state.chScroll = math.max(0, math.min(saved.scroll or 0, #groups - D.CH_VISIBLE))
-    else
-        -- 首次切到副本定位首章；不要沿用主线数字章号造成跨分类错位。
-        local stageId = currentStageId()
-        local key = stageId and ((section == "dungeon") == SC.isResourceStage(stageId))
-            and stageGroupKey(stageId) or nil
-        locateGroup(groups, key)
-    end
 end
 
 local function cardRowAt(groups, x, y)
@@ -512,8 +453,8 @@ end
 local chapterBackgrounds = {}
 ---@type table<string, number>
 local chapterBackgroundRetry = {}
-local function ensureChapterBackground(vg, stageId, background)
-    local path = background or SC.getBattleBackground(stageId)
+local function ensureChapterBackground(vg, stageId)
+    local path = SC.getBattleBackground(stageId)
     local image = chapterBackgrounds[path]
     if image and image >= 0 then return image end
     local now = time.elapsedTime
@@ -530,8 +471,8 @@ local function ensureChapterBackground(vg, stageId, background)
     return loaded
 end
 
-local function drawChapterBackground(vg, stageId, x, y, hue, isSel, locked, background)
-    local image = ensureChapterBackground(vg, stageId, background)
+local function drawChapterBackground(vg, stageId, x, y, hue, isSel, locked)
+    local image = ensureChapterBackground(vg, stageId)
     local srcW, srcH = 0, 0
     if image >= 0 then srcW, srcH = nvgImageSize(vg, image) end
     nvgBeginPath(vg)
@@ -555,22 +496,6 @@ local function drawChapterBackground(vg, stageId, x, y, hue, isSel, locked, back
     nvgFill(vg)
 end
 
-local function drawTowerEntry(vg, battleData)
-    local locked = not ResourceList.isTowerUnlocked(battleData)
-    drawChapterBackground(vg, nil, TOWER_CX - TOWER_W * 0.5, TOWER_CY - TOWER_H * 0.5,
-        CH_HUES[5], false, locked, "image/界面底板/副本秘境/UI_FBRK_3.png")
-    drawFittedTitle(vg, TOWER_CX, TOWER_CY - 12, "通天塔", TOWER_W - 18, 26, 1,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, locked and 139 or 235,
-        locked and 149 or 230, locked and 165 or 210, 3)
-    local caption = "三队攻坚"
-    if locked then
-        local stageId = ResourceList.getTowerUnlockStage()
-        caption = I18n.format("通关 %d-%d 解锁", math.floor(stageId / 100), stageId % 100)
-    end
-    drawFittedTitle(vg, TOWER_CX, TOWER_CY + 20, caption, TOWER_W - 12, 20, 2,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 201, 151, 59, 2)
-end
-
 ---@param vg any
 function StageSelectDialog.init(vg)
     for _, image in pairs(chapterBackgrounds) do nvgDeleteImage(vg, image) end
@@ -590,32 +515,31 @@ function StageSelectDialog.open(teamIdx)
     state.openTime = time.elapsedTime
     state.chDragY = nil
     state.chDragMoved = false
-    state.sectionPositions = {}
     resetCardScroll()
     state.targetTeam = teamIdx
-    local curStage = currentStageId()
-    state.section = curStage and SC.isResourceStage(curStage) and "dungeon" or "main"
-    -- 资源队伍自动打开所属副本章；终焉仍定位对应独立章。
-    local groups = currentGroups()
-    locateGroup(groups, stageGroupKey(curStage))
-end
-
--- 旧副本导航也只打开同一张关卡选择表，不再进入次数/挑战详情。
-function StageSelectDialog.openDungeon(teamIdx, dungeonId)
-    StageSelectDialog.open(teamIdx or 1)
-    state.section = "dungeon"
-    local groups = currentGroups()
-    local current = currentStageId()
-    local key = current and SC.isResourceStage(current) and stageGroupKey(current) or nil
-    if dungeonId then
-        local DC = require("config.DungeonConfig")
-        local dungeon = require("runtime.ClientDispatcher").get("dungeon") or {}
-        local floor = math.min(DC.MAX_FLOOR[dungeonId] or 1,
-            DC.getHighestClearedFloor(dungeon[dungeonId], dungeonId) + 1)
-        key = ResourceList.getGroupKey(DC.getStageId(dungeonId, floor))
+    local BS = require("ui.battle.scene.BattleScene")
+    local curStage = BS.getStageId()
+    if state.targetTeam then
+        local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+        curStage = BattleTriPage.getTeamStageId(state.targetTeam) or curStage
     end
-    locateGroup(groups, key)
-    resetCardScroll()
+    -- 定位到当前关所在章节（终焉神殿 → 对应单难度终焉组 "T<id>"）
+    local curKey
+    if curStage and SC.isTerminalTemple(curStage) then
+        curKey = "T" .. tostring(curStage)
+    elseif curStage then
+        curKey = math.floor(curStage / 100)
+    end
+    ensureCache()
+    state.selKey = curKey
+    -- 滚动让当前章可见
+    local groups = state.cacheGroups or {}
+    local gi = 1
+    for i, g in ipairs(groups) do
+        if tostring(g.key) == tostring(curKey) then gi = i; break end
+    end
+    local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
+    state.chScroll = math.max(0, math.min(gi - 1, maxScroll))
 end
 
 function StageSelectDialog.close()
@@ -639,7 +563,7 @@ end
 
 function StageSelectDialog.handleScroll(wheel, x, y)
     if not state.open then return false end
-    local groups = currentGroups()
+    local groups = ensureCache()
     local top, bottom = chapterListBounds(groups)
     -- 覆盖整列章节和上下箭头，不要求正好落在按钮高度内。
     if x >= D.CH_X - 20 and x <= D.CH_X + D.CH_W + 20
@@ -667,7 +591,7 @@ function StageSelectDialog.handleDragBegin(x, y)
     state.cardDragId = nil
     state.cardDragHorizontal = false
     state.cardDragMoved = false
-    local groups = currentGroups()
+    local groups = ensureCache()
     local top, bottom = chapterListBounds(groups)
     if x >= D.CH_X and x <= D.CH_X + D.CH_W and y >= top and y <= bottom then
         state.chDragY = y
@@ -690,7 +614,7 @@ function StageSelectDialog.handleDragMove(x, y)
     if state.chDragY then
         local delta = state.chDragY - y
         if math.abs(delta) >= 15 then state.chDragMoved = true end
-        local groups = currentGroups()
+        local groups = ensureCache()
         local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
         local step = D.CH_BTN_H + D.CH_GAP
         state.chScroll = math.max(0, math.min(maxScroll,
@@ -753,11 +677,10 @@ function StageSelectDialog.draw(vg)
     local scale = getAnimScale()
     if scale <= 0.01 then return end
 
-    local groups, maxOrder = currentGroups()
+    local groups, maxOrder = ensureCache()
     local curStage = currentStageId()
     local sel = selectedGroup(groups)
     if not sel then return end
-    local battleData, dungeonData = ResourceList.getProgress()
 
     -- 不再铺全屏灰色遮罩
     nvgSave(vg)
@@ -775,19 +698,6 @@ function StageSelectDialog.draw(vg)
         D.TT_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, D.TT_SW,
         { strokeColor = { D.TT_SR, D.TT_SG, D.TT_SB } })
-
-    -- 顶部分类不挪动主线章节、敌人及既有滚动热区。
-    for _, tab in ipairs({ { x = MAIN_TAB_X, key = "main", text = "主线" },
-        { x = DUNGEON_TAB_X, key = "dungeon", text = "副本" } }) do
-        local active = state.section == tab.key
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, tab.x - TAB_W * 0.5, TAB_Y - TAB_H * 0.5, TAB_W, TAB_H, 10)
-        nvgFillColor(vg, nvgRGBA(active and 106 or 37, active and 78 or 33, active and 36 or 29, 240))
-        nvgFill(vg)
-        drawFittedTitle(vg, tab.x, TAB_Y, tab.text, TAB_W - 12, 28, 1,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 235, 194, 2)
-    end
-    -- 两类关卡共用下方章节、关卡行与敌人卡面，不进入独立资源详情。
 
     -- ===================== 左栏：章节列表 =====================
     local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
@@ -811,11 +721,12 @@ function StageSelectDialog.draw(vg)
         local x = D.CH_X
         local y = listTop + (vi - 1) * (D.CH_BTN_H + D.CH_GAP)
         local isSel = (tostring(g.key) == tostring(sel.key))
-        local hue = chapterHue(g.key, g.hueIndex)
+        local hue = chapterHue(g.key)
         local firstId = g.ids and g.ids[1]
-        local chapterLocked = stageLocked(firstId, maxOrder, battleData, dungeonData)
+        local firstOrder = firstId and state.cacheOrder and state.cacheOrder[firstId]
+        local chapterLocked = (firstOrder == nil) or (maxOrder == nil) or (firstOrder > maxOrder)
 
-        drawChapterBackground(vg, firstId, x, y, hue, isSel, chapterLocked, g.background)
+        drawChapterBackground(vg, firstId, x, y, hue, isSel, chapterLocked)
         if isSel then
             nvgBeginPath(vg)
             nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
@@ -835,7 +746,7 @@ function StageSelectDialog.draw(vg)
         end
         -- 副标题：普通章节 = "N 章"；单难度终焉 = 难度名（如 "困难"/"噩梦"）
         local rel = g.subLabel or tostring(SC.getRelativeChapter(g.key)) .. " 章"
-        if not g.resourceDungeonId and type(g.key) == "string" then
+        if type(g.key) == "string" then
             rel = I18n.difficulty(rel)
         else
             rel = I18n.lookup(rel)
@@ -853,8 +764,6 @@ function StageSelectDialog.draw(vg)
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 2)
     end
 
-    if state.section == "dungeon" then drawTowerEntry(vg, battleData) end
-
     -- ===================== 中栏：关卡竖排 + 敌人卡面 =====================
     nvgSave(vg)
     nvgIntersectScissor(vg, D.MID_X, D.ROW_Y0 - 4, D.MID_W, 5 * (D.ROW_H + D.ROW_GAP))
@@ -862,9 +771,10 @@ function StageSelectDialog.draw(vg)
         local y = D.ROW_Y0 + (i - 1) * (D.ROW_H + D.ROW_GAP)
         local x = D.MID_X
         local isCur = (id == curStage)
+        local isBoss = SC.hasBoss(id) or SC.isTerminalTemple(id)
+        local ord = state.cacheOrder and state.cacheOrder[id] or nil
+        local locked = (ord == nil) or (maxOrder == nil) or (ord > maxOrder)
         local entry = SC.getStage(id)
-        local isBoss = (entry and (entry.bossId or 0) > 0) or SC.isTerminalTemple(id)
-        local locked = stageLocked(id, maxOrder, battleData, dungeonData)
 
         -- 行底
         nvgBeginPath(vg)
@@ -905,8 +815,6 @@ function StageSelectDialog.draw(vg)
             sub = "神殿"
         elseif isBoss then
             sub = "首领"
-        elseif SC.isResourceStage(id) then
-            sub = "副本"
         else
             sub = I18n.difficulty(SC.getDifficultyDisplayName(SC.getDifficulty(id)))
         end
@@ -1026,25 +934,11 @@ end
 function StageSelectDialog.handleInput(x, y)
     if not state.open then return false end
 
-    local groups, maxOrder = currentGroups()
+    local BS = require("ui.battle.scene.BattleScene")
+    local groups, maxOrder = ensureCache()
     if state.chDragMoved or state.cardDragMoved then
         state.chDragMoved = false
         state.cardDragMoved = false
-        return true
-    end
-    if hitTestRect(x, y, MAIN_TAB_X, TAB_Y, TAB_W, TAB_H)
-        or hitTestRect(x, y, DUNGEON_TAB_X, TAB_Y, TAB_W, TAB_H) then
-        switchSection(x < (MAIN_TAB_X + DUNGEON_TAB_X) * 0.5 and "main" or "dungeon")
-        BF.trigger("stage_sel_section")
-        return true
-    end
-    if state.section == "dungeon" and hitTestRect(x, y, TOWER_CX, TOWER_CY, TOWER_W, TOWER_H) then
-        BF.trigger("stage_sel_tower")
-        if ResourceList.isTowerUnlocked() and onDungeonSelect then
-            local teamIdx = state.targetTeam or 1
-            if onDungeonSelect("babel_tower", teamIdx) then StageSelectDialog.close() end
-            print("[StageSelectDialog] 查看通天塔: 队伍=" .. teamIdx)
-        end
         return true
     end
     local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
@@ -1090,12 +984,20 @@ function StageSelectDialog.handleInput(x, y)
             local y0 = D.ROW_Y0 + (i - 1) * (D.ROW_H + D.ROW_GAP)
             if x >= D.MID_X and x <= D.MID_X + D.MID_W and y >= y0 and y <= y0 + D.ROW_H then
                 BF.trigger("stage_sel_cell")
-                if stageLocked(id, maxOrder) then return true end
+                local ord = state.cacheOrder and state.cacheOrder[id] or nil
+                if (ord == nil) or (maxOrder == nil) or (ord > maxOrder) then
+                    return true
+                end
                 if id == currentStageId() then return true end
-                local BattleTriPage = require("ui.battle.tri.BattleTriPage")
-                local teamIdx = SC.isTerminalTemple(id) and 1 or (state.targetTeam or 1)
-                local ok = BattleTriPage.gotoTeamStage(teamIdx, id)
-                -- 只关选关弹窗，三队页与其他两队战斗继续保留。
+                local ok
+                if SC.isTerminalTemple(id) then
+                    ok = require("ui.battle.tri.BattleTriPage").gotoTeamStage(1, id)
+                elseif state.targetTeam then
+                    local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+                    ok = BattleTriPage.gotoTeamStage(state.targetTeam, id)
+                else
+                    ok = BS.gotoStage(id)
+                end
                 if ok then StageSelectDialog.close() end
                 print("[StageSelectDialog] 前往关卡: " .. tostring(id))
                 return true

@@ -15,9 +15,6 @@ local ProjectileSystem  = require("ui.battle.combat.ProjectileSystem")
 local SEM               = require("systems.StatusEffectManager")
 local TM                = require("systems.ThreatManager")
 local TAL               = require("systems.TalentManager")
-local ETS               = require("systems.ExtraTalentSystem")
-local BattleAllyLifecycle = require("ui.battle.scene.BattleAllyLifecycle")
-local BattleMountScope  = require("ui.battle.scene.BattleMountScope")
 local RCH               = require("systems.RelicConditionHandler")
 local ART               = require("systems.ArtifactRuntime")
 local CF                = require("systems.CombatFormula")
@@ -28,7 +25,6 @@ local NumberUtil        = require("core.NumberUtil")
 local BattleLayout      = require("core.BattleLayout")
 local BattleStats       = require("systems.BattleStats")
 local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
-local DropSystem        = require("systems.DropSystem")
 
 local BattleTriDriver = {}
 
@@ -81,11 +77,6 @@ local function buildWave(stageId)
         local u = MC.createMonster(1, level)
         if u then list[#list + 1] = u end
     end
-    if SC.isResourceStage(stageId) then
-        for _, unit in ipairs(list) do
-            unit.goldReward, unit.expReward = 0, 0
-        end
-    end
     return list, level
 end
 
@@ -112,7 +103,6 @@ function BattleTriDriver.new(teamIdx, options)
         pendingKills = {},
         rewardQueue = {},
         rewardTimer = 0,
-        dropLuck = 0,
         introTimer = 0,
         marchTimer = 0,
         marchNotice = false,
@@ -122,17 +112,10 @@ function BattleTriDriver.new(teamIdx, options)
         psState     = ProjectileSystem.newState(),
         tmState     = TM.newState(),
         talRefs     = TAL.newBattleRefs(),
-        talUnitStates = TAL.newUnitStates(),
-        etsState    = ETS.newState(),
         beState     = BattleEffects.newFxState(),
         semState    = SEM.newSemState(),
-        rchState    = RCH.newState(),
         onKill      = nil,  -- function(data) 由 TriPage/宿主注入
-        onDrop      = nil,
-        onStageCleared = nil,
-        terminalRaid = nil,
         onStageChanged = nil,
-        onAllDead   = nil,  -- 普通关全灭出口；终焉由协同宿主结算
     }
 
     --- mount 本战斗的全部子系统状态
@@ -142,11 +125,8 @@ function BattleTriDriver.new(teamIdx, options)
         ProjectileSystem.mount(drv.psState)
         TM.mount(drv.tmState)
         TAL.mount(drv.talRefs)
-        TAL.mountUnitStates(drv.talUnitStates)
-        ETS.mount(drv.etsState)
         BattleEffects.mount(drv.beState)
         SEM.mount(drv.semState)
-        RCH.mount(drv.rchState)
     end
 
     --- 注入 BattleCombat ctx（在 mounted 状态上）
@@ -206,14 +186,12 @@ function BattleTriDriver.new(teamIdx, options)
                 battle.currentStageId = prevId
                 local cleared = battle.clearedStages
                 local nextCleared = type(cleared) == "table" and cleared[tostring(prevId)] == true
-                battle.battleMode = SC.isResourceStage(prevId) and "idle"
-                    or (nextCleared and "idle" or "firstClear")
+                battle.battleMode = nextCleared and "idle" or "firstClear"
+                require("boot.StandaloneSave").Flush()
             end
         end
         self._syncedMainStage = prevId
         self:start(prevId)
-        -- 驱动完成退关之后保存，不能把新镜像采集成旧驱动关卡。
-        require("boot.StandaloneSave").Flush()
         BattleCombat.addFloatingText("退回上一关", BattleLayout.STRIP_W * 0.5, BattleLayout.STRIP_CY,
             { 255, 140, 120 }, false)
     end
@@ -236,12 +214,10 @@ function BattleTriDriver.new(teamIdx, options)
             self:queuePendingKills()
         end
         self.stageId = stageId
-        self.pendingStageId = nil
         self.marchTimer = 0
         self.marchNotice = false
         self.kills = 0
         self._clearReported = false
-        self._wipeReported = false
         self._labDefeated = false
         self._labTimedOut = false
         self._labElapsed = 0
@@ -249,11 +225,9 @@ function BattleTriDriver.new(teamIdx, options)
         self._timeoutElapsed = 0   -- 战斗超时增伤计时（每场重开清零）
         self._terminalStopped = false
         self:activate()
-        TAL.reset()
-        self.talUnitStates = TAL.mountedUnitStates()
+        if self.battleLab then TAL.reset() end
         -- 清理旧战线单位的临时效果，不触碰其他队的神器状态
         ART.reset(self.allies)
-        RCH.reset()
         -- 己方: 正常战斗从编队页构建；战斗实验室由测试配置创建独立单位
         if self.battleLab then
             self.teamSignature = nil
@@ -263,8 +237,6 @@ function BattleTriDriver.new(teamIdx, options)
             self.teamSignature = CharacterPanel.getTeamSignature(self.teamIdx)
             self.allies = CharacterPanel.getDeployedTeam(self.teamIdx) or {}
         end
-        -- 本场固定幸运值：队伍重开才更新，阵亡、换装和延迟领奖不追溯改写。
-        self.dropLuck = self.battleLab and 0 or DropSystem.captureTeamLuck(self.allies)
         -- 敌方：首通实验使用正式首通敌人列表，其余沿用当前三行战斗的出怪规则
         local entry = SC.getStage(stageId)
         local isTerminal = not self.battleLab and SC.isTerminalTemple(stageId)
@@ -302,8 +274,8 @@ function BattleTriDriver.new(teamIdx, options)
         BattleEffects.reset()
         ProjectileSystem.reset()
         TM.reset()
-        SEM.reset() -- 每场普通战斗也只清本队，旧单位DOT/HOT不能继续tick。
         if self.battleLab then
+            SEM.reset()
             -- 仅在独立测试入口使用全局词缀状态，不能与游戏内战斗交错运行
             local MAS = require("systems.MapAffixSystem")
             MAS.onStageLoad(self.firstClear and (entry.chapter or 0) or 0, self.allies)
@@ -358,14 +330,8 @@ function BattleTriDriver.new(teamIdx, options)
         self._started = true
         print(string.format("[TriDriver] 队%d 开战 stage=%s allies=%d enemies=%d",
             self.teamIdx, tostring(stageId), #self.allies, #self.enemies))
-        if not self.battleLab then
-            if self.onStageChanged and (not wasStarted or previousStageId ~= stageId) then
-                self.onStageChanged(self.teamIdx, stageId)
-            end
-            -- 实际进场才通知剧情；同关重开也允许模块按会话/领取账本去重。
-            if not SC.isResourceStage(stageId) then
-                require("ui.battle.stage.StageEntryEvents").notify(stageId, self.teamIdx)
-            end
+        if not self.battleLab and self.onStageChanged and (not wasStarted or previousStageId ~= stageId) then
+            self.onStageChanged(self.teamIdx, stageId)
         end
     end
 
@@ -374,14 +340,10 @@ function BattleTriDriver.new(teamIdx, options)
         self.kills = self.kills + 1
         if self.battleLab then return end
         local pending = self.pendingKills
-        -- 资源每杀奖励由 DC 的重复收益 API 结算，绝不叠加借用怪物的金币/经验。
-        local isResourceStage = SC.isResourceStage(self.stageId)
         pending[#pending + 1] = {
             stageId = self.stageId,
-            teamIdx = self.teamIdx,
-            dropLuck = self.dropLuck,
-            expReward = not isResourceStage and (unit.expReward or 0) or 0,
-            goldReward = not isResourceStage and (unit.goldReward or 0) or 0,
+            expReward = unit.expReward or 0,
+            goldReward = unit.goldReward or 0,
         }
     end
 
@@ -404,8 +366,7 @@ function BattleTriDriver.new(teamIdx, options)
             local kill = pending[i]
             expReward = expReward + (kill.expReward or 0)
             goldReward = goldReward + (kill.goldReward or 0)
-            queue[#queue + 1] = { stageId = kill.stageId, dropOnly = true,
-                teamIdx = kill.teamIdx, dropLuck = kill.dropLuck }
+            queue[#queue + 1] = { stageId = kill.stageId, dropOnly = true }
         end
         if self.onKill and (expReward > 0 or goldReward > 0) then
             self.onKill({
@@ -512,35 +473,16 @@ function BattleTriDriver.new(teamIdx, options)
             self.teamIdx, tostring(self.stageId), MARCH_DURATION))
     end
 
-    --- 背景、行军预约、实际推进共用目标；账户账本仅决定是否跳过已通终焉。
-    ---@return number destinationId
-    ---@return number|nil waitingTerminalId
-    function drv:resolveAdvanceStage()
-        if self.battleLab then return self.stageId, nil end
-        local nextId = SC.getNextStageId(self.stageId)
-        if not nextId or not SC.isTerminalTemple(nextId) then
-            return nextId or self.stageId, nil
-        end
-        local BattleScene = require("ui.battle.scene.BattleScene")
-        local battle = require("runtime.ClientDispatcher").get("battle")
-        local savedMax = type(battle) == "table" and (tonumber(battle.maxStageId) or 0) or 0
-        local liveCleared = BattleScene.getClearedStages()
-        local savedCleared = type(battle) == "table" and battle.clearedStages or {}
-        savedCleared = type(savedCleared) == "table" and savedCleared or {}
-        local terminalCleared = liveCleared[nextId] == true or liveCleared[tostring(nextId)] == true
-            or savedCleared[nextId] == true or savedCleared[tostring(nextId)] == true
-        local liveMax = BattleScene.getMaxStageId()
-        local livePrev, savedPrev = SC.getTerminalPrevStageId(liveMax), SC.getTerminalPrevStageId(savedMax)
-        local liveRank = livePrev and livePrev + 0.5 or liveMax
-        local savedRank = savedPrev and savedPrev + 0.5 or savedMax
-        return SC.resolveAutoAdvance(self.stageId, math.max(liveRank, savedRank),
-            { [nextId] = terminalCleared })
-    end
-
-    --- 保留旧调用接口；未通终焉仍返回终焉入口，实际推进会等待确认。
+    --- 行军背景与实际推进共用目标，未通终焉不能仅凭推算上限跳过。
     function drv:getAdvanceStageId()
-        local destination, waitingTerminal = self:resolveAdvanceStage()
-        return waitingTerminal or destination
+        local nextId = SC.getNextStageId(self.stageId)
+        if nextId and SC.isTerminalTemple(nextId) then
+            local BattleScene = require("ui.battle.scene.BattleScene")
+            local skipToId, shouldSkip = SC.shouldSkipTerminal(
+                self.stageId, BattleScene.getMaxStageId(), BattleScene.getClearedStages())
+            if shouldSkip and skipToId then return skipToId end
+        end
+        return nextId
     end
 
     --- 背景单向放大后保持峰值并淡出；第三个返回值是下层背景的目标关卡。
@@ -562,8 +504,12 @@ function BattleTriDriver.new(teamIdx, options)
     function drv:advanceStage()
         self.marchTimer = 0
         self.marchNotice = false
-        local nextId, waitingTerminalId = self:resolveAdvanceStage()
-        if waitingTerminalId then
+        local nextId = self:getAdvanceStageId()
+        if not nextId then
+            self:start(self.stageId)
+            return
+        end
+        if SC.isTerminalTemple(nextId) then
             local BattleScene = require("ui.battle.scene.BattleScene")
             self._syncedMainStage = self.stageId
             self.active = false
@@ -571,7 +517,7 @@ function BattleTriDriver.new(teamIdx, options)
                 BattleScene.nextStage()
             end
             print(string.format("[TriDriver] 队%d 通关 %s，等待玩家在选关页进入终焉 %s",
-                self.teamIdx, tostring(self.stageId), tostring(waitingTerminalId)))
+                self.teamIdx, tostring(self.stageId), tostring(nextId)))
             return
         end
         local clearedId = self.stageId
@@ -596,20 +542,6 @@ function BattleTriDriver.new(teamIdx, options)
                 if unit.hp > 0 then BattleCombat.clearCardAnim(unit) end
             end
         end
-        -- finished(false)可能来自本帧后半的DOT/敌攻；此时业务已停止，不能
-        -- 再调用复活/伤害钩子，但新阵亡仍需登记并完成退场。
-        for _, unit in ipairs(self.allies) do
-            if unit.hp <= 0 and not unit._triDeathHandled then
-                unit._triDeathHandled = true
-                unit.atkProgress = 0
-                TM.removeUnit(unit)
-                SEM.removeUnit(unit)
-                unit._fallenPending = true
-                unit._fallenAt = time.elapsedTime
-                BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = 1,
-                    knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0, noTombstone = true })
-            end
-        end
         BattleCombat.updateHpBuffers(self.allies, dt)
         BattleCombat.updateHpBuffers(self.enemies, dt)
         BattleEffects.update(dt)
@@ -619,23 +551,22 @@ function BattleTriDriver.new(teamIdx, options)
         require("ui.battle.scene.BattleAllyReset").compactFallen(self.allies, time.elapsedTime)
     end
 
-    --- 战斗 tick：逻辑时钟只用于伤害/状态，真实时钟用于入场/行军/掉落/视觉。
-    --- 单参调用兼容实验室及旧宿主，绝不在驱动内部再次乘全局倍率。
-    function drv:tick(realDt, logicDt)
+    --- 战斗 tick（须已 mount）
+    function drv:tick(dt)
         if not self.active then return end
-        local dt = logicDt or realDt
         self._tickDt = dt
-        self:tickRewards(realDt)
+        self._timeoutElapsed = (self._timeoutElapsed or 0) + dt   -- 超时增伤计时
+        self:tickRewards(dt)
         -- 共享池可以由另一条战线打空：先分发本线死亡，再走失守/胜利早返。
         if self.terminalRaid then self.terminalRaid:sync() end
         self:reportDefeatedEnemies()
         local allies, enemies = self.allies, self.enemies
         if self.terminalRaid and self.terminalRaid.defeated[self.teamIdx] then
-            self:tickTerminalStopped(realDt)
+            self:tickTerminalStopped(dt)
             return
         end
-        if self.terminalRaid and self.terminalRaid.finished then
-            self:tickTerminalStopped(realDt)
+        if self.terminalRaid and self.terminalRaid.finished and self.terminalRaid.won then
+            self:tickTerminalStopped(dt)
             return
         end
         if #allies == 0 then
@@ -643,20 +574,15 @@ function BattleTriDriver.new(teamIdx, options)
             self.marchNotice = false
             return
         end
-        if (self.introTimer or 0) > 0 or (self.terminalRaid and self.terminalRaid._introPending) then
-            self.introTimer = math.max(0, (self.introTimer or 0) - realDt)
-            BattleCombat.updateCardAnims(realDt)
-            BattleCombat.updateFloatingTexts(realDt)
-            BattleCombat.updateHitFlashes(realDt)
+        if (self.introTimer or 0) > 0 then
+            self.introTimer = self.introTimer - dt
+            BattleCombat.updateCardAnims(dt)
+            BattleCombat.updateFloatingTexts(dt)
+            BattleCombat.updateHitFlashes(dt)
             if self.introTimer <= 0 then self.marchNotice = false end
             return
         end
         if (self.marchTimer or 0) <= 0 then self.marchNotice = false end
-        -- 入场/空队/行军/失守不消耗战斗时钟；倍率需在本帧攻击前更新。
-        if (self.marchTimer or 0) <= 0 and (#enemies > 0 or #self.enemyQueue > 0) then
-            self._timeoutElapsed = (self._timeoutElapsed or 0) + dt
-            self.combatState.ctx.globalDmgMult = require("systems.BattleTimeout").calcMult(self._timeoutElapsed)
-        end
         if self.battleLab then
             self._labElapsed = self._labElapsed + dt
             if self._labElapsed >= self._labTimeLimit then
@@ -723,16 +649,16 @@ function BattleTriDriver.new(teamIdx, options)
         if self.terminalRaid then
             if self.terminalRaid.hp <= 0 then
                 self.terminalRaid:finish(true)
-                self:tickTerminalStopped(realDt)
+                self:tickTerminalStopped(dt)
                 return
             end
             if not hasAliveAlly then
                 self:retreatStage()
-                self:tickTerminalStopped(realDt)
+                self:tickTerminalStopped(dt)
                 return
             end
             if self.terminalRaid.finished then
-                self:tickTerminalStopped(realDt)
+                self:tickTerminalStopped(dt)
                 return
             end
         end
@@ -758,7 +684,7 @@ function BattleTriDriver.new(teamIdx, options)
             if (self.marchTimer or 0) <= 0 then
                 self:beginMarch()
             end
-            self.marchTimer = self.marchTimer - realDt
+            self.marchTimer = self.marchTimer - dt
             for _, unit in ipairs(allies) do
                 if unit.hp > 0 then
                     local step = math.sin(self.marchTimer * 10) * MARCH_STEP
@@ -767,9 +693,9 @@ function BattleTriDriver.new(teamIdx, options)
                     })
                 end
             end
-            BattleCombat.updateCardAnims(realDt)
-            BattleCombat.updateFloatingTexts(realDt)
-            BattleCombat.updateHitFlashes(realDt)
+            BattleCombat.updateCardAnims(dt)
+            BattleCombat.updateFloatingTexts(dt)
+            BattleCombat.updateHitFlashes(dt)
             if self.marchTimer <= 0 then
                 self:advanceStage()
             end
@@ -781,10 +707,6 @@ function BattleTriDriver.new(teamIdx, options)
                 self._labDefeated = true
                 self.active = false
                 return
-            end
-            if not self._wipeReported then
-                self._wipeReported = true
-                if self.onAllDead then self.onAllDead(self.teamIdx, self.stageId) end
             end
             self:retreatStage()
             return
@@ -885,18 +807,14 @@ function BattleTriDriver.new(teamIdx, options)
         self:reportDefeatedEnemies()
 
         -- 纯视觉层
-        BattleEffects.update(realDt)
-        BattleCombat.updateCardAnims(realDt)
-        BattleCombat.updateFloatingTexts(realDt)
-        BattleCombat.updateHitFlashes(realDt)
+        BattleEffects.update(dt)
+        BattleCombat.updateCardAnims(dt)
+        BattleCombat.updateFloatingTexts(dt)
+        BattleCombat.updateHitFlashes(dt)
     end
 
     --- 便捷: mount + tick
-    function drv:update(dt, logicDt)
-        if not self.battleLab and not SC.isResourceStage(self.stageId) then
-            require("ui.battle.stage.StageEntryEvents").retry(self.teamIdx)
-        end
-        -- 协同期间签名变更不能单路重开，否则会破坏同编号共享池绑定。
+    function drv:update(dt)
         if not self.battleLab and not self.terminalRaid then
             self._sigTick = (self._sigTick or 0) + 1
             if self._sigTick >= 15 then
@@ -910,7 +828,7 @@ function BattleTriDriver.new(teamIdx, options)
             end
         end
         self:activate()
-        self:tick(dt, logicDt)
+        self:tick(dt)
     end
 
     return drv

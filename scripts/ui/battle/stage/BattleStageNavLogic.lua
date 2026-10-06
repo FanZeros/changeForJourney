@@ -5,15 +5,8 @@
 local BottomNav = require("ui.hud.BottomNav")
 local TerminalConfirmDialog = require("ui.battle.popup.TerminalConfirmDialog")
 local BattleAllyReset = require("ui.battle.scene.BattleAllyReset")
-local DC = require("config.DungeonConfig")
-local PDM = require("rules.character.PlayerDataManager")
 
 local M = {}
-
--- 单机 LocalActionBridge 的固定 UID；PDM 与客户端镜像共用同一份模块数据。
-local function isResourceStageUnlocked(stageId)
-    return DC.isStageUnlocked(stageId, PDM.GetModule(1, "battle"), PDM.GetModule(1, "dungeon"))
-end
 
 --- 切关后恢复己方阵容：先还原出场顺序（阵亡紧凑会打乱），再重置各单位的血量/状态。
 --- 顺序必须最先还原：resetAllyUnit 内部会按「在 allies 中的下标」重新套用装备/神器
@@ -61,12 +54,8 @@ function M.bind(deps)
     local function beginVictoryMarch()
         if get("victoryMarch") then return end
         local stageConfig = getStageConfig()
-        local nextId, waitingTerminal = stageConfig.resolveAutoAdvance(
-            get("currentStageId"), get("maxStageId_"), get("clearedStages"))
-        if stageConfig.isResourceStage(nextId) and not isResourceStageUnlocked(nextId) then
-            nextId = get("currentStageId")
-        end
-        if waitingTerminal or nextId == get("currentStageId") then
+        local nextId = stageConfig.getNextStageId(get("currentStageId"))
+        if not nextId then
             nextStage()
             return
         end
@@ -104,20 +93,29 @@ function M.bind(deps)
         end
     end
 
-    nextStage = function()
+    local function nextStage()
         local stageConfig = getStageConfig()
         local currentStageId = get("currentStageId")
-        local destination, waitingTerminal = stageConfig.resolveAutoAdvance(
-            currentStageId, get("maxStageId_"), get("clearedStages"))
-        if stageConfig.isResourceStage(destination) and not isResourceStageUnlocked(destination) then
-            -- 独立首通尚未记账时原地重开，不凭前进按钮解锁资源下一层。
-            destination = currentStageId
+        local nextId = stageConfig.getNextStageId(currentStageId)
+        if nextId then
+            -- 终焉神殿：只有历史最高关卡已进入下一难度时才跳过
+            if stageConfig.isTerminalTemple(nextId) then
+                local skipToId, shouldSkip = stageConfig.shouldSkipTerminal(
+                    currentStageId, get("maxStageId_"), get("clearedStages"))
+                if skipToId and shouldSkip then
+                    print("[BattleScene] 终焉神殿已跳过(maxStage=" .. get("maxStageId_")
+                        .. " upper=" .. tostring(stageConfig.getProgressUpperBound(get("maxStageId_"), get("clearedStages"), nil))
+                        .. " skipTo=" .. tostring(skipToId) .. ") → " .. tostring(skipToId))
+                    nextId = skipToId
+                else
+                    TerminalConfirmDialog.open(nextId)
+                    return
+                end
+            end
+            applyStageSwitch(nextId, get("BG_ZOOM_FWD_TARGET"), "前进")
+        else
+            print("[BattleScene] 已是最后一关")
         end
-        if waitingTerminal then
-            TerminalConfirmDialog.open(waitingTerminal)
-            return
-        end
-        applyStageSwitch(destination, get("BG_ZOOM_FWD_TARGET"), "前进")
     end
 
     local function prevStage()
@@ -125,12 +123,8 @@ function M.bind(deps)
         local currentStageId = get("currentStageId")
         local prevId = stageConfig.getPrevStageId(currentStageId)
         -- 跨难度回退：当前是某难度第一关时，回退到上一难度末关
-        if not prevId and not stageConfig.isResourceStage(currentStageId) then
+        if not prevId then
             prevId = stageConfig.getLastStageOfPrevDifficulty(currentStageId)
-        end
-        if prevId and stageConfig.isResourceStage(prevId) and not isResourceStageUnlocked(prevId) then
-            print("[BattleScene] 资源关卡尚未解锁: " .. tostring(prevId))
-            return
         end
         if prevId then
             applyStageSwitch(prevId, get("BG_ZOOM_BACK_TARGET"), "后退")
@@ -139,27 +133,17 @@ function M.bind(deps)
         end
     end
 
-    local function gotoStage(stageId, opts)
+    local function gotoStage(stageId)
         local stageConfig = getStageConfig()
         stageId = tonumber(stageId)
-        if not stageId or stageId % 1 ~= 0 or not stageConfig.getStage(stageId) then
-            return false, "无效关卡"
-        end
-        local maxId = tonumber(get("maxStageId_")) or 0
-        local maxPrevious = stageConfig.getTerminalPrevStageId(maxId)
-        local maxRank = maxPrevious and maxPrevious + 0.5 or maxId
-        if stageConfig.isResourceStage(stageId) then
-            if not isResourceStageUnlocked(stageId) then
-                return false, "关卡尚未解锁"
-            end
-        elseif stageConfig.isTerminalTemple(stageId) then
+        if not stageId or stageId < 1 then return false, "无效关卡" end
+        if stageConfig.isTerminalTemple(stageId) then
             local prevId = stageConfig.getTerminalPrevStageId(stageId)
             local cleared = get("clearedStages")
-            if not prevId or maxRank < prevId
-                or not (cleared[prevId] == true or cleared[tostring(prevId)] == true) then
+            if not prevId or get("maxStageId_") < prevId or not cleared[prevId] then
                 return false, "终焉尚未解锁"
             end
-        elseif stageId > maxRank then
+        elseif stageId > get("maxStageId_") then
             return false, "关卡尚未解锁"
         end
         -- 与前进/后退对齐：选关同样要清定时器并复位阵容。
@@ -170,7 +154,7 @@ function M.bind(deps)
         set("reincarnationTimer", nil)
         set("pendingReincarnation", nil)
         set("bgTransAnim", { timer = 0, zoomTarget = get("BG_ZOOM_FWD_TARGET") })
-        loadStage(stageId, true, opts and opts.deferEnter == true)
+        loadStage(stageId, true)
         set("regenAccum", 0)
         restoreAllies(getAllies, resetAllyUnit)
         startBattleTalents()

@@ -146,9 +146,9 @@ ESC.SETS = {
         color = { 0xC4, 0x4A, 0x6A, 255 },
         twoPiece = {
             { key = AD.LUK, flat = 4 },
-            { key = AD.ADVANTAGE_DMG_BONUS, flat = 8 },
+            { key = AD.MAX_DMG_BONUS, flat = 8 },
         },
-        desc2 = "命数+4，优势伤害+8%。",
+        desc2 = "命数+4，最大伤害加成+8%。",
         desc4 = "未暴击时下次暴击率+6%（最多叠3层，暴击清空）。",
         desc6 = "暴击时额外一段30%伤害；若未暴击则回复1%已损失生命。",
     },

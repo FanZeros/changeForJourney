@@ -5,72 +5,6 @@ local StageConfig = require("config.StageConfig")
 
 local BattleSchema = {}
 
----@param value any
----@return integer|nil
-local function validStageId(value)
-    if type(value) ~= "number" and type(value) ~= "string" then return nil end
-    local id = math.tointeger(tonumber(value) or 0)
-    if id and id > 0 and StageConfig.getStage(id) then return id end
-    return nil
-end
-
----@param stageId number
----@return number
-local function progressRank(stageId)
-    local previous = StageConfig.getTerminalPrevStageId(stageId)
-    return previous and previous + 0.5 or stageId
-end
-
---- 单一位置迁移入口；实时镜像不退终焉，只有真实读档才回到同难度末关。
---- 主线表存在时 currentStageId 是一队权威；仅侧线旧表时迁移旧一队位置。
----@param data table
----@param restoring boolean
----@return boolean
-function BattleSchema.normalizeTeamStageIds(data, restoring)
-    if type(data) ~= "table" then return false end
-    local mainTeams = type(data.teamStageIds) == "table" and data.teamStageIds or nil
-    local legacyTeams = type(data.teamCurrentStageIds) == "table" and data.teamCurrentStageIds or nil
-    local savedTeams = mainTeams or legacyTeams or {}
-    local current = validStageId(data.currentStageId)
-    local savedFirst = validStageId(savedTeams["1"] or savedTeams[1])
-    if not mainTeams and legacyTeams then
-        current = savedFirst or current
-    else
-        current = current or savedFirst
-    end
-    local firstStage = StageConfig.NORMAL_FIRST_STAGE
-    current = current or firstStage
-    local maxStage = validStageId(data.maxStageId)
-    if not maxStage or StageConfig.isResourceStage(maxStage) then
-        maxStage = StageConfig.isResourceStage(current) and firstStage or current
-    end
-    data.maxStageId = maxStage
-    local maxRank = progressRank(maxStage)
-    local unlocked = require("config.ExpTable").getUnlockedTeamCount(data)
-    local fixedTeams = {}
-    for teamIdx = 1, 3 do
-        local id = teamIdx == 1 and current
-            or validStageId(savedTeams[tostring(teamIdx)] or savedTeams[teamIdx]) or firstStage
-        if teamIdx > unlocked then
-            id = firstStage
-        elseif StageConfig.isResourceStage(id) then
-            local DC = require("config.DungeonConfig")
-            local dungeonId = DC.decodeStageId(id)
-            if maxRank < DC.DEFINITIONS[dungeonId].unlockStage then id = firstStage end
-        elseif progressRank(id) > maxRank then
-            id = firstStage
-        end
-        if restoring == true and StageConfig.isTerminalTemple(id) then
-            id = StageConfig.getTerminalPrevStageId(id) or firstStage
-        end
-        fixedTeams[tostring(teamIdx)] = id
-    end
-    data.teamStageIds = fixedTeams
-    data.currentStageId = fixedTeams["1"]
-    data.teamCurrentStageIds = nil
-    return true
-end
-
 BattleSchema.Fields = {
     battle = {
         pdmKey     = "ModBattle",
@@ -96,15 +30,7 @@ BattleSchema.Fields = {
             }
         end,
         onLoad = function(data)
-            if type(data) ~= "table" then return end
-            local cleared = {}
-            if type(data.clearedStages) == "table" then
-                for key, value in pairs(data.clearedStages) do
-                    local id = math.tointeger(tonumber(key) or 0)
-                    if id and id > 0 and value == true then cleared[tostring(id)] = true end
-                end
-            end
-            data.clearedStages = cleared
+            if not data.clearedStages then data.clearedStages = {} end
             if data.currentStage and not data.currentStageId then
                 data.currentStageId = 0101
                 data.currentStage = nil
@@ -113,8 +39,42 @@ BattleSchema.Fields = {
                 data.maxStageId = data.currentStageId or 0101
                 data.maxStage = nil
             end
-            -- onLoad 同时服务实时推送，不在此处执行真正重登的终焉回退。
-            BattleSchema.normalizeTeamStageIds(data, false)
+            if not data.currentStageId then data.currentStageId = 0101 end
+            if not data.maxStageId then data.maxStageId = data.currentStageId end
+            -- 终焉神殿（挑战关）不保存进度：玩家重登后回退到前一关
+            local terminalFallback = {
+                [StageConfig.TERMINAL_NORMAL]    = StageConfig.NORMAL_LAST_STAGE,
+                [StageConfig.TERMINAL_HARD]      = StageConfig.HARD_LAST_STAGE,
+                [StageConfig.TERMINAL_NIGHTMARE] = StageConfig.NIGHTMARE_LAST_STAGE,
+                [StageConfig.TERMINAL_HELL]      = StageConfig.HELL_LAST_STAGE,
+                [StageConfig.TERMINAL_PURGATORY] = StageConfig.PURGATORY_LAST_STAGE,
+                [StageConfig.TERMINAL_TORMENT]   = StageConfig.TORMENT_LAST_STAGE,
+                [StageConfig.TERMINAL_TORMENT2]  = StageConfig.TORMENT2_LAST_STAGE,
+                [StageConfig.TERMINAL_TORMENT3]  = StageConfig.TORMENT3_LAST_STAGE,
+                [StageConfig.TERMINAL_TORMENT4]     = StageConfig.TORMENT4_LAST_STAGE,
+                [StageConfig.TERMINAL_TORMENT5]     = StageConfig.TORMENT5_LAST_STAGE,
+                [StageConfig.TERMINAL_ANNIHILATION]  = StageConfig.ANNIHILATION_LAST_STAGE,
+                [StageConfig.TERMINAL_ANNIHILATION2] = StageConfig.ANNIHILATION2_LAST_STAGE,
+                [StageConfig.TERMINAL_ANNIHILATION3] = StageConfig.ANNIHILATION3_LAST_STAGE,
+                [StageConfig.TERMINAL_ANNIHILATION4] = StageConfig.ANNIHILATION4_LAST_STAGE,
+            }
+            local fallback = terminalFallback[data.currentStageId]
+            if fallback then
+                data.currentStageId = fallback
+            end
+            -- 三队当前关独立保存；旧档只有一队，不能把共享最高关当二三队当前关。
+            -- 终焉挑战不恢复，三队都按已有规则退回对应难度末关。
+            local savedTeams = type(data.teamStageIds) == "table" and data.teamStageIds or {}
+            local fixedTeams = {}
+            for teamIdx = 1, 3 do
+                local id = teamIdx == 1 and tonumber(data.currentStageId)
+                    or tonumber(savedTeams[tostring(teamIdx)] or savedTeams[teamIdx])
+                if not id or id % 1 ~= 0 or not StageConfig.getStage(id) then
+                    id = StageConfig.NORMAL_FIRST_STAGE
+                end
+                fixedTeams[tostring(teamIdx)] = terminalFallback[id] or id
+            end
+            data.teamStageIds = fixedTeams
             -- 🔴 兜底修复：自动补标终焉神殿为已通关（避免重复挑战）
             -- 仅条件1：maxStageId 已进入下一难度（玩家明确通过了终焉）
             -- 注意：不在此处处理"末关已通关但未推进"的情况（条件2），
@@ -136,9 +96,9 @@ BattleSchema.Fields = {
                 [StageConfig.TERMINAL_ANNIHILATION3] = StageConfig.ANNIHILATION4_FIRST_STAGE,
                 [StageConfig.TERMINAL_ANNIHILATION4] = StageConfig.ANNIHILATION5_FIRST_STAGE,
             }
-            local maxProgress = progressRank(data.maxStageId)
+            local maxSId = tonumber(data.maxStageId) or 0
             for terminalId, nextDiffFirst in pairs(terminalThresholds) do
-                if maxProgress >= nextDiffFirst and data.clearedStages[tostring(terminalId)] ~= true then
+                if maxSId >= nextDiffFirst and not data.clearedStages[tostring(terminalId)] then
                     data.clearedStages[tostring(terminalId)] = true
                 end
             end

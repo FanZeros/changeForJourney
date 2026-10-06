@@ -232,7 +232,6 @@ function M.bind(deps)
         rebuildRoster()
         refreshPowerCache()
         refreshNavBadge()
-        return changed
     end
 
     local function resetSessionData()

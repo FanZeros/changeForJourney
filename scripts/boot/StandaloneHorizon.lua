@@ -99,7 +99,7 @@ local function drawRewardInPanel(pid, outsideViewport)
     if not (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) then return end
     if RewardPopup.currentPanel() ~= pid then return end
     if TowerBattleScene.isActive() and not outsideViewport then return end
-    if pid == 'center' and (BattleTriPage.isOpen() or TowerBattleScene.isActive() or DungeonBattleScene.isOpen()) then
+    if pid == 'center' and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
         local fit = math.min(logicalW() / 1080, logicalH() / 2400)
         nvgSave(vg())
         nvgResetScissor(vg())
@@ -231,8 +231,7 @@ local function HorizonUpdateTransform()
     H_ox, H_oy, H_s = Viewport.layout(logicalW(), logicalH())
     BattleLayout.setMode("strip")
     H_TRI_L0 = BattleTriPage.isOpen()  -- [暗黑替换] 面板透明底开关（L0 已铺营地/英灵墙）
-    local triRenderScale = (BattleTriPage.isOpen() or DungeonBattleScene.isOpen())
-        and BattleLayout.CARD_SCALE or 1.0
+    local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)
     BattleEffects.setRenderScale(triRenderScale)  -- [三行并行]
     H_SEAM_BACK = BattleTriPage.isOpen() and not TowerBattleScene.isActive()
@@ -245,29 +244,21 @@ local function HorizonUpdateTransform()
     end
 end
 
--- 副本选关采用横屏设计空间；绘制与输入共用同一等比变换。
+-- [底栏移除] 横屏副本(5)页：竖版设计全窗等比铺（模态层）
+-- 全屏弹窗/战斗覆盖打开时不画（它们自带层级与让位逻辑）
 local function HorizonDrawPageModal(_unused_vg)
     if BottomNav.getSelectedIndex() ~= 5 then return end
     if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
-    if PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen()
-        or OfflineRewardPanel.isOpen() or RewardPopup.isOpen() then return end
-    if not DungeonPage.isDetailOpen() then
-        BottomNav.setSelectedIndex(3)
-        BattleTriPage.open()
-        require("ui.battle.stage.StageSelectDialog").openDungeon(1)
-        return
-    end
-    DungeonPage.setLandscapeMode(true)
-    local fit = math.min(logicalW() / 1920, logicalH() / 1080)
-    local ox = (logicalW() - 1920 * fit) * 0.5
-    local oy = (logicalH() - 1080 * fit) * 0.5
+    local fit = math.min(logicalW() / DESIGN_W(), logicalH() / DESIGN_H())
+    local ox = (logicalW() - DESIGN_W() * fit) * 0.5
+    local oy = (logicalH() - DESIGN_H() * fit) * 0.5
     nvgSave(vg())
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
     nvgBeginPath(vg())
     nvgRect(vg(), 0, 0, logicalW(), logicalH())
     nvgFillColor(vg(), nvgRGBA(8, 8, 10, 235))
     nvgFill(vg())
-    nvgScissor(vg(), ox, oy, 1920 * fit, 1080 * fit)
+    nvgScissor(vg(), ox, oy, DESIGN_W() * fit, DESIGN_H() * fit)
     nvgTranslate(vg(), ox, oy)
     nvgScale(vg(), fit, fit)
     DungeonPage.draw(vg())
@@ -307,26 +298,19 @@ local function HorizonDrawTutorialOverlay()
     local hs = TutorialManager.getCurrentHotspot()
     local screen = nil
     if hs then
-        local function project(rect, ox, oy, sx, sy)
-            return { cx = ox + rect.cx * sx, cy = oy + rect.cy * sy,
-                w = rect.w * sx, h = rect.h * sy }
-        end
         if hs.panel == "modal" then
-            local dw, dh = DESIGN_W(), DESIGN_H()
-            if BottomNav.getSelectedIndex() == 5 then dw, dh = 1920, 1080 end
-            local fit = math.min(logicalW() / dw, logicalH() / dh)
-            local ox = (logicalW() - dw * fit) * 0.5
-            local oy = (logicalH() - dh * fit) * 0.5
-            screen = project(hs, ox, oy, fit, fit)
-            if hs.spotlight then screen.spotlight = project(hs.spotlight, ox, oy, fit, fit) end
+            local fit = math.min(logicalW() / DESIGN_W(), logicalH() / DESIGN_H())
+            screen = { cx = (logicalW() - DESIGN_W() * fit) * 0.5 + hs.cx * fit,
+                cy = (logicalH() - DESIGN_H() * fit) * 0.5 + hs.cy * fit,
+                w = hs.w * fit, h = hs.h * fit }
         else
             local note, panel = Viewport.getNote(hs.panel), Viewport.PANELS[hs.panel]
             if note and panel then
                 local cs = note.s * Viewport.DS
                 local sx = note.scaleX or cs
-                local ox, oy = note.ox + panel.bx * note.s, note.oy + panel.by * note.s
-                screen = project(hs, ox, oy, sx, cs)
-                if hs.spotlight then screen.spotlight = project(hs.spotlight, ox, oy, sx, cs) end
+                screen = { cx = note.ox + panel.bx * note.s + hs.cx * sx,
+                    cy = note.oy + panel.by * note.s + hs.cy * cs,
+                    w = hs.w * sx, h = hs.h * cs }
             end
         end
     end
@@ -368,7 +352,6 @@ local function seamInputBlocked()
         or UpdateNoticePopup.isOpen() or DarkTitleScreen.isOpen() or StartScreen.isOpen()
         or LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()
         or TutorialManager.isActive() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive()
-        or BottomNav.getSelectedIndex() == 5
         or (RewardPopup.isOpen() and not RewardPopup.currentRowTag())
         or SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
         or TerminalConfirmDialog.isOpen()
@@ -520,7 +503,6 @@ local function equipmentOwnerPanel(owner)
 end
 
 drawEquipDetailOverlay = function()
-    if DungeonBattleScene.isOpen() or (BottomNav.getSelectedIndex() == 5 and not TowerBattleScene.isActive()) then return end
     -- 配装详情画在栏外，不被左右栏裁切
     local ok, EquipmentDetail = pcall(require, "ui.character.equip.EquipmentDetail")
     if not ok or not EquipmentDetail.isCompactCorner or not EquipmentDetail.isCompactCorner() then return end
@@ -538,7 +520,6 @@ drawEquipDetailOverlay = function()
 end
 
 equipOverlayDesign = function(sx, sy)
-    if DungeonBattleScene.isOpen() or (BottomNav.getSelectedIndex() == 5 and not TowerBattleScene.isActive()) then return nil end
     local ok, EquipmentDetail = pcall(require, "ui.character.equip.EquipmentDetail")
     if not ok or not EquipmentDetail.isCompactCorner or not EquipmentDetail.isCompactCorner() then return nil end
     local owner = EquipmentDetail.getOwner and EquipmentDetail.getOwner() or "character"
@@ -675,7 +656,7 @@ function HandleNanoVGRenderHorizon()
     if towerBattleOpen then
         -- 通天塔三行攻坚铺满窗口，见 Viewport.finish 之后
     elseif dungeonBattleOpen then
-        -- 副本独立横屏战场在结束面板视口后绘制。
+        DungeonBattleScene.draw(vg())
     else
         local tabIndex = BottomNav.getSelectedIndex()
         if tabIndex == 1 then
@@ -720,31 +701,6 @@ function HandleNanoVGRenderHorizon()
 
     if talentPageUsesWideLayout() and not BattleTriPage.isOpen() then
         drawWideTalentPage(H_ox, H_oy, H_s)
-    end
-
-    if dungeonBattleOpen then
-        DungeonBattleScene.draw(vg(), logicalW(), logicalH())
-        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() and not RewardPopup.currentPanel() then
-            local fit = math.min(logicalW() / 1080, logicalH() / 2400)
-            nvgSave(vg())
-            nvgScissor(vg(), 0, 0, logicalW(), logicalH())
-            nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
-            nvgScale(vg(), fit, fit)
-            RewardPopup.draw(vg())
-            nvgRestore(vg())
-        end
-        drawRewardInPanel(RewardPopup.currentPanel(), true)
-        if PlayerInfoPanel.isOpen() then
-            local fit = math.min(logicalW() / 1080, logicalH() / 2400)
-            nvgSave(vg())
-            nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
-            nvgScale(vg(), fit, fit)
-            PlayerInfoPanel.draw(vg())
-            nvgRestore(vg())
-        end
-        HorizonDrawIntroOverlay()
-        finishFrame()
-        return
     end
 
     if towerBattleOpen then
@@ -869,7 +825,7 @@ function HandleNanoVGRenderHorizon()
             end
             nvgRestore(vg())
         end
-        -- [底栏移除] 副本页全窗横屏模态（盖在三行战斗之上、标题/开场之下）
+        -- [底栏移除] 副本页全窗竖版模态（盖在三行战斗之上、标题/开场之下）
         HorizonDrawPageModal(vg())
         -- [三面板] 三行模式：归属面板的奖励弹窗随触发面板绘制（左/中/右）；
         -- 非三行模式左/右已在各自视口内绘制、中栏由全局弹窗层绘制，此处不重复
@@ -914,7 +870,7 @@ function HandleNanoVGRenderHorizon()
     end
 
     -- 玩家信息已由中栏弹窗层绘制，不再用竖屏坐标居中重画。
-    -- [底栏移除] 副本页全窗横屏模态
+    -- [底栏移除] 副本页全窗竖版模态
     HorizonDrawPageModal(vg())
     -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
     if DarkTitleScreen.isOpen() then

@@ -43,10 +43,7 @@ local function makeUnit(hero, equipment)
                 eqData.inventory[tostring(index)] = equip
                 slots[slot] = index
                 ES.applyToUnit(unit.attrs, equip, index, ES.getAscendBoost(equip))
-                if slot == "armor" then
-                    unit.armorType = AD.ARMOR_TYPE_ENUM[equip.type] or unit.attrs.armorType
-                    unit.attrs.armorType = unit.armorType
-                end
+                if slot == "armor" then unit.armorType = AD.ARMOR_TYPE_ENUM[equip.type] end
             end
         end
         Sets.applyToUnit(unit.attrs, eqData, hero.id, ES.getFromInventory, ES.getHeroSlots)

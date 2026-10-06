@@ -30,18 +30,16 @@ function M.load(ctx, stageId, skipBattleStart)
         return
     end
 
-    local isResourceStage = stageConfig.isResourceStage(stageId)
     ctx.currentStageId = stageId
     ctx.stageName = stageConfig.getStageDisplayName(stageId)
     -- 解锁进度兜底：能被加载的关卡必然已解锁。此前手动"前进"按钮在未通关时
     -- 直接 loadStage(nextId) 不推进 ctx.maxStageId_，导致当前关进度与解锁进度脱节
     -- （选关列表只显示到旧进度、扫荡弹窗识别不了当前关卡）
-    if not isResourceStage and stageId > ctx.maxStageId_ then
+    if stageId > ctx.maxStageId_ then
         ctx.maxStageId_ = stageId
         ctx.recalcIdleIncome()
     end
-    -- 资源首通走独立 dungeon ledger，不启动主线首通奖励/词缀/限时。
-    ctx.isFirstClear = not isResourceStage and not ctx.clearedStages[stageId]
+    ctx.isFirstClear = not ctx.clearedStages[stageId]
     ctx.idleRangeText_ = nil  -- 关卡变化时重新计算挂机范围文本
 
     ctx.searchingTimer = nil
@@ -56,20 +54,15 @@ function M.load(ctx, stageId, skipBattleStart)
     -- 章节变化时切换地图背景
     -- 挂机模式：使用范围内最早（最低）章节的背景素材
     local bgChapter = entry.chapter
-    if not ctx.isFirstClear and not isResourceStage then
+    if not ctx.isFirstClear then
         local stages = require("shared.StageUtils").collectPrevStages(ctx.maxStageId_, 5, stageConfig)
         if #stages > 0 then
             bgChapter = stages[#stages].chapter  -- 最低关的章节
         end
     end
-    -- 用独立 ID 作资源背景键：同源章节跨资源类型、资源返回主线也必须换图。
-    local backgroundKey = isResourceStage and stageId or bgChapter
-    if backgroundKey ~= ctx.currentChapter and ctx.vg_ then
-        ctx.currentChapter = backgroundKey
-        if isResourceStage then
-            local backgroundPath = stageConfig.getBattleBackground(stageId)
-            ctx.setMapBackground(ctx.vg_, backgroundPath)
-        elseif ctx.isFirstClear and entry.mapBg then
+    if bgChapter ~= ctx.currentChapter and ctx.vg_ then
+        ctx.currentChapter = bgChapter
+        if ctx.isFirstClear and entry.mapBg then
             -- 终焉神殿使用自定义地图背景
             ctx.setMapBackground(ctx.vg_, "image/关卡地图/" .. entry.mapBg)
         else
@@ -79,9 +72,9 @@ function M.load(ctx, stageId, skipBattleStart)
         end
     end
 
-    -- 资源常驻战斗只生成当前 entry；主线挂机仍混合最高进度前5关。
+    -- 生成全部敌人（挂机模式用5关混合，首通用单关卡）
     local allEnemies, maxField
-    if not ctx.isFirstClear and not isResourceStage then
+    if not ctx.isFirstClear then
         allEnemies, maxField = ctx.generateIdleEnemyList()
     else
         allEnemies = ctx.generateEnemyList(entry)

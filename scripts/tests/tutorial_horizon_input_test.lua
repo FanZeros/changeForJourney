@@ -4,7 +4,7 @@
 function Start()
     ---@type fun(name: string): any
     local nativeRequire = require
-    local originals, nvgOriginals, overlayOriginals = {}, {}, {}
+    local originals, nvgOriginals = {}, {}
     local originalInput, originalTime = input, time
     local VP = nativeRequire("core.Viewport")
     local originalNotes = VP._notes
@@ -140,42 +140,14 @@ function Start()
         local TM = nativeRequire("systems.TutorialManager")
         local Overlay = nativeRequire("ui.tutorial.TutorialOverlay")
         mods["systems.TutorialManager"], mods["ui.tutorial.TutorialOverlay"] = TM, Overlay
-        local projected, drawn = nil, nil ---@type any, any
-        overlayOriginals.module, overlayOriginals.draw = Overlay, Overlay.draw
-        Overlay.draw = function(vg, width, height, hotspot, ...)
-            projected = hotspot
-            drawn = overlayOriginals.draw(vg, width, height, hotspot, ...)
-            return drawn
-        end
         mods["ui.character.panel.CharacterPanel"] = page("character", {
             draw = function()
                 if not state.missing then
                     local key = TM.getCurrentHighlight()
-                    if key and key ~= "town_overview" and key ~= "building_church" then
-                        TM.registerHotspot(key, 540, 600, 160, 100, "right")
-                    end
+                    if key then TM.registerHotspot(key, 540, 600, 160, 100, "right") end
                 end
             end,
         })
-        local townSourceFile = assert(cache:GetFile("ui/town/TownScene.lua"), "缺真实TownScene源码")
-        local townLines = {}
-        while not townSourceFile:IsEof() do townLines[#townLines + 1] = townSourceFile:ReadLine() end
-        townSourceFile:Dispose()
-        local townSource = table.concat(townLines, "\n")
-        local townFirst = assert(townSource:find("-- 城镇总览高亮完整左栏", 1, true))
-        local townLast = assert(townSource:find("-- 第7个地点", townFirst, true))
-        local townEnv = { _tmActive = true, _TM = TM }
-        local townRegistration, townError = load(townSource:sub(townFirst, townLast - 1),
-            "@真实TownScene总览注册", "t", townEnv)
-        assert(townRegistration, townError)
-        mods["ui.town.TownScene"] = page("town", { draw = function()
-            if state.missing then return end
-            if TM.getCurrentHighlight() == "town_overview" then
-                townRegistration()
-            elseif TM.getCurrentHighlight() == "building_church" then
-                TM.registerHotspot("building_church", 540, 1100, 200, 180, "left")
-            end
-        end })
         -- 图形函数只替换底层绘制；保留实际 Overlay.layout/draw 和 Horizon note 投影。
         for _, name in ipairs({ "nvgBeginFrame", "nvgEndFrame", "nvgSave", "nvgRestore",
             "nvgTranslate", "nvgScale", "nvgResetTransform", "nvgResetScissor", "nvgScissor",
@@ -188,24 +160,6 @@ function Start()
         rawset(_G, "nvgTextBounds", function(_, _, _, text) return utf8.len(text) * 10 end)
         nativeRequire("boot.StandaloneHorizon")
         check(captured ~= nil and captured.Viewport == VP, "捕获真实 Horizon ctx / Viewport")
-        -- 只读抽取生产投影函数，覆盖非默认scaleX；不复制它的公式作为待测实现。
-        local projectionFile = assert(cache:GetFile("boot/StandaloneHorizon.lua"), "缺真实Horizon源码")
-        local projectionLines = {}
-        while not projectionFile:IsEof() do projectionLines[#projectionLines + 1] = projectionFile:ReadLine() end
-        projectionFile:Dispose()
-        local projectionSource = table.concat(projectionLines, "\n")
-        local first = assert(projectionSource:find("local function HorizonDrawTutorialOverlay()", 1, true))
-        local last = assert(projectionSource:find("\n--- [弹窗聚焦]", first, true))
-        local projectionEnv = setmetatable({ TutorialManager = TM, Viewport = VP,
-            ScenarioDialogue = mods["ui.story.ScenarioDialogue"], LetterIntro = mock(), IntroCutscene = mock(),
-            DarkTitleScreen = mock(), DungeonBattleScene = mock(), TowerBattleScene = mock(),
-            logicalW = function() return RT.logicalW end, logicalH = function() return RT.logicalH end,
-            DESIGN_W = function() return RT.DESIGN_W end, DESIGN_H = function() return RT.DESIGN_H end,
-            vg = function() return RT.vg end, applyFrame = noop }, { __index = _G })
-        local projectionChunk, projectionError = load(projectionSource:sub(first, last - 1)
-            .. "\nreturn HorizonDrawTutorialOverlay", "@真实Horizon教程投影", "t", projectionEnv)
-        assert(projectionChunk, projectionError)
-        local projectTutorial = projectionChunk()
         capturing = false
         local InputModule = nativeRequire("boot.StandaloneHorizonInput")
         local left = { Button = { GetInt = function() return MOUSEB_LEFT end } }
@@ -226,7 +180,6 @@ function Start()
             invoke("HandleMouseButtonUpHorizon")
         end
         local function fixture(tri, transformed, dpr)
-            RT.logicalW, RT.logicalH, RT.windowW, RT.windowH = 1920, 1080, 1920, 1080
             state.tri, state.reward, state.detail, state.missing, state.owner = tri, false, false, false, "character"
             state.seamSmith, state.warehouse, state.pinned = false, false, false
             RT.dpr, RT.frameScale = dpr, transformed and 0.8 or 1
@@ -325,104 +278,6 @@ function Start()
                 end
             end
         end
-        local function overlaps(a, b)
-            return a and b and math.abs(a.cx - b.cx) < (a.w + b.w) * 0.5
-                and math.abs(a.cy - b.cy) < (a.h + b.h) * 0.5
-        end
-        for _, tri in ipairs({ false, true }) do
-            for _, size in ipairs({ { 1920, 1080 }, { 1280, 720 }, { 844, 390 } }) do
-                runCase("城镇整栏总览 " .. tostring(tri) .. " " .. size[1] .. "x" .. size[2], function()
-                    fixture(tri, true, 2)
-                    TM.skipCurrentGroup()
-                    TM.update(0.3)
-                    TM.startGroup(4)
-                    TM.update(1.2)
-                    RT.logicalW, RT.logicalH = size[1], size[2]
-                    RT.windowW, RT.windowH = size[1], size[2]
-                    invoke("HandleNanoVGRenderHorizon", {})
-                    check(TM.getCurrentHighlight() == "town_overview" and projected and projected.spotlight,
-                        "真实宿主将城镇可视区域投影到screen.spotlight")
-                    if not projected or not projected.spotlight or not drawn then return end
-                    local note, panel = VP.getNote("left"), VP.PANELS.left
-                    local scaleX, scaleY = note.scaleX or note.s * VP.DS, note.s * VP.DS
-                    local expectedLeft, expectedTop = note.ox + panel.bx * note.s, note.oy + panel.by * note.s
-                    local visual = projected.spotlight
-                    check(math.abs(visual.cx - expectedLeft - 540 * scaleX) < 0.00001
-                        and math.abs(visual.cy - expectedTop - 1200 * scaleY) < 0.00001
-                        and math.abs(visual.w - 1080 * scaleX) < 0.00001
-                        and math.abs(visual.h - 2400 * scaleY) < 0.00001, "总览视觉精确跟随当前Viewport note")
-                    check(drawn.hole and math.abs(drawn.hole.w - visual.w) < 0.00001
-                        and math.abs(drawn.hole.h - visual.h) < 0.00001, "最终draw全栏开洞而非顶部细带")
-                    check(not overlaps(drawn.bubble, drawn.hole) and not overlaps(drawn.skip, drawn.hole),
-                        "提示及跳过不遮完整左栏")
-                    local x, y = panelPosition("left", 540, 150)
-                    local bx, by = panelPosition("left", 540, 1100)
-                    local before = TM.getProgress().step
-                    clearCalls()
-                    check(TM.canPointerStart(x, y), "原顶部空白带仍放行")
-                    check(not TM.canPointerStart(bx, by), "全栏虽变亮，建筑处down仍阻断")
-                    click(bx, by)
-                    check(TM.getProgress().step == before and not TM.isGroupCompleted(4), "建筑点击不完成总览")
-                    check(n("town.handleInput") == 0 and n("action") == 0, "建筑不穿透业务或发action")
-                    click(x, y)
-                    check(TM.isGroupCompleted(4) and n("persist") == 1, "空白带点击正常完成且只保存一次")
-                    TM.update(0.3)
-                    TM.startGroup(5)
-                    TM.update(1.2)
-                    invoke("HandleNanoVGRenderHorizon", {})
-                    check(TM.getCurrentHighlight() == "building_church" and projected and projected.spotlight == nil,
-                        "下一个建筑教程不继承总览spotlight")
-                    check(drawn and drawn.hole and drawn.hs and drawn.hole.w <= drawn.hs.w + 16.001,
-                        "建筑教程恢复原小热点光环")
-                    state.missing = true
-                    invoke("HandleNanoVGRenderHorizon", {})
-                    check(projected == nil and drawn and drawn.hs == nil and drawn.hole == nil,
-                        "缺目标时原整栏洞不残留，不制造虚假可见目标")
-                end)
-            end
-        end
-        runCase("生产投影复用非默认scaleX与屏幕裁切", function()
-            fixture(true, true, 3)
-            local spot = { cx = 540, cy = 1200, w = 1080, h = 2400 }
-            for _, panelId in ipairs({ "left", "right", "modal" }) do
-                for _, size in ipairs({ { 1920, 1080 }, { 844, 390 } }) do
-                    RT.logicalW, RT.logicalH = size[1], size[2]
-                    local scale = size[2] / 1080
-                    local panel = VP.PANELS[panelId]
-                    local origin = panelId == "right" and (size[1] - 486 * scale - panel.bx * scale) or 0
-                    local sx, sy = 0.37 * scale, VP.DS * scale
-                    if panel then VP.note(panelId, origin, 0, scale, sx) end
-                    TM.clearHotspots()
-                    TM.registerHotspot(TM.getCurrentHighlight(), 540, 150, 160, 100, panelId, spot)
-                    projectTutorial()
-                    check(projected and projected.spotlight and drawn.hs ~= nil,
-                        "抽取真实投影支持 " .. panelId .. " 非默认横缩")
-                    if projected and projected.spotlight then
-                        local expectedX, expectedY, expectedW, expectedH
-                        if panelId == "modal" then
-                            local fit = math.min(size[1] / 1080, size[2] / 2400)
-                            expectedX, expectedY = size[1] * 0.5, size[2] * 0.5
-                            expectedW, expectedH = 1080 * fit, 2400 * fit
-                        else
-                            expectedX, expectedY = origin + panel.bx * scale + 540 * sx, 1200 * sy
-                            expectedW, expectedH = 1080 * sx, 2400 * sy
-                        end
-                        check(math.abs(projected.spotlight.cx - expectedX) < 0.00001
-                            and math.abs(projected.spotlight.cy - expectedY) < 0.00001
-                            and math.abs(projected.spotlight.w - expectedW) < 0.00001
-                            and math.abs(projected.spotlight.h - expectedH) < 0.00001,
-                            "独立视觉矩形与热点共用真实note/模态fit")
-                        check(math.abs(drawn.hs.w - projected.w) < 0.00001
-                            and math.abs(drawn.hs.h - projected.h) < 0.00001,
-                            "非默认scaleX下命中范围仍仅实际热点")
-                    end
-                end
-            end
-            TM.clearHotspots()
-            TM.registerHotspot(TM.getCurrentHighlight(), -1200, 150, 100, 100, "left", spot)
-            projectTutorial()
-            check(drawn.hs == nil and drawn.hole == nil, "完全出屏点击目标不因整栏视觉矩形而被伪造")
-        end)
         runCase("准备期非法按下延迟松开不能推进", function()
             fixture(true, false, 1)
             local x, y = panelPosition("right", 540, 600)
@@ -617,7 +472,6 @@ function Start()
         end
     end)
     if not ok then check(false, "Start exception: " .. tostring(err)) end
-    if overlayOriginals.module then overlayOriginals.module.draw = overlayOriginals.draw end
     require, input, time = nativeRequire, originalInput, originalTime
     VP._notes = originalNotes
     for name, saved in pairs(nvgOriginals) do rawset(_G, name, saved.value) end

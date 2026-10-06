@@ -106,7 +106,7 @@ local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealD
     critRate, critDmg = CF.applyCritOverflow(critRate, critDmg, attacker.attrs)
 
     -- 类型倍率（熬夜冠军 ATK_SLASH）
-    local atkType = attacker.attrs.atkType or attacker.atkType or AD.ATK_SLASH
+    local atkType = attacker.atkType or AD.ATK_SLASH
 
     -- 发射斩击（不检测hp > 0，即使目标被普攻击杀也发射）
     local sides = { 1, -1, 0.5 }  -- 贝塞尔方向：左、右、微偏
@@ -114,7 +114,7 @@ local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealD
         local st = slashTargets[si]
 
         -- 针对每个目标独立计算护甲抗性和类型倍率
-        local armorType = (st.attrs and st.attrs.armorType) or st.armorType or AD.ARMOR_LEATHER
+        local armorType = st.armorType or AD.ARMOR_LEATHER
         local effectiveArmor = math.max(0,
             (st.attrs and st.attrs:get(AD.PHYS_ARMOR) or 0)
             - attacker.attrs:get(AD.PHYS_PEN))
@@ -131,7 +131,7 @@ local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealD
             dmg = dmg * critMultiplier
         end
 
-        dmg = dmg * typeMult * CF.getMatchupDamageMult(attacker.attrs, typeMult)
+        dmg = dmg * typeMult
         if attacker.attrs.artifactExtraDamageMult then
             dmg = dmg * attacker.attrs.artifactExtraDamageMult
         end

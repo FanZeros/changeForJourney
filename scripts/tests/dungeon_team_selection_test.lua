@@ -27,13 +27,6 @@ function Start()
             if not name then break end
             if name == wanted then return value, index end
         end
-        for index = 1, 100 do
-            local name, value = debug.getupvalue(fn, index)
-            if not name then break end
-            if type(value) == "function" and name == "clearPendingChallenge" then
-                return upvalue(value, wanted)
-            end
-        end
         error("缺少真实函数状态: " .. wanted)
     end
     local ok, err = pcall(function()
@@ -55,9 +48,7 @@ function Start()
             battle = { currentStageId = 101, maxStageId = 2501, clearedStages = {} },
             dungeon = {
                 gold_mine = { floor = 7, dailyUsed = 0 },
-                equipment_vault = { floor = 11, dailyUsed = 0 },
-                black_diamond = { floor = 5, dailyUsed = 0 },
-                ancient_ruin = { floor = 79, idleAccumSec = 99 }, -- 隐藏旧档不能挪用
+                ancient_ruin = { floor = 11, dailyUsed = 0 },
             },
             artifacts = { bag = {}, equipped = {}, equippedByTeam = {} },
         }
@@ -86,8 +77,6 @@ function Start()
             ["ui.hud.popup.OfflineRewardPanel"] = { isOpen = function() return false end },
             ["ui.loot.LootBoxPage"] = { showToast = function(message) toasts[#toasts + 1] = message end },
             ["ui.dungeon.DungeonBattleScene"] = sceneExit,
-            ["rules.dungeon.DungeonService"] = { Challenge = function() return false, "测试拒绝", nil end },
-            ["rules.dungeon.DungeonIdleService"] = {},
         }
         local realNames = {
             ["core.DrawUtil"] = true, ["core.BattleLayout"] = true,
@@ -108,8 +97,6 @@ function Start()
             ["ui.character.panel.CharacterPower"] = true,
             ["ui.character.panel.CharacterProgress"] = true,
             ["ui.dungeon.DungeonPage"] = true, ["runtime.GameAction"] = true,
-            ["ui.dungeon.DungeonRewards"] = true,
-            ["rules.dungeon.DungeonHandler"] = true,
         }
         local real, loading = {}, {}
         replace(_G, "require", function(name)
@@ -208,21 +195,10 @@ function Start()
             eq(CP.getActiveTeamIdx(), team, "选队读回" .. team)
         end
         local function response(request, success)
-            if not success then
-                local handler = require("rules.dungeon.DungeonHandler")
-                local failure = handler.actionHandlers[ACTION](1, request.params)
-                failure.action = ACTION -- LocalActionBridge实际加action的传输边界
-                eq(failure.dungeonId, request.params.dungeonId, "真实Handler失败副本上下文")
-                eq(failure.floor, request.params.floor, "真实Handler失败楼层上下文")
-                eq(failure.teamIdx, request.params.teamIdx, "真实Handler失败队号上下文")
-                return failure
-            end
             return {
                 action = ACTION, success = success, reason = success and nil or "测试拒绝",
                 dungeonId = request.params.dungeonId, floor = request.params.floor,
-                teamIdx = request.params.teamIdx, challengeId = "challenge" .. tostring(request.serial),
                 monsterLevel = 25, monsters = {},
-                stageEntry = require("config.DungeonConfig").getCombatEntry(request.params.dungeonId, request.params.floor),
             }
         end
         -- 保留真实 GameAction.sendAction；替身只占据传输边界，不走规则层或玩家存档。
@@ -233,11 +209,10 @@ function Start()
                 local request = {
                     action = action, params = params,
                     capturedTeam = upvalue(Page.update, "pendingChallengeTeam"),
-                    settled = false, serial = #sends + 1,
+                    settled = false,
                 }
-                local explicitTeam = upvalue(Page.handleInput, "detailTeamIdx")
-                eq(request.capturedTeam, explicitTeam or CP.getActiveTeamIdx(), "发送前锁定行队号或旧列表所选队伍")
-                eq(params.teamIdx, request.capturedTeam, "普通资源副本协议显式携带队号")
+                eq(request.capturedTeam, CP.getActiveTeamIdx(), "发送前锁定所选队伍")
+                eq(params.teamIdx, nil, "保持现有普通副本协议参数")
                 sends[#sends + 1] = request
                 if transport.mode == "sync_success" or transport.mode == "sync_failure" then
                     request.settled = true
@@ -247,9 +222,8 @@ function Start()
             end,
         }
         local dungeonCases = {
-            { id = "gold_mine", y = 484, floor = 7, title = "金币" },
-            { id = "equipment_vault", y = 875, floor = 11, title = "装备" },
-            { id = "black_diamond", y = 1266, floor = 5, title = "黑钻" },
+            { id = "gold_mine", y = 504, floor = 7, title = "矿洞" },
+            { id = "ancient_ruin", y = 932, floor = 11, title = "遗迹" },
         }
         local function detail(case)
             Page.handleInput(0, 0)
@@ -278,8 +252,6 @@ function Start()
             local options = opens[#opens]
             eq(options.dungeonId, case.id, label .. "场景副本")
             eq(options.data.floor, case.floor, label .. "场景楼层")
-            eq(options.teamIdx, team, label .. "场景显式队号")
-            eq(options.data.teamIdx, team, label .. "回执队号")
             if data then eq(options.data, data, label .. "回包原样传递") end
             eq(type(options.onClose), "function", label .. "关闭回调存在")
             verifyTeam(options.allies, team, label)
@@ -364,14 +336,9 @@ function Start()
             Page.update(1)
             cleared(case.title .. "五秒超时")
             eq(#opens, before, "超时不打开场景")
-            -- 真实迟到回包必须拒绝，不打开场景、不解锁新队请求。
-            local late = response(timedOut, true)
-            Page.onActionResult(late)
-            eq(#opens, before, "超时后迟到Challenge不打开战斗")
+            -- 传输替身丢弃无响应请求；不伪造已超时动作的迟到回包。
             timedOut.settled = true
             local retry = challenge(case)
-            Page.onActionResult(late)
-            eq(upvalue(Page.update, "pendingChallengeTeam"), 3, "旧队回包不消费新队等待")
             eq(retry.capturedTeam, 3, "超时重试重新捕获队3")
             opened(case, 3, before, resolve(retry, true), case.title .. "超时重试")
             print(TAG .. " PASS " .. case.title .. "超时重试")
@@ -423,87 +390,17 @@ function Start()
             end
         end
 
-        -- 选关公开API固定行队号，与activeTeam解耦，不发挑战。
-        transport.mode = "deferred"
-        for _, case in ipairs(dungeonCases) do
-            Page.close()
-            selected(1)
-            local sent = #sends
-            eq(Page.openResource(case.id, 3), true, "选关打开资源详情")
-            eq(#sends, sent, "openResource不直接发动作")
-            eq(CP.getActiveTeamIdx(), 1, "公开API不修改activeTeam")
-            selected(2) -- 编辑队2，仍必须发选关行队3
-            local before = #opens
-            local req = challenge(case)
-            selected(2)
-            eq(req.params.teamIdx, 3, "选关显式行队号写协议")
-            local wrong = response(req, true)
-            wrong.teamIdx = nil
-            Page.onActionResult(wrong)
-            eq(#opens, before, "无team回包不打开场景")
-            eq(upvalue(Page.update, "pendingChallengeTeam"), 3, "无team回包不消费pending")
-            wrong = response(req, true)
-            wrong.dungeonId = "ancient_ruin"
-            Page.onActionResult(wrong)
-            eq(#opens, before, "错副本回包不打开场景")
-            wrong = response(req, true)
-            wrong.floor = case.floor + 1
-            Page.onActionResult(wrong)
-            eq(#opens, before, "错层回包不打开场景")
-            opened(case, 3, before, resolve(req, true), "选关显式队3")
-            Page.close()
-            eq(Page.openResource(case.id, 2), true, "再打开显式队2")
-            selected(2)
-            req = challenge(case)
-            before = #opens
-            Page.close()
-            resolve(req, true)
-            eq(#opens, before, "关闭详情后迟到回包拒绝")
-            cleared("关闭详情")
-        end
-        eq(Page.openResource("ancient_ruin", 1), false, "隐藏旧遗迹没有资源入口")
-        eq(Page.openResource("gold_mine", 0), false, "显式队号0拒绝")
-        eq(Page.openResource("gold_mine", 4), false, "显式队号4拒绝")
-        eq(Page.openResource("gold_mine", 1.5), false, "非整数队号拒绝")
-        Page.close()
-        eq(Page.openTower(), true, "独立塔公开详情")
-        eq(upvalue(Page.handleInput, "detailDungeon").id, "babel_tower", "独立塔不是黑钻副本")
-        Page.close()
-        local towerLate = { action = Protocol.ACTION_TYPES.TOWER_CHALLENGE, success = true, floor = 1, wave = 1 }
-        Page.onActionResult(towerLate) -- 若重新打开塔会触发禁止未声明require并令测试失败。
-        cleared("关闭后塔迟到回包")
-
-        -- 规则抛异常的合法失败仍需携带身份，不能被UI当作迟到包永久忽略。
-        local serviceMock = mocks["rules.dungeon.DungeonService"]
-        local oldChallenge = serviceMock.Challenge
-        local oldWin = serviceMock.Win
-        serviceMock.Challenge = function() error("expected-challenge-error", 0) end
-        serviceMock.Win = function() error("expected-win-error", 0) end
-        local ruleHandlers = require("rules.dungeon.DungeonHandler").actionHandlers
-        local failedRequest = { dungeonId = "equipment_vault", floor = 11, teamIdx = 3,
-            challengeId = "current-error-token" }
-        for _, action in ipairs({ ACTION, Protocol.ACTION_TYPES.DUNGEON_WIN }) do
-            local failed = ruleHandlers[action](1, failedRequest)
-            eq(failed.success, false, "异常失败返回false")
-            eq(failed.reason, "本地处理失败", "异常失败不暴露内部堆栈")
-            for _, key in ipairs({ "dungeonId", "floor", "teamIdx", "challengeId" }) do
-                eq(failed[key], failedRequest[key], "异常失败保留 " .. key)
-            end
-        end
-        serviceMock.Challenge, serviceMock.Win = oldChallenge, oldWin
-
         -- 主线旧调用不带队号必须仍是队1；绝不能为修副本而改变 CP 的默认值。
         selected(3)
         verifyTeam(CP.getDeployedTeam(), 1, "主线缺省队1")
         verifyTeam(CP.getDeployedTeam(nil), 1, "主线显式nil仍队1")
         eq(CP.getActiveTeamIdx(), 3, "主线取队不会改变正在编辑的队3")
-        -- 没有pending的旧回包现在必须拒绝，不能伪造队一战斗。
+        -- 无 pending 的旧调用兼容回落队1，同时证明前次快照已完全清除。
         local beforeFallback = #opens
         local legacy = { action = ACTION, success = true, dungeonId = "gold_mine", floor = 7, monsters = {} }
         Page.onActionResult(legacy)
-        eq(#opens, beforeFallback, "无等待旧回包拒绝")
-        cleared("无等待旧回包")
-        print(TAG .. " PASS 主线缺省队1与副本严格回执")
+        opened(dungeonCases[1], 1, beforeFallback, legacy, "无等待回包缺省队1")
+        print(TAG .. " PASS 主线默认与旧回包保持队1")
 
         eq(cjson.encode(modules.heroes), stableHeroes, "测试未改输入英雄数据")
         eq(cjson.encode(modules.artifacts), stableArtifacts, "真实神器桥未改装配数据")

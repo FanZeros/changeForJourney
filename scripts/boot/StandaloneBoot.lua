@@ -5,7 +5,6 @@
 local GameState         = require("core.GameState")
 local ExpTable          = require("config.ExpTable")
 local StageConfig       = require("config.StageConfig")
-local DungeonConfig     = require("config.DungeonConfig")
 local DropSystem        = require("systems.DropSystem")
 local EquipmentSystem   = require("systems.EquipmentSystem")
 local LootBoxSystem     = require("systems.LootBoxSystem")
@@ -38,12 +37,6 @@ local M = {}
 -- 首通战斗击杀掉落先暂存。通关并入首通奖励；失败保留为「战斗掉落」；挂机仍进遗匣。
 local pendingFcSeeds = {}
 local pendingFcScrolls = {}
-
---- 正式清档丢弃旧运行态待结算掉落；普通失败/离关仍走 showKeptDrops。
-function M.resetPendingBattleRewards()
-    pendingFcSeeds = {}
-    pendingFcScrolls = {}
-end
 
 local SCROLL_DROP_TO_REWARD = {
     weaponScroll    = "weapon_scroll",
@@ -123,21 +116,6 @@ function M.run(rt)
     local localSendAction = rt.localSendAction
     local localBridgeReady_ = false
 
-    -- 资源关由选关页直接切换三队关卡；这里只保留通天塔独立详情入口。
-    require("ui.battle.stage.StageSelectDialog").setOnDungeonSelect(function(dungeonId, _teamIdx)
-        if dungeonId ~= "babel_tower" then return false end
-        BottomNav.refreshUnlockState()
-        if BottomNav.isTabLocked(5) then
-            require("core.UiToast").show(I18n.format("通关 %d-%d 解锁", 3, 5))
-            return false
-        end
-        local DungeonPage = require("ui.dungeon.DungeonPage")
-        if not DungeonPage.openTower() then return false end
-        BattleTriPage.close()
-        BottomNav.setSelectedIndex(5)
-        return true
-    end)
-
     -- 5.1 阵容变更回调：角色面板出战变动 → 同步战斗画面 → 重载关卡 → 更新 TopBar 战力
     -- [三队并行] 回调携带 teamIdx：队1 同步战斗画面；队2/3 编队先本地生效（并行战斗 Phase 3 接入）
     CharacterPanel.setOnTeamChanged(function(teamIdx, otherTeamIdx)
@@ -177,20 +155,10 @@ function M.run(rt)
         end
     end)
 
-    -- 养成刷新由 CharacterPanel 冻结差异检测唯一负责；此回调只保留归属诊断。
-    -- 不再次失效编队/刷新默认 Scene，避免同一次成长重复重开战斗。
-    CharacterPanel.setOnHeroProgressChanged(function(heroId, teamIdx)
-        local _, actualTeamIdx = CharacterPanel.getHeroDeployPosition(heroId)
-        if not actualTeamIdx or actualTeamIdx ~= teamIdx then return end
-        print("[Standalone] 英雄养成刷新 hero=" .. tostring(heroId) .. " team=" .. actualTeamIdx)
-    end)
-
     -- 5.2 击杀奖励回调：经验平分给每个上场远征队员，金币/远征等级经验照常
     -- [三栏并行] 提取为局部函数，BattleScene（栏1）与 BattleTriPage（栏2/3）共用
     -- 三行战斗在入场时把本关经验和金币加总后一次发放。
     local handleKillRewards = function(data)
-        -- 资源奖励统一在每杀 dropOnly 分支结算，不能另发源怪金币或两类经验。
-        if StageConfig.isResourceStage(data.stageId) then return end
         local baseExp  = data.expReward  or 0
         local baseGold = data.goldReward or 0
         local heroIds  = data.heroIds    or {}
@@ -212,9 +180,11 @@ function M.run(rt)
             local totalExp = baseExp * expMult
             local perHeroExp = math.floor(totalExp / #heroIds + 0.5)
             if perHeroExp > 0 then
-                -- addHeroExp 内按有效等级/共鸣差异刷新；旁队及开页不碰默认 Scene。
                 for _, hid in ipairs(heroIds) do
                     CharacterPanel.addHeroExp(hid, perHeroExp)
+                end
+                if BattleScene.refreshAllyStats then
+                    BattleScene.refreshAllyStats()
                 end
             end
         end
@@ -347,50 +317,12 @@ function M.run(rt)
     -- 存档恢复早于订阅注册，首次打开也必须能看到已保存的遗匣。
     LootBox.updateSeedData(ClientDispatcher.get("lootbox"))
 
-    -- 主线挂机与资源关的装备共用遗匣/自动分解路径，入匣时确定装备内容。
-    local function addKillEquipment(stageId, quality, level)
-        local lootboxData = ClientDispatcher.get("lootbox")
-        if not lootboxData then return end
-        local equipData = PlayerStore.Get("equipment")
-        local autoSettings = (equipData and equipData.settings) or nil
-        if BlacksmithConfig.shouldAutoDecompose(autoSettings, quality, level) then
-            local essence = BlacksmithConfig.calcAutoDecomposeEssence(quality, level)
-            GameState.setEssence(GameState.getEssence() + essence)
-            BlacksmithConfig.recordAutoDecompose(lootboxData, quality, level, essence)
-            LootBox.updateSeedData(lootboxData)
-            print("[Standalone] auto-decompose: q=" .. quality .. " lv=" .. level
-                .. " essence=+" .. essence)
-        else
-            LootBoxSystem.addSeed(lootboxData, stageId, quality, level)
-            LootBox.addSeedHint(quality, level)
-            LootBox.updateSeedData(lootboxData)
-            print("[Standalone] seed added: q=" .. quality .. " lv=" .. level
-                .. " total=" .. LootBoxSystem.getTotalCount(lootboxData))
-        end
-    end
-
-    -- 5.245 击杀掉落：挂机进遗匣；主线首通暂存，资源关按每杀重复收益直接到账。
-    -- 三队与默认 Scene 共用；driver 的每条 dropOnly 代表一次击杀，不是整波奖励。
+    -- 5.245 击杀掉落：挂机进遗匣；首通暂存，通关后并入首通奖励
+    -- 第 1 队与第 2/3 队共用同一套挂机掉落（装备种子 + 卷轴）
     local function applyKillDrop(data)
-        if StageConfig.isResourceStage(data.stageId) then
-            local rewards = DungeonConfig.getStageRewards(data.stageId, 1)
-            if rewards.gold > 0 then
-                GameState.setGold(GameState.getGold() + rewards.gold)
-            end
-            if rewards.diamond > 0 then
-                GameState.setGems(GameState.getGems() + rewards.diamond)
-            end
-            for _, seed in ipairs(rewards.equipSeeds) do
-                for _ = 1, seed.count or 1 do
-                    addKillEquipment(seed.stageId or data.stageId, seed.quality, seed.level)
-                end
-            end
-            -- 不掷主线装备/卷轴，不发源怪经验、扫荡券或主线首通奖励。
-            return
-        end
         local stageEntry = StageConfig.getStage(data.stageId)
         if not stageEntry then return end
-        local quality = DropSystem.rollKillDrop(stageEntry, data)
+        local quality = DropSystem.rollKillDrop(stageEntry)
         local scrollType = DropSystem.rollScrollDrop(stageEntry)
         if data.isFirstClear then
             if quality then
@@ -408,7 +340,26 @@ function M.run(rt)
         end
         -- 装备掉落（挂机）：符合自动分解条件直接转精粹，与多人服务端同一语义
         if quality then
-            addKillEquipment(data.stageId, quality, stageEntry.monsterLevel or 1)
+            local level = stageEntry.monsterLevel or 1
+            local lootboxData = ClientDispatcher.get("lootbox")
+            if lootboxData then
+                local equipData = PlayerStore.Get("equipment")
+                local autoSettings = (equipData and equipData.settings) or nil
+                if BlacksmithConfig.shouldAutoDecompose(autoSettings, quality, level) then
+                    local essence = BlacksmithConfig.calcAutoDecomposeEssence(quality, level)
+                    GameState.setEssence(GameState.getEssence() + essence)
+                    BlacksmithConfig.recordAutoDecompose(lootboxData, quality, level, essence)
+                    LootBox.updateSeedData(lootboxData)
+                    print("[Standalone] auto-decompose: q=" .. quality .. " lv=" .. level
+                        .. " essence=+" .. essence)
+                else
+                    LootBoxSystem.addSeed(lootboxData, data.stageId, quality, level)
+                    LootBox.addSeedHint(quality, level)
+                    LootBox.updateSeedData(lootboxData)
+                    print("[Standalone] seed added: q=" .. quality .. " lv=" .. level
+                        .. " total=" .. LootBoxSystem.getTotalCount(lootboxData))
+                end
+            end
         end
         -- 卷轴掉落（挂机直接加入货币）
         if scrollType then
@@ -426,33 +377,20 @@ function M.run(rt)
         end
     end
     BattleScene.setOnEnemyDrop(applyKillDrop)
-    -- driver 每杀 dropOnly；只有主线首通进入暂存，资源关在 applyKillDrop 提前结算。
+    -- 第 2/3 队不记首通，只按挂机掉落叠加
     BattleTriPage.setOnDrop(function(data)
-        if StageConfig.isResourceStage(data.stageId) then
-            applyKillDrop(data)
-            return
-        end
         if data.dropOnly then
-            applyKillDrop({ stageId = data.stageId, isFirstClear = true,
-                teamIdx = data.teamIdx, dropLuck = data.dropLuck })
+            applyKillDrop({ stageId = data.stageId, isFirstClear = true })
             return
         end
-        applyKillDrop({ stageId = data.stageId, isFirstClear = false,
-            teamIdx = data.teamIdx, dropLuck = data.dropLuck })
+        applyKillDrop({ stageId = data.stageId, isFirstClear = false })
     end)
-    BattleTriPage.setOnStageClear(function(_, stageId)
-        if StageConfig.isResourceStage(stageId) then return end
+    BattleTriPage.setOnStageClear(function(_, _)
         showKeptDrops("战斗掉落")
     end)
 
-    -- 三行死亡携带失败关卡；默认 Scene 原有失败地点背景与掉落出口保持不变。
-    BattleTriPage.setOnAllDead(function(_, failedStageId)
-        if StageConfig.isResourceStage(failedStageId) then return end
-        require("systems.StoryPlayer").onWipe(failedStageId)
-    end)
     BattleScene.setOnAllDead(function()
         local failedStageId = BattleScene.getCurrentStageId()
-        if StageConfig.isResourceStage(failedStageId) then return end
         showKeptDrops("战斗掉落")
         require("systems.StoryPlayer").onWipe(failedStageId)
     end)
@@ -543,7 +481,6 @@ function M.run(rt)
 
     -- 5.25 首通奖励回调：本地计算首通金币+装备，弹出 RewardPopup
     BattleScene.setOnFirstClear(function(clearedStageId, teamIdx)
-        if StageConfig.isResourceStage(clearedStageId) then return end
         teamIdx = teamIdx or 1
         -- 首通账本三队共用；只有一队通关改变一队当前关，二三队不能拉走一队。
         local battle = ClientDispatcher.get("battle")

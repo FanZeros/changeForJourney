@@ -51,25 +51,18 @@ local NAMES = {
 ---@field gateStacks number
 ---@field shieldStacks number
 
-local function newState()
-    return {
-        iceStatues = {}, ---@type table[]
-        orbitAngle = 0,
-        persistAcc = 0,
-        dirty = {}, ---@type table<number, ExtraTalentData>
-        pendingPrecise = {}, ---@type table<number, number>
-        pendingConquer = {}, ---@type table<number, number>
-        pendingBeams = {}, ---@type table<number, number>
-        pendingShadows = {}, ---@type table<number, number>
-        pendingGatling = {}, ---@type table<number, number>
-        pendingNitroDash = {}, ---@type table<number, number>
-    }
-end
-local defaultState = newState()
-local battle = defaultState
-function ETS.newState() return newState() end
-function ETS.mount(s) battle = s or defaultState end
-function ETS.mountedState() return battle end
+local battle = {
+    iceStatues = {}, ---@type table[]
+    orbitAngle = 0,
+    persistAcc = 0,
+    dirty = {}, ---@type table<number, ExtraTalentData>
+    pendingPrecise = {}, ---@type table<number, number>
+    pendingConquer = {}, ---@type table<number, number>
+    pendingBeams = {}, ---@type table<number, number>
+    pendingShadows = {}, ---@type table<number, number>
+    pendingGatling = {}, ---@type table<number, number>
+    pendingNitroDash = {}, ---@type table<number, number>
+}
 
 local NUM_KEYS = {
     "stacks", "splitKills", "iceStatues", "issuedCards", "burnKills",
@@ -450,10 +443,8 @@ end
 
 local function persistNow(heroId, extra)
     heroId = toHeroId(heroId)
+    extra = ETS.normalize(extra)
     local ok, CP = pcall(require, "ui.character.panel.CharacterPanel")
-    -- dirty只是待保存标记，别让暂停战线的旧整表覆盖另一战线已提交的成长/消耗。
-    local owned = ok and CP and CP.getOwnedHero and CP.getOwnedHero(heroId)
-    extra = ETS.normalize(owned and owned.extraTalent or extra)
     if ok and CP and CP.patchExtraTalent then
         CP.patchExtraTalent(heroId, extra)
     end

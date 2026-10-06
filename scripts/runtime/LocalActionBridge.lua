@@ -371,22 +371,6 @@ function M.init()
             end
         end,
     })
-    require("rules.dungeon.DungeonService").SetPersistCallback(function(_uid)
-        -- 副本事务先镜像货币且延后通知，唯一落盘入口必须确认真实写入成功。
-        return require("boot.StandaloneSave").Flush()
-    end, {
-        begin = function() deferredTaskPushes_ = {} end,
-        finish = function(_uid, success)
-            local pushes = deferredTaskPushes_ or {}
-            deferredTaskPushes_ = nil
-            if not success then return end
-            -- 覆盖 Flush 内 MarkOnline 的 session 推送，失败不得提前发布在线边界。
-            for name, data in pairs(pushes) do
-                ClientDispatcher.set(name, data)
-                if name == "currency" then GameState.syncFromCurrency(data) end
-            end
-        end,
-    })
     print("[LocalActionBridge] init uid=" .. LOCAL_UID)
 end
 

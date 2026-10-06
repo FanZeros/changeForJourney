@@ -97,8 +97,6 @@ function M.process(ctx, logicDt)
                 print("[BattleScene] enemy died, calling dropCallback stageId=" .. tostring(currentStageId))
                 ctx.onEnemyDropCallback({
                     stageId = currentStageId,
-                    teamIdx = 1,
-                    dropLuck = ctx.dropLuck or 0,
                     enemyCX = enemyCX,
                     enemyCY = ENEMY_CARD_CY,
                     isFirstClear = ctx.isFirstClear == true,

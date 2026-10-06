@@ -223,29 +223,14 @@ end
 -- ======================== 绘制 ========================
 
 ---@param vg any NanoVG 上下文
-function BRP.draw(vg, width, height)
+function BRP.draw(vg)
     if not state.open then return end
 
-    -- 横屏只拟合实际结算内容，不再缩放整张2400高竖版画布。
-    if width and height then
-        nvgSave(vg)
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, width, height)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 180))
-        nvgFill(vg)
-        local fit = math.min(width / 1180, height / 1180)
-        nvgTranslate(vg, width * 0.5, height * 0.5)
-        nvgScale(vg, fit, fit)
-        nvgTranslate(vg, -540, -1300)
-    end
-
     -- === 0. 全屏黑色遮罩（50%不透明度） ===
-    if not width then
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-        nvgFill(vg)
-    end
+    nvgBeginPath(vg)
+    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))  -- 50% = 255*0.5 ≈ 128
+    nvgFill(vg)
 
     -- === 3. 消耗时间（结算底板已移除） ===
     local totalSecs = math.floor(state.elapsedSecs)
@@ -357,7 +342,6 @@ function BRP.draw(vg, width, height)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, HINT_CX, HINT_CY, "点击空白处关闭", nil)
-    if width and height then nvgRestore(vg) end
 end
 
 return BRP

@@ -76,7 +76,6 @@ M.ATTR_LEFT_PRIORITY = {
     AD.FINAL_ARMOR_BONUS,
     AD.FINAL_ENERGY_SHIELD_BONUS,
     AD.FINAL_DODGE_BONUS,
-    AD.DROP_LUCK,
 }
 
 --- 右列候选属性（前3个为特殊显示：攻击类型/攻击间隔/攻击目标，不走 AD.META）
@@ -97,8 +96,8 @@ M.ATTR_RIGHT_PRIORITY = {
     AD.MAG_DMG_BONUS,
     AD.COMBO_RATE,
     AD.COMBO_DMG_UP,
-    AD.ADVANTAGE_DMG_BONUS,
-    AD.DISADVANTAGE_DMG_BONUS,
+    AD.MAX_DMG_BONUS,
+    AD.MIN_DMG_BONUS,
     AD.PHYS_ATK_BONUS,
     AD.MAG_ATK_BONUS,
     AD.FINAL_PHYS_ATK_BONUS,
@@ -128,7 +127,7 @@ M.ATTR_DISPLAY_ORDER = {
     -- 输出向
     AD.PHYS_PEN, AD.MAG_PEN,
     AD.PHYS_DMG_BONUS, AD.MAG_DMG_BONUS, AD.DMG_BONUS, AD.FINAL_DAMAGE_BONUS,
-    AD.ADVANTAGE_DMG_BONUS, AD.DISADVANTAGE_DMG_BONUS,
+    AD.MAX_DMG_BONUS, AD.MIN_DMG_BONUS,
     -- 防御核心
     AD.ARMOR, AD.RESISTANCE, AD.ENERGY_SHIELD,
     -- 生存/辅助
@@ -144,8 +143,6 @@ M.ATTR_DISPLAY_ORDER = {
     AD.HEAL_BONUS, AD.HEAL_CRIT_RATE, AD.HEAL_CRIT_DMG,
     AD.FINAL_STR_BONUS, AD.FINAL_AGI_BONUS, AD.FINAL_INT_BONUS,
     AD.FINAL_VIT_BONUS, AD.FINAL_LUK_BONUS, AD.FINAL_SPI_BONUS,
-    -- 探索属性独立展示，不混入六围或战斗伤害。
-    AD.DROP_LUCK,
     -- 基础信息
     "_atkType", AD.ATK_INTERVAL, "_atkTargets",
     -- 特殊机制/神器
@@ -558,8 +555,8 @@ function M.collectAttributes(heroId, heroCfg, level, options)
     if category == "healing" then
         skipCritKeys[AD.DMG_BONUS] = true
         skipCritKeys[AD.FINAL_DAMAGE_BONUS] = true
-        skipCritKeys[AD.ADVANTAGE_DMG_BONUS] = true
-        skipCritKeys[AD.DISADVANTAGE_DMG_BONUS] = true
+        skipCritKeys[AD.MAX_DMG_BONUS] = true
+        skipCritKeys[AD.MIN_DMG_BONUS] = true
         -- 治疗普攻走 calcHealAttack（无连击、伤害浮动或伤害加成）。
         skipCritKeys[AD.COMBO_RATE] = true
         skipCritKeys[AD.COMBO_DMG_UP] = true

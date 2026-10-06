@@ -227,8 +227,6 @@ function M.process(ctx, dt)
             -- 开战前刷新属性（装备/槽位强化等可能在寻怪期间才同步完成）
             BattleScene.refreshAllyStats()
             for _, u in ipairs(allies) do resetAllyUnit(u) end
-            -- 本波配装已提交；只刷新掉落快照，不重复执行开战天赋。
-            if ctx.captureDropLuck then ctx.captureDropLuck() end
             -- 生成新一波敌人（挂机用5关混合；首通保留 loadStage 已生成的阵容）
             do
                 if not isFirstClear then

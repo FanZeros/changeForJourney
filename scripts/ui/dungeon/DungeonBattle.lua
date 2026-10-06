@@ -9,10 +9,6 @@ local AD       = require("systems.AttributeDef")
 local Protocol = require("shared.Protocol")
 local GameConfig = require("config.GameConfig")
 local TowerConfig = require("config.TowerConfig")
-local DungeonConfig = require("config.DungeonConfig")
-local EnemySpawn = require("ui.battle.stage.BattleEnemySpawn")
-local BattleLayout = require("core.BattleLayout")
-local CombatRuntime = require("ui.dungeon.DungeonCombatRuntime")
 
 local DungeonBattle = {}
 
@@ -125,8 +121,6 @@ end
 --- 获取当前狂暴阶段 (0/1/2)
 ---@return number
 function DungeonBattle.getRagePhase()
-    if not active then return 0 end
-    if cfg.resourceCombat then return CombatRuntime.getBerserk().getRagePhase() end
     return ragePhase
 end
 
@@ -144,23 +138,14 @@ end
 ---@param allies table 副本己方单位列表引用
 function DungeonBattle.enter(data, allies)
     -- 保存配置
-    if active then DungeonBattle.exit() end
     cfg.dungeonId         = data.dungeonId or "gold_mine"
-    cfg.teamIdx           = data.teamIdx or 1
-    cfg.challengeId       = data.challengeId
-    cfg.resourceCombat    = DungeonConfig.isResourceDungeon(cfg.dungeonId)
-    cfg.stageEntry        = data.stageEntry
-    if cfg.resourceCombat and not cfg.stageEntry then
-        error("资源副本Challenge缺少stageEntry")
-    end
-    cfg.maxFieldEnemies   = BattleLayout.MAX_PER_SIDE
     cfg.floor             = data.floor or 1
     cfg.wave              = data.wave or 1
     cfg.monsterLevel      = data.monsterLevel or 1
     cfg.monsters          = data.monsters or {}
     cfg.firstGold         = data.firstGold or 0
-    cfg.classBonus        = cfg.resourceCombat and "" or (data.classBonus or "")
-    cfg.classBonusValue   = cfg.resourceCombat and 0 or (data.classBonusValue or 0.20)
+    cfg.classBonus        = data.classBonus or ""
+    cfg.classBonusValue   = data.classBonusValue or 0.20
     cfg.rageTime          = data.rageTime or 30
     cfg.rageAtkBonus      = data.rageAtkBonus or 0.50
     cfg.superRageTime     = data.superRageTime or 60
@@ -172,8 +157,7 @@ function DungeonBattle.enter(data, allies)
     cfg.dummyMaxHp        = data.dummyMaxHp or 1000000000000
     cfg.dummyRegen        = data.dummyRegen or cfg.dummyMaxHp
 
-    -- 重置状态（包括上一局残留结算锁）
-    resultPending, resultIsWin, resultElapsed, serverResult = false, false, 0, nil
+    -- 重置状态
     active    = true
     elapsed   = 0
     ragePhase = 0
@@ -200,18 +184,6 @@ end
 ---@return table[] enemyList
 function DungeonBattle.generateEnemies()
     local list = {}
-    if cfg.resourceCombat then
-        list = EnemySpawn.generateEnemyList(cfg.stageEntry, true)
-        local ids = EnemySpawn.getFirstClearBonusMonsterIds(cfg.stageEntry)
-        if ids then
-            for i = 1, #ids do
-                EnemySpawn.markFirstClearBonusSpawnPhase(list[#list - #ids + i], i, #ids)
-            end
-        end
-        -- 怪物经验/金币不另行发放，唯一奖励来自DUNGEON_WIN回执。
-        for _, unit in ipairs(list) do unit.expReward, unit.goldReward = 0, 0 end
-        return list
-    end
     if cfg.trainingDummy then
         local unit = MC.createMonster(1, math.max(1, cfg.monsterLevel or 1))
         if unit then
@@ -285,10 +257,6 @@ function DungeonBattle.update(dt, enemies, allies)
 
     elapsed = elapsed + dt
     if cfg.trainingDummy then return end
-    if cfg.resourceCombat then
-        CombatRuntime.getBerserk().update(dt, enemies, allies)
-        return
-    end
 
     -- 狂暴阶段检测
     if ragePhase == 0 and elapsed >= cfg.rageTime then
@@ -479,7 +447,7 @@ end
 --- 副本战斗胜利回调（由 BattleScene 的胜利判定调用）
 --- 不再立即 exit，进入结算等待状态，等服务端返回奖励数据后由 BattleScene 展示结算面板
 function DungeonBattle.onVictory()
-    if not active or resultPending then return end
+    if not active then return end
     if cfg.trainingDummy then return end
 
     print(string.format("[DungeonBattle] VICTORY floor=%d elapsed=%.1fs ragePhase=%d",
@@ -503,8 +471,6 @@ function DungeonBattle.onVictory()
         Client.sendAction(Protocol.ACTION_TYPES.DUNGEON_WIN, {
             dungeonId = cfg.dungeonId,
             floor     = cfg.floor,
-            teamIdx   = cfg.teamIdx,
-            challengeId = cfg.challengeId,
         })
     end
 
@@ -526,8 +492,7 @@ end
 --- 副本战斗失败回调
 --- 不再立即 exit，进入结算等待状态
 function DungeonBattle.onDefeat()
-    if not active or resultPending then return end
-    if cfg.resourceCombat then CombatRuntime.cancelChallenge() end
+    if not active then return end
 
     print(string.format("[DungeonBattle] DEFEAT floor=%d elapsed=%.1fs", cfg.floor, elapsed))
 
@@ -544,14 +509,9 @@ end
 --- 设置服务端返回的结算数据（由 DungeonPage.onActionResult 调用）
 ---@param data table 服务端 DUNGEON_WIN 返回的数据
 function DungeonBattle.setServerResult(data)
-    if not active or not resultPending or not resultIsWin or serverResult or not data then return false end
-    if cfg.resourceCombat and (data.action ~= Protocol.ACTION_TYPES.DUNGEON_WIN
-        or data.dungeonId ~= cfg.dungeonId or data.floor ~= cfg.floor
-        or data.teamIdx ~= cfg.teamIdx or data.challengeId ~= cfg.challengeId) then return false end
     serverResult = data
     print(string.format("[DungeonBattle] setServerResult: gold=%s firstClear=%s",
-        tostring(data.gold), tostring(data.firstClear)))
-    return true
+        tostring(data and data.gold), tostring(data and data.firstClear)))
 end
 
 --- 获取结算状态
@@ -570,12 +530,6 @@ end
 
 --- 退出副本战斗模式，恢复 BattleScene 正常状态
 function DungeonBattle.exit()
-    if active and cfg.resourceCombat then
-        CombatRuntime.getBerserk().exit()
-        if not resultPending or not resultIsWin or (serverResult and serverResult.success == false) then
-            CombatRuntime.cancelChallenge()
-        end
-    end
     for u, baseInterval in pairs(origIntervals) do
         if u then
             u.atkInterval = baseInterval

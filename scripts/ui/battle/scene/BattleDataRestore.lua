@@ -19,52 +19,43 @@ function M.bind(deps)
     local function setBattleData(data)
         if not data then return end
 
-        -- cleared 是永久首通事实，不是当前战斗模式。回灌可能只含部分账本，
-        -- 合并本地与输入账本并归一数字/字符串键；只接受严格true。
-        -- 清档需先走 resetToDefault，不能借一次普通恢复清除历史首通。
-        local clearedStages = {}
-        local function mergeCleared(source)
-            if type(source) ~= "table" then return end
-            for k, v in pairs(source) do
-                local numKey = math.tointeger(tonumber(k) or 0)
-                if numKey and numKey > 0 and v == true then
+        -- 恢复已通关关卡集合
+        if data.clearedStages then
+            local clearedStages = {}
+            for k, v in pairs(data.clearedStages) do
+                -- 服务端以 tostring(stageId) 为 key 存储，本地以 number 为 key
+                local numKey = tonumber(k)
+                if numKey and v then
                     clearedStages[numKey] = true
                 end
             end
+            set("clearedStages", clearedStages)
         end
-        mergeCleared(get("clearedStages"))
-        mergeCleared(data.clearedStages)
-        set("clearedStages", clearedStages)
 
-        -- 旧档后备推断只补真实关链中最高节点之前的关卡，不补最高节点。
-        -- 终焉ID非单调（999在2305之后），不能按 sid < maxStageId 数值比较。
-        local maxSId = math.tointeger(tonumber(data.maxStageId) or 0)
-        if maxSId and maxSId > 0 and not getStageConfig().isResourceStage(maxSId) then
-            -- 与存档对齐（Debug 跳回低进度时允许降低 maxStageId_）
+        -- 用 maxStageId 补全 clearedStages（后备推断：低于 maxStageId 的关卡必定已通关）
+        local maxSId = data.maxStageId and tonumber(data.maxStageId)
+        if maxSId then
+            -- 与服务端存档对齐（Debug 跳回低进度时需降低 maxStageId_）
             set("maxStageId_", maxSId)
+            -- 更新挂机收益显示（maxStageId 变化后立即刷新，不等下一关加载）
+            recalcIdleIncome()
             local stageConfig = getStageConfig()
             local sid = stageConfig.getFirstStageId
                 and stageConfig.getFirstStageId(stageConfig.DIFFICULTY_NORMAL)
                 or 0101
-            local prefix, visited = {}, {}
-            while sid and sid ~= maxSId and not visited[sid] do
-                visited[sid] = true
-                prefix[#prefix + 1] = sid
+            local clearedStages = get("clearedStages")
+            while sid and sid < maxSId do
+                if not clearedStages[sid] then
+                    clearedStages[sid] = true
+                end
                 local nextSid = stageConfig.getNextStageId(sid)
                 if not nextSid and stageConfig.isTerminalTemple(sid) then
-                    -- 终焉神殿无 next，跨难度继续查找真实前缀
+                    -- 终焉神殿无 next，跨难度继续填充
                     local diff = stageConfig.getDifficulty(sid)
                     nextSid = stageConfig.getReincarnationTarget(diff)
                 end
                 sid = nextSid
             end
-            -- 找不到目标时不把整条关链误认作已通，保留已确认的账本即可。
-            if sid == maxSId then
-                local restoredStages = get("clearedStages")
-                for _, passedId in ipairs(prefix) do restoredStages[passedId] = true end
-            end
-            -- 最高节点和账本到位后立即刷新，不等下一关加载。
-            recalcIdleIncome()
         end
 
         -- 恢复当前关卡（如果与本地不同则切换）
@@ -127,9 +118,7 @@ function M.bind(deps)
         -- 无论是否切换关卡，都刷新 isFirstClear（clearedStages 可能已更新）
         -- 注意：当战斗进行中(isBusy)时关卡切换被忽略，此时应以本地 currentStageId 为准
         -- 否则 savedStageId（可能是旧值）会导致 isFirstClear 被错误设为 false
-        local restoredId = get("currentStageId")
-        local isFirstClear = not getStageConfig().isResourceStage(restoredId)
-            and not get("clearedStages")[restoredId]
+        local isFirstClear = not get("clearedStages")[get("currentStageId")]
         set("isFirstClear", isFirstClear)
         if not isFirstClear and StageBerserk.isActive() then
             StageBerserk.exit()

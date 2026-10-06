@@ -17,6 +17,10 @@
             "../.emmylua",
             "../urhox-libs"
         ],
+        "ignoreDir": [
+            "tests",
+            "_proc"
+        ],
         "checkThirdParty": false
     },
     "diagnostics": {

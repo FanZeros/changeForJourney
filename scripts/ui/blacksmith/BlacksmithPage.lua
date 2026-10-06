@@ -614,8 +614,6 @@ function BlacksmithPage.init(vg)
 
     BlacksmithEnhance.init(vg)
     BlacksmithRefine.init(vg)
-    -- 首次升阶不再在绘制中同步加载；缺扩展/资源时由特效模块安全降级。
-    require("ui.fx.SpineResultEffect").preload(vg)
 
     -- 装备或货币变化时刷新可强化角标缓存
     PlayerStore.Subscribe("equipment", function(data)

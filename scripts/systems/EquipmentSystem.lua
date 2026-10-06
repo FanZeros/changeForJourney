@@ -575,11 +575,8 @@ local function ascendStatValue(key)
         return value
     end
     local meta = AD.META[key]
-    if not meta then return 0 end
-    -- 探索属性不计战斗战力，但洗练旧升阶投入仍须有正的换算价值。
-    local valueModel = meta.refineValueModel or meta.valueModel
-    if not valueModel or valueModel <= 0 then return 0 end
-    return meta.dataType == AD.TYPE_PCT and valueModel / 100 or valueModel
+    if not meta or not meta.valueModel or meta.valueModel <= 0 then return 0 end
+    return meta.dataType == AD.TYPE_PCT and meta.valueModel / 100 or meta.valueModel
 end
 
 --- 洗练时按价值转移固定升阶加成，不修改旧词条或已有装备。

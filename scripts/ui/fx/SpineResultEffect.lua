@@ -1,224 +1,180 @@
 -- ============================================================================
 -- SpineResultEffect - 通用成功/失败 Spine 动画特效
 -- 底层封装：直接使用 nvgSpineCreate / nvgSpineRender 在 NanoVG 中播放
--- 特效故障只影响表现，不得中断锻炉及同帧其他栏位的绘制。
+-- 用法：
+--   local SpineResultEffect = require("ui.fx.SpineResultEffect")
+--   SpineResultEffect.play(true, function() print("done") end)   -- 成功
+--   SpineResultEffect.play(false)                                 -- 失败
+--   在 NanoVGRender 中调用 SpineResultEffect.draw(vg, cx, cy, size)
 -- ============================================================================
+
+---@diagnostic disable: undefined-global
+-- nvgSpineCreate / nvgSpineRender 是引擎内置全局函数（NanoVG Spine 扩展）
 
 local SpineResultEffect = {}
 
+-- Spine 资源路径（三件套在 assets/image/spine/ 下）
 local SPINE_JSON = "image/spine/UI_SPINE_QHTX.json"
+
+-- 动画名称映射
 local ANIM_SUCCESS = "1"
 local ANIM_FAILURE = "2"
--- 与资源动画时长一致；优先读取当前轨道时长，旧扩展用此值兜底。
-local ANIM_DURATION = { [ANIM_SUCCESS] = 1.6667, [ANIM_FAILURE] = 1.3333 }
-local END_GRACE = 0.3
 
----@type SpineInstance|nil
-local spineInstance = nil
-local loaded = false
-local disabled = false
-local playing = false
-local completed = false
----@type number
-local lastTime = 0
----@type number
-local startedAt = 0
----@type number
-local duration = 0
-local playbackId = 0
----@type string|nil
-local currentAnim = nil
----@type function|nil
-local onCompleteCb = nil
+-- 内部状态
+local spineInstance = nil   -- nvgSpineCreate 返回的实例
+local loaded = false        -- 是否已加载
+local playing = false       -- 是否正在播放
+local lastTime = 0          -- 上一帧 elapsedTime，用于算 dt
+local onCompleteCb = nil    -- 播放完成回调
+local initVg = nil          -- 记录初始化时的 vg 上下文
 
+-- Spine 骨架原始尺寸（从 JSON skeleton 字段读取）
 local DATA_X = -501
 local DATA_Y = -449.5
 local DATA_W = 1002
 local DATA_H = 899
 
-local function releaseInstance()
-    local instance = spineInstance
-    spineInstance = nil
-    loaded = false
-    if instance then
-        -- 先解除 Lua 状态，Unload/Dispose 的监听不得完成旧播放。
-        pcall(function() instance:SetCompleteListener(function() end) end)
-        pcall(function() instance:Unload() end)
-        pcall(function() instance:Dispose() end)
-    end
-end
-
-local function disableEffect(reason)
-    playing = false
-    completed = false
-    onCompleteCb = nil
-    currentAnim = nil
-    SpineResultEffect._pendingAnim = nil
-    if not disabled then
-        disabled = true
-        print("[SpineResultEffect] 特效已停用，业务与绘制继续: " .. tostring(reason))
-    end
-    releaseInstance()
-end
-
-local function finishPlayback()
-    local cb = onCompleteCb
-    playing = false
-    completed = false
-    onCompleteCb = nil
-    currentAnim = nil
-    SpineResultEffect._pendingAnim = nil
-    if cb then
-        -- 不在 Spine Update 的监听栈内调用业务；先清旧状态，允许回调重新播放。
-        local ok, err = pcall(cb)
-        if not ok then print("[SpineResultEffect] 完成回调失败: " .. tostring(err)) end
-    end
-end
-
----@param vg any
----@return boolean
+--- 初始化 Spine 实例（懒加载，首次 draw 时自动调用）
+---@param vg any NanoVG 上下文
+---@return boolean 是否成功
 local function ensureLoaded(vg)
-    if disabled then return false end
     if loaded and spineInstance then return true end
     if not vg then return false end
-    if type(nvgSpineCreate) ~= "function" or type(nvgSpineRender) ~= "function" then
-        disableEffect("Spine 扩展不可用")
+
+    spineInstance = nvgSpineCreate(vg)
+    if not spineInstance then
+        print("[SpineResultEffect] nvgSpineCreate failed")
         return false
     end
 
-    local ok, err = pcall(function()
-        local instance = nvgSpineCreate(vg)
-        if not instance then error("nvgSpineCreate 返回空实例") end
-        spineInstance = instance
-        if not instance:Load(SPINE_JSON) then error("加载失败: " .. SPINE_JSON) end
-        instance:SetPremultipliedAlpha(true)
-        instance:SetDefaultMix(0.1)
-        instance:SetSpeed(1.0)
-        instance:SetCompleteListener(function(track, anim)
-            if playing and track == 0 and anim == currentAnim then completed = true end
-        end)
-    end)
-    if not ok then
-        disableEffect(err)
+    if not spineInstance:Load(SPINE_JSON) then
+        print("[SpineResultEffect] Failed to load: " .. SPINE_JSON)
+        spineInstance = nil
         return false
     end
+
+    -- atlas 中 pma:true，启用预乘 alpha
+    spineInstance:SetPremultipliedAlpha(true)
+    spineInstance:SetDefaultMix(0.1)
+    spineInstance:SetSpeed(1.0)
+
+    -- 注册完成回调
+    spineInstance:SetCompleteListener(function(track, anim)
+        if playing then
+            playing = false
+            if onCompleteCb then
+                local cb = onCompleteCb
+                onCompleteCb = nil
+                cb()
+            end
+        end
+    end)
+
     loaded = true
+    initVg = vg
     print("[SpineResultEffect] Loaded OK")
     return true
 end
 
-local function startAnimation()
-    local instance = spineInstance
-    local anim = SpineResultEffect._pendingAnim
-    if not instance or not anim then return end
-    local ok, err = pcall(function()
-        if not instance:SetAnimation(0, anim, false) then error("动画不存在: " .. anim) end
-    end)
-    if not ok then
-        disableEffect(err)
+--- 播放成功或失败动画
+---@param isSuccess boolean true=成功动画(1), false=失败动画(2)
+---@param onComplete? function 播放完成后的回调
+function SpineResultEffect.play(isSuccess, onComplete)
+    if not loaded or not spineInstance then
+        -- 未加载时记录待播放状态，等 draw 时初始化后补播
+        playing = true
+        onCompleteCb = onComplete
+        -- 暂存要播放的动画名
+        SpineResultEffect._pendingAnim = isSuccess and ANIM_SUCCESS or ANIM_FAILURE
+        lastTime = time.elapsedTime
         return
     end
-    -- 查询时长属于可选能力；缺少此 API 的旧扩展仍按资源时长播放。
-    local durationOk, trackDuration = pcall(function() return instance:GetAnimationDuration(0) end)
-    if durationOk and type(trackDuration) == "number"
-        and trackDuration > 0 and trackDuration < math.huge then
-        duration = trackDuration
-    end
-    SpineResultEffect._pendingAnim = nil
-    print("[SpineResultEffect] Playing: " .. anim)
-end
 
---- 播放成功或失败动画。业务成功与否不依赖特效是否可用。
----@param isSuccess boolean
----@param onComplete? function
-function SpineResultEffect.play(isSuccess, onComplete)
-    if disabled then return end
-    local anim = isSuccess and ANIM_SUCCESS or ANIM_FAILURE
-    playbackId = playbackId + 1
-    currentAnim = anim
-    duration = ANIM_DURATION[anim]
-    startedAt = time.elapsedTime
-    lastTime = startedAt
-    completed = false
+    local animName = isSuccess and ANIM_SUCCESS or ANIM_FAILURE
+    spineInstance:SetAnimation(0, animName, false)
     playing = true
     onCompleteCb = onComplete
-    SpineResultEffect._pendingAnim = anim
-    if loaded and spineInstance then startAnimation() end
+    lastTime = time.elapsedTime
+    SpineResultEffect._pendingAnim = nil
+    print("[SpineResultEffect] Playing: " .. animName)
 end
 
+--- 是否正在播放
 ---@return boolean
 function SpineResultEffect.isPlaying()
-    -- 关闭页面后未 draw，或旧扩展漏发完成事件，也不能一直保持播放态。
-    if playing and time.elapsedTime - startedAt >= duration + END_GRACE then
-        finishPlayback()
-    end
     return playing
 end
 
+--- 停止播放
 function SpineResultEffect.stop()
     playing = false
-    completed = false
     onCompleteCb = nil
-    currentAnim = nil
     SpineResultEffect._pendingAnim = nil
-    local instance = spineInstance
-    if instance then
-        local ok, err = pcall(function() instance:ClearTracks() end)
-        if not ok then disableEffect(err) end
+    if spineInstance then
+        spineInstance:ClearTracks()
     end
 end
 
---- NanoVGRender 中绘制；返回前恢复外层变换、裁剪与颜色状态。
----@param vg any
----@param cx number
----@param cy number
----@param size number|nil
+--- 每帧绘制（在 NanoVG 渲染函数中调用）
+--- 自动处理 update + render，调用方只需提供绘制中心
+--- 缩放到调用方给出的槽位尺寸，并按骨架边界居中。
+---@param vg any NanoVG 上下文
+---@param cx number 绘制中心 X（设计坐标）
+---@param cy number 绘制中心 Y（设计坐标）
+---@param size number|nil 目标边长，默认按装备槽 160
 function SpineResultEffect.draw(vg, cx, cy, size)
-    if not SpineResultEffect.isPlaying() or not ensureLoaded(vg) then return end
-    if SpineResultEffect._pendingAnim then startAnimation() end
-    local instance = spineInstance
-    if not playing or not instance then return end
+    if not playing then return end
 
+    -- 懒加载
+    if not ensureLoaded(vg) then return end
+
+    -- 处理待播放动画（play 在 load 之前被调用的情况）
+    if SpineResultEffect._pendingAnim then
+        spineInstance:SetAnimation(0, SpineResultEffect._pendingAnim, false)
+        SpineResultEffect._pendingAnim = nil
+        lastTime = time.elapsedTime
+    end
+
+    -- 计算 dt
     local now = time.elapsedTime
-    local dt = math.max(0, math.min(now - lastTime, 0.1))
+    local dt = now - lastTime
+    if dt > 0.1 then dt = 0.016 end  -- 防止暂停后大跳
     lastTime = now
-    local thisPlayback = playbackId
-    local saved = false
-    local ok, err = pcall(function()
-        nvgSave(vg)
-        saved = true
-        instance:Update(dt)
-        local target = size or 160
-        local scale = math.min(target / DATA_W, target / DATA_H)
-        instance:SetScale(scale, -scale)
-        local drawW = DATA_W * scale
-        local drawH = DATA_H * scale
-        local posX = cx - drawW * 0.5 - DATA_X * scale
-        local posY = cy - drawH * 0.5 + (DATA_H + DATA_Y) * scale
-        instance:SetPosition(posX, posY)
-        nvgSpineRender(vg, instance)
-    end)
-    if saved then
-        local restored, restoreErr = pcall(nvgRestore, vg)
-        if not restored then ok, err = false, restoreErr end
-    end
-    if not ok then
-        disableEffect(err)
-    elseif playing and completed and playbackId == thisPlayback then
-        finishPlayback()
-    end
+
+    -- 更新骨架动画
+    spineInstance:Update(dt)
+
+    local target = size or 160
+    local scale = math.min(target / DATA_W, target / DATA_H)
+    spineInstance:SetScale(scale, -scale)
+    local drawW = DATA_W * scale
+    local drawH = DATA_H * scale
+    local boxX = cx - drawW * 0.5
+    local boxY = cy - drawH * 0.5
+    local posX = boxX - DATA_X * scale
+    local posY = boxY + (DATA_H + DATA_Y) * scale
+    spineInstance:SetPosition(posX, posY)
+
+    -- 渲染
+    nvgSpineRender(vg, spineInstance)
 end
 
---- 初始化时预热，避免首次升阶才同步加载资源。
----@param vg any
+--- 预加载 Spine 实例（启动时调用，避免首次播放卡顿）
+---@param vg any NanoVG 上下文
 function SpineResultEffect.preload(vg)
     ensureLoaded(vg)
 end
 
+--- 释放资源
 function SpineResultEffect.destroy()
-    SpineResultEffect.stop()
-    releaseInstance()
-    disabled = false
+    if spineInstance then
+        spineInstance:Unload()
+        spineInstance = nil
+    end
+    loaded = false
+    playing = false
+    onCompleteCb = nil
+    SpineResultEffect._pendingAnim = nil
 end
 
 return SpineResultEffect

@@ -157,11 +157,7 @@ function Start()
             check(near(banner.paint.x + banner.paint.w * 0.5, 200)
                 and near(banner.paint.y + banner.paint.h * 0.5, banner.shape.y + 42), "cover居中裁切: " .. i)
         end
-        local hasFirstChapter = false
-        for _, caption in ipairs(texts) do
-            if caption == SC.getChapterName(1) then hasFirstChapter = true end
-        end
-        check(events[1].text == "选择关卡" and hasFirstChapter, "弹窗标题与章节名保留")
+        check(events[1].text == "选择关卡" and texts[2] == SC.getChapterName(1), "弹窗标题与章节名保留")
         for _, language in ipairs({ "zh_TW", "en", "ja", "ko" }) do
             I18n.set(language)
             check(#draw() == 7, language .. "显示语言不改变章节背景")
@@ -429,77 +425,6 @@ function Start()
             end
             check(not joined:find("可三队一起上场", 1, true), "移除旧窄行说明")
         end
-        -- 资源列表与主线章节分离；选关行队号进入副本时必须原样保留。
-        local resourceSelections = {}
-        local acceptResource = true
-        local dispatcher = { get = function(key)
-            if key == "dungeon" then return {} end
-            return { maxStageId = maxStage }
-        end }
-        fixtures["runtime.ClientDispatcher"] = dispatcher
-        local resourceModule = originalRequire("ui.battle.stage.StageSelectResources")
-        local realDispatcher = originalRequire("runtime.ClientDispatcher")
-        local savedGet = realDispatcher.get
-        realDispatcher.get = dispatcher.get
-        Dialog.setOnDungeonSelect(function(id, teamIdx)
-            resourceSelections[#resourceSelections + 1] = { id = id, teamIdx = teamIdx }
-            return acceptResource
-        end)
-        fixtures["ui.battle.tri.BattleTriPage"] = { getTeamStageId = function() return 101 end }
-        for _, teamIdx in ipairs({ 1, 2, 3 }) do
-            for index, id in ipairs({ "gold_mine", "equipment_vault", "black_diamond", "babel_tower" }) do
-                Dialog.close()
-                Dialog.open(teamIdx)
-                time.elapsedTime = time.elapsedTime + 1
-                local before = jumps
-                Dialog.handleInput(635, 686)
-                draw()
-                local y = index < 4 and (836 + (index - 1) * 190 + 70) or (1434 + 70)
-                Dialog.handleScroll(-99, 175, 900)
-                Dialog.handleInput(500, y)
-                local selection = resourceSelections[#resourceSelections]
-                check(selection.id == id and selection.teamIdx == teamIdx,
-                    "选关副本路由锁定队号: " .. id .. "/" .. teamIdx)
-                check(jumps == before and not Dialog.isOpen(), "副本导航不调用主线跳关且关闭旧弹窗")
-            end
-        end
-        Dialog.open(2)
-        time.elapsedTime = time.elapsedTime + 1
-        Dialog.handleInput(635, 686)
-        acceptResource = false
-        local beforeSelections = #resourceSelections
-        Dialog.handleInput(500, 900)
-        check(Dialog.isOpen() and #resourceSelections == beforeSelections + 1,
-            "锁定或拒绝进入副本时保留选关列表")
-        Dialog.handleDragBegin(500, 900)
-        Dialog.handleDragMove(500, 980)
-        Dialog.handleDragMove(500, 900)
-        Dialog.handleDragEnd()
-        Dialog.handleInput(500, 900)
-        check(#resourceSelections == beforeSelections + 1, "副本卡往返拖动不误点击")
-        Dialog.handleInput(445, 686)
-        check(#draw() == 7, "切回主线恢复原章节列表")
-        Dialog.close()
-        Dialog.open()
-        Dialog.handleInput(635, 686)
-        acceptResource = true
-        Dialog.handleInput(500, 900)
-        check(resourceSelections[#resourceSelections].teamIdx == 1, "普通选关默认资源队伍一")
-        for _, language in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
-            I18n.set(language)
-            Dialog.open()
-            Dialog.handleInput(635, 686)
-            time.elapsedTime = time.elapsedTime + 1
-            draw()
-            local captions = {}
-            for _, caption in ipairs(texts) do captions[caption] = true end
-            for _, source in ipairs({ "金币副本", "装备副本", "黑钻副本", "通天塔" }) do
-                check(captions[I18n.lookup(source)], language .. "副本入口有完整名称: " .. source)
-            end
-            Dialog.close()
-        end
-        realDispatcher.get = savedGet
-        resourceModule.release({})
         I18n.set(initialLanguage)
         print("[stage_chapter_background_test] ALL PASS: " .. assertions .. " assertions")
     end)

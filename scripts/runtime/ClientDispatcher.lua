@@ -164,16 +164,6 @@ function ClientDispatcher.notifySubscribers(moduleName)
     end
 end
 
---- 发布单机已在运行态生效的进度：仍通知订阅者和全局UI，不走读档迁移。
---- 全局回调的第二参数标识实时镜像，防止把行军预约目的地反向回灌场景。
----@param moduleName string
----@param data table
-function ClientDispatcher.publishLive(moduleName, data)
-    moduleData[moduleName] = data
-    ClientDispatcher.notifySubscribers(moduleName)
-    if onAnyUpdate then onAnyUpdate({ [moduleName] = data }, { live = true }) end
-end
-
 --- 设置全局更新回调
 ---@param callback function|nil
 function ClientDispatcher.setOnAnyUpdate(callback)

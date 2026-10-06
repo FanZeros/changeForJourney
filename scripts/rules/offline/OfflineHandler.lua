@@ -20,9 +20,7 @@ handlers[Protocol.ACTION_TYPES.CLAIM_OFFLINE_REWARDS] = function(uid, params)
     return {
         success   = true,
         gold      = result.gold,
-        diamond   = result.diamond,
         heroExp   = result.heroExp,
-        heroExpGrants = result.heroExpGrants,
         playerExp = result.playerExp,
         lootboxEquips = result.lootboxEquips,
     }

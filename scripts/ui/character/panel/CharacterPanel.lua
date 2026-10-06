@@ -171,12 +171,8 @@ local rosterPowerCache = {}  -- rosterPowerCache[i] = number
 -- ======================== 阵容变更回调 ========================
 
 --- 当队伍阵容变更时调用（外部通过 setOnTeamChanged 注册）
----@type fun(teamIdx: number, otherTeamIdx: number?)|nil
+---@type fun()|nil
 local onTeamChangedCallback = nil
-
--- 转职/重置与编队交易分离，不清累计、不提交布局。
----@type fun(heroId: number, teamIdx: number)|nil
-local onHeroProgressChangedCallback = nil
 
 -- ======================== 初始角色配置 ========================
 
@@ -434,88 +430,6 @@ local function hitTestRosterCard(dx, dy)
     return nil
 end
 
--- heroes 推送可能原地修改共享表。持有冻结的值快照，不能比较 table 引用。
--- 养成与布局分离；转职推送/独立回执共用同一门禁，避免一次成功刷新两遍。
-local function copyRefreshValue(value)
-    if type(value) ~= "table" then return value end
-    local result = {}
-    for k, v in pairs(value) do result[k] = copyRefreshValue(v) end
-    return result
-end
-
-local function sameRefreshValue(a, b)
-    if type(a) ~= type(b) then return false end
-    if type(a) ~= "table" then return a == b end
-    for k, v in pairs(a) do if not sameRefreshValue(v, b[k]) then return false end end
-    for k in pairs(b) do if a[k] == nil then return false end end
-    return true
-end
-
-local function teamRefreshSnapshot()
-    local result = {}
-    for t = 1, TEAM_COUNT do
-        local values = {}
-        local slots = teams[t] and teams[t].slots or {}
-        for i = 1, MAX_SLOTS do
-            local slot = slots[i]
-            local candidateId = slot and slot.state == "occupied" and slot.heroId or nil
-            local own = candidateId and ownedSet[candidateId]
-            local heroId = own and candidateId or nil
-            values[i] = { heroId = heroId, level = own and own.level,
-                advBranch = copyRefreshValue(own and own.advBranch or {}),
-                awakening = copyRefreshValue(own and own.awakening or {}),
-                extraTalent = copyRefreshValue(own and own.extraTalent or {}) }
-        end
-        result[t] = values
-    end
-    return result
-end
-
-local heroesRefreshBaseline = {}
-local lastHeroesRefreshTeams = {}
-
--- 此处是 heroes 推送、经验/共鸣与独立养成回执的唯一战斗刷新出口。
--- 已发生编队交易的队伍由 HeroSync.invalidateTeams 处理，不能再当作养成刷新。
-local function updateHeroesRefreshBaseline(layoutChanged)
-    local current = teamRefreshSnapshot()
-    local changed, changedTeams, classTeams = {}, {}, {}
-    for t = 1, TEAM_COUNT do
-        local previous = heroesRefreshBaseline[t]
-        if not sameRefreshValue(previous, current[t])
-            and not (layoutChanged and layoutChanged[t]) then
-            changed[t] = true
-            changedTeams[#changedTeams + 1] = t
-            -- 同槽同英雄的分支值变化才需要重建职业；普通属性只更新下波快照。
-            -- 比较冻结值可识别共享 advBranch 表原地写入，以及重置删除分支。
-            for i = 1, MAX_SLOTS do
-                local oldSlot = previous and previous[i]
-                local slot = current[t][i]
-                if oldSlot and slot.heroId and oldSlot.heroId == slot.heroId
-                    and not sameRefreshValue(oldSlot.advBranch, slot.advBranch) then
-                    classTeams[t] = true
-                    break
-                end
-            end
-        end
-    end
-    heroesRefreshBaseline = current
-    lastHeroesRefreshTeams = changed
-    if #changedTeams > 0 then
-        local TriPage = require("ui.battle.tri.BattleTriPage")
-        TriPage.refreshHeroProgressTeams(changedTeams, classTeams)
-    end
-end
-
---- 本次已应用 heroes 的有效属性变化队。返回副本，不泄露冻结门禁。
-function CharacterPanel.getLastHeroesRefreshTeams()
-    return copyRefreshValue(lastHeroesRefreshTeams)
-end
-
---- 兼容旧消息桥：Page 已在更新出口负责默认 Scene，重复调用不得再次刷新。
-function CharacterPanel.refreshDefaultSceneForHeroes()
-    return false
-end
-
 -- ======================== Public API ========================
 
 function CharacterPanel.init(vg)
@@ -590,7 +504,10 @@ function CharacterPanel.init(vg)
             CharacterPanel.setHeroesData(heroesData)
         end
         refreshPowerCache()
-        CharacterPanel.refreshDefaultSceneForHeroes()
+        local ok, BS = pcall(require, "ui.battle.scene.BattleScene")
+        if ok and BS and BS.refreshAllyStats then
+            BS.refreshAllyStats()
+        end
     end)
 
     -- 监听装备数据变更 → 穿戴/卸下后自动刷新战斗力缓存
@@ -600,8 +517,8 @@ function CharacterPanel.init(vg)
     -- refreshNavBadge() 里 PlayerStore.Get("equipment") 拿到旧数据，角标不刷新。
     -- PlayerStore.Subscribe 的回调在 PlayerStore 更新缓存后才触发，保证数据最新。
     PlayerStore.Subscribe("equipment", function()
-        -- 装备不改变名册拥有/等级/排序；刷新已覆盖名册与三队缓存，勿重复建英雄。
         refreshPowerCache()
+        rebuildRoster()
         refreshNavBadge()
         -- 装备晚于 heroes 到达时，setAllies 快照不含词缀；需刷新战斗 pending 快照
         local ok, BS = pcall(require, "ui.battle.scene.BattleScene")
@@ -627,8 +544,6 @@ function CharacterPanel.init(vg)
     -- 构建 roster
     rebuildRoster()
     refreshNavBadge()
-    heroesRefreshBaseline = teamRefreshSnapshot()
-    lastHeroesRefreshTeams = {}
 
     print("[CharacterPanel] init OK, roster count: " .. #heroRoster
         .. ", initial heroes: " .. #INITIAL_HERO_IDS
@@ -909,10 +824,6 @@ function CharacterPanel.patchExtraTalent(heroId, extra)
             hd.extraTalent = extra
         end
     end
-    if owned then
-        refreshPowerCache()
-        updateHeroesRefreshBaseline()
-    end
 end
 
 --- 获取某英雄的重复获得次数（旧接口，兼容保留）
@@ -1059,15 +970,9 @@ end
 CharacterPanel.applyEquippedItems = applyEquippedItems
 
 --- 注册阵容变更回调（队伍出战变化时自动调用）
----@param callback fun(teamIdx: number, otherTeamIdx: number?) 回调函数
+---@param callback fun() 回调函数
 function CharacterPanel.setOnTeamChanged(callback)
     onTeamChangedCallback = callback
-end
-
---- 独立养成回执，不提交编队、不清累计统计，teamIdx 永远是真实所属队。
----@param callback fun(heroId: number, teamIdx: number)|nil
-function CharacterPanel.setOnHeroProgressChanged(callback)
-    onHeroProgressChangedCallback = callback
 end
 
 --- 设置初始英雄列表（新手引导"三选一"后调用）
@@ -1309,16 +1214,11 @@ local function ensureHeroSync()
 end
 
 function CharacterPanel.setHeroesData(data)
-    local changedTeams = ensureHeroSync().setHeroesData(data)
-    if data then updateHeroesRefreshBaseline(changedTeams) end
-    return changedTeams
+    return ensureHeroSync().setHeroesData(data)
 end
 
 function CharacterPanel.resetSessionData()
-    local result = ensureHeroSync().resetSessionData()
-    heroesRefreshBaseline = teamRefreshSnapshot()
-    lastHeroesRefreshTeams = {}
-    return result
+    return ensureHeroSync().resetSessionData()
 end
 
 --- 获取当前共鸣等级（全队前 5 高等级中的最低值）
@@ -1334,37 +1234,17 @@ function CharacterPanel.getEffectiveLevel(heroId)
 end
 
 local _progress
--- 在线击杀先更新面板，单机必须同时提交到 Dispatcher/PDM 共用的 roster。
--- 不经 set/onLoad 再造英雄推送，也不提交编队；存档周期直接检测此表变化。
-local function persistLocalHeroExp(changed)
-    if IsNetworkMode and IsNetworkMode() then return end
-    local data = ClientDispatcher.get("heroes")
-    local roster = data and data.roster
-    if type(roster) ~= "table" then return end
-    for heroId, patch in pairs(changed) do
-        local saved = roster[heroId] or roster[tostring(heroId)]
-        if type(saved) == "table" and saved.level then
-            -- 每字段 patch，不能因 exp 变化把面板旧 level/maxExp 回灌。
-            for _, field in ipairs({ "level", "exp", "maxExp" }) do
-                if patch[field] ~= nil then saved[field] = patch[field] end
-            end
-        end
-    end
-end
-
 local function bindProgress()
     _progress = CharacterProgress.bind({
         ExpTable = ExpTable,
         MAX_SLOTS = MAX_SLOTS,
         get = function(k)
             if k == "ownedSet" then return ownedSet
-            elseif k == "teams" then return teams
-            elseif k == "onHeroProgressChangedCallback" then return onHeroProgressChangedCallback
+            elseif k == "teamSlots" then return teamSlots
+            elseif k == "onTeamChangedCallback" then return onTeamChangedCallback
             end
             return nil
         end,
-        getHeroDeployPosition = CharacterPanel.getHeroDeployPosition,
-        persistHeroExp = persistLocalHeroExp,
         applyResonanceSync = applyResonanceSync,
         syncTeamSlotsFromOwned = syncTeamSlotsFromOwned,
         rebuildRoster = rebuildRoster,
@@ -1378,27 +1258,19 @@ local function ensureProgress()
 end
 
 function CharacterPanel.addHeroExp(heroId, amount)
-    local result = ensureProgress().addHeroExp(heroId, amount)
-    if result then updateHeroesRefreshBaseline() end
-    return result
+    return ensureProgress().addHeroExp(heroId, amount)
 end
 
 function CharacterPanel.syncSlotLevel(heroId, newLevel)
-    local result = ensureProgress().syncSlotLevel(heroId, newLevel)
-    if result then updateHeroesRefreshBaseline() end
-    return result
+    return ensureProgress().syncSlotLevel(heroId, newLevel)
 end
 
 function CharacterPanel.setHeroAdvBranch(heroId, branchId, advLevel)
-    local result = ensureProgress().setHeroAdvBranch(heroId, branchId, advLevel)
-    if result then updateHeroesRefreshBaseline() end
-    return result
+    return ensureProgress().setHeroAdvBranch(heroId, branchId, advLevel)
 end
 
 function CharacterPanel.resetHeroAdvBranch(heroId)
-    local result = ensureProgress().resetHeroAdvBranch(heroId)
-    if result then updateHeroesRefreshBaseline() end
-    return result
+    return ensureProgress().resetHeroAdvBranch(heroId)
 end
 
 --- 立即重算并刷新角标（供装备/卸下后即时更新调用）

@@ -63,8 +63,8 @@ AffixConfig.AFFIXES = {
     { id = 29, key = "magDmgBonus",   dataType = "pct",   baseValue = 3.3,   weight = 100, name = "魔法伤害加成" },
     { id = 30, key = "comboRate",     dataType = "pct",   baseValue = 3.3,   weight = 100, name = "连击概率" },
     { id = 31, key = "comboDmgUp",    dataType = "pct",   baseValue = 1.7,   weight = 100, name = "连击增伤" },
-    { id = 32, key = "maxDmgBonus",   dataType = "pct",   baseValue = 8.3,   weight = 100, name = "优势伤害" },
-    { id = 33, key = "minDmgBonus",   dataType = "pct",   baseValue = 10.0,  weight = 100, name = "劣势伤害" },
+    { id = 32, key = "maxDmgBonus",   dataType = "pct",   baseValue = 8.3,   weight = 100, name = "最大伤害加成" },
+    { id = 33, key = "minDmgBonus",   dataType = "pct",   baseValue = 10.0,  weight = 100, name = "最小伤害加成" },
     { id = 34, key = "hitValue",      dataType = "float", baseValue = 1.25,  weight = 100, name = "命中值" },
 
    -- 治疗属性
@@ -80,8 +80,6 @@ AffixConfig.AFFIXES = {
     { id = 42, key = "dodgeBonus",   dataType = "pct",   baseValue = 1.7,   weight = 100, name = "闪避加成" },
     { id = 43, key = "esBonus",      dataType = "pct",   baseValue = 1.7,   weight = 100, name = "护盾加成" },
     { id = 44, key = "armorBonus",   dataType = "pct",   baseValue = 1.7,   weight = 100, name = "护甲加成" },
-    -- 探索词条沿用普通生成/洗练/升阶与存档管线，不改变命数或魔化词条池。
-    { id = 45, key = "dropLuck",     dataType = "float", baseValue = 1.0,   weight = 100, name = "幸运值" },
 }
 
 -- ======================== 魔化词缀模板表 ========================

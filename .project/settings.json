@@ -19,6 +19,12 @@
       "../scripts"
     ],
     "asset_ignores": [
+      "../assets/image/剧情背景试点_*",
+      "../assets/image/edited_剧情背景试点_*",
+      "../assets/image/剧情背景_BG*",
+      "../assets/image/edited_剧情背景_BG*",
+      "../assets/image/开始画面背景_终焉之门_墨线简洁_审核稿_*",
+      "../assets/image/剧情背景_后续8张_审核总览*",
       "../assets/backup/**",
       "../assets/image/审核/**",
       "../assets/image/审核_*"
@@ -26,7 +32,18 @@
   },
   "@runtime": {
     "multiplayer": {
-      "enabled": false
+      "enabled": false,
+      "max_players": 4,
+      "background_match": false,
+      "match_info": {
+        "desc_name": "free_match",
+        "immediately_start": true,
+        "match_timeout": 0,
+        "player_number": 1
+      },
+      "persistent_world": {
+        "enabled": false
+      }
     }
   }
 }

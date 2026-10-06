@@ -44,10 +44,6 @@ local SC = {}
 ---@field difficulty             string|nil
 ---@field mode                   string|nil
 ---@field mapBg                  string|nil
----@field resourceDungeonId       string|nil
----@field resourceFloor           number|nil
----@field displayChapter          number|nil
----@field sourceStageId           number|nil
 ---@field firstClearBonusMonster  number|nil   -- 兼容旧配置：单只首通附加怪
 ---@field firstClearBonusMonsters number[]|nil -- 首通附加特殊怪 ID 列表（x-3 单只；x-5 两只不同）
 
@@ -364,16 +360,7 @@ end
 ---@param id number
 ---@return StageEntry|nil
 function SC.getStage(id)
-    local value = tonumber(id)
-    if not value then return nil end
-    if idIndex[value] then return idIndex[value] end
-    if value >= 100000 then return require("config.DungeonConfig").getStage(value) end
-    return nil
-end
-
-function SC.isResourceStage(id)
-    local value = tonumber(id) or 0
-    return value >= 100000 and require("config.DungeonConfig").decodeStageId(value) ~= nil
+    return idIndex[id]
 end
 
 -- 选关卡片的23章背景映射，资源路径不随显示语言变化。
@@ -408,8 +395,7 @@ local CHAPTER_BG = {
 ---@return string path
 ---@return number chapter
 function SC.getBattleBackground(stageId)
-    local entry = SC.getStage(tonumber(stageId) or 0)
-    if entry and entry.resourceDungeonId and entry.mapBg then return entry.mapBg, entry.displayChapter or 1 end
+    local entry = stageId and idIndex[tonumber(stageId) or 0]
     local chapter = ((entry and entry.chapter or 1) - 1) % 23 + 1
     return CHAPTER_BG[chapter] or CHAPTER_BG[1], chapter
 end
@@ -478,7 +464,7 @@ end
 ---@param id number
 ---@return boolean
 function SC.hasBoss(id)
-    local s = SC.getStage(id)
+    local s = idIndex[id]
     return s ~= nil and s.bossId > 0
 end
 
@@ -486,7 +472,7 @@ end
 ---@param isFirstClear boolean
 ---@return number
 function SC.getMonsterCount(id, isFirstClear)
-    local s = SC.getStage(id)
+    local s = idIndex[id]
     if not s then return 0 end
     return isFirstClear and s.firstCount or s.idleCount
 end
@@ -503,7 +489,7 @@ function SC.getDifficulty(id)
     if terminalIds[id] then
         return terminalIds[id]
     end
-    local s = SC.getStage(id)
+    local s = idIndex[id]
     if not s then return SC.DIFFICULTY_NORMAL end
     for _, item in ipairs(CHAPTER_RANGES) do
         if s.chapter >= item.range.first then
@@ -610,7 +596,7 @@ end
 --- 是否应跳过终焉神殿（已进入下一难度或神殿已通关）
 ---@param currentStageId number 当前难度末关 ID
 ---@param maxStageId number
----@param clearedStages table|nil
+---@param clearedStages table<number, boolean>
 ---@return number|nil skipToId
 ---@return boolean shouldSkip
 function SC.shouldSkipTerminal(currentStageId, maxStageId, clearedStages)
@@ -618,35 +604,18 @@ function SC.shouldSkipTerminal(currentStageId, maxStageId, clearedStages)
     local skipToId = SC.getReincarnationTarget(diff)
     if not skipToId then return nil, false end
     local terminalId = SC.getTerminalTempleId(diff)
-    local ledger = type(clearedStages) == "table" and clearedStages or {}
-    local terminalCleared = terminalId ~= nil
-        and (ledger[terminalId] == true or ledger[tostring(terminalId)] == true)
-    -- 尚未挑战的末关不能仅凭解锁上界跳过终焉。
-    local maxId = tonumber(maxStageId) or 0
-    local terminalPrevious = SC.getTerminalPrevStageId(maxId)
-    local rank = terminalPrevious and terminalPrevious + 0.5 or maxId
-    return skipToId, rank >= skipToId or terminalCleared
-end
-
---- 预约、行军背景、保存与真实推进共用同一目标；首次终焉只等确认。
----@param currentStageId number
----@param maxStageId number|nil
----@param clearedStages table|nil
----@return number destinationId
----@return number|nil waitingTerminalId
-function SC.resolveAutoAdvance(currentStageId, maxStageId, clearedStages)
-    local nextId = SC.getNextStageId(currentStageId)
-    if not nextId then return currentStageId, nil end
-    if not SC.isTerminalTemple(nextId) then return nextId, nil end
-    local destination, shouldSkip = SC.shouldSkipTerminal(currentStageId, maxStageId or 0, clearedStages)
-    if shouldSkip and destination then return destination, nil end
-    return currentStageId, nextId
+    local terminalCleared = false
+    if terminalId then
+        terminalCleared = not not (clearedStages[terminalId] or clearedStages[tostring(terminalId)])
+    end
+    -- 不能用 getProgressUpperBound 代替 maxStageId：9205 通关后 upper=9301，但尚未挑战终焉时不应跳过
+    ---@diagnostic disable-next-line: return-type-mismatch
+    return skipToId, (maxStageId >= skipToId) or terminalCleared
 end
 
 ---@param currentStageId number
 ---@return number|nil
 function SC.getLastStageOfPrevDifficulty(currentStageId)
-    if SC.isResourceStage(currentStageId) then return nil end
     local diff = SC.getDifficulty(currentStageId)
     local prevDiff = diffDowngrade[diff]
     if not prevDiff then return nil end
@@ -656,15 +625,10 @@ end
 ---@param id number
 ---@return number|nil
 function SC.getNextStageId(id)
-    if SC.isResourceStage(id) then
-        local DC = require("config.DungeonConfig")
-        local dungeonId, floor = DC.decodeStageId(id)
-        return DC.getStageId(dungeonId, floor + 1)
-    end
     if SC.isTerminalTemple(id) then
         return nil
     end
-    local s = SC.getStage(id)
+    local s = idIndex[id]
     if not s then return nil end
     if s.stage < 5 then
         return s.chapter * 100 + (s.stage + 1)
@@ -680,15 +644,10 @@ end
 ---@param id number
 ---@return number|nil
 function SC.getPrevStageId(id)
-    if SC.isResourceStage(id) then
-        local DC = require("config.DungeonConfig")
-        local dungeonId, floor = DC.decodeStageId(id)
-        return DC.getStageId(dungeonId, floor - 1)
-    end
     if SC.isTerminalTemple(id) then
         return nil
     end
-    local s = SC.getStage(id)
+    local s = idIndex[id]
     if not s then return nil end
     if s.stage > 1 then
         return s.chapter * 100 + (s.stage - 1)
@@ -784,8 +743,7 @@ local DIFF_DISPLAY_NAMES = {
 ---@param stageId number|string|nil
 ---@return string
 function SC.getStageDisplayName(stageId)
-    local entry = SC.getStage(tonumber(stageId) or 0)
-    if entry and entry.resourceDungeonId then return entry.name end
+    local entry = idIndex[tonumber(stageId) or 0]
     if not entry then return tostring(stageId or "?") end
     if SC.isTerminalTemple(entry.id) then return entry.name end
     local base = entry.name:match("^(.-)%d+%-%d+$")
@@ -797,8 +755,7 @@ end
 ---@return string
 function SC.formatProgressDisplay(stageId)
     if not stageId or stageId == 0 then return "普通1-1" end
-    local entry = SC.getStage(tonumber(stageId) or 0)
-    if entry and entry.resourceDungeonId then return entry.name end
+    local entry = idIndex[tonumber(stageId)]
     if not entry then return "普通1-1" end
     if SC.isTerminalTemple(entry.id) then
         return entry.name
@@ -822,7 +779,6 @@ function SC.hasReachedNightmare(battleData)
     if not battleData then return false end
     local maxId = tonumber(battleData.maxStageId) or 0
     local curId = tonumber(battleData.currentStageId) or maxId
-    if SC.isResourceStage(curId) then curId = maxId end
     return maxId >= SC.NIGHTMARE_FIRST_STAGE or curId >= SC.NIGHTMARE_FIRST_STAGE
 end
 
@@ -832,7 +788,7 @@ end
 ---@return number
 function SC.getFirstClearGoldenKey(stageId, stageEntry)
     stageId = tonumber(stageId) or 0
-    if SC.isResourceStage(stageId) or stageId < SC.NIGHTMARE_FIRST_STAGE then return 0 end
+    if stageId < SC.NIGHTMARE_FIRST_STAGE then return 0 end
     stageEntry = stageEntry or SC.getStage(stageId)
     if not stageEntry or (stageEntry.stage or 0) ~= 5 then return 0 end
     if SC.isTerminalTemple(stageId) then return 0 end
@@ -846,7 +802,7 @@ end
 ---@return StageEntry|nil
 local function isNonTerminalChapterEnd(stageId, stageEntry)
     stageId = tonumber(stageId) or 0
-    if stageId <= 0 or SC.isResourceStage(stageId) or SC.isTerminalTemple(stageId) then return false, nil end
+    if stageId <= 0 or SC.isTerminalTemple(stageId) then return false, nil end
     stageEntry = stageEntry or SC.getStage(stageId)
     if not stageEntry or (stageEntry.stage or 0) ~= 5 then return false, nil end
     return true, stageEntry

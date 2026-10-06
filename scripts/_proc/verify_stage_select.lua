@@ -6,7 +6,6 @@ local I18n = require("core.I18n")
 ---@type NVGContextWrapper|nil
 local vg = nil
 local stageId, offset, language = 32301, 0, "zh_CN"
-local section = "main"
 local opened = false
 
 function Start()
@@ -14,7 +13,6 @@ function Start()
         stageId = tonumber(argument:match("^%-review%-stage=(%d+)$")) or stageId
         offset = tonumber(argument:match("^%-review%-offset=(%d+)$")) or offset
         language = argument:match("^%-review%-lang=(.+)$") or language
-        section = argument:match("^%-review%-section=(.+)$") or section
     end
     local originalRequire = require
     local battle = {
@@ -35,7 +33,6 @@ function Start()
     I18n.installDrawHook()
     Dialog.init(vg)
     Dialog.open()
-    if section == "dungeon" then Dialog.handleInput(635, 686) end
     if offset > 0 then
         local rowY = 790 + 4 * 178 + 62
         Dialog.handleDragBegin(700, rowY)

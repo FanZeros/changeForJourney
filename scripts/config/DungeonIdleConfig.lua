@@ -1,10 +1,11 @@
 -- ============================================================================
 -- DungeonIdleConfig - 副本挂机/离线收益配置
--- 金币副本 → 金币 | 装备副本 → 装备 | 黑钻副本/独立通天塔 → 钻石
--- 隐藏上古遗迹仅保留旧粉尘存量领取。
+-- 黄金矿洞 → 金币 | 上古遗迹 → 奥术粉尘 | 通天塔 → 钻石
 --
--- 旧货币的每分钟效率、2× 倍率与尾段口径保持不变。
--- 新装备以完整 24h 发 2 次 sweepEquip 为准，每分钟允许小数，最终件数向下取整。
+-- 平衡原则（相对每日 2 次扫荡）：
+--   · 挂机是补充收入，不应压过扫荡
+--   · 满条收益 ≈ 1 次同层扫荡奖励
+--   · 效率 = 扫荡奖励 / EFFICIENCY_DIVISOR（满条分钟数）
 -- ============================================================================
 
 local DungeonConfig = require("config.DungeonConfig")
@@ -27,11 +28,10 @@ DungeonIdleConfig.MAX_ACCUM_SEC = DungeonIdleConfig.FULL_RATE_SEC
 --- 满格对应分钟数（= FULL_RATE_SEC / 60）
 DungeonIdleConfig.MAX_ACCUM_MIN = DungeonIdleConfig.FULL_RATE_SEC / 60
 
---- 货币基准的每分钟效率除数（沿用旧 12h 的 720，不改变旧收入）。
+--- 每分钟效率除数：24 小时满额 ≈ 1 次扫荡，与改前 12 小时口径的每分钟效率保持一致
+--- 改前除数是 720（12h），满条收益 ≈ 1 次扫荡。现在满格改成 24h，除数仍用 720，
+--- 否则每分钟收益会被砍半。
 DungeonIdleConfig.EFFICIENCY_DIVISOR = 720
-
---- 装备完整 24h 的扫荡次数当量；不再应用旧货币 REWARD_MULT。
-DungeonIdleConfig.EQUIP_FULL_SWEEPS = 2
 
 --- 副本挂机收益倍率
 DungeonIdleConfig.REWARD_MULT = 2
@@ -39,17 +39,15 @@ DungeonIdleConfig.REWARD_MULT = 2
 --- 最少累积 60 秒才可领取
 DungeonIdleConfig.MIN_CLAIM_SEC = 60
 
---- 副本 → 奖励 type；equip 必须交给 DungeonService，不是货币。
+--- 副本 → 奖励资源 type（与 ResourceDefs / CurrencyService 对齐）
 DungeonIdleConfig.REWARD_TYPE = {
-    gold_mine      = "gold",
-    equipment_vault = "equip",
-    black_diamond  = "diamond",
-    ancient_ruin   = "arcane_dust",
-    babel_tower    = "diamond",
+    gold_mine    = "gold",
+    ancient_ruin = "arcane_dust",
+    babel_tower  = "diamond",
 }
 
---- 活跃挂机副本。旧遗迹只领取既存积累，停止新增时间。
-DungeonIdleConfig.DUNGEON_IDS = { "gold_mine", "equipment_vault", "black_diamond", "babel_tower" }
+--- 副本 ID 列表
+DungeonIdleConfig.DUNGEON_IDS = { "gold_mine", "ancient_ruin", "babel_tower" }
 
 --- 获取指定层扫荡奖励（作为挂机效率基准）
 ---@param dungeonId string
@@ -59,12 +57,9 @@ function DungeonIdleConfig.getSweepReward(dungeonId, floor)
     floor = math.floor(tonumber(floor) or 0)
     if floor <= 0 then return 0 end
 
-    if DungeonConfig.isResourceDungeon(dungeonId) then
-        local data = DungeonConfig.getFloor(dungeonId, floor)
-        if not data then return 0 end
-        if dungeonId == "gold_mine" then return data.sweepGold or 0 end
-        if dungeonId == "equipment_vault" then return data.sweepEquip or 0 end
-        if dungeonId == "black_diamond" then return data.sweepDiamond or 0 end
+    if dungeonId == "gold_mine" then
+        local data = DungeonConfig.getGoldMineFloor(floor)
+        return data and (data.sweepGold or 0) or 0
     elseif dungeonId == "ancient_ruin" then
         local data = DungeonConfig.getAncientRuinFloor(floor)
         return data and (data.sweepDust or 0) or 0
@@ -82,9 +77,6 @@ end
 function DungeonIdleConfig.getIdlePerMin(dungeonId, floor)
     local sweep = DungeonIdleConfig.getSweepReward(dungeonId, floor)
     if sweep <= 0 then return 0 end
-    if dungeonId == "equipment_vault" then
-        return sweep * DungeonIdleConfig.EQUIP_FULL_SWEEPS / DungeonIdleConfig.MAX_ACCUM_MIN
-    end
     local div = DungeonIdleConfig.EFFICIENCY_DIVISOR
     if div <= 0 then div = 480 end
     return math.max(1, math.floor(sweep / div))
@@ -111,67 +103,32 @@ function DungeonIdleConfig.effectiveSeconds(accumSec)
     return full + math.floor((raw - full) * DungeonIdleConfig.TAIL_RATIO)
 end
 
---- 根据累积秒数计算可领取数量。
---- 货币消费全部原始分钟；装备只消费足以发整件的最小原分钟，保留不足一件余量。
---- 装备 consumedSec 保留本轮 FULL/TAIL 的位置，不把残余尾段重新计为全速。
+--- 根据累积秒数计算可领取数量
+--- 返回的 minutes 是实际累积分钟（领取时按它扣存档），amount 按有效时长算。
 ---@param dungeonId string
 ---@param floor number
 ---@param accumSec number
----@param consumedSec number|nil 仅装备；旧档 nil=0
 ---@return number amount
 ---@return number minutes
-function DungeonIdleConfig.calcReward(dungeonId, floor, accumSec, consumedSec)
+function DungeonIdleConfig.calcReward(dungeonId, floor, accumSec)
     local raw = math.floor(tonumber(accumSec) or 0)
     if raw < DungeonIdleConfig.MIN_CLAIM_SEC then
         return 0, 0
     end
     local perMin = DungeonIdleConfig.getIdlePerMin(dungeonId, floor)
     if perMin <= 0 then return 0, 0 end
-    if dungeonId == "equipment_vault" then
-        local cursor = math.min(DungeonIdleConfig.HARD_CAP_SEC, math.max(0, math.floor(tonumber(consumedSec) or 0)))
-        local maxMinutes = math.floor(math.min(raw, DungeonIdleConfig.HARD_CAP_SEC - cursor) / 60)
-        local baseline = DungeonIdleConfig.effectiveSeconds(cursor)
-        local fullReward = DungeonIdleConfig.getSweepReward(dungeonId, floor) * DungeonIdleConfig.EQUIP_FULL_SWEEPS
-        local function amountAt(minutes)
-            local effective = DungeonIdleConfig.effectiveSeconds(cursor + minutes * 60) - baseline
-            -- 先乘整数扫荡当量再除秒数，避免 perMin 浮点乘回整数的边界误差。
-            return math.floor(effective * fullReward / DungeonIdleConfig.FULL_RATE_SEC)
-        end
-        local amount = amountAt(maxMinutes)
-        if amount <= 0 then return 0, 0 end
-        local low, high = 1, maxMinutes
-        while low < high do
-            local mid = math.floor((low + high) / 2)
-            if amountAt(mid) >= amount then high = mid else low = mid + 1 end
-        end
-        return amount, low
-    end
     local effective = DungeonIdleConfig.effectiveSeconds(raw)
     local payMinutes = math.floor(effective / 60)
     local rawMinutes = math.floor(raw / 60)
     return payMinutes * perMin * DungeonIdleConfig.REWARD_MULT, rawMinutes
 end
 
---- 三资源取真实最高 cleared（包含已通末层）；旧遗迹/独立塔保留 floor-1 口径。
----@param sub table|nil
----@param dungeonId string|nil 不传时兼容旧调用，并识别账本中的末层
+--- 从副本进度子结构推算挂机层（= 可扫荡层 = floor - 1）
+---@param sub table
 ---@return number idleFloor 0 表示尚无挂机收益
-function DungeonIdleConfig.getIdleFloorFromSub(sub, dungeonId)
+function DungeonIdleConfig.getIdleFloorFromSub(sub)
     if not sub then return 0 end
-    if dungeonId then
-        if DungeonConfig.isResourceDungeon(dungeonId) then
-            return DungeonConfig.getHighestClearedFloor(sub, dungeonId)
-        end
-        if not DungeonIdleConfig.REWARD_TYPE[dungeonId] then return 0 end
-    end
-    local legacyFloor = math.max(0, math.floor(tonumber(sub.floor) or 1) - 1)
-    if dungeonId then return legacyFloor end
-    local highest = legacyFloor
-    for key, cleared in pairs(sub.cleared or {}) do
-        local floor = math.tointeger(tonumber(key) or 0)
-        if cleared == true and floor and floor > highest then highest = floor end
-    end
-    return highest
+    return math.max(0, math.floor(tonumber(sub.floor) or 1) - 1)
 end
 
 return DungeonIdleConfig

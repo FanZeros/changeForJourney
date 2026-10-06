@@ -28,9 +28,6 @@ local EquipmentBag      = require("ui.character.equip.EquipmentBag")
 local StageConfig       = require("config.StageConfig")
 local BattleStats       = require("systems.BattleStats")
 local I18n              = require("core.I18n")
-local RCH               = require("systems.RelicConditionHandler")
-local BattleMountScope  = require("ui.battle.scene.BattleMountScope")
-local BattleSpeed       = require("ui.battle.stage.BattleSpeed")
 
 -- 只在显示边界翻译；驱动进度、源关卡名和地图缓存仍使用原始配置。
 local function stageDisplayName(stageId)
@@ -44,10 +41,7 @@ local COL_COUNT = ExpTable.TEAM_COUNT or 3
 -- ---- 状态 ----
 local isOpen_ = false
 local inited = false
-local battleReady = true  -- 分帧启动/读档期间由宿主关闭
 local drivers = {}        -- [1]/[2]/[3] = BattleTriDriver
----@type table<number|string, number>|nil
-local restoredStageIds = nil
 local terminalRaid = nil
 local l1Images = {}       -- 同一路径共用句柄，切场景不删除其他行仍在使用的贴图
 local l1Failures = {}     -- 加载失败只提示一次，后续帧仍允许重试
@@ -55,7 +49,6 @@ local l1RowImages = {}    -- 跨章图尚未就绪时保留本行最近成功加
 local triOnKill = nil     -- function(data)（由宿主注入，与 BattleScene.onEnemyKill 同构）
 local triOnDrop = nil     -- function(data)（击杀掉落，与 BattleScene.onEnemyDrop 同构）
 local triOnStageClear = nil -- function(teamIdx, clearedStageId)
-local triOnAllDead = nil  -- 普通全灭通知；不干预终焉与掉落
 local region = { x = 486, y = 0, w = 948, h = 1080 }  -- 战斗区（窗口坐标）
 
 local function dialogToDesign(wx, wy)
@@ -68,47 +61,8 @@ end
 function BattleTriPage.setOnKill(cb) triOnKill = cb end
 function BattleTriPage.setOnDrop(cb) triOnDrop = cb end
 function BattleTriPage.setOnStageClear(cb) triOnStageClear = cb end
-function BattleTriPage.setOnAllDead(cb) triOnAllDead = cb end
 
 function BattleTriPage.isOpen() return isOpen_ end
-function BattleTriPage.setBattleReady(ready) battleReady = ready == true end
-
---- 全局倍率以账户最高难度解锁，不随某队选旧关/模态按钮隐藏而降速。
-function BattleTriPage.getMaxUnlockedBattleSpeed()
-    local Scene = require("ui.battle.scene.BattleScene")
-    local battle = ClientDispatcher.get("battle")
-    local savedMax = type(battle) == "table" and (tonumber(battle.maxStageId) or 0) or 0
-    -- 终焉编号并非难度顺序，先解析两份凭据再合并倍率。
-    return math.max(BattleSpeed.getMaxUnlocked(StageConfig.getDifficulty(Scene.getMaxStageId() or 0)),
-        BattleSpeed.getMaxUnlocked(StageConfig.getDifficulty(savedMax)))
-end
-
-function BattleTriPage.isSpeedButtonVisible()
-    if not battleReady or not isOpen_ or terminalRaid
-        or BattleTriPage.getMaxUnlockedBattleSpeed() <= 1
-        or SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
-        or TerminalConfirmDialog.isOpen() or RewardPopup.currentRowTag()
-        or EquipmentBag.shouldBattleOverlay()
-        or require("ui.story.gate.LetterIntro").isOpen()
-        or require("ui.story.gate.IntroCutscene").isActive()
-        or require("ui.story.ScenarioDialogue").isActive() then return false end
-    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
-    for row = 1, math.min(COL_COUNT, unlocked) do
-        local drv = drivers[row]
-        if drv and drv.active and #drv.allies > 0
-            and (drv.introTimer or 0) <= 0 and (drv.marchTimer or 0) <= 0 then return true end
-    end
-    return false
-end
-
---- 原始真实 dt 入口；Page.update 每帧只解析一次，再把同一值传给三队与共享计时。
-function BattleTriPage.getBattleLogicDt(dt)
-    local Scene = require("ui.battle.scene.BattleScene")
-    local logicDt, speed = BattleSpeed.getLogicDt(dt, Scene.battleSpeed,
-        BattleTriPage.getMaxUnlockedBattleSpeed(), true)
-    Scene.battleSpeed = speed
-    return logicDt
-end
 
 --- 存档阵容晚于战斗页到达时，清掉已记住的编队，下一帧按真实槽位重建。
 ---@param onlyTeams table<number, boolean>|nil 仅失效指定队伍；nil=全部（旧行为）
@@ -118,48 +72,6 @@ function BattleTriPage.invalidateTeams(onlyTeams)
             drv.teamSignature = nil
         end
     end
-end
-
---- 成长刷新与编队交易分离：转职失效真实队，普通属性只构建下波 pending。
---- 不懒建驱动、不重开关卡、不重置统计或复活；关闭页时默认 Scene 仅属于队一。
----@param teamIndices number[] 已由面板冻结差异筛选的真实变化队
----@param classTeams table<number, boolean>|nil 分支变化队；省略时仅轻刷新
-function BattleTriPage.refreshHeroProgressTeams(teamIndices, classTeams)
-    local changed, rebuild = {}, {}
-    for _, value in ipairs(teamIndices or {}) do
-        local teamIdx = tonumber(value)
-        if teamIdx and teamIdx >= 1 and teamIdx <= COL_COUNT and teamIdx % 1 == 0 then
-            changed[teamIdx] = true
-            if classTeams and classTeams[teamIdx] then rebuild[teamIdx] = true end
-        end
-    end
-    if not next(changed) then return false end
-    return BattleMountScope.run(function()
-        if next(rebuild) then BattleTriPage.invalidateTeams(rebuild) end
-        for teamIdx = 1, COL_COUNT do
-            local drv = drivers[teamIdx]
-            if changed[teamIdx] and not rebuild[teamIdx] and drv then
-                -- 只借本队挂载，不重新 bindContext；保留战斗上下文/连击/投射物原引用。
-                drv.mount()
-                local lifecycle = require("ui.battle.scene.BattleAllyLifecycle").bind({
-                    getAllies = function() return drv.allies end,
-                    getEnemies = function() return drv.enemies end,
-                    getEnemyQueue = function() return drv.enemyQueue end,
-                    get = function(key) return drv[key] end,
-                    set = function(key, value) drv[key] = value end,
-                    -- 三行驱动没有默认 Scene 挂机收益缓存，不能回算默认场景。
-                    recalcIdleIncome = function() end,
-                    ALLY_CARD_CY = BattleLayout.FIELD_CY,
-                })
-                lifecycle.refreshAllyStats()
-                print(string.format("[BattleTriPage] 队%d 成长属性已写入下波快照", teamIdx))
-            end
-        end
-        if changed[1] and not isOpen_ then
-            require("ui.battle.scene.BattleScene").refreshAllyStats()
-        end
-        return true
-    end)
 end
 
 
@@ -182,7 +94,6 @@ local function ensureDrivers()
                 if triOnDrop then triOnDrop(data) end
             end
             drv.onStageCleared = function(teamIdx, clearedStageId)
-                drv.pendingStageId = drv:resolveAdvanceStage()
                 local firstClear = BattleScene.completeTriStageClear(clearedStageId, teamIdx)
                 if not firstClear and triOnStageClear then
                     triOnStageClear(teamIdx, clearedStageId)
@@ -206,8 +117,8 @@ local function ensureDrivers()
                         -- 终焉仍留在运行态，落盘的一队当前关使用同一个末关回退点。
                         battle.currentStageId = savedId
                         local cleared = battle.clearedStages or {}
-                        battle.battleMode = (StageConfig.isResourceStage(savedId)
-                            or cleared[savedId] or cleared[tostring(savedId)]) and "idle" or "firstClear"
+                        battle.battleMode = (cleared[savedId] or cleared[tostring(savedId)])
+                            and "idle" or "firstClear"
                     end
                     if changed then
                         print(string.format("[BattleTriPage] 队%d 关卡入档 stage=%s", teamIdx, tostring(savedId)))
@@ -215,24 +126,15 @@ local function ensureDrivers()
                         require("boot.StandaloneSave").Flush()
                     end
                 end
-            end
-            drv.onAllDead = function(teamIdx, stageId)
-                if triOnAllDead then triOnAllDead(teamIdx, stageId) end
+                require("systems.StoryPlayer").onStage(stageId, "enter")
             end
             local battle = ClientDispatcher.get("battle")
-            local savedTeams = restoredStageIds or (type(battle) == "table" and battle.teamStageIds) or {}
+            local savedTeams = type(battle) == "table" and battle.teamStageIds or {}
             savedTeams = type(savedTeams) == "table" and savedTeams or {}
             local startStage = (t == 1) and BattleScene.getStageId()
                 or tonumber(savedTeams[tostring(t)] or savedTeams[t]) or StageConfig.NORMAL_FIRST_STAGE
             if t ~= 1 and StageConfig.isTerminalTemple(startStage) then
                 startStage = StageConfig.getTerminalPrevStageId(startStage) or StageConfig.NORMAL_FIRST_STAGE
-            end
-            if StageConfig.isResourceStage(startStage) then
-                local DC = require("config.DungeonConfig")
-                if not DC.isStageUnlocked(startStage, battle, ClientDispatcher.get("dungeon")) then
-                    startStage = StageConfig.NORMAL_FIRST_STAGE
-                    if t == 1 then BattleScene.adoptStageProgress(startStage) end
-                end
             end
             drv._syncedMainStage = startStage
             drivers[t] = drv
@@ -326,10 +228,6 @@ local function finishTerminalRaid(won)
     local stageId = raid.stageId
     clearTerminalRaid()
     local BattleScene = require("ui.battle.scene.BattleScene")
-    local destination = won and StageConfig.getReincarnationTarget(StageConfig.getDifficulty(stageId))
-        or StageConfig.getTerminalPrevStageId(stageId)
-    -- 首通/轮回回调可能立即保存，先为三队预约同一退出关卡。
-    for _, drv in pairs(drivers) do drv.pendingStageId = destination or stageId end
     if won then
         settleRaidKillRewards(raid)
         BattleScene.completeTriTerminal(stageId)
@@ -352,7 +250,7 @@ end
 
 --- 打开三行战斗（懒建驱动器；已解锁队伍自动开战）
 function BattleTriPage.open()
-    if not battleReady or isOpen_ then return end
+    if isOpen_ then return end
     isOpen_ = true
     require("ui.battle.scene.BattleScene").pumpBattleCards()
     local unlocked = ensureDrivers()
@@ -377,7 +275,6 @@ local function ensureEmptyStates()
         tal    = TAL.newBattleRefs(),
         be     = BattleEffects.newFxState(),
         sem    = SEM.newSemState(),
-        rch    = RCH.newState(),
     }
 end
 
@@ -391,7 +288,6 @@ function BattleTriPage.mountEmpty()
     TAL.mount(emptyStates.tal)
     BattleEffects.mount(emptyStates.be)
     SEM.mount(emptyStates.sem)
-    RCH.mount(emptyStates.rch)
 end
 
 -- 章 1 用现有林景；2–23 用按章重出的满幅背景。难度章按 23 循环。
@@ -479,7 +375,7 @@ end
 
 --- 每帧更新：三行使用同一套 BattleTriDriver，只切换各自的状态实例。
 function BattleTriPage.update(dt)
-    if not battleReady or not isOpen_ then return end
+    if not isOpen_ then return end
     -- 初始剧情（信件/过场/情景对话）点完之前不推进战斗，避免开场期间自动开战。
     if require("ui.story.gate.LetterIntro").isOpen()
         or require("ui.story.gate.IntroCutscene").isActive()
@@ -489,31 +385,12 @@ function BattleTriPage.update(dt)
     BattleLayout.setMode("strip")
     require("ui.battle.scene.BattleScene").pumpBattleCards()
     local unlocked = ensureDrivers()
-    local logicDt = BattleTriPage.getBattleLogicDt(dt)
-    -- 帧开始仍在任一有效战线入场时，全协同只推进视觉，不推进攻击或共享限时。
-    local raidAtFrameStart = terminalRaid
-    local raidClockActive = false
-    if raidAtFrameStart and not raidAtFrameStart.finished then
-        local introPending = false
-        for row = 1, math.min(COL_COUNT, unlocked) do
-            local drv = drivers[row]
-            if drv and drv.terminalRaid == raidAtFrameStart and not raidAtFrameStart.defeated[row]
-                and #drv.allies > 0 then
-                raidClockActive = true
-                if (drv.introTimer or 0) > 0 then introPending = true end
-            end
-        end
-        raidAtFrameStart._introPending = introPending
-        raidClockActive = raidClockActive and not introPending
-    end
     for t = 1, math.min(COL_COUNT, unlocked) do
         local drv = drivers[t]
-        if drv then drv:update(dt, logicDt) end
+        if drv then drv:update(dt) end
     end
     if terminalRaid and not terminalRaid.finished then
-        if terminalRaid == raidAtFrameStart and raidClockActive then
-            terminalRaid.elapsed = terminalRaid.elapsed + logicDt
-        end
+        terminalRaid.elapsed = terminalRaid.elapsed + dt
         if terminalRaid.hp <= 0 then
             terminalRaid:finish(true)
         elseif terminalRaid.elapsed >= require("config.GameConfig").Battle.TIME_LIMIT_SEC then
@@ -545,6 +422,14 @@ function BattleTriPage.update(dt)
         end
     end
     TerminalConfirmDialog.update()
+    -- 三行结束后恢复默认状态，避免后续单场界面读到最后一队的数据。
+    BattleStats.mount(0)
+    BattleCombat.mount(nil)
+    ProjectileSystem.mount(nil)
+    TM.mount(nil)
+    TAL.mount(nil)
+    BattleEffects.mount(nil)
+    SEM.mount(nil)
 end
 -- [暗黑替换 v2] L0 框体图（用户素材, 1672x941, 三个透明内矩形）+ 分层渲染
 local PLATE_AR = 1672 / 941
@@ -867,34 +752,25 @@ function BattleTriPage.gotoTeamStage(teamIdx, stageId)
     local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     if teamIdx < 1 or teamIdx > unlocked then return false end
     local BattleScene = require("ui.battle.scene.BattleScene")
-    -- 终焉 ID 比本难度末关小，解锁比较须与单队 Nav 使用同一进度顺序。
-    local maxStage = tonumber(BattleScene.getMaxStageId()) or 0
-    local maxPrevious = StageConfig.getTerminalPrevStageId(maxStage)
-    local maxRank = maxPrevious and maxPrevious + 0.5 or maxStage
     if StageConfig.isTerminalTemple(stageId) then
         if terminalRaid then return false end
         local previous = StageConfig.getTerminalPrevStageId(stageId)
         local cleared = BattleScene.getClearedStages()
-        if not previous or maxRank < previous
-            or not (cleared[previous] == true or cleared[tostring(previous)] == true) then
+        local maxStage = BattleScene.getMaxStageId()
+        if not previous or maxStage < previous
+            or not (cleared[previous] or cleared[tostring(previous)]) then
             return false
         end
-        if not BattleScene.gotoStage(stageId, { deferEnter = true }) then return false end
+        if not BattleScene.gotoStage(stageId) then return false end
         startTerminalRaid(stageId)
         require("systems.GameBGM").setScene("samsara", { fromStart = true })
         return true
     end
-    if terminalRaid then return false end
-    if StageConfig.isResourceStage(stageId) then
-        if not require("config.DungeonConfig").isStageUnlocked(stageId,
-            ClientDispatcher.get("battle"), ClientDispatcher.get("dungeon")) then return false end
-    elseif stageId > maxRank then
-        return false
-    end
+    if terminalRaid or stageId > BattleScene.getMaxStageId() then return false end
     local drv = drivers[teamIdx]
     if not drv then return false end
     if teamIdx == 1 then
-        if not BattleScene.gotoStage(stageId, { deferEnter = true }) then return false end
+        if not BattleScene.gotoStage(stageId) then return false end
     end
     drv:start(stageId)
     return true
@@ -940,7 +816,7 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         BattleScene.drawSpeedButton(vg)
         nvgRestore(vg)
     end
-    if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(1)) then
+    do
         nvgSave(vg)
         nvgTranslate(vg, hudSweepX, hudY)
         nvgScale(vg, hudScale, hudScale)
@@ -999,14 +875,12 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
             BattleScene.drawSpeedButton(vg)
             nvgRestore(vg)
         end
-        if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(row)) then
-            nvgSave(vg)
-            nvgTranslate(vg, rowSweepX, rowY)
-            nvgScale(vg, hudScale, hudScale)
-            nvgTranslate(vg, -971, -2115)
-            SweepDialog.drawButton(vg)
-            nvgRestore(vg)
-        end
+        nvgSave(vg)
+        nvgTranslate(vg, rowSweepX, rowY)
+        nvgScale(vg, hudScale, hudScale)
+        nvgTranslate(vg, -971, -2115)
+        SweepDialog.drawButton(vg)
+        nvgRestore(vg)
         nvgSave(vg)
         nvgTranslate(vg, rowStatsX, rowY)
         nvgScale(vg, hudScale, hudScale)
@@ -1115,8 +989,7 @@ function BattleTriPage.handleInput(wx, wy)
         bs.handleSpeedButtonInput(987 + (wx - hudSpeedX) / hudScale, 311 + (wy - hudY) / hudScale)
         return true
     end
-    if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(1))
-        and math.abs(wx - hudSweepX) <= hitW and math.abs(wy - hudY) <= hitH then
+    if math.abs(wx - hudSweepX) <= hitW and math.abs(wy - hudY) <= hitH then
         SweepDialog.handleButtonInput(971 + (wx - hudSweepX) / hudScale, 2115 + (wy - hudY) / hudScale, 1)
         return true
     end
@@ -1155,8 +1028,7 @@ function BattleTriPage.handleInput(wx, wy)
             bs.handleSpeedButtonInput(987 + (wx - rowSpeedX) / hudScale, 311 + (wy - rowY) / hudScale)
             return true
         end
-        if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(row))
-            and math.abs(wx - rowSweepX) <= hitW and math.abs(wy - rowY) <= hitH then
+        if math.abs(wx - rowSweepX) <= hitW and math.abs(wy - rowY) <= hitH then
             SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale, row)
             return true
         end
@@ -1323,82 +1195,5 @@ function BattleTriPage.handleRightClick(wx, wy)
     end
     return false
 end
-
---- 三队实时快照。预约只用于存档连续性，不改变正在行军的战线实际关卡。
----@return number[]|nil
-function BattleTriPage.getTeamStageIds()
-    if not next(drivers) and not restoredStageIds then return nil end
-    local battle = ClientDispatcher.get("battle")
-    local saved = type(battle) == "table" and battle.teamStageIds or {}
-    saved = type(saved) == "table" and saved or {}
-    local result = {}
-    for team = 1, COL_COUNT do
-        local drv = drivers[team]
-        local closedMainStage = team == 1 and not isOpen_
-            and require("ui.battle.scene.BattleScene").getStageId() or nil
-        local stageId = closedMainStage or (drv and (drv.pendingStageId or drv.stageId))
-            or (restoredStageIds and restoredStageIds[team])
-            or tonumber(saved[tostring(team)] or saved[team])
-            or (team == 1 and type(battle) == "table" and tonumber(battle.currentStageId))
-            or StageConfig.NORMAL_FIRST_STAGE
-        -- 协同是临时运行态，读档回到末关，不允许单队恢复终焉。
-        result[team] = StageConfig.isTerminalTemple(stageId)
-            and (StageConfig.getTerminalPrevStageId(stageId) or StageConfig.NORMAL_FIRST_STAGE) or stageId
-    end
-    return result
-end
-
---- 放弃旧协同，不分发死亡事件，不通过正常收尾/奖励结算路径。
-local function discardTerminalRaid()
-    if not terminalRaid then return end
-    terminalRaid:release()
-    for _, drv in pairs(drivers) do drv.terminalRaid = nil end
-    terminalRaid = nil
-end
-
-local function discardDriver(drv)
-    drv.active = false
-    drv.pendingKills, drv.rewardQueue = {}, {}
-    drv.rewardTimer, drv.pendingStageId = 0, nil
-    drv.psState.projectiles, drv.combatState.comboQueue = {}, {}
-    drv.onKill, drv.onDrop, drv.onStageCleared, drv.onStageChanged, drv.onAllDead = nil, nil, nil, nil, nil
-    drv:activate()
-    RCH.reset()
-    require("systems.ArtifactRuntime").reset(drv.allies)
-end
-
---- 只在真实恢复时回灌，周期同步必须仅采集；接受数组或规范字符串键表。
----@param stageIds table<number|string, number>
-function BattleTriPage.setTeamStageIds(stageIds)
-    if type(stageIds) ~= "table" then return false end
-    local restored = {}
-    for team = 1, COL_COUNT do
-        local id = tonumber(stageIds[tostring(team)] or stageIds[team]) or StageConfig.NORMAL_FIRST_STAGE
-        if id % 1 ~= 0 or not StageConfig.getStage(id) then id = StageConfig.NORMAL_FIRST_STAGE end
-        restored[team] = StageConfig.isTerminalTemple(id)
-            and (StageConfig.getTerminalPrevStageId(id) or StageConfig.NORMAL_FIRST_STAGE) or id
-    end
-    -- 旧单位、掉落与共享绑定均属于旧读档上下文；新阵容齐备后才由ensureDrivers重建。
-    discardTerminalRaid()
-    for _, drv in pairs(drivers) do discardDriver(drv) end
-    drivers = {}
-    restoredStageIds = restored
-    return true
-end
-
---- 清档公开出口：不得让旧raid在清理时结算奖，也不能保留驱动或恢复进度。
-function BattleTriPage.resetToDefault()
-    battleReady, isOpen_ = false, false
-    discardTerminalRaid()
-    for _, drv in pairs(drivers) do discardDriver(drv) end
-    drivers, restoredStageIds, l1RowImages = {}, nil, {}
-    emptyStates = nil
-    print("[BattleTriPage] resetToDefault: discarded drivers/restore/raid/rewards")
-end
-
--- 更新/绘制/选关/恢复临时借用各战线，正常及异常出口均恢复调用方挂载。
-BattleMountScope.wrap(BattleTriPage, {
-    "open", "update", "draw", "gotoTeamStage", "setTeamStageIds", "resetToDefault", "handleInput",
-}, false)
 
 return BattleTriPage

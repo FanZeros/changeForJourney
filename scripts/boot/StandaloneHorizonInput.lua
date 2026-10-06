@@ -77,7 +77,7 @@ function Input.bind(ctx)
     -- 遗匣按压由左栏捕获；移出左栏后不再把同次拖拽转交右栏/战斗。
     local lootPress = false
 
-    -- 横屏副本(5)页独占画布（全屏弹窗打开时让位）
+    -- [底栏移除] 横屏副本(5)页全窗竖版模态是否激活（全屏弹窗打开时让位）
     local function HorizonPageModalActive()
         if BottomNav.getSelectedIndex() ~= 5 then return false end
         if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return false end
@@ -90,7 +90,7 @@ function Input.bind(ctx)
 
     --- 玩家信息面板坐标。三行战斗里面板是全窗居中重画的，点击必须用同一套 letterbox。
     local function playerInfoDesignCoords(sx, sy)
-        if BattleTriPage.isOpen() or TowerBattleScene.isActive() or DungeonBattleScene.isOpen() then
+        if BattleTriPage.isOpen() or TowerBattleScene.isActive() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             return (sx - (logicalW() - 1080 * fit) * 0.5) / fit,
                    (sy - (logicalH() - 2400 * fit) * 0.5) / fit
@@ -108,7 +108,7 @@ function Input.bind(ctx)
 
     --- 归属面板奖励弹窗的设计坐标：左/右栏走各自 Viewport note，中栏（三行模式）走全窗 letterbox
     local function rewardPopupDesignCoords(sx, sy, pid)
-        if pid == 'center' and (BattleTriPage.isOpen() or DungeonBattleScene.isOpen()) then
+        if pid == 'center' and BattleTriPage.isOpen() then
             return playerInfoDesignCoords(sx, sy)
         end
         local note = Viewport.getNote(pid)
@@ -170,14 +170,17 @@ function Input.bind(ctx)
             if sx >= 0 and sx <= 486 * ps then return 'left', sx / cs, sy / cs end
             return 'none', 0, 0 -- 左栏之外仍消费，不操作被覆盖的塔/其它业务页。
         end
-        -- 副本页独占横屏画布；不把左右栏的局部坐标冒充副本坐标。
+        -- [底栏移除] 横屏副本(5)页全窗竖版模态：中段命中映射到设计坐标；
+        -- 左右栏让出（TopBar 页签/角色面板仍可点），全屏弹窗打开时让位
         if HorizonPageModalActive() then
-            DungeonPage.setLandscapeMode(true)
-            local fit = math.min(logicalW() / 1920, logicalH() / 1080)
-            return 'modal', (sx - (logicalW() - 1920 * fit) * 0.5) / fit,
-                            (sy - (logicalH() - 1080 * fit) * 0.5) / fit
+            local ps = logicalH() / 1080
+            local leftW = 486 * ps
+            if sx >= leftW and sx <= logicalW() - leftW then
+                local fit = math.min(logicalW() / DESIGN_W(), logicalH() / DESIGN_H())
+                return 'modal', (sx - (logicalW() - DESIGN_W() * fit) * 0.5) / fit,
+                                (sy - (logicalH() - DESIGN_H() * fit) * 0.5) / fit
+            end
         end
-        if DungeonBattleScene.isOpen() then return 'modal', sx, sy end
         if TowerBattleScene.isActive() then return 'modal', sx, sy end
         -- [三行并行] 战斗模式命中: 面板按战斗布局定位，中段为三行战斗区
         if BattleTriPage.isOpen() then
@@ -441,10 +444,7 @@ function Input.bind(ctx)
             terminalDown(sx, sy, button)
             return
         end
-        if button == MOUSEB_LEFT and (DungeonBattleScene.isOpen() or HorizonPageModalActive()) then
-            equipOverlayPress = false
-        end
-        if button == MOUSEB_LEFT and not (DungeonBattleScene.isOpen() or HorizonPageModalActive()) then
+        if button == MOUSEB_LEFT then
             detailDismissPress = false
             local mousePos = pointerPosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
@@ -1068,18 +1068,13 @@ function Input.bind(ctx)
                 if isTap then DungeonPage.handleInput(dx, dy) end
                 return
             end
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
-                RewardPopup.handleDragEnd(dx, dy)
-                if isTap then RewardPopup.handleInput(dx, dy) end
-                return
-            end
             if TowerBattleScene.isActive() then
                 if isTap then TowerBattleScene.handleClick(dx, dy, logicalW(), logicalH()) end
                 return
             end
             if DungeonBattleScene.isOpen() then
                 DungeonBattleScene.handleDragEnd(dx, dy)
-                if isTap then DungeonBattleScene.handleInput(dx, dy, logicalW(), logicalH()) end
+                if isTap then DungeonBattleScene.handleInput(dx, dy) end
                 return
             end
             if PlayerInfoPanel.isOpen() then
@@ -1412,10 +1407,6 @@ function Input.bind(ctx)
                 return
             end
         end
-
-        -- 副本独占全窗时，先于隐藏的古树、选关及装备袋消费滚轮。
-        if DungeonBattleScene.isOpen() then DungeonBattleScene.handleScroll(wheel) return end
-        if HorizonPageModalActive() then return end
 
         -- 塔内功绩覆盖阻断其它业务滚轮；只有左栏可滚奖励轨道。
         if TowerBattleScene.isActive() and TaskPage.isOpen() then

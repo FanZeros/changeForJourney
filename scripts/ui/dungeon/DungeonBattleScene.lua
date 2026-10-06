@@ -75,7 +75,7 @@ local ALLY_SHADOW_CX, ALLY_SHADOW_CY = 540, 1760
 local ALLY_SHADOW_W, ALLY_SHADOW_H   = 1080, 556
 
 -- 敌方卡片组基准坐标
-local ENEMY_CARD_CY      = 804
+local ENEMY_CARD_CY      = BattleLayout.STRIP_CY
 local ENEMY_TAG_OFFSET_Y  = -BattleLayout.CARD_H * 0.5 + 4
 local ENEMY_NAME_OFFSET_Y = BattleLayout.CARD_H * 0.5 - 129
 local ENEMY_HP_BG_OFFSET_Y = BattleLayout.CARD_H * 0.5 - 66
@@ -84,7 +84,7 @@ local ENEMY_ATK_BG_OFFSET_Y = 181
 local ENEMY_LVL_OFFSET_Y = BattleLayout.CARD_H * 0.5 - 4
 
 -- 己方卡片组基准坐标
-local ALLY_CARD_CY       = 1760
+local ALLY_CARD_CY       = BattleLayout.STRIP_CY
 local ALLY_TAG_OFFSET_Y   = -BattleLayout.CARD_H * 0.5 + 4
 local ALLY_NAME_OFFSET_Y  = BattleLayout.CARD_H * 0.5 - 134
 local ALLY_HP_BG_OFFSET_Y = BattleLayout.CARD_H * 0.5 - 66
@@ -722,165 +722,134 @@ function DungeonScene.onActionResult(data)
     return DungeonBattle.setServerResult(data)
 end
 
-function DungeonScene.draw(vg)
+-- 横屏宿主传逻辑尺寸；未传尺寸的旧调用按设计尺寸处理。
+local function landscapeFit(width, height)
+    local w, h = width or 1920, height or 1080
+    local fit = math.min(w / 1920, h / 1080)
+    return fit, (w - 1920 * fit) * 0.5, (h - 1080 * fit) * 0.5
+end
+
+local function beginCenteredOverlay(vg, width, height, centerY, contentHeight)
+    local fit = math.min((width or 1920) / 1120, (height or 1080) / contentHeight)
+    nvgSave(vg)
+    nvgTranslate(vg, (width or 1920) * 0.5, (height or 1080) * 0.5)
+    nvgScale(vg, fit, fit)
+    nvgTranslate(vg, -540, -centerY)
+end
+
+function DungeonScene.draw(vg, width, height)
     if not state.open then return end
-
-    -- 1. 地图背景（副本对应地图，带漂移）[暗黑化 P1: 压暗 tint + 边缘晕影]
-    local driftY = -BG_DRIFT_Y_AMP * (1.0 - math.cos(bgAnimTimer * 2 * math.pi / BG_DRIFT_Y_PERIOD)) * 0.5
+    width, height = width or 1920, height or 1080
+    local fit, ox, oy = landscapeFit(width, height)
     local mapImg = getMapImage()
-    DarkIcon.drawDarkScene(vg, mapImg, MAP_CX, MAP_CY + driftY, MAP_W, MAP_H, 1.0)
+    local driftY = -BG_DRIFT_Y_AMP * (1.0 - math.cos(bgAnimTimer * 2 * math.pi / BG_DRIFT_Y_PERIOD)) * 0.5
+    nvgSave(vg)
+    nvgScissor(vg, 0, 0, width, height)
+    if mapImg and mapImg > 0 then
+        local imageW, imageH = nvgImageSize(vg, mapImg)
+        if imageW > 0 and imageH > 0 then
+            local cover = math.max(width / imageW, (height + BG_DRIFT_Y_AMP * 2) / imageH)
+            DarkIcon.drawDarkScene(vg, mapImg, width * 0.5, height * 0.5 + driftY,
+                imageW * cover, imageH * cover, 1.0)
+        end
+    end
+    nvgTranslate(vg, ox, oy)
+    nvgScale(vg, fit, fit)
 
-    -- 2. 敌方战场阴影
-    drawImageCentered(vg, imgShadow, ENEMY_SHADOW_CX, ENEMY_SHADOW_CY,
-        ENEMY_SHADOW_W, ENEMY_SHADOW_H, 1.0)
-
-    -- 3. 敌方卡片组
-    BattleDraw.drawCardGroup(vg, state.enemies, ENEMY_CARD_CY,
-        ENEMY_TAG_OFFSET_Y, ENEMY_NAME_OFFSET_Y,
-        ENEMY_HP_BG_OFFSET_Y, ENEMY_HP_VAL_OFFSET_Y,
-        ENEMY_ATK_BG_OFFSET_Y, ENEMY_LVL_OFFSET_Y, imgEnemyTag, false)
-
-    -- 4. 副本标题
-    drawTextStroke(vg, DB.TITLE_X, DB.TITLE_Y, getDungeonTitle(),
-        DB.TITLE_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, DB.TITLE_SW,
-        { strokeColor = { DB.TITLE_SR, DB.TITLE_SG, DB.TITLE_SB } })
-
-    -- 5. 计时/狂暴状态
+    drawTextStroke(vg, 960, 90, getDungeonTitle(), 52,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+    local cfg = DungeonBattle.getConfig()
+    local timeText, timeR, timeG, timeB = "", 255, 255, 255
     if DungeonBattle.isTrainingDummy() then
-        local dps = 0
         local dur = BattleStats.getDuration()
-        if dur > 0.1 then
-            dps = math.floor(BattleStats.getTotal("totalDamage", false) / dur)  -- false=波次桶(非累计)
-        end
-        drawTextStroke(vg, DB.TIME_X, DB.TIME_Y,
-            string.format("已测试 %.1fs · DPS %s", DungeonBattle.getElapsed(), require("core.NumberUtil").format(dps)),
-            DB.TIME_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 230, 150, DB.TIME_SW,
-            { strokeColor = { DB.TIME_SR, DB.TIME_SG, DB.TIME_SB } })
+        local dps = dur > 0.1 and math.floor(BattleStats.getTotal("totalDamage", false) / dur) or 0
+        timeText = string.format("已测试 %.1fs · DPS %s", DungeonBattle.getElapsed(), require("core.NumberUtil").format(dps))
     else
-    local elapsed = DungeonBattle.getElapsed()
-    local remaining = DungeonBattle.getTimeRemaining()
-    local ragePhase = DungeonBattle.getRagePhase()
-    local timeText, timeR, timeG, timeB
-    if ragePhase == 2 then
-        timeText = string.format("超级狂暴! 剩余%.0fs", remaining)
-        timeR, timeG, timeB = DB.SUPER_RAGE_R, DB.SUPER_RAGE_G, DB.SUPER_RAGE_B
-    elseif ragePhase == 1 then
-        timeText = string.format("狂暴中 剩余%.0fs", remaining)
-        timeR, timeG, timeB = DB.RAGE_R, DB.RAGE_G, DB.RAGE_B
-    else
+        local remaining, rage = DungeonBattle.getTimeRemaining(), DungeonBattle.getRagePhase()
         timeText = string.format("剩余 %.0fs", remaining)
-        timeR, timeG, timeB = 255, 255, 255
-        if remaining <= 30 then
-            timeR, timeG, timeB = 255, 144, 144
-        end
+        if rage == 2 then
+            timeText = string.format("超级狂暴! 剩余%.0fs", remaining)
+            timeR, timeG, timeB = DB.SUPER_RAGE_R, DB.SUPER_RAGE_G, DB.SUPER_RAGE_B
+        elseif rage == 1 then
+            timeText = string.format("狂暴中 剩余%.0fs", remaining)
+            timeR, timeG, timeB = DB.RAGE_R, DB.RAGE_G, DB.RAGE_B
+        elseif remaining <= 30 then timeG, timeB = 144, 144 end
     end
-    drawTextStroke(vg, DB.TIME_X, DB.TIME_Y, timeText,
-        DB.TIME_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        timeR, timeG, timeB, DB.TIME_SW,
-        { strokeColor = { DB.TIME_SR, DB.TIME_SG, DB.TIME_SB } })
+    drawTextStroke(vg, 960, 165, timeText, 36,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, timeR, timeG, timeB, 4)
+    if #state.enemyQueue > 0 then
+        drawTextStroke(vg, 960, 225, "后备敌人 " .. tostring(#state.enemyQueue), 32,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
     end
-
-    -- 5b. 通天塔波次 + 剩余敌人计数（显示在中间标题区域下方）
-    local isTowerDraw = (DungeonBattle.getConfig().dungeonId == "babel_tower")
-    if isTowerDraw then
-        -- 波次信息（紧跟计时器下方）
-        local waveCfg = DungeonBattle.getConfig()
-        local waveText = "波次 " .. tostring(waveCfg.wave or 1) .. "/10"
-        drawTextStroke(vg, 540, 1290, waveText,
-            40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 230, 150, 4,
-            { strokeColor = { DB.TITLE_SR, DB.TITLE_SG, DB.TITLE_SB } })
-        -- 剩余敌人
-        if #state.enemyQueue > 0 then
-            local remainText = "剩余敌人 " .. tostring(#state.enemyQueue)
-            drawTextStroke(vg, 540, 525, remainText,
-                40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                255, 255, 255, 4,
-                { strokeColor = { DB.TITLE_SR, DB.TITLE_SG, DB.TITLE_SB } })
-        end
-    end
-
-    -- 敌人计数适用于三资源，不仅是塔。
-    if #state.enemyQueue > 0 and DungeonBattle.getConfig().resourceCombat then
-        drawTextStroke(vg, 540, 525, "后备敌人 " .. tostring(#state.enemyQueue), 36,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
-    end
-    if DungeonBattle.getConfig().resourceCombat then
+    if cfg.resourceCombat then
         local names = {}
         for _, affix in ipairs(MapAffixSystem.getActiveAffixes() or {}) do names[#names + 1] = affix.name end
         for _, affix in ipairs(BossAffixSystem.getActiveAffixes() or {}) do names[#names + 1] = "首领·" .. affix.name end
         if #names > 0 then
-            drawTextStroke(vg, 540, 1350, table.concat(names, " · "), 26,
+            drawTextStroke(vg, 960, 990, table.concat(names, " · "), 26,
                 NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 210, 160, 3)
         end
     end
-
-    -- 6. 职业加成提示（资源模式强制无旧职业增益）
     local classId, bonusVal = DungeonBattle.getClassBonus()
     if classId and classId ~= "" then
-        local className = CLASS_NAMES[classId] or classId
-        local bonusLabel = (classId == "priest" or classId == "debt") and "治疗" or "伤害"
-        local bonusText = string.format("%s +%.0f%%%s", className, bonusVal * 100, bonusLabel)
-        drawTextStroke(vg, DB.TITLE_X, DB.BONUS_Y, bonusText,
-            DB.BONUS_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            DB.BONUS_R, DB.BONUS_G, DB.BONUS_B, 3)
+        local label = (classId == "priest" or classId == "debt") and "治疗" or "伤害"
+        drawTextStroke(vg, 960, 1030, string.format("%s +%.0f%%%s", CLASS_NAMES[classId] or classId, bonusVal * 100, label),
+            30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, DB.BONUS_R, DB.BONUS_G, DB.BONUS_B, 3)
     end
 
-    -- 7. 己方战场阴影
-    drawImageCentered(vg, imgShadow, ALLY_SHADOW_CX, ALLY_SHADOW_CY,
-        ALLY_SHADOW_W, ALLY_SHADOW_H, 1.0)
-
-    -- 8. 己方卡片组
-    BattleDraw.drawCardGroup(vg, state.allies, ALLY_CARD_CY,
-        ALLY_TAG_OFFSET_Y, ALLY_NAME_OFFSET_Y,
-        ALLY_HP_BG_OFFSET_Y, ALLY_HP_VAL_OFFSET_Y,
+    -- 卡牌、投射物和飘字共享948×360战场，不单独平移任一阵营。
+    nvgSave(vg)
+    nvgTranslate(vg, (1920 - BattleLayout.STRIP_W * 1.75) * 0.5, 310)
+    nvgScale(vg, 1.75, 1.75)
+    BattleDraw.drawCardGroup(vg, state.enemies, BattleLayout.STRIP_CY,
+        ENEMY_TAG_OFFSET_Y, ENEMY_NAME_OFFSET_Y, ENEMY_HP_BG_OFFSET_Y, ENEMY_HP_VAL_OFFSET_Y,
+        ENEMY_ATK_BG_OFFSET_Y, ENEMY_LVL_OFFSET_Y, imgEnemyTag, false)
+    BattleDraw.drawCardGroup(vg, state.allies, BattleLayout.STRIP_CY,
+        ALLY_TAG_OFFSET_Y, ALLY_NAME_OFFSET_Y, ALLY_HP_BG_OFFSET_Y, ALLY_HP_VAL_OFFSET_Y,
         ALLY_ATK_BG_OFFSET_Y, ALLY_LVL_OFFSET_Y, imgAllyTags[1], true)
-
-    -- 9. 撤退按钮
-    local _bfSF = BF.begin(vg, "dbs_retreat", DB.SF_CX, DB.SF_CY, DB.SF_W, DB.SF_H)
-    drawImageCentered(vg, imgRetreatBtn, DB.SF_CX, DB.SF_CY, DB.SF_W, DB.SF_H, 1.0)
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, DB.SF_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(DB.SF_R, DB.SF_G, DB.SF_B, 255))
-    nvgText(vg, DB.SF_CX, DB.SF_CY, DungeonBattle.isTrainingDummy() and "退出" or "撤退", nil)
-    BF.finish(vg, _bfSF)
-
-    if DungeonBattle.isTrainingDummy() then
-        DamageStatsPanel.drawButton(vg)
-    end
-
-    -- 10. 攻击特效
     if SettingsPanel.isEffectsEnabled() then
-        ProjectileSystem.drawStarGates(vg, state.allies, ALLY_CARD_CY, getCardCX, true)
-        ProjectileSystem.drawStarGates(vg, state.enemies, ENEMY_CARD_CY, getCardCX, false)
+        ProjectileSystem.drawStarGates(vg, state.allies, BattleLayout.STRIP_CY, getCardCX, true)
+        ProjectileSystem.drawStarGates(vg, state.enemies, BattleLayout.STRIP_CY, getCardCX, false)
         BattleEffects.draw(vg)
         ProjectileSystem.draw(vg)
         SpineCardEffect.draw(vg, "dungeon")
     end
-
-    -- 11. 浮动伤害文字
     if SettingsPanel.isDamageNumbersEnabled() then
-        BattleDraw.drawFloatingTexts(vg, BattleCombat.getFloatingTexts())
+        BattleDraw.drawFloatingTexts(vg)
     end
+    nvgRestore(vg)
 
-    -- 12. 倍速按钮
-    drawSpeedButton(vg)
+    local feedback = BF.begin(vg, "dbs_retreat", 1750, 110, 260, 90)
+    drawImageCentered(vg, imgRetreatBtn, 1750, 110, 260, 90, 1.0)
+    drawTextStroke(vg, 1750, 110, DungeonBattle.isTrainingDummy() and "退出" or "撤退", 36,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+    BF.finish(vg, feedback)
+    if isSpeedButtonVisible() then
+        drawImageCentered(vg, imgSpeedIcon, 1500, 110, 100, 110, 1.0)
+        drawTextStroke(vg, 1500, 110, getSpeedText(), 38,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+    end
+    if DungeonBattle.isTrainingDummy() then
+        drawTextStroke(vg, 170, 110, "统计", 36,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+    end
+    nvgRestore(vg)
 
-    -- 13. 战斗结算面板
-    BattleResultPanel.draw(vg)
+    BattleResultPanel.draw(vg, width, height)
     if state.resultPanelShown and state.rewardOverflow then
-        drawTextStroke(vg, 540, 1655, state.rewardOverflow, 32,
+        drawTextStroke(vg, width * 0.5, height * 0.92, state.rewardOverflow, 24,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 220, 140, 3)
     end
-
-    if DungeonBattle.isTrainingDummy() then
+    if DungeonBattle.isTrainingDummy() and DamageStatsPanel.isOpen() then
+        beginCenteredOverlay(vg, width, height, 1195, 1300)
         DamageStatsPanel.draw(vg)
+        nvgRestore(vg)
     end
-
-    -- 14. 撤退确认弹窗（最顶层）
-    drawConfirmDialog(vg)
+    if state.confirmOpen then
+        beginCenteredOverlay(vg, width, height, CDL.BG_CY, 800)
+        drawConfirmDialog(vg)
+        nvgRestore(vg)
+    end
 end
 
 function DungeonScene.update(dt)
@@ -1333,11 +1302,28 @@ function DungeonScene.update(dt)
 end
 
 --- 处理点击输入
----@param dx number 设计空间X (0~1080)
----@param dy number 设计空间Y (0~2400)
+---@param dx number 宿主逻辑X
+---@param dy number 宿主逻辑Y
+---@param width number|nil
+---@param height number|nil
 ---@return boolean
-function DungeonScene.handleInput(dx, dy)
+function DungeonScene.handleInput(dx, dy, width, height)
     if not state.open then return false end
+    width, height = width or 1920, height or 1080
+
+    -- 弹层反变换与绘制一致；不允许下层撤退按钮穿透。
+    if state.confirmOpen then
+        if state.confirmClosing then return true end
+        local fit = math.min(width / 1120, height / 800)
+        dx, dy = (dx - width * 0.5) / fit + 540, (dy - height * 0.5) / fit + CDL.BG_CY
+    elseif state.battleState == BATTLE_ACTIVE and DungeonBattle.isTrainingDummy() and DamageStatsPanel.isOpen() then
+        local fit = math.min(width / 1120, height / 1300)
+        DamageStatsPanel.handleInput((dx - width * 0.5) / fit + 540, (dy - height * 0.5) / fit + 1195)
+        return true
+    else
+        local fit, ox, oy = landscapeFit(width, height)
+        dx, dy = (dx - ox) / fit, (dy - oy) / fit
+    end
 
     -- 确认弹窗优先拦截
     if state.confirmOpen and not state.confirmClosing then
@@ -1373,16 +1359,17 @@ function DungeonScene.handleInput(dx, dy)
         return true
     end
 
-    -- 战斗统计面板
-    if DungeonBattle.isTrainingDummy() and DamageStatsPanel.handleInput(dx, dy) then return true end
-    if DungeonBattle.isTrainingDummy() and DamageStatsPanel.handleButtonInput(
-        dx, dy, 100 + (DungeonBattle.getConfig().teamIdx or 1)) then return true end
+    if DungeonBattle.isTrainingDummy() and hitTest(dx, dy, 170, 110, 150, 90) then
+        DamageStatsPanel.open(100 + (DungeonBattle.getConfig().teamIdx or 1))
+        return true
+    end
 
-    -- 倍速按钮
-    if handleSpeedButtonInput(dx, dy) then return true end
+    if isSpeedButtonVisible() and hitTest(dx, dy, 1500, 110, 100, 110) then
+        return DungeonScene.cycleBattleSpeed()
+    end
 
     -- 撤退按钮
-    if hitTest(dx, dy, DB.SF_CX, DB.SF_CY, DB.SF_W, DB.SF_H) then
+    if hitTest(dx, dy, 1750, 110, 260, 90) then
         BF.trigger("dbs_retreat")
         if DungeonBattle.isTrainingDummy() then
             if state.onClose then state.onClose() end

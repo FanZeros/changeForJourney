@@ -393,35 +393,26 @@ end
 
 -- ======================== 渲染（仅在buff选择时绘制） ========================
 
-local function drawErrorFallback(vg)
+local function drawErrorFallback(vg, width, height)
     local msg = state.errorMessage or "通天塔战斗状态异常，请退出后重试"
+    local cx, cy = width * 0.5, height * 0.5
+    local fontScale = math.min(width / 1920, height / 1080)
     nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, 1080, 2400)
+    nvgRect(vg, 0, 0, width, height)
     nvgFillColor(vg, nvgRGBA(20, 16, 16, 235))
     nvgFill(vg)
-    drawTextStroke(vg, 540, 1060, "通天塔战斗异常", 60,
+    drawTextStroke(vg, cx, cy - 140 * fontScale, "通天塔战斗异常", 60 * fontScale,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 220, 180, 5,
         { strokeColor = { 40, 20, 20 } })
-    drawTextStroke(vg, 540, 1160, msg, 38,
+    drawTextStroke(vg, cx, cy - 40 * fontScale, msg, 38 * fontScale,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4,
         { strokeColor = { 40, 20, 20 } })
-    drawTextStroke(vg, 540, 1240, "floor=" .. tostring(state.floor) .. " wave=" .. tostring(state.wave), 32,
+    drawTextStroke(vg, cx, cy + 40 * fontScale, "floor=" .. tostring(state.floor) .. " wave=" .. tostring(state.wave), 32 * fontScale,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 210, 120, 3,
         { strokeColor = { 40, 20, 20 } })
-    drawTextStroke(vg, 540, 1330, "点击屏幕返回副本界面", 34,
+    drawTextStroke(vg, cx, cy + 130 * fontScale, "点击屏幕返回副本界面", 34 * fontScale,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 210, 230, 255, 3,
         { strokeColor = { 40, 20, 20 } })
-end
-
-local function drawPortraitOverlay(vg, logicalW, logicalH, drawFn)
-    logicalW = logicalW or 1080
-    logicalH = logicalH or 2400
-    local fit = math.min(logicalW / 1080, logicalH / 2400)
-    nvgSave(vg)
-    nvgTranslate(vg, (logicalW - 1080 * fit) * 0.5, (logicalH - 2400 * fit) * 0.5)
-    nvgScale(vg, fit, fit)
-    drawFn()
-    nvgRestore(vg)
 end
 
 function TowerScene.draw(vg, logicalW, logicalH)
@@ -454,18 +445,14 @@ function TowerScene.draw(vg, logicalW, logicalH)
             end
             state.phase = "error"
             state.errorMessage = "通天塔战斗画面丢失，请退出后重试"
-            drawErrorFallback(vg)
+            drawErrorFallback(vg, logicalW, logicalH)
         end
     elseif state.phase == "buff_pick" then
-        drawPortraitOverlay(vg, logicalW, logicalH, function()
-            TowerBuffPick.draw(vg)
-        end)
+        TowerBuffPick.draw(vg, logicalW, logicalH)
     elseif state.phase == "floor_win" then
-        drawPortraitOverlay(vg, logicalW, logicalH, function()
-            BattleResultPanel.draw(vg)
-        end)
+        BattleResultPanel.draw(vg, logicalW, logicalH)
     elseif state.phase == "error" then
-        drawErrorFallback(vg)
+        drawErrorFallback(vg, logicalW, logicalH)
     end
 end
 
@@ -521,10 +508,7 @@ function TowerScene.handleClick(dx, dy, logicalW, logicalH)
         TowerScene.close()
         return true
     elseif state.phase == "buff_pick" and TowerBuffPick.isOpen() then
-        local fit = math.min(logicalW / 1080, logicalH / 2400)
-        local px = (dx - (logicalW - 1080 * fit) * 0.5) / fit
-        local py = (dy - (logicalH - 2400 * fit) * 0.5) / fit
-        return TowerBuffPick.handleClick(px, py)
+        return TowerBuffPick.handleClick(dx, dy, logicalW, logicalH)
     elseif state.phase == "battle" then
         TowerTriBattle.handleClick(dx, dy)
         return true

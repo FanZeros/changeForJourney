@@ -34,7 +34,7 @@ function M.run(teamIdx, fn, ...)
     SEM.mount(scope.status)
     TAL.mountUnitStates(scope.unitStates)
     ETS.mount(scope.extraTalents)
-    Layout.setMode("classic") -- 副本全页坐标，不能沿用主线三行条带。
+    Layout.setMode("strip") -- 副本与主线共用左右对阵坐标，作用域退出后还原宿主。
     Stats.mount(100 + (teamIdx or 1)) -- 独立数字桶，不覆盖主线0或三队1/2/3
     -- 无mount API的公共模块复用独立实例，临时桥接函数，返回后原样还原。
     -- 内部跨模块require仍取得同一导出表，故BattleCombat也消费当前副本实例。

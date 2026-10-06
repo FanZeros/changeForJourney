@@ -16,6 +16,7 @@ local BlacksmithConfig = require("config.BlacksmithConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local AD               = require("systems.AttributeDef")
 local I18n             = require("core.I18n")
+local MaterialTip      = require("ui.blacksmith.RefineMaterialTip")
 
 local drawImageCentered = DrawUtil.drawImageCentered
 local hitTest           = DrawUtil.hitTest
@@ -253,11 +254,11 @@ refineData = {
 
 --- 额外资源定义（2026-09-30：精粹入列，替代原左侧固定精粹显示；选精粹=无附加效果）
 local EXTRA_RES_OPTIONS = {
-    { key = "essence", name = "精粹", iconPath = "image/货币道具/UI_icon_JC.png", quality = 2, cost = nil },
-    { key = "enhanceStone", name = "洗练石", iconPath = "image/货币道具/UI_icon_QH_1.png", quality = 3, cost = 1 },
-    { key = "destroyStone", name = "点金石", iconPath = "image/货币道具/UI_icon_QH_3.png", quality = 5, cost = nil },  -- cost 动态：当前品质即为消耗数
-    { key = "corruptStone", name = "腐化石", iconPath = "image/货币道具/UI_icon_FHS.png", quality = 3, cost = 1 },
-    { key = "sacredStone", name = "神圣石", iconPath = "image/货币道具/UI_icon_SSS.png", quality = 6, cost = 1 },
+    { key = "essence", type = "essence", name = "精粹", iconPath = "image/货币道具/UI_icon_JC.png", quality = 2, cost = nil },
+    { key = "enhanceStone", type = "refine_stone", name = "洗练石", iconPath = "image/货币道具/UI_icon_QH_1.png", quality = 3, cost = 1 },
+    { key = "destroyStone", type = "gold_stone", name = "点金石", iconPath = "image/货币道具/UI_icon_QH_3.png", quality = 5, cost = nil },  -- cost 动态：当前品质即为消耗数
+    { key = "corruptStone", type = "corrupt_stone", name = "腐化石", iconPath = "image/货币道具/UI_icon_FHS.png", quality = 3, cost = 1 },
+    { key = "sacredStone", type = "sacred_stone", name = "神圣石", iconPath = "image/货币道具/UI_icon_SSS.png", quality = 6, cost = 1 },
 }
 
 --- 当前选中的额外资源 (nil = 未选择)
@@ -265,6 +266,18 @@ selectedExtraRes = nil  -- EXTRA_RES_OPTIONS[n] or nil
 
 --- 额外资源选择弹窗是否打开
 local extraResPopupOpen = false
+
+function M.handleHover(dx, dy)
+    MaterialTip.hover(dx, dy, XL, EXTRA_RES_OPTIONS, extraResPopupOpen)
+end
+
+function M.clearHover()
+    MaterialTip.clear()
+end
+
+function M.drawHoverTip(vg)
+    MaterialTip.draw(vg, XL, EXTRA_RES_OPTIONS, extraResPopupOpen)
+end
 
 -- ======================== 洗练动画状态 ========================
 
@@ -455,6 +468,7 @@ end
 
 --- 根据选中装备更新洗练面板数据
 function M.updateRefineData(equip)
+    MaterialTip.clear()
     if not equip then
         refineData.before       = {}
         refineData.after        = {}
@@ -875,13 +889,9 @@ end
 local function drawExtraResPopup(vg)
     if not extraResPopupOpen then return end
 
-    local popupW = 320
-    local itemH = 80
-    local popupH = #EXTRA_RES_OPTIONS * itemH + 16  -- 上下各 8 padding
-    local popupCX = XL.EXTRA_ICON_CX
-    local popupBottom = XL.EXTRA_ICON_CY - XL.EXTRA_ICON_SIZE * 0.5 - 8  -- 弹窗底部在槽位上方 8px
-    local popupTop = popupBottom - popupH
-    local popupLeft = popupCX - popupW * 0.5
+    local bounds = MaterialTip.bounds(XL, #EXTRA_RES_OPTIONS)
+    local popupW, itemH, popupH = bounds.w, bounds.itemH, bounds.h
+    local popupTop, popupLeft = bounds.y, bounds.x
 
     -- 弹窗背景（深色半透明）
     nvgBeginPath(vg)
@@ -900,7 +910,7 @@ local function drawExtraResPopup(vg)
         local textX = popupLeft + 90
 
         -- 高亮当前选中
-        if selectedExtraRes and selectedExtraRes.key == opt.key then
+        if (selectedExtraRes and selectedExtraRes.key == opt.key) or MaterialTip.isHovered(i) then
             nvgBeginPath(vg)
             nvgRoundedRect(vg, popupLeft + 6, itemY - itemH * 0.5 + 4, popupW - 12, itemH - 8, 10)
             nvgFillColor(vg, nvgRGBA(255, 255, 255, 25))
@@ -1024,32 +1034,23 @@ end
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
 function M.handleInput(dx, dy)
+    MaterialTip.clear()
     -- ===== 1. 额外资源弹窗交互（最上层，优先消费） =====
     if extraResPopupOpen then
-        local popupW = 320
-        local itemH = 80
-        local popupH = #EXTRA_RES_OPTIONS * itemH + 16
-        local popupCX = XL.EXTRA_ICON_CX
-        local popupBottom = XL.EXTRA_ICON_CY - XL.EXTRA_ICON_SIZE * 0.5 - 8
-        local popupTop = popupBottom - popupH
-        local popupLeft = popupCX - popupW * 0.5
+        local bounds = MaterialTip.bounds(XL, #EXTRA_RES_OPTIONS)
+        local idx = MaterialTip.rowAt(dx, dy, bounds, #EXTRA_RES_OPTIONS)
 
-        -- 检查是否点击了弹窗内的选项
-        if dx >= popupLeft and dx <= popupLeft + popupW and dy >= popupTop and dy <= popupBottom then
-            local relY = dy - popupTop - 8  -- 减去上 padding
-            local idx = math.floor(relY / itemH) + 1
-            if idx >= 1 and idx <= #EXTRA_RES_OPTIONS then
-                local opt = EXTRA_RES_OPTIONS[idx]
-                if selectedExtraRes and selectedExtraRes.key == opt.key then
-                    -- 再次点击已选中的 → 取消选择
-                    selectedExtraRes = nil
-                    print("[BlacksmithRefine] 取消额外资源: " .. opt.name)
-                else
-                    selectedExtraRes = opt
-                    print("[BlacksmithRefine] 选择额外资源: " .. opt.name)
-                end
-                recalcRefineEssenceCost()
+        -- 点击/悬停/绘制使用同一套整行几何，padding 不属于选项。
+        if idx > 0 then
+            local opt = EXTRA_RES_OPTIONS[idx]
+            if selectedExtraRes and selectedExtraRes.key == opt.key then
+                selectedExtraRes = nil
+                print("[BlacksmithRefine] 取消额外资源: " .. opt.name)
+            else
+                selectedExtraRes = opt
+                print("[BlacksmithRefine] 选择额外资源: " .. opt.name)
             end
+            recalcRefineEssenceCost()
             extraResPopupOpen = false
             return true
         end

@@ -33,6 +33,9 @@ function M.bind(deps)
         -- 转职结果与教堂开关无关（转职页在右侧栏角色详情）
         local ProtocolEarly = getProtocol()
         -- 闭页仅停止展示；先按请求身份收尾，迟到/不匹配回执不得解锁或盖新提示。
+        if data.action == ProtocolEarly.ACTION_TYPES.ARTIFACT_DRAW then
+            ArtifactDrawPanel.onArtifactDrawResult()
+        end
         if data.action == ProtocolEarly.ACTION_TYPES.ARTIFACT_EQUIP then
             if ArtifactPanel.onArtifactEquipResult(data.success, data) == false then return end
         end

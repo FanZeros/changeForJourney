@@ -15,6 +15,7 @@ local GachaConfig = require("config.GachaConfig")
 local UrGachaConfig = require("config.UrGachaConfig")
 local GameState = require("core.GameState")
 local HeroAssetUtil = require("config.HeroAssetUtil")
+local RepeatDrawButton = require("ui.widget.RepeatDrawButton")
 local drawTextStroke = DrawUtil.drawTextStroke
 local drawImageCenteredUtil = DrawUtil.drawImageCentered
 
@@ -213,6 +214,17 @@ function RecruitAnim.init(vg)
 end
 
 local againFn_ = nil
+local closeCallbacks_ = {}
+
+local function notifyClosed()
+    local callbacks = closeCallbacks_
+    closeCallbacks_ = {}
+    local onClose = state.onClose
+    state.onClose = nil
+    if onClose then callbacks[#callbacks + 1] = onClose end
+    -- 先取走整批回调，回调内重开或关闭不会重复消费旧结果。
+    for _, callback in ipairs(callbacks) do callback() end
+end
 
 function RecruitAnim.setOnAgain(fn)
     againFn_ = fn
@@ -242,6 +254,7 @@ function RecruitAnim.start(results, onClose, count, poolId)
         end
     end
     state.results = ordered
+    if state.onClose then closeCallbacks_[#closeCallbacks_ + 1] = state.onClose end
     state.onClose = onClose
     state.pullCount = (count == 10 or count == 1) and count or ((#ordered > 1) and 10 or 1)
     state.poolId = poolId
@@ -292,10 +305,7 @@ function RecruitAnim.update(dt)
             state.glowStartT = 0
             state.phase = "idle"
             state.results = {}
-            if state.onClose then
-                state.onClose()
-                state.onClose = nil
-            end
+            notifyClosed()
             print("[RecruitAnim] 关闭")
         end
     end
@@ -328,10 +338,7 @@ function RecruitAnim.close()
     state.fadeOutStartT = 0
     state.phase = "idle"
     state.results = {}
-    if state.onClose then
-        state.onClose()
-        state.onClose = nil
-    end
+    notifyClosed()
     print("[RecruitAnim] 关闭")
 end
 
@@ -645,36 +652,19 @@ function RecruitAnim.draw(vg)
             local owned = stellar and GameState.getStellarRecruitTicket() or GameState.getRecruitTicket()
             local tickets = math.min(owned or 0, ticketCost)
             local gems = math.floor((ticketCost - tickets) * gemCost / ticketCost + 0.5)
-            local icon = img.diamondIcon
-            local costText = tostring(gems)
+            local parts = {}
             if tickets > 0 then
-                icon = (stellar and img.ticketIconStellar and img.ticketIconStellar >= 0)
-                    and img.ticketIconStellar or img.ticketIcon
-                costText = tostring(tickets)
-                if gems > 0 then costText = costText .. "+" .. tostring(gems) end
+                parts[#parts + 1] = {
+                    icon = stellar and img.ticketIconStellar or img.ticketIcon,
+                    type = stellar and "stellar_ticket" or "adventure_ticket", amount = tickets,
+                }
             end
-            local btnX, btnY, btnW, btnH = 300, DESIGN_H - 274, 480, 88
-            DarkIcon.drawNine(vg, "btn", btnX, btnY, btnW, btnH, { accent = "gold" })
-            local bcx, bcy = btnX + btnW * 0.5, btnY + btnH * 0.5
-            nvgFontFace(vg, "sans")
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFontSize(vg, 36)
-            local labelW = nvgTextBounds(vg, 0, 0, againText)
-            nvgFontSize(vg, 32)
-            local costW = nvgTextBounds(vg, 0, 0, costText)
-            local ICON, GAP = 40, 12
-            local left = bcx - (labelW + GAP + ICON + 8 + costW) * 0.5
-            nvgFontSize(vg, 36)
-            nvgFillColor(vg, nvgRGBA(255, 236, 190, 255))
-            nvgText(vg, left, bcy, againText, nil)
-            if icon and icon >= 0 then
-                drawImageCentered(vg, icon, left + labelW + GAP + ICON * 0.5, bcy, ICON, ICON, 1.0)
+            if gems > 0 or tickets <= 0 then
+                parts[#parts + 1] = { icon = img.diamondIcon, type = "diamond", amount = gems }
             end
             local enough = tickets >= ticketCost or (GameState.getGems() or 0) >= gems
-            local r, g, b = 255, 255, 255
-            if not enough then r, g, b = 255, 90, 90 end
-            drawTextStroke(vg, left + labelW + GAP + ICON + 8, bcy, costText, 32,
-                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, r, g, b, 3)
+            RepeatDrawButton.draw(vg, DESIGN_W * 0.5, DESIGN_H - 230, 480, 88,
+                againText, parts, enough)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFontSize(vg, 40)
             nvgFillColor(vg, nvgRGBA(255, 255, 255, 180))

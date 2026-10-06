@@ -1,9 +1,11 @@
--- 司仪一转：CPU 多边形/贝塞尔绘制，主体和底板全部程序生成。
+-- 职业一转：CPU 多边形/贝塞尔绘制，主体和底板全部程序生成。
 -- 基于既有转职试稿与 procedural-lua-headless 的 Start/pcall/Exit 模板。
--- 默认仅输出审核图；显式 -install 才替换 111/112，绝不修改其他图标或 .meta。
--- UrhoXRuntime _proc/generate_advancement_trials.lua -tapcode_dir=/workspace -tool_mode -graphicsheadless
+-- 默认审核111/112；-seal-review仅生成101/102审核，禁止安装。
+-- 显式 -install 仍只替换111/112，绝不修改其他正式图标或.meta。
+-- UrhoXRuntime _proc/generate_advancement_trials.lua -tapcode_dir=/workspace -tool_mode -graphicsheadless -seal-review
 local ROOT = "/workspace/assets/image/职业图标/"
 local OUT = "/workspace/.git/advancement-icons-validation/generated/"
+local SEAL_OUT = "/workspace/assets/image/审核_职业转职_20261006_封门人/"
 local BACKUP = "/workspace/.git/advancement-icons-validation/originals/"
 local SIZE, SCALE = 560, 2
 local CENTER = 139.5
@@ -12,10 +14,12 @@ local GOLD = { 161, 121, 64 }
 local BONE = { 220, 206, 170 }
 local SHADE = { 77, 55, 30 }
 local ORDER = { 111, 112 }
-local install = false
+local install, sealReview = false, false
 for _, argument in ipairs(GetArguments()) do
     if argument == "-install" then install = true end
+    if argument == "-seal-review" then sealReview = true end
 end
+if sealReview then ORDER = { 101, 102 } end
 ---@type Image[]
 local images = {}
 
@@ -151,7 +155,104 @@ local function render(branchId)
         line(p[1] - 1.5, p[2] - 1.2, p[1] + 0.8, p[2] - 1.2, 0.9, BONE, 0.6)
     end
 
-    if branchId == 111 then
+    if branchId == 101 or branchId == 102 then
+        -- 封门人共享门盾轮廓：双层旧铜门框、骨白铁甲、暗色负空间。
+        -- 门闩以横向锁杆蓄住伤害；闸门以抬起的栅齿和侧向泄压区分。
+        local frame = { { 79, 218 }, { 79, 88 }, { 88, 68 }, { 111, 53 },
+            { 168, 53 }, { 191, 68 }, { 200, 88 }, { 200, 218 },
+            { 184, 231 }, { 95, 231 } }
+        emblem(frame, GOLD, SHADE)
+        local inner = { { 92, 214 }, { 92, 91 }, { 98, 78 }, { 116, 66 },
+            { 163, 66 }, { 181, 78 }, { 187, 91 }, { 187, 214 },
+            { 177, 219 }, { 102, 219 } }
+        polygon(inner, { 47, 40, 29 }, DARK)
+        stroke(inner, 2, DARK, true)
+        stroke({ { 82, 214 }, { 82, 88 }, { 91, 70 }, { 113, 56 }, { 168, 56 } }, 2, BONE, false, 0.75)
+        stroke({ { 198, 90 }, { 198, 215 }, { 183, 228 }, { 99, 228 } }, 2, SHADE, false)
+        for _, x in ipairs({ 85, 194 }) do
+            for _, y in ipairs({ 100, 153, 207 }) do
+                ellipse(x, y, 4.1, 4.1, DARK)
+                ellipse(x - 0.5, y - 0.6, 2.6, 2.6, BONE, GOLD)
+            end
+        end
+        emblem({ { 126, 59 }, { 153, 59 }, { 159, 66 }, { 153, 73 },
+            { 126, 73 }, { 120, 66 } }, GOLD, SHADE)
+        line(132, 65, 147, 65, 2, BONE)
+
+        if branchId == 101 then
+            -- 闭合双扉与加厚横闩表达更大的储伤容量；下方分流箭强调转敌。
+            local left = { { 98, 90 }, { 117, 77 }, { 135, 77 }, { 135, 205 }, { 99, 205 } }
+            local right = { { 144, 77 }, { 162, 77 }, { 180, 90 }, { 180, 205 }, { 144, 205 } }
+            emblem(left, BONE, GOLD)
+            emblem(right, BONE, GOLD)
+            polygon({ { 103, 96 }, { 122, 84 }, { 131, 84 }, { 131, 198 }, { 104, 198 } }, GOLD, SHADE)
+            polygon({ { 148, 84 }, { 158, 84 }, { 175, 95 }, { 175, 198 }, { 148, 198 } }, GOLD, SHADE)
+            line(139.5, 80, 139.5, 202, 6.5, DARK)
+            line(137, 82, 137, 200, 1.3, BONE, 0.75)
+            for _, y in ipairs({ 104, 182 }) do
+                for _, side in ipairs({ -1, 1 }) do
+                    local x = 139.5 + side * 26
+                    emblem({ { x - 11, y - 7 }, { x + 11, y - 7 },
+                        { x + 11, y + 7 }, { x - 11, y + 7 } }, BONE, GOLD)
+                    line(x - 7, y, x + 7, y, 1.8, SHADE)
+                    ellipse(x - 6, y, 2.3, 2.3, DARK)
+                    ellipse(x + 6, y, 2.3, 2.3, DARK)
+                end
+            end
+            emblem({ { 94, 125 }, { 185, 125 }, { 190, 131 }, { 190, 151 },
+                { 185, 157 }, { 94, 157 }, { 89, 151 }, { 89, 131 } }, BONE, GOLD)
+            polygon({ { 99, 145 }, { 181, 145 }, { 185, 151 }, { 95, 151 } }, SHADE)
+            line(96, 129, 182, 129, 2.4, BONE)
+            emblem({ { 130, 119 }, { 149, 119 }, { 149, 163 }, { 130, 163 } }, GOLD, SHADE)
+            ellipse(139.5, 134, 3.3, 3.3, DARK)
+            ellipse(139.5, 150, 3.3, 3.3, DARK)
+            -- 一个蓄压核心分成两支向外箭，避免误用圣铃/治疗星纹。
+            polygon({ { 139.5, 180 }, { 146, 188 }, { 139.5, 196 }, { 133, 188 } }, BONE, GOLD)
+            for _, side in ipairs({ -1, 1 }) do
+                local x = 139.5 + side * 47
+                stroke({ { 139.5, 194 }, { 139.5, 213 }, { x, 213 } }, 6.5, DARK, false)
+                stroke({ { 139.5, 194 }, { 139.5, 213 }, { x, 213 } }, 2.8, BONE, false)
+                polygon({ { x + side * 9, 213 }, { x - side * 1, 207 },
+                    { x - side * 1, 219 } }, BONE, GOLD)
+            end
+        else
+            -- 半提起的铁闸露出明确门洞，栅齿与侧排气口表达满载泄压。
+            polygon({ { 99, 94 }, { 117, 80 }, { 163, 80 }, { 180, 94 },
+                { 180, 210 }, { 99, 210 } }, DARK)
+            polygon({ { 105, 174 }, { 175, 174 }, { 178, 209 }, { 101, 209 } }, { 24, 22, 18 }, DARK)
+            for _, x in ipairs({ 107, 123, 140, 157, 173 }) do
+                emblem({ { x - 4, 88 }, { x + 4, 88 }, { x + 4, 151 },
+                    { x, 162 }, { x - 4, 151 } }, BONE, GOLD)
+                line(x - 1.6, 92, x - 1.6, 147, 1.3, BONE, 0.8)
+            end
+            for _, y in ipairs({ 107, 133 }) do
+                emblem({ { 99, y - 4 }, { 180, y - 4 }, { 180, y + 4 }, { 99, y + 4 } }, GOLD, SHADE)
+                line(102, y - 2, 176, y - 2, 1.5, BONE, 0.7)
+            end
+            -- 内向短矛头表示强制引敌，底部向外泄压与门闩分流形态不同。
+            for _, side in ipairs({ -1, 1 }) do
+                local x = 139.5 + side * 80
+                for _, y in ipairs({ 116, 145, 174 }) do
+                    line(x + side * 11, y, x - side * 7, y, 6, DARK)
+                    line(x + side * 11, y, x - side * 7, y, 2.6, GOLD)
+                    emblem({ { x - side * 14, y }, { x - side * 3, y - 7 },
+                        { x - side * 3, y + 7 } }, BONE, GOLD)
+                end
+                local relief = { { 139.5 + side * 31, 187 } }
+                curve(relief, 139.5 + side * 39, 180, 139.5 + side * 47, 183,
+                    139.5 + side * 51, 198)
+                stroke(relief, 7, DARK, false)
+                stroke(relief, 2.6, BONE, false)
+                polygon({ { 139.5 + side * 55, 201 }, { 139.5 + side * 49, 211 },
+                    { 139.5 + side * 46, 198 } }, BONE, GOLD)
+            end
+            -- 空门洞中的暗铜拱线保留深度，不再加十字、皇冠或其他职业符号。
+            stroke({ { 117, 209 }, { 117, 177 }, { 125, 170 }, { 154, 170 },
+                { 162, 177 }, { 162, 209 } }, 1.8, GOLD, false, 0.45)
+            line(109, 210, 170, 210, 3, GOLD)
+            line(108, 214, 171, 214, 1.5, BONE, 0.7)
+        end
+    elseif branchId == 111 then
         -- 延祷：同一圣铃连接两份祷盾；沙漏提示延缓而不是两道声波。
         for _, side in ipairs({ -1, 1 }) do
             local x = 140 + side * 65
@@ -191,7 +292,8 @@ local function render(branchId)
         end
     end
 
-    -- 两个分支共用骨白旧铜圣铃；不是换色图，以附属结构区分机制。
+    if branchId == 111 or branchId == 112 then
+    -- 两个司仪分支共用骨白旧铜圣铃；不是换色图，以附属结构区分机制。
     arc(140, 97, 10, 10, 0, 360, 10, DARK)
     arc(140, 97, 10, 10, 0, 360, 4.4, GOLD)
     arc(140, 97, 10, 10, 200, 310, 1.9, BONE)
@@ -224,6 +326,7 @@ local function render(branchId)
     -- 稀疏刻痕，不使用模糊光晕或霓虹；保持小尺寸主体识别。
     line(126, 172, 123, 177, 0.8, SHADE, 0.6)
     line(154, 137, 156, 142, 0.9, SHADE, 0.55)
+    end
 
     local image = Image()
     images[#images + 1] = image
@@ -262,7 +365,10 @@ end
 
 function Start()
     local ok, err = pcall(function()
-        assert(fileSystem:CreateDir(OUT), "创建转职审核目录失败")
+        -- 审核模式没有安装权限，即便误传-install也在任何写盘前拒绝。
+        assert(not (sealReview and install), "-seal-review只生成审核图，禁止同时安装")
+        local output = sealReview and SEAL_OUT or OUT
+        assert(fileSystem:CreateDir(output), "创建转职审核目录失败")
         if install then assert(fileSystem:CreateDir(BACKUP), "创建转职原图备份目录失败") end
         -- 两图都成功生成后才进入安装阶段；审核运行绝不触碰正式图。
         for _, branchId in ipairs(ORDER) do
@@ -270,8 +376,8 @@ function Start()
             print("[adv-trial] " .. branchId .. " 开始全底板和主体程序绘制")
             local master = render(branchId)
             local small = reduce(master)
-            assert(master:SavePNG(OUT .. "UI_icon_ZY_" .. branchId .. "_560.png"), "保存母图失败")
-            assert(small:SavePNG(OUT .. name), "保存审核图失败")
+            assert(master:SavePNG(output .. "UI_icon_ZY_" .. branchId .. "_560.png"), "保存母图失败")
+            assert(small:SavePNG(output .. name), "保存审核图失败")
             print("[adv-trial] " .. branchId .. " 280×280 RGBA审核PNG已保存")
         end
         if install then
@@ -287,7 +393,8 @@ function Start()
                 print("[adv-trial] 已安装 " .. name .. "，原.meta保持不变")
             end
         end
-        print("[adv-trial] ALL PASS：2枚司仪一转，模式=" .. (install and "安装" or "仅审核"))
+        print("[adv-trial] ALL PASS：2枚" .. (sealReview and "封门人一转" or "司仪一转")
+            .. "，模式=" .. (install and "安装" or "仅审核"))
     end)
     -- 成功与失败都立即释放所有已创建Image，退出不依赖GC。
     for _, image in ipairs(images) do image:Dispose() end

@@ -1,4 +1,4 @@
--- 第三批正式资源专项：只读取真实PNG及配置，不读玩家档、不写资源。
+-- 第三批及已确认四枚一转正式资源专项：只读取真实PNG及配置，不读玩家档、不写资源。
 -- UrhoXRuntime tests/advancement_batch3_asset_test.lua -tapcode_dir=/workspace -tool_mode -graphicsheadless
 local AVC = require("config.AdvancementConfig")
 local CC = require("config.ClassConfig")
@@ -7,6 +7,10 @@ local ROOT = "/workspace/assets/image/职业图标/"
 local ROWS = {
     {id=4, classId=CC.RANGER, name="回响客", talent="gate_echo_delay", uuid="A_zbOVWpA6ooDKffvnbr4V9K"},
     {id=5, classId=CC.ASSASSIN, name="换面人", talent="gate_mask_steal", uuid="EXQx2crg8Rg83U3tQxlmUzyN"},
+    {id=107, first=true, classId=CC.RANGER, name="残响", talent="gate_107_aftertone", uuid="AiH1cfl20HoHEpIte8DOh65z"},
+    {id=108, first=true, classId=CC.RANGER, name="叠声", talent="gate_108_stacktone", uuid="HnQl4YNLBkhwgEqfV2KdQYlJ"},
+    {id=109, first=true, classId=CC.ASSASSIN, name="借面", talent="gate_109_borrow", uuid="Fj4OgY-YA66RtBoVDRYramg8"},
+    {id=110, first=true, classId=CC.ASSASSIN, name="剥面", talent="gate_110_stripface", uuid="Fxhf2c_Rdyx1E-PQUG0lor4H"},
     {id=213, classId=CC.RANGER, name="风回", parent=107, talent="gate_213_wind", uuid="A6_CGS4zzelA0DyJW6AJ1TnD"},
     {id=214, classId=CC.RANGER, name="瞳回", parent=107, talent="gate_214_eye", uuid="ERV38UWXv2DOop2vSg2VeQBT"},
     {id=215, classId=CC.RANGER, name="瞄回", parent=108, talent="gate_215_aim", uuid="DeddyS9vH-VQyV_jBHnZRFtf"},
@@ -16,6 +20,14 @@ local ROWS = {
     {id=219, classId=CC.ASSASSIN, name="致命面", parent=110, talent="gate_219_lethal", uuid="BFlOwQFezrNst-8AFk8k3pK6"},
     {id=220, classId=CC.ASSASSIN, name="双面", parent=110, talent="adv_220_dual_blade", uuid="Ht54WQvolZILr8zHyPINwd_g"},
 }
+-- 独立验收新确认的四图；默认仍保留第三批十图及四一转的完整联合覆盖。
+for _, argument in ipairs(GetArguments()) do
+    if argument == "-first-icons-only" then
+        local firstRows = {}
+        for _, row in ipairs(ROWS) do if row.first then firstRows[#firstRows+1] = row end end
+        ROWS = firstRows
+    end
+end
 local passes, failures = 0, 0
 ---@type Image[]
 local images = {}
@@ -89,6 +101,8 @@ function Start()
         local uuids, signatures = {}, {}
         local echo = require("_proc.advancement.BatchEcho")
         local mask = require("_proc.advancement.BatchMask")
+        local reviewEcho = require("_proc.advancement.ReviewEcho")
+        local reviewMask = require("_proc.advancement.ReviewMask")
         local raster = require("_proc.advancement.Batch3Raster")
         check(not pcall(echo,{},107),"第三批回响客模块拒绝安装范围外107")
         check(not pcall(mask,{},109),"第三批换面人模块拒绝安装范围外109")
@@ -97,10 +111,26 @@ function Start()
         check(originalGeometry == recoloredGeometry,"几何比较器忽略纯换色，不把换色误判为新轮廓")
         for _,row in ipairs(ROWS) do
             local id, classId = row.id,row.classId
-            signatures[id] = geometry(classId == CC.RANGER and echo or mask,id)
-            local cfg = row.parent and assert(AVC.get(id)) or assert(CC.CLASSES[classId])
+            local drawer = row.first and (classId == CC.RANGER and reviewEcho or reviewMask)
+                or (classId == CC.RANGER and echo or mask)
+            signatures[id] = geometry(drawer,id)
+            local cfg = (row.first or row.parent) and assert(AVC.get(id)) or assert(CC.CLASSES[classId])
             check(cfg.name == row.name and cfg.talentId == row.talent,id .. "职业名与天赋保持原配置")
-            if row.parent then
+            if row.first then
+                check(cfg.baseClass == classId and cfg.advLevel == 1 and cfg.parentBranch == nil,id .. "一转归属和阶段")
+                check(cfg.combatPower == 15,id .. "一转原战力保持")
+                local mapped = AVC.FIRST_BRANCHES[classId]
+                check(mapped[1] == id or mapped[2] == id,id .. "真实一转映射")
+                local children = AVC.SECOND_BRANCHES[id]
+                local childA, childB = AVC.get(children[1]), AVC.get(children[2])
+                check(childA and childB and childA.parentBranch == id and childB.parentBranch == id,id .. "后续二转仍接同一父分支")
+                check(AVC.canAdvance(10,10000,1,classId,id,nil),id .. "原一转门槛开放")
+                check(not AVC.canAdvance(9,10000,1,classId,id,nil),id .. "一转等级不足拒绝")
+                check(not AVC.canAdvance(10,9999,1,classId,id,nil),id .. "一转金币不足拒绝")
+                check(not AVC.canAdvance(10,10000,1,CC.WARRIOR,id,nil),id .. "一转错职业拒绝")
+                check(not AVC.canAdvance(10,10000,1,classId,id,{first=id}),id .. "重复一转拒绝")
+                check(not AVC.canAdvance(25,100000,2,classId,id,{first=id}),id .. "一转图不当作二转分支")
+            elseif row.parent then
                 check(cfg.baseClass == classId and cfg.advLevel == 2 and cfg.parentBranch == row.parent,id .. "二转归属和父分支")
                 check(cfg.combatPower == 20,id .. "二转原战力保持")
                 local mapped = AVC.SECOND_BRANCHES[row.parent]
@@ -155,7 +185,6 @@ function Start()
             check(different>500,id .. "新主体不是司仪旧主体")
             -- 绑定当前真实绘图代码和正式PNG，防止同图换色PNG与另一份代码各自通过。
             -- 仅在内存重绘，不落母图、不改资源；逐像素比较引擎相同8位量化结果。
-            local drawer = classId == CC.RANGER and echo or mask
             local master = raster.render(drawer,id,regenerated)
             local expected = raster.reduce(master,regenerated)
             local payloadMismatch = 0

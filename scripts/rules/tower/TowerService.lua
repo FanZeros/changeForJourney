@@ -65,12 +65,13 @@ end
 
 -- ======================== 挑战（进入通天塔战斗） ========================
 
---- 发起通天塔挑战，返回当前层+第一波的战斗配置
+--- 发起通天塔挑战，返回所选层+第一波的战斗配置
 ---@param uid number
+---@param requestedFloor number|nil 缺省挑战当前层，全部通关后默认第112层
 ---@return boolean ok
 ---@return string|nil err
 ---@return table|nil result { floor, wave, monsterLevel, monsters, rageTime, superRageTime, buffs }
-function TowerService.Challenge(uid)
+function TowerService.Challenge(uid, requestedFloor)
     local unlocked, unlockErr = checkTeamUnlocks(uid)
     if not unlocked then return false, unlockErr end
     local dungeon = PDM.GetModule(uid, "dungeon")
@@ -80,10 +81,12 @@ function TowerService.Challenge(uid)
 
     local bt = ensureBT(dungeon, uid)
 
-    local floor = bt.floor
-    if floor > TowerConfig.MAX_FLOOR then
-        return false, "已通关全部层数"
-    end
+    local maxFloor = math.min(tonumber(bt.floor) or 1, TowerConfig.MAX_FLOOR)
+    local floor = requestedFloor
+    if floor == nil then floor = maxFloor end
+    if type(floor) ~= "number" or floor ~= math.floor(floor) or floor < 1
+        or floor > TowerConfig.MAX_FLOOR then return false, "无效的层数" end
+    if floor > maxFloor then return false, "层数未解锁" end
 
     local floorCfg = TowerConfig.getFloor(floor)
     if not floorCfg then
@@ -136,9 +139,6 @@ function TowerService.WaveWin(uid, floor, wave)
     end
 
     local bt = ensureBT(dungeon, uid)
-    if bt.floor ~= floor then
-        return false, "层数不匹配"
-    end
 
     local floorCfg = TowerConfig.getFloor(floor)
     if not floorCfg then
@@ -224,8 +224,19 @@ function TowerService.FloorWin(uid, floor)
     end
 
     local bt = ensureBT(dungeon, uid)
-    if bt.floor ~= floor then
-        return false, "层数不匹配"
+    local run = runs[uid]
+    if not run or run.bt ~= bt or run.floor ~= floor then
+        return false, "挑战未开始"
+    end
+    if run.floorResult then
+        print("[TowerService] replay FloorWin run=" .. run.id .. " floor=" .. floor)
+        return true, nil, copy(run.floorResult)
+    end
+    if run.phase ~= "floor_win" or run.wave ~= TowerConfig.WAVES_PER_FLOOR then
+        return false, "本层尚未通关"
+    end
+    for wave = 1, TowerConfig.WAVES_PER_FLOOR do
+        if not run.waveResults[wave] then return false, "本层尚未通关" end
     end
 
     local floorCfg = TowerConfig.getFloor(floor)
@@ -233,20 +244,31 @@ function TowerService.FloorWin(uid, floor)
         return false, "层配置不存在"
     end
 
-    -- 首通给 firstDiamond；重复通关也给扫荡档钻石，避免玩家完整打完一层无任何收益。
-    local firstClear = not (bt.cleared[floor] or bt.cleared[tostring(floor)])
+    -- 旧档可能只有推进层数而没有 cleared 键：历史层不能再次发首通钻石。
+    -- 真正首次通关给 firstDiamond；重打完整十波仍给 sweepDiamond。
+    bt.cleared = bt.cleared or {}
+    local oldFloor = tonumber(bt.floor) or 1
+    local firstClear = not (oldFloor > floor or bt.cleared[floor] or bt.cleared[tostring(floor)])
     local diamondReward = firstClear and floorCfg.firstDiamond or floorCfg.sweepDiamond
 
-    -- 标记通关、推进层数
     bt.cleared[floor] = true
     bt.cleared[tostring(floor)] = nil
-    bt.floor = math.min(floor + 1, TowerConfig.MAX_FLOOR + 1)
+    bt.floor = math.max(oldFloor, math.min(floor + 1, TowerConfig.MAX_FLOOR + 1))
 
     local rewards = {}
     if diamondReward > 0 then
         rewards[#rewards + 1] = { type = "diamond", amount = diamondReward }
-        CurrencyService.GrantReward(uid, rewards[1])
     end
+    -- 先消费当局并缓存回执，奖励/MarkDirty 的同步回调不能重复发奖。
+    run.phase = "settled"
+    run.floorResult = {
+        floor         = floor,
+        firstClear    = firstClear,
+        diamondReward = diamondReward,
+        rewards       = rewards,
+        nextFloor     = bt.floor,
+    }
+    if diamondReward > 0 then CurrencyService.GrantReward(uid, rewards[1]) end
 
     PDM.MarkDirty(uid, "dungeon")
     if diamondReward > 0 then
@@ -256,13 +278,7 @@ function TowerService.FloorWin(uid, floor)
     print(string.format("[TowerService] FloorWin uid=%s floor=%d firstClear=%s diamond=%d nextFloor=%d",
         tostring(uid), floor, tostring(firstClear), diamondReward, bt.floor))
 
-    return true, nil, {
-        floor         = floor,
-        firstClear    = firstClear,
-        diamondReward = diamondReward,
-        rewards       = rewards,
-        nextFloor     = bt.floor,
-    }
+    return true, nil, copy(run.floorResult)
 end
 
 -- ======================== 选择强化 ========================
@@ -289,7 +305,7 @@ function TowerService.PickBuff(uid, buffId, request)
     end
 
     local run = runs[uid]
-    if not run or run.bt ~= bt or run.floor ~= bt.floor then return false, "挑战未开始" end
+    if not run or run.bt ~= bt then return false, "挑战未开始" end
     request = request or {}
     if request.runId ~= nil and request.runId ~= run.id then return false, "挑战已过期" end
     if request.floor ~= nil and request.floor ~= run.floor then return false, "层数不匹配" end

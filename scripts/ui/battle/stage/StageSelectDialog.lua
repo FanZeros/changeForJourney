@@ -88,10 +88,9 @@ local function drawFittedTitle(vg, x, y, source, width, fontSize, maxLines, alig
 end
 
 local StageSelectDialog = {}
-local onDungeonSelect = nil ---@type fun(dungeonId: string, teamIdx: number): boolean|nil
+local onDungeonSelect = nil ---@type fun(dungeonId: string, teamIdx: number, floor: number): boolean|nil
 local TAB_Y, TAB_W, TAB_H = 686, 150, 46
 local MAIN_TAB_X, DUNGEON_TAB_X = 445, 635
-local TOWER_CX, TOWER_CY, TOWER_W, TOWER_H = 200, 1620, 190, 84
 
 function StageSelectDialog.setOnDungeonSelect(callback)
     onDungeonSelect = callback
@@ -165,6 +164,9 @@ local state = {
     chDragY   = nil,   -- 左栏按下位置
     chDragScroll = 0, -- 按下时滚动起点
     chDragMoved = false,
+    rowScroll = {},        ---@type table<string, number> 各组关卡列表的纵向像素偏移
+    rowDragKey = nil,      ---@type string|nil 整个右视窗（含标签/空白）捕获纵拖
+    rowDragLastY = 0,
     cardScroll = {},       ---@type table<number, number> 各关敌人列表独立偏移
     cardDragId = nil,      ---@type number|nil 当前捕获的关卡
     cardDragX = 0,
@@ -203,7 +205,7 @@ local function collectAllIds()
     while cur and guard < 2000 do
         guard = guard + 1
         if order[cur] then break end
-        if SC.getStage(cur) then
+        if ResourceList.getStageEntry(cur) then
             ids[#ids + 1] = cur
             order[cur] = #ids
         end
@@ -288,9 +290,9 @@ local function currentGroups()
     return ensureCache()
 end
 
--- 资源进度是副本独立账本，不能用主线链序 cacheMaxOrder 代替。
+-- 资源/通天塔进度是副本独立账本，不能用主线链序 cacheMaxOrder 代替。
 local function stageLocked(id, maxOrder, battleData, dungeonData)
-    if SC.isResourceStage(id) then
+    if ResourceList.isTowerStage(id) or SC.isResourceStage(id) then
         return not ResourceList.isStageUnlocked(id, battleData, dungeonData)
     end
     local ord = state.cacheOrder and state.cacheOrder[id]
@@ -311,16 +313,16 @@ end
 ---@param id number
 ---@return number
 local function displayChapter(id)
-    local entry = SC.getStage(id)
+    local entry = ResourceList.getStageEntry(id)
     return entry and entry.displayChapter or math.floor(id / 100)
 end
 
 local function shortStageLabel(id)
     if SC.isTerminalTemple(id) then
-        local entry = SC.getStage(id)
+        local entry = ResourceList.getStageEntry(id)
         return entry and entry.name or "终焉神殿"
     end
-    local entry = SC.getStage(id)
+    local entry = ResourceList.getStageEntry(id)
     if not entry then return tostring(id) end
     local rel = displayChapter(id)
     return string.format("%d-%d", rel, entry.stage)
@@ -358,6 +360,7 @@ local function stageMonsterCards(entry)
     local counts = {} ---@type table<number, number>
     local seen = {} ---@type table<number, boolean>
     if not entry then return cards end
+    if entry.tower then return cards end
     local total = entry.firstCount or entry.idleCount or 0
     local types = entry.monsters or {}
     local normalCount = total
@@ -406,6 +409,73 @@ local function chapterListBounds(groups)
     return top, bottom
 end
 
+-- 关卡视窗与纵向偏移是绘制/命中的唯一来源；主线五行及神殿说明保留原尺寸。
+local ROW_STEP = D.ROW_H + D.ROW_GAP
+local function rowViewport()
+    return D.MID_X, D.ROW_Y0 - 4, D.MID_W, 5 * ROW_STEP
+end
+
+local function inRowViewport(x, y)
+    local vx, vy, vw, vh = rowViewport()
+    return x >= vx and x <= vx + vw and y >= vy and y < vy + vh
+end
+
+local function rowScrollLimit(group)
+    local _, _, _, height = rowViewport()
+    return math.max(0, #group.ids * ROW_STEP - D.ROW_GAP + 4 - height)
+end
+
+local function setRowScroll(group, offset)
+    local value = math.max(0, math.min(rowScrollLimit(group), offset))
+    state.rowScroll[tostring(group.key)] = value
+    return value
+end
+
+local function getRowScroll(group)
+    return setRowScroll(group, state.rowScroll[tostring(group.key)] or 0)
+end
+
+local function rowY(index, offset)
+    return D.ROW_Y0 + (index - 1) * ROW_STEP - offset
+end
+
+local function visibleRows(group)
+    local offset = getRowScroll(group)
+    local _, top, _, height = rowViewport()
+    local first = math.max(1, math.floor((top - D.ROW_Y0 + offset - D.ROW_H) / ROW_STEP) + 2)
+    local last = math.min(#group.ids, math.ceil((top + height - D.ROW_Y0 + offset) / ROW_STEP))
+    return first, last, offset
+end
+
+local function revealStage(group, stageId)
+    local offset = getRowScroll(group)
+    if not stageId then return end
+    local _, top, _, height = rowViewport()
+    for index, id in ipairs(group.ids) do
+        if id == stageId then
+            local y = rowY(index, offset)
+            if y < top then offset = offset + y - top
+            elseif y + D.ROW_H > top + height then offset = offset + y + D.ROW_H - top - height end
+            setRowScroll(group, offset)
+            return
+        end
+    end
+end
+
+local function groupTarget(group)
+    return group.isTower and ResourceList.getCurrentTowerStageId() or currentStageId()
+end
+
+local function rowAt(group, x, y)
+    if not group or not inRowViewport(x, y) then return nil end
+    local offset = getRowScroll(group)
+    local index = math.floor((y - D.ROW_Y0 + offset) / ROW_STEP) + 1
+    local id = group.ids[index]
+    local top = rowY(index, offset)
+    if id and y >= top and y <= top + D.ROW_H then return id, top end
+    return nil
+end
+
 -- 标签区 | 敌人视口 [卡面 + 名称 + xN] | 行右缘
 --         CARD_X=455 <---------------> MID_X+MID_W-4=891
 -- 仅敌人内容平移；裁剪先在行坐标设置，避免滚动后侵入标签或相邻关卡。
@@ -422,6 +492,7 @@ end
 
 local function resetCardScroll()
     state.cardScroll = {}
+    state.rowDragKey = nil
     state.cardDragId = nil
     state.cardDragHorizontal = false
     state.cardDragMoved = false
@@ -429,18 +500,28 @@ end
 
 local function stageGroupKey(stageId)
     if not stageId then return nil end
-    if SC.isResourceStage(stageId) then return ResourceList.getGroupKey(stageId) end
+    if ResourceList.isTowerStage(stageId) or SC.isResourceStage(stageId) then
+        return ResourceList.getGroupKey(stageId)
+    end
     if SC.isTerminalTemple(stageId) then return "T" .. tostring(stageId) end
     return math.floor(stageId / 100)
 end
 
-local function locateGroup(groups, key)
+local function locateGroup(groups, key, targetId)
     local gi = 1
     for i, g in ipairs(groups) do
         if tostring(g.key) == tostring(key) then gi = i; break end
     end
-    state.selKey = groups[gi] and groups[gi].key or nil
+    local group = groups[gi]
+    state.selKey = group and group.key or nil
     state.chScroll = math.min(gi - 1, math.max(0, #groups - D.CH_VISIBLE))
+    if group then
+        if targetId or state.rowScroll[tostring(group.key)] == nil then
+            revealStage(group, targetId or groupTarget(group))
+        else
+            getRowScroll(group)
+        end
+    end
 end
 
 local function switchSection(section)
@@ -458,21 +539,19 @@ local function switchSection(section)
     else
         -- 首次切到副本定位首章；不要沿用主线数字章号造成跨分类错位。
         local stageId = currentStageId()
-        local key = stageId and ((section == "dungeon") == SC.isResourceStage(stageId))
+        local isDungeon = stageId and (ResourceList.isTowerStage(stageId) or SC.isResourceStage(stageId))
+        local key = stageId and ((section == "dungeon") == not not isDungeon)
             and stageGroupKey(stageId) or nil
-        locateGroup(groups, key)
+        locateGroup(groups, key, key and stageId or nil)
     end
 end
 
 local function cardRowAt(groups, x, y)
-    local sel = selectedGroup(groups)
-    if not sel then return nil end
-    for i, id in ipairs(sel.ids) do
-        local rowY = D.ROW_Y0 + (i - 1) * (D.ROW_H + D.ROW_GAP)
-        local vx, vy, vw, vh = cardViewport(rowY)
-        if x >= vx and x <= vx + vw and y >= vy and y <= vy + vh then
-            return id, stageMonsterCards(SC.getStage(id))
-        end
+    local id, y0 = rowAt(selectedGroup(groups), x, y)
+    if not id then return nil end
+    local vx, vy, vw, vh = cardViewport(y0)
+    if x >= vx and x <= vx + vw and y >= vy and y <= vy + vh then
+        return id, stageMonsterCards(ResourceList.getStageEntry(id))
     end
     return nil
 end
@@ -555,20 +634,20 @@ local function drawChapterBackground(vg, stageId, x, y, hue, isSel, locked, back
     nvgFill(vg)
 end
 
-local function drawTowerEntry(vg, battleData)
-    local locked = not ResourceList.isTowerUnlocked(battleData)
-    drawChapterBackground(vg, nil, TOWER_CX - TOWER_W * 0.5, TOWER_CY - TOWER_H * 0.5,
-        CH_HUES[5], false, locked, "image/界面底板/副本秘境/UI_FBRK_3.png")
-    drawFittedTitle(vg, TOWER_CX, TOWER_CY - 12, "通天塔", TOWER_W - 18, 26, 1,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, locked and 139 or 235,
-        locked and 149 or 230, locked and 165 or 210, 3)
-    local caption = "三队攻坚"
-    if locked then
-        local stageId = ResourceList.getTowerUnlockStage()
-        caption = I18n.format("通关 %d-%d 解锁", math.floor(stageId / 100), stageId % 100)
-    end
-    drawFittedTitle(vg, TOWER_CX, TOWER_CY + 20, caption, TOWER_W - 12, 20, 2,
+-- 塔每波随机出怪，预览只展示真实层级和规则，绝不以固定卡牌冒充随机配置。
+local function drawTowerPreview(vg, entry, y, locked)
+    local vx, vy, vw, vh = cardViewport(y)
+    nvgSave(vg)
+    nvgIntersectScissor(vg, vx, vy, vw, vh)
+    local color = locked and 149 or 230
+    drawFittedTitle(vg, vx + vw * 0.5, y + 36,
+        I18n.format("怪物 Lv.%d", entry.monsterLevel or 0), vw - 16, 28, 1,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 235, color, 194, 2)
+    drawFittedTitle(vg, vx + vw * 0.5, y + 82, "每层10波，敌人随机生成", vw - 16, 24, 1,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color, color, color, 2)
+    drawFittedTitle(vg, vx + vw * 0.5, y + 128, "三队攻坚，共同推进", vw - 16, 24, 1,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 201, 151, 59, 2)
+    nvgRestore(vg)
 end
 
 ---@param vg any
@@ -594,27 +673,38 @@ function StageSelectDialog.open(teamIdx)
     resetCardScroll()
     state.targetTeam = teamIdx
     local curStage = currentStageId()
-    state.section = curStage and SC.isResourceStage(curStage) and "dungeon" or "main"
-    -- 资源队伍自动打开所属副本章；终焉仍定位对应独立章。
+    local isDungeon = curStage and (ResourceList.isTowerStage(curStage) or SC.isResourceStage(curStage))
+    state.section = isDungeon and "dungeon" or "main"
+    -- 资源队伍自动打开所属副本，并将完整层号滚入可视区；终焉仍定位独立章。
     local groups = currentGroups()
-    locateGroup(groups, stageGroupKey(curStage))
+    locateGroup(groups, stageGroupKey(curStage), curStage)
 end
 
 -- 旧副本导航也只打开同一张关卡选择表，不再进入次数/挑战详情。
 function StageSelectDialog.openDungeon(teamIdx, dungeonId)
     StageSelectDialog.open(teamIdx or 1)
-    state.section = "dungeon"
+    state.targetTeam = teamIdx or state.targetTeam or 1
+    switchSection("dungeon")
     local groups = currentGroups()
-    local current = currentStageId()
-    local key = current and SC.isResourceStage(current) and stageGroupKey(current) or nil
-    if dungeonId then
+    local targetId = currentStageId()
+    local key = stageGroupKey(targetId)
+    if dungeonId == "babel_tower" then
+        targetId = ResourceList.getCurrentTowerStageId()
+        key = "R:babel_tower"
+    elseif dungeonId then
         local DC = require("config.DungeonConfig")
         local dungeon = require("runtime.ClientDispatcher").get("dungeon") or {}
-        local floor = math.min(DC.MAX_FLOOR[dungeonId] or 1,
-            DC.getHighestClearedFloor(dungeon[dungeonId], dungeonId) + 1)
-        key = ResourceList.getGroupKey(DC.getStageId(dungeonId, floor))
+        if DC.isResourceDungeon(dungeonId) then
+            local currentDungeon = targetId and DC.decodeStageId(targetId)
+            if currentDungeon ~= dungeonId then
+                local floor = math.min(DC.MAX_FLOOR[dungeonId],
+                    DC.getHighestClearedFloor(dungeon[dungeonId], dungeonId) + 1)
+                targetId = DC.getStageId(dungeonId, floor)
+            end
+            key = "R:" .. dungeonId
+        end
     end
-    locateGroup(groups, key)
+    locateGroup(groups, key, targetId)
     resetCardScroll()
 end
 
@@ -646,15 +736,12 @@ function StageSelectDialog.handleScroll(wheel, x, y)
         and y >= top - 70 and y <= bottom + 70 then
         local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
         state.chScroll = math.max(0, math.min(maxScroll, state.chScroll - wheel))
-    else
-        local id, cards = cardRowAt(groups, x, y)
-        if id and cards then
-            local limit = cardScrollLimit(cards)
-            local offset = math.max(0, math.min(limit,
-                (state.cardScroll[id] or 0) - wheel * (D.CARD_W + D.CARD_GAP)))
-            state.cardScroll[id] = offset
-            -- 增量拖动直接使用当前偏移；滚轮混用后不回到按下时的旧位置。
-            if state.cardDragId == id then state.cardDragScroll = offset end
+    elseif inRowViewport(x, y) then
+        local group = selectedGroup(groups)
+        if group then
+            setRowScroll(group, getRowScroll(group) - wheel * ROW_STEP)
+            -- 混合滚轮与拖动后，不回到按下时的旧偏移。
+            if state.rowDragKey then state.cardDragMoved = true end
         end
     end
     return true
@@ -664,6 +751,7 @@ function StageSelectDialog.handleDragBegin(x, y)
     if not state.open then return false end
     state.chDragY = nil
     state.chDragMoved = false
+    state.rowDragKey = nil
     state.cardDragId = nil
     state.cardDragHorizontal = false
     state.cardDragMoved = false
@@ -672,14 +760,18 @@ function StageSelectDialog.handleDragBegin(x, y)
     if x >= D.CH_X and x <= D.CH_X + D.CH_W and y >= top and y <= bottom then
         state.chDragY = y
         state.chDragScroll = state.chScroll
-    else
-        local id, cards = cardRowAt(groups, x, y)
-        if id and cards then
-            local limit = cardScrollLimit(cards)
-            state.cardDragId = id
+    elseif inRowViewport(x, y) then
+        local group = selectedGroup(groups)
+        if group then
+            state.rowDragKey = tostring(group.key)
             state.cardDragX, state.cardDragY = x, y
-            state.cardDragLastX = x
-            state.cardDragScroll = math.max(0, math.min(limit, state.cardScroll[id] or 0))
+            state.cardDragLastX, state.rowDragLastY = x, y
+            local id, cards = cardRowAt(groups, x, y)
+            if id and cards and not ResourceList.isTowerStage(id) then
+                state.cardDragId = id
+                local limit = cardScrollLimit(cards)
+                state.cardDragScroll = math.max(0, math.min(limit, state.cardScroll[id] or 0))
+            end
         end
     end
     return true
@@ -695,24 +787,29 @@ function StageSelectDialog.handleDragMove(x, y)
         local step = D.CH_BTN_H + D.CH_GAP
         state.chScroll = math.max(0, math.min(maxScroll,
             state.chDragScroll + math.floor(delta / step + 0.5)))
-    elseif state.cardDragId then
+    elseif state.rowDragKey then
         local deltaX, deltaY = state.cardDragX - x, state.cardDragY - y
-        if math.max(math.abs(deltaX), math.abs(deltaY)) >= 15 then
-            if not state.cardDragMoved then
-                state.cardDragHorizontal = math.abs(deltaX) >= math.abs(deltaY)
-                state.cardDragLastX = state.cardDragX
-                print("[StageSelectDialog] 拖动敌人列表: " .. tostring(state.cardDragId))
-            end
+        if not state.cardDragMoved and math.max(math.abs(deltaX), math.abs(deltaY)) >= 15 then
+            -- 首次越阈值即锁方向，之后往返/斜拖也不串轴、不误切关。
+            state.cardDragHorizontal = math.abs(deltaX) >= math.abs(deltaY)
             state.cardDragMoved = true
         end
-        if state.cardDragMoved and state.cardDragHorizontal then
-            local cards = stageMonsterCards(SC.getStage(state.cardDragId))
-            local limit = cardScrollLimit(cards)
-            local delta = state.cardDragLastX - x
-            state.cardDragScroll = math.max(0, math.min(limit, state.cardDragScroll + delta))
-            state.cardScroll[state.cardDragId] = state.cardDragScroll
-            -- 每步消化端点外位移，反向拖动立即响应，不必先走回按下位置。
-            state.cardDragLastX = x
+        if state.cardDragMoved then
+            if state.cardDragHorizontal and state.cardDragId then
+                local cards = stageMonsterCards(ResourceList.getStageEntry(state.cardDragId))
+                local limit = cardScrollLimit(cards)
+                state.cardDragScroll = math.max(0, math.min(limit,
+                    state.cardDragScroll + state.cardDragLastX - x))
+                state.cardScroll[state.cardDragId] = state.cardDragScroll
+                state.cardDragLastX = x
+            elseif not state.cardDragHorizontal then
+                local group = selectedGroup(currentGroups())
+                if group and tostring(group.key) == state.rowDragKey then
+                    setRowScroll(group, getRowScroll(group) + state.rowDragLastY - y)
+                end
+                -- 消化越界位移，反向拖动立即响应，不必走回起点。
+                state.rowDragLastY = y
+            end
         end
     end
     return true
@@ -721,6 +818,7 @@ end
 function StageSelectDialog.handleDragEnd()
     if not state.open then return false end
     state.chDragY = nil
+    state.rowDragKey = nil
     state.cardDragId = nil
     state.cardDragHorizontal = false
     -- moved 留到点击消费或下一次按下；宿主可能把往返拖动误判为短点击。
@@ -754,7 +852,6 @@ function StageSelectDialog.draw(vg)
     if scale <= 0.01 then return end
 
     local groups, maxOrder = currentGroups()
-    local curStage = currentStageId()
     local sel = selectedGroup(groups)
     if not sel then return end
     local battleData, dungeonData = ResourceList.getProgress()
@@ -828,23 +925,23 @@ function StageSelectDialog.draw(vg)
         -- 章节按钮文字：解锁=亮色，锁定=灰蓝色
         local chR, chG, chB = 235, 230, 210
         if chapterLocked then chR, chG, chB = 0x8b, 0x95, 0xa5 end
-        drawFittedTitle(vg, cx, y + D.CH_BTN_H * 0.34, g.name, D.CH_W - 18, 26, 2,
+        local singleTitle = g.resourceDungeonId or g.isTower
+        drawFittedTitle(vg, cx, y + D.CH_BTN_H * (singleTitle and 0.5 or 0.34),
+            g.name, D.CH_W - 18, 26, 2,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, chR, chG, chB, 3)
         if chapterLocked and imgLock >= 0 then
             drawImageCentered(vg, imgLock, x + D.CH_W - 22, y + 22, 30, 30, 0.9)
         end
-        -- 副标题：普通章节 = "N 章"；单难度终焉 = 难度名（如 "困难"/"噩梦"）
-        local rel = g.subLabel or tostring(SC.getRelativeChapter(g.key)) .. " 章"
-        if not g.resourceDungeonId and type(g.key) == "string" then
-            rel = I18n.difficulty(rel)
-        else
-            rel = I18n.lookup(rel)
+        if not singleTitle then
+            -- 主线章节/终焉保留原副标题，副本每类只显示居中名称。
+            local rel = g.subLabel or tostring(SC.getRelativeChapter(g.key)) .. " 章"
+            rel = type(g.key) == "string" and I18n.difficulty(rel) or I18n.lookup(rel)
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 20)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0xc9, 0x97, 0x3B, 220))
+            nvgText(vg, cx, y + D.CH_BTN_H * 0.74, rel, nil)
         end
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 20)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0xc9, 0x97, 0x3B, 220))
-        nvgText(vg, cx, y + D.CH_BTN_H * 0.74, rel, nil)
     end
 
     if needScroll and state.chScroll < maxScroll then
@@ -853,16 +950,18 @@ function StageSelectDialog.draw(vg)
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 2)
     end
 
-    if state.section == "dungeon" then drawTowerEntry(vg, battleData) end
-
     -- ===================== 中栏：关卡竖排 + 敌人卡面 =====================
     nvgSave(vg)
-    nvgIntersectScissor(vg, D.MID_X, D.ROW_Y0 - 4, D.MID_W, 5 * (D.ROW_H + D.ROW_GAP))
-    for i, id in ipairs(sel.ids) do
-        local y = D.ROW_Y0 + (i - 1) * (D.ROW_H + D.ROW_GAP)
+    local vx0, vy0, vw0, vh0 = rowViewport()
+    nvgIntersectScissor(vg, vx0, vy0, vw0, vh0)
+    local firstRow, lastRow, rowOffset = visibleRows(sel)
+    local selectedCurrent = groupTarget(sel)
+    for i = firstRow, lastRow do
+        local id = sel.ids[i]
+        local y = rowY(i, rowOffset)
         local x = D.MID_X
-        local isCur = (id == curStage)
-        local entry = SC.getStage(id)
+        local isCur = (id == selectedCurrent)
+        local entry = ResourceList.getStageEntry(id)
         local isBoss = (entry and (entry.bossId or 0) > 0) or SC.isTerminalTemple(id)
         local locked = stageLocked(id, maxOrder, battleData, dungeonData)
 
@@ -905,6 +1004,8 @@ function StageSelectDialog.draw(vg)
             sub = "神殿"
         elseif isBoss then
             sub = "首领"
+        elseif ResourceList.isTowerStage(id) then
+            sub = "通天塔"
         elseif SC.isResourceStage(id) then
             sub = "副本"
         else
@@ -932,7 +1033,9 @@ function StageSelectDialog.draw(vg)
         -- 布局：图标 18px 中心 (x+25, y+84)，数字左缘 x+38；左栏可用宽
         -- ~124px（CARD_X-MID_X-边距），最长 5 位数（ml92 外推上限 ~2.9e4）
         -- 20 号字 ~55px，38+55=93px < 124px 不撞卡面。
-        local recPower, recExtr = SRP.get(id)
+        ---@type number|nil, boolean|nil
+        local recPower, recExtr
+        if not ResourceList.isTowerStage(id) then recPower, recExtr = SRP.get(id) end
         if recPower then
             local rr, rg, rb
             if recExtr then
@@ -955,66 +1058,83 @@ function StageSelectDialog.draw(vg)
                 rr, rg, rb, 2, { alpha = iconAlpha })
         end
 
-        -- 敌人卡面（行右侧横排；名称和数量随卡面一起滚动）
-        local mids = stageMonsterCards(entry)
-        local maxOffset, contentW = cardScrollLimit(mids)
-        local offset = math.max(0, math.min(maxOffset, state.cardScroll[id] or 0))
-        state.cardScroll[id] = offset
-        local vx, vy, vw, vh = cardViewport(y)
-        local cardCY = y + 62
-        nvgSave(vg)
-        nvgIntersectScissor(vg, vx, vy, vw, vh)
-        for ci, info in ipairs(mids) do
-            local monsterId = info.id
-            local cardCX = D.CARD_X + 2 + (ci - 1) * (D.CARD_W + D.CARD_GAP) + D.CARD_W * 0.5 - offset
-            local card = ensureMonsterCard(vg, monsterId)
-            if card >= 0 then
-                drawImageCover(vg, card, cardCX, cardCY, D.CARD_W, D.CARD_H, locked and 0.4 or 1.0)
-            else
+        if entry and entry.tower then
+            drawTowerPreview(vg, entry, y, locked)
+        else
+            -- 敌人卡面（行右侧横排；名称和数量随卡面一起滚动）
+            local mids = stageMonsterCards(entry)
+            local maxOffset, contentW = cardScrollLimit(mids)
+            local offset = math.max(0, math.min(maxOffset, state.cardScroll[id] or 0))
+            state.cardScroll[id] = offset
+            local vx, vy, vw, vh = cardViewport(y)
+            local cardCY = y + 62
+            nvgSave(vg)
+            nvgIntersectScissor(vg, vx, vy, vw, vh)
+            for ci, info in ipairs(mids) do
+                local monsterId = info.id
+                local cardCX = D.CARD_X + 2 + (ci - 1) * (D.CARD_W + D.CARD_GAP) + D.CARD_W * 0.5 - offset
+                local card = ensureMonsterCard(vg, monsterId)
+                if card >= 0 then
+                    drawImageCover(vg, card, cardCX, cardCY, D.CARD_W, D.CARD_H, locked and 0.4 or 1.0)
+                else
+                    nvgBeginPath(vg)
+                    nvgRoundedRect(vg, cardCX - D.CARD_W * 0.5, cardCY - D.CARD_H * 0.5,
+                        D.CARD_W, D.CARD_H, 8)
+                    nvgFillColor(vg, nvgRGBA(30, 26, 22, 200))
+                    nvgFill(vg)
+                end
                 nvgBeginPath(vg)
                 nvgRoundedRect(vg, cardCX - D.CARD_W * 0.5, cardCY - D.CARD_H * 0.5,
                     D.CARD_W, D.CARD_H, 8)
-                nvgFillColor(vg, nvgRGBA(30, 26, 22, 200))
-                nvgFill(vg)
+                nvgStrokeColor(vg, nvgRGBA(201, 151, 59, locked and 90 or 200))
+                nvgStrokeWidth(vg, 2)
+                nvgStroke(vg)
+                local name = MC.getName(monsterId)
+                nvgSave(vg)
+                nvgIntersectScissor(vg, cardCX - D.CARD_W * 0.5, cardCY - D.CARD_H * 0.5,
+                    D.CARD_W, D.CARD_H)
+                drawTextStroke(vg, cardCX, cardCY - D.CARD_H * 0.5 + 14, name, 16,
+                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 236, 226, 198, 2,
+                    { alpha = locked and 0.55 or 1 })
+                nvgRestore(vg)
+                drawTextStroke(vg, cardCX, cardCY + D.CARD_H * 0.5 + 12,
+                    "x" .. tostring(info.count), 18,
+                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 214, 120, 2,
+                    { alpha = locked and 0.55 or 1 })
             end
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, cardCX - D.CARD_W * 0.5, cardCY - D.CARD_H * 0.5,
-                D.CARD_W, D.CARD_H, 8)
-            nvgStrokeColor(vg, nvgRGBA(201, 151, 59, locked and 90 or 200))
-            nvgStrokeWidth(vg, 2)
-            nvgStroke(vg)
-            local name = MC.getName(monsterId)
-            nvgSave(vg)
-            nvgIntersectScissor(vg, cardCX - D.CARD_W * 0.5, cardCY - D.CARD_H * 0.5,
-                D.CARD_W, D.CARD_H)
-            drawTextStroke(vg, cardCX, cardCY - D.CARD_H * 0.5 + 14, name, 16,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 236, 226, 198, 2,
-                { alpha = locked and 0.55 or 1 })
             nvgRestore(vg)
-            drawTextStroke(vg, cardCX, cardCY + D.CARD_H * 0.5 + 12,
-                "x" .. tostring(info.count), 18,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 214, 120, 2,
-                { alpha = locked and 0.55 or 1 })
-        end
-        nvgRestore(vg)
-        if maxOffset > 0 then
-            local thumbW = vw * vw / contentW
-            local thumbX = vx + (vw - thumbW) * offset / maxOffset
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, vx, y + D.ROW_H - 6, vw, 3, 1.5)
-            nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 60))
-            nvgFill(vg)
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, thumbX, y + D.ROW_H - 6, thumbW, 3, 1.5)
-            nvgFillColor(vg, nvgRGBA(201, 151, 59, locked and 110 or 220))
-            nvgFill(vg)
-            drawFittedTitle(vg, vx + vw * 0.5, y + D.ROW_H - 22, "左右拖动查看敌人", vw - 8, 18, 1,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 201, 151, 59, 2)
+            if maxOffset > 0 then
+                local thumbW = vw * vw / contentW
+                local thumbX = vx + (vw - thumbW) * offset / maxOffset
+                nvgBeginPath(vg)
+                nvgRoundedRect(vg, vx, y + D.ROW_H - 6, vw, 3, 1.5)
+                nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 60))
+                nvgFill(vg)
+                nvgBeginPath(vg)
+                nvgRoundedRect(vg, thumbX, y + D.ROW_H - 6, thumbW, 3, 1.5)
+                nvgFillColor(vg, nvgRGBA(201, 151, 59, locked and 110 or 220))
+                nvgFill(vg)
+                drawFittedTitle(vg, vx + vw * 0.5, y + D.ROW_H - 22, "左右拖动查看敌人", vw - 8, 18, 1,
+                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 201, 151, 59, 2)
+            end
         end
         if SC.isTerminalTemple(id) then drawTerminalGuide(vg, y, locked) end
     end
     nvgRestore(vg)
 
+    local rowLimit = rowScrollLimit(sel)
+    if rowLimit > 0 then
+        local thumbH = math.max(30, vh0 * vh0 / (vh0 + rowLimit))
+        local thumbY = vy0 + (vh0 - thumbH) * rowOffset / rowLimit
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, vx0 + vw0 + 8, vy0, 5, vh0, 2.5)
+        nvgFillColor(vg, nvgRGBA(182, 176, 157, 60))
+        nvgFill(vg)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, vx0 + vw0 + 8, thumbY, 5, thumbH, 2.5)
+        nvgFillColor(vg, nvgRGBA(201, 151, 59, 220))
+        nvgFill(vg)
+    end
     nvgRestore(vg)
 end
 
@@ -1036,15 +1156,6 @@ function StageSelectDialog.handleInput(x, y)
         or hitTestRect(x, y, DUNGEON_TAB_X, TAB_Y, TAB_W, TAB_H) then
         switchSection(x < (MAIN_TAB_X + DUNGEON_TAB_X) * 0.5 and "main" or "dungeon")
         BF.trigger("stage_sel_section")
-        return true
-    end
-    if state.section == "dungeon" and hitTestRect(x, y, TOWER_CX, TOWER_CY, TOWER_W, TOWER_H) then
-        BF.trigger("stage_sel_tower")
-        if ResourceList.isTowerUnlocked() and onDungeonSelect then
-            local teamIdx = state.targetTeam or 1
-            if onDungeonSelect("babel_tower", teamIdx) then StageSelectDialog.close() end
-            print("[StageSelectDialog] 查看通天塔: 队伍=" .. teamIdx)
-        end
         return true
     end
     local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
@@ -1079,28 +1190,35 @@ function StageSelectDialog.handleInput(x, y)
             BF.trigger("stage_sel_ch")
             if tostring(state.selKey) ~= tostring(g.key) then resetCardScroll() end
             state.selKey = g.key
+            if state.rowScroll[tostring(g.key)] == nil then revealStage(g, groupTarget(g)) end
             return true
         end
     end
 
-    -- 关卡行：点击直接前往，不再弹确认
+    -- 关卡行：绘制/命中共用偏移，裁剪外和行间空白绝不能选到隐藏关卡。
     local sel = selectedGroup(groups)
-    if sel then
-        for i, id in ipairs(sel.ids) do
-            local y0 = D.ROW_Y0 + (i - 1) * (D.ROW_H + D.ROW_GAP)
-            if x >= D.MID_X and x <= D.MID_X + D.MID_W and y >= y0 and y <= y0 + D.ROW_H then
-                BF.trigger("stage_sel_cell")
-                if stageLocked(id, maxOrder) then return true end
-                if id == currentStageId() then return true end
-                local BattleTriPage = require("ui.battle.tri.BattleTriPage")
-                local teamIdx = SC.isTerminalTemple(id) and 1 or (state.targetTeam or 1)
-                local ok = BattleTriPage.gotoTeamStage(teamIdx, id)
-                -- 只关选关弹窗，三队页与其他两队战斗继续保留。
+    local id = rowAt(sel, x, y)
+    if id then
+        BF.trigger("stage_sel_cell")
+        if stageLocked(id, maxOrder) then return true end
+        if ResourceList.isTowerStage(id) then
+            local entry = ResourceList.getStageEntry(id)
+            local teamIdx = state.targetTeam or 1
+            if entry and onDungeonSelect then
+                local ok = onDungeonSelect("babel_tower", teamIdx, entry.stage)
                 if ok then StageSelectDialog.close() end
-                print("[StageSelectDialog] 前往关卡: " .. tostring(id))
-                return true
+                print("[StageSelectDialog] 前往通天塔: 队伍=" .. teamIdx .. " 层=" .. entry.stage)
             end
+            return true
         end
+        if id == currentStageId() then return true end
+        local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+        local teamIdx = SC.isTerminalTemple(id) and 1 or (state.targetTeam or 1)
+        local ok = BattleTriPage.gotoTeamStage(teamIdx, id)
+        -- 只关选关弹窗，三队页与其他两队战斗继续保留。
+        if ok then StageSelectDialog.close() end
+        print("[StageSelectDialog] 前往关卡: " .. tostring(id))
+        return true
     end
 
     if not hitTestRect(x, y, D.BG_CX, D.BG_CY, D.BG_W, D.BG_H) then

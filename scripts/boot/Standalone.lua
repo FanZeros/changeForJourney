@@ -1098,11 +1098,12 @@ function HandleUpdate(eventType, eventData)
     end
     if tabIndex == 1 then
         CharacterPanel.update(dt)
-    elseif tabIndex == 5 then
+    elseif tabIndex == 5 or (tabIndex == 3 and DungeonPage.isTowerChallengePending()) then
         DungeonPage.update(dt)
     end
-    if tabIndex ~= 5 and not DungeonBattleScene.isOpen() and not TowerBattleScene.isActive() then
-        -- 从副本页导航离开时释放旧详情/请求，迟到挑战不能再抢回战斗界面。
+    if tabIndex ~= 5 and not DungeonBattleScene.isOpen() and not TowerBattleScene.isActive()
+        and not (tabIndex == 3 and DungeonPage.isTowerChallengePending()) then
+        -- 选关发出的塔请求在tab3继续等回执/超时；导航离开仍取消迟到挑战。
         DungeonPage.close()
     end
     if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then

@@ -1,5 +1,75 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+## game01 竖屏残留、横屏适配与 PR88 对照（2026-10-06）
+
+### 范围、快照与结论
+
+- 仅检查 `/workspace/game01`；固定源码基线为 `workspace930@96703200e382144a243e448bac3153f8300f90f6`。本轮独立记录分支 `audit1006/game01-portrait-pr88`，不改其他 game 或共享根配置。
+- PR88 来源 `integrate/game04-taptap-20261005@670f669bc7dd5b8760bfa71d7234b909dac2b76f`；实时 API 返回 open、merged=false。PR 差异以共同祖先 `372f4506` 到来源计算，共35文件；API返回的base.sha为7b93bcee，不替代本轮fetch的当前目标96703200。
+- **当前是固定1920×1080横屏宿主＋1080×2400局部子页，不是竖屏主界面。** 不能全局替换 `GameConfig.Design`，不能按 `portrait` 或 `2400` 机械删代码。
+- **PR88不是横屏适配PR**：没有改Viewport、GameConfig、Horizon/HorizonInput、DungeonBattleScene/Scope、IntroCutscene、UpdateNoticePopup、CharacterInput/CharacterPanelDraw2、Electron或发布方向。TowerBattleScene仅新增清档reset；三队计时、状态隔离、成长/存档不是屏幕方向修复。
+- 当前确认六类应修的适配问题，另一个过场问题须限定触发条件；所有均未在本轮实施。城镇总览教程已经随PR92修复，不重复报未修。
+
+### 方向相关位置分类清单
+
+以下行号对应本轮固定源码；同组普通页面列出实际模块，详细调用按宿主及ModuleMap路由查找。不是每个包含1080/2400的文件都需要修改。
+
+| 类别 | 主要位置 | 当前含义与处理建议 |
+|---|---|---|
+| 正式入口 | `scripts/main.lua:9–15`、`boot/Standalone.lua:258–294,1133–1135` | Start→Standalone；读取物理尺寸/DPR，固定1920×1080，ScreenMode仅重算letterbox；保留。main顶部network注释过时 |
+| 发布与桌面窗口 | `.project/project.json:13`、`electron-shell/main.js:135–140` | 发布已landscape；Electron1590×987固定内容窗口。后者不是16:9，但宿主contain能处理；改窗口比例属于可选产品优化，不改身份/配置 |
+| 子页设计空间 | `scripts/config/GameConfig.lua:7–11`、`core/Viewport.lua:10–28,37–85` | Design1080×2400；DS=.45；每栏486×1080；普通三栏BASE1458×1080，宿主居中；三行左右贴边。保留，顶部旧侧轨示意可更新 |
+| 宿主绘制与输入 | `scripts/boot/StandaloneHorizon.lua:60–77,164–168,545–555,634–687,747–810`；`StandaloneHorizonInput.lua:81–235,1221–1356,1359–1496` | 物理→除DPR→逆整帧→逆子页；三行/塔/副本是业务状态分支，不是设备旋转分支。鼠标/触摸/滚轮都须同源变换 |
+| 左栏经营页 | `scripts/ui/town/{TownScene,TownPageChrome}.lua`；`ui/market/{MarketPage,MarketDraw,MarketInput}.lua`；`ui/tavern/{TavernPage,TavernPopups,TavernShopPage,RecruitAnim,TargetRecruitPanel}.lua`；`ui/loot/{LootBoxPage,LootBox}.lua`；`ui/story/task/{TaskPage,ExpeditionTrackView}.lua` | 1080×2400是活用页内稿；正式开页在 `boot/StandaloneBoot.lua:216–270`，可保留，不整页替换宽高 |
+| 锻炉与仓库 | `scripts/ui/blacksmith/{BlacksmithPage,BlacksmithDraw,BlacksmithInput,BlacksmithDecompose,BlacksmithEnhance,BlacksmithRefine}.lua`；`ui/backpack/{BackpackPanel,BackpackDialogs,BackpackGrids,BackpackEquipLink}.lua` | 中栏锻炉＋左栏仓库与warehouse profile有效；洗练左右排布是页内布局，不是设备方向。`BackpackPanel.lua:1181,1208`旧drawWindow/toDesignCoords未见生产调用，可分阶段清理 |
+| 右栏角色与详情 | `scripts/ui/character/panel/{CharacterPanel,CharacterPanelDraw2,CharacterInput}.lua`；`ui/character/detail/{CharacterDetail,CharacterDetailDraw,CharacterAttributeView,CharacterEquipStats,CharacterDetailEquip}.lua` | Design及CONTENT_SHIFT_Y=2400*.06是活契约；保持绘制/命中一致。未绘旧队签仍拦头像，见H07 |
+| 装备及角色弹层 | `scripts/ui/character/equip/{EquipmentBag,EquipmentDetail,EquipmentDetailDraw}.lua`；`ui/character/hero/{ArtifactDetailPanel,AvatarSelectPanel,AwakeningPanel,HeroRosterPanel}.lua`；`ui/character/EquipCrossDrag.lua:65–90,333–368` | compact/浮层/跨栏投放都有独立变换；EquipmentBag含2000×1020、8列覆盖布局及旧竖稿，不能整删；旧入口先查宿主和测试再清 |
+| 教堂、神器、古树 | `scripts/ui/church/{ChurchPage,ChurchDraw,ChurchInput,ChurchRosterDraw,ChurchArtifactPanel,ChurchArtifactDrawPanel,ChurchClassChange}.lua`；`ui/church/talent/{TalentPage,ChurchTalentPanel,TalentStarMap}.lua` | 神器三队与30/60子格保留；`boot/ArtifactGesture.lua:43–138`用note逆变换/捕获/变换变更取消。古树widthScale1.8、map高2400，旧方形居中注释过时，不重做已全高布局 |
+| 主线及共享战斗布局 | `scripts/core/BattleLayout.lua:17–20,43–56,90–104`；`ui/battle/scene/{BattleScene,BattleDraw,BattleView}.lua`；`ui/battle/tri/{BattleTriPage,BattleTriDriver}.lua` | strip/classic均仍消费；三行条带与局部卡面坐标不是屏幕方向。不能依据“classic已移除”注释删除 |
+| 选关/扫荡/统计/结算 | `scripts/ui/battle/stage/{StageSelectDialog,SweepDialog}.lua`；`ui/battle/popup/{DamageStatsPanel,BattleResultPanel,TerminalConfirmDialog}.lua` | 复用局部稿，由Page/宿主适配；draw/input一致部分可保留，改横宽卡属于设计优化 |
+| 资源副本 | `scripts/ui/dungeon/DungeonPage.lua:549,575–579,718`；`DungeonBattleScene.lua:56–62,1427–1437`；`DungeonBattleScope.lua:37,69` | 选择页contain；战斗目前仍在中栏，用Scope临时classic并恢复。旧双方cy180错配已不成立；但任意栏局部坐标强制modal仍错，见H06。真正全窗横排副本尚非本基线现状 |
+| 通天塔 | `scripts/ui/tower/{TowerBattleScene,TowerTriBattle,TowerBuffPick}.lua`；`TowerBattleScene.lua:398–450,491–508` | 塔战横屏三行；选buff/结算用drawPortraitOverlay及一致逆变换，可保留；异常fallback遗漏适配，见H01 |
+| HUD/全局弹窗 | `scripts/ui/hud/popup/{OfflineRewardPanel,PlayerInfoPanel,RedeemCodePanel,SettingsPanel,UpdateNoticePopup,RewardPopup,LevelUpPopup}.lua` | 玩家/设置/奖励为局部稿；离线内部1760宽、实际792，不误称挤成486；升级 `LevelUpPopup.lua:168–172`已780×466横卡。更新提醒见H03；奖励归属见H05 |
+| 标题、信件、对白、过场 | `scripts/ui/story/gate/{DarkTitleScreenGate,LetterIntro,IntroCutscene,StartScreen}.lua`；`ui/story/ScenarioDialogue.lua:421,599–609` | 正式标题/信件/对白已按宿主横屏；StartScreen空兼容isOpen恒false，可连调用链清理；Intro旧整体cover仅列条件项，不直接删模块 |
+| 教程与手势 | `scripts/systems/TutorialManager.lua:114–123,221–258,329–339`；`ui/tutorial/{TutorialOverlay,TutorialPageRecovery}.lua`；`boot/{ArtifactGesture,SeamBackGesture,TerminalInput,OfflineRewardOverlay}.lua` | 热点/spotlight按note投影，页面恢复不依赖已隐藏旧tab；捕获及resize取消保留。城镇总览已修，见后文 |
+| 通用绘图/UI桥/开发层 | `scripts/core/{DrawUtil,HorizonBg,UiToast,DarkIcon}.lua`；`ui/widget/{DesignWidgetSurface,KeywordText,SetFilterDialog}.lua`；`ui/dev/{CEPanel,KeyboardShortcuts,GMConsolePanel,DebugPanel}.lua` | cover是素材裁切、screen常为局部坐标。SHOWCASE默认false但有调用，是验收钩子；HorizonBg只画页内纯底色，旧贴图说明过时。Toast漏三行/塔，见附项 |
+| portrait立绘 | `scripts/config/HeroAssetUtil.lua:27`；`config/UrGachaConfig.lua:174–176,203–205`；`ui/tavern/TavernPage.lua:267,298–300`；`ui/character/hero/AwakeningPanel.lua:165`；`ui/story/ScenarioDialogue.lua:94–98,402–485` | 角色立绘路径/缓存/动画，不是竖屏，全部保留。塔drawPortraitOverlay才指竖稿弹层 |
+| 独立预览/测试 | `scripts/_proc/`的render_awaken、render_letter、verify_offline_panel、verify_reward_popup、verify_resource_dungeon、verify_stage_select、render_portrait等；`scripts/tests/`的horizon/gesture/layout系列 | 独立画布/截图尺寸不是主游戏方向入口，不全局替换；后续迁移时同步对应fixture。未执行这些Runtime测试 |
+
+### 六类应修适配问题：均未由 PR88 解决
+
+H编号沿用2026-10-05旧审查；H06/H07为本轮新增。H02单独列条件项，不把它与正常三队必现问题混计。
+
+| 编号与建议顺序 | 当前状态／具体失败场景 | 当前代码锚点与修法 |
+|---|---|---|
+| **H06 优先：副本侧栏幽灵按钮** | 副本运行、无更高弹窗；真实撤退在宿主(960,983.7)，左(474,983.7)及右(1446,983.7)也换算为副本(540,2186)，错误打开撤退确认；确认按钮有同类风险 | `boot/StandaloneHorizon.lua:664`；`StandaloneHorizonInput.lua:225–230,1075–1078`；`ui/dungeon/DungeonBattleScene.lua:1385–1396`。输入按实际center变换统一反解，侧栏消费但不触发副本按钮；保留classic |
+| **H07 优先：隐形旧队签拦头像** | 无详情/无教程；右栏子页(636,270)位于队一槽2头像内，却先命中未绘的旧队三Tab；三队已解锁时切到队三而非打开头像，未解锁也会消费点击 | `ui/character/panel/CharacterInput.lua:118–141`；`CharacterPanelDraw2.lua:277–279,490–550`。删除无绘制的旧页签热区和分发，不删正式三队头像/队伍数据 |
+| **H01：塔异常页超出横屏** | 塔异常/画面丢失进入error；正文/层号/返回提示Y1160/1240/1330超出1080高宿主，黑底也仅1080宽。返回操作仍能退出，不称完全卡死 | `ui/tower/TowerBattleScene.lua:378–395,439,450`；`boot/StandaloneHorizon.lua:712`。fallback接宿主w/h或一致适配器，文字保持内容帧内，增加内容帧裁剪 |
+| **H03：更新提醒遮罩/输入范围不一致** | 提醒打开时遮罩只占宿主X717..1203，左右仍亮着但Down/Up/Wheel全窗吞掉。是模态视觉范围错配，不是按钮必定错位 | `boot/StandaloneHorizon.lua:129–138`；`ui/hud/popup/UpdateNoticePopup.lua:99–103`。宿主先铺全窗遮罩，卡片仍contain，避免中央重复叠暗 |
+| **H04：黑边滚轮误操作右栏** | 1024×768,DPR1；上黑边(894.4,48)→宿主(1677,-90)→右栏(540,-200)，仍派名册滚轮，有余量即移动 | `boot/StandaloneHorizonInput.lua:210–217,1477`；`ui/character/panel/CharacterInput.lua:328–335`。入口拒绝内容帧外的新操作；已有拖拽move/up必须继续收尾，不能锁死所有权 |
+| **H05：塔功绩奖励归属错位＋滚轮下放** | 塔/功绩开启、tri关闭、非row奖励归属left；≥6项且入场结束，(100,450)在真实网格却判rp_out，>10项不能从该处拖滚。卡外滚轮可下放功绩；(900,450)不在left奖励却被center兜底误滚奖励 | `boot/StandaloneHorizon.lua:715–717,739`；`StandaloneHorizonInput.lua:145–161,1028–1030,1384–1414`。奖励输入/分类共用真实note，移除无关center兜底，模态卡外滚轮也消费。必须有旧焦点left或显式left，不泛称所有塔领奖都错 |
+
+### 条件修复、已修项目及旁支建议
+
+- **H02条件项：Intro整体竖稿cover让眼皮提前离屏。** `boot/StandaloneHorizon.lua:283–287`与`ui/story/gate/IntroCutscene.lua:116–132`：如果Intro真的active，openness≥0.253125时眼皮已离开可见区。应只cover背景、眼皮/字幕按宿主矩形。但正式三队胜利 `BattleTriPage.lua:225–249`→`BattleScene.lua:1210–1235`直接loadStage，不走Boot轮回回调；回调存在不证明正常三队必播。先确认正式过场接线需求，不机械删Intro，也不沿旧报告称正常三队必现。
+- **城镇教程整栏高亮已修，不需重复改。** PR92是当前96703200祖先；`ui/town/TownScene.lua:607–611`整栏spotlight与小点击区分离，`boot/StandaloneHorizon.lua:302–319`分别投影，`ui/tutorial/TutorialOverlay.lua:75–82`只按spotlight挖视觉洞；真正继续点击仍用顶部小区，换步清理不继承。教程15由Manager跳旧tab步骤、Recovery打开tab5，不能为旧隐藏tab重新加入口。
+- **已修/保留：** 当前滚轮已去外帧变换并传csx/csy；终焉确认已有模态守卫；副本Scope切classic已修旧上下排错配；神器用note、捕获、变换改变取消和IntersectScissor，未确认本轮新增方向缺陷。
+- **横屏迁移附项一：Toast漏三行/塔。** `boot/StandaloneHorizon.lua:743–744,854–855`提前收帧，而唯一`UiToast.draw`在`:888`；仓库快捷穿戴成功/失败的提示按绝对时间过期但未显示。建议共用finishFrame绘制，验证遮挡优先级；不是竖屏设计尺寸问题。
+- **横屏迁移附项二：三行/塔BattleView未遵守部分显示开关。** `ui/battle/scene/BattleView.lua:70–76`无条件画浮字/特效/投射物/星门；普通副本`:854–866`有对应守卫。只补呈现出口，不能停止伤害/命中模拟；不泛称所有动画开关失效。
+- **可选布局优化：** 资源副本改全窗横排、塔三选一改横排、玩家信息改宽卡和提高触控尺寸、Electron改16:9；这些是产品设计选择，不是所有局部竖稿都必须重做。
+- **可分批清理：** StartScreen空兼容及不可达分支；BackpackPanel旧window/inline入口；EquipmentBag/旧DebugPanel/名册入口。先迁宿主/测试，不能整模块删光；正式DarkTitleScreen、仓库left＋配装、神器三队、局部Design保持。
+- **过时说明可清：** main的network入口注释、Viewport旧侧轨示意、BattleLayout“classic已移除”、HorizonBg旧贴图、古树旧方形视口说明。仅改说明不冒充功能修复。
+
+### 本轮实际验证与交接边界
+
+- 两路独立只读扫描/调用审读，主会话复核关键函数与PR差异。没有从关键词数量推导缺陷数量，不把旧文档当现行证据。
+- Python内存数学检查234项通过，含6组物理尺寸×DPR1/2/3×3栏×4点共216组往返；另检查塔越界、遮罩范围、黑边路由、奖励错位/幽灵中心、副本三栏同局部点、旧队签/头像交叠及条件过场阈值。仅源码常量/数学验证，不等于执行Lua或真实设备复现。
+- 仓库规范36项单测实际全部通过；首阶段提交检查2763个路径，0错误0警告。前期外层调用超时/空输出未计通过，以上以独立捕获的实际结果为准。
+- **未执行**游戏Runtime专项、LSP、GPU像素/手机触控/性能验收或官方build；本轮只改现有文档与项目交接，没有改Lua、资源、配置，不重建、不占共享构建窗口。历史测试数字不算本轮结果。
+- 后续修复先读相关引擎文档及至少三个适用示例，改Lua后LSP无Error再官方build，并核对产物确实来自game01，不把别项目build成功算本项目部署。
+- 用户授权阶段成果正常push新任务分支，不推workspace系列、不强推、不自动建/合PR。阶段记录e5d97d1a已push且远端SHA一致；最终报告收尾另提交并推同一新任务分支。
+- 持续推进授权范围，确需用户选择下一项时先如实简报再真正AskUserQuestion；尊重停止、权限拒绝和安全边界。凭据不进源码、Git配置、日志或记忆；全局记忆工具失败，交接偏好实际强化于已有项目记忆。
+
 ## 升阶修复 PR87 交接（2026-10-05）
 
 - 用户明确授权提交PR；https://github.com/FanZeros/changeForJourney/pull/87，head=`fix930/equipment-ascend-freeze-20261005`，base=`workspace930`。创建源39f32c370954b41c7d38c275d4af40c798d0a46b、目标372f4506a6f55342f28964b73ee60312e3c96c59；返回open、draft=false、merged=false，未自动合并，不宣称CI通过。

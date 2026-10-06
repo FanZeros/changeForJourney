@@ -1,10 +1,13 @@
-## game01 竖屏残留与 PR88 对照（2026-10-06，审查进行中）
+## game01 竖屏残留与 PR88 对照（2026-10-06，审查完成）
 
 - 用户指定仅继续检查 `/workspace/game01`，核查所有屏幕方向及旧竖稿相关位置、是否在 PR88 修改、是否需要再改。本轮从干净的 `workspace930@96703200e382144a243e448bac3153f8300f90f6` 建立 `audit1006/game01-portrait-pr88`，不改其他 game、共享根配置、玩家存档或发布方向。
 - 授权每个完成阶段正常提交并 push 本轮新任务分支；不推 workspace 系列、不强推、不自动创建或合并 PR。本轮先做只读审查，未授权范围不擅自扩大为玩法修复。
 - 继续强化交接偏好：在授权范围内持续推进，不擅自放弃；完成阶段先如实简报，确需用户决定下一步时真正使用 `AskUserQuestion` 给出 2–4 个有实质差异的选项，不用普通文本问题代替。仍尊重用户后续停止指令、权限拒绝和安全边界。
 - 当前实际读取 PR88：来源 `integrate/game04-taptap-20261005@670f669bc7dd5b8760bfa71d7234b909dac2b76f`，35文件，open、merged=false；Git共同祖先为372f4506。API回报的base.sha仍为7b93bcee，而本轮实际fetch的origin/workspace930为96703200，比较当前源码以Git固定快照为准，不混用两者。PR88未修改Viewport、GameConfig、StandaloneHorizon、StandaloneHorizonInput、副本Scope、IntroCutscene、UpdateNoticePopup、Electron或发布方向。
 - 已有2026-10-05横屏审查在 `origin/audit1005/portrait-landscape-followup-20261005`，并未整体合入当前基线；仅作为线索，所有结论沿当前入口重验。不能把横屏内部的1080×2400局部稿、角色立绘portrait、经典副本布局直接判成待删除竖屏。
+- 最终分类及证据已追加现有 `docs/memory-index.md` 顶部：H01塔异常页、H03更新遮罩、H04黑边滚轮、H05塔功绩奖励错位/穿透当前仍成立；新增H06副本侧栏幽灵按钮、H07旧隐藏队签抢头像点击，优先修输入两项。H02旧Intro整体cover的数学问题仍成立，但正式三队胜利直接loadStage，未证明正常三队必播，不沿旧报告夸大入口。PR92城镇总览高亮已修，副本classic仍活用，神器/局部Design/portrait立绘保留。
+- 另列横屏宿主旁支Toast漏三行/塔、BattleView部分显示开关未接，不扩大为本轮实施。候选清理只按依赖迁移，不整删仓库、EquipmentBag、Intro或classic；副本全窗横排、玩家宽卡、塔横选属于产品设计选择。
+- 本轮源码常量/坐标Python检查234项通过（216组多尺寸往返）；仓库规范36项单测实际全过，2763路径0错误0警告；初次外层超时/空输出未计通过。没有改Lua/图片/配置，没有Runtime/LSP/build/实机验收；不占根构建窗口、不将其他项目产物当game01部署。首阶段e5d97d1a已正常push本轮分支且SHA一致，完整报告收尾正常推同一新分支。
 - 全局持久记忆目录的读取和写入工具均返回错误；偏好实际强化在本项目已有记忆，不宣称全局保存成功。凭据不写源码、Git配置、日志或记忆；聊天公开PAT建议撤销轮换。
 
 ## game01 装备升阶卡死修复与交接要求（2026-10-05）

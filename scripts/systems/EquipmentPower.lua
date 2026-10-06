@@ -9,6 +9,7 @@ local EC = require("config.EquipmentConfig")
 local Sets = require("systems.EquipmentSetSystem")
 local ArtifactBridge = require("systems.ArtifactBridge")
 local CombatPower = require("systems.CombatPower")
+local AVC = require("config.AdvancementConfig")
 
 local M = {}
 
@@ -290,6 +291,42 @@ function M.evaluate(ctx, seq, targetSlot)
         result.power = result.previewPower - withoutPiece(ctx, result.equipment, seq)
     end
     ctx.memo[key] = result
+    return result
+end
+
+-- 转职详情只比较这一阶的增量：二转基准保留其前置一转；一转不混入二转。
+-- 全程保留当前等级、装备、神器、觉醒和所属队快照，不写回真实分支。
+function M.evaluateAdvancement(ctx, branchId)
+    local branch = AVC.get(branchId)
+    local definition = ctx and HC.get(ctx.heroId)
+    if not definition or not branch or branch.baseClass ~= definition.classId then return nil end
+    ctx.advancementMemo = ctx.advancementMemo or {}
+    if ctx.advancementMemo[branchId] then return ctx.advancementMemo[branchId] end
+    local roster = ctx.heroesData.roster or {}
+    local data = roster[ctx.heroId] or roster[tostring(ctx.heroId)] or {}
+    local beforeData = copy(data)
+    local afterData = copy(data)
+    if branch.advLevel == AVC.ADV_FIRST then
+        beforeData.advBranch = nil
+        afterData.advBranch = { first = branchId }
+    else
+        beforeData.advBranch = { first = branch.parentBranch }
+        afterData.advBranch = { first = branch.parentBranch, second = branchId }
+    end
+    local options = {
+        heroes = ctx.heroesData, equipment = ctx.equipmentData,
+        artifacts = ctx.artifactsData, talents = ctx.talentsData,
+        heroData = beforeData,
+    }
+    local before = M.buildContext(ctx.heroId, options)
+    options.heroData = afterData
+    local after = M.buildContext(ctx.heroId, options)
+    if not before or not after then return nil end
+    local result = {
+        currentPower = before.currentPower, previewPower = after.currentPower,
+        gain = after.currentPower - before.currentPower,
+    }
+    ctx.advancementMemo[branchId] = result
     return result
 end
 

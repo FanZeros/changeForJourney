@@ -257,10 +257,13 @@ end
 local function makeTip(row, dx, dy)
     local AD = require("systems.AttributeDef")
     local meta = AD.META[row.key]
+    -- 特殊机制与装备来源说明优先，其余属性读取统一词条定义。
+    local desc = row.desc
+    if type(desc) ~= "string" or desc == "" then desc = AD.getDesc(row.key) end
     return {
         x = dx, y = dy, key = row.key,
         name = row.name or (meta and meta.name) or tostring(row.key),
-        desc = row.desc or (meta and meta.desc) or "该属性为当前角色的最终面板数值。",
+        desc = desc,
     }
 end
 

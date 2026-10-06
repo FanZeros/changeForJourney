@@ -12,6 +12,7 @@ function M.bind(deps)
     local EquipmentSystem = deps.EquipmentSystem
     local EquipmentConfig = deps.EquipmentConfig
     local EquipmentSetSystem = require("systems.EquipmentSetSystem")
+    local EquipmentPower = require("systems.EquipmentPower")
     local CPE = require("systems.CombatPowerEstimate")
     -- [927 遗物后端移除] RelicBridge 已删除，不再从 deps 取用
     local ArtifactBridge = deps.ArtifactBridge
@@ -40,39 +41,10 @@ function M.bind(deps)
         if not eqData or not eqData.inventory then
             return nil
         end
+        EquipmentPower.applyEquipment(attrs, eqData, heroId)
         local heroEq = EquipmentSystem.getHeroSlots(eqData, heroId)
-        if not heroEq then
-            return nil
-        end
-
-        local heroesData = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
-        if partySlot == nil then
-            partySlot = EquipmentSystem.findPartySlot(heroesData and heroesData.deployed, heroId)
-        end
-
-        local appliedSeqs = {}
-        local equippedArmorType = nil
-        for _, slotKey in ipairs(EquipmentConfig.SLOTS) do
-            local seq = heroEq[slotKey]
-            if seq and not appliedSeqs[seq] then
-                local equip = eqData.inventory[tostring(seq)]
-                if equip then
-                    EquipmentSystem.hydrate(equip)
-                    local slotBoost = EquipmentSystem.getAscendBoost(equip)
-                    EquipmentSystem.applyToUnit(attrs, equip, seq, slotBoost)
-                    appliedSeqs[seq] = true
-                    if slotKey == "armor" and equip.type then
-                        equippedArmorType = AD.ARMOR_TYPE_ENUM[equip.type]
-                    end
-                end
-            end
-        end
-        EquipmentSetSystem.applyToUnit(
-            attrs, eqData, heroId,
-            EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
-        -- 普攻读 attrs，天赋读战斗单位；让两条管线使用同一件装备的护甲类型。
-        if equippedArmorType then attrs.armorType = equippedArmorType end
-        return equippedArmorType
+        local armor = heroEq and heroEq.armor and EquipmentSystem.getFromInventory(eqData, heroEq.armor)
+        return armor and AD.ARMOR_TYPE_ENUM[armor.type] or nil
     end
 
     local function getHeroLevel(heroId)
@@ -135,25 +107,19 @@ function M.bind(deps)
     end
 
     local function calcHeroPower(heroId, partySlot, teamIdx)
-        local hero = buildHeroAttrs(heroId, partySlot, teamIdx)
-        if not hero then return 0 end
-        local a = hero.attrs
-
-        local total = 0
-        for key, meta in pairs(AD.META) do
-            if not POWER_SKIP[key] and meta.valueModel and meta.valueModel > 0 then
-                local val = a:get(key)
-                if meta.dataType == AD.TYPE_PCT then
-                    total = total + val * (meta.valueModel / 100)
-                else
-                    total = total + val * meta.valueModel
-                end
-            end
-        end
-        total = total + AwakeningConfig.calcTotalCombatPower(heroId, hero.awakening)
-        total = total + (a.artifactPowerBonus or 0)
-
-        return math.floor(total + 0.5)
+        local deployedSlot, deployedTeam = findHeroDeployPosition(heroId)
+        local matches = (partySlot == nil or tonumber(partySlot) == deployedSlot)
+            and (teamIdx == nil or tonumber(teamIdx) == deployedTeam)
+        local owned = get("ownedSet") or {}
+        local context = EquipmentPower.buildContext(heroId, {
+            heroData = owned[tonumber(heroId) or heroId],
+            heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes"),
+            equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment"),
+            artifacts = matches and (ClientDispatcher.get("artifacts") or PlayerStore.Get("artifacts")) or {},
+            talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents"),
+        })
+        if not context then return 0 end
+        return math.floor(context.currentPower + 0.5)
     end
 
     -- 实战预估（分项计价原型）：与 calcHeroPower 走同一条真实存档管线
@@ -173,11 +139,11 @@ function M.bind(deps)
     end
 
     local function refreshPowerCache()
+        -- 此回调可早于评分订阅者；先失效，避免原地更新后红点仍用旧快照。
+        EquipmentPower.invalidate()
         local talentsData = ClientDispatcher.get("talents") or PlayerStore.Get("talents")
         local litNodes = talentsData and talentsData.litNodes or nil
-        if litNodes then
-            HC.setDefaultLitNodes(litNodes)
-        end
+        HC.setDefaultLitNodes(litNodes)
 
         -- 仅在本轮刷新复用同英雄、同实际神器队/槽的计算，不跨通知缓存属性。
         -- 显式队/槽不匹配时仍走独立口径，不能拿名册的神器结果覆盖它。
@@ -215,7 +181,8 @@ function M.bind(deps)
         local ownedSet = get("ownedSet") or {}
         local teamPowerCaches = get("teamPowerCaches")
         local runtimeOnlyPowerCaches = {}
-        local runtimePerHero = litNodes and TalentEffect.calcRuntimeOnlyPower(litNodes) or 0
+        -- 运行时节点已按各角色生效条件计入共享战力，不再按队伍人头重复加。
+        local runtimePerHero = 0
         for t = 1, TEAM_COUNT do
             local team = teams[t] or teams[tostring(t)]
             local slots = team and team.slots or {}

@@ -24,7 +24,7 @@ local function deepCopy(value, seen)
 end
 
 local function snapshot(options, key)
-    if options and options[key] ~= nil then return deepCopy(options[key]) end
+    if options ~= nil then return deepCopy(options[key] or {}) end
     return deepCopy(Dispatcher.get(key) or PlayerStore.Get(key) or {})
 end
 
@@ -121,9 +121,9 @@ end
 
 -- 装备加成独立重建：同一人物底板相减，两侧都不带神器。
 -- 保留职业/养成对装备的真实派生和乘区；不把人物固有值当成装备来源。
-local function collectBonusSource(heroId, heroCfg, level, heroes, equipment)
+local function collectBonusSource(heroId, heroCfg, level, heroes, equipment, talents)
     local source = Attrs.collectAttributes(heroId, heroCfg, level,
-        { heroes = heroes, equipment = equipment, artifacts = {} })
+        { heroes = heroes, equipment = equipment, artifacts = {}, talents = talents })
     -- 现有总属性页未列护盾减伤，装备模式仍须覆盖这个装备来源。
     local key = AD.ES_DMG_REDUCE
     local meta = AD.getMeta(key)
@@ -159,17 +159,17 @@ local function bonusStats(source, baseline)
     return stats
 end
 
-local function equipmentBonuses(heroId, heroCfg, level, heroes, equipment, previewEq)
+local function equipmentBonuses(heroId, heroCfg, level, heroes, equipment, previewEq, talents)
     local function bareSource(eqData)
         local bareEq = deepCopy(eqData)
         bareEq.equipped = bareEq.equipped or {}
         bareEq.equipped[heroId] = nil
         bareEq.equipped[tostring(heroId)] = nil
-        return collectBonusSource(heroId, heroCfg, level, heroes, bareEq)
+        return collectBonusSource(heroId, heroCfg, level, heroes, bareEq, talents)
     end
     local baseline = bareSource(equipment)
-    local current = collectBonusSource(heroId, heroCfg, level, heroes, equipment)
-    local preview = previewEq and collectBonusSource(heroId, heroCfg, level, heroes, previewEq) or nil
+    local current = collectBonusSource(heroId, heroCfg, level, heroes, equipment, talents)
+    local preview = previewEq and collectBonusSource(heroId, heroCfg, level, heroes, previewEq, talents) or nil
     -- 候选可来自同队其它角色；试穿会卸下原持有者装备，裸装底板也必须在试穿世界重建。
     local previewBaseline = previewEq and bareSource(previewEq) or baseline
     local currentDiff = mergeRows(baseline, current)
@@ -219,19 +219,20 @@ function M.build(heroId, level, seqOrNil, targetSlotOrNil, optionsOrNil)
     local heroes = snapshot(optionsOrNil, "heroes")
     local equipment = snapshot(optionsOrNil, "equipment")
     local artifacts = snapshot(optionsOrNil, "artifacts")
+    local talents = snapshot(optionsOrNil, "talents")
     local heroLevel = tonumber(level) or Eq.getHeroLevel(heroes, heroN)
     -- 参数等级与属性构建/穿戴校验必须同源，仅写副本。
     heroes.roster = heroes.roster or {}
     local hd = heroes.roster[heroN] or heroes.roster[tostring(heroN)] or {}
     hd.level = heroLevel
     heroes.roster[heroN] = hd
-    local options = { heroes = heroes, equipment = equipment, artifacts = artifacts }
+    local options = { heroes = heroes, equipment = equipment, artifacts = artifacts, talents = talents }
     result.current = Attrs.collectAttributes(heroN, heroCfg, heroLevel, options)
     result.currentSets = setSummary(equipment, heroN)
     result.rows = mergeRows(result.current, nil)
     local function finish(previewEq)
         if optionsOrNil and optionsOrNil.includeEquipmentBonuses then
-            result.equipmentBonuses = equipmentBonuses(heroN, heroCfg, heroLevel, heroes, equipment, previewEq)
+            result.equipmentBonuses = equipmentBonuses(heroN, heroCfg, heroLevel, heroes, equipment, previewEq, talents)
         end
         return result
     end
@@ -250,7 +251,7 @@ function M.build(heroId, level, seqOrNil, targetSlotOrNil, optionsOrNil)
     if not ok then result.error = err or "无法穿戴"; return finish() end
 
     result.preview = Attrs.collectAttributes(heroN, heroCfg, heroLevel,
-        { heroes = heroes, equipment = previewEq, artifacts = artifacts })
+        { heroes = heroes, equipment = previewEq, artifacts = artifacts, talents = talents })
     result.previewSets = setSummary(previewEq, heroN)
     result.rows = mergeRows(result.current, result.preview)
     return finish(previewEq)

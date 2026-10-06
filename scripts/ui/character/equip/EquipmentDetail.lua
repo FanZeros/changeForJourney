@@ -7,6 +7,7 @@
 
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
+local EquipmentPower   = require("systems.EquipmentPower")
 local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local EquipmentSetSystem = require("systems.EquipmentSetSystem")
 local AffixConfig      = require("config.AffixConfig")
@@ -145,109 +146,16 @@ local drawTextStroke = require("core.DrawUtil").drawTextStroke
 
 -- ======================== 战斗力计算 ========================
 
--- [临时背包战斗力优化] 按角色伤害类型过滤不生效的"攻击向"派生属性
--- 防御属性(physArmor/magArmor等)对所有角色都有减伤效果，不排除
--- 六围属性：不直接排除，而是按派生表(AD.DERIVATIVES)计算部分有效战斗力
---   例：物理角色的 INT(2.0→魔攻[排除] + 0.5%→魔伤加成[排除] + 3.0→能量护盾[保留])
---       → 只计入能量护盾的贡献 = 3.0 * 0.1 = 0.30 价值/点（而非完整的 5 价值/点）
-local EXCLUDED_KEYS_BY_DMG_TYPE = {
-    ["物理"] = {
-        magAtk=true, magCritRate=true, magCritDmg=true, magPen=true,
-        magDmgBonus=true, magAtkBonus=true,
-        healAmount=true, healBonus=true, healCritRate=true, healCritDmg=true,
-    },
-    ["魔法"] = {
-        physAtk=true, physCritRate=true, physCritDmg=true, physPen=true,
-        physDmgBonus=true, physAtkBonus=true,
-        healAmount=true, healBonus=true, healCritRate=true, healCritDmg=true,
-    },
-    ["治疗"] = {
-        physAtk=true, physCritRate=true, physCritDmg=true, physPen=true,
-        physDmgBonus=true, physAtkBonus=true,
-        magAtk=true, magCritRate=true, magCritDmg=true, magPen=true,
-        magDmgBonus=true, magAtkBonus=true,
-    },
-}
-
--- 六围 key 快速查找集合
-local BASE_STAT_SET = {}
-for _, k in ipairs(AD.BASE_STATS) do BASE_STAT_SET[k] = true end
-
---- 计算单个属性贡献的战斗力值
---- [fix 930] 六围一律按派生表折算（有 excluded 时排除异系派生）。
----   旧逻辑仅在 heroId 非 nil 时走派生表，导致背包/战利品/铁匠铺视角
----   （heroId=nil）六围按 valueModel=5 满额计价——戒指/吊坠等六围饰品
----   战力虚高 3.3 倍（设计调平值 ≈1.5/点，见模板 4.28×1.5≈6.43）。
----@param key string 属性 key
----@param value number 属性数值
----@param excluded table|nil 排除集合
----@return number 战斗力贡献
-local function calcStatPower(key, value, excluded)
-    -- 六围属性 → 恒按派生表折算有效战斗力
-    if BASE_STAT_SET[key] then
-        local derivatives = AD.DERIVATIVES and AD.DERIVATIVES[key]
-        if derivatives then
-            local effectiveVM = 0
-            for _, d in ipairs(derivatives) do
-                if not (excluded and excluded[d.attr]) then
-                    local dMeta = AD.META[d.attr]
-                    if dMeta and dMeta.valueModel and dMeta.valueModel > 0 then
-                        -- perPoint 是每点六围增加的派生属性量
-                        -- dMeta.valueModel 是派生属性的价值权重
-                        if dMeta.dataType == AD.TYPE_PCT then
-                            effectiveVM = effectiveVM + d.perPoint * dMeta.valueModel / 100
-                        else
-                            effectiveVM = effectiveVM + d.perPoint * dMeta.valueModel
-                        end
-                    end
-                end
-            end
-            return value * effectiveVM
-        end
-        -- 无派生表则回退到原始 valueModel
-    end
-
-    -- 非六围属性 / 无排除规则 → 检查排除后用原始 valueModel
-    if excluded and excluded[key] then return 0 end
-    local meta = AD.META[key]
-    if not meta or not meta.valueModel or meta.valueModel <= 0 then return 0 end
-    if meta.dataType == AD.TYPE_PCT then
-        return value * meta.valueModel / 100
-    else
-        return value * meta.valueModel
-    end
+-- 角色分与自动配装共用实际换装评估；未选角色保留通用展示价值。
+local function calcEquipPower(equip, heroId, slot)
+    return EquipmentPower.score(equip, heroId, slot)
 end
 
---- 计算装备战斗力
---- heroId 非 nil 时按角色伤害类型过滤；六围属性按派生表部分计算有效贡献
----@param equip table 装备实例
----@param heroId number|nil 角色ID（临时背包传入，总背包传nil）
----@return number
-local function calcEquipPower(equip, heroId)
-    if not equip then return 0 end
-
-    -- 根据角色伤害类型获取需要排除的属性集合
-    local excluded = nil
-    if heroId then
-        local hero = HC.HEROES and HC.HEROES[heroId]
-        if hero and hero.dmgMainType then
-            excluded = EXCLUDED_KEYS_BY_DMG_TYPE[hero.dmgMainType]
-        end
-    end
-
-    local power = 0
-    local ascendBoost = EquipmentSystem.getAscendBoost(equip)
-
-    for i, s in ipairs(equip.baseStats or {}) do
-        local val = EquipmentSystem.effectiveBaseStatValue(equip, i, ascendBoost)
-        power = power + calcStatPower(s[1], val, excluded)
-    end
-
-    for _, affix in ipairs(equip.affixes or {}) do
-        power = power + calcStatPower(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix), excluded)
-    end
-
-    return math.floor(power)
+local function replacementGain(equip)
+    if not equip or not detState.heroId then return 0 end
+    local context = EquipmentPower.getContext(detState.heroId)
+    local result = EquipmentPower.evaluate(context, detState.equipSeq, detState.slot or equip.slot)
+    return result and result.valid and result.gain or 0
 end
 
 -- ======================== 属性格式化 ========================
@@ -735,15 +643,14 @@ function EquipmentDetail.close()
     local curEquip = getComparisonEquip()
     local hasCurrent = (not isEquipped) and (curEquip ~= nil)
     local btnKey = isEquipped and "unequip" or (hasCurrent and "replace" or "wear")
-    local newPower = newEquip and calcEquipPower(newEquip, detState.heroId) or 0
-    local curPower = curEquip and calcEquipPower(curEquip, detState.heroId) or 0
+    local powerDiff = replacementGain(newEquip)
     detState.snapshot = {
         newEquip   = newEquip,
         isEquipped = isEquipped,
         curEquip   = curEquip,
         hasCurrent = hasCurrent,
         btnKey     = btnKey,
-        powerDiff  = newPower - curPower,
+        powerDiff  = powerDiff,
     }
     detState.closing   = true
     detState.closeTime = time.elapsedTime
@@ -1138,9 +1045,7 @@ function EquipmentDetail.draw(vg)
         curEquip = getComparisonEquip()
         hasCurrent = (not isEquipped) and (curEquip ~= nil)
         btnText = isEquipped and I18n.t("unequip") or (hasCurrent and I18n.t("replace") or I18n.t("wear"))
-        local newPower = calcEquipPower(newEquip, detState.heroId)
-        local curPower = curEquip and calcEquipPower(curEquip, detState.heroId) or 0
-        powerDiff = newPower - curPower
+        powerDiff = replacementGain(newEquip)
     end
 
     if not newEquip then return end
@@ -1198,7 +1103,7 @@ function EquipmentDetail.drawReadOnly(vg, equip, x, y)
     nvgSave(vg)
     nvgTranslate(vg, x - (REF_BG_CX - COMPACT_BG_W * 0.5) * COMPACT_SCALE, y)
     nvgScale(vg, COMPACT_SCALE, COMPACT_SCALE)
-    drawCompactPanel(vg, equip, "", false)
+    drawCompactPanel(vg, equip, "", false, { generic = true })
     nvgRestore(vg)
 end
 

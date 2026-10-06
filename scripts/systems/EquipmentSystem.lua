@@ -953,10 +953,11 @@ end
 ---@param heroId number|string
 ---@param slot string
 ---@param heroesData table|nil
+---@param silent boolean|nil 只读评估关闭日志，校验规则不变
 ---@return boolean ok
 ---@return string|nil err
 ---@return table|nil result
-function EquipmentSystem.applyEquip(equipData, seq, heroId, slot, heroesData)
+function EquipmentSystem.applyEquip(equipData, seq, heroId, slot, heroesData, silent)
     local seqN = tonumber(seq)
     local heroN = tonumber(heroId)
     if not equipData or not seqN or not heroN or not slot then
@@ -978,8 +979,10 @@ function EquipmentSystem.applyEquip(equipData, seq, heroId, slot, heroesData)
         local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
         local gateOk, requiredLevel = EquipmentSystem.checkLevelGate(heroLevel, equip)
         if not gateOk then
-            print("[EquipmentSystem] applyEquip REJECTED level gate: heroLv="
-                .. tostring(heroLevel) .. " < equipLv=" .. tostring(requiredLevel))
+            if not silent then
+                print("[EquipmentSystem] applyEquip REJECTED level gate: heroLv="
+                    .. tostring(heroLevel) .. " < equipLv=" .. tostring(requiredLevel))
+            end
             return false, "角色等级不足，需要等级 " .. tostring(requiredLevel)
         end
     end
@@ -1064,9 +1067,11 @@ function EquipmentSystem.applyEquip(equipData, seq, heroId, slot, heroesData)
     end
 
     slots[slot] = seq
-    print("[EquipmentSystem] applyEquip heroId=" .. tostring(heroId)
-        .. " slot=" .. slot .. " seq=" .. seqStr
-        .. (oldSeq and (" replaced=" .. tostring(oldSeq)) or ""))
+    if not silent then
+        print("[EquipmentSystem] applyEquip heroId=" .. tostring(heroId)
+            .. " slot=" .. slot .. " seq=" .. seqStr
+            .. (oldSeq and (" replaced=" .. tostring(oldSeq)) or ""))
+    end
 
     return true, nil, {
         seq = seq,

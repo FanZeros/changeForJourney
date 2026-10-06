@@ -211,8 +211,8 @@ function EquipmentDetailDraw.create(ctx)
             { accent = DarkIcon.QUALITY_TRIM[math.min(6, math.max(1, q))] })
 
         -- 战力组先实测，标题不能占用其图标/数值/箭头区域。
-        local equipPower = calcEquipPower(equip, detState.heroId)
-        local powerStr = require("core.NumberUtil").format(equipPower)
+        local equipPower = calcEquipPower(equip, detState.heroId, detState.slot)
+        local powerStr = tostring(equipPower)
         local powerFont = REF_STAT_FONT
         local powerRight = bgX + bgW - 24
         nvgFontFace(vg, "sans")
@@ -503,7 +503,7 @@ function EquipmentDetailDraw.create(ctx)
     ---@param equip table
     ---@param btnText string
     ---@param showActions boolean|nil
-    local function drawCompactPanel(vg, equip, btnText, showActions)
+    local function drawCompactPanel(vg, equip, btnText, showActions, scoreContext)
         local images = ctx.getImages()
         local imgPowerIcon, imgArrowUp, imgArrowDown = images.powerIcon, images.arrowUp, images.arrowDown
         local imgBtnGreen, imgBtnRed = images.btnGreen, images.btnRed
@@ -520,7 +520,10 @@ function EquipmentDetailDraw.create(ctx)
         if showActions ~= false then detState.lockHotspot = nil end
 
         -- 先给战力图标和完整数值留位，再测量标题（锁图标和热区计入同一预算）。
-        local powerStr = require("core.NumberUtil").format(calcEquipPower(equip, detState.heroId))
+        local scoreHeroId = scoreContext and scoreContext.heroId or detState.heroId
+        if scoreContext and scoreContext.generic then scoreHeroId = nil end
+        local powerStr = tostring(calcEquipPower(equip, scoreHeroId,
+            scoreContext and scoreContext.slot or detState.slot))
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 36)
         local powerW = I18n.displayBounds(vg, 0, 0, powerStr)

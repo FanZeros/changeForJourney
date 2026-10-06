@@ -582,7 +582,9 @@ end
 function UnitAttributes:getActualInterval()
     local base = self.final[AD.ATK_INTERVAL]
     local speed = self.final[AD.ATK_SPEED]
-    return base / (1 + speed / 100)
+    -- 减速不能让分母为零或负数；极高攻速统一停在 0.05 秒，不回退成慢速。
+    local speedMult = math.max(0.01, 1 + speed / 100)
+    return math.max(0.05, base / speedMult)
 end
 
 -- ======================== 序列化 ========================

@@ -20,6 +20,7 @@ local HeroAssetUtil     = require("config.HeroAssetUtil")
 local AwakeningPanel    = require("ui.character.hero.AwakeningPanel")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
 local EquipmentSystem   = require("systems.EquipmentSystem")
+local EquipmentPower    = require("systems.EquipmentPower")
 local BF                 = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local ETS = require("systems.ExtraTalentSystem")
@@ -357,8 +358,10 @@ end
 local _powerCache = { dirty = true, values = {} }
 -- 实战预估缓存：与战力共用脏标记（markPowerDirty 一并置脏）
 local _estimateCache = { dirty = true, values = {} }
--- _hasUpgradeForSlot 缓存：仅当 heroId 变化或装备数据脏时重算
-local _upgradeCache = { heroId = nil, results = {}, dirty = true }  -- results[slotName] = bool
+-- 上下文身份随英雄/装备/圣物/天赋变化失效，不能只盯 equipment 脏标记。
+local _upgradeCache = { heroId = nil, results = {}, dirty = true }
+---@type table|nil
+local _upgradeContext = nil
 
 --- 标记战斗力缓存为脏（外部数据变化时调用）
 function M.markPowerDirty()
@@ -398,17 +401,18 @@ local function getCachedEstimate(heroId)
     return estimate
 end
 
---- 获取缓存的可提升判断（仅在 heroId 变化或脏标记时重算）
+--- 获取缓存的可提升判断（全部六槽复用一次上下文）。
 local function getCachedUpgrade(heroId, slotName, equipData)
-    if _upgradeCache.heroId == heroId and not _upgradeCache.dirty then
+    local ctx = EquipmentPower.getContext(heroId)
+    if _upgradeCache.heroId == heroId and not _upgradeCache.dirty and _upgradeContext == ctx then
         return _upgradeCache.results[slotName]
     end
-    -- 脏了或 heroId 变了，全部重算 6 个槽位（一次性算完）
     _upgradeCache.heroId = heroId
     _upgradeCache.results = {}
-    local SLOTS = { "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }
-    for _, s in ipairs(SLOTS) do
-        _upgradeCache.results[s] = CharacterDetailRef._hasUpgradeForSlot(heroId, s, equipData)
+    _upgradeContext = ctx
+    for _, slot in ipairs(DT_SLOTS) do
+        _upgradeCache.results[slot.slot] = ctx ~= nil
+            and CharacterDetailRef._hasUpgradeForSlot(heroId, slot.slot, equipData, ctx) or false
     end
     _upgradeCache.dirty = false
     return _upgradeCache.results[slotName]
@@ -750,7 +754,7 @@ function M.draw(vg)
     local heroEquipped = nil
     local heroInventory = nil
     if equipData then
-        heroEquipped = equipData.equipped and equipData.equipped[heroId]
+        heroEquipped = EquipmentSystem.getHeroSlots(equipData, heroId)
         heroInventory = equipData.inventory
     end
 
@@ -840,6 +844,17 @@ function M.draw(vg)
                 nvgText(vg, lvlX, lvlY, lvlText, nil)
             end
 
+            local powerSlot = isTwohandOccupied and "weapon" or slot.slot
+            local powerText = "战力 " .. tostring(EquipmentPower.score(equippedEquip, heroId, powerSlot))
+            local powerFont = 26
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, powerFont)
+            local powerWidth = nvgTextBounds(vg, 0, 0, powerText) or 0
+            local powerMaxWidth = DT_SLOT_SIZE * 0.62
+            if powerWidth > powerMaxWidth then powerFont = powerFont * powerMaxWidth / powerWidth end
+            drawTextStroke(vg, scx + DT_SLOT_SIZE * 0.45, scy + DT_SLOT_SIZE * 0.15,
+                powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, 244, 237, 224, 3)
+
             local slotEnhLv = equippedEquip and EquipmentSystem.getAscendLevel(equippedEquip) or 0
             if slotEnhLv > 0 then
                 local enhText = "+" .. slotEnhLv
@@ -885,8 +900,7 @@ function M.draw(vg)
 
         -- ICON_UP 可提升角标（使用缓存，避免每帧遍历全背包）
         local imgIconUp = CharacterDetailRef._imgIconUp
-        if not isTwohandOccupied and imgIconUp >= 0
-            and getCachedUpgrade(heroId, slot.slot, equipData) then
+        if imgIconUp >= 0 and getCachedUpgrade(heroId, slot.slot, equipData) then
             local upSize = 40
             local upX = slot.cx - DT_SLOT_SIZE * 0.5 + upSize * 0.5 + 2
             local upY = slot.cy - DT_SLOT_SIZE * 0.5 + upSize * 0.5 + 2

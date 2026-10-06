@@ -15,6 +15,7 @@ local EquipmentBag     = require("ui.character.equip.EquipmentBag")
 local PlayerStore      = require("core.PlayerStore")
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
+local EquipmentPower   = require("systems.EquipmentPower")
 local DetailAttrs      = require("ui.character.detail.CharacterDetailAttrs")
 local BF              = require("systems.ButtonFeedback")
 local Draw             = require("ui.character.detail.CharacterDetailDraw")
@@ -114,139 +115,48 @@ end
 
 -- ======================== 装备可提升判断 ========================
 
---- 检查指定槽位是否有可提升装备（背包中存在战斗力更高的可穿戴装备）
+--- 检查指定槽位是否有真实净战力提升（共享模拟包含双手卸槽、套装及职业有效属性）。
 ---@param heroId number
 ---@param slotName string "weapon"|"offhand"|"armor"|"helmet"|"shoes"|"accessory"
 ---@param equipData table PlayerStore.Get("equipment") 返回的数据
+---@param ctx table|nil 同一次六槽检查共用的评分上下文
 ---@return boolean
-function CharacterDetail._hasUpgradeForSlot(heroId, slotName, equipData)
+function CharacterDetail._hasUpgradeForSlot(heroId, slotName, equipData, ctx)
     if not equipData or not equipData.inventory then return false end
+    ctx = ctx or EquipmentPower.getContext(heroId)
+    if not ctx then return false end
 
-    local inventory = equipData.inventory
-    local heroEquipped = EquipmentSystem.getHeroSlots(equipData, heroId)
-
-    -- 1) 当前已装备物品的战斗力（空槽 = 0）
-    local equippedPower = 0
-    if heroEquipped then
-        local seq = heroEquipped[slotName]
-        if seq then
-            local eqItem = inventory[tostring(seq)]
-            if eqItem then
-                equippedPower = CharacterDetail._EquipDetail.calcEquipPower(eqItem, heroId)
+    -- 保留自动装备候选边界：不把其他英雄/其他槽已穿戴的装备当作仓库升级。
+    local equippedSeqNums = {}
+    for _, heroSlots in pairs(equipData.equipped or {}) do
+        if type(heroSlots) == "table" then
+            for _, eqSeq in pairs(heroSlots) do
+                local seqNum = tonumber(eqSeq)
+                if seqNum then equippedSeqNums[seqNum] = true end
             end
         end
     end
-
-    -- 1.5) 主手槽：预计算副手战斗力（供双手武器对比用）
-    --      双手武器替换主手+副手，基准应为两者之和（与 EquipmentBag 一致）
-    local offhandPower = 0
-    if slotName == "weapon" and heroEquipped then
-        local ohSeq = heroEquipped["offhand"]
-        if ohSeq then
-            local ohItem = inventory[tostring(ohSeq)]
-            if ohItem then
-                offhandPower = CharacterDetail._EquipDetail.calcEquipPower(ohItem, heroId)
-            end
-        end
-    end
-
-    -- 2) 收集所有英雄已装备的 seq（这些装备不可用于提升判断）
-    --    使用 tonumber 做数字比较，避免 tostring(int) vs tostring(float) 不匹配
-    local equippedSeqNums = {}  -- [number] = true
-    if equipData.equipped then
-        for _, heroSlots in pairs(equipData.equipped) do
-            if type(heroSlots) == "table" then
-                for _, eqSeq in pairs(heroSlots) do
-                    local n = tonumber(eqSeq)
-                    if n then equippedSeqNums[n] = true end
-                end
-            end
-        end
-    end
-
-    -- 3) 构建英雄可穿戴子类型集合
-    local wearableSet = nil  -- nil = 不限制
-    local heroCfg = HC.get(heroId)
-    if heroCfg then
-        if slotName == "weapon" then
-            local types = heroCfg.weaponTypes
-            if types and #types > 0 then
-                wearableSet = {}
-                for _, t in ipairs(types) do wearableSet[t] = true end
-            end
-        elseif slotName == "offhand" then
-            local types = heroCfg.offhandTypes
-            if types and #types > 0 then
-                wearableSet = {}
-                for _, t in ipairs(types) do wearableSet[t] = true end
-            end
-        elseif slotName == "armor" or slotName == "helmet" or slotName == "shoes" then
-            wearableSet = EquipmentSystem.getWearableTypeSet(heroId, slotName)
-        end
-        -- accessory: wearableSet 保持 nil，不限制
-    end
-
-    -- 3.5) 等级穿戴门槛：英雄等级低于装备等级的候选不参与红点判断
-    local heroesData = PlayerStore.Get("heroes")
-    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
-
-    -- 4) 遍历背包，找到任一可穿戴且战斗力更高的未装备装备即返回 true
-    for seq, equip in pairs(inventory) do
+    for seq in pairs(equipData.inventory) do
         local seqNum = tonumber(seq)
-        if equip.slot == slotName and seqNum and not equippedSeqNums[seqNum] then
-            -- 可穿戴类型检查 + 等级穿戴门槛
-            if (not wearableSet or wearableSet[equip.type])
-                and (EquipmentSystem.checkLevelGate(heroLevel, equip)) then
-                local itemPower = CharacterDetail._EquipDetail.calcEquipPower(equip, heroId)
-                -- 双手武器替换主手+副手，基准用两者之和（与 EquipmentBag 一致）
-                local baseline = equippedPower
-                if slotName == "weapon" and equip.grip == "twohand" then
-                    baseline = equippedPower + offhandPower
-                end
-                if itemPower > baseline then
-                    return true
-                end
-            end
+        if seqNum and not equippedSeqNums[seqNum] then
+            -- 不预判自然槽/职业/等级：副手单手武器与自动卸槽由 evaluator 统一处理。
+            local preview = EquipmentPower.evaluate(ctx, seq, slotName)
+            if preview and preview.valid and preview.gain > 1e-6 then return true end
         end
     end
     return false
 end
 
---- 检查指定英雄是否有任意槽位可提升（用于入口链路角标）
---- 需要复刻 CharacterDetail 渲染中的双手武器占用副手判断，
---- 避免副手被双手武器占用时仍误报可提升。
+--- 检查指定英雄是否有任意槽位可提升（用于入口链路角标）。
 ---@param heroId number
 ---@return boolean
 function CharacterDetail.hasAnyUpgradeForHero(heroId)
     local equipData = PlayerStore.Get("equipment")
     if not equipData then return false end
-
-    local inventory = equipData.inventory
-    local heroEquipped = EquipmentSystem.getHeroSlots(equipData, heroId)
-
-    -- 检测主手是否为双手武器 → 副手槽位被占用则跳过
-    local offhandOccupied = false
-    if heroEquipped and inventory then
-        local offSeq = heroEquipped["offhand"]
-        -- 副手本身没装备时，检查主手 grip
-        if not offSeq or not inventory[tostring(offSeq)] then
-            local wpnSeq = heroEquipped["weapon"]
-            if wpnSeq then
-                local wpnItem = inventory[tostring(wpnSeq)]
-                if wpnItem and wpnItem.grip == "twohand" then
-                    offhandOccupied = true
-                end
-            end
-        end
-    end
-
+    local ctx = EquipmentPower.getContext(heroId)
+    if not ctx then return false end
     for _, slot in ipairs(DT_SLOTS) do
-        -- 双手武器占用副手时，跳过 offhand 槽位
-        if not (slot.slot == "offhand" and offhandOccupied) then
-            if CharacterDetail._hasUpgradeForSlot(heroId, slot.slot, equipData) then
-                return true
-            end
-        end
+        if CharacterDetail._hasUpgradeForSlot(heroId, slot.slot, equipData, ctx) then return true end
     end
     return false
 end

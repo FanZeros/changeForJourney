@@ -1297,7 +1297,7 @@ function DungeonScene.update(dt)
         for _, u in ipairs(state.enemies) do allUnits[#allUnits + 1] = u end
         for _, unit in ipairs(allUnits) do
             if unit.hp > 0 and unit.attrs then
-                local regen = unit.attrs:get(AD.HP_REGEN) or 0
+                local regen = CF.calcHpRegen(unit.attrs)
                 if regen > 0 then
                     local actual = unit.attrs:heal(regen)
                     syncUnitHp(unit)

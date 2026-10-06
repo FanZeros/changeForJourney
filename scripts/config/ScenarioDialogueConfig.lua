@@ -20,11 +20,8 @@ local APPEARANCES = {
     ["黄桃龙？"] = { heroId = 2 },
     ["叮咚鸡？"] = { heroId = 3 },
 }
-local BLACKSMITH = {
-    portraitPath = "image/怪物卡牌/KP_GW_1004.png",
-    iconPath = "image/怪物卡牌/KP_GW_1004.png",
-    contain = true,                            -- 昆吾已有卡图，不冒充透明立绘
-}
+-- 暂无专用铁匠头像/立绘：保留名字映射并留空，不借敌人卡图或回退到英雄10。
+local BLACKSMITH = {}
 APPEARANCES["铁匠"] = BLACKSMITH
 APPEARANCES["愤怒的铁匠"] = BLACKSMITH
 

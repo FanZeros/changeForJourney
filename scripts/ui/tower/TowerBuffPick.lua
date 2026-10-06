@@ -73,7 +73,13 @@ local state = {
     open = false,
     floor = 1,
     choices = {},     -- { {id, quality, name, desc}, ... } 最多3个
-    onPick = nil,     -- function(buffId) 回调
+    onPick = nil,     -- function(buffId, requestId) 请求前锁 Scene，不代表选择成功
+    request = {},    -- Service 签发 runId/selectionId/floor/wave
+    pending = false,
+    pendingRequest = nil,
+    pendingTime = 0,
+    retryBuffId = nil, -- 结果未知（发送异常/超时）只能同卡重试
+    onError = nil,
 }
 
 -- NanoVG 上下文
@@ -81,8 +87,10 @@ local vg_ = nil
 
 -- ======================== sendAction 注入 ========================
 
----@type fun(action: string, params: table)|nil
+---@type fun(action: string, params: table): boolean|nil
 local sendAction_ = nil
+local requestSerial = 0
+local PENDING_TIMEOUT = 5.0
 
 function Panel.setSendAction(fn)
     sendAction_ = fn
@@ -104,8 +112,10 @@ end
 --- 打开面板，展示三选一
 ---@param floor number 当前层数
 ---@param choices table[] 强化选项列表 { {id, quality, name, desc}, ... }
----@param onPick function|nil 选择后的回调 function(buffId)
-function Panel.open(floor, choices, onPick)
+---@param onPick function|nil 请求前回调 function(buffId, requestId)，false 阻止发送
+---@param request table|nil 当次选择身份，由 Service 签发
+---@param onError function|nil 发送失败/超时的匹配失败回执回调
+function Panel.open(floor, choices, onPick, request, onError)
     if not towerBuffInited_ and vg_ then
         Panel.init(vg_)
     end
@@ -113,6 +123,13 @@ function Panel.open(floor, choices, onPick)
     state.floor = floor or 1
     state.choices = choices or {}
     state.onPick = onPick
+    state.onError = onError
+    state.request = {}
+    for key, value in pairs(request or {}) do state.request[key] = value end
+    state.pending = false
+    state.pendingRequest = nil
+    state.pendingTime = 0
+    state.retryBuffId = nil
     for i = 1, 3 do kwCards[i]:clear() end   -- 清上次打开的关键词状态
     print("[TowerBuffPick] open floor=" .. state.floor .. " choices=" .. #state.choices)
 end
@@ -121,7 +138,52 @@ function Panel.close()
     state.open = false
     state.choices = {}
     state.onPick = nil
+    state.onError = nil
+    state.request = {}
+    state.pending = false
+    state.pendingRequest = nil
+    state.pendingTime = 0
+    state.retryBuffId = nil
     for i = 1, 3 do kwCards[i]:clear() end
+end
+
+-- 失败只释放对应请求，不能让旧失败/超时覆盖新请求。
+function Panel.setPending(pending, requestId, retryOnly)
+    if pending == true then return false end
+    local request = state.pendingRequest
+    if not request or request.requestId ~= requestId then return false end
+    state.retryBuffId = (retryOnly == true or state.retryBuffId ~= nil) and request.buffId or nil
+    state.pending = false
+    state.pendingRequest = nil
+    state.pendingTime = 0
+    return true
+end
+
+local function failRequest(request, reason, retryOnly)
+    if state.pendingRequest ~= request then return end
+    request.success = false
+    request.reason = reason
+    request.retryOnly = retryOnly
+    local errorFn = state.onError
+    if errorFn then
+        local ok, err = pcall(errorFn, request)
+        if not ok then print("[TowerBuffPick] ERROR failure callback: " .. tostring(err)) end
+    end
+    -- 同步回执可能关闭/重开面板，必须按本地请求对象而不是只按 selectionId 检查。
+    if state.pendingRequest == request then
+        Panel.setPending(false, request.requestId, retryOnly)
+    end
+    print("[TowerBuffPick] request failed selection=" .. tostring(request.selectionId)
+        .. " request=" .. tostring(request.requestId) .. " reason=" .. tostring(reason))
+end
+
+-- 交付结果未知时只能重试同卡；新 requestId 让迟到旧回执无法消费 retry。
+function Panel.update(dt)
+    if not state.open or not state.pending or not state.pendingRequest then return end
+    state.pendingTime = state.pendingTime + dt
+    if state.pendingTime >= PENDING_TIMEOUT then
+        failRequest(state.pendingRequest, "强化回执超时，请重试所选强化", true)
+    end
 end
 
 function Panel.isOpen()
@@ -214,6 +276,7 @@ end
 
 function Panel.handleClick(dx, dy)
     if not state.open then return false end
+    if state.pending then return true end
 
     -- 关键词优先：任一卡片解释气泡开着 → 任意点击先关气泡（不选卡）
     for i = 1, 3 do
@@ -236,21 +299,36 @@ function Panel.handleClick(dx, dy)
             BF.trigger("tower_buff_" .. i)
             print("[TowerBuffPick] picked #" .. i .. " buffId=" .. (choice.id or "nil") .. " name=" .. (choice.name or ""))
 
-            -- 先保存回调引用，然后立即关闭面板（防止回调出错时面板卡死）
-            local pickFn = state.onPick
-            Panel.close()
-
-            -- 发送选择请求
-            if sendAction_ then
-                sendAction_(Protocol.ACTION_TYPES.TOWER_PICK_BUFF, { buffId = choice.id })
+            if not sendAction_ then
+                print("[TowerBuffPick] no action sender, keep selection open")
+                return true
             end
-
-            -- 回调（即使出错也不影响面板关闭）
-            if pickFn then
-                local ok, err = pcall(pickFn, choice.id)
-                if not ok then
-                    print("[TowerBuffPick] ERROR in onPick callback: " .. tostring(err))
+            if state.retryBuffId and choice.id ~= state.retryBuffId then
+                print("[TowerBuffPick] receipt uncertain, retry only buffId=" .. state.retryBuffId)
+                return true
+            end
+            -- 本地桥同步回包：发送前同时锁 Panel/Scene，绝不先做成功逻辑。
+            local request = {}
+            for key, value in pairs(state.request) do request[key] = value end
+            request.buffId = choice.id
+            requestSerial = requestSerial + 1
+            request.requestId = requestSerial
+            state.pending = true
+            state.pendingRequest = request
+            state.pendingTime = 0
+            if state.onPick then
+                local ok, accepted = pcall(state.onPick, choice.id, request.requestId)
+                if not ok or accepted == false then
+                    failRequest(request, "强化请求未发送，请重试", false)
+                    print("[TowerBuffPick] request rejected: " .. tostring(accepted))
+                    return true
                 end
+            end
+            local sent, result = pcall(sendAction_, Protocol.ACTION_TYPES.TOWER_PICK_BUFF, request)
+            if not sent or result == false then
+                -- sender 抛错可能已提交，只有 false 明确未发送；不覆盖已同步消费的成功。
+                failRequest(request, "强化请求发送失败，请重试", not sent)
+                print("[TowerBuffPick] send failed: " .. tostring(result))
             end
 
             return true

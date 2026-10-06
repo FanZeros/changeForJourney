@@ -129,7 +129,8 @@ end
 
 --- 编码存档 JSON；成功返回字符串，失败返回 nil
 local function encodeSave()
-    local ok, json = pcall(cjson.encode, buildSaveData())
+    -- 采集/构建也可能失败（页面尚未就绪或坏数据），必须在 pcall 内求值。
+    local ok, json = pcall(function() return cjson.encode(buildSaveData()) end)
     if not ok or type(json) ~= "string" then
         print("[StandaloneSave] encode 失败: " .. tostring(json))
         return nil

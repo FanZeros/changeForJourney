@@ -32,6 +32,12 @@ add("敏捷", "敏捷", "AGI", "敏捷", "민첩")
 add("秘识", "秘識", "INT", "知力", "지력")
 add("体质", "體質", "VIT", "体力", "체질")
 add("命数", "命數", "LUK", "運", "운")
+add("幸运值", "幸運值", "Drop Luck", "ドロップ運", "드롭 행운")
+add(require("systems.AttributeDef").DROP_LUCK_DESC,
+    "本隊出戰成員的幸運值相加，開戰時確定，本場陣亡不扣除。每1點使主線擊殺裝備掉落機率相對提高1%；品質Q1至Q6的原有權重分別乘以1、1+幸運值/500、1+2×幸運值/500、1+3×幸運值/500、1+4×幸運值/500、1+幸運值/100。本隊有效幸運值最多200，掉落機率最多100%，不突破關卡品質上限或開啟原權重為0的品質。不影響離線、掃蕩、副本固定獎勵、卷軸或詞條品級。",
+    "Adds the Drop Luck of this team's deployed heroes at battle start; deaths do not reduce it. Each point raises the main-story kill equipment drop chance by 1% relative to its base chance. Original Q1-Q6 rarity weights are multiplied by 1, 1+Luck/500, 1+2*Luck/500, 1+3*Luck/500, 1+4*Luck/500, and 1+Luck/100. Effective team Luck caps at 200 and drop chance at 100%. Stage rarity caps and zero-weight rarities remain unchanged. Offline income, sweeps, fixed dungeon rewards, scrolls, and affix grades are unaffected.",
+    "戦闘開始時に、この隊の出撃メンバーのドロップ運を合算します。戦闘中の死亡では減りません。1点につきメインストーリー討伐の装備ドロップ率が元の確率に対して1%上昇。Q1～Q6の元の抽選重みをそれぞれ1、1+運/500、1+2×運/500、1+3×運/500、1+4×運/500、1+運/100倍にします。有効な隊の運は最大200、ドロップ率は最大100%。ステージのレア度上限と重み0のレア度は変わりません。オフライン、掃討、ダンジョン固定報酬、巻物、効果等級には影響しません。",
+    "전투 시작 시 이 부대의 출전 영웅 드롭 행운을 합산하며, 전투 중 사망해도 감소하지 않습니다. 1점당 메인 스토리 처치 장비 드롭 확률이 기본 확률 대비 1% 증가합니다. Q1~Q6의 기존 등급 가중치에 각각 1, 1+행운/500, 1+2×행운/500, 1+3×행운/500, 1+4×행운/500, 1+행운/100을 곱합니다. 부대 유효 행운은 최대 200, 드롭 확률은 최대 100%입니다. 스테이지 등급 상한과 가중치 0 등급은 바뀌지 않습니다. 오프라인, 소탕, 던전 고정 보상, 두루마리 및 옵션 등급에는 영향을 주지 않습니다.")
 add("魂火", "魂火", "Spirit", "魂火", "혼화")
 add("生命值", "生命值", "HP", "HP", "체력")
 add("护甲", "護甲", "Armor", "鎧", "갑옷")

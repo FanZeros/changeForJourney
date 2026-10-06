@@ -109,9 +109,11 @@ end
 function TutorialManager.getNewHeroId() return newHeroId_ end
 function TutorialManager.getProgress() return snapshot() end
 function TutorialManager.clearHotspots() hotspots_ = {} end
-function TutorialManager.registerHotspot(key, cx, cy, w, h, panel)
+--- spotlight 仅控制视觉开洞，点击继续仍使用 cx/cy/w/h。
+---@param spotlight? TutorialOverlayRect
+function TutorialManager.registerHotspot(key, cx, cy, w, h, panel, spotlight)
     if w <= 0 or h <= 0 then return end
-    hotspots_[key] = { cx = cx, cy = cy, w = w, h = h,
+    hotspots_[key] = { cx = cx, cy = cy, w = w, h = h, spotlight = spotlight,
         panel = (panel == "left" or panel == "right" or panel == "modal") and panel or "center" }
 end
 function TutorialManager.getCurrentHotspot()

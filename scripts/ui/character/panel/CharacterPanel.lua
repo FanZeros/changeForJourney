@@ -478,19 +478,31 @@ local lastHeroesRefreshTeams = {}
 -- 已发生编队交易的队伍由 HeroSync.invalidateTeams 处理，不能再当作养成刷新。
 local function updateHeroesRefreshBaseline(layoutChanged)
     local current = teamRefreshSnapshot()
-    local changed, changedTeams = {}, {}
+    local changed, changedTeams, classTeams = {}, {}, {}
     for t = 1, TEAM_COUNT do
-        if not sameRefreshValue(heroesRefreshBaseline[t], current[t])
+        local previous = heroesRefreshBaseline[t]
+        if not sameRefreshValue(previous, current[t])
             and not (layoutChanged and layoutChanged[t]) then
             changed[t] = true
             changedTeams[#changedTeams + 1] = t
+            -- 同槽同英雄的分支值变化才需要重建职业；普通属性只更新下波快照。
+            -- 比较冻结值可识别共享 advBranch 表原地写入，以及重置删除分支。
+            for i = 1, MAX_SLOTS do
+                local oldSlot = previous and previous[i]
+                local slot = current[t][i]
+                if oldSlot and slot.heroId and oldSlot.heroId == slot.heroId
+                    and not sameRefreshValue(oldSlot.advBranch, slot.advBranch) then
+                    classTeams[t] = true
+                    break
+                end
+            end
         end
     end
     heroesRefreshBaseline = current
     lastHeroesRefreshTeams = changed
     if #changedTeams > 0 then
         local TriPage = require("ui.battle.tri.BattleTriPage")
-        TriPage.refreshHeroProgressTeams(changedTeams)
+        TriPage.refreshHeroProgressTeams(changedTeams, classTeams)
     end
 end
 
@@ -588,8 +600,8 @@ function CharacterPanel.init(vg)
     -- refreshNavBadge() 里 PlayerStore.Get("equipment") 拿到旧数据，角标不刷新。
     -- PlayerStore.Subscribe 的回调在 PlayerStore 更新缓存后才触发，保证数据最新。
     PlayerStore.Subscribe("equipment", function()
+        -- 装备不改变名册拥有/等级/排序；刷新已覆盖名册与三队缓存，勿重复建英雄。
         refreshPowerCache()
-        rebuildRoster()
         refreshNavBadge()
         -- 装备晚于 heroes 到达时，setAllies 快照不含词缀；需刷新战斗 pending 快照
         local ok, BS = pcall(require, "ui.battle.scene.BattleScene")

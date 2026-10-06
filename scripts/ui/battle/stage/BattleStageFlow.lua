@@ -112,26 +112,27 @@ function M.ensureBattleCards(ctx, queue)
     return q
 end
 
---- 每帧消化加载队列
+--- 每帧消化加载队列；空表是已完成哨兵，nil仅表示尚未构建。
 ---@param queue table[]|nil
 ---@param vg userdata|nil
 ---@return table[]|nil remaining
 function M.pumpBattleCards(queue, vg)
-    if not queue then return nil end
+    if not queue or #queue == 0 then return queue end
+    -- 保留8ms墙钟预算，并限制每次泵任务数；单个同步解码无法中途抢占。
     local t0 = time.elapsedTime
-    local i = 1
-    while i <= #queue and time.elapsedTime - t0 < 0.008 do
-        local job = table.remove(queue, i)
+    local processed = 0
+    while #queue > 0 and processed < 4 and time.elapsedTime - t0 < 0.008 do
+        local job = table.remove(queue, 1)
         if job.fn then
             job.fn()
         else
             local h = nvgCreateImage(vg, job.path, 0)
             if job.apply then job.apply(h) end
         end
+        processed = processed + 1
     end
     if #queue == 0 then
         print("[BattleStageFlow] 战斗卡牌分帧加载完成")
-        return nil
     end
     return queue
 end

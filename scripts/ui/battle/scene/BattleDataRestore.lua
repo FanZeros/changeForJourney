@@ -19,16 +19,22 @@ function M.bind(deps)
     local function setBattleData(data)
         if not data then return end
 
-        -- 每次回灌都重建本地账本；缺账本不能保留旧最高节点的推断记录。
-        -- 首通只接受严格true，避免字符串"false"等宽松值被周期同步洗成已通。
-        local restoredCleared = {}
-        for k, v in pairs(type(data.clearedStages) == "table" and data.clearedStages or {}) do
-            local numKey = math.tointeger(tonumber(k) or 0)
-            if numKey and numKey > 0 and v == true then
-                restoredCleared[numKey] = true
+        -- cleared 是永久首通事实，不是当前战斗模式。回灌可能只含部分账本，
+        -- 合并两源并归一数字/字符串键；false/缺失不能撤销已经确认的 true。
+        -- 清档需先走 resetToDefault，不能借一次普通恢复清除历史首通。
+        local clearedStages = {}
+        local function mergeCleared(source)
+            if type(source) ~= "table" then return end
+            for k, v in pairs(source) do
+                local numKey = math.tointeger(tonumber(k) or 0)
+                if numKey and numKey > 0 and v == true then
+                    clearedStages[numKey] = true
+                end
             end
         end
-        set("clearedStages", restoredCleared)
+        mergeCleared(get("clearedStages"))
+        mergeCleared(data.clearedStages)
+        set("clearedStages", clearedStages)
 
         -- 旧档后备推断只补真实关链中最高节点之前的关卡，不补最高节点。
         -- 终焉ID非单调（999在2305之后），不能按 sid < maxStageId 数值比较。

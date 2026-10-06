@@ -64,9 +64,10 @@ local function run()
     end
     check(#ids == 357, "357个真实装备模板")
     check(typeCount == 25, "25个真实装备子类型")
-    check(#affixes == 57 and #AC.AFFIXES == 44 and #AC.CORRUPT_AFFIXES == 13, "44普通+13魔化词缀")
+    check(#affixes == 58 and #AC.AFFIXES == 45 and #AC.CORRUPT_AFFIXES == 13, "原44普通+新增幸运+13魔化词缀")
+    check(AC.AFFIXES[45].id == 45 and AC.AFFIXES[45].name == "幸运值", "新增普通幸运词条追加，不替换旧词条")
     check(setSourceCount == 48, "12套名称及36条2/4/6说明")
-    check(#sources == 487, "487个源文覆盖组合")
+    check(#sources == 488, "原487个源文及新增幸运名称全部覆盖")
     local newEquipment = {
         W82 = { name = "虫壳战刃", type = "单手剑", slot = "weapon", setId = "carapace" },
         W83 = { name = "虫壳巨刃", type = "双手剑", slot = "weapon", setId = "carapace" },
@@ -307,7 +308,7 @@ local function run()
     state.selectedEquip, state.selectedEquipSlot = equip, "weapon"
     Enhance.updateEnhanceData(equip)
     I18n.set("zh_CN")
-    check(combinations == #sources * #langs and combinations == 1948, "四语1948个全量覆盖组合")
+    check(combinations == #sources * #langs and combinations == 1952, "原四语1948组合加幸运名称四语全部覆盖")
     -- 正图片句柄覆盖锁图标实际绘制和热区；直接调用真实Draw入口，省掉业务输入副作用。
     local DetailDraw = require("ui.character.equip.EquipmentDetailDraw")
     local headerState = { heroId = nil, slot = nil, descScrollY = 0, descScrollMax = 0 }

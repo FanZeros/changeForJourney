@@ -25,6 +25,7 @@ local DarkIcon = require("core.DarkIcon")  -- [暗黑化] 地图压暗滤镜
 
 local BattleResultPanel = require("ui.battle.popup.BattleResultPanel")
 local OfflineCalc = require("systems.OfflineCalc")
+local DropSystem = require("systems.DropSystem")
 local TerminalConfirmDialog = require("ui.battle.popup.TerminalConfirmDialog")
 local MonsterInfoPopup = require("ui.battle.popup.MonsterInfoPopup")
 local BattleSpeed = require("ui.battle.stage.BattleSpeed")
@@ -137,6 +138,7 @@ local enemyQueue = {}
 
 -- 己方单位列表（由 setAllies 填充，init 不再预填占位数据）
 local allies = {}
+local dropLuck_ = 0  -- 单战线本场固定幸运值，阵亡紧凑和待更新配装不追溯改写
 
 -- [EnemyGuard] 检测逻辑与己方生命周期同职责提取。
 local _enemyGuardFired = false
@@ -421,7 +423,12 @@ local function generateIdleEnemyList()
     return BattleEnemySpawn.generateIdleEnemyList(getStageConfig(), maxStageId_, currentStageId)
 end
 
+local function captureDropLuck()
+    dropLuck_ = DropSystem.captureTeamLuck(allies)
+end
+
 local function startBattleTalents()
+    captureDropLuck()
     BattleStageFlow.startBattleTalents(allies, enemies)
 end
 --- 恢复主战斗的 BattleCombat 上下文（副本/竞技场关闭后必须调用）
@@ -431,6 +438,7 @@ local function setupBattleCombatContext()
 end
 
 -- [卡牌分帧加载] 英雄卡/怪物卡/投射物图，首次进战斗时构建队列，由 update 分帧消化
+---@type table[]|nil
 local battleCardQueue = nil
 local function ensureBattleCards(vg)
     battleCardQueue = BattleStageFlow.ensureBattleCards({
@@ -448,6 +456,8 @@ end
 ---@param skipBattleStart? boolean 跳过 TAL/TM 战斗启动（调用方自行在 resetAllyUnit 后调用 startBattleTalents）
 ---@param deferEnter? boolean 三行兼容Scene加载不提前通知实际Driver进场
 local function loadStage(stageId, skipBattleStart, deferEnter)
+    -- 任意实际切关/重开都取消旧行军，避免选关后预约再次跳关。
+    victoryMarch = nil
     BattleMountScope.mountDefault()
     local ctx = {
         currentStageId = currentStageId, stageName = stageName, maxStageId_ = maxStageId_,
@@ -533,7 +543,8 @@ bindBattleExtracts = function()
         end
     end
     local function setLifecycle(key, value)
-        if key == "reincarnationTimer" then reincarnationTimer = value
+        if key == "dropLuck" then dropLuck_ = value
+        elseif key == "reincarnationTimer" then reincarnationTimer = value
         elseif key == "allies" then allies = value
         elseif key == "enemies" then enemies = value
         elseif key == "enemyQueue" then enemyQueue = value
@@ -576,6 +587,12 @@ end
 -- ======================== Public API ========================
 
 function BattleScene.init(vg)
+    -- 新NanoVG上下文不能复用旧卡牌句柄或已完成队列；同上下文切关不失效。
+    if vg_ ~= vg then
+        battleCardQueue = nil
+        for id in pairs(imgHeroCards) do imgHeroCards[id] = nil end
+        for id in pairs(imgMonsterCards) do imgMonsterCards[id] = nil end
+    end
     vg_ = vg  -- 缓存，供 loadStage 切换地图背景
     -- 地图背景延后到 loadStage / 首次绘制，避免启动解码 1MB+ MAP_1
     currentChapter = 1
@@ -915,7 +932,8 @@ function BattleScene.update(dt)
         updateCardAnims = updateCardAnims, updateFloatingTexts = updateFloatingTexts,
         updateHitFlashes = updateHitFlashes, updateComboQueue = updateComboQueue,
         getStageConfig = getStageConfig, loadStage = loadStage, resetAllyUnit = resetAllyUnit,
-        startBattleTalents = startBattleTalents, onStageChangedCallback = onStageChangedCallback,
+        startBattleTalents = startBattleTalents, captureDropLuck = captureDropLuck,
+        onStageChangedCallback = onStageChangedCallback,
         onReincarnateCallback = onReincarnateCallback, recalcIdleIncome = recalcIdleIncome,
         generateIdleEnemyList = generateIdleEnemyList, assignEnemiesToField = assignEnemiesToField,
         BattleScene = BattleScene,
@@ -952,6 +970,24 @@ function BattleScene.update(dt)
     maxStageId_ = _phCtx.maxStageId_
     stageName = _phCtx.stageName
 
+    -- 暂停已由 Phases 消费；胜利行军是停战后的真实时钟阶段，不能放在
+    -- battleActive 守卫后，也不能再触发一次胜负/挂机寻怪/攻击逻辑。
+    if victoryMarch then
+        BattleEffects.update(dt)
+        updateCardAnims(dt)
+        updateFloatingTexts(dt)
+        updateHitFlashes(dt)
+        SpeechBubble.update(dt)
+        bgAnimTimer = bgAnimTimer + dt
+        if bgTransAnim then
+            bgTransAnim.timer = bgTransAnim.timer + dt
+            if bgTransAnim.timer >= (bgTransAnim.duration or BG_TRANS_DURATION) then
+                bgTransAnim = nil
+            end
+        end
+        _navLogic.tickVictoryMarch(dt)
+        return
+    end
     if not battleActive then return end
 
     local logicDt = BattleScene.getBattleLogicDt(dt)
@@ -1006,6 +1042,7 @@ function BattleScene.update(dt)
         onEnemyKillCallback = onEnemyKillCallback, onEnemyDropCallback = onEnemyDropCallback,
         onFirstClearCallback = onFirstClearCallback, onAllDeadCallback = onAllDeadCallback,
         stageKillCount = stageKillCount_, isFirstClear = isFirstClear, clearedStages = clearedStages,
+        dropLuck = dropLuck_,
         reincarnationTimer = reincarnationTimer, battleActive = battleActive,
         searchingTimer = searchingTimer, defeatTimer = defeatTimer,
         terminalDefeatPending = terminalDefeatPending, defeatByTimeout = defeatByTimeout,
@@ -1027,13 +1064,17 @@ function BattleScene.update(dt)
     else
         stageKillCount_ = _casCtx.stageKillCount
     end
-    isFirstClear = _casCtx.isFirstClear
-    reincarnationTimer = _casCtx.reincarnationTimer
-    battleActive = _casCtx.battleActive
-    searchingTimer = _casCtx.searchingTimer
-    defeatTimer = _casCtx.defeatTimer
-    terminalDefeatPending = _casCtx.terminalDefeatPending
-    defeatByTimeout = _casCtx.defeatByTimeout
+    -- Nav 可能在胜利回调中开始行军或直接加载新关（最高末关/跳过终焉）。
+    -- ctx 属于旧战斗，不能覆盖停战状态或新关从账本派生的首通状态。
+    if currentStageId == stageIdBeforeCas then
+        isFirstClear = _casCtx.isFirstClear
+        reincarnationTimer = _casCtx.reincarnationTimer
+        battleActive = victoryMarch == nil and _casCtx.battleActive
+        searchingTimer = _casCtx.searchingTimer
+        defeatTimer = _casCtx.defeatTimer
+        terminalDefeatPending = _casCtx.terminalDefeatPending
+        defeatByTimeout = _casCtx.defeatByTimeout
+    end
     if _casConsumed then return end
 
     -- ---- 攻击进度 / DOT HOT / 天赋计时 / 护盾回血（委托 BattleSceneTick） ----
@@ -1078,9 +1119,6 @@ function BattleScene.update(dt)
         if bgTransAnim.timer >= duration then
             bgTransAnim = nil
         end
-    end
-    if _navLogic and _navLogic.tickVictoryMarch then
-        _navLogic.tickVictoryMarch(dt)
     end
 end
 
@@ -1425,6 +1463,7 @@ function BattleScene.reloadStage(opts)
 end
 --- 重置战斗场景到初始默认状态（清除存档后调用）
 function BattleScene.resetToDefault()
+    victoryMarch = nil
     return getAllyLifecycle().resetToDefault()
 end
 --- 暂停战斗（切离战斗页面时调用）

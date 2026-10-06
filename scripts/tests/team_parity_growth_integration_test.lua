@@ -33,6 +33,8 @@ function Start()
         return true
     end
     local ok, err = pcall(function()
+        -- 所有持久化必须走下方独立 MemorySave；意外真实 File 访问立即失败。
+        replace(_G, "File", function() error("成长集成测试禁止读写真档") end)
         local CP = nativeRequire("ui.character.panel.CharacterPanel")
         local Stats = nativeRequire("systems.BattleStats")
         local Page = nativeRequire("ui.battle.tri.BattleTriPage")
@@ -222,9 +224,10 @@ function Start()
                 and drv.rchState.unitStates == old.immunity and drv.kills == old.kills
                 and drv.active == old.active
         end
-        local function runReceipt(heroId, target, reset, closed)
+        local function runReceipt(heroId, target, reset, closed, receiptOnly)
             local label = (closed and "closed " or "open ") .. (reset and "reset " or "advance ")
                 .. "hero=" .. heroId .. " team=" .. tostring(target)
+                .. (receiptOnly and " receipt-before-push" or "")
             if closed then Page.close() else Page.open() end
             for _, drv in ipairs(drivers) do
                 drv.combatState.comboQueue = { { timer = 0.7 } }
@@ -244,10 +247,27 @@ function Start()
             local defaultUnit = Scene.getAllies()[1]
             local defaultHp, defaultAttrs = defaultUnit and defaultUnit.hp, defaultUnit and defaultUnit.attrs
             local action = reset and Protocol.ACTION_TYPES.RESET_CLASS or Protocol.ACTION_TYPES.ADVANCE_CLASS
-            local result = handlers[action](1, { heroId = heroId, branchId = firstBranch(heroId), advLevel = 1 })
+            ---@type table
+            local result
+            if receiptOnly then
+                -- 模拟合法成功回执先到，heroes 推送稍后到；不调用会先推送的真实 handler。
+                result = { success = true, heroId = heroId, branchId = not reset and firstBranch(heroId) or nil,
+                    advLevel = not reset and 1 or nil }
+            else
+                result = handlers[action](1, { heroId = heroId, branchId = firstBranch(heroId), advLevel = 1 })
+            end
             result.action = action
-            check(result.success, label .. " real handler/service success")
+            check(result.success, label .. (receiptOnly and " successful direct receipt" or " real handler/service success"))
             receipts.onActionResult(result)
+            if receiptOnly then
+                local afterInvalid, afterRefresh = #invalidations, sceneRefreshes
+                -- 面板第一转与镜像可能别名共享；冻结门禁必须识别第一次写入并去重迟到推送。
+                local branch = CP.getOwnedHero(heroId).advBranch
+                heroes.roster[heroId].advBranch = branch and { first = branch.first, second = branch.second } or nil
+                Dispatcher.set("heroes", heroes)
+                check(#invalidations == afterInvalid and sceneRefreshes == afterRefresh,
+                    label .. " delayed identical push does not refresh twice")
+            end
             check(reset and not CP.getOwnedHero(heroId).advBranch
                 or not reset and CP.getOwnedHero(heroId).advBranch.first == result.branchId,
                 label .. " receipt synchronized owned progression")
@@ -311,6 +331,15 @@ function Start()
                 runReceipt(heroId, target, true, closed)
             end
         end
+        -- 独立回执无先行 heroes 推送时，三个 wrapper 的成功返回才驱动冻结刷新。
+        for _, closed in ipairs({ false, true }) do
+            for index, heroId in ipairs({ 1, 2, 3, 25 }) do
+                local target = index <= 3 and index or nil
+                CP.setActiveTeam(index % 3 + 1)
+                runReceipt(heroId, target, false, closed, true)
+                runReceipt(heroId, target, true, closed, true)
+            end
+        end
         -- 失败/未知英雄回执不得修改任何队伍。
         local oldInvalid, oldFormation = #invalidations, formationEvents
         receipts.onActionResult({ action = Protocol.ACTION_TYPES.ADVANCE_CLASS, success = false, heroId = 1 })
@@ -318,6 +347,79 @@ function Start()
         CP.setHeroAdvBranch(999, 101, 1)
         CP.resetHeroAdvBranch(999)
         check(#invalidations == oldInvalid and formationEvents == oldFormation, "failed and unknown-hero receipts do not refresh teams")
+        -- 轻刷新必须真实构建本队 pending；不能只保留签名但什么都没更新。
+        local scopeModules = {
+            nativeRequire("ui.battle.combat.BattleCombat"), nativeRequire("ui.battle.combat.ProjectileSystem"),
+            nativeRequire("ui.battle.combat.BattleEffects"), nativeRequire("systems.ThreatManager"),
+            nativeRequire("systems.TalentManager"), nativeRequire("systems.ExtraTalentSystem"),
+            nativeRequire("systems.StatusEffectManager"), nativeRequire("systems.RelicConditionHandler"),
+        }
+        local Talents = nativeRequire("systems.TalentManager")
+        local function mountedSnapshot()
+            local result = { statsTeam = Stats.mountedTeam(), talentUnits = Talents.mountedUnitStates() }
+            for i, module in ipairs(scopeModules) do result[i] = module.mountedState() end
+            return result
+        end
+        local function sameMounted(before)
+            if Stats.mountedTeam() ~= before.statsTeam or Talents.mountedUnitStates() ~= before.talentUnits then return false end
+            for i, module in ipairs(scopeModules) do if module.mountedState() ~= before[i] then return false end end
+            return true
+        end
+        local function prepareGrowthState()
+            local result = {}
+            for team, drv in ipairs(drivers) do
+                drv.combatState.comboQueue = { { timer = 0.7 } }
+                drv.psState.projectiles = { { onHit = noop } }
+                drv.kills, drv.marchTimer, drv._sigTick = 7, 0, 0
+                drv.teamSignature = CP.getTeamSignature(team)
+                local units = {}
+                for i, unit in ipairs(drv.allies) do
+                    unit.atkProgress, unit.reviveTimer = 0.4, 0.3
+                    units[i] = { unit = unit, attrs = unit.attrs, hp = unit.hp, base = unit._baseSnapshot,
+                        pending = unit._pendingSnapshot, atkProgress = unit.atkProgress, reviveTimer = unit.reviveTimer,
+                        fallen = unit._fallen, fallenPending = unit._fallenPending,
+                        partySlot = unit.partySlot, artifactTeam = unit.artifactTeamIdx, slotOrder = unit._slotOrder }
+                end
+                result[team] = { driver = driverSnapshot(drv), units = units,
+                    context = drv.combatState.ctx, startCount = starts[team] }
+            end
+            drivers[3].mount()
+            return result, mountedSnapshot()
+        end
+        local function verifyGrowthState(before, changedTeam, label)
+            for team, drv in ipairs(drivers) do
+                local prior = before[team]
+                check(unchanged(drv, prior.driver) and drv.teamSignature == prior.driver.signature
+                    and drv.combatState.ctx == prior.context and starts[team] == prior.startCount,
+                    label .. " keeps real driver state/context/signature team " .. team)
+                for i, old in ipairs(prior.units) do
+                    local unit = drv.allies[i]
+                    check(unit == old.unit and unit.attrs == old.attrs and unit.hp == old.hp
+                        and unit._baseSnapshot == old.base and unit.reviveTimer == old.reviveTimer
+                        and unit.atkProgress == old.atkProgress and unit._fallen == old.fallen
+                        and unit._fallenPending == old.fallenPending and unit.partySlot == old.partySlot
+                        and unit.artifactTeamIdx == old.artifactTeam and unit._slotOrder == old.slotOrder,
+                        label .. " keeps hp/death/live/base/real slot team " .. team)
+                    if team == changedTeam then
+                        local own = CP.getOwnedHero(unit.heroId)
+                        local expected = HC.createHero(unit.heroId, CP.getEffectiveLevel(unit.heroId),
+                            own.advBranch, own.awakening, own.extraTalent)
+                        local armor = CP.applyEquippedItems(expected.attrs, unit.heroId, unit.partySlot)
+                        if armor then expected.armorType = armor end
+                        local artifacts = nativeRequire("systems.ArtifactBridge").applyToUnit(expected.attrs,
+                            unit.partySlot, nil, unit.artifactTeamIdx) or {}
+                        check(unit._pendingSnapshot and unit._pendingSnapshot ~= old.pending
+                            and same(unit._pendingSnapshot.final, expected.attrs.final)
+                            and unit._pendingArmorType == expected.armorType
+                            and unit._pendingLevel == CP.getEffectiveLevel(unit.heroId)
+                            and same(unit._pendingArtifactEffects, artifacts),
+                            label .. " real Lifecycle pending matches owned/equipment/own-team artifact pipeline " .. team)
+                    else
+                        check(unit._pendingSnapshot == old.pending, label .. " unrelated pending untouched team " .. team)
+                    end
+                end
+            end
+        end
         -- 真实原地推送：闭页队一属性变化保留轻刷新，旁队/未上阵不借用默认 Scene。
         for _, id in ipairs({ 1, 2, 3, 25 }) do
             heroes.roster[id].awakening = { _awk3Migrated = true }
@@ -329,6 +431,15 @@ function Start()
             for _, field in ipairs({ "level", "awakening", "extraTalent" }) do
                 for index, id in ipairs({ 1, 2, 3, 25 }) do
                     seedStats()
+                    local target = index <= 3 and index or nil
+                    -- 觉醒推送时令真实驱动单位阵亡；其他属性验证受伤存活者也不回血。
+                    if target then
+                        local unit = drivers[target].allies[1]
+                        unit.hp = field == "awakening" and 0 or math.max(1, unit.maxHp - 2)
+                        unit.attrs.final[AD.HP] = unit.hp
+                        unit._fallen = unit.hp == 0 and true or nil
+                    end
+                    local beforeDrivers, beforeMounted = prepareGrowthState()
                     local beforeStats = statsSnapshot()
                     local beforeRefresh, beforeInvalid = sceneRefreshes, #invalidations
                     local hero = heroes.roster[id]
@@ -336,6 +447,8 @@ function Start()
                     elseif field == "awakening" then hero.awakening[open and 2 or 1] = true
                     else hero.extraTalent.stacks = hero.extraTalent.stacks + 1 end
                     Dispatcher.set("heroes", heroes)
+                    check(sameMounted(beforeMounted), "attribute push restores every caller mount including TAL units/ETS/stats")
+                    verifyGrowthState(beforeDrivers, target, "原地" .. field .. "推送 hero=" .. id)
                     check(sceneRefreshes == beforeRefresh + ((not open and index == 1) and 1 or 0),
                         "real in-place " .. field .. " push hero=" .. id .. " open=" .. tostring(open) .. " default refresh scope")
                     check(#invalidations == beforeInvalid, "nonclass attribute push keeps formation signatures")
@@ -346,7 +459,43 @@ function Start()
                 end
             end
         end
+        -- 追加技独立本地 patch 同样走真实 pending，重复值/迟到镜像不重复刷新。
+        do
+            Page.open()
+            seedStats()
+            local beforeDrivers, beforeMounted = prepareGrowthState()
+            local beforeRefresh, beforeInvalid = sceneRefreshes, #invalidations
+            local beforeStats = statsSnapshot()
+            local oldExtra = CP.getOwnedHero(2).extraTalent
+            CP.patchExtraTalent(2, { stacks = oldExtra.stacks + 1 })
+            verifyGrowthState(beforeDrivers, 2, "独立追加技回执")
+            check(sceneRefreshes == beforeRefresh and #invalidations == beforeInvalid
+                and sameMounted(beforeMounted) and same(beforeStats, statsSnapshot()),
+                "extra-talent patch retains default Scene/signatures/stats/caller mounts")
+            local pending = drivers[2].allies[1]._pendingSnapshot
+            CP.patchExtraTalent(2, CP.getOwnedHero(2).extraTalent)
+            Dispatcher.set("heroes", heroes)
+            check(drivers[2].allies[1]._pendingSnapshot == pending and #invalidations == beforeInvalid,
+                "identical extra-talent patch and delayed push keep the original pending snapshot")
+        end
         Page.close()
+        -- 普通刷新抛错仍恢复调用者挂载，不能吞错或借异常重开/清统计。
+        do
+            drivers[3].mount()
+            local beforeMounted, beforeStats = mountedSnapshot(), statsSnapshot()
+            local beforeInvalid = #invalidations
+            local create = HC.createHero
+            HC.createHero = function() error("成长刷新异常夹具") end
+            local refreshed, refreshError = pcall(Page.refreshHeroProgressTeams, { 2 })
+            HC.createHero = create
+            check(not refreshed and tostring(refreshError):find("成长刷新异常夹具", 1, true)
+                and sameMounted(beforeMounted) and same(beforeStats, statsSnapshot())
+                and #invalidations == beforeInvalid,
+                "ordinary pending refresh propagates error and restores all caller mounts/stats without invalidation")
+            check(Page.refreshHeroProgressTeams({ 0, 4, 1.5, "bad" }) == false
+                and sameMounted(beforeMounted) and #invalidations == beforeInvalid,
+                "invalid growth teams neither borrow mounts nor refresh formation")
+        end
         -- 保留真实跨队编队的原子交换回调。
         seedStats()
         local oldThird = statsSnapshot()[3]
@@ -385,6 +534,9 @@ function Start()
         check(changedLayouts and changedLayouts[1] and changedLayouts[2] and changedLayouts[3],
             "mainline HeroSync returns actual changed layout map")
         check(next(CP.setHeroesData(heroes)) == nil, "unchanged HeroSync returns empty changed map")
+        for _, drv in ipairs(drivers) do for _ = 1, 15 do drv:update(0) end end
+        check(drivers[2].allies[1].partySlot == 2 and drivers[3].allies[1].partySlot == 3,
+            "real layout rebuild retains holes before ordinary pending refresh")
         Scene.setAllies(CP.getDeployedTeam(1))
         local messageMocks = {
             ["ui.character.panel.CharacterPanel"] = CP,
@@ -450,9 +602,12 @@ function Start()
             if open then Page.open() else Page.close() end
             for _, id in ipairs({ 1, 2, 3, 25 }) do
                 local beforeRefresh, beforeInvalid = sceneRefreshes, #invalidations
+                local beforeDrivers, beforeMounted = prepareGrowthState()
                 local own = CP.getOwnedHero(id)
                 local oldLevel = own.level
                 CP.addHeroExp(id, nativeRequire("config.ExpTable").getHeroExpForLevel(oldLevel))
+                check(sameMounted(beforeMounted), "local experience restores all caller mounts")
+                verifyGrowthState(beforeDrivers, id ~= 25 and id or nil, "本地升级 hero=" .. id)
                 check(CP.getOwnedHero(id).level > oldLevel, "real local exp increases hero level " .. id)
                 check(sceneRefreshes == beforeRefresh + ((not open and id == 1) and 1 or 0),
                     "local level-up default scope hero=" .. id .. " open=" .. tostring(open))
@@ -467,7 +622,10 @@ function Start()
         local syncedLevel = CP.getOwnedHero(2).level + 1
         CP.getOwnedHero(2).level = syncedLevel
         local beforeSlotRefresh, beforeSlotInvalid = sceneRefreshes, #invalidations
-        CP.syncSlotLevel(2, syncedLevel)
+        local beforeSlotDrivers, beforeSlotMounted = prepareGrowthState()
+        check(CP.syncSlotLevel(2, syncedLevel) == true, "syncSlotLevel returns successful receipt to refresh wrapper")
+        verifyGrowthState(beforeSlotDrivers, 2, "旁队槽位等级回执")
+        check(sameMounted(beforeSlotMounted), "slot-level receipt restores all caller mounts")
         CP.setActiveTeam(2)
         local actualSlots = CP.getTeamSlotsData()
         check(actualSlots[2].heroId == 2 and actualSlots[2].level == syncedLevel,

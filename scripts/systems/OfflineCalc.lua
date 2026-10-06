@@ -188,6 +188,59 @@ local function mergeScrollDropsInto(dest, source)
     end
 end
 
+local SCROLL_TYPES = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
+
+local function getTicketRate(scrollDropRate)
+    return math.min(0.35, math.max(0.12, scrollDropRate * 4))
+end
+
+-- 离线装备按产出序号轮询怪物池；小数件的品质沿用下一位置，不消耗 RNG。
+local function calcExpectedDrops(kills, entry, stageConfig)
+    if not MC.LEVELS[math.min(entry.monsterLevel or 1, 60)] or #(entry.monsters or {}) == 0 then
+        return {}, {}
+    end
+    local raw = kills * (entry.dropRate or 0.05)
+    local whole = math.floor(raw)
+    local fraction = raw - whole
+    local pool = buildQualityPool(entry)
+    local size = #pool
+    local cap = getMaxDropQuality(stageConfig, entry)
+    local counts = {}
+    if size == 0 then
+        counts[1] = raw
+    else
+        for index, monsterId in ipairs(pool) do
+            local occurrences = math.floor(whole / size)
+                + (index <= whole % size and 1 or 0)
+                + (index == whole % size + 1 and fraction or 0)
+            local template = MC.MONSTERS[monsterId]
+            local data = MC.QUALITY[template and template.quality or 1] or MC.QUALITY[1]
+            local weights, totalWeight = data.dropWeights, 0
+            for q = 1, 6 do totalWeight = totalWeight + (weights[q] or 0) end
+            if totalWeight <= 0 then
+                counts[1] = (counts[1] or 0) + occurrences
+            else
+                for q = 1, 6 do
+                    local quality = math.min(q, cap)
+                    counts[quality] = (counts[quality] or 0)
+                        + occurrences * (weights[q] or 0) / totalWeight
+                end
+            end
+        end
+    end
+    local seeds, scrolls = {}, {}
+    for q = 1, 6 do
+        if (counts[q] or 0) > 0 then
+            seeds[#seeds + 1] = { stageId = entry.id, quality = q,
+                level = entry.monsterLevel, count = counts[q] }
+        end
+    end
+    local scrollRate = entry.scrollDropRate or 0
+    for _, key in ipairs(SCROLL_TYPES) do scrolls[key] = kills * scrollRate / #SCROLL_TYPES end
+    scrolls.sweepTicket = kills * getTicketRate(scrollRate)
+    return seeds, scrolls
+end
+
 -- ======================== 奖励计算 ========================
 
 --- 根据击杀数计算奖励（单关卡）
@@ -307,7 +360,7 @@ function OfflineCalc.calcRewardsFromKills(kills, stageEntry, heroCount, stageCon
     local scrollDropRate = stageEntry.scrollDropRate or 0
     local scrollDrops = {}
     if scrollDropRate > 0 then
-        local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
+        local scrollTypes = SCROLL_TYPES
         local rawScrollCount = kills * scrollDropRate
         local totalScrolls = math.floor(rawScrollCount)
         local scrollFrac = rawScrollCount - totalScrolls
@@ -320,7 +373,7 @@ function OfflineCalc.calcRewardsFromKills(kills, stageEntry, heroCount, stageCon
         end
     end
     -- 扫荡券：约每 5 只怪 1 张，比卷轴更频繁
-    local ticketRate = math.min(0.35, math.max(0.12, scrollDropRate * 4))
+    local ticketRate = getTicketRate(scrollDropRate)
     if ticketRate <= 0 then ticketRate = 0.20 end
     local rawTickets = kills * ticketRate
     local ticketCount = math.floor(rawTickets)
@@ -560,7 +613,7 @@ end
 ---@param teams OfflineTeamSpec[]
 ---@param stageConfig table|nil
 ---@return OfflineTeamRewards|nil
-function OfflineCalc.calcTeamOfflineRewards(seconds, teams, stageConfig)
+local function calcTeamRewards(seconds, teams, stageConfig, expected)
     if seconds ~= seconds or seconds == math.huge then return nil end
     local actual = math.max(0, seconds)
     if actual < OfflineCalc.MIN_SECONDS or type(teams) ~= "table" then return nil end
@@ -597,10 +650,27 @@ function OfflineCalc.calcTeamOfflineRewards(seconds, teams, stageConfig)
                 if cfg.isResourceStage and cfg.isResourceStage(stageId) then
                     -- DC 内封装每分钟旧效率及货币 REWARD_MULT，装备不乘倍率。
                     -- 不把资源关送入主线收入表/怪物掉落，否则会混入经验、卷轴和扫荡券。
-                    local resource = DC.getStageRewards(stageId, effective * OfflineCalc.IDLE_KILL_RATE)
-                    reward.gold = resource.gold or 0
-                    reward.diamond = resource.diamond or 0
-                    reward.equipSeeds = resource.equipSeeds or {}
+                    local resourceKills = effective * OfflineCalc.IDLE_KILL_RATE
+                    if expected then
+                        local id, floor = DC.decodeStageId(stageId)
+                        local amount = DC.getStageRewardAmount(stageId, resourceKills)
+                        if id == "gold_mine" then reward.gold = amount
+                        elseif id == "black_diamond" then reward.diamond = amount
+                        elseif id == "equipment_vault" then
+                            local data = DC.getFloor(id, floor)
+                            for q = data.equipMinQuality, data.equipMaxQuality do
+                                reward.equipSeeds[#reward.equipSeeds + 1] = {
+                                    stageId = stageId, quality = q, level = data.equipLevel,
+                                    count = amount / (data.equipMaxQuality - data.equipMinQuality + 1),
+                                }
+                            end
+                        end
+                    else
+                        local resource = DC.getStageRewards(stageId, resourceKills)
+                        reward.gold = resource.gold or 0
+                        reward.diamond = resource.diamond or 0
+                        reward.equipSeeds = resource.equipSeeds or {}
+                    end
                 else
                     -- 重登通常已由 Schema 将终焉退至同难度末关；旧直接调用也保持此边界。
                     local incomeId = stageId
@@ -608,9 +678,13 @@ function OfflineCalc.calcTeamOfflineRewards(seconds, teams, stageConfig)
                         incomeId = cfg.getTerminalPrevStageId(stageId) or stageId
                         entry = cfg.getStage(incomeId) or entry
                     end
-                    local dropped = OfflineCalc.calcRewardsFromKills(kills, entry, heroCount, cfg)
-                    reward.equipSeeds = dropped.equipSeeds
-                    reward.scrollDrops = dropped.scrollDrops
+                    if expected then
+                        reward.equipSeeds, reward.scrollDrops = calcExpectedDrops(kills, entry, cfg)
+                    else
+                        local dropped = OfflineCalc.calcRewardsFromKills(kills, entry, heroCount, cfg)
+                        reward.equipSeeds = dropped.equipSeeds
+                        reward.scrollDrops = dropped.scrollDrops
+                    end
                     local goldPerMin, expPerMin = IdleIncomeConfig.get(incomeId)
                     reward.gold = math.floor(goldPerMin * effective / 60 + 0.5)
                     reward.adventureExp = math.floor(expPerMin * effective / 60 + 0.5)
@@ -632,6 +706,24 @@ function OfflineCalc.calcTeamOfflineRewards(seconds, teams, stageConfig)
     end
     if #total.teamRewards == 0 then return nil end
     return total
+end
+
+--- 实际结算保留原随机次数与奖励顺序；预览共用金额、人数和时间规则。
+---@param seconds number
+---@param teams OfflineTeamSpec[]
+---@param stageConfig table|nil
+---@return OfflineTeamRewards|nil
+function OfflineCalc.calcTeamOfflineRewards(seconds, teams, stageConfig)
+    return calcTeamRewards(seconds, teams, stageConfig, false)
+end
+
+--- 无随机的数学期望；装备 count 可为小数，禁止作为真实发奖载荷使用。
+---@param seconds number
+---@param teams OfflineTeamSpec[]
+---@param stageConfig table|nil
+---@return OfflineTeamRewards|nil
+function OfflineCalc.previewTeamOfflineRewards(seconds, teams, stageConfig)
+    return calcTeamRewards(seconds, teams, stageConfig, true)
 end
 
 --- 【入口 B】在线定时结算（无门槛，由调用方保证 interval >= 60s）

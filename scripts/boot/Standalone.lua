@@ -472,6 +472,7 @@ end
 
 function Standalone.Stop()
     RewardPopup.clearBattleRewards()
+    require("ui.battle.stage.StageSelectDialog").close()
     StandaloneSave.Flush()  -- [单机存档] 退出前立即落盘
     SpinePowerUpEffect.destroy()
     LevelUpPopup.destroy()
@@ -714,6 +715,7 @@ function Standalone.requestResetToStartScreen()
 
     -- 2. 关闭所有打开的面板/弹窗
     RewardPopup.clearBattleRewards()
+    require("ui.battle.stage.StageSelectDialog").close()
     if MarketPage.isOpen()          then MarketPage.close()          end
     if TavernPage.isOpen()          then TavernPage.close()          end
     -- [锻炉双页 0929] 锻炉强制关闭（联动仓库由其 closeAutoWarehouse 处理，这里再兜底关仓库）

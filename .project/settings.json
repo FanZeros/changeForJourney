@@ -18,7 +18,11 @@
       "../assets",
       "../scripts"
     ],
-    "asset_ignores": []
+    "asset_ignores": [
+      "../assets/backup/**",
+      "../assets/image/审核/**",
+      "../assets/image/审核_*"
+    ]
   },
   "@runtime": {
     "multiplayer": {

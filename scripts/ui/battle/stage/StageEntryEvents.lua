@@ -13,6 +13,10 @@ local pendingEntries = {}
 ---@return boolean
 function Events.notify(stageId, teamIdx)
     teamIdx = teamIdx or 1
+    if require("config.StageConfig").isResourceStage(stageId) then
+        pendingEntries[teamIdx] = nil
+        return false
+    end
     if notifiedStages[stageId] then
         pendingEntries[teamIdx] = nil
         return false

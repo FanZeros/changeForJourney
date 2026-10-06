@@ -528,10 +528,18 @@ function DungeonPage.openResource(dungeonId, teamIdx)
         toast(ExpTable.getTeamUnlockText(team))
         return false
     end
-    return openDetail(dungeonId, team)
+    DungeonPage.close()
+    require("ui.hud.BottomNav").setSelectedIndex(3)
+    require("ui.battle.tri.BattleTriPage").open()
+    require("ui.battle.stage.StageSelectDialog").openDungeon(team, dungeonId)
+    return true
 end
 
 ---@return boolean
+function DungeonPage.isDetailOpen()
+    return detailOpen
+end
+
 function DungeonPage.openTower()
     return openDetail("babel_tower", nil)
 end
@@ -1175,7 +1183,11 @@ function DungeonPage.handleInput(dx, dy)
     for cardIdx, dungeon in ipairs(dungeonList) do
         local cardCX, cardCY, cardScale = cardRect(cardIdx)
         if DrawUtil.hitTest(dx, dy, cardCX, cardCY, CARD_W * cardScale, CARD_H * cardScale) then
-            openDetail(dungeon.id, nil)
+            if DungeonConfig.isResourceDungeon(dungeon.id) then
+                DungeonPage.openResource(dungeon.id, 1)
+            else
+                openDetail(dungeon.id, nil)
+            end
             return true
         end
     end

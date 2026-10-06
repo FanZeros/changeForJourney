@@ -52,6 +52,9 @@ end
 ---@param isFirstClear boolean
 ---@return table[] allEnemies
 function M.generateEnemyList(stageEntry, isFirstClear)
+    local isResourceStage = stageEntry.mode == "resource_dungeon"
+    -- 资源关只使用当前 entry 的常驻怪物，不追加主线首通特殊怪。
+    if isResourceStage then isFirstClear = false end
     local totalCount = isFirstClear and stageEntry.firstCount or stageEntry.idleCount
     local monsterTypes = stageEntry.monsters
     local level = stageEntry.monsterLevel
@@ -92,6 +95,11 @@ function M.generateEnemyList(stageEntry, isFirstClear)
         end
     end
 
+    if isResourceStage then
+        for _, unit in ipairs(list) do
+            unit.goldReward, unit.expReward = 0, 0
+        end
+    end
     return list
 end
 
@@ -137,6 +145,11 @@ end
 ---@param currentStageId number
 ---@return table[] allEnemies, number maxField
 function M.generateIdleEnemyList(stageConfig, maxStageId, currentStageId)
+    if stageConfig.isResourceStage(currentStageId) then
+        local entry = stageConfig.getStage(currentStageId)
+        if entry then return M.generateEnemyList(entry, false), entry.maxFieldEnemies or 4 end
+        return {}, 4
+    end
     local IDLE_STAGE_COUNT = 5
     local stages = require("shared.StageUtils").collectPrevStages(maxStageId, IDLE_STAGE_COUNT, stageConfig)
     if #stages == 0 then

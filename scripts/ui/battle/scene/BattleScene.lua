@@ -1175,11 +1175,12 @@ end
 function BattleScene.adoptStageProgress(stageId)
     stageId = tonumber(stageId)
     if not stageId or not getStageConfig().getStage(stageId) then return end
-    if stageId > maxStageId_ then
+    local resourceStage = SC.isResourceStage(stageId)
+    if not resourceStage and stageId > maxStageId_ then
         maxStageId_ = stageId
     end
     currentStageId = stageId
-    isFirstClear = not (clearedStages[stageId] or clearedStages[tostring(stageId)])
+    isFirstClear = not resourceStage and not (clearedStages[stageId] or clearedStages[tostring(stageId)])
 end
 --- 三行普通关通关：三队共享解锁与首通账本，各队保留独立的当前关卡。
 --- 一队追赶已被其他队通关的节点时仍要同步当前关，不能被奖励去重拦住。
@@ -1194,6 +1195,33 @@ function BattleScene.completeTriStageClear(stageId, teamIdx)
     end
     local ClientDispatcher = require("runtime.ClientDispatcher")
     local battle = ClientDispatcher.get("battle")
+    if SC.isResourceStage(id) then
+        local DC = require("config.DungeonConfig")
+        local dungeon = ClientDispatcher.get("dungeon")
+        if type(dungeon) ~= "table" or type(battle) ~= "table" then return false end
+        if not DC.isStageUnlocked(id, battle, dungeon) then return false end
+        local dungeonId, floor = DC.decodeStageId(id)
+        local sub = dungeon[dungeonId]
+        if type(sub) ~= "table" then sub = { floor = 1, cleared = {} }; dungeon[dungeonId] = sub end
+        if type(sub.cleared) ~= "table" then sub.cleared = {} end
+        local wasCleared = floor <= DC.getHighestClearedFloor(sub, dungeonId)
+        sub.cleared[tostring(floor)] = true
+        sub.floor = math.min(DC.MAX_FLOOR[dungeonId], math.max(tonumber(sub.floor) or 1, floor + 1))
+        local nextId = SC.getNextStageId(id) or id
+        if type(battle.teamStageIds) ~= "table" then battle.teamStageIds = {} end
+        battle.teamStageIds[tostring(teamIdx)] = nextId
+        if teamIdx == 1 then
+            BattleScene.adoptStageProgress(nextId)
+            battle.currentStageId, battle.battleMode = nextId, "idle"
+        end
+        if not wasCleared then
+            print(string.format("[BattleScene] 队%d 资源通关 %s 层%d，主线进度保持%s", teamIdx, dungeonId, floor, tostring(battle.maxStageId)))
+        end
+        ClientDispatcher.notifySubscribers("dungeon")
+        ClientDispatcher.notifySubscribers("battle")
+        require("boot.StandaloneSave").Flush()
+        return false -- 资源奖励按击杀发放，不触发主线首次通关回调。
+    end
     local savedCleared = type(battle) == "table" and battle.clearedStages or {}
     savedCleared = savedCleared or {}
     local wasCleared = clearedStages[id] == true or clearedStages[tostring(id)] == true

@@ -1,8 +1,8 @@
 -- ============================================================================
--- OfflineCalc - 挂机/离线收益计算模块（v2 统一杀怪效率）
--- 职责: 基于固定杀怪效率 + maxStageId 前 N 关加权混合，计算挂机收益
+-- OfflineCalc - 挂机/离线收益计算模块
+-- 职责: 离线按每支非空队伍当前关独立计算；旧在线结算保留账户双锚点兼容
 -- 运行端: server
--- 公式: kills = seconds × IDLE_KILL_RATE; rewards = 多关卡加权(kills, stages, heroCount)
+-- 公式: 每队 kills = seconds × IDLE_KILL_RATE；时间边界只计算一次，不按队叠加
 -- ============================================================================
 
 local MC = require("config.MonsterConfig")
@@ -11,6 +11,40 @@ local ET = require("config.ExpTable")
 local StageUtils = require("shared.StageUtils")
 local EquipmentSystem = require("systems.EquipmentSystem")
 local IdleIncomeConfig = require("config.IdleIncomeConfig")
+local DC = require("config.DungeonConfig")
+
+---@class OfflineTeamSpec
+---@field teamIdx number
+---@field stageId number
+---@field heroCount number
+
+---@class OfflineTeamReward: OfflineTeamSpec
+---@field gold number
+---@field diamond number
+---@field adventureExp number
+---@field adventurerExp number
+---@field kills number
+---@field equipSeeds table[]
+---@field scrollDrops table<string, number>
+
+---@class OfflineTeamRewards
+---@field gold number
+---@field diamond number
+---@field adventureExp number
+---@field adventurerExp number
+---@field kills number
+---@field equipSeeds table[]
+---@field scrollDrops table<string, number>
+---@field teamRewards OfflineTeamReward[]
+---@field seconds number
+---@field rawSeconds number
+---@field effectiveSeconds number
+---@field fullRateSeconds number
+---@field tailRatio number
+---@field maxSeconds number
+---@field hardCapSeconds number
+---@field cappedByHardCap boolean
+---@field grantedEquips table[]|nil
 
 local OfflineCalc = {}
 
@@ -515,6 +549,89 @@ function OfflineCalc.calcOfflineIdleRewards(seconds, incomeStageId, heroCount, d
         rewards.cappedByHardCap = rawActual > raw
     end
     return rewards
+end
+
+-- ======================== 按队伍当前关的离线计算 ========================
+
+--- 各队独立刷当前关；合计只累加奖励/击杀，不叠加离线时长。
+--- 主线收入用有效秒数，装备/卷轴沿用原封顶 raw 秒数；资源全走在线共享 DC API。
+--- 调用方负责解锁/出战资格校验，此处再次拒绝非法、重复或空队参数。
+---@param seconds number
+---@param teams OfflineTeamSpec[]
+---@param stageConfig table|nil
+---@return OfflineTeamRewards|nil
+function OfflineCalc.calcTeamOfflineRewards(seconds, teams, stageConfig)
+    if seconds ~= seconds or seconds == math.huge then return nil end
+    local actual = math.max(0, seconds)
+    if actual < OfflineCalc.MIN_SECONDS or type(teams) ~= "table" then return nil end
+    local raw = OfflineCalc.capSeconds(actual)
+    local effective = OfflineCalc.effectiveOfflineSeconds(raw)
+    local kills = math.floor(raw * OfflineCalc.IDLE_KILL_RATE)
+    local cfg = stageConfig or SC
+    ---@type OfflineTeamRewards
+    local total = {
+        gold = 0, diamond = 0, adventureExp = 0, adventurerExp = 0, kills = 0,
+        equipSeeds = {}, scrollDrops = {}, teamRewards = {},
+        seconds = raw, rawSeconds = actual, effectiveSeconds = effective,
+        fullRateSeconds = OfflineCalc.FULL_RATE_SECONDS,
+        tailRatio = OfflineCalc.TAIL_RATIO, maxSeconds = OfflineCalc.FULL_RATE_SECONDS,
+        hardCapSeconds = OfflineCalc.HARD_CAP_SECONDS, cappedByHardCap = actual > raw,
+    }
+    local seen = {}
+    for _, team in ipairs(teams) do
+        if type(team) ~= "table" then goto continue_team end
+        local teamIdx = math.tointeger(tonumber(team.teamIdx) or 0)
+        local stageId = math.tointeger(tonumber(team.stageId) or 0)
+        local heroCount = math.tointeger(tonumber(team.heroCount) or 0)
+        if teamIdx and teamIdx >= 1 and teamIdx <= (ET.TEAM_COUNT or 3)
+            and not seen[teamIdx] and stageId and stageId > 0 and heroCount
+            and heroCount > 0 and heroCount <= (ET.TEAM_MAX_SLOTS or 4) then
+            local entry = cfg.getStage(stageId)
+            if entry then
+                ---@type OfflineTeamReward
+                local reward = {
+                    teamIdx = teamIdx, stageId = stageId, heroCount = heroCount,
+                    gold = 0, diamond = 0, adventureExp = 0, adventurerExp = 0,
+                    equipSeeds = {}, scrollDrops = {}, kills = kills,
+                }
+                if cfg.isResourceStage and cfg.isResourceStage(stageId) then
+                    -- DC 内封装每分钟旧效率及货币 REWARD_MULT，装备不乘倍率。
+                    -- 不把资源关送入主线收入表/怪物掉落，否则会混入经验、卷轴和扫荡券。
+                    local resource = DC.getStageRewards(stageId, effective * OfflineCalc.IDLE_KILL_RATE)
+                    reward.gold = resource.gold or 0
+                    reward.diamond = resource.diamond or 0
+                    reward.equipSeeds = resource.equipSeeds or {}
+                else
+                    -- 重登通常已由 Schema 将终焉退至同难度末关；旧直接调用也保持此边界。
+                    local incomeId = stageId
+                    if cfg.isTerminalTemple and cfg.isTerminalTemple(stageId) then
+                        incomeId = cfg.getTerminalPrevStageId(stageId) or stageId
+                        entry = cfg.getStage(incomeId) or entry
+                    end
+                    local dropped = OfflineCalc.calcRewardsFromKills(kills, entry, heroCount, cfg)
+                    reward.equipSeeds = dropped.equipSeeds
+                    reward.scrollDrops = dropped.scrollDrops
+                    local goldPerMin, expPerMin = IdleIncomeConfig.get(incomeId)
+                    reward.gold = math.floor(goldPerMin * effective / 60 + 0.5)
+                    reward.adventureExp = math.floor(expPerMin * effective / 60 + 0.5)
+                    reward.adventurerExp = math.floor(reward.adventureExp
+                        * ET.getHeroCountExpMult(heroCount) + 0.5)
+                end
+                seen[teamIdx] = true
+                total.teamRewards[#total.teamRewards + 1] = reward
+                total.gold = total.gold + reward.gold
+                total.diamond = total.diamond + reward.diamond
+                total.adventureExp = total.adventureExp + reward.adventureExp
+                total.adventurerExp = total.adventurerExp + reward.adventurerExp
+                total.kills = total.kills + reward.kills
+                mergeEquipSeedsInto(total.equipSeeds, reward.equipSeeds)
+                mergeScrollDropsInto(total.scrollDrops, reward.scrollDrops)
+            end
+        end
+        ::continue_team::
+    end
+    if #total.teamRewards == 0 then return nil end
+    return total
 end
 
 --- 【入口 B】在线定时结算（无门槛，由调用方保证 interval >= 60s）

@@ -39,7 +39,7 @@ function M.bind(deps)
         -- 旧档后备推断只补真实关链中最高节点之前的关卡，不补最高节点。
         -- 终焉ID非单调（999在2305之后），不能按 sid < maxStageId 数值比较。
         local maxSId = math.tointeger(tonumber(data.maxStageId) or 0)
-        if maxSId and maxSId > 0 then
+        if maxSId and maxSId > 0 and not getStageConfig().isResourceStage(maxSId) then
             -- 与存档对齐（Debug 跳回低进度时允许降低 maxStageId_）
             set("maxStageId_", maxSId)
             local stageConfig = getStageConfig()
@@ -127,7 +127,9 @@ function M.bind(deps)
         -- 无论是否切换关卡，都刷新 isFirstClear（clearedStages 可能已更新）
         -- 注意：当战斗进行中(isBusy)时关卡切换被忽略，此时应以本地 currentStageId 为准
         -- 否则 savedStageId（可能是旧值）会导致 isFirstClear 被错误设为 false
-        local isFirstClear = not get("clearedStages")[get("currentStageId")]
+        local restoredId = get("currentStageId")
+        local isFirstClear = not getStageConfig().isResourceStage(restoredId)
+            and not get("clearedStages")[restoredId]
         set("isFirstClear", isFirstClear)
         if not isFirstClear and StageBerserk.isActive() then
             StageBerserk.exit()

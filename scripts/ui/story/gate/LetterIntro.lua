@@ -1,6 +1,6 @@
 -- ============================================================================
 -- LetterIntro.lua — 先祖来信（开场第一幕·横屏信笺）
--- 玩法：暗色横信逐行显墨（4 段）→ 火漆印「终」→ 交给门厅点卯（ScenarioDialogue.OPENING）。
+-- 玩法：默认保留完整信件；新档短引子只揭示一段，随后立即进入基础教学。
 -- 绘制：全窗口逻辑坐标。横屏信笺偏左、矮而宽，右边留出书斋桌案。
 -- 素材（本地路径，不走 URL）：
 --   image/剧情/背景/STORY_BG_01.png  已审核书斋桌案（帽、印鉴、名册），全程不切火漆特写
@@ -8,7 +8,7 @@
 
 ---@class LetterIntro
 ---@field init fun(vg: NVGContextWrapper?)
----@field start fun(onFinish: function|nil)
+---@field start fun(onFinish: function|nil, options: table|nil)
 ---@field isOpen fun(): boolean
 ---@field reset fun()
 ---@field handleTap fun()
@@ -43,6 +43,16 @@ local BLOCKS = {
     },
 }
 
+local BRIEF_BLOCKS = {
+    {
+        { t = "致第三十七任远征长：", gold = true },
+        { t = "帽子、印鉴、名册都在桌上，三位伙伴已在门外等你。" },
+        { t = "先带队出门，路上的故事，我们稍后再说。", gold = true },
+    },
+}
+local contentBlocks_ = BLOCKS
+local compact_ = false
+
 local C_INK  = { 214, 200, 166 }
 local C_GOLD = { 232, 200, 120 }
 local C_DIM  = { 150, 142, 124 }
@@ -65,7 +75,7 @@ local BLOCK_HOLD  = 1.5
 local SEAL_DUR    = 0.9
 local FADE_DUR    = 0.6
 
-local function lineCount(b) return #BLOCKS[b] end
+local function lineCount(b) return #contentBlocks_[b] end
 
 -- 构造显示单元，不改 BLOCKS。第 5/6 行合成一句，等原两行都揭示后显示完整译句。
 ---@class LetterDisplayUnit
@@ -77,7 +87,7 @@ local function lineCount(b) return #BLOCKS[b] end
 ---@field dim boolean|nil
 local function displayUnits()
     local units = {} ---@type LetterDisplayUnit[]
-    for b, block in ipairs(BLOCKS) do
+    for b, block in ipairs(contentBlocks_) do
         for i, line in ipairs(block) do
             if not (b == 2 and i == 3) then
                 local source = line.t
@@ -174,9 +184,12 @@ local function ensureLetterImages()
     end
 end
 
-function LetterIntro.start(onFinish)
+---@param options table|nil
+function LetterIntro.start(onFinish, options)
     ensureLetterImages()
     if active then return end
+    compact_ = options ~= nil and options.compact == true
+    contentBlocks_ = compact_ and BRIEF_BLOCKS or BLOCKS
     active      = true
     state       = "reveal"
     blockIdx    = 1
@@ -211,12 +224,12 @@ function LetterIntro.handleTap()
         local revealed = math.floor(revealT / LINE_REVEAL)
         if revealed < cur then
             revealT = cur * LINE_REVEAL
-        elseif blockIdx < #BLOCKS then
+        elseif blockIdx < #contentBlocks_ then
             blockIdx = blockIdx + 1
             revealT = 0
         else
-            state = "sealed"
-            sealedT = 0
+            state = compact_ and "fading" or "sealed"
+            sealedT, fadeT = 0, 0
         end
     elseif state == "sealed" then
         state = "fading"
@@ -233,12 +246,12 @@ function LetterIntro.update(dt)
         revealT = revealT + dt
         local cur = lineCount(blockIdx)
         if revealT >= cur * LINE_REVEAL + BLOCK_HOLD then
-            if blockIdx < #BLOCKS then
+            if blockIdx < #contentBlocks_ then
                 blockIdx = blockIdx + 1
                 revealT = 0
             else
-                state = "sealed"
-                sealedT = 0
+                state = compact_ and "fading" or "sealed"
+                sealedT, fadeT = 0, 0
             end
         end
     elseif state == "sealed" then
@@ -349,7 +362,8 @@ local function drawLetter(vg, w, h)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 180 * hintA))
     if state == "reveal" then
-        Display.draw(vg, w * 0.5, layout.footerY, "· 轻 触 翻 阅 ·")
+        Display.draw(vg, w * 0.5, layout.footerY,
+            compact_ and "· 轻触出发 ·" or "· 轻 触 翻 阅 ·")
     elseif state == "sealed" then
         Display.draw(vg, w * 0.5, layout.footerY, "· 火 漆 已 落 ·")
     end

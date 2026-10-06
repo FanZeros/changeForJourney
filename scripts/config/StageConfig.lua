@@ -657,9 +657,7 @@ end
 ---@return number|nil
 function SC.getNextStageId(id)
     if SC.isResourceStage(id) then
-        local DC = require("config.DungeonConfig")
-        local dungeonId, floor = DC.decodeStageId(id)
-        return DC.getStageId(dungeonId, floor + 1)
+        return require("config.DungeonConfig").getNextChapterStageId(id)
     end
     if SC.isTerminalTemple(id) then
         return nil
@@ -681,9 +679,7 @@ end
 ---@return number|nil
 function SC.getPrevStageId(id)
     if SC.isResourceStage(id) then
-        local DC = require("config.DungeonConfig")
-        local dungeonId, floor = DC.decodeStageId(id)
-        return DC.getStageId(dungeonId, floor - 1)
+        return require("config.DungeonConfig").getPrevChapterStageId(id)
     end
     if SC.isTerminalTemple(id) then
         return nil

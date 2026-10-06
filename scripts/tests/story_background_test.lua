@@ -160,6 +160,18 @@ local function newContext()
         end,
     }
     ctx.deps["boot.StandaloneSave"] = { Flush = function() ctx.flushes = ctx.flushes + 1; return true end }
+    ctx.clock = { elapsedTime = 100 }
+    env.time = ctx.clock
+    ctx.deps["systems.TutorialManager"] = {
+        canPlayPendingStory = function() return not ctx.tutorialBlocked end,
+        isGroupCompleted = function(id) return ctx.foundation and ctx.foundation[id] == true or false end,
+    }
+    ctx.deps["ui.hud.popup.RewardPopup"] = {
+        isOpen = function() return ctx.rewardOpen == true end,
+        hasPendingBattleRewards = function() return ctx.rewardPending == true end,
+    }
+    ctx.deps["ui.tutorial.TutorialPageRecovery"] = { isBlocked = function() return ctx.recoveryBlocked == true end }
+    ctx.deps["boot.BattleRewardOverlay"] = { isBlocked = function() return ctx.battleRewardBlocked == true end }
     env.require = function(name)
         if ctx.deps[name] ~= nil then return ctx.deps[name] end
         local permitted = name:match("^config%.") or name == "core.EventBus" or name == "core.I18nStory"
@@ -618,7 +630,7 @@ end
 local function pendingBoot(ctx)
     ctx.env.ClientDispatcher = ctx.deps["runtime.ClientDispatcher"]
     ctx.env.ScenarioDialogue = ctx.dialogue
-    ctx.env.TutorialManager = { canPlayPendingStory = function() return not ctx.tutorialBlocked end }
+    ctx.env.TutorialManager = ctx.deps["systems.TutorialManager"]
     ctx.env.LetterIntro = { isOpen = function() return ctx.letterOpen end }
     ctx.env.IntroCutscene = { isActive = function() return ctx.introActive end }
     ctx.env.RewardPopup = { isOpen = function() return ctx.rewardOpen end,
@@ -637,7 +649,7 @@ local function pendingBoot(ctx)
     return ctx.compile(text .. "\nreturn tryPlayPendingStory_", "production-pending-story")
 end
 local function rewardGateCases()
-    for _, gate in ipairs({ "tutorialBlocked", "letterOpen", "introActive", "rewardOpen", "rewardPending", "offlineOpen" }) do
+    for _, gate in ipairs({ "tutorialBlocked", "letterOpen", "introActive", "rewardOpen", "rewardPending", "offlineOpen", "recoveryBlocked" }) do
         local ctx = newContext()
         local story = ctx.env.require("systems.StoryPlayer")
         story.onWipe(1305)
@@ -750,39 +762,91 @@ local function bootChainCases()
     local ctx = newContext()
     local letter = ctx.env.require("ui.story.gate.LetterIntro")
     letter.init(ctx.vg)
+    ctx.modules.session.introCompleted = false
+    ctx.modules.session.keep = "unchanged-session-field"
+    ctx.env.ClientDispatcher = ctx.deps["runtime.ClientDispatcher"]
     ctx.env.ScenarioDialogue, ctx.env.ScenarioDialogueConfig = ctx.dialogue, ctx.config
-    local completed, marked = 0, 0
-    ctx.env.finishIntro_ = function() completed = completed + 1 end
-    ctx.env.markIntroCompleted_ = function() marked = marked + 1 end
-    ctx.env.GameBGM = { setScene = noop }
+    local completed, scenes = 0, {}
+    ctx.env.GameBGM = { setScene = function(name) scenes[#scenes + 1] = name end }
+    ctx.env.showOfflineRewardPanel_ = function() completed = completed + 1; return true end
+    ctx.env.postStartFlowDone_ = false
     ctx.env.LetterIntro = letter
     ctx.env.localSendAction = function(action, params)
         ctx.actions[#ctx.actions + 1] = { action = action, params = params }; return true
     end
-    local openingText = section("boot.Standalone", "local function playJoinAt_(index)", "\n--- 首通/入场排队")
-    local opening = ctx.compile(openingText .. "\nreturn startOpeningBriefing_", "production-opening-chain")
-    ctx.env.startOpeningBriefing_ = opening
+    local finishText = section("boot.Standalone", "local function markIntroCompleted_(deferOpening)",
+        "\n--- 首通/入场排队")
+    local mark, finishIntro = ctx.compile(finishText .. "\nreturn markIntroCompleted_, finishIntro_",
+        "production-short-intro-finish")
+    ctx.env.markIntroCompleted_, ctx.env.finishIntro_ = mark, finishIntro
     local introText = section("boot.Standalone", "local function startIntroChain_()", "\n--- 清除存档后")
     local start = ctx.compile(introText .. "\nreturn startIntroChain_", "production-intro-chain")
     start()
-    eq(marked, 1, "Boot still marks original intro completion at start")
+    eq(ctx.modules.session.introCompleted, true, "Boot still marks original intro completion at start")
+    eq(ctx.modules.session.deferredOpening, true, "only new intro reserves original introduction for later")
+    eq(ctx.modules.session.deferredOpeningIndex, 1, "deferred opening begins at original first segment")
+    eq(ctx.modules.session.keep, "unchanged-session-field", "intro mark preserves unrelated session fields")
     eq(ctx.actions[1].action, "grant_starter_trio", "Boot preserves starter grant action")
-    eq(#ctx.shown, 0, "Boot waits for letter before opening")
-    for _ = 1, 10 do letter.handleTap() end
-    letter.update(1)
-    eq(#ctx.shown, 1, "real letter callback opens briefing")
+    eq(#ctx.shown, 0, "Boot waits for letter before gameplay, no immediate opening")
+    letter.handleTap(); ctx.calls = {}; letter.draw(ctx.vg, 1920, 1080)
+    local shortBody = ""
+    for _, call in ipairs(ctx.calls) do if call.kind == "text" then shortBody = shortBody .. call.text end end
+    check(shortBody:find("帽子、印鉴、名册都在桌上，三位伙伴已在门外等你。", 1, true)
+        and shortBody:find("先带队出门，路上的故事，我们稍后再说。", 1, true),
+        "real Boot opts into the single three-line compact letter")
+    letter.handleTap(); letter.update(0.3)
+    eq(completed, 0, "compact letter keeps original fade completion guard")
+    letter.update(0.31)
+    eq(completed, 1, "short letter completion goes directly to gameplay once")
+    eq(ctx.env.postStartFlowDone_, true, "finishIntro preserves offline post-start flow result")
+    eq(scenes[#scenes], "battle", "short intro hands music back to battle")
+    eq(#ctx.shown, 0, "compact callback no longer starts OPENING or three joins immediately")
+    letter.handleTap(); letter.update(1)
+    eq(completed, 1, "whole compact intro finishes once despite duplicate interactions")
+    eq(#ctx.actions, 1, "background change adds no extra reward dispatch")
+
+    -- 原84配置196句仍可完整展示，但先等基础操作完成，并把四段错开而非即时串播。
+    local story = ctx.env.require("systems.StoryPlayer")
+    eq(story.takeDeferredOpening(), nil, "new intro cannot play while foundation tutorials incomplete")
+    ctx.foundation = { [1] = true, [2] = true, [4] = true, [8] = true, [9] = true }
+    local play = pendingBoot(ctx)
+    play()
+    eq(#ctx.shown, 1, "foundation completion permits original opening briefing")
     eq(ctx.shown[1].backgroundIsCg, true, "Boot explicitly forwards backgroundIsCg")
-    check(same(ctx.shown[1].steps, ctx.config.OPENING.steps), "Boot cloned steps preserve original fields, no hidden bg injection")
+    eq(ctx.shown[1].steps, ctx.config.OPENING.steps, "deferred Boot preserves exact original step table")
     ctx.dialogue.update(0.3); ctx.draw()
     eq(#images(ctx), 1, "Boot opening draws CG once, no portrait")
+    local before = ctx.flushes
     finish(ctx)
-    eq(#ctx.shown, 2, "opening completion chains first join")
+    eq(ctx.modules.session.deferredOpeningIndex, 2, "only real opening finish advances deferred progress")
+    eq(ctx.flushes, before + 1, "deferred finish Flushes memory save exactly once")
+    eq(#ctx.shown, 1, "opening completion does not immediately chain first join")
+    play(); eq(#ctx.shown, 1, "next deferred segment waits during 30-second gap")
+    ctx.clock.elapsedTime = ctx.clock.elapsedTime + 29.99
+    play(); eq(#ctx.shown, 1, "29.99 seconds does not consume next join")
+    ctx.clock.elapsedTime = ctx.clock.elapsedTime + 0.01
+    play()
+    eq(#ctx.shown, 2, "first join becomes available at 30 seconds")
     eq(ctx.shown[2].background, bg(2), "Boot first join HALL")
+    eq(ctx.shown[2].steps, ctx.config.OPENING_JOINS[1].steps, "first join preserves original dialogue")
     finish(ctx)
-    eq(#ctx.shown, 3, "first join completion must chain second join (onFinish cannot be clobbered)")
-    finish(ctx); eq(#ctx.shown, 4, "second join chains third join")
-    finish(ctx); eq(completed, 1, "whole letter/opening/three-join chain finishes once")
-    eq(#ctx.actions, 1, "background change adds no extra reward dispatch")
+    eq(ctx.modules.session.deferredOpeningIndex, 3, "first join completion advances to second join")
+    eq(#ctx.shown, 2, "first join completion cannot immediately chain second join")
+    ctx.clock.elapsedTime = ctx.clock.elapsedTime + 30; play()
+    eq(#ctx.shown, 3, "second original join plays after its own gap")
+    eq(ctx.shown[3].steps, ctx.config.OPENING_JOINS[2].steps, "second join retains exact original steps")
+    finish(ctx)
+    eq(ctx.modules.session.deferredOpeningIndex, 4, "second join completion advances to third join")
+    eq(#ctx.shown, 3, "second join does not immediately chain third join")
+    ctx.clock.elapsedTime = ctx.clock.elapsedTime + 30; play()
+    eq(#ctx.shown, 4, "third original join plays after its own gap")
+    eq(ctx.shown[4].steps, ctx.config.OPENING_JOINS[3].steps, "third join retains exact original steps")
+    finish(ctx)
+    eq(ctx.modules.session.deferredOpening, false, "all four real segment finishes clear pending flag")
+    eq(ctx.modules.session.deferredOpeningCompletedVersion, 1, "completion version written only at final finish")
+    eq(completed, 1, "deferred segments do not repeat intro completion or offline startup")
+    eq(#ctx.actions, 1, "deferred visual introductions add no scenario rewards or repeat starter grants")
+    eq(#ctx.notices, 0, "deferred introductions do not manufacture tutorial claim notices")
     ctx.assertSafe()
 end
 
@@ -795,7 +859,7 @@ function Start()
         { "direct-CG-flag-and-fallback", cgCases }, { "wipe-capture-and-reward-gates", wipeCases },
         { "Boot-all-dead-time-of-capture", wipeBootCases }, { "Boot-reward-gates-and-failed-local-callback", rewardGateCases },
         { "letter-study-and-same-path-title", letterTitleCases }, { "HeroScenario-background-and-claim-dedup", heroCases },
-        { "real-Boot-letter-opening-join-chain", bootChainCases },
+        { "real-Boot-compact-intro-and-deferred-original-segments", bootChainCases },
     }
     for _, case in ipairs(cases) do
         local ok, why = pcall(case[2])

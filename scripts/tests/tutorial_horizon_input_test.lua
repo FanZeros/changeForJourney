@@ -112,6 +112,7 @@ function Start()
                 currentPanel = function() return state.reward and "right" or nil end,
                 currentRowTag = function() return nil end,
             }),
+            ["core.I18n"] = { lookup = function(text) return text end },
             ["core.DarkIcon"] = mock({ SHOWCASE = false }),
             ["core.DrawUtil"] = mock({ SEAMBAR_ASPECT = 0.04, SEAMBAR_ARROW_Y = 0.469,
                 seamSlideX = function() return 0 end,
@@ -151,7 +152,7 @@ function Start()
             draw = function()
                 if not state.missing then
                     local key = TM.getCurrentHighlight()
-                    if key and key ~= "town_overview" and key ~= "building_church" then
+                    if key and key ~= "town_overview" and key ~= "building_church" and key ~= "building_tavern" then
                         TM.registerHotspot(key, 540, 600, 160, 100, "right")
                     end
                 end
@@ -168,10 +169,19 @@ function Start()
         local townRegistration, townError = load(townSource:sub(townFirst, townLast - 1),
             "@真实TownScene总览注册", "t", townEnv)
         assert(townRegistration, townError)
+        local tavernFirst = assert(townSource:find("-- 酒馆\n", 1, true))
+        local tavernLast = assert(townSource:find("-- 仓库（背包入口）", tavernFirst, true))
+        local tavernLine = assert(townSource:match('(    if _tmActive and not tavernLocked then _TM.registerHotspot%("building_tavern"[^\n]+)'))
+        local tavernEnv = { _tmActive = true, tavernLocked = false, _TM = TM }
+        local tavernRegistration, tavernError = load(townSource:sub(tavernFirst, tavernLast - 1)
+            .. tavernLine, "@真实TownScene酒馆注册", "t", tavernEnv)
+        assert(tavernRegistration, tavernError)
         mods["ui.town.TownScene"] = page("town", { draw = function()
             if state.missing then return end
             if TM.getCurrentHighlight() == "town_overview" then
                 townRegistration()
+            elseif TM.getCurrentHighlight() == "building_tavern" then
+                tavernRegistration()
             elseif TM.getCurrentHighlight() == "building_church" then
                 TM.registerHotspot("building_church", 540, 1100, 200, 180, "left")
             end
@@ -331,7 +341,7 @@ function Start()
         end
         for _, tri in ipairs({ false, true }) do
             for _, size in ipairs({ { 1920, 1080 }, { 1280, 720 }, { 844, 390 } }) do
-                runCase("城镇整栏总览 " .. tostring(tri) .. " " .. size[1] .. "x" .. size[2], function()
+                runCase("城镇酒馆入口 " .. tostring(tri) .. " " .. size[1] .. "x" .. size[2], function()
                     fixture(tri, true, 2)
                     TM.skipCurrentGroup()
                     TM.update(0.3)
@@ -340,44 +350,58 @@ function Start()
                     RT.logicalW, RT.logicalH = size[1], size[2]
                     RT.windowW, RT.windowH = size[1], size[2]
                     invoke("HandleNanoVGRenderHorizon", {})
-                    check(TM.getCurrentHighlight() == "town_overview" and projected and projected.spotlight,
-                        "真实宿主将城镇可视区域投影到screen.spotlight")
-                    if not projected or not projected.spotlight or not drawn then return end
+                    check(TM.getCurrentHighlight() == "building_tavern" and projected and projected.spotlight == nil,
+                        "真实宿主投影明确酒馆目标，不再制造空白继续区")
+                    if not projected or not drawn then return end
+                    local hotspot = TM.getCurrentHotspot()
+                    check(hotspot and hotspot.panel == "left" and hotspot.cx == 832 and hotspot.cy == 1400
+                        and hotspot.w == 397 and hotspot.h == 387, "真实TownScene酒馆注册精确位置尺寸")
                     local note, panel = VP.getNote("left"), VP.PANELS.left
                     local scaleX, scaleY = note.scaleX or note.s * VP.DS, note.s * VP.DS
                     local expectedLeft, expectedTop = note.ox + panel.bx * note.s, note.oy + panel.by * note.s
-                    local visual = projected.spotlight
-                    check(math.abs(visual.cx - expectedLeft - 540 * scaleX) < 0.00001
-                        and math.abs(visual.cy - expectedTop - 1200 * scaleY) < 0.00001
-                        and math.abs(visual.w - 1080 * scaleX) < 0.00001
-                        and math.abs(visual.h - 2400 * scaleY) < 0.00001, "总览视觉精确跟随当前Viewport note")
-                    check(drawn.hole and math.abs(drawn.hole.w - visual.w) < 0.00001
-                        and math.abs(drawn.hole.h - visual.h) < 0.00001, "最终draw全栏开洞而非顶部细带")
+                    check(math.abs(projected.cx - expectedLeft - 832 * scaleX) < 0.00001
+                        and math.abs(projected.cy - expectedTop - 1400 * scaleY) < 0.00001
+                        and math.abs(projected.w - 397 * scaleX) < 0.00001
+                        and math.abs(projected.h - 387 * scaleY) < 0.00001, "酒馆热点精确跟随当前Viewport note")
+                    check(drawn.hole and drawn.hs and drawn.hole.w <= drawn.hs.w + 16.001
+                        and drawn.hole.h <= drawn.hs.h + 16.001, "最终draw只开酒馆小目标洞而非完整左栏")
                     check(not overlaps(drawn.bubble, drawn.hole) and not overlaps(drawn.skip, drawn.hole),
-                        "提示及跳过不遮完整左栏")
+                        "提示及跳过不遮真实酒馆目标")
                     local x, y = panelPosition("left", 540, 150)
                     local bx, by = panelPosition("left", 540, 1100)
+                    local tx, ty = panelPosition("left", 832, 1400)
                     local before = TM.getProgress().step
                     clearCalls()
-                    check(TM.canPointerStart(x, y), "原顶部空白带仍放行")
-                    check(not TM.canPointerStart(bx, by), "全栏虽变亮，建筑处down仍阻断")
+                    check(not TM.canPointerStart(x, y), "原顶部空白带不再放行")
+                    check(not TM.canPointerStart(bx, by) and TM.canPointerStart(tx, ty),
+                        "其他建筑down阻断，仅酒馆目标放行")
                     click(bx, by)
-                    check(TM.getProgress().step == before and not TM.isGroupCompleted(4), "建筑点击不完成总览")
-                    check(n("town.handleInput") == 0 and n("action") == 0, "建筑不穿透业务或发action")
+                    check(TM.getProgress().step == before and not TM.isGroupCompleted(4), "非目标建筑点击不完成教程")
+                    check(n("town.handleInput") == 0 and n("action") == 0, "非目标建筑不穿透业务或发action")
                     click(x, y)
-                    check(TM.isGroupCompleted(4) and n("persist") == 1, "空白带点击正常完成且只保存一次")
+                    check(not TM.isGroupCompleted(4) and n("persist") == 0 and n("town.handleInput") == 0,
+                        "空白点击不完成、不保存、不派发")
+                    click(tx, ty)
+                    check(TM.getProgress().step == before and not TM.isGroupCompleted(4)
+                        and n("persist") == 0 and n("town.handleInput") == 1,
+                        "酒馆目标只透传一次，不把延迟打开前的点击当成功")
+                    TM.notifyEvent("enter_tavern")
+                    check(TM.isGroupCompleted(4) and n("persist") == 1,
+                        "成功开页回执enter_tavern才完成且只保存一次")
+                    TM.notifyEvent("enter_tavern")
+                    check(n("persist") == 1, "重复成功回执不二次保存")
                     TM.update(0.3)
                     TM.startGroup(5)
                     TM.update(1.2)
                     invoke("HandleNanoVGRenderHorizon", {})
                     check(TM.getCurrentHighlight() == "building_church" and projected and projected.spotlight == nil,
-                        "下一个建筑教程不继承总览spotlight")
+                        "下一个建筑教程不继承其他目标或spotlight")
                     check(drawn and drawn.hole and drawn.hs and drawn.hole.w <= drawn.hs.w + 16.001,
-                        "建筑教程恢复原小热点光环")
+                        "建筑教程保留原小热点光环")
                     state.missing = true
                     invoke("HandleNanoVGRenderHorizon", {})
                     check(projected == nil and drawn and drawn.hs == nil and drawn.hole == nil,
-                        "缺目标时原整栏洞不残留，不制造虚假可见目标")
+                        "缺目标时旧洞不残留，不制造虚假可见目标")
                 end)
             end
         end

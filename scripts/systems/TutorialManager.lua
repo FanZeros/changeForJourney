@@ -19,6 +19,7 @@ local hotspots_ = {}
 local completed_ = {}
 local queue_ = {}
 local queuedRecruitStarted_ = false
+local recruitCount_ = nil ---@type number|nil
 local newHeroId_ = nil ---@type number|nil
 local restored_ = false
 local resumePending_ = false
@@ -78,7 +79,9 @@ local function finish()
     animState_, animT_, triggerQuiet_ = "out", 0, 0
     save()
     if finishedGroup == 6 then
-        -- 古树教学已自动收起教堂；完成后接离场对话，再触发酒馆教学，避免丢失入口。
+        local talent = require("ui.church.talent.TalentPage")
+        if talent.isOpen() then talent.close() end
+        -- 收起本组目标页，再排离场对话，避免宽页挡住待展示奖励。
         require("systems.StoryPlayer").onPlace("church", "leave")
     end
 end
@@ -114,7 +117,8 @@ function TutorialManager.clearHotspots() hotspots_ = {} end
 function TutorialManager.registerHotspot(key, cx, cy, w, h, panel, spotlight)
     if w <= 0 or h <= 0 then return end
     hotspots_[key] = { cx = cx, cy = cy, w = w, h = h, spotlight = spotlight,
-        panel = (panel == "left" or panel == "right" or panel == "modal") and panel or "center" }
+        panel = (panel == "left" or panel == "right" or panel == "modal" or panel == "tri_modal")
+            and panel or "center" }
 end
 function TutorialManager.getCurrentHotspot()
     local current = step()
@@ -128,23 +132,37 @@ end
 local function validNewHero()
     local heroes = store_ and store_.Get("heroes")
     local roster = heroes and heroes.roster
-    return newHeroId_ and roster and (roster[newHeroId_] or roster[tostring(newHeroId_)]) ~= nil
+    local hero = newHeroId_ and roster and (roster[newHeroId_] or roster[tostring(newHeroId_)])
+    if hero and tonumber(hero.level) and tonumber(hero.level) > 0 then return true end
+    local panel = require("ui.character.panel.CharacterPanel")
+    return newHeroId_ ~= nil and panel.isOwned and panel.isOwned(newHeroId_) == true
 end
 local function start(id)
     if isGroupCompleted(id) then return end
-    if id == 9 and not validNewHero() then
-        -- 全重复招募/旧档无目标时，不要求玩家拖一个不存在的角色。
-        completed_[tostring(id)] = true
-        print("[TutorialManager] 无新增角色，略过上阵教学")
-        save()
-        return
-    end
-    if id == 9 and validNewHero() then
+    if id == 9 then
         local panel = require("ui.character.panel.CharacterPanel")
-        local layout = panel.getTeamSlotLayout and panel.getTeamSlotLayout(1)
-        if layout and tonumber(layout[3]) == newHeroId_ then
+        -- 冷启动默认槽位仍是 locked；等真实英雄/阵容同步，不把未就绪当已满编。
+        if panel.isHeroesDataApplied and not panel.isHeroesDataApplied() then return false end
+        local slots = panel.getTeamSlotsData and panel.getTeamSlotsData(1)
+        local target = slots and slots[4]
+        local reason = nil ---@type string|nil
+        if not validNewHero() then
+            reason = "无新增角色"
+        else
+            for teamIdx = 1, 3 do
+                local layout = panel.getTeamSlotLayout and panel.getTeamSlotLayout(teamIdx)
+                for _, heroId in ipairs(layout or {}) do
+                    if tonumber(heroId) == newHeroId_ then reason = "目标角色已上阵"; break end
+                end
+                if reason then break end
+            end
+            if not reason and (not target or target.state ~= "empty") then
+                reason = "小队1槽位4已占用或未解锁，保留现有阵容"
+            end
+        end
+        if reason then
             completed_["9"] = true
-            print("[TutorialManager] 新角色已在队一槽位3，免重复上阵教学")
+            print("[TutorialManager] " .. reason .. "，略过上阵教学")
             save()
             return
         end
@@ -166,7 +184,7 @@ end
 function TutorialManager.startGroup(id)
     if isGroupCompleted(id) or activeGroup_ == id then return end
     if activeGroup_ then queueGroup(id)
-    else start(id) end
+    elseif start(id) == false then queueGroup(id) end
 end
 function TutorialManager.onScenarioClaimed(sid)
     if sid == 23 then
@@ -180,9 +198,22 @@ end
 
 --- 未消费的新剧情不能抢正在进行的操作教学；组结束后按原队列继续。
 function TutorialManager.canPlayPendingStory()
-    return activeGroup_ == nil or animState_ == "out"
+    return activeGroup_ == nil and #queue_ == 0
 end
 function TutorialManager.notifyEvent(name)
+    if name == "gacha10_started" or name == "gacha_started" then
+        recruitCount_ = name == "gacha10_started" and 10 or 1
+        if not isGroupCompleted(9) and activeGroup_ ~= 9 then
+            local deployQueued = false
+            for _, id in ipairs(queue_) do if id == 9 then deployQueued = true; break end end
+            if not deployQueued then newHeroId_ = nil; save() end
+        end
+    elseif name == "gacha10_failed" or name == "gacha_failed" then
+        recruitCount_ = nil
+    end
+    -- 首次单抽也算已学会招募，不要求额外消费十连。
+    if name == "gacha_started" then name = "gacha10_started"
+    elseif name == "gacha_failed" then name = "gacha10_failed" end
     if activeGroup_ ~= 8 then
         local queuedRecruit = false
         for _, id in ipairs(queue_) do if id == 8 then queuedRecruit = true; break end end
@@ -193,7 +224,7 @@ function TutorialManager.notifyEvent(name)
                 queuedRecruitStarted_ = false
                 completed_["8"] = true
                 for i = #queue_, 1, -1 do if queue_[i] == 8 then table.remove(queue_, i) end end
-                print("[TutorialManager] 待触发阶段已完成真实十连，免重复教学")
+                print("[TutorialManager] 待触发阶段已完成真实招募，免重复教学")
                 save()
             end
         end
@@ -209,6 +240,48 @@ function TutorialManager.notifyEvent(name)
     local current = step()
     if current and current.advanceOn == name then advance() end
 end
+--- 仅消费本次真实招募；先排教程，再让招募动画关闭回调中的闲聊参与仲裁。
+function TutorialManager.onRecruitCompleted(results, count)
+    if recruitCount_ == nil or recruitCount_ ~= count or type(results) ~= "table" or #results == 0 then
+        return false
+    end
+    recruitCount_ = nil
+    TutorialManager.notifyEvent("gacha10_complete")
+    if not isGroupCompleted(8) then
+        completed_["8"] = true
+        for i = #queue_, 1, -1 do if queue_[i] == 8 then table.remove(queue_, i) end end
+        save()
+    end
+    if isGroupCompleted(9) or activeGroup_ == 9 then return true end
+    for _, id in ipairs(queue_) do if id == 9 then return true end end
+    newHeroId_ = nil
+    for _, result in ipairs(results) do
+        local heroId = tonumber(result.heroId)
+        if result.type == "hero" and result.isNew == true and heroId and heroId > 0 then
+            newHeroId_ = heroId
+            break
+        end
+    end
+    if newHeroId_ then
+        print("[TutorialManager] 首次招募新增角色=" .. newHeroId_ .. "，排入槽位4上阵教学")
+        queueGroup(9)
+    else
+        completed_["9"] = true
+        print("[TutorialManager] 本次招募无新增角色，略过上阵教学")
+        save()
+    end
+    return true
+end
+
+--- 编队提交/回滚后读回真实布局；错误槽、错误队和未成功提交都不算完成。
+function TutorialManager.notifyHeroDeployed(heroId, teamIdx, slotIdx)
+    if activeGroup_ ~= 9 or animState_ == "out" or tonumber(heroId) ~= newHeroId_
+        or teamIdx ~= 1 or slotIdx ~= 4 then return false end
+    local layout = require("ui.character.panel.CharacterPanel").getTeamSlotLayout(1)
+    if not layout or tonumber(layout[4]) ~= newHeroId_ then return false end
+    TutorialManager.notifyEvent("drag_to_slot_4")
+    return true
+end
 function TutorialManager.skipCurrentGroup() finish() end
 
 -- 当前覆盖层被更高优先级窗口挡住时，输入同样让位，不能只隐藏绘制。
@@ -216,7 +289,8 @@ function TutorialManager.isInputActive()
     if not activeGroup_ or animState_ == "out" or Scenario.isActive() then return false end
     local RP = require("ui.hud.popup.RewardPopup")
     if RP.isOpen and RP.isOpen() then return false end
-    return not require("ui.tutorial.TutorialPageRecovery").isBlocked()
+    local current = step()
+    return not require("ui.tutorial.TutorialPageRecovery").isBlocked(current and current.highlight)
 end
 function TutorialManager.setOverlayRect(w, h, hs)
     local target = hs
@@ -234,7 +308,8 @@ function TutorialManager.canPointerStart(x, y)
     if prepareResume then prepareResume() end
     if settleRemaining_ > 0 then return false end
     local current = step()
-    if not current or current.invisible or current.advanceOn ~= "click_highlight" then return true end
+    if not current or current.invisible then return true end
+    if current.advanceOn ~= "click_highlight" and not current.pointerTarget then return true end
     -- 真正按钮边界才放行；光环外扩不是按钮可点击区域。
     return hit(overlay_.hs, x, y) == true
 end
@@ -248,8 +323,11 @@ function TutorialManager.handleScreenClick(x, y, blockedPress)
     local current = step()
     if not current or current.invisible then return false end
     if settleRemaining_ > 0 then return true end
-    if current.advanceOn == "click_highlight" then
-        if hit(overlay_.hs, x, y) then advance(); return false end
+    if current.advanceOn == "click_highlight" or current.pointerTarget then
+        if hit(overlay_.hs, x, y) then
+            if current.advanceOn == "click_highlight" then advance() end
+            return false
+        end
         return true
     end
     return false
@@ -259,9 +337,13 @@ function TutorialManager.handleClick(x, y, pid)
     if not TutorialManager.isInputActive() then return false end
     local current = step()
     local hs = TutorialManager.getCurrentHotspot()
-    if current and current.advanceOn == "click_highlight" and hs and pid and pid ~= hs.panel then return true end
-    if current and current.advanceOn == "click_highlight" then
-        if hit(hs, x, y) then advance(); return false end
+    local targeted = current and (current.advanceOn == "click_highlight" or current.pointerTarget)
+    if targeted and hs and pid and pid ~= hs.panel then return true end
+    if targeted then
+        if hit(hs, x, y) then
+            if current.advanceOn == "click_highlight" then advance() end
+            return false
+        end
         return true
     end
     return false
@@ -271,7 +353,7 @@ function TutorialManager.init(vg, playerStore, persist)
     vg_, store_, persist_ = vg, playerStore, persist
     activeGroup_, activeStep_, newHeroId_ = nil, 1, nil
     completed_, queue_, hotspots_, lastUnlockState_ = {}, {}, {}, {}
-    queuedRecruitStarted_ = false
+    queuedRecruitStarted_, recruitCount_ = false, nil
     animState_, animT_, groupElapsed_, stepElapsed_ = "idle", 0, 0, 0
     overlayLayout_, restored_, resumePending_ = nil, false, false
     overlay_.hs = nil
@@ -295,7 +377,12 @@ local function restore()
         end
         if id and not isGroupCompleted(id) then
             -- 重启后目标页面已关闭，重新走本组入口；不重播剧情或重复发奖励。
-            start(id)
+            if start(id) == false then
+                -- 原正在执行的组优先于旧待启动队列，冷恢复不能把它追加到队尾。
+                for i = #queue_, 1, -1 do if queue_[i] == id then table.remove(queue_, i) end end
+                table.insert(queue_, 1, id)
+                save()
+            end
             resumePending_ = true
         end
     else
@@ -324,7 +411,7 @@ prepareResume = function()
     local current = step()
     if not current or current.invisible then resumePending_ = false; return end
     local Recovery = require("ui.tutorial.TutorialPageRecovery")
-    if Recovery.isBlocked() then return end
+    if Recovery.isBlocked(current.highlight) then return end
     local initial = resumePending_
     resumePending_, recoveryElapsed_ = false, 0
     if activeGroup_ == 15 and activeStep_ == 1 then
@@ -332,6 +419,15 @@ prepareResume = function()
         activeStep_, stepElapsed_ = 2, 0
         current = step()
         save()
+    end
+    if activeGroup_ == 15 and current and current.highlight == "dungeon_gold_mine" then
+        -- 旧档已在金币任务时只补完成状态，不回退关卡、不重新入场或领奖。
+        local stageId = require("ui.battle.tri.BattleTriPage").getTeamStageId(1)
+        if stageId and require("config.DungeonConfig").decodeStageId(stageId) == "gold_mine" then
+            print("[TutorialManager] 小队1已进入黄金矿洞，补齐副本引导完成状态")
+            TutorialManager.notifyEvent("enter_gold_mine")
+            return
+        end
     end
     if current and Recovery.prepare(vg_, store_, current.highlight, newHeroId_, initial) then
         settleRemaining_, missingElapsed_ = PAGE_SETTLE_TIME, 0
@@ -352,7 +448,8 @@ function TutorialManager.update(dt)
             triggerQuiet_ = triggerQuiet_ + dt
             if triggerQuiet_ >= TRIGGER_QUIET_TIME then
                 triggerQuiet_ = 0
-                start(table.remove(queue_, 1))
+                local id = table.remove(queue_, 1)
+                if start(id) == false then table.insert(queue_, 1, id) end
             end
         end
         return

@@ -1,6 +1,7 @@
 -- 屏幕逻辑坐标的新手引导绘制；帧变换、DPR 与字体由宿主负责。
 -- hs 是实际可点击矩形；spotlight 可单独指定视觉范围，hole 不能用于点击命中。
 local TutorialOverlay = {}
+local I18n = require("core.I18n")
 
 ---@class TutorialOverlayRect
 ---@field cx number
@@ -217,7 +218,9 @@ end
 ---@return TutorialOverlayLayout
 function TutorialOverlay.draw(vg, width, height, hs, text, elapsed, groupElapsed, alpha, invisible, allowDrag, preparing)
     local initial = TutorialOverlay.layout(width, height, hs)
-    local displayText = (initial.hs or preparing) and (text or "") or RECOVERY_TEXT
+    local sourceText = (initial.hs or preparing) and (text or "") or RECOVERY_TEXT
+    -- 先完整翻译再折行；词典按整句匹配，拆行后再翻译会漏掉入口指令。
+    local displayText = I18n.lookup(sourceText)
     nvgSave(vg)
     -- 保留宿主的屏幕逻辑帧变换，只清除之前残留的面板裁剪。
     nvgResetScissor(vg)

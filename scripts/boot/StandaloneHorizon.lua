@@ -322,12 +322,15 @@ local function HorizonDrawTutorialOverlay()
             return { cx = ox + rect.cx * sx, cy = oy + rect.cy * sy,
                 w = rect.w * sx, h = rect.h * sy }
         end
-        if hs.panel == "modal" then
+        if hs.panel == "modal" or hs.panel == "tri_modal" then
             local dw, dh = DESIGN_W(), DESIGN_H()
             if BottomNav.getSelectedIndex() == 5 then dw, dh = 1920, 1080 end
             local fit = math.min(logicalW() / dw, logicalH() / dh)
             local ox = (logicalW() - dw * fit) * 0.5
             local oy = (logicalH() - dh * fit) * 0.5
+            if hs.panel == "tri_modal" then
+                ox, oy, fit = BattleTriPage.getDialogTransform(logicalW(), logicalH())
+            end
             screen = project(hs, ox, oy, fit, fit)
             if hs.spotlight then screen.spotlight = project(hs.spotlight, ox, oy, fit, fit) end
         else

@@ -58,10 +58,19 @@ local triOnStageClear = nil -- function(teamIdx, clearedStageId)
 local triOnAllDead = nil  -- 普通全灭通知；不干预终焉与掉落
 local region = { x = 486, y = 0, w = 948, h = 1080 }  -- 战斗区（窗口坐标）
 
+--- 弹窗绘制、输入和教程热点共用横屏变换，不能借普通中栏的旧帧坐标。
+---@param width number|nil
+---@param height number|nil
+---@return number, number, number
+function BattleTriPage.getDialogTransform(width, height)
+    local w, h = width or region.w, height or region.h
+    local fit = math.min(w / 1080, h / 2400) * 2
+    return w * 0.5 - 540 * fit, h * 0.5 - 1195 * fit, fit
+end
+
 local function dialogToDesign(wx, wy)
-    local fit = math.min(region.w / 1080, region.h / 2400) * 2
-    return (wx - region.w * 0.5) / fit + 540,
-           (wy - region.h * 0.5) / fit + 1195
+    local ox, oy, fit = BattleTriPage.getDialogTransform()
+    return (wx - ox) / fit, (wy - oy) / fit
 end
 
 --- 击杀奖励回调注入（宿主与 BattleScene.setOnEnemyKill 同源）
@@ -830,12 +839,11 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
     -- [对话框覆盖] 选关/扫荡/统计/终焉确认：按当前横屏可用区域放大到 2 倍。
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
         or TerminalConfirmDialog.isOpen() then
-        local fit = math.min(logicalW / 1080, logicalH / 2400) * 2
+        local ox, oy, fit = BattleTriPage.getDialogTransform(logicalW, logicalH)
         nvgSave(vg)
         nvgScissor(vg, 0, 0, logicalW, logicalH)
-        nvgTranslate(vg, logicalW * 0.5, logicalH * 0.5)
+        nvgTranslate(vg, ox, oy)
         nvgScale(vg, fit, fit)
-        nvgTranslate(vg, -540, -1195)
         if SweepDialog.isOpen() then SweepDialog.draw(vg) end
         if DamageStatsPanel.isOpen() then DamageStatsPanel.draw(vg) end
         if StageSelectDialog.isOpen() then StageSelectDialog.draw(vg) end

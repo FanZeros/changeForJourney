@@ -17,6 +17,11 @@ local wipeReserved_ = false
 local wipePending_ = false
 ---@type number|string|nil
 local pendingWipeStage_ = nil
+local deferredToken_ = 0
+local nextDeferredAt_ = 0
+local DEFERRED_GAP = 30
+local deferredInFlight_ = nil ---@type table|nil
+local FOUNDATION_GROUPS = { 1, 2, 4, 8, 9 }
 
 local PLACE = {
     town = { enter = 23 },
@@ -209,6 +214,8 @@ end
 function StoryPlayer.resetAll()
     queue_ = {}
     queuedBackgrounds_ = {}
+    deferredInFlight_ = nil
+    nextDeferredAt_ = 0
     StoryPlayer.resetWipe()
 end
 
@@ -249,6 +256,10 @@ function StoryPlayer.backfillCleared()
     return added
 end
 
+function StoryPlayer.hasPending()
+    return #queue_ > 0 or wipePending_
+end
+
 --- 取出下一段可播放情景。没有则返回 nil。
 ---@return table|nil
 function StoryPlayer.take()
@@ -274,6 +285,54 @@ function StoryPlayer.take()
         end
     end
     return nil
+end
+
+--- 基础操作后再讲伙伴介绍，段间留30秒游戏时间；普通正文不受此条件影响。
+function StoryPlayer.takeDeferredOpening()
+    local data = session()
+    if data.deferredOpening ~= true or data.introCompleted ~= true then return nil end
+    if time.elapsedTime < nextDeferredAt_ then return nil end
+    local tutorial = require("systems.TutorialManager")
+    if not tutorial.canPlayPendingStory() then return nil end
+    for _, id in ipairs(FOUNDATION_GROUPS) do
+        if not tutorial.isGroupCompleted(id) then return nil end
+    end
+    if #queue_ > 0 or require("ui.story.ScenarioDialogue").isActive()
+        or require("ui.character.hero.HeroScenario").hasPending() then return nil end
+    local index = math.tointeger(tonumber(data.deferredOpeningIndex) or 1)
+    if not index or index < 1 or index > 4 then return nil end
+    local cfg = index == 1 and ScenarioDialogueConfig.OPENING
+        or ScenarioDialogueConfig.OPENING_JOINS[index - 1]
+    if not cfg or not cfg.steps or #cfg.steps == 0 then return nil end
+    deferredToken_ = deferredToken_ + 1
+    deferredInFlight_ = { token = deferredToken_, index = index }
+    print("[StoryPlayer] deferred opening " .. index .. "/4")
+    return { config = cfg, deferredToken = deferredToken_ }
+end
+
+--- 完成/跳过才推进；旧回调、硬重置和重复完成不能写新会话的进度。
+function StoryPlayer.finishDeferredOpening(token)
+    local current = deferredInFlight_
+    if not current or current.token ~= token then return false end
+    local data = session()
+    if data.deferredOpening ~= true or tonumber(data.deferredOpeningIndex or 1) ~= current.index then
+        deferredInFlight_ = nil
+        return false
+    end
+    deferredInFlight_ = nil
+    nextDeferredAt_ = time.elapsedTime + DEFERRED_GAP
+    local updated = {}
+    for key, value in pairs(data) do updated[key] = value end
+    if current.index == 4 then
+        updated.deferredOpening = false
+        updated.deferredOpeningCompletedVersion = 1
+    else
+        updated.deferredOpeningIndex = current.index + 1
+    end
+    ClientDispatcher.handleStateUpdate(cjson.encode({ modules = { session = updated } }))
+    require("boot.StandaloneSave").Flush()
+    print("[StoryPlayer] deferred opening finished " .. current.index .. "/4")
+    return true
 end
 
 return StoryPlayer

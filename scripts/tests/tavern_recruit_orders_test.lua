@@ -341,7 +341,8 @@ local function newContext(options)
         registerHotspot = function(id, cx, cy, w, h, region)
             record("hotspot", { id = id, cx = cx, cy = cy, w = w, h = h, region = region })
         end,
-        setNewHeroId = noop, notifyEvent = function(name) ctx.tutorial[#ctx.tutorial + 1] = name end,
+        setNewHeroId = noop, onRecruitCompleted = noop,
+        notifyEvent = function(name) ctx.tutorial[#ctx.tutorial + 1] = name end,
     })
     mock("systems.StoryPlayer", { onPlace = noop })
 

@@ -91,11 +91,21 @@ local function markClaimed(id)
     print("[HeroScenario] claimed scenario " .. tostring(id))
 end
 
+local function playbackBlocked()
+    if ScenarioDialogue.isActive() or not require("systems.TutorialManager").canPlayPendingStory() then
+        return true
+    end
+    local reward = require("ui.hud.popup.RewardPopup")
+    if require("systems.StoryPlayer").hasPending() then return true end
+    if reward.isOpen() or require("ui.tutorial.TutorialPageRecovery").isBlocked() then return true end
+    return reward.hasPendingBattleRewards() and not require("boot.BattleRewardOverlay").isBlocked()
+end
+
 ---@param id integer
 ---@param onFinish function|nil
 ---@return boolean
 local function showScenario(id, onFinish)
-    if ScenarioDialogue.isActive() then
+    if playbackBlocked() then
         print("[HeroScenario] skip show, dialogue active id=" .. tostring(id))
         return false
     end
@@ -140,6 +150,10 @@ end
 ---@param heroId integer
 ---@param onFinish function|nil
 local function playJoinThenIdle(heroId, onFinish)
+    if playbackBlocked() then
+        enqueue(heroId)
+        return
+    end
     local joinId = JOIN_ID[heroId]
     if not joinId then
         if onFinish then onFinish() end
@@ -175,7 +189,7 @@ end
 local drainDepth_ = 0
 local DRAIN_MAX_DEPTH = 8
 drainPending = function()
-    if ScenarioDialogue.isActive() or #pending_ == 0 then return end
+    if playbackBlocked() or #pending_ == 0 then return end
     if drainDepth_ >= DRAIN_MAX_DEPTH then
         print("[HeroScenario] drain depth cap reached, drop " .. tostring(pending_[1]))
         table.remove(pending_, 1)
@@ -205,16 +219,8 @@ function HeroScenario.onRecruitResults(results)
             end
         end
     end
-    local function nextAt(index)
-        if index > #queue then
-            drainPending()
-            return
-        end
-        playJoinThenIdle(queue[index], function()
-            nextAt(index + 1)
-        end)
-    end
-    nextAt(1)
+    for _, heroId in ipairs(queue) do enqueue(heroId) end
+    drainPending()
 end
 
 ---@param heroId integer
@@ -245,5 +251,18 @@ end
 EventBus.on("scenario_dialogue_finished", function()
     drainPending()
 end)
+
+function HeroScenario.hasPending()
+    return #pending_ > 0
+end
+
+--- 教程/奖励释放后主动再试，不能仅靠剧情结束广播，否则等待队列会饿死。
+function HeroScenario.update()
+    drainPending()
+end
+
+function HeroScenario.resetAll()
+    pending_, idleSeen_, drainDepth_ = {}, {}, 0
+end
 
 return HeroScenario

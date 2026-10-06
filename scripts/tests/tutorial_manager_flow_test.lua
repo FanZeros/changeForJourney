@@ -20,12 +20,17 @@ function Start()
         ["ui.character.panel.CharacterPanel"] = { prepareTutorial = function() end },
         ["ui.tavern.TavernPage"] = { open = function() calls.tavern = true end },
         ["ui.blacksmith.BlacksmithPage"] = { open = function() calls.smith = true end },
+        ["ui.battle.tri.BattleTriPage"] = { getTeamStageId = function() return 101 end },
+        ["config.DungeonConfig"] = { decodeStageId = function(id)
+            assert(id == 101, "本管理专项仅使用小队1主线101的显式读回")
+            return nil
+        end },
         ["ui.tutorial.TutorialPageRecovery"] = { isBlocked = function() return false end,
             prepare = function(_, _, target)
                 calls.target = target
                 if target == "tavern_btn_gacha10" then calls.tavern = true end
                 if target == "smith_btn_enhance" then calls.smith = true end
-                if target == "dungeon_gold_mine" then calls.tab = 5 end
+                if target == "dungeon_gold_mine" then calls.tab = 3 end
                 return false
             end },
     }
@@ -114,8 +119,8 @@ function Start()
         TM.update(0.3)
         TM.startGroup(15)
         TM.update(0.1)
-        check(calls.tab == 5 and TM.getCurrentHighlight() == "dungeon_gold_mine",
-            "横屏隐藏旧页签时直接恢复合法副本入口")
+        check(calls.tab == 3 and TM.getCurrentHighlight() == "dungeon_gold_mine",
+            "横屏恢复三队页的黄金矿洞选关入口，不返回旧副本页签")
         TM.skipCurrentGroup()
         TM.update(0.3)
 

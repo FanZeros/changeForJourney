@@ -59,7 +59,8 @@ local function prepareRoster(heroId, initial)
 end
 
 --- 高优先级剧情/领奖/战斗保持原流程，恢复器不能抢走它们的页面。
-function M.isBlocked()
+function M.isBlocked(target)
+    local ownsStageSelect = target == "tab_dungeon" or target == "dungeon_gold_mine"
     local checks = {
         { "ui.hud.popup.OfflineRewardPanel", "isOpen" },
         { "ui.hud.popup.UpdateNoticePopup", "isOpen" },
@@ -70,10 +71,17 @@ function M.isBlocked()
         { "ui.dungeon.DungeonBattleScene", "isOpen" },
         { "ui.tower.TowerBattleScene", "isActive" },
         { "ui.tavern.TavernPage", "isRecruitConfirmOpen" },
+        { "ui.battle.stage.SweepDialog", "isOpen" },
+        { "ui.battle.popup.DamageStatsPanel", "isOpen" },
+        { "ui.battle.stage.StageSelectDialog", "isOpen" },
+        { "ui.battle.popup.TerminalConfirmDialog", "isOpen" },
     }
     for _, check in ipairs(checks) do
-        local ok, p = pcall(require, check[1])
-        if ok and p and p[check[2]] and p[check[2]]() == true then return true end
+        -- 只豁免当前教程自己的选关窗；无参故事/队列及其他教程仍等待它关闭。
+        if not (ownsStageSelect and check[1] == "ui.battle.stage.StageSelectDialog") then
+            local ok, p = pcall(require, check[1])
+            if ok and p and p[check[2]] and p[check[2]]() == true then return true end
+        end
     end
     return false
 end
@@ -146,9 +154,17 @@ function M.prepare(vg, store, target, newHeroId, initial)
     elseif target == "tab_dungeon" or target == "dungeon_gold_mine" then
         changed = closeLeft({}) or changed
         changed = detailClosed() or changed
-        if not nav.getSelectedIndex or nav.getSelectedIndex() ~= 5 then
-            nav.setSelectedIndex(5)
+        if not nav.getSelectedIndex or nav.getSelectedIndex() ~= 3 then
+            nav.setSelectedIndex(3)
             changed = true
+        end
+        local tri = page("ui.battle.tri.BattleTriPage")
+        if not isOpen(tri) then
+            tri.open()
+            changed = isOpen(tri) or changed
+        end
+        if isOpen(tri) then
+            changed = page("ui.battle.stage.StageSelectDialog").prepareTutorial() or changed
         end
     end
     if changed then print("[TutorialPageRecovery] 恢复目标页面: " .. target) end

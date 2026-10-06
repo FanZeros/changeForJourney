@@ -1,13 +1,16 @@
 -- 职业一转：CPU 多边形/贝塞尔绘制，主体和底板全部程序生成。
 -- 基于既有转职试稿与 procedural-lua-headless 的 Start/pcall/Exit 模板。
 -- 默认审核111/112；-seal-review审核101/102，-first-review审核103–110。
--- 两个-review模式均禁止安装；显式-install仍只替换111/112。
+-- -batch1默认安装封门人/司仪基础与二转十图，配合-review-only可只生成。
+-- 历史-review模式仍禁止安装；未选批次时显式-install仍只替换111/112。
 -- UrhoXRuntime _proc/generate_advancement_trials.lua -tapcode_dir=/workspace -tool_mode -graphicsheadless -seal-review
 local ROOT = "/workspace/assets/image/职业图标/"
 local OUT = "/workspace/.git/advancement-icons-validation/generated/"
 local SEAL_OUT = "/workspace/assets/image/审核_职业转职_20261006_封门人/"
 local FIRST_OUT = "/workspace/assets/image/审核_职业转职_20261006_其余一转/"
+local BATCH_OUT = "/workspace/.git/advancement-icons-validation/batch1/generated/"
 local BACKUP = "/workspace/.git/advancement-icons-validation/originals/"
+local BATCH_BACKUP = "/workspace/.git/advancement-icons-validation/batch1/originals/"
 local SIZE, SCALE = 560, 2
 local CENTER = 139.5
 local DARK = { 14, 12, 10 }
@@ -15,14 +18,20 @@ local GOLD = { 161, 121, 64 }
 local BONE = { 220, 206, 170 }
 local SHADE = { 77, 55, 30 }
 local ORDER = { 111, 112 }
-local install, sealReview, firstReview = false, false, false
+local install, sealReview, firstReview, batch1, reviewOnly = false, false, false, false, false
 for _, argument in ipairs(GetArguments()) do
     if argument == "-install" then install = true end
     if argument == "-seal-review" then sealReview = true end
     if argument == "-first-review" then firstReview = true end
+    if argument == "-batch1" then batch1 = true end
+    if argument == "-review-only" then reviewOnly = true end
 end
 if sealReview then ORDER = { 101, 102 } end
 if firstReview then ORDER = { 103, 104, 105, 106, 107, 108, 109, 110 } end
+if batch1 then
+    ORDER = { 1, 6, 201, 202, 203, 204, 221, 222, 223, 224 }
+    install = not reviewOnly
+end
 ---@type table<number, fun(d: table, branchId: integer)>
 local reviewDrawers = {}
 ---@type Image[]
@@ -376,8 +385,10 @@ end
 function Start()
     local ok, err = pcall(function()
         -- 审核模式没有安装权限，即便误传-install也在任何写盘前拒绝。
-        assert(not (sealReview and firstReview), "只能选择一种审核运行模式")
-        assert(not ((sealReview or firstReview) and install), "审核模式只生成审核图，禁止同时安装")
+        local modeCount = (sealReview and 1 or 0) + (firstReview and 1 or 0) + (batch1 and 1 or 0)
+        assert(modeCount <= 1, "审核与批次只能选择一种模式")
+        assert(not (reviewOnly and not batch1), "-review-only必须指定批次")
+        assert(not ((sealReview or firstReview) and install), "历史审核模式只生成审核图，禁止同时安装")
         -- 审核模块的加载也纳入pcall；缺模块时失败日志和Image清理仍会收尾。
         if firstReview then
             local spoil = require("_proc.advancement.ReviewSpoil")
@@ -386,11 +397,17 @@ function Start()
             local mask = require("_proc.advancement.ReviewMask")
             reviewDrawers = { [103] = spoil, [104] = spoil, [105] = rift, [106] = rift,
                 [107] = echo, [108] = echo, [109] = mask, [110] = mask }
+        elseif batch1 then
+            local seal = require("_proc.advancement.BatchSeal")
+            local prayer = require("_proc.advancement.BatchPrayer")
+            reviewDrawers = { [1] = seal, [201] = seal, [202] = seal, [203] = seal, [204] = seal,
+                [6] = prayer, [221] = prayer, [222] = prayer, [223] = prayer, [224] = prayer }
         end
-        local output = firstReview and FIRST_OUT or (sealReview and SEAL_OUT or OUT)
-        assert(fileSystem:CreateDir(output), "创建转职审核目录失败")
-        if install then assert(fileSystem:CreateDir(BACKUP), "创建转职原图备份目录失败") end
-        -- 两图都成功生成后才进入安装阶段；审核运行绝不触碰正式图。
+        local output = batch1 and BATCH_OUT or (firstReview and FIRST_OUT or (sealReview and SEAL_OUT or OUT))
+        local backup = batch1 and BATCH_BACKUP or BACKUP
+        assert(fileSystem:CreateDir(output), "创建转职生成目录失败")
+        if install then assert(fileSystem:CreateDir(backup), "创建转职原图备份目录失败") end
+        -- 本批所有图都成功生成后才安装；原meta和其他职业图不在白名单内。
         for _, branchId in ipairs(ORDER) do
             local name = "UI_icon_ZY_" .. branchId .. ".png"
             print("[adv-trial] " .. branchId .. " 开始全底板和主体程序绘制")
@@ -401,20 +418,36 @@ function Start()
             print("[adv-trial] " .. branchId .. " 280×280 RGBA审核PNG已保存")
         end
         if install then
+            local rollback = backup .. "current/"
+            assert(fileSystem:CreateDir(rollback), "创建本次安装恢复目录失败")
             for _, branchId in ipairs(ORDER) do
                 local name = "UI_icon_ZY_" .. branchId .. ".png"
-                if not fileSystem:FileExists(BACKUP .. name) then
-                    assert(fileSystem:Copy(ROOT .. name, BACKUP .. name), "备份转职原图失败：" .. name)
+                if not fileSystem:FileExists(backup .. name) then
+                    assert(fileSystem:Copy(ROOT .. name, backup .. name), "备份转职原图失败：" .. name)
                 end
+                assert(fileSystem:Copy(ROOT .. name, rollback .. name), "备份本次安装前图片失败：" .. name)
             end
-            for _, branchId in ipairs(ORDER) do
-                local name = "UI_icon_ZY_" .. branchId .. ".png"
-                assert(fileSystem:Copy(OUT .. name, ROOT .. name), "安装转职图失败：" .. name)
-                print("[adv-trial] 已安装 " .. name .. "，原.meta保持不变")
+            local installed = {}
+            local copied, copyError = pcall(function()
+                for _, branchId in ipairs(ORDER) do
+                    local name = "UI_icon_ZY_" .. branchId .. ".png"
+                    -- 先登记当前路径，Copy异常或部分写入时也纳入恢复。
+                    installed[#installed + 1] = name
+                    assert(fileSystem:Copy(output .. name, ROOT .. name), "安装转职图失败：" .. name)
+                    print("[adv-trial] 已安装 " .. name .. "，原.meta保持不变")
+                end
+            end)
+            if not copied then
+                local restored = true
+                for _, name in ipairs(installed) do
+                    local restoredOK, result = pcall(function() return fileSystem:Copy(rollback .. name, ROOT .. name) end)
+                    if not restoredOK or not result then restored = false end
+                end
+                error(tostring(copyError) .. (restored and "；已恢复本批原图" or "；原图恢复失败，需核对备份"))
             end
         end
         print("[adv-trial] ALL PASS：" .. #ORDER .. "枚"
-            .. (firstReview and "其余一转" or (sealReview and "封门人一转" or "司仪一转"))
+            .. (batch1 and "第一批封门人/司仪" or (firstReview and "其余一转" or (sealReview and "封门人一转" or "司仪一转")))
             .. "，模式=" .. (install and "安装" or "仅审核"))
     end)
     -- 成功与失败都立即释放所有已创建Image，退出不依赖GC。

@@ -62,6 +62,11 @@ function Start()
         local reads, writes = {}, {}
         ---@type any[]
         local fileEvents, draws, loads, feedback = {}, {}, {}, {}
+        local silhouetteBlendCalls, silhouetteFillCalls = 0, 0
+        local silhouetteImages = {
+            ["UI_CZ_CK.png"] = true, ["UI_CZ_TREE.png"] = true, ["UI_CZ_SJ.png"] = true,
+            ["UI_CZ_JT.png"] = true, ["UI_CZ_JG.png"] = true,
+        }
         local clock = { elapsedTime = 100 }
         ---@type any
         local vg = {}
@@ -154,11 +159,30 @@ function Start()
             return {}
         end
         stub("nvgImagePattern", imagePattern)
-        stub("nvgImagePatternTinted", imagePattern)
-        for _, name in ipairs({ "nvgBeginPath", "nvgFill", "nvgFillColor", "nvgFillPaint",
+        stub("nvgImagePatternTinted", function(_, x, y, w, h, _, image, tint)
+            assert(type(tint) == "table", "tinted image must receive test color")
+            local filename = loads[image]:match("[^/]+$")
+            local silhouette = silhouetteImages[filename] == true
+                and tint.r == 0 and tint.g == 0 and tint.b == 0
+                and tint.a == math.floor(255 * 0.85)
+            recordRect("image", x, y, w, h, { image = image, path = loads[image], tint = tint })
+            return { silhouette = silhouette }
+        end)
+        stub("nvgRGBA", function(r, g, b, a) return { r = r, g = g, b = b, a = a } end)
+        for _, name in ipairs({ "nvgBeginPath", "nvgFillColor",
             "nvgStroke", "nvgStrokeColor", "nvgStrokeWidth", "nvgFontFace", "nvgCircle",
-            "nvgScissor", "nvgGlobalCompositeOperation", "nvgGlobalCompositeBlendFuncSeparate" }) do stub(name) end
-        -- nvgRGBA/NVG_* 与 FILE_* 沿用引擎真实定义；不覆写颜色类型，不猜枚举数字。
+            "nvgScissor", "nvgGlobalCompositeOperation" }) do stub(name) end
+        stub("nvgFillPaint", function(_, paint) vgState.fillPaint = paint end)
+        stub("nvgFill", function()
+            if vgState.fillPaint and vgState.fillPaint.silhouette then
+                silhouetteFillCalls = silhouetteFillCalls + 1
+            end
+            vgState.fillPaint = nil
+        end)
+        stub("nvgGlobalCompositeBlendFuncSeparate", function()
+            silhouetteBlendCalls = silhouetteBlendCalls + 1
+        end)
+        -- NanoVG colors in this test are tables so the final tinted image color is inspectable.
 
         local redeemState = { open = false, opens = 0, inputs = 0, updates = 0 }
         local redeem = {
@@ -204,6 +228,8 @@ function Start()
             getMaxExp = function() return 100 end,
         }
         local closedPanel = { init = noop, draw = noop, isOpen = function() return false end }
+        local expMarketUnlocked = true
+        local tutorialUnlocks = { smith = true, church = true, tavern = true }
         ---@type table<string, any>
         local mods = {
             ["core.I18n"] = i18n, ["core.DrawUtil"] = drawUtil, ["core.DarkIcon"] = darkIcon,
@@ -222,10 +248,14 @@ function Start()
             ["ui.widget.HeroFrame"] = { draw = noop },
             ["runtime.GameAction"] = { isGM = function() return false end },
             ["core.HorizonBg"] = { draw = noop },
-            ["config.ExpTable"] = { CHURCH_UNLOCK_LEVEL = 30, isBuildingUnlocked = function() return true end },
+            ["config.ExpTable"] = { CHURCH_UNLOCK_LEVEL = 30,
+                isBuildingUnlocked = function() return expMarketUnlocked end,
+                getBuildingUnlockLevel = function() return 30 end },
             ["ui.widget.DesignWidgetSurface"] = { init = noop },
             ["systems.TutorialManager"] = { isActive = function() return false end,
-                isBuildingUnlocked = function() return true end },
+                isBuildingUnlocked = function(buildingKey)
+                    return tutorialUnlocks[buildingKey] == true
+                end },
             ["ui.loot.LootBox"] = { getCount = function() return 0 end, drawRates = noop },
             ["ui.blacksmith.BlacksmithPage"] = { canEnhanceAny = function() return false end },
             ["ui.church.talent.TalentPage"] = { hasAnyUnusedTalent = function() return false end },
@@ -531,11 +561,52 @@ function Start()
                 and near(taskIcon.y + taskIcon.h * 0.5, 2240), "功绩图标TASK_CX-73/文本TASK_CX+34且无Y-6")
             check(near(lootIcon.w, 64) and near(taskIcon.w, 64), "遗匣/功绩沿用64图标")
             local labels = matches("nine", "style", "plain")
-            local oldPlain = 0
+            local oldPlain, expeditionLabels = 0, 0
             for _, label in ipairs(labels) do
                 if near(label.w, 300) and near(label.h, 64) then oldPlain = oldPlain + 1 end
+                if near(label.x, 410) and near(label.y, 1570)
+                    and near(label.w, 220) and near(label.h, 80) then
+                    expeditionLabels = expeditionLabels + 1
+                end
             end
-            check(oldPlain == 0 and #labels == 8, "移除遗匣300x64额外plain，只保留八个地点名牌")
+            check(oldPlain == 0 and #labels - expeditionLabels == 8,
+                "移除遗匣300x64额外plain，原八个地点名牌保持不变")
+            check(expeditionLabels == 1, "新增远征名牌保持220x80和原设计坐标")
+
+            -- 通过真实TownScene分支的绘制替身检查五处剪影参数与叠加次数，
+            -- 不加载实际PNG像素，因此不代替Alpha边缘和黑度的视觉验收。
+            tutorialUnlocks = { smith = false, church = false, tavern = false }
+            expMarketUnlocked = false
+            capture(function() town.draw(vg) end)
+            local lockedImages = {
+                ["UI_CZ_CK.png"] = true,
+                ["UI_CZ_TREE.png"] = true,
+                ["UI_CZ_SJ.png"] = true,
+                ["UI_CZ_JT.png"] = true,
+                ["UI_CZ_JG.png"] = true,
+            }
+            local silhouettes = {}
+            for _, draw in ipairs(draws) do
+                if draw.kind == "image" and lockedImages[draw.path:match("[^/]+$")] then
+                    silhouettes[draw.path:match("[^/]+$")] = draw
+                end
+            end
+            for _, path in ipairs({ "UI_CZ_CK.png", "UI_CZ_TREE.png", "UI_CZ_SJ.png",
+                "UI_CZ_JT.png", "UI_CZ_JG.png" }) do
+                local silhouette = silhouettes[path]
+                check(silhouette ~= nil, "锁定建筑使用黑色剪影 " .. path)
+                if silhouette then
+                    check(silhouette.tint.r == 0 and silhouette.tint.g == 0 and silhouette.tint.b == 0
+                        and silhouette.tint.a == math.floor(255 * 0.85), "剪影色/强度统一 " .. path)
+                    check(silhouette.w > 0 and silhouette.h > 0, "剪影保留素材alpha轮廓 " .. path)
+                end
+            end
+            check(silhouetteFillCalls == 5 * 6 and silhouetteBlendCalls == 0,
+                "五处锁定剪影均执行六层黑色覆盖，不再按PNG alpha二次压暗")
+            tutorialUnlocks = { smith = true, church = true, tavern = true }
+            expMarketUnlocked = true
+            capture(function() town.draw(vg) end)
+
             for _, sample in ipairs({ { text = "狱火锻炉", x = 569, y = 554, icon = "ICON_CZ_TJP.png", ix = 444 },
                 { text = "终焉古树", x = 585, y = 1229, icon = "ICON_CZ_TREE.png", ix = 450 },
                 { text = "月蚀黑市", x = 259, y = 846, icon = "ICON_CZ_SC.png", ix = 152 },

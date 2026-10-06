@@ -60,7 +60,6 @@ local dispatcherCallbacks_ = {}
 --- WaitForChange 内部状态（前置声明，确保 Cleanup 闭包能正确捕获）
 local activeWatchers_ = {}
 local watcherIdSeq_ = 0
-local updateSubscribed_ = false
 
 --- 全局超时提示回调：当 WaitForChange 超时且调用者未提供 onTimeout 时触发
 --- 用于统一向玩家展示"操作超时"提示（如 Toast、Loading 消失等）
@@ -141,8 +140,7 @@ function PlayerStore.Cleanup()
     inited_ = false
 
     -- 清理 WaitForChange watchers
-    -- ⚠️ 不再调用 UnsubscribeFromEvent("Update")，避免误杀 HandleUpdate_Client
-    --    handleWatcherUpdate 通过 #activeWatchers_==0 自行跳过
+    -- 等待器由主循环显式驱动，清理时只移除条目，不修改宿主的事件订阅。
     activeWatchers_ = {}
     watcherIdSeq_ = 0
 
@@ -238,15 +236,11 @@ end
 -- WaitForChange 在 T0 快照旧引用，per-frame 检测 cache_ 引用变化，
 -- 变化即回调，超时兜底。
 
---- per-frame 检测函数（全局事件回调）
---- ⚠️ 不再调用 UnsubscribeFromEvent("Update")！
---- 因为全局 UnsubscribeFromEvent 会把所有 Update handler（包括 HandleUpdate_Client）一起取消，
---- 导致游戏逻辑停止更新、UI 冻结。改为通过标志位跳过执行。
-local function handleWatcherUpdate(eventType, eventData)
-    -- 无活跃 watcher 时直接跳过（替代 UnsubscribeFromEvent 的"避免空转"）
+--- 主 Update 每帧调用；全局 SubscribeToEvent 对同事件是替换，不可由等待器另行订阅。
+--- 超时使用原始帧时间，不受战斗暂停或变速影响。
+---@param dt number
+function PlayerStore.Update(dt)
     if #activeWatchers_ == 0 then return end
-
-    local dt = eventData["TimeStep"]:GetFloat()
 
     for i = #activeWatchers_, 1, -1 do
         local w = activeWatchers_[i]
@@ -324,15 +318,10 @@ function PlayerStore.WaitForChange(key, opts)
 
     table.insert(activeWatchers_, watcher)
 
-    -- 按需订阅 Update 事件
-    if not updateSubscribed_ then
-        SubscribeToEvent("Update", handleWatcherUpdate)
-        updateSubscribed_ = true
-    end
+    -- 只登记等待项；Standalone.HandleUpdate 统一调用 Update，不抢占游戏事件回调。
 
     -- 返回取消函数（页面销毁时调用，防止回调泄漏）
-    -- ⚠️ 不再调用 UnsubscribeFromEvent("Update")，仅移除 watcher 条目；
-    --    handleWatcherUpdate 通过 #activeWatchers_==0 自行跳过，避免误杀其他 Update handler
+    -- 仅移除自己的等待项，不改变主循环订阅。
     return function()
         for i = #activeWatchers_, 1, -1 do
             if activeWatchers_[i].id == id then

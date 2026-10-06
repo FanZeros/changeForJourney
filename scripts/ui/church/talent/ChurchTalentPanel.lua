@@ -7,6 +7,7 @@
 local GameConfig    = require("config.GameConfig")
 local DrawUtil      = require("core.DrawUtil")
 local TalentStarMap = require("ui.church.talent.TalentStarMap")
+local TalentNodeDefs = require("shared.talent.TalentNodeDefs")
 local TalentEffect  = require("systems.TalentEffect")
 local BF            = require("systems.ButtonFeedback")
 local DarkIcon      = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
@@ -168,6 +169,41 @@ function M.setContext(ctx)
 end
 
 -- ======================== 内部函数 ========================
+
+--- 与激活规则一致：相邻节点已点亮，且还有远征点；只读快照，不修改存档。
+---@param nodeId number|nil
+---@return boolean, string|nil
+local function canActivateNode(nodeId)
+    local id = tonumber(nodeId)
+    local node = id and TalentNodeDefs.getNode(id)
+    local dispatcher = getDispatcher()
+    local talents = dispatcher.get("talents")
+    local player = dispatcher.get("player")
+    if not node or not talents or not player then return false, "未解锁" end
+
+    -- 与 Schema 相同：起始点不耗点，数字/字符串节点 ID 去重。
+    local litSet = { [0] = true }
+    local usedPoints = 0
+    for _, rawId in pairs(talents.litNodes or {}) do
+        local litId = tonumber(rawId)
+        if litId ~= nil and not litSet[litId] then
+            litSet[litId] = true
+            usedPoints = usedPoints + 1
+        end
+    end
+    if litSet[id] then return false, "已激活" end
+
+    local hasAdjacentLit = false
+    for _, adjId in ipairs(node.adj or {}) do
+        if litSet[adjId] then
+            hasAdjacentLit = true
+            break
+        end
+    end
+    if not hasAdjacentLit then return false, "未解锁" end
+    if (player.level or 1) - usedPoints <= 0 then return false, "远征点不足" end
+    return true, nil
+end
 
 --- 判断节点是否为末尾天赋（已点亮子图的叶子：只有 1 个已点亮邻居，即其父节点）
 --- 叶子节点可以安全移除而不断开其他已点亮节点的连通性
@@ -562,15 +598,17 @@ function M.drawDetailPanel(vg)
     local infoFont = M.fitDetailFont(vg, infoText, textBoxW, TFD.infoBgH - TFD.infopad * 2)
     kt:draw(vg, infoText, textBoxX, textBoxY, textBoxW, infoFont)
 
-    -- 7. 按钮：末尾已点亮节点显示红色"重置"，未点亮节点显示绿色"激活"
+    -- 7. 已点亮叶子可重置；未点亮节点只有可达且有点数时才显示激活。
     local isLit = TalentStarMap.isNodeLit(state.tfDetailNodeId)
     local isTerminal = isLit and isTerminalNode(state.tfDetailNodeId)
+    local canActivate, activateReason = canActivateNode(state.tfDetailNodeId)
+    local actionable = isTerminal or (not isLit and canActivate)
     local btnKey = isTerminal and "ctp_reset_single" or "ctp_activate"
-    local btnAccent = isTerminal and "red" or "green"  -- [暗黑化 P1-B3] 重置=红 激活=绿
-    local btnText = isTerminal and "重置" or (isLit and "已激活" or "激活")
-    -- 按钮文字：可操作=亮金，已激活不可再点=棕色
+    local btnAccent = isTerminal and "red" or "green"
+    local btnText = isTerminal and "重置" or (isLit and "已激活"
+        or (canActivate and "激活" or activateReason))
     local btnTextR, btnTextG, btnTextB = 255, 214, 102
-    if isLit and not isTerminal then
+    if not actionable then
         btnTextR, btnTextG, btnTextB = 0x8b, 0x95, 0xa5
     end
 
@@ -579,14 +617,19 @@ function M.drawDetailPanel(vg)
         TFD.btnCX - TFD.btnW * 0.5,
         TFD.btnCY - TFD.btnH * 0.5,
         TFD.btnW, TFD.btnH,
-        { accent = btnAccent })
+        { accent = btnAccent, alpha = actionable and 1.0 or 0.4 })
 
-    -- 8. 按钮文本
+    -- 8. 按钮文本按最终译文宽度缩字，禁用原因不越出按钮。
+    local buttonText = I18n.lookup(btnText or "未解锁")
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, TFD.btnFont)
+    local buttonTextW = nvgTextBounds(vg, 0, 0, buttonText)
+    if buttonTextW > TFD.btnW - 40 then
+        nvgFontSize(vg, TFD.btnFont * (TFD.btnW - 40) / buttonTextW)
+    end
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(btnTextR, btnTextG, btnTextB, 255))
-    nvgText(vg, TFD.btnCX, TFD.btnCY, btnText, nil)
+    nvgText(vg, TFD.btnCX, TFD.btnCY, buttonText, nil)
     BF.finish(vg, _bf2)
 
     nvgRestore(vg)  -- 恢复缩放变换
@@ -776,7 +819,12 @@ function M.handleDetailInput(dx, dy)
                 nodeId = nid,
             })
         elseif nid ~= nil and not isLit then
-            -- 未点亮节点：发送激活请求
+            local canActivate, reason = canActivateNode(nid)
+            if not canActivate then
+                print("[ChurchTalentPanel] 激活不可用: nodeId=" .. tostring(nid) .. " reason=" .. tostring(reason))
+                return true
+            end
+            -- 点击时重查条件，避免详情打开期间点数或相邻节点变化。
             BF.trigger("ctp_activate")
             print("[ChurchTalentPanel] 天赋激活按钮点击: nodeId=" .. tostring(nid))
             getClient().sendAction(getProtocol().ACTION_TYPES.ACTIVATE_TALENT, {

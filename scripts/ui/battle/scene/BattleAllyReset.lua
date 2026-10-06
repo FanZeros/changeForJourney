@@ -47,6 +47,8 @@ function M.restoreFromSnapshot(u)
     if u._pendingSnapshot then
         u._hadPendingSnapshot = true
         u._baseSnapshot = u._pendingSnapshot
+        -- 新属性快照已携带装备类型；没有独立 pending 字段时也不能被旧波类型覆盖。
+        u._baseArmorType = u._pendingArmorType or u._pendingSnapshot.armorType or u._baseArmorType
         u._pendingSnapshot = nil
         if u._pendingArtifactEffects ~= nil then
             u.artifactEffects = #u._pendingArtifactEffects > 0 and u._pendingArtifactEffects or nil
@@ -70,6 +72,9 @@ function M.restoreFromSnapshot(u)
         -- 旧波临时倍率必须从旧 attrs 撤销，不能在新干净快照上再做一次除法。
         require("systems.ArtifactRuntime").reset({ u })
         u.attrs = u._baseSnapshot:clone()
+        if u._baseArmorType then u.attrs.armorType = u._baseArmorType end
+        u.armorType = u.attrs.armorType
+        u.atkType = u.attrs.atkType
         if u.attrs and AD.getAtkCategory(u.attrs.atkType) == "healing" then
             local snapHeal = u._baseSnapshot:get(AD.HEAL_AMOUNT)
             local clonedHeal = u.attrs:get(AD.HEAL_AMOUNT)

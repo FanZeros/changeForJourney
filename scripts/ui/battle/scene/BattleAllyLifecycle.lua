@@ -18,6 +18,7 @@ local ProjectileSystem = require("ui.battle.combat.ProjectileSystem")
 local SpeechBubble = require("ui.widget.SpeechBubble")
 local BottomNav = require("ui.hud.BottomNav")
 local BattleAllyReset = require("ui.battle.scene.BattleAllyReset")
+local BattleLayout = require("core.BattleLayout")
 
 local M = {}
 
@@ -35,7 +36,15 @@ function M.getLiveAttackInterval(unit, fallback)
     return unit.atkInterval or fallback
 end
 
+---@param deps table
 function M.bind(deps)
+    -- 可选视觉上下文由宿主明确提供；不能对Scene的封闭get查询不存在的键。
+    ---@type string|nil
+    local effectScope = deps.effectScope
+    ---@type number|nil
+    local effectCardCY = deps.effectCardCY
+    ---@type number|nil
+    local effectCardScale = deps.effectCardScale
     local getStageConfig = deps.getStageConfig
     local getStageMaxFieldEnemies = deps.getStageMaxFieldEnemies
     local loadStage = deps.loadStage
@@ -274,7 +283,11 @@ function M.bind(deps)
                                     if a == u then idx = ai; break end
                                 end
                                 local cx = BattleCombat.getCardCX(getAllies(), idx)
-                                require("ui.fx.SpineCardEffect").playLevelUp(cx, ALLY_CARD_CY)
+                                local strip = BattleLayout.MODE == "strip"
+                                local cy = effectCardCY or (strip and BattleLayout.STRIP_CY or ALLY_CARD_CY)
+                                local scale = effectCardScale or (strip and BattleLayout.CARD_SCALE or 1)
+                                require("ui.fx.SpineCardEffect").playLevelUp(cx, cy, nil, effectScope or "battle",
+                                    BattleLayout.CARD_W * scale, BattleLayout.CARD_H * scale)
                             end
                         else
                             print(string.format("[BattleScene] refreshAllyStats: hero %s attrs refreshed (equip/awaken change), pending",

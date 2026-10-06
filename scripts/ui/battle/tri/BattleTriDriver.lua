@@ -681,6 +681,12 @@ function BattleTriDriver.new(teamIdx, options)
                         end
                         local cx, cy = BattleCombat.getCardPos(allies, idx)
                         BattleCombat.addFloatingText("复活", cx, cy, { 120, 255, 160 }, false)
+                        -- 仅给真正回到正生命的本人加视觉；亡魂拦截不等于回血复活。
+                        if u.hp > 0 then
+                            require("ui.fx.SpineCardEffect").playRevive(cx, cy, nil, "tri" .. self.teamIdx,
+                                BattleLayout.CARD_W * BattleLayout.CARD_SCALE,
+                                BattleLayout.CARD_H * BattleLayout.CARD_SCALE)
+                        end
                     else
                         u._triDeathHandled = true
                         u.atkProgress = 0

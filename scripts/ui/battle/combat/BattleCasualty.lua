@@ -35,6 +35,27 @@ function M.process(ctx, logicDt)
     local stageName = ctx.stageName
     local getStageConfig = ctx.getStageConfig
 
+    -- 坐标只来自当前真实布局/显式视觉上下文；死亡拦截与业务分支保持原顺序。
+    ---@type string|nil
+    local effectScope = ctx.effectScope
+    ---@type number|nil
+    local effectCardCY = ctx.effectCardCY
+    ---@type number|nil
+    local effectCardScale = ctx.effectCardScale
+    local function playReviveEffect(unit)
+        if unit.hp <= 0 then return end
+        local idx = 1
+        for ai, ally in ipairs(allies) do
+            if ally == unit then idx = ai; break end
+        end
+        local cx = BattleCombat.getCardCX(allies, idx)
+        local strip = BattleLayout.MODE == "strip"
+        local cy = effectCardCY or (strip and BattleLayout.STRIP_CY or ALLY_CARD_CY)
+        local scale = effectCardScale or (strip and BattleLayout.CARD_SCALE or 1)
+        require("ui.fx.SpineCardEffect").playRevive(cx, cy, nil, effectScope or "battle",
+            BattleLayout.CARD_W * scale, BattleLayout.CARD_H * scale)
+    end
+
     -- 先扫描整条战线，避免同帧多死补位/收缩跳过后一个死亡对象。
     -- 命中端已即时分发时 TAL 内部幂等；奖励仍按 reviveTimer 独立记账。
     for _, unit in ipairs(enemies) do
@@ -173,23 +194,13 @@ function M.process(ctx, logicDt)
         -- 神器: 死亡拦截（神圣十架复活 / 亡魂之祭）
         local artifactRevived = ART.onAllyDeath(unit)
         if artifactRevived then
-            local idx = 1
-            for ai, a in ipairs(allies) do
-                if a == unit then idx = ai; break end
-            end
-            local cx = BattleCombat.getCardCX(allies, idx)
-            require("ui.fx.SpineCardEffect").playRevive(cx, ALLY_CARD_CY)
+            playReviveEffect(unit)
         else
             -- 天赋: 死亡拦截（复活吧爱人复活）
             local revived = TAL.onAllyDeath(unit, allies, syncUnitHp)
             if revived then
-                -- 复活成功，跳过死亡处理；播放复活 Spine 特效
-                local idx = 1
-                for ai, a in ipairs(allies) do
-                    if a == unit then idx = ai; break end
-                end
-                local cx = BattleCombat.getCardCX(allies, idx)
-                require("ui.fx.SpineCardEffect").playRevive(cx, ALLY_CARD_CY)
+                -- 复活业务分支不变，只在本人正生命时播放程序化视觉。
+                playReviveEffect(unit)
             else
                 -- 阵亡台词触发
                 SpeechBubble.trigger(unit, "death")

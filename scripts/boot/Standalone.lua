@@ -747,6 +747,10 @@ function Standalone.requestResetToStartScreen()
     ScenarioDialogue.reset()
     battleSync = { lastMax = -1, lastCleared = "", lastStages = "", acc = 0 }
 
+    -- 清档先取消旧会话特效，不在新英雄／战力同步期间补播旧动画。
+    SpinePowerUpEffect.resetSession()
+    require("ui.fx.SpineCardEffect").stopAll()
+    require("ui.fx.SpineResultEffect").stop()
     -- 3. 重置 GameState（货币、经验等缓存）
     GameState.reset()
     print(string.format("%s step3: GameState.reset done clock=%.4f", TAG, os.clock()))
@@ -828,6 +832,10 @@ function HandleUpdate(eventType, eventData)
     local dt = eventData["TimeStep"]:GetFloat()
     -- 等待回执使用真实帧时间；标题/暂停不阻断超时，也不另订阅 Update 覆盖主循环。
     PlayerStore.Update(dt)
+    -- 特效用真实时钟收尾，不随战斗倍速，不被标题／剧情提前返回冻结。
+    SpinePowerUpEffect.update(dt)
+    require("ui.fx.SpineCardEffect").update(dt)
+    require("ui.fx.SpineResultEffect").update(dt)
     require("ui.dev.CEPanel").pollHotkey()
     -- 分帧启动：每帧 1 个模块 init，标题可先画出来
     pumpBootQueue_()

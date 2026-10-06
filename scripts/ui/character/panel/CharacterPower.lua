@@ -3,6 +3,8 @@
 -- ============================================================================
 
 local M = {}
+local EventBus = require("core.EventBus")
+local GameEvents = require("config.GameEvents")
 
 function M.bind(deps)
     local AD = deps.AD
@@ -236,15 +238,21 @@ function M.bind(deps)
         set("runtimeOnlyPowerCaches", runtimeOnlyPowerCaches)
         set("runtimeOnlyPowerCache", runtimeOnlyPowerCaches[1] or 0)
 
-        -- 顶栏保持队1口径；各队标题和当前队接口使用对应队的缓存。
-        local total = runtimeOnlyPowerCaches[1] or 0
-        local mainCache = teamPowerCaches[1] or {}
-        for i = 1, MAX_SLOTS do
-            total = total + (mainCache[i] or 0)
+        -- 全队缓存完成后一次发布快照；队2/3独立成长也会通知，不借活动队推测来源。
+        local teamPowers = {}
+        for t = 1, TEAM_COUNT do
+            local teamTotal = runtimeOnlyPowerCaches[t] or 0
+            local cache = teamPowerCaches[t] or {}
+            for i = 1, MAX_SLOTS do teamTotal = teamTotal + (cache[i] or 0) end
+            teamPowers[t] = teamTotal
         end
-
-        GameState.setPower(total)
+        -- 顶栏与选关继续使用队1，专用提示使用完整快照。
+        GameState.setPower(teamPowers[1] or 0)
         CharacterDetail.markPowerDirty()
+        EventBus.emit(GameEvents.TEAM_POWER_CHANGED, {
+            powers = teamPowers,
+            ready = CharacterPanel.isHeroesDataApplied and CharacterPanel.isHeroesDataApplied() or false,
+        })
     end
 
     local function refreshUpgradeBadgeCache()

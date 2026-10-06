@@ -146,6 +146,17 @@ local function finishFrame()
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
     drawOrphanRowReward()
     artifactOverlay.draw(vg())
+    -- 战力提示全窗居中、按队列出；非模态且不盖住剧情和奖励等高优先级内容。
+    if not StartScreen.isOpen() and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
+        and not IntroCutscene.isActive() and not ScenarioDialogue.isActive()
+        and not RewardPopup.isOpen() and not PlayerInfoPanel.isOpen()
+        and not LevelUpPopup.isOpen() and not OfflineRewardPanel.isOpen()
+        and not UpdateNoticePopup.isOpen() and not CEPanel.isOpen()
+        and not TutorialManager.isActive() and not StageSelectDialog.isOpen()
+        and not SweepDialog.isOpen() and not DamageStatsPanel.isOpen()
+        and not TerminalConfirmDialog.isOpen() then
+        SpinePowerUpEffect.draw(vg(), logicalW(), logicalH())
+    end
     -- 升级弹窗由宿主逻辑空间布局：不再借中栏 Viewport 或 1080×2400 letterbox。
     -- 所有业务/PlayerInfo/三行/通天塔绘制都已完成，Offline/Update/CE 保持原上层优先级。
     if LevelUpPopup.isOpen() then
@@ -844,11 +855,6 @@ function HandleNanoVGRenderHorizon()
         end
         -- 玩家信息已画在左栏视口内。三行路径会提前 return，必须在这里再画一层全窗居中，
         -- 否则面板被左栏裁切，点外面也无法按面板外关闭。
-        if SpinePowerUpEffect.isPlaying() then
-            Viewport.begin(vg(), Viewport.PANELS.left, oxL, 0, ps)
-            SpinePowerUpEffect.draw(vg(), -30)
-            Viewport.finish(vg())
-        end
         if PlayerInfoPanel.isOpen() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
@@ -900,7 +906,6 @@ function HandleNanoVGRenderHorizon()
     HeroRosterPanel.draw(vg())
     PlayerInfoPanel.draw(vg())
     RewardPopup.draw(vg())
-    SpinePowerUpEffect.draw(vg())
     Viewport.finish(vg())
 
     -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）

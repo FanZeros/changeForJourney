@@ -9,8 +9,23 @@
    - ❌ 禁止用纯文本、开放式问题、或任何非 `AskUserQuestion` 的形式中断对话等待用户。
    - ✅ 必须调用 `AskUserQuestion`，给出 2–4 个明确的下一步选项。
 3. **在本记忆中持续强化此规则**：每轮结束更新「上次做了什么」，并保留本节铁律不被覆盖。
-4. **分支纪律**：以当轮指定基线新建任务分支，完成后只 push 新分支；本轮基线为 `workspace1005@487027ae`，任务分支为 `feat1005/class-advancement-icons-20261006`，**绝不推送到任何 `workspace` 系列或原基线分支**。用户本轮已授权创建目标为 `workspace1005` 的 PR，不自动合并或发布。
+4. **分支纪律**：以当前任务授权为准。本轮暗黑特效任务基于 `workspace1005@9497bfdb409c2d0fc17533e4cfc280702fe83517`，任务分支为 `feat1005/team-power-dark-effects-20261006`。用户最新明确提供即时鉴权并要求提 PR，授权提交／正常 push 本任务分支及创建目标 `workspace1005` 的 PR；不混入其他会话返回键改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布，凭据不持久化。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
+
+## 上次做了什么（2026-10-06，三队暗黑特效 PR107 已创建）
+
+- 用户最新明确“帮我提一个pr”，即时鉴权可写；28白名单文件提交 `73b7dcc1d62798b88e980487f1dd5a5dfa98e110` 已正常push同任务分支，push／ls-remote均exit0、远端SHA与本地一致。正式 **PR #107**：https://github.com/FanZeros/changeForJourney/pull/107，head=`feat1005/team-power-dark-effects-20261006`、base=`workspace1005`；创建源73b7dcc1、目标fc6bbc5b，返回open／draft=false／merged=false／mergeable未计算，不称CI通过或已合并。
+- 22份Lua由b26冻结实际载荷构造，3新meta／3已有交接仅28项；完整回归及性能限制写入PR。另一会话返回键/H_SEAM_BACK修复Horizon e470fc1c保留在本地、未夹进PR，不改其工作树；.project／上传／无关repair meta／内部证据不提交。目标新增PR105／106净六文件与本任务无交集，未自动merge或推目标。候选2907路径规范20旧问题与9497bfdb逐项同集合、警告0／新增0，36校验单测exit0，不称全仓规范清零。
+- 初次同步提交等待timeout后核查HEAD未动、无提交，后按独立index标准commit成功；初次托管push空输出后ls-remote确认无任务分支，随后正常push真实exit0并验证，不把无输出当成功。凭据仅进程内helper／API即时鉴权，不写文件、remote、Git配置或记忆，公开凭据应撤销更换。PR成功后仅白名单交接补记，不重复创建、不自动合并发布。
+
+## 上次做了什么（2026-10-06，三队战力提示与程序化暗黑特效，本地完成）
+
+- 当前任务 `feat1005/team-power-dark-effects-20261006` 基于9497bfdb；完整三队正式缓存快照＋ready避免冷档误报，提示全窗中心、同队净增／多队独立到期与高优先级让位。队1GameState兼容事件、正式公式、成长／奖励／编队／复活规则、存档字段与当前波pending不改。没有本任务commit／push／PR／合并／发布授权，历史职业图自动push不转用。
+- 原Power／Card／Result模块兼容，实际效果改程序化暗铁旧铜骨白血红：升级封印燃焰、转职双扉裂光、复活灰片聚魂、成功合印、失败碎灭，scope隔离battle／tri1..3／dungeon／detail-class并绑定真实卡／台尺寸。真实墙钟统一收尾在early return前，清档取消，随机函数和nativeSpine／图片加载0；旧资源未删，不称包体裁剪。
+- 实际UI／Yoga自动宽Label，逐色alpha、不全局改写、不额外控件opacity／transform／clip。字体真实失败修正：先字号再文本清旧675宽，15位双数514，长短切换514→297→514；18位双完整整数改18号后533≤580。首轮native崩溃及字体5／2失败保留，测试Start初始化／当前frame宿主测字修正后最终mixed35组753/0、logic453/0、UI300/0均exit0，不关GC、不称C异常万能修复。
+- 九套父Runtime正式回归public25、神器60、预估、成长1697/0/harness0、升阶257、切关、远征110、Horizon300cases2405、host117/0全exit0，Card17／Result51亦父通过；旧57场景1220原生Result断言已替换，未保留冒称。Horizon原60失败在固定基线逐项同集合，修塔夹具／补双宿主旧契约，不改生产点击／滚轮优先级。最新父冻结联合35组753/0、UI18组300/0、logic17组453/0亦实际exit0；b26最终main150帧Lua／资源0、缺图0，raw FAIL/exit1仅149条100ms软件尖峰，全部报告错误逐项属于帧尖峰，不称性能通过。
+- 最终官方b26成功，根scripts552Lua，22本任务源码与真实UUID-hash部署载荷22/22字节一致；22Lua单文件LSP空items不称全仓静态覆盖。四阶段／英日韩／全窗1至3队及1280×800受控样片实际120帧exit0并Read，不代用户审美／设备操作验收。两次main150帧Lua／资源0、缺图0，raw FAIL/exit1仅149软件尖峰，不称性能通过。内部证据只.git/validation，.project／_uploads／无关repair meta不混入。
+- **持续强化：持续推进已授权范围、不擅自取消退出；通常交接需真实AskUserQuestion选项，当前最新恢复明确不再提问、直接继续，遵循当前指令不机械询问。** 尊重停止／权限拒绝／安全边界，代理与peer不是用户授权，不推任何workspace系列、不强推／自动合并发布，凭据不进源码／配置／日志／记忆。
 
 ## 上次做了什么（2026-10-06，42职业图全部确认实装）
 

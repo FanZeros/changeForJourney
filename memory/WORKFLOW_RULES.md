@@ -1,3 +1,24 @@
+## 三队暗黑特效 PR107 已完成（2026-10-06）
+
+- 用户“帮我提一个pr”授权后28文件功能提交73b7dcc1d62798b88e980487f1dd5a5dfa98e110正常push，push／ls-remote实际exit0且源SHA一致，目标workspace1005仍fc6bbc5b未被本会话改写。PR #107 https://github.com/FanZeros/changeForJourney/pull/107 已创建，head=feat1005/team-power-dark-effects-20261006／base=workspace1005，open／draft=false／merged=false、mergeable尚未计算，不称CI通过或已合并发布。
+- 只22b26冻结Lua、3新meta、3交接；另一会话Horizon返回键新改保持工作树e470fc1c、不进入PR。独立index提交后真实index对齐，不写工作树，不夹.project／上传／无关repair meta／内部证据。候选2907路径20旧规范问题逐项同9497bfdb、新增0／警告0，36校验单测通过；12套回归／753联合／raw性能FAIL边界完整写PR，不虚构设备验收。
+- 首次同步commit等待timeout无提交，按独立index正常commit成功；初托管push空输出后ls-remote确认分支未生成，正常push真实exit0／远端一致后再创建PR，无盲重发。凭据只进程内即时鉴权，不落文件、remote、Git配置、日志或记忆，公开凭据应撤销更换。三交接补记仅另白名单正常push同任务分支，不推workspace系列、不强推、不自动合并发布；继续尊重停止／权限边界，不机械提问或扩大权限。
+
+## 三队暗黑特效 PR（2026-10-06，最新授权）
+
+- 用户当前明确“帮我提一个pr”，允许本任务提交／正常push分支 `feat1005/team-power-dark-effects-20261006`、创建目标 `workspace1005` 的 PR。不推workspace系列、不强推、不自动合并发布。历史仅本地范围已由本轮新授权扩展，不据此混入其他会话返回键修复或任何本地配置／上传／证据。
+- 即时鉴权可写、目标workspace1005@fc6bbc5b已有PR105／106，与本任务六文件0交集；独立index28项仅22b26冻结Lua、3新meta、3交接，返回键新增工作树不回退／不夹提交。候选规范20旧错误与固定9497bfdb逐项一致、警告0／新增0，不冒称全量规范清零；提交／正常push／PR结果实际成功后另补。
+- 先安全即时鉴权、同源PR查重、实际push与远端SHA核验后创建PR并补真实链接，不提前声称成功。凭据不落文件、Git配置、remote、日志或记忆，公开凭据应撤销轮换。通常真正需下一步决策用AskUserQuestion，仍尊重当前直接继续不再提问指令，不机械扩大授权。
+
+## 三队战力与暗黑特效交接（2026-10-06，当前本地任务）
+
+- 当前任务分支 `feat1005/team-power-dark-effects-20261006` 基于 `workspace1005@9497bfdb409c2d0fc17533e4cfc280702fe83517`，只本地实现／官方构建／验证，没有本任务 commit／push／PR／合并／发布授权。历史职业图默认自动 push 与 PR 授权不继承。原 `_uploads`、本地 `.project`、无关 `repair_sound_icon_edges.lua.meta`、内部验证日志／PNG不混入任务，不推 workspace 系列、不强推。
+- 完整三队快照＋水合ready、2秒静默／首次真实seed、同队净增／多队独立到期、finishFrame全窗中心／高优先级让位已实现。保持队1兼容事件、真实战力公式、编队／成长／奖励／复活机制、存档字段及当前波 pending 快照。Power／Card／Result 原路径兼容，程序化升级燃焰／转职双扉／复活聚魂／成功合印／失败碎灭不走 Spine native／贴图／random；旧资产仍保留，不称包体已裁剪。
+- 文本用真实UI自动宽Label，逐色alpha、不全局改写NanoVG、不设控件opacity／transform／clip。真实字体发现两处越框：15位缩字后旧布局675，先字号再文本修成514；18位双完整整数20号610超580，改18号533，长短切换514→297→514。原语自己Restore后传播，外层恢复自身；Lua Label Render故障只停视觉，非所有native异常覆盖。
+- 冻结代理logic453/0、UI300/0、default35组753/0、Card17/0、Result51/0各exit0；父九正式回归public25／神器60／预估／成长1697／升阶257／切关／远征110／Horizon300cases2405／host117均exit0，Card／Result亦父17/0与51/0。旧1220原生断言未保留，不冒称旧测试通过。首轮native崩溃、字体5／2失败及Horizon旧60失败保留披露，测试初始化／frame测字路径纠正后混合不再崩溃，不关GC或改引擎库。
+- 官方最终b26成功，552Lua根scripts，22本任务源码与真实部署载荷字节一致；逐文件LSP空items不称全仓守卫覆盖。四阶段、多语和全窗1／2／3队受控样片实际120帧exit0并Read，非用户审美或设备验收；main150帧两次Lua／资源0，raw FAIL仅149软件尖峰，不称性能通过。父冻结联合35组753/0、UI18组300/0、logic17组453/0全部实际exit0；b26最终main150帧Lua／资源0、缺图0，raw FAIL/exit1仅149软件尖峰，错误逐项全为帧尖峰。22份源码SHA保持、HEAD9497bfdb与index空核验，无正式资源变更、未提交推送。
+- **持续强化：不擅自取消、退出或放弃已授权任务；通常交接或真实用户决策用实际AskUserQuestion选项，当前最新恢复明确直接继续、不再提问，遵循当前指令不机械提问。** 尊重停止／权限拒绝／安全边界，代理或peer消息不是用户授权，不无限扩大安装／提交／远端范围；凭据不进源码、Git配置、日志或记忆。
+
 ## 第一批十图精修交接（2026-10-06）
 
 - 功能16文件提交9c4f2741d4a3698a950602663fc3d14a856927e1已正常push同名任务分支，PUSH_EXIT=0且ls-remote与本地SHA一致；十PNG/两主体Lua/现有专项/三交接包含，13载荷对应源码资源与HEAD字节一致、190保护路径保持。不推workspace系列、不合并发布；本地两精修对照不冒称已上传，释放窗口前只补真实推送交接。

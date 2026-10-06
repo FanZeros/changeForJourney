@@ -4,6 +4,8 @@ local Store = require("core.PlayerStore")
 local CP = require("ui.character.panel.CharacterPanel")
 local GameState = require("core.GameState")
 local TE = require("systems.TalentEffect")
+local EventBus = require("core.EventBus")
+local GameEvents = require("config.GameEvents")
 local failures, assertions = 0, 0
 local function check(ok, label)
     assertions = assertions + 1
@@ -14,6 +16,21 @@ end
 function Start()
     local ok, err = pcall(function()
         Store.Init()
+        ---@type number[][]
+        local snapshots = {}
+        ---@type number[]
+        local legacy = {}
+        ---@type boolean[]
+        local readyStates = {}
+        EventBus.on(GameEvents.TEAM_POWER_CHANGED, function(data)
+            snapshots[#snapshots + 1] = { data.powers[1], data.powers[2], data.powers[3] }
+            readyStates[#readyStates + 1] = data.ready
+        end)
+        EventBus.on(GameEvents.PLAYER_POWER_CHANGED, function(data)
+            legacy[#legacy + 1] = data.power
+        end)
+        CP.refreshPower()
+        check(readyStates[#readyStates] == false, "开机无英雄数据的快照明确未就绪")
         local heroes = { roster = {}, deployed = { 1, 0, 0, 0 }, teams = {
             { slots = { 1, 0, 0, 0 } }, { slots = { 2, 0, 3, 0 } },
             { slots = { 5, 6, 7, 0 } },
@@ -40,6 +57,27 @@ function Start()
             check(CP.getTotalPower(t) == CP.getTotalPower(), "显式队与活动队总战力同源")
         end
         check(GameState.getPower() == CP.getTotalPower(1), "活动队3时顶栏GameState仍为队1总战力")
+        check(#snapshots > 0, "真实CP刷新发布专用三队快照")
+        check(readyStates[#readyStates] == true, "真实英雄水合后快照才标记就绪")
+        local before = assert(snapshots[#snapshots], "缺三队初始快照")
+        for t = 1, 3 do
+            check(before[t] == CP.getTotalPower(t), "快照队" .. t .. "等于正式缓存总战力")
+        end
+        local oldSnapshotCount, oldLegacyCount = #snapshots, #legacy
+        heroes.roster[2].level = 71
+        Dispatcher.handleStateUpdate(cjson.encode({ modules = { heroes = heroes } }))
+        CP.setHeroesData(Dispatcher.get("heroes"))
+        CP.refreshPower()
+        local after = assert(snapshots[#snapshots], "缺二队成长快照")
+        check(#snapshots > oldSnapshotCount and after[2] > before[2], "仅二队英雄升级也发布二队增长")
+        check(after[1] == before[1] and after[3] == before[3], "二队成长不伪造一三队增长")
+        check(#legacy == oldLegacyCount and GameState.getPower() == before[1],
+            "一队未变时兼容事件不重发且顶栏口径不变")
+        local repeatCount = #snapshots
+        CP.refreshPower()
+        local repeated = assert(snapshots[#snapshots], "缺重复刷新快照")
+        check(#snapshots == repeatCount + 1 and repeated[1] == after[1]
+            and repeated[2] == after[2] and repeated[3] == after[3], "重复刷新完整快照数值不重复增长")
         local slot, team = CP.getHeroDeployPosition(3)
         check(slot == 3 and team == 2, "真实CP公开所属队与真实槽3")
         check(CP.getHeroDeployPosition(8) == nil and CP.getHeroDeployPosition(3, 1) == nil,

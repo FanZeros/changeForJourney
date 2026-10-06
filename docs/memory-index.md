@@ -1,5 +1,11 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+## 三队暗黑特效 PR107（2026-10-06，已创建）
+
+- 正式PR #107：https://github.com/FanZeros/changeForJourney/pull/107，head=`feat1005/team-power-dark-effects-20261006`、base=`workspace1005`；创建源73b7dcc1d62798b88e980487f1dd5a5dfa98e110、目标fc6bbc5bc1f417460ee395cf483b64001f76bc84，返回open、draft=false、merged=false、mergeable未计算，未自动合并发布，不冒称CI通过。
+- 28文件功能提交73b7dcc1已实际正常push，push／ls-remote exit0且源SHA一致、目标fc6bbc5b未被本会话推送。22Lua对b26载荷／冻结SHA一致，3新meta、3交接白名单，不夹另一会话Horizon返回键修复（工作树SHA e470fc1c保持）或.project／上传／无关repair meta／内部证据。候选2907路径20规范旧错误逐项同9497bfdb、警告0／新增0；36校验单测exit0，原12套回归和149帧尖峰raw FAIL等边界在PR完整披露。
+- 首次同步commit等待timeout无提交已查实，改独立index正常commit成功；第一次托管push无输出后核实远端任务分支不存在，改正常push exit0核验成功。无强推、无切换／reset／覆盖工作树、无自动merge目标。凭据只即时进程／API，不写源码、Git配置、remote、日志或记忆；公开凭据应撤销轮换。成功后不重复创建PR，三交接另白名单补推。
+
 ## 三队暗黑特效 PR 授权（2026-10-06）
 
 - 用户最新明确要求“帮我提一个pr”，授权提交／正常push `feat1005/team-power-dark-effects-20261006` 并创建目标 `workspace1005` 的 PR；不自动合并或发布，不推 workspace 系列，不强推。先即时鉴权、查询同源 PR、防重创建，实际结果后补SHA／链接，不提前声称推送或创建成功。

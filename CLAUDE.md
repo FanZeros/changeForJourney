@@ -12,6 +12,12 @@
 4. **分支纪律**：以当前任务授权为准。本轮暗黑特效任务基于 `workspace1005@9497bfdb409c2d0fc17533e4cfc280702fe83517`，任务分支为 `feat1005/team-power-dark-effects-20261006`。用户最新明确提供即时鉴权并要求提 PR，授权提交／正常 push 本任务分支及创建目标 `workspace1005` 的 PR；不混入其他会话返回键改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布，凭据不持久化。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-06，三队暗黑特效 PR107 已创建）
+
+- 用户最新明确“帮我提一个pr”，即时鉴权可写；28白名单文件提交 `73b7dcc1d62798b88e980487f1dd5a5dfa98e110` 已正常push同任务分支，push／ls-remote均exit0、远端SHA与本地一致。正式 **PR #107**：https://github.com/FanZeros/changeForJourney/pull/107，head=`feat1005/team-power-dark-effects-20261006`、base=`workspace1005`；创建源73b7dcc1、目标fc6bbc5b，返回open／draft=false／merged=false／mergeable未计算，不称CI通过或已合并。
+- 22份Lua由b26冻结实际载荷构造，3新meta／3已有交接仅28项；完整回归及性能限制写入PR。另一会话返回键/H_SEAM_BACK修复Horizon e470fc1c保留在本地、未夹进PR，不改其工作树；.project／上传／无关repair meta／内部证据不提交。目标新增PR105／106净六文件与本任务无交集，未自动merge或推目标。候选2907路径规范20旧问题与9497bfdb逐项同集合、警告0／新增0，36校验单测exit0，不称全仓规范清零。
+- 初次同步提交等待timeout后核查HEAD未动、无提交，后按独立index标准commit成功；初次托管push空输出后ls-remote确认无任务分支，随后正常push真实exit0并验证，不把无输出当成功。凭据仅进程内helper／API即时鉴权，不写文件、remote、Git配置或记忆，公开凭据应撤销更换。PR成功后仅白名单交接补记，不重复创建、不自动合并发布。
+
 ## 上次做了什么（2026-10-06，三队战力提示与程序化暗黑特效，本地完成）
 
 - 当前任务 `feat1005/team-power-dark-effects-20261006` 基于9497bfdb；完整三队正式缓存快照＋ready避免冷档误报，提示全窗中心、同队净增／多队独立到期与高优先级让位。队1GameState兼容事件、正式公式、成长／奖励／编队／复活规则、存档字段与当前波pending不改。没有本任务commit／push／PR／合并／发布授权，历史职业图自动push不转用。

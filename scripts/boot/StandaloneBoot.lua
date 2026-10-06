@@ -240,6 +240,28 @@ function M.run(rt)
         TalentPage.init(vg)
         TalentPage.open()
     end)
+    -- 城镇远征小门与第一行 HUD 共用选关页；延迟执行时重新检查遮挡与终焉。
+    local StageSelectDialog = require("ui.battle.stage.StageSelectDialog")
+    local BattleRewardOverlay = require("boot.BattleRewardOverlay")
+    local function expeditionEntryBlocked()
+        return BattleTriPage.isTerminalRaidActive() or BottomNav.isAllLocked()
+            or BottomNav.isTabLocked(3) or BattleRewardOverlay.isBlocked() or RewardPopup.isOpen()
+            or BackpackPanel.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
+            or MarketPage.isOpen() or LootBoxPage.isOpen() or TaskPage.isOpen()
+            or require("ui.church.talent.TalentPage").isOpen()
+            or require("ui.character.equip.EquipmentDetail").isOpen()
+            or require("ui.character.hero.HeroRosterPanel").isVisible()
+            or require("ui.dev.CEPanel").isOpen() or require("systems.TutorialManager").isActive()
+    end
+    TownScene.setOnExpeditionClick(function()
+        if expeditionEntryBlocked() then return end
+        if not BattleTriPage.isOpen() then BattleTriPage.open() end
+        -- open() 无成功返回值；未就绪或接管终焉时不切 tab、不打开选关。
+        if not BattleTriPage.isOpen() or expeditionEntryBlocked() then return end
+        if BottomNav.getSelectedIndex() ~= 3 then BottomNav.setSelectedIndex(3) end
+        if BottomNav.getSelectedIndex() ~= 3 then return end
+        StageSelectDialog.open(1)
+    end)
     -- 5.16 城镇酒馆点击 → 打开酒馆界面
     TownScene.setOnTavernClick(function()
         TavernPage.init(vg)

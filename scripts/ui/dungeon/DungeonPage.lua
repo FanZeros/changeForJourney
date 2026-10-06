@@ -33,9 +33,10 @@ local PENDING_TIMEOUT = 5.0     -- 5秒无响应自动重置
 -- ======================== 图片句柄 ========================
 
 local imgTopPattern  = -1   -- UI_FB_BJ.png    顶部花纹
-local imgCard1       = -1   -- UI_FBRK_1.png   副本卡片背景（金币矿洞）
-local imgCard2       = -1   -- UI_FBRK_2.png   副本卡片背景（上古遗迹）
-local imgCard3       = -1   -- UI_FBRK_3.png   副本卡片背景（通天塔）
+local imgCard1       = -1   -- 金币副本背景
+local imgCard2       = -1   -- 装备副本背景
+local imgCard3       = -1   -- 黑钻副本背景
+local imgCard4       = -1   -- 通天塔独立背景
 local imgGold        = -1   -- UI_icon_JB_X.png 金币图标
 local imgGem         = -1   -- UI_icon_SJ_X.png 宝石图标
 local imgDust        = -1   -- UI_icon_ASFC.png 奥术尘图标
@@ -256,7 +257,7 @@ for _, id in ipairs(DungeonConfig.RESOURCE_IDS) do
 end
 dungeonList[#dungeonList + 1] = {
     id = "babel_tower", name = "通天塔", titleColor = { 255, 215, 0 },
-    cardImage = "image/界面底板/副本秘境/UI_FBRK_3.png",
+    cardImage = "image/战斗背景/通天塔.png",
     rewards = { { type = "diamond", icon = "image/货币道具/UI_icon_SJ_X.png", quality = 5, label = "黑晶" } },
 }
 
@@ -405,11 +406,19 @@ local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
     nvgFill(vg)
 end
 
---- 左上角定位绘制图片
-local function drawImageTopLeft(vg, img, x, y, w, h, alpha)
+--- 左上角定位绘图；仅新副本横图启用 cover，旧图片保持原缩放。
+local function drawImageTopLeft(vg, img, x, y, w, h, alpha, cover)
     if img < 0 then return end
     alpha = alpha or 1.0
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
+    local px, py, pw, ph = x, y, w, h
+    if cover then
+        local iw, ih = nvgImageSize(vg, img)
+        if iw <= 0 or ih <= 0 then return end
+        local scale = math.max(w / iw, h / ih)
+        pw, ph = iw * scale, ih * scale
+        px, py = x + (w - pw) * 0.5, y + (h - ph) * 0.5
+    end
+    local paint = nvgImagePattern(vg, px, py, pw, ph, 0, img, alpha)
     ---@cast paint NVGpaint
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
@@ -557,9 +566,10 @@ function DungeonPage.init(vg)
     dungeonInited_ = true
     dungeonVg_ = vg
     imgTopPattern = nvgCreateImage(vg, "image/界面底板/副本秘境/UI_FB_BJ.png", 0)
-    imgCard1      = nvgCreateImage(vg, "image/界面底板/副本秘境/UI_FBRK_1.png", 0)
-    imgCard2      = nvgCreateImage(vg, "image/界面底板/副本秘境/UI_FBRK_2.png", 0)
-    imgCard3      = nvgCreateImage(vg, "image/界面底板/副本秘境/UI_FBRK_3.png", 0)
+    imgCard1      = nvgCreateImage(vg, DungeonConfig.DEFINITIONS.gold_mine.cardImage, 0)
+    imgCard2      = nvgCreateImage(vg, DungeonConfig.DEFINITIONS.equipment_vault.cardImage, 0)
+    imgCard3      = nvgCreateImage(vg, DungeonConfig.DEFINITIONS.black_diamond.cardImage, 0)
+    imgCard4      = nvgCreateImage(vg, "image/战斗背景/通天塔.png", 0)
     imgGold       = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     imgGem        = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
     imgDust       = nvgCreateImage(vg, "image/货币道具/UI_icon_ASFC.png", 0)
@@ -609,7 +619,7 @@ function DungeonPage.draw(vg)
     end
 
     -- 6. 副本卡片（循环绘制所有副本）
-    local cardImages = { imgCard1, imgCard2, imgCard3, imgCard3 }
+    local cardImages = { imgCard1, imgCard2, imgCard3, imgCard4 }
 
     for cardIdx, dungeon in ipairs(dungeonList) do
         local cardCX, cardCY, cardScale = cardRect(cardIdx)
@@ -632,7 +642,7 @@ function DungeonPage.draw(vg)
         nvgTranslate(vg, -sourceCX, -CARD_Y)
         nvgIntersectScissor(vg, CARD_X, cardY, CARD_W, CARD_H)
         local cardImg = cardImages[cardIdx] or imgCard1
-        drawImageTopLeft(vg, cardImg, CARD_X, cardY, CARD_W, CARD_H, 1.0)
+        drawImageTopLeft(vg, cardImg, CARD_X, cardY, CARD_W, CARD_H, 1.0, true)
 
         -- 解锁判断
         local unlocked, lockText = isDungeonUnlocked(dungeon.id)

@@ -28,6 +28,7 @@ local TownScene = {}
 
 local imgChurch   = -1   -- 教堂建筑
 local imgTree     = -1   -- 终焉古树（天赋入口）
+local imgExpedition = -1 -- 远征小门（独立透明立绘，名牌可作缺图降级）
 local imgTavern   = -1   -- 酒馆建筑
 local imgMarket   = -1   -- 市场建筑
 local imgWarehouse = -1  -- 仓库建筑（背包入口）
@@ -85,6 +86,12 @@ local TREE_ICON_CX, TREE_ICON_CY = 450, 1229
 local TREE_ICON_SZ = 64
 local TREE_TEXT_X,  TREE_TEXT_Y  = 585, 1229
 
+-- 远征小门：480×600 透明图按 0.4 等比缩小；统一热区覆盖门与文字小牌。
+-- 古树名牌底 1291.5 < 热区顶 1310；热区右 630 < 酒馆热区左 633.5。
+local EXPEDITION_CX, EXPEDITION_CY, EXPEDITION_W, EXPEDITION_H = 520, 1440, 192, 240
+local EXPEDITION_LBL_CX, EXPEDITION_LBL_CY, EXPEDITION_LBL_W, EXPEDITION_LBL_H = 520, 1610, 220, 80
+local EXPEDITION_HIT_CX, EXPEDITION_HIT_CY, EXPEDITION_HIT_W, EXPEDITION_HIT_H = 520, 1480, 220, 340
+local EXPEDITION_IMAGE_PATH = "image/城镇建筑/UI_CZ_EXPEDITION_GATE.png"
 
 -- ---- 下方建筑 ----
 
@@ -167,10 +174,16 @@ end
 --- 延迟回调队列：点击动画播放一段后再触发页面打开
 local CLICK_CALLBACK_DELAY = 0.15  -- 回调延迟（秒），让闪白+缩放可见
 local deferredActions = {}         -- { { fireAt=number, fn=function }, ... }
+---@type fun()|nil
+local onExpeditionClick = nil
+local expeditionPending = false
+local expeditionCallbackVersion = 0 -- setter/取消队列后，旧延迟闭包不得调用新绑定
 
 --- 引导换步接管页面时，取消尚未执行的旧建筑打开回调，避免延迟重开覆盖目标。
 function TownScene.cancelPendingPageOpen()
     deferredActions = {}
+    expeditionPending = false
+    expeditionCallbackVersion = expeditionCallbackVersion + 1
 end
 
 local function deferAction(delay, fn)
@@ -428,6 +441,12 @@ local function ensureTownImages(vg)
     imgIconSmith   = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_TJP.png", 0)
     imgChurch      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JT.png", 0)
     imgTree        = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_TREE.png", 0)
+    imgExpedition  = nvgCreateImage(ctx, EXPEDITION_IMAGE_PATH, 0) or -1
+    if imgExpedition >= 0 then
+        print("[TownScene] 远征门加载并缓存 -> " .. EXPEDITION_IMAGE_PATH .. " (" .. imgExpedition .. ")")
+    else
+        print("[TownScene] 远征门加载失败 -> " .. EXPEDITION_IMAGE_PATH .. "，保留远征名牌入口")
+    end
     imgTavern      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JG.png", 0)
     imgMarket      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_SJ.png", 0)
     imgWarehouse   = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_TJP.png", 0)
@@ -520,6 +539,21 @@ function TownScene.draw(vg)
         _TM.registerHotspot("talent_toggle", TREE_CX, TREE_CY, TREE_W, TREE_H, "left")
         _TM.registerHotspot("building_tree", TREE_CX, TREE_CY, TREE_W, TREE_H, "left")
     end
+
+    -- 远征小门：沿用城镇设计坐标与按压缩小，门/名牌不超出统一热区。
+    local expeditionFeedback = BF.begin(vg, "town_expedition",
+        EXPEDITION_HIT_CX, EXPEDITION_HIT_CY, EXPEDITION_HIT_W, EXPEDITION_HIT_H)
+    if imgExpedition >= 0 then
+        drawImageDarkTint(vg, imgExpedition, EXPEDITION_CX, EXPEDITION_CY, EXPEDITION_W, EXPEDITION_H, 1.0)
+        drawFlashOverlay(vg, imgExpedition, EXPEDITION_CX, EXPEDITION_CY, EXPEDITION_W, EXPEDITION_H,
+            getClickFlashAlpha("expedition"))
+    end
+    DarkIcon.drawNine(vg, "plain", EXPEDITION_LBL_CX - EXPEDITION_LBL_W * 0.5,
+        EXPEDITION_LBL_CY - EXPEDITION_LBL_H * 0.5, EXPEDITION_LBL_W, EXPEDITION_LBL_H)
+    drawTextStroke(vg, EXPEDITION_LBL_CX, EXPEDITION_LBL_CY, "远征",
+        LABEL_FONT_SIZE, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        255, 255, 255, LABEL_STROKE_WIDTH)
+    BF.finish(vg, expeditionFeedback)
 
     -- ---- 下方建筑 ----
 
@@ -660,6 +694,14 @@ function TownScene.setOnTreeClick(fn)
     onTreeClick = fn
 end
 
+--- 回调：点击远征小门；换绑/解绑后旧延迟回调失效，不影响其他建筑。
+---@param fn fun()|nil
+function TownScene.setOnExpeditionClick(fn)
+    onExpeditionClick = fn
+    expeditionPending = false
+    expeditionCallbackVersion = expeditionCallbackVersion + 1
+end
+
 --- 回调：点击酒馆
 local onTavernClick = nil
 
@@ -695,6 +737,24 @@ function TownScene.setOnTaskClick(fn)
 end
 
 function TownScene.handleInput(dx, dy)
+    -- 仅由宿主既有左栏点击链进入；二级页/模态先消费，不注册独立输入事件。
+    if math.abs(dx - EXPEDITION_HIT_CX) <= EXPEDITION_HIT_W * 0.5
+        and math.abs(dy - EXPEDITION_HIT_CY) <= EXPEDITION_HIT_H * 0.5 then
+        if expeditionPending then return true end
+        BF.trigger("town_expedition")
+        triggerClickAnim("expedition")
+        if onExpeditionClick then
+            expeditionPending = true
+            local version = expeditionCallbackVersion
+            deferAction(CLICK_CALLBACK_DELAY, function()
+                if version ~= expeditionCallbackVersion then return end
+                expeditionPending = false
+                local callback = onExpeditionClick
+                if callback then callback() end
+            end)
+        end
+        return true
+    end
     -- 整个地点含名牌与收益文字；不再保留左下角全局箱子热区。
     if math.abs(dx - LOOT_HIT_CX) <= LOOT_HIT_W * 0.5
         and math.abs(dy - LOOT_HIT_CY) <= LOOT_HIT_H * 0.5 then

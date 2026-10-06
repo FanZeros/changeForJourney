@@ -372,22 +372,25 @@ end
 --- [三队并行] 中缝返回键列表：左页‹（左框柱）/ 详情›（右框柱），两级二级页可同时存在
 --- 各占一个框柱位，互不竞争（此前 if/else 单按钮，左右同开时只能活一个）
 --- [锻炉双页 0929] 锻炉页移中栏：其返回条挂在锻炉右缘（中栏右分界线），三行/非三行都绘制
--- 与绘制层级共用：全窗覆盖期间不显示、也不命中下层返回条。
-local function seamInputBlocked()
+-- 获得/提示框只阻断下层返回操作，不隐藏返回条；完整场景覆盖仍同时隐藏并阻断。
+---@param forDraw boolean?
+local function seamInputBlocked(forDraw)
     return not bootReady_() or CEPanel.isOpen() or HeroRosterPanel.isVisible()
-        or PlayerInfoPanel.isOpen() or OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen()
-        or UpdateNoticePopup.isOpen() or DarkTitleScreen.isOpen() or StartScreen.isOpen()
+        or DarkTitleScreen.isOpen() or StartScreen.isOpen()
         or LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()
         or TutorialManager.isActive() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive()
         or BottomNav.getSelectedIndex() == 5
-        or (RewardPopup.isOpen() and not RewardPopup.currentRowTag())
-        or SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
-        or TerminalConfirmDialog.isOpen()
+        or (not forDraw and (PlayerInfoPanel.isOpen() or OfflineRewardPanel.isOpen()
+            or LevelUpPopup.isOpen() or UpdateNoticePopup.isOpen()
+            or (RewardPopup.isOpen() and not RewardPopup.currentRowTag())
+            or SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
+            or TerminalConfirmDialog.isOpen()))
 end
 
-local function seamBackList()
+---@param forDraw boolean?
+local function seamBackList(forDraw)
     local list = {}
-    if seamInputBlocked() then return list end
+    if seamInputBlocked(forDraw) then return list end
     local tri = BattleTriPage.isOpen()
     local psL = tri and (logicalH() / 1080) or H_s
     local cs = psL * Viewport.DS
@@ -723,7 +726,7 @@ function HandleNanoVGRenderHorizon()
         end
         -- 背包上层补画后再压暗侧栏，保持全局弹窗的遮罩在背包之上。
         HorizonDimSidePanels()
-        for _, seamBtn in ipairs(seamBackList()) do
+        for _, seamBtn in ipairs(seamBackList(true)) do
             DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, seamBtn.top + seamBtn.sh * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
         end
@@ -849,7 +852,7 @@ function HandleNanoVGRenderHorizon()
         end
         drawWideTalentPage(0, 0, logicalH() / 1080)
         -- [三队并行] 中缝返回条（窗口坐标，页面视口之外）：全高门柱边条，左页‹ / 详情›，两级并存各自绘制
-        for _, seamBtn in ipairs(seamBackList()) do
+        for _, seamBtn in ipairs(seamBackList(true)) do
             DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, seamBtn.top + seamBtn.sh * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
         end

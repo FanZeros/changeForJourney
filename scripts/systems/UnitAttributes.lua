@@ -612,6 +612,8 @@ function UnitAttributes:toBattleUnit(name, level)
         hp          = self.final[AD.HP],
         maxHp       = self.final[AD.MAX_HP],
         atkProgress = 0.0,
+        atkType     = self.atkType,
+        armorType   = self.armorType,
         attrs       = self,   -- 引用完整属性，战斗系统可直接访问
     }
 end

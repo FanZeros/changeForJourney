@@ -63,8 +63,8 @@ AffixConfig.AFFIXES = {
     { id = 29, key = "magDmgBonus",   dataType = "pct",   baseValue = 3.3,   weight = 100, name = "魔法伤害加成" },
     { id = 30, key = "comboRate",     dataType = "pct",   baseValue = 3.3,   weight = 100, name = "连击概率" },
     { id = 31, key = "comboDmgUp",    dataType = "pct",   baseValue = 1.7,   weight = 100, name = "连击增伤" },
-    { id = 32, key = "maxDmgBonus",   dataType = "pct",   baseValue = 8.3,   weight = 100, name = "最大伤害加成" },
-    { id = 33, key = "minDmgBonus",   dataType = "pct",   baseValue = 10.0,  weight = 100, name = "最小伤害加成" },
+    { id = 32, key = "maxDmgBonus",   dataType = "pct",   baseValue = 8.3,   weight = 100, name = "优势伤害" },
+    { id = 33, key = "minDmgBonus",   dataType = "pct",   baseValue = 10.0,  weight = 100, name = "劣势伤害" },
     { id = 34, key = "hitValue",      dataType = "float", baseValue = 1.25,  weight = 100, name = "命中值" },
 
    -- 治疗属性

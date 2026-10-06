@@ -351,7 +351,7 @@ local function calcTalentFixedDamage(attacker, target, baseDmg, opts)
     opts = opts or {}
     if not attacker.attrs or not target.attrs or baseDmg <= 0 then return 0, false end
 
-    local atkType = opts.atkType or attacker.atkType or AD.ATK_SLASH
+    local atkType = opts.atkType or attacker.attrs.atkType or attacker.atkType or AD.ATK_SLASH
     local category = AD.getAtkCategory(atkType)
 
     local dmgBonusPct = attacker.attrs:get(AD.DMG_BONUS)
@@ -396,7 +396,7 @@ local function calcTalentFixedDamage(attacker, target, baseDmg, opts)
     -- 与普攻一致：仅专属觉醒解锁溢出转换，forceCrit 不绕过觉醒门控。
     critRate, critDmg = CF.applyCritOverflow(critRate, critDmg, attacker.attrs)
 
-    local armorType = target.armorType or AD.ARMOR_LEATHER
+    local armorType = target.attrs.armorType or target.armorType or AD.ARMOR_LEATHER
     local resistance = 0
     local penBonus = 1.0
     if not opts.ignoreArmor then
@@ -426,7 +426,9 @@ local function calcTalentFixedDamage(attacker, target, baseDmg, opts)
     end
     local typeMult = AD.getTypeMult(atkType, armorType)
 
-    local dmg = baseDmg * (1 + dmgBonusPct / 100)
+    -- 固定伤害独立按目标克制增幅；基于已结算伤害的复制效果不经过这里。
+    local matchupMult = CF.getMatchupDamageMult(attacker.attrs, typeMult)
+    local dmg = baseDmg * (1 + dmgBonusPct / 100) * matchupMult
     local isCrit = false
     if opts.forceCrit then
         isCrit = true

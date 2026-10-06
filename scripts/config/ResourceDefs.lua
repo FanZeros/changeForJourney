@@ -37,6 +37,15 @@ ResourceDefs.DEFS = {
     sacred_stone      = { iconPath = "image/货币道具/UI_icon_SSS.png",    quality = 6, name = "神圣石" },
 }
 
+--- 洗练材料使用说明；按当前锻炉规则展示，不根据遗留资源 key 推断用途。
+ResourceDefs.DEFS.essence.desc = "用于普通洗练，重新随机未锁定的普通词缀；锁定词缀和魔化词条保持不变。\n消耗随装备品质、等级和锁定数量变化，双手装备费用翻倍；腐化装备的精粹费用再翻倍。\n洗练后需点击「替换」应用结果。"
+ResourceDefs.DEFS.enhance_star.desc = "保留词缀种类，重新随机未锁定词缀的品级与数值；若新数值更低，保留原词缀。锁定词缀和魔化词条不变。\n每次消耗1颗，不消耗精粹。\n洗练后需点击「替换」应用结果。"
+ResourceDefs.DEFS.break_protect.desc = "提升装备品质1级，保留原词缀；增加词缀槽位时补充新词缀。\n达到当前进度的品质上限后，改为随机提升一条普通词缀的品级1级，最高S品。\n消耗颗数等于装备当前品质编号，不消耗精粹，结果直接生效。"
+ResourceDefs.DEFS.corrupt_stone.desc = "随机将一条可转换的普通词缀变为对应魔化词条并强化数值，同时增加1层腐化，最多3层。\n每层腐化使装备基础属性乘以90%；腐化后普通洗练的精粹费用翻倍。\n每次消耗1颗，不消耗精粹，结果直接生效。"
+ResourceDefs.DEFS.sacred_stone.desc = "用于已腐化装备，洗除最上层腐化，恢复该层损失的基础属性，并还原该层转换的词缀。旧版腐化记录可能一次清除全部层数。\n每次消耗1颗，不消耗精粹，不增加洗练次数，结果直接生效。"
+ResourceDefs.DEFS.refine_stone.desc = ResourceDefs.DEFS.enhance_star.desc
+ResourceDefs.DEFS.gold_stone.desc = ResourceDefs.DEFS.break_protect.desc
+
 --- 数字 ID（来自资源配置表序号）→ snake_case type 映射
 --- GMConsolePanel / 奖励字符串解析使用
 ResourceDefs.ID_TO_TYPE = {

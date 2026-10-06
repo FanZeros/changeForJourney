@@ -19,6 +19,8 @@ local GameState         = require("core.GameState")
 local I18n              = require("core.I18n")
 local BF                = require("systems.ButtonFeedback")
 local ResourceList      = require("ui.battle.stage.StageSelectResources")
+local ExpeditionOverview = require("ui.battle.stage.ExpeditionOverview")
+local ET                = require("config.ExpTable")
 local RewardPreview     = require("ui.battle.stage.StageSelectRewardPreview")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
@@ -193,6 +195,9 @@ local imgAct = -1
 local imgLock = -1
 
 local state = {
+    view      = "selector",
+    fromOverview = false,
+    targetTeam = 1,
     section   = "main",
     sectionPositions = {}, ---@type table<string, table> 各分类保留选中章与滚动位置
     open      = false,
@@ -724,10 +729,17 @@ function StageSelectDialog.init(vg)
         TAB_Y, TAB_W, TAB_H, MAIN_TAB_X, DUNGEON_TAB_X, D.CH_Y0, D.ROW_Y0))
 end
 
----@param teamIdx number|nil 多队战斗行号；大于 1 时确认后切该队自己的关卡
-function StageSelectDialog.open(teamIdx)
-    if state.open then return end
-    state.open     = true
+local function teamSelectionAllowed(teamIdx)
+    local Tri = require("ui.battle.tri.BattleTriPage")
+    local Nav = require("ui.hud.BottomNav")
+    return not Tri.isTerminalRaidActive() and not Nav.isAllLocked() and not Nav.isTabLocked(3)
+        and not require("ui.dungeon.DungeonBattleScene").isOpen()
+        and not require("ui.tower.TowerBattleScene").isActive()
+        and teamIdx >= 1 and teamIdx <= ET.getUnlockedTeamCount(require("runtime.ClientDispatcher").get("battle"))
+end
+
+local function locateTeam(teamIdx)
+    state.view = "selector"
     state.openTime = time.elapsedTime
     state.chDragY = nil
     state.chDragMoved = false
@@ -737,15 +749,55 @@ function StageSelectDialog.open(teamIdx)
     local curStage = currentStageId()
     local isDungeon = curStage and (ResourceList.isTowerStage(curStage) or SC.isResourceStage(curStage))
     state.section = isDungeon and "dungeon" or "main"
-    -- 资源队伍自动打开所属副本，并将完整层号滚入可视区；终焉仍定位独立章。
     local groups = currentGroups()
     locateGroup(groups, stageGroupKey(curStage), curStage)
 end
 
+---@param teamIdx number|nil 多队战斗行号；行 HUD 保持直接进入该队选关。
+function StageSelectDialog.open(teamIdx)
+    if state.open then return end
+    local team = math.tointeger(tonumber(teamIdx) or 1)
+    if not team or not teamSelectionAllowed(team) then return end
+    state.open = true
+    state.fromOverview = false
+    locateTeam(team)
+end
+
+function StageSelectDialog.openOverview()
+    if state.open or not teamSelectionAllowed(1) then return end
+    state.open = true
+    state.view = "overview"
+    state.fromOverview = true
+    state.openTime = time.elapsedTime
+    state.chDragY, state.chDragMoved = nil, false
+    resetCardScroll()
+    ExpeditionOverview.open(require("ui.character.panel.CharacterPanel").getActiveTeamIdx())
+end
+
+function StageSelectDialog.showTeam(teamIdx)
+    local team = math.tointeger(tonumber(teamIdx) or 0)
+    if not state.open or not team or not teamSelectionAllowed(team) then return false end
+    state.fromOverview = state.fromOverview or state.view == "overview"
+    locateTeam(team)
+    return true
+end
+
+function StageSelectDialog.backToOverview()
+    if not state.open then return end
+    state.view = "overview"
+    state.fromOverview = true
+    state.openTime = time.elapsedTime
+    state.chDragY, state.chDragMoved = nil, false
+    resetCardScroll()
+    ExpeditionOverview.open(state.targetTeam)
+end
+
 -- 旧副本导航也只打开同一张关卡选择表，不再进入次数/挑战详情。
 function StageSelectDialog.openDungeon(teamIdx, dungeonId)
-    StageSelectDialog.open(teamIdx or 1)
-    state.targetTeam = teamIdx or state.targetTeam or 1
+    local team = math.tointeger(tonumber(teamIdx) or state.targetTeam or 1)
+    if not team or not teamSelectionAllowed(team) then return end
+    if not state.open then StageSelectDialog.open(team)
+    else locateTeam(team) end
     switchSection("dungeon")
     local groups = currentGroups()
     local targetId = currentStageId()
@@ -792,6 +844,8 @@ end
 
 function StageSelectDialog.close()
     state.open = false
+    state.view = "selector"
+    state.fromOverview = false
     state.chDragY = nil
     state.chDragMoved = false
     resetCardScroll()
@@ -811,6 +865,7 @@ end
 
 function StageSelectDialog.handleScroll(wheel, x, y)
     if not state.open then return false end
+    if state.view == "overview" then return true end
     local groups = currentGroups()
     local top, bottom = chapterListBounds(groups)
     -- 覆盖整列章节和上下箭头，不要求正好落在按钮高度内。
@@ -831,6 +886,7 @@ end
 
 function StageSelectDialog.handleDragBegin(x, y)
     if not state.open then return false end
+    if state.view == "overview" then ExpeditionOverview.handleDragBegin(x, y) return true end
     state.chDragY = nil
     state.chDragMoved = false
     state.rowDragKey = nil
@@ -861,6 +917,7 @@ end
 
 function StageSelectDialog.handleDragMove(x, y)
     if not state.open then return false end
+    if state.view == "overview" then ExpeditionOverview.handleDragMove(x, y) return true end
     if state.chDragY then
         local delta = state.chDragY - y
         if math.abs(delta) >= 15 then state.chDragMoved = true end
@@ -932,6 +989,7 @@ function StageSelectDialog.draw(vg)
     if not state.open then return end
     local scale = getAnimScale()
     if scale <= 0.01 then return end
+    if state.view == "overview" then ExpeditionOverview.draw(vg, scale) return end
 
     local groups, maxOrder = currentGroups()
     local sel = selectedGroup(groups)
@@ -950,11 +1008,18 @@ function StageSelectDialog.draw(vg)
             D.BG_W, D.BG_H, D.BG_IT, D.BG_IR, D.BG_IB, D.BG_IL)
     end
 
-    drawTextStroke(vg, D.BG_CX, D.TT_Y, "选择关卡",
+    drawTextStroke(vg, D.BG_CX, D.TT_Y, "队伍 " .. state.targetTeam .. " · 选择关卡",
         D.TT_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, D.TT_SW,
         { strokeColor = { D.TT_SR, D.TT_SG, D.TT_SB } })
 
+    if state.fromOverview then
+        DarkIcon.drawNine(vg, "btn", 95, 701, 145, 54)
+        drawTextStroke(vg, 167.5, 728, "‹ 收益概览", 24,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 240, 199, 94, 2)
+    end
+
+    -- 顶部分类不挪动主线章节、敌人及既有滚动热区。
     -- 顶部分类与章节列表整体下移一点，按钮组在左栏仍水平居中；右侧关卡及敌人区不动。
     for _, tab in ipairs({ { x = MAIN_TAB_X, key = "main", text = "主线" },
         { x = DUNGEON_TAB_X, key = "dungeon", text = "副本" } }) do
@@ -1283,11 +1348,21 @@ end
 ---@return boolean
 function StageSelectDialog.handleInput(x, y)
     if not state.open then return false end
+    if state.view == "overview" then
+        local action, team = ExpeditionOverview.handleInput(x, y)
+        if action == "close" then StageSelectDialog.close()
+        elseif action == "team" then StageSelectDialog.showTeam(team) end
+        return true
+    end
 
     local groups, maxOrder = currentGroups()
     if state.chDragMoved or state.cardDragMoved then
         state.chDragMoved = false
         state.cardDragMoved = false
+        return true
+    end
+    if state.fromOverview and hitTestRect(x, y, 167.5, 728, 145, 54) then
+        StageSelectDialog.backToOverview()
         return true
     end
     if hitTestRect(x, y, MAIN_TAB_X, TAB_Y, TAB_W, TAB_H)
@@ -1337,6 +1412,7 @@ function StageSelectDialog.handleInput(x, y)
     local id = rowAt(sel, x, y)
     if id then
         BF.trigger("stage_sel_cell")
+        if not teamSelectionAllowed(state.targetTeam) then return true end
         if stageLocked(id, maxOrder) then return true end
         if ResourceList.isTowerStage(id) then
             local entry = ResourceList.getStageEntry(id)

@@ -975,8 +975,22 @@ local function performAttack(attacker, targetList, isAlly)
         atkCX, atkCY = getCardPos(allyList, math.max(1, math.ceil(#allyList / 2)))
     end
 
-    -- 累计总伤害（用于统一计算攻击吸血�?
-    local totalDmgDealt = 0
+    -- 多目标/穿透弹共享一次攻击回血机会；只在真实落地并扣除 HP 后消费。
+    local atkHealTriggered = false
+    local function healAfterPrimaryHit(actualDamage)
+        if atkHealTriggered or actualDamage <= 0 then return end
+        atkHealTriggered = true
+        if attacker.hp <= 0 or not attacker.attrs or not ART.canHeal(attacker) then return end
+        local atkHeal = CF.calcAtkHeal(attacker.attrs)
+        if atkHeal > 0 then
+            local healActual = attacker.attrs:heal(atkHeal)
+            syncUnitHp(attacker)
+            if healActual > 0 then
+                local aCX, aCY = getCardPos(allyList, atkIdx or math.max(1, math.ceil(#allyList / 2)))
+                addFloatingText("+" .. NumberUtil.format(math.floor(healActual)), aCX, aCY, { 0, 255, 82 }, false)
+            end
+        end
+    end
 
     -- 多目标攻击：基础攻击仇恨每次出手只计算一次，伤害仇恨仍按每个目标分别计算
     local baseThreatCounted = false
@@ -1294,6 +1308,7 @@ local function performAttack(attacker, targetList, isAlly)
                         local takenForStats = actual + math.max(0, shieldBefore - shieldAfter)
                         ART.checkShieldBreak(curTgt, shieldBefore)
                         syncUnitHp(curTgt)
+                        healAfterPrimaryHit(actual)
 
                         -- 地图词缀钩子：怪物攻击命中己方 → 蚀甲叠层；己方攻击命中怪物 → 濒死检测
                         if not isAlly then
@@ -1402,7 +1417,6 @@ local function performAttack(attacker, targetList, isAlly)
                             end
                         end
 
-                        totalDmgDealt = totalDmgDealt + result.totalDamage
                         -- 累计伤害统计（结算面板用�?
                         BCS.unitDamageAccum[attacker] = (BCS.unitDamageAccum[attacker] or 0) + takenForStats
 
@@ -1547,20 +1561,6 @@ local function performAttack(attacker, targetList, isAlly)
     -- [单发穿透] 目标收集完毕 → 发射一发穿透弹（无收集/无宿主支持时各目标已走原路径）
     if piercePack and #piercePack.events > 0 then
         BCS.ctx.onPierceAttack(attacker, atkCX, atkCY, piercePack)
-    end
-
-    -- 攻击吸血（所有目标伤害合计后统一计算一次）
-    if totalDmgDealt > 0 and attacker.hp > 0 and attacker.attrs and ART.canHeal(attacker) then
-        local atkHeal = CF.calcAtkHeal(attacker.attrs)
-        if atkHeal > 0 then
-            local healActual = attacker.attrs:heal(atkHeal)
-            syncUnitHp(attacker)
-            if healActual > 0 then
-                -- 直接复用上方 resolveUnitInList 返回�?atkIdx
-                local aCX, aCY = getCardPos(allyList, atkIdx or math.max(1, math.ceil(#allyList / 2)))
-                addFloatingText("+" .. NumberUtil.format(math.floor(healActual)), aCX, aCY, { 0, 255, 82 }, false)
-            end
-        end
     end
 
     _perfAtkDepth = _perfAtkDepth - 1

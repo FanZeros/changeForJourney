@@ -53,6 +53,7 @@ local GameSFX           = require("systems.GameSFX")
 local RewardCascade     = require("ui.widget.RewardCascade")
 local BattleRewardQueue = require("ui.widget.BattleRewardQueue")
 local HeroFrame = require("ui.widget.HeroFrame")
+local ResultRepeatFooter = require("ui.widget.ResultRepeatFooter")
 
 local RewardPopup = {}
 
@@ -158,6 +159,8 @@ local state = {
     sfxPlayed   = 0,
     -- 物品点击回调
     onItemClick = nil,    -- function(item, index) 点击某个物品时触发
+    repeatDraw = nil,     ---@type table|nil { getCost(count), onContinue(count) } 主动开箱结果
+    repeatAfterClose = nil, ---@type fun()|nil 仅明确点击继续后执行一次
     battleHoldStart = nil, -- 逐件动画结束后，开始累计无遮挡的战斗展示停留时间
 }
 
@@ -381,17 +384,7 @@ local cachedVg = nil
 
 -- ======================== 工具函数 ========================
 
-local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
-    if img < 0 or alpha <= 0.01 then return end
-    local x = cx - w * 0.5
-    local y = cy - h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
-    ---@cast paint NVGpaint
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y, w, h)
-    nvgFillPaint(vg, paint)
-    nvgFill(vg)
-end
+local drawImageCentered = DrawUtil.drawImageCentered
 
 local function clampScroll()
     state.scrollY = math.max(0, math.min(state.scrollMax, state.scrollY))
@@ -420,15 +413,9 @@ local function getHeroIcon(heroId)
     return img
 end
 
---- 获取装备图标（委托 ImageCache 共享缓存）
-local function getEquipIcon(templateId)
-    return ImageCache.getEquipIcon(templateId)
-end
-
---- 获取品质背景框（委托 ImageCache 共享缓存）
-local function getQualityBg(quality)
-    return ImageCache.getQualityBg(quality)
-end
+-- 装备图标/品质框复用共享缓存。
+local getEquipIcon = ImageCache.getEquipIcon
+local getQualityBg = ImageCache.getQualityBg
 
 --- 获取格子中心坐标（含不足两行时的垂直居中偏移）
 local function getCellCenter(row, col)
@@ -536,6 +523,10 @@ local function showNow(title, rewards, opts)
     state.followScroll = false
     state.onItemClick = opts and opts.onItemClick or nil
     state.onClose     = opts and opts.onClose     or nil
+    state.repeatDraw = opts and not opts.row and opts.repeatDraw or nil
+    if state.repeatDraw and (type(state.repeatDraw.getCost) ~= "function"
+        or type(state.repeatDraw.onContinue) ~= "function") then state.repeatDraw = nil end
+    state.repeatAfterClose = nil
     state.battleHoldStart = nil
     -- 跟随触发面板：显式 opts.panel 优先，否则取横屏当前焦点面板（全局 H_focusPanel）
     state.panel = (opts and opts.panel) or (H_focusPanel or nil)
@@ -697,7 +688,9 @@ function RewardPopup.hitPanel(dx, dy)
     if not state.open then return false end
     dx = invLayoutX(dx)
     dy = invLayoutY(dy)
-    local bottom = math.max(PANEL_CY + PANEL_H * 0.5, HINT_CY + HINT_FONT)
+    local bottom = math.max(PANEL_CY + PANEL_H * 0.5
+        + (state.repeatDraw and ResultRepeatFooter.EXTRA_HEIGHT or 0),
+        (state.repeatDraw and ResultRepeatFooter.HINT_Y or HINT_CY) + HINT_FONT)
     return dx >= PANEL_CX - PANEL_W * 0.5 and dx <= PANEL_CX + PANEL_W * 0.5
         and dy >= GLOW_CY - GLOW_H * 0.5 and dy <= bottom + 24
 end
@@ -762,8 +755,10 @@ function RewardPopup.update(dt)
             closedAt_ = time.elapsedTime  -- 记录关闭时刻，启动点击穿透保护
             print("[RewardPopup] closed")
             local cb = state.onClose
-            state.onClose = nil
+            local continueDraw = state.repeatAfterClose
+            state.onClose, state.repeatAfterClose, state.repeatDraw = nil, nil, nil
             if cb then cb() end
+            if continueDraw and not state.open then continueDraw() end
             return
         end
     end
@@ -849,6 +844,8 @@ function RewardPopup.handleInput(dx, dy)
         return false
     end
 
+    -- 关闭动画中不再改写继续动作，连点只消费一次。
+    if state.animPhase == "closing" then return true end
     -- 同帧保护：防止 show() 同帧的点击事件立即关闭弹窗
     if time.elapsedTime - state.animStart < 0.05 then return true end
     -- 拖动列表后松开，不关闭、不点物品
@@ -863,6 +860,16 @@ function RewardPopup.handleInput(dx, dy)
     -- 屏幕设计坐标 → 布局坐标系（与绘制层缩放对应）
     dx = invLayoutX(dx)
     dy = invLayoutY(dy)
+
+    if state.repeatDraw then
+        local count = ResultRepeatFooter.hit(dx, dy)
+        if count > 0 then
+            local onContinue = state.repeatDraw.onContinue
+            state.repeatAfterClose = function() onContinue(count) end
+            RewardPopup.close()
+            return true
+        end
+    end
 
     -- 任何点击都能关闭奖励弹窗：面板外点击同样关闭并消费事件，
     -- 避免弹窗一直挂着挡住后续操作。
@@ -1161,7 +1168,9 @@ function RewardPopup.drawContent(vg)
     end
 
     -- 3) 背景面板
-    drawImageCentered(vg, imgPanel, PANEL_CX, PANEL_CY, PANEL_W, PANEL_H, 1.0)
+    local extraHeight = state.repeatDraw and ResultRepeatFooter.EXTRA_HEIGHT or 0
+    drawImageCentered(vg, imgPanel, PANEL_CX, PANEL_CY + extraHeight * 0.5,
+        PANEL_W, PANEL_H + extraHeight, 1.0)
 
     -- 4) 奖励类型文本（暗金亮 + 深色描边，贴合暗黑主题）
     nvgFontFace(vg, "sans")
@@ -1469,16 +1478,18 @@ function RewardPopup.drawContent(vg)
         nvgFill(vg)
     end
 
-    -- 6) 底部提示文本（逐个获得中可点击跳过）
+    -- 6) 宝箱继续按钮仅在奖励全部出场后可见，普通奖励保持原提示。
     local hint = HINT_TEXT
     if state.cascade and not cascadeFinished() then
         hint = "点击跳过"
+    elseif state.repeatDraw then
+        ResultRepeatFooter.draw(vg, state.repeatDraw, getResourceIcon)
     end
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, HINT_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0xC8, 0xC0, 0xB0, 200))
-    nvgText(vg, HINT_CX, HINT_CY, hint, nil)
+    nvgText(vg, HINT_CX, state.repeatDraw and ResultRepeatFooter.HINT_Y or HINT_CY, hint, nil)
 
     -- 恢复布局缩放，再恢复缩放/透明变换
     if (state.layoutScale or 1.0) ~= 1.0 then nvgRestore(vg) end

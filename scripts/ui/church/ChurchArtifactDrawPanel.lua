@@ -99,6 +99,8 @@ local state = {
     keyConfirmNeedKeys = 0,
     keyConfirmDiamondCost = 0,
     artifactFreeDrawDayId = 0,
+    drawPending = false,
+    resultGeneration = 0,
 }
 
 local ctx_ = nil
@@ -175,11 +177,18 @@ local function getDrawCosts(count)
 end
 
 local function sendArtifactDraw(count)
+    if state.drawPending then return false end
     local fn = getSendAction()
     local Protocol = getProtocol()
     if not fn or not Protocol then return false end
     local payType = (count == 1 and hasArtifactFreeDraw()) and "free_daily" or "diamond"
-    fn(Protocol.ACTION_TYPES.ARTIFACT_DRAW, { count = count, payType = payType })
+    -- 请求锁在发送前设置，兼容单机桥接同步返回成功/失败。
+    state.drawPending = true
+    local handled = fn(Protocol.ACTION_TYPES.ARTIFACT_DRAW, { count = count, payType = payType })
+    if handled == false and state.drawPending then
+        state.drawPending = false
+        return false
+    end
     return true
 end
 
@@ -215,11 +224,14 @@ local function getKeyConfirmAnim()
 end
 
 local function checkKeyAndDraw(count)
+    if state.drawPending then showFloat("正在开启宝箱，请稍候") return false end
     local keyCost = getKeyCost(count)
     local keys = GameState.getGoldenKey()
     if keyCost <= 0 or keys >= keyCost then
         if sendArtifactDraw(count) then
-            showFloat("正在开启宝箱", count == 10 and COL.BTN_TEN_X or COL.BTN_ONE_X, COL.BTN_Y - 120)
+            if state.drawPending then
+                showFloat("正在开启宝箱", count == 10 and COL.BTN_TEN_X or COL.BTN_ONE_X, COL.BTN_Y - 120)
+            end
         else
             showFloat("网络未连接", 540, COL.BTN_Y - 120)
         end
@@ -232,6 +244,25 @@ local function checkKeyAndDraw(count)
     print(string.format("[ChurchArtifactDrawPanel] 黄金钥匙不足: 需%d 有%d 补购%d把 花费%d钻",
         keyCost, keys, shortfall, diamondCost))
     return false
+end
+
+local function getRepeatCost(count)
+    local needed = getKeyCost(count)
+    if needed == 0 then return { parts = {}, enough = true, freeText = "今日免费" } end
+    local keys = math.min(GameState.getGoldenKey() or 0, needed)
+    local gems = (needed - keys) * ArtifactDefs.KEY_DIAMOND_PRICE
+    local parts = {}
+    if keys > 0 then parts[#parts + 1] = { type = "golden_key", amount = keys } end
+    if gems > 0 then parts[#parts + 1] = { type = "diamond", amount = gems } end
+    return { parts = parts, enough = (GameState.getGems() or 0) >= gems }
+end
+
+local function continueArtifactDraw(count, generation)
+    if generation ~= state.resultGeneration or not ctx_ or not ctx_.state
+        or not ctx_.state.open or ctx_.state.closing then return end
+    if count ~= 1 and count ~= 10 then return end
+    print("[ChurchArtifactDrawPanel] 继续开箱 count=" .. count)
+    checkKeyAndDraw(count)
 end
 
 -- ======================== 绘制 ========================
@@ -483,8 +514,13 @@ function M.handleTabInput(dx, dy)
             end
             local drawCount = state.keyConfirmCount
             closeKeyConfirm()
-            sendArtifactDraw(drawCount)
-            showFloat("正在开启宝箱", drawCount == 10 and COL.BTN_TEN_X or COL.BTN_ONE_X, COL.BTN_Y - 120)
+            if sendArtifactDraw(drawCount) then
+                if state.drawPending then
+                    showFloat("正在开启宝箱", drawCount == 10 and COL.BTN_TEN_X or COL.BTN_ONE_X, COL.BTN_Y - 120)
+                end
+            else
+                showFloat("开箱请求未发送，请重试", 540, COL.BTN_Y - 120)
+            end
             return true
         end
 
@@ -511,9 +547,16 @@ end
 
 -- ======================== 结果处理 ========================
 
+function M.onArtifactDrawResult()
+    state.drawPending = false
+end
+
 --- ARTIFACT_DRAW 成功回包：同步保底计数 + 弹奖励
 ---@return table[] rewards
 function M.onArtifactDrawSuccess(data)
+    M.onArtifactDrawResult()
+    state.resultGeneration = state.resultGeneration + 1
+    local generation = state.resultGeneration
     local artifactData = PlayerStore.Get("artifacts")
     if artifactData then
         if data.pityRare ~= nil then artifactData.pityRare = data.pityRare end
@@ -538,7 +581,13 @@ function M.onArtifactDrawSuccess(data)
         }
     end
     if #rewards > 0 then
-        RewardPopup.show("神器宝箱", rewards, { panel = "left", cascade = true })
+        RewardPopup.show("神器宝箱", rewards, {
+            panel = "left", cascade = true,
+            repeatDraw = {
+                getCost = getRepeatCost,
+                onContinue = function(count) continueArtifactDraw(count, generation) end,
+            },
+        })
         print("[ChurchArtifactDrawPanel] 宝箱获得动画: count=" .. #rewards .. ", panel=left")
     end
     return rewards
@@ -567,6 +616,7 @@ end
 function M.reset()
     state.keyConfirmVisible = false
     state.keyConfirmClosing = false
+    state.resultGeneration = state.resultGeneration + 1
 end
 
 --- 钥匙补购弹窗是否可见（ChurchInput 用于模态优先路由）

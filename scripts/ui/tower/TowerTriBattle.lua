@@ -5,6 +5,7 @@
 -- ============================================================================
 
 local AD               = require("systems.AttributeDef")
+local CF               = require("systems.CombatFormula")
 local TM               = require("systems.ThreatManager")
 local SEM              = require("systems.StatusEffectManager")
 local TAL              = require("systems.TalentManager")
@@ -435,7 +436,7 @@ local function tickLane(lane, dt)
         lane.regenAccum = lane.regenAccum - 1.0
         for _, unit in ipairs(lane.allies) do
             if unit.hp > 0 and unit.attrs then
-                local regen = unit.attrs:get(AD.HP_REGEN) or 0
+                local regen = CF.calcHpRegen(unit.attrs)
                 if regen > 0 then
                     unit.attrs:heal(regen)
                     BattleCombat.syncUnitHp(unit)
@@ -444,7 +445,7 @@ local function tickLane(lane, dt)
         end
         for _, unit in ipairs(lane.enemies) do
             if unit.hp > 0 and unit.attrs then
-                local regen = unit.attrs:get(AD.HP_REGEN) or 0
+                local regen = CF.calcHpRegen(unit.attrs)
                 if regen > 0 then
                     unit.attrs:heal(regen)
                     BattleCombat.syncUnitHp(unit)

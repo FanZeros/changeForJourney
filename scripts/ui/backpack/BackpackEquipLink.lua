@@ -397,7 +397,8 @@ function M.bind(deps)
             slot = equip.slot, grip = equip.grip, equipType = equip.type }
     end
     function api.openCandidate(equip, cx, cy, pinned)
-        EquipmentDetail.open(equip.seq, nil, nil, true, "backpack",
+        -- 保留只读动作（slot=nil），角色上下文独立于「全部」部位筛选。
+        EquipmentDetail.open(equip.seq, nil, currentHero(), true, "backpack",
             cx + GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5)
         if pinned and EquipmentDetail.pin then EquipmentDetail.pin() end
     end

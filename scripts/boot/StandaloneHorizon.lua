@@ -573,6 +573,27 @@ equipOverlayDesign = function(sx, sy)
     return nil
 end
 
+-- 洗练材料悬停复用当前帧的面板变换及宿主覆盖守卫，不改点击/触摸路由。
+if BlacksmithPage.setMaterialHoverSource then
+    BlacksmithPage.setMaterialHoverSource(function()
+        if seamInputBlocked() or (RT.preload_ and RT.preload_.active)
+            or EquipCrossDrag.isArmed() or input:GetNumTouches() > 0
+            or input:GetMouseButtonDown(MOUSEB_LEFT) then return nil end
+        local mouse = input:GetMousePosition()
+        local sx, sy = toDesign(mouse.x / dpr(), mouse.y / dpr())
+        if equipOverlayDesign(sx, sy) then return nil end
+        local note, panel = Viewport.getNote("center"), Viewport.PANELS.center
+        if not note then return nil end
+        local cs = note.s * Viewport.DS
+        local xs = note.scaleX or cs
+        if cs <= 0 or xs <= 0 then return nil end
+        local dx = (sx - note.ox - panel.bx * note.s) / xs
+        local dy = (sy - note.oy - panel.by * note.s) / cs
+        if dx < 0 or dx > 1080 or dy < 0 or dy > 2400 then return nil end
+        return dx, dy
+    end)
+end
+
 function HandleNanoVGRenderHorizon()
     if not vg() then return end
     seamGesture.cancelIfBlocked()

@@ -48,7 +48,7 @@ local MARCH_STEP = 7
 local function getLiveAttackInterval(unit, fallback)
     if unit and unit.attrs and unit.attrs.getActualInterval then
         local v = unit.attrs:getActualInterval()
-        if v and v > 0.05 then return v end
+        if v and v >= 0.05 then return v end
     end
     return fallback
 end
@@ -843,6 +843,7 @@ function BattleTriDriver.new(teamIdx, options)
             onHot = function(unit, source, heal)
                 if unit.attrs and unit.hp > 0 then
                     local actual = unit.attrs:heal(heal)
+                    BattleCombat.syncUnitHp(unit)
                     if actual > 0 then
                         local isUnitAlly = BattleLayout.detectGroup({ unit }) == "ally"
                         local list = isUnitAlly and allies or enemies
@@ -859,6 +860,7 @@ function BattleTriDriver.new(teamIdx, options)
             healUnit = function(unit, amount)
                 if unit.attrs and unit.hp > 0 then
                     local actual = unit.attrs:heal(amount)
+                    BattleCombat.syncUnitHp(unit)
                     return actual
                 end
                 return 0
@@ -877,12 +879,26 @@ function BattleTriDriver.new(teamIdx, options)
             end,
         })
 
-        -- 能量护盾恢复
+        -- 生命/能量护盾恢复：按逻辑秒推进，生命回复受 HEAL_BONUS 增幅与 heal 禁疗守门。
         for _, u in ipairs(allies) do
-            if u.hp > 0 and u.attrs then u.attrs:tickEnergyShield(dt) end
+            if u.hp > 0 and u.attrs then
+                local regen = CF.calcHpRegen(u.attrs)
+                if regen > 0 then
+                    u.attrs:heal(regen * dt)
+                    BattleCombat.syncUnitHp(u)
+                end
+                u.attrs:tickEnergyShield(dt)
+            end
         end
         for _, u in ipairs(enemies) do
-            if u.hp > 0 and u.attrs then u.attrs:tickEnergyShield(dt) end
+            if u.hp > 0 and u.attrs then
+                local regen = CF.calcHpRegen(u.attrs)
+                if regen > 0 then
+                    u.attrs:heal(regen * dt)
+                    BattleCombat.syncUnitHp(u)
+                end
+                u.attrs:tickEnergyShield(dt)
+            end
         end
 
         -- 投射物 / 连击

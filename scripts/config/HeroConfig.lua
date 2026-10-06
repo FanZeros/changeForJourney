@@ -446,8 +446,9 @@ end
 ---@param advBranch table|nil 转职分支 { first=number?, second=number? }
 ---@param awakening table|nil 觉醒数据 { [1]=true, [2]=true, [3]=true }
 ---@param extraTalent table|nil|boolean 追加技永久层；false=不应用
+---@param options table|nil 只读重建可显式指定 litNodes，并关闭重复诊断日志
 ---@return table|nil 战斗单位 { name, level, hp, maxHp, atkProgress, attrs, heroId, classId, ... }
-function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
+function HC.createHero(heroId, level, advBranch, awakening, extraTalent, options)
     local hero = HC.HEROES[heroId]
     if not hero then
         print("[HeroConfig] 未知英雄 ID: " .. tostring(heroId))
@@ -527,9 +528,11 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
         AVC.applyStatBonuses(advBranch, attrs)
     end
 
-    -- 应用天赋星图加成
-    if _defaultLitNodes then
-        TalentEffect.applyToUnit(attrs, _defaultLitNodes, hero.classId)
+    -- 显式快照不借上次星图默认值，也不改全局默认值。
+    local litNodes = _defaultLitNodes
+    if options and options.litNodes ~= nil then litNodes = options.litNodes end
+    if litNodes then
+        TalentEffect.applyToUnit(attrs, litNodes, hero.classId)
     end
 
     -- 攻击伤害系数 & 伤害波动比例（存入 attrs 供 CombatFormula 读取）
@@ -569,7 +572,7 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
         end
     end
     -- [DIAG-ADV] 牧师转职排查：打印创建时的 advTalentIds
-    if heroId == 9 or heroId == 15 then
+    if (heroId == 9 or heroId == 15) and not (options and options.silent) then
         local tidStr = #unit.advTalentIds > 0 and table.concat(unit.advTalentIds, ",") or "EMPTY"
         local abStr = advBranch and string.format("{first=%s,second=%s}",
             tostring(advBranch.first), tostring(advBranch.second)) or "nil"
@@ -586,8 +589,8 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
 
     -- 天赋星图运行时节点集合（供 TalentManager 检查 RUNTIME_ONLY 节点）
     unit.litNodeSet = {}
-    if _defaultLitNodes then
-        for _, nodeId in ipairs(_defaultLitNodes) do
+    if litNodes then
+        for _, nodeId in ipairs(litNodes) do
             unit.litNodeSet[nodeId] = true
         end
     end

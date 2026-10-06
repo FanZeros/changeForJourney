@@ -231,7 +231,7 @@ function M.run(rt)
         TalentPage.init(vg)
         TalentPage.open()
     end)
-    -- 城镇远征小门与第一行 HUD 共用选关页；延迟执行时重新检查遮挡与终焉。
+    -- 城镇远征先展示三队收益，选队后进入原选关；延迟执行时重新检查遮挡与终焉。
     local StageSelectDialog = require("ui.battle.stage.StageSelectDialog")
     local BattleRewardOverlay = require("boot.BattleRewardOverlay")
     local function expeditionEntryBlocked()
@@ -244,15 +244,17 @@ function M.run(rt)
             or require("ui.character.hero.HeroRosterPanel").isVisible()
             or require("ui.dev.CEPanel").isOpen() or require("systems.TutorialManager").isActive()
     end
-    TownScene.setOnExpeditionClick(function()
+    local function openExpeditionOverview()
         if expeditionEntryBlocked() then return end
         if not BattleTriPage.isOpen() then BattleTriPage.open() end
         -- open() 无成功返回值；未就绪或接管终焉时不切 tab、不打开选关。
         if not BattleTriPage.isOpen() or expeditionEntryBlocked() then return end
         if BottomNav.getSelectedIndex() ~= 3 then BottomNav.setSelectedIndex(3) end
         if BottomNav.getSelectedIndex() ~= 3 then return end
-        StageSelectDialog.open(1)
-    end)
+        StageSelectDialog.openOverview()
+    end
+    TownScene.setOnExpeditionClick(openExpeditionOverview)
+    TopBar.setOnExpeditionClick(openExpeditionOverview)
     -- 5.16 城镇酒馆点击 → 打开酒馆界面
     TownScene.setOnTavernClick(function()
         TavernPage.init(vg)

@@ -15,6 +15,8 @@ local PlayerStore      = require("core.PlayerStore")
 local HeroFrame        = require("ui.widget.HeroFrame")
 local AVC              = require("config.AdvancementConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
+local EquipmentPower   = require("systems.EquipmentPower")
+local DrawUtil         = require("core.DrawUtil")
 local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
 local ImageCache       = require("ui.widget.ImageCache")
 local BF               = require("systems.ButtonFeedback")
@@ -314,6 +316,10 @@ end
 ---@param heroId number|nil 当前角色 ID（传递给 EquipmentDetail，选择模式可为 nil）
 ---@param onSelect function|nil 选择回调 function(seq, equip)，设置后点击格子直接回调而非打开详情
 function EquipmentBag.open(slot, slotName, heroId, onSelect)
+    if bagState.heroId ~= heroId then
+        EquipmentBag._hoverSeq, EquipmentBag._hoverSince = nil, nil
+        if EquipmentDetail.getOwner() == "bag" then EquipmentDetail.close() end
+    end
     bagState.open      = true
     bagState.closing   = false
     bagState.slot       = slot
@@ -379,6 +385,7 @@ end
 ---@return table|nil 可穿戴子类型 set { ["单手剑"]=true, ... }；nil 表示不限制
 ---@return string|nil dualWieldMode "different"(207)|"same"(220)|nil
 local function buildWearableSet(heroId, slot)
+    if not heroId or not slot then return nil, nil end
     if slot == "accessory" then
         return nil, nil  -- 饰品无限制
     end
@@ -454,8 +461,9 @@ local function getFilteredEquips()
         return {}
     end
 
-    local slot = bagState.filter   -- 页签过滤；nil = 所有
+    local slot = bagState.filter   -- 页签过滤；nil = 所有，不丢失 heroId
     local heroId = bagState.heroId
+    local powerContext = heroId and EquipmentPower.getContext(heroId) or nil
 
     -- 构建可穿戴子类型过滤集合
     local wearableSet, dualWieldMode = buildWearableSet(heroId, slot)
@@ -497,8 +505,8 @@ local function getFilteredEquips()
                     end
                 end
             elseif slot == nil then
-                -- 「所有」页签：当前英雄四个槽位都算已装备
-                for _, sk in ipairs({ "weapon", "offhand", "armor", "accessory" }) do
+                -- 「所有」页签：当前英雄六个槽位都算已装备。
+                for _, sk in ipairs({ "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }) do
                     if heroEquipped[sk] then
                         equippedSeqs[tostring(heroEquipped[sk])] = true
                     end
@@ -543,13 +551,19 @@ local function getFilteredEquips()
             end
             local seqStr2 = tostring(seq)
             local isEquipped = equippedSeqs[seqStr2] or false
-            local ownerHeroId = equippedByHero[seqStr2]  -- nil 或 heroId
-            result[#result + 1] = { seq = seq, equip = equip, equipped = isEquipped, equippedByHeroId = ownerHeroId }
+            local ownerHeroId = equippedByHero[seqStr2]  -- 仅头像归属；评分始终使用所选 heroId。
+            local preview = powerContext and EquipmentPower.evaluate(powerContext, seq, slot)
+            result[#result + 1] = {
+                seq = seq, equip = equip, equipped = isEquipped, equippedByHeroId = ownerHeroId,
+                power = EquipmentPower.score(equip, heroId, slot),
+                upgrade = preview ~= nil and preview.valid == true and preview.gain > 1e-6,
+                canWear = heroId == nil or (preview ~= nil and preview.valid == true),
+            }
         end
         ::skip::
     end
 
-    -- 已装备排最前，然后按品质降序、等级降序排序
+    -- 已装备排最前，然后按品质、所选角色单件贡献、等级和 seq 稳定排序。
     table.sort(result, function(a, b)
         if a.equipped ~= b.equipped then
             return a.equipped  -- true 排前面
@@ -557,6 +571,7 @@ local function getFilteredEquips()
         if a.equip.quality ~= b.equip.quality then
             return a.equip.quality > b.equip.quality
         end
+        if a.power ~= b.power then return a.power > b.power end
         if a.equip.level ~= b.equip.level then
             return a.equip.level > b.equip.level
         end
@@ -632,10 +647,10 @@ local function canWearBagEntry(entry)
     if not levelOk then
         return false, true, requiredLevel
     end
-    local slot = bagState.filter or bagState.slot or entry.equip.slot
-    local wearableSet = buildWearableSet(heroId, slot)
-    if not wearableSet then return true, false, nil end
-    return wearableSet[equip.type] == true, false, nil
+    local slot = bagState.filter or entry.equip.slot
+    local ctx = EquipmentPower.getContext(heroId)
+    local preview = ctx and EquipmentPower.evaluate(ctx, entry.seq, slot)
+    return preview ~= nil and preview.valid == true, false, nil
 end
 
 ---@param entry table
@@ -663,7 +678,7 @@ local function quickEquipEntry(entry)
     end
     local Client = require("runtime.GameAction")
     local Protocol = require("shared.Protocol")
-    local slot = bagState.filter or bagState.slot or entry.equip.slot
+    local slot = bagState.filter or entry.equip.slot
     if entry.equipped then
         Client.sendAction(Protocol.ACTION_TYPES.UNEQUIP_ITEM, {
             heroId = bagState.heroId,
@@ -980,49 +995,8 @@ function EquipmentBag.draw(vg, opts)
     local totalCells = math.max(#equips, CELL_COLS * minRows)
     local totalRows = math.ceil(totalCells / CELL_COLS)
 
-    -- === 计算当前已装备装备的战斗力（用于 ICON_UP 角标判断）===
-    local equippedPower = 0
-    local offhandPower = 0   -- 副手战斗力（仅 weapon 槽使用，供双手武器对比）
+    -- 角色上下文已由列表复用，ICON_UP 使用单件 preview 的真实净 gain。
     local heroId = bagState.heroId
-    -- 等级穿戴门槛：ICON_UP 角标与快速穿戴均以此为准
-    local heroLevel = EquipmentSystem.getHeroLevel(PlayerStore.Get("heroes"), heroId)
-    local equipData = heroId and PlayerStore.Get("equipment") or nil
-    local heroEquipped = equipData and EquipmentSystem.getHeroSlots(equipData, heroId)
-    if heroEquipped and equipData.inventory then
-        -- 当前槽位已装备的战斗力
-        local cmpSlot = bagState.filter or bagState.slot
-        local eqSeq = cmpSlot and heroEquipped[cmpSlot]
-        if eqSeq then
-            local eqItem = equipData.inventory[tostring(eqSeq)]
-            if eqItem then
-                equippedPower = EquipmentDetail.calcEquipPower(eqItem, heroId)
-            end
-        end
-
-        -- 副手槽：若副手为空但主手是双手武器，基准 = 双手武器战斗力 / 2
-        if cmpSlot == "offhand" and equippedPower == 0 then
-            local weaponSeq = heroEquipped["weapon"]
-            if weaponSeq then
-                local weaponItem = equipData.inventory[tostring(weaponSeq)]
-                if weaponItem and weaponItem.grip == "twohand" then
-                    equippedPower = math.floor(
-                        EquipmentDetail.calcEquipPower(weaponItem, heroId) / 2
-                    )
-                end
-            end
-        end
-
-        -- 主手槽：预计算副手战斗力（供双手武器 ICON_UP 对比用）
-        if cmpSlot == "weapon" then
-            local ohSeq = heroEquipped["offhand"]
-            if ohSeq then
-                local ohItem = equipData.inventory[tostring(ohSeq)]
-                if ohItem then
-                    offhandPower = EquipmentDetail.calcEquipPower(ohItem, heroId)
-                end
-            end
-        end
-    end
 
     -- 计算滚动最大值
     local totalContentH = totalRows * CELL_SIZE + (totalRows - 1) * CELL_GAP
@@ -1143,7 +1117,7 @@ function EquipmentBag.draw(vg, opts)
                     nvgText(vg, cx, cy, displayName, nil)
                 end
 
-                if not canWearBagEntry(entry) then
+                if entry.canWear == false then
                     nvgBeginPath(vg)
                     nvgRoundedRect(vg, cx - CELL_SIZE * 0.5, cy - CELL_SIZE * 0.5, CELL_SIZE, CELL_SIZE, 16)
                     nvgFillColor(vg, nvgRGBA(18, 18, 18, 150))
@@ -1168,6 +1142,19 @@ function EquipmentBag.draw(vg, opts)
                     -- 白色填充
                     nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
                     nvgText(vg, lvlX, lvlY, lvlText, nil)
+                end
+
+                -- 单件贡献与等级分行，不占用 E/头像、锁及升阶角标。
+                do
+                    local powerText = "战力 " .. tostring(entry.power or 0)
+                    local powerFont = 26
+                    nvgFontFace(vg, "sans")
+                    nvgFontSize(vg, powerFont)
+                    local textW = nvgTextBounds(vg, 0, 0, powerText) or 0
+                    local maxW = CELL_SIZE * 0.62
+                    if textW > maxW then powerFont = powerFont * maxW / textW end
+                    DrawUtil.drawTextStroke(vg, cx + CELL_SIZE * 0.45, cy + CELL_SIZE * 0.15,
+                        powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, 244, 237, 224, 3)
                 end
 
                 -- 强化角标（右上角，描边，+X）
@@ -1230,22 +1217,13 @@ function EquipmentBag.draw(vg, opts)
                     end
                 end
 
-                -- ICON_UP 角标（左上角，战斗力高于当前已装备时显示；有角色头像角标时不显示避免重叠）
-                -- 等级穿戴门槛：装备等级高于英雄等级时不显示升级箭头
+                -- 箭头只认有效穿戴模拟的真实净提升，不能拿单件分减当前槽分。
                 if not entry.equipped and not entry.equippedByHeroId and heroId and imgIconUp >= 0
-                    and (EquipmentSystem.checkLevelGate(heroLevel, equip)) then
-                    local itemPower = EquipmentDetail.calcEquipPower(equip, heroId)
-                    -- 双手武器替换主手+副手，基准用两者之和
-                    local baseline = equippedPower
-                    if (bagState.filter or bagState.slot) == "weapon" and equip.grip == "twohand" then
-                        baseline = equippedPower + offhandPower
-                    end
-                    if itemPower > baseline then
-                        local upSize = 40
-                        local upX = cx - CELL_SIZE * 0.5 + upSize * 0.5 + 2
-                        local upY = cy - CELL_SIZE * 0.5 + upSize * 0.5 + 2
-                        drawImageCentered(vg, imgIconUp, upX, upY, upSize, upSize, 1.0)
-                    end
+                    and entry.upgrade then
+                    local upSize = 40
+                    local upX = cx - CELL_SIZE * 0.5 + upSize * 0.5 + 2
+                    local upY = cy - CELL_SIZE * 0.5 + upSize * 0.5 + 2
+                    drawImageCentered(vg, imgIconUp, upX, upY, upSize, upSize, 1.0)
                 end
 
                 -- 锁定角标：未装备→左上角（与铁匠铺一致）；已装备→左下角避让 E/头像角标

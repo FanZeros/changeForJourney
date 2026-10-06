@@ -188,22 +188,7 @@ end
 local function applyDetailRuntimeBonuses(attrs, heroId, classId, heroesData, eqData, options)
     local heroEq = getHeroEquipped(eqData, heroId)
     if heroEq and eqData and eqData.inventory then
-        local appliedSeqs = {}
-        for _, slotKey in ipairs(EquipmentConfig.SLOTS) do
-            local seq = heroEq[slotKey]
-            if seq and not appliedSeqs[seq] then
-                local equip = eqData.inventory[tostring(seq)] or eqData.inventory[seq]
-                if equip then
-                    EquipmentSystem.hydrate(equip)
-                    local slotBoost = EquipmentSystem.getAscendBoost(equip)
-                    EquipmentSystem.applyToUnit(attrs, equip, seq, slotBoost)
-                    appliedSeqs[seq] = true
-                end
-            end
-        end
-        EquipmentSetSystem.applyToUnit(
-            attrs, eqData, heroId,
-            EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
+        require("systems.EquipmentPower").applyEquipment(attrs, eqData, heroId)
     end
 
     local partySlotForArtifact, teamIdx = findArtifactPosition(heroesData, heroId)
@@ -221,7 +206,8 @@ local function buildHeroAttrsForDetail(heroId, level, heroesData, eqData, option
     if options and extraTalent == nil then extraTalent = {} end
     local awakening = hd and hd.awakening
     if options and awakening == nil then awakening = {} end
-    local unit = HC.createHero(heroId, level, hd and hd.advBranch or nil, awakening, extraTalent)
+    local createOptions = options and { litNodes = options.talents and options.talents.litNodes or false, silent = true } or nil
+    local unit = HC.createHero(heroId, level, hd and hd.advBranch or nil, awakening, extraTalent, createOptions)
     if not unit or not unit.attrs then return nil, heroCfg end
     applyDetailRuntimeBonuses(unit.attrs, heroId, heroCfg.classId, heroesData, eqData, options)
     return unit, heroCfg
@@ -320,13 +306,18 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         or ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
     local eqData = options and deepCopy(options.equipment or {})
         or ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
-    local runtimeOptions = options and { artifacts = deepCopy(options.artifacts or {}) } or nil
+    local runtimeOptions = options and { artifacts = deepCopy(options.artifacts or {}),
+        talents = deepCopy(options.talents or {}) } or nil
     local hd = getHeroRuntimeData(heroesData, heroId)
     local extraTalent = hd and hd.extraTalent
     if options and extraTalent == nil then extraTalent = {} end
     local awakening = hd and hd.awakening
     if options and awakening == nil then awakening = {} end
-    local hero = HC.createHero(heroId, level, hd and hd.advBranch, awakening, extraTalent)
+    local talents
+    if options then talents = options.talents or {}
+    else talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents") end
+    local createOptions = options and { litNodes = talents and talents.litNodes or false, silent = true } or nil
+    local hero = HC.createHero(heroId, level, hd and hd.advBranch, awakening, extraTalent, createOptions)
     if not hero or not hero.attrs then
         return { left = {}, right = {}, stats = {} }
     end
@@ -440,7 +431,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
     else
         effCrit = attrs:getUncapped(AD.HEAL_CRIT_RATE)
     end
-    if attrs.artifactCritRateMult then
+    if category ~= "healing" and attrs.artifactCritRateMult then
         effCrit = effCrit * attrs.artifactCritRateMult
     end
     local overflowEnabled = category ~= "healing" and (attrs.critOverflowRatio or 0) > 0
@@ -472,7 +463,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
             effCritDmg = effCritDmg + attrs:getUncapped(AD.MAG_CRIT_DMG)
         end
     end
-    if attrs.artifactCritDmgMult then
+    if category ~= "healing" and attrs.artifactCritDmgMult then
         effCritDmg = effCritDmg * attrs.artifactCritDmgMult
     end
     -- 复用实战转换函数；未解锁专属觉醒只封顶概率，不放大暴伤。

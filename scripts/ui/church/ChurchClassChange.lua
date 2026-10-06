@@ -16,6 +16,7 @@ local BF             = require("systems.ButtonFeedback")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local NumberUtil     = require("core.NumberUtil")
 local KeywordText    = require("ui.widget.KeywordText")
+local EquipmentPower = require("systems.EquipmentPower")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -152,8 +153,8 @@ local ADV2 = {
         { iconCX = 893, iconCY = 1941, nameCX = 893, nameCY = 2017 },
     },
     -- 转职等级要求
-    firstLevel  = 10,
-    secondLevel = 25,
+    firstLevel  = AVC.COST[1].level,
+    secondLevel = AVC.COST[2].level,
     lockFont    = 40,
     -- 一转锁定遮罩
     lock1 = { bgCX = 540, bgCY = 1626, bgW = 1080, bgH = 320,
@@ -223,10 +224,15 @@ end
 -- 确认弹窗直接使用 ClassConfig / AdvancementConfig 的实际职业天赋说明，
 -- 不在界面重复维护一份旧职业文案。
 
+local function getBranchPower(branchId)
+    local ctx = heroId() and EquipmentPower.getContext(heroId())
+    return ctx and EquipmentPower.evaluateAdvancement(ctx, branchId) or nil
+end
+
 --- 转职消耗金币
 local ADV_COST = {
-    [1] = 10000,     -- 一转消耗
-    [2] = 100000,    -- 二转消耗
+    [1] = AVC.COST[1].gold,
+    [2] = AVC.COST[2].gold,
 }
 
 --- 金币数字格式化：超4位数转K显示
@@ -246,6 +252,8 @@ local CONFIRM = {
     iconCX = 540, iconCY = 802, iconW = 166, iconH = 166,
     -- 转职阶段
     stageCX = 847, stageCY = 915, stageFont = 34,
+    -- 战力行放在阶段与属性之间，不挤占天赋说明区域
+    powerCY = 957, powerFont = 30,
     -- 基础属性
     attrStartY   = 1016,
     attrSpacing  = 77,
@@ -461,8 +469,8 @@ end
 ---@param heroLevel number
 ---@return string
 local function firstBranchState(advBranch, branchId, heroLevel)
-    if heroLevel < ADV2.firstLevel then return "off" end
     if advBranch and advBranch.first == branchId then return "owned" end
+    if heroLevel < ADV2.firstLevel then return "off" end
     if not advBranch or not advBranch.first then return "avail" end
     return "off"
 end
@@ -474,8 +482,8 @@ end
 ---@param heroLevel number
 ---@return string
 local function secondBranchState(advBranch, parentFirstId, branchId, heroLevel)
-    if heroLevel < ADV2.secondLevel then return "off" end
     if advBranch and advBranch.second == branchId then return "owned" end
+    if heroLevel < ADV2.secondLevel then return "off" end
     if advBranch and advBranch.first == parentFirstId and not advBranch.second then return "avail" end
     return "off"
 end
@@ -518,7 +526,7 @@ function M.drawContent(vg)
 
     -- 一转分叉线：未转职时两侧都可能通向 → 整条白亮；已转职后当前职业路径
     -- （中干 + 选中腿）用金色，另一腿压暗。等级未解锁时推迟到遮罩后统一灰度绘制。
-    local lockedLine1 = heroLevel < ADV2.firstLevel
+    local lockedLine1 = heroLevel < ADV2.firstLevel and not (advBranch and advBranch.first)
     local firstTurned = (advBranch and advBranch.first) and true or false
     local selIsLeft = false
     if firstTurned then
@@ -551,7 +559,7 @@ function M.drawContent(vg)
         -- 二转分叉线（先绘制，置于一转图标底层）：
         -- 对应一转已转 → 二转已选中腿走金色路径；一转已选但二转未选 → 整条白亮；
         -- 非路径 → 整条暗。二转未解锁时推迟到二转遮罩后统一灰度（避免半白半灰）。
-        local lockedLine2 = heroLevel < ADV2.secondLevel
+        local lockedLine2 = heroLevel < ADV2.secondLevel and not (advBranch and advBranch.second)
         if not lockedLine2 then
             local secondTurned = (advBranch and advBranch.second) and true or false
             -- 已选二转是否落在该一转的左子分支
@@ -669,8 +677,8 @@ function M.drawContent(vg)
         end
     end
 
-    -- 等级锁定遮罩
-    if heroLevel < ADV2.firstLevel then
+    -- 等级锁定遮罩；新门槛不重新锁住旧档已经完成的转职。
+    if lockedLine1 then
         local top = ADV2.lock1.bgCY - ADV2.lock1.bgH * 0.5
         local bot = ADV2.lock2.bgCY + ADV2.lock2.bgH * 0.5
         local w   = ADV2.lock1.bgW
@@ -711,7 +719,7 @@ function M.drawContent(vg)
             ADV2.lockFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 255, 255, 6,
             { italic = true })
-    elseif heroLevel < ADV2.secondLevel then
+    elseif heroLevel < ADV2.secondLevel and not (advBranch and advBranch.second) then
         local lk = ADV2.lock2
         nvgBeginPath(vg)
         nvgRect(vg, lk.bgCX - lk.bgW * 0.5, lk.bgCY - lk.bgH * 0.5, lk.bgW, lk.bgH)
@@ -757,7 +765,9 @@ function M.openConfirmPopup(advLevel, branchId, branchName, classNum, owned)
     pop.confirmClosing    = false
     pop.confirmAnimT      = time.elapsedTime
     M.confirmKwText:clear()   -- 清上次弹窗的关键词状态
-    print("[ChurchClassChange] 打开转职确认: " .. branchName .. " (Lv" .. advLevel .. "转, owned=" .. tostring(pop.confirmOwned) .. ")")
+    local power = advLevel > 0 and getBranchPower(branchId) or nil
+    print("[ChurchClassChange] 打开转职确认: " .. branchName .. " (Lv" .. advLevel .. "转, owned=" .. tostring(pop.confirmOwned)
+        .. ", powerGain=" .. tostring(power and power.gain) .. ")")
 end
 
 --- 关闭转职确认弹窗（带动画）
@@ -841,6 +851,21 @@ function M.drawConfirmPopup(vg)
         C.stageFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4,
         { strokeColor = { 0x28, 0x28, 0x28 } })
+
+    -- 转职战力按当前角色完整属性的同阶前后差计算，已拥有分支也显示其贡献。
+    if advLevel > 0 then
+        local power = getBranchPower(branchId)
+        local gain = power and (math.floor(power.previewPower + 0.5) - math.floor(power.currentPower + 0.5))
+        local value = gain and ((gain >= 0 and "+" or "") .. tostring(gain)) or "--"
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, C.powerFont)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
+        nvgText(vg, C.attrLabelX, C.powerCY, "预计战力增加", nil)
+        drawTextStroke(vg, C.attrValueX, C.powerCY, value,
+            C.powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
+            255, 214, 102, 3)
+    end
 
     -- 基础属性列表
     local attrs = getBranchAttrs(branchId, classId)
@@ -1066,6 +1091,12 @@ function M.handleConfirmInput(dx, dy)
             print("[ChurchClassChange] 关闭已拥有职业信息: " .. pop.confirmBranchName)
             M.closeConfirmPopup()
         else
+            -- 等级不足的详情可浏览，但锁定按钮不能发送转职请求。
+            local req = AVC.COST[pop.confirmAdvLevel]
+            if req and heroId() and getAdvanceHeroLevel(heroId()) < req.level then
+                M.showFloat("需要Lv" .. req.level)
+                return true
+            end
             -- 判断是否已走另一条路线
             local clickLocked = false
             if pop.confirmAdvLevel > 0 and heroId() then

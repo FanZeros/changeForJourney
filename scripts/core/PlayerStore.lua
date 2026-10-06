@@ -38,6 +38,22 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
 --- cache_[fieldKey] = moduleData
 local cache_ = {}
 
+-- 单调版本支持只读派生缓存：原地发布、切区和重新初始化也可被区分。
+local revisions_ = {}
+local revisionSeq_ = 0
+local function markRevision(fieldKey)
+    revisionSeq_ = revisionSeq_ + 1
+    revisions_[fieldKey] = revisionSeq_
+end
+
+function PlayerStore.GetRevision(fieldKey)
+    return revisions_[fieldKey] or 0
+end
+
+local function clearRevisions()
+    for _, key in ipairs({ "heroes", "equipment", "artifacts", "talents" }) do markRevision(key) end
+end
+
 --- 变更订阅者
 --- subscribers_[fieldKey] = { callback1, callback2, ... }
 local subscribers_ = {}
@@ -88,6 +104,7 @@ function PlayerStore.Init()
         -- 创建闭包回调
         local callback = function(data, _moduleName)
             cache_[fieldKey] = data
+            markRevision(fieldKey)
 
             -- 通知该字段的订阅者
             local subs = subscribers_[fieldKey]
@@ -118,6 +135,7 @@ function PlayerStore.Init()
         local existing = ClientDispatcher.get(fieldKey)
         if existing then
             cache_[fieldKey] = existing
+            markRevision(fieldKey)
         end
     end
 
@@ -127,6 +145,7 @@ end
 
 --- 清理 PlayerStore（断线/重置时调用）
 function PlayerStore.Cleanup()
+    clearRevisions()
     -- 取消 ClientDispatcher 订阅
     for fieldKey, callback in pairs(dispatcherCallbacks_) do
         ClientDispatcher.unsubscribe(fieldKey, callback)
@@ -150,6 +169,7 @@ end
 --- 清空数据镜像但保留订阅关系
 --- 用于同一客户端会话内切区/返回选服，等待新区全量数据重新填充。
 function PlayerStore.ClearCache()
+    clearRevisions()
     cache_ = {}
     activeWatchers_ = {}
     watcherIdSeq_ = 0

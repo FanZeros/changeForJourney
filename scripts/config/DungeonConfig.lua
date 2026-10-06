@@ -627,15 +627,22 @@ function DungeonConfig.isStageUnlocked(stageId, battleData, dungeonData)
     return floor <= math.min(def.maxFloor, highest + 1)
 end
 
+-- 只读期望数量，与真实逐杀结算共用效率；不骰奖励、不生成装备。
+function DungeonConfig.getStageRewardAmount(stageId, kills)
+    local id, floor = DungeonConfig.decodeStageId(stageId)
+    if not id or (tonumber(kills) or 0) <= 0 then return 0 end
+    local idle = require("config.DungeonIdleConfig")
+    local rate = idle.getIdlePerMin(id, floor)
+    local perMinute = id == "equipment_vault" and rate or rate * idle.REWARD_MULT
+    return math.max(0, kills) * perMinute / 20 -- 每3秒1只，即每分钟20只。
+end
+
 -- 在线每次击杀与离线固定杀怪效率复用原每分钟收益，不把一次扫荡变为无限波大奖。
 function DungeonConfig.getStageRewards(stageId, kills)
     local id, floor = DungeonConfig.decodeStageId(stageId)
     local rewards = { gold = 0, diamond = 0, adventureExp = 0, adventurerExp = 0, equipSeeds = {}, scrollDrops = {} }
     if not id or (tonumber(kills) or 0) <= 0 then return rewards end
-    local idle = require("config.DungeonIdleConfig")
-    local rate = idle.getIdlePerMin(id, floor)
-    local perMinute = id == "equipment_vault" and rate or rate * idle.REWARD_MULT
-    local raw = math.max(0, kills) * perMinute / 20 -- 每3秒1只，即每分钟20只。
+    local raw = DungeonConfig.getStageRewardAmount(stageId, kills)
     local amount = math.floor(raw)
     if math.random() < raw - amount then amount = amount + 1 end
     if id == "gold_mine" then rewards.gold = amount

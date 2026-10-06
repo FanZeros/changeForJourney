@@ -10,6 +10,7 @@ local PlayerStore     = require("core.PlayerStore")
 local EquipmentConfig = require("config.EquipmentConfig")
 local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local EquipmentWearability = require("ui.character.detail.EquipmentWearability")
+local EquipmentPower = require("systems.EquipmentPower")
 local AdvancementConfig = require("config.AdvancementConfig")
 local HeroConfig      = require("config.HeroConfig")
 local CharacterPanel  = require("ui.character.panel.CharacterPanel")
@@ -102,38 +103,38 @@ function M.bind(deps)
         end
 
         local list = {}
-        local slotFilter, filterHeroId, heroes, dualMode = filterContext()
-        -- 可穿戴状态只决定灰显，不再过滤掉装备；实际穿戴仍由 applyEquip 校验。
-        local canEquip = filterHeroId ~= nil and EquipmentWearability.createChecker(
-            equipData, filterHeroId, heroes) or nil
+        local slotFilter, filterHeroId, _, dualMode = filterContext()
+        -- 一次列表复用角色上下文；评分器缓存单件模拟，不逐帧逐件重建 HeroCombat。
+        local powerContext = filterHeroId ~= nil and EquipmentPower.getContext(filterHeroId) or nil
         for seqStr, equip in pairs(equipData.inventory) do
             local matches, tpl, naturalSlot, equipType, grip, level, quality =
                 matchesBaseFilter(equip, slotFilter, dualMode)
             -- 部位、品质与套装决定列表；不能穿的保留在同一绘制/点击/hover/peek真源内。
             if matches and setChecked(equip.templateId) then
-                local canWear, cannotEquipReason = true, nil
-                if canEquip then canWear, cannotEquipReason = canEquip(seqStr, slotFilter) end
-                list[#list + 1] = {
-                    seq = tonumber(seqStr) or 0,
-                    templateId = equip.templateId,
-                    level = level,
-                    quality = quality,
-                    name = tpl.name or "",
-                    type = equipType or "",
-                    slot = naturalSlot,
-                    grip = grip,
-                    enhanceLevel = equip.enhanceLevel or 0,
-                    equippedByHeroId = equippedByHero[tostring(seqStr)] or nil,
-                    locked = equip.locked or nil,
-                    canWear = canWear,
-                    cannotEquipReason = cannotEquipReason,
-                }
+                local preview = powerContext and EquipmentPower.evaluate(powerContext, seqStr, slotFilter)
+                -- 保留完整装备（词条/腐化/套装等），仅在列表副本附加显示字段，绝不改 inventory。
+                local entry = {}
+                for key, value in pairs(equip) do entry[key] = value end
+                entry.seq = tonumber(seqStr) or 0
+                entry.level, entry.quality = level, quality
+                entry.name = tpl.name or ""
+                entry.type, entry.slot, entry.grip = equipType or "", naturalSlot, grip
+                entry.enhanceLevel = equip.enhanceLevel or 0
+                entry.equippedByHeroId = equippedByHero[tostring(seqStr)] or nil
+                entry.canWear = filterHeroId == nil or (preview ~= nil and preview.valid == true)
+                entry.cannotEquipReason = not entry.canWear and (preview and preview.error or "角色数据未就绪") or nil
+                entry.power = EquipmentPower.score(equip, filterHeroId, slotFilter)
+                entry.upgrade = preview ~= nil and preview.valid == true and preview.gain > 1e-6
+                list[#list + 1] = entry
             end
         end
 
         table.sort(list, function(a, b)
             if a.quality ~= b.quality then return a.quality > b.quality end
-            return a.level > b.level
+            if a.power ~= b.power then return a.power > b.power end
+            if a.level ~= b.level then return a.level > b.level end
+            if a.enhanceLevel ~= b.enhanceLevel then return a.enhanceLevel > b.enhanceLevel end
+            return a.seq < b.seq
         end)
 
         return list
@@ -192,6 +193,18 @@ function M.bind(deps)
                     DarkIcon.drawIconDark(vg, icon, cx, cy, GRID.CELL_SIZE - 10, GRID.CELL_SIZE - 10, 1.0)
                 end
 
+                -- 复用角色槽的升级图标；头像/锁仍占原左上角，不相互覆盖。
+                if equip.upgrade and not equip.equippedByHeroId and not equip.locked then
+                    local detail = package.loaded["ui.character.detail.CharacterDetail"]
+                    local upIcon = detail and detail._imgIconUp or -1
+                    if upIcon >= 0 then
+                        local upSize = 40
+                        DrawUtil.drawImageCentered(vg, upIcon,
+                            cx - GRID.CELL_SIZE * 0.5 + upSize * 0.5 + 2,
+                            cy - GRID.CELL_SIZE * 0.5 + upSize * 0.5 + 2, upSize, upSize, 1.0)
+                    end
+                end
+
                 do
                     local lvlText = "Lv." .. (equip.level or 1)
                     local lvl = EquipmentSetIcon.levelLayout(equip, cx, cy, GRID.CELL_SIZE)
@@ -214,6 +227,20 @@ function M.bind(deps)
                     end
                     nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
                     nvgText(vg, lvlX, lvlY, lvlText, nil)
+                end
+
+                -- 单件贡献位于等级上方，保留右下等级及左下套装徽记占位。
+                do
+                    local powerText = "战力 " .. tostring(equip.power or 0)
+                    local powerFont = 26
+                    nvgFontFace(vg, "sans")
+                    nvgFontSize(vg, powerFont)
+                    local textW = nvgTextBounds(vg, 0, 0, powerText) or 0
+                    local maxW = GRID.CELL_SIZE * 0.62
+                    if textW > maxW then powerFont = powerFont * maxW / textW end
+                    DrawUtil.drawTextStroke(vg, cx + GRID.CELL_SIZE * 0.45, cy + GRID.CELL_SIZE * 0.15,
+                        powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM,
+                        244, 237, 224, 3)
                 end
 
                 if equip.enhanceLevel and equip.enhanceLevel > 0 then

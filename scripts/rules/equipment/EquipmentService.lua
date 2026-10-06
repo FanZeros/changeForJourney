@@ -5,92 +5,13 @@
 -- ============================================================================
 
 local PDM             = require("rules.character.PlayerDataManager")
-local EquipmentSystem  = require("systems.EquipmentSystem")
-local EquipmentConfig  = require("config.EquipmentConfig")
-local BlacksmithConfig = require("config.BlacksmithConfig")
+local EquipmentSystem = require("systems.EquipmentSystem")
+local EquipmentPower  = require("systems.EquipmentPower")
+local EquipmentConfig = require("config.EquipmentConfig")
 local AVC             = require("config.AdvancementConfig")
 local HC              = require("config.HeroConfig")
-local CC              = require("config.ClassConfig")
-local AD              = require("systems.AttributeDef")
 
 local EquipmentService = {}
-
--- ======================== 战斗力计算（复刻客户端逻辑） ========================
-
-local EXCLUDED_KEYS_BY_DMG_TYPE = {
-    ["物理"] = {
-        magAtk=true, magCritRate=true, magCritDmg=true, magPen=true,
-        magDmgBonus=true, magAtkBonus=true,
-        healAmount=true, healBonus=true, healCritRate=true, healCritDmg=true,
-    },
-    ["魔法"] = {
-        physAtk=true, physCritRate=true, physCritDmg=true, physPen=true,
-        physDmgBonus=true, physAtkBonus=true,
-        healAmount=true, healBonus=true, healCritRate=true, healCritDmg=true,
-    },
-    ["治疗"] = {
-        physAtk=true, physCritRate=true, physCritDmg=true, physPen=true,
-        physDmgBonus=true, physAtkBonus=true,
-        magAtk=true, magCritRate=true, magCritDmg=true, magPen=true,
-        magDmgBonus=true, magAtkBonus=true,
-    },
-}
-
-local BASE_STAT_SET = {}
-for _, k in ipairs(AD.BASE_STATS) do BASE_STAT_SET[k] = true end
-
--- [fix 930] 与客户端 EquipmentDetail.calcStatPower 同步：
--- 六围一律按派生表折算，消除 heroId=nil 视角下六围饰品战力虚高
-local function calcStatPower(key, value, excluded)
-    if BASE_STAT_SET[key] then
-        local derivatives = AD.DERIVATIVES and AD.DERIVATIVES[key]
-        if derivatives then
-            local effectiveVM = 0
-            for _, d in ipairs(derivatives) do
-                if not (excluded and excluded[d.attr]) then
-                    local dMeta = AD.META[d.attr]
-                    if dMeta and dMeta.valueModel and dMeta.valueModel > 0 then
-                        if dMeta.dataType == AD.TYPE_PCT then
-                            effectiveVM = effectiveVM + d.perPoint * dMeta.valueModel / 100
-                        else
-                            effectiveVM = effectiveVM + d.perPoint * dMeta.valueModel
-                        end
-                    end
-                end
-            end
-            return value * effectiveVM
-        end
-    end
-    if excluded and excluded[key] then return 0 end
-    local meta = AD.META[key]
-    if not meta or not meta.valueModel or meta.valueModel <= 0 then return 0 end
-    if meta.dataType == AD.TYPE_PCT then
-        return value * meta.valueModel / 100
-    else
-        return value * meta.valueModel
-    end
-end
-
-local function calcEquipPower(equip, heroId)
-    if not equip then return 0 end
-    local excluded = nil
-    if heroId then
-        local hero = HC.HEROES and HC.HEROES[heroId]
-        if hero and hero.dmgMainType then
-            excluded = EXCLUDED_KEYS_BY_DMG_TYPE[hero.dmgMainType]
-        end
-    end
-    local power = 0
-    local ascendBoost = EquipmentSystem.getAscendBoost(equip)
-    for i, s in ipairs(equip.baseStats or {}) do
-        local val = EquipmentSystem.effectiveBaseStatValue(equip, i, ascendBoost)
-        power = power + calcStatPower(s[1], val, excluded)
-    end
-    for _, affix in ipairs(equip.affixes or {}) do
-        power = power + calcStatPower(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix), excluded)
-    end
-    return math.floor(power)
-end
 
 -- ======================== GM 给装备 ========================
 
@@ -255,8 +176,20 @@ function EquipmentService.UnequipAll(uid, heroId)
     return true, nil, result
 end
 
---- 一键装备：为指定英雄的每个槽位装备战斗力最高的可穿戴装备
---- 处理顺序：weapon → armor → accessory → offhand（武器先于副手，便于双手武器互斥判断）
+--- 仅在一键装备开始时复制数据，水合/候选试穿均不修改 PDM 的活表。
+---@param value any
+---@return any
+local function copyEquipData(value)
+    if type(value) ~= "table" then return value end
+    local copy = {}
+    for key, entry in pairs(value) do
+        copy[key] = copyEquipData(entry)
+    end
+    return copy
+end
+
+--- 一键装备：按真实整套战力的正向净收益选择合法候选。
+--- 普通槽逐槽优化；主副手联合枚举，避免双手/双持转换被单槽基准阻塞。
 ---@param uid number
 ---@param heroId number|nil
 ---@return boolean ok, string? err, table? result
@@ -266,182 +199,201 @@ function EquipmentService.EquipAllBest(uid, heroId)
 
     heroId = tonumber(heroId)
     if not heroId then return false, "参数缺失" end
+    if not HC.get(heroId) then return false, "英雄不存在" end
 
-    local heroCfg = HC.get(heroId)
-    if not heroCfg then return false, "英雄不存在" end
+    local heroesData = PDM.GetModule(uid, "heroes")
+    local artifactsData = PDM.GetModule(uid, "artifacts")
+    local talentsData = PDM.GetModule(uid, "talents")
+    local hd = heroesData and heroesData.roster
+        and (heroesData.roster[heroId] or heroesData.roster[tostring(heroId)])
+    local dualMode = AVC.getDualWieldMode(hd and hd.advBranch)
+    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
 
-    EquipmentSystem.ensureHeroSlots(equipData, heroId)
+    if not equipData.inventory then
+        return true, nil, { heroId = heroId, equipped = 0, changes = 0 }
+    end
 
-    local inventory = equipData.inventory
-    if not inventory then return true, nil, { heroId = heroId, equipped = 0 } end
+    ---@type table
+    local workingEquip = copyEquipData(equipData)
+    local inventory = workingEquip.inventory
+    EquipmentSystem.ensureHeroSlots(workingEquip, heroId)
+    for _, equip in pairs(inventory) do
+        if type(equip) == "table" then
+            EquipmentSystem.hydrate(equip)
+        end
+    end
 
-    -- 收集所有英雄已装备的 seq（不可用于装备）
-    local equippedSeqNums = {}
-    for _, heroSlots in pairs(equipData.equipped) do
-        if type(heroSlots) == "table" then
-            for _, eqSeq in pairs(heroSlots) do
-                local n = tonumber(eqSeq)
-                if n then equippedSeqNums[n] = true end
+    -- 只排除其他英雄的物品；本英雄主副手必须能作为组合候选（含互换）。
+    local occupiedByOthers = {}
+    for hid, slots in pairs(equipData.equipped or {}) do
+        if tonumber(hid) ~= heroId and type(slots) == "table" then
+            for _, seq in pairs(slots) do
+                local seqNum = tonumber(seq)
+                if seqNum then occupiedByOthers[seqNum] = true end
             end
         end
     end
 
     local wearableSets = {}
-    for _, slotKey in ipairs(EquipmentConfig.SLOTS) do
-        wearableSets[slotKey] = EquipmentSystem.getWearableTypeSet(heroId, slotKey)
+    local candidates = {}
+    for _, slotName in ipairs(EquipmentConfig.SLOTS) do
+        wearableSets[slotName] = EquipmentSystem.getWearableTypeSet(heroId, slotName)
+        candidates[slotName] = {}
     end
 
-    -- 双持模式检测
-    local heroesData = PDM.GetModule(uid, "heroes")
-    local hd = heroesData and heroesData.roster and (heroesData.roster[heroId] or heroesData.roster[tostring(heroId)])
-    local advBranch = hd and hd.advBranch
-    local dualMode = AVC.getDualWieldMode(advBranch)
-
-    -- 等级穿戴门槛：英雄等级低于装备等级的候选直接跳过
-    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
-
-    -- 按顺序处理：weapon → armor → helmet → shoes → accessory → offhand
-    local SLOT_ORDER = { "weapon", "armor", "helmet", "shoes", "accessory", "offhand" }
-    local changed = 0
-    local heroSlots = EquipmentSystem.ensureHeroSlots(equipData, heroId)
-
-    for _, slotName in ipairs(SLOT_ORDER) do
-        local ws = wearableSets[slotName]  -- nil = 不限制
-
-        -- 当前已装备的战斗力
-        local curSeq = heroSlots[slotName]
-        local curPower = 0
-        if curSeq then
-            local curEquip = inventory[tostring(curSeq)]
-            if curEquip then
-                curPower = calcEquipPower(curEquip, heroId)
-            end
-        end
-
-        -- 双手武器特殊处理：武器槽的双手武器基准 = 当前武器 + 当前副手
-        -- 副手槽处理时，已装备双手武器则跳过
-        local baseline = curPower
-        if slotName == "weapon" then
-            local ohSeq = heroSlots["offhand"]
-            if ohSeq then
-                local ohEquip = inventory[tostring(ohSeq)]
-                if ohEquip then
-                    baseline = curPower  -- 单手武器只比自身；双手武器另行处理
-                end
-            end
-        elseif slotName == "offhand" then
-            -- 如果主手是双手武器，副手不可装备
-            local wpnSeq = heroSlots["weapon"]
-            if wpnSeq then
-                local wpnEquip = inventory[tostring(wpnSeq)]
-                if wpnEquip and wpnEquip.grip == "twohand" then
-                    goto continue_slot
-                end
-            end
-        end
-
-        -- 遍历背包找战力最高的可穿戴装备
-        -- 策略：先找绝对战力最高的候选，循环结束后再判断是否优于当前
-        local bestSeq      = nil
-        local bestPower    = 0
-        local bestBaseline = baseline  -- 记录最优候选对应的基准（双手武器基准不同）
-        local bestGrip     = nil
-
-        for seq, equip in pairs(inventory) do
-            local seqNum = tonumber(seq)
-            if not seqNum then goto continue_item end
-
-            -- 跳过已被任何英雄装备的
-            if equippedSeqNums[seqNum] then goto continue_item end
-
-            -- 等级穿戴门槛：装备等级高于英雄等级则不可作为候选
-            if not (EquipmentSystem.checkLevelGate(heroLevel, equip)) then goto continue_item end
-
-            -- 槽位匹配
-            local matchSlot = false
-            if equip.slot == slotName then
-                matchSlot = true
-            elseif slotName == "offhand" and equip.slot == "weapon" and equip.grip == "onehand" and dualMode then
-                -- 双持天赋：单手武器可放副手
-                local mainWeaponSeq = heroSlots["weapon"]
-                local mainWeaponType = nil
-                if mainWeaponSeq then
-                    local mw = inventory[tostring(mainWeaponSeq)]
-                    mainWeaponType = mw and mw.type
-                end
-                if dualMode == "different" and mainWeaponType and equip.type == mainWeaponType then
-                    goto continue_item
-                elseif dualMode == "same" and mainWeaponType and equip.type ~= mainWeaponType then
-                    goto continue_item
-                end
-                matchSlot = true
-            end
-            if not matchSlot then goto continue_item end
-
-            -- 类型限制
-            if ws and not ws[equip.type] then goto continue_item end
-
-            -- 计算该装备战力（包含 baseStats + affixes 随机词缀）
-            local itemPower = calcEquipPower(equip, heroId)
-
-            -- 双手武器替换主手时，基准 = 当前主手 + 当前副手（卸副手的代价）
-            local itemBaseline = baseline
-            if slotName == "weapon" and equip.grip == "twohand" then
-                local ohSeq2 = heroSlots["offhand"]
-                if ohSeq2 then
-                    local ohEquip2 = inventory[tostring(ohSeq2)]
-                    if ohEquip2 then
-                        itemBaseline = curPower + calcEquipPower(ohEquip2, heroId)
+    -- 水合、等级和类型先过滤，不按静态分数截断；最终合法性仍由试穿验证。
+    local seen = {}
+    for seq in pairs(inventory) do
+        local seqNum = tonumber(seq)
+        if seqNum and seqNum > 0 and seqNum < math.huge
+            and seqNum == math.floor(seqNum) and not seen[seqNum]
+            and not occupiedByOthers[seqNum] then
+            seen[seqNum] = true
+            local equip = EquipmentSystem.getFromInventory(workingEquip, seqNum)
+            if type(equip) == "table" and EquipmentSystem.checkLevelGate(heroLevel, equip) then
+                for _, slotName in ipairs(EquipmentConfig.SLOTS) do
+                    local wearable = wearableSets[slotName]
+                    local matches = equip.slot == slotName
+                    if slotName == "offhand" and dualMode then
+                        matches = equip.slot == "weapon" and equip.grip == "onehand"
+                        -- 双持副手沿用武器类型，不是常规盾牌/法器的副手类型集合。
+                        wearable = wearableSets.weapon
+                    end
+                    if matches and (not wearable or wearable[equip.type]) then
+                        local pool = candidates[slotName]
+                        pool[#pool + 1] = seqNum
                     end
                 end
             end
-
-            -- 选择净收益最大的候选（双手武器 baseline 已含副手代价）
-            local itemGain = itemPower - itemBaseline
-            local bestGain = bestPower - bestBaseline
-            if itemGain > bestGain then
-                bestSeq      = seqNum
-                bestPower    = itemPower
-                bestBaseline = itemBaseline
-                bestGrip     = equip.grip
-            end
-
-            ::continue_item::
         end
+    end
+    for _, pool in pairs(candidates) do
+        table.sort(pool)
+    end
+    -- false 为卸下该槽，允许双手 → 单手+副手和双持类型整体切换。
+    table.insert(candidates.weapon, 1, false)
+    table.insert(candidates.offhand, 1, false)
 
-        -- 循环结束后统一判断：最优候选必须真的优于当前才替换
-        if bestSeq and bestPower > bestBaseline then
-            -- 清除旧装备在 equippedSeqNums 中的占用
-            if curSeq then
-                equippedSeqNums[tonumber(curSeq)] = nil
-            end
-
-            local applied, applyErr = EquipmentSystem.applyEquip(
-                equipData, bestSeq, heroId, slotName, heroesData)
-            if not applied then
-                print("[EquipmentService] EQUIP_ALL_BEST apply failed: " .. tostring(applyErr))
-                goto continue_slot
-            end
-            equippedSeqNums[bestSeq] = true
-            changed = changed + 1
-            heroSlots = EquipmentSystem.ensureHeroSlots(equipData, heroId)
-
-            print("[EquipmentService] EQUIP_ALL_BEST uid=" .. tostring(uid)
-                .. " heroId=" .. tostring(heroId) .. " slot=" .. slotName
-                .. " seq=" .. tostring(bestSeq) .. " power=" .. bestPower)
-        end
-
-        ::continue_slot::
+    ---@param equipment table
+    local function buildContext(equipment)
+        return EquipmentPower.buildContext(heroId, {
+            heroes = heroesData,
+            equipment = equipment,
+            artifacts = artifactsData,
+            talents = talentsData,
+        })
     end
 
+    ---@param ctx table
+    ---@param slotName string
+    ---@return table|nil
+    local function bestForSlot(ctx, slotName)
+        ---@type table|nil
+        local best = nil
+        local bestGain = 0
+        for _, seq in ipairs(candidates[slotName]) do
+            local evaluated = EquipmentPower.evaluate(ctx, seq, slotName)
+            if evaluated.valid and evaluated.gain > bestGain then
+                best = evaluated
+                bestGain = evaluated.gain
+            end
+        end
+        return best
+    end
+
+    ---@param ctx table
+    ---@return table|nil
+    local function bestWeaponPair(ctx)
+        ---@type table|nil
+        local best = nil
+        local bestGain = 0
+        for _, weaponSeq in ipairs(candidates.weapon) do
+            ---@type table|nil
+            local weapon = nil
+            if weaponSeq then
+                weapon = EquipmentSystem.getFromInventory(workingEquip, weaponSeq)
+            end
+            for _, offhandSeq in ipairs(candidates.offhand) do
+                -- 一件装备不能同时占主副手；双手武器的唯一副手候选为空。
+                local legalPair = not weaponSeq or not offhandSeq or weaponSeq ~= offhandSeq
+                if weapon and weapon.grip == "twohand" and offhandSeq then
+                    legalPair = false
+                end
+                if legalPair and offhandSeq and dualMode then
+                    local offhand = EquipmentSystem.getFromInventory(workingEquip, offhandSeq)
+                    if dualMode == "same" then
+                        legalPair = weapon ~= nil and offhand ~= nil
+                            and weapon.type == offhand.type
+                    elseif dualMode == "different" and weapon and offhand then
+                        legalPair = weapon.type ~= offhand.type
+                    end
+                end
+                if legalPair then
+                    -- evaluateLoadout 在隔离表上先清副手、再主手、最后副手。
+                    -- 因而旧双持类型不会误拒绝最终合法的整体换装。
+                    local evaluated = EquipmentPower.evaluateLoadout(ctx, {
+                        weapon = weaponSeq,
+                        offhand = offhandSeq,
+                    })
+                    if evaluated.valid and evaluated.gain > bestGain then
+                        best = evaluated
+                        bestGain = evaluated.gain
+                    end
+                end
+            end
+        end
+        return best
+    end
+
+    local ordinaryChanged = false
+    local order = { "weaponPair", "armor", "helmet", "shoes", "accessory", "weaponPair" }
+    for index, slotName in ipairs(order) do
+        -- 普通装备可能影响套装、倍率与上限，再基于新整套属性优化一次武器对。
+        if index < #order or ordinaryChanged then
+            local ctx = buildContext(workingEquip)
+            if not ctx then return false, "角色属性数据不可用" end
+            ---@type table|nil
+            local best = nil
+            if slotName == "weaponPair" then
+                best = bestWeaponPair(ctx)
+            else
+                best = bestForSlot(ctx, slotName)
+            end
+            if best then
+                workingEquip = best.equipment
+                if slotName ~= "weaponPair" then ordinaryChanged = true end
+                print("[EquipmentService] EQUIP_ALL_BEST preview uid=" .. tostring(uid)
+                    .. " heroId=" .. tostring(heroId) .. " slot=" .. slotName
+                    .. " gain=" .. tostring(best.gain)
+                    .. " power=" .. tostring(best.previewPower))
+            end
+        end
+    end
+
+    -- 只提交本英雄已验证的最终槽位，不把试穿的其他英雄/背包表覆盖回活表。
+    -- changed 统计最终真实不同的槽位（含双手换装卸掉副手），不统计中间试换次数。
+    local initialSlots = EquipmentSystem.getHeroSlots(equipData, heroId) or {}
+    local finalSlots = EquipmentSystem.getHeroSlots(workingEquip, heroId) or {}
+    local changed = 0
+    for _, slotName in ipairs(EquipmentConfig.SLOTS) do
+        local oldSeq = initialSlots[slotName]
+        local newSeq = finalSlots[slotName]
+        if (tonumber(oldSeq) or oldSeq or nil) ~= (tonumber(newSeq) or newSeq or nil) then
+            changed = changed + 1
+        end
+    end
     if changed > 0 then
+        local liveSlots = EquipmentSystem.ensureHeroSlots(equipData, heroId)
+        for _, slotName in ipairs(EquipmentConfig.SLOTS) do
+            liveSlots[slotName] = finalSlots[slotName] or nil
+        end
         PDM.MarkDirty(uid, "equipment")
     end
 
     print("[EquipmentService] EQUIP_ALL_BEST uid=" .. tostring(uid)
         .. " heroId=" .. tostring(heroId) .. " total_changed=" .. changed)
 
-    return true, nil, { heroId = heroId, equipped = changed }
+    return true, nil, { heroId = heroId, equipped = changed, changes = changed }
 end
 
 -- ======================== 自动分解设置 ========================

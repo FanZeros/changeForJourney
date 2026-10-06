@@ -766,4 +766,17 @@ function OfflineService.Cleanup(uid)
     end
 end
 
+--- 远征概览使用已加载快照；沿用领取资格，不访问 PDM/session 或待领奖励。
+---@param heroesData table|nil
+---@param battleData table|nil
+---@param dungeonData table|nil
+---@param seconds number|nil
+---@return OfflineTeamRewards|nil
+function OfflineService.PreviewTeamIncome(heroesData, battleData, dungeonData, seconds)
+    if type(heroesData) ~= "table" or type(battleData) ~= "table" then return nil end
+    local config = StageProvider.Get()
+    local teams = collectOfflineTeams(heroesData, battleData, config, dungeonData)
+    return OfflineCalc.previewTeamOfflineRewards(seconds or 3600, teams, config)
+end
+
 return OfflineService

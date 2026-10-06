@@ -14,6 +14,11 @@ local I18n           = require("core.I18n")
 local HeroFrame = require("ui.widget.HeroFrame")
 
 local TopBar = {}
+local onExpeditionClick = nil ---@type fun()|nil
+
+function TopBar.setOnExpeditionClick(callback)
+    onExpeditionClick = callback
+end
 
 -- Image handles
 local imgExpBg   = -1
@@ -387,6 +392,8 @@ function TopBar.handleInput(x, y, offsetY, hidePageTabs)
                 local GameSFX = require("systems.GameSFX")
                 GameSFX.playUIMove(2)
             end
+            -- 先保留原页签切换，再打开概览；重复点击远征也能再次查看。
+            if tab.index == 3 and onExpeditionClick then onExpeditionClick() end
             return true
         end
     end

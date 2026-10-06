@@ -29,7 +29,7 @@ return function(d, id)
     local curve = d.curve
     local CENTER, LIMIT = 139.5, 108
 
-    -- 这些薄封装只检查父闭包的几何包络，不接管像素、裁剪或绘制语义。
+    -- 安全域仍由原坐标检查；仅主体渐变改为无纹理的水平填色条带。
     -- 圆形安全域是凸集；线段和填充多边形只需验证端点/顶点及圆头描边半宽。
     ---@param x number
     ---@param y number
@@ -46,13 +46,79 @@ return function(d, id)
         for _, p in ipairs(points) do inBounds(p[1], p[2], padding) end
     end
 
+    ---@param a number[]
+    ---@param b number[]
+    ---@param t number
+    ---@return number[]
+    local function mix(a, b, t)
+        return { a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t,
+            a[3] + (b[3] - a[3]) * t }
+    end
+
+    -- Sutherland-Hodgman水平半平面裁切；交点来自原线段，绝不扩张安全域。
+    ---@param points number[][]
+    ---@param boundary number
+    ---@param keepAbove boolean
+    ---@return number[][]
+    local function clipY(points, boundary, keepAbove)
+        local result = {}
+        if #points == 0 then return result end
+        local previous = points[#points]
+        local previousInside = keepAbove and previous[2] >= boundary
+            or not keepAbove and previous[2] <= boundary
+        for _, current in ipairs(points) do
+            local currentInside = keepAbove and current[2] >= boundary
+                or not keepAbove and current[2] <= boundary
+            if currentInside ~= previousInside then
+                local t = (boundary - previous[2]) / (current[2] - previous[2])
+                result[#result + 1] = { previous[1] + (current[1] - previous[1]) * t, boundary }
+            end
+            if currentInside then result[#result + 1] = { current[1], current[2] } end
+            previous, previousInside = current, currentInside
+        end
+        return result
+    end
+
     ---@param points number[][]
     ---@param top number[]
     ---@param bottom number[]|nil
     ---@param opacity number|nil
     local function polygon(points, top, bottom, opacity)
         checkPoints(points, 0)
-        d.polygon(points, top, bottom, opacity)
+        if #points < 3 then return end
+        if not bottom then
+            d.polygon(points, top, nil, opacity)
+            return
+        end
+        local yMin, yMax = points[1][2], points[1][2]
+        for _, p in ipairs(points) do
+            yMin, yMax = math.min(yMin, p[2]), math.max(yMax, p[2])
+        end
+        local height = yMax - yMin
+        if height <= 0 then return end
+        -- 560母图每像素行至多0.5设计单位，避免大骨白面出现24/32段的可见色阶。
+        local segments = math.max(1, math.ceil(height * 2))
+        local boundaries = {}
+        for i = 0, segments do boundaries[i + 1] = yMin + height * i / segments end
+        -- 同一公共边只存一份坐标；相邻条带不重叠，半透明也只混合一次。
+        for i = 1, segments do
+            local low, high = boundaries[i], boundaries[i + 1]
+            local piece = clipY(clipY(points, low, true), high, false)
+            if #piece >= 3 then
+                local twiceArea = 0
+                local previous = piece[#piece]
+                for _, current in ipairs(piece) do
+                    twiceArea = twiceArea + previous[1] * current[2] - current[1] * previous[2]
+                    previous = current
+                end
+                if math.abs(twiceArea) > 0.000001 then
+                    checkPoints(piece, 0)
+                    local t = ((low + high) * 0.5 - yMin) / height
+                    -- bottom=nil绕过父scan的brushed/worn/keyLight；不影响父底板与111/112。
+                    d.polygon(piece, mix(top, bottom, t), nil, opacity)
+                end
+            end
+        end
     end
 
     ---@param points number[][]
@@ -87,7 +153,13 @@ return function(d, id)
     local function ellipse(cx, cy, rx, ry, top, bottom)
         -- 外接圆比真实椭圆更严格，避免只检查四个端点却漏掉斜向极值。
         inBounds(cx, cy, math.max(rx, ry))
-        d.ellipse(cx, cy, rx, ry, top, bottom)
+        -- 包含小嵌件在内统一48点；纯色也不回到父ellipse的另一填色路径。
+        local points = {}
+        for i = 0, 47 do
+            local angle = i * math.pi * 2 / 48
+            points[#points + 1] = { cx + math.cos(angle) * rx, cy + math.sin(angle) * ry }
+        end
+        polygon(points, top, bottom)
     end
 
     ---@param cx number
@@ -107,9 +179,11 @@ return function(d, id)
     ---@param top number[]|nil
     ---@param bottom number[]|nil
     local function emblem(points, top, bottom)
-        -- 父 emblem 固定使用7px暗描边，不能按细金线1.5px来估边界。
+        -- 与父emblem同一描边工艺，只将主体填色交给本地平滑渐变。
         checkPoints(points, 3.5)
-        d.emblem(points, top, bottom)
+        stroke(points, 7, DARK, true)
+        polygon(points, top or BONE, bottom or GOLD)
+        stroke(points, 1.5, GOLD, true)
     end
 
     -- 共用圣铃只统一工艺，不统一五图轮廓。基础铃简洁；进阶铃多一圈厚铜套箍。
@@ -153,14 +227,31 @@ return function(d, id)
         curve(body, 15, 46, -15, 46, -35, 41)
         curve(body, -48, 38, -48, 31, -35, 27)
         edge(body, 8, DARK, true)
-        polygon(project(body), BONE, SHADE)
-        -- 一整片铜暗面和单侧宽高光：先建立体积，再留少量刻边。
-        polygon(project({ { 4, -29 }, { 16, -24 }, { 24, -11 }, { 27, 13 },
-            { 38, 30 }, { 23, 37 }, { 14, 18 }, { 10, -9 } }), GOLD, SHADE)
+        polygon(project(body), BONE, refined and SHADE or mix(BONE, GOLD, 0.55))
+        -- 基础铃由宽骨白明面、中央罩壳和右铜暗面构成，不靠细接缝或噪声塑形。
+        if refined then
+            polygon(project({ { 4, -29 }, { 16, -24 }, { 24, -11 }, { 27, 13 },
+                { 38, 30 }, { 23, 37 }, { 14, 18 }, { 10, -9 } }), GOLD, SHADE)
+        else
+            polygon(project({ { 6, -28 }, { 17, -23 }, { 24, -10 }, { 27, 13 },
+                { 36, 29 }, { 26, 34 }, { 17, 18 }, { 12, -7 } }), GOLD, SHADE)
+            local brightFace = { { -11, -25 } }
+            curve(brightFace, -24, -18, -23, -3, -25, 12)
+            curve(brightFace, -25, 18, -29, 23, -29, 25)
+            curve(brightFace, -22, 23, -19, 13, -17, 2)
+            curve(brightFace, -16, -10, -15, -20, -11, -25)
+            polygon(project(brightFace), BONE, mix(BONE, GOLD, 0.25))
+        end
         edge(body, 1.6, GOLD, true)
         local highlight = { { -12, -23 } }
         curve(highlight, -23, -13, -17, 6, -29, 24)
         edge(highlight, 3.8, BONE, false)
+        -- 钟口下唇先于口腔，骨白上沿和铜色厚边分开，口腔保持独立暗形。
+        if not refined then
+            polygon(project({ { -40, 34 }, { -38, 40 }, { -27, 44 }, { 27, 44 },
+                { 38, 40 }, { 40, 34 } }), GOLD, SHADE)
+            arc(cx, cy + 35 * size, 43 * size, 7 * size, 0, 180, 3 * size, GOLD)
+        end
         ellipse(cx, cy + 35 * size, 43 * size, 7 * size, GOLD, BONE)
         ellipse(cx, cy + 37 * size, 33 * size, 4.6 * size, DARK, SHADE)
         edge({ { 0, 37 }, { 0, 53 } }, 5.5, DARK, false)
@@ -174,9 +265,6 @@ return function(d, id)
             ellipse(cx, cy + 8 * size, 8 * size, 11 * size, DARK)
             ellipse(cx - size, cy + 7 * size, 5.3 * size, 8 * size, GOLD, SHADE)
             edge({ { -2, 2 }, { -3, 10 } }, 1.6, BONE, false)
-        else
-            -- 基础司仪只留一条制造接缝，细节明显少于已审核的一转和本批二转。
-            edge({ { 9, -7 }, { 11, 14 } }, 1.8, SHADE, false)
         end
     end
 
@@ -191,7 +279,7 @@ return function(d, id)
         -- 战祷，父111：保护队友后下一击增伤。选择“执铃战地仪式护腕”，不是加剑箭。
         -- 单只手甲不是巨大全身角色；宽袖口/骨白束带/持铃拇指将它区别于普通骑士拳套。
         -- 右上圣铃先画，提环被手指握住；斜向腕甲和下垂布带形成独有不对称轮廓。
-        bell(184, 132, 0.66, true)
+        bell(179, 139, 0.70, true)
         emblem({ { 99, 167 }, { 151, 164 }, { 166, 207 }, { 154, 226 },
             { 111, 222 }, { 89, 208 } }, GOLD, SHADE)
         polygon({ { 106, 174 }, { 145, 171 }, { 156, 207 }, { 147, 217 },
@@ -207,28 +295,38 @@ return function(d, id)
             { 87, 215 }, { 84, 200 } }, BONE, GOLD)
         line(93, 181, 90, 201, 3, SHADE)
 
-        local glove = { { 105, 171 }, { 97, 152 }, { 108, 122 }, { 110, 103 },
-            { 121, 87 }, { 153, 85 }, { 166, 99 }, { 165, 122 },
-            { 152, 151 }, { 151, 168 } }
+        local glove = { { 105, 171 }, { 97, 152 }, { 108, 122 }, { 115, 108 },
+            { 126, 96 }, { 150, 94 }, { 161, 109 }, { 160, 132 },
+            { 151, 151 }, { 151, 168 } }
         emblem(glove, BONE, GOLD)
-        polygon({ { 143, 96 }, { 158, 101 }, { 159, 121 }, { 146, 149 },
+        polygon({ { 143, 105 }, { 154, 110 }, { 153, 131 }, { 145, 150 },
             { 144, 165 }, { 131, 167 }, { 137, 134 } }, GOLD, SHADE)
-        stroke({ { 109, 155 }, { 119, 130 }, { 120, 111 } }, 4, BONE, false)
-        -- 大片掌甲只留一条斜脊；三个粗指节是护具结构，而非技能层数示意。
-        emblem({ { 117, 106 }, { 128, 93 }, { 154, 93 }, { 160, 108 },
-            { 152, 118 }, { 123, 119 } }, GOLD, SHADE)
-        for _, x in ipairs({ 126, 139, 152 }) do
-            line(x, 97, x + 1, 110, 3.7, DARK)
-            line(x - 2, 97, x - 1, 107, 1.8, BONE)
-        end
-        -- 右侧弯曲拇指包住铃环，不能读成第二把武器。
-        local thumb = { { 146, 127 } }
-        curve(thumb, 152, 109, 164, 92, 180, 91)
-        curve(thumb, 190, 91, 194, 98, 189, 105)
-        curve(thumb, 181, 112, 172, 111, 165, 125)
-        curve(thumb, 161, 134, 151, 136, 146, 127)
+        stroke({ { 109, 155 }, { 119, 130 }, { 120, 115 } }, 4, BONE, false)
+        -- 斜向拳面而非平板三槽；两条粗折缝只交代护指甲片的握曲。
+        emblem({ { 118, 111 }, { 128, 98 }, { 151, 95 }, { 163, 106 },
+            { 151, 121 }, { 125, 124 } }, GOLD, SHADE)
+        stroke({ { 132, 103 }, { 136, 114 } }, 3.5, DARK, false)
+        stroke({ { 145, 101 }, { 149, 111 } }, 3.5, DARK, false)
+        line(130, 104, 133, 111, 1.8, BONE)
+        line(143, 103, 146, 110, 1.8, BONE)
+        -- 食指扣住环顶，拇指从掌侧回收夹住环底；不是把两个独立器物搭边。
+        local indexFinger = { { 154, 109 } }
+        curve(indexFinger, 158, 97, 170, 82, 182, 89)
+        curve(indexFinger, 187, 92, 188, 99, 185, 103)
+        curve(indexFinger, 178, 111, 168, 112, 158, 121)
+        curve(indexFinger, 151, 120, 150, 115, 154, 109)
+        emblem(indexFinger, BONE, GOLD)
+        stroke({ { 158, 108 }, { 169, 95 }, { 179, 92 } }, 3, BONE, false)
+        local thumb = { { 146, 132 } }
+        curve(thumb, 150, 120, 162, 103, 174, 107)
+        curve(thumb, 180, 109, 179, 115, 174, 119)
+        curve(thumb, 168, 124, 164, 132, 159, 136)
+        curve(thumb, 153, 139, 147, 138, 146, 132)
         emblem(thumb, BONE, GOLD)
-        stroke({ { 159, 116 }, { 169, 103 }, { 181, 99 } }, 3, BONE, false)
+        stroke({ { 153, 129 }, { 164, 116 }, { 171, 113 } }, 2.8, BONE, false)
+        -- 只补提环前缘的可见弧段，后缘仍被食指遮住，形成真实穿握遮挡。
+        arc(179, 97.7, 7, 7, 15, 92, 5.8, DARK)
+        arc(179, 97.7, 7, 7, 15, 92, 2.8, GOLD)
         ellipse(125, 193, 7, 10, DARK)
         ellipse(124, 192, 4.5, 7, GOLD, SHADE)
         line(123, 189, 122, 194, 1.8, BONE)
@@ -252,6 +350,9 @@ return function(d, id)
             { 116, 203 }, { 100, 184 } }, GOLD, SHADE)
         polygon({ { 117, 117 }, { 163, 117 }, { 166, 177 }, { 156, 191 },
             { 124, 191 }, { 113, 177 } }, DARK)
+        -- 顶盖下缘为实体铜厚唇，后画护柱遮住接缝，避免顶盖像平面屋檐。
+        polygon({ { 105, 105 }, { 175, 105 }, { 175, 113 }, { 105, 113 } }, GOLD, SHADE)
+        line(110, 105, 169, 105, 2.8, BONE)
         -- 两根实体护柱围住灯室；不是另加盾牌/徽章底盘。
         emblem({ { 102, 110 }, { 113, 111 }, { 115, 177 }, { 123, 195 },
             { 113, 198 }, { 102, 181 } }, BONE, GOLD)
@@ -270,6 +371,8 @@ return function(d, id)
         polygon({ { 142, 130 }, { 149, 142 }, { 142, 149 }, { 139, 141 } }, GOLD, SHADE)
         emblem({ { 111, 196 }, { 169, 196 }, { 178, 205 }, { 169, 216 },
             { 111, 216 }, { 102, 205 } }, GOLD, SHADE)
+        polygon({ { 110, 204 }, { 169, 204 }, { 164, 212 }, { 116, 212 } },
+            mix(GOLD, SHADE, 0.35), SHADE)
         line(112, 201, 168, 201, 3.4, BONE)
         line(117, 212, 163, 212, 2.8, SHADE)
         -- 只一条礼仪绑带沿灯脚外侧垂下，平切布端避免箭头化。
@@ -301,13 +404,36 @@ return function(d, id)
         curve(rightPage, 221, 113, 221, 154, 215, 177)
         curve(rightPage, 195, 171, 168, 177, 142, 193)
         curve(rightPage, 146, 168, 146, 132, 142, 109)
-        emblem(leftPage, BONE, GOLD)
-        emblem(rightPage, BONE, GOLD)
-        -- 每页一个宽明面、一条厚页沿，不写伪文字，也不铺满神秘符号。
+        emblem(leftPage, BONE, mix(BONE, GOLD, 0.65))
+        emblem(rightPage, BONE, mix(BONE, GOLD, 0.65))
+        -- 页块厚度沿书壳走，不铺横线假装文字；明暗页沿各只一条。
+        polygon({ { 66, 174 }, { 103, 176 }, { 134, 190 }, { 134, 196 },
+            { 104, 182 }, { 73, 187 } }, mix(BONE, GOLD, 0.35), GOLD)
+        polygon({ { 146, 190 }, { 176, 176 }, { 213, 174 }, { 207, 187 },
+            { 175, 182 }, { 146, 196 } }, GOLD, SHADE)
+        -- 保留大片可读骨白纸面，只用书脊侧/右页侧的大块暗面交代页曲。
         polygon({ { 125, 108 }, { 133, 112 }, { 130, 176 }, { 123, 177 },
             { 111, 170 }, { 118, 144 } }, GOLD, SHADE)
         polygon({ { 198, 96 }, { 211, 96 }, { 215, 157 }, { 208, 169 },
             { 195, 167 }, { 202, 137 } }, GOLD, SHADE)
+        -- 一枚装帧卷叶盲压饰，不加徽章底框、假文字或机制符号。
+        local pressedLeaf = { { 92, 116 } }
+        curve(pressedLeaf, 101, 118, 112, 125, 119, 139)
+        curve(pressedLeaf, 119, 149, 111, 159, 105, 165)
+        curve(pressedLeaf, 97, 160, 88, 150, 86, 139)
+        curve(pressedLeaf, 85, 130, 88, 121, 92, 116)
+        polygon(pressedLeaf, mix(BONE, GOLD, 0.50), GOLD)
+        stroke(pressedLeaf, 2, mix(GOLD, SHADE, 0.35), true)
+        polygon({ { 96, 124 }, { 106, 135 }, { 110, 144 }, { 103, 157 },
+            { 102, 140 } }, BONE, mix(BONE, GOLD, 0.40))
+        stroke({ { 96, 124 }, { 104, 139 }, { 103, 157 } }, 2.8, SHADE, false)
+        -- 另一页仅压入随纸张弯曲的页框，内容区留白，不与卷叶叠第二徽记。
+        local pageInset = { { 157, 119 } }
+        curve(pageInset, 171, 111, 185, 106, 197, 107)
+        curve(pageInset, 201, 124, 205, 144, 203, 156)
+        curve(pageInset, 188, 156, 170, 164, 159, 170)
+        curve(pageInset, 161, 151, 160, 133, 157, 119)
+        stroke(pageInset, 2.7, mix(GOLD, BONE, 0.12), true)
         local leftEdge = { { 68, 99 } }
         curve(leftEdge, 88, 96, 114, 103, 126, 111)
         stroke(leftEdge, 3.5, BONE, false)
@@ -328,42 +454,56 @@ return function(d, id)
                 { x + 1, 124 }, { x - 6, 118 } }, GOLD, SHADE)
             line(x - 3, 104, x - 3, 114, 2.1, BONE)
         end
-        -- 无字礼仪书签和小圣铃连接两大页块；铃纹比基础精细但不争主体。
-        emblem({ { 132, 173 }, { 148, 173 }, { 149, 203 }, { 140, 213 },
+        -- 书签从中缝内穿出，上方铜扣压住入口，下方小铃不再像悬空贴图。
+        emblem({ { 133, 166 }, { 147, 166 }, { 149, 203 }, { 140, 213 },
             { 131, 203 } }, GOLD, SHADE)
         bell(139.5, 201, 0.44, true)
+        emblem({ { 131, 165 }, { 148, 165 }, { 148, 174 }, { 132, 175 } }, GOLD, SHADE)
+        line(134, 168, 145, 168, 2.2, BONE)
         return
     end
 
     -- 罚忏，父112：治疗时40%概率造成三倍暗影伤害，不是主动全屏雷击。
     -- “罩铃执仪权杖”以暗色钟室、长柄和礼仪束带表达审罚职责，不画伤害投射/十字。
     -- 与大赦横向书翼形成明显对照；封闭拱罩没有冠齿、宝石列或皇冠尖。
-    emblem({ { 104, 218 }, { 117, 225 }, { 172, 128 }, { 155, 121 } }, GOLD, SHADE)
-    polygon({ { 106, 216 }, { 111, 219 }, { 161, 128 }, { 157, 126 } }, BONE, GOLD)
-    line(115, 216, 165, 131, 2.7, SHADE)
+    emblem({ { 104, 218 }, { 117, 225 }, { 163, 151 }, { 149, 144 } }, GOLD, SHADE)
+    polygon({ { 106, 216 }, { 111, 219 }, { 154, 150 }, { 150, 147 } }, BONE, GOLD)
+    polygon({ { 113, 219 }, { 117, 220 }, { 160, 151 }, { 156, 149 } }, GOLD, SHADE)
+    line(115, 216, 158, 151, 2.7, SHADE)
     ellipse(109, 224, 8, 6.5, DARK)
     ellipse(108, 222.5, 5.5, 4.3, GOLD, SHADE)
     line(105, 220, 110, 220, 2, BONE)
+
+    -- 仅杖头局部横向放大并移向中心；顶点、曲线采样点与描边继续按108断言。
+    ---@param points number[][]
+    ---@return number[][]
+    local function headPoints(points)
+        local result = {}
+        for _, p in ipairs(points) do
+            result[#result + 1] = { 168 + (p[1] - 177) * 1.28, 102 + (p[2] - 96.5) * 1.12 }
+        end
+        return result
+    end
 
     local hood = { { 177, 53 } }
     curve(hood, 157, 54, 146, 68, 147, 86)
     curve(hood, 147, 111, 161, 130, 177, 140)
     curve(hood, 195, 129, 208, 108, 208, 86)
     curve(hood, 208, 68, 196, 54, 177, 53)
-    emblem(hood, BONE, GOLD)
+    emblem(headPoints(hood), BONE, GOLD)
     local chamber = { { 177, 64 } }
     curve(chamber, 162, 64, 157, 75, 158, 88)
     curve(chamber, 159, 106, 166, 121, 177, 130)
     curve(chamber, 189, 120, 198, 104, 198, 88)
     curve(chamber, 198, 74, 191, 64, 177, 64)
-    polygon(chamber, SHADE, DARK)
-    stroke(chamber, 2.5, GOLD, true)
-    stroke({ { 155, 82 }, { 158, 104 }, { 169, 122 } }, 3.5, BONE, false)
-    stroke({ { 203, 89 }, { 199, 110 }, { 185, 132 } }, 3, SHADE, false)
-    bell(177, 101, 0.48, true)
-    -- 粗铜下箍接住罩铃与杖柄，没有第二杖头/魔法符阵。
-    emblem({ { 163, 126 }, { 181, 135 }, { 174, 147 }, { 155, 138 } }, GOLD, SHADE)
-    line(163, 131, 177, 138, 2.6, BONE)
+    polygon(headPoints(chamber), SHADE, DARK)
+    stroke(headPoints(chamber), 2.5, GOLD, true)
+    stroke(headPoints({ { 155, 82 }, { 158, 104 }, { 169, 122 } }), 3.5, BONE, false)
+    stroke(headPoints({ { 203, 89 }, { 199, 110 }, { 185, 132 } }), 3, SHADE, false)
+    bell(168, 105, 0.55, true)
+    -- 放大的粗铜下箍接住新柄轴，不出现旧接头与新杖头两套错位结构。
+    emblem(headPoints({ { 163, 126 }, { 181, 135 }, { 174, 147 }, { 155, 138 } }), GOLD, SHADE)
+    stroke(headPoints({ { 163, 131 }, { 177, 138 } }), 2.6, BONE, false)
     -- 骨白礼仪布带横卷于握柄，宽面与自然折角；末端平切，不读成指向箭。
     local sash = { { 136, 160 } }
     curve(sash, 147, 165, 164, 166, 180, 157)

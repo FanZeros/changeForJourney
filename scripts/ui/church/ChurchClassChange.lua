@@ -1024,8 +1024,8 @@ function M.drawConfirmPopup(vg)
                 C.coinSize, C.coinSize, 1.0)
 
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            -- 按钮内金币消耗：够=亮深棕，不够=灰蓝色禁用色
-            nvgFillColor(vg, canAfford and nvgRGBA(0x46, 0x2f, 0x20, 255) or nvgRGBA(0x8b, 0x95, 0xa5, 255))
+            -- 按钮内金币消耗：足够时亮金，不足时灰蓝。
+            nvgFillColor(vg, canAfford and nvgRGBA(255, 214, 102, 255) or nvgRGBA(0x8b, 0x95, 0xa5, 255))
             nvgText(vg, coinStartX + C.coinSize + coinGap, C.btnCY, costStr, nil)
             BF.finish(vg, _bf2)
         end

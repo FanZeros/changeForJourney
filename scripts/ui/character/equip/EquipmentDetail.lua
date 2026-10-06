@@ -26,10 +26,6 @@ local EquipmentDetailDraw = require("ui.character.equip.EquipmentDetailDraw")
 
 local BlacksmithConfig = require("config.BlacksmithConfig")
 local KeywordText      = require("ui.widget.KeywordText")
-local BlacksmithPage   = nil  -- 延迟加载，避免循环依赖
-local EquipmentBag     = nil  -- 延迟加载
-local BottomNav        = nil  -- 延迟加载
-local CharacterDetail  = nil  -- 延迟加载
 
 local EquipmentDetail = {}
 
@@ -96,7 +92,6 @@ local imgPowerIcon   = -1
 local imgArrowUp     = -1
 local imgArrowDown   = -1
 local imgBtnGreen    = -1
-local imgBtnYellow   = -1   -- UI_AN_HUANG.png（前往洗练按钮）
 local imgBtnRed      = -1   -- UI_AN_HONG.png（立即分解按钮）
 local imgLock        = -1   -- UI_ICON_SUO.png（装备锁定图标）
 local imgAffixBadge  = {}   -- { D=handle, C=handle, ... }
@@ -373,14 +368,11 @@ local REF_BTN_W   = 410
 local REF_BTN_H   = 100
 local REF_BTN_FONT = 40
 
--- 强化按钮（装备详情背景底边下方 18px）[UI 0930] 宽度收窄
-local REF_ENH_BTN_GAP  = 18   -- 与背景底边间距
-local REF_ENH_BTN_W    = 300
-local REF_ENH_BTN_H    = 100
-local REF_ENH_BTN_FONT = 40
-
--- 立即分解按钮（前往洗练按钮下方，背包模式专用）
-local REF_DEC_BTN_GAP = 72    -- 与前往洗练按钮的间距（下移至背景框外）
+-- 立即分解按钮（背景底边下方 18px；无穿戴按钮时放在框内）
+local REF_DEC_BTN_GAP  = 18
+local REF_DEC_BTN_W    = 300
+local REF_DEC_BTN_H    = 100
+local REF_DEC_BTN_FONT = 40
 
 -- 当前装备面板（顶部与新装备面板对齐）
 local CUR_BG_CX = 274
@@ -481,14 +473,10 @@ end
 local function compactViewHeight(equip, withButtons)
     local contentBottom = compactContentBottom(equip)
     local setH = compactSetBlockHeight(equip)
-    if not withButtons then
+    if not withButtons or detState.slot == nil then
         return math.max(360, contentBottom + setH + 18)
     end
-    local btnCount = 0
-    if detState.slot ~= nil then btnCount = btnCount + 1 end
-    if TutorialManager.isBuildingUnlocked("smith") then btnCount = btnCount + 1 end
-    return math.max(430, contentBottom + setH + COMPACT_BTN_GAP
-        + btnCount * COMPACT_BTN_H + math.max(0, btnCount - 1) * 12 + 18)
+    return math.max(430, contentBottom + setH + COMPACT_BTN_GAP + COMPACT_BTN_H + 18)
 end
 
 local function compactCompareEquip()
@@ -504,19 +492,12 @@ local function compactVisSize()
     return COMPACT_BG_W * COMPACT_SCALE, h * COMPACT_SCALE
 end
 
---- 小窗按钮：贴在最后一条内容下方，上下排列，完整留在框内。
----@return number wearCY, number refineCY, number cx, number w, number h
+--- 小窗穿戴/卸下按钮：贴在最后一条内容下方，完整留在框内。
+---@return number wearCY, number cx, number w, number h
 local function compactButtonRow()
     local panelH = compactViewHeight(detState.layoutEquip, true)
-    local smithOn = TutorialManager.isBuildingUnlocked("smith")
-    local showWear = detState.slot ~= nil
     local h = COMPACT_BTN_H
-    local refineCY = panelH - 18 - h * 0.5
-    local wearCY = refineCY
-    if showWear and smithOn then
-        wearCY = refineCY - h - 12
-    end
-    return wearCY, refineCY, REF_BG_CX, COMPACT_BTN_W, h
+    return panelH - 18 - h * 0.5, REF_BG_CX, COMPACT_BTN_W, h
 end
 
 local function compactOffset()
@@ -585,7 +566,7 @@ local panelDraw = EquipmentDetailDraw.create({
     getImages = function()
         return {
             powerIcon = imgPowerIcon, arrowUp = imgArrowUp, arrowDown = imgArrowDown,
-            btnGreen = imgBtnGreen, btnYellow = imgBtnYellow, btnRed = imgBtnRed,
+            btnGreen = imgBtnGreen, btnRed = imgBtnRed,
             lock = imgLock, affixBadge = imgAffixBadge,
         }
     end,
@@ -629,11 +610,10 @@ local panelDraw = EquipmentDetailDraw.create({
         REF_BTN_FONT = REF_BTN_FONT,
         REF_BTN_H = REF_BTN_H,
         REF_BTN_W = REF_BTN_W,
+        REF_DEC_BTN_FONT = REF_DEC_BTN_FONT,
         REF_DEC_BTN_GAP = REF_DEC_BTN_GAP,
-        REF_ENH_BTN_FONT = REF_ENH_BTN_FONT,
-        REF_ENH_BTN_GAP = REF_ENH_BTN_GAP,
-        REF_ENH_BTN_H = REF_ENH_BTN_H,
-        REF_ENH_BTN_W = REF_ENH_BTN_W,
+        REF_DEC_BTN_H = REF_DEC_BTN_H,
+        REF_DEC_BTN_W = REF_DEC_BTN_W,
         REF_ICON_CX = REF_ICON_CX,
         REF_ICON_CY = REF_ICON_CY,
         REF_ICON_SIZE = REF_ICON_SIZE,
@@ -668,7 +648,6 @@ function EquipmentDetail.init(vg)
     imgArrowUp   = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
     imgArrowDown = nvgCreateImage(vg, "image/通用图标/ICON_down.png", 0)
     imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-    imgBtnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgBtnRed    = nvgCreateImage(vg, "image/按钮/UI_AN_HONG.png", 0)
     imgLock      = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
     ImageCache.init(vg)
@@ -921,14 +900,10 @@ function EquipmentDetail.handleInput(dx, dy)
     local offsetX = detState.compactCorner and 0 or (SINGLE_BG_CX - REF_BG_CX)
     local btnCX = REF_BTN_CX + offsetX
 
-    -- 前往洗练按钮Y
-    local enhOnly = (detState.slot == nil)  -- 背包模式
-    local enhBtnCY
-    if enhOnly then
-        enhBtnCY = btnCY  -- 背包模式：顶替穿戴按钮位置
-    else
-        enhBtnCY = REF_BG_CY + REF_BG_H * 0.5 + REF_ENH_BTN_GAP + REF_ENH_BTN_H * 0.5
-    end
+    -- 大面板分解按钮：无穿戴按钮时放在框内，其余情况紧贴底板下方。
+    local backpackOnly = (detState.slot == nil)
+    local decBtnCY = backpackOnly and btnCY
+        or (REF_BG_CY + REF_BG_H * 0.5 + REF_DEC_BTN_GAP + REF_DEC_BTN_H * 0.5)
 
     if detState.compactCorner and detState.lockHotspot
        and hitTest(dx, dy, detState.lockHotspot.cx, detState.lockHotspot.cy,
@@ -948,25 +923,8 @@ function EquipmentDetail.handleInput(dx, dy)
     end
 
     if detState.compactCorner then
-        local smithOn = TutorialManager.isBuildingUnlocked("smith")
-        local showWear = not enhOnly
-        local wearCY, refineCY, cx, bw, bh = compactButtonRow()
-        if smithOn and hitTest(dx, dy, cx, refineCY, bw, bh) then
-            BF.trigger("ed_enhance")
-            if not BlacksmithPage then BlacksmithPage = require("ui.blacksmith.BlacksmithPage") end
-            if not EquipmentBag then EquipmentBag = require("ui.character.equip.EquipmentBag") end
-            if not CharacterDetail then CharacterDetail = require("ui.character.detail.CharacterDetail") end
-            detState.open = false
-            detState.closing = false
-            detState.snapshot = nil
-            if EquipmentBag.isOpen() then EquipmentBag.close() end
-            -- [锻炉双页 0929] 仓库保持打开（作为锻炉左栏）；未开时由 BlacksmithPage.open 自动联动打开
-            if CharacterDetail.isOpen() then CharacterDetail.forceClose() end
-            newEquip.seq = tonumber(detState.equipSeq)  -- inventory 项不带 seq，工作台需要
-            BlacksmithPage.open(newEquip, "xilian")
-            print("[EquipmentDetail] 小窗前往洗练 seq=" .. tostring(detState.equipSeq))
-            return true
-        end
+        local showWear = not backpackOnly
+        local wearCY, cx, bw, bh = compactButtonRow()
         if showWear and hitTest(dx, dy, cx, wearCY, bw, bh) then
             BF.trigger("ed_equip")
             local Client = getClient()
@@ -995,44 +953,11 @@ function EquipmentDetail.handleInput(dx, dy)
         end
     end
 
-    -- 点击前往洗练按钮（仅铁匠铺已解锁时响应）
-    if (not detState.compactCorner) and TutorialManager.isBuildingUnlocked("smith")
-       and hitTest(dx, dy, btnCX, enhBtnCY, REF_ENH_BTN_W, REF_ENH_BTN_H) then
-        BF.trigger("ed_enhance")
-        -- 延迟加载依赖模块
-        if not BlacksmithPage then BlacksmithPage = require("ui.blacksmith.BlacksmithPage") end
-        if not EquipmentBag then EquipmentBag = require("ui.character.equip.EquipmentBag") end
-        if not BottomNav then BottomNav = require("ui.hud.BottomNav") end
-        if not CharacterDetail then CharacterDetail = require("ui.character.detail.CharacterDetail") end
-
-        -- 1) 立即关闭装备详情（不走动画，直接重置状态）
-        detState.open    = false
-        detState.closing = false
-        detState.snapshot = nil
-
-        -- 2) 关闭 EquipmentBag（[锻炉双页 0929] 仓库保持打开作为锻炉左栏，
-        --    未开时由 BlacksmithPage.open 自动联动打开）
-        if EquipmentBag.isOpen() then
-            EquipmentBag.close()
-        end
-
-        -- 3) 强制关闭角色详情（跳过动画，否则 isDetailOpen()=true 会阻止 BottomNav 绘制）
-        if CharacterDetail.isOpen() then
-            CharacterDetail.forceClose()
-        end
-
-        -- 4) 打开铁匠铺洗练面板并预选装备（锻炉在中栏、仓库在左栏）
-        newEquip.seq = tonumber(detState.equipSeq)  -- inventory 项不带 seq，工作台需要
-        BlacksmithPage.open(newEquip, "xilian")
-        print("[EquipmentDetail] 前往洗练 → 打开铁匠铺洗练面板，装备: " .. (newEquip.name or "?"))
-        return true
-    end
-
-    -- 点击立即分解按钮（未穿戴未锁定装备，前往洗练下方；背包模式与角色槽位模式通用）
-    if (not detState.compactCorner) and (not newEquip.locked) and (not isEquipped)
-       and TutorialManager.isBuildingUnlocked("smith") then
-        local decBtnCY = enhBtnCY + REF_ENH_BTN_H + REF_DEC_BTN_GAP
-        if hitTest(dx, dy, btnCX, decBtnCY, REF_ENH_BTN_W, REF_ENH_BTN_H) then
+    -- 点击立即分解按钮（保留未穿戴、未锁定及铁匠铺解锁条件）
+    local showDecompose = (not detState.compactCorner) and (not newEquip.locked) and (not isEquipped)
+        and TutorialManager.isBuildingUnlocked("smith")
+    if showDecompose then
+        if hitTest(dx, dy, btnCX, decBtnCY, REF_DEC_BTN_W, REF_DEC_BTN_H) then
             BF.trigger("ed_decompose")
             local Client = getClient()
             local Protocol = getProtocol()
@@ -1049,7 +974,7 @@ function EquipmentDetail.handleInput(dx, dy)
     end
 
     -- 点击穿戴/卸下按钮（背包模式不显示此按钮，跳过）
-    if (not detState.compactCorner) and not enhOnly and hitTest(dx, dy, btnCX, btnCY, REF_BTN_W, REF_BTN_H) then
+    if (not detState.compactCorner) and not backpackOnly and hitTest(dx, dy, btnCX, btnCY, REF_BTN_W, REF_BTN_H) then
         BF.trigger("ed_equip")
         local Client = getClient()
         local Protocol = getProtocol()
@@ -1135,11 +1060,6 @@ function EquipmentDetail.handleInput(dx, dy)
         if hitTest(dx, dy, panelCenter, panelH * 0.5, panelW, panelH) then
             inPanel = true
         end
-        local rowY, _, _, _, bh = compactButtonRow()
-        if math.abs(dy - rowY) <= bh * 0.5 + 8
-            and math.abs(dx - REF_BG_CX) <= COMPACT_BG_W * 0.5 then
-            inPanel = true
-        end
     elseif hasCurrent then
         if hitTest(dx, dy, SINGLE_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H) then
             inPanel = true
@@ -1150,12 +1070,12 @@ function EquipmentDetail.handleInput(dx, dy)
         end
     end
 
-    -- 穿戴按钮区域也算面板内
-    if hitTest(dx, dy, btnCX, btnCY, REF_BTN_W + 40, REF_BTN_H + 40) then
+    -- 仅保留实际显示的按钮热区，compact 按钮均已包含在底板内。
+    if (not detState.compactCorner) and not backpackOnly
+       and hitTest(dx, dy, btnCX, btnCY, REF_BTN_W + 40, REF_BTN_H + 40) then
         inPanel = true
     end
-    -- 前往洗练按钮区域也算面板内
-    if hitTest(dx, dy, btnCX, enhBtnCY, REF_ENH_BTN_W + 40, REF_ENH_BTN_H + 40) then
+    if showDecompose and hitTest(dx, dy, btnCX, decBtnCY, REF_DEC_BTN_W, REF_DEC_BTN_H) then
         inPanel = true
     end
 
@@ -1239,7 +1159,7 @@ function EquipmentDetail.draw(vg)
         nvgTranslate(vg, 0, slideOY)
     end
 
-    local enhOnly = (detState.slot == nil)  -- 背包模式：无穿戴按钮，仅前往洗练
+    local backpackOnly = (detState.slot == nil)  -- 背包模式不显示穿戴按钮
 
     if compact then
         local compare = hasCurrent and curEquip or nil
@@ -1267,7 +1187,7 @@ function EquipmentDetail.draw(vg)
     local showDecompose = (not isEquipped) and (not newEquip.locked)
     drawEquipPanel(vg, newEquip, singleOffsetX,
         SINGLE_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H,
-        (hasCurrent and powerDiff or nil), true, btnText, enhOnly, true, showDecompose)
+        (hasCurrent and powerDiff or nil), true, btnText, backpackOnly, true, showDecompose)
 
     nvgRestore(vg)
 end
@@ -1314,19 +1234,22 @@ function EquipmentDetail.containsPoint(dx, dy)
     else
         if hitTest(lx, ly, SINGLE_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H) then return true end
     end
-    if detState.compactCorner then
-        local rowY, _, _, _, bh = compactButtonRow()
-        if math.abs(ly - rowY) <= bh * 0.5 + 8
-            and math.abs(lx - REF_BG_CX) <= COMPACT_BG_W * 0.5 then
-            return true
-        end
+    if detState.compactCorner then return false end
+
+    local btnCX = REF_BTN_CX + SINGLE_BG_CX - REF_BG_CX
+    local eqData = PlayerStore.Get("equipment")
+    local equip = eqData and eqData.inventory and eqData.inventory[detState.equipSeq]
+    if not equip then return false end
+    local btnCY = layoutButtons(equip)
+    if detState.slot ~= nil and hitTest(lx, ly, btnCX, btnCY, REF_BTN_W + 40, REF_BTN_H + 40) then
+        return true
     end
-    local offsetX = detState.compactCorner and 0 or (SINGLE_BG_CX - REF_BG_CX)
-    local btnCX = REF_BTN_CX + offsetX
-    local stripTop = REF_BG_CY + REF_BG_H * 0.5
-    local stripBot = stripTop + REF_ENH_BTN_GAP + REF_ENH_BTN_H + 48
-    return lx >= btnCX - (REF_BTN_W + 40) * 0.5 and lx <= btnCX + (REF_BTN_W + 40) * 0.5
-       and ly >= stripTop and ly <= stripBot
+    if not equip.locked and not isClickedEquipEquipped() and TutorialManager.isBuildingUnlocked("smith") then
+        local decBtnCY = detState.slot == nil and btnCY
+            or (REF_BG_CY + REF_BG_H * 0.5 + REF_DEC_BTN_GAP + REF_DEC_BTN_H * 0.5)
+        return hitTest(lx, ly, btnCX, decBtnCY, REF_DEC_BTN_W, REF_DEC_BTN_H)
+    end
+    return false
 end
 
 ---@param wheel number

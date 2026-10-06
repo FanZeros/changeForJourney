@@ -40,7 +40,10 @@ function BattleSchema.normalizeTeamStageIds(data, restoring)
     end
     local firstStage = StageConfig.NORMAL_FIRST_STAGE
     current = current or firstStage
-    local maxStage = validStageId(data.maxStageId) or current
+    local maxStage = validStageId(data.maxStageId)
+    if not maxStage or StageConfig.isResourceStage(maxStage) then
+        maxStage = StageConfig.isResourceStage(current) and firstStage or current
+    end
     data.maxStageId = maxStage
     local maxRank = progressRank(maxStage)
     local unlocked = require("config.ExpTable").getUnlockedTeamCount(data)
@@ -48,7 +51,15 @@ function BattleSchema.normalizeTeamStageIds(data, restoring)
     for teamIdx = 1, 3 do
         local id = teamIdx == 1 and current
             or validStageId(savedTeams[tostring(teamIdx)] or savedTeams[teamIdx]) or firstStage
-        if teamIdx > unlocked or progressRank(id) > maxRank then id = firstStage end
+        if teamIdx > unlocked then
+            id = firstStage
+        elseif StageConfig.isResourceStage(id) then
+            local DC = require("config.DungeonConfig")
+            local dungeonId = DC.decodeStageId(id)
+            if maxRank < DC.DEFINITIONS[dungeonId].unlockStage then id = firstStage end
+        elseif progressRank(id) > maxRank then
+            id = firstStage
+        end
         if restoring == true and StageConfig.isTerminalTemple(id) then
             id = StageConfig.getTerminalPrevStageId(id) or firstStage
         end

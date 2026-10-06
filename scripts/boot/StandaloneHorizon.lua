@@ -251,6 +251,12 @@ local function HorizonDrawPageModal(_unused_vg)
     if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
     if PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen()
         or OfflineRewardPanel.isOpen() or RewardPopup.isOpen() then return end
+    if not DungeonPage.isDetailOpen() then
+        BottomNav.setSelectedIndex(3)
+        BattleTriPage.open()
+        require("ui.battle.stage.StageSelectDialog").openDungeon(1)
+        return
+    end
     DungeonPage.setLandscapeMode(true)
     local fit = math.min(logicalW() / 1920, logicalH() / 1080)
     local ox = (logicalW() - 1920 * fit) * 0.5

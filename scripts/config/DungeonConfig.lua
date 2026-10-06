@@ -454,4 +454,81 @@ function DungeonConfig.getHighestClearedFloor(sub, id)
     return highest
 end
 
+-- 资源关卡使用独立ID；只记录队伍位置，不进入主线进度链。
+local RESOURCE_STAGE_BASE = { gold_mine = 100000, equipment_vault = 200000, black_diamond = 300000 }
+local resourceStages = {}
+
+function DungeonConfig.getStageId(id, floor)
+    local base = RESOURCE_STAGE_BASE[id]
+    local level = math.tointeger(tonumber(floor) or 0)
+    if not base or not level or level < 1 or level > (DungeonConfig.MAX_FLOOR[id] or 0) then return nil end
+    return base + level
+end
+
+function DungeonConfig.decodeStageId(stageId)
+    local value = math.tointeger(tonumber(stageId) or 0)
+    if not value then return nil end
+    for id, base in pairs(RESOURCE_STAGE_BASE) do
+        local floor = value - base
+        if floor >= 1 and floor <= DungeonConfig.MAX_FLOOR[id] then return id, floor end
+    end
+    return nil
+end
+
+function DungeonConfig.getStage(stageId)
+    local id, floor = DungeonConfig.decodeStageId(stageId)
+    if not id then return nil end
+    if resourceStages[stageId] then return resourceStages[stageId] end
+    local entry = DungeonConfig.getCombatEntry(id, floor)
+    if not entry then return nil end
+    entry.sourceStageId = entry.id
+    entry.id = stageId
+    entry.resourceDungeonId, entry.resourceFloor = id, floor
+    entry.displayChapter = math.ceil(floor / 5)
+    entry.stage = (floor - 1) % 5 + 1
+    entry.name = DungeonConfig.DEFINITIONS[id].name .. " " .. entry.displayChapter .. "-" .. entry.stage
+    entry.firstClearBonusMonster, entry.firstClearBonusMonsters = nil, nil
+    entry.mapBg = "image/关卡地图/" .. (id == "gold_mine" and "MAP_FB1.png" or (id == "equipment_vault" and "MAP_FB2.png" or "MAP_FB3.png"))
+    resourceStages[stageId] = entry
+    return entry
+end
+
+function DungeonConfig.isStageUnlocked(stageId, battleData, dungeonData)
+    local id, floor = DungeonConfig.decodeStageId(stageId)
+    if not id then return false end
+    local def = DungeonConfig.DEFINITIONS[id]
+    local maxId = tonumber(battleData and battleData.maxStageId) or 0
+    local previous = StageConfig.getTerminalPrevStageId(maxId)
+    local maxRank = previous and previous + 0.5 or maxId
+    if maxRank < def.unlockStage then return false end
+    local sub = type(dungeonData) == "table" and dungeonData[id] or nil
+    return floor <= math.min(def.maxFloor, DungeonConfig.getHighestClearedFloor(sub, id) + 1)
+end
+
+-- 在线每次击杀与离线固定杀怪效率复用原每分钟收益，不把一次扫荡变为无限波大奖。
+function DungeonConfig.getStageRewards(stageId, kills)
+    local id, floor = DungeonConfig.decodeStageId(stageId)
+    local rewards = { gold = 0, diamond = 0, adventureExp = 0, adventurerExp = 0, equipSeeds = {}, scrollDrops = {} }
+    if not id or (tonumber(kills) or 0) <= 0 then return rewards end
+    local idle = require("config.DungeonIdleConfig")
+    local rate = idle.getIdlePerMin(id, floor)
+    local perMinute = id == "equipment_vault" and rate or rate * idle.REWARD_MULT
+    local raw = math.max(0, kills) * perMinute / 20 -- 每3秒1只，即每分钟20只。
+    local amount = math.floor(raw)
+    if math.random() < raw - amount then amount = amount + 1 end
+    if id == "gold_mine" then rewards.gold = amount
+    elseif id == "black_diamond" then rewards.diamond = amount
+    elseif amount > 0 then
+        local data = DungeonConfig.getFloor(id, floor)
+        for _ = 1, amount do
+            rewards.equipSeeds[#rewards.equipSeeds + 1] = {
+                stageId = stageId, count = 1, level = data.equipLevel,
+                quality = math.random(data.equipMinQuality, data.equipMaxQuality),
+            }
+        end
+    end
+    return rewards
+end
+
+
 return DungeonConfig

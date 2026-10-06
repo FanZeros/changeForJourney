@@ -206,8 +206,8 @@ local function ensureDrivers()
                         -- 终焉仍留在运行态，落盘的一队当前关使用同一个末关回退点。
                         battle.currentStageId = savedId
                         local cleared = battle.clearedStages or {}
-                        battle.battleMode = (cleared[savedId] or cleared[tostring(savedId)])
-                            and "idle" or "firstClear"
+                        battle.battleMode = (StageConfig.isResourceStage(savedId)
+                            or cleared[savedId] or cleared[tostring(savedId)]) and "idle" or "firstClear"
                     end
                     if changed then
                         print(string.format("[BattleTriPage] 队%d 关卡入档 stage=%s", teamIdx, tostring(savedId)))
@@ -226,6 +226,13 @@ local function ensureDrivers()
                 or tonumber(savedTeams[tostring(t)] or savedTeams[t]) or StageConfig.NORMAL_FIRST_STAGE
             if t ~= 1 and StageConfig.isTerminalTemple(startStage) then
                 startStage = StageConfig.getTerminalPrevStageId(startStage) or StageConfig.NORMAL_FIRST_STAGE
+            end
+            if StageConfig.isResourceStage(startStage) then
+                local DC = require("config.DungeonConfig")
+                if not DC.isStageUnlocked(startStage, battle, ClientDispatcher.get("dungeon")) then
+                    startStage = StageConfig.NORMAL_FIRST_STAGE
+                    if t == 1 then BattleScene.adoptStageProgress(startStage) end
+                end
             end
             drv._syncedMainStage = startStage
             drivers[t] = drv
@@ -877,7 +884,13 @@ function BattleTriPage.gotoTeamStage(teamIdx, stageId)
         require("systems.GameBGM").setScene("samsara", { fromStart = true })
         return true
     end
-    if terminalRaid or stageId > maxRank then return false end
+    if terminalRaid then return false end
+    if StageConfig.isResourceStage(stageId) then
+        if not require("config.DungeonConfig").isStageUnlocked(stageId,
+            ClientDispatcher.get("battle"), ClientDispatcher.get("dungeon")) then return false end
+    elseif stageId > maxRank then
+        return false
+    end
     local drv = drivers[teamIdx]
     if not drv then return false end
     if teamIdx == 1 then
@@ -927,7 +940,7 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         BattleScene.drawSpeedButton(vg)
         nvgRestore(vg)
     end
-    do
+    if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(1)) then
         nvgSave(vg)
         nvgTranslate(vg, hudSweepX, hudY)
         nvgScale(vg, hudScale, hudScale)
@@ -986,12 +999,14 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
             BattleScene.drawSpeedButton(vg)
             nvgRestore(vg)
         end
-        nvgSave(vg)
-        nvgTranslate(vg, rowSweepX, rowY)
-        nvgScale(vg, hudScale, hudScale)
-        nvgTranslate(vg, -971, -2115)
-        SweepDialog.drawButton(vg)
-        nvgRestore(vg)
+        if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(row)) then
+            nvgSave(vg)
+            nvgTranslate(vg, rowSweepX, rowY)
+            nvgScale(vg, hudScale, hudScale)
+            nvgTranslate(vg, -971, -2115)
+            SweepDialog.drawButton(vg)
+            nvgRestore(vg)
+        end
         nvgSave(vg)
         nvgTranslate(vg, rowStatsX, rowY)
         nvgScale(vg, hudScale, hudScale)
@@ -1100,7 +1115,8 @@ function BattleTriPage.handleInput(wx, wy)
         bs.handleSpeedButtonInput(987 + (wx - hudSpeedX) / hudScale, 311 + (wy - hudY) / hudScale)
         return true
     end
-    if math.abs(wx - hudSweepX) <= hitW and math.abs(wy - hudY) <= hitH then
+    if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(1))
+        and math.abs(wx - hudSweepX) <= hitW and math.abs(wy - hudY) <= hitH then
         SweepDialog.handleButtonInput(971 + (wx - hudSweepX) / hudScale, 2115 + (wy - hudY) / hudScale, 1)
         return true
     end
@@ -1139,7 +1155,8 @@ function BattleTriPage.handleInput(wx, wy)
             bs.handleSpeedButtonInput(987 + (wx - rowSpeedX) / hudScale, 311 + (wy - rowY) / hudScale)
             return true
         end
-        if math.abs(wx - rowSweepX) <= hitW and math.abs(wy - rowY) <= hitH then
+        if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(row))
+            and math.abs(wx - rowSweepX) <= hitW and math.abs(wy - rowY) <= hitH then
             SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale, row)
             return true
         end

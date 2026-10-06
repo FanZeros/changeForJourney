@@ -81,6 +81,11 @@ local function buildWave(stageId)
         local u = MC.createMonster(1, level)
         if u then list[#list + 1] = u end
     end
+    if SC.isResourceStage(stageId) then
+        for _, unit in ipairs(list) do
+            unit.goldReward, unit.expReward = 0, 0
+        end
+    end
     return list, level
 end
 
@@ -201,7 +206,8 @@ function BattleTriDriver.new(teamIdx, options)
                 battle.currentStageId = prevId
                 local cleared = battle.clearedStages
                 local nextCleared = type(cleared) == "table" and cleared[tostring(prevId)] == true
-                battle.battleMode = nextCleared and "idle" or "firstClear"
+                battle.battleMode = SC.isResourceStage(prevId) and "idle"
+                    or (nextCleared and "idle" or "firstClear")
             end
         end
         self._syncedMainStage = prevId
@@ -357,7 +363,9 @@ function BattleTriDriver.new(teamIdx, options)
                 self.onStageChanged(self.teamIdx, stageId)
             end
             -- 实际进场才通知剧情；同关重开也允许模块按会话/领取账本去重。
-            require("ui.battle.stage.StageEntryEvents").notify(stageId, self.teamIdx)
+            if not SC.isResourceStage(stageId) then
+                require("ui.battle.stage.StageEntryEvents").notify(stageId, self.teamIdx)
+            end
         end
     end
 
@@ -366,12 +374,14 @@ function BattleTriDriver.new(teamIdx, options)
         self.kills = self.kills + 1
         if self.battleLab then return end
         local pending = self.pendingKills
+        -- 资源每杀奖励由 DC 的重复收益 API 结算，绝不叠加借用怪物的金币/经验。
+        local isResourceStage = SC.isResourceStage(self.stageId)
         pending[#pending + 1] = {
             stageId = self.stageId,
             teamIdx = self.teamIdx,
             dropLuck = self.dropLuck,
-            expReward = unit.expReward or 0,
-            goldReward = unit.goldReward or 0,
+            expReward = not isResourceStage and (unit.expReward or 0) or 0,
+            goldReward = not isResourceStage and (unit.goldReward or 0) or 0,
         }
     end
 
@@ -883,7 +893,7 @@ function BattleTriDriver.new(teamIdx, options)
 
     --- 便捷: mount + tick
     function drv:update(dt, logicDt)
-        if not self.battleLab then
+        if not self.battleLab and not SC.isResourceStage(self.stageId) then
             require("ui.battle.stage.StageEntryEvents").retry(self.teamIdx)
         end
         -- 协同期间签名变更不能单路重开，否则会破坏同编号共享池绑定。

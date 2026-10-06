@@ -230,8 +230,11 @@ function Start()
                     setAccountProgress(previous, { [previous] = true })
                     drivers[t]:start(previous)
                     drivers[t]:advanceStage()
-                    check(drivers[t].stageId == previous and not drivers[t].active,
-                        "队" .. t .. "终焉" .. id .. "未通仍停末关不伪造轮回")
+                    -- 终焉未确认不能停摆：停在末关并继续在原关刷怪，不伪造轮回。
+                    check(drivers[t].stageId == previous and drivers[t].active,
+                        "队" .. t .. "终焉" .. id .. "未通仍停末关继续刷本关不伪造轮回")
+                    check(#drivers[t].enemies + #drivers[t].enemyQueue > 0,
+                        "队" .. t .. "终焉" .. id .. "未通仍重新出怪")
                 end
             end
         end

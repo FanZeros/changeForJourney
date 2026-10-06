@@ -44,7 +44,7 @@ function Start()
 
         -- 每个用例有新 Dispatcher/MessageHandler/Scene/Restore/Boot/Page/Driver实例，
         -- 不修改引擎 require 单例，不运行 Standalone 全入口/Save 以免读取玩家存档。
-        local function newProcess(data)
+        local function newProcess(data, fullEnemyWave)
             local ctx = { firstCalls = 0, restoreCalls = 0, syncCalls = 0, flushes = 0,
                 confirmations = {}, popups = {}, drivers = {}, wallet = {} } ---@type any
             local deps = {} ---@type table<string, any>
@@ -72,6 +72,10 @@ function Start()
             ctx.dispatcher = deps["runtime.ClientDispatcher"]
             deps["boot.StandaloneSave"] = { Flush = function() ctx.flushes = ctx.flushes + 1; return true end }
             deps["core.PlayerStore"] = stub({ Get = function(name) return ctx.dispatcher.get(name) end })
+            -- 只替换PDM查表出口，不初始化或读写真实玩家档。
+            deps["rules.character.PlayerDataManager"] = { GetModule = function(_, name)
+                return ctx.dispatcher.get(name)
+            end }
             deps["shared.StageProvider"] = { Get = function() return SC end }
             deps["systems.OfflineCalc"] = {
                 resolveIdleStageAnchors = function(snapshot) return snapshot.maxStageId, snapshot.maxStageId end,
@@ -114,6 +118,10 @@ function Start()
                 assignEnemiesToField = function(list) return list, {} end,
                 getFirstClearBonusMonsterIds = function() return nil end,
             }
+            -- 金币专项保留真实总怪数、场上分配和后备补位，只替换怪物数值。
+            if fullEnemyWave then
+                deps["ui.battle.stage.BattleEnemySpawn"] = compile("ui.battle.stage.BattleEnemySpawn")
+            end
             deps["ui.character.panel.CharacterPanel"] = stub({
                 getTeamSignature = function(team) return "syntheticTeam" .. team end,
                 getDeployedTeam = function(team) return { { hp = 100, maxHp = 100, heroId = team, atkProgress = 0 } } end,
@@ -334,7 +342,18 @@ function Start()
         eq(ctx.drivers[1]:getAdvanceStageId(), 999, "2305推进目标仍是待确认终焉")
         ctx.drivers[1]:advanceStage()
         eq(ctx.drivers[1].stageId, 2305, "2305驱动仍停末关")
-        eq(ctx.drivers[1].active, false, "2305驱动等玩家确认")
+        -- 未确认终焉时不能停摆：队伍必须继续在原关战斗，只弹出一次确认。
+        check(ctx.drivers[1].active, "2305未确认终焉仍继续战斗")
+        check(ctx.drivers[1].marchTimer == 0, "2305未确认终焉不残留行军")
+        check(not ctx.drivers[1].marchNotice, "2305未确认终焉不显示前进提示")
+        check(#ctx.drivers[1].enemies + #ctx.drivers[1].enemyQueue > 0, "2305未确认终焉重新出怪")
+        local confirmCount = #ctx.confirmations
+        ctx.drivers[1]:start(2305)
+        eq(#ctx.confirmations, confirmCount, "2305同关重开不重复弹确认")
+        ctx.drivers[1].introTimer = 0
+        for _, enemy in ipairs(ctx.drivers[1].enemies) do enemy.hp = 0 end
+        for _, enemy in ipairs(ctx.drivers[1].enemyQueue) do enemy.hp = 0 end
+        ctx.drivers[1]:tick(1.1)
         eq(ctx.confirmations[1], 999, "2305真实Scene.nextStage弹999确认")
         eq(ctx.scene.getStageId(), 2305, "未确认不进入999或轮回")
         ctx.page.close()
@@ -353,6 +372,60 @@ function Start()
         eq(ctx.battle().battleMode, "idle", "已通旧关重开保持挂机模式")
         eq(ctx.firstCalls, 0, "旧关启动与同步不补发历史首通")
         ctx.page.close()
+
+        -- 资源选关必须清完整波后进入下一层；重打已通层也前进，失败退层不丢首通。
+        local DC = nativeRequire("config.DungeonConfig")
+        for team = 1, 3 do
+            local resource = newProcess(seeded(1001, 4905), true)
+            local dungeon = {}
+            for _, dungeonId in ipairs(DC.RESOURCE_IDS) do
+                dungeon[dungeonId] = { floor = 1, cleared = {} }
+            end
+            resource.dispatcher.set("dungeon", dungeon)
+            local firstId = DC.getStageId("gold_mine", 1)
+            -- 资源关按章节锚点推进，不能写死层号；以正式关卡链为准。
+            local nextId = SC.getNextStageId(firstId)
+            for attempt = 1, 2 do
+                local label = "金币首层队" .. team .. (attempt == 1 and "首通" or "重打")
+                check(resource.page.gotoTeamStage(team, firstId), label .. "真实选关")
+                local driver = resource.drivers[team]
+                driver.introTimer = 0
+                eq(#driver.enemies + #driver.enemyQueue, SC.getStage(firstId).idleCount, label .. "真实整波怪数")
+                check(#driver.enemyQueue > 0, label .. "存在后备怪物")
+                for _, enemy in ipairs(driver.enemies) do enemy.hp = 0 end
+                resource.page.update(1.1)
+                check(not driver._clearReported and driver.marchTimer == 0, label .. "场上怪物倒下不是整波胜利")
+                local ticks = 0
+                while not driver._clearReported and ticks < 400 do
+                    for _, enemy in ipairs(driver.enemies) do enemy.hp = 0 end
+                    resource.page.update(0.1)
+                    ticks = ticks + 1
+                end
+                check(driver._clearReported and driver.marchTimer > 0, label .. "整波胜利进入行军")
+                eq(#driver.enemies + #driver.enemyQueue, 0, label .. "整波已清空")
+                eq(driver.stageId, firstId, label .. "行军结束前仍显示首层")
+                local sub = resource.dispatcher.get("dungeon").gold_mine
+                check(sub.cleared[1] == true or sub.cleared["1"] == true, label .. "独立已通账本")
+                check(DC.isStageUnlocked(nextId, resource.battle(), resource.dispatcher.get("dungeon")),
+                    label .. "下一章节锚点已解锁")
+                resource.sync(1.1)
+                resource.page.update(driver.marchTimer - 0.1)
+                eq(driver.stageId, firstId, label .. "未满两秒不提前换层")
+                resource.page.update(0.2)
+                eq(driver.stageId, nextId, label .. "自动进入下一章节锚点")
+                eq(resource.battle().teamStageIds[tostring(team)], nextId, label .. "队伍位置同步")
+                eq(resource.scene.getMaxStageId(), 4905, label .. "不改变主线最高关")
+                eq(resource.firstCalls, 0, label .. "不触发主线首通奖励")
+            end
+            local driver = resource.drivers[team]
+            driver.introTimer = 0
+            for _, ally in ipairs(driver.allies) do ally.hp = 0 end
+            resource.page.update(0.1)
+            eq(driver.stageId, firstId, "金币第二层全灭会退回首层队" .. team)
+            check(DC.isStageUnlocked(nextId, resource.battle(), resource.dispatcher.get("dungeon")),
+                "退回首层仍保留下一层解锁队" .. team)
+            resource.page.close()
+        end
 
         -- 显式清档沿真实Dispatcher.reset + Scene.resetToDefault，Sync旧键缓存不是事实来源。
         ctx = newProcess(seeded(34505, 34505))

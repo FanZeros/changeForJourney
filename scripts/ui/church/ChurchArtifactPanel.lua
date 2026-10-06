@@ -69,14 +69,15 @@ local TITLE = {
     TEXT = "神器背包",
 }
 
+local ACTION_ROW_Y = 2150
 local REROLL_BTN = {
-    CX = 310, CY = 2174,
+    CX = 310, CY = ACTION_ROW_Y,
     W = 410, H = 100,
     FONT = 40,
 }
 
 local MERGE_BTN = {
-    CX = 773, CY = 2174,
+    CX = 773, CY = ACTION_ROW_Y,
     W = 410, H = 100,
     FONT = 40,
     NP_T = 20, NP_R = 20, NP_B = 20, NP_L = 20,
@@ -90,9 +91,9 @@ local GRID = {
     GAP = 30,
     COLS = 5,
     MARGIN_LEFT = 80,  -- (1080 - 5*160 - 4*30) / 2
-    -- [双格改版] 网格可视高 664（≈3.5 行，可滚动）：顶 1446 贴标题、底 2110 近按钮
+    -- [双格改版] 背包可视高 640（约3.4行，可滚动）：顶1446贴标题，底2086与上移后按钮上沿2100留14px间距
     CLIP_TOP = 1446,
-    CLIP_BOTTOM = 2110,
+    CLIP_BOTTOM = 2086,
     FIRST_ROW_TOP = 1446,
 }
 
@@ -531,6 +532,9 @@ local function sendAction(action, params)
 end
 
 local function getEquipActionState(artifact, location, slot, subSlot, teamIdx)
+    if not artifact then
+        return { label = "安装", enabled = false, hint = "请选择神器" }
+    end
     local team, currentSlot, currentSub = ArtifactSchema.findEquippedSlotAnyTeam(getArtifactData(), artifact.id)
     if location == "slot" then
         local unchanged = team == (teamIdx or 1) and currentSlot == slot and currentSub == (subSlot or 1)
@@ -658,7 +662,8 @@ function M.init(vg)
         end
         ArtifactDetailPanel.hide()
     end)
-    ArtifactDetailPanel.setOnRefine(function(artifact)
+    ArtifactDetailPanel.setOnRefine(function(artifact, location)
+        if location ~= "bag" then return end
         local Protocol = ctx_ and ctx_.getProtocol and ctx_.getProtocol() or nil
         if not Protocol then
             showFloat("网络未连接", 540, 1700)

@@ -86,6 +86,18 @@ mocks["ui.story.ScenarioDialogue"] = {
     end,
 }
 
+-- 新剧情调度依赖必须显式使用内存桩，绝不由 require fallback 进入真实教程/奖励/恢复业务。
+local playback = { tutorialBlocked = false, rewardOpen = false, rewardPending = false,
+    recoveryBlocked = false, battleRewardBlocked = false, storyPending = false }
+mocks["systems.TutorialManager"] = { canPlayPendingStory = function() return not playback.tutorialBlocked end }
+mocks["ui.hud.popup.RewardPopup"] = {
+    isOpen = function() return playback.rewardOpen end,
+    hasPendingBattleRewards = function() return playback.rewardPending end,
+}
+mocks["ui.tutorial.TutorialPageRecovery"] = { isBlocked = function() return playback.recoveryBlocked end }
+mocks["boot.BattleRewardOverlay"] = { isBlocked = function() return playback.battleRewardBlocked end }
+mocks["systems.StoryPlayer"] = { hasPending = function() return playback.storyPending end }
+
 -- 假 ClientDispatcher
 ---@type table<string, table>
 local modules = {}
@@ -124,6 +136,7 @@ local function resetState(claimed)
     dialogueActive = false
     lastShown = nil
     MockBridge.lastSession = nil
+    for key in pairs(playback) do playback[key] = false end
     modules.session = { claimedScenarios = claimed or {}, introCompleted = true }
     modules.heroes = {
         roster = {
@@ -213,13 +226,14 @@ function Start()
     resetState()
     dialogueActive = true    -- 假装城镇剧情正在播
     HS.onOpenHero(25)
-    eq(#playedCfgs, 0, "用例7: 对话忙时不播（请求进 pending_，入队77已补落档）")
-    check(claimedOf(77), "用例7: busy 时入队77仍补落档")
+    eq(#playedCfgs, 0, "用例7: 对话忙时不播（请求进 pending_，不提前消费）")
+    check(not claimedOf(77), "用例7: busy 时入队77不提前落档")
     dialogueActive = false
     EventBus.emit("scenario_dialogue_finished", { reason = "finished" })
     check(#playedCfgs >= 1, "用例7: 广播结束后立即补播——方案C核心（无需等下次点击）")
     if #playedCfgs >= 1 then
         eq(idOfPlayed(playedCfgs[1]), 81, "用例7: 补播的是闲聊81")
+        check(claimedOf(77), "用例7: 释放后已拥有角色才补入队77落档")
         check(claimedOf(81), "用例7: 闲聊81落档")
         finishCurrentDialogue()
     end
@@ -231,6 +245,33 @@ function Start()
     dialogueActive = false
     EventBus.emit("scenario_dialogue_finished", { reason = "finished" })
     eq(#playedCfgs, 0, "用例8: 已落档角色 busy 时再点不重播不排队")
+
+    -- 新调度依赖：任何阻挡都只排队，不提前写claimed；没有结束广播也能由update补播。
+    for _, gate in ipairs({ "tutorialBlocked", "rewardOpen", "rewardPending", "recoveryBlocked", "storyPending" }) do
+        HS.resetAll()
+        resetState()
+        flushCount = 0
+        playback[gate] = true
+        HS.onOpenHero(25); HS.onOpenHero(25); HS.update()
+        eq(#playedCfgs, 0, "调度 " .. gate .. ": 阻挡期间不展示")
+        check(not claimedOf(77) and not claimedOf(81), "调度 " .. gate .. ": 阻挡期间不消费入队或闲聊")
+        eq(flushCount, 0, "调度 " .. gate .. ": 阻挡期间不Flush")
+        playback[gate] = false
+        HS.update()
+        eq(#playedCfgs, 1, "调度 " .. gate .. ": update释放后去重补播一次")
+        eq(idOfPlayed(playedCfgs[1]), 81, "调度 " .. gate .. ": 已拥有角色补播正确闲聊")
+        check(claimedOf(77) and claimedOf(81), "调度 " .. gate .. ": 实际展示后才落档")
+        finishCurrentDialogue(); HS.update()
+        eq(#playedCfgs, 1, "调度 " .. gate .. ": 重复poll不重播")
+    end
+    HS.resetAll(); resetState()
+    playback.tutorialBlocked = true
+    HS.onRecruitResults({ { type = "hero", heroId = 24, isNew = true } })
+    HS.resetAll()
+    playback.tutorialBlocked = false
+    HS.update()
+    eq(#playedCfgs, 0, "resetAll丢弃旧待播，不把清档前队列带入新会话")
+    check(not claimedOf(76) and not claimedOf(80), "resetAll不伪造旧待播已看或落档")
 
     if #failures == 0 then
         print(PREFIX .. "RESULT ALL PASS")

@@ -259,7 +259,10 @@ function M.run(rt)
     TownScene.setOnTavernClick(function()
         TavernPage.init(vg)
         TavernPage.open()
-        require("systems.StoryPlayer").onPlace("tavern", "enter")
+        if TavernPage.isOpen() then
+            require("systems.TutorialManager").notifyEvent("enter_tavern")
+            require("systems.StoryPlayer").onPlace("tavern", "enter")
+        end
     end)
     -- 5.18 城镇市场点击 → 打开市场界面
     TownScene.setOnMarketClick(function()

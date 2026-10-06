@@ -32,6 +32,11 @@ local drawTextStroke = DrawUtil.drawTextStroke
 
 local M = {}
 
+---@type number|nil
+local jobEffectHero = nil
+---@type number|nil
+local jobEffectOpenTime = nil
+
 -- 天赋描述关键词富文本（可点击关键词弹出解释）；输入侧经 M.talentKwText 访问
 M.talentKwText = KeywordText.new()
 
@@ -476,10 +481,35 @@ function M.getImgIconUp()
     return CharacterDetailRef and CharacterDetailRef._imgIconUp or -1
 end
 
+--- 成功回执只给当前静止可见的转职详情卡加视觉，不改变页签/英雄或业务状态。
+---@param heroId number|string|nil
+---@return boolean played
+function M.playJobChangeForHero(heroId)
+    if type(heroId) ~= "number" then return false end
+    if not detailState or not detailState.open or detailState.closing
+        or detailState.tab ~= "class" or detailState.heroId ~= heroId
+        or detailState.switchDir or math.abs(detailState.cardDragVisual or 0) > 0.001
+        or time.elapsedTime - detailState.openTime < ANIM_DURATION then return false end
+    if not HC.get(heroId) or not require("ui.hud.popup.SettingsPanel").isEffectsEnabled() then return false end
+    -- class重绘当前卡的pos=0、scale=CENTER_SCALE；外层页面fit/seam由draw承接。
+    require("ui.fx.SpineCardEffect").playJobChange(DT_CARD_CX, CARD.CY, nil, "detail-class",
+        CARD.W * CARD.CENTER_SCALE, CARD.H * CARD.CENTER_SCALE)
+    jobEffectHero, jobEffectOpenTime = heroId, detailState.openTime
+    return true
+end
+
 -- ======================== 绘制主函数 ========================
 
 --- 绘制角色详情二级界面
 function M.draw(vg)
+    -- 播放中换人/关页/拖动即取消这张卡的视觉，不能把上一英雄的效果画到新卡。
+    if jobEffectHero and (not detailState.open or detailState.closing
+        or detailState.tab ~= "class" or detailState.heroId ~= jobEffectHero
+        or detailState.openTime ~= jobEffectOpenTime or detailState.switchDir
+        or math.abs(detailState.cardDragVisual or 0) > 0.001) then
+        require("ui.fx.SpineCardEffect").stopAll("detail-class")
+        jobEffectHero, jobEffectOpenTime = nil, nil
+    end
     if not detailState.open then return end
 
     local heroId = detailState.heroId
@@ -1416,13 +1446,15 @@ function M.draw(vg)
         drawCarouselCard(heroId, 0, 1)
     end
 
-    -- === 转职确认/重置弹窗、飘字与转职 Spine 特效（转职页最上层）===
+    -- === 转职确认/重置弹窗、飘字与程序化转职特效（同一详情设计空间）===
     if detailState.tab == "class" then
         local ClassChange = require("ui.church.ChurchClassChange")
         ClassChange.drawConfirmPopup(vg)
         ClassChange.drawResetConfirmPopup(vg)
         ClassChange.drawFloatText(vg)
-        require("ui.fx.SpineCardEffect").draw(vg, "church")
+        if require("ui.hud.popup.SettingsPanel").isEffectsEnabled() then
+            require("ui.fx.SpineCardEffect").draw(vg, "detail-class")
+        end
     end
 
     -- === 装备背包覆盖层 ===

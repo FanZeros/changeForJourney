@@ -29,10 +29,25 @@ function Start()
         "ui.hud.popup.UpdateNoticePopup", "ui.hud.popup.LevelUpPopup",
         "ui.story.gate.DarkTitleScreenGate", "ui.story.gate.LetterIntro",
         "ui.story.gate.IntroCutscene", "ui.dungeon.DungeonBattleScene", "ui.tower.TowerBattleScene",
+        "ui.battle.stage.SweepDialog", "ui.battle.popup.DamageStatsPanel",
+        "ui.battle.stage.StageSelectDialog", "ui.battle.popup.TerminalConfirmDialog",
+        "ui.battle.tri.BattleTriPage",
     }
     for _, path in ipairs(paths) do view(path) end
     mods["ui.story.gate.IntroCutscene"].isActive = mods["ui.story.gate.IntroCutscene"].isOpen
     mods["ui.tower.TowerBattleScene"].isActive = mods["ui.tower.TowerBattleScene"].isOpen
+    mods["ui.battle.tri.BattleTriPage"].getTeamStageId = function() return 101 end
+    mods["config.DungeonConfig"] = { decodeStageId = function(id)
+        assert(id == 101, "本恢复专项仅使用小队1主线101的显式读回")
+        return nil
+    end }
+    local dialog = mods["ui.battle.stage.StageSelectDialog"]
+    local dialogState = views["ui.battle.stage.StageSelectDialog"]
+    dialog.prepareTutorial = function()
+        local changed = not dialogState.open or dialogState.tab ~= "gold_mine"
+        if changed then dialog.open(); dialogState.tab = "gold_mine" end
+        return changed
+    end
     local story, busy, team, nav, hero, filter = false, false, 1, 3, nil, nil
     mods["ui.story.ScenarioDialogue"] = { isActive = function() return story end }
     mods["systems.StoryPlayer"] = { onPlace = function() end }
@@ -169,12 +184,15 @@ function Start()
         smithState.tab = "xilian"; tick(0.5)
         check(smithState.tab == "qianghua", "洗练切走可恢复升阶")
         reset(15)
-        check(nav == 5 and TM.getCurrentHighlight() == "dungeon_gold_mine", "恢复黄金矿洞列表而非隐藏旧页签")
+        check(nav == 3 and views["ui.battle.tri.BattleTriPage"].open and dialogState.open
+            and dialogState.tab == "gold_mine" and TM.getCurrentHighlight() == "dungeon_gold_mine",
+            "恢复三队页及黄金矿洞选关列表，而非旧副本页签")
 
         for _, path in ipairs({ "ui.hud.popup.RewardPopup", "ui.hud.popup.OfflineRewardPanel",
             "ui.hud.popup.UpdateNoticePopup", "ui.hud.popup.LevelUpPopup", "ui.story.gate.DarkTitleScreenGate",
             "ui.story.gate.LetterIntro", "ui.story.gate.IntroCutscene", "ui.dungeon.DungeonBattleScene",
-            "ui.tower.TowerBattleScene" }) do
+            "ui.tower.TowerBattleScene", "ui.battle.stage.SweepDialog", "ui.battle.popup.DamageStatsPanel",
+            "ui.battle.stage.StageSelectDialog", "ui.battle.popup.TerminalConfirmDialog" }) do
             reset(8); views[path].open = true
             local before = tavernState.opens
             tick(1)

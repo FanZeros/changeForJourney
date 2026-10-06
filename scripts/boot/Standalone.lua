@@ -57,7 +57,6 @@ local IntroCutscene      = require("ui.story.gate.IntroCutscene")
 local LetterIntro        = require("ui.story.gate.LetterIntro")          -- [LetterIntro] 先祖来信（新档开场）
 local CharacterDetail    = require("ui.character.detail.CharacterDetail")  -- [三队并行] 中缝返回键目标
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")     -- [LetterIntro] 情景对话
-local ScenarioDialogueConfig = require("config.ScenarioDialogueConfig") -- [LetterIntro] 情景配置
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库 + 画廊验收页
 local StandaloneSave     = require("boot.StandaloneSave") -- [单机存档] 本地快照/恢复（无联网）
@@ -536,7 +535,7 @@ local function showOfflineRewardPanel_()
 end
 
 --- [LetterIntro] 新档标记开场剧情完成（session 整表替换，必须带全字段）
-local function markIntroCompleted_()
+local function markIntroCompleted_(deferOpening)
     local sessionData = ClientDispatcher.get("session") or {}
     local claimed = sessionData.claimedScenarios or {}
     claimed["1"] = true  -- 旧点将情景不再播放
@@ -553,6 +552,11 @@ local function markIntroCompleted_()
     updated.lastOnlineTime = sessionData.lastOnlineTime or 0
     updated.firstLoginTime = sessionData.firstLoginTime or 0
     updated.introCompleted = true
+    if deferOpening and sessionData.introCompleted ~= true then
+        -- 只给真正新档保留延后介绍；旧档不新增待播、不重发初始角色。
+        updated.deferredOpening = true
+        updated.deferredOpeningIndex = 1
+    end
     updated.claimedScenarios = claimed
     if not updated.initialHeroId then
         updated.initialHeroId = 1
@@ -563,69 +567,12 @@ local function markIntroCompleted_()
         .. tostring(updated.initialHeroId) .. ")")
 end
 
---- 信件结束后的门厅点卯（横屏第二幕），再接三人入队
+--- 短引子结束即进入游戏，伙伴长介绍由 StoryPlayer 在基础教学后分段播放。
 local function finishIntro_()
     print("[Standalone] intro chain finished, unlock game")
     GameBGM.setScene("battle", { fromStart = true })
     markIntroCompleted_()
-    showOfflineRewardPanel_()
-end
-
-local function playJoinAt_(index)
-    local joins = ScenarioDialogueConfig.OPENING_JOINS
-    if not joins or index > #joins then
-        print("[Standalone] starter joins finished played=" .. tostring(index - 1))
-        finishIntro_()
-        return
-    end
-    local cfg = joins[index]
-    if not cfg or not cfg.steps or #cfg.steps == 0 then
-        print("[Standalone] starter join missing index=" .. tostring(index))
-        playJoinAt_(index + 1)
-        return
-    end
-    print("[Standalone] play starter join " .. index .. "/" .. #joins
-        .. " title=" .. tostring(cfg.title) .. " steps=" .. #cfg.steps)
-    ScenarioDialogue.show({
-        mode = cfg.mode or "large",
-        background = cfg.background,
-        title = cfg.title,
-        steps = cfg.steps,
-        onFinish = function()
-            print("[Standalone] starter join finished index=" .. tostring(index))
-            playJoinAt_(index + 1)
-        end,
-    })
-end
-
-local function startStarterJoins_()
-    playJoinAt_(1)
-end
-
-local function startOpeningBriefing_()
-    local cfg = ScenarioDialogueConfig.OPENING
-    if not cfg or not cfg.steps then
-        print("[Standalone] OPENING missing, go straight to joins")
-        startStarterJoins_()
-        return
-    end
-    print("[Standalone] letter finished, play opening briefing steps=" .. #cfg.steps)
-    local openingSteps = {}
-    for i, step in ipairs(cfg.steps) do
-        openingSteps[i] = {}
-        for k, v in pairs(step) do openingSteps[i][k] = v end
-    end
-    ScenarioDialogue.show({
-        mode = cfg.mode or "large",
-        background = cfg.background,
-        backgroundIsCg = cfg.backgroundIsCg,
-        title = cfg.title,
-        steps = openingSteps,
-        onFinish = function()
-            print("[Standalone] opening briefing finished, start joins")
-            startStarterJoins_()
-        end,
-    })
+    postStartFlowDone_ = showOfflineRewardPanel_()
 end
 
 --- 首通/入场排队的情景，等奖励弹窗关掉后再用横屏对话条播放
@@ -634,9 +581,12 @@ local function tryPlayPendingStory_()
     if ScenarioDialogue.isActive() or LetterIntro.isOpen() or IntroCutscene.isActive() then
         return
     end
-    if RewardPopup.isOpen() or RewardPopup.hasPendingBattleRewards() or OfflineRewardPanel.isOpen() then
+    if RewardPopup.isOpen() or OfflineRewardPanel.isOpen()
+        or require("ui.tutorial.TutorialPageRecovery").isBlocked() then
         return
     end
+    local rewardBlocked = require("boot.BattleRewardOverlay").isBlocked()
+    if RewardPopup.hasPendingBattleRewards() and not rewardBlocked then return end
     local pending = ClientMsgHandler.consumePendingScenarioDialogue()
     if not pending then
         pending = ClientMsgHandler.consumePendingFollowUpDialogue()
@@ -645,10 +595,15 @@ local function tryPlayPendingStory_()
         pending = require("systems.StoryPlayer").take()
     end
     if not pending or not pending.config or not pending.config.steps or #pending.config.steps == 0 then
+        if rewardBlocked then return end
+        pending = require("systems.StoryPlayer").takeDeferredOpening()
+    end
+    if not pending or not pending.config or not pending.config.steps or #pending.config.steps == 0 then
         return
     end
     local cfg = pending.config
     local scenarioId = pending.scenarioId
+    local deferredToken = pending.deferredToken
     if scenarioId then
         local sessionData = ClientDispatcher.get("session") or {}
         local updated = {}
@@ -669,10 +624,15 @@ local function tryPlayPendingStory_()
     ScenarioDialogue.show({
         mode = cfg.mode or "small",
         background = cfg.background,
+        backgroundIsCg = cfg.backgroundIsCg,
         title = cfg.title,
         eyeOpen = cfg.eyeOpen,
         steps = cfg.steps,
         onFinish = function()
+            if deferredToken then
+                require("systems.StoryPlayer").finishDeferredOpening(deferredToken)
+                return
+            end
             if scenarioId then
                 print("[Standalone] claim scenario reward id=" .. tostring(scenarioId))
                 -- [横屏接线 0928] 恢复引导触发链: claim 结果处理时 fireTutorial → onScenarioClaimed
@@ -690,15 +650,15 @@ local function tryPlayPendingStory_()
     })
 end
 
---- [LetterIntro] 新档开场链：先祖来信 → 门厅点卯 → 进游戏
+--- [LetterIntro] 新档开场链：短先祖来信 → 进游戏
 local function startIntroChain_()
     -- 一开始就落盘，避免标题关闭后重进或存档回写把同一段开场再播一遍。
     -- 三人也在这时入队。若只等对话结束，中途存档会把默认的一个人写死。
-    markIntroCompleted_()
+    markIntroCompleted_(true)
     local handled = localSendAction("grant_starter_trio", {})
     print("[Standalone] grant starter trio at intro start handled=" .. tostring(handled))
     GameBGM.setScene("letter", { fromStart = true })
-    LetterIntro.start(startOpeningBriefing_)
+    LetterIntro.start(finishIntro_, { compact = true })
 end
 
 --- 清除存档后重置客户端状态并回到开始界面
@@ -745,10 +705,15 @@ function Standalone.requestResetToStartScreen()
     -- 离线待领包属于旧会话；新档不能重发或领取旧账户收益。
     require("rules.offline.OfflineService").Cleanup(1)
     require("systems.StoryPlayer").resetAll()
+    require("ui.character.hero.HeroScenario").resetAll()
     ClientMsgHandler.resetSessionBridgeState()
     ScenarioDialogue.reset()
     battleSync = { lastMax = -1, lastCleared = "", lastStages = "", acc = 0 }
 
+    -- 清档先取消旧会话特效，不在新英雄／战力同步期间补播旧动画。
+    SpinePowerUpEffect.resetSession()
+    require("ui.fx.SpineCardEffect").stopAll()
+    require("ui.fx.SpineResultEffect").stop()
     -- 3. 重置 GameState（货币、经验等缓存）
     GameState.reset()
     print(string.format("%s step3: GameState.reset done clock=%.4f", TAG, os.clock()))
@@ -830,6 +795,10 @@ function HandleUpdate(eventType, eventData)
     local dt = eventData["TimeStep"]:GetFloat()
     -- 等待回执使用真实帧时间；标题/暂停不阻断超时，也不另订阅 Update 覆盖主循环。
     PlayerStore.Update(dt)
+    -- 特效用真实时钟收尾，不随战斗倍速，不被标题／剧情提前返回冻结。
+    SpinePowerUpEffect.update(dt)
+    require("ui.fx.SpineCardEffect").update(dt)
+    require("ui.fx.SpineResultEffect").update(dt)
     require("ui.dev.CEPanel").pollHotkey()
     -- 分帧启动：每帧 1 个模块 init，标题可先画出来
     pumpBootQueue_()
@@ -926,7 +895,7 @@ function HandleUpdate(eventType, eventData)
         end
     end
 
-    -- 开始页/标题刚关闭 → 老档弹离线收益；新档走开场链（来信 → 门厅点卯）
+    -- 开始页/标题刚关闭 → 老档弹离线收益；新档只播短来信
     -- 必须等 DarkTitleScreen 关闭后再播，否则信件会被标题盖住且点击被吞
     if not postStartFlowDone_ and not DarkTitleScreen.isOpen() then
         if not startFlowBegun_ then
@@ -952,14 +921,14 @@ function HandleUpdate(eventType, eventData)
             print("[Standalone] legacy save detected, mark intro completed")
             markIntroCompleted_()
         end
-        if introDone then
+        if introDone and not LetterIntro.isOpen() then
             -- 角色还没刷新时保持未完成，下一帧再结算。
             if showOfflineRewardPanel_() then
                 postStartFlowDone_ = true
             end
-        else
+        elseif not introDone then
             postStartFlowDone_ = true
-            print("[Standalone] new save detected, starting intro chain (letter → briefing)")
+            print("[Standalone] new save detected, starting brief letter intro")
             startIntroChain_()
         end
     end
@@ -1031,6 +1000,7 @@ function HandleUpdate(eventType, eventData)
             end
         end
         tryPlayPendingStory_()
+        require("ui.character.hero.HeroScenario").update()
     end
 
     -- [三行并行] 横屏专用: 战斗布局恒为 strip（竖屏 classic 已移除）

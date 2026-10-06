@@ -58,10 +58,19 @@ local triOnStageClear = nil -- function(teamIdx, clearedStageId)
 local triOnAllDead = nil  -- 普通全灭通知；不干预终焉与掉落
 local region = { x = 486, y = 0, w = 948, h = 1080 }  -- 战斗区（窗口坐标）
 
+--- 弹窗绘制、输入和教程热点共用横屏变换，不能借普通中栏的旧帧坐标。
+---@param width number|nil
+---@param height number|nil
+---@return number, number, number
+function BattleTriPage.getDialogTransform(width, height)
+    local w, h = width or region.w, height or region.h
+    local fit = math.min(w / 1080, h / 2400) * 2
+    return w * 0.5 - 540 * fit, h * 0.5 - 1195 * fit, fit
+end
+
 local function dialogToDesign(wx, wy)
-    local fit = math.min(region.w / 1080, region.h / 2400) * 2
-    return (wx - region.w * 0.5) / fit + 540,
-           (wy - region.h * 0.5) / fit + 1195
+    local ox, oy, fit = BattleTriPage.getDialogTransform()
+    return (wx - ox) / fit, (wy - oy) / fit
 end
 
 --- 击杀奖励回调注入（宿主与 BattleScene.setOnEnemyKill 同源）
@@ -155,6 +164,9 @@ function BattleTriPage.refreshHeroProgressTeams(teamIndices, classTeams)
                     -- 三行驱动没有默认 Scene 挂机收益缓存，不能回算默认场景。
                     recalcIdleIncome = function() end,
                     ALLY_CARD_CY = BattleLayout.FIELD_CY,
+                    effectScope = "tri" .. teamIdx,
+                    effectCardCY = BattleLayout.STRIP_CY,
+                    effectCardScale = BattleLayout.CARD_SCALE,
                 })
                 lifecycle.refreshAllyStats()
                 print(string.format("[BattleTriPage] 队%d 成长属性已写入下波快照", teamIdx))
@@ -697,6 +709,10 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
                 -- 普通空编队隐藏敌人；终焉仍展示三只 Boss，包括空队/失守战线。
                 local enemiesShown = (terminalRaid or #drv.allies > 0) and drv.enemies or {}
                 BattleView.draw(vg, { allies = drv.allies, enemies = enemiesShown }, nil, true)
+                -- 与本行卡面共用当前transform/scissor，仅绘本行scope，不在窗口坐标重画。
+                if require("ui.hud.popup.SettingsPanel").isEffectsEnabled() then
+                    require("ui.fx.SpineCardEffect").draw(vg, "tri" .. row)
+                end
             end
             nvgRestore(vg)
         end
@@ -823,12 +839,11 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
     -- [对话框覆盖] 选关/扫荡/统计/终焉确认：按当前横屏可用区域放大到 2 倍。
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
         or TerminalConfirmDialog.isOpen() then
-        local fit = math.min(logicalW / 1080, logicalH / 2400) * 2
+        local ox, oy, fit = BattleTriPage.getDialogTransform(logicalW, logicalH)
         nvgSave(vg)
         nvgScissor(vg, 0, 0, logicalW, logicalH)
-        nvgTranslate(vg, logicalW * 0.5, logicalH * 0.5)
+        nvgTranslate(vg, ox, oy)
         nvgScale(vg, fit, fit)
-        nvgTranslate(vg, -540, -1195)
         if SweepDialog.isOpen() then SweepDialog.draw(vg) end
         if DamageStatsPanel.isOpen() then DamageStatsPanel.draw(vg) end
         if StageSelectDialog.isOpen() then StageSelectDialog.draw(vg) end

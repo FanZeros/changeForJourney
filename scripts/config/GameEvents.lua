@@ -31,6 +31,7 @@ local GameEvents = {
     PLAYER_LEVEL_UP      = "CG_PlayerLevelUp",
     PLAYER_EXP_CHANGED   = "CG_PlayerExpChanged",
     PLAYER_POWER_CHANGED = "CG_PlayerPowerChanged",
+    TEAM_POWER_CHANGED   = "CG_TeamPowerChanged", -- 三队最终缓存快照；不改变顶栏队1兼容事件
 
     -- UI 事件
     SHOP_OPENED          = "CG_ShopOpened",

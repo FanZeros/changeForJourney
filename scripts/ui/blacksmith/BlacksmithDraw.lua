@@ -93,7 +93,7 @@ function M.bind(deps)
 
         -- 强化结果特效（叠在工作台槽上）
         if SpineResultEffect.isPlaying() then
-            SpineResultEffect.draw(vg, WORKBENCH_CX, WORKBENCH_CY)
+            SpineResultEffect.draw(vg, WORKBENCH_CX, WORKBENCH_CY, BlacksmithPage.WORKBENCH.size)
         end
 
         -- === 下半部分：tab 内容 + tab 栏（背景由整页单一暗黑底提供）===

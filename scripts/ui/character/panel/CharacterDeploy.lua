@@ -113,13 +113,8 @@ function M.bind(deps)
 
         require("systems.GameSFX").play("ui_loosen")
 
-        -- 新手引导：若拖拽的是引导高亮的新英雄，触发 drag_to_slot_3 推进
-        do
-            local _TM = require("systems.TutorialManager")
-            if _TM.isActive() and _TM.getNewHeroId() == heroId and slotIdx == 3 then
-                _TM.notifyEvent("drag_to_slot_3")
-            end
-        end
+        -- 真实编队回调可能回滚；中央校验会重新读取提交后的队一槽位4。
+        require("systems.TutorialManager").notifyHeroDeployed(heroId, activeTeamIdx, slotIdx)
 
         return true
     end

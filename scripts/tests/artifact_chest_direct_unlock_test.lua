@@ -185,10 +185,25 @@ function Start()
         eq(Service.Equip(uid, "7", 1, 1, 2), false, "低进度队2仍锁")
 
         -- 真实面板的绘制/点击函数；仅替换绘图底层，非完整实机视觉验收。
-        local texts, buttons, actions = {}, {}, {}
-        local function noop() end
-        replace(DrawUtil, "drawTextStroke", function(_, _, _, text) texts[#texts + 1] = text end)
-        replace(DrawUtil, "drawImageCentered", noop)
+        local texts, costTexts, buttons, actions = {}, {}, {}, {}
+        local imagePaths, nextImage = {}, 0
+        local function noop() return {} end
+        local costY = 1111 + 300
+        replace(DrawUtil, "drawTextStroke", function(_, x, y, text, font, align, r, g, b)
+            texts[#texts + 1] = text
+            if y == costY then costTexts[#costTexts + 1] = { text = tostring(text), x = x, r = r, g = g, b = b } end
+        end)
+        replace(DrawUtil, "drawImageCentered", function(_, icon, cx, cy, w, h)
+            if cy == costY then
+                buttons.drawnIcons = buttons.drawnIcons or {}
+                buttons.drawnIcons[#buttons.drawnIcons + 1] = { icon = icon, cx = cx, w = w, h = h }
+            end
+        end)
+        replace(_G, "nvgCreateImage", function(_, path)
+            nextImage = nextImage + 1
+            imagePaths[nextImage] = path
+            return nextImage
+        end)
         replace(BF, "begin", function(_, id) buttons[id] = true return {} end)
         replace(BF, "finish", noop)
         replace(BF, "trigger", noop)
@@ -198,6 +213,10 @@ function Start()
         replace(_G, "nvgTextBounds", function(_, _, _, text) return #text * 10 end)
         replace(_G, "nvgRGBA", function() return {} end)
         replace(_G, "time", { elapsedTime = 100 })
+        -- 同步钟固定为+8时区，覆盖免费、钥匙优先、混合补购与资源不足显示。
+        local panelNow = 1800000000
+        local panelToday = math.floor((panelNow + 28800) / 86400)
+        replace(os, "time", function() return panelNow end)
         local Panel = require("ui.church.ChurchArtifactDrawPanel")
         Panel.setContext({
             state = {}, getProtocol = function() return Protocol end,
@@ -205,23 +224,60 @@ function Start()
                 actions[#actions + 1] = { action = action, params = params }
             end } end,
         })
+        Panel.init({})
+        local function check(value, label)
+            assertions = assertions + 1
+            assert(value, label)
+        end
         for _, case in ipairs(progressCases) do
             reset(case.battle)
             Panel.reset()
             eq(Panel.isArtifactChestUnlocked(), true, case.label .. "面板查询直接开放")
-            texts, buttons, actions = {}, {}, {}
+            texts, costTexts, buttons, actions = {}, {}, {}, {}
+            buttons.drawnIcons = nil
             Panel.drawContent({})
             eq(buttons.church_artifact_draw_1, true, case.label .. "绘制单抽按钮")
             eq(buttons.church_artifact_draw_10, true, case.label .. "绘制十连按钮")
-            for _, text in ipairs(texts) do
-                eq(text:find("噩梦", 1, true), nil, "面板没有噩梦锁文案")
-            end
+            check(table.concat(texts, "|"):find("免费单抽", 1, true) ~= nil, case.label .. "免费单抽标签")
+            eq(costTexts[1].text, "免费", case.label .. "单抽免费成本")
+            eq(costTexts[2].text, "6000", case.label .. "无钥匙十连黑晶价")
+            eq(#(buttons.drawnIcons or {}), 1, case.label .. "免费无图标且十连仅显示黑晶")
+            eq(imagePaths[buttons.drawnIcons[1].icon], "image/货币道具/UI_icon_SJ_X.png", case.label .. "十连价格显示黑晶图标")
             eq(Panel.handleTabInput(323, 1381), true, case.label .. "单抽点击被处理")
             eq(#actions, 1, case.label .. "单抽动作发出")
             eq(actions[1].params.payType, "free_daily", "未用每日免费优先")
             eq(actions[1].action, Protocol.ACTION_TYPES.ARTIFACT_DRAW, "面板抽取协议不变")
             eq(actions[1].params.count, 1, "面板单抽次数正确")
         end
+
+        reset({}, 0, 6000)
+        modules.artifacts.dailyFreeDrawDayId = panelToday
+        Panel.reset()
+        texts, costTexts, buttons, actions = {}, {}, {}, {}
+        buttons.drawnIcons = nil
+        Panel.drawContent({})
+        eq(costTexts[1].text, "600", "无钥匙付费单抽显示600黑晶")
+        eq(costTexts[2].text, "6000", "无钥匙十连显示6000黑晶")
+        eq(#(buttons.drawnIcons or {}), 2, "付费单抽和十连各显示黑晶图标")
+        eq(imagePaths[buttons.drawnIcons[1].icon], "image/货币道具/UI_icon_SJ_X.png", "单抽显示黑晶图标")
+        eq(imagePaths[buttons.drawnIcons[2].icon], "image/货币道具/UI_icon_SJ_X.png", "十连显示黑晶图标")
+
+        reset({}, 3, 1800)
+        modules.artifacts.dailyFreeDrawDayId = panelToday
+        Panel.reset()
+        texts, costTexts, buttons, actions = {}, {}, {}, {}
+        buttons.drawnIcons = nil
+        Panel.drawContent({})
+        eq(costTexts[1].text, "1", "有钥匙时单抽仅展示实际消耗钥匙数")
+        eq(costTexts[2].text, "3", "十连先展示现有钥匙数")
+        eq(costTexts[3].text, "4200", "十连黑晶仅补足七把钥匙")
+        eq(#(buttons.drawnIcons or {}), 3, "混合十连成本显示两种资源图标")
+        eq(imagePaths[buttons.drawnIcons[1].icon], "image/货币道具/UI_icon_HJYS.png", "单抽成本为钥匙图标")
+        eq(imagePaths[buttons.drawnIcons[2].icon], "image/货币道具/UI_icon_HJYS.png", "十连钥匙部分图标")
+        eq(imagePaths[buttons.drawnIcons[3].icon], "image/货币道具/UI_icon_SJ_X.png", "十连补购部分黑晶图标")
+        eq(costTexts[1].r, 255, "钥匙足够时成本为亮色")
+        eq(costTexts[3].r, 0x8b, "黑晶余额不足时补购价置灰")
+
         reset({}, 10)
         modules.artifacts.dailyFreeDrawDayId = today
         actions = {}
@@ -252,7 +308,10 @@ function Start()
         Panel.setContext(nil)
     end)
     for i = #restores, 1, -1 do restores[i]() end
+    print("[artifact_chest_direct_unlock_test] RESULT: " .. (ok and "PASS" or "FAIL")
+        .. " assertions=" .. assertions .. " reason=" .. tostring(err))
     if not ok then
+        print("[artifact_chest_direct_unlock_test] FAIL: " .. tostring(err) .. " (" .. assertions .. " assertions)")
         log:Write(LOG_ERROR, "[artifact_chest_direct_unlock_test] " .. tostring(err))
     else
         print("[artifact_chest_direct_unlock_test] ALL PASS: " .. assertions .. " assertions")

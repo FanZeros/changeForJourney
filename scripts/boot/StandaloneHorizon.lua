@@ -146,6 +146,17 @@ local function finishFrame()
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
     drawOrphanRowReward()
     artifactOverlay.draw(vg())
+    -- 战力提示全窗居中、按队列出；非模态且不盖住剧情和奖励等高优先级内容。
+    if not StartScreen.isOpen() and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
+        and not IntroCutscene.isActive() and not ScenarioDialogue.isActive()
+        and not RewardPopup.isOpen() and not PlayerInfoPanel.isOpen()
+        and not LevelUpPopup.isOpen() and not OfflineRewardPanel.isOpen()
+        and not UpdateNoticePopup.isOpen() and not CEPanel.isOpen()
+        and not TutorialManager.isActive() and not StageSelectDialog.isOpen()
+        and not SweepDialog.isOpen() and not DamageStatsPanel.isOpen()
+        and not TerminalConfirmDialog.isOpen() then
+        SpinePowerUpEffect.draw(vg(), logicalW(), logicalH())
+    end
     -- 升级弹窗由宿主逻辑空间布局：不再借中栏 Viewport 或 1080×2400 letterbox。
     -- 所有业务/PlayerInfo/三行/通天塔绘制都已完成，Offline/Update/CE 保持原上层优先级。
     if LevelUpPopup.isOpen() then
@@ -311,12 +322,15 @@ local function HorizonDrawTutorialOverlay()
             return { cx = ox + rect.cx * sx, cy = oy + rect.cy * sy,
                 w = rect.w * sx, h = rect.h * sy }
         end
-        if hs.panel == "modal" then
+        if hs.panel == "modal" or hs.panel == "tri_modal" then
             local dw, dh = DESIGN_W(), DESIGN_H()
             if BottomNav.getSelectedIndex() == 5 then dw, dh = 1920, 1080 end
             local fit = math.min(logicalW() / dw, logicalH() / dh)
             local ox = (logicalW() - dw * fit) * 0.5
             local oy = (logicalH() - dh * fit) * 0.5
+            if hs.panel == "tri_modal" then
+                ox, oy, fit = BattleTriPage.getDialogTransform(logicalW(), logicalH())
+            end
             screen = project(hs, ox, oy, fit, fit)
             if hs.spotlight then screen.spotlight = project(hs.spotlight, ox, oy, fit, fit) end
         else
@@ -361,22 +375,25 @@ end
 --- [三队并行] 中缝返回键列表：左页‹（左框柱）/ 详情›（右框柱），两级二级页可同时存在
 --- 各占一个框柱位，互不竞争（此前 if/else 单按钮，左右同开时只能活一个）
 --- [锻炉双页 0929] 锻炉页移中栏：其返回条挂在锻炉右缘（中栏右分界线），三行/非三行都绘制
--- 与绘制层级共用：全窗覆盖期间不显示、也不命中下层返回条。
-local function seamInputBlocked()
+-- 获得/提示框只阻断下层返回操作，不隐藏返回条；完整场景覆盖仍同时隐藏并阻断。
+---@param forDraw boolean?
+local function seamInputBlocked(forDraw)
     return not bootReady_() or CEPanel.isOpen() or HeroRosterPanel.isVisible()
-        or PlayerInfoPanel.isOpen() or OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen()
-        or UpdateNoticePopup.isOpen() or DarkTitleScreen.isOpen() or StartScreen.isOpen()
+        or DarkTitleScreen.isOpen() or StartScreen.isOpen()
         or LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()
         or TutorialManager.isActive() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive()
         or BottomNav.getSelectedIndex() == 5
-        or (RewardPopup.isOpen() and not RewardPopup.currentRowTag())
-        or SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
-        or TerminalConfirmDialog.isOpen()
+        or (not forDraw and (PlayerInfoPanel.isOpen() or OfflineRewardPanel.isOpen()
+            or LevelUpPopup.isOpen() or UpdateNoticePopup.isOpen()
+            or (RewardPopup.isOpen() and not RewardPopup.currentRowTag())
+            or SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
+            or TerminalConfirmDialog.isOpen()))
 end
 
-local function seamBackList()
+---@param forDraw boolean?
+local function seamBackList(forDraw)
     local list = {}
-    if seamInputBlocked() then return list end
+    if seamInputBlocked(forDraw) then return list end
     local tri = BattleTriPage.isOpen()
     local psL = tri and (logicalH() / 1080) or H_s
     local cs = psL * Viewport.DS
@@ -733,7 +750,7 @@ function HandleNanoVGRenderHorizon()
         end
         -- 背包上层补画后再压暗侧栏，保持全局弹窗的遮罩在背包之上。
         HorizonDimSidePanels()
-        for _, seamBtn in ipairs(seamBackList()) do
+        for _, seamBtn in ipairs(seamBackList(true)) do
             DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, seamBtn.top + seamBtn.sh * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
         end
@@ -859,17 +876,12 @@ function HandleNanoVGRenderHorizon()
         end
         drawWideTalentPage(0, 0, logicalH() / 1080)
         -- [三队并行] 中缝返回条（窗口坐标，页面视口之外）：全高门柱边条，左页‹ / 详情›，两级并存各自绘制
-        for _, seamBtn in ipairs(seamBackList()) do
+        for _, seamBtn in ipairs(seamBackList(true)) do
             DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, seamBtn.top + seamBtn.sh * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
         end
         -- 玩家信息已画在左栏视口内。三行路径会提前 return，必须在这里再画一层全窗居中，
         -- 否则面板被左栏裁切，点外面也无法按面板外关闭。
-        if SpinePowerUpEffect.isPlaying() then
-            Viewport.begin(vg(), Viewport.PANELS.left, oxL, 0, ps)
-            SpinePowerUpEffect.draw(vg(), -30)
-            Viewport.finish(vg())
-        end
         if PlayerInfoPanel.isOpen() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
@@ -921,7 +933,6 @@ function HandleNanoVGRenderHorizon()
     HeroRosterPanel.draw(vg())
     PlayerInfoPanel.draw(vg())
     RewardPopup.draw(vg())
-    SpinePowerUpEffect.draw(vg())
     Viewport.finish(vg())
 
     -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）

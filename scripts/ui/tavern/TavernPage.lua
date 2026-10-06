@@ -421,14 +421,15 @@ local GACHA_PULL_TIMEOUT   = 8       -- 超时秒数（缩短至8秒，更快恢
 
 local function notifyRecruitStarted(count)
     local tutorial = require("systems.TutorialManager")
-    tutorial.setNewHeroId(nil)
-    if count == 10 then tutorial.notifyEvent("gacha10_started") end
+    tutorial.notifyEvent(count == 10 and "gacha10_started" or "gacha_started")
 end
 
 local function failPendingRecruit()
     local count = pendingGachaCount
     pendingGachaPull, pendingGachaCount = false, nil
-    if count == 10 then require("systems.TutorialManager").notifyEvent("gacha10_failed") end
+    if count then
+        require("systems.TutorialManager").notifyEvent(count == 10 and "gacha10_failed" or "gacha_failed")
+    end
 end
 
 --- 打开酒馆
@@ -619,7 +620,7 @@ local function doRecruitDirect(count, forcePayType)
         results, _ = GachaSystem.pull(count, payType)
     end
     if not results then
-        if count == 10 then require("systems.TutorialManager").notifyEvent("gacha10_failed") end
+        require("systems.TutorialManager").notifyEvent(count == 10 and "gacha10_failed" or "gacha_failed")
         return
     end
 
@@ -628,19 +629,11 @@ local function doRecruitDirect(count, forcePayType)
 
     syncDisplayData()
 
+    -- 先保存本次新旧判定与待触发教程；动画完成前 isRecruitBusy 会阻止启动。
+    require("systems.TutorialManager").onRecruitCompleted(results, count)
     RecruitAnim.start(results, function()
         syncDisplayData()
         print("[TavernPage] 招募动画结束")
-        -- 新手引导：单机模式在动画结束后通知 gacha10_complete
-        local _TM = require("systems.TutorialManager")
-        _TM.setNewHeroId(nil)
-        for _, r in ipairs(results) do
-            if r.type == "hero" and r.heroId then
-                _TM.setNewHeroId(r.heroId)
-                break
-            end
-        end
-        if count == 10 then _TM.notifyEvent("gacha10_complete") end
         require("ui.character.hero.HeroScenario").onRecruitResults(results)
     end, count, getSelectedPoolId())
 end
@@ -1266,7 +1259,7 @@ function TavernPage.onActionResult(data)
     print("[TavernPage] pendingGachaPull released (action=" .. tostring(data.action) .. " success=" .. tostring(data.success) .. ")")
 
     if not data.success then
-        if requestCount == 10 then require("systems.TutorialManager").notifyEvent("gacha10_failed") end
+        if requestCount then require("systems.TutorialManager").notifyEvent(requestCount == 10 and "gacha10_failed" or "gacha_failed") end
         local msg = TavernPopups.formatGachaFailReason(data.reason)
         TavernPopups.showFloatText(msg, DESIGN_W * 0.5, DESIGN_H * 0.42)
         print("[TavernPage] 招募失败: " .. tostring(data.reason))
@@ -1275,7 +1268,7 @@ function TavernPage.onActionResult(data)
 
     -- 只处理包含有效结果的成功响应；缺结果不能让教程永久等待。
     if type(data.gachaResults) ~= "table" or #data.gachaResults == 0 then
-        if requestCount == 10 then require("systems.TutorialManager").notifyEvent("gacha10_failed") end
+        if requestCount then require("systems.TutorialManager").notifyEvent(requestCount == 10 and "gacha10_failed" or "gacha_failed") end
         return
     end
 
@@ -1299,20 +1292,9 @@ function TavernPage.onActionResult(data)
     -- ClientDispatcher 订阅会自动同步 GameState，这里只需刷新显示
     syncDisplayData()
 
-    -- 新手引导：记录本次招募到的第一个英雄 ID，供 character_new_hero 热点定位
-    -- 注意：不加 isActive() 守卫——引导组9在离开酒馆后才激活，
-    -- 但 newHeroId_ 需要在此处提前记录，否则激活时已拿不到数据
-    do
-        local _TM2 = require("systems.TutorialManager")
-        _TM2.setNewHeroId(nil)
-        for _, r in ipairs(data.gachaResults) do
-            if r.type == "hero" and r.heroId then
-                _TM2.setNewHeroId(r.heroId)
-                break
-            end
-        end
-        -- 通知引导组8的 invisible 步骤：招募结果已返回，可结束引导
-        if requestCount == 10 then _TM2.notifyEvent("gacha10_complete") end
+    -- 只有本次在途请求的有效结果能设置教程目标；孤立/重复回执不能覆盖它。
+    if requestCount then
+        require("systems.TutorialManager").onRecruitCompleted(data.gachaResults, requestCount)
     end
 
     -- 播放招募动画

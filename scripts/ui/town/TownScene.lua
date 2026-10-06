@@ -230,23 +230,23 @@ local function drawFlashOverlay(vg, img, cx, cy, w, h, alpha)
     nvgRestore(vg)
 end
 
---- 绘制建筑黑色剪影（未解锁时叠加）
---- 原理：先正常画建筑，再用自定义混合将建筑不透明区域压暗为黑色
---- RGB: dst * (1 - src_alpha * darkness) → 建筑区域变黑
---- Alpha: 保持不变 → 不会产生透明孔洞
---- @param darkness number 0.0=不变, 1.0=纯黑
+--- 绘制建筑黑色剪影（未解锁时覆盖成统一纯黑）
+--- 六层纯黑 tint 将常见半透明主体的源图 RGB 覆盖掉；源图 alpha 仅保留轮廓与抗锯齿。
+--- @param darkness number 0.0=不变, 1.0=每层黑色覆盖强度
 local function drawImageSilhouette(vg, img, cx, cy, w, h, darkness)
     if img < 0 or darkness <= 0.01 then return end
-    -- 第一步：正常绘制建筑图（保留原始形状和颜色）
-    drawImageCentered(vg, img, cx, cy, w, h, 1.0)
-    -- 第二步：用同一张图做遮罩，将建筑区域压暗
-    -- blend: rgb = src*0 + dst*(1-src_a) = dst*(1-src_a),  alpha = dst_a 不变
-    nvgSave(vg)
-    nvgGlobalCompositeBlendFuncSeparate(vg,
-        NVG_ZERO, NVG_ONE_MINUS_SRC_ALPHA,   -- RGB: dst darkened by src alpha
-        NVG_ZERO, NVG_ONE)                    -- Alpha: keep destination
-    drawImageCentered(vg, img, cx, cy, w, h, darkness)
-    nvgRestore(vg)
+    local x = cx - w * 0.5
+    local y = cy - h * 0.5
+    local tint = nvgRGBA(0, 0, 0, math.floor(255 * darkness))
+    ---@cast tint NVGcolor
+    local paint = nvgImagePatternTinted(vg, x, y, w, h, 0, img, tint)
+    -- 每层按“当前保留Alpha”叠加；α≈0.5时六层覆盖率约96%，仍保留透明外缘。
+    for _ = 1, 6 do
+        nvgBeginPath(vg)
+        nvgRect(vg, x, y, w, h)
+        nvgFillPaint(vg, paint)
+        nvgFill(vg)
+    end
 end
 
 --- 城镇已解锁地点统一轻度暖色叠色，保留立绘细节和识别度

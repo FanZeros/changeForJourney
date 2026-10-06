@@ -11,7 +11,8 @@
 --       {
 --         text       = string,            -- 引导文本（nil = 无气泡文本）
 --         highlight  = string,            -- 高亮区域 key（注册到 TutorialOverlay 的热点）
---         advanceOn  = string,            -- 触发进入下一步的事件（"click_highlight" / "enter_panel" / nil=手动）
+--         advanceOn  = string,            -- 点击或真实业务事件推进
+--         pointerTarget = boolean|nil,    -- 业务事件步骤仅放行目标热点，不把点击当成功
 --       }
 --     }
 --   }
@@ -85,9 +86,10 @@ TutorialConfig[4] = {
     unlocks = { "town_panel" },
     steps = {
         {
-            text      = "左侧就是城镇，各类功能建筑都在这里，点击空白处继续",
-            highlight = "town_overview",
-            advanceOn = "click_highlight",
+            text      = "点击左侧「酒馆」，看看如何招募新的远征伙伴；打开酒馆后继续",
+            highlight = "building_tavern",
+            advanceOn = "enter_tavern",
+            pointerTarget = true,
         },
     },
 }
@@ -152,8 +154,8 @@ TutorialConfig[8] = {
             advanceOn = "gacha10_started",
         },
         {
-            -- 无界面步骤：等待招募结果返回后结束引导，确保 newHeroId 已设置
-            -- 同时阻止玩家在招募请求进行中离开酒馆（配合 TavernPage pendingGachaPull 检查）
+            -- 无界面步骤：等待真实招募结果；本次新增目标持久排队后才衔接组9。
+            -- 招募请求或结果动画在途时不切页面（TavernPage.isRecruitBusy）。
             advanceOn = "gacha10_complete",
             invisible = true,
         },
@@ -161,14 +163,14 @@ TutorialConfig[8] = {
 }
 
 -- ─── 引导组 9 ───
--- 触发：情景32/33/34（离开酒馆英雄分支）结束后
+-- 触发：首次成功招募结果后自动衔接；保留情景32/33/34的旧档兼容入口
 TutorialConfig[9] = {
     triggerScenarios = { 32, 33, 34 },
     steps = {
         {
-            text      = "将新角色拖入右侧队伍的槽位3上阵吧",
+            text      = "将新角色拖入右侧小队1的槽位4（后卫）上阵吧",
             highlight = "character_new_hero",
-            advanceOn = "drag_to_slot_3",
+            advanceOn = "drag_to_slot_4",
         },
     },
 }
@@ -234,9 +236,10 @@ TutorialConfig[15] = {
             advanceOn = "enter_panel_dungeon",
         },
         {
-            text      = "挑战黄金矿洞",
+            text      = "点击右侧1-1关卡，进入黄金矿洞",
             highlight = "dungeon_gold_mine",
-            advanceOn = "click_highlight",
+            advanceOn = "enter_gold_mine",
+            pointerTarget = true,
         },
     },
 }

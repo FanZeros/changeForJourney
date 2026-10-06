@@ -1,61 +1,78 @@
--- 卡片 Spine 特效跨页面隔离回归测试（模拟 NanoVG/Spine 实例）。
-local function eq(actual, expected, message)
-    assert(actual == expected, message .. ": " .. tostring(actual) .. " / " .. tostring(expected))
+-- 本轮适配：旧 Spine create/load/complete-listener/GPU 夹具已移除。
+-- 本文件现在验证真实程序化 Card controller 的页面隔离、显式尺寸、墙钟生命周期；不代表原生GPU覆盖。
+-- 只读生产源码→独立env；不改全局time/nvg、package.loaded，不加载玩家档。
+local totals = {assertions=0,failures=0}
+local function check(ok,label)
+    totals.assertions=totals.assertions+1
+    if ok then print("[PASS] "..label) else totals.failures=totals.failures+1;print("[FAIL] "..label) end
 end
-
+local function eq(a,b,label) check(a==b,label.." actual="..tostring(a).." expected="..tostring(b)) end
+local function readSource()
+    local file=assert(cache:GetFile("ui/fx/SpineCardEffect.lua"))
+    local lines={}
+    while not file:IsEof() do lines[#lines+1]=file:ReadLine() end
+    file:Dispose()
+    return table.concat(lines,"\n")
+end
 function Start()
-    time = { elapsedTime = 10 }
-    local created, rendered, unloaded = {}, {}, {}
-    nvgSpineCreate = function()
-        local inst = {}
-        function inst:Load() return true end
-        function inst:SetPremultipliedAlpha() end
-        function inst:SetSpeed() end
-        function inst:SetAnimation(_, name) self.name = name end
-        function inst:SetCompleteListener(listener) self.complete = listener end
-        function inst:Update() end
-        function inst:SetScale() end
-        function inst:SetPosition() end
-        function inst:Unload() unloaded[#unloaded + 1] = self.name end
-        created[#created + 1] = inst
-        return inst
-    end
-    nvgSpineRender = function(_, inst)
-        rendered[#rendered + 1] = inst.name
-    end
-
-    local effect = require("ui.fx.SpineCardEffect")
-    local done = 0
-    effect.playLevelUp(100, 200)
-    effect.playJobChange(300, 400, function() done = done + 1 end)
-    effect.playRevive(500, 600)
-    effect.playRevive(700, 800, nil, "dungeon")
-    effect.draw({}, "church")
-    eq(#rendered, 1, "礼拜堂只绘制转职")
-    eq(rendered[1], "2", "礼拜堂动画编号")
-    eq(#created, 1, "不能加载其他页面的动画")
-    effect.draw({}, "battle")
-    eq(#rendered, 3, "主线战斗绘制升级及复活")
-    eq(rendered[2], "3", "主线复活动画编号")
-    eq(rendered[3], "1", "升级动画编号")
-    effect.draw({}, "dungeon")
-    eq(rendered[4], "3", "副本只绘制副本复活")
-    eq(#created, 4, "四个实例各加载一次")
-
-    created[1].complete()
-    effect.draw({}, "battle")
-    eq(done, 0, "战斗页不能消费礼拜堂完成回调")
-    effect.draw({}, "church")
-    eq(done, 1, "转职完成回调只在礼拜堂执行")
-    eq(unloaded[1], "2", "转职结束释放资源")
-
-    time.elapsedTime = 13
-    effect.draw({}, "church")
-    eq(#unloaded, 4, "离开页面后旧动画被释放")
-    eq(effect.isPlaying(), false, "过期实例被移出队列")
-    local count = #rendered
-    effect.draw({}, "battle")
-    effect.draw({}, "dungeon")
-    eq(#rendered, count, "重新进入战斗或副本不会补播旧特效")
-    print("[SpineCardEffectTest] PASS: battle/church/dungeon scopes, callback, expiry")
+    local cleanup = function() end
+    local ok,err=pcall(function()
+        local clock={elapsedTime=100.0}
+        local calls, forbidden, depth={},0,0
+        local env={time=clock,print=function() end,math=math,table=table,string=string,
+            assert=assert,error=error,type=type,ipairs=ipairs,pairs=pairs,next=next,tostring=tostring,pcall=pcall}
+        env.nvgSave=function() depth=depth+1 end
+        env.nvgRestore=function() depth=depth-1 end
+        env.nvgSpineCreate=function() forbidden=forbidden+1;error("Spine is forbidden") end
+        env.nvgSpineRender=env.nvgSpineCreate
+        env.nvgCreateImage=env.nvgSpineCreate
+        env.require=function(name)
+            if name=="core.BattleLayout" then return require(name) end
+            assert(name=="ui.fx.DarkEffectPrimitives",name)
+            return {drawCard=function(_,kind,cx,cy,w,h,elapsed,duration,alpha)
+                calls[#calls+1]={kind=kind,cx=cx,cy=cy,w=w,h=h,elapsed=elapsed,duration=duration,alpha=alpha}
+            end}
+        end
+        local effect=assert(load(readSource(),"@ui/fx/SpineCardEffect.lua","t",env))()
+        cleanup=effect.destroy
+        local done=0
+        effect.preload(nil);effect.preload({})
+        effect.playLevelUp(100,200)
+        effect.playJobChange(300,400,function() done=done+1 end)
+        effect.playRevive(500,600)
+        effect.playRevive(700,800,nil,"dungeon",120,210)
+        clock.elapsedTime=100.2
+        effect.draw({},"church")
+        eq(#calls,1,"church只绘制转职")
+        eq(calls[1].kind,"job","转职真实程序化kind")
+        effect.draw({},"battle")
+        eq(#calls,3,"battle只绘制升级及battle复活")
+        effect.draw({},"dungeon")
+        eq(#calls,4,"dungeon只绘制副本复活")
+        eq(calls[4].w,120,"显式宽度不乘宿主DPR/fit")
+        eq(calls[4].h,210,"显式高度不乘宿主DPR/fit")
+        eq(calls[4].cx,700,"显式中心不改写")
+        eq(calls[4].cy,800,"显式Y中心不改写")
+        eq(depth,0,"程序化draw保护宿主stack")
+        effect.draw({},"church",0)
+        eq(#calls,4,"alpha0不绘制任何图元")
+        clock.elapsedTime=101.0;effect.update(0)
+        eq(done,0,"较短复活到期不提前完成转职")
+        check(not effect.isPlaying("dungeon"),"没draw副本也按墙钟到期")
+        clock.elapsedTime=101.34;effect.update(0)
+        eq(done,1,"转职无draw墙钟完成一次")
+        check(not effect.isPlaying(),"全部作用域到期")
+        effect.update(100);effect.draw({},"church")
+        eq(done,1,"重复update/draw不重复callback")
+        effect.playLevelUp(100,200,function() done=done+1 end)
+        effect.stopAll("battle");clock.elapsedTime=200;effect.update(0)
+        eq(done,1,"stop取消而非完成callback")
+        effect.destroy();effect.destroy()
+        eq(forbidden,0,"preload/play/draw/destroy无Spine/图像调用")
+    end)
+    pcall(cleanup)
+    if not ok then check(false,"suite exception: "..tostring(err)) end
+    print(string.format("[spine_card_effect_test] %s assertions=%d failures=%d",
+        totals.failures==0 and "ALL PASS" or "FAIL",totals.assertions,totals.failures))
+    engine:Exit()
 end

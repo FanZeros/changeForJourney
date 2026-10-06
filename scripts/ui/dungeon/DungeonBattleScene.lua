@@ -1128,7 +1128,12 @@ function DungeonScene.update(dt)
                     if ally == unit then idx = ai; break end
                 end
                 local cx = getCardCX(state.allies, idx)
-                SpineCardEffect.playRevive(cx, ALLY_CARD_CY, nil, "dungeon")
+                if unit.hp > 0 then
+                    -- 播放坐标/尺寸仍在948×360条带内；draw外层1.75与fit只乘一次。
+                    SpineCardEffect.playRevive(cx, BattleLayout.STRIP_CY, nil, "dungeon",
+                        BattleLayout.CARD_W * BattleLayout.CARD_SCALE,
+                        BattleLayout.CARD_H * BattleLayout.CARD_SCALE)
+                end
             else
                 -- [阵亡紧凑] 救不回：退场动画 → 移队尾 → 存活者前移补位（与主线同规则）
                 unit.atkProgress = 0

@@ -81,7 +81,7 @@ local BTN_BACK = {
 
 -- 4. Tab 栏（转职已迁到右侧栏角色详情；神器宝箱从市场·典藏迁入 → 装配/宝箱双页签）
 local TAB = {
-    BG_CX = 540, BG_CY = 2312, BG_W = 600, BG_H = 112,
+    BG_CX = 540, BG_CY = 2288, BG_W = 600, BG_H = 112,
     SLIDER_W = 300, SLIDER_H = 112,
     INSET_TOP = 10, INSET_BOTTOM = 10, INSET_LEFT = 70, INSET_RIGHT = 70,
     FONT_SIZE = 32,
@@ -92,8 +92,8 @@ local TAB = {
 
 -- 5. 页签：神器装配 / 神器宝箱（市场典藏迁移而来）
 local TAB_ITEMS = {
-    { name = "神器", cx = 390, cy = 2312, textX = 390, textY = 2308 },
-    { name = "宝箱", cx = 690, cy = 2312, textX = 690, textY = 2308 },
+    { name = "神器", cx = 390, cy = 2288, textX = 390, textY = 2284 },
+    { name = "宝箱", cx = 690, cy = 2288, textX = 690, textY = 2284 },
 }
 
 local TAB_KEYS = { "shenqi", "baoxiang" }

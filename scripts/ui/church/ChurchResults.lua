@@ -115,6 +115,10 @@ function M.bind(deps)
             local okDetail, CharacterDetail = pcall(require, "ui.character.detail.CharacterDetail")
             if okDetail and CharacterDetail.getHeroId and CharacterDetail.getHeroId() == data.heroId then
                 CharacterDetail.markPowerDirty()
+                if data.success and CharacterDetail.isOpen and CharacterDetail.isOpen() then
+                    -- 实际卡坐标由绘制模块提供；迟到/失败/切英雄/闭页不创建特效。
+                    require("ui.character.detail.CharacterDetailDraw").playJobChangeForHero(data.heroId)
+                end
             end
             local ClassChange = require("ui.church.ChurchClassChange")
             ClassChange.showFloat("转职成功")

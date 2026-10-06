@@ -246,6 +246,7 @@ AD.DESC = {
     [AD.MAG_BLOCK_RATIO]  = "魔法格挡时减免的伤害比例，基础60%，上限80%",
     [AD.ABNORMAL_RES]     = "减少受到的异常状态持续时间，上限80%",
     [AD.HP_BONUS]         = "百分比增加生命值上限",
+    [AD.ARMOR_BONUS]      = "百分比增加护甲。",
     [AD.DODGE_BONUS]     = "百分比增加闪避值",
     [AD.ES_BONUS]         = "百分比增加护盾上限",
     [AD.ES_DMG_REDUCE]    = "护盾存在时，先按该比例减免本次伤害，再扣护盾。没有来源时为 0，上限 80%。",

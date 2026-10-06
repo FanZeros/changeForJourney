@@ -494,6 +494,100 @@ function DungeonConfig.decodeStageId(stageId)
     return nil
 end
 
+-- 章节只收紧可选/推进节点，旧层号、战斗配置、奖励与存档账本仍原样有效。
+-- 首层单独保留；随后每五个主线小关取旧章末层，末尾不足一章使用既有终层。
+local chapterFloorsCache = {} ---@type table<string, number[]>
+
+---@param id string
+---@return number[] 私有缓存，不对调用方暴露可变引用
+local function getChapterFloorsInternal(id)
+    local def = DungeonConfig.DEFINITIONS[id]
+    if not def then return {} end
+    if chapterFloorsCache[id] then return chapterFloorsCache[id] end
+    local floors = {}
+    for floor = 1, def.maxFloor do
+        local source = getSourceStage(id, floor)
+        if floor == 1 or floor == def.maxFloor or (source and source.stage == 5) then
+            floors[#floors + 1] = floor
+        end
+    end
+    chapterFloorsCache[id] = floors
+    return floors
+end
+
+---@param id string
+---@return number[] 独立数组，调用方修改不会污染后续查询
+function DungeonConfig.getChapterFloors(id)
+    local floors = {}
+    for index, floor in ipairs(getChapterFloorsInternal(id)) do floors[index] = floor end
+    return floors
+end
+
+---@param id string
+---@param floor number|string
+---@return number|nil 同章末锚点的章序号；首层独立为1，非法层返回nil
+function DungeonConfig.getChapterIndex(id, floor)
+    local level = math.tointeger(tonumber(floor) or 0)
+    local def = DungeonConfig.DEFINITIONS[id]
+    if not def or not level or level < 1 or level > def.maxFloor then return nil end
+    for index, anchor in ipairs(getChapterFloorsInternal(id)) do
+        if level <= anchor then return index end
+    end
+    return nil
+end
+
+---@param id string
+---@return number
+function DungeonConfig.getChapterCount(id)
+    return #getChapterFloorsInternal(id)
+end
+
+---@param id string
+---@return number[] 仅可选章节锚点，所有旧ID仍可解码/恢复
+function DungeonConfig.getChapterStageIds(id)
+    local ids = {}
+    for _, floor in ipairs(getChapterFloorsInternal(id)) do
+        local stageId = DungeonConfig.getStageId(id, floor)
+        if stageId then ids[#ids + 1] = stageId end
+    end
+    return ids
+end
+
+---@param stageId number|string
+---@return number|nil 当前章末锚点；已是锚点时原样返回，不改写队伍位置
+function DungeonConfig.getChapterStageId(stageId)
+    local id, floor = DungeonConfig.decodeStageId(stageId)
+    if not id then return nil end
+    local index = DungeonConfig.getChapterIndex(id, floor)
+    if not index then return nil end
+    local floors = getChapterFloorsInternal(id)
+    return DungeonConfig.getStageId(id, floors[index])
+end
+
+---@param stageId number|string
+---@return number|nil 锚点推进下一章；旧中间关完成后衔接本章末锚点，终层无下一关
+function DungeonConfig.getNextChapterStageId(stageId)
+    local id, floor = DungeonConfig.decodeStageId(stageId)
+    if not id then return nil end
+    for _, anchor in ipairs(getChapterFloorsInternal(id)) do
+        if anchor > floor then return DungeonConfig.getStageId(id, anchor) end
+    end
+    return nil
+end
+
+---@param stageId number|string
+---@return number|nil 严格在当前旧层之前的章节锚点；首层无上一关
+function DungeonConfig.getPrevChapterStageId(stageId)
+    local id, floor = DungeonConfig.decodeStageId(stageId)
+    if not id then return nil end
+    local floors = getChapterFloorsInternal(id)
+    for index = #floors, 1, -1 do
+        local anchor = floors[index]
+        if anchor < floor then return DungeonConfig.getStageId(id, anchor) end
+    end
+    return nil
+end
+
 function DungeonConfig.getStage(stageId)
     local id, floor = DungeonConfig.decodeStageId(stageId)
     if not id then return nil end
@@ -504,7 +598,7 @@ function DungeonConfig.getStage(stageId)
     entry.id = stageId
     entry.resourceDungeonId, entry.resourceFloor = id, floor
     entry.displayChapter = 1
-    entry.stage = floor
+    entry.stage = DungeonConfig.getChapterIndex(id, floor)
     entry.name = DungeonConfig.DEFINITIONS[id].name .. " " .. entry.displayChapter .. "-" .. entry.stage
     entry.firstClearBonusMonster, entry.firstClearBonusMonsters = nil, nil
     entry.mapBg = DungeonConfig.DEFINITIONS[id].cardImage
@@ -521,7 +615,16 @@ function DungeonConfig.isStageUnlocked(stageId, battleData, dungeonData)
     local maxRank = previous and previous + 0.5 or maxId
     if maxRank < def.unlockStage then return false end
     local sub = type(dungeonData) == "table" and dungeonData[id] or nil
-    return floor <= math.min(def.maxFloor, DungeonConfig.getHighestClearedFloor(sub, id) + 1)
+    local highest = DungeonConfig.getHighestClearedFloor(sub, id)
+    local chapterFloors = getChapterFloorsInternal(id)
+    for index, anchor in ipairs(chapterFloors) do
+        if floor == anchor then
+            -- 仍只认可旧floor-1/cleared；允许从已通前锚点挑战本章末，不补写跳过层。
+            return index == 1 or highest >= chapterFloors[index - 1]
+        end
+    end
+    -- 未选入新列表的旧中间关仍可恢复/完成原战斗，不提前重定价或挪队伍位置。
+    return floor <= math.min(def.maxFloor, highest + 1)
 end
 
 -- 只读期望数量，与真实逐杀结算共用效率；不骰奖励、不生成装备。

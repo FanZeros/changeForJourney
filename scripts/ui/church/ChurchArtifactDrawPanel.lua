@@ -46,9 +46,8 @@ local COL = {
     BTN_ONE_X = 323, BTN_TEN_X = 783, BTN_Y = 1081 + CONTENT_OY,
     BTN_W = 316, BTN_H = 122,
     BTN_TEXT_Y = 1058 + CONTENT_OY, BTN_FONT = 32,
-    COST_ICON_Y = 1111 + CONTENT_OY, COST_ICON_SIZE = 58,
-    COST_TEXT_Y = 1111 + CONTENT_OY, COST_FONT = 30,
-    TEN_KEY = ArtifactDefs.DRAW_KEY_COST[10],
+    COST_ICON_Y = 1111 + CONTENT_OY,
+    COST_TEXT_Y = 1111 + CONTENT_OY,
 }
 
 -- 黄金钥匙不足时的快速购买确认框（居中模态，不随 CONTENT_OY 偏移）
@@ -158,6 +157,23 @@ end
 local function getKeyCost(count)
     if count == 1 and hasArtifactFreeDraw() then return 0 end
     return ArtifactDefs.DRAW_KEY_COST[count] or count
+end
+
+--- 按实际支付优先序计算按钮展示：先用现有钥匙，缺口按神器宝箱单价换黑晶。
+---@return table[] costs { {kind="key"|"gems", icon=number, amount=number} }
+---@return boolean affordable
+local function getDrawCosts(count)
+    local required = ArtifactDefs.DRAW_KEY_COST[count] or count
+    if count == 1 and getKeyCost(count) == 0 then return {}, true end
+
+    local keys = math.max(0, tonumber(GameState.getGoldenKey()) or 0)
+    local keysUsed = math.min(keys, required)
+    local missing = required - keysUsed
+    local gems = missing * ArtifactDefs.KEY_DIAMOND_PRICE
+    local costs = {}
+    if keysUsed > 0 then costs[#costs + 1] = { kind = "key", icon = img.goldenKey, amount = keysUsed } end
+    if gems > 0 then costs[#costs + 1] = { kind = "gems", icon = img.gem, amount = gems } end
+    return costs, (tonumber(GameState.getGems()) or 0) >= gems
 end
 
 local function sendArtifactDraw(count)
@@ -305,26 +321,51 @@ local function drawCollectionLockedContent(vg)
     nvgText(vg, 540, 1380 + CONTENT_OY, progressText, nil)
 end
 
-local function drawCollectionDrawButton(vg, id, cx, countText, keyCost)
+local function drawCollectionDrawButton(vg, id, cx, countText, count)
     local bf = BF.begin(vg, id, cx, COL.BTN_Y, COL.BTN_W, COL.BTN_H)
     drawImageCentered(vg, img.collectionDrawBtn, cx, COL.BTN_Y, COL.BTN_W, COL.BTN_H, 1.0)
     drawTextStroke(vg, cx, COL.BTN_TEXT_Y, countText, COL.BTN_FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4, { strokeColor = { 0, 0, 0 } })
 
-    local costStr = keyCost <= 0 and "免费" or ("x" .. tostring(keyCost))
+    local costs, affordable = getDrawCosts(count)
+    local costParts = {}
+    local costFont, iconSize, iconGap, partGap = 30, 36, 4, 6
+    if #costs == 0 then
+        costParts[1] = { text = "免费" }
+    else
+        local mixed = #costs > 1
+        if mixed then costFont, iconSize, iconGap = 24, 28, 4 end
+        for _, cost in ipairs(costs) do
+            costParts[#costParts + 1] = {
+                icon = cost.icon,
+                text = tostring(math.floor(cost.amount + 0.5)),
+            }
+        end
+    end
+
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, COL.COST_FONT)
-    local costTextW = nvgTextBounds(vg, 0, 0, costStr)
-    local gap = 8
-    local totalW = COL.COST_ICON_SIZE + gap + costTextW
-    local iconX = cx - totalW * 0.5 + COL.COST_ICON_SIZE * 0.5
-    local textX = iconX + COL.COST_ICON_SIZE * 0.5 + gap
-    local keyIcon = img.goldenKey >= 0 and img.goldenKey or img.gem
-    drawImageCentered(vg, keyIcon, iconX, COL.COST_ICON_Y, COL.COST_ICON_SIZE, COL.COST_ICON_SIZE, 1.0)
-    drawTextStroke(vg, textX, COL.COST_TEXT_Y, costStr, COL.COST_FONT,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        255, 255, 255, 4, { strokeColor = { 0, 0, 0 } })
+    nvgFontSize(vg, costFont)
+    local totalW = 0
+    for i, part in ipairs(costParts) do
+        part.textW = nvgTextBounds(vg, 0, 0, part.text)
+        totalW = totalW + part.textW
+        if part.icon and part.icon >= 0 then totalW = totalW + iconSize + iconGap end
+        if i > 1 then totalW = totalW + partGap end
+    end
+    local x = cx - totalW * 0.5
+    for i, part in ipairs(costParts) do
+        if part.icon and part.icon >= 0 then
+            drawImageCentered(vg, part.icon, x + iconSize * 0.5, COL.COST_ICON_Y, iconSize, iconSize, 1.0)
+            x = x + iconSize + iconGap
+        end
+        local r, g, b = 255, 255, 255
+        if not affordable then r, g, b = 0x8b, 0x95, 0xa5 end
+        drawTextStroke(vg, x, COL.COST_TEXT_Y, part.text, costFont,
+            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, r, g, b, 3, { strokeColor = { 0, 0, 0 } })
+        x = x + part.textW
+        if i < #costParts then x = x + partGap end
+    end
     BF.finish(vg, bf)
 end
 
@@ -384,8 +425,8 @@ function M.drawContent(vg)
 
     local oneCost = getKeyCost(1)
     local oneText = oneCost <= 0 and "免费单抽" or "抽1次"
-    drawCollectionDrawButton(vg, "church_artifact_draw_1", COL.BTN_ONE_X, oneText, oneCost)
-    drawCollectionDrawButton(vg, "church_artifact_draw_10", COL.BTN_TEN_X, "抽10次", COL.TEN_KEY)
+    drawCollectionDrawButton(vg, "church_artifact_draw_1", COL.BTN_ONE_X, oneText, 1)
+    drawCollectionDrawButton(vg, "church_artifact_draw_10", COL.BTN_TEN_X, "抽10次", 10)
 end
 
 function M.drawKeyConfirmDialog(vg)

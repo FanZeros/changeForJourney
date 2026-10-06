@@ -378,6 +378,7 @@ function Start()
             }),
             ["ui.dungeon.DungeonBattleScene"] = page("dungeon", {
                 isOpen = function() return state.dungeon end,
+                draw = function() if state.dungeon then snapshot("dungeon") end end,
             }),
             ["ui.backpack.BackpackPanel"] = backpack,
             ["ui.character.equip.EquipmentDetail"] = detail,
@@ -424,6 +425,9 @@ function Start()
                 end }),
             ["runtime.GameAction"] = mock({ sendAction = function() count("action"); return false end }),
         }
+        mods["ui.fx.SpinePowerUpEffect"] = mock({
+            draw = function(_, width, height) record("power.draw", width, height) end,
+        })
         -- Runtime 的 require 可绕过 package.preload/loaded，所以拦截 _G.require 的动态依赖。
         rawset(_G, "require", function(name)
             if realModules[name] then
@@ -1049,7 +1053,8 @@ function Start()
             for _, dpr in ipairs({ 1, 2, 3 }) do
                 runCase("Tower Task tri=" .. tostring(towerTri) .. " DPR=" .. dpr .. " 覆盖/输入/返回保留塔", function()
                     fixture("tower", dpr, true, false)
-                    state.task, state.towerTri, state.talent, state.dungeon = true, towerTri, true, true
+                    -- 资源副本与塔是互斥全页宿主；本组只测试塔上的Task覆盖。
+                    state.task, state.towerTri, state.talent, state.dungeon = true, towerTri, true, false
                     clearCalls()
                     for key in pairs(drawings) do drawings[key] = nil end
                     invoke("HandleNanoVGRenderHorizon")
@@ -1116,6 +1121,48 @@ function Start()
                 end)
             end
         end
+        for _, mode in ipairs({ "ordinary", "tri", "tower", "dungeon" }) do
+            runCase("战力提示宿主唯一全窗绘制 " .. mode, function()
+                fixture(mode, 2, true, false)
+                state.dungeon = mode == "dungeon"
+                clearCalls()
+                invoke("HandleNanoVGRenderHorizon")
+                check(n("power.draw") == 1, "各全页路径仅finishFrame绘一次战力提示")
+                checkXY("power.draw", 1920, 1080, "宿主传逻辑全窗尺寸而非左栏偏移")
+            end)
+        end
+        for _, blocker in ipairs({ "title", "letter", "intro", "story", "reward", "pip",
+            "level", "offline", "notice", "ce", "tutorial", "stage", "sweep", "stats", "terminal" }) do
+            runCase("战力提示让位 " .. blocker, function()
+                fixture("tri", 2, true, false)
+                state[blocker] = true
+                clearCalls()
+                invoke("HandleNanoVGRenderHorizon")
+                check(n("power.draw") == 0, "战力提示不盖高优先级" .. blocker)
+            end)
+        end
+        runCase("塔副本双宿主脏态：副本独占绘制输入", function()
+            fixture("tower", 2, true, false)
+            state.task, state.towerTri, state.dungeon = true, true, true
+            clearCalls()
+            for key in pairs(drawings) do drawings[key] = nil end
+            invoke("HandleNanoVGRenderHorizon")
+            local counts = { dungeon = 0, tower = 0, task = 0 }
+            for _, draw in ipairs(drawings) do
+                if counts[draw.name] ~= nil then counts[draw.name] = counts[draw.name] + 1 end
+            end
+            check(counts.dungeon == 1 and counts.tower == 0 and counts.task == 0,
+                "双宿主旧脏态不把塔Task叠在资源副本上")
+            clearCalls()
+            positionWindow(250, 505)
+            click()
+            invoke("HandleMouseWheelHorizon", wheel)
+            check(n("task.handleScroll") == 0 and n("dungeon.handleScroll") == 1,
+                "副本优先滚轮不下放塔Task")
+            -- 既有点击解析先保留塔Task入口，绘制与滚轮则副本优先；本轮不改该脏态契约。
+            check(n("task.handleInput") == 1 and n("tower.handleClick") == 0,
+                "双宿主旧脏态点击保持原Task优先，不扩改输入规则")
+        end)
         runCase("Tower Task低于Reward/PIP/LevelUp", function()
             fixture("tower", 2, true, false)
             state.task, state.towerTri, state.reward, state.pip, state.level = true, true, true, true, true

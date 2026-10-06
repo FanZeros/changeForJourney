@@ -1,3 +1,12 @@
+## game01 竖屏残留与 PR88 对照（2026-10-06，审查进行中）
+
+- 用户指定仅继续检查 `/workspace/game01`，核查所有屏幕方向及旧竖稿相关位置、是否在 PR88 修改、是否需要再改。本轮从干净的 `workspace930@96703200e382144a243e448bac3153f8300f90f6` 建立 `audit1006/game01-portrait-pr88`，不改其他 game、共享根配置、玩家存档或发布方向。
+- 授权每个完成阶段正常提交并 push 本轮新任务分支；不推 workspace 系列、不强推、不自动创建或合并 PR。本轮先做只读审查，未授权范围不擅自扩大为玩法修复。
+- 继续强化交接偏好：在授权范围内持续推进，不擅自放弃；完成阶段先如实简报，确需用户决定下一步时真正使用 `AskUserQuestion` 给出 2–4 个有实质差异的选项，不用普通文本问题代替。仍尊重用户后续停止指令、权限拒绝和安全边界。
+- 当前实际读取 PR88：来源 `integrate/game04-taptap-20261005@670f669bc7dd5b8760bfa71d7234b909dac2b76f`，35文件，open、merged=false；Git共同祖先为372f4506。API回报的base.sha仍为7b93bcee，而本轮实际fetch的origin/workspace930为96703200，比较当前源码以Git固定快照为准，不混用两者。PR88未修改Viewport、GameConfig、StandaloneHorizon、StandaloneHorizonInput、副本Scope、IntroCutscene、UpdateNoticePopup、Electron或发布方向。
+- 已有2026-10-05横屏审查在 `origin/audit1005/portrait-landscape-followup-20261005`，并未整体合入当前基线；仅作为线索，所有结论沿当前入口重验。不能把横屏内部的1080×2400局部稿、角色立绘portrait、经典副本布局直接判成待删除竖屏。
+- 全局持久记忆目录的读取和写入工具均返回错误；偏好实际强化在本项目已有记忆，不宣称全局保存成功。凭据不写源码、Git配置、日志或记忆；聊天公开PAT建议撤销轮换。
+
 ## game01 装备升阶卡死修复与交接要求（2026-10-05）
 
 - 用户明确限定在 `/workspace/game01` 开发；本轮从 `workspace930@372f4506a6f55342f28964b73ee60312e3c96c59` 创建独立任务分支 `fix930/equipment-ascend-freeze-20261005`，不改 game02/game03/game04，不推任何 workspace 系列、不自动创建或合并 PR。

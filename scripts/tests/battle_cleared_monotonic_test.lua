@@ -1,6 +1,7 @@
 -- B01：永久 cleared 单调回归。沿用 tri_clear_unlock/scenario82 的隔离源码脚手架。
 -- 真实 Driver.start/tick -> Page -> Scene.completeTriStageClear -> Boot 奖励，
--- 正式 SyncBattleState -> Dispatcher -> ClientMessageHandler -> Scene/Restore -> 再胜利。
+-- 正式 SyncBattleState -> Dispatcher.publishLive（不回灌活战斗）-> 再胜利，
+-- 并单独走 ClientMessageHandler -> Scene/Restore 的部分历史快照回灌。
 -- 仅加载项目 Lua 源码；存档、随机掉落、战斗数值/绘制叶子为内存替身，不访问玩家档。
 -- 本地 Scene 使用既有 getter/setter bind 与 StageLoad/Lifecycle，不引入远端 RuntimeContext。
 -- 以 RESULT ALL PASS/FAIL 判定，Runtime exit0 本身不是通过证据。
@@ -73,7 +74,7 @@ function Start()
             deps["core.PlayerStore"] = stub({ Get = function(name) return ctx.dispatcher.get(name) end })
             deps["shared.StageProvider"] = { Get = function() return SC end }
             deps["systems.OfflineCalc"] = {
-                resolveIdleStageAnchors = function(snapshot) return snapshot.currentStageId, snapshot.currentStageId end,
+                resolveIdleStageAnchors = function(snapshot) return snapshot.maxStageId, snapshot.maxStageId end,
                 calcOnlineIdleRewards = function() return { gold = 0, adventureExp = 0, adventurerExp = 0 } end,
             }
             deps["systems.DropSystem"] = stub({ generateFirstClearEquips = function() return {} end,
@@ -87,7 +88,11 @@ function Start()
             deps["config.MonsterConfig"] = { createMonster = function(id)
                 return { hp = 1, monsterId = id, atkProgress = 0, expReward = 0, goldReward = 0 }
             end }
-            deps["ui.battle.combat.BattleCombat"] = stub({ newState = function() return {} end,
+            local mountedCombat = nil ---@type table|nil
+            deps["ui.battle.combat.BattleCombat"] = stub({ newState = function() return { ctx = {} } end,
+                mount = function(value) mountedCombat = value end,
+                mountedState = function() return mountedCombat end,
+                setContext = function(value) if mountedCombat then mountedCombat.ctx = value end end,
                 DEATH_ANIM_DURATION = 0.3, REVIVE_ANIM_DURATION = 0.3 })
             for _, name in ipairs({ "ui.battle.combat.ProjectileSystem", "systems.ThreatManager",
                 "systems.TalentManager", "ui.battle.combat.BattleEffects", "systems.StatusEffectManager",
@@ -157,6 +162,10 @@ function Start()
             end
             deps["ui.battle.tri.BattleTriPage"] = compile("ui.battle.tri.BattleTriPage")
             ctx.page = deps["ui.battle.tri.BattleTriPage"]
+            -- 使用真实采集器；只替换落盘出口，不以手抄快照掩盖永久账本回归。
+            deps["boot.StandaloneSave"] = compile("boot.StandaloneSave")
+            deps["boot.StandaloneSave"].Flush = function() ctx.flushes = ctx.flushes + 1; return true end
+            deps["boot.StandaloneSave"].SetBattlePage(ctx.page)
             -- 先提供真实 Page 再让 Boot 接线，首通与击杀/掉落出口均使用现有接口。
             deps["boot.StandaloneBoot"] = compile("boot.StandaloneBoot")
             deps["boot.StandaloneBoot"].run({ vg = {}, localSendAction = noop, setLocalBridgeReady = noop })
@@ -167,11 +176,12 @@ function Start()
             end
             ctx.page.open()
             env.BattleScene, env.ClientDispatcher, env.cjson = ctx.scene, ctx.dispatcher, cjson
+            env.StandaloneSave, env.StageConfig, env.bootReady_ = deps["boot.StandaloneSave"], SC, true
             local sync = assert(load(syncSource .. "\nreturn SyncBattleState", "@正式B01/SyncBattleState", "t", env))()
-            local realUpdate = ctx.dispatcher.handleStateUpdate
-            ctx.dispatcher.handleStateUpdate = function(json)
+            local publish = ctx.dispatcher.publishLive
+            ctx.dispatcher.publishLive = function(name, snapshot)
                 ctx.syncCalls = ctx.syncCalls + 1
-                return realUpdate(json)
+                return publish(name, snapshot)
             end
             ctx.sync = sync
             ctx.battle = function() return ctx.dispatcher.get("battle") end
@@ -214,7 +224,7 @@ function Start()
             dualMark(ctx, 34505, label .. " 首胜")
             local restoreBefore = ctx.restoreCalls
             for second = 1, 6 do ctx.sync(1.1) end
-            check(ctx.syncCalls > 0 and ctx.restoreCalls > restoreBefore, label .. " 真Sync/Msg/Restore回灌已执行")
+            check(ctx.syncCalls > 0 and ctx.restoreCalls == restoreBefore, label .. " 真Sync/publishLive已执行且不回灌活战斗")
             dualMark(ctx, 34505, label .. " 六秒同步后")
             local gold, exp, gems, calls = ctx.wallet.gold, ctx.wallet.exp, ctx.wallet.gems, ctx.firstCalls
             ctx.win(firstTeam, 34505)

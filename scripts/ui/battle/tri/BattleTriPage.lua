@@ -120,6 +120,48 @@ function BattleTriPage.invalidateTeams(onlyTeams)
     end
 end
 
+--- 成长刷新与编队交易分离：转职失效真实队，普通属性只构建下波 pending。
+--- 不懒建驱动、不重开关卡、不重置统计或复活；关闭页时默认 Scene 仅属于队一。
+---@param teamIndices number[] 已由面板冻结差异筛选的真实变化队
+---@param classTeams table<number, boolean>|nil 分支变化队；省略时仅轻刷新
+function BattleTriPage.refreshHeroProgressTeams(teamIndices, classTeams)
+    local changed, rebuild = {}, {}
+    for _, value in ipairs(teamIndices or {}) do
+        local teamIdx = tonumber(value)
+        if teamIdx and teamIdx >= 1 and teamIdx <= COL_COUNT and teamIdx % 1 == 0 then
+            changed[teamIdx] = true
+            if classTeams and classTeams[teamIdx] then rebuild[teamIdx] = true end
+        end
+    end
+    if not next(changed) then return false end
+    return BattleMountScope.run(function()
+        if next(rebuild) then BattleTriPage.invalidateTeams(rebuild) end
+        for teamIdx = 1, COL_COUNT do
+            local drv = drivers[teamIdx]
+            if changed[teamIdx] and not rebuild[teamIdx] and drv then
+                -- 只借本队挂载，不重新 bindContext；保留战斗上下文/连击/投射物原引用。
+                drv.mount()
+                local lifecycle = require("ui.battle.scene.BattleAllyLifecycle").bind({
+                    getAllies = function() return drv.allies end,
+                    getEnemies = function() return drv.enemies end,
+                    getEnemyQueue = function() return drv.enemyQueue end,
+                    get = function(key) return drv[key] end,
+                    set = function(key, value) drv[key] = value end,
+                    -- 三行驱动没有默认 Scene 挂机收益缓存，不能回算默认场景。
+                    recalcIdleIncome = function() end,
+                    ALLY_CARD_CY = BattleLayout.FIELD_CY,
+                })
+                lifecycle.refreshAllyStats()
+                print(string.format("[BattleTriPage] 队%d 成长属性已写入下波快照", teamIdx))
+            end
+        end
+        if changed[1] and not isOpen_ then
+            require("ui.battle.scene.BattleScene").refreshAllyStats()
+        end
+        return true
+    end)
+end
+
 
 -- [终焉协同] 前向声明：ensureDrivers 的终焉接管分支引用（定义在下方）
 local startTerminalRaid
@@ -818,13 +860,16 @@ function BattleTriPage.gotoTeamStage(teamIdx, stageId)
     local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     if teamIdx < 1 or teamIdx > unlocked then return false end
     local BattleScene = require("ui.battle.scene.BattleScene")
+    -- 终焉 ID 比本难度末关小，解锁比较须与单队 Nav 使用同一进度顺序。
+    local maxStage = tonumber(BattleScene.getMaxStageId()) or 0
+    local maxPrevious = StageConfig.getTerminalPrevStageId(maxStage)
+    local maxRank = maxPrevious and maxPrevious + 0.5 or maxStage
     if StageConfig.isTerminalTemple(stageId) then
         if terminalRaid then return false end
         local previous = StageConfig.getTerminalPrevStageId(stageId)
         local cleared = BattleScene.getClearedStages()
-        local maxStage = BattleScene.getMaxStageId()
-        if not previous or maxStage < previous
-            or not (cleared[previous] or cleared[tostring(previous)]) then
+        if not previous or maxRank < previous
+            or not (cleared[previous] == true or cleared[tostring(previous)] == true) then
             return false
         end
         if not BattleScene.gotoStage(stageId, { deferEnter = true }) then return false end
@@ -832,7 +877,7 @@ function BattleTriPage.gotoTeamStage(teamIdx, stageId)
         require("systems.GameBGM").setScene("samsara", { fromStart = true })
         return true
     end
-    if terminalRaid or stageId > BattleScene.getMaxStageId() then return false end
+    if terminalRaid or stageId > maxRank then return false end
     local drv = drivers[teamIdx]
     if not drv then return false end
     if teamIdx == 1 then

@@ -478,19 +478,31 @@ local lastHeroesRefreshTeams = {}
 -- 已发生编队交易的队伍由 HeroSync.invalidateTeams 处理，不能再当作养成刷新。
 local function updateHeroesRefreshBaseline(layoutChanged)
     local current = teamRefreshSnapshot()
-    local changed, changedTeams = {}, {}
+    local changed, changedTeams, classTeams = {}, {}, {}
     for t = 1, TEAM_COUNT do
-        if not sameRefreshValue(heroesRefreshBaseline[t], current[t])
+        local previous = heroesRefreshBaseline[t]
+        if not sameRefreshValue(previous, current[t])
             and not (layoutChanged and layoutChanged[t]) then
             changed[t] = true
             changedTeams[#changedTeams + 1] = t
+            -- 同槽同英雄的分支值变化才需要重建职业；普通属性只更新下波快照。
+            -- 比较冻结值可识别共享 advBranch 表原地写入，以及重置删除分支。
+            for i = 1, MAX_SLOTS do
+                local oldSlot = previous and previous[i]
+                local slot = current[t][i]
+                if oldSlot and slot.heroId and oldSlot.heroId == slot.heroId
+                    and not sameRefreshValue(oldSlot.advBranch, slot.advBranch) then
+                    classTeams[t] = true
+                    break
+                end
+            end
         end
     end
     heroesRefreshBaseline = current
     lastHeroesRefreshTeams = changed
     if #changedTeams > 0 then
         local TriPage = require("ui.battle.tri.BattleTriPage")
-        TriPage.refreshHeroProgressTeams(changedTeams)
+        TriPage.refreshHeroProgressTeams(changedTeams, classTeams)
     end
 end
 

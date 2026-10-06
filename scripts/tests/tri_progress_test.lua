@@ -65,6 +65,7 @@ function Start()
         mocks["runtime.ClientDispatcher"] = dispatcher
         mocks["ui.battle.scene.BattleScene"] = scene
         mocks["config.StageConfig"] = SC
+        mocks["shared.battle.BattleSchema"] = Schema
         mocks["core.BattleLayout"] = nativeRequire("core.BattleLayout")
         mocks["systems.AttributeDef"] = nativeRequire("systems.AttributeDef")
         mocks["config.MonsterConfig"] = nativeRequire("config.MonsterConfig")
@@ -111,6 +112,8 @@ function Start()
         end }
         local Story = compile("systems.StoryPlayer")
         mocks["systems.StoryPlayer"] = Story
+        local Entries = compile("ui.battle.stage.StageEntryEvents")
+        mocks["ui.battle.stage.StageEntryEvents"] = Entries
         local Driver = compile("ui.battle.tri.BattleTriDriver")
         local drivers = {}
         mocks["ui.battle.tri.BattleTriDriver"] = { new = function(t)
@@ -125,6 +128,25 @@ function Start()
             and Page.getTeamStageId(3) == 2504, "三队按独立存档关卡启动")
         check(modules.battle.currentStageId == 1001 and modules.battle.idleAccumSec == 17,
             "二三队初始化不覆盖一队关卡和挂机字段")
+        for series = 1, 14 do
+            local terminalId = series * 1000 - 1
+            local previous = SC.getTerminalPrevStageId(terminalId)
+            maxStage = terminalId
+            for t = 1, 3 do
+                check(Page.gotoTeamStage(t, previous),
+                    "最高终焉" .. terminalId .. "队" .. t .. "可选已解锁末关" .. previous)
+                local before = drivers[t].stageId
+                local target = SC.getReincarnationTarget(SC.getDifficulty(terminalId))
+                check(not Page.gotoTeamStage(t, target) and drivers[t].stageId == before,
+                    "最高终焉" .. terminalId .. "队" .. t .. "不能提前选下一难度")
+            end
+        end
+        maxStage = 4905
+        Page.gotoTeamStage(1, 1001)
+        Page.gotoTeamStage(2, 203)
+        Page.gotoTeamStage(3, 2504)
+        while Story.take() do end
+        Entries.reset()
         check(Page.gotoTeamStage(2, 204), "二队可手动进入已解锁关卡")
         local story = Story.take()
         check(story and story.scenarioId == 41 and Story.take() == nil, "二队手动换关触发真实入关剧情41一次")
@@ -140,6 +162,8 @@ function Start()
             and not Page.gotoTeamStage(3, 5001), "无效或未解锁目标不改变队伍存档")
 
         local function clearAndAdvance(t, id)
+            -- 各个推进场景使用独立入场通知台账；同场景内仍验证只播放一次。
+            Entries.reset()
             local drv = drivers[t]
             drv:start(id)
             while Story.take() do end
@@ -165,6 +189,7 @@ function Start()
         drivers[3]:start(2505)
         check(Story.take() == nil, "开场未完成不提前入队后续剧情")
         modules.session.introCompleted = true
+        Entries.reset()
         drivers[2]:start(205)
         drivers[2]:retreatStage()
         check(drivers[2].stageId == 204 and modules.battle.teamStageIds["2"] == 204,
@@ -172,6 +197,11 @@ function Start()
         story = Story.take()
         check(story and story.scenarioId == 41, "失败退回剧情关同样走入关通知")
 
+        local function setAccountProgress(id, ledger)
+            -- 驱动读取 live 和保存态两份凭据，场景夹具必须同时更新，不能遗留4905。
+            maxStage, cleared = id, ledger
+            modules.battle.maxStageId, modules.battle.clearedStages = id, ledger
+        end
         local terminalCount = 0
         for series = 1, 14 do
             local id = series * 1000 - 1
@@ -181,7 +211,7 @@ function Start()
                 local target = SC.getReincarnationTarget(SC.getDifficulty(id))
                 for t = 2, 3 do
                     for _, key in ipairs({ id, tostring(id) }) do
-                        maxStage, cleared = previous, { [key] = true }
+                        setAccountProgress(previous, { [key] = true })
                         local drv = drivers[t]
                         drv:start(previous)
                         while Story.take() do end
@@ -192,12 +222,12 @@ function Start()
                         check(drv.active and drv.stageId == target,
                             "队" .. t .. "终焉" .. id .. "数字或字符串已通键都正常推进")
                     end
-                    maxStage, cleared = target, {}
+                    setAccountProgress(target, {})
                     drivers[t]:start(previous)
                     drivers[t]:advanceStage()
                     check(drivers[t].stageId == target and drivers[t].active,
                         "队" .. t .. "终焉" .. id .. "旧档共享最高关跨难度也可推进")
-                    maxStage, cleared = previous, { [previous] = true }
+                    setAccountProgress(previous, { [previous] = true })
                     drivers[t]:start(previous)
                     drivers[t]:advanceStage()
                     check(drivers[t].stageId == previous and not drivers[t].active,
@@ -214,24 +244,31 @@ function Start()
         local cases = {
             { currentStageId = 1001, maxStageId = 4905, clearedStages = {},
                 teamStageIds = { [1] = 3001, [2] = "204", [3] = 2505 } },
-            { currentStageId = 1001, maxStageId = 4905, clearedStages = {},
+            { currentStageId = 1001, maxStageId = 3999, clearedStages = {},
                 teamStageIds = { ["2"] = "999", ["3"] = 3999 } },
             { currentStageId = 1001, maxStageId = 4905, clearedStages = {},
                 teamStageIds = { ["2"] = 203.5, ["3"] = "bad" } },
             { currentStageId = 1001, maxStageId = 4905, clearedStages = {} },
+            { currentStageId = 1001, maxStageId = 4905, clearedStages = {},
+                teamStageIds = { ["2"] = "999", ["3"] = 3999 } },
         }
         for i, data in ipairs(cases) do
+            -- onLoad 同时用于运行态推送；真正读档需显式开启回退迁移。
             Schema.Fields.battle.onLoad(data)
+            Schema.normalizeTeamStageIds(data, true)
             check(data.teamStageIds["1"] == 1001, "迁移" .. i .. "以一队当前关为准而非最高关")
         end
         check(cases[1].teamStageIds["2"] == 204 and cases[1].teamStageIds["3"] == 2505,
             "Schema接受数字队键和字符串关卡")
         check(cases[2].teamStageIds["2"] == 2305 and cases[2].teamStageIds["3"] == 9205,
-            "终焉重登三队统一退对应末关")
+            "终焉重登三队统一退对应末关 actual=" .. tostring(cases[2].teamStageIds["2"])
+                .. "/" .. tostring(cases[2].teamStageIds["3"]))
         check(cases[3].teamStageIds["2"] == 101 and cases[3].teamStageIds["3"] == 101,
             "无效关卡安全回1-1")
         check(cases[4].teamStageIds["2"] == 101 and cases[4].teamStageIds["3"] == 101,
             "旧档缺字段只迁移默认当前关，不虚构二三队历史")
+        check(cases[5].teamStageIds["2"] == 2305 and cases[5].teamStageIds["3"] == 101,
+            "终焉回退点超账号上界时回101，不恢复未解锁末关")
 
         maxStage, cleared = 4905, {}
         Page.gotoTeamStage(1, 1001)
@@ -264,9 +301,11 @@ function Start()
             Save.Flush()
             return true
         end
-        maxStage, cleared = 4905, { [2305] = true }
+        maxStage, cleared = 999, { [2305] = 1 }
         modules.battle.teamStageIds["1"] = 2305
-        check(Page.gotoTeamStage(1, 999), "终焉仍通过真实Page切换协同战")
+        check(not Page.gotoTeamStage(1, 999), "终焉最高节点不接受非true的末关通关标记")
+        cleared = { ["2305"] = true }
+        check(Page.gotoTeamStage(1, 999), "最高节点999及字符串末关账本仍可通过真实Page进入协同战")
         local enteredSave = cjson.decode(disk["standalone_save.json"])
         check(mainStage == 999 and modules.battle.currentStageId == 2305
             and enteredSave.modules.battle.currentStageId == 2305,
@@ -316,6 +355,9 @@ function Start()
     rawset(_G, "fileSystem", nativeSystem)
     rawset(_G, "time", nativeTime)
     if ok then print("[tri_progress_test] ALL PASS: " .. assertions .. " assertions")
-    else log:Write(LOG_ERROR, "[tri_progress_test] " .. tostring(err)) end
+    else
+        print("[tri_progress_test] FAIL " .. tostring(err))
+        log:Write(LOG_ERROR, "[tri_progress_test] " .. tostring(err))
+    end
     engine:Exit()
 end

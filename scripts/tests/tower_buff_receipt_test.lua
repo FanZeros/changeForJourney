@@ -70,7 +70,7 @@ function Start()
             for k, v in pairs(originals) do all[k] = v end
         end
         for k in pairs(all) do all[k] = nil end
-        all.battle = { maxStageId = 1906, clearedStages = { [1905] = true } }
+        all.battle = { maxStageId = 2001, clearedStages = { [1905] = true } }
         all.player = { name = "B04 fixture", level = 1, exp = 0 }
         all.currency = {}
         all.heroes = { roster = {}, teams = {}, deployed = {} }
@@ -126,7 +126,7 @@ function Start()
             Scene.close()
             Page.close()
             hold, queue, receipts, actionCounts, opens = false, {}, {}, {}, 0
-            Dispatcher.set("battle", { maxStageId = 1906, clearedStages = { [1905] = true } })
+            Dispatcher.set("battle", { maxStageId = 2001, clearedStages = { [1905] = true } })
             Dispatcher.set("dungeon", { babel_tower = { floor = 1, cleared = {}, buffs = {}, dailyUsed = 0 } })
             teams = {}
             for t = 1, 3 do
@@ -208,7 +208,7 @@ function Start()
             interval(1, "失败不应用20")
             Page.onActionResult(last(AT.TOWER_PICK_BUFF))
             eq(opens, 1, "重复失败回包不重开")
-            all.battle = { maxStageId = 1906, clearedStages = { [1905] = true } }
+            all.battle = { maxStageId = 2001, clearedStages = { [1905] = true } }
             click(1)
             eq(#all.dungeon.babel_tower.buffs, 1, "恢复资格后当前选择重试一次")
             eq(sceneState.wave, 2, "重试成功换波")
@@ -318,7 +318,7 @@ function Start()
             all.battle = { maxStageId = 101 }
             click(1)
             local failure = last(AT.TOWER_PICK_BUFF)
-            all.battle = { maxStageId = 1906, clearedStages = { [1905] = true } }
+            all.battle = { maxStageId = 2001, clearedStages = { [1905] = true } }
             hold = true
             click(1)
             Page.onActionResult(failure)

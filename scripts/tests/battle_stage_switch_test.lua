@@ -1,9 +1,10 @@
 -- ============================================================================
 -- battle_stage_switch_test.lua — 战斗切关回归
--- 覆盖三处修复：
+-- 覆盖切关及状态生命周期修复：
 --   1) 失败回退 / 轮回 / 寻怪 后 battleActive 不被过期值覆盖（否则战斗卡死）
 --   2) 切关时还原己方出场顺序（否则选关后角色位置变化）
 --   3) 行2/3 全灭有墙钟兜底复活（否则永久卡住）
+--   4) 单队首通两秒真实行军/暂停/选关取消，胜利ctx不覆盖停战
 -- 跑法: ./.cli/UrhoXRuntime tests/battle_stage_switch_test.lua -tool_mode -graphicssurfaceless
 -- ============================================================================
 
@@ -234,7 +235,14 @@ local function testTriDriverWipeFallback()
     drv.mount()
     drv.bindContext()
 
-    drv:tick(1 / 60)
+    local nativeRequire = require
+    rawset(_G, "require", function(name)
+        if name == "boot.StandaloneSave" then return { Flush = function() return true end } end
+        return nativeRequire(name)
+    end)
+    local ok, err = pcall(function() drv:tick(1 / 60) end)
+    rawset(_G, "require", nativeRequire)
+    if not ok then error(err) end
     check(drv.stageId == SC.NORMAL_FIRST_STAGE, "全灭后退回上一关，实得 " .. tostring(drv.stageId))
     local stillDown = true
     for _, u in ipairs(drv.allies) do
@@ -531,6 +539,172 @@ local function testArtifactBridgeTeam()
         "缺省 teamIdx 回落队1（旧调用兼容）")
 end
 
+-- ── 9) 真实 Scene/Nav/Casualty：单队首通行军使用真实时钟并可取消 ──
+local function testVictoryMarchLifecycle()
+    local SC = require("config.StageConfig")
+    local function fixture()
+        local function noop() end
+        local env = setmetatable({ time = { elapsedTime = 100 } }, { __index = _G })
+        local loaded, mocks = {}, {}
+        ---@type table
+        local shared
+        ---@type table
+        local nav
+        local marches, combatTicks, firstClears = 0, 0, 0
+        ---@type table|nil
+        local background
+        local combat = setmetatable({
+            getAliveUnits = function(list)
+                local alive = {}
+                for _, unit in ipairs(list) do
+                    if unit.hp > 0 then alive[#alive + 1] = unit end
+                end
+                return alive
+            end,
+            mountedState = function() return { ctx = {} } end,
+        }, { __index = function() return noop end })
+        local function stub(fields)
+            return setmetatable(fields or {}, { __index = function() return noop end })
+        end
+        mocks["config.StageConfig"] = SC
+        mocks["core.BattleLayout"] = require("core.BattleLayout")
+        mocks["systems.AttributeDef"] = require("systems.AttributeDef")
+        mocks["shared.StageProvider"] = { Get = function() return SC end }
+        mocks["ui.battle.combat.BattleCombat"] = combat
+        mocks["ui.battle.scene.BattleMountScope"] = { mountDefault = noop, wrap = noop }
+        mocks["ui.battle.tri.BattleTriPage"] = { isOpen = function() return false end }
+        mocks["ui.battle.stage.StageBerserk"] = stub({ isActive = function() return false end })
+        mocks["systems.BattleTimeout"] = { calcMult = function() return 1 end }
+        mocks["runtime.ClientDispatcher"] = { get = function() return nil end }
+        mocks["systems.OfflineCalc"] = {
+            resolveIdleStageAnchors = function() return 101, 101 end,
+            calcOnlineIdleRewards = function() return { gold = 0, adventureExp = 0 } end,
+        }
+        mocks["systems.DropSystem"] = { captureTeamLuck = function() return 0 end }
+        mocks["ui.battle.scene.BattleSceneTick"] = { tick = function() combatTicks = combatTicks + 1 end }
+        mocks["ui.battle.scene.BattleAllyReset"] = stub({ restoreOrder = noop })
+        mocks["ui.battle.scene.BattleAllyLifecycle"] = { bind = function(deps)
+            return {
+                setAllies = function(list) deps.set("allies", list) end,
+                setEnemies = function(list) deps.set("enemies", list) end,
+                reloadStage = function() deps.loadStage(deps.get("currentStageId"), true) end,
+                -- Scene 仍须在委托前取消预约，不能依赖所有 Lifecycle 调用者。
+                resetToDefault = function()
+                    deps.set("currentStageId", 101)
+                    deps.set("battleActive", false)
+                    deps.set("enemies", {})
+                    deps.set("enemyQueue", {})
+                end,
+            }
+        end }
+        mocks["ui.battle.stage.BattleStageLoad"] = { load = function(ctx, id)
+            ctx.currentStageId, ctx.stageName = id, tostring(id)
+            ctx.enemies, ctx.enemyQueue = { { hp = 100 } }, {}
+            ctx.battleActive, ctx.isFirstClear = true, ctx.clearedStages[id] ~= true
+            ctx.firstClearTimeLeft = 60
+            ctx.searchingTimer, ctx.defeatTimer, ctx.reincarnationTimer = nil, nil, nil
+        end }
+        local realNames = {
+            ["ui.battle.scene.BattleScene"] = true,
+            ["ui.battle.stage.BattleStageNavLogic"] = true,
+            ["ui.battle.scene.BattleScenePhases"] = true,
+            ["ui.battle.combat.BattleCasualty"] = true,
+        }
+        env.require = function(name)
+            if mocks[name] then return mocks[name] end
+            if loaded[name] then return loaded[name] end
+            if not realNames[name] then mocks[name] = stub(); return mocks[name] end
+            local file = assert(cache:GetFile(name:gsub("%.", "/") .. ".lua"))
+            local lines = {}
+            while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+            file:Dispose()
+            local value = assert(load(table.concat(lines, "\n"), "@" .. name, "t", env))()
+            loaded[name] = value
+            return value
+        end
+        local realNav = env.require("ui.battle.stage.BattleStageNavLogic")
+        mocks["ui.battle.stage.BattleStageNavLogic"] = { bind = function(deps)
+            shared = deps
+            local realSet = deps.set
+            deps.set = function(key, value)
+                if key == "bgTransAnim" then background = value end
+                realSet(key, value)
+            end
+            nav = realNav.bind(deps)
+            local tick = nav.tickVictoryMarch
+            nav.tickVictoryMarch = function(dt) marches = marches + 1; tick(dt) end
+            return nav
+        end }
+        local Scene = env.require("ui.battle.scene.BattleScene")
+        Scene.setAllies({ { hp = 100, maxHp = 100, heroId = 1 } })
+        shared.set("maxStageId_", 205)
+        Scene.gotoStage(101)
+        Scene.setOnFirstClear(function() firstClears = firstClears + 1 end)
+        -- 倍率只有真实战斗逻辑可用，不能把行军的两秒缩成 0.2 秒。
+        Scene.getBattleLogicDt = function(dt) return dt * 10 end
+        return {
+            Scene = Scene,
+            get = function(key) return shared.get(key) end,
+            counters = function() return marches, combatTicks, firstClears end,
+            background = function() return background end,
+        }
+    end
+
+    local f = fixture()
+    f.Scene.beginVictoryMarch()
+    local march = f.get("victoryMarch")
+    check(march and not f.get("battleActive"), "开始行军后战斗停止，预约仍保留")
+    f.Scene.update(0.5)
+    check(march.timer == 0.5 and f.background().timer == 0.5,
+        "battleActive=false 时行军及背景仍推进 0.5 真实秒")
+    local _, combatTicks = f.counters()
+    check(combatTicks == 0, "行军不进入攻击/DOT/战斗tick")
+    f.Scene.pause()
+    f.Scene.update(10)
+    check(march.timer == 0.5 and f.Scene.getStageId() == 101,
+        "暂停冻结行军，十秒暂停不提前切关")
+    f.Scene.resume()
+    f.Scene.update(1.49)
+    check(f.Scene.getStageId() == 101, "两秒行军未满时不进入预约关卡")
+    f.Scene.update(0.02)
+    check(f.Scene.getStageId() == 102 and f.get("victoryMarch") == nil
+        and f.get("battleActive") and f.get("isFirstClear"),
+        "两秒真实行军结束进入102，首通模式和战斗恢复")
+
+    local natural = fixture()
+    natural.Scene.setEnemies({})
+    natural.Scene.update(0.01)
+    check(natural.get("victoryMarch") and not natural.get("battleActive"),
+        "真实Casualty首通回写不会用旧true覆盖行军停战")
+    natural.Scene.update(0.5)
+    local _, _, clears = natural.counters()
+    check(clears == 1 and natural.get("searchingTimer") == nil
+        and natural.get("victoryMarch").timer == 0.5,
+        "首通后只结算一次，行军期间不误入挂机寻怪")
+    natural.Scene.update(1.5)
+    check(natural.Scene.getStageId() == 102 and natural.get("battleActive"),
+        "自然胜利与直接行军使用同一两秒推进出口")
+
+    for _, action in ipairs({ "goto", "prev", "next", "reload", "reset" }) do
+        local item = fixture()
+        item.Scene.gotoStage(103)
+        item.Scene.beginVictoryMarch()
+        if action == "goto" then item.Scene.gotoStage(101)
+        elseif action == "prev" then item.Scene.prevStage()
+        elseif action == "next" then item.Scene.nextStage()
+        elseif action == "reload" then item.Scene.reloadStage()
+        else item.Scene.resetToDefault() end
+        local destination = item.Scene.getStageId()
+        check(item.get("victoryMarch") == nil, action .. " 主动切关/重置取消旧预约")
+        item.Scene.update(2.1)
+        check(item.Scene.getStageId() == destination, action .. " 后旧行军不会再次跳关")
+    end
+    local rejected = fixture()
+    rejected.Scene.beginVictoryMarch()
+    check(not rejected.Scene.gotoStage(2501) and rejected.get("victoryMarch") ~= nil,
+        "拒绝未解锁选关不取消正在进行的合法行军")
+end
+
 function Start()
     print("[battle_stage_switch_test] start")
     local ok, err = pcall(function()
@@ -542,6 +716,7 @@ function Start()
         testArtifactRuntimeIsolation()
         testArtifactTeamSchema()
         testArtifactBridgeTeam()
+        testVictoryMarchLifecycle()
     end)
     if not ok then
         print("[FAIL] 测试抛异常: " .. tostring(err))

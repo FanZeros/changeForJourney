@@ -94,7 +94,7 @@ function M.bind(deps)
     local function syncSlotLevel(heroId, newLevel)
         local ownedSet = get("ownedSet")
         local ownData = ownedSet[heroId]
-        if not ownData then return end
+        if not ownData then return false end
         -- 编辑队只是视图；等级回执同步真实所属队的槽位快照。
         local partySlot, teamIdx = getHeroDeployPosition(heroId)
         local teams = get("teams") or {}
@@ -108,13 +108,14 @@ function M.bind(deps)
         rebuildRoster()
         refreshPowerCache()
         refreshNavBadge()
+        return true
     end
 
     local function setHeroAdvBranch(heroId, branchId, advLevel)
         local ownedSet = get("ownedSet")
         local ownData = ownedSet[heroId]
-        if not ownData then return end
-        if advLevel ~= 1 and advLevel ~= 2 then return end
+        if not ownData then return false end
+        if advLevel ~= 1 and advLevel ~= 2 then return false end
         if not ownData.advBranch then
             ownData.advBranch = {}
         end
@@ -124,14 +125,16 @@ function M.bind(deps)
             ownData.advBranch.second = branchId
         end
         refreshHeroProgress(heroId)
+        return true
     end
 
     local function resetHeroAdvBranch(heroId)
         local ownedSet = get("ownedSet")
         local ownData = ownedSet[heroId]
-        if not ownData then return end
+        if not ownData then return false end
         ownData.advBranch = nil
         refreshHeroProgress(heroId)
+        return true
     end
 
     return {

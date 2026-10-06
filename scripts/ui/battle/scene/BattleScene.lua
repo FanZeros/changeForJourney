@@ -456,6 +456,8 @@ end
 ---@param skipBattleStart? boolean 跳过 TAL/TM 战斗启动（调用方自行在 resetAllyUnit 后调用 startBattleTalents）
 ---@param deferEnter? boolean 三行兼容Scene加载不提前通知实际Driver进场
 local function loadStage(stageId, skipBattleStart, deferEnter)
+    -- 任意实际切关/重开都取消旧行军，避免选关后预约再次跳关。
+    victoryMarch = nil
     BattleMountScope.mountDefault()
     local ctx = {
         currentStageId = currentStageId, stageName = stageName, maxStageId_ = maxStageId_,
@@ -968,6 +970,24 @@ function BattleScene.update(dt)
     maxStageId_ = _phCtx.maxStageId_
     stageName = _phCtx.stageName
 
+    -- 暂停已由 Phases 消费；胜利行军是停战后的真实时钟阶段，不能放在
+    -- battleActive 守卫后，也不能再触发一次胜负/挂机寻怪/攻击逻辑。
+    if victoryMarch then
+        BattleEffects.update(dt)
+        updateCardAnims(dt)
+        updateFloatingTexts(dt)
+        updateHitFlashes(dt)
+        SpeechBubble.update(dt)
+        bgAnimTimer = bgAnimTimer + dt
+        if bgTransAnim then
+            bgTransAnim.timer = bgTransAnim.timer + dt
+            if bgTransAnim.timer >= (bgTransAnim.duration or BG_TRANS_DURATION) then
+                bgTransAnim = nil
+            end
+        end
+        _navLogic.tickVictoryMarch(dt)
+        return
+    end
     if not battleActive then return end
 
     local logicDt = BattleScene.getBattleLogicDt(dt)
@@ -1044,13 +1064,17 @@ function BattleScene.update(dt)
     else
         stageKillCount_ = _casCtx.stageKillCount
     end
-    isFirstClear = _casCtx.isFirstClear
-    reincarnationTimer = _casCtx.reincarnationTimer
-    battleActive = _casCtx.battleActive
-    searchingTimer = _casCtx.searchingTimer
-    defeatTimer = _casCtx.defeatTimer
-    terminalDefeatPending = _casCtx.terminalDefeatPending
-    defeatByTimeout = _casCtx.defeatByTimeout
+    -- Nav 可能在胜利回调中开始行军或直接加载新关（最高末关/跳过终焉）。
+    -- ctx 属于旧战斗，不能覆盖停战状态或新关从账本派生的首通状态。
+    if currentStageId == stageIdBeforeCas then
+        isFirstClear = _casCtx.isFirstClear
+        reincarnationTimer = _casCtx.reincarnationTimer
+        battleActive = victoryMarch == nil and _casCtx.battleActive
+        searchingTimer = _casCtx.searchingTimer
+        defeatTimer = _casCtx.defeatTimer
+        terminalDefeatPending = _casCtx.terminalDefeatPending
+        defeatByTimeout = _casCtx.defeatByTimeout
+    end
     if _casConsumed then return end
 
     -- ---- 攻击进度 / DOT HOT / 天赋计时 / 护盾回血（委托 BattleSceneTick） ----
@@ -1095,9 +1119,6 @@ function BattleScene.update(dt)
         if bgTransAnim.timer >= duration then
             bgTransAnim = nil
         end
-    end
-    if _navLogic and _navLogic.tickVictoryMarch then
-        _navLogic.tickVictoryMarch(dt)
     end
 end
 
@@ -1442,6 +1463,7 @@ function BattleScene.reloadStage(opts)
 end
 --- 重置战斗场景到初始默认状态（清除存档后调用）
 function BattleScene.resetToDefault()
+    victoryMarch = nil
     return getAllyLifecycle().resetToDefault()
 end
 --- 暂停战斗（切离战斗页面时调用）

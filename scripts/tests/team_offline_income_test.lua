@@ -491,11 +491,11 @@ function Start()
             end
         end
 
-        -- 直接验证真实 Restore，不依赖 Scene UI 或 Sync 的永久事实合并掩盖删标。
+        -- 真实Restore按PR91保留永久两源并集；未知/非严格true只能不新增，不能撤销历史。
         local Restore = require("ui.battle.scene.BattleDataRestore")
-        local function restoreCase(label, sid, ledger, cleared)
+        local function restoreCase(label, sid, ledger, cleared, localCleared)
             runCase("restore_ledger", label, function()
-                local oldLedger = { [sid] = true, [999999] = true }
+                local oldLedger = { [sid] = localCleared, [999999] = true }
                 local state = {
                     currentStageId = sid, maxStageId_ = sid, clearedStages = oldLedger,
                     initialBattleDataLoaded = true, battleActive = true, isFirstClear = false,
@@ -515,25 +515,27 @@ function Start()
                 local before = stable(data)
                 restore.setBattleData(data)
                 check(state.clearedStages ~= oldLedger, "每次创建独立账本", state.clearedStages, "new table")
-                eq(state.clearedStages[999999], nil, "不遗留旧本地最高记录")
+                eq(state.clearedStages[999999], true, "正整数历史凭据不借部分回灌撤销")
                 eq(state.clearedStages[2001.5], nil, "拒绝分数关卡凭据")
                 eq(state.clearedStages[0], nil, "拒绝零关卡凭据")
                 eq(state.clearedStages[-1], nil, "拒绝负关卡凭据")
-                eq(state.clearedStages[sid], cleared and true or nil, "最高关只保留严格true原始凭据")
-                eq(state.isFirstClear, not cleared, "首通模式不删除最高关永久标记")
+                local expectedClear = cleared or localCleared == true
+                eq(state.clearedStages[sid], expectedClear and true or nil, "最高关取两源严格true并集")
+                eq(state.isFirstClear, not expectedClear, "首通模式不删除最高关永久标记")
                 eq(state.currentStageId, sid, "主线保留有效当前关")
                 eq(stable(data), before, "Restore不得修改输入账户账本")
-                eq(oldLedger[sid], true, "Restore不得原地修改旧账本引用")
+                eq(oldLedger[sid], localCleared, "Restore不得原地修改旧账本引用")
                 check(refreshes > 0, "回灌最高关立即刷新收益", refreshes, ">0")
                 local firstLedger = state.clearedStages
                 restore.setBattleData({ currentStageId = sid, maxStageId = sid })
                 check(state.clearedStages ~= firstLedger, "缺账本再次独立重建", state.clearedStages, "new table")
-                eq(state.clearedStages[sid], nil, "缺账本不得继承上一帧最高凭据")
-                eq(state.isFirstClear, true, "缺账本保守首通模式")
+                eq(state.clearedStages[sid], expectedClear and true or nil, "缺账本保留先前已确认事实")
+                eq(state.isFirstClear, not expectedClear, "缺账本不撤销已通或新增未知首通")
             end)
         end
         for _, kind in ipairs(ledgerKinds) do
-            restoreCase(kind.name, 2001, kind.ledger, kind.clear)
+            restoreCase(kind.name .. "/unknownLocal", 2001, kind.ledger, kind.clear)
+            restoreCase(kind.name .. "/confirmedLocal", 2001, kind.ledger, kind.clear, true)
         end
         restoreCase("主线最高关无后继仍保留首通", 34505, { ["34505"] = true }, true)
         restoreCase("拒绝分数零负凭据", 2001,
@@ -682,9 +684,10 @@ function Start()
                     modules.battle = data
                     local savedBefore = stable(data)
                     setUpvalue(Scene.getStageId, "currentStageId", current)
-                    -- 覆盖缺账本回灌复用旧本地记录的路径；保存账本必须有最终解释权。
+                    -- 收益显示暂读账户镜像；这不能撤销本地永久事实，下一段Sync再合并两源。
                     setUpvalue(Scene.getClearedStages, "clearedStages", { [2001] = true })
                     Scene.setBattleData(copy(data))
+                    eq(Scene.getClearedStages()[2001], true, "账户缺项回灌不能撤销本地已确认首通")
                     recalc()
                     eq(upvalue(recalc, "cachedGoldPerMin"), priorGold,
                         "Scene无严格true凭据回前关 " .. sample.name .. "/" .. current)
@@ -702,47 +705,61 @@ function Start()
             local syncSource = table.concat(lines, "\n"):match("(local battleSync =.-)\nlocal physW")
             assert(syncSource, "未找到生产周期同步边界")
             for _, sample in ipairs(sceneLedgers) do
-                local data = { currentStageId = 1001, maxStageId = 2001,
-                    teamCurrentStageIds = { 1001, 101, 101 },
-                    clearedStages = copy(sample.ledger), battleMode = "firstClear" }
-                modules.battle = data
-                setUpvalue(Scene.getStageId, "currentStageId", 1001)
-                setUpvalue(Scene.getClearedStages, "clearedStages", { [2001] = true })
-                Scene.setBattleData(copy(data))
-                -- 执行当前生产publishLive与CaptureBattleProgress，只借用内存存储。
-                -- live镜像不走onLoad；真正重登链路由持久化专项另行覆盖。
-                local dispatchModules = upvalue(dispatcher.handleStateUpdate, "dispatchModules")
-                setUpvalue(dispatchModules, "moduleData", modules)
-                local notifications, anyUpdates = 0, 0
-                setUpvalue(dispatcher.notifySubscribers, "subscribers", {
-                    battle = { function() notifications = notifications + 1 end },
-                })
-                setUpvalue(dispatcher.publishLive, "onAnyUpdate", function(patch, options)
-                    anyUpdates = anyUpdates + 1
-                    eq(patch.battle, modules.battle, "实时同步全局UI仍收到真实battle")
-                    eq(options.live, true, "实时镜像标记不伪装读档")
-                end)
-                local Save = require("boot.StandaloneSave")
-                setUpvalue(Save.CaptureBattleProgress, "battlePage", nil)
-                local syncEnv = setmetatable({ BattleScene = Scene, StageConfig = SC,
-                    ClientDispatcher = dispatcher, StandaloneSave = Save, bootReady_ = true,
-                }, { __index = _G })
-                local syncChunk, syncErr = load(syncSource .. "\nreturn SyncBattleState",
-                    "@boot/Standalone.lua#SyncBattleState", "t", syncEnv)
-                assert(syncChunk, syncErr)
-                local sync = syncChunk() --[[@as fun(dt: number)]]
-                sync(1)
-                eq(notifications, 1, "真实publishLive保留battle订阅通知")
-                eq(anyUpdates, 1, "真实publishLive保留全局UI通知")
-                local savedLedger = modules.battle.clearedStages
-                check(savedLedger[2001] ~= true and savedLedger["2001"] ~= true,
-                    "周期同步不将假首通写回账户 " .. sample.name, savedLedger["2001"], "not true")
-                eq(Calc.resolveIdleIncomeStageId(modules.battle, SC), 1905,
-                    "周期同步后账户收入仍按真实凭据 " .. sample.name)
-                recalc()
-                eq(upvalue(recalc, "cachedGoldPerMin"), priorGold,
-                    "周期同步后显示不升未通最高档 " .. sample.name)
+                for _, localValue in ipairs({ false, true, 1, "false" }) do
+                    local confirmed = localValue == true
+                    local data = { currentStageId = 1001, maxStageId = 2001,
+                        teamCurrentStageIds = { 1001, 101, 101 },
+                        clearedStages = copy(sample.ledger), battleMode = "firstClear" }
+                    modules.battle = data
+                    setUpvalue(Scene.getStageId, "currentStageId", 1001)
+                    setUpvalue(Scene.getClearedStages, "clearedStages", { [2001] = localValue })
+                    Scene.setBattleData(copy(data))
+                    eq(Scene.getClearedStages()[2001], confirmed and true or nil,
+                        "回灌仅保留本地严格true，不撤销确认事实 " .. sample.name .. "/" .. tostring(localValue))
+                    -- 执行当前生产publishLive与CaptureBattleProgress，只借用内存存储。
+                    -- live镜像不走onLoad；真正重登链路由持久化专项另行覆盖。
+                    local dispatchModules = upvalue(dispatcher.handleStateUpdate, "dispatchModules")
+                    setUpvalue(dispatchModules, "moduleData", modules)
+                    local notifications, anyUpdates = 0, 0
+                    setUpvalue(dispatcher.notifySubscribers, "subscribers", {
+                        battle = { function() notifications = notifications + 1 end },
+                    })
+                    setUpvalue(dispatcher.publishLive, "onAnyUpdate", function(patch, options)
+                        anyUpdates = anyUpdates + 1
+                        eq(patch.battle, modules.battle, "实时同步全局UI仍收到真实battle")
+                        eq(options.live, true, "实时镜像标记不伪装读档")
+                    end)
+                    local Save = require("boot.StandaloneSave")
+                    setUpvalue(Save.CaptureBattleProgress, "battlePage", nil)
+                    local syncEnv = setmetatable({ BattleScene = Scene, StageConfig = SC,
+                        ClientDispatcher = dispatcher, StandaloneSave = Save, bootReady_ = true,
+                    }, { __index = _G })
+                    local syncChunk, syncErr = load(syncSource .. "\nreturn SyncBattleState",
+                        "@boot/Standalone.lua#SyncBattleState", "t", syncEnv)
+                    assert(syncChunk, syncErr)
+                    local sync = syncChunk() --[[@as fun(dt: number)]]
+                    sync(1)
+                    eq(notifications, 1, "真实publishLive保留battle订阅通知")
+                    eq(anyUpdates, 1, "真实publishLive保留全局UI通知")
+                    local savedLedger = modules.battle.clearedStages
+                    eq(savedLedger[2001] == true or savedLedger["2001"] == true, confirmed,
+                        "周期同步永久两源只合并严格true " .. sample.name .. "/" .. tostring(localValue))
+                    eq(Calc.resolveIdleIncomeStageId(modules.battle, SC), confirmed and 2001 or 1905,
+                        "周期同步后账户收入按已合并真实凭据 " .. sample.name)
+                    recalc()
+                    eq(upvalue(recalc, "cachedGoldPerMin"), confirmed and gpm or priorGold,
+                        "周期同步后显示与真实账本一致 " .. sample.name)
+                end
             end
+            -- 正式清档出口才能撤销永久事实；无需开启GPU/玩家文件，也不能偷用空快照。
+            setUpvalue(Scene.getClearedStages, "clearedStages", { [2001] = true })
+            Scene.resetToDefault()
+            eq(next(Scene.getClearedStages()), nil, "正式Scene resetToDefault清空永久本地账本")
+            modules.battle = { currentStageId = 101, maxStageId = 101, clearedStages = {} }
+            -- 同关后续恢复不加载场景，避免专项触发图像/战斗初始化。
+            setUpvalue(bind, "initialBattleDataLoaded", true)
+            Scene.setBattleData(copy(modules.battle))
+            eq(next(Scene.getClearedStages()), nil, "显式清档后空快照不复活旧事实")
         end)
     end)
     if not ok then

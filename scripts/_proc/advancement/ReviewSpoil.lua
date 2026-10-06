@@ -1,7 +1,7 @@
 -- 103/104 审核主体：沿用 generate_advancement_trials 的 CPU 多边形/曲线闭包。
 -- 只发出形状；不创建画布、不读旧图、不画底板、不保存或安装 PNG。
--- 103：三排可辨识的库存长骨 + 消耗回流的心形；104：斜骨剑剥开两片重甲。
--- 共用骨节剑护手，不用十字、皇冠、星芒或别的职业徽记。
+-- 103：三层缚骨护肩与骨剑；104：保留斜骨剑剥开重甲的构图。
+-- 共用骨节剑护手，以实物战具建立职业身份，不画心形或机制箭头。
 
 ---@class ReviewSpoilDraw
 ---@field polygon fun(points:number[][], top:number[], bottom?:number[], opacity?:number)
@@ -20,31 +20,26 @@
 return function(d, branchId)
     assert(branchId == 103 or branchId == 104, "ReviewSpoil只绘制103/104审核主体")
     -- 父生成器的闭包必须点调用，不把 d 当作隐含 self 传入。
-    local polygon, line, stroke = d.polygon, d.line, d.stroke
+    local polygon, stroke = d.polygon, d.stroke
     local ellipse, curve, emblem = d.ellipse, d.curve, d.emblem
     local DARK, GOLD, BONE, SHADE = d.DARK, d.GOLD, d.BONE, d.SHADE
 
-    --- 库存长骨有完整双髁轮廓，排间负空间不靠细刻线表达。
+    --- 护肩三层弧形骨片沿用原三排结构，改为宽厚覆片而非独立库存长骨。
     ---@param cx number
     ---@param cy number
     ---@param half number
-    local function reserveBone(cx, cy, half)
+    local function shoulderRib(cx, cy, half)
         local left, right = cx - half, cx + half
-        local bone = { { left + 12, cy - 6 } }
-        curve(bone, left + 8, cy - 16, left - 2, cy - 16, left - 5, cy - 9)
-        curve(bone, left - 12, cy - 5, left - 12, cy + 5, left - 5, cy + 9)
-        curve(bone, left - 2, cy + 16, left + 8, cy + 16, left + 12, cy + 6)
-        curve(bone, left + 24, cy + 3, right - 24, cy + 3, right - 12, cy + 6)
-        curve(bone, right - 8, cy + 16, right + 2, cy + 16, right + 5, cy + 9)
-        curve(bone, right + 12, cy + 5, right + 12, cy - 5, right + 5, cy - 9)
-        curve(bone, right + 2, cy - 16, right - 8, cy - 16, right - 12, cy - 6)
-        curve(bone, right - 24, cy - 3, left + 24, cy - 3, left + 12, cy - 6)
-        emblem(bone, BONE, GOLD)
-        line(left + 15, cy - 2, right - 15, cy - 2, 3, BONE)
-        line(left + 17, cy + 4, right - 17, cy + 4, 2.6, SHADE)
-        -- 每端只留一道粗关节凹口，缩到64px不会变成细碎噪声。
-        line(left - 4, cy - 4, left, cy + 4, 3, SHADE)
-        line(right + 4, cy - 4, right, cy + 4, 3, SHADE)
+        local plate = { { left, cy + 5 }, { left + 3, cy - 6 } }
+        curve(plate, left + 19, cy - 17, right - 19, cy - 17, right - 3, cy - 6)
+        curve(plate, right + 5, cy + 1, right + 6, cy + 8, right - 2, cy + 13)
+        curve(plate, right - 17, cy + 4, left + 17, cy + 4, left + 2, cy + 13)
+        emblem(plate, BONE, GOLD)
+        local ridge = { { left + 7, cy - 3 } }
+        curve(ridge, left + 23, cy - 11, right - 23, cy - 11, right - 7, cy - 3)
+        stroke(ridge, 3, BONE, false)
+        -- 每层只保留一道宽骨脊，层间空隙由真实轮廓留出。
+        stroke({ { right - 9, cy + 2 }, { right - 6, cy + 7 } }, 3, SHADE, false)
     end
 
     --- 共用骨剑：局部坐标几何投影，不另建画布或改父生成器变换。
@@ -94,32 +89,26 @@ return function(d, branchId)
     end
 
     if branchId == 103 then
-        -- 骨市：左侧三排满储长骨，右侧直立骨剑；下方的心形承接消耗回流。
-        -- 绝不把12→18的层数误画成三柄武器或治疗职业的圣徽。
-        boneSword(186, 140, 0, 1)
-        reserveBone(110, 96, 33)
-        reserveBone(114, 132, 36)
-        reserveBone(110, 168, 33)
-        -- 两段铜色夹扣将“叠骨库存”连成一组，不另画箱子/第二层底板。
-        for _, y in ipairs({ 111, 147 }) do
-            emblem({ { 101, y }, { 119, y }, { 119, y + 5 }, { 101, y + 5 } }, GOLD, SHADE)
-            line(104, y + 1, 116, y + 1, 1.8, BONE)
+        -- 骨市：保留左侧三排和右侧骨剑的位置，三排改成可穿戴的缚骨护肩。
+        -- 缚带与下缘臂护均是装备结构，不用库存计数、心形或回流箭说明天赋。
+        emblem({ { 97, 76 }, { 125, 74 }, { 144, 97 }, { 146, 160 },
+            { 127, 186 }, { 99, 180 }, { 84, 151 }, { 81, 113 } }, SHADE, DARK)
+        shoulderRib(110, 99, 43)
+        shoulderRib(114, 134, 39)
+        shoulderRib(112, 168, 33)
+        -- 旧铜纵向缚带把三层骨覆片连成护肩，留出两侧的大块骨白。
+        emblem({ { 107, 83 }, { 117, 82 }, { 126, 172 }, { 116, 185 },
+            { 108, 176 }, { 103, 106 } }, GOLD, SHADE)
+        stroke({ { 110, 91 }, { 118, 171 } }, 3, BONE, false)
+        for _, y in ipairs({ 115, 150 }) do
+            emblem({ { 104, y }, { 124, y - 1 }, { 125, y + 10 }, { 105, y + 11 } }, GOLD, SHADE)
+            polygon({ { 110, y + 3 }, { 120, y + 2 }, { 120, y + 7 }, { 110, y + 8 } }, DARK)
         end
-        -- 消耗路径仅一条粗弯箭，来自库存而非从敌人抽血。
-        local returnFlow = { { 147, 179 } }
-        curve(returnFlow, 169, 188, 165, 201, 143, 205)
-        stroke(returnFlow, 9, DARK, false)
-        stroke(returnFlow, 4.2, GOLD, false)
-        emblem({ { 137, 206 }, { 146, 196 }, { 149, 208 } }, BONE, GOLD)
-        -- 不用十字/加号：骨白旧铜心形直接表达回复已损生命。
-        local heart = { { 118, 202 } }
-        curve(heart, 107, 187, 88, 196, 96, 211)
-        curve(heart, 101, 219, 112, 225, 118, 231)
-        curve(heart, 124, 225, 135, 219, 140, 211)
-        curve(heart, 148, 196, 129, 187, 118, 202)
-        emblem(heart, BONE, GOLD)
-        polygon({ { 121, 204 }, { 135, 201 }, { 134, 210 }, { 120, 226 } }, GOLD, SHADE)
-        stroke({ { 102, 201 }, { 100, 206 }, { 109, 216 } }, 3, BONE, false)
+        -- 下缘短臂护代替原来独立心形，仍沿原构图的左下重心收尾。
+        emblem({ { 92, 189 }, { 115, 191 }, { 132, 186 }, { 135, 205 },
+            { 122, 220 }, { 101, 220 }, { 89, 207 } }, BONE, GOLD)
+        polygon({ { 97, 204 }, { 126, 204 }, { 121, 214 }, { 103, 214 } }, GOLD, SHADE)
+        boneSword(186, 140, 0, 1)
     else
         -- 剥壳：两大片甲壳沿斜骨剑分离；暗色裂口是开阔负空间而非细黑线。
         -- 配置是击杀精英/首领得骸骨 + 优先护甲克制目标，不是无条件破甲。
@@ -149,6 +138,12 @@ return function(d, branchId)
             ellipse(p[1], p[2], 4.2, 4.2, DARK)
             ellipse(p[1] - 0.6, p[2] - 0.6, 2.8, 2.8, BONE, GOLD)
         end
+        -- 脱开的两片保留原形，添宽皮革束带与边缘包条，明确是强敌穿戴的重甲。
+        polygon({ { 68, 114 }, { 79, 111 }, { 89, 151 }, { 79, 159 }, { 72, 142 } }, SHADE, DARK)
+        stroke({ { 73, 119 }, { 79, 145 } }, 3, GOLD, false)
+        polygon({ { 196, 156 }, { 207, 150 }, { 204, 166 }, { 185, 193 },
+            { 175, 196 }, { 179, 186 } }, SHADE, DARK)
+        stroke({ { 202, 160 }, { 184, 186 } }, 3, GOLD, false)
         -- 两块剥落碎片与主体留明显空隙，不借绘制裁剪掩盖越界。
         emblem({ { 195, 78 }, { 207, 76 }, { 215, 87 }, { 204, 91 } }, BONE, GOLD)
         emblem({ { 60, 171 }, { 76, 178 }, { 72, 192 }, { 60, 184 } }, GOLD, SHADE)

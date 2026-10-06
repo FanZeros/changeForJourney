@@ -155,6 +155,9 @@ function BattleTriPage.refreshHeroProgressTeams(teamIndices, classTeams)
                     -- 三行驱动没有默认 Scene 挂机收益缓存，不能回算默认场景。
                     recalcIdleIncome = function() end,
                     ALLY_CARD_CY = BattleLayout.FIELD_CY,
+                    effectScope = "tri" .. teamIdx,
+                    effectCardCY = BattleLayout.STRIP_CY,
+                    effectCardScale = BattleLayout.CARD_SCALE,
                 })
                 lifecycle.refreshAllyStats()
                 print(string.format("[BattleTriPage] 队%d 成长属性已写入下波快照", teamIdx))
@@ -697,6 +700,10 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
                 -- 普通空编队隐藏敌人；终焉仍展示三只 Boss，包括空队/失守战线。
                 local enemiesShown = (terminalRaid or #drv.allies > 0) and drv.enemies or {}
                 BattleView.draw(vg, { allies = drv.allies, enemies = enemiesShown }, nil, true)
+                -- 与本行卡面共用当前transform/scissor，仅绘本行scope，不在窗口坐标重画。
+                if require("ui.hud.popup.SettingsPanel").isEffectsEnabled() then
+                    require("ui.fx.SpineCardEffect").draw(vg, "tri" .. row)
+                end
             end
             nvgRestore(vg)
         end

@@ -1,315 +1,277 @@
--- ============================================================================
--- SpinePowerUpEffect - 战斗力提升 Spine 动画 + 数值展示
--- 触发时机：天赋点技/转职/穿戴装备等导致战斗力提升时
--- 底层封装：nvgSpineCreate / nvgSpineRender + DrawUtil 描边文字
--- 用法：
---   local SpinePowerUpEffect = require("ui.fx.SpinePowerUpEffect")
---   SpinePowerUpEffect.init()                      -- Start 时初始化（订阅事件）
---   SpinePowerUpEffect.draw(vg)                    -- NanoVGRender 中每帧调用
---   SpinePowerUpEffect.destroy()                   -- Stop 时清理
--- ============================================================================
-
----@diagnostic disable: undefined-global
-
-local EventBus   = require("core.EventBus")
+-- 三队战力提升：保留旧模块路径，表现改为全窗居中的暗铁铭牌与新 UI 文字。
+-- 只展示正式缓存的净增加值，不改变公式、编队或当前波的战斗快照。
+local UI = require("urhox-libs/UI")
+local Surface = require("ui.widget.DesignWidgetSurface")
+local EventBus = require("core.EventBus")
 local GameEvents = require("config.GameEvents")
-local GameState  = require("core.GameState")
-local DrawUtil   = require("core.DrawUtil")
+local I18n = require("core.I18n")
+local Effects = require("ui.fx.DarkEffectPrimitives")
 
-local SpinePowerUpEffect = {}
+local Effect = {}
+local TEAM_COUNT, STABILIZE_DELAY, DURATION = 3, 2, 3.2
+local WIDTH, HEADER_H, ROW_H = 760, 66, 76
+---@class TeamPowerPresentation
+---@field power number
+---@field base number
+---@field delta number
+---@field startedAt number
+---@type table<number, TeamPowerPresentation>
+local active = {}
+---@type table<number, number>
+local previous = {}
+local initialized, disabled = false, false
+---@type number
+local stabilizeUntil = 0
+---@type Panel?
+local card = nil
+---@type Label?
+local title = nil
+---@type Panel[]
+local rowPanels = {}
+---@type Label[]
+local teamLabels = {}
+---@type Label[]
+local valueLabels = {}
 
--- ======================== 常量 ========================
+local TEXT = {
+    zh_CN = { title = "战力提升", team = "小队 %d", value = "%s   +%s" },
+    zh_TW = { title = "戰力提升", team = "小隊 %d", value = "%s   +%s" },
+    en = { title = "POWER INCREASED", team = "TEAM %d", value = "%s   +%s" },
+    ja = { title = "戦力上昇", team = "部隊 %d", value = "%s   +%s" },
+    ko = { title = "전투력 상승", team = "팀 %d", value = "%s   +%s" },
+}
 
--- Spine 资源（三件套在 assets/image/spine/ 下）
-local SPINE_JSON  = "image/spine/UI_SPINE_ZDLTS.json"
-local ANIM_NAME   = "1"
+local function now()
+    local value = time.elapsedTime
+    if type(value) ~= "number" or value ~= value or math.abs(value) == math.huge then return 0 end
+    return value
+end
 
--- 骨架原始尺寸（来自 JSON skeleton 字段）
-local DATA_X = -345.5
-local DATA_Y = -73.59
-local DATA_W = 691
-local DATA_H = 228.54
+local function finitePositive(value)
+    return type(value) == "number" and value == value and math.abs(value) < math.huge and value > 0
+end
 
--- 横屏顶栏战力在 (197, 175)。特效跟着数字，不再用旧竖屏底部坐标。
-local SPINE_X = 430
-local SPINE_Y = 175
-
-local TEXT_POWER_X  = 250
-local TEXT_POWER_Y  = 175
-local TEXT_DELTA_X  = 470
-local TEXT_DELTA_Y  = 175
-local TEXT_SIZE     = 47     -- 字号
-local TEXT_STROKE   = 4      -- 描边宽度
-
--- 颜色
-local COLOR_WHITE = { 255, 255, 255 }        -- 当前战斗力：纯白
-local COLOR_GOLD  = { 0xfc, 0xe8, 0x5d }     -- 提升数值：#fce85d
-
--- 文字时间轴（秒）
-local TEXT_FADE_IN_AT   = 0.66    -- 文字开始淡入的时刻
-local TEXT_FADE_IN_DUR  = 0.25    -- 淡入持续时长
-local TEXT_FADE_OUT_AT  = 2.33    -- 文字开始淡出的时刻
-local TEXT_FADE_OUT_DUR = 0.35    -- 淡出持续时长
-local EFFECT_END_TIME   = TEXT_FADE_OUT_AT + TEXT_FADE_OUT_DUR  -- 整体效果结束时刻
-
--- 稳定化延迟（秒）：每次收到 power 变化后重置计时器，
--- 连续这么久没有新变化才认为初始化数据同步完成，开始响应后续的真实变化
-local STABILIZE_DELAY = 2.0
-
--- ======================== 内部状态 ========================
-
-local spineInstance = nil
-local loaded    = false
-local playing   = false
-local lastTime  = 0
-
--- 显示数据
-local displayPower = 0       -- 当前战斗力
-local displayDelta = 0       -- 本次提升量
-local animElapsed  = 0       -- 动画总经过时间
-local spineCompleted = false -- Spine 动画是否已播完
-
--- 上一次记录的战斗力（用于计算差值）
-local prevPower = nil
-
--- 待播放队列（短时间内多次提升合并展示）
-local pendingAnim = nil      -- play() 在 load 之前被调用时暂存
-
--- 稳定化状态：进入游戏后服务端数据分批到达，等数据稳定后才开始响应
-local stabilizing    = false  -- 是否处于稳定化阶段
-local stabilizeTimer = 0      -- 距上次 power 变化的计时器
-
--- ======================== Spine 管理 ========================
-
----@param vg any
----@return boolean
-local function ensureLoaded(vg)
-    if loaded and spineInstance then return true end
-    if not vg then return false end
-
-    -- 旧版 TapTap 客户端无 Spine 扩展（全局函数缺失）→ 提醒更新（进程内仅弹一次）
-    if type(nvgSpineCreate) ~= "function" then
-        print("[SpinePowerUpEffect] nvgSpineCreate unavailable (old client?)")
-        require("ui.hud.popup.UpdateNoticePopup").notifyOnce()
-        return false
+local function powerValue(value)
+    if type(value) ~= "number" or value ~= value or math.abs(value) == math.huge or value < 0 then
+        return nil
     end
+    return math.floor(value + 0.5)
+end
 
-    spineInstance = nvgSpineCreate(vg)
-    if not spineInstance then
-        print("[SpinePowerUpEffect] nvgSpineCreate failed")
-        require("ui.hud.popup.UpdateNoticePopup").notifyOnce()
-        return false
+local function formatPower(value)
+    local full = string.format("%.0f", value)
+    -- 极端大值采用科学记数，避免有限但数百位的字符串越出铭牌。
+    if #full > 18 then return string.format("%.3e", value) end
+    return full
+end
+
+local function clearExpired()
+    local current = now()
+    for team = 1, TEAM_COUNT do
+        local row = active[team]
+        if row and current - row.startedAt >= DURATION then active[team] = nil end
     end
+end
 
-    if not spineInstance:Load(SPINE_JSON) then
-        print("[SpinePowerUpEffect] Failed to load: " .. SPINE_JSON)
-        spineInstance = nil
-        return false
+local function onTeamPowerChanged(data)
+    if not initialized or type(data) ~= "table" or type(data.powers) ~= "table" then return end
+    -- 开机player同步可能先发布空队，不能把标题停留后的首次读档当作战力增长。
+    if data.ready == false then
+        previous, active = {}, {}
+        return
     end
+    clearExpired()
+    local current = now()
+    for team = 1, TEAM_COUNT do
+        local power = powerValue(data.powers[team])
+        if power then
+            local old = previous[team]
+            previous[team] = power
+            if current < stabilizeUntil or old == nil then
+                active[team] = nil
+            elseif power ~= old then
+                local row = active[team]
+                if row then
+                    -- 连续穿卸／升阶显示本段净提升，不把下降前旧增量叠入新结果。
+                    row.power, row.delta = power, math.max(0, power - row.base)
+                    if row.delta == 0 then active[team] = nil
+                    elseif power > old then row.startedAt = current end
+                elseif power > old then
+                    active[team] = { power = power, base = old, delta = power - old, startedAt = current }
+                    print(string.format("[TeamPowerEffect] 小队%d 战力%s→%s (+%s)", team,
+                        formatPower(old), formatPower(power), formatPower(power - old)))
+                end
+            end
+        end
+    end
+end
 
-    -- atlas pma:true
-    spineInstance:SetPremultipliedAlpha(true)
-    spineInstance:SetDefaultMix(0.1)
-    spineInstance:SetSpeed(1.0)
+local function ensureCard()
+    if card then return end
+    Surface.init()
+    title = UI.Label {
+        text = "", height = 42, fontSize = 22, alignSelf = "center", whiteSpace = "nowrap",
+        textAlign = "center", verticalAlign = "middle", fontColor = {216, 201, 163, 255},
+        pointerEvents = "none",
+    }
+    ---@type Widget[]
+    local children = { title }
+    for team = 1, TEAM_COUNT do
+        local teamLabel = UI.Label {
+            text = "", height = 25, fontSize = 13, alignSelf = "center", whiteSpace = "nowrap",
+            textAlign = "center", verticalAlign = "middle", fontColor = {150, 138, 110, 255},
+            pointerEvents = "none",
+        }
+        local valueLabel = UI.Label {
+            text = "", height = 43, fontSize = 27, alignSelf = "center", whiteSpace = "nowrap",
+            textAlign = "center", verticalAlign = "middle", fontColor = {240, 199, 94, 255},
+            pointerEvents = "none",
+        }
+        local panel = UI.Panel {
+            width = "100%", height = ROW_H, alignItems = "center", pointerEvents = "none",
+            children = { teamLabel, valueLabel },
+        }
+        ---@cast teamLabel Label
+        ---@cast valueLabel Label
+        teamLabels[team] = teamLabel
+        valueLabels[team] = valueLabel
+        rowPanels[team] = panel
+        children[#children + 1] = panel
+    end
+    card = UI.Panel {
+        width = WIDTH, height = HEADER_H + ROW_H, padding = {12, 90, 12, 90},
+        alignItems = "center", pointerEvents = "none", children = children,
+    }
+    print("[TeamPowerEffect] 三队暗铁铭牌已就绪，无 Spine 资源依赖")
+end
 
-    -- 播放完成回调：标记 Spine 动画已结束
-    spineInstance:SetCompleteListener(function(track, anim)
-        spineCompleted = true
+-- 文字使用自动宽度单行Label，不设控件opacity/transform/clip。
+-- 透明度逐色相乘；正常绘制不建立UI嵌套状态帧，不改写任何引擎全局入口。
+local function drawSurface(root, vg, width, height)
+    Surface.draw(root, vg, width, height)
+end
+
+local function fade(elapsed)
+    return math.max(0, math.min(1, elapsed / 0.24, (DURATION - elapsed) / 0.45))
+end
+
+function Effect.resetSession()
+    previous, active = {}, {}
+    stabilizeUntil = now() + STABILIZE_DELAY
+    disabled = false
+end
+
+function Effect.init()
+    if initialized then EventBus.off(GameEvents.TEAM_POWER_CHANGED, onTeamPowerChanged) end
+    initialized = true
+    Effect.resetSession()
+    EventBus.on(GameEvents.TEAM_POWER_CHANGED, onTeamPowerChanged)
+end
+
+-- 生命周期只由真实时钟决定；标题、塔／副本或未 draw 都能结束稳定期和播放。
+function Effect.update(_dt)
+    if initialized then clearExpired() end
+end
+
+function Effect.isPlaying()
+    clearExpired()
+    return not disabled and next(active) ~= nil
+end
+
+-- 返回副本，便于回归核对；调用者不能修改内部基准或计时。
+function Effect.getDisplayRows()
+    clearExpired()
+    local rows = {}
+    for team = 1, TEAM_COUNT do
+        local row = active[team]
+        if row then rows[#rows + 1] = {
+            teamIdx = team, power = row.power, delta = row.delta,
+            elapsed = math.max(0, now() - row.startedAt),
+        } end
+    end
+    return rows
+end
+
+---@return number left
+---@return number top
+---@return number scale
+---@return number height
+function Effect.getGeometry(width, height)
+    if not finitePositive(width) or not finitePositive(height) then return 0, 0, 0, 0 end
+    local count = #Effect.getDisplayRows()
+    local cardHeight = HEADER_H + ROW_H * math.max(1, count)
+    local scale = math.max(0.01, math.min(1, (width - 40) / WIDTH, (height - 40) / cardHeight))
+    return (width - WIDTH * scale) * 0.5, (height - cardHeight * scale) * 0.5, scale, cardHeight
+end
+
+--- 宿主 finishFrame 的逻辑屏幕空间调用，不借任何左栏／中栏 Viewport。
+function Effect.draw(vg, width, height)
+    if not vg or not Effect.isPlaying() then return end
+    local screenWidth = width or 1080
+    local screenHeight = height or 2400
+    if not finitePositive(screenWidth) or not finitePositive(screenHeight) then return end
+    local rows = Effect.getDisplayRows()
+    local left, top, scale, cardHeight = Effect.getGeometry(screenWidth, screenHeight)
+    local elapsed = DURATION
+    for _, row in ipairs(rows) do elapsed = math.min(elapsed, row.elapsed) end
+    -- 铭牌使用最新一队的时间轴；各行文字保留自己的淡入／淡出。
+    local alpha = math.min(1, elapsed / 0.24, (DURATION - elapsed) / 0.45)
+    local saved = false
+    local ok, caught = pcall(function()
+        ensureCard()
+        local currentCard, currentTitle = card, title
+        if not currentCard or not currentTitle then return end
+        local text = TEXT[I18n.get()] or TEXT.zh_CN
+        currentTitle:SetText(text.title)
+        currentCard:SetHeight(cardHeight)
+        currentTitle:SetFontColor({216, 201, 163, math.floor(fade(elapsed) * 255 + 0.5)})
+        for team = 1, TEAM_COUNT do rowPanels[team]:Hide() end
+        for _, row in ipairs(rows) do
+            rowPanels[row.teamIdx]:Show()
+            local rowAlpha = math.floor(fade(row.elapsed) * 255 + 0.5)
+            teamLabels[row.teamIdx]:SetFontColor({150, 138, 110, rowAlpha})
+            valueLabels[row.teamIdx]:SetFontColor({240, 199, 94, rowAlpha})
+            teamLabels[row.teamIdx]:SetText(string.format(text.team, row.teamIdx))
+            local value = string.format(text.value, formatPower(row.power), formatPower(row.delta))
+            -- 先设字号再更新文本，让自动宽度按本帧字号测量；避免缩字后沿用旧宽度。
+            -- 两个18位整数仍保留完整值，用18号字收进580宽内容区，不截断战力。
+            valueLabels[row.teamIdx]:SetFontSize(#value > 36 and 18 or (#value > 30 and 20 or 27))
+            valueLabels[row.teamIdx]:SetText(value)
+        end
+        nvgSave(vg)
+        saved = true
+        nvgTranslate(vg, left, top)
+        nvgScale(vg, scale, scale)
+        Effects.drawPower(vg, WIDTH * 0.5, cardHeight * 0.5, WIDTH, cardHeight, elapsed, DURATION, math.max(0, alpha))
+        drawSurface(currentCard, vg, WIDTH, cardHeight)
     end)
-
-    loaded = true
-    print("[SpinePowerUpEffect] Loaded OK")
-    return true
-end
-
--- ======================== 播放控制 ========================
-
---- 内部播放（已知 power 和 delta）
----@param power number 当前战斗力
----@param delta number 提升量
-local function playInternal(power, delta)
-    displayPower = power
-    displayDelta = delta
-    animElapsed    = 0
-    spineCompleted = false
-
-    if not loaded or not spineInstance then
-        pendingAnim = true
-        playing = true
-        lastTime = time.elapsedTime
-        return
-    end
-
-    spineInstance:SetAnimation(0, ANIM_NAME, false)
-    playing   = true
-    pendingAnim = nil
-    lastTime  = time.elapsedTime
-end
-
--- ======================== 事件监听 ========================
-
----@param data table { power = number }
-local function onPowerChanged(data)
-    local newPower = data.power or 0
-
-    -- 稳定化阶段：服务端数据分批到达，只静默更新基准值（不重置计时器，避免用户操作延长稳定期）
-    if stabilizing then
-        prevPower = newPower
-        return
-    end
-
-    -- 首次同步（兜底），仅记录基准值
-    if prevPower == nil then
-        prevPower = newPower
-        return
-    end
-
-    local delta = newPower - prevPower
-    prevPower = newPower
-
-    -- 只在战斗力提升时触发（降低不触发）
-    if delta > 0 then
-        -- 如果正在播放，合并增量
-        if playing then
-            displayPower = newPower
-            displayDelta = displayDelta + delta
-        else
-            playInternal(newPower, delta)
+    local failure = ok and "" or tostring(caught)
+    if saved then
+        local restored, restoreError = pcall(nvgRestore, vg)
+        if not restored then
+            ok = false
+            failure = tostring(restoreError)
         end
     end
-end
-
--- ======================== 公开 API ========================
-
---- 初始化（在 Start / init 阶段调用）
-function SpinePowerUpEffect.init()
-    prevPower      = nil
-    stabilizing    = true            -- 进入稳定化阶段
-    stabilizeTimer = STABILIZE_DELAY -- 初始计时器
-    EventBus.on(GameEvents.PLAYER_POWER_CHANGED, onPowerChanged)
-end
-
---- 每帧绘制（在 NanoVGRender 中调用）
----@param vg any NanoVG 上下文
----@param offsetY number|nil 与 TopBar.draw 的纵向偏移一致
-function SpinePowerUpEffect.draw(vg, offsetY)
-    -- 稳定化计时：等待服务端数据全部到达后才开始响应战斗力变化
-    if stabilizing then
-        local frameDt = time.timeStep or 0.016
-        stabilizeTimer = stabilizeTimer - frameDt
-        if stabilizeTimer <= 0 then
-            stabilizing = false
-            -- prevPower 已在稳定化期间被更新到最新值，后续变化才会触发动画
-        end
-    end
-
-    if not playing then return end
-
-    -- 懒加载
-    if not ensureLoaded(vg) then return end
-
-    -- 处理待播放
-    if pendingAnim then
-        spineInstance:SetAnimation(0, ANIM_NAME, false)
-        pendingAnim = nil
-        lastTime = time.elapsedTime
-    end
-
-    -- 计算 dt
-    local now = time.elapsedTime
-    local dt = now - lastTime
-    if dt > 0.1 then dt = 0.016 end
-    lastTime = now
-
-    -- 累计动画经过时间
-    animElapsed = animElapsed + dt
-
-    -- 整体效果结束判定
-    if animElapsed >= EFFECT_END_TIME then
-        playing = false
-        spineCompleted = false
-        return
-    end
-
-    -- ---- Spine 骨架渲染 ----
-    if not spineCompleted then
-        spineInstance:Update(dt)
-        spineInstance:SetScale(1.0, -1.0)
-        local dataCenterX = DATA_X + DATA_W * 0.5
-        local dataCenterY = DATA_Y + DATA_H * 0.5
-        local shiftY = offsetY or 0
-        local posX = SPINE_X - dataCenterX
-        local posY = SPINE_Y + shiftY + dataCenterY
-        spineInstance:SetPosition(posX, posY)
-        nvgSpineRender(vg, spineInstance)
-    end
-
-    -- ---- 文字渲染（按时间轴淡入淡出） ----
-    local textAlpha = 0.0
-    if animElapsed < TEXT_FADE_IN_AT then
-        -- 还没到出现时间
-        textAlpha = 0.0
-    elseif animElapsed < TEXT_FADE_IN_AT + TEXT_FADE_IN_DUR then
-        -- 淡入阶段
-        textAlpha = (animElapsed - TEXT_FADE_IN_AT) / TEXT_FADE_IN_DUR
-    elseif animElapsed < TEXT_FADE_OUT_AT then
-        -- 完全可见阶段
-        textAlpha = 1.0
-    elseif animElapsed < EFFECT_END_TIME then
-        -- 淡出阶段
-        textAlpha = 1.0 - (animElapsed - TEXT_FADE_OUT_AT) / TEXT_FADE_OUT_DUR
-    end
-
-    if textAlpha > 0.01 then
-        nvgFontFace(vg, "sans")
-        local textOpts = { alpha = textAlpha }
-
-        -- 当前战斗力（纯白，左对齐）
-        local textY = TEXT_POWER_Y + (offsetY or 0)
-        DrawUtil.drawTextStroke(vg,
-            TEXT_POWER_X, textY,
-            tostring(displayPower),
-            TEXT_SIZE, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE,
-            COLOR_WHITE[1], COLOR_WHITE[2], COLOR_WHITE[3],
-            TEXT_STROKE, textOpts)
-
-        -- 提升数值（金黄，左对齐）
-        DrawUtil.drawTextStroke(vg,
-            TEXT_DELTA_X, textY,
-            "+" .. tostring(displayDelta),
-            TEXT_SIZE, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE,
-            COLOR_GOLD[1], COLOR_GOLD[2], COLOR_GOLD[3],
-            TEXT_STROKE, textOpts)
+    if not ok and not disabled then
+        disabled = true
+        active = {}
+        print("[TeamPowerEffect] 绘制已安全停用，业务继续: " .. failure)
     end
 end
 
---- 是否正在播放
----@return boolean
-function SpinePowerUpEffect.isPlaying()
-    return playing
+function Effect.preload(_vg)
+    -- 兼容旧调用；程序化效果无贴图／骨架需要预加载。
 end
 
---- 预加载（启动时调用）
----@param vg any
-function SpinePowerUpEffect.preload(vg)
-    ensureLoaded(vg)
+function Effect.destroy()
+    EventBus.off(GameEvents.TEAM_POWER_CHANGED, onTeamPowerChanged)
+    initialized = false
+    previous, active = {}, {}
+    if card then card:Destroy() end
+    card, title = nil, nil
+    rowPanels, teamLabels, valueLabels = {}, {}, {}
+    disabled = false
 end
 
---- 释放资源
-function SpinePowerUpEffect.destroy()
-    EventBus.off(GameEvents.PLAYER_POWER_CHANGED, onPowerChanged)
-    if spineInstance then
-        spineInstance:Unload()
-        spineInstance = nil
-    end
-    loaded         = false
-    playing        = false
-    spineCompleted = false
-    animElapsed    = 0
-    prevPower      = nil
-    pendingAnim    = nil
-    stabilizing    = false
-    stabilizeTimer = 0
-end
-
-return SpinePowerUpEffect
+return Effect

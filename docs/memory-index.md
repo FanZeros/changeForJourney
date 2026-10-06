@@ -1,5 +1,23 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+## 三队暗黑特效 PR 授权（2026-10-06）
+
+- 用户最新明确要求“帮我提一个pr”，授权提交／正常push `feat1005/team-power-dark-effects-20261006` 并创建目标 `workspace1005` 的 PR；不自动合并或发布，不推 workspace 系列，不强推。先即时鉴权、查询同源 PR、防重创建，实际结果后补SHA／链接，不提前声称推送或创建成功。
+- 仅本任务冻结 b26 的22Lua、三份新meta与现有三交接；其他会话返回键/H_SEAM_BACK最小修复独立，不进入本PR。冻结代码若共享工作树随后被局部编辑，按已核验部署字节构造原任务提交，不回退／覆盖对方工作树；独立暂存范围核验，不全量add。本地.project、_uploads、无关repair meta、玩家档与内部日志／PNG不提交。
+- 即时鉴权确认仓库可写，目标workspace1005已前进到fc6bbc5bc1f417460ee395cf483b64001f76bc84（PR105／106），相对9497bfdb净六文件与本任务无交集；不自动合并目标或切换共享工作树。已构造独立28项候选：22Lua逐字节绑定b26、3新meta UUID唯一、3交接；Horizon返回键新增仅在工作树，不进入候选。候选规范20旧错误／0警告，与固定基线逐项同一集合，新增0；不称全量规范通过。实际提交／push／PR结果后补，不提前声称成功。
+- 保留12套回归、753核心断言、22部署载荷字节一致与main raw FAIL仅149帧尖峰及native／旧夹具失败边界。源码未重改，不为纯Git任务重复构建；后续其他会话build不代替本次冻结证据。聊天公开凭据只进程内即时使用，不入源码、Git配置、日志、记忆，应撤销更换。
+
+## 三队战力提示与程序化暗黑特效（2026-10-06，本地完成）
+
+- 当前分支 `feat1005/team-power-dark-effects-20261006`，固定基线 `9497bfdb409c2d0fc17533e4cfc280702fe83517`；单机 `multiplayer.enabled=false`。实现与验证仅本地，尚未 commit／push／创建 PR／合并或发布；历史职业图授权不得转用。保留原 `_uploads`、本地 `.project` 与无关自动 meta，不混入任务。
+- 完整三队缓存刷新后发布 `TEAM_POWER_CHANGED` 快照及真实英雄水合 `ready`，队1 GameState 兼容事件／正式公式不变。首次就绪只建立基准，2秒静默，同队连续提升显示本段净增加，下降不叠旧增量，多队逐行独立到期；全窗 `finishFrame` 唯一居中绘制，不拦输入，教程／剧情／奖励／离线／更新／选关／扫荡／统计等遮挡时让位。真实墙钟统一收尾在 Standalone early return 之前，隐藏仍到期，清档取消旧会话。
+- 旧 Power／Card／Result 模块路径与入口保持，实际加载链改程序化暗铁、旧铜、骨白、血红余烬；升级封印燃焰、转职双扉裂光、复活灰片聚魂、锻炉成功合印／失败碎灭分别独立几何与阶段。不加载 Spine／图片、不新增 native context 或随机数调用；旧 Spine 资源未删除，未称包体已裁剪。三行 `tri1..3`、普通 `battle`、副本 `dungeon` 与转职 `detail-class` 分域，绑定真实卡片／工作台尺寸，当前波 pending 与成长／奖励／复活规则、存档字段不改。
+- Power 文字走真实 UI／DesignWidgetSurface／Yoga 单行自动宽度 Label，无父 opacity／transform／clip，无全局函数改写。实证修复 SetFontSize 在 SetText 后导致旧宽675残留；改顺序后15位双数514px，连续长→短→长514→297→514。18位完整整数双数原20号610px越580，改18号后首／次帧均533px；超18位才科学记数，不截断普通战力。单原语 Save／pcall／Restore 自恢复，真实 Label Lua Render 故障一次停视觉，不宣称原生字形或驱动异常万能恢复。
+- 冻结代理实际五入口均 exit0：logic17组453/0，UI18组300/0，default35组753/0，Card17/0，Result6组51/0。父实跑九套正式回归均 exit0：public25、神器60、公共预估 ALL PASS、成长1697/0/harness0、升阶257、切关 ALL PASS、远征110、Horizon300/300与2405断言、宿主117/0；Card／Result另由父复跑17/0、51/0。旧 Result 57场景1220原生断言已替换，不称保留；最终联合日志另落 `.git/validation/team-power-dark-effects-20261006`。
+- 首轮 native std::bad_function_call／UI段错误与中间5／2字体断言失败如实保留；测试在 Start 初始化 UI 并在正在 BeginFrame 的宿主 context 测字，最终混合运行不再崩溃，不停止 GC、不修改引擎库。Horizon旧60失败在固定基线逐项同集合，修六塔夹具排除副本并补双宿主脏态，保留旧点击塔优先／滚轮绘制副本优先契约，不称生产不一致已修。
+- 官方最终 `manifest-origin.b26.json` 构建成功，根 scripts552Lua，本任务22源码与实际UUID-hash载荷22/22逐字节一致，内部证据0入包；22Lua逐文件LSP severity1空items不代全仓静态覆盖。四阶段／英日韩与全窗1／2／3队及1280×800样片均实际120帧 exit0并 Read，受控图库非玩家操作／设备性能验收。两次 main150帧Lua/资源0、缺图0，raw FAIL/exit1仅149次100ms软件尖峰；不冒称性能通过。父再次实跑冻结联合35组753/0、UI18组300/0、logic17组453/0，均exit0并留存完整日志。b26最终main150帧实际Lua／资源0、缺图0，raw FAIL/exit1仅149条100ms软件尖峰；源码22份SHA前后保持，Git HEAD仍9497bfdb、index空、正式资源差异空。
+- 持续推进已授权范围、不擅自取消退出；当前最新恢复明确直接继续不再提问，遵循当前指令不机械 AskUserQuestion，不无限扩大 Git 授权。尊重停止／权限拒绝／安全边界，凭据不进源码、Git配置、日志或记忆；不推任何 workspace 系列，不自动合并发布。
+
 ## 42职业图全部确认实装（2026-10-06）
 
 - 实际9文件提交cacc582a75a43f7fa9a12bd218b14af1e8e6cda9已正常push，push/ls-remote退出0，远端同名任务分支与本地一致，workspace1005仍487027ae未动、index空。最终四图118/0/exit0、成长1697/0及觉醒成长ALL PASS/exit0再次核验；暂存2881路径规范20旧问题/新增0。42正式PNG、14绘图Lua及最终总览已包含于核验远端对象，不自动合并发布。

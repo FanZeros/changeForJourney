@@ -35,7 +35,7 @@ local SHOP_ITEMS = {
         costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
-        id = 102, name = "星辉招募券", quality = 6,
+        id = 102, name = "星辰招募券", quality = 6,
         limitCycle = "daily", limitCount = -1, price = 160,
         icon = "image/货币道具/UI_icon_ZMQ_2.png",
         costIcon = "image/货币道具/UI_icon_JGB_X.png",
@@ -189,10 +189,10 @@ local SHOP_ITEMS = {
     },
 }
 
---- 招募券置顶：远征招募券 → 星辉招募券 → 其余商品
+--- 招募券置顶：远征招募券 → 星辰招募券 → 其余商品
 local function isRecruitTicketShopItem(item)
     return item.id == 1 or item.id == 102
-        or item.name == "远征招募券" or item.name == "星辉招募券"
+        or item.name == "远征招募券" or item.name == "星辰招募券"
 end
 
 local function getShopDisplayItems()

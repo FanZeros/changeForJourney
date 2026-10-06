@@ -1,5 +1,5 @@
 -- ============================================================================
--- UrGachaConfig.lua - 星辉招募（UR 限定卡池）配置
+-- UrGachaConfig.lua - 星辰招募（UR 限定卡池）配置
 -- 规则文档：docs/配置文件/建筑-酒馆招募.txt
 -- ============================================================================
 
@@ -8,12 +8,12 @@ local HC = require("config.HeroConfig")
 local UrGachaConfig = {}
 
 UrGachaConfig.POOL_ID   = "stellar"
-UrGachaConfig.POOL_NAME = "星辉招募"
+UrGachaConfig.POOL_NAME = "星辰招募"
 
 -- ======================== 开放条件 ========================
 
 UrGachaConfig.Unlock = {
-    --- 通关进度达到地狱首关（7001）即开放星辉招募
+    --- 通关进度达到地狱首关（7001）即开放星辰招募
     HELL_FIRST_STAGE = 7001,
 }
 
@@ -26,7 +26,7 @@ UrGachaConfig.Cost = {
     TEN_DIAMOND    = 9000,
 }
 
---- 市场商店星辉券商品 id（8 折 720 钻，每日限购；与酒馆钻石快速补券独立）
+--- 市场商店星辰券商品 id（8 折 720 钻，每日限购；与酒馆钻石快速补券独立）
 UrGachaConfig.Market = {
     STELLAR_DIAMOND_ITEM_ID = 18,
 }
@@ -169,15 +169,16 @@ UrGachaConfig.TargetUp = {
 
 UrGachaConfig.UI = {
     bgPath          = "image/界面底板/酒馆抽卡/UI_KCBJ_2.png",
-    poolTabPath     = "image/界面底板/酒馆抽卡/UI_KCFL_2.png",
+    poolTabPath     = "image/界面底板/酒馆抽卡/UI_TAVERN_RECRUIT_ORDER_STELLAR.png",
     ticketIconPath  = "image/货币道具/UI_icon_ZMQ2_X.png",
     portraitPattern = "image/界面底板/酒馆抽卡/KCLH_%d.png",
     portraitCx      = 540,
     portraitCy      = 1145,
-    poolTabCx       = 249,
-    poolTabCy       = 558,
-    poolTextX       = 80,
-    poolTextY       = 591,
+    -- 双竖招募令（1080×2400 设计空间）；刷新元数据也沿用这些坐标。
+    poolTabCx       = 815,
+    poolTabCy       = 545,
+    poolTextX       = 815,
+    poolTextY       = 345,
 }
 
 -- ======================== 当期 UP ========================
@@ -217,7 +218,7 @@ function UrGachaConfig.getTimeDisplayText()
     return "永久"
 end
 
---- 星辉池是否已解锁（进入地狱难度后开放）
+--- 星辰池是否已解锁（进入地狱难度后开放）
 ---@param currency table|nil  保留兼容，未使用
 ---@param roster table|nil    保留兼容，未使用
 ---@param battle table|nil    需含 maxStageId

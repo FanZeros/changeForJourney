@@ -69,7 +69,7 @@ GameConfig.Resources = {
     { key = "helmetScroll",    name = "头盔卷轴",   giveAmount = 5    },
     { key = "shoesScroll",     name = "鞋子卷轴",   giveAmount = 5    },
     { key = "recruitTicket", name = "远征招募券", giveAmount = 10   },
-    { key = "stellarRecruitTicket", name = "星辉招募券", giveAmount = 10 },
+    { key = "stellarRecruitTicket", name = "星辰招募券", giveAmount = 10 },
     { key = "sweepTicket",   name = "扫荡券",     giveAmount = 10   },
     { key = "tavernCoin",    name = "酒馆币",     giveAmount = 50   },
     { key = "arcaneDust",    name = "奥术粉尘", giveAmount = 1000 },

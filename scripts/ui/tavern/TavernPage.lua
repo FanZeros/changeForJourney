@@ -18,6 +18,7 @@ local drawNineSlice          = DrawUtil.drawNineSlice
 local hitTest                = DrawUtil.hitTest
 local drawRoundedRectCentered = DrawUtil.drawRoundedRectCentered
 local RecruitAnim       = require("ui.tavern.RecruitAnim")
+local RecruitOrders     = require("ui.tavern.TavernRecruitOrders")
 local TavernPopups      = require("ui.tavern.TavernPopups")
 local TavernShopPage    = require("ui.tavern.TavernShopPage")
 local TargetRecruitPanel = require("ui.tavern.TargetRecruitPanel")
@@ -62,17 +63,7 @@ local NAME_FONT_SIZE              = 50
 local BTN_BACK_CX, BTN_BACK_CY = 958, 1150
 local BTN_BACK_W, BTN_BACK_H   = 184, 143
 
--- 5. 招募池子分类图（尺寸共用；坐标见 pools 表）
-local POOL_W, POOL_H = 440, 204 -- 池子图片尺寸
-local POOL_GAP = 12              -- 池子间距（预留第三池）
-
--- 6. 池子文本（字号/描边共用；坐标见 pools 表）
-local POOL_TEXT_SIZE = 40        -- 字号
--- 描边颜色 #613637
-local POOL_STROKE_R = 0x61       -- 97
-local POOL_STROKE_G = 0x36       -- 54
-local POOL_STROKE_B = 0x37       -- 55
-local POOL_STROKE_W = 5          -- 描边宽度
+-- 5-6. 双竖招募令入口布局/标题/状态统一由 TavernRecruitOrders 管理。
 
 -- 7. 抽卡池剩余时间图标背景
 local TIMER_BG_CX, TIMER_BG_CY = 999, 292
@@ -225,33 +216,7 @@ local function isStellarPoolId(poolId)
     return poolId == UrGachaConfig.POOL_ID or poolId == POOL_ID_STELLAR
 end
 
-local pools = {
-    {
-        id       = POOL_ID_STANDARD,
-        name     = "常规招募",
-        timeText = "永久",
-        cx       = 249,
-        cy       = 342,
-        textX    = 80,
-        textY    = 375,
-        catKey   = "poolCatStandard",
-        bgKey    = "bgStandard",
-        enabled  = true,
-    },
-    {
-        id       = POOL_ID_STELLAR,
-        name     = UrGachaConfig.POOL_NAME,
-        timeText = UrGachaConfig.getTimeDisplayText(),
-        cx       = UrGachaConfig.UI.poolTabCx,
-        cy       = UrGachaConfig.UI.poolTabCy,
-        textX    = UrGachaConfig.UI.poolTextX,
-        textY    = UrGachaConfig.UI.poolTextY,
-        catKey   = "poolCatStellar",
-        bgKey    = "bgStellar",
-        enabled  = UrGachaConfig.isPoolEnabled(),
-        unlocked = false,
-    },
-}
+local pools = RecruitOrders.createPools()
 
 -- ======================== 图片资源（主界面专用） ========================
 
@@ -261,9 +226,6 @@ local img = {
     bgStellar       = -1,   -- UI_KCBJ_2.png
     nameBg    = -1,   -- UI_TJP_MC.png
     btnBack   = -1,   -- UI_AN_FH.png
-    poolCatStandard = -1,   -- UI_KCFL_1.png
-    poolCatStellar  = -1,   -- UI_KCFL_2.png
-    poolSel   = -1,   -- UI_KCFL_GL.png
     upPortrait      = -1,   -- KCLH_{heroId}.png 当期 UP
     timerBg   = -1,   -- UI_YXTBBJ.png
     timerIcon = -1,   -- UI_icon_NZ.png
@@ -271,7 +233,7 @@ local img = {
     pityBg      = -1, -- UI_JG_SMBJ.png
     pityIcon    = -1, -- UI_icon_TS.png
     ticketIcon  = -1, -- UI_icon_ZMQ_X.png（常规）
-    ticketIconStellar = -1, -- UI_icon_ZMQ_2 星辉招募券
+    ticketIconStellar = -1, -- UI_icon_ZMQ_2 星辰招募券
     diamondIcon = -1, -- UI_icon_SJ_X.png
     btnLv       = -1, -- UI_AN_LV.png
     tabBg       = -1, -- UI_AN_1.png
@@ -314,20 +276,7 @@ local function isStellarPoolSelected()
 end
 
 local function refreshPoolMeta()
-    local stellar = pools[2]
-    if stellar then
-        stellar.name     = UrGachaConfig.POOL_NAME
-        stellar.timeText = UrGachaConfig.getTimeDisplayText()
-        stellar.cx       = UrGachaConfig.UI.poolTabCx
-        stellar.cy       = UrGachaConfig.UI.poolTabCy
-        stellar.textX    = UrGachaConfig.UI.poolTextX
-        stellar.textY    = UrGachaConfig.UI.poolTextY
-        local currencyData = ClientDispatcher.get("currency")
-        local heroesData   = ClientDispatcher.get("heroes")
-        local unlocked, _ = UrGachaConfig.checkPoolUnlocked(currencyData, heroesData and heroesData.roster, ClientDispatcher.get("battle"))
-        stellar.enabled  = UrGachaConfig.isPoolEnabled()
-        stellar.unlocked = unlocked
-    end
+    RecruitOrders.refreshPoolMeta(pools)
 end
 
 local function isStellarPoolUnlocked()
@@ -422,9 +371,7 @@ function TavernPage.init(vg)
     img.bgStellar       = loadImage(vg, UrGachaConfig.UI.bgPath)
     img.nameBg    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
     img.btnBack   = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
-    img.poolCatStandard = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_KCFL_1.png", 0)
-    img.poolCatStellar  = loadImage(vg, UrGachaConfig.UI.poolTabPath)
-    img.poolSel   = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_KCFL_GL.png", 0)
+    RecruitOrders.init(vg, pools)
     reloadUpPortrait(vg)
     img.timerBg   = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_YXTBBJ.png", 0)
     img.timerIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_NZ.png", 0)
@@ -665,7 +612,7 @@ local function doRecruitDirect(count, forcePayType)
 
     local results, _
     if isStellarPoolSelected() then
-        print("[TavernPage] 星辉招募仅支持联网模式")
+        print("[TavernPage] 星辰招募仅支持联网模式")
         return
     else
         notifyRecruitStarted(count)
@@ -741,7 +688,7 @@ end
 local function drawPityText(vg, cx, cy)
     local remain = tostring(state.pityRemain)
     local rank   = state.pityRank .. "级"
-    local suffix = isStellarPoolSelected() and "角色" or "远征队员"
+    local suffix = isStellarPoolSelected() and "星辰远征队员" or "远征队员"
 
     local segments = {
         { text = "接下来",   color = { 255, 255, 255 } },
@@ -909,32 +856,9 @@ local function drawPageImpl(vg)
         -- ============ 商店标签页内容 ============
         TavernShopPage.drawContent(vg)
     else
-        -- ============ 4. 招募池子列表 ============
+        -- ============ 4. 双竖招募令（角色之后绘制） ============
         refreshPoolMeta()
-        for i, pool in ipairs(pools) do
-            if not pool.enabled then goto continue_pool_draw end
-            local cx, cy = pool.cx, pool.cy
-            local poolAlpha = (pool.unlocked ~= false) and 1.0 or 0.45
-            local catImg = img[pool.catKey] or img.poolCatStandard
-            if catImg and catImg >= 0 then
-                drawImageCentered(vg, catImg, cx, cy, POOL_W, POOL_H, poolAlpha)
-            end
-
-            if state.selectedPool == i then
-                drawImageCentered(vg, img.poolSel, cx, cy, POOL_W, POOL_H, poolAlpha)
-            end
-
-            drawTextStroke(vg,
-                pool.textX, pool.textY,
-                pool.name,
-                POOL_TEXT_SIZE,
-                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-                255, 255, 255,
-                POOL_STROKE_W,
-                { strokeColor = { POOL_STROKE_R, POOL_STROKE_G, POOL_STROKE_B }, alpha = poolAlpha }
-            )
-            ::continue_pool_draw::
-        end
+        RecruitOrders.draw(vg, pools, state.selectedPool)
 
         -- ============ 6. 保底提示背景条 ============
         drawImageCentered(vg, img.pityBg, PITY_BG_CX, PITY_BG_CY, PITY_BG_W, PITY_BG_H, 1.0)
@@ -1267,21 +1191,20 @@ function TavernPage.handleInput(dx, dy)
     -- 池子点击检测（仅招募标签页）
     if state.tab ~= "shop" then
         refreshPoolMeta()
-        for i, pool in ipairs(pools) do
-            local cx, cy = pool.cx, pool.cy
-            if hitTest(dx, dy, cx, cy, POOL_W, POOL_H) then
-                if pool.unlocked == false then
-                    TavernPopups.showFloatText("进入地狱难度后开放", cx, cy - 40)
-                    return true
-                end
-                if state.selectedPool ~= i then
-                    state.selectedPool = i
-                    syncDisplayData()
-                    require("systems.GameSFX").playUIMove(2)
-                end
-                print("[TavernPage] 选中池子: " .. pool.name)
+        local i, pool = RecruitOrders.hitTest(dx, dy, pools)
+        if i and pool then
+            if pool.unlocked == false then
+                TavernPopups.showFloatText("进入地狱难度后开放", pool.cx, pool.cy - 40)
+                print("[TavernPage] 招募令未解锁: " .. pool.id .. "，进入地狱难度后开放")
                 return true
             end
+            if state.selectedPool ~= i then
+                state.selectedPool = i
+                syncDisplayData()
+                require("systems.GameSFX").playUIMove(2)
+                print("[TavernPage] 切换招募令: " .. pool.id .. " (" .. pool.name .. ")")
+            end
+            return true
         end
     end
 

@@ -210,7 +210,7 @@ function Start()
         replace(require("rules.redeem.RedeemService"), "Init", noop)
         local clock = { elapsedTime = 100 }
         replace(_G, "time", clock)
-        local paint = { slots = {}, icons = {}, buttons = {}, texts = {}, stack = {}, tx = 0, ty = 0, sx = 1, sy = 1 }
+        local paint = { slots = {}, icons = {}, buttons = {}, texts = {}, panels = {}, stack = {}, tx = 0, ty = 0, sx = 1, sy = 1 }
         local function screen(x, y) return paint.tx + x * paint.sx, paint.ty + y * paint.sy end
         local DrawUtil = require("core.DrawUtil")
         replace(DrawUtil, "drawTextStroke", function(_, _, _, text) paint.texts[#paint.texts + 1] = text end)
@@ -229,9 +229,13 @@ function Start()
             end
         end)
         replace(require("ui.widget.ImageCache"), "init", noop)
-        for _, name in ipairs({ "nvgBeginPath", "nvgRect", "nvgRoundedRect", "nvgFill", "nvgStroke",
+        for _, name in ipairs({ "nvgBeginPath", "nvgRect", "nvgFill", "nvgStroke",
             "nvgStrokeColor", "nvgStrokeWidth", "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgFillColor",
             "nvgGlobalAlpha", "nvgIntersectScissor" }) do replace(_G, name, noop) end
+        replace(_G, "nvgRoundedRect", function(_, x, y, w, h)
+            local sx, sy = screen(x, y)
+            paint.panels[#paint.panels + 1] = { x = sx, y = sy, w = w * paint.sx, h = h * paint.sy }
+        end)
         replace(_G, "nvgCreateImage", function() return -1 end)
         replace(_G, "nvgRGBA", function() return {} end)
         replace(_G, "nvgTextBounds", function(_, _, _, text) return utf8.len(text) * 14 end)
@@ -246,9 +250,14 @@ function Start()
         replace(_G, "nvgTranslate", function(_, x, y) paint.tx, paint.ty = paint.tx + x * paint.sx, paint.ty + y * paint.sy end)
         replace(_G, "nvgScale", function(_, x, y) paint.sx, paint.sy = paint.sx * x, paint.sy * y end)
         replace(require("core.DarkIcon"), "drawNine", function(_, kind, x, y, w, h)
-            local sx, sy = screen(x + w * 0.5, y + h * 0.5)
-            if kind == "slot" then paint.slots[#paint.slots + 1] = { x = sx, y = sy }
-            elseif kind == "btn" then paint.buttons[#paint.buttons + 1] = { x = sx, y = sy } end
+            local sx, sy = screen(x, y)
+            if kind == "panel" then
+                paint.panels[#paint.panels + 1] = { x = sx, y = sy, w = w * paint.sx, h = h * paint.sy }
+            elseif kind == "slot" then
+                paint.slots[#paint.slots + 1] = { x = sx + w * paint.sx * 0.5, y = sy + h * paint.sy * 0.5 }
+            elseif kind == "btn" then
+                paint.buttons[#paint.buttons + 1] = { x = sx + w * paint.sx * 0.5, y = sy + h * paint.sy * 0.5 }
+            end
         end)
         local Panel = require("ui.church.ChurchArtifactPanel")
         local Detail = require("ui.character.hero.ArtifactDetailPanel")
@@ -270,15 +279,18 @@ function Start()
         local Action = require("runtime.GameAction")
         local Bridge = require("runtime.LocalActionBridge")
         local Messages = require("runtime.ClientMessageHandler")
-        Messages.setup({ sendAction = Action.sendAction, ui = {} })
-        local watcher = { update = noop, subscribed = false }
-        replace(_G, "SubscribeToEvent", function(event, callback)
-            if event == "Update" then watcher.update, watcher.subscribed = callback, true end
+        local PlayerStore = require("core.PlayerStore")
+        local PlayerStoreUpdate = PlayerStore.Update
+        local watcher = { update = noop }
+        replace(PlayerStore, "Update", function(dt)
+            PlayerStoreUpdate(dt)
+            watcher.update("Update", { TimeStep = { GetFloat = function() return dt end } })
         end)
         Store.Cleanup()
         Dispatcher.reset()
         Store.Init()
         Bridge.init()
+        Messages.setup({ sendAction = Action.sendAction, ui = {} })
         local uiLevel = 60
         replace(GameState, "getLevel", function() return uiLevel end)
         local sender = Action.sendAction
@@ -296,7 +308,7 @@ function Start()
         end
         local function data() return Store.Get("artifacts") end
         local function draw()
-            paint.slots, paint.icons, paint.buttons, paint.texts = {}, {}, {}, {}
+            paint.slots, paint.icons, paint.buttons, paint.texts, paint.panels = {}, {}, {}, {}, {}
             Panel.drawContent({})
         end
         local function clickSlot(team, slot, sub)
@@ -305,11 +317,20 @@ function Start()
             check(cell ~= nil, "使用当前公开绘制定位槽位")
             Panel.handleTabInput(cell.x, cell.y)
         end
-        local function equipButton()
+        local function slotDetailPoint(xOffset)
+            paint.buttons, paint.texts, paint.panels = {}, {}, {}
+            Detail.draw({})
+            eq(#paint.buttons, 0, "已装神器详情不绘制安装/取下/洗练按钮")
+            local panel = paint.panels[1]
+            check(panel ~= nil, "已装详情公开绘制存在")
+            return panel.x + (xOffset or 265), panel.y + 797
+        end
+        local function equipBagDetail()
             paint.buttons, paint.texts = {}, {}
             Detail.draw({})
+            eq(#paint.buttons, 2, "背包详情保留安装和洗练按钮")
             local button = paint.buttons[1]
-            check(button ~= nil, "使用当前锚定详情绘制定位按钮")
+            check(button ~= nil, "背包详情绘制安装按钮")
             Panel.handleTabInput(button.x, button.y)
         end
         local function selectBag(id)
@@ -322,19 +343,20 @@ function Start()
             check(point.x ~= nil, "公开绘制中找到未装实例" .. id)
             Panel.handleTabInput(point.x, point.y)
             eq(Detail.getSelection().artifactId, tostring(id), "GitHub锚定详情保持实例身份")
-            equipButton()
+            equipBagDetail()
         end
         local function reset()
             Panel.reset()
-            uiLevel, churchState.open = 60, true
+            uiLevel = 60
+            churchState.open = true
             clock.elapsedTime = clock.elapsedTime + 10
             Dispatcher.set("artifacts", fresh())
-            Dispatcher.set("battle", { maxStageId = 1906 })
+            Dispatcher.set("battle", { maxStageId = 906, clearedStages = { ["905"] = true } })
             Dispatcher.set("player", { level = 60 })
             sender, requests, receipts = Action.sendAction, {}, {}
         end
         local function advance(dt)
-            watcher.update("Update", { TimeStep = { GetFloat = function() return dt end } })
+            PlayerStore.Update(dt)
         end
         local function deliver(request, success)
             local response = copy(request)
@@ -399,7 +421,7 @@ function Start()
         run("超时同目标重试不接受迟到成功失败回执", function()
             reset() selectBag("1") sender = function() return true end
             clickSlot(2, 1, 1)
-            check(watcher.subscribed, "真实WaitForChange注册Update")
+            check(type(PlayerStore.Update) == "function", "PlayerStore.Update由主循环驱动等待")
             advance(6) clickSlot(2, 1, 1)
             eq(#requests, 2, "超时允许同目标重试")
             check(requests[1].requestId ~= requests[2].requestId, "同目标请求身份不同")
@@ -430,7 +452,7 @@ function Start()
             deliver(old, false) clickSlot(2, 1, 1)
             eq(#requests, 3, "reset前旧回执不影响新请求")
         end)
-        run("GitHub钉住详情实时占用与旧取下防误卸", function()
+        run("GitHub钉住详情实时占用与已装详情只读", function()
             reset() selectBag("1")
             Schema.setEquippedId(data(), 1, 1, "1", 1)
             clickSlot(2, 1, 1)
@@ -440,16 +462,22 @@ function Start()
             Panel.reset() clickSlot(1, 1, 1)
             eq(Detail.isPinned(), true, "保留GitHub点击钉住详情")
             paint.texts = {} Detail.draw({})
-            check(table.concat(paint.texts, "|"):find("队伍1", 1, true), "详情显示实际占用队")
-            equipButton()
-            eq(Schema.getEquippedId(data(), 1, 1, 1), nil, "正常取下精确来源")
+            local positionText = table.concat(paint.texts, "|")
+            check(positionText:find("队伍1 · 前锋 · 第1格", 1, true), "已装详情保留位置提示")
+            for _, xOffset in ipairs({ 133, 397 }) do
+                local slotX, slotY = slotDetailPoint(xOffset)
+                Panel.handleTabInput(slotX, slotY)
+                eq(Schema.getEquippedId(data(), 1, 1, 1), "1", "已装详情旧操作区不改变装配")
+                eq(#requests, 0, "已装详情旧操作区不派取下/洗练")
+            end
+            local slotX, slotY = slotDetailPoint(397)
             Schema.setEquippedId(data(), 1, 1, "1", 2) clickSlot(2, 1, 1)
             Schema.setEquippedId(data(), 1, 1, "2", 2)
             paint.texts = {} Detail.draw({})
             check(table.concat(paint.texts, "|"):find("位置已变", 1, true), "旧详情实时禁用")
             local count = #requests
-            equipButton()
-            eq(#requests, count, "旧详情不发误卸动作")
+            Panel.handleTabInput(slotX, slotY)
+            eq(#requests, count, "旧已装详情位置无操作")
             eq(Schema.getEquippedId(data(), 1, 1, 2), "2", "保留替换实体")
             eq(storageCalls, 0, "生产链零存档调用")
         end)

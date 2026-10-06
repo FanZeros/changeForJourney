@@ -185,9 +185,19 @@ function Start()
         local function equipped(team, slot, sub)
             return Schema.getEquippedId(data(), slot, sub, team)
         end
+        local function makeBattleProgress(maxStageId, clearedStages)
+            return {
+                maxStageId = maxStageId,
+                currentStageId = 101,
+                clearedStages = clearedStages or {},
+                teamStageIds = { ["1"] = 101, ["2"] = 101, ["3"] = 101 },
+            }
+        end
         local function slotPoint(team, slot, sub)
-            -- 当前公共界面规格：三队行中心 465/807/1149，160格+10缝，4列间距224。
-            return ({ 252, 476, 700, 924 })[slot], ({ 465, 807, 1149 })[team] + (sub == 1 and -85 or 85)
+            -- 行式界面四列从左到右的号位映射为4/3/2/1。
+            local columnX = { 924, 700, 476, 252 }
+            local rowY = { 465, 807, 1149 }
+            return columnX[slot], rowY[team] + (sub == 1 and -85 or 85)
         end
         local function draw()
             clearPaint()
@@ -197,7 +207,7 @@ function Start()
         local function bagPoint(id)
             draw()
             for _, icon in ipairs(paint.icons) do
-                if icon.id == tostring(id) and icon.size == 160 and icon.y >= 1446 and icon.y <= 2110 then
+                if icon.id == tostring(id) and icon.size == 160 and icon.y >= 1446 and icon.y <= 2086 then
                     return icon.x, icon.y
                 end
             end
@@ -211,8 +221,8 @@ function Start()
         end
         local function detailButton(kind)
             local rect = detailRect()
-            -- 使用真实公开绘制的本体边界定位按钮，不读取详情私有布局/state。
-            return rect.x + (kind == "refine" and 397 or 133), rect.y + 797
+            local actionX = { equip = 133, ["slot-action"] = 265, refine = 397 }
+            return rect.x + actionX[kind], rect.y + 797
         end
         local function reset(level, progress, count)
             Panel.reset()
@@ -224,7 +234,7 @@ function Start()
             Dispatcher.clearModuleData()
             Store.ClearCache()
             Dispatcher.set("player", { level = level or 60 })
-            Dispatcher.set("battle", progress or { maxStageId = 1906 })
+            Dispatcher.set("battle", progress or makeBattleProgress(2001))
             Dispatcher.set("currency", { privilegePoint = 20, gems = 0, goldenKey = 0 })
             local artifacts = Schema.Fields.artifacts.getDefault()
             for i = 1, count or 12 do
@@ -330,10 +340,11 @@ function Start()
                     "服务端拒绝有准确门槛") end
             end
             for _, gate in ipairs({
-                { stage = 905, team = 2, allow = false }, { stage = 906, team = 2, allow = true },
-                { stage = 1905, team = 3, allow = false }, { stage = 1906, team = 3, allow = true },
+                { stage = 905, team = 2, allow = false }, { stage = 1001, team = 2, allow = true },
+                { stage = 1905, team = 3, allow = false }, { stage = 2001, team = 3, allow = true },
             }) do
-                reset(60, { maxStageId = gate.stage })
+                -- 每章只有五关：使用真实下一章首关验证严格越界，不用不存在的906/1906。
+                reset(60, makeBattleProgress(gate.stage))
                 bagDrag("112", gate.team, 4, 2)
                 eq(#sent, gate.allow and 1 or 0, "抵达关卡不等于通关")
                 eq(equipped(gate.team, 4, 2), gate.allow and "112" or nil, "队伍锁定不误装")
@@ -533,9 +544,13 @@ function Start()
             eq(#held, 1, "桥仅延迟UI回执不伪造服务结果")
             eq(equipped(1, 1, 1), "112", "服务已装配")
             local x, y = bagPoint("111")
-            Panel.handleDragBegin(x, y)
-            Panel.handleDragMove(252, 550)
-            Panel.handleDragEnd(252, 550)
+            local tx, ty = slotPoint(1, 1, 2)
+            eq(Panel.handleDragBegin(x, y), true, "pending时背包按下仍被接管")
+            eq(Panel.isItemDragging(), false, "pending时不能创建第二个物品拖动")
+            -- 禁止装配时按下走背包滚动分支；水平试拖避免改变后续查找的滚动位置。
+            Panel.handleDragMove(x + 15, y)
+            eq(Panel.isItemDragging(), false, "pending时跨阈值仍不能装配")
+            Panel.handleDragEnd(tx, ty)
             eq(#sent, 1, "pending阻止第二请求重入")
             Panel.cancelPointer()
             bridge.holdAck = false
@@ -658,11 +673,16 @@ function Start()
             eq(Details.getSelection().teamIdx, 1, "详情装配队伍")
             eq(Details.getSelection().slot, 3, "详情装配号位")
             eq(Details.getSelection().subSlot, 1, "详情装配子格")
-            ex, ey = detailButton("equip")
-            Panel.handleTabInput(ex, ey)
-            eq(actionCount(Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP), 1, "详情取下走真实卸下动作")
-            eq(equipped(1, 3, 1), nil, "真实详情取下来源准确")
-            invariantNoConsume("点击安装重试与取下")
+            for _, kind in ipairs({ "equip", "refine" }) do
+                ex, ey = detailButton(kind)
+                eq(Panel.handleTabInput(ex, ey), true, "已装详情旧操作区域点击被消费")
+                eq(#sent, 2, "已装详情点击不新增业务动作")
+                eq(actionCount(Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP), 0, "已装详情不派取下动作")
+                eq(equipped(1, 3, 1), "112", "只读详情保留原装配")
+                eq(Details.isPinned(), true, "只读点击保持详情pin")
+                eq(Details.getSelection().slot, 3, "只读详情保留准确号位")
+            end
+            invariantNoConsume("点击安装重试与已装详情只读")
         end)
 
         run("拖动经过洗练安装按钮及原格不执行点击", function()
@@ -712,7 +732,8 @@ function Start()
             eq(Panel.handleTabInput(x, y), true, "滚动后真实点击被处理")
             eq(Details.getSelection().artifactId, hitId, "点击peek与hover绘图同实例")
             Details.closeImmediate()
-            pointerDrag(x, y, 252, 380)
+            local tx, ty = slotPoint(1, 1, 1)
+            pointerDrag(x, y, tx, ty)
             eq(sent[1].params.artifactId, hitId, "滚动后拖放仍使用同实例")
             eq(equipped(1, 1, 1), hitId, "滚动实例真实装配")
             invariantNoConsume("滚动一致性")

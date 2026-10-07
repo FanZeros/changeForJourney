@@ -1,3 +1,10 @@
+## 上场与结算数据刷新去重（2026-10-07）
+
+- 本轮用户要求查上场/结算重复排序、战力和装备模拟，完成后正常push/PR，测试勿复杂化。固定ec1d8a61父，九文件功能08c6c4569555f5da45e0bc45de7acecac6650cc0已正常push并核远端SHA，独立 `perf1007/data-refresh-dedup`；正式PR #121：https://github.com/FanZeros/changeForJourney/pull/121，base=workspace1005/open/draft=false/merged=false，未推基线/自动合并发布。
+- 玩家解锁空槽不评分，heroes冻结最后评分值门禁；纯exp保引用、失败回滚不预先清cache、成功上场最终同步full1，legacy回调先刷新后读取。批次只合并末尾派生刷新，逐英雄共鸣/持久化及公式/倍率/奖励/存档保持；编辑队不评分、power排序不排旧缓存。
+- 官方b3成功593Lua/9载荷一致；现有Sync855/Exp780/Sort557均0失败、原atomic/drag/切关/预估120通过，纯Git候选三核心亦实际exit0。只两个旧test补计数/两batch例，不建框架。逐文件LSP无Error、规范21旧问题同父新增0、36单测过；host160/1与entry46/9旧夹具依赖失败保留，不混修，不称设备FPS/全面不卡/全仓全绿。
+- 持续推进当前授权，最新明确直接继续不机械提问；尊重停止/权限/安全边界。独立index/ref、sharedHEAD/index保持，九路径+三本人块不夹塔/教程/.project/上传/内证/玩家档，不推workspace系列/强推/合并发布，凭据不进源码/配置/日志/记忆。
+
 ## 右栏排序与总战力主值交接（2026-10-07）
 
 - **已正常push并核验：** 最终26白名单提交a313445e9c31810e9cd9887354674e138a696259正常push独立feat1007/roster-sort-total-power-20261007，push／ls-remote实际exit0、远端SHA一致，workspace1005仍81266ee8未推。正式PR #119：https://github.com/FanZeros/changeForJourney/pull/119，base=workspace1005／head=本任务，open／draft=false／merged=false／mergeable未计算，不称CI通过、已合并或发布。提交包含23源码/meta＋3本人交接，目标PR117优化保持，塔WIP／.project／内证／玩家档／凭据不混入；下面“未push／PR”均属此前过程记录。成功后仅三交接补记正常push，不重复创建PR。

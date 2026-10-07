@@ -1,3 +1,11 @@
+## 上场与结算数据刷新去重（2026-10-07）
+
+- 九源码/旧测试提交08c6c4569555f5da45e0bc45de7acecac6650cc0已正常push并ls-remote核验 `perf1007/data-refresh-dedup`，workspace1005仍ec1d8a61未推；正式PR #121：https://github.com/FanZeros/changeForJourney/pull/121，open/draft=false/merged=false，不称CI、合并发布。
+- 去掉玩家空槽解锁和编辑队视图的评分；heroes冻结最后评分的有效值，重复/纯exp/失败回滚不评分，成功同步编队full1。批经验逐英雄升级/共鸣/持久化原序，末尾full/light1；power排序等新缓存，原公式/倍率/奖励/存档不变。旧callback读最新cache顺序兼容。
+- 官方b3/593Lua与9实际载荷bytes/size一致，Sync855/0、Exp780/0、Sort557/0，原atomic/drag/切关/预估120/0通过；纯本任务Git候选三核心855/780/557均exit0。只两个既有test小增量，逐文件LSP无Error；规范21旧问题同父/新增0、36单测OK。
+- host160/1、entry46/9因旧夹具缺TowerBattleScene/horizonInputContext/TowerBuffSidebar未通过，相关源不改、不混修；早exp780/2和旧Sync637/27日志保留，最终修代码/新计数后原业务oracle全过。不称整仓/设备FPS/所有卡顿消失，headless环境错误保留。
+- 仅本任务独立index/ref和三本人交接，sharedHEAD/index不动、不混塔/教程/.project/上传/内证/玩家档；凭据不持久化。尊重当前直接继续及停止/权限边界，不推workspace系列/强推/自动合并发布。
+
 ## 右栏排序与总战力主值动画（2026-10-07）
 
 - **已正常push并核验：** 最终26白名单提交a313445e9c31810e9cd9887354674e138a696259正常push独立feat1007/roster-sort-total-power-20261007，push／ls-remote实际exit0、远端SHA一致，workspace1005仍81266ee8未推。正式PR #119：https://github.com/FanZeros/changeForJourney/pull/119，base=workspace1005／head=本任务，open／draft=false／merged=false／mergeable未计算，不称CI通过、已合并或发布。提交包含23源码/meta＋3本人交接，目标PR117优化保持，塔WIP／.project／内证／玩家档／凭据不混入；下面“未push／PR”均属此前过程记录。成功后仅三交接补记正常push，不重复创建PR。

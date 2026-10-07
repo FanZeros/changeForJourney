@@ -102,10 +102,17 @@ local function realPanel(nativeRequire)
     local HC = nativeRequire("config.HeroConfig")
     local Draw = nativeRequire("ui.character.panel.CharacterPanelDraw2")
     local EP = nativeRequire("systems.EquipmentPower")
-    local oldBuild, oldRequire, savedLit = EP.buildContext, require, HC._getSavedLitNodes()
+    -- 正式当前穿戴评分走轻快照；独立oracle始终保留完整库存上下文。
+    local oldBuild, oldWornBuild, oldRequire, savedLit = EP.buildContext, EP.buildWornContext, require, HC._getSavedLitNodes()
     local data, storeListeners, dispatcherListeners = {}, {}, {}
     local context, contexts, dirty, snapshots, actions, synchronousCacheReads = {}, 0, 0, {}, 0, 0
     local panel = {}
+    local progressCounts = { rebuild = 0, refresh = 0, nav = 0, light = 0 }
+    local progressTeams, layoutInvalidations = {}, {}
+    ---@type table
+    local sortSession
+    ---@type table
+    local inputSession
     local overlayVisible = false
     local detail = { opened = nil, visible = false }
     local noop = function() end
@@ -135,7 +142,11 @@ local function realPanel(nativeRequire)
                 if correct then synchronousCacheReads = synchronousCacheReads + 1 end
             end
         end },
-        ["ui.battle.tri.BattleTriPage"] = { invalidateTeams = noop, refreshHeroProgressTeams = noop },
+        ["ui.battle.tri.BattleTriPage"] = {
+            invalidateTeams = function(teams) layoutInvalidations[#layoutInvalidations + 1] = copy(teams) end,
+            refreshHeroProgressTeams = function(teams, classes)
+                progressTeams[#progressTeams + 1] = { teams = copy(teams), classes = copy(classes) }
+            end },
         ["ui.battle.scene.BattleScene"] = { refreshAllyStats = noop },
         ["ui.hud.popup.OfflineRewardPanel"] = { isOpen = function() return false end },
         ["ui.church.ChurchPage"] = { hasAdvanceForHero = function() return false end },
@@ -163,13 +174,34 @@ local function realPanel(nativeRequire)
         if modules[name] then return modules[name] end
         if name == "ui.character.panel.CharacterPanel" or name == "ui.character.panel.CharacterPower"
             or name == "ui.character.panel.CharacterHeroSync" or name == "ui.character.panel.CharacterInput"
-            or name == "ui.character.panel.CharacterRosterSort" then
+            or name == "ui.character.panel.CharacterRosterSort" or name == "ui.character.panel.CharacterProgress" then
             modules[name] = resourceModule(name, mocked)
-            return modules[name]
+            local value = modules[name]
+            if name == "ui.character.panel.CharacterProgress" then
+                local bind = value.bind
+                value.bind = function(deps)
+                    for key, counter in pairs({ rebuildRoster = "rebuild", refreshPowerCache = "refresh",
+                        refreshNavBadge = "nav", syncRosterExpFromOwned = "light" }) do
+                        local original = deps[key]
+                        if original then deps[key] = function(...)
+                            progressCounts[counter] = progressCounts[counter] + 1
+                            return original(...)
+                        end end
+                    end
+                    return bind(deps)
+                end
+            elseif name == "ui.character.panel.CharacterRosterSort" then
+                local bind = value.bind
+                value.bind = function(deps) sortSession = bind(deps); return sortSession end
+            elseif name == "ui.character.panel.CharacterInput" then
+                local bind = value.bind
+                value.bind = function(deps) inputSession = bind(deps); return inputSession end
+            end
+            return value
         end
         return nativeRequire(name)
     end
-    EP.buildContext = function(...) contexts = contexts + 1; return oldBuild(...) end
+    EP.buildWornContext = function(...) contexts = contexts + 1; return oldWornBuild(...) end
     require = mocked
     local ok, err = pcall(function()
         local Panel = mocked("ui.character.panel.CharacterPanel")
@@ -330,6 +362,165 @@ local function realPanel(nativeRequire)
         overlayVisible = true; Panel.draw({}); overlayVisible = false
         Panel.handleDragEnd(sortX, sortY); Panel.handleInput(sortX, sortY)
         check(Panel.getRosterSort() == "power", "引擎非package缓存overlay瞬时出现后关闭仍取消旧Down")
+        -- PR117融合：纯exp不影响五模式原始排序键、缓存或合法Down；旁队共鸣仍完整刷新。
+        local ET = nativeRequire("config.ExpTable")
+        local savedHeroes = copy(data.heroes)
+        local function same(a, b)
+            if type(a) ~= type(b) then return false end
+            if type(a) ~= "table" then return a == b end
+            for key, value in pairs(a) do if not same(value, b[key]) then return false end end
+            for key in pairs(b) do if a[key] == nil then return false end end
+            return true
+        end
+        local function rowPoint(id)
+            local found
+            for i, entry in ipairs(roster) do if entry.heroId == id then found = i; break end end
+            assert(found, "真实名册找不到hero=" .. tostring(id))
+            local r = math.ceil(found / Draw.MAX_PER_ROW)
+            local c = found - (r - 1) * Draw.MAX_PER_ROW
+            local n = math.min(Draw.MAX_PER_ROW, #roster - (r - 1) * Draw.MAX_PER_ROW)
+            local width = n * Draw.ROSTER_ICON + (n - 1) * 24
+            return (Draw.DESIGN_W - width) * 0.5 + Draw.ROSTER_ICON * 0.5
+                + (c - 1) * (Draw.ROSTER_ICON + 24) + Draw.CONTENT_SHIFT_X,
+                Draw.ROW1_CY + (r - 1) * Draw.ROW_SPACING + Draw.CONTENT_SHIFT_Y, found
+        end
+        local function applyExpFixture(levels)
+            detail.visible, detail.opened = false, nil
+            Panel.update(0.016)
+            data.heroes = copy(savedHeroes)
+            for id = 1, 8 do
+                local own = data.heroes.roster[tostring(id)]
+                own.level = levels and levels[id] or 10
+                own.exp, own.maxExp = 0, ET.getHeroExpForLevel(own.level)
+            end
+            Panel.setHeroesData(data.heroes)
+            Panel.update(0.016)
+        end
+        local function resetExpCounts()
+            contexts, dirty, snapshots, synchronousCacheReads = 0, 0, {}, 0
+            progressTeams, layoutInvalidations = {}, {}
+            for key in pairs(progressCounts) do progressCounts[key] = 0 end
+        end
+        for _, mode in ipairs({ "default", "team", "power", "level", "rarity" }) do
+            applyExpFixture()
+            Panel.setRosterSort(mode, mode == "level")
+            local priorOrder, priorRevision = order(roster), sortSession.getRevision()
+            local priorRows, priorPower, mappedPower = {}, copy(cacheValues), {}
+            for i, entry in ipairs(roster) do priorRows[i] = entry end
+            for id = 1, 8 do mappedPower[id] = Panel.getRosterPower(id) end
+            local priorSlots, priorSlotPowers, priorLayouts = {}, {}, {}
+            for team = 1, 3 do
+                local slots, values = Panel.getTeamSlotsData(team)
+                priorSlots[team], priorSlotPowers[team] = slots, copy(values)
+                priorLayouts[team] = Panel.getTeamSlotLayout(team)
+            end
+            local pressedId = roster[1].heroId
+            local px, py = rowPoint(pressedId)
+            Panel.handleDragBegin(px, py)
+            check(inputSession.isRosterInteractionBusy() and context.getDragState().heroId == pressedId,
+                "纯exp前真实名册Down绑定原hero " .. mode)
+            resetExpCounts()
+            check(Panel.addHeroExp(pressedId, 1), "纯exp真实入口成功 " .. mode)
+            check(progressCounts.rebuild == 0 and progressCounts.refresh == 0 and progressCounts.nav == 0
+                and progressCounts.light == 1, "纯exp仅一次原位同步/完整刷新零次 " .. mode)
+            check(contexts == 0 and dirty == 0 and #snapshots == 0 and synchronousCacheReads == 0,
+                "纯exp无真实穿戴评分/战力dirty/事件 " .. mode)
+            check(order(roster) == priorOrder and sortSession.getRevision() == priorRevision
+                and Panel.getRosterSort() == mode, "纯exp不重排或改mode/revision " .. mode)
+            for i, entry in ipairs(roster) do
+                check(entry == priorRows[i], "纯exp保留每一名册行引用 " .. mode .. "/" .. entry.heroId)
+            end
+            check(context.getHeroRoster() == roster and context.getRosterPowerCache() == cacheValues
+                and same(cacheValues, priorPower), "纯exp名册/索引缓存引用与值均保留 " .. mode)
+            for id = 1, 8 do
+                check(Panel.getRosterPower(id) == mappedPower[id] and Panel.getOwnedHero(id).level == 10,
+                    "纯exp保持heroId战力/等级 " .. mode .. "/" .. id)
+            end
+            for team = 1, 3 do
+                local slots, values = Panel.getTeamSlotsData(team)
+                check(slots == priorSlots[team] and same(values, priorSlotPowers[team])
+                    and same(Panel.getTeamSlotLayout(team), priorLayouts[team]),
+                    "纯exp三队槽引用/战力/编队不变 " .. mode .. "/" .. team)
+            end
+            check(roster[1].exp == 1 and roster[1].maxExp == ET.getHeroExpForLevel(10)
+                and Panel.getOwnedHero(pressedId).exp == 1 and data.heroes.roster[tostring(pressedId)].exp == 1,
+                "纯exp显示/owned/持久镜像立即一致 " .. mode)
+            Panel.draw({})
+            check(inputSession.isRosterInteractionBusy() and context.getDragState().heroId == pressedId
+                and order(roster) == priorOrder and sortSession.getRevision() == priorRevision,
+                "纯exp及tab3 draw不取消或换掉原Down " .. mode)
+            Panel.handleDragEnd(px, py); Panel.handleInput(px, py)
+            check(detail.opened == pressedId, "纯exp后End->Input仍打开原Down英雄 " .. mode)
+            detail.visible, detail.opened = false, nil; Panel.update(0.016)
+            check(contexts == 0 and order(roster) == priorOrder and sortSession.getRevision() == priorRevision
+                and #progressTeams == 0 and #layoutInvalidations == 0 and actions == 0,
+                "纯exp收尾无延迟重排/战斗属性通知/编队动作 " .. mode)
+        end
+
+        -- 获奖hero1自身10级不变；真实TOP5地板10提升队3的hero3及bench7/8。
+        applyExpFixture({ [1] = 10, [2] = 10, [3] = 1, [4] = 10,
+            [5] = 10, [6] = 10, [7] = 1, [8] = 1 })
+        Panel.setRosterSort("level", false)
+        local priorOrder, priorRevision = order(roster), sortSession.getRevision()
+        local priorTeam3Power = Panel.getTotalPower(3)
+        local priorTeamPowers, priorLayouts = {}, {}
+        for team = 1, 3 do
+            local _, values = Panel.getTeamSlotsData(team)
+            priorTeamPowers[team], priorLayouts[team] = copy(values), Panel.getTeamSlotLayout(team)
+        end
+        check(order(roster, true) == "1,2,4,5,6,3,7,8" and Panel.getResonanceLevel() == 10,
+            "旁队共鸣夹具真实TOP5与旧level降序正确")
+        local px, py, pressedIndex = rowPoint(6)
+        Panel.handleDragBegin(px, py)
+        resetExpCounts()
+        check(Panel.addHeroExp(1, 1), "获奖英雄不升级也能触发旁队/bench共鸣")
+        check(Panel.getOwnedHero(1).level == 10 and Panel.getOwnedHero(1).exp == 1
+            and Panel.getOwnedHero(3).level == 10 and Panel.getOwnedHero(7).level == 10
+            and Panel.getOwnedHero(8).level == 10, "全owned检测旁队与bench等级变化不只检查获奖hero")
+        check(progressCounts.rebuild == 1 and progressCounts.refresh == 1 and progressCounts.nav == 1
+            and progressCounts.light == 0 and contexts == 8 and dirty == 1 and #snapshots == 1,
+            "旁队共鸣精确一次完整rebuild/穿戴评分refresh/角标/完整事件")
+        check(synchronousCacheReads == 1 and snapshots[1].ready and #snapshots[1].powers == 3,
+            "旁队共鸣完整事件同步读取heroId映射及三队ready正确")
+        check(same(progressTeams, { { teams = { 3 }, classes = {} } })
+            and same(Panel.getLastHeroesRefreshTeams(), { [3] = true }) and #layoutInvalidations == 0,
+            "旁队共鸣只通知真实队3属性，不失效编队或借编辑队")
+        check(Panel.getTotalPower(3) > priorTeam3Power, "旁队共鸣实际队3战力立即增长")
+        for team = 1, 3 do
+            local slots, values = Panel.getTeamSlotsData(team)
+            check(same(Panel.getTeamSlotLayout(team), priorLayouts[team]), "旁队共鸣三队孔位不变 " .. team)
+            if team < 3 then check(same(values, priorTeamPowers[team]), "未变等级队战力不被旁队共鸣污染 " .. team) end
+            for _, slot in ipairs(slots) do
+                if slot.state == "occupied" then
+                    check(slot.level == Panel.getOwnedHero(slot.heroId).level,
+                        "旁队共鸣真实槽位level同步 " .. team .. "/" .. slot.heroId)
+                end
+            end
+        end
+        for i, entry in ipairs(roster) do
+            if entry.owned then
+                local own = Panel.getOwnedHero(entry.heroId)
+                check(entry.level == own.level and entry.exp == own.exp and entry.maxExp == own.maxExp
+                    and cacheValues[i] == Panel.getRosterPower(entry.heroId),
+                    "旁队共鸣全owned显示与正式缓存立即一致 " .. entry.heroId)
+            end
+        end
+        check(order(roster) == priorOrder and sortSession.getRevision() == priorRevision
+            and roster[pressedIndex].heroId == 6 and inputSession.isRosterInteractionBusy(),
+            "旁队共鸣Down期间完整刷新但延迟level重排保住原索引")
+        Panel.handleDragEnd(px, py); Panel.handleInput(px, py)
+        check(detail.opened == 6, "旁队共鸣后Up不点到新level次序里的其他英雄")
+        detail.visible, detail.opened = false, nil; Panel.update(0.016)
+        check(order(roster, true) == "1,2,3,4,5,6,7,8" and sortSession.getRevision() == priorRevision + 1
+            and contexts == 8 and #snapshots == 1 and actions == 0,
+            "旁队共鸣Down结束精确一次level重排，不重复评分/事件或发送编队")
+        for id = 1, 8 do
+            local current = math.floor(oldBuild(id, { heroData = Panel.getOwnedHero(id), heroes = data.heroes,
+                equipment = data.equipment, artifacts = data.artifacts, talents = data.talents }).currentPower + 0.5)
+            check(Panel.getRosterPower(id) == current, "旁队共鸣穿戴缓存与完整库存oracle一致 " .. id)
+        end
+        data.heroes = savedHeroes
+        Panel.setHeroesData(data.heroes); Panel.setRosterSort("power"); Panel.update(0.016)
         local signature = Panel.getTeamSignature(2)
         local ownedLevel = Panel.getOwnedHero(2).level
         Panel.destroyPresentation()
@@ -341,7 +532,7 @@ local function realPanel(nativeRequire)
         check(mode == "default" and not ascending and not Panel.isHeroesDataApplied(), "reset清旧Down/default与水合ready")
         check(actions == 0, "排序专项全过程无编队/合成动作")
     end)
-    EP.buildContext, require = oldBuild, oldRequire
+    EP.buildWornContext, require = oldWornBuild, oldRequire
     HC.setDefaultLitNodes(savedLit)
     if not ok then check(false, "真实Panel异常 " .. tostring(err)) end
 end

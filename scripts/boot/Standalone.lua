@@ -107,6 +107,11 @@ local fontNormal = -1
 ---@type table|nil
 local bootQueue_ = nil
 local bootReady_ = false
+---@type table|nil
+local entryQueue_ = nil
+local entryPrepared_ = false
+---@type function|nil
+local firstStageStep_ = nil
 
 local function pumpBootQueue_()
     if not bootQueue_ then return end
@@ -196,7 +201,7 @@ local function clearedSnapshot(entries)
 end
 
 local function SyncBattleState(dt)
-    if not bootReady_ then return end
+    if not bootReady_ or StandaloneRT.entryPreparing then return end
     battleSync.acc = battleSync.acc + (dt or 0)
     if battleSync.acc < 1.0 then return end
     battleSync.acc = 0
@@ -287,6 +292,8 @@ function Standalone._bootWiring()
 end
 
 function Standalone.Start()
+    entryQueue_, entryPrepared_ = nil, false
+    StandaloneRT.entryPrepared, StandaloneRT.entryPreparing, StandaloneRT.entryRendered = false, false, false
     BattleTriPage.setBattleReady(false)
     StandaloneSave.SetBattlePage(BattleTriPage)
     -- 0. PlayerStore 初始化：单机模式下此前从未调用（仅多人 Client.lua 调），
@@ -419,12 +426,21 @@ function Standalone.Start()
             local BattleDraw = require("ui.battle.scene.BattleDraw")
             BattleDraw.preloadCards(vg, BattleScene.getAllies())
             BattleDraw.preloadCards(vg, BattleScene.getEnemies())
+            ProjectileSystem.preloadBattleEffects()
+            GameSFX.preload("hit")
+        end },
+        { "BattleEntry", function()
+            entryPrepared_ = BattleTriPage.prepareEntry(vg)
+            StandaloneRT.entryPrepared = entryPrepared_
         end },
     }
+    for _, step in ipairs(bootSteps) do
+        if step[1] == "firstStage" then firstStageStep_ = step[2] break end
+    end
     bootQueue_ = StartupQueue.new(bootSteps, {
         onComplete = function(index, name, elapsed, ok, err)
-            -- 素材异常沿用旧启动容错；不能因预热失败让战斗永久停在未就绪。
-            if name == "BattleAssets" then BattleTriPage.setBattleReady(true) end
+            -- 只有首场准备步骤完整成功后才解除战斗门禁；后续素材预热失败仍可沿用旧容错。
+            if name == "firstStage" and ok then BattleTriPage.setBattleReady(true) end
             if not ok then
                 print("[Standalone] boot step FAIL " .. name .. ": " .. tostring(err))
             else
@@ -493,6 +509,8 @@ end
 function Standalone.Stop()
     -- 启动尚未完成时丢弃挂起任务，不能在已释放的VG上下文继续恢复。
     bootQueue_ = nil
+    entryQueue_, entryPrepared_ = nil, false
+    StandaloneRT.entryPrepared, StandaloneRT.entryPreparing, StandaloneRT.entryRendered = false, false, false
     bootReady_ = false
     StandaloneRT.bootReady_ = false
     RewardPopup.clearBattleRewards()
@@ -521,20 +539,50 @@ function Standalone.Stop()
     end
 end
 
+--- 入场重建只发生在开局/清档，不在攻击期同步加载，也不推进离线待领期间的战斗。
+local function prepareEntry_()
+    if entryPrepared_ and not BattleTriPage.isEntryPrepared() then
+        entryPrepared_ = false
+        StandaloneRT.entryPrepared, StandaloneRT.entryRendered = false, false
+    end
+    if entryPrepared_ then return true end
+    if not entryQueue_ then
+        StandaloneRT.entryPreparing = true
+        StandaloneRT.entryRendered = false
+        entryQueue_ = StartupQueue.new({
+            { "firstStageRetry", function()
+                if not BattleTriPage.isBattleReady() then
+                    assert(firstStageStep_, "首场准备未初始化")()
+                    BattleTriPage.setBattleReady(true)
+                end
+            end },
+            { "BattleEntry", function()
+                entryPrepared_ = BattleTriPage.prepareEntry(vg)
+            end },
+        }, { onComplete = function(_, _, _, ok, err)
+            if not ok then print("[Standalone] 入场战斗准备失败: " .. tostring(err)) end
+        end })
+    end
+    return false
+end
+
 --- 标题关闭后按真实离线时长结算并弹窗。不足 1 分钟不弹。
---- 必须等存档角色刷新到面板后再算，避免按默认开局阵容结算。
+--- 必须先完成真实战斗准备及一帧绘制，角色数据齐备后才计算离线收益。
 local function showOfflineRewardPanel_()
     local CharacterPanel = require("ui.character.panel.CharacterPanel")
     if not CharacterPanel.isHeroesDataApplied() then
         local heroesData = ClientDispatcher.get("heroes")
         if heroesData then
             CharacterPanel.setHeroesData(heroesData)
+            entryPrepared_ = false
+            StandaloneRT.entryPrepared, StandaloneRT.entryRendered = false, false
         end
     end
     if not CharacterPanel.isHeroesDataApplied() then
         print("[Standalone] 角色数据未刷新，推迟离线结算")
         return false
     end
+    if not prepareEntry_() or not StandaloneRT.entryRendered then return false end
     local LocalActionBridge = require("runtime.LocalActionBridge")
     LocalActionBridge.init()
     StandaloneSave.ReconcileOfflineBoundary()
@@ -693,6 +741,8 @@ end
 local function startIntroChain_()
     -- 一开始就落盘，避免标题关闭后重进或存档回写把同一段开场再播一遍。
     -- 三人也在这时入队。若只等对话结束，中途存档会把默认的一个人写死。
+    entryPrepared_ = false
+    StandaloneRT.entryPrepared, StandaloneRT.entryRendered = false, false
     markIntroCompleted_(true)
     local handled = localSendAction("grant_starter_trio", {})
     print("[Standalone] grant starter trio at intro start handled=" .. tostring(handled))
@@ -806,6 +856,8 @@ function Standalone.requestResetToStartScreen()
     postStartFlowDone_ = false
     storyBackfilled_ = false
     startFlowBegun_ = false
+    entryQueue_, entryPrepared_ = nil, false
+    StandaloneRT.entryPrepared, StandaloneRT.entryPreparing, StandaloneRT.entryRendered = false, false, false
     print(string.format("%s step11: startScreenWasOpen_=true clock=%.4f", TAG, os.clock()))
 
     -- 12. 回到标题。不能重跑 Start，否则事件重复注册并把页面叠坏。
@@ -844,6 +896,15 @@ function HandleUpdate(eventType, eventData)
     if not bootReady_ then
         if StartScreen.isOpen() then StartScreen.update(dt) end
         if DarkTitleScreen.isOpen() then DarkTitleScreen.update(dt) end
+        return
+    end
+    if entryQueue_ then
+        if entryQueue_:pump() then
+            entryQueue_ = nil
+            StandaloneRT.entryPrepared = entryPrepared_
+            StandaloneRT.entryPreparing = false
+        end
+        -- 完成当帧也先交给渲染；下一帧才允许离线计算与领取窗出现。
         return
     end
 
@@ -1053,7 +1114,7 @@ function HandleUpdate(eventType, eventData)
 
     require("ui.dev.CERuntime").installSpeedHook()
     require("ui.dev.CERuntime").tick()
-    -- 待领取离线奖励不落盘；此时暂停战斗，避免线上击杀收益因存档冻结而丢失。
+    -- 待领取离线奖励时暂停战斗；Flush仍沿原事务语义保存，但不推进在线时间边界。
     local awaitingOfflineClaim = require("rules.offline.OfflineService").HasPendingRewards(1)
     if postStartFlowDone_ and not awaitingOfflineClaim then
         -- 副本/通天塔对战更新（打开时独占）
@@ -1139,33 +1200,37 @@ function HandleUpdate(eventType, eventData)
 end
 
 function HandleMouseButtonDown(eventType, eventData)
-    if not bootReady_ then return end
+    if not bootReady_ or StandaloneRT.entryPreparing then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleMouseButtonDownHorizon(eventType, eventData)
 end
 
 function HandleMouseMove(eventType, eventData)
+    if not bootReady_ or StandaloneRT.entryPreparing then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleMouseMoveHorizon(eventType, eventData)
 end
 
 function HandleMouseButtonUp(eventType, eventData)
-    if not bootReady_ then return end
+    if not bootReady_ or StandaloneRT.entryPreparing then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleMouseButtonUpHorizon(eventType, eventData)
 end
 
 function HandleTouchBegin(eventType, eventData)
+    if not bootReady_ or StandaloneRT.entryPreparing then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleTouchBeginHorizon(eventType, eventData)
 end
 
 function HandleTouchMove(eventType, eventData)
+    if not bootReady_ or StandaloneRT.entryPreparing then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleTouchMoveHorizon(eventType, eventData)
 end
 
 function HandleTouchEnd(eventType, eventData)
+    if not bootReady_ or StandaloneRT.entryPreparing then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleTouchEndHorizon(eventType, eventData)
 end
@@ -1176,6 +1241,7 @@ function HandleScreenMode(eventType, eventData)
 end
 
 function HandleMouseWheel(eventType, eventData)
+    if not bootReady_ or StandaloneRT.entryPreparing then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleMouseWheelHorizon(eventType, eventData)
 end

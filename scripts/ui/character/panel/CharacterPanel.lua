@@ -166,6 +166,18 @@ local shardMap = {}
 -- 每项: { heroId, level, exp, maxExp, owned }
 local heroRoster = {}
 
+--- 经验不参与名册排序或正式战力；原位更新显示字段，保留行引用/顺序与战力缓存。
+--- 共鸣提升等级走完整 rebuildRoster，不在此轻量路径改 level。
+local function syncRosterExpFromOwned()
+    for _, entry in ipairs(heroRoster) do
+        local own = entry.owned and ownedSet[entry.heroId]
+        if own then
+            entry.exp = own.exp
+            entry.maxExp = own.maxExp
+        end
+    end
+end
+
 -- 缓存角色列表的战斗力
 local rosterPowerCache = {}  -- rosterPowerCache[i] = number
 
@@ -1365,6 +1377,7 @@ local function bindProgress()
         persistHeroExp = persistLocalHeroExp,
         applyResonanceSync = applyResonanceSync,
         syncTeamSlotsFromOwned = syncTeamSlotsFromOwned,
+        syncRosterExpFromOwned = syncRosterExpFromOwned,
         rebuildRoster = rebuildRoster,
         refreshPowerCache = refreshPowerCache,
         refreshNavBadge = refreshNavBadge,

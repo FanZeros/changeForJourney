@@ -36,14 +36,6 @@ function Start()
             local text = table.concat(lines, "\n")
             local env = setmetatable({}, { __index = _G })
             env._G = env
-            if arg == "-assets-run-host-integration" then
-                -- 仅进程内补新增宿主依赖到既有局部环境，不重写原165条断言。
-                env.StartupQueue = require("boot.StartupQueue")
-                local old, patched = text:gsub("{nvgCreateImage=function%(ctx,path,flags%)",
-                    "{StandaloneRT={},nvgCreateImage=function(ctx,path,flags)")
-                assert(patched == 1, "unique original wrapperEnv dependency anchor")
-                text = old
-            end
             local ok, err = xpcall(function()
                 assert(load(text, "@" .. path, "t", env))()
                 if arg == "-assets-run-host-integration" then env.Start() end
@@ -271,6 +263,10 @@ function Start()
             "ui.character.equip.EquipmentBag", "systems.BattleStats", "core.I18n", "systems.RelicConditionHandler",
             "ui.battle.scene.BattleMountScope", "ui.battle.stage.BattleSpeed" }) do triMocks[name] = {} end
         triMocks["ui.battle.scene.BattleMountScope"] = { wrap = noop }
+        triMocks["ui.battle.tri.BattleEntryPreparation"] = compile("ui/battle/tri/BattleEntryPreparation.lua", {
+            ["ui.battle.scene.BattleDraw"] = Draw,
+            ["ui.battle.scene.BattleMountScope"] = { run = forbidden },
+        })
         local Tri = compile("ui/battle/tri/BattleTriPage.lua", triMocks)
         before = #loads
         Tri.preload(context)
@@ -325,10 +321,13 @@ function Start()
         })
         boundary.nvgDelete = noop
         local boundaryCompleted, resumedAfterStop = 0, 0
-        boundary.bootSteps = { { "BattleAssets", function()
-            for i = 1, 5 do boundary.nvgCreateImage(context, "boundary-" .. i .. ".png", 0) end
-            boundaryCompleted = boundaryCompleted + 1
-        end } }
+        boundary.bootSteps = {
+            { "firstStage", function()
+                for i = 1, 5 do boundary.nvgCreateImage(context, "boundary-" .. i .. ".png", 0) end
+                boundaryCompleted = boundaryCompleted + 1
+            end },
+            { "BattleAssets", function() end },
+        }
         assert(load(section("boot/Standalone.lua", "    -- 2.5 图片去重按context+flags+path隔离", "    -- 3. Font"),
             "@startup-real/Standalone.image-wrapper", "t", boundary))()
         local configCode = section("boot/Standalone.lua", "    bootQueue_ = StartupQueue.new(bootSteps, {", "    -- 轻量接线")
@@ -357,17 +356,41 @@ function Start()
         boundary.Standalone.Stop(); pump()
         check(boundary.bootQueue_ == nil and not boundary.StandaloneRT.bootReady_ and boundaryCompleted == 0,
             "真实Stop丢弃挂起worker，后续pump不恢复已释放context")
-        boundary.bootSteps = { { "BattleAssets", function() resumedAfterStop = resumedAfterStop + 1 end } }
+        boundary.bootSteps = {
+            { "firstStage", function() resumedAfterStop = resumedAfterStop + 1 end },
+            { "BattleAssets", function() end },
+        }
         assert(load(configCode, "@startup-real/Standalone.fresh-queue", "t", boundary))()
         pump()
-        check(resumedAfterStop == 1 and boundaryCompleted == 0 and triMocks.ready == true
-            and boundary.StandaloneRT.bootReady_ and title.isReady(), "新队列独立完成，旧挂起worker从未恢复")
+        check(resumedAfterStop == 1 and triMocks.ready == true and not boundary.StandaloneRT.bootReady_
+            and not title.isReady(), "首场准备成功后解除战斗门禁，但标题继续等待素材步骤")
+        pump()
+        check(boundaryCompleted == 0 and boundary.StandaloneRT.bootReady_ and title.isReady(),
+            "全部启动步骤结束后独立解锁标题")
         title.setReady(false); triMocks.ready = false
-        boundary.bootSteps = { { "BattleAssets", function() error("EXPECTED_ASSET_FAILURE") end } }
+        boundary.bootSteps = {
+            { "firstStage", function() error("EXPECTED_FIRST_STAGE_FAILURE") end },
+            { "BattleAssets", function() end },
+        }
+        assert(load(configCode, "@startup-real/Standalone.first-stage-failure", "t", boundary))()
+        pump()
+        check(not triMocks.ready and not boundary.StandaloneRT.bootReady_,
+            "首场准备抛错时不解除BattleTri门禁")
+        pump()
+        check(title.isReady() and boundary.StandaloneRT.bootReady_ and not triMocks.ready,
+            "后续素材步骤成功也不能恢复失败首场的BattleTri门禁")
+        title.setReady(false); triMocks.ready = false
+        boundary.bootSteps = {
+            { "firstStage", function() end },
+            { "BattleAssets", function() error("EXPECTED_ASSET_FAILURE") end },
+        }
         assert(load(configCode, "@startup-real/Standalone.failed-assets", "t", boundary))()
         pump()
-        check(title.isReady() and triMocks.ready == true and boundary.StandaloneRT.bootReady_,
-            "最终素材失败沿用旧容错且不遗留新battleReady冻结")
+        check(triMocks.ready and not boundary.StandaloneRT.bootReady_,
+            "首场准备成功后即使素材步骤失败也保留战斗容错")
+        pump()
+        check(title.isReady() and triMocks.ready and boundary.StandaloneRT.bootReady_,
+            "素材失败沿用旧启动容错且不遗留BattleTri冻结")
         -- 可选只读边界复现，审查输出不冒称支持同VM完整重启；不改生产修复。
         for _, arg in ipairs(GetArguments()) do
             if arg == "-assets-audit-stop-restart" then

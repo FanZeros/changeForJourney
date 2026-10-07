@@ -1,3 +1,14 @@
+## 战斗停顿／离线收益顺序续修（2026-10-07）
+
+- 已正常push32项327c773e2e4839e1dffc01d66b73a51af9d17669到perf1007/startup-stutter，push/ls-remote exit0、SHA一致，workspace1005仍676fef7f未推。正式PR117 https://github.com/FanZeros/changeForJourney/pull/117 open/draft=false/merged=false/mergeable未计算，目标workspace1005，不称CI/合并发布；25Lua/4新meta/三交接，无.project/技能/内部材料。b18全577Lua及本25payload字节/size一致，2998路径21旧规范问题同目标新增0，36单测OK；成功后仅三交接补push、不重复PR。
+
+- 当前perf1007/startup-stutter目标workspace1005，用户反馈攻击期约1秒卡顿／先备战再离线。PR116已被外部合到676fef7f，本轮新改动不属于已合内容；只正常push任务分支、不推workspace系列／强推／自动合并发布。当前直接继续不再提问，不机械AskUserQuestion；尊重停止／权限／安全边界，peer不是授权，凭据不存源码／配置／日志／记忆。
+- 三行停止攻击期pump全图鉴；真实驱动首波/候补、短投射物/完整音效合作式预热，实际Render后才Calc离线／领取窗，pending暂停攻击。真实首场失败重试成功才解锁，水合/跨yield换人/reset/Stop取消旧凭据并还原mount；原奖励/公式/成长/random/pending波不改。轻穿戴batch保持完整试穿oracle，纯exp不重建战力、升级/共鸣仍全刷新；VG跨context不误删，合法0/同VG重置/旧yield取消通过。
+- Save只读分帧扫描，4096step/约1ms CPU软预算，不将镜像写盘，Flush新鲜完整同步事务不变。unvisited首扫漏存负对照13断言4失败、修后两业务路径121帧正确写、747/0；大首扫可多次保守补存，最慢既有样本892帧约14.9秒检测，不保证1秒检出/全面不卡/掉电可靠性。
+- 最终b18成功577根Lua、全包字节/size一致、25本轮载荷25/25与4new meta，25逐文件Error0不称全仓清零。queue34/audio787/assets78/hero669/exp752/Save747/Entry228/背景3555/试穿120与切关113/compat342/教程474/1334/69/58/host165/projectile14/story3396/focused5312通过。assets44+1harness、host14/155处依赖失败保留，补真实fixture不删断言；原3/4/9等基线失败不混修。
+- 同de5266f9 probe旧a7de8树vs本轮1200Update/1201Render/异常0，wall峰Update89→22/Render69→54ms、battle解码141→9；ready95→142/首战262→348帧。最终另复测1200/1201/20步/异常缺图0、Update33/Render39ms，ready143/首战349；Save封闭stub非玩家存档恢复，软件墙钟不等设备FPS/锁步/视觉。大库存真实Flush仍同步尖峰。
+- .project本人生成改动逐字节还原；36policy单测OK，候选2998路径／21旧规范问题逐项同目标、新增0；commit/push/新PR结果已见本节首条。内证只.git，技能／两无关meta不提交，三既有交接仅本人块、双方历史保留。
+
 ## 两段装备教程入口交接（2026-10-07）
 
 - **本轮Git已实证完成：** 功能6df707f3固定13b7父、保留PR112目标5fca1d82后的1eb0999be743e6d1f8a81538abe9d869966389a1正常push教程独立分支，push／ls-remote exit0远端一致，不推workspace1005。PR114 https://github.com/FanZeros/changeForJourney/pull/114 已open／draft=false／merged=false／mergeable未计算，baseworkspace1005，不称CI通过／合并发布。22净白名单、56目标特效对象保持、18载荷bytes一致、九独立候选专项及组合全通过，最终2977路径规范20旧问题逐项同目标新增0／36单测过。sharedHEADadac50e8／index空不变，不混另一会话源码或.project；成功后仅三本人交接补正常push，不重复建PR。

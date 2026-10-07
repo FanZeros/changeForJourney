@@ -308,6 +308,21 @@ function ProjectileSystem.prewarmOne(key)
     getImage(key)
 end
 
+local function preloadConfigs(configs)
+    for _, cfg in pairs(configs) do
+        getImage(cfg.imgKey)
+        GameSFX.preload(cfg.sfxKey or cfg.imgKey)
+    end
+end
+
+--- 开局先备好短音效和投射物小图；卡面仍只准备真实首波，不加载全图鉴。
+function ProjectileSystem.preloadBattleEffects()
+    preloadConfigs(CONFIGS)
+    preloadConfigs(MONSTER_CONFIGS)
+    preloadConfigs(SKILL_CONFIGS)
+    preloadConfigs(TALENT_PROJ_CONFIGS)
+end
+
 --- 绘制投射物图片（居中，支持旋转/缩放/透明度）
 --- 素材默认朝右(+X方向)，angle=0时朝右，angle=-π/2时朝上
 local function drawProjectileImage(vg, imgHandle, cx, cy, w, h, angle, alpha)

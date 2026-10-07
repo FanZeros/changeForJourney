@@ -4,6 +4,7 @@
 -- ============================================================================
 
 local GameSFX = {}
+local StartupQueue = require("boot.StartupQueue")
 
 -- ── 音效定义 ──
 -- weight: 多个音效时的随机权重（等权留空即可）
@@ -105,6 +106,7 @@ local masterGain_  = 1.0   -- 主音量乘数（由 SettingsPanel 控制；Effec
 
 -- 已加载的 Sound 资源：{ key -> Sound[] }；空列表也缓存，避免失败后逐次重试
 local sounds_      = {}
+local loading_     = {}   -- 协作式预热期间不发布半组候选；stop换表取消旧批次
 local unknownKeys_ = {}
 
 -- 复用 SoundSource 池（避免每次 play 新建组件）
@@ -116,17 +118,28 @@ local pool_        = {}    -- SoundSource[]
 --- 首次使用 key 时加载其完整候选；随机仍在成功列表上进行，失败不改变消费次数。
 local function ensureSounds(key, def)
     if sounds_[key] then return sounds_[key] end
-    local list = {}
-    sounds_[key] = list
-    for _, path in ipairs(def.paths) do
-        local snd = cache:GetResource("Sound", path)
-        if snd then
-            snd.looped = false
-            table.insert(list, snd)
-        else
-            print("[GameSFX] 加载失败: " .. path)
+    if loading_[key] then return nil end
+    local saved, pending = sounds_, loading_
+    local token, list = {}, {}
+    pending[key] = token
+    local ok, err = pcall(function()
+        for _, path in ipairs(def.paths) do
+            StartupQueue.checkpoint()
+            if sounds_ ~= saved or loading_ ~= pending then return end
+            local snd = cache:GetResource("Sound", path)
+            if sounds_ ~= saved or loading_ ~= pending then return end
+            if snd then
+                snd.looped = false
+                table.insert(list, snd)
+            else
+                print("[GameSFX] 加载失败: " .. path)
+            end
         end
-    end
+    end)
+    if pending[key] == token then pending[key] = nil end
+    if not ok then error(err, 0) end
+    if sounds_ ~= saved or loading_ ~= pending then return nil end
+    saved[key] = list
     return list
 end
 
@@ -154,6 +167,13 @@ end
 ---@param scene Scene
 function GameSFX.init(scene)
     scene_ = scene
+end
+
+--- 只准备候选资源，不创建音源、播放或消费随机数；战斗入场队列提前调用。
+---@param key string
+function GameSFX.preload(key)
+    local def = SFX_DEFS[key]
+    if def then ensureSounds(key, def) end
 end
 
 --- 初始化音源池；音效资源在首次 play 时按 key 加载
@@ -207,7 +227,7 @@ function GameSFX.play(key, teamIdx)
         return
     end
     local list = ensureSounds(key, def)
-    if #list == 0 then return end
+    if not list or #list == 0 then return end
     -- 随机选一个
     local snd = list[math.random(1, #list)]
     local src = acquireSource()
@@ -250,6 +270,7 @@ function GameSFX.stop()
     sfxNode_  = nil
     pool_     = {}
     sounds_   = {}
+    loading_  = {}
     unknownKeys_ = {}
     started_  = false
 end

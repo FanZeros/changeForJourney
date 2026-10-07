@@ -137,29 +137,9 @@ local function readSnapshot(options, key)
     return copy(require("core.PlayerStore").Get(key) or {})
 end
 
-function M.buildContext(heroId, options)
-    local id = tonumber(heroId)
-    if not id or not HC.get(id) then return nil end
-    local ctx = {
-        heroId = id,
-        heroesData = readSnapshot(options, "heroes"),
-        equipmentData = readSnapshot(options, "equipment"),
-        artifactsData = readSnapshot(options, "artifacts"),
-        talentsData = readSnapshot(options, "talents"),
-        seeds = {}, teamUnits = {}, memo = {}, scores = {},
-    }
-    if options and options.heroData then
-        ctx.heroesData.roster = ctx.heroesData.roster or {}
-        ctx.heroesData.roster[id] = copy(options.heroData)
-    end
-    ctx.equipmentData.inventory = ctx.equipmentData.inventory or {}
-    ctx.equipmentData.equipped = ctx.equipmentData.equipped or {}
-    for key, item in pairs(ctx.equipmentData.inventory) do
-        if type(item) == "table" then
-            Eq.hydrate(item)
-            item.seq = tonumber(item.seq or key) or item.seq
-        end
-    end
+-- 两种上下文共用同一裸种子/有效装备/本队光环/神器与正式估值管线。
+local function finishContext(ctx)
+    local id = ctx.heroId
     local roster = ctx.heroesData.roster or {}
     local function seedFor(sourceId)
         if ctx.seeds[sourceId] then return end
@@ -195,6 +175,100 @@ function M.buildContext(heroId, options)
     applyTeamAura(ctx.teamUnits)
     ctx.currentPower = powerFor(ctx, ctx.hero, ctx.teamUnits, ctx.equipmentData)
     return ctx
+end
+
+-- 通用上下文仍保留完整库存：试穿、候选评分和转职预览不能借用轻快照。
+function M.buildContext(heroId, options)
+    local id = tonumber(heroId)
+    if not id or not HC.get(id) then return nil end
+    local ctx = {
+        heroId = id,
+        heroesData = readSnapshot(options, "heroes"),
+        equipmentData = readSnapshot(options, "equipment"),
+        artifactsData = readSnapshot(options, "artifacts"),
+        talentsData = readSnapshot(options, "talents"),
+        seeds = {}, teamUnits = {}, memo = {}, scores = {},
+    }
+    if options and options.heroData then
+        ctx.heroesData.roster = ctx.heroesData.roster or {}
+        ctx.heroesData.roster[id] = copy(options.heroData)
+    end
+    ctx.equipmentData.inventory = ctx.equipmentData.inventory or {}
+    ctx.equipmentData.equipped = ctx.equipmentData.equipped or {}
+    for key, item in pairs(ctx.equipmentData.inventory) do
+        if type(item) == "table" then
+            Eq.hydrate(item)
+            item.seq = tonumber(item.seq or key) or item.seq
+        end
+    end
+    return finishContext(ctx)
+end
+
+-- 仅供当前穿戴战力批次：模块快照一次，库存源只读，按本队实际六槽取副本。
+-- 不跨通知缓存，也不传给 evaluate/score；它不承诺包含未穿戴候选。
+function M.createWornBatch(options)
+    local equipment = options and options.equipment
+    if options == nil then equipment = require("core.PlayerStore").Get("equipment") end
+    return {
+        heroesData = readSnapshot(options, "heroes"),
+        artifactsData = readSnapshot(options, "artifacts"),
+        talentsData = readSnapshot(options, "talents"),
+        equipmentData = { inventory = {}, equipped = copy(equipment and equipment.equipped or {}) },
+        sourceInventory = equipment and equipment.inventory or {},
+        copiedKeys = {}, copySeen = {},
+    }
+end
+
+local function copyWornItems(batch, heroId)
+    local slots = Eq.getHeroSlots(batch.equipmentData, heroId) or {}
+    for _, slot in ipairs(EC.SLOTS) do
+        local seq = slots[slot]
+        if seq then
+            -- 与 getFromInventory 完全相同：字符串键优先，原 seq 键后备。
+            -- 保留槽表（含无效副手），让旧双手/去重/五算六规则原样判断。
+            local key = tostring(seq)
+            local item = batch.sourceInventory[key]
+            if not item then key, item = seq, batch.sourceInventory[seq] end
+            if item and not batch.copiedKeys[key] then
+                batch.copiedKeys[key] = true
+                local snapshot = copy(item, batch.copySeen)
+                if type(snapshot) == "table" then
+                    Eq.hydrate(snapshot)
+                    snapshot.seq = tonumber(snapshot.seq or key) or snapshot.seq
+                end
+                batch.equipmentData.inventory[key] = snapshot
+            end
+        end
+    end
+end
+
+-- 与 buildContext 的 currentPower 同口径，但只水合目标及真实所属队穿戴项。
+-- heroData 的覆盖仅属于本上下文，不污染批次里其他英雄的队友种子。
+function M.buildWornContext(heroId, options, batch)
+    local id = tonumber(heroId)
+    if not id or not HC.get(id) then return nil end
+    batch = batch or M.createWornBatch(options)
+    local heroes = batch.heroesData
+    if options and options.heroData then
+        local overridden = {}
+        for key, value in pairs(heroes) do overridden[key] = value end
+        overridden.roster = {}
+        for key, value in pairs(heroes.roster or {}) do overridden.roster[key] = value end
+        overridden.roster[id] = copy(options.heroData)
+        heroes = overridden
+    end
+    copyWornItems(batch, id)
+    local _, team = M.findPosition(heroes, id)
+    local ids = team and idsForTeam(heroes, team) or {}
+    for slot = 1, 4 do
+        local sourceId = numericId(ids[slot] or ids[tostring(slot)])
+        if sourceId and sourceId > 0 and HC.get(sourceId) then copyWornItems(batch, sourceId) end
+    end
+    return finishContext({
+        heroId = id, heroesData = heroes, equipmentData = batch.equipmentData,
+        artifactsData = batch.artifactsData, talentsData = batch.talentsData,
+        seeds = {}, teamUnits = {}, memo = {}, scores = {},
+    })
 end
 
 local function equipmentCopy(ctx)
@@ -280,6 +354,7 @@ function M.evaluate(ctx, seq, targetSlot)
     -- 双手在副手的占位只是显示，不执行一次非法副手穿戴。
     if slot == "offhand" and item.grip == "twohand"
         and tostring(currentSlots.weapon) == tostring(seq) then alreadyEquipped = true end
+    ---@type table|nil
     local result
     if alreadyEquipped then
         result = { valid = true, gain = 0, currentPower = ctx.currentPower,
@@ -288,6 +363,7 @@ function M.evaluate(ctx, seq, targetSlot)
         result = M.evaluateLoadout(ctx, { [slot] = seq })
     end
     if result and result.valid then
+        ---@cast result table<string, any>
         result.power = result.previewPower - withoutPiece(ctx, result.equipment, seq)
     end
     ctx.memo[key] = result
@@ -417,7 +493,9 @@ function M.score(equip, heroId, targetSlot)
     local unit = {}
     for field, value in pairs(ctx.hero) do unit[field] = value end
     unit.attrs = ctx.hero.attrs:clone()
-    Eq.applyToUnit(unit.attrs, equip, "power_preview", Eq.getAscendBoost(equip))
+    ---@type any modifierId支持字符串标签；此值不是库存序号。
+    local previewSeq = "power_preview"
+    Eq.applyToUnit(unit.attrs, equip, previewSeq, Eq.getAscendBoost(equip))
     local units = {}
     for _, old in ipairs(ctx.teamUnits) do units[#units + 1] = old.heroId == ctx.heroId and unit or old end
     local value = math.floor(powerFor(ctx, unit, units, ctx.equipmentData) - ctx.currentPower + 0.5)

@@ -28,7 +28,8 @@ end
 local function noop() end
 
 local function fixture()
-    local counts = { rebuild = 0, refresh = 0, calc = 0, context = 0, invalidations = 0, nav = 0 }
+    local counts = { rebuild = 0, refresh = 0, calc = 0, context = 0, invalidations = 0, nav = 0,
+        fullContext = 0, wornContext = 0, wornBatch = 0, hydrate = 0 }
     local trace, notifications, legacy, invalidated, progress, observations = {}, {}, {}, {}, {}, {}
     local modules, stored, subscriptions = {}, {}, {}
     local loaded, loading = {}, {}
@@ -106,7 +107,12 @@ local function fixture()
     mocks["ui.character.panel.CharacterDeploy"] = { bind = function() return {} end }
     mocks["ui.character.panel.CharacterInput"] = { bind = function() return {} end }
     mocks["ui.character.panel.CharacterProgress"] = { bind = function() return {} end }
-    mocks["ui.church.talent.TalentStarMap"] = {}
+    mocks["ui.church.talent.TalentStarMap"] = {
+        -- 外围UI只提供明确的静态节点文字，真实解析/估值仍执行TalentEffect/CombatPower。
+        getNode = function(id)
+            return id == 0 and { effect = "力量+2", st = "small" } or nil
+        end,
+    }
     mocks["ui.battle.tri.BattleTriPage"] = {
         invalidateTeams = function(selected)
             invalidated[#invalidated + 1] = copy(selected)
@@ -221,11 +227,30 @@ local function fixture()
                 powerApi = api
                 return api
             end
+        elseif name == "systems.EquipmentSystem" then
+            local hydrate = value.hydrate
+            value.hydrate = function(...)
+                counts.hydrate = counts.hydrate + 1
+                return hydrate(...)
+            end
         elseif name == "systems.EquipmentPower" then
             local context, invalidate = value.buildContext, value.invalidate
             value.buildContext = function(...)
                 counts.context = counts.context + 1
+                counts.fullContext = counts.fullContext + 1
                 return context(...)
+            end
+            if value.buildWornContext then
+                local worn, batch = value.buildWornContext, value.createWornBatch
+                value.buildWornContext = function(...)
+                    counts.context = counts.context + 1
+                    counts.wornContext = counts.wornContext + 1
+                    return worn(...)
+                end
+                value.createWornBatch = function(...)
+                    counts.wornBatch = counts.wornBatch + 1
+                    return batch(...)
+                end
             end
             value.invalidate = function()
                 counts.invalidations = counts.invalidations + 1
@@ -390,6 +415,241 @@ local function countsCheck(f, label, deployed, viaSubscription)
     return business
 end
 
+-- 真正的正式战力对照：保留通用完整库存作oracle，不用新函数自己验证自己。
+local function wornContextChecks()
+    local f = fixture()
+    local EP, Eq = f.load("systems.EquipmentPower"), f.load("systems.EquipmentSystem")
+    local EC, ESC = f.load("config.EquipmentConfig"), f.load("config.EquipmentSetConfig")
+    local AD = f.load("systems.AttributeDef")
+    check(type(EP.buildWornContext) == "function" and type(EP.createWornBatch) == "function",
+        "穿戴专用入口存在，通用入口独立")
+    if not EP.buildWornContext then return end
+    local ids = { 1, 2, 3, 4, 8, 9, 12, 14, 15, 18, 19, 20 }
+    local roster, teams = {}, {}
+    for index, id in ipairs(ids) do
+        roster[index % 2 == 0 and tostring(id) or id] = {
+            level = 100 + index, exp = index, awakening = { [1] = true, [2] = true, [3] = true },
+            extraTalent = { issuedCards = 12, totalKills = 40 },
+        }
+        local team = math.floor((index - 1) / 4) + 1
+        teams[team] = teams[team] or { slots = {} }
+        teams[team].slots[(index - 1) % 4 + 1] = index % 2 == 0 and tostring(id) or id
+    end
+    local templateIds = {}
+    for id in pairs(EC.ITEMS) do templateIds[#templateIds + 1] = id end
+    table.sort(templateIds)
+    local equipment = { inventory = {}, equipped = {}, nextSeq = 1001, unrelated = { preserve = true } }
+    for index = 1, 1000 do
+        equipment.inventory[index % 2 == 0 and index or tostring(index)] = {
+            templateId = templateIds[(index - 1) % #templateIds + 1], level = 85,
+            quality = 6, ascendLevel = index % 21, affixMult = 1.2,
+            affixes = { { affixId = 1, quality = 3, value = 7, ascBonus = 0.5 } },
+        }
+    end
+    local function templateFor(slot, setId)
+        for _, id in ipairs(templateIds) do
+            local template = EC.ITEMS[id]
+            if template.slot == slot and (not setId or ESC.getSetIdForTemplate(template) == setId) then return id end
+        end
+        error("missing real template " .. slot .. "/" .. tostring(setId))
+    end
+    for index, id in ipairs(ids) do
+        local slots = {}
+        equipment.equipped[index % 2 == 0 and tostring(id) or id] = slots
+        local setId = id == 19 and "last_rite" or id == 20 and "starless" or id == 3 and "nitros" or nil
+        for slotIndex, slot in ipairs(EC.SLOTS) do
+            local seq = (index - 1) * 6 + slotIndex
+            equipment.inventory[seq % 2 == 0 and seq or tostring(seq)].templateId = templateFor(slot, setId)
+            slots[slot] = seq % 2 == 0 and seq or tostring(seq)
+        end
+    end
+    equipment.inventory[1000].templateId = "C1" -- 未穿戴但合法的候选，不能只测拒绝路径。
+    local artifacts = { bag = {
+        { id = "1", artifactId = 7, quality = 3, valueRatio = 1234 },
+        { id = "2", artifactId = 8, quality = 4, valueRatio = 2345 },
+        { id = "3", artifactId = 14, quality = 4, valueRatio = 3456 },
+    }, equippedByTeam = { [1] = { [2] = { "1" } }, [2] = { [3] = { "2" } }, [3] = { [4] = { "3" } } } }
+    f.load("shared.artifact.ArtifactSchema").normalizeModule(artifacts)
+    local options = { heroes = { roster = roster, teams = teams, deployed = { 1, 2, 3, 4 } },
+        equipment = equipment, artifacts = artifacts, talents = { litNodes = { 0, 113, 115, 124, 125, 126, 128 } } }
+    local before = copy(options)
+    local inventoryWalks = 0
+    setmetatable(equipment.inventory, { __pairs = function(value)
+        inventoryWalks = inventoryWalks + 1
+        return next, value, nil
+    end })
+    local function contextSame(light, full, label)
+        check(light and full and light.currentPower == full.currentPower, label .. " 未取整战力严格相同")
+        if not light or not full then return end
+        check(light.hero.partySlot == full.hero.partySlot and light.hero.teamIdx == full.hero.teamIdx,
+            label .. " 神器真实队/槽一致")
+        check(#light.teamUnits == #full.teamUnits, label .. " 本队去重/顺序一致")
+        for index, unit in ipairs(full.teamUnits) do
+            local actual = light.teamUnits[index]
+            check(actual and actual.heroId == unit.heroId and same(actual.attrs.final, unit.attrs.final)
+                and same(actual.attrs.modifiers, unit.attrs.modifiers) and same(actual.attrs._setRows, unit.attrs._setRows)
+                and same(actual.artifactEffects, unit.artifactEffects), label .. " 完整属性/套装/神器 " .. index)
+        end
+    end
+    inventoryWalks = 0
+    f.reset()
+    local lightStarted = os.clock()
+    local batch = EP.createWornBatch(options)
+    for _, id in ipairs(ids) do EP.buildWornContext(id, options, batch) end
+    local lightSeconds = os.clock() - lightStarted
+    local lightCounts, lightWalks = copy(f.counts), inventoryWalks
+    check(lightCounts.hydrate == 72 and lightWalks == 0,
+        "1000库存12拥有三队批次仅hydrate72已穿项，遍历全inventory=0")
+    check(Eq.getInventoryCount(batch.equipmentData) == 72, "轻快照无928未穿候选")
+    inventoryWalks = 0
+    f.reset()
+    local fullStarted = os.clock()
+    for _, id in ipairs(ids) do EP.buildContext(id, options) end
+    local fullSeconds = os.clock() - fullStarted
+    local fullCounts, fullWalks = copy(f.counts), inventoryWalks
+    check(fullCounts.hydrate == 12000 and fullWalks == 12,
+        "旧通用ctx对照确实hydrate12000项/完整库存12次")
+    print(string.format("%s WORN_COUNTS fullHydrate=%d wornHydrate=%d fullWalks=%d wornWalks=%d",
+        TAG, fullCounts.hydrate, lightCounts.hydrate, fullWalks, lightWalks))
+    print(string.format("%s WORN_CPU fullMs=%.3f wornMs=%.3f (isolated os.clock CPU, not device FPS)",
+        TAG, fullSeconds * 1000, lightSeconds * 1000))
+    for _, id in ipairs(ids) do
+        contextSame(EP.buildWornContext(id, options, batch), EP.buildContext(id, options), "1000库存 hero=" .. id)
+    end
+    check(EP.buildWornContext(19, options).hero.attrs._setSix == "last_rite",
+        "真实司仪六件光环有效非空")
+    check(EP.buildWornContext(20, options).hero.attrs._setFour == "starless"
+        and EP.buildWornContext(3, options).hero.attrs._setFour == "nitros", "真实无光/硝烟开战属性有效")
+    check(same(options, before), "轻/完整上下文均不写英雄/装备/神器/天赋源数据")
+    -- 候选必须仍在完整库存中，且完整evaluate/score契约不因当前穿戴优化缩小。
+    local full = EP.buildContext(1, options)
+    local candidate = equipment.inventory[1000]
+    check(Eq.getInventoryCount(full.equipmentData) == 1000 and full.equipmentData.inventory[1000] ~= candidate
+        and candidate.type == nil, "通用ctx完整1000项且hydrate只写副本")
+    local result = EP.evaluate(full, 1000, full.equipmentData.inventory[1000].slot)
+    check(result and result.valid and result.equipment.equipped[1].accessory == 1000,
+        "未穿戴合法候选仍可evaluate并真实试穿，完整inventory不缩减")
+    check(EP.evaluateLoadout(full, { weapon = 1000 }).valid == false,
+        "完整试穿职业/部位门禁不放宽")
+    f.modules.heroes, f.modules.equipment, f.modules.artifacts, f.modules.talents =
+        options.heroes, equipment, artifacts, options.talents
+    f.stored.heroes, f.stored.equipment, f.stored.artifacts, f.stored.talents =
+        options.heroes, equipment, artifacts, options.talents
+    local cached = EP.getContext(1)
+    check(cached and Eq.getInventoryCount(cached.equipmentData) == 1000,
+        "score/getContext仍用完整库存，不接轻context")
+    check(type(EP.score(candidate, 1)) == "number", "正式候选score仍返回数值")
+    -- 同批覆盖只影响本人，不能改变其他英雄后续构造时的队友。
+    local override = copy(options)
+    override.heroData = { level = 150, awakening = { [1] = true }, extraTalent = { issuedCards = 5 } }
+    contextSame(EP.buildWornContext(1, override, batch), EP.buildContext(1, override), "heroData独立覆盖")
+    contextSame(EP.buildWornContext(2, options, batch), EP.buildContext(2, options), "覆盖不泄漏队友")
+    check(same(batch.heroesData, before.heroes), "批次英雄快照没有被heroData覆盖污染")
+    -- 脏档：数字/string并存、前导0、非数字seq、重复槽、缺项和旧双手副手。
+    local dirty = copy(options)
+    local inv, equipped = dirty.equipment.inventory, dirty.equipment.equipped
+    inv[1] = { templateId = "W1", level = 3, quality = 1 }
+    inv["1"] = { templateId = "W7", level = "45", quality = 4, enhanceLevel = "19" }
+    inv["0001"] = { templateId = "C1", level = 42, quality = 5 }
+    inv.bad = { templateId = "H1", level = 999999, quality = 3, ascendLevel = 120 }
+    inv[0] = { templateId = "S1", level = 0, quality = 1, ascendLevel = -4 }
+    inv.unknown = { templateId = "missing_template", type = "custom", slot = "armor", baseStats = { { AD.ARMOR, 7 } } }
+    inv[true] = { templateId = "C1", level = 12, quality = 2 }
+    inv[false] = false
+    equipped[1] = { weapon = 1, offhand = "1", accessory = "0001", helmet = "bad", shoes = 0, armor = "missing" }
+    equipped["1"] = { weapon = 1000 }
+    equipped[2] = { armor = "unknown", accessory = true }
+    equipped["2"] = { weapon = 1000 }
+    dirty.heroes.teams = { [1] = { slots = { [1] = { heroId = "1" }, ["2"] = "2", [3] = 1, [4] = 9999 } },
+        ["1"] = { slots = { 20 } }, ["2"] = { slots = { ["1"] = 19, ["2"] = "20" } },
+        [3] = { slots = { 8, 14 } } }
+    dirty.heroes.roster[1].advBranch = { first = 103, second = 207 }
+    dirty.heroes.roster[8].advBranch = { first = 109, second = 220 }
+    equipped[8] = { weapon = "1", offhand = 2, accessory = "0001" }
+    equipped[14] = { weapon = "1", offhand = "1" }
+    local dirtyBefore = copy(dirty)
+    local dirtyBatch = EP.createWornBatch(dirty)
+    for _, id in ipairs({ 1, 2, 19, 20, 8, 14, 25 }) do
+        contextSame(EP.buildWornContext(id, dirty, dirtyBatch), EP.buildContext(id, dirty), "脏key/双持 hero=" .. id)
+    end
+    check(same(dirty, dirtyBefore), "脏key/双持/夹紧水合不修改源数据")
+    check(EP.buildWornContext(1, dirty).equipmentData.inventory["1"].templateId == "W7"
+        and EP.buildWornContext(1, dirty).equipmentData.equipped[1].offhand == "1",
+        "字符串inventory优先且原无效副手槽不删（不伪五算六）")
+    check(EP.buildWornContext(9999, options) == nil and EP.buildWornContext("bad", options) == nil,
+        "未知hero/非法ID同原通用入口返回nil")
+    local twohand = copy(options)
+    local twohandTemplate
+    for _, templateId in ipairs(templateIds) do
+        local template = EC.ITEMS[templateId]
+        if template.slot == "weapon" and template.grip == "twohand"
+            and ESC.getSetIdForTemplate(template) == "swordgate" then twohandTemplate = templateId; break end
+    end
+    assert(twohandTemplate, "real swordgate twohand template")
+    local twohandSlots = {}
+    twohand.equipment.equipped[1] = twohandSlots
+    for index, slot in ipairs({ "weapon", "armor", "helmet", "shoes", "accessory" }) do
+        twohand.equipment.inventory[tostring(1100 + index)] = {
+            templateId = slot == "weapon" and twohandTemplate or templateFor(slot, "swordgate"),
+            level = 90, quality = 4,
+        }
+        twohandSlots[slot] = tostring(1100 + index)
+    end
+    local validTwohand = EP.buildWornContext(1, twohand)
+    contextSame(validTwohand, EP.buildContext(1, twohand), "真实双手5件算6")
+    check(validTwohand.hero.attrs._setSix == "swordgate", "双手空副手五算六未丢失")
+    twohandSlots.offhand = "missing_piece"
+    local dirtyTwohand = EP.buildWornContext(1, twohand)
+    contextSame(dirtyTwohand, EP.buildContext(1, twohand), "脏双手无效非空副手")
+    check(dirtyTwohand.hero.attrs._setSix == nil, "脏非空副手不伪造5算6")
+    -- 原地更改与替换源，必须新批读取最新值；旧批只代表本次同步评估窗口。
+    equipment.inventory[1000].level = 86
+    equipment.equipped[1].accessory = 1000
+    local nextBatch = EP.createWornBatch(options)
+    contextSame(EP.buildWornContext(1, options, nextBatch), EP.buildContext(1, options), "新通知原位穿戴/等级更新")
+    check(nextBatch ~= batch and nextBatch.equipmentData.inventory[1000] ~= nil,
+        "新批拾取原位修改的未曾穿戴候选，不跨通知负缓存")
+    local empty = { heroes = options.heroes }
+    contextSame(EP.buildWornContext(1, empty), EP.buildContext(1, empty), "空装备/神器/天赋")
+    f.stored.heroes, f.stored.equipment, f.stored.artifacts, f.stored.talents =
+        options.heroes, equipment, artifacts, options.talents
+    contextSame(EP.buildWornContext(1), EP.buildContext(1), "无options读取Store快照")
+    -- 真Panel刷新：12拥有，先正常水合，再测单次刷新，不把oracle成本计入优化计数。
+    f.modules.battle = { maxStageId = 2001, clearedStages = { ["905"] = true, ["1905"] = true } }
+    f.apply(options.heroes)
+    f.reset()
+    inventoryWalks = 0
+    f.data().power.refreshPowerCache()
+    local refreshCounts, refreshWalks = copy(f.counts), inventoryWalks
+    check(refreshCounts.fullContext == 0 and refreshCounts.wornContext == 12 and refreshCounts.wornBatch == 1,
+        "真实Power单刷新12轻context/1batch/0fullcontext")
+    check(refreshCounts.hydrate <= 73 and refreshWalks == 0,
+        "真实Power刷新全inventory遍历0，水合至多73当前穿戴项")
+    print(string.format("%s WORN_REFRESH contexts=%d batches=%d hydrate=%d walks=%d",
+        TAG, refreshCounts.wornContext, refreshCounts.wornBatch, refreshCounts.hydrate, refreshWalks))
+    for _, id in ipairs(ids) do
+        local own = f.panel.getOwnedHero(id)
+        local expected = EP.buildContext(id, { heroData = own, heroes = options.heroes, equipment = equipment,
+            artifacts = artifacts, talents = options.talents }).currentPower
+        check(f.data().detail.calcHeroPower(id) == math.floor(expected + 0.5), "真实Panel同完整ctx hero=" .. id)
+    end
+    for team = 1, 3 do
+        f.panel.setActiveTeam(team)
+        for _, id in ipairs(ids) do
+            local slot, actualTeam = EP.findPosition(options.heroes, id)
+            local correct = f.data().detail.calcHeroPower(id, slot, actualTeam)
+            local wrongTeam = actualTeam % 3 + 1
+            local wrong = EP.buildContext(id, { heroData = f.panel.getOwnedHero(id), heroes = options.heroes,
+                equipment = equipment, artifacts = {}, talents = options.talents }).currentPower
+            check(correct == f.data().detail.calcHeroPower(id), "活动队不改变真实神器队 hero=" .. id .. " active=" .. team)
+            check(f.data().detail.calcHeroPower(id, slot, wrongTeam) == math.floor(wrong + 0.5),
+                "错队不借神器且同完整ctx hero=" .. id .. " active=" .. team)
+        end
+    end
+    check(same(options.heroes, before.heroes) and same(artifacts, before.artifacts),
+        "完整Panel同步/多活动队/错误队未写英雄或神器源")
+end
+
 function Start()
     local oldRequire, oldFile = require, File
     local ok, err = pcall(function()
@@ -511,6 +771,7 @@ function Start()
         countsCheck(f, "subscription-after-reset", 5, true)
         finalCheck(f, "subscription-after-reset")
         check(require == oldRequire and File == oldFile, "全局require/File保持，完全隔离真实档")
+        if not baseline then wornContextChecks() end
     end)
     if not ok then check(false, "harness error: " .. tostring(err)) end
     print(string.format("%s %s assertions=%d failures=%d mode=%s", TAG,

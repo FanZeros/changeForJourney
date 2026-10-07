@@ -7,6 +7,7 @@ local I18n = require("core.I18n")
 local M = {}
 local images = {} ---@type table<string, integer>
 local retryAt = {} ---@type table<string, number>
+local imageVg = nil ---@type any
 
 --- 期望值允许不足一件；任何正数都不能被NumberUtil向下取整成0。
 ---@param amount number
@@ -23,7 +24,11 @@ end
 
 ---@param vg any
 function M.init(vg)
-    for _, image in pairs(images) do nvgDeleteImage(vg, image) end
+    -- 相同VG仍执行原有显式重置；更换VG只忘记旧句柄，由旧context生命周期释放。
+    if imageVg == vg then
+        for _, image in pairs(images) do nvgDeleteImage(vg, image) end
+    end
+    imageVg = vg
     images, retryAt = {}, {}
     print("[StageSelectRewardPreview] 静态收益预估初始化；资源无额外奖，装备保留小数期望，塔首通/重打分列")
 end
@@ -32,16 +37,20 @@ end
 ---@param path string
 ---@return integer
 local function getImage(vg, path)
-    local image = images[path]
+    local cachedImages, retries = images, retryAt
+    local image = cachedImages[path]
     if image and image >= 0 then return image end
     local now = time.elapsedTime
-    if retryAt[path] and now < retryAt[path] then return -1 end
+    if retries[path] and now < retries[path] then return -1 end
     local loaded = nvgCreateImage(vg, path, 0) or -1
+    ---@cast loaded integer
+    -- 加载可合作式让出；期间重置或换VG后，不发布已经过期的加载结果。
+    if imageVg ~= vg or images ~= cachedImages then return -1 end
     if loaded >= 0 then
-        images[path], retryAt[path] = loaded, nil
+        cachedImages[path], retries[path] = loaded, nil
         print("[StageSelectRewardPreview] 复用奖励图标: " .. path)
     else
-        retryAt[path] = now + 2
+        retries[path] = now + 2
         print("[StageSelectRewardPreview] 图标暂不可用: " .. path)
     end
     return loaded
@@ -76,6 +85,10 @@ end
 ---@param locked boolean
 function M.draw(vg, reward, x, y, width, height, locked)
     if not reward then return end
+    if imageVg ~= vg then M.init(vg) end
+    local cachedImages = images
+    local image = getImage(vg, reward.iconPath)
+    if imageVg ~= vg or images ~= cachedImages then return end
     local alpha = locked and 0.55 or 1
     local cy = y + height * 0.5
     nvgSave(vg)
@@ -88,7 +101,6 @@ function M.draw(vg, reward, x, y, width, height, locked)
     drawText(vg, x + 4, cy, title, 136, 18, alpha)
     local iconCX = x + 158
     DarkIcon.drawQualityBg(vg, reward.quality, iconCX, cy, 30, 30, alpha)
-    local image = getImage(vg, reward.iconPath)
     if image >= 0 then DrawUtil.drawImageCentered(vg, image, iconCX, cy, 24, 24, alpha) end
     if reward.isEstimate then
         drawText(vg, x + 180, cy, M.formatEstimate(reward.amount), 106, 22, alpha)

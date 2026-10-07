@@ -9,6 +9,7 @@ function M.bind(deps)
     local get = deps.get
     local applyResonanceSync = deps.applyResonanceSync
     local syncTeamSlotsFromOwned = deps.syncTeamSlotsFromOwned
+    local syncRosterExpFromOwned = deps.syncRosterExpFromOwned
     local rebuildRoster = deps.rebuildRoster
     local refreshPowerCache = deps.refreshPowerCache
     local refreshNavBadge = deps.refreshNavBadge
@@ -35,10 +36,13 @@ function M.bind(deps)
         local ownData = ownedSet[heroId]
         if not ownData or not isFinite(amount) or amount <= 0 then return false end
         -- 拒绝损坏来源和溢出；不得让 NaN/inf 进入共鸣排序或持久化。
-        for _, hero in pairs(ownedSet) do
+        -- 即使没有持久化出口也记录全名册等级：共鸣可能只提升另一队/未上阵英雄。
+        local beforeLevels = {}
+        for id, hero in pairs(ownedSet) do
             if not isFinite(hero.level) or hero.level < 1 or hero.level % 1 ~= 0
                 or not isFinite(hero.exp or 0) or (hero.exp or 0) < 0
                 or (hero.maxExp ~= nil and not isFinite(hero.maxExp)) then return false end
+            beforeLevels[id] = hero.level
         end
         local newExp = (ownData.exp or 0) + amount
         if not isFinite(newExp) then return false end
@@ -85,9 +89,23 @@ function M.bind(deps)
             end
             persistHeroExp(changed)
         end
-        rebuildRoster()
-        refreshPowerCache()
-        refreshNavBadge()
+        local levelChanged = false
+        for id, hero in pairs(ownedSet) do
+            if hero.level ~= beforeLevels[id] then
+                levelChanged = true
+                break
+            end
+        end
+        if levelChanged or not syncRosterExpFromOwned then
+            -- 等级/共鸣影响排序、装备门槛和正式战力，保持原完整刷新与外层通知。
+            -- 旧独立 bind 调用未提供轻量出口时仍保留完整刷新契约。
+            rebuildRoster()
+            refreshPowerCache()
+            refreshNavBadge()
+        else
+            -- 纯经验变化只更新现有显示快照；不创建属性上下文、不重排、不重开战斗。
+            syncRosterExpFromOwned()
+        end
         return true
     end
 

@@ -611,7 +611,7 @@ function HandleNanoVGRenderHorizon()
     applyFrame()
 
     -- 分帧启动中：只画标题，避免未 init 的城镇/战斗模块被绘制
-    if not bootReady_() then
+    if not bootReady_() or RT.entryPreparing then
         nvgBeginPath(vg())
         nvgRect(vg(), 0, 0, logicalW(), logicalH())
         nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
@@ -861,6 +861,7 @@ function HandleNanoVGRenderHorizon()
         Viewport.finish(vg())
         -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
         BattleTriPage.draw(vg(), logicalW(), logicalH())
+        if RT.entryPrepared then RT.entryRendered = true end
         -- [行1 HUD] 宿主最终层级绘制：速度/扫荡/统计/选关按钮——
         -- 确保位于一切战斗行背景与框柱之上（用户实测按钮被行1背景穿帮）
         BattleTriPage.drawHud(vg(), logicalW(), logicalH())

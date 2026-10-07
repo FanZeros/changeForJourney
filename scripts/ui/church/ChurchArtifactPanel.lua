@@ -933,6 +933,10 @@ function M.drawContent(vg)
     end
     nvgText(vg, MERGE_BTN.CX, MERGE_BTN.CY, label, nil)
 
+end
+
+--- 详情独立于内容层，交给教堂在公共按钮与名称牌之后绘制。
+function M.drawOverlay(vg)
     ArtifactDetailPanel.draw(vg)
 end
 

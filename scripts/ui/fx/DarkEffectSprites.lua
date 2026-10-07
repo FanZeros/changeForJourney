@@ -21,6 +21,7 @@ local ROOT = "image/暗黑特效/"
 ---@field pngFailed boolean
 ---@field overlayFailed boolean
 ---@field instance SpineInstance|nil
+---@field sweepSlot SpineSlot|nil
 ---@field lastElapsed number
 ---@field lastCx number?
 ---@field lastCy number?
@@ -47,7 +48,7 @@ local REQUIRED = {
     revive = { "ash_flake", "soul_flame", "smoke_flame", "rune_ring", "seal_plate", "rune_strip", "impact_glow" },
     success = { "seal_plate", "seal_shard", "rune_ring", "copper_wing", "rune_strip", "impact_glow", "ember", "light_sweep" },
     failure = { "seal_plate", "seal_shard", "rune_ring", "smoke_flame", "impact_glow", "ash_flake", "light_sweep" },
-    power = { "nameplate", "copper_wing", "rune_ring", "rift_light", "smoke_flame", "rune_strip", "ember", "light_sweep" },
+    power = { "nameplate", "copper_wing", "rune_ring", "rift_light", "smoke_flame", "rune_strip", "ember" },
 }
 local WHITE = { 255, 255, 255 }
 local ASH = { 164, 157, 143 }
@@ -99,7 +100,7 @@ local function disposeNative(entry)
     -- 先摘掉引用；只执行一种原生释放，实测 Unload 后再 Dispose 会原生崩溃。
     -- 优先卸载骨架/贴图并交 GC 收对象；缺 Unload 的旧扩展才调用 Dispose。
     local instance = entry.instance
-    entry.instance = nil
+    entry.instance, entry.sweepSlot = nil, nil
     if not instance then return end
     if hasMethod(instance, "Unload") then
         local ok, err = pcall(function() instance:Unload() end)
@@ -243,6 +244,12 @@ local function attemptNative(entry)
         end
         if instance:Load(ROOT .. entry.family .. "_fx.json") ~= true then error("Spine Load 失败", 0) end
         if entry.released then return end
+        if entry.family == "power" then
+            if not hasMethod(instance, "FindSlot") then error("Spine API 缺失: FindSlot", 0) end
+            local sweepSlot = instance:FindSlot("sweep")
+            if not sweepSlot or not sweepSlot:IsValid() then error("Spine 战力扫光槽缺失", 0) end
+            entry.sweepSlot = sweepSlot
+        end
         -- 无 listener，完成由原控制器墙钟派发，原生动画不参与业务回调。
         if instance:SetAnimation(0, entry.animation, false) ~= true then error("Spine SetAnimation 失败", 0) end
         local seconds = instance:GetAnimationDuration(0)
@@ -289,7 +296,11 @@ local function drawNative(vg, entry, cx, cy, sx, sy, elapsed, duration, alpha)
             else instance:Update(0) end
         end
         entry.lastCx, entry.lastCy, entry.lastSx, entry.lastSy = cx, cy, sx, sy
-        if not entry.released then nvgSpineRender(vg, instance) end
+        if not entry.released then
+            -- 动画 Update 会重写槽透明度，必须在渲染前屏蔽横穿文字区的 Spine 扫光。
+            if entry.sweepSlot then entry.sweepSlot:SetColor(1, 1, 1, 0) end
+            nvgSpineRender(vg, instance)
+        end
     end)
     if ok then return true end
     entry.nativeFailed = true
@@ -482,8 +493,7 @@ local function power(vg, context, p, a)
         sprite(vg, context, "rift_light", side * 310, 0, 19, 132, 0, a * impact * .58, side > 0)
         sprite(vg, context, "rune_strip", side * 294, 0, 19, 103, 0, a * split * .65, side > 0)
     end
-    sprite(vg, context, "light_sweep", -223 + stage(p, .20, .57) * 446, 0,
-        185, 113, .27, a * impact * .21)
+    -- 不在数字阅读区绘制横向扫光，只保留铭牌两侧动效。
     for i = 1, 8 do
         local q = clamp((p - .18 - i * .026) / .45)
         local life = smooth(q * 8) * (1 - stage(q, .70, 1))
@@ -521,8 +531,8 @@ local function accents(vg, family, animation, p, alpha)
             nvgFill(vg)
         end
     end
-    if impact > 0 then
-        local wide = family == "power" and 280 or (family == "card" and 74 or 63)
+    if impact > 0 and family ~= "power" then
+        local wide = family == "card" and 74 or 63
         local y = family == "card" and (21 - p * 52) or -7
         local color = nvgRGBA(227, 202, 162, math.floor(clamp(alpha * impact * .34) * 255 + .5))
         ---@cast color NVGcolor

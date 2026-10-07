@@ -101,6 +101,13 @@ function M.settleVictory(raid, drivers, settle, scene)
     print(string.format("[BattleTriPage] 终焉胜利已结算，等待轮回 stage=%d", raid.stageId))
 end
 
+-- 放弃运行态协同不走胜负结算，读档/清档不能追加旧战斗奖励。
+function M.discardRaid(raid, drivers)
+    if not raid then return end
+    raid:release()
+    for _, drv in pairs(drivers) do drv.terminalRaid = nil end
+end
+
 ---@param drv table
 function M.discardDriver(drv)
     drv.active = false

@@ -1451,9 +1451,7 @@ end
 
 --- 放弃旧协同，不分发死亡事件，不通过正常收尾/奖励结算路径。
 local function discardTerminalRaid()
-    if not terminalRaid then return end
-    terminalRaid:release()
-    for _, drv in pairs(drivers) do drv.terminalRaid = nil end
+    require("ui.battle.tri.TerminalReincarnation").discardRaid(terminalRaid, drivers)
     terminalRaid = nil
 end
 

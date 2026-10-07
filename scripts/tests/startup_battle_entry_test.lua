@@ -296,7 +296,7 @@ local function fixture(options)
     for _, name in ipairs({ "ui.hud.TopBar", "ui.hud.BottomNav", "ui.dev.DebugPanel", "ui.dev.CEPanel",
         "ui.character.hero.HeroRosterPanel", "ui.hud.popup.RewardPopup", "ui.town.TownScene",
         "ui.blacksmith.BlacksmithPage", "ui.church.ChurchPage", "ui.church.talent.TalentPage",
-        "ui.tavern.TavernPage", "ui.market.MarketPage", "ui.dungeon.DungeonBattleScene",
+        "ui.tavern.TavernPage", "ui.tavern.RecruitAnim", "ui.market.MarketPage", "ui.dungeon.DungeonBattleScene",
         "ui.tower.TowerBattleScene", "ui.tower.TowerBuffPick", "ui.dungeon.DungeonPage",
         "ui.backpack.BackpackPanel", "ui.loot.LootBox", "ui.loot.LootBoxPage", "ui.hud.popup.LevelUpPopup",
         "ui.hud.popup.UpdateNoticePopup", "ui.hud.popup.PlayerInfoPanel", "ui.hud.popup.RedeemCodePanel",

@@ -105,6 +105,7 @@ local function runBattleLedgerCases(nativeRequire)
         modules["systems.OfflineCalc"] = { resolveIdleStageAnchors = function() return stageId, stageId end,
             calcOnlineIdleRewards = function() return {} end }
         modules["systems.BattleTimeout"] = { calcMult = function() return 1 end }
+        modules["systems.CombatFormula"] = { calcHpRegen = function() return 0 end }
         modules["systems.DropSystem"] = stub({ generateFirstClearEquips = function() return {} end,
             generateFirstClearScrolls = function() return nil end,
             rollKillDrop = function() return nil end, rollScrollDrop = function() return nil end })
@@ -119,6 +120,7 @@ local function runBattleLedgerCases(nativeRequire)
                 newBattleRefs = function() return {} end, newFxState = function() return {} end,
                 newSemState = function() return {} end })
         end
+        modules["ui.battle.combat.BattleCombat"].newState = function() return { ctx = {} } end
         env.require = function(name)
             if modules[name] then return modules[name] end
             local module

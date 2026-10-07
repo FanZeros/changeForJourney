@@ -11,6 +11,7 @@ local EquipmentConfig = require("config.EquipmentConfig")
 local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local EquipmentWearability = require("ui.character.detail.EquipmentWearability")
 local EquipmentPower = require("systems.EquipmentPower")
+local SettingsPanel = require("ui.hud.popup.SettingsPanel")
 local AdvancementConfig = require("config.AdvancementConfig")
 local HeroConfig      = require("config.HeroConfig")
 local CharacterPanel  = require("ui.character.panel.CharacterPanel")
@@ -263,7 +264,7 @@ function M.bind(deps)
                 end
 
                 -- 单件贡献位于等级上方，保留右下等级及左下套装徽记占位。
-                do
+                if SettingsPanel.isEquipmentPowerEnabled() then
                     local powerText = tostring(equip.power or 0)
                     local powerFont, iconSize, gap = 26, 22, 4
                     nvgFontFace(vg, "sans")

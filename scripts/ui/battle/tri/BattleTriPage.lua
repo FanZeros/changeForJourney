@@ -556,7 +556,7 @@ function BattleTriPage.update(dt)
     -- 三行卡面走在场/待补位缓存，不能在攻击期间继续解码全图鉴大图。
     local unlocked = ensureDrivers()
     local logicDt = BattleTriPage.getBattleLogicDt(dt)
-    -- 帧开始仍在任一有效战线入场时，全协同只推进视觉，不推进攻击或共享限时。
+    -- 帧开始仍在任一有效战线入场时，全协同只推进视觉，不推进攻击或共享用时。
     local raidAtFrameStart = terminalRaid
     local waitingReincarnation = raidAtFrameStart and raidAtFrameStart.settlementStarted and raidAtFrameStart.won
     local raidClockActive = false
@@ -587,15 +587,13 @@ function BattleTriPage.update(dt)
         end
         if terminalRaid.hp <= 0 then
             terminalRaid:finish(true)
-        elseif terminalRaid.elapsed >= require("config.GameConfig").Battle.TIME_LIMIT_SEC then
-            terminalRaid:finish(false)
         end
     end
     if terminalRaid and terminalRaid.finished then
         if terminalRaid.won then
             finishTerminalRaid(true)
         else
-            -- 全灭/超时先停止战斗，至少留一秒让角色退场，不同帧立即重开。
+            -- 全灭先停止战斗，至少留一秒让角色退场，不同帧立即重开。
             -- 首次观察到失败不累计当前战斗帧；即使大 dt 也不能同帧直接退关。
             if terminalRaid.finishObserved then
                 terminalRaid.finishElapsed = terminalRaid.finishElapsed + dt
@@ -881,16 +879,12 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgRestore(vg)
         end
 
-        -- [终焉协同] 生命由各 Boss 卡牌血条展示，行1 只保留协同倒计时。
+        -- [终焉协同] 生命由各 Boss 卡牌血条展示，行1 标明不限时。
         if terminalRaid and row == 1 and row <= unlocked then
-            local timeLimit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
-            local left = math.max(0, math.ceil(timeLimit - terminalRaid.elapsed))
             nvgFontSize(vg, 22)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, left <= 30 and nvgRGBA(255, 120, 110, 255)
-                or nvgRGBA(236, 226, 198, 255))
-            nvgText(vg, ix + 28, iy + 55,
-                I18n.format("限时 %d:%02d", left // 60, left % 60), nil)
+            nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
+            nvgText(vg, ix + 28, iy + 55, I18n.lookup("不限时"), nil)
         end
 
         local killed, total

@@ -10,6 +10,7 @@ local M = {}
 ---@field classReq string|nil
 
 -- 稳定业务 ID → 暗契展示名；与统计/奖励/战斗使用的原 ID、原名保持分离。
+---@type string[]
 local names = {
     "墓铁磨刃", "幽典涌魔", "余烬续命", "夜巡之眼", "断命刃", "墓影步",
     "锁链连斩", "饮血续命", "夜袭先手", "裂甲尖锋", "濒死狂焰", "盛命凶怒",
@@ -20,6 +21,7 @@ local names = {
 }
 
 -- 图标用实体主题，不按显示名猜测机制；字符串用于资产/几何绘制器选择。
+---@type string[]
 local icons = {
     "blade", "tome", "blood", "eye", "blade", "eye",
     "chain", "blood", "blade", "blade", "blood", "blood",
@@ -32,8 +34,11 @@ local classIcons = {
     knight = "shield", warrior = "blade", mage = "tome",
     ranger = "eye", assassin = "blade", priest = "bell",
 }
-local qualities = { "灰烬", "血契", "渊誓" }
-local rarities = { "稀有", "史诗", "传说" }
+---@type string[]
+local rarities = { "普通", "优质", "稀有" }
+-- 对应 TowerConfig 的 1=白、2=绿、3=蓝；每次返回独立颜色，避免控件反写共享表。
+---@type number[][]
+local rarityColors = { { 231, 231, 231, 255 }, { 106, 190, 115, 255 }, { 100, 161, 226, 255 } }
 
 ---@param choice TowerPresentationChoice|nil
 ---@return number|nil
@@ -74,18 +79,24 @@ function M.description(choice)
     return M.text((choice and choice.desc) or "")
 end
 
---- 1..3 是既有塔词条品质索引；仅改展示标签，不改抽取权重。
+--- 1..3 是配置真实品质索引；仅改展示标签，不改抽取权重或暗契名。
 ---@param quality number|nil
 ---@return string
 function M.quality(quality)
-    return M.text((quality and qualities[quality]) or "暗契")
+    return M.rarity(quality)
 end
 
---- 原品质索引对应的显示说明，供需要通用稀有度提示的页面使用。
 ---@param quality number|nil
 ---@return string
 function M.rarity(quality)
     return M.text((quality and rarities[quality]) or "")
+end
+
+---@param quality number|nil
+---@return number[]
+function M.rarityColor(quality)
+    local color = (quality and rarityColors[quality]) or rarityColors[1]
+    return { color[1], color[2], color[3], color[4] }
 end
 
 ---@param choice TowerPresentationChoice|nil

@@ -6,6 +6,15 @@
 local TAG="[tower_sidebar_native_test]"
 local total={checks=0,failed=0,cases=0,text=0,glyph=0}
 local langs={"zh_CN","zh_TW","en","ja","ko"}
+-- 独立五语文本与真实品质配色，不调用展示适配器生成期望。
+local expected={
+    zh_CN={rarities={"普通","优质","稀有"},collapse="收起",expand="展开",title="已获强化",pending="待选暗契 ×3"},
+    zh_TW={rarities={"普通","優質","稀有"},collapse="收起",expand="展開",title="已獲強化",pending="待選暗契 ×3"},
+    en={rarities={"Common","Uncommon","Rare"},collapse="Collapse",expand="Expand",title="Acquired Boons",pending="Pending Pacts ×3"},
+    ja={rarities={"コモン","アンコモン","レア"},collapse="折りたたむ",expand="展開",title="獲得済みの強化",pending="未選択の暗契 ×3"},
+    ko={rarities={"일반","고급","레어"},collapse="접기",expand="펼치기",title="획득한 강화",pending="미선택 계약 ×3"},
+}
+local expectedColors={{231,231,231,255},{106,190,115,255},{100,161,226,255}}
 local dimensions={{1920,1080},{1280,800}}
 ---@type NVGContextWrapper?
 local vg=nil
@@ -20,6 +29,10 @@ local Sidebar={}
 local observations={} ---@type table<any, any[]>
 local widgets={} ---@type any[]
 local finished=false
+-- 可选视觉验收：不执行回归变更序列，固定第17层/35增益，供官方Runtime截图。
+local preview=false
+local previewCollapsed=false
+local previewLang="zh_CN"
 local index=0
 local source=""
 local snapshot={floor=17,wave=9,phase="battle",buffIds={},inputModal=false}
@@ -138,7 +151,7 @@ end
 local function scrollCase(w,h,lang)
     total.cases=total.cases+1
     I18n.set(lang)
-    createSidebar();snapshot.floor=17;snapshot.wave=9;snapshot.phase="battle";snapshot.inputModal=false
+    createSidebar();snapshot.floor=17;snapshot.wave=9;snapshot.phase="battle";snapshot.inputModal=false;snapshot.pendingChoices=0
     snapshot.buffIds={1,2,3,4,5,6,7,8}
     settle(w,h)
     local route=uv(Sidebar.destroy,"routeScroll");local buffs=uv(Sidebar.destroy,"buffScroll")
@@ -162,6 +175,54 @@ local function scrollCase(w,h,lang)
     local _,drag=route:GetScroll();near(drag,wheel+50,"left actual touch drag+50 "..lang)
     Sidebar.dragBegin(bx,by,w,h);Sidebar.dragMove(bx,by-50*Layout.compute(w,h).sideScale,w,h);Sidebar.dragEnd()
     local _,bd=buffs:GetScroll();near(bd,math.min(bsy+50,bh-br.h),"right actual touch drag+50 "..lang)
+    local toggle=uv(Sidebar.destroy,"toggleButton");local title=uv(Sidebar.destroy,"buffTitle")
+    local rule=uv(Sidebar.destroy,"ruleNote");local pending=uv(Sidebar.destroy,"pendingButton")
+    local retreat=uv(Sidebar.destroy,"actionButton");local actual=expected[lang]
+    near(title.props.fontSize,25.6,"右标题尺寸80% "..lang)
+    near(rule.props.fontSize,14.4,"右说明尺寸80% "..lang)
+    near(left.props.paddingLeft,24,"左栏间距保持 "..lang)
+    near(right.props.paddingLeft,19.2,"右栏留白缩至80% "..lang)
+    eq(toggle.props.text,actual.collapse,"独立五语收起文案 "..lang)
+    inspectText(toggle,"collapse/"..lang)
+    local firstRow=rows:GetChildAt(1);local firstHeader=firstRow:GetChildAt(1)
+    near(firstHeader:GetChildAt(1).props.width,51.2,"图标配置尺寸80% "..lang)
+    near(firstHeader:GetChildAt(1):GetLayout().w,51,"真实Yoga按像素舍入图标80% "..lang)
+    near(firstHeader:GetChildAt(2):GetChildAt(1).props.fontSize,20.8,"名字尺寸80% "..lang)
+    near(firstRow:GetChildAt(2).props.fontSize,18.4,"描述尺寸80% "..lang)
+    snapshot.pendingChoices=3;settle(w,h)
+    local ax,ay=point(retreat,"right",w,h);local px,py=point(pending,"right",w,h)
+    local tx,ty=point(toggle,"right",w,h);local beforeSy=select(2,buffs:GetScroll())
+    local beforeKey=Sidebar.getPresentationKey();local beforeRows=rows:GetChildAt(1)
+    local beforeLeft=fingerprint(left:GetAbsoluteLayout());local beforeRight=fingerprint(right:GetAbsoluteLayout())
+    eq(Sidebar.handleClick(tx,ty,w,h),"toggle_buffs","真实收起按钮命中 "..lang)
+    Sidebar.dragBegin(bx,by,w,h);eq(Sidebar.toggleCollapsed(),true,"一键收起 "..lang)
+    check(Sidebar.getPresentationKey()~=beforeKey,"收起使旧按压版本失效 "..lang)
+    settle(w,h);Sidebar.dragMove(bx,by-80*Layout.compute(w,h).sideScale,w,h)
+    near(select(2,buffs:GetScroll()),beforeSy,"收起停止旧drag且真实布局不清零sy "..lang)
+    Sidebar.handleScroll(-1,bx,by,w,h);Sidebar.dragBegin(bx,by,w,h)
+    Sidebar.dragMove(bx,by-80*Layout.compute(w,h).sideScale,w,h);Sidebar.dragEnd()
+    near(select(2,buffs:GetScroll()),beforeSy,"隐藏区域不滚轮不拖动 "..lang)
+    eq(buffs:IsVisible(),false,"隐藏真实ScrollView "..lang);eq(rule:IsVisible(),false,"隐藏规则说明 "..lang)
+    eq(rows:GetChildAt(1),beforeRows,"收起不销毁现有卡片 "..lang)
+    eq(title:GetText(),actual.title.."  8","数量收起后保留 "..lang)
+    eq(pending.props.text,actual.pending,"待选数量收起后保留 "..lang)
+    eq(Sidebar.handleClick(px,py,w,h),"resume_pick","收起保留待选恢复入口 "..lang)
+    eq(Sidebar.handleClick(ax,ay,w,h),"retreat","收起保留撤退入口和位置 "..lang)
+    eq(toggle.props.text,actual.expand,"独立五语展开文案 "..lang);inspectText(toggle,"expand/"..lang)
+    eq(fingerprint(left:GetAbsoluteLayout()),beforeLeft,"收起不改左栏几何 "..lang)
+    eq(fingerprint(right:GetAbsoluteLayout()),beforeRight,"收起不改右栏几何 "..lang)
+    snapshot.inputModal=true;settle(w,h)
+    eq(Sidebar.handleClick(tx,ty,w,h),nil,"模态阻止收起展开按钮 "..lang)
+    snapshot.inputModal=false;settle(w,h)
+    eq(Sidebar.toggleCollapsed(),false,"一键展开 "..lang);settle(w,h)
+    near(select(2,buffs:GetScroll()),beforeSy,"展开恢复原sy "..lang)
+    check(Sidebar.getPresentationKey()~=beforeKey,"收起展开ABA版本仍失效 "..lang)
+    eq(rows:GetChildAt(1),beforeRows,"展开复用原卡片 "..lang)
+    Sidebar.toggleCollapsed();Sidebar.reset();settle(w,h)
+    eq(Sidebar.isCollapsed(),false,"reset默认展开 "..lang)
+    eq(buffs:IsVisible(),true,"reset恢复内容可见 "..lang)
+    near(select(2,buffs:GetScroll()),0,"reset清理旧会话scroll "..lang)
+    snapshot.pendingChoices=0;settle(w,h)
     snapshot.floor=112;settle(w,h);local _,endY=route:GetScroll();near(endY,revealExpected(route,112),"floor112 bottom-clamped reveal "..lang)
     snapshot.floor=1;settle(w,h);local _,first=route:GetScroll();near(first,0,"floor1 top-clamped reveal "..lang)
     snapshot.floor=17;snapshot.buffIds={1,2,3,4,5,6,7,8};settle(w,h)
@@ -173,12 +234,18 @@ local function scrollCase(w,h,lang)
     settle(w,h)
     local _,returned=route:GetScroll();near(returned,revealExpected(route,17),"same root return size re-centers current route "..lang)
     snapshot.buffIds={};for id=1,30 do snapshot.buffIds[#snapshot.buffIds+1]=id end
+    snapshot.pendingChoices=3
     settle(w,h)
     eq(#rows:GetChildren(),30,"all30 actual buff descriptions available "..lang)
     assertTree(left,"left/"..lang);assertTree(right,"right/"..lang)
     local seen={}
-    for _,row in ipairs(rows:GetChildren()) do
+    for rowIndex,row in ipairs(rows:GetChildren()) do
         local header=row:GetChildAt(1);local desc=row:GetChildAt(2);local name=header:GetChildAt(2):GetChildAt(1)
+        local quality=header:GetChildAt(2):GetChildAt(2);local def=Config.BUFFS_BY_ID[rowIndex]
+        eq(quality:GetText(),actual.rarities[def.quality].."  ×1","独立真实稀有度文字 "..lang.."/"..rowIndex)
+        eq(fingerprint(quality.props.fontColor),fingerprint(expectedColors[def.quality]),"品质文字白绿蓝 "..lang.."/"..rowIndex)
+        eq(fingerprint(row.props.borderColor),fingerprint(expectedColors[def.quality]),"卡片边框白绿蓝 "..lang.."/"..rowIndex)
+        eq(quality.props.textStroke,nil,"不额外增加文字描边次数 "..lang.."/"..rowIndex)
         seen[name:GetText()]=true;seen[desc:GetText()]=true
         local dl=desc:GetAbsoluteLayout();local rowRect=row:GetAbsoluteLayout()
         check(dl.h>0 and dl.y+dl.h<=rowRect.y+rowRect.h+.01,"full long description fits own actual Yoga row "..lang)
@@ -190,7 +257,18 @@ local function scrollCase(w,h,lang)
     end
     buffs:ScrollToBottom();local _,fullBottom=buffs:GetScroll()
     check(fullBottom>0,"long real acquired list can reach lower rows "..lang)
+    Sidebar.toggleCollapsed()
+    local alternateLang=lang=="en" and "ko" or "en"
+    I18n.set(alternateLang);settle(w,h)
+    near(select(2,buffs:GetScroll()),fullBottom,"收起时切换语言不钳制旧sy "..lang)
+    Sidebar.toggleCollapsed();settle(w,h)
+    local _,translatedHeight=buffs:GetContentSize();local translatedViewport=buffs:GetLayout()
+    near(select(2,buffs:GetScroll()),math.min(fullBottom,math.max(0,translatedHeight-translatedViewport.h)),"展开后按真实译文高度钳制sy "..lang)
+    I18n.set(lang);settle(w,h);buffs:ScrollToBottom()
+    Sidebar.toggleCollapsed();local beforeShrink=select(2,buffs:GetScroll())
     snapshot.buffIds={1};settle(w,h)
+    near(select(2,buffs:GetScroll()),beforeShrink,"收起时增益变化不提前清零旧sy "..lang)
+    Sidebar.toggleCollapsed();settle(w,h)
     local _,shrunken=buffs:GetScroll();near(shrunken,0,"shortened actual list clamps old bottom scroll "..lang)
     eq(#rows:GetChildren(),1,"old acquired row instances replaced after list change "..lang)
     snapshot.buffIds={};for id=1,30 do snapshot.buffIds[#snapshot.buffIds+1]=id end
@@ -217,6 +295,12 @@ local function scrollCase(w,h,lang)
     print(TAG.." CASE COMPLETE "..lang.." "..w.."x"..h.." checks="..total.checks.." failed="..total.failed.." route="..rw.."/"..rh.." buffs="..bw.."/"..bh)
 end
 function Start()
+    for _,arg in ipairs(GetArguments()) do
+        if arg=="-tower-sidebar-preview" then preview=true end
+        if arg=="-tower-sidebar-collapsed" then previewCollapsed=true end
+        local lang=arg:match("^%-tower%-sidebar%-lang=(.+)$")
+        if lang and expected[lang] then previewLang=lang end
+    end
     local f=assert(cache:GetFile("ui/tower/TowerBuffSidebar.lua"));local lines={}
     while not f:IsEof() do lines[#lines+1]=f:ReadLine() end;f:Dispose();source=table.concat(lines,"\n")
     Surface.init();vg=assert(nvgCreate(1));check(nvgCreateFont(vg,"sans","Fonts/NotoSansCJKkr-Bold.otf")>=0,"only actual host sans font")
@@ -229,6 +313,22 @@ function HandleSidebarNative()
     nvgBeginFrame(ctx,w,h,d)
     local ok,err=xpcall(function()
         index=index+1
+        if preview then
+            if index==1 then
+                I18n.set(previewLang);createSidebar()
+                snapshot.buffIds={};for id=1,35 do snapshot.buffIds[#snapshot.buffIds+1]=id end
+                snapshot.pendingChoices=3
+                if previewCollapsed then Sidebar.toggleCollapsed() end
+            end
+            settle(w,h)
+            if index==120 then
+                check(Sidebar.isCollapsed()==previewCollapsed,"视觉验收目标状态保持120帧")
+                check(fingerprint(Config.BUFFS)==configBefore,"视觉验收不修改配置")
+                print(TAG.." PREVIEW COMPLETE lang="..previewLang.." collapsed="..tostring(previewCollapsed).." frames="..index)
+                finished=true
+            end
+            return
+        end
         local dimensionsIndex=math.floor((index-1)/#langs)+1
         local lang=langs[(index-1)%#langs+1]
         local dims=assert(dimensions[dimensionsIndex],"invalid dimensions case")

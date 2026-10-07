@@ -396,7 +396,7 @@ function M.drawContent(vg)
         255, 255, 255, 6, { strokeColor = { 0, 0, 0 }, italic = true })
 
     drawRichTextCentered(vg, COL.DESC_X, COL.DESC_Y - 18, COL.DESC_FONT, 4, {
-        { text = "获得100金币，赠送", color = { 255, 255, 255 } },
+        { text = "获得", color = { 255, 255, 255 } },
         { text = "普通", color = QUALITY_COLORS.normal },
         { text = "、", color = { 255, 255, 255 } },
         { text = "优质", color = QUALITY_COLORS.good },

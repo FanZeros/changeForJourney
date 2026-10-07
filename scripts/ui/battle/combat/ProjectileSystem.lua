@@ -286,6 +286,8 @@ end
 -- [三行并行] 条带渲染缩放：投射物/星门等视觉尺寸 × renderScale
 -- （卡牌在条带内缩至 CARD_SCALE，投射物同步缩放避免比例失调；飞行时长为 duration 制不受影响）
 local renderScale = 1.0
+-- 只缩小视觉尺寸，保留布局倍率、轨迹、展开位置与命中时序。
+local PROJECTILE_VISUAL_SCALE = 0.5
 function ProjectileSystem.setRenderScale(s) renderScale = s or 1.0 end
 
 --- [分帧预热] 收集全部投射物图 key（去重，供战斗卡牌分帧泵预热）
@@ -325,10 +327,11 @@ end
 
 --- 绘制投射物图片（居中，支持旋转/缩放/透明度）
 --- 素材默认朝右(+X方向)，angle=0时朝右，angle=-π/2时朝上
-local function drawProjectileImage(vg, imgHandle, cx, cy, w, h, angle, alpha)
+local function drawProjectileImage(vg, imgHandle, cx, cy, w, h, angle, alpha, visualScale)
     if not imgHandle or imgHandle <= 0 then return end
-    w = w * renderScale
-    h = h * renderScale
+    local sizeScale = visualScale or PROJECTILE_VISUAL_SCALE
+    w = w * renderScale * sizeScale
+    h = h * renderScale * sizeScale
     nvgSave(vg)
     nvgTranslate(vg, cx, cy)
     if angle ~= 0 then
@@ -382,12 +385,12 @@ local function drawTrail(vg, cx, cy, prevCX, prevCY, color, t, size)
     local nx = dx / dist
     local ny = dy / dist
 
-    local tailLen = math.min(dist, size * 1.5)
+    local tailLen = math.min(dist, size * 1.5) * PROJECTILE_VISUAL_SCALE
     local tailEndX = cx + nx * tailLen
     local tailEndY = cy + ny * tailLen
 
-    local headW = size * 0.35
-    local tailW = size * 0.05
+    local headW = size * 0.35 * PROJECTILE_VISUAL_SCALE
+    local tailW = size * 0.05 * PROJECTILE_VISUAL_SCALE
     local perpX = -ny
     local perpY = nx
 
@@ -408,7 +411,7 @@ local function drawTrail(vg, cx, cy, prevCX, prevCY, color, t, size)
     nvgFill(vg)
 
     -- 头部发光
-    local glowR = size * 0.4
+    local glowR = size * 0.4 * PROJECTILE_VISUAL_SCALE
     local glowPaint = nvgRadialGradient(vg,
         cx, cy, glowR * 0.1, glowR,
         nvgRGBA(color[1], color[2], color[3], math.floor(alpha * 0.6)),
@@ -708,7 +711,9 @@ local function updateAndDrawLightning(proj, vg, t)
     local midY = proj.startY + math.sin(angle) * curDist * 0.5
 
     -- 绘制拉伸的闪电图片
-    local stretchW = math.max(cfg.imgW, curDist)
+    -- 保持闪电连接攻击者与目标，仅把链条厚度和最短贴图宽度减半。
+    local stretchW = math.max(cfg.imgW * PROJECTILE_VISUAL_SCALE, curDist)
+    local stretchH = cfg.imgH * PROJECTILE_VISUAL_SCALE
     local imgHandle = getImage(cfg.imgKey)
     if not imgHandle or imgHandle <= 0 then return end
 
@@ -716,11 +721,11 @@ local function updateAndDrawLightning(proj, vg, t)
     nvgTranslate(vg, midX, midY)
     nvgRotate(vg, angle)
     -- 用 nvgImagePattern 重复/拉伸图片
-    local paint = nvgImagePattern(vg, -stretchW * 0.5, -cfg.imgH * 0.5,
-        stretchW, cfg.imgH, 0, imgHandle, alpha)
+    local paint = nvgImagePattern(vg, -stretchW * 0.5, -stretchH * 0.5,
+        stretchW, stretchH, 0, imgHandle, alpha)
     ---@cast paint NVGpaint
     nvgBeginPath(vg)
-    nvgRect(vg, -stretchW * 0.5, -cfg.imgH * 0.5, stretchW, cfg.imgH)
+    nvgRect(vg, -stretchW * 0.5, -stretchH * 0.5, stretchW, stretchH)
     nvgFillPaint(vg, paint)
     nvgFill(vg)
     nvgRestore(vg)
@@ -752,7 +757,7 @@ local function updateAndDrawSlash(proj, vg, t)
 
     -- 红色光晕
     if cfg.slashTint and alpha > 0.01 then
-        local glowR = cfg.imgH * 0.5 * scale
+        local glowR = cfg.imgH * 0.5 * scale * PROJECTILE_VISUAL_SCALE
         local ga = math.floor(100 * alpha)
         local glowPaint = nvgRadialGradient(vg,
             cx, cy, glowR * 0.2, glowR,
@@ -1400,7 +1405,8 @@ function ProjectileSystem.drawStarGates(vg, units, cardCY, getCardCX, isAlly, ge
                 local size = 118 * pulse * renderScale
                 local alpha = 0.88 + 0.12 * math.sin(starGateDrawTime * 2.6 + gateIndex * 0.7)
                 drawStarGateAura(vg, cx, cy, size, alpha)
-                drawProjectileImage(vg, imgHandle, cx, cy, size, size, starGateDrawTime * 1.8 * (isAlly and 1 or -1), alpha)
+                -- 常驻召唤门不是投掷物，保持原有尺寸和光晕。
+                drawProjectileImage(vg, imgHandle, cx, cy, size, size, starGateDrawTime * 1.8 * (isAlly and 1 or -1), alpha, 1)
             end
         end
     end

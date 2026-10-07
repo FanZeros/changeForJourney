@@ -31,6 +31,7 @@ local HP_BAR_PADDING = 4
 -- 浮动文字
 local FLOAT_TOTAL_FRAMES = 20
 local FLOAT_MOVE_DIST    = 240
+local FLOAT_VISUAL_SCALE = 0.7
 
 -- 职业图标映射
 local CLASS_ICON_MAP = {
@@ -508,6 +509,10 @@ function BattleDraw.drawFloatingTexts(vg)
 
         if alpha > 0 then
             nvgSave(vg)
+            -- 以当前飘字中心缩放整组文字、图标、描边，不缩短飘动轨迹。
+            nvgTranslate(vg, drawX, drawY)
+            nvgScale(vg, FLOAT_VISUAL_SCALE, FLOAT_VISUAL_SCALE)
+            nvgTranslate(vg, -drawX, -drawY)
             nvgGlobalAlpha(vg, alpha / 255)
             local textW = 0
             if ft.text and ft.text ~= "" then

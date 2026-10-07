@@ -623,8 +623,7 @@ local function drawTerminalGuide(vg, rowY, locked)
     local sources = {
         "最多三队一起上场，不必三队全部存活。",
         "同编号敌人跨队共享生命，击败全部三名敌人即可通关。",
-        I18n.format("限时 %d 秒；全部参战队伍失守或超时则失败。",
-            (GameConfig.Battle and GameConfig.Battle.TIME_LIMIT_SEC) or 300),
+        "不限时；全部参战队伍失守才失败。",
         "胜利进入下一难度，失败退回本难度最后一关。",
     }
     for index, source in ipairs(sources) do

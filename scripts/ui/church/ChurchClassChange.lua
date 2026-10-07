@@ -43,8 +43,6 @@ local pop = {
     confirmPopup = false, confirmAdvLevel = 0, confirmBranchId = 0,
     confirmBranchName = "", confirmClassNum = 1, confirmOwned = false,
     confirmAnimT = 0, confirmClosing = false,
-    resetConfPopup = false, resetConfRefund = 0,
-    resetConfAnimT = 0, resetConfClosing = false,
     floatText = nil, floatTextX = 0, floatTextY = 0, floatTextTime = 0,
 }
 
@@ -314,7 +312,6 @@ end
 function M.setHero(id)
     if currentHeroId ~= id then
         pop.confirmPopup = false
-        pop.resetConfPopup = false
         M.confirmKwText:clear()   -- 切角色清关键词状态
     end
     currentHeroId = id
@@ -1267,184 +1264,12 @@ function M.handleResetButton(dx, dy)
     end
     BF.trigger("ccc_reset")
     if heroId() then
-        M.openResetConfirmPopup()
+        print("[ChurchClassChange] 直接重置转职 heroId=" .. tostring(heroId()))
+        require("runtime.GameAction").sendAction(
+            require("shared.Protocol").ACTION_TYPES.RESET_CLASS, {
+            heroId = heroId(),
+        })
     end
-    return true
-end
-
--- ======================== 重置转职二级确认弹窗 ========================
--- 参考终焉神殿确认弹窗样式（九宫格背景 + 确认/取消按钮）
-
-local RC = {
-    BG_CX = 540, BG_CY = 1100, BG_W = 950, BG_H = 580,
-    -- 标题（白色 + 棕色描边）
-    TITLE_CY = 880, TITLE_FONT = 56, TITLE_SW = 6,
-    TITLE_SR = 0x46, TITLE_SG = 0x2f, TITLE_SB = 0x20,
-    -- 副标题
-    SUB_CY = 980, SUB_FONT = 38,
-    -- 说明行
-    LINE1_CY = 1060, LINE_FONT = 36,
-    LINE2_CY = 1120,
-    -- 确认按钮（绿色）
-    OK_CX = 340, OK_CY = 1280, OK_W = 310, OK_H = 100, OK_FONT = 40,
-    OK_TR = 0x2a, OK_TG = 0x52, OK_TB = 0x18,
-    -- 取消按钮（灰色）
-    CANCEL_CX = 740, CANCEL_CY = 1280, CANCEL_W = 310, CANCEL_H = 100, CANCEL_FONT = 40,
-    CANCEL_TR = 0x50, CANCEL_TG = 0x46, CANCEL_TB = 0x3c,
-}
-
---- 计算当前英雄重置时可返还的金币
----@return number refundGold
-local function calcResetRefund()
-    if not heroId() then return 0 end
-    local ownData = CharacterPanel.getOwnedHero(heroId())
-    if not ownData or not ownData.advBranch then return 0 end
-    local refund = 0
-    if ownData.advBranch.first then
-        refund = refund + math.floor(ADV_COST[1] * 0.5)
-    end
-    if ownData.advBranch.second then
-        refund = refund + math.floor(ADV_COST[2] * 0.5)
-    end
-    return refund
-end
-
---- 打开重置转职确认弹窗
-function M.openResetConfirmPopup()
-    pop.resetConfPopup   = true
-    pop.resetConfClosing = false
-    pop.resetConfAnimT   = time.elapsedTime
-    pop.resetConfRefund  = calcResetRefund()
-    print("[ChurchClassChange] 打开重置确认弹窗 refund=" .. tostring(pop.resetConfRefund))
-end
-
---- 关闭重置转职确认弹窗（带动画）
-function M.closeResetConfirmPopup()
-    if not pop.resetConfPopup then return end
-    if pop.resetConfClosing then return end
-    pop.resetConfClosing = true
-    pop.resetConfAnimT   = time.elapsedTime
-end
-
---- 绘制重置转职确认弹窗
-function M.drawResetConfirmPopup(vg)
-    if not pop.resetConfPopup then return end
-
-    -- 动画进度
-    local elapsed = time.elapsedTime - pop.resetConfAnimT
-    local rawT = math.min(1.0, elapsed / POPUP_ANIM_DUR)
-    local popProgress
-    if pop.resetConfClosing then
-        popProgress = 1.0 - easeInCubic(rawT)
-        if rawT >= 1.0 then
-            pop.resetConfPopup = false
-            pop.resetConfClosing = false
-            return
-        end
-    else
-        popProgress = easeOutCubic(rawT)
-    end
-    local popScale = POPUP_SCALE_FROM + (1.0 - POPUP_SCALE_FROM) * popProgress
-
-    -- 背景遮罩
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(128 * popProgress + 0.5)))
-    nvgFill(vg)
-
-    -- 缩放变换
-    nvgSave(vg)
-    nvgTranslate(vg, RC.BG_CX, RC.BG_CY)
-    nvgScale(vg, popScale, popScale)
-    nvgTranslate(vg, -RC.BG_CX, -RC.BG_CY)
-    nvgGlobalAlpha(vg, popProgress)
-
-    -- 弹窗背景 [暗黑化 P1-B5] 矢量面板
-    DarkIcon.drawNine(vg, "panel",
-        RC.BG_CX - RC.BG_W * 0.5, RC.BG_CY - RC.BG_H * 0.5,
-        RC.BG_W, RC.BG_H)
-
-    -- 标题 "重置转职"
-    drawTextStroke(vg, RC.BG_CX, RC.TITLE_CY, "⚠ 重置转职", RC.TITLE_FONT,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, RC.TITLE_SW,
-        { strokeColor = { RC.TITLE_SR, RC.TITLE_SG, RC.TITLE_SB } })
-
-    -- 副标题
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, RC.SUB_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
-    nvgText(vg, RC.BG_CX, RC.SUB_CY, "确认重置当前英雄的转职？", nil)
-
-    -- 说明文本
-    nvgFontSize(vg, RC.LINE_FONT)
-    nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
-    nvgText(vg, RC.BG_CX, RC.LINE1_CY, "重置后将清除所有转职分支", nil)
-
-    local refund = pop.resetConfRefund or 0
-    local refundText = "返还50%已消耗金币: " .. formatGold(refund) .. " 金币"
-    nvgFillColor(vg, nvgRGBA(0xc8, 0x96, 0x20, 255))  -- 金色高亮
-    nvgText(vg, RC.BG_CX, RC.LINE2_CY, refundText, nil)
-
-    -- 确认按钮（绿色）[暗黑化 P1-B3]
-    DarkIcon.drawNine(vg, "btn",
-        RC.OK_CX - RC.OK_W * 0.5, RC.OK_CY - RC.OK_H * 0.5,
-        RC.OK_W, RC.OK_H, { accent = "green" })
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, RC.OK_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(RC.OK_TR, RC.OK_TG, RC.OK_TB, 255))
-    nvgText(vg, RC.OK_CX, RC.OK_CY, "确认重置", nil)
-
-    -- 取消按钮（灰色）[暗黑化 P1-B3]
-    DarkIcon.drawNine(vg, "btn",
-        RC.CANCEL_CX - RC.CANCEL_W * 0.5, RC.CANCEL_CY - RC.CANCEL_H * 0.5,
-        RC.CANCEL_W, RC.CANCEL_H)
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, RC.CANCEL_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(RC.CANCEL_TR, RC.CANCEL_TG, RC.CANCEL_TB, 255))
-    nvgText(vg, RC.CANCEL_CX, RC.CANCEL_CY, "取消", nil)
-
-    nvgRestore(vg)
-end
-
---- 处理重置确认弹窗的触摸输入
----@param dx number 设计坐标X
----@param dy number 设计坐标Y
----@return boolean consumed
-function M.handleResetConfirmInput(dx, dy)
-    if not pop.resetConfPopup then return false end
-    if pop.resetConfClosing then return true end
-
-    -- 确认按钮
-    if hitTest(dx, dy, RC.OK_CX, RC.OK_CY, RC.OK_W, RC.OK_H) then
-        BF.trigger("ccc_reset_confirm")
-        if heroId() then
-            print("[ChurchClassChange] 确认重置转职 heroId=" .. tostring(heroId()))
-            require("runtime.GameAction").sendAction(
-                require("shared.Protocol").ACTION_TYPES.RESET_CLASS, {
-                heroId = heroId(),
-            })
-        end
-        M.closeResetConfirmPopup()
-        return true
-    end
-
-    -- 取消按钮
-    if hitTest(dx, dy, RC.CANCEL_CX, RC.CANCEL_CY, RC.CANCEL_W, RC.CANCEL_H) then
-        BF.trigger("ccc_reset_cancel")
-        M.closeResetConfirmPopup()
-        return true
-    end
-
-    -- 同帧保护
-    if time.elapsedTime - pop.resetConfAnimT < 0.05 then return true end
-
-    -- 点击面板外部 → 关闭
-    if not hitTest(dx, dy, RC.BG_CX, RC.BG_CY, RC.BG_W, RC.BG_H) then
-        M.closeResetConfirmPopup()
-        return true
-    end
-
     return true
 end
 

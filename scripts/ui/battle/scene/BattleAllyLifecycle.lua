@@ -135,7 +135,7 @@ function M.bind(deps)
     local function resetBattle()
         set("battleActive", true)
         set("battleTimeoutElapsed", 0)
-        if get("isFirstClear") then
+        if get("isFirstClear") and not getStageConfig().isTerminalTemple(get("currentStageId")) then
             set("firstClearTimeLeft", require("config.GameConfig").Battle.TIME_LIMIT_SEC)
         else
             set("firstClearTimeLeft", nil)

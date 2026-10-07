@@ -21,6 +21,7 @@ local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
 local ImageCache       = require("ui.widget.ImageCache")
 local BF               = require("systems.ButtonFeedback")
 local I18n             = require("core.I18n")
+local SettingsPanel    = require("ui.hud.popup.SettingsPanel")
 
 local EquipmentBag = {}
 
@@ -183,7 +184,7 @@ local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
     if img < 0 or alpha <= 0.01 then return end
     local x = cx - w * 0.5
     local y = cy - h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
+    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha) --[[@as NVGpaint]]
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
@@ -1145,7 +1146,7 @@ function EquipmentBag.draw(vg, opts)
                 end
 
                 -- 单件贡献与等级分行，不占用 E/头像、锁及升阶角标。
-                do
+                if SettingsPanel.isEquipmentPowerEnabled() then
                     local powerText = tostring(entry.power or 0)
                     local powerFont, iconSize, gap = 26, 22, 4
                     nvgFontFace(vg, "sans")

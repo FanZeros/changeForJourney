@@ -385,13 +385,13 @@ function Start()
 
         -- 精确执行真实class尾层draw，确认与旧礼拜堂scope严格分离且开关生效。
         local classDrawCode = segment("ui/character/detail/CharacterDetailDraw.lua",
-            "    -- === 转职确认/重置弹窗、飘字与程序化转职特效", "    -- === 装备背包覆盖层 ===")
+            "    -- === 转职确认弹窗、飘字与程序化转职特效", "    -- === 装备背包覆盖层 ===")
         detailState.tab = "class"
         local classVG = {}
         local classEnv = environment({ ["ui.fx.SpineCardEffect"] = Card,
             ["ui.hud.popup.SettingsPanel"] = Settings,
             ["ui.church.ChurchClassChange"] = { drawConfirmPopup = noop,
-                drawResetConfirmPopup = noop, drawFloatText = noop } }, { detailState = detailState, vg = classVG })
+                drawFloatText = noop } }, { detailState = detailState, vg = classVG })
         local classDraw = assert(load("return function()\n" .. classDrawCode .. "\nend",
             "@host-real/Detail.class.tail", "t", classEnv))()
         drawBefore = #draws; classDraw()
@@ -584,6 +584,13 @@ function Start()
         wrapperEnv.Standalone={};wrapperEnv.vg=ctxA
         -- PR116 Stop同时清理启动队列与共享ready镜像；仅提供其真实宿主上下文。
         wrapperEnv.StandaloneRT={bootReady_=true};wrapperEnv.bootQueue_={};wrapperEnv.bootReady_=true
+        -- 既有 Stop 夹具补齐开场/选关/塔UI依赖，不执行其真实业务或持久化。
+        wrapperEnv.LetterIntro={reset=noop};wrapperEnv.ScenarioDialogue={reset=noop}
+        wrapperEnv.TowerBattleScene={resetToDefault=noop};wrapperEnv.TowerBuffPick={destroy=noop}
+        stopMocks["systems.StoryPlayer"]={resetAll=noop}
+        stopMocks["ui.battle.stage.StageSelectDialog"]={close=noop}
+        stopMocks["ui.tavern.RecruitAnim"]={destroy=noop}
+        stopMocks["ui.tower.TowerBuffSidebar"]={destroy=noop}
         wrapperEnv.RewardPopup={clearBattleRewards=noop};wrapperEnv.StandaloneSave={Flush=noop}
         wrapperEnv.SpinePowerUpEffect={destroy=function() stopOrder[#stopOrder+1]="Power" end}
         wrapperEnv.LevelUpPopup={destroy=function() presentationOrder[#presentationOrder+1]="LevelUp" end}

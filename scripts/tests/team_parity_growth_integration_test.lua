@@ -322,6 +322,63 @@ function Start()
             end
             Stats.mount(3)
         end
+        local AdvancementService = nativeRequire("rules.advancement.AdvancementService")
+        check(AVC.COST[1].gold == 10000 and AVC.COST[2].gold == 100000, "两级转职配置价格不变")
+        for _, case in ipairs({
+            { branch = { first = 101 }, expected = 10000 },
+            { branch = { second = 201 }, expected = 100000 },
+            { branch = { first = 101, second = 201 }, expected = 110000 },
+            { branch = {}, expected = 0 },
+        }) do
+            heroes.roster[25].advBranch = case.branch
+            local goldBefore = modules.currency.gold
+            local success, _, result = AdvancementService.ResetClass(1, 25)
+            check(success and result and result.refundGold == case.expected, "转职重置全额返还 " .. case.expected)
+            check(modules.currency.gold == goldBefore + case.expected and not heroes.roster[25].advBranch,
+                "实际金币余额与清除分支一致 " .. case.expected)
+            local repeated, _, repeatedResult = AdvancementService.ResetClass(1, 25)
+            check(repeated and repeatedResult and repeatedResult.refundGold == 0
+                and modules.currency.gold == goldBefore + case.expected, "重复重置不会重复发金币")
+        end
+        for _, branch in ipairs({ 207, 220 }) do
+            for _, slot in ipairs({ "weapon", "offhand" }) do
+                heroes.roster[25].advBranch = { first = 101, second = branch }
+                modules.equipment.inventory["9001"] = { slot = slot }
+                modules.equipment.equipped[25] = { offhand = 9001 }
+                local success, _, result = AdvancementService.ResetClass(1, 25)
+                check(success and result and result.refundGold == 110000, "双持重置同样全额返还")
+                local equippedSlots = modules.equipment.equipped[25] or modules.equipment.equipped["25"] or {}
+                check((slot == "weapon" and result.removedOffhandSeq == 9001
+                    and equippedSlots.offhand == nil)
+                    or (slot == "offhand" and result.removedOffhandSeq == nil
+                        and equippedSlots.offhand == 9001), "仅卸下双持副槽中的武器")
+                check(modules.equipment.inventory["9001"] ~= nil, "卸下副手仍保留背包实例")
+            end
+        end
+        modules.equipment.inventory["9001"], modules.equipment.equipped[25] = nil, nil
+        local sentActions = {}
+        local ClassChange = sourceModule("ui/church/ChurchClassChange.lua", function(name)
+            if name == "runtime.GameAction" then return { sendAction = function(action, params)
+                sentActions[#sentActions + 1] = { action = action, params = params }
+            end } end
+            return nativeRequire(name)
+        end)
+        ClassChange.setHero(1)
+        check(ClassChange.handleResetButton(540, 1940) and #sentActions == 1,
+            "重置按钮首击直接发送，不需要二次确认")
+        check(sentActions[1].action == Protocol.ACTION_TYPES.RESET_CLASS and sentActions[1].params.heroId == 1,
+            "重置按钮使用原协议及当前英雄")
+        check(not ClassChange.handleResetButton(540, 2240) and #sentActions == 1,
+            "旧未平移坐标不发送重置")
+        ClassChange.setHero(2)
+        ClassChange.handleResetButton(540, 1940)
+        check(#sentActions == 2 and sentActions[2].params.heroId == 2, "切角色后重置目标立即更新")
+        ClassChange.setHero(nil)
+        ClassChange.handleResetButton(540, 1940)
+        check(#sentActions == 2, "无当前英雄不发送重置")
+        check(ClassChange.openResetConfirmPopup == nil and ClassChange.closeResetConfirmPopup == nil
+            and ClassChange.handleResetConfirmInput == nil and ClassChange.drawResetConfirmPopup == nil,
+            "重置确认弹窗公开逻辑已清除")
         for _, closed in ipairs({ false, true }) do
             if closed then Scene.setAllies(CP.getDeployedTeam(1)) end
             for index, heroId in ipairs({ 1, 2, 3, 25 }) do
@@ -486,7 +543,7 @@ function Start()
             local beforeInvalid = #invalidations
             local create = HC.createHero
             HC.createHero = function() error("成长刷新异常夹具") end
-            local refreshed, refreshError = pcall(Page.refreshHeroProgressTeams, { 2 })
+            local refreshed, refreshError = pcall(function() return Page.refreshHeroProgressTeams({ 2 }) end)
             HC.createHero = create
             check(not refreshed and tostring(refreshError):find("成长刷新异常夹具", 1, true)
                 and sameMounted(beforeMounted) and same(beforeStats, statsSnapshot())

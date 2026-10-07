@@ -357,11 +357,71 @@ function Start()
             settings.init(vg)
             check(not settings.isSetIconsEnabled(), "init 从内存旧档恢复 false，不变默认值")
         end)
+        runCase("装备战力显示默认关闭、旧档与五语译文", function()
+            check(not settings.isEquipmentPowerEnabled(), "无档装备战力默认关闭")
+            local expected = { zh_CN = "装备战力显示", zh_TW = "裝備戰力顯示",
+                en = "Equipment Power", ja = "装備戦力表示", ko = "장비 전투력 표시" }
+            for _, lang in ipairs(langs) do
+                i18n.set(lang.id)
+                check(i18n.t("show_equipment_power") == expected[lang.id], lang.id .. " 新偏好译文")
+            end
+            i18n.set("zh_CN")
+            settings.setEquipmentPowerEnabled(true)
+            local trueSave = memory["settings_volume.json"]
+            check(readSettings().showEquipmentPower == true, "开启战力显示写入既有设置档")
+            settings.setEquipmentPowerEnabled(false)
+            local falseSave = memory["settings_volume.json"]
+            check(readSettings().showEquipmentPower == false, "关闭战力显示写入既有设置档")
+            memory["settings_volume.json"] = trueSave
+            settings.init(vg)
+            check(settings.isEquipmentPowerEnabled(), "重新初始化恢复开启偏好")
+            memory["settings_volume.json"] = falseSave
+            settings.init(vg)
+            check(not settings.isEquipmentPowerEnabled(), "重新初始化恢复关闭偏好")
+            local oldSave = readSettings()
+            oldSave.showEquipmentPower = nil
+            settings.setEquipmentPowerEnabled(true)
+            memory["settings_volume.json"] = cjson.encode(oldSave)
+            settings.init(vg)
+            check(not settings.isEquipmentPowerEnabled(), "旧档缺字段不继承之前的开启状态")
+            settings.setEquipmentPowerEnabled(true)
+            memory["settings_volume.json"] = nil
+            settings.init(vg)
+            check(not settings.isEquipmentPowerEnabled(), "无档重新加载恢复默认关闭")
+        end)
         settledOpen(settings)
         runCase("独立 draw 五语2+2+1布局和背景", function()
             check(settings.getEmbedYOffset() == 40, "嵌入默认偏移仍为40")
             capture(function() settings.draw(vg) end)
             assertLayout(0, true)
+        end)
+        runCase("装备战力开关独立/嵌入可点击且不改其他设置", function()
+            settings.persistLanguage()
+            for _, mode in ipairs({ { embedded = false, oy = 0 }, { embedded = true, oy = 40 },
+                { embedded = true, oy = 125 } }) do
+                capture(function()
+                    if mode.embedded then settings.drawEmbedded(vg, mode.oy) else settings.draw(vg) end
+                end)
+                local label = one("text", "text", i18n.t("show_equipment_power"))
+                check(near(label.x, 177) and near(label.y, 1670 + mode.oy), "新开关绘制在语言与兑换码之间")
+                local before = readSettings()
+                local writesBefore = writes["settings_volume.json"] or 0
+                local function click()
+                    if mode.embedded then return settings.handleEmbeddedInput(820, label.y, mode.oy) end
+                    return settings.handleInput(820, label.y)
+                end
+                check(click() and settings.isEquipmentPowerEnabled(), "点击绘制中心立即开启战力显示")
+                local saved = readSettings()
+                check(saved.showEquipmentPower == true and (writes["settings_volume.json"] or 0) == writesBefore + 1,
+                    "每次开关点击仅保存一次")
+                for key, value in pairs(before) do
+                    if key ~= "showEquipmentPower" then
+                        check(saved[key] == value, "战力开关不改其他设置 " .. key)
+                    end
+                end
+                check(click() and not settings.isEquipmentPowerEnabled() and readSettings().showEquipmentPower == false,
+                    "再次点击立即关闭且持久化")
+            end
         end)
         for _, offset in ipairs({ 40, 0, 125 }) do
             runCase("drawEmbedded offset=" .. offset .. " 共用语言/兑换码布局", function()
@@ -493,6 +553,11 @@ function Start()
             check(near(bg.x, 65) and near(bg.w, 950) and near(bg.y, 193.5)
                 and near(bg.y + bg.h, 2070.5), "PIP 背景保持顶193.5，底为2070.5")
             assertLayout(40, false)
+            check(not settings.isEquipmentPowerEnabled(), "PIP 默认装备战力关闭")
+            check(panel.handleInput(820, 1710) and settings.isEquipmentPowerEnabled()
+                and readSettings().showEquipmentPower == true, "PIP 真实输入转发可开启装备战力并保存")
+            check(panel.handleInput(820, 1710) and not settings.isEquipmentPowerEnabled()
+                and readSettings().showEquipmentPower == false, "PIP 再次点击可关闭装备战力并保存")
             for index, lang in ipairs(langs) do
                 i18n.set(lang.id == "en" and "zh_CN" or "en")
                 check(panel.handleInput(expectedX[index], expectedY[index] + 40) and i18n.get() == lang.id,

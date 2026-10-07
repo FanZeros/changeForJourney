@@ -327,7 +327,8 @@ add("可三队一起上场", "可三隊一起上場", "All 3 squads can join", "
 add("左右拖动查看敌人", "左右拖動查看敵人", "Drag left or right to view enemies", "左右にドラッグして敵を確認", "좌우로 드래그하여 적 확인")
 add("最多三队一起上场，不必三队全部存活。", "最多三隊一起上場，不必三隊全部存活。", "Up to 3 squads can join. Not all squads need to survive.", "最大3小隊で参加可能。全小隊の生存は不要です。", "최대 3개 소대가 함께 참가하며, 모든 소대가 생존할 필요는 없습니다.")
 add("同编号敌人跨队共享生命，击败全部三名敌人即可通关。", "同編號敵人跨隊共享生命，擊敗全部三名敵人即可通關。", "Each enemy shares HP across squads. Defeat all 3 enemies to clear.", "同じ番号の敵は小隊間でHPを共有。敵3体をすべて倒せばクリア。", "같은 번호의 적은 소대 간 생명력을 공유합니다. 적 3명을 모두 처치하면 클리어합니다.")
-add("限时 %d 秒；全部参战队伍失守或超时则失败。", "限時 %d 秒；全部參戰隊伍失守或超時則失敗。", "Time limit: %d seconds. All participating squads defeated or time out means failure.", "制限時間%d秒。参加した全小隊の全滅、または時間切れで失敗。", "제한 시간은 %d초입니다. 참가한 모든 소대가 전멸하거나 시간이 초과되면 실패합니다.")
+add("不限时", "不限時", "No time limit", "時間制限なし", "시간 제한 없음")
+add("不限时；全部参战队伍失守才失败。", "不限時；全部參戰隊伍失守才失敗。", "No time limit. Failure only if all participating squads are defeated.", "時間制限なし。参加した全小隊が全滅した場合のみ失敗。", "시간 제한은 없습니다. 참가한 모든 소대가 전멸해야 실패합니다.")
 add("胜利进入下一难度，失败退回本难度最后一关。", "勝利進入下一難度，失敗退回本難度最後一關。", "Win to enter the next difficulty. Failure returns to this difficulty's final stage.", "勝利すると次の難易度へ進み、失敗すると現在の難易度の最終ステージへ戻ります。", "승리하면 다음 난이도로 진입하며, 실패하면 현재 난이도의 마지막 스테이지로 돌아갑니다.")
 add("未编队，请在右侧部署队员", "未編隊，請在右側部署隊員", "No squad. Deploy heroes on the right.", "未編成です。右側で隊員を配置してください", "미편성 상태입니다. 오른쪽에서 영웅을 배치하세요")
 

@@ -784,7 +784,7 @@ function M.draw(vg)
     local heroEquipped = nil
     local heroInventory = nil
     if equipData then
-        heroEquipped = EquipmentSystem.getHeroSlots(equipData, heroId)
+        heroEquipped = EquipmentSystem.getHeroSlots(equipData, heroId --[[@as number]])
         heroInventory = equipData.inventory
     end
 
@@ -874,21 +874,23 @@ function M.draw(vg)
                 nvgText(vg, lvlX, lvlY, lvlText, nil)
             end
 
-            local powerSlot = isTwohandOccupied and "weapon" or slot.slot
-            local powerText = tostring(EquipmentPower.score(equippedEquip, heroId, powerSlot))
-            local powerFont, powerIconSize, powerGap = 26, 22, 4
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, powerFont)
-            local powerWidth = nvgTextBounds(vg, 0, 0, powerText) or 0
-            local powerMaxWidth = DT_SLOT_SIZE * 0.62 - powerIconSize - powerGap
-            if powerWidth > powerMaxWidth then powerFont = powerFont * powerMaxWidth / powerWidth end
-            nvgFontSize(vg, powerFont)
-            local fittedWidth = nvgTextBounds(vg, 0, 0, powerText) or 0
-            local powerRight, powerBottom = scx + DT_SLOT_SIZE * 0.45, scy + DT_SLOT_SIZE * 0.15
-            DarkIcon.draw(vg, "power", powerRight - fittedWidth - powerGap - powerIconSize * .5,
-                powerBottom - powerIconSize * .5, powerIconSize, 1)
-            drawTextStroke(vg, powerRight, powerBottom,
-                powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, 244, 237, 224, 3)
+            if require("ui.hud.popup.SettingsPanel").isEquipmentPowerEnabled() then
+                local powerSlot = isTwohandOccupied and "weapon" or slot.slot
+                local powerText = tostring(EquipmentPower.score(equippedEquip, heroId, powerSlot))
+                local powerFont, powerIconSize, powerGap = 26, 22, 4
+                nvgFontFace(vg, "sans")
+                nvgFontSize(vg, powerFont)
+                local powerWidth = nvgTextBounds(vg, 0, 0, powerText) or 0
+                local powerMaxWidth = DT_SLOT_SIZE * 0.62 - powerIconSize - powerGap
+                if powerWidth > powerMaxWidth then powerFont = powerFont * powerMaxWidth / powerWidth end
+                nvgFontSize(vg, powerFont)
+                local fittedWidth = nvgTextBounds(vg, 0, 0, powerText) or 0
+                local powerRight, powerBottom = scx + DT_SLOT_SIZE * 0.45, scy + DT_SLOT_SIZE * 0.15
+                DarkIcon.draw(vg, "power", powerRight - fittedWidth - powerGap - powerIconSize * .5,
+                    powerBottom - powerIconSize * .5, powerIconSize, 1)
+                drawTextStroke(vg, powerRight, powerBottom,
+                    powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, 244, 237, 224, 3)
+            end
 
             local slotEnhLv = equippedEquip and EquipmentSystem.getAscendLevel(equippedEquip) or 0
             if slotEnhLv > 0 then
@@ -1451,11 +1453,10 @@ function M.draw(vg)
         drawCarouselCard(heroId, 0, 1)
     end
 
-    -- === 转职确认/重置弹窗、飘字与程序化转职特效（同一详情设计空间）===
+    -- === 转职确认弹窗、飘字与程序化转职特效（同一详情设计空间）===
     if detailState.tab == "class" then
         local ClassChange = require("ui.church.ChurchClassChange")
         ClassChange.drawConfirmPopup(vg)
-        ClassChange.drawResetConfirmPopup(vg)
         ClassChange.drawFloatText(vg)
         if require("ui.hud.popup.SettingsPanel").isEffectsEnabled() then
             require("ui.fx.SpineCardEffect").draw(vg, "detail-class")

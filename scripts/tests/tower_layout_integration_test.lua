@@ -186,11 +186,8 @@ function Start()
         stat.roots = {}
         mods["urhox-libs/UI"] = fakeUI(stat)
         mods["core.I18n"] = { get = function() return stat.language or "zh-Hans" end }
-        mods["ui.tower.TowerPresentation"] = {
-            text = function(text, ...) if select("#", ...) > 0 then return string.format(text, ...) end return text end,
-            name = function(def) return def.name end, description = function(def) return def.desc end,
-            quality = function(q) return "Q" .. q end, icon = function() return "blade" end,
-        }
+        mods["core.I18nTower"] = compile("core/I18nTower.lua", env)
+        mods["ui.tower.TowerPresentation"] = compile("ui/tower/TowerPresentation.lua", env)
         mods["ui.tower.TowerOathEffect"] = { drawIcon = noop }
         mods["ui.widget.DesignWidgetSurface"] = { init = noop, draw = function(root)
             stat.roots[#stat.roots + 1] = root
@@ -199,6 +196,11 @@ function Start()
             for i, child in ipairs(root.children) do
                 child.layout = { x = 24, y = i == #root.children and root.props.height - 88 or 180,
                     w = 438, h = i == #root.children and 64 or 600 }
+                if root.props.borderLeftWidth then
+                    local ys = {20, 62, 116, 116, 840, 920, 992}
+                    local hs = {32, 44, 700, 700, 64, 64, 64}
+                    child.layout = {x = 19.2, y = ys[i], w = 447.6, h = hs[i]}
+                end
             end
         end }
         local sidebar = compile("ui/tower/TowerBuffSidebar.lua", env)
@@ -252,7 +254,7 @@ function Start()
         sidebar.draw({}, 1920, 1080, snapshot)
         local left, right = stat.roots[1], stat.roots[2]
         eq(#left.children[4].children[1].children, 112, "112 read-only nodes")
-        local content = right.children[2].children[1]
+        local content = right.children[3].children[1]
         eq(#content.children, 3, "one row per id")
         local first = content.children[1]
         eq(first.children[2].text, rows[1].desc, "duplicate description not multiplied")
@@ -265,12 +267,12 @@ function Start()
         local l = layout.compute(1920, 1080)
         local x, y = l.right.x + 100, 300
         sidebar.handleScroll(-1, x, y, 1920, 1080)
-        eq(right.children[2].scroll, 110, "right wheel")
+        eq(right.children[3].scroll, 110, "right wheel")
         sidebar.dragBegin(x, y, 1920, 1080)
         sidebar.dragMove(x, y-50, 1920, 1080)
-        eq(right.children[2].scroll, 160, "right drag")
+        eq(right.children[3].scroll, 160, "right drag")
         sidebar.dragMove(x, y-100, 1280, 800)
-        eq(right.children[2].scroll, 160, "resize cancels drag")
+        eq(right.children[3].scroll, 160, "resize cancels drag")
         eq(sidebar.handleClick(l.right.x+100, 1020, 1920,1080), "retreat", "right action hit")
         stat.failDraw = true
         local ok = pcall(sidebar.draw, {},1920,1080,snapshot)
@@ -282,8 +284,39 @@ function Start()
         sidebar.destroy(); eq(stat.destroyed,after,"destroy idempotent")
         sidebar.drawConfirmation({},1280,800)
         local confirm = stat.roots[#stat.roots]
-        eq(confirm.children[4].text,"取消","standalone confirmation caption")
+        eq(confirm.children[4].text,"Cancel","standalone confirmation uses current English locale")
         sidebar.destroy(); eq(stat.actions,0,"read-only UI no actions")
+    end)
+    runCase("真实右栏收起保持scroll、数量、动作与尺寸",function()
+        local sidebar,layout,stat=sidebarFixture()
+        local snapshot={floor=17,wave=3,phase="battle",buffIds={1,1,7,17},pendingChoices=3,inputModal=false}
+        sidebar.draw({},1920,1080,snapshot)
+        local left,right=stat.roots[1],stat.roots[2];local scroll=right.children[3]
+        local card=scroll.children[1].children[1];local key=sidebar.getPresentationKey()
+        near(left.props.padding,24,"左栏padding原值")
+        near(right.children[1].props.fontSize,25.6,"右栏标题80%")
+        near(card.children[1].children[1].props.width,51.2,"图标80%")
+        near(card.children[1].children[2].children[1].props.fontSize,20.8,"名字80%")
+        near(card.children[2].props.fontSize,18.4,"描述80%")
+        eq(card.children[1].children[2].children[2].text,"普通  ×2","次数原样聚合")
+        local l=layout.compute(1920,1080);local x=l.right.x+100
+        sidebar.handleScroll(-1,x,300,1920,1080);sidebar.dragBegin(x,300,1920,1080)
+        eq(sidebar.handleClick(x,80,1920,1080),"toggle_buffs","一键按钮动作")
+        check(sidebar.toggleCollapsed(),"默认展开可以收起")
+        sidebar.draw({},1920,1080,snapshot);sidebar.dragMove(x,250,1920,1080)
+        eq(scroll.scroll,110,"切换停止旧drag且不清零scroll")
+        eq(scroll.props.visible,false,"隐藏内容")
+        eq(right.children[1].text,"已获强化  4","常驻总数量不丢失")
+        eq(sidebar.handleClick(x,940,1920,1080),"resume_pick","常驻待选恢复")
+        eq(sidebar.handleClick(x,1020,1920,1080),"retreat","常驻撤退入口")
+        sidebar.handleScroll(-1,x,300,1920,1080);eq(scroll.scroll,110,"隐藏滚轮不影响内容")
+        check(not sidebar.toggleCollapsed(),"展开")
+        eq(scroll.scroll,110,"展开保留scroll")
+        check(sidebar.getPresentationKey()~=key,"ABA也不重用旧版本")
+        sidebar.toggleCollapsed();sidebar.reset()
+        check(not sidebar.isCollapsed() and scroll.props.visible,"reset默认展开")
+        eq(scroll.scroll,0,"reset清理旧scroll")
+        sidebar.destroy()
     end)
     local function inputFixture()
         local env, mods, stat = private()
@@ -299,7 +332,8 @@ function Start()
             if not mods[name] then mods[name] = generic() end
         end
         mods["ui.tower.TowerBattleScene"] = {
-            isActive=function() return c.active end, getPresentationKey=function() return c.key end,
+            isActive=function() return c.active end,
+            getPresentationKey=function() return c.key .. ":" .. (c.sidebarKey and c.sidebarKey() or "") end,
             getLayout=mods["ui.tower.TowerLayout"].compute,
             handleClick=function(x,y,w,h) c.clicks[#c.clicks+1]={x,y,w,h} end,
             handleDragBegin=function() c.begins=c.begins+1 end,
@@ -403,6 +437,23 @@ function Start()
             c.overlays={};c.up();eq(#c.clicks,0,"observed ABA cancels "..index)
         end
     end)
+    runCase("正式宿主按压遇到真实Sidebar切换/ABA/reset失效",function()
+        local c=inputFixture();local sidebar=sidebarFixture()
+        c.sidebarKey=sidebar.getPresentationKey
+        c.down();sidebar.toggleCollapsed();c.up()
+        eq(#c.clicks,0,"切换后旧鼠标抬起不触发战斗或按钮")
+        c.down();sidebar.toggleCollapsed();sidebar.toggleCollapsed();c.up()
+        eq(#c.clicks,0,"无需中间observe也能识别真实toggleABA")
+        c.env.time.elapsedTime=101
+        c.touch(1,1700,1020,"HandleTouchBeginHorizon")
+        sidebar.toggleCollapsed();c.observe();sidebar.toggleCollapsed()
+        c.touch(1,1700,1020,"HandleTouchEndHorizon")
+        eq(#c.clicks,0,"旧触摸抬起在展开后仍失效")
+        c.env.time.elapsedTime=102;c.down();sidebar.reset();c.up()
+        eq(#c.clicks,0,"reset使旧会话按压失效")
+        c.down();c.up();eq(#c.clicks,1,"切换后新按压可以正常处理")
+        sidebar.destroy()
+    end)
     runCase("TaskPage exact narrow inverse wheel drag and no ordinary penetration",function()
         local c=inputFixture();c.w,c.h,c.task=1280,800,true
         local l=compile("ui/tower/TowerLayout.lua",c.env).compute(c.w,c.h)
@@ -467,8 +518,11 @@ function Start()
         tri.draw=function()stat.frames[#stat.frames+1]="middle"end
         tri.requestRetreat=function()tri.retreats=tri.retreats+1;tri.confirm=true end
         tri.handleClick=function()tri.clicks=tri.clicks+1 end
-        local side={action=nil,scrolls=0,drag=0}
-        side.reset=noop;side.draw=function()stat.frames[#stat.frames+1]="sides"end
+        local side={action=nil,scrolls=0,drag=0,version=0,collapsed=false}
+        side.getPresentationKey=function()return side.version..":"..tostring(side.collapsed)end
+        side.toggleCollapsed=function()side.collapsed=not side.collapsed;side.version=side.version+1 end
+        side.reset=function()side.collapsed=false;side.version=side.version+1 end
+        side.draw=function()stat.frames[#stat.frames+1]="sides"end
         side.handleClick=function()return side.action end
         side.handleScroll=function()side.scrolls=side.scrolls+1 end
         side.dragBegin=function()side.drag=side.drag+1 end
@@ -495,6 +549,12 @@ function Start()
         scene.draw({},1920,1080);eq(stat.frames[1],"sides","side draw first");eq(stat.frames[2],"middle","middle draw next")
         scene.handleClick(100,300,1920,1080);eq(tri.clicks,0,"left read-only")
         scene.handleClick(960,300,1920,1080);eq(tri.clicks,1,"middle click")
+        side.action="toggle_buffs";local beforeToggle=scene.getPresentationKey()
+        scene.handleClick(1700,100,1920,1080)
+        check(side.collapsed and scene.getPresentationKey()~=beforeToggle,"收起动作改变真实Scene按压版本")
+        eq(tri.clicks,1,"收起不穿透中栏战斗")
+        scene.handleClick(1700,100,1920,1080)
+        check(not side.collapsed and scene.getPresentationKey()~=beforeToggle,"展开ABA仍使旧按压失效")
         side.action="retreat";scene.handleClick(1700,1020,1920,1080);eq(tri.retreats,1,"existing retreat API")
         scene.handleScroll(-1,100,300,1920,1080);eq(side.scrolls,0,"confirmation blocks list")
         tri.confirm=false;s.phase="battle";panel.open,panel.visible=true,true

@@ -537,23 +537,10 @@ local function drawRefineAttrRows(vg, attrs, firstY, panelLeft, offsetX, alpha, 
     for i, attr in ipairs(attrs) do
         local rowY = firstY + (i - 1) * XL.ATTR_ROW_STEP
 
-        -- 品质图标 / 魔化紫色圆标
-        if attr.isCorrupt then
-            local r = XL.ATTR_ICON_SIZE * 0.22
-            nvgBeginPath(vg)
-            nvgCircle(vg, panelLeft + XL.ATTR_ICON_CX + offsetX, rowY, r)
-            nvgFillColor(vg, nvgRGBA(0x9B, 0x4D, 0xFF, a))
-            nvgFill(vg)
-            nvgBeginPath(vg)
-            nvgCircle(vg, panelLeft + XL.ATTR_ICON_CX + offsetX, rowY, r)
-            nvgStrokeWidth(vg, 2)
-            nvgStrokeColor(vg, nvgRGBA(0xE0, 0xB0, 0xFF, math.floor(a * 0.85)))
-            nvgStroke(vg)
-        else
-            local gradeIcon = imgGrade[attr.grade] or -1
-            if gradeIcon >= 0 then
-                drawImageCentered(vg, gradeIcon, panelLeft + XL.ATTR_ICON_CX + offsetX, rowY, XL.ATTR_ICON_SIZE, XL.ATTR_ICON_SIZE, a / 255)
-            end
+        -- 洗练前后均保留真实品级；腐化/弱化仅通过名称与数值颜色表达。
+        local gradeIcon = imgGrade[attr.grade] or -1
+        if gradeIcon >= 0 then
+            drawImageCentered(vg, gradeIcon, panelLeft + XL.ATTR_ICON_CX + offsetX, rowY, XL.ATTR_ICON_SIZE, XL.ATTR_ICON_SIZE, a / 255)
         end
 
         -- 属性名（左对齐，超长缩字号）

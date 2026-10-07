@@ -406,19 +406,8 @@ function EquipmentDetailDraw.create(ctx)
                 local badgeKey = AFFIX_BADGE_KEY[aq] or "D"
                 local badgeImg = imgAffixBadge[badgeKey] or -1
 
-                -- 词缀行不铺底色阴影
-                if isCorrupt then
-                    local r = math.min(REF_BADGE_W, REF_BADGE_H) * 0.28
-                    nvgBeginPath(vg)
-                    nvgCircle(vg, REF_BADGE_CX + offsetX, affixY, r)
-                    nvgFillColor(vg, nvgRGBA(0x9B, 0x4D, 0xFF, 255))
-                    nvgFill(vg)
-                    nvgBeginPath(vg)
-                    nvgCircle(vg, REF_BADGE_CX + offsetX, affixY, r)
-                    nvgStrokeWidth(vg, 2)
-                    nvgStrokeColor(vg, nvgRGBA(0xE0, 0xB0, 0xFF, 220))
-                    nvgStroke(vg)
-                elseif badgeImg >= 0 then
+                -- 词缀行不铺底色阴影，腐化仍显示真实品级。
+                if badgeImg >= 0 then
                     drawImageCentered(vg, badgeImg,
                         REF_BADGE_CX + offsetX, affixY,
                         REF_BADGE_W, REF_BADGE_H, 1.0)

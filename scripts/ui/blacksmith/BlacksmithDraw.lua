@@ -122,7 +122,7 @@ function M.bind(deps)
             inactive = { r = TAB_INACTIVE_R, g = TAB_INACTIVE_G, b = TAB_INACTIVE_B },
             activePred = function(i, _) return state.tab == tabKeys[i] end,
             drawBadge = function(vg2, i, item, textX, textY)
-                if i == 1 and imgIconUp and imgIconUp >= 0 and BlacksmithPage.canEnhanceAny() then
+                if i == 1 and imgIconUp and imgIconUp >= 0 and BlacksmithPage.canEnhanceSelected() then
                     nvgFontFace(vg2, "sans"); nvgFontSize(vg2, TAB_FONT_SIZE)
                     local upSize = 30
                     local textHalfW = nvgTextBounds(vg2, 0, 0, item.name) * 0.5

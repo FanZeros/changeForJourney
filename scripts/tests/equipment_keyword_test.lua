@@ -69,6 +69,7 @@ function M.run()
 
         -- 字体/颜色/文字 spy，真实布局与热区不替换。
         local texts, color, font = {}, {}, 28
+        local images, circles = {}, {}
         local function noop() end
         for _, name in ipairs({ "nvgFontFace", "nvgTextAlign", "nvgTextLetterSpacing", "nvgBeginPath",
             "nvgRoundedRect", "nvgRect", "nvgCircle", "nvgFill", "nvgStroke", "nvgStrokeWidth",
@@ -93,7 +94,9 @@ function M.run()
         end)
         replace(_G, "time", { elapsedTime = 100 })
         local Draw = require("core.DrawUtil")
-        replace(Draw, "drawImageCentered", noop)
+        replace(Draw, "drawImageCentered", function(_, image, x, y, w, h, alpha)
+            images[#images + 1] = {image = image, x = x, y = y, w = w, h = h, alpha = alpha}
+        end)
         replace(Draw, "drawTextStroke", function(vg, x, y, text, size)
             nvgFontSize(vg, size); nvgText(vg, x, y, text)
         end)
@@ -130,7 +133,23 @@ function M.run()
         }
         local state = {open = true, tab = "xilian", selectedEquip = equip, selectedSeq = equip.seq,
             selectedEquipSlot = "weapon"}
-        local grade = { D = -1, C = -1, B = -1, A = -1, S = -1 }
+        local grade = { D = 9101, C = 9102, B = 9103, A = 9104, S = 9105 }
+        replace(_G, "nvgCreateImage", function(_, path)
+            local key = path:match("ICON_CZBZ_([DCBAS])%.png$")
+            return key and grade[key] or -1
+        end)
+        replace(_G, "nvgCircle", function(_, x, y, radius)
+            circles[#circles + 1] = {x = x, y = y, radius = radius}
+        end)
+        replace(_G, "nvgImagePattern", function(_, x, y, w, h, _, image, alpha)
+            images[#images + 1] = {image = image, x = x, y = y, w = w, h = h, alpha = alpha}
+            return {}
+        end)
+        local function gradeCount(key)
+            local n = 0
+            for _, image in ipairs(images) do if image.image == grade[key] then n = n + 1 end end
+            return n
+        end
         local actions = 0
         local function client() return {sendAction = function() actions = actions + 1 end} end
         local ctx = { state = state, imgGrade = grade, formatAffixValue = function(_, v) return tostring(v) end,
@@ -162,12 +181,15 @@ function M.run()
             return Input.handleInput(x, y)
         end
         Refine.drawPanel(vg)
+        check(gradeCount("D") == 1 and gradeCount("C") == 1 and #circles == 0, "洗练前腐化D与普通C均保留评级，无紫点")
         local kt, h = keywordInstance("attribute:dropLuck")
         check(tap(h.x1 + 1, h.y1 + 1) and kt:isOpen(), "真实洗练Begin→End→Input开解释")
         check(tap(773, 2129) and not kt:isOpen() and actions == 0, "洗练按钮首点只关说明不派动作")
         Refine.onActionResult({success = true, refinePreview = equip.affixes, seq = equip.seq})
         time.elapsedTime = 101
+        images, circles = {}, {}
         Refine.drawPanel(vg)
+        check(gradeCount("D") == 2 and gradeCount("C") == 2 and #circles == 0, "洗练前后均保留腐化品级，无紫点")
         kt, h = keywordInstance("attribute:finalLukBonus")
         local n = 0
         for _, s in ipairs(kt.hotspots) do if s.key == "attribute:finalLukBonus" then n = n + 1 end end
@@ -180,7 +202,9 @@ function M.run()
         check(actions == beforeActions, "材料选择不派业务")
         Refine.clearKeywords()
         state.tab = "qianghua"
+        images, circles = {}, {}
         Enhance.drawPanel(vg)
+        check(gradeCount("D") == 1 and gradeCount("C") == 1 and #circles == 0, "强化保留腐化品级，无紫点")
         kt, h = keywordInstance("attribute:dropLuck")
         check(tap(h.x1 + 1, h.y1 + 1) and kt:isOpen(), "真实升阶Begin→End→Input开解释")
         check(tap(307, 2129) and not kt:isOpen() and actions == 0, "升阶按钮首点只关说明")
@@ -199,9 +223,13 @@ function M.run()
             return nil
         end)
         local Detail = require("ui.character.equip.EquipmentDetail")
+        Detail.init(vg)
         Detail.open(equip.seq, "weapon", nil, false, "bag")
         time.elapsedTime = 102
+        images, circles = {}, {}
         Detail.draw(vg)
+        check(gradeCount("D") == 1 and gradeCount("C") == 1 and #circles == 0,
+            "大详情保留腐化品级，无紫点 D=" .. gradeCount("D") .. " C=" .. gradeCount("C") .. " circles=" .. #circles)
         kt, h = keywordInstance("attribute:dropLuck")
         local detailKt = kt
         local function detailTap(x, y)
@@ -238,6 +266,45 @@ function M.run()
         Detail.drawReadOnly(vg, equip, 0, 0)
         check(#detailKt.hotspots == before, "只读比较不清主窗口热点")
         Detail.close()
+
+        -- 页签只检查当前工作台；背包另有可强化装备不能串标，资源变化实时生效。
+        local Page = require("ui.blacksmith.BlacksmithPage")
+        local Dispatcher = require("runtime.ClientDispatcher")
+        replace(Dispatcher, "get", function(module)
+            if module == "equipment" then return {inventory = {[tostring(equip.seq)] = equip}} end
+            return nil
+        end)
+        local Config = require("config.BlacksmithConfig")
+        local ExpTable = require("config.ExpTable")
+        local ownedGold, ownedScroll, playerLevel = 100000000, 100000000, 100000
+        replace(State, "getGold", function() return ownedGold end)
+        replace(State, "getWeaponScroll", function() return ownedScroll end)
+        replace(State, "getLevel", function() return playerLevel end)
+        Page.setSelectedEquip(nil)
+        Page.markEnhanceDirty()
+        check(Page.canEnhanceAny() and not Page.canEnhanceSelected(), "空工作台不被背包可强化装备点亮")
+        Page.setSelectedEquip(equip)
+        local cost = Config.getAscendCost(equip.ascendLevel + 1)
+        ownedGold, ownedScroll = cost.gold, cost.scroll
+        check(Page.canEnhanceSelected(), "当前装备材料刚好够升一级时点亮")
+        ownedGold = cost.gold - 1
+        check(not Page.canEnhanceSelected(), "金币不足立即熄灭，不借用全背包缓存")
+        ownedGold, ownedScroll = cost.gold, cost.scroll - 1
+        check(not Page.canEnhanceSelected(), "对应卷轴不足立即熄灭")
+        ownedScroll = cost.scroll
+        check(Page.canEnhanceSelected(), "补足材料不需要缓存刷新即恢复")
+        local savedLevel = equip.ascendLevel
+        equip.ascendLevel = Config.MAX_ENHANCE_LEVEL
+        check(not Page.canEnhanceSelected(), "当前装备满阶时熄灭")
+        playerLevel = 1
+        equip.ascendLevel = ExpTable.getEnhanceLevelCap(playerLevel)
+        check(not Page.canEnhanceSelected(), "达到玩家等级上限时熄灭")
+        equip.ascendLevel, playerLevel = savedLevel, 100000
+        Page.setSelectedEquip(nil)
+        check(not Page.canEnhanceSelected(), "移走当前装备即熄灭")
+        Page.setSelectedEquip(equip)
+        check(Page.canEnhanceSelected() and actions == 0, "重新放入装备恢复，检查不发强化动作")
+        Page.setSelectedEquip(nil)
 
         -- 真实神器详情保留橙色数值、灰色比例，关键词popup点击不能穿透安装按钮。
         local Assets = require("config.ArtifactAssetUtil")

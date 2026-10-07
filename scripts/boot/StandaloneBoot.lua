@@ -56,8 +56,9 @@ local SCROLL_DROP_TO_REWARD = {
 }
 
 --- 取出暂存掉落；背包满时完整存入遗匣。
----@return table[]
-local function takePendingFcRewards()
+---@param deferNotify boolean|nil 首通统一投递后再通知，独立掉落结算仍即时通知
+---@return table[], boolean
+local function takePendingFcRewards(deferNotify)
     local dropSeeds = pendingFcSeeds
     local dropScrolls = pendingFcScrolls
     pendingFcSeeds = {}
@@ -91,14 +92,14 @@ local function takePendingFcRewards()
             end
         end
     end
-    if #dropSeeds > 0 then
+    if #dropSeeds > 0 and not deferNotify then
         ClientDispatcher.notifySubscribers("equipment")
         ClientDispatcher.notifySubscribers("lootbox")
     end
     if #rewards > 0 then
         print("[Standalone] 结算暂存掉落 n=" .. tostring(#rewards))
     end
-    return rewards
+    return rewards, #dropSeeds > 0
 end
 
 local function showKeptDrops(title)
@@ -599,6 +600,8 @@ function M.run(rt)
     -- 5.25 首通奖励回调：本地计算首通金币+装备，弹出 RewardPopup
     BattleScene.setOnFirstClear(function(clearedStageId, teamIdx)
         if StageConfig.isResourceStage(clearedStageId) then return end
+        -- 默认单队 Scene 没有外层结账；三队显式传队号，由 StageProgress/终焉统一提交。
+        local saveAtCompletion = teamIdx == nil
         teamIdx = teamIdx or 1
         -- 首通账本三队共用；只有一队通关改变一队当前关，二三队不能拉走一队。
         local battle = ClientDispatcher.get("battle")
@@ -634,7 +637,7 @@ function M.run(rt)
                 end
                 print(string.format("[Standalone] 首通进度已写入 current=%s max=%s",
                     tostring(battle.currentStageId), tostring(battle.maxStageId)))
-                require("boot.StandaloneSave").Flush()
+                -- 奖励、首通账本与当前进度由通关结尾一起提交，不能先落盘空奖励标记。
             end
         end
         -- [首通情景接线修复 2026-09-30] 0922 删除 Client/Server 联网壳（4e184304）时，
@@ -644,7 +647,10 @@ function M.run(rt)
         -- 情景先入队，等首通奖励弹窗关闭后由 tryPlayPendingStory_ 逐段播出并领奖。
         require("systems.StoryPlayer").onStage(clearedStageId, "clear")
         local stageEntry = StageConfig.getStage(clearedStageId)
-        if not stageEntry then return end
+        if not stageEntry then
+            if saveAtCompletion then StandaloneSave.Flush() end
+            return
+        end
 
         local rewards = {}
         -- 首通金币
@@ -690,10 +696,7 @@ function M.run(rt)
                 destination = destination,
             }
         end
-        if #fcEquips > 0 then
-            ClientDispatcher.notifySubscribers("equipment")
-            ClientDispatcher.notifySubscribers("lootbox")
-        end
+        -- 固定首通装备与暂存击杀装备全部投递后，统一刷新一次装备派生数据。
         -- 首通卷轴（每个独立随机，按类型聚合）
         local scrollReward = DropSystem.generateFirstClearScrolls(stageEntry)
         if scrollReward and scrollReward.scrolls then
@@ -750,10 +753,15 @@ function M.run(rt)
             rewards[#rewards + 1] = { type = "sacred_stone", amount = fcSacredStone }
         end
         -- 本关击杀掉落并入首通奖励；超出背包容量的装备标记为已入遗匣。
-        local dropRewards = takePendingFcRewards()
+        local dropRewards, hasPendingEquipment = takePendingFcRewards(true)
         for _, item in ipairs(dropRewards) do
             rewards[#rewards + 1] = item
         end
+        if #fcEquips > 0 or hasPendingEquipment then
+            ClientDispatcher.notifySubscribers("equipment")
+            ClientDispatcher.notifySubscribers("lootbox")
+        end
+        if saveAtCompletion then StandaloneSave.Flush() end
         if #rewards > 0 then
             print("[Standalone] 首通奖励: gold=" .. tostring(fcGold)
                 .. " diamond=" .. tostring(fcDiamond)

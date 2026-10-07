@@ -663,4 +663,126 @@ function M.collectAttributes(heroId, heroCfg, level, options)
     return { left = left, right = right, stats = stats, attrs = attrs }
 end
 
+-- ======================== 属性页只读展示缓存 ========================
+-- collectAttributes 仍逐调用返回独立属性容器（预览/战斗不能共享可变 attrs）。
+-- 只有每个详情宿主私有的展示闭包复用行与六围；不在英雄之间或宿主之间共享。
+local function sameValue(a, b)
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return a == b end
+    for key, value in pairs(a) do
+        if not sameValue(value, b[key]) then return false end
+    end
+    for key in pairs(b) do if a[key] == nil then return false end end
+    return true
+end
+
+local function presentationDependencies(heroId, heroCfg, level, options)
+    ---@type table|nil
+    local heroes = nil
+    ---@type table|nil
+    local equipment = nil
+    ---@type table|nil
+    local artifacts = nil
+    ---@type table|nil
+    local talents = nil
+    ---@type table|boolean|nil
+    local litNodes = nil
+    if options ~= nil then
+        heroes, equipment = options.heroes or {}, options.equipment or {}
+        artifacts, talents = options.artifacts or {}, options.talents or {}
+        litNodes = talents.litNodes or false
+    else
+        heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
+        equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
+        -- 神器正式属性桥从 PlayerStore 读取，不借 Dispatcher 的陈旧镜像。
+        artifacts = PlayerStore.Get("artifacts")
+        talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents")
+        litNodes = HC._getSavedLitNodes and HC._getSavedLitNodes()
+    end
+    local deps = { heroId = heroId, heroCfg = heroCfg, level = level, explicit = options ~= nil,
+        language = require("core.I18n").get(), heroesPresent = heroes ~= nil,
+        artifacts = artifacts, litNodes = litNodes,
+        talents = talents and talents.litNodes, teams = {}, heroes = {}, worn = {} }
+    -- 非英雄模块版本也区分 ClearCache/Cleanup → 同内容重入；纯经验发布不进入 key。
+    if not options and PlayerStore.GetRevision then
+        deps.equipmentRevision = PlayerStore.GetRevision("equipment")
+        deps.artifactsRevision = PlayerStore.GetRevision("artifacts")
+        deps.talentsRevision = PlayerStore.GetRevision("talents")
+        deps.storeHeroesPresent = PlayerStore.Get("heroes") ~= nil
+    end
+    for team = 1, 3 do
+        local ids = getTeamSlotIds(heroes, team)
+        local slots = {}
+        for slot = 1, 4 do slots[slot] = ids[slot] or ids[tostring(slot)] or false end
+        deps.teams[team] = slots
+    end
+    local function addHero(id)
+        if deps.heroes[id] then return end
+        local hd = getHeroRuntimeData(heroes, id)
+        local fallback = {}
+        if not options and (not hd or hd.awakening == nil or hd.extraTalent == nil) then
+            -- 与 ExtraTalentSystem 的 nil 回退一致，不调用会规范化写回的 getOwned。
+            local ok, panel = pcall(require, "ui.character.panel.CharacterPanel")
+            if ok and panel.getOwnedHero then fallback = panel.getOwnedHero(id) or {} end
+        end
+        deps.heroes[id] = { present = hd ~= nil, level = hd and hd.level,
+            advBranch = hd and hd.advBranch, awakening = hd and hd.awakening,
+            extraTalent = hd and hd.extraTalent, fallbackAwakening = fallback.awakening,
+            fallbackExtraTalent = fallback.extraTalent, cfg = HC.get(id) }
+        local slots = getHeroEquipped(equipment, id)
+        local worn = { slots = slots, items = {} }
+        local inventory = equipment and equipment.inventory
+        for _, slot in ipairs(EquipmentConfig.SLOTS) do
+            local seq = slots and slots[slot]
+            if seq then worn.items[slot] = inventory and (inventory[tostring(seq)] or inventory[seq]) or false end
+        end
+        deps.worn[id] = worn
+    end
+    addHero(heroId)
+    if tonumber(heroId) == 20 then
+        local _, team = findArtifactPosition(heroes, heroId)
+        local ids = team and getTeamSlotIds(heroes, team) or {}
+        for slot = 1, 4 do
+            local id = tonumber(ids[slot] or ids[tostring(slot)])
+            if id and id > 0 then addHero(id) end
+        end
+    end
+    return deps
+end
+
+--- 创建宿主私有展示读取器。返回的行/六围只供该宿主绘制，不供预览修改。
+--- 不改 collectAttributes 的独立返回值契约；缺省 collector 仍使用真实属性管线。
+---@param collector? function
+---@return function
+function M.createPresentationCache(collector)
+    collector = collector or M.collectAttributes
+    local saved = {} ---@type table
+    local presentation = {} ---@type table
+    local populated = false
+    return function(heroId, heroCfg, level, options)
+        local deps = presentationDependencies(heroId, heroCfg, level, options)
+        if populated and sameValue(deps, saved) then return presentation, presentation.rows end
+        local data = collector(heroId, heroCfg, level, options)
+        local columns = deepCopy({ data.left, data.right })
+        local rows, originalIndex = {}, {}
+        for _, column in ipairs(columns) do
+            for _, row in ipairs(column) do
+                rows[#rows + 1] = row
+                originalIndex[row] = #rows
+            end
+        end
+        table.sort(rows, function(a, b)
+            local oa, ob = DISPLAY_ORDER_INDEX[a.key] or 9999, DISPLAY_ORDER_INDEX[b.key] or 9999
+            if oa ~= ob then return oa < ob end
+            return originalIndex[a] < originalIndex[b]
+        end)
+        -- 不保存/暴露可变 UnitAttributes；保留源行顺序，排序不写 _origIdx 到返回行。
+        presentation = { rows = rows, stats = deepCopy(data.stats) }
+        -- getFromInventory/追加技旧档回退可能水合数据：保存完成后的实际字段，避免次帧伪失效。
+        saved = deepCopy(presentationDependencies(heroId, heroCfg, level, options))
+        populated = true
+        return presentation, rows
+    end
+end
+
 return M

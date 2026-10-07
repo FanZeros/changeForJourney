@@ -175,29 +175,38 @@ local DESIGN_H = GameConfig.Design.HEIGHT
 -- [Standalone] battle 状态本地同步：无 Server 推送时，把 BattleScene 本地进度
 -- （maxStageId_/clearedStages）每秒比对一次，变化才发布实时镜像，
 -- 供 TutorialManager / BottomNav / DungeonBattleScene 的建筑与页签解锁判定使用
-local battleSync = { lastMax = -1, lastCleared = "", lastStages = "", acc = 0 }
+---@type table
+local battleSync = { lastMax = -1, lastCleared = {}, lastStages = {}, acc = 0 }
+local BattleProgressSchema = require("shared.battle.BattleSchema")
 local function progressRank(id)
     local previous = StageConfig.getTerminalPrevStageId(id)
     return previous and previous + 0.5 or id
 end
+
+-- 只承认严格 true 的正整数事实；数字/字符串键归一，不排序、不拼接全账本。
 local function clearedSnapshot(entries)
-    local normalized, ids = {}, {}
+    local normalized, count = {}, 0
     if type(entries) == "table" then
         for key, value in pairs(entries) do
-            local id = math.tointeger(tonumber(key) or 0)
+            local id = (type(key) == "number" or type(key) == "string")
+                and math.tointeger(tonumber(key) or 0)
             if value == true and id and id > 0 then
                 local savedKey = tostring(id)
                 if not normalized[savedKey] then
                     normalized[savedKey] = true
-                    ids[#ids + 1] = id
+                    count = count + 1
                 end
             end
         end
     end
-    table.sort(ids)
-    local keys = {}
-    for i, id in ipairs(ids) do keys[i] = tostring(id) end
-    return normalized, table.concat(keys, ","), #ids
+    return normalized, count
+end
+
+local function sameProgressMap(a, b)
+    if type(a) ~= "table" or type(b) ~= "table" then return false end
+    for key, value in pairs(a) do if b[key] ~= value then return false end end
+    for key, value in pairs(b) do if a[key] ~= value then return false end end
+    return true
 end
 
 local function SyncBattleState(dt)
@@ -206,38 +215,93 @@ local function SyncBattleState(dt)
     if battleSync.acc < 1.0 then return end
     battleSync.acc = 0
     local maxId = tonumber(BattleScene.getMaxStageId()) or 0
-    local clearedStr, liveSignature = clearedSnapshot(BattleScene.getClearedStages())
-    -- 模块更新是整表替换。合并双源永久账本，不能把场景缺项回写成删档。
-    -- 显式清档入口会同时重置两源；这里不缓存旧账本，也不阻止合法清档。
+    local liveLedger = BattleScene.getClearedStages()
+    local mergedCleared, clearedN = clearedSnapshot(liveLedger)
     local battle = ClientDispatcher.get("battle")
     if type(battle) ~= "table" then battle = {} end
-    local savedCleared, savedSignature = clearedSnapshot(battle.clearedStages)
-    for key in pairs(savedCleared) do clearedStr[key] = true end
-    local mergedCleared, signature, clearedN = clearedSnapshot(clearedStr)
-    -- 合并永久事实只更新原账本，不回灌场景、重开驱动或清战斗状态。
-    local liveLedger = BattleScene.getClearedStages()
+    local savedCleared = clearedSnapshot(battle.clearedStages)
+    local ledgersDiffer = not sameProgressMap(mergedCleared, savedCleared)
+    for key in pairs(savedCleared) do
+        if not mergedCleared[key] then
+            mergedCleared[key] = true
+            clearedN = clearedN + 1
+        end
+    end
+    -- 只从本轮两源取并集，不以旧缓存补事实；两源明确清空时允许合法清档。
+    -- 补原场景账本但不回灌场景/驱动，不重开当前波或改变 pending 属性。
     if type(liveLedger) == "table" then
-        for key in pairs(mergedCleared) do liveLedger[tonumber(key)] = true end
+        for key in pairs(mergedCleared) do
+            local id = tonumber(key)
+            if liveLedger[id] ~= true then liveLedger[id] = true end
+        end
     end
     local savedMax = tonumber(battle.maxStageId) or 0
     local mergedMax = progressRank(maxId) >= progressRank(savedMax) and maxId or savedMax
+    local savedMaxChanged = battle.maxStageId ~= mergedMax
     battle.maxStageId = mergedMax
-    battle.clearedStages = mergedCleared
-    local captured = StandaloneSave.CaptureBattleProgress(battle)
-    local teams = captured.teamStageIds
-    local stageSignature = table.concat({ tostring(teams["1"]), tostring(teams["2"]), tostring(teams["3"]) }, ",")
-    if mergedMax == battleSync.lastMax and signature == battleSync.lastCleared
-        and stageSignature == battleSync.lastStages
-        and liveSignature == signature and savedSignature == signature then return end
+    if not sameProgressMap(battle.clearedStages, mergedCleared) then
+        battle.clearedStages = mergedCleared
+    end
+
+    -- 仅三队小表规范化以判断进度；不在稳态调用完整 Capture 再扫描两份账本。
+    -- 浅拷贝来自当前模块，非进度字段（效率/挂机/扩展数据）保持当前引用和值。
+    local candidate = {}
+    for key, value in pairs(battle) do candidate[key] = value end
+    candidate.clearedStages = mergedCleared
+    local liveTeams = BattleTriPage.getTeamStageIds()
+    if type(liveTeams) == "table" then
+        local savedTeams = type(battle.teamStageIds) == "table" and battle.teamStageIds or {}
+        local ids = {}
+        for team = 1, 3 do
+            ids[tostring(team)] = liveTeams[team] or liveTeams[tostring(team)]
+                or savedTeams[tostring(team)] or savedTeams[team]
+        end
+        candidate.teamStageIds = ids
+        candidate.currentStageId = ids["1"] or battle.currentStageId
+    end
+    BattleProgressSchema.normalizeTeamStageIds(candidate, false)
+    local teams = candidate.teamStageIds
+    if candidate.maxStageId == battleSync.lastMax
+        and battle.maxStageId == candidate.maxStageId
+        and sameProgressMap(mergedCleared, battleSync.lastCleared)
+        and sameProgressMap(teams, battleSync.lastStages)
+        and battle.currentStageId == candidate.currentStageId
+        and sameProgressMap(battle.teamStageIds, teams)
+        and battle.teamCurrentStageIds == nil and not ledgersDiffer and not savedMaxChanged then return end
+
+    local captured = StandaloneSave.CaptureBattleProgress(candidate)
     if battleSync.lastMax == -1 then
-        print("[Standalone] battle 状态首次同步: maxStageId=" .. tostring(mergedMax) .. ", cleared=" .. clearedN)
-    elseif liveSignature ~= savedSignature then
+        print("[Standalone] battle 状态首次同步: maxStageId=" .. tostring(captured.maxStageId) .. ", cleared=" .. clearedN)
+    elseif ledgersDiffer then
         print("[Standalone] battle 通关账本合并: cleared=" .. clearedN)
     end
-    battleSync.lastMax = mergedMax
-    battleSync.lastCleared = signature
-    battleSync.lastStages = stageSignature
+    battleSync.lastMax = captured.maxStageId
+    -- 冻结比较值，不能与可原地修改的已发布模块共用账本/队伍表。
+    battleSync.lastCleared = clearedSnapshot(captured.clearedStages)
+    battleSync.lastStages = { ["1"] = captured.teamStageIds["1"],
+        ["2"] = captured.teamStageIds["2"], ["3"] = captured.teamStageIds["3"] }
     ClientDispatcher.publishLive("battle", captured)
+end
+
+-- 仅缓存红点显示。真实装备投递仍直接调用 EquipmentSystem.isInventoryFull。
+---@type table
+local inventoryBadge = { ready = false, full = false, acc = 0 }
+local function updateInventoryBadges(dt)
+    local equipment = ClientDispatcher.get("equipment")
+    local inventory = type(equipment) == "table" and equipment.inventory or nil
+    local revision = PlayerStore.GetRevision and PlayerStore.GetRevision("equipment") or 0
+    inventoryBadge.acc = inventoryBadge.acc + math.max(0, dt or 0)
+    if not inventoryBadge.ready or inventoryBadge.equipment ~= equipment
+        or inventoryBadge.inventory ~= inventory or inventoryBadge.revision ~= revision
+        or inventoryBadge.acc >= 0.5 then
+        inventoryBadge.full = type(inventory) == "table"
+            and EquipmentSystem.isInventoryFull(equipment) or false
+        inventoryBadge.equipment, inventoryBadge.inventory = equipment, inventory
+        inventoryBadge.revision, inventoryBadge.acc, inventoryBadge.ready = revision, 0, true
+    end
+    -- 仍每帧设置两个显示标志，页面重开/显示重置不借旧控件状态。
+    TownScene.setSmithRedDot(inventoryBadge.full)
+    BlacksmithPage.setDecomposeRedDot(inventoryBadge.full)
 end
 
 local physW, physH, dpr, logicalW, logicalH
@@ -292,6 +356,8 @@ function Standalone._bootWiring()
 end
 
 function Standalone.Start()
+    battleSync = { lastMax = -1, lastCleared = {}, lastStages = {}, acc = 0 }
+    inventoryBadge = { ready = false, full = false, acc = 0 }
     entryQueue_, entryPrepared_ = nil, false
     StandaloneRT.entryPrepared, StandaloneRT.entryPreparing, StandaloneRT.entryRendered = false, false, false
     BattleTriPage.setBattleReady(false)
@@ -517,6 +583,7 @@ function Standalone.Stop()
     StandaloneRT.entryPrepared, StandaloneRT.entryPreparing, StandaloneRT.entryRendered = false, false, false
     bootReady_ = false
     StandaloneRT.bootReady_ = false
+    inventoryBadge = { ready = false, full = false, acc = 0 }
     RewardPopup.clearBattleRewards()
     require("ui.battle.stage.StageSelectDialog").close()
     StandaloneSave.Flush()  -- [单机存档] 退出前立即落盘
@@ -835,7 +902,8 @@ function Standalone.requestResetToStartScreen()
     require("ui.character.hero.HeroScenario").resetAll()
     ClientMsgHandler.resetSessionBridgeState()
     ScenarioDialogue.reset()
-    battleSync = { lastMax = -1, lastCleared = "", lastStages = "", acc = 0 }
+    battleSync = { lastMax = -1, lastCleared = {}, lastStages = {}, acc = 0 }
+    inventoryBadge = { ready = false, full = false, acc = 0 }
 
     -- 清档先取消旧会话特效，不在新英雄／战力同步期间补播旧动画。
     SpinePowerUpEffect.resetSession()
@@ -1244,11 +1312,8 @@ function HandleUpdate(eventType, eventData)
         BackpackPanel.update(dt)
     end
 
-    -- 铁匠铺分解红点（背包满时提示）
-    local equipData_ = ClientDispatcher.get("equipment")
-    local bagFull_ = equipData_ and EquipmentSystem.isInventoryFull(equipData_) or false
-    TownScene.setSmithRedDot(bagFull_)
-    BlacksmithPage.setDecomposeRedDot(bagFull_)
+    -- 铁匠铺分解红点：通知/引用变化即刷新，未通知原地增删至多约半秒兜底。
+    updateInventoryBadges(dt)
 
     LootBox.update(dt)
     RewardPopup.update(dt)

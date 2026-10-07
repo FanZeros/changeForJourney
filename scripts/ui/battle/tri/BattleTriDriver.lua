@@ -212,8 +212,8 @@ function BattleTriDriver.new(teamIdx, options)
         end
         self._syncedMainStage = prevId
         self:start(prevId)
-        -- 驱动完成退关之后保存，不能把新镜像采集成旧驱动关卡。
-        require("boot.StandaloneSave").Flush()
+        -- 驱动完成退关之后合并保存请求，不在战斗帧重复序列化整个背包。
+        require("boot.StandaloneSave").RequestSave()
         BattleCombat.addFloatingText("退回上一关", BattleLayout.STRIP_W * 0.5, BattleLayout.STRIP_CY,
             { 255, 140, 120 }, false)
     end

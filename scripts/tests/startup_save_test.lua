@@ -53,7 +53,9 @@ local function fixture(count)
     local f = { now = 200000, pending = false, fault = "", disk = {}, encodes = 0,
         encodeMs = 0, writes = 0, renames = 0, captures = 0, exports = 0, steps = 0,
         clockQueries = 0, slowClock = false, clockValue = 0, captureFault = false,
-        maxStage = 2501, ledger = {}, live = nil, onRename = nil }
+        maxStage = 2501, ledger = {}, live = nil, onRename = nil, onWrite = nil,
+        handles = 0, closes = 0, disposes = 0, activeHandles = 0, onClose = nil,
+        onSnapshot = nil, onExport = nil }
     f.modules = { session = { lastOnlineTime = 199000, firstLoginTime = 100 },
         currency = { gold = 20 }, heroes = { roster = { [1] = { level = 100, exp = 1 },
             [25] = { level = 70, exp = 4 } }, deployed = { 1, 0, 25, 0 } },
@@ -96,17 +98,39 @@ local function fixture(count)
     env.File = function(path, mode)
         allowed(path)
         if f.fault == "open-throw" and mode == FILE_WRITE then error("expected open throw") end
-        return { IsOpen = function() return not (mode == FILE_WRITE and f.fault == "open") end,
-            ReadString = function() return f.disk[path] end, Close = function() end,
+        f.handles, f.activeHandles = f.handles + 1, f.activeHandles + 1
+        local disposed = false
+        return { IsOpen = function()
+                if f.fault == "isopen-throw" then error("expected IsOpen throw") end
+                return not (mode == FILE_WRITE and f.fault == "open")
+            end,
+            ReadString = function() return f.disk[path] end,
+            Close = function()
+                f.closes = f.closes + 1
+                if f.fault == "close-throw" then error("expected Close throw") end
+                if f.onClose then f.onClose() end
+                if f.fault == "close-false" then return false end
+            end,
+            Dispose = function()
+                assert(not disposed, "file disposed twice")
+                disposed = true
+                f.disposes, f.activeHandles = f.disposes + 1, f.activeHandles - 1
+                if f.fault == "dispose-throw" then error("expected Dispose throw") end
+            end,
             WriteString = function(_, text)
                 f.writes = f.writes + 1
                 if f.fault == "write-throw" then error("expected write throw") end
                 f.disk[path] = f.fault == "write" and text:sub(1, 7) or text
+                if f.onWrite then f.onWrite() end
                 return f.fault ~= "write"
             end }
     end
     env.fileSystem = { FileExists = function(_, path) allowed(path); return f.disk[path] ~= nil end,
-        Delete = function(_, path) allowed(path); f.disk[path] = nil return true end,
+        Delete = function(_, path)
+            allowed(path)
+            if f.fault == "delete-throw" then error("expected Delete throw") end
+            f.disk[path] = nil return true
+        end,
         Rename = function(_, from, to)
             allowed(from); allowed(to); f.renames = f.renames + 1
             if f.fault == "rename-throw" then error("expected rename throw") end
@@ -117,11 +141,18 @@ local function fixture(count)
         end }
     local mocks = {
         ["runtime.ClientDispatcher"] = { get = function(name) return f.modules[name] end,
-            snapshotAll = function() return f.modules end,
+            snapshotAll = function()
+                if f.onSnapshot then f.onSnapshot() end
+                return f.modules
+            end,
             handleStateUpdate = function(json)
                 for name, data in pairs(cjson.decode(json).modules) do f.modules[name] = data end
             end },
-        ["core.GameState"] = { exportSave = function() f.exports = f.exports + 1; return copy(f.state) end,
+        ["core.GameState"] = { exportSave = function()
+                f.exports = f.exports + 1
+                if f.onExport then f.onExport() end
+                return copy(f.state)
+            end,
             importSave = function(value) f.state = copy(value or {}) end, syncPlayerData = function() end },
         ["ui.battle.scene.BattleScene"] = { getMaxStageId = function() return f.maxStage end,
             getClearedStages = function() return f.ledger end, setBattleData = function() end },
@@ -247,12 +278,73 @@ function Start()
             check(same(f.modules, before), "detector must be source-read-only")
             f.modules.equipment.inventory["20"].affixes[1].value = 9.25
             local frames = f.untilWrite()
-            check(frames <= 185, "small tree mutation <=1s scan wait +2s debounce +frames")
+            check(frames <= 1865, "small tree mutation <=1s scan wait +30s merge +frames")
             eq(f.saved().modules.equipment.inventory["20"].affixes[1].value, 9.25, "in-place unnotified affix saved")
             eq(f.encodes, 1, "one fresh encode for save")
             eq(f.captures, 1, "full capture only for save")
             for _ = 1, 600 do f.update() end
             eq(f.writes, 1, "stable scan has no recurring write loop")
+        end)
+        run("RequestSave bounded thirty-second merge and quiet zero writes", function()
+            local f = fixture(10); f.ready()
+            for _ = 1, 3600 do f.update() end
+            eq(f.writes, 0, "quiet sixty seconds no periodic writes")
+            eq(f.encodes, 0, "quiet sixty seconds no periodic JSON")
+            eq(f.save.RequestSave(), nil, "request is not transaction success")
+            eq(f.timer(), 30, "first request establishes thirty-second deadline")
+            f.update(1.75)
+            eq(f.writes, 0, "two-second update budget still before merge deadline")
+            f.update(0.25)
+            eq(f.writes, 0, "second two does not retain obsolete debounce save")
+            -- 剩余期限只由Update真实dt消耗；负数/非有限dt不能提前或延后。
+            local timer = f.timer()
+            f.save.Update(-100); f.save.Update(0 / 0); f.save.Update(math.huge)
+            eq(f.timer(), timer, "invalid frame time cannot alter merge deadline")
+            -- 上面已消耗2秒，继续变更至总30秒。
+            for second = 3, 29 do
+                f.modules.currency.gold = second
+                f.save.RequestSave()
+                f.update(1)
+                eq(f.writes, 0, "continuous updates do not write early " .. second)
+                eq(f.timer(), 30 - second, "continuous requests cannot postpone deadline " .. second)
+            end
+            f.modules.currency.gold = 30; f.save.RequestSave(); f.update(1)
+            eq(f.writes, 1, "continuous changes save at thirty seconds")
+            eq(f.saved().modules.currency.gold, 30, "merged save captures latest value")
+            eq(f.encodes, 1, "thirty requests have one encode")
+            eq(f.activeHandles, 0, "merged write releases native-shaped object")
+            f.settle()
+            local writes, encodes = f.writes, f.encodes
+            for _ = 1, 3600 do f.update() end
+            eq(f.writes, writes, "stable after settle has no recurring writes")
+            eq(f.encodes, encodes, "stable after settle has no recurring encoding")
+        end)
+        run("detector-only continuous mutations never extend merge window", function()
+            local f = fixture(4); f.ready()
+            f.modules.currency.gold = 31
+            for _ = 1, 120 do f.update() end
+            check(f.timer() ~= nil, "in-place fallback detects ordinary change")
+            local deadline = f.timer()
+            local seconds = math.floor(deadline)
+            for second = 1, seconds do
+                f.modules.currency.gold = 100 + second
+                f.update(1)
+            end
+            if f.writes == 0 then f.update(1) end
+            eq(f.writes, 1, "detector changes cannot starve maximum deadline")
+            eq(f.saved().modules.currency.gold, 100 + seconds, "fallback commits current source")
+        end)
+        run("Flush remains immediate candidate transaction with pending ordinary request", function()
+            local f = fixture(3); f.ready(); f.save.RequestSave(); f.update(5)
+            f.state.exp = 7
+            local candidate = { level = 100, exp = 88, maxExp = 1000, name = "candidate" }
+            eq(f.save.Flush(candidate), true, "immediate Flush does not wait thirty seconds")
+            eq(f.writes, 1, "immediate Flush writes once")
+            eq(f.saved().gameState.exp, 88, "candidate experience persisted in same transaction")
+            eq(f.saved().modules.player.exp, 88, "candidate player mirror persisted")
+            eq(f.state.exp, 7, "candidate does not prematurely publish live experience")
+            eq(f.timer(), nil, "committed pending request cleared")
+            eq(f.activeHandles, 0, "immediate Flush object released")
         end)
         run("adds deletes types strings numeric keys", function()
             local f = fixture(6); f.ready()
@@ -372,7 +464,8 @@ function Start()
             eq(p.saved().modules.currency.gold, 99, "existing pending write is not falsely called full freeze")
         end)
         run("failure atomic boolean rollback retry fresh", function()
-            for _, fault in ipairs({ "encode", "open", "open-throw", "write", "write-throw", "rename", "rename-throw", "capture" }) do
+            for _, fault in ipairs({ "encode", "open", "open-throw", "isopen-throw", "write", "write-throw",
+                "close-throw", "close-false", "dispose-throw", "rename", "rename-throw", "capture" }) do
                 local f = fixture(4); f.save.OfflineChecked(); f.ready(); f.save.Flush()
                 local disk, online = f.disk["standalone_save.json"], f.modules.session.lastOnlineTime
                 f.now = f.now + 30; f.modules.currency.gold = 55
@@ -382,11 +475,212 @@ function Start()
                 eq(f.disk["standalone_save.json"], disk, "old file byte identical " .. fault)
                 eq(f.modules.session.lastOnlineTime, online, "online rollback " .. fault)
                 eq(f.disk["standalone_save.pending.json"], nil, "failed temp cleanup " .. fault)
+                eq(f.activeHandles, 0, "all file objects released " .. fault)
+                eq(f.timer(), 2, "failed commit retry in two seconds " .. fault)
                 f.fault, f.captureFault = "", false
                 f.modules.currency.gold = 66
-                f.update(2)
+                f.save.RequestSave()
+                f.update(1)
+                eq(f.disk["standalone_save.json"], disk, "no early retry " .. fault)
+                eq(f.timer(), 1, "ordinary requests cannot extend retry " .. fault)
+                f.update(1)
                 eq(f.saved().modules.currency.gold, 66, "retry current not stale " .. fault)
                 eq(f.saved().savedAt, f.now, "retry boundary current " .. fault)
+                eq(f.activeHandles, 0, "successful retry releases file " .. fault)
+            end
+        end)
+        run("write cleanup errors contained and lifecycle invalidates old commit", function()
+            local f = fixture(3); f.save.OfflineChecked(); eq(f.save.Flush(), true, "establish cleanup baseline")
+            local disk, online = f.disk["standalone_save.json"], f.modules.session.lastOnlineTime
+            f.now = f.now + 30; f.modules.currency.gold = 45
+            f.fault = "delete-throw"
+            f.env.fileSystem.Rename = function() return false end
+            eq(f.save.Flush(), false, "cleanup throw cannot escape failed commit")
+            eq(f.disk["standalone_save.json"], disk, "cleanup failure preserves committed file")
+            eq(f.modules.session.lastOnlineTime, online, "cleanup failure restores online boundary")
+            eq(f.activeHandles, 0, "cleanup failure still releases file")
+            eq(f.timer(), 2, "cleanup failure retains two-second retry")
+
+            for _, phase in ipairs({ "write", "close" }) do
+                for _, lifecycle in ipairs({ "Wipe", "RestoreData" }) do
+                    local g = fixture(3); g.save.OfflineChecked(); g.save.Flush(); g.settle()
+                    local original = g.disk["standalone_save.json"]
+                    local baselineWrites = g.writes
+                    g.now = g.now + 30; g.modules.currency.gold = 70
+                    local invoked = false
+                    local function invalidate()
+                        if invoked then return end
+                        invoked = true
+                        g.onWrite, g.onClose = nil, nil
+                        if lifecycle == "Wipe" then
+                            g.save.Wipe(); g.modules = {}; g.state = {}
+                        else
+                            eq(g.save.RestoreData(), true, "restore from committed old bytes during " .. phase)
+                        end
+                    end
+                    if phase == "write" then g.onWrite = invalidate else g.onClose = invalidate end
+                    eq(g.save.Flush(), false, "old commit rejected after " .. lifecycle .. " at " .. phase)
+                    eq(g.activeHandles, 0, "invalidated commit file released " .. lifecycle .. phase)
+                    eq(g.timer(), nil, "old retry does not rearm new lifecycle " .. lifecycle .. phase)
+                    eq(g.disk["standalone_save.pending.json"], nil, "invalidated pending removed " .. lifecycle .. phase)
+                    if lifecycle == "Wipe" then
+                        eq(g.disk["standalone_save.json"], nil, "wiped archive not resurrected " .. phase)
+                        for _ = 1, 2100 do g.update() end
+                        eq(g.writes, baselineWrites + 1, "old wipe task never writes again " .. phase)
+                    else
+                        eq(g.disk["standalone_save.json"], original, "restore keeps old committed bytes " .. phase)
+                        eq(g.modules.currency.gold, 20, "restore keeps old balance " .. phase)
+                        eq(g.modules.session.lastOnlineTime, 200000, "old failure cannot overwrite restored online " .. phase)
+                    end
+                end
+            end
+        end)
+        run("recursive Flush rejected and new request survives commit", function()
+            local f = fixture(2); f.ready(); f.save.RequestSave()
+            f.onWrite = function()
+                f.onWrite = nil
+                eq(f.save.Flush(), false, "nested Flush never claims success")
+                f.save.Update(100)
+                f.modules.currency.gold = 456
+                f.save.RequestSave()
+            end
+            eq(f.save.Flush(), true, "outer synchronous commit succeeds")
+            eq(f.writes, 1, "nested writer cannot truncate shared pending file")
+            eq(f.saved().modules.currency.gold, 20, "outer commit remains encoded candidate")
+            check(f.timer() ~= nil and f.timer() <= 30, "during-write request remains bounded pending")
+            f.update(30)
+            eq(f.saved().modules.currency.gold, 456, "subsequent request captures fresh data")
+            eq(f.activeHandles, 0, "all nested-guard objects released")
+        end)
+        run("commit scalar receipt stable cursor and callback changes", function()
+            -- Flush可先于下一轮检测；提交过的顶层余额/删除不应再安排第二次写盘。
+            local stable = fixture(2); stable.ready()
+            stable.modules.currency.oldField = 8; stable.ready(); stable.settle()
+            stable.slowClock = true; stable.update(1)
+            local scan = upvalue(stable.save.Update, "detectorScan")
+            local advance = upvalue(stable.save.Update, "advanceDetector")
+            local mirror = advance and upvalue(advance, "detectorSnapshot")
+            check(scan ~= nil and mirror.modules.currency.oldField == 8, "real mirror and suspended scan exist")
+            -- 定点模拟此合法phase1状态，验证提交维护删除键不留下失效next cursor。
+            scan.stack = { scan.stack[1], { source = stable.modules.currency, snapshot = mirror.modules.currency,
+                phase = 1, key = "oldField" } }
+            stable.modules.currency.oldField = nil
+            stable.modules.currency.gold = 30; stable.state.gold = 30
+            local stableWrites = stable.writes
+            eq(stable.save.Flush(), true, "flush before detector observes final scalar/deletion")
+            stable.slowClock = false; stable.settle()
+            local writes, encodes = stable.writes, stable.encodes
+            for _ = 1, 3600 do stable.update() end
+            eq(stable.writes, stableWrites + 1, "committed stable scalar/deletion never needs conservative rewrite")
+            eq(stable.writes, writes, "committed stable sixty seconds zero extra writes")
+            eq(stable.encodes, encodes, "committed stable sixty seconds zero extra encoding")
+            eq(stable.saved().modules.currency.oldField, nil, "deleted scalar actually committed")
+
+            for _, mode in ipairs({ "new", "aba", "replace" }) do
+                local f = fixture(2); f.ready()
+                f.slowClock = true; f.update(1)
+                check(upvalue(f.save.Update, "detectorScan") ~= nil, "callback starts with suspended scan " .. mode)
+                f.modules.currency.gold = 30; f.state.gold = 30
+                f.onRename = function()
+                    f.onRename = nil
+                    if mode == "replace" then
+                        f.modules.currency = { gold = 20 }
+                    else
+                        f.modules.currency.gold = mode == "aba" and 20 or 123
+                    end
+                    f.state.gold = mode == "new" and 456 or 20
+                end
+                eq(f.save.Flush(), true, "callback cannot invalidate completed commit " .. mode)
+                eq(f.saved().modules.currency.gold, 30, "disk has pre-callback currency " .. mode)
+                eq(f.saved().gameState.gold, 30, "disk has pre-callback GameState " .. mode)
+                check(f.timer() ~= nil, "unnotified callback change remains pending including ABA " .. mode)
+                f.slowClock = false; f.update(30)
+                eq(f.saved().modules.currency.gold, mode == "new" and 123 or 20, "callback currency later fresh " .. mode)
+                eq(f.saved().gameState.gold, mode == "new" and 456 or 20, "callback GameState later fresh " .. mode)
+                eq(f.activeHandles, 0, "callback receipt objects released " .. mode)
+            end
+        end)
+        run("Rename success is commit point despite later lifecycle reset", function()
+            for _, lifecycle in ipairs({ "Wipe", "RestoreData" }) do
+                local f = fixture(2); f.save.OfflineChecked(); eq(f.save.Flush(), true, "commit-point initial save")
+                local writes = f.writes
+                f.now = f.now + 30; f.modules.currency.gold = 44
+                local invoked = false
+                f.onRename = function()
+                    f.onRename = nil; invoked = true
+                    -- 内存后端已把候选替换到主档，再执行新生命周期。
+                    eq(f.saved().modules.currency.gold, 44, "candidate already durable before " .. lifecycle)
+                    if lifecycle == "Wipe" then
+                        f.save.Wipe(); f.modules = {}; f.state = {}
+                    else
+                        eq(f.save.RestoreData(), true, "post-Rename restore succeeds")
+                    end
+                end
+                eq(f.save.Flush(), true, "successful Rename cannot become false after " .. lifecycle)
+                check(invoked, "actual post-Rename lifecycle callback executed " .. lifecycle)
+                eq(f.writes, writes + 1, "one candidate write despite lifecycle reset " .. lifecycle)
+                eq(f.timer(), nil, "committed old writer never rearms retry " .. lifecycle)
+                eq(f.activeHandles, 0, "commit-point lifecycle file released " .. lifecycle)
+                eq(f.disk["standalone_save.pending.json"], nil, "committed pending consumed " .. lifecycle)
+                local laterWrites = f.writes
+                if lifecycle == "Wipe" then
+                    eq(f.disk["standalone_save.json"], nil, "later wipe stays deleted")
+                    for _ = 1, 2100 do f.update() end
+                    eq(f.writes, laterWrites, "old successful writer cannot resurrect wiped archive")
+                else
+                    eq(f.modules.currency.gold, 44, "restore uses committed candidate not pre-write balance")
+                    eq(f.modules.session.lastOnlineTime, f.now, "committed boundary not rolled back after restore")
+                    eq(f.saved().savedAt, f.now, "savedAt remains actual commit boundary")
+                end
+            end
+        end)
+        run("post-commit reconcile lifecycle cannot mutate new detector", function()
+            for _, phase in ipairs({ "snapshot", "export" }) do
+                for _, lifecycle in ipairs({ "Wipe", "RestoreData" }) do
+                    local f = fixture(2); f.ready(); eq(f.save.Flush(), true, "reconcile lifecycle initial commit")
+                    f.modules.currency.gold = 44
+                    ---@type table|nil
+                    local replacementScan = nil
+                    ---@type table|nil
+                    local replacementSource = nil
+                    ---@type number|nil
+                    local replacementTimer = nil
+                    local invoked = false
+                    f.onRename = function()
+                        f.onRename = nil
+                        local function resetAfterCommit()
+                            if invoked then return end
+                            invoked = true; f.onSnapshot, f.onExport = nil, nil
+                            if lifecycle == "Wipe" then
+                                f.save.Wipe(); f.modules = {}; f.state = {}
+                            else
+                                eq(f.save.RestoreData(), true, "restore committed candidate during reconcile " .. phase)
+                            end
+                            -- 写者锁只禁止Update重入；直接推进只读检测，且用足够大新树确保预算中止。
+                            local probe = {}
+                            for key = 1, 64 do probe[tostring(key)] = key end
+                            f.modules.reconcileProbe = probe
+                            f.slowClock = true
+                            local advance = upvalue(f.save.Update, "advanceDetector")
+                            advance(f.env.os.clock())
+                            replacementScan = upvalue(f.save.Update, "detectorScan")
+                            replacementSource = replacementScan and replacementScan.stack[1].source.gameState
+                            replacementTimer = f.timer()
+                        end
+                        if phase == "snapshot" then f.onSnapshot = resetAfterCommit else f.onExport = resetAfterCommit end
+                    end
+                    eq(f.save.Flush(), true, "post-commit lifecycle is not falsely reported failed " .. lifecycle .. phase)
+                    check(invoked and replacementScan ~= nil, "reconcile reset and new scan actually executed " .. lifecycle .. phase)
+                    eq(upvalue(f.save.Update, "detectorScan"), replacementScan, "old maintenance retains new scan identity " .. lifecycle .. phase)
+                    eq(replacementScan.stack[1].source.gameState, replacementSource, "old maintenance cannot replace new scan source " .. lifecycle .. phase)
+                    eq(f.timer(), replacementTimer, "old maintenance preserves new lifecycle request " .. lifecycle .. phase)
+                    eq(f.activeHandles, 0, "post-commit lifecycle releases files " .. lifecycle .. phase)
+                    if lifecycle == "Wipe" then
+                        eq(f.disk["standalone_save.json"], nil, "post-commit wipe remains deleted " .. phase)
+                    else
+                        eq(f.saved().modules.currency.gold, 44, "post-commit restore reads actual committed value " .. phase)
+                    end
+                end
             end
         end)
         run("scan exception cyclic data and recovery", function()
@@ -394,7 +688,7 @@ function Start()
             f.modules.extra = {}; f.modules.extra.self = f.modules.extra
             for _ = 1, 600 do eq(pcall(f.save.Update, 1 / 60), true, "cyclic detector contained") end
             f.modules.extra = { fixed = true }
-            f.untilWrite(1200)
+            f.untilWrite(3000)
             eq(f.saved().modules.extra.fixed, true, "stable valid data recovers after cycle")
             f.captureFault = true
             eq(pcall(f.save.Update, 1), true, "capture exception contained")
@@ -412,7 +706,7 @@ function Start()
             g.disk["standalone_save.json"] = cjson.encode({ savedAt = 100, gameState = { gold = 5 }, modules = {
                 currency = { gold = 5 }, heroes = { roster = {}, deployed = {} }, session = { lastOnlineTime = 100 } } })
             eq(g.save.RestoreData(), true, "restore succeeds with timer pending")
-            for _ = 1, 600 do g.update() end
+            for _ = 1, 1920 do g.update() end
             eq(g.writes, 1, "restore replaces stale timer with one conservative fresh baseline save")
             eq(g.saved().modules.currency.gold, 5, "restore baseline cannot save old dirty currency")
             g.modules.currency.gold = 6
@@ -479,9 +773,14 @@ function Start()
             check(latencyFrames > 0, "large tail mutation eventually saved " .. count)
             eq(f.saved().modules.equipment.inventory[tostring(count)].affixes[1].value, 654.321,
                 "large tail final value " .. count)
-            print(string.format("%s METRIC baseline=%s inventory=%d baselineFrames=%d idle1200Encodes=%d totalEncodes=%d capture=%d traversalNext=%d idlePeakMs=%.4f flushPeakMs=%.4f mutationFrames=%d elapsedCpuMs=%.3f",
+            local serializedBytes = #(f.disk["standalone_save.json"] or "")
+            eq(f.activeHandles, 0, "large commit has no retained file " .. count)
+            local directStart = os.clock()
+            eq(f.save.Flush(), true, "large synchronous transaction remains immediate " .. count)
+            local directFlushMs = (os.clock() - directStart) * 1000
+            print(string.format("%s METRIC baseline=%s inventory=%d baselineFrames=%d idle1200Encodes=%d totalEncodes=%d capture=%d traversalNext=%d idlePeakMs=%.4f flushPeakMs=%.4f directFlushMs=%.4f saveBytes=%d mutationFrames=%d elapsedCpuMs=%.3f",
                 TAG, tostring(baseline), count, completeFrames, quietTotal, f.encodes, f.captures, measuredSteps,
-                idlePeak, flushPeak, latencyFrames, (os.clock() - started) * 1000))
+                idlePeak, flushPeak, directFlushMs, serializedBytes, latencyFrames, (os.clock() - started) * 1000))
         end
     end)
     print(string.format("%s SUMMARY baseline=%s cases=%d assertions=%d failures=%d harnessErrors=%d", TAG,

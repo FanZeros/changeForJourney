@@ -242,7 +242,7 @@ local function ensureDrivers()
                     if changed then
                         print(string.format("[BattleTriPage] 队%d 关卡入档 stage=%s", teamIdx, tostring(savedId)))
                         ClientDispatcher.notifySubscribers("battle")
-                        require("boot.StandaloneSave").Flush()
+                        require("boot.StandaloneSave").RequestSave()
                     end
                 end
             end
@@ -323,8 +323,9 @@ startTerminalRaid = function(stageId)
     if terminalRaid.maxHp <= 0 then
         terminalRaid:finish(false)
     end
+    -- 三队回退点全部更新后只保存一次，终焉挑战不沿用普通换关的延迟周期。
+    require("boot.StandaloneSave").Flush()
 end
-
 --- 胜利时三个编号各结算一次 Boss 击杀奖励（经验/金币），不按战线副本重复发奖。
 --- 沿用原编号归属队伍的存活英雄名单，全灭队只计金币/玩家经验。
 local function settleRaidKillRewards(raid)

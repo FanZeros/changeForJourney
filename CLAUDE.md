@@ -20,6 +20,13 @@
 - 清波直接进入下一波，未选卡组按获得顺序保留，右侧待选数量可恢复；选卡不重开当前波，强化下一波生效。本层结算/失败/退出清空待选，不跨层保留；权威追加、请求重试与幂等继续保留。
 - 排序按钮显式sans/normal修复宿主只有sans、主题却请求sans-bold导致无字。复用三个现有测试小幅补充，回执450/0、布局967/0、名册6661/0，真实侧栏现有专项16291/0，均实际exit0；11修改Lua逐文件LSP无Error，官方b2成功593Lua，本11源码与实际载荷bytes/size一致。未做设备触控/完整实战视觉或性能验收。
 - 持续推进已授权范围，按最新直接继续指令不机械提问；只11Lua+三交接本人块，不混并行教程/数据去重/.project/上传/无关meta/内部证据。独立index/ref、不切sharedHEAD、不推workspace系列、不强推、不自动合并发布；凭据不进源码/配置/日志/记忆。实际push/PR成功后补记录。
+## 上次做了什么（2026-10-07，上场与结算数据刷新去重）
+
+- **已正常push并核验：** 九文件功能提交08c6c4569555f5da45e0bc45de7acecac6650cc0正常push `perf1007/data-refresh-dedup`，push/ls-remote实际exit0且远端SHA一致；workspace1005仍ec1d8a61未推。正式PR #121：https://github.com/FanZeros/changeForJourney/pull/121，base=workspace1005，open/draft=false/merged=false，mergeable未计算，不称CI通过、合并或发布。
+- 玩家槽位解锁不无条件评分；heroes以最后完成评分的冻结拥有/等级/分支/觉醒/extraTalent/队槽值去重，纯经验保留名册/槽引用。上场最终同步只刷新一次，失败回滚不污染缓存；旧callback先刷新后读取兼容。批结算逐英雄升级/共鸣/persist顺序不改，仅末尾一次full/light；编辑队不评分、power排序等新缓存，不改公式/倍率/奖励/存档规则。
+- 官方b3成功593根Lua，九源码/测试载荷bytes/size一致；Sync855/0、Exp780/0、Sort557/0及原atomic/drag/切关/预估120/0实际通过，纯本任务Git候选三核心亦855/780/557全部exit0。重复/纯exp/失败回滚评分0、成功上场full1，batch逐项persist/slots保持。仅补两个旧测试，无新框架。逐文件LSP无Error，规范21旧问题同ec1d8a61/新增0，36单测通过。
+- 原host160/1旧Stop夹具TowerBattleScene nil、entry46/9旧horizonInputContext/TowerBuffSidebar依赖缺失保留且未混修；相关Standalone/Horizon源不改。早exp780/2诊断集合残留修代码后原断言780/0，Sync旧计数637/27记录保留。不是设备FPS/全部不卡或整仓全绿；headless音频/shader环境错误保留。
+- 当前授权持续推进，最新要求直接继续不机械提问；只正常push独立任务分支，不推workspace系列/强推/自动合并发布，尊重停止/权限边界。共享HEAD/index保持，塔/教程/.project/上传/玩家档/内证不混提交；三交接仅本人块，凭据不进源码/Git配置/日志/记忆。
 
 ## 上次做了什么（2026-10-07，右栏排序与总战力主值动画）
 

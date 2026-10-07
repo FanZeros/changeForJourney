@@ -186,6 +186,7 @@ local rosterPowerCache = {}  -- rosterPowerCache[i] = number
 --- 当队伍阵容变更时调用（外部通过 setOnTeamChanged 注册）
 ---@type fun(teamIdx: number, otherTeamIdx: number?)|nil
 local onTeamChangedCallback = nil
+local teamChangeSyncRefresh = false
 
 -- 转职/重置与编队交易分离，不清累计、不提交布局。
 ---@type fun(heroId: number, teamIdx: number)|nil
@@ -244,6 +245,8 @@ local _rosterSort = CharacterRosterSort.bind({
     end,
 })
 
+---@type table|nil
+local _heroSync = nil
 local _power
 local function bindPower()
     _power = CharacterPower.bind({
@@ -316,7 +319,9 @@ end
 
 local function refreshPowerCache()
     -- 映射hook位于原Power全部缓存完成且emit之前，不能在此事后重复排序。
-    return ensurePower().refreshPowerCache()
+    local result = ensurePower().refreshPowerCache()
+    if _heroSync then _heroSync.rememberState() end
+    return result
 end
 
 local function refreshUpgradeBadgeCache()
@@ -343,7 +348,7 @@ local recalcScrollMax
 --- 纯重建/排序；正式战力由其后的完整 refreshPowerCache 一次更新。
 --- 按压期间保留ID位置，结束后应用排队排序，不以更新后的索引替换Down英雄。
 local function rebuildRoster()
-    _rosterSort.rebuild()
+    _rosterSort.rebuild(true)
     if _input and _input.observeRosterIdentity then _input.observeRosterIdentity() end
     recalcScrollMax()
 end
@@ -660,6 +665,24 @@ end
 
 -- ======================== 出战操作 ========================
 
+function CharacterPanel.refreshTeamChange()
+    rebuildRoster()
+    refreshPowerCache()
+    refreshNavBadge()
+    heroesRefreshBaseline = teamRefreshSnapshot()
+    lastHeroesRefreshTeams = {}
+end
+
+-- 同步宿主先应用最终回执；旧宿主仍在回调前获得最新缓存。
+local function commitTeamChange(teamIdx, otherTeamIdx)
+    if teamChangeSyncRefresh and onTeamChangedCallback then
+        if onTeamChangedCallback(teamIdx, otherTeamIdx) ~= true then CharacterPanel.refreshTeamChange() end
+    else
+        CharacterPanel.refreshTeamChange()
+        if onTeamChangedCallback then onTeamChangedCallback(teamIdx, otherTeamIdx) end
+    end
+end
+
 local _deploy
 local function bindDeploy()
     _deploy = CharacterDeploy.bind({
@@ -677,6 +700,7 @@ local function bindDeploy()
         refreshPowerCache = refreshPowerCache,
         refreshNavBadge = refreshNavBadge,
         getOnTeamChanged = function() return onTeamChangedCallback end,
+        commitTeamChange = commitTeamChange,
     })
 end
 
@@ -721,6 +745,7 @@ local function bindInput()
         getActiveTeamIdx = function() return activeTeamIdx end,
         getRosterSortRevision = _rosterSort.getRevision,
         getOnTeamChanged = function() return onTeamChangedCallback end,
+        commitTeamChange = commitTeamChange,
         deployHeroToSlot = deployHeroToSlot,
         rebuildRoster = rebuildRoster,
         refreshPowerCache = refreshPowerCache,
@@ -1066,8 +1091,10 @@ CharacterPanel.applyEquippedItems = applyEquippedItems
 
 --- 注册阵容变更回调（队伍出战变化时自动调用）
 ---@param callback fun(teamIdx: number, otherTeamIdx: number?) 回调函数
-function CharacterPanel.setOnTeamChanged(callback)
+---@param syncRefresh? boolean 同步宿主返回true表示最终回执（含回滚）已刷新
+function CharacterPanel.setOnTeamChanged(callback, syncRefresh)
     onTeamChangedCallback = callback
+    teamChangeSyncRefresh = syncRefresh == true
 end
 
 --- 独立养成回执，不提交编队、不清累计统计，teamIdx 永远是真实所属队。
@@ -1222,9 +1249,7 @@ function CharacterPanel.setActiveTeam(idx)
     dragState.fromTeam = nil
     selectSlotState.active = false
     selectSlotState.slotIndex = nil
-    rebuildRoster()
-    refreshPowerCache()
-    refreshNavBadge()
+    -- 仅切编辑视图；三队战力、角标和名册顺序不依赖活动队。
     print("[CharacterPanel] 切换到队伍 " .. idx)
     return true
 end
@@ -1267,11 +1292,9 @@ function CharacterPanel.refreshSlotUnlocks()
             end
         end
     end
-    rebuildRoster()
-    refreshPowerCache()
+    -- 解锁空槽没有英雄属性变化，不重建名册、不重算战力或装备模拟。
 end
 
-local _heroSync
 local function bindHeroSync()
     _heroSync = CharacterHeroSync.bind({
         ExpTable = ExpTable,
@@ -1279,7 +1302,11 @@ local function bindHeroSync()
         MAX_SLOTS = MAX_SLOTS,
         TEAM_COUNT = TEAM_COUNT,
         get = function(k)
-            if k == "teams" then return teams
+            if k == "ownedSet" then return ownedSet
+            elseif k == "shardMap" then return shardMap
+            elseif k == "heroRoster" then return heroRoster
+            elseif k == "heroesDataApplied" then return heroesDataApplied
+            elseif k == "teams" then return teams
             elseif k == "teamPowerCaches" then return teamPowerCaches
             elseif k == "activeTeamIdx" then return activeTeamIdx
             elseif k == "dragState" then return dragState
@@ -1317,8 +1344,11 @@ local function ensureHeroSync()
 end
 
 function CharacterPanel.setHeroesData(data)
-    local changedTeams = ensureHeroSync().setHeroesData(data)
-    if data then updateHeroesRefreshBaseline(changedTeams) end
+    local changedTeams, powerChanged = ensureHeroSync().setHeroesData(data)
+    if data then
+        if powerChanged then updateHeroesRefreshBaseline(changedTeams)
+        else lastHeroesRefreshTeams = {} end
+    end
     return changedTeams
 end
 
@@ -1389,9 +1419,22 @@ local function ensureProgress()
 end
 
 function CharacterPanel.addHeroExp(heroId, amount)
-    local result = ensureProgress().addHeroExp(heroId, amount)
-    if result then updateHeroesRefreshBaseline() end
+    local result, levelChanged = ensureProgress().addHeroExp(heroId, amount)
+    if result then
+        if levelChanged then updateHeroesRefreshBaseline()
+        else lastHeroesRefreshTeams = {} end
+    end
     return result
+end
+
+--- 同一笔结算保持逐英雄升级/共鸣顺序，仅最后刷新一次。
+function CharacterPanel.addHeroesExp(heroIds, amount)
+    local result, levelChanged = ensureProgress().addHeroesExp(heroIds, amount)
+    if result then
+        if levelChanged then updateHeroesRefreshBaseline()
+        else lastHeroesRefreshTeams = {} end
+    end
+    return result, levelChanged
 end
 
 function CharacterPanel.syncSlotLevel(heroId, newLevel)

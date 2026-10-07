@@ -5,6 +5,13 @@
 - 基于workspace1005@ec1d8a61，独立fix1007/tower-flow-roster-labels。胜败结算1440×760横向UI，最多12英雄/楼层波次/耗时奖励；清档无回调销毁树，普通副本保持。
 - 清波直接换波，待选FIFO保存至本层结束，右侧恢复入口；择契不重开当前波，强化下一波生效，失败/退出/本层结算清队列。请求幂等与同卡重试保持；排序字体sans/normal修复宿主无sans-bold导致无字。
 - 仅复用现有相关测试：回执450/0、布局967/0、名册6661/0、侧栏16291/0均exit0；11Lua LSP无Error，官方b2成功593Lua、11载荷字节/size一致。不是设备/完整通关视觉/性能验收。仅11源码+三交接本人块，不混peer/.project/内部证据，不推基线/强推/自动合并；当前直接继续不机械提问，凭据不写源码/配置/日志/记忆。push与PR成功后补实证。
+## 上场与结算数据刷新去重（2026-10-07）
+
+- 九源码/旧测试提交08c6c4569555f5da45e0bc45de7acecac6650cc0已正常push并ls-remote核验 `perf1007/data-refresh-dedup`，workspace1005仍ec1d8a61未推；正式PR #121：https://github.com/FanZeros/changeForJourney/pull/121，open/draft=false/merged=false，不称CI、合并发布。
+- 去掉玩家空槽解锁和编辑队视图的评分；heroes冻结最后评分的有效值，重复/纯exp/失败回滚不评分，成功同步编队full1。批经验逐英雄升级/共鸣/持久化原序，末尾full/light1；power排序等新缓存，原公式/倍率/奖励/存档不变。旧callback读最新cache顺序兼容。
+- 官方b3/593Lua与9实际载荷bytes/size一致，Sync855/0、Exp780/0、Sort557/0，原atomic/drag/切关/预估120/0通过；纯本任务Git候选三核心855/780/557均exit0。只两个既有test小增量，逐文件LSP无Error；规范21旧问题同父/新增0、36单测OK。
+- host160/1、entry46/9因旧夹具缺TowerBattleScene/horizonInputContext/TowerBuffSidebar未通过，相关源不改、不混修；早exp780/2和旧Sync637/27日志保留，最终修代码/新计数后原业务oracle全过。不称整仓/设备FPS/所有卡顿消失，headless环境错误保留。
+- 仅本任务独立index/ref和三本人交接，sharedHEAD/index不动、不混塔/教程/.project/上传/内证/玩家档；凭据不持久化。尊重当前直接继续及停止/权限边界，不推workspace系列/强推/自动合并发布。
 
 ## 右栏排序与总战力主值动画（2026-10-07）
 

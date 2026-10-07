@@ -33,7 +33,7 @@ local function fixture()
     local counts = { rebuild = 0, refresh = 0, nav = 0, light = 0, slots = 0,
         context = 0, createHero = 0, rosterSort = 0, rawSort = 0, persist = 0, powerInvalidations = 0 }
     local modules, loaded, loading, allowedPaths = {}, {}, {}, {}
-    local patches, events, progress, layouts = {}, {}, {}, {}
+    local patches, events, progress, layouts, refreshSteps = {}, {}, {}, {}, {}
     local subscriptions = {}
     local gamePower = 0
     local networkMode = false
@@ -141,6 +141,11 @@ local function fixture()
                     if original then
                         deps[key] = function(...)
                             counts[countKey] = counts[countKey] + 1
+                            if countKey ~= "slots" then
+                                refreshSteps[#refreshSteps + 1] = {
+                                    key = countKey, slots = counts.slots, persist = counts.persist,
+                                }
+                            end
                             return original(...)
                         end
                     end
@@ -199,12 +204,12 @@ local function fixture()
     panel.init(nil)
     local function reset()
         for key in pairs(counts) do counts[key] = 0 end
-        patches, events, progress, layouts = {}, {}, {}, {}
+        patches, events, progress, layouts, refreshSteps = {}, {}, {}, {}, {}
     end
     local function data()
         return { roster = drawContext.getHeroRoster(), rosterPower = drawContext.getRosterPowerCache(),
             detail = detailContext, patches = patches, events = events, progress = progress,
-            layouts = layouts, gamePower = gamePower }
+            layouts = layouts, refreshSteps = refreshSteps, gamePower = gamePower }
     end
     local function apply(heroes)
         modules.heroes = heroes
@@ -498,6 +503,49 @@ function Start()
         check(cp.syncSlotLevel(3, 11), "外部先修改owned的slot-level回执保留true")
         check(f.counts.rebuild == 1 and f.counts.refresh == 1 and same(f.data().progress[1].teams, { 2 }),
             "syncSlotLevel不扩写重复门控，真正外部等级变化仍完整刷新")
+        if not baseline then
+            -- 同序单次调用作对照；只合并显示刷新，逐项共鸣/槽位/persist不得合并。
+            local function batchAgainstSingles(initial, ids, amount, validCount, expectLevel, label)
+                f.apply(copy(initial))
+                for _, id in ipairs(ids) do cp.addHeroExp(id, amount) end
+                local expected, singleCounts = snapshot(f), copy(f.counts)
+                local expectedPatches = copy(f.data().patches)
+                local expectedResonance = cp.getResonanceLevel()
+                f.apply(copy(initial))
+                local added, levelChanged = cp.addHeroesExp(ids, amount)
+                local actual, count = snapshot(f), f.counts
+                check(added == true and levelChanged == expectLevel, label .. " 批次返回成功及全名册等级变化")
+                check(same(actual.owned, expected.owned) and same(actual.saved, expected.saved)
+                    and same(actual.slots, expected.slots), label .. " 同序单调用level/exp/maxExp与存档槽位严格一致")
+                check(cp.getResonanceLevel() == expectedResonance, label .. " 同序共鸣地板一致")
+                check(same(actual.roster, expected.roster) and same(actual.rosterPower, expected.rosterPower)
+                    and same(actual.powers, expected.powers), label .. " 批次最终显示及各队战力一致")
+                check(count.slots == validCount and count.slots == singleCounts.slots
+                    and count.persist == (noPersist and 0 or validCount)
+                    and count.persist == singleCounts.persist, label .. " 有效条目slots/persist次数保持")
+                check(same(f.data().patches, expectedPatches), label .. " 逐项changed-only持久化patch顺序保持")
+                check(count.rebuild == (expectLevel and 1 or 0) and count.refresh == count.rebuild
+                    and count.nav == count.rebuild and count.rosterSort == count.rebuild
+                    and count.light == (expectLevel and 0 or 1), label .. " full/light只收尾一次")
+                local steps = f.data().refreshSteps
+                local afterAll = #steps == (expectLevel and 3 or 1)
+                for _, step in ipairs(steps) do
+                    afterAll = afterAll and step.slots == validCount
+                        and step.persist == (noPersist and 0 or validCount)
+                end
+                check(afterAll, label .. " 全部显示刷新均发生在所有有效入账之后")
+                print(string.format("%s BATCH case=%s valid=%d full=%d light=%d slots=%d persist=%d",
+                    TAG, label, validCount, count.rebuild, count.light, count.slots, count.persist))
+            end
+            batchAgainstSingles(heroes(et), { 1, 9999, 0, 1, 2, 8 }, 1, 3, false, "重复ID及混合无效")
+            check(cp.getOwnedHero(1).exp == 2 and cp.getOwnedHero(2).exp == 1,
+                "重复ID确实入账两次，未知/空槽/仅碎片不入账")
+            batchAgainstSingles(heroes(et, { [1] = 10, [2] = 10, [3] = 10, [4] = 10,
+                [5] = 9, [6] = 1, [25] = 1 }), { 5, 6, 25 }, et.getHeroExpForLevel(9), 3, true, "批次跨队共鸣")
+            check(cp.getOwnedHero(6).level == 10 and cp.getOwnedHero(25).level == 10
+                and cp.getOwnedHero(6).exp == et.getHeroExpForLevel(9),
+                "前项先抬高共鸣地板，后项按新等级继续入账")
+        end
         check(require == oldRequire and File == oldFile, "全局require/File保持，真实玩家档完全隔离")
     end)
     if not ok then check(false, "harness error: " .. tostring(err)) end

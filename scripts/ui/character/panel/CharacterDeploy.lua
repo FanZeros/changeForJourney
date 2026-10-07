@@ -12,13 +12,17 @@ function M.bind(deps)
     local getTeamSlots = deps.getTeamSlots
     local getActiveTeamIdx = deps.getActiveTeamIdx
     local getOwnedSet = deps.getOwnedSet
-    local getTeamPowerCaches = deps.getTeamPowerCaches
-    local getSlotPowerCache = deps.getSlotPowerCache
-    local calcHeroPower = deps.calcHeroPower
     local rebuildRoster = deps.rebuildRoster
     local refreshPowerCache = deps.refreshPowerCache
     local refreshNavBadge = deps.refreshNavBadge
     local getOnTeamChanged = deps.getOnTeamChanged
+    local commitTeamChange = deps.commitTeamChange or function(teamIdx, otherTeamIdx)
+        rebuildRoster()
+        refreshPowerCache()
+        refreshNavBadge()
+        local cb = getOnTeamChanged()
+        if cb then cb(teamIdx, otherTeamIdx) end
+    end
 
     local function findHeroTeamIdx(heroId)
         local teams = getTeams()
@@ -55,18 +59,13 @@ function M.bind(deps)
         if otherTeam and otherTeam ~= activeTeamIdx then
             local teams = getTeams()
             local otherSlots = teams[otherTeam].slots
-            local teamPowerCaches = getTeamPowerCaches()
             for i = 1, #otherSlots do
                 if otherSlots[i].state == "occupied" and otherSlots[i].heroId == heroId then
                     if slot.state == "occupied" and slot.heroId and slot.heroId ~= heroId then
                         otherSlots[i] = slot
-                        if teamPowerCaches[otherTeam] then
-                            teamPowerCaches[otherTeam][i] = calcHeroPower(slot.heroId, i, otherTeam)
-                        end
                         print(string.format("[CharacterPanel] 英雄%d 与队伍%d槽%d 交换", heroId, otherTeam, i))
                     else
                         otherSlots[i] = { state = "empty" }
-                        if teamPowerCaches[otherTeam] then teamPowerCaches[otherTeam][i] = 0 end
                         print(string.format("[CharacterPanel] 英雄%d 从队伍%d 移到当前队伍%d", heroId, otherTeam, activeTeamIdx))
                     end
                     break
@@ -75,11 +74,9 @@ function M.bind(deps)
         end
 
         -- 如果该英雄已在其他槽位，先移除
-        local slotPowerCache = getSlotPowerCache()
         for i = 1, MAX_SLOTS do
             if teamSlots[i].state == "occupied" and teamSlots[i].heroId == heroId then
                 teamSlots[i] = { state = "empty" }
-                slotPowerCache[i] = 0
                 break
             end
         end
@@ -97,19 +94,12 @@ function M.bind(deps)
             exp    = ownData.exp,
             maxExp = ownData.maxExp,
         }
-        slotPowerCache[slotIdx] = calcHeroPower(heroId, slotIdx, activeTeamIdx)
 
         local heroCfg = HC.get(heroId)
         print("[CharacterPanel] 部署 " .. (heroCfg and heroCfg.name or "?") .. " 到槽位 " .. slotIdx)
 
-        -- 重建列表（排序会变化）
-        rebuildRoster()
-        refreshPowerCache()
-        refreshNavBadge()
-
-        -- 通知阵容变更
-        local cb = getOnTeamChanged()
-        if cb then cb(activeTeamIdx, otherTeam ~= activeTeamIdx and otherTeam or nil) end
+        -- 同步回执刷新最终编队；没有同步宿主时只做一次本地刷新。
+        commitTeamChange(activeTeamIdx, otherTeam ~= activeTeamIdx and otherTeam or nil)
 
         require("systems.GameSFX").play("ui_loosen")
 

@@ -150,12 +150,15 @@ function M.run(rt)
                 print("[Standalone] 编队同步失败: " .. tostring(reason))
                 local heroesData = ClientDispatcher.get("heroes")
                 if heroesData then CharacterPanel.setHeroesData(heroesData) end
-                return
+                return true
             end
+        else
+            -- 启动桥尚未就绪时，本地先完成唯一一轮派生计算，下面再读取最终缓存。
+            CharacterPanel.refreshTeamChange()
         end
         if teamIdx ~= 1 and otherTeamIdx ~= 1 then
             print("[Standalone] 队伍" .. teamIdx .. " 编队变更")
-            return
+            return true
         end
         local team = CharacterPanel.getDeployedTeam(1)
         TopBar.setTotalPower(CharacterPanel.getTotalPower())
@@ -166,7 +169,8 @@ function M.run(rt)
         else
             print("[Standalone] 阵容变更，当前无出战英雄")
         end
-    end)
+        return true
+    end, true)
 
     -- 养成刷新由 CharacterPanel 冻结差异检测唯一负责；此回调只保留归属诊断。
     -- 不再次失效编队/刷新默认 Scene，避免同一次成长重复重开战斗。
@@ -203,10 +207,8 @@ function M.run(rt)
             local totalExp = baseExp * expMult
             local perHeroExp = math.floor(totalExp / #heroIds + 0.5)
             if perHeroExp > 0 then
-                -- addHeroExp 内按有效等级/共鸣差异刷新；旁队及开页不碰默认 Scene。
-                for _, hid in ipairs(heroIds) do
-                    CharacterPanel.addHeroExp(hid, perHeroExp)
-                end
+                -- 逐英雄保留升级/共鸣/持久化顺序，名册与战力只在批次收尾刷新一次。
+                CharacterPanel.addHeroesExp(heroIds, perHeroExp)
             end
         end
     end

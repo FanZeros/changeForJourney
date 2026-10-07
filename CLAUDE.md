@@ -12,6 +12,14 @@
 4. **分支纪律**：以当前任务授权为准。本轮暗黑特效任务基于 `workspace1005@9497bfdb409c2d0fc17533e4cfc280702fe83517`，任务分支为 `feat1005/team-power-dark-effects-20261006`。用户最新明确提供即时鉴权并要求提 PR，授权提交／正常 push 本任务分支及创建目标 `workspace1005` 的 PR；不混入其他会话返回键改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布，凭据不持久化。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-07，上场与结算数据刷新去重）
+
+- **已正常push并核验：** 九文件功能提交08c6c4569555f5da45e0bc45de7acecac6650cc0正常push `perf1007/data-refresh-dedup`，push/ls-remote实际exit0且远端SHA一致；workspace1005仍ec1d8a61未推。正式PR #121：https://github.com/FanZeros/changeForJourney/pull/121，base=workspace1005，open/draft=false/merged=false，mergeable未计算，不称CI通过、合并或发布。
+- 玩家槽位解锁不无条件评分；heroes以最后完成评分的冻结拥有/等级/分支/觉醒/extraTalent/队槽值去重，纯经验保留名册/槽引用。上场最终同步只刷新一次，失败回滚不污染缓存；旧callback先刷新后读取兼容。批结算逐英雄升级/共鸣/persist顺序不改，仅末尾一次full/light；编辑队不评分、power排序等新缓存，不改公式/倍率/奖励/存档规则。
+- 官方b3成功593根Lua，九源码/测试载荷bytes/size一致；Sync855/0、Exp780/0、Sort557/0及原atomic/drag/切关/预估120/0实际通过，纯本任务Git候选三核心亦855/780/557全部exit0。重复/纯exp/失败回滚评分0、成功上场full1，batch逐项persist/slots保持。仅补两个旧测试，无新框架。逐文件LSP无Error，规范21旧问题同ec1d8a61/新增0，36单测通过。
+- 原host160/1旧Stop夹具TowerBattleScene nil、entry46/9旧horizonInputContext/TowerBuffSidebar依赖缺失保留且未混修；相关Standalone/Horizon源不改。早exp780/2诊断集合残留修代码后原断言780/0，Sync旧计数637/27记录保留。不是设备FPS/全部不卡或整仓全绿；headless音频/shader环境错误保留。
+- 当前授权持续推进，最新要求直接继续不机械提问；只正常push独立任务分支，不推workspace系列/强推/自动合并发布，尊重停止/权限边界。共享HEAD/index保持，塔/教程/.project/上传/玩家档/内证不混提交；三交接仅本人块，凭据不进源码/Git配置/日志/记忆。
+
 ## 上次做了什么（2026-10-07，右栏排序与总战力主值动画）
 
 - **已正常push并核验：** 最终26白名单提交a313445e9c31810e9cd9887354674e138a696259正常push独立feat1007/roster-sort-total-power-20261007，push／ls-remote实际exit0、远端SHA一致，workspace1005仍81266ee8未推。正式PR #119：https://github.com/FanZeros/changeForJourney/pull/119，base=workspace1005／head=本任务，open／draft=false／merged=false／mergeable未计算，不称CI通过、已合并或发布。提交包含23源码/meta＋3本人交接，目标PR117优化保持，塔WIP／.project／内证／玩家档／凭据不混入；下面“未push／PR”均属此前过程记录。成功后仅三交接补记正常push，不重复创建PR。

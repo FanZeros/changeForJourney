@@ -104,7 +104,7 @@ function M.bind(deps)
         if not deps.isInteractionBusy() then sortNow() end
     end
 
-    local function rebuild()
+    local function rebuild(awaitPower)
         local roster, ownedSet, shards = deps.getHeroRoster(), deps.getOwnedSet(), deps.getShardMap()
         local previous, entries = {}, {}
         for _, entry in ipairs(roster) do previous[#previous + 1] = entry.heroId end
@@ -124,7 +124,8 @@ function M.bind(deps)
             if entries[id] then roster[#roster + 1] = entries[id] end
         end
         remap()
-        requestSort()
+        -- 完整评分紧随其后时，不先用旧战力排一次；独立rebuild维持原契约。
+        if not (awaitPower and mode == "power") then requestSort() end
     end
 
     local function powerRefreshed()

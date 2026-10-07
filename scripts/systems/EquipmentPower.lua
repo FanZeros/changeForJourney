@@ -177,14 +177,42 @@ local function finishContext(ctx)
     return ctx
 end
 
--- 通用上下文仍保留完整库存：试穿、候选评分和转职预览不能借用轻快照。
+-- 隔离库存只在同一装备版本内共享：applyEquip 写 equipped，hydrate 会写库存及嵌套词条。
+-- 必须先深拷贝/水合，不能把 PlayerStore 的 live inventory 交给任何试穿路径。
+---@type table|nil
+local sharedEquipmentSnapshot
+---@type table|nil
+local sharedEquipmentSource
+local sharedEquipmentRevision = -1
+local function equipmentSnapshot(options)
+    if options ~= nil then return readSnapshot(options, "equipment") end
+    local store = require("core.PlayerStore")
+    local source = store.Get("equipment")
+    local revision = store.GetRevision and store.GetRevision("equipment") or 0
+    -- 无revision的旧宿主不能证明同引用仍是同版本：直接build必须保持逐调用新快照。
+    if store.GetRevision and sharedEquipmentSnapshot and sharedEquipmentSource == source
+        and sharedEquipmentRevision == revision then return sharedEquipmentSnapshot end
+    sharedEquipmentSource, sharedEquipmentRevision = source, revision
+    sharedEquipmentSnapshot = copy(source or {})
+    sharedEquipmentSnapshot.inventory = sharedEquipmentSnapshot.inventory or {}
+    sharedEquipmentSnapshot.equipped = sharedEquipmentSnapshot.equipped or {}
+    for key, item in pairs(sharedEquipmentSnapshot.inventory) do
+        if type(item) == "table" then
+            Eq.hydrate(item)
+            item.seq = tonumber(item.seq or key) or item.seq
+        end
+    end
+    return sharedEquipmentSnapshot
+end
+
+-- 通用上下文保留完整隔离库存；显式 options 仍有独立副本，缺省来源按装备版本共享。
 function M.buildContext(heroId, options)
     local id = tonumber(heroId)
     if not id or not HC.get(id) then return nil end
     local ctx = {
         heroId = id,
         heroesData = readSnapshot(options, "heroes"),
-        equipmentData = readSnapshot(options, "equipment"),
+        equipmentData = equipmentSnapshot(options),
         artifactsData = readSnapshot(options, "artifacts"),
         talentsData = readSnapshot(options, "talents"),
         seeds = {}, teamUnits = {}, memo = {}, scores = {},
@@ -195,10 +223,12 @@ function M.buildContext(heroId, options)
     end
     ctx.equipmentData.inventory = ctx.equipmentData.inventory or {}
     ctx.equipmentData.equipped = ctx.equipmentData.equipped or {}
-    for key, item in pairs(ctx.equipmentData.inventory) do
-        if type(item) == "table" then
-            Eq.hydrate(item)
-            item.seq = tonumber(item.seq or key) or item.seq
+    if options ~= nil then
+        for key, item in pairs(ctx.equipmentData.inventory) do
+            if type(item) == "table" then
+                Eq.hydrate(item)
+                item.seq = tonumber(item.seq or key) or item.seq
+            end
         end
     end
     return finishContext(ctx)
@@ -335,7 +365,8 @@ local function withoutPiece(ctx, equipment, seq)
     return powerFor(ctx, unit, units, stripped)
 end
 
-function M.evaluate(ctx, seq, targetSlot)
+-- 角标只需净提升；完整评分随后在同一 memo 结果上懒补单件贡献。
+function M.evaluateGain(ctx, seq, targetSlot)
     if not ctx then return nil end
     local item = Eq.getFromInventory(ctx.equipmentData, seq)
     if not item then return nil end
@@ -362,11 +393,18 @@ function M.evaluate(ctx, seq, targetSlot)
     else
         result = M.evaluateLoadout(ctx, { [slot] = seq })
     end
-    if result and result.valid then
+    -- evaluateLoadout 的 power=0 是占位值，不能冒充已经求过 withoutPiece。
+    if result and result.valid then result.power = nil end
+    ctx.memo[key] = result
+    return result
+end
+
+function M.evaluate(ctx, seq, targetSlot)
+    local result = M.evaluateGain(ctx, seq, targetSlot)
+    if result and result.valid and result.power == nil then
         ---@cast result table<string, any>
         result.power = result.previewPower - withoutPiece(ctx, result.equipment, seq)
     end
-    ctx.memo[key] = result
     return result
 end
 
@@ -439,11 +477,15 @@ local cached = {}
 local subscribed = false
 function M.invalidate()
     cached = {}
+    sharedEquipmentSnapshot, sharedEquipmentSource = nil, nil
+    sharedEquipmentRevision = -1
 end
 
 function M.getContext(heroId)
     local store = require("core.PlayerStore")
-    if not subscribed then
+    -- Store 在通知订阅者前递增 revision；晚注册的失效回调会误清本次刷新刚造的 ctx。
+    -- 仅为无 revision 的旧夹具/调用方保留订阅兜底。
+    if not store.GetRevision and not subscribed then
         for _, key in ipairs({ "heroes", "equipment", "artifacts", "talents" }) do
             store.Subscribe(key, M.invalidate)
         end

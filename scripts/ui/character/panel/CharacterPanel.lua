@@ -610,11 +610,13 @@ function CharacterPanel.init(vg)
     -- 监听天赋数据变更 → 立即刷新战斗力缓存（不能只标记脏，因为用户可能在教堂页面，CharacterPanel 不 draw）
     ClientDispatcher.subscribe("talents", function()
         refreshPowerCache()
+        refreshNavBadge()
     end)
 
     -- 监听神器数据变更 → 装配/卸下后刷新战斗力与战斗待定快照
     PlayerStore.Subscribe("artifacts", function()
         refreshPowerCache()
+        refreshNavBadge()
         local ok, BS = pcall(require, "ui.battle.scene.BattleScene")
         if ok and BS and BS.refreshAllyStats then
             BS.refreshAllyStats()
@@ -646,6 +648,11 @@ function CharacterPanel.draw(vg)
 
     -- 角色详情二级界面（覆盖在一切之上）
     CharacterDetail.draw(vg)
+end
+
+-- 角标任务跨页也要前进；惯性滚动仍只由角色页 update 驱动。
+function CharacterPanel.updateBadges()
+    if _power then _power.updateBadges() end
 end
 
 function CharacterPanel.update(dt)
@@ -1356,6 +1363,7 @@ function CharacterPanel.resetSessionData()
     _rosterSort.reset()
     if Draw.resetPresentation then Draw.resetPresentation() end
     local result = ensureHeroSync().resetSessionData()
+    if _power then _power.cancelBadgeRefresh() end
     heroesRefreshBaseline = teamRefreshSnapshot()
     lastHeroesRefreshTeams = {}
     return result

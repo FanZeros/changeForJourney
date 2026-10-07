@@ -13,6 +13,9 @@ local ImageCache        = require("ui.widget.ImageCache")
 local ArtifactAssetUtil   = require("config.ArtifactAssetUtil")
 
 local ArtifactDetailPanel = {}
+local effectKeywords = require("ui.widget.KeywordText").new({
+    textColor = { 0xb7, 0xa5, 0x94 }, popupMaxW = 500,
+})
 
 -- ======================== 动画常量 ========================
 
@@ -245,6 +248,7 @@ local function sameSelection(artifact, location, slot, subSlot, teamIdx)
 end
 
 local function clearSelection(reason)
+    effectKeywords:clear()
     if not state.visible then return end
     local artifactId = state.artifact and state.artifact.id
     state.visible = false
@@ -368,116 +372,18 @@ local function getEffectTextWithRatios(artifact)
 end
 
 local function drawWrappedText(vg, x, y, maxW, text, fontSize, lineH, r, g, b, highlightText)
-    text = tostring(text or "")
-    if text == "" then return end
-    local highlights = {}
-    if type(highlightText) == "table" then
-        for _, h in ipairs(highlightText) do
-            if h and h ~= "" then highlights[#highlights + 1] = tostring(h) end
-        end
-    elseif highlightText and highlightText ~= "" then
-        highlights[1] = tostring(highlightText)
-    end
-
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, fontSize)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-    nvgFillColor(vg, nvgRGBA(r, g, b, 255))
-
-    local chars = {}
-    local i = 1
-    local len = #text
-    while i <= len do
-        local b0 = string.byte(text, i)
-        local charLen = 1
-        if b0 >= 0xF0 then
-            charLen = 4
-        elseif b0 >= 0xE0 then
-            charLen = 3
-        elseif b0 >= 0xC0 then
-            charLen = 2
-        end
-        chars[#chars + 1] = string.sub(text, i, i + charLen - 1)
-        i = i + charLen
-    end
-
-    local lineY = y
-    local lineStart = 1
-    while lineStart <= #chars do
-        if chars[lineStart] == "\n" then
-            lineY = lineY + lineH
-            lineStart = lineStart + 1
-        else
-            local lineEnd = lineStart
-            for ci = lineStart, #chars do
-                if chars[ci] == "\n" then
-                    lineEnd = ci - 1
-                    break
-                end
-                local sub = table.concat(chars, "", lineStart, ci)
-                local tw = nvgTextBounds(vg, 0, 0, sub)
-                if tw > maxW and ci > lineStart then
-                    lineEnd = ci - 1
-                    break
-                end
-                lineEnd = ci
-            end
-            if lineEnd >= lineStart then
-                local lineStr = table.concat(chars, "", lineStart, lineEnd)
-                if #highlights > 0 then
-                    local hs, he = nil, nil
-                    for _, h in ipairs(highlights) do
-                        local s, e = lineStr:find(h, 1, true)
-                        if s and (not hs or s < hs) then
-                            hs, he = s, e
-                        end
-                    end
-                    if hs then
-                        local before = lineStr:sub(1, hs - 1)
-                        local mid = lineStr:sub(hs, he)
-                        local after = lineStr:sub(he + 1)
-                        local ratioPrefix, ratioMid, ratioSuffix = mid:match("^(.-)(（[%d%.]+%%）)(.*)$")
-                        local curX = x
-                        nvgFillColor(vg, nvgRGBA(r, g, b, 255))
-                        if before ~= "" then
-                            nvgText(vg, curX, lineY, before, nil)
-                            curX = curX + nvgTextBounds(vg, 0, 0, before)
-                        end
-                        nvgFillColor(vg, nvgRGBA(DESC_TEXT.HIGHLIGHT_R, DESC_TEXT.HIGHLIGHT_G, DESC_TEXT.HIGHLIGHT_B, 255))
-                        if ratioMid then
-                            if ratioPrefix ~= "" then
-                                nvgText(vg, curX, lineY, ratioPrefix, nil)
-                                curX = curX + nvgTextBounds(vg, 0, 0, ratioPrefix)
-                            end
-                            nvgFillColor(vg, nvgRGBA(DESC_TEXT.RATIO_R, DESC_TEXT.RATIO_G, DESC_TEXT.RATIO_B, 255))
-                            nvgText(vg, curX, lineY, ratioMid, nil)
-                            curX = curX + nvgTextBounds(vg, 0, 0, ratioMid)
-                            if ratioSuffix ~= "" then
-                                nvgFillColor(vg, nvgRGBA(DESC_TEXT.HIGHLIGHT_R, DESC_TEXT.HIGHLIGHT_G, DESC_TEXT.HIGHLIGHT_B, 255))
-                                nvgText(vg, curX, lineY, ratioSuffix, nil)
-                                curX = curX + nvgTextBounds(vg, 0, 0, ratioSuffix)
-                            end
-                        else
-                            nvgText(vg, curX, lineY, mid, nil)
-                            curX = curX + nvgTextBounds(vg, 0, 0, mid)
-                        end
-                        nvgFillColor(vg, nvgRGBA(r, g, b, 255))
-                        if after ~= "" then
-                            nvgText(vg, curX, lineY, after, nil)
-                        end
-                    else
-                        nvgFillColor(vg, nvgRGBA(r, g, b, 255))
-                        nvgText(vg, x, lineY, lineStr, nil)
-                    end
-                else
-                    nvgFillColor(vg, nvgRGBA(r, g, b, 255))
-                    nvgText(vg, x, lineY, lineStr, nil)
-                end
-            end
-            lineY = lineY + lineH
-            lineStart = lineEnd + 1
+    local styles = {}
+    for _, highlight in ipairs(highlightText or {}) do
+        local value, ratio = highlight:match("^(.-)(（[%d%.]+%%）)$")
+        styles[#styles + 1] = { text = value or highlight,
+            color = { DESC_TEXT.HIGHLIGHT_R, DESC_TEXT.HIGHLIGHT_G, DESC_TEXT.HIGHLIGHT_B } }
+        if ratio then
+            styles[#styles + 1] = { text = ratio,
+                color = { DESC_TEXT.RATIO_R, DESC_TEXT.RATIO_G, DESC_TEXT.RATIO_B } }
         end
     end
+    effectKeywords.textColor = { r, g, b }
+    effectKeywords:draw(vg, tostring(text or ""), x, y, maxW, fontSize, lineH, nil, true, { styles = styles })
 end
 
 local function internalUpdate()
@@ -529,6 +435,7 @@ function ArtifactDetailPanel.show(artifact, location, slot, subSlot, teamIdx, op
         return
     end
 
+    effectKeywords:clear()
     state.artifact = artifact
     state.location = selectedLocation
     state.slot = slot
@@ -551,6 +458,7 @@ function ArtifactDetailPanel.show(artifact, location, slot, subSlot, teamIdx, op
 end
 
 function ArtifactDetailPanel.hide()
+    effectKeywords:clear()
     if not state.visible or state.closing then return end
     if state.floating then
         ArtifactDetailPanel.closeImmediate()
@@ -607,6 +515,7 @@ end
 
 function ArtifactDetailPanel.refreshArtifact(artifact)
     if state.visible and artifact then
+        effectKeywords:clear()
         state.artifact = artifact
     end
 end
@@ -702,6 +611,7 @@ function ArtifactDetailPanel.draw(vg)
         DESC_BG.R,
         DESC_BG.FILL_R, DESC_BG.FILL_G, DESC_BG.FILL_B, DESC_BG.FILL_A)
 
+    effectKeywords:beginFrame()
     local effectText = getEffectTextWithRatios(artifact)
     if effectText and effectText ~= "" then
         local textX = DESC_BG.CX - DESC_BG.W * 0.5 + DESC_TEXT.PADDING
@@ -798,6 +708,10 @@ function ArtifactDetailPanel.draw(vg)
     end
 
     nvgRestore(vg)
+    effectKeywords:setPopupTransform(function(x, y)
+        return cx + (x - BG.CX) * scale, cy + (y - BG.CY) * scale
+    end)
+    effectKeywords:drawPopup(vg)
 end
 
 ---@param tx number 1080x2400 设计坐标
@@ -811,6 +725,10 @@ function ArtifactDetailPanel.handleTap(tx, ty)
 
     -- 开合动画只拦可见本体，不吞无关格子的点击/拖拽。
     if state.closing or state.opening then return inside end
+    if effectKeywords:handleInput(lx, ly) then
+        ArtifactDetailPanel.pin()
+        return true
+    end
     if not inside then
         if state.floating then
             ArtifactDetailPanel.closeImmediate()

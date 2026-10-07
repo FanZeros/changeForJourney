@@ -1171,6 +1171,7 @@ function HandleUpdate(eventType, eventData)
             print("[ValidateHook] opened panel: " .. tostring(H_AUTO_OPEN_PANEL))
         end
     end
+    CharacterPanel.updateBadges()
     if tabIndex == 1 then
         CharacterPanel.update(dt)
     elseif tabIndex == 5 or (tabIndex == 3 and DungeonPage.isTowerChallengePending()) then

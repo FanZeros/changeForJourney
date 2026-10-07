@@ -33,6 +33,7 @@ function M.bind(deps)
             BlacksmithEnhance.handleDialogDragBegin(dx, dy)
             return true
         end
+        -- 宿主每次按下都调用 Begin（不是跨阈值拖动）；保留热区/气泡到松手点击。
         return true  -- 铁匠铺打开时消费所有拖拽
     end
 
@@ -98,6 +99,10 @@ function M.bind(deps)
             return BlacksmithEnhance.handleDialogInput(dx, dy)
         end
 
+        -- 已打开的关键词气泡优先，点击页签/按钮只关说明，不触发业务动作。
+        local keywordPanel = state.tab == "qianghua" and BlacksmithEnhance or BlacksmithRefine
+        if keywordPanel.handleKeywordInput(dx, dy) then return true end
+
         -- [锻炉双页 0929] 页内返回键已移除：锻炉右侧中缝返回条（seamBackList）统一接管关闭
 
         -- [锻炉双页 0929] 工作台槽点击
@@ -122,6 +127,8 @@ function M.bind(deps)
                 local tabKeys = { "qianghua", "xilian" }
                 local newTab = tabKeys[i]
                 if state.tab ~= newTab then
+                    BlacksmithEnhance.clearKeywords()
+                    BlacksmithRefine.clearKeywords()
                     state.tabFrom = state.tab
                     state.tabSwitchTime = time.elapsedTime
                     state.tab = newTab

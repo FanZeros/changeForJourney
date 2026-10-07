@@ -35,6 +35,8 @@ local EquipmentDetail = {}
 local setKw = {
     KeywordText.new(), KeywordText.new(), KeywordText.new(),
 }
+local affixKw = KeywordText.new()
+local keywordDismissGesture = false -- 按下时说明已打开：即使微抖动/重绘关泡，松手仍只消费说明。
 
 -- ======================== 设计分辨率 ========================
 
@@ -468,7 +470,7 @@ end
 
 -- 绘制分区：共用活状态和 KeywordText；图片 getter 保证 init 之后的句柄可见。
 local panelDraw = EquipmentDetailDraw.create({
-    detState = detState, setKw = setKw,
+    detState = detState, setKw = setKw, affixKw = affixKw,
     qualityColor = QUALITY_COLOR, affixBadgeKey = AFFIX_BADGE_KEY,
     ---@return EquipmentDetailDrawImages
     getImages = function()
@@ -572,6 +574,7 @@ end
 ---@param slot string 槽位
 ---@param heroId number 角色ID
 function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner, anchorX, anchorY)
+    keywordDismissGesture = false
     detState.open      = true
     detState.closing   = false
     detState.equipSeq  = tostring(seq)
@@ -589,6 +592,7 @@ function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner, anchorX, 
     detState.descDragging = false
     detState.lockHotspot = nil
     detState.layoutEquip = nil
+    affixKw:clear()
     for i = 1, 3 do setKw[i]:clear() end   -- 清上次装备的关键词状态
     print("[EquipmentDetail] open seq=" .. tostring(seq) .. " slot=" .. tostring(slot)
         .. " heroId=" .. tostring(heroId) .. " compact=" .. tostring(detState.compactCorner)
@@ -623,6 +627,9 @@ function EquipmentDetail.dismissHover(owner)
 end
 
 function EquipmentDetail.close()
+    keywordDismissGesture = false
+    affixKw:clear()
+    for i = 1, 3 do setKw[i]:clear() end
     if detState.compactCorner then
         detState.open = false
         detState.closing = false
@@ -763,6 +770,12 @@ end
 function EquipmentDetail.handleInput(dx, dy)
     if not detState.open then return false end
     if detState.closing then return true end
+    if keywordDismissGesture then
+        keywordDismissGesture = false
+        affixKw:closePopup()
+        for i = 1, 3 do setKw[i]:closePopup() end
+        return true
+    end
     if detState.compactCorner then
         local ox, oy = compactOffset()
         dx = (dx - ox) / COMPACT_SCALE
@@ -785,7 +798,8 @@ function EquipmentDetail.handleInput(dx, dy)
     local curEquip = getComparisonEquip()
     local hasCurrent = (not isEquipped) and (curEquip ~= nil)
 
-    -- 套装词条关键词（仅 compact 主面板交互；坐标已反变换到 compact 局部系，与热区对齐）
+    -- 气泡优先关闭，不能把这次点击变成穿戴/分解或关闭装备详情。
+    if affixKw:isOpen() then affixKw:closePopup(); return true end
     if detState.compactCorner then
         for i = 1, 3 do
             if setKw[i]:isOpen() then
@@ -793,10 +807,13 @@ function EquipmentDetail.handleInput(dx, dy)
                 return true
             end
         end
+    end
+    -- 大面板文字在滚动变换内；输入补回 scrollY，clip 防止隐藏词条吃按钮点击。
+    local keywordY = detState.compactCorner and dy or dy + detState.descScrollY
+    if affixKw:handleInput(dx, keywordY) then return true end
+    if detState.compactCorner then
         for i = 1, 3 do
-            if setKw[i]:handleInput(dx, dy) then
-                return true
-            end
+            if setKw[i]:handleInput(dx, dy) then return true end
         end
     end
 
@@ -1067,6 +1084,7 @@ function EquipmentDetail.draw(vg)
     local backpackOnly = (detState.slot == nil)  -- 背包模式不显示穿戴按钮
 
     if compact then
+        affixKw:setPopupTransform(function(x, y) return x, y end)
         local compare = hasCurrent and curEquip or nil
         if compare then
             local side = (detState.owner == "character") and -1 or 1
@@ -1081,7 +1099,8 @@ function EquipmentDetail.draw(vg)
             nvgText(vg, REF_BG_CX + side * (COMPACT_BG_W + 16), 16, "当前装备", nil)
         end
         drawCompactPanel(vg, newEquip, btnText)
-        -- 套装词条关键词解释气泡（compact 局部坐标系，与热区对齐）
+        -- 关键词解释气泡在内容之后、滚动裁剪之外绘制。
+        affixKw:drawPopup(vg)
         for i = 1, 3 do setKw[i]:drawPopup(vg) end
         nvgRestore(vg)
         return
@@ -1093,6 +1112,8 @@ function EquipmentDetail.draw(vg)
     drawEquipPanel(vg, newEquip, singleOffsetX,
         SINGLE_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H,
         (hasCurrent and powerDiff or nil), true, btnText, backpackOnly, true, showDecompose)
+    affixKw:setPopupTransform(function(x, y) return x, y - detState.descScrollY end)
+    affixKw:drawPopup(vg)
 
     nvgRestore(vg)
 end
@@ -1164,6 +1185,7 @@ end
 function EquipmentDetail.handleScroll(wheel, dx, dy)
     if not detState.open or detState.closing then return false end
     if dx ~= nil and not EquipmentDetail.containsPoint(dx, dy) then return false end
+    affixKw:closePopup()
     detState.descScrollY = detState.descScrollY - (wheel or 0) * 90
     clampDescScroll()
     return true
@@ -1171,12 +1193,16 @@ end
 
 function EquipmentDetail.handleDragBegin(dx, dy)
     if not detState.open or detState.closing then return false end
+    keywordDismissGesture = affixKw:isOpen()
+    if detState.compactCorner then
+        for i = 1, 3 do keywordDismissGesture = keywordDismissGesture or setKw[i]:isOpen() end
+    end
     local _, ly = dx, dy
     if detState.compactCorner then
         local ox, oy = compactOffset()
         ly = (dy - oy) / COMPACT_SCALE
     end
-    for i = 1, 3 do setKw[i]:closePopup() end   -- 拖拽时关关键词气泡
+    -- 每次指针按下都会到 Begin；点击说明/按钮须保留气泡到松手消费。
     detState.descDragging = true
     detState.descDragLastY = ly
     return true
@@ -1188,6 +1214,10 @@ function EquipmentDetail.handleDragMove(dx, dy)
     if detState.compactCorner then
         local ox, oy = compactOffset()
         ly = (dy - oy) / COMPACT_SCALE
+    end
+    if math.abs(detState.descDragLastY - ly) > 0.01 then
+        affixKw:closePopup()
+        for i = 1, 3 do setKw[i]:closePopup() end
     end
     detState.descScrollY = detState.descScrollY + (detState.descDragLastY - ly)
     detState.descDragLastY = ly

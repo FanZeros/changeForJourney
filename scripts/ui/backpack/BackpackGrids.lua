@@ -87,9 +87,42 @@ function M.bind(deps)
         return counts
     end
 
+    -- 绘制、点击、悬停共用列表；只在数据版本/筛选改变时重建，滚动不重复评分排序。
+    local cachedList = {}
+    local cachedSources = {}
+    local cachedKey = ""
+    local function listCacheKey(slotFilter, heroId, dualMode)
+        if not PlayerStore.GetRevision then return nil end
+        local parts = { tostring(slotFilter), tostring(heroId), tostring(dualMode) }
+        for _, key in ipairs({ "equipment", "heroes", "artifacts", "talents" }) do
+            parts[#parts + 1] = tostring(PlayerStore.GetRevision(key))
+        end
+        for quality = 1, #EquipmentConfig.QUALITY do
+            parts[#parts + 1] = qualityChecked(quality) and "1" or "0"
+        end
+        -- 筛选集合很小；冻结值而非引用，可识别弹窗对同一集合的原地勾选。
+        local selected = {}
+        for key, value in pairs(decomposeState.setFilter or {}) do
+            if value then selected[#selected + 1] = tostring(key) end
+        end
+        table.sort(selected)
+        parts[#parts + 1] = table.concat(selected, ",")
+        return table.concat(parts, "|")
+    end
+
     local function getEquipList()
         local equipData = PlayerStore.Get("equipment")
-        if not equipData or not equipData.inventory then return {} end
+        if not equipData or not equipData.inventory then
+            cachedList, cachedSources, cachedKey = {}, {}, ""
+            return cachedList
+        end
+        local slotFilter, filterHeroId, _, dualMode = filterContext()
+        local key = listCacheKey(slotFilter, filterHeroId, dualMode)
+        local sources = { equipData, PlayerStore.Get("heroes"),
+            PlayerStore.Get("artifacts"), PlayerStore.Get("talents") }
+        if key and key == cachedKey and sources[1] == cachedSources[1]
+            and sources[2] == cachedSources[2] and sources[3] == cachedSources[3]
+            and sources[4] == cachedSources[4] then return cachedList end
 
         local equippedByHero = {}
         if equipData.equipped then
@@ -103,7 +136,6 @@ function M.bind(deps)
         end
 
         local list = {}
-        local slotFilter, filterHeroId, _, dualMode = filterContext()
         -- 一次列表复用角色上下文；评分器缓存单件模拟，不逐帧逐件重建 HeroCombat。
         local powerContext = filterHeroId ~= nil and EquipmentPower.getContext(filterHeroId) or nil
         for seqStr, equip in pairs(equipData.inventory) do
@@ -137,6 +169,7 @@ function M.bind(deps)
             return a.seq < b.seq
         end)
 
+        cachedList, cachedSources, cachedKey = list, sources, key or ""
         return list
     end
 

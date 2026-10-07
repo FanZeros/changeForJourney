@@ -33,7 +33,7 @@ local ctx = { modules = {}, loading = {}, engineModules = {}, metrics = {}, erro
     activeImages = {}, updateTasks = 0, drawTasks = 0, initTasks = 0, frameBootTasks = 0,
     frameLoads = 0, frameImages = 0, frameRequests = 0, dtTotal = 0, dtMax = 0,
     frameWork = {}, observedFrames = {}, eventImageStats = {}, imageOwners = {},
-    battleUpdates = 0, battleRenders = 0, renderPending = false, endRequested = false }
+    battleUpdates = 0, battleRenders = 0, renderPending = false, endRequested = false, driverRefs = {} }
 local overrides = {}
 local env = setmetatable({}, { __index = function(_, key)
     local value = overrides[key]
@@ -297,6 +297,14 @@ local function instrument(name, module)
             end
         end
     end
+    if name == "ui.battle.tri.BattleTriDriver" then
+        local factory = assert(module.new)
+        module.new = function(team, ...)
+            local drv = factory(team, ...)
+            ctx.driverRefs[team] = drv
+            return drv
+        end
+    end
     if name == "ui.battle.tri.BattleTriPage" then
         local original = assert(module.setBattleReady)
         module.setBattleReady = function(ready)
@@ -369,6 +377,8 @@ local function phase()
     if not title then return "load" end
     if title.isOpen() then return title.isFading() and "title-fade" or "title" end
     if letter and letter.isOpen() then return "letter" end
+    local rt = ctx.modules["boot.StandaloneRT"]
+    if rt and rt.entryPreparing then return "entering" end
     local dispatcher = ctx.modules["runtime.ClientDispatcher"]
     local session = dispatcher and dispatcher.get("session")
     if ctx.bootDone and tri and tri.isOpen() and session and session.introCompleted == true then return "battle" end
@@ -417,7 +427,10 @@ local function checkTrio()
     for id = 1, 3 do
         if not (heroes.roster[id] or heroes.roster[tostring(id)]) then return false end
     end
-    local team, allies = panel.getDeployedTeam(1), scene.getAllies()
+    local team = panel.getDeployedTeam(1)
+    -- 三行已经接管时验证实际参战驱动，不用已暂停的兼容Scene旧单人快照替代。
+    local driver = ctx.driverRefs[1]
+    local allies = driver and driver.allies or scene.getAllies()
     if #team ~= 3 or #allies ~= 3 then return false end
     local seen = {}
     for _, ally in ipairs(allies) do seen[ally.heroId or ally.id] = true end

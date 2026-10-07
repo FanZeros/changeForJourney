@@ -23,16 +23,22 @@
 - 相关生命周期／快捷78／切关／原子编队／领奖241／触发35／神器手势1869通过。仓库旧24失败在固定13b7独立完整Runtime同序／同重数／同集合，新增0；两边applyEquip97461比较mismatch0，但旧stub异常后绘制未达，不称该测试通过。seam旧4805后奖励隐藏返回断言失败，门控块与固定父一致，仅只读对照未独立全集复跑，不修返回键旁支。
 - 正式main实际150帧boot18/18、Lua／资源0／缺图0；rawFAIL/exit1仅4个100ms环境帧尖峰，不称性能通过。逻辑／绘制记录器不等于本轮GPU截图、逐语视觉、手机触控或用户审美验收。前序资源根、API缺口、锁队及重开时序夹具失败均保留，修夹具不降低生产门禁。36规范单测通过；候选20旧问题同固定父／新增0，不称全仓规范清零。
 - **持续强化：持续推进已授权任务、不擅自取消退出；当前最新恢复明确直接继续、不再提问，遵循当前指令不机械AskUserQuestion。** 尊重停止／权限拒绝／安全边界，只正常push教程独立分支，不推workspace系列、不强推、不自动合并发布。凭据不进源码、Git配置、remote、日志或记忆，公开凭据应撤销轮换；三记忆仅精确插入本人块、双方历史保留。
-## 上次做了什么（2026-10-07，启动卡顿首轮优化，本地完成）
+## 上次做了什么（2026-10-07，战斗停顿与离线收益顺序续修）
 
-- 拉取 `origin/workspace1005@5fca1d82` 后新建 `perf1007/startup-stutter`，未推基线、未创建 PR／合并发布，本轮尚未 commit/push；历史其他任务的远端授权不转用。
-- `StartupQueue` 合作式分帧：每帧恢复一次，在宿主真实图片缓存 miss 前检查4ms软预算／最多2张；单张解码及纯CPU不可抢占，不保证全帧4ms。19步完成后才解锁标题，避免半初始化接线／弹窗被提前使用；Stop丢弃悬挂worker，资源失败保留旧容错。
-- 城镇19个直接图片调用、三行框／实际存档章节背景、首场在场卡移至标题下分帧预热；默认MAP_1和星门只在确实需要时加载。四处局部图片缓存加新context守卫，不借旧或半初始化句柄，不声称整个宿主支持同VM重启。TopBar取消本模块全部头像预载，其他模块仍可能加载，不称总量减25。
-- BGM启动Sound请求7→1，SFX63→0，后续按轨／完整候选列表按需；随机、池、音量、淡入淡出保持，首次使用仍同步。英雄通知唯一名册重建／完整缓存刷新，先于失效与离线即时读；6名拥有5名出战夹具上下文direct23→12、订阅29→12，正式战力与神器队槽口径不变。
-- 最终父复跑：queue34／audio762／hero396／assets74断言均0失败、exit0；旧卡加载14／投射物原文／宿主原165断言隔离补依赖均通过。旧public3失败、artifact白名单0断言失败、章节TowerConfig遍历nil均保留并做基线对照，不能称全仓全绿。修改Lua逐文件LSP Error=0；官方构建b11成功，根scripts571Lua，本轮17源码与UUID-hash载荷17/17字节一致；首次b10因新probe.meta UUID含slash复制失败已修，纹理压缩81旧超2048警告仍保留。构建自带LSP daemon不可用跳闸门，不能以build替全仓静态检查，已单文件诊断；`.project`生成变化已还原。
-- 同版隔离probe（SHA ec8fa4ca）四轮真实标题／进入流程均0异常／0图片失败、exit0，保留随机/GC/TimeStep并封闭玩家档IO。标题Update wall峰448→167ms、单callback解码42→2；进入淡出Render425→172ms，来信Update470→4ms。代价title ready5→118/119帧；战斗后段Update145→321ms／Render64→187ms未改善，含后台冷图和后续剧情，不能称设备FPS提升或全面不卡。长离线／旧遗匣批量生成与保存编码本轮未改未测；下一步优先实机验收标题等待，再定位后台卡图与剧情首次加载。
-- 构建后最终真实开场复跑：19步全完、三人真实上阵、180战斗Update／181Render、0异常／0图片失败、exit0及Stop成功；此轮title ready101帧，Update峰329ms（前四轮167／205ms，软件环境波动明显），解码上限仍2。不要只引用最佳167ms称稳定性能达标。
-- 持续推进已授权范围、如实交接；当前恢复明确不再提问，遵循最新指令，不机械询问／扩大远端授权。内部证据仅 `.git/validation/startup1007`，无关 `.agent`技能目录与本地配置不混任务；凭据不入源码、配置、日志或记忆。
+- 延续用户“战斗期间约1秒卡顿／先备好战斗再显示离线收益”需求，仍在`perf1007/startup-stutter`，目标`workspace1005`。已实查PR116被外部合并至676fef7f（closed／merged=true）；本轮新改动不能称已进入PR116。只正常push任务分支，不推workspace系列、不强推、不自动合并发布，凭据不持久化。
+- 三行攻击期不再pump全图鉴；boot／入场协作式准备真实驱动、首波和候补、短投射物及完整音效组，实际三行Render后才核算／显示离线收益，待领取仍暂停战斗。真实首场失败重试只成功后解锁，外部水合／跨yield换编队／Stop／reset使旧准备凭据失效；不改奖励、随机消费、成长、战力公式或当前波pending。首屏预热等待变长，资源失败仍按旧绘制容错，不保证所有纹理成功。
+- 当前穿戴战力用单次refresh轻batch，1000库存／12owned水合12000→72、全库存遍历12→0，严格未取整power／属性／套装／神器oracle一致；试穿通用完整库存上下文保留。纯经验无升级不重建名册／战力（七人批量context98→0），旁队／未部署共鸣升级仍全刷新。VG缓存跨context丢引用不误删，同VG重置／合法0／yield取消保留。
+- 存档由每秒完整JSON比较改4096步骤／约1ms CPU软预算结构检查，真正Flush仍即时新鲜完整编码／Write／Rename、不保存跨帧镜像。首扫未访问locked漏存已修，前版负对照13断言4失败，修后OfflineChecked／Restore两路径121帧正确写盘；最终15组747／0。大型业务首扫可能多次保守补存，检测可数秒（先前10000装备892帧约14.9秒），同步Flush仍尖峰，不承诺1秒检出／掉电可靠性／全面不卡。
+- 最终官方b18成功，根scripts577Lua全包逐字节及size0差异，本轮25Lua载荷25/25一致；四新Lua/meta入包，25逐文件severity1均0，不代全仓静态清零（缓存61个其他Error）。最终queue34／audio787／assets78／hero669／exp752／Save747／Entry228／背景3555／试穿120通过；切关113、副本compat342、教程474／1334／69／58、原host165、投射物14、story3396、focused5312通过。assets44+1harness及host14／155处两次依赖缺口先失败，仅补真实fixture依赖后通过、原断言保留；原公共3／神器4／预估9等基线失败不混修。
+- 相同probe SHA de5266f9的a7de8旧树vs本轮工作树长A/B，各1200 Update／1201 Render／异常0，旧目录1162生产/meta文件逐对象匹配，probe唯一替换。Update墙钟峰89→22ms、Render69→54ms、battle图片解码141→9；title ready95→142、首战262→348帧，等待变长。最终冻结版另复测1200／1201／20步／异常0／缺图0，Update峰33ms、Render39ms，ready143／首战349；不混用最好值、不是逐战斗状态锁步／设备FPS。探针File／FS封闭、Save明确stub，不是玩家存档恢复或持久化性能实测。
+- `.project`仅本人构建生成的身份/default已与构建前备份逐字节恢复；内证只.git/validation/startup1007，技能／两无关meta不提交。下一阶段提交／push／新PR实际结果后补，不重复创建已合PR116。当前明确直接继续不再提问，不机械AskUserQuestion；尊重停止／权限拒绝／安全边界，不把代理报告当授权。
+
+## 上次做了什么（2026-10-07，启动卡顿首轮优化，PR #116 历史交付）
+
+- 基线 `workspace1005@56cfbd3c` 含PR113/114/115。两提交 `69f126b2` + `a7de8dae` 已正常push并核验；正式PR #116：https://github.com/FanZeros/changeForJourney/pull/116，base=`workspace1005`，head=`perf1007/startup-stutter`，创建时open／draft=false／merged=false／mergeable=true；本轮后续实查已由外部合并至676fef7f（closed／merged=true）。本会话不推workspace系列、不自动合并发布。
+- 正式Build b14成功，根scripts573 Lua；相对目标17个Lua与UUID-hash载荷17/17逐字节一致。Build LSP daemon code1而跳过全仓gate，17本轮Lua单文件severity1均0；两条`DungeonConfig.lua`上游类型诊断未改；81条1080×2400超2048纹理压缩警告保留。四专项：queue34/audio762/hero396/assets74均0失败exit0；battle-stage-switch、教程entry17/474、副本compat342、原host165、projectile-arc通过。`resource_dungeon_visual_test` 16组38675项中10失败，含上游新`ExpeditionOverview`隔离mock不兼容及旧掉落定值与PR115成长表漂移，未改上游遮盖问题。
+- 最终同SHA `ec8fa4ca` 冻结旧5fca树vs56cf合并树同探针A/B：title-only三轮基线ready帧5/5/5、Update峰211/212/209ms；优化ready93/93/94帧、峰66/66/94ms，解码峰42→2。一次真实首场成对探针均180 Update/181 Render与异常0，ready帧5→93、battle Update峰98→85ms、淡出Render峰307→66ms。真实存档分支不在同一探针，另一次Save封闭探针开场复测ready101帧/Update峰329ms。仅软件headless CPU/墙钟样本，不能等同设备FPS或全面不卡；启动等待明显变长。长离线奖励、遗匣装备生成与存档编码未测。
+- `.project`构建生成身份配置已还原；全量记忆索引相对最新base仅新增本任务交接行，无历史删除。工作区剩余未跟踪技能文件及两份无关meta未提交；`.git/validation/startup1007`只放内部证据。聊天曾曝光的PAT需立即撤销轮换，不写进仓库／配置／记忆。
 
 
 ## 上次做了什么（2026-10-07，图片与 Spine 暗黑特效续作）

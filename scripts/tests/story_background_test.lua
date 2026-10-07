@@ -609,6 +609,7 @@ end
 local function wipeBootCases()
     local ctx = newContext()
     local story = ctx.env.require("systems.StoryPlayer")
+    ctx.env.StageConfig = ctx.env.require("config.StageConfig")
     local callback
     ctx.env.BattleScene = {
         getCurrentStageId = function() return ctx.modules.battle.currentStageId end,
@@ -770,6 +771,7 @@ local function bootChainCases()
     ctx.env.GameBGM = { setScene = function(name) scenes[#scenes + 1] = name end }
     ctx.env.showOfflineRewardPanel_ = function() completed = completed + 1; return true end
     ctx.env.postStartFlowDone_ = false
+    ctx.env.StandaloneRT = {}
     ctx.env.LetterIntro = letter
     ctx.env.localSendAction = function(action, params)
         ctx.actions[#ctx.actions + 1] = { action = action, params = params }; return true

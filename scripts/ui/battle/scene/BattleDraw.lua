@@ -89,7 +89,7 @@ local function cardImage(vg, unit)
     return -1
 end
 
---- 首屏在场卡牌预热。保留共享分帧队列，未在场大图仍由原后台路径加载。
+--- 只预热指定在场/候补卡牌；三行宿主不在攻击期间消化全图鉴大图队列。
 function BattleDraw.preloadCards(vg, units)
     for _, unit in ipairs(units) do cardImage(vg, unit) end
 end

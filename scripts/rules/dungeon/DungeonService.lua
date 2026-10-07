@@ -254,10 +254,67 @@ function DungeonService.GrantEquipment(uid, dungeonId, floor, count)
     return true, nil, result
 end
 
+--- 一次扫荡当量对应的卷轴与扫荡券：与挂机同口径（24h 挂机 = 两次扫荡）。
+---@param floor number
+---@return number scrollPerSweep, number ticketPerSweep
+local function equipScrollPerSweep(floor)
+    local scrollRate, ticketRate = DC.getEquipDropRates(floor)
+    local idle = require("config.DungeonIdleConfig")
+    local fullMinutes = idle.MAX_ACCUM_MIN
+    local fullSeconds = idle.FULL_RATE_SEC
+    local function perSweep(rate)
+        return math.max(1, math.floor(rate * fullSeconds / fullMinutes))
+    end
+    return perSweep(scrollRate), perSweep(ticketRate)
+end
+
+--- 把卷轴/扫荡券写入货币；只发配置里存在的字段。
+---@param uid number
+---@param floor number
+---@param sweepCount number 本次发奖的扫荡当量数（首通=2，扫荡/挂机=1）
+---@return table scrollDrops
+local function grantEquipScrolls(uid, floor, sweepCount)
+    local currency = PDM.GetModule(uid, "currency")
+    if not currency then return {} end
+    local scrollPerSweep, ticketPerSweep = equipScrollPerSweep(floor)
+    local scrollTotal = scrollPerSweep * sweepCount
+    local ticketTotal = ticketPerSweep * sweepCount
+    local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
+    local drops = {}
+    for _ = 1, scrollTotal do
+        local st = scrollTypes[math.random(1, #scrollTypes)]
+        drops[st] = (drops[st] or 0) + 1
+    end
+    for field, count in pairs(drops) do
+        currency[field] = (currency[field] or 0) + count
+    end
+    if ticketTotal > 0 then
+        currency.sweepTicket = (currency.sweepTicket or 0) + ticketTotal
+        drops.sweepTicket = ticketTotal
+    end
+    markDirty(uid, "currency")
+    return drops
+end
+
+--- 公开入口：装备副本卷轴/扫荡券发放（供挂机领取在同一事务内调用）。
+---@param uid number
+---@param floor number
+---@param sweepCount number
+---@return table scrollDrops
+function DungeonService.GrantEquipScrolls(uid, floor, sweepCount)
+    return grantEquipScrolls(uid, floor, sweepCount)
+end
+
 local function grantRewards(uid, id, floorData, firstClear)
     if id == "equipment_vault" then
-        local count = firstClear and floorData.firstEquip or floorData.sweepEquip
-        return DungeonService.GrantEquipment(uid, id, floorData.floor, count)
+        local sweep = floorData.sweepEquip or 0
+        local count = firstClear and (floorData.firstEquip or sweep * 2) or sweep
+        local ok, err, result = DungeonService.GrantEquipment(uid, id, floorData.floor, count)
+        if not ok then return false, err end
+        result = result or {}
+        -- 首通=两次扫荡当量，扫荡=一次；与挂机同口径补卷轴与扫荡券。
+        result.scrollDrops = grantEquipScrolls(uid, floorData.floor, firstClear and 2 or 1)
+        return true, nil, result
     end
     local currency = PDM.GetModule(uid, "currency")
     if not currency then return false, "数据未加载" end

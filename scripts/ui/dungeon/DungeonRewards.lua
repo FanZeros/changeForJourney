@@ -20,6 +20,19 @@ function M.build(data)
         reward.iconPath = item.iconPath or (item.templateId and EquipmentConfig.getIconPath(item.templateId)) or CHEST_ICON
         rewards[#rewards + 1] = reward
     end
+    -- 装备副本补发的卷轴/扫荡券：并入同一回执展示。
+    local SCROLL_TO_REWARD = {
+        weaponScroll = "weapon_scroll", offhandScroll = "offhand_scroll",
+        armorScroll = "armor_scroll", accessoryScroll = "accessory_scroll",
+        helmetScroll = "helmet_scroll", shoesScroll = "shoes_scroll",
+        sweepTicket = "sweep_ticket",
+    }
+    for field, count in pairs(data.scrollDrops or {}) do
+        local amount = math.floor(tonumber(count) or 0)
+        if amount > 0 then
+            rewards[#rewards + 1] = { type = SCROLL_TO_REWARD[field] or field, amount = amount }
+        end
+    end
     return rewards
 end
 

@@ -1,3 +1,13 @@
+## 右栏排序与总战力主值交接（2026-10-07）
+
+- **最终本地验证与融合（下列为此前过程记录）：** 源码融合提交6c965dd6eb33e371c9345f73a4119b462ee65caa／tree6c66f056保留外部PR117目标81266ee8；相对目标23源码/meta路径＝19Lua＋4meta，不含塔。最终七核心排序557／启动669／host167／入口474／经验762双维／入场229／Save747全部0断言失败且exit0；所有读取源图与最终Git对象一致、共享回退0。纯exp五模式保持Down／引用／缓存，共鸣旁队与候补升级全刷新；两新目标夹具仅补真实依赖与rebuild计数，原业务断言逆构逐字节保留。最新招募5161／Horizon1334／副本6185断言过且exit0，focused5314断言过但rawFAIL／exit1仅106.19ms软件尖峰。main240帧20/20、198帧解锁／239Update／240Render／Stop完成，玩家档读取0／仅新隔离档写1，Lua／资源0，rawFAIL只17软件尖峰；原150帧18/20未ready与副本45秒超时保留。Save原65秒超时及1失败保留，同源812与候选180秒预算各747/0，不定性必现基线失败。最终本人官方b10成功／593根Lua，17非bootUUID-hash载荷bytes/size一致，两共享boot含塔hunk另Git-only验证，不称19全载荷或纯候选build；36安装源＋两个新test逐文件Error0，不称全仓。21旧规范问题同812新增0／36单测完整OK。6303UI、七多语样片与Power612＋672／Rich2784来自同展示源固定676验证，不冒充新目标GPU／设备验收。仅本块三交接追加，尚未push／PR，成功后再补真实结果；sharedHEAD676/index空、不推workspace系列／强推／合并发布，凭据不持久化。
+
+- 当前用户授权小队UI/短促反馈/五模式名册排序、完整总战力滚动，完成后正常push及workspace1005 PR。为隔离并行塔任务，本人独立feat1007/roster-sort-total-power-20261007固定676fef7父；本地功能69d5e0a1040f78f8b1df83f95a0f280e553b4855/tree7d31，21路径=17Lua+4meta，其他2977对象不变。两个boot仅本人CP取消/释放hunk，不带塔；sharedHEAD676/index空不改，未push/PR实际结果后补。
+- 原头像尺寸、五列五行和教程热区不移动；默认旧序/队伍真实队槽、数值升降只重排视图与缓存，不算额外hero/发编队/改公式或存档。pre-emit完整映射、ABA/覆盖取消、tab3 draw收尾及reset/Stop detached UI根显式Destroy；首次ready/解锁静默。总值主Label滚动，旧→新/净增静态辅助，原token/期限/装饰不变。
+- 真实Sort293/UI6303/startup396/host167/Power612+672/Rich2784均0失败；60头像/474入口/manager58/Horizon1334/targets66/recovery69过。本人官方b5成功、peer官方b6组合后15源码实际载荷字节/size一致；两boot候选不等共享塔载荷，Git-only候选验证后另记，不冒称纯候选build或17全载荷。
+- 固定676旧神器60/4、旧host155/1 Git-only同现/sharedFallback0；不修公式，host仅补StartupQueue/Stop旧夹具。新Sort真实oracle替错误固定bonus，本系magAtk保严格反转；启动实际calc0/context6精确断言，招募只读依赖补齐不开放File/RNG/cwd。规范21旧问题逐项同676/新增0、36单测另核；样片实际语言标签与独立12核心/main/推送PR另补，不能先称成功。
+- **持续强化：不擅自取消退出已授权任务，当前最新明确直接继续不再提问，遵循当前指令不机械AskUserQuestion。** 尊重停止/权限/安全边界，peer不扩大授权；只正常push独立分支，不推workspace系列/强推/合并发布，凭据不写源码/Git配置/日志/记忆；内部验证/塔/.project/无关meta/玩家档不提交，三记忆精确本人块双留历史。
+
 ## 战斗停顿／离线收益顺序续修（2026-10-07）
 
 - 已正常push32项327c773e2e4839e1dffc01d66b73a51af9d17669到perf1007/startup-stutter，push/ls-remote exit0、SHA一致，workspace1005仍676fef7f未推。正式PR117 https://github.com/FanZeros/changeForJourney/pull/117 open/draft=false/merged=false/mergeable未计算，目标workspace1005，不称CI/合并发布；25Lua/4新meta/三交接，无.project/技能/内部材料。b18全577Lua及本25payload字节/size一致，2998路径21旧规范问题同目标新增0，36单测OK；成功后仅三交接补push、不重复PR。

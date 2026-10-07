@@ -13,6 +13,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
 ---@field name string
 ---@field ids number[]
 ---@field subLabel string|nil
+---@field unlockStage number|nil
 ---@field resourceDungeonId string|nil
 ---@field isTower boolean|nil
 ---@field hueIndex number|nil
@@ -48,7 +49,7 @@ function M.getGroups()
         -- 配置层提供章跨度旧ID锚点；UI不压缩/重写实际队伍任务和旧账本。
         local ids = DC.getChapterStageIds(id)
         groups[#groups + 1] = {
-            key = "R:" .. id, name = def.name, subLabel = "",
+            key = "R:" .. id, name = def.name, subLabel = "", unlockStage = def.unlockStage,
             resourceDungeonId = id, hueIndex = resourceIndex,
             background = def.cardImage, ids = ids,
         }
@@ -57,6 +58,7 @@ function M.getGroups()
     for floor = 1, TC.MAX_FLOOR do ids[#ids + 1] = TOWER_STAGE_BASE + floor end
     groups[#groups + 1] = {
         key = "R:babel_tower", name = "通天塔", subLabel = "",
+        unlockStage = DC.UNLOCK_CONDITIONS.babel_tower,
         isTower = true, hueIndex = 5,
         background = "image/战斗背景/通天塔.png", ids = ids,
     }

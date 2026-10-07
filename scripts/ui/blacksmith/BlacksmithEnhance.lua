@@ -344,7 +344,7 @@ end
 ---@param curGradeIcon number|nil 当前词缀等级图标句柄
 ---@param nextGradeIcon number|nil 提升后词缀等级图标句柄
 ---@param showArrow boolean|nil 是否显示提升箭头和提升后数值（默认 true）
----@param isCorrupt boolean|nil 魔化词条：用紫色圆标替代 D~S 品质图
+---@param isCorrupt boolean|nil 腐化词条：名称与数值紫色，品级图标保持
 local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGradeIcon, showArrow, isCorrupt, attributeKey, clip)
     if showArrow == nil then showArrow = true end
     -- 魔化词条：名称与数值紫色（评级标不变）
@@ -407,22 +407,11 @@ local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGr
         nvgText(vg, ATTR_NEXT_BG_CX, rowY, nextVal, nil)
     end
 
-    -- 词缀等级图标 / 魔化紫色圆标
-    if isCorrupt then
-        local r = AFFIX_GRADE_ICON_SIZE * 0.22
-        nvgBeginPath(vg)
-        nvgCircle(vg, AFFIX_GRADE_CUR_CX, rowY, r)
-        nvgFillColor(vg, nvgRGBA(0x9B, 0x4D, 0xFF, 255))
-        nvgFill(vg)
-        nvgBeginPath(vg)
-        nvgCircle(vg, AFFIX_GRADE_CUR_CX, rowY, r)
-        nvgStrokeWidth(vg, 2)
-        nvgStrokeColor(vg, nvgRGBA(0xE0, 0xB0, 0xFF, 220))
-        nvgStroke(vg)
-    elseif curGradeIcon and curGradeIcon >= 0 then
+    -- 腐化只改变名称与数值颜色，词缀仍显示真实品级图标。
+    if curGradeIcon and curGradeIcon >= 0 then
         drawImageCentered(vg, curGradeIcon, AFFIX_GRADE_CUR_CX, rowY, AFFIX_GRADE_ICON_SIZE, AFFIX_GRADE_ICON_SIZE, 1.0)
     end
-    if showArrow and nextGradeIcon and nextGradeIcon >= 0 and not isCorrupt then
+    if showArrow and nextGradeIcon and nextGradeIcon >= 0 then
         drawImageCentered(vg, nextGradeIcon, AFFIX_GRADE_NEXT_CX, rowY, AFFIX_GRADE_ICON_SIZE, AFFIX_GRADE_ICON_SIZE, 1.0)
     end
 end

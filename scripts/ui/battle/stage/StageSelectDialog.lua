@@ -1098,15 +1098,20 @@ function StageSelectDialog.draw(vg)
         -- 章节按钮文字：解锁=亮色，锁定=灰蓝色
         local chR, chG, chB = 235, 230, 210
         if chapterLocked then chR, chG, chB = 0x8b, 0x95, 0xa5 end
-        local singleTitle = g.resourceDungeonId or g.isTower
+        local unlockHint = chapterLocked and g.unlockStage
+            and I18n.format("%s 解锁", shortStageLabel(g.unlockStage)) or nil
+        local singleTitle = (g.resourceDungeonId or g.isTower) and not unlockHint
         drawFittedTitle(vg, cx, y + D.CH_BTN_H * (singleTitle and 0.5 or 0.34),
             g.name, D.CH_W - 18, 26, 2,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, chR, chG, chB, 3)
         if chapterLocked and imgLock >= 0 then
             drawImageCentered(vg, imgLock, x + D.CH_W - 22, y + 22, 30, 30, 0.9)
         end
-        if not singleTitle then
-            -- 主线章节/终焉保留原副标题，副本每类只显示居中名称。
+        if unlockHint then
+            drawFittedTitle(vg, cx, y + D.CH_BTN_H * 0.8, unlockHint, D.CH_W - 18, 20, 1,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, chR, chG, chB, 2)
+        elseif not singleTitle then
+            -- 主线章节/终焉保留原副标题，已解锁副本仅显示居中名称。
             local rel = g.subLabel or tostring(SC.getRelativeChapter(g.key)) .. " 章"
             rel = type(g.key) == "string" and I18n.difficulty(rel) or I18n.lookup(rel)
             nvgFontFace(vg, "sans")
@@ -1341,28 +1346,6 @@ function StageSelectDialog.draw(vg)
         nvgRoundedRect(vg, vx0 + vw0 + 8, thumbY, 5, thumbH, 2.5)
         nvgFillColor(vg, nvgRGBA(201, 151, 59, 220))
         nvgFill(vg)
-    end
-    if layout.compact then
-        -- 四分类下方的左栏空区，仅画说明，不新增热区或挤占右侧关卡视窗。
-        local noteCX, noteW = D.CH_X + D.CH_W * 0.5, D.CH_W
-        local align = NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE
-        drawFittedTitle(vg, noteCX, 1320, "按击杀结算", noteW, 20, 1,
-            align, 201, 151, 59, 2)
-        drawFittedTitle(vg, noteCX, 1346, "非额外通关奖励", noteW, 20, 1,
-            align, 201, 151, 59, 2)
-        if sel.resourceDungeonId == "equipment_vault" then
-            drawFittedTitle(vg, noteCX, 1390, "装备随机掉落", noteW, 18, 1,
-                align, 182, 176, 157, 2)
-            drawFittedTitle(vg, noteCX, 1416, "按设置入包/分解", noteW, 18, 1,
-                align, 182, 176, 157, 2)
-            drawFittedTitle(vg, noteCX, 1442, "或进入遗匣", noteW, 18, 1,
-                align, 182, 176, 157, 2)
-        else
-            drawFittedTitle(vg, noteCX, 1390, "一关约主线一章", noteW, 18, 1,
-                align, 182, 176, 157, 2)
-            drawFittedTitle(vg, noteCX, 1416, "末关保留原跨度", noteW, 18, 1,
-                align, 182, 176, 157, 2)
-        end
     end
     nvgRestore(vg)
 end

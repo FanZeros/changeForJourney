@@ -366,11 +366,19 @@ function BlacksmithPage.markEnhanceDirty()
     _enhanceCache.dirty = true
 end
 
---- 检查是否有任意出战槽位的装备满足强化条件（城镇建筑角标/BottomNav 用）
+--- 检查是否有任意背包装备满足强化条件（城镇建筑角标/BottomNav 用）
 ---@return boolean
 function BlacksmithPage.canEnhanceAny()
     if not _enhCache then bindEnhanceCache() end
     return _enhCache.canEnhanceAny()
+end
+
+--- 页签角标只跟随工作台装备，实时读取资源与升阶上限，不借用全背包缓存。
+---@return boolean
+function BlacksmithPage.canEnhanceSelected()
+    if not state.selectedEquip then return false end
+    if not _enhCache then bindEnhanceCache() end
+    return _enhCache.canEnhance(state.selectedEquip)
 end
 
 --- 查询装备当前被哪个英雄穿戴（遍历出战+后备阵容）

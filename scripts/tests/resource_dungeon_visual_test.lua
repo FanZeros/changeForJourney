@@ -14,8 +14,7 @@ for _, arg in ipairs(GetArguments()) do
     local root = arg:match("^%-tapcode_dir=(.+)$")
     if root then ROOT = root:gsub("/+$", "") end
     local view = arg:match("^%-review=(.+)$")
-    if view then REVIEW = view end
-end
+    if view then REVIEW = view end end
 local CWD = "/home/Maker/resource-dungeon-visual-validation-20261006"
 local TAG = "[resource_dungeon_visual_test] "
 local PATHS = {
@@ -23,34 +22,27 @@ local PATHS = {
     black_diamond = "image/战斗背景/黑钻副本.png", babel_tower = "image/战斗背景/通天塔.png",
 }
 local SOURCE_FILES = {
-    ["config.StageConfig"] = "config/StageConfig.lua",
-    ["config.StageConfig_Normal"] = "config/StageConfig_Normal.lua",
-    ["config.StageConfig_Hard"] = "config/StageConfig_Hard.lua",
-    ["config.StageConfig_Nightmare"] = "config/StageConfig_Nightmare.lua",
-    ["config.StageConfig_Hell"] = "config/StageConfig_Hell.lua",
-    ["config.StageConfig_Purgatory"] = "config/StageConfig_Purgatory.lua",
-    ["config.StageConfig_Torment"] = "config/StageConfig_Torment.lua",
-    ["config.StageConfig_Torment2"] = "config/StageConfig_Torment2.lua",
-    ["config.StageConfig_Torment3"] = "config/StageConfig_Torment3.lua",
-    ["config.StageConfig_Torment4"] = "config/StageConfig_Torment4.lua",
-    ["config.StageConfig_Torment5"] = "config/StageConfig_Torment5.lua",
-    ["config.StageConfig_Annihilation"] = "config/StageConfig_Annihilation.lua",
-    ["config.StageConfig_Annihilation2"] = "config/StageConfig_Annihilation2.lua",
-    ["config.StageConfig_Annihilation3"] = "config/StageConfig_Annihilation3.lua",
-    ["config.StageConfig_Annihilation4"] = "config/StageConfig_Annihilation4.lua",
-    ["config.StageConfig_Annihilation5"] = "config/StageConfig_Annihilation5.lua",
-    ["config.DungeonConfig"] = "config/DungeonConfig.lua",
-    ["config.DungeonIdleConfig"] = "config/DungeonIdleConfig.lua",
-    ["config.MonsterConfig"] = "config/MonsterConfig.lua",
-    ["config.TowerConfig"] = "config/TowerConfig.lua",
+    ["config.StageConfig"] = "config/StageConfig.lua", ["config.StageConfig_Normal"] = "config/StageConfig_Normal.lua",
+    ["config.StageConfig_Hard"] = "config/StageConfig_Hard.lua", ["config.StageConfig_Nightmare"] = "config/StageConfig_Nightmare.lua",
+    ["config.StageConfig_Hell"] = "config/StageConfig_Hell.lua", ["config.StageConfig_Purgatory"] = "config/StageConfig_Purgatory.lua",
+    ["config.StageConfig_Torment"] = "config/StageConfig_Torment.lua", ["config.StageConfig_Torment2"] = "config/StageConfig_Torment2.lua",
+    ["config.StageConfig_Torment3"] = "config/StageConfig_Torment3.lua", ["config.StageConfig_Torment4"] = "config/StageConfig_Torment4.lua",
+    ["config.StageConfig_Torment5"] = "config/StageConfig_Torment5.lua", ["config.StageConfig_Annihilation"] = "config/StageConfig_Annihilation.lua",
+    ["config.StageConfig_Annihilation2"] = "config/StageConfig_Annihilation2.lua", ["config.StageConfig_Annihilation3"] = "config/StageConfig_Annihilation3.lua",
+    ["config.StageConfig_Annihilation4"] = "config/StageConfig_Annihilation4.lua", ["config.StageConfig_Annihilation5"] = "config/StageConfig_Annihilation5.lua",
+    ["config.DungeonConfig"] = "config/DungeonConfig.lua", ["config.DungeonIdleConfig"] = "config/DungeonIdleConfig.lua",
+    ["config.StageExpHelper"] = "config/StageExpHelper.lua", ["config.IdleIncomeConfig"] = "config/IdleIncomeConfig.lua", -- 经验只读依赖
+    ["config.ExpTable"] = "config/ExpTable.lua", ["config.ResourceDefs"] = "config/ResourceDefs.lua",
+    ["config.MonsterConfig"] = "config/MonsterConfig.lua", ["config.TowerConfig"] = "config/TowerConfig.lua",
     ["ui.battle.stage.BattleEnemySpawn"] = "ui/battle/stage/BattleEnemySpawn.lua",
     ["ui.battle.stage.StageSelectDialog"] = "ui/battle/stage/StageSelectDialog.lua",
     ["ui.battle.stage.StageSelectResources"] = "ui/battle/stage/StageSelectResources.lua",
     ["ui.battle.stage.StageSelectRewardPreview"] = "ui/battle/stage/StageSelectRewardPreview.lua",
-    ["ui.battle.scene.BattleScene"] = "ui/battle/scene/BattleScene.lua", -- 只提取完整completeTriStageClear
-    ["core.NumberUtil"] = "core/NumberUtil.lua",
+    ["ui.battle.stage.ExpeditionOverview"] = "ui/battle/stage/ExpeditionOverview.lua", -- 仅selector顶层依赖，不开启远征概览
+    ["ui.battle.scene.BattleScene"] = "ui/battle/scene/BattleScene.lua", -- 只提取完整completeTriStageClear委托
+    ["ui.battle.tri.BattleTriStageProgress"] = "ui/battle/tri/BattleTriStageProgress.lua", -- 仅专用内存通关fixture执行
+    ["core.NumberUtil"] = "core/NumberUtil.lua", ["core.DrawUtil"] = "core/DrawUtil.lua", ["core.DarkIcon"] = "core/DarkIcon.lua",
     ["ui.battle.tri.BattleTriPage"] = "ui/battle/tri/BattleTriPage.lua", -- 只提取背景常量+纯resolver
-    ["core.DrawUtil"] = "core/DrawUtil.lua", ["core.DarkIcon"] = "core/DarkIcon.lua",
 }
 local nativeFile, nativeCreateImage, nativeFS = File, nvgCreateImage, fileSystem
 local sources, reads, contexts, initialLoaded = {}, {}, {}, {} ---@type any
@@ -62,11 +54,9 @@ local ANCHORS = {
     black_diamond={1,6,11,16,21,26,31,36,41,46,51,56,61,66,71,76,81,86,91,96,101,106,111,115},
 }
 local function expectedChapter(id,floor)
-    for index,anchor in ipairs(ANCHORS[id]) do if floor<=anchor then return index,anchor end end
-end
+    for index,anchor in ipairs(ANCHORS[id]) do if floor<=anchor then return index,anchor end end end
 local function anchorIndex(id,floor)
-    for index,anchor in ipairs(ANCHORS[id]) do if floor==anchor then return index end end
-end
+    for index,anchor in ipairs(ANCHORS[id]) do if floor==anchor then return index end end end
 for name in pairs(SOURCE_FILES) do initialLoaded[name] = package.loaded[name] end
 local function check(ok, label) checks = checks + 1; assert(ok, label) end
 local function eq(a,b,label) check(a == b,label .. " actual=" .. tostring(a) .. " expected=" .. tostring(b)) end
@@ -74,20 +64,17 @@ local function near(a,b,label) check(type(a)=="number" and math.abs(a-b)<0.00000
 local function noop() end
 local function copy(t)
     if type(t) ~= "table" then return t end
-    local r = {}; for k,v in pairs(t) do r[k] = copy(v) end; return r
-end
+    local r = {}; for k,v in pairs(t) do r[k] = copy(v) end; return r end
 local function same(a,b)
     if type(a) ~= type(b) then return false end
     if type(a) ~= "table" then return a == b end
     for k,v in pairs(a) do if not same(v,b[k]) then return false end end
     for k in pairs(b) do if a[k] == nil then return false end end
-    return true
-end
+    return true end
 local function compareExcept(a,b,except,label)
     local x,y = copy(a),copy(b)
     for k in pairs(except) do x[k],y[k] = nil,nil end
-    check(same(x,y),label)
-end
+    check(same(x,y),label) end
 local function source(name)
     local rel = assert(SOURCE_FILES[name],"source denied " .. tostring(name))
     if sources[name] then return sources[name] end
@@ -100,11 +87,9 @@ local function source(name)
         local lines = {}; while not f:IsEof() do lines[#lines+1] = f:ReadLine() end
         return table.concat(lines,"\n")
     end)
-    f:Dispose(); assert(ok,text); sources[name] = text; reads[#reads+1] = path; return text
-end
+    f:Dispose(); assert(ok,text); sources[name] = text; reads[#reads+1] = path; return text end
 local function compile(text,label,env)
-    local chunk,why = load(text,"@" .. label,"t",env); assert(chunk,why); return chunk()
-end
+    local chunk,why = load(text,"@" .. label,"t",env); assert(chunk,why); return chunk() end
 
 -- 冻结oracle，git show ca609d7162a5e75c6ba3b0045e8750b5ab70aa79:scripts/config/DungeonConfig.lua。
 -- 只读原commit取得，绝不从合并后逻辑反推；含远端累计最大敌人数/首通bonus全清/扁平1-N。
@@ -371,8 +356,7 @@ local function legacySource()
     local hash = 2166136261
     for i=1,#prefix do hash = ((hash ~ prefix:byte(i))*16777619) & 0xffffffff end
     eq(#prefix,27716,"legacy前段冻结字节数"); eq(hash,1709042829,"legacy前段冻结FNV1a")
-    return prefix .. LEGACY_TAIL
-end
+    return prefix .. LEGACY_TAIL end
 local NVG = {
     "nvgArc", "nvgBeginPath", "nvgBezierTo", "nvgCircle", "nvgClosePath", "nvgCreateImage", "nvgDeleteImage",
     "nvgEllipse", "nvgFill", "nvgFillColor", "nvgFillPaint", "nvgFontFace", "nvgFontSize", "nvgTextBounds",
@@ -396,8 +380,7 @@ local function newContext(legacy,review,vg)
     local function deny(label) c.denied[#c.denied+1]=label; error("isolated test denies " .. label) end
     c.deny=deny
     local function blocked(label)
-        return setmetatable({}, {__index=function(_,k) return function() return deny(label .. "." .. tostring(k)) end end})
-    end
+        return setmetatable({}, {__index=function(_,k) return function() return deny(label .. "." .. tostring(k)) end end}) end
     for _,k in ipairs({"assert","error","ipairs","pairs","next","pcall","xpcall","select","tonumber",
         "tostring","type","setmetatable","getmetatable","rawget","rawset","rawequal"}) do e[k]=_G[k] end
     e.math,e.string,e.table,e.utf8=copy(math),copy(string),copy(table),copy(utf8)
@@ -405,8 +388,7 @@ local function newContext(legacy,review,vg)
         c.randomCalls=c.randomCalls+1
         if a==nil then return c.randomValue end
         if b==nil then b,a=a,1 end
-        return math.min(b,a+math.floor(c.randomValue*(b-a+1)))
-    end
+        return math.min(b,a+math.floor(c.randomValue*(b-a+1))) end
     e.math.randomseed=function() return deny("global RNG seed") end
     e._G,e.time=e,c.clock; e.print=noop
     for k,v in pairs(_G) do if k:match("^NVG_") then e[k]=v end end
@@ -414,8 +396,7 @@ local function newContext(legacy,review,vg)
     for _,k in ipairs({"io","os","package","debug","cache","fileSystem","engine","network","clientCloud","serverCloud"}) do e[k]=blocked(k) end
     for _,k in ipairs({"load","loadfile","dofile","GetFileSystem","GetEngine","SubscribeToEvent","SendEvent"}) do e[k]=function() return deny(k) end end
     local function mock(name,fields)
-        c.modules[name]=setmetatable(fields,{__index=function(_,k) return function() return deny(name .. "." .. tostring(k)) end end})
-    end
+        c.modules[name]=setmetatable(fields,{__index=function(_,k) return function() return deny(name .. "." .. tostring(k)) end end}) end
     mock("config.GameConfig",{Design={WIDTH=1080,HEIGHT=2400},Battle={TIME_LIMIT_SEC=300}})
     mock("core.GameState",{getPower=function() return 100 end})
     mock("core.BattleLayout",{})
@@ -430,9 +411,16 @@ local function newContext(legacy,review,vg)
         notifyEvent=function(name)
             assert(name=="enter_gold_mine","explicit gold entered event only")
             c.tutorialEvents[#c.tutorialEvents+1]=name
-        end,
-    })
+        end, })
     mock("systems.ButtonFeedback",{trigger=function(k) c.events[#c.events+1]=k end,begin=function() return false end,finish=noop})
+    -- selector只需装载真实ExpeditionOverview，不覆盖其领取/离线业务或头像管线；所有方法保持拒绝。
+    mock("rules.offline.OfflineService",{})
+    mock("ui.widget.HeroFrame",{})
+    -- 最新选关入口的只读独占状态守卫；绝不提供导航、战斗启动或runtime action。
+    mock("ui.hud.BottomNav",{isAllLocked=function() return false end,isTabLocked=function(tab)
+        assert(tab==3,"selector只查询战斗tab锁"); return false end})
+    mock("ui.dungeon.DungeonBattleScene",{isOpen=function() return false end})
+    mock("ui.tower.TowerBattleScene",{isActive=function() return false end})
     local qualityImages={}
     mock("ui.widget.ImageCache",{getQualityBg=function(quality)
         if type(quality)~="number" or quality%1~=0 or quality<1 or quality>6 then return deny("quality image invalid") end
@@ -447,20 +435,21 @@ local function newContext(legacy,review,vg)
     mock("systems.UnitAttributes",{})
     mock("runtime.ClientDispatcher",{get=function(key)
         if key=="battle" or key=="dungeon" then return c.memory[key] end
-        return deny("dispatcher unknown get " .. tostring(key))
-    end})
+        return deny("dispatcher unknown get " .. tostring(key)) end})
     mock("ui.battle.scene.BattleScene",{getMaxStageId=function() return c.maxStage end,
         getStageId=function() return c.teams[1] end,getClearedStages=function() return c.memory.battle.clearedStages end})
     mock("ui.battle.tri.BattleTriPage",{getTeamStageId=function(team) return c.teams[team] end,
+        isTerminalRaidActive=function() return false end,
         gotoTeamStage=function(team,id)
             c.selections[#c.selections+1]={team=team,id=id}
             if c.accepts then c.teams[team]=id; return true end
-            return false
-        end})
+            return false end})
     -- 不提供任何global fallback；SC->DC是函数内lazy require，DC->SC顶层按真实顺序完成。
     e.require=function(name)
         if c.modules[name] then return c.modules[name] end
         if not SOURCE_FILES[name] or name=="ui.battle.tri.BattleTriPage" then return deny("unknown require " .. tostring(name)) end
+        if name=="ui.battle.tri.BattleTriStageProgress" and not c.modules["boot.StandaloneSave"] then
+            return deny("tri progress outside explicit memory-clear fixture") end
         if c.loading[name] then return deny("unexpected eager circular require " .. name) end
         c.loading[name]=true
         local text=(legacy and name=="config.DungeonConfig") and legacySource() or source(name)
@@ -470,11 +459,8 @@ local function newContext(legacy,review,vg)
             -- 仅unit工厂mock，不运行属性/战斗业务；名字、模板品质、卡牌映射仍真实。
             result.createMonster=function(id,level)
                 local tpl=assert(result.MONSTERS[id],"unknown monster " .. id)
-                return {monsterId=id,level=level,quality=tpl.quality,name=tpl.name,goldReward=99,expReward=88}
-            end
-        end
-        return result
-    end
+                return {monsterId=id,level=level,quality=tpl.quality,name=tpl.name,goldReward=99,expReward=88} end end
+        return result end
     setmetatable(e,{__index=function(_,k) return deny("unknown global " .. tostring(k)) end})
     c.require=e.require
     local shape,paint,clip,stack={},{},{},{} ---@type any
@@ -485,13 +471,11 @@ local function newContext(legacy,review,vg)
     e.nvgSave=function() stack[#stack+1]={clip=copy(clip),fontSize=fontSize,align=align} end
     e.nvgRestore=function()
         local saved=assert(table.remove(stack),"unbalanced nvgRestore")
-        clip,fontSize,align=saved.clip,saved.fontSize,saved.align
-    end
+        clip,fontSize,align=saved.clip,saved.fontSize,saved.align end
     e.nvgIntersectScissor=function(_,x,y,w,h)
         if clip then local r,b=math.min(x+w,clip.x+clip.w),math.min(y+h,clip.y+clip.h)
             x,y=math.max(x,clip.x),math.max(y,clip.y); w,h=math.max(0,r-x),math.max(0,b-y) end
-        clip={x=x,y=y,w=w,h=h}
-    end
+        clip={x=x,y=y,w=w,h=h} end
     e.nvgFontSize=function(_,v) fontSize=v end; e.nvgTextAlign=function(_,v) align=v end
     e.nvgTextBounds=function(_,_,_,text) return (utf8.len(text) or #text)*fontSize*0.75 end
     e.nvgText=function(_,x,y,text) c.calls[#c.calls+1]={kind="rawText",text=text,x=x,y=y,size=fontSize,align=align,clip=copy(clip)}; return x end
@@ -521,20 +505,17 @@ local function newContext(legacy,review,vg)
         local h
         if c.review then h=nativeCreateImage(ctx,path,flags); assert(h and h>=0,"real review image missing " .. path)
         else h=c.imageResult[path]; if h==nil then h=c.nextHandle; c.nextHandle=h+1 end end
-        if h>=0 then c.handles[h]=path end; return h
-    end
+        if h>=0 then c.handles[h]=path end; return h end
     e.nvgDeleteImage=function(ctx,h) c.deleted[h]=true; if c.review then nvgDeleteImage(ctx,h) end end
     e.nvgImageSize=function(_,h) if c.badSize[c.handles[h]] then return 0,0 end; return 1896,720 end
     e.nvgImagePattern=function(_,x,y,w,h,angle,handle,alpha)
         assert(handle>=0,"invalid image painted")
-        return {path=c.handles[handle],handle=handle,x=x,y=y,w=w,h=h,alpha=alpha,angle=angle}
-    end
+        return {path=c.handles[handle],handle=handle,x=x,y=y,w=w,h=h,alpha=alpha,angle=angle} end
     e.nvgImagePatternTinted=function(ctx,x,y,w,h,a,handle,tint) return e.nvgImagePattern(ctx,x,y,w,h,a,handle,tint.a/255) end
     if c.review then
         local create,delete=e.nvgCreateImage,e.nvgDeleteImage
         for _,k in ipairs(NVG) do e[k]=assert(_G[k],"real NVG unavailable " .. k) end
-        e.nvgCreateImage,e.nvgDeleteImage=create,delete
-    end
+        e.nvgCreateImage,e.nvgDeleteImage=create,delete end
     c.clipBalanced=function() check(#stack==0 and clip==nil,"真实Dialog/DrawUtil save/scissor无泄漏") end
     c.prepareDialog=function()
         local dc=c.require("config.DungeonConfig")
@@ -544,52 +525,40 @@ local function newContext(legacy,review,vg)
             local realText,realCover=du.drawTextStroke,du.drawImageCover
             du.drawTextStroke=function(ctx,x,y,text,size,textAlign,r,g,b,sw,opts)
                 c.calls[#c.calls+1]={kind="text",x=x,y=y,text=text,size=size,align=textAlign,clip=copy(clip)}
-                return realText(ctx,x,y,text,size,textAlign,r,g,b,sw,opts)
-            end
+                return realText(ctx,x,y,text,size,textAlign,r,g,b,sw,opts) end
             du.drawImageCover=function(ctx,img,x,y,w,h,alpha)
                 c.calls[#c.calls+1]={kind="card",path=c.handles[img],x=x,y=y,w=w,h=h,clip=copy(clip)}
-                return realCover(ctx,img,x,y,w,h,alpha)
-            end
-        end
+                return realCover(ctx,img,x,y,w,h,alpha) end end
         c.dialog=c.require("ui.battle.stage.StageSelectDialog"); c.dialog.init(c.vg)
         c.dialog.setOnDungeonSelect(function(id,team,floor)
             c.towerSelections[#c.towerSelections+1]={id=id,team=team,floor=floor}; return c.accepts
         end)
-        return c.dialog
-    end
+        return c.dialog end
     c.draw=function()
         local random=c.randomCalls
         c.calls={}; c.clock.elapsedTime=c.clock.elapsedTime+1; c.dialog.draw(c.vg)
-        if not c.review then c.clipBalanced(); eq(c.randomCalls,random,"每次真实Dialog.draw不消耗RNG") end
-    end
-    return c
-end
+        if not c.review then c.clipBalanced(); eq(c.randomCalls,random,"每次真实Dialog.draw不消耗RNG") end end
+    return c end
 local function idle(c,before) check(same(c.memory,before),"查看/选择没有货币、解锁、收益、扫荡次数或activeTeam消费") end
 local function banners(c)
     local r={}; for _,v in ipairs(c.calls) do
         if v.kind=="fill" and v.paint and v.paint.path and v.shape.x==105 and v.shape.w==190 and v.shape.h==84 then r[#r+1]=v end
-    end; return r
-end
+    end; return r end
 local function textAt(c,text,x,y)
-    for _,v in ipairs(c.calls) do if (v.kind=="text" or v.kind=="rawText") and v.text==text and v.x==x and v.y==y then return v end end
-end
+    for _,v in ipairs(c.calls) do if (v.kind=="text" or v.kind=="rawText") and v.text==text and v.x==x and v.y==y then return v end end end
 local function rowLabel(c,floor)
     for _,v in ipairs(c.calls) do
-        if v.kind=="text" and v.x==331 and v.text=="1-" .. floor then return v end
-    end
-end
+        if v.kind=="text" and v.x==331 and v.text=="1-" .. floor then return v end end end
 local function rowGeometry(c)
     return c.viewKind=="resource" and 140 or 168, c.viewKind=="resource" and 28 or 34,
-        c.viewKind=="resource" and 78 or 100
-end
+        c.viewKind=="resource" and 78 or 100 end
 local function visibleRow(c,floor)
     local label=assert(rowLabel(c,floor),"real Dialog row missing 1-" .. floor)
     local height,labelOffset=rowGeometry(c)
     local top=label.y-labelOffset
     local y=(math.max(786,top)+math.min(1676,top+height))*0.5
     check(y>=786 and y<1676,"实际可视行点击位于真实裁剪内")
-    return 340,y,top
-end
+    return 340,y,top end
 local function currentRow(c,floor,status)
     local label=assert(rowLabel(c,floor),"current row label missing")
     local height,labelOffset,statusOffset=rowGeometry(c)
@@ -597,11 +566,9 @@ local function currentRow(c,floor,status)
     check(top>=786 and top+height<=1676,"reveal完整当前行落入右栏")
     local stateText=textAt(c,status or "当前",331,top+statusOffset)
     check(stateText,"真实当前/当前章节状态与章标签同一行")
-    if c.viewKind~="resource" then check(stateText.y+stateText.size*0.5+2<top+130,"塔状态22号字下缘含描边不碰奖励带130") end
-end
+    if c.viewKind~="resource" then check(stateText.y+stateText.size*0.5+2<top+130,"塔状态22号字下缘含描边不碰奖励带130") end end
 local function openMain(c,team)
-    c.viewKind="main"; c.dialog.close(); c.dialog.open(team or 1); c.draw()
-end
+    c.viewKind="main"; c.dialog.close(); c.dialog.open(team or 1); c.draw() end
 local function configCases()
     local c,old=newContext(),newContext(true)
     local sc,dc=c.require("config.StageConfig"),c.require("config.DungeonConfig")
@@ -649,23 +616,17 @@ local function configCases()
                     for i,u in ipairs(list) do
                         eq(u.monsterId,pool[(i-1)%#pool+1],"spawn循环普通池")
                         eq(u.level,b.monsterLevel,"spawn保留旧等级"); check(not u.isBoss and not u._isBonusMonster,"spawn没有Boss/bonus")
-                        eq(u.goldReward,0,"资源怪本体金币仍0"); eq(u.expReward,0,"资源怪本体经验仍0")
-                    end
-                end
+                        eq(u.goldReward,0,"资源怪本体金币仍0"); eq(u.expReward,0,"资源怪本体经验仍0") end end
                 a.monsters[1]=-999; a.qw[1]=-888
-                check(same(dc.getCombatEntry(id,1).monsters,pool),"普通池每次复制，返回对象不污染source")
-            end
-            local owner,decoded=dc.decodeStageId(tostring(sid)); eq(owner,id,"decode资源种类"); eq(decoded,floor,"decode层")
-        end
-        for _,f in ipairs({0,-1,dc.MAX_FLOOR[id]+1,1.5,"bad"}) do eq(dc.getStageId(id,f),nil,"越界floor拒绝") end
-    end
+                check(same(dc.getCombatEntry(id,1).monsters,pool),"普通池每次复制，返回对象不污染source") end
+            local owner,decoded=dc.decodeStageId(tostring(sid)); eq(owner,id,"decode资源种类"); eq(decoded,floor,"decode层") end
+        for _,f in ipairs({0,-1,dc.MAX_FLOOR[id]+1,1.5,"bad"}) do eq(dc.getStageId(id,f),nil,"越界floor拒绝") end end
     eq(floorCoverage,339,"全部339层覆盖一次")
     check(same(sc.STAGES,before),"所有真实主线source无污染")
     local cursor,seen=101,{}
     for _=1,2000 do
         if not cursor or seen[cursor] then break end; seen[cursor]=true; check(not sc.isResourceStage(cursor),"资源不写主线链")
-        cursor=sc.getNextStageId(cursor) or (sc.isTerminalTemple(cursor) and sc.getReincarnationTarget(sc.getDifficulty(cursor)) or nil)
-    end
+        cursor=sc.getNextStageId(cursor) or (sc.isTerminalTemple(cursor) and sc.getReincarnationTarget(sc.getDifficulty(cursor)) or nil) end
     -- 独立env真正DC-first，不能给SC/DC塞临时空表遮盖不成立的循环。
     local reverse=newContext()
     reverse.modules["config.DungeonConfig"],reverse.modules["config.StageConfig"]=nil,nil
@@ -726,56 +687,44 @@ local SC = require("config.StageConfig")
 local diffToFirstStage,diffToLastStage={},{}
 for _,name in ipairs({'NORMAL','HARD','NIGHTMARE','HELL','PURGATORY','TORMENT','TORMENT2','TORMENT3','TORMENT4','TORMENT5','ANNIHILATION','ANNIHILATION2','ANNIHILATION3','ANNIHILATION4','ANNIHILATION5'}) do
     diffToFirstStage[SC['DIFFICULTY_' .. name]]=SC[name .. '_FIRST_STAGE']
-    diffToLastStage[SC['DIFFICULTY_' .. name]]=SC[name .. '_LAST_STAGE']
-end
+    diffToLastStage[SC['DIFFICULTY_' .. name]]=SC[name .. '_LAST_STAGE'] end
 function SC.getNextStageId(id)
     if SC.isResourceStage(id) then
         local DC = require("config.DungeonConfig")
         local dungeonId, floor = DC.decodeStageId(id)
-        return DC.getStageId(dungeonId, floor + 1)
-    end
+        return DC.getStageId(dungeonId, floor + 1) end
     if SC.isTerminalTemple(id) then
-        return nil
-    end
+        return nil end
     local s = SC.getStage(id)
     if not s then return nil end
     if s.stage < 5 then
-        return s.chapter * 100 + (s.stage + 1)
-    end
+        return s.chapter * 100 + (s.stage + 1) end
     local difficulty = SC.getDifficulty(id)
     local lastStage = diffToLastStage[difficulty]
     if id == lastStage then
-        return SC.getTerminalTempleId(difficulty)
-    end
-    return (s.chapter + 1) * 100 + 1
-end
+        return SC.getTerminalTempleId(difficulty) end
+    return (s.chapter + 1) * 100 + 1 end
 function SC.getPrevStageId(id)
     if SC.isResourceStage(id) then
         local DC = require("config.DungeonConfig")
         local dungeonId, floor = DC.decodeStageId(id)
-        return DC.getStageId(dungeonId, floor - 1)
-    end
+        return DC.getStageId(dungeonId, floor - 1) end
     if SC.isTerminalTemple(id) then
-        return nil
-    end
+        return nil end
     local s = SC.getStage(id)
     if not s then return nil end
     if s.stage > 1 then
-        return s.chapter * 100 + (s.stage - 1)
-    end
+        return s.chapter * 100 + (s.stage - 1) end
     local difficulty = SC.getDifficulty(id)
     local firstStage = diffToFirstStage[difficulty]
     if id == firstStage then
-        return nil
-    end
-    return (s.chapter - 1) * 100 + 5
-end
+        return nil end
+    return (s.chapter - 1) * 100 + 5 end
 ]==],"ca609d7-navigation-oracle-adapted-local-difficulty-tables",old.env)
     for sid in pairs(sc.STAGES) do
         check(not sc.isResourceStage(sid),"STAGES只含真实主线")
         eq(sc.getNextStageId(sid),os.getNextStageId(sid),"全主线next冻结 " .. sid)
-        eq(sc.getPrevStageId(sid),os.getPrevStageId(sid),"全主线prev冻结 " .. sid)
-    end
+        eq(sc.getPrevStageId(sid),os.getPrevStageId(sid),"全主线prev冻结 " .. sid) end
     local saved=copy(c.memory)
     for _,id in ipairs(dc.RESOURCE_IDS) do
         local expected=ANCHORS[id]
@@ -791,8 +740,7 @@ end
             local index,anchor=expectedChapter(id,f)
             local nextFloor,prevFloor=nil,nil ---@type number|nil, number|nil
             for _,v in ipairs(expected) do
-                if v<f then prevFloor=v elseif v>f and not nextFloor then nextFloor=v end
-            end
+                if v<f then prevFloor=v elseif v>f and not nextFloor then nextFloor=v end end
             local nextId=nextFloor and od.getStageId(id,nextFloor) or nil
             local prevId=prevFloor and od.getStageId(id,prevFloor) or nil
             for _,input in ipairs({sid,tostring(sid)}) do
@@ -801,13 +749,10 @@ end
                 eq(dc.getNextChapterStageId(input),nextId,"next严格下一锚点含末层")
                 eq(dc.getPrevChapterStageId(input),prevId,"prev严格前锚点含首层")
                 eq(sc.getNextStageId(input),nextId,"SC仅资源next章推进")
-                eq(sc.getPrevStageId(input),prevId,"SC仅资源prev章退关")
-            end
+                eq(sc.getPrevStageId(input),prevId,"SC仅资源prev章退关") end
             if anchorIndex(id,f) then
                 if nextId then eq(sc.getPrevStageId(nextId),sid,"章锚点next/prev往返") end
-                if prevId then eq(sc.getNextStageId(prevId),sid,"章锚点prev/next往返") end
-            end
-        end
+                if prevId then eq(sc.getNextStageId(prevId),sid,"章锚点prev/next往返") end end end
         for _,fixture in ipairs({
             {sub={floor=1,cleared={}},highest=0,anchor6=false,anchor11=false,old8=false},
             {sub={floor=2,cleared={}},highest=1,anchor6=true,anchor11=false,old8=false},
@@ -823,40 +768,34 @@ end
             eq(dc.isStageUnlocked(od.getStageId(id,11),{maxStageId=34505},ledger),fixture.anchor11,"固定11跨章解锁")
             eq(dc.isStageUnlocked(od.getStageId(id,8),{maxStageId=34505},ledger),fixture.old8,"旧8仍highest+1")
             eq(dc.isStageUnlocked(od.getStageId(id,11),{maxStageId=dc.UNLOCK_CONDITIONS[id]-1},ledger),false,"跨章仍需主线门槛")
-            check(same(ledger,before),"映射解锁不迁移floor/cleared")
-        end
+            check(same(ledger,before),"映射解锁不迁移floor/cleared") end
         local max=od.MAX_FLOOR[id]
         for _,sub in ipairs({{floor=max+1},{floor=1,cleared={[max]=true}},{floor="1",cleared={[tostring(max)]=true}}}) do
             eq(dc.getHighestClearedFloor(sub,id),max,"末层旧数字/string账本保留")
             eq(c.require("config.DungeonIdleConfig").getIdleFloorFromSub(sub,id),max,"末层挂机仍实际旧floor")
-            check(dc.isStageUnlocked(od.getStageId(id,max),{maxStageId=34505},{[id]=sub}),"已通末章仍可重打")
-        end
-        for _,f in ipairs({0,-1,max+1,1.5,"invalid"}) do eq(dc.getChapterIndex(id,f),nil,"非法chapter floor拒绝") end
-    end
+            check(dc.isStageUnlocked(od.getStageId(id,max),{maxStageId=34505},{[id]=sub}),"已通末章仍可重打") end
+        for _,f in ipairs({0,-1,max+1,1.5,"invalid"}) do eq(dc.getChapterIndex(id,f),nil,"非法chapter floor拒绝") end end
     check(same(dc.getChapterFloors("ancient_ruin"),{}),"旧遗迹不挪用资源章节")
     eq(dc.getChapterCount("ancient_ruin"),0,"旧遗迹章数0")
     for f=1,od.MAX_FLOOR.ancient_ruin do
-        check(same(dc.getFloor("ancient_ruin",f),od.getFloor("ancient_ruin",f)),"旧遗迹逐层完全冻结")
-    end
+        check(same(dc.getFloor("ancient_ruin",f),od.getFloor("ancient_ruin",f)),"旧遗迹逐层完全冻结") end
     for _,sid in ipairs({101,999,400001,100000,100116,200110,300116,100001.5,"bad"}) do
         eq(dc.getChapterStageId(sid),nil,"非资源/越界映射拒绝")
         eq(dc.getNextChapterStageId(sid),nil,"非资源next拒绝")
-        eq(dc.getPrevChapterStageId(sid),nil,"非资源prev拒绝")
-    end
-    idle(c,saved)
-end
+        eq(dc.getPrevChapterStageId(sid),nil,"非资源prev拒绝") end
+    idle(c,saved) end
 local function triClearCases()
     local c=newContext(); local sc,dc=c.require("config.StageConfig"),c.require("config.DungeonConfig")
     local text=source("ui.battle.scene.BattleScene")
     local first=assert(text:find("function BattleScene.completeTriStageClear(stageId, teamIdx)",1,true))
-    local last=assert(text:find("\n--- [终焉协同]",first,true))
-    local block=text:sub(first,last-1)
+    -- 当前完整委托后是“三队终焉状态机”；只截到本函数end，不装载Scene生命周期/终焉依赖。
+    local last=assert(text:find("\nend",first,true),"completeTriStageClear end missing")
+    local block=text:sub(first,last+3)
     local flushes,firstRewards,adopted=0,0,{} ---@type any
     local scene={adoptStageProgress=function(id) adopted[#adopted+1]=id end,
         onFirstClear=function() firstRewards=firstRewards+1 end}
     c.modules["runtime.ClientDispatcher"].notifySubscribers=function(key)
-        check(key=="battle" or key=="dungeon","真实通关仅内存通知")
-    end
+        check(key=="battle" or key=="dungeon","真实通关仅内存通知") end
     -- 仅本fixture的Flush是显式内存计数mock；通用安全env仍拒绝真实save模块和File。
     c.modules["boot.StandaloneSave"]={Flush=function() flushes=flushes+1 end}
     c.env.BattleScene=scene
@@ -888,16 +827,12 @@ local function triClearCases()
                 else eq(c.memory.battle.currentStageId,101,"队2/3不改队1主场景") end
                 local cleared=copy(sub)
                 eq(scene.completeTriStageClear(tostring(sid),team),false,"已cleared重打不首奖")
-                check(same(sub,cleared),"重打旧账本不重复填跳过层")
-            end
-        end
-    end
+                check(same(sub,cleared),"重打旧账本不重复填跳过层") end end end
     eq(firstRewards,0,"执行真实完整通关函数未触发onFirstClear")
     local saved=copy(c.memory); local n=flushes
     c.memory.battle.maxStageId=304; saved=copy(c.memory)
     eq(scene.completeTriStageClear(100006,1),false,"主线门槛不足真实资源clear拒绝")
-    eq(flushes,n,"拒绝不Flush"); check(same(c.memory,saved),"拒绝不动内存ledger")
-end
+    eq(flushes,n,"拒绝不Flush"); check(same(c.memory,saved),"拒绝不动内存ledger") end
 local function resolverCases()
     local c=newContext(); local sc=c.require("config.StageConfig")
     local text=source("ui.battle.tri.BattleTriPage")
@@ -915,11 +850,10 @@ local function resolverCases()
     eq(tri.resolveBackgroundPath(101),sc.getBattleBackground(101),"主线保留")
     eq(tri.resolveBackgroundPath(2401),tri.resolveBackgroundPath(101),"主线23章循环保留")
     eq(tri.resolveBackgroundPath(nil),tri.resolveBackgroundPath(101),"nil fallback")
-    eq(tri.resolveBackgroundPath("invalid"),tri.resolveBackgroundPath(101),"非法fallback")
-end
+    eq(tri.resolveBackgroundPath("invalid"),tri.resolveBackgroundPath(101),"非法fallback") end
 local function layoutCases()
     local c=newContext(); local d=c.prepareDialog(); local saved=copy(c.memory); openMain(c)
-    check(textAt(c,"选择关卡",540,732),"实际标题未上移")
+    check(textAt(c,"队伍 1 · 选择关卡",540,732),"实际队伍选关标题未上移")
     check(textAt(c,"主线",150,782) and textAt(c,"副本",250,782),"tab文本真实新中心")
     local tabShapes=0
     for _,v in ipairs(c.calls) do if v.kind=="fill" and v.shape.y==759 and v.shape.w==90 and v.shape.h==46 then
@@ -932,8 +866,7 @@ local function layoutCases()
     check(#cards>0 and cards[1].x==503 and cards[1].w==92 and cards[1].h==104,"实际右栏卡片旧布局")
     for _,p in ipairs({{445,686},{635,686},{350,782},{500,782}}) do
         local n=#c.events; d.handleInput(p[1],p[2]); c.draw(); eq(#c.events,n,"旧tabs/右栏新同行空白不响应")
-        eq(banners(c)[1].paint.path,bs[1].paint.path,"旧tab不能切分类"); check(d.isOpen(),"旧tab点不关闭")
-    end
+        eq(banners(c)[1].paint.path,bs[1].paint.path,"旧tab不能切分类"); check(d.isOpen(),"旧tab点不关闭") end
     for _,x in ipairs({205,250,295}) do for _,y in ipairs({759,782,805}) do
         d.handleInput(150,782); d.handleInput(x,y); c.draw(); eq(c.events[#c.events],"stage_sel_section","副本tab端点热区")
         eq(banners(c)[1].paint.path,PATHS.gold_mine,"新副本tab实际切分类")
@@ -984,6 +917,7 @@ local function resourceGroupCases()
         eq(g.key,"R:" .. id,"四组key及顺序冻结")
         eq(g.background,PATHS[id],"四组专属背景含tower")
         eq(g.subLabel,"","副本无伪章节副标题"); eq(#g.ids,sizes[i],"分类含全部层")
+        eq(g.unlockStage,({305,1305,605,605})[i],"四类解锁门槛来自真实配置")
         if id=="babel_tower" then check(g.isTower==true and g.resourceDungeonId==nil,"塔不是三资源组")
         else eq(g.resourceDungeonId,id,"资源组种类准确"); eq(g.name,dc.DEFINITIONS[id].name,"组名冻结") end
         for index,sid in ipairs(g.ids) do
@@ -1063,6 +997,82 @@ local function imageCases()
     end
     idle(c,saved)
 end
+local function categoryCaptionCases()
+    local c=newContext(); local d=c.prepareDialog()
+    -- 独立展示oracle：不从DC/StageSelectResources/shortStageLabel推导期望文字。
+    local expected={
+        {id="gold_mine",name="金币副本",gate=305,hint="3-5 解锁"},
+        {id="equipment_vault",name="装备副本",gate=1305,hint="13-5 解锁"},
+        {id="black_diamond",name="黑钻副本",gate=605,hint="6-5 解锁"},
+        {id="babel_tower",name="通天塔",gate=605,hint="6-5 解锁"},
+    }
+    local centered=NVG_ALIGN_CENTER+NVG_ALIGN_MIDDLE
+    local function drawn(text,x,y,size,label)
+        local call=assert(textAt(c,text,x,y),label .. "缺少实际绘制 " .. text)
+        near(call.size,size,label .. "字号"); eq(call.align,centered,label .. "居中")
+        local raw=false
+        for _,v in ipairs(c.calls) do
+            if v.kind=="rawText" and v.text==text and v.x==x and v.y==y then
+                near(v.size,size,label .. "NanoVG字号"); eq(v.align,centered,label .. "NanoVG居中"); raw=true
+            end
+        end
+        check(raw,label .. "真实DrawUtil最终执行nvgText，非仅拦截包装调用")
+        check(call.clip==nil,label .. "未被右栏裁剪隐藏")
+        return call
+    end
+    for _,rank in ipairs({304,305,604,605,1304,1305,34505}) do
+        c.maxStage=rank; c.memory.battle.maxStageId=rank
+        local saved,teams,random=copy(c.memory),copy(c.teams),c.randomCalls
+        d.close(); d.openDungeon(1,"gold_mine"); c.draw()
+        eq(#banners(c),4,"门槛边界四分类全部实际绘制")
+        for index,fixture in ipairs(expected) do
+            local y=876+(index-1)*94; local locked=rank<fixture.gate
+            local titleY=y+84*(locked and 0.34 or 0.5)
+            drawn(fixture.name,200,titleY,26,"分类名称 " .. fixture.id)
+            if locked then
+                local hint=drawn(fixture.hint,200,y+84*0.8,20,"锁定门槛 " .. fixture.id)
+                check(hint.y>titleY and hint.y+hint.size*0.5+2<y+84,"门槛独立第二行且不越卡片底")
+                check((utf8.len(fixture.hint) or #fixture.hint)*hint.size*0.75<=172,"独立门槛文字一行完整容纳")
+            else
+                for _,v in ipairs(c.calls) do
+                    if v.kind=="text" or v.kind=="rawText" then
+                        check(not (v.x>=105 and v.x<=295 and v.y>=y+52 and v.y<=y+84),
+                            "已解锁分类完全隐藏第二行/空副标题 " .. fixture.id)
+                        check(not (v.text==fixture.hint and v.y>=y and v.y<=y+84),
+                            "已解锁分类不残留门槛文字 " .. fixture.id)
+                    end
+                end
+                check(not textAt(c,fixture.name,200,y+84*0.34),"已解锁名称不保留旧双行锚点")
+            end
+            local lockDrawn=false
+            for _,v in ipairs(c.calls) do
+                if v.kind=="fill" and v.paint and v.paint.path=="image/通用图标/UI_ICON_SUO.png"
+                    and v.shape.x==258 and v.shape.y==y+7 then lockDrawn=true end
+            end
+            eq(lockDrawn,locked,"分类锁图标与独立门槛状态一致 " .. fixture.id)
+        end
+        eq(c.randomCalls,random,"分类文案绘制不取随机/发奖")
+        eq(#c.selections,0,"分类文案查看不跳关"); eq(#c.towerSelections,0,"分类文案查看不进塔")
+        check(same(c.teams,teams),"分类文案不写队伍位置"); idle(c,saved)
+    end
+    -- 主线锁定/解锁都保留原章号副标题，终焉也保留原难度副标题。
+    for _,rank in ipairs({101,34505}) do
+        c.maxStage=rank; c.memory.battle.maxStageId=rank; c.teams={101,201,301}
+        local saved=copy(c.memory); openMain(c)
+        for chapter=1,7 do
+            local y=876+(chapter-1)*94
+            drawn(chapter .. " 章",200,y+84*0.74,20,"主线原章号副标题")
+        end
+        idle(c,saved)
+    end
+    c.teams={999,201,301}; openMain(c)
+    local temple=false
+    for _,v in ipairs(c.calls) do if v.kind=="text" and v.text=="终焉" and v.x==200 then
+        local y=v.y-84*0.34
+        drawn("普通",200,y+84*0.74,20,"终焉原难度副标题"); temple=true
+    end end
+    check(temple,"真实主线列表已绘制普通终焉分类")
+end
 local function selectionCases()
     local c=newContext(); local d=c.prepareDialog(); local dc=c.require("config.DungeonConfig"); local saved=copy(c.memory)
     for _,team in ipairs({1,2,3}) do
@@ -1094,7 +1104,8 @@ local function selectionCases()
     eq(#c.selections,n+1,"往返drag误tap消费"); check(same(c.teams,beforeTeams),"拒绝/drag不改队")
     for _,id in ipairs(dc.RESOURCE_IDS) do
         c.maxStage=dc.UNLOCK_CONDITIONS[id]-1; c.memory.battle.maxStageId=c.maxStage
-        local lockedBefore=copy(c.memory); d.close(); d.openDungeon(3,id); c.draw(); local count=#c.selections
+        local lockedBefore=copy(c.memory); d.close(); d.openDungeon(1,id); c.draw(); local count=#c.selections
+        check(d.isOpen(),"低进度仍已解锁队1实际打开资源列表，不被队3入口锁替代副本锁")
         d.handleInput(340,820); eq(#c.selections,count,"主线门槛不足资源锁guard " .. id); idle(c,lockedBefore)
     end
     c.maxStage=604; c.memory.battle.maxStageId=604; local towerBefore=copy(c.memory)
@@ -1139,9 +1150,10 @@ local function towerDialogCases()
     c.memory.dungeon.babel_tower.floor=113
     d.close(); d.openDungeon(1,"babel_tower"); c.draw(); currentRow(c,112)
     local _,_,top=visibleRow(c,112)
-    check(textAt(c,"首次 ×5800 / 重打 ×2900",503,top+147),"塔全通floor113真实行仍112且重打扫荡2900")
+    check(textAt(c,"首次 ×5800 / 重打 ×2900",457,top+147),"塔全通floor113真实行仍112且重打扫荡2900")
     c.maxStage=604; c.memory.battle.maxStageId=604; c.memory.dungeon.babel_tower.floor=112
-    local saved=copy(c.memory); d.close(); d.openDungeon(3,"babel_tower"); c.draw()
+    local saved=copy(c.memory); d.close(); d.openDungeon(1,"babel_tower"); c.draw()
+    check(d.isOpen(),"605门槛fixture用已解锁队1，真实打开塔112列表后再测副本锁")
     local n=#c.towerSelections; local x,y=visibleRow(c,112); d.handleInput(x,y)
     eq(#c.towerSelections,n,"605门槛不足即使塔112也不调用"); idle(c,saved)
 end
@@ -1311,17 +1323,16 @@ local function resourceDialogCases()
             local label=rowLabel(c,chapter)
             check(label.clip and label.clip.x==315 and label.clip.y==786 and label.clip.w==580 and label.clip.h==890,"资源章标签固定890视窗")
             local sid=dc.getStageId(id,floor); local reward=r.getRewardPreview(sid,dc.getStage(sid))
-            check(textAt(c,"通关收益预估",327,top+121),"每章实际奖励预估标题独立带")
-            local amount=textAt(c,estimate.formatEstimate(reward.amount),503,top+121)
-            check(amount and amount.clip and amount.clip.y>=top+104 and amount.clip.y+amount.clip.h<=top+138,"≈小数位于行内奖励区不越底")
+            check(textAt(c,"通关奖励",327,top+121),"每章实际通关奖励标题独立带")
+            local amount=textAt(c,estimate.formatEstimate(reward.amount),457,top+121)
+            check(amount and amount.clip and amount.clip.y>=top+104 and amount.clip.y+amount.clip.h<=top+138,"收益小数位于行内奖励区不越底")
             if id=="equipment_vault" then
-                check(textAt(c,string.format("随机Lv.%d · 品质%d-%d",reward.equipLevel,reward.equipMinQuality,reward.equipMaxQuality),615,top+121),"装备真实等级品质说明")
+                check(textAt(c,string.format("随机Lv.%d · 品质%d-%d",reward.equipLevel,reward.equipMinQuality,reward.equipMaxQuality),687,top+121),"装备真实等级品质说明")
             end
-            check(textAt(c,"按击杀结算",200,1320) and textAt(c,"非额外通关奖励",200,1346),"资源收益说明完整左列不撞右栏底边")
-            if id=="equipment_vault" then
-                check(textAt(c,"装备随机掉落",200,1390) and textAt(c,"按设置入包/分解",200,1416)
-                    and textAt(c,"或进入遗匣",200,1442),"装备去向说明左列完整可读")
-            else check(textAt(c,"一关约主线一章",200,1390) and textAt(c,"末关保留原跨度",200,1416),"章跨度说明左列完整可读") end
+            check(not textAt(c,"按击杀结算",200,1320) and not textAt(c,"非额外通关奖励",200,1346),"左下收益说明按需求移除")
+            check(not textAt(c,"装备随机掉落",200,1390) and not textAt(c,"按设置入包/分解",200,1416)
+                and not textAt(c,"或进入遗匣",200,1442),"左下装备去向说明移除")
+            check(not textAt(c,"一关约主线一章",200,1390) and not textAt(c,"末关保留原跨度",200,1416),"左下章跨度说明移除")
             for _,v in ipairs(c.calls) do
                 if v.kind=="text" then check(not v.text:find("首次 ×",1,true),"资源不画firstGold/firstEquip保证奖") end
             end
@@ -1415,13 +1426,22 @@ local function safetyCases()
         function() c.env.File("standalone_save.json",FILE_WRITE) end,function() c.require("core.GameState").save() end,
         function() c.require("runtime.ClientDispatcher").action("dungeon.enter",{}) end,
         function() c.env.cache:GetFile("main.lua") end,function() c.env.clientCloud:Set("x",1) end,
-        function() c.env.fileSystem:SetCurrentDir(ROOT) end,function() c.env.loadfile("main.lua") end}) do
+        function() c.env.fileSystem:SetCurrentDir(ROOT) end,function() c.env.loadfile("main.lua") end,
+        function() c.env.network:Connect("127.0.0.1",2345) end,
+        function() c.require("ui.hud.BottomNav").setAllLocked(true) end,
+        function() c.require("ui.dungeon.DungeonBattleScene").open() end,
+        function() c.require("ui.tower.TowerBattleScene").start() end,
+        function() c.require("rules.offline.OfflineService").PreviewTeamIncome({}, {}, {}, 3600) end,
+        function() c.require("rules.offline.OfflineService").Claim() end,
+        function() c.require("ui.widget.HeroFrame").initImages(c.vg) end,
+        function() c.require("ui.battle.stage.ExpeditionOverview").open(1) end,
+        function() c.require("ui.battle.tri.BattleTriStageProgress") end}) do
         local n=#c.denied; check(not pcall(probe),"危险探针确实拒绝"); eq(#c.denied,n+1,"拒绝可审计")
     end
     for name in pairs(SOURCE_FILES) do eq(package.loaded[name],initialLoaded[name],"全局package cache不污染 " .. name) end
     eq(File,nativeFile,"全局File不覆写"); eq(nvgCreateImage,nativeCreateImage,"全局绘图API不覆写")
     local expectedReads=0; for _ in pairs(SOURCE_FILES) do expectedReads=expectedReads+1 end
-    eq(expectedReads,29,"固定29份源码安全白名单")
+    eq(expectedReads,35,"固定35份源码安全白名单；新增仅真实必要依赖")
     eq(#reads,expectedReads,"全部固定源码读取，Tri/Scene只取纯函数段")
     print(TAG .. "LIMIT: source/File=read-only allowlist; real GameState/save/File-write/cloud/runtime-action/main/Boot.run denied.")
     print(TAG .. "LIMIT: spawn unit factory, I18n, BF, progress/gotoTeamStage mocked; no full main, live combat, persistence or mobile-input claim.")
@@ -1459,7 +1479,9 @@ function Start()
         {"actual-Tri-background-pure-resolver",resolverCases},
         {"actual-new-tabs-and-old-tabs-dead",layoutCases},{"shared-chapter-bounds-wheel-arrows-drag",scrollCases},
         {"four-flat-groups-71-resource-chapters-112-tower-339-old-ids",resourceGroupCases},
-        {"four-preview-path-cache-zero-missing",imageCases},{"teams123-lock-guards-no-consumption",selectionCases},
+        {"four-preview-path-cache-zero-missing",imageCases},
+        {"four-category-locked-unlock-captions-hidden-after-unlock-main-subtitles",categoryCaptionCases},
+        {"teams123-lock-guards-no-consumption",selectionCases},
         {"actual-Dialog-all112-tower-floor-routing-reveal-locks",towerDialogCases},
         {"actual-continuous-rows-scroll-clip-gesture-section-memory",continuousRowCases},
         {"pure-reward-expectation-all339-and-tower112",rewardCases},

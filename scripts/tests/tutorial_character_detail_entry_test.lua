@@ -366,6 +366,12 @@ function Start()
                 c.renderBattle()
                 local hs = assert(c.tm.getCurrentHotspot(), "live battle card hotspot missing")
                 eq(hs.heroId, 3, "dead/fallen skipped without pretending array index is team slot")
+                c.memory.session.initialHeroId = 2
+                c.renderBattle(); eq(c.tm.getCurrentHotspot(), nil, "fallen initial hero never substitutes incompatible teammate")
+                c.memory.session.initialHeroId = 3
+                c.renderBattle(); eq(assert(c.tm.getCurrentHotspot()).heroId, 3, "living initial hero remains gift equipment target")
+                c.memory.session.initialHeroId = nil
+                c.renderBattle()
                 local selected = {}
                 c.cardHelpers.visit(width, height, 1, function(unit, row, index, cx, cy, w, h)
                     selected[#selected + 1] = { hero = unit.heroId, row = row, index = index, cx = cx, cy = cy, w = w, h = h }

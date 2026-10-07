@@ -279,15 +279,18 @@ function TutorialManager.onRecruitCompleted(results, count)
     if recruitCount_ == nil or recruitCount_ ~= count or type(results) ~= "table" or #results == 0 then
         return false
     end
-    recruitCount_ = nil
-    TutorialManager.notifyEvent("gacha10_complete")
-    if not isGroupCompleted(8) then
-        completed_["8"] = true
-        for i = #queue_, 1, -1 do if queue_[i] == 8 then table.remove(queue_, i) end end
-        save()
+    recruitCount_, queuedRecruitStarted_ = nil, false
+    -- 完成组8与选择新增英雄/排组9一次保存，避免持久化回调观察到不完整的后续教学状态。
+    completed_["8"] = true
+    for i = #queue_, 1, -1 do if queue_[i] == 8 then table.remove(queue_, i) end end
+    if activeGroup_ == 8 then
+        activeStep_, stepElapsed_ = #Config[8].steps + 1, 0
+        animState_, animT_, triggerQuiet_ = "out", 0, 0
+        resetTarget()
+        print("[TutorialManager] 引导完成: 8")
     end
-    if isGroupCompleted(9) or activeGroup_ == 9 then return true end
-    for _, id in ipairs(queue_) do if id == 9 then return true end end
+    if isGroupCompleted(9) or activeGroup_ == 9 then save(); return true end
+    for _, id in ipairs(queue_) do if id == 9 then save(); return true end end
     newHeroId_ = nil
     for _, result in ipairs(results) do
         local heroId = tonumber(result.heroId)

@@ -412,6 +412,7 @@ local function runPowerEvents()
         eq(row.delta,50,"count-up authoritative delta never becomes sample")
         eq(row.displayPower,100,"initial display begins at old power")
         eq(row.displayDelta,0,"initial display begins with zero increase")
+        eq(row.displayRemaining,50,"initial remaining increase is full authority gap")
         eq(row.progress,0,"initial display has delay phase")
         f.power.update(1e9)
         eq(assert(f:row(1)).displayPower,100,"large dt alone cannot advance numeric animation")
@@ -422,6 +423,7 @@ local function runPowerEvents()
         check(row.progress > 0 and row.progress < 1,"middle numeric progress is interior")
         check(row.displayPower > 100 and row.displayPower < 150,"middle power is visibly rolling")
         check(row.displayDelta > 0 and row.displayDelta < 50,"middle delta is visibly rolling")
+        eq(row.displayRemaining,150-row.displayPower,"remaining decreases exactly as total rolls up")
         eq(row.displayPower,math.floor(row.displayPower),"middle power stays integral")
         eq(row.displayDelta,math.floor(row.displayDelta),"middle increase stays integral")
         eq(row.power,150,"query does not mutate authority")
@@ -430,6 +432,7 @@ local function runPowerEvents()
         row = assert(f:row(1))
         eq(row.displayPower,150,"numeric completion snaps to exact target")
         eq(row.displayDelta,50,"numeric completion snaps to exact delta")
+        eq(row.displayRemaining,0,"numeric completion leaves zero remaining increase")
         eq(row.progress,1,"completion progress exactly one")
         f.clock.elapsedTime = 103.19
         check(assert(f:row(1)).pulse > 0,"numeric completion has bounded settle pulse")
@@ -460,6 +463,7 @@ local function runPowerEvents()
         f:emit({170,250,350})
         local falling = assert(f:row(1))
         eq(falling.displayPower,rolling.displayPower,"positive-net drop retargets exact current sample")
+        eq(falling.displayRemaining,0,"decline clamps negative remaining gap without changing sampled total")
         eq(falling.delta,70,"drop authoritative net recomputed")
         near(falling.elapsed,.4,"drop must not extend original rise lifetime")
         f.clock.elapsedTime = 104.31
@@ -491,6 +495,8 @@ local function runPowerEvents()
         local row=assert(f:row(1))
         eq(row.displayPower,math.maxinteger-1,"integer upper bound small-step preserves low bits")
         eq(row.displayDelta,1,"integer upper-bound middle gain one")
+        check(row.displayRemaining==1 and math.type(row.displayRemaining)=="integer",
+            "integer upper-bound remaining preserves exact low bit and integer type")
         f.clock.elapsedTime=started+1.4
         eq(assert(f:row(1)).displayPower,math.maxinteger,"integer upper-bound exact final authority")
         f:baseline({123456789012345671,0,0});started=f.clock.elapsedTime
@@ -972,8 +978,10 @@ local function runPowerUI(vg)
                 local row = children[team + 1]
                 check(row:IsVisible(), "real team row visible " .. team)
                 local labels = row:GetChildren()
-                local teamLabel, valueLabel, rangeLabel = labels[1], labels[2], labels[3] ---@type Label, Label, Label
-                eq(#labels,3,"real row retains team/value plus range Label "..team)
+                local teamLabel, valueLine, rangeLabel = labels[1], labels[2], labels[3] ---@type Label, Panel, Label
+                local main = valueLine:GetChildren()
+                local icon, valueLabel, remainingLabel = main[1], main[2], main[3] ---@type Panel, Label, Label
+                eq(#labels,3,"real row retains team/combined value line plus range Label "..team)
                 eq(teamLabel:GetText(), "小队 " .. team, "real team Label identity " .. team)
                 local base = ({100,200,300})[team]
                 eq(rangeLabel:GetText(),expectedRange(base,expected[team],expected[team]-base),
@@ -988,7 +996,15 @@ local function runPowerUI(vg)
                     "real value Label is exact team total only " .. team)
                 check(not valueLabel:GetText():find("+",1,true), "real main value has no gain prefix or suffix")
                 local cell = valueLabel:GetAbsoluteLayout()
-                near(cell.x + cell.w*.5, layout.w*.5, "real team value Label centered", .50001)
+                local combined = valueLine:GetAbsoluteLayout()
+                near(combined.x + combined.w*.5, layout.w*.5, "real icon/total/remaining combination centered", .50001)
+                if currentStage==1 and team==1 then
+                    check(#main==3 and valueLine.props.flexDirection=="row"
+                        and icon.props.backgroundImage=="image/通用图标/ICON_ZDL.png"
+                        and icon.props.backgroundFit=="contain", "real main line reuses power icon Panel with contain")
+                    check(remainingLabel:GetText()=="+0" and remainingLabel.props.fontSize<valueLabel.props.fontSize,
+                        "real completed remaining Label is smaller +0")
+                end
                 check(cell.w > 0 and cell.h > 0 and cell.y + cell.h <= layout.h + .001,
                     "real Label width/height inside root")
                 near(row:GetLayout().h,96,"real rich team row height")
@@ -1020,7 +1036,7 @@ local function runPowerUI(vg)
             eq(header:GetText(), expected, "real localized title " .. language)
             for team = 1, 3 do
                 local labels = children[team+1]:GetChildren()
-                local value = labels[2] ---@type Label
+                local value = labels[2]:GetChildren()[2] ---@type Label
                 local range = labels[3] ---@type Label
                 local rangeLayout = range:GetAbsoluteLayout()
                 local rangeWidth = hostTextWidth(vg,range)
@@ -1054,7 +1070,8 @@ local function runPowerUI(vg)
         end
         f.power.draw(vg,1920,1080)
         local root = assert(f.draws[#f.draws]).root
-        local label = root:GetChildren()[3]:GetChildren()[2] ---@type Label
+        local valueLine = root:GetChildren()[3]:GetChildren()[2] ---@type Panel
+        local label = valueLine:GetChildren()[2] ---@type Label
         local layout = label:GetAbsoluteLayout()
         local text = label:GetText()
         local formatted = expectedPower(value)
@@ -1075,13 +1092,14 @@ local function runPowerUI(vg)
             "consecutive long/short/integer-max actual width stays inside 580 frame=" .. index
             .. " measured=" .. tostring(measured) .. " layout=" .. tostring(layout.w)
             .. " font=" .. tostring(label.props.fontSize))
-        near(layout.x + layout.w*.5,root:GetLayout().w*.5,
-            "consecutive font change actual Label centered",.50001)
+        local combined = valueLine:GetAbsoluteLayout()
+        near(combined.x + combined.w*.5,root:GetLayout().w*.5,
+            "consecutive font change actual combination centered",.50001)
         if index == 2 then
             eq(label.props.fontSize,27,"long to short restores normal font")
             check(layout.w < uiState.transitionWidth,"long to short recomputes narrower auto width")
         elseif index == 3 then
-            eq(label.props.fontSize,27,"single 15-digit total retains large main font")
+            check(label.props.fontSize>18 and label.props.fontSize<=27,"15-digit total retains readable paired font budget")
             check(layout.w > uiState.transitionWidth,"short to long recomputes larger auto width")
         elseif index == 5 then
             near(layout.w,uiState.transitionWidth,"unchanged maximum integer width stable next frame")
@@ -1135,9 +1153,12 @@ local function runPowerUI(vg)
         for team=1,3 do
             local row=assert(f:row(team))
             local labels=root:GetChildren()[team+1]:GetChildren()
-            local value,range=labels[2],labels[3] ---@type Label, Label
+            local value,range=labels[2]:GetChildren()[2],labels[3] ---@type Label, Label
+            local remaining=labels[2]:GetChildren()[3] ---@type Label
             eq(value:GetText(),expectedPower(row.displayPower),
                 "real main UI text is sampled integer total only team "..team)
+            eq(remaining:GetText(),"+"..expectedPower(row.displayRemaining),
+                "real smaller remaining Label follows sampled gap team "..team)
             check(not value:GetText():find("+",1,true),"rolling main value never draws displayDelta team "..team)
             eq(range:GetText(),expectedRange(row.base,row.power,row.delta),
                 "real UI auxiliary remains authoritative team "..team)
@@ -1183,20 +1204,35 @@ local function runPowerUI(vg)
             f.power.draw(vg,1920,1080)
             local root=assert(f.draws[#f.draws]).root
             local labels=root:GetChildren()[2]:GetChildren()
-            local value,range=labels[2],labels[3] ---@type Label, Label
+            local valueLine=labels[2] ---@type Panel
+            local main=valueLine:GetChildren()
+            local icon,value,remaining=main[1],main[2],main[3] ---@type Panel, Label, Label
+            local range=labels[3] ---@type Label
             local row=assert(f:row(1))
             eq(value:GetText(),expectedPower(row.displayPower),"worst-18-digit main exact sample "..index)
+            eq(remaining:GetText(),"+"..expectedPower(row.displayRemaining),"worst-18-digit remaining exact gap "..index)
             eq(range:GetText(),expected,"worst-three-18-digit auxiliary unchanged start/middle/final "..index)
-            eq(value.props.fontSize,27,"worst-18-digit main retains large font "..index)
+            check(value.props.fontSize>18 and value.props.fontSize<=27
+                and remaining.props.fontSize<value.props.fontSize,"worst-18-digit paired font budget "..index)
             eq(range.props.fontSize,12,"worst-three-18-digit auxiliary retains original font "..index)
-            for _,label in ipairs({value,range}) do
+            for _,label in ipairs({value,remaining,range}) do
                 local layout=label:GetAbsoluteLayout()
                 local measured=hostTextWidth(vg,label)
                 check(measured>0 and measured<=layout.w+1 and layout.w<=580.001,
                     "worst-three-18-digit actual font fits 580 sample="..index.." measured="..measured.." layout="..layout.w)
-                near(layout.x+layout.w*.5,root:GetLayout().w*.5,
-                    "worst-18-digit labels remain centered sample "..index,.50001)
             end
+            local combined=valueLine:GetAbsoluteLayout()
+            local iconLayout=icon:GetAbsoluteLayout()
+            local remainingLayout=remaining:GetAbsoluteLayout()
+            check(combined.w<=580.001 and iconLayout.x>=combined.x-.001
+                and remainingLayout.x+remainingLayout.w<=combined.x+combined.w+.001,
+                "worst-18-digit icon and both numbers fit combined 580 budget "..index)
+            near(combined.x+combined.w*.5,root:GetLayout().w*.5,"worst-18-digit combination centered "..index,.50001)
+            local rangeLayout=range:GetAbsoluteLayout()
+            near(rangeLayout.x+rangeLayout.w*.5,root:GetLayout().w*.5,"worst-18-digit authority range centered "..index,.50001)
+            near(icon.props.opacity,value.props.fontColor[4]/255,"power icon shares numeric fade alpha "..index)
+            if uiState.powerIcon then eq(icon,uiState.powerIcon,"power frames reuse same image Panel "..index) end
+            uiState.powerIcon=icon
             if index==1 then eq(row.displayPower,base,"worst-18-digit start preserves exact base")
             elseif index==2 then check(row.displayPower>base and row.displayPower<target,"worst-18-digit middle truly interpolates")
             else eq(row.displayPower,target,"worst-18-digit final exact authority") end
@@ -1331,7 +1367,7 @@ local function drawVisual(vg)
             for team=1,visual.teams do
                 local row=assert(visual.power:row(team))
                 local labels=root:GetChildren()[team+1]:GetChildren()
-                local value,range=labels[2],labels[3] ---@type Label, Label
+                local value,range=labels[2]:GetChildren()[2],labels[3] ---@type Label, Label
                 eq(value:GetText(),expectedPower(row.displayPower),"visual actual main total only team "..team)
                 eq(range:GetText(),expectedRange(team*10000,({123456,234567,345678})[team],
                     ({123456,234567,345678})[team]-team*10000),"visual auxiliary authority independent of sample team "..team)

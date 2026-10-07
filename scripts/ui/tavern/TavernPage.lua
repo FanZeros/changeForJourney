@@ -515,6 +515,8 @@ function TavernPage.close()
     state.closing = true
     state.closeTime = time.elapsedTime
     TavernPopups.resetAll()
+    -- 结果页随酒馆离开收尾；不能留下不可见的招募忙碌状态。
+    if RecruitAnim.isPlaying() then RecruitAnim.close() end
     print("[TavernPage] 关闭酒馆（动画）")
 end
 
@@ -541,6 +543,7 @@ function TavernPage.forceClose()
     state.open = false
     state.closing = false
     TavernPopups.resetAll()
+    if RecruitAnim.isPlaying() then RecruitAnim.close() end
 end
 
 --- 返回打开/关闭动画进度 (0=完全关闭, 1=完全打开)
@@ -1295,6 +1298,14 @@ function TavernPage.onActionResult(data)
     -- 只有本次在途请求的有效结果能设置教程目标；孤立/重复回执不能覆盖它。
     if requestCount then
         require("systems.TutorialManager").onRecruitCompleted(data.gachaResults, requestCount)
+    end
+
+    -- 页面在请求在途时可能被配装仓库替换，仍消费真实回执与教程目标，
+    -- 但不启动永远无法绘制/点击关闭的结果页。
+    if not state.open or state.closing then
+        require("ui.character.hero.HeroScenario").onRecruitResults(data.gachaResults)
+        print("[TavernPage] 酒馆已关闭，招募结果完成收尾")
+        return
     end
 
     -- 播放招募动画

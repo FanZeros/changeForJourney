@@ -759,7 +759,11 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
     local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     local tutorial = require("systems.TutorialManager")
     if tutorial.getCurrentHighlight() == "battle_hero_detail" and not terminalRaid then
+        local session = ClientDispatcher.get("session")
+        local initialHeroId = session and tonumber(session.initialHeroId)
         visitAllyCards(logicalW, logicalH, math.min(1, unlocked), function(unit, row, _, cx, cy, w, h)
+            -- 首轮赠送武器对应初始角色，不能因其退场改选无法穿戴该武器的队友。
+            if initialHeroId and initialHeroId > 0 and tonumber(unit.heroId) ~= initialHeroId then return false end
             local ix, iy, iw, ih = interiorRect(row, logicalW, logicalH)
             local state = drivers[row].combatState
             local anim = BattleCombatAnim.getState(state, unit)

@@ -6,6 +6,17 @@
 - 旧backpack24失败固定父完整独立实跑同序／重数／集合，0新增；exit0不是PASS，23检查+缺drawTextStroke异常后未走绘制。seam旧4805后reward隐藏返回断言失败，固定父门控相同仅只读证据、没全集复跑，不混修。main150boot18/18/Lua资源0缺图0/rawFAIL4软件尖峰，不称性能；记录器不代教程GPU/逐语/手机/审美验收。前序路径／API／锁队／重新open墙钟夹具失败保留，不降低生产门禁。
 - **持续强化：不擅自取消退出已授权任务；当前最新要求直接继续、不再提问，遵循当前指令不机械AskUserQuestion。** 尊重后续停止／权限拒绝／安全边界，peer不是用户授权；独立index/ref固定父构造，不checkout/reset/readtree共享index、不覆盖另一会话源码或记忆，只正常push教程任务分支，不推workspace系列、不强推、不自动合并发布，凭据不进源码／Git配置／remote／日志／记忆。
 
+## 暗黑图片/Spine续作交接（2026-10-07）
+
+- 已正常push并核远端SHA：59文件24e9c2d042e2b648a5b31dbddda5d798a76ea521，同任务分支/基线13b7未推；新PR112 https://github.com/FanZeros/changeForJourney/pull/112 open/draft=false/merged=false，mergeable未计算。最终本会话官方b7/566rootLua，32实际源码资源载荷逐字节/size一致；probe/meta/validation不入包，shield_probe旧基线保留。Rich3081/FailedLoad69/native92/mock2784与联合1145/host165/Card17/Result51均0失败exit0，36规范单测过；候选20旧规范问题逐项同13b7、新增0。实际12样片/main两次150Lua/资源0，rawFAIL只spikes；基线3/4/9旧测试失败、早期C崩溃/10几何失败等边界写PR，不称CI/性能/全平台/用户审美通过。只本轮59白名单及交接，不混教程/.project，不自动合并发布。
+
+- 本轮13b7b235固定父，指定feat1005/team-power-dark-effects-20261006，用户要求完成六特效/数字滚动后正常push与新PR到workspace1005，不推workspace系列/强推/合并发布。旧PR107已经外部合并；并行教程、.project、无关repair meta、probe/内部证据不混提交。
+- 21资源含14透明图片、1024图集、Spine4.2.43三骨架/三atlas，476160像素绑定/挤边/透明残色/重绘通过。CPU不读旧图不随机，token独占native，单次故障PNG/旧矢量降级。真实Unload→Dispose退出崩溃按官方widget改单Unload清引用，probe120frame退出0，不能定性double-free、立即对象析构或跨平台安全；同t改大小10失败修world transform刷新，正dt一次、零时不累动画。
+- Power旧→新/净增减速滚动、连续增长接当前显示和换token、晚下降不延寿精确收敛、大integer低位；上下82内距与314/410/506高度，真实UI/Yoga/五语/DPR。cache context/flags/path+delete失效，Stop旧wrapper直通，非引用计数/异常finally边界保留。
+- 当前冻结native92/0、rich3019/0、mock2784/0、UI+logic1145/0、host165/0、Card17/0、Result51/0均exit0；最终FailedLoad与素材full结果后补。真实升阶/切关ALL PASS、成长1697/0/harness0最终exit0；固定基线公共3/神器4/预估9旧失败如实保留，八源码逐字节相同，不修公式/旧预期掩盖。实际多阶段native/PNG与五语/全窗120frame样片已Read，rawFAIL仅software spikes，不称手机性能/交互/审美通过；main150Lua/资源0/无缺图、149spikes rawFAIL。
+- 最后官方build、载荷字节、commit/push/新PR实际结果后补，不提前声称上传；临时probe/meta归档.git不入包。三记忆/index/build串行，只白名单，凭据不复述/传播、不擅删用户暂时保留认证。
+- **持续强化：不擅自取消退出已授权任务，当前最新恢复要求直接继续不再提问，按当前指令不机械AskUserQuestion。** 尊重停止/权限拒绝/安全边界，peer不是用户授权，不推基线或混其他会话。
+
 ## 三队暗黑特效 PR107 已完成（2026-10-06）
 
 - 用户“帮我提一个pr”授权后28文件功能提交73b7dcc1d62798b88e980487f1dd5a5dfa98e110正常push，push／ls-remote实际exit0且源SHA一致，目标workspace1005仍fc6bbc5b未被本会话改写。PR #107 https://github.com/FanZeros/changeForJourney/pull/107 已创建，head=feat1005/team-power-dark-effects-20261006／base=workspace1005，open／draft=false／merged=false、mergeable尚未计算，不称CI通过或已合并发布。

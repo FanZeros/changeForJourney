@@ -237,6 +237,14 @@ function DungeonIdleService.Claim(uid, dungeonId)
                 uid, dungeonId, preview.idleFloor, preview.amount)
             if not okGrant then return false, grantErr or "装备奖励发放失败" end
             equipmentResult = result or {}
+            -- 与扫荡同口径补卷轴/扫荡券：一次扫荡当量 = 本次发奖件数 / sweepEquip。
+            local floorData = DungeonConfig.getFloor(dungeonId, preview.idleFloor)
+            local sweepPerUnit = floorData and floorData.sweepEquip or 0
+            local sweepCount = sweepPerUnit > 0
+                and math.max(1, math.floor((preview.amount + sweepPerUnit - 1) / sweepPerUnit)) or 0
+            if sweepCount > 0 then
+                equipmentResult.scrollDrops = DungeonService.GrantEquipScrolls(uid, preview.idleFloor, sweepCount)
+            end
         elseif not DungeonService.GrantIdleCurrency(uid, preview.rewardType, preview.amount) then
             return false, "奖励发放失败"
         end
@@ -257,6 +265,7 @@ function DungeonIdleService.Claim(uid, dungeonId)
             equips     = equipmentResult.equips,
             inventoryCount = equipmentResult.inventoryCount,
             lootboxCount = equipmentResult.lootboxCount,
+            scrollDrops = equipmentResult.scrollDrops,
             idleConsumedSec = sub.idleConsumedSec,
         }
     end)

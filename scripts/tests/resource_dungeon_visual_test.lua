@@ -208,6 +208,28 @@ function DungeonConfig.getCombatEntry(id, floor)
     return entry
 end
 
+--- 装备副本每层产出随层成长；首通按两次扫荡当量。
+DungeonConfig.EQUIP_SWEEP_BASE = 80
+DungeonConfig.EQUIP_SWEEP_STEP = 25
+
+--- 装备副本指定层的一次扫荡当量（挂机 24h = 两次）。
+---@param floor number
+---@return number
+function DungeonConfig.getEquipSweepCount(floor)
+    floor = math.max(1, math.floor(tonumber(floor) or 1))
+    return DungeonConfig.EQUIP_SWEEP_BASE + (floor - 1) * DungeonConfig.EQUIP_SWEEP_STEP
+end
+
+--- 装备副本沿用源关卷轴掉率；扫荡券与主线同口径（卷轴的 4 倍，夹在 0.12~0.35）。
+---@param floor number
+---@return number scrollRate, number ticketRate
+function DungeonConfig.getEquipDropRates(floor)
+    local source = getSourceStage("equipment_vault", floor)
+    local scrollRate = source and (source.scrollDropRate or 0.05) or 0.05
+    local ticketRate = math.min(0.35, math.max(0.12, scrollRate * 4))
+    return scrollRate, ticketRate
+end
+
 --- 获取层配置，旧遗迹仍能按原规则结清旧数据，不挪用为新装备副本。
 ---@return table|nil
 function DungeonConfig.getFloor(id, floor)
@@ -223,7 +245,9 @@ function DungeonConfig.getFloor(id, floor)
         result.firstGold, result.sweepGold = old.firstGold, old.sweepGold
     elseif id == "equipment_vault" then
         local cap = StageConfig.getMaxDropQuality(combat)
-        result.firstEquip, result.sweepEquip = 6, 3
+        local sweep = DungeonConfig.getEquipSweepCount(floor)
+        result.sweepEquip = sweep
+        result.firstEquip = sweep * 2
         result.equipLevel = combat.monsterLevel
         result.equipMinQuality, result.equipMaxQuality = math.min(3, cap), cap
     elseif id == "black_diamond" then
@@ -316,6 +340,22 @@ function DungeonConfig.getStageRewards(stageId, kills)
                 quality = math.random(data.equipMinQuality, data.equipMaxQuality),
             }
         end
+        -- 装备副本按源关掉率补卷轴与扫荡券，资源结构向主线靠拢。
+        local scrollRate, ticketRate = DungeonConfig.getEquipDropRates(floor)
+        local killsN = math.max(0, tonumber(kills) or 0)
+        local function rollCount(r)
+            local rawR = killsN * r
+            local n = math.floor(rawR)
+            if math.random() < rawR - n then n = n + 1 end
+            return n
+        end
+        local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
+        for _ = 1, rollCount(scrollRate) do
+            local st = scrollTypes[math.random(1, #scrollTypes)]
+            rewards.scrollDrops[st] = (rewards.scrollDrops[st] or 0) + 1
+        end
+        local tickets = rollCount(ticketRate)
+        if tickets > 0 then rewards.scrollDrops.sweepTicket = tickets end
     end
     return rewards
 end

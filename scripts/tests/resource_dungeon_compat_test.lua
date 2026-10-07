@@ -153,19 +153,24 @@ function Start()
             eq(IC.getIdleFloorFromSub({ floor = 1, cleared = {} }, id), 0, id .. "新档无挂机收益")
             check(IC.getSweepReward(id, last) > 0, id .. "末层收益存在")
         end
+        -- 本段验证挂机累积算法（与件数成长正交），钉回旧固定当量 3 复现原数值。
+        local realBase, realStep = DC.EQUIP_SWEEP_BASE, DC.EQUIP_SWEEP_STEP
+        DC.EQUIP_SWEEP_BASE, DC.EQUIP_SWEEP_STEP = 3, 0
         local equip = assert(DC.getFloor("equipment_vault", 109))
-        eq(equip.firstEquip, 6, "装备首通6件")
-        eq(equip.sweepEquip, 3, "装备扫荡3件")
+        local equipSweep = DC.getEquipSweepCount(109)
+        eq(equip.sweepEquip, equipSweep, "装备扫荡随层成长")
+        eq(equip.firstEquip, equipSweep * 2, "装备首通为两次扫荡当量")
+        eq(equipSweep, 3, "冻结当量复现旧口径")
         check(IC.getIdlePerMin("equipment_vault", 109) > 0 and IC.getIdlePerMin("equipment_vault", 109) < 1, "装备每分钟允许小数")
         for _, seconds in ipairs({ 60, 14399, 14400, 86400, 172800, IC.HARD_CAP_SEC, IC.HARD_CAP_SEC + 86400 }) do
             local amount, minutes = IC.calcReward("equipment_vault", 109, seconds)
-            local expected = math.floor(math.floor(IC.effectiveSeconds(seconds) / 60) * 6 / 1440)
+            local expected = math.floor(math.floor(IC.effectiveSeconds(seconds) / 60) * equipSweep * 2 / 1440)
             eq(amount, expected, "装备累计件数floor sec=" .. seconds)
-            local neededSeconds = amount <= 6 and amount * 14400 or (86400 + (amount - 6) * 28800)
+            local neededSeconds = amount <= equipSweep * 2 and amount * 14400 or (86400 + (amount - equipSweep * 2) * 28800)
             eq(minutes, math.floor(neededSeconds / 60), "装备只扣整件所需分钟 sec=" .. seconds)
         end
-        eq(IC.calcReward("equipment_vault", 109, 86400), 6, "24h仅两次扫荡不会几千件")
-        eq(IC.calcReward("equipment_vault", 109, IC.HARD_CAP_SEC), 24, "7日装备尾段24件")
+        eq(IC.calcReward("equipment_vault", 109, 86400), equipSweep * 2, "24h两次扫荡当量")
+        eq(IC.calcReward("equipment_vault", 109, IC.HARD_CAP_SEC), equipSweep * 2 * 4, "7日装备尾段四倍")
         for _, entry in ipairs({
             { id = "gold_mine", sweep = DC.getGoldMineFloor(38).sweepGold },
             { id = "ancient_ruin", sweep = DC.getAncientRuinFloor(56).sweepDust },
@@ -183,7 +188,7 @@ function Start()
 
         local modules = { dungeon = old, battle = { maxStageId = 99999 }, session = { lastOnlineTime = now - 3600 } }
         local state = { dirty = 0, flushed = 0, grants = 0, fail = false, currencyGrants = 0,
-            expectedCount = 6, expectedSec = 86437, totalEquip = 0 }
+            expectedCount = equipSweep * 2, expectedSec = 86437, totalEquip = 0 }
         mocks["rules.character.PlayerDataManager"] = {
             GetModule = function(_, name) return modules[name] end,
             MarkDirty = function() state.dirty = state.dirty + 1 end,
@@ -222,6 +227,13 @@ function Start()
                 local equips = {}
                 for i = 1, count do equips[i] = { seq = i, level = equip.equipLevel } end
                 return true, nil, { equips = equips, inventoryCount = 4, lootboxCount = 2 }
+            end,
+            GrantEquipScrolls = function(uid, floor, sweepCount)
+                eq(uid, 0, "卷轴调用UID")
+                eq(floor, 109, "卷轴调用末层")
+                check(sweepCount >= 1, "卷轴按扫荡当量发")
+                state.scrollGrants = (state.scrollGrants or 0) + 1
+                return { weaponScroll = 1, sweepTicket = 1 }
             end,
         }
         local Service = env.require("rules.dungeon.DungeonIdleService")
@@ -361,6 +373,18 @@ function Start()
         Service.SyncOfflineOnEnter(0)
         eq(old.equipment_vault.idleAccumSec, 3600, "补算成功后重复进入幂等")
         Service.Cleanup(0)
+        check(Service.Cleanup ~= nil, "清理接口存在")
+        DC.EQUIP_SWEEP_BASE, DC.EQUIP_SWEEP_STEP = realBase, realStep
+        local realSweep = DC.getEquipSweepCount(109)
+        check(realSweep > 3 and DC.getFloor("equipment_vault", 109).sweepEquip == realSweep, "装备件数随层成长生效")
+        local sid = DC.getStageId("equipment_vault", 109)
+        local drops = DC.getStageRewards(sid, 1200)
+        local scrollSum, ticketSum = 0, 0
+        for field, count in pairs(drops.scrollDrops) do
+            if field == "sweepTicket" then ticketSum = ticketSum + count else scrollSum = scrollSum + count end
+        end
+        check(scrollSum > 0, "装备副本挂机掉卷轴")
+        check(ticketSum > 0, "装备副本挂机掉扫荡券")
         print(TAG .. " ALL PASS: " .. assertions .. " assertions")
     end)
     if not ok then log:Write(LOG_ERROR, TAG .. " FAIL after " .. assertions .. " assertions: " .. tostring(err)) end

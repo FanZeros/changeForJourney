@@ -10,6 +10,7 @@
 local BattleLayout = require("core.BattleLayout")
 local BattleView   = require("ui.battle.scene.BattleView")
 local BattleCombat = require("ui.battle.combat.BattleCombat")
+local BattleCombatAnim = require("ui.battle.combat.BattleCombatAnim")
 local ProjectileSystem = require("ui.battle.combat.ProjectileSystem")
 local TM               = require("systems.ThreatManager")
 local TAL              = require("systems.TalentManager")
@@ -585,6 +586,29 @@ local function interiorRect(row, logicalW, logicalH)
     return ox + ir.x0 * pw, ir.y0 * ph, (ir.x1 - ir.x0) * pw, (ir.y1 - ir.y0) * ph
 end
 
+--- 战斗卡点击与教程热点共用实际条带位置；数组为阵亡紧凑后的绘制顺序，不代表原编队槽号。
+local function visitAllyCards(logicalW, logicalH, unlocked, visit)
+    local scale = 1.0
+    for row = 1, COL_COUNT do
+        local _, _, iw, ih = interiorRect(row, logicalW, logicalH)
+        scale = math.min(scale, math.min(iw / BattleLayout.STRIP_W, ih / BattleLayout.STRIP_H))
+    end
+    local w = BattleLayout.CARD_W * BattleLayout.CARD_SCALE * scale
+    local h = BattleLayout.CARD_H * BattleLayout.CARD_SCALE * scale
+    for row = 1, math.min(COL_COUNT, unlocked) do
+        local ix, iy, iw, ih = interiorRect(row, logicalW, logicalH)
+        local ox = ix + (iw - BattleLayout.STRIP_W * scale) * 0.5
+        local oy = iy + (ih - BattleLayout.STRIP_H * scale) * 0.5 + ih * 0.06
+        local allies = drivers[row] and drivers[row].allies
+        for i, unit in ipairs(allies or {}) do
+            if unit.heroId and unit.hp > 0 and not unit._fallen then
+                local cx, cy = BattleLayout.cardPos("ally", i, #allies)
+                if visit(unit, row, i, ox + cx * scale, oy + cy * scale, w, h) then return end
+            end
+        end
+    end
+end
+
 --- [三队并行] 行内矩形（窗口坐标）导出：供 Standalone 中缝返回键定位
 ---@param row number 行号 1~3
 ---@return number x number y number w number h
@@ -684,6 +708,31 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
 
     local BattleScene = require("ui.battle.scene.BattleScene")
     local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
+    local tutorial = require("systems.TutorialManager")
+    if tutorial.getCurrentHighlight() == "battle_hero_detail" and not terminalRaid then
+        visitAllyCards(logicalW, logicalH, math.min(1, unlocked), function(unit, row, _, cx, cy, w, h)
+            local ix, iy, iw, ih = interiorRect(row, logicalW, logicalH)
+            local state = drivers[row].combatState
+            local anim = BattleCombatAnim.getState(state, unit)
+            if anim == "entering" or anim == "reviving" or anim == "dying" or anim == "gone"
+                or anim == "march" or anim == "advance" then return false end
+            -- 视觉卡可能冲刺/蓄力；高亮只取可见卡与原点击框的交集，不改普通点击规则。
+            local scale = w / (BattleLayout.CARD_W * BattleLayout.CARD_SCALE)
+            local offset = BattleCombatAnim.getOffsetY(state, unit)
+                + BattleCombatAnim.getChargeOffsetY(state, unit, true)
+            local vx = cx - offset * scale
+            local vy = cy + BattleCombatAnim.getArcOffsetY(state, unit, true) * scale / BattleLayout.CARD_SCALE
+            local cardScale = BattleCombatAnim.getCardScale(state, unit, true)
+            local left = math.max(cx - w * 0.5, vx - w * cardScale * 0.5, ix, 0)
+            local right = math.min(cx + w * 0.5, vx + w * cardScale * 0.5, ix + iw, logicalW)
+            local top = math.max(cy - h * 0.5, vy - h * cardScale * 0.5, iy, 0)
+            local bottom = math.min(cy + h * 0.5, vy + h * cardScale * 0.5, iy + ih, logicalH)
+            if right - left < 12 or bottom - top < 12 then return false end
+            tutorial.registerCharacterDetailHotspot("battle_hero_detail", unit.heroId,
+                (left + right) * 0.5, (top + bottom) * 0.5, right - left, bottom - top, "screen")
+            return true
+        end)
+    end
 
     -- 统一战斗缩放: 取三个内矩形中最小可容缩放, 保证三行卡牌等大
     local contentScale = 1.0
@@ -1195,41 +1244,15 @@ function BattleTriPage.handleInput(wx, wy)
         end
     end
 
-    -- 点击己方战斗卡，右侧打开该角色属性页。敌方卡和空白不处理。
-    local contentScale = 1.0
-    for row = 1, COL_COUNT do
-        local _, _, iw, ih = interiorRect(row, logicalW, logicalH)
-        contentScale = math.min(contentScale,
-            math.min(iw / BattleLayout.STRIP_W, ih / BattleLayout.STRIP_H))
-    end
-    local cardW = BattleLayout.CARD_W * BattleLayout.CARD_SCALE * contentScale
-    local cardH = BattleLayout.CARD_H * BattleLayout.CARD_SCALE * contentScale
-    for row = 1, math.min(COL_COUNT, unlocked) do
-        local ix, iy, iw, ih = interiorRect(row, logicalW, logicalH)
-        local dw = BattleLayout.STRIP_W * contentScale
-        local dh = BattleLayout.STRIP_H * contentScale
-        local originX = ix + (iw - dw) * 0.5
-        local originY = iy + (ih - dh) * 0.5 + ih * 0.06
-        local allies = drivers[row] and drivers[row].allies
-        if allies then
-            for i = 1, #allies do
-                local unit = allies[i]
-                -- [阵亡紧凑] 只响应存活且未退场的角色；已退到队尾的阵亡者不可点
-                if unit and unit.heroId and unit.hp > 0 and not unit._fallen then
-                    local cx, cy = BattleLayout.cardPos("ally", i, #allies)
-                    local sx = originX + cx * contentScale
-                    local sy = originY + cy * contentScale
-                    if math.abs(wx - sx) <= cardW * 0.5 and math.abs(wy - sy) <= cardH * 0.5 then
-                        require("ui.character.detail.CharacterDetail").open(unit.heroId)
-                        require("systems.GameSFX").play("ui_pick")
-                        print(string.format("[BattleTriPage] 点击战场角色 队%d 槽%d hero=%s",
-                            row, i, tostring(unit.heroId)))
-                        return true
-                    end
-                end
-            end
-        end
-    end
+    -- 点击己方战斗卡，右侧打开该角色详情。敌方卡和空白不处理。
+    visitAllyCards(logicalW, logicalH, unlocked, function(unit, row, i, cx, cy, w, h)
+        if math.abs(wx - cx) > w * 0.5 or math.abs(wy - cy) > h * 0.5 then return false end
+        require("ui.character.detail.CharacterDetail").open(unit.heroId)
+        require("systems.TutorialManager").notifyCharacterDetailOpened("battle", unit.heroId)
+        require("systems.GameSFX").play("ui_pick")
+        print(string.format("[BattleTriPage] 点击战场角色 队%d 槽%d hero=%s", row, i, tostring(unit.heroId)))
+        return true
+    end)
 
     return true  -- 战斗区吞掉其余点击（自动战斗）
 end

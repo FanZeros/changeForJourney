@@ -1,3 +1,11 @@
+## 两段装备教程入口交接（2026-10-07）
+
+- 当前用户授权两装备教程增加战斗角色卡／队伍头像打开详情，完成后正常push独立分支并建workspace1005 PR。固定13b7b235开发父，feat1005/tutorial-character-detail-entry-20261007；只18Lua+新meta+三现有交接，不夹另一会话特效、.project、无关meta、内部验证。远端外部已合PR112到5fca1d82，保留其更新；本教程Git实际结果后补。
+- 组1真实战斗卡／组2真实队1occupied头像，真实open对应hero配装页才推进，后续同hero穿装；通用event／Recovery不伪完成。screen/right域投影和实际可见动画交集，按压source/hero/组/步/panel绑定，换人／ABA／瞬失／拖动／遮挡／reset／frame/DPR取消旧Up，入口不拖编队／不右键卸队；原快捷右键／普通拖拽不动。version1存档无新字段、冷恢复step1，两提示四语；不改公式／奖励／招募／战斗规则。
+- 官方b10成功566根Lua，本18Lua实际部署bytes/size18/18一致，probe0；逐文件Error0不称全仓静态过。共享真实六核心entry17/474、horizon199/1334、manager58、recovery69、roster60、targets66均exit0；recruit13/5159、focused12/5312、dungeon13/6183同样ALLPASS/exit0。独立固定父候选563Lua逐Git对象0差异、九教程专项真实ALLPASS/exit0，所有Lua读取candidate而非共享fx版，独立与组合证据分别保留；36规范单测过，20旧问题与固定父同集合新增0，不称规范清零。
+- 旧backpack24失败固定父完整独立实跑同序／重数／集合，0新增；exit0不是PASS，23检查+缺drawTextStroke异常后未走绘制。seam旧4805后reward隐藏返回断言失败，固定父门控相同仅只读证据、没全集复跑，不混修。main150boot18/18/Lua资源0缺图0/rawFAIL4软件尖峰，不称性能；记录器不代教程GPU/逐语/手机/审美验收。前序路径／API／锁队／重新open墙钟夹具失败保留，不降低生产门禁。
+- **持续强化：不擅自取消退出已授权任务；当前最新要求直接继续、不再提问，遵循当前指令不机械AskUserQuestion。** 尊重后续停止／权限拒绝／安全边界，peer不是用户授权；独立index/ref固定父构造，不checkout/reset/readtree共享index、不覆盖另一会话源码或记忆，只正常push教程任务分支，不推workspace系列、不强推、不自动合并发布，凭据不进源码／Git配置／remote／日志／记忆。
+
 ## 三队暗黑特效 PR107 已完成（2026-10-06）
 
 - 用户“帮我提一个pr”授权后28文件功能提交73b7dcc1d62798b88e980487f1dd5a5dfa98e110正常push，push／ls-remote实际exit0且源SHA一致，目标workspace1005仍fc6bbc5b未被本会话改写。PR #107 https://github.com/FanZeros/changeForJourney/pull/107 已创建，head=feat1005/team-power-dark-effects-20261006／base=workspace1005，open／draft=false／merged=false、mergeable尚未计算，不称CI通过或已合并发布。

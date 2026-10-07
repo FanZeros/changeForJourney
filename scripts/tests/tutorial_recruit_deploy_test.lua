@@ -1,13 +1,13 @@
 -- 专项只读业务验证，采用 scaffold-2d 的 Start/Stop 生命周期，不初始化 UI/main/真实档。
 -- cwd=/home/Maker/tutorial-onboarding-validation-20261006
 -- /home/Maker/resource-dungeon-visual-validation-20261006/.cli/UrhoXRuntime
--- tests/tutorial_recruit_deploy_test.lua -tapcode_dir=/workspace/changeForJourney-workspace1005
+-- tests/tutorial_recruit_deploy_test.lua -tapcode_dir=/workspace
 -- -tool_mode -nosound -graphicsheadless -validate -validate-frames=60 -validate-timeout=45
 -- -validate-output=/home/Maker/tutorial-onboarding-validation-20261006/recruit-deploy-validate.json
 -- 完整真实 TM/TavernPage/CharacterDeploy/CharacterInput/Draw2；Panel getter/名册命中
 -- 仅抽完整闭包。动作、存储、动画、剧情与装饰均为显式内存替身。
 -- 不执行其他旧测试，不把 mock 的成功事件冒充生产事件，不创建 GPU/截图。
-local PROJECT = "/workspace/changeForJourney-workspace1005"
+local PROJECT = "/workspace"
 local CWD = "/home/Maker/tutorial-onboarding-validation-20261006"
 local TAG = "[tutorial_recruit_deploy_test] "
 local ROOT = ""
@@ -31,7 +31,7 @@ local SOURCE_FILES = {
     ["core.I18nStory"] = PROJECT .. "/scripts/core/I18nStory.lua",
 }
 local FRAGMENTS_ONLY = { ["ui.character.panel.CharacterPanel"] = true }
-local nativeFile = File
+local nativeFile, nativeCache = File, cache
 local sources, reads, contexts = {}, {}, {} ---@type any
 local checks, groups, failures = 0, 0, 0
 local hostLoaded, hostGlobals = {}, {} ---@type any
@@ -58,15 +58,17 @@ local function source(name)
     assert(path:sub(1, #PROJECT + 9) == PROJECT .. "/scripts/" and path:sub(-4) == ".lua"
         and not path:find("..", 1, true), "fixed absolute Lua source only")
     if sources[name] then return sources[name] end
-    -- native File 不进入任何生产 env，只允许此固定路径表与 FILE_READ；不得读取玩家文件。
-    local file = assert(nativeFile(path, FILE_READ), "source File unavailable " .. path)
+    -- cache 只在宿主读取已白名单化的脚本资源；不进入任何生产 env，不读玩家文件。
+    local resource = path:sub(#PROJECT + 10)
+    local file = assert(nativeCache:GetFile(resource), "source cache File unavailable " .. resource)
     local ok, text = pcall(function()
-        assert(file:IsOpen(), "source open failed " .. path)
+        assert(file:IsOpen(), "source open failed " .. resource)
+        assert(file:GetMode() == FILE_READ, "source must be read-only " .. resource)
         local lines = {}; while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
         return table.concat(lines, "\n")
     end)
     file:Dispose(); assert(ok, text)
-    sources[name] = text; reads[#reads + 1] = path; return text
+    sources[name] = text; reads[#reads + 1] = resource; return text
 end
 local function section(name, first, last)
     local text = source(name)
@@ -804,11 +806,14 @@ local function finalAudit()
     for key,value in pairs(_G) do
         local actual=hostGlobals[key]; check(actual==value or type(actual)=="number" and type(value)=="number" and actual~=actual and value~=value,"no host global added " .. tostring(key))
     end
-    for _, path in ipairs(reads) do
-        local allowed=false; for _, permitted in pairs(SOURCE_FILES) do if path==permitted then allowed=true end end
-        check(allowed,"native File read fixed allowlisted source " .. path)
+    for _, resource in ipairs(reads) do
+        local allowed=false; for _, permitted in pairs(SOURCE_FILES) do
+            if resource==permitted:sub(#PROJECT+10) then allowed=true end
+        end
+        check(allowed,"cache read exact allowlisted script resource " .. resource)
     end
     eq(File,nativeFile,"native File unchanged")
+    eq(cache,nativeCache,"native cache unchanged")
     check(#contexts>0 and #reads>0,"actual production loaded under strict capability audit")
 end
 local function runCase(label, fn)

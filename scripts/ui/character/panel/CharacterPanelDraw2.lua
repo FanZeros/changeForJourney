@@ -348,6 +348,9 @@ local function avatarCenter(teamIdx, slotIdx)
     return cx, cy
 end
 
+M.AV_SIZE = AV_SIZE
+M.avatarCenter = avatarCenter
+
 local function drawHeroPower(vg, cx, cy, width, power, fontSize)
     local powerText = require("core.NumberUtil").format(power or 0)
     local iconSize, gap = fontSize, 4
@@ -462,6 +465,19 @@ function M.drawTeamAvatars(vg)
         local slots = teams[t] and teams[t].slots
         for s = 1, M.MAX_SLOTS do
             drawAvatarSlot(vg, t, s, slots and slots[s], locked)
+        end
+        if t == 1 and not locked and TutorialManager.getCurrentHighlight() == "character_slot_1" then
+            local drag = getDragState and getDragState()
+            for s = 1, M.MAX_SLOTS do
+                local slot = slots and slots[s]
+                local hidden = drag and drag.active and drag.fromTeam == t and drag.fromSlot == s
+                if slot and slot.state == "occupied" and slot.heroId and not hidden then
+                    local cx, cy = avatarCenter(t, s)
+                    TutorialManager.registerCharacterDetailHotspot("character_slot_1", slot.heroId,
+                        cx + M.CONTENT_SHIFT_X, cy + M.CONTENT_SHIFT_Y, AV_SIZE, AV_SIZE, "right")
+                    break
+                end
+            end
         end
     end
 end
@@ -684,12 +700,8 @@ function M.draw(vg, scrollY, detailOpen)
             drawHeroPower(vg, cx, cy + ROSTER_POWER_DY, ROSTER_ICON, rosterPowerCache[idx] or 0, 24)
         end
 
-        -- 新手引导热点：第一个 roster 卡片槽 / 新获得英雄卡片
+        -- 新招募英雄仍按真实heroId注册名册；详情入口热点只由上方队伍头像提供。
         if TutorialManager.isActive() then
-            if idx == 1 then
-                TutorialManager.registerHotspot("character_slot_1", cx + contentShiftX,
-                    cy + M.CONTENT_SHIFT_Y, ROSTER_ICON, ROSTER_ICON, "right")
-            end
             local _newId = TutorialManager.getNewHeroId()
             if _newId and entry.heroId == _newId then
                 TutorialManager.registerHotspot("character_new_hero", cx + contentShiftX,

@@ -16,8 +16,12 @@ function Start()
         },
         ["ui.church.ChurchPage"] = { forceClose = function() calls.church = true end },
         ["ui.church.talent.TalentPage"] = { forceClose = function() end },
-        ["ui.character.detail.CharacterDetail"] = { forceClose = function() end },
-        ["ui.character.panel.CharacterPanel"] = { prepareTutorial = function() end },
+        ["ui.character.detail.CharacterDetail"] = { forceClose = function() calls.hero = nil end,
+            open = function(id) calls.hero = id end, isOpen = function() return calls.hero ~= nil end,
+            getHeroId = function() return calls.hero end, isEquipTab = function() return true end },
+        ["ui.character.panel.CharacterPanel"] = { prepareTutorial = function() end,
+            getTeamSlotsData = function() return { {}, {}, {}, { state = "empty" } } end,
+            getTeamSlotLayout = function() return { 0, 0, 0, 0 } end },
         ["ui.tavern.TavernPage"] = { open = function() calls.tavern = true end },
         ["ui.blacksmith.BlacksmithPage"] = { open = function() calls.smith = true end },
         ["ui.battle.tri.BattleTriPage"] = { getTeamStageId = function() return 101 end },
@@ -55,13 +59,23 @@ function Start()
         TM.update(0.25)
         check(TM.isActive() and not TM.isGroupCompleted(1), "剧情领取不是操作完成")
         check(TM.getPreferredCharacterTab() == "equip", "教程打开详情优先配装")
-        hs("character_slot_1")
+        hs("battle_hero_detail")
+        TM.registerCharacterDetailHotspot("battle_hero_detail", 1, 250, 200, 100, 60, "screen")
         check(TM.canPointerStart(250, 200), "真实目标按下放行")
         check(not TM.canPointerStart(312, 200), "外扩光环不冒充按钮边界")
-        check(TM.handleScreenClick(312, 200) == true and TM.getCurrentHighlight() == "character_slot_1",
+        check(TM.handleScreenClick(312, 200) == true and TM.getCurrentHighlight() == "battle_hero_detail",
             "点光环但未命中按钮不能提前推进")
-        check(TM.handleScreenClick(250, 200) == false and TM.getCurrentHighlight() == "equip_slot_weapon",
-            "点角色后进入武器槽")
+        check(TM.handleScreenClick(250, 200) == false and TM.getCurrentHighlight() == "battle_hero_detail",
+            "点角色热点只放行，不提前推进")
+        TM.notifyEvent("character_detail_opened")
+        check(TM.getCurrentHighlight() == "battle_hero_detail", "无来源和英雄的通用事件不冒充入口成功")
+        check(not TM.notifyCharacterDetailOpened("battle", 1), "详情未打开不推进")
+        mocks["ui.character.detail.CharacterDetail"].open(1)
+        check(not TM.notifyCharacterDetailOpened("avatar", 1) and not TM.notifyCharacterDetailOpened("battle", 2),
+            "错来源或错英雄不推进")
+        check(TM.notifyCharacterDetailOpened("battle", 1) and TM.getCurrentHighlight() == "equip_slot_weapon"
+            and TM.getEquipmentHeroId() == 1, "真实战斗卡打开对应详情才进入武器槽")
+        check(not TM.notifyCharacterDetailOpened("battle", 1), "重复入口回执不再推进")
         hs("equip_slot_weapon")
         TM.handleScreenClick(250, 200)
         check(TM.getCurrentHighlight() == "equip_item_gifted", "武器槽下一步为合法仓库装备")
@@ -73,6 +87,17 @@ function Start()
         check(TM.isGroupCompleted(1) and not TM.isActive(), "成功穿戴回执完成教程")
         init()
         check(TM.isGroupCompleted(1) and not TM.isActive(), "重启保留完成状态，不重复发奖励")
+        TM.startGroup(2)
+        hs("character_slot_1")
+        TM.registerCharacterDetailHotspot("character_slot_1", 2, 250, 200, 100, 60, "right")
+        TM.handleScreenClick(250, 200)
+        check(TM.getCurrentHighlight() == "character_slot_1" and TM.getEquipmentHeroId() == nil,
+            "第二段头像入口独立等待，旧组英雄不串入")
+        mocks["ui.character.detail.CharacterDetail"].open(2)
+        check(TM.notifyCharacterDetailOpened("avatar", 2) and TM.getCurrentHighlight() == "equip_btn_auto",
+            "真实队伍头像打开详情才开始一键装备")
+        TM.notifyEvent("equipment_equipped"); TM.update(0.3)
+        check(TM.isGroupCompleted(2), "第二段仍以穿戴成功回执完成")
 
         TM.startGroup(8)
         check(TM.getCurrentHighlight() == "tavern_btn_gacha10", "招募初始目标")

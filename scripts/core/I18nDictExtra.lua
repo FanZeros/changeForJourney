@@ -9,6 +9,15 @@ local function add(zh, tw, en, ja, ko)
     D.ko[zh] = ko
 end
 
+-- ===== 两段装备教学：战斗卡与队伍头像入口 =====
+add("点击战斗中的己方角色卡，打开角色详情", "點擊戰鬥中的己方角色卡，開啟角色詳情",
+    "Tap your hero's battle card to open their details", "戦闘中の味方カードをタップして詳細を開こう",
+    "전투 중 아군 캐릭터 카드를 눌러 상세 정보를 여세요")
+add("又掉落了新装备，点击右侧队伍头像打开角色详情", "又掉落了新裝備，點擊右側隊伍頭像開啟角色詳情",
+    "New gear! Tap a squad portrait on the right to open hero details",
+    "新しい装備を入手！右側の小隊アイコンからキャラ詳細を開こう",
+    "새 장비를 획득했어요! 오른쪽 소대 초상화를 눌러 캐릭터 상세 정보를 여세요")
+
 -- ===== 遗匣地点与奖励去向 =====
 add("已入遗匣", "已入遺匣", "In coffer", "遺匣に保管", "유물함 보관")
 add("遗匣领取", "遺匣領取", "Coffer rewards", "遺匣の受取", "유물함 수령")

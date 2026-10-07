@@ -18,7 +18,8 @@
 --   }
 --
 -- highlight key 对照表（由各 UI 模块调用 TutorialOverlay.registerHotspot() 注册）：
---   "character_slot_1"       — 角色面板第一个槽位中的角色
+--   "battle_hero_detail"     — 小队1存活己方战斗卡（屏幕逻辑坐标）
+--   "character_slot_1"       — 右栏小队1首个已上阵头像
 --   "equip_slot_weapon"      — 角色详情武器槽位
 --   "equip_item_gifted"      — 左栏仓库首个可见、可穿戴的武器候选
 --   "equip_btn_auto"         — 角色详情「一键装备」按钮
@@ -43,9 +44,11 @@ TutorialConfig[1] = {
     unlocks = { "character_panel" },
     steps = {
         {
-            text      = "点击右侧队伍中的角色查看详情",
-            highlight = "character_slot_1",
-            advanceOn = "click_highlight",
+            text      = "点击战斗中的己方角色卡，打开角色详情",
+            highlight = "battle_hero_detail",
+            advanceOn = "character_detail_opened",
+            entrySource = "battle",
+            pointerTarget = true,
         },
         {
             text      = "快来点击武器槽位来为角色装备新武器吧！",
@@ -66,9 +69,11 @@ TutorialConfig[2] = {
     triggerScenarios = { 8, 9, 10 },
     steps = {
         {
-            text      = "又掉落了新装备，点击右侧角色查看详情",
+            text      = "又掉落了新装备，点击右侧队伍头像打开角色详情",
             highlight = "character_slot_1",
-            advanceOn = "click_highlight",
+            advanceOn = "character_detail_opened",
+            entrySource = "avatar",
+            pointerTarget = true,
         },
         {
             text      = "这次试试一键装备吧！",

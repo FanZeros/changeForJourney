@@ -21,6 +21,8 @@ local queue_ = {}
 local queuedRecruitStarted_ = false
 local recruitCount_ = nil ---@type number|nil
 local newHeroId_ = nil ---@type number|nil
+local equipmentHeroId_ = nil ---@type number|nil
+local detailEntryPress_ = nil ---@type any
 local restored_ = false
 local resumePending_ = false
 local lastUnlockState_ = {}
@@ -34,7 +36,12 @@ local TRIGGER_QUIET_TIME = 0.25
 ---@type fun()?
 local prepareResume
 
+local function invalidateDetailEntryPress()
+    if detailEntryPress_ then detailEntryPress_.invalid = true end
+    detailEntryPress_ = nil
+end
 local function resetTarget()
+    invalidateDetailEntryPress()
     resumePending_ = true
     recoveryElapsed_, settleRemaining_, missingElapsed_ = 0, 0, 0
     overlayLayout_, overlay_.hs = nil, nil
@@ -74,6 +81,7 @@ end
 local function finish()
     if not activeGroup_ or animState_ == "out" then return end
     local finishedGroup = activeGroup_
+    invalidateDetailEntryPress()
     completed_[tostring(finishedGroup)] = true
     print("[TutorialManager] 引导完成: " .. finishedGroup)
     animState_, animT_, triggerQuiet_ = "out", 0, 0
@@ -110,6 +118,7 @@ function TutorialManager.setNewHeroId(id)
     save()
 end
 function TutorialManager.getNewHeroId() return newHeroId_ end
+function TutorialManager.getEquipmentHeroId() return equipmentHeroId_ end
 function TutorialManager.getProgress() return snapshot() end
 function TutorialManager.clearHotspots() hotspots_ = {} end
 --- spotlight 仅控制视觉开洞，点击继续仍使用 cx/cy/w/h。
@@ -117,8 +126,33 @@ function TutorialManager.clearHotspots() hotspots_ = {} end
 function TutorialManager.registerHotspot(key, cx, cy, w, h, panel, spotlight)
     if w <= 0 or h <= 0 then return end
     hotspots_[key] = { cx = cx, cy = cy, w = w, h = h, spotlight = spotlight,
-        panel = (panel == "left" or panel == "right" or panel == "modal" or panel == "tri_modal")
-            and panel or "center" }
+        panel = (panel == "left" or panel == "right" or panel == "modal" or panel == "tri_modal"
+            or panel == "screen") and panel or "center" }
+end
+--- 入口目标携带真实英雄，后续配装不再按名册排序或默认槽位换人。
+function TutorialManager.registerCharacterDetailHotspot(key, heroId, cx, cy, w, h, panel)
+    local current = step()
+    local id = tonumber(heroId)
+    if not current or current.highlight ~= key or not current.entrySource or not id or id <= 0
+        or w <= 0 or h <= 0 then return end
+    TutorialManager.registerHotspot(key, cx, cy, w, h, panel)
+    hotspots_[key].heroId = id
+end
+function TutorialManager.notifyCharacterDetailOpened(source, heroId)
+    local current = step()
+    local hs = current and hotspots_[current.highlight]
+    local id = tonumber(heroId)
+    if not current or not id or id <= 0 or animState_ == "out" or current.entrySource ~= source
+        or current.advanceOn ~= "character_detail_opened" or not hs or hs.heroId ~= id
+        or settleRemaining_ > 0 then return false end
+    if detailEntryPress_ and (detailEntryPress_.invalid or detailEntryPress_.heroId ~= id
+        or detailEntryPress_.source ~= source) then return false end
+    local detail = require("ui.character.detail.CharacterDetail")
+    if not detail.isOpen() or tonumber(detail.getHeroId()) ~= id or not detail.isEquipTab() then return false end
+    equipmentHeroId_ = id
+    print("[TutorialManager] 详情入口完成: " .. source .. " hero=" .. id)
+    advance()
+    return true
 end
 function TutorialManager.getCurrentHotspot()
     local current = step()
@@ -167,7 +201,7 @@ local function start(id)
             return
         end
     end
-    activeGroup_, activeStep_ = id, 1
+    activeGroup_, activeStep_, equipmentHeroId_ = id, 1, nil
     animState_, animT_, groupElapsed_, stepElapsed_ = "in", 0, 0, 0
     resetTarget()
     applyUnlocks(id)
@@ -238,7 +272,7 @@ function TutorialManager.notifyEvent(name)
         return
     end
     local current = step()
-    if current and current.advanceOn == name then advance() end
+    if current and not current.entrySource and current.advanceOn == name then advance() end
 end
 --- 仅消费本次真实招募；先排教程，再让招募动画关闭回调中的闲聊参与仲裁。
 function TutorialManager.onRecruitCompleted(results, count)
@@ -296,23 +330,56 @@ function TutorialManager.setOverlayRect(w, h, hs)
     local target = hs
     if settleRemaining_ > 0 then target = nil end
     overlay_ = { w = w, h = h, hs = target }
+    if detailEntryPress_ then
+        local current = step()
+        local hsNow = TutorialManager.getCurrentHotspot()
+        if not target or not current or not hsNow or hsNow.heroId ~= detailEntryPress_.heroId
+            or hsNow.panel ~= detailEntryPress_.panel or current.highlight ~= detailEntryPress_.key
+            or current.entrySource ~= detailEntryPress_.source then
+            invalidateDetailEntryPress()
+        end
+    end
     local Overlay = require("ui.tutorial.TutorialOverlay")
     overlayLayout_ = Overlay.layout(w, h, target)
 end
 local function hit(rect, x, y)
     return rect and DrawUtil.hitTest(x, y, rect.cx, rect.cy, rect.w, rect.h)
 end
-function TutorialManager.canPointerStart(x, y)
+function TutorialManager.canPointerStart(x, y, button)
     if not TutorialManager.isInputActive() then return true end
+    local current = step()
+    -- 入口教学只接受左键/触摸；其它步骤仍保留右键快捷穿戴。
+    if current and current.entrySource and button and button ~= MOUSEB_LEFT then return false end
     if groupElapsed_ >= 1 and overlayLayout_ and hit(overlayLayout_.skip, x, y) then return false end
     if prepareResume then prepareResume() end
     if settleRemaining_ > 0 then return false end
-    local current = step()
+    current = step()
     if not current or current.invisible then return true end
     if current.advanceOn ~= "click_highlight" and not current.pointerTarget then return true end
     -- 真正按钮边界才放行；光环外扩不是按钮可点击区域。
     return hit(overlay_.hs, x, y) == true
 end
+-- 只为详情入口保存按下身份；逐帧热点重建不是新的手势。
+function TutorialManager.beginDetailEntryPress()
+    invalidateDetailEntryPress()
+    local current = step()
+    local hs = TutorialManager.getCurrentHotspot()
+    if not current or not current.entrySource or not hs or not hs.heroId then return nil end
+    detailEntryPress_ = { group = activeGroup_, step = activeStep_, key = current.highlight,
+        source = current.entrySource, heroId = hs.heroId, panel = hs.panel, invalid = false }
+    return detailEntryPress_
+end
+function TutorialManager.isDetailEntryPressValid(press)
+    if not press then return true end
+    local current = step()
+    local hs = TutorialManager.getCurrentHotspot()
+    return not press.invalid and press == detailEntryPress_ and TutorialManager.isInputActive()
+        and current ~= nil and hs ~= nil and overlay_.hs ~= nil and settleRemaining_ == 0
+        and activeGroup_ == press.group and activeStep_ == press.step
+        and current.highlight == press.key and current.entrySource == press.source
+        and hs.heroId == press.heroId and hs.panel == press.panel
+end
+function TutorialManager.cancelDetailEntryPress() invalidateDetailEntryPress() end
 function TutorialManager.handleScreenClick(x, y, blockedPress)
     if not TutorialManager.isInputActive() then return false end
     if groupElapsed_ >= 1 and overlayLayout_ and hit(overlayLayout_.skip, x, y) then
@@ -351,7 +418,8 @@ end
 
 function TutorialManager.init(vg, playerStore, persist)
     vg_, store_, persist_ = vg, playerStore, persist
-    activeGroup_, activeStep_, newHeroId_ = nil, 1, nil
+    invalidateDetailEntryPress()
+    activeGroup_, activeStep_, newHeroId_, equipmentHeroId_ = nil, 1, nil, nil
     completed_, queue_, hotspots_, lastUnlockState_ = {}, {}, {}, {}
     queuedRecruitStarted_, recruitCount_ = false, nil
     animState_, animT_, groupElapsed_, stepElapsed_ = "idle", 0, 0, 0
@@ -429,13 +497,14 @@ prepareResume = function()
             return
         end
     end
-    if current and Recovery.prepare(vg_, store_, current.highlight, newHeroId_, initial) then
+    if current and Recovery.prepare(vg_, store_, current.highlight, newHeroId_, initial, equipmentHeroId_) then
         settleRemaining_, missingElapsed_ = PAGE_SETTLE_TIME, 0
         hotspots_, overlay_.hs, overlayLayout_ = {}, nil, nil
     end
 end
 function TutorialManager.update(dt)
     elapsed_ = elapsed_ + dt
+    if detailEntryPress_ and not TutorialManager.isInputActive() then invalidateDetailEntryPress() end
     if not restored_ then restore() end
     if not activeGroup_ then
         local Recovery = require("ui.tutorial.TutorialPageRecovery")

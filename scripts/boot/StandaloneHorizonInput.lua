@@ -361,9 +361,15 @@ function Input.bind(ctx)
     local tutorialPress = false
     local tutorialBlockedPress = false
     local tutorialStartX, tutorialStartY = 0, 0
+    local tutorialEntryPress = nil ---@type any
 
     function HandleMouseButtonDownHorizon(eventType, eventData)
+        local button = eventData["Button"]:GetInt()
+        -- 入口主键按压期间忽略副鼠标键，不能清掉其英雄身份后偷换落点。
+        if tutorialEntryPress and button ~= MOUSEB_LEFT then return end
         if seamGesture.hasPress() then seamGesture.reset() end
+        if tutorialEntryPress then TutorialManager.cancelDetailEntryPress() end
+        tutorialEntryPress = nil
         tutorialPress, tutorialBlockedPress = false, false
         if OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() then cancelUnderlyingPress() end
         equipmentPressPanel = nil
@@ -393,7 +399,6 @@ function Input.bind(ctx)
             pressStartDX, pressStartDY = 0, 0
             return
         end
-        local button = eventData["Button"]:GetInt()
         if button == MOUSEB_LEFT and seamGesture then
             local mp = pointerPosition()
             local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
@@ -410,12 +415,24 @@ function Input.bind(ctx)
             if button == MOUSEB_LEFT then
                 tutorialPress = true
                 tutorialStartX, tutorialStartY = sx, sy
-                if not TutorialManager.canPointerStart(sx, sy) then
+                if not TutorialManager.canPointerStart(sx, sy, button) then
                     tutorialBlockedPress = true
                     cancelUnderlyingPress()
                     return
                 end
-            elseif not TutorialManager.canPointerStart(sx, sy) then
+                tutorialEntryPress = TutorialManager.beginDetailEntryPress()
+                if tutorialEntryPress then
+                    tutorialEntryPress.width, tutorialEntryPress.height = logicalW(), logicalH()
+                    tutorialEntryPress.scale, tutorialEntryPress.ox, tutorialEntryPress.oy,
+                        tutorialEntryPress.dpr = RT.frameScale or 1, RT.frameOx or 0, RT.frameOy or 0, dpr()
+                    -- 入口仅是点击，不启动头像编队拖拽；松手仍走原点击业务。
+                    local pid, dx, dy = HorizonResolveMouse()
+                    equipmentPressPanel = pid
+                    pressStartDX, pressStartDY = dx or 0, dy or 0
+                    pressValid = pid ~= 'none'
+                    return
+                end
+            elseif not TutorialManager.canPointerStart(sx, sy, button) then
                 return
             end
         end
@@ -610,6 +627,19 @@ function Input.bind(ctx)
     end
 
     function HandleMouseMoveHorizon(eventType, eventData)
+        if tutorialEntryPress then
+            local mp = pointerPosition()
+            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            if math.abs(sx - tutorialStartX) + math.abs(sy - tutorialStartY) >= TAP_THRESHOLD
+                or not TutorialManager.isDetailEntryPressValid(tutorialEntryPress)
+                or tutorialEntryPress.width ~= logicalW() or tutorialEntryPress.height ~= logicalH()
+                or tutorialEntryPress.scale ~= (RT.frameScale or 1) or tutorialEntryPress.ox ~= (RT.frameOx or 0)
+                or tutorialEntryPress.oy ~= (RT.frameOy or 0) or tutorialEntryPress.dpr ~= dpr() then
+                TutorialManager.cancelDetailEntryPress()
+                tutorialEntryPress.invalid = true
+            end
+            return
+        end
         if seamGesture.hasPress() then
             local mp = pointerPosition()
             local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
@@ -803,6 +833,18 @@ function Input.bind(ctx)
             pressValid = false
             return
         end
+        if tutorialEntryPress and eventData["Button"]:GetInt() ~= MOUSEB_LEFT then return end
+        if tutorialEntryPress and (not TutorialManager.isDetailEntryPressValid(tutorialEntryPress)
+            or tutorialEntryPress.width ~= logicalW() or tutorialEntryPress.height ~= logicalH()
+            or tutorialEntryPress.scale ~= (RT.frameScale or 1) or tutorialEntryPress.ox ~= (RT.frameOx or 0)
+            or tutorialEntryPress.oy ~= (RT.frameOy or 0) or tutorialEntryPress.dpr ~= dpr()) then
+            tutorialEntryPress = nil
+            tutorialPress, tutorialBlockedPress = false, false
+            TutorialManager.cancelDetailEntryPress()
+            cancelUnderlyingPress()
+            if tutorialInputActive() then return end
+        end
+        tutorialEntryPress = nil
         if tutorialPress then
             tutorialPress = false
             local mp = pointerPosition()

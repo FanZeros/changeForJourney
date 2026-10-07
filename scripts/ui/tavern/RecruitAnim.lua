@@ -1,6 +1,6 @@
 -- ============================================================================
--- RecruitAnim.lua - 酒馆招募结果
--- 直接展示抽卡结果，不再播放开场 Spine。
+-- RecruitAnim.lua - 酒馆招募揭晓与结果
+-- 只播放已发奖回执：封印聚光、开门、错峰翻牌与品质余辉。
 -- ============================================================================
 ---@diagnostic disable: undefined-global
 
@@ -16,6 +16,8 @@ local UrGachaConfig = require("config.UrGachaConfig")
 local GameState = require("core.GameState")
 local HeroAssetUtil = require("config.HeroAssetUtil")
 local RepeatDrawButton = require("ui.widget.RepeatDrawButton")
+local Timeline = require("ui.tavern.RecruitTimeline")
+local Presentation = require("ui.tavern.RecruitPresentation")
 local drawTextStroke = DrawUtil.drawTextStroke
 local drawImageCenteredUtil = DrawUtil.drawImageCentered
 
@@ -82,30 +84,24 @@ local TEN_GAP    = 10
 -- 单抽位置
 local SINGLE_CX, SINGLE_CY = 540, 1050
 
--- 动画时长
-local FADE_IN_DURATION   = 0.6
-local CARD_FADE_DURATION = 0.5
-local CARD_OFFSET_Y      = 290
-local FADE_OUT_DURATION  = 0.35  -- 关闭淡出时长
-
--- 泛光动画
-local GLOW_ANIM_DURATION = 0.35
-local GLOW_SQUISH_RATIO  = 0.15
+-- 动画由独立时间轴统一采样，渲染与命中共用揭晓完成条件。
+local FADE_OUT_DURATION = Timeline.FADE_DURATION
 
 -- ======================== 资源定义（统一引用中央注册表） ========================
 local RESOURCE_DEFS = ResourceDefs.DEFS
 
 -- ======================== 状态 ========================
--- phase: "idle" → "cards" → "fadeOut" → "idle"
+-- phase: "idle" → "intro" → "cards" → "fadeOut" → "idle"
 
 local state = {
     phase         = "idle",
     results       = {},
     highestQ      = 0,
-    fadeStartT    = 0,
+    introStartT   = 0,
     cardStartT    = 0,
-    glowStartT    = 0,
     fadeOutStartT = 0,
+    pullCount     = 1,
+    poolId        = "standard",
     onClose       = nil,
 }
 
@@ -196,6 +192,7 @@ end
 ---@param vg any NanoVG 上下文
 function RecruitAnim.init(vg)
     cachedVg = vg
+    Presentation.init(vg)
     img.resultBg = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_XKJM.png", 0)
     -- [暗黑化 P2-A] 卡底 KP_TY_N~UR 改由 drawCardBg 矢量绘制，贴图加载已移除
     for _, b in ipairs({ "R", "SR", "SSR", "UR" }) do
@@ -216,6 +213,8 @@ end
 local againFn_ = nil
 -- 上一次输入是否落在"继续招募"按钮上：中缝返回条此时不能顺手关页。
 local lastInputWasRepeat_ = false
+local lastRepeatT_ = -math.huge
+local lastRevealT_ = -math.huge
 local closeCallbacks_ = {}
 
 local function notifyClosed()
@@ -257,6 +256,7 @@ function RecruitAnim.start(results, onClose, count, poolId)
     end
     state.results = ordered
     lastInputWasRepeat_ = false
+    lastRevealT_ = -math.huge
     if state.onClose then closeCallbacks_[#closeCallbacks_ + 1] = state.onClose end
     state.onClose = onClose
     state.pullCount = (count == 10 or count == 1) and count or ((#ordered > 1) and 10 or 1)
@@ -268,94 +268,107 @@ function RecruitAnim.start(results, onClose, count, poolId)
         if q > state.highestQ then state.highestQ = q end
     end
 
-    -- 直接展示抽卡结果
+    -- 结果已由业务层结算，表现阶段只读；较长开场同时给卡面加载留出窗口。
+    if cachedVg then
+        for _, item in ipairs(state.results) do
+            if item.heroId and resultRank(item) == 1 then getHeroCardImage(cachedVg, item.heroId) end
+        end
+    end
     state.fadeOutStartT = 0
-    state.fadeStartT = time.elapsedTime
-    state.cardStartT = time.elapsedTime
-    state.glowStartT = time.elapsedTime
-    state.phase = "cards"
-    print("[RecruitAnim] start cards=" .. tostring(#state.results))
+    state.introStartT = time.elapsedTime
+    state.cardStartT = state.introStartT + Timeline.INTRO_DURATION
+    state.phase = "intro"
+    print("[RecruitAnim] 开门 cards=" .. tostring(#state.results) .. " quality=" .. state.highestQ)
 end
 
 function RecruitAnim.isPlaying()
     return state.phase ~= "idle"
 end
 
+local function cardsReady()
+    return time.elapsedTime >= state.cardStartT + Timeline.cardSpan(#state.results)
+end
+
+local function revealAll()
+    state.phase = "cards"
+    state.cardStartT = time.elapsedTime - Timeline.cardSpan(#state.results)
+    lastRevealT_ = time.elapsedTime
+    lastInputWasRepeat_ = false
+    print("[RecruitAnim] 跳过表现，揭晓全部")
+end
+
 function RecruitAnim.update(dt)
     if state.phase == "idle" then return end
-
-    if state.phase == "fadeIn" then
-        local elapsed = time.elapsedTime - state.fadeStartT
-        if elapsed >= FADE_IN_DURATION then
-            state.phase = "cards"
-            state.cardStartT = time.elapsedTime
-            state.glowStartT = 0
-        end
+    if state.phase == "intro" and time.elapsedTime - state.introStartT >= Timeline.INTRO_DURATION then
+        state.phase = "cards"
+        -- 使用计划时间，不因低帧率/暂停回来而额外延长动画。
+        print("[RecruitAnim] 开门结束，开始翻牌")
     end
-
-    if state.phase == "cards" and state.glowStartT == 0 then
-        local count = #state.results
-        local lastDelay = (count - 1) * 0.05
-        local elapsed = time.elapsedTime - state.cardStartT
-        if elapsed >= lastDelay + CARD_FADE_DURATION then
-            state.glowStartT = time.elapsedTime
-        end
-    end
-
-    if state.phase == "fadeOut" then
-        local elapsed = time.elapsedTime - state.fadeOutStartT
-        if elapsed >= FADE_OUT_DURATION then
-            state.glowStartT = 0
-            state.phase = "idle"
-            state.results = {}
-            notifyClosed()
-            print("[RecruitAnim] 关闭")
-        end
+    if state.phase == "fadeOut" and time.elapsedTime - state.fadeOutStartT >= FADE_OUT_DURATION then
+        state.phase = "idle"
+        state.results = {}
+        notifyClosed()
+        print("[RecruitAnim] 关闭")
     end
 end
 
 ---@return boolean
 function RecruitAnim.handleInput(dx, dy)
     if state.phase == "idle" then return false end
-
+    if lastRevealT_ == time.elapsedTime then return true end
+    if state.phase == "intro" or (state.phase == "cards" and not cardsReady()) then
+        -- 首次点击仅跳到完整结果，不关闭、不重抽，不可能误点尚未显示的继续按钮。
+        revealAll()
+        return true
+    end
     if state.phase == "cards" then
-        local elapsed = time.elapsedTime - state.cardStartT
-        if elapsed > 0.4 and againFn_
-            and math.abs(dx - DESIGN_W * 0.5) <= 240
+        if againFn_ and math.abs(dx - DESIGN_W * 0.5) <= 240
             and math.abs(dy - (DESIGN_H - 230)) <= 44 then
             lastInputWasRepeat_ = true
-            againFn_(state.pullCount or 1)
+            againFn_(state.pullCount, state.poolId)
+            -- 单机回执可同步start；在回调返回后重新设置同事件返回条屏障。
+            lastInputWasRepeat_ = true
+            lastRepeatT_ = time.elapsedTime
             return true
         end
-        -- 点击触发淡出
         lastInputWasRepeat_ = false
         state.phase = "fadeOut"
         state.fadeOutStartT = time.elapsedTime
-        return true
     end
-
-    -- fadeIn / fadeOut 阶段消费事件但不操作
     return true
 end
 
---- 中缝返回条落在结果页时，等价于"任意点击"：跳过或结束本次结果展示。
+--- 中缝返回会与同一次输入路由连续调用；重复招募/跳过不能被顺手再关闭。
 ---@return boolean 是否消费
 function RecruitAnim.dismiss()
-    if state.phase ~= "cards" or lastInputWasRepeat_ then return false end
+    if (lastInputWasRepeat_ and lastRepeatT_ == time.elapsedTime) or lastRevealT_ == time.elapsedTime then return false end
     lastInputWasRepeat_ = false
+    if state.phase == "intro" or (state.phase == "cards" and not cardsReady()) then
+        revealAll()
+        return true
+    end
+    if state.phase ~= "cards" then return false end
     state.phase = "fadeOut"
     state.fadeOutStartT = time.elapsedTime
     return true
 end
 
 function RecruitAnim.close()
-    state.glowStartT  = 0
     state.fadeOutStartT = 0
     state.phase = "idle"
     state.results = {}
     lastInputWasRepeat_ = false
     notifyClosed()
     print("[RecruitAnim] 关闭")
+end
+
+-- Stop只取消表现，不触发剧情或刷新已销毁的宿主。
+function RecruitAnim.destroy()
+    state.phase, state.results, state.onClose = "idle", {}, nil
+    closeCallbacks_ = {}
+    lastInputWasRepeat_ = false
+    Presentation.destroy()
+    cachedVg = nil
 end
 
 -- ======================== 绘制 ========================
@@ -597,10 +610,6 @@ function RecruitAnim.draw(vg)
     nvgFill(vg)
 
     local bgAlpha = 1.0
-    if state.phase == "fadeIn" then
-        local elapsed = time.elapsedTime - state.fadeStartT
-        bgAlpha = math.min(1.0, elapsed / FADE_IN_DURATION)
-    end
 
     -- 半透明黑色遮罩（在视频最后一帧上）
     nvgBeginPath(vg)
@@ -615,43 +624,46 @@ function RecruitAnim.draw(vg)
     nvgFillColor(vg, nvgRGBA(8, 10, 16, math.floor(70 * bgAlpha)))
     nvgFill(vg)
 
-    -- 卡片（cards / fadeOut 阶段都绘制）
+    if state.phase == "intro" then
+        Presentation.drawIntro(vg, time.elapsedTime - state.introStartT, state.highestQ)
+    end
+
+    -- 卡片翻牌只改变局部变换，仍使用原整卡映射和真实结果分组。
     if state.phase == "cards" or state.phase == "fadeOut" then
         local count = #state.results
         local positions = getCardPositions(count)
-
         for i, item in ipairs(state.results) do
             local pos = positions[i]
-            if pos then
-                local delay = (i - 1) * 0.05
-                local elapsed = time.elapsedTime - state.cardStartT - delay
-                local t = math.max(0, math.min(1.0, elapsed / CARD_FADE_DURATION))
-
-                if t > 0.001 then
-                    local eased = easeOutCubic(t)
-                    local drawY = pos.y + CARD_OFFSET_Y * (1.0 - eased)
-                    local thisAlpha = eased
-
-                    if item.type == "hero" then
-                        drawCharacterCard(vg, pos.x, drawY, item, thisAlpha)
-                    elseif item.type == "shard" then
-                        drawShardCard(vg, pos.x, drawY, item, thisAlpha)
-                    elseif item.type == "dupe_to_shard" then
-                        drawDupeToShardCard(vg, pos.x, drawY, item, thisAlpha)
-                    elseif item.type == "decompose" then
-                        drawDecomposeCard(vg, pos.x, drawY, item, thisAlpha)
-                    else
-                        drawResourceCard(vg, pos.x, drawY, item, thisAlpha)
-                    end
+            local pose = Timeline.card(time.elapsedTime - state.cardStartT, i)
+            if pos and pose.visible then
+                local drawY = pos.y + pose.offsetY
+                local cardH = resultRank(item) == 1 and HERO_CARD_H or CARD_H
+                Presentation.drawCardGlow(vg, pos.x, drawY, CARD_W, cardH, item.quality, pose.glow)
+                nvgSave(vg)
+                nvgTranslate(vg, pos.x, drawY)
+                nvgScale(vg, pose.scaleX * pose.scale, pose.scale)
+                nvgTranslate(vg, -pos.x, -drawY)
+                if not pose.front then
+                    Presentation.drawBack(vg, pos.x, drawY, CARD_W, HERO_CARD_H, pose.alpha)
+                elseif item.type == "hero" then
+                    drawCharacterCard(vg, pos.x, drawY, item, pose.alpha)
+                elseif item.type == "shard" then
+                    drawShardCard(vg, pos.x, drawY, item, pose.alpha)
+                elseif item.type == "dupe_to_shard" then
+                    drawDupeToShardCard(vg, pos.x, drawY, item, pose.alpha)
+                elseif item.type == "decompose" then
+                    drawDecomposeCard(vg, pos.x, drawY, item, pose.alpha)
+                else
+                    drawResourceCard(vg, pos.x, drawY, item, pose.alpha)
                 end
+                nvgRestore(vg)
             end
         end
     end
 
-    -- 提示文本（cards 和 fadeOut 阶段都显示，跟着全局淡出）
+    -- 继续招募仅在所有卡牌揭晓后显示，热区用同一条件。
     if state.phase == "cards" or state.phase == "fadeOut" then
-        local elapsed = time.elapsedTime - state.cardStartT
-        if elapsed > 0.8 then
+        if cardsReady() and againFn_ then
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 40)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -681,14 +693,11 @@ function RecruitAnim.draw(vg)
             local enough = tickets >= ticketCost or (GameState.getGems() or 0) >= gems
             RepeatDrawButton.draw(vg, DESIGN_W * 0.5, DESIGN_H - 230, 480, 88,
                 againText, parts, enough)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFontSize(vg, 40)
-            nvgFillColor(vg, nvgRGBA(255, 255, 255, 180))
-            nvgText(vg, DESIGN_W * 0.5, DESIGN_H - 120, "点击任意处继续", nil)
         end
     end
 
     nvgRestore(vg)
+    Presentation.drawLabels(vg, state.phase, cardsReady(), state.poolId, globalAlpha)
 end
 
 return RecruitAnim

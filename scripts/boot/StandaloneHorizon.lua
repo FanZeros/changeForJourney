@@ -603,6 +603,7 @@ function HandleNanoVGRenderHorizon()
     seamGesture.cancelIfBlocked()
     TutorialManager.clearHotspots()
     HorizonUpdateTransform()
+    if horizonInputContext.observeTowerPress then horizonInputContext.observeTowerPress() end
     nvgBeginFrame(vg(), windowW(), windowH(), dpr())
     nvgBeginPath(vg())
     nvgRect(vg(), 0, 0, windowW(), windowH())
@@ -793,7 +794,9 @@ function HandleNanoVGRenderHorizon()
         TowerBattleScene.draw(vg(), logicalW(), logicalH())
         -- 查看等级奖励只叠功绩左栏，不退出塔；关闭后继续原塔场景。
         if TaskPage.isOpen() then
-            Viewport.begin(vg(), Viewport.PANELS.left, 0, 0, logicalH() / 1080)
+            local towerLayout = TowerBattleScene.getLayout(logicalW(), logicalH())
+            Viewport.begin(vg(), Viewport.PANELS.left, towerLayout.left.x, towerLayout.left.y,
+                towerLayout.sideScale)
             TaskPage.draw(vg())
             Viewport.finish(vg())
         end

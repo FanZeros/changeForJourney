@@ -522,6 +522,9 @@ function Standalone.Stop()
     require("ui.fx.DarkEffectSprites").destroy()
     LevelUpPopup.destroy()
     CharacterPanel.destroyPresentation()
+    TowerBattleScene.resetToDefault()
+    TowerBuffPick.destroy()
+    require("ui.tower.TowerBuffSidebar").destroy()
     require("ui.widget.DesignWidgetSurface").shutdown()
     -- 不覆盖其他所有者后装的hook；让仍被引用的旧wrapper直通，再只撤下本会话包装。
     if invalidateImageCache_ then invalidateImageCache_() end

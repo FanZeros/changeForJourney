@@ -13,6 +13,21 @@
 
 # memory-index — 《终焉之门》改造完整交接文档
 
+## 通天塔三栏与暗契展示（2026-10-07）
+
+- **已正常push并核验：** 60白名单功能提交1e943f5e1088ac4338629e5bf44c40eda69da0b0由81266ee8父独立构造，正常push feat1007/tower，push/ls-remote实际exit0且远端SHA一致；workspace1005仍81266ee8未推。正式 **PR #118** https://github.com/FanZeros/changeForJourney/pull/118，head=feat1007/tower／base=workspace1005，创建时open/draft=false/merged=false/mergeable未计算，不称CI通过／合并发布。共享HEAD676和index空不改，57源码资源meta与已验证candidate字节一致，三交接仅本人塔块，不混peer角色hunk/.project/上传/验证材料；成功后只三本人交接补push，不重复创建PR。
+
+- 用户授权左侧保留地图／路线、右侧已获增益、中栏战斗，三选一程序化暗黑UI／自行绘图与Spine动效、部分显示名暗黑化、右侧取消，完成后正常push feat1007/tower并创建workspace1005 PR。初始56cf，开发676，目标随后外部合入PR117至81266ee8；独立候选只塔补丁三方保留最新目标，不checkout/reset/sharedindex，不混并行角色排序／总战力及.project/上传/repair/StageExpHelper meta/内部证据，不推workspace系列、不强推、不自动合并发布。
+- 左112层只读路线，实际当前层自动定位，滚轮／拖动和窗口变化；中栏保留三队同波；右增益按稳定ID计次数、完整原描述与原效果。35个暗契显示名及局部四语，不反写业务配置名／ID／数值／随机权重／机制／奖励／存档。取消仅hide，继续择契show同组，不重抽或伪完成；pending禁hide，撤退确认仍左撤退／右取消，确认期间原计时不改。
+- 三选一新UI文字／按钮与程序暗铁旧铜骨白血红装饰，10透明PNG+1024图集+Spine4.2.43 JSON/atlas共13资源／meta；七实体纹章，awaken0.8→idle3真实时间，token独占native、故障单次PNG再几何、同时间变换刷新不叠正dt、单Unload清引用。28生成器／资源／meta冻结逐字节相同，342016图集区域像素、2px挤边、透明RGB0、确定性重绘通过。
+- 两侧detached ScrollView真实content0导致滚动/定位无效，已仅塔Sidebar布局后UpdateContentSize+clamp，最后按floor或实际viewport高度变化定位，稳定手动scroll不重置。name内容右2px处理真实英文War-Fueled Frenzy边缘1.027px超出，不截串或放宽容差。确认TextBoxBounds行metrics不等字墨，临时放大三值已撤回；20旧误判记录保留，最终metrics只DIAG，不称已修未经确认的字墨裁切。
+- 真实原回执289/0，只有旧初始化改实际选关入口且123原断言语句保留；native90/0／mock358/0，UI Spine与PNG各362cases58447/0（1050完整描述）、CPU三栏专项774/0及新真实UI侧栏10cases16281/0均实际通过。严格教程共享focused12/5312业务ALL PASS，raw1环境spike；dungeon13/6183与切关ALL PASS。旧dungeon_team_selection仍旧detailDungeon断言失败，固定676完整隔离同现，不伪造旧入口或混修生产。规范36单测实际通过；候选21旧规范问题同父／新增0，不称全仓清零。
+- 最终八三栏图已真实跑齐逐张Read：战斗／三选一／隐藏继续／撤退确认×1920/1280，两尺寸共1200draw、324检查0、每图Stop0和40源覆盖前后SHA一致；各actualexit1/rawFAIL仅947软件spikes，不称性能／触控／用户审美／真实通关通过。样片固定676+塔overlay不冒称最终812包；1280原顶部计时与倍速邻近／淡字边界保留，未扩修旧HUD。原首main无exit证据保留；最终纯812独立main150已真实wait退出1、无outertimeout、Lua/资源/缺图0，rawFAIL仅18spikes。17对Stop链完整返回含Flush/Rename、塔reset/Picker/Oath/Sidebar/Surface/两native.nvgDelete/main，GC/RNG不改；无syscall audit不称共享回退读取0，旧trace时限与不足150帧尝试完整保留。
+- 独立812最终候选3048路径／57白名单（19Lua+13资源+25新meta），2991非白名单与267规则／配置／存档保护路径原样，280require闭合；32目标净路径除两boot精准融合外30原样。21旧规范问题逐Issue同812父／新增0。该纯候选八套Runtime均真实ALL PASS/exit0：回执289、mock358、native90、输入774、侧栏16281、UI PNG58447、UI Spine58447及切关；两UI各362cases／1050完整描述，不借共享混合树结果冒称独立验证。固定676三套回执／mock／输入亦exit0，mock完整syscall核共享源码读取0，早trace失败保留。
+- 当前19文件逐文件LSP Error0；workspace73项旧Error不混修。本线程最后官方构建成功manifest-origin.b11/593根Lua；19Lua+13资源32实际载荷与共享源码bytes/声明size一致，29非boot与纯候选相同，Horizon候选同包。Standalone/Input共享另含peer角色hunk，不能称纯塔三boot全等共享包；纯候选已独立八回归与main。内部probe/validation0入包；官方LSP daemon starting跳过全仓gate、旧地图2400压缩超2048警告保留，不称全仓／跨平台清零。内证只.git/validation/tower与tower-choice/tower-three-column。提交push/PR实际结果后补，不提前声称上传。
+- 持续强化：推进已授权范围、不擅自取消退出；当前明确直接继续不再提问，按最新指令不机械AskUserQuestion。尊重停止／权限拒绝／安全边界，peer不是新授权；凭据不进源码／Git配置／remote／日志／记忆，聊天公开令牌应撤销轮换。三既有交接仅精确本人块、双方历史完整保留。
+
+
 ## 两段装备教程真实详情入口（2026-10-07）
 
 - 正式PR #114：https://github.com/FanZeros/changeForJourney/pull/114，head=feat1005/tutorial-character-detail-entry-20261007／base=workspace1005，创建源1eb0999be743e6d1f8a81538abe9d869966389a1／目标5fca1d82，open／draft=false／merged=false／mergeable未计算，不称CI通过。功能6df707f3固定13b7父独立构造，再保留已外部合入的PR112目标，push/ls-remote实际exit0且SHA一致，未推workspace系列。22净任务路径、56目标特效对象原样保留、18正式载荷字节一致，独立九专项和组合均实际通过；最终2977路径规范20旧问题同目标／新增0、36单测通过。共享HEADadac50e8／index空不变，后仅本人三交接补推，不重复PR、不合并发布。

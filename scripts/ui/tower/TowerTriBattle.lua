@@ -27,6 +27,8 @@ local BF               = require("systems.ButtonFeedback")
 local DrawUtil         = require("core.DrawUtil")
 local StageConfig      = require("config.StageConfig")
 local PlayerStore      = require("core.PlayerStore")
+local TowerLayout      = require("ui.tower.TowerLayout")
+local TowerBuffSidebar = require("ui.tower.TowerBuffSidebar")
 
 local TowerTriBattle = {}
 
@@ -58,6 +60,7 @@ local BATTLE_LOSE   = "lose"
 
 local state = {
     open = false,
+    presentationVersion = 0,
     phase = BATTLE_ACTIVE,
     lanes = {},
     allAllies = {},
@@ -491,6 +494,7 @@ end
 
 ---@param opts table { teamAllies = { [1]=table[], [2]=table[], [3]=table[] }, data = table, onClose = function }
 function TowerTriBattle.open(opts)
+    state.presentationVersion = state.presentationVersion + 1
     opts = opts or {}
     state.open = true
     state.phase = BATTLE_ACTIVE
@@ -713,22 +717,35 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
     TowerTriBattle.init(vg)
     BattleLayout.setMode("strip")
 
-    BattleTriPage.drawL1Underlay(vg, logicalW, logicalH, "image/战斗背景/通天塔.png")
-    BattleTriPage.drawL0(vg, logicalW, logicalH)
+    local layout = TowerLayout.compute(logicalW, logicalH)
+    local transform = TowerLayout.battleTransform(layout)
+    -- 仅框体背景使用局部裁切变换；人物条带仍按中栏可用矩形等比绘制。
+    nvgSave(vg)
+    nvgIntersectScissor(vg, layout.center.x, layout.center.y, layout.center.w, layout.center.h)
+    nvgTranslate(vg, transform.x, transform.y)
+    nvgScale(vg, transform.scaleX, transform.scaleY)
+    nvgTranslate(vg, -transform.cropX, 0)
+    BattleTriPage.drawL1Underlay(vg, transform.referenceW, transform.referenceH, "image/战斗背景/通天塔.png")
+    BattleTriPage.drawL0(vg, transform.referenceW, transform.referenceH)
+    nvgRestore(vg)
 
+    local interiors = {}
     local contentScale = 1.0
     for row = 1, TEAM_COUNT do
-        local ix, iy, iw, ih = BattleTriPage.getInteriorRectFor(row, logicalW, logicalH)
-        if iw and ih then
+        local ix, iy, iw, ih = BattleTriPage.getInteriorRectFor(row, transform.referenceW, transform.referenceH)
+        if ix and iw and ih then
+            local x, y, w, h = TowerLayout.mapInterior(layout, ix, iy, iw, ih)
+            interiors[row] = { x = x, y = y, w = w, h = h }
             contentScale = math.min(contentScale,
-                math.min(iw / BattleLayout.STRIP_W, ih / BattleLayout.STRIP_H))
+                math.min(w / BattleLayout.STRIP_W, h / BattleLayout.STRIP_H))
         end
     end
 
     for row = 1, TEAM_COUNT do
         local lane = state.lanes[row]
-        local ix, iy, iw, ih = BattleTriPage.getInteriorRectFor(row, logicalW, logicalH)
-        if lane and ix then
+        local rect = interiors[row]
+        if lane and rect then
+            local ix, iy, iw, ih = rect.x, rect.y, rect.w, rect.h
             local dw = BattleLayout.STRIP_W * contentScale
             local dh = BattleLayout.STRIP_H * contentScale
             nvgSave(vg)
@@ -783,18 +800,10 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
     DrawUtil.drawTextStroke(vg, logicalW * 0.5, 28, timeText, 28,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 4)
 
-    -- 撤退
-    local rx, ry, rw, rh = logicalW * 0.5, logicalH - 42, 220, 56
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, rx - rw * 0.5, ry - rh * 0.5, rw, rh, 10)
-    nvgFillColor(vg, nvgRGBA(90, 28, 28, 220))
-    nvgFill(vg)
-    DrawUtil.drawTextStroke(vg, rx, ry, "撤退", 26,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 220, 220, 3)
-
-    -- 倍速
+    -- 撤退入口由右侧UI组件绘制，确认/失败契约仍由本模块持有。
+    -- 倍速留在中栏，不覆盖右侧强化列表。
     if getMaxUnlockedBattleSpeed() > 1.0 and state.phase == BATTLE_ACTIVE then
-        local sx, sy = logicalW - 70, 40
+        local sx, sy = layout.center.x + layout.center.w - 70, 40
         nvgBeginPath(vg)
         nvgRoundedRect(vg, sx - 48, sy - 22, 96, 44, 8)
         nvgFillColor(vg, nvgRGBA(20, 28, 36, 210))
@@ -804,30 +813,7 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
     end
 
     if state.confirmOpen then
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, logicalW, logicalH)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 160))
-        nvgFill(vg)
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, logicalW * 0.5 - 280, logicalH * 0.5 - 140, 560, 280, 16)
-        nvgFillColor(vg, nvgRGBA(28, 22, 20, 245))
-        nvgFill(vg)
-        DrawUtil.drawTextStroke(vg, logicalW * 0.5, logicalH * 0.5 - 70, "确认撤退？", 36,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 230, 200, 4)
-        DrawUtil.drawTextStroke(vg, logicalW * 0.5, logicalH * 0.5 - 20, "本层进度将丢失", 24,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 200, 180, 160, 3)
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, logicalW * 0.5 - 220, logicalH * 0.5 + 50, 180, 56, 10)
-        nvgFillColor(vg, nvgRGBA(140, 40, 40, 240))
-        nvgFill(vg)
-        DrawUtil.drawTextStroke(vg, logicalW * 0.5 - 130, logicalH * 0.5 + 78, "撤退", 26,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, logicalW * 0.5 + 40, logicalH * 0.5 + 50, 180, 56, 10)
-        nvgFillColor(vg, nvgRGBA(70, 70, 70, 240))
-        nvgFill(vg)
-        DrawUtil.drawTextStroke(vg, logicalW * 0.5 + 130, logicalH * 0.5 + 78, "取消", 26,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+        TowerBuffSidebar.drawConfirmation(vg, logicalW, logicalH)
     end
 
     if BattleResultPanel.isOpen() then
@@ -860,9 +846,27 @@ function TowerTriBattle.cycleBattleSpeed()
     return true
 end
 
-function TowerTriBattle.handleClick(wx, wy)
+function TowerTriBattle.isConfirmationOpen()
+    return state.open and state.confirmOpen
+end
+
+function TowerTriBattle.getPresentationKey()
+    return state.presentationVersion .. ":" .. tostring(state.open) .. ":" .. state.phase .. ":" .. tostring(state.confirmOpen)
+        .. ":" .. tostring(state.resultPanelShown)
+end
+
+function TowerTriBattle.requestRetreat()
+    if not state.open or state.phase ~= BATTLE_ACTIVE or BattleResultPanel.isOpen() then return false end
+    BF.trigger("tower_tri_retreat")
+    state.presentationVersion = state.presentationVersion + 1
+    state.confirmOpen = true
+    return true
+end
+
+function TowerTriBattle.handleClick(wx, wy, width, height)
     if not state.open then return true end
-    local logicalW, logicalH = state.logicalW, state.logicalH
+    local logicalW, logicalH = width or state.logicalW, height or state.logicalH
+    local layout = TowerLayout.compute(logicalW, logicalH)
 
     if BattleResultPanel.isOpen() then
         local fit = math.min(logicalW / 1080, logicalH / 2400)
@@ -873,13 +877,15 @@ function TowerTriBattle.handleClick(wx, wy)
     end
 
     if state.confirmOpen then
-        if hitBox(wx, wy, logicalW * 0.5 - 130, logicalH * 0.5 + 78, 180, 56) then
+        local dialog = TowerLayout.confirm(layout)
+        if TowerLayout.contains(dialog.retreat, wx, wy) then
             BF.trigger("tower_tri_retreat_ok")
             state.confirmOpen = false
             finishLose()
             return true
         end
-        if hitBox(wx, wy, logicalW * 0.5 + 130, logicalH * 0.5 + 78, 180, 56) then
+        if TowerLayout.contains(dialog.cancel, wx, wy) then
+            state.presentationVersion = state.presentationVersion + 1
             state.confirmOpen = false
             return true
         end
@@ -888,14 +894,9 @@ function TowerTriBattle.handleClick(wx, wy)
 
     if state.phase ~= BATTLE_ACTIVE then return true end
 
-    if getMaxUnlockedBattleSpeed() > 1.0 and hitBox(wx, wy, logicalW - 70, 40, 96, 44) then
+    if getMaxUnlockedBattleSpeed() > 1.0
+        and hitBox(wx, wy, layout.center.x + layout.center.w - 70, 40, 96, 44) then
         return TowerTriBattle.cycleBattleSpeed()
-    end
-
-    if hitBox(wx, wy, logicalW * 0.5, logicalH - 42, 220, 56) then
-        BF.trigger("tower_tri_retreat")
-        state.confirmOpen = true
-        return true
     end
     return true
 end

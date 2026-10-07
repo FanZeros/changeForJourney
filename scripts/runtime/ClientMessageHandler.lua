@@ -289,17 +289,21 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          return false
      end
 
-     local function apply()
+     local function apply(completed)
          if TalentPage and TalentPage.syncTalentFromStore then
              pcall(TalentPage.syncTalentFromStore)
          elseif ChurchPage and ChurchPage.syncTalentFromStore then
              pcall(ChurchPage.syncTalentFromStore)
          end
+         -- 仅成功激活且目标已同步才结束古树教学；重置或超时刷新不算学习。
+         if completed and expect.mode == "activate" and synced(PlayerStore.Get("talents")) then
+             TutorialManager.notifyEvent("talent_learned")
+         end
      end
 
      local cur = PlayerStore.Get("talents")
      if synced(cur) then
-         apply()
+         apply(true)
          return
      end
 
@@ -310,7 +314,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
              return synced(new)
          end,
          onChange = function()
-             apply()
+             apply(true)
          end,
          onTimeout = function()
              print("[ClientMsgHandler] talent action sync timeout mode=" .. tostring(expect.mode)

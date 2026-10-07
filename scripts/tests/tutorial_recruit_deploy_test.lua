@@ -103,7 +103,8 @@ local function newContext(options)
         activeTeam = options.activeTeam or 1, unlockedTeams = options.unlockedTeams or 3,
         drag = { active = false, moved = false }, selection = { active = false },
         scrolling = false, scroll = 0, scrollLastY = 0, scrollDelta = 0, velocity = 0,
-        animPlaying = false, allowConfirm = true, canPull = true, sendMode = "pending",
+        animPlaying = false, animPending = {}, animCallbacks = 0,
+        allowConfirm = true, canPull = true, sendMode = "pending",
         callbackMode = "accept", nextResults = {}, font = 24, stack = 0,
         memory = { session = { claimedScenarios = {}, unrelatedLedger = { keep = 17 },
             tutorialProgress = { version = 1, completed = {}, queue = {} } },
@@ -248,6 +249,15 @@ local function newContext(options)
         start = function(results, callback, count, pool)
             c.animPlaying = true
             c.anims[#c.anims + 1] = { results = copy(results), finish = callback, count = count, pool = pool }
+            c.animPending[#c.animPending + 1] = callback
+        end,
+        close = function()
+            -- 与真实RecruitAnim一致：先释放忙碌状态并取走整批回调，再调用；重复关闭不重复消费。
+            c.animPlaying = false
+            local callbacks = c.animPending; c.animPending = {}
+            for _, callback in ipairs(callbacks) do
+                c.animCallbacks = c.animCallbacks + 1; callback()
+            end
         end })
     mock("ui.tavern.TavernShopPage", { init = noop, resetScroll = noop, syncPurchasedFromStore = noop,
         isPendingBuy = function() return false end, update = noop, drawContent = noop,
@@ -393,7 +403,7 @@ local function newContext(options)
     c.tick = function(dt) c.clock.elapsedTime = c.clock.elapsedTime + dt; c.tm.update(dt) end
     c.finishAnim = function(index)
         local animation = assert(c.anims[index or #c.anims], "animation callback not captured")
-        c.animPlaying = false; animation.finish(); return animation.finish
+        c.modules["ui.tavern.RecruitAnim"].close(); return animation.finish
     end
     c.send = function(mode)
         c.sendMode = mode or "pending"
@@ -570,6 +580,41 @@ local function recruitSuccessCases()
                 eq(queued(c, 9), 0, "active9 never duplicated into queue")
                 audit(c)
             end
+        end
+    end
+end
+local function recruitCloseCases()
+    for _, mode in ipairs({"forceClose", "close"}) do
+        for _, timing in ipairs({"after-result", "in-flight"}) do
+            local c = newContext(); begin8(c, "active"); c.send(); c.request(10)
+            if timing == "in-flight" then
+                c.page[mode](); c.page[mode]()
+                check(c.page.isRecruitBusy(), "closing must preserve in-flight request " .. mode)
+            end
+            local savedBefore = #c.persists
+            c.receipt(ownedResults())
+            eq(#c.persists, savedBefore + 1, "recruit8 and queued9 saved in one snapshot " .. mode .. timing)
+            local saved = c.persists[#c.persists]
+            check(saved.completed["8"] and saved.newHeroId == 18 and same(saved.queue, {9}),
+                "first success save contains completed8 and actual target/queue9")
+            if timing == "after-result" then
+                check(c.page.isRecruitBusy() and c.animPlaying, "visible result stays busy before close")
+                eq(#c.stories, 0, "HeroScenario waits for visible result close callback")
+                c.tick(1); check(c.tm.getCurrentGroup() ~= 9, "result animation gates queued9")
+                c.page[mode](); c.page[mode]()
+            end
+            eq(#c.anims, timing == "after-result" and 1 or 0, "closed/closing receipt starts no hidden animation")
+            eq(c.animCallbacks, timing == "after-result" and 1 or 0, "result close callback consumed once")
+            check(not c.animPlaying and not c.page.isRecruitBusy(), "close clears result/request busy " .. mode .. timing)
+            eq(#c.stories, 1, "successful result reaches HeroScenario exactly once")
+            c.modules["ui.tavern.RecruitAnim"].close()
+            eq(#c.stories, 1, "idle animation close does not repeat old callback")
+            if mode == "close" then
+                c.clock.elapsedTime = c.clock.elapsedTime + 0.4
+                eq(c.page.getAnimProgress(), 0, "ordinary close reaches end of page transition")
+            else check(not c.page.isOpen(), "forceClose closes page immediately") end
+            eq(queued(c, 9), 1, "close retains one actual new-hero tutorial")
+            activate9(c); audit(c)
         end
     end
 end
@@ -850,6 +895,7 @@ function Start()
     runCase("strict-loader-denials-independent-env-deepcopy",safetyCases)
     runCase("config9-rear4-legacy-map-and-real-Panel-getters",configAndGetterCases)
     runCase("real-Tavern-local-deferred-sync-single-ten-active-queued-absent8",recruitSuccessCases)
+    runCase("real-Tavern-close-forceClose-result-inflight-callback-once-and-auto9",recruitCloseCases)
     runCase("real-animation-callback-duplicate-and-quiet-priority-dedup",duplicateAndPriorityCases)
     runCase("all-duplicate-newness-stale-target-and-completed-skip",allDuplicateCases)
     runCase("request-failure-timeout-disconnect-orphan-no-premature9",failureCases)

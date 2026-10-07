@@ -1,5 +1,5 @@
 -- 三队战力提升：图片铭牌、Spine 分层仪式与新 UI 数字滚动。
--- 大号只显示小队总战力；辅助行保留权威旧→新与净增，动画值不回写战力、编队或当前波快照。
+-- 主行显示小队总战力与递减的剩余增量；辅助行保留权威旧→新与净增，不回写战力、编队或当前波快照。
 local UI = require("urhox-libs/UI")
 local Surface = require("ui.widget.DesignWidgetSurface")
 local EventBus = require("core.EventBus")
@@ -37,6 +37,10 @@ local rowPanels = {}
 local teamLabels = {}
 ---@type Label[]
 local valueLabels = {}
+---@type Label[]
+local remainingLabels = {}
+---@type Panel[]
+local powerIcons = {}
 ---@type Label[]
 local rangeLabels = {}
 
@@ -190,6 +194,20 @@ local function ensureCard()
             textAlign = "center", verticalAlign = "middle", fontColor = {240, 199, 94, 255},
             pointerEvents = "none",
         }
+        local powerIcon = UI.Panel {
+            width = 30, height = 30, flexShrink = 0, backgroundFit = "contain",
+            backgroundImage = "image/通用图标/ICON_ZDL.png", pointerEvents = "none",
+        }
+        local remainingLabel = UI.Label {
+            text = "", height = 44, fontSize = 18, whiteSpace = "nowrap",
+            textAlign = "center", verticalAlign = "middle", fontColor = {194, 166, 105, 255},
+            pointerEvents = "none",
+        }
+        local valueLine = UI.Panel {
+            height = 44, flexDirection = "row", gap = 8, alignItems = "center",
+            alignSelf = "center", pointerEvents = "none",
+            children = { powerIcon, valueLabel, remainingLabel },
+        }
         local rangeLabel = UI.Label {
             text = "", height = 22, fontSize = 12, alignSelf = "center", whiteSpace = "nowrap",
             textAlign = "center", verticalAlign = "middle", fontColor = {162, 152, 134, 255},
@@ -197,12 +215,14 @@ local function ensureCard()
         }
         local panel = UI.Panel {
             width = "100%", height = ROW_H, alignItems = "center", pointerEvents = "none",
-            children = { teamLabel, valueLabel, rangeLabel },
+            children = { teamLabel, valueLine, rangeLabel },
         }
         ---@cast teamLabel Label
         ---@cast valueLabel Label
+        ---@cast remainingLabel Label
         ---@cast rangeLabel Label
         teamLabels[team], valueLabels[team], rangeLabels[team] = teamLabel, valueLabel, rangeLabel
+        remainingLabels[team], powerIcons[team] = remainingLabel, powerIcon
         rowPanels[team] = panel
         children[#children + 1] = panel
     end
@@ -251,7 +271,9 @@ function Effect.getDisplayRows()
             local settle = clamp((current - row.tweenAt - COUNT_DELAY - COUNT_TIME) / .28)
             rows[#rows + 1] = {
                 teamIdx = team, power = row.power, base = row.base, delta = row.delta,
-                displayPower = displayed, displayDelta = gain, progress = progress,
+                displayPower = displayed, displayDelta = gain,
+                -- 两端都是integer时先做整数差，不先转double；下降时不能显示负的剩余增量。
+                displayRemaining = math.max(0, row.power - displayed), progress = progress,
                 pulse = progress >= 1 and math.sin(settle * math.pi) or 0,
                 elapsed = math.max(0, current - row.startedAt),
             }
@@ -299,14 +321,24 @@ function Effect.draw(vg, width, height)
             local pulse = row.pulse
             valueLabels[team]:SetFontColor({240 + math.floor(pulse * 15),
                 199 + math.floor(pulse * 31), 94 + math.floor(pulse * 72), rowAlpha})
+            remainingLabels[team]:SetFontColor({194, 166, 105, rowAlpha})
+            -- Panel背景图交给ImageCache按路径复用；只改变透明度，不逐帧加载或替换图标。
+            powerIcons[team]:SetOpacity(rowAlpha / 255)
             rangeLabels[team]:SetFontColor({162, 152, 134, math.floor(rowAlpha * .82)})
             teamLabels[team]:SetText(string.format(text.team, team))
             local value = formatPower(row.displayPower)
-            -- 按终值预算字号，防止数位增长时UI来回抖动；先字号后文本以刷新真实自动宽度。
-            local finalValue = formatPower(row.power)
-            local fontSize = #finalValue > 36 and 18 or (#finalValue > 30 and 20 or 27)
-            valueLabels[team]:SetFontSize(fontSize + pulse * 1.4)
+            local remaining = "+" .. formatPower(row.displayRemaining)
+            -- 按两端位数预算整组宽度（图标30 + 两个gap16），包含终值脉冲；18位双数也不越过580。
+            -- 用同字体的等宽数字预算，避免滚动剩余值变短时字号跳动；先字号后文本刷新真实自动宽度。
+            local valueDigits = math.max(#formatPower(row.base), #formatPower(row.power), #value)
+            local remainingDigits = math.max(#formatPower(row.delta), #formatPower(row.displayRemaining))
+            local valueWidth = UI.MeasureTextWidth(string.rep("8", valueDigits), UI.Theme.FontSize(28.4), "sans")
+            local remainingWidth = UI.MeasureTextWidth("+" .. string.rep("8", remainingDigits), UI.Theme.FontSize(18), "sans")
+            local fontSize = 27 * math.min(1, 530 / math.max(1, valueWidth + remainingWidth))
+            valueLabels[team]:SetFontSize(fontSize + pulse * 1.4 * fontSize / 27)
+            remainingLabels[team]:SetFontSize(fontSize * 2 / 3)
             valueLabels[team]:SetText(value)
+            remainingLabels[team]:SetText(remaining)
             -- 辅助行始终使用权威快照，不随displayDelta从0滚动；连续增减只在真实回执后更新。
             rangeLabels[team]:SetText(formatPower(row.base) .. "  →  " .. formatPower(row.power)
                 .. "  ·  +" .. formatPower(row.delta))
@@ -343,6 +375,7 @@ function Effect.destroy()
     if card then card:Destroy() end
     card, title = nil, nil
     rowPanels, teamLabels, valueLabels, rangeLabels = {}, {}, {}, {}
+    remainingLabels, powerIcons = {}, {}
     disabled = false
 end
 

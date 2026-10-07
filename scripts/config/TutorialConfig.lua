@@ -128,7 +128,7 @@ TutorialConfig[6] = {
         {
             text      = "尝试点击来学习任意的远征点",
             highlight = "talent_node_area",
-            advanceOn = "click_highlight",
+            advanceOn = "talent_learned",
         },
     },
 }

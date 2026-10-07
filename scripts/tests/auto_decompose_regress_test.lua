@@ -67,7 +67,9 @@ local function testRarityMultiselect()
         local EquipmentText = require("core.I18nEquipmentText")
         local actions, rewards, dirty, progress = {}, {}, {}, {}
         local testPDM = { equipment = {}, currency = { essence = 0 } }
+        local equipmentRevision = 0
         patch(PlayerStore, "Get", function(name) return testPDM[name] end)
+        patch(PlayerStore, "GetRevision", function(name) return name == "equipment" and equipmentRevision or 0 end)
         patch(PDM, "GetModule", function(_, name) return testPDM[name] end)
         patch(PDM, "MarkDirty", function(_, name) dirty[name] = (dirty[name] or 0) + 1 end)
         patch(TaskService, "UpdateProgress", function(_, name, count)
@@ -77,7 +79,20 @@ local function testRarityMultiselect()
             actions[#actions + 1] = { action = action, params = copy(params) }
             return true
         end)
-        patch(Detail, "isOpen", function() return false end)
+        local detailState = { open = false, pinned = false, point = false, owner = "backpack", opens = 0, dismisses = 0 }
+        patch(Detail, "isOpen", function() return detailState.open end)
+        patch(Detail, "isPinned", function() return detailState.pinned end)
+        patch(Detail, "getOwner", function() return detailState.owner end)
+        patch(Detail, "containsPoint", function() return detailState.point end)
+        patch(Detail, "dismissHover", function(owner)
+            if owner == detailState.owner and not detailState.pinned then
+                detailState.open = false; detailState.dismisses = detailState.dismisses + 1
+            end
+        end)
+        patch(Detail, "open", function(_, _, _, _, owner)
+            detailState.opens = detailState.opens + 1
+            detailState.open, detailState.owner = true, owner
+        end)
         patch(RewardPopup, "show", function(title, items)
             rewards[#rewards + 1] = { title = title, items = copy(items) }
         end)
@@ -154,6 +169,9 @@ local function testRarityMultiselect()
                 testPDM.equipment.inventory[tostring(row[1])] = equip(row[1], row[2], row[3])
             end
             testPDM.currency = { essence = 0 }
+            detailState.open, detailState.pinned, detailState.point = false, false, false
+            -- onOpen保留旧longPressFired语义；夹具显式结束上轮触摸并重置按压。
+            M.handleDragBegin(-1, -1); M.handleDragEnd(-1, -1)
             M.onOpen()
         end
         local allEligible = { 9101, 9102, 9201, 9202, 9301, 9302, 9401, 9501, 9601 }
@@ -190,7 +208,7 @@ local function testRarityMultiselect()
                 return result
             end
             -- 顶部六坐标与格子坐标分别捕获，不把格子对勾误算为顶部品质对勾。
-            local function selected(expected, text)
+            local function selected(expected, text, committed)
                 paints = {}
                 M.drawPanel({})
                 local top, icons, actual, seen = {}, {}, {}, {}
@@ -214,7 +232,7 @@ local function testRarityMultiselect()
                 end
                 eq(signature(actual), signature(expected), label .. text .. " 格子选择")
                 local wanted, equipped = {}, equippedSet()
-                for _, seq in ipairs(expected) do wanted[tostring(seq)] = true end
+                for _, seq in ipairs(committed or expected) do wanted[tostring(seq)] = true end
                 for q = 1, 6 do
                     local eligible, complete = 0, true
                     for seq, item in pairs(testPDM.equipment.inventory) do
@@ -641,7 +659,274 @@ local function testRarityMultiselect()
             check(M.handlePopupInput(540, 1330), label .. "保存关闭自动阈值")
             eq(actions[#actions].params.autoQuality, 0, label .. "自动同阈值二次点击仍归零")
             selected(union, "自动阈值取消不清手动选择")
+
+            -- 框选只经过真实公开 API 和真实 drawPanel/奖励预览/请求出口。
+            -- 区域跨两行两列：首行9101/9102；次行锁定9203/可选9301。
+            -- 既选9501在选区外必须保留；相交有面积，擦边/格隙/空格不选。
+            local x1, x2 = layout.gx - 70, layout.gx + layout.gs + 70
+            local y1, y2 = layout.gy - 70, layout.gy + layout.gs + 70
+            local base, added = { 9501 }, { 9101, 9102, 9301, 9501 }
+            local gestureActions, gestureRewards = #actions, #rewards
+            for direction, corners in ipairs({ { x1, y1, x2, y2 }, { x2, y1, x1, y2 },
+                { x1, y2, x2, y1 }, { x2, y2, x1, y1 } }) do
+                resetFixture(); cell(9501)
+                check(M.handleMarqueeBegin(corners[1], corners[2]) == true,
+                    label .. "四方向" .. direction .. " Begin成功")
+                check(M.isMarqueeActive(), label .. "四方向" .. direction .. "已捕获")
+                selected(base, "Begin不提前勾选")
+                check(M.handleMarqueeMove(corners[3], corners[4]) == true,
+                    label .. "四方向" .. direction .. " Move消费")
+                selected(added, "四方向" .. direction .. "预览跳锁且追加既选", base)
+                preview(base, "框选预览不提前污染已选奖励")
+                -- 回到起点后 Move 重算临时集合，而非留下经过格子的历史选择。
+                check(M.handleMarqueeMove(corners[1], corners[2]) == true, label .. "回原点仍消费")
+                selected(base, "回原点零面积只保留既选", base)
+                check(M.handleMarqueeMove(corners[3], corners[4]) == true, label .. "再次展开仍消费")
+                check(M.handleMarqueeEnd(corners[3], corners[4]) == true, label .. "四方向End消费")
+                check(not M.isMarqueeActive(), label .. "End释放框选")
+                selected(added, "四方向" .. direction .. "提交追加并集")
+                preview(added, "End后奖励才计入新增装备")
+            end
+            eq(#actions, gestureActions, label .. "四方向右键只选不分解或设置")
+            eq(#rewards, gestureRewards, label .. "四方向右键不弹分解奖励")
+            request(added, "四方向提交后必须显式分解按钮发送")
+            failure()
+
+            resetFixture(); cell(9501)
+            check(M.handleMarqueeBegin(x1, y1), label .. "取消测试Begin")
+            M.handleMarqueeMove(x2, y2)
+            selected(added, "取消前确有临时预览", base)
+            M.cancelMarquee(); M.cancelMarquee()
+            check(not M.isMarqueeActive(), label .. "重复取消幂等")
+            selected(base, "取消保留按下前选择")
+            preview(base, "取消不残留临时奖励")
+            check(M.handleMarqueeMove(x2, y2) == false and M.handleMarqueeEnd(x2, y2) == false,
+                label .. "取消后旧Move/Up不复活")
+            selected(base, "旧Up不追加预览项")
+            check(M.handleMarqueeBegin(x1, y1), label .. "刷新测试Begin")
+            M.handleMarqueeMove(x2, y2)
+            testPDM.equipment = copy(testPDM.equipment)
+            testPDM.equipment.inventory["8999"] = equip(8999, 6)
+            M.onEquipmentDataUpdate()
+            check(not M.isMarqueeActive() and not M.handleMarqueeEnd(x2, y2),
+                label .. "全量刷新永久取消旧框选")
+            selected(base, "刷新只按seq保留之前选择且不误选前插项")
+            preview(base, "刷新保留原选择奖励")
+            request(base, "刷新不把临时预览混入payload")
+            failure()
+            for _, updateKind in ipairs({ "reference", "revision" }) do
+                resetFixture(); cell(9401); cell(9501)
+                check(M.handleMarqueeBegin(x1, y1), label .. updateKind .. "未通知刷新Begin")
+                M.handleMarqueeMove(x2, y2)
+                if updateKind == "reference" then testPDM.equipment = copy(testPDM.equipment) end
+                testPDM.equipment.inventory["9101"].locked = true
+                testPDM.equipment.inventory["9401"].locked = true
+                testPDM.equipment.equipped[3] = { weapon = "9102.0" }
+                if updateKind == "revision" then equipmentRevision = equipmentRevision + 1 end
+                -- 不主动调onEquipmentDataUpdate，依赖真实模块观测引用/revision。
+                check(not M.handleMarqueeMove(x2, y2) and not M.isMarqueeActive(),
+                    label .. updateKind .. "真实数据变化Move立即取消")
+                check(not M.handleMarqueeEnd(x2, y2), label .. updateKind .. "旧Up不能提交过时选区")
+                selected({ 9501 }, updateKind .. "只按seq保留之前仍安全选择")
+                preview({ 9501 }, updateKind .. "安全重映射后真实预览")
+                request({ 9501 }, updateKind .. "最新锁定穿戴不混入payload")
+                failure()
+            end
+
+            resetFixture()
+            local beforeSingle = #actions
+            for _, expected in ipairs({ { 9101 }, {} }) do
+                check(M.handleMarqueeBegin(layout.gx, layout.gy), label .. "静止右键Begin")
+                check(M.handleMarqueeEnd(layout.gx, layout.gy), label .. "静止右键End")
+                selected(expected, "无拖拽右键单格切换")
+            end
+            local gapX = layout.gx + 80 + (layout.gs - 160) * 0.5
+            check(M.handleMarqueeBegin(gapX, layout.gy), label .. "格隙静止右键可开始")
+            check(M.handleMarqueeEnd(gapX, layout.gy), label .. "格隙静止右键消费")
+            selected({}, "格隙无单格选择")
+            check(M.handleMarqueeBegin(layout.gx + 2 * layout.gs, layout.gy), label .. "锁格右键Begin")
+            check(M.handleMarqueeEnd(layout.gx + 2 * layout.gs, layout.gy), label .. "锁格右键End")
+            selected({}, "锁格右键不选")
+            eq(#actions, beforeSingle, label .. "静止右键不执行分解")
+            -- 缝隙垂直矩形不碰任何格；贴着首格右边界向缝内拖不算擦边。
+            for _, edgeX in ipairs({ layout.gx + 80, gapX }) do
+                check(M.handleMarqueeBegin(edgeX, y1), label .. "格边矩形Begin")
+                M.handleMarqueeMove(gapX + 1, y2)
+                check(M.handleMarqueeEnd(gapX + 1, y2), label .. "格边矩形End")
+                selected({}, "格隙与擦边均无相交面积")
+            end
+            local gridBottom = profile == "warehouse" and 1980 or 2025
+            for _, point in ipairs({ { layout.gx - 81, layout.gy }, { 1011, layout.gy },
+                { layout.gx, layout.gy - 81 }, { layout.gx, gridBottom + 1 },
+                { 773, layout.by }, { layout.qx, layout.qy } }) do
+                check(M.handleMarqueeBegin(point[1], point[2]) == false,
+                    label .. "非网格Begin拒绝 " .. point[1] .. "," .. point[2])
+                check(not M.isMarqueeActive(), label .. "非网格没有遗留capture")
+            end
+
+            resetFixture(); cell(9501)
+            check(M.handleMarqueeBegin(x1, y1), label .. "本页自动弹窗前Begin")
+            M.handleMarqueeMove(x2, y2); M.openAutoPopup()
+            check(M.isPopupOpen() and not M.isMarqueeActive(), label .. "本页弹窗取消框选")
+            check(not M.handleMarqueeBegin(x1, y1) and not M.handleMarqueeEnd(x2, y2),
+                label .. "本页弹窗拒绝新旧右键")
+            check(M.handlePopupInput(540, 1330), label .. "关闭真实自动弹窗")
+            selected(base, "弹窗关闭后不复活临时选择")
+            request(base, "pending测试原选择发送")
+            check(not M.handleMarqueeBegin(x1, y1), label .. "pending分解不启动框选")
+            failure()
+            for _, blocked in ipairs({ "pinned", "point", "owner" }) do
+                detailState.open, detailState.pinned, detailState.point = true, false, false
+                detailState.owner = profile == "warehouse" and "backpack" or "smith"
+                if blocked == "owner" then detailState.owner = "other"
+                else detailState[blocked] = true end
+                check(not M.handleMarqueeBegin(x1, y1), label .. "详情" .. blocked .. "拒绝框选")
+                detailState.open, detailState.pinned, detailState.point = false, false, false
+            end
+            detailState.owner = profile == "warehouse" and "backpack" or "smith"
+            detailState.open = true
+            local dismissBefore = detailState.dismisses
+            check(M.handleMarqueeBegin(x1, y1), label .. "同宿主未钉住hover允许开始")
+            eq(detailState.dismisses, dismissBefore + 1, label .. "开始先关闭同宿主hover")
+            local opensBefore = detailState.opens
+            M.handleHover(layout.gx, layout.gy); time.elapsedTime = time.elapsedTime + 0.5
+            M.handleHover(layout.gx, layout.gy); M.drawPanel({})
+            eq(detailState.opens, opensBefore, label .. "框选期间hover及长按不打开详情")
+            M.handleMarqueeMove(x2, y2)
+            detailState.open = true
+            check(not M.handleMarqueeMove(x2, y2) and not M.isMarqueeActive(),
+                label .. "途中详情模态取消框选")
+            detailState.open = false
+            check(not M.handleMarqueeEnd(x2, y2), label .. "详情关闭后旧Up仍不复活")
+            selected(base, "详情取消保留之前选择")
+
+            -- 50件跨十行：只选可见格；仓库整八行，旧smith第五行后部分格裁剪。
+            resetFixture()
+            testPDM.equipment = { inventory = {}, equipped = { [1] = { weapon = "8050.0" } }, settings = {} }
+            for index = 1, 50 do
+                testPDM.equipment.inventory[tostring(8000 + index)] = equip(8000 + index, 1, index == 2)
+            end
+            M.onOpen()
+            for _, scroll in ipairs({ 0, 100 }) do
+                if scroll > 0 then M.handleScroll(-1, layout.gx, layout.gy) end
+                local visible = {}
+                for index = 1, 49 do
+                    local cy = layout.gy + math.floor((index - 1) / 5) * layout.gs - scroll
+                    local height = math.min(cy + 80, gridBottom) - math.max(cy - 80, layout.gy - 80)
+                    if height > 8 and index ~= 2 then visible[#visible + 1] = 8000 + index end
+                end
+                check(#visible > 0 and #visible < 49, label .. "可见oracle不等于全库存")
+                check(M.handleMarqueeBegin(80, layout.gy - 80), label .. "裁剪边缘Begin")
+                local topCell = M.peekCellAt(layout.gx, layout.gy - 79)
+                M.handleScroll(-1, layout.gx, layout.gy)
+                eq(M.peekCellAt(layout.gx, layout.gy - 79), topCell, label .. "框选期间滚轮不改可见坐标")
+                check(M.handleMarqueeEnd(3000, 4000), label .. "跨栏及按钮区End仍由原网格裁剪")
+                request(visible, "可见格裁剪scroll=" .. scroll)
+                failure()
+                -- 单格取消所有已选，下一轮追加不携带上一轮已选的出屏项。
+                M.onOpen()
+            end
+            -- 部分露出<=8px沿用原点击不可选；超过8px可选，不选择完全出屏格。
+            if profile == "warehouse" then
+                for _, row in ipairs({ { 152, {} }, { 151, { 8001 } } }) do
+                    M.onOpen()
+                    M.handleDragBegin(-1, 0); M.handleDragMove(-1, -row[1]); M.handleDragEnd(-1, -row[1])
+                    check(M.handleMarqueeBegin(layout.gx - 70, layout.gy - 80), label .. "8px裁剪边界Begin")
+                    check(M.handleMarqueeEnd(layout.gx + 70, layout.gy - 64), label .. "8px裁剪边界End")
+                    request(row[2], "可见高度" .. (160 - row[1]) .. "px严格沿用原点击阈值")
+                    failure()
+                end
+                M.onOpen()
+                M.handleScroll(-12, layout.gx, layout.gy) -- 第七行顶部仍露出100px，前六行完全出屏。
+                local clipped = M.peekCellAt(layout.gx, layout.gy - 79)
+                check(clipped ~= nil, label .. "滚动顶部确有部分可见格")
+                check(M.handleMarqueeBegin(layout.gx - 70, layout.gy - 79), label .. "部分可见格Begin")
+                check(M.handleMarqueeEnd(layout.gx + 70, layout.gy - 65), label .. "部分可见格End")
+                request(clipped and { clipped.seq } or {}, "裁剪顶部只命中部分可见格")
+                failure(); M.onOpen()
+            end
+
+            -- 原触摸/左键语义：短按切换，拖动滚动且取消长按，长按详情不勾选。
+            resetFixture()
+            M.handleDragBegin(layout.gx, layout.gy)
+            M.handleDragEnd(layout.gx, layout.gy)
+            cell(9101); selected({ 9101 }, "原短按仍单格切换")
+            M.handleDragBegin(layout.gx, layout.gy)
+            M.handleDragMove(layout.gx, layout.gy - 100)
+            M.handleDragEnd(layout.gx, layout.gy - 100)
+            eq(M.peekCellAt(layout.gx, layout.gy - 79).seq, 9101, label .. "原拖动滚动后顶部部分格")
+            local touchOpens = detailState.opens
+            time.elapsedTime = time.elapsedTime + 0.5; M.drawPanel({})
+            eq(detailState.opens, touchOpens, label .. "原触摸移动超限取消长按")
+            resetFixture()
+            M.handleDragBegin(layout.gx, layout.gy)
+            time.elapsedTime = time.elapsedTime + 0.5; M.drawPanel({})
+            eq(detailState.opens, touchOpens + 1, label .. "原触摸长按仍打开详情一次")
+            M.handleDragEnd(layout.gx, layout.gy)
+            detailState.open = false
+            M.handleInput(layout.gx, layout.gy)
+            selected({}, "原长按释放不额外勾选")
+            resetFixture()
         end
+
+        -- 真实仓库Panel仅薄转发：验证宿主模式/页签/动画/本页modal与关闭取消。
+        -- 初始化只替换资源及声音边界，分解模块和equipLink仍是真实实例。
+        local Panel = require("ui.backpack.BackpackPanel")
+        local GameSFX = require("systems.GameSFX")
+        local ImageCache = require("ui.widget.ImageCache")
+        local SetFilter = require("ui.widget.SetFilterDialog")
+        patch(GameSFX, "playUIMove", function() end)
+        patch(ImageCache, "init", function() end)
+        Panel.init({})
+        resetFixture()
+        Panel.open("left", "decompose")
+        check(not Panel.canMarquee() and not Panel.handleMarqueeBegin(90, 480),
+            "真实Panel打开动画期间不允许框选未绘制位置")
+        time.elapsedTime = time.elapsedTime + 0.5
+        check(Panel.canMarquee(), "真实Panel稳定左栏分解页允许框选")
+        check(Panel.handleMarqueeBegin(90, 480) == true and M.isMarqueeActive() and Panel.isMarqueeActive(),
+            "真实Panel Begin薄转发到同一Decompose实例")
+        check(Panel.handleMarqueeMove(420, 810) == true, "真实Panel Move薄转发")
+        check(Panel.handleMarqueeEnd(420, 810) == true and not M.isMarqueeActive(), "真实Panel End薄转发")
+        local forwardedActions = #actions
+        check(Panel.handleInput(773, 2160), "真实Panel显式分解按钮沿原路径")
+        eq(#actions, forwardedActions + 1, "真实Panel框选只在显式按钮后发一次分解")
+        eq(signature(actions[#actions].params.seqs), signature({ 9101, 9102, 9301 }),
+            "真实Panel并集payload跳锁/已穿戴")
+        M.onActionResult({ action = Protocol.ACTION_TYPES.DECOMPOSE_EQUIP, success = false })
+        check(Panel.handleMarqueeBegin(90, 480), "真实Panel取消转发前Begin")
+        Panel.cancelMarquee(); Panel.cancelMarquee()
+        check(not Panel.isMarqueeActive() and not M.isMarqueeActive() and not Panel.handleMarqueeEnd(420, 810),
+            "真实Panel重复取消与旧End不复活")
+        check(Panel.handleMarqueeBegin(90, 480), "真实Panel自动popup前Begin")
+        M.openAutoPopup()
+        check(not Panel.canMarquee() and not Panel.handleMarqueeMove(420, 810),
+            "真实Panel本页自动modal阻止can/Move")
+        check(M.handlePopupInput(540, 1330), "真实Panel关闭自动modal")
+        check(not Panel.handleMarqueeEnd(420, 810), "真实Panel自动modal关闭不复活旧End")
+        local filterOpen = false
+        patch(SetFilter, "isOpen", function() return filterOpen end)
+        check(Panel.handleMarqueeBegin(90, 480), "真实Panel套装modal前Begin")
+        filterOpen = true
+        check(not Panel.canMarquee() and not Panel.handleMarqueeEnd(420, 810) and not M.isMarqueeActive(),
+            "真实Panel套装筛选modal取消End")
+        filterOpen = false
+        check(Panel.handleMarqueeBegin(90, 480), "真实Panel切页前Begin")
+        check(Panel.handleInput(274, 2308), "真实Panel原装备页签点击")
+        check(not Panel.canMarquee() and not M.isMarqueeActive() and not Panel.handleMarqueeEnd(420, 810),
+            "真实Panel切equip页永久取消分解框选")
+        for _, mode in ipairs({ true, false }) do
+            Panel.open(mode, "decompose"); time.elapsedTime = time.elapsedTime + 0.5
+            check(not Panel.canMarquee() and not Panel.handleMarqueeBegin(90, 480),
+                "真实Panel非left宿主不允许框选 mode=" .. tostring(mode))
+        end
+        Panel.open("left", "decompose"); time.elapsedTime = time.elapsedTime + 0.5
+        check(Panel.handleMarqueeBegin(90, 480), "真实Panel关闭前Begin")
+        Panel.close()
+        check(not Panel.canMarquee() and not M.isMarqueeActive() and not Panel.handleMarqueeEnd(420, 810),
+            "真实Panelclose立即取消不等动画完成")
+        time.elapsedTime = time.elapsedTime + 0.5; Panel.update(0)
+        check(not Panel.isOpen(), "真实Panel关闭动画完成")
     end)
     -- 无论断言或真实模块抛错，先恢复全部替身，沿用原PDM恢复方式。
     for index = #patches, 1, -1 do

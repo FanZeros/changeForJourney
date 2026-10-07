@@ -1,6 +1,6 @@
 -- 专项回归：仅只读生产源码/图片，通过 cache.GetFile + load(env) 创建独立真实模块。
--- /home/Maker/game04-runtime/UrhoXRuntime tests/story_background_test.lua
---   -tapcode_dir=/workspace/game04 -tool_mode -graphicsheadless -validate -validateframes=90
+-- /home/Maker/urhox-runtime/UrhoXRuntime tests/story_background_test.lua
+--   -tapcode_dir=/workspace/journey-selection-fix -tool_mode -graphicsheadless -validate -validateframes=90
 -- 不启动完整Boot、不读取玩家档、不dispatch cloud；绘制出口是语义spy，不冒充截图。
 local PREFIX = "[story_background] "
 local checks, groups = 0, 0
@@ -52,12 +52,29 @@ local function noop() end
 local function bg(index) return string.format("image/剧情/背景/STORY_BG_%02d.png", index) end
 local TITLE = "image/界面底板/标题与加载/UI_TITLE_BG_GATE.png"
 local LOGO = "image/界面底板/标题与加载/UI_LOGO_TM.png"
+-- 独立枚举作为门控 oracle，不从恢复器读取名单，避免漏页时测试同步漏测。
+local LEFT_PAGE_CASES = {
+    { "教堂", "ui.church.ChurchPage" }, { "古树", "ui.church.talent.TalentPage" },
+    { "酒馆", "ui.tavern.TavernPage" }, { "市场", "ui.market.MarketPage" },
+    { "遗匣", "ui.loot.LootBoxPage" }, { "任务", "ui.story.task.TaskPage" },
+    { "锻炉", "ui.blacksmith.BlacksmithPage" }, { "仓库", "ui.backpack.BackpackPanel" },
+}
+local HIGH_PRIORITY_CASES = {
+    { "ui.hud.popup.OfflineRewardPanel", "isOpen" }, { "ui.hud.popup.UpdateNoticePopup", "isOpen" },
+    { "ui.hud.popup.LevelUpPopup", "isOpen" }, { "ui.story.gate.DarkTitleScreenGate", "isOpen" },
+    { "ui.story.gate.LetterIntro", "isOpen" }, { "ui.story.gate.IntroCutscene", "isActive" },
+    { "ui.dungeon.DungeonBattleScene", "isOpen" }, { "ui.tower.TowerBattleScene", "isActive" },
+    { "ui.tavern.TavernPage", "isRecruitConfirmOpen" }, { "ui.battle.stage.SweepDialog", "isOpen" },
+    { "ui.battle.popup.DamageStatsPanel", "isOpen" }, { "ui.battle.stage.StageSelectDialog", "isOpen" },
+    { "ui.battle.popup.TerminalConfirmDialog", "isOpen" },
+}
 
 -- 绘制记录包含最终调用次序、alpha、平移、覆盖区域；不安装全局require/package.loaded桩。
 local function newContext()
     local ctx = { deps = {}, calls = {}, loads = {}, responses = {}, handles = {}, nextHandle = 0,
         modules = {}, events = {}, shown = {}, actions = {}, notices = {}, flushes = 0,
-        fileAttempts = 0, cloudAttempts = 0, vg = {}, font = 20, stack = {}, tx = 0, ty = 0 } ---@type any
+        fileAttempts = 0, cloudAttempts = 0, stateUpdates = 0, unexpectedDependencies = {},
+        vg = {}, font = 20, stack = {}, tx = 0, ty = 0 } ---@type any
     local env = setmetatable({}, { __index = _G }) ---@type any
     ctx.env = env
     local function record(kind, data)
@@ -155,6 +172,7 @@ local function newContext()
     ctx.deps["runtime.ClientDispatcher"] = {
         get = function(name) return ctx.modules[name] end,
         handleStateUpdate = function(json)
+            ctx.stateUpdates = ctx.stateUpdates + 1
             local data = cjson.decode(json)
             for name, value in pairs(data.modules) do ctx.modules[name] = value end
         end,
@@ -170,7 +188,36 @@ local function newContext()
         isOpen = function() return ctx.rewardOpen == true end,
         hasPendingBattleRewards = function() return ctx.rewardPending == true end,
     }
-    ctx.deps["ui.tutorial.TutorialPageRecovery"] = { isBlocked = function() return ctx.recoveryBlocked == true end }
+    -- 恢复器加载真实源码；仅显式隔离它查询的高优先级页面和八类建筑叶子。
+    -- 关闭请求不清 open，只有页面生命周期真正收尾才变 false，符合生产 isOpen 契约。
+    ctx.pageStates, ctx.highPriority = {}, {}
+    for _, entry in ipairs(LEFT_PAGE_CASES) do
+        local path = entry[2]
+        local state = { open = false, closing = false, openTime = 0, closeTime = 0 }
+        ctx.pageStates[path] = state
+        ctx.deps[path] = {
+            isOpen = function() return state.open end,
+            open = function() state.open, state.closing = true, false; state.openTime = ctx.clock.elapsedTime end,
+            close = function()
+                if not state.open or state.closing then return end
+                state.closing, state.closeTime = true, ctx.clock.elapsedTime
+            end,
+            finishClose = function() state.open, state.closing = false, false end,
+            getSeamAnim = function() return state.openTime, state.closeTime, 0.3, 0.3 end,
+        }
+    end
+    for _, entry in ipairs(HIGH_PRIORITY_CASES) do
+        local path, method = entry[1], entry[2]
+        if path ~= "ui.story.gate.LetterIntro" and path ~= "ui.story.gate.DarkTitleScreenGate" then
+            ctx.deps[path] = ctx.deps[path] or {}
+            ctx.deps[path][method] = function()
+                if path == "ui.hud.popup.UpdateNoticePopup" and ctx.recoveryBlocked then return true end
+                if path == "ui.hud.popup.OfflineRewardPanel" and ctx.offlineOpen then return true end
+                if path == "ui.story.gate.IntroCutscene" and ctx.introActive then return true end
+                return ctx.highPriority[path .. ":" .. method] == true
+            end
+        end
+    end
     ctx.deps["boot.BattleRewardOverlay"] = { isBlocked = function() return ctx.battleRewardBlocked == true end }
     env.require = function(name)
         if ctx.deps[name] ~= nil then return ctx.deps[name] end
@@ -178,6 +225,8 @@ local function newContext()
             or name == "ui.story.StoryDisplay" or name == "ui.story.ScenarioDialogue"
             or name == "ui.story.gate.LetterIntro" or name == "ui.story.gate.DarkTitleScreenGate"
             or name == "systems.StoryPlayer" or name == "ui.character.hero.HeroScenario"
+            or name == "ui.tutorial.TutorialPageRecovery"
+        if not permitted then ctx.unexpectedDependencies[#ctx.unexpectedDependencies + 1] = name end
         assert(permitted, "unexpected dependency blocked: " .. tostring(name))
         local chunk, why = load(source(name), "@" .. name:gsub("%.", "/") .. ".lua", "t", env)
         assert(chunk, why)
@@ -218,6 +267,7 @@ local function newContext()
     function ctx.assertSafe()
         eq(ctx.fileAttempts, 0, "no player save File/fileSystem access")
         eq(ctx.cloudAttempts, 0, "no cloud/network dispatch")
+        eq(#ctx.unexpectedDependencies, 0, "未知依赖即使被生产 pcall 捕获也不能绕过隔离")
     end
     return ctx
 end
@@ -629,6 +679,18 @@ local function wipeBootCases()
     ctx.assertSafe()
 end
 local function pendingBoot(ctx)
+    -- 三类队列出口和延迟开场都记录读取次数；暂停不等于 take 后不展示。
+    ctx.pendingReads = { scenario = 0, follow = 0, story = 0, deferred = 0 }
+    local story = ctx.env.require("systems.StoryPlayer")
+    local take, takeDeferred = story.take, story.takeDeferredOpening
+    story.take = function()
+        ctx.pendingReads.story = ctx.pendingReads.story + 1
+        return take()
+    end
+    story.takeDeferredOpening = function()
+        ctx.pendingReads.deferred = ctx.pendingReads.deferred + 1
+        return takeDeferred()
+    end
     ctx.env.ClientDispatcher = ctx.deps["runtime.ClientDispatcher"]
     ctx.env.ScenarioDialogue = ctx.dialogue
     ctx.env.TutorialManager = ctx.deps["systems.TutorialManager"]
@@ -638,8 +700,14 @@ local function pendingBoot(ctx)
         hasPendingBattleRewards = function() return ctx.rewardPending end }
     ctx.env.OfflineRewardPanel = { isOpen = function() return ctx.offlineOpen end }
     ctx.env.ClientMsgHandler = {
-        consumePendingScenarioDialogue = function() return table.remove(ctx.pending or {}, 1) end,
-        consumePendingFollowUpDialogue = function() return nil end,
+        consumePendingScenarioDialogue = function()
+            ctx.pendingReads.scenario = ctx.pendingReads.scenario + 1
+            return table.remove(ctx.pending or {}, 1)
+        end,
+        consumePendingFollowUpDialogue = function()
+            ctx.pendingReads.follow = ctx.pendingReads.follow + 1
+            return table.remove(ctx.followPending or {}, 1)
+        end,
         setPendingTutorialNotify = function(id) ctx.notices[#ctx.notices + 1] = id end,
     }
     ctx.env.localSendAction = function(action, params)
@@ -683,6 +751,196 @@ local function rewardGateCases()
     eq(ctx.shown[1].eyeOpen, true, "pending Boot forwards legacy eyeOpen")
     eq(bar(ctx), nil, "forwarded eyeOpen really hides dialogue during entry")
     ctx.assertSafe()
+end
+local function assertPendingPaused(ctx, sessionBefore, message)
+    eq(#ctx.shown, 0, message .. "：不展示")
+    for name, count in pairs(ctx.pendingReads) do eq(count, 0, message .. "：不读取/消费 " .. name) end
+    eq(ctx.stateUpdates, 0, message .. "：不发布预标记或82台账")
+    eq(ctx.flushes, 0, message .. "：不落档")
+    eq(#ctx.actions, 0, message .. "：不发奖")
+    eq(#ctx.notices, 0, message .. "：不伪造教程领奖通知")
+    check(same(ctx.modules.session, sessionBefore), message .. "：完整session保持原样")
+end
+local function buildingGateCases()
+    local ctx = newContext()
+    local recovery = ctx.env.require("ui.tutorial.TutorialPageRecovery")
+    eq(#LEFT_PAGE_CASES, 8, "八类建筑页独立枚举完整")
+    eq(recovery.isBlocked(), false, "无高优先级页面时原恢复器不阻挡")
+    eq(recovery.isPendingStoryBlocked(), false, "全部关闭时允许待播")
+    for _, entry in ipairs(LEFT_PAGE_CASES) do
+        local label, path = entry[1], entry[2]
+        local p = ctx.deps[path]
+        p.open()
+        eq(recovery.isBlocked(), false, label .. "：原教程门控仍放行，不抢教程建筑页")
+        eq(recovery.isPendingStoryBlocked(), true, label .. "：独立故事门控暂停")
+        p.close()
+        eq(p.isOpen(), true, label .. "：close启动动画不等于真正关闭")
+        ctx.clock.elapsedTime = ctx.clock.elapsedTime + 10
+        eq(recovery.isPendingStoryBlocked(), true, label .. "：即使超动画时间也等真实生命周期收尾")
+        p.finishClose()
+        eq(recovery.isPendingStoryBlocked(), false, label .. "：真实关闭后放行")
+    end
+    for _, entry in ipairs(HIGH_PRIORITY_CASES) do
+        local path, method = entry[1], entry[2]
+        local original = ctx.env.require(path)[method]
+        ctx.deps[path][method] = function() return true end
+        eq(recovery.isBlocked(), true, "原高优先级门控保持 " .. path)
+        eq(recovery.isPendingStoryBlocked(), true, "新故事门控继承原高优先级 " .. path)
+        if path == "ui.battle.stage.StageSelectDialog" then
+            eq(recovery.isBlocked("tab_dungeon"), false, "原副本教程选关豁免保留")
+            eq(recovery.isBlocked("dungeon_gold_mine"), false, "原金矿教程选关豁免保留")
+            eq(recovery.isPendingStoryBlocked(), true, "故事不借用教程选关豁免")
+        end
+        ctx.deps[path][method] = original
+    end
+    ctx.assertSafe()
+end
+local function buildingBootCases()
+    for _, entry in ipairs(LEFT_PAGE_CASES) do
+        for _, queueKind in ipairs({ "scenario", "follow", "story", "deferred" }) do
+            local ctx = newContext()
+            local story = ctx.env.require("systems.StoryPlayer")
+            local label = entry[1] .. "/" .. queueKind
+            local cfg = ctx.config.SCENARIO_38
+            local item = { scenarioId = 38, config = cfg }
+            if queueKind == "scenario" then ctx.pending = { item }
+            elseif queueKind == "follow" then ctx.followPending = { item }
+            elseif queueKind == "story" then check(story.enqueue(38), label .. "：真实队列入队")
+            else
+                ctx.modules.session.deferredOpening, ctx.modules.session.deferredOpeningIndex = true, 1
+                ctx.foundation = { [1] = true, [2] = true, [4] = true, [8] = true, [9] = true }
+                cfg = ctx.config.OPENING
+            end
+            local play = pendingBoot(ctx)
+            local p = ctx.deps[entry[2]]
+            p.open()
+            local sessionBefore = copy(ctx.modules.session)
+            for _ = 1, 3 do play() end
+            assertPendingPaused(ctx, sessionBefore, label .. "打开时")
+            if queueKind == "scenario" then eq(ctx.pending[1], item, label .. "：桥接队首身份仍在")
+            elseif queueKind == "follow" then eq(ctx.followPending[1], item, label .. "：后续队首身份仍在")
+            elseif queueKind == "story" then check(story.hasPending(), label .. "：真实StoryPlayer仍待播") end
+            p.close(); play()
+            ctx.clock.elapsedTime = ctx.clock.elapsedTime + 10; play()
+            assertPendingPaused(ctx, sessionBefore, label .. "关闭动画中")
+            p.finishClose(); play()
+            eq(#ctx.shown, 1, label .. "：全部真实关闭后下次泵自动恢复一次")
+            eq(ctx.shown[1].steps, cfg.steps, label .. "：恢复原队首/原段")
+            eq(ctx.shown[1].background, cfg.background, label .. "：背景原样")
+            eq(ctx.shown[1].mode, cfg.mode, label .. "：模式原样")
+            play(); play()
+            eq(#ctx.shown, 1, label .. "：重复泵不重播")
+            eq(#ctx.actions, 0, label .. "：起播仍不发奖")
+            if queueKind ~= "deferred" then
+                check(ctx.modules.session.claimedScenarios["38"] == true, label .. "：仅起播时沿原时机预标记")
+            else
+                eq(ctx.modules.session.deferredOpeningIndex, 1, label .. "：开场仅真实结束才推进")
+            end
+            finish(ctx)
+            if queueKind ~= "deferred" then
+                eq(#ctx.actions, 1, label .. "：仅结束沿原领奖出口调用一次")
+                eq(ctx.actions[1].params.scenarioId, 38, label .. "：原领奖ID")
+                eq(#ctx.notices, 1, label .. "：真实结束通知教程一次")
+            else
+                eq(ctx.modules.session.deferredOpeningIndex, 2, label .. "：结束后推进一次")
+                eq(ctx.flushes, 1, label .. "：结束落档一次")
+                eq(#ctx.actions, 0, label .. "：延迟介绍不发奖")
+            end
+            play(); ctx.dialogue.skip(); play()
+            eq(#ctx.shown, 1, label .. "：消费/完成后不重复展示")
+            ctx.assertSafe()
+        end
+    end
+    -- 锻炉真正关闭不是释放条件：仓库手动持有或仍在close动画，都继续暂停。
+    local ctx = newContext()
+    local story = ctx.env.require("systems.StoryPlayer")
+    check(story.enqueue(82), "82奖励故事成功排队")
+    local play = pendingBoot(ctx)
+    local smith, bag = ctx.deps["ui.blacksmith.BlacksmithPage"], ctx.deps["ui.backpack.BackpackPanel"]
+    smith.open(); bag.open()
+    ctx.rewardPending, ctx.battleRewardBlocked = true, true
+    local snapshot = copy(ctx.modules.session)
+    play(); smith.close(); play(); smith.finishClose(); play()
+    eq(bag.isOpen(), true, "锻炉已关闭但仓库仍开")
+    assertPendingPaused(ctx, snapshot, "锻炉关闭仓库仍开，奖励覆盖门控不能绕过建筑")
+    bag.close(); ctx.clock.elapsedTime = ctx.clock.elapsedTime + 10; play()
+    assertPendingPaused(ctx, snapshot, "库存关闭动画未收尾")
+    bag.finishClose(); play()
+    eq(#ctx.shown, 1, "双页真正关闭后82恢复一次")
+    eq(ctx.shown[1].steps, ctx.config.SCENARIO_82.steps, "82恢复原奖励故事")
+    eq(ctx.modules.session.claimedScenarios["82"], nil, "82仍不在起播时预标记claimed")
+    check(type(ctx.modules.session.scenarioRewardsGranted) == "table", "82原台账仅起播时创建")
+    eq(next(ctx.modules.session.scenarioRewardsGranted), nil, "起播不伪造82发奖记录")
+    eq(#ctx.actions, 0, "82起播仍不发奖")
+    finish(ctx); play(); play()
+    eq(#ctx.actions, 1, "82真实结束调用原领奖一次")
+    eq(ctx.actions[1].params.scenarioId, 82, "82奖励ID未改")
+    eq(ctx.actions[1].params.preClaimed, true, "82原领奖preClaimed参数保持")
+    eq(#ctx.shown, 1, "82单队列消费后不重播")
+    ctx.assertSafe()
+end
+local function buildingHeroCases()
+    for _, entry in ipairs(LEFT_PAGE_CASES) do
+        for _, route in ipairs({ "直接详情", "真实结束广播" }) do
+            local ctx = newContext()
+            local hs = ctx.env.require("ui.character.hero.HeroScenario")
+            local p = ctx.deps[entry[2]]
+            local label = entry[1] .. "/HeroScenario/" .. route
+            ctx.modules.heroes.roster[25] = { level = 1 }
+            if route == "真实结束广播" then sample(ctx, "small", bg(5)) end
+            p.open()
+            local sessionBefore = copy(ctx.modules.session)
+            local shownBefore = #ctx.shown
+            hs.onOpenHero(25); hs.onOpenHero(25)
+            hs.onRecruitResults({ { type = "hero", heroId = 24, isNew = true },
+                { type = "hero", heroId = 24, isNew = true } })
+            if route == "真实结束广播" then ctx.dialogue.skip() end
+            local function paused(message)
+                eq(#ctx.shown, shownBefore, label .. message .. "：不展示")
+                check(hs.hasPending(), label .. message .. "：真实Hero队列保留")
+                check(same(ctx.modules.session, sessionBefore), label .. message .. "：不提前标记已拥有/新招募角色")
+                eq(ctx.stateUpdates, 0, label .. message .. "：不发布状态")
+                eq(ctx.flushes, 0, label .. message .. "：不落档")
+                eq(#ctx.actions, 0, label .. message .. "：不发奖")
+            end
+            hs.update(); ctx.bus.emit("scenario_dialogue_finished", { reason = "finished" })
+            paused("打开时")
+            p.close()
+            hs.onOpenHero(25); hs.update()
+            ctx.bus.emit("scenario_dialogue_finished", { reason = "dismissed" })
+            ctx.clock.elapsedTime = ctx.clock.elapsedTime + 10; hs.update()
+            paused("关闭动画中重入")
+            p.finishClose(); hs.update(); hs.update()
+            eq(#ctx.shown, shownBefore + 1, label .. "：真正关闭后闲聊恢复一次")
+            eq(ctx.shown[#ctx.shown].steps, ctx.config.SCENARIO_81.steps, label .. "：保持队首英雄25闲聊")
+            check(ctx.modules.session.claimedScenarios["77"] and ctx.modules.session.claimedScenarios["81"],
+                label .. "：已拥有英雄仅恢复时沿原时机落档")
+            eq(ctx.modules.session.claimedScenarios["76"], nil, label .. "：下一新招募角色还没消费")
+            eq(ctx.flushes, 2, label .. "：原入队补标记+闲聊各一次")
+            -- 播放结束前重开建筑：onFinish回调与真实结束广播都不能把第二个请求抽走。
+            p.open(); finish(ctx); hs.update()
+            ctx.bus.emit("scenario_dialogue_finished", { reason = "finished" })
+            eq(#ctx.shown, shownBefore + 1, label .. "：回调/广播重入仍挡第二个角色")
+            check(hs.hasPending(), label .. "：第二队首未丢失")
+            eq(ctx.modules.session.claimedScenarios["76"], nil, label .. "：重入不预标记新人")
+            eq(ctx.flushes, 2, label .. "：重入不额外Flush")
+            p.close(); hs.update()
+            eq(#ctx.shown, shownBefore + 1, label .. "：再次close中仍暂停")
+            p.finishClose(); hs.update()
+            eq(#ctx.shown, shownBefore + 2, label .. "：第二请求自动恢复一次")
+            eq(ctx.shown[#ctx.shown].steps, ctx.config.SCENARIO_76.steps, label .. "：FIFO新招募入队保持")
+            finish(ctx)
+            eq(#ctx.shown, shownBefore + 3, label .. "：原新人入队结束接闲聊一次")
+            eq(ctx.shown[#ctx.shown].steps, ctx.config.SCENARIO_80.steps, label .. "：原新人闲聊保持")
+            finish(ctx); hs.update(); hs.onOpenHero(25)
+            ctx.bus.emit("scenario_dialogue_finished", { reason = "finished" }); hs.update()
+            eq(#ctx.shown, shownBefore + 3, label .. "：重复调用/广播不重播")
+            eq(hs.hasPending(), false, label .. "：两次请求均完成无积压")
+            eq(ctx.flushes, 4, label .. "：四个原标记各落档一次")
+            eq(#ctx.actions, 0, label .. "：Hero流程没有新增发奖出口")
+            ctx.assertSafe()
+        end
+    end
 end
 local function letterTitleCases()
     local ctx = newContext()
@@ -860,6 +1118,9 @@ function Start()
         { "legacy-eyeOpen-contract", eyeCases }, { "cache-handle0-retry-and-context", cacheCases },
         { "direct-CG-flag-and-fallback", cgCases }, { "wipe-capture-and-reward-gates", wipeCases },
         { "Boot-all-dead-time-of-capture", wipeBootCases }, { "Boot-reward-gates-and-failed-local-callback", rewardGateCases },
+        { "building-story-gate-keeps-original-tutorial-priority", buildingGateCases },
+        { "eight-building-pages-pause-all-Boot-queues-and-deferred-opening", buildingBootCases },
+        { "eight-building-pages-block-Hero-direct-broadcast-and-reentry", buildingHeroCases },
         { "letter-study-and-same-path-title", letterTitleCases }, { "HeroScenario-background-and-claim-dedup", heroCases },
         { "real-Boot-compact-intro-and-deferred-original-segments", bootChainCases },
     }

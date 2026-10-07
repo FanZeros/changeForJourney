@@ -22,6 +22,7 @@ local pdmAttached_ = false
 local publishedPlayer_ = {}
 ---@type table<string, table>|nil
 local deferredTaskPushes_ = nil
+local publishingDungeonRewards_ = false
 
 --- GameState 单机提交钩子；这里只镜像 player，不反向调用 syncPlayerData。
 --- init 前也可使用，确保升级事件观察者的 PDM 与 Dispatcher 已同源。
@@ -382,20 +383,42 @@ function M.init()
             end
         end,
     })
-    require("rules.dungeon.DungeonService").SetPersistCallback(function(_uid)
-        -- 副本事务先镜像货币且延后通知，唯一落盘入口必须确认真实写入成功。
-        return require("boot.StandaloneSave").Flush()
+    require("rules.dungeon.DungeonService").SetPersistCallback(function(uid)
+        -- 候选经验进入磁盘快照，GameState 仅在提交成功后同步，失败不提前升级。
+        return require("boot.StandaloneSave").Flush(PDM.GetModule(uid, "player"))
     end, {
         begin = function() deferredTaskPushes_ = {} end,
         finish = function(_uid, success)
             local pushes = deferredTaskPushes_ or {}
             deferredTaskPushes_ = nil
             if not success then return end
-            -- 覆盖 Flush 内 MarkOnline 的 session 推送，失败不得提前发布在线边界。
+            -- 先冻结玩家，再发布队员。订阅者重入 action 不能用旧 GameState 覆盖候选经验。
+            local player = nil ---@type table|nil
+            if pushes.player then
+                player = {}
+                for key, value in pairs(pushes.player) do player[key] = value end
+            end
+            publishingDungeonRewards_ = true
+            local function publish(fn, name, data)
+                local ok, err = pcall(fn, name, data)
+                if not ok then print("[LocalActionBridge] 副本提交通知失败: " .. tostring(err)) end
+            end
+            if pushes.heroes then publish(ClientDispatcher.set, "heroes", pushes.heroes) end
+            if player then
+                publish(function(_, data) GameState.syncPlayerData(data) end, "player", player)
+            end
+            -- 单个订阅异常不能跳过其他已提交模块；失败事务此前已直接返回。
             for name, data in pairs(pushes) do
                 ClientDispatcher.set(name, data, { normalized = true })
                 if name == "currency" then GameState.syncFromCurrency(data) end
+                if name ~= "heroes" and name ~= "player" then
+                    publish(ClientDispatcher.set, name, data)
+                    if name == "currency" then
+                        publish(function(_, value) GameState.syncFromCurrency(value) end, name, data)
+                    end
+                end
             end
+            publishingDungeonRewards_ = false
         end,
     })
     print("[LocalActionBridge] init uid=" .. LOCAL_UID)
@@ -405,6 +428,8 @@ end
 ---@param params table|nil
 ---@return boolean handled
 function M.dispatch(action, params)
+    -- 已落盘奖励的模块通知尚未发布完，拒绝同步重入，避免旧玩家镜像覆盖新经验。
+    if publishingDungeonRewards_ then return false end
     if not inited_ then
         M.init()
     end

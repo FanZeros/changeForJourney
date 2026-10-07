@@ -823,6 +823,7 @@ end
 ---@param mode? boolean|"left" true=全窗居中模态；"left"=横屏左栏页；nil/false=内嵌
 ---@param initialTab? string "equip"|"item"|"decompose"，默认 "equip"
 local function openPage(mode, initialTab)
+    BlacksmithDecompose.cancelMarquee()
     if mode == "left" then
         hostMode_ = "left"
     elseif mode then
@@ -861,6 +862,7 @@ end
 
 -- 动画操作与持有操作分离：自动 release 不冒充玩家手动关闭。
 local function closePage()
+    BlacksmithDecompose.cancelMarquee()
     if not state.open or state.closing then return end
     state.closing = true
     state.closeTime = time.elapsedTime
@@ -881,6 +883,7 @@ local equipLink = BackpackEquipLink.bind({
         return changed
     end,
     selectEquipTab = function()
+        BlacksmithDecompose.cancelMarquee()
         if state.tab == "equip" then return end
         state.tab, state.tabFrom, state.tabSwitchTime = "equip", "equip", 0
         state.scrollY, state.scrollMax, state.scrollVel = 0, 0, 0
@@ -888,6 +891,7 @@ local equipLink = BackpackEquipLink.bind({
         SetFilterDialog.close()
     end,
     restoreView = function(view)
+        BlacksmithDecompose.cancelMarquee()
         hostMode_ = view.mode
         applyLayout(isCompact())
         state.tab, state.tabFrom, state.tabSwitchTime = view.tab, view.tab, 0
@@ -1219,6 +1223,7 @@ end
 
 ---@return boolean 是否消费了事件
 function Panel.handleInput(dx, dy)
+    BlacksmithDecompose.cancelMarquee()
     if not state.open then return false end
 
     -- 套装筛选弹窗最优先（模态：打开时消费全部点击）
@@ -1456,45 +1461,39 @@ function Panel.haltScroll() equipLink.haltScroll() end
 function Panel.handleHover(dx, dy) equipLink.handleHover(dx, dy) end
 function Panel.handleRightClick(dx, dy) return equipLink.handleRightClick(dx, dy) end
 
+--- 框选只属于稳定打开的仓库分解页，不穿透本页弹窗。
+function Panel.canMarquee()
+    return state.open and not state.closing and hostMode_ == "left" and state.tab == "decompose"
+        and time.elapsedTime - state.openTime >= ANIM_OPEN_DUR
+        and not SetFilterDialog.isOpen() and not itemDetState.open
+        and not BlacksmithDecompose.isPopupOpen()
+end
+function Panel.cancelMarquee() BlacksmithDecompose.cancelMarquee() end
+function Panel.isMarqueeActive() return BlacksmithDecompose.isMarqueeActive() end
+function Panel.handleMarqueeBegin(dx, dy)
+    if not Panel.canMarquee() then return false end
+    local started = BlacksmithDecompose.handleMarqueeBegin(dx, dy)
+    if started then equipLink.haltScroll() end
+    return started
+end
+function Panel.handleMarqueeMove(dx, dy)
+    if not Panel.canMarquee() then Panel.cancelMarquee(); return false end
+    return BlacksmithDecompose.handleMarqueeMove(dx, dy)
+end
+function Panel.handleMarqueeEnd(dx, dy)
+    if not Panel.canMarquee() then Panel.cancelMarquee(); return false end
+    return BlacksmithDecompose.handleMarqueeEnd(dx, dy)
+end
+
 function Panel.handleDragBegin(dx, dy) return equipLink.handleDragBegin(dx, dy) end
 function Panel.handleDragMove(dx, dy) return equipLink.handleDragMove(dx, dy) end
 function Panel.handleDragEnd(dx, dy) return equipLink.handleDragEnd(dx, dy) end
 function Panel.handleScroll(wheel, dx, dy) return equipLink.handleScroll(wheel, dx, dy) end
 
---- 服务端操作结果回调
----@param data table
-function Panel.onActionResult(data)
-    equipLink.onActionResult(data)
-    if data.action == Protocol.ACTION_TYPES.DECOMPOSE_EQUIP then
-        -- [分解入仓 0929] 分解请求由 BlacksmithDecompose（仓库分解 tab）发出，
-        -- 回执转发给它（内部 pendingDecompose 门控保证只处理自己发起的请求，
-        -- 与 ClientMessageHandler 同时广播给 BlacksmithPage 的路径互不重复弹奖）
-        if decomposeReady_ then
-            BlacksmithDecompose.onActionResult(data)
-        end
-        return
-    end
-
-    if data.action == Protocol.ACTION_TYPES.CONVERT_UR_SHARD then
-        itemDetState.urConvertPending = false
-        if not data.success then
-            local LootBoxPage = require("ui.loot.LootBoxPage")
-            if LootBoxPage.showToast then
-                LootBoxPage.showToast(data.reason or "转化失败")
-            end
-        end
-        return
-    end
-
-    if data.action == Protocol.ACTION_TYPES.RESTORE_UR_SHARD_CONVERT then
-        itemDetState.urConvertPending = false
-        local LootBoxPage = require("ui.loot.LootBoxPage")
-        if data.success then
-            if LootBoxPage.showToast then LootBoxPage.showToast("转化次数已恢复") end
-        elseif LootBoxPage.showToast then
-            LootBoxPage.showToast(data.reason or "恢复失败")
-        end
-    end
-end
+--- 服务端操作结果回调（依赖原状态；就绪标记不取绑定时快照）
+Panel.onActionResult = require("ui.backpack.BackpackActionResult").bind({
+    equipLink = equipLink, Protocol = Protocol, BlacksmithDecompose = BlacksmithDecompose,
+    itemDetState = itemDetState, getDecomposeReady = function() return decomposeReady_ end,
+})
 
 return Panel

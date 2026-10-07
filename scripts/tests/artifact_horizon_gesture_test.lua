@@ -180,7 +180,8 @@ function Start()
         local realPaths = {
             ["boot.ArtifactGesture"] = true, ["boot.StandaloneHorizon"] = true,
             ["boot.StandaloneHorizonInput"] = true, ["boot.OfflineRewardOverlay"] = true,
-            ["boot.SeamBackGesture"] = true,
+            ["boot.SeamBackGesture"] = true, ["boot.DecomposeMarqueeGesture"] = true,
+            ["boot.StandaloneHorizonWheel"] = true,
         }
         ---@type any
         local realModules = {}

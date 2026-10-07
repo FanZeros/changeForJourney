@@ -22,6 +22,8 @@ function Start()
         local allowed = {
             ["config.DungeonConfig"] = true, ["config.DungeonIdleConfig"] = true,
             ["config.TowerConfig"] = true, ["config.StageConfig"] = true,
+            ["config.ExpTable"] = true, ["config.StageExpHelper"] = true,
+            ["config.IdleIncomeConfig"] = true,
             ["shared.dungeon.DungeonSchema"] = true, ["shared.dungeon.DungeonCompat"] = true,
             ["shared.ModuleRegistry"] = true, ["rules.dungeon.DungeonIdleService"] = true,
         }
@@ -174,13 +176,26 @@ function Start()
         for _, entry in ipairs({
             { id = "gold_mine", sweep = DC.getGoldMineFloor(38).sweepGold },
             { id = "ancient_ruin", sweep = DC.getAncientRuinFloor(56).sweepDust },
-            { id = "babel_tower", sweep = TC.getFloor(20).sweepDiamond },
         }) do
             local floor = entry.id == "gold_mine" and 38 or (entry.id == "ancient_ruin" and 56 or 20)
             local perMin = math.max(1, math.floor(entry.sweep / 720))
             eq(IC.getIdlePerMin(entry.id, floor), perMin, entry.id .. "旧每分钟口径")
             eq(IC.calcReward(entry.id, floor, 172800), math.floor(IC.effectiveSeconds(172800) / 60) * perMin * 2, entry.id .. "旧倍率尾段不变")
         end
+        for _, floor in ipairs({ 55, 56, 84, 85, 113, 114 }) do
+            local rate = math.max(1, (25 * floor + 50) / 720)
+            eq(IC.getIdlePerMin("black_diamond", floor), rate, "黑钻小数效率层" .. floor)
+            local claim = IC.calcReward("black_diamond", floor, 86400)
+            eq(claim, 100 * floor + 200, "黑钻24h层" .. floor)
+            eq(math.type(claim), "integer", "黑钻最终领取为整数")
+            if floor > 1 then
+                eq(claim - IC.calcReward("black_diamond", floor - 1, 86400), 100, "阈值增长无断崖")
+            end
+        end
+        local towerRate = math.max(1, TC.getFloor(20).sweepDiamond / 720)
+        eq(IC.getIdlePerMin("babel_tower", 20), towerRate, "塔黑钻保留小数")
+        eq(IC.calcReward("babel_tower", 20, 172800),
+            math.floor(math.floor(IC.effectiveSeconds(172800) / 60) * towerRate * 2), "塔尾段最终取整")
         eq(IC.getIdleFloorFromSub({ floor = 21, cleared = { [21] = true } }, "babel_tower"), 20, "独立塔保持旧挂机口径")
         eq(IC.getSweepReward("unknown", 1), 0, "未知ID无收益")
         eq(IC.REWARD_TYPE.ancient_ruin, "arcane_dust", "旧遗迹仍发粉尘")

@@ -35,6 +35,8 @@ local SOURCE_FILES = {
     ["ui.town.TownScene"] = PROJECT .. "/scripts/ui/town/TownScene.lua",
     ["ui.character.hero.HeroScenario"] = PROJECT .. "/scripts/ui/character/hero/HeroScenario.lua",
     ["boot.StandaloneHorizonInput"] = PROJECT .. "/scripts/boot/StandaloneHorizonInput.lua",
+    ["boot.DecomposeMarqueeGesture"] = PROJECT .. "/scripts/boot/DecomposeMarqueeGesture.lua",
+    ["boot.StandaloneHorizonWheel"] = PROJECT .. "/scripts/boot/StandaloneHorizonWheel.lua",
     -- 这三个文件只允许读取/抽取明确完整闭包；禁止 require 或执行完整模块。
     ["boot.StandaloneHorizon"] = PROJECT .. "/scripts/boot/StandaloneHorizon.lua",
     ["boot.StandaloneBoot"] = PROJECT .. "/scripts/boot/StandaloneBoot.lua",

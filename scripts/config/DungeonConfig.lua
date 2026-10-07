@@ -661,11 +661,27 @@ function DungeonConfig.getStageRewardAmount(stageId, kills)
     return math.max(0, kills) * perMinute / 20 -- 每3秒1只，即每分钟20只。
 end
 
+--- 资源经验沿用源主线每分钟收入；在线每杀与离线每3秒一杀使用同一口径。
+---@param stageId number
+---@param kills number
+---@return integer
+function DungeonConfig.getStageExpAmount(stageId, kills)
+    local entry = DungeonConfig.getStage(stageId)
+    local count = tonumber(kills) or 0
+    if not entry or count <= 0 or count ~= count or count == math.huge then return 0 end
+    local expPerMin = require("config.StageExpHelper").getExpPerMinByStageId(entry.sourceStageId)
+    return math.floor(expPerMin * count / 20 + 0.5)
+end
+
 -- 在线每次击杀与离线固定杀怪效率复用原每分钟收益，不把一次扫荡变为无限波大奖。
-function DungeonConfig.getStageRewards(stageId, kills)
+---@param heroCount number|nil 实际领取队伍人数，旧调用默认一人
+function DungeonConfig.getStageRewards(stageId, kills, heroCount)
     local id, floor = DungeonConfig.decodeStageId(stageId)
     local rewards = { gold = 0, diamond = 0, adventureExp = 0, adventurerExp = 0, equipSeeds = {}, scrollDrops = {} }
     if not id or (tonumber(kills) or 0) <= 0 then return rewards end
+    rewards.adventureExp = DungeonConfig.getStageExpAmount(stageId, kills)
+    local expMult = require("config.ExpTable").getHeroCountExpMult(heroCount or 1)
+    rewards.adventurerExp = math.floor(rewards.adventureExp * expMult + 0.5)
     local raw = DungeonConfig.getStageRewardAmount(stageId, kills)
     local amount = math.floor(raw)
     if math.random() < raw - amount then amount = amount + 1 end

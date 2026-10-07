@@ -1258,9 +1258,10 @@ function M.drawResetButton(vg)
     BF.finish(vg, _bfReset)
 end
 
---- 重置按钮点击（屏幕坐标，调用方不要做转职树下移换算）
+--- 重置按钮点击：输入逆变换到转职树坐标，与 drawContent 的整体平移一致。
 ---@return boolean
 function M.handleResetButton(dx, dy)
+    dy = dy - TREE_SHIFT_Y
     if not hitTest(dx, dy, BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H) then
         return false
     end

@@ -485,6 +485,14 @@ function M.bind(deps)
 
         -- 转职确认/重置弹窗已随转职页迁到右侧栏角色详情
 
+        -- 神器详情盖住内容、底栏与名称牌；与详情优先的输入顺序保持一致。
+        if state.tab == "shenqi" and not isAnimating then
+            nvgSave(vg)
+            nvgTranslate(vg, lowerOX, 0)
+            ArtifactPanel.drawOverlay(vg)
+            nvgRestore(vg)
+        end
+
         -- ================== 神器宝箱·钥匙补购确认弹窗（模态，Tab 内容之上） ==================
         ArtifactDrawPanel.drawKeyConfirmDialog(vg)
 

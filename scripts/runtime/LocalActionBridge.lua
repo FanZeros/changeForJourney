@@ -18,6 +18,8 @@ local LOCAL_UID = 1
 local inited_ = false
 local handlers_ = {}
 local pdmAttached_ = false
+-- 玩家模块也被规则层原地写入，冻结已通知标量，不能以共享表自身作旧值。
+local publishedPlayer_ = {}
 ---@type table<string, table>|nil
 local deferredTaskPushes_ = nil
 
@@ -25,17 +27,25 @@ local deferredTaskPushes_ = nil
 --- init 前也可使用，确保升级事件观察者的 PDM 与 Dispatcher 已同源。
 ---@param player table|nil
 function M.syncPlayerIntoPdm(player)
-    local data = ClientDispatcher.get("player") or {}
+    local data = ClientDispatcher.get("player")
+    local changed = data == nil
+    data = data or {}
     player = player or { name = GameState.getName(), level = GameState.getLevel(),
         exp = GameState.getExp(), maxExp = GameState.getMaxExp(), power = GameState.getPower() }
     for _, field in ipairs({ "name", "level", "exp", "maxExp", "power" }) do
+        if publishedPlayer_[field] ~= player[field] then changed = true end
         data[field] = player[field]
+        publishedPlayer_[field] = player[field]
     end
+    -- 头像不在 GameState 的五标量镜像内，规则层直接写共享模块时也必须通知。
+    if publishedPlayer_.avatarHeroId ~= data.avatarHeroId then changed = true end
+    publishedPlayer_.avatarHeroId = data.avatarHeroId
     if not pdmAttached_ then
         ClientDispatcher.getAll().player = data
         PDM.AttachLocalModules(LOCAL_UID, ClientDispatcher.getAll())
     end
-    ClientDispatcher.set("player", data)
+    -- 每次 action 只核对镜像；无变化不触发槽位解锁/全名册战力重建。
+    if changed then ClientDispatcher.set("player", data, { normalized = pdmAttached_ }) end
 end
 
 local function registerHandlers(handlers)
@@ -244,7 +254,8 @@ local function attachPdm()
                         -- syncPlayerData 自己先发布 player 再发升级，不能提前/重复 set。
                         GameState.syncPlayerData(moduleData)
                     else
-                        ClientDispatcher.set(fieldKey, moduleData)
+                        -- 业务模块已经在初始化/读档时规范化；升阶/穿戴等无需再水合全库存。
+                        ClientDispatcher.set(fieldKey, moduleData, { normalized = true })
                         if fieldKey == "currency" then
                             GameState.syncFromCurrency(moduleData)
                         end
@@ -366,7 +377,7 @@ function M.init()
             if not success then return end
             -- 只在持久化成功后通知最终奖励/台账，失败不触发领成功视觉。
             for name, data in pairs(pushes) do
-                ClientDispatcher.set(name, data)
+                ClientDispatcher.set(name, data, { normalized = true })
                 if name == "currency" then GameState.syncFromCurrency(data) end
             end
         end,
@@ -382,7 +393,7 @@ function M.init()
             if not success then return end
             -- 覆盖 Flush 内 MarkOnline 的 session 推送，失败不得提前发布在线边界。
             for name, data in pairs(pushes) do
-                ClientDispatcher.set(name, data)
+                ClientDispatcher.set(name, data, { normalized = true })
                 if name == "currency" then GameState.syncFromCurrency(data) end
             end
         end,

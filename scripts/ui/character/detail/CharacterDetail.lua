@@ -115,48 +115,86 @@ end
 
 -- ======================== 装备可提升判断 ========================
 
+-- 同一隔离装备快照只建一次未穿戴候选索引；六槽/多英雄不再重复扫全库存与占用表。
+-- 类型/槽位来自已水合副本，不读取或水合 PlayerStore 的真实库存项。
+local upgradeCandidates = { equipment = false, bySlot = {} }
+local function candidatesForUpgrade(equipment)
+    if upgradeCandidates.equipment == equipment then return upgradeCandidates.bySlot end
+    local occupied, bySlot = {}, {}
+    for _, heroSlots in pairs(equipment.equipped or {}) do
+        if type(heroSlots) == "table" then
+            for _, seq in pairs(heroSlots) do
+                local id = tonumber(seq)
+                if id then occupied[id] = true end
+            end
+        end
+    end
+    for seq in pairs(equipment.inventory or {}) do
+        local id = tonumber(seq)
+        if id and not occupied[id] then
+            local item = EquipmentSystem.getFromInventory(equipment, seq)
+            if item and item.slot then
+                local entry = { seq = seq, item = item }
+                bySlot[item.slot] = bySlot[item.slot] or {}
+                bySlot[item.slot][#bySlot[item.slot] + 1] = entry
+                -- 合法双持副手的自然槽仍是 weapon；不能只按自然槽过滤掉它。
+                if item.slot == "weapon" and item.grip == "onehand" then
+                    bySlot.offhand = bySlot.offhand or {}
+                    bySlot.offhand[#bySlot.offhand + 1] = entry
+                end
+            end
+        end
+    end
+    upgradeCandidates = { equipment = equipment, bySlot = bySlot }
+    return bySlot
+end
+
 --- 检查指定槽位是否有真实净战力提升（共享模拟包含双手卸槽、套装及职业有效属性）。
 ---@param heroId number
 ---@param slotName string "weapon"|"offhand"|"armor"|"helmet"|"shoes"|"accessory"
 ---@param equipData table PlayerStore.Get("equipment") 返回的数据
 ---@param ctx table|nil 同一次六槽检查共用的评分上下文
+---@param checkpoint? fun() 仅角标调度可传入让出预算，不影响正式战力/评分调用
 ---@return boolean
-function CharacterDetail._hasUpgradeForSlot(heroId, slotName, equipData, ctx)
+function CharacterDetail._hasUpgradeForSlot(heroId, slotName, equipData, ctx, checkpoint)
     if not equipData or not equipData.inventory then return false end
     ctx = ctx or EquipmentPower.getContext(heroId)
     if not ctx then return false end
-
-    -- 保留自动装备候选边界：不把其他英雄/其他槽已穿戴的装备当作仓库升级。
-    local equippedSeqNums = {}
-    for _, heroSlots in pairs(equipData.equipped or {}) do
-        if type(heroSlots) == "table" then
-            for _, eqSeq in pairs(heroSlots) do
-                local seqNum = tonumber(eqSeq)
-                if seqNum then equippedSeqNums[seqNum] = true end
+    ctx.upgradeSlotResults = ctx.upgradeSlotResults or {}
+    if ctx.upgradeSlotResults[slotName] ~= nil then return ctx.upgradeSlotResults[slotName] end
+    local candidates = candidatesForUpgrade(ctx.equipmentData)[slotName] or {}
+    local level = EquipmentSystem.getHeroLevel(ctx.heroesData, heroId)
+    local wearable = EquipmentSystem.getWearableTypeSet(heroId, slotName)
+    local weaponTypes = EquipmentSystem.getWearableTypeSet(heroId, "weapon")
+    for _, candidate in ipairs(candidates) do
+        if checkpoint then checkpoint() end
+        local item = candidate.item
+        local types = wearable
+        if slotName == "offhand" and item.slot == "weapon" then types = weaponTypes end
+        -- 只剔除必然拒绝项；主副手同/异类型与自动卸槽仍由权威 evaluator 校验。
+        if (not types or types[item.type]) and EquipmentSystem.checkLevelGate(level, item) then
+            local preview = EquipmentPower.evaluateGain(ctx, candidate.seq, slotName)
+            if preview and preview.valid and preview.gain > 1e-6 then
+                ctx.upgradeSlotResults[slotName] = true
+                return true
             end
         end
     end
-    for seq in pairs(equipData.inventory) do
-        local seqNum = tonumber(seq)
-        if seqNum and not equippedSeqNums[seqNum] then
-            -- 不预判自然槽/职业/等级：副手单手武器与自动卸槽由 evaluator 统一处理。
-            local preview = EquipmentPower.evaluate(ctx, seq, slotName)
-            if preview and preview.valid and preview.gain > 1e-6 then return true end
-        end
-    end
+    ctx.upgradeSlotResults[slotName] = false
     return false
 end
 
 --- 检查指定英雄是否有任意槽位可提升（用于入口链路角标）。
 ---@param heroId number
+---@param checkpoint? fun() 仅异步角标调度传入；旧同步调用保持原返回契约
 ---@return boolean
-function CharacterDetail.hasAnyUpgradeForHero(heroId)
+function CharacterDetail.hasAnyUpgradeForHero(heroId, checkpoint)
     local equipData = PlayerStore.Get("equipment")
     if not equipData then return false end
     local ctx = EquipmentPower.getContext(heroId)
     if not ctx then return false end
     for _, slot in ipairs(DT_SLOTS) do
-        if CharacterDetail._hasUpgradeForSlot(heroId, slot.slot, equipData, ctx) then return true end
+        if CharacterDetail._hasUpgradeForSlot(heroId, slot.slot, equipData, ctx, checkpoint) then return true end
     end
     return false
 end

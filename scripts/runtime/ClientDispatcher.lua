@@ -102,10 +102,12 @@ function ClientDispatcher.getAll()
 end
 
 --- 直接写入模块并通知订阅者（避免 JSON 往返拆表）
+--- 只有已完成初始化的本地运行态推送可跳过读档迁移；导入/恢复仍走默认路径。
 ---@param moduleName string
 ---@param data table
-function ClientDispatcher.set(moduleName, data)
-    if type(data) == "table" then
+---@param options? { normalized: boolean }
+function ClientDispatcher.set(moduleName, data, options)
+    if type(data) == "table" and not (options and options.normalized) then
         ModuleRegistry.applyOnLoad(moduleName, data)
         CharacterSchema.applyOnLoad(moduleName, data)
     end

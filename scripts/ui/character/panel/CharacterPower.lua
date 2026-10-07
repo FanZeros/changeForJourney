@@ -229,36 +229,147 @@ function M.bind(deps)
         })
     end
 
-    local function refreshUpgradeBadgeCache()
-        local ownedSet = get("ownedSet")
-        local upgradeBadgeCache = {}
-        -- 转职已迁到角色详情页签，可转职也计入角色页角标
-        local okChurch, ChurchPage = pcall(require, "ui.church.ChurchPage")
-        local canAdvance = (okChurch and ChurchPage.hasAdvanceForHero) and ChurchPage.hasAdvanceForHero or nil
-        for heroId, _ in pairs(ownedSet) do
-            local advance = canAdvance and canAdvance(heroId) or false
-            if CharacterPanel.isHeroDeployed(heroId) then
-                upgradeBadgeCache[heroId] = CharacterDetail.hasAnyUpgradeForHero(heroId)
-                    or CharacterDetail.hasAwakeningUpgrade(heroId) or advance
-            else
-                upgradeBadgeCache[heroId] = CharacterDetail.hasAwakeningUpgrade(heroId) or advance
+    -- 正式战力立即发布；全库存换装角标允许跨帧，但只提交完整同版本结果。
+    ---@type thread|nil
+    local badgeJob = nil
+    local badgeRevision = ""
+    local completedRevision = ""
+    local completedEquipmentBadges = {}
+    local badgeDeadline, badgeSteps = 0, 0
+    local BADGE_CPU_BUDGET = 0.001
+    local BADGE_MAX_STEPS = 128
+
+    -- 只冻结小规模名册/队孔的战斗字段；在线经验和金币每秒变化不应饿死候选任务。
+    local function appendSignature(parts, value)
+        if type(value) ~= "table" then
+            local text = tostring(value)
+            parts[#parts + 1] = type(value) .. ":" .. #text .. ":" .. text
+            return
+        end
+        local keys = {}
+        for key in pairs(value) do keys[#keys + 1] = key end
+        table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+        parts[#parts + 1] = "{"
+        for _, key in ipairs(keys) do
+            appendSignature(parts, key)
+            appendSignature(parts, value[key])
+        end
+        parts[#parts + 1] = "}"
+    end
+
+    local function badgeVersion()
+        local parts = {}
+        for _, key in ipairs({ "equipment", "artifacts", "talents" }) do
+            parts[#parts + 1] = tostring(PlayerStore.GetRevision(key))
+        end
+        local owned = get("ownedSet") or {}
+        local ids = {}
+        for id in pairs(owned) do ids[#ids + 1] = id end
+        table.sort(ids, function(a, b) return tostring(a) < tostring(b) end)
+        for _, id in ipairs(ids) do
+            local hero = owned[id]
+            appendSignature(parts, id)
+            appendSignature(parts, hero.level)
+            appendSignature(parts, hero.advBranch)
+            appendSignature(parts, hero.awakening)
+            appendSignature(parts, hero.extraTalent)
+            appendSignature(parts, CharacterPanel.isHeroDeployed(id))
+        end
+        for team = 1, TEAM_COUNT or 0 do
+            local teams = get("teams") or {}
+            local slots = (teams[team] or teams[tostring(team)] or {}).slots or {}
+            for slot = 1, MAX_SLOTS do
+                local entry = slots[slot] or {}
+                appendSignature(parts, entry.state)
+                appendSignature(parts, entry.heroId)
             end
         end
-        set("upgradeBadgeCache", upgradeBadgeCache)
-        return upgradeBadgeCache
+        return table.concat(parts, "|")
+    end
+
+    local function badgeCheckpoint()
+        badgeSteps = badgeSteps + 1
+        if badgeSteps >= BADGE_MAX_STEPS or os.clock() >= badgeDeadline then
+            coroutine.yield()
+        end
+    end
+
+    local function buildEquipmentBadges(checkpoint)
+        local result = {}
+        for heroId in pairs(get("ownedSet") or {}) do
+            if checkpoint then checkpoint() end
+            result[heroId] = CharacterPanel.isHeroDeployed(heroId)
+                and CharacterDetail.hasAnyUpgradeForHero(heroId, checkpoint) or false
+        end
+        return result
+    end
+
+    local function publishUpgradeBadges(equipmentBadges)
+        local result, hasUpgrade = {}, false
+        local okChurch, ChurchPage = pcall(require, "ui.church.ChurchPage")
+        local canAdvance = okChurch and ChurchPage.hasAdvanceForHero
+        for heroId in pairs(get("ownedSet") or {}) do
+            local value = equipmentBadges[heroId] or CharacterDetail.hasAwakeningUpgrade(heroId)
+                or (canAdvance and canAdvance(heroId)) or false
+            result[heroId], hasUpgrade = value, hasUpgrade or value
+        end
+        set("upgradeBadgeCache", result)
+        BottomNav.setBadge(1, hasUpgrade)
+        return result
+    end
+
+    -- 显式调用仍同步返回；生产导航通知走下面的预算队列。
+    local function refreshUpgradeBadgeCache()
+        local result = buildEquipmentBadges()
+        if PlayerStore.GetRevision then
+            completedRevision, completedEquipmentBadges = badgeVersion(), result
+            badgeJob, badgeRevision = nil, completedRevision
+        end
+        return publishUpgradeBadges(result)
     end
 
     local function refreshNavBadge()
-        local upgradeBadgeCache = refreshUpgradeBadgeCache()
-        local hasUpgrade = false
-        for _, v in pairs(upgradeBadgeCache) do
-            if v then
-                hasUpgrade = true
-                break
+        if PlayerStore.GetRevision then
+            local revision = badgeVersion()
+            if completedRevision == revision then
+                badgeJob = nil
+            elseif not badgeJob or badgeRevision ~= revision then
+                badgeRevision = revision
+                badgeJob = coroutine.create(function() return buildEquipmentBadges(badgeCheckpoint) end)
+            end
+            -- 金币/碎片只刷新小规模养成条件，不取消仍有效的全库存任务。
+            publishUpgradeBadges(completedEquipmentBadges)
+        else
+            refreshUpgradeBadgeCache()
+        end
+        BottomNav.refreshTownBadge()
+    end
+
+    local function updateBadges()
+        if not badgeJob then return end
+        -- 同引用原地更新也由版本识别；丢弃旧任务，避免混用前后两次装备结果。
+        if badgeRevision ~= badgeVersion() then refreshNavBadge() end
+        if not badgeJob then return end
+        local job = badgeJob
+        badgeSteps, badgeDeadline = 0, os.clock() + BADGE_CPU_BUDGET
+        local ok, result = coroutine.resume(job)
+        if not ok then
+            badgeJob = nil
+            print("[CharacterPower] 角标预算任务失败: " .. tostring(result))
+        elseif coroutine.status(job) == "dead" then
+            badgeJob = nil
+            if badgeRevision == badgeVersion() then
+                completedRevision, completedEquipmentBadges = badgeRevision, result
+                publishUpgradeBadges(result)
             end
         end
-        BottomNav.setBadge(1, hasUpgrade)
-        BottomNav.refreshTownBadge()
+    end
+
+    local function cancelBadgeRefresh()
+        badgeJob, badgeRevision, completedRevision = nil, "", ""
+        completedEquipmentBadges = {}
+        set("upgradeBadgeCache", {})
+        BottomNav.setBadge(1, false)
     end
 
     return {
@@ -270,6 +381,8 @@ function M.bind(deps)
         refreshPowerCache = refreshPowerCache,
         refreshUpgradeBadgeCache = refreshUpgradeBadgeCache,
         refreshNavBadge = refreshNavBadge,
+        updateBadges = updateBadges,
+        cancelBadgeRefresh = cancelBadgeRefresh,
         POWER_SKIP = POWER_SKIP,
     }
 end

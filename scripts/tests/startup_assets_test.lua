@@ -78,7 +78,8 @@ function Start()
         end
         local real = { ["config.ExpTable"] = true, ["config.StageConfig"] = true,
             ["config.HeroAssetUtil"] = true, ["config.MonsterConfig"] = true,
-            ["core.BattleLayout"] = true, ["config.AwakeningConfig"] = true }
+            ["core.BattleLayout"] = true, ["config.AwakeningConfig"] = true,
+            ["ui.battle.combat.BattleCombatAnim"] = true }
         local function environment(mocks, fields)
             local env = setmetatable(fields or {}, { __index = _G })
             env._G, env.time, env.File = env, clock, forbidden

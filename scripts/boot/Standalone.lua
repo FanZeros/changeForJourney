@@ -104,7 +104,7 @@ local postStartFlowDone_ = false  -- [LetterIntro] 开场/离线收益只触发�
 local storyBackfilled_ = false    -- [旧档补播] 已首通关卡的未领情景只补排队一次
 local startFlowBegun_ = false     -- 标题已关，BGM 已起；离线结算可能还在等角色刷新
 local fontNormal = -1
----@type StartupQueue|nil
+---@type table|nil
 local bootQueue_ = nil
 local bootReady_ = false
 

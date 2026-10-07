@@ -319,7 +319,7 @@ local function drawProjectileImage(vg, imgHandle, cx, cy, w, h, angle, alpha)
     if angle ~= 0 then
         nvgRotate(vg, angle)
     end
-    local paint = nvgImagePattern(vg, -w * 0.5, -h * 0.5, w, h, 0, imgHandle, alpha)
+    local paint = nvgImagePattern(vg, -w * 0.5, -h * 0.5, w, h, 0, imgHandle, alpha) --[[@as NVGpaint]]
     nvgBeginPath(vg)
     nvgRect(vg, -w * 0.5, -h * 0.5, w, h)
     nvgFillPaint(vg, paint)
@@ -703,6 +703,7 @@ local function updateAndDrawLightning(proj, vg, t)
     -- 用 nvgImagePattern 重复/拉伸图片
     local paint = nvgImagePattern(vg, -stretchW * 0.5, -cfg.imgH * 0.5,
         stretchW, cfg.imgH, 0, imgHandle, alpha)
+    ---@cast paint NVGpaint
     nvgBeginPath(vg)
     nvgRect(vg, -stretchW * 0.5, -cfg.imgH * 0.5, stretchW, cfg.imgH)
     nvgFillPaint(vg, paint)
@@ -1365,12 +1366,13 @@ end
 ---@param getCardCY function|nil
 function ProjectileSystem.drawStarGates(vg, units, cardCY, getCardCX, isAlly, getCardCY)
     if not vg or not units or not getCardCX then return end
-    local imgHandle = getImage("EF_skill_20")
+    local imgHandle = -1
     for i, unit in ipairs(units) do
         local shouldDraw = unit
             and unit.heroId == 20
             and ((unit.hp and unit.hp > 0) or (unit._starGatePersistsAfterDeath and unit._starGateSummoned))
         if shouldDraw then
+            if imgHandle < 0 then imgHandle = getImage("EF_skill_20") end
             local count = unit._starGateCount or 1
             if count <= 0 then
                 count = require("config.AwakeningConfig").hasNode(unit.awakeningNodes, 6) and 2 or 1

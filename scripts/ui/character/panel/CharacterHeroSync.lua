@@ -14,7 +14,6 @@ function M.bind(deps)
     local get = deps.get
     local set = deps.set
     local buildDefaultSlots = deps.buildDefaultSlots
-    local calcHeroPower = deps.calcHeroPower
     local rebuildRoster = deps.rebuildRoster
     local refreshPowerCache = deps.refreshPowerCache
     local refreshNavBadge = deps.refreshNavBadge
@@ -163,17 +162,14 @@ function M.bind(deps)
             ---@type table
             local cache = teamPowerCaches[t]
             for k in pairs(cache) do cache[k] = nil end
-            local slots = teams[t].slots
-            for i = 1, #slots do
-                if slots[i].state == "occupied" and slots[i].heroId then
-                    cache[i] = calcHeroPower(slots[i].heroId, i)
-                end
-            end
         end
         set("teamSlots", teams[activeTeamIdx].slots)
         set("slotPowerCache", teamPowerCaches[activeTeamIdx])
         set("heroesDataApplied", true)
+        -- 完整缓存先于可能即时读取的编队失效/离线预览回调，且快照已 ready。
+        -- refreshPowerCache 按真实队/槽覆盖名册与三队，无需提前逐队重复计算。
         rebuildRoster()
+        refreshPowerCache()
         -- 只失效编队布局真正变化的队伍：其他行保持战斗进度不重置
         local changed = {}
         local anyChanged = false
@@ -229,8 +225,6 @@ function M.bind(deps)
                 activeTeamIdx, table.concat(teamsInfo, " ")))
         end
 
-        rebuildRoster()
-        refreshPowerCache()
         refreshNavBadge()
         return changed
     end

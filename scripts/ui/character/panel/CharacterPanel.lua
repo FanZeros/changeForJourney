@@ -587,9 +587,11 @@ function CharacterPanel.init(vg)
     ClientDispatcher.subscribe("heroes", function()
         local heroesData = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
         if heroesData then
+            -- setHeroesData 已完成名册和三队最终缓存；无数据通知仍保留刷新。
             CharacterPanel.setHeroesData(heroesData)
+        else
+            refreshPowerCache()
         end
-        refreshPowerCache()
         CharacterPanel.refreshDefaultSceneForHeroes()
     end)
 

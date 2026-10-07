@@ -214,7 +214,7 @@ local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
     if img < 0 or alpha <= 0.01 then return end
     local x = cx - w * 0.5
     local y = cy - h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
+    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha) --[[@as NVGpaint]]
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
@@ -286,6 +286,7 @@ local function drawNineSlice(vg, img, dx, dy, dw, dh, iTop, iRight, iBottom, iLe
 
     if sMW <= 0 or sMH <= 0 then
         local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, img, 1.0)
+        ---@cast paint NVGpaint
         nvgBeginPath(vg)
         nvgRect(vg, dx, dy, dw, dh)
         nvgFillPaint(vg, paint)
@@ -327,12 +328,13 @@ local function drawNineSlice(vg, img, dx, dy, dw, dh, iTop, iRight, iBottom, iLe
         if pw > 0 and ph > 0 and sw > 0 and sh > 0 then
             local scaleX = pw / sw
             local scaleY = ph / sh
+            ---@type NVGpaint
             local paint = nvgImagePattern(vg,
                 px - sx * scaleX,
                 py - sy * scaleY,
                 srcW * scaleX,
                 srcH * scaleY,
-                0, img, 1.0)
+                0, img, 1.0) --[[@as NVGpaint]]
             nvgBeginPath(vg)
             nvgRect(vg, px, py, pw, ph)
             nvgFillPaint(vg, paint)
@@ -423,6 +425,7 @@ local townVg_ = nil
 local townImgsLoaded_ = false
 
 function TownScene.init(vg)
+    if townVg_ ~= vg then townImgsLoaded_ = false end
     townVg_ = vg
 end
 
@@ -457,6 +460,11 @@ local function ensureTownImages(vg)
     imgIconMarket  = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_SC.png", 0)
     imgIconUp      = nvgCreateImage(ctx, "image/通用图标/ICON_UP.png", 0)
     imgLock        = nvgCreateImage(ctx, "image/通用图标/UI_ICON_SUO.png", 0)
+end
+
+--- 启动队列内预热；与绘制共用幂等加载，不让第一帧城镇集中解码。
+function TownScene.preload(vg)
+    ensureTownImages(vg)
 end
 
 function TownScene.draw(vg)

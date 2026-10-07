@@ -56,9 +56,15 @@ function BattleDraw.setContext(context)
 end
 
 local directCards = { hero = {}, monster = {} }
+---@type any
+local directCardVg = nil
 
 --- 分帧队列没完成时，按场上单位直接读本地卡面。
 local function cardImage(vg, unit)
+    if directCardVg ~= vg then
+        directCardVg = vg
+        directCards = { hero = {}, monster = {} }
+    end
     if unit.heroId then
         local cached = imgCtx.imgHeroCards and imgCtx.imgHeroCards[unit.heroId]
         if cached and cached >= 0 then return cached end
@@ -81,6 +87,11 @@ local function cardImage(vg, unit)
         return direct
     end
     return -1
+end
+
+--- 首屏在场卡牌预热。保留共享分帧队列，未在场大图仍由原后台路径加载。
+function BattleDraw.preloadCards(vg, units)
+    for _, unit in ipairs(units) do cardImage(vg, unit) end
 end
 
 -- ======================== 工具绘制函数 ========================

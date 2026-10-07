@@ -12,6 +12,19 @@
 - 正式main150帧boot18/18、Lua／资源0、缺图0；rawFAIL/exit1仅4环境尖峰，不称性能／GPU截图／逐语视觉／手机或审美验收。前期资源根、API、锁队、重新open动画夹具失败均保留，最终只补边界／墙钟不改生产门禁。36规范单测真实过，候选20旧问题／新增0，不称全仓清零。
 - 持续推进已授权任务，尊重本轮直接继续不再提问与停止／权限边界；独立ref/index保护共享工作树／历史双方三记忆。只正常push教程分支，不推workspace系列／强推／自动合并发布；凭据不进源码／配置／remote／日志／记忆，公开凭据应撤销轮换。
 
+
+## 启动卡顿优化 PR 交接（2026-10-07）
+
+- 独立功能提交 `69f126b2`，分支 `perf1007/startup-stutter`，已经基于目标最新 `workspace1005@56cfbd3c`，其中保留PR113/114/115既有代码。PR尚未创建；即时查重同源PR为空。本轮允许推送任务分支并开PR，不推workspace系列、不强推、不自动合并。
+- 源码提交25路径：本轮启动队列、图片预热与冷缓存按需、按需音频、英雄通知计算去重、四套专项和交接记忆；上游同分支教程/副本增量作为远端base ancestry保留。唯一战斗页冲突已合并PR114真实教程热点与本轮预热。StartupAssets额外单测白名单BattleCombatAnim。
+- 最终56cf合并树的官方b14构建成功，根`scripts`共573个Lua；相对目标改动的17个Lua与dist UUID-hash部署载荷17/17逐字节一致。构建LSP子daemon以code1退出，Build跳过全仓LSP gate；17个本轮Lua逐文件severity1诊断均为0，但不据此声称全仓清零。`DungeonConfig.lua`两处nilable `integer?`参数不匹配为目标附近既有/上游诊断，本轮未改。纹理压缩81条1080×2400超2048警告保留。
+- 最新树Startup Queue34、音频762、英雄同步396、首屏资源74、新手业务入口17/474、Horizon199/1334、DungeonGuide6183、招募5159、Focused引导5312，以及battle-card14、stage-switch、manager58、recovery69、layout60、flow66等通过。资源视觉测试仍fail：16组38675项中10fail（ExpeditionOverview隔离mock未更新+1项旧掉落定值不适配PR115后的成长数据），未修改外部测试/生产。
+- 严格区分实测版本：性能四轮A/B为临时目标5fca1d82的ec8fa4ca探针；最新56cfPR115合入后又增PR114教程页调用与新资源。故先前标题 Update 448→167ms、最大解码42→2等不能算最新PR目标复测。PR说明披露测量与合入目标差别、标题等待5→118/119帧及软件环境battle后段尖峰。
+- 旧5fca基线上的b11构建对源码SHA与部署载荷17/17逐字节一致；当时主入口enter复测19步、三名starter、180个battle Update和181个Render、异常0。此证据不是56cf合并树的最终构建；项目配置已还原，验证证据只在`.git/validation/startup1007`不提交。
+- 源码提交含有面向宿主VG的图片创建wrapper预算检查、startup coroutine按软时限让出及图片/声音缓存错位到后续场景首次使用；单图解码、CPU初始化和音效首次播放仍同步。`StartupQueue`通过实际新建VG恢复预载标记，但本PR未证明整个宿主VM完整Stop→Start皆可重启。音频入口首次播放可能在游戏内产生延迟尖峰，已保留为可测边界。
+- 后续有待实机观察首屏标题解锁需约101帧（不同探针运行出现118/119帧）；所测同版标题Update和单回调解码只来自软件headless探针。首场负载指标没有随合入PR114/115后的最终树重测；战斗后段软件Update/Render峰曾升高，本PR不能宣称整体卡顿解决。
+- 离线批量奖励、遗匣装备实例化与序列化/持久化没有在本轮修改或探针中测量，后续若玩家报告进入游戏后仍卡，先区分标题启动、进入首场、离线结算及遗匣生成路径再分析。
+- 用户在聊天中曾显式提供仓库PAT，凭据不得复述或写入提交；应立即撤销/轮换。PR若创建成功，再补写真实PR号/URL和远端SHA。
 ## 图片与 Spine 暗黑特效续作（2026-10-07）
 
 - 已正常push59文件提交24e9c2d042e2b648a5b31dbddda5d798a76ea521，push/ls-remote exit0远端SHA一致，不推workspace1005。新正式PR #112：https://github.com/FanZeros/changeForJourney/pull/112，head=feat1005/team-power-dark-effects-20261006、base=workspace1005，open/draft=false/merged=false，mergeable未计算，不称CI通过或已合并。最终本会话官方b7/566根Lua，11Lua+21资源32/32实际载荷bytes/size一致，临时dark probe/meta/validation0；旧shield_probe基线保留。Rich3081/0、FailedLoad69/0、native92/0、mock2784/0与联合1145/host165/Card17/Result51全部exit0。12真实最终样片和main两次150均Lua/资源0，但raw软件尖峰仍FAIL；原3/4/9基线旧测试失败与36规范单测及20旧meta问题完整披露于PR，未夹并行教程或.project。

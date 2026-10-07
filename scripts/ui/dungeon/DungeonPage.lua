@@ -1176,9 +1176,10 @@ function DungeonPage.handleInput(dx, dy)
                     )
                 else
                     print("[DungeonPage] sending DUNGEON_SWEEP dungeon=" .. dId .. " floor=" .. (currentFloor - 1))
+                    local teamIdx = detailTeamIdx or require("ui.character.panel.CharacterPanel").getActiveTeamIdx()
                     require("runtime.GameAction").sendAction(
                         Protocol.ACTION_TYPES.DUNGEON_SWEEP,
-                        { dungeonId = dId }
+                        { dungeonId = dId, teamIdx = teamIdx }
                     )
                 end
             end

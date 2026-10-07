@@ -230,12 +230,12 @@ local function randomScrollType()
     return SCROLL_TYPES[math.random(1, #SCROLL_TYPES)]
 end
 
---- 扫荡券掉落。约为卷轴掉率的 4 倍，大约每 5 只怪 1 张。
+--- 扫荡券掉落。为卷轴掉率的 2 倍（原为 4 倍，掉得过多）。
 ---@param stageEntry table|nil
 ---@return boolean
 function DropSystem.rollSweepTicket(stageEntry)
     local scrollRate = stageEntry and stageEntry.scrollDropRate or 0.05
-    local rate = math.min(0.35, math.max(0.12, scrollRate * 4))
+    local rate = math.min(0.20, math.max(0.06, scrollRate * 2))
     return math.random() <= rate
 end
 

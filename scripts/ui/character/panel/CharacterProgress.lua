@@ -31,7 +31,21 @@ function M.bind(deps)
             and value ~= math.huge and value ~= -math.huge
     end
 
-    local function addHeroExp(heroId, amount)
+    local function refreshExpProgress(levelChanged)
+        if levelChanged or not syncRosterExpFromOwned then
+            -- 等级/共鸣影响排序、装备门槛和正式战力，保持原完整刷新与外层通知。
+            -- 旧独立 bind 调用未提供轻量出口时仍保留完整刷新契约。
+            rebuildRoster()
+            refreshPowerCache()
+            refreshNavBadge()
+        else
+            -- 纯经验变化只更新现有显示快照；不创建属性上下文、不重排、不重开战斗。
+            syncRosterExpFromOwned()
+        end
+    end
+
+    -- 单次入账仍按原顺序校验、升级、共鸣、同步槽位与持久化；只将显示刷新移到出口。
+    local function applyHeroExp(heroId, amount)
         local ownedSet = get("ownedSet")
         local ownData = ownedSet[heroId]
         if not ownData or not isFinite(amount) or amount <= 0 then return false end
@@ -96,17 +110,33 @@ function M.bind(deps)
                 break
             end
         end
-        if levelChanged or not syncRosterExpFromOwned then
-            -- 等级/共鸣影响排序、装备门槛和正式战力，保持原完整刷新与外层通知。
-            -- 旧独立 bind 调用未提供轻量出口时仍保留完整刷新契约。
-            rebuildRoster()
-            refreshPowerCache()
-            refreshNavBadge()
-        else
-            -- 纯经验变化只更新现有显示快照；不创建属性上下文、不重排、不重开战斗。
-            syncRosterExpFromOwned()
+        return true, levelChanged
+    end
+
+    local function addHeroExp(heroId, amount)
+        local result, levelChanged = applyHeroExp(heroId, amount)
+        if result then refreshExpProgress(levelChanged) end
+        return result, levelChanged
+    end
+
+    -- 顺序处理每个条目，不去重：同一英雄出现两次仍获得两次经验。
+    -- 部分条目无效不回滚已成功入账；有效批次只在收尾刷新一次。
+    ---@return boolean added 至少一个条目通过原单英雄入账
+    ---@return boolean levelChanged 任一入账或共鸣改变了名册等级
+    local function addHeroesExp(heroIds, amount)
+        if type(heroIds) ~= "table" or not isFinite(amount) or amount <= 0 then
+            return false, false
         end
-        return true
+        local added, levelChanged = false, false
+        for _, heroId in ipairs(heroIds) do
+            local result, changed = applyHeroExp(heroId, amount)
+            if result then
+                added = true
+                levelChanged = levelChanged or changed
+            end
+        end
+        if added then refreshExpProgress(levelChanged) end
+        return added, levelChanged
     end
 
     local function syncSlotLevel(heroId, newLevel)
@@ -157,6 +187,7 @@ function M.bind(deps)
 
     return {
         addHeroExp = addHeroExp,
+        addHeroesExp = addHeroesExp,
         syncSlotLevel = syncSlotLevel,
         setHeroAdvBranch = setHeroAdvBranch,
         resetHeroAdvBranch = resetHeroAdvBranch,

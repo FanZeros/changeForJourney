@@ -17,6 +17,49 @@ function M.bind(deps)
     local rebuildRoster = deps.rebuildRoster
     local refreshPowerCache = deps.refreshPowerCache
     local refreshNavBadge = deps.refreshNavBadge
+    ---@type table|nil
+    local lastPowerState = nil
+    ---@type table|nil
+    local lastShards = nil
+
+    local function copy(value)
+        if type(value) ~= "table" then return value end
+        local result = {}
+        for key, item in pairs(value) do result[key] = copy(item) end
+        return result
+    end
+
+    local function same(a, b)
+        if type(a) ~= type(b) then return false end
+        if type(a) ~= "table" then return a == b end
+        for key, value in pairs(a) do if not same(value, b[key]) then return false end end
+        for key in pairs(b) do if a[key] == nil then return false end end
+        return true
+    end
+
+    local function powerState()
+        local state = { owned = {}, teams = {} }
+        for id, own in pairs(get("ownedSet") or {}) do
+            state.owned[id] = { level = own.level, advBranch = copy(own.advBranch),
+                awakening = copy(own.awakening), extraTalent = copy(own.extraTalent) }
+        end
+        local teams = get("teams")
+        for t = 1, TEAM_COUNT do
+            local ids, slots = {}, teams[t] and teams[t].slots or {}
+            for i = 1, MAX_SLOTS do
+                local slot = slots[i]
+                ids[i] = slot and slot.state == "occupied" and slot.heroId or 0
+            end
+            state.teams[t] = ids
+        end
+        return state
+    end
+
+    -- 冻结的是最后完成评分的值，不能拿乐观改过的编队或共享分支引用作门禁。
+    local function rememberState()
+        lastPowerState = powerState()
+        lastShards = copy(get("shardMap") or {})
+    end
 
     local function setHeroesData(data)
         if not data then return end
@@ -33,7 +76,7 @@ function M.bind(deps)
                     local s = slots[i]
                     ids[i] = (s and s.state == "occupied" and s.heroId) or 0
                 end
-                prevLayout[t] = ids
+                prevLayout[t] = lastPowerState and lastPowerState.teams[t] or ids
             end
         end
 
@@ -52,6 +95,8 @@ function M.bind(deps)
                 deployedStr, rosterCount))
         end
 
+        local previousOwned = get("ownedSet") or {}
+        local expChanged = false
         local ownedSet = {}
         local shardMap = {}
         if data.roster then
@@ -76,6 +121,13 @@ function M.bind(deps)
                         extraTalent = ExtraTalentSystem.normalize(heroData.extraTalent),
                     }
                 end
+            end
+        end
+        for id, own in pairs(ownedSet) do
+            local previous = previousOwned[id]
+            if not previous or previous.exp ~= own.exp or previous.maxExp ~= own.maxExp then
+                expChanged = true
+                break
             end
         end
         set("ownedSet", ownedSet)
@@ -124,14 +176,31 @@ function M.bind(deps)
             return slots
         end
 
+        local function applySlots(previous, slots)
+            if #previous ~= #slots then return slots end
+            for i, slot in ipairs(slots) do
+                local old = previous[i]
+                if not old or old.state ~= slot.state or old.heroId ~= slot.heroId then return slots end
+            end
+            -- 身份不变只同步经验/等级，保留头像手势与现有槽位引用。
+            for i, slot in ipairs(slots) do
+                local old = previous[i]
+                old.level, old.exp, old.maxExp = slot.level, slot.exp, slot.maxExp
+            end
+            return previous
+        end
         if data.deployed then
-            teams[1].slots = buildSlotsFromIds(data.deployed)
+            local previous = teams[1].slots
+            local slots = buildSlotsFromIds(data.deployed)
+            teams[1].slots = applySlots(previous, slots)
         end
         if data.teams and type(data.teams) == "table" then
             for t = 2, TEAM_COUNT do
                 local tdata = data.teams[t]
                 if type(tdata) == "table" and type(tdata.slots) == "table" then
-                    teams[t].slots = buildSlotsFromIds(tdata.slots)
+                    local previous = teams[t].slots
+                    local slots = buildSlotsFromIds(tdata.slots)
+                    teams[t].slots = applySlots(previous, slots)
                 end
             end
         end
@@ -158,18 +227,36 @@ function M.bind(deps)
 
         local teamPowerCaches = get("teamPowerCaches")
         local activeTeamIdx = get("activeTeamIdx")
-        for t = 1, TEAM_COUNT do
-            ---@type table
-            local cache = teamPowerCaches[t]
-            for k in pairs(cache) do cache[k] = nil end
-        end
+        local powerChanged = not get("heroesDataApplied") or not same(lastPowerState, powerState())
+        local shardsChanged = not same(lastShards, shardMap)
         set("teamSlots", teams[activeTeamIdx].slots)
         set("slotPowerCache", teamPowerCaches[activeTeamIdx])
         set("heroesDataApplied", true)
+        local function refreshOfflinePreview()
+            local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
+            if OfflineRewardPanel.isOpen() and OfflineRewardPanel.refreshHeroPreview then
+                local OfflineService = require("rules.offline.OfflineService")
+                local preview = OfflineService.RebuildHeroPreview and OfflineService.RebuildHeroPreview(1)
+                if preview then OfflineRewardPanel.refreshHeroPreview(preview) end
+            end
+        end
+        if not powerChanged then
+            -- 经验/碎片只更新原名册显示，不失效装备模拟，不重算全队战力。
+            local roster = get("heroRoster") or {}
+            for _, entry in ipairs(roster) do
+                local own = ownedSet[entry.heroId]
+                if own then entry.exp, entry.maxExp = own.exp, own.maxExp end
+                entry.shards = shardMap[entry.heroId] or 0
+            end
+            if shardsChanged then refreshNavBadge() end
+            if expChanged then refreshOfflinePreview() end
+            lastShards = copy(shardMap)
+            return {}, false
+        end
         -- 完整缓存先于可能即时读取的编队失效/离线预览回调，且快照已 ready。
-        -- refreshPowerCache 按真实队/槽覆盖名册与三队，无需提前逐队重复计算。
         rebuildRoster()
         refreshPowerCache()
+        rememberState()
         -- 只失效编队布局真正变化的队伍：其他行保持战斗进度不重置
         local changed = {}
         local anyChanged = false
@@ -202,14 +289,7 @@ function M.bind(deps)
                 print("[CharacterHeroSync] 编队布局未变化，战斗不重置")
             end
         end
-        local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
-        if OfflineRewardPanel.isOpen() and OfflineRewardPanel.refreshHeroPreview then
-            local OfflineService = require("rules.offline.OfflineService")
-            local preview = OfflineService.RebuildHeroPreview and OfflineService.RebuildHeroPreview(1)
-            if preview then
-                OfflineRewardPanel.refreshHeroPreview(preview)
-            end
-        end
+        refreshOfflinePreview()
 
         do
             local teamsInfo = {}
@@ -226,10 +306,11 @@ function M.bind(deps)
         end
 
         refreshNavBadge()
-        return changed
+        return changed, true
     end
 
     local function resetSessionData()
+        lastPowerState, lastShards = nil, nil
         local teams = get("teams")
         local teamPowerCaches = get("teamPowerCaches")
         for t = 1, TEAM_COUNT do
@@ -267,6 +348,7 @@ function M.bind(deps)
     return {
         setHeroesData = setHeroesData,
         resetSessionData = resetSessionData,
+        rememberState = rememberState,
     }
 end
 

@@ -31,6 +31,8 @@ local function fixture()
     local counts = { rebuild = 0, refresh = 0, calc = 0, context = 0, invalidations = 0, nav = 0,
         fullContext = 0, wornContext = 0, wornBatch = 0, hydrate = 0 }
     local trace, notifications, legacy, invalidated, progress, observations = {}, {}, {}, {}, {}, {}
+    -- 重复/纯exp通知不发布新快照；保留实际事件的最后值作完整缓存对照。
+    local latestSnapshot = {}
     local modules, stored, subscriptions = {}, {}, {}
     local loaded, loading = {}, {}
     local clock = 1700000000
@@ -40,6 +42,7 @@ local function fixture()
     local powerApi
     ---@type table
     local drawContext
+    local inputContext = {}
     ---@type table
     local detailContext
     local offlineOpen = false
@@ -104,8 +107,11 @@ local function fixture()
         setContext = function(value) drawContext = value end,
         initImages = noop, getSharedImages = function() return {} end,
     }
-    mocks["ui.character.panel.CharacterDeploy"] = { bind = function() return {} end }
-    mocks["ui.character.panel.CharacterInput"] = { bind = function() return {} end }
+    mocks["ui.character.panel.CharacterInput"] = {
+        bind = function(deps) inputContext = deps; return { handleInput = noop } end,
+    }
+    mocks["systems.GameSFX"] = { play = noop }
+    mocks["systems.TutorialManager"] = { notifyHeroDeployed = noop }
     mocks["ui.character.panel.CharacterProgress"] = { bind = function() return {} end }
     mocks["ui.church.talent.TalentStarMap"] = {
         -- 外围UI只提供明确的静态节点文字，真实解析/估值仍执行TalentEffect/CombatPower。
@@ -158,6 +164,7 @@ local function fixture()
     local realNames = {
         ["ui.character.panel.CharacterPanel"] = true,
         ["ui.character.panel.CharacterHeroSync"] = true,
+        ["ui.character.panel.CharacterDeploy"] = true,
         ["ui.character.panel.CharacterPower"] = true,
         ["ui.character.panel.CharacterRosterSort"] = true,
         ["rules.offline.OfflineService"] = true,
@@ -282,6 +289,7 @@ local function fixture()
     panel = env.require("ui.character.panel.CharacterPanel")
     local bus, events = env.require("core.EventBus"), env.require("config.GameEvents")
     bus.on(events.TEAM_POWER_CHANGED, function(value)
+        latestSnapshot = copy(value)
         notifications[#notifications + 1] = copy(value)
         record("team-event")
         snapshot("team-event")
@@ -303,12 +311,16 @@ local function fixture()
     return {
         panel = panel, load = env.require, counts = counts, reset = resetCounts, apply = apply,
         openOffline = function(value) offlineOpen = value end,
+        deploy = function(heroId, slot)
+            panel.handleInput(0, 0) -- 仅bind，外围输入不触发；部署执行真实CharacterDeploy。
+            return inputContext.deployHeroToSlot(heroId, slot)
+        end,
         modules = modules, stored = stored,
         data = function()
             return { trace = trace, events = notifications, legacy = legacy, invalidated = invalidated,
                 progress = progress, observations = observations, preview = offlinePreview,
                 roster = drawContext.getHeroRoster(), rosterPower = drawContext.getRosterPowerCache(),
-                detail = detailContext, power = powerApi, gamePower = gamePower }
+                detail = detailContext, power = powerApi, gamePower = gamePower, snapshot = latestSnapshot }
         end,
     }
 end
@@ -319,6 +331,7 @@ local function heroes()
         roster[tostring(id)] = { level = 60 + id, exp = id, shards = id * 2,
             awakening = {}, extraTalent = {} }
     end
+    roster["4"].advBranch = { first = 101 }
     roster["25"] = { shards = 9 }
     return { roster = roster, deployed = { 1, 0, 2, 0 }, teams = {
         { slots = { 1, 0, 2, 0 } }, { slots = { 0, 3, 0, 4 } }, { slots = { 5, 0, 0, 0 } },
@@ -351,10 +364,10 @@ local function rosterCheck(f, label)
     check(lastDeployed < firstReserve, label .. " 三队出战均排未出战英雄之前")
 end
 
-local function finalCheck(f, label)
+local function finalCheck(f, label, unchanged)
     local data, cp = f.data(), f.panel
     check(cp.isHeroesDataApplied(), label .. " ready=true")
-    local snapshot = data.events[#data.events]
+    local snapshot = unchanged and not baseline and data.snapshot or data.events[#data.events]
     check(snapshot and snapshot.ready == true, label .. " 最终战力快照ready=true")
     for team = 1, 3 do
         local slots, powers = cp.getTeamSlotsData(team)
@@ -381,27 +394,29 @@ local function finalCheck(f, label)
     end
 end
 
-local function countsCheck(f, label, deployed, viaSubscription)
+local function countsCheck(f, label, deployed, viaSubscription, unchanged)
     local count, data = copy(f.counts), f.data()
+    local skipped = unchanged and not baseline
+    local refreshCount = skipped and 0 or 1
     print(string.format("%s COUNTS mode=%s case=%s rebuild=%d refresh=%d calc=%d context=%d invalidate=%d events=%d",
         TAG, baseline and "baseline" or "optimized", label, count.rebuild, count.refresh,
         count.calc, count.context, count.invalidations, #data.events))
     local ownedCount = 0
     for _, entry in ipairs(data.roster) do if entry.owned then ownedCount = ownedCount + 1 end end
-    check(count.rebuild == (baseline and 2 or 1), label .. " 精确rebuild次数")
-    check(count.refresh == 1, label .. " Sync精确refresh次数")
-    check(count.invalidations == ((baseline and viaSubscription) and 2 or 1), label .. " 实际Power刷新/失效次数")
-    check(#data.events == ((baseline and viaSubscription) and 2 or 1), label .. " 完整快照仅最终发布一次")
+    check(count.rebuild == (baseline and 2 or refreshCount), label .. " 精确rebuild次数")
+    check(count.refresh == refreshCount, label .. " Sync精确refresh次数")
+    check(count.invalidations == ((baseline and viaSubscription) and 2 or refreshCount), label .. " 实际Power刷新/失效次数")
+    check(#data.events == ((baseline and viaSubscription) and 2 or refreshCount), label .. " 完整快照仅必要时最终发布一次")
     -- 名册重建只做视图排序，正式Power同轮一次按heroId/真实神器队槽评分，不重复调用公开calc。
     check(count.calc == (baseline and (deployed + ownedCount * 2) or 0), label .. " 直接calc精确次数")
     check(count.context == (baseline and (deployed + ownedCount * (viaSubscription and 4 or 3))
-        or ownedCount), label .. " 真实EquipmentPower上下文精确次数")
+        or ownedCount * refreshCount), label .. " 真实EquipmentPower上下文精确次数")
     local business = {}
     for _, kind in ipairs(data.trace) do
         if kind == "invalidate" or kind == "offline-service" or kind == "offline-panel"
             or kind == "nav" or kind == "progress" then business[#business + 1] = kind end
     end
-    if not baseline then
+    if not baseline and not skipped then
         ---@type number|nil
         local eventIndex = nil
         ---@type number|nil
@@ -674,6 +689,7 @@ function Start()
         f.modules.talents = { litNodes = {} }
         local pending = f.load("rules.offline.OfflineService").CalcOnEnter(1)
         check(pending ~= nil, "真实离线Service建立隔离pending")
+        check(not cp.isHeroesDataApplied(), "首份英雄通知前保持ready=false")
         f.openOffline(true)
         f.reset()
         local changed = f.apply(input)
@@ -704,11 +720,41 @@ function Start()
             "缺省名册战力取真实队2槽4神器")
 
         f.reset()
+        local duplicate = f.apply(copy(input))
+        countsCheck(f, "direct-identical", 5, false, true)
+        check(baseline or (same(duplicate, {}) and #f.data().trace == 0),
+            "逐值相同的新table直接通知不重复业务回调")
+        finalCheck(f, "direct-identical", true)
+
+        f.reset()
         f.apply(input, true)
-        countsCheck(f, "subscription-identical", 5, true)
+        countsCheck(f, "subscription-identical", 5, true, true)
         check(#f.data().invalidated == 0 and #f.data().progress == 0,
             "相同数据订阅不失效布局或养成")
-        finalCheck(f, "subscription-identical-active3")
+        finalCheck(f, "subscription-identical-active3", true)
+
+        local stableRoster, stablePower = f.data().roster, f.data().rosterPower
+        local stableSlots, stableSlotPower = cp.getTeamSlotsData(2)
+        local stableSlot = stableSlots[4]
+        local expInput = copy(input)
+        expInput.roster["4"].exp = expInput.roster["4"].exp + 1
+        f.reset()
+        f.apply(expInput, true)
+        local expBusiness = countsCheck(f, "subscription-exp-only", 5, true, true)
+        local updatedSlots, updatedSlotPower = cp.getTeamSlotsData(2)
+        local rosterExp
+        for _, entry in ipairs(f.data().roster) do if entry.heroId == 4 then rosterExp = entry.exp end end
+        check(cp.getOwnedHero(4).exp == expInput.roster["4"].exp
+            and updatedSlots[4].exp == expInput.roster["4"].exp and rosterExp == expInput.roster["4"].exp,
+            "纯exp通知更新拥有/槽位/名册经验")
+        check(baseline or (f.data().roster == stableRoster and f.data().rosterPower == stablePower
+            and updatedSlots == stableSlots and updatedSlots[4] == stableSlot and updatedSlotPower == stableSlotPower),
+            "纯exp通知保留名册/槽数组/槽对象/战力cache引用")
+        check(baseline or (same(expBusiness, { "offline-service", "offline-panel" })
+            and #f.data().invalidated == 0 and #f.data().progress == 0),
+            "纯exp只更新实际离线预览，不重开战斗或养成")
+        finalCheck(f, "subscription-exp-only", true)
+        input = expInput
 
         input.roster["4"].level = 90
         f.reset()
@@ -719,6 +765,17 @@ function Start()
         check(same(f.data().progress[1].classes, {}), "等级成长不触发职业重建")
         check(growthBusiness[#growthBusiness] == "progress", "养成刷新仍最后执行业务回调")
         finalCheck(f, "subscription-growth")
+
+        check(cp.getOwnedHero(4).advBranch == input.roster["4"].advBranch,
+            "原地分支夹具确实与拥有数据共享同一表")
+        input.roster["4"].advBranch.first = 102
+        f.reset()
+        f.apply(input, true)
+        countsCheck(f, "subscription-branch-in-place", 5, true)
+        check(#f.data().invalidated == 0 and same(f.data().progress[1].teams, { 2 })
+            and f.data().progress[1].classes[2] == true,
+            "原地分支修改仍刷新队2职业，不被共享引用吞掉")
+        finalCheck(f, "subscription-branch-in-place")
 
         input.teams[2].slots, input.teams[3].slots = { 0, 5, 0, 4 }, { 3, 0, 0, 0 }
         f.reset()
@@ -732,11 +789,11 @@ function Start()
         input.teams[2].slots, input.teams[3].slots = { 1, 5, 0, 4 }, { 3, 9999, 0, 0 }
         f.reset()
         f.apply(input, true)
-        countsCheck(f, "subscription-dedup", 5, true)
+        countsCheck(f, "subscription-dedup", 5, true, true)
         check(same(cp.getTeamSlotLayout(2), { 0, 5, 0, 4 })
             and same(cp.getTeamSlotLayout(3), { 3, 0, 0, 0 }), "重复/未拥有脏槽按原规则清空")
         check(#f.data().invalidated == 0, "去重后有效布局未变不重置")
-        finalCheck(f, "subscription-dedup")
+        finalCheck(f, "subscription-dedup", true)
 
         input.teams[2].slots = { 0, 0, 0, 0 }
         f.reset()
@@ -748,8 +805,8 @@ function Start()
 
         f.reset()
         f.apply(input, true, true)
-        countsCheck(f, "subscription-store-fallback", 3, true)
-        finalCheck(f, "subscription-store-fallback")
+        countsCheck(f, "subscription-store-fallback", 3, true, true)
+        finalCheck(f, "subscription-store-fallback", true)
 
         f.reset()
         f.apply(nil)
@@ -770,6 +827,44 @@ function Start()
         f.apply(heroes(), true)
         countsCheck(f, "subscription-after-reset", 5, true)
         finalCheck(f, "subscription-after-reset")
+        if not baseline then
+            -- 一条真实同步部署链：成功回执、重复回执、失败回滚与无宿主兜底。
+            f.openOffline(false)
+            local authoritative = heroes()
+            cp.setOnTeamChanged(function()
+                authoritative.deployed = cp.getTeamSlotLayout(1)
+                for team = 1, 3 do authoritative.teams[team].slots = cp.getTeamSlotLayout(team) end
+                f.apply(authoritative, true)
+                return true
+            end, true)
+            f.reset()
+            check(f.deploy(8, 4), "真实部署发起同步单机回执")
+            countsCheck(f, "deploy-sync-success", 6, true)
+            check(cp.getTeamSlotLayout(1)[4] == 8 and same(f.data().invalidated, { { [1] = true } }),
+                "同步回执只算一次且冻结布局仍失效真正变化的队1")
+            finalCheck(f, "deploy-sync-success")
+            f.reset()
+            f.apply(authoritative, true)
+            countsCheck(f, "deploy-sync-repeat", 6, true, true)
+            finalCheck(f, "deploy-sync-repeat", true)
+            local beforeRollback = copy(f.data().snapshot)
+            cp.setOnTeamChanged(function() f.apply(authoritative, true); return true end, true)
+            f.reset()
+            check(f.deploy(3, 2), "真实跨队部署发起失败回滚回执")
+            countsCheck(f, "deploy-sync-rollback", 6, true, true)
+            check(same(f.data().snapshot, beforeRollback) and cp.getTeamSlotLayout(1)[2] == 0
+                and cp.getTeamSlotLayout(2)[2] == 3 and #f.data().invalidated == 0
+                and #f.data().progress == 0, "失败回滚不清战力缓存、不改变最终编队或重开战斗")
+            finalCheck(f, "deploy-sync-rollback", true)
+            cp.setOnTeamChanged(nil)
+            f.reset()
+            check(f.deploy(3, 2), "无回调宿主仍可真实部署")
+            check(f.counts.invalidations == 1 and f.counts.context == 6 and #f.data().events == 1,
+                "无回调宿主仅一次完整刷新，不丢本地兜底")
+            print(string.format("%s DEPLOY_COUNTS fallback refresh=%d context=%d events=%d",
+                TAG, f.counts.invalidations, f.counts.context, #f.data().events))
+            finalCheck(f, "deploy-no-callback")
+        end
         check(require == oldRequire and File == oldFile, "全局require/File保持，完全隔离真实档")
         if not baseline then wornContextChecks() end
     end)

@@ -24,6 +24,13 @@ function M.bind(deps)
     local rebuildRoster = deps.rebuildRoster
     local refreshPowerCache = deps.refreshPowerCache
     local refreshNavBadge = deps.refreshNavBadge
+    local commitTeamChange = deps.commitTeamChange or function(teamIdx, otherTeamIdx)
+        rebuildRoster()
+        refreshPowerCache()
+        refreshNavBadge()
+        local cb = getOnTeamChanged()
+        if cb then cb(teamIdx, otherTeamIdx) end
+    end
     local isHeroDeployed = deps.isHeroDeployed
     local isInScrollArea = deps.isInScrollArea
     local clampScroll = deps.clampScroll
@@ -165,7 +172,6 @@ function M.bind(deps)
         local teamSlots = getTeamSlots()
         local slotPowerCache = getSlotPowerCache()
         local activeTeamIdx = getActiveTeamIdx()
-        local onTeamChangedCallback = getOnTeamChanged()
 
         if press.kind and (press.canceled or press.consumed) then
             finishPress()
@@ -184,11 +190,8 @@ function M.bind(deps)
                 local srcTeam = dragState.fromTeam or activeTeamIdx
                 local srcIdx = dragState.fromSlot
                 local teams = getTeams()
-                local powerCaches = getTeamPowerCaches()
                 local srcSlots = teams[srcTeam] and teams[srcTeam].slots
                 local dstSlots = teams[dropTeam] and teams[dropTeam].slots
-                local srcCache = powerCaches[srcTeam]
-                local dstCache = powerCaches[dropTeam]
                 local dstSlot = dstSlots and dstSlots[dropSlot]
                 if not dstSlot or dstSlot.state == "locked" then
                     print("[CharacterPanel] 目标槽位 " .. dropSlot .. " 未解锁，无法交换")
@@ -199,25 +202,15 @@ function M.bind(deps)
                         if dstSlot.state == "empty" then
                             dstSlots[dropSlot] = srcSlot
                             srcSlots[srcIdx] = { state = "empty" }
-                            if dstCache then dstCache[dropSlot] = (srcCache and srcCache[srcIdx]) or 0 end
-                            if srcCache then srcCache[srcIdx] = 0 end
                             print(string.format("[CharacterPanel] 移动 队%d槽%d → 队%d槽%d",
                                 srcTeam, srcIdx, dropTeam, dropSlot))
                         else
                             srcSlots[srcIdx], dstSlots[dropSlot] = dstSlots[dropSlot], srcSlots[srcIdx]
-                            if srcCache and dstCache then
-                                srcCache[srcIdx], dstCache[dropSlot] = dstCache[dropSlot], srcCache[srcIdx]
-                            end
                             print(string.format("[CharacterPanel] 交换 队%d槽%d ↔ 队%d槽%d",
                                 srcTeam, srcIdx, dropTeam, dropSlot))
                         end
-                        rebuildRoster()
-                        refreshPowerCache()
-                        refreshNavBadge()
-                        if onTeamChangedCallback then
-                            -- 跨队交换必须一次性提交两队，逐队同步会在第一轮刷新时覆盖第二队槽位。
-                            onTeamChangedCallback(srcTeam, dropTeam ~= srcTeam and dropTeam or nil)
-                        end
+                        -- 跨队一次提交两队，最终同步数据只刷新一轮。
+                        commitTeamChange(srcTeam, dropTeam ~= srcTeam and dropTeam or nil)
                         require("systems.TutorialManager").notifyHeroDeployed(draggedHeroId, dropTeam, dropSlot)
                     end
                 else
@@ -545,8 +538,6 @@ function M.bind(deps)
 
         local heroId = slot.heroId
         slots[slotIdx] = { state = "empty" }
-        local caches = getTeamPowerCaches()
-        if caches[avatarTeam] then caches[avatarTeam][slotIdx] = 0 end
 
         local dragState = getDragState()
         dragState.active = false
@@ -555,11 +546,7 @@ function M.bind(deps)
         dragState.fromSlot = nil
         dragState.fromTeam = nil
 
-        rebuildRoster()
-        refreshPowerCache()
-        refreshNavBadge()
-        local cb = getOnTeamChanged()
-        if cb then cb(avatarTeam) end
+        commitTeamChange(avatarTeam)
         require("systems.GameSFX").play("ui_loosen")
         print(string.format("[CharacterPanel] 右键卸下 英雄%d 队伍%d 槽位%d", heroId, avatarTeam, slotIdx))
         return true

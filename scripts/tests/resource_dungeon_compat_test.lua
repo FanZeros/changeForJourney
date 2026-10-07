@@ -23,7 +23,8 @@ function Start()
             ["config.DungeonConfig"] = true, ["config.DungeonIdleConfig"] = true,
             ["config.TowerConfig"] = true, ["config.StageConfig"] = true,
             ["config.ExpTable"] = true, ["config.StageExpHelper"] = true,
-            ["config.IdleIncomeConfig"] = true,
+            ["config.IdleIncomeConfig"] = true, ["systems.DropSystem"] = true,
+            ["config.MonsterConfig"] = true, ["systems.AttributeDef"] = true, ["systems.UnitAttributes"] = true,
             ["shared.dungeon.DungeonSchema"] = true, ["shared.dungeon.DungeonCompat"] = true,
             ["shared.ModuleRegistry"] = true, ["rules.dungeon.DungeonIdleService"] = true,
         }
@@ -45,6 +46,7 @@ function Start()
             real[name] = value
             return value
         end
+        mocks["systems.EquipmentSystem"] = {} -- 掉率只读接口不生成/交付装备，测试禁止触及该边界。
         local DC = env.require("config.DungeonConfig")
         local IC = env.require("config.DungeonIdleConfig")
         local TC = env.require("config.TowerConfig")

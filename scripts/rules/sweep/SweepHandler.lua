@@ -12,25 +12,16 @@ local SweepHandler = {}
 local handlers = {}
 
 handlers[Protocol.ACTION_TYPES.SWEEP] = function(uid, params)
-    local count = params and (params.count or params.times) or 1
-    local teamIdx = params and params.teamIdx or nil
-    local ok, err, result = SweepService.Sweep(uid, count, teamIdx)
+    params = params or {}
+    local count = params.count
+    if count == nil then count = params.times end
+    local teamIdx = params.teamIdx
+    local ok, err, result = SweepService.Sweep(uid, count, teamIdx, params.stageId)
     if not ok then
-        return { success = false, reason = err }
+        return { success = false, reason = err, teamIdx = teamIdx, stageId = params and params.stageId }
     end
-    return {
-        success         = true,
-        gold            = result.gold,
-        heroExp         = result.heroExp,
-        heroExpTotal    = result.heroExpTotal,
-        playerExp       = result.playerExp,
-        equipCount      = result.equipCount,
-        equips          = result.equips,
-        equipByQuality  = result.equipByQuality,
-        scrollDrops     = result.scrollDrops,
-        ticketLeft      = result.ticketLeft,
-        count           = result.count,
-    }
+    result.success = true
+    return result
 end
 
 SweepHandler.actionHandlers = handlers

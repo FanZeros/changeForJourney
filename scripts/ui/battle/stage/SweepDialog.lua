@@ -1,772 +1,317 @@
--- ============================================================================
--- SweepDialog - 主线扫荡弹窗
--- 入口：战斗界面右侧扫荡按钮（与战利品箱子 X=109 对称，X=971）
--- 功能：展示当前关卡、预计奖励，支持扫荡消耗/执行（后续下半部分扩展）
--- ============================================================================
-
-local GameConfig        = require("config.GameConfig")
-local GameState         = require("core.GameState")
-local PlayerStore       = require("core.PlayerStore")
-local SC                = require("config.StageConfig")
-local ExpTable          = require("config.ExpTable")
-local ClientDispatcher  = require("runtime.ClientDispatcher")
-local ImageCache        = require("ui.widget.ImageCache")
-local DrawUtil          = require("core.DrawUtil")
-
-local drawTextStroke    = DrawUtil.drawTextStroke
-local drawImageCentered = DrawUtil.drawImageCentered
-
+-- 扫荡弹窗：主线与资源副本一券一场；预估参考远征六指标，不含首通大奖。
+-- 复用新 UI 组件与现有 DesignWidgetSurface，宿主仍负责帧、缩放和模态输入。
+local UI = require("urhox-libs/UI")
+local Surface = require("ui.widget.DesignWidgetSurface")
+local Rules = require("shared.sweep.SweepRewards")
+local Service = require("rules.sweep.SweepService")
+local SC = require("config.StageConfig")
+local DC = require("config.DungeonConfig")
+local ET = require("config.ExpTable")
+local Store = require("core.PlayerStore")
+local GameState = require("core.GameState")
+local ResourceDefs = require("config.ResourceDefs")
+local Format = require("ui.battle.stage.StageSelectRewardPreview")
 local BF = require("systems.ButtonFeedback")
-local SweepDialog = {}
+local DrawUtil = require("core.DrawUtil")
+local I18n = require("core.I18n")
 
--- ======================== 设计分辨率 ========================
+local M = {}
+local D = { x = 65, y = 570, w = 950, h = 1250, cx = 540, cy = 1195,
+    confirmY = 1700, stepY = 1510, sliderX = 340, sliderW = 400,
+    teamX = 438, teamY = 968, teamW = 170, teamH = 48, teamStep = 194 }
+local state = { open = false, openTime = 0, count = 1, teamIdx = 1, stageId = nil,
+    sliderDragging = false, lastPreview = -1, preview = nil, reason = "", kind = "main" }
+local root = nil ---@type Panel?
+local title = nil ---@type Label?
+local stageLabel = nil ---@type Label?
+local quantity = nil ---@type Label?
+local ticketLabel = nil ---@type Label?
+local statusLabel = nil ---@type Label?
+local confirmButton = nil ---@type Button?
+local metrics = {} ---@type Label[]
+local teamButtons = {} ---@type Button[]
+local categoryButtons = {} ---@type Button[]
+local imageVg = nil ---@type any
+local sweepImage = -1
+local lastLanguage = ""
+local categories = { "main", "gold_mine", "equipment_vault", "black_diamond" }
+local names = { main = "主线", gold_mine = "金币副本", equipment_vault = "装备副本", black_diamond = "黑晶副本" }
+local C = { bone = { 244, 237, 224, 255 }, dim = { 159, 151, 140, 255 }, gold = { 231, 192, 116, 255 } }
 
-local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
-local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
-
--- ======================== 入口按钮布局 ========================
--- 战利品箱子位置：BOX_CX=109, BOX_CY=2115
--- 扫荡按钮以 X=540 镜像：X = 540*2 - 109 = 971
-local BTN_CX   = 971
-local BTN_CY   = 2115
-local BTN_W    = 130
-local BTN_H    = 144
-
--- ======================== 弹窗布局常量 ========================
-
-local D = {
-    -- 弹窗背景框（九宫格）
-    BG_CX   = 540,  BG_CY   = 1195,
-    BG_W    = 950,  BG_H    = 1250,
-    BG_IT   = 180,
-
-    -- 标题 "主线扫荡"
-    TT_X    = 540,  TT_Y    = 705,
-    TT_FONT = 60,   TT_SW   = 6,
-    TT_SR   = 0x46, TT_SG   = 0x2f, TT_SB = 0x20,
-
-    -- 副标题提示
-    SUB_X   = 540,  SUB_Y   = 816,
-    SUB_FONT = 40,
-    SUB_R   = 0xb6, SUB_G   = 0xb0, SUB_B = 0x9d,
-
-    -- 当前关卡区域背景
-    CUR_BG_CX = 540, CUR_BG_CY = 900,
-    CUR_BG_W  = 800, CUR_BG_H  = 80, CUR_BG_R = 16, CUR_BG_A = 13,
-
-    -- "当前关卡" 标签（左对齐）
-    CUR_LBL_X = 169, CUR_LBL_Y = 900,
-    CUR_LBL_FONT = 40,
-    CUR_LBL_R = 0x8b, CUR_LBL_G = 0x95, CUR_LBL_B = 0xa5,
-
-    -- 关卡名（右对齐）
-    CUR_VAL_X = 904, CUR_VAL_Y = 900,
-    CUR_VAL_FONT = 40, CUR_VAL_SW = 6,
-
-    -- 扫荡对象小队选择行（经验发给所选队伍）
-    TEAM_CY = 968, TEAM_BTN_W = 170, TEAM_BTN_H = 48, TEAM_GAP = 24,
-    TEAM_FIRST_CX = 438, TEAM_FONT = 34,
-
-    -- "预计奖励" 标题
-    REW_TT_X = 540, REW_TT_Y = 1020,
-    REW_TT_FONT = 40, REW_TT_SW = 6,
-
-    -- 奖励区域背景
-    REW_BG_CX = 540, REW_BG_CY = 1131,
-    REW_BG_W  = 800, REW_BG_H  = 220, REW_BG_R = 16, REW_BG_A = 13,
-
-    -- 奖励图标行
-    REW_ICON_Y  = 1136,
-    REW_ICON_SZ = 160,    -- 品质背景框尺寸
-    REW_ICON_PAD = 12,    -- 图标内缩量
-    REW_ICON_GAP = 30,    -- 图标间距
-
-    -- 奖励信息行（共用样式常量，行位置由 INFO_ROWS 定义）
-    INF_FONT   = 40,
-    INF_VAL_SW = 6,
-    INF_LBL_X  = 169,
-    INF_VAL_X  = 904,
-    INF_BG_W   = 800, INF_BG_H = 80, INF_BG_R = 16, INF_BG_A = 13,
-    INF_LBL_R  = 0x8b, INF_LBL_G = 0x95, INF_LBL_B = 0xa5,
-
-    -- 扫荡次数（沿用购买道具弹窗的数量控件）
-    QTY_CX = 540, QTY_CY = 1440, QTY_FONT = 40,
-    MINUS_CX = 282, PLUS_CX = 798, STEP_CY = 1510, STEP_SIZE = 84,
-    SLIDER_CX = 540, SLIDER_CY = 1510, SLIDER_W = 400, SLIDER_H = 24,
-    KNOB_SIZE = 36,
-
-    -- 扫荡券消耗
-    TKT_ICON_CY = 1600, TKT_ICON_SZ = 70, TKT_FONT = 40,
-
-    -- 确认按钮（扫荡）
-    ACT_CX   = 540,  ACT_CY  = 1700,
-    ACT_W    = 410,  ACT_H   = 100,
-    ACT_FONT = 40,
-}
-
--- ======================== 奖励项定义 ========================
--- 每个奖励项：{ quality, iconPath, label }
-local REWARD_ITEMS = {
-    { quality = 2, iconPath = "image/货币道具/UI_icon_JB_X.png",    label = "金币"     },
-    { quality = 2, iconPath = "image/货币道具/UI_icon_JB_X.png",    label = "随机装备",  isEquip = true  },
-    { quality = 3, iconPath = "image/货币道具/UI_icon_JZ_SJ.png",   label = "随机卷轴" },
-}
--- 装备图标用固定的 B 品质背景占位
-local EQUIP_PLACEHOLDER_QUALITY = 2
-
--- ======================== 信息行定义 ========================
--- label: 显示文本, field: StageConfig 字段名, cy: 行中心Y坐标
-local INFO_ROWS = {
-    { label = "远征队员经验", field = "adventurerExp", cy = 1340 },
-}
-
--- ======================== 扫荡消耗常量 ========================
-local SWEEP_COST = 1   -- 每次扫荡消耗扫荡券数
-
--- ======================== 图片句柄 ========================
-
-local imgBtnSweep   = -1   -- UI_ICON_SD.png（入口按钮图标）
-local imgTicketIcon = -1   -- UI_icon_SDQ_X.png（扫荡券图标）
-local imgMinus     = -1   -- UI_AN_JIAN.png
-local imgPlus      = -1   -- UI_AN_JIA.png
-
--- 奖励图标缓存 [index] = nvgImage
-local rewardIconCache = {}
-
-local cachedVg = nil
-
--- ======================== 状态 ========================
-
-local SWEEP_MAX = 10
-local _sweepRewardCache = nil   ---@type table|nil
-local _sweepRewardStageId = nil
-
-local state = {
-    open      = false,
-    openTime  = 0,
-    count     = 1,
-    sliderDragging = false,
-    teamIdx   = 1, -- 扫荡经验发放目标小队（1~3）
-}
-
---- 已解锁小队数（未解锁的不可选）
-local function unlockedTeams()
-    return math.min(3, ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle")))
+local function label(text, x, y, width, size, color)
+    return UI.Label { text = I18n.lookup(text), position = "absolute", left = x, top = y,
+        width = width, height = 50, fontSize = size or 30, fontColor = color or C.bone,
+        fontFamily = "sans", fontWeight = "normal", verticalAlign = "middle" }
 end
 
---- 所选小队的出战人数（排除空槽，与 SweepService 口径一致）
-local function teamDeployedCount(teamIdx)
-    local heroesData = PlayerStore.Get("heroes")
-    if not heroesData then return 0 end
-    local slots = heroesData.teams and heroesData.teams[teamIdx]
-        and heroesData.teams[teamIdx].slots
-    if not slots then slots = teamIdx == 1 and heroesData.deployed or nil end
-    if not slots then return 0 end
-    local n = 0
-    for _, slot in ipairs(slots) do
-        if (tonumber(slot) or 0) > 0 then n = n + 1 end
+local function button(text, x, y, width, height)
+    return UI.Button { text = I18n.lookup(text), position = "absolute", left = x, top = y,
+        width = width, height = height, fontSize = 30, fontFamily = "sans", fontWeight = "normal",
+        textColor = C.bone, backgroundColor = { 61, 48, 33, 255 },
+        borderWidth = 1, borderColor = { 126, 93, 47, 255 }, borderRadius = 8 }
+end
+
+local function destroyTree()
+    if root then root:Destroy() end
+    root, title, stageLabel, quantity, ticketLabel, statusLabel, confirmButton = nil, nil, nil, nil, nil, nil, nil
+    metrics, teamButtons, categoryButtons = {}, {}, {}
+end
+
+local function ensureTree()
+    if root then return end
+    Surface.init()
+    root = UI.Panel { width = D.w, height = D.h, backgroundColor = { 25, 22, 19, 250 },
+        borderWidth = 3, borderColor = { 135, 99, 49, 255 }, borderRadius = 22 }
+    title = label("关卡扫荡", 45, 75, 810, 52, C.gold)
+    root:AddChild(title)
+    root:AddChild(button("×", 835, 25, 70, 65))
+    root:AddChild(label("1张券 = 重打1场 · 不含首通大奖", 45, 165, 855, 26, C.dim))
+    for i, kind in ipairs(categories) do
+        local b = button(names[kind], 45 + (i - 1) * 217, 250, 205, 52)
+        categoryButtons[i] = b; root:AddChild(b)
     end
-    return n
-end
-
-local function teamCenter(index)
-    return D.TEAM_FIRST_CX + (index - 1) * (D.TEAM_BTN_W + D.TEAM_GAP), D.TEAM_CY
-end
-
--- ======================== 动画常量 ========================
-
-local ANIM_OPEN_DUR  = 0.18
-local ANIM_CLOSE_DUR = 0.14
-
--- ======================== 工具 ========================
-
-local function hitTestRect(dx, dy, cx, cy, w, h)
-    return dx >= cx - w * 0.5 and dx <= cx + w * 0.5
-       and dy >= cy - h * 0.5 and dy <= cy + h * 0.5
-end
-
-local function hitTestCircle(dx, dy, cx, cy, r)
-    local ddx, ddy = dx - cx, dy - cy
-    return ddx * ddx + ddy * ddy <= r * r
-end
-
---- 难度中文名
-local DIFF_NAMES = {
-    [SC.DIFFICULTY_NORMAL]    = "普通",
-    [SC.DIFFICULTY_HARD]      = "困难",
-    [SC.DIFFICULTY_NIGHTMARE] = "噩梦",
-    [SC.DIFFICULTY_HELL]      = "地狱",
-    [SC.DIFFICULTY_PURGATORY] = "炼狱",
-    [SC.DIFFICULTY_TORMENT]   = "折磨",
-    [SC.DIFFICULTY_TORMENT2]  = "折磨II",
-    [SC.DIFFICULTY_TORMENT3]  = "折磨III",
-    [SC.DIFFICULTY_TORMENT4]  = "折磨IV",
-    [SC.DIFFICULTY_TORMENT5]      = "折磨V",
-    [SC.DIFFICULTY_ANNIHILATION]  = "湮灭",
-    [SC.DIFFICULTY_ANNIHILATION2] = "湮灭II",
-    [SC.DIFFICULTY_ANNIHILATION3] = "湮灭III",
-    [SC.DIFFICULTY_ANNIHILATION4] = "湮灭IV",
-    [SC.DIFFICULTY_ANNIHILATION5] = "湮灭V",
-}
-
---- 获取扫荡关卡显示名称。只显示最高已通关，不再拼「5-1至5-5」。
-local function getCurrentStageName()
-    local battleData = PlayerStore.Get("battle")
-    local maxStageId = battleData and (battleData.maxStageId or battleData.currentStageId)
-    if not maxStageId or maxStageId == 0 then return "未知关卡" end
-
-    local cleared = battleData.clearedStages or {}
-    local function isCleared(id)
-        return cleared[id] or cleared[tostring(id)]
+    stageLabel = label("尚无可扫荡关卡", 45, 302, 850, 35, C.gold); root:AddChild(stageLabel)
+    root:AddChild(label("扫荡小队", 104, 370, 210, 32, C.dim))
+    for team = 1, 3 do
+        local b = button("小队" .. team, D.teamX - D.x - D.teamW * 0.5 + (team - 1) * D.teamStep,
+            D.teamY - D.y - D.teamH * 0.5, D.teamW, D.teamH)
+        b:SetStyle({ fontSize = 28 }); teamButtons[team] = b; root:AddChild(b)
     end
-    local stageId = maxStageId
-    if not isCleared(stageId) then
-        stageId = SC.getPrevStageId(stageId) or SC.getLastStageOfPrevDifficulty(stageId)
-    end
-    if stageId and SC.isTerminalTemple(stageId) then
-        stageId = SC.getPrevStageId(stageId) or SC.getTerminalPrevStageId(stageId)
-            or SC.getLastStageOfPrevDifficulty(stageId)
-    end
-    local entry = stageId and SC.getStage(stageId) or nil
-    if not entry then return "未知关卡" end
-
-    local diff = SC.getDifficulty(entry.id)
-    local diffName = DIFF_NAMES[diff] or "普通"
-    return diffName .. " " .. entry.chapter .. "-" .. entry.stage
-end
-
---- 获取弹窗动画缩放系数（打开/关闭）
-local function getAnimScale()
-    if not state.open then return 0 end
-    local elapsed = time.elapsedTime - state.openTime
-    local t = math.min(elapsed / ANIM_OPEN_DUR, 1.0)
-    -- 弹性进入（overshoot）
-    local k = 1.0 + 0.08 * math.sin(t * math.pi)
-    return t * k
-end
-
---- 是否有可用的已通关关卡（与扫荡结算的关卡回退规则一致）
-local function canSweepStage()
-    local battleData = PlayerStore.Get("battle")
-    local maxStageId = battleData and (battleData.maxStageId or battleData.currentStageId)
-    if not maxStageId or maxStageId == 0 then return false end
-    local cleared = battleData.clearedStages or {}
-    local stageId = maxStageId
-    if not (cleared[stageId] or cleared[tostring(stageId)]) then
-        stageId = SC.getPrevStageId(stageId) or SC.getLastStageOfPrevDifficulty(stageId)
-    end
-    if stageId and SC.isTerminalTemple(stageId) then
-        stageId = SC.getPrevStageId(stageId) or SC.getTerminalPrevStageId(stageId)
-            or SC.getLastStageOfPrevDifficulty(stageId)
-    end
-    local entry = stageId and SC.getStage(stageId)
-    return entry ~= nil and (entry.monsterLevel or 0) > 0
-end
-
-local function getMaxCount()
-    if not canSweepStage() then return 0 end
-    return math.min(SWEEP_MAX, math.max(0, math.floor(GameState.getSweepTicket() or 0) / SWEEP_COST))
-end
-
-local function setSliderCount(x)
-    local maxCount = getMaxCount()
-    if maxCount < 1 then return end
-    local sliderL = D.SLIDER_CX - D.SLIDER_W * 0.5
-    local frac = math.max(0, math.min(1, (x - sliderL) / D.SLIDER_W))
-    state.count = math.floor(frac * (maxCount - 1) + 0.5) + 1
-end
-
--- ======================== Public API ========================
-
---- 初始化（在 BattleScene.init 中调用）
----@param vg any NanoVG 上下文
-function SweepDialog.init(vg)
-    cachedVg = vg
-    imgBtnSweep = nvgCreateImage(vg, "image/通用图标/UI_ICON_SD.png", 0)
-
-    -- 预加载奖励图标（装备用 "?" 文字绘制，无需加载图片）
-    for i, item in ipairs(REWARD_ITEMS) do
-        if not item.isEquip then
-            rewardIconCache[i] = nvgCreateImage(vg, item.iconPath, 0)
-        end
-    end
-
-    -- 次数按钮 & 扫荡券图标
-    imgTicketIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_SDQ_X.png", 0)
-    imgMinus     = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png", 0)
-    imgPlus      = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)
-
-    -- 初始化 ImageCache（如未初始化）
-    ImageCache.init(vg)
-
-    print("[SweepDialog] init OK")
-end
-
---- 打开弹窗；战线显式指定小队，泛入口默认右栏激活小队。
----@param teamIdx number|nil 扫荡经验目标队伍（1~3）
-function SweepDialog.open(teamIdx)
-    if state.open then return end
-    if teamIdx == nil then
-        local CharacterPanel = require("ui.character.panel.CharacterPanel")
-        teamIdx = CharacterPanel.getActiveTeamIdx() or 1
-    end
-    local selectedTeam = math.tointeger(tonumber(teamIdx) or 0)
-    if not selectedTeam or selectedTeam < 1 or selectedTeam > ExpTable.TEAM_COUNT then
-        print("[SweepDialog] open blocked: 无效的队伍编号 " .. tostring(teamIdx))
-        return
-    end
-    state.open     = true
-    state.openTime = time.elapsedTime
-    state.count    = 1
-    state.sliderDragging = false
-    -- 锁队/空队保留明确选择，由确认门禁拒绝；不得静默改扫队一。
-    state.teamIdx = selectedTeam
-    _sweepRewardCache = nil
-    print("[SweepDialog] open, team=" .. state.teamIdx
-        .. ", tickets=" .. tostring(GameState.getSweepTicket() or 0)
-        .. ", maxCount=" .. getMaxCount())
-    -- 重新打开时清除预估奖励缓存，确保数据最新
-    _sweepRewardCache = nil
-end
-
---- 关闭弹窗
-function SweepDialog.close()
-    state.open = false
-    state.sliderDragging = false
-end
-
---- 是否已打开
-function SweepDialog.isOpen()
-    return state.open
-end
-
--- ======================== 绘制入口按钮 ========================
-
---- 绘制战斗界面右侧扫荡入口按钮
----@param vg any
-function SweepDialog.drawButton(vg)
-    if imgBtnSweep < 0 then return end
-    local _ds = BF.begin(vg, "sweep_btn", BTN_CX, BTN_CY, BTN_W, BTN_H)
-    drawImageCentered(vg, imgBtnSweep, BTN_CX, BTN_CY, BTN_W, BTN_H, 1.0)
-    -- 图标下方绘制"扫荡"文字标签（样式与战利品文字保持一致：白色 32px 描边4）
-    drawTextStroke(vg, BTN_CX, BTN_CY + BTN_H * 0.42, "扫荡", 32,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
-    BF.finish(vg, _ds)
-end
-
--- ======================== 绘制弹窗 ========================
-
---- 扫荡固定参数（与本地 SweepService 保持一致）
-local SWEEP_REWARD_MINUTES = 10   -- 扫荡 = 领取 N 分钟挂机收益（与本地 SweepService.REWARD_MINUTES 一致）
-local IdleIncomeConfig = require("config.IdleIncomeConfig")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
-
---- 获取扫荡单次预估奖励，结果按帧缓存
---- 与本地 SweepService 完全一致：基于玩家最高进度关卡 maxStageId，
---- 领取 SWEEP_REWARD_MINUTES 分钟的挂机收益（IdleIncomeConfig）
----@return table|nil rewards  adventureExp / adventurerExp / gold 等
-local function getSweepRewardEstimate()
-    local heroesData = PlayerStore.Get("heroes")
-    local battleData = PlayerStore.Get("battle")
-    local maxStageId = battleData and (battleData.maxStageId or battleData.currentStageId)
-    if not maxStageId or maxStageId == 0 then return nil end
-
-    if _sweepRewardStageId ~= maxStageId then
-        -- 关卡变化，清缓存
-        _sweepRewardCache   = nil
-        _sweepRewardStageId = maxStageId
-    end
-    if _sweepRewardCache then return _sweepRewardCache end
-
-    -- 出战英雄数：按所选小队（排除空槽），与 SweepService 发放口径一致
-    local heroCount = teamDeployedCount(state.teamIdx)
-    if heroCount == 0 then heroCount = 1 end
-
-    -- 金币 & 经验 = 挂机收益/分钟 × N 分钟（与本地 SweepService 一致）
-    local cfgGoldPerMin, cfgExpPerMin = IdleIncomeConfig.get(maxStageId)
-    local gold    = math.floor(cfgGoldPerMin * SWEEP_REWARD_MINUTES)
-    local baseExp = math.floor(cfgExpPerMin * SWEEP_REWARD_MINUTES)
-
-    -- 英雄经验 = baseExp × 出战人数倍率
-    local ExpTable = require("config.ExpTable")
-    local heroCountMult = ExpTable.heroCountExpMult[heroCount] or 1.0
-    local heroExpTotal  = math.floor(baseExp * heroCountMult)
-
-    _sweepRewardCache = {
-        gold          = gold,
-        adventureExp  = baseExp,
-        adventurerExp = heroExpTotal,
+    root:AddChild(label("本次收益预估", 45, 432, 850, 32, C.bone))
+    local definitions = {
+        { "金币 / 黑晶", "gold" }, { "远征经验", nil }, { "每名队员经验", nil },
+        { "随机装备 / 件", nil }, { "卷轴合计 / 张", "random_scroll" }, { "扫荡券掉落 / 张", "sweep_ticket" },
     }
-    return _sweepRewardCache
-end
-
---- 读取关卡奖励数值并格式化
-local function getStageRewardStr(field)
-    local rewards = getSweepRewardEstimate()
-    if not rewards then return "---" end
-    local v = rewards[field]
-    if not v or v <= 0 then return "---" end
-    v = v * (state.count or 1)
-    -- [万→k/M/B 0930] 大数统一走 NumberUtil（10k/1.2M/3.4B），不再用"万"单位
-    return require("core.NumberUtil").format(v)
-end
-
---- 绘制单个奖励图标（品质背景 + 内容图标 + 文字标签）
----@param vg any
----@param cx number 中心X
----@param cy number 中心Y
----@param itemIdx number 奖励项索引
-local function drawRewardIcon(vg, cx, cy, itemIdx)
-    local item = REWARD_ITEMS[itemIdx]
-    if not item then return end
-
-    local sz    = D.REW_ICON_SZ
-    local inner = sz - D.REW_ICON_PAD * 2
-
-    -- 品质背景框
-    local qBg = ImageCache.getQualityBg(item.quality)
-    if qBg >= 0 then
-        drawImageCentered(vg, qBg, cx, cy, sz, sz, 1.0)
+    for i, def in ipairs(definitions) do
+        local x, y = 45 + ((i - 1) % 3) * 289, 492 + math.floor((i - 1) / 3) * 137
+        local card = UI.Panel { position = "absolute", left = x, top = y, width = 277, height = 125,
+            backgroundColor = { 37, 31, 25, 255 }, borderRadius = 10, borderWidth = 1,
+            borderColor = { 79, 65, 45, 255 } }
+        if def[2] then
+            card:AddChild(UI.Panel { position = "absolute", left = 12, top = 12, width = 35, height = 35,
+                backgroundImage = ResourceDefs.DEFS[def[2]].iconPath, backgroundFit = "contain" })
+        end
+        card:AddChild(label(def[1], def[2] and 52 or 12, 7, def[2] and 211 or 250, 26, C.dim))
+        local value = label("0", 12, 57, 250, 36, C.gold)
+        metrics[i] = value; card:AddChild(value); root:AddChild(card)
     end
+    root:AddChild(label("随机数量为平均期望，单次可能为0；六种卷轴均匀掉落。", 45, 770, 860, 19, C.dim))
+    quantity = label("扫荡次数：1", 300, 842, 480, 38); root:AddChild(quantity)
+    root:AddChild(button("−", 175, 898, 84, 84))
+    root:AddChild(button("+", 691, 898, 84, 84))
+    ticketLabel = label("", 175, 994, 650, 31, C.gold); root:AddChild(ticketLabel)
+    confirmButton = button("扫荡", 270, 1080, 410, 100); root:AddChild(confirmButton)
+    statusLabel = label("", 45, 1181, 860, 19, C.dim); root:AddChild(statusLabel)
+end
 
-    -- 内容图标
-    if item.isEquip then
-        -- 与战利品箱一致：品质背景框 + "?" 问号描边
-        drawTextStroke(vg, cx, cy, "?", sz * 0.58,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, sz * 0.04)
+local function getModules()
+    return Store.Get("battle") or {}, Store.Get("dungeon") or {}, Store.Get("heroes") or {}
+end
+
+local function teamCount(team)
+    local battle, _, heroes = getModules()
+    local ids = Rules.getTeam(heroes, battle, team)
+    return ids and #ids or 0
+end
+
+local function selectTarget(kind, preferred)
+    local battle, dungeon = getModules()
+    state.kind = kind
+    state.stageId = nil
+    if kind == "main" then
+        -- 分类主线不能被本队资源位置带回副本，最高已通回退仍由统一规则负责。
+        local source = {}
+        for key, value in pairs(battle) do source[key] = value end
+        source.teamStageIds = {}
+        source.currentStageId = battle.maxStageId
+        state.stageId = Rules.resolveDefaultStage(source, dungeon, state.teamIdx,
+            preferred and not SC.isResourceStage(preferred) and preferred or battle.maxStageId)
     else
-        local iconImg = rewardIconCache[itemIdx]
-        if iconImg and iconImg >= 0 then
-            drawImageCentered(vg, iconImg, cx, cy, inner, inner, 1.0)
+        if preferred and DC.decodeStageId(preferred) == kind and Rules.isCleared(preferred, battle, dungeon) then
+            state.stageId = preferred
+            state.lastPreview = -1
+            return
+        end
+        local sub = dungeon[kind]
+        local highest = DC.getHighestClearedFloor(sub, kind)
+        for floor = highest, 1, -1 do
+            local id = DC.getStageId(kind, floor)
+            if Rules.isCleared(id, battle, dungeon) then state.stageId = id; break end
         end
     end
-
-
+    state.lastPreview = -1
 end
 
---- 绘制弹窗全部内容（遮罩 + 面板）
----@param vg any
-function SweepDialog.draw(vg)
+local function refresh()
+    local battle, dungeon, heroes = getModules()
+    local preview, err = Service.Preview(heroes, battle, dungeon, Store.Get("equipment") or {},
+        Store.Get("artifacts"), Store.Get("talents"), state.teamIdx, state.stageId, state.count)
+    -- 未找到目标时不能让Service隐式回退到其他分类。
+    if not state.stageId then preview, err = nil, "请先通关该分类的关卡" end
+    state.preview, state.reason = preview, err or ""
+    state.lastPreview = time.elapsedTime
+end
+
+local function maxCount()
+    if not state.stageId or not Rules.isCleared(state.stageId, Store.Get("battle"), Store.Get("dungeon")) then return 0 end
+    return math.min(Rules.MAX_COUNT, math.max(0, math.floor(GameState.getSweepTicket() or 0)))
+end
+
+local function inside(x, y, cx, cy, w, h)
+    return math.abs(x - cx) <= w * 0.5 and math.abs(y - cy) <= h * 0.5
+end
+local function designPoint(x, y)
+    return D.cx + (x - D.cx) / 0.8, D.cy + (y - D.cy) / 0.8
+end
+local function sliderCount(x)
+    local limit = maxCount()
+    if limit < 1 then return end
+    local fraction = math.max(0, math.min(1, (x - D.sliderX) / D.sliderW))
+    state.count = math.floor(fraction * (limit - 1) + 0.5) + 1
+    state.lastPreview = -1
+end
+
+function M.init(vg)
+    if imageVg == vg and sweepImage >= 0 then nvgDeleteImage(vg, sweepImage) end
+    imageVg = vg
+    sweepImage = nvgCreateImage(vg, "image/通用图标/UI_ICON_SD.png", 0) or -1
+    destroyTree()
+end
+
+function M.open(teamIdx, preferredStageId)
+    if state.open then return end
+    local team = teamIdx or require("ui.character.panel.CharacterPanel").getActiveTeamIdx() or 1
+    team = math.tointeger(tonumber(team) or 0)
+    if not team or team < 1 or team > ET.TEAM_COUNT then return end
+    state.open, state.openTime, state.count, state.teamIdx = true, time.elapsedTime, 1, team
+    state.sliderDragging = false
+    local battle, dungeon = getModules()
+    local tasks = battle.teamStageIds or {}
+    local current = preferredStageId or tasks[tostring(team)] or tasks[team] or (team == 1 and battle.currentStageId)
+    local resource = current and DC.decodeStageId(current)
+    selectTarget(resource or "main", tonumber(current))
+    refresh()
+    print(string.format("[SweepDialog] 打开 队%d 分类=%s 关卡=%s 券=%d", team,
+        state.kind, tostring(state.stageId), GameState.getSweepTicket() or 0))
+end
+
+function M.close()
+    state.open, state.sliderDragging = false, false
+end
+function M.isOpen() return state.open end
+
+function M.drawButton(vg)
+    if sweepImage < 0 then return end
+    DrawUtil.drawImageCentered(vg, sweepImage, 971, 2115, 130, 144, 1)
+    DrawUtil.drawTextStroke(vg, 971, 2175, "扫荡", 32, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+end
+
+function M.draw(vg)
     if not state.open then return end
-
-    -- 扫荡次数随实际持有扫荡券变化，不能在扣券后保留超额选择
-    local maxCount = getMaxCount()
-    state.count = math.max(1, math.min(state.count, maxCount))
-
-    local scale = getAnimScale()
+    local limit = maxCount()
+    local count = math.max(1, math.min(state.count, math.max(1, limit)))
+    if state.count ~= count then state.count = count; state.lastPreview = -1 end
+    if time.elapsedTime - state.lastPreview >= 0.5 or I18n.get() ~= lastLanguage then refresh() end
+    if I18n.get() ~= lastLanguage then destroyTree(); lastLanguage = I18n.get() end
+    ensureTree()
+    local preview = state.preview or {}
+    title:SetText(I18n.lookup(state.kind == "main" and "主线扫荡" or "副本扫荡"))
+    stageLabel:SetText(state.stageId and I18n.lookup(SC.getStageDisplayName(state.stageId)) or I18n.lookup("尚无可扫荡关卡"))
+    local values = { state.kind == "black_diamond" and preview.diamond or preview.gold,
+        preview.playerExp, preview.heroExp, preview.equipCount, preview.scrollCount, 0 }
+    for i = 1, 6 do metrics[i]:SetText(Format.formatEstimate(values[i] or 0)) end
+    quantity:SetText(I18n.format("扫荡次数：%d", state.count))
+    ticketLabel:SetText(I18n.format("消耗 %d 张扫荡券（拥有 %d 张）", state.count, GameState.getSweepTicket() or 0))
+    local unlocked = ET.getUnlockedTeamCount(Store.Get("battle"))
+    for team, b in ipairs(teamButtons) do
+        b:SetText(I18n.format("小队%d(%d人)", team, teamCount(team)))
+        b:SetDisabled(team > unlocked)
+        b:SetStyle({ borderColor = team == state.teamIdx and C.gold or C.dim })
+    end
+    for i, b in ipairs(categoryButtons) do
+        b:SetStyle({ borderColor = categories[i] == state.kind and C.gold or C.dim })
+    end
+    local canConfirm = limit >= state.count and state.preview ~= nil
+    confirmButton:SetDisabled(not canConfirm)
+    confirmButton:SetText(I18n.lookup(canConfirm and "扫荡" or (state.reason ~= "" and "无法扫荡" or "扫荡券不足")))
+    statusLabel:SetText(I18n.lookup(state.reason ~= "" and state.reason or "扫荡不返券；可用券不限每日次数，挂机收益不变。"))
+    local t = math.min(1, math.max(0, (time.elapsedTime - state.openTime) / 0.18))
+    local scale = t * (1 + 0.08 * math.sin(t * math.pi))
     if scale <= 0.01 then return end
-
-    -- 不再铺全屏灰色遮罩
-
-    -- 弹窗内容以 BG_CX/BG_CY 为中心缩放
     nvgSave(vg)
-    nvgTranslate(vg, D.BG_CX, D.BG_CY)
-    nvgScale(vg, scale * 0.8, scale * 0.8)
-    nvgTranslate(vg, -D.BG_CX, -D.BG_CY)
-
-    -- 2) 弹窗背景框（九宫格）
-    DarkIcon.drawNine(vg, "panel", D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5, D.BG_W, D.BG_H, { titleH = D.BG_IT })
-
-    -- 3) 标题 "主线扫荡"
-    drawTextStroke(vg, D.TT_X, D.TT_Y, "主线扫荡",
-        D.TT_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, D.TT_SW,
-        { strokeColor = { D.TT_SR, D.TT_SG, D.TT_SB } })
-
-    -- 4) 副标题 "消耗扫荡券可以快速获得资源"
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, D.SUB_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(D.SUB_R, D.SUB_G, D.SUB_B, 255))
-    nvgText(vg, D.SUB_X, D.SUB_Y, "消耗扫荡券可以快速获得资源", nil)
-
-    -- 5) 当前关卡区域背景
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        D.CUR_BG_CX - D.CUR_BG_W * 0.5, D.CUR_BG_CY - D.CUR_BG_H * 0.5,
-        D.CUR_BG_W, D.CUR_BG_H, D.CUR_BG_R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, D.CUR_BG_A))
-    nvgFill(vg)
-
-    -- 6) "当前关卡" 标签（左对齐）
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, D.CUR_LBL_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(D.CUR_LBL_R, D.CUR_LBL_G, D.CUR_LBL_B, 255))
-    nvgText(vg, D.CUR_LBL_X, D.CUR_LBL_Y, "扫荡关卡", nil)
-
-    -- 7) 关卡名（右对齐，绿色描边）
-    local stageName = getCurrentStageName()
-    drawTextStroke(vg, D.CUR_VAL_X, D.CUR_VAL_Y, stageName,
-        D.CUR_VAL_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-        0x63, 0xff, 0x84, D.CUR_VAL_SW,
-        { strokeColor = { 0, 0, 0 } })
-
-    -- 7b) 扫荡对象小队行：经验发给所选小队的出战角色
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, D.CUR_LBL_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(D.CUR_LBL_R, D.CUR_LBL_G, D.CUR_LBL_B, 255))
-    nvgText(vg, D.CUR_LBL_X, D.TEAM_CY, "扫荡小队", nil)
-    local unlocked = unlockedTeams()
-    for t = 1, 3 do
-        local cx, cy = teamCenter(t)
-        local locked = t > unlocked
-        local selected = state.teamIdx == t
-        local didScale = BF.begin(vg, "sweep_dlg_team_" .. t, cx, cy,
-            D.TEAM_BTN_W, D.TEAM_BTN_H)
-        if locked then nvgGlobalAlpha(vg, 0.35) end
-        DarkIcon.drawNine(vg, "btn", cx - D.TEAM_BTN_W * 0.5, cy - D.TEAM_BTN_H * 0.5,
-            D.TEAM_BTN_W, D.TEAM_BTN_H, { accent = selected and "gold" or nil })
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, D.TEAM_FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        local cnt = teamDeployedCount(t)
-        local label = locked and ("小队" .. t .. " 未解锁")
-            or ("小队" .. t .. "(" .. cnt .. "人)")
-        nvgFillColor(vg, selected and nvgRGBA(0x6d, 0x4c, 0x1d, 255)
-            or nvgRGBA(244, 237, 224, 255))
-        nvgText(vg, cx, cy, label, nil)
-        if locked then nvgGlobalAlpha(vg, 1) end
-        BF.finish(vg, didScale)
-    end
-
-    -- 8) "预计奖励" 标题（白色描边）
-    drawTextStroke(vg, D.REW_TT_X, D.REW_TT_Y, "预计奖励",
-        D.REW_TT_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, D.REW_TT_SW,
-        { strokeColor = { 0, 0, 0 } })
-
-    -- 9) 奖励区域背景
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        D.REW_BG_CX - D.REW_BG_W * 0.5, D.REW_BG_CY - D.REW_BG_H * 0.5,
-        D.REW_BG_W, D.REW_BG_H, D.REW_BG_R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, D.REW_BG_A))
-    nvgFill(vg)
-
-    -- 10) 奖励图标行（居中排列）
-    local count   = #REWARD_ITEMS
-    local totalW  = count * D.REW_ICON_SZ + (count - 1) * D.REW_ICON_GAP
-    local startX  = D.BG_CX - totalW * 0.5 + D.REW_ICON_SZ * 0.5
-    local iconCY  = D.REW_ICON_Y  -- Y=1124 为图标行中心坐标
-
-    for i = 1, count do
-        local cx = startX + (i - 1) * (D.REW_ICON_SZ + D.REW_ICON_GAP)
-        drawRewardIcon(vg, cx, iconCY, i)
-    end
-
-    -- 11) 奖励信息行（远征等级经验 × 2 行）
-    for _, row in ipairs(INFO_ROWS) do
-        -- 行背景
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, 540 - D.INF_BG_W * 0.5, row.cy - D.INF_BG_H * 0.5,
-            D.INF_BG_W, D.INF_BG_H, D.INF_BG_R)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, D.INF_BG_A)); nvgFill(vg)
-        -- 左标签
-        nvgFontFace(vg, "sans"); nvgFontSize(vg, D.INF_FONT)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(D.INF_LBL_R, D.INF_LBL_G, D.INF_LBL_B, 255))
-        nvgText(vg, D.INF_LBL_X, row.cy, row.label, nil)
-        -- 右数值（绿色 + 黑描边）
-        local valStr = getStageRewardStr(row.field)
-        drawTextStroke(vg, D.INF_VAL_X, row.cy, valStr,
-            D.INF_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-            0x63, 0xff, 0x84, D.INF_VAL_SW, { strokeColor = { 0, 0, 0 } })
-    end
-
-    -- 次数选择：与购买道具一致的减号、滑条和加号
-    drawTextStroke(vg, D.QTY_CX, D.QTY_CY, "扫荡次数:" .. state.count,
-        D.QTY_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, 5, { strokeColor = { 0, 0, 0 } })
-
-    local minus = BF.begin(vg, "sweep_dlg_minus", D.MINUS_CX, D.STEP_CY, D.STEP_SIZE, D.STEP_SIZE)
-    drawImageCentered(vg, imgMinus, D.MINUS_CX, D.STEP_CY, D.STEP_SIZE, D.STEP_SIZE,
-        state.count <= 1 and 0.4 or 1.0)
-    BF.finish(vg, minus)
-    local plus = BF.begin(vg, "sweep_dlg_plus", D.PLUS_CX, D.STEP_CY, D.STEP_SIZE, D.STEP_SIZE)
-    drawImageCentered(vg, imgPlus, D.PLUS_CX, D.STEP_CY, D.STEP_SIZE, D.STEP_SIZE,
-        state.count >= maxCount and 0.4 or 1.0)
-    BF.finish(vg, plus)
-
-    local sliderL = D.SLIDER_CX - D.SLIDER_W * 0.5
-    local sliderFrac = maxCount > 1 and (state.count - 1) / (maxCount - 1) or 0
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, sliderL, D.SLIDER_CY - D.SLIDER_H * 0.5,
-        D.SLIDER_W, D.SLIDER_H, D.SLIDER_H * 0.5)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 51))
-    nvgFill(vg)
-    local fillW = D.SLIDER_W * sliderFrac
-    if fillW > 0 then
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, sliderL, D.SLIDER_CY - D.SLIDER_H * 0.5,
-            fillW, D.SLIDER_H, D.SLIDER_H * 0.5)
-        nvgFillColor(vg, nvgRGBA(255, 255, 255, 80))
-        nvgFill(vg)
-    end
-    nvgBeginPath(vg)
-    nvgCircle(vg, sliderL + fillW, D.SLIDER_CY, D.KNOB_SIZE * 0.5)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, maxCount > 0 and 255 or 100))
-    nvgFill(vg)
-    nvgStrokeColor(vg, nvgRGBA(0x44, 0x2d, 0x19, 255))
-    nvgStrokeWidth(vg, 6)
-    nvgStroke(vg)
-
-    -- 消耗与拥有数：数量与扫荡次数同步
-    local cost = SWEEP_COST * state.count
-    local owned = GameState.getSweepTicket() or 0
-    local costStr = "×" .. tostring(cost) .. "  (拥有 " .. tostring(owned) .. ")"
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, D.TKT_FONT)
-    local costTextW = nvgTextBounds(vg, 0, 0, costStr)
-    local costTotalW = D.TKT_ICON_SZ + 4 + costTextW
-    local costStartX = D.BG_CX - costTotalW * 0.5
-    drawImageCentered(vg, imgTicketIcon, costStartX + D.TKT_ICON_SZ * 0.5,
-        D.TKT_ICON_CY, D.TKT_ICON_SZ, D.TKT_ICON_SZ, 1.0)
-    -- 消耗文字：券够=亮白，不够=灰蓝色
-    drawTextStroke(vg, costStartX + D.TKT_ICON_SZ + 4, D.TKT_ICON_CY, costStr,
-        D.TKT_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        owned >= cost and 255 or 0x8b, owned >= cost and 255 or 0x95,
-        owned >= cost and 255 or 0xa5, 5, { strokeColor = { 0, 0, 0 } })
-
-    -- 确认按钮（无券时禁用）
-    local canSweep = maxCount >= 1
-    local confirm = BF.begin(vg, "sweep_dlg_confirm", D.ACT_CX, D.ACT_CY, D.ACT_W, D.ACT_H)
-    DarkIcon.drawNine(vg, "btn", D.ACT_CX - D.ACT_W * 0.5, D.ACT_CY - D.ACT_H * 0.5,
-        D.ACT_W, D.ACT_H, { accent = canSweep and "gold" or nil })
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, D.ACT_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    -- 按钮文字：满足=亮骨白，不满足=棕色
-    if canSweep then
-        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
-    else
-        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
-    end
-    nvgText(vg, D.ACT_CX, D.ACT_CY,
-        canSweep and "扫荡" or (canSweepStage() and "扫荡券不足" or "尚无可扫荡关卡"), nil)
-    BF.finish(vg, confirm)
-
+    nvgTranslate(vg, D.cx, D.cy); nvgScale(vg, scale * 0.8, scale * 0.8)
+    nvgTranslate(vg, D.x - D.cx, D.y - D.cy)
+    Surface.draw(root, vg, D.w, D.h)
+    -- 滑条仍为自定义矢量图形；文字/按钮全部使用UI组件。
+    local fraction = limit > 1 and (state.count - 1) / (limit - 1) or 0
+    nvgBeginPath(vg); nvgRoundedRect(vg, 275, 928, 400, 24, 12)
+    nvgFillColor(vg, nvgRGBA(75, 65, 50, 255)); nvgFill(vg)
+    nvgBeginPath(vg); nvgCircle(vg, 275 + fraction * 400, 940, 18)
+    nvgFillColor(vg, nvgRGBA(231, 192, 116, 255)); nvgFill(vg)
     nvgRestore(vg)
 end
 
--- ======================== 输入处理 ========================
-
---- 处理触摸/点击输入
----@param x number 点击X
----@param y number 点击Y
----@return boolean consumed 是否消费事件
-function SweepDialog.handleInput(x, y)
+function M.handleInput(x, y)
     if not state.open then return false end
-    x = D.BG_CX + (x - D.BG_CX) / 0.8
-    y = D.BG_CY + (y - D.BG_CY) / 0.8
-
-    local maxCount = getMaxCount()
-    state.count = math.max(1, math.min(state.count, maxCount))
-    if hitTestRect(x, y, D.MINUS_CX, D.STEP_CY, D.STEP_SIZE, D.STEP_SIZE) then
-        BF.trigger("sweep_dlg_minus")
-        state.count = math.max(1, state.count - 1)
-        print("[SweepDialog] count=" .. state.count .. "/" .. maxCount)
-        return true
+    x, y = designPoint(x, y)
+    if inside(x, y, D.x + 870, D.y + 57.5, 70, 65) then M.close(); return true end
+    state.count = math.max(1, math.min(state.count, math.max(1, maxCount())))
+    for i, kind in ipairs(categories) do
+        if inside(x, y, D.x + 45 + (i - 1) * 217 + 102.5, D.y + 276, 205, 52) then
+            selectTarget(kind); refresh(); return true
+        end
     end
-    if hitTestRect(x, y, D.PLUS_CX, D.STEP_CY, D.STEP_SIZE, D.STEP_SIZE) then
-        BF.trigger("sweep_dlg_plus")
-        if maxCount > 0 then state.count = math.min(maxCount, state.count + 1) end
-        print("[SweepDialog] count=" .. state.count .. "/" .. maxCount)
-        return true
-    end
-    if maxCount > 1 and hitTestRect(x, y, D.SLIDER_CX, D.SLIDER_CY,
-        D.SLIDER_W + D.KNOB_SIZE, math.max(D.SLIDER_H, D.KNOB_SIZE) + 20) then
-        setSliderCount(x)
-        print("[SweepDialog] slider count=" .. state.count .. "/" .. maxCount)
-        return true
-    end
-    -- 小队选择（未解锁不可选）
-    for t = 1, 3 do
-        local cx, cy = teamCenter(t)
-        if hitTestRect(x, y, cx, cy, D.TEAM_BTN_W, D.TEAM_BTN_H) then
-            if t <= unlockedTeams() then
-                BF.trigger("sweep_dlg_team_" .. t)
-                state.teamIdx = t
-                _sweepRewardCache = nil
-                print("[SweepDialog] team=" .. t)
-            else
-                print("[SweepDialog] " .. ExpTable.getTeamUnlockText(t) .. "队伍" .. t)
+    for team = 1, 3 do
+        if inside(x, y, D.teamX + (team - 1) * D.teamStep, D.teamY, D.teamW, D.teamH) then
+            if team <= ET.getUnlockedTeamCount(Store.Get("battle")) then
+                state.teamIdx = team; state.lastPreview = -1; refresh()
             end
             return true
         end
     end
-    if hitTestRect(x, y, D.ACT_CX, D.ACT_CY, D.ACT_W, D.ACT_H) then
-        if state.teamIdx > unlockedTeams() then
-            print("[SweepDialog] sweep blocked: " .. ExpTable.getTeamUnlockText(state.teamIdx))
-            return true
-        end
-        if maxCount < 1 then
-            print("[SweepDialog] sweep blocked: " .. (canSweepStage() and "扫荡券不足" or "当前关卡无法扫荡"))
-            return true
-        end
-        if teamDeployedCount(state.teamIdx) == 0 then
-            print("[SweepDialog] sweep blocked: 所选小队未出战英雄")
-            return true
-        end
-        BF.trigger("sweep_dlg_confirm")
-        print("[SweepDialog] submit count=" .. state.count
-            .. " team=" .. state.teamIdx .. " tickets=" .. GameState.getSweepTicket())
-        if SweepDialog.onSweep then SweepDialog.onSweep(state.count, state.teamIdx) end
+    if inside(x, y, 282, D.stepY, 84, 84) then
+        state.count = math.max(1, state.count - 1); state.lastPreview = -1; return true
+    end
+    if inside(x, y, 798, D.stepY, 84, 84) then
+        state.count = math.max(1, math.min(maxCount(), state.count + 1)); state.lastPreview = -1; return true
+    end
+    if maxCount() > 1 and inside(x, y, 540, D.stepY, 436, 56) then sliderCount(x); return true end
+    if inside(x, y, 540, D.confirmY, 410, 100) then
+        refresh()
+        if state.preview and maxCount() >= state.count then
+            BF.trigger("sweep_dlg_confirm")
+            if M.onSweep then M.onSweep(state.count, state.teamIdx, state.stageId) end
+        else print("[SweepDialog] 拒绝扫荡: " .. state.reason) end
         return true
     end
-    if not hitTestRect(x, y, D.BG_CX, D.BG_CY, D.BG_W, D.BG_H) then
-        SweepDialog.close()
-    end
+    if not inside(x, y, D.cx, D.cy, D.w, D.h) then M.close() end
     return true
 end
 
---- 滑条拖拽使用与三行弹窗相同的窗口坐标逆映射。
-function SweepDialog.handleDragBegin(x, y)
+function M.handleDragBegin(x, y)
     if not state.open then return false end
-    x = D.BG_CX + (x - D.BG_CX) / 0.8
-    y = D.BG_CY + (y - D.BG_CY) / 0.8
-    if getMaxCount() > 1 and hitTestRect(x, y, D.SLIDER_CX, D.SLIDER_CY,
-        D.SLIDER_W + D.KNOB_SIZE, math.max(D.SLIDER_H, D.KNOB_SIZE) + 20) then
-        state.sliderDragging = true
-        setSliderCount(x)
+    x, y = designPoint(x, y)
+    if maxCount() > 1 and inside(x, y, 540, D.stepY, 436, 56) then
+        state.sliderDragging = true; sliderCount(x)
     end
     return true
 end
-
-function SweepDialog.handleDragMove(x, _y)
+function M.handleDragMove(x, _y)
     if not state.sliderDragging then return false end
-    x = D.BG_CX + (x - D.BG_CX) / 0.8
-    setSliderCount(x)
-    return true
+    local dx = D.cx + (x - D.cx) / 0.8
+    sliderCount(dx); return true
 end
-
-function SweepDialog.handleDragEnd()
-    if not state.sliderDragging then return false end
+function M.handleDragEnd()
+    local dragging = state.sliderDragging
     state.sliderDragging = false
-    print("[SweepDialog] slider final count=" .. state.count)
-    return true
+    return dragging
 end
-
---- 确认扫荡回调（由外部绑定，如 BattleScene.lua）
----@type function|nil
-SweepDialog.onSweep = nil
-
---- 处理入口按钮点击（由 BattleScene 在 lootBox 之后调用）
----@param x number
----@param y number
----@param teamIdx number|nil 战线队号；泛入口省略时默认激活队
----@return boolean consumed
-function SweepDialog.handleButtonInput(x, y, teamIdx)
+function M.handleButtonInput(x, y, teamIdx, stageId)
     if state.open then return false end
-    -- 命中检测：点击是否在扫荡按钮区域内
-    if math.abs(x - BTN_CX) <= BTN_W * 0.5 and math.abs(y - BTN_CY) <= BTN_H * 0.5 then
-        BF.trigger("sweep_btn")
-        SweepDialog.open(teamIdx)
-        return true
-    end
+    if inside(x, y, 971, 2115, 130, 144) then M.open(teamIdx, stageId); return true end
     return false
 end
 
-return SweepDialog
+---@type function|nil
+M.onSweep = nil
+return M

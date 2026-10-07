@@ -400,7 +400,30 @@ end
 ---@param uid number
 ---@param dungeonId string
 ---@param teamIdx number|nil 结算经验发放队伍，缺省队1
-function DungeonService.Sweep(uid, dungeonId, teamIdx)
+function DungeonService.Sweep(uid, dungeonId, teamIdx, floor, count)
+    -- 资源旧协议也走一券一场，不再从12小时挂机基准发奖；旧遗迹仍按旧日次结清。
+    if DC.isResourceDungeon(dungeonId) then
+        local dungeon = PDM.GetModule(uid, "dungeon")
+        local battle = PDM.GetModule(uid, "battle")
+        if not dungeon or not battle then return false, "数据未加载" end
+        local sub = dungeon[dungeonId]
+        local targetFloor = floor
+        if targetFloor == nil then
+            local rules = require("shared.sweep.SweepRewards")
+            for candidate = DC.getHighestClearedFloor(sub, dungeonId), 1, -1 do
+                if rules.isCleared(DC.getStageId(dungeonId, candidate), battle, dungeon) then
+                    targetFloor = candidate
+                    break
+                end
+            end
+        end
+        local stageId = DC.getStageId(dungeonId, targetFloor)
+        if not stageId then return false, "暂无可扫荡层" end
+        local ok, err, rewards = require("rules.sweep.SweepService").Sweep(uid, count, teamIdx, stageId)
+        if not ok then return false, err end
+        rewards.dungeonId, rewards.sweepFloor = dungeonId, targetFloor
+        return true, nil, rewards
+    end
     local sub, _, err = getUnlockedData(uid, dungeonId)
     if not sub then return false, err end
     local today = math.floor((os.time() + 28800) / 86400)

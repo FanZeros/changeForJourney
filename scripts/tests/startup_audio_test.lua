@@ -51,14 +51,18 @@ local function countLogs(h, fragment)
     return n
 end
 
-local function newHarness(source, label, failures, lengths)
+local function newHarness(source, label, failures, lengths, startupQueue)
     local h = {
         loads = {}, counts = {}, sounds = {}, nodes = {}, sources = {}, plays = {}, randoms = {}, logs = {},
         failures = failures or {}, lengths = lengths or {}, timeline = {},
     }
     local env = {
-        LOCAL = LOCAL, assert = assert, error = error, type = type, tonumber = tonumber,
+        LOCAL = LOCAL, assert = assert, error = error, type = type, tonumber = tonumber, pcall = pcall,
         tostring = tostring, pairs = pairs, ipairs = ipairs, table = table, string = string,
+        require = function(name)
+            assert(name == "boot.StartupQueue", "only startup checkpoint dependency")
+            return startupQueue or { checkpoint = function() end }
+        end,
         print = function(line) h.logs[#h.logs + 1] = tostring(line) end,
     }
     -- 独立 math 表，绝不替换引擎全局 math.random 或 randomseed。
@@ -287,6 +291,58 @@ local function testSFX(source)
         for _, src in ipairs(h.sources) do eq(src.soundType, "Effect", "pool Effect channel") end
         m.start(); eq(#h.sources, 6, "start idempotent")
         eq(#h.randoms, 0, "start consumes no random")
+        m.stop()
+    end)
+    runCase("SFX prewarm never plays or consumes random and keeps complete candidates", function()
+        local m, h = newHarness(source, "GameSFX.lua")
+        m.preload("hit"); m.preload("hit"); m.preload("unknown")
+        eq(#h.loads, 2, "before start prewarm loads the complete hit group only once")
+        eq(#h.randoms, 0, "prewarm never consumes random")
+        eq(#h.plays, 0, "prewarm never plays")
+        eq(#h.sources, 0, "prewarm never creates sources")
+        m.start(); m.play("hit")
+        eq(#h.loads, 2, "first attack reuses prepared candidates without resource IO")
+        eq(h.randoms[1].high, 2, "first attack still selects among both original candidates")
+        m.stop(); m.preload("hit")
+        eq(#h.loads, 4, "stop clears prewarm cache for a fresh lifecycle")
+    end)
+    runCase("SFX cooperative prewarm publishes only complete current lifecycle", function()
+        local queue = assert(load(readSource("boot/StartupQueue.lua"), "@audio-startup-queue", "t", {
+            setmetatable = setmetatable, coroutine = coroutine, time = { elapsedTime = 0 },
+        }))()
+        local m, h = newHarness(source, "GameSFX.lua", nil, nil, queue)
+        m.start()
+        local worker = queue.new({ { "hit", function() m.preload("hit") end } },
+            { maxImages = 1, clock = function() return 0 end })
+        eq(worker:pump(), false, "two candidate prewarm suspends after first IO")
+        eq(#h.loads, 1, "first pump fetched only first candidate")
+        m.preload("hit"); m.play("hit")
+        eq(#h.loads, 1, "reentry does not reload unfinished group")
+        eq(#h.randoms, 0, "unfinished group cannot select truncated candidate list")
+        eq(#h.plays, 0, "unfinished group cannot play partial list")
+        eq(worker:pump(), true, "second pump completes group")
+        eq(#h.loads, 2, "second pump fetches remaining candidate")
+        m.play("hit")
+        eq(h.randoms[1].high, 2, "completion publishes both original candidates")
+        eq(h.randoms[1].loads, 2, "complete group available before random")
+        m.stop(); m.start()
+        local stale = queue.new({ { "old", function() m.preload("hit") end } },
+            { maxImages = 1, clock = function() return 0 end })
+        eq(stale:pump(), false, "old lifecycle suspended")
+        m.stop(); m.start()
+        m.preload("hit")
+        eq(#h.loads, 5, "new lifecycle loads complete group independently")
+        eq(stale:pump(), true, "old suspended worker exits cleanly")
+        eq(#h.loads, 5, "stale worker does not fetch or publish old remainder")
+        m.play("hit")
+        eq(h.randoms[2].high, 2, "new lifecycle retains complete group")
+        local stopped = queue.new({ { "stopped", function() m.preload("ui_pick") end } },
+            { maxImages = 1, clock = function() return 0 end })
+        eq(stopped:pump(), false, "another preload suspended")
+        m.stop(); eq(stopped:pump(), true, "stop cancels stale preload without restart")
+        m.start(); m.preload("ui_pick")
+        eq(h.counts[defs.ui_pick.paths[1]], 2, "fresh lifecycle reloads first candidate")
+        eq(h.counts[defs.ui_pick.paths[2]], 1, "stale second candidate never fetched")
         m.stop()
     end)
     runCase("SFX complete candidates before one random + reuse", function()

@@ -668,6 +668,7 @@ local function standaloneClosures(c)
         ScenarioDialogue=c.scenario,ScenarioDialogueConfig=c.config,LetterIntro=c.letter,
         IntroCutscene=c.modules["ui.story.gate.IntroCutscene"],RewardPopup=c.modules["ui.hud.popup.RewardPopup"],
         OfflineRewardPanel=c.modules["ui.hud.popup.OfflineRewardPanel"],DarkTitleScreen=c.modules["ui.story.gate.DarkTitleScreenGate"],
+        StandaloneRT={}, entryPrepared_=false,
         GameBGM={setScene=function(scene) c.record("bgm." .. scene) end,start=noop},GameSFX={start=noop},
         showOfflineRewardPanel_=function() c.record("offline.check"); return c.offlineReady~=false end,
         localSendAction=function(action,params)

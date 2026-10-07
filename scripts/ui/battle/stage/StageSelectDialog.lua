@@ -189,11 +189,10 @@ local CH_HUES = {
     { 0x4a, 0x3f, 0x63 }, { 0x5a, 0x30, 0x33 }, { 0x3d, 0x53, 0x3a }, { 0x59, 0x4d, 0x2e },
 }
 
-local imgBtn = -1
-local imgBg  = -1
-local imgAct = -1
-local imgLock = -1
-
+local imgBtn, imgBg, imgAct, imgLock = -1, -1, -1, -1
+local imageVg = nil ---@type any
+local imageBatch = {} -- 每次init独立身份；合作式加载让出后，旧批次不能写回新context。
+local imagesReady = false
 local state = {
     view      = "selector",
     fromOverview = false,
@@ -380,15 +379,18 @@ local monsterCards = {}
 ---@param monsterId number
 ---@return integer
 local function ensureMonsterCard(vg, monsterId)
-    local img = monsterCards[monsterId]
+    local batch, cards = imageBatch, monsterCards
+    local img = cards[monsterId]
     if img and img >= 0 then return img end
     local artId = require("config.MonsterConfig").getCardArtId(monsterId)
-    img = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", artId), 0)
-    if img and img >= 0 then
-        monsterCards[monsterId] = img
-        return img
+    local loaded = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", artId), 0)
+    ---@cast loaded integer|nil
+    if imageBatch ~= batch or imageVg ~= vg or not imagesReady then return -1 end
+    if loaded and loaded >= 0 then
+        cards[monsterId] = loaded
+        return loaded
     end
-    monsterCards[monsterId] = nil
+    cards[monsterId] = nil
     return -1
 end
 
@@ -652,25 +654,30 @@ local chapterBackgrounds = {}
 ---@type table<string, number>
 local chapterBackgroundRetry = {}
 local function ensureChapterBackground(vg, stageId, background)
+    local batch = imageBatch
+    local backgrounds, retries = chapterBackgrounds, chapterBackgroundRetry
     local path = background or SC.getBattleBackground(stageId)
-    local image = chapterBackgrounds[path]
+    local image = backgrounds[path]
     if image and image >= 0 then return image end
     local now = time.elapsedTime
-    if chapterBackgroundRetry[path] and now < chapterBackgroundRetry[path] then return -1 end
+    if retries[path] and now < retries[path] then return -1 end
     local loaded = nvgCreateImage(vg, path, 0) or -1
+    if imageBatch ~= batch or imageVg ~= vg or not imagesReady then return -1 end
     if loaded >= 0 then
-        chapterBackgrounds[path] = loaded
-        chapterBackgroundRetry[path] = nil
+        backgrounds[path] = loaded
+        retries[path] = nil
         print("[StageSelectDialog] 章节背景已加载: " .. path)
     else
-        chapterBackgroundRetry[path] = now + 2
+        retries[path] = now + 2
         print("[StageSelectDialog] 章节背景暂不可用，稍后重试: " .. path)
     end
     return loaded
 end
 
 local function drawChapterBackground(vg, stageId, x, y, hue, isSel, locked, background)
+    local batch = imageBatch
     local image = ensureChapterBackground(vg, stageId, background)
+    if imageBatch ~= batch or imageVg ~= vg or not imagesReady then return false end
     local srcW, srcH = 0, 0
     if image >= 0 then srcW, srcH = nvgImageSize(vg, image) end
     nvgBeginPath(vg)
@@ -692,6 +699,7 @@ local function drawChapterBackground(vg, stageId, x, y, hue, isSel, locked, back
         nvgFillColor(vg, nvgRGBA(hue[1], hue[2], hue[3], 170))
     end
     nvgFill(vg)
+    return true
 end
 
 -- 塔每波随机出怪，规则与整层奖励单独绘制，不套资源卡面布局。
@@ -714,14 +722,30 @@ end
 
 ---@param vg any
 function StageSelectDialog.init(vg)
-    for _, image in pairs(chapterBackgrounds) do nvgDeleteImage(vg, image) end
+    -- 同VG保留原init契约：释放章节缓存并重新请求静态图，奖励缓存也重置。
+    -- 换VG时旧context可能已经销毁，只丢弃句柄，不能用新VG删除旧图片。
+    if imageVg == vg then
+        for _, image in pairs(chapterBackgrounds) do nvgDeleteImage(vg, image) end
+    else
+        monsterCards = {}
+    end
+    local batch = {}
+    imageBatch, imageVg, imagesReady = batch, vg, false
     chapterBackgrounds, chapterBackgroundRetry = {}, {}
-    imgBtn = nvgCreateImage(vg, "image/通用图标/UI_ICON_XG.png", 0)
-    -- 九宫格拉伸用法（950x1117），保留原图；整图拉伸用法（950x647）走 UI_TY_EJQRK_POP 副本
-    imgBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
-    imgAct = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
-    imgLock = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
+    titleLayoutCache, titleLayoutKeys = {}, {}
+    imgBtn, imgBg, imgAct, imgLock = -1, -1, -1, -1
     RewardPreview.init(vg)
+    local button = nvgCreateImage(vg, "image/通用图标/UI_ICON_XG.png", 0)
+    if imageBatch ~= batch then return end
+    -- 九宫格拉伸用法（950x1117），保留原图；整图拉伸用法（950x647）走 UI_TY_EJQRK_POP 副本
+    local background = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
+    if imageBatch ~= batch then return end
+    local action = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
+    if imageBatch ~= batch then return end
+    local lock = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
+    if imageBatch ~= batch then return end
+    -- nvgCreateImage可合作式yield；四图加载调用全部返回后才原子发布本批结果。
+    imgBtn, imgBg, imgAct, imgLock, imagesReady = button, background, action, lock, true
     print(string.format("[StageSelectDialog] 主线行%d/资源行%d，视窗%d；资源按击杀预估无额外奖",
         MAIN_ROW_LAYOUT.rowHeight, RESOURCE_ROW_LAYOUT.rowHeight, ROW_VIEWPORT_HEIGHT))
     print(string.format("[StageSelectDialog] init OK; layout TAB_Y=%d TAB_W=%d TAB_H=%d "
@@ -968,6 +992,7 @@ end
 
 ---@param vg any
 function StageSelectDialog.drawButton(vg)
+    if imageVg ~= vg or not imagesReady then return end
     local _ds = BF.begin(vg, "stage_sel_btn", BTN_CX, BTN_CY, BTN_W, BTN_H)
     if imgBtn >= 0 then
         drawImageCentered(vg, imgBtn, BTN_CX, BTN_CY, ICON_W, ICON_H, 1.0)
@@ -986,7 +1011,8 @@ end
 
 ---@param vg any
 function StageSelectDialog.draw(vg)
-    if not state.open then return end
+    if not state.open or imageVg ~= vg or not imagesReady then return end
+    local batch = imageBatch
     local scale = getAnimScale()
     if scale <= 0.01 then return end
     if state.view == "overview" then ExpeditionOverview.draw(vg, scale) return end
@@ -1058,7 +1084,9 @@ function StageSelectDialog.draw(vg)
         local firstId = g.ids and g.ids[1]
         local chapterLocked = stageLocked(firstId, maxOrder, battleData, dungeonData)
 
-        drawChapterBackground(vg, firstId, x, y, hue, isSel, chapterLocked, g.background)
+        if not drawChapterBackground(vg, firstId, x, y, hue, isSel, chapterLocked, g.background) then
+            nvgRestore(vg) return
+        end
         if isSel then
             nvgBeginPath(vg)
             nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
@@ -1237,6 +1265,11 @@ function StageSelectDialog.draw(vg)
                 local monsterId = info.id
                 local cardCX = D.CARD_X + 2 + (ci - 1) * (cardW + layout.cardGap) + cardW * 0.5 - offset
                 local card = ensureMonsterCard(vg, monsterId)
+                if imageBatch ~= batch or imageVg ~= vg or not imagesReady then
+                    -- 卡面clip、关卡视窗clip、弹窗transform依次恢复。
+                    nvgRestore(vg) nvgRestore(vg) nvgRestore(vg)
+                    return
+                end
                 if card >= 0 then
                     drawImageCover(vg, card, cardCX, cardCY, cardW, cardH, locked and 0.4 or 1.0)
                 else
@@ -1288,6 +1321,10 @@ function StageSelectDialog.draw(vg)
                 RewardPreview.draw(vg, ResourceList.getRewardPreview(id, entry),
                     x + 8, y + REWARD_BAND_Y, D.MID_W - 16, REWARD_BAND_HEIGHT, locked)
             end
+        end
+        if imageBatch ~= batch or imageVg ~= vg or not imagesReady then
+            nvgRestore(vg) nvgRestore(vg) -- 关卡视窗clip、弹窗transform
+            return
         end
         if SC.isTerminalTemple(id) then drawTerminalGuide(vg, y, locked) end
     end

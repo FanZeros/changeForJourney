@@ -174,6 +174,7 @@ function Start()
         end } }
         local pageEnv = environment(pageMocks, { BattleLayout = Layout, COL_COUNT = 3,
             drivers = fixtureDrivers, isOpen_ = true,
+            entryPreparation = nativeRequire("ui.battle.tri.BattleEntryPreparation").new(),
             BattleMountScope = { run = function(body) return body() end },
             BattleTriPage = { invalidateTeams = function(teams) invalidations[#invalidations + 1] = teams end } })
         local refresh = assert(load(refreshCode .. "\nreturn BattleTriPage.refreshHeroProgressTeams",
@@ -550,7 +551,8 @@ function Start()
         -- 真实Standalone.Start图片wrapper段，ctx/flags/path键与删除缓存失效不污染_G。
         local wrapperCode = segment("boot/Standalone.lua", "    -- 2.5 图片去重按context+flags+path隔离", "    -- 3. Font")
         local createdImages, deletedImages, handle = {}, {}, 0
-        local wrapperEnv = environment({}, {nvgCreateImage=function(ctx,path,flags)
+        local wrapperEnv = environment({}, {StandaloneRT={}, StartupQueue=nativeRequire("boot.StartupQueue"),
+            nvgCreateImage=function(ctx,path,flags)
             handle=handle+1; createdImages[#createdImages+1]={ctx,path,flags,handle}; return handle
         end, nvgDeleteImage=function(ctx,id) deletedImages[#deletedImages+1]={ctx,id} end})
         wrapperEnv._G=wrapperEnv

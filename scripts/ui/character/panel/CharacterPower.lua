@@ -108,18 +108,25 @@ function M.bind(deps)
         return hero
     end
 
-    local function calcHeroPower(heroId, partySlot, teamIdx)
+    local function calcHeroPower(heroId, partySlot, teamIdx, wornBatches)
         local deployedSlot, deployedTeam = findHeroDeployPosition(heroId)
         local matches = (partySlot == nil or tonumber(partySlot) == deployedSlot)
             and (teamIdx == nil or tonumber(teamIdx) == deployedTeam)
         local owned = get("ownedSet") or {}
-        local context = EquipmentPower.buildContext(heroId, {
+        local options = {
             heroData = owned[tonumber(heroId) or heroId],
             heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes"),
             equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment"),
             artifacts = matches and (ClientDispatcher.get("artifacts") or PlayerStore.Get("artifacts")) or {},
             talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents"),
-        })
+        }
+        -- 仅单次 refresh 内共享模块/已穿装备快照；不跨通知复用，不借错队神器。
+        local batch = wornBatches and wornBatches[matches]
+        if wornBatches and not batch then
+            batch = EquipmentPower.createWornBatch(options)
+            wornBatches[matches] = batch
+        end
+        local context = EquipmentPower.buildWornContext(heroId, options, batch)
         if not context then return 0 end
         return math.floor(context.currentPower + 0.5)
     end
@@ -149,7 +156,7 @@ function M.bind(deps)
 
         -- 仅在本轮刷新复用同英雄、同实际神器队/槽的计算，不跨通知缓存属性。
         -- 显式队/槽不匹配时仍走独立口径，不能拿名册的神器结果覆盖它。
-        local refreshedPowers = {}
+        local refreshedPowers, wornBatches = {}, {}
         local function powerForRefresh(heroId, partySlot, teamIdx)
             local id = tonumber(heroId) or heroId
             local deployedSlot, deployedTeam = findHeroDeployPosition(id, teamIdx)
@@ -159,7 +166,7 @@ function M.bind(deps)
             local key = tostring(id) .. ":" .. context
             local value = refreshedPowers[key]
             if value == nil then
-                value = calcHeroPower(id, partySlot, teamIdx)
+                value = calcHeroPower(id, partySlot, teamIdx, wornBatches)
                 refreshedPowers[key] = value
             end
             return value

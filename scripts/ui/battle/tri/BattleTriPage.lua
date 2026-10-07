@@ -1,12 +1,5 @@
--- ============================================================================
--- BattleTriPage - 三行并行战斗（Phase 3 修正版）
--- 布局: 战斗区 = 中段区域（Standalone 传入 486,0,948,1080，左右经营/角色面板
---       保持原样），纵向堆叠三行战斗（行高 = rh/3 ≈ 360）:
---   行1/2/3 = 同一套 BattleTriDriver（各自独立状态）
---   行1 的关卡进度仍跟随 BattleScene（首通/存档/掉落不另起一套）
---   未解锁行: 暗罩 + 通关解锁条件 + 该队编队预览；返回按钮退出战斗区
--- 每行内 8 卡单线: 我方 4 张在左半段、敌方 4 张在右半段（BattleLayout strip 模式）
--- ============================================================================
+-- 三行独立驱动，中段战斗区486,0,948,1080；左右保留经营/角色面板。
+-- 每行己方/敌方各四槽；队一沿用主线进度，未解锁行显示条件与编队预览。
 local BattleLayout = require("core.BattleLayout")
 local BattleView   = require("ui.battle.scene.BattleView")
 local BattleCombat = require("ui.battle.combat.BattleCombat")
@@ -49,6 +42,7 @@ local inited = false
 local imageVg = nil
 local battleReady = true  -- 分帧启动/读档期间由宿主关闭
 local drivers = {}        -- [1]/[2]/[3] = BattleTriDriver
+local entryPreparation = require("ui.battle.tri.BattleEntryPreparation").new()
 ---@type table<number|string, number>|nil
 local restoredStageIds = nil
 local terminalRaid = nil
@@ -88,7 +82,19 @@ function BattleTriPage.isOpen() return isOpen_ end
 ---@return boolean
 function BattleTriPage.isTerminalRaidActive() return terminalRaid ~= nil end
 
-function BattleTriPage.setBattleReady(ready) battleReady = ready == true end
+function BattleTriPage.setBattleReady(ready)
+    battleReady = ready == true
+    if not battleReady then entryPreparation.invalidate() end
+end
+function BattleTriPage.isBattleReady() return battleReady end
+
+--- 入场门禁只在离线结算前查询，真实回执/编队变化不能沿用旧预热凭据。
+function BattleTriPage.isEntryPrepared()
+    local CharacterPanel = require("ui.character.panel.CharacterPanel")
+    local unlocked = math.min(COL_COUNT, ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle")))
+    return entryPreparation.isPrepared(battleReady and isOpen_, drivers, unlocked,
+        CharacterPanel.getTeamSignature)
+end
 
 --- 全局倍率以账户最高难度解锁，不随某队选旧关/模态按钮隐藏而降速。
 function BattleTriPage.getMaxUnlockedBattleSpeed()
@@ -130,6 +136,7 @@ end
 --- 存档阵容晚于战斗页到达时，清掉已记住的编队，下一帧按真实槽位重建。
 ---@param onlyTeams table<number, boolean>|nil 仅失效指定队伍；nil=全部（旧行为）
 function BattleTriPage.invalidateTeams(onlyTeams)
+    entryPreparation.invalidate()
     for idx, drv in pairs(drivers) do
         if not onlyTeams or onlyTeams[idx] then
             drv.teamSignature = nil
@@ -151,6 +158,7 @@ function BattleTriPage.refreshHeroProgressTeams(teamIndices, classTeams)
         end
     end
     if not next(changed) then return false end
+    entryPreparation.invalidate()
     return BattleMountScope.run(function()
         if next(rebuild) then BattleTriPage.invalidateTeams(rebuild) end
         for teamIdx = 1, COL_COUNT do
@@ -181,7 +189,6 @@ function BattleTriPage.refreshHeroProgressTeams(teamIndices, classTeams)
         return true
     end)
 end
-
 
 -- [终焉协同] 前向声明：ensureDrivers 的终焉接管分支引用（定义在下方）
 local startTerminalRaid
@@ -374,7 +381,6 @@ end
 function BattleTriPage.open()
     if not battleReady or isOpen_ then return end
     isOpen_ = true
-    require("ui.battle.scene.BattleScene").pumpBattleCards()
     local unlocked = ensureDrivers()
     print("[BattleTriPage] open, unlockedTeams=" .. unlocked)
 end
@@ -525,6 +531,18 @@ function BattleTriPage.preload(vg)
     end
 end
 
+--- 入场前创建真实驱动并预热完整首波（含候补），不调用update或推进攻击/领奖。
+--- 由宿主合作式队列调用；绘制期不消费全图鉴后台加载队列。
+function BattleTriPage.prepareEntry(vg)
+    if not battleReady then return false end
+    entryPreparation.invalidate()
+    BattleTriPage.open()
+    BattleTriPage.preload(vg)
+    local CharacterPanel = require("ui.character.panel.CharacterPanel")
+    local unlocked = math.min(COL_COUNT, ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle")))
+    return entryPreparation.prepare(vg, drivers, unlocked, CharacterPanel.getTeamSignature, not terminalRaid)
+end
+
 --- [三行并行] L0 整套大背景铺满窗口（左右面板 + 中段框体同源）
 
 --- 每帧更新：三行使用同一套 BattleTriDriver，只切换各自的状态实例。
@@ -537,7 +555,7 @@ function BattleTriPage.update(dt)
         return
     end
     BattleLayout.setMode("strip")
-    require("ui.battle.scene.BattleScene").pumpBattleCards()
+    -- 三行卡面走在场/待补位缓存，不能在攻击期间继续解码全图鉴大图。
     local unlocked = ensureDrivers()
     local logicDt = BattleTriPage.getBattleLogicDt(dt)
     -- 帧开始仍在任一有效战线入场时，全协同只推进视觉，不推进攻击或共享限时。
@@ -1454,6 +1472,7 @@ function BattleTriPage.setTeamStageIds(stageIds)
             and (StageConfig.getTerminalPrevStageId(id) or StageConfig.NORMAL_FIRST_STAGE) or id
     end
     -- 旧单位、掉落与共享绑定均属于旧读档上下文；新阵容齐备后才由ensureDrivers重建。
+    entryPreparation.invalidate()
     discardTerminalRaid()
     for _, drv in pairs(drivers) do discardDriver(drv) end
     drivers = {}
@@ -1464,6 +1483,7 @@ end
 --- 清档公开出口：不得让旧raid在清理时结算奖，也不能保留驱动或恢复进度。
 function BattleTriPage.resetToDefault()
     battleReady, isOpen_ = false, false
+    entryPreparation.invalidate()
     discardTerminalRaid()
     for _, drv in pairs(drivers) do discardDriver(drv) end
     drivers, restoredStageIds, l1RowImages = {}, nil, {}
@@ -1473,7 +1493,7 @@ end
 
 -- 更新/绘制/选关/恢复临时借用各战线，正常及异常出口均恢复调用方挂载。
 BattleMountScope.wrap(BattleTriPage, {
-    "open", "update", "draw", "gotoTeamStage", "setTeamStageIds", "resetToDefault", "handleInput",
+    "open", "prepareEntry", "update", "draw", "gotoTeamStage", "setTeamStageIds", "resetToDefault", "handleInput",
 }, false)
 
 return BattleTriPage

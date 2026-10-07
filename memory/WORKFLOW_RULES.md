@@ -1,5 +1,7 @@
 ## 通天塔三栏与暗契展示（2026-10-07）
 
+- **已正常push并核验：** 60白名单功能提交1e943f5e1088ac4338629e5bf44c40eda69da0b0由81266ee8父独立构造，正常push feat1007/tower，push/ls-remote实际exit0且远端SHA一致；workspace1005仍81266ee8未推。正式 **PR #118** https://github.com/FanZeros/changeForJourney/pull/118，head=feat1007/tower／base=workspace1005，创建时open/draft=false/merged=false/mergeable未计算，不称CI通过／合并发布。共享HEAD676和index空不改，57源码资源meta与已验证candidate字节一致，三交接仅本人塔块，不混peer角色hunk/.project/上传/验证材料；成功后只三本人交接补push，不重复创建PR。
+
 - 用户授权左侧保留地图／路线、右侧已获增益、中栏战斗，三选一程序化暗黑UI／自行绘图与Spine动效、部分显示名暗黑化、右侧取消，完成后正常push feat1007/tower并创建workspace1005 PR。初始56cf，开发676，目标随后外部合入PR117至81266ee8；独立候选只塔补丁三方保留最新目标，不checkout/reset/sharedindex，不混并行角色排序／总战力及.project/上传/repair/StageExpHelper meta/内部证据，不推workspace系列、不强推、不自动合并发布。
 - 左112层只读路线，实际当前层自动定位，滚轮／拖动和窗口变化；中栏保留三队同波；右增益按稳定ID计次数、完整原描述与原效果。35个暗契显示名及局部四语，不反写业务配置名／ID／数值／随机权重／机制／奖励／存档。取消仅hide，继续择契show同组，不重抽或伪完成；pending禁hide，撤退确认仍左撤退／右取消，确认期间原计时不改。
 - 三选一新UI文字／按钮与程序暗铁旧铜骨白血红装饰，10透明PNG+1024图集+Spine4.2.43 JSON/atlas共13资源／meta；七实体纹章，awaken0.8→idle3真实时间，token独占native、故障单次PNG再几何、同时间变换刷新不叠正dt、单Unload清引用。28生成器／资源／meta冻结逐字节相同，342016图集区域像素、2px挤边、透明RGB0、确定性重绘通过。

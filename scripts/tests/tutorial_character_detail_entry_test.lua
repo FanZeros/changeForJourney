@@ -130,6 +130,7 @@ function Start()
             "ui.market.MarketPage", "ui.loot.LootBoxPage", "ui.story.task.TaskPage", "ui.blacksmith.BlacksmithPage",
             "ui.hud.popup.PlayerInfoPanel", "ui.hud.popup.RewardPopup", "ui.hud.popup.OfflineRewardPanel",
             "ui.hud.popup.UpdateNoticePopup", "ui.hud.popup.LevelUpPopup", "ui.story.gate.DarkTitleScreenGate",
+            "ui.story.gate.StartScreen", "ui.dev.CEPanel",
             "ui.story.gate.LetterIntro", "ui.story.gate.IntroCutscene", "ui.dungeon.DungeonBattleScene", "ui.tower.TowerBattleScene",
             "ui.battle.stage.SweepDialog", "ui.battle.popup.DamageStatsPanel", "ui.battle.stage.StageSelectDialog",
             "ui.battle.popup.TerminalConfirmDialog", "ui.character.equip.EquipmentDetail" }

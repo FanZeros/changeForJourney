@@ -235,6 +235,10 @@ function Start()
                 state.scrollGrants = (state.scrollGrants or 0) + 1
                 return { weaponScroll = 1, sweepTicket = 1 }
             end,
+            GrantIdleExp = function(uid, teamIdx, monsterLevel, minutes)
+                state.expGrants = (state.expGrants or 0) + 1
+                return 0, 0
+            end,
         }
         local Service = env.require("rules.dungeon.DungeonIdleService")
         local stored = cjson.encode(old)

@@ -16,7 +16,8 @@ end
 
 handlers[Protocol.ACTION_TYPES.DUNGEON_SWEEP] = function(uid, params)
     local id = params and params.dungeonId or "gold_mine"
-    return response(DungeonService.Sweep(uid, id))
+    local teamIdx = params and params.teamIdx or nil
+    return response(DungeonService.Sweep(uid, id, teamIdx))
 end
 
 local function battleResponse(params, ok, err, result)

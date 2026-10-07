@@ -20,7 +20,8 @@ local persistHooks_ = {} ---@type table
 ---@type table<string, table>
 local transactions = {}
 -- Flush 会推进在线边界；它异常时 session 也属于本次候选快照。
-local TRANSACTION_MODULES = { "dungeon", "currency", "equipment", "lootbox", "session" }
+-- heroes/player 承载副本结算经验，失败时同样要回滚。
+local TRANSACTION_MODULES = { "dungeon", "currency", "equipment", "lootbox", "session", "heroes", "player" }
 
 --- 单机桥注入唯一写档入口的布尔结果；PDM.FlushImmediate 只是日志，不能代替。
 --- hooks 延后 Save 内 MarkOnline 的 session 通知，不承担奖励发放。
@@ -328,7 +329,78 @@ local function grantRewards(uid, id, floorData, firstClear)
     return true, nil, { gold = gold, diamond = diamond, dust = dust }
 end
 
-function DungeonService.Sweep(uid, dungeonId)
+--- 副本结算经验：与同进度主线同级（首通=两次扫荡当量=20 分钟，重复通关=10 分钟）。
+--- 与挂机领取共用 GrantIdleExp，避免两处口径漂移。
+---@param uid number
+---@param teamIdx number|nil
+---@param monsterLevel number
+---@param isFirstClear boolean
+---@return number playerExp, number heroExpTotal
+local function grantDungeonExp(uid, teamIdx, monsterLevel, isFirstClear)
+    return DungeonService.GrantIdleExp(uid, teamIdx, monsterLevel, isFirstClear and 20 or 10)
+end
+
+--- 公开入口：副本结算经验（按分钟数发放，供挂机领取在同一事务内调用）。
+---@param uid number
+---@param teamIdx number|nil
+---@param monsterLevel number
+---@param minutes number
+---@return number playerExp, number heroExpTotal
+function DungeonService.GrantIdleExp(uid, teamIdx, monsterLevel, minutes)
+    local ExpTable = require("config.ExpTable")
+    local StageExpHelper = require("config.StageExpHelper")
+    local heroes = PDM.GetModule(uid, "heroes")
+    local playerData = PDM.GetModule(uid, "player")
+    if type(heroes) ~= "table" or type(playerData) ~= "table" then return 0, 0 end
+    local expPerMin = StageExpHelper.getExpPerMin(monsterLevel)
+    local mins = math.floor(tonumber(minutes) or 0)
+    if expPerMin <= 0 or mins <= 0 then return 0, 0 end
+    local playerExp = math.floor(expPerMin * mins)
+    if playerExp <= 0 then return 0, 0 end
+
+    local team = math.tointeger(tonumber(teamIdx) or 1) or 1
+    local slots = type(heroes.teams) == "table" and heroes.teams[team]
+        and heroes.teams[team].slots or nil
+    local deployed = {}
+    if type(slots) == "table" then
+        for _, heroId in ipairs(slots) do
+            local id = math.tointeger(tonumber(heroId) or 0)
+            if id and id > 0 then deployed[#deployed + 1] = id end
+        end
+    end
+    if #deployed == 0 and team == 1 and type(heroes.deployed) == "table" then
+        for _, heroId in ipairs(heroes.deployed) do
+            local id = math.tointeger(tonumber(heroId) or 0)
+            if id and id > 0 then deployed[#deployed + 1] = id end
+        end
+    end
+
+    local heroExpTotal = 0
+    if #deployed > 0 then
+        heroExpTotal = math.floor(playerExp * (ExpTable.getHeroCountExpMult(#deployed)))
+        local perHero = math.floor(heroExpTotal / #deployed + 0.5)
+        if perHero > 0 then
+            local roster = heroes.roster
+            for _, heroId in ipairs(deployed) do
+                local heroData = type(roster) == "table" and (roster[heroId] or roster[tostring(heroId)])
+                if type(heroData) == "table" then
+                    heroData.exp = (heroData.exp or 0) + perHero
+                    ExpTable.autoLevelUpHero(heroData)
+                end
+            end
+            markDirty(uid, "heroes")
+        end
+    end
+    playerData.exp = (playerData.exp or 0) + playerExp
+    ExpTable.autoLevelUpPlayer(playerData)
+    markDirty(uid, "player")
+    return playerExp, heroExpTotal
+end
+
+---@param uid number
+---@param dungeonId string
+---@param teamIdx number|nil 结算经验发放队伍，缺省队1
+function DungeonService.Sweep(uid, dungeonId, teamIdx)
     local sub, _, err = getUnlockedData(uid, dungeonId)
     if not sub then return false, err end
     local today = math.floor((os.time() + 28800) / 86400)
@@ -344,6 +416,9 @@ function DungeonService.Sweep(uid, dungeonId)
         if not granted then return false, rewardErr end
         sub.dailyUsed, sub.dailyDay = used + 1, today
         markDirty(uid, "dungeon")
+        -- 扫荡经验：10 分钟当量，与同进度主线同级，发给指定队伍。
+        local playerExp, heroExp = grantDungeonExp(uid, teamIdx, floorData.monsterLevel, false)
+        rewards.playerExp, rewards.heroExpTotal = playerExp, heroExp
         rewards.dungeonId, rewards.sweepFloor = dungeonId, floor
         rewards.dailyUsed, rewards.dailyMax = sub.dailyUsed, limit
         return true, nil, rewards
@@ -434,6 +509,9 @@ function DungeonService.Win(uid, dungeonId, floor, teamIdx, challengeId)
         end
         if sub.floor < DC.MAX_FLOOR[dungeonId] then sub.floor = sub.floor + 1 end
         markDirty(uid, "dungeon")
+        -- 副本经验：首通 20 分钟当量、重复通关 10 分钟，与同进度主线同级。
+        local playerExp, heroExp = grantDungeonExp(uid, team, floorData.monsterLevel, firstClear)
+        rewards.playerExp, rewards.heroExpTotal = playerExp, heroExp
         rewards.dungeonId, rewards.floor, rewards.teamIdx = dungeonId, floor, team
         rewards.challengeId = challengeId
         rewards.firstClear, rewards.nextFloor = firstClear, sub.floor

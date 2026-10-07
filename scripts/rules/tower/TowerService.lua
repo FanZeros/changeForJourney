@@ -208,6 +208,67 @@ end
 
 -- ======================== 整层通关 ========================
 
+--- 通天塔经验：与同进度主线同级（首通 20 分钟当量、重打 10 分钟）。
+--- 远征经验加玩家，队员经验平分给三队全部出战英雄；与副本共用同一经验助手。
+---@param uid number
+---@param monsterLevel number
+---@param isFirstClear boolean
+---@return number playerExp, number heroExpTotal
+local function grantTowerExp(uid, monsterLevel, isFirstClear)
+    local StageExpHelper = require("config.StageExpHelper")
+    local heroes = PDM.GetModule(uid, "heroes")
+    local playerData = PDM.GetModule(uid, "player")
+    if type(heroes) ~= "table" or type(playerData) ~= "table" then return 0, 0 end
+    local expPerMin = StageExpHelper.getExpPerMin(monsterLevel)
+    if expPerMin <= 0 then return 0, 0 end
+    local playerExp = math.floor(expPerMin * (isFirstClear and 20 or 10))
+    if playerExp <= 0 then return 0, 0 end
+
+    -- 三队出战英雄（队1 无 teams 时回退 deployed），去重后平分。
+    local deployed, seen = {}, {}
+    for team = 1, ExpTable.TEAM_COUNT do
+        local slots = type(heroes.teams) == "table" and heroes.teams[team]
+            and heroes.teams[team].slots or nil
+        if type(slots) == "table" then
+            for _, heroId in ipairs(slots) do
+                local id = math.tointeger(tonumber(heroId) or 0)
+                if id and id > 0 and not seen[id] then
+                    seen[id] = true
+                    deployed[#deployed + 1] = id
+                end
+            end
+        end
+    end
+    if #deployed == 0 and type(heroes.deployed) == "table" then
+        for _, heroId in ipairs(heroes.deployed) do
+            local id = math.tointeger(tonumber(heroId) or 0)
+            if id and id > 0 and not seen[id] then
+                seen[id] = true
+                deployed[#deployed + 1] = id
+            end
+        end
+    end
+
+    local heroExpTotal = 0
+    if #deployed > 0 then
+        heroExpTotal = math.floor(playerExp * (ExpTable.getHeroCountExpMult(#deployed)))
+        local perHero = math.floor(heroExpTotal / #deployed + 0.5)
+        if perHero > 0 then
+            local roster = heroes.roster
+            for _, heroId in ipairs(deployed) do
+                local heroData = type(roster) == "table" and (roster[heroId] or roster[tostring(heroId)])
+                if type(heroData) == "table" then
+                    heroData.exp = (heroData.exp or 0) + perHero
+                    ExpTable.autoLevelUpHero(heroData)
+                end
+            end
+        end
+    end
+    playerData.exp = (playerData.exp or 0) + playerExp
+    ExpTable.autoLevelUpPlayer(playerData)
+    return playerExp, heroExpTotal
+end
+
 --- 通天塔整层通关结算：发放奖励、推进层数
 ---@param uid number
 ---@param floor number 通关的层
@@ -259,12 +320,18 @@ function TowerService.FloorWin(uid, floor)
     if diamondReward > 0 then
         rewards[#rewards + 1] = { type = "diamond", amount = diamondReward }
     end
+
+    -- 通天塔经验：与同进度主线同级（首通 20 分钟当量、重打 10 分钟），发给三队出战英雄。
+    local playerExp, heroExpTotal = grantTowerExp(uid, floorCfg.monsterLevel, firstClear)
+
     -- 先消费当局并缓存回执，奖励/MarkDirty 的同步回调不能重复发奖。
     run.phase = "settled"
     run.floorResult = {
         floor         = floor,
         firstClear    = firstClear,
         diamondReward = diamondReward,
+        playerExp     = playerExp,
+        heroExpTotal  = heroExpTotal,
         rewards       = rewards,
         nextFloor     = bt.floor,
     }
@@ -273,6 +340,10 @@ function TowerService.FloorWin(uid, floor)
     PDM.MarkDirty(uid, "dungeon")
     if diamondReward > 0 then
         PDM.MarkDirty(uid, "currency")
+    end
+    if playerExp > 0 then
+        PDM.MarkDirty(uid, "heroes")
+        PDM.MarkDirty(uid, "player")
     end
 
     print(string.format("[TowerService] FloorWin uid=%s floor=%d firstClear=%s diamond=%d nextFloor=%d",

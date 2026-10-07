@@ -191,7 +191,7 @@ end
 local SCROLL_TYPES = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
 
 local function getTicketRate(scrollDropRate)
-    return math.min(0.35, math.max(0.12, scrollDropRate * 4))
+    return math.min(0.20, math.max(0.06, scrollDropRate * 2))
 end
 
 -- 离线装备按产出序号轮询怪物池；小数件的品质沿用下一位置，不消耗 RNG。
@@ -372,9 +372,9 @@ function OfflineCalc.calcRewardsFromKills(kills, stageEntry, heroCount, stageCon
             scrollDrops[st] = (scrollDrops[st] or 0) + 1
         end
     end
-    -- 扫荡券：约每 5 只怪 1 张，比卷轴更频繁
+    -- 扫荡券：与在线同口径（getTicketRate，卷轴的 2 倍）。
     local ticketRate = getTicketRate(scrollDropRate)
-    if ticketRate <= 0 then ticketRate = 0.20 end
+    if ticketRate <= 0 then ticketRate = 0.10 end
     local rawTickets = kills * ticketRate
     local ticketCount = math.floor(rawTickets)
     if math.random() < (rawTickets - ticketCount) then

@@ -71,6 +71,8 @@ handlers[Protocol.ACTION_TYPES.TOWER_FLOOR_WIN] = function(uid, params)
         floor         = result.floor,
         firstClear    = result.firstClear,
         diamondReward = result.diamondReward,
+        playerExp     = result.playerExp,
+        heroExpTotal  = result.heroExpTotal,
         rewards       = result.rewards,
         nextFloor     = result.nextFloor,
     }

@@ -220,13 +220,13 @@ function DungeonConfig.getEquipSweepCount(floor)
     return DungeonConfig.EQUIP_SWEEP_BASE + (floor - 1) * DungeonConfig.EQUIP_SWEEP_STEP
 end
 
---- 装备副本沿用源关卷轴掉率；扫荡券与主线同口径（卷轴的 4 倍，夹在 0.12~0.35）。
+--- 装备副本沿用源关卷轴掉率；扫荡券与主线同口径（卷轴的 2 倍，夹在 0.06~0.20）。
 ---@param floor number
 ---@return number scrollRate, number ticketRate
 function DungeonConfig.getEquipDropRates(floor)
     local source = getSourceStage("equipment_vault", floor)
     local scrollRate = source and (source.scrollDropRate or 0.05) or 0.05
-    local ticketRate = math.min(0.35, math.max(0.12, scrollRate * 4))
+    local ticketRate = math.min(0.20, math.max(0.06, scrollRate * 2))
     return scrollRate, ticketRate
 end
 

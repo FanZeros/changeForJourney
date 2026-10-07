@@ -1,5 +1,7 @@
 ## 暗黑图片/Spine续作交接（2026-10-07）
 
+- 已正常push并核远端SHA：59文件24e9c2d042e2b648a5b31dbddda5d798a76ea521，同任务分支/基线13b7未推；新PR112 https://github.com/FanZeros/changeForJourney/pull/112 open/draft=false/merged=false，mergeable未计算。最终本会话官方b7/566rootLua，32实际源码资源载荷逐字节/size一致；probe/meta/validation不入包，shield_probe旧基线保留。Rich3081/FailedLoad69/native92/mock2784与联合1145/host165/Card17/Result51均0失败exit0，36规范单测过；候选20旧规范问题逐项同13b7、新增0。实际12样片/main两次150Lua/资源0，rawFAIL只spikes；基线3/4/9旧测试失败、早期C崩溃/10几何失败等边界写PR，不称CI/性能/全平台/用户审美通过。只本轮59白名单及交接，不混教程/.project，不自动合并发布。
+
 - 本轮13b7b235固定父，指定feat1005/team-power-dark-effects-20261006，用户要求完成六特效/数字滚动后正常push与新PR到workspace1005，不推workspace系列/强推/合并发布。旧PR107已经外部合并；并行教程、.project、无关repair meta、probe/内部证据不混提交。
 - 21资源含14透明图片、1024图集、Spine4.2.43三骨架/三atlas，476160像素绑定/挤边/透明残色/重绘通过。CPU不读旧图不随机，token独占native，单次故障PNG/旧矢量降级。真实Unload→Dispose退出崩溃按官方widget改单Unload清引用，probe120frame退出0，不能定性double-free、立即对象析构或跨平台安全；同t改大小10失败修world transform刷新，正dt一次、零时不累动画。
 - Power旧→新/净增减速滚动、连续增长接当前显示和换token、晚下降不延寿精确收敛、大integer低位；上下82内距与314/410/506高度，真实UI/Yoga/五语/DPR。cache context/flags/path+delete失效，Stop旧wrapper直通，非引用计数/异常finally边界保留。

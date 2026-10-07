@@ -230,12 +230,22 @@ local function randomScrollType()
     return SCROLL_TYPES[math.random(1, #SCROLL_TYPES)]
 end
 
---- 扫荡券掉落。为卷轴掉率的 2 倍（原为 4 倍，掉得过多）。
+--- 扫荡券统一掉率：卷轴掉率的 4 倍，最低 12%、最高 40%；只读查询不消耗随机数。
+---@param scrollRate number|nil
+---@return number
+function DropSystem.getSweepTicketRate(scrollRate)
+    return math.min(0.40, math.max(0.12, (scrollRate or 0.05) * 4))
+end
+
+--- 主线每次击杀独立判定扫荡券；资源与终焉不得借主线入口重复发券。
 ---@param stageEntry table|nil
 ---@return boolean
 function DropSystem.rollSweepTicket(stageEntry)
-    local scrollRate = stageEntry and stageEntry.scrollDropRate or 0.05
-    local rate = math.min(0.20, math.max(0.06, scrollRate * 2))
+    if stageEntry and (stageEntry.mode == "resource_dungeon" or stageEntry.mode == "terminal"
+        or StageConfig.isResourceStage(stageEntry.id) or StageConfig.isTerminalTemple(stageEntry.id)) then
+        return false
+    end
+    local rate = DropSystem.getSweepTicketRate(stageEntry and stageEntry.scrollDropRate)
     return math.random() <= rate
 end
 

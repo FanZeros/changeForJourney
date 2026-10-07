@@ -96,7 +96,8 @@ local function controlled(options)
     local opts=options or {}
     local stats={fallback=0,creates=0,loads=0,animations=0,renders=0,updates={},unloads=0,disposes=0,
         images=0,deletes={},patterns=0,fills=0,depth=0,stack={},geometry={},invalid=0,instances={},
-        transforms={},colors={},logs={},saveCalls=0,restoreCalls=0,imageNames={},platePaths={},worldRefreshes=0}
+        transforms={},colors={},logs={},saveCalls=0,restoreCalls=0,imageNames={},platePaths={},worldRefreshes=0,
+        patternIds={},slotLookups={},slotColors={},slotResets=0,renderSlots={}}
     local env=privateEnv(stats.logs)
     local matrix={a=1,b=0,c=0,d=1,x=0,y=0}
     local function snapshot() return {a=matrix.a,b=matrix.b,c=matrix.c,d=matrix.d,x=matrix.x,y=matrix.y} end
@@ -145,6 +146,7 @@ local function controlled(options)
     env.nvgDeleteImage=function(ctx,id) stats.deletes[#stats.deletes+1]={ctx,id} end
     env.nvgImagePatternTinted=function(_,x,y,w,h,angle,id,color)
         stats.patterns=stats.patterns+1
+        stats.patternIds[#stats.patternIds+1]=id
         if opts.patternThrow then error("CONTROLLED_PATTERN",0) end
         return {image=id,color=color}
     end
@@ -156,6 +158,23 @@ local function controlled(options)
             if opts.createThrow then error("CONTROLLED_NATIVE_CREATE",0) end
             if opts.createNil then return nil end
             local obj={vg=vg,time=0}
+            -- 真实API的槽句柄可缓存；动画Update每次覆盖alpha，测试必须验证渲染前再次屏蔽。
+            local slot={name="sweep",color={1,1,1,1}}
+            function slot:IsValid() return not opts.slotInvalid end
+            function slot:GetName() return self.name end
+            function slot:GetColor() return table.unpack(self.color) end
+            function slot:SetColor(r,g,b,a)
+                stats.slotColors[#stats.slotColors+1]={r,g,b,a}
+                if opts.slotColorThrow then error("CONTROLLED_SLOT_COLOR",0) end
+                self.color={r,g,b,a}
+            end
+            obj.sweepSlot=slot
+            function obj:FindSlot(name)
+                stats.slotLookups[#stats.slotLookups+1]=name
+                if opts.findSlotThrow then error("CONTROLLED_FIND_SLOT",0) end
+                if name~="sweep" or opts.slotMissing then return nil end
+                return self.sweepSlot
+            end
             function obj:Load(path) stats.loads=stats.loads+1;self.path=path
                 if opts.loadThrow then error("CONTROLLED_LOAD",0) end
                 return not opts.loadFalse end
@@ -167,6 +186,7 @@ local function controlled(options)
             function obj:GetAnimationDuration() if opts.durationThrow then error("CONTROLLED_DURATION",0) end
                 return opts.duration or DURATIONS[self.animation] end
             function obj:Update(dt) stats.updates[#stats.updates+1]=dt;self.time=self.time+dt
+                self.sweepSlot.color={1,1,1,1};stats.slotResets=stats.slotResets+1
                 if opts.updateThrow then error("CONTROLLED_UPDATE",0) end
                 if opts.onUpdate then opts.onUpdate() end end
             function obj:UpdateWorldTransform() stats.worldRefreshes=stats.worldRefreshes+1 end
@@ -183,6 +203,7 @@ local function controlled(options)
             return obj
         end
         env.nvgSpineRender=function(_,obj) stats.renders=stats.renders+1
+            stats.renderSlots[#stats.renderSlots+1]={table.unpack(obj.sweepSlot.color)}
             if opts.renderThrow then error("CONTROLLED_RENDER",0) end end
     end
     local f={env=env,stats=stats,vg={},opts=opts}
@@ -217,6 +238,126 @@ local function logic()
         draw(f,"job",.85,1,token);eq(f.stats.creates,1,"retired token cannot resurrect")
         f.rich.destroy();eq(#f.stats.deletes,14,"destroy releases shared images")
         f.rich.destroy();eq(#f.stats.deletes,14,"destroy idempotent")
+    end)
+    -- 槽颜色在每次动画更新后都被重置；实际提交时必须只把战力sweep的alpha置零。
+    case("power-native-sweep-cached-and-hidden-before-every-render",function()
+        local f=controlled();local token={}
+        for index,p in ipairs({.2,.3,.45,.65,.9}) do
+            draw(f,"power",p,1,token)
+            local obj=assert(f.stats.instances[1])
+            eq(f.stats.renders,index,"power still uses native each frame "..index)
+            eq(f.stats.slotResets,index,"controlled animation really resets slot alpha each Update "..index)
+            eq(#f.stats.slotColors,index,"sweep suppression repeated after each reset "..index)
+            local color=assert(f.stats.renderSlots[index])
+            eq(color[1],1,"sweep keeps red multiplier "..index)
+            eq(color[2],1,"sweep keeps green multiplier "..index)
+            eq(color[3],1,"sweep keeps blue multiplier "..index)
+            eq(color[4],0,"sweep alpha zero at actual native render "..index)
+            near(obj.time,p*DURATIONS.power,"sweep suppression cannot change native elapsed "..index)
+        end
+        eq(#f.stats.slotLookups,1,"FindSlot cached once for independent power playback")
+        eq(f.stats.slotLookups[1],"sweep","public named sweep slot used")
+        eq(f.stats.creates,1,"sweep suppression reuses same native instance")
+        eq(f.stats.patterns,0,"healthy sweep suppression cannot hide PNG substitution")
+        eq(f.stats.fallback,0,"healthy sweep suppression cannot hide vector substitution")
+        eq(f.stats.depth,0,"sweep suppression restores host state")
+        f.rich.release(token)
+        eq(f.stats.unloads,1,"cached sweep released with native owner once")
+        eq(f.stats.disposes,0,"cached sweep owner still uses single unload API")
+    end)
+    case("power-native-sweep-same-time-repeat-never-advances",function()
+        local f=controlled();local token={};draw(f,"power",.4,1,token)
+        local obj=assert(f.stats.instances[1]);local updates=#f.stats.updates
+        local elapsed=obj.time
+        for index=1,4 do
+            -- 同时间外部也可能恢复槽颜色，不能依赖上一帧已透明而省略屏蔽。
+            obj.sweepSlot:SetColor(1,1,1,1)
+            local colors=#f.stats.slotColors
+            draw(f,"power",.4,.5,token)
+            eq(#f.stats.slotColors,colors+1,"same-time render reapplies suppression "..index)
+            eq(f.stats.renderSlots[#f.stats.renderSlots][4],0,"same-time native submission has invisible sweep "..index)
+            eq(#f.stats.updates,updates,"same-time suppression never advances Update "..index)
+            near(obj.time,elapsed,"same-time suppression keeps track time "..index)
+        end
+        eq(#f.stats.slotLookups,1,"same-time render never repeats FindSlot")
+        eq(f.stats.renders,5,"same-time duplicate still submits all requested native renders")
+        eq(f.stats.patterns,0,"same-time duplicate remains native")
+        eq(f.stats.fallback,0,"same-time duplicate never vector substitute")
+    end)
+    case("power-missing-invalid-slot-single-fallback-other-cards-unchanged",function()
+        for index,opts in ipairs({{slotMissing=true},{slotInvalid=true},{missingMethod="FindSlot"},
+            {findSlotThrow=true},{slotColorThrow=true}}) do
+            local f=controlled(opts);local token={};draw(f,"power",.3,1,token)
+            eq(f.stats.renders,0,"unsafe power slot never renders native "..index)
+            check(f.stats.patterns>0,"unsafe power slot falls to actual PNG "..index)
+            eq(f.stats.fallback,0,"unsafe slot PNG not vector substitute "..index)
+            eq(f.stats.unloads,1,"unsafe power slot unloads once "..index)
+            eq(f.stats.disposes,0,"unsafe power slot never Dispose after Unload "..index)
+            local creates,loads,lookups,colors,logs=f.stats.creates,f.stats.loads,#f.stats.slotLookups,#f.stats.slotColors,#f.stats.logs
+            for _=1,4 do draw(f,"power",.4,1,token) end
+            eq(f.stats.creates,creates,"unsafe power slot creation failure latched "..index)
+            eq(f.stats.loads,loads,"unsafe power slot Load failure latched "..index)
+            eq(#f.stats.slotLookups,lookups,"unsafe power slot lookup failure latched "..index)
+            eq(#f.stats.slotColors,colors,"unsafe power slot color failure latched "..index)
+            eq(#f.stats.logs,logs,"unsafe power slot logs once "..index)
+            eq(f.stats.unloads,1,"unsafe power slot repeats do not unload again "..index)
+            eq(f.stats.depth,0,"unsafe slot fallback restores host state "..index)
+        end
+        for _,kind in ipairs({"level","job","revive","success","failure"}) do
+            local f=controlled({missingMethod="FindSlot"});local token={}
+            draw(f,kind,.3,1,token);draw(f,kind,.6,1,token)
+            eq(f.stats.renders,2,"other animation needs no FindSlot "..kind)
+            eq(#f.stats.slotLookups,0,"other animation never queries sweep "..kind)
+            eq(#f.stats.slotColors,0,"other animation never suppresses sweep "..kind)
+            for _,color in ipairs(f.stats.renderSlots) do eq(color[4],1,"other animation retains reset sweep alpha "..kind) end
+            eq(f.stats.patterns,0,"other animation native not replaced "..kind)
+            eq(f.stats.fallback,0,"other animation never vector substitute "..kind)
+        end
+    end)
+    case("power-PNG-never-samples-light-sweep-and-other-kinds-retain-it",function()
+        for _,missing in ipairs({false,"light_sweep"}) do
+            for _,plain in ipairs({false,true}) do
+                local f=controlled({noNative=true,imageMissing=missing})
+                -- 同时覆盖tint和旧ImagePattern入口，预热可包含共享图，战力采样不能用它。
+                if plain then f.env.nvgImagePatternTinted=nil end
+                local token={}
+                for _,p in ipairs({.05,.2,.3,.5,.75,.9}) do draw(f,"power",p,1,token) end
+                check(f.stats.patterns>0,"power truly samples PNG layers missing="..tostring(missing).." plain="..tostring(plain))
+                local sweepSamples=0
+                for _,id in ipairs(f.stats.patternIds) do
+                    if f.stats.imageNames[id]==ROOT.."light_sweep.png" then sweepSamples=sweepSamples+1 end
+                end
+                eq(sweepSamples,0,"power never samples shared light_sweep PNG")
+                eq(f.stats.fallback,0,"missing unrelated light_sweep never blocks power PNG readiness")
+                eq(f.stats.images,14,"shared fourteen-image preload contract unchanged")
+                eq(f.stats.depth,0,"power PNG sweep removal leaves state balanced")
+            end
+        end
+        for _,entry in ipairs({{"level",.3},{"job",.4},{"success",.45},{"failure",.25}}) do
+            local f=controlled({noNative=true});draw(f,entry[1],entry[2],1,{})
+            local sweepSamples=0
+            for _,id in ipairs(f.stats.patternIds) do
+                if f.stats.imageNames[id]==ROOT.."light_sweep.png" then sweepSamples=sweepSamples+1 end
+            end
+            check(sweepSamples>0,"other PNG animation retains original light_sweep "..entry[1])
+            eq(f.stats.fallback,0,"other PNG sweep still truly rendered "..entry[1])
+        end
+    end)
+    case("power-program-accents-stay-outside-central-text-other-card-retains-shard",function()
+        local f=controlled();draw(f,"power",.3,1,{})
+        check(#f.stats.geometry>0,"native power really draws side accent particles")
+        for index,point in ipairs(f.stats.geometry) do
+            check(math.abs(point[1]-380)>280,"power accent never crosses central number area point "..index)
+        end
+        eq(f.stats.patterns,0,"power accent geometry is native overlay not PNG")
+        eq(f.stats.fallback,0,"power accent geometry is not vector substitute")
+        local card=controlled();draw(card,"level",.3,1,{})
+        local centerPoints=0
+        for _,point in ipairs(card.stats.geometry) do
+            if math.abs(point[1]-300)>50 and math.abs(point[1]-300)<90 then centerPoints=centerPoints+1 end
+        end
+        check(centerPoints>0,"other card retains original middle impact light shard")
+        eq(card.stats.patterns,0,"other card shard remains native overlay not PNG")
     end)
     case("power-native-and-PNG-actual-attachment-envelope-three-rows",function()
         local data=require("cjson").decode(read(ROOT.."power_fx.json"))
@@ -492,7 +633,7 @@ local function realFixture(vg,noNative,options)
             stats.creates=stats.creates+1
             local obj=assert(original.spine(ctx),"real Spine create returned nil")
             local proxy={native=obj,track=0}
-            for _,name in ipairs({"SetPosition","SetScale","SetColor","SetSpeed","SetTimeScale","SetPremultipliedAlpha"}) do
+            for _,name in ipairs({"SetPosition","SetScale","SetColor","SetSpeed","SetTimeScale","SetPremultipliedAlpha","FindSlot"}) do
                 local method=obj[name] --[[@as function]]
                 if type(method)=="function" then proxy[name]=function(_,...) return method(obj,...) end end
             end
@@ -550,6 +691,12 @@ local function nativeRender(vg)
             local old=proxy.track;draw(f,kind,.65,1,token)
             near(proxy.native:GetTrackTime(0),old,"same-time actual native not advanced twice "..kind,.001)
             if kind=="power" then
+                -- 原生帧额外读取真实槽颜色，不能把受控对象的alpha记录当作GPU/API实证。
+                local sweep=assert(proxy.native:FindSlot("sweep"),"actual native sweep slot absent")
+                check(sweep:IsValid(),"actual native cached sweep slot valid")
+                local getSlotColor=sweep.GetColor --[[@as function]]
+                local _,_,_,sweepAlpha=getSlotColor(sweep)
+                eq(sweepAlpha,0,"actual native power sweep hidden after animation Update")
                 local plate=require("cjson").decode(read(ROOT.."power_fx.json")).skins[1].attachments.plate.nameplate
                 for _,height in ipairs({174,270,366,254,350,446,314,410,506}) do
                     local fit=math.min(1,430/height)

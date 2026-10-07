@@ -261,8 +261,16 @@ local function powerFixture(realDrawing, richDrawing)
     end
     local backend = richDrawing and visualRichBackend()
         or { drawPower = effects.drawPower, preload = function() end, destroy = function() end }
-    local releases = {}
-    if not richDrawing then backend.release = function(token) releases[#releases + 1] = token end end
+    local releases, powerDraws = {}, {}
+    if not richDrawing then
+        backend.release = function(token) releases[#releases + 1] = token end
+        local actualDrawPower=backend.drawPower
+        backend.drawPower=function(vg,cx,cy,width,height,elapsed,duration,alpha,token)
+            -- 只记录调用参数，继续执行真实图元；UI树、Surface与布局仍走原生产实现。
+            powerDraws[#powerDraws+1]={elapsed=elapsed,duration=duration,alpha=alpha,token=token,height=height}
+            return actualDrawPower(vg,cx,cy,width,height,elapsed,duration,alpha,token)
+        end
+    end
     env.require = function(name)
         if name == "core.EventBus" then return bus end
         if name == "config.GameEvents" then return events end
@@ -275,7 +283,7 @@ local function powerFixture(realDrawing, richDrawing)
     local power = compile("ui/fx/SpinePowerUpEffect.lua", env)
     cleanups[#cleanups + 1] = power.destroy
     local f = { power = power, bus = bus, clock = clock, draws = draws, language = language,
-        record = record, events = events, logs = logs, env = env, releases = releases }
+        record = record, events = events, logs = logs, env = env, releases = releases, powerDraws = powerDraws }
     function f:emit(powers, activeTeam)
         self.bus.emit(self.events.TEAM_POWER_CHANGED, { powers = powers, activeTeam = activeTeam })
     end
@@ -514,6 +522,107 @@ local function runPowerEvents()
         count=#f.releases;f.clock.elapsedTime=102.6;f:emit({220,200,300})
         eq(#f.releases,count,"positive-net decrease does not restart or retire plaque native timeline")
     end)
+    -- 时长只由权威净增分档；阈值两侧、重复快照和只读查询不得改计时。
+    case("power-net-duration-threshold-both-sides-and-readonly-query",function()
+        for _,entry in ipairs({{999,3.2},{1000,3.8},{9999,3.8},{10000,4.4},{99999,4.4},{100000,5}}) do
+            local delta,duration=entry[1],entry[2]
+            local f=powerFixture(false);f:baseline();local started=f.clock.elapsedTime
+            f:emit({100+delta,200,300})
+            local row=assert(f:row(1))
+            near(row.duration,duration,"duration threshold full net "..delta)
+            eq(row.delta,delta,"threshold retains exact net "..delta)
+            eq(row.displayRemaining,delta,"readonly initial gap retained "..delta)
+            row.duration,row.delta,row.displayRemaining=-1,-1,-1
+            f.clock.elapsedTime=started+1.4
+            row=assert(f:row(1))
+            near(row.duration,duration,"query copy cannot change duration "..delta)
+            eq(row.delta,delta,"query copy cannot change full net "..delta)
+            eq(row.displayRemaining,0,"readonly query still settles to zero "..delta)
+            eq(row.displayPower,100+delta,"threshold exact settled authority "..delta)
+            local releases=#f.releases
+            f:emit({100+delta,200,300});f.power.update(1e9)
+            near(assert(f:row(1)).elapsed,1.4,"same snapshot and large dt cannot restart age "..delta)
+            eq(#f.releases,releases,"same snapshot cannot restart plaque "..delta)
+            f.clock.elapsedTime=started+duration-.01
+            row=assert(f:row(1))
+            eq(row.displayPower,row.power,"exact final total held until threshold expiry "..delta)
+            eq(row.delta,delta,"full net held until threshold expiry "..delta)
+            f:emit({100+delta,200,300})
+            f.clock.elapsedTime=started+duration+.001
+            eq(f:row(1),nil,"late duplicate cannot extend threshold expiry "..delta)
+        end
+    end)
+    case("power-large-gain-longer-hold-and-drop-never-renews-duration",function()
+        local f=powerFixture(false);f:baseline();f:emit({100100,200,300})
+        f.clock.elapsedTime=105.3
+        local row=assert(f:row(1))
+        near(row.duration,5,"large gain outlives original 3.2-second window")
+        eq(row.displayPower,100100,"large gain holds readable exact final total after 3.2 seconds")
+        eq(row.delta,100000,"large gain holds complete net after count finishes")
+        local releases=#f.releases
+        f.clock.elapsedTime=106.8;f:emit({600,200,300})
+        row=assert(f:row(1))
+        near(row.duration,5,"decline below every bonus threshold cannot replace original duration")
+        near(row.elapsed,4.8,"late decline keeps original age")
+        eq(row.delta,500,"late decline updates actual net without summing gains")
+        eq(#f.releases,releases,"late decline cannot restart plaque")
+        f.clock.elapsedTime=106.99
+        row=assert(f:row(1))
+        eq(row.displayPower,600,"late large decline completes to exact authority before old expiry")
+        eq(row.displayDelta,500,"late large decline completes exact net before old expiry")
+        eq(row.displayRemaining,0,"late decline readonly remaining never goes negative")
+        f:emit({600,200,300});f.clock.elapsedTime=107.001
+        eq(f:row(1),nil,"neither decline nor duplicate extends large-gain expiry")
+    end)
+    case("power-three-teams-independent-net-duration-and-expiry",function()
+        local f=powerFixture(false);f:baseline();f:emit({1099,200,300})
+        f.clock.elapsedTime=102.5;f:emit({1099,1200,300})
+        f.clock.elapsedTime=103;f:emit({1099,1200,100300})
+        for team,duration in ipairs({3.2,3.8,5}) do
+            near(assert(f:row(team)).duration,duration,"independent duration for squad "..team)
+        end
+        f.clock.elapsedTime=103.5;f:emit({1099,10200,100300})
+        near(assert(f:row(1)).elapsed,1.5,"team2 growth leaves team1 start untouched")
+        near(assert(f:row(2)).elapsed,0,"only team2 growth restarts age")
+        near(assert(f:row(2)).duration,4.4,"team2 cumulative net reaches next duration bucket")
+        near(assert(f:row(3)).elapsed,.5,"team2 growth leaves team3 start untouched")
+        f.clock.elapsedTime=105.201;f.power.update(0)
+        eq(f:row(1),nil,"short team expires at own deadline")
+        check(f:row(2)~=nil and f:row(3)~=nil,"both longer teams survive short expiry")
+        f.clock.elapsedTime=107.89;f:emit({1099,10200,100300})
+        eq(#f.power.getDisplayRows(),2,"duplicate cannot resurrect expired team1")
+        f.clock.elapsedTime=107.901;f.power.update(0)
+        eq(f:row(2),nil,"renewed team2 expires at its own 4.4-second deadline")
+        eq(assert(f:row(3)).displayPower,100300,"team3 final total still readable after team2 expires")
+        f.clock.elapsedTime=108.001;eq(#f.power.getDisplayRows(),0,"last squad expires at own five-second deadline")
+    end)
+    -- 连续小回执以初始基线算净增，不能只拿最后一次增幅分档或把历次净增相加。
+    case("power-rapid-growth-cumulative-net-crosses-duration-buckets",function()
+        local f=powerFixture(false);f:baseline()
+        local started=f.clock.elapsedTime
+        for index,entry in ipairs({{200,3.2},{1100,3.8},{10100,4.4},{100100,5}}) do
+            f.clock.elapsedTime=started+(index-1)*.1
+            local before=f:row(1)
+            f:emit({entry[1],200,300})
+            local row=assert(f:row(1))
+            eq(row.base,100,"rapid growth preserves original base "..index)
+            eq(row.delta,entry[1]-100,"rapid growth complete net not last increment or sum "..index)
+            near(row.duration,entry[2],"rapid cumulative net crosses duration bucket "..index)
+            near(row.elapsed,0,"real rapid growth restarts only this row "..index)
+            if before then
+                eq(row.displayPower,before.displayPower,"rapid growth keeps visible total continuity "..index)
+                eq(row.displayDelta,before.displayDelta,"rapid growth keeps query sample continuity "..index)
+            end
+        end
+        f.clock.elapsedTime=started+1.7
+        local row=assert(f:row(1))
+        eq(row.displayPower,100100,"rapid final total snaps exactly")
+        eq(row.delta,100000,"rapid final full net remains authoritative")
+        eq(row.displayRemaining,0,"rapid final readonly remaining gap zero")
+        f.clock.elapsedTime=started+5.29;f:emit({100100,200,300})
+        eq(assert(f:row(1)).displayPower,100100,"rapid final total held near renewed expiry")
+        f.clock.elapsedTime=started+5.301;eq(f:row(1),nil,"rapid duplicate cannot extend final five-second deadline")
+    end)
     case("power-extreme-final-values-three-team-cap-and-release", function()
         local f = powerFixture(false)
         local targets = {math.maxinteger,999999999999999872,1e300}
@@ -532,7 +641,9 @@ local function runPowerEvents()
             check(finite(row.displayPower) and row.displayPower >= 0,"large final sample finite team "..team)
         end
         local releases = #f.releases
-        f.clock.elapsedTime = 105.21; f.power.update(0)
+        f.clock.elapsedTime = 106.99
+        eq(#f.power.getDisplayRows(),3,"extreme gains retain all three rows before five-second expiry")
+        f.clock.elapsedTime = 107.001; f.power.update(0)
         check(#f.releases > releases,"last-row wallclock expiry releases plaque visual token")
         releases = #f.releases
         f.power.update(0); f.power.isPlaying(); f.power.getDisplayRows()
@@ -1002,8 +1113,9 @@ local function runPowerUI(vg)
                     check(#main==3 and valueLine.props.flexDirection=="row"
                         and icon.props.backgroundImage=="image/通用图标/ICON_ZDL.png"
                         and icon.props.backgroundFit=="contain", "real main line reuses power icon Panel with contain")
-                    check(remainingLabel:GetText()=="+0" and remainingLabel.props.fontSize<valueLabel.props.fontSize,
-                        "real completed remaining Label is smaller +0")
+                    check(remainingLabel:GetText()=="+"..expectedPower(expected[team]-base)
+                        and remainingLabel.props.fontSize<valueLabel.props.fontSize,
+                        "real completed smaller Label retains full net increase")
                 end
                 check(cell.w > 0 and cell.h > 0 and cell.y + cell.h <= layout.h + .001,
                     "real Label width/height inside root")
@@ -1157,8 +1269,8 @@ local function runPowerUI(vg)
             local remaining=labels[2]:GetChildren()[3] ---@type Label
             eq(value:GetText(),expectedPower(row.displayPower),
                 "real main UI text is sampled integer total only team "..team)
-            eq(remaining:GetText(),"+"..expectedPower(row.displayRemaining),
-                "real smaller remaining Label follows sampled gap team "..team)
+            eq(remaining:GetText(),"+"..expectedPower(row.delta),
+                "real smaller net Label stays authoritative throughout rolling team "..team)
             check(not value:GetText():find("+",1,true),"rolling main value never draws displayDelta team "..team)
             eq(range:GetText(),expectedRange(row.base,row.power,row.delta),
                 "real UI auxiliary remains authoritative team "..team)
@@ -1199,7 +1311,8 @@ local function runPowerUI(vg)
         f:baseline({base,0,0}); f:emit({target,0,0})
         local started=f.clock.elapsedTime
         local expected=expectedRange(base,target,delta)
-        for index,offset in ipairs({0,.585,1.4}) do
+        -- 超大净增保留到5秒，4.4秒仍须展示准确终值和完整净增而不是已清零的剩余查询。
+        for index,offset in ipairs({0,.585,1.4,4.4}) do
             f.clock.elapsedTime=started+offset
             f.power.draw(vg,1920,1080)
             local root=assert(f.draws[#f.draws]).root
@@ -1210,7 +1323,7 @@ local function runPowerUI(vg)
             local range=labels[3] ---@type Label
             local row=assert(f:row(1))
             eq(value:GetText(),expectedPower(row.displayPower),"worst-18-digit main exact sample "..index)
-            eq(remaining:GetText(),"+"..expectedPower(row.displayRemaining),"worst-18-digit remaining exact gap "..index)
+            eq(remaining:GetText(),"+"..expectedPower(row.delta),"worst-18-digit fixed full net increase "..index)
             eq(range:GetText(),expected,"worst-three-18-digit auxiliary unchanged start/middle/final "..index)
             check(value.props.fontSize>18 and value.props.fontSize<=27
                 and remaining.props.fontSize<value.props.fontSize,"worst-18-digit paired font budget "..index)
@@ -1238,7 +1351,54 @@ local function runPowerUI(vg)
             else eq(row.displayPower,target,"worst-18-digit final exact authority") end
         end
     end)
-    elseif currentStage == 26 then case("power-real-label-render-fault-recovers-outer-state", function()
+    elseif currentStage == 26 then case("power-real-ui-shared-plaque-duration-fixed-across-short-row-expiry",function()
+        local f=realPowerFixture();f:baseline({100,200,300})
+        local started=f.clock.elapsedTime
+        f:emit({100100,200,300})
+        f.clock.elapsedTime=started+.3;f.power.draw(vg,1920,1080)
+        local original=assert(f.powerDraws[#f.powerDraws])
+        near(original.duration,5,"first large-gain plaque has five-second timeline")
+        near(original.elapsed,.3,"first plaque uses original growth clock")
+        f.clock.elapsedTime=started+.5;f:emit({100100,250,300})
+        f.clock.elapsedTime=started+.8;f.power.draw(vg,1920,1080)
+        local restarted=assert(f.powerDraws[#f.powerDraws])
+        check(restarted.token~=original.token,"real second-team growth creates fresh plaque token")
+        near(restarted.duration,4.5,"new plaque covers remaining large-row deadline not short-row 3.2")
+        near(restarted.elapsed,.3,"new plaque clock bound to latest genuine growth")
+        local releases=#f.releases
+        local previousElapsed=restarted.elapsed
+        -- 小增队3.7秒先到期，铭牌不能切回旧大增队的age或改变同token的动画duration。
+        for index,offset in ipairs({3.69,3.701,4.4}) do
+            f.clock.elapsedTime=started+offset
+            f:emit({100100,250,300});f.power.update(1e9)
+            local calls=#f.powerDraws
+            f.power.draw(vg,1920,1080)
+            eq(#f.powerDraws,calls+1,"large-row remainder still draws plaque "..index)
+            local sample=assert(f.powerDraws[#f.powerDraws])
+            eq(sample.token,restarted.token,"short-row expiry preserves plaque token "..index)
+            near(sample.duration,4.5,"short-row expiry preserves fixed plaque duration "..index)
+            near(sample.elapsed,offset-.5,"plaque elapsed stays bound to token start "..index)
+            check(sample.elapsed>previousElapsed,"plaque elapsed monotonic through short expiry "..index)
+            check(sample.elapsed<sample.duration and sample.alpha>0,"surviving large-row plaque stays visible "..index)
+            eq(#f.releases,releases,"duplicate and partial expiry never retire plaque "..index)
+            previousElapsed=sample.elapsed
+            local root=assert(f.draws[#f.draws]).root
+            local children=root:GetChildren()
+            check(children[2]:IsVisible(),"large-gain UI row remains visible "..index)
+            eq(children[3]:IsVisible(),index==1,"short-gain row disappears only at own deadline "..index)
+            near(sample.height,index==1 and 410 or 314,"real plaque compacts rows without changing timeline "..index)
+            local main=children[2]:GetChildren()[2]:GetChildren()
+            local value,net=main[2],main[3] ---@type Label, Label
+            eq(value:GetText(),"100100","surviving large-gain exact final total readable "..index)
+            eq(net:GetText(),"+100000","surviving large-gain full net readable "..index)
+        end
+        f.clock.elapsedTime=started+5.001
+        local calls=#f.powerDraws
+        f.power.draw(vg,1920,1080)
+        eq(#f.powerDraws,calls,"last-row expiry stops plaque draw")
+        check(#f.releases>releases,"last-row expiry finally retires shared plaque token")
+    end)
+    elseif currentStage == 27 then case("power-real-label-render-fault-recovers-outer-state", function()
         local f = realPowerFixture()
         f:baseline(); f:emit({110,220,330}); f.clock.elapsedTime = f.clock.elapsedTime + .5
         f.power.draw(vg,1920,1080)
@@ -1445,7 +1605,7 @@ function HandleDarkEffectsTestRender(_eventType, _eventData)
         if not frameOk then check(false, "real NanoVG frame completion: " .. tostring(frameErr)) end
     end
     if not ok then check(false, "real UI suite exception: " .. tostring(err)) end
-    if not ok or (not visual.enabled and uiState.stage >= 26) then summarize() end
+    if not ok or (not visual.enabled and uiState.stage >= 27) then summarize() end
 end
 
 function Stop()

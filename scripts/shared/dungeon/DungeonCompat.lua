@@ -78,11 +78,38 @@ function DungeonCompat.migrateMonsterBuffV1(data)
     return true
 end
 
---- 加载/接收：幂等补全结构、修正 key 和日计数；不复制、清空或回退旧副本进度。
+--- 首次读档：无账本旧资源档以有效 floor-1 证明连续已通历史，先落到 cleared。
+--- Registry 比 Schema 更早调用本入口，必须先于规范化以免非空坏账本被清空后误补。
+---@param data table mod_dungeon
+local function migrateResourceClearedV1(data)
+    if type(data.compat) ~= "table" then data.compat = {} end
+    if data.compat.resourceClearedV1 then return end
+    for _, id in ipairs(DungeonConfig.RESOURCE_IDS) do
+        local sub = data[id]
+        if type(sub) == "table" then
+            local cleared = sub.cleared
+            local noLedger = cleared == nil or (type(cleared) == "table" and next(cleared) == nil)
+            local floor = math.tointeger(tonumber(sub.floor) or 0)
+            local maxFloor = DungeonConfig.MAX_FLOOR[id]
+            -- floor=1 不授予首层；小数/非法/越界值不能经后续规范化变成迁移凭据。
+            if noLedger and floor and floor > 1 and floor <= maxFloor + 1 then
+                local history = {}
+                for clearedFloor = 1, floor - 1 do history[clearedFloor] = true end
+                sub.cleared = history
+                print(string.format("[DungeonCompat] %s legacy cleared migrated: 1..%d", id, floor - 1))
+            end
+        end
+    end
+    -- 新档与非空账本也标记此次判定，重复加载不重推断、不补齐新章节跳过的层。
+    data.compat.resourceClearedV1 = true
+end
+
+--- 加载/接收：幂等补全结构、修正 key 和日计数；无账本旧资源档先迁移已通历史。
 --- 旧难度迁移仍只由服务端或显式 runMigration 开启，不扩展到新 ID。
 ---@param data table mod_dungeon
 ---@param opts table|nil { runMigration?: boolean }
 function DungeonCompat.onLoad(data, opts)
+    migrateResourceClearedV1(data)
     local today = math.floor((os.time() + 28800) / 86400)
     for _, id in ipairs({ "gold_mine", "ancient_ruin", "equipment_vault", "black_diamond", "babel_tower" }) do
         if type(data[id]) ~= "table" then

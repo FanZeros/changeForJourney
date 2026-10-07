@@ -449,13 +449,14 @@ function DungeonConfig.getEquipSweepCount(floor)
     return DungeonConfig.EQUIP_SWEEP_BASE + (floor - 1) * DungeonConfig.EQUIP_SWEEP_STEP
 end
 
---- 装备副本沿用源关卷轴掉率；扫荡券与主线同口径（卷轴的 2 倍，夹在 0.06~0.20）。
+--- 装备副本沿用源关卷轴掉率；扫荡券委托主线统一掉率，不另设倍率。
 ---@param floor number
 ---@return number scrollRate, number ticketRate
 function DungeonConfig.getEquipDropRates(floor)
     local source = getSourceStage("equipment_vault", floor)
     local scrollRate = source and (source.scrollDropRate or 0.05) or 0.05
-    local ticketRate = math.min(0.20, math.max(0.06, scrollRate * 2))
+    -- 函数内加载，避免配置初始化与掉落系统互相引用。
+    local ticketRate = require("systems.DropSystem").getSweepTicketRate(scrollRate)
     return scrollRate, ticketRate
 end
 
@@ -673,6 +674,22 @@ function DungeonConfig.getStageExpAmount(stageId, kills)
     return math.floor(expPerMin * count / 20 + 0.5)
 end
 
+--- 装备副本卷轴/扫荡券的只读期望；不骰奖励、不生成装备、不改变玩家数据。
+---@param stageId number|string
+---@param kills number
+---@return table<string, number> 六种卷轴与扫荡券期望；其他副本或非法击杀数为空
+function DungeonConfig.getStageScrollEstimate(stageId, kills)
+    local id, floor = DungeonConfig.decodeStageId(stageId)
+    local count = tonumber(kills) or 0
+    if id ~= "equipment_vault" or count <= 0 or count ~= count or count == math.huge then return {} end
+    local scrollRate, ticketRate = DungeonConfig.getEquipDropRates(floor)
+    local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
+    local estimate = {}
+    for _, key in ipairs(scrollTypes) do estimate[key] = count * scrollRate / #scrollTypes end
+    estimate.sweepTicket = count * ticketRate
+    return estimate
+end
+
 -- 在线每次击杀与离线固定杀怪效率复用原每分钟收益，不把一次扫荡变为无限波大奖。
 ---@param heroCount number|nil 实际领取队伍人数，旧调用默认一人
 function DungeonConfig.getStageRewards(stageId, kills, heroCount)
@@ -687,15 +704,18 @@ function DungeonConfig.getStageRewards(stageId, kills, heroCount)
     if math.random() < raw - amount then amount = amount + 1 end
     if id == "gold_mine" then rewards.gold = amount
     elseif id == "black_diamond" then rewards.diamond = amount
-    elseif amount > 0 then
-        local data = DungeonConfig.getFloor(id, floor)
-        for _ = 1, amount do
-            rewards.equipSeeds[#rewards.equipSeeds + 1] = {
-                stageId = stageId, count = 1, level = data.equipLevel,
-                quality = math.random(data.equipMinQuality, data.equipMaxQuality),
-            }
+    elseif id == "equipment_vault" then
+        if amount > 0 then
+            local data = DungeonConfig.getFloor(id, floor)
+            for _ = 1, amount do
+                rewards.equipSeeds[#rewards.equipSeeds + 1] = {
+                    stageId = stageId, count = 1, level = data.equipLevel,
+                    quality = math.random(data.equipMinQuality, data.equipMaxQuality),
+                }
+            end
         end
-        -- 装备副本按源关掉率补卷轴与扫荡券，资源结构向主线靠拢。
+        -- 卷轴与扫荡券独立于装备数量；未掉装备的一杀也能命中。
+        -- 仅装备副本允许此补充掉落，金币/黑钻不借用主线掉落。
         local scrollRate, ticketRate = DungeonConfig.getEquipDropRates(floor)
         local killsN = math.max(0, tonumber(kills) or 0)
         local function rollCount(r)

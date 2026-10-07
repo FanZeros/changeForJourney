@@ -417,6 +417,8 @@ local pendingGachaPull = false
 local pendingGachaPullTime = 0       -- 发送时间戳
 ---@type number|nil
 local pendingGachaCount = nil
+---@type string|nil
+local pendingGachaPoolId = nil
 local GACHA_PULL_TIMEOUT   = 8       -- 超时秒数（缩短至8秒，更快恢复）
 
 local function notifyRecruitStarted(count)
@@ -426,7 +428,7 @@ end
 
 local function failPendingRecruit()
     local count = pendingGachaCount
-    pendingGachaPull, pendingGachaCount = false, nil
+    pendingGachaPull, pendingGachaCount, pendingGachaPoolId = false, nil, nil
     if count then
         require("systems.TutorialManager").notifyEvent(count == 10 and "gacha10_failed" or "gacha_failed")
     end
@@ -590,6 +592,7 @@ local function doRecruitDirect(count, forcePayType)
         pendingGachaPull = true
         pendingGachaPullTime = time.elapsedTime
         pendingGachaCount = count
+        pendingGachaPoolId = poolId
         -- 单机桥可同步回执，必须先进入等待步骤，再发送实际请求。
         notifyRecruitStarted(count)
         local handled = _sendAction(Protocol.ACTION_TYPES.GACHA_PULL,
@@ -662,7 +665,18 @@ local function doRecruit(count)
     doRecruitDirect(count)
 end
 
-RecruitAnim.setOnAgain(function(count)
+RecruitAnim.setOnAgain(function(count, poolId)
+    -- 继续抽取当前结果所属池；异步回执期间页面可能切池或重新打开。
+    if poolId then
+        for index, pool in ipairs(pools) do
+            if pool.id == poolId then
+                state.selectedPool = index
+                refreshPoolMeta()
+                syncDisplayData()
+                break
+            end
+        end
+    end
     doRecruit(count)
 end)
 
@@ -1258,7 +1272,8 @@ function TavernPage.onActionResult(data)
     end
 
     local requestCount = pendingGachaCount
-    pendingGachaPull, pendingGachaCount = false, nil
+    local requestPoolId = pendingGachaPoolId
+    pendingGachaPull, pendingGachaCount, pendingGachaPoolId = false, nil, nil
     print("[TavernPage] pendingGachaPull released (action=" .. tostring(data.action) .. " success=" .. tostring(data.success) .. ")")
 
     if not data.success then
@@ -1275,8 +1290,9 @@ function TavernPage.onActionResult(data)
         return
     end
 
-    -- 记录历史
-    TavernPopups.recordHistory(data.gachaResults, data.poolId or getSelectedPoolId())
+    local resultPoolId = data.poolId or requestPoolId or getSelectedPoolId()
+    -- 记录历史，冻结本次请求池，不拿页面后来的选中池解释旧结果。
+    TavernPopups.recordHistory(data.gachaResults, resultPoolId)
 
     -- 同步保底计数
     if data.pity then
@@ -1313,7 +1329,7 @@ function TavernPage.onActionResult(data)
         syncDisplayData()
         print("[TavernPage] 招募动画结束（服务端模式）")
         require("ui.character.hero.HeroScenario").onRecruitResults(data.gachaResults)
-    end, nil, getSelectedPoolId())
+    end, requestCount, resultPoolId)
 end
 
 -- ======================== 拖拽/滚动支持 ========================

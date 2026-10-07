@@ -58,6 +58,9 @@ function Start()
         eq(actualAffix, transportedAffix, "实际水合词条等于精确双JSON流水，不能重骰或再改精度")
         F.same(modules.dungeon, expected.modules.dungeon, "双onLoad冷恢复副本账本/日次/余秒/游标")
         F.same(modules.currency, expected.modules.currency, "冷恢复奖励余额")
+        eq(modules.currency.sweepTicket, stored.modules.currency.sweepTicket,
+            "一券一场扣除及合法挂机所得券余额按真实File冷恢复")
+        eq(modules.currency.sweepTicket, expected.modules.currency.sweepTicket, "冷恢复不返还已消费扫荡券")
         F.same(modules.equipment, expected.modules.equipment, "冷恢复确定背包装备")
         F.same(modules.lootbox, expected.modules.lootbox, "冷恢复确定遗匣装备")
         F.same(modules.battle, expected.modules.battle, "主线进度保持")
@@ -67,7 +70,7 @@ function Start()
         for _, id in ipairs(h.DC.RESOURCE_IDS) do
             eq(modules.dungeon[id].floor, 2, "冷恢复独立副本层")
             eq(modules.dungeon[id].cleared[1], true, "冷恢复首通记录")
-            eq(modules.dungeon[id].dailyUsed, 1, "冷恢复扫荡次数")
+            eq(modules.dungeon[id].dailyUsed, 0, "冷恢复新扫荡不扣旧每日次数")
             eq(h.Service.Win(1, id, 2, 2), false, "冷恢复不保留内存pending不能伪Win")
         end
         eq(modules.dungeon.ancient_ruin.idleAccumSec, 88000, "旧粉尘未被新资源挪用")

@@ -656,10 +656,10 @@ function BattleScene.init(vg)
 
     -- 初始化扫荡弹窗
     SweepDialog.init(vg)
-    SweepDialog.onSweep = function(count, teamIdx)
+    SweepDialog.onSweep = function(count, teamIdx, stageId)
         require("runtime.GameAction").sendAction(
             require("shared.Protocol").ACTION_TYPES.SWEEP,
-            { count = count or 1, teamIdx = teamIdx or 1 })
+            { count = count or 1, teamIdx = teamIdx or 1, stageId = stageId })
     end
 
     -- 初始化战斗统计面板
@@ -1327,7 +1327,7 @@ function BattleScene.handleInput(dx, dy)
     if SweepDialog.handleInput(dx, dy) then return true end
     -- 战斗统计面板（已打开时拦截所有输入，需在按钮判定之前）
     if DamageStatsPanel.handleInput(dx, dy) then return true end
-    if SweepDialog.handleButtonInput(dx, dy) then return true end
+    if SweepDialog.handleButtonInput(dx, dy, 1, currentStageId) then return true end
     if DamageStatsPanel.handleButtonInput(dx, dy) then return true end
 
     -- 首通战斗倍速按钮

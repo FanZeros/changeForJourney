@@ -1146,14 +1146,19 @@ function EquipmentBag.draw(vg, opts)
 
                 -- 单件贡献与等级分行，不占用 E/头像、锁及升阶角标。
                 do
-                    local powerText = "战力 " .. tostring(entry.power or 0)
-                    local powerFont = 26
+                    local powerText = tostring(entry.power or 0)
+                    local powerFont, iconSize, gap = 26, 22, 4
                     nvgFontFace(vg, "sans")
                     nvgFontSize(vg, powerFont)
                     local textW = nvgTextBounds(vg, 0, 0, powerText) or 0
-                    local maxW = CELL_SIZE * 0.62
+                    local maxW = CELL_SIZE * 0.62 - iconSize - gap
                     if textW > maxW then powerFont = powerFont * maxW / textW end
-                    DrawUtil.drawTextStroke(vg, cx + CELL_SIZE * 0.45, cy + CELL_SIZE * 0.15,
+                    nvgFontSize(vg, powerFont)
+                    local fittedW = nvgTextBounds(vg, 0, 0, powerText) or 0
+                    local right, bottom = cx + CELL_SIZE * 0.45, cy + CELL_SIZE * 0.15
+                    DarkIcon.draw(vg, "power", right - fittedW - gap - iconSize * .5,
+                        bottom - iconSize * .5, iconSize, 1)
+                    DrawUtil.drawTextStroke(vg, right, bottom,
                         powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, 244, 237, 224, 3)
                 end
 

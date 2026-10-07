@@ -1066,7 +1066,7 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         BattleScene.drawSpeedButton(vg)
         nvgRestore(vg)
     end
-    if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(1)) then
+    do
         nvgSave(vg)
         nvgTranslate(vg, hudSweepX, hudY)
         nvgScale(vg, hudScale, hudScale)
@@ -1125,7 +1125,7 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
             BattleScene.drawSpeedButton(vg)
             nvgRestore(vg)
         end
-        if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(row)) then
+        do
             nvgSave(vg)
             nvgTranslate(vg, rowSweepX, rowY)
             nvgScale(vg, hudScale, hudScale)
@@ -1241,9 +1241,10 @@ function BattleTriPage.handleInput(wx, wy)
         bs.handleSpeedButtonInput(987 + (wx - hudSpeedX) / hudScale, 311 + (wy - hudY) / hudScale)
         return true
     end
-    if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(1))
-        and math.abs(wx - hudSweepX) <= hitW and math.abs(wy - hudY) <= hitH then
-        SweepDialog.handleButtonInput(971 + (wx - hudSweepX) / hudScale, 2115 + (wy - hudY) / hudScale, 1)
+    if math.abs(wx - hudSweepX) <= hitW and math.abs(wy - hudY) <= hitH then
+        -- 驱动 stageId 是已到达关卡；pendingStageId 仅是行军预约，不能冒充当前。
+        SweepDialog.handleButtonInput(971 + (wx - hudSweepX) / hudScale, 2115 + (wy - hudY) / hudScale,
+            1, BattleTriPage.getTeamStageId(1))
         return true
     end
     if math.abs(wx - hudStatsX) <= hitW and math.abs(wy - hudY) <= hitH then
@@ -1281,9 +1282,9 @@ function BattleTriPage.handleInput(wx, wy)
             bs.handleSpeedButtonInput(987 + (wx - rowSpeedX) / hudScale, 311 + (wy - rowY) / hudScale)
             return true
         end
-        if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(row))
-            and math.abs(wx - rowSweepX) <= hitW and math.abs(wy - rowY) <= hitH then
-            SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale, row)
+        if math.abs(wx - rowSweepX) <= hitW and math.abs(wy - rowY) <= hitH then
+            SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale,
+                row, BattleTriPage.getTeamStageId(row))
             return true
         end
         if math.abs(wx - rowStatsX) <= hitW and math.abs(wy - rowY) <= hitH then

@@ -264,14 +264,19 @@ function M.bind(deps)
 
                 -- 单件贡献位于等级上方，保留右下等级及左下套装徽记占位。
                 do
-                    local powerText = "战力 " .. tostring(equip.power or 0)
-                    local powerFont = 26
+                    local powerText = tostring(equip.power or 0)
+                    local powerFont, iconSize, gap = 26, 22, 4
                     nvgFontFace(vg, "sans")
                     nvgFontSize(vg, powerFont)
                     local textW = nvgTextBounds(vg, 0, 0, powerText) or 0
-                    local maxW = GRID.CELL_SIZE * 0.62
+                    local maxW = GRID.CELL_SIZE * 0.62 - iconSize - gap
                     if textW > maxW then powerFont = powerFont * maxW / textW end
-                    DrawUtil.drawTextStroke(vg, cx + GRID.CELL_SIZE * 0.45, cy + GRID.CELL_SIZE * 0.15,
+                    nvgFontSize(vg, powerFont)
+                    local fittedW = nvgTextBounds(vg, 0, 0, powerText) or 0
+                    local right, bottom = cx + GRID.CELL_SIZE * 0.45, cy + GRID.CELL_SIZE * 0.15
+                    DarkIcon.draw(vg, "power", right - fittedW - gap - iconSize * .5,
+                        bottom - iconSize * .5, iconSize, 1)
+                    DrawUtil.drawTextStroke(vg, right, bottom,
                         powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM,
                         244, 237, 224, 3)
                 end

@@ -17,6 +17,8 @@ local EquipmentSystem  = require("systems.EquipmentSystem")
 local AD               = require("systems.AttributeDef")
 local I18n             = require("core.I18n")
 local MaterialTip      = require("ui.blacksmith.RefineMaterialTip")
+local KeywordText      = require("ui.widget.KeywordText")
+local rowKeywords = KeywordText.new()
 
 local drawImageCentered = DrawUtil.drawImageCentered
 local hitTest           = DrawUtil.hitTest
@@ -267,7 +269,23 @@ selectedExtraRes = nil  -- EXTRA_RES_OPTIONS[n] or nil
 --- 额外资源选择弹窗是否打开
 local extraResPopupOpen = false
 
+function M.clearKeywords()
+    rowKeywords:clear()
+end
+
+function M.handleKeywordInput(dx, dy)
+    -- 材料选择是更高层 modal，不能让被遮挡的右侧词条先消费点击。
+    if extraResPopupOpen then return M.handleInput(dx, dy) end
+    return rowKeywords:handleInput(dx, dy)
+end
+
+function M.drawKeywordsPopup(vg)
+    rowKeywords:drawPopup(vg)
+end
+
 function M.handleHover(dx, dy)
+    rowKeywords:setHover(dx, dy)
+    if rowKeywords:isOpen() then MaterialTip.clear(); return end
     MaterialTip.hover(dx, dy, XL, EXTRA_RES_OPTIONS, extraResPopupOpen)
 end
 
@@ -391,6 +409,7 @@ local function affixToDisplayRow(affix, equip, index, corruptMeta)
     local effVal = equip and EquipmentSystem.effectiveAffixValue(equip, affix) or affix.value
     local row = {
         name = affix.name or affix.key or "?",
+        key = affix.key,
         value = formatAffixValue(affix.key, effVal, affix.affixId),
         grade = qDef and qDef.name or "D",
         isCorrupt = isCorrupt,
@@ -468,6 +487,7 @@ end
 
 --- 根据选中装备更新洗练面板数据
 function M.updateRefineData(equip)
+    M.clearKeywords()
     MaterialTip.clear()
     if not equip then
         refineData.before       = {}
@@ -549,13 +569,17 @@ local function drawRefineAttrRows(vg, attrs, firstY, panelLeft, offsetX, alpha, 
         end
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         local nameRGB = attr.nameColor or { XL.ATTR_NAME_R, XL.ATTR_NAME_G, XL.ATTR_NAME_B }
-        nvgFillColor(vg, nvgRGBA(nameRGB[1], nameRGB[2], nameRGB[3], a))
-        nvgText(vg, panelLeft + XL.ATTR_NAME_X + offsetX, rowY, name, nil)
+        rowKeywords:drawAttribute(vg, name, attr.key, panelLeft + XL.ATTR_NAME_X + offsetX,
+            rowY, XL.ATTR_NAME_MAX_W, nameFont,
+            { keywordColor = attr.nameColor, alpha = a, interactive = a >= 128,
+              clip = { XL.FRAME_CX - XL.FRAME_W * 0.5, XL.FRAME_CY - XL.FRAME_H * 0.5,
+                       XL.FRAME_W, XL.FRAME_H } })
 
         -- 腐化标签已移除（2026-09-30）：魔化/弱化状态只通过名称与数值颜色表达
 
         -- 数值（右对齐）：腐化对比时数值行下移一行展示「旧 → 新」
         local valueText = tostring(attr.value or "")
+        nvgFontSize(vg, nameFont)
         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
         local valRGB = attr.valueColor or { XL.ATTR_VAL_R, XL.ATTR_VAL_G, XL.ATTR_VAL_B }
         nvgFillColor(vg, nvgRGBA(valRGB[1], valRGB[2], valRGB[3], a))
@@ -596,6 +620,7 @@ end
 
 --- 绘制洗练界面上半部分
 function M.drawPanel(vg)
+    rowKeywords:beginFrame()
     local data = refineData
 
     -- 计算动画进度
@@ -1060,6 +1085,7 @@ function M.handleInput(dx, dy)
         return true
     end
 
+    if rowKeywords:handleInput(dx, dy) then return true end
     -- ===== 2. 洗练前词缀锁定（点金石路径不显示锁；左侧面板内坐标） =====
     if shouldShowAffixLocks() and state.selectedEquip and #refineData.before > 0 then
         local seq = state.selectedEquip.seq
@@ -1133,6 +1159,7 @@ end
 ---@param data table 服务端返回数据
 ---@return boolean 是否已处理
 function M.onActionResult(data)
+    M.clearKeywords()
     if data.success == false and data.reason then
         showRefineToast(data.reason)
         return true
@@ -1205,6 +1232,7 @@ function M.onActionResult(data)
                     and EquipmentSystem.effectiveAffixValue(state.selectedEquip, affix) or affix.value
                 before[#before + 1] = {
                     name = affix.name or affix.key or "?",
+                    key = affix.key,
                     value = formatAffixValue(affix.key, effVal, affix.affixId),
                     grade = gradeName,
                 }
@@ -1269,6 +1297,7 @@ function M.onActionResult(data)
                     and EquipmentSystem.effectiveAffixValue(state.selectedEquip, affix) or affix.value
                 before[#before + 1] = {
                     name = affix.name or affix.key or "?",
+                    key = affix.key,
                     value = formatAffixValue(affix.key, effVal, affix.affixId),
                     grade = gradeName,
                 }
@@ -1373,6 +1402,7 @@ function M.onActionResult(data)
                 and EquipmentSystem.effectiveAffixValue(state.selectedEquip, affix) or affix.value
             after[#after + 1] = {
                 name = affix.name or affix.key or "?",
+                key = affix.key,
                 value = formatAffixValue(affix.key, effVal, affix.affixId),
                 grade = gradeName,
             }

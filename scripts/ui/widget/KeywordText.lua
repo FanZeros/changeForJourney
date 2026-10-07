@@ -27,6 +27,7 @@ local KW = require("config.KeywordConfig")
 local GameConfig = require("config.GameConfig")
 local I18n = require("core.I18n")
 local KeywordLocale = require("core.I18nKeywords")
+local AD = require("systems.AttributeDef")
 
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
 local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
@@ -159,6 +160,38 @@ local function splitSegments(source)
     return segs, text
 end
 
+-- 显示样式只作用于片段颜色，不改文本或业务 key（神器数值/比例沿用旧色）。
+local function styledSegments(segs, styles)
+    if not styles or #styles == 0 then return segs end
+    local result = {}
+    for _, seg in ipairs(segs) do
+        if seg.keyword then
+            result[#result + 1] = seg
+        else
+            local at = 1
+            while at <= #seg.text do
+                local first, last, color
+                for _, style in ipairs(styles) do
+                    if style.text and style.text ~= "" then
+                        local s, e = seg.text:find(style.text, at, true)
+                        if s and (not first or s < first or (s == first and e > last)) then
+                            first, last, color = s, e, style.color
+                        end
+                    end
+                end
+                if not first then
+                    result[#result + 1] = { text = seg.text:sub(at) }
+                    break
+                end
+                if first > at then result[#result + 1] = { text = seg.text:sub(at, first - 1) } end
+                result[#result + 1] = { text = seg.text:sub(first, last), color = color }
+                at = last + 1
+            end
+        end
+    end
+    return result
+end
+
 -- ======================== 排版（缓存） ========================
 
 --- UTF-8安全折行：英文普通词尽量整体换行，超宽词/关键词才逐codepoint拆行。
@@ -177,11 +210,12 @@ local function layoutSegments(vg, segs, width, fontSize)
         cur = { pieces = {}, width = 0 }
         lines[#lines + 1] = cur
     end
+    local pieceColor = nil ---@type table|nil
     local function addPiece(s, key)
         if s == "" then return end
         local w, inkLeft, inkTop, inkHeight = measure(vg, fontSize, s)
         cur.pieces[#cur.pieces + 1] = { text = s, keyword = key ~= nil, key = key, w = w,
-            inkLeft = inkLeft, inkTop = inkTop, inkHeight = inkHeight }
+            inkLeft = inkLeft, inkTop = inkTop, inkHeight = inkHeight, color = pieceColor }
         cur.width = cur.width + w
     end
     local function addToken(token, key)
@@ -207,6 +241,7 @@ local function layoutSegments(vg, segs, width, fontSize)
         addPiece(buf, key)
     end
     for _, seg in ipairs(segs) do
+        pieceColor = seg.color
         if seg.keyword then
             addToken(seg.text, seg.key)
         else
@@ -231,7 +266,7 @@ local function layoutSegments(vg, segs, width, fontSize)
         local pieces = {}
         for _, piece in ipairs(line.pieces) do
             local previous = pieces[#pieces]
-            if previous and not previous.keyword and not piece.keyword then
+            if previous and not previous.keyword and not piece.keyword and previous.color == piece.color then
                 -- 普通文字可以合并，关键词不合并（相邻不同出现次数仍有独立热区）。
                 local combined = previous.text .. piece.text
                 local combinedW, inkLeft, inkTop, inkHeight = measure(vg, fontSize, combined)
@@ -263,8 +298,16 @@ local function layoutMetrics(layout, fontSize, lineHeight)
     return lh, math.max(#layout.lines * lh, (#layout.lines - 1) * lh + inkHeight)
 end
 
-local function layoutText(vg, text, width, fontSize)
-    local segs, display = splitSegments(text)
+local function layoutText(vg, text, width, fontSize, opts)
+    -- 属性全名无需做机制子串扫描；本地化仅发生一次。
+    local segs, display
+    if opts and opts.attributeKey then
+        display = I18n.lookup(text)
+        segs = { { text = display, keyword = true, key = "attribute:" .. opts.attributeKey } }
+    else
+        segs, display = splitSegments(text)
+    end
+    segs = styledSegments(segs, opts and opts.styles)
     local layout = layoutSegments(vg, segs, width, fontSize)
     layout.displayText = display
     return layout
@@ -315,7 +358,7 @@ end
 ---@param width number
 ---@param fontSize number
 ---@return table
-function KeywordText:_layout(vg, text, width, fontSize)
+function KeywordText:_layout(vg, text, width, fontSize, opts)
     self:_syncLanguage()
     -- nil估算布局不能污染后续真实NanoVG字体测量；切换上下文时也必须失效。
     if self._layoutContext ~= vg then
@@ -325,11 +368,15 @@ function KeywordText:_layout(vg, text, width, fontSize)
         self._drawIndex = 0
         self._drawIdentities = {}
     end
+    local styleKeys = { opts and opts.attributeKey or "" }
+    for _, style in ipairs(opts and opts.styles or {}) do
+        styleKeys[#styleKeys + 1] = style.text .. ":" .. table.concat(style.color, ",")
+    end
     local key = I18n.get() .. "\0" .. text .. "\0" .. width .. "\0" .. fontSize
-        .. "\0" .. measurementScale(vg, fontSize)
+        .. "\0" .. measurementScale(vg, fontSize) .. "\0" .. table.concat(styleKeys, "\0")
     local hit = self._cache[key]
     if hit then return hit end
-    local layout = layoutText(vg, text, width, fontSize)
+    local layout = layoutText(vg, text, width, fontSize, opts)
     self._cache[key] = layout
     self._cacheKeys[#self._cacheKeys + 1] = key
     if #self._cacheKeys > CACHE_LIMIT then
@@ -349,9 +396,10 @@ end
 ---@param lineHeight number|nil 行高（默认 fontSize*1.35）
 ---@param centerCX number|nil 传入则每行以该 X 居中（x 仅参与折行宽度计算）
 ---@param keepHotspots boolean|nil 为 true 时追加热区（同一帧多段文本共用一个实例）
+---@param opts table|nil 仅显示选项 { keywordColor, alpha, clip={x,y,w,h}, interactive=false, styles }
 ---@return number 总高度
-function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX, keepHotspots)
-    local layout = self:_layout(vg, text, width, fontSize)
+function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX, keepHotspots, opts)
+    local layout = self:_layout(vg, text, width, fontSize, opts)
     local lh, height = layoutMetrics(layout, fontSize, lineHeight)
 
     if not keepHotspots then
@@ -360,8 +408,10 @@ function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX,
     end
     -- 同帧多段各自保存身份，避免总览首尾段每帧互相清掉弹窗。
     self._drawIndex = self._drawIndex + 1
+    local clip = opts and opts.clip
     local identity = table.concat({ text, tostring(x), tostring(y), tostring(width),
-        tostring(fontSize), tostring(lh), tostring(centerCX) }, "\0")
+        tostring(fontSize), tostring(lh), tostring(centerCX), tostring(opts and opts.attributeKey),
+        tostring(opts and opts.interactive), clip and table.concat(clip, ",") or "" }, "\0")
     if identity ~= self._drawIdentities[self._drawIndex] then
         self._drawIdentities[self._drawIndex] = identity
         self.popup, self.hoverIdx = nil, nil
@@ -379,20 +429,29 @@ function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX,
         end
         for _, p in ipairs(line.pieces) do
             if p.keyword then
+                local x1, y1, x2 = cx, ly, cx + p.w
+                local y2 = ly + math.max(fontSize, p.inkHeight or fontSize)
+                if clip then
+                    x1, y1 = math.max(x1, clip[1]), math.max(y1, clip[2])
+                    x2, y2 = math.min(x2, clip[1] + clip[3]), math.min(y2, clip[2] + clip[4])
+                end
                 local idx = #self.hotspots + 1
-                self.hotspots[idx] = { x1 = cx, y1 = ly, x2 = cx + p.w,
-                    y2 = ly + math.max(fontSize, p.inkHeight or fontSize),
-                    name = p.key, key = p.key, text = p.text }
+                if x2 > x1 and y2 > y1 and not (opts and opts.interactive == false) then
+                    self.hotspots[idx] = { x1 = x1, y1 = y1, x2 = x2, y2 = y2,
+                        name = p.key, key = p.key, text = p.text, clip = clip,
+                        sourceName = opts and opts.attributeKey and text or nil }
+                end
                 if vg then
-                    local col = self.hoverIdx == idx and KEYWORD_HOVER or KEYWORD_COLOR
+                    local col = opts and opts.keywordColor
+                        or (self.hoverIdx == idx and KEYWORD_HOVER or KEYWORD_COLOR)
                     nvgFontSize(vg, fontSize)
-                    nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
+                    nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], opts and opts.alpha or col[4] or 255))
                     I18n.displayText(vg, cx - (p.inkLeft or 0), ly - (p.inkTop or 0), p.text, nil)
                 end
             elseif vg then
                 nvgFontSize(vg, fontSize)
-                local tc = self.textColor
-                nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], tc[4] or 255))
+                local tc = p.color or self.textColor
+                nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], opts and opts.alpha or tc[4] or 255))
                 I18n.displayText(vg, cx - (p.inkLeft or 0), ly - (p.inkTop or 0), p.text, nil)
             end
             cx = cx + p.w
@@ -401,6 +460,42 @@ function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX,
 
     self._lastLayoutH = height
     return self._lastLayoutH
+end
+
+--- 多行表格一帧起点：保留布局缓存和当前气泡，空表也会清旧热区。
+function KeywordText:beginFrame()
+    self:_syncLanguage()
+    self.hotspots = {}
+    self._drawIndex = 0
+end
+
+--- 固定高度属性名：整行按原属性key点击，数值/徽章仍由调用者绘制。
+---@param vg any
+---@param text string
+---@param attributeKey string|nil
+---@param x number 左对齐起点或右对齐终点
+---@param centerY number
+---@param maxW number
+---@param fontSize number
+---@param opts table|nil { right, keywordColor, alpha, clip, interactive }
+---@return number width, number fontSize
+function KeywordText:drawAttribute(vg, text, attributeKey, x, centerY, maxW, fontSize, opts)
+    opts = opts or {}
+    local style = {}
+    for key, value in pairs(opts) do style[key] = value end
+    local meta = attributeKey and AD.META[attributeKey]
+    if meta and AD.getDesc(attributeKey) ~= "" then style.attributeKey = attributeKey end
+    local size = fontSize
+    local layout = self:_layout(vg, text, 100000, size, style)
+    local width = layout.lines[1].width
+    while width > maxW and size > 8 do
+        size = size - 1
+        layout = self:_layout(vg, text, 100000, size, style)
+        width = layout.lines[1].width
+    end
+    local left = opts.right and x - width or x
+    self:draw(vg, text, left, centerY - size * 0.5, math.max(maxW, width), size, size, nil, true, style)
+    return width, size
 end
 
 --- 帧末移除已经不再绘制的尾段，防止旧热区对应的弹窗继续显示。
@@ -457,6 +552,20 @@ function KeywordText:_map(dx, dy)
     return dx, dy
 end
 
+local function containsHotspot(h, x, y)
+    local clip = h.clip
+    if clip and (x < clip[1] or x > clip[1] + clip[3] or y < clip[2] or y > clip[2] + clip[4]) then
+        return false
+    end
+    return x >= h.x1 and x <= h.x2 and y >= h.y1 - 4 and y <= h.y2 + 4
+end
+
+local function hotspotDefinition(key, sourceName)
+    local attributeKey = key:match("^attribute:(.+)$")
+    if attributeKey then return KeywordLocale.getAttribute(attributeKey, I18n.get(), sourceName) end
+    return KeywordLocale.get(key, I18n.get())
+end
+
 --- 悬停更新（可选调用；坐标与热区同空间）
 ---@param dx number
 ---@param dy number
@@ -465,7 +574,7 @@ function KeywordText:setHover(dx, dy)
     local mx, my = self:_map(dx, dy)
     local hitIdx = nil
     for i, h in ipairs(self.hotspots) do
-        if mx >= h.x1 and mx <= h.x2 and my >= h.y1 - 4 and my <= h.y2 + 4 then
+        if containsHotspot(h, mx, my) then
             hitIdx = i
             break
         end
@@ -510,8 +619,8 @@ function KeywordText:handleInput(dx, dy)
     end
     local mx, my = self:_map(dx, dy)
     for _, h in ipairs(self.hotspots) do
-        if mx >= h.x1 and mx <= h.x2 and my >= h.y1 - 4 and my <= h.y2 + 4 then
-            local def = KeywordLocale.get(h.name, I18n.get())
+        if containsHotspot(h, mx, my) then
+            local def = hotspotDefinition(h.name, h.sourceName)
             if def then
                 local anchorCX = (h.x1 + h.x2) * 0.5
                 local anchorY  = h.y1

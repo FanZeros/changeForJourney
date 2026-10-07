@@ -663,6 +663,8 @@ end
 ---@param preSelectEquip table|nil 预选装备（从装备详情跳转时传入）
 ---@param initialTab string|nil 初始 tab："qianghua"|"xilian"，默认 "qianghua"
 function BlacksmithPage.open(preSelectEquip, initialTab)
+    BlacksmithEnhance.clearKeywords()
+    BlacksmithRefine.clearKeywords()
     BlacksmithRefine.clearHover()
     if not blacksmithInited_ and blacksmithVg_ then
         BlacksmithPage.init(blacksmithVg_)
@@ -770,6 +772,8 @@ end
 
 --- 关闭铁匠铺（启动关闭动画；动画完成后联动关闭仓库）
 function BlacksmithPage.close()
+    BlacksmithEnhance.clearKeywords()
+    BlacksmithRefine.clearKeywords()
     BlacksmithRefine.clearHover()
     if state.closing then return end
     require("systems.StoryPlayer").onPlace("smith", "leave")
@@ -796,6 +800,8 @@ end
 
 --- 强制关闭（跳过动画，用于安全恢复）
 function BlacksmithPage.forceClose()
+    BlacksmithEnhance.clearKeywords()
+    BlacksmithRefine.clearKeywords()
     BlacksmithRefine.clearHover()
     if not state.open then return end
     print("[BlacksmithPage] forceClose: 跳过动画强制关闭 (closing=" .. tostring(state.closing) .. ")")
@@ -962,6 +968,12 @@ function BlacksmithPage.draw(vg)
     end
     bindPageDraw()
     _pageDraw.drawPageImpl(vg)
+    -- 解释气泡在 tab 内容裁剪外；二级确认/装备详情仍为更上层。
+    if state.open and not state.closing and state.selectedEquip and ox == 0
+        and not EquipmentDetail.isOpen() and not BlacksmithEnhance.isDialogOpen() then
+        local keywordPanel = state.tab == "xilian" and BlacksmithRefine or BlacksmithEnhance
+        keywordPanel.drawKeywordsPopup(vg)
+    end
     if state.open and not state.closing and state.tab == "xilian" and state.selectedEquip
         and ox == 0 and materialHoverSource and not EquipmentDetail.isOpen() then
         local dx, dy = materialHoverSource()

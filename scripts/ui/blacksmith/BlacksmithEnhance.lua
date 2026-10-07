@@ -21,11 +21,16 @@ local BF                = require("systems.ButtonFeedback")
 local EquipmentSystem   = require("systems.EquipmentSystem")
 local I18n              = require("core.I18n")
 local EquipmentText     = require("core.I18nEquipmentText")
+local rowKeywords = require("ui.widget.KeywordText").new()
 
 local drawImageCentered = DrawUtil.drawImageCentered
 local hitTest           = DrawUtil.hitTest
 
 local M = {}
+
+function M.clearKeywords() rowKeywords:clear() end
+function M.handleKeywordInput(dx, dy) return rowKeywords:handleInput(dx, dy) end
+function M.drawKeywordsPopup(vg) rowKeywords:drawPopup(vg) end
 
 -- ======================== 门控状态（防止快速连点） ========================
 local pendingEnhance = false       -- 是否有强化请求在等待服务端响应
@@ -236,6 +241,7 @@ end
 
 --- 根据选中装备更新强化面板数据
 function M.updateEnhanceData(equip)
+    M.clearKeywords()
     -- 确定当前槽位的卷轴类型
     local equipSlot = state.selectedEquipSlot or "weapon"
     local scrollField = BlacksmithConfig.SLOT_SCROLL_MAP[equipSlot] or "weaponScroll"
@@ -284,6 +290,7 @@ function M.updateEnhanceData(equip)
         end
         baseAttrs[#baseAttrs + 1] = {
             name = meta and meta.name or key,
+            key = key,
             curVal = currentText,
             nextVal = nextText,
             boosted = nextVal ~= curVal,
@@ -299,6 +306,7 @@ function M.updateEnhanceData(equip)
         local effVal = EquipmentSystem.effectiveAffixValue(equip, affix)
         affixes[#affixes + 1] = {
             name     = affix.name or affix.key,
+            key      = affix.key,
             curVal   = formatAffixValue(affix.key, effVal),
             nextVal  = formatAffixValue(affix.key, effVal),
             curGrade = gradeName,
@@ -337,7 +345,7 @@ end
 ---@param nextGradeIcon number|nil 提升后词缀等级图标句柄
 ---@param showArrow boolean|nil 是否显示提升箭头和提升后数值（默认 true）
 ---@param isCorrupt boolean|nil 魔化词条：用紫色圆标替代 D~S 品质图
-local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGradeIcon, showArrow, isCorrupt)
+local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGradeIcon, showArrow, isCorrupt, attributeKey, clip)
     if showArrow == nil then showArrow = true end
     -- 魔化词条：名称与数值紫色（评级标不变）
     local textR, textG, textB = ATTR_TEXT_COLOR_R, ATTR_TEXT_COLOR_G, ATTR_TEXT_COLOR_B
@@ -360,7 +368,9 @@ local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGr
     end
     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(nameR, nameG, nameB, 255))
-    nvgText(vg, ATTR_NAME_X, rowY, displayName, nil)
+    rowKeywords:drawAttribute(vg, displayName, attributeKey, ATTR_NAME_X, rowY,
+        ATTR_NAME_X - 70, nameFont,
+        { right = true, clip = clip, keywordColor = isCorrupt and { nameR, nameG, nameB } or nil })
 
     -- 当前属性值背景框
     local curBgX = ATTR_CUR_BG_CX - ATTR_BG_W * 0.5
@@ -467,6 +477,7 @@ end
 
 --- 绘制强化界面上半部分（等级 + 属性预览）
 function M.drawPanel(vg)
+    rowKeywords:beginFrame()
     local data = enhanceData
 
     -- 1. 动态标题："角色栏N>XX栏强化"
@@ -513,17 +524,19 @@ function M.drawPanel(vg)
     for _, attr in ipairs(data.baseAttrs) do
         -- 只有受强化加成的属性显示箭头和提升后数值
         local showArrow = attr.boosted and not data.isMaxLevel
-        drawAttrRow(vg, rowY, attr.name, attr.curVal, attr.nextVal, nil, nil, showArrow)
+        drawAttrRow(vg, rowY, attr.name, attr.curVal, attr.nextVal, nil, nil, showArrow, false, attr.key)
         rowY = rowY + ATTR_ROW_HEIGHT + ATTR_ROW_SPACING
     end
 
     -- 7-8. 随机词缀区域
     local affixY = math.max(AFFIX_FIRST_Y, rowY + 4)
+    local affixClip = { 80, affixY - 24, 920, math.max(0, 1695 - affixY + 24) }
     nvgSave(vg)
     nvgIntersectScissor(vg, 80, affixY - 24, 920, 1695 - affixY + 24)
     for _, affix in ipairs(data.affixes) do
         local curIcon = imgGrade[affix.curGrade] or -1
-        drawAttrRow(vg, affixY, affix.name, affix.curVal, affix.nextVal, curIcon, nil, false, affix.isCorrupt)
+        drawAttrRow(vg, affixY, affix.name, affix.curVal, affix.nextVal, curIcon, nil, false,
+            affix.isCorrupt, affix.key, affixClip)
         affixY = affixY + AFFIX_ROW_STEP
     end
     -- 里程碑将新增词条 → 占位行（》 ??? +?）替代原绿色小字提示
@@ -1096,6 +1109,7 @@ end
 
 --- 重置门控状态（打开铁匠铺/切换 Tab 时调用）
 function M.onOpen()
+    M.clearKeywords()
     pendingEnhance = false
     dlg.open    = false
     dlg.closing = false
@@ -1127,6 +1141,7 @@ end
 ---@param dy number 设计坐标 Y
 ---@return boolean consumed 是否消费了该事件
 function M.handleInput(dx, dy)
+    if rowKeywords:handleInput(dx, dy) then return true end
     -- [锻炉双页 0929] 候选条已移除（选装备改为仓库拖拽），不再响应 handleCandidateClick
     -- 强化按钮（升一级）
     if hitTest(dx, dy, EB.ENH_BTN_CX, EB.ENH_BTN_CY, EB.ENH_BTN_W, EB.ENH_BTN_H) then

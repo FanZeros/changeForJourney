@@ -14,7 +14,9 @@
 
 ## 上次做了什么（2026-10-07，两段装备教程真实详情入口）
 
-- 用户要求两装备教学顺带教会战斗角色卡／队伍头像进入详情，并完成后正常push独立分支、创建workspace1005 PR。固定开发父13b7b235，教程分支feat1005/tutorial-character-detail-entry-20261007；独立index/ref，不切换或重置共享工作树，不混并行特效、.project、无关meta或内部证据。远端最新5fca1d82已外部合入PR112，只保留其更新，不代称本教程已提交／推送／创建PR；真实结果后补。
+- **已正常push并核验：** 教程功能6df707f3由固定13b7父独立构造，随后保留外部已合PR112目标5fca1d82成为1eb0999be743e6d1f8a81538abe9d869966389a1；仅正常push feat1005/tutorial-character-detail-entry-20261007，push／ls-remote实际exit0、远端SHA一致，未推workspace1005。正式 **PR #114** https://github.com/FanZeros/changeForJourney/pull/114，base=workspace1005／head=教程分支，open／draft=false／merged=false，mergeable未计算，不称CI通过或已合并发布。相对最新目标22白名单、18Lua载荷一致、56目标特效对象原样保留；独立候选九专项与组合版本均实际通过，2977路径20旧规范问题同目标／新增0，36单测通过。共享HEAD仍adac50e8、shared index空，不checkout／覆盖另一会话。成功后仅补本节三交接正常push，不重复创建PR。
+
+- 用户要求两装备教学顺带教会战斗角色卡／队伍头像进入详情，并完成后正常push独立分支、创建workspace1005 PR。固定开发父13b7b235，教程分支feat1005/tutorial-character-detail-entry-20261007；独立index/ref，不切换或重置共享工作树，不混并行特效、.project、无关meta或内部证据。远端5fca1d82已外部合入PR112，最终独立教程ref保留其更新；提交／推送／PR实证见本节首条。
 - 组1战斗真实己方卡→该英雄配装详情→武器槽→左仓快捷穿戴；组2真实队1occupied头像→该英雄配装详情→一键装备。source／hero／真实open+equip门控，通用event／自动恢复不伪完成，后续绑定点击英雄。screen/right投影、实际动画卡与普通点击框交集，进场／死亡／行进过渡不注册；原普通点击／装备成功回执／公式／奖励／招募不改。
 - 入口Down绑定组／步骤／source／hero／panel，目标换人／ABA／瞬失／遮挡／拖动／reset／观测到frame或DPR变化永久取消旧按压。只左键／触摸，不启动编队拖拽，避免右键卸队、源头像残留及副键清token绕过；后续快捷右键与普通拖拽保留。两提示补四语；存档仍version1，冷恢复重走入口，无新持久字段。
 - 本会话最终官方b10成功，566根Lua；本教程18Lua与实际UUID-hash载荷18/18字节及size一致，临时dark probe0入包。逐文件LSP Error0，不称全仓静态清零。六核心真实Runtime全部exit0：入口17cases474、横屏199cases1334、manager58、recovery69、头像60、目标链66。旧招募13组5159／基础12组5312／副本13组6183全部ALL PASS/exit0，安全负例、锁队／裁剪／重开动画原断言保留。独立固定父候选563Lua逐Git对象核验0差异、九教程专项亦全部真实ALL PASS/exit0，实际项目Lua全来自候选，共享scripts读取0；与含已合PR112的工作树组合验证分别留证。

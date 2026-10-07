@@ -95,6 +95,7 @@ function Start()
         function Widget:SetHeight(height) self.props.height = height end
         function Widget:SetFontColor(color) self.color = color end
         function Widget:SetDisabled(value) self.disabled = value end
+        function Widget:SetVisible(value) self.props.visible = value end
         function Widget:SetStyle(props) for key, value in pairs(props) do self.props[key] = value end end
         function Widget:GetAbsoluteLayout() return self.layout end
         function Widget:GetLayout() return self.layout end
@@ -123,6 +124,63 @@ function Start()
         local factory = function(props) local value = setmetatable({}, Widget); value:Init(props); return value end
         return { Widget = Widget, Label = factory, Panel = factory, Button = factory, ScrollView = factory }
     end
+    runCase("tower result twelve heroes landscape and legacy close compatibility", function()
+        local env, mods, stat = private()
+        mods["urhox-libs/UI"] = fakeUI(stat)
+        mods["urhox-libs/UI"].MeasureTextWidth = function() return 0 end
+        mods["urhox-libs/UI"].Theme = { FontSize = function(s) return s end }
+        mods["core.NumberUtil"] = { format = tostring }
+        mods["core.DrawUtil"], mods["ui.widget.ImageCache"] = {}, {}
+        mods["core.DarkIcon"] = { drawQualityBg = noop }
+        mods["ui.widget.HeroFrame"] = { draw = function() stat.heroDraws = (stat.heroDraws or 0) + 1 end }
+        mods["config.ResourceDefs"] = { DEFS = { diamond = { name = "黑晶", quality = 5 } } }
+        mods["config.HeroConfig"] = { HEROES = {} }
+        mods["core.I18n"] = { get = function() return "zh_CN" end, lookup = function(s) return s end }
+        mods["ui.widget.DesignWidgetSurface"] = { init = noop, draw = function(root)
+            stat.resultRoot = root; stat.resultDraws = (stat.resultDraws or 0) + 1
+        end }
+        env.nvgCreateImage = function() return -1 end
+        local result = compile("ui/battle/popup/BattleResultPanel.lua", env)
+        local heroes, closed = {}, 0
+        for i = 1, 12 do heroes[i] = { heroId = i, name = "英雄" .. i, quality = 1, totalDamage = i * 100 } end
+        result.init({})
+        result.show({ layout = "tower", floor = 112, isWin = true, elapsedSecs = 125,
+            heroStats = heroes, rewards = { { type = "diamond", amount = 123 } },
+            onClose = function() closed = closed + 1 end })
+        for _, size in ipairs({ {1920,1080}, {1280,800} }) do
+            result.draw({}, size[1], size[2])
+            local root = stat.resultRoot
+            eq(root.props.width, 1440, "actual horizontal content width")
+            eq(root.props.height, 760, "actual horizontal content height")
+            eq(root.children[1].text, "通天塔 · 通关", "clear title")
+            eq(root.children[3].text, "总耗时 2分05秒", "elapsed visible")
+            eq(#root.children[6].children, 12, "all twelve heroes retained")
+            for _, cell in ipairs(root.children[6].children) do
+                check(cell.props.left + cell.props.width <= 900 and cell.props.top + cell.props.height <= 432, "hero inside statistics panel")
+                eq(cell.children[2].props.fontWeight, "normal", "host registered font only")
+            end
+            eq(root.children[7].children[1].children[3].text, "×123", "reward amount visible")
+            eq(stat.depth, 0, "landscape draw restores NVG state")
+        end
+        local oldRoot = stat.resultRoot
+        result.handleInput(0, 0); result.close()
+        check(oldRoot.destroyed and not result.isOpen(), "close destroys owned tree")
+        eq(closed, 1, "close callback exactly once")
+        result.show({ layout = "tower", isWin = false, heroStats = heroes })
+        result.draw({}, 1280, 800)
+        eq(stat.resultRoot.children[1].text, "通天塔 · 失败", "defeat title")
+        eq(stat.resultRoot.children[7].children[1].text, "暂无奖励", "empty rewards clear")
+        result.close()
+        local drawCount = stat.resultDraws
+        result.show({ heroStats = heroes })
+        result.draw({})
+        eq(stat.resultDraws, drawCount, "ordinary result uses unchanged legacy draw")
+        eq(stat.heroDraws, 6, "ordinary six-hero legacy unchanged")
+        result.close()
+        result.show({ layout = "tower", onClose = function() closed = closed + 1 end })
+        result.resetToDefault(); result.close()
+        check(not result.isOpen() and closed == 1, "reset discards old callback without completion")
+    end)
     local function sidebarFixture()
         local env, mods, stat = private()
         stat.roots = {}
@@ -417,7 +475,7 @@ function Start()
         mods["systems.TowerBuffRuntime"]={cleanup=noop,applyStatBuffs=noop,initMechanics=noop}
         mods["ui.dungeon.DungeonBattle"]={}
         mods["shared.Protocol"]={ACTION_TYPES={}}
-        mods["ui.battle.popup.BattleResultPanel"]={isOpen=function()return false end}
+        mods["ui.battle.popup.BattleResultPanel"]={isOpen=function()return false end, resetToDefault=noop}
         mods["ui.battle.scene.BattleDraw"]={drawTextStroke=noop}
         mods["systems.BattleStats"]={}
         mods["config.HeroConfig"]={HEROES={}}
@@ -437,7 +495,7 @@ function Start()
         scene.handleClick(960,300,1920,1080);eq(tri.clicks,1,"middle click")
         side.action="retreat";scene.handleClick(1700,1020,1920,1080);eq(tri.retreats,1,"existing retreat API")
         scene.handleScroll(-1,100,300,1920,1080);eq(side.scrolls,0,"confirmation blocks list")
-        tri.confirm=false;s.phase="buff_pick";panel.open,panel.visible=true,true
+        tri.confirm=false;s.phase="battle";panel.open,panel.visible=true,true
         scene.handleClick(100,300,1920,1080);eq(panel.clicks,1,"visible pick modal")
         panel.visible=false;side.action="resume_pick"
         scene.handleClick(1700,1020,1920,1080);eq(panel.showCalls,1,"hidden pick resume")

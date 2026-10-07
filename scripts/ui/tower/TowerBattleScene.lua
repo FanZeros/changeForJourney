@@ -37,9 +37,11 @@ local state = {
     pendingBuffChoices = nil,
     runId = nil,
     pendingSelection = nil,
+    choiceQueue = {},
+    unappliedBuffIds = {}, -- 战斗中择契不重开当前波，新强化在下一波开始应用。
 
     -- 阶段
-    phase    = "idle",  -- idle / battle / buff_pick / floor_win / error
+    phase    = "idle",  -- idle / battle / floor_win / error
 
     -- 异常兜底
     errorMessage = nil,
@@ -122,6 +124,7 @@ end
 function TowerScene.getDisplayState()
     return { floor = state.floor, wave = state.wave, phase = state.phase,
         monsterLevel = state.monsterLevel, buffIds = copyBuffIds(state.buffIds),
+        pendingChoices = #state.choiceQueue,
         inputModal = TowerTriBattle.isConfirmationOpen() or BattleResultPanel.isOpen() }
 end
 
@@ -148,6 +151,7 @@ function TowerScene.open(opts)
     state.monsterLevel = opts.data.monsterLevel or 1
     TowerBuffPick.close()
     state.pendingSelection = nil
+    state.choiceQueue, state.unappliedBuffIds = {}, {}
     state.runId = opts.data.runId
     state.buffIds = copyBuffIds(opts.data.buffs)
     state.onClose = opts.onClose
@@ -195,6 +199,7 @@ function TowerScene.close()
     state.phase = "idle"
     state.pendingSelection = nil
     state.pendingBuffChoices = nil
+    state.choiceQueue, state.unappliedBuffIds = {}, {}
     state.runId = nil
     TowerBuffPick.close()
     state.errorMessage = nil
@@ -215,11 +220,15 @@ function TowerScene.resetToDefault()
     state.allies, state.teamAllies = nil, nil
     state.buffIds, state.floorHeroDamage = {}, {}
     state.pendingBuffChoices, state.serverFloorResult = nil, nil
+    state.pendingSelection = nil
+    state.choiceQueue, state.unappliedBuffIds = {}, {}
+    state.runId = nil
     state.errorMessage, state.errorLogged = nil, false
     state.floor, state.wave, state.monsterLevel = 1, 1, 1
     state.totalElapsedSecs, state.currentWaveStartTime = 0, 0
     TowerBuffPick.close()
     TowerBuffPick.setSendAction(nil)
+    BattleResultPanel.resetToDefault()
     TowerTriBattle.forceClose()
     TowerBuffRuntime.cleanup()
     print("[TowerBattleScene] resetToDefault: discarded battle/buffs/callbacks")
@@ -228,6 +237,20 @@ end
 --- 内部：用指定怪物列表打开一波战斗
 function TowerScene._openWaveBattle(monsters)
     state.currentWaveStartTime = time.elapsedTime or 0
+    -- 择契与当前波分离：不重置敌人、计时、投射物或机制计数。
+    local okBuff, buffErr = pcall(function()
+        if #state.unappliedBuffIds > 0 then
+            applyBuffsToAllTeams(state.unappliedBuffIds)
+            state.unappliedBuffIds = {}
+        end
+        TowerBuffRuntime.initMechanics(state.buffIds)
+    end)
+    if not okBuff then
+        print("[TowerBattleScene] ERROR prepare wave buffs: " .. tostring(buffErr))
+        state.phase = "error"
+        state.errorMessage = "通天塔强化生效失败，请退出后重试"
+        return false
+    end
     local rageAdvance = TowerBuffRuntime.getRageAdvance()
     local data = {
         dungeonId    = "babel_tower",
@@ -283,6 +306,19 @@ end
 
 -- ======================== 波次胜利处理 ========================
 
+local function openQueuedChoice(visible)
+    local pending = state.choiceQueue[1]
+    state.pendingSelection = pending
+    if not pending then TowerBuffPick.close(); return end
+    TowerBuffPick.open(state.floor, pending.data.buffChoices, function(buffId, requestId)
+        if state.pendingSelection ~= pending or pending.buffId or state.phase ~= "battle" then return false end
+        pending.buffId, pending.requestId = buffId, requestId
+        return true
+    end, { runId = pending.runId, selectionId = pending.selectionId,
+        floor = pending.floor, wave = pending.wave }, TowerScene.onPickBuffResult)
+    if not visible then TowerBuffPick.hide() end
+end
+
 --- 由 DungeonPage.onActionResult 在收到 TOWER_WAVE_WIN 时调用
 function TowerScene.onWaveWinResult(data)
     if not state.active or state.phase ~= "battle" or not data then return end
@@ -312,32 +348,31 @@ function TowerScene.onWaveWinResult(data)
     state.pendingBuffChoices = data.buffChoices
 
     if data.floorCleared then
+        TowerBuffPick.close()
+        state.choiceQueue, state.unappliedBuffIds = {}, {}
+        state.pendingSelection, state.pendingBuffChoices = nil, nil
         TowerTriBattle.forceClose()
         state.phase = "floor_win" -- 本地桥可同步结算，先切 phase 防重复 WaveWin 重入。
         if state.sendAction then
             state.sendAction(Protocol.ACTION_TYPES.TOWER_FLOOR_WIN, { floor = state.floor })
         end
     else
-        state.phase = "buff_pick"
         local pending = { runId = data.runId, selectionId = data.selectionId,
             floor = state.floor, wave = state.wave, data = data }
-        state.pendingSelection = pending
-        TowerBuffPick.open(state.floor, data.buffChoices, function(buffId, requestId)
-            if state.pendingSelection ~= pending or pending.buffId or state.phase ~= "buff_pick" then return false end
-            pending.buffId = buffId
-            pending.requestId = requestId
-            print("[TowerBattleScene] PickBuff pending selection=" .. pending.selectionId
-                .. " request=" .. requestId .. " buffId=" .. buffId)
-            return true
-        end, { runId = pending.runId, selectionId = pending.selectionId,
-            floor = pending.floor, wave = pending.wave }, TowerScene.onPickBuffResult)
+        local first = #state.choiceQueue == 0
+        state.choiceQueue[#state.choiceQueue + 1] = pending
+        TowerTriBattle.forceClose()
+        state.wave = data.nextWave
+        if not TowerScene._openWaveBattle(data.monsters) then return end
+        -- 第一组提示一次；收起后后续组只累计，不打断正在进行的战斗。
+        if first then openQueuedChoice(true) end
     end
 end
 
---- 成功回执是同步快照、应用本次强化和换波的唯一入口。
+--- 成功回执只消费当前择契，不负责推进或重开战斗。
 function TowerScene.onPickBuffResult(data)
     local pending = state.pendingSelection
-    if not state.active or state.phase ~= "buff_pick" or not pending or not pending.buffId or not data then return end
+    if not state.active or state.phase ~= "battle" or not pending or not pending.buffId or not data then return end
     if data.runId ~= pending.runId or data.selectionId ~= pending.selectionId
         or data.floor ~= pending.floor or data.wave ~= pending.wave or data.buffId ~= pending.buffId
         or data.requestId ~= pending.requestId then
@@ -360,34 +395,17 @@ function TowerScene.onPickBuffResult(data)
     end
     for i, id in ipairs(state.buffIds) do if ids[i] ~= id then return end end
     local buffId = pending.buffId
+    local visible = TowerBuffPick.isVisible()
     state.buffIds = copyBuffIds(ids)
-    state.pendingSelection = nil -- 先消费回执，任何可重入调用均不能重复 apply/换波。
+    table.remove(state.choiceQueue, 1)
+    state.pendingSelection = nil -- 先消费身份，迟到回执不能重复加入待应用列表。
     state.pendingBuffChoices = nil
+    state.unappliedBuffIds[#state.unappliedBuffIds + 1] = buffId
     TowerBuffPick.close()
-    TowerTriBattle.forceClose()
-    local okBuff, buffErr = pcall(function()
-        applyBuffsToAllTeams({ buffId })
-        TowerBuffRuntime.initMechanics(state.buffIds)
-    end)
-    if not okBuff then
-        print("[TowerBattleScene] ERROR apply picked buff " .. tostring(buffId) .. ": " .. tostring(buffErr))
-        state.phase = "error"
-        state.errorMessage = "通天塔强化生效失败，请退出后重试"
-        return
-    end
-    for _, unit in ipairs(flattenTeamAllies()) do
-        if unit.hp > 0 and unit.attrs then
-            local heal = math.floor((unit.maxHp or unit.attrs:get(AD.MAX_HP) or 0) * 0.10)
-            unit.attrs:heal(heal)
-            unit.hp = unit.attrs:get(AD.HP)
-            if unit.maxHp and unit.hp > unit.maxHp then unit.hp = unit.maxHp end
-        end
-    end
-    state.wave = data.nextWave
-    state.phase = "battle"
+    openQueuedChoice(visible)
     print("[TowerBattleScene] accepted PickBuff selection=" .. pending.selectionId
-        .. " request=" .. tostring(data.requestId) .. " total=" .. #state.buffIds .. " next=" .. state.wave)
-    TowerScene._openWaveBattle(pending.data.monsters)
+        .. " request=" .. tostring(data.requestId) .. " total=" .. #state.buffIds
+        .. " battle wave unchanged=" .. state.wave)
 end
 
 --- 由 DungeonPage.onActionResult 在收到 TOWER_FLOOR_WIN 时调用
@@ -406,6 +424,7 @@ function TowerScene.onFloorWinResult(data)
         rewards[#rewards + 1] = { type = "diamond", amount = data.diamondReward }
     end
     BattleResultPanel.show({
+        layout = "tower", floor = state.floor,
         isWin = true,
         elapsedSecs = state.totalElapsedSecs,
         heroStats = buildFloorHeroStats(),
@@ -474,12 +493,14 @@ function TowerScene.draw(vg, logicalW, logicalH)
             state.errorMessage = "通天塔战斗画面丢失，请退出后重试"
             drawErrorFallback(vg, logicalW, logicalH)
         end
-    elseif state.phase == "buff_pick" then
-        if TowerBuffPick.isVisible() then TowerBuffPick.draw(vg, logicalW, logicalH) end
     elseif state.phase == "floor_win" then
         BattleResultPanel.draw(vg, logicalW, logicalH)
     elseif state.phase == "error" then
         drawErrorFallback(vg, logicalW, logicalH)
+    end
+    if state.phase == "battle" and not BattleResultPanel.isOpen()
+        and not TowerTriBattle.isConfirmationOpen() and TowerBuffPick.isVisible() then
+        TowerBuffPick.draw(vg, logicalW, logicalH)
     end
 end
 
@@ -511,8 +532,12 @@ function TowerScene.update(dt)
             state.errorMessage = "通天塔战斗逻辑异常，请退出后重试"
             TowerTriBattle.forceClose()
         end
-    elseif state.phase == "buff_pick" then
         TowerBuffPick.update(dt)
+        if BattleResultPanel.isOpen() then
+            TowerBuffPick.close()
+            state.choiceQueue, state.unappliedBuffIds = {}, {}
+            state.pendingSelection = nil
+        end
     elseif state.phase == "floor_win" then
         BattleResultPanel.update(dt)
     end
@@ -526,31 +551,27 @@ function TowerScene.handleClick(dx, dy, logicalW, logicalH)
     logicalH = logicalH or 2400
 
     if state.phase == "floor_win" and BattleResultPanel.isOpen() then
-        local fit = math.min(logicalW / 1080, logicalH / 2400)
-        local px = (dx - (logicalW - 1080 * fit) * 0.5) / fit
-        local py = (dy - (logicalH - 2400 * fit) * 0.5) / fit
-        BattleResultPanel.handleInput(px, py)
+        BattleResultPanel.handleInput(dx, dy)
         return true
     elseif state.phase == "error" then
         TowerScene.close()
         return true
-    elseif state.phase == "buff_pick" and TowerBuffPick.isOpen() then
-        if TowerBuffPick.isVisible() then
-            return TowerBuffPick.handleClick(dx, dy, logicalW, logicalH)
-        end
-        if TowerBuffSidebar.handleClick(dx, dy, logicalW, logicalH) == "resume_pick" then
-            TowerBuffPick.show()
-        end
-        return true
     elseif state.phase == "battle" then
         if TowerTriBattle.isConfirmationOpen() or BattleResultPanel.isOpen() then
             TowerTriBattle.handleClick(dx, dy, logicalW, logicalH)
-        elseif TowerBuffSidebar.handleClick(dx, dy, logicalW, logicalH) == "retreat" then
-            TowerTriBattle.requestRetreat()
+        elseif TowerBuffPick.isVisible() then
+            TowerBuffPick.handleClick(dx, dy, logicalW, logicalH)
         else
-            local layout = TowerLayout.compute(logicalW, logicalH)
-            if TowerLayout.panelAt(layout, dx, dy) == "center" then
-                TowerTriBattle.handleClick(dx, dy, logicalW, logicalH)
+            local action = TowerBuffSidebar.handleClick(dx, dy, logicalW, logicalH)
+            if action == "resume_pick" then
+                TowerBuffPick.show()
+            elseif action == "retreat" then
+                TowerTriBattle.requestRetreat()
+            else
+                local layout = TowerLayout.compute(logicalW, logicalH)
+                if TowerLayout.panelAt(layout, dx, dy) == "center" then
+                    TowerTriBattle.handleClick(dx, dy, logicalW, logicalH)
+                end
             end
         end
         return true

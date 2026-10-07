@@ -50,6 +50,12 @@ add("塔之路线", "塔之路線", "Tower Route", "塔の道筋", "탑의 경�
 add("已获强化", "已獲強化", "Acquired Boons", "獲得済みの強化", "획득한 강화")
 add("暂无强化", "暫無強化", "No boons yet", "強化はまだない", "아직 강화 없음")
 add("继续择契", "繼續擇契", "Resume Pact Choice", "契印選びを続ける", "계약 선택 계속")
+add("待选暗契 ×%d", "待選暗契 ×%d", "Pending Pacts ×%d", "未選択の暗契 ×%d", "미선택 계약 ×%d")
+add("稍后选择", "稍後選擇", "Choose Later", "後で選ぶ", "나중에 선택")
+add("选择保留，战斗继续；强化从下一波生效", "選擇保留，戰鬥繼續；強化從下一波生效",
+    "Choices stay available; battle continues. Boons apply next wave.",
+    "選択肢は保持され、戦闘は継続。強化は次のウェーブから有効。",
+    "선택지는 유지되고 전투는 계속됩니다. 강화는 다음 웨이브부터 적용됩니다.")
 add("本层路线仅供查看", "本層路線僅供查看", "This floor's route is view-only", "この階の道筋は閲覧専用", "현재 층의 경로는 확인만 가능합니다")
 add("次数仅作记录，效果按原规则生效", "次數僅作記錄，效果按原規則生效",
     "Counts are recorded only; effects follow the original rules.",

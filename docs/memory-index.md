@@ -1,3 +1,10 @@
+## 塔结算横屏与择契不停战（2026-10-07）
+
+- 正式PR #120：https://github.com/FanZeros/changeForJourney/pull/120；功能b59bba3a728f25bb48564402ecbda145a48aaeda已正常push且远端一致，head=fix1007/tower-flow-roster-labels/base=workspace1005，open/draft=false/merged=false，未推基线或合并发布。14白名单仅11Lua+三本人交接，sharedHEAD/index不改；21旧规范问题同基线新增0/36单测通过。下方后补措辞是此前过程记录。
+
+- 基于workspace1005@ec1d8a61，独立fix1007/tower-flow-roster-labels。胜败结算1440×760横向UI，最多12英雄/楼层波次/耗时奖励；清档无回调销毁树，普通副本保持。
+- 清波直接换波，待选FIFO保存至本层结束，右侧恢复入口；择契不重开当前波，强化下一波生效，失败/退出/本层结算清队列。请求幂等与同卡重试保持；排序字体sans/normal修复宿主无sans-bold导致无字。
+- 仅复用现有相关测试：回执450/0、布局967/0、名册6661/0、侧栏16291/0均exit0；11Lua LSP无Error，官方b2成功593Lua、11载荷字节/size一致。不是设备/完整通关视觉/性能验收。仅11源码+三交接本人块，不混peer/.project/内部证据，不推基线/强推/自动合并；当前直接继续不机械提问，凭据不写源码/配置/日志/记忆。push与PR成功后补实证。
 ## 上场与结算数据刷新去重（2026-10-07）
 
 - 九源码/旧测试提交08c6c4569555f5da45e0bc45de7acecac6650cc0已正常push并ls-remote核验 `perf1007/data-refresh-dedup`，workspace1005仍ec1d8a61未推；正式PR #121：https://github.com/FanZeros/changeForJourney/pull/121，open/draft=false/merged=false，不称CI、合并发布。

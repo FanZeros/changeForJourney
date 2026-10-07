@@ -641,6 +641,9 @@ function TowerTriBattle.update(dt)
                 state.resultPanelShown = true
                 local _, _, elapsedSecs = DungeonBattle.getResultState()
                 BattleResultPanel.show({
+                    layout = "tower",
+                    floor = state.floor,
+                    wave = state.wave,
                     isWin = false,
                     elapsedSecs = elapsedSecs,
                     heroStats = BattleStats.buildHeroDamageStats(state.allAllies, HeroConfig.HEROES),
@@ -817,12 +820,7 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
     end
 
     if BattleResultPanel.isOpen() then
-        local fit = math.min(logicalW / 1080, logicalH / 2400)
-        nvgSave(vg)
-        nvgTranslate(vg, (logicalW - 1080 * fit) * 0.5, (logicalH - 2400 * fit) * 0.5)
-        nvgScale(vg, fit, fit)
-        BattleResultPanel.draw(vg)
-        nvgRestore(vg)
+        BattleResultPanel.draw(vg, logicalW, logicalH)
     end
 end
 
@@ -869,10 +867,7 @@ function TowerTriBattle.handleClick(wx, wy, width, height)
     local layout = TowerLayout.compute(logicalW, logicalH)
 
     if BattleResultPanel.isOpen() then
-        local fit = math.min(logicalW / 1080, logicalH / 2400)
-        local dx = (wx - (logicalW - 1080 * fit) * 0.5) / fit
-        local dy = (wy - (logicalH - 2400 * fit) * 0.5) / fit
-        BattleResultPanel.handleInput(dx, dy)
+        BattleResultPanel.handleInput(wx, wy)
         return true
     end
 

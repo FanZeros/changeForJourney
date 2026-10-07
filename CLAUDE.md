@@ -12,6 +12,14 @@
 4. **分支纪律**：以当前任务授权为准。本轮暗黑特效任务基于 `workspace1005@9497bfdb409c2d0fc17533e4cfc280702fe83517`，任务分支为 `feat1005/team-power-dark-effects-20261006`。用户最新明确提供即时鉴权并要求提 PR，授权提交／正常 push 本任务分支及创建目标 `workspace1005` 的 PR；不混入其他会话返回键改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布，凭据不持久化。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-07，塔结算横屏与择契不停战）
+
+- 已正常push功能提交b59bba3a728f25bb48564402ecbda145a48aaeda，远端SHA一致；正式PR #120：https://github.com/FanZeros/changeForJourney/pull/120，head=fix1007/tower-flow-roster-labels、base=workspace1005，open/draft=false/merged=false，未自动合并发布。14白名单仅11Lua+三本人交接，sharedHEAD/index不改，基线ec1d8a61未推；规范21旧问题同基线、新增0，36单测通过。下方“成功后补”是此前过程记录。
+
+- 本轮基于workspace1005@ec1d8a61，独立fix1007/tower-flow-roster-labels。胜败塔结算改1440×760横向UI，完整显示最多12英雄、楼层/波次、耗时、奖励；普通副本原路径保持。清档无回调释放结算树。
+- 清波直接进入下一波，未选卡组按获得顺序保留，右侧待选数量可恢复；选卡不重开当前波，强化下一波生效。本层结算/失败/退出清空待选，不跨层保留；权威追加、请求重试与幂等继续保留。
+- 排序按钮显式sans/normal修复宿主只有sans、主题却请求sans-bold导致无字。复用三个现有测试小幅补充，回执450/0、布局967/0、名册6661/0，真实侧栏现有专项16291/0，均实际exit0；11修改Lua逐文件LSP无Error，官方b2成功593Lua，本11源码与实际载荷bytes/size一致。未做设备触控/完整实战视觉或性能验收。
+- 持续推进已授权范围，按最新直接继续指令不机械提问；只11Lua+三交接本人块，不混并行教程/数据去重/.project/上传/无关meta/内部证据。独立index/ref、不切sharedHEAD、不推workspace系列、不强推、不自动合并发布；凭据不进源码/配置/日志/记忆。实际push/PR成功后补记录。
 ## 上次做了什么（2026-10-07，上场与结算数据刷新去重）
 
 - **已正常push并核验：** 九文件功能提交08c6c4569555f5da45e0bc45de7acecac6650cc0正常push `perf1007/data-refresh-dedup`，push/ls-remote实际exit0且远端SHA一致；workspace1005仍ec1d8a61未推。正式PR #121：https://github.com/FanZeros/changeForJourney/pull/121，base=workspace1005，open/draft=false/merged=false，mergeable未计算，不称CI通过、合并或发布。

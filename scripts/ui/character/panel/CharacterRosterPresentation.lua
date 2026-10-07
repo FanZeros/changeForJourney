@@ -153,6 +153,8 @@ local function ensureToolbar()
         local button = UI.Button {
             width = WIDTHS[i], height = SORT_H, flexShrink = 0, borderRadius = 6, borderWidth = 1,
             padding = 0, paddingHorizontal = 4, fontSize = 15, minFontSize = 12, text = "",
+            -- 正式宿主只注册sans；主题默认bold映射到UI私有context的sans-bold会无字。
+            fontFamily = "sans", fontWeight = "normal",
             textColor = {213, 201, 175, 255}, backgroundColor = {27, 23, 19, 245},
             hoverBackgroundColor = {45, 37, 27, 255}, pressedBackgroundColor = {19, 16, 13, 255},
             disabledBackgroundColor = {25, 23, 21, 220}, disabledTextColor = {124, 116, 99, 255},

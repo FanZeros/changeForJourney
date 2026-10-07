@@ -32,6 +32,17 @@ local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
 local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 
 local M = {}
+---@type table|nil
+local marquee = nil
+
+--- 取消框选只撤销预览，不改动按下前的勾选。
+function M.cancelMarquee()
+    marquee = nil
+end
+
+function M.isMarqueeActive()
+    return marquee ~= nil
+end
 
 -- ======================== 分解界面常量 ========================
 
@@ -126,6 +137,7 @@ end
 --- 切换布局 profile（宿主页 open 时调用一次）
 ---@param name string "smith"|"warehouse"
 function M.applyProfile(name)
+    M.cancelMarquee()
     if not FJ_PROFILE_ORIG then
         FJ_PROFILE_ORIG = {}
         for k, v in pairs(FJ) do FJ_PROFILE_ORIG[k] = v end
@@ -188,6 +200,8 @@ local LONG_PRESS_MOVE_LIMIT = 20   -- 像素（超出此范围取消长按）
 
 -- 背包数据
 local backpackItems = {}
+local equipmentSnapshot = nil ---@type table?
+local equipmentRevision = -1
 
 -- ======================== ctx 引用（由 setContext 注入） ========================
 
@@ -272,6 +286,7 @@ end
 
 --- 刷新背包数据：从 ClientDispatcher 获取最新装备数据，筛选出未穿戴的装备
 function M.refreshBackpackItems()
+    M.cancelMarquee()
     -- 记录刷新前选中的装备 seq（用于刷新后重映射）
     local oldSelectedSeqs = {}
     for idx in pairs(fjState.selectedItems) do
@@ -282,6 +297,8 @@ function M.refreshBackpackItems()
     end
 
     local equipData = PlayerStore.Get("equipment")
+    equipmentSnapshot = equipData
+    equipmentRevision = PlayerStore.GetRevision("equipment")
     backpackItems = {}
     if not equipData or not equipData.inventory then
         fjState.selectedItems = {}
@@ -333,7 +350,105 @@ local function qualityFullySelected(quality)
     return hasSelectable
 end
 
+-- 仓库可以独立打开，不能依赖锻炉可见时的订阅；原地发布也用版本号识别。
+local function observeEquipmentData()
+    if equipmentSnapshot ~= PlayerStore.Get("equipment")
+        or equipmentRevision ~= PlayerStore.GetRevision("equipment") then
+        M.refreshBackpackItems()
+    end
+end
+
 -- ======================== 打开/关闭/重置 ========================
+
+-- 框选区域只覆盖可见网格；相交必须有面积，擦边/格间空隙不算装备。
+--    网格左缘                 网格右缘
+--    +--------------------------+
+--    | [装备]  [锁定]  [装备]   |  锁定/已穿戴/空格不参与
+--    |    +-------框选-------+  |  四方向拖拽均归一后裁剪
+--    +----+------------------+--+  网格底缘外的按钮永不命中
+local function marqueeRect(x, y)
+    local top = FJ.GRID_FIRST_CY - FJ.GRID_CELL * 0.5
+    local right = FJ.GRID_LEFT + FJ.GRID_TOTAL_W
+    return math.max(FJ.GRID_LEFT, math.min(marquee.x, x)),
+        math.max(top, math.min(marquee.y, y)),
+        math.min(right, math.max(marquee.x, x)),
+        math.min(FJ.GRID_BOTTOM_Y, math.max(marquee.y, y))
+end
+
+local function itemSelected(idx)
+    return fjState.selectedItems[idx] or (marquee and marquee.selected[idx])
+end
+
+--- 右键只启动选区，不滚动、不长按、不发分解操作。
+function M.handleMarqueeBegin(dx, dy)
+    M.cancelMarquee()
+    if fjState.autoPopupOpen or pendingDecompose then return false end
+    local top = FJ.GRID_FIRST_CY - FJ.GRID_CELL * 0.5
+    if dx < FJ.GRID_LEFT or dx > FJ.GRID_LEFT + FJ.GRID_TOTAL_W
+        or dy < top or dy > FJ.GRID_BOTTOM_Y then return false end
+    if EquipmentDetail.isOpen() then
+        if EquipmentDetail.isPinned() or EquipmentDetail.getOwner() ~= FJ.DETAIL_OWNER
+            or EquipmentDetail.containsPoint(dx, dy) then return false end
+        EquipmentDetail.dismissHover(FJ.DETAIL_OWNER)
+        if EquipmentDetail.isOpen() then return false end
+    end
+    M.refreshBackpackItems()
+    fjState.touchStartY = nil
+    fjState.longPressActive, fjState.longPressFired = false, false
+    fjState.longPressCellIdx = 0
+    fjState.hoverSeq, fjState.hoverSince = nil, nil
+    marquee = { x = dx, y = dy, right = dx, bottom = dy, selected = {}, moved = false }
+    print("[BlacksmithDecompose] 右键框选开始")
+    return true
+end
+
+function M.handleMarqueeMove(dx, dy)
+    observeEquipmentData()
+    if not marquee then return false end
+    if fjState.autoPopupOpen or EquipmentDetail.isOpen() then
+        M.cancelMarquee()
+        return false
+    end
+    if math.abs(dx - marquee.x) + math.abs(dy - marquee.y) >= 15 then marquee.moved = true end
+    marquee.right, marquee.bottom = dx, dy
+    marquee.selected = {}
+    if not marquee.moved then return true end
+    local left, top, right, bottom = marqueeRect(dx, dy)
+    if right <= left or bottom <= top then return true end
+    for idx, item in ipairs(backpackItems) do
+        local col = (idx - 1) % FJ.GRID_COLS
+        local row = math.floor((idx - 1) / FJ.GRID_COLS)
+        local cx = FJ.GRID_FIRST_CX + col * FJ.GRID_COL_STEP
+        local cy = FJ.GRID_FIRST_CY + row * FJ.GRID_ROW_STEP - fjState.scrollY
+        local gridTop = FJ.GRID_FIRST_CY - FJ.GRID_CELL * 0.5
+        local visibleH = math.min(cy + FJ.GRID_CELL * 0.5, FJ.GRID_BOTTOM_Y)
+            - math.max(cy - FJ.GRID_CELL * 0.5, gridTop)
+        if not item.locked and visibleH > 8 and cx + FJ.GRID_CELL * 0.5 > left
+            and cx - FJ.GRID_CELL * 0.5 < right and cy + FJ.GRID_CELL * 0.5 > top
+            and cy - FJ.GRID_CELL * 0.5 < bottom then
+            marquee.selected[idx] = true
+        end
+    end
+    return true
+end
+
+--- 松开只追加勾选。静止右键切换单格；分解仍由原确认按钮提交。
+function M.handleMarqueeEnd(dx, dy)
+    if not M.handleMarqueeMove(dx, dy) then return false end
+    local selected, moved = marquee.selected, marquee.moved
+    M.cancelMarquee()
+    if moved then
+        local added = 0
+        for idx in pairs(selected) do
+            if not fjState.selectedItems[idx] then added = added + 1 end
+            fjState.selectedItems[idx] = true
+        end
+        print("[BlacksmithDecompose] 右键框选完成，新增勾选: " .. added)
+    else
+        M.handleInput(dx, dy)
+    end
+    return true
+end
 
 --- 打开时重置分解状态
 function M.onOpen()
@@ -376,6 +491,7 @@ end
 
 --- 直接打开自动分解弹窗（供外部调用，如从战利品面板跳转）
 function M.openAutoPopup()
+    if marquee then M.cancelMarquee() end
     -- 同步最新的服务端设置
     local equipData = PlayerStore.Get("equipment")
     if equipData and equipData.settings then
@@ -490,6 +606,7 @@ end
 
 --- 绘制上半部分奖励槽位内容
 function M.drawUpperSlot(vg)
+    observeEquipmentData()
     local previewEssence, selCount, scrollHint, entries = calcRewardPreview()
 
     -- 显示文本
@@ -529,6 +646,7 @@ end
 
 --- 绘制分解面板（下半部分）
 function M.drawPanel(vg)
+    observeEquipmentData()
     -- 长按检测：每帧检查是否超过阈值
     if fjState.longPressActive and not fjState.longPressFired then
         local elapsed = time.elapsedTime - fjState.longPressStartTime
@@ -652,7 +770,7 @@ function M.drawPanel(vg)
             EquipmentSetIcon.drawBadge(vg, item, cx, cy, FJ.GRID_CELL, 1.0)
 
             -- 选中状态
-            if fjState.selectedItems[idx] then
+            if itemSelected(idx) then
                 nvgBeginPath(vg)
                 nvgRoundedRect(vg, cx - FJ.GRID_CELL * 0.5, cy - FJ.GRID_CELL * 0.5,
                     FJ.GRID_CELL, FJ.GRID_CELL, FJ.GRID_RADIUS)
@@ -673,6 +791,18 @@ function M.drawPanel(vg)
         ::continue_slot::
     end
 
+    if marquee and marquee.moved then
+        local left, top, right, bottom = marqueeRect(marquee.right, marquee.bottom)
+        if right > left and bottom > top then
+            nvgBeginPath(vg)
+            nvgRect(vg, left, top, right - left, bottom - top)
+            nvgFillColor(vg, nvgRGBA(238, 205, 119, 32))
+            nvgFill(vg)
+            nvgStrokeColor(vg, nvgRGBA(238, 205, 119, 230))
+            nvgStrokeWidth(vg, 3)
+            nvgStroke(vg)
+        end
+    end
     nvgRestore(vg)
 
     -- 4. 自动分解按钮 UI_AN_HUANG
@@ -968,6 +1098,8 @@ end
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
 function M.handleInput(dx, dy)
+    observeEquipmentData()
+    M.cancelMarquee()
     -- 装备详情打开时拦截所有输入
     if EquipmentDetail.isOpen() then return true end
 
@@ -1067,6 +1199,7 @@ end
 
 --- 拖拽开始
 function M.handleDragBegin(dx, dy)
+    M.cancelMarquee()
     if EquipmentDetail.isOpen() then
         EquipmentDetail.handleDragBegin(dx, dy)
         return true
@@ -1183,7 +1316,7 @@ end
 ---@param dx number 左栏设计坐标 X
 ---@param dy number 左栏设计坐标 Y
 function M.handleHover(dx, dy)
-    if fjState.autoPopupOpen then return end
+    if fjState.autoPopupOpen or marquee then return end
     local item = M.peekCellAt(dx, dy)
     if not item or not item.seq then
         fjState.hoverSeq = nil
@@ -1226,7 +1359,7 @@ end
 ---@param dx number|nil
 ---@param dy number|nil
 function M.handleScroll(wheel, dx, dy)
-    if fjState.autoPopupOpen then return end
+    if fjState.autoPopupOpen or marquee then return end
     if EquipmentDetail.isOpen() then
         if dx == nil or EquipmentDetail.containsPoint(dx, dy) then
             EquipmentDetail.handleScroll(wheel, dx, dy)

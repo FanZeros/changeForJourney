@@ -59,6 +59,8 @@ local SOURCE_FILES = {
     ["ui.battle.tri.BattleTriPage"] = PROJECT .. "/scripts/ui/battle/tri/BattleTriPage.lua",
     ["boot.StandaloneHorizon"] = PROJECT .. "/scripts/boot/StandaloneHorizon.lua",
     ["boot.StandaloneHorizonInput"] = PROJECT .. "/scripts/boot/StandaloneHorizonInput.lua",
+    ["boot.DecomposeMarqueeGesture"] = PROJECT .. "/scripts/boot/DecomposeMarqueeGesture.lua",
+    ["boot.StandaloneHorizonWheel"] = PROJECT .. "/scripts/boot/StandaloneHorizonWheel.lua",
 }
 local FRAGMENTS_ONLY = { ["ui.battle.tri.BattleTriPage"] = true, ["boot.StandaloneHorizon"] = true }
 local ALLOWED_PATHS = {}

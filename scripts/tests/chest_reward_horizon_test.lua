@@ -173,6 +173,8 @@ function Start()
         local Results = compile("ui.church.ChurchResults")
         local Defs, Protocol = mods["shared.artifact.ArtifactDefs"], mods["shared.Protocol"]
         mods["boot.SeamBackGesture"] = compile("boot.SeamBackGesture")
+        mods["boot.DecomposeMarqueeGesture"] = compile("boot.DecomposeMarqueeGesture")
+        mods["boot.StandaloneHorizonWheel"] = compile("boot.StandaloneHorizonWheel")
         mods["boot.StandaloneHorizonInput"] = compile("boot.StandaloneHorizonInput")
         mods["boot.OfflineRewardOverlay"] = compile("boot.OfflineRewardOverlay")
         local horizonSource = source("boot.StandaloneHorizon")

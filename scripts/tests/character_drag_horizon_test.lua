@@ -44,7 +44,8 @@ function Start()
     require = function(name)
         if name == "boot.StandaloneRT" then return RT end
         if name == "core.Viewport" or name == "boot.StandaloneHorizonInput"
-            or name == "boot.OfflineRewardOverlay" or name == "boot.SeamBackGesture" then return originalRequire(name) end
+            or name == "boot.OfflineRewardOverlay" or name == "boot.SeamBackGesture"
+            or name == "boot.DecomposeMarqueeGesture" or name == "boot.StandaloneHorizonWheel" then return originalRequire(name) end
         if not mods[name] then mods[name] = mock() end
         return mods[name]
     end

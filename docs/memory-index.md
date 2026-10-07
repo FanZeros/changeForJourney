@@ -1,5 +1,17 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+## 两段装备教程真实详情入口（2026-10-07）
+
+- 正式PR #114：https://github.com/FanZeros/changeForJourney/pull/114，head=feat1005/tutorial-character-detail-entry-20261007／base=workspace1005，创建源1eb0999be743e6d1f8a81538abe9d869966389a1／目标5fca1d82，open／draft=false／merged=false／mergeable未计算，不称CI通过。功能6df707f3固定13b7父独立构造，再保留已外部合入的PR112目标，push/ls-remote实际exit0且SHA一致，未推workspace系列。22净任务路径、56目标特效对象原样保留、18正式载荷字节一致，独立九专项和组合均实际通过；最终2977路径规范20旧问题同目标／新增0、36单测通过。共享HEADadac50e8／index空不变，后仅本人三交接补推，不重复PR、不合并发布。
+
+- 本轮用户要求两装备教程增加战斗卡／队伍头像打开详情，并完成后正常push与PR。固定开发父workspace1005@13b7b235，独立feat1005/tutorial-character-detail-entry-20261007；只18Lua、新专项meta、三既有交接，不夹并行特效／.project／无关meta／内部证据。目标已外部合入PR112至5fca1d82，最终教程ref保留目标更新；实际提交／推送／PR结果见本节首条。
+- 组1真实战斗己方卡→同英雄配装详情→武器槽→左仓快捷穿戴；组2真实队1occupied头像→同英雄配装详情→一键装备。来源／英雄／open+equip门控与专用通知；通用事件和Recovery不伪完成，后续携点击英雄。可见动画卡／正式anchor／行框交集、screen/right投影；冷恢复重走入口且version1字段不变，原装备公式／奖励／招募／战斗不改。
+- 入口按压绑定身份，目标更换／ABA／瞬失／遮挡／拖动／reset／frame及DPR变化取消，混合副键不清主token。仅左键／触摸，入口不启动编队drag；后续快捷右键和普通drag保留，两新句补繁英日韩。
+- 官方最终b10成功，566根Lua，18实际部署UUID-hash载荷字节及size全一致／probe0；逐文件Error0不代全仓覆盖。共享工作树六核心全部exit0：entry17/474、horizon199/1334、manager58、recovery69、roster60、targets66；旧recruit13/5159、focused12/5312、dungeon13/6183均ALL PASS/exit0，安全审计原断言保留。独立固定父候选563Lua逐对象一致、九教程专项实际ALL PASS/exit0，真实Lua读取全candidate／共享读取0；与PR112组合工作树证据分开，不混称。
+- 相关配装生命周期／快捷78／切关／编队同步／领奖241／触发35／神器手势1869过。backpack旧24失败固定13b7独立Runtime同序／同重数／同集合、新增0，实际exit0但测试失败；applyEquip97461比较0差异，旧drawTextStroke替身异常后绘制未达。seam旧4805后奖励隐藏返回断言失败，仅固定父相同门控只读对照、没跑基线全集，不修旁支。
+- 正式main150帧boot18/18、Lua／资源0、缺图0；rawFAIL/exit1仅4环境尖峰，不称性能／GPU截图／逐语视觉／手机或审美验收。前期资源根、API、锁队、重新open动画夹具失败均保留，最终只补边界／墙钟不改生产门禁。36规范单测真实过，候选20旧问题／新增0，不称全仓清零。
+- 持续推进已授权任务，尊重本轮直接继续不再提问与停止／权限边界；独立ref/index保护共享工作树／历史双方三记忆。只正常push教程分支，不推workspace系列／强推／自动合并发布；凭据不进源码／配置／remote／日志／记忆，公开凭据应撤销轮换。
+
 ## 图片与 Spine 暗黑特效续作（2026-10-07）
 
 - 已正常push59文件提交24e9c2d042e2b648a5b31dbddda5d798a76ea521，push/ls-remote exit0远端SHA一致，不推workspace1005。新正式PR #112：https://github.com/FanZeros/changeForJourney/pull/112，head=feat1005/team-power-dark-effects-20261006、base=workspace1005，open/draft=false/merged=false，mergeable未计算，不称CI通过或已合并。最终本会话官方b7/566根Lua，11Lua+21资源32/32实际载荷bytes/size一致，临时dark probe/meta/validation0；旧shield_probe基线保留。Rich3081/0、FailedLoad69/0、native92/0、mock2784/0与联合1145/host165/Card17/Result51全部exit0。12真实最终样片和main两次150均Lua/资源0，但raw软件尖峰仍FAIL；原3/4/9基线旧测试失败与36规范单测及20旧meta问题完整披露于PR，未夹并行教程或.project。

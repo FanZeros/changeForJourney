@@ -133,6 +133,7 @@ function M.bind(deps)
             if slot and slot.state == "occupied" and slot.heroId then
                 require("systems.GameSFX").play("ui_pick")
                 CharacterDetail.open(slot.heroId)
+                require("systems.TutorialManager").notifyCharacterDetailOpened("avatar", slot.heroId)
             elseif slot and slot.state == "empty" then
                 selectSlotState.active = true
                 selectSlotState.slotIndex = avatarSlot

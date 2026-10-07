@@ -1,7 +1,7 @@
 -- 独立strict专项；沿用scaffold-2d Start/Stop生命周期，不启动游戏/main/真实存档。
 -- cwd MUST be /home/Maker/tutorial-onboarding-validation-20261006.
 -- /home/Maker/resource-dungeon-visual-validation-20261006/.cli/UrhoXRuntime tests/tutorial_dungeon_guide_test.lua
--- -tapcode_dir=/workspace/changeForJourney-workspace1005 -tool_mode -nosound -graphicsheadless
+-- -tapcode_dir=/workspace -tool_mode -nosound -graphicsheadless
 -- -validate -validate-frames=60 -validate-timeout=45 -validate-output=<isolated cwd>/dungeon-guide.json
 -- 可选 -dungeon-guide-review=gold：真实Dialog/Overlay/PNG，纯NanoVG，生产BTP放大变换。
 -- review使用-graphicssurfaceless -screenshot=<isolated cwd>/dungeon-guide.png -screenshot-frame=120 -x 1920 -y 1080。
@@ -9,7 +9,7 @@
 -- Driver:start、Scene.gotoStage/pump、ensureDrivers是精确内存边界；不测/不宣称setTeams持久化。
 -- 旧DungeonPage只提供拒绝访问的dead-module哨兵，绝不读取或加载真实旧模块。
 -- 底层绘图spy用于语义/几何验收，不等价于手机实测或真实战斗验收。
-local PROJECT = "/workspace/changeForJourney-workspace1005"
+local PROJECT = "/workspace"
 local CWD = "/home/Maker/tutorial-onboarding-validation-20261006"
 local TAG = "[tutorial_dungeon_guide_test] "
 local ROOT, REVIEW = "", ""
@@ -43,6 +43,7 @@ local SOURCE_FILES = {
     ["config.DungeonIdleConfig"] = PROJECT .. "/scripts/config/DungeonIdleConfig.lua",
     ["config.TowerConfig"] = PROJECT .. "/scripts/config/TowerConfig.lua",
     ["config.MonsterConfig"] = PROJECT .. "/scripts/config/MonsterConfig.lua",
+    ["config.ResourceDefs"] = PROJECT .. "/scripts/config/ResourceDefs.lua",
     ["core.DrawUtil"] = PROJECT .. "/scripts/core/DrawUtil.lua",
     ["core.DarkIcon"] = PROJECT .. "/scripts/core/DarkIcon.lua",
     ["core.NumberUtil"] = PROJECT .. "/scripts/core/NumberUtil.lua",
@@ -51,6 +52,7 @@ local SOURCE_FILES = {
     ["ui.tutorial.TutorialOverlay"] = PROJECT .. "/scripts/ui/tutorial/TutorialOverlay.lua",
     ["ui.tutorial.TutorialPageRecovery"] = PROJECT .. "/scripts/ui/tutorial/TutorialPageRecovery.lua",
     ["ui.battle.stage.StageSelectDialog"] = PROJECT .. "/scripts/ui/battle/stage/StageSelectDialog.lua",
+    ["ui.battle.stage.ExpeditionOverview"] = PROJECT .. "/scripts/ui/battle/stage/ExpeditionOverview.lua",
     ["ui.battle.stage.StageSelectResources"] = PROJECT .. "/scripts/ui/battle/stage/StageSelectResources.lua",
     ["ui.battle.stage.StageSelectRewardPreview"] = PROJECT .. "/scripts/ui/battle/stage/StageSelectRewardPreview.lua",
     ["ui.battle.stage.BattleEnemySpawn"] = PROJECT .. "/scripts/ui/battle/stage/BattleEnemySpawn.lua",
@@ -61,7 +63,7 @@ local SOURCE_FILES = {
 local FRAGMENTS_ONLY = { ["ui.battle.tri.BattleTriPage"] = true, ["boot.StandaloneHorizon"] = true }
 local ALLOWED_PATHS = {}
 for _, path in pairs(SOURCE_FILES) do ALLOWED_PATHS[path] = true end
-local nativeFile, nativeCreateImage, nativeDeleteImage = File, nvgCreateImage, nvgDeleteImage
+local nativeFile, nativeCache, nativeCreateImage, nativeDeleteImage = File, cache, nvgCreateImage, nvgDeleteImage
 local sources, reads, contexts, fragments = {}, {}, {}, {} ---@type any
 local checks, groups, failures = 0, 0, 0
 local loadedBefore, globalsBefore = {}, {} ---@type any
@@ -80,19 +82,23 @@ local function same(a, b)
     for k in pairs(b) do if a[k] == nil then return false end end
     return true
 end
--- 唯一原生File出口：调用方不能拼路径，也不能选择写模式；失败同样Dispose。
+-- 唯一宿主cache读口：绝对白名单保留源码身份；调用方不能拼路径/选择写模式，失败同样Dispose。
 local function fixedFile(path, mode)
     assert(ROOT == PROJECT, "unexpected project root")
     assert(ALLOWED_PATHS[path] == true and mode == FILE_READ, "fixedFile path/mode denied")
-    local file = assert(nativeFile(path, FILE_READ), "source File unavailable " .. path)
+    assert(path:sub(1, #PROJECT + 9) == PROJECT .. "/scripts/" and path:sub(-4) == ".lua"
+        and not path:find("..", 1, true), "fixed absolute Lua source only")
+    local resource = path:sub(#PROJECT + 10)
+    local file = assert(nativeCache:GetFile(resource), "source cache File unavailable " .. resource)
     local ok, text = pcall(function()
-        assert(file:IsOpen(), "source open failed " .. path)
+        assert(file:IsOpen(), "source open failed " .. resource)
+        assert(file:GetMode() == FILE_READ, "source must be read-only " .. resource)
         local lines = {}; while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
         return table.concat(lines, "\n")
     end)
     file:Dispose()
     assert(ok, text)
-    reads[#reads + 1] = path
+    reads[#reads + 1] = resource
     return text
 end
 local function source(name)
@@ -258,6 +264,9 @@ local function newContext(review, vg)
     c.mock("systems.UnitAttributes", {})
     c.mock("systems.ButtonFeedback", { begin = function() return false end, finish = noop,
         trigger = function(name) c.record(name) end })
+    -- 本专项不进入远征概览：加载真实Overview，但离线服务/头像的任何调用明确拒绝。
+    c.mock("rules.offline.OfflineService", {})
+    c.mock("ui.widget.HeroFrame", {})
     c.mock("runtime.ClientDispatcher", { get = function(key)
         if c.memory[key] == nil then return deny("dispatcher unknown get " .. tostring(key)) end
         return c.memory[key]
@@ -291,6 +300,11 @@ local function newContext(review, vg)
         end
         c.mock(name, api)
     end
+    rawset(c.modules["ui.hud.BottomNav"], "isAllLocked", function() return c.navLocked == true end)
+    rawset(c.modules["ui.hud.BottomNav"], "isTabLocked", function(tab)
+        assert(tab == 3, "Dialog selection only queries battle nav3")
+        return c.battleTabLocked == true
+    end)
     -- 模块名仍被旧HorizonInput顶层require；访问任何旧接口都必须失败，而不是静默兼容。
     c.mock("ui.dungeon.DungeonPage", {})
     c.mock("boot.ArtifactGesture", { bind = function() return nil end, down = function() return false end,
@@ -453,6 +467,7 @@ function BattleTriPage.isOpen() return isOpen_ end
     -- 每段为生产完整函数/闭包，不复制goto、输入或变换算法，不启动整个BTP模块。
     local transform = section(btp, "function BattleTriPage.getDialogTransform(", "\n--- 击杀奖励回调")
     local life = section(btp, "function BattleTriPage.open()", "\n--- 幂等初始化")
+    local terminalState = section(btp, "function BattleTriPage.isTerminalRaidActive()", "\nfunction BattleTriPage.setBattleReady(")
     local interior = section(btp, "local PLATE_AR =", "\n--- [三队并行] 行内矩形")
     local gotoText = section(btp, "function BattleTriPage.getTeamStageId(", "\n--- 每行 HUD")
     local inputText = section(btp, "function BattleTriPage.handleInput(", "\n--- 三队实时快照")
@@ -461,7 +476,8 @@ function BattleTriPage.isOpen() return isOpen_ end
     assert(source(btp):find(regionLine, 1, true), "production draw region assignment missing")
     local drawText = "\nfunction BattleTriPage.draw(vg, logicalW, logicalH)\n"
         .. regionLine .. "\nlocal BattleScene = require(\"ui.battle.scene.BattleScene\")\n" .. modalText .. "\nend\n"
-    c.tri = compile(prefix .. transform .. life .. interior .. gotoText .. inputText .. drawText .. "\nreturn BattleTriPage",
+    c.tri, c.setTerminalRaid = compile(prefix .. transform .. life .. terminalState .. interior .. gotoText .. inputText .. drawText
+        .. "\nreturn BattleTriPage, function(active) terminalRaid = active and {} or nil end",
         SOURCE_FILES[btp] .. "#complete-dialog-closures", e)
     c.modules[btp] = c.tri
     c.rt.vg = c.vg
@@ -588,6 +604,25 @@ local function contractCases()
     eq(c.dc.getStageId("gold_mine", 1), 100001, "independent first task ID oracle")
     local ids = c.require("ui.battle.stage.StageSelectResources").getGroups()[1].ids
     eq(ids[1], 100001, "actual resource rows first ID")
+    check(c.modules["ui.battle.stage.ExpeditionOverview"] ~= nil
+        and sources["ui.battle.stage.ExpeditionOverview"] ~= nil and sources["config.ResourceDefs"] ~= nil,
+        "Dialog eager dependency uses real allowlisted Overview/ResourceDefs")
+    local before = ledger(c)
+    c.dialog.close()
+    for _, gate in ipairs({ "navLocked", "battleTabLocked", "terminal", "dungeon", "tower" }) do
+        c.navLocked, c.battleTabLocked = gate == "navLocked", gate == "battleTabLocked"
+        c.setTerminalRaid(gate == "terminal")
+        c.views["ui.dungeon.DungeonBattleScene"].open = gate == "dungeon"
+        c.views["ui.tower.TowerBattleScene"].open = gate == "tower"
+        c.dialog.openDungeon(1, "gold_mine")
+        check(not c.dialog.isOpen(), "actual Dialog selection guard refuses " .. gate)
+        eq(#c.sceneCalls, 0, "guarded Dialog open submits no task " .. gate)
+        eq(#c.starts, 0, "guarded Dialog open starts no driver " .. gate)
+        eq(eventCount(c, "enter_gold_mine"), 0, "guarded Dialog open emits no success " .. gate)
+    end
+    c.navLocked, c.battleTabLocked = false, false; c.setTerminalRaid(false)
+    c.views["ui.dungeon.DungeonBattleScene"].open, c.views["ui.tower.TowerBattleScene"].open = false, false
+    check(same(ledger(c), before), "selection guards preserve gameplay ledger")
     audit(c)
 end
 local function recoveryCases()
@@ -702,13 +737,30 @@ local function registrationCases()
     eq(c.tm.getCurrentHotspot(), nil, "opening .17s not stable hotspot")
     c.clock.elapsedTime = c.clock.elapsedTime + 0.02
     c.clearDraw(); c.tm.clearHotspots(); c.dialog.draw(c.vg); target(c)
+    -- 默认档max306只解锁队1；新Dialog会拒绝锁定队2请求，保留原队1视图和合法热点。
+    eq(c.require("config.ExpTable").getUnlockedTeamCount(c.memory.battle), 1, "fixture initially only team1 unlocked")
+    local before = ledger(c)
+    c.dialog.openDungeon(2, "gold_mine"); c.clock.elapsedTime = c.clock.elapsedTime + 1
+    c.clearDraw(); c.tm.clearHotspots(); c.dialog.draw(c.vg); target(c)
+    check(textFound(c, "队伍 1 · 选择关卡") ~= nil, "locked team2 request retains actual team1 selector")
+    check(same(ledger(c), before), "locked team2 request preserves gameplay ledger")
+    -- 显式补已越过905的资格，再验证真正切到队2时绝不借用队1教程热点。
+    c.memory.battle.maxStageId = 906
+    eq(c.require("config.ExpTable").getUnlockedTeamCount(c.memory.battle), 2, "wrong-team fixture explicitly unlocks team2")
     c.dialog.openDungeon(2, "gold_mine"); c.clock.elapsedTime = c.clock.elapsedTime + 1
     c.clearDraw(); c.tm.clearHotspots(); c.dialog.draw(c.vg)
-    eq(c.tm.getCurrentHotspot(), nil, "wrong targetTeam2 no target")
-    c.dialog.openDungeon(1, "equipment_vault")
+    check(textFound(c, "队伍 2 · 选择关卡") ~= nil, "wrong-team check actually reached team2 selector")
+    eq(c.tm.getCurrentHotspot(), nil, "unlocked targetTeam2 no borrowed team1 target")
+    eq(#c.sceneCalls, 0, "team selection never submits task")
+    eq(#c.starts, 0, "team selection never starts driver")
+    eq(eventCount(c, "enter_gold_mine"), 0, "team selection never invents gold completion")
+    check(not c.tm.isGroupCompleted(15), "team selection does not complete guide15")
+    -- 已开窗时openDungeon仍会重新定位并重置openTime；仅推进墙钟，不跑教程恢复重置滚动。
+    c.dialog.openDungeon(1, "equipment_vault"); c.clock.elapsedTime = c.clock.elapsedTime + 1
     c.clearDraw(); c.tm.clearHotspots(); c.dialog.draw(c.vg)
     eq(c.tm.getCurrentHotspot(), nil, "wrong selected resource no target")
-    c.dialog.openDungeon(1, "gold_mine"); c.dialog.handleScroll(-0.4, 340, 900)
+    c.dialog.openDungeon(1, "gold_mine"); c.clock.elapsedTime = c.clock.elapsedTime + 1
+    c.dialog.handleScroll(-0.4, 340, 900)
     c.clearDraw(); c.tm.clearHotspots(); c.dialog.draw(c.vg)
     local clipped = assert(c.tm.getCurrentHotspot(), "partially clipped real first row still has visible target")
     near(clipped.cx, 605, "partial row keeps actual X"); near(clipped.cy, 828, "partial row clipped centerY")
@@ -990,6 +1042,16 @@ local function safetyCases()
         function() return c.env.math.random() end,
     }
     for i, probe in ipairs(probes) do check(not pcall(probe), "strict dangerous probe " .. i) end
+    local boundaryProbes = {
+        function() c.require("rules.offline.OfflineService").PreviewTeamIncome() end,
+        function() c.require("ui.widget.HeroFrame").initImages() end,
+        function() c.require("ui.widget.HeroFrame").draw() end,
+    }
+    for i, probe in ipairs(boundaryProbes) do
+        local before = #c.denied
+        check(not pcall(probe), "unexercised Overview service/graphics boundary rejects " .. i)
+        eq(#c.denied, before + 1, "Overview boundary denial recorded " .. i)
+    end
     c.denied = {}; audit(c)
     local other = newContext()
     check(c.env ~= other.env and c.tm ~= other.tm and c.dialog ~= other.dialog and c.tri ~= other.tri,
@@ -1005,12 +1067,20 @@ local function hostAudit()
     local function equalValue(a, b) return a == b or type(a) == "number" and type(b) == "number" and a ~= a and b ~= b end
     for k, v in pairs(globalsBefore) do check(equalValue(_G[k], v), "host global original " .. tostring(k)) end
     for k, v in pairs(_G) do check(equalValue(globalsBefore[k], v), "no host globals added " .. tostring(k)) end
-    for _, path in ipairs(reads) do check(ALLOWED_PATHS[path] == true, "every File exact absolute allowlist") end
+    for _, resource in ipairs(reads) do
+        check(ALLOWED_PATHS[PROJECT .. "/scripts/" .. resource] == true, "every cache read exact allowlisted script resource")
+    end
     check(#reads > 0 and #fragments > 0, "audit covers actual sources and full production closures")
     check(SOURCE_FILES["ui.dungeon.DungeonPage"] == nil and SOURCE_FILES["boot.StandaloneSave"] == nil,
         "old page/save outside readable source set")
     eq(File, nativeFile, "host File never overwritten")
+    eq(cache, nativeCache, "host cache never overwritten")
     eq(nvgCreateImage, nativeCreateImage, "host NanoVG never overwritten")
+    check(sources["ui.battle.stage.ExpeditionOverview"] ~= nil and sources["config.ResourceDefs"] ~= nil,
+        "new eager dependencies read as real allowlisted source")
+    check(SOURCE_FILES["rules.offline.OfflineService"] == nil and sources["rules.offline.OfflineService"] == nil
+        and SOURCE_FILES["ui.widget.HeroFrame"] == nil and sources["ui.widget.HeroFrame"] == nil,
+        "unexercised Overview service/graphics remain rejecting boundaries, never real IO modules")
 end
 ---@type any
 local reviewContext, reviewVG = nil, nil

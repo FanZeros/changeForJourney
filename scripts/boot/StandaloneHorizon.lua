@@ -322,7 +322,11 @@ local function HorizonDrawTutorialOverlay()
             return { cx = ox + rect.cx * sx, cy = oy + rect.cy * sy,
                 w = rect.w * sx, h = rect.h * sy }
         end
-        if hs.panel == "modal" or hs.panel == "tri_modal" then
+        if hs.panel == "screen" then
+            -- 战斗卡已在屏幕逻辑空间，不能再套右/中栏的设计坐标变换。
+            screen = project(hs, 0, 0, 1, 1)
+            if hs.spotlight then screen.spotlight = project(hs.spotlight, 0, 0, 1, 1) end
+        elseif hs.panel == "modal" or hs.panel == "tri_modal" then
             local dw, dh = DESIGN_W(), DESIGN_H()
             if BottomNav.getSelectedIndex() == 5 then dw, dh = 1920, 1080 end
             local fit = math.min(logicalW() / dw, logicalH() / dh)

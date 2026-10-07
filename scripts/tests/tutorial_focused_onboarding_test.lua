@@ -1,7 +1,7 @@
 -- 专项只读验证；基于 scaffold-2d 的 Start/Stop 生命周期，不初始化游戏/main/真实档。
 -- cwd MUST be /home/Maker/tutorial-onboarding-validation-20261006.
 -- /home/Maker/resource-dungeon-visual-validation-20261006/.cli/UrhoXRuntime tests/tutorial_focused_onboarding_test.lua
--- -tapcode_dir=/workspace/changeForJourney-workspace1005 -tool_mode -nosound -graphicsheadless
+-- -tapcode_dir=/workspace -tool_mode -nosound -graphicsheadless
 -- -validate -validate-frames=60 -validate-timeout=45 -validate-output=<isolated cwd>/validate.json
 -- 真实 TM/Recovery/Letter/Scenario/Story + 完整只读闭包；其他业务为内存替身。
 -- 绘图 spy 是语义/几何记录，不是截图，也不代表真实手机或完整存档验收。
@@ -12,7 +12,7 @@ for _, arg in ipairs(GetArguments()) do
     local path = arg:match("^%-tapcode_dir=(.+)$")
     if path then ROOT = path:gsub("/+$", "") end
 end
-local PROJECT = "/workspace/changeForJourney-workspace1005"
+local PROJECT = "/workspace"
 local CWD = "/home/Maker/tutorial-onboarding-validation-20261006"
 local TAG = "[tutorial_focused_onboarding_test] "
 local SOURCE_FILES = {
@@ -41,7 +41,7 @@ local SOURCE_FILES = {
     ["boot.Standalone"] = PROJECT .. "/scripts/boot/Standalone.lua",
 }
 local FRAGMENTS_ONLY = { ["boot.StandaloneHorizon"]=true, ["boot.StandaloneBoot"]=true, ["boot.Standalone"]=true }
-local nativeFile = File
+local nativeFile, nativeCache = File, cache
 local sources, reads, contexts = {}, {}, {} ---@type any
 local checks, groups, failures = 0, 0, 0
 local loadedBefore, globalsBefore = {}, {} ---@type any
@@ -66,14 +66,19 @@ local function source(name)
     local path=assert(SOURCE_FILES[name],"source denied " .. tostring(name))
     if sources[name] then return sources[name] end
     assert(ROOT==PROJECT,"unexpected project root")
-    local f=assert(nativeFile(path,FILE_READ),"source File unavailable " .. path)
+    assert(path:sub(1,#PROJECT+9)==PROJECT .. "/scripts/" and path:sub(-4)==".lua"
+        and not path:find("..",1,true),"fixed absolute Lua source only")
+    -- 绝对白名单仅作源码身份；宿主cache只读scripts资源根下的相对键，不开放给生产env。
+    local resource=path:sub(#PROJECT+10)
+    local f=assert(nativeCache:GetFile(resource),"source cache File unavailable " .. resource)
     local ok,text=pcall(function()
-        assert(f:IsOpen(),"source open failed " .. path)
+        assert(f:IsOpen(),"source open failed " .. resource)
+        assert(f:GetMode()==FILE_READ,"source must be read-only " .. resource)
         local lines={}; while not f:IsEof() do lines[#lines+1]=f:ReadLine() end
         return table.concat(lines,"\n")
     end)
     f:Dispose(); assert(ok,text)
-    sources[name]=text; reads[#reads+1]=path; return text
+    sources[name]=text; reads[#reads+1]=resource; return text
 end
 local function section(name,first,last)
     local text=source(name)
@@ -950,7 +955,7 @@ local function localizedCases()
     auditContext(c)
 end
 local REVIEW_IMAGES={
-    ["image/剧情/背景/STORY_BG_01.png"]=PROJECT .. "/assets/image/剧情/背景/STORY_BG_01.png",
+    ["image/剧情/背景/STORY_BG_01.png"]="image/剧情/背景/STORY_BG_01.png",
     ["fixed-town-backdrop"]="/workspace/screenshots/town-expedition-landscape-inspect-20261006.png",
 }
 local NATIVE_DRAW_NAMES={
@@ -978,11 +983,11 @@ local function startReview()
     -- 仅明确列举的绘图能力；env未知全局、require、文件/业务拒绝规则完全不变。
     for _,name in ipairs(NATIVE_DRAW_NAMES) do rawset(c.env,name,assert(_G[name],"native draw missing " .. name)) end
     c.env.nvgCreateImage=function(vg,path,flags)
-        local absolute=REVIEW_IMAGES[path]
-        if not absolute then return c.deny("native image not whitelisted " .. tostring(path)) end
-        local handle=nvgCreateImage(vg,absolute,flags or 0)
+        local image=REVIEW_IMAGES[path]
+        if not image then return c.deny("native image not whitelisted " .. tostring(path)) end
+        local handle=nvgCreateImage(vg,image,flags or 0)
         check(handle>=0,"native whitelisted image load " .. path)
-        c.loads[#c.loads+1]=absolute; return handle
+        c.loads[#c.loads+1]=image; return handle
     end
     local i18n=c.modules["core.I18n"]
     i18n.displayBounds=nvgTextBounds; i18n.displayText=nvgText
@@ -1003,7 +1008,9 @@ function HandleFocusedOnboardingReview()
     if REVIEW=="letter" then c.letter.draw(reviewVG,1920,1080)
     else
         nvgBeginPath(reviewVG); nvgRect(reviewVG,0,0,1920,1080)
-        nvgFillPaint(reviewVG,nvgImagePattern(reviewVG,0,0,1920,1080,0,reviewBackdrop,1)); nvgFill(reviewVG)
+        local backdropPaint=nvgImagePattern(reviewVG,0,0,1920,1080,0,reviewBackdrop,1)
+        ---@cast backdropPaint NVGpaint
+        nvgFillPaint(reviewVG,backdropPaint); nvgFill(reviewVG)
         reviewProject()
     end
     nvgRestore(reviewVG); nvgEndFrame(reviewVG)
@@ -1038,10 +1045,14 @@ function Start()
             local a=globalsBefore[k]; check(a==v or type(a)=="number" and type(v)=="number" and a~=a and v~=v,
                 "no global added " .. tostring(k))
         end
-        for _,path in ipairs(reads) do
-            local allowed=false; for _,candidate in pairs(SOURCE_FILES) do if candidate==path then allowed=true end end
-            check(allowed and path:sub(1,#PROJECT+9)==PROJECT .. "/scripts/","every native File read fixed source only")
+        for _,resource in ipairs(reads) do
+            local allowed=false; for _,candidate in pairs(SOURCE_FILES) do
+                if candidate==PROJECT .. "/scripts/" .. resource then allowed=true end
+            end
+            check(allowed,"every cache read exact allowlisted script resource")
         end
+        eq(File,nativeFile,"host File never overwritten")
+        eq(cache,nativeCache,"host cache never overwritten")
         check(#contexts>0 and #reads>0,"audit covered actual isolated production modules")
     end)
     print(TAG .. "RESULT " .. (failures==0 and "ALL PASS" or "FAIL") .. " groups=" .. groups .. " checks=" .. checks .. " failures=" .. failures)

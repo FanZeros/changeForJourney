@@ -1,5 +1,6 @@
 -- 右侧角色栏：实际绘图与共享HeroFrame的碎片/职业避让、单人战力和点击中心。
 function Start()
+    ---@type fun(name: string): any
     local nativeRequire = require
     local originals = {}
     local records, images, frames, targets = {}, {}, {}, {}
@@ -30,6 +31,10 @@ function Start()
         ["config.HeroAssetUtil"] = { ensureIcon = function() return 1 end },
         ["core.HorizonBg"] = { draw = noop },
         ["systems.TutorialManager"] = { isActive = function() return true end, getNewHeroId = function() return 3 end,
+            getCurrentHighlight = function() return "character_slot_1" end,
+            registerCharacterDetailHotspot = function(key, heroId, cx, cy, w, h, panel)
+                targets[key] = { heroId = heroId, cx = cx, cy = cy, w = w, h = h, panel = panel }
+            end,
             registerHotspot = function(key, cx, cy) targets[key] = { cx = cx, cy = cy } end },
     }
     require = function(name) return mocks[name] or nativeRequire(name) end
@@ -101,8 +106,12 @@ function Start()
         local team, slot = Draw.hitTestAvatarSlot(occupied.cx + Draw.CONTENT_SHIFT_X,
             occupied.cy + Draw.CONTENT_SHIFT_Y, false)
         check(team == 1 and slot == 1, "三队新布局头像中心与点击命中一致")
-        check(targets.character_slot_1 and targets.character_slot_1.cy == Draw.ROW1_CY + Draw.CONTENT_SHIFT_Y,
-            "教程名册热点同步新首行坐标")
+        local targetCX, targetCY = Draw.avatarCenter(1, 1)
+        check(targets.character_slot_1 and targets.character_slot_1.cx == targetCX + Draw.CONTENT_SHIFT_X
+            and targets.character_slot_1.cy == targetCY + Draw.CONTENT_SHIFT_Y
+            and targets.character_slot_1.heroId == 1 and targets.character_slot_1.panel == "right"
+            and targets.character_slot_1.w == Draw.AV_SIZE,
+            "教程热点与右栏真实队伍头像同位同尺寸且绑定英雄")
         check(math.abs(Draw.SCROLL_BOTTOM + Draw.CONTENT_SHIFT_Y - 2400) < 0.001,
             "滚动底边扣除内容下移，末行战力可见")
         check(Draw.ROW_SPACING > Draw.ROSTER_BOTTOM_DY + Draw.ROSTER_ICON * 0.5,
@@ -138,15 +147,28 @@ function Start()
         check(math.max(0, fullBottom - Draw.SCROLL_BOTTOM) == 0, "25人完整内容无需滚动")
         check(Draw.ROSTER_ICON == 148 and rosterFrames[1].size == 148 and teamFrames[1].size == 176,
             "名册与编队头像尺寸没有缩小")
-        check(targets.character_slot_1.cy == Draw.ROW1_CY + Draw.CONTENT_SHIFT_Y,
-            "上移后教程热点仍与首行同位")
+        check(targets.character_slot_1.cx == targetCX + Draw.CONTENT_SHIFT_X
+            and targets.character_slot_1.cy == targetCY + Draw.CONTENT_SHIFT_Y,
+            "名册布局变化不移动队伍头像教程热点")
+        roster[1], roster[25] = roster[25], roster[1]
+        targets = {}; Draw.draw({}, 150, false)
+        check(targets.character_slot_1.heroId == 1 and targets.character_slot_1.cy == targetCY + Draw.CONTENT_SHIFT_Y,
+            "名册排序与滚动不改变入口英雄或热点")
+        roster[1], roster[25] = roster[25], roster[1]
+        local saved = teams[1].slots[1]
+        teams[1].slots[1] = { state = "empty" }
+        targets = {}; Draw.draw({}, 0, false)
+        check(not targets.character_slot_1 and targets.character_new_hero,
+            "空队没有假头像入口，新英雄名册目标仍保留")
+        teams[1].slots[1] = saved
+        records, frames = {}, {}; Draw.draw({}, 0, false)
         -- 读取正式名册命中函数，隔离状态但不手抄一份输入公式。
         local file = assert(cache:GetFile("ui/character/panel/CharacterPanel.lua"))
         local lines = {}
         while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
         file:Dispose()
         local source = table.concat(lines, "\n")
-        local hitSource = assert(source:match("(local function hitTestRosterCard.-)\n%-%- ======================== Public API"))
+        local hitSource = assert(source:match("(local function hitTestRosterCard.-)\n%-%- heroes 推送可能"))
         local env = setmetatable({ Draw = Draw, DESIGN_W = 1080, DESIGN_H = 2400,
             ROW1_CY = Draw.ROW1_CY, ROW_SPACING = Draw.ROW_SPACING, MAX_PER_ROW = Draw.MAX_PER_ROW,
             SCROLL_TOP = Draw.SCROLL_TOP, SCROLL_BOTTOM = Draw.SCROLL_BOTTOM, heroRoster = roster, scrollY = 0 },

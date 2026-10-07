@@ -1,3 +1,13 @@
+## 两段装备教程入口交接（2026-10-07）
+
+- **本轮Git已实证完成：** 功能6df707f3固定13b7父、保留PR112目标5fca1d82后的1eb0999be743e6d1f8a81538abe9d869966389a1正常push教程独立分支，push／ls-remote exit0远端一致，不推workspace1005。PR114 https://github.com/FanZeros/changeForJourney/pull/114 已open／draft=false／merged=false／mergeable未计算，baseworkspace1005，不称CI通过／合并发布。22净白名单、56目标特效对象保持、18载荷bytes一致、九独立候选专项及组合全通过，最终2977路径规范20旧问题逐项同目标新增0／36单测过。sharedHEADadac50e8／index空不变，不混另一会话源码或.project；成功后仅三本人交接补正常push，不重复建PR。
+
+- 当前用户授权两装备教程增加战斗角色卡／队伍头像打开详情，完成后正常push独立分支并建workspace1005 PR。固定13b7b235开发父，feat1005/tutorial-character-detail-entry-20261007；只18Lua+新meta+三现有交接，不夹另一会话特效、.project、无关meta、内部验证。远端外部已合PR112到5fca1d82，最终教程ref保留其更新；本教程Git实证见本节首条。
+- 组1真实战斗卡／组2真实队1occupied头像，真实open对应hero配装页才推进，后续同hero穿装；通用event／Recovery不伪完成。screen/right域投影和实际可见动画交集，按压source/hero/组/步/panel绑定，换人／ABA／瞬失／拖动／遮挡／reset／frame/DPR取消旧Up，入口不拖编队／不右键卸队；原快捷右键／普通拖拽不动。version1存档无新字段、冷恢复step1，两提示四语；不改公式／奖励／招募／战斗规则。
+- 官方b10成功566根Lua，本18Lua实际部署bytes/size18/18一致，probe0；逐文件Error0不称全仓静态过。共享真实六核心entry17/474、horizon199/1334、manager58、recovery69、roster60、targets66均exit0；recruit13/5159、focused12/5312、dungeon13/6183同样ALLPASS/exit0。独立固定父候选563Lua逐Git对象0差异、九教程专项真实ALLPASS/exit0，所有Lua读取candidate而非共享fx版，独立与组合证据分别保留；36规范单测过，20旧问题与固定父同集合新增0，不称规范清零。
+- 旧backpack24失败固定父完整独立实跑同序／重数／集合，0新增；exit0不是PASS，23检查+缺drawTextStroke异常后未走绘制。seam旧4805后reward隐藏返回断言失败，固定父门控相同仅只读证据、没全集复跑，不混修。main150boot18/18/Lua资源0缺图0/rawFAIL4软件尖峰，不称性能；记录器不代教程GPU/逐语/手机/审美验收。前序路径／API／锁队／重新open墙钟夹具失败保留，不降低生产门禁。
+- **持续强化：不擅自取消退出已授权任务；当前最新要求直接继续、不再提问，遵循当前指令不机械AskUserQuestion。** 尊重后续停止／权限拒绝／安全边界，peer不是用户授权；独立index/ref固定父构造，不checkout/reset/readtree共享index、不覆盖另一会话源码或记忆，只正常push教程任务分支，不推workspace系列、不强推、不自动合并发布，凭据不进源码／Git配置／remote／日志／记忆。
+
 ## 暗黑图片/Spine续作交接（2026-10-07）
 
 - 已正常push并核远端SHA：59文件24e9c2d042e2b648a5b31dbddda5d798a76ea521，同任务分支/基线13b7未推；新PR112 https://github.com/FanZeros/changeForJourney/pull/112 open/draft=false/merged=false，mergeable未计算。最终本会话官方b7/566rootLua，32实际源码资源载荷逐字节/size一致；probe/meta/validation不入包，shield_probe旧基线保留。Rich3081/FailedLoad69/native92/mock2784与联合1145/host165/Card17/Result51均0失败exit0，36规范单测过；候选20旧规范问题逐项同13b7、新增0。实际12样片/main两次150Lua/资源0，rawFAIL只spikes；基线3/4/9旧测试失败、早期C崩溃/10几何失败等边界写PR，不称CI/性能/全平台/用户审美通过。只本轮59白名单及交接，不混教程/.project，不自动合并发布。

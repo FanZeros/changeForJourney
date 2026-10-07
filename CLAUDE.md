@@ -12,6 +12,18 @@
 4. **分支纪律**：以当前任务授权为准。本轮暗黑特效任务基于 `workspace1005@9497bfdb409c2d0fc17533e4cfc280702fe83517`，任务分支为 `feat1005/team-power-dark-effects-20261006`。用户最新明确提供即时鉴权并要求提 PR，授权提交／正常 push 本任务分支及创建目标 `workspace1005` 的 PR；不混入其他会话返回键改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布，凭据不持久化。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-07，两段装备教程真实详情入口）
+
+- **已正常push并核验：** 教程功能6df707f3由固定13b7父独立构造，随后保留外部已合PR112目标5fca1d82成为1eb0999be743e6d1f8a81538abe9d869966389a1；仅正常push feat1005/tutorial-character-detail-entry-20261007，push／ls-remote实际exit0、远端SHA一致，未推workspace1005。正式 **PR #114** https://github.com/FanZeros/changeForJourney/pull/114，base=workspace1005／head=教程分支，open／draft=false／merged=false，mergeable未计算，不称CI通过或已合并发布。相对最新目标22白名单、18Lua载荷一致、56目标特效对象原样保留；独立候选九专项与组合版本均实际通过，2977路径20旧规范问题同目标／新增0，36单测通过。共享HEAD仍adac50e8、shared index空，不checkout／覆盖另一会话。成功后仅补本节三交接正常push，不重复创建PR。
+
+- 用户要求两装备教学顺带教会战斗角色卡／队伍头像进入详情，并完成后正常push独立分支、创建workspace1005 PR。固定开发父13b7b235，教程分支feat1005/tutorial-character-detail-entry-20261007；独立index/ref，不切换或重置共享工作树，不混并行特效、.project、无关meta或内部证据。远端5fca1d82已外部合入PR112，最终独立教程ref保留其更新；提交／推送／PR实证见本节首条。
+- 组1战斗真实己方卡→该英雄配装详情→武器槽→左仓快捷穿戴；组2真实队1occupied头像→该英雄配装详情→一键装备。source／hero／真实open+equip门控，通用event／自动恢复不伪完成，后续绑定点击英雄。screen/right投影、实际动画卡与普通点击框交集，进场／死亡／行进过渡不注册；原普通点击／装备成功回执／公式／奖励／招募不改。
+- 入口Down绑定组／步骤／source／hero／panel，目标换人／ABA／瞬失／遮挡／拖动／reset／观测到frame或DPR变化永久取消旧按压。只左键／触摸，不启动编队拖拽，避免右键卸队、源头像残留及副键清token绕过；后续快捷右键与普通拖拽保留。两提示补四语；存档仍version1，冷恢复重走入口，无新持久字段。
+- 本会话最终官方b10成功，566根Lua；本教程18Lua与实际UUID-hash载荷18/18字节及size一致，临时dark probe0入包。逐文件LSP Error0，不称全仓静态清零。六核心真实Runtime全部exit0：入口17cases474、横屏199cases1334、manager58、recovery69、头像60、目标链66。旧招募13组5159／基础12组5312／副本13组6183全部ALL PASS/exit0，安全负例、锁队／裁剪／重开动画原断言保留。独立固定父候选563Lua逐Git对象核验0差异、九教程专项亦全部真实ALL PASS/exit0，实际项目Lua全来自候选，共享scripts读取0；与含已合PR112的工作树组合验证分别留证。
+- 相关生命周期／快捷78／切关／原子编队／领奖241／触发35／神器手势1869通过。仓库旧24失败在固定13b7独立完整Runtime同序／同重数／同集合，新增0；两边applyEquip97461比较mismatch0，但旧stub异常后绘制未达，不称该测试通过。seam旧4805后奖励隐藏返回断言失败，门控块与固定父一致，仅只读对照未独立全集复跑，不修返回键旁支。
+- 正式main实际150帧boot18/18、Lua／资源0／缺图0；rawFAIL/exit1仅4个100ms环境帧尖峰，不称性能通过。逻辑／绘制记录器不等于本轮GPU截图、逐语视觉、手机触控或用户审美验收。前序资源根、API缺口、锁队及重开时序夹具失败均保留，修夹具不降低生产门禁。36规范单测通过；候选20旧问题同固定父／新增0，不称全仓规范清零。
+- **持续强化：持续推进已授权任务、不擅自取消退出；当前最新恢复明确直接继续、不再提问，遵循当前指令不机械AskUserQuestion。** 尊重停止／权限拒绝／安全边界，只正常push教程独立分支，不推workspace系列、不强推、不自动合并发布。凭据不进源码、Git配置、remote、日志或记忆，公开凭据应撤销轮换；三记忆仅精确插入本人块、双方历史保留。
+
 ## 上次做了什么（2026-10-07，图片与 Spine 暗黑特效续作）
 
 - **已正常push并核验：** 59文件提交 `24e9c2d042e2b648a5b31dbddda5d798a76ea521` 已上传同任务分支，push/ls-remote实际exit0、远端SHA一致、workspace1005仍13b7未推。正式 **PR #112** https://github.com/FanZeros/changeForJourney/pull/112，head=feat1005/team-power-dark-effects-20261006、base=workspace1005，open/draft=false/merged=false、mergeable未计算；不称CI通过或已合并发布。独立index仅本轮源码资源/meta/三交接，不混并行教程。

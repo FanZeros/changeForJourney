@@ -65,6 +65,7 @@ local TutorialManager    = require("systems.TutorialManager")  -- [横屏接线 
 local LocalActionBridge  = require("runtime.LocalActionBridge")
 local StandaloneBoot     = require("boot.StandaloneBoot")
 local StandaloneRT       = require("boot.StandaloneRT")
+local StartupQueue       = require("boot.StartupQueue")
 
 local Standalone = {}
 
@@ -103,57 +104,21 @@ local postStartFlowDone_ = false  -- [LetterIntro] 开场/离线收益只触发�
 local storyBackfilled_ = false    -- [旧档补播] 已首通关卡的未领情景只补排队一次
 local startFlowBegun_ = false     -- 标题已关，BGM 已起；离线结算可能还在等角色刷新
 local fontNormal = -1
+---@type StartupQueue|nil
 local bootQueue_ = nil
-local bootIdx_ = 0
 local bootReady_ = false
--- [启动优化] 标题提前解锁：核心 UI（到 TownScene 为止）完成后即可点击进入，
--- 弹窗类 init / 接线 / firstStage 在标题后的后台帧继续分步消化。
--- 用户反馈的 64~66% 卡死均为旧包行为；提前解锁可把剩余重活彻底移出"进游戏前"。
-local TITLE_UNLOCK_STEP = 9
 
 local function pumpBootQueue_()
     if not bootQueue_ then return end
-    -- 每帧最多消化 8ms，避免单步解码把预览判定成引擎异常
-    local tFrame = time.elapsedTime
-    while bootQueue_ and (time.elapsedTime - tFrame) < 0.008 do
-        bootIdx_ = bootIdx_ + 1
-        local step = bootQueue_[bootIdx_]
-        if not step then
-            bootQueue_ = nil
-            bootReady_ = true
-            StandaloneRT.bootReady_ = true
-            StandaloneRT.vg = vg
-            DarkTitleScreen.setReady(true)
-            print("[Standalone] boot queue complete, title unlocked")
-            return
-        end
-        local name, fn = step[1], step[2]
-        local t0 = time.elapsedTime
-        local ok, err = pcall(fn)
-        local dt = time.elapsedTime - t0
-        local total = bootQueue_ and #bootQueue_ or bootIdx_
-        if not ok then
-            print("[Standalone] boot step FAIL " .. tostring(name) .. ": " .. tostring(err))
-        else
-            print(string.format("[Standalone] boot step %d/%d %s (%.0fms)",
-                bootIdx_, total, name, dt * 1000))
-        end
-        DarkTitleScreen.loadDone = bootIdx_
-        DarkTitleScreen.loadTotal = total
-        DarkTitleScreen.loadPercent = math.floor(bootIdx_ * 100 / math.max(1, total))
-        -- [启动诊断] 加载条上直接显示步骤名与耗时，便于真机定位哪一步超帧预算
-        DarkTitleScreen.loadStep = name
-        DarkTitleScreen.loadStepMs = math.floor(dt * 1000)
-        if bootIdx_ >= TITLE_UNLOCK_STEP then
-            -- 核心步骤完成：解锁标题（后台继续泵完剩余步骤）
-            bootReady_ = true
-            StandaloneRT.bootReady_ = true
-            StandaloneRT.vg = vg
-            DarkTitleScreen.setReady(true)
-        else
-            DarkTitleScreen.setReady(false)
-        end
-        if dt >= 0.008 then break end
+    -- 整个init可在真实图片缓存未命中时让出；缓存命中不占解码额度。
+    -- 每帧只恢复一次，不把多个轻步骤与下一个重步骤挤到同一帧。
+    if bootQueue_:pump() then
+        bootQueue_ = nil
+        bootReady_ = true
+        StandaloneRT.bootReady_ = true
+        StandaloneRT.vg = vg
+        DarkTitleScreen.setReady(true)
+        print("[Standalone] boot queue complete, title unlocked")
     end
 end
 
@@ -364,6 +329,7 @@ function Standalone.Start()
         local key = tostring(flags or 0) .. ":" .. path
         local cached = byContext[key]
         if cached then return cached end
+        StartupQueue.checkpoint()
         local handle = createImage(ctx, path, flags)
         if handle and handle > 0 then byContext[key] = handle end
         return handle
@@ -406,7 +372,7 @@ function Standalone.Start()
     DarkTitleScreen.init(vg)
     DarkTitleScreen.setReady(false)
     DarkTitleScreen.open()
-    bootQueue_ = {
+    local bootSteps = {
         { "LetterIntro", function() LetterIntro.init(vg) end },
         { "TopBar", function() TopBar.init(vg) end },
         { "BottomNav", function() BottomNav.init(vg) end },
@@ -415,7 +381,7 @@ function Standalone.Start()
         { "ScenarioDialogue", function() ScenarioDialogue.init(vg, scene) end },
         { "CharacterPanel", function() CharacterPanel.init(vg) end },
         { "BackpackPanel", function() BackpackPanel.init(vg) end },
-        { "TownScene", function() TownScene.init(vg) end },
+        { "TownScene", function() TownScene.init(vg); TownScene.preload(vg) end },
         { "RewardPopup", function() RewardPopup.init(vg) end },
         { "OfflineRewardPanel", function() OfflineRewardPanel.init(vg) end },
         { "LevelUpPopup", function() LevelUpPopup.init(vg) end },
@@ -447,11 +413,35 @@ function Standalone.Start()
                 BattleScene.reloadStage({ startSearching = true })
                 print("[Standalone] 初始阵容同步: " .. #initialTeam .. " 个英雄（寻怪模式）")
             end
-            BattleTriPage.setBattleReady(true)
+        end },
+        { "BattleAssets", function()
+            BattleTriPage.preload(vg)
+            local BattleDraw = require("ui.battle.scene.BattleDraw")
+            BattleDraw.preloadCards(vg, BattleScene.getAllies())
+            BattleDraw.preloadCards(vg, BattleScene.getEnemies())
         end },
     }
-    bootIdx_ = 0
-    print("[Standalone] boot queue " .. #bootQueue_ .. " steps (title first)")
+    bootQueue_ = StartupQueue.new(bootSteps, {
+        onComplete = function(index, name, elapsed, ok, err)
+            -- 素材异常沿用旧启动容错；不能因预热失败让战斗永久停在未就绪。
+            if name == "BattleAssets" then BattleTriPage.setBattleReady(true) end
+            if not ok then
+                print("[Standalone] boot step FAIL " .. name .. ": " .. tostring(err))
+            else
+                print(string.format("[Standalone] boot step %d/%d %s (%.0fms span)",
+                    index, #bootSteps, name, elapsed * 1000))
+            end
+            DarkTitleScreen.loadDone = index
+            DarkTitleScreen.loadTotal = #bootSteps
+            DarkTitleScreen.loadPercent = math.floor(index * 100 / #bootSteps)
+            DarkTitleScreen.loadStep = name
+            DarkTitleScreen.loadStepMs = math.floor(elapsed * 1000)
+        end,
+    })
+    -- 就绪后才放行输入/游戏：防止部分初始化让出期间触发开场与回执。
+    bootReady_ = false
+    StandaloneRT.bootReady_ = false
+    print("[Standalone] boot queue " .. #bootSteps .. " steps (title first, cooperative images)")
 
     -- 轻量接线（不解码贴图，可在首帧完成）
     ClientMsgHandler.setup({ sendAction = localSendAction })
@@ -501,6 +491,10 @@ function Standalone.Start()
 end
 
 function Standalone.Stop()
+    -- 启动尚未完成时丢弃挂起任务，不能在已释放的VG上下文继续恢复。
+    bootQueue_ = nil
+    bootReady_ = false
+    StandaloneRT.bootReady_ = false
     RewardPopup.clearBattleRewards()
     require("ui.battle.stage.StageSelectDialog").close()
     StandaloneSave.Flush()  -- [单机存档] 退出前立即落盘

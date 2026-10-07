@@ -30,8 +30,9 @@ local bgmNode_   = nil
 local started_   = false
 local masterGain_ = 1.0   -- 主音量乘数 0~1（由 SettingsPanel 控制）
 
--- 已加载的 Sound 资源（key → Sound）
+-- 已加载的 Sound 资源（key → Sound），失败在本次 start/stop 生命周期内只尝试一次
 local sounds_    = {}
+local failedSounds_ = {}
 
 -- 双通道（A/B 交替使用）
 ---@type SoundSource
@@ -48,6 +49,26 @@ local fadeFromGain_ = 0   -- 淡出通道的起始音量
 local fadeToGain_   = 0   -- 淡入通道的目标音量
 
 -- ── 工具函数 ──
+
+---@param key string
+---@return Sound|nil
+local function ensureSound(key)
+    if sounds_[key] then return sounds_[key] end
+    if failedSounds_[key] then return nil end
+    local info = TRACKS[key]
+    if not info then return nil end
+
+    local snd = cache:GetResource("Sound", info.path)
+    if snd then
+        snd.looped = true
+        sounds_[key] = snd
+    else
+        failedSounds_[key] = true
+        print("[GameBGM] 加载失败: " .. info.path)
+    end
+    return snd
+end
+
 local function getActiveSource()
     return activeSlot_ == "A" and srcA_ or srcB_
 end
@@ -68,16 +89,8 @@ function GameBGM.start()
     started_ = true
     if not scene_ then return end
 
-    -- 预加载所有轨道
-    for key, info in pairs(TRACKS) do
-        local snd = cache:GetResource("Sound", info.path)
-        if snd then
-            snd.looped = true
-            sounds_[key] = snd
-        else
-            print("[GameBGM] 加载失败: " .. info.path)
-        end
-    end
+    -- 只加载当前轨道，其余轨道切换场景时再加载。
+    local snd = ensureSound(activeKey_)
 
     bgmNode_ = scene_:CreateChild("GameBGM", LOCAL)
 
@@ -89,7 +102,6 @@ function GameBGM.start()
 
     -- 播放初始轨道
     local info = TRACKS[activeKey_]
-    local snd  = sounds_[activeKey_]
     if snd and info then
         snd.looped = true  -- 确保循环标记生效
         srcA_.gain = info.gain * masterGain_
@@ -114,7 +126,7 @@ function GameBGM.setScene(sceneName, opts)
         return
     end
 
-    local newSnd = sounds_[sceneName]
+    local newSnd = ensureSound(sceneName)
     if not newSnd then return end
 
     local activeSrc  = getActiveSource()
@@ -225,6 +237,7 @@ function GameBGM.stop()
     started_ = false
     fading_  = false
     sounds_  = {}
+    failedSounds_ = {}
 end
 
 return GameBGM

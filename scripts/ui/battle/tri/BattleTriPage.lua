@@ -45,6 +45,8 @@ local COL_COUNT = ExpTable.TEAM_COUNT or 3
 -- ---- 状态 ----
 local isOpen_ = false
 local inited = false
+---@type any
+local imageVg = nil
 local battleReady = true  -- 分帧启动/读档期间由宿主关闭
 local drivers = {}        -- [1]/[2]/[3] = BattleTriDriver
 ---@type table<number|string, number>|nil
@@ -468,14 +470,14 @@ local function getBackgroundImage(vg, path)
     return img
 end
 
-local function ensureRowBg(vg, row, unlocked)
+local function ensureRowBg(vg, row, unlocked, stageId)
     -- 锁定队展示待解锁章节；解锁后按各队实际战斗进度切回背景。
     ---@type string
     local path
     if row > unlocked then
         path = CHAPTER_BG[row == 2 and 10 or 20]
     else
-        path = BattleTriPage.resolveBackgroundPath(BattleTriPage.getTeamStageId(row))
+        path = BattleTriPage.resolveBackgroundPath(stageId or BattleTriPage.getTeamStageId(row))
     end
     local image = getBackgroundImage(vg, path)
     if image >= 0 then
@@ -486,12 +488,41 @@ local function ensureRowBg(vg, row, unlocked)
 end
 
 function BattleTriPage.init(vg)
+    if imageVg ~= vg then
+        imageVg = vg
+        inited = false
+        l1Images, l1Failures, l1RowImages = {}, {}, {}
+    end
     if inited then return end
     inited = true
     BattleView.init(vg)
     imgL0 = nvgCreateImage(vg, "image/暗黑/L0_stone_frame.png", 0)
     StageSelectDialog.init(vg)
     SoundToggle.initImages(vg)
+end
+
+--- 仅预热首屏素材，不创建/推进战斗驱动，不改变各队进度。
+function BattleTriPage.preload(vg)
+    BattleTriPage.init(vg)
+    local battle = ClientDispatcher.get("battle")
+    local unlocked = ExpTable.getUnlockedTeamCount(battle)
+    local savedTeams = restoredStageIds or (type(battle) == "table" and battle.teamStageIds) or {}
+    savedTeams = type(savedTeams) == "table" and savedTeams or {}
+    local BattleScene = require("ui.battle.scene.BattleScene")
+    for row = 1, COL_COUNT do
+        -- 与首次建驱动的关卡选择一致，但不为加载图片启动战斗或发进度通知。
+        local stageId = BattleTriPage.getTeamStageId(row)
+            or (row == 1 and BattleScene.getStageId())
+            or tonumber(savedTeams[tostring(row)] or savedTeams[row]) or StageConfig.NORMAL_FIRST_STAGE
+        if row ~= 1 and StageConfig.isTerminalTemple(stageId) then
+            stageId = StageConfig.getTerminalPrevStageId(stageId) or StageConfig.NORMAL_FIRST_STAGE
+        end
+        if StageConfig.isResourceStage(stageId)
+            and not require("config.DungeonConfig").isStageUnlocked(stageId, battle, ClientDispatcher.get("dungeon")) then
+            stageId = StageConfig.NORMAL_FIRST_STAGE
+        end
+        ensureRowBg(vg, row, unlocked, stageId)
+    end
 end
 
 --- [三行并行] L0 整套大背景铺满窗口（左右面板 + 中段框体同源）

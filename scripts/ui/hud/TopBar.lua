@@ -49,7 +49,7 @@ local function drawImageCentered(vg, img, cx, cy, w, h)
     if img < 0 then return end
     local x = cx - w * 0.5
     local y = cy - h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, 1.0)
+    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, 1.0) --[[@as NVGpaint]]
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
@@ -78,8 +78,7 @@ function TopBar.init(vg)
     imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     imgGemIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
     if not imgGoldIcon or imgGoldIcon < 0 then print("[TopBar] WARN: UI_icon_JB_X.png load failed, using vector icon") end
-    -- 加载角色头像图标
-    HeroAssetUtil.preloadIcons(vg, imgHeroIcons)
+    -- 头像由绘制时 ensureIcon 按当前头像加载，不在启动同步解码全部25张。
 
     if imgExpBg   < 0 then print("[TopBar] WARN: UI_JYT_1.png load failed") end
     if imgExpFill < 0 then print("[TopBar] WARN: UI_JYT_2.png load failed") end
@@ -300,6 +299,7 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
         nvgSave(vg)
         nvgScissor(vg, fillX, fillY, clipW, fillH)
         local paint = nvgImagePattern(vg, fillX, fillY, fillW, fillH, 0, imgExpFill, 1.0)
+        ---@cast paint NVGpaint
         nvgBeginPath(vg)
         nvgRect(vg, fillX, fillY, fillW, fillH)
         nvgFillPaint(vg, paint)

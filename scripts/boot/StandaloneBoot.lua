@@ -52,6 +52,7 @@ local SCROLL_DROP_TO_REWARD = {
     accessoryScroll = "accessory_scroll",
     helmetScroll    = "helmet_scroll",
     shoesScroll     = "shoes_scroll",
+    sweepTicket     = "sweep_ticket",
 }
 
 --- 取出暂存掉落；背包满时完整存入遗匣。
@@ -416,6 +417,17 @@ function M.run(rt)
                     addKillEquipment(seed.stageId or data.stageId, seed.quality, seed.level)
                 end
             end
+            -- 只领取副本返回的已命中卷轴/券，不再对借用主线关卡额外骰一次。
+            for field, amount in pairs(rewards.scrollDrops) do
+                local rewardKey = SCROLL_DROP_TO_REWARD[field]
+                if rewardKey and amount > 0 then
+                    local method = field:sub(1, 1):upper() .. field:sub(2)
+                    local current = GameState["get" .. method]()
+                    local base = type(current) == "number" and current or 0
+                    GameState["set" .. method](base + amount)
+                    print("[Standalone] 资源掉落到账: type=" .. rewardKey .. " amount=" .. tostring(amount))
+                end
+            end
             -- 不发借用怪物奖励或主线首通奖励；副本经验已按同进度独立结算。
             return
         end
@@ -423,6 +435,7 @@ function M.run(rt)
         if not stageEntry then return end
         local quality = DropSystem.rollKillDrop(stageEntry, data)
         local scrollType = DropSystem.rollScrollDrop(stageEntry)
+        local sweepTicket = DropSystem.rollSweepTicket(stageEntry)
         if data.isFirstClear then
             if quality then
                 local level = stageEntry.monsterLevel or 1
@@ -434,6 +447,10 @@ function M.run(rt)
                 pendingFcScrolls[scrollType] = (pendingFcScrolls[scrollType] or 0) + 1
                 print("[Standalone] 首通卷轴暂存: type=" .. scrollType
                     .. " n=" .. tostring(pendingFcScrolls[scrollType]))
+            end
+            if sweepTicket then
+                pendingFcScrolls.sweepTicket = (pendingFcScrolls.sweepTicket or 0) + 1
+                print("[Standalone] 首通扫荡券暂存: n=" .. tostring(pendingFcScrolls.sweepTicket))
             end
             return
         end
@@ -454,6 +471,13 @@ function M.run(rt)
                 setter(nextValue)
                 print("[Standalone] scroll drop: type=" .. scrollType)
             end
+        end
+        -- 挂机扫荡券直接到账，不进遗匣；首通仍由暂存结算出口统一领取。
+        if sweepTicket then
+            local current = GameState.getSweepTicket()
+            local base = type(current) == "number" and current or 0
+            GameState.setSweepTicket(base + 1)
+            print("[Standalone] 扫荡券掉落到账: amount=1")
         end
     end
     BattleScene.setOnEnemyDrop(applyKillDrop)

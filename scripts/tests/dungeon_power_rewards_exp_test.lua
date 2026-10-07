@@ -23,7 +23,7 @@ local function isolated(mocks)
     env.require = function(name)
         if mocks[name] then return mocks[name] end
         if modules[name] then return modules[name] end
-        assert(name:match("^config%.") or name == "systems.OfflineCalc" or name == "systems.AttributeDef"
+        assert(name:match("^config%.") or name == "systems.OfflineCalc" or name == "systems.DropSystem" or name == "systems.AttributeDef"
             or name == "systems.UnitAttributes" or name == "shared.StageUtils" or name == "core.GameState"
             or name == "rules.dungeon.DungeonService" or name == "rules.tower.TowerService"
             or name == "boot.StandaloneSave" or name:match("^ui%.battle%.stage%.StageSelect"),
@@ -168,7 +168,9 @@ function Start()
             CharacterPanel = { getTeamSlotIds = function() error("有快照不应读当前编队") end,
                 addHeroesExp = function(ids, amount) recipient, perHero = ids, amount end },
             addKillEquipment = function() end }, { __index = env })
-        local consume = assert(load(boot:sub(first, last - 1) .. "    end\nreturn applyKillDrop",
+        local mapFirst = assert(boot:find("local SCROLL_DROP_TO_REWARD =", 1, true))
+        local mapLast = assert(boot:find("\n}", mapFirst, true)) + 2
+        local consume = assert(load(boot:sub(mapFirst, mapLast) .. "\n" .. boot:sub(first, last - 1) .. "    end\nreturn applyKillDrop",
             "@Boot资源发奖", "t", bootEnv))()
         local playerBefore = GS.exportSave()
         local expectedExp = DC.getStageExpAmount(drop.stageId, 1)

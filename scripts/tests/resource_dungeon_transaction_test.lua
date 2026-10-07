@@ -22,6 +22,8 @@ function Start()
             local diskBefore = F.read(F.SAVE)
             local dungeon, sub = modules.dungeon, modules.dungeon.equipment_vault
             local cleared, bag, seeds = sub.cleared, modules.equipment.inventory, modules.lootbox.seeds
+            local heroes, roster, hero = modules.heroes, modules.heroes.roster, modules.heroes.roster[1]
+            local player, session = modules.player, modules.session
             local firstEquip = next(bag) and bag[next(bag)]
             local pushBefore, eventBefore = h.pushes, h.events
             h.committed = false
@@ -35,6 +37,11 @@ function Start()
             eq(sub.cleared, cleared, label .. "onLoad替换的cleared原表还原")
             eq(modules.equipment.inventory, bag, label .. "inventory外部别名")
             eq(modules.lootbox.seeds, seeds, label .. "seeds外部别名")
+            eq(modules.heroes, heroes, label .. "heroes模块外部别名")
+            eq(modules.heroes.roster, roster, label .. "roster外部别名")
+            eq(modules.heroes.roster[1], hero, label .. "hero外部别名")
+            eq(modules.player, player, label .. "player模块外部别名")
+            eq(modules.session, session, label .. "session模块外部别名")
             if firstEquip then eq(bag[next(bag)], firstEquip, label .. "原装备引用") end
             eq(h.PDM.GetModule(1, "dungeon"), h.Dispatcher.get("dungeon"), label .. "双源同表")
             eq(h.pushes, pushBefore, label .. "没有候选模块通知")
@@ -65,11 +72,22 @@ function Start()
                 modules.dungeon[id].floor = 2
                 modules.dungeon[id].cleared[1] = true
                 h.failure = failure
+                local sweepWrites, sweepRenames = h.writeAttempts, h.renameAttempts
                 assertRollback(modules, function() return h.Service.Sweep(1, id) end, id .. "/sweep/" .. failure)
-                eq(modules.dungeon[id].dailyUsed, 0, "失败不扣扫荡日次")
+                if failure == "open" or failure == "write" or failure == "rename" then
+                    check(h.writeAttempts > sweepWrites, "扫荡实际进入真实File写入失败边界")
+                end
+                if failure == "rename" then check(h.renameAttempts > sweepRenames, "扫荡实际进入真实Rename失败边界") end
+                eq(modules.dungeon[id].dailyUsed, 0, "失败不改旧扫荡日次")
+                eq(modules.currency.sweepTicket, 30, "失败原位返还扫荡券")
                 h.failure = ""
-                check(h.Service.Sweep(1, id), "扫荡真实写盘重试")
-                eq(modules.dungeon[id].dailyUsed, 1, "只扣成功一次")
+                local swept, sweepErr, sweepReply = h.Service.Sweep(1, id)
+                check(swept, "扫荡真实写盘重试 " .. tostring(sweepErr))
+                eq(modules.dungeon[id].dailyUsed, 0, "新规则成功也不扣旧每日次")
+                eq(modules.currency.sweepTicket, 29, "重试只扣成功一券")
+                eq(sweepReply.stageId, h.DC.getStageId(id, 1), "真实写档锁定已通资源层")
+                local saved = cjson.decode(F.read(F.SAVE))
+                eq(saved.modules.currency.sweepTicket, 29, "券余额随完整奖励真实File落盘")
 
                 modules = F.install(h, id == "equipment_vault" and 199 or 0)
                 modules.dungeon[id].floor = 2
@@ -101,6 +119,44 @@ function Start()
         LS.deliverEquipment = deliver
         check(h.Handler.actionHandlers[AT.DUNGEON_WIN](1, params).success, "交付异常后可重试")
 
+        -- 新扫荡同样走真实File事务：生成/交付中途失败不能部分入包或扣券。
+        for _, failure in ipairs({ "generation", "delivery" }) do
+            modules = F.install(h, 199)
+            modules.dungeon.equipment_vault.floor = 2
+            modules.dungeon.equipment_vault.cleared[1] = true
+            local random, generate, delivery = h.env.math.random, h.ES.generateRandom, LS.deliverEquipment
+            -- 私有math副本，稳定命中每杀装备，不更改Runtime全局RNG。
+            h.env.math = F.copy(math)
+            h.env.math.random = function(a, b)
+                if a == nil then return 0 end
+                return b == nil and 1 or a
+            end
+            local calls = 0
+            if failure == "generation" then
+                h.ES.generateRandom = function(...)
+                    calls = calls + 1
+                    if calls == 3 then return nil end
+                    return generate(...)
+                end
+            else
+                LS.deliverEquipment = function(...)
+                    calls = calls + 1
+                    local result = delivery(...)
+                    if calls == 3 then error("expected sweep partial delivery exception") end
+                    return result
+                end
+            end
+            assertRollback(modules, function() return h.Service.Sweep(1, "equipment_vault", 2, 1, 1) end,
+                "扫荡真实File/" .. failure)
+            eq(calls, 3, "真实扫荡第三件中途失败")
+            eq(modules.currency.sweepTicket, 30, "扫荡中途失败不扣券")
+            h.ES.generateRandom, LS.deliverEquipment = generate, delivery
+            check(h.Service.Sweep(1, "equipment_vault", 2, 1, 1), "扫荡中途失败后可原请求重试")
+            eq(modules.currency.sweepTicket, 29, "重试只扣一券")
+            eq(cjson.decode(F.read(F.SAVE)).modules.currency.sweepTicket, 29, "重试券实际落盘")
+            h.env.math.random = random
+        end
+
         -- 无接线必须fail closed，不能因PDM.FlushImmediate只print而承认成功。
         modules = F.install(h, 0)
         params = challenge("gold_mine", 2)
@@ -111,44 +167,30 @@ function Start()
         -- 重新创建隔离生命周期，不用换全局File/require；保存旧真实文件不会读取正式档。
         h = F.new()
         modules = F.install(h, 199)
-        F.ui(h)
-        local battleBefore, heroesBefore = F.copy(modules.battle), F.copy(modules.heroes)
+        -- 旧Page详情→独立Scene→Win UI链已从正式openResource入口移除。
+        -- 本测试不运行该已不可达链，也不伪造detailOpen；现行战线输入由
+        -- team_sweep_input_test与sweep_dialog_preview_test验收，不含设备触控或渲染像素。
+        print(TAG .. " LEGACY UI NOT RUN: replaced by Tri selection; current input verified separately")
+        -- 不走死UI，真实Handler/规则/双onLoad/原子Rename照常生成综合冷恢复快照。
+        local battleBefore = F.copy(modules.battle)
         for index, id in ipairs(h.DC.RESOURCE_IDS) do
             local team = index == 2 and 3 or 2
-            local beforeSends = #h.sends
-            h.Dialog.open(team)
-            h.Dialog.handleInput(635, 686)
-            h.Dialog.handleInput(300, 836 + (index - 1) * 190 + 40)
-            eq(h.Dialog.isOpen(), false, "真实选关详情导航关闭弹窗")
-            eq(#h.sends, beforeSends, "打开详情不自动发挑战")
-            h.Page.handleInput(750, 1633)
-            local request = h.sends[#h.sends]
-            eq(request.action, AT.DUNGEON_CHALLENGE, "真实Page按钮发送Challenge")
-            eq(request.params.teamIdx, team, "Page锁定选关队号不是activeTeam1")
-            check(h.Scene.isOpen(), "同步真实Handler回执通过Page pending开Scene")
-            eq(h.Battle.getConfig().teamIdx, team, "Scene队号未丢失")
-            eq(#h.sceneState.enemies, 4, "实际Scene四槽")
-            for _, units in ipairs({ h.sceneState.enemies, h.sceneState.enemyQueue }) do
-                for _, unit in ipairs(units) do unit.hp = 0; unit.attrs.final[h.require("systems.AttributeDef").HP] = 0 end
-            end
-            for _ = 1, 30 do h.Scene.update(0.41) end
-            local reply = h.replies[#h.replies]
-            eq(reply.action, AT.DUNGEON_WIN, "真实Scene生命周期发送Win")
-            check(reply.success and reply.firstClear, "Win真实保存后才回成功")
-            eq(reply.teamIdx, team, "Win按原队结算")
-            check(h.Battle.isResultReady(), "真实成功回执解锁Scene结算")
-            eq(modules.dungeon[id].floor, 2, "独立层推进")
-            check(#h.displayed > 0 and #h.displayed[#h.displayed] > 0, "实际Scene展示服务端奖励")
-            h.Scene.close()
-            h.Page.close()
-            F.same(modules.battle, battleBefore, "UI闭环不改主线")
-            F.same(modules.heroes, heroesBefore, "UI闭环不改编队")
-            check(h.Service.Sweep(1, id), "为冷恢复保存成功扫荡日次")
+            local params = challenge(id, team)
+            local reply = h.Handler.actionHandlers[AT.DUNGEON_WIN](1, params)
+            check(reply.success and reply.firstClear, "综合快照真实Handler首通成功")
+            eq(reply.teamIdx, team, "综合快照真实Handler保留目标队伍")
+            eq(modules.dungeon[id].floor, 2, "综合快照独立副本推进")
+            local tickets = modules.currency.sweepTicket
+            local swept, sweepErr = h.Service.Sweep(1, id, team, 1, 1)
+            check(swept, "综合快照扫荡真实File保存 " .. tostring(sweepErr))
+            eq(modules.currency.sweepTicket, tickets - 1, "综合快照一券一场不返券")
+            eq(modules.dungeon[id].dailyUsed, 0, "综合快照扫荡不消耗旧日次")
             modules.dungeon[id].idleAccumSec = 30 * 3600 + 37
-            check(h.Idle.Claim(1, id), "为冷恢复保存真实挂机领取")
+            check(h.Idle.Claim(1, id), "综合快照真实挂机领取")
+            F.same(modules.battle, battleBefore, "综合快照副本事务不改主线")
         end
-        eq(h.ES.getInventoryCount(modules.equipment), 200, "UI闭环保持背包容量")
-        check(#modules.lootbox.seeds > 0, "UI胜利满包的确定装备入匣")
+        eq(h.ES.getInventoryCount(modules.equipment), 200, "综合快照保持背包容量")
+        check(#modules.lootbox.seeds > 0, "综合快照满包的确定装备入匣")
         local expected = { modules = F.copy(modules), gameState = h.GS.exportSave(),
             disk = cjson.decode(F.read(F.SAVE)), expectedLootCount = #modules.lootbox.seeds }
         F.writeExpected(expected)

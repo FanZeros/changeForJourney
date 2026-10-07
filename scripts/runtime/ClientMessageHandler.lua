@@ -660,20 +660,19 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          RewardPopup.show("离线装备已入遗匣", data.lootboxEquips, { panel = "left" })
      end
 
-     -- 扫荡结果
-     if data.action == Protocol.ACTION_TYPES.SWEEP and data.success then
+     -- 主线与资源扫荡回执统一展示；旧遗迹/塔仍由 DungeonPage 走兼容路径。
+     local isResourceSweep = data.action == Protocol.ACTION_TYPES.DUNGEON_SWEEP
+         and require("config.DungeonConfig").isResourceDungeon(data.dungeonId)
+     if (data.action == Protocol.ACTION_TYPES.SWEEP or isResourceSweep) and data.success then
          local rewards = {}
          if (data.gold or 0) > 0 then rewards[#rewards + 1] = { type = "gold", amount = data.gold } end
+         if (data.diamond or 0) > 0 then rewards[#rewards + 1] = { type = "diamond", amount = data.diamond } end
          for _, equip in ipairs(data.equips or {}) do
-             rewards[#rewards + 1] = {
-                 type = "equip",
-                 templateId = equip.templateId,
-                 quality = equip.quality,
-                 level = equip.level,
-                 slot = equip.slot,
-                 equip = equip.equip,
-                 destination = equip.destination,
-             }
+             -- 保留完整实例、去向与附加字段，只负责展示，不重新生成/交付装备。
+             local reward = {}
+             for key, value in pairs(equip) do reward[key] = value end
+             reward.type = "equip"
+             rewards[#rewards + 1] = reward
          end
          for scrollField, count in pairs(data.scrollDrops or {}) do
              local SCROLL_MAP = { weaponScroll = "weapon_scroll", offhandScroll = "offhand_scroll", armorScroll = "armor_scroll", accessoryScroll = "accessory_scroll", helmetScroll = "helmet_scroll", shoesScroll = "shoes_scroll" }
@@ -686,7 +685,20 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
              SweepDialog.close()
              print("[ClientMessageHandler] sweep reward popup shown, SweepDialog auto-closed")
          end
-         RewardPopup.show("扫荡奖励", rewards)
+         -- 经验不是可点击道具；按回执区分远征经验、每人经验与旧版全队合计。
+         local summary = {}
+         local NumberUtil = require("core.NumberUtil")
+         if (data.playerExp or 0) > 0 then
+             summary[#summary + 1] = "远征经验 +" .. NumberUtil.format(data.playerExp)
+         end
+         if (data.heroExp or 0) > 0 then
+             summary[#summary + 1] = "队" .. tostring(data.teamIdx or 1)
+                 .. "每名队员经验 +" .. NumberUtil.format(data.heroExp)
+         elseif (data.heroExpTotal or 0) > 0 then
+             -- 旧回执未提供每人值时不根据当前编队反推，避免换队后显示错误。
+             summary[#summary + 1] = "队员经验合计 +" .. NumberUtil.format(data.heroExpTotal)
+         end
+         RewardPopup.show("扫荡奖励", rewards, { subtitle = table.concat(summary, " · ") })
      end
  end
 

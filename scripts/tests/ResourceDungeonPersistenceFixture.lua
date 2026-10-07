@@ -91,13 +91,16 @@ function M.new()
             restoreContext = noop, getStageId = function() return 2501 end,
             getMaxStageId = function() return 2501 end, getClearedStages = function() return {} end,
         },
-        ["ui.battle.tri.BattleTriPage"] = { getTeamStageId = function() return 2501 end },
+        ["ui.battle.tri.BattleTriPage"] = { getTeamStageId = function() return 2501 end,
+            isTerminalRaidActive = function() return false end },
         ["ui.hud.popup.SettingsPanel"] = { isEffectsEnabled = function() return false end },
         ["ui.fx.SpineCardEffect"] = { playRevive = noop },
         ["systems.ButtonFeedback"] = { trigger = noop },
         ["systems.GameSFX"] = setmetatable({}, { __index = function() return noop end }),
         ["ui.loot.LootBoxPage"] = { showToast = noop },
-        ["ui.hud.BottomNav"] = { getSelectedIndex = function() return 3 end, setSelectedIndex = noop },
+        ["ui.hud.BottomNav"] = { getSelectedIndex = function() return 3 end, setSelectedIndex = noop,
+            isAllLocked = function() return false end, isTabLocked = function() return false end },
+        ["ui.tower.TowerBattleScene"] = { isActive = function() return false end },
         ["ui.hud.popup.RewardPopup"] = { show = function(_, rewards) h.displayed[#h.displayed + 1] = rewards end },
         ["ui.battle.popup.BattleResultPanel"] = {
             init = noop, update = noop, draw = noop, isOpen = function() return false end,
@@ -186,6 +189,8 @@ function M.install(h, count)
         modules[name] = h.Schema.Fields[name].getDefault()
     end
     modules.currency.gold, modules.currency.gems, modules.currency.arcaneDust = 10, 20, 30
+    modules.currency.sweepTicket = 30 -- 一券一场资源扫荡；不靠首通/挂机返券补齐夹具。
+    modules.artifacts, modules.talents = {}, {} -- 幸运上下文完整快照，不回读玩家Store。
     modules.heroes.roster = { [1] = { level = 100 }, [2] = { level = 100 }, [3] = { level = 100 } }
     modules.heroes.deployed = { 1, 0, 0, 0 }
     modules.heroes.teams = { { slots = { 1, 0, 0, 0 } }, { slots = { 2, 0, 0, 0 } }, { slots = { 3, 0, 0, 0 } } }
@@ -216,23 +221,5 @@ function M.install(h, count)
     return modules
 end
 
-function M.ui(h)
-    h.Page = h.require("ui.dungeon.DungeonPage")
-    h.Scene = h.require("ui.dungeon.DungeonBattleScene")
-    h.Dialog = h.require("ui.battle.stage.StageSelectDialog")
-    h.Battle = h.require("ui.dungeon.DungeonBattle")
-    local function upvalue(fn, wanted)
-        for i = 1, 100 do
-            local name, value = debug.getupvalue(fn, i)
-            if not name then break end
-            if name == wanted then return value, i end
-        end
-        error("缺少实际状态 " .. wanted)
-    end
-    local _, index = upvalue(h.Page.handleInput, "dungeonInited_")
-    debug.setupvalue(h.Page.handleInput, index, true) -- 唯一GPU初始化门禁；不伪造pending/胜利。
-    h.sceneState = upvalue(upvalue(h.Scene.update, "implementation"), "state")
-    h.Dialog.setOnDungeonSelect(function(id, team) return h.Page.openResource(id, team) end)
-end
 
 return M

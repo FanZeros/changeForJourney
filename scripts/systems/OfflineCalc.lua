@@ -191,7 +191,7 @@ end
 local SCROLL_TYPES = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
 
 local function getTicketRate(scrollDropRate)
-    return math.min(0.20, math.max(0.06, scrollDropRate * 2))
+    return require("systems.DropSystem").getSweepTicketRate(scrollDropRate)
 end
 
 -- 离线装备按产出序号轮询怪物池；小数件的品质沿用下一位置，不消耗 RNG。
@@ -372,9 +372,8 @@ function OfflineCalc.calcRewardsFromKills(kills, stageEntry, heroCount, stageCon
             scrollDrops[st] = (scrollDrops[st] or 0) + 1
         end
     end
-    -- 扫荡券：与在线同口径（getTicketRate，卷轴的 2 倍）。
+    -- 扫荡券：与在线共用 DropSystem 的卷轴 4 倍掉率及上下限。
     local ticketRate = getTicketRate(scrollDropRate)
-    if ticketRate <= 0 then ticketRate = 0.10 end
     local rawTickets = kills * ticketRate
     local ticketCount = math.floor(rawTickets)
     if math.random() < (rawTickets - ticketCount) then
@@ -667,11 +666,13 @@ local function calcTeamRewards(seconds, teams, stageConfig, expected)
                                 }
                             end
                         end
+                        reward.scrollDrops = DC.getStageScrollEstimate(stageId, resourceKills)
                     else
-                        local resource = DC.getStageRewards(stageId, resourceKills)
+                        local resource = DC.getStageRewards(stageId, resourceKills, heroCount)
                         reward.gold = resource.gold or 0
                         reward.diamond = resource.diamond or 0
                         reward.equipSeeds = resource.equipSeeds or {}
+                        reward.scrollDrops = resource.scrollDrops or {}
                     end
                 else
                     -- 重登通常已由 Schema 将终焉退至同难度末关；旧直接调用也保持此边界。

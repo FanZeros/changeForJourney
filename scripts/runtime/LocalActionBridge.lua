@@ -400,17 +400,16 @@ function M.init()
             end
             publishingDungeonRewards_ = true
             local function publish(fn, name, data)
-                local ok, err = pcall(fn, name, data)
+                local ok, err = pcall(fn, name, data, { normalized = true })
                 if not ok then print("[LocalActionBridge] 副本提交通知失败: " .. tostring(err)) end
             end
             if pushes.heroes then publish(ClientDispatcher.set, "heroes", pushes.heroes) end
             if player then
+                publish(ClientDispatcher.set, "player", pushes.player)
                 publish(function(_, data) GameState.syncPlayerData(data) end, "player", player)
             end
-            -- 单个订阅异常不能跳过其他已提交模块；失败事务此前已直接返回。
+            -- 单个订阅异常不能跳过其他已提交模块或留下重入锁；不重复裸发布。
             for name, data in pairs(pushes) do
-                ClientDispatcher.set(name, data, { normalized = true })
-                if name == "currency" then GameState.syncFromCurrency(data) end
                 if name ~= "heroes" and name ~= "player" then
                     publish(ClientDispatcher.set, name, data)
                     if name == "currency" then

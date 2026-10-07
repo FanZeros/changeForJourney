@@ -169,6 +169,11 @@ end
 local function resetButtonCase()
     local f = fixture()
     f.modules["systems.EquipmentPower"] = {}
+    local actions = {}
+    f.modules["runtime.GameAction"] = { sendAction = function(action, params)
+        actions[#actions + 1] = { action = action, params = params }
+    end }
+    local protocol = f.load("shared.Protocol")
     local page = f.load("ui.church.ChurchClassChange")
     page.init({})
     page.setHero(1)
@@ -192,6 +197,9 @@ local function resetButtonCase()
         local before = #f.all("button.trigger")
         eq(page.handleResetButton(point[1], point[2]), true, "中心/边缘触发 " .. i)
         eq(#f.all("button.trigger"), before + 1, "命中只触发一次反馈 " .. i)
+        eq(#actions, i, "命中首次直接发送一次重置动作 " .. i)
+        eq(actions[i].action, protocol.ACTION_TYPES.RESET_CLASS, "使用原重置协议")
+        eq(actions[i].params.heroId, 1, "保留当前英雄重置目标")
     end
     local outside = { { 540, 2240 }, { rect.x - rect.w * .5 - 1, rect.y },
         { rect.x + rect.w * .5 + 1, rect.y }, { rect.x, rect.y - rect.h * .5 - 1 },
@@ -200,6 +208,7 @@ local function resetButtonCase()
         local before = #f.all("button.trigger")
         eq(page.handleResetButton(point[1], point[2]), false, "旧中心/按钮外不触发 " .. i)
         eq(#f.all("button.trigger"), before, "按钮外不产生反馈 " .. i)
+        eq(#actions, #inside, "按钮外不发送重置动作 " .. i)
     end
 end
 
@@ -347,6 +356,11 @@ local function equipmentFixture()
         isOpen = function() return false end, close = noop, drawIf = noop, init = noop }
     f.modules["ui.battle.tri.BattleTriPage"] = { isOpen = function() return false end }
     f.modules["ui.church.ChurchPage"] = { hasAdvanceForHero = function() return false end }
+    f.showEquipmentPower = false
+    f.modules["ui.hud.popup.SettingsPanel"] = {
+        isEquipmentPowerEnabled = function() return f.showEquipmentPower == true end,
+        isSetIconsEnabled = function() return true end,
+    }
     -- 角标布局使用真实共享模块，未把正文宽度预算挪到测试实现里。
     f.modules["ui.widget.EquipmentSetIcon"] = nil
     f.item = item
@@ -407,6 +421,47 @@ local function equipmentCase()
             _hasUpgradeForSlot = function() return false end },
         imgHeroCards = {}, imgHeroIcons = {}, imgClassIcons = {},
         calcHeroPower = function() return 0 end, collectAttributes = noop, clampAttrScroll = noop })
+    -- 显示关闭只屏蔽数字与图标，不能改变等级位置、评分结果或候选顺序。
+    f.power = 1234
+    local function assertHidden(label)
+        for _, call in ipairs(f.all("icon")) do check(call.kind ~= "power", label .. " 隐藏战力图标") end
+        for _, call in ipairs(f.all("text")) do check(call.text ~= "1234", label .. " 隐藏战力数字") end
+    end
+    local function levelSnapshot()
+        local levels = {}
+        for _, call in ipairs(f.all("text")) do
+            if call.text == "Lv.8" then levels[#levels + 1] = table.concat({ call.x, call.y, call.font, call.align }, "|") end
+        end
+        check(#levels > 0, "关闭战力显示仍绘制等级")
+        return table.concat(levels, ";")
+    end
+    local function checkPreference(draw, label)
+        f.showEquipmentPower = false
+        f.clear()
+        draw()
+        assertHidden(label)
+        local offLevel = levelSnapshot()
+        f.showEquipmentPower = true
+        f.clear()
+        draw()
+        assertPowerLayout(f, label, 160)
+        eq(levelSnapshot(), offLevel, label .. " 开关不改变等级位置、字号或对齐")
+        f.showEquipmentPower = false
+    end
+    local listOff = grids.getEquipList()
+    checkPreference(function() grids.drawEquipGrid({}) end, "BackpackGrids 偏好")
+    f.showEquipmentPower = true
+    local listOn = grids.getEquipList()
+    eq(#listOn, #listOff, "开关不改变仓库候选数量")
+    for i, entry in ipairs(listOff) do
+        eq(listOn[i].seq, entry.seq, "开关不改变装备排序")
+        eq(listOn[i].power, entry.power, "开关不改变评分结果")
+    end
+    checkPreference(function() bag.draw({}) end, "EquipmentBag 偏好")
+    f.heroSlots = { weapon = 1 }
+    checkPreference(function() detail.draw({}) end, "CharacterDetailDraw 偏好")
+    f.heroSlots = nil
+    f.showEquipmentPower = true
     for _, power in ipairs({ 0, 1234, 123456789012345678 }) do
         f.power = power
         f.clear()

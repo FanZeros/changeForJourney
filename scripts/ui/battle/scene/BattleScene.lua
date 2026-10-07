@@ -998,7 +998,9 @@ function BattleScene.update(dt)
 
     local logicDt = BattleScene.getBattleLogicDt(dt)
 
-    -- 首通战斗限时：超时自动失败（与全灭同逻辑）
+    -- 终焉不限时；即使切关或恢复留下首通计时器，也不能据此判负。
+    if getStageConfig().isTerminalTemple(currentStageId) then firstClearTimeLeft = nil end
+    -- 普通首通战斗限时：超时自动失败（与全灭同逻辑）
     if isFirstClear and firstClearTimeLeft then
         firstClearTimeLeft = firstClearTimeLeft - logicDt
         if firstClearTimeLeft <= 0 then
@@ -1006,14 +1008,7 @@ function BattleScene.update(dt)
             StageBerserk.exit()
             settleWaveEfficiency()
             print("[BattleScene] 首通战斗超时，自动失败")
-            if getStageConfig().isTerminalTemple(currentStageId) then
-                if defeatTimer == nil then
-                    defeatTimer = 0
-                    battleActive = false
-                    terminalDefeatPending = true
-                    defeatByTimeout = true
-                end
-            elseif defeatTimer == nil then
+            if defeatTimer == nil then
                 defeatTimer = 0
                 battleActive = false
                 defeatByTimeout = true

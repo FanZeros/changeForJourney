@@ -162,7 +162,7 @@ local function isolated(fixture, body, sharedKeyword)
     -- 只隔离与轮播无关的转职业务页面，不替换Draw的class五卡路径。
     local classPage = {}
     for _, name in ipairs({ "init", "setHero", "drawBg", "drawContent", "drawConfirmPopup",
-        "drawResetConfirmPopup", "drawFloatText" }) do
+        "drawFloatText" }) do
         classPage[name] = function() fixture.hits.classPage = fixture.hits.classPage + 1 end
     end
     patch(_G, "require", function(name)
@@ -737,10 +737,11 @@ local function verifyRadarNumbers(vg, label)
                 local ink = textsNear(calls, text, x, cy, 3)
                 local original, left, right = legacy and 38 or 34, legacy and 552 or 545, legacy and 1068 or 1075
                 local maxWidth = legacy and 160 or 150
-                left, right = math.max(left, x - maxWidth * 0.5), math.min(right, x + maxWidth * 0.5)
+                local fittedLeft = math.max(left, x - maxWidth * 0.5)
+                local fittedRight = math.min(right, x + maxWidth * 0.5)
                 local inside, fonts = #ink == 9, true
                 for _, glyph in ipairs(ink) do
-                    inside = inside and fits(glyph, left, right) and #glyph.bounds == 4
+                    inside = inside and fits(glyph, fittedLeft, fittedRight) and #glyph.bounds == 4
                         and glyph.bounds[2] >= cy - 40 and glyph.bounds[4] <= cy + 40
                     fonts = fonts and (ordinary and glyph.font == original or not ordinary and glyph.font < original)
                 end

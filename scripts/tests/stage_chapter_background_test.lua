@@ -693,7 +693,7 @@ function Start()
         local sources = {
             "最多三队一起上场，不必三队全部存活。",
             "同编号敌人跨队共享生命，击败全部三名敌人即可通关。",
-            "限时 %d 秒；全部参战队伍失守或超时则失败。",
+            "不限时；全部参战队伍失守才失败。",
             "胜利进入下一难度，失败退回本难度最后一关。",
         }
         for _, language in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
@@ -720,7 +720,7 @@ function Start()
             end
             joined = joined:gsub("%s", "")
             for i, source in ipairs(sources) do
-                local translated = i == 3 and I18n.format(source, 300) or I18n.lookup(source)
+                local translated = I18n.lookup(source)
                 check(joined:find(translated:gsub("%s", ""), 1, true) ~= nil,
                     language .. "完整呈现规则段" .. i)
                 if language ~= "zh_CN" then

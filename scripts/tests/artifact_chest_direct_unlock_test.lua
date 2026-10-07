@@ -44,7 +44,7 @@ function Start()
             modules = {
                 battle = battle,
                 player = { level = 1 },
-                currency = { goldenKey = keys or 0, gems = gems or 0 },
+                currency = { goldenKey = keys or 0, gems = gems or 0, gold = 12345 },
                 artifacts = Schema.Fields.artifacts.getDefault(),
             }
             for i = 1, size or 0 do
@@ -91,6 +91,7 @@ function Start()
             eq(modules.artifacts.dailyFreeDrawDayId, today, case.label .. "记录今日免费")
             eq(modules.currency.gems, 0, case.label .. "免费不扣黑晶")
             eq(modules.currency.goldenKey, 0, case.label .. "免费不扣钥匙")
+            eq(modules.currency.gold, 12345, case.label .. "神器单抽不赠金币")
             eq(taskDraws, 1, case.label .. "只推进一次任务")
             reject(1, "free_daily", case.label .. "当天重复免费")
             now = now + 86400
@@ -109,6 +110,7 @@ function Start()
         eq(result.keysUsed, 10, "十连消耗十把钥匙")
         eq(modules.currency.goldenKey, 0, "十连钥匙余额正确")
         eq(modules.currency.gems, 100, "钥匙十连不扣黑晶")
+        eq(modules.currency.gold, 12345, "神器十连不赠金币")
         eq(#modules.artifacts.bag, 10, "十连获得十件")
         eq(modules.artifacts.drawStats.ten, 1, "十连统计正确")
         eq(taskDraws, 10, "十连任务计数正确")
@@ -239,6 +241,7 @@ function Start()
             eq(buttons.church_artifact_draw_1, true, case.label .. "绘制单抽按钮")
             eq(buttons.church_artifact_draw_10, true, case.label .. "绘制十连按钮")
             check(table.concat(texts, "|"):find("免费单抽", 1, true) ~= nil, case.label .. "免费单抽标签")
+            check(table.concat(texts, "|"):find("金币", 1, true) == nil, case.label .. "宝箱文案不再承诺金币")
             eq(costTexts[1].text, "免费", case.label .. "单抽免费成本")
             eq(costTexts[2].text, "6000", case.label .. "无钥匙十连黑晶价")
             eq(#(buttons.drawnIcons or {}), 1, case.label .. "免费无图标且十连仅显示黑晶")
@@ -248,6 +251,7 @@ function Start()
             eq(actions[1].params.payType, "free_daily", "未用每日免费优先")
             eq(actions[1].action, Protocol.ACTION_TYPES.ARTIFACT_DRAW, "面板抽取协议不变")
             eq(actions[1].params.count, 1, "面板单抽次数正确")
+            Panel.onArtifactDrawResult()  -- 模拟本轮回执，下一轮夹具不继承请求中的状态。
         end
 
         reset({}, 0, 6000)
@@ -286,6 +290,7 @@ function Start()
         eq(#actions, 1, "低进度十连动作发出")
         eq(actions[1].params.count, 10, "十连次数正确")
         eq(actions[1].params.payType, "diamond", "十连保持原支付方式")
+        Panel.onArtifactDrawResult()
         reset({}, 0, 6000)
         actions = {}
         Panel.reset()

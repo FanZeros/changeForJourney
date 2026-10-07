@@ -133,6 +133,7 @@ function TowerScene.getPresentationKey()
         .. ":" .. state.floor .. ":" .. state.wave
         .. ":" .. state.phase .. ":" .. TowerBuffPick.getPresentationKey()
         .. ":" .. TowerTriBattle.getPresentationKey()
+        .. ":" .. TowerBuffSidebar.getPresentationKey()
 end
 
 function TowerScene.getLayout(width, height)
@@ -567,6 +568,8 @@ function TowerScene.handleClick(dx, dy, logicalW, logicalH)
                 TowerBuffPick.show()
             elseif action == "retreat" then
                 TowerTriBattle.requestRetreat()
+            elseif action == "toggle_buffs" then
+                TowerBuffSidebar.toggleCollapsed()
             else
                 local layout = TowerLayout.compute(logicalW, logicalH)
                 if TowerLayout.panelAt(layout, dx, dy) == "center" then

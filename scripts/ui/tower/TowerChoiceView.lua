@@ -31,7 +31,6 @@ local notice = nil
 local layoutKey = ""
 local COPPER = {168, 121, 76, 255}
 local BONE = {231, 219, 195, 255}
-local COLORS = {{156, 169, 167}, {167, 103, 112}, {213, 175, 102}}
 
 -- 每层只恢复自己保存的状态；子绘制失败时不让外层误弹仍未释放的内部栈。
 local function withState(vg, draw)
@@ -168,7 +167,7 @@ function View.drawCard(vg, index, choice, state, landscape, keyword, elapsed, to
     local cx, cy, width, height = View.cardRect(index, landscape)
     local x, y = cx - width * .5, cy - height * .5
     local quality = math.max(1, math.min(3, math.floor(tonumber(choice.quality) or 1)))
-    local color = COLORS[quality]
+    local color = Presentation.rarityColor(quality)
     local picked = state.pendingRequest and state.pendingRequest.buffId == choice.id
     local allowed = not state.pending and (not state.retryBuffId or state.retryBuffId == choice.id)
     plate(vg, x, y, width, height, color, picked or false)
@@ -180,7 +179,7 @@ function View.drawCard(vg, index, choice, state, landscape, keyword, elapsed, to
         Effect.drawIcon(vg, Presentation.icon(choice), iconX, iconY, iconSize, (allowed or picked) and 1 or .55)
     end)
     widgets.name:SetText(Presentation.name(choice))
-    local qualityText = Presentation.quality(quality) .. " · " .. Presentation.rarity(quality)
+    local qualityText = Presentation.rarity(quality)
     local qualityWidth = landscape and width - 56 or 210
     local qualitySize = 24
     withState(vg, function()

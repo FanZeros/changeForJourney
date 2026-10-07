@@ -681,7 +681,6 @@ function CharacterDetail.handleInput(dx, dy)
     if detailState.tab == "class" then
         local ClassChange = require("ui.church.ChurchClassChange")
         ClassChange.setHero(detailState.heroId)
-        if ClassChange.handleResetConfirmInput(dx, dy) then return true end
         if ClassChange.handleConfirmInput(dx, dy) then return true end
         if ClassChange.handleResetButton(dx, dy) then return true end
         if ClassChange.handleBranchInput(dx, dy) then return true end

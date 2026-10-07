@@ -32,6 +32,7 @@ local state = {
     showDamageNumbers = true,
     showEffects = true,
     showSetIcons = true,  -- 装备格左下角套装徽记
+    showEquipmentPower = false,  -- 仅控制方形装备格内的战力显示
     -- 滑块拖拽
     draggingSlider = nil,  -- nil / "bgm" / "sfx"
 }
@@ -120,6 +121,8 @@ local LANG_ROWS = math.ceil(#I18n.LANGS / LANG_PER_ROW)
 -- 三行从原语言条目向下排，首行不侵入特效开关的点击区。
 local LANG_EXTRA_H = (LANG_ROWS - 1) * (LANG_CHIP_H + LANG_ROW_GAP)
 local LANGUAGE_CY = ITEM5_CY + LANG_EXTRA_H * 0.5
+-- 新开关放在语言与兑换码之间的留白，不移动其他设置或扩大重叠热区。
+local EQUIPMENT_POWER_CY = ITEM5_CY + LANG_EXTRA_H + 82
 -- 保持背景顶边，向下覆盖兑换码按钮及底部留白；绘制和命中共用尺寸。
 local PANEL_EXTRA_H = math.max(LANG_EXTRA_H,
     CODE_BTN.CY + LANG_EXTRA_H + CODE_BTN.H * 0.5 + BG.IB - (BG.CY + BG.H * 0.5))
@@ -139,6 +142,7 @@ local function saveSettings()
             showDamageNumbers = state.showDamageNumbers ~= false,
             showEffects = state.showEffects ~= false,
             showSetIcons = state.showSetIcons ~= false,
+            showEquipmentPower = state.showEquipmentPower == true,
             language = I18n.get(),
         })
         if ok then
@@ -150,6 +154,8 @@ end
 
 --- 从本地文件加载设置
 local function loadSettings()
+    -- 缺字段旧档及无档均关闭战力显示，不沿用上一份设置的开启值。
+    state.showEquipmentPower = false
     if not fileSystem:FileExists(SETTINGS_SAVE_FILE) then return end
     local file = File(SETTINGS_SAVE_FILE, FILE_READ)
     if not file:IsOpen() then return end
@@ -173,6 +179,7 @@ local function loadSettings()
             state.showEffects = data.showEffects
         end
         if type(data.showSetIcons) == "boolean" then state.showSetIcons = data.showSetIcons end
+        state.showEquipmentPower = data.showEquipmentPower == true
         if type(data.language) == "string" then
             I18n.set(data.language)
         end
@@ -275,6 +282,16 @@ function SettingsPanel.setSetIconsEnabled(enabled)
     state.showSetIcons = enabled == true
     saveSettings()
     print("[SettingsPanel] 套装角标显示：" .. tostring(state.showSetIcons))
+end
+
+function SettingsPanel.isEquipmentPowerEnabled()
+    return state.showEquipmentPower == true
+end
+
+function SettingsPanel.setEquipmentPowerEnabled(enabled)
+    state.showEquipmentPower = enabled == true
+    saveSettings()
+    print("[SettingsPanel] 装备格战力显示：" .. tostring(state.showEquipmentPower))
 end
 
 function SettingsPanel.isEffectsEnabled()
@@ -440,6 +457,12 @@ function SettingsPanel.handleInput(dx, dy)
     -- 开关4 点击（特效显示）
     if hitToggle(dx, dy, ITEM4_CY) then
         toggleEffects()
+        return true
+    end
+
+    -- 装备格战力开关：只改显示偏好，不修改装备评分或排序。
+    if hitToggle(dx, dy, EQUIPMENT_POWER_CY) then
+        SettingsPanel.setEquipmentPowerEnabled(not SettingsPanel.isEquipmentPowerEnabled())
         return true
     end
 
@@ -679,6 +702,7 @@ function SettingsPanel.draw(vg)
 
     -- ── 8.3 语言 ──
     drawLanguageItem(vg, LANGUAGE_CY)
+    drawToggleItem(vg, EQUIPMENT_POWER_CY, I18n.t("show_equipment_power"), SettingsPanel.isEquipmentPowerEnabled())
 
     -- ── 9. 兑换码按钮（暖金，不再用绿色贴图）──
     local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H, CODE_BTN.W, CODE_BTN.H)
@@ -715,6 +739,7 @@ function SettingsPanel.drawEmbedded(vg, yOffset)
     drawToggleItem(vg, ITEM3_CY, I18n.t("damage_numbers"), state.showDamageNumbers ~= false)
     drawToggleItem(vg, ITEM4_CY, I18n.t("show_effects"), state.showEffects ~= false)
     drawLanguageItem(vg, LANGUAGE_CY)
+    drawToggleItem(vg, EQUIPMENT_POWER_CY, I18n.t("show_equipment_power"), SettingsPanel.isEquipmentPowerEnabled())
     local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H + oy, CODE_BTN.W, CODE_BTN.H)
     DarkIcon.drawNine(vg, "btn",
         CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY + LANG_EXTRA_H - CODE_BTN.H * 0.5,
@@ -761,6 +786,10 @@ function SettingsPanel.handleEmbeddedInput(dx, dy, yOffset)
     end
     if hitToggle(dx, ly, ITEM4_CY) then
         toggleEffects()
+        return true
+    end
+    if hitToggle(dx, ly, EQUIPMENT_POWER_CY) then
+        SettingsPanel.setEquipmentPowerEnabled(not SettingsPanel.isEquipmentPowerEnabled())
         return true
     end
     if hitLanguageChips(dx, ly, LANGUAGE_CY) then

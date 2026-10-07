@@ -30,12 +30,18 @@ local routeScroll = nil
 local buffScroll = nil
 ---@type Panel?
 local buffContent = nil
+---@type Panel?
+local collapsedSpace = nil
 ---@type Label?
 local floorLabel = nil
 ---@type Label?
 local waveLabel = nil
 ---@type Label?
 local buffTitle = nil
+---@type Button?
+local toggleButton = nil
+local collapsed = false
+local presentationVersion = 0
 ---@type Label?
 local routeTitle = nil
 ---@type Label?
@@ -154,17 +160,22 @@ local function ensureRoots()
         overflow = "hidden", pointerEvents = "none",
         children = { routeTitle, floorLabel, waveLabel, routeScroll, routeNote } }
 
-    buffTitle, ruleNote = label("", 32), label("", 18, C.muted)
-    buffContent = UI.Panel { width = "100%", gap = 14, pointerEvents = "none" }
+    buffTitle, ruleNote = label("", 25.6), label("", 14.4, C.muted)
+    toggleButton = button("收起")
+    toggleButton:SetStyle({ height = 44, fontSize = 20.8 })
+    buffContent = UI.Panel { width = "100%", gap = 10, pointerEvents = "none" }
     buffScroll = UI.ScrollView { width = "100%", flexGrow = 1, flexBasis = 0,
         scrollX = false, scrollY = true, bounces = false, showScrollbar = true,
         scrollbarInteractive = true, pointerEvents = "none", children = { buffContent } }
+    -- 收起只隐藏内容，不销毁列表；弹性占位保持底部恢复/撤退入口与三栏几何不变。
+    collapsedSpace = UI.Panel { width = "100%", flexGrow = 1, flexBasis = 0,
+        visible = false, pointerEvents = "none" }
     actionButton, pendingButton = button(""), button("")
     pendingButton:SetVisible(false)
     rightRoot = UI.Panel { width = 486, height = 1080, backgroundColor = C.background,
-        borderLeftWidth = 3, borderLeftColor = C.border, padding = 24, gap = 14,
+        borderLeftWidth = 3, borderLeftColor = C.border, padding = 19.2, gap = 10,
         overflow = "hidden", pointerEvents = "none",
-        children = { buffTitle, buffScroll, ruleNote, pendingButton, actionButton } }
+        children = { buffTitle, toggleButton, buffScroll, collapsedSpace, ruleNote, pendingButton, actionButton } }
 
     confirmTitle, confirmNote = label("", 34), label("", 24, C.muted)
     confirmTitle:SetStyle({ textAlign = "center", height = 46 })
@@ -185,26 +196,23 @@ local function rebuildBuffs(snapshot)
     local children = buffContent:GetChildren()
     for i = #children, 1, -1 do children[i]:Destroy() end
     if #rows == 0 then
-        buffContent:AddChild(label(text("暂无强化"), 24, C.muted))
+        buffContent:AddChild(label(text("暂无强化"), 19.2, C.muted))
     end
     for _, row in ipairs(rows) do
         local def = Config.BUFFS_BY_ID[row.id]
-        local name = label(Presentation.name(def), 26, C.text)
+        local color = Presentation.rarityColor(def.quality)
+        local name = label(Presentation.name(def), 20.8, C.text)
         name:SetStyle({ paddingRight = 2 })
-        local quality = label(Presentation.quality(def.quality) .. "  ×" .. row.count, 20, C.gold)
-        local desc = label(Presentation.description(def), 23, C.muted)
-        local header = UI.Panel { width = "100%", flexDirection = "row", gap = 14,
+        local quality = label(Presentation.rarity(def.quality) .. "  ×" .. row.count, 16, color)
+        local desc = label(Presentation.description(def), 18.4, C.muted)
+        local header = UI.Panel { width = "100%", flexDirection = "row", gap = 10,
             alignItems = "center", children = {
-                Icon { width = 64, height = 64, buff = def, pointerEvents = "none" },
-                UI.Panel { flexGrow = 1, flexShrink = 1, gap = 4, children = { name, quality } },
+                Icon { width = 51.2, height = 51.2, buff = def, pointerEvents = "none" },
+                UI.Panel { flexGrow = 1, flexShrink = 1, gap = 3, children = { name, quality } },
             } }
-        buffContent:AddChild(UI.Panel { width = "100%", padding = 16, gap = 12,
-            backgroundColor = C.surface, borderWidth = 1, borderColor = C.border,
+        buffContent:AddChild(UI.Panel { width = "100%", padding = 12.8, gap = 8,
+            backgroundColor = C.surface, borderWidth = 1, borderColor = color,
             borderRadius = 4, pointerEvents = "none", children = { header, desc } })
-    end
-    if buffScroll then
-        local _, sy = buffScroll:GetScroll()
-        buffScroll:SetScroll(0, sy)
     end
 end
 
@@ -259,6 +267,10 @@ local function sync(snapshot, layout)
         confirmCancel:SetText(text("取消"))
     end
     if buffTitle then buffTitle:SetText(text("已获强化") .. "  " .. #(snapshot.buffIds or {})) end
+    if toggleButton then
+        toggleButton:SetText(text(collapsed and "展开" or "收起"))
+        toggleButton:SetDisabled(snapshot.inputModal == true)
+    end
     leftRoot:SetHeight(layout.sideHeight)
     rightRoot:SetHeight(layout.sideHeight)
     lastLanguage, lastFloor, lastWave, lastPhase = language, snapshot.floor, snapshot.wave, snapshot.phase
@@ -278,7 +290,7 @@ function Sidebar.draw(vg, width, height, snapshot)
                 -- detached子树不参与UI.Update；先更新真实布局后的滚动范围，不能用默认0范围裁掉输入。
                 YGNodeCalculateLayout(root.node, 486, layout.sideHeight, YGDirectionLTR)
                 local scroll = side.root == leftRoot and routeScroll or buffScroll
-                if scroll then
+                if scroll and side.root == leftRoot then
                     scroll:UpdateContentSize()
                     local _, sy = scroll:GetScroll()
                     scroll:SetScroll(0, sy)
@@ -292,6 +304,14 @@ function Sidebar.draw(vg, width, height, snapshot)
                     lastRouteViewport = viewport.h
                 end
                 Surface.draw(root, vg, 486, layout.sideHeight)
+                if side.root == rightRoot and buffScroll and not collapsed then
+                    -- 新建/译文Label在真实Render时才测得多行高度；先测字后更新范围，
+                    -- 不用初始化的一行高度提前钳制旧sy，收起状态完全不更新范围。
+                    YGNodeCalculateLayout(root.node, 486, layout.sideHeight, YGDirectionLTR)
+                    buffScroll:UpdateContentSize()
+                    local _, sy = buffScroll:GetScroll()
+                    buffScroll:SetScroll(0, sy)
+                end
             end
         end)
     end
@@ -316,6 +336,27 @@ function Sidebar.drawConfirmation(vg, width, height)
     end)
 end
 
+-- 单调版本让宿主按压快照识别收起→展开的 ABA；不触碰玩法会话或择契身份。
+function Sidebar.getPresentationKey()
+    return tostring(presentationVersion) .. ":" .. tostring(collapsed)
+end
+
+function Sidebar.isCollapsed()
+    return collapsed
+end
+
+function Sidebar.toggleCollapsed()
+    ensureRoots()
+    drag = nil
+    collapsed = not collapsed
+    presentationVersion = presentationVersion + 1
+    if buffScroll then buffScroll:SetVisible(not collapsed) end
+    if ruleNote then ruleNote:SetVisible(not collapsed) end
+    if collapsedSpace then collapsedSpace:SetVisible(collapsed) end
+    if toggleButton then toggleButton:SetText(text(collapsed and "展开" or "收起")) end
+    return collapsed
+end
+
 local function widgetHit(widget, x, y)
     if not widget then return false end
     local r = widget:GetAbsoluteLayout()
@@ -326,6 +367,7 @@ function Sidebar.handleClick(x, y, width, height)
     local layout = Layout.compute(width, height)
     if Layout.panelAt(layout, x, y) ~= "right" then return nil end
     local dx, dy = Layout.toSide(layout, "right", x, y)
+    if not lastSnapshot.inputModal and widgetHit(toggleButton, dx, dy) then return "toggle_buffs" end
     if not lastSnapshot.inputModal and (lastSnapshot.pendingChoices or 0) > 0
         and lastSnapshot.phase == "battle" and widgetHit(pendingButton, dx, dy) then
         return "resume_pick"
@@ -337,7 +379,7 @@ end
 function Sidebar.handleScroll(wheel, x, y, width, height)
     local layout = Layout.compute(width, height)
     local side = Layout.panelAt(layout, x, y)
-    local scroll = side == "left" and routeScroll or (side == "right" and buffScroll or nil)
+    local scroll = side == "left" and routeScroll or (side == "right" and not collapsed and buffScroll or nil)
     if scroll then
         local dx, dy = Layout.toSide(layout, side, x, y)
         if widgetHit(scroll, dx, dy) then scroll:ScrollBy(0, -wheel * 110) end
@@ -349,7 +391,7 @@ function Sidebar.dragBegin(x, y, width, height)
     drag = nil
     local layout = Layout.compute(width, height)
     local side = Layout.panelAt(layout, x, y)
-    local scroll = side == "left" and routeScroll or (side == "right" and buffScroll or nil)
+    local scroll = side == "left" and routeScroll or (side == "right" and not collapsed and buffScroll or nil)
     if scroll then
         local dx, dy = Layout.toSide(layout, side, x, y)
         if widgetHit(scroll, dx, dy) then
@@ -372,6 +414,12 @@ end
 
 function Sidebar.reset()
     drag, action = nil, nil
+    collapsed = false
+    presentationVersion = presentationVersion + 1
+    if buffScroll then buffScroll:SetVisible(true) end
+    if ruleNote then ruleNote:SetVisible(true) end
+    if collapsedSpace then collapsedSpace:SetVisible(false) end
+    if toggleButton then toggleButton:SetText(text("收起")) end
     lastSnapshot = {}
     lastFloor, lastWave, lastPhase, lastLanguage, lastBuffKey = 0, 0, "", "", ""
     lastRouteViewport = 0
@@ -386,7 +434,8 @@ function Sidebar.destroy()
     if rightRoot then rightRoot:Destroy() end
     if confirmRoot then confirmRoot:Destroy() end
     leftRoot, rightRoot, confirmRoot = nil, nil, nil
-    routeScroll, buffScroll, buffContent = nil, nil, nil
+    routeScroll, buffScroll, buffContent, collapsedSpace = nil, nil, nil, nil
+    toggleButton = nil
     floorLabel, waveLabel, buffTitle, routeTitle, routeNote, ruleNote = nil, nil, nil, nil, nil, nil
     actionButton, pendingButton, confirmRetreat, confirmCancel, confirmTitle, confirmNote = nil, nil, nil, nil, nil, nil
     nodes, nodeLabels = {}, {}

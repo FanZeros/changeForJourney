@@ -1,9 +1,9 @@
--- Independent tower presentation regression, based on scaffold-2d lifecycle.
--- Actual host sans (same as Standalone), Yoga, UI widget Render, KeywordText and PNG/native draw.
--- Never boots the game, loads player saves, patches global nvg/time/RNG, or builds.
--- Default forces actual PNG; -tower-choice-native requires the effect owner's ready.
+-- 通天塔展示独立回归，沿用 scaffold-2d 生命周期。
+-- 实际宿主 sans、Yoga、UI Render、KeywordText 与 PNG/原生绘制。
+-- 不启动游戏、不加载玩家存档、不修改全局 nvg/time/RNG、不构建。
+-- 默认使用实际 PNG；-tower-choice-native 使用真实原生特效。
 -- Runtime: tests/tower_choice_presentation_test.lua -tapcode_dir=/workspace -tool_mode
--- Use -graphicssurfaceless -nosound for the real rendering callbacks on Linux.
+-- Linux 使用 -graphicssurfaceless -nosound 验证真实绘制回调。
 local TAG = "[TowerChoicePresentation]"
 local totals = {checks=0, failed=0, cases=0, text=0, glyph=0, descriptions=0, native=0, png=0}
 ---@type NVGContextWrapper?
@@ -15,6 +15,20 @@ local completed, frame, nativeMode = false, 0, false
 local original = {text=nvgText, bounds=nvgTextBounds, random=math.random,
     seed=math.randomseed, save=nvgSave, restore=nvgRestore, spine=nvgSpineCreate}
 local langs = {"zh_CN", "zh_TW", "en", "ja", "ko"}
+-- 独立期望不可从生产词典/rarity反推，否则配置索引错位仍会自洽通过。
+local expectedRarities = {
+    zh_CN = {"普通", "优质", "稀有"}, zh_TW = {"普通", "優質", "稀有"},
+    en = {"Common", "Uncommon", "Rare"}, ja = {"コモン", "アンコモン", "レア"},
+    ko = {"일반", "고급", "레어"},
+}
+local expectedColors = {{231,231,231,255}, {106,190,115,255}, {100,161,226,255}}
+local expectedFooters = {
+    zh_CN = {"选择保留，战斗继续；强化从下一波生效", "稍后选择"},
+    zh_TW = {"選擇保留，戰鬥繼續；強化從下一波生效", "稍後選擇"},
+    en = {"Choices stay available; battle continues. Boons apply next wave.", "Choose Later"},
+    ja = {"選択肢は保持され、戦闘は継続。強化は次のウェーブから有効。", "後で選ぶ"},
+    ko = {"선택지는 유지되고 전투는 계속됩니다. 강화는 다음 웨이브부터 적용됩니다.", "나중에 선택"},
+}
 local function check(value, label)
     totals.checks = totals.checks + 1
     if not value then totals.failed = totals.failed + 1; print(TAG .. " FAIL " .. label) end
@@ -84,7 +98,7 @@ local function fingerprint(value)
 end
 
 local function createFixture()
-    local f = {draws={}, textRecords={}, popupRects={}, active=nil, fontSize=0,
+    local f = {draws={}, textRecords={}, popupRects={}, strokeColors={}, active=nil, fontSize=0,
         depth=0, fault=nil, packets={}, picks={}, errors={}, effectResults={},
         clock={elapsedTime=100}, randomCalls=0, tokens={{},{},{}}}
     local mathProxy = setmetatable({random=function()
@@ -107,6 +121,18 @@ local function createFixture()
         totals.text=totals.text+1
         if record.bounds.w>0 and record.bounds.h>0 then totals.glyph=totals.glyph+1 end
         return original.text(ctx,x,y,text,...)
+    end
+    env.nvgRGBA=function(r,g,b,a)
+        if f.capturePlate then
+            local color=nvgRGBA(r,g,b,a)
+            f.colorChannels[color]={r,g,b,a}
+            return color
+        end
+        return nvgRGBA(r,g,b,a)
+    end
+    env.nvgStrokeColor=function(ctx,color)
+        if f.capturePlate then f.strokeColors[#f.strokeColors+1]=f.colorChannels[color] end
+        return nvgStrokeColor(ctx,color)
     end
     env.nvgRoundedRect = function(ctx,x,y,w,h,r)
         if f.capturePopup then f.popupRects[#f.popupRects+1]=rectangle(x,y,w,h) end
@@ -260,11 +286,18 @@ local function layoutCase(ctx,lang,landscape,id)
     for index=1,3 do
         local keyword=f.cards[index]
         local label=lang .. "/" .. tostring(landscape) .. "/" .. id .. "/" .. index
+        f.capturePlate=true;f.strokeColors={};f.colorChannels={}
         local observation=drawDescriptionObserved(ctx,index,choice,state,landscape,keyword)
+        f.capturePlate=false
+        local color=expectedColors[choice.quality]
+        eq(fingerprint(f.strokeColors[1]),fingerprint({color[1],color[2],color[3],150}),"Picker实际卡片边框白绿蓝 "..label)
         local card=f.draws[#f.draws].root
         local cc=card:GetChildren()
         local name=inspectWidget(cc[1],f.presentation.name(choice),"name " .. label)
-        local quality=inspectWidget(cc[2],f.presentation.quality(choice.quality) .. " · " .. f.presentation.rarity(choice.quality),"quality " .. label)
+        local quality = inspectWidget(cc[2],expectedRarities[lang][choice.quality],"quality " .. label)
+        eq(fingerprint(cc[2].props.fontColor),fingerprint(expectedColors[choice.quality]),"真实稀有度文字配色 " .. label)
+        eq(f.presentation.quality(choice.quality),expectedRarities[lang][choice.quality],"品质兼容接口使用真实索引 " .. label)
+        eq(f.presentation.rarity(choice.quality),expectedRarities[lang][choice.quality],"通用稀有度使用真实索引 " .. label)
         local action=inspectWidget(cc[3],f.presentation.text("铭刻"),"action " .. label)
         eq(cc[3].props.disabled,false,"normal choice action enabled")
         local box=card:GetLayout()
@@ -285,8 +318,8 @@ local function layoutCase(ctx,lang,landscape,id)
     end
     f.view.drawFooter(ctx,state,landscape)
     local footer=f.draws[#f.draws].root:GetChildren()
-    local notice=inspectWidget(footer[1],f.presentation.text("取消只收起契印，当前选择仍会保留"),"retention notice " .. lang)
-    local cancel=inspectWidget(footer[2],f.presentation.text("取消"),"cancel " .. lang)
+    local notice=inspectWidget(footer[1],expectedFooters[lang][1],"retention notice " .. lang)
+    local cancel=inspectWidget(footer[2],expectedFooters[lang][2],"cancel " .. lang)
     check(separate(notice,cancel),"notice and right-side cancel do not overlap " .. lang)
     local cx,cy,cw,ch=f.view.cancelRect(landscape)
     near(cancel.x,cx-cw*.5,"cancel actual Yoga left agrees with click rect")

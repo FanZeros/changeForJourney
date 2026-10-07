@@ -12,6 +12,16 @@
 4. **分支纪律**：以当前任务授权为准。本轮暗黑特效任务基于 `workspace1005@9497bfdb409c2d0fc17533e4cfc280702fe83517`，任务分支为 `feat1005/team-power-dark-effects-20261006`。用户最新明确提供即时鉴权并要求提 PR，授权提交／正常 push 本任务分支及创建目标 `workspace1005` 的 PR；不混入其他会话返回键改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布，凭据不持久化。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-07，图片与 Spine 暗黑特效续作）
+
+- 本轮固定基线 `13b7b2355d462bc36ee4733433a613503f242498`，仍在 `feat1005/team-power-dark-effects-20261006`。用户要求六类特效加入程序图片、真正 Spine 与程序补层、战力旧值→新值滚动，全部完成正常push并新PR到workspace1005；不推workspace系列、不强推、不自动合并发布。旧PR107已经外部合并，本轮不是更新旧PR。并行教程文件、.project、repair meta、内部证据不提交。
+- CPU生成14透明PNG、1024图集、三JSON/三atlas共21资源及21meta，Spine真实4.2.43，升级/转职/复活/成功/失败/战力六独立动画；476160图集区域像素、2px挤边、零透明残色、确定性重绘与44冻结指纹通过。最后名牌仅扩大内暗区，其他13图/骨架/meta不变。单token独占native、失败一次降级PNG再旧矢量；不每帧create/load、不消费随机、不改成长/奖励/复活/公式/存档或当前波pending。
+- 真实4.2 Load/动画/Render成功后Unload→Dispose链在当前Runtime退出崩溃，已按官方UI.Spine单Unload→清引用，最小120帧probe退出0且VG删除完成，不定性底层double-free、不称立即析构或所有平台安全。真实同时间换尺寸10断言失败，修transform变化时UpdateWorldTransform、缺接口Update(0)，不增加动画时间或重复正dt；稳定参数不额外刷新。临时probe与meta已归档.git不入包。
+- Power数值减速滚动、完整旧→新及净增、连续增长从当前显示接续且换铭牌token、晚下降压缩到原期限前收敛、integer低位精确；一至三队314/410/506高，上下82洁净边距，真实UI/Yoga五语、极长数、DPR等通过。图片cache按context/flags/path、delete失效、Stop旧wrapper直通与顺序释放，保留共享句柄非引用计数和异常收尾边界。
+- 当前冻结专项真实native92/0、rich3019/0、mock2784/0、logic+真实UI1145/0、host165/0、Card17/0、Result51/0均exit0；最后故障Load与素材full复跑结果后补。升阶/切关ALL PASS、成长1697/0/harness0最终复跑exit0。固定13b7旧公共战力3/神器4/预估9失败保留，八源与固定基线字节一致，不改公式或测试掩盖；不能称全仓回归全绿。
+- 最后四阶段native、两阶段PNG、五语与全窗1/2/3队实际样片120帧，已Read确认纹理/运动差异、数字终值与框沿；raw FAIL仅软件帧尖峰，不称设备性能/触控/用户审美验收。正式main150帧Lua/资源0、无缺图，rawFAIL仅149软件尖峰。官方构建、源码载荷最终核验与commit/push/PR实际结果后补，不提前称已上传。证据只.git/validation/dark-rich，凭据不复述/传播；此前用户选暂时保留的本机认证不擅自删除。
+- **持续强化：推进已授权范围、不擅自取消退出；当前最新恢复明确不再提问、直接继续，遵循当前指令不机械AskUserQuestion。** 尊重停止/权限拒绝、安全边界，不借peer扩大授权，不混教程改动，共享build/index/三记忆串行。
+
 ## 上次做了什么（2026-10-06，三队暗黑特效 PR107 已创建）
 
 - 用户最新明确“帮我提一个pr”，即时鉴权可写；28白名单文件提交 `73b7dcc1d62798b88e980487f1dd5a5dfa98e110` 已正常push同任务分支，push／ls-remote均exit0、远端SHA与本地一致。正式 **PR #107**：https://github.com/FanZeros/changeForJourney/pull/107，head=`feat1005/team-power-dark-effects-20261006`、base=`workspace1005`；创建源73b7dcc1、目标fc6bbc5b，返回open／draft=false／merged=false／mergeable未计算，不称CI通过或已合并。

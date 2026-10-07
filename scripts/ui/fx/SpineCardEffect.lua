@@ -1,8 +1,9 @@
--- 程序化卡片特效；保留旧模块/API 名称，不持有原生 Spine 资源。
+-- 暗黑卡片特效：独占 Spine + 分层 PNG + 程序化矢量兜底，保留旧模块/API。
 -- 坐标/尺寸属于调用者当前 NanoVG 空间（本模块不再乘 DPR/fit）。
 -- 所有时间线直接采样 time.elapsedTime - startedAt；update(dt) 仅派发完成回调。
 local SpineCardEffect = {}
 local BattleLayout = require("core.BattleLayout")
+local Sprites = require("ui.fx.DarkEffectSprites")
 local DURATION = { level = 1.3333, job = 1.3333, revive = 0.9 }
 local MAX_ACTIVE = 32
 
@@ -21,6 +22,7 @@ local MAX_ACTIVE = 32
 ---@field duration number
 ---@field onComplete function|nil
 ---@field finished boolean
+---@field token table
 ---@type DarkCardPlayback[]
 local activeInstances = {}
 local cancelEpoch = 0
@@ -64,6 +66,8 @@ local function expire(now)
     for _, entry in ipairs(done) do scopeVersions[entry.scope] = scopeEpochs[entry.scope] or 0 end
     activeInstances = remaining
     local epoch = cancelEpoch
+    -- 全部旧 token 先释放，再派发完成；回调中新建播放不会被批次收尾删除。
+    for _, entry in ipairs(done) do Sprites.release(entry.token) end
     for _, entry in ipairs(done) do
         if cancelEpoch == epoch and (scopeEpochs[entry.scope] or 0) == scopeVersions[entry.scope] then
             dispatch(entry)
@@ -116,7 +120,10 @@ local function play(kind, cx, cy, onComplete, scope, width, height, defaultScope
     if kind == "level" then
         for _, entry in ipairs(activeInstances) do
             if entry.kind == kind and entry.scope == scope and entry.cx == cx and entry.cy == cy then
+                local oldToken = entry.token
+                entry.token = {} -- 连续升级是新播放，不能继续使用旧原生时间线。
                 entry.startedAt, entry.width, entry.height, entry.onComplete = now, w, h, onComplete
+                Sprites.release(oldToken)
                 print("[SpineCardEffect] 替换连续升级 scope=" .. scope)
                 return
             end
@@ -126,12 +133,13 @@ local function play(kind, cx, cy, onComplete, scope, width, height, defaultScope
     if #activeInstances >= MAX_ACTIVE then
         local dropped = table.remove(activeInstances, 1)
         dropped.finished, dropped.onComplete = true, nil
+        Sprites.release(dropped.token)
         print("[SpineCardEffect] 达到上限 " .. MAX_ACTIVE .. "，取消最老记录 " .. dropped.kind
             .. " scope=" .. dropped.scope)
     end
     activeInstances[#activeInstances + 1] = {
         kind = kind, scope = scope, cx = cx, cy = cy, width = w, height = h,
-        startedAt = now, duration = DURATION[kind], onComplete = onComplete, finished = false,
+        startedAt = now, duration = DURATION[kind], onComplete = onComplete, finished = false, token = {},
     }
     print("[SpineCardEffect] 播放 " .. kind .. " scope=" .. scope .. " 中心=" .. cx .. "," .. cy)
 end
@@ -197,22 +205,25 @@ function SpineCardEffect.draw(vg, scope, alpha)
         if entry.scope == scope then batch[#batch + 1] = entry end
     end
     for _, entry in ipairs(batch) do
+        local token = entry.token
         if not entry.finished then
             local saved = false
             local ok, err = pcall(function()
-                local primitives = require("ui.fx.DarkEffectPrimitives")
                 nvgSave(vg)
                 saved = true
-                primitives.drawCard(vg, entry.kind, entry.cx, entry.cy, entry.width, entry.height,
-                    math.max(0, now - entry.startedAt), entry.duration, opacity)
+                Sprites.drawCard(vg, entry.kind, entry.cx, entry.cy, entry.width, entry.height,
+                    math.max(0, now - entry.startedAt), entry.duration, opacity, token)
             end)
             if saved then
                 local restored, restoreErr = pcall(nvgRestore, vg)
                 if not restored then ok, err = false, restoreErr end
             end
             if not ok then
-                -- 视觉单次降级，禁止逐帧重试；计时与业务完成回调继续。
+                -- 已取消/替换的旧绘图错误，不得停用回调刚创建的新播放。
+                if entry.finished or entry.token ~= token then return end
+                -- 三层视觉均失败：释放原生，但计时与业务完成回调继续。
                 disabled = true
+                for _, pending in ipairs(activeInstances) do Sprites.release(pending.token) end
                 print("[SpineCardEffect] 视觉已停用，计时继续: " .. tostring(err))
                 return
             end
@@ -221,7 +232,9 @@ function SpineCardEffect.draw(vg, scope, alpha)
 end
 
 ---@param vg? any
-function SpineCardEffect.preload(vg) end -- 幂等空操作：不分配原生对象或缓存资源。
+function SpineCardEffect.preload(vg)
+    Sprites.preload(vg) -- 一次预热 PNG；原生 Spine 仍按播放 token 独占延迟创建。
+end
 
 ---@param scope? string 省略则取消全部；取消不执行完成回调。
 function SpineCardEffect.stopAll(scope)
@@ -231,13 +244,17 @@ function SpineCardEffect.stopAll(scope)
         cancelEpoch = cancelEpoch + 1
         scopeEpochs = {}
     end
-    for i = #activeInstances, 1, -1 do
-        local entry = activeInstances[i]
+    local remaining, stopped = {}, {} ---@type DarkCardPlayback[], DarkCardPlayback[]
+    for _, entry in ipairs(activeInstances) do
         if not scope or entry.scope == scope then
             entry.finished, entry.onComplete = true, nil
-            table.remove(activeInstances, i)
+            stopped[#stopped + 1] = entry
+        else
+            remaining[#remaining + 1] = entry
         end
     end
+    activeInstances = remaining -- 先分离全批，原生释放重入 play 不被旧循环取消。
+    for _, entry in ipairs(stopped) do Sprites.release(entry.token) end
 end
 
 function SpineCardEffect.destroy()

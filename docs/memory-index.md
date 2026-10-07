@@ -1,5 +1,14 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+## 图片与 Spine 暗黑特效续作（2026-10-07）
+
+- 固定13b7b235，任务分支feat1005/team-power-dark-effects-20261006，用户授权全部完成后正常push并新PR至workspace1005，不推基线/强推/自动合并发布；旧PR107外部已合，并行教程及.project不混入。本轮三控制器API、scope、实际尺寸、业务墙钟和pending保持，仅展示升级。
+- 14程序透明图+1024图集+三骨架/三atlas共21资产与meta，Spine4.2.43；476160区域像素及2px挤边/零透明残色/重绘绑定通过，最后名牌内区拓宽只改nameplate/atlas和绘图代码。CPU生成不读旧图、不消费random；每token独占native、单次失败PNG再矢量，不重复加载。原3.8.99被当前4.2 Runtime拒绝的失败保留，不假称只改版本串转换兼容。
+- 真实native加载绘制成功，退出Unload后Dispose崩溃；与官方UI控件一致改单Unload丢引用，最小120frame probe退出0/nvgDelete完成，不能定性double-free或所有平台可靠释放。真实同t改大小10失败后修UpdateWorldTransform（缺API Update(0)），正常正dt一次、同参数不刷新；冻结native92、rich3019、mock2784、UI+logic1145、host165、Card17、Result51均0失败/exit0。最后故障Load及最终素材full另补，不用mock替native。
+- 战力完整旧→新/净增减速计数、连续增长接显示值、换新token避免动画时间回退、下降压缩但不延寿、18位整数精确；UI上下82内边距、总高314/410/506，真实字体/Yoga五语/DPR/长短切换通过。宿主cache隔离ctx/flags/path、delete失效、Stop旧wrapper直通；非引用计数及异常收尾边界未扩改。
+- 升阶和切关ALL PASS、成长1697/0/harness0均最终真实exit0；旧公共战力3/神器4/预估9失败与固定13b7八源码逐字节相同，不改正式公式或旧测试消除。四阶段native、两阶段PNG、五语/全窗队数120frame实际样片已Read，不称设备性能/玩家交互/审美通过；raw仅软件尖峰，main150lua/resource0/缺图0但149spikes rawFAIL。临时probe/meta已归档.git，最后官方build/载荷/推送/PR真实结果另补。
+- 持续推进并尊重当前不再提问指令、安全与权限边界；三记忆/build/index窗口串行，不复述凭据，不扩大远端范围，原用户暂时保留认证不擅删。内证不提交、不发布。
+
 ## 三队暗黑特效 PR107（2026-10-06，已创建）
 
 - 正式PR #107：https://github.com/FanZeros/changeForJourney/pull/107，head=`feat1005/team-power-dark-effects-20261006`、base=`workspace1005`；创建源73b7dcc1d62798b88e980487f1dd5a5dfa98e110、目标fc6bbc5bc1f417460ee395cf483b64001f76bc84，返回open、draft=false、merged=false、mergeable未计算，未自动合并发布，不冒称CI通过。

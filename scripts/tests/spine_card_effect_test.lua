@@ -1,5 +1,5 @@
--- 本轮适配：旧 Spine create/load/complete-listener/GPU 夹具已移除。
--- 本文件现在验证真实程序化 Card controller 的页面隔离、显式尺寸、墙钟生命周期；不代表原生GPU覆盖。
+-- Card controller契约：保留页面隔离、显式尺寸、墙钟生命周期与取消语义。
+-- Sprites后端在本入口受控注入；native Spine/纹理/释放另由rich入口实测，不禁止正式资源。
 -- 只读生产源码→独立env；不改全局time/nvg、package.loaded，不加载玩家档。
 local totals = {assertions=0,failures=0}
 local function check(ok,label)
@@ -28,8 +28,9 @@ function Start()
         env.nvgCreateImage=env.nvgSpineCreate
         env.require=function(name)
             if name=="core.BattleLayout" then return require(name) end
-            assert(name=="ui.fx.DarkEffectPrimitives",name)
-            return {drawCard=function(_,kind,cx,cy,w,h,elapsed,duration,alpha)
+            assert(name=="ui.fx.DarkEffectSprites",name)
+            return {preload=function() end,release=function() end,destroy=function() end,
+                drawCard=function(_,kind,cx,cy,w,h,elapsed,duration,alpha)
                 calls[#calls+1]={kind=kind,cx=cx,cy=cy,w=w,h=h,elapsed=elapsed,duration=duration,alpha=alpha}
             end}
         end
@@ -68,7 +69,7 @@ function Start()
         effect.stopAll("battle");clock.elapsedTime=200;effect.update(0)
         eq(done,1,"stop取消而非完成callback")
         effect.destroy();effect.destroy()
-        eq(forbidden,0,"preload/play/draw/destroy无Spine/图像调用")
+        eq(forbidden,0,"受控Sprites注入后controller不旁路后端原生入口")
     end)
     pcall(cleanup)
     if not ok then check(false,"suite exception: "..tostring(err)) end

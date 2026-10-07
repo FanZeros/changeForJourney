@@ -87,6 +87,16 @@ end
 
 -- NanoVG context & font
 local vg = nil
+---@type function?
+local originalImageCreate_ = nil
+---@type function?
+local originalImageDelete_ = nil
+---@type function?
+local imageCreateWrapper_ = nil
+---@type function?
+local imageDeleteWrapper_ = nil
+---@type function?
+local invalidateImageCache_ = nil
 local sceneRef_ = nil  -- 保存 scene 引用，供 requestResetToStartScreen 使用
 local startScreenWasOpen_ = false
 local postStartFlowDone_ = false  -- [LetterIntro] 开场/离线收益只触发一次（等标题关闭）
@@ -339,17 +349,35 @@ function Standalone.Start()
     end
     require("core.I18n").installDrawHook()
 
-    -- 2.5 [一次性加载] 全局贴图去重：同一路径全生命周期只加载一次，
-    -- 启动预载与各模块 init 共用同一句柄，避免重复占用显存与二次解码
+    -- 2.5 图片去重按context+flags+path隔离；删除句柄时同步失效缓存。
+    -- 否则新特效释放图片后会重新取得死句柄，重启/多context也会借到错误纹理。
     local handleCache = {}
-    local origNvgCreateImage = nvgCreateImage
-    nvgCreateImage = function(ctx, path, flags)
-        local cached = handleCache[path]
+    local cacheActive = true
+    invalidateImageCache_ = function() cacheActive = false; handleCache = {} end
+    local createImage, deleteImage = nvgCreateImage, nvgDeleteImage
+    originalImageCreate_, originalImageDelete_ = createImage, deleteImage
+    imageCreateWrapper_ = function(ctx, path, flags)
+        -- Stop后外部hook可能仍闭包引用本wrapper；此时直通而非复用旧context句柄。
+        if not cacheActive then return createImage(ctx, path, flags) end
+        local byContext = handleCache[ctx]
+        if not byContext then byContext = {}; handleCache[ctx] = byContext end
+        local key = tostring(flags or 0) .. ":" .. path
+        local cached = byContext[key]
         if cached then return cached end
-        local handle = origNvgCreateImage(ctx, path, flags)
-        if handle and handle >= 0 then handleCache[path] = handle end
+        local handle = createImage(ctx, path, flags)
+        if handle and handle > 0 then byContext[key] = handle end
         return handle
     end
+    imageDeleteWrapper_ = function(ctx, handle)
+        local byContext = handleCache[ctx]
+        if byContext then
+            for key, cached in pairs(byContext) do
+                if cached == handle then byContext[key] = nil end
+            end
+        end
+        return deleteImage(ctx, handle)
+    end
+    nvgCreateImage, nvgDeleteImage = imageCreateWrapper_, imageDeleteWrapper_
 
     -- 3. Font：Noto Sans CJK KR Bold（OFL，覆盖中日韩英；旧圆体 CN 无韩文）
     fontNormal = nvgCreateFont(vg, "sans", "Fonts/NotoSansCJKkr-Bold.otf")
@@ -393,7 +421,10 @@ function Standalone.Start()
         { "LevelUpPopup", function() LevelUpPopup.init(vg) end },
         { "UpdateNoticePopup", function() UpdateNoticePopup.init(vg) end },
         { "PlayerInfoPanel", function() PlayerInfoPanel.init(vg) end },
-        { "SpinePowerUp", function() SpinePowerUpEffect.init() end },
+        { "SpinePowerUp", function()
+            SpinePowerUpEffect.init()
+            SpinePowerUpEffect.preload(vg)
+        end },
         { "TutorialManager", function()
             TutorialManager.init(vg, PlayerStore, function(progress)
                 local session = ClientDispatcher.get("session")
@@ -474,8 +505,21 @@ function Standalone.Stop()
     require("ui.battle.stage.StageSelectDialog").close()
     StandaloneSave.Flush()  -- [单机存档] 退出前立即落盘
     SpinePowerUpEffect.destroy()
+    require("ui.fx.SpineCardEffect").destroy()
+    require("ui.fx.SpineResultEffect").destroy()
+    require("ui.fx.DarkEffectSprites").destroy()
     LevelUpPopup.destroy()
     require("ui.widget.DesignWidgetSurface").shutdown()
+    -- 不覆盖其他所有者后装的hook；让仍被引用的旧wrapper直通，再只撤下本会话包装。
+    if invalidateImageCache_ then invalidateImageCache_() end
+    invalidateImageCache_ = nil
+    if nvgCreateImage == imageCreateWrapper_ and originalImageCreate_ then
+        nvgCreateImage = originalImageCreate_
+    end
+    if nvgDeleteImage == imageDeleteWrapper_ and originalImageDelete_ then
+        nvgDeleteImage = originalImageDelete_
+    end
+    originalImageCreate_, originalImageDelete_, imageCreateWrapper_, imageDeleteWrapper_ = nil, nil, nil, nil
     if vg then
         nvgDelete(vg)
         vg = nil

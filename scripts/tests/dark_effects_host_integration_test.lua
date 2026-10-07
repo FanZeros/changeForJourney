@@ -39,6 +39,7 @@ function Start()
         local function environment(mocks, fields)
             local env = setmetatable(fields or {}, { __index = _G })
             env.time = clock
+            env._G = env
             env.File = function() error("host integration forbids player File access") end
             env.require = function(name)
                 if mocks and mocks[name] then return mocks[name] end
@@ -460,6 +461,139 @@ function Start()
         check(#resultDraws == 1, "Blacksmith idle result does not draw")
         smithState.open = false; resultPlaying = true; smith.drawPageImpl(smithVG)
         check(#resultDraws == 1, "Blacksmith closed page does not draw")
+
+        -- 真实finishFrame全窗门控；逐个高优先级宿主让位，仍完成本帧收尾。
+        local frameCode = segment("boot/StandaloneHorizon.lua", "local function finishFrame()", "local function toDesign(sx, sy)")
+        local gates = { "StartScreen", "DarkTitleScreen", "LetterIntro", "IntroCutscene", "ScenarioDialogue",
+            "RewardPopup", "PlayerInfoPanel", "LevelUpPopup", "OfflineRewardPanel", "UpdateNoticePopup",
+            "CEPanel", "TutorialManager", "StageSelectDialog", "SweepDialog", "DamageStatsPanel", "TerminalConfirmDialog" }
+        local gateState, frameDraws, frameEnds, frameDepth = {}, {}, 0, 0
+        local frameVG = {}
+        local frameFields = { vg = function() return frameVG end, logicalW = function() return 1920 end,
+            logicalH = function() return 1080 end, applyFrame = noop, drawOrphanRowReward = noop,
+            artifactOverlay = { draw = noop }, OfflineRewardOverlay = { draw = noop }, drawUpdateNotice = noop,
+            nvgSave = function() frameDepth = frameDepth + 1 end,
+            nvgRestore = function() frameDepth = frameDepth - 1 end,
+            nvgResetTransform = noop, nvgResetScissor = noop, nvgScissor = noop,
+            nvgEndFrame = function() frameEnds = frameEnds + 1 end,
+            SpinePowerUpEffect = { draw = function(ctx,w,h) frameDraws[#frameDraws+1]={ctx,w,h} end } }
+        for _, name in ipairs(gates) do
+            frameFields[name] = { isOpen = function() return gateState[name] == true end,
+                isActive = function() return gateState[name] == true end, draw = noop }
+        end
+        local frameEnv = environment({},frameFields)
+        frameEnv._G = frameEnv
+        local finishFrame = assert(load(frameCode.."\nreturn finishFrame", "@host-real/finishFrame", "t", frameEnv))()
+        finishFrame()
+        check(#frameDraws==1 and frameDraws[1][1]==frameVG and frameDraws[1][2]==1920 and frameDraws[1][3]==1080,
+            "actual finishFrame draws one global Power with logical whole-window geometry")
+        for _, name in ipairs(gates) do
+            local drawsBefore, endsBefore = #frameDraws,frameEnds
+            gateState[name] = true; finishFrame(); gateState[name] = false
+            check(#frameDraws==drawsBefore,"actual Power yields to "..name)
+            check(frameEnds==endsBefore+1 and frameDepth==0,"blocked "..name.." still closes native frame")
+        end
+        finishFrame(); check(#frameDraws==2,"Power resumes after blockers close")
+
+        -- 真实HandleUpdate完整最早分支，不复制advance；未boot/标题早返前必须更新全部特效。
+        local updateCode = segment("boot/Standalone.lua", "function HandleUpdate(eventType, eventData)", "    -- [DWP 异步预下载]")
+        local updateOrder, receivedDt = {}, {}
+        local function updateEffect(name)
+            return { update = function(dt) updateOrder[#updateOrder+1]=name; receivedDt[name]=dt end }
+        end
+        local updateEnv = environment({ ["ui.fx.SpineCardEffect"]=updateEffect("Card"),
+            ["ui.fx.SpineResultEffect"]=updateEffect("Result"), ["ui.dev.CEPanel"]={pollHotkey=noop} },
+            { PlayerStore=updateEffect("Store"), SpinePowerUpEffect=updateEffect("Power"),
+            pumpBootQueue_=noop, bootReady_=false, StartScreen={isOpen=function() return true end,update=noop},
+            DarkTitleScreen={isOpen=function() return true end,update=noop} })
+        updateEnv.PlayerStore.Update = updateEnv.PlayerStore.update
+        local update = assert(load(updateCode.."\nend\nreturn HandleUpdate", "@host-real/HandleUpdate.boot-early-return", "t", updateEnv))()
+        local event = { TimeStep={GetFloat=function() return 250 end} }
+        update("Update",event)
+        check(table.concat(updateOrder,",")=="Store,Power,Card,Result","unbooted true host updates all effects before early-return")
+        check(receivedDt.Power==250 and receivedDt.Card==250 and receivedDt.Result==250,"large dt forwarded once without host speed scaling")
+
+        -- 真清档视觉段：只运行唯一生产锚点，注入真实三个controller而不是复制reset规则。
+        local visualReset = segment("boot/Standalone.lua", "    -- 清档先取消旧会话特效", "    -- 3. 重置 GameState")
+        local backend = {drawCard=noop,drawResult=noop,drawPower=noop,preload=noop,release=noop,destroy=noop}
+        local function controllerEnv(extra)
+            local env = environment({ ["ui.fx.DarkEffectSprites"]=backend, ["core.BattleLayout"]=Layout,
+                ["core.EventBus"]=extra and extra.bus or {}, ["config.GameEvents"]=nativeRequire("config.GameEvents"),
+                ["core.I18n"]={get=function() return "zh_CN" end} }, {nvgSave=noop,nvgRestore=noop})
+            env._G = env
+            return env
+        end
+        local bus = assert(load(source("core/EventBus.lua"),"@host-real/EventBus","t",controllerEnv()))()
+        local CardController = assert(load(source("ui/fx/SpineCardEffect.lua"),"@host-real/Card","t",controllerEnv()))()
+        local ResultController = assert(load(source("ui/fx/SpineResultEffect.lua"),"@host-real/Result","t",controllerEnv()))()
+        local PowerController = assert(load(source("ui/fx/SpinePowerUpEffect.lua"),"@host-real/Power","t",controllerEnv({bus=bus})))()
+        local complete = 0
+        clock.elapsedTime = 100; PowerController.init()
+        bus.emit(nativeRequire("config.GameEvents").TEAM_POWER_CHANGED,{powers={100,200,300},ready=true})
+        clock.elapsedTime = 102
+        bus.emit(nativeRequire("config.GameEvents").TEAM_POWER_CHANGED,{powers={150,250,350},ready=true})
+        CardController.playRevive(100,200,function() complete=complete+1 end,"tri2")
+        ResultController.play(true,function() complete=complete+1 end)
+        check(PowerController.isPlaying() and CardController.isPlaying() and ResultController.isPlaying(),
+            "three actual controllers active before real clear-session segment")
+        local resetEnv = environment({["ui.fx.SpineCardEffect"]=CardController,["ui.fx.SpineResultEffect"]=ResultController},
+            {SpinePowerUpEffect=PowerController})
+        assert(load(visualReset,"@host-real/reset.visual","t",resetEnv))()
+        clock.elapsedTime = 200; CardController.update(0); ResultController.update(0); PowerController.update(0)
+        check(complete==0 and not CardController.isPlaying() and not ResultController.isPlaying() and not PowerController.isPlaying(),
+            "real clear session cancels all old effects without completion or stale rows")
+        bus.emit(nativeRequire("config.GameEvents").TEAM_POWER_CHANGED,{powers={9000,9000,9000},ready=false})
+        bus.emit(nativeRequire("config.GameEvents").TEAM_POWER_CHANGED,{powers={8000,8000,8000},ready=true})
+        check(#PowerController.getDisplayRows()==0,"new first hydrated account never reports old-to-new gain")
+        PowerController.destroy(); CardController.destroy(); ResultController.destroy()
+
+        -- 真实Standalone.Start图片wrapper段，ctx/flags/path键与删除缓存失效不污染_G。
+        local wrapperCode = segment("boot/Standalone.lua", "    -- 2.5 图片去重按context+flags+path隔离", "    -- 3. Font")
+        local createdImages, deletedImages, handle = {}, {}, 0
+        local wrapperEnv = environment({}, {nvgCreateImage=function(ctx,path,flags)
+            handle=handle+1; createdImages[#createdImages+1]={ctx,path,flags,handle}; return handle
+        end, nvgDeleteImage=function(ctx,id) deletedImages[#deletedImages+1]={ctx,id} end})
+        wrapperEnv._G=wrapperEnv
+        local nativeCreate, nativeDelete = nvgCreateImage,nvgDeleteImage
+        assert(load(wrapperCode,"@host-real/Start.image-wrapper","t",wrapperEnv))()
+        local ctxA,ctxB={},{ }
+        local first=wrapperEnv.nvgCreateImage(ctxA,"same.png",0)
+        check(wrapperEnv.nvgCreateImage(ctxA,"same.png",0)==first and #createdImages==1,"same ctx/path/flags reuses actual host wrapper handle")
+        local second=wrapperEnv.nvgCreateImage(ctxB,"same.png",0)
+        local flagged=wrapperEnv.nvgCreateImage(ctxA,"same.png",1)
+        check(second~=first and flagged~=first and #createdImages==3,"real host wrapper separates context and flags")
+        wrapperEnv.nvgDeleteImage(ctxA,first)
+        local fresh=wrapperEnv.nvgCreateImage(ctxA,"same.png",0)
+        check(fresh~=first and #deletedImages==1,"deleted same-path handle never reused")
+        check(wrapperEnv.nvgCreateImage(ctxB,"same.png",0)==second,"one ctx delete does not invalidate other ctx")
+        check(nvgCreateImage==nativeCreate and nvgDeleteImage==nativeDelete,"host wrapper test never rewrites native global functions")
+
+        local stopCode=segment("boot/Standalone.lua","function Standalone.Stop()","--- 标题关闭后按真实离线时长结算")
+        local stopOrder={}
+        local stopMocks={ ["ui.fx.SpineCardEffect"]={destroy=function() stopOrder[#stopOrder+1]="Card" end},
+            ["ui.fx.SpineResultEffect"]={destroy=function() stopOrder[#stopOrder+1]="Result" end},
+            ["ui.fx.DarkEffectSprites"]={destroy=function() stopOrder[#stopOrder+1]="Sprites" end},
+            ["ui.widget.DesignWidgetSurface"]={shutdown=function() stopOrder[#stopOrder+1]="Surface" end},
+            ["ui.battle.stage.StageSelectDialog"]={close=noop} }
+        wrapperEnv.Standalone={};wrapperEnv.vg=ctxA
+        wrapperEnv.RewardPopup={clearBattleRewards=noop};wrapperEnv.StandaloneSave={Flush=noop}
+        wrapperEnv.SpinePowerUpEffect={destroy=function() stopOrder[#stopOrder+1]="Power" end}
+        wrapperEnv.LevelUpPopup={destroy=noop};wrapperEnv.nvgDelete=function() stopOrder[#stopOrder+1]="vgDelete" end
+        local originalWrapperRequire=wrapperEnv.require
+        wrapperEnv.require=function(name) return stopMocks[name] or originalWrapperRequire(name) end
+        local ownedCreate,ownedDelete=wrapperEnv.nvgCreateImage,wrapperEnv.nvgDeleteImage
+        local externalCreate=function(...) return ownedCreate(...) end
+        local externalDelete=function(...) return ownedDelete(...) end
+        wrapperEnv.nvgCreateImage,wrapperEnv.nvgDeleteImage=externalCreate,externalDelete
+        assert(load(stopCode,"@host-real/Stop.image-ownership","t",wrapperEnv))()
+        wrapperEnv.Standalone.Stop()
+        check(table.concat(stopOrder,",")=="Power,Card,Result,Sprites,Surface,vgDelete","actual Stop releases controllers/images before owning vg")
+        check(wrapperEnv.nvgCreateImage==externalCreate and wrapperEnv.nvgDeleteImage==externalDelete,"actual Stop preserves newer external wrapper owners")
+        local oldCreateCount=#createdImages
+        local afterStop1=wrapperEnv.nvgCreateImage(ctxA,"same.png",0)
+        local afterStop2=wrapperEnv.nvgCreateImage(ctxA,"same.png",0)
+        check(afterStop1~=afterStop2 and #createdImages==oldCreateCount+2,"external closure through retired wrapper directly creates, never uses old context cache")
+        check(wrapperEnv.invalidateImageCache_==nil and wrapperEnv.originalImageCreate_==nil and wrapperEnv.imageCreateWrapper_==nil,"Stop clears session-owned cache hooks")
 
         check(sources["ui/battle/tri/BattleTriDriver.lua"] and sources["ui/dungeon/DungeonBattleScene.lua"]
             and sources["ui/battle/combat/BattleCasualty.lua"] and sources["ui/church/ChurchResults.lua"],

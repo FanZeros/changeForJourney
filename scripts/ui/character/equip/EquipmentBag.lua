@@ -1144,17 +1144,26 @@ function EquipmentBag.draw(vg, opts)
                     nvgText(vg, lvlX, lvlY, lvlText, nil)
                 end
 
-                -- 单件贡献与等级分行，不占用 E/头像、锁及升阶角标。
+                -- 单件贡献恢复为战力图标加数值，不再显示“战力”字样。
                 do
-                    local powerText = "战力 " .. tostring(entry.power or 0)
+                    local powerText = tostring(entry.power or 0)
                     local powerFont = 26
+                    local powerIconSize, powerGap = 24, 4
+                    local rightX = cx + CELL_SIZE * 0.45
+                    local powerY = cy + CELL_SIZE * 0.15
                     nvgFontFace(vg, "sans")
                     nvgFontSize(vg, powerFont)
                     local textW = nvgTextBounds(vg, 0, 0, powerText) or 0
                     local maxW = CELL_SIZE * 0.62
-                    if textW > maxW then powerFont = powerFont * maxW / textW end
-                    DrawUtil.drawTextStroke(vg, cx + CELL_SIZE * 0.45, cy + CELL_SIZE * 0.15,
-                        powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, 244, 237, 224, 3)
+                    if textW + powerIconSize + powerGap > maxW and textW > 0 then
+                        powerFont = powerFont * (maxW - powerIconSize - powerGap) / textW
+                    end
+                    nvgFontSize(vg, powerFont)
+                    textW = nvgTextBounds(vg, 0, 0, powerText) or 0
+                    DrawUtil.drawTextStroke(vg, rightX, powerY,
+                        powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+                    DarkIcon.draw(vg, "power", rightX - textW - powerGap - powerIconSize * 0.5,
+                        powerY, powerIconSize, 1.0)
                 end
 
                 -- 强化角标（右上角，描边，+X）

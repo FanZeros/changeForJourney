@@ -92,7 +92,7 @@ end
 
 local StageSelectDialog = {}
 local onDungeonSelect = nil ---@type fun(dungeonId: string, teamIdx: number, floor: number): boolean|nil
-local TAB_Y, TAB_W, TAB_H = 782, 90, 46
+local TAB_Y, TAB_W, TAB_H = 814, 90, 46
 local MAIN_TAB_X, DUNGEON_TAB_X = 150, 250
 
 function StageSelectDialog.setOnDungeonSelect(callback)

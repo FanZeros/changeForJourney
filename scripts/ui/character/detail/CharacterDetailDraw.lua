@@ -875,15 +875,24 @@ function M.draw(vg)
             end
 
             local powerSlot = isTwohandOccupied and "weapon" or slot.slot
-            local powerText = "战力 " .. tostring(EquipmentPower.score(equippedEquip, heroId, powerSlot))
+            local powerText = tostring(EquipmentPower.score(equippedEquip, heroId, powerSlot))
             local powerFont = 26
+            local powerIconSize, powerGap = 24, 4
+            local rightX = scx + DT_SLOT_SIZE * 0.45
+            local powerY = scy + DT_SLOT_SIZE * 0.15
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, powerFont)
             local powerWidth = nvgTextBounds(vg, 0, 0, powerText) or 0
             local powerMaxWidth = DT_SLOT_SIZE * 0.62
-            if powerWidth > powerMaxWidth then powerFont = powerFont * powerMaxWidth / powerWidth end
-            drawTextStroke(vg, scx + DT_SLOT_SIZE * 0.45, scy + DT_SLOT_SIZE * 0.15,
-                powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, 244, 237, 224, 3)
+            if powerWidth + powerIconSize + powerGap > powerMaxWidth and powerWidth > 0 then
+                powerFont = powerFont * (powerMaxWidth - powerIconSize - powerGap) / powerWidth
+            end
+            nvgFontSize(vg, powerFont)
+            powerWidth = nvgTextBounds(vg, 0, 0, powerText) or 0
+            drawTextStroke(vg, rightX, powerY,
+                powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+            DarkIcon.draw(vg, "power", rightX - powerWidth - powerGap - powerIconSize * 0.5,
+                powerY, powerIconSize, 1.0)
 
             local slotEnhLv = equippedEquip and EquipmentSystem.getAscendLevel(equippedEquip) or 0
             if slotEnhLv > 0 then

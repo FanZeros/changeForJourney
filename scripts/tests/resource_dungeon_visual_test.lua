@@ -880,9 +880,9 @@ end
 local function layoutCases()
     local c=newContext(); local d=c.prepareDialog(); local saved=copy(c.memory); openMain(c)
     check(textAt(c,"选择关卡",540,732),"实际标题未上移")
-    check(textAt(c,"主线",150,782) and textAt(c,"副本",250,782),"tab文本真实新中心")
+    check(textAt(c,"主线",150,814) and textAt(c,"副本",250,814),"tab文本真实新中心")
     local tabShapes=0
-    for _,v in ipairs(c.calls) do if v.kind=="fill" and v.shape.y==759 and v.shape.w==90 and v.shape.h==46 then
+    for _,v in ipairs(c.calls) do if v.kind=="fill" and v.shape.y==791 and v.shape.w==90 and v.shape.h==46 then
         check(v.shape.x==105 or v.shape.x==205,"tab新90x46矩形"); tabShapes=tabShapes+1 end end
     eq(tabShapes,2,"两新tab形状")
     local bs=banners(c); eq(#bs,7,"主线可见7章")
@@ -894,15 +894,15 @@ local function layoutCases()
         local n=#c.events; d.handleInput(p[1],p[2]); c.draw(); eq(#c.events,n,"旧tabs/右栏新同行空白不响应")
         eq(banners(c)[1].paint.path,bs[1].paint.path,"旧tab不能切分类"); check(d.isOpen(),"旧tab点不关闭")
     end
-    for _,x in ipairs({205,250,295}) do for _,y in ipairs({759,782,805}) do
-        d.handleInput(150,782); d.handleInput(x,y); c.draw(); eq(c.events[#c.events],"stage_sel_section","副本tab端点热区")
+    for _,x in ipairs({205,250,295}) do for _,y in ipairs({791,814,837}) do
+        d.handleInput(150,814); d.handleInput(x,y); c.draw(); eq(c.events[#c.events],"stage_sel_section","副本tab端点热区")
         eq(banners(c)[1].paint.path,PATHS.gold_mine,"新副本tab实际切分类")
     end end
-    for _,x in ipairs({105,150,195}) do for _,y in ipairs({759,782,805}) do
-        d.handleInput(250,782); d.handleInput(x,y); c.draw(); eq(banners(c)[1].paint.path,bs[1].paint.path,"主线tab端点热区")
+    for _,x in ipairs({105,150,195}) do for _,y in ipairs({791,814,837}) do
+        d.handleInput(250,814); d.handleInput(x,y); c.draw(); eq(banners(c)[1].paint.path,bs[1].paint.path,"主线tab端点热区")
     end end
-    for _,p in ipairs({{204.999,782},{295.001,782},{250,758.999},{250,805.001},{200,782}}) do
-        d.handleInput(150,782); local n=#c.events; d.handleInput(p[1],p[2]); eq(#c.events,n,"tab边外0.001/gap不响应")
+    for _,p in ipairs({{204.999,814},{295.001,814},{250,790.999},{250,837.001},{200,814}}) do
+        d.handleInput(150,814); local n=#c.events; d.handleInput(p[1],p[2]); eq(#c.events,n,"tab边外0.001/gap不响应")
     end
     eq(#c.selections,0,"查看tabs不跳主线/副本关"); eq(#c.towerSelections,0,"不碰tower"); idle(c,saved)
 end
@@ -1162,7 +1162,7 @@ local function continuousRowCases()
     check(#before>0,"横拖前真实draw存在")
     zd.handleInput(200,1002); zd.handleScroll(-2,340,900); z.draw(); check(textAt(z,"1-3",331,818),"装备独立150步纵scroll")
     zd.handleInput(200,1190); z.draw(); check(textAt(z,"1-3",331,824),"切回塔保留自身纵scroll")
-    zd.handleInput(150,782); z.draw(); zd.handleInput(250,782); z.draw()
+    zd.handleInput(150,814); z.draw(); zd.handleInput(250,814); z.draw()
     check(textAt(z,"1-3",331,824),"主线副本tabs切回塔仍保留纵scroll")
     zd.handleInput(200,1002); z.draw(); check(textAt(z,"1-3",331,818),"装备scroll不被塔/tabs覆盖")
     zd.handleInput(200,1190); zd.handleScroll(-999,340,900); z.draw(); currentRow(z,112)
@@ -1405,7 +1405,7 @@ function Start()
         reviewVG=assert(nvgCreate(1)); check(nvgCreateFont(reviewVG,"sans","Fonts/MiSans-Regular.ttf")>=0,"真实字体")
         reviewContext=newContext(false,true,reviewVG); local d=reviewContext.prepareDialog()
         if REVIEW=="main" then d.open(1)
-        elseif REVIEW=="resources" then d.open(1); d.handleInput(250,782)
+        elseif REVIEW=="resources" then d.open(1); d.handleInput(250,814)
         else d.openDungeon(1,({gold="gold_mine",equipment="equipment_vault",diamond="black_diamond",tower="babel_tower"})[REVIEW]) end
         reviewContext.clock.elapsedTime=101
         SubscribeToEvent(reviewVG,"NanoVGRender","HandleResourceDungeonVisualReview")

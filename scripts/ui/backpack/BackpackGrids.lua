@@ -229,18 +229,27 @@ function M.bind(deps)
                     nvgText(vg, lvlX, lvlY, lvlText, nil)
                 end
 
-                -- 单件贡献位于等级上方，保留右下等级及左下套装徽记占位。
+                -- 单件贡献用战力图标加数值显示，等级与套装徽记仍保留原位。
                 do
-                    local powerText = "战力 " .. tostring(equip.power or 0)
+                    local powerText = tostring(equip.power or 0)
                     local powerFont = 26
+                    local powerIconSize, powerGap = 24, 4
+                    local rightX = cx + GRID.CELL_SIZE * 0.45
+                    local powerY = cy + GRID.CELL_SIZE * 0.15
                     nvgFontFace(vg, "sans")
                     nvgFontSize(vg, powerFont)
                     local textW = nvgTextBounds(vg, 0, 0, powerText) or 0
                     local maxW = GRID.CELL_SIZE * 0.62
-                    if textW > maxW then powerFont = powerFont * maxW / textW end
-                    DrawUtil.drawTextStroke(vg, cx + GRID.CELL_SIZE * 0.45, cy + GRID.CELL_SIZE * 0.15,
-                        powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM,
+                    if textW + powerIconSize + powerGap > maxW and textW > 0 then
+                        powerFont = powerFont * (maxW - powerIconSize - powerGap) / textW
+                    end
+                    nvgFontSize(vg, powerFont)
+                    textW = nvgTextBounds(vg, 0, 0, powerText) or 0
+                    DrawUtil.drawTextStroke(vg, rightX, powerY,
+                        powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
                         244, 237, 224, 3)
+                    DarkIcon.draw(vg, "power", rightX - textW - powerGap - powerIconSize * 0.5,
+                        powerY, powerIconSize, 1.0)
                 end
 
                 if equip.enhanceLevel and equip.enhanceLevel > 0 then

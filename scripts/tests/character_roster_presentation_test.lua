@@ -154,6 +154,10 @@ local function setupFixture()
             fixture.targets[key] = {cx=cx,cy=cy,w=w,h=h,panel=panel}
         end,
     }
+    env.nvgGlobalAlpha = function(ctx, alpha)
+        nvgGlobalAlpha(ctx, alpha)
+        fixture.currentAlpha = alpha
+    end
     env.nvgCreateImage = function(ctx, path, flags)
         local handle = nvgCreateImage(ctx, path, flags)
         fixture.imageCreates = fixture.imageCreates + 1
@@ -194,7 +198,9 @@ local function setupFixture()
             local draw = mod.draw
             mod.draw = function(ctx, opts)
                 draw(ctx, opts) -- actual HeroFrame draw; options only recorded AFTER real rendering
-                fixture.frameCalls[#fixture.frameCalls + 1] = copy(opts)
+                local record = copy(opts)
+                record.observedAlpha = fixture.currentAlpha
+                fixture.frameCalls[#fixture.frameCalls + 1] = record
             end
         elseif name == "core.DrawUtil" then
             local draw = mod.drawTextStroke
@@ -238,6 +244,7 @@ local function setupFixture()
 end
 
 local function captureStart()
+    fixture.currentAlpha = 1
     fixture.captures, fixture.frameCalls, fixture.textCalls, fixture.strokes, fixture.targets = {}, {}, {}, {}, {}
 end
 local function actualDraw(detailOpen)
@@ -608,6 +615,110 @@ local function runActualGeometry()
     end)
 end
 
+local function runVisibleRoster()
+    case("large-roster-visible-range-original-culling-geometry", function()
+        restoreBase();fixture.presentation.reset();fixture.i18n.set("zh_CN")
+        local D = fixture.draw
+        local originalRoster, originalPowers = fixture.roster, fixture.powers
+        local cfgReads = 0
+        -- 只给私有Draw模块注入真实HC转发器，统计配置读取；不修改全局HC或图元。
+        fixture.modules["config.HeroConfig"] = setmetatable({ get = function(id)
+            cfgReads = cfgReads + 1
+            return fixture.HC.get(id)
+        end }, { __index = fixture.HC })
+        local previousDraw = D
+        D = assert(load(readSource("ui/character/panel/CharacterPanelDraw2.lua"), "@visible-roster/Draw2", "t", fixture.env))()
+        local function upvalue(fn, key)
+            for i=1,100 do local name,value=debug.getupvalue(fn,i);if not name then break end
+                if name==key then return value end
+            end
+            error("missing production upvalue " .. key)
+        end
+        -- 复用已经注入的真实宿主函数和已初始化图像，只重新装载私有Draw实现。
+        D.setContext({
+            getTeamSlots=upvalue(previousDraw.draw,"getTeamSlots"),
+            getHeroRoster=upvalue(previousDraw.draw,"getHeroRoster"),
+            getSlotPowerCache=upvalue(previousDraw.draw,"getSlotPowerCache"),
+            getRosterPowerCache=upvalue(previousDraw.draw,"getRosterPowerCache"),
+            getDragState=upvalue(previousDraw.draw,"getDragState"),
+            getSelectSlotState=upvalue(previousDraw.draw,"getSelectSlotState"),
+            getHeroDeployTeams=upvalue(previousDraw.draw,"getHeroDeployTeams"),
+            getUpgradeBadgeCache=upvalue(previousDraw.draw,"getUpgradeBadgeCache"),
+            getActiveTeamIdx=function() return fixture.active end,
+            getUnlockedTeamCount=function() return fixture.unlocked end,
+            getTeamOccupiedCounts=function() return {3,2,1} end,
+            getTeams=function() return fixture.teams end,
+            getTeamPowerCaches=function() return fixture.teamPowers end,
+            getTeamTotalPower=function(t) return fixture.totals[t] end,
+            getRosterSort=function() return fixture.mode,fixture.ascending end,
+            isHeroesDataApplied=function() return fixture.ready end,
+        })
+        D.initImages(vg)
+        for _,count in ipairs({0,1,4,6,25,1003}) do
+            fixture.roster,fixture.powers={},{}
+            for i=1,count do
+                local source=originalRoster[((i-1)%#originalRoster)+1]
+                fixture.roster[i]=copy(source);fixture.powers[i]=originalPowers[((i-1)%#originalPowers)+1]
+            end
+            local maxScroll=math.max(0,D.ROW1_CY+(math.ceil(count/5)-1)*D.ROW_SPACING+D.ROSTER_BOTTOM_DY-D.SCROLL_BOTTOM)
+            local edge=D.ROW1_CY+D.ROW_SPACING+D.ROSTER_BOTTOM_DY-D.SCROLL_TOP
+            for _,scroll in ipairs({-400,0,77.25,edge-.001,edge,edge+.001,maxScroll*.5,maxScroll,maxScroll+2000}) do
+                local expected={}
+                for i=1,count do
+                    local row=math.ceil(i/D.MAX_PER_ROW)
+                    local cy=D.ROW1_CY+(row-1)*D.ROW_SPACING-scroll
+                    if cy+D.ROSTER_BOTTOM_DY>=D.SCROLL_TOP and cy-D.ROSTER_ICON*.5<=D.SCROLL_BOTTOM then
+                        expected[#expected+1]={index=i,cy=cy,row=row}
+                    end
+                end
+                local first,last=D.getVisibleRosterRange(count,scroll)
+                for _,item in ipairs(expected) do check(item.index>=first and item.index<=last,"range includes original visible boundary "..count.."/"..scroll) end
+                check(last-first+1<=45,"range candidate cost bounded independently of roster size "..count)
+                captureStart();cfgReads=0
+                D.draw(vg,scroll,false)
+                local frames={}
+                for _,frame in ipairs(fixture.frameCalls) do if frame.nameLabel then frames[#frames+1]=frame end end
+                eq(#frames,#expected,"actual Draw matches original culling count "..count.."/"..scroll)
+                check(cfgReads<=65,"actual HC reads bounded by visible candidates plus fixed avatars "..count)
+                for i,item in ipairs(expected) do
+                    local frame=frames[i]
+                    if frame then
+                        local rowCount=math.min(item.row*5,count)-(item.row-1)*5
+                        local total=rowCount*D.ROSTER_ICON+(rowCount-1)*24
+                        local col=item.index-(item.row-1)*5
+                        local cx=(D.DESIGN_W-total)*.5+D.ROSTER_ICON*.5+(col-1)*(D.ROSTER_ICON+24)
+                        eq(frame.heroId,fixture.roster[item.index].heroId,"visible original index/order preserved")
+                        near(frame.cx,cx,"partial final row original centered x")
+                        near(frame.cy,item.cy,"visible original scroll y")
+                        local fade = math.max(0, math.min(1, (item.cy+D.ROSTER_ICON*.5-D.SCROLL_TOP)/D.ROSTER_ICON))
+                        near(frame.observedAlpha,fade,"visible original edge fade")
+                    end
+                end
+            end
+        end
+        -- 使用末尾唯一hero25，证明源在视口外时浮动拖拽卡仍显示。
+        for i=1,#fixture.roster do fixture.roster[i].heroId = i==#fixture.roster and 25 or 1 end
+        fixture.drag={active=true,heroId=25,cx=540,cy=500}
+        captureStart();D.draw(vg,0,true)
+        local floating=false
+        for _,frame in ipairs(fixture.frameCalls) do
+            if frame.heroId==25 and not frame.nameLabel and frame.alpha==.92 then floating=true end
+        end
+        check(floating,"offscreen drag source retains independent floating card under detail-open")
+        local lastScroll=math.max(0,D.ROW1_CY+(math.ceil(#fixture.roster/5)-1)*D.ROW_SPACING+D.ROSTER_BOTTOM_DY-D.SCROLL_BOTTOM)
+        captureStart();D.draw(vg,lastScroll,false)
+        local sourceVisible=false
+        for _,frame in ipairs(fixture.frameCalls) do
+            if frame.heroId==25 and frame.nameLabel and frame.dragSource then sourceVisible=true end
+        end
+        check(sourceVisible,"visible source retains original dragSource dimming")
+        check(fixture.targets.character_new_hero~=nil,"visible final-row new hero retains tutorial hotspot")
+        fixture.drag={active=false};fixture.roster,fixture.powers=originalRoster,originalPowers
+        fixture.modules["config.HeroConfig"]=nil
+        fixture.presentation.reset();actualDraw();assertUnchanged("visible-range fixture restored")
+    end)
+end
+
 local function verifyReleased(label)
     for index,root in ipairs(roots) do
         local record=rootSeen[root]
@@ -654,7 +765,8 @@ local function runStage()
     elseif stage==11 then runInteractions()
     elseif stage==12 then runObservation()
     elseif stage==13 then runActualGeometry()
-    elseif stage==14 then runLifecycle() end
+    elseif stage==14 then runVisibleRoster()
+    elseif stage==15 then runLifecycle() end
 end
 local function setupVisual()
     fixture.i18n.set(state.language);fixture.mode,fixture.ascending="power",false
@@ -728,7 +840,7 @@ function HandleRosterPresentationRender(_eventType,_eventData)
         if not ended then check(false,"actual EndFrame "..tostring(frameErr)) end
     end
     if not ok then check(false,"actual frame "..tostring(err)) end
-    if not ok or (state.visual and state.frames>=150) or (not state.visual and state.stage>=14) then summarize() end
+    if not ok or (state.visual and state.frames>=150) or (not state.visual and state.stage>=15) then summarize() end
 end
 
 function Stop()

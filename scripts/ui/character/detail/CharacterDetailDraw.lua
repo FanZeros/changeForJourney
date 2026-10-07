@@ -344,7 +344,10 @@ local getOwnedData      = nil   -- function(heroId) → ownData or nil
 local calcHeroPowerFn   = nil   -- function(heroId) → number
 local calcHeroEstimateFn = nil  -- function(heroId) → number 实战预估（分项计价原型）
 local CharacterDetailRef = nil  -- CharacterDetail 模块引用（访问 _hasUpgradeForSlot 等）
-local collectAttributes = nil   -- DetailAttrs.collectAttributes
+---@type function|nil
+local collectAttributes = nil -- 保留注入/恢复边界，预览与测试可使用独立collector
+---@type function|nil
+local collectPresentation = nil -- setContext创建宿主私有缓存；模块加载不运行属性管线
 local clampAttrScroll   = nil   -- 限制属性滚动
 
 -- 实战预估副行开关：默认关闭。原型口径（systems/CombatPowerEstimate.lua），
@@ -432,6 +435,7 @@ function M.setContext(ctx)
     calcHeroEstimateFn  = ctx.calcHeroEstimate
     CharacterDetailRef = ctx.CharacterDetail
     collectAttributes = ctx.collectAttributes
+    collectPresentation = nil -- 只有属性分支才需要展示缓存（配装宿主不初始化属性依赖）
     clampAttrScroll   = ctx.clampAttrScroll
     -- 共享图片
     imgHeroCards   = ctx.imgHeroCards   or {}
@@ -1113,27 +1117,8 @@ function M.draw(vg)
     -- ===                  属性区域（左列列表 / 右侧雷达）          ===
     -- ================================================================
 
-    local attrData = collectAttributes(heroId, heroCfg, heroLevel)
-    local leftAttrs  = attrData.left
-    local rightAttrs = attrData.right
-    -- 防御属性在前，攻击和额外属性接在后面，同一列滚动。
-    local attrRows = {}
-    for i = 1, #leftAttrs do
-        attrRows[#attrRows + 1] = leftAttrs[i]
-    end
-    for i = 1, #rightAttrs do
-        attrRows[#attrRows + 1] = rightAttrs[i]
-    end
-    -- 按重要程度稳定排序（未列出的属性保持原相对顺序，排在最后）
-    local orderIdx = DetailAttrs.displayOrderIndex()
-    for i, row in ipairs(attrRows) do row._origIdx = i end
-    table.sort(attrRows, function(a, b)
-        local oa = orderIdx[a.key] or 9999
-        local ob = orderIdx[b.key] or 9999
-        if oa ~= ob then return oa < ob end
-        return (a._origIdx or 0) < (b._origIdx or 0)
-    end)
-    for _, row in ipairs(attrRows) do row._origIdx = nil end
+    if not collectPresentation then collectPresentation = DetailAttrs.createPresentationCache(collectAttributes) end
+    local attrData, attrRows = collectPresentation(heroId, heroCfg, heroLevel)
     detailState.cachedLeft = attrRows
     detailState.cachedRight = {}
     local maxScroll, hits = M.drawAttributeRows(vg, attrRows,

@@ -619,10 +619,22 @@ end
 
 -- ======================== 绘制主函数 ========================
 
---- 绘制角色面板（编队槽位 + 角色列表）
---- CharacterDetail.draw() 由 CharacterPanel 在调用本函数之后单独调用
----@param vg any NanoVG 上下文
----@param scrollY number 当前滚动偏移
+-- 原剔除条件为 cardBottom >= TOP 且 cardTop <= BOTTOM；两端各保留一行
+-- 数值边界余量，最终仍使用原判断。总底框/最后行居中/拖拽浮层不依赖此范围。
+---@param rosterCount integer
+---@param scrollY number
+---@return integer first
+---@return integer last
+function M.getVisibleRosterRange(rosterCount, scrollY)
+    local firstRow = math.max(1, math.ceil((SCROLL_TOP - ROSTER_BOTTOM_DY + scrollY - ROW1_CY) / ROW_SPACING))
+    local lastRow = math.floor((SCROLL_BOTTOM + ROSTER_ICON * 0.5 + scrollY - ROW1_CY) / ROW_SPACING) + 2
+    return math.max(1, (firstRow - 1) * MAX_PER_ROW + 1), math.min(rosterCount, lastRow * MAX_PER_ROW)
+end
+
+--- 绘制角色面板；详情仍由宿主随后覆盖，浮动拖拽仍在裁剪外绘制。
+---@param vg any
+---@param scrollY number
+---@param detailOpen boolean
 function M.draw(vg, scrollY, detailOpen)
     local teamSlots       = getTeamSlots()
     local heroRoster      = getHeroRoster()
@@ -689,7 +701,8 @@ function M.draw(vg, scrollY, detailOpen)
         nvgStrokeWidth(vg, 2)
         nvgStroke(vg)
     end
-    for idx = 1, rosterCount do
+    local firstVisible, lastVisible = M.getVisibleRosterRange(rosterCount, scrollY)
+    for idx = firstVisible, lastVisible do
         local entry = heroRoster[idx]
         local heroCfg = HC.get(entry.heroId)
         if not heroCfg then goto continueRoster end

@@ -22,7 +22,7 @@ function Start()
             session = { introCompleted = true, initialHeroId = 1, claimedScenarios = {} },
             player = {}, heroes = { roster = {} },
         }
-        local notices, flushes, firstCalls = 0, 0, 0
+        local notices, flushes, firstCalls, requests = 0, 0, 0, 0
         local disk = {}
         local mocks = {}
         local function noop() end
@@ -107,6 +107,9 @@ function Start()
         mocks["boot.StandaloneSave"] = { Flush = function()
             flushes = flushes + 1
             return Save.Flush()
+        end, RequestSave = function()
+            requests = requests + 1
+            Save.RequestSave()
         end }
         local Story = compile("systems.StoryPlayer")
         mocks["systems.StoryPlayer"] = Story
@@ -149,7 +152,10 @@ function Start()
         Page.gotoTeamStage(3, 2504)
         while Story.take() do end
         Entries.reset()
+        local beforeMoveFlush, beforeMoveRequest = flushes, requests
         check(Page.gotoTeamStage(2, 204), "二队可手动进入已解锁关卡")
+        check(flushes == beforeMoveFlush and requests == beforeMoveRequest + 1,
+            "普通换关只请求保存，不在交互帧全量写盘")
         local story = Story.take()
         check(story and story.scenarioId == 41 and Story.take() == nil, "二队手动换关触发真实入关剧情41一次")
         local beforeFlush = flushes
@@ -193,7 +199,10 @@ function Start()
         modules.session.introCompleted = true
         Entries.reset()
         drivers[2]:start(205)
+        local beforeRetreatFlush, beforeRetreatRequest = flushes, requests
         drivers[2]:retreatStage()
+        check(flushes == beforeRetreatFlush and requests == beforeRetreatRequest + 2,
+            "退关两个保存入口都只合并请求，不重复写盘")
         check(drivers[2].stageId == 204 and modules.battle.teamStageIds["2"] == 204,
             "二队失败退关也保存实际当前关")
         story = Story.take()

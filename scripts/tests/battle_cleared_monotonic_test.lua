@@ -144,6 +144,8 @@ function Start()
             deps["ui.battle.scene.BattleDataRestore"] = compile("ui.battle.scene.BattleDataRestore")
             deps["ui.battle.stage.BattleStageNavLogic"] = compile("ui.battle.stage.BattleStageNavLogic")
             deps["ui.battle.stage.BattleStageLoad"] = compile("ui.battle.stage.BattleStageLoad")
+            deps["ui.battle.tri.BattleTriStageProgress"] = compile("ui.battle.tri.BattleTriStageProgress")
+            deps["ui.battle.tri.TerminalSceneFlow"] = compile("ui.battle.tri.TerminalSceneFlow")
             deps["ui.battle.scene.BattleScene"] = compile("ui.battle.scene.BattleScene")
             ctx.scene = deps["ui.battle.scene.BattleScene"]
             local realRestore = ctx.scene.setBattleData
@@ -172,7 +174,11 @@ function Start()
             ctx.page = deps["ui.battle.tri.BattleTriPage"]
             -- 使用真实采集器；只替换落盘出口，不以手抄快照掩盖永久账本回归。
             deps["boot.StandaloneSave"] = compile("boot.StandaloneSave")
-            deps["boot.StandaloneSave"].Flush = function() ctx.flushes = ctx.flushes + 1; return true end
+            deps["boot.StandaloneSave"].Flush = function()
+                ctx.flushes = ctx.flushes + 1
+                ctx.lastSavedGold = ctx.wallet.gold
+                return true
+            end
             deps["boot.StandaloneSave"].SetBattlePage(ctx.page)
             -- 先提供真实 Page 再让 Boot 接线，首通与击杀/掉落出口均使用现有接口。
             deps["boot.StandaloneBoot"] = compile("boot.StandaloneBoot")
@@ -185,6 +191,7 @@ function Start()
             ctx.page.open()
             env.BattleScene, env.ClientDispatcher, env.cjson = ctx.scene, ctx.dispatcher, cjson
             env.StandaloneSave, env.StageConfig, env.bootReady_ = deps["boot.StandaloneSave"], SC, true
+            env.StandaloneRT, env.BattleTriPage = {}, ctx.page
             local sync = assert(load(syncSource .. "\nreturn SyncBattleState", "@正式B01/SyncBattleState", "t", env))()
             local publish = ctx.dispatcher.publishLive
             ctx.dispatcher.publishLive = function(name, snapshot)
@@ -193,6 +200,29 @@ function Start()
             end
             ctx.sync = sync
             ctx.battle = function() return ctx.dispatcher.get("battle") end
+            ctx.enqueueEquipment = function()
+                local sequence = {}
+                deps["systems.DropSystem"].rollKillDrop = function() sequence[#sequence + 1] = "kill"; return 1 end
+                deps["systems.DropSystem"].generateFirstClearEquips = function()
+                    sequence[#sequence + 1] = "first"
+                    return { { templateId = "W1", quality = 1, level = 1 } }
+                end
+                deps["systems.EquipmentSystem"].generateRandom = function()
+                    sequence[#sequence + 1] = "pending"
+                    return { templateId = "O1", quality = 1, level = 1 }
+                end
+                deps["systems.LootBoxSystem"].deliverEquipment = function(_, _, item)
+                    sequence[#sequence + 1] = "deliver:" .. item.templateId
+                    return "inventory"
+                end
+                -- 经真实 Driver 注入回调进入首通暂存，不手抄暂存奖励逻辑。
+                local driver = assert(ctx.drivers[1])
+                driver.onDrop({ stageId = 34505, teamIdx = 1, dropOnly = true, dropLuck = 0 })
+                local notifications = {}
+                ctx.dispatcher.subscribe("equipment", function() notifications.equipment = (notifications.equipment or 0) + 1 end)
+                ctx.dispatcher.subscribe("lootbox", function() notifications.lootbox = (notifications.lootbox or 0) + 1 end)
+                return sequence, notifications
+            end
             ctx.win = function(team, id)
                 local driver = assert(ctx.drivers[team], "队伍未解锁")
                 driver:start(id)
@@ -226,7 +256,9 @@ function Start()
             local label = "34505首通队" .. firstTeam
             local ctx = newProcess(seeded(34505, 34505))
             eq(SC.getNextStageId(34505), nil, label .. " 正式配置没有后继")
+            local beforeFirstFlush = ctx.flushes
             ctx.win(firstTeam, 34505)
+            eq(ctx.flushes - beforeFirstFlush, 1, label .. " 账本和奖励只同步提交一次")
             eq(ctx.firstCalls, 1, label .. " 首次回调1")
             eq(ctx.wallet.gold, SC.getStage(34505).fcGold, label .. " 首次金币86300")
             dualMark(ctx, 34505, label .. " 首胜")
@@ -235,7 +267,9 @@ function Start()
             check(ctx.syncCalls > 0 and ctx.restoreCalls == restoreBefore, label .. " 真Sync/publishLive已执行且不回灌活战斗")
             dualMark(ctx, 34505, label .. " 六秒同步后")
             local gold, exp, gems, calls = ctx.wallet.gold, ctx.wallet.exp, ctx.wallet.gems, ctx.firstCalls
+            local beforeRepeatFlush = ctx.flushes
             ctx.win(firstTeam, 34505)
+            eq(ctx.flushes, beforeRepeatFlush, label .. " 重复挂机通关不即时全量写盘")
             print(PREFIX .. "EVIDENCE " .. label .. " gold=" .. gold .. "->" .. ctx.wallet.gold
                 .. " exp=" .. exp .. "->" .. ctx.wallet.exp .. " gems=" .. gems .. "->" .. ctx.wallet.gems)
             eq(ctx.firstCalls, calls, label .. " 再胜回调增量0")
@@ -250,6 +284,27 @@ function Start()
             eq(ctx.battle().sentinel.value, "保留非进度字段", label .. " 嵌套非进度字段未丢")
             ctx.page.close()
         end
+
+        local rewards = newProcess(seeded(34505, 34505))
+        local sequence, notifications = rewards.enqueueEquipment()
+        rewards.win(1, 34505)
+        eq(table.concat(sequence, ","), "kill,first,deliver:W1,pending,deliver:O1",
+            "固定与暂存装备生成投递顺序保持")
+        eq(notifications.equipment, 1, "同次首通两个装备来源只刷新装备一次")
+        eq(notifications.lootbox, 1, "同次首通两个装备来源只刷新遗匣一次")
+        local equipmentRewards = {}
+        for _, item in ipairs(rewards.popups[#rewards.popups].rewards) do
+            if item.type == "equip" then equipmentRewards[#equipmentRewards + 1] = item.templateId end
+        end
+        eq(table.concat(equipmentRewards, ","), "W1,O1", "奖励显示顺序和完整装备来源保持")
+        rewards.page.close()
+
+        local single = newProcess(seeded(34505, 34505))
+        local beforeSingleFlush = single.flushes
+        single.scene.onFirstClear(34505)
+        eq(single.flushes - beforeSingleFlush, 1, "默认单队首通保留一次即时提交")
+        eq(single.lastSavedGold, SC.getStage(34505).fcGold, "默认单队在奖励到账之后提交")
+        single.page.close()
 
         -- JSON模拟进程重启，不能只复用旧Scene账本或引用复制。
         local first = newProcess(seeded(34505, 34505))

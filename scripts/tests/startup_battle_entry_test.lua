@@ -72,7 +72,8 @@ local function fixture(options)
     if options.maxStage == 101 then modules.battle.clearedStages = {} end
     local counts = { starts = 0, updates = 0, images = 0, pumps = 0, calc = 0,
         shown = 0, flush = 0, reconcile = 0, checked = 0, starter = 0, random = 0,
-        mutations = 0, claims = 0, readonly = 0, tick = 0, firstStage = 0 }
+        mutations = 0, claims = 0, readonly = 0, tick = 0, firstStage = 0, inventoryScans = 0,
+        saveRequests = 0 }
     local trace, drivers, loaded, loading, sources, images, cardHandles = {}, {}, {}, {}, {}, {}, {}
     local clock = { elapsedTime = 100 }
     local controls = { imageFailure = nil, failPrepare = false, failClaim = false, failFirstStage = false,
@@ -188,6 +189,7 @@ local function fixture(options)
     mocks["core.GameState"] = { getLevel = function() return 100 end, reset = noop }
     mocks["runtime.ClientDispatcher"] = { get = function(key) return modules[key] end,
         subscribe = noop, notifySubscribers = noop, hasData = function() return false end,
+        publishLive = function(key, value) modules[key] = value end,
         handleStateUpdate = function(json)
             local input = cjson.decode(json)
             for key, value in pairs(input.modules) do modules[key] = value end
@@ -216,7 +218,10 @@ local function fixture(options)
     for _, name in ipairs({ "CharacterDeploy", "CharacterInput", "CharacterProgress" }) do
         mocks["ui.character.panel." .. name] = { bind = function() return {} end }
     end
-    mocks["systems.EquipmentSystem"] = { isInventoryFull = function() return false end }
+    mocks["systems.EquipmentSystem"] = { isInventoryFull = function()
+        counts.inventoryScans = counts.inventoryScans + 1
+        return false
+    end }
     mocks["systems.ArtifactBridge"] = { applyToUnit = function() return {} end }
     mocks["systems.LootBoxSystem"] = {}
     local Scene = passive()
@@ -257,7 +262,15 @@ local function fixture(options)
         end }
     mocks["rules.offline.OfflineService"] = Service
     local Save = { SetBattlePage = noop, RestoreData = noop, ApplyBattleProgress = noop, Update = noop,
+        CaptureBattleProgress = function(battle)
+            -- 此入口夹具只隔离持久化；新增同步专项在下方加载真实 Capture。
+            local candidate = {}
+            for key, value in pairs(battle) do candidate[key] = value end
+            return candidate
+        end,
         Flush = function() counts.flush = counts.flush + 1; record("flush") end,
+        -- 普通进度请求不等于提交；保留独立计数和 nil 返回，不冒充同步Flush。
+        RequestSave = function() counts.saveRequests = counts.saveRequests + 1; record("save-request") end,
         ReconcileOfflineBoundary = function() counts.reconcile = counts.reconcile + 1; record("reconcile") end,
         OfflineChecked = function() counts.checked = counts.checked + 1; record("checked") end }
     mocks["boot.StandaloneSave"] = Save
@@ -368,6 +381,7 @@ local function fixture(options)
         ["ui.character.panel.CharacterRosterSort"] = true,
         ["systems.AttributeDef"] = true, ["systems.UnitAttributes"] = true, ["systems.BattleTimeout"] = true,
         ["systems.TalentEffect"] = true, ["core.BattleLayout"] = true,
+        ["shared.battle.BattleSchema"] = true,
         ["core.NumberUtil"] = true, ["core.EventBus"] = true, ["shared.heroes.HeroResonance"] = true }
     env.require = function(name)
         if mocks[name] then return mocks[name] end
@@ -560,8 +574,272 @@ local function drain(f, limit)
     return pumps
 end
 
+-- 同步/红点专项不依赖开场教程夹具：抽取完整生产闭包与真实 Capture/Schema，
+-- 只把模块数据、三队读口和红点显示接到内存；禁止 File/RNG/驱动回灌。
+local function progressFixture()
+    ---@type table
+    local state = { modules = { battle = { currentStageId = 201, maxStageId = 2001,
+        teamStageIds = { ["1"] = 201, ["2"] = 305, ["3"] = 401 },
+        clearedStages = { ["905"] = true, ["1905"] = true }, battleMode = "idle",
+        idleAccumSec = 17, effWindow = { gold = 3 }, custom = { keep = true } },
+        equipment = { inventory = {}, equipped = {}, nextSeq = 1 } },
+        liveMax = 2001, liveLedger = { [905] = true, [1905] = true },
+        teams = { 201, 305, 401 }, revision = 1,
+        counts = { capture = 0, publish = 0, sort = 0, scans = 0, visits = 0,
+            smith = 0, decompose = 0, forbidden = 0 } }
+    ---@type table
+    local env = setmetatable({}, { __index = _G })
+    env._G = env
+    local function forbidden()
+        state.counts.forbidden = state.counts.forbidden + 1
+        error("进度/红点专项禁止玩家IO、RNG、奖励或驱动回灌")
+    end
+    env.File, env.io, env.fileSystem = forbidden, nil,
+        { FileExists = forbidden, Rename = forbidden, Delete = forbidden }
+    env.math = setmetatable({ random = forbidden, randomseed = forbidden }, { __index = math })
+    env.table = setmetatable({ sort = function(...)
+        state.counts.sort = state.counts.sort + 1
+        return table.sort(...)
+    end }, { __index = table })
+    env.bootReady_, env.StandaloneRT = true, {}
+    env.BattleScene = { getMaxStageId = function() return state.liveMax end,
+        getClearedStages = function() return state.liveLedger end,
+        setBattleData = forbidden, reloadStage = forbidden, setAllies = forbidden }
+    env.BattleTriPage = { getTeamStageIds = function() return state.teams end,
+        setTeamStageIds = forbidden, open = forbidden, update = forbidden }
+    env.ClientDispatcher = { get = function(key) return state.modules[key] end,
+        publishLive = function(key, data)
+            assert(key == "battle")
+            state.counts.publish = state.counts.publish + 1
+            state.modules[key] = data
+        end }
+    env.PlayerStore = { GetRevision = function(key)
+        assert(key == "equipment"); return state.revision
+    end }
+    env.TownScene = { setSmithRedDot = function(value)
+        state.smith = value; state.counts.smith = state.counts.smith + 1
+    end }
+    env.BlacksmithPage = { setDecomposeRedDot = function(value)
+        state.decompose = value; state.counts.decompose = state.counts.decompose + 1
+    end }
+    ---@type table
+    local schema = {}
+    env.require = function(name)
+        if name == "shared.battle.BattleSchema" then return schema end
+        assert(name:match("^config%."), "未声明进度专项依赖 " .. name)
+        return require(name)
+    end
+    env.StageConfig = require("config.StageConfig")
+    schema = assert(load(source("shared/battle/BattleSchema.lua"), "@badge-real/BattleSchema", "t", env))()
+    env.BattleSchema = schema
+    local captureText = section(source("boot/StandaloneSave.lua"),
+        "function StandaloneSave.CaptureBattleProgress(battle)", "local SAVE_FILE")
+    env.StandaloneSave, env.battlePage = {}, env.BattleTriPage
+    assert(load(captureText, "@badge-real/StandaloneSave.CaptureBattleProgress", "t", env))()
+    local realCapture = env.StandaloneSave.CaptureBattleProgress
+    state.oracle = realCapture
+    env.StandaloneSave.CaptureBattleProgress = function(battle)
+        state.counts.capture = state.counts.capture + 1
+        return realCapture(battle)
+    end
+    -- 容量算法也使用生产原文；只spy计数，不改真实数量语义。
+    env.EquipmentSystem = { MAX_INVENTORY = 200 }
+    local countText = section(source("systems/EquipmentSystem.lua"),
+        "function EquipmentSystem.getInventoryCount(equipData)", "--- 向玩家背包添加装备")
+    assert(load(countText, "@badge-real/EquipmentSystem.inventory-count", "t", env))()
+    local realCount = env.EquipmentSystem.getInventoryCount
+    env.EquipmentSystem.getInventoryCount = function(equipment)
+        state.counts.scans = state.counts.scans + 1
+        local count = realCount(equipment)
+        state.counts.visits = state.counts.visits + count
+        return count
+    end
+    local host = source("boot/Standalone.lua")
+    local block = section(host, "local battleSync =", "local physW")
+    state.sync, state.badges = assert(load(block
+        .. "\nreturn SyncBattleState, updateInventoryBadges", "@badge-real/Standalone.progress", "t", env))()
+    state.env, state.host, state.eq = env, host, env.EquipmentSystem
+    return state
+end
+
 function Start()
     local originalRequire, originalImage, originalFile = require, nvgCreateImage, File
+    scenario("稳态进度线性比较无排序或Capture", function()
+        local f = progressFixture()
+        f.liveLedger, f.modules.battle.clearedStages = {}, {}
+        for id = 1, 1000 do
+            f.liveLedger[id], f.modules.battle.clearedStages[tostring(id)] = true, true
+        end
+        f.sync(0.99)
+        check(f.counts.capture == 0 and f.counts.publish == 0, "不足一秒不采集/发布")
+        f.sync(0.02)
+        check(f.counts.capture == 1 and f.counts.publish == 1, "首轮仅一次真实Capture及发布")
+        local battle, ledger, teams = f.modules.battle, f.modules.battle.clearedStages, f.modules.battle.teamStageIds
+        local window, custom = battle.effWindow, battle.custom
+        battle.idleAccumSec, window.gold, custom.keep = 99, 7, "new"
+        for _ = 1, 180 do f.sync(1.01) end
+        check(f.counts.capture == 1 and f.counts.publish == 1 and f.counts.sort == 0,
+            "1000条账本180次稳态同步：排序0，额外Capture/发布0")
+        check(f.modules.battle == battle and battle.clearedStages == ledger and battle.teamStageIds == teams
+            and battle.effWindow == window and battle.custom == custom and battle.idleAccumSec == 99
+            and window.gold == 7 and custom.keep == "new", "稳态保引用及非进度原地更新")
+        -- 等数量替换击穿只计数/只看表引用的错误去重。
+        f.liveLedger[1000], ledger["1000"] = nil, nil
+        f.liveLedger[5001], ledger["5001"] = true, true
+        f.sync(1.01)
+        check(f.counts.capture == 2 and f.counts.publish == 2 and f.modules.battle.clearedStages["5001"] == true
+            and f.modules.battle.clearedStages["1000"] == nil, "同引用同数量不同键仍精确检测")
+        check(f.modules.battle.effWindow == window and f.modules.battle.custom == custom
+            and f.modules.battle.idleAccumSec == 99, "进度发布保留最新非进度数据及嵌套引用")
+        check(f.counts.forbidden == 0, "同步没有RNG/IO/驱动回灌")
+        local beforeRepair = f.counts.publish
+        f.modules.battle.maxStageId = 101
+        f.sync(1.01)
+        check(f.modules.battle.maxStageId == f.liveMax and f.counts.publish == beforeRepair + 1,
+            "仅保存最高关回退也发布修复，通知驱动的解锁缓存不留在旧值")
+        f.sync(1.01)
+        check(f.counts.publish == beforeRepair + 1, "最高关修复后重新进入无额外发布稳态")
+    end)
+    scenario("永久账本双源互补及严格键值", function()
+        local f = progressFixture()
+        f.liveLedger = { [905] = true, ["905"] = false, ["1905"] = true,
+            [0] = true, [-2] = true, [1.5] = true, ["bad"] = true,
+            ["inf"] = true, [true] = true, ["99"] = 1, ["100"] = "true" }
+        f.modules.battle.clearedStages = { ["905"] = true, ["2305"] = true, ["1905"] = false }
+        f.sync(1)
+        check(same(f.modules.battle.clearedStages, { ["905"] = true, ["1905"] = true, ["2305"] = true }),
+            "双键false不能擦掉true，仅正整数严格true保留")
+        check(f.liveLedger[2305] == true and f.liveLedger[905] == true, "saved独有事实补回原场景账本")
+        f.liveLedger[2305] = nil
+        local count = f.counts.publish
+        f.sync(1)
+        check(f.liveLedger[2305] == true and f.counts.publish == count + 1,
+            "单源删除仍从另一源修复并发布，不丢永久事实")
+        local battle = f.modules.battle
+        f.liveLedger[2305], battle.clearedStages["2305"] = nil, nil
+        f.sync(1)
+        check(f.modules.battle.clearedStages["2305"] == nil, "两源明确删除不从比较缓存复活")
+        f.liveLedger, f.liveMax, f.teams = {}, 101, { 101, 101, 101 }
+        f.modules.battle = { currentStageId = 101, maxStageId = 101, clearedStages = {},
+            teamStageIds = { ["1"] = 101, ["2"] = 101, ["3"] = 101 }, custom = { reset = true } }
+        f.sync(1)
+        check(next(f.modules.battle.clearedStages) == nil and f.modules.battle.maxStageId == 101
+            and f.modules.battle.custom.reset == true, "两源及max明确重置允许清档，不回借旧账本")
+        check(f.counts.sort == 0 and f.counts.forbidden == 0, "脏键/互补/清档没有排序、随机或驱动变更")
+    end)
+    scenario("三队进度及终焉沿真实Schema/Capture", function()
+        local f = progressFixture()
+        local SC = f.env.StageConfig
+        f.liveMax, f.teams = SC.TERMINAL_NORMAL, { SC.TERMINAL_NORMAL, 305, 401 }
+        f.modules.battle.maxStageId = SC.getTerminalPrevStageId(SC.TERMINAL_NORMAL)
+        local expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected) and f.modules.battle.teamStageIds["1"] == SC.TERMINAL_NORMAL,
+            "终焉rank超过普通末关；实时规范不作读档退关")
+        local count = f.counts.capture
+        f.sync(1)
+        check(f.counts.capture == count, "终焉稳态不重复Capture")
+        f.modules.battle.maxStageId = SC.HARD_FIRST_STAGE
+        expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected) and f.modules.battle.maxStageId == SC.HARD_FIRST_STAGE,
+            "saved已跨难度时不被旧终焉max覆盖")
+        f.teams[2] = 306
+        expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected), "非法关卡三队位置严格沿真实Schema规范")
+        count = f.counts.capture
+        f.sync(1)
+        check(f.counts.capture == count, "无效live队位置规范结果相同时不反复采集")
+        f.teams[2] = 305
+        f.modules.battle.currentStageId = 101
+        expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected) and f.modules.battle.currentStageId == SC.TERMINAL_NORMAL,
+            "进度签名不变也修复模块current与真实一队位置不一致")
+        f.teams[3] = 305
+        expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected) and f.modules.battle.teamStageIds["3"] == 305,
+            "真实三队同表位置变化立即发布，不借缓存队表")
+        f.teams = nil
+        f.modules.battle.teamStageIds["2"] = 401
+        expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected), "无live三队表时仍沿原存档侧线口径")
+        f.modules.battle.teamCurrentStageIds = { ["1"] = 305 }
+        expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected) and f.modules.battle.teamCurrentStageIds == nil,
+            "旧侧线字段迁移保留真实Schema语义")
+        f.teams = { 101, 305, 401 }
+        f.liveMax, f.liveLedger = 101, {}
+        f.modules.battle = { currentStageId = 101, maxStageId = 101, clearedStages = {},
+            teamStageIds = { ["1"] = 101, ["2"] = 305, ["3"] = 401 }, autoBattle = false }
+        expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected) and f.modules.battle.teamStageIds["2"] == 101
+            and f.modules.battle.teamStageIds["3"] == 101 and f.modules.battle.autoBattle == false,
+            "未解锁侧线沿真实Schema回初关且保非进度false字段")
+        count = f.counts.capture
+        f.sync(1)
+        check(f.counts.capture == count, "未解锁live队保持旧位置也不反复Capture")
+        f.env.StandaloneRT.entryPreparing = true
+        count = f.counts.capture
+        f.sync(5)
+        f.env.StandaloneRT.entryPreparing = false
+        f.env.bootReady_ = false
+        f.sync(5)
+        check(f.counts.capture == count and f.counts.forbidden == 0, "准备/Stop门控不采集，不操作活驱动")
+    end)
+    scenario("红点revision/引用即时失效与半秒兜底", function()
+        local f = progressFixture()
+        local inventory = f.modules.equipment.inventory
+        for id = 1, 199 do inventory[tostring(id)] = { seq = id } end
+        f.badges(0)
+        check(not f.smith and not f.decompose and f.counts.scans == 1, "199件首轮真实计数，两红点关闭")
+        for _ = 1, 120 do f.badges(1 / 60) end
+        check(f.counts.scans <= 5 and f.counts.visits <= 5 * 199
+            and f.counts.smith == 121 and f.counts.decompose == 121,
+            "120稳态帧至多5次计数，仍每帧同步两显示标志")
+        inventory["200"] = { seq = 200 }; f.revision = f.revision + 1
+        f.badges(0)
+        check(f.smith and f.decompose, "同引用新增第200件通知立即显示满包")
+        inventory["200"] = nil; f.revision = f.revision + 1
+        f.badges(0)
+        check(not f.smith and not f.decompose, "同引用删除通知立即取消红点")
+        inventory["200"] = { seq = 200 }
+        f.badges(0.49)
+        check(not f.smith and f.eq.isInventoryFull(f.modules.equipment),
+            "未通知patch允许UI短缓存，但真实投递容量马上看见200件")
+        f.badges(0.02)
+        check(f.smith and f.decompose, "未通知原地新增至多约半秒恢复红点")
+        inventory["200"] = nil
+        f.badges(0.51)
+        check(not f.smith and not f.decompose, "未通知原地删除半秒内恢复")
+        local scans = f.counts.scans
+        f.modules.equipment = { inventory = inventory }
+        f.badges(0)
+        check(f.counts.scans == scans + 1, "相同inventory和revision的模块替换也立即刷新")
+        local full = {}
+        for id = 1, 200 do full[tostring(id)] = {} end
+        f.modules.equipment.inventory = full
+        f.badges(0)
+        check(f.smith and f.decompose, "同模块替换inventory引用即时失效")
+        f.modules.equipment = nil
+        f.badges(0)
+        check(not f.smith and not f.decompose, "模块缺失即清红点不访问nil库存")
+        f.modules.equipment = { inventory = {} }
+        f.badges(0)
+        check(not f.smith and not f.decompose and f.counts.forbidden == 0,
+            "清档空库存不借旧红点，不碰随机/奖励/文件")
+        f.env.PlayerStore.GetRevision = nil
+        f.modules.equipment.inventory = full
+        f.badges(0)
+        check(f.smith and f.decompose, "无revision旧宿主仍按引用及半秒兜底")
+        check(f.host:find("    updateInventoryBadges(dt)", 1, true) ~= nil,
+            "完整HandleUpdate实际调用共享红点缓存，不只验证孤立helper")
+    end)
     scenario("旧档三队准备", function()
         local f = fixture()
         f.tri.setBattleReady(false)
@@ -608,7 +886,14 @@ function Start()
             "旧离线参数/奖励逐字段原样透传")
         setvalue(f.env.HandleUpdate, "postStartFlowDone_", true)
         local frozen, starts = f.snapshot(), f.counts.starts
-        for _ = 1, 40 do f.step() end
+        for frame = 1, 40 do
+            f.step()
+            if frame == 1 then
+                check(f.counts.inventoryScans == 1, "首个完整HandleUpdate实际走红点缓存，首轮只计数一次")
+            end
+        end
+        check(f.counts.inventoryScans == 2,
+            "离线待领仍更新UI：40个16ms帧精确首扫一次加半秒兜底一次")
         check(f.counts.updates == 0 and f.counts.tick == 0 and f.counts.pumps == 0
             and same(f.snapshot(), frozen), "离线pending40帧不tick真实driver/单Scene/全图鉴")
         check(f.counts.starts == starts and f.counts.calc == 1 and f.counts.shown == 1,
@@ -622,6 +907,8 @@ function Start()
             "成功原onClaim回执才Flush")
         f.step()
         check(f.counts.updates == 3 and f.counts.pumps == 0, "领取后才恢复三队update，无后台大图pump")
+        check(f.counts.inventoryScans == 2,
+            "领取后同库存16ms帧未到兜底期限，不额外全量计数")
         local entries = f.trace(); local calcIndex, renderIndex = 0, 0
         for index, name in ipairs(entries) do
             if name == "render-finish" then renderIndex = index elseif name == "calc" then calcIndex = index end

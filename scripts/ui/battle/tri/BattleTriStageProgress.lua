@@ -71,7 +71,13 @@ function M.complete(scene, stageId, teamIdx, setMaxStage)
     if not wasCleared then scene.onFirstClear(id, teamIdx) end
     if type(battle) == "table" then
         ClientDispatcher.notifySubscribers("battle")
-        require("boot.StandaloneSave").Flush()
+        local save = require("boot.StandaloneSave")
+        if not wasCleared then
+            -- 首次结账保持同步保存；重复挂机通关仅合并普通进度请求。
+            save.Flush()
+        else
+            save.RequestSave()
+        end
     end
     return not wasCleared
 end

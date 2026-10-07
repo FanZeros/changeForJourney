@@ -508,6 +508,7 @@ function Start()
                 end
                 local finishCalls = 0
                 local bossRefs, allBosses = {}, {}
+                patch(BattleScene, "updateTriReincarnation", function() return true end)
                 patch(BattleScene, "completeTriTerminal", function()
                     finishCalls = finishCalls + 1
                     local allOnce, eventCount = #allBosses == 9, 0
@@ -564,7 +565,8 @@ function Start()
                         if events[boss] ~= 1 then allOnce = false end
                         eventCount = eventCount + (events[boss] or 0)
                     end
-                    check(drivers[row].terminalRaid == nil, "胜利真实宿主解除共享池绑定，队" .. row)
+                    check(drivers[row].terminalRaid == raid and drivers[row].stageId == SC.TERMINAL_NORMAL,
+                        "胜利真实宿主保留共享池待轮回，队" .. row)
                 end
                 check(noFakeSource and actualSources, "同步死亡不伪造六个未命中实例杀手，三次实杀保留末击源")
                 check(allOnce and eventCount == 9, "九个死亡事件总数恰好9，不因三次跨线扫描重复")

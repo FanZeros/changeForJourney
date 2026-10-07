@@ -111,6 +111,13 @@ function Start()
             for _, source in ipairs(letterSources) do
                 check(Story.lookup(source, lang) ~= nil, lang .. "当前信件12行")
             end
+            -- 正式配置源文更名后不能漏同步完整词条，只遍历词典捕获不到这种遗漏。
+            for _, step in ipairs({ Config.SCENARIO_8.steps[1], Config.SCENARIO_8.steps[2],
+                Config.SCENARIO_10.steps[1], Config.SCENARIO_20.steps[1], Config.SCENARIO_21.steps[1] }) do
+                local translated = Story.lookup(step.text, lang)
+                check(translated ~= nil and Display.text(step.text) == translated,
+                    lang .. "真实关卡战报源文与译文匹配")
+            end
             local text = Display.text(Config.OPENING.steps[1].text)
             local rows = Display.layoutText(nil, text, 70, 16)
             local rebuilt = {}

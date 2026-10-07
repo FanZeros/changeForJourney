@@ -46,6 +46,7 @@ local entryPreparation = require("ui.battle.tri.BattleEntryPreparation").new()
 ---@type table<number|string, number>|nil
 local restoredStageIds = nil
 local terminalRaid = nil
+local applyingTerminalDestination = false
 local l1Images = {}       -- 同一路径共用句柄，切场景不删除其他行仍在使用的贴图
 local l1Failures = {}     -- 加载失败只提示一次，后续帧仍允许重试
 local l1RowImages = {}    -- 跨章图尚未就绪时保留本行最近成功加载的背景
@@ -216,6 +217,8 @@ local function ensureDrivers()
                 end
             end
             drv.onStageChanged = function(teamIdx, stageId)
+                -- 轮回三队事务最后统一写目标；队1进场不能先保存队2/3的旧末关。
+                if applyingTerminalDestination then return end
                 -- 关卡到达才记录当前关；重开同关/改编队不重复通知。
                 local battle = ClientDispatcher.get("battle")
                 if type(battle) == "table" then
@@ -349,32 +352,27 @@ end
 
 local function finishTerminalRaid(won)
     local raid = terminalRaid
-    if not raid then return end
+    if not raid or raid.settlementStarted then return end
     local stageId = raid.stageId
-    clearTerminalRaid()
+    raid.settlementStarted = true
     local BattleScene = require("ui.battle.scene.BattleScene")
-    local destination = won and StageConfig.getReincarnationTarget(StageConfig.getDifficulty(stageId))
-        or StageConfig.getTerminalPrevStageId(stageId)
-    -- 首通/轮回回调可能立即保存，先为三队预约同一退出关卡。
-    for _, drv in pairs(drivers) do drv.pendingStageId = destination or stageId end
     if won then
-        settleRaidKillRewards(raid)
-        BattleScene.completeTriTerminal(stageId)
-    else
-        local previous = StageConfig.getTerminalPrevStageId(stageId)
-        BattleScene.adoptStageProgress(previous)
-        BattleTriPage.gotoTeamStage(1, previous)
-        -- 进终焉时导航被锁定（NavLogic gotoStage），失败退回必须解锁
-        require("ui.hud.BottomNav").setAllLocked(false)
-        require("systems.GameBGM").setScene("battle")
+        require("ui.battle.tri.TerminalReincarnation").settleVictory(raid, drivers, settleRaidKillRewards, BattleScene)
+        return
     end
-    for row = 2, COL_COUNT do
-        if drivers[row] then
-            drivers[row]:start(won and (StageConfig.getReincarnationTarget(StageConfig.getDifficulty(stageId)) or stageId)
-                or (StageConfig.getTerminalPrevStageId(stageId) or stageId))
-        end
-    end
-    print(string.format("[BattleTriPage] 终焉%s，三队协同结束 stage=%d", won and "胜利" or "失败", stageId))
+    clearTerminalRaid()
+    require("ui.battle.tri.TerminalReincarnation").retreat(raid, drivers,
+        StageConfig.getTerminalPrevStageId(stageId), BattleScene, BattleTriPage.gotoTeamStage)
+end
+
+--- 只由完成/skip动画出口调用，三队实际进场后由Scene统一持久化。
+function BattleTriPage.completeTerminalReincarnation(stageId)
+    if not terminalRaid or not terminalRaid.won or not terminalRaid.settlementStarted then return false end
+    clearTerminalRaid()
+    entryPreparation.invalidate()
+    require("ui.battle.tri.TerminalReincarnation").enterTeams(drivers, stageId,
+        function(value) applyingTerminalDestination = value end)
+    return true
 end
 
 --- 打开三行战斗（懒建驱动器；已解锁队伍自动开战）
@@ -560,6 +558,7 @@ function BattleTriPage.update(dt)
     local logicDt = BattleTriPage.getBattleLogicDt(dt)
     -- 帧开始仍在任一有效战线入场时，全协同只推进视觉，不推进攻击或共享限时。
     local raidAtFrameStart = terminalRaid
+    local waitingReincarnation = raidAtFrameStart and raidAtFrameStart.settlementStarted and raidAtFrameStart.won
     local raidClockActive = false
     if raidAtFrameStart and not raidAtFrameStart.finished then
         local introPending = false
@@ -577,6 +576,10 @@ function BattleTriPage.update(dt)
     for t = 1, math.min(COL_COUNT, unlocked) do
         local drv = drivers[t]
         if drv then drv:update(dt, logicDt) end
+    end
+    if waitingReincarnation then
+        require("ui.battle.scene.BattleScene").updateTriReincarnation(dt)
+        return
     end
     if terminalRaid and not terminalRaid.finished then
         if terminalRaid == raidAtFrameStart and raidClockActive then
@@ -1448,22 +1451,11 @@ end
 
 --- 放弃旧协同，不分发死亡事件，不通过正常收尾/奖励结算路径。
 local function discardTerminalRaid()
-    if not terminalRaid then return end
-    terminalRaid:release()
-    for _, drv in pairs(drivers) do drv.terminalRaid = nil end
+    require("ui.battle.tri.TerminalReincarnation").discardRaid(terminalRaid, drivers)
     terminalRaid = nil
 end
 
-local function discardDriver(drv)
-    drv.active = false
-    drv.pendingKills, drv.rewardQueue = {}, {}
-    drv.rewardTimer, drv.pendingStageId = 0, nil
-    drv.psState.projectiles, drv.combatState.comboQueue = {}, {}
-    drv.onKill, drv.onDrop, drv.onStageCleared, drv.onStageChanged, drv.onAllDead = nil, nil, nil, nil, nil
-    drv:activate()
-    RCH.reset()
-    require("systems.ArtifactRuntime").reset(drv.allies)
-end
+local discardDriver = require("ui.battle.tri.TerminalReincarnation").discardDriver
 
 --- 只在真实恢复时回灌，周期同步必须仅采集；接受数组或规范字符串键表。
 ---@param stageIds table<number|string, number>
@@ -1477,6 +1469,7 @@ function BattleTriPage.setTeamStageIds(stageIds)
             and (StageConfig.getTerminalPrevStageId(id) or StageConfig.NORMAL_FIRST_STAGE) or id
     end
     -- 旧单位、掉落与共享绑定均属于旧读档上下文；新阵容齐备后才由ensureDrivers重建。
+    require("ui.battle.scene.BattleScene").cancelTriReincarnation()
     entryPreparation.invalidate()
     discardTerminalRaid()
     for _, drv in pairs(drivers) do discardDriver(drv) end
@@ -1488,6 +1481,7 @@ end
 --- 清档公开出口：不得让旧raid在清理时结算奖，也不能保留驱动或恢复进度。
 function BattleTriPage.resetToDefault()
     battleReady, isOpen_ = false, false
+    require("ui.battle.scene.BattleScene").cancelTriReincarnation()
     entryPreparation.invalidate()
     discardTerminalRaid()
     for _, drv in pairs(drivers) do discardDriver(drv) end
@@ -1499,6 +1493,7 @@ end
 -- 更新/绘制/选关/恢复临时借用各战线，正常及异常出口均恢复调用方挂载。
 BattleMountScope.wrap(BattleTriPage, {
     "open", "prepareEntry", "update", "draw", "gotoTeamStage", "setTeamStageIds", "resetToDefault", "handleInput",
+    "completeTerminalReincarnation",
 }, false)
 
 return BattleTriPage

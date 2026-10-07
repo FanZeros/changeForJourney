@@ -166,8 +166,8 @@ ScenarioDialogueConfig.SCENARIO_7 = {
 ScenarioDialogueConfig.SCENARIO_8 = {
     mode = "small",
     steps = {
-        { characterId = 1, name = "大狗嚼", text = "嘶——山膏的爪子是真疼！毛都拍乱了！没事！狗子抗造！叫！" },
-        { characterId = 1, name = "大狗嚼", text = "咦？！硬铁重衣！穿上它，山膏再挠就纯属给我按摩了！我穿我穿！远征长帮我扣扣子！" },
+        { characterId = 1, name = "大狗嚼", text = "嘶——天狗的爪子是真疼！毛都拍乱了！没事！狗子抗造！叫！" },
+        { characterId = 1, name = "大狗嚼", text = "咦？！硬铁重衣！穿上它，天狗再挠就纯属给我按摩了！我穿我穿！远征长帮我扣扣子！" },
     },
     rewards = {
         { type = "equip", templateId = "A25", quality = 2, level = 1 },
@@ -192,7 +192,7 @@ ScenarioDialogueConfig.SCENARIO_9 = {
 ScenarioDialogueConfig.SCENARIO_10 = {
     mode = "small",
     steps = {
-        { characterId = 3, name = "叮咚鸡", text = "叮咚~战报：遭遇豪彘，毫毛带电，手臂轻微刮伤。防护等级不足，需升级。" },
+        { characterId = 3, name = "叮咚鸡", text = "叮咚~战报：遭遇酸与，利爪来袭，手臂轻微刮伤。防护等级不足，需升级。" },
         { characterId = 3, name = "叮咚鸡", text = "叮咚~装备通知：拾取鳞甲一件，外观破损，防护合格。已着装。勿视，影响作战形象。" },
     },
     rewards = {
@@ -302,7 +302,7 @@ ScenarioDialogueConfig.SCENARIO_20 = {
     mode = "large",
     background = "image/关卡地图/MAP_1.png",
     steps = {
-        { characterId = 1, name = "大狗嚼", text = "呼——毕方的火是真烫！毛都烤酥了！不过没掉毛，整体打满分！叫！" },
+        { characterId = 1, name = "大狗嚼", text = "呼——雷神的雷是真猛！毛都电竖了！不过没掉毛，整体打满分！叫！" },
         { characterId = 1, name = "大狗嚼", text = "闻到了！前面就是城镇！有烤肉味！……啊不对，是文明的味道！远征长，进城逛逛！" },
     },
 }
@@ -313,7 +313,7 @@ ScenarioDialogueConfig.SCENARIO_21 = {
     mode = "large",
     background = "image/关卡地图/MAP_1.png",
     steps = {
-        { characterId = 2, name = "黄桃龙", text = "成功了！黄桃龙把金乌都打下来了！远征长快夸我！夸完请吃饭！" },
+        { characterId = 2, name = "黄桃龙", text = "成功了！黄桃龙打败雷神了！远征长快夸我！夸完请吃饭！" },
         { characterId = 2, name = "黄桃龙", text = "好累呀……前面就是城镇了吧！听说镇上有卖黄桃罐头的！要去要去！现在就去！" },
     },
 }

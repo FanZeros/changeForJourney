@@ -469,9 +469,9 @@ local function openTestPage(env)
     patch(BS, "gotoStage", function(id) stage = id; return true end)
     patch(BS, "completeTriTerminal", function()
         observations.victories = observations.victories + 1
-        stage = SC.getReincarnationTarget(SC.getDifficulty(TERMINAL))
-        return true
+        return true -- 胜利只结账，生产Scene保持终焉直到动画完成。
     end)
+    patch(BS, "updateTriReincarnation", function() return true end)
     patch(require("ui.story.gate.LetterIntro"), "isOpen", function() return false end)
     patch(require("ui.story.gate.IntroCutscene"), "isActive", function() return false end)
     patch(require("ui.story.ScenarioDialogue"), "isActive", function() return false end)
@@ -618,10 +618,17 @@ local function testPageImmediateVictoryAndRewards()
             "仅 lines[row][row] 的实际奖励入账，队" .. row)
         check(reward and #reward.heroIds == 1 and reward.heroIds[1] == drivers[row].allies[1].heroId,
             "奖励经验名单只取对应队存活英雄，队" .. row)
-        check(drivers[row].terminalRaid == nil, "胜利当帧解除共享绑定，队" .. row)
+        check(drivers[row].terminalRaid == raid and drivers[row].stageId == TERMINAL
+            and drivers[row].pendingStageId == nil, "胜利保持终焉且无目标预约，队" .. row)
     end
     Page.update(0)
     check(observed.victories == 1 and #observed.rewards == 3, "胜利后再次 Page.update 不重复完成或奖励")
+    local target = SC.getReincarnationTarget(SC.getDifficulty(TERMINAL))
+    check(Page.completeTerminalReincarnation(target), "动画完成出口统一三队进场")
+    for row = 1, 3 do
+        check(drivers[row].terminalRaid == nil and drivers[row].stageId == target,
+            "动画结束才解绑并进入目标，队" .. row)
+    end
 end
 
 -- 图形/SFX/时钟只是叶子 spy；Page、RewardPopup、Cascade、BattleView、
@@ -800,36 +807,250 @@ local function testPageTerminalDraw()
     end
 end
 
--- 保留原有 completeTriTerminal 基线：真实轮回推进、存档镜像、首通去重。
--- 隔离 BattleScene 私有进度和持久化边界，不写玩家真实存档。
-local function testCompleteTriTerminal()
-    local BattleScene = compileModule("ui.battle.scene.BattleScene")
+-- 真正Scene/Nav/三队/Story/Intro与保存快照串联；IO仅采集JSON，不读写玩家档。
+local function terminalFlowFixture(stageId)
+    local deps, state = {}, { reward = false, pendingReward = false, tutorial = false,
+        recovery = false, dialogue = false, starts = 0, snapshots = {}, arrivals = {}, kills = {} }
+    local env = setmetatable({}, { __index = _G })
+    env.require = function(name) return deps[name] or require(name) end
+    local battle = { currentStageId = SC.getTerminalPrevStageId(stageId), maxStageId = SC.getTerminalPrevStageId(stageId),
+        clearedStages = { [tostring(SC.getTerminalPrevStageId(stageId))] = true } }
+    local session = { introCompleted = true, initialHeroId = 1, claimedScenarios = {} }
     local Dispatcher = require("runtime.ClientDispatcher")
-    local battle = { clearedStages = {} }
     local oldGet = Dispatcher.get
-    patch(Dispatcher, "get", function(key) if key == "battle" then return battle end; return oldGet(key) end)
-    patch(require("boot.StandaloneSave"), "Flush", function() end)
-    patch(require("ui.hud.BottomNav"), "setAllLocked", function() end)
+    patch(Dispatcher, "get", function(name)
+        if name == "battle" then return battle end
+        if name == "session" then return session end
+        return oldGet(name)
+    end)
+    deps["ui.hud.popup.RewardPopup"] = { isOpen = function() return state.reward end,
+        hasPendingBattleRewards = function() return state.pendingReward end,
+        currentRowTag = function() return nil end,
+        show = function() state.reward = true end }
+    deps["ui.tutorial.TutorialPageRecovery"] = { isPendingStoryBlocked = function() return state.recovery end }
+    deps["systems.TutorialManager"] = { canPlayPendingStory = function() return not state.tutorial end }
+    deps["ui.story.ScenarioDialogue"] = { isActive = function() return state.dialogue end }
+    deps["ui.story.gate.LetterIntro"] = { isOpen = function() return false end }
+    deps["systems.StoryPlayer"] = compileModule("systems.StoryPlayer", env)
+    local Story = deps["systems.StoryPlayer"]
+    local Scene = compileModule("ui.battle.scene.BattleScene", env)
+    deps["ui.battle.scene.BattleScene"] = Scene
+    deps["ui.battle.tri.TerminalSceneFlow"] = compileModule("ui.battle.tri.TerminalSceneFlow", env)
+    deps["ui.battle.tri.BattleTriStageProgress"] = compileModule("ui.battle.tri.BattleTriStageProgress", env)
+    local Page = compileModule("ui.battle.tri.BattleTriPage", env)
+    deps["ui.battle.tri.BattleTriPage"] = Page
+    deps["ui.battle.tri.TerminalReincarnation"] = compileModule("ui.battle.tri.TerminalReincarnation", env)
+    local Save = compileModule("boot.StandaloneSave", env)
+    deps["boot.StandaloneSave"] = Save
+    Save.SetBattlePage(Page)
+    Save.Flush = function()
+        local snapshot = Save.CaptureBattleProgress(battle)
+        state.snapshots[#state.snapshots + 1] = cjson.decode(cjson.encode(snapshot))
+        return true
+    end
+    -- NavLogic/Driver底层模块仍引用真实保存单例，在边界统一替为同一采集函数。
+    patch(require("boot.StandaloneSave"), "Flush", Save.Flush)
+    patch(require("ui.hud.BottomNav"), "setAllLocked", function(locked) state.locked = locked end)
     patch(require("systems.GameBGM"), "setScene", function() end)
-    local targetId = SC.getReincarnationTarget(SC.getDifficulty(TERMINAL))
-    check(targetId ~= nil, "轮回目标关存在")
-    local fcCalls = {}
-    BattleScene.setOnFirstClear(function(id) fcCalls[#fcCalls + 1] = id end)
-    defer(function() BattleScene.setOnFirstClear(nil) end)
-    local lastStage = SC.getTerminalPrevStageId(TERMINAL)
-    BattleScene.adoptStageProgress(lastStage)
-    BattleScene.getClearedStages()[lastStage] = true
-    BattleScene.adoptStageProgress(TERMINAL)
-    check(BattleScene.getStageId() == TERMINAL, "主线已停在终焉关")
-    check(BattleScene.completeTriTerminal(TERMINAL) == true, "completeTriTerminal 成功")
-    check(BattleScene.getStageId() == targetId and BattleScene.getMaxStageId() >= targetId, "胜利推进轮回目标并覆盖 maxStage")
-    check(BattleScene.getClearedStages()[TERMINAL] == true and battle.clearedStages[tostring(TERMINAL)] == true,
-        "终焉已通关同时写内存进度和隔离存档镜像")
-    check(#fcCalls == 1 and fcCalls[1] == TERMINAL, "首通回调恰好一次")
-    BattleScene.adoptStageProgress(TERMINAL)
-    check(BattleScene.completeTriTerminal(TERMINAL) == true and BattleScene.getStageId() == targetId, "重复通关仍可轮回")
-    check(#fcCalls == 1, "重复通关不重复首通奖励")
+    patch(require("ui.battle.stage.StageEntryEvents"), "notify", function(id, team)
+        state.arrivals[#state.arrivals + 1] = { id = id, team = team }
+        Story.onStage(id, "enter")
+        return true
+    end)
+    patch(require("ui.battle.stage.StageEntryEvents"), "retry", function() end)
+    local introEnv = setmetatable({ require = env.require, cache = { GetResource = function() return nil end } }, { __index = _G })
+    local Intro = compileModule("ui.story.gate.IntroCutscene", introEnv)
+    deps["ui.story.gate.IntroCutscene"] = Intro
+    local sourceFile = assert(cache:GetFile("boot/StandaloneBoot.lua"))
+    local lines = {}
+    while not sourceFile:IsEof() do lines[#lines + 1] = sourceFile:ReadLine() end
+    sourceFile:Dispose()
+    local source = table.concat(lines, "\n")
+    local first = assert(source:find("    BattleScene.setOnReincarnate(function(data)", 1, true))
+    local last = assert(source:find("\n    -- 5.25 首通奖励", first, true))
+    local wiringEnv = setmetatable({ BattleScene = Scene, IntroCutscene = Intro }, { __index = _G })
+    local oldIntroStart = Intro.start
+    Intro.start = function(cb) state.starts = state.starts + 1; oldIntroStart(cb) end
+    assert(load(source:sub(first, last - 1), "@真实StandaloneBoot轮回闭包", "t", wiringEnv))()
+    -- 首通闭包完整运行，仅奖励生成/页面显示等叶子是替身，真实关卡配置与Story保留。
+    first = assert(source:find("    BattleScene.setOnFirstClear(function(clearedStageId, teamIdx)", 1, true))
+    last = assert(source:find("\n    -- 5.3 初始阵容", first, true))
+    local values = {}
+    local GS = setmetatable({}, { __index = function(_, key)
+        if key:sub(1, 3) == "get" then return function() return values[key:sub(4)] or 0 end end
+        if key:sub(1, 3) == "set" then return function(value) values[key:sub(4)] = value end end
+        if key == "addExp" then return function(value) values.Exp = (values.Exp or 0) + value end end
+    end })
+    local rewardEnv = setmetatable({ require = env.require, StageConfig = SC, BattleScene = Scene,
+        ClientDispatcher = Dispatcher, GameState = GS, RewardPopup = deps["ui.hud.popup.RewardPopup"],
+        DropSystem = { generateFirstClearEquips = function() return {} end, generateFirstClearScrolls = function() return nil end },
+        LootBoxSystem = {}, takePendingFcRewards = function() return {} end, showKeptDrops = function() end }, { __index = _G })
+    assert(load(source:sub(first, last - 1), "@真实StandaloneBoot首通闭包", "t", rewardEnv))()
+    -- completeTriTerminal调内部callback；以Story队列及经验叶子检查实际首通执行次数。
+    state.values = values
+    local CP = require("ui.character.panel.CharacterPanel")
+    patch(CP, "getDeployedTeam", function(row) return { assert(HC.createHero(row, 1)) } end)
+    patch(CP, "getTeamSignature", function(row) return "terminal-flow-" .. row end)
+    patch(require("config.ExpTable"), "getUnlockedTeamCount", function() return 3 end)
+    local drivers = {}
+    local oldNew = Driver.new
+    patch(Driver, "new", function(row, opts) local drv = oldNew(row, opts); drivers[row] = drv; return drv end)
+    Scene.adoptStageProgress(battle.currentStageId)
+    Scene.getClearedStages()[battle.currentStageId] = true
+    Scene.adoptStageProgress(stageId)
+    Page.setOnKill(function(data) state.kills[#state.kills + 1] = data end)
+    Page.open()
+    for _, drv in ipairs(drivers) do drv.introTimer = 0 end
+    state.snapshots, state.arrivals = {}, {} -- 入终焉的真实通知已排61/68，不算目标通知。
+    local raid = assert(drivers[1].terminalRaid)
+    local function finishRaid()
+        for index = 1, 3 do
+            local enemy = raid.lines[1][index]
+            clearShield(enemy)
+            enemy.attrs:takeDamage(raid.pools[index].maxHp * 100)
+        end
+        Page.update(0)
+    end
+    -- 只读编译正式SyncBattleState和正式live发布/路由，验证末关快照不回灌运行态终焉。
+    local standaloneFile = assert(cache:GetFile("boot/Standalone.lua"))
+    local standaloneLines = {}
+    while not standaloneFile:IsEof() do standaloneLines[#standaloneLines + 1] = standaloneFile:ReadLine() end
+    standaloneFile:Dispose()
+    local standaloneSource = table.concat(standaloneLines, "\n")
+    local syncFirst = assert(standaloneSource:find("local battleSync =", 1, true))
+    local syncLast = assert(standaloneSource:find("\nlocal physW, physH", syncFirst, true))
+    local liveDispatcher = compileModule("runtime.ClientDispatcher", env)
+    liveDispatcher.set("battle", battle, { normalized = true })
+    local routes = { restored = 0 }
+    local router = { onBattleDataUpdate = function(data) routes.restored = routes.restored + 1; Scene.setBattleData(data) end }
+    local handlerFile = assert(cache:GetFile("runtime/ClientMessageHandler.lua"))
+    local handlerLines = {}
+    while not handlerFile:IsEof() do handlerLines[#handlerLines + 1] = handlerFile:ReadLine() end
+    handlerFile:Dispose()
+    local handlerSource = table.concat(handlerLines, "\n")
+    local routerFirst = assert(handlerSource:find(" function M.setupDataSubscriptions()", 1, true))
+    local routerLast = assert(handlerSource:find("\n --= 网络事件处理", routerFirst, true))
+    local routerEnv = setmetatable({ M = router, ClientDispatcher = liveDispatcher }, { __index = _G })
+    assert(load(handlerSource:sub(routerFirst, routerLast - 1), "@真实live回灌路由", "t", routerEnv))()
+    router.setupDataSubscriptions()
+    local syncEnv = setmetatable({ bootReady_ = true, StandaloneRT = {}, StageConfig = SC,
+        BattleScene = Scene, StandaloneSave = Save, ClientDispatcher = liveDispatcher }, { __index = _G })
+    local sync = assert(load(standaloneSource:sub(syncFirst, syncLast - 1) .. "\nreturn SyncBattleState",
+        "@真实SyncBattleState", "t", syncEnv))()
+    local function syncBattle()
+        sync(1.1)
+        battle = liveDispatcher.get("battle")
+        check(routes.restored == 0, "正式publishLive及ClientMessageHandler不走末关回灌")
+        check(Scene.getStageId() == stageId and drivers[1].stageId == stageId,
+            "周期SyncBattleState保留运行态队1终焉，不被末关快照拉走")
+        check(battle.currentStageId == SC.getTerminalPrevStageId(stageId)
+            and battle.maxStageId >= SC.getReincarnationTarget(SC.getDifficulty(stageId)), "周期同步保留末关策略及目标解锁")
+    end
+    defer(function() Intro.reset(); Page.resetToDefault() end)
+    return { scene = Scene, page = Page, story = Story, intro = Intro, save = Save, battle = battle,
+        session = session, drivers = drivers, raid = raid, state = state, finishRaid = finishRaid, syncBattle = syncBattle }
 end
+
+local function testCompleteTriTerminal()
+    for _, terminal in ipairs({ SC.TERMINAL_NORMAL, SC.TERMINAL_HARD }) do
+        case("完整轮回链 " .. terminal, function()
+            local f = terminalFlowFixture(terminal)
+            local target = SC.getReincarnationTarget(SC.getDifficulty(terminal))
+            local previous = SC.getTerminalPrevStageId(terminal)
+            f.finishRaid()
+            f.syncBattle()
+            check(#f.state.kills == 3 and f.state.starts == 0, "胜利结算三Boss一次但不开始动画 " .. terminal)
+            check(f.scene.getStageId() == terminal and f.page.isTerminalRaidActive(), "胜利保持Scene及三隊终焉")
+            check(f.battle.currentStageId == previous and f.battle.maxStageId >= target
+                and f.battle.clearedStages[tostring(terminal)] == true, "首通写末关回退点及永久目标解锁而非目标当前关")
+            local fcExp = f.state.values.Exp
+            check(fcExp == SC.getStage(terminal).fcExp, "真实首通闭包恰好发放终焉经验")
+            check(not f.scene.completeTriTerminal(tostring(terminal)), "重复胜利被运行态pending拦截")
+            f.page.update(20)
+            check(#f.state.kills == 3 and f.state.values.Exp == fcExp and f.state.starts == 0,
+                "奖励或战场故事未完不重发三Boss/首通，不偷播动画")
+            for row = 1, 3 do
+                check(f.drivers[row].stageId == terminal and f.drivers[row].pendingStageId == nil,
+                    "等待期间不预约/进场目标，队" .. row)
+            end
+            for _, snap in ipairs(f.state.snapshots) do
+                check(snap.currentStageId == previous and snap.teamStageIds["1"] == previous
+                    and snap.teamStageIds["2"] == previous and snap.teamStageIds["3"] == previous,
+                    "中断保存三队均为末关安全点")
+            end
+            local pending = {}
+            while f.story.hasPending("battle") do pending[#pending + 1] = assert(f.story.take("battle")).scenarioId end
+            local expectedEnter, expectedClear = terminal == SC.TERMINAL_NORMAL and 61 or 68,
+                terminal == SC.TERMINAL_NORMAL and 62 or 69
+            local seen = {}
+            for _, id in ipairs(pending) do seen[id] = true; f.session.claimedScenarios[id] = true end
+            check(seen[expectedEnter] and seen[expectedClear], "生产入场61/68及首通62/69均保留，不断言FIFO反序")
+            f.state.reward = false
+            for _, blocker in ipairs({ "pendingReward", "dialogue", "tutorial", "recovery" }) do
+                f.state[blocker] = true; f.page.update(10); f.state[blocker] = false
+                check(f.state.starts == 0, blocker .. "真实收尾前不启动轮回")
+            end
+            f.story.enqueue(32) -- 酒馆已关闭后的可见城镇告别不能被轮回抢走。
+            f.page.update(10)
+            check(f.state.starts == 0, "横屏可见城镇告别等待，不提前轮回")
+            local townFarewell = f.story.take("battle_town")
+            check(townFarewell and townFarewell.scenarioId == 32, "只消费可见城镇告别，不取未进入锻炉")
+            f.session.claimedScenarios["32"] = true
+            f.story.enqueue(47) -- 未进入的锻炉剧情不应阻止本次轮回。
+            f.page.update(1.9)
+            check(f.state.starts == 0, "无阻挡后真实时钟倒计时不足两秒不启动")
+            f.page.update(0.2)
+            check(f.state.starts == 1 and f.intro.isActive() and f.scene.getStageId() == terminal,
+                "走生产StandaloneBoot闭包启动既有Intro，仍不进目标")
+            f.page.update(10)
+            check(f.state.starts == 1 and #f.state.arrivals == 0, "动画active不重复start/目标入场")
+            if terminal == SC.TERMINAL_NORMAL then f.intro.skip()
+            else for _ = 1, 5 do f.intro.update(20) end end
+            check(f.scene.getStageId() == target and not f.page.isTerminalRaidActive(), "完成或skip统一完成Scene轮回")
+            for row = 1, 3 do check(f.drivers[row].stageId == target, "动画结束三队实际进入目标，队" .. row) end
+            check(#f.state.arrivals == 3, "目标只由三个真实Driver各通知进场，不由兼容Scene提前重复通知")
+            local lastSave = f.state.snapshots[#f.state.snapshots]
+            check(lastSave.currentStageId == target and lastSave.teamStageIds["2"] == target
+                and lastSave.teamStageIds["3"] == target, "三队进场后才最后保存统一目标")
+            f.intro.skip()
+            check(f.state.starts == 1 and #f.state.kills == 3 and f.state.values.Exp == fcExp,
+                "重复skip不发第二次首通/三Boss奖励")
+        end)
+    end
+    case("已通终焉及claimed双键", function()
+        for _, stringKey in ipairs({ false, true }) do
+            case("已通账本键" .. tostring(stringKey), function()
+                local f = terminalFlowFixture(TERMINAL)
+                local key = stringKey and tostring(TERMINAL) or TERMINAL
+                f.battle.clearedStages[key] = true
+                f.session.claimedScenarios[stringKey and "61" or 61] = true
+                f.session.claimedScenarios[stringKey and "62" or 62] = true
+                f.finishRaid()
+                check(f.state.values.Exp == nil and not f.story.hasPending("battle"), "双键旧账本不重发首通或对白")
+                f.page.update(2.1)
+                f.intro.skip()
+                local target = SC.getReincarnationTarget(SC.getDifficulty(TERMINAL))
+                check(f.scene.getStageId() == target and #f.state.kills == 3, "已通终焉仍正常收尾，本次三Boss只结算一次")
+            end)
+        end
+    end)
+    case("待轮回读档/旧动画token", function()
+        local f = terminalFlowFixture(TERMINAL)
+        f.finishRaid()
+        f.state.reward = false
+        while f.story.hasPending("battle") do f.story.take("battle") end
+        f.page.update(2.1)
+        local previous = SC.getTerminalPrevStageId(TERMINAL)
+        f.page.setTeamStageIds({ previous, previous, previous })
+        f.scene.adoptStageProgress(previous)
+        f.intro.skip() -- 旧生产回调携带token，不可将新读档推进目标。
+        check(f.scene.getStageId() == previous and not f.page.isTerminalRaidActive(), "读档取消pending，旧动画回调无效")
+        check(f.battle.clearedStages[tostring(TERMINAL)] == true
+            and f.battle.maxStageId >= SC.getReincarnationTarget(SC.getDifficulty(TERMINAL)), "回末关保留通关及目标解锁")
+        check(#f.state.kills == 3, "恢复不重发已结算三Boss")
+    end)
+end
+
 
 function Start()
     local ok, err = pcall(function()

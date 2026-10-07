@@ -18,10 +18,7 @@ local wipePending_ = false
 ---@type number|string|nil
 local pendingWipeStage_ = nil
 local deferredToken_ = 0
-local nextDeferredAt_ = 0
-local DEFERRED_GAP = 30
 local deferredInFlight_ = nil ---@type table|nil
-local FOUNDATION_GROUPS = { 1, 2, 4, 8, 9 }
 
 local PLACE = {
     town = { enter = 23 },
@@ -122,15 +119,8 @@ end
 
 ---@param spec number|table|nil
 local function enqueueSpec(spec)
-    -- 全角色通用的追加情景（spec.extra = { id, ... }），与角色分支情景一起排队
-    if type(spec) == "table" and type(spec.extra) == "table" then
-        for _, extraId in ipairs(spec.extra) do
-            StoryPlayer.enqueue(extraId)
-        end
-    end
     local id = resolve(spec)
-    if not id then return end
-    if id == 11 or id == 12 or id == 13 then
+    if id and (id == 11 or id == 12 or id == 13) then
         local heroes = ClientDispatcher.get("heroes") or {}
         local roster = heroes.roster or {}
         local starterCount = 0
@@ -146,14 +136,35 @@ local function enqueueSpec(spec)
             return
         end
     end
-    StoryPlayer.enqueue(id)
+    if id then StoryPlayer.enqueue(id) end
+    -- 第二章先收尾角色对白，再发潜能引导，避免先切觉醒页才补旧对白。
+    if type(spec) == "table" and type(spec.extra) == "table" then
+        for _, extraId in ipairs(spec.extra) do StoryPlayer.enqueue(extraId) end
+    end
+end
+
+--- 建筑剧情只能在所属菜单（离场对白在城镇）播放，其他正文归主线战场。
+---@param id number
+---@param place string|nil
+function StoryPlayer.matchesPlace(id, place)
+    if not place then return true end -- 兼容只读/调试取队列，不用于宿主菜单路由。
+    if id >= 23 and id <= 26 or id >= 28 and id <= 30
+        or id >= 32 and id <= 34 or id >= 48 and id <= 50 then
+        return place == "town" or place == "battle_town"
+    end
+    if id == 27 then return place == "church" end
+    if id == 31 then return place == "tavern" end
+    if id == 47 then return place == "smith" end
+    return place == "battle" or place == "battle_town"
 end
 
 ---@param place string
 ---@param phase string "enter"|"leave"
 function StoryPlayer.onPlace(place, phase)
     local def = PLACE[place]
-    if not def then return end
+    if not def or phase ~= "enter" and phase ~= "leave" then return end
+    -- 没看到入场介绍就离开，不排后面的告别对白；下次打开再自动介绍。
+    if phase == "leave" and not isClaimed(def.enter) then return end
     enqueueSpec(def[phase])
 end
 
@@ -215,7 +226,6 @@ function StoryPlayer.resetAll()
     queue_ = {}
     queuedBackgrounds_ = {}
     deferredInFlight_ = nil
-    nextDeferredAt_ = 0
     StoryPlayer.resetWipe()
 end
 
@@ -256,57 +266,61 @@ function StoryPlayer.backfillCleared()
     return added
 end
 
-function StoryPlayer.hasPending()
-    return #queue_ > 0 or wipePending_
+---@param place string|nil
+function StoryPlayer.hasPending(place)
+    if wipePending_ and (not place or place == "battle" or place == "battle_town") then return true end
+    for _, id in ipairs(queue_) do
+        if not isClaimed(id) and StoryPlayer.matchesPlace(id, place) then return true end
+    end
+    return false
 end
 
---- 取出下一段可播放情景。没有则返回 nil。
+--- 只取当前场景可播的剧情；其他场景留在队列，不能阻塞本菜单的自动介绍。
+---@param place string|nil
 ---@return table|nil
-function StoryPlayer.take()
+function StoryPlayer.take(place)
     if wipePending_ then StoryPlayer.onWipe(pendingWipeStage_) end
-    while #queue_ > 0 do
-        local id = table.remove(queue_, 1)
-        local background = id and queuedBackgrounds_[id]
-        if id then queuedBackgrounds_[id] = nil end
-        if id and not isClaimed(id) then
-            local cfg = ScenarioDialogueConfig["SCENARIO_" .. tostring(id)]
-            if cfg and cfg.steps and #cfg.steps > 0 then
-                if background then
-                    local visual = {}
-                    for key, value in pairs(cfg) do visual[key] = value end
-                    visual.background = background
-                    cfg = visual
+    local index = 1
+    while index <= #queue_ do
+        local id = queue_[index]
+        if not isClaimed(id) and not StoryPlayer.matchesPlace(id, place) then
+            index = index + 1
+        else
+            table.remove(queue_, index)
+            local background = queuedBackgrounds_[id]
+            queuedBackgrounds_[id] = nil
+            if not isClaimed(id) then
+                local cfg = ScenarioDialogueConfig["SCENARIO_" .. tostring(id)]
+                if cfg and cfg.steps and #cfg.steps > 0 then
+                    if background then
+                        local visual = {}
+                        for key, value in pairs(cfg) do visual[key] = value end
+                        visual.background = background
+                        cfg = visual
+                    end
+                    print("[StoryPlayer] take scenario " .. tostring(id)
+                        .. " place=" .. tostring(place) .. " steps=" .. #cfg.steps)
+                    return { scenarioId = id, config = cfg, place = place }
                 end
-                print("[StoryPlayer] take scenario " .. tostring(id)
-                    .. " steps=" .. #cfg.steps .. " mode=" .. tostring(cfg.mode))
-                return { scenarioId = id, config = cfg }
+                print("[StoryPlayer] missing steps for scenario " .. tostring(id))
             end
-            print("[StoryPlayer] missing steps for scenario " .. tostring(id))
         end
     end
     return nil
 end
 
---- 基础操作后再讲伙伴介绍，段间留30秒游戏时间；普通正文不受此条件影响。
+--- 兼容旧档的延后开场进度；现在由入场链立即接续，不再等待教程或30秒间隔。
 function StoryPlayer.takeDeferredOpening()
     local data = session()
     if data.deferredOpening ~= true or data.introCompleted ~= true then return nil end
-    if time.elapsedTime < nextDeferredAt_ then return nil end
-    local tutorial = require("systems.TutorialManager")
-    if not tutorial.canPlayPendingStory() then return nil end
-    for _, id in ipairs(FOUNDATION_GROUPS) do
-        if not tutorial.isGroupCompleted(id) then return nil end
-    end
-    if #queue_ > 0 or require("ui.story.ScenarioDialogue").isActive()
-        or require("ui.character.hero.HeroScenario").hasPending() then return nil end
     local index = math.tointeger(tonumber(data.deferredOpeningIndex) or 1)
-    if not index or index < 1 or index > 4 then return nil end
+    if not index or index < 1 or index > 4 then index = 1 end
     local cfg = index == 1 and ScenarioDialogueConfig.OPENING
         or ScenarioDialogueConfig.OPENING_JOINS[index - 1]
     if not cfg or not cfg.steps or #cfg.steps == 0 then return nil end
     deferredToken_ = deferredToken_ + 1
     deferredInFlight_ = { token = deferredToken_, index = index }
-    print("[StoryPlayer] deferred opening " .. index .. "/4")
+    print("[StoryPlayer] opening " .. index .. "/4 before gameplay")
     return { config = cfg, deferredToken = deferredToken_ }
 end
 
@@ -315,12 +329,13 @@ function StoryPlayer.finishDeferredOpening(token)
     local current = deferredInFlight_
     if not current or current.token ~= token then return false end
     local data = session()
-    if data.deferredOpening ~= true or tonumber(data.deferredOpeningIndex or 1) ~= current.index then
+    local savedIndex = math.tointeger(tonumber(data.deferredOpeningIndex) or 1)
+    if not savedIndex or savedIndex < 1 or savedIndex > 4 then savedIndex = 1 end
+    if data.deferredOpening ~= true or savedIndex ~= current.index then
         deferredInFlight_ = nil
         return false
     end
     deferredInFlight_ = nil
-    nextDeferredAt_ = time.elapsedTime + DEFERRED_GAP
     local updated = {}
     for key, value in pairs(data) do updated[key] = value end
     if current.index == 4 then

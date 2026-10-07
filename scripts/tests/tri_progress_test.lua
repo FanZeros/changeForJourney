@@ -85,10 +85,8 @@ function Start()
                 newBattleRefs = function() return {} end, newFxState = function() return {} end,
                 newSemState = function() return {} end })
         end
-        mocks["ui.battle.stage.BattleEnemySpawn"] = {
-            generateEnemyList = function() return { { hp = 1 } } end,
-            assignEnemiesToField = function(list) return list, {} end,
-        }
+        -- 出怪与首通附加怪阶段使用真实模块，不能遗漏 Driver 新的生产 helper。
+        mocks["ui.battle.stage.BattleEnemySpawn"] = compile("ui.battle.stage.BattleEnemySpawn")
         rawset(_G, "require", function(name)
             if mocks[name] then return mocks[name] end
             mocks[name] = stub()
@@ -121,6 +119,10 @@ function Start()
             drivers[t] = drv
             return drv
         end }
+        mocks["ui.battle.tri.TerminalReincarnation"] = compile("ui.battle.tri.TerminalReincarnation")
+        mocks["ui.battle.tri.BattleEntryPreparation"] = compile("ui.battle.tri.BattleEntryPreparation")
+        mocks["ui.battle.stage.BattleSpeed"] = compile("ui.battle.stage.BattleSpeed")
+        scene.battleSpeed = 1
         local Page = compile("ui.battle.tri.BattleTriPage")
         mocks["ui.battle.tri.BattleTriPage"] = Page
         Page.open()
@@ -294,16 +296,16 @@ function Start()
             and Page.getTeamStageId(3) == 2505, "重新创建页面和驱动后仍恢复各队当前关")
         check(modules.battle.idleAccumSec == 17 and notices > 0, "恢复保留其他字段并使用正式通知出口")
         -- 终焉协同仍由页面接管；胜负收尾后的三队位置全部写入同一存档。
+        local terminalTarget
         scene.completeTriTerminal = function(id)
-            local target = SC.getReincarnationTarget(SC.getDifficulty(id))
-            mainStage = target
-            modules.battle.currentStageId = target
-            modules.battle.maxStageId = math.max(modules.battle.maxStageId, target)
+            terminalTarget = SC.getReincarnationTarget(SC.getDifficulty(id))
+            modules.battle.maxStageId = math.max(modules.battle.maxStageId, terminalTarget)
             cleared[id] = true
             modules.battle.clearedStages[tostring(id)] = true
             Save.Flush()
             return true
         end
+        scene.updateTriReincarnation = function() return true end
         maxStage, cleared = 999, { [2305] = 1 }
         modules.battle.teamStageIds["1"] = 2305
         check(not Page.gotoTeamStage(1, 999), "终焉最高节点不接受非true的末关通关标记")
@@ -338,8 +340,17 @@ function Start()
         Page.update(0)
         Page.update(0)
         for t = 1, 3 do
+            check(drivers[t].stageId == 999 and modules.battle.teamStageIds[tostring(t)] == 2305,
+                "队" .. t .. "胜利仍停终焉，待轮回保存末关")
+        end
+        check(terminalTarget == 2401 and Page.completeTerminalReincarnation(terminalTarget), "模拟动画完成统一三队目标进场")
+        mainStage = terminalTarget
+        modules.battle.currentStageId = terminalTarget
+        modules.battle.teamStageIds = { ["1"] = terminalTarget, ["2"] = terminalTarget, ["3"] = terminalTarget }
+        Save.Flush()
+        for t = 1, 3 do
             check(drivers[t].stageId == 2401 and modules.battle.teamStageIds[tostring(t)] == 2401,
-                "队" .. t .. "终焉胜利后的目标关已入档")
+                "队" .. t .. "动画完成后的目标关已入档")
         end
         local terminalSave = cjson.decode(disk["standalone_save.json"])
         check(terminalSave.modules.battle.teamStageIds["2"] == 2401

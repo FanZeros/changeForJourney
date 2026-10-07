@@ -77,7 +77,8 @@ local function fixture(options)
     local clock = { elapsedTime = 100 }
     local controls = { imageFailure = nil, failPrepare = false, failClaim = false, failFirstStage = false,
         pending = false, letterOpen = false, titleOpen = true, titleFading = false,
-        viewportOpen = false, titleReady = false, shown = nil, yieldEvery = true }
+        viewportOpen = false, titleReady = false, shown = nil, yieldEvery = true,
+        dialogueOpen = false, dialogue = nil }
     local mounts = {}
     local mocks = {}
     local env = setmetatable({}, { __index = _G })
@@ -210,7 +211,7 @@ local function fixture(options)
                 local own = deps.get("ownedSet")[id]
                 return own and own.level or 1
             end,
-            refreshPowerCache = noop, refreshNavBadge = noop }
+            refreshPowerCache = noop, refreshNavBadge = noop, updateBadges = noop }
     end }
     for _, name in ipairs({ "CharacterDeploy", "CharacterInput", "CharacterProgress" }) do
         mocks["ui.character.panel." .. name] = { bind = function() return {} end }
@@ -224,6 +225,7 @@ local function fixture(options)
     Scene.getStageId = function() return sceneStage end
     Scene.getMaxStageId = function() return modules.battle.maxStageId end
     Scene.getClearedStages = function() return modules.battle.clearedStages end
+    Scene.cancelTriReincarnation = noop
     Scene.adoptStageProgress = function(id) sceneStage = id end
     Scene.resetToDefault = function() sceneStage = 101 end
     Scene.setAllies, Scene.refreshAllyStats = noop, noop
@@ -294,7 +296,7 @@ local function fixture(options)
     for _, name in ipairs({ "ui.hud.TopBar", "ui.hud.BottomNav", "ui.dev.DebugPanel", "ui.dev.CEPanel",
         "ui.character.hero.HeroRosterPanel", "ui.hud.popup.RewardPopup", "ui.town.TownScene",
         "ui.blacksmith.BlacksmithPage", "ui.church.ChurchPage", "ui.church.talent.TalentPage",
-        "ui.tavern.TavernPage", "ui.market.MarketPage", "ui.dungeon.DungeonBattleScene",
+        "ui.tavern.TavernPage", "ui.tavern.RecruitAnim", "ui.market.MarketPage", "ui.dungeon.DungeonBattleScene",
         "ui.tower.TowerBattleScene", "ui.tower.TowerBuffPick", "ui.dungeon.DungeonPage",
         "ui.backpack.BackpackPanel", "ui.loot.LootBox", "ui.loot.LootBoxPage", "ui.hud.popup.LevelUpPopup",
         "ui.hud.popup.UpdateNoticePopup", "ui.hud.popup.PlayerInfoPanel", "ui.hud.popup.RedeemCodePanel",
@@ -304,8 +306,9 @@ local function fixture(options)
         "ui.character.detail.CharacterDetail", "ui.character.equip.EquipmentBag", "ui.story.ScenarioDialogue",
         "core.DarkIcon", "ui.fx.SpineCardEffect", "ui.fx.SpineResultEffect", "ui.fx.DarkEffectSprites",
         "ui.widget.DesignWidgetSurface", "ui.dev.KeyboardShortcuts", "ui.character.hero.HeroScenario",
-        "systems.StoryPlayer", "rules.dungeon.DungeonService", "rules.dungeon.DungeonIdleService",
-        "ui.widget.SoundToggle", "ui.battle.tri.TerminalRaid", "ui.character.EquipCrossDrag" }) do
+        "rules.dungeon.DungeonService", "rules.dungeon.DungeonIdleService",
+        "ui.widget.SoundToggle", "ui.battle.tri.TerminalRaid", "ui.character.EquipCrossDrag",
+        "ui.tower.TowerBuffSidebar" }) do
         if not mocks[name] then mocks[name] = passive() end
     end
     mocks["ui.hud.TopBar"].markAvatarViewed, mocks["ui.hud.TopBar"].setTotalPower = noop, noop
@@ -330,13 +333,32 @@ local function fixture(options)
     mocks["systems.GameSFX"].start, mocks["systems.GameSFX"].stop, mocks["systems.GameSFX"].preload = noop, noop, noop
     mocks["ui.fx.SpinePowerUpEffect"].preload, mocks["ui.fx.SpinePowerUpEffect"].resetSession = noop, noop
     mocks["ui.fx.SpineCardEffect"].stopAll, mocks["ui.fx.SpineResultEffect"].stop = noop, noop
-    mocks["systems.StoryPlayer"].resetAll, mocks["ui.character.hero.HeroScenario"].resetAll = noop, noop
+    mocks["ui.character.hero.HeroScenario"].resetAll = noop
+    mocks["ui.story.ScenarioDialogue"].isActive = function() return controls.dialogueOpen end
+    mocks["ui.story.ScenarioDialogue"].show = function(opts)
+        controls.dialogueOpen, controls.dialogue = true, opts
+        record("opening:" .. tostring(opts.title))
+    end
+    mocks["ui.story.ScenarioDialogue"].reset = function()
+        controls.dialogueOpen, controls.dialogue = false, nil
+    end
+    mocks["ui.tutorial.TutorialPageRecovery"] = {
+        -- 夹具所有二级菜单关闭；正式nav3三行页已开时左右城镇/主线同时可见。
+        getStoryPlace = function()
+            local tri = loaded["ui.battle.tri.BattleTriPage"]
+            return tri and tri.isOpen() and "battle_town" or "battle"
+        end,
+        isPendingStoryBlocked = function(place)
+            assert(place == "battle" or place == "battle_town"); return false
+        end,
+    }
     mocks["rules.dungeon.DungeonService"].Cleanup, mocks["rules.dungeon.DungeonIdleService"].Cleanup = noop, noop
     mocks["ui.character.equip.EquipmentBag"].shouldBattleOverlay = function() return false end
     mocks["ui.character.equip.EquipmentBag"].setOverlayRegion = noop
     mocks["ui.dev.CERuntime"] = { installSpeedHook = noop, tick = noop }
     mocks["ui.hud.popup.SettingsPanel"] = { isEffectsEnabled = function() return false end }
     local real = { ["boot.Standalone"] = true, ["boot.StartupQueue"] = true,
+        ["systems.StoryPlayer"] = true, ["ui.battle.tri.TerminalReincarnation"] = true,
         ["ui.battle.tri.BattleTriPage"] = true, ["ui.battle.tri.BattleTriDriver"] = true,
         ["ui.battle.tri.BattleEntryPreparation"] = true,
         ["ui.battle.scene.BattleMountScope"] = true, ["ui.battle.scene.BattleDraw"] = true,
@@ -483,7 +505,7 @@ local function fixture(options)
         HorizonUpdateTransform = noop, applyFrame = noop, bootReady_ = function() return rt.bootReady_ end,
         windowW = function() return 1920 end, windowH = function() return 1080 end,
         dpr = function() return 1 end, StartScreen = mocks["ui.story.gate.StartScreen"],
-        nvgBeginFrame = noop }, { __index = env })
+        nvgBeginFrame = noop, horizonInputContext = {} }, { __index = env })
     hen._G = hen
     local renderGate = section(horizonText, "function HandleNanoVGRenderHorizon()",
         "    -- 横屏底色。石框、关卡图和各页底板负责可见画面，不再铺 UI_WORLD_BG。")
@@ -623,6 +645,35 @@ function Start()
         f.controls.letterOpen = false
         local starts = f.counts.starts
         assert(f.controls.letterFinish)()
+        local opening = f.env.require("config.ScenarioDialogueConfig")
+        local openingConfigs = { opening.OPENING, table.unpack(opening.OPENING_JOINS) }
+        check(#openingConfigs == 4 and not f.state().queue and f.controls.dialogueOpen,
+            "信件结束先进入完整门厅+三人介绍四段，不提前prepare")
+        for index, cfg in ipairs(openingConfigs) do
+            local dialogue = assert(f.controls.dialogue, "missing opening dialogue " .. index)
+            check(dialogue.steps == cfg.steps and dialogue.title == cfg.title
+                and dialogue.background == cfg.background and dialogue.mode == cfg.mode,
+                "真实开场段顺序/正文/场景保持 #" .. index)
+            local frozen = f.snapshot()
+            for _ = 1, 3 do f.step() end
+            check(not f.state().queue and not f.state().post and f.counts.calc == 0
+                and f.counts.updates == 0 and f.counts.pumps == 0 and same(f.snapshot(), frozen),
+                "开场正文完成前不prepare/离线/战斗/奖励改动 #" .. index)
+            f.controls.dialogueOpen = false
+            dialogue.onFinish()
+            local afterFinish = f.snapshot()
+            dialogue.onFinish()
+            check(same(f.snapshot(), afterFinish), "开场旧token重复完成不改下一段存档 #" .. index)
+            if index < 4 then
+                check(f.controls.dialogueOpen and not f.state().queue and not f.state().post
+                    and f.modules.session.deferredOpening == true
+                    and f.modules.session.deferredOpeningIndex == index + 1,
+                    "完成后立即接续下一段，仍独占开场 #" .. index)
+            end
+        end
+        check(f.modules.session.deferredOpening == false
+            and f.modules.session.deferredOpeningCompletedVersion == 1,
+            "全部四段真实完成后才持久标记开场完成")
         check(f.state().queue and not f.state().post and f.counts.calc == 0,
             "finishIntro只排真实prepare，未渲染不算离线")
         drain(f)

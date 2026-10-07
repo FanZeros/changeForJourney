@@ -75,7 +75,13 @@ function Start()
                 { 140, 220, 250 }, { 240, 170, 250 }, { 255, 200, 100 } }, drawIconDark = noop },
             ["config.HeroConfig"] = { get = function() return nil end },
             ["core.NumberUtil"] = { format = function(value) return tostring(value) end },
-            ["core.DrawUtil"] = { drawTextStroke = noop },
+            ["core.DrawUtil"] = { drawTextStroke = noop,
+                -- 新版Popup把原背景rect交给共享图片绘制叶子；保留实际尺寸/仿射记录。
+                drawImageCentered = function(vg, _, cx, cy, w, h)
+                    env.nvgBeginPath(vg)
+                    env.nvgRect(vg, cx - w * 0.5, cy - h * 0.5, w, h)
+                    env.nvgFill(vg)
+                end },
             ["ui.widget.ImageCache"] = { init = noop, getEquipIcon = function() return -1 end,
                 getQualityBg = function() return -1 end },
             ["config.ArtifactAssetUtil"] = { drawIcon = noop },
@@ -83,6 +89,12 @@ function Start()
                 diamond = { quality = 5, iconPath = "spy/diamond.png" } } },
             ["systems.GameSFX"] = { play = function(key) sounds[#sounds + 1] = key end },
             ["ui.widget.HeroFrame"] = { draw = noop },
+            -- 本专项没有repeatDraw请求；新增主动开箱页脚不应进入普通/战斗绘制路径。
+            ["ui.widget.ResultRepeatFooter"] = {
+                EXTRA_HEIGHT = 100, HINT_Y = 1334,
+                draw = function() error("普通/战斗奖励误绘制主动开箱页脚") end,
+                hit = function() error("普通/战斗奖励误命中主动开箱页脚") end,
+            },
         }
         -- 未白名单的依赖直接报错，而非回落到全局 require 或偷偷加载生产页面/存档。
         env.require = function(name)
@@ -1067,7 +1079,7 @@ function Start()
                 "systems.BattleStats", "ui.hud.TopBar", "ui.character.panel.CharacterPanel", "ui.dev.CEPanel",
                 "ui.character.hero.HeroRosterPanel", "ui.town.TownScene", "ui.blacksmith.BlacksmithPage",
                 "ui.church.ChurchPage", "ui.church.talent.TalentPage", "ui.tavern.TavernPage",
-                "ui.tavern.TavernPopups", "ui.tavern.TargetRecruitPanel", "ui.market.MarketPage",
+                "ui.tavern.TavernPopups", "ui.tavern.TargetRecruitPanel", "ui.tavern.RecruitAnim", "ui.market.MarketPage",
                 "ui.dungeon.DungeonBattleScene", "ui.tower.TowerBattleScene", "ui.dungeon.DungeonPage",
                 "ui.backpack.BackpackPanel", "ui.loot.LootBox", "ui.loot.LootBoxPage", "ui.story.task.TaskPage",
                 "ui.hud.popup.LevelUpPopup", "ui.hud.popup.OfflineRewardPanel", "ui.hud.popup.UpdateNoticePopup",
@@ -1090,7 +1102,25 @@ function Start()
                 return {}
             end }
             routeMods["ui.battle.scene.BattleScene"] = { getStageId = function() return 1 end,
-                pumpBattleCards = function() pumps = pumps + 1 end }
+                getClearedStages = function() return routeMods["runtime.ClientDispatcher"].get("battle").clearedStages or {} end,
+                pumpBattleCards = function() pumps = pumps + 1; error("routing禁止全图鉴pump") end }
+            -- 新增入场/挂载helper只用于零解锁空驱动的路由夹具；不替代本专项被测输入/绘制。
+            routeMods["ui.battle.combat.BattleCombatAnim"] = {}
+            routeMods["systems.RelicConditionHandler"] = closedPage()
+            routeMods["ui.battle.stage.BattleSpeed"] = {}
+            routeMods["ui.battle.tri.TerminalReincarnation"] = {
+                discardDriver = function() error("零解锁routing不应持有/清理driver") end,
+            }
+            routeMods["systems.TutorialManager"].getCurrentHighlight = function() return nil end
+            routeMods["ui.battle.scene.BattleMountScope"] = {
+                wrap = function() end,
+                run = function(callback, ...) return callback(...) end,
+            }
+            routeMods["ui.battle.tri.BattleEntryPreparation"] = { new = function()
+                return { invalidate = noop,
+                    prepare = function() error("routing禁止入场准备") end,
+                    isPrepared = function() error("routing禁止入场凭据") end }
+            end }
             routeMods["ui.character.equip.EquipmentBag"].setOverlayRegion = noop
             routeMods["ui.dev.CEPanel"].handleWheel = function() return false end
             routeMods["ui.dev.CEPanel"].handleDown = function() return false end
@@ -1134,7 +1164,7 @@ function Start()
             routeMods["ui.battle.tri.BattleTriPage"] = Tri
             -- open只走空Battle/零解锁spy，不生成驱动、不调用真实存档/结算。
             Tri.open()
-            equal(pumps, 1, "真实open只调用spy pump")
+            equal(pumps, 0, "真实open不再调用全图鉴pump，零解锁不生成驱动")
             local sizes = { { 1920, 1080 }, { 1440, 810 }, { 2560, 1440 } }
             local interiors = { { .2835, .0117, .7201, .3103 }, { .2835, .3475, .7207, .6482 },
                 { .2877, .6812, .7099, .9883 } }

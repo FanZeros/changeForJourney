@@ -190,7 +190,8 @@ local function productionCases()
     local function newProcess()
         instances = instances + 1
         local ctx = { actions = {}, notices = {}, finished = {}, dirty = {}, shown = {},
-            pending = {}, allowStory = true, rewardOpen = false } ---@type any
+            pending = {}, allowStory = true, rewardOpen = false, place = "battle",
+            storyBlocked = false, rewardBlocked = false, pendingBattleRewards = false } ---@type any
         local deps = {} ---@type table<string, any>
         local env = setmetatable({}, { __index = _G }) ---@type any
         env.File, env.fileSystem, env.cjson = memoryFile, memoryFS, cjson
@@ -237,10 +238,19 @@ local function productionCases()
         }
         deps["boot.StandaloneSave"] = compile("boot.StandaloneSave")
         ctx.save = deps["boot.StandaloneSave"]
+        deps["ui.tutorial.TutorialPageRecovery"] = {
+            getStoryPlace = function() return ctx.place end,
+            isPendingStoryBlocked = function(place)
+                assert(place == ctx.place, "正式闭包须透传Recovery.getStoryPlace结果")
+                return ctx.storyBlocked
+            end,
+        }
+        deps["boot.BattleRewardOverlay"] = { isBlocked = function() return ctx.rewardBlocked end }
         env.ClientDispatcher, env.ScenarioDialogue = ctx.dispatcher, ctx.dialogue
         env.TutorialManager = { canPlayPendingStory = function() return ctx.allowStory end }
         env.LetterIntro, env.IntroCutscene = { isOpen = closed }, { isActive = closed }
-        env.RewardPopup = { isOpen = function() return ctx.rewardOpen end, hasPendingBattleRewards = closed }
+        env.RewardPopup = { isOpen = function() return ctx.rewardOpen end,
+            hasPendingBattleRewards = function() return ctx.pendingBattleRewards end }
         env.OfflineRewardPanel = { isOpen = closed }
         env.ClientMsgHandler = {
             consumePendingScenarioDialogue = function() return table.remove(ctx.pending, 1) end,
@@ -383,6 +393,42 @@ local function productionCases()
         eq(shards(ctx), 10, label .. " 重入没有双发")
     end
 
+    -- 用例6前置：205先角色分支51/52/53再82；按场景取队列不能丢掉待播82。
+    for hero = 1, 3 do
+        for _, trigger in ipairs({ "clear", "backfill" }) do
+            local ctx = seed({ claimed = {} })
+            session(ctx).initialHeroId = hero
+            if trigger == "clear" then ctx.story.onStage(205, "clear")
+            else eq(ctx.story.backfillCleared(), 2, "205分支与82真实backfill两项") end
+            eq(ctx.story.take("town"), nil, "205分支与82不能被城镇场景抢走")
+            check(ctx.story.hasPending("battle"), "205两项仍在主线队列")
+            local branch = ctx.story.take("battle")
+            eq(branch and branch.scenarioId, 50 + hero, "205 " .. trigger .. "先角色分支" .. hero)
+            local pending82 = ctx.story.take("battle")
+            eq(pending82 and pending82.scenarioId, 82, "205 " .. trigger .. "再82潜能引导")
+            eq(pending82 and pending82.config.steps, config.SCENARIO_82.steps, "205后置82仍完整三句")
+            eq(ctx.story.take("battle"), nil, "205分支与82无重复")
+            eq(#ctx.actions, 0, "只取队列不提前领奖")
+            eq(shards(ctx), 0, "只取队列不发82碎片")
+        end
+    end
+    -- Recovery仅替换页面叶子；实际正式闭包/Story.take(place)要尊重阻挡并保留队列。
+    for _, blocker in ipairs({ "town", "church", "story", "reward" }) do
+        local ctx = seed()
+        check(ctx.story.enqueue(82), "82场景阻挡fixture入队")
+        if blocker == "town" or blocker == "church" then ctx.place = blocker
+        elseif blocker == "story" then ctx.storyBlocked = true
+        else ctx.pendingBattleRewards = true end
+        ctx.play()
+        check(not ctx.dialogue.isActive(), "82阻挡=" .. blocker .. "不错误起播")
+        check(ctx.story.hasPending("battle"), "82阻挡=" .. blocker .. "仍保留待播")
+        unawarded(ctx, "82阻挡=" .. blocker)
+        ctx.place, ctx.storyBlocked, ctx.pendingBattleRewards = "battle", false, false
+        ctx.play()
+        progress(ctx, 1, "82阻挡解除=" .. blocker)
+        unawarded(ctx, "82阻挡解除=" .. blocker)
+    end
+
     -- 用例6：真实首通资格（服务写clear + 正式onStage事件入口）→起播→每个中断点→JSON→新queue补播。
     -- 不冒称测试整个Boot/随机战斗；首通回调的onStage接线由既有tri_clear_unlock测试覆盖。
     for _, point in ipairs({ 1, 2, 3, "dismiss_before", "dismiss_during" }) do
@@ -517,7 +563,9 @@ local function productionCases()
     for _, source in ipairs({ "queue", "pending", "follow" }) do
         ctx = seed({ noGranted = true })
         local pending = { scenarioId = 27, config = config.SCENARIO_27 }
-        if source == "queue" then ctx.story.enqueue(27)
+        if source == "queue" then
+            ctx.story.enqueue(27)
+            ctx.place = "church" -- 27是教堂入场介绍，真实take(place)不在battle消费它。
         elseif source == "pending" then ctx.pending[1] = pending
         else ctx.follow = { pending } end
         ctx.play()

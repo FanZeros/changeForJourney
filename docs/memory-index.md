@@ -15,13 +15,15 @@
 
 ## 战斗停顿与离线收益顺序续修（2026-10-07）
 
+- 正式PR #117：https://github.com/FanZeros/changeForJourney/pull/117，head=perf1007/startup-stutter@327c773e2e4839e1dffc01d66b73a51af9d17669／base=workspace1005@676fef7f，open／draft=false／merged=false／mergeable未计算。32项白名单已正常push且ls-remote同SHA、两命令exit0，未推workspace1005。25Lua/4新meta/3交接，无本地.project/技能/内部证据；b18全577Lua及25本轮payload bytes/size一致、2998路径21旧规范问题同目标新增0/36单测OK。成功后仅三本人交接补推，不重复PR、不自动合并发布，不称CI通过。
+
 - 延续两项反馈：攻击期约1秒停顿、先准备战斗再显示离线收益。`perf1007/startup-stutter`目标workspace1005；PR116实查外部已合676fef7f，不能把本轮新修称已合／更新open116。正常push同任务分支，不推workspace系列、不强推、不自动合并发布。
 - boot20步＋入场重准备：真实三队驱动／首波／候补和短投射物／完整音效组先合作式预热，实际三行Render后才CalcOnEnter／OfflineChecked／领取窗；待领取暂停攻击。首场失败真实重试，外部已applied水合、跨yield换人／Stop／reset令旧token与编队签名失效；Scope退出恢复全部挂载。三行open/update不再pump全图鉴，其他公开图鉴接口不删；不改奖励／公式／随机／成长／pending波。
 - 单轮穿戴战力共享轻batch，1000库存12owned水合12000→72、库存全遍历12→0，完整oracle未取整power／属性／套装／神器一致；通用试穿完整库存仍保留。纯exp同步不重建战力，真实等级／旁队／未部署共鸣升级仍原全刷新。图片跨VG清引用不借新VG删旧句柄；同VG重置、合法0、协程旧batch取消回归保留。
 - Save每秒完整JSON轮询改分帧只读检测，4096步骤／约1ms CPU软预算；即时事务仍fresh build/encode/Write/Rename，跨帧镜像只置脏不保存。首次unvisited字段漏存负对照13断言4失败，业务态首扫保守置脏修后两路径121帧正确存值；747/0最终复跑。大业务首扫可能多次补存，检测不是1秒期限，先前10000项892帧约14.9秒；最终同步Flush仍62ms量级样本，不称掉电可靠／全面不卡。
 - 官方最终b18成功，577rootLua全包字节和size0差异、25本轮Lua25/25一致、4新meta唯一；25逐文件LSP Error0不代全仓（缓存其他61Error）。最终queue34/audio787/assets78/hero669/exp752/Save747/Entry12cases228/背景3555/preview120；切关113、compat342、教程474/1334/69/58、host165、projectile14、story3396、focused5312实际通过。assets44检查＋1harness和host14/155检查处先失败，依赖fixture补真实helper/StartupQueue/RT后原断言完整通过；原公共3/神器4/预估9、team_income1045+harness、资源视觉10等既有失败如实保留，不称全仓全绿。
 - 同probe SHA de5266f9旧a7de8冻结树（1162文件Git对象一致、probe唯一替换）vs本轮工作树，均1200Update/1201Render/异常0：Update wall峰89→22ms、Render69→54ms、battle解码141→9；ready95→142/首战262→348帧，等待变长。最终另一次同源码1200/1201/20steps/异常及缺图0，Update33/Render39ms、ready143/首战349；不拿最佳值冒稳定。File/FS封闭、Save stub，不是玩家存档恢复／持久化／设备FPS／锁步战斗证明，shader/audio环境ERROR保留。
-- `.project`构建身份及默认字段已和备份逐字节恢复，内证只.git，技能／两无关meta不提交。36规范单测实际OK，候选2998路径／21旧规范问题与目标逐项同集合、新增0；提交／push／新PR实证后补。三交接只改本人块，保留别任务历史；直接继续不再提问，尊重停止／权限／安全边界，凭据不落源码／Git配置／日志／记忆。
+- `.project`构建身份及默认字段已和备份逐字节恢复，内证只.git，技能／两无关meta不提交。36规范单测实际OK，候选2998路径／21旧规范问题与目标逐项同集合、新增0；提交／push／新PR实证见本节首条。三交接只改本人块，保留别任务历史；直接继续不再提问，尊重停止／权限／安全边界，凭据不落源码／Git配置／日志／记忆。
 
 ## 启动卡顿优化 PR 交接（2026-10-07，首轮历史）
 

@@ -25,13 +25,15 @@
 - **持续强化：持续推进已授权任务、不擅自取消退出；当前最新恢复明确直接继续、不再提问，遵循当前指令不机械AskUserQuestion。** 尊重停止／权限拒绝／安全边界，只正常push教程独立分支，不推workspace系列、不强推、不自动合并发布。凭据不进源码、Git配置、remote、日志或记忆，公开凭据应撤销轮换；三记忆仅精确插入本人块、双方历史保留。
 ## 上次做了什么（2026-10-07，战斗停顿与离线收益顺序续修）
 
+- **已正常push并核验：** 32白名单文件提交327c773e2e4839e1dffc01d66b73a51af9d17669已进入perf1007/startup-stutter，push/ls-remote实际exit0且远端SHA一致，workspace1005仍676fef7f未被本会话推送。正式PR #117：https://github.com/FanZeros/changeForJourney/pull/117，head任务分支／base workspace1005，open／draft=false／merged=false／mergeable未计算，不称CI通过或合并发布。b18全577Lua及25本轮载荷字节/size一致；2998路径21旧规范问题同目标、新增0，36单测OK。仅25Lua/4新meta/3交接，无.project/技能/内部材料；推送成功后只三交接补记，不重复创建PR。
+
 - 延续用户“战斗期间约1秒卡顿／先备好战斗再显示离线收益”需求，仍在`perf1007/startup-stutter`，目标`workspace1005`。已实查PR116被外部合并至676fef7f（closed／merged=true）；本轮新改动不能称已进入PR116。只正常push任务分支，不推workspace系列、不强推、不自动合并发布，凭据不持久化。
 - 三行攻击期不再pump全图鉴；boot／入场协作式准备真实驱动、首波和候补、短投射物及完整音效组，实际三行Render后才核算／显示离线收益，待领取仍暂停战斗。真实首场失败重试只成功后解锁，外部水合／跨yield换编队／Stop／reset使旧准备凭据失效；不改奖励、随机消费、成长、战力公式或当前波pending。首屏预热等待变长，资源失败仍按旧绘制容错，不保证所有纹理成功。
 - 当前穿戴战力用单次refresh轻batch，1000库存／12owned水合12000→72、全库存遍历12→0，严格未取整power／属性／套装／神器oracle一致；试穿通用完整库存上下文保留。纯经验无升级不重建名册／战力（七人批量context98→0），旁队／未部署共鸣升级仍全刷新。VG缓存跨context丢引用不误删，同VG重置／合法0／yield取消保留。
 - 存档由每秒完整JSON比较改4096步骤／约1ms CPU软预算结构检查，真正Flush仍即时新鲜完整编码／Write／Rename、不保存跨帧镜像。首扫未访问locked漏存已修，前版负对照13断言4失败，修后OfflineChecked／Restore两路径121帧正确写盘；最终15组747／0。大型业务首扫可能多次保守补存，检测可数秒（先前10000装备892帧约14.9秒），同步Flush仍尖峰，不承诺1秒检出／掉电可靠性／全面不卡。
 - 最终官方b18成功，根scripts577Lua全包逐字节及size0差异，本轮25Lua载荷25/25一致；四新Lua/meta入包，25逐文件severity1均0，不代全仓静态清零（缓存61个其他Error）。最终queue34／audio787／assets78／hero669／exp752／Save747／Entry228／背景3555／试穿120通过；切关113、副本compat342、教程474／1334／69／58、原host165、投射物14、story3396、focused5312通过。assets44+1harness及host14／155处两次依赖缺口先失败，仅补真实fixture依赖后通过、原断言保留；原公共3／神器4／预估9等基线失败不混修。
 - 相同probe SHA de5266f9的a7de8旧树vs本轮工作树长A/B，各1200 Update／1201 Render／异常0，旧目录1162生产/meta文件逐对象匹配，probe唯一替换。Update墙钟峰89→22ms、Render69→54ms、battle图片解码141→9；title ready95→142、首战262→348帧，等待变长。最终冻结版另复测1200／1201／20步／异常0／缺图0，Update峰33ms、Render39ms，ready143／首战349；不混用最好值、不是逐战斗状态锁步／设备FPS。探针File／FS封闭、Save明确stub，不是玩家存档恢复或持久化性能实测。
-- `.project`仅本人构建生成的身份/default已与构建前备份逐字节恢复；内证只.git/validation/startup1007，技能／两无关meta不提交。下一阶段提交／push／新PR实际结果后补，不重复创建已合PR116。当前明确直接继续不再提问，不机械AskUserQuestion；尊重停止／权限拒绝／安全边界，不把代理报告当授权。
+- `.project`仅本人构建生成的身份/default已与构建前备份逐字节恢复；内证只.git/validation/startup1007，技能／两无关meta不提交。提交／push／新PR实际结果已见本节首条，不重复创建已合PR116。当前明确直接继续不再提问，不机械AskUserQuestion；尊重停止／权限拒绝／安全边界，不把代理报告当授权。
 
 ## 上次做了什么（2026-10-07，启动卡顿首轮优化，PR #116 历史交付）
 

@@ -1,6 +1,6 @@
 -- B04：真实 Panel -> GameAction -> LocalActionBridge -> Handler -> Service -> DungeonPage -> Scene。
 -- 合成内存模块，不读取/恢复玩家存档；仅隔离绘图初始化、保存出口和消息交付时机。
--- 跑法：UrhoXRuntime tests/tower_buff_receipt_test.lua -tapcode_dir=/workspace/game03 -tool_mode -graphicsheadless -nosound
+-- 跑法：UrhoXRuntime tests/tower_buff_receipt_test.lua -tapcode_dir=/workspace -tool_mode -graphicsheadless -nosound
 local assertions, failures = 0, 0
 local restores = {}
 
@@ -79,18 +79,29 @@ function Start()
         patch(require("rules.redeem.RedeemService"), "Init", function() end)
         local teams = {}
         patch(CP, "getDeployedTeam", function(t) return teams[t or 1] or {} end)
-        -- 本地 Page 保留挑战事务，走 openTower + handleInput 真入口，不伪造挑战回执。
-        -- 只跳过图片初始化；不创建 NanoVG 上下文/不改导航。
-        local oldInited, initedIndex = upvalue(Page.handleInput, "dungeonInited_")
-        debug.setupvalue(Page.handleInput, initedIndex, true)
-        restores[#restores + 1] = function() debug.setupvalue(Page.handleInput, initedIndex, oldInited) end
+        -- openTower 只定位选关表；复制 StandaloneBoot.run 的回调接线，
+        -- 由真实首层行点击调用 requestTowerChallenge，挑战与回执均不替身。
+        -- 不运行完整 Boot（避免读取玩家档），也不创建 NanoVG 上下文。
+        local Dialog = require("ui.battle.stage.StageSelectDialog")
+        local oldDungeonSelect, dungeonSelectIndex = upvalue(Dialog.handleInput, "onDungeonSelect")
+        Dialog.setOnDungeonSelect(function(dungeonId, _teamIdx, floor)
+            if dungeonId ~= "babel_tower" then return false end
+            return Page.requestTowerChallenge(floor)
+        end)
+        restores[#restores + 1] = function()
+            Dialog.close()
+            debug.setupvalue(Dialog.handleInput, dungeonSelectIndex, oldDungeonSelect)
+        end
         local panelState = getState(Panel.isOpen)
         local kwCards = upvalue(Panel.handleClick, "kwCards")
         for _, card in ipairs(kwCards) do
             patch(card, "isOpen", function() return false end)
             patch(card, "handleInput", function() return false end)
         end
-        local receipts, queue = {}, {}
+        ---@type table[]
+        local receipts = {}
+        ---@type table[]
+        local queue = {}
         local hold = false
         patch(Msg, "handleActionResult", function(data)
             receipts[#receipts + 1] = data
@@ -138,7 +149,12 @@ function Start()
                 teams[t] = { unit }
             end
             eq(Page.openTower(), true, "本地真实openTower入口")
-            Page.handleInput(750, 1633)
+            -- 当前选关塔分组首行：MID_X=315/ROW_Y0=790/ROW_H=168。
+            -- 不再点旧详情挑战按钮(750,1633)，该点现在是第5层行。
+            check(Dialog.isOpen(), "openTower只定位真实选关表")
+            eq(actionCounts[AT.TOWER_CHALLENGE], nil, "未点层行不发送挑战")
+            eq(Dialog.handleInput(600, 874), true, "真实选关首层行点击")
+            eq(actionCounts[AT.TOWER_CHALLENGE], 1, "首层行只发送一次真实挑战")
             eq(Scene.isActive(), true, "正式DungeonPage打开Scene")
             eq(PDM.GetModule(1, "dungeon"), all.dungeon, "PDM与Dispatcher正式同表")
         end

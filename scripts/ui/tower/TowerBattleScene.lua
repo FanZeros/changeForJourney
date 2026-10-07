@@ -14,6 +14,8 @@ local BattleDraw         = require("ui.battle.scene.BattleDraw")
 local BattleStats        = require("systems.BattleStats")
 local HeroConfig         = require("config.HeroConfig")
 local AD                 = require("systems.AttributeDef")
+local TowerLayout        = require("ui.tower.TowerLayout")
+local TowerBuffSidebar   = require("ui.tower.TowerBuffSidebar")
 
 local drawTextStroke = BattleDraw.drawTextStroke
 
@@ -23,6 +25,7 @@ local TowerScene = {}
 
 local state = {
     active = false,
+    sessionVersion = 0,
 
     -- 层/波
     floor     = 1,
@@ -115,9 +118,29 @@ function TowerScene.isActive()
     return state.active
 end
 
+-- 仅复制展示身份与已确认强化，不泄露战斗单位/权威run可变表。
+function TowerScene.getDisplayState()
+    return { floor = state.floor, wave = state.wave, phase = state.phase,
+        monsterLevel = state.monsterLevel, buffIds = copyBuffIds(state.buffIds),
+        inputModal = TowerTriBattle.isConfirmationOpen() or BattleResultPanel.isOpen() }
+end
+
+function TowerScene.getPresentationKey()
+    return state.sessionVersion .. ":" .. tostring(state.active) .. ":" .. tostring(state.runId)
+        .. ":" .. state.floor .. ":" .. state.wave
+        .. ":" .. state.phase .. ":" .. TowerBuffPick.getPresentationKey()
+        .. ":" .. TowerTriBattle.getPresentationKey()
+end
+
+function TowerScene.getLayout(width, height)
+    return TowerLayout.compute(width, height)
+end
+
 --- 打开通天塔战斗（由 DungeonPage 在 TOWER_CHALLENGE 成功后调用）
 ---@param opts table { teamAllies, allies, data, sendAction, onClose }
 function TowerScene.open(opts)
+    state.sessionVersion = state.sessionVersion + 1
+    TowerBuffSidebar.reset()
     state.active = true
     state.phase  = "battle"
     state.floor  = opts.data.floor or 1
@@ -167,6 +190,7 @@ function TowerScene.open(opts)
 end
 
 function TowerScene.close()
+    TowerBuffSidebar.reset()
     state.active = false
     state.phase = "idle"
     state.pendingSelection = nil
@@ -184,6 +208,7 @@ end
 
 --- 清档专用硬清理，不结算旧波次，也不执行旧会话退出回调。
 function TowerScene.resetToDefault()
+    TowerBuffSidebar.reset()
     state.active = false
     state.phase = "idle"
     state.onClose, state.sendAction = nil, nil
@@ -420,6 +445,8 @@ function TowerScene.draw(vg, logicalW, logicalH)
     logicalW = logicalW or 1080
     logicalH = logicalH or 2400
 
+    -- 侧栏在战斗/确认/择契模态之下，保持TaskPage等奖励宿主的后续覆盖顺序。
+    TowerBuffSidebar.draw(vg, logicalW, logicalH, TowerScene.getDisplayState())
     local triOpen = TowerTriBattle.isOpen()
     if triOpen then
         local okDraw, drawErr = xpcall(function()
@@ -448,7 +475,7 @@ function TowerScene.draw(vg, logicalW, logicalH)
             drawErrorFallback(vg, logicalW, logicalH)
         end
     elseif state.phase == "buff_pick" then
-        TowerBuffPick.draw(vg, logicalW, logicalH)
+        if TowerBuffPick.isVisible() then TowerBuffPick.draw(vg, logicalW, logicalH) end
     elseif state.phase == "floor_win" then
         BattleResultPanel.draw(vg, logicalW, logicalH)
     elseif state.phase == "error" then
@@ -508,13 +535,54 @@ function TowerScene.handleClick(dx, dy, logicalW, logicalH)
         TowerScene.close()
         return true
     elseif state.phase == "buff_pick" and TowerBuffPick.isOpen() then
-        return TowerBuffPick.handleClick(dx, dy, logicalW, logicalH)
+        if TowerBuffPick.isVisible() then
+            return TowerBuffPick.handleClick(dx, dy, logicalW, logicalH)
+        end
+        if TowerBuffSidebar.handleClick(dx, dy, logicalW, logicalH) == "resume_pick" then
+            TowerBuffPick.show()
+        end
+        return true
     elseif state.phase == "battle" then
-        TowerTriBattle.handleClick(dx, dy)
+        if TowerTriBattle.isConfirmationOpen() or BattleResultPanel.isOpen() then
+            TowerTriBattle.handleClick(dx, dy, logicalW, logicalH)
+        elseif TowerBuffSidebar.handleClick(dx, dy, logicalW, logicalH) == "retreat" then
+            TowerTriBattle.requestRetreat()
+        else
+            local layout = TowerLayout.compute(logicalW, logicalH)
+            if TowerLayout.panelAt(layout, dx, dy) == "center" then
+                TowerTriBattle.handleClick(dx, dy, logicalW, logicalH)
+            end
+        end
         return true
     end
 
     return true
+end
+
+local function sidebarInputAllowed()
+    return state.active and (state.phase == "battle" or state.phase == "buff_pick")
+        and not TowerBuffPick.isVisible() and not TowerTriBattle.isConfirmationOpen()
+        and not BattleResultPanel.isOpen()
+end
+
+function TowerScene.handleScroll(wheel, x, y, width, height)
+    if not state.active then return false end
+    if sidebarInputAllowed() then TowerBuffSidebar.handleScroll(wheel, x, y, width, height) end
+    return true
+end
+
+function TowerScene.handleDragBegin(x, y, width, height)
+    TowerBuffSidebar.dragEnd()
+    if sidebarInputAllowed() then TowerBuffSidebar.dragBegin(x, y, width, height) end
+end
+
+function TowerScene.handleDragMove(x, y, width, height)
+    if sidebarInputAllowed() then TowerBuffSidebar.dragMove(x, y, width, height)
+    else TowerBuffSidebar.dragEnd() end
+end
+
+function TowerScene.handleDragEnd()
+    TowerBuffSidebar.dragEnd()
 end
 
 return TowerScene

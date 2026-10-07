@@ -1,5 +1,7 @@
 ## 塔结算横屏与择契不停战（2026-10-07）
 
+- 已正常push14白名单功能b59bba3a728f25bb48564402ecbda145a48aaeda且ls-remote同SHA；PR120 https://github.com/FanZeros/changeForJourney/pull/120，head任务分支/baseworkspace1005，open/draft=false/merged=false，不称CI/合并发布。sharedHEAD/index保持，未推基线；21旧规范问题同ec1d8a61新增0，36单测通过。成功后仅三本人交接追加，不重复建PR或混peer。下方未push措辞属此前过程。
+
 - 用户要求塔胜败结算横屏、三选一可留着不选且战斗继续、右栏排序文字修复；完成后新分支正常push与workspace1005 PR，测试勿复杂化。独立fix1007/tower-flow-roster-labels固定ec1d8a61父，不切共享HEAD/index，不夹并行教程/数据去重/.project/上传/验证/无关meta。
 - 1440×760塔结算最多12英雄，普通副本不改；FIFO未选组本层内保留，清波直接下一波，选择只追加一次并下一波生效，不重置当前敌人/计时/投射物。右待选入口恢复原组，失败/退出/本层结算清理；sans/normal修复排序字体。
 - 现有回执450/0、布局967/0、名册6661/0、真实侧栏16291/0均exit0；11Lua单文件LSP无Error，官方b2/593Lua与11载荷字节/size一致。不称全仓/设备/性能/完整实战视觉通过；只三个旧测试小增量，不新增大测试框架。

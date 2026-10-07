@@ -14,6 +14,8 @@
 
 ## 上次做了什么（2026-10-07，塔结算横屏与择契不停战）
 
+- 已正常push功能提交b59bba3a728f25bb48564402ecbda145a48aaeda，远端SHA一致；正式PR #120：https://github.com/FanZeros/changeForJourney/pull/120，head=fix1007/tower-flow-roster-labels、base=workspace1005，open/draft=false/merged=false，未自动合并发布。14白名单仅11Lua+三本人交接，sharedHEAD/index不改，基线ec1d8a61未推；规范21旧问题同基线、新增0，36单测通过。下方“成功后补”是此前过程记录。
+
 - 本轮基于workspace1005@ec1d8a61，独立fix1007/tower-flow-roster-labels。胜败塔结算改1440×760横向UI，完整显示最多12英雄、楼层/波次、耗时、奖励；普通副本原路径保持。清档无回调释放结算树。
 - 清波直接进入下一波，未选卡组按获得顺序保留，右侧待选数量可恢复；选卡不重开当前波，强化下一波生效。本层结算/失败/退出清空待选，不跨层保留；权威追加、请求重试与幂等继续保留。
 - 排序按钮显式sans/normal修复宿主只有sans、主题却请求sans-bold导致无字。复用三个现有测试小幅补充，回执450/0、布局967/0、名册6661/0，真实侧栏现有专项16291/0，均实际exit0；11修改Lua逐文件LSP无Error，官方b2成功593Lua，本11源码与实际载荷bytes/size一致。未做设备触控/完整实战视觉或性能验收。

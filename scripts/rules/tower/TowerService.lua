@@ -474,6 +474,9 @@ function TowerService.Sweep(uid)
     bt.dailyUsed = bt.dailyUsed + 1
     local diamondReward = floorCfg.sweepDiamond
 
+    local playerExp, heroExpTotal = grantTowerExp(uid, floorCfg.monsterLevel, false)
+    PDM.MarkDirty(uid, "heroes")
+    PDM.MarkDirty(uid, "player")
     CurrencyService.GrantReward(uid, { type = "diamond", amount = diamondReward })
 
     PDM.MarkDirty(uid, "dungeon")
@@ -485,6 +488,8 @@ function TowerService.Sweep(uid)
     return true, nil, {
         sweepFloor    = sweepFloor,
         diamondReward = diamondReward,
+        playerExp     = playerExp,
+        heroExpTotal  = heroExpTotal,
         dailyUsed     = bt.dailyUsed,
         dailyMax      = TowerConfig.DAILY_SWEEP_LIMIT,
     }

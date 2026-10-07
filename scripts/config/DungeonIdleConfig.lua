@@ -3,8 +3,8 @@
 -- 金币副本 → 金币 | 装备副本 → 装备 | 黑钻副本/独立通天塔 → 钻石
 -- 隐藏上古遗迹仅保留旧粉尘存量领取。
 --
--- 旧货币的每分钟效率、2× 倍率与尾段口径保持不变。
--- 新装备以完整 24h 发 2 次 sweepEquip 为准，每分钟允许小数，最终件数向下取整。
+-- 金币/旧粉尘的每分钟效率保持不变；黑钻保留小数，避免整数阈值跳涨。
+-- 2× 倍率与尾段口径不变。装备完整 24h 发 2 次 sweepEquip，最终件数向下取整。
 -- ============================================================================
 
 local DungeonConfig = require("config.DungeonConfig")
@@ -87,6 +87,10 @@ function DungeonIdleConfig.getIdlePerMin(dungeonId, floor)
     end
     local div = DungeonIdleConfig.EFFICIENCY_DIVISOR
     if div <= 0 then div = 480 end
+    -- 黑钻保留小数效率，避免跨整数阈值时整段收益翻倍；领取时才取整。
+    if dungeonId == "black_diamond" or dungeonId == "babel_tower" then
+        return math.max(1, sweep / div)
+    end
     return math.max(1, math.floor(sweep / div))
 end
 
@@ -149,7 +153,7 @@ function DungeonIdleConfig.calcReward(dungeonId, floor, accumSec, consumedSec)
     local effective = DungeonIdleConfig.effectiveSeconds(raw)
     local payMinutes = math.floor(effective / 60)
     local rawMinutes = math.floor(raw / 60)
-    return payMinutes * perMin * DungeonIdleConfig.REWARD_MULT, rawMinutes
+    return math.floor(payMinutes * perMin * DungeonIdleConfig.REWARD_MULT), rawMinutes
 end
 
 --- 三资源取真实最高 cleared（包含已通末层）；旧遗迹/独立塔保留 floor-1 口径。

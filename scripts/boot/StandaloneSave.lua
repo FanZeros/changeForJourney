@@ -254,8 +254,8 @@ local function rosterForSave(roster)
     return out
 end
 
---- 收集当前全部可持久化数据 → 存档表
-local function buildSaveData()
+--- 收集当前全部可持久化数据 → 存档表；候选玩家仅用于副本事务，不发布通知。
+local function buildSaveData(candidatePlayer)
     local all = ClientDispatcher.snapshotAll()
     local modules = {}
     for name, data in pairs(all) do
@@ -270,19 +270,27 @@ local function buildSaveData()
             modules[name] = data
         end
     end
+    local savedState = GameState.exportSave()
+    if type(candidatePlayer) == "table" then
+        -- 两份玩家进度同源；不提前改 live GameState，失败仍可原位回滚。
+        modules.player = candidatePlayer
+        for _, field in ipairs({ "name", "level", "exp", "maxExp" }) do
+            if candidatePlayer[field] ~= nil then savedState[field] = candidatePlayer[field] end
+        end
+    end
     return {
         version   = SAVE_VERSION,
         savedAt   = lastSavedAt,
-        gameState = GameState.exportSave(),
+        gameState = savedState,
         modules   = modules,
     }
 end
 
 --- 编码存档 JSON；成功返回字符串，失败返回 nil
-local function encodeSave()
+local function encodeSave(candidatePlayer)
     -- 采集/构建也可能失败（页面尚未就绪或坏数据），必须在 pcall 内求值。
     local ok, json, data = pcall(function()
-        local current = buildSaveData()
+        local current = buildSaveData(candidatePlayer)
         return cjson.encode(current), current
     end)
     if not ok or type(json) ~= "string" then
@@ -293,7 +301,7 @@ local function encodeSave()
 end
 
 --- 临时文件完整写入且原子替换成功才承认提交；失败不触碰玩家旧档。
-local function writeFile()
+local function writeFile(candidatePlayer)
     -- 检测栈/镜像从不参与落盘；保留在途扫描进度，防止持续掉落写档让大库存尾部饥饿。
     -- 即时提交仍只从当前业务状态重新同步构建。
     local previousSavedAt = lastSavedAt
@@ -312,7 +320,7 @@ local function writeFile()
         print("[StandaloneSave] 写档失败(" .. reason .. "): " .. SAVE_FILE)
         return false
     end
-    local json, committedData = encodeSave()
+    local json, committedData = encodeSave(candidatePlayer)
     if not json then return failed("编码") end
     if not fileSystem or not fileSystem.Rename then return failed("无安全替换接口") end
     local opened, file = pcall(File, TEMP_SAVE_FILE, FILE_WRITE)
@@ -500,8 +508,9 @@ function StandaloneSave.Wipe()
     print("[StandaloneSave] wiped " .. SAVE_FILE)
 end
 
-function StandaloneSave.Flush()
-    return writeFile()
+---@param candidatePlayer table|nil 副本事务的待提交玩家进度；普通自动存档不传
+function StandaloneSave.Flush(candidatePlayer)
+    return writeFile(candidatePlayer)
 end
 
 return StandaloneSave

@@ -4,6 +4,8 @@ local DC = require("config.DungeonConfig")
 local SC = require("config.StageConfig")
 local TC = require("config.TowerConfig")
 local IdleConfig = require("config.DungeonIdleConfig")
+local SRP = require("config.StageRecommendPower")
+local StageExpHelper = require("config.StageExpHelper")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 
 ---@class StageSelectGroup
@@ -23,6 +25,8 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
 ---@field isEstimate boolean
 ---@field firstAmount number|nil
 ---@field repeatAmount number|nil
+---@field playerExp number|nil
+---@field repeatPlayerExp number|nil
 ---@field equipLevel number|nil
 ---@field equipMinQuality number|nil
 ---@field equipMaxQuality number|nil
@@ -73,8 +77,32 @@ function M.getDisplayStageId(stageId)
     return stageId
 end
 
---- 纯静态收益预览：整行击杀收益的数学期望，不调用随机/发奖接口。
---- 资源沿用旧resourceFloor收益基准；塔明确分别列出整层首通与重打。
+--- 共用主线推荐口径；资源按敌人数修正，塔使用同等级主线参考乘属性倍率。
+--- 副本统一保留估算色；不绕过主线模型的等级上限，不作为入场门槛。
+---@param stageId number
+---@param entry table|nil
+---@return number|nil, boolean|nil
+function M.getRecommendedPower(stageId, entry)
+    local combat = entry or M.getStageEntry(stageId)
+    if not combat then return nil end
+    if M.isTowerStage(stageId) then
+        local level = combat.monsterLevel or 1
+        local base = SRP.get(level * 100 + 1)
+        if not base then return nil end
+        return math.ceil(base * TC.MONSTER_STAT_MULT / 5) * 5, true
+    end
+    if SC.isResourceStage(stageId) then
+        local sourceId = combat.sourceStageId
+        local base = sourceId and SRP.get(sourceId)
+        local source = sourceId and SC.getStage(sourceId)
+        if not base or not source then return nil end
+        local ratio = math.max(1, (combat.firstCount or 0) / math.max(1, source.firstCount or 1))
+        return math.ceil(base * ratio / 5) * 5, true
+    end
+    return SRP.get(stageId)
+end
+
+--- 只读展示整行击杀收益，不调用随机/发奖接口；塔首通与重打分列。
 ---@param stageId number
 ---@param entry table|nil
 ---@return StageSelectRewardData|nil
@@ -86,6 +114,8 @@ function M.getRewardPreview(stageId, entry)
         return {
             iconPath = def.rewardIcon, quality = def.quality, amount = floorData.firstDiamond,
             isEstimate = false, firstAmount = floorData.firstDiamond, repeatAmount = floorData.sweepDiamond,
+            playerExp = math.floor(StageExpHelper.getExpPerMin(floorData.monsterLevel) * 20),
+            repeatPlayerExp = math.floor(StageExpHelper.getExpPerMin(floorData.monsterLevel) * 10),
         }
     end
     local id, floor = DC.decodeStageId(stageId)
@@ -99,6 +129,7 @@ function M.getRewardPreview(stageId, entry)
     local amount = perMinute * math.max(0, combat.firstCount or 0) / 20
     local result = {
         iconPath = def.rewardIcon, quality = def.quality, amount = amount, isEstimate = true,
+        playerExp = DC.getStageExpAmount(stageId, math.max(0, combat.firstCount or 0)),
     } ---@type StageSelectRewardData
     if id == "equipment_vault" then
         local floorData = DC.getFloor(id, legacyFloor)

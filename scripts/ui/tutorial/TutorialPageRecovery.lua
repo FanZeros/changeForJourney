@@ -87,6 +87,16 @@ function M.isBlocked(target)
     return false
 end
 
+--- 仅待播故事暂停：教程仍可使用建筑页，不能把此条件并入原 isBlocked。
+--- 各页 isOpen 在关闭动画完成前仍为 true，锻炉关闭后也要继续等仓库真正关闭。
+function M.isPendingStoryBlocked()
+    if M.isBlocked() then return true end
+    for _, path in ipairs(LEFT_PAGES) do
+        if isOpen(page(path)) then return true end
+    end
+    return false
+end
+
 --- 返回是否改变页面；宿主据此等待动画结束，再显示/放行引导目标。
 function M.prepare(vg, store, target, newHeroId, initial, equipmentHeroId)
     if not target then return false end

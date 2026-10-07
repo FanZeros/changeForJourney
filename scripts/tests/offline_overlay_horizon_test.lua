@@ -54,7 +54,8 @@ function Start()
         local sources, compiled, realLoads = {}, {}, {}
         local realModules = { ["boot.StandaloneHorizonInput"] = true,
             ["boot.OfflineRewardOverlay"] = true, ["boot.SeamBackGesture"] = true,
-            ["boot.TerminalInput"] = true }
+            ["boot.TerminalInput"] = true, ["boot.DecomposeMarqueeGesture"] = true,
+            ["boot.StandaloneHorizonWheel"] = true }
         local function source(name)
             if sources[name] then return sources[name] end
             local path = name:gsub("%.", "/") .. ".lua"

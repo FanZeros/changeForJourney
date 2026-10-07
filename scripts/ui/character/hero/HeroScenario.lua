@@ -97,7 +97,7 @@ local function playbackBlocked()
     end
     local reward = require("ui.hud.popup.RewardPopup")
     if require("systems.StoryPlayer").hasPending() then return true end
-    if reward.isOpen() or require("ui.tutorial.TutorialPageRecovery").isBlocked() then return true end
+    if reward.isOpen() or require("ui.tutorial.TutorialPageRecovery").isPendingStoryBlocked() then return true end
     return reward.hasPendingBattleRewards() and not require("boot.BattleRewardOverlay").isBlocked()
 end
 

@@ -94,7 +94,10 @@ mocks["ui.hud.popup.RewardPopup"] = {
     isOpen = function() return playback.rewardOpen end,
     hasPendingBattleRewards = function() return playback.rewardPending end,
 }
-mocks["ui.tutorial.TutorialPageRecovery"] = { isBlocked = function() return playback.recoveryBlocked end }
+mocks["ui.tutorial.TutorialPageRecovery"] = {
+    isBlocked = function() return playback.recoveryBlocked end,
+    isPendingStoryBlocked = function() return playback.recoveryBlocked end,
+}
 mocks["boot.BattleRewardOverlay"] = { isBlocked = function() return playback.battleRewardBlocked end }
 mocks["systems.StoryPlayer"] = { hasPending = function() return playback.storyPending end }
 

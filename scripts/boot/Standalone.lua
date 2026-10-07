@@ -672,7 +672,7 @@ local function tryPlayPendingStory_()
         return
     end
     if RewardPopup.isOpen() or OfflineRewardPanel.isOpen()
-        or require("ui.tutorial.TutorialPageRecovery").isBlocked() then
+        or require("ui.tutorial.TutorialPageRecovery").isPendingStoryBlocked() then
         return
     end
     local rewardBlocked = require("boot.BattleRewardOverlay").isBlocked()

@@ -606,6 +606,8 @@ local function testVictoryMarchLifecycle()
         end }
         local realNames = {
             ["ui.battle.scene.BattleScene"] = true,
+            ["ui.battle.tri.TerminalSceneFlow"] = true,
+            ["ui.battle.tri.TerminalReincarnation"] = true,
             ["ui.battle.stage.BattleStageNavLogic"] = true,
             ["ui.battle.scene.BattleScenePhases"] = true,
             ["ui.battle.combat.BattleCasualty"] = true,

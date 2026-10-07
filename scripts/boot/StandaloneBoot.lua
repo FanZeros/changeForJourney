@@ -568,7 +568,7 @@ function M.run(rt)
         IntroCutscene.reset()
         IntroCutscene.start(function()
             print("[Standalone] reincarnation intro finished, completing stage load")
-            BattleScene.completeReincarnation()
+            BattleScene.completeReincarnation(data.reincarnationToken)
         end)
     end)
 
@@ -584,21 +584,25 @@ function M.run(rt)
                 if not battle.clearedStages then battle.clearedStages = {} end
                 battle.clearedStages[tostring(clearedNum)] = true
                 local nextId = StageConfig.getNextStageId(clearedNum)
-                if teamIdx ~= 1 then
+                if StageConfig.isTerminalTemple(clearedNum) then
+                    -- 通关账本解锁目标，但当前/三队存档仍回末关，动画完成才写目标。
+                    local previous = StageConfig.getTerminalPrevStageId(clearedNum)
+                    local target = StageConfig.getReincarnationTarget(StageConfig.getDifficulty(clearedNum))
+                    battle.currentStageId = previous
+                    battle.maxStageId = math.max(tonumber(battle.maxStageId) or 0, target or previous)
+                    battle.teamStageIds = { ["1"] = previous, ["2"] = previous, ["3"] = previous }
+                    battle.battleMode = "idle"
+                elseif teamIdx ~= 1 then
                     local progressId = nextId and not StageConfig.isTerminalTemple(nextId)
                         and nextId or clearedNum
                     battle.maxStageId = math.max(tonumber(battle.maxStageId) or 0, progressId)
-                elseif StageConfig.isTerminalTemple(clearedNum) then
-                    local reincarnationStage = StageConfig.getReincarnationTarget(StageConfig.getDifficulty(clearedNum))
-                    battle.currentStageId = reincarnationStage
-                    battle.maxStageId = math.max(tonumber(battle.maxStageId) or 0, reincarnationStage)
-                    battle.battleMode = "firstClear"
                 elseif nextId and not StageConfig.isTerminalTemple(nextId) then
                     battle.currentStageId = nextId
                     if nextId > (tonumber(battle.maxStageId) or 0) then
                         battle.maxStageId = nextId
                     end
-                    local nextCleared = battle.clearedStages[tostring(nextId)] == true
+                    local nextCleared = battle.clearedStages[nextId] == true
+                        or battle.clearedStages[tostring(nextId)] == true
                     battle.battleMode = nextCleared and "idle" or "firstClear"
                 else
                     battle.currentStageId = clearedNum

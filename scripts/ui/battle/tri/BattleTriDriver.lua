@@ -267,9 +267,20 @@ function BattleTriDriver.new(teamIdx, options)
         end
         -- 本场固定幸运值：队伍重开才更新，阵亡、换装和延迟领奖不追溯改写。
         self.dropLuck = self.battleLab and 0 or DropSystem.captureTeamLuck(self.allies)
-        -- 敌方：首通实验使用正式首通敌人列表，其余沿用当前三行战斗的出怪规则
+        -- 每场捕获共享首通账本，正式三队也要生成与入场剧情对应的附加怪。
+        -- 不改实验室专用全局词缀状态；资源关和终焉仍使用各自的出怪规则。
         local entry = SC.getStage(stageId)
         local isTerminal = not self.battleLab and SC.isTerminalTemple(stageId)
+        local firstClearForSpawn = self.firstClear
+        if not self.battleLab then
+            local liveCleared = require("ui.battle.scene.BattleScene").getClearedStages() or {}
+            local battle = require("runtime.ClientDispatcher").get("battle")
+            local savedCleared = type(battle) == "table" and battle.clearedStages or {}
+            savedCleared = type(savedCleared) == "table" and savedCleared or {}
+            firstClearForSpawn = not SC.isResourceStage(stageId) and not isTerminal
+                and liveCleared[stageId] ~= true and liveCleared[tostring(stageId)] ~= true
+                and savedCleared[stageId] ~= true and savedCleared[tostring(stageId)] ~= true
+        end
         local allEnemies
         if isTerminal then
             allEnemies = {}
@@ -281,9 +292,9 @@ function BattleTriDriver.new(teamIdx, options)
                 end
             end
         else
-            allEnemies = entry and BattleEnemySpawn.generateEnemyList(entry, self.battleLab and self.firstClear) or {}
+            allEnemies = entry and BattleEnemySpawn.generateEnemyList(entry, firstClearForSpawn) or {}
         end
-        if self.battleLab and self.firstClear and entry then
+        if firstClearForSpawn and entry and not SC.isResourceStage(stageId) then
             -- 生成顺序为普通怪后接附加怪；首/末附加怪使用正式出场阶段标记。
             local bonusIds = BattleEnemySpawn.getFirstClearBonusMonsterIds(entry)
             if bonusIds then

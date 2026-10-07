@@ -507,6 +507,10 @@ function Standalone.Start()
 end
 
 function Standalone.Stop()
+    if Standalone.cancelOpening then Standalone.cancelOpening() end
+    LetterIntro.reset()
+    ScenarioDialogue.reset()
+    require("systems.StoryPlayer").resetAll()
     -- 启动尚未完成时丢弃挂起任务，不能在已释放的VG上下文继续恢复。
     bootQueue_ = nil
     entryQueue_, entryPrepared_ = nil, false
@@ -643,7 +647,7 @@ local function markIntroCompleted_(deferOpening)
     updated.firstLoginTime = sessionData.firstLoginTime or 0
     updated.introCompleted = true
     if deferOpening and sessionData.introCompleted ~= true then
-        -- 只给真正新档保留延后介绍；旧档不新增待播、不重发初始角色。
+        -- 仅真正新档预留前置四段介绍；沿用旧字段以兼容未播完的存档。
         updated.deferredOpening = true
         updated.deferredOpeningIndex = 1
     end
@@ -657,12 +661,45 @@ local function markIntroCompleted_(deferOpening)
         .. tostring(updated.initialHeroId) .. ")")
 end
 
---- 短引子结束即进入游戏，伙伴长介绍由 StoryPlayer 在基础教学后分段播放。
+--- 开场链独占到最后一段，清档/退出使旧信件与对白回调失效。
+local openingFlowToken_ = 0
+local openingFlowActive_ = false
+local function cancelOpening_()
+    openingFlowToken_ = openingFlowToken_ + 1
+    openingFlowActive_ = false
+end
+
 local function finishIntro_()
+    openingFlowActive_ = false
     print("[Standalone] intro chain finished, unlock game")
     GameBGM.setScene("battle", { fromStart = true })
     markIntroCompleted_()
     postStartFlowDone_ = showOfflineRewardPanel_()
+end
+
+--- 旧延播档从未完成的段落接续，新档信件结束后顺序播放门厅与三人入队。
+local function playOpening_(token)
+    if token ~= openingFlowToken_ then return end
+    local story = require("systems.StoryPlayer")
+    local pending = story.takeDeferredOpening()
+    if not pending then finishIntro_(); return end
+    local cfg = pending.config
+    GameBGM.setScene("letter", { fromStart = true })
+    ScenarioDialogue.show({
+        mode = cfg.mode or "large", background = cfg.background,
+        backgroundIsCg = cfg.backgroundIsCg, title = cfg.title, steps = cfg.steps,
+        onFinish = function()
+            if token ~= openingFlowToken_ then return end
+            if story.finishDeferredOpening(pending.deferredToken) then playOpening_(token) end
+        end,
+    })
+end
+
+local function resumeOpening_()
+    openingFlowToken_ = openingFlowToken_ + 1
+    openingFlowActive_ = true
+    postStartFlowDone_ = false
+    playOpening_(openingFlowToken_)
 end
 
 --- 首通/入场排队的情景，等奖励弹窗关掉后再用横屏对话条播放
@@ -671,29 +708,26 @@ local function tryPlayPendingStory_()
     if ScenarioDialogue.isActive() or LetterIntro.isOpen() or IntroCutscene.isActive() then
         return
     end
+    local recovery = require("ui.tutorial.TutorialPageRecovery")
+    local place = recovery.getStoryPlace()
     if RewardPopup.isOpen() or OfflineRewardPanel.isOpen()
-        or require("ui.tutorial.TutorialPageRecovery").isPendingStoryBlocked() then
-        return
-    end
+        or recovery.isPendingStoryBlocked(place) then return end
     local rewardBlocked = require("boot.BattleRewardOverlay").isBlocked()
     if RewardPopup.hasPendingBattleRewards() and not rewardBlocked then return end
-    local pending = ClientMsgHandler.consumePendingScenarioDialogue()
-    if not pending then
-        pending = ClientMsgHandler.consumePendingFollowUpDialogue()
+    local pending
+    -- 旧回执和关卡队列只归主线，不能抢菜单自己的首次介绍。
+    if place == "battle" or place == "battle_town" then
+        pending = ClientMsgHandler.consumePendingScenarioDialogue()
+        if not pending then pending = ClientMsgHandler.consumePendingFollowUpDialogue() end
     end
     if not pending or not pending.config or not pending.config.steps or #pending.config.steps == 0 then
-        pending = require("systems.StoryPlayer").take()
-    end
-    if not pending or not pending.config or not pending.config.steps or #pending.config.steps == 0 then
-        if rewardBlocked then return end
-        pending = require("systems.StoryPlayer").takeDeferredOpening()
+        pending = require("systems.StoryPlayer").take(place)
     end
     if not pending or not pending.config or not pending.config.steps or #pending.config.steps == 0 then
         return
     end
     local cfg = pending.config
     local scenarioId = pending.scenarioId
-    local deferredToken = pending.deferredToken
     if scenarioId then
         local sessionData = ClientDispatcher.get("session") or {}
         local updated = {}
@@ -719,10 +753,6 @@ local function tryPlayPendingStory_()
         eyeOpen = cfg.eyeOpen,
         steps = cfg.steps,
         onFinish = function()
-            if deferredToken then
-                require("systems.StoryPlayer").finishDeferredOpening(deferredToken)
-                return
-            end
             if scenarioId then
                 print("[Standalone] claim scenario reward id=" .. tostring(scenarioId))
                 -- [横屏接线 0928] 恢复引导触发链: claim 结果处理时 fireTutorial → onScenarioClaimed
@@ -740,24 +770,28 @@ local function tryPlayPendingStory_()
     })
 end
 
---- [LetterIntro] 新档开场链：短先祖来信 → 进游戏
+--- [LetterIntro] 新档开场链：完整先祖来信 → 门厅 → 三人入队 → 进游戏
 local function startIntroChain_()
-    -- 一开始就落盘，避免标题关闭后重进或存档回写把同一段开场再播一遍。
-    -- 三人也在这时入队。若只等对话结束，中途存档会把默认的一个人写死。
     entryPrepared_ = false
     StandaloneRT.entryPrepared, StandaloneRT.entryRendered = false, false
     markIntroCompleted_(true)
     local handled = localSendAction("grant_starter_trio", {})
     print("[Standalone] grant starter trio at intro start handled=" .. tostring(handled))
+    openingFlowToken_ = openingFlowToken_ + 1
+    openingFlowActive_ = true
+    postStartFlowDone_ = false
+    local token = openingFlowToken_
     GameBGM.setScene("letter", { fromStart = true })
-    LetterIntro.start(finishIntro_, { compact = true })
+    LetterIntro.start(function() playOpening_(token) end)
 end
+Standalone.cancelOpening = cancelOpening_
 
 --- 清除存档后重置客户端状态并回到开始界面
 --- 由 DebugPanel 的 reset_save 处理器调用
 function Standalone.requestResetToStartScreen()
     local TAG = "[Standalone][DIAG-RESET]"
     local t0 = os.clock()
+    cancelOpening_()
     print(string.format("%s requestResetToStartScreen START clock=%.4f", TAG, t0))
 
     -- 1. 停止 BGM & SFX
@@ -998,7 +1032,7 @@ function HandleUpdate(eventType, eventData)
         end
     end
 
-    -- 开始页/标题刚关闭 → 老档弹离线收益；新档只播短来信
+    -- 开始页/标题刚关闭 → 完整开场或旧未完成段接续，结束后才弹离线收益。
     -- 必须等 DarkTitleScreen 关闭后再播，否则信件会被标题盖住且点击被吞
     if not postStartFlowDone_ and not DarkTitleScreen.isOpen() then
         if not startFlowBegun_ then
@@ -1024,19 +1058,42 @@ function HandleUpdate(eventType, eventData)
             print("[Standalone] legacy save detected, mark intro completed")
             markIntroCompleted_()
         end
-        if introDone and not LetterIntro.isOpen() then
+        if not openingFlowActive_ and introDone and sessionData.deferredOpening == true then
+            resumeOpening_()
+        elseif not openingFlowActive_ and introDone and not LetterIntro.isOpen() then
             -- 角色还没刷新时保持未完成，下一帧再结算。
-            if showOfflineRewardPanel_() then
-                postStartFlowDone_ = true
-            end
-        elseif not introDone then
-            postStartFlowDone_ = true
-            print("[Standalone] new save detected, starting brief letter intro")
+            if showOfflineRewardPanel_() then postStartFlowDone_ = true end
+        elseif not openingFlowActive_ and not introDone then
+            print("[Standalone] new save detected, starting complete intro chain")
             startIntroChain_()
         end
     end
 
+    -- 开场介绍不让教程、后台战斗或旧剧情插入；最后一段结束后再结算离线收益。
+    if openingFlowActive_ then
+        if LetterIntro.isOpen() then LetterIntro.update(dt)
+        elseif ScenarioDialogue.isActive() then ScenarioDialogue.update(dt) end
+        return
+    end
+
     BottomNav.update(dt)
+
+    -- 按实际打开的菜单自动触发，覆盖城镇点击、教程恢复和其他直达入口。
+    if postStartFlowDone_ then
+        local place = require("ui.tutorial.TutorialPageRecovery").getStoryPlace()
+        local story = require("systems.StoryPlayer")
+        if place == "battle_town" then
+            local battle = ClientDispatcher.get("battle") or {}
+            local cleared = battle.clearedStages or {}
+            -- 三行布局一开始就画城镇，但故事抵达城门仍应在第一章通关之后。
+            if cleared[105] == true or cleared["105"] == true
+                or (tonumber(battle.maxStageId) or 0) >= 201 then
+                story.onPlace("town", "enter")
+            end
+        else
+            story.onPlace(place, "enter")
+        end
+    end
 
     -- [横屏接线 0928] 新手引导每帧驱动（原 ClientUpdate 接线，重构时丢失）
     -- 热点在绘制帧开始时清空，输入始终可读取最近一次实际渲染的坐标。

@@ -1,6 +1,6 @@
 -- 专项回归：仅只读生产源码/图片，通过 cache.GetFile + load(env) 创建独立真实模块。
--- /home/Maker/urhox-runtime/UrhoXRuntime tests/story_background_test.lua
---   -tapcode_dir=/workspace/journey-selection-fix -tool_mode -graphicsheadless -validate -validateframes=90
+-- /workspace/.cli/UrhoXRuntime tests/story_background_test.lua
+--   -tapcode_dir=/workspace/game2 -tool_mode -graphicsheadless
 -- 不启动完整Boot、不读取玩家档、不dispatch cloud；绘制出口是语义spy，不冒充截图。
 local PREFIX = "[story_background] "
 local checks, groups = 0, 0
@@ -197,7 +197,10 @@ local function newContext()
         ctx.pageStates[path] = state
         ctx.deps[path] = {
             isOpen = function() return state.open end,
-            open = function() state.open, state.closing = true, false; state.openTime = ctx.clock.elapsedTime end,
+            open = function()
+                state.open, state.closing, state.closeTime = true, false, 0
+                state.openTime = ctx.clock.elapsedTime
+            end,
             close = function()
                 if not state.open or state.closing then return end
                 state.closing, state.closeTime = true, ctx.clock.elapsedTime
@@ -218,7 +221,11 @@ local function newContext()
             end
         end
     end
+    ctx.deps["ui.tavern.TavernPage"].isRecruitBusy = function() return ctx.recruitBusy == true end
     ctx.deps["boot.BattleRewardOverlay"] = { isBlocked = function() return ctx.battleRewardBlocked == true end }
+    ctx.nav = 3
+    ctx.deps["ui.hud.BottomNav"] = { getSelectedIndex = function() return ctx.nav end }
+    ctx.deps["ui.battle.tri.BattleTriPage"] = { isOpen = function() return ctx.triOpen == true end }
     env.require = function(name)
         if ctx.deps[name] ~= nil then return ctx.deps[name] end
         local permitted = name:match("^config%.") or name == "core.EventBus" or name == "core.I18nStory"
@@ -679,13 +686,13 @@ local function wipeBootCases()
     ctx.assertSafe()
 end
 local function pendingBoot(ctx)
-    -- 三类队列出口和延迟开场都记录读取次数；暂停不等于 take 后不展示。
+    -- 三类队列出口记录读取次数；后续剧情泵永远不读取旧延播开场。
     ctx.pendingReads = { scenario = 0, follow = 0, story = 0, deferred = 0 }
     local story = ctx.env.require("systems.StoryPlayer")
     local take, takeDeferred = story.take, story.takeDeferredOpening
-    story.take = function()
+    story.take = function(place)
         ctx.pendingReads.story = ctx.pendingReads.story + 1
-        return take()
+        return take(place)
     end
     story.takeDeferredOpening = function()
         ctx.pendingReads.deferred = ctx.pendingReads.deferred + 1
@@ -752,9 +759,11 @@ local function rewardGateCases()
     eq(bar(ctx), nil, "forwarded eyeOpen really hides dialogue during entry")
     ctx.assertSafe()
 end
-local function assertPendingPaused(ctx, sessionBefore, message)
+local function assertPendingPaused(ctx, sessionBefore, message, storyProbes)
     eq(#ctx.shown, 0, message .. "：不展示")
-    for name, count in pairs(ctx.pendingReads) do eq(count, 0, message .. "：不读取/消费 " .. name) end
+    for name, count in pairs(ctx.pendingReads) do
+        eq(count, name == "story" and (storyProbes or 0) or 0, message .. "：所属查询不消费队列 " .. name)
+    end
     eq(ctx.stateUpdates, 0, message .. "：不发布预标记或82台账")
     eq(ctx.flushes, 0, message .. "：不落档")
     eq(#ctx.actions, 0, message .. "：不发奖")
@@ -764,32 +773,92 @@ end
 local function buildingGateCases()
     local ctx = newContext()
     local recovery = ctx.env.require("ui.tutorial.TutorialPageRecovery")
+    local owners = { ["ui.church.ChurchPage"] = "church", ["ui.tavern.TavernPage"] = "tavern",
+        ["ui.blacksmith.BlacksmithPage"] = "smith" }
     eq(#LEFT_PAGE_CASES, 8, "八类建筑页独立枚举完整")
     eq(recovery.isBlocked(), false, "无高优先级页面时原恢复器不阻挡")
-    eq(recovery.isPendingStoryBlocked(), false, "全部关闭时允许待播")
+    eq(recovery.getStoryPlace(), "battle", "三行未开时主线页归战场")
+    ctx.triOpen = true
+    eq(recovery.getStoryPlace(), "battle_town", "默认nav3真实三行同时归城镇和战场")
+    eq(recovery.isPendingStoryBlocked("battle_town"), false, "三行布局本身不阻挡普通剧情")
+    ctx.nav = 5
+    eq(recovery.getStoryPlace(), "battle", "其他页签不因三行旧状态误归双上下文")
+    ctx.triOpen = false
+    ctx.nav = 4
+    eq(recovery.getStoryPlace(), "town", "城镇页归城镇")
+    eq(recovery.isPendingStoryBlocked("town"), false, "全部关闭时允许城镇待播")
     for _, entry in ipairs(LEFT_PAGE_CASES) do
         local label, path = entry[1], entry[2]
-        local p = ctx.deps[path]
+        local p, owner = ctx.deps[path], owners[path]
         p.open()
         eq(recovery.isBlocked(), false, label .. "：原教程门控仍放行，不抢教程建筑页")
-        eq(recovery.isPendingStoryBlocked(), true, label .. "：独立故事门控暂停")
+        eq(recovery.isPendingStoryBlocked(), true, label .. "：无所属上下文不豁免")
+        eq(recovery.getStoryPlace(), owner or "other", label .. "：按实际菜单定位")
+        for _, place in ipairs({ "battle", "town", "church", "tavern", "smith", "battle_town" }) do
+            eq(recovery.isPendingStoryBlocked(place), place ~= owner, label .. "：只豁免所属菜单 " .. place)
+        end
         p.close()
         eq(p.isOpen(), true, label .. "：close启动动画不等于真正关闭")
+        eq(recovery.getStoryPlace(), "other", label .. "：关闭动画不算所属菜单")
         ctx.clock.elapsedTime = ctx.clock.elapsedTime + 10
-        eq(recovery.isPendingStoryBlocked(), true, label .. "：即使超动画时间也等真实生命周期收尾")
+        eq(recovery.isPendingStoryBlocked(owner or "battle"), true, label .. "：超时也等真实生命周期收尾")
         p.finishClose()
-        eq(recovery.isPendingStoryBlocked(), false, label .. "：真实关闭后放行")
+        eq(recovery.isPendingStoryBlocked("town"), false, label .. "：真实关闭后放行")
     end
+    local smith, bag, tavern = ctx.deps["ui.blacksmith.BlacksmithPage"],
+        ctx.deps["ui.backpack.BackpackPanel"], ctx.deps["ui.tavern.TavernPage"]
+    smith.open(); bag.open()
+    eq(recovery.getStoryPlace(), "smith", "锻炉联动仓库仍归锻炉")
+    eq(recovery.isPendingStoryBlocked("smith"), false, "锻炉只豁免本页和联动仓库")
+    eq(recovery.isPendingStoryBlocked("tavern"), true, "仓库不因错误所属获得豁免")
+    bag.close()
+    eq(recovery.isPendingStoryBlocked("smith"), true, "联动仓库关闭动画继续挡")
+    bag.finishClose(); tavern.open()
+    eq(recovery.isPendingStoryBlocked("smith"), true, "锻炉所属不能豁免另一个酒馆")
+    eq(recovery.isPendingStoryBlocked("tavern"), true, "酒馆所属不能豁免另一个锻炉")
+    smith.finishClose(); tavern.finishClose()
+    -- 锻炉错峰滑入将开放时间推后0.12秒；早关必须优先读真实closing，不能放宽门禁。
+    local smithState = ctx.pageStates["ui.blacksmith.BlacksmithPage"]
+    local originalSeam = smith.getSeamAnim
+    smith.isClosing = function() return smithState.closing end
+    smith.getSeamAnim = function()
+        return smithState.openTime + 0.12, smithState.closeTime, 0.3, 0.3
+    end
+    smith.open(); bag.open()
+    eq(smith.isClosing(), false, "锻炉显式getter开放时不是关闭中")
+    eq(recovery.getStoryPlace(), "smith", "锻炉未来开放时间不误挡正常所属")
+    eq(recovery.isPendingStoryBlocked("smith"), false, "正常锻炉仍精确豁免联动仓库")
+    ctx.clock.elapsedTime = ctx.clock.elapsedTime + 0.04
+    smith.close()
+    local opened, closed = smith.getSeamAnim()
+    check(opened > ctx.clock.elapsedTime, "早关时错峰开放时间确实仍在未来")
+    check(closed > 0 and closed < opened, "早关时间小于开放时间，时间戳回退无法识别")
+    eq(smith.isOpen(), true, "锻炉早关动画尚未收尾")
+    eq(smith.isClosing(), true, "锻炉显式getter保留真实关闭状态")
+    eq(recovery.getStoryPlace(), "other", "锻炉未来开放时间早关必须归other")
+    eq(recovery.isPendingStoryBlocked("smith"), true, "锻炉早关不能豁免自身或联动仓库")
+    bag.finishClose()
+    eq(recovery.getStoryPlace(), "other", "仓库收尾后锻炉早关仍归other")
+    eq(recovery.isPendingStoryBlocked("smith"), true, "独立锻炉早关仍阻挡所属剧情")
+    smith.finishClose(); smith.open()
+    -- 显式false也优先于旧时间戳，证明getter不是只在true时附加检查。
+    smithState.closeTime = smithState.openTime + 0.2
+    eq(recovery.getStoryPlace(), "smith", "显式开放状态优先于残留关闭时间戳")
+    eq(recovery.isPendingStoryBlocked("smith"), false, "真实重新开放后精确放行锻炉")
+    smith.finishClose()
+    smith.isClosing, smith.getSeamAnim = nil, originalSeam
     for _, entry in ipairs(HIGH_PRIORITY_CASES) do
         local path, method = entry[1], entry[2]
         local original = ctx.env.require(path)[method]
         ctx.deps[path][method] = function() return true end
         eq(recovery.isBlocked(), true, "原高优先级门控保持 " .. path)
-        eq(recovery.isPendingStoryBlocked(), true, "新故事门控继承原高优先级 " .. path)
+        for _, place in ipairs({ "battle", "town", "church", "tavern", "smith", "battle_town" }) do
+            eq(recovery.isPendingStoryBlocked(place), true, "所属菜单不能绕过高优先级 " .. path .. "/" .. place)
+        end
         if path == "ui.battle.stage.StageSelectDialog" then
             eq(recovery.isBlocked("tab_dungeon"), false, "原副本教程选关豁免保留")
             eq(recovery.isBlocked("dungeon_gold_mine"), false, "原金矿教程选关豁免保留")
-            eq(recovery.isPendingStoryBlocked(), true, "故事不借用教程选关豁免")
+            eq(recovery.isPendingStoryBlocked("battle"), true, "故事不借用教程选关豁免")
         end
         ctx.deps[path][method] = original
     end
@@ -797,7 +866,7 @@ local function buildingGateCases()
 end
 local function buildingBootCases()
     for _, entry in ipairs(LEFT_PAGE_CASES) do
-        for _, queueKind in ipairs({ "scenario", "follow", "story", "deferred" }) do
+        for _, queueKind in ipairs({ "scenario", "follow", "story" }) do
             local ctx = newContext()
             local story = ctx.env.require("systems.StoryPlayer")
             local label = entry[1] .. "/" .. queueKind
@@ -805,24 +874,21 @@ local function buildingBootCases()
             local item = { scenarioId = 38, config = cfg }
             if queueKind == "scenario" then ctx.pending = { item }
             elseif queueKind == "follow" then ctx.followPending = { item }
-            elseif queueKind == "story" then check(story.enqueue(38), label .. "：真实队列入队")
-            else
-                ctx.modules.session.deferredOpening, ctx.modules.session.deferredOpeningIndex = true, 1
-                ctx.foundation = { [1] = true, [2] = true, [4] = true, [8] = true, [9] = true }
-                cfg = ctx.config.OPENING
-            end
+            else check(story.enqueue(38), label .. "：真实队列入队") end
             local play = pendingBoot(ctx)
             local p = ctx.deps[entry[2]]
             p.open()
             local sessionBefore = copy(ctx.modules.session)
             for _ = 1, 3 do play() end
-            assertPendingPaused(ctx, sessionBefore, label .. "打开时")
+            local ownedMenu = entry[2] == "ui.church.ChurchPage" or entry[2] == "ui.tavern.TavernPage"
+                or entry[2] == "ui.blacksmith.BlacksmithPage"
+            assertPendingPaused(ctx, sessionBefore, label .. "打开时", ownedMenu and 3 or 0)
             if queueKind == "scenario" then eq(ctx.pending[1], item, label .. "：桥接队首身份仍在")
             elseif queueKind == "follow" then eq(ctx.followPending[1], item, label .. "：后续队首身份仍在")
             elseif queueKind == "story" then check(story.hasPending(), label .. "：真实StoryPlayer仍待播") end
             p.close(); play()
             ctx.clock.elapsedTime = ctx.clock.elapsedTime + 10; play()
-            assertPendingPaused(ctx, sessionBefore, label .. "关闭动画中")
+            assertPendingPaused(ctx, sessionBefore, label .. "关闭动画中", ownedMenu and 3 or 0)
             p.finishClose(); play()
             eq(#ctx.shown, 1, label .. "：全部真实关闭后下次泵自动恢复一次")
             eq(ctx.shown[1].steps, cfg.steps, label .. "：恢复原队首/原段")
@@ -831,21 +897,11 @@ local function buildingBootCases()
             play(); play()
             eq(#ctx.shown, 1, label .. "：重复泵不重播")
             eq(#ctx.actions, 0, label .. "：起播仍不发奖")
-            if queueKind ~= "deferred" then
-                check(ctx.modules.session.claimedScenarios["38"] == true, label .. "：仅起播时沿原时机预标记")
-            else
-                eq(ctx.modules.session.deferredOpeningIndex, 1, label .. "：开场仅真实结束才推进")
-            end
+            check(ctx.modules.session.claimedScenarios["38"] == true, label .. "：仅起播时沿原时机预标记")
             finish(ctx)
-            if queueKind ~= "deferred" then
-                eq(#ctx.actions, 1, label .. "：仅结束沿原领奖出口调用一次")
-                eq(ctx.actions[1].params.scenarioId, 38, label .. "：原领奖ID")
-                eq(#ctx.notices, 1, label .. "：真实结束通知教程一次")
-            else
-                eq(ctx.modules.session.deferredOpeningIndex, 2, label .. "：结束后推进一次")
-                eq(ctx.flushes, 1, label .. "：结束落档一次")
-                eq(#ctx.actions, 0, label .. "：延迟介绍不发奖")
-            end
+            eq(#ctx.actions, 1, label .. "：仅结束沿原领奖出口调用一次")
+            eq(ctx.actions[1].params.scenarioId, 38, label .. "：原领奖ID")
+            eq(#ctx.notices, 1, label .. "：真实结束通知教程一次")
             play(); ctx.dialogue.skip(); play()
             eq(#ctx.shown, 1, label .. "：消费/完成后不重复展示")
             ctx.assertSafe()
@@ -862,9 +918,9 @@ local function buildingBootCases()
     local snapshot = copy(ctx.modules.session)
     play(); smith.close(); play(); smith.finishClose(); play()
     eq(bag.isOpen(), true, "锻炉已关闭但仓库仍开")
-    assertPendingPaused(ctx, snapshot, "锻炉关闭仓库仍开，奖励覆盖门控不能绕过建筑")
+    assertPendingPaused(ctx, snapshot, "锻炉关闭仓库仍开，奖励覆盖门控不能绕过建筑", 1)
     bag.close(); ctx.clock.elapsedTime = ctx.clock.elapsedTime + 10; play()
-    assertPendingPaused(ctx, snapshot, "库存关闭动画未收尾")
+    assertPendingPaused(ctx, snapshot, "库存关闭动画未收尾", 1)
     bag.finishClose(); play()
     eq(#ctx.shown, 1, "双页真正关闭后82恢复一次")
     eq(ctx.shown[1].steps, ctx.config.SCENARIO_82.steps, "82恢复原奖励故事")
@@ -889,6 +945,9 @@ local function buildingHeroCases()
             ctx.modules.heroes.roster[25] = { level = 1 }
             if route == "真实结束广播" then sample(ctx, "small", bg(5)) end
             p.open()
+            -- 酒馆菜单允许招募对白，仍必须等真实招募动画收尾。
+            local inTavern = entry[2] == "ui.tavern.TavernPage"
+            ctx.recruitBusy = inTavern
             local sessionBefore = copy(ctx.modules.session)
             local shownBefore = #ctx.shown
             hs.onOpenHero(25); hs.onOpenHero(25)
@@ -898,45 +957,52 @@ local function buildingHeroCases()
             local function paused(message)
                 eq(#ctx.shown, shownBefore, label .. message .. "：不展示")
                 check(hs.hasPending(), label .. message .. "：真实Hero队列保留")
-                check(same(ctx.modules.session, sessionBefore), label .. message .. "：不提前标记已拥有/新招募角色")
+                check(same(ctx.modules.session, sessionBefore), label .. message .. "：不提前标记角色")
                 eq(ctx.stateUpdates, 0, label .. message .. "：不发布状态")
                 eq(ctx.flushes, 0, label .. message .. "：不落档")
                 eq(#ctx.actions, 0, label .. message .. "：不发奖")
             end
             hs.update(); ctx.bus.emit("scenario_dialogue_finished", { reason = "finished" })
-            paused("打开时")
-            p.close()
+            paused(inTavern and "招募忙时" or "打开时")
+            p.close(); ctx.recruitBusy = false
             hs.onOpenHero(25); hs.update()
             ctx.bus.emit("scenario_dialogue_finished", { reason = "dismissed" })
             ctx.clock.elapsedTime = ctx.clock.elapsedTime + 10; hs.update()
             paused("关闭动画中重入")
-            p.finishClose(); hs.update(); hs.update()
-            eq(#ctx.shown, shownBefore + 1, label .. "：真正关闭后闲聊恢复一次")
-            eq(ctx.shown[#ctx.shown].steps, ctx.config.SCENARIO_81.steps, label .. "：保持队首英雄25闲聊")
-            check(ctx.modules.session.claimedScenarios["77"] and ctx.modules.session.claimedScenarios["81"],
-                label .. "：已拥有英雄仅恢复时沿原时机落档")
-            eq(ctx.modules.session.claimedScenarios["76"], nil, label .. "：下一新招募角色还没消费")
-            eq(ctx.flushes, 2, label .. "：原入队补标记+闲聊各一次")
-            -- 播放结束前重开建筑：onFinish回调与真实结束广播都不能把第二个请求抽走。
-            p.open(); finish(ctx); hs.update()
+            if inTavern then p.open() else p.finishClose() end
+            hs.update(); hs.update()
+            eq(#ctx.shown, shownBefore + 1, label .. "：所属/关闭后入队剧情恢复一次")
+            eq(ctx.shown[#ctx.shown].steps, ctx.config.SCENARIO_77.steps, label .. "：已拥有未看仍先播入队")
+            check(ctx.modules.session.claimedScenarios["77"], label .. "：仅起播才标记入队")
+            eq(ctx.modules.session.claimedScenarios["81"], nil, label .. "：未看闲聊不提前标记")
+            eq(ctx.modules.session.claimedScenarios["76"], nil, label .. "：下一角色还没消费")
+            eq(ctx.flushes, 1, label .. "：已播入队标记落档一次")
+            finish(ctx)
+            eq(#ctx.shown, shownBefore + 2, label .. "：入队结束立即接本角色闲聊")
+            eq(ctx.shown[#ctx.shown].steps, ctx.config.SCENARIO_81.steps, label .. "：本角色闲聊原文")
+            eq(ctx.flushes, 2, label .. "：入队与闲聊各标记一次")
+            -- 本角色闲聊结束前覆盖页面，回调及广播不得抽走第二队首。
+            if inTavern then ctx.recruitBusy = true else p.open() end
+            finish(ctx); hs.update()
             ctx.bus.emit("scenario_dialogue_finished", { reason = "finished" })
-            eq(#ctx.shown, shownBefore + 1, label .. "：回调/广播重入仍挡第二个角色")
+            eq(#ctx.shown, shownBefore + 2, label .. "：重入仍挡第二个角色")
             check(hs.hasPending(), label .. "：第二队首未丢失")
             eq(ctx.modules.session.claimedScenarios["76"], nil, label .. "：重入不预标记新人")
             eq(ctx.flushes, 2, label .. "：重入不额外Flush")
-            p.close(); hs.update()
-            eq(#ctx.shown, shownBefore + 1, label .. "：再次close中仍暂停")
-            p.finishClose(); hs.update()
-            eq(#ctx.shown, shownBefore + 2, label .. "：第二请求自动恢复一次")
-            eq(ctx.shown[#ctx.shown].steps, ctx.config.SCENARIO_76.steps, label .. "：FIFO新招募入队保持")
+            p.close(); ctx.recruitBusy = false; hs.update()
+            eq(#ctx.shown, shownBefore + 2, label .. "：再次close中仍暂停")
+            if inTavern then p.open() else p.finishClose() end
+            hs.update()
+            eq(#ctx.shown, shownBefore + 3, label .. "：第二请求自动恢复一次")
+            eq(ctx.shown[#ctx.shown].steps, ctx.config.SCENARIO_76.steps, label .. "：FIFO新人入队保持")
             finish(ctx)
-            eq(#ctx.shown, shownBefore + 3, label .. "：原新人入队结束接闲聊一次")
-            eq(ctx.shown[#ctx.shown].steps, ctx.config.SCENARIO_80.steps, label .. "：原新人闲聊保持")
+            eq(#ctx.shown, shownBefore + 4, label .. "：新人入队结束接闲聊一次")
+            eq(ctx.shown[#ctx.shown].steps, ctx.config.SCENARIO_80.steps, label .. "：新人闲聊原文")
             finish(ctx); hs.update(); hs.onOpenHero(25)
             ctx.bus.emit("scenario_dialogue_finished", { reason = "finished" }); hs.update()
-            eq(#ctx.shown, shownBefore + 3, label .. "：重复调用/广播不重播")
+            eq(#ctx.shown, shownBefore + 4, label .. "：重复调用/广播不重播")
             eq(hs.hasPending(), false, label .. "：两次请求均完成无积压")
-            eq(ctx.flushes, 4, label .. "：四个原标记各落档一次")
+            eq(ctx.flushes, 4, label .. "：四个真实标记各落档一次")
             eq(#ctx.actions, 0, label .. "：Hero流程没有新增发奖出口")
             ctx.assertSafe()
         end
@@ -1012,102 +1078,328 @@ local function heroCases()
     eq(#ctx.shown, 1, "busy hero requests wait and deduplicate")
     ctx.dialogue.skip()
     eq(#ctx.shown, 2, "real finished EventBus drains pending hero")
-    eq(ctx.shown[2].background, bg(17), "drained idle retains background17")
+    eq(ctx.shown[2].background, bg(17), "drained join retains background17")
+    eq(ctx.shown[2].steps, ctx.config.SCENARIO_77.steps, "已拥有未看入队仍先77")
+    ctx.dialogue.skip()
+    eq(#ctx.shown, 3, "真实入队结束接81一次")
+    eq(ctx.shown[3].steps, ctx.config.SCENARIO_81.steps, "闲聊81原文保持")
     ctx.dialogue.skip(); hs.onOpenHero(25)
-    eq(#ctx.shown, 2, "drained claim prevents replay")
+    eq(#ctx.shown, 3, "drained claim prevents replay")
     ctx.assertSafe()
 end
-local function bootChainCases()
+local function placeQueueCases()
     local ctx = newContext()
-    local letter = ctx.env.require("ui.story.gate.LetterIntro")
-    letter.init(ctx.vg)
-    ctx.modules.session.introCompleted = false
-    ctx.modules.session.keep = "unchanged-session-field"
+    local story = ctx.env.require("systems.StoryPlayer")
+    local expected = { [27] = "church", [31] = "tavern", [47] = "smith" }
+    for _, id in ipairs({ 23,24,25,26,28,29,30,32,33,34,48,49,50 }) do expected[id] = "town" end
+    for id = 1, 82 do
+        if ctx.config["SCENARIO_" .. id] then
+            for _, place in ipairs({ "town", "battle", "church", "tavern", "smith", "other", "battle_town" }) do
+                local owner = expected[id] or "battle"
+                local matches = place == owner or place == "battle_town" and (owner == "town" or owner == "battle")
+                eq(story.matchesPlace(id, place), matches, "80剧情精确归属 " .. id .. "/" .. place)
+            end
+        end
+    end
+    for _, id in ipairs({ 35, 31, 47, 27, 23, 36 }) do check(story.enqueue(id), "混合队列入队 " .. id) end
+    for _, pair in ipairs({ { "tavern",31 }, { "church",27 }, { "smith",47 }, { "town",23 },
+        { "battle",35 }, { "battle",36 } }) do
+        check(story.hasPending(pair[1]), "所属队列待播 " .. pair[1])
+        eq(story.take(pair[1]).scenarioId, pair[2], "跨场跳过但同场FIFO " .. pair[1])
+    end
+    eq(story.hasPending(), false, "跨场取完无积压")
+    eq(story.take("other"), nil, "其他页不能消费任何剧情")
+    -- 两栏同时可见时沿用全队列FIFO，不人为给城镇或主线另设永久优先级。
+    for _, ids in ipairs({ { 23,24,5 }, { 5,23,24 }, { 23,5,24 } }) do
+        for _, id in ipairs({ 31,27,47 }) do check(story.enqueue(id), "双上下文保留菜单队首 " .. id) end
+        for _, id in ipairs(ids) do check(story.enqueue(id), "双上下文混合FIFO入队 " .. id) end
+        for _, id in ipairs(ids) do
+            check(story.hasPending("battle_town"), "双上下文有可播城镇或主线 " .. id)
+            eq(story.take("battle_town").scenarioId, id, "双上下文按原全队列顺序消费 " .. id)
+        end
+        eq(story.hasPending("battle_town"), false, "仅剩菜单时双上下文不虚报待播")
+        eq(story.take("battle_town"), nil, "双上下文不消费三个菜单介绍")
+        for _, pair in ipairs({ { "tavern",31 }, { "church",27 }, { "smith",47 } }) do
+            eq(story.take(pair[1]).scenarioId, pair[2], "跳过菜单后菜单原队首仍在 " .. pair[1])
+        end
+    end
+    for hero = 1, 3 do
+        local branch = newContext()
+        branch.modules.session.initialHeroId = hero
+        local s = branch.env.require("systems.StoryPlayer")
+        for _, place in ipairs({ "church", "tavern", "smith" }) do
+            s.onPlace(place, "leave")
+            eq(s.hasPending("town"), false, "没看入场不排告别 " .. place)
+            s.onPlace(place, "enter")
+            eq(s.take("battle"), nil, "菜单介绍不归战场 " .. place)
+            local item = assert(s.take(place))
+            branch.modules.session.claimedScenarios[tostring(item.scenarioId)] = true
+            s.onPlace(place, "leave")
+            eq(s.take(place), nil, "告别不留所属菜单 " .. place)
+            local want = ({ church = 27, tavern = 31, smith = 47 })[place] + hero
+            eq(s.take("town").scenarioId, want, "告别回城镇英雄分支 " .. place)
+        end
+        s.onStage(205, "clear")
+        eq(s.take("town"), nil, "205不能跑到城镇")
+        eq(s.take("battle").scenarioId, 50 + hero, "205先角色收尾分支")
+        eq(s.take("battle").scenarioId, 82, "205后潜能引导82")
+        eq(s.take("battle"), nil, "205仅两段")
+        branch.assertSafe()
+    end
+    ctx.assertSafe()
+end
+local function menuBootCases()
+    for _, entry in ipairs({ { "tavern", "ui.tavern.TavernPage",31 },
+        { "church", "ui.church.ChurchPage",27 }, { "smith", "ui.blacksmith.BlacksmithPage",47 } }) do
+        local ctx = newContext()
+        local story = ctx.env.require("systems.StoryPlayer")
+        local play = pendingBoot(ctx)
+        local p = ctx.deps[entry[2]]
+        local bridge = { scenarioId = 38, config = ctx.config.SCENARIO_38 }
+        ctx.pending, ctx.followPending = { bridge }, { bridge }
+        check(story.enqueue(35), "菜单前有战场旧队首")
+        p.open()
+        if entry[1] == "smith" then ctx.deps["ui.backpack.BackpackPanel"].open() end
+        -- 与生产Update同一段闭包，直接菜单/教程恢复入口无需点击城镇才触发。
+        ctx.env.postStartFlowDone_ = true
+        local auto = section("boot.Standalone", "    -- 按实际打开的菜单自动触发，", "\n    -- [横屏接线 0928]")
+        ctx.compile(auto, "production-auto-place")
+        play(); play()
+        eq(#ctx.shown, 1, "所属菜单自动起播一次 " .. entry[1])
+        eq(ctx.shown[1].steps, ctx.config["SCENARIO_" .. entry[3]].steps, "所属菜单原文 " .. entry[1])
+        eq(ctx.shown[1].background, ctx.config["SCENARIO_" .. entry[3]].background, "所属菜单背景保持")
+        eq(ctx.pendingReads.scenario, 0, "菜单不读旧主线回执")
+        eq(ctx.pendingReads.follow, 0, "菜单不读主线后续回执")
+        eq(ctx.pending[1], bridge, "菜单保留主线桥接队首")
+        check(story.hasPending("battle"), "菜单保留主线队首")
+        eq(#ctx.actions, 0, "菜单起播仍不发奖")
+        finish(ctx)
+        eq(#ctx.actions, 1, "所属菜单真实结束领奖一次")
+        ctx.compile(auto, "production-auto-place-again"); play()
+        eq(#ctx.shown, 1, "所属菜单已看不重播")
+        story.onPlace(entry[1], "leave")
+        play(); eq(#ctx.shown, 1, "告别不在菜单播")
+        p.close(); play(); eq(#ctx.shown, 1, "所属页关闭动画挡告别")
+        p.finishClose()
+        if entry[1] == "smith" then ctx.deps["ui.backpack.BackpackPanel"].finishClose() end
+        ctx.nav = 4; play()
+        eq(ctx.shown[2].steps, ctx.config["SCENARIO_" .. (entry[3] + 1)].steps, "回城镇才播告别")
+        eq(ctx.pendingReads.scenario, 0, "城镇仍不消费主线桥接")
+        finish(ctx); ctx.nav = 3; play()
+        eq(ctx.shown[3].steps, ctx.config.SCENARIO_38.steps, "回主线恢复原桥接队首")
+        ctx.assertSafe()
+    end
+    -- 正式nav3三行无需切旧nav4：菜单介绍结束、真正关闭后直接播告别，再恢复主线。
+    local autoPlace = section("boot.Standalone", "    -- 按实际打开的菜单自动触发，", "\n    -- [横屏接线 0928]")
+    for _, entry in ipairs({ { "tavern", "ui.tavern.TavernPage",31 },
+        { "church", "ui.church.ChurchPage",27 }, { "smith", "ui.blacksmith.BlacksmithPage",47 } }) do
+        local ctx = newContext()
+        ctx.triOpen = true
+        ctx.modules.battle.clearedStages = { [105] = true }
+        ctx.modules.session.claimedScenarios = { ["23"] = true, ["24"] = true }
+        ctx.env.postStartFlowDone_ = true
+        local recovery = ctx.env.require("ui.tutorial.TutorialPageRecovery")
+        local story, play = ctx.env.require("systems.StoryPlayer"), pendingBoot(ctx)
+        local p = ctx.deps[entry[2]]
+        p.open()
+        if entry[1] == "smith" then ctx.deps["ui.backpack.BackpackPanel"].open() end
+        ctx.compile(autoPlace, "production-tri-menu-enter"); play()
+        eq(ctx.nav, 3, "菜单直达不伪切旧城镇页签 " .. entry[1])
+        eq(recovery.getStoryPlace(), entry[1], "双上下文仍优先真实所属菜单 " .. entry[1])
+        eq(#ctx.shown, 1, "三行菜单自动起播一次 " .. entry[1])
+        eq(ctx.shown[1].steps, ctx.config["SCENARIO_" .. entry[3]].steps, "三行菜单保留原介绍 " .. entry[1])
+        eq(ctx.pendingReads.scenario, 0, "三行菜单不消费主线回执 " .. entry[1])
+        finish(ctx)
+        story.onPlace(entry[1], "leave")
+        check(story.enqueue(5), "菜单告别后还有主线5待播 " .. entry[1])
+        p.close(); ctx.compile(autoPlace, "production-tri-menu-closing"); play()
+        eq(recovery.getStoryPlace(), "other", "三行菜单关闭动画不能回退双上下文 " .. entry[1])
+        eq(recovery.isPendingStoryBlocked("battle_town"), true, "三行菜单关闭动画仍挡双上下文 " .. entry[1])
+        eq(#ctx.shown, 1, "三行关闭动画不抢播告别 " .. entry[1])
+        p.finishClose()
+        if entry[1] == "smith" then ctx.deps["ui.backpack.BackpackPanel"].finishClose() end
+        eq(recovery.getStoryPlace(), "battle_town", "菜单真实关闭后恢复三行双上下文 " .. entry[1])
+        ctx.compile(autoPlace, "production-tri-menu-closed"); play()
+        eq(#ctx.shown, 2, "nav3原地播菜单告别一次 " .. entry[1])
+        eq(ctx.shown[2].steps, ctx.config["SCENARIO_" .. (entry[3] + 1)].steps, "三行31到32/27到28/47到48原文 " .. entry[1])
+        finish(ctx); ctx.compile(autoPlace, "production-tri-menu-follow"); play()
+        eq(#ctx.shown, 3, "三行告别后主线不饥饿 " .. entry[1])
+        eq(ctx.shown[3].steps, ctx.config.SCENARIO_5.steps, "三行告别后恢复主线5 " .. entry[1])
+        finish(ctx)
+        ctx.pending = { { scenarioId = 38, config = ctx.config.SCENARIO_38 } }
+        play()
+        eq(#ctx.shown, 4, "三行双上下文继续消费真实普通回执 " .. entry[1])
+        eq(ctx.shown[4].steps, ctx.config.SCENARIO_38.steps, "三行普通回执保留原38 " .. entry[1])
+        eq(#ctx.pending, 0, "三行普通回执恰好消费一次 " .. entry[1])
+        eq(ctx.nav, 3, "告别和主线全程保持正式nav3 " .. entry[1])
+        ctx.assertSafe()
+    end
+    -- 城镇绘图存在不等于剧情已经抵达；新开场/第一章期间不得自动抢播23。
+    for _, fixture in ipairs({
+        { label = "新入三行", cleared = {}, max = 101, current = 101, town = false },
+        { label = "仅当前关201", cleared = {}, max = 104, current = 201, town = false },
+        { label = "max尚未201", cleared = {}, max = 200, current = 104, town = false },
+        { label = "数字105已通", cleared = { [105] = true }, max = 105, current = 105, town = true },
+        { label = "字符串105已通", cleared = { ["105"] = true }, max = 105, current = 105, town = true },
+        { label = "旧档max201", cleared = {}, max = 201, current = 101, town = true },
+        { label = "字符串max201", cleared = {}, max = "201", current = 101, town = true },
+    }) do
+        local ctx = newContext()
+        ctx.triOpen = true
+        ctx.modules.battle.clearedStages, ctx.modules.battle.maxStageId = fixture.cleared, fixture.max
+        ctx.modules.battle.currentStageId = fixture.current
+        local story, play = ctx.env.require("systems.StoryPlayer"), pendingBoot(ctx)
+        local recovery = ctx.env.require("ui.tutorial.TutorialPageRecovery")
+        eq(recovery.getStoryPlace(), "battle_town", fixture.label .. "：始终是真实三行双上下文")
+        ctx.env.postStartFlowDone_ = false
+        ctx.compile(autoPlace, "production-tri-before-gameplay")
+        eq(story.hasPending(), false, fixture.label .. "：开场未完成不自动入城")
+        ctx.env.postStartFlowDone_ = true
+        ctx.compile(autoPlace, "production-tri-town-entry"); play()
+        eq(#ctx.shown, fixture.town and 1 or 0, fixture.label .. "：按真实第一章进度入城")
+        if fixture.town then
+            eq(ctx.shown[1].steps, ctx.config.SCENARIO_23.steps, fixture.label .. "：先23抵达城门")
+            finish(ctx)
+            ctx.compile(autoPlace, "production-tri-town-repeat"); play()
+            eq(#ctx.shown, 2, fixture.label .. "：23结束后原分支24自动可取")
+            eq(ctx.shown[2].steps, ctx.config.SCENARIO_24.steps, fixture.label .. "：24保留原文")
+            story.onStage(101, "clear")
+            finish(ctx); ctx.compile(autoPlace, "production-tri-town-to-battle"); play()
+            eq(#ctx.shown, 3, fixture.label .. "：23和24后主线仍可取")
+            eq(ctx.shown[3].steps, ctx.config.SCENARIO_5.steps, fixture.label .. "：取原主线5而非永久城镇筛选")
+            eq(ctx.modules.session.claimedScenarios["23"], true, fixture.label .. "：23真实起播防重")
+            eq(ctx.modules.session.claimedScenarios["24"], true, fixture.label .. "：24真实起播防重")
+        else
+            eq(story.hasPending("town"), false, fixture.label .. "：尚未抵达不积压城镇剧情")
+            eq(ctx.stateUpdates, 0, fixture.label .. "：自动绘城不预标记剧情")
+            eq(ctx.flushes, 0, fixture.label .. "：自动绘城不落档")
+            story.onStage(101, "clear"); ctx.compile(autoPlace, "production-tri-first-clear"); play()
+            eq(#ctx.shown, 1, fixture.label .. "：第一章首通主线正常播放")
+            eq(ctx.shown[1].steps, ctx.config.SCENARIO_5.steps, fixture.label .. "：首通5不被23抢播")
+            eq(story.hasPending("town"), false, fixture.label .. "：首通后仍无提前城门剧情")
+        end
+        check(ctx.pendingReads.scenario > 0 and ctx.pendingReads.follow > 0, fixture.label .. "：双上下文保留普通回执读取")
+        eq(ctx.nav, 3, fixture.label .. "：城镇与主线不需旧页签切换")
+        ctx.assertSafe()
+    end
+    for _, entry in ipairs(LEFT_PAGE_CASES) do
+        local ctx = newContext()
+        ctx.modules.session.deferredOpening, ctx.modules.session.deferredOpeningIndex = true, 3
+        local play = pendingBoot(ctx)
+        ctx.deps[entry[2]].open(); play()
+        ctx.deps[entry[2]].finishClose(); play()
+        eq(#ctx.shown, 0, "后续泵永不消费旧开场 " .. entry[1])
+        eq(ctx.pendingReads.deferred, 0, "后续泵不读取旧开场 " .. entry[1])
+        eq(ctx.modules.session.deferredOpeningIndex, 3, "后续泵保留旧进度")
+        eq(ctx.flushes, 0, "后续泵不落开场档")
+        ctx.assertSafe()
+    end
+end
+local function bootOpening(ctx)
     ctx.env.ClientDispatcher = ctx.deps["runtime.ClientDispatcher"]
     ctx.env.ScenarioDialogue, ctx.env.ScenarioDialogueConfig = ctx.dialogue, ctx.config
-    local completed, scenes = 0, {}
-    ctx.env.GameBGM = { setScene = function(name) scenes[#scenes + 1] = name end }
-    ctx.env.showOfflineRewardPanel_ = function() completed = completed + 1; return true end
-    ctx.env.postStartFlowDone_ = false
-    ctx.env.StandaloneRT = {}
+    local letter = ctx.env.require("ui.story.gate.LetterIntro")
+    letter.init(ctx.vg)
     ctx.env.LetterIntro = letter
+    ctx.env.Standalone, ctx.env.StandaloneRT = {}, {}
+    ctx.env.postStartFlowDone_, ctx.env.entryPrepared_ = false, false
+    ctx.completed, ctx.scenes = 0, {}
+    ctx.env.GameBGM = { setScene = function(name) ctx.scenes[#ctx.scenes + 1] = name end }
+    ctx.env.showOfflineRewardPanel_ = function() ctx.completed = ctx.completed + 1; return true end
     ctx.env.localSendAction = function(action, params)
         ctx.actions[#ctx.actions + 1] = { action = action, params = params }; return true
     end
-    local finishText = section("boot.Standalone", "local function markIntroCompleted_(deferOpening)",
-        "\n--- 首通/入场排队")
-    local mark, finishIntro = ctx.compile(finishText .. "\nreturn markIntroCompleted_, finishIntro_",
-        "production-short-intro-finish")
-    ctx.env.markIntroCompleted_, ctx.env.finishIntro_ = mark, finishIntro
-    local introText = section("boot.Standalone", "local function startIntroChain_()", "\n--- 清除存档后")
-    local start = ctx.compile(introText .. "\nreturn startIntroChain_", "production-intro-chain")
-    start()
-    eq(ctx.modules.session.introCompleted, true, "Boot still marks original intro completion at start")
-    eq(ctx.modules.session.deferredOpening, true, "only new intro reserves original introduction for later")
-    eq(ctx.modules.session.deferredOpeningIndex, 1, "deferred opening begins at original first segment")
-    eq(ctx.modules.session.keep, "unchanged-session-field", "intro mark preserves unrelated session fields")
-    eq(ctx.actions[1].action, "grant_starter_trio", "Boot preserves starter grant action")
-    eq(#ctx.shown, 0, "Boot waits for letter before gameplay, no immediate opening")
-    letter.handleTap(); ctx.calls = {}; letter.draw(ctx.vg, 1920, 1080)
-    local shortBody = ""
-    for _, call in ipairs(ctx.calls) do if call.kind == "text" then shortBody = shortBody .. call.text end end
-    check(shortBody:find("帽子、印鉴、名册都在桌上，三位伙伴已在门外等你。", 1, true)
-        and shortBody:find("先带队出门，路上的故事，我们稍后再说。", 1, true),
-        "real Boot opts into the single three-line compact letter")
-    letter.handleTap(); letter.update(0.3)
-    eq(completed, 0, "compact letter keeps original fade completion guard")
+    local text = section("boot.Standalone", "local function markIntroCompleted_(deferOpening)", "\n--- 清除存档后")
+    return ctx.compile(text .. "\nreturn { start=startIntroChain_, resume=resumeOpening_, cancel=cancelOpening_ }", "production-opening-chain"), letter
+end
+local function bootChainCases()
+    local ctx = newContext()
+    ctx.modules.session.introCompleted = false
+    ctx.modules.session.keep = "unchanged-session-field"
+    local chain, letter = bootOpening(ctx)
+    chain.start()
+    eq(ctx.modules.session.introCompleted, true, "新档仍预标记原开场完成字段")
+    eq(ctx.modules.session.deferredOpening, true, "开场链保存可恢复进度")
+    eq(ctx.modules.session.deferredOpeningIndex, 1, "新档开场从第一段")
+    eq(ctx.modules.session.keep, "unchanged-session-field", "保留无关session字段")
+    eq(ctx.actions[1].action, "grant_starter_trio", "原starter动作保持")
+    eq(#ctx.actions, 1, "初始三人只发一次")
+    eq(#ctx.shown, 0, "必须完整信件后才开始门厅")
+    eq(ctx.completed, 0, "信件前不进入游戏/离线结算")
+    for _ = 1, 7 do letter.handleTap() end
+    ctx.calls = {}; letter.draw(ctx.vg, 1920, 1080)
+    local text = ""
+    for _, call in ipairs(ctx.calls) do if call.kind == "text" then text = text .. call.text end end
+    check(text:find("公会管这叫交接。我管这叫甩锅。", 1, true)
+        and text:find("先听他们把话说完，再出门。", 1, true), "真实Boot使用完整来信，不再compact")
+    check(not text:find("先带队出门，路上的故事，我们稍后再说。", 1, true), "开场不混短信旧策略")
+    letter.handleTap(); letter.handleTap(); letter.update(0.3)
+    eq(#ctx.shown, 0, "完整信件仍等待淡出收尾")
     letter.update(0.31)
-    eq(completed, 1, "short letter completion goes directly to gameplay once")
-    eq(ctx.env.postStartFlowDone_, true, "finishIntro preserves offline post-start flow result")
-    eq(scenes[#scenes], "battle", "short intro hands music back to battle")
-    eq(#ctx.shown, 0, "compact callback no longer starts OPENING or three joins immediately")
-    letter.handleTap(); letter.update(1)
-    eq(completed, 1, "whole compact intro finishes once despite duplicate interactions")
-    eq(#ctx.actions, 1, "background change adds no extra reward dispatch")
-
-    -- 原84配置196句仍可完整展示，但先等基础操作完成，并把四段错开而非即时串播。
-    local story = ctx.env.require("systems.StoryPlayer")
-    eq(story.takeDeferredOpening(), nil, "new intro cannot play while foundation tutorials incomplete")
-    ctx.foundation = { [1] = true, [2] = true, [4] = true, [8] = true, [9] = true }
-    local play = pendingBoot(ctx)
-    play()
-    eq(#ctx.shown, 1, "foundation completion permits original opening briefing")
-    eq(ctx.shown[1].backgroundIsCg, true, "Boot explicitly forwards backgroundIsCg")
-    eq(ctx.shown[1].steps, ctx.config.OPENING.steps, "deferred Boot preserves exact original step table")
-    ctx.dialogue.update(0.3); ctx.draw()
-    eq(#images(ctx), 1, "Boot opening draws CG once, no portrait")
-    local before = ctx.flushes
-    finish(ctx)
-    eq(ctx.modules.session.deferredOpeningIndex, 2, "only real opening finish advances deferred progress")
-    eq(ctx.flushes, before + 1, "deferred finish Flushes memory save exactly once")
-    eq(#ctx.shown, 1, "opening completion does not immediately chain first join")
-    play(); eq(#ctx.shown, 1, "next deferred segment waits during 30-second gap")
-    ctx.clock.elapsedTime = ctx.clock.elapsedTime + 29.99
-    play(); eq(#ctx.shown, 1, "29.99 seconds does not consume next join")
-    ctx.clock.elapsedTime = ctx.clock.elapsedTime + 0.01
-    play()
-    eq(#ctx.shown, 2, "first join becomes available at 30 seconds")
-    eq(ctx.shown[2].background, bg(2), "Boot first join HALL")
-    eq(ctx.shown[2].steps, ctx.config.OPENING_JOINS[1].steps, "first join preserves original dialogue")
-    finish(ctx)
-    eq(ctx.modules.session.deferredOpeningIndex, 3, "first join completion advances to second join")
-    eq(#ctx.shown, 2, "first join completion cannot immediately chain second join")
-    ctx.clock.elapsedTime = ctx.clock.elapsedTime + 30; play()
-    eq(#ctx.shown, 3, "second original join plays after its own gap")
-    eq(ctx.shown[3].steps, ctx.config.OPENING_JOINS[2].steps, "second join retains exact original steps")
-    finish(ctx)
-    eq(ctx.modules.session.deferredOpeningIndex, 4, "second join completion advances to third join")
-    eq(#ctx.shown, 3, "second join does not immediately chain third join")
-    ctx.clock.elapsedTime = ctx.clock.elapsedTime + 30; play()
-    eq(#ctx.shown, 4, "third original join plays after its own gap")
-    eq(ctx.shown[4].steps, ctx.config.OPENING_JOINS[3].steps, "third join retains exact original steps")
-    finish(ctx)
-    eq(ctx.modules.session.deferredOpening, false, "all four real segment finishes clear pending flag")
-    eq(ctx.modules.session.deferredOpeningCompletedVersion, 1, "completion version written only at final finish")
-    eq(completed, 1, "deferred segments do not repeat intro completion or offline startup")
-    eq(#ctx.actions, 1, "deferred visual introductions add no scenario rewards or repeat starter grants")
-    eq(#ctx.notices, 0, "deferred introductions do not manufacture tutorial claim notices")
+    local expected = { ctx.config.OPENING, table.unpack(ctx.config.OPENING_JOINS) }
+    for index, cfg in ipairs(expected) do
+        eq(#ctx.shown, index, "信件后连续即时段落 " .. index)
+        local shown = ctx.shown[index]
+        eq(shown.steps, cfg.steps, "原步骤表身份 " .. index)
+        eq(shown.background, cfg.background, "原背景 " .. index)
+        eq(shown.backgroundIsCg, cfg.backgroundIsCg, "原CG标记 " .. index)
+        eq(shown.mode, cfg.mode, "原模式 " .. index)
+        eq(ctx.modules.session.deferredOpeningIndex, index, "只已结束段落推进保存index")
+        eq(ctx.completed, 0, "最后一段结束前不离线结算/进入游戏")
+        local stale, flushes = shown.onFinish, ctx.flushes
+        if index == 1 then
+            ctx.dialogue.update(0.3); ctx.draw()
+            eq(#images(ctx), 1, "真实Boot门厅CG只绘制一次无立绘")
+        end
+        finish(ctx)
+        eq(ctx.flushes, flushes + (index == 4 and 2 or 1), "结束推进一次，最终另存原intro标记")
+        local after = ctx.flushes
+        stale(); eq(ctx.flushes, after, "重复回调不推进/落档")
+    end
+    eq(#ctx.shown, 4, "门厅加三人入队完整四段")
+    eq(ctx.modules.session.deferredOpening, false, "四段结束清待播")
+    eq(ctx.modules.session.deferredOpeningCompletedVersion, 1, "最终完成版本")
+    eq(ctx.completed, 1, "最后一段结束才离线结算一次")
+    eq(ctx.env.postStartFlowDone_, true, "原离线启动结果保持")
+    eq(ctx.scenes[#ctx.scenes], "battle", "开场结束音乐交还战场")
+    eq(#ctx.actions, 1, "四段纯展示不发场景奖励/重复初始角色")
+    eq(#ctx.notices, 0, "四段不制造教程领取通知")
+    local play = pendingBoot(ctx); play()
+    eq(ctx.pendingReads.deferred, 0, "后续剧情泵不读取已完成开场")
     ctx.assertSafe()
+    for index = 1, 4 do
+        local old = newContext()
+        old.modules.session.deferredOpening, old.modules.session.deferredOpeningIndex = true, index
+        old.modules.session.keep = "旧进度保留"
+        local flow, oldLetter = bootOpening(old)
+        flow.resume()
+        eq(oldLetter.isOpen(), false, "旧延播档不重播已读来信")
+        for current = index, 4 do
+            local cfg = current == 1 and old.config.OPENING or old.config.OPENING_JOINS[current - 1]
+            eq(old.shown[#old.shown].steps, cfg.steps, "旧档从保存index连续接续")
+            eq(old.completed, 0, "旧档剩余段落结束前不进游戏")
+            finish(old)
+        end
+        eq(#old.shown, 5 - index, "旧档只播剩余段落")
+        eq(old.modules.session.keep, "旧进度保留", "旧任意字段保留")
+        eq(old.completed, 1, "旧档最后结束进游戏一次")
+        eq(#old.actions, 0, "旧档不补发starter")
+        old.assertSafe()
+    end
+    local reset = newContext()
+    reset.modules.session.deferredOpening, reset.modules.session.deferredOpeningIndex = true, 2
+    local flow = bootOpening(reset)
+    flow.resume()
+    local stale = reset.shown[1].onFinish
+    flow.cancel(); reset.env.require("systems.StoryPlayer").resetAll(); reset.dialogue.reset()
+    reset.modules.session = { introCompleted = true, deferredOpening = true, deferredOpeningIndex = 2, newSave = true }
+    flow.resume()
+    local before, count, flushes = copy(reset.modules.session), #reset.shown, reset.flushes
+    stale()
+    check(same(reset.modules.session, before), "旧flow/token不写同index新档")
+    eq(#reset.shown, count, "旧回调不替新档连播")
+    eq(reset.flushes, flushes, "旧回调不落新档")
+    reset.assertSafe()
 end
 
 function Start()
@@ -1119,10 +1411,12 @@ function Start()
         { "direct-CG-flag-and-fallback", cgCases }, { "wipe-capture-and-reward-gates", wipeCases },
         { "Boot-all-dead-time-of-capture", wipeBootCases }, { "Boot-reward-gates-and-failed-local-callback", rewardGateCases },
         { "building-story-gate-keeps-original-tutorial-priority", buildingGateCases },
-        { "eight-building-pages-pause-all-Boot-queues-and-deferred-opening", buildingBootCases },
-        { "eight-building-pages-block-Hero-direct-broadcast-and-reentry", buildingHeroCases },
+        { "eight-building-pages-pause-battle-Boot-queues", buildingBootCases },
+        { "eight-building-pages-Hero-owned-or-blocked-reentry", buildingHeroCases },
         { "letter-study-and-same-path-title", letterTitleCases }, { "HeroScenario-background-and-claim-dedup", heroCases },
-        { "real-Boot-compact-intro-and-deferred-original-segments", bootChainCases },
+        { "all80-place-FIFO-and-205-branch-before82", placeQueueCases },
+        { "real-menu-auto-story-and-deferred-never-consumed-by-pump", menuBootCases },
+        { "real-Boot-full-intro-continuous-original-segments-and-reset", bootChainCases },
     }
     for _, case in ipairs(cases) do
         local ok, why = pcall(case[2])

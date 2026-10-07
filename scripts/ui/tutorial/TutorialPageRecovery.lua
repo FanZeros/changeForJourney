@@ -17,6 +17,8 @@ local function isOpen(p)
     return p.isOpen and p.isOpen() == true
 end
 local function isClosing(p)
+    -- 锻炉滑入有错峰延迟，不能用未来openTime与closeTime比较推断真实关闭状态。
+    if p.isClosing then return p.isClosing() == true end
     if not p.getSeamAnim then return false end
     local opened, closed = p.getSeamAnim()
     return type(closed) == "number" and closed > 0
@@ -87,12 +89,45 @@ function M.isBlocked(target)
     return false
 end
 
---- 仅待播故事暂停：教程仍可使用建筑页，不能把此条件并入原 isBlocked。
---- 各页 isOpen 在关闭动画完成前仍为 true，锻炉关闭后也要继续等仓库真正关闭。
-function M.isPendingStoryBlocked()
-    if M.isBlocked() then return true end
+local STORY_PAGES = {
+    church = "ui.church.ChurchPage", tavern = "ui.tavern.TavernPage",
+    smith = "ui.blacksmith.BlacksmithPage",
+}
+
+--- 剧情按真实菜单归属播放，不能把锻炉队列带入酒馆或其他菜单。
+function M.getStoryPlace()
+    for _, place in ipairs({ "smith", "tavern", "church" }) do
+        local p = page(STORY_PAGES[place])
+        if isOpen(p) and not isClosing(p) then return place end
+    end
     for _, path in ipairs(LEFT_PAGES) do
-        if isOpen(page(path)) then return true end
+        if isOpen(page(path)) then return "other" end
+    end
+    local nav = page("ui.hud.BottomNav").getSelectedIndex()
+    if nav == 4 then return "town" end
+    -- 正式三行页签是3，左栏城镇与中栏主线同时可见，不能靠旧tab4判断离场。
+    if nav == 3 and isOpen(page("ui.battle.tri.BattleTriPage")) then return "battle_town" end
+    return "battle"
+end
+
+--- 只豁免当前剧情所属菜单；锻炉联动仓库属于同一操作区。
+---@param place string|nil
+function M.isPendingStoryBlocked(place)
+    if M.isBlocked() then return true end
+    if place == "tavern" then
+        local tavern = page(STORY_PAGES.tavern)
+        if tavern.isRecruitBusy and tavern.isRecruitBusy() then return true end
+    end
+    local owner = place and STORY_PAGES[place]
+    local smith = place == "smith" and page(STORY_PAGES.smith)
+    local smithOpen = smith and isOpen(smith) and not isClosing(smith)
+    for _, path in ipairs(LEFT_PAGES) do
+        local p = page(path)
+        if isOpen(p) and (path ~= owner or isClosing(p)) then
+            local smithWarehouse = smithOpen and path == "ui.backpack.BackpackPanel"
+                and not isClosing(p)
+            if not smithWarehouse then return true end
+        end
     end
     return false
 end

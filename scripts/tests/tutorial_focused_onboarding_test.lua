@@ -1,8 +1,7 @@
 -- 专项只读验证；基于 scaffold-2d 的 Start/Stop 生命周期，不初始化游戏/main/真实档。
--- cwd MUST be /home/Maker/tutorial-onboarding-validation-20261006.
--- /home/Maker/resource-dungeon-visual-validation-20261006/.cli/UrhoXRuntime tests/tutorial_focused_onboarding_test.lua
--- -tapcode_dir=/workspace -tool_mode -nosound -graphicsheadless
--- -validate -validate-frames=60 -validate-timeout=45 -validate-output=<isolated cwd>/validate.json
+-- 工作目录可为当前项目或调用者自己的隔离目录；项目只来自明确 tapcode_dir 参数。
+-- /workspace/.cli/UrhoXRuntime tests/tutorial_focused_onboarding_test.lua
+-- -tapcode_dir=/workspace/game2 -tool_mode -graphicsheadless
 -- 真实 TM/Recovery/Letter/Scenario/Story + 完整只读闭包；其他业务为内存替身。
 -- 绘图 spy 是语义/几何记录，不是截图，也不代表真实手机或完整存档验收。
 local ROOT, REVIEW = "", ""
@@ -12,8 +11,9 @@ for _, arg in ipairs(GetArguments()) do
     local path = arg:match("^%-tapcode_dir=(.+)$")
     if path then ROOT = path:gsub("/+$", "") end
 end
-local PROJECT = "/workspace"
-local CWD = "/home/Maker/tutorial-onboarding-validation-20261006"
+local PROJECT = assert(ROOT ~= "" and ROOT:sub(1,1) == "/" and not ROOT:find("..",1,true)
+    and ROOT or nil, "必须明确指定当前项目绝对 tapcode_dir，不能回退其他项目")
+local CWD = fileSystem:GetCurrentDir():gsub("/+$", "")
 local TAG = "[tutorial_focused_onboarding_test] "
 local SOURCE_FILES = {
     ["config.TutorialConfig"] = PROJECT .. "/scripts/config/TutorialConfig.lua",
@@ -238,6 +238,7 @@ local function newContext()
             init=noop,close=function() state.open=false; state.closes=state.closes+1 end,
             forceClose=function() state.open=false; state.closes=state.closes+1 end,
             getSeamAnim=function() return 100,state.closeTime,0.45,0.38 end,
+            isClosing=function() return state.closeTime>0 end,
             isLeftMode=function() return true end,isRecruitBusy=function() return state.busy or state.confirm end,
             isRecruitConfirmOpen=function() return state.confirm end,isEquipTab=function() return state.tab=="equip" end,
             getHeroId=function() return c.heroId end,getHorizonWidthScale=function() return 1 end,
@@ -670,7 +671,7 @@ local function standaloneClosures(c)
         ScenarioDialogue=c.scenario,ScenarioDialogueConfig=c.config,LetterIntro=c.letter,
         IntroCutscene=c.modules["ui.story.gate.IntroCutscene"],RewardPopup=c.modules["ui.hud.popup.RewardPopup"],
         OfflineRewardPanel=c.modules["ui.hud.popup.OfflineRewardPanel"],DarkTitleScreen=c.modules["ui.story.gate.DarkTitleScreenGate"],
-        StandaloneRT={}, entryPrepared_=false,
+        Standalone={}, StandaloneRT={}, entryPrepared_=false,
         GameBGM={setScene=function(scene) c.record("bgm." .. scene) end,start=noop},GameSFX={start=noop},
         showOfflineRewardPanel_=function() c.record("offline.check"); return c.offlineReady~=false end,
         localSendAction=function(action,params)
@@ -688,20 +689,22 @@ local function standaloneClosures(c)
             setPendingTutorialNotify=function(id) c.notices[#c.notices+1]=id end},
     }) do rawset(e,key,value) end
     local body=section("boot.Standalone","local function markIntroCompleted_(deferOpening)","\n--- 清除存档后")
-    return compile(body .. "\nreturn {mark=markIntroCompleted_,finish=finishIntro_,start=startIntroChain_,play=tryPlayPendingStory_}",
-        SOURCE_FILES["boot.Standalone"],e)
+    local post=section("boot.Standalone","    if not postStartFlowDone_ and not DarkTitleScreen.isOpen() then",
+        "\n    -- 开场介绍不让教程、后台战斗或旧剧情插入；")
+    return compile("local startFlowBegun_,startScreenWasOpen_=false,false\n" .. body
+        .. "\nreturn {mark=markIntroCompleted_,finish=finishIntro_,start=startIntroChain_,play=tryPlayPendingStory_,"
+        .. "resume=resumeOpening_,cancel=cancelOpening_,post=function()\n" .. post
+        .. "\nreturn postStartFlowDone_\nend}",SOURCE_FILES["boot.Standalone"],e)
 end
-local function postTitle(c,closures)
-    rawset(c.env,"markIntroCompleted_",closures.mark); rawset(c.env,"startIntroChain_",closures.start)
-    local text=section("boot.Standalone","    if not postStartFlowDone_ and not DarkTitleScreen.isOpen() then","\n    BottomNav.update(dt)")
-    return compile("local startFlowBegun_,startScreenWasOpen_=false,false\nreturn function()\n"
-        .. text .. "\nreturn postStartFlowDone_\nend",SOURCE_FILES["boot.Standalone"],c.env)
+local function postTitle(_,closures)
+    -- 标题分支与开场链必须共享生产local token/active，不另造全局假状态。
+    return closures.post
 end
 local function openingCases()
     local c=newContext(); c.memory.session={introCompleted=false,customLedger={x=9},claimedScenarios={}}
     local closures=standaloneClosures(c); local post=postTitle(c,closures)
-    check(post(),"real new-save title branch completes once")
-    check(c.letter.isOpen() and not c.scenario.isActive(),"new opening only real brief letter")
+    check(not post(),"真实新档标题分支等待完整开场")
+    check(c.letter.isOpen() and not c.scenario.isActive(),"新档先真实完整信件")
     eq(c.grants,1,"original starter action exactly once")
     eq(c.memory.session.deferredOpening,true,"new save alone deferred marked")
     eq(c.memory.session.deferredOpeningIndex,1,"new save deferred starts1")
@@ -712,14 +715,25 @@ local function openingCases()
     c.env.postStartFlowDone_=false -- 模拟pre-cover先设intro=true、post-title仍未完成的真实路径。
     post(); eq(countCalls(c,"offline.check"),0,"intro=true during letter cannot show offline early")
     for _=1,10 do c.letter.handleTap() end
-    c.letter.update(0); eq(#c.shown,0,"brief finish never immediately plays10 long opening lines")
-    eq(countCalls(c,"offline.check"),1,"brief finish returns actual finish closure offline check")
+    c.letter.update(0); eq(#c.shown,1,"完整信件结束立即播门厅")
+    eq(countCalls(c,"offline.check"),0,"信件结束不提前进入游戏/离线结算")
+    local opening={c.config.OPENING,table.unpack(c.config.OPENING_JOINS)}
+    for index,cfg in ipairs(opening) do
+        eq(c.shown[index].steps,cfg.steps,"完整开场步骤保持 " .. index)
+        eq(c.shown[index].background,cfg.background,"完整开场背景保持 " .. index)
+        check(not post(),"标题重复帧不在长对白期间进游戏")
+        eq(c.grants,1,"重复标题帧不重发starter")
+        finishDialogue(c)
+    end
+    eq(countCalls(c,"offline.check"),1,"只有三人入队结束才离线结算一次")
     c.letter.update(1); post(); eq(c.grants,1,"repeat postTitle/finish does not grant again")
     eq(countCalls(c,"offline.check"),1,"successful finish/post-title offline computed once")
     local retry=newContext(); retry.memory.session.introCompleted=false; retry.offlineReady=false
     local rf=standaloneClosures(retry); local rp=postTitle(retry,rf); rp()
     for _=1,10 do retry.letter.handleTap() end
-    retry.letter.update(0); check(not retry.env.postStartFlowDone_,"failed offline finish remains retryable")
+    retry.letter.update(0)
+    for _=1,4 do finishDialogue(retry) end
+    check(not retry.env.postStartFlowDone_,"failed offline finish remains retryable")
     eq(countCalls(retry,"offline.check"),1,"failed offline once at finish")
     rp(); eq(countCalls(retry,"offline.check"),2,"next post-title frame retries readiness")
     retry.offlineReady=true; rp(); rp(); eq(countCalls(retry,"offline.check"),3,"successful retry finalizes exactly once")
@@ -727,7 +741,7 @@ local function openingCases()
     auditContext(retry)
     local story=c.require("systems.StoryPlayer"); story.onStage(103,"clear")
     eq(story.take(),nil,"starter ready no old random hero reward scenario11-13")
-    eq(story.takeDeferredOpening(),nil,"opening waits actual basic operation progress")
+    eq(story.takeDeferredOpening(),nil,"完整开场已播完没有剩余段落")
     auditContext(c)
     for _,intro in ipairs({false,true}) do
         local old=newContext(); old.memory.session.introCompleted=intro
@@ -751,68 +765,88 @@ local function deferredCases()
         c.memory.session.deferredOpening,c.memory.session.deferredOpeningIndex=true,1
         c.memory.session.tutorialProgress.completed[tostring(missing)]=nil
         c.tm.init(c.vg,c.store,c.persist); c.tick(0)
-        eq(c.require("systems.StoryPlayer").takeDeferredOpening(),nil,"each missing foundation blocks " .. missing)
-        eq(c.flushes,0,"blocked take never saves")
+        local item=c.require("systems.StoryPlayer").takeDeferredOpening()
+        eq(item.config.steps,c.config.OPENING.steps,"缺基础教程也可在入场链播放 " .. missing)
+        eq(c.flushes,0,"取段不提前保存/推进")
         auditContext(c)
     end
-    local c=newContext(); foundation(c)
+    local c=newContext()
     c.memory.session.deferredOpening,c.memory.session.deferredOpeningIndex=true,1
     local story=c.require("systems.StoryPlayer"); local f=standaloneClosures(c)
-    story.enqueue(35); eq(story.takeDeferredOpening(),nil,"ordinary queue wins before deferred")
-    f.play(); eq(c.shown[1].steps,c.config.SCENARIO_35.steps,"ordinary story plays before opening")
-    eq(c.memory.session.deferredOpeningIndex,1,"ordinary play doesn't advance deferred")
-    finishDialogue(c)
-    eq(c.actions[#c.actions].action,"claim_scenario_reward","normal claim still real closure action boundary")
+    story.enqueue(35)
     local expected={c.config.OPENING,c.config.OPENING_JOINS[1],c.config.OPENING_JOINS[2],c.config.OPENING_JOINS[3]}
     local totalSteps=0
+    -- 普通队列、基础教程与30秒门槛不再阻挡旧档入场介绍。
     for index,cfg in ipairs(expected) do
         local before=copy(c.memory); local flush=c.flushes; local actions=#c.actions
-        f.play(); local shown=c.shown[#c.shown]
-        eq(shown.steps,cfg.steps,"deferred keeps original config/steps identity " .. index)
-        eq(shown.background,cfg.background,"deferred correct original background")
-        eq(shown.backgroundIsCg,cfg.backgroundIsCg,"deferred CG flag preserved")
-        eq(shown.title,cfg.title,"deferred title forwarded")
-        check(same(c.memory,before),"take/show not mark complete nor session update")
-        eq(c.flushes,flush,"take/show no Flush")
-        eq(#c.actions,actions,"deferred no claim or hero action")
-        local stale=shown.onFinish
+        local item=assert(story.takeDeferredOpening())
+        eq(item.config,cfg,"旧档段落配置身份 " .. index)
+        eq(item.config.steps,cfg.steps,"旧档原文身份 " .. index)
+        check(same(c.memory,before),"取段不标完成或发布session")
+        eq(c.flushes,flush,"take no Flush")
+        eq(#c.actions,actions,"入场介绍无领奖/招募动作")
         if index==1 then
-            c.scenario.reset(); eq(c.memory.session.deferredOpeningIndex,1,"hard reset no progress")
-            f.play(); stale(); eq(c.memory.session.deferredOpeningIndex,1,"old token cannot complete new playback")
-            eq(c.flushes,flush,"old token no Flush")
+            local replacement=story.takeDeferredOpening()
+            eq(story.finishDeferredOpening(item.deferredToken),false,"重复取段替换token，旧回调无效")
+            eq(c.memory.session.deferredOpeningIndex,1,"旧token不推进")
+            eq(c.flushes,flush,"旧token不Flush")
+            item=replacement
         end
-        if index%2==0 then c.scenario.skip(); c.scenario.skip() else finishDialogue(c) end
+        check(story.finishDeferredOpening(item.deferredToken),"真实结束推进 " .. index)
         totalSteps=totalSteps+#cfg.steps
-        eq(c.flushes,flush+1,"only natural/skip onFinish Flush once")
-        if index<4 then eq(c.memory.session.deferredOpeningIndex,index+1,"only finish advances index")
+        eq(c.flushes,flush+1,"仅真实结束Flush一次")
+        eq(story.finishDeferredOpening(item.deferredToken),false,"重复结束不推进")
+        eq(c.flushes,flush+1,"重复结束不再Flush")
+        if index<4 then eq(c.memory.session.deferredOpeningIndex,index+1,"下一段立即可取")
         else
-            eq(c.memory.session.deferredOpening,false,"all4 clears marker")
-            eq(c.memory.session.deferredOpeningCompletedVersion,1,"all4 records completion version")
-        end
-        c.scenario.skip(); stale(); eq(c.flushes,flush+1,"duplicate callback cannot progress/save")
-        if index<4 then
-            local shownCount=#c.shown
-            f.play(); eq(#c.shown,shownCount,"no immediate next deferred segment")
-            c.clock.elapsedTime=c.clock.elapsedTime+29.999
-            f.play(); eq(#c.shown,shownCount,"29.999s still leaves game time")
-            if index==1 then
-                story.enqueue(47); f.play()
-                eq(c.shown[#c.shown].steps,c.config.SCENARIO_47.steps,"ordinary story never waits for deferred gap")
-                finishDialogue(c)
-            end
-            c.clock.elapsedTime=c.clock.elapsedTime+0.0011
-            check(story.takeDeferredOpening()~=nil,"30s exact boundary now permits next segment")
+            eq(c.memory.session.deferredOpening,false,"四段全部结束清标记")
+            eq(c.memory.session.deferredOpeningCompletedVersion,1,"四段完成版本")
         end
     end
-    eq(totalSteps,10,"all original deferred ten lines retain accessibility")
-    f.play(); eq(#c.shown,7,"no fifth/repeated deferred opening, ordinary2 + deferred5 including cancelled replay")
+    eq(totalSteps,10,"门厅四句与三人六句完整可达")
+    eq(story.takeDeferredOpening(),nil,"没有第五/重复开场")
+    check(story.hasPending("battle"),"入场介绍不消费普通剧情")
+    f.play(); eq(c.shown[1].steps,c.config.SCENARIO_35.steps,"入场后普通剧情保持原队首")
+    finishDialogue(c)
+    eq(c.actions[#c.actions].action,"claim_scenario_reward","普通领奖出口保持")
     auditContext(c)
-    local reset=newContext(); foundation(reset)
+    for index=1,4 do
+        local old=newContext()
+        old.memory.session.deferredOpening,old.memory.session.deferredOpeningIndex=true,index
+        old.memory.session.customLedger={index=index}
+        local closures=standaloneClosures(old)
+        check(not postTitle(old,closures)(),"旧延播档先接续，不先入场")
+        check(not old.letter.isOpen(),"旧档不重读来信")
+        for current=index,4 do
+            local cfg=current==1 and old.config.OPENING or old.config.OPENING_JOINS[current-1]
+            eq(old.shown[#old.shown].steps,cfg.steps,"旧档保存index即时接续 " .. current)
+            eq(countCalls(old,"offline.check"),0,"剩余段落期间不进入游戏")
+            finishDialogue(old)
+        end
+        eq(#old.shown,5-index,"旧档只播剩余段落数")
+        eq(old.grants,0,"旧延播档不重复补starter")
+        eq(countCalls(old,"offline.check"),1,"旧档最终才结算离线")
+        eq(old.memory.session.customLedger.index,index,"旧档其他台账保持")
+        auditContext(old)
+    end
+    local reset=newContext()
     reset.memory.session.deferredOpening,reset.memory.session.deferredOpeningIndex=true,1
     local s=reset.require("systems.StoryPlayer"); local item=s.takeDeferredOpening()
-    s.resetAll(); eq(s.finishDeferredOpening(item.deferredToken),false,"reset invalidates token")
-    eq(reset.memory.session.deferredOpeningIndex,1,"reset old callback cannot write session")
-    eq(reset.flushes,0,"reset old callback no Flush")
+    s.resetAll()
+    reset.memory.session={introCompleted=true,deferredOpening=true,deferredOpeningIndex=1,newSave=true}
+    eq(s.finishDeferredOpening(item.deferredToken),false,"reset invalidates token even same-index new save")
+    eq(reset.memory.session.deferredOpeningIndex,1,"旧token不能写新session")
+    eq(reset.flushes,0,"旧token不Flush")
+    local flow=standaloneClosures(reset); flow.resume()
+    local stale=reset.shown[1].onFinish
+    flow.cancel(); s.resetAll(); reset.scenario.reset()
+    reset.memory.session={introCompleted=true,deferredOpening=true,deferredOpeningIndex=1,newSave="第二次"}
+    flow.resume()
+    local before,count,flush=copy(reset.memory),#reset.shown,reset.flushes
+    stale()
+    check(same(reset.memory,before),"旧flow回调不能进入或推进新档")
+    eq(#reset.shown,count,"旧flow不能插入新对白")
+    eq(reset.flushes,flush,"旧flow不能落新档")
     auditContext(reset)
 end
 local function priorityCases()
@@ -822,10 +856,12 @@ local function priorityCases()
         "ui.battle.popup.DamageStatsPanel","ui.battle.stage.StageSelectDialog","ui.battle.popup.TerminalConfirmDialog"}) do
         local c=newContext(); foundation(c)
         c.memory.session.deferredOpening,c.memory.session.deferredOpeningIndex=true,1
+        check(c.require("systems.StoryPlayer").enqueue(35),"普通主线剧情入队")
         c.views[gate].open=true; local f=standaloneClosures(c); local before=copy(c.memory)
-        f.play(); eq(#c.shown,0,"pending opening doesn't steal " .. gate)
+        f.play(); eq(#c.shown,0,"普通剧情不抢高优先级 " .. gate)
         check(same(c.memory,before) and c.flushes==0,"blocked pending doesn't mark/save")
-        c.views[gate].open=false; f.play(); eq(c.shown[1].steps,c.config.OPENING.steps,"blocked opening not dropped")
+        c.views[gate].open=false; f.play(); eq(c.shown[1].steps,c.config.SCENARIO_35.steps,"阻挡后普通队首不丢失")
+        eq(c.memory.session.deferredOpeningIndex,1,"后续泵不消费旧开场进度")
         c.scenario.skip(); auditContext(c)
     end
     local c=newContext(); foundation(c)
@@ -834,11 +870,12 @@ local function priorityCases()
     c.views["ui.hud.popup.RewardPopup"].pending=true
     f.play(); eq(#c.shown,0,"pending visible battle rewards precede deferred")
     c.rewardBlocked=true; f.play(); eq(#c.shown,0,"high priority blocked battle keeps deferred waiting")
-    story.enqueue(47); f.play()
-    eq(c.shown[1].steps,c.config.SCENARIO_47.steps,"hidden battle reward doesn't deadlock ordinary story")
+    story.enqueue(35); f.play()
+    eq(c.shown[1].steps,c.config.SCENARIO_35.steps,"hidden battle reward doesn't deadlock ordinary story")
     finishDialogue(c); c.rewardBlocked=false; c.views["ui.hud.popup.RewardPopup"].pending=false
-    f.play(); eq(c.shown[2].steps,c.config.OPENING.steps,"hidden reward resolving releases deferred")
-    c.scenario.skip(); auditContext(c)
+    f.play(); eq(#c.shown,1,"奖励释放后后续泵也不消费旧开场")
+    eq(c.memory.session.deferredOpeningIndex,1,"旧开场留给入场恢复链")
+    auditContext(c)
     local queued=newContext(); local play=standaloneClosures(queued).play
     queued.require("systems.StoryPlayer").enqueue(35); queued.tm.onScenarioClaimed(20)
     play(); eq(#queued.shown,0,"queue tutorial protects original0.25 quiet window from ordinary")
@@ -869,9 +906,11 @@ local function heroScenarioCases()
             eq(c.require("systems.StoryPlayer").take().scenarioId,35,"queued ordinary consumed before hero")
         end
         hero.update(); eq(#c.shown,1,"hero poll recovers once without new clicks/end event " .. gate)
-        eq(c.shown[1].steps,c.config.SCENARIO_78.steps,"owned hero emits original idle not repeated join")
-        check(c.memory.session.claimedScenarios["74"] and c.memory.session.claimedScenarios["78"],"only played idle original ledger set")
-        finishDialogue(c); hero.update(); hero.onOpenHero(18); eq(#c.shown,1,"hero queue/claim dedup no replay")
+        eq(c.shown[1].steps,c.config.SCENARIO_74.steps,"已拥有未看入队先74")
+        check(c.memory.session.claimedScenarios["74"] and not c.memory.session.claimedScenarios["78"],"只标记实际已开始的入队")
+        finishDialogue(c)
+        eq(c.shown[2].steps,c.config.SCENARIO_78.steps,"真实入队结束后才78")
+        finishDialogue(c); hero.update(); hero.onOpenHero(18); eq(#c.shown,2,"hero queue/claim dedup no replay")
         auditContext(c)
     end
     local c=newContext(); local hero=c.require("ui.character.hero.HeroScenario")
@@ -903,14 +942,52 @@ local function heroScenarioCases()
     precedence.memory.session.deferredOpening,precedence.memory.session.deferredOpeningIndex=true,1
     local ps=precedence.require("systems.StoryPlayer"); local play=standaloneClosures(precedence).play
     play(); eq(#precedence.shown,0,"pending hero priority over deferred, without mutual deadlock")
-    h2.update(); eq(precedence.shown[1].steps,precedence.config.SCENARIO_78.steps,"hero poll consumes ahead of deferred")
+    h2.update(); eq(precedence.shown[1].steps,precedence.config.SCENARIO_74.steps,"已拥有待播先入队74")
     ps.enqueue(35); h2.onRecruitResults({{type="hero",heroId=19,isNew=true}})
     precedence.scenario.skip(); eq(#precedence.shown,1,"finish broadcast cannot jump ahead of ordinary queue")
     play(); eq(precedence.shown[2].steps,precedence.config.SCENARIO_35.steps,"ordinary queue priority during event drain")
-    precedence.scenario.skip(); eq(precedence.shown[3].steps,precedence.config.SCENARIO_75.steps,"after ordinary finish drains next hero")
-    precedence.scenario.skip(); precedence.scenario.skip(); play()
-    eq(precedence.shown[5].steps,precedence.config.OPENING.steps,"hero+ordinary finished then deferred released")
-    precedence.scenario.skip(); auditContext(precedence)
+    precedence.scenario.skip(); eq(precedence.shown[3].steps,precedence.config.SCENARIO_75.steps,"普通结束后按FIFO播已排队下一英雄")
+    precedence.scenario.skip(); eq(precedence.shown[4].steps,precedence.config.SCENARIO_79.steps,"下一英雄入队后闲聊")
+    precedence.scenario.skip(); eq(precedence.shown[5].steps,precedence.config.SCENARIO_78.steps,"被普通剧情打断的上一英雄闲聊不丢失")
+    precedence.scenario.skip(); play()
+    eq(#precedence.shown,5,"后续泵不再消费旧deferred")
+    eq(precedence.memory.session.deferredOpeningIndex,1,"旧开场只留给入场恢复")
+    auditContext(precedence)
+end
+local function menuStoryCases()
+    for _,entry in ipairs({{"tavern","ui.tavern.TavernPage",31},{"church","ui.church.ChurchPage",27},
+        {"smith","ui.blacksmith.BlacksmithPage",47}}) do
+        local c=newContext(); local story=c.require("systems.StoryPlayer"); local f=standaloneClosures(c)
+        local recovery=c.require("ui.tutorial.TutorialPageRecovery")
+        c.views[entry[2]].open=true
+        if entry[1]=="smith" then c.views["ui.backpack.BackpackPanel"].open=true end
+        story.enqueue(35); story.onPlace(entry[1],"enter")
+        eq(recovery.getStoryPlace(),entry[1],"真实菜单归属 " .. entry[1])
+        f.play(); eq(c.shown[1].steps,c.config["SCENARIO_" .. entry[3]].steps,"所属菜单先播自身介绍")
+        check(story.hasPending("battle"),"主线队首留给主线")
+        eq(story.take("battle").scenarioId,35,"错场主线原队首不丢失")
+        finishDialogue(c); story.onPlace(entry[1],"leave")
+        f.play(); eq(#c.shown,1,"告别不会在所属菜单播放")
+        c.views[entry[2]].closeTime=c.clock.elapsedTime
+        eq(recovery.getStoryPlace(),"other","关闭动画不是所属菜单")
+        f.play(); eq(#c.shown,1,"关闭动画继续挡")
+        c.views[entry[2]].open=false
+        c.views["ui.backpack.BackpackPanel"].open=false; c.nav=4
+        f.play(); eq(c.shown[2].steps,c.config["SCENARIO_" .. (entry[3]+1)].steps,"城镇才播告别")
+        finishDialogue(c); auditContext(c)
+    end
+    local c=newContext(); local h=c.require("ui.character.hero.HeroScenario")
+    c.memory.heroes.roster[25]={level=1}
+    c.views["ui.tavern.TavernPage"].open=true
+    c.views["ui.tavern.TavernPage"].busy=true
+    h.onOpenHero(25); h.update()
+    eq(#c.shown,0,"酒馆内真实招募busy仍挡剧情")
+    check(h.hasPending() and c.flushes==0,"招募忙时只排队不标记")
+    c.views["ui.tavern.TavernPage"].busy=false
+    h.update(); eq(c.shown[1].steps,c.config.SCENARIO_77.steps,"酒馆内已拥有未看先入队77")
+    finishDialogue(c); eq(c.shown[2].steps,c.config.SCENARIO_81.steps,"酒馆内入队完接81")
+    finishDialogue(c); h.update(); eq(#c.shown,2,"酒馆重复poll不重播")
+    auditContext(c)
 end
 local function localizedCases()
     local c=newContext(); local dictionary=c.require("core.I18nStory")
@@ -959,7 +1036,7 @@ local function localizedCases()
 end
 local REVIEW_IMAGES={
     ["image/剧情/背景/STORY_BG_01.png"]="image/剧情/背景/STORY_BG_01.png",
-    ["fixed-town-backdrop"]="/workspace/screenshots/town-expedition-landscape-inspect-20261006.png",
+    ["fixed-town-backdrop"]=PROJECT .. "/screenshots/town-expedition-landscape-inspect-20261006.png",
 }
 local NATIVE_DRAW_NAMES={
     "nvgBeginPath","nvgCircle","nvgClosePath","nvgFill","nvgFillColor","nvgFillPaint","nvgFontFace","nvgFontSize",
@@ -1036,6 +1113,7 @@ function Start()
     runCase("real-deferred-token-only-finish-reset-and-original-four-configs",deferredCases)
     runCase("ordinary-deferred-quiet-priority-hidden-reward-no-deadlock",priorityCases)
     runCase("real-HeroScenario-blocked-queue-dedup-poll-event-reset",heroScenarioCases)
+    runCase("menu-owned-story-queue-and-tavern-recruit-busy",menuStoryCases)
     runCase("real-I18nStory-FULL196-and-short-four-language-layout",localizedCases)
     runCase("package-loaded-global-and-source-audit",function()
         for k,v in pairs(loadedBefore) do eq(package.loaded[k],v,"package loaded original " .. k) end
@@ -1060,7 +1138,8 @@ function Start()
     end)
     print(TAG .. "RESULT " .. (failures==0 and "ALL PASS" or "FAIL") .. " groups=" .. groups .. " checks=" .. checks .. " failures=" .. failures)
     if failures>0 then log:Write(LOG_ERROR,TAG .. "validation assertions failed=" .. failures) end
-    -- 官方 validate 帧预算负责退出和报告；不得用进程退出码替代断言结果。
+    -- 断言结果独立于退出码；普通专项无需validate也在完整审计后退出。
+    engine:Exit()
 end
 function Stop()
     if reviewVG then nvgDelete(reviewVG); reviewVG=nil end

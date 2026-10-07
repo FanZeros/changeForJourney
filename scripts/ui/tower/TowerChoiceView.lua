@@ -228,10 +228,10 @@ function View.drawFooter(vg, state, landscape)
     ensure(landscape)
     local currentCancel, currentNotice, root = cancel, notice, footer
     if not currentCancel or not currentNotice or not root then return end
-    currentCancel:SetText(Presentation.text("取消"))
+    currentCancel:SetText(Presentation.text("稍后选择"))
     currentCancel:SetDisabled(state.pending)
     currentNotice:SetText(Presentation.text(state.retryBuffId and "仅可重试原契印"
-        or "取消只收起契印，当前选择仍会保留"))
+        or "选择保留，战斗继续；强化从下一波生效"))
     Surface.draw(root, vg, landscape and 1920 or 1080, landscape and 1080 or 2400)
 end
 

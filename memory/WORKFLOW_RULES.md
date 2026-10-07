@@ -1,3 +1,10 @@
+## 塔结算横屏与择契不停战（2026-10-07）
+
+- 用户要求塔胜败结算横屏、三选一可留着不选且战斗继续、右栏排序文字修复；完成后新分支正常push与workspace1005 PR，测试勿复杂化。独立fix1007/tower-flow-roster-labels固定ec1d8a61父，不切共享HEAD/index，不夹并行教程/数据去重/.project/上传/验证/无关meta。
+- 1440×760塔结算最多12英雄，普通副本不改；FIFO未选组本层内保留，清波直接下一波，选择只追加一次并下一波生效，不重置当前敌人/计时/投射物。右待选入口恢复原组，失败/退出/本层结算清理；sans/normal修复排序字体。
+- 现有回执450/0、布局967/0、名册6661/0、真实侧栏16291/0均exit0；11Lua单文件LSP无Error，官方b2/593Lua与11载荷字节/size一致。不称全仓/设备/性能/完整实战视觉通过；只三个旧测试小增量，不新增大测试框架。
+- 持续推进当前授权，最新要求直接继续不机械提问；只正常push独立任务分支，不推workspace系列/强推/自动合并发布，尊重停止与权限边界，凭据不进源码/配置/日志/记忆。Git实际结果成功后另补，不提前称已推或已建PR。
+
 ## 右栏排序与总战力主值交接（2026-10-07）
 
 - **已正常push并核验：** 最终26白名单提交a313445e9c31810e9cd9887354674e138a696259正常push独立feat1007/roster-sort-total-power-20261007，push／ls-remote实际exit0、远端SHA一致，workspace1005仍81266ee8未推。正式PR #119：https://github.com/FanZeros/changeForJourney/pull/119，base=workspace1005／head=本任务，open／draft=false／merged=false／mergeable未计算，不称CI通过、已合并或发布。提交包含23源码/meta＋3本人交接，目标PR117优化保持，塔WIP／.project／内证／玩家档／凭据不混入；下面“未push／PR”均属此前过程记录。成功后仅三交接补记正常push，不重复创建PR。

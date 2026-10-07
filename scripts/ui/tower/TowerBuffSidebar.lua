@@ -44,6 +44,8 @@ local routeNote = nil
 local ruleNote = nil
 ---@type Button?
 local actionButton = nil
+---@type Button?
+local pendingButton = nil
 ---@type Panel?
 local confirmRoot = nil
 ---@type Button?
@@ -157,11 +159,12 @@ local function ensureRoots()
     buffScroll = UI.ScrollView { width = "100%", flexGrow = 1, flexBasis = 0,
         scrollX = false, scrollY = true, bounces = false, showScrollbar = true,
         scrollbarInteractive = true, pointerEvents = "none", children = { buffContent } }
-    actionButton = button("")
+    actionButton, pendingButton = button(""), button("")
+    pendingButton:SetVisible(false)
     rightRoot = UI.Panel { width = 486, height = 1080, backgroundColor = C.background,
         borderLeftWidth = 3, borderLeftColor = C.border, padding = 24, gap = 14,
         overflow = "hidden", pointerEvents = "none",
-        children = { buffTitle, buffScroll, ruleNote, actionButton } }
+        children = { buffTitle, buffScroll, ruleNote, pendingButton, actionButton } }
 
     confirmTitle, confirmNote = label("", 34), label("", 24, C.muted)
     confirmTitle:SetStyle({ textAlign = "center", height = 46 })
@@ -240,6 +243,12 @@ local function sync(snapshot, layout)
     elseif actionButton then
         actionButton:SetDisabled(action == nil or snapshot.inputModal == true)
     end
+    if pendingButton then
+        local count = snapshot.pendingChoices or 0
+        pendingButton:SetVisible(count > 0)
+        pendingButton:SetText(text("待选暗契 ×%d", count))
+        pendingButton:SetDisabled(snapshot.phase ~= "battle" or snapshot.inputModal == true)
+    end
     if changedLanguage then
         routeTitle:SetText(text("塔之路线"))
         routeNote:SetText(text("本层路线仅供查看"))
@@ -317,6 +326,10 @@ function Sidebar.handleClick(x, y, width, height)
     local layout = Layout.compute(width, height)
     if Layout.panelAt(layout, x, y) ~= "right" then return nil end
     local dx, dy = Layout.toSide(layout, "right", x, y)
+    if not lastSnapshot.inputModal and (lastSnapshot.pendingChoices or 0) > 0
+        and lastSnapshot.phase == "battle" and widgetHit(pendingButton, dx, dy) then
+        return "resume_pick"
+    end
     if action and not lastSnapshot.inputModal and widgetHit(actionButton, dx, dy) then return action end
     return nil
 end
@@ -375,7 +388,7 @@ function Sidebar.destroy()
     leftRoot, rightRoot, confirmRoot = nil, nil, nil
     routeScroll, buffScroll, buffContent = nil, nil, nil
     floorLabel, waveLabel, buffTitle, routeTitle, routeNote, ruleNote = nil, nil, nil, nil, nil, nil
-    actionButton, confirmRetreat, confirmCancel, confirmTitle, confirmNote = nil, nil, nil, nil, nil
+    actionButton, pendingButton, confirmRetreat, confirmCancel, confirmTitle, confirmNote = nil, nil, nil, nil, nil, nil
     nodes, nodeLabels = {}, {}
 end
 

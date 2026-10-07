@@ -97,7 +97,8 @@ function TowerService.Challenge(uid, requestedFloor)
     bt.buffs = {}
     runSerial = runSerial + 1
     local run = { id = tostring(uid) .. ":" .. runSerial, bt = bt, floor = floor,
-        wave = 1, phase = "battle", selections = {}, waveResults = {}, requests = {} }
+        wave = 1, phase = "battle", selections = {}, waveResults = {}, requests = {},
+        pendingSelections = {} }
     runs[uid] = run
     PDM.MarkDirty(uid, "dungeon")
 
@@ -200,8 +201,9 @@ function TowerService.WaveWin(uid, floor, wave)
         monsterLevel = floorCfg.monsterLevel,
         buffChoices  = choices,
     }
-    run.phase = "buff_pick"
-    run.pending = { id = selectionId, wave = wave, result = result }
+    -- 选择保留到本层结束，清波直接推进；未选择不能阻塞下一波。
+    run.pendingSelections[#run.pendingSelections + 1] = { id = selectionId, wave = wave, result = result }
+    run.wave = nextWave
     run.waveResults[wave] = result
     return true, nil, copy(result)
 end
@@ -381,7 +383,7 @@ function TowerService.PickBuff(uid, buffId, request)
     if request.runId ~= nil and request.runId ~= run.id then return false, "挑战已过期" end
     if request.floor ~= nil and request.floor ~= run.floor then return false, "层数不匹配" end
     -- 旧无 token 调用只兼容当前待选，不能在未 Challenge/清波时创造选择。
-    local pending = run.pending
+    local pending = run.pendingSelections[1]
     local selectionId = request.selectionId or (pending and pending.id)
     local requestId = request.requestId
     local previous = requestId and run.requests[requestId]
@@ -401,7 +403,7 @@ function TowerService.PickBuff(uid, buffId, request)
             .. " request=" .. tostring(requestId))
         return true, nil, result
     end
-    if run.phase ~= "buff_pick" or not pending or selectionId ~= pending.id
+    if run.phase ~= "battle" or not pending or selectionId ~= pending.id
         or (request.wave ~= nil and request.wave ~= pending.wave) then return false, "强化选择已过期" end
     local offered = false
     for _, choice in ipairs(pending.result.buffChoices) do
@@ -425,9 +427,7 @@ function TowerService.PickBuff(uid, buffId, request)
     }
     run.selections[selectionId] = result
     if requestId then run.requests[requestId] = result end
-    run.pending = nil
-    run.wave = result.nextWave
-    run.phase = "battle"
+    table.remove(run.pendingSelections, 1)
     PDM.MarkDirty(uid, "dungeon")
 
     print(string.format("[TowerService] PickBuff uid=%s run=%s selection=%s request=%s buffId=%d total=%d",

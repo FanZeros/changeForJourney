@@ -2,7 +2,8 @@
 -- 基于scaffold-2d的Start/Stop + NanoVGRender；设计画面1080x2400，逻辑帧+DPR contain。
 -- UI/Button/Label/Yoga/字体/Draw2/HeroFrame/HeroConfig均真实；只读源码在私有env编译。
 -- 私有env只注入受控时钟、编队数据与Tutorial记录器；所有nvg spy先转发原生，不改_G。
--- UI.GetNVGContext作为宿主有效frame，字体测量与实际绘制同context；autoEvents=false。
+-- 使用独立宿主NanoVG，像正式Boot一样只注册sans；UI私有context仅用于控件测量。
+-- autoEvents=false；不能用UI私有context的sans-bold掩盖正式宿主缺字。
 -- 图元记录与受控样片不等于设备触控/性能/用户审美验收。
 -- 运行由主会话官方build后进行；可加-roster-visual -roster-lang=ko -roster-phase=change。
 -- 日志/截图输出路径仅.git/validation/roster-power-20261007，由外层Runtime参数控制。
@@ -99,7 +100,10 @@ local function setupFixture()
     local UI = require("urhox-libs/UI")
     local surface = require("ui.widget.DesignWidgetSurface")
     surface.init()
-    vg = assert(UI.GetNVGContext(), "UI actual NanoVG context missing")
+    vg = assert(nvgCreate(1), "actual host NanoVG context missing")
+    check(vg ~= UI.GetNVGContext(), "real host context differs from UI private font context")
+    check(nvgCreateFont(vg, "sans", FONT) >= 0, "real host registers only multilingual sans")
+    check(nvgFindFont(vg, "sans-bold") < 0, "real host has no implicit sans-bold alias")
     fixture.UI, fixture.surface = UI, surface
     fixture.i18n = require("core.I18n")
     fixture.originalLanguage = fixture.i18n.get()
@@ -262,7 +266,9 @@ local function measure(widget)
     local fit = widget.autoFitCache_
     local size = fit and fit.fontSize or UI.Theme.FontSize(widget.props.fontSize)
     nvgSave(vg); nvgResetTransform(vg)
-    nvgFontFace(vg, UI.Theme.FontFace(widget.props.fontFamily, widget.props.fontWeight))
+    local face = UI.Theme.FontFace(widget.props.fontFamily, widget.props.fontWeight)
+    check(nvgFindFont(vg, face) >= 0, "actual render host registered widget font " .. face)
+    nvgFontFace(vg, face)
     nvgFontSize(vg, size)
     nvgTextLetterSpacing(vg, widget.props.letterSpacing or 0)
     local width = nvgTextBounds(vg, 0, 0, widget.props.text, nil, nil, false)
@@ -691,7 +697,7 @@ function HandleRosterPresentationRender(_eventType,_eventData)
     local width,height=graphics:GetWidth()/dpr,graphics:GetHeight()/dpr
     local begun=false
     local ok,err=pcall(function()
-        -- UI context, fonts, MeasureTextFit and glyph rasterization share this actual active frame.
+        -- 宿主frame独立于UI私有测量context，覆盖正式绘制时的字体别名条件。
         nvgBeginFrame(vg,width,height,dpr);begun=true
         if state.visual then
             local scale=math.min(width/1080,height/2400)
@@ -744,7 +750,8 @@ function Stop()
     if vg then for handle in pairs(imageHandles) do nvgDeleteImage(vg,handle) end end
     imageHandles={}
     if fixture.i18n and fixture.originalLanguage then fixture.i18n.set(fixture.originalLanguage) end
-    if fixture.surface then fixture.surface.shutdown() end -- owns UI context: no second nvgDelete
+    if fixture.surface then fixture.surface.shutdown() end -- owns UI private context only
+    if vg then nvgDelete(vg) end -- separate host context, released exactly once
     vg=nil
     print(TAG .. " STOP native time/require/random unchanged=" .. tostring(time==originals.time and require==originals.require and math.random==originals.random))
 end

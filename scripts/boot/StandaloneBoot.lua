@@ -393,7 +393,18 @@ function M.run(rt)
     -- 三队与默认 Scene 共用；driver 的每条 dropOnly 代表一次击杀，不是整波奖励。
     local function applyKillDrop(data)
         if StageConfig.isResourceStage(data.stageId) then
-            local rewards = DungeonConfig.getStageRewards(data.stageId, 1)
+            -- 三行奖励队列携带本场存活英雄快照，切队/换阵不能把经验发给另一队。
+            local heroIds = data.heroIds
+            if not heroIds then
+                local teams = CharacterPanel.getTeamSlotIds()
+                heroIds = (teams[data.teamIdx or 1] or {}).slots or {}
+            end
+            local rewards = DungeonConfig.getStageRewards(data.stageId, 1, #heroIds)
+            if (rewards.adventureExp or 0) > 0 then GameState.addExp(rewards.adventureExp) end
+            if #heroIds > 0 then
+                local perHero = math.floor((rewards.adventurerExp or 0) / #heroIds + 0.5)
+                if perHero > 0 then CharacterPanel.addHeroesExp(heroIds, perHero) end
+            end
             if rewards.gold > 0 then
                 GameState.setGold(GameState.getGold() + rewards.gold)
             end
@@ -405,7 +416,7 @@ function M.run(rt)
                     addKillEquipment(seed.stageId or data.stageId, seed.quality, seed.level)
                 end
             end
-            -- 不掷主线装备/卷轴，不发源怪经验、扫荡券或主线首通奖励。
+            -- 不发借用怪物奖励或主线首通奖励；副本经验已按同进度独立结算。
             return
         end
         local stageEntry = StageConfig.getStage(data.stageId)

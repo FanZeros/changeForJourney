@@ -378,8 +378,16 @@ function BattleTriDriver.new(teamIdx, options)
         local pending = self.pendingKills
         -- 资源每杀奖励由 DC 的重复收益 API 结算，绝不叠加借用怪物的金币/经验。
         local isResourceStage = SC.isResourceStage(self.stageId)
+        local heroIds = {}
+        if isResourceStage then
+            -- 资源逐杀记下当时仍存活的队员；关末死亡/切队不改变已赚经验的归属。
+            for _, ally in ipairs(self.allies) do
+                if ally.hp > 0 then heroIds[#heroIds + 1] = ally.heroId end
+            end
+        end
         pending[#pending + 1] = {
             stageId = self.stageId,
+            heroIds = isResourceStage and heroIds or nil,
             teamIdx = self.teamIdx,
             dropLuck = self.dropLuck,
             expReward = not isResourceStage and (unit.expReward or 0) or 0,
@@ -407,7 +415,7 @@ function BattleTriDriver.new(teamIdx, options)
             expReward = expReward + (kill.expReward or 0)
             goldReward = goldReward + (kill.goldReward or 0)
             queue[#queue + 1] = { stageId = kill.stageId, dropOnly = true,
-                teamIdx = kill.teamIdx, dropLuck = kill.dropLuck }
+                teamIdx = kill.teamIdx, dropLuck = kill.dropLuck, heroIds = kill.heroIds or heroIds }
         end
         if self.onKill and (expReward > 0 or goldReward > 0) then
             self.onKill({

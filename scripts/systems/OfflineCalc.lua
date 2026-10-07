@@ -648,9 +648,11 @@ local function calcTeamRewards(seconds, teams, stageConfig, expected)
                     equipSeeds = {}, scrollDrops = {}, kills = kills,
                 }
                 if cfg.isResourceStage and cfg.isResourceStage(stageId) then
-                    -- DC 内封装每分钟旧效率及货币 REWARD_MULT，装备不乘倍率。
-                    -- 不把资源关送入主线收入表/怪物掉落，否则会混入经验、卷轴和扫荡券。
+                    -- 资源金币/黑钻/装备沿用独立效率；经验按源主线同进度发给本队。
                     local resourceKills = effective * OfflineCalc.IDLE_KILL_RATE
+                    reward.adventureExp = DC.getStageExpAmount(stageId, resourceKills)
+                    reward.adventurerExp = math.floor(reward.adventureExp
+                        * ET.getHeroCountExpMult(heroCount) + 0.5)
                     if expected then
                         local id, floor = DC.decodeStageId(stageId)
                         local amount = DC.getStageRewardAmount(stageId, resourceKills)

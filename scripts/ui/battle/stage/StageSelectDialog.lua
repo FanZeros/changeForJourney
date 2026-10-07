@@ -11,7 +11,6 @@
 local GameConfig        = require("config.GameConfig")
 local SC                = require("config.StageConfig")
 local MC                = require("config.MonsterConfig")
-local SRP               = require("config.StageRecommendPower")
 local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
 local DrawUtil          = require("core.DrawUtil")
 local DarkIcon          = require("core.DarkIcon")
@@ -66,7 +65,7 @@ local function titleLines(vg, source, width, fontSize)
     return lines
 end
 
-local function drawFittedTitle(vg, x, y, source, width, fontSize, maxLines, align, r, g, b, stroke)
+local function drawFittedTitle(vg, x, y, source, width, fontSize, maxLines, align, r, g, b, stroke, opts)
     local size = fontSize
     local lines = titleLines(vg, source, width, size)
     local function tooLarge()
@@ -86,7 +85,7 @@ local function drawFittedTitle(vg, x, y, source, width, fontSize, maxLines, alig
     local topY = y - (#lines - 1) * lineHeight * 0.5
     for index, line in ipairs(lines) do
         drawTextStroke(vg, x, topY + (index - 1) * lineHeight, line, size,
-            align, r, g, b, stroke)
+            align, r, g, b, stroke, opts)
     end
 end
 
@@ -746,7 +745,7 @@ function StageSelectDialog.init(vg)
     if imageBatch ~= batch then return end
     -- nvgCreateImage可合作式yield；四图加载调用全部返回后才原子发布本批结果。
     imgBtn, imgBg, imgAct, imgLock, imagesReady = button, background, action, lock, true
-    print(string.format("[StageSelectDialog] 主线行%d/资源行%d，视窗%d；资源按击杀预估无额外奖",
+    print(string.format("[StageSelectDialog] 主线行%d/资源行%d，视窗%d；副本显示战力、奖励与经验",
         MAIN_ROW_LAYOUT.rowHeight, RESOURCE_ROW_LAYOUT.rowHeight, ROW_VIEWPORT_HEIGHT))
     print(string.format("[StageSelectDialog] init OK; layout TAB_Y=%d TAB_W=%d TAB_H=%d "
         .. "MAIN_TAB_X=%d DUNGEON_TAB_X=%d CH_Y0=%d ROW_Y0=%d",
@@ -1220,12 +1219,10 @@ function StageSelectDialog.draw(vg)
         --   + 纯数字（与 TopBar 玩家战力同图标，玩家一看即懂是战力比较）。
         --   ≈ 模糊前缀取消——外推关仅以蓝灰数字色区分，不做文本标注。
         -- 三态：实测(数字与玩家总战力比较着色) / 外推(蓝灰) / 无数据(不绘制)。
-        -- 布局：图标 18px 中心 (x+25, y+84)，数字左缘 x+38；左栏可用宽
-        -- ~124px（CARD_X-MID_X-边距），最长 5 位数（ml92 外推上限 ~2.9e4）
-        -- 20 号字 ~55px，38+55=93px < 124px 不撞卡面。
+        -- 布局：图标中心 x+25，数字左缘 x+38；副本大数缩写并适配可用宽度。
+        -- 主线仍保留原完整数字，锁定行的图标与文字透明度一致。
         ---@type number|nil, boolean|nil
-        local recPower, recExtr
-        if not ResourceList.isTowerStage(id) then recPower, recExtr = SRP.get(id) end
+        local recPower, recExtr = ResourceList.getRecommendedPower(id, entry)
         if recPower then
             local rr, rg, rb
             if recExtr then
@@ -1243,8 +1240,10 @@ function StageSelectDialog.draw(vg)
             end
             local iconAlpha = (locked and 140 or 255) / 255
             DarkIcon.draw(vg, "power", x + 25, y + layout.powerY, 18, iconAlpha)
-            drawTextStroke(vg, x + 38, y + layout.powerY, tostring(recPower), 20,
-                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+            local isDungeon = ResourceList.getGroupKey(id) ~= nil
+            local powerText = isDungeon and require("core.NumberUtil").format(recPower) or tostring(recPower)
+            drawFittedTitle(vg, x + 38, y + layout.powerY, powerText,
+                D.CARD_X - x - 46, 20, 1, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
                 rr, rg, rb, 2, { alpha = iconAlpha })
         end
 

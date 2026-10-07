@@ -9,17 +9,17 @@ local images = {} ---@type table<string, integer>
 local retryAt = {} ---@type table<string, number>
 local imageVg = nil ---@type any
 
---- 期望值允许不足一件；任何正数都不能被NumberUtil向下取整成0。
+--- 收益直接显示数值，保留不足一件的小数，不附加预估符号。
 ---@param amount number
 ---@return string
 function M.formatEstimate(amount)
-    if amount <= 0 then return "—" end
-    if amount >= 10000 then return "≈" .. NumberUtil.format(amount) end
-    if amount < 0.0001 then return "≈<0.0001" end
+    if amount <= 0 then return "0" end
+    if amount >= 10000 then return NumberUtil.format(amount) end
+    if amount < 0.0001 then return "<0.0001" end
     local decimals = amount < 0.01 and 4 or (amount < 1 and 3 or 1)
     local text = string.format("%." .. decimals .. "f", amount)
     text = text:gsub("0+$", ""):gsub("%.$", "")
-    return "≈" .. text
+    return text
 end
 
 ---@param vg any
@@ -30,7 +30,7 @@ function M.init(vg)
     end
     imageVg = vg
     images, retryAt = {}, {}
-    print("[StageSelectRewardPreview] 静态收益预估初始化；资源无额外奖，装备保留小数期望，塔首通/重打分列")
+    print("[StageSelectRewardPreview] 奖励数值与经验初始化；塔首通/重打分列")
 end
 
 ---@param vg any
@@ -97,23 +97,26 @@ function M.draw(vg, reward, x, y, width, height, locked)
     nvgRoundedRect(vg, x, y, width, height, 6)
     nvgFillColor(vg, nvgRGBA(26, 22, 16, locked and 110 or 185))
     nvgFill(vg)
-    local title = reward.isEstimate and "通关收益预估" or "通关奖励"
-    drawText(vg, x + 4, cy, title, 136, 18, alpha)
-    local iconCX = x + 158
+    drawText(vg, x + 4, cy, "通关奖励", 94, 18, alpha)
+    local iconCX = x + 112
     DarkIcon.drawQualityBg(vg, reward.quality, iconCX, cy, 30, 30, alpha)
     if image >= 0 then DrawUtil.drawImageCentered(vg, image, iconCX, cy, 24, 24, alpha) end
     if reward.isEstimate then
-        drawText(vg, x + 180, cy, M.formatEstimate(reward.amount), 106, 22, alpha)
-        local detail = ""
+        drawText(vg, x + 134, cy, M.formatEstimate(reward.amount), 92, 22, alpha)
+        drawText(vg, x + 234, cy, I18n.format("远征经验 %s", NumberUtil.format(reward.playerExp or 0)),
+            reward.equipLevel and 122 or (width - 238), 18, alpha)
         if reward.equipLevel then
-            detail = I18n.format("随机Lv.%d · 品质%d-%d", reward.equipLevel,
+            local detail = I18n.format("随机Lv.%d · 品质%d-%d", reward.equipLevel,
                 reward.equipMinQuality or 1, reward.equipMaxQuality or 1)
+            drawText(vg, x + 364, cy, detail, width - 368, 18, alpha)
         end
-        drawText(vg, x + 292, cy, detail, width - 296, 18, alpha)
     else
         local text = I18n.format("首次 ×%s / 重打 ×%s", NumberUtil.format(reward.firstAmount or 0),
             NumberUtil.format(reward.repeatAmount or 0))
-        drawText(vg, x + 180, cy, text, width - 184, 22, alpha)
+        drawText(vg, x + 134, cy, text, 242, 20, alpha)
+        local expText = I18n.format("远征经验 %s/%s", NumberUtil.format(reward.playerExp or 0),
+            NumberUtil.format(reward.repeatPlayerExp or 0))
+        drawText(vg, x + 384, cy, expText, width - 388, 18, alpha)
     end
     nvgRestore(vg)
 end

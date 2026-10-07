@@ -113,6 +113,14 @@ function Start()
         mods["config.HeroAssetUtil"] = { ensureIcon = function() return -1 end }
         mods["config.ExpTable"] = { TEAM_COUNT = 3, getUnlockedTeamCount = function() return c.unlocked end }
         mods["ui.widget.HeroFrame"] = { draw = function(_, opts) c.frames[#c.frames + 1] = copy(opts) end }
+        -- 入口专项继续执行真实Draw2/输入/教程目标；新UI展示由独立真实Presentation专项验证。
+        -- 仅补严格env依赖，不改原17场景/474断言，不替换任何入口或几何函数。
+        mods["ui.character.panel.CharacterRosterPresentation"] = {
+            reset = noop, observe = noop, finishObservation = noop, drawHeader = noop, drawSort = noop,
+            getFeedback = function() return false, false, 0, 0 end,
+            hitTestSort = function() return nil end, setSortInteraction = noop, clearSortInteraction = noop,
+            setTeamInteraction = noop, clearTeamInteraction = noop,
+        }
         mods["core.DarkIcon"], mods["core.HorizonBg"] = {}, { draw = noop }
         mods["systems.GameSFX"] = { play = noop }
         mods["systems.StoryPlayer"] = { onPlace = noop }

@@ -1,5 +1,5 @@
 -- 三队战力提升：图片铭牌、Spine 分层仪式与新 UI 数字滚动。
--- 只展示正式缓存的净增加值，动画值不回写战力、编队或当前波快照。
+-- 大号只显示小队总战力；辅助行保留权威旧→新与净增，动画值不回写战力、编队或当前波快照。
 local UI = require("urhox-libs/UI")
 local Surface = require("ui.widget.DesignWidgetSurface")
 local EventBus = require("core.EventBus")
@@ -41,11 +41,11 @@ local valueLabels = {}
 local rangeLabels = {}
 
 local TEXT = {
-    zh_CN = { title = "战力提升", team = "小队 %d", value = "%s   +%s" },
-    zh_TW = { title = "戰力提升", team = "小隊 %d", value = "%s   +%s" },
-    en = { title = "POWER INCREASED", team = "TEAM %d", value = "%s   +%s" },
-    ja = { title = "戦力上昇", team = "部隊 %d", value = "%s   +%s" },
-    ko = { title = "전투력 상승", team = "팀 %d", value = "%s   +%s" },
+    zh_CN = { title = "战力提升", team = "小队 %d" },
+    zh_TW = { title = "戰力提升", team = "小隊 %d" },
+    en = { title = "POWER INCREASED", team = "TEAM %d" },
+    ja = { title = "戦力上昇", team = "部隊 %d" },
+    ko = { title = "전투력 상승", team = "팀 %d" },
 }
 
 local function now()
@@ -301,13 +301,15 @@ function Effect.draw(vg, width, height)
                 199 + math.floor(pulse * 31), 94 + math.floor(pulse * 72), rowAlpha})
             rangeLabels[team]:SetFontColor({162, 152, 134, math.floor(rowAlpha * .82)})
             teamLabels[team]:SetText(string.format(text.team, team))
-            local value = string.format(text.value, formatPower(row.displayPower), formatPower(row.displayDelta))
+            local value = formatPower(row.displayPower)
             -- 按终值预算字号，防止数位增长时UI来回抖动；先字号后文本以刷新真实自动宽度。
-            local finalValue = string.format(text.value, formatPower(row.power), formatPower(row.delta))
+            local finalValue = formatPower(row.power)
             local fontSize = #finalValue > 36 and 18 or (#finalValue > 30 and 20 or 27)
             valueLabels[team]:SetFontSize(fontSize + pulse * 1.4)
             valueLabels[team]:SetText(value)
-            rangeLabels[team]:SetText(formatPower(row.base) .. "  →  " .. formatPower(row.power))
+            -- 辅助行始终使用权威快照，不随displayDelta从0滚动；连续增减只在真实回执后更新。
+            rangeLabels[team]:SetText(formatPower(row.base) .. "  →  " .. formatPower(row.power)
+                .. "  ·  +" .. formatPower(row.delta))
         end
         nvgSave(vg)
         saved = true

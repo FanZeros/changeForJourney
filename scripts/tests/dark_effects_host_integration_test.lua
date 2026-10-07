@@ -550,7 +550,9 @@ function Start()
         -- 真实Standalone.Start图片wrapper段，ctx/flags/path键与删除缓存失效不污染_G。
         local wrapperCode = segment("boot/Standalone.lua", "    -- 2.5 图片去重按context+flags+path隔离", "    -- 3. Font")
         local createdImages, deletedImages, handle = {}, {}, 0
-        local wrapperEnv = environment({}, {nvgCreateImage=function(ctx,path,flags)
+        -- PR116宿主图片miss调用真实checkpoint；主线程无active queue时应按实际实现直通。
+        local StartupQueue = compile("boot/StartupQueue.lua")
+        local wrapperEnv = environment({}, {StartupQueue=StartupQueue, nvgCreateImage=function(ctx,path,flags)
             handle=handle+1; createdImages[#createdImages+1]={ctx,path,flags,handle}; return handle
         end, nvgDeleteImage=function(ctx,id) deletedImages[#deletedImages+1]={ctx,id} end})
         wrapperEnv._G=wrapperEnv
@@ -569,16 +571,24 @@ function Start()
         check(nvgCreateImage==nativeCreate and nvgDeleteImage==nativeDelete,"host wrapper test never rewrites native global functions")
 
         local stopCode=segment("boot/Standalone.lua","function Standalone.Stop()","--- 标题关闭后按真实离线时长结算")
-        local stopOrder={}
+        local stopOrder, presentationOrder, presentationDestroys = {}, {}, 0
         local stopMocks={ ["ui.fx.SpineCardEffect"]={destroy=function() stopOrder[#stopOrder+1]="Card" end},
             ["ui.fx.SpineResultEffect"]={destroy=function() stopOrder[#stopOrder+1]="Result" end},
             ["ui.fx.DarkEffectSprites"]={destroy=function() stopOrder[#stopOrder+1]="Sprites" end},
-            ["ui.widget.DesignWidgetSurface"]={shutdown=function() stopOrder[#stopOrder+1]="Surface" end},
+            ["ui.widget.DesignWidgetSurface"]={shutdown=function()
+                stopOrder[#stopOrder+1]="Surface";presentationOrder[#presentationOrder+1]="Surface"
+            end},
             ["ui.battle.stage.StageSelectDialog"]={close=noop} }
         wrapperEnv.Standalone={};wrapperEnv.vg=ctxA
+        -- PR116 Stop同时清理启动队列与共享ready镜像；仅提供其真实宿主上下文。
+        wrapperEnv.StandaloneRT={bootReady_=true};wrapperEnv.bootQueue_={};wrapperEnv.bootReady_=true
         wrapperEnv.RewardPopup={clearBattleRewards=noop};wrapperEnv.StandaloneSave={Flush=noop}
         wrapperEnv.SpinePowerUpEffect={destroy=function() stopOrder[#stopOrder+1]="Power" end}
-        wrapperEnv.LevelUpPopup={destroy=noop};wrapperEnv.nvgDelete=function() stopOrder[#stopOrder+1]="vgDelete" end
+        wrapperEnv.LevelUpPopup={destroy=function() presentationOrder[#presentationOrder+1]="LevelUp" end}
+        wrapperEnv.CharacterPanel={destroyPresentation=function()
+            presentationDestroys=presentationDestroys+1;presentationOrder[#presentationOrder+1]="Character"
+        end}
+        wrapperEnv.nvgDelete=function() stopOrder[#stopOrder+1]="vgDelete" end
         local originalWrapperRequire=wrapperEnv.require
         wrapperEnv.require=function(name) return stopMocks[name] or originalWrapperRequire(name) end
         local ownedCreate,ownedDelete=wrapperEnv.nvgCreateImage,wrapperEnv.nvgDeleteImage
@@ -587,7 +597,11 @@ function Start()
         wrapperEnv.nvgCreateImage,wrapperEnv.nvgDeleteImage=externalCreate,externalDelete
         assert(load(stopCode,"@host-real/Stop.image-ownership","t",wrapperEnv))()
         wrapperEnv.Standalone.Stop()
+        check(wrapperEnv.bootQueue_==nil and wrapperEnv.bootReady_==false and wrapperEnv.StandaloneRT.bootReady_==false,
+            "actual Stop discards suspended startup queue and both ready flags")
         check(table.concat(stopOrder,",")=="Power,Card,Result,Sprites,Surface,vgDelete","actual Stop releases controllers/images before owning vg")
+        check(presentationDestroys==1 and table.concat(presentationOrder,",")=="LevelUp,Character,Surface",
+            "actual Stop destroys character presentation exactly once after LevelUp and before Surface")
         check(wrapperEnv.nvgCreateImage==externalCreate and wrapperEnv.nvgDeleteImage==externalDelete,"actual Stop preserves newer external wrapper owners")
         local oldCreateCount=#createdImages
         local afterStop1=wrapperEnv.nvgCreateImage(ctxA,"same.png",0)

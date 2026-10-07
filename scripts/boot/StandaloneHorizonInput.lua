@@ -1011,6 +1011,7 @@ function Input.bind(ctx)
             local mousePos = input:GetMousePosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             if CEPanel.handleUp(sx, sy, logicalH()) then
+                CharacterPanel.handleDragEnd(-1, -1)
                 artifactGesture.cancel()
                 levelPress, levelMoved = false, false
                 if LevelUpPopup.isOpen() then cancelUnderlyingPress() end
@@ -1024,6 +1025,7 @@ function Input.bind(ctx)
             if fit <= 0 then fit = 1 end
             local dx = (sx - (logicalW() - 1080 * fit) * 0.5) / fit
             local dy = (sy - (logicalH() - 2400 * fit) * 0.5) / fit
+            CharacterPanel.handleDragEnd(-1, -1)
             UpdateNoticePopup.handleInput(dx, dy)
             levelPress, levelMoved = false, false
             pressValid = false
@@ -1077,6 +1079,10 @@ function Input.bind(ctx)
         local button = eventData["Button"]:GetInt()
         local wasLootPress = lootPress
         if button == MOUSEB_LEFT then
+            -- 领奖若在拖拽途中出现，先撤销旧来源，再走弹窗Up；不能先尝试落队。
+            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+                CharacterPanel.handleDragEnd(-1, -1)
+            end
             -- 不论鼠标在哪一栏、是否有新覆盖层，都释放遗匣的拖拽状态。
             LootBox.handleDragEnd(0, 0)
             lootPress = false

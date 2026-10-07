@@ -30,6 +30,14 @@ function Start()
         ["core.DrawUtil"] = drawUtil,
         ["config.HeroAssetUtil"] = { ensureIcon = function() return 1 end },
         ["core.HorizonBg"] = { draw = noop },
+        -- 旧专项只保留原60项头像/名册几何与教程业务断言。
+        -- 新UI/Yoga/字体及反馈独立在 character_roster_presentation_test 真Runtime验证。
+        ["ui.character.panel.CharacterRosterPresentation"] = {
+            reset = noop, observe = noop, finishObservation = noop, drawSort = noop, drawHeader = noop,
+            getFeedback = function() return false, false, 0, 0 end,
+            clearSortInteraction = noop, clearTeamInteraction = noop,
+            hitTestSort = function() return nil end, setSortInteraction = noop, setTeamInteraction = noop,
+        },
         ["systems.TutorialManager"] = { isActive = function() return true end, getNewHeroId = function() return 3 end,
             getCurrentHighlight = function() return "character_slot_1" end,
             registerCharacterDetailHotspot = function(key, heroId, cx, cy, w, h, panel)

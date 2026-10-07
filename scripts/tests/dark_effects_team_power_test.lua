@@ -196,6 +196,10 @@ local function expectedPower(value)
     return #full>18 and string.format("%.3e",value) or full
 end
 
+local function expectedRange(base, power, delta)
+    return expectedPower(base) .. "  →  " .. expectedPower(power) .. "  ·  +" .. expectedPower(delta)
+end
+
 local function controllerFixture(path, effects)
     local logs, clock = {}, { elapsedTime = 100.0 }
     local env = environment(clock, logs)
@@ -972,17 +976,17 @@ local function runPowerUI(vg)
                 eq(#labels,3,"real row retains team/value plus range Label "..team)
                 eq(teamLabel:GetText(), "小队 " .. team, "real team Label identity " .. team)
                 local base = ({100,200,300})[team]
-                eq(rangeLabel:GetText(),string.format("%.0f  →  %.0f",base,expected[team]),
-                    "range shows original base to authority team "..team)
+                eq(rangeLabel:GetText(),expectedRange(base,expected[team],expected[team]-base),
+                    "range shows authority old-to-new plus net gain team "..team)
                 local range = rangeLabel:GetAbsoluteLayout()
                 local rangeWidth = hostTextWidth(vg,rangeLabel)
                 check(rangeWidth > 0 and rangeWidth <= range.w+1 and range.w <= 580.001,
                     "real range Label fits content and actual font team "..team)
                 near(range.x+range.w*.5,layout.w*.5,"real range centered",.50001)
                 check(range.y+range.h <= layout.h-81.999,"range stays above reserved plaque bottom border")
-                check(valueLabel:GetText():find(tostring(expected[team]),1,true) ~= nil,
-                    "real value Label contains team power " .. team)
-                check(valueLabel:GetText():find("+",1,true) ~= nil, "real value Label displays delta")
+                eq(valueLabel:GetText(),expectedPower(expected[team]),
+                    "real value Label is exact team total only " .. team)
+                check(not valueLabel:GetText():find("+",1,true), "real main value has no gain prefix or suffix")
                 local cell = valueLabel:GetAbsoluteLayout()
                 near(cell.x + cell.w*.5, layout.w*.5, "real team value Label centered", .50001)
                 check(cell.w > 0 and cell.h > 0 and cell.y + cell.h <= layout.h + .001,
@@ -1020,13 +1024,16 @@ local function runPowerUI(vg)
                 local range = labels[3] ---@type Label
                 local rangeLayout = range:GetAbsoluteLayout()
                 local rangeWidth = hostTextWidth(vg,range)
-                check(range:GetText():find("→",1,true) ~= nil,"localized range retains old-to-new separator "..language.."/"..team)
+                local row = assert(f:row(team))
+                eq(range:GetText(),expectedRange(row.base,row.power,row.delta),
+                    "localized auxiliary retains exact authority range and net "..language.."/"..team)
                 check(rangeWidth > 0 and rangeWidth <= rangeLayout.w+1 and rangeLayout.w <= 580.001,
                     "localized extreme range actual font fits "..language.."/"..team)
                 local layout = value:GetAbsoluteLayout()
                 local text = value:GetText()
-                check(#text < 100 and text:find("+",1,true) ~= nil,
-                    "extreme finite number compact and retains increase " .. language .. "/" .. team)
+                eq(text,expectedPower(row.displayPower),
+                    "extreme finite main value is exact total only " .. language .. "/" .. team)
+                check(#text < 100,"extreme finite number remains compact " .. language .. "/" .. team)
                 local textWidth = hostTextWidth(vg, value)
                 check(textWidth > 0 and textWidth <= layout.w + 1 and layout.w <= 580 + .001,
                     "long actual multilingual text auto-width inside content area " .. language .. "/" .. team
@@ -1051,8 +1058,15 @@ local function runPowerUI(vg)
         local layout = label:GetAbsoluteLayout()
         local text = label:GetText()
         local formatted = expectedPower(value)
-        eq(text, formatted .. "   +" .. formatted,
-            "long/short/18-digit Power retains exact integer display frame " .. index)
+        eq(text, formatted,
+            "long/short/18-digit Power retains exact total-only display frame " .. index)
+        local range = root:GetChildren()[3]:GetChildren()[3] ---@type Label
+        eq(range:GetText(),expectedRange(0,value,value),
+            "long/short auxiliary retains exact authority and net frame " .. index)
+        local rangeLayout = range:GetAbsoluteLayout()
+        local rangeMeasured = hostTextWidth(vg,range)
+        check(rangeMeasured > 0 and rangeMeasured <= rangeLayout.w + 1 and rangeLayout.w <= 580.001,
+            "long/short/18-digit auxiliary actual width stays inside 580 frame=" .. index)
         check(not text:find("e",1,true), "up to 18 digits not replaced by scientific notation")
         local measured = hostTextWidth(vg,label)
         print(TAG .. string.format(" [UI WIDTH] frame=%d bytes=%d font=%s measured=%s layout=%s value=%s",
@@ -1067,7 +1081,7 @@ local function runPowerUI(vg)
             eq(label.props.fontSize,27,"long to short restores normal font")
             check(layout.w < uiState.transitionWidth,"long to short recomputes narrower auto width")
         elseif index == 3 then
-            check(label.props.fontSize < 27,"short to long reduces font before measurement")
+            eq(label.props.fontSize,27,"single 15-digit total retains large main font")
             check(layout.w > uiState.transitionWidth,"short to long recomputes larger auto width")
         elseif index == 5 then
             near(layout.w,uiState.transitionWidth,"unchanged maximum integer width stable next frame")
@@ -1097,18 +1111,24 @@ local function runPowerUI(vg)
         f.power.draw(vg,1920,1080)
         eq(#f.draws,before+1,"Power draws again after invalid host")
     end)
-    elseif currentStage <= 21 then case("power-real-ui-rolling-range-and-retarget-"..currentStage,function()
+    elseif currentStage <= 24 then case("power-real-ui-rolling-range-and-retarget-"..currentStage,function()
         local f=realPowerFixture()
         if currentStage==18 then
             f:baseline({100,200,300}); f:emit({200,350,500})
             uiState.rollStarted=f.clock.elapsedTime
+            uiState.rangeTexts={}
         end
-        local offsets={[18]=0,[19]=.585,[20]=.585,[21]=1.985}
+        local offsets={[18]=0,[19]=.585,[20]=.585,[21]=1.985,[22]=2,[23]=2.585,[24]=3.1}
         f.clock.elapsedTime=uiState.rollStarted+offsets[currentStage]
         if currentStage==20 then
             local old=assert(f:row(2)); uiState.oldSample=old.displayPower
             f:emit({200,450,500})
             eq(assert(f:row(2)).displayPower,uiState.oldSample,"real UI retarget keeps current middle sample")
+        elseif currentStage==22 then
+            local old=assert(f:row(2)); uiState.fallSample=old.displayPower
+            f:emit({200,400,500})
+            eq(assert(f:row(2)).displayPower,uiState.fallSample,"real UI decline keeps current displayed total")
+            eq(assert(f:row(2)).delta,200,"real UI decline auxiliary uses reduced authority net")
         end
         f.power.draw(vg,1920,1080)
         local root=assert(f.draws[#f.draws]).root
@@ -1116,10 +1136,20 @@ local function runPowerUI(vg)
             local row=assert(f:row(team))
             local labels=root:GetChildren()[team+1]:GetChildren()
             local value,range=labels[2],labels[3] ---@type Label, Label
-            eq(value:GetText(),string.format("%.0f   +%.0f",row.displayPower,row.displayDelta),
-                "real UI text matches sampled integer team "..team)
-            eq(range:GetText(),string.format("%.0f  →  %.0f",row.base,row.power),
-                "real UI range remains authoritative team "..team)
+            eq(value:GetText(),expectedPower(row.displayPower),
+                "real main UI text is sampled integer total only team "..team)
+            check(not value:GetText():find("+",1,true),"rolling main value never draws displayDelta team "..team)
+            eq(range:GetText(),expectedRange(row.base,row.power,row.delta),
+                "real UI auxiliary remains authoritative team "..team)
+            if currentStage==18 then
+                uiState.rangeTexts[team]=range:GetText()
+            elseif (currentStage==20 or currentStage==22) and team==2 then
+                check(range:GetText()~=uiState.rangeTexts[team],"real authority retarget updates only team2 auxiliary")
+                uiState.rangeTexts[team]=range:GetText()
+            else
+                eq(range:GetText(),uiState.rangeTexts[team],
+                    "auxiliary exact old-new-net unchanged across start/middle/final team "..team.." stage "..currentStage)
+            end
             for _,label in ipairs({value,range}) do
                 local l=label:GetAbsoluteLayout()
                 local w=hostTextWidth(vg,label)
@@ -1127,16 +1157,52 @@ local function runPowerUI(vg)
             end
             if currentStage==18 then
                 eq(row.displayPower,row.base,"first visible rolling UI retains old integer team "..team)
-                eq(row.displayDelta,0,"first visible rolling UI starts +0 team "..team)
+                eq(row.displayDelta,0,"first visible rolling sample still starts with zero gain team "..team)
+                check(range:GetText():find("+"..expectedPower(row.delta),1,true)~=nil,
+                    "first auxiliary shows full authority net, not sampled zero team "..team)
             elseif currentStage==19 then
                 check(row.displayPower>row.base and row.displayPower<row.power,"actual middle UI has not jumped to final team "..team)
-            elseif currentStage==21 then
+            elseif currentStage==21 or currentStage==24 then
                 eq(row.displayPower,row.power,"real UI final integer target exact team "..team)
-                eq(row.displayDelta,row.delta,"real UI final gain exact team "..team)
+                eq(row.displayDelta,row.delta,"real UI final gain sample exact team "..team)
+            elseif currentStage==23 and team==2 then
+                check(row.displayPower<uiState.fallSample and row.displayPower>row.power,
+                    "real declining main value rolls between current display and reduced authority")
             end
         end
     end)
-    elseif currentStage == 22 then case("power-real-label-render-fault-recovers-outer-state", function()
+    elseif currentStage == 25 then case("power-real-ui-worst-three-18-digit-range",function()
+        local f=realPowerFixture()
+        local base,target=100000000000000000,999999999999999999
+        local delta=target-base
+        f:baseline({base,0,0}); f:emit({target,0,0})
+        local started=f.clock.elapsedTime
+        local expected=expectedRange(base,target,delta)
+        for index,offset in ipairs({0,.585,1.4}) do
+            f.clock.elapsedTime=started+offset
+            f.power.draw(vg,1920,1080)
+            local root=assert(f.draws[#f.draws]).root
+            local labels=root:GetChildren()[2]:GetChildren()
+            local value,range=labels[2],labels[3] ---@type Label, Label
+            local row=assert(f:row(1))
+            eq(value:GetText(),expectedPower(row.displayPower),"worst-18-digit main exact sample "..index)
+            eq(range:GetText(),expected,"worst-three-18-digit auxiliary unchanged start/middle/final "..index)
+            eq(value.props.fontSize,27,"worst-18-digit main retains large font "..index)
+            eq(range.props.fontSize,12,"worst-three-18-digit auxiliary retains original font "..index)
+            for _,label in ipairs({value,range}) do
+                local layout=label:GetAbsoluteLayout()
+                local measured=hostTextWidth(vg,label)
+                check(measured>0 and measured<=layout.w+1 and layout.w<=580.001,
+                    "worst-three-18-digit actual font fits 580 sample="..index.." measured="..measured.." layout="..layout.w)
+                near(layout.x+layout.w*.5,root:GetLayout().w*.5,
+                    "worst-18-digit labels remain centered sample "..index,.50001)
+            end
+            if index==1 then eq(row.displayPower,base,"worst-18-digit start preserves exact base")
+            elseif index==2 then check(row.displayPower>base and row.displayPower<target,"worst-18-digit middle truly interpolates")
+            else eq(row.displayPower,target,"worst-18-digit final exact authority") end
+        end
+    end)
+    elseif currentStage == 26 then case("power-real-label-render-fault-recovers-outer-state", function()
         local f = realPowerFixture()
         f:baseline(); f:emit({110,220,330}); f.clock.elapsedTime = f.clock.elapsedTime + .5
         f.power.draw(vg,1920,1080)
@@ -1257,7 +1323,25 @@ end
 local function drawVisual(vg)
     nvgBeginPath(vg); nvgRect(vg,0,0,1920,1080)
     nvgFillColor(vg,nvgRGBA(13,11,9,255)); nvgFill(vg)
-    if visual.powerOnly then visual.power.power.draw(vg,1920,1080); return end
+    if visual.powerOnly then
+        visual.power.power.draw(vg,1920,1080)
+        if not visual.powerChecked then
+            visual.powerChecked=true
+            local root=assert(visual.power.draws[#visual.power.draws],"actual visual Power surface missing").root
+            for team=1,visual.teams do
+                local row=assert(visual.power:row(team))
+                local labels=root:GetChildren()[team+1]:GetChildren()
+                local value,range=labels[2],labels[3] ---@type Label, Label
+                eq(value:GetText(),expectedPower(row.displayPower),"visual actual main total only team "..team)
+                eq(range:GetText(),expectedRange(team*10000,({123456,234567,345678})[team],
+                    ({123456,234567,345678})[team]-team*10000),"visual auxiliary authority independent of sample team "..team)
+                print(TAG.." VISUAL VALUE team="..team.." sample="..visual.sample
+                    .." main="..value:GetText().." auxiliary="..range:GetText())
+            end
+            print(TAG.." VISUAL ASSERTIONS assertions="..totals.assertions.." failures="..totals.failures)
+        end
+        return
+    end
     -- Power actual controller is centered in a bounded top host; its UI tree/Surface/labels are real.
     visual.power.power.draw(vg,1920,470)
     for index, center in ipairs({250,600,960}) do
@@ -1325,7 +1409,7 @@ function HandleDarkEffectsTestRender(_eventType, _eventData)
         if not frameOk then check(false, "real NanoVG frame completion: " .. tostring(frameErr)) end
     end
     if not ok then check(false, "real UI suite exception: " .. tostring(err)) end
-    if not ok or (not visual.enabled and uiState.stage >= 22) then summarize() end
+    if not ok or (not visual.enabled and uiState.stage >= 26) then summarize() end
 end
 
 function Stop()

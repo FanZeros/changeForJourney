@@ -12,6 +12,17 @@
 4. **分支纪律**：以当前任务授权为准。本轮暗黑特效任务基于 `workspace1005@9497bfdb409c2d0fc17533e4cfc280702fe83517`，任务分支为 `feat1005/team-power-dark-effects-20261006`。用户最新明确提供即时鉴权并要求提 PR，授权提交／正常 push 本任务分支及创建目标 `workspace1005` 的 PR；不混入其他会话返回键改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布，凭据不持久化。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-07，右栏排序与总战力主值动画）
+
+- **已正常push并核验：** 最终26白名单提交a313445e9c31810e9cd9887354674e138a696259正常push独立feat1007/roster-sort-total-power-20261007，push／ls-remote实际exit0、远端SHA一致，workspace1005仍81266ee8未推。正式PR #119：https://github.com/FanZeros/changeForJourney/pull/119，base=workspace1005／head=本任务，open／draft=false／merged=false／mergeable未计算，不称CI通过、已合并或发布。提交包含23源码/meta＋3本人交接，目标PR117优化保持，塔WIP／.project／内证／玩家档／凭据不混入；下面“未push／PR”均属此前过程记录。成功后仅三交接补记正常push，不重复创建PR。
+
+- **最终本地验证与融合（下列为此前过程记录）：** 源码融合提交6c965dd6eb33e371c9345f73a4119b462ee65caa／tree6c66f056保留外部PR117目标81266ee8；相对目标23源码/meta路径＝19Lua＋4meta，不含塔。最终七核心排序557／启动669／host167／入口474／经验762双维／入场229／Save747全部0断言失败且exit0；所有读取源图与最终Git对象一致、共享回退0。纯exp五模式保持Down／引用／缓存，共鸣旁队与候补升级全刷新；两新目标夹具仅补真实依赖与rebuild计数，原业务断言逆构逐字节保留。最新招募5161／Horizon1334／副本6185断言过且exit0，focused5314断言过但rawFAIL／exit1仅106.19ms软件尖峰。main240帧20/20、198帧解锁／239Update／240Render／Stop完成，玩家档读取0／仅新隔离档写1，Lua／资源0，rawFAIL只17软件尖峰；原150帧18/20未ready与副本45秒超时保留。Save原65秒超时及1失败保留，同源812与候选180秒预算各747/0，不定性必现基线失败。最终本人官方b10成功／593根Lua，17非bootUUID-hash载荷bytes/size一致，两共享boot含塔hunk另Git-only验证，不称19全载荷或纯候选build；36安装源＋两个新test逐文件Error0，不称全仓。21旧规范问题同812新增0／36单测完整OK。6303UI、七多语样片与Power612＋672／Rich2784来自同展示源固定676验证，不冒充新目标GPU／设备验收。仅本块三交接追加，尚未push／PR，成功后再补真实结果；sharedHEAD676/index空、不推workspace系列／强推／合并发布，凭据不持久化。
+
+- 用户授权右侧小队UI/短促反馈、默认/队伍/战力/等级/稀有度排序，总战力主值滚动，完成后正常push与workspace1005 PR。为避开并行塔任务，固定676fef7父独立feat1007/roster-sort-total-power-20261007；功能本地69d5e0a1040f78f8b1df83f95a0f280e553b4855/tree7d31，共21路径=17Lua+4meta，其他2977对象不变。两boot只本人CP取消/释放hunk、塔0，sharedHEAD676/index空保持；实际push/PR后补，不提前声称成功。
+- 三队颜色、176/148头像、五列五行、真实槽位/教程位置不改；新UI标题/排序栏和短促框沿、占用数/总战力。排序只名册与heroId缓存，不改编队/公式/成长/奖励/存档；pre-emit映射、按压延期、ABA/遮挡/尺寸取消、tab3仅draw收尾，首ready/解锁静默。detached UI子树reset/Stop显式Destroy，主Label仅总值滚动、小字权威旧→新/净增固定，原token/插值/期限/装饰不改。
+- 实际Sort293/UI6303/startup396/host167/Power612+672/Rich2784全0失败；头像60/入口474/manager58/Horizon1334/targets66/recovery69通过。本人官方b5成功，peer官方b6组合后15本源码实际载荷字节/size一致，独立两boot本人hunk不等共享塔载荷，候选Git-only验证另补，不称17全载荷或纯候选build。逐文件LSP Error0有Warning不称全仓清零。
+- 固定676 Git-only旧神器60/4、旧host155/1同现/sharedFallback0；host仅补StartupQueue/Stop夹具最终167/0，不修公式。Sort真实oracle替错误固定bonus/本系magAtk制造真实反转；启动去重复评分精确calc0/context6保396原断言。严格招募只补overlay/graphics只读依赖，不开放File/RNG/cwd/未知接口。候选2998路径21旧规范问题同676/新增0/警告0，36单测另核；独立12核心/main与样片语言标签最后另补。共享组合focused/dungeon被并行塔新global拦，不混修或降低旧断言。
+- **持续强化：推进已授权范围不擅自取消退出，当前最新明确直接继续不再提问，遵循当前指令不机械AskUserQuestion。** 尊重停止/权限/安全边界，只正常push独立分支，不推workspace系列/强推/自动合并发布；凭据不进源码/Git配置/日志/记忆，内部证据/.project/塔/上传/无关meta/玩家档不提交，三记忆只本人块双留历史。
 ## 通天塔三栏与暗契展示（2026-10-07）
 
 - **已正常push并核验：** 60白名单功能提交1e943f5e1088ac4338629e5bf44c40eda69da0b0由81266ee8父独立构造，正常push feat1007/tower，push/ls-remote实际exit0且远端SHA一致；workspace1005仍81266ee8未推。正式 **PR #118** https://github.com/FanZeros/changeForJourney/pull/118，head=feat1007/tower／base=workspace1005，创建时open/draft=false/merged=false/mergeable未计算，不称CI通过／合并发布。共享HEAD676和index空不改，57源码资源meta与已验证candidate字节一致，三交接仅本人塔块，不混peer角色hunk/.project/上传/验证材料；成功后只三本人交接补push，不重复创建PR。

@@ -159,6 +159,7 @@ local function fixture()
         ["ui.character.panel.CharacterPanel"] = true,
         ["ui.character.panel.CharacterHeroSync"] = true,
         ["ui.character.panel.CharacterPower"] = true,
+        ["ui.character.panel.CharacterRosterSort"] = true,
         ["rules.offline.OfflineService"] = true,
         ["core.EventBus"] = true, ["core.BattleLayout"] = true,
         ["core.NumberUtil"] = true,
@@ -391,9 +392,10 @@ local function countsCheck(f, label, deployed, viaSubscription)
     check(count.refresh == 1, label .. " Sync精确refresh次数")
     check(count.invalidations == ((baseline and viaSubscription) and 2 or 1), label .. " 实际Power刷新/失效次数")
     check(#data.events == ((baseline and viaSubscription) and 2 or 1), label .. " 完整快照仅最终发布一次")
-    check(count.calc == (baseline and (deployed + ownedCount * 2) or ownedCount), label .. " 直接calc精确次数")
+    -- 名册重建只做视图排序，正式Power同轮一次按heroId/真实神器队槽评分，不重复调用公开calc。
+    check(count.calc == (baseline and (deployed + ownedCount * 2) or 0), label .. " 直接calc精确次数")
     check(count.context == (baseline and (deployed + ownedCount * (viaSubscription and 4 or 3))
-        or ownedCount * 2), label .. " 真实EquipmentPower上下文精确次数")
+        or ownedCount), label .. " 真实EquipmentPower上下文精确次数")
     local business = {}
     for _, kind in ipairs(data.trace) do
         if kind == "invalidate" or kind == "offline-service" or kind == "offline-panel"

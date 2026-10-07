@@ -31,7 +31,7 @@ local function noop() end
 
 local function fixture()
     local counts = { rebuild = 0, refresh = 0, nav = 0, light = 0, slots = 0,
-        context = 0, createHero = 0, rosterSort = 0, persist = 0, powerInvalidations = 0 }
+        context = 0, createHero = 0, rosterSort = 0, rawSort = 0, persist = 0, powerInvalidations = 0 }
     local modules, loaded, loading, allowedPaths = {}, {}, {}, {}
     local patches, events, progress, layouts = {}, {}, {}, {}
     local subscriptions = {}
@@ -88,6 +88,7 @@ local function fixture()
         ["ui.character.panel.CharacterPanel"] = true,
         ["ui.character.panel.CharacterProgress"] = true,
         ["ui.character.panel.CharacterHeroSync"] = true,
+        ["ui.character.panel.CharacterRosterSort"] = true,
         ["ui.character.panel.CharacterPower"] = true,
         ["core.EventBus"] = true, ["core.BattleLayout"] = true, ["core.NumberUtil"] = true,
         ["systems.AttributeDef"] = true, ["systems.UnitAttributes"] = true,
@@ -105,9 +106,12 @@ local function fixture()
     env._G = env
     env.File = function() error("禁止访问真实玩家档") end
     env.IsNetworkMode = function() return networkMode end
+    -- 新排序入口先检查已排序视图，正确顺序不再强制table.sort；旧baseline仍用原底层计数。
+    -- 新版精确统计真实RosterSort.rebuild，独立保留rawSort防纯exp落入排序热点。
     env.table = setmetatable({ sort = function(list, compare)
         if list[1] and type(list[1]) == "table" and list[1].heroId then
-            counts.rosterSort = counts.rosterSort + 1
+            counts.rawSort = counts.rawSort + 1
+            if baseline then counts.rosterSort = counts.rosterSort + 1 end
         end
         return table.sort(list, compare)
     end }, { __index = table })
@@ -151,6 +155,17 @@ local function fixture()
                     end
                 end
                 return bind(deps)
+            end
+        elseif name == "ui.character.panel.CharacterRosterSort" then
+            local bind = value.bind
+            value.bind = function(deps)
+                local api = bind(deps)
+                local rebuild = api.rebuild
+                api.rebuild = function(...)
+                    if not baseline then counts.rosterSort = counts.rosterSort + 1 end
+                    return rebuild(...)
+                end
+                return api
             end
         elseif name == "systems.EquipmentPower" then
             for _, key in ipairs({ "buildContext", "buildWornContext" }) do
@@ -277,14 +292,16 @@ end
 local function countsCheck(f, label, expectLevel, calls)
     calls = calls or 1
     local count, state = copy(f.counts), f.data()
-    print(string.format("%s COUNTS mode=%s noPersist=%s case=%s calls=%d rebuild=%d refresh=%d nav=%d light=%d sort=%d context=%d create=%d events=%d progress=%d",
+    print(string.format("%s COUNTS mode=%s noPersist=%s case=%s calls=%d rebuild=%d refresh=%d nav=%d light=%d sort=%d rawSort=%d context=%d create=%d events=%d progress=%d",
         TAG, baseline and "baseline" or "optimized", tostring(noPersist), label, calls,
-        count.rebuild, count.refresh, count.nav, count.light, count.rosterSort, count.context,
+        count.rebuild, count.refresh, count.nav, count.light, count.rosterSort, count.rawSort, count.context,
         count.createHero, #state.events, #state.progress))
     local full = baseline or expectLevel
     check(count.rebuild == (full and calls or 0) and count.refresh == (full and calls or 0),
         label .. " 完整名册/战力刷新精确次数")
     check(count.rosterSort == (full and calls or 0), label .. " 只有等级变化重排名册")
+    check(count.rawSort <= count.rebuild and (full or count.rawSort == 0),
+        label .. " 底层table.sort不超真实rebuild且纯exp精确零调用")
     check(count.nav == (full and calls or 0), label .. " 只有等级变化重算角标")
     check(count.light == (full and 0 or calls), label .. " 纯exp原位显示同步次数")
     check(full and count.context > 0 or not full and count.context == 0,

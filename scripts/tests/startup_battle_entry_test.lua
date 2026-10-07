@@ -201,7 +201,7 @@ local function fixture(options)
         NAME_BG_DY = 100, NAME_BG_H = 40, SCROLL_TOP = 450, SCROLL_BOTTOM = 2200,
         SCROLL_LEFT = 0, SCROLL_RIGHT = 1080, DESIGN_W = 1080, ROSTER_BOTTOM_DY = 130,
         getSlotCX = function(index) return index * 205 end, setContext = noop, initImages = noop,
-        getSharedImages = function() return {} end, draw = noop }
+        getSharedImages = function() return {} end, draw = noop, resetPresentation = noop }
     mocks["ui.character.panel.CharacterPanelDraw2"] = panelDraw
     mocks["ui.character.panel.CharacterPower"] = { bind = function(deps)
         return { calcHeroPower = function(id) return tonumber(id) or 0 end,
@@ -343,6 +343,7 @@ local function fixture(options)
         ["ui.battle.scene.BattleView"] = true, ["ui.battle.stage.BattleEnemySpawn"] = true,
         ["ui.battle.combat.BattleCombatAnim"] = true, ["ui.battle.stage.BattleSpeed"] = true,
         ["ui.character.panel.CharacterPanel"] = true, ["ui.character.panel.CharacterHeroSync"] = true,
+        ["ui.character.panel.CharacterRosterSort"] = true,
         ["systems.AttributeDef"] = true, ["systems.UnitAttributes"] = true, ["systems.BattleTimeout"] = true,
         ["systems.TalentEffect"] = true, ["core.BattleLayout"] = true,
         ["core.NumberUtil"] = true, ["core.EventBus"] = true, ["shared.heroes.HeroResonance"] = true }
@@ -384,6 +385,19 @@ local function fixture(options)
     env.cache = { GetFile = forbidden("UNDECLARED_RESOURCE") }
     local Panel = env.require("ui.character.panel.CharacterPanel")
     Panel.init(nil)
+    local presentationDestroys, presentationOrder = 0, {}
+    local destroyPresentation = Panel.destroyPresentation
+    Panel.destroyPresentation = function(...)
+        presentationDestroys = presentationDestroys + 1
+        presentationOrder[#presentationOrder + 1] = "Character"
+        return destroyPresentation(...)
+    end
+    mocks["ui.hud.popup.LevelUpPopup"].destroy = function()
+        presentationOrder[#presentationOrder + 1] = "LevelUp"
+    end
+    mocks["ui.widget.DesignWidgetSurface"].shutdown = function()
+        presentationOrder[#presentationOrder + 1] = "Surface"
+    end
     local function heroes(ids)
         local roster = {}
         for _, id in ipairs(ids) do roster[tostring(id)] = { level = 5 + id, exp = id, shards = 0 } end
@@ -493,7 +507,8 @@ local function fixture(options)
         snapshot = fingerprint, mountSnapshot = mountSnapshot, mountsEqual = mountsEqual,
         data = data, images = images, resetCounts = resetCounters,
         trace = function() return trace end, rt = rt, combat = Combat, ps = PS, effects = Effects,
-        clock = clock, cardHandles = cardHandles }
+        clock = clock, cardHandles = cardHandles,
+        presentationState = function() return presentationDestroys, table.concat(presentationOrder, ",") end }
 end
 
 local function scenario(name, callback)
@@ -660,6 +675,9 @@ function Start()
             "Stop夹具真图片预算yield而非空worker")
         local count, starts = f.counts.images, f.counts.starts
         f.boot.Stop(); f.step()
+        local presentationDestroys, presentationOrder = f.presentationState()
+        check(presentationDestroys == 1 and presentationOrder == "LevelUp,Character,Surface",
+            "真实Stop仅一次释放角色展示，保持LevelUp→Character→Surface顺序")
         check(not f.state().queue and not f.rt.entryPrepared and not f.rt.entryRendered
             and not f.rt.entryPreparing and f.counts.images == count and f.counts.starts == starts,
             "真实Stop丢弃worker，后续Update不能恢复旧VG/ready")

@@ -40,9 +40,124 @@ function M.bind(deps)
     local HC = deps.HC
 
     local DRAG_THRESHOLD = 30
+    -- 一个Down只可消费一次。End先于Input时保留released，下一Update/Begin销毁。
+    local press = {}
+    local blockers = {
+        { "ui.hud.popup.OfflineRewardPanel", "isOpen" }, { "ui.hud.popup.LevelUpPopup", "isOpen" },
+        { "ui.hud.popup.UpdateNoticePopup", "isOpen" }, { "ui.hud.popup.PlayerInfoPanel", "isOpen" },
+        { "ui.story.gate.DarkTitleScreenGate", "isOpen" }, { "ui.story.gate.StartScreen", "isOpen" },
+        { "ui.story.gate.LetterIntro", "isOpen" }, { "ui.story.gate.IntroCutscene", "isActive" },
+        { "ui.story.ScenarioDialogue", "isActive" }, { "ui.battle.popup.TerminalConfirmDialog", "isOpen" },
+        { "ui.dungeon.DungeonBattleScene", "isOpen" }, { "ui.tower.TowerBattleScene", "isActive" },
+        { "ui.dev.CEPanel", "isOpen" },
+    }
+    local blockerModules = {}
+    local blockersLoaded = false
+    local function loadBlockers()
+        if blockersLoaded then return end
+        -- 引擎require自有缓存，package.loaded不是其权威表。只在首个手势缓存模块引用，
+        -- 后续Down/Move/End/Update只读API，绝不每帧require或创建UI/英雄。
+        for i, blocker in ipairs(blockers) do blockerModules[i] = require(blocker[1]) end
+        blockerModules.reward = require("ui.hud.popup.RewardPopup")
+        blockersLoaded = true
+    end
+    local function presentationBlocked()
+        if deps.isRosterInputBlocked and deps.isRosterInputBlocked() then return true end
+        for i, blocker in ipairs(blockers) do
+            local module = blockerModules[i]
+            if module and module[blocker[2]] and module[blocker[2]]() then return true end
+        end
+        local reward = blockerModules.reward
+        if reward and reward.isOpen and reward.isOpen() then
+            local panel = reward.currentPanel and reward.currentPanel()
+            local row = reward.currentRowTag and reward.currentRowTag()
+            if not row and (panel == nil or panel == "right" or panel == "center") then return true end
+        end
+        return false
+    end
+    local function geometry()
+        if deps.getRosterGeometry then return deps.getRosterGeometry() end
+        if graphics then return graphics:GetWidth(), graphics:GetHeight(), graphics:GetDPR() end
+        return 0, 0, 1
+    end
+    local function clearVisual()
+        if Draw.clearSortInteraction then Draw.clearSortInteraction() end
+        if Draw.clearTeamInteraction then Draw.clearTeamInteraction() end
+    end
+    local function cancelRosterInteraction()
+        if press.kind then press.canceled = true end
+        local drag = getDragState()
+        drag.active, drag.moved = false, false
+        drag.heroId, drag.rosterIdx, drag.fromSlot, drag.fromTeam = nil, nil, nil, nil
+        setIsDragging(false)
+        setScrollVelocity(0)
+        clearVisual()
+    end
+    local function finishPress()
+        press.consumed = true
+        clearVisual()
+    end
+    local function hitSort(dx, dy)
+        return Draw.hitTestRosterSort and Draw.hitTestRosterSort(dx, dy) or nil
+    end
+    local function hitHeader(dx, dy)
+        return Draw.hitTestTeamHeader and Draw.hitTestTeamHeader(dx, dy) or nil
+    end
+    local function remember(kind, dx, dy, target, heroId)
+        loadBlockers()
+        local w, h, dpr = geometry()
+        local mode, ascending
+        if CharacterPanel.getRosterSort then mode, ascending = CharacterPanel.getRosterSort() end
+        press = { kind = kind, x = dx, y = dy, target = target, heroId = heroId,
+            width = w, height = h, dpr = dpr, mode = mode, ascending = ascending,
+            revision = deps.getRosterSortRevision and deps.getRosterSortRevision() or 0 }
+    end
+    local function observeRosterIdentity()
+        if not press.kind or press.canceled or press.consumed then return end
+        if press.kind == "avatar" then
+            local team = getTeams()[press.team]
+            local slot = team and team.slots[press.target]
+            if not slot or slot.heroId ~= press.heroId or slot.state ~= press.state then cancelRosterInteraction() end
+        elseif press.kind == "roster" then
+            local entry = getHeroRoster()[press.target]
+            if not entry or entry.heroId ~= press.heroId or entry.owned ~= press.owned then cancelRosterInteraction() end
+        end
+    end
+    local function validatePresentation()
+        if not press.kind or press.canceled then return end
+        observeRosterIdentity()
+        local w, h, dpr = geometry()
+        if w ~= press.width or h ~= press.height or dpr ~= press.dpr or presentationBlocked() then
+            cancelRosterInteraction()
+        end
+    end
+    local function pressMatches(dx, dy)
+        validatePresentation()
+        if press.canceled or press.consumed then return false end
+        if press.kind == "sort" then
+            local mode, ascending
+            if CharacterPanel.getRosterSort then mode, ascending = CharacterPanel.getRosterSort() end
+            return hitSort(dx, dy) == press.target and mode == press.mode and ascending == press.ascending
+                and (not deps.getRosterSortRevision or deps.getRosterSortRevision() == press.revision)
+        elseif press.kind == "header" then
+            return hitHeader(dx, dy) == press.target
+        elseif press.kind == "roster" then
+            local index = hitTestRosterCard(dx, dy)
+            local entry = index and getHeroRoster()[index]
+            return entry and entry.heroId == press.heroId
+        elseif press.kind == "avatar" then
+            local team, slot = Draw.hitTestAvatarSlot(dx, dy)
+            local data = team and getTeams()[team].slots[slot]
+            return team == press.team and slot == press.target
+                and data and data.heroId == press.heroId and data.state == press.state
+        end
+        return false
+    end
 
     local function handleInput(dx, dy)
+        validatePresentation()
         if CharacterDetail.isOpen() then
+            cancelRosterInteraction()
             return CharacterDetail.handleInput(dx, dy)
         end
 
@@ -52,7 +167,16 @@ function M.bind(deps)
         local activeTeamIdx = getActiveTeamIdx()
         local onTeamChangedCallback = getOnTeamChanged()
 
+        if press.kind and (press.canceled or press.consumed) then
+            finishPress()
+            dragState.active, dragState.heroId = false, nil
+            dragState.rosterIdx, dragState.fromSlot, dragState.fromTeam = nil, nil, nil
+            setIsDragging(false)
+            return true
+        end
+
         if dragState.active then
+            finishPress()
             -- 头像行内移动时，仍按槽位命中处理交换/部署。
             local draggedHeroId = dragState.heroId
             local dropTeam, dropSlot = Draw.hitTestAvatarSlot(dx, dy)
@@ -116,10 +240,33 @@ function M.bind(deps)
             return true
         end
 
-        local tabIdx = Draw.hitTestTeamTabs(dx, dy)
-        if tabIdx then
-            CharacterPanel.setActiveTeam(tabIdx)
+        local sortTarget = hitSort(dx, dy)
+        if press.kind == "sort" or sortTarget then
+            local valid = press.kind == "sort" and press.released and pressMatches(dx, dy)
+            local target = press.target
+            finishPress()
+            if valid then
+                local mode, ascending = CharacterPanel.getRosterSort()
+                if target == "direction" then
+                    if mode ~= "default" and mode ~= "team" then CharacterPanel.setRosterSort(mode, not ascending) end
+                else
+                    CharacterPanel.setRosterSort(target)
+                end
+            end
             return true
+        end
+
+        -- 主界面的旧tab没有绘制，不能以其历史矩形抢占头像。
+        local header = hitHeader(dx, dy)
+        if press.kind == "header" or header then
+            local valid = not press.kind or (press.kind == "header" and pressMatches(dx, dy))
+            finishPress()
+            if valid and header then CharacterPanel.setActiveTeam(header) end
+            return true
+        end
+        if press.kind then
+            if not pressMatches(dx, dy) or press.moved then finishPress(); return true end
+            finishPress()
         end
 
         -- 头像编队：点哪一队的头像就切到哪一队，空位进入选人
@@ -197,14 +344,36 @@ function M.bind(deps)
     end
 
     local function handleDragBegin(dx, dy)
+        press = {}
+        clearVisual()
         if CharacterDetail.isOpen() then
             return CharacterDetail.handleDragBegin(dx, dy)
         end
 
         local dragState = getDragState()
+        if not dragState.active then
+            dragState.heroId, dragState.rosterIdx, dragState.fromSlot, dragState.fromTeam = nil, nil, nil, nil
+            dragState.moved = false
+            setIsDragging(false)
+        end
+        if not dragState.active then
+            local target, header = hitSort(dx, dy), hitHeader(dx, dy)
+            if target then
+                remember("sort", dx, dy, target)
+                if Draw.setSortInteraction then Draw.setSortInteraction(dx, dy, true) end
+                return true
+            elseif header then
+                remember("header", dx, dy, header)
+                if Draw.setTeamInteraction then Draw.setTeamInteraction(dx, dy, true) end
+                return true
+            end
+        end
         local avatarTeam, slotIdx = Draw.hitTestAvatarSlot(dx, dy)
         if avatarTeam then
             local slot = getTeams()[avatarTeam].slots[slotIdx]
+            remember("avatar", dx, dy, slotIdx, slot.heroId)
+            press.team, press.state = avatarTeam, slot.state
+            if Draw.setTeamInteraction then Draw.setTeamInteraction(dx, dy, true) end
             if slot.state == "occupied" and slot.heroId then
                 dragState.startX = dx
                 dragState.startY = dy
@@ -216,8 +385,8 @@ function M.bind(deps)
                 dragState.rosterIdx = nil
                 dragState.active = false
                 dragState.moved = false
-                return true
             end
+            return true
         end
 
         if isInScrollArea(dx, dy) then
@@ -225,6 +394,10 @@ function M.bind(deps)
             if rosterIdx then
                 local heroRoster = getHeroRoster()
                 local entry = heroRoster[rosterIdx]
+                if entry then
+                    remember("roster", dx, dy, rosterIdx, entry.heroId)
+                    press.owned = entry.owned
+                end
                 if entry and entry.owned then
                     dragState.startX = dx
                     dragState.startY = dy
@@ -251,10 +424,24 @@ function M.bind(deps)
     end
 
     local function handleDragMove(dx, dy)
+        validatePresentation()
         if CharacterDetail.isOpen() then
+            cancelRosterInteraction()
             return CharacterDetail.handleDragMove(dx, dy)
         end
 
+        if press.kind and (math.abs(dx - press.x) > DRAG_THRESHOLD or math.abs(dy - press.y) > DRAG_THRESHOLD) then
+            press.moved = true
+            if press.kind == "sort" or press.kind == "header" then cancelRosterInteraction() end
+        end
+        if press.kind == "sort" or press.kind == "header" then
+            if not pressMatches(dx, dy) then cancelRosterInteraction() end
+            if not press.canceled then
+                if press.kind == "sort" and Draw.setSortInteraction then Draw.setSortInteraction(dx, dy, true) end
+                if press.kind == "header" and Draw.setTeamInteraction then Draw.setTeamInteraction(dx, dy, true) end
+            end
+            return true
+        end
         local dragState = getDragState()
         if dragState.heroId and not dragState.active then
             local distX = math.abs(dx - dragState.startX)
@@ -297,7 +484,12 @@ function M.bind(deps)
     end
 
     local function handleDragEnd(dx, dy)
+        validatePresentation()
+        if press.kind then press.released = true end
+        if dx < 0 or dy < 0 then cancelRosterInteraction() end
+        clearVisual()
         if CharacterDetail.isOpen() then
+            cancelRosterInteraction()
             setIsDragging(false)
             local dragState = getDragState()
             dragState.active = false
@@ -338,6 +530,7 @@ function M.bind(deps)
     end
 
     local function handleRightClick(dx, dy)
+        cancelRosterInteraction()
         if CharacterDetail.isOpen() then
             return CharacterDetail.handleRightClick(dx, dy)
         end
@@ -373,6 +566,16 @@ function M.bind(deps)
     end
 
     return {
+        isRosterInteractionBusy = function()
+            return press.kind ~= nil and not press.canceled
+        end,
+        observeRosterIdentity = observeRosterIdentity,
+        cancelRosterInteraction = cancelRosterInteraction,
+        updateRosterInteraction = function()
+            validatePresentation()
+            if CharacterDetail.isOpen() then cancelRosterInteraction() end
+            if press.released then press = {} end
+        end,
         handleInput = handleInput,
         handleDragBegin = handleDragBegin,
         handleDragMove = handleDragMove,

@@ -25,6 +25,7 @@ local CharacterInput   = require("ui.character.panel.CharacterInput")
 local CharacterHeroSync = require("ui.character.panel.CharacterHeroSync")
 local CharacterPower    = require("ui.character.panel.CharacterPower")
 local CharacterProgress = require("ui.character.panel.CharacterProgress")
+local CharacterRosterSort = require("ui.character.panel.CharacterRosterSort")
 
 local CharacterPanel = {}
 
@@ -220,6 +221,29 @@ local selectSlotState = {
 
 -- ======================== 工具函数 ========================
 
+---@type table|nil
+local _input = nil
+local _rosterSort = CharacterRosterSort.bind({
+    HC = HC, ExpTable = ExpTable, MAX_SLOTS = MAX_SLOTS, TEAM_COUNT = TEAM_COUNT,
+    getTeams = function() return teams end,
+    getHeroRoster = function() return heroRoster end,
+    getPowerCache = function() return rosterPowerCache end,
+    getOwnedSet = function() return ownedSet end,
+    getShardMap = function() return shardMap end,
+    isInteractionBusy = function()
+        return dragState.active or dragState.heroId ~= nil or isDragging
+            or (_input and _input.isRosterInteractionBusy and _input.isRosterInteractionBusy()) or false
+    end,
+    cancelInteraction = function()
+        if _input and _input.cancelRosterInteraction then _input.cancelRosterInteraction() end
+        dragState.active, dragState.moved = false, false
+        dragState.heroId, dragState.rosterIdx, dragState.fromSlot, dragState.fromTeam = nil, nil, nil, nil
+        selectSlotState.active, selectSlotState.slotIndex = false, nil
+        scrollY, scrollVelocity, isDragging, dragLastY, dragDeltaY = 0, 0, false, 0, 0
+        if Draw.clearSortInteraction then Draw.clearSortInteraction() end
+    end,
+})
+
 local _power
 local function bindPower()
     _power = CharacterPower.bind({
@@ -250,7 +274,11 @@ local function bindPower()
         end,
         set = function(k, v)
             if k == "runtimeOnlyPowerCache" then runtimeOnlyPowerCache = v
-            elseif k == "runtimeOnlyPowerCaches" then runtimeOnlyPowerCaches = v
+            elseif k == "runtimeOnlyPowerCaches" then
+                runtimeOnlyPowerCaches = v
+                -- Power仅此setter在名册/三队全部缓存完成后、GameState/完整事件发布前调用。
+                -- 此处重映射/必要重排不计算英雄，订阅者同步读到相同的新heroId战力。
+                _rosterSort.powerRefreshed()
             elseif k == "upgradeBadgeCache" then upgradeBadgeCache = v
             end
         end,
@@ -287,6 +315,7 @@ function CharacterPanel.getHeroDeployPosition(heroId, teamIdx)
 end
 
 local function refreshPowerCache()
+    -- 映射hook位于原Power全部缓存完成且emit之前，不能在此事后重复排序。
     return ensurePower().refreshPowerCache()
 end
 
@@ -308,92 +337,14 @@ local function isHeroDeployed(heroId)
     return false
 end
 
---- 英雄是否在任意队伍出战（用于名册排序）。只看全部队伍，不跟当前选中小队走。
----@param heroId number
----@return boolean
-local function isDeployedInAnyTeam(heroId)
-    for t = 1, TEAM_COUNT do
-        local slots = teams[t] and teams[t].slots
-        if slots then
-            for i = 1, #slots do
-                local slot = slots[i]
-                if slot.state == "occupied" and slot.heroId == heroId then
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
-
 -- 前向声明（rebuildRoster 需要调用 recalcScrollMax）
 local recalcScrollMax
 
---- 重建 heroRoster 列表（全部英雄，按排序规则排列）
---- 排序：拥有且任一队出战 > 拥有未出战（品质高→低，等级高→低）> 未拥有（品质高→低）
---- 出战判定覆盖全部队伍，切换当前小队不改变下方名册顺序。
+--- 纯重建/排序；正式战力由其后的完整 refreshPowerCache 一次更新。
+--- 按压期间保留ID位置，结束后应用排队排序，不以更新后的索引替换Down英雄。
 local function rebuildRoster()
-    for i = #heroRoster, 1, -1 do heroRoster[i] = nil end
-    local allIds = HC.getAllIds()
-    for _, id in ipairs(allIds) do
-        local ownData = ownedSet[id]
-        local shards = shardMap[id] or 0
-        if ownData then
-            heroRoster[#heroRoster + 1] = {
-                heroId = id,
-                level  = ownData.level,
-                exp    = ownData.exp,
-                maxExp = ownData.maxExp,
-                owned  = true,
-                shards = shards,
-            }
-        else
-            heroRoster[#heroRoster + 1] = {
-                heroId = id,
-                level  = 1,
-                exp    = 0,
-                maxExp = ExpTable.getHeroExpForLevel(1) or 5,
-                owned  = false,
-                shards = shards,
-            }
-        end
-    end
-    -- 排序
-    table.sort(heroRoster, function(a, b)
-        -- 1) 拥有的排在未拥有前面
-        if a.owned ~= b.owned then
-            return a.owned
-        end
-        if a.owned then
-            -- 任一队出战的角色固定排在未出战角色前；不按当前小队、也不按槽位重排。
-            local aDeployed = isDeployedInAnyTeam(a.heroId)
-            local bDeployed = isDeployedInAnyTeam(b.heroId)
-            if aDeployed ~= bDeployed then
-                return aDeployed
-            end
-            -- 品质从高到低
-            local aq = HC.get(a.heroId).quality or 0
-            local bq = HC.get(b.heroId).quality or 0
-            if aq ~= bq then return aq > bq end
-            -- 4) 等级从高到低
-            if a.level ~= b.level then return a.level > b.level end
-        else
-            -- 未拥有的按品质从高到低
-            local aq = HC.get(a.heroId).quality or 0
-            local bq = HC.get(b.heroId).quality or 0
-            if aq ~= bq then return aq > bq end
-        end
-        -- 5) 相同则按 ID 排序
-        return a.heroId < b.heroId
-    end)
-    -- 刷新战斗力缓存
-    for i, entry in ipairs(heroRoster) do
-        if entry.owned then
-            rosterPowerCache[i] = calcHeroPower(entry.heroId)
-        else
-            rosterPowerCache[i] = 0
-        end
-    end
+    _rosterSort.rebuild()
+    if _input and _input.observeRosterIdentity then _input.observeRosterIdentity() end
     recalcScrollMax()
 end
 
@@ -530,6 +481,31 @@ end
 
 -- ======================== Public API ========================
 
+--- 名册视图排序，不改拥有数据/编队；显式切换取消旧手势并回到顶部。
+---@param mode string default/team/power/level/rarity
+---@param ascending? boolean 数值模式默认降序；default/team保持固定旧序/队槽升序
+---@return boolean
+function CharacterPanel.setRosterSort(mode, ascending)
+    return _rosterSort.setSort(mode, ascending)
+end
+
+---@return string mode
+---@return boolean ascending
+function CharacterPanel.getRosterSort()
+    return _rosterSort.getSort()
+end
+
+--- 释放展示树/旧手势，不重置玩家拥有/编队/存档或触发评分。
+function CharacterPanel.destroyPresentation()
+    if _input and _input.cancelRosterInteraction then _input.cancelRosterInteraction() end
+    if Draw.resetPresentation then Draw.resetPresentation() end
+end
+
+--- 只读正式缓存，未拥有不返回伪战力；不触发计算。
+function CharacterPanel.getRosterPower(heroId)
+    return _rosterSort.getPower(heroId)
+end
+
 function CharacterPanel.init(vg)
     -- 绘制子模块：注入共享状态 + 加载图片
     Draw.setContext({
@@ -548,7 +524,10 @@ function CharacterPanel.init(vg)
         getTeams = function() return teams end,
         getTeamPowerCaches = function() return teamPowerCaches end,
         getTeamTotalPower = function(t) return CharacterPanel.getTotalPower(t) end,
+        getRosterSort = CharacterPanel.getRosterSort,
+        isHeroesDataApplied = function() return heroesDataApplied end,
     })
+    if Draw.resetPresentation then Draw.resetPresentation() end
     Draw.initImages(vg)
 
     -- 详情界面模块初始化（共享图片句柄来自 Draw 子模块）
@@ -592,8 +571,7 @@ function CharacterPanel.init(vg)
     end
 
     applyResonanceSync()
-    -- 初始化战斗力缓存
-    refreshPowerCache()
+    _rosterSort.reset()
 
     -- 监听英雄数据变更 → 碎片/拥有状态变化时刷新列表
     ClientDispatcher.subscribe("heroes", function()
@@ -638,8 +616,9 @@ function CharacterPanel.init(vg)
         end
     end)
 
-    -- 构建 roster
+    -- 构建 roster，再完成唯一完整战力刷新
     rebuildRoster()
+    refreshPowerCache()
     refreshNavBadge()
     heroesRefreshBaseline = teamRefreshSnapshot()
     lastHeroesRefreshTeams = {}
@@ -649,7 +628,14 @@ function CharacterPanel.init(vg)
         .. ", scrollMaxY: " .. scrollMaxY)
 end
 
+-- 独立于tab1惯性update：三行tab3仍绘制右名册，下一draw也必须释放token/待排。
+local function finishRosterViewFrame()
+    if _input and _input.updateRosterInteraction then _input.updateRosterInteraction() end
+    _rosterSort.flush()
+end
+
 function CharacterPanel.draw(vg)
+    finishRosterViewFrame()
     -- 委托给 Draw 子模块绘制主界面（编队槽位 + 角色列表 + 拖拽浮层）
     Draw.draw(vg, scrollY, CharacterDetail.isOpen and CharacterDetail.isOpen() or false)
 
@@ -658,6 +644,8 @@ function CharacterPanel.draw(vg)
 end
 
 function CharacterPanel.update(dt)
+    -- End->Input和Input->End两种宿主顺序都先消费原Down，再在后续帧重排。
+    finishRosterViewFrame()
     -- 惯性滚动（非拖拽卡片时才惯性）
     if not isDragging and not dragState.active and math.abs(scrollVelocity) > SCROLL_MIN_VEL then
         scrollY = scrollY - scrollVelocity
@@ -716,7 +704,6 @@ local function isInScrollArea(dx, dy)
        and dy >= SCROLL_TOP  and dy <= SCROLL_BOTTOM
 end
 
-local _input
 local function bindInput()
     _input = CharacterInput.bind({
         CharacterDetail = CharacterDetail,
@@ -732,6 +719,7 @@ local function bindInput()
         getHeroRoster = function() return heroRoster end,
         getShardMap = function() return shardMap end,
         getActiveTeamIdx = function() return activeTeamIdx end,
+        getRosterSortRevision = _rosterSort.getRevision,
         getOnTeamChanged = function() return onTeamChangedCallback end,
         deployHeroToSlot = deployHeroToSlot,
         rebuildRoster = rebuildRoster,
@@ -797,9 +785,13 @@ function CharacterPanel.handleDragMove(dx, dy)
 end
 
 function CharacterPanel.handleHover(dx, dy)
-    local CharacterDetail = require("ui.character.detail.CharacterDetail")
-    if CharacterDetail.isOpen() and CharacterDetail.handleHover then
-        CharacterDetail.handleHover(dx, dy)
+    if CharacterDetail.isOpen() then
+        if Draw.clearSortInteraction then Draw.clearSortInteraction() end
+        if Draw.clearTeamInteraction then Draw.clearTeamInteraction() end
+        if CharacterDetail.handleHover then CharacterDetail.handleHover(dx, dy) end
+    elseif not (_input and _input.isRosterInteractionBusy and _input.isRosterInteractionBusy()) then
+        if Draw.setSortInteraction then Draw.setSortInteraction(dx, dy, false) end
+        if Draw.setTeamInteraction then Draw.setTeamInteraction(dx, dy, false) end
     end
 end
 
@@ -877,8 +869,8 @@ function CharacterPanel.removeHero(heroId)
     ownedSet[heroId] = nil
     local heroCfg = HC.get(heroId)
     print("[CharacterPanel] 删除远征队员: " .. (heroCfg and heroCfg.name or "ID:" .. heroId))
-    refreshPowerCache()
     rebuildRoster()
+    refreshPowerCache()
     refreshNavBadge()
 
     -- 如果被删除的英雄原本在队伍中，通知阵容变更（队1 需重建战斗单元）
@@ -1110,12 +1102,11 @@ function CharacterPanel.setInitialHeroes(heroIds, level)
                 exp    = 0,
                 maxExp = ExpTable.getHeroExpForLevel(level) or 5,
             }
-            slotPowerCache[idx] = calcHeroPower(heroId, idx)
         end
     end
     applyResonanceSync()
-    refreshPowerCache()
     rebuildRoster()
+    refreshPowerCache()
     refreshNavBadge()
     print("[CharacterPanel] 初始英雄设置完成, 数量: " .. #heroIds)
     -- 通知阵容变更
@@ -1276,8 +1267,8 @@ function CharacterPanel.refreshSlotUnlocks()
             end
         end
     end
-    refreshPowerCache()
     rebuildRoster()
+    refreshPowerCache()
 end
 
 local _heroSync
@@ -1332,6 +1323,8 @@ function CharacterPanel.setHeroesData(data)
 end
 
 function CharacterPanel.resetSessionData()
+    _rosterSort.reset()
+    if Draw.resetPresentation then Draw.resetPresentation() end
     local result = ensureHeroSync().resetSessionData()
     heroesRefreshBaseline = teamRefreshSnapshot()
     lastHeroesRefreshTeams = {}

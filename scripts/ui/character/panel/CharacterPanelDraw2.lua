@@ -10,6 +10,7 @@ local DarkIcon = require("core.DarkIcon")   -- [三队并行] 页签复用按钮
 local ExpTable = require("config.ExpTable")
 local TutorialManager = require("systems.TutorialManager")
 local HeroFrame = require("ui.widget.HeroFrame")
+local Presentation = require("ui.character.panel.CharacterRosterPresentation")
 
 local drawImageCentered  = DrawUtil.drawImageCentered
 local drawImageCover     = DrawUtil.drawImageCover
@@ -188,6 +189,8 @@ local getTeamOccupiedCounts -- [三队并行] function() return counts[] end
 local getTeams             -- function() return teams end
 local getTeamPowerCaches   -- function() return teamPowerCaches end
 local getTeamTotalPower    -- function(teamIdx) return totalPower end
+local getRosterSort = function() return "default", false end
+local isHeroesDataApplied = function() return true end
 
 --- 注入来自 CharacterPanel 的共享状态
 function M.setContext(ctx)
@@ -206,6 +209,9 @@ function M.setContext(ctx)
     getTeams             = ctx.getTeams
     getTeamPowerCaches   = ctx.getTeamPowerCaches
     getTeamTotalPower    = ctx.getTeamTotalPower
+    getRosterSort       = ctx.getRosterSort or function() return "default", false end
+    isHeroesDataApplied = ctx.isHeroesDataApplied or function() return true end
+    Presentation.reset()
 end
 
 -- ======================== 图片初始化 ========================
@@ -399,6 +405,18 @@ local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
         dragSource = draggingSource and true or nil,
         posLabel = (not locked) and SLOT_POS_NAME[slotIdx] or nil,
     })
+    local hovered, pressed, pulse = Presentation.getFeedback(teamIdx, slotIdx)
+    if not locked and not draggingSource and (hovered or pressed or pulse > 0) then
+        -- 框沿反馈不缩放头像，不移动普通点击区或教程热点。
+        local tc = teamColor(teamIdx, false)
+        local inset = pressed and 2 or -3
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, cx - AV_SIZE * .5 + inset, cy - AV_SIZE * .5 + inset,
+            AV_SIZE - inset * 2, AV_SIZE - inset * 2, 18)
+        nvgStrokeColor(vg, nvgRGBA(tc[1], tc[2], tc[3], math.floor(100 + 130 * math.max(pulse, pressed and 1 or .4))))
+        nvgStrokeWidth(vg, pressed and 4 or 2 + pulse * 2)
+        nvgStroke(vg)
+    end
     if occupied and not locked and not draggingSource then
         local caches = getTeamPowerCaches and getTeamPowerCaches() or {}
         local cache = caches[teamIdx]
@@ -425,44 +443,46 @@ function M.drawTeamAvatars(vg)
         local frameW = rowW + 40
         local frameH = AV_LABEL_H + AV_PAD_Y + AV_SIZE + AV_POWER_H + 20
         local tc = teamColor(t, locked)
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, frameX, frameY, frameW, frameH, 16)
-        -- 队伍色底调：暗色混入队伍色，active 时描边更亮更粗
-        nvgFillColor(vg, nvgRGBA(math.floor(tc[1] * 0.16), math.floor(tc[2] * 0.16),
-            math.floor(tc[3] * 0.16), locked and 80 or 150))
-        nvgFill(vg)
-        nvgStrokeColor(vg, nvgRGBA(tc[1], tc[2], tc[3],
-            t == activeIdx and 235 or (locked and 90 or 150)))
-        nvgStrokeWidth(vg, t == activeIdx and 3 or 2)
-        nvgStroke(vg)
-        -- 「小队N」标题，左上角（队伍色）
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 30)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], locked and 170 or 255))
-        nvgText(vg, frameX + 20, frameY + AV_LABEL_H * 0.5,
-            locked and ("小队" .. t .. "  未解锁") or ("小队" .. t), nil)
+        local slots = teams[t] and teams[t].slots
         local powerCaches = getTeamPowerCaches and getTeamPowerCaches() or {}
-        local teamPower = 0
-        local cache = powerCaches[t]
-        if cache then
-            for i = 1, M.MAX_SLOTS do
-                teamPower = teamPower + (cache[i] or 0)
-            end
+        local cache = powerCaches[t] or {}
+        local teamPower, occupiedCount = 0, 0
+        for s = 1, M.MAX_SLOTS do
+            teamPower = teamPower + (cache[s] or 0)
+            local slot = slots and slots[s]
+            if slot and slot.state == "occupied" and slot.heroId then occupiedCount = occupiedCount + 1 end
         end
         if getTeamTotalPower then teamPower = getTeamTotalPower(t) end
-        local powerStr = require("core.NumberUtil").format(teamPower)
-        local labelCY = frameY + AV_LABEL_H * 0.5
-        nvgFontSize(vg, 26)
-        nvgFillColor(vg, locked and nvgRGBA(140, 130, 115, 160) or nvgRGBA(247, 254, 119, 255))
-        nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-        nvgText(vg, frameX + frameW - 16, labelCY, powerStr, nil)
-        local powerTextW = nvgTextBounds(vg, 0, 0, powerStr)
-        if img.power and img.power >= 0 then
-            drawImageCentered(vg, img.power, frameX + frameW - 16 - powerTextW - 22, labelCY,
-                30, 30, locked and 0.45 or 1)
+        Presentation.observe(t, slots, teamPower, activeIdx, function(heroId)
+            local owned = getHeroRoster and getHeroRoster() or {}
+            for _, entry in ipairs(owned) do if entry.heroId == heroId then return entry.level or 1 end end
+            return 1
+        end, isHeroesDataApplied(), locked)
+        local hovered, pressed, selectedPulse, powerPulse = Presentation.getFeedback(t)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, frameX, frameY, frameW, frameH, 16)
+        nvgFillColor(vg, nvgRGBA(math.floor(tc[1] * 0.12), math.floor(tc[2] * 0.12),
+            math.floor(tc[3] * 0.12), locked and 80 or 190))
+        nvgFill(vg)
+        nvgStrokeColor(vg, nvgRGBA(tc[1], tc[2], tc[3], locked and 75 or
+            math.floor(math.min(255, (t == activeIdx and 205 or 110) + 45 * math.max(selectedPulse, powerPulse)))))
+        nvgStrokeWidth(vg, t == activeIdx and 3 or 2)
+        nvgStroke(vg)
+        -- 左侧队色导轨/标题按压反馈，不增加独立动画实例或动头像位置。
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, frameX + 5, frameY + 10, 4, frameH - 20, 2)
+        nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], locked and 65 or (t == activeIdx and 235 or 120)))
+        nvgFill(vg)
+        if hovered or pressed then
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, frameX + 15, frameY + 6, frameW - 30, 44, 8)
+            nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], pressed and 48 or 22))
+            nvgFill(vg)
         end
-        local slots = teams[t] and teams[t].slots
+        Presentation.drawHeader(vg, t, frameX + 20, frameY + 6, tc, locked, occupiedCount, teamPower)
+        if img.power and img.power > 0 then
+            drawImageCentered(vg, img.power, frameX + 424, frameY + 28, 24, 24, locked and .35 or 1)
+        end
         for s = 1, M.MAX_SLOTS do
             drawAvatarSlot(vg, t, s, slots and slots[s], locked)
         end
@@ -480,6 +500,7 @@ function M.drawTeamAvatars(vg)
             end
         end
     end
+    Presentation.finishObservation(activeIdx)
 end
 
 --- 头像槽命中：返回队伍与槽位，未解锁队伍不响应
@@ -566,6 +587,36 @@ function M.hitTestTeamTabs(dx, dy)
     return nil
 end
 
+M.resetPresentation = Presentation.reset
+
+function M.hitTestRosterSort(dx, dy)
+    return Presentation.hitTestSort(dx - M.CONTENT_SHIFT_X, dy - M.CONTENT_SHIFT_Y)
+end
+
+function M.setSortInteraction(dx, dy, pressed)
+    Presentation.setSortInteraction(dx - M.CONTENT_SHIFT_X, dy - M.CONTENT_SHIFT_Y, pressed)
+end
+
+M.clearSortInteraction = Presentation.clearSortInteraction
+M.clearTeamInteraction = Presentation.clearTeamInteraction
+
+function M.hitTestTeamHeader(dx, dy)
+    dx, dy = dx - M.CONTENT_SHIFT_X, dy - M.CONTENT_SHIFT_Y
+    local unlocked = getUnlockedTeamCount and getUnlockedTeamCount() or 1
+    for t = 1, math.min(M.TEAM_TAB_COUNT, unlocked) do
+        local _, cy = avatarCenter(t, 1)
+        local top = cy - AV_SIZE * .5 - AV_PAD_Y - AV_LABEL_H - 4
+        if dx >= avatarRowX() and dx < avatarRowX() + 752 and dy >= top and dy < top + 44 then return t end
+    end
+    return nil
+end
+
+function M.setTeamInteraction(dx, dy, pressed)
+    local team, slot = M.hitTestAvatarSlot(dx, dy, false)
+    if not team then team = M.hitTestTeamHeader(dx, dy) end
+    Presentation.setTeamInteraction(team, slot, pressed)
+end
+
 -- ======================== 绘制主函数 ========================
 
 --- 绘制角色面板（编队槽位 + 角色列表）
@@ -598,7 +649,13 @@ function M.draw(vg, scrollY, detailOpen)
     local contentShiftX = M.CONTENT_SHIFT_X
     nvgSave(vg)
     nvgTranslate(vg, contentShiftX, M.CONTENT_SHIFT_Y)
+    if detailOpen then
+        M.clearSortInteraction()
+        M.clearTeamInteraction()
+    end
     M.drawTeamAvatars(vg)
+    local sortMode, ascending = getRosterSort()
+    Presentation.drawSort(vg, sortMode, ascending)
 
     -- ================================================================
     -- 下半部分：角色列表

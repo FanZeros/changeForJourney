@@ -138,6 +138,8 @@ local function newContext(options)
     e.math.random = function() return deny("RNG") end
     e.math.randomseed = function() return deny("RNG seed") end
     e._G, e.time, e.H_SEAM_BACK, e.H_TRI_L0 = e, c.clock, true, false
+    e.graphics = { GetWidth = function() return 1458 end, GetHeight = function() return 1080 end,
+        GetDPR = function() return 1 end }
     e.print = noop
     for key, value in pairs(_G) do
         if type(key) == "string" and (key:match("^NVG_") or key:match("^MOUSEB_")) then e[key] = value end
@@ -186,7 +188,17 @@ local function newContext(options)
     mock("ui.hud.BottomNav", { setTabLocked = noop, setSelectedIndex = function(idx) c.nav = idx end,
         getSelectedIndex = function() return c.nav end })
     mock("ui.story.ScenarioDialogue", { isActive = function() return c.story end })
-    mock("ui.hud.popup.RewardPopup", { isOpen = function() return c.reward end })
+    mock("ui.hud.popup.RewardPopup", { isOpen = function() return c.reward end,
+        currentPanel = function() return "right" end, currentRowTag = function() return nil end })
+    -- 正式Input在首个手势缓存覆盖层引用；只显式提供只读API，不开放文件或未知依赖。
+    for _, name in ipairs({ "ui.hud.popup.OfflineRewardPanel", "ui.hud.popup.LevelUpPopup",
+        "ui.hud.popup.UpdateNoticePopup", "ui.hud.popup.PlayerInfoPanel", "ui.story.gate.DarkTitleScreenGate",
+        "ui.story.gate.StartScreen", "ui.story.gate.LetterIntro", "ui.battle.popup.TerminalConfirmDialog",
+        "ui.dungeon.DungeonBattleScene", "ui.dev.CEPanel" }) do
+        mock(name, { isOpen = function() return false end })
+    end
+    mock("ui.story.gate.IntroCutscene", { isActive = function() return false end })
+    mock("ui.tower.TowerBattleScene", { isActive = function() return false end })
     mock("systems.StoryPlayer", { onPlace = noop, followOf = function() return nil end })
     mock("ui.tutorial.TutorialOverlay", { layout = function(_, _, target)
         return { hole = target, skip = { cx = 10, cy = 10, w = 5, h = 5 } } end, draw = noop })
@@ -207,6 +219,12 @@ local function newContext(options)
         c.stories[#c.stories + 1] = copy(results) end })
     mock("ui.character.detail.CharacterDetail", { isOpen = function() return false end,
         open = function() c.detailOpened = c.detailOpened + 1 end })
+    -- 新右栏装饰不属于招募业务；几何/输入仍执行完整正式Draw2。
+    mock("ui.character.panel.CharacterRosterPresentation", { reset = noop, observe = noop,
+        finishObservation = noop, drawHeader = noop, drawSort = noop,
+        getFeedback = function() return false, false, 0, 0 end,
+        hitTestSort = function() return nil end, setSortInteraction = noop,
+        clearSortInteraction = noop, setTeamInteraction = noop, clearTeamInteraction = noop })
     mock("systems.GachaSystem", { canPull = function() return c.canPull, "ticket" end,
         setPityCounts = noop, getSSRPityRemain = function() return 80 end,
         pull = function(count, payType)

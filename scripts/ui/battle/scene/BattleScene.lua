@@ -297,7 +297,8 @@ local updateComboQueue    = BattleCombat.updateComboQueue
 function BattleScene.getMaxUnlockedBattleSpeed()
     local Page = require("ui.battle.tri.BattleTriPage")
     if Page.isOpen() then return Page.getMaxUnlockedBattleSpeed() end
-    return BattleSpeed.getMaxUnlocked(getStageConfig().getDifficulty(currentStageId))
+    return BattleSpeed.getAccountMaxUnlocked(require("runtime.ClientDispatcher").get("battle"),
+        maxStageId_, clearedStages)
 end
 
 function BattleScene.isSpeedButtonVisible()

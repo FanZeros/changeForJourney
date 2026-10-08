@@ -375,7 +375,7 @@ function Start()
         end
         I18n.set("zh_CN")
 
-        -- 旧过场不启音频也可独立验证：第一阶段先停留；用skip保证生命周期出口。
+        -- 终焉过场不启用旧音频；保留skip生命周期并逐段验证新剧情。
         Intro.init(nil, nil)
         Intro.reset()
         local introFinishes = 0
@@ -386,6 +386,114 @@ function Start()
         Intro.skip()
         check(introFinishes == 1 and Intro.isFinished(), "过场skip仅一次")
         Intro.reset()
+        local introSources = {
+            "终焉之门，已被推开。", "三支远征队的旗帜，仍立在神殿前。",
+            "门后的路更险，但这一次，我们带着胜利前行。",
+            "公会的名册翻到新一页，伙伴的名字，一个也没有少。",
+            "远征长，整队。下一段远征，出发！",
+        }
+        local removedSources = {
+            "这就是……宿命吗？", "我终究……还是倒在这里了吗",
+            "一切的轮回，再次开始了么……", "不知能否斩断宿命，挣脱轮回呢……",
+            "远征长！远征长！",
+        }
+        local durations = { 1.5, 4.0, 7.5, 4.0, 3.5 }
+        check(#Story.INTRO == #introSources, "终焉过场只有五句当前远征剧情")
+        for i, source in ipairs(introSources) do
+            check(Story.INTRO[i] == source, "终焉阶段与新剧情逐句绑定" .. i)
+        end
+        for _, source in ipairs(Story.SOURCES) do
+            for _, removed in ipairs(removedSources) do
+                check(source ~= removed, "旧过场台词已从剧情源列表删除")
+            end
+        end
+        for _, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+            I18n.set(lang)
+            for _, source in ipairs(removedSources) do
+                check(Story.lookup(source, lang) == nil, lang .. "旧宿命/濒死词条不残留")
+            end
+            for i, source in ipairs(introSources) do
+                local translated = assert(Story.lookup(source, lang), "新终焉台词缺少翻译")
+                local _, _, typing, duration = Story.typed(translated, 0, 10, durations[i] - 0.2)
+                local callbacks = 0
+                Intro.reset()
+                Intro.start(function() callbacks = callbacks + 1 end)
+                for previous = 1, i - 1 do Intro.update(durations[previous]) end
+                local elapsed = typing * 0.43
+                Intro.update(0.2 + elapsed)
+                captures, drawCalls = {}, {}
+                Intro.draw(nil)
+                local expected = Story.typed(translated, elapsed, 10, durations[i] - 0.2)
+                check(table.concat(captures) == expected and utf8.len(expected) ~= nil,
+                    lang .. "终焉阶段" .. i .. "绘制当前译文UTF8前缀")
+                local fullElapsed = (typing + duration) * 0.5
+                Intro.update(fullElapsed - elapsed)
+                captures, drawCalls = {}, {}
+                Intro.draw(nil)
+                check(table.concat(captures) == translated and #drawCalls > 0 and #drawCalls <= 2,
+                    lang .. "终焉阶段" .. i .. "窗口内完整译文不截断")
+                for _, call in ipairs(drawCalls) do
+                    check(call.x == 540 and call.width <= 1080 * 0.88 + 0.01
+                        and call.font >= 24 and call.y >= 1200 - 88 - 0.01
+                        and call.y + call.font * 1.25 <= 1200 + 88 + 0.01,
+                        lang .. "终焉字幕位于横屏中部安全带")
+                end
+                check(callbacks == 0 and Intro.isActive(), "字幕未结束不提前推进目标关卡")
+                Intro.reset()
+                Intro.skip()
+                check(callbacks == 0, "重置取消当前过场回调")
+            end
+        end
+        I18n.set("zh_CN")
+        local naturalFinishes = 0
+        Intro.start(function() naturalFinishes = naturalFinishes + 1 end)
+        for i, duration in ipairs(durations) do
+            Intro.update(duration)
+            check(naturalFinishes == (i == #durations and 1 or 0), "自然过场仅末阶段完成回调")
+        end
+        Intro.update(100)
+        Intro.skip()
+        check(naturalFinishes == 1 and Intro.isFinished() and not Intro.isActive(), "自然完成后不重复回调")
+        Intro.reset()
+        local cancelled = 0
+        Intro.start(function() cancelled = cancelled + 1 end)
+        Intro.update(0.5)
+        Intro.reset()
+        Intro.update(100)
+        Intro.skip()
+        check(cancelled == 0 and not Intro.isActive() and not Intro.isFinished(), "读档/清档丢弃旧过场回调")
+        -- 真实背景选择及cover尺寸通过绘制出口录制；不用两份同图伪装换景。
+        local backgrounds, backgroundDraws = {}, {}
+        replace("nvgCreateImage", function(_, path)
+            backgrounds[#backgrounds + 1] = path
+            return #backgrounds
+        end)
+        replace("nvgImageSize", function(_, image)
+            if backgrounds[image] == "image/暗黑/L1_row1_forest.png" then return 1896, 720 end
+            return 1024, 1024
+        end)
+        local DrawUtil = require("core.DrawUtil")
+        local originalDrawImage = DrawUtil.drawImageCentered
+        DrawUtil.drawImageCentered = function(_, image, _, _, width, height, alpha)
+            backgroundDraws[#backgroundDraws + 1] = { path = backgrounds[image], width = width, height = height, alpha = alpha }
+        end
+        Intro.init(metricContext, nil)
+        Intro.start()
+        check(backgrounds[1] == "image/关卡地图/MAP_999.png"
+            and backgrounds[2] == "image/暗黑/L1_row1_forest.png", "神殿与远征道路使用不同素材")
+        Intro.update(durations[1]); Intro.update(durations[2]); Intro.update(durations[3] * 0.5)
+        Intro.draw(nil)
+        DrawUtil.drawImageCentered = originalDrawImage
+        check(#backgroundDraws == 2 and backgroundDraws[1].alpha == 1
+            and backgroundDraws[2].alpha == 0.5, "换景道路淡入覆盖不透明神殿，不双重淡出")
+        for _, draw in ipairs(backgroundDraws) do
+            local ratio = draw.path == backgrounds[2] and 1896 / 720 or 1
+            check(draw.width >= 1080 and draw.height >= 2400
+                and math.abs(draw.width / draw.height - ratio) < 0.001, "背景等比cover满屏，不拉伸横幅")
+        end
+        Intro.reset()
+        replace("nvgCreateImage", function() return -1 end)
+        replace("nvgImageSize", function() return 1, 1 end)
         -- 剧情职位的头像/立绘来源一致；不把历史角色编号直接当作英雄身份。
         local HeroAssets = require("config.HeroAssetUtil")
         local HC = require("config.HeroConfig")

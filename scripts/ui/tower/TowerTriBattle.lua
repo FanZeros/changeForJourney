@@ -77,18 +77,8 @@ local state = {
 
 local inited = false
 
-local function getMainProgressStageId()
-    local battleData = PlayerStore.Get("battle")
-    return battleData and tonumber(battleData.maxStageId or battleData.currentStageId) or 0
-end
-
 local function getMaxUnlockedBattleSpeed()
-    local stageId = getMainProgressStageId()
-    if stageId <= 0 then return 1.0 end
-    local diff = StageConfig.getDifficulty(stageId)
-    if diff == StageConfig.DIFFICULTY_HARD then return 1.5 end
-    if diff and diff ~= StageConfig.DIFFICULTY_NORMAL then return 2.0 end
-    return 1.0
+    return require("ui.battle.stage.BattleSpeed").getAccountMaxUnlocked(PlayerStore.Get("battle"))
 end
 
 local function getBattleLogicDt(dt)

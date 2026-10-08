@@ -10,6 +10,7 @@ local TAL = require("systems.TalentManager")
 local MAS = require("systems.MapAffixSystem")
 local BAS = require("systems.BossAffixSystem")
 local BattleCombat = require("ui.battle.combat.BattleCombat")
+local AD = require("systems.AttributeDef")
 
 local M = {}
 
@@ -58,13 +59,15 @@ function M.tick(ctx, logicDt)
 
     -- ---- 更新状态效果（DOT/HOT tick） ----
     SEM.update(logicDt, {
-    onDot = function(unit, source, dmg)
+    onDot = function(unit, source, dmg, isBurnCrit)
         -- 判断目标是否为己方
         local isUnitAlly = false
         for _, u in ipairs(ctx.allies) do
             if u == unit then isUnitAlly = true; break end
         end
-        ctx.dealDamageToUnit(unit, dmg, isUnitAlly, "灼烧 ", {255, 120, 30}, source, { isDot = true })
+        ctx.dealDamageToUnit(unit, dmg, isUnitAlly, "灼烧 ", {255, 120, 30}, source, {
+            isDot = true, atkType = AD.ATK_FIRE, floatKind = "burn", isCrit = isBurnCrit,
+        })
     end,
     onHot = function(unit, source, heal)
         if unit.attrs and unit.hp > 0 then
@@ -81,7 +84,7 @@ function M.tick(ctx, logicDt)
                 for ii, u in ipairs(list) do
                     if u == unit then cx = ctx.getCardCX(list, ii); break end
                 end
-                ctx.addFloatingText("恢复 +" .. require("core.NumberUtil").format(actual), cx, cy, {0, 255, 82}, false)
+                BattleCombat.addCombatNumber(unit, actual, cx, cy, { channel = "heal", atkType = AD.ATK_HOLY })
                 -- 战斗统计：HOT 持续治疗输出（来源为己方英雄时归因）
                 if source and source.heroId then
                     require("systems.BattleStats").recordHeal(source, actual, true)
@@ -155,7 +158,7 @@ function M.tick(ctx, logicDt)
                     for ii, uu in ipairs(list) do
                         if uu == u then cx = ctx.getCardCX(list, ii); break end
                     end
-                    ctx.addFloatingText("回复 +" .. require("core.NumberUtil").format(actual), cx, cy, {0, 255, 82}, false)
+                    BattleCombat.addCombatNumber(u, actual, cx, cy, { channel = "heal", atkType = AD.ATK_HOLY })
                 end
             end
         end

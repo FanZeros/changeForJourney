@@ -10,6 +10,7 @@
 -- 归因: 以 heroId 为 key 聚合（避免 setAllies 重建单位引用导致累计丢失）
 -- ============================================================================
 
+local BattleClock = require("ui.battle.combat.BattleClock")
 local BattleStats = {}
 
 -- stats[heroId] = {
@@ -96,7 +97,7 @@ end
 
 --- 标记一次活动（更新计时窗口，波次桶与累计桶各自计时）
 local function touch()
-    local now = time.elapsedTime
+    local now = BattleClock.now()
     local b = bucket()
     if not b.startTime then b.startTime = now end
     b.lastTime = now

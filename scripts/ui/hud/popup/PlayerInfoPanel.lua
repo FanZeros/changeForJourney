@@ -926,7 +926,7 @@ function PlayerInfoPanel.draw(vg)
     -- ── 16. 远征等级经验进度数值 ──
     local advExp    = GameState.getExp()
     local advMaxExp = GameState.getMaxExp()
-    local expText = tostring(advExp) .. "/" .. tostring(advMaxExp)
+    local expText = NumberUtil.format(advExp) .. "/" .. NumberUtil.format(advMaxExp)
     drawTextStroke(vg, ADV_EXP.X, ADV_EXP.Y, expText,
         ADV_EXP.FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
         ADV_EXP.FR, ADV_EXP.FG, ADV_EXP.FB, ADV_EXP.SW,

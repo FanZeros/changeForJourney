@@ -5,6 +5,7 @@
 
 local AD = require("systems.AttributeDef")
 local TM = require("systems.ThreatManager")
+local BattleClock = require("ui.battle.combat.BattleClock")
 
 ---@class RelicConditionHandler
 local RCH = {}
@@ -219,7 +220,7 @@ function RCH._checkFirstBelow(unit, state, hpPct)
                     -- 如果有时间限制，记录到 timedBuffs
                     if duration then
                         state.timedBuffs[#state.timedBuffs + 1] = {
-                            expireAt = os.clock() + tonumber(duration),
+                            expireAt = BattleClock.cpuNow() + tonumber(duration),
                             modId = modId,
                         }
                     end
@@ -231,7 +232,7 @@ end
 
 --- 检查限时 buff 是否到期
 function RCH._checkTimedBuffs(unit, state, battleTime)
-    local now = os.clock()
+    local now = BattleClock.cpuNow()
     local i = 1
     while i <= #state.timedBuffs do
         local buff = state.timedBuffs[i]

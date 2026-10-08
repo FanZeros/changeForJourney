@@ -8,7 +8,7 @@ local TM  = require("systems.ThreatManager")
 local SEM = require("systems.StatusEffectManager")
 local TAL = require("systems.TalentManager")
 local ART = require("systems.ArtifactRuntime")
-local NumberUtil = require("core.NumberUtil")
+local AD = require("systems.AttributeDef")
 local BattleStats = require("systems.BattleStats")
 local GameSFX = require("systems.GameSFX")
 
@@ -22,6 +22,7 @@ function M.bind(deps)
     local getCardPos = deps.getCardPos
     local playAttackCardAnim = deps.playAttackCardAnim
     local addFloatingText = deps.addFloatingText
+    local addCombatNumber = deps.addCombatNumber
     local setRecoil = deps.setRecoil
     local setHitFlash = deps.setHitFlash
     local applyGlobalDmgMult = deps.applyGlobalDmgMult
@@ -125,29 +126,19 @@ function M.bind(deps)
         ART.checkShieldBreak(curTgt, shieldBefore)
         syncUnitHp(curTgt)
 
-        local baseColor = (result.category == "magical")
-            and { 113, 253, 255 } or { 255, 238, 96 }
-        local prefix = ""
-        local color  = baseColor
-        if hit.isCrit then
-            prefix = "暴击 "
-        end
-        if hit.isBlocked then
-            prefix = prefix .. "格挡 "
-            color  = { 180, 180, 180 }
-        end
-
-        -- 护盾吸收灰色飘字（完全吸收时不显示 -0）
+        -- 合并仅涉及真实HP/吸盾数字，连击公式和每次统计保持独立。
         local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
         if actual > 0 then
-            addFloatingText(prefix .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, hit.isCrit, nil, true)
-            if shieldAbsorb > 0 then
-                addFloatingText(NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
-                    { 168, 168, 168 }, false, nil, true)
-            end
-        elseif shieldAbsorb > 0 then
-            addFloatingText(prefix .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
-                { 168, 168, 168 }, false, nil, true)
+            addCombatNumber(curTgt, actual, curTgtCX, curTgtCY, {
+                channel = "damage", atkType = result.atkType,
+                isCrit = hit.isCrit, isBlocked = hit.isBlocked,
+            })
+        end
+        if shieldAbsorb > 0 then
+            addCombatNumber(curTgt, shieldAbsorb, curTgtCX, curTgtCY, {
+                channel = "shield", atkType = result.atkType,
+                isCrit = hit.isCrit, isBlocked = hit.isBlocked,
+            })
         end
 
         if curTgt.hp <= 0 and hpBefore > 0 then
@@ -182,14 +173,14 @@ function M.bind(deps)
                 syncUnitHp(attacker)
                 if healActual > 0 then
                     local aCX, aCY = getCardPos(allyList, atkIdx)
-                    addFloatingText("+" .. NumberUtil.format(math.floor(healActual)), aCX, aCY, { 0, 255, 82 }, false)
+                    addCombatNumber(attacker, healActual, aCX, aCY, { channel = "heal", atkType = AD.ATK_HOLY })
                 end
             end
         end
 
         -- 连击命中后：让按攻击计数触发的天赋（如熬夜冠军夜华斩）也能被连击推进/触发（仅对应英雄生效）
         TAL.onComboAttack(attacker, curTgt, isAlly, targetList, function(tgt, dmg, isTgtAlly, pfx, clr, projOpts)
-            local meta = statMetaFromProjOpts(projOpts)
+            local meta = statMetaFromProjOpts(projOpts, attacker, result.atkType)
             local function doTalentDamage()
                 local sourceAttacker = (projOpts and projOpts.sourceAttacker) or attacker
                 dealDamageToUnit(tgt, dmg, isTgtAlly, pfx or "", clr or { 255, 238, 96 }, sourceAttacker, meta)

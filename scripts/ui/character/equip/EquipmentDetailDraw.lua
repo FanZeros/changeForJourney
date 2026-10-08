@@ -119,6 +119,41 @@ local function titleLayout(vg, text, width, preferredFont, minimumFont, lockSize
     return rows, font, widest
 end
 
+-- 套装正文语义纹章独立于装备角标偏好；32px适配现有42px标题带。
+-- 缺资源仍画旧铜菱形徽记，不把套装正文退化为只有文字。
+local function drawSetTitle(vg, setDef, text, x, y, width, font)
+    local size, gap = 32, 10
+    local cx = x + size * 0.5
+    -- 图片成功时也会设置FillPaint，必须完整恢复调用方的文字填充状态。
+    nvgSave(vg)
+    if not EquipmentSetIcon.draw(vg, setDef.id, cx, y, size, 1.0) then
+        local col = setDef.color or { 232, 208, 122, 255 }
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y - size * 0.5, size, size, 5)
+        nvgFillColor(vg, nvgRGBA(26, 24, 30, 255))
+        nvgFill(vg)
+        nvgStrokeColor(vg, nvgRGBA(col[1], col[2], col[3], 230))
+        nvgStrokeWidth(vg, 2)
+        nvgStroke(vg)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, cx, y - 10)
+        nvgLineTo(vg, cx + 8, y)
+        nvgLineTo(vg, cx, y + 10)
+        nvgLineTo(vg, cx - 8, y)
+        nvgClosePath(vg)
+        nvgStroke(vg)
+    end
+    nvgRestore(vg)
+    local textX = x + size + gap
+    local available = math.max(1, width - size - gap)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, font)
+    local measured = I18n.displayBounds(vg, 0, 0, text)
+    if measured > available then nvgFontSize(vg, font * available / measured) end
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    I18n.displayText(vg, textX, y, text, nil)
+end
+
 --- 只捕获共享引用、不可变布局与函数；不捕获尚未初始化的图片数值。
 ---@param ctx EquipmentDetailDrawContext
 function EquipmentDetailDraw.create(ctx)
@@ -281,16 +316,30 @@ function EquipmentDetailDraw.create(ctx)
             or EquipmentConfig.ITEMS[tostring(equip.templateId)]
         local setId = EquipmentSetConfig.getSetIdForTemplate(tpl)
         local setDef = setId and EquipmentSetConfig.get(setId) or nil
-        if setDef then
-            typeName = I18n.format("%s · %s", I18n.lookup(typeName), I18n.lookup(setDef.name))
-        else
-            typeName = I18n.lookup(typeName)
-        end
+        typeName = I18n.lookup(typeName)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, REF_TYPE_FONT)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-        nvgText(vg, REF_TYPE_X + offsetX, REF_TYPE_Y, typeName, nil)
+        local typeX = REF_TYPE_X + offsetX
+        if setDef then
+            local prefix = typeName .. " · "
+            local setName = I18n.lookup(setDef.name)
+            local available = math.max(1, bgX + bgW - 24 - typeX)
+            local prefixW = I18n.displayBounds(vg, 0, 0, prefix)
+            local setW = I18n.displayBounds(vg, 0, 0, setName)
+            local font = REF_TYPE_FONT
+            if prefixW + setW + 42 > available then
+                font = font * math.max(1, available - 42) / math.max(1, prefixW + setW)
+                nvgFontSize(vg, font)
+                prefixW = I18n.displayBounds(vg, 0, 0, prefix)
+            end
+            I18n.displayText(vg, typeX, REF_TYPE_Y, prefix, nil)
+            drawSetTitle(vg, setDef, setName, typeX + prefixW, REF_TYPE_Y,
+                available - prefixW, font)
+        else
+            I18n.displayText(vg, typeX, REF_TYPE_Y, typeName, nil)
+        end
 
         -- 4) 品质文本 - 左对齐 X578 Y861 字号30 品质色 描边4
         local qualityDef = EquipmentConfig.QUALITY[q]
@@ -680,7 +729,8 @@ function EquipmentDetailDraw.create(ctx)
             nvgFontSize(vg, 30)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
-            nvgText(vg, leftX + 8, sectionTop + 22, setLines[1].text, nil)
+            drawSetTitle(vg, setDef, setLines[1].text, leftX + 8, sectionTop + 22,
+                rightX - leftX - 16, 30)
             local rowTop = sectionTop + SET_TITLE_H
             local mainPanel = (showActions ~= false)  -- 仅主面板关键词可点（对比/只读预览不交互）
             for i = 2, #setLines do

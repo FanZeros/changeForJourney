@@ -63,6 +63,7 @@ function M.bind(deps)
         dealDmgFn(target, rhymeDmg, not isAlly, "押韵 ", { 255, 220, 120 }, {
             instantDamage = true,
             statCategory = "magical",
+            atkType = AD.ATK_HOLY,
         })
     end
 
@@ -575,6 +576,7 @@ function M.bind(deps)
                         dealDmgFn(missileTarget, missileDmg, not isAlly, missilePrefix, missileColor, {
                             talentProjKey = "EF_ZY_106",
                             statCategory = "magical",
+                            atkType = AD.ATK_SHADOW,
                             isCrit = missileCrit,
                             critEligible = true,
                         })
@@ -595,6 +597,7 @@ function M.bind(deps)
                                         dealDmgFn(u, missileDmg, not isAlly, explosionPrefix, explosionColor, {
                                             talentProjKey = "EF_ZY_224",
                                             statCategory = "magical",
+                                            atkType = AD.ATK_SHADOW,
                                             isCrit = missileCrit,
                                             critEligible = false,
                                         })
@@ -933,6 +936,7 @@ function M.bind(deps)
                             dealDmgFn(randTarget, punishDmg, not isAlly, prefix, { 255, 215, 0 }, {
                                 talentProjKey = "EF_ZY_224",
                                 statCategory = "magical",
+                                atkType = AD.ATK_SHADOW,
                                 isCrit = punishCrit,
                                 critEligible = true,
                             })

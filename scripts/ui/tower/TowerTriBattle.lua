@@ -31,6 +31,7 @@ local PlayerStore      = require("core.PlayerStore")
 local TowerLayout      = require("ui.tower.TowerLayout")
 local TowerBuffSidebar = require("ui.tower.TowerBuffSidebar")
 local TowerText        = require("ui.tower.TowerPresentation")
+local BattleClock      = require("ui.battle.combat.BattleClock")
 
 local TowerTriBattle = {}
 
@@ -198,9 +199,7 @@ end
 local function resetLaneVisuals()
     local s = BattleCombat.mountedState()
     if s then
-        s.floatingTexts = {}
-        s.pendingFt = {}
-        s.ftSpawnCd = 0
+        BattleCombat.clearFloatingTexts()
         s.cardAnims = {}
         s.hitFlashes = {}
         s.hpBuffers = {}
@@ -342,7 +341,7 @@ local function tickLane(lane, dt)
                 TM.removeUnit(unit)
                 SEM.removeUnit(unit)
                 unit._fallenPending = true
-                unit._fallenAt = time.elapsedTime
+                unit._fallenAt = BattleClock.now()
                 BattleCombat.setCardAnim(unit, {
                     state = "dying", timer = 0, lungeDir = 1,
                     knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0,
@@ -355,7 +354,7 @@ local function tickLane(lane, dt)
     end
     -- [阵亡紧凑] 退场完成 → 移队尾 → 存活者前移一格（含卡住兜底）
     local allies = lane.allies
-    require("ui.battle.scene.BattleAllyReset").compactFallen(allies, time.elapsedTime)
+    require("ui.battle.scene.BattleAllyReset").compactFallen(allies, BattleClock.now())
     local allyAlive = BattleCombat.getAliveUnits(allies)
     if #allyAlive == 0 and #lane.allies > 0 then
         lane.wiped = true
@@ -402,12 +401,13 @@ local function tickLane(lane, dt)
     TM.update(dt)
     reportDefeatedEnemies(lane)
     SEM.update(dt, {
-        onDot = function(unit, source, dmg)
+        onDot = function(unit, source, dmg, isBurnCrit)
             local isUnitAlly = false
             for _, u in ipairs(lane.allies) do
                 if u == unit then isUnitAlly = true; break end
             end
-            BattleCombat.dealDamageToUnit(unit, dmg, isUnitAlly, "灼烧 ", { 255, 120, 30 }, source, { isDot = true })
+            BattleCombat.dealDamageToUnit(unit, dmg, isUnitAlly, "灼烧 ", { 255, 120, 30 }, source,
+                { isDot = true, atkType = AD.ATK_FIRE, floatKind = "burn", isCrit = isBurnCrit })
         end,
         onHot = function(unit, source, heal)
             if unit.attrs and unit.hp > 0 then
@@ -423,7 +423,7 @@ local function tickLane(lane, dt)
                     for ii, uu in ipairs(list) do
                         if uu == unit then cx, cy = BattleCombat.getCardPos(list, ii); break end
                     end
-                    BattleCombat.addFloatingText("恢复 +" .. NumberUtil.format(actual), cx, cy, { 0, 255, 82 }, false)
+                    BattleCombat.addCombatNumber(unit, actual, cx, cy, { channel = "heal", atkType = AD.ATK_HOLY })
                 end
             end
         end,
@@ -655,7 +655,9 @@ local function finishLose()
     print("[TowerTriBattle] 攻坚失败 floor=" .. tostring(state.floor) .. " wave=" .. tostring(state.wave))
 end
 
-function TowerTriBattle.update(dt)
+---@param dt number
+---@param battlePaused boolean|nil 侧栏暂停，不消费战斗/连击/判胜
+function TowerTriBattle.update(dt, battlePaused)
     if not state.open then return end
     BattleLayout.setMode("strip")
     local triScale = BattleLayout.CARD_SCALE or 0.48
@@ -694,6 +696,8 @@ function TowerTriBattle.update(dt)
         end
         return
     end
+
+    if battlePaused then return end
 
     local logicDt = getBattleLogicDt(dt)
     DungeonBattle.update(logicDt, collectFieldEnemies(), state.allAllies)

@@ -83,6 +83,7 @@ local function tryRosaBounce(attacker, s, target, isAlly, targetList, dealDmgFn,
             isRicochet = true,
             isCrit = result.isCrit,
             statCategory = result.category or "physical",
+            atkType = result.atkType,
             critEligible = false,
             onProjectileLand = function()
                 if bounceGen ~= s.rosaBounceGen then return end

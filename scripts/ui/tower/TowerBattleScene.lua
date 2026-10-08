@@ -18,6 +18,7 @@ local TowerLayout        = require("ui.tower.TowerLayout")
 local TowerBuffSidebar   = require("ui.tower.TowerBuffSidebar")
 local UI = require("urhox-libs/UI")
 local Surface = require("ui.widget.DesignWidgetSurface")
+local BattleClock = require("ui.battle.combat.BattleClock")
 
 ---@type Widget?
 local settlementRoot = nil
@@ -218,7 +219,7 @@ function TowerScene.open(opts)
     state.pendingBuffChoices = nil
     state.serverFloorResult = nil
     state.totalElapsedSecs = 0
-    state.currentWaveStartTime = time.elapsedTime or 0
+    state.currentWaveStartTime = BattleClock.now() or 0
     resetFloorStats()
     state.errorMessage = nil
     state.errorLogged = false
@@ -297,7 +298,7 @@ end
 
 --- 内部：用指定怪物列表打开一波战斗
 function TowerScene._openWaveBattle(monsters)
-    state.currentWaveStartTime = time.elapsedTime or 0
+    state.currentWaveStartTime = BattleClock.now() or 0
     -- 择契与当前波分离：不重置敌人、计时、投射物或机制计数。
     local okBuff, buffErr = pcall(function()
         if #state.unappliedBuffIds > 0 then
@@ -411,7 +412,7 @@ function TowerScene.onWaveWinResult(data)
     if waveElapsed and waveElapsed > 0 then
         state.totalElapsedSecs = state.totalElapsedSecs + waveElapsed
     else
-        state.totalElapsedSecs = state.totalElapsedSecs + math.max(0, (time.elapsedTime or 0) - state.currentWaveStartTime)
+        state.totalElapsedSecs = state.totalElapsedSecs + math.max(0, (BattleClock.now() or 0) - state.currentWaveStartTime)
     end
     accumulateCurrentWaveStats()
     -- 保留FIFO选择和正在等待的选择回执，不跨层丢弃或重新open Panel。
@@ -652,7 +653,9 @@ end
 
 -- ======================== 更新 ========================
 
-function TowerScene.update(dt)
+---@param dt number
+---@param battlePaused boolean|nil 仅暂停ACTIVE战斗；结算/暗契UI/回执超时继续
+function TowerScene.update(dt, battlePaused)
     if not state.active then return end
 
     if state.phase == "battle" then
@@ -667,7 +670,7 @@ function TowerScene.update(dt)
             return
         end
         local ok, err = xpcall(function()
-            TowerTriBattle.update(dt)
+            TowerTriBattle.update(dt, battlePaused)
         end, debug.traceback)
         if not ok then
             print("[TowerBattleScene] ERROR TowerTriBattle.update failed floor=" .. tostring(state.floor)

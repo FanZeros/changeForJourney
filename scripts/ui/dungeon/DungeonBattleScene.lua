@@ -27,6 +27,7 @@ local SpineCardEffect  = require("ui.fx.SpineCardEffect")
 local ProjectileSystem  = require("ui.battle.combat.ProjectileSystem")
 local RCH              = require("systems.RelicConditionHandler")
 local ART              = require("systems.ArtifactRuntime")
+local BattleClock      = require("ui.battle.combat.BattleClock")
 
 local GameConfig = require("config.GameConfig")
 local StageConfig = require("config.StageConfig")
@@ -841,7 +842,9 @@ function DungeonScene.draw(vg, width, height)
     end
 end
 
-function DungeonScene.update(dt)
+---@param dt number
+---@param battlePaused boolean|nil 侧栏暂停，确认/结算UI仍用真实dt
+function DungeonScene.update(dt, battlePaused)
     if not state.open then return end
 
     -- 确认弹窗关闭动画
@@ -853,22 +856,24 @@ function DungeonScene.update(dt)
         end
     end
 
-    -- 背景漂移
-    bgAnimTimer = bgAnimTimer + dt
+    local freezeActiveBattle = battlePaused == true and state.battleState == BATTLE_ACTIVE
+    if not freezeActiveBattle then
+        -- 背景漂移及战斗卡牌/弹字都冻结，不让恢复首帧跳过退场或浮字。
+        bgAnimTimer = bgAnimTimer + dt
 
-    -- 投射物与连击队列跟随战斗 logicDt；纯视觉用真实 dt（2 倍速时不叠加算力）
-    local logicDtForFx = (state.battleState == BATTLE_ACTIVE) and getBattleLogicDt(dt) or dt
-    if state.battleState == BATTLE_ACTIVE then
-        ProjectileSystem.update(logicDtForFx)
-        BattleCombat.updateComboQueue(logicDtForFx)
+        -- 投射物/连击携带伤害回调，不能作为暂停期间的纯视觉继续更新。
+        local logicDtForFx = (state.battleState == BATTLE_ACTIVE) and getBattleLogicDt(dt) or dt
+        if state.battleState == BATTLE_ACTIVE then
+            ProjectileSystem.update(logicDtForFx)
+            BattleCombat.updateComboQueue(logicDtForFx)
+        end
+        BattleEffects.update(dt)
+        BattleCombat.updateCardAnims(dt)
+        BattleCombat.updateFloatingTexts(dt)
+        BattleCombat.updateHitFlashes(dt)
     end
 
-    BattleEffects.update(dt)
-    BattleCombat.updateCardAnims(dt)
-    BattleCombat.updateFloatingTexts(dt)
-    BattleCombat.updateHitFlashes(dt)
-
-    -- 结算面板更新
+    -- 结算面板更新（真实dt，不随侧栏暂停）
     BattleResultPanel.update(dt)
 
     -- 战斗结束后的结算延迟阶段
@@ -902,6 +907,8 @@ function DungeonScene.update(dt)
         end
         return
     end
+
+    if freezeActiveBattle then return end
 
     -- ==== 以下为 BATTLE_ACTIVE 阶段逻辑 ====
     local logicDt = getBattleLogicDt(dt)
@@ -1123,7 +1130,7 @@ function DungeonScene.update(dt)
                 TM.removeUnit(unit)
                 SEM.removeUnit(unit)
                 unit._fallenPending = true
-                unit._fallenAt = time.elapsedTime
+                unit._fallenAt = BattleClock.now()
                 BattleCombat.setCardAnim(unit, {
                     state = "dying", timer = 0, lungeDir = 1,
                     knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0,
@@ -1133,7 +1140,7 @@ function DungeonScene.update(dt)
         end
     end
     -- [阵亡紧凑] 退场完成 → 移队尾 → 存活者前移一格（含卡住兜底）
-    require("ui.battle.scene.BattleAllyReset").compactFallen(state.allies, time.elapsedTime)
+    require("ui.battle.scene.BattleAllyReset").compactFallen(state.allies, BattleClock.now())
     allyAlive = BattleCombat.getAliveUnits(state.allies)
 
     if #allyAlive == 0 and #state.allies > 0 then
@@ -1218,12 +1225,13 @@ function DungeonScene.update(dt)
     -- ---- 状态效果（DOT/HOT） ----
     reportDefeatedEnemies()
     local okSem, semErr = pcall(SEM.update, logicDt, {
-        onDot = function(unit, source, dmg)
+        onDot = function(unit, source, dmg, isBurnCrit)
             local isUnitAlly = false
             for _, u in ipairs(state.allies) do
                 if u == unit then isUnitAlly = true; break end
             end
-            dealDamageToUnit(unit, dmg, isUnitAlly, "灼烧 ", {255, 120, 30}, source, { isDot = true })
+            dealDamageToUnit(unit, dmg, isUnitAlly, "灼烧 ", {255, 120, 30}, source,
+                { isDot = true, atkType = AD.ATK_FIRE, floatKind = "burn", isCrit = isBurnCrit })
         end,
         onHot = function(unit, source, heal)
             if unit.attrs and unit.hp > 0 then
@@ -1240,7 +1248,7 @@ function DungeonScene.update(dt)
                     for ii, u in ipairs(list) do
                         if u == unit then cx = getCardCX(list, ii); break end
                     end
-                    addFloatingText("恢复 +" .. tostring(actual), cx, cy, {0, 255, 82}, false)
+                    BattleCombat.addCombatNumber(unit, actual, cx, cy, { channel = "heal", atkType = AD.ATK_HOLY })
                 end
             end
         end,

@@ -714,21 +714,21 @@ local function drawPityText(vg, cx, cy)
     nvgFontSize(vg, PITY_TEXT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
 
-    -- 先用缓存宽度计算总宽度以居中
+    -- 说明按钮左缘894；保底文案仅占左侧完整预算，长译文按实宽拟合。
     local totalW = 0
     for _, seg in ipairs(segments) do
-        local w = getCachedTextWidth(vg, seg.text, PITY_TEXT_SIZE)
-        seg.w = w
-        totalW = totalW + w
+        seg.text = I18n.lookup(seg.text)
+        seg.w = getCachedTextWidth(vg, seg.text, PITY_TEXT_SIZE)
+        totalW = totalW + seg.w
     end
-
-    -- 从居中起始位置绘制
-    local startX = cx - totalW * 0.5
-    local curX = startX
+    local left, right = 50, PITY_ICON_BG_CX - PITY_ICON_BG_W * 0.5 - 24
+    local factor = math.min(1, (right - left) / math.max(1, totalW))
+    nvgFontSize(vg, PITY_TEXT_SIZE * factor)
+    local curX = (left + right - totalW * factor) * 0.5
     for _, seg in ipairs(segments) do
         nvgFillColor(vg, nvgRGBA(seg.color[1], seg.color[2], seg.color[3], 255))
-        nvgText(vg, curX, cy, seg.text, nil)
-        curX = curX + seg.w
+        I18n.displayText(vg, curX, cy, seg.text, nil)
+        curX = curX + seg.w * factor
     end
 end
 
@@ -873,12 +873,18 @@ local function drawPageImpl(vg)
         -- ============ 6. 保底提示背景条 ============
         drawImageCentered(vg, img.pityBg, PITY_BG_CX, PITY_BG_CY, PITY_BG_W, PITY_BG_H, 1.0)
 
-        -- ============ 7. 保底提示图标背景（复用 timerBg） ============
+        -- ============ 7-8. 旧铜描边骨白说明入口，沿用原90x90反馈/点击区域 ============
         local _s2 = BF.begin(vg, "tavern_pity", PITY_ICON_BG_CX, PITY_ICON_BG_CY, PITY_ICON_BG_W, PITY_ICON_BG_H)
-        drawImageCentered(vg, img.timerBg, PITY_ICON_BG_CX, PITY_ICON_BG_CY, PITY_ICON_BG_W, PITY_ICON_BG_H, 1.0)
-
-        -- ============ 8. 保底提示图标 ============
-        drawImageCentered(vg, img.pityIcon, PITY_ICON_CX, PITY_ICON_CY, PITY_ICON_W, PITY_ICON_H, 1.0)
+        DarkIcon.drawNine(vg, "btn", PITY_ICON_BG_CX - PITY_ICON_BG_W * 0.5,
+            PITY_ICON_BG_CY - 32, PITY_ICON_BG_W, 64, { accent = { 155, 120, 76 } })
+        nvgFontFace(vg, "sans")
+        local infoText = I18n.lookup("说明")
+        nvgFontSize(vg, 28)
+        local infoW = I18n.displayBounds(vg, 0, 0, infoText)
+        if infoW > PITY_ICON_BG_W - 16 then nvgFontSize(vg, 28 * (PITY_ICON_BG_W - 16) / infoW) end
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
+        I18n.displayText(vg, PITY_ICON_BG_CX, PITY_ICON_BG_CY, infoText, nil)
         BF.finish(vg, _s2)
 
         -- ============ 9a. 指定招募/星辉指定UP提示文本 ==========

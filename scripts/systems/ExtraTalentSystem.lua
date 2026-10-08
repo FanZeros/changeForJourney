@@ -855,6 +855,7 @@ function ETS.onLoverDeathNuke(dyingUnit, allies, enemies, dealDmgFn)
             dealDmgFn(e, dmg, false, "圣核 ", { 255, 230, 140 }, {
                 instantDamage = true,
                 statCategory = "magical",
+                atkType = AD.ATK_HOLY,
             })
         end
     end
@@ -891,6 +892,7 @@ function ETS.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
                     dealDmgFn(target, dmg, not isAlly, (AD.ATK_TYPE_NAME[t] or "撕咬") .. " ", { 255, 210, 120 }, {
                         instantDamage = true,
                         statCategory = cat,
+                        atkType = t,
                     })
                 end
             end
@@ -913,6 +915,7 @@ function ETS.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
                         isRicochet = true,
                         instantDamage = true,
                         statCategory = result.category or "physical",
+                        atkType = result.atkType,
                     })
                     hits = hits + 1
                 end

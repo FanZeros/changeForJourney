@@ -55,6 +55,7 @@ function Start()
         env.math.random = function() error("random forbidden") end
         env.math.randomseed = env.math.random
         env.print = noop
+        mods["ui.battle.combat.BattleClock"] = compile("ui/battle/combat/BattleClock.lua", env)
         env.require = function(name) return assert(mods[name], "unprepared dependency " .. name) end
         env.nvgSave = function() stat.depth = stat.depth + 1 end
         env.nvgRestore = function() stat.depth = stat.depth - 1; check(stat.depth >= 0, "NVG no parent pop") end

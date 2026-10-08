@@ -326,6 +326,7 @@ local function fireMelissaStarGate(melissa, isAlly, targetList, dealDmgFn, teamU
         starGateCount = gateCount or 1,
         starGateRadius = 118,
         statCategory = AD.getAtkCategory(atkType),
+        atkType = atkType,
         isCrit = isCrit,
         critEligible = true,
         useBasicProjectile = true,

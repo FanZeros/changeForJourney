@@ -33,6 +33,7 @@ local state = {
     showEffects = true,
     showSetIcons = true,  -- 装备格左下角套装徽记
     showEquipmentPower = false,  -- 仅控制方形装备格内的战力显示
+    pauseBattleOnSidePanels = false,  -- 左操作页/右角色详情打开时暂停战斗（独立本地偏好）
     -- 滑块拖拽
     draggingSlider = nil,  -- nil / "bgm" / "sfx"
 }
@@ -121,11 +122,18 @@ local LANG_ROWS = math.ceil(#I18n.LANGS / LANG_PER_ROW)
 -- 三行从原语言条目向下排，首行不侵入特效开关的点击区。
 local LANG_EXTRA_H = (LANG_ROWS - 1) * (LANG_CHIP_H + LANG_ROW_GAP)
 local LANGUAGE_CY = ITEM5_CY + LANG_EXTRA_H * 0.5
--- 新开关放在语言与兑换码之间的留白，不移动其他设置或扩大重叠热区。
+-- 战力与侧栏暂停各占一行90px热区、行距110；兑换码跟随下移，绘制/点击共用坐标。
 local EQUIPMENT_POWER_CY = ITEM5_CY + LANG_EXTRA_H + 82
+local SIDE_PANEL_PAUSE_CY = EQUIPMENT_POWER_CY + 110
+local REDEEM_CODE_CY = CODE_BTN.CY + LANG_EXTRA_H + 110
 -- 保持背景顶边，向下覆盖兑换码按钮及底部留白；绘制和命中共用尺寸。
 local PANEL_EXTRA_H = math.max(LANG_EXTRA_H,
-    CODE_BTN.CY + LANG_EXTRA_H + CODE_BTN.H * 0.5 + BG.IB - (BG.CY + BG.H * 0.5))
+    REDEEM_CODE_CY + CODE_BTN.H * 0.5 + BG.IB - (BG.CY + BG.H * 0.5))
+
+local SIDE_PANEL_PAUSE_LABELS = {
+    zh_CN = "侧栏打开时暂停战斗", zh_TW = "側欄開啟時暫停戰鬥",
+    en = "Pause battle with side panels", ja = "サイドパネルで戦闘を一時停止", ko = "사이드 패널에서 전투 일시 정지",
+}
 
 -- ======================== 本地设置持久化 ========================
 
@@ -143,6 +151,7 @@ local function saveSettings()
             showEffects = state.showEffects ~= false,
             showSetIcons = state.showSetIcons ~= false,
             showEquipmentPower = state.showEquipmentPower == true,
+            pauseBattleOnSidePanels = state.pauseBattleOnSidePanels == true,
             language = I18n.get(),
         })
         if ok then
@@ -154,15 +163,16 @@ end
 
 --- 从本地文件加载设置
 local function loadSettings()
-    -- 缺字段旧档及无档均关闭战力显示，不沿用上一份设置的开启值。
+    -- 缺字段旧档及无档均使用默认关闭，不沿用上一份设置的开启值。
     state.showEquipmentPower = false
+    state.pauseBattleOnSidePanels = false
     if not fileSystem:FileExists(SETTINGS_SAVE_FILE) then return end
     local file = File(SETTINGS_SAVE_FILE, FILE_READ)
     if not file:IsOpen() then return end
     local raw = file:ReadString()
     file:Close()
     local ok, data = pcall(cjson.decode, raw)
-    if ok and data then
+    if ok and type(data) == "table" then
         if type(data.bgmVolume) == "number" then
             state.bgmVolume = math.max(0, math.min(1, data.bgmVolume))
         end
@@ -180,6 +190,7 @@ local function loadSettings()
         end
         if type(data.showSetIcons) == "boolean" then state.showSetIcons = data.showSetIcons end
         state.showEquipmentPower = data.showEquipmentPower == true
+        state.pauseBattleOnSidePanels = data.pauseBattleOnSidePanels == true
         if type(data.language) == "string" then
             I18n.set(data.language)
         end
@@ -292,6 +303,19 @@ function SettingsPanel.setEquipmentPowerEnabled(enabled)
     state.showEquipmentPower = enabled == true
     saveSettings()
     print("[SettingsPanel] 装备格战力显示：" .. tostring(state.showEquipmentPower))
+end
+
+--- 左操作页或右角色详情打开时是否暂停战斗（与手动暂停、语言/音量独立）
+---@return boolean
+function SettingsPanel.isPauseBattleOnSidePanelsEnabled()
+    return state.pauseBattleOnSidePanels == true
+end
+
+---@param enabled boolean
+function SettingsPanel.setPauseBattleOnSidePanelsEnabled(enabled)
+    state.pauseBattleOnSidePanels = enabled == true
+    saveSettings()
+    print("[SettingsPanel] 侧栏打开时暂停战斗：" .. tostring(state.pauseBattleOnSidePanels))
 end
 
 function SettingsPanel.isEffectsEnabled()
@@ -466,12 +490,17 @@ function SettingsPanel.handleInput(dx, dy)
         return true
     end
 
+    if hitToggle(dx, dy, SIDE_PANEL_PAUSE_CY) then
+        SettingsPanel.setPauseBattleOnSidePanelsEnabled(not SettingsPanel.isPauseBattleOnSidePanelsEnabled())
+        return true
+    end
+
     if hitLanguageChips(dx, dy, LANGUAGE_CY) then
         return true
     end
 
     -- 兑换码按钮
-    if hitTest(dx, dy, CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H, CODE_BTN.W, CODE_BTN.H) then
+    if hitTest(dx, dy, CODE_BTN.CX, REDEEM_CODE_CY, CODE_BTN.W, CODE_BTN.H) then
         BF.trigger("set_code")
         print("[SettingsPanel] 兑换码按钮被点击 → 打开兑换码面板")
         RedeemCodePanel.open()
@@ -598,7 +627,8 @@ end
 ---@param itemCY number 条目中心 Y
 ---@param label string 条目标签
 ---@param enabled boolean 是否开启
-local function drawToggleItem(vg, itemCY, label, enabled)
+---@param fitLabel boolean|nil 将长标签限制在开关左侧，沿用当前字体与描边
+local function drawToggleItem(vg, itemCY, label, enabled, fitLabel)
     if ITEM1_BG.A > 0 then
         nvgBeginPath(vg)
         nvgRoundedRect(vg,
@@ -608,8 +638,16 @@ local function drawToggleItem(vg, itemCY, label, enabled)
         nvgFill(vg)
     end
 
+    local labelFont = ITEM1_TEXT.FONT
+    if fitLabel then
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, labelFont)
+        local available = TOGGLE.CX - TOGGLE.W * 0.5 - ITEM1_TEXT.X - 24 - ITEM1_TEXT.SW * 2
+        local measured = nvgTextBounds(vg, 0, 0, label)
+        if measured > available then labelFont = labelFont * available / measured end
+    end
     drawTextStroke(vg, ITEM1_TEXT.X, itemCY, label,
-        ITEM1_TEXT.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        labelFont, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         ITEM1_TEXT.FR, ITEM1_TEXT.FG, ITEM1_TEXT.FB, ITEM1_TEXT.SW,
         { strokeColor = { ITEM1_TEXT.SR, ITEM1_TEXT.SG, ITEM1_TEXT.SB } })
 
@@ -703,11 +741,13 @@ function SettingsPanel.draw(vg)
     -- ── 8.3 语言 ──
     drawLanguageItem(vg, LANGUAGE_CY)
     drawToggleItem(vg, EQUIPMENT_POWER_CY, I18n.t("show_equipment_power"), SettingsPanel.isEquipmentPowerEnabled())
+    drawToggleItem(vg, SIDE_PANEL_PAUSE_CY, SIDE_PANEL_PAUSE_LABELS[I18n.get()] or SIDE_PANEL_PAUSE_LABELS.zh_CN,
+        SettingsPanel.isPauseBattleOnSidePanelsEnabled(), true)
 
     -- ── 9. 兑换码按钮（暖金，不再用绿色贴图）──
-    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H, CODE_BTN.W, CODE_BTN.H)
+    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, REDEEM_CODE_CY, CODE_BTN.W, CODE_BTN.H)
     DarkIcon.drawNine(vg, "btn",
-        CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY + LANG_EXTRA_H - CODE_BTN.H * 0.5,
+        CODE_BTN.CX - CODE_BTN.W * 0.5, REDEEM_CODE_CY - CODE_BTN.H * 0.5,
         CODE_BTN.W, CODE_BTN.H, { accent = "gold" })
 
     -- ── 10. "兑换码" 文本 ──
@@ -715,7 +755,7 @@ function SettingsPanel.draw(vg)
     nvgFontSize(vg, CODE_TXT.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-    nvgText(vg, CODE_TXT.X, CODE_TXT.Y + LANG_EXTRA_H, I18n.t("redeem_code"), nil)
+    nvgText(vg, CODE_TXT.X, REDEEM_CODE_CY, I18n.t("redeem_code"), nil)
     BF.finish(vg, _bf1)
 
     nvgRestore(vg)
@@ -740,15 +780,17 @@ function SettingsPanel.drawEmbedded(vg, yOffset)
     drawToggleItem(vg, ITEM4_CY, I18n.t("show_effects"), state.showEffects ~= false)
     drawLanguageItem(vg, LANGUAGE_CY)
     drawToggleItem(vg, EQUIPMENT_POWER_CY, I18n.t("show_equipment_power"), SettingsPanel.isEquipmentPowerEnabled())
-    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H + oy, CODE_BTN.W, CODE_BTN.H)
+    drawToggleItem(vg, SIDE_PANEL_PAUSE_CY, SIDE_PANEL_PAUSE_LABELS[I18n.get()] or SIDE_PANEL_PAUSE_LABELS.zh_CN,
+        SettingsPanel.isPauseBattleOnSidePanelsEnabled(), true)
+    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, REDEEM_CODE_CY + oy, CODE_BTN.W, CODE_BTN.H)
     DarkIcon.drawNine(vg, "btn",
-        CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY + LANG_EXTRA_H - CODE_BTN.H * 0.5,
+        CODE_BTN.CX - CODE_BTN.W * 0.5, REDEEM_CODE_CY - CODE_BTN.H * 0.5,
         CODE_BTN.W, CODE_BTN.H, { accent = "gold" })
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, CODE_TXT.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-    nvgText(vg, CODE_TXT.X, CODE_TXT.Y + LANG_EXTRA_H, I18n.t("redeem_code"), nil)
+    nvgText(vg, CODE_TXT.X, REDEEM_CODE_CY, I18n.t("redeem_code"), nil)
     BF.finish(vg, _bf1)
     nvgRestore(vg)
     RedeemCodePanel.draw(vg)
@@ -792,10 +834,14 @@ function SettingsPanel.handleEmbeddedInput(dx, dy, yOffset)
         SettingsPanel.setEquipmentPowerEnabled(not SettingsPanel.isEquipmentPowerEnabled())
         return true
     end
+    if hitToggle(dx, ly, SIDE_PANEL_PAUSE_CY) then
+        SettingsPanel.setPauseBattleOnSidePanelsEnabled(not SettingsPanel.isPauseBattleOnSidePanelsEnabled())
+        return true
+    end
     if hitLanguageChips(dx, ly, LANGUAGE_CY) then
         return true
     end
-    if hitTest(dx, ly, CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H, CODE_BTN.W, CODE_BTN.H) then
+    if hitTest(dx, ly, CODE_BTN.CX, REDEEM_CODE_CY, CODE_BTN.W, CODE_BTN.H) then
         BF.trigger("set_code")
         RedeemCodePanel.open()
         return true

@@ -66,6 +66,7 @@ local LocalActionBridge  = require("runtime.LocalActionBridge")
 local StandaloneBoot     = require("boot.StandaloneBoot")
 local StandaloneRT       = require("boot.StandaloneRT")
 local StartupQueue       = require("boot.StartupQueue")
+local SidePanelBattlePause = require("ui.battle.scene.SidePanelBattlePause")
 
 local Standalone = {}
 
@@ -1004,6 +1005,8 @@ end
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
     local dt = eventData["TimeStep"]:GetFloat()
+    -- UI/回执仍用真实时间；先冻结战斗绝对时钟，标题/开场提前返回也不补暂停时长。
+    SidePanelBattlePause.refresh()
     -- 等待回执使用真实帧时间；标题/暂停不阻断超时，也不另订阅 Update 覆盖主循环。
     PlayerStore.Update(dt)
     -- 特效用真实时钟收尾，不随战斗倍速，不被标题／剧情提前返回冻结。
@@ -1259,19 +1262,20 @@ function HandleUpdate(eventType, eventData)
     require("ui.dev.CERuntime").tick()
     -- 待领取离线奖励时暂停战斗；Flush仍沿原事务语义保存，但不推进在线时间边界。
     local awaitingOfflineClaim = require("rules.offline.OfflineService").HasPendingRewards(1)
+    local sidePanelsPaused = SidePanelBattlePause.refresh()
     if postStartFlowDone_ and not awaitingOfflineClaim then
-        -- 副本/通天塔对战更新（打开时独占）
+        -- 守卫只围住战斗派发，不能全局return或传dt=0（仍会判胜/连击/发奖）。
+        -- 塔/副本内部保留确认、结算与回执超时的真实dt；只跳过ACTIVE战斗。
         if TowerBattleScene.isActive() then
-            TowerBattleScene.update(dt)
+            TowerBattleScene.update(dt, sidePanelsPaused)
         elseif DungeonBattleScene.isOpen() then
-            DungeonBattleScene.update(dt)
+            DungeonBattleScene.update(dt, sidePanelsPaused)
         elseif BattleTriPage.isOpen() then
-            -- [三栏并行] 三栏页内部会以 default 状态驱动 BattleScene.update（栏1 引擎）
-            BattleTriPage.update(dt)
+            if not sidePanelsPaused then BattleTriPage.update(dt) end
         elseif BottomNav.getSelectedIndex() ~= 5 and BottomNav.getSelectedIndex() ~= 3 then
             -- 副本详情/结算退出仍暂停原三队；不能启动默认战场清掉其天赋状态。
             -- 返回tab3的首帧由下方守卫重开三队，不抢先驱动默认场景。
-            BattleScene.update(dt)
+            if not sidePanelsPaused then BattleScene.update(dt) end
         end
     end
     require("ui.dev.CERuntime").tick()

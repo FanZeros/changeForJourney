@@ -71,7 +71,7 @@ function Start()
         local real = { ["config.ExpTable"] = true, ["config.StageConfig"] = true,
             ["config.HeroAssetUtil"] = true, ["config.MonsterConfig"] = true,
             ["core.BattleLayout"] = true, ["config.AwakeningConfig"] = true,
-            ["ui.battle.combat.BattleCombatAnim"] = true }
+            ["ui.battle.combat.BattleCombatAnim"] = true, ["systems.AttributeDef"] = true }
         local function environment(mocks, fields)
             local env = setmetatable(fields or {}, { __index = _G })
             env._G, env.time, env.File = env, clock, forbidden
@@ -115,7 +115,11 @@ function Start()
         end
         local DrawUtil = { drawTextStroke = noop,
             drawCardImage = function(_, image) cards[#cards + 1] = image end }
+        local expeditionCalls = {}
         local townMocks = {
+            ["ui.town.TownExpeditionIcon"] = { draw = function(_, x, y, size)
+                expeditionCalls[#expeditionCalls + 1] = { x, y, size }
+            end },
             ["core.GameState"] = { getLevel = function() return 100 end },
             ["core.DarkIcon"] = { draw = noop, drawNine = noop },
             ["core.HorizonBg"] = { draw = noop }, ["core.DrawUtil"] = DrawUtil,
@@ -139,13 +143,27 @@ function Start()
         clock.elapsedTime = 101
         Town.preload(nil)
         local warm = #loads
-        check(warm == 19, "Town真实预热覆盖19个既有图片调用")
+        check(warm == 19, "Town真实预热保留原19图，白色远征导航使用独立矢量")
+        local townPaths = {
+            "image/界面底板/城镇世界/UI_CZ_YX.png", "image/通用图标/ICON_CZ_YX.png",
+            "image/界面底板/城镇世界/UI_CZ_GJ.png", "image/通用图标/ICON_CZ_GJ.png",
+            "image/界面底板/城镇世界/UI_CZ_CK.png", "image/通用图标/ICON_CZ_TJP.png",
+            "image/界面底板/城镇世界/UI_CZ_JT.png", "image/界面底板/城镇世界/UI_CZ_TREE.png",
+            "image/城镇建筑/UI_CZ_EXPEDITION_GATE.png", "image/界面底板/城镇世界/UI_CZ_JG.png",
+            "image/界面底板/城镇世界/UI_CZ_SJ.png", "image/界面底板/城镇世界/UI_CZ_TJP.png",
+            "image/通用图标/ICON_CZ_CK.png", "image/通用图标/ICON_CZ_JT.png",
+            "image/通用图标/ICON_CZ_TREE.png", "image/通用图标/ICON_CZ_JG.png",
+            "image/通用图标/ICON_CZ_SC.png", "image/通用图标/ICON_UP.png", "image/通用图标/UI_ICON_SUO.png",
+        }
+        for _, path in ipairs(townPaths) do check(pathCount(path) == 1, "Town真实预热路径恰好一次 " .. path) end
         check(callback == 0, "预热不消费到期的真实城镇延迟业务回调")
         for _, entry in ipairs(loads) do check(entry.vg == context and entry.flags == 0, "Town init context及flags保持") end
         Town.preload(context)
         check(#loads == warm, "Town重复preload不重复图片调用")
         Town.draw(context)
         check(#loads == warm and callback == 1, "Town首次完整draw新增图片0且原延迟回调仍正常")
+        check(#expeditionCalls == 1 and expeditionCalls[1][1] == 460 and expeditionCalls[1][2] == 1610
+            and expeditionCalls[1][3] == 48, "Town远征名牌真实调用独立白色罗盘，48尺寸与既定位置保持")
         Town.draw(context)
         check(#loads == warm and callback == 1, "Town后续draw缓存命中，延迟回调恰好一次")
         local ColdTown = compile("ui/town/TownScene.lua", townMocks)
@@ -166,6 +184,8 @@ function Start()
             ["systems.TalentManager"] = { getConquerStacks = function() return 0 end },
             ["core.NumberUtil"] = { format = tostring }, ["core.DrawUtil"] = DrawUtil,
             ["systems.ExtraTalentSystem"] = { drawOrbit = noop } }
+        local Icon, iconEnv = compile("ui/battle/scene/DamageTypeIcon.lua", {})
+        drawMocks["ui.battle.scene.DamageTypeIcon"] = Icon
         local Draw = compile("ui/battle/scene/BattleDraw.lua", drawMocks)
         local hero = { heroId = 1, hp = 10, maxHp = 10, name = "hero", level = 1 }
         local monster = { monsterId = 1, hp = 10, maxHp = 10, name = "monster", level = 1 }
@@ -318,12 +338,19 @@ function Start()
             -- Stop新接入的外围呈现/故事清理，只记录可调用性，不启动实际故事或塔场景。
             ["systems.StoryPlayer"] = { resetAll = noop }, ["ui.tavern.RecruitAnim"] = { destroy = noop },
             ["ui.tower.TowerBuffSidebar"] = { destroy = noop },
-            ["ui.widget.DesignWidgetSurface"] = { shutdown = noop } }, {
+            ["ui.widget.DesignWidgetSurface"] = { shutdown = noop },
+            ["systems.ExtraTalentSystem"] = { flush = noop },
+            ["ui.battle.scene.BattleMountScope"] = { runDefault = function(fn) fn() end },
+            ["ui.battle.combat.BattleCasualty"] = { flushRewards = noop },
+            ["ui.dungeon.DungeonBattleScope"] = { run = function(_, fn) fn() end },
+            ["ui.tower.TowerTriBattle"] = { flushPendingGrowth = noop },
+            ["ui.character.hero.AwakeningArtwork"] = { destroy = noop },
+            ["rules.tower.TowerService"] = { ResetToDefault = noop } }, {
             LetterIntro = { reset = noop }, ScenarioDialogue = { reset = noop },
             CharacterPanel = { destroyPresentation = noop }, TowerBattleScene = { resetToDefault = noop },
             TowerBuffPick = { destroy = noop },
             StartupQueue = Queue, StandaloneRT = {}, DarkTitleScreen = title, vg = context,
-            BattleTriPage = { setBattleReady = function(ready) triMocks.ready = ready end },
+            BattleTriPage = { setBattleReady = function(ready) triMocks.ready = ready end, flushPendingGrowth = noop },
             Standalone = {}, RewardPopup = { clearBattleRewards = noop }, StandaloneSave = { Flush = noop },
             SpinePowerUpEffect = { destroy = noop }, LevelUpPopup = { destroy = noop },
         })
@@ -464,7 +491,8 @@ function Start()
                 env.nvgFontSize = function(_, s) rec.state.font = s; emit("字号", s) end
                 env.nvgFontFace = function(_, s) rec.state.face = s end
                 env.nvgTextAlign = function(_, a) rec.state.align = a end
-                env.nvgFillColor = function(_, c) rec.state.color = c end
+                env.nvgStrokeColor = function(_, c) emit("描边颜色", c) end
+                env.nvgFillColor = function(_, c) rec.state.color = c; emit("填充颜色", c) end
                 env.nvgStrokeWidth = function(_, w)
                     rec.state.stroke = w; local c = emit("描边", w); c.width = scaleLength(w)
                 end
@@ -506,6 +534,21 @@ function Start()
                 rec.clear = function() rec.calls = {} end
                 return rec
             end
+            -- 独立真实白罗盘：不是计数mock替代像素语义，完整load后检查白色/轮廓/位置/状态。
+            local ExpeditionIcon, expeditionEnv = compile("ui/town/TownExpeditionIcon.lua", {})
+            local er = recorder(expeditionEnv)
+            local expeditionState = copy(er.state)
+            before = #loads
+            ExpeditionIcon.draw(context, 460, 1610, 48)
+            local ring, needle, ink = er.find("圆"), er.find("起点"), er.find("填充颜色")
+            check(#ring == 2 and near(ring[1].x, 460) and near(ring[1].y, 1610)
+                and near(ring[1].radius, 48 * 0.36) and #needle == 9,
+                "真实远征白罗盘双层环/四轴/菱形轮廓与460,1610,48位置尺寸保持")
+            check(#ink == 1 and ink[1].args[1][1] == 255 and ink[1].args[1][2] == 255
+                and ink[1].args[1][3] == 255 and ink[1].args[1][4] == 255
+                and #loads == before and same(er.state, expeditionState) and #er.stack == 0,
+                "真实远征白罗盘非金色纹理、不读图且完整恢复NanoVG状态")
+
             local sounds = {}
             local VisualPS, psEnv = compile("ui/battle/combat/ProjectileSystem.lua", {
                 ["systems.GameSFX"] = { play = function(key, team) sounds[#sounds + 1] = { key, team } end },
@@ -838,7 +881,9 @@ function Start()
             local fr = recorder(strokeEnv)
             local floatMocks = copy(drawMocks); floatMocks["core.DrawUtil"] = strokeUtil
             local FloatDraw, floatEnv = compile("ui/battle/scene/BattleDraw.lua", floatMocks)
-            for name, value in pairs(strokeEnv) do if name:find("nvg", 1, true) == 1 then floatEnv[name] = value end end
+            for name, value in pairs(strokeEnv) do
+                if name:find("nvg", 1, true) == 1 then floatEnv[name], iconEnv[name] = value, value end
+            end
             local floatQueue = {}
             FloatDraw.setContext({ combat = { getFloatingTexts = function() return floatQueue end } })
             local function floatCase(kind, font, t, color, label)
@@ -851,9 +896,10 @@ function Start()
                 local x, y = 300 + 144 * t, 180 - 192 * t
                 local size = math.max(1, math.floor(font * (1 - 0.75 * t)))
                 local icon = math.max(22, size * 0.92)
-                local offset = kind and (icon * 0.72 + 2) / 2 or 0
-                -- 独立帧样本：0/2/5/10/18/20帧原透明度。18帧应为102，避免0.9重排算式的浮点floor差一。
-                local alpha = assert(({ [0] = 0, [0.1] = 170, [0.25] = 255,
+                local known = kind and kind ~= "" and kind ~= "未知"
+                local offset = known and (icon * 0.92 + 2) / 2 or 0
+                -- 独立帧样本：出生/2帧立即255，仅最后5帧淡出，18帧为102。
+                local alpha = assert(({ [0] = 255, [0.1] = 255, [0.25] = 255,
                     [0.5] = 255, [0.9] = 102, [1] = 0 })[t])
                 if alpha == 0 then
                     check(#fr.calls == 0 and same(fr.state, state) and same(ft, beforeFloat), label .. "透明时不绘制不污染状态")
@@ -861,7 +907,7 @@ function Start()
                 end
                 local fill = assert(texts[9])
                 local m = fill.state.matrix
-                check(#texts == 9 and #scales == 1 and near(scales[1].args[1], 0.7) and near(scales[1].args[2], 0.7)
+                check(#texts == 9 and #scales >= 1 and near(scales[1].args[1], 0.7) and near(scales[1].args[2], 0.7)
                     and near(fill.size, size * 0.7) and fill.args[3] == "123"
                     and near(fill.x, x + offset * 0.7) and near(fill.y, y)
                     and near(m[1] * x + m[3] * y + m[5], x) and near(m[2] * x + m[4] * y + m[6], y),
@@ -873,36 +919,52 @@ function Start()
                     outline = outline and near(texts[i].x - fill.x, dx[i] * 0.7)
                         and near(texts[i].y - fill.y, dy[i] * 0.7) and near(texts[i].size, size * 0.7)
                 end
-                check(outline and near(fill.state.alpha, alpha / 255), label .. "真实八向描边及淡入淡出70%/原透明度保持")
+                check(outline and near(fill.state.alpha, alpha / 255), label .. "真实八向描边及即显/末段淡出保持")
                 local circles, points, rects, strokes = fr.find("圆"), fr.find("起点"), fr.find("圆角矩形"), fr.find("描边")
                 local iconX = x - size * 1.8 / 2 - 1
+                local unit = icon / 72 * 0.7
+                local base = x + (iconX - x) * 0.7
                 if kind == "magic" then
-                    check(#circles == 1 and near(circles[1].x, x + (iconX - x) * 0.7)
-                        and near(circles[1].y, y + icon * 0.028) and near(circles[1].radius, icon * 0.154),
-                        label .. "魔法图标几何与文字间距一起70%")
+                    check(#fr.find("二次曲线") == 4 and near(points[1].x, base + 13 * unit)
+                        and near(points[1].y, y - 28 * unit), label .. "旧magic解析为暗影月刃，中心/尺寸70%")
                 elseif kind == "heal" then
-                    check(#rects == 2 and near(rects[1].w, icon * 0.126) and near(rects[1].h, icon * 0.448)
-                        and near(rects[1].cx, x + (iconX - x) * 0.7) and near(rects[1].cy, y),
-                        label .. "治疗图标和最小22尺寸均70%")
+                    check(#points == 2 and #fr.find("线段") == 12 and near(points[1].x, base - 7 * unit)
+                        and near(points[1].y, y - 23 * unit), label .. "治疗十字完整轮廓与最小22尺寸70%")
                 elseif kind and kind:find("phys", 1, true) then
-                    check(near(points[1].x, x + (iconX - x - icon * 0.08) * 0.7)
-                        and near(points[1].y, y - icon * 0.322) and #rects == 2,
-                        label .. "物理图标/间距70%")
+                    check(near(points[1].x, base + 18 * unit) and near(points[1].y, y - 29 * unit),
+                        label .. "斩击刀刃中心/间距70%")
                 elseif kind == "burn" then
-                    check(#fr.find("二次曲线") == 6 and near(points[1].y, y + icon * 0.266), label .. "灼烧曲线图标70%")
-                elseif kind == "block" or kind == "shield" then
-                    check(#fr.find("二次曲线") == 2 and near(points[1].y, y - icon * 0.308), label .. "格挡/护盾图标70%")
+                    check(#fr.find("二次曲线") == 6 and #circles == 4
+                        and near(points[1].y, y + 29 * unit), label .. "灼烧火焰六曲线及独立DOT三点角标70%")
+                elseif kind == "shield" then
+                    check(#fr.find("二次曲线") == 2 and near(points[1].x, base)
+                        and near(points[1].y, y - 28 * unit), label .. "吸盾徽记实际尺寸70%")
+                elseif kind == "block" then
+                    check(#fr.find("二次曲线") == 2 and #scales == 3
+                        and near(points[5].x, base + 25 * unit) and near(points[5].y, y + (24 - 28 * 0.34) * unit),
+                        label .. "格挡保留斩击主体并右下盾角标，不被属性遮住")
                 elseif kind == "crit" then
-                    check(#points == 1 and #fr.find("线段") == 7 and near(points[1].y, y - icon * 0.294), label .. "暴击星图标70%")
-                else check(#circles == 0 and #points == 0 and #rects == 0 and #strokes == 0, label .. "无kind/未知kind不新增图案") end
+                    check(#scales == 3 and near(points[5].x, base + 25 * unit)
+                        and near(points[5].y, y + (-24 - 27 * 0.34) * unit), label .. "暴击保留属性主体并右上星角标")
+                else check(#circles == 0 and #points == 0 and #rects == 0 and #strokes == 0 and #scales == 1,
+                    label .. "无kind/未知kind不画图也不占图标宽") end
                 if kind and kind:find("crit", 1, true) and kind ~= "crit" then
-                    check(#points == 2 and near(points[2].y, y - icon * 0.294), label .. "复合暴击标记也70%")
+                    check(#scales == 3 and near(points[5].x, base + 25 * unit)
+                        and near(points[5].y, y + (-24 - 27 * 0.34) * unit), label .. "复合暴击角标同样70%且不盖刀刃")
+                end
+                if known then
+                    check(near(scales[2].args[1], icon / 72) and near(scales[2].args[2], icon / 72),
+                        label .. "图标72设计空间按实际字号缩放")
                 end
                 for _, s in ipairs(strokes) do
-                    local factor = (kind == "burn" or kind == "heal" or kind == "crit") and 0.05 or 0.06
-                    -- 复合暴击最后一道采用0.05，其他基础图标依旧0.06。
-                    if kind and kind:find("crit", 1, true) and s == strokes[#strokes] then factor = 0.05 end
-                    check(near(s.width, math.max(1.5, icon * factor) * 0.7), label .. "图标最小描边也70%")
+                    local badgeScale = s.state.matrix[1] / (icon / 72 * 0.7)
+                    check((near(badgeScale, 1) or near(badgeScale, 0.34))
+                        and near(s.width, s.args[1] * unit * badgeScale) and near(s.state.alpha, alpha / 255),
+                        label .. "描边按主体/角标局部比例缩放且alpha仅乘一次")
+                end
+                for _, gradient in ipairs(fr.find("线性渐变")) do
+                    check(gradient.args[5][4] == 255 and gradient.args[6][4] == 255,
+                        label .. "骨白/属性色高光均不再双乘alpha")
                 end
                 local rgb = fill.state.color
                 check(rgb[1] == color[1] and rgb[2] == color[2] and rgb[3] == color[3], label .. "浮字语义颜色保持")
@@ -919,12 +981,12 @@ function Start()
             floatCase("phys_crit", 80, 0.5, { 255, 236, 170 }, "物理暴击大字")
             floatCase("magic", 64, 0.25, { 120, 220, 255 }, "魔法自定义字号")
             floatCase("heal", 1, 0.5, { 90, 235, 130 }, "治疗字号1图标最小22")
-            floatCase("burn", 30, 0.1, { 255, 140, 40 }, "灼烧淡入")
+            floatCase("burn", 30, 0.1, { 255, 140, 40 }, "灼烧即显")
             floatCase("block", 48, 0.9, { 7, 8, 9 }, "格挡淡出")
             floatCase("shield", 48, 0.5, { 7, 8, 9 }, "护盾")
             floatCase("crit", 90, 0.5, { 255, 70, 70 }, "独立暴击")
-            floatCase("未知", 42, 0.5, { 7, 8, 9 }, "未知kind保留原占位")
-            floatCase("", 42, 0.5, { 7, 8, 9 }, "空kind保留原占位")
+            floatCase("未知", 42, 0.5, { 7, 8, 9 }, "未知kind无空占位")
+            floatCase("", 42, 0.5, { 7, 8, 9 }, "空kind无空占位")
             floatCase(nil, 40, 0, { 7, 8, 9 }, "初生浮字")
             floatCase(nil, 40, 1, { 7, 8, 9 }, "寿命终点浮字")
             local a = { text = "甲", fontSize = 40, duration = 2, timer = 1,

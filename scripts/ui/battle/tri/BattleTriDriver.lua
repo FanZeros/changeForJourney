@@ -29,6 +29,7 @@ local BattleLayout      = require("core.BattleLayout")
 local BattleStats       = require("systems.BattleStats")
 local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
 local DropSystem        = require("systems.DropSystem")
+local BattleClock       = require("ui.battle.combat.BattleClock")
 
 local BattleTriDriver = {}
 
@@ -635,7 +636,7 @@ function BattleTriDriver.new(teamIdx, options)
                 TM.removeUnit(unit)
                 SEM.removeUnit(unit)
                 unit._fallenPending = true
-                unit._fallenAt = time.elapsedTime
+                unit._fallenAt = BattleClock.now()
                 BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = 1,
                     knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0, noTombstone = true })
             end
@@ -646,7 +647,7 @@ function BattleTriDriver.new(teamIdx, options)
         BattleCombat.updateCardAnims(dt)
         BattleCombat.updateFloatingTexts(dt)
         BattleCombat.updateHitFlashes(dt)
-        require("ui.battle.scene.BattleAllyReset").compactFallen(self.allies, time.elapsedTime)
+        require("ui.battle.scene.BattleAllyReset").compactFallen(self.allies, BattleClock.now())
     end
 
     --- 战斗 tick：逻辑时钟只用于伤害/状态，真实时钟用于入场/行军/掉落/视觉。
@@ -724,7 +725,7 @@ function BattleTriDriver.new(teamIdx, options)
                         SEM.removeUnit(u)
                         -- [阵亡紧凑] 退场动画播完后移至队尾，存活者前移补位
                         u._fallenPending = true
-                        u._fallenAt = time.elapsedTime
+                        u._fallenAt = BattleClock.now()
                         BattleCombat.setCardAnim(u, { state = "dying", timer = 0, lungeDir = 1,
                             knockbackMult = 1.0 + (u._overkillRatio or 0) * 2.0, noTombstone = true })
                     end
@@ -733,7 +734,7 @@ function BattleTriDriver.new(teamIdx, options)
                 end
             end
             -- [阵亡紧凑] 与主线 BattleCasualty 同规则：退场完成 → 移队尾 → 存活者前移一格（含卡住兜底）
-            require("ui.battle.scene.BattleAllyReset").compactFallen(allies, time.elapsedTime)
+            require("ui.battle.scene.BattleAllyReset").compactFallen(allies, BattleClock.now())
         end
 
         -- 存活统计
@@ -867,9 +868,10 @@ function BattleTriDriver.new(teamIdx, options)
         -- 攻击/神器等本帧新死亡必须早于 SEM.update 的死人状态清理。
         self:reportDefeatedEnemies()
         SEM.update(dt, {
-            onDot = function(unit, source, dmg)
+            onDot = function(unit, source, dmg, isBurnCrit)
                 local isUnitAlly = BattleLayout.detectGroup({ unit }) == "ally"
-                BattleCombat.dealDamageToUnit(unit, dmg, isUnitAlly, "", { 255, 120, 30 }, source, { isDot = true, floatKind = "burn" })
+                BattleCombat.dealDamageToUnit(unit, dmg, isUnitAlly, "", { 255, 120, 30 }, source,
+                    { isDot = true, atkType = AD.ATK_FIRE, floatKind = "burn", isCrit = isBurnCrit })
             end,
             onHot = function(unit, source, heal)
                 if unit.attrs and unit.hp > 0 then
@@ -882,7 +884,7 @@ function BattleTriDriver.new(teamIdx, options)
                         for ii, uu in ipairs(list) do
                             if uu == unit then cx, cy = BattleCombat.getCardPos(list, ii) break end
                         end
-                        BattleCombat.addFloatingText("+" .. NumberUtil.format(actual), cx, cy, { 0, 255, 82 }, false, nil, false, "heal")
+                        BattleCombat.addCombatNumber(unit, actual, cx, cy, { channel = "heal", atkType = AD.ATK_HOLY })
                     end
                 end
             end,

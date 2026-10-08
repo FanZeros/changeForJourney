@@ -172,6 +172,7 @@ function Start()
         for _, name in ipairs({ "nvgBeginPath", "nvgFillColor",
             "nvgStroke", "nvgStrokeColor", "nvgStrokeWidth", "nvgFontFace", "nvgCircle",
             "nvgScissor", "nvgGlobalCompositeOperation" }) do stub(name) end
+        stub("nvgScissor", function(_, x, y, w, h) recordRect("scissor", x, y, w, h) end)
         stub("nvgFillPaint", function(_, paint) vgState.fillPaint = paint end)
         stub("nvgFill", function()
             if vgState.fillPaint and vgState.fillPaint.silhouette then
@@ -220,12 +221,13 @@ function Start()
             session = { playDays = 7 }, heroes = { roster = {} }, equipment = { inventory = {} },
             battle = { maxStageId = 204 },
         }
+        local advExpValue, advMaxExpValue = 0, 100
         local gameState = {
             getGold = function() return 123 end, getGems = function() return 456 end,
             getEssence = function() return 3 end, getSweepTicket = function() return 4 end,
             getRecruitTicket = function() return 5 end, getGoldenKey = function() return 6 end,
-            getLevel = function() return 30 end, getExp = function() return 0 end,
-            getMaxExp = function() return 100 end,
+            getLevel = function() return 30 end, getExp = function() return advExpValue end,
+            getMaxExp = function() return advMaxExpValue end,
         }
         local closedPanel = { init = noop, draw = noop, isOpen = function() return false end }
         local expMarketUnlocked = true
@@ -261,6 +263,9 @@ function Start()
             ["ui.church.talent.TalentPage"] = { hasAnyUnusedTalent = function() return false end },
             ["ui.church.ChurchPage"] = { hasAnyChurchBadge = function() return false end },
             ["ui.story.task.TaskPage"] = { hasClaimable = function() return false end },
+            ["ui.town.TownExpeditionIcon"] = { draw = function(_, cx, cy, size)
+                recordRect("icon", cx - size * 0.5, cy - size * 0.5, size, size, { key = "expedition_compass" })
+            end },
         }
         rawset(_G, "require", function(name)
             assert(mods[name], "unmocked dependency: " .. tostring(name))
@@ -334,13 +339,13 @@ function Start()
             check(near((chips[5] or {}).x, (chips[2] or {}).x), "末行单枚与右列对齐")
             local code = one("text", "text", i18n.t("redeem_code"))
             local codeBg = one("nine", "style", "btn")
-            check(near(code.x, 540) and near(code.y, 1768 + oy), "兑换码文字中心=" .. (1768 + oy))
-            check(near(codeBg.x + codeBg.w * 0.5, 540) and near(codeBg.y + codeBg.h * 0.5, 1768 + oy)
+            check(near(code.x, 540) and near(code.y, 1878 + oy), "兑换码文字中心=" .. (1878 + oy))
+            check(near(codeBg.x + codeBg.w * 0.5, 540) and near(codeBg.y + codeBg.h * 0.5, 1878 + oy)
                 and near(codeBg.w, 410) and near(codeBg.h, 100), "兑换码背景与文本中心/热区一致")
             if standalone then
                 local bg = one("nine", "style", "panel")
                 check(near(bg.x, 65) and near(bg.w, 950) and near(bg.y, 785.5)
-                    and near(bg.y + bg.h, 1918), "独立设置背景保持顶785.5，底扩展至1918")
+                    and near(bg.y + bg.h, 2028), "独立设置背景保持顶785.5，底扩展至2028")
             end
         end
 
@@ -486,25 +491,25 @@ function Start()
             runCase(mode.label .. " 兑换码实际热区及子面板优先", function()
                 redeem.close()
                 local before = redeemState.opens
-                check(click(540, 1768 + mode.oy) and redeemState.opens == before + 1,
+                check(click(540, 1878 + mode.oy) and redeemState.opens == before + 1,
                     "迁移后的兑换码中心可点击")
                 check(feedback[#feedback] == "set_code", "兑换码使用原按钮反馈key")
                 local inputBefore = redeemState.inputs
                 check(click(10, 10) and redeemState.inputs == inputBefore + 1, "子面板优先，不触发父面板外部关闭")
                 redeem.close()
                 expectStillOpen(settings, mode.label .. " redeem")
-                check(click(540, 1817 + mode.oy) and redeemState.opens == before + 2,
+                check(click(540, 1927 + mode.oy) and redeemState.opens == before + 2,
                     "兑换码底部内边可点，不被旧背景底边1570.5关闭")
                 redeem.close()
                 expectStillOpen(settings, mode.label .. " redeem lower edge")
             end)
         end
         runCase("独立设置背景边缘与外部关闭仍一致", function()
-            for _, y in ipairs({ 785.5, 1918 }) do
+            for _, y in ipairs({ 785.5, 2028 }) do
                 check(settings.handleInput(100, y), "背景边界事件被消费")
                 expectStillOpen(settings, "inside edge " .. y)
             end
-            for _, y in ipairs({ 785.4, 1918.1 }) do
+            for _, y in ipairs({ 785.4, 2028.1 }) do
                 check(settings.handleInput(100, y), "背景外事件被消费")
                 clock.elapsedTime = clock.elapsedTime + 0.3
                 capture(function() settings.draw(vg) end)
@@ -566,11 +571,11 @@ function Start()
             end
             redeem.close()
             local opens = redeemState.opens
-            check(panel.handleInput(540, 1808) and redeemState.opens == opens + 1,
-                "PIP 嵌入兑换码中心1808可点")
+            check(panel.handleInput(540, 1918) and redeemState.opens == opens + 1,
+                "PIP 嵌入兑换码中心1918可点")
             redeem.close()
             expectStillOpen(panel, "PIP redeem")
-            check(panel.handleInput(540, 1857) and redeemState.opens == opens + 2,
+            check(panel.handleInput(540, 1967) and redeemState.opens == opens + 2,
                 "PIP 兑换码底部仍可点")
             redeem.close()
             expectStillOpen(panel, "PIP redeem lower edge")
@@ -610,6 +615,39 @@ function Start()
             check(cjson.decode(memory["play_time.json"]).seconds == 125, "新的PIP实例从内存持久化125秒恢复")
         end)
 
+        runCase("PIP 远征经验短数值边界与raw进度条", function()
+            local oldNumberUtil = mods["core.NumberUtil"]
+            mods["core.NumberUtil"] = fresh("core.NumberUtil")
+            local panel = newPip(0)
+            for _, sample in ipairs({
+                { exp = 0, max = 100, text = "0/100" },
+                { exp = 9999, max = 10000, text = "9999/10k" },
+                { exp = 10000, max = 20000, text = "10k/20k" },
+                { exp = 999950, max = 1000000, text = "1M/1M" },
+                { exp = 62209438, max = 66016487, text = "62.2M/66M" },
+                { exp = 123, max = 0, text = "123/0" },
+            }) do
+                advExpValue, advMaxExpValue = sample.exp, sample.max
+                capture(function() panel.draw(vg) end)
+                local expLabel = one("text", "text", sample.text)
+                check(near(expLabel.x, 940) and near(expLabel.y, 865)
+                    and expLabel.align == NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
+                    "经验数值短格式仍在原坐标 " .. sample.text)
+                local fills = matches("scissor")
+                local ratio = sample.max > 0 and math.min(sample.exp / sample.max, 1) or 0
+                if ratio > 0 then
+                    check(#fills == 1 and near(fills[1].x, 144) and near(fills[1].y, 900)
+                        and near(fills[1].w, 792 * ratio) and near(fills[1].h, 18),
+                        "进度条使用raw exp/max而不是短数值 " .. sample.text)
+                else
+                    check(#fills == 0, "零/无上限经验不画填充 " .. sample.text)
+                end
+            end
+            advExpValue, advMaxExpValue = 0, 100
+            mods["core.NumberUtil"] = oldNumberUtil
+            panel.close()
+        end)
+
         runCase("Town 遗匣/功绩对齐且六个原地点布局不变", function()
             local town = fresh("ui.town.TownScene")
             town.init(vg)
@@ -637,6 +675,19 @@ function Start()
             check(oldPlain == 0 and #labels - expeditionLabels == 8,
                 "移除遗匣300x64额外plain，原八个地点名牌保持不变")
             check(expeditionLabels == 1, "新增远征名牌保持220x80和原设计坐标")
+            local expedition = one("text", "text", "远征")
+            local expeditionIcon = one("icon", "key", "expedition_compass")
+            check(near(expedition.x, 550) and near(expedition.y, 1610)
+                and near(expeditionIcon.x + expeditionIcon.w * 0.5, 460)
+                and near(expeditionIcon.y + expeditionIcon.h * 0.5, 1610)
+                and near(expeditionIcon.w, 48) and near(expeditionIcon.h, 48),
+                "远征白图标48px与标题同Y且不相互重叠")
+            local churchArt = one("image", "path", "image/界面底板/城镇世界/UI_CZ_JT.png")
+            check(near(churchArt.x + churchArt.w * 0.5, 211)
+                and near(churchArt.y + churchArt.h * 0.5, 1451.6)
+                and near(churchArt.w, 292.4) and near(churchArt.h, 584.8)
+                and near(churchArt.y + churchArt.h, 1744),
+                "教堂美术缩小85%并保持旧脚底1744，名牌与热区不变")
 
             -- 通过真实TownScene分支的绘制替身检查五处剪影参数与叠加次数，
             -- 不加载实际PNG像素，因此不代替Alpha边缘和黑度的视觉验收。

@@ -15,7 +15,6 @@ local RCH = require("systems.RelicConditionHandler")
 local ART = require("systems.ArtifactRuntime")
 local MAS = require("systems.MapAffixSystem")
 local DungeonBattle = require("ui.dungeon.DungeonBattle")
-local NumberUtil = require("core.NumberUtil")
 local BattleStats = require("systems.BattleStats")
 local GameSFX = require("systems.GameSFX")
 local BattleCombatFx = require("ui.battle.combat.BattleCombatFx")
@@ -33,8 +32,8 @@ local function newState(id)
     return {
         id = id or "?",
         floatingTexts   = {},
-        pendingFt       = {},  -- [伤害排队] 待显示伤害飘字队列
-        ftSpawnCd       = 0.0, -- [伤害排队] 出队倒计时
+        combatNumberIndex = {}, -- target引用 × channel × 实际属性的当前显示批次
+        ftSequence      = 0,   -- 确定性视觉方向，不消费战斗RNG
         cardAnims       = {},
         hitFlashes      = {},
         hpBuffers       = {},
@@ -129,10 +128,13 @@ local function isAllyUnit(unit)
 end
 
 --- 从天赋投射物选项提取战斗统计元数据
-local function statMetaFromProjOpts(projOpts)
-    if not projOpts then return nil end
-    if projOpts.isDot or projOpts.statCategory or projOpts.isCrit or projOpts.critEligible ~= nil
-        or projOpts.threatScale or projOpts.isRicochet or projOpts.isNightSlash then
+local function statMetaFromProjOpts(projOpts, source, atkType)
+    projOpts = projOpts or {}
+    local actualSource = projOpts.sourceAttacker or source
+    local snapshotType = projOpts.atkType or atkType
+        or (actualSource and (actualSource.atkType or (actualSource.attrs and actualSource.attrs.atkType)))
+    if snapshotType or projOpts.floatKind or projOpts.isBlocked or projOpts.isDot or projOpts.statCategory or projOpts.isCrit
+        or projOpts.critEligible ~= nil or projOpts.threatScale or projOpts.isRicochet or projOpts.isNightSlash then
         return {
             isDot = projOpts.isDot,
             category = projOpts.statCategory,
@@ -141,6 +143,9 @@ local function statMetaFromProjOpts(projOpts)
             threatScale = projOpts.threatScale,
             isRicochet = projOpts.isRicochet,
             isNightSlash = projOpts.isNightSlash,
+            atkType = snapshotType,
+            floatKind = projOpts.floatKind,
+            isBlocked = projOpts.isBlocked,
         }
     end
     return nil
@@ -351,6 +356,13 @@ local function addFloatingText(text, cx, cy, color, isCrit, fontSize, deferred, 
 end
 BattleCombat.addFloatingText = addFloatingText
 
+--- 即时结构化数字：只合并视觉，amount仍为各次真实结算值。
+local function addCombatNumber(target, amount, cx, cy, meta)
+    return BattleCombatFx.addCombatNumber(BCS, target, amount, cx, cy, meta)
+end
+BattleCombat.addCombatNumber = addCombatNumber
+function BattleCombat.clearFloatingTexts() BattleCombatFx.resetFloatingTexts(BCS) end
+
 --- 设置受击后退（跟随设置「特效显示」开关）
 local function setRecoil(target, lungeDir)
     BattleCombatAnim.setRecoil(BCS, target, lungeDir)
@@ -477,17 +489,20 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     local showCrit = statMeta and statMeta.isCrit or false
     -- 伤害飘字配色：普通白色 / 暴击红色 / 护盾吸收灰色（完全吸收时不显示 -0）
     local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
+    local numberType = statMeta and statMeta.atkType
+        or (source and (source.atkType or (source.attrs and source.attrs.atkType)))
     if actual > 0 then
-        addFloatingText(NumberUtil.format(actual), tgtCX, tgtCY,
-            showCrit and { 255, 60, 60 } or { 255, 255, 255 }, showCrit, nil, true,
-            statMeta and statMeta.floatKind)
-        if shieldAbsorb > 0 then
-            addFloatingText(NumberUtil.format(shieldAbsorb), tgtCX, tgtCY,
-                { 168, 168, 168 }, false, nil, true)
-        end
-    elseif shieldAbsorb > 0 then
-        addFloatingText((prefix or "") .. NumberUtil.format(shieldAbsorb), tgtCX, tgtCY,
-            { 168, 168, 168 }, false, nil, true)
+        addCombatNumber(target, actual, tgtCX, tgtCY, {
+            channel = "damage", atkType = numberType, isCrit = showCrit,
+            isBlocked = statMeta and statMeta.isBlocked, isDot = statMeta and statMeta.isDot,
+            floatKind = statMeta and statMeta.floatKind,
+        })
+    end
+    if shieldAbsorb > 0 then
+        addCombatNumber(target, shieldAbsorb, tgtCX, tgtCY, {
+            channel = "shield", atkType = numberType, isCrit = showCrit,
+            isBlocked = statMeta and statMeta.isBlocked, isDot = statMeta and statMeta.isDot,
+        })
     end
     setHitFlash(target)
     if actual > 0 then
@@ -631,7 +646,7 @@ end
 ---@param allyList table|nil
 ---@param enemyList table|nil
 function BattleCombat.dealTalentDamage(attacker, target, damage, isTargetAlly, prefix, color, projOpts, allyList, enemyList)
-    local meta = statMetaFromProjOpts(projOpts)
+    local meta = statMetaFromProjOpts(projOpts, attacker)
     local function applyDamage()
         return applyFlyingSwordDamageWithRetarget(attacker, target, damage, isTargetAlly, prefix, color, meta, projOpts, allyList, enemyList)
     end
@@ -661,6 +676,7 @@ end
 ---@param enemyList table|nil
 function BattleCombat.onTalentDealDamage(attacker, target, tgtCX, tgtCY, prefix, applyDamage, projOpts, allyList, enemyList)
     local BattleEffects = require("ui.battle.combat.BattleEffects")
+    local projectileStatMeta = statMetaFromProjOpts(projOpts, attacker)
     allyList = allyList or BCS.ctx.getAllies()
     enemyList = enemyList or BCS.ctx.getEnemies()
 
@@ -704,7 +720,7 @@ function BattleCombat.onTalentDealDamage(attacker, target, tgtCX, tgtCY, prefix,
             onReturnHit = function()
                 local actual = applyFlyingSwordDamageWithRetarget(
                     attacker, target, flybackDmg, fb.isTargetAlly, "飞回", { 255, 200, 100 },
-                    statMetaFromProjOpts(projOpts), projOpts, allyList, enemyList)
+                    projectileStatMeta, projOpts, allyList, enemyList)
                 if actual > 0 and fb.recordChance and fb.recordChance > 0 and fb.addCarryover then
                     if math.random() < fb.recordChance then
                         fb.addCarryover(flybackDmg)
@@ -987,7 +1003,7 @@ local function performAttack(attacker, targetList, isAlly)
             syncUnitHp(attacker)
             if healActual > 0 then
                 local aCX, aCY = getCardPos(allyList, atkIdx or math.max(1, math.ceil(#allyList / 2)))
-                addFloatingText("+" .. NumberUtil.format(math.floor(healActual)), aCX, aCY, { 0, 255, 82 }, false)
+                addCombatNumber(attacker, healActual, aCX, aCY, { channel = "heal", atkType = AD.ATK_HOLY })
             end
         end
     end
@@ -1160,8 +1176,9 @@ local function performAttack(attacker, targetList, isAlly)
                         end
                         syncUnitHp(curTgt)
                         -- 飘字只显示绿色 +数值（暴击放大），无需"治疗"说明
-                        local color = { 0, 255, 82 }
-                        addFloatingText("+" .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, result.isCrit)
+                        addCombatNumber(curTgt, actual, curTgtCX, curTgtCY, {
+                            channel = "heal", atkType = result.atkType, isCrit = result.isCrit,
+                        })
                         setHitFlash(curTgt)
                         if isAlly and actual > 0 then
                             TM.onHealingDone(attacker, actual)
@@ -1174,7 +1191,7 @@ local function performAttack(attacker, targetList, isAlly)
                         end
                         -- 治疗也触发 onAfterAttack（天赋后续处理，支持投射物如惩戒飞弹）
                         TAL.onAfterAttack(attacker, curTgt, result, isAlly, targetList, function(tgt, dmg, isTgtAlly, pfx, clr, projOpts)
-                            local meta = statMetaFromProjOpts(projOpts)
+                            local meta = statMetaFromProjOpts(projOpts, attacker, result.atkType)
                             local function doTalentDamage()
                                 local sourceAttacker = (projOpts and projOpts.sourceAttacker) or attacker
                                 dealDamageToUnit(tgt, dmg, isTgtAlly, pfx or "", clr or {255, 238, 96}, sourceAttacker, meta)
@@ -1321,16 +1338,7 @@ local function performAttack(attacker, targetList, isAlly)
                             end
                         end
 
-                        -- 飘字配色：普通白色 / 暴击红色（物理魔法不再分色，格挡由前缀表达）
-                        local kind = nil
-                        if hit.isCrit and hit.isBlocked then kind = "critblock"
-                        elseif hit.isCrit then kind = "crit"
-                        elseif hit.isBlocked then kind = "block" end
-                        if result.category == "magical" then
-                            kind = kind and (kind .. "magic") or "magic"
-                        elseif result.category == "physical" then
-                            kind = kind and (kind .. "phys") or "phys"
-                        end
+                        -- 格挡回调保持每次独立结算；数字使用本次result属性快照。
                         if hit.isBlocked then
                             local blockedAmt = (hit.preBlockDamage or hit.rawDamage or takenForStats or 0) - (actual or 0)
                             if blockedAmt < 0 then blockedAmt = takenForStats or 0 end
@@ -1340,19 +1348,16 @@ local function performAttack(attacker, targetList, isAlly)
                         -- 护盾吸收灰色飘字（完全吸收时不显示 -0）
                         local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
                         if actual > 0 then
-                            local numColor = { 255, 236, 170 }
-                            if kind and kind:find("magic", 1, true) then numColor = { 120, 220, 255 }
-                            elseif kind and kind:find("burn", 1, true) then numColor = { 255, 140, 40 }
-                            elseif hit.isCrit then numColor = { 255, 70, 70 } end
-                            addFloatingText(NumberUtil.format(actual), curTgtCX, curTgtCY,
-                                numColor, hit.isCrit, nil, true, kind)
-                            if shieldAbsorb > 0 then
-                                addFloatingText(NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
-                                    { 168, 168, 168 }, false, nil, true)
-                            end
-                        elseif shieldAbsorb > 0 then
-                            addFloatingText(NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
-                                { 168, 168, 168 }, false, nil, true, "shield")
+                            addCombatNumber(curTgt, actual, curTgtCX, curTgtCY, {
+                                channel = "damage", atkType = result.atkType,
+                                isCrit = hit.isCrit, isBlocked = hit.isBlocked,
+                            })
+                        end
+                        if shieldAbsorb > 0 then
+                            addCombatNumber(curTgt, shieldAbsorb, curTgtCX, curTgtCY, {
+                                channel = "shield", atkType = result.atkType,
+                                isCrit = hit.isCrit, isBlocked = hit.isBlocked,
+                            })
                         end
 
                         -- 暴击回调（供台词系统触发暴击台词�?
@@ -1460,7 +1465,7 @@ local function performAttack(attacker, targetList, isAlly)
                         ART.onAfterAttack(attacker, curTgt, result)
                         TAL.onAfterAttack(attacker, curTgt, result, isAlly, targetList, function(tgt, dmg, isTgtAlly, pfx, clr, projOpts)
                             -- 封装实际伤害为回调，支持延迟（投射物到达后执行）
-                            local meta = statMetaFromProjOpts(projOpts)
+                            local meta = statMetaFromProjOpts(projOpts, attacker, result.atkType)
                             local function doTalentDamage()
                                 local sourceAttacker = (projOpts and projOpts.sourceAttacker) or attacker
                                 dealDamageToUnit(tgt, dmg, isTgtAlly, pfx or "", clr or {255, 238, 96}, sourceAttacker, meta)
@@ -1539,12 +1544,10 @@ local function performAttack(attacker, targetList, isAlly)
                 end
 
                 local tgtCX, tgtCY = getCardPos(targetList, curIndex)
-                -- 伤害飘字配色：普通白色 / 暴击红色
-                local ftColor = isCrit and { 255, 60, 60 } or { 255, 255, 255 }
-                addFloatingText(
-                    (isCrit and "暴击 " or "") .. NumberUtil.format(actualDmg),
-                    tgtCX, tgtCY, ftColor, isCrit
-                )
+                addCombatNumber(curTarget, actualDmg, tgtCX, tgtCY, {
+                    channel = "damage", isCrit = isCrit,
+                    atkType = attacker.atkType or (attacker.attrs and attacker.attrs.atkType) or AD.ATK_SLASH,
+                })
                 setRecoil(curTarget, isAlly and -1 or 1)
                 setHitFlash(curTarget)
                 if actualDmg > 0 then GameSFX.play("hit", BattleStats.mountedTeam()) end
@@ -1575,6 +1578,7 @@ local _combo = BattleCombatCombo.bind({
     getCardPos = getCardPos,
     playAttackCardAnim = playAttackCardAnim,
     addFloatingText = addFloatingText,
+    addCombatNumber = addCombatNumber,
     setRecoil = setRecoil,
     setHitFlash = setHitFlash,
     applyGlobalDmgMult = applyGlobalDmgMult,
@@ -1632,7 +1636,7 @@ end
 -- ======================== 浮动文字更新 ========================
 
 function BattleCombat.updateFloatingTexts(dt)
-    BattleCombatFx.updateFloatingTexts(BCS, dt, addFloatingText)
+    BattleCombatFx.updateFloatingTexts(BCS, dt)
 end
 
 -- ======================== 受击闪烁更新 ========================
@@ -1672,9 +1676,7 @@ end
 -- ======================== 状态重�?========================
 
 function BattleCombat.reset()
-    BCS.floatingTexts = {}
-    BCS.pendingFt     = {}   -- [伤害排队] 清空待显示队列
-    BCS.ftSpawnCd     = 0
+    BattleCombatFx.resetFloatingTexts(BCS)
     BCS.cardAnims     = {}
     BCS.hitFlashes    = {}
     BCS.hpBuffers     = {}

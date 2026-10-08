@@ -168,6 +168,7 @@ function M.bind(deps)
                         dealDamage(tgt, dmg, true, "缓冲 ", { 180, 180, 200 }, {
                             instantDamage = true,
                             statCategory = "physical",
+                            atkType = AD.ATK_CRUSH,
                         })
                         TM.addThreat(ally, math.floor(bar * 0.8 + 0.5))
                         talentLog("[Talent] 加载中 缓冲圈吐出 " .. tostring(dmg))
@@ -195,6 +196,7 @@ function M.bind(deps)
                             dealDamage(tgt, dmg, not entry.isAlly, "高ping ", { 120, 200, 255 }, {
                                 instantDamage = true,
                                 statCategory = "physical",
+                                atkType = AD.ATK_PIERCE,
                                 threatScale = 0.10,
                             })
                             talentLog("[Talent] 高ping战士 延迟结算 " .. tostring(dmg))

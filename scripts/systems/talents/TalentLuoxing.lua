@@ -114,6 +114,7 @@ local function tryYouyeSuperCrit(attacker, target, result, isAlly, dealDmgFn)
 
     dealDmgFn(target, extraDmg, not isAlly, "超暴击 ", { 255, 120, 255 }, {
         statCategory = result.category or "magical",
+        atkType = result.atkType,
         critEligible = false,
     })
     talentLog(string.format("[Talent] 内鬼 觉醒7: 超暴击 (率=%.1f%% 额外=%d)", superCritRate, extraDmg))

@@ -42,6 +42,7 @@ local function onXinAfterAttack(attacker, s, target, isAlly, targetList, dealDmg
                         dealDmgFn(u, beamDmg, not isAlly, "必杀 ", { 120, 220, 255 }, {
                             instantDamage = true,
                             statCategory = result.category or "magical",
+                            atkType = result.atkType,
                         })
                     end
                 end

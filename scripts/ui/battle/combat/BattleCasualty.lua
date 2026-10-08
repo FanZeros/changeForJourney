@@ -13,6 +13,7 @@ local SpeechBubble = require("ui.widget.SpeechBubble")
 local StageBerserk = require("ui.battle.stage.StageBerserk")
 local Diag = require("systems.BattleDiag")
 local BattleLayout = require("core.BattleLayout")
+local BattleClock = require("ui.battle.combat.BattleClock")
 
 local M = {}
 
@@ -231,7 +232,7 @@ function M.process(ctx, logicDt)
 
                 unit.reviveTimer = 0       -- 标记已处理，防止重复调用
                 unit._fallenPending = true -- [阵亡紧凑] 退场完成后移至队尾
-                unit._fallenAt = time.elapsedTime
+                unit._fallenAt = BattleClock.now()
                 unit.atkProgress = 0
                 TM.removeUnit(unit)
                 SEM.removeUnit(unit)
@@ -246,7 +247,7 @@ function M.process(ctx, logicDt)
 
     -- [阵亡紧凑] 阵亡英雄退场动画完成后移至队尾，存活英雄前移填位（含卡住兜底）
     -- （单位对象保留：下一关 resetAllyUnit 全员重置复活）
-    require("ui.battle.scene.BattleAllyReset").compactFallen(allies, time.elapsedTime)
+    require("ui.battle.scene.BattleAllyReset").compactFallen(allies, BattleClock.now())
 
     -- 检查是否有存活单位
     local allyAlive  = getAliveUnits(allies)

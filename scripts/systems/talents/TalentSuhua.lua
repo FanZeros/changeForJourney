@@ -142,6 +142,7 @@ local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealD
         local opts = {
             isCrit = isCrit,
             statCategory = "physical",
+            atkType = atkType,
             critEligible = true,
             isNightSlash = true,
         }

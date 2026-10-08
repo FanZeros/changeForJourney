@@ -10,8 +10,15 @@ local M = {}
 
 local SPEED_CX, SPEED_CY = 987, 311
 local SPEED_W, SPEED_H = 130, 143
+local TERMINAL_IDS = {
+    SC.TERMINAL_NORMAL, SC.TERMINAL_HARD, SC.TERMINAL_NIGHTMARE,
+    SC.TERMINAL_HELL, SC.TERMINAL_PURGATORY, SC.TERMINAL_TORMENT,
+    SC.TERMINAL_TORMENT2, SC.TERMINAL_TORMENT3, SC.TERMINAL_TORMENT4,
+    SC.TERMINAL_TORMENT5, SC.TERMINAL_ANNIHILATION, SC.TERMINAL_ANNIHILATION2,
+    SC.TERMINAL_ANNIHILATION3, SC.TERMINAL_ANNIHILATION4,
+}
 
---- 按当前难度返回已解锁的最高倍速
+--- 按已解锁难度返回最高倍速
 ---@param difficulty string|nil
 ---@return number
 function M.getMaxUnlocked(difficulty)
@@ -27,6 +34,29 @@ function M.getMaxUnlocked(difficulty)
         return 1.5
     end
     return 1.0
+end
+
+--- 解锁属于账户进度，不能随选旧关或过场的末关安全存档降级。
+--- 旧档可能只有终焉通关账本：严格 true 的终焉对应下一难度，不新增持久字段。
+---@param battle table|nil
+---@param memoryMaxStageId number|nil
+---@param memoryCleared table|nil
+---@return number
+function M.getAccountMaxUnlocked(battle, memoryMaxStageId, memoryCleared)
+    local data = type(battle) == "table" and battle or {}
+    local savedMax = tonumber(data.maxStageId) or tonumber(data.currentStageId) or 0
+    local maxSpeed = math.max(M.getMaxUnlocked(SC.getDifficulty(savedMax)),
+        M.getMaxUnlocked(SC.getDifficulty(tonumber(memoryMaxStageId) or 0)))
+    local savedCleared = type(data.clearedStages) == "table" and data.clearedStages or {}
+    local localCleared = type(memoryCleared) == "table" and memoryCleared or {}
+    for _, terminalId in ipairs(TERMINAL_IDS) do
+        if savedCleared[terminalId] == true or savedCleared[tostring(terminalId)] == true
+            or localCleared[terminalId] == true or localCleared[tostring(terminalId)] == true then
+            local nextDifficulty = SC.getNextDifficulty(SC.getDifficulty(terminalId))
+            maxSpeed = math.max(maxSpeed, M.getMaxUnlocked(nextDifficulty))
+        end
+    end
+    return maxSpeed
 end
 
 ---@param speed number

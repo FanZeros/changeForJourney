@@ -1164,7 +1164,7 @@ local function terminalFlowFixture(stageId)
     assert(load(handlerSource:sub(routerFirst, routerLast - 1), "@真实live回灌路由", "t", routerEnv))()
     router.setupDataSubscriptions()
     local syncEnv = setmetatable({ bootReady_ = true, StandaloneRT = {}, StageConfig = SC,
-        BattleScene = Scene, StandaloneSave = Save, ClientDispatcher = liveDispatcher }, { __index = _G })
+        BattleScene = Scene, BattleTriPage = Page, StandaloneSave = Save, ClientDispatcher = liveDispatcher }, { __index = _G })
     local sync = assert(load(standaloneSource:sub(syncFirst, syncLast - 1) .. "\nreturn SyncBattleState",
         "@真实SyncBattleState", "t", syncEnv))()
     local function syncBattle()
@@ -1181,6 +1181,67 @@ local function terminalFlowFixture(stageId)
         session = session, drivers = drivers, raid = raid, state = state, finishRaid = finishRaid, syncBattle = syncBattle }
 end
 
+local function testAccountSpeedUnlocks()
+    local Speed = require("ui.battle.stage.BattleSpeed")
+    check(Speed.getAccountMaxUnlocked(nil) == 1, "新档不提前解锁倍速")
+    check(Speed.getAccountMaxUnlocked({ maxStageId = TERMINAL }) == 1, "只抵达普通终焉不算通关")
+    check(Speed.getAccountMaxUnlocked({ maxStageId = SC.NORMAL_LAST_STAGE }) == 1,
+        "普通末关不提前解锁倍速")
+    for _, key in ipairs({ TERMINAL, tostring(TERMINAL) }) do
+        for _, value in ipairs({ false, 1, "true" }) do
+            check(Speed.getAccountMaxUnlocked({ maxStageId = SC.NORMAL_LAST_STAGE,
+                clearedStages = { [key] = value } }) == 1, "非严格true终焉账本不能解锁")
+        end
+    end
+    local difficulty = SC.DIFFICULTY_NORMAL
+    while SC.getNextDifficulty(difficulty) do
+        local terminal = SC.getTerminalTempleId(difficulty)
+        local expected = difficulty == SC.DIFFICULTY_NORMAL and 1.5 or 2
+        for _, key in ipairs({ terminal, tostring(terminal) }) do
+            local battle = { currentStageId = SC.NORMAL_FIRST_STAGE, maxStageId = SC.getTerminalPrevStageId(terminal),
+                clearedStages = { [key] = true } }
+            local original = cjson.encode(battle)
+            check(Speed.getAccountMaxUnlocked(battle) == expected,
+                "终焉通关双键解锁下一难度倍速 " .. terminal)
+            check(cjson.encode(battle) == original, "倍速查询不修改旧档 " .. terminal)
+            local restored = cjson.decode(cjson.encode(battle))
+            check(Speed.getAccountMaxUnlocked(restored) == expected, "JSON重启保留倍速资格 " .. terminal)
+            check(Speed.getAccountMaxUnlocked(nil, SC.NORMAL_FIRST_STAGE, battle.clearedStages) == expected,
+                "内存终焉账本也可解锁 " .. terminal)
+        end
+        difficulty = SC.getNextDifficulty(difficulty)
+    end
+    check(Speed.getAccountMaxUnlocked({ maxStageId = SC.TERMINAL_HARD }, SC.NIGHTMARE_FIRST_STAGE) == 2,
+        "分别解析终焉与最高关难度，不比较编号大小")
+    check(Speed.getAccountMaxUnlocked({ maxStageId = SC.NIGHTMARE_FIRST_STAGE }, SC.TERMINAL_NORMAL) == 2,
+        "旧当前终焉不降低账户最高倍速")
+    check(Speed.cycle(1, 1.5) == 1.5 and Speed.cycle(1.5, 1.5) == 1,
+        "普通终焉后仅开放1与1.5倍循环")
+    check(Speed.cycle(1, 2) == 1.5 and Speed.cycle(1.5, 2) == 2 and Speed.cycle(2, 2) == 1,
+        "困难终焉后开放1与1.5与2倍循环")
+
+    -- 提取正式副本/塔私有查询，不复制倍速实现、不启动页面或读写玩家存档。
+    for _, name in ipairs({ "ui.dungeon.DungeonBattleScene", "ui.tower.TowerTriBattle" }) do
+        local file = assert(cache:GetFile(name:gsub("%.", "/") .. ".lua"))
+        local lines = {}
+        while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+        file:Dispose()
+        local source = table.concat(lines, "\n")
+        local first = assert(source:find("local function getMaxUnlockedBattleSpeed()", 1, true))
+        local last = assert(source:find("\nlocal function ", first + 1, true))
+        local battle = { maxStageId = SC.NORMAL_LAST_STAGE, clearedStages = { [tostring(TERMINAL)] = true } }
+        local env = setmetatable({ PlayerStore = { Get = function() return battle end }, StageConfig = SC },
+            { __index = _G })
+        local getter = assert(load(source:sub(first, last - 1) .. "\nreturn getMaxUnlockedBattleSpeed",
+            "@真实倍速查询:" .. name, "t", env))()
+        check(getter() == 1.5, name .. "旧普通终焉通关档解锁1.5倍")
+        battle = { maxStageId = SC.HARD_LAST_STAGE, clearedStages = { [tostring(SC.TERMINAL_HARD)] = true } }
+        check(getter() == 2, name .. "旧困难终焉通关档解锁2倍")
+        battle = { maxStageId = SC.NORMAL_FIRST_STAGE, clearedStages = {} }
+        check(getter() == 1, name .. "清档不继承其他账户倍速")
+    end
+end
+
 local function testCompleteTriTerminal()
     for _, terminal in ipairs({ SC.TERMINAL_NORMAL, SC.TERMINAL_HARD }) do
         case("完整轮回链 " .. terminal, function()
@@ -1193,6 +1254,11 @@ local function testCompleteTriTerminal()
             check(f.scene.getStageId() == terminal and f.page.isTerminalRaidActive(), "胜利保持Scene及三隊终焉")
             check(f.battle.currentStageId == previous and f.battle.maxStageId >= target
                 and f.battle.clearedStages[tostring(terminal)] == true, "首通写末关回退点及永久目标解锁而非目标当前关")
+            local expectedSpeed = terminal == SC.TERMINAL_NORMAL and 1.5 or 2
+            check(f.page.getMaxUnlockedBattleSpeed() == expectedSpeed
+                and f.scene.getMaxUnlockedBattleSpeed() == expectedSpeed,
+                "终焉胜利即永久解锁账户倍速，过场末关安全点不降级")
+            check(not f.page.isSpeedButtonVisible(), "终焉收尾期间不显示可操作倍速按钮")
             local fcExp = f.state.values.Exp
             check(fcExp == SC.getStage(terminal).fcExp, "真实首通闭包恰好发放终焉经验")
             check(not f.scene.completeTriTerminal(tostring(terminal)), "重复胜利被运行态pending拦截")
@@ -1231,7 +1297,7 @@ local function testCompleteTriTerminal()
             check(f.state.starts == 0, "无阻挡后真实时钟倒计时不足两秒不启动")
             f.page.update(0.2)
             check(f.state.starts == 1 and f.intro.isActive() and f.scene.getStageId() == terminal,
-                "走生产StandaloneBoot闭包启动既有Intro，仍不进目标")
+                "走生产StandaloneBoot闭包启动终焉远征过场，仍不进目标")
             f.page.update(10)
             check(f.state.starts == 1 and #f.state.arrivals == 0, "动画active不重复start/目标入场")
             if terminal == SC.TERMINAL_NORMAL then f.intro.skip()
@@ -1245,6 +1311,11 @@ local function testCompleteTriTerminal()
             f.intro.skip()
             check(f.state.starts == 1 and #f.state.kills == 3 and f.state.values.Exp == fcExp,
                 "重复skip不发第二次首通/三Boss奖励")
+            f.page.resetToDefault()
+            f.scene.adoptStageProgress(SC.NORMAL_FIRST_STAGE)
+            check(f.scene.getMaxUnlockedBattleSpeed() == expectedSpeed
+                and f.page.getMaxUnlockedBattleSpeed() == expectedSpeed,
+                "三队关闭后单队回普通旧关仍保留倍速解锁")
         end)
     end
     case("已通终焉及claimed双键", function()
@@ -1253,6 +1324,8 @@ local function testCompleteTriTerminal()
                 local f = terminalFlowFixture(TERMINAL)
                 local key = stringKey and tostring(TERMINAL) or TERMINAL
                 f.battle.clearedStages[key] = true
+                check(f.page.getMaxUnlockedBattleSpeed() == 1.5 and f.scene.getMaxUnlockedBattleSpeed() == 1.5,
+                    "真实Scene/三队最高关停普通末关，终焉双键旧账本仍解锁1.5倍")
                 f.session.claimedScenarios[stringKey and "61" or 61] = true
                 f.session.claimedScenarios[stringKey and "62" or 62] = true
                 f.finishRaid()
@@ -1299,6 +1372,7 @@ function Start()
         case("真实 Page 即时胜利和奖励口径", testPageImmediateVictoryAndRewards)
         case("真实终焉 row1 奖励输入/覆盖层/战斗锁", testPageRowRewardInput)
         case("真实终焉draw五语不限时且保留卡牌生命", testPageTerminalDraw)
+        case("终焉账本永久倍速与旧档恢复", testAccountSpeedUnlocks)
         case("真实主线轮回/首通去重", testCompleteTriTerminal)
     end)
     if not ok then check(false, "测试初始化/收尾异常: " .. tostring(err)) end

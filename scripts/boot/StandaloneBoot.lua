@@ -586,13 +586,13 @@ function M.run(rt)
         BlacksmithDecompose.openAutoPopup()
     end)
 
-    -- 5.24 轮回回调：倒计时结束 → 播放开场动画 → 完成关卡加载
+    -- 5.24 终焉过渡：奖励/战场对白收尾后，播放胜利远征过场，再统一进入下一难度。
     BattleScene.setOnReincarnate(function(data)
-        print("[Standalone] reincarnation triggered, starting intro cutscene (difficulty "
-            .. tostring(data.fromDifficulty) .. " → " .. tostring(data.toDifficulty) .. ")")
+        print("[Standalone] 终焉通关，开始远征过场（" .. tostring(data.fromDifficulty)
+            .. " → " .. tostring(data.toDifficulty) .. "）")
         IntroCutscene.reset()
         IntroCutscene.start(function()
-            print("[Standalone] reincarnation intro finished, completing stage load")
+            print("[Standalone] 终焉远征过场完成，统一加载目标关卡")
             BattleScene.completeReincarnation(data.reincarnationToken)
         end)
     end)

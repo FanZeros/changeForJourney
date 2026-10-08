@@ -1,6 +1,6 @@
 -- 专项只读测试：2D脚手架 Start/Stop 生命周期，真实配置/Dialog/DrawUtil，其他业务为内存mock。
--- 必须 cwd=/home/Maker/resource-dungeon-visual-validation-20261006，ROOT只从-tapcode_dir解析。
--- /home/Maker/resource-dungeon-visual-validation-20261006/.cli/UrhoXRuntime tests/resource_dungeon_visual_test.lua -tapcode_dir=<1005根>
+-- 必须 cwd=/home/Maker/game4-validation/stage-regression，ROOT只从-tapcode_dir解析。
+-- /workspace/.cli/UrhoXRuntime tests/resource_dungeon_visual_test.lua -tapcode_dir=/workspace/game4
 --   -tool_mode -nosound -graphicsheadless -validate -validate-frames=60 -validate-timeout=45
 --   -validate-output=<隔离cwd>/validate.json
 -- 可选 -review=main|resources|gold|equipment|diamond|tower：真实Dialog/DrawUtil/PNG/NanoVG截图。
@@ -15,7 +15,7 @@ for _, arg in ipairs(GetArguments()) do
     if root then ROOT = root:gsub("/+$", "") end
     local view = arg:match("^%-review=(.+)$")
     if view then REVIEW = view end end
-local CWD = "/home/Maker/resource-dungeon-visual-validation-20261006"
+local CWD = "/home/Maker/game4-validation/stage-regression"
 local TAG = "[resource_dungeon_visual_test] "
 local PATHS = {
     gold_mine = "image/战斗背景/金币副本.png", equipment_vault = "image/战斗背景/装备副本.png",
@@ -38,6 +38,8 @@ local SOURCE_FILES = {
     ["ui.battle.stage.StageSelectDialog"] = "ui/battle/stage/StageSelectDialog.lua",
     ["ui.battle.stage.StageSelectResources"] = "ui/battle/stage/StageSelectResources.lua",
     ["ui.battle.stage.StageSelectRewardPreview"] = "ui/battle/stage/StageSelectRewardPreview.lua",
+    ["core.I18nTower"] = "core/I18nTower.lua", ["ui.tower.TowerPresentation"] = "ui/tower/TowerPresentation.lua",
+    ["systems.DropSystem"] = "systems/DropSystem.lua", -- 实际只读getSweepTicketRate；装备生成边界拒绝。
     ["ui.battle.stage.ExpeditionOverview"] = "ui/battle/stage/ExpeditionOverview.lua", -- 仅selector顶层依赖，不开启远征概览
     ["ui.battle.scene.BattleScene"] = "ui/battle/scene/BattleScene.lua", -- 只提取完整completeTriStageClear委托
     ["ui.battle.tri.BattleTriStageProgress"] = "ui/battle/tri/BattleTriStageProgress.lua", -- 仅专用内存通关fixture执行
@@ -433,6 +435,7 @@ local function newContext(legacy,review,vg)
         PHYS_ARMOR="armor",PHYS_PEN="physPen",MAG_PEN="magPen",ATK_HEAL="atkHeal",COMBO_RATE="comboRate",
         ATK_SPEED="atkSpeed",ABNORMAL_RES="abnormalRes"})
     mock("systems.UnitAttributes",{})
+    mock("systems.EquipmentSystem",{}) -- DropSystem顶层依赖；不提供生成、持久化或随机业务。
     mock("runtime.ClientDispatcher",{get=function(key)
         if key=="battle" or key=="dungeon" then return c.memory[key] end
         return deny("dispatcher unknown get " .. tostring(key)) end})
@@ -854,9 +857,9 @@ local function resolverCases()
 local function layoutCases()
     local c=newContext(); local d=c.prepareDialog(); local saved=copy(c.memory); openMain(c)
     check(textAt(c,"队伍 1 · 选择关卡",540,732),"实际队伍选关标题未上移")
-    check(textAt(c,"主线",150,782) and textAt(c,"副本",250,782),"tab文本真实新中心")
+    check(textAt(c,"主线",150,808) and textAt(c,"副本",250,808),"tab文本真实新中心")
     local tabShapes=0
-    for _,v in ipairs(c.calls) do if v.kind=="fill" and v.shape.y==759 and v.shape.w==90 and v.shape.h==46 then
+    for _,v in ipairs(c.calls) do if v.kind=="fill" and v.shape.y==785 and v.shape.w==90 and v.shape.h==46 then
         check(v.shape.x==105 or v.shape.x==205,"tab新90x46矩形"); tabShapes=tabShapes+1 end end
     eq(tabShapes,2,"两新tab形状")
     local bs=banners(c); eq(#bs,7,"主线可见7章")
@@ -867,15 +870,15 @@ local function layoutCases()
     for _,p in ipairs({{445,686},{635,686},{350,782},{500,782}}) do
         local n=#c.events; d.handleInput(p[1],p[2]); c.draw(); eq(#c.events,n,"旧tabs/右栏新同行空白不响应")
         eq(banners(c)[1].paint.path,bs[1].paint.path,"旧tab不能切分类"); check(d.isOpen(),"旧tab点不关闭") end
-    for _,x in ipairs({205,250,295}) do for _,y in ipairs({759,782,805}) do
-        d.handleInput(150,782); d.handleInput(x,y); c.draw(); eq(c.events[#c.events],"stage_sel_section","副本tab端点热区")
+    for _,x in ipairs({205,250,295}) do for _,y in ipairs({785,808,831}) do
+        d.handleInput(150,808); d.handleInput(x,y); c.draw(); eq(c.events[#c.events],"stage_sel_section","副本tab端点热区")
         eq(banners(c)[1].paint.path,PATHS.gold_mine,"新副本tab实际切分类")
     end end
-    for _,x in ipairs({105,150,195}) do for _,y in ipairs({759,782,805}) do
-        d.handleInput(250,782); d.handleInput(x,y); c.draw(); eq(banners(c)[1].paint.path,bs[1].paint.path,"主线tab端点热区")
+    for _,x in ipairs({105,150,195}) do for _,y in ipairs({785,808,831}) do
+        d.handleInput(250,808); d.handleInput(x,y); c.draw(); eq(banners(c)[1].paint.path,bs[1].paint.path,"主线tab端点热区")
     end end
-    for _,p in ipairs({{204.999,782},{295.001,782},{250,758.999},{250,805.001},{200,782}}) do
-        d.handleInput(150,782); local n=#c.events; d.handleInput(p[1],p[2]); eq(#c.events,n,"tab边外0.001/gap不响应")
+    for _,p in ipairs({{204.999,808},{295.001,808},{250,784.999},{250,831.001},{200,808}}) do
+        d.handleInput(150,808); local n=#c.events; d.handleInput(p[1],p[2]); eq(#c.events,n,"tab边外0.001/gap不响应")
     end
     eq(#c.selections,0,"查看tabs不跳主线/副本关"); eq(#c.towerSelections,0,"不碰tower"); idle(c,saved)
 end
@@ -1214,7 +1217,7 @@ local function continuousRowCases()
     check(#before>0,"横拖前真实draw存在")
     zd.handleInput(200,1002); zd.handleScroll(-2,340,900); z.draw(); check(textAt(z,"1-3",331,818),"装备独立150步纵scroll")
     zd.handleInput(200,1190); z.draw(); check(textAt(z,"1-3",331,824),"切回塔保留自身纵scroll")
-    zd.handleInput(150,782); z.draw(); zd.handleInput(250,782); z.draw()
+    zd.handleInput(150,808); z.draw(); zd.handleInput(250,808); z.draw()
     check(textAt(z,"1-3",331,824),"主线副本tabs切回塔仍保留纵scroll")
     zd.handleInput(200,1002); z.draw(); check(textAt(z,"1-3",331,818),"装备scroll不被塔/tabs覆盖")
     zd.handleInput(200,1190); zd.handleScroll(-999,340,900); z.draw(); currentRow(z,112)
@@ -1440,8 +1443,12 @@ local function safetyCases()
     end
     for name in pairs(SOURCE_FILES) do eq(package.loaded[name],initialLoaded[name],"全局package cache不污染 " .. name) end
     eq(File,nativeFile,"全局File不覆写"); eq(nvgCreateImage,nativeCreateImage,"全局绘图API不覆写")
-    local expectedReads=0; for _ in pairs(SOURCE_FILES) do expectedReads=expectedReads+1 end
-    eq(expectedReads,35,"固定35份源码安全白名单；新增仅真实必要依赖")
+    local expectedReads=0
+    for name in pairs(SOURCE_FILES) do
+        expectedReads=expectedReads+1
+        source(name) -- 前面的业务断言可提前失败；安全白名单读取审计仍独立完整执行。
+    end
+    eq(expectedReads,38,"固定38份源码安全白名单；新增仅真实必要依赖")
     eq(#reads,expectedReads,"全部固定源码读取，Tri/Scene只取纯函数段")
     print(TAG .. "LIMIT: source/File=read-only allowlist; real GameState/save/File-write/cloud/runtime-action/main/Boot.run denied.")
     print(TAG .. "LIMIT: spawn unit factory, I18n, BF, progress/gotoTeamStage mocked; no full main, live combat, persistence or mobile-input claim.")
@@ -1465,7 +1472,7 @@ function Start()
         reviewVG=assert(nvgCreate(1)); check(nvgCreateFont(reviewVG,"sans","Fonts/MiSans-Regular.ttf")>=0,"真实字体")
         reviewContext=newContext(false,true,reviewVG); local d=reviewContext.prepareDialog()
         if REVIEW=="main" then d.open(1)
-        elseif REVIEW=="resources" then d.open(1); d.handleInput(250,782)
+        elseif REVIEW=="resources" then d.open(1); d.handleInput(250,808)
         else d.openDungeon(1,({gold="gold_mine",equipment="equipment_vault",diamond="black_diamond",tower="babel_tower"})[REVIEW]) end
         reviewContext.clock.elapsedTime=101
         SubscribeToEvent(reviewVG,"NanoVGRender","HandleResourceDungeonVisualReview")

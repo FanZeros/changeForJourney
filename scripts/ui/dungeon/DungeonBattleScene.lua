@@ -164,7 +164,6 @@ local imgMapBabelTower = -1  -- 通天塔地图
 local imgMapLegacy    = -1  -- 旧遗迹/木桩保留原 MAP_FB1
 local imgShadow       = -1
 local imgRetreatBtn   = -1
-local imgSpeedIcon    = -1
 local imgEnemyTag     = -1
 local imgAllyTags     = {}
 
@@ -194,7 +193,6 @@ local state = {
     confirmClosing = false,
     confirmOpenTime  = 0,
     confirmCloseTime = 0,
-    battleSpeed = 1.0,
 }
 
 -- 背景动效
@@ -233,64 +231,9 @@ local function easeInCubic(t)
     return t * t * t
 end
 
-local function getMaxUnlockedBattleSpeed()
-    return require("ui.battle.stage.BattleSpeed").getAccountMaxUnlocked(PlayerStore.Get("battle"))
-end
-
-local function isSpeedButtonVisible()
-    return state.open and state.battleState == BATTLE_ACTIVE
-        and not state.confirmOpen and not state.confirmClosing
-        and getMaxUnlockedBattleSpeed() > 1.0
-        and not BattleResultPanel.isOpen()
-end
-
-local function getBattleLogicDt(dt)
-    local maxSpeed = getMaxUnlockedBattleSpeed()
-    if state.battleSpeed > maxSpeed then
-        state.battleSpeed = maxSpeed
-    end
-    if isSpeedButtonVisible() then
-        return dt * state.battleSpeed
-    end
-    return dt
-end
-
-local function getSpeedText()
-    if state.battleSpeed == 1.5 then
-        return "X1.5"
-    elseif state.battleSpeed >= 2.0 then
-        return "X2"
-    end
-    return "X1"
-end
-
-local function drawSpeedButton(vg)
-    if not isSpeedButtonVisible() then return end
-    local alpha = state.battleSpeed > 1.0 and 1.0 or 0.82
-    drawImageCentered(vg, imgSpeedIcon, 987, 311, 130, 143, alpha)
-    drawTextStroke(vg, 987, 305,
-        getSpeedText(), 52,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 6,
-        { strokeColor = { 0x36, 0x77, 0x78 } })
-end
-
+-- 兼容旧快捷键调用；副本战斗加速已删除。
 function DungeonScene.cycleBattleSpeed()
-    if not isSpeedButtonVisible() then return false end
-    local maxSpeed = getMaxUnlockedBattleSpeed()
-    if state.battleSpeed < 1.5 and maxSpeed >= 1.5 then
-        state.battleSpeed = 1.5
-    elseif state.battleSpeed < 2.0 and maxSpeed >= 2.0 then
-        state.battleSpeed = 2.0
-    else
-        state.battleSpeed = 1.0
-    end
-    print("[DungeonBattleScene] 副本战斗倍速切换: " .. getSpeedText())
-    return true
-end
-
-local function handleSpeedButtonInput(dx, dy)
-    if math.abs(dx - 987) > 65 or math.abs(dy - 311) > 71.5 then return false end
-    return DungeonScene.cycleBattleSpeed()
+    return false
 end
 
 --- 九宫格绘制
@@ -497,7 +440,6 @@ function DungeonScene.init(vg)
     -- 阴影板绘制为 1080x556（源图 1080x610 压扁），使用 SHADOW 副本，调整原图不影响其他用法
     imgShadow        = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY_SHADOW.png", 0)
     imgRetreatBtn    = nvgCreateImage(vg, "image/按钮/UI_AN_HONG.png", 0)
-    imgSpeedIcon     = nvgCreateImage(vg, "image/通用图标/UI_ICON_kong.png", 0)
     imgEnemyTag      = nvgCreateImage(vg, "image/通用图标/ICON_ZY_XG.png", 0)
     for i = 1, 6 do
         imgAllyTags[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
@@ -536,10 +478,6 @@ function DungeonScene.open(opts)
         regenAccum = 0
         state.confirmOpen = false
         state.confirmClosing = false
-        state.battleSpeed = getMaxUnlockedBattleSpeed()
-        if opts.data and opts.data.trainingDummy then
-            state.battleSpeed = 1.0
-        end
 
         -- 通知 DungeonBattle 模块进入副本模式
         local data = opts.data or {}
@@ -813,11 +751,6 @@ function DungeonScene.draw(vg, width, height)
     drawTextStroke(vg, 1750, 110, DungeonBattle.isTrainingDummy() and "退出" or "撤退", 36,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
     BF.finish(vg, feedback)
-    if isSpeedButtonVisible() then
-        drawImageCentered(vg, imgSpeedIcon, 1500, 110, 100, 110, 1.0)
-        drawTextStroke(vg, 1500, 110, getSpeedText(), 38,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
-    end
     if DungeonBattle.isTrainingDummy() then
         drawTextStroke(vg, 170, 110, "统计", 36,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
@@ -856,11 +789,10 @@ function DungeonScene.update(dt)
     -- 背景漂移
     bgAnimTimer = bgAnimTimer + dt
 
-    -- 投射物与连击队列跟随战斗 logicDt；纯视觉用真实 dt（2 倍速时不叠加算力）
-    local logicDtForFx = (state.battleState == BATTLE_ACTIVE) and getBattleLogicDt(dt) or dt
+    -- 投射物、连击与视觉统一使用真实 dt，不再读取旧倍率状态。
     if state.battleState == BATTLE_ACTIVE then
-        ProjectileSystem.update(logicDtForFx)
-        BattleCombat.updateComboQueue(logicDtForFx)
+        ProjectileSystem.update(dt)
+        BattleCombat.updateComboQueue(dt)
     end
 
     BattleEffects.update(dt)
@@ -904,7 +836,7 @@ function DungeonScene.update(dt)
     end
 
     -- ==== 以下为 BATTLE_ACTIVE 阶段逻辑 ====
-    local logicDt = getBattleLogicDt(dt)
+    local logicDt = dt
 
     -- DungeonBattle 计时（狂暴阶段检测，狂暴加成施加到怪物与己方单位）
     DungeonBattle.update(logicDt, state.enemies, state.allies)
@@ -1356,10 +1288,6 @@ function DungeonScene.handleInput(dx, dy, width, height)
     if DungeonBattle.isTrainingDummy() and hitTest(dx, dy, 170, 110, 150, 90) then
         DamageStatsPanel.open(100 + (DungeonBattle.getConfig().teamIdx or 1))
         return true
-    end
-
-    if isSpeedButtonVisible() and hitTest(dx, dy, 1500, 110, 100, 110) then
-        return DungeonScene.cycleBattleSpeed()
     end
 
     -- 撤退按钮

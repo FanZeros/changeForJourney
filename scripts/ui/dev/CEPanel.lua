@@ -39,7 +39,6 @@ local function actions()
         { id = "kill", label = "秒杀当前战斗" },
         { id = "heal", label = "己方满血" },
         { id = "god", label = CERuntime.isGodMode() and "无敌：开" or "无敌：关" },
-        { id = "speed", label = CERuntime.isSpeedOn() and "三倍速：开" or "三倍速：关" },
         { id = "guide", label = "跳过引导" },
         { id = "dungeon", label = "副本/塔层+5" },
         { id = "loot", label = "遗匣塞各品质" },
@@ -160,7 +159,6 @@ function CEPanel.draw(vg, screenW, screenH)
     for _, btn in ipairs(buttons_) do
         if btn.visible then
             local hot = btn.id == "god" and CERuntime.isGodMode()
-                or btn.id == "speed" and CERuntime.isSpeedOn()
                 or btn.id == "pack"
             drawBtn(vg, btn.x, btn.y, btn.w, btn.h, btn.label, hot)
         end
@@ -257,9 +255,6 @@ function CEPanel.run(id)
     elseif id == "god" then
         local on = CERuntime.toggleGodMode()
         require("core.UiToast").show(on and "无敌已开" or "无敌已关", 1.6)
-    elseif id == "speed" then
-        local on = CERuntime.toggleSpeed()
-        require("core.UiToast").show(on and "三倍速已开" or "三倍速已关", 1.6)
     elseif id == "guide" then
         CEService.skipGuide()
     elseif id == "dungeon" then

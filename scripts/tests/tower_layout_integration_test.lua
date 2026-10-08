@@ -2,6 +2,8 @@
 -- 执行完整生产Layout/Sidebar/Scene/Tri/Input；UI树为显式CPU替身，不冒称真实Yoga/GPU。
 -- 不加载main、不读玩家存档、不发Action、不调用随机数；规则专项另外独立保留。
 function Start()
+    assert(fileSystem:GetCurrentDir():gsub("/+$", "") == "/home/Maker/game4-validation/stage-regression",
+        "isolated stage regression cwd required")
     local TAG = "[tower_layout_integration_test] "
     local checks, cases, failures = 0, 0, 0
     local sources = {}
@@ -50,6 +52,13 @@ function Start()
         local mods, env, stat = {}, {}, { actions = 0, depth = 0, clips = {}, frames = {}, views = {}, destroyed = 0 }
         setmetatable(env, { __index = _G })
         env._G = env
+        -- 生产闭包不得继承宿主File/FS/cloud；源码只经外层cache:GetFile只读出口。
+        local function denied() error("native IO/network forbidden in tower fixture") end
+        env.File, env.GetFileSystem, env.GetEngine, env.GetCache = denied, denied, denied, denied
+        env.loadfile, env.dofile, env.SendEvent, env.SubscribeToEvent = denied, denied, denied, denied
+        for _, key in ipairs({ "fileSystem", "cache", "engine", "network", "clientCloud", "serverCloud", "io", "os", "package" }) do
+            env[key] = setmetatable({}, { __index = denied, __newindex = denied })
+        end
         env.time = { elapsedTime = 100 }
         env.math = copy(math)
         env.math.random = function() error("random forbidden") end
@@ -311,14 +320,20 @@ function Start()
             return name=="battle" and progress or (name=="dungeon" and dungeon or nil)
         end}
         mods["core.GameState"]={getPower=function()return 100 end}
-        mods["core.I18n"]={get=function()return "zh_CN" end,lookup=function(s)return s end,
+        mods["core.I18n"]={get=function()return stat.language or "zh_CN" end,lookup=function(s)return s end,
             format=function(s,...)return string.format(s,...)end}
         mods["core.I18nTower"]=compile("core/I18nTower.lua",env)
         mods["ui.tower.TowerPresentation"]=compile("ui/tower/TowerPresentation.lua",env)
         mods["core.NumberUtil"]={format=tostring}
-        local drawn={}
-        mods["core.DrawUtil"]={drawTextStroke=function(_,_,_,s)drawn[#drawn+1]=s end,
+        local drawn, textCalls, shapes = {}, {}, {}
+        mods["core.DrawUtil"]={drawTextStroke=function(_,x,y,s,size)
+                drawn[#drawn+1]=s
+                textCalls[#textCalls+1]={x=x,y=y,text=s,size=size}
+            end,
             drawImageCentered=noop,drawNineSlice=noop,drawImageCover=noop}
+        env.nvgRoundedRect=function(_,x,y,w,h)
+            shapes[#shapes+1]={x=x,y=y,w=w,h=h}
+        end
         mods["core.DarkIcon"]={drawQualityBg=noop,draw=noop}
         mods["systems.ButtonFeedback"]={trigger=noop}
         mods["ui.battle.stage.BattleEnemySpawn"]={getFirstClearBonusMonsterIds=function()return {} end}
@@ -367,14 +382,47 @@ function Start()
         local seen={};for _,s in ipairs(drawn)do seen[s]=true end
         check(seen["第1层"] and seen["第6层"],"real selector draws floor labels")
         check(seen["第1-5层 · 每层1波"],"real selector draws group1..5")
-        check(seen["本组剩余首通黑钻 ×1650 · 重打/扫荡0"],"remaining group first-clear visible")
-        check(seen["每层胜利神器5% · 品质1/2/3 80/18/2%"],"random artifact explicitly probability not guaranteed")
-        for _,s in ipairs(drawn)do check(not s:find("每层10波",1,true),"no ten-wave preview") end
+        check(seen["首通奖励 ×1650"],"remaining group first-clear summary visible")
+        check(not seen["本组剩余首通黑钻 ×1650 · 重打/扫荡0"],"selector hides repeat/sweep explanation")
+        check(not seen["每层胜利神器5% · 品质1/2/3 80/18/2%"],"selector hides detailed drop probabilities")
+        for _,s in ipairs(drawn)do
+            check(not s:find("每层10波",1,true),"no ten-wave preview")
+            check(not s:find("组远征经验",1,true),"selector hides experience formulas")
+        end
         local requested=0
         selector.setOnDungeonSelect(function(_,_,floor)requested=floor;return false end)
         selector.handleInput(600,980);eq(requested,0,"locked real row6 rejects entry")
         dungeon.babel_tower.floor=6
         selector.handleInput(600,980);eq(requested,6,"unlocked row6 calls checkpoint6")
+        -- 需求给定808/CH876/塔摘要44的独立锚点；不从生产常量反推oracle。
+        for _, language in ipairs({"zh_CN","zh_TW","en","ja","ko"}) do
+            stat.language=language
+            drawn,textCalls,shapes={},{},{}
+            selector.draw(vg)
+            local summary=string.format(mods["core.I18nTower"].lookup("首通奖励 ×%s",language),"0")
+            local expected={
+                zh_CN="首通奖励 ×0",zh_TW="首通獎勵 ×0",en="First-clear reward ×0",
+                ja="初回報酬 ×0",ko="첫 클리어 보상 ×0",
+            }
+            eq(summary,expected[language],"new complete reward translation "..language)
+            local hasSummary,hasMain,hasDungeon,hasBand,hasChapter=false,false,false,false,false
+            for _, call in ipairs(textCalls) do
+                if call.text==summary and call.x==367 and call.y==916 then hasSummary=true end
+                if call.text=="主线" and call.x==150 and call.y==808 then hasMain=true end
+                if call.text=="副本" and call.x==250 and call.y==808 then hasDungeon=true end
+                check(not call.text:find("%",1,true) and not call.text:find("EXP",1,true)
+                    and not call.text:find("经验",1,true) and not call.text:find("重打",1,true),
+                    "tower selector omits probability/EXP/repeat formula "..language)
+            end
+            for _, shape in ipairs(shapes) do
+                if shape.x==323 and shape.y==894 and shape.w==564 and shape.h==44 then hasBand=true end
+                if shape.x==105 and shape.y==876 and shape.w==190 and shape.h==84 then hasChapter=true end
+            end
+            check(hasSummary,"real tower summary text centered in 44 band "..language)
+            check(hasMain and hasDungeon,"real tab text stays at808 "..language)
+            check(hasBand and hasChapter,"44 tower band and CH_Y0=876 preserved "..language)
+        end
+        stat.language="zh_CN"
         eq(stat.actions,0,"preview does not dispatch rewards")
         selector.close();env.require=baseRequire
         eq(stat.depth,0,"selector drawing restores all state")
@@ -517,6 +565,12 @@ function Start()
         for name in read("boot/StandaloneHorizonInput.lua"):gmatch('require%("([^"]+)"%)') do
             if not mods[name] then mods[name] = generic() end
         end
+        mods["ui.character.hero.AwakeningArtwork"] = { hasPress = function() return false end, observe = noop,
+            isOpen = function() return false end, releaseTouch = function() return false end,
+            hasTouch = function() return false end,
+            bindInput = function()
+                return function() return false end -- 本专项没有全图模态；完整指针闭包仍走正式Input。
+            end }
         mods["ui.tower.TowerBattleScene"] = {
             isActive=function() return c.active end,
             getPresentationKey=function() return c.key .. ":" .. (c.sidebarKey and c.sidebarKey() or "") end,
@@ -771,7 +825,7 @@ function Start()
         mods["ui.battle.combat.BattleCombat"].DEATH_ANIM_DURATION=.4
         mods["ui.battle.scene.BattleView"].draw=function()stat.views[#stat.views+1]=true end
         mods["ui.tower.TowerBuffSidebar"]={drawConfirmation=noop}
-        mods["core.PlayerStore"].Get=function()return {}end
+        -- PlayerStore已不是真实Tri依赖；不加载或伪造无用业务存档模块。
         mods["core.I18n"]={get=function()return "zh_CN" end}
         mods["core.I18nTower"]=compile("core/I18nTower.lua",env)
         mods["ui.tower.TowerPresentation"]=compile("ui/tower/TowerPresentation.lua",env)

@@ -23,7 +23,6 @@ local EquipmentSystem   = require("systems.EquipmentSystem")
 local EquipmentPower    = require("systems.EquipmentPower")
 local BF                 = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
-local ETS = require("systems.ExtraTalentSystem")
 local I18n = require("core.I18n")
 local KeywordText = require("ui.widget.KeywordText")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
@@ -31,6 +30,11 @@ local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 local drawTextStroke = DrawUtil.drawTextStroke
 
 local M = {}
+local radarTransition = EquipStats.createRadarTransition()
+
+function M.resetRadarTransition()
+    radarTransition:reset()
+end
 
 ---@type number|nil
 local jobEffectHero = nil
@@ -429,6 +433,7 @@ end
 --- 注入依赖
 ---@param ctx table
 function M.setContext(ctx)
+    radarTransition:reset()
     detailState       = ctx.detailState
     getOwnedData      = ctx.getOwnedData
     calcHeroPowerFn     = ctx.calcHeroPower
@@ -506,6 +511,9 @@ end
 
 --- 绘制角色详情二级界面
 function M.draw(vg)
+    if not detailState.open or detailState.closing or detailState.tab ~= "attr" then
+        radarTransition:reset()
+    end
     -- 播放中换人/关页/拖动即取消这张卡的视觉，不能把上一英雄的效果画到新卡。
     if jobEffectHero and (not detailState.open or detailState.closing
         or detailState.tab ~= "class" or detailState.heroId ~= jobEffectHero
@@ -1132,7 +1140,8 @@ function M.draw(vg)
     AttributeView.drawDivider(vg, MID_DIV2_CY)
 
     -- 属性页六围：共享绘图但保留原视觉、布局与点击 API。
-    EquipStats.drawLegacy(vg, attrData.stats)
+    local radarVisual = radarTransition:sample(attrData.stats, nil, false, tostring(heroId), time.elapsedTime)
+    EquipStats.drawLegacy(vg, attrData.stats, radarVisual)
 
     -- ================================================================
     -- ===                    天赋技能区域                            ===
@@ -1151,12 +1160,8 @@ function M.draw(vg)
         0x66, 0xf8, 0x62, 5)
 
     local talentDesc = heroCfg.talentDesc or ""
-    local extraLine = ETS.getDesc(heroId, ownData and ownData.extraTalent)
-    if extraLine ~= "" then
-        talentDesc = talentDesc .. "\n" .. extraLine
-    end
-    -- 短描述紧凑显示，长描述/成长说明按可用高度适配，不侵入底部页签。
-    local talentFont = extraLine ~= "" and 28 or 34
+    -- 属性详情只展示基础天赋；觉醒说明与累计成长统一放在觉醒页。
+    local talentFont = 34
     local availableH = TALENT_BG_CY + TALENT_BG_H * 0.5 - 8 - TALENT_TEXT_TOP
     while talentFont > 18
         and M.talentKwText:measureHeight(vg, talentDesc, TALENT_TEXT_WIDTH, talentFont) > availableH do
@@ -1244,7 +1249,7 @@ function M.draw(vg)
     nvgFillColor(vg, not ownedHero and lockedColor or (curTab == "equip" and activeColor or inactiveColor))
     nvgText(vg, TEXT_EQUIP_CX, TEXT_EQUIP_CY, I18n.t("tab_equip"), nil)
 
-    nvgFillColor(vg, not ownedHero and lockedColor or (curTab == "class" and activeColor or inactiveColor))
+    nvgFillColor(vg, curTab == "class" and activeColor or inactiveColor)
     nvgText(vg, TEXT_CLASS_CX, TEXT_CLASS_CY, I18n.t("tab_class"), nil)
 
     -- 转职Tab角标：当前英雄可转职时显示红点

@@ -18,6 +18,8 @@ local CACHE_SECONDS = 0.2
 local SCROLL_FRICTION = 0.90
 local SCROLL_MIN_VEL = 0.5
 local slotHover = { key = nil, since = 0 }
+-- 本宿主私有，不能与属性页共享动画状态；数字/真实预览不进入此闭包。
+local radarTransition = Stats.createRadarTransition()
 
 local function clearSlotHover()
     slotHover.key, slotHover.since = nil, 0
@@ -301,7 +303,11 @@ function M.draw(vg, heroId, detailState)
     clampScroll("sets")
     local displayCurrent = display.current or {}
     local displayPreview = display.preview
-    Stats.drawRadar(vg, displayCurrent.stats, displayPreview and displayPreview.stats or nil, equipmentMode)
+    -- 只以英雄/样式切换开动画，不把0.2s缓存签名或每帧新建表当作动画key。
+    local styleKey = tostring(heroId) .. "|" .. panelState.attributeMode
+    local visual = radarTransition:sample(displayCurrent.stats,
+        displayPreview and displayPreview.stats or nil, equipmentMode, styleKey, now())
+    Stats.drawRadar(vg, displayCurrent.stats, displayPreview and displayPreview.stats or nil, equipmentMode, visual)
 end
 
 function M.onSlotChanged(slot, heroId)
@@ -316,8 +322,8 @@ function M.markDirty()
     clearTip()
 end
 
---- clear/reset 都废弃候选缓存和属性说明，不遗留上一位角色热区。
-function M.clear()
+--- 清缓存/热区与滚动；活动页切英雄可保留独立雷达视觉闭包。
+local function clearPanelData()
     clearSlotHover()
     panelState.data = nil
     panelState.cacheKey = nil
@@ -335,8 +341,18 @@ function M.clear()
     clearTip()
 end
 
+--- 关闭/显式clear释放全部视觉状态；重新首绘静默，不泄漏上一位角色。
+function M.clear()
+    clearPanelData()
+    radarTransition:reset()
+end
+
 function M.reset(heroId, slot)
-    M.clear()
+    -- 上层活动配装页换英雄也调用reset；只此边沿保留当前视觉形状连续过渡。
+    -- reset(nil)是关闭，同英雄reset是重新进入；二者必须清动画。
+    local changingHero = heroId ~= nil and panelState.heroId ~= nil and panelState.heroId ~= heroId
+    clearPanelData()
+    if not changingHero then radarTransition:reset() end
     panelState.heroId = heroId
     panelState.slot = slot
 end

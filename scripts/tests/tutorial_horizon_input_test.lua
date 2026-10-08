@@ -153,7 +153,8 @@ function Start()
             if name == "systems.TutorialManager" or name == "ui.tutorial.TutorialOverlay"
                 or name == "config.TutorialConfig" or name == "config.GameConfig"
                 or name == "boot.SeamBackGesture" or name == "boot.DecomposeMarqueeGesture"
-                or name == "boot.StandaloneHorizonWheel" then
+                or name == "boot.StandaloneHorizonWheel"
+                or name == "ui.character.hero.AwakeningArtwork" then
                 return nativeRequire(name)
             end
             if name == "boot.StandaloneHorizonInput" then

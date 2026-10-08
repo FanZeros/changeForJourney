@@ -159,6 +159,11 @@ local function handleEscape()
         PlayerInfoPanel.close()
         return
     end
+    local AwakeningArtwork = require("ui.character.hero.AwakeningArtwork")
+    if AwakeningArtwork.isOpen() then
+        AwakeningArtwork.close()
+        return
+    end
     local CharacterDetail = require("ui.character.detail.CharacterDetail")
     if CharacterDetail.isOpen() then
         CharacterDetail.close()
@@ -215,6 +220,11 @@ function KeyboardShortcuts.update()
         return
     end
 
+    if require("ui.character.hero.AwakeningArtwork").isOpen() then
+        -- 影画被上层奖励/升级遮住时，确认键仍交给原模态；其它快捷键不得操作底层。
+        if pressed(KEY_SPACE) or pressed(KEY_RETURN) or pressed(KEY_RETURN2) then handleConfirm() end
+        return
+    end
     if textBusy() then return end
 
     if pressed(KEY_H) then

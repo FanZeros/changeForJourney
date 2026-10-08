@@ -29,7 +29,6 @@ local selectedButtons = {}
 ---@class RosterTeamHeader
 ---@field root Panel
 ---@field title Label
----@field count Label
 ---@field power Label
 ---@type RosterTeamHeader[]
 local headers = {}
@@ -199,35 +198,50 @@ local function ensureHeader(team)
     if header then return header end
     Surface.init()
     local title = UI.Label { width = 268, height = 44, fontSize = 22, minFontSize = 16,
+        fontFamily = "sans", fontWeight = "normal",
         verticalAlign = "middle", text = "", whiteSpace = "nowrap", pointerEvents = "none" }
-    local count = UI.Label { width = 72, height = 44, fontSize = 16,
-        verticalAlign = "middle", textAlign = "center", text = "", pointerEvents = "none" }
     local power = UI.Label { width = 360, height = 44, fontSize = 20, minFontSize = 12,
+        fontFamily = "sans", fontWeight = "normal",
         verticalAlign = "middle", textAlign = "right", text = "", whiteSpace = "nowrap", pointerEvents = "none" }
-    local root = UI.Panel { width = 752, height = 44, flexDirection = "row", gap = 26,
-        children = { title, count, power }, pointerEvents = "none" }
-    header = {root = root, title = title, count = count, power = power}
+    -- 保留原标题宽度、战力文字框与右边缘；人数不再占用Label或绘制空间。
+    -- 两框间距也预留24px战力图标，即使长值自动缩字也不侵入队名。
+    local root = UI.Panel { width = 752, height = 44, flexDirection = "row", justifyContent = "space-between",
+        children = { title, power }, pointerEvents = "none" }
+    header = {root = root, title = title, power = power}
     headers[team] = header
     return header
 end
 
-function M.drawHeader(vg, team, x, y, color, locked, count, power)
+-- 返回当前宿主设计坐标中的图标中心；只测量已渲染Label，不创建测量控件/字体。
+---@return number iconX
+---@return number iconY
+function M.drawHeader(vg, team, x, y, color, locked, power)
     local header = ensureHeader(team)
     local pack = TEXT[I18n.get()] or TEXT.zh_CN
     local label = locked and (string.format(pack.squad, team) .. " · " .. pack.locked) or string.format(pack.squad, team)
     if header.title.props.text ~= label then header.title:SetText(label) end
-    local counts = locked and "" or tostring(count) .. "/4"
-    if header.count.props.text ~= counts then header.count:SetText(counts) end
     local value = locked and "—" or NumberUtil.format(power)
     if header.power.props.text ~= value then header.power:SetText(value) end
     header.title:SetFontColor({color[1], color[2], color[3], locked and 155 or 255})
-    header.count:SetFontColor({154, 143, 121, locked and 100 or 220})
     local _, _, _, pulse = M.getFeedback(team)
     header.power:SetFontColor({247, 219 + math.floor(pulse * 25), 119 + math.floor(pulse * 70), locked and 120 or 255})
     nvgSave(vg)
     nvgTranslate(vg, x, y)
     Surface.draw(header.root, vg, 752, 44)
+    -- Label自动缩字发生在Render内，必须在真实布局/绘制后读本帧字号与文字框。
+    -- textAlign=right：值右缘固定，图标随实际显示宽度贴在值左侧4px。
+    local props = header.power:GetProps()
+    local layout = header.power:GetAbsoluteLayout()
+    local rect = header.power.autoFitRect_ or header.power.effectiveTextRect_ or layout
+    local fit = header.power.autoFitCache_
+    nvgFontFace(vg, UI.Theme.FontFace(props.fontFamily, props.fontWeight))
+    nvgFontSize(vg, fit and fit.fontSize or UI.Theme.FontSize(props.fontSize))
+    nvgTextLetterSpacing(vg, props.letterSpacing or 0)
+    local textWidth = nvgTextBounds(vg, 0, 0, header.power.displayText_ or value, nil, nil, false)
+    local iconX = x + rect.x + rect.w - textWidth - 4 - 12
+    local iconY = y + rect.y + rect.h * .5
     nvgRestore(vg)
+    return iconX, iconY
 end
 
 function M.getSortGeometry()

@@ -177,6 +177,85 @@ function ETS.getName(heroId)
     return NAMES[toHeroId(heroId)] or ""
 end
 
+-- 阶段状态只展示真实持久字段/现有系数，不借用觉醒门禁或编造战斗临时值。
+local STAGE_STATUS = {
+    [1] = {
+        [1] = function(e, fmt) return fmt("生命上限 +%d", e.stacks) end,
+        [2] = function(e, fmt) return fmt("魔攻 +%.1f", e.burnKills * 0.2) end,
+        [3] = function(e, fmt) return fmt("物攻 +%.1f", e.stacks * 0.2) end,
+        [4] = function(e, fmt) return fmt("生命上限 +%.1f", e.stacks * 0.5) end,
+        [5] = function(e, fmt) return fmt("护甲 +%.1f", e.stacks * 0.2) end,
+        [6] = function(e, fmt) return fmt("魔攻 +%.1f", e.shockKills * 0.2) end,
+        [7] = function(e, fmt) return fmt("连击率 +%.1f%%", e.stacks * 0.1) end,
+        [8] = function(e, fmt) return fmt("全伤害 +%.2f%%", e.stacks * 0.15) end,
+        [9] = function(e, fmt) return fmt("魂火 +%.2f", e.overflowCount * 0.05) end,
+        [10] = function(e, fmt) return fmt("生命上限 +%d", e.shareCount * 3) end,
+        [11] = function(e, fmt) return fmt("物攻 +%.1f", e.stacks * 0.3) end,
+        [12] = function(e, fmt)
+            return fmt("魔攻 +%.1f · 累计冰冻成长 +%.2f%%（总概率上限80%%）", e.stacks * 0.2, e.stacks * 0.05)
+        end,
+        [13] = function(e, fmt) return fmt("物攻 +%.1f", e.stacks * 0.25) end,
+        [14] = function(e, fmt) return fmt("双攻 +%.1f%%", e.stacks * 0.1) end,
+        [15] = function(e, fmt)
+            return fmt("生命上限 +%d · 累计复活成长 +%.1f%%（总概率上限80%%）", e.stacks * 2, e.stacks * 0.5)
+        end,
+        [16] = function(e, fmt) return fmt("飞剑系数 +%.1f%%", e.swordStacks * 0.2) end,
+        [17] = function(e, fmt) return fmt("魔攻 +%.1f", e.stacks * 0.2) end,
+        [18] = function(e, fmt) return fmt("暴击率 +%.1f%%", e.stacks * 0.1) end,
+        [19] = function(e, fmt) return fmt("魂火 +%.2f", e.stacks * 0.05) end,
+        [20] = function(e, fmt) return fmt("星门伤害 +%.1f%%", e.gateStacks * 0.3) end,
+        [21] = function(e, fmt) return fmt("氮气率 +%.2f%%", e.nitroKills * 0.05) end,
+        [22] = function(e, fmt)
+            return fmt("累计课时缩短 %.2f（最短8次攻击）", math.min(12, e.gatlingKills * 0.05))
+        end,
+        [23] = function(e, fmt) return fmt("护盾上限 +%d", e.shieldStacks) end,
+        [24] = function(e, fmt) return fmt("生命上限 +%d", e.stacks) end,
+        [25] = function(e, fmt) return fmt("物攻 +%.1f", e.stacks * 0.3) end,
+    },
+    [2] = {
+        [1] = function(e, fmt) return fmt("图鉴 %d/8", biteCount(e)) end,
+        [3] = function(e, fmt) return fmt("预存精准 %d/5", e.preciseStored) end,
+        [4] = function(e, fmt) return fmt("武德库存 %d", e.blockBank) end,
+        [5] = function(e, fmt) return fmt("开场甲片 %d", e.conquerCarry) end,
+        [7] = function(e, fmt) return fmt("预存光线 %d/3", e.beamCharges) end,
+        [8] = function(e, fmt) return fmt("仇种 %d/8", mapCount(e.markTypes)) end,
+        [11] = function(e, fmt) return fmt("斩影 %d/4", e.slashShadows) end,
+        [12] = function(e, fmt) return fmt("冰雕 %d/3", e.iceStatues) end,
+        [13] = function(e, fmt)
+            return fmt("分裂击杀 %d · 额外弹射 +%d", e.splitKills, math.min(5, math.floor(e.splitKills / 8)))
+        end,
+        [15] = function(e, fmt) return fmt("预存票 %d", mapCount(e.tickets)) end,
+        [22] = function(e, fmt) return fmt("预存连打 %d/10", math.min(10, math.floor(e.gatlingKills / 8))) end,
+    },
+    -- 蜕变只有条件/形态说明，无独立持久数值；正文由 AwakeningConfig 展示。
+}
+
+local function stageStatusFromData(heroId, stage, data, formatter)
+    local statuses = STAGE_STATUS[stage]
+    local format = statuses and statuses[heroId]
+    return format and format(data, formatter or string.format) or ""
+end
+
+--- 只读阶段状态：新阶段1=初醒、2=共鸣、3=蜕变；无数值状态返回空串。
+--- 显式 extra（含 false）只规范化复制，不读 owned/觉醒/存档，不写回。
+--- 省略 extra 可读取当前 owned 的字段，但仍仅复制；解锁门禁由调用方判断。
+---@param heroId number
+---@param stage number
+---@param extra table|nil|boolean
+---@return string
+function ETS.getStageStatus(heroId, stage, extra)
+    heroId = toHeroId(heroId)
+    if not NAMES[heroId] or not STAGE_STATUS[stage] or not STAGE_STATUS[stage][heroId] then return "" end
+    local raw = extra
+    if extra == nil then
+        local ok, CP = pcall(require, "ui.character.panel.CharacterPanel")
+        local owned = ok and CP and CP.getOwnedHero and CP.getOwnedHero(heroId)
+        raw = owned and owned.extraTalent or nil
+    end
+    local I18n = require("core.I18n")
+    return stageStatusFromData(heroId, stage, ETS.normalize(type(raw) == "table" and raw or nil), I18n.format)
+end
+
 local function lockedTag(awk, node, text)
     if awkHas(awk, node) then return text end
     return "【未解锁】" .. text
@@ -196,43 +275,43 @@ function ETS.getStatusLine(heroId, extra)
     local lines = {
         [1] = function()
             return string.format("%s · %s · %s",
-                lockedTag(awk, 1, string.format("生命上限 +%d", extra.stacks)),
+                lockedTag(awk, 1, stageStatusFromData(heroId, 1, extra)),
                 lockedTag(awk, 4, string.format("图鉴 %d/8", biteCount(extra))),
                 n7 and "全系撕咬" or "【未解锁】全系撕咬")
         end,
         [2] = function()
             return string.format("%s · %s",
-                lockedTag(awk, 1, string.format("魔攻 +%.1f", extra.burnKills * 0.2)),
+                lockedTag(awk, 1, stageStatusFromData(heroId, 1, extra)),
                 lockedTag(awk, 4, string.format("火种 %d/4", math.min(4, math.floor(extra.burnKills / 5)))))
         end,
         [3] = function()
             return string.format("%s · %s",
-                lockedTag(awk, 1, string.format("物攻 +%.1f", extra.stacks * 0.2)),
+                lockedTag(awk, 1, stageStatusFromData(heroId, 1, extra)),
                 lockedTag(awk, 4, string.format("预存精准 %d/5", extra.preciseStored)))
         end,
         [4] = function()
             return string.format("%s · %s",
-                lockedTag(awk, 1, string.format("生命上限 +%.1f", extra.stacks * 0.5)),
+                lockedTag(awk, 1, stageStatusFromData(heroId, 1, extra)),
                 lockedTag(awk, 4, string.format("武德库存 %d", extra.blockBank)))
         end,
         [5] = function()
             return string.format("%s · %s",
-                lockedTag(awk, 1, string.format("护甲 +%.1f", extra.stacks * 0.2)),
+                lockedTag(awk, 1, stageStatusFromData(heroId, 1, extra)),
                 lockedTag(awk, 4, string.format("开场甲片 %d", extra.conquerCarry)))
         end,
         [6] = function()
             return string.format("%s · %s",
-                lockedTag(awk, 1, string.format("魔攻 +%.1f", extra.shockKills * 0.2)),
+                lockedTag(awk, 1, stageStatusFromData(heroId, 1, extra)),
                 n4 and "电跳邻" or "【未解锁】安可回路")
         end,
         [7] = function()
             return string.format("%s · %s",
-                lockedTag(awk, 1, string.format("连击率 +%.1f%%", extra.stacks * 0.1)),
+                lockedTag(awk, 1, stageStatusFromData(heroId, 1, extra)),
                 lockedTag(awk, 4, string.format("预存光线 %d/3", extra.beamCharges)))
         end,
         [8] = function()
             return string.format("%s · %s",
-                lockedTag(awk, 1, string.format("全伤害 +%.2f%%", extra.stacks * 0.15)),
+                lockedTag(awk, 1, stageStatusFromData(heroId, 1, extra)),
                 lockedTag(awk, 4, string.format("仇种 %d/8", mapCount(extra.markTypes))))
         end,
         [9] = function()
@@ -242,12 +321,12 @@ function ETS.getStatusLine(heroId, extra)
         end,
         [10] = function()
             return string.format("%s · %s",
-                lockedTag(awk, 1, string.format("生命上限 +%d", extra.shareCount * 3)),
+                lockedTag(awk, 1, stageStatusFromData(heroId, 1, extra)),
                 lockedTag(awk, 4, string.format("驻留门 %d/3", math.min(3, math.floor(extra.shareCount / 8)))))
         end,
         [11] = function()
             return string.format("%s · %s",
-                lockedTag(awk, 1, string.format("物攻 +%.1f", extra.stacks * 0.3)),
+                lockedTag(awk, 1, stageStatusFromData(heroId, 1, extra)),
                 lockedTag(awk, 4, string.format("斩影 %d/4", extra.slashShadows)))
         end,
         [12] = function()
@@ -259,12 +338,12 @@ function ETS.getStatusLine(heroId, extra)
         [13] = function()
             local extraBounces = n4 and math.min(5, math.floor(extra.splitKills / 8)) or 0
             return string.format("%s · %s%s",
-                lockedTag(awk, 1, string.format("物攻 +%.1f", extra.stacks * 0.25)),
+                lockedTag(awk, 1, stageStatusFromData(heroId, 1, extra)),
                 lockedTag(awk, 4, string.format("分裂击杀 %d · 额外弹射 +%d", extra.splitKills, extraBounces)),
                 n7 and " · 环绕进化" or "")
         end,
         [14] = function()
-            return lockedTag(awk, 1, string.format("双攻 +%.1f%%", extra.stacks * 0.1))
+            return lockedTag(awk, 1, stageStatusFromData(heroId, 1, extra))
         end,
         [15] = function()
             local rate = math.min(80, extra.stacks * 0.5)
@@ -299,6 +378,10 @@ function ETS.getStatusLine(heroId, extra)
     local fn = lines[heroId]
     if fn then
         return tostring(fn())
+    end
+    -- 补齐原来缺失的五位英雄；旧角色的标签/阶段组合契约保持。
+    if heroId == 17 or heroId == 18 or heroId == 19 or heroId == 24 or heroId == 25 then
+        return lockedTag(awk, 1, stageStatusFromData(heroId, 1, extra))
     end
     return ""
 end

@@ -32,7 +32,7 @@ local function setup()
     end
     local text = source("boot.StandaloneBoot")
     local mapFirst = assert(text:find("local SCROLL_DROP_TO_REWARD =", 1, true))
-    local takeFirst = assert(text:find("local function takePendingFcRewards()", mapFirst, true))
+    local takeFirst = assert(text:find("local function takePendingFcRewards(deferNotify)", mapFirst, true))
     local takeLast = assert(text:find("\nend", takeFirst, true)) + 4
     local applyFirst = assert(text:find("    local function applyKillDrop(data)", 1, true))
     local applyLast = assert(text:find("    BattleTriPage.setOnStageClear(", applyFirst, true))

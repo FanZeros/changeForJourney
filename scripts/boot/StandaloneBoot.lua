@@ -527,8 +527,8 @@ function M.run(rt)
     end)
 
     -- 遗匣领取统一刷新：装备先入包，再显示实际到账的内容。
-    -- seedIndex=单件领取；quality+setFilter=批量领取的筛选范围（空集合=不限制）。
-    local function claimLoot(seedIndex, quality, setFilter)
+    -- seedIndex=单件领取；批量品质/套装两参兼容，追加独立部位/类型快照。
+    local function claimLoot(seedIndex, quality, setFilter, detailFilter)
         local lootboxData = ClientDispatcher.get("lootbox")
         local equipData = ClientDispatcher.get("equipment")
         if not lootboxData or not equipData then return end
@@ -538,7 +538,7 @@ function M.run(rt)
         if seedIndex then
             claimed, bagFull = LootBoxSystem.claimGroup(lootboxData, seedIndex, equipData)
         else
-            claimed, bagFull = LootBoxSystem.claimAll(lootboxData, equipData, quality, setFilter)
+            claimed, bagFull = LootBoxSystem.claimAll(lootboxData, equipData, quality, setFilter, detailFilter)
         end
         ClientDispatcher.notifySubscribers("lootbox")
         if #claimed > 0 then
@@ -555,17 +555,19 @@ function M.run(rt)
         print("[Standalone] 遗匣领取: claimed=" .. #claimed
             .. " remaining=" .. LootBoxSystem.getTotalCount(lootboxData))
     end
-    LootBox.setOnClaimAll(function(quality, setFilter) claimLoot(nil, quality, setFilter) end)
+    LootBox.setOnClaimAll(function(quality, setFilter, detailFilter)
+        claimLoot(nil, quality, setFilter, detailFilter)
+    end)
     LootBox.setOnClaimOne(claimLoot)
 
-    local function decomposeLoot(seedIndex, quality, setFilter)
+    local function decomposeLoot(seedIndex, quality, setFilter, detailFilter)
         local lootboxData = ClientDispatcher.get("lootbox")
         if not lootboxData then return end
         local essence, pieces
         if seedIndex then
             essence, pieces = LootBoxSystem.decomposeOne(lootboxData, seedIndex)
         else
-            essence, pieces = LootBoxSystem.decomposeAll(lootboxData, quality, setFilter)
+            essence, pieces = LootBoxSystem.decomposeAll(lootboxData, quality, setFilter, detailFilter)
         end
         if pieces <= 0 then return end
         GameState.setEssence(GameState.getEssence() + essence)
@@ -574,7 +576,9 @@ function M.run(rt)
             LootBoxPage.showToast(string.format(I18n.lookup("回收 %d 件装备 · 精华 +%d"), pieces, essence))
         end
     end
-    LootBox.setOnDecomposeAll(function(quality, setFilter) decomposeLoot(nil, quality, setFilter) end)
+    LootBox.setOnDecomposeAll(function(quality, setFilter, detailFilter)
+        decomposeLoot(nil, quality, setFilter, detailFilter)
+    end)
     LootBox.setOnDecomposeOne(decomposeLoot)
 
     -- 5.249 自动分解设置回调：[分解入仓 0929] 打开仓库分解 tab 并弹出自动分解设置

@@ -24,7 +24,6 @@ local BattleStats       = require("systems.BattleStats")
 local I18n              = require("core.I18n")
 local RCH               = require("systems.RelicConditionHandler")
 local BattleMountScope  = require("ui.battle.scene.BattleMountScope")
-local BattleSpeed       = require("ui.battle.stage.BattleSpeed")
 
 -- 只在显示边界翻译；驱动进度、源关卡名和地图缓存仍使用原始配置。
 local function stageDisplayName(stageId)
@@ -97,38 +96,17 @@ function BattleTriPage.isEntryPrepared()
         CharacterPanel.getTeamSignature)
 end
 
---- 全局倍率以账户最高难度解锁，不随某队选旧关/模态按钮隐藏而降速。
+-- 旧倍率查询仅为兼容；难度、账户账本与模态状态都不能开启战斗加速。
 function BattleTriPage.getMaxUnlockedBattleSpeed()
-    local Scene = require("ui.battle.scene.BattleScene")
-    return BattleSpeed.getAccountMaxUnlocked(ClientDispatcher.get("battle"),
-        Scene.getMaxStageId(), Scene.getClearedStages())
+    return 1
 end
 
 function BattleTriPage.isSpeedButtonVisible()
-    if not battleReady or not isOpen_ or terminalRaid
-        or BattleTriPage.getMaxUnlockedBattleSpeed() <= 1
-        or SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
-        or TerminalConfirmDialog.isOpen() or RewardPopup.currentRowTag()
-        or EquipmentBag.shouldBattleOverlay()
-        or require("ui.story.gate.LetterIntro").isOpen()
-        or require("ui.story.gate.IntroCutscene").isActive()
-        or require("ui.story.ScenarioDialogue").isActive() then return false end
-    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
-    for row = 1, math.min(COL_COUNT, unlocked) do
-        local drv = drivers[row]
-        if drv and drv.active and #drv.allies > 0
-            and (drv.introTimer or 0) <= 0 and (drv.marchTimer or 0) <= 0 then return true end
-    end
     return false
 end
 
---- 原始真实 dt 入口；Page.update 每帧只解析一次，再把同一值传给三队与共享计时。
 function BattleTriPage.getBattleLogicDt(dt)
-    local Scene = require("ui.battle.scene.BattleScene")
-    local logicDt, speed = BattleSpeed.getLogicDt(dt, Scene.battleSpeed,
-        BattleTriPage.getMaxUnlockedBattleSpeed(), true)
-    Scene.battleSpeed = speed
-    return logicDt
+    return dt
 end
 
 --- 存档阵容晚于战斗页到达时，清掉已记住的编队，下一帧按真实槽位重建。
@@ -553,7 +531,8 @@ function BattleTriPage.update(dt)
     BattleLayout.setMode("strip")
     -- 三行卡面走在场/待补位缓存，不能在攻击期间继续解码全图鉴大图。
     local unlocked = ensureDrivers()
-    local logicDt = BattleTriPage.getBattleLogicDt(dt)
+    -- 同一真实 dt 传给三队与共享计时，不读取旧倍率字段或兼容接口。
+    local logicDt = dt
     -- 帧开始仍在任一有效战线入场时，全协同只推进视觉，不推进攻击或共享用时。
     local raidAtFrameStart = terminalRaid
     local waitingReincarnation = raidAtFrameStart and raidAtFrameStart.settlementStarted and raidAtFrameStart.won
@@ -849,7 +828,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         -- 普通战斗给右上 HUD 留空；按最终译文测宽，不改行高/按钮热区。
         local labelW = iw - 56
         if not terminalRaid and row <= unlocked then
-            local hudCount = BattleScene.isSpeedButtonVisible() and 5 or 4
+            local hudCount = 4
             labelW = math.max(1, iw - 116 - (hudCount - 1) * 58)
         end
         local labelTextW = nvgTextBounds(vg, 0, 0, stageText, nil)
@@ -1018,7 +997,7 @@ function BattleTriPage.gotoTeamStage(teamIdx, stageId)
     return true
 end
 
---- 每行 HUD 从右上角往左排：速度(可选) / 扫荡 / 统计 / 选关 / 音效。
+--- 每行 HUD 从右上角往左排：扫荡 / 统计 / 选关 / 音效。
 --- 由宿主在 BattleTriPage.draw 之后调用——保证按钮位于一切战斗背景/框柱之上（避免穿帮）。
 --- 任一模态对话框打开时不绘制（弹窗压暗与本体在 draw 内已覆盖按钮位）。
 --- 已解锁的其他队伍与第一行保持同一套按钮。
@@ -1028,7 +1007,6 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         or TerminalConfirmDialog.isOpen() or terminalRaid then
         return
     end
-    local BattleScene = require("ui.battle.scene.BattleScene")
     local ix1, iy1, iw1, ih1 = interiorRect(1, logicalW, logicalH)
     local hudScale = 0.44  -- 原 0.55 的约 80%
     local hudPad = 4
@@ -1036,13 +1014,8 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
     local hudY = iy1 + hudHalf + 2
     local hudGap = 58
     local hudShift = 17  -- 约 0.3 个按钮宽，避免贴出右框
-    local showSpeed = BattleScene.isSpeedButtonVisible()
     local cursorX = ix1 + iw1 - hudPad - hudHalf - hudShift
-    local hudSpeedX, hudSweepX, hudStatsX, hudStageX, hudSoundX
-    if showSpeed then
-        hudSpeedX = cursorX
-        cursorX = cursorX - hudGap
-    end
+    local hudSweepX, hudStatsX, hudStageX, hudSoundX
     hudSweepX = cursorX
     cursorX = cursorX - hudGap
     hudStatsX = cursorX
@@ -1050,14 +1023,6 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
     hudStageX = cursorX
     cursorX = cursorX - hudGap
     hudSoundX = cursorX
-    if showSpeed then
-        nvgSave(vg)
-        nvgTranslate(vg, hudSpeedX, hudY)
-        nvgScale(vg, hudScale, hudScale)
-        nvgTranslate(vg, -987, -311)
-        BattleScene.drawSpeedButton(vg)
-        nvgRestore(vg)
-    end
     do
         nvgSave(vg)
         nvgTranslate(vg, hudSweepX, hudY)
@@ -1097,11 +1062,7 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         local ix, iy, iw = interiorRect(row, logicalW, logicalH)
         local rowY = iy + hudHalf + 2
         local rowCursor = ix + iw - hudPad - hudHalf - hudShift
-        local rowSpeedX, rowSweepX, rowStatsX, rowStageX, rowSoundX
-        if showSpeed then
-            rowSpeedX = rowCursor
-            rowCursor = rowCursor - hudGap
-        end
+        local rowSweepX, rowStatsX, rowStageX, rowSoundX
         rowSweepX = rowCursor
         rowCursor = rowCursor - hudGap
         rowStatsX = rowCursor
@@ -1109,14 +1070,6 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         rowStageX = rowCursor
         rowCursor = rowCursor - hudGap
         rowSoundX = rowCursor
-        if showSpeed then
-            nvgSave(vg)
-            nvgTranslate(vg, rowSpeedX, rowY)
-            nvgScale(vg, hudScale, hudScale)
-            nvgTranslate(vg, -987, -311)
-            BattleScene.drawSpeedButton(vg)
-            nvgRestore(vg)
-        end
         do
             nvgSave(vg)
             nvgTranslate(vg, rowSweepX, rowY)
@@ -1194,8 +1147,6 @@ function BattleTriPage.handleInput(wx, wy)
         RewardPopup.handleInputRegion(wx, wy, ix1, iy1, iw1, ih1)
         return true
     end
-    local bs = require("ui.battle.scene.BattleScene")
-
     -- 对话框打开: 逆映射到设计空间（与 2 倍渲染缩放一致）
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
         local dx, dy = dialogToDesign(wx, wy)
@@ -1214,13 +1165,8 @@ function BattleTriPage.handleInput(wx, wy)
     local hudY = iy1 + hudHalf + 2
     local hudGap = 58
     local hudShift = 17  -- 与 drawHud 一致
-    local showSpeed = bs.isSpeedButtonVisible()
     local cursorX = ix1 + iw1 - hudPad - hudHalf - hudShift
-    local hudSpeedX, hudSweepX, hudStatsX, hudStageX, hudSoundX
-    if showSpeed then
-        hudSpeedX = cursorX
-        cursorX = cursorX - hudGap
-    end
+    local hudSweepX, hudStatsX, hudStageX, hudSoundX
     hudSweepX = cursorX
     cursorX = cursorX - hudGap
     hudStatsX = cursorX
@@ -1229,10 +1175,6 @@ function BattleTriPage.handleInput(wx, wy)
     cursorX = cursorX - hudGap
     hudSoundX = cursorX
     local hitW, hitH = 65 * hudScale, 72 * hudScale
-    if showSpeed and math.abs(wx - hudSpeedX) <= hitW and math.abs(wy - hudY) <= hitH then
-        bs.handleSpeedButtonInput(987 + (wx - hudSpeedX) / hudScale, 311 + (wy - hudY) / hudScale)
-        return true
-    end
     if math.abs(wx - hudSweepX) <= hitW and math.abs(wy - hudY) <= hitH then
         -- 驱动 stageId 是已到达关卡；pendingStageId 仅是行军预约，不能冒充当前。
         SweepDialog.handleButtonInput(971 + (wx - hudSweepX) / hudScale, 2115 + (wy - hudY) / hudScale,
@@ -1258,11 +1200,7 @@ function BattleTriPage.handleInput(wx, wy)
         local ix, iy, iw = interiorRect(row, logicalW, logicalH)
         local rowY = iy + hudHalf + 2
         local rowCursor = ix + iw - hudPad - hudHalf - hudShift
-        local rowSpeedX, rowSweepX, rowStatsX, rowStageX, rowSoundX
-        if showSpeed then
-            rowSpeedX = rowCursor
-            rowCursor = rowCursor - hudGap
-        end
+        local rowSweepX, rowStatsX, rowStageX, rowSoundX
         rowSweepX = rowCursor
         rowCursor = rowCursor - hudGap
         rowStatsX = rowCursor
@@ -1270,10 +1208,6 @@ function BattleTriPage.handleInput(wx, wy)
         rowStageX = rowCursor
         rowCursor = rowCursor - hudGap
         rowSoundX = rowCursor
-        if showSpeed and math.abs(wx - rowSpeedX) <= hitW and math.abs(wy - rowY) <= hitH then
-            bs.handleSpeedButtonInput(987 + (wx - rowSpeedX) / hudScale, 311 + (wy - rowY) / hudScale)
-            return true
-        end
         if math.abs(wx - rowSweepX) <= hitW and math.abs(wy - rowY) <= hitH then
             SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale,
                 row, BattleTriPage.getTeamStageId(row))

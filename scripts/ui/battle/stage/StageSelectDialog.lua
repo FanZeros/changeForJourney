@@ -92,7 +92,7 @@ end
 
 local StageSelectDialog = {}
 local onDungeonSelect = nil ---@type fun(dungeonId: string, teamIdx: number, floor: number): boolean|nil
-local TAB_Y, TAB_W, TAB_H = 782, 90, 46
+local TAB_Y, TAB_W, TAB_H = 808, 90, 46
 local MAIN_TAB_X, DUNGEON_TAB_X = 150, 250
 
 function StageSelectDialog.setOnDungeonSelect(callback)
@@ -717,7 +717,7 @@ local function drawTowerPreview(vg, entry, y, locked, dungeonData)
         TowerText.text("第%d-%d层 · 每层1波", reward.runStartFloor, reward.runEndFloor), vw - 16, 24, 1,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color, color, color, 2)
     nvgRestore(vg)
-    RewardPreview.draw(vg, reward, D.MID_X + 8, y + 92, D.MID_W - 16, 72, locked)
+    RewardPreview.draw(vg, reward, D.MID_X + 8, y + 104, D.MID_W - 16, 44, locked)
 end
 
 ---@param vg any

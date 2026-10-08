@@ -1,86 +1,35 @@
 -- ============================================================================
--- BattleSpeed - 首通战斗倍速按钮与逻辑 dt
--- 从 BattleScene 抽出；对外 API 仍由 BattleScene 包装（BattleTriPage 依赖）
+-- BattleSpeed - 已移除战斗倍速的旧接口兼容层
+-- 不读取难度或账户进度，不绘制按钮，不拦截点击；战斗始终使用真实 dt。
 -- ============================================================================
-
-local BattleDraw = require("ui.battle.scene.BattleDraw")
-local SC = require("config.StageConfig")
 
 local M = {}
 
-local SPEED_CX, SPEED_CY = 987, 311
-local SPEED_W, SPEED_H = 130, 143
-local TERMINAL_IDS = {
-    SC.TERMINAL_NORMAL, SC.TERMINAL_HARD, SC.TERMINAL_NIGHTMARE,
-    SC.TERMINAL_HELL, SC.TERMINAL_PURGATORY, SC.TERMINAL_TORMENT,
-    SC.TERMINAL_TORMENT2, SC.TERMINAL_TORMENT3, SC.TERMINAL_TORMENT4,
-    SC.TERMINAL_TORMENT5, SC.TERMINAL_ANNIHILATION, SC.TERMINAL_ANNIHILATION2,
-    SC.TERMINAL_ANNIHILATION3, SC.TERMINAL_ANNIHILATION4,
-}
-
---- 按已解锁难度返回最高倍速
 ---@param difficulty string|nil
 ---@return number
 function M.getMaxUnlocked(difficulty)
-    if difficulty == SC.DIFFICULTY_HELL or difficulty == SC.DIFFICULTY_NIGHTMARE
-        or difficulty == SC.DIFFICULTY_PURGATORY or difficulty == SC.DIFFICULTY_TORMENT
-        or difficulty == SC.DIFFICULTY_TORMENT2 or difficulty == SC.DIFFICULTY_TORMENT3
-        or difficulty == SC.DIFFICULTY_TORMENT4 or difficulty == SC.DIFFICULTY_TORMENT5
-        or difficulty == SC.DIFFICULTY_ANNIHILATION or difficulty == SC.DIFFICULTY_ANNIHILATION2
-        or difficulty == SC.DIFFICULTY_ANNIHILATION3 or difficulty == SC.DIFFICULTY_ANNIHILATION4
-        or difficulty == SC.DIFFICULTY_ANNIHILATION5 then
-        return 2.0
-    elseif difficulty == SC.DIFFICULTY_HARD then
-        return 1.5
-    end
-    return 1.0
+    return 1
 end
 
---- 解锁属于账户进度，不能随选旧关或过场的末关安全存档降级。
---- 旧档可能只有终焉通关账本：严格 true 的终焉对应下一难度，不新增持久字段。
 ---@param battle table|nil
 ---@param memoryMaxStageId number|nil
 ---@param memoryCleared table|nil
 ---@return number
 function M.getAccountMaxUnlocked(battle, memoryMaxStageId, memoryCleared)
-    local data = type(battle) == "table" and battle or {}
-    local savedMax = tonumber(data.maxStageId) or tonumber(data.currentStageId) or 0
-    local maxSpeed = math.max(M.getMaxUnlocked(SC.getDifficulty(savedMax)),
-        M.getMaxUnlocked(SC.getDifficulty(tonumber(memoryMaxStageId) or 0)))
-    local savedCleared = type(data.clearedStages) == "table" and data.clearedStages or {}
-    local localCleared = type(memoryCleared) == "table" and memoryCleared or {}
-    for _, terminalId in ipairs(TERMINAL_IDS) do
-        if savedCleared[terminalId] == true or savedCleared[tostring(terminalId)] == true
-            or localCleared[terminalId] == true or localCleared[tostring(terminalId)] == true then
-            local nextDifficulty = SC.getNextDifficulty(SC.getDifficulty(terminalId))
-            maxSpeed = math.max(maxSpeed, M.getMaxUnlocked(nextDifficulty))
-        end
-    end
-    return maxSpeed
+    return 1
 end
 
 ---@param speed number
 ---@return string
 function M.getSpeedText(speed)
-    if speed == 1.5 then
-        return "X1.5"
-    elseif speed >= 2.0 then
-        return "X2"
-    end
     return "X1"
 end
 
---- 在 1.0 → 1.5 → 2.0 → 1.0 间循环（受 maxSpeed 限制）
 ---@param speed number
 ---@param maxSpeed number
 ---@return number
 function M.cycle(speed, maxSpeed)
-    if speed < 1.5 and maxSpeed >= 1.5 then
-        return 1.5
-    elseif speed < 2.0 and maxSpeed >= 2.0 then
-        return 2.0
-    end
-    return 1.0
+    return 1
 end
 
 ---@param dt number
@@ -89,35 +38,23 @@ end
 ---@param visible boolean
 ---@return number logicDt, number clampedSpeed
 function M.getLogicDt(dt, speed, maxSpeed, visible)
-    local s = speed
-    if s > maxSpeed then
-        s = maxSpeed
-    end
-    if visible then
-        return dt * s, s
-    end
-    return dt, s
+    return dt, 1
 end
 
 ---@param dx number
 ---@param dy number
 ---@return boolean
 function M.hitTest(dx, dy)
-    return math.abs(dx - SPEED_CX) <= (SPEED_W * 0.5) and math.abs(dy - SPEED_CY) <= (SPEED_H * 0.5)
+    return false
 end
 
----@param vg userdata
+---@param vg any
 ---@param img number
 ---@param speed number
 ---@param visible boolean
+---@return boolean
 function M.draw(vg, img, speed, visible)
-    if not visible then return end
-    local alpha = speed > 1.0 and 1.0 or 0.82
-    BattleDraw.drawImageCentered(vg, img, SPEED_CX, SPEED_CY, SPEED_W, SPEED_H, alpha)
-    BattleDraw.drawTextStroke(vg, SPEED_CX, 305,
-        M.getSpeedText(speed), 52,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 6,
-        { strokeColor = { 0x36, 0x77, 0x78 } })
+    return false
 end
 
 return M

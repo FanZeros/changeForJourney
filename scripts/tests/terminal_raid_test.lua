@@ -535,6 +535,10 @@ local function testPageNoTimeLimit()
         for _, won in ipairs({ true, false }) do
             case("终焉不限时后" .. (won and "胜利" or "全灭") .. stageId, function()
                 local Page, drivers, raid, observed = openTestPage(nil, stageId)
+                patch(require("ui.battle.scene.BattleScene"), "battleSpeed", 3)
+                check(Page.getBattleLogicDt(.25) == .25 and not Page.isSpeedButtonVisible(),
+                    "终焉真实Page兼容接口不读取旧三倍速字段")
+                patch(Page, "getBattleLogicDt", function() error("共享用时不得依赖旧倍率解析") end)
                 -- 仅拉长夹具攻击间隔，真实驱动仍推进状态、攻击进度与增伤时钟。
                 for row = 1, 3 do
                     for _, unit in ipairs({ drivers[row].allies[1], table.unpack(drivers[row].enemies) }) do
@@ -687,7 +691,7 @@ local function singleSceneFixture()
     deps["ui.battle.scene.BattleScenePhases"] = compileModule("ui.battle.scene.BattleScenePhases", env)
     local Scene = compileModule("ui.battle.scene.BattleScene", env)
     Scene.updateTriReincarnation = function() return false end
-    Scene.getBattleLogicDt = function(dt) return dt end
+    -- 不替换真实时钟入口，避免掩盖Scene倍速回归。
     Scene.setOnFirstClear(function() observed.firstClears = observed.firstClears + 1 end)
     Scene.setOnAllDead(function() observed.allDead = observed.allDead + 1 end)
     local function enter(stageId)
@@ -785,9 +789,33 @@ local function testOtherTimeLimitsUnchanged()
     end
     local towerEnv = setmetatable({ require = function(name)
         if name == "ui.dungeon.DungeonBattle" then return Dungeon end
-        if name == "core.PlayerStore" then return { Get = function() return { maxStageId = 101 } end } end
+        if name == "core.PlayerStore" then return { Get = function() return { maxStageId = 34505,
+            clearedStages = { [tostring(SC.TERMINAL_HARD)] = true } } end } end
         return require(name)
     end }, { __index = _G })
+    -- 图形叶子用spy，Tower.draw/handleClick仍为完整生产实现。
+    local towerTexts = {}
+    local realPage = require("ui.battle.tri.BattleTriPage")
+    local view = { init = function() end, draw = function() end }
+    local pageView = { init = function() end, drawL0 = function() end, drawL1Underlay = function() end,
+        getInteriorRectFor = realPage.getInteriorRectFor }
+    for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgIntersectScissor", "nvgScissor",
+        "nvgTranslate", "nvgScale", "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgFillColor", "nvgText" }) do
+        towerEnv[name] = function() end
+    end
+    towerEnv.nvgRGBA = function(...) return { ... } end
+    local baseRequire = towerEnv.require
+    towerEnv.require = function(name)
+        if name == "ui.battle.tri.BattleTriPage" then return pageView end
+        if name == "ui.battle.scene.BattleView" then return view end
+        if name == "core.DrawUtil" then return { drawTextStroke = function(_, _, _, text)
+            towerTexts[#towerTexts + 1] = text
+        end } end
+        return baseRequire(name)
+    end
+    patch(BattleEffects, "init", function() end)
+    patch(PS, "init", function() end)
+    patch(require("ui.battle.popup.BattleResultPanel"), "init", function() end)
     local Tower = compileModule("ui.tower.TowerTriBattle", towerEnv)
     defer(Tower.forceClose)
     local teams, lanes = {}, {}
@@ -799,7 +827,39 @@ local function testOtherTimeLimitsUnchanged()
     end
     patch(require("ui.tower.TowerWaveSplit"), "splitToLanes", function() return lanes end)
     Tower.open({ teamAllies = teams, data = { dungeonId = "babel_tower", monsters = { 1 }, floor = 1 } })
-    Tower.update(limit - 1)
+    check(not Tower.cycleBattleSpeed(), "最高难度账户也不能切换塔倍速")
+    local towerState
+    for i = 1, 100 do
+        local name, value = debug.getupvalue(Tower.isOpen, i)
+        if name == "state" then towerState = value break end
+        if not name then break end
+    end
+    assert(towerState, "塔私有状态缺失")
+    towerState.battleSpeed = 3 -- 模拟旧运行态残留，生产update不得读取。
+    local originalCycle = Tower.cycleBattleSpeed
+    Tower.cycleBattleSpeed = function() error("旧塔按钮不得命中切速入口") end
+    for _, size in ipairs({ {1920,1080}, {1280,800} }) do
+        Tower.draw({}, size[1], size[2])
+        local layout = require("ui.tower.TowerLayout").compute(size[1], size[2])
+        check(Tower.handleClick(layout.center.x + layout.center.w - 70, 40, size[1], size[2])
+            and towerState.phase == "active" and not towerState.confirmOpen,
+            "旧塔倍速区域仅沿原整区防穿透，不切速或撤退")
+    end
+    for _, text in ipairs(towerTexts) do
+        check(not text:match("^X%d"), "真实塔HUD不绘制旧倍率标签")
+    end
+    Tower.cycleBattleSpeed = originalCycle
+    for row = 1, 3 do
+        teams[row][1].atkProgress = 0
+        teams[row][1].atkInterval = 1
+    end
+    Tower.update(.25)
+    check(Dungeon.getElapsed() == .25, "真实塔整层计时只推进四分之一秒")
+    for row = 1, 3 do
+        check(math.abs(teams[row][1].atkProgress - .25) < 1e-9, "真实塔队" .. row .. "攻击进度使用原dt")
+        teams[row][1].atkInterval = 1000000000
+    end
+    Tower.update(limit - 1 - .25)
     local resultPending = Dungeon.getResultState()
     check(not resultPending and not Dungeon.isTimeLimitExceeded(), "真实通天塔299秒不判负")
     Tower.update(1)
@@ -1181,64 +1241,91 @@ local function terminalFlowFixture(stageId)
         session = session, drivers = drivers, raid = raid, state = state, finishRaid = finishRaid, syncBattle = syncBattle }
 end
 
-local function testAccountSpeedUnlocks()
+local function testAccountSpeedRemoved()
     local Speed = require("ui.battle.stage.BattleSpeed")
-    check(Speed.getAccountMaxUnlocked(nil) == 1, "新档不提前解锁倍速")
-    check(Speed.getAccountMaxUnlocked({ maxStageId = TERMINAL }) == 1, "只抵达普通终焉不算通关")
-    check(Speed.getAccountMaxUnlocked({ maxStageId = SC.NORMAL_LAST_STAGE }) == 1,
-        "普通末关不提前解锁倍速")
-    for _, key in ipairs({ TERMINAL, tostring(TERMINAL) }) do
-        for _, value in ipairs({ false, 1, "true" }) do
-            check(Speed.getAccountMaxUnlocked({ maxStageId = SC.NORMAL_LAST_STAGE,
-                clearedStages = { [key] = value } }) == 1, "非严格true终焉账本不能解锁")
-        end
-    end
+    check(Speed.getAccountMaxUnlocked(nil) == 1, "新档兼容倍率恒为1")
     local difficulty = SC.DIFFICULTY_NORMAL
-    while SC.getNextDifficulty(difficulty) do
+    repeat
+        check(Speed.getMaxUnlocked(difficulty) == 1, "所有难度都不解锁倍速 " .. difficulty)
         local terminal = SC.getTerminalTempleId(difficulty)
-        local expected = difficulty == SC.DIFFICULTY_NORMAL and 1.5 or 2
-        for _, key in ipairs({ terminal, tostring(terminal) }) do
-            local battle = { currentStageId = SC.NORMAL_FIRST_STAGE, maxStageId = SC.getTerminalPrevStageId(terminal),
-                clearedStages = { [key] = true } }
-            local original = cjson.encode(battle)
-            check(Speed.getAccountMaxUnlocked(battle) == expected,
-                "终焉通关双键解锁下一难度倍速 " .. terminal)
-            check(cjson.encode(battle) == original, "倍速查询不修改旧档 " .. terminal)
-            local restored = cjson.decode(cjson.encode(battle))
-            check(Speed.getAccountMaxUnlocked(restored) == expected, "JSON重启保留倍速资格 " .. terminal)
-            check(Speed.getAccountMaxUnlocked(nil, SC.NORMAL_FIRST_STAGE, battle.clearedStages) == expected,
-                "内存终焉账本也可解锁 " .. terminal)
+        if terminal then
+            for _, key in ipairs({ terminal, tostring(terminal) }) do
+                local battle = { currentStageId = SC.NORMAL_FIRST_STAGE,
+                    maxStageId = SC.getTerminalPrevStageId(terminal), clearedStages = { [key] = true } }
+                local original = cjson.encode(battle)
+                check(Speed.getAccountMaxUnlocked(battle, 34505, battle.clearedStages) == 1,
+                    "终焉双键通关和最高内存关也不能加速 " .. terminal)
+                check(cjson.encode(battle) == original, "兼容查询不修改旧档 " .. terminal)
+                check(Speed.getAccountMaxUnlocked(cjson.decode(original)) == 1, "重启旧档仍为真实速度")
+            end
         end
         difficulty = SC.getNextDifficulty(difficulty)
+    until not difficulty
+    for _, speed in ipairs({ 1, 1.5, 2, 3, 10 }) do
+        check(Speed.cycle(speed, 10) == 1 and Speed.getSpeedText(speed) == "X1", "旧循环/标签不保留倍率")
+        for _, visible in ipairs({ false, true }) do
+            for _, dt in ipairs({ 0, 1 / 60, 0.25, 2 }) do
+                local logicDt, normalized = Speed.getLogicDt(dt, speed, 10, visible)
+                check(logicDt == dt and normalized == 1, "旧dt入口恒为原dt，不依赖visible或旧倍率")
+            end
+        end
     end
-    check(Speed.getAccountMaxUnlocked({ maxStageId = SC.TERMINAL_HARD }, SC.NIGHTMARE_FIRST_STAGE) == 2,
-        "分别解析终焉与最高关难度，不比较编号大小")
-    check(Speed.getAccountMaxUnlocked({ maxStageId = SC.NIGHTMARE_FIRST_STAGE }, SC.TERMINAL_NORMAL) == 2,
-        "旧当前终焉不降低账户最高倍速")
-    check(Speed.cycle(1, 1.5) == 1.5 and Speed.cycle(1.5, 1.5) == 1,
-        "普通终焉后仅开放1与1.5倍循环")
-    check(Speed.cycle(1, 2) == 1.5 and Speed.cycle(1.5, 2) == 2 and Speed.cycle(2, 2) == 1,
-        "困难终焉后开放1与1.5与2倍循环")
+    check(not Speed.hitTest(987, 311) and not Speed.hitTest(922, 239.5)
+        and not Speed.hitTest(1052, 382.5), "旧按钮中心和边界都不命中")
+    check(Speed.draw(nil, -1, 3, true) == false, "旧绘制接口不访问NanoVG或图标")
 
-    -- 提取正式副本/塔私有查询，不复制倍速实现、不启动页面或读写玩家存档。
-    for _, name in ipairs({ "ui.dungeon.DungeonBattleScene", "ui.tower.TowerTriBattle" }) do
-        local file = assert(cache:GetFile(name:gsub("%.", "/") .. ".lua"))
-        local lines = {}
-        while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
-        file:Dispose()
-        local source = table.concat(lines, "\n")
-        local first = assert(source:find("local function getMaxUnlockedBattleSpeed()", 1, true))
-        local last = assert(source:find("\nlocal function ", first + 1, true))
-        local battle = { maxStageId = SC.NORMAL_LAST_STAGE, clearedStages = { [tostring(TERMINAL)] = true } }
-        local env = setmetatable({ PlayerStore = { Get = function() return battle end }, StageConfig = SC },
-            { __index = _G })
-        local getter = assert(load(source:sub(first, last - 1) .. "\nreturn getMaxUnlockedBattleSpeed",
-            "@真实倍速查询:" .. name, "t", env))()
-        check(getter() == 1.5, name .. "旧普通终焉通关档解锁1.5倍")
-        battle = { maxStageId = SC.HARD_LAST_STAGE, clearedStages = { [tostring(SC.TERMINAL_HARD)] = true } }
-        check(getter() == 2, name .. "旧困难终焉通关档解锁2倍")
-        battle = { maxStageId = SC.NORMAL_FIRST_STAGE, clearedStages = {} }
-        check(getter() == 1, name .. "清档不继承其他账户倍速")
+    -- 使用真实Scene.update及公共战斗tick，不把时钟替为假实现。
+    patch(BC, "performAttack", function() end)
+    local Scene, observed, enter = singleSceneFixture()
+    for _, stageId in ipairs({ 101, SC.HARD_FIRST_STAGE, SC.NIGHTMARE_FIRST_STAGE, 34505 }) do
+        enter(stageId)
+        Scene.battleSpeed = 3
+        check(Scene.getMaxUnlockedBattleSpeed() == 1 and not Scene.isSpeedButtonVisible()
+            and Scene.getBattleLogicDt(.25) == .25 and not Scene.cycleBattleSpeed(), "真实Scene兼容接口恒为正常速度")
+        local unit = Scene.getAllies()[1]
+        unit.attrs.final[AD.ATK_INTERVAL], unit.attrs.final[AD.ATK_SPEED] = 1, 0
+        unit.atkInterval, unit._lastAttrInterval, unit.atkProgress = 1, 1, 0
+        local elapsed = 0
+        local originalTick = require("ui.battle.scene.BattleSceneTick").tick
+        local index = #restores
+        patch(require("ui.battle.scene.BattleSceneTick"), "tick", function(ctx, dt)
+            elapsed = elapsed + dt
+            return originalTick(ctx, dt)
+        end)
+        -- 旧作弊包装器即使留在兼容API上，真实update也不再经过它。
+        patch(Scene, "getBattleLogicDt", function() error("旧倍率入口不应被update调用") end)
+        Scene.update(.25)
+        check(elapsed == .25 and math.abs(unit.atkProgress - .25) < 1e-9
+            and observed.get("battleActive"), "真实Scene攻击进度及tick只推进真实四分之一秒 " .. stageId)
+        restoreTo(index)
+    end
+    check(not Scene.handleSpeedButtonInput(987, 311) and not Scene.drawSpeedButton(nil), "Scene旧绘制/命中接口为空操作")
+    -- 输入叶子设为不命中；只读真实handleInput，旧倍速分支不能吞掉空白点击。
+    for _, name in ipairs({ "ui.battle.popup.BattleResultPanel", "ui.battle.popup.TerminalConfirmDialog",
+        "ui.battle.stage.SweepDialog", "ui.battle.popup.DamageStatsPanel" }) do
+        patch(require(name), "isOpen", function() return false end)
+        patch(require(name), "handleInput", function() return false end)
+        patch(require(name), "handleButtonInput", function() return false end)
+    end
+    -- 真实输入单独编译同一源码并沿测试叶子路由。
+    local inputEnv = setmetatable({ require = function(name)
+        if name == "ui.battle.popup.TerminalConfirmDialog" then return { handleInput = function() return false end } end
+        return require(name)
+    end }, { __index = _G })
+    local inputScene = compileModule("ui.battle.scene.BattleScene", inputEnv)
+    check(not inputScene.handleInput(987, 311), "真实Scene旧倍速中心点击返回false")
+
+    local ceEnv = setmetatable({ require = function(name)
+        if name == "ui.battle.scene.BattleScene" then return inputScene end
+        return require(name)
+    end }, { __index = _G })
+    local CE = compileModule("ui.dev.CERuntime", ceEnv)
+    local originalClock, originalSpeed = inputScene.getBattleLogicDt, inputScene.battleSpeed
+    for _ = 1, 3 do
+        check(CE.setSpeedOn(true) == false and CE.toggleSpeed() == false
+            and CE.installSpeedHook() == false and not CE.isSpeedOn(), "CE旧入口不能启用加速或安装包装器")
+        check(inputScene.getBattleLogicDt == originalClock and inputScene.battleSpeed == originalSpeed
+            and inputScene.getBattleLogicDt(.25) == .25, "CE不改写真实Scene时钟函数/倍率字段")
     end
 end
 
@@ -1254,10 +1341,9 @@ local function testCompleteTriTerminal()
             check(f.scene.getStageId() == terminal and f.page.isTerminalRaidActive(), "胜利保持Scene及三隊终焉")
             check(f.battle.currentStageId == previous and f.battle.maxStageId >= target
                 and f.battle.clearedStages[tostring(terminal)] == true, "首通写末关回退点及永久目标解锁而非目标当前关")
-            local expectedSpeed = terminal == SC.TERMINAL_NORMAL and 1.5 or 2
-            check(f.page.getMaxUnlockedBattleSpeed() == expectedSpeed
-                and f.scene.getMaxUnlockedBattleSpeed() == expectedSpeed,
-                "终焉胜利即永久解锁账户倍速，过场末关安全点不降级")
+            check(f.page.getMaxUnlockedBattleSpeed() == 1
+                and f.scene.getMaxUnlockedBattleSpeed() == 1,
+                "终焉胜利与永久目标解锁不再开启战斗倍速")
             check(not f.page.isSpeedButtonVisible(), "终焉收尾期间不显示可操作倍速按钮")
             local fcExp = f.state.values.Exp
             check(fcExp == SC.getStage(terminal).fcExp, "真实首通闭包恰好发放终焉经验")
@@ -1313,9 +1399,9 @@ local function testCompleteTriTerminal()
                 "重复skip不发第二次首通/三Boss奖励")
             f.page.resetToDefault()
             f.scene.adoptStageProgress(SC.NORMAL_FIRST_STAGE)
-            check(f.scene.getMaxUnlockedBattleSpeed() == expectedSpeed
-                and f.page.getMaxUnlockedBattleSpeed() == expectedSpeed,
-                "三队关闭后单队回普通旧关仍保留倍速解锁")
+            check(f.scene.getMaxUnlockedBattleSpeed() == 1
+                and f.page.getMaxUnlockedBattleSpeed() == 1,
+                "三队关闭后单队回旧关仍为正常速度")
         end)
     end
     case("已通终焉及claimed双键", function()
@@ -1324,8 +1410,8 @@ local function testCompleteTriTerminal()
                 local f = terminalFlowFixture(TERMINAL)
                 local key = stringKey and tostring(TERMINAL) or TERMINAL
                 f.battle.clearedStages[key] = true
-                check(f.page.getMaxUnlockedBattleSpeed() == 1.5 and f.scene.getMaxUnlockedBattleSpeed() == 1.5,
-                    "真实Scene/三队最高关停普通末关，终焉双键旧账本仍解锁1.5倍")
+                check(f.page.getMaxUnlockedBattleSpeed() == 1 and f.scene.getMaxUnlockedBattleSpeed() == 1,
+                    "真实Scene/三队读取终焉双键旧账本也不再解锁倍率")
                 f.session.claimedScenarios[stringKey and "61" or 61] = true
                 f.session.claimedScenarios[stringKey and "62" or 62] = true
                 f.finishRaid()
@@ -1357,6 +1443,22 @@ end
 
 function Start()
     local ok, err = pcall(function()
+        -- 所有真实保存链只落内存；用例遗漏Flush替身也不得写入cwd或玩家档。
+        local disk = {}
+        local function noop() end
+        patch(_G, "File", function(path, mode)
+            return { IsOpen = function() return true end,
+                WriteString = function(_, data) disk[path] = data; return true end,
+                ReadString = function() return disk[path] end, Close = noop, Dispose = noop }
+        end)
+        patch(_G, "fileSystem", {
+            FileExists = function(_, path) return disk[path] ~= nil end,
+            Delete = function(_, path) disk[path] = nil; return true end,
+            Rename = function(_, from, to)
+                if disk[from] == nil then return false end
+                disk[to], disk[from] = disk[from], nil; return true
+            end,
+        })
         case("三池构建/扣血/治疗/死亡/release", testRaidPoolBasics)
         case("护盾/状态/攻击战线隔离", testLaneIsolation)
         case("所有池空才胜利", testDriverRaidVictory)
@@ -1372,7 +1474,7 @@ function Start()
         case("真实 Page 即时胜利和奖励口径", testPageImmediateVictoryAndRewards)
         case("真实终焉 row1 奖励输入/覆盖层/战斗锁", testPageRowRewardInput)
         case("真实终焉draw五语不限时且保留卡牌生命", testPageTerminalDraw)
-        case("终焉账本永久倍速与旧档恢复", testAccountSpeedUnlocks)
+        case("旧倍速兼容与真实Scene时钟及点击", testAccountSpeedRemoved)
         case("真实主线轮回/首通去重", testCompleteTriTerminal)
     end)
     if not ok then check(false, "测试初始化/收尾异常: " .. tostring(err)) end

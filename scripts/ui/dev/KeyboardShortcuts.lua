@@ -1,6 +1,6 @@
 -- ============================================================================
 -- KeyboardShortcuts - PC 键盘快捷键
--- Esc 关闭，空格/回车继续，F 倍速，数字键打开城镇页面。H 查看说明。
+-- Esc 关闭，空格/回车继续，数字键打开城镇页面。H 查看说明。
 -- 兑换码和 GM 输入时不抢字母键。
 -- ============================================================================
 
@@ -14,7 +14,6 @@ local LINES = {
     "H  打开或关闭本说明",
     "Esc  关闭当前弹窗或页面",
     "空格 / 回车  继续对话、领取或关掉奖励",
-    "F  切换战斗倍速",
     "M  开关音效",
     "I  玩家信息",
     "B  背包",
@@ -88,34 +87,6 @@ local function togglePage(isOpen, closeFn, openFn)
     end
     closeLeftPages()
     openFn()
-end
-
-local function cycleSpeed()
-    local DungeonBattleScene = require("ui.dungeon.DungeonBattleScene")
-    if DungeonBattleScene.isOpen and DungeonBattleScene.isOpen() then
-        if DungeonBattleScene.cycleBattleSpeed and DungeonBattleScene.cycleBattleSpeed() then
-            toast("副本倍速已切换")
-            return
-        end
-        toast("当前不能切换倍速")
-        return
-    end
-    local TowerBattleScene = require("ui.tower.TowerBattleScene")
-    if TowerBattleScene.isActive and TowerBattleScene.isActive() then
-        local TowerTriBattle = require("ui.tower.TowerTriBattle")
-        if TowerTriBattle.cycleBattleSpeed and TowerTriBattle.cycleBattleSpeed() then
-            toast("塔倍速已切换")
-            return
-        end
-        toast("当前不能切换倍速")
-        return
-    end
-    local BattleScene = require("ui.battle.scene.BattleScene")
-    if BattleScene.cycleBattleSpeed and BattleScene.cycleBattleSpeed() then
-        toast("倍速 " .. BattleScene.getSpeedText())
-        return
-    end
-    toast("当前不能切换倍速")
 end
 
 local function handleEscape()
@@ -238,10 +209,6 @@ function KeyboardShortcuts.update()
     end
     if pressed(KEY_SPACE) or pressed(KEY_RETURN) or pressed(KEY_RETURN2) then
         handleConfirm()
-        return
-    end
-    if pressed(KEY_F) then
-        cycleSpeed()
         return
     end
     if pressed(KEY_M) then

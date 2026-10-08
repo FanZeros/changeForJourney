@@ -35,6 +35,15 @@ local function copy(value)
     for key, child in pairs(value) do result[key] = copy(child) end
     return result
 end
+local function sameData(a, b)
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return a == b end
+    for key, value in pairs(a) do
+        if not sameData(value, b[key]) then return false end
+    end
+    for key in pairs(b) do if a[key] == nil then return false end end
+    return true
+end
 local function shortHero()
     for _, id in ipairs(HC.getAllIds()) do
         if HC.get(id).name == "老六" then return id end
@@ -69,6 +78,7 @@ function M.fixture(heroId, opts)
     local snapshots = {
         heroes = { roster = { [tostring(heroId)] = own }, deployed = {} },
         equipment = { inventory = {}, equipped = {}, nextSeq = 100 }, artifacts = { bag = {} },
+        talents = { litNodes = {} },
     }
     local state = { open = true, heroId = heroId, tab = "attr", tabFrom = "attr",
         openTime = time.elapsedTime - 10, tabSwitchTime = time.elapsedTime - 10,
@@ -106,7 +116,7 @@ function M.fixture(heroId, opts)
         roster = roster, ownedById = ownedById, powerById = powerById,
         longClass = opts.longClass == true, longValues = opts.longValues == true,
         hits = { own = 0, attrs = 0, power = 0, roster = 0, clamp = 0,
-            awakening = 0, panel = 0, church = 0, class = 0, keyword = 0, rows = 0,
+            awakening = 0, panel = 0, snapshot = 0, church = 0, class = 0, keyword = 0, rows = 0,
             ownIds = {}, powerIds = {}, panelIds = {}, classPage = 0 } }
 end
 M.shortHero = shortHero
@@ -182,6 +192,20 @@ local function isolated(fixture, body, sharedKeyword)
             return result
         end)
     end
+    -- 透传真实HC公式，只验收属性收集器读取完整快照后的隔离参数；不再期待Owned回读。
+    local createHero = HC.createHero
+    patch(HC, "createHero", function(id, level, advBranch, awakening, extraTalent, options)
+        local own = assert(fixture.snapshots.heroes.roster[tostring(id)], "HC请求了快照外角色")
+        assert(level == own.level and sameData(advBranch, own.advBranch)
+            and awakening ~= own.awakening and sameData(awakening, own.awakening)
+            and extraTalent ~= own.extraTalent and sameData(extraTalent, own.extraTalent)
+            and options and options.silent == true
+            and options.litNodes ~= fixture.snapshots.talents.litNodes
+            and sameData(options.litNodes, fixture.snapshots.talents.litNodes),
+            "真实HC必须收到显式快照的等级/转职/觉醒/追加/星图隔离副本")
+        fixture.hits.snapshot = fixture.hits.snapshot + 1
+        return createHero(id, level, advBranch, awakening, extraTalent, options)
+    end)
     local context = {
         detailState = fixture.state, imgHeroCards = cards, imgClassIcons = icons,
         getOwnedData = function(id)
@@ -198,7 +222,9 @@ local function isolated(fixture, body, sharedKeyword)
             fixture.hits.attrs = fixture.hits.attrs + 1
             assert(id == fixture.heroId and cfg == HC.get(id) and level == fixture.own.level,
                 "Draw必须传真实HC配置与fixture等级给属性收集器")
+            local snapshotsBefore = copy(fixture.snapshots)
             local attrs = Attrs.collectAttributes(id, cfg, level, fixture.snapshots)
+            assert(sameData(fixture.snapshots, snapshotsBefore), "真实属性计算不能迁移或修改fixture源快照")
             if fixture.longValues then
                 attrs.left[1].value = "123456789012345678901234567890%"
                 attrs.left[1].name = "最大生命值"
@@ -372,7 +398,7 @@ local function restorationSnapshot(vg)
     local saved = { context = savedContext(), matrix = currentMatrix(vg), functions = {},
         requireFn = require, class = CC.get, keyword = Draw.talentKwText, card = DrawUtil.drawCardImage,
         display = I18n.displayText, language = I18n.get(), time = time, rows = Draw.drawAttributeRows,
-        legacyDesc = ETS.getDesc, stageStatus = ETS.getStageStatus }
+        legacyDesc = ETS.getDesc, stageStatus = ETS.getStageStatus, createHero = HC.createHero }
     for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgScale", "nvgCreateImage", "nvgText",
         "nvgTextBounds", "nvgTextAlign", "nvgFontSize", "nvgImagePattern", "nvgCircle",
         "nvgRoundedRect", "nvgIntersectScissor", "nvgMoveTo", "nvgLineTo" }) do
@@ -390,6 +416,7 @@ local function restored(vg, prior)
         and I18n.displayText == prior.display and I18n.get() == prior.language
         and time == prior.time and Draw.drawAttributeRows == prior.rows
         and ETS.getDesc == prior.legacyDesc and ETS.getStageStatus == prior.stageStatus
+        and HC.createHero == prior.createHero
 end
 
 local function safeRun(label, body)
@@ -399,7 +426,7 @@ end
 
 local function verifyDraw(vg, fixture, label)
     local previous = { requireFn = require, class = CC.get, keyword = Draw.talentKwText,
-        font = nvgFontSize, text = nvgText, rows = Draw.drawAttributeRows }
+        font = nvgFontSize, text = nvgText, rows = Draw.drawAttributeRows, createHero = HC.createHero }
     local ok, result = isolated(fixture, function(keyword, patch, defer)
         local calls = probe(vg, patch, defer)
         local backDraw = DrawUtil.drawBackChevron
@@ -426,8 +453,9 @@ local function verifyDraw(vg, fixture, label)
         check(fixture.hits.own >= 2 and fixture.hits.attrs == 1 and fixture.hits.power == 1,
             label .. " 真实Draw命中隔离拥有数据/属性/战力")
         check(fixture.hits.roster > 0 and fixture.hits.awakening == 1
-            and fixture.hits.panel > 0 and fixture.hits.church == 1,
-            label .. " 名册/觉醒/教堂等所有动态替身确实命中")
+            and fixture.hits.snapshot == 1 and fixture.hits.church == 1
+            and (#fixture.roster > 1 or fixture.hits.panel == 0),
+            label .. " 名册/觉醒/完整属性快照/教堂边界命中，单卡属性不借Owned")
         check(fixture.hits.keyword == 1 and fixture.hits.rows == 1 and calls.measures > 20,
             label .. " 真实KeywordText/AttributeView和引擎字体测量执行")
         if fixture.longClass then check(fixture.hits.class > 0, label .. " 超长职业翻译替身命中") end
@@ -539,7 +567,8 @@ local function verifyDraw(vg, fixture, label)
     end)
     check(ok, label .. " 完整真实draw成功" .. (ok and "" or (": " .. tostring(result))))
     check(require == previous.requireFn and CC.get == previous.class and Draw.talentKwText == previous.keyword
-        and nvgFontSize == previous.font and nvgText == previous.text and Draw.drawAttributeRows == previous.rows,
+        and nvgFontSize == previous.font and nvgText == previous.text and Draw.drawAttributeRows == previous.rows
+        and HC.createHero == previous.createHero,
         label .. " 成功路径恢复全部替换函数")
     return ok and result or nil
 end
@@ -788,7 +817,7 @@ local function verifyRadarNumbers(vg, label)
         local nextTiny = copy(tiny)
         nextTiny.str, nextTiny.spi = tiny.str + 0.000123, tiny.spi - 0.000321
         Stats.drawRadar(vg, tiny, nextTiny, true)
-        for index, text in ipairs({ "+0.0042", "+0.1", "0", "-0.0042", "+1.2", "-2.5" }) do
+        for index, text in ipairs({ "+0.0042", "+0.125", "0", "-0.0042", "+1.25", "-2.5" }) do
             local x, y = axisPoint(Stats.LAYOUT.radar, index, Stats.LAYOUT.radar.labelR)
             local ink = textsNear(calls, text, x, y + 16, 3)
             local precisionOK = #ink == 9
@@ -953,8 +982,9 @@ local function verifyFailureRestoration(vg)
         defer(function() I18n.set(language) end)
         I18n.set("en")
         Draw.draw(vg)
-        assert(fixture.hits.own > 0 and fixture.hits.panel > 0 and fixture.hits.church > 0
-            and fixture.hits.class > 0, "失败探针未实际执行替身")
+        -- 完整真实Draw和新快照链已经执行后再主动失败，不能靠旧Owned回读前提提前中断。
+        assert(fixture.hits.own > 0 and fixture.hits.attrs == 1 and fixture.hits.snapshot == 1
+            and fixture.hits.church > 0 and fixture.hits.class > 0, "失败探针未实际执行真实快照/绘制边界")
         error("EXPECTED_LAYOUT_FAILURE_AFTER_REAL_DRAW")
     end)
     check(not ok and tostring(err):find("EXPECTED_LAYOUT_FAILURE_AFTER_REAL_DRAW", 1, true) ~= nil,

@@ -1,6 +1,8 @@
 -- 章节背景回归：真实关卡配置/选关绘制，图形与外部页面使用内存替身。
 -- 不读写真实存档；覆盖每章取图、23章循环、终焉兼容、圆角cover与加载缓存。
 function Start()
+    assert(fileSystem:GetCurrentDir():gsub("/+$", "") == "/home/Maker/game4-validation/stage-regression",
+        "isolated stage regression cwd required")
     local originalRequire, originalTime = require, time
     local savedGlobals = {}
     local assertions = 0
@@ -11,8 +13,20 @@ function Start()
     local function near(a, b) return math.abs(a - b) < 0.000001 end
     local function noop() end
     local function hook(name, fn)
-        savedGlobals[name] = _G[name]
+        savedGlobals[name] = { value = _G[name] }
         _G[name] = fn
+    end
+    local ioAttempts = 0
+    local function denied()
+        ioAttempts = ioAttempts + 1
+        error("native IO/network forbidden in chapter fixture")
+    end
+    -- 在任何生产require前阻断业务IO；只读模块加载由引擎resource cache完成。
+    for _, name in ipairs({ "File", "GetFileSystem", "GetCache", "GetEngine", "loadfile", "dofile" }) do
+        hook(name, denied)
+    end
+    for _, name in ipairs({ "cache", "fileSystem", "network", "clientCloud", "serverCloud", "io", "os" }) do
+        hook(name, setmetatable({}, { __index = denied, __newindex = denied }))
     end
     local ok, err = pcall(function()
         local SC = originalRequire("config.StageConfig")
@@ -745,7 +759,7 @@ function Start()
                 Dialog.open(teamIdx)
                 time.elapsedTime = time.elapsedTime + 1
                 local before = jumps
-                Dialog.handleInput(250, 782)
+                Dialog.handleInput(250, 808)
                 draw()
                 -- 上游已把旧整页副本卡迁成左分类+右真实第一行；不替换生产ResourceList。
                 Dialog.handleInput(175, 876 + (index - 1) * 94 + 40)
@@ -759,7 +773,7 @@ function Start()
         end
         Dialog.open(2)
         time.elapsedTime = time.elapsedTime + 1
-        Dialog.handleInput(250, 782)
+        Dialog.handleInput(250, 808)
         acceptResource = false
         local beforeSelections = #resourceSelections
         Dialog.handleInput(500, 820)
@@ -771,18 +785,18 @@ function Start()
         Dialog.handleDragEnd()
         Dialog.handleInput(500, 820)
         check(#resourceSelections == beforeSelections + 1, "副本卡往返拖动不误点击")
-        Dialog.handleInput(150, 782)
+        Dialog.handleInput(150, 808)
         check(#draw() == 7, "切回主线恢复原章节列表")
         Dialog.close()
         Dialog.open()
-        Dialog.handleInput(250, 782)
+        Dialog.handleInput(250, 808)
         acceptResource = true
         Dialog.handleInput(500, 820)
         check(resourceSelections[#resourceSelections].teamIdx == 1, "普通选关默认资源队伍一")
         for _, language in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
             I18n.set(language)
             Dialog.open()
-            Dialog.handleInput(250, 782)
+            Dialog.handleInput(250, 808)
             time.elapsedTime = time.elapsedTime + 1
             draw()
             -- 当前章名允许两行；仍核验译文全部字符，不只判断任一片段存在。
@@ -805,7 +819,9 @@ function Start()
         print("[stage_chapter_background_test] ALL PASS: " .. assertions .. " assertions")
     end)
     require, time = originalRequire, originalTime
-    for name, value in pairs(savedGlobals) do _G[name] = value end
+    for name, saved in pairs(savedGlobals) do _G[name] = saved.value end
     if not ok then print("[stage_chapter_background_test] FAIL: " .. tostring(err)) end
+    print("[stage_chapter_background_test] SUMMARY assertions=" .. assertions
+        .. " failures=" .. (ok and 0 or 1) .. " forbiddenIO=" .. ioAttempts)
     engine:Exit()
 end

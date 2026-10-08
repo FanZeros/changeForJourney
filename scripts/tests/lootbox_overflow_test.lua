@@ -816,6 +816,7 @@ local function withBoot(bagCount, body)
     inject("systems.DropSystem", {
         rollKillDrop = function() return h.dropQuality end,
         rollScrollDrop = function() return "weaponScroll" end,
+        rollSweepTicket = function() return false end, -- 隔离新扫荡券随机分支，旧遗匣奖励断言保持确定性
         generateFirstClearEquips = function() return h.firstEquips end,
         generateFirstClearScrolls = function() return { scrolls = { weaponScroll = 3 } } end,
     })
@@ -883,6 +884,9 @@ local function withBoot(bagCount, body)
     -- 禁止昵称分支访问云端与账号接口。
     local oldCloud, oldLobby = rawget(_G, "clientCloud"), rawget(_G, "lobby")
     local oldNickname = rawget(_G, "GetUserNickname")
+    local oldSave = rawget(_G, "StandaloneSave")
+    -- 部分旧Boot奖励接线取全局保存模块；测试只受理请求，绝不调用真实磁盘。
+    rawset(_G, "StandaloneSave", { RequestSave = noop, Flush = function() return true end })
     local oldCap = LootBoxSystem.levelCap
     rawset(_G, "clientCloud", false)
     rawset(_G, "lobby", false)
@@ -900,6 +904,7 @@ local function withBoot(bagCount, body)
     rawset(_G, "clientCloud", oldCloud)
     rawset(_G, "lobby", oldLobby)
     rawset(_G, "GetUserNickname", oldNickname)
+    rawset(_G, "StandaloneSave", oldSave)
     for index = #patches, 1, -1 do
         local patch = patches[index]
         patch.target[patch.key] = patch.previous
@@ -1212,7 +1217,67 @@ local function testBootQualityCallbackForwarding()
     end)
 end
 
-function Start()
+-- 四维过滤必须穿过真实Boot回调到系统；倒序容量截断只领取末尾可见装备。
+local function testBootDetailFilterForwarding()
+    withBoot(199, function(h)
+        local Config = require("config.EquipmentConfig")
+        local function entry(id, quality, level)
+            return { equip = { templateId = id, quality = quality, level = level, baseStats = {} } }
+        end
+        local function fixture()
+            return { seeds = { entry("W5", 5, 1), entry("W1", 5, 2), entry("O1", 5, 3),
+                entry("W5", 1, 4), entry("W5", 5, 5), { count = 3 } } }
+        end
+        local quality, sets = { [5] = true }, { carapace = true }
+        local detail = { slotFilter = "weapon", typeFilter = Config.ITEMS.W5.type }
+        local realClaim, realRecycle = LootBoxSystem.claimAll, LootBoxSystem.decomposeAll
+        h.data.lootbox = fixture()
+        local original = h.data.lootbox.seeds
+        local hidden = { original[2], original[3], original[4], original[6] }
+        local hiddenSnapshot = copy(hidden)
+        local lastVisible, firstVisible = original[5].equip, original[1].equip
+        withPatchedField(LootBoxSystem, "claimAll", function(data, bag, q, s, d)
+            eq(q, quality, "Boot品质快照原样透传")
+            eq(s, sets, "Boot套装快照原样透传")
+            eq(d, detail, "Boot部位类型快照原样透传")
+            return realClaim(data, bag, q, s, d)
+        end, function()
+            h.fire("ui.loot.LootBox", "setOnClaimAll", quality, sets, detail)
+        end)
+        eq(EquipmentSystem.getInventoryCount(h.data.equipment), 200, "倒序过滤领取仍受容量200限制")
+        eq(h.data.equipment.inventory[tostring(lastVisible.seq)], lastVisible, "容量最后一格优先领取来源末尾可见装备")
+        eq(h.data.lootbox.seeds[1].equip, firstVisible, "倒序截断保留较早可见装备")
+        eq(#h.data.lootbox.seeds, 5, "仅一件可见装备被移除")
+        same(hidden, hiddenSnapshot, "满包领取不改所有隐藏装备及待整理")
+        for _, entry in ipairs(hidden) do
+            local found = false
+            for _, retained in ipairs(h.data.lootbox.seeds) do if retained == entry then found = true end end
+            assert(found, "隐藏条目仍保留原引用")
+        end
+        h.data.lootbox = fixture()
+        local beforeEssence = h.currency.Essence
+        hidden = { h.data.lootbox.seeds[2], h.data.lootbox.seeds[3], h.data.lootbox.seeds[4], h.data.lootbox.seeds[6] }
+        hiddenSnapshot = copy(hidden)
+        withPatchedField(LootBoxSystem, "decomposeAll", function(data, q, s, d)
+            eq(q, quality, "回收Boot旧第一参透传")
+            eq(s, sets, "回收Boot旧第二参透传")
+            eq(d, detail, "回收Boot追加第三参透传")
+            return realRecycle(data, q, s, d)
+        end, function()
+            h.fire("ui.loot.LootBox", "setOnDecomposeAll", quality, sets, detail)
+        end)
+        eq(h.currency.Essence, beforeEssence + essenceFor(5, 1, 1) + essenceFor(5, 5, 1), "回收只支付两件四维AND可见装备")
+        eq(#h.data.lootbox.seeds, 4, "四维过滤回收保留所有隐藏条目")
+        same(h.data.lootbox.seeds, hiddenSnapshot, "四维过滤回收不改隐藏装备或待整理")
+        -- 副手仅匹配真正副手，不借仓库双持把主手单手剑包含进来。
+        local box = fixture()
+        local _, pieces = realRecycle(box, 0, nil, { slotFilter = "offhand" })
+        eq(pieces, 1, "系统副手过滤不引入英雄双持")
+        eq(#box.seeds, 5, "系统副手过滤保留主手和待整理")
+    end)
+end
+
+local function runTests()
     assert(cjson and cjson.encode and cjson.decode, "UrhoXRuntime built-in cjson is required")
     math.randomseed(20260924)
     local tests = {
@@ -1234,6 +1299,7 @@ function Start()
         { "real Boot idle equipment, claim/recycle callbacks and reward categories", testBootIdleAndClaimCallbacks },
         { "real Boot subscriber clamps only unrevealed legacy seeds", testBootSubscriberSeedOnlyClamp },
         { "real Boot forwards exact quality to claimAll/decomposeAll", testBootQualityCallbackForwarding },
+        { "real Boot four-dimensional filters preserve hidden entries and reverse capacity cutoff", testBootDetailFilterForwarding },
     }
     for index, test in ipairs(tests) do
         local savedCap = LootBoxSystem.levelCap
@@ -1244,4 +1310,11 @@ function Start()
         print(PREFIX .. "PASS " .. tostring(index) .. "/" .. tostring(#tests) .. " " .. test[1])
     end
     print(PREFIX .. "ALL PASSED (" .. tostring(#tests) .. " cases)")
+end
+
+-- 独立Runtime入口总会退出，失败日志与ALL PASSED标记分别供调用方校验。
+function Start()
+    local ok, err = pcall(runTests)
+    if not ok then log:Write(LOG_ERROR, PREFIX .. "[FAIL] " .. tostring(err)) end
+    engine:Exit()
 end

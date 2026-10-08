@@ -65,11 +65,24 @@ function M.drawTitle(vg, x, y, title)
     nvgText(vg, x, y, title, nil)
 end
 
+-- 两页六围/派生数值共用精度，只格式化显示，不取整或改写实际属性。
+function M.formatNumber(value, decimals)
+    local number = tonumber(value) or 0
+    if math.type(number) == "integer" then return tostring(number) end
+    local amount = string.format("%." .. tostring(decimals or 6) .. "f", number)
+    amount = amount:gsub("0+$", ""):gsub("%.$", "")
+    return amount == "-0" and "0" or amount
+end
+
+function M.formatInterval(value)
+    return M.formatNumber(value) .. "s"
+end
+
 local function formattedValue(row)
     if row.value ~= nil then return tostring(row.value) end
     local value = row.currentValue
     if type(value) == "number" then
-        if row.key == "atkInterval" then return string.format("%.2fs", value) end
+        if row.key == "atkInterval" then return M.formatInterval(value) end
         if AD.META[row.key] and AD.formatAttrDisplayValue then
             return AD.formatAttrDisplayValue(row.key, value)
         end

@@ -1,7 +1,7 @@
 -- 独立strict专项；沿用scaffold-2d Start/Stop生命周期，不启动游戏/main/真实存档。
--- cwd MUST be /home/Maker/tutorial-onboarding-validation-20261006.
--- /home/Maker/resource-dungeon-visual-validation-20261006/.cli/UrhoXRuntime tests/tutorial_dungeon_guide_test.lua
--- -tapcode_dir=/workspace -tool_mode -nosound -graphicsheadless
+-- cwd MUST be /home/Maker/game4-validation/stage-regression.
+-- /workspace/.cli/UrhoXRuntime tests/tutorial_dungeon_guide_test.lua
+-- -tapcode_dir=/workspace/game4 -tool_mode -nosound -graphicsheadless
 -- -validate -validate-frames=60 -validate-timeout=45 -validate-output=<isolated cwd>/dungeon-guide.json
 -- 可选 -dungeon-guide-review=gold：真实Dialog/Overlay/PNG，纯NanoVG，生产BTP放大变换。
 -- review使用-graphicssurfaceless -screenshot=<isolated cwd>/dungeon-guide.png -screenshot-frame=120 -x 1920 -y 1080。
@@ -9,8 +9,8 @@
 -- Driver:start、Scene.gotoStage/pump、ensureDrivers是精确内存边界；不测/不宣称setTeams持久化。
 -- 旧DungeonPage只提供拒绝访问的dead-module哨兵，绝不读取或加载真实旧模块。
 -- 底层绘图spy用于语义/几何验收，不等价于手机实测或真实战斗验收。
-local PROJECT = "/workspace"
-local CWD = "/home/Maker/tutorial-onboarding-validation-20261006"
+local PROJECT = "/workspace/game4"
+local CWD = "/home/Maker/game4-validation/stage-regression"
 local TAG = "[tutorial_dungeon_guide_test] "
 local ROOT, REVIEW = "", ""
 for _, arg in ipairs(GetArguments()) do
@@ -55,6 +55,10 @@ local SOURCE_FILES = {
     ["ui.battle.stage.ExpeditionOverview"] = PROJECT .. "/scripts/ui/battle/stage/ExpeditionOverview.lua",
     ["ui.battle.stage.StageSelectResources"] = PROJECT .. "/scripts/ui/battle/stage/StageSelectResources.lua",
     ["ui.battle.stage.StageSelectRewardPreview"] = PROJECT .. "/scripts/ui/battle/stage/StageSelectRewardPreview.lua",
+    ["core.I18nTower"] = PROJECT .. "/scripts/core/I18nTower.lua",
+    ["ui.tower.TowerPresentation"] = PROJECT .. "/scripts/ui/tower/TowerPresentation.lua",
+    ["config.StageExpHelper"] = PROJECT .. "/scripts/config/StageExpHelper.lua",
+    ["config.IdleIncomeConfig"] = PROJECT .. "/scripts/config/IdleIncomeConfig.lua",
     ["ui.battle.stage.BattleEnemySpawn"] = PROJECT .. "/scripts/ui/battle/stage/BattleEnemySpawn.lua",
     ["ui.battle.tri.BattleTriPage"] = PROJECT .. "/scripts/ui/battle/tri/BattleTriPage.lua",
     ["boot.StandaloneHorizon"] = PROJECT .. "/scripts/boot/StandaloneHorizon.lua",
@@ -309,6 +313,12 @@ local function newContext(review, vg)
     end)
     -- 模块名仍被旧HorizonInput顶层require；访问任何旧接口都必须失败，而不是静默兼容。
     c.mock("ui.dungeon.DungeonPage", {})
+    c.mock("ui.character.hero.AwakeningArtwork", { hasPress = function() return false end, observe = noop,
+        isOpen = function() return false end, releaseTouch = function() return false end,
+        hasTouch = function() return false end,
+        bindInput = function()
+            return function() return false end -- 无全图页；只隔离新增顶层指针依赖，不改教程输入。
+        end })
     c.mock("boot.ArtifactGesture", { bind = function() return nil end, down = function() return false end,
         up = function() return false end, move = function() return false end, hover = noop, cancel = noop })
     c.mock("ui.widget.SoundToggle", { handleButtonInput = function() return deny("non-dialog HUD sound input") end })

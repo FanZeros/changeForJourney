@@ -94,7 +94,7 @@ local function presentationCacheRegression()
     end
     local sources, revisions = data, { heroes = 1, equipment = 1, artifacts = 1, talents = 1 }
     local owned = data.heroes.roster
-    local language, litNodes = "zh_CN", {}
+    local litNodes, language = data.talents.litNodes, "zh_CN"
     local builds, creates, inventoryScans = 0, 0, 0
     local modules = {}
     local env = setmetatable({}, { __index = _G })
@@ -159,6 +159,8 @@ local function presentationCacheRegression()
     local initialCreates = creates
     assertMatches(first, 20, 70, nil, "cold star-gate")
     initialCreates = creates
+    -- 冷构建先隔离快照可复制背包；只测180暖帧依赖检查不得再次扫描整库存。
+    inventoryScans = 0
     local stable = true
     for _ = 1, 180 do if sample() ~= first then stable = false end end
     check(stable, "180 warm presentation frames reuse host-private rows")
@@ -211,7 +213,7 @@ local function presentationCacheRegression()
     check(row({ left = swapped.rows, right = {} }, "_artifactCritDmgMult") ~= nil,
         "artifact fixture applies actual id12 multiplier rather than only invalidating a key")
     changed("team reassignment", function() data.heroes.teams[1].slots = { 2, 20, 21, 9 } end, 20, 71)
-    changed("same-reference lit nodes", function() litNodes[1] = 1; data.talents.litNodes[1] = 1 end, 20, 71)
+    changed("same-reference lit nodes", function() litNodes[#litNodes + 1] = 1 end, 20, 71)
     changed("language", function() language = "ko" end, 20, 71)
     changed("clear mirror with same Dispatcher content", function()
         revisions.equipment, revisions.artifacts, revisions.talents = 2, 2, 2

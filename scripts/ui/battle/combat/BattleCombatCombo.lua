@@ -11,6 +11,8 @@ local ART = require("systems.ArtifactRuntime")
 local AD = require("systems.AttributeDef")
 local BattleStats = require("systems.BattleStats")
 local GameSFX = require("systems.GameSFX")
+local EquipmentSetRuntime = require("systems.EquipmentSetRuntime")
+local RCH = require("systems.RelicConditionHandler")
 
 local M = {}
 
@@ -117,6 +119,7 @@ function M.bind(deps)
         finalDmg = applyGlobalDmgMult(finalDmg)
         -- 铁憨憨帝国铁壁：拦截队友伤害（连击目标与主攻击一致）
         local comboTgtIsAlly = not isAlly
+        finalDmg = EquipmentSetRuntime.onIncoming(curTgt, finalDmg, attacker)
         finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, comboTgtIsAlly, syncUnitHp, result.category)
         result.damageDealt = finalDmg
         local shieldBefore = (curTgt.attrs.energyShield or 0) + (curTgt.attrs.tempEnergyShield or 0)
@@ -127,6 +130,9 @@ function M.bind(deps)
         syncUnitHp(curTgt)
 
         -- 合并仅涉及真实HP/吸盾数字，连击公式和每次统计保持独立。
+        if hit.isBlocked then
+            EquipmentSetRuntime.onBlocked(curTgt, attacker, hit.blockedDamage or 0, dealDamageToUnit, isAlly)
+        end
         local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
         if actual > 0 then
             addCombatNumber(curTgt, actual, curTgtCX, curTgtCY, {
@@ -161,7 +167,9 @@ function M.bind(deps)
             BattleStats.recordTaken(curTgt, takenForStats)
         end
 
-        if isAlly then
+        local skipThreat = EquipmentSetRuntime.shouldSkipThreat(attacker)
+            or RCH.shouldSkipThreat(attacker)
+        if isAlly and not skipThreat then
             TM.onDamageDealt(attacker, result.totalDamage)
         end
 

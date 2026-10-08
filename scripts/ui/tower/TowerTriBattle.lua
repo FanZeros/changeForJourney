@@ -27,7 +27,6 @@ local HeroConfig       = require("config.HeroConfig")
 local BF               = require("systems.ButtonFeedback")
 local DrawUtil         = require("core.DrawUtil")
 local StageConfig      = require("config.StageConfig")
-local PlayerStore      = require("core.PlayerStore")
 local TowerLayout      = require("ui.tower.TowerLayout")
 local TowerBuffSidebar = require("ui.tower.TowerBuffSidebar")
 local TowerText        = require("ui.tower.TowerPresentation")
@@ -73,7 +72,6 @@ local state = {
     resultTimer = 0,
     resultPanelShown = false,
     confirmOpen = false,
-    battleSpeed = 1.0,
     onClose = nil,
     hostExtraTalents = ETS.mountedState(),
     logicalW = 1920,
@@ -81,23 +79,6 @@ local state = {
 }
 
 local inited = false
-
-local function getMaxUnlockedBattleSpeed()
-    return require("ui.battle.stage.BattleSpeed").getAccountMaxUnlocked(PlayerStore.Get("battle"))
-end
-
-local function getBattleLogicDt(dt)
-    local maxSpeed = getMaxUnlockedBattleSpeed()
-    if state.battleSpeed > maxSpeed then state.battleSpeed = maxSpeed end
-    if maxSpeed > 1.0 then return dt * state.battleSpeed end
-    return dt
-end
-
-local function getSpeedText()
-    if state.battleSpeed >= 2.0 then return "X2" end
-    if state.battleSpeed >= 1.5 then return "X1.5" end
-    return "X1"
-end
 
 local function collectAllAllies()
     local list = {}
@@ -437,8 +418,8 @@ local function tickLane(lane, dt)
             end
             return 0
         end,
-        dealDamage = function(target, damage, isTargetAlly, prefix, color, source)
-            return BattleCombat.dealDamageToUnit(target, damage, isTargetAlly, prefix, color, source)
+        dealDamage = function(target, damage, isTargetAlly, prefix, color, source, meta)
+            return BattleCombat.dealDamageToUnit(target, damage, isTargetAlly, prefix, color, source, meta)
         end,
         dealTalentDamage = function(attacker, target, damage, isTargetAlly, prefix, color, projOpts)
             return BattleCombat.dealTalentDamage(attacker, target, damage, isTargetAlly, prefix, color, projOpts, lane.allies, lane.enemies)
@@ -524,9 +505,6 @@ function TowerTriBattle.open(opts)
     state.resultPanelShown = false
     state.confirmOpen = false
     state.onClose = opts.onClose
-    state.battleSpeed = 1.0
-    local maxSpeed = getMaxUnlockedBattleSpeed()
-    if maxSpeed > 1.0 then state.battleSpeed = 1.0 end
 
     local data = opts.data or {}
     state.floor = data.floor or 1
@@ -699,7 +677,8 @@ function TowerTriBattle.update(dt, battlePaused)
 
     if battlePaused then return end
 
-    local logicDt = getBattleLogicDt(dt)
+    -- 三条塔战线与整层限时共用真实 dt，不依赖账户难度或旧倍率状态。
+    local logicDt = dt
     DungeonBattle.update(logicDt, collectFieldEnemies(), state.allAllies)
     ART.update(logicDt, state.allAllies)
 
@@ -833,18 +812,6 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
     DrawUtil.drawTextStroke(vg, logicalW * 0.5, 28, timeText, 28,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 4)
 
-    -- 撤退入口由右侧UI组件绘制，确认/失败契约仍由本模块持有。
-    -- 倍速留在中栏，不覆盖右侧强化列表。
-    if getMaxUnlockedBattleSpeed() > 1.0 and state.phase == BATTLE_ACTIVE then
-        local sx, sy = layout.center.x + layout.center.w - 70, 40
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, sx - 48, sy - 22, 96, 44, 8)
-        nvgFillColor(vg, nvgRGBA(20, 28, 36, 210))
-        nvgFill(vg)
-        DrawUtil.drawTextStroke(vg, sx, sy, getSpeedText(), 22,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 220, 235, 255, 3)
-    end
-
     if state.confirmOpen then
         TowerBuffSidebar.drawConfirmation(vg, logicalW, logicalH)
     end
@@ -854,24 +821,9 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
     end
 end
 
-local function hitBox(x, y, cx, cy, w, h)
-    return math.abs(x - cx) <= w * 0.5 and math.abs(y - cy) <= h * 0.5
-end
-
+-- 兼容旧快捷键调用；通天塔不再提供战斗加速。
 function TowerTriBattle.cycleBattleSpeed()
-    if getMaxUnlockedBattleSpeed() <= 1.0 or state.phase ~= BATTLE_ACTIVE then
-        return false
-    end
-    local maxSpeed = getMaxUnlockedBattleSpeed()
-    if state.battleSpeed < 1.5 and maxSpeed >= 1.5 then
-        state.battleSpeed = 1.5
-    elseif state.battleSpeed < 2.0 and maxSpeed >= 2.0 then
-        state.battleSpeed = 2.0
-    else
-        state.battleSpeed = 1.0
-    end
-    print("[TowerTriBattle] speed " .. getSpeedText())
-    return true
+    return false
 end
 
 function TowerTriBattle.isConfirmationOpen()
@@ -919,10 +871,6 @@ function TowerTriBattle.handleClick(wx, wy, width, height)
 
     if state.phase ~= BATTLE_ACTIVE then return true end
 
-    if getMaxUnlockedBattleSpeed() > 1.0
-        and hitBox(wx, wy, layout.center.x + layout.center.w - 70, 40, 96, 44) then
-        return TowerTriBattle.cycleBattleSpeed()
-    end
     return true
 end
 

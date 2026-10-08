@@ -25,7 +25,7 @@ end
 local function preview(h, team, stage, count)
     local d = h.data
     return h.Sweep.Preview(d.heroes, d.battle, d.dungeon, d.equipment,
-        d.artifacts, d.talents, team, stage, count)
+        d.artifacts, d.talents, team, stage, count, d.player)
 end
 
 -- 保存所有原table边：不仅比较值，也逐个证明模块/数组/英雄/装备/嵌套词条别名还在。
@@ -194,7 +194,7 @@ local function testPreviewPurity()
 end
 
 local function testGuards()
-    local invalid = { { "0", 0 }, { "negative", -1 }, { "fraction", 1.5 }, { "overMax", 11 },
+    local invalid = { { "0", 0 }, { "negative", -1 }, { "fraction", 1.5 },
         { "text", "abc" }, { "infinity", math.huge }, { "nan", 0/0 }, { "boolean", false } }
     for _, input in ipairs(invalid) do
         run("非法次数 " .. input[1], function()
@@ -307,6 +307,78 @@ local function testProtocolValidation()
     end)
 end
 
+local function assertProgress(h, result, ids, expected, playerExpected, before)
+    eq(#result.heroProgress, #ids, "成长回执仅包含有效槽位")
+    for index, id in ipairs(ids) do
+        local value = result.heroProgress[index]
+        local hero = expected[id] or expected[tostring(id)]
+        local prior = before.heroes.roster[id] or before.heroes.roster[tostring(id)]
+        eq(value.heroId, id, "成长回执按Slots顺序，不按ID排序")
+        for _, field in ipairs({ "level", "exp", "maxExp" }) do
+            eq(value[field], hero[field], "预估/执行精确成长hero" .. id .. "/" .. field)
+        end
+        eq(value.beforeLevel, prior.level, "英雄原等级")
+        eq(value.gain, hero.level - prior.level, "英雄提升包含共鸣")
+        eq(value.capped, h.ET.isHeroMaxLevel(hero.level), "英雄满级标记")
+    end
+    for _, field in ipairs({ "level", "exp", "maxExp" }) do
+        eq(result.playerProgress[field], playerExpected[field], "玩家精确成长/" .. field)
+    end
+    eq(result.playerProgress.beforeLevel, before.player.level, "玩家原等级")
+    eq(result.playerProgress.gain, playerExpected.level - before.player.level, "玩家提升等级数")
+    eq(result.playerProgress.capped, h.ET.isPlayerMaxLevel(playerExpected.level), "玩家满级标记")
+    eq(result.heroExpBatch, nil, "压缩经验批次不得泄露回执")
+    eq(result.heroExpBatches, nil, "不得重建展开经验数组")
+end
+
+-- 独立慢速oracle直接复播旧Sweep顺序，不经过新的共用成长入口。
+local function growthOracle(h, ids, stage, count)
+    local expected, player = F.copy(h.data.heroes.roster), F.copy(h.data.player)
+    local entry = assert(h.SC.getStage(stage))
+    local resource = h.SC.isResourceStage(stage)
+    local baseExp = 0
+    if resource then baseExp = h.DC.getStageExpAmount(stage, 1)
+    else
+        for _, enemy in ipairs(h.Spawn.generateEnemyList(entry, false)) do baseExp = baseExp + enemy.expReward end
+    end
+    local mult = h.ET.getHeroCountExpMult(#ids)
+    local amount = resource and math.floor(math.floor(baseExp * mult + 0.5) / #ids + 0.5)
+        or math.floor(baseExp * mult / #ids + 0.5)
+    local batches = count * (resource and entry.idleCount or 1)
+    local resonance = h.require("shared.heroes.HeroResonance")
+    -- 大批高等级对照仅在地板已同步且所有入账都不可能升级时走独立解析oracle，
+    -- 不重复数百万次TOP5排序；升级/共鸣场景下面仍完整复播旧逐批路径。
+    local stable = true
+    local floor = resonance.computeResonanceLevel(expected)
+    for _, hero in pairs(expected) do
+        if hero.level < floor then stable = false end
+    end
+    for _, id in ipairs(ids) do
+        local hero = expected[id] or expected[tostring(id)]
+        local needed = h.ET.getHeroExpForLevel(hero.level)
+        if not needed or (hero.exp or 0) + amount * batches >= needed then stable = false end
+    end
+    if stable then
+        for _, id in ipairs(ids) do
+            local hero = expected[id] or expected[tostring(id)]
+            hero.exp = (hero.exp or 0) + amount * batches
+            hero.maxExp = h.ET.getHeroExpForLevel(hero.level)
+        end
+    else
+        for _ = 1, batches do
+            for _, id in ipairs(ids) do
+                local hero = expected[id] or expected[tostring(id)]
+                hero.exp = (hero.exp or 0) + amount
+                h.ET.autoLevelUpHero(hero)
+                resonance.syncRosterToResonance(expected)
+            end
+        end
+    end
+    player.exp = (player.exp or 0) + baseExp * batches
+    h.ET.autoLevelUpPlayer(player)
+    return expected, player
+end
+
 -- 正式CharacterProgress.addHeroesExp作为顺序oracle：逐英雄升级后共鸣；资源每杀、主线每场。
 local function testExpOrder()
     for _, stage in ipairs({ 101, 100001, 200001, 300001 }) do
@@ -347,8 +419,13 @@ local function testExpOrder()
                     eq(expected[2].level, 2, "hero1升级触发hero2共鸣")
                     eq(expected[2].exp, 8, "hero2共鸣归零后再入账，应8而非7")
                 end
-                local ok, err = h.Sweep.Sweep(1, count, 1, stage)
+                local before = F.copy(h.data)
+                local estimated = assert(preview(h, 1, stage, count))
+                assertProgress(h, estimated, { 1, 2 }, expected, playerExpected, before)
+                same(h.data, before, "顺序预估不改输入")
+                local ok, err, receipt = h.Sweep.Sweep(1, count, 1, stage)
                 check(ok, "顺序扫荡成功 " .. tostring(err))
+                assertProgress(h, receipt, { 1, 2 }, expected, playerExpected, before)
                 for id = 1, 6 do
                     for _, field in ipairs({ "level", "exp", "maxExp" }) do
                         eq(h.data.heroes.roster[id][field], expected[id][field], "正式逐英雄/逐杀/逐场oracle hero" .. id .. "/" .. field)
@@ -357,6 +434,214 @@ local function testExpOrder()
                 same(h.data.player, playerExpected, "玩家升级遵守逐杀/逐场顺序")
             end)
         end
+    end
+end
+
+local function configureGrowth(h, kind)
+    local ids = { 4, 1, 3, 2 } -- 非ID顺序，四人队倍率必须为2.5。
+    h.data.heroes.teams = { { slots = ids }, { slots = {} }, { slots = {} } }
+    h.data.heroes.deployed = F.copy(ids)
+    h.data.heroes.roster = {}
+    for id = 1, 8 do
+        local level = kind == "capped" and 200 or kind == "cap-boundary" and 199
+            or kind == "stable" and 100 or 2
+        if kind == "resonance" and id <= 4 then level = 1 end
+        h.data.heroes.roster[id] = { level = level,
+            exp = kind == "capped" and 777 or kind == "cap-boundary" and h.ET.hero[199] - 1
+                or kind == "resonance" and id <= 4 and 19 or 0,
+            maxExp = -1, extra = { untouched = id } }
+    end
+    if kind == "resonance" then
+        -- 四个高等级旁队/候补：第一名出战升级就能抬TOP5地板并清掉后续英雄经验。
+        for id = 5, 8 do h.data.heroes.roster[id].level = 2 end
+    elseif kind == "cap-boundary" then
+        for id = 5, 8 do
+            h.data.heroes.roster[id].level = 200
+            h.data.heroes.roster[id].exp, h.data.heroes.roster[id].maxExp = 0, 0
+        end
+    end
+    h.data.player = { level = kind == "capped" and 200 or kind == "cap-boundary" and 199
+        or kind == "stable" and 100 or 1,
+        exp = kind == "capped" and 999 or kind == "cap-boundary" and h.ET.player[199] - 1 or 99,
+        maxExp = -1, untouched = true }
+    h.data.battle.clearedStages[101] = true
+    return ids
+end
+
+local function testGrowthPreview()
+    for _, kind in ipairs({ "resonance", "multilevel", "capped", "cap-boundary" }) do
+        for _, stage in ipairs({ 101, 6705, 100001, 200001, 300001 }) do
+            run("四人精确成长 " .. kind .. "/" .. stage, function()
+                local h = F.new(); F.install(h, 0)
+                local ids = configureGrowth(h, kind)
+                h.forceRandom = 0.999999
+                local count = kind == "multilevel" and (stage == 101 and 130 or 30) or 3
+                h.data.currency.sweepTicket = math.max(h.data.currency.sweepTicket, count)
+                local expected, playerExpected = growthOracle(h, ids, stage, count)
+                local before = F.copy(h.data)
+                h.forbidRNG = true
+                local estimate = assert(preview(h, 1, stage, count))
+                assertProgress(h, estimate, ids, expected, playerExpected, before)
+                same(h.data, before, "四人成长预估纯读")
+                h.forbidRNG = false
+                local ok, err, result = h.Sweep.Sweep(1, count, 1, stage)
+                check(ok, "四人真实交易 " .. tostring(err))
+                assertProgress(h, result, ids, expected, playerExpected, before)
+                same(result.heroProgress, estimate.heroProgress, "四人成长预估严格等于执行")
+                same(result.playerProgress, estimate.playerProgress, "玩家成长预估严格等于执行")
+                same(h.data.heroes.roster, expected, "全名册共鸣/附加字段精确")
+                same(h.data.player, playerExpected, "玩家附加字段不变")
+                if kind == "multilevel" then check(result.playerProgress.gain > 1, "真实多级成长夹具") end
+                if kind == "capped" or kind == "cap-boundary" then
+                    for _, value in ipairs(result.heroProgress) do
+                        eq(value.exp, 0, "满级/到达满级后经验全部清零")
+                        eq(value.maxExp, 0, "满级maxExp=0")
+                    end
+                end
+            end)
+        end
+    end
+    run("可选player不改变旧参数位置/字符串槽位纯读", function()
+        local h = F.new(); F.install(h, 0)
+        local ids = configureGrowth(h, "resonance")
+        for id, hero in pairs(F.copy(h.data.heroes.roster)) do
+            h.data.heroes.roster[tostring(id)], h.data.heroes.roster[id] = hero, nil
+        end
+        h.data.heroes.teams[1].slots = { "4", "1", "3", "2" }
+        local before = F.copy(h.data)
+        local d = h.data
+        local old = assert(h.Sweep.Preview(d.heroes, d.battle, d.dungeon, d.equipment,
+            d.artifacts, d.talents, 1, 101, 3))
+        eq(old.playerProgress, nil, "缺省player不虚构Lv1成长")
+        local expected, playerExpected = growthOracle(h, ids, 101, 3)
+        local current = assert(preview(h, 1, 101, 3))
+        assertProgress(h, current, ids, expected, playerExpected, before)
+        same(current.heroProgress, old.heroProgress, "player可选不影响英雄共鸣")
+        same(h.data, before, "字符串槽位与所有输入表不变")
+        -- 修改返回值也不能污染源数据或后续预估。
+        current.heroProgress[1].exp, current.playerProgress.exp = -999, -999
+        same(assert(preview(h, 1, 101, 3)).heroProgress, old.heroProgress, "预估返回值无共享可变引用")
+        same(h.data, before, "返回值修改不改输入")
+    end)
+end
+
+local function testLargeSweep()
+    for _, stage in ipairs({ 101, 100001 }) do
+        run("45000券一次执行/恒定经验空间 " .. stage, function()
+            local h = F.new(); F.install(h, 0)
+            local ids = configureGrowth(h, stage == 101 and "resonance" or "stable")
+            h.data.currency.sweepTicket = 45000
+            local expected, playerExpected = growthOracle(h, ids, stage, 45000)
+            local before = F.copy(h.data)
+            local entry = assert(h.SC.getStage(stage))
+            local raw = h.Rewards.calculate(entry, 4, 45000, false, 0, 1)
+            eq(raw.heroExpBatches, nil, "45000场不创建展开数组")
+            eq(raw.heroExpBatch.count, h.SC.isResourceStage(stage) and entry.idleCount * 45000 or 45000,
+                "压缩批数仍为原每杀/每场")
+            local calls, floors = 0, 0
+            local originalLevel, originalFloor = h.ET.autoLevelUpHero, h.env.math.floor
+            h.ET.autoLevelUpHero = function(...)
+                calls = calls + 1; check(calls < 1000, "45000场成长不遍历每个不升级批次")
+                return originalLevel(...)
+            end
+            h.env.math.floor = function(...)
+                floors = floors + 1; check(floors < 2000, "Preview复杂度不能随count*kills增长")
+                return originalFloor(...)
+            end
+            h.forbidRNG = true
+            local estimate = assert(preview(h, 1, stage, 45000))
+            assertProgress(h, estimate, ids, expected, playerExpected, before)
+            same(h.data, before, "45000场预估不改输入")
+            h.env.math.floor = originalFloor
+            h.forbidRNG, h.forceRandom = false, 0.999999
+            local rolls, originalRoll = 0, h.SC.isResourceStage(stage) and h.DC.getStageRewards or h.Drop.rollKillDrop
+            local function counted(...)
+                rolls = rolls + 1
+                return originalRoll(...)
+            end
+            if h.SC.isResourceStage(stage) then h.DC.getStageRewards = counted else h.Drop.rollKillDrop = counted end
+            calls = 0
+            local ok, err, result = h.Sweep.Sweep(1, "45000", 1, stage)
+            check(ok, "45000券合法一次执行 " .. tostring(err))
+            eq(h.data.currency.sweepTicket, 0, "45000券一次扣完")
+            eq(h.persists, 1, "45000场同一原子交易只持久化一次")
+            eq(rolls, entry.idleCount * 45000, "随机掉落仍每杀一次原接口")
+            assertProgress(h, result, ids, expected, playerExpected, before)
+            same(result.heroProgress, estimate.heroProgress, "45000场预估与实际成长一致")
+            same(h.data.heroes.roster, expected, "45000场全名册精确等于慢速oracle")
+        end)
+    end
+    run("大批存档失败/成长和45000券原位回滚", function()
+        local h = F.new(); F.install(h, 0)
+        configureGrowth(h, "resonance")
+        h.data.currency.sweepTicket = 45000
+        h.forceRandom, h.failure = 0.999999, "false"
+        assertRollback(h, function() return h.Sweep.Sweep(1, 45000, 1, 101) end, "45000场落盘失败")
+    end)
+    run("券余额决定上界/低券不足拒绝零RNG", function()
+        for _, owned in ipairs({ 0, 1, 2, 11, 45000 }) do
+            local h = F.new(); F.install(h, 0)
+            h.data.currency.sweepTicket, h.forbidRNG = owned, true
+            local before = F.copy(h.data)
+            local ok, err = h.Sweep.Sweep(1, owned + 1, 1, 1905)
+            eq(ok, false, "请求不得超过实际券余额")
+            eq(err, "扫荡券不足", "合法正整数不足券不是无效次数")
+            same(h.data, before, "不足券原模块不改")
+            eq(h.rngCalls + h.persists + h.notifications, 0, "不足券零随机/落盘/通知")
+            if owned > 0 and owned <= 11 then
+                h.forbidRNG, h.forceRandom = false, 0.999999
+                eq(h.Sweep.Sweep(1, owned, 1, 1905), true, "实际拥有11券不再受10上限")
+                eq(h.data.currency.sweepTicket, 0, "低券刚好可用余额全部扣除")
+            end
+        end
+        local h = F.new(); F.install(h, 0)
+        h.data.currency.sweepTicket, h.forceRandom = 2.9, 0.999999
+        local ok, err, receipt = h.Sweep.Sweep(1, 2, 1, 1905)
+        check(ok, "旧档小数券余额合法交易后日志不抛错 " .. tostring(err))
+        eq(receipt.ticketLeft, 2.9 - 2, "旧档小数券余额不截断")
+        eq(h.data.currency.sweepTicket, 2.9 - 2, "实际扣券只减请求整场成本")
+        eq(h.persists, 1, "小数旧券交易持久化一次后正常返回")
+    end)
+end
+
+local function testRandomReplay()
+    for _, stage in ipairs({ 1905, 200001 }) do
+        run("11场逐杀RNG/完整装备原序复播 " .. stage, function()
+            local h, oracle = F.new(), F.new(); F.install(h, 199); F.install(oracle, 199)
+            local entry = assert(h.SC.getStage(stage))
+            local count, expectedEquips, scrolls = 11, {}, {}
+            local gold, diamond = 0, 0
+            for _ = 1, entry.idleCount * count do
+                if h.SC.isResourceStage(stage) then
+                    local value = oracle.DC.getStageRewards(stage, 1, 2)
+                    gold, diamond = gold + value.gold, diamond + value.diamond
+                    for field, amount in pairs(value.scrollDrops) do
+                        if field ~= "sweepTicket" then scrolls[field] = (scrolls[field] or 0) + amount end
+                    end
+                    for _, seed in ipairs(value.equipSeeds) do
+                        expectedEquips[#expectedEquips + 1] = assert(oracle.ES.generateRandom(seed.level, seed.quality))
+                    end
+                else
+                    local quality = oracle.Drop.rollKillDrop(entry, { teamIdx = 2, dropLuck = 0 })
+                    if quality then expectedEquips[#expectedEquips + 1] = assert(oracle.ES.generateRandom(entry.monsterLevel, quality)) end
+                    local scroll = oracle.Drop.rollScrollDrop(entry)
+                    if scroll then scrolls[scroll] = (scrolls[scroll] or 0) + 1 end
+                end
+            end
+            local ok, err, result = h.Sweep.Sweep(1, count, 2, stage)
+            check(ok, "11场逐杀RNG执行 " .. tostring(err))
+            eq(h.seed, oracle.seed, "每杀RNG终态相同，不少骰/多骰/改序")
+            eq(h.rngCalls, oracle.rngCalls, "随机消费次数严格相同")
+            eq(#result.equips, #expectedEquips, "原逐杀接口全装备数相同")
+            check(#expectedEquips > 1, "夹具覆盖背包满后入遗匣")
+            for index, equip in ipairs(expectedEquips) do
+                equip.seq = result.equips[index].equip.seq
+                same(result.equips[index].equip, equip, "完整装备内容和顺序相同")
+            end
+            same(result.scrollDrops, scrolls, "原卷轴掉落完全一致/不返券")
+            if h.SC.isResourceStage(stage) then eq(result.gold, gold, "资源原金币"); eq(result.diamond, diamond, "资源原黑晶") end
+            eq(h.data.currency.sweepTicket, 19, "仍按一券一场扣11券")
+        end)
     end
 end
 
@@ -496,6 +781,9 @@ function Start()
     run("两资源协议同成本同奖励/不扣日次和挂机", testProtocolParity)
     testProtocolValidation()
     testExpOrder()
+    testGrowthPreview()
+    testLargeSweep()
+    testRandomReplay()
     run("满包完整入遗匣/领取不重骰", testFullBag)
     testRollback()
     run("券更多统一掉率", testMoreTickets)

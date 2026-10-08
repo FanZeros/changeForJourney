@@ -7,6 +7,7 @@ local HC = require("config.HeroConfig")
 local Eq = require("systems.EquipmentSystem")
 local EC = require("config.EquipmentConfig")
 local Sets = require("systems.EquipmentSetSystem")
+local ESR = require("systems.EquipmentSetRuntime")
 local ArtifactBridge = require("systems.ArtifactBridge")
 local CombatPower = require("systems.CombatPower")
 local AVC = require("config.AdvancementConfig")
@@ -77,13 +78,8 @@ local function buildUnit(ctx, heroId, equipment)
     for key, value in pairs(seed) do unit[key] = value end
     unit.attrs = seed.attrs:clone()
     M.applyEquipment(unit.attrs, equipment, heroId)
-    -- 只执行确定性的开战属性，不运行条件被动/计时器或写战斗状态。
-    if unit.attrs._setFour == "nitros" then
-        local extra = math.min(10, math.floor(unit.attrs:get(AD.HIT_VALUE) / 80) * 2)
-        if extra > 0 then unit.attrs:addModifier("set4_nitros", { { key = AD.COMBO_RATE, flat = extra } }) end
-    elseif unit.attrs._setFour == "starless" then
-        unit.attrs:addModifier("set4_starless", { { key = AD.MAG_PEN, flat = 8 } })
-    end
+    -- 确定性四件与实战/UI共用；不运行条件被动或写战斗状态。
+    ESR.applyStaticBonuses(unit.attrs)
     local slot, team = M.findPosition(ctx.heroesData, heroId)
     unit.partySlot, unit.teamIdx = slot, team
     if slot then unit.artifactEffects = ArtifactBridge.applyToUnit(unit.attrs, slot, ctx.artifactsData, team) end
@@ -91,17 +87,7 @@ local function buildUnit(ctx, heroId, equipment)
 end
 
 local function applyTeamAura(units)
-    local active = false
-    for _, unit in ipairs(units) do
-        if unit.attrs._setSix == "last_rite" then active = true break end
-    end
-    if active then
-        for _, unit in ipairs(units) do
-            -- 队友旧快照可能被复用：克隆后再挂光环，避免污染 current 基准。
-            unit.attrs = unit.attrs:clone()
-            unit.attrs:addModifier("set6_last_rite", { { key = AD.ES_BONUS, flat = 8 } })
-        end
-    end
+    ESR.applyTeamAura(units)
 end
 
 local function powerFor(ctx, unit, units, equipment)

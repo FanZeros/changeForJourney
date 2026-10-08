@@ -28,7 +28,6 @@ local OfflineCalc = require("systems.OfflineCalc")
 local DropSystem = require("systems.DropSystem")
 local TerminalConfirmDialog = require("ui.battle.popup.TerminalConfirmDialog")
 local MonsterInfoPopup = require("ui.battle.popup.MonsterInfoPopup")
-local BattleSpeed = require("ui.battle.stage.BattleSpeed")
 local BattleEnemySpawn = require("ui.battle.stage.BattleEnemySpawn")
 local BattleTransitionHud = require("ui.battle.stage.BattleTransitionHud")
 local BattleStageFlow = require("ui.battle.stage.BattleStageFlow")
@@ -195,9 +194,8 @@ local imgBtnFwdGrey = -1
 local isPaused = false
 local regenAccum = 0          -- 每秒回血累积计时器
 
--- 首通战斗倍速：只影响 BattleScene 首通战斗逻辑，不影响挂机/副本/通天塔/网络计时
+-- 旧调用可能仍写入此字段；仅保留兼容，实际战斗不读取倍率。
 BattleScene.battleSpeed = 1.0
-BattleScene.imgSpeedIcon = -1
 
 -- 挂机寻怪计时
 local SEARCH_ENEMY_DURATION = 3.0   -- "寻怪中"进度条时长（秒）
@@ -294,54 +292,35 @@ local updateFloatingTexts = BattleCombat.updateFloatingTexts
 local updateHitFlashes    = BattleCombat.updateHitFlashes
 local updateComboQueue    = BattleCombat.updateComboQueue
 
+-- 战斗倍速已删除；保留旧接口，避免历史调用方访问缺失函数。
 function BattleScene.getMaxUnlockedBattleSpeed()
-    local Page = require("ui.battle.tri.BattleTriPage")
-    if Page.isOpen() then return Page.getMaxUnlockedBattleSpeed() end
-    return BattleSpeed.getAccountMaxUnlocked(require("runtime.ClientDispatcher").get("battle"),
-        maxStageId_, clearedStages)
+    return 1
 end
 
 function BattleScene.isSpeedButtonVisible()
-    local Page = require("ui.battle.tri.BattleTriPage")
-    if Page.isOpen() then return Page.isSpeedButtonVisible() end
-    return isFirstClear and battleActive and not isPaused
-        and BattleScene.getMaxUnlockedBattleSpeed() > 1.0
-        and not BattleResultPanel.isOpen()
-        and not TerminalConfirmDialog.isOpen()
-        and not SweepDialog.isOpen() and not DamageStatsPanel.isOpen()
-        and searchingTimer == nil and defeatTimer == nil and reincarnationTimer == nil
+    return false
 end
 
 function BattleScene.getBattleLogicDt(dt)
-    local Page = require("ui.battle.tri.BattleTriPage")
-    if Page.isOpen() then return Page.getBattleLogicDt(dt) end
-    local logicDt, speed = BattleSpeed.getLogicDt(
-        dt, BattleScene.battleSpeed, BattleScene.getMaxUnlockedBattleSpeed(),
-        BattleScene.isSpeedButtonVisible())
-    BattleScene.battleSpeed = speed
-    return logicDt
+    return dt
 end
 
 local getLiveAttackInterval = BattleAllyLifecycle.getLiveAttackInterval
 
 function BattleScene.getSpeedText()
-    return BattleSpeed.getSpeedText(BattleScene.battleSpeed)
+    return "X1"
 end
 
 function BattleScene.drawSpeedButton(vg)
-    BattleSpeed.draw(vg, BattleScene.imgSpeedIcon, BattleScene.battleSpeed, BattleScene.isSpeedButtonVisible())
+    return false
 end
 
 function BattleScene.cycleBattleSpeed()
-    if not BattleScene.isSpeedButtonVisible() then return false end
-    BattleScene.battleSpeed = BattleSpeed.cycle(BattleScene.battleSpeed, BattleScene.getMaxUnlockedBattleSpeed())
-    print("[BattleScene] 首通战斗倍速切换: " .. BattleScene.getSpeedText())
-    return true
+    return false
 end
 
 function BattleScene.handleSpeedButtonInput(dx, dy)
-    if not BattleSpeed.hitTest(dx, dy) then return false end
-    return BattleScene.cycleBattleSpeed()
+    return false
 end
 
 -- ======================== 属性快照隔离（委托 BattleAllyReset） ========================
@@ -617,7 +596,6 @@ function BattleScene.init(vg)
     imgBtnFwd     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYGB.png", 0)
     imgBtnFwdGrey = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYG.png", 0)
     imgBtnIcon    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYG2.png", 0)
-    BattleScene.imgSpeedIcon  = nvgCreateImage(vg, "image/通用图标/UI_ICON_kong.png", 0)
     imgEnemyTag = nvgCreateImage(vg, "image/通用图标/ICON_ZY_XG.png", 0)
     for i = 1, 6 do
         imgAllyTags[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
@@ -805,9 +783,6 @@ function BattleScene.draw(vg)
         ALLY_TAG_OFFSET_Y, ALLY_NAME_OFFSET_Y,
         ALLY_HP_BG_OFFSET_Y, ALLY_HP_VAL_OFFSET_Y,
         ALLY_ATK_BG_OFFSET_Y, ALLY_LVL_OFFSET_Y, imgAllyTags[1], true)
-
-    -- 14.5 首通战斗倍速按钮
-    BattleScene.drawSpeedButton(vg)
 
     -- 14.5~14.7 战斗特效
     if require("ui.hud.popup.SettingsPanel").isEffectsEnabled() then
@@ -999,7 +974,8 @@ function BattleScene.update(dt)
     end
     if not battleActive then return end
 
-    local logicDt = BattleScene.getBattleLogicDt(dt)
+    -- 首通、重打与挂机共用真实时钟，不再经过可替换的旧倍率接口。
+    local logicDt = dt
 
     -- 终焉不限时；即使切关或恢复留下首通计时器，也不能据此判负。
     if getStageConfig().isTerminalTemple(currentStageId) then firstClearTimeLeft = nil end
@@ -1105,14 +1081,14 @@ function BattleScene.update(dt)
     ProjectileSystem.update(logicDt)
     updateComboQueue(logicDt)
 
-    -- ---- 纯视觉层：用真实 dt，2 倍速时不叠加特效/飘字算力 ----
+    -- ---- 纯视觉层：与战斗逻辑共用真实 dt ----
     BattleEffects.update(dt)
     updateCardAnims(dt)
     updateFloatingTexts(dt)
     updateHitFlashes(dt)
     SpeechBubble.update(dt)
 
-    -- ---- 诊断：周期性完整性检查（真实时间，避免倍速下扫描过频） ----
+    -- ---- 诊断：按真实时间周期性检查完整性 ----
     Diag.update(dt, allies, enemies)
 
     -- ---- 更新背景持续动效 ----
@@ -1331,9 +1307,6 @@ function BattleScene.handleInput(dx, dy)
     if DamageStatsPanel.handleInput(dx, dy) then return true end
     if SweepDialog.handleButtonInput(dx, dy, 1, currentStageId) then return true end
     if DamageStatsPanel.handleButtonInput(dx, dy) then return true end
-
-    -- 首通战斗倍速按钮
-    if BattleScene.handleSpeedButtonInput(dx, dy) then return true end
 
     -- 终焉神殿：禁用后退和前进
     local isTerminalInput = getStageConfig().isTerminalTemple(currentStageId)

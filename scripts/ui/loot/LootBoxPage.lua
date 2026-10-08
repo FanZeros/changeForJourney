@@ -15,10 +15,15 @@ local BF = require("systems.ButtonFeedback")
 local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
 local NumberUtil = require("core.NumberUtil")
 local I18n = require("core.I18n")
+local BackpackFilters = require("ui.backpack.BackpackFilters")
+local EquipmentQuery = require("systems.EquipmentQuery")
+local EquipmentSystem = require("systems.EquipmentSystem")
 
 local LootBoxPage = {}
 local W, H = 1080, 2400
-local LIST = { x = 48, y = 430, w = 984, h = 1690, rowH = 224, gap = 18 }
+local LIST = { x = 48, y = 660, w = 984, h = 1460, rowH = 224, gap = 18 }
+-- 工具条与列表同一坐标源：部位/类型行中心434，排序行中心524，列表底2120。
+local GRID = { FIRST_ROW_TOP = LIST.y, CLIP_BOTTOM = LIST.y + LIST.h }
 -- 稀有度勾选条：右上角一排 6 档（与背包分解页同款同位置逻辑），名称牌占左上。
 local FILTER = { firstCX = 565, cy = 286, size = 70, gap = 12 }
 -- 套装筛选入口按钮：与稀有度勾选条同行，左侧空位。
@@ -34,6 +39,13 @@ local text = DrawUtil.drawTextStroke
 local state = {
     open = false, closing = false, openTime = 0, closeTime = 0,
     sourceSummary = {}, summary = {},
+    ---@type string|nil
+    slotFilter = nil,
+    ---@type string|nil
+    typeFilter = nil,
+    ---@type string|nil
+    sortKey = nil,
+    sortAscending = false, -- 仅排序方向，绝不影响批量动作的过滤范围
     ---@type table<number, boolean>
     qualitySet = {}, -- [quality]=true 勾选的稀有度档；空集合=全部（不筛选）
     ---@type table<string, boolean>
@@ -47,13 +59,17 @@ local state = {
 }
 local imgName, imgBox, imgCheck, imgPower = -1, -1, -1, -1
 local inited = false
+-- bind 返回独立菜单；先声明供关闭生命周期使用，后接重建回调。
+---@type table
+local filterBar = {}
+local menuPressed = false
 ---@type fun(index: number)|nil
 local onClaimOne = nil
----@type fun(qualitySet: table<number, boolean>, setFilter: table<string, boolean>)|nil
+---@type fun(qualitySet: table<number, boolean>, setFilter: table<string, boolean>, detailFilter: table)|nil
 local onClaimAll = nil
 ---@type fun(index: number)|nil
 local onDecomposeOne = nil
----@type fun(qualitySet: table<number, boolean>, setFilter: table<string, boolean>)|nil
+---@type fun(qualitySet: table<number, boolean>, setFilter: table<string, boolean>, detailFilter: table)|nil
 local onDecomposeAll = nil
 ---@type fun()|nil
 local onClose = nil
@@ -92,6 +108,8 @@ end
 local function finishClose()
     clearDetail()
     SetFilterDialog.close()
+    filterBar.close()
+    menuPressed = false
     state.open, state.closing, state.dragging = false, false, false
     state.confirm, state.dragMoved, state.messages = false, false, {}
     if onClose then onClose() end
@@ -139,26 +157,24 @@ local function currentSetFilter()
     return set
 end
 
---- 装备实例的套装 id；无归属返回 SetFilterDialog.NONE_KEY。
----@param equip table|nil
----@return string
-local function setIdOfEquip(equip)
-    if not equip then return SetFilterDialog.NONE_KEY end
-    local tpl = EquipmentConfig.ITEMS[equip.templateId]
-        or EquipmentConfig.ITEMS[tostring(equip.templateId)]
-    return EquipmentSetConfig.getSetIdForTemplate(tpl) or SetFilterDialog.NONE_KEY
+--- 批量操作追加只读快照；不传页面状态表，旧前两参保持品质/套装契约。
+local function currentDetailFilter()
+    return { slotFilter = state.slotFilter, typeFilter = state.typeFilter }
 end
 
---- 套装行数量仅统计已确定装备，忽略套装勾选；待整理项不能冒充无套装。
+local function hasFilter()
+    return EquipmentQuery.isFiltered(state.qualitySet, state.setFilter, state)
+end
+
+--- 套装行数量只统计确定装备，忽略套装勾选但遵循品质/部位/类型 AND 规则。
 ---@return table<string, integer>
 local function getSetCounts()
     local counts = { none = 0 }
     for _, setId in ipairs(EquipmentSetConfig.orderedSetIds()) do counts[setId] = 0 end
-    local allQuality = not next(state.qualitySet)
     for _, entry in ipairs(state.sourceSummary) do
         local equip = entry.equip
-        if equip and (allQuality or state.qualitySet[equip.quality] == true) then
-            local setId = setIdOfEquip(equip)
+        if EquipmentQuery.matches(equip, state.qualitySet, nil, state) then
+            local setId = EquipmentQuery.getSetId(equip)
             counts[setId] = (counts[setId] or 0) + 1
         end
     end
@@ -190,43 +206,68 @@ local function filterName()
     if #picked == 0 then qualityText = I18n.lookup("全部品质")
     elseif #picked == 1 then qualityText = I18n.lookup(EquipmentConfig.QUALITY[picked[1]].name)
     else qualityText = string.format(I18n.lookup("共 %d 种品质"), #picked) end
+    local parts = { qualityText }
     local setText = setFilterName()
-    if setText then return qualityText .. " · " .. setText end
-    return qualityText
+    if setText then parts[#parts + 1] = setText end
+    if state.slotFilter then parts[#parts + 1] = I18n.lookup(EquipmentConfig.SLOT_NAME[state.slotFilter]) end
+    if state.typeFilter then parts[#parts + 1] = I18n.lookup(state.typeFilter) end
+    return table.concat(parts, " · ")
 end
 
 local function rebuildSummary()
     state.summary = {}
     state.count, state.pendingCount = 0, 0
-    local set = currentSet()
-    local setFilter = currentSetFilter()
-    local allQuality = not next(set)
-    local allSet = not next(setFilter)
+    local sortKey = state.sortKey
+    local field = ({ power = "power", quality = "quality", level = "level", ascend = "enhanceLevel" })[sortKey]
+    local attributeSort = sortKey ~= nil and sortKey ~= "default" and field == nil
     for sourceIndex, entry in ipairs(state.sourceSummary) do
         local equip = entry.equip
-        -- 旧种子仅在“全部”中展示待整理，不能冒充已确定品质/套装的装备。
-        local qualityOK = allQuality or (equip and set[equip.quality] == true)
-        local setOK = allSet or (equip and setFilter[setIdOfEquip(equip)] == true)
-        if qualityOK and setOK then
+        -- 待整理只在所有过滤维度不限时展示，排序方向不构成过滤条件。
+        local matches = equip and EquipmentQuery.matches(equip, state.qualitySet, state.setFilter, state)
+            or not equip and not hasFilter()
+        if matches then
             local display = {}
             for key, value in pairs(entry) do display[key] = value end
             display.sourceIndex = entry.sourceIndex or sourceIndex
             display.displayOrder = sourceIndex
-            -- 与行内战力同口径，重建时计算一次；不改装备实例或 seeds 顺序。
-            display.power = equip and EquipmentDetail.calcEquipPower(equip, nil) or 0
-            state.summary[#state.summary + 1] = display
             if equip then
+                -- 显示/评分/详情共用深拷贝水合结果，源装备及腐化快照保持不变。
+                display.equip = EquipmentQuery.hydrateCopy(equip)
+                display.quality, display.level = display.equip.quality, display.equip.level
+                display.enhanceLevel = EquipmentSystem.getAscendLevel(display.equip)
+                display.power = EquipmentDetail.calcEquipPower(display.equip, nil)
+                if attributeSort then
+                    display.sortValue, display.hasSortAttribute = EquipmentQuery.attributeValue(display.equip, sortKey)
+                end
                 state.count = state.count + 1
             else
+                display.power = 0
                 state.pendingCount = state.pendingCount + (entry.count or 1)
             end
+            state.summary[#state.summary + 1] = display
         end
     end
-    -- 确定装备按战力降序；同战力与待整理项保持原相对顺序，避免刷新抖动。
-    table.sort(state.summary, function(a, b)
-        if (a.equip ~= nil) ~= (b.equip ~= nil) then return a.equip ~= nil end
+    -- 默认保留遗匣数值战力降序；显式排序按有效值，缺属性无论方向始终置后。
+    local function defaultOrder(a, b)
         if a.power ~= b.power then return a.power > b.power end
         return a.displayOrder < b.displayOrder
+    end
+    table.sort(state.summary, function(a, b)
+        if (a.equip ~= nil) ~= (b.equip ~= nil) then return a.equip ~= nil end
+        if not a.equip then return a.displayOrder < b.displayOrder end
+        if attributeSort then
+            if a.hasSortAttribute ~= b.hasSortAttribute then return a.hasSortAttribute end
+            if a.sortValue ~= b.sortValue then
+                if state.sortAscending then return a.sortValue < b.sortValue end
+                return a.sortValue > b.sortValue
+            end
+        elseif field and a[field] ~= b[field] then
+            if state.sortAscending then return a[field] < b[field] end
+            return a[field] > b[field]
+        elseif (not sortKey or sortKey == "default") and state.sortAscending and a.power ~= b.power then
+            return a.power < b.power
+        end
+        return defaultOrder(a, b)
     end)
     local height = #state.summary * (LIST.rowH + LIST.gap) - LIST.gap
     state.maxScrollY = math.max(0, height - LIST.h)
@@ -234,17 +275,27 @@ local function rebuildSummary()
     clearDetail()
 end
 
---- 勾选/取消某一稀有度档（多选）；空集合即“全部”。
-local function toggleQuality(quality)
-    if state.qualitySet[quality] then
-        state.qualitySet[quality] = nil
-    else
-        state.qualitySet[quality] = true
-    end
+--- 过滤/排序变化统一清理滚动手势、旧确认与旧详情。
+local function filtersChanged()
     state.scrollY = 0
     if state.dragging then state.dragMoved = true end
     state.dragging, state.confirm = false, false
     rebuildSummary()
+end
+
+-- 只绑定通用工具条，不引入仓库英雄/双持上下文；状态与菜单均属于本页。
+filterBar = BackpackFilters.bind({
+    filters = state, GRID = GRID,
+    getSlot = function() return state.slotFilter end,
+    setSlot = function(slot) state.slotFilter = slot end,
+    clearQualitySets = function() state.qualitySet, state.setFilter = {}, {} end,
+    onChange = filtersChanged,
+})
+
+--- 勾选/取消某一稀有度档（多选）；空集合即“全部”。
+local function toggleQuality(quality)
+    state.qualitySet[quality] = not state.qualitySet[quality] or nil
+    filtersChanged()
 end
 
 ---@param summary table[]|nil
@@ -253,7 +304,10 @@ function LootBoxPage.refresh(summary)
     state.sourceSummary = summary or {}
     rebuildSummary()
     -- 异步刷新取消当前拖拽并抑制该次释放点击，避免索引移动后误领另一条。
-    if state.dragging or state.confirm then state.dragMoved = true end
+    if state.dragging or state.confirm or menuPressed then state.dragMoved = true end
+    -- close 会清菜单 moved，释放保护先保存在页面；刷新不改过滤和排序。
+    filterBar.close()
+    menuPressed = false
     state.dragging = false
     -- 二次确认只对用户看见的这一批有效，异步掉落/刷新后必须重新确认。
     state.confirm = false
@@ -262,6 +316,10 @@ end
 ---@param summary table[]|nil
 function LootBoxPage.open(summary)
     state.qualitySet, state.setFilter, state.scrollY = {}, {}, 0
+    state.slotFilter, state.typeFilter, state.sortKey, state.sortAscending = nil, nil, nil, false
+    state.dragging, state.dragMoved, state.confirm = false, false, false
+    filterBar.close()
+    menuPressed = false
     SetFilterDialog.close()
     LootBoxPage.refresh(summary or state.sourceSummary)
     if state.open and not state.closing then return end
@@ -278,6 +336,8 @@ function LootBoxPage.close()
     if not state.open or state.closing then return end
     state.closing, state.closeTime = true, time.elapsedTime
     state.dragging, state.confirm = false, false
+    filterBar.close()
+    menuPressed = false
     SetFilterDialog.close()
     clearDetail()
     print("[LootBoxPage] close")
@@ -475,7 +535,12 @@ local function drawConfirmation(vg)
     DarkIcon.drawNine(vg, "panel", CONFIRM.cx - CONFIRM.w * 0.5,
         CONFIRM.cy - CONFIRM.h * 0.5, CONFIRM.w, CONFIRM.h, { titleH = 104 })
     text(vg, 540, 1035, "确认一键回收", 48, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 4)
-    text(vg, 540, 1150, string.format(I18n.lookup("回收范围：%s装备"), filterName()), 36,
+    local range = string.format(I18n.lookup("回收范围：%s装备"), filterName())
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 36)
+    local rangeWidth = nvgTextBounds(vg, 0, 0, range)
+    local font = math.min(36, 36 * (CONFIRM.w - 80) / math.max(1, rangeWidth))
+    text(vg, 540, 1150, range, font,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
     text(vg, 540, 1210, string.format(I18n.lookup("共 %d 件，回收后无法撤回"), state.count), 34,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 226, 149, 135, 2)
@@ -501,20 +566,25 @@ function LootBoxPage.draw(vg)
     text(vg, 1044, 130, "旅途所得，暂存于此", 32,
         NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 216, 201, 163, 3)
     drawFilters(vg)
+    filterBar.draw(vg)
     local statusText = string.format(I18n.lookup("%s · 待领取 %d 件"), filterName(), state.count)
     if state.pendingCount > 0 then
         statusText = statusText .. string.format(I18n.lookup(" · 待整理 %d 件"), state.pendingCount)
     end
-    text(vg, 540, 360, statusText, 28,
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 28)
+    local statusWidth = nvgTextBounds(vg, 0, 0, statusText)
+    local statusFont = math.min(28, 28 * 960 / math.max(1, statusWidth))
+    text(vg, 540, 360, statusText, statusFont,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 231, 210, 161, 2)
 
     nvgSave(vg)
     nvgIntersectScissor(vg, LIST.x, LIST.y, LIST.w, LIST.h)
     if #state.summary == 0 then
         DrawUtil.drawImageCentered(vg, imgBox, 540, 1000, 260, 260, 0.7)
-        local hasFilter = next(state.qualitySet) ~= nil or next(state.setFilter) ~= nil
-        local emptyTitle = hasFilter and "暂无符合筛选的装备" or "遗匣为空"
-        local emptyHint = hasFilter and "调整上方勾选或取消全部勾选查看全部" or "继续远征，新的战利品会存放在这里"
+        local filtered = hasFilter()
+        local emptyTitle = filtered and "暂无符合筛选的装备" or "遗匣为空"
+        local emptyHint = filtered and "调整上方筛选或重置查看全部" or "继续远征，新的战利品会存放在这里"
         text(vg, 540, 1210, I18n.lookup(emptyTitle), 48, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 3)
         text(vg, 540, 1285, I18n.lookup(emptyHint), 32,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 161, 152, 136, 2)
@@ -533,11 +603,11 @@ function LootBoxPage.draw(vg)
         nvgFill(vg)
     end
     local hasItems = state.count > 0
-    local hasFilter = next(state.qualitySet) ~= nil or next(state.setFilter) ~= nil
+    local filtered = hasFilter()
     drawButton(vg, "lbp_claim_all", BTN_CLAIM_CX, BTN_Y, BTN_W, BTN_H,
-        hasFilter and "领取勾选" or "一键领取", "gold", hasItems)
+        filtered and "领取勾选" or "一键领取", "gold", hasItems)
     drawButton(vg, "lbp_decompose_all", BTN_DECOMPOSE_CX, BTN_Y, BTN_W, BTN_H,
-        hasFilter and "回收勾选" or "一键回收", "red", hasItems)
+        filtered and "回收勾选" or "一键回收", "red", hasItems)
     TownPageChrome.drawBack(vg, BACK)
     if not state.confirm and state.detailIndex then
         local entry = state.summary[state.detailIndex]
@@ -546,6 +616,7 @@ function LootBoxPage.draw(vg)
             EquipmentDetail.drawReadOnly(vg, entry.equip, x, y)
         end
     end
+    filterBar.drawOverlay(vg)
     if state.confirm then drawConfirmation(vg) end
     -- 套装筛选弹窗（最顶层模态）
     SetFilterDialog.draw(vg)
@@ -553,11 +624,11 @@ function LootBoxPage.draw(vg)
     nvgRestore(vg)
 end
 
--- 单件参数是原 seeds 索引；批量参数是品质集合+套装集合（空集合=不限制）。
+-- 单件参数是原 seeds 索引；批量参数兼容品质/套装，第三参是部位/类型新快照。
 -- 批量接收方只处理已有 equip 的条目，待整理残留不参与领取或回收。
-local function action(name, callback, value, value2)
+local function action(name, callback, value, value2, value3)
     print("[LootBoxPage] action=" .. name .. " value=" .. tostring(value))
-    if callback then callback(value, value2) end
+    if callback then callback(value, value2, value3) end
 end
 
 local function entryAt(dx, dy)
@@ -576,7 +647,7 @@ function LootBoxPage.handleHover(dx, dy)
         clearDetail()
         return true
     end
-    if not ready() or state.confirm or state.dragging or SetFilterDialog.isOpen() then
+    if not ready() or state.confirm or state.dragging or SetFilterDialog.isOpen() or filterBar.isOpen() then
         clearDetail() return
     end
     if state.detailIndex then
@@ -603,9 +674,12 @@ function LootBoxPage.handleHover(dx, dy)
 end
 
 function LootBoxPage.handleRightClick(dx, dy)
-    if not state.open or not ready() or state.confirm or SetFilterDialog.isOpen() then
-        return false
+    if not state.open or not ready() then return false end
+    if state.confirm or SetFilterDialog.isOpen() or filterBar.isOpen() then
+        clearDetail()
+        return true
     end
+    if state.dragging or state.dragMoved then return true end
     local entry = entryAt(dx, dy)
     if not entry or not entry.equip then return true end
     clearDetail()
@@ -628,8 +702,13 @@ function LootBoxPage.handleInput(dx, dy)
         elseif DrawUtil.hitTest(dx, dy, 750, CONFIRM.btnY, 330, 96) then
             BF.trigger("lbp_confirm")
             state.confirm = false
-            action("decomposeAll", onDecomposeAll, currentSet(), currentSetFilter())
+            action("decomposeAll", onDecomposeAll, currentSet(), currentSetFilter(), currentDetailFilter())
         end
+        return true
+    end
+    menuPressed = false
+    if filterBar.handleInput(dx, dy) then
+        clearDetail()
         return true
     end
     if state.detailIndex then
@@ -649,11 +728,7 @@ function LootBoxPage.handleInput(dx, dy)
         clearDetail()
         SetFilterDialog.open(state.setFilter, {
             getCounts = getSetCounts,
-            onChange = function()
-                state.scrollY = 0
-                state.dragging, state.confirm = false, false
-                rebuildSummary()
-            end,
+            onChange = filtersChanged,
         })
         return true
     end
@@ -671,7 +746,7 @@ function LootBoxPage.handleInput(dx, dy)
         clearDetail()
         if state.count > 0 then
             BF.trigger("lbp_claim_all")
-            action("claimAll", onClaimAll, currentSet(), currentSetFilter())
+            action("claimAll", onClaimAll, currentSet(), currentSetFilter(), currentDetailFilter())
         end
         return true
     end
@@ -702,14 +777,22 @@ end
 
 function LootBoxPage.handleDragBegin(dx, dy)
     state.dragMoved = false
-    if not ready() or state.confirm or SetFilterDialog.isOpen() or not insideList(dx, dy) then
-        return false
+    if not ready() then return false end
+    if state.confirm or SetFilterDialog.isOpen() then return true end
+    if filterBar.isOpen() then
+        menuPressed = true
+        state.dragging = false
+        clearDetail()
+        return filterBar.handleDragBegin(dx, dy)
     end
+    if not insideList(dx, dy) then return false end
     state.dragging = true
     state.dragStartY, state.dragStartScroll = dy, state.scrollY
     return true
 end
-function LootBoxPage.handleDragMove(_dx, dy)
+function LootBoxPage.handleDragMove(dx, dy)
+    if state.confirm or SetFilterDialog.isOpen() then return true end
+    if filterBar.isOpen() then return filterBar.handleDragMove(dx, dy) end
     if not state.dragging then return false end
     local delta = state.dragStartY - dy
     if math.abs(delta) >= 15 then
@@ -720,8 +803,10 @@ function LootBoxPage.handleDragMove(_dx, dy)
     clampScroll()
     return true
 end
-function LootBoxPage.handleDragEnd(_dx, _dy)
-    local wasDragging = state.dragging
+function LootBoxPage.handleDragEnd(dx, dy)
+    if state.confirm or SetFilterDialog.isOpen() then return true end
+    if filterBar.isOpen() then return filterBar.handleDragEnd(dx, dy) end
+    local wasDragging = state.dragging or menuPressed
     state.dragging = false
     return wasDragging
 end
@@ -729,6 +814,7 @@ function LootBoxPage.handleScroll(wheel)
     if not state.open then return false end
     if not ready() or state.confirm then return true end
     if SetFilterDialog.isOpen() then return true end  -- 弹窗打开时消费但不滚动列表
+    if filterBar.isOpen() then return filterBar.handleScroll(wheel) end
     if state.dragging then state.dragMoved = true end
     state.dragging = false
     clearDetail()

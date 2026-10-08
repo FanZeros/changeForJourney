@@ -1,13 +1,11 @@
 -- ============================================================================
--- CERuntime - 战斗侧测试开关（无敌 / 三倍速）
+-- CERuntime - 战斗侧无敌测试开关
 -- 只影响本机当场战斗，不写存档。
 -- ============================================================================
 
 local CERuntime = {}
 
 local godMode_ = false
-local speedOn_ = false
-local speedHooked_ = false
 local damageHooked_ = false
 
 function CERuntime.isGodMode()
@@ -15,7 +13,7 @@ function CERuntime.isGodMode()
 end
 
 function CERuntime.isSpeedOn()
-    return speedOn_
+    return false
 end
 
 function CERuntime.setGodMode(on)
@@ -28,34 +26,17 @@ function CERuntime.toggleGodMode()
     return godMode_
 end
 
+-- 旧测试入口仅保留无操作兼容，不能安装包装器或改写任何战斗时钟。
 function CERuntime.setSpeedOn(on)
-    speedOn_ = on == true
-    print("[CE] speed3x=" .. tostring(speedOn_))
-    CERuntime.installSpeedHook()
+    return false
 end
 
 function CERuntime.toggleSpeed()
-    CERuntime.setSpeedOn(not speedOn_)
-    return speedOn_
+    return false
 end
 
 function CERuntime.installSpeedHook()
-    if speedHooked_ then return end
-    local ok, BattleScene = pcall(require, "ui.battle.scene.BattleScene")
-    if not ok or not BattleScene or not BattleScene.getBattleLogicDt then
-        print("[CE] speed hook skipped, BattleScene not ready")
-        return
-    end
-    speedHooked_ = true
-    local raw = BattleScene.getBattleLogicDt
-    function BattleScene.getBattleLogicDt(dt)
-        if speedOn_ then
-            BattleScene.battleSpeed = 3
-            return dt * 3
-        end
-        return raw(dt)
-    end
-    print("[CE] speed hook installed")
+    return false
 end
 
 function CERuntime.installDamageHook()

@@ -6,7 +6,7 @@ local MC = require("config.MonsterConfig")
 local ET = require("config.ExpTable")
 local DropSystem = require("systems.DropSystem")
 
-local M = { COST = 1, MAX_COUNT = 10 }
+local M = { COST = 1 }
 
 local function isCleared(stageId, battle, dungeon)
     local id, floor = DC.decodeStageId(stageId)
@@ -109,40 +109,39 @@ end
 --- 返回值只供界面/扫荡结算，预估装备数允许小数，不能当实际装备交付。
 function M.calculate(entry, heroCount, count, roll, luck, teamIdx)
     local result = { gold = 0, diamond = 0, playerExp = 0, heroExp = 0, heroExpTotal = 0,
-        equipCount = 0, equips = {}, scrollDrops = {}, ticketDrop = 0, kills = 0, heroExpBatches = {} }
+        equipCount = 0, equips = {}, scrollDrops = {}, ticketDrop = 0, kills = 0 }
     local kills = math.max(0, math.floor(entry.idleCount or 0))
+    local totalKills = kills * count
     local multiplier = ET.getHeroCountExpMult(heroCount)
     if SC.isResourceStage(entry.id) then
-        -- 在线资源按每杀取整，不能把整场 kills 一次取整而改变经验。
-        for _ = 1, count do
-            for _ = 1, kills do
-                if roll then
-                    local rewards = DC.getStageRewards(entry.id, 1, heroCount)
-                    result.gold = result.gold + rewards.gold
-                    result.diamond = result.diamond + rewards.diamond
-                    result.playerExp = result.playerExp + rewards.adventureExp
-                    local perHero = math.floor(rewards.adventurerExp / heroCount + 0.5)
-                    result.heroExp = result.heroExp + perHero
-                    result.heroExpBatches[#result.heroExpBatches + 1] = perHero
-                    addScrolls(result.scrollDrops, rewards.scrollDrops)
-                    for _, seed in ipairs(rewards.equipSeeds) do
-                        local equip = require("systems.EquipmentSystem").generateRandom(seed.level, seed.quality)
-                        if not equip then error("扫荡装备生成失败") end
-                        result.equips[#result.equips + 1] = equip
-                    end
-                else
-                    local id = DC.decodeStageId(entry.id)
-                    local amount = DC.getStageRewardAmount(entry.id, 1)
-                    if id == "gold_mine" then result.gold = result.gold + amount
-                    elseif id == "black_diamond" then result.diamond = result.diamond + amount
-                    else result.equipCount = result.equipCount + amount end
-                    local exp = DC.getStageExpAmount(entry.id, 1)
-                    result.playerExp = result.playerExp + exp
-                    result.heroExp = result.heroExp + math.floor(math.floor(exp * multiplier + 0.5) / heroCount + 0.5)
+        -- 经验先按在线每杀双重取整，再乘杀数；同关每批等量，用常量空间表示顺序。
+        local exp = DC.getStageExpAmount(entry.id, 1)
+        local perHero = math.floor(math.floor(exp * multiplier + 0.5) / heroCount + 0.5)
+        result.playerExp = exp * totalKills
+        result.heroExp = perHero * totalKills
+        result.heroExpBatch = { amount = perHero, count = totalKills }
+        if roll then
+            -- 每杀继续调用原 RNG 接口（含资源券判定，但不交付券），不合并随机掉落。
+            for _ = 1, totalKills do
+                local rewards = DC.getStageRewards(entry.id, 1, heroCount)
+                result.gold = result.gold + rewards.gold
+                result.diamond = result.diamond + rewards.diamond
+                addScrolls(result.scrollDrops, rewards.scrollDrops)
+                for _, seed in ipairs(rewards.equipSeeds) do
+                    local equip = require("systems.EquipmentSystem").generateRandom(seed.level, seed.quality)
+                    if not equip then error("扫荡装备生成失败") end
+                    result.equips[#result.equips + 1] = equip
                 end
             end
+        else
+            -- 纯预估只查询一次每杀期望，不遍历 count 场或生成 count*kills 数组。
+            local id = DC.decodeStageId(entry.id)
+            local amount = DC.getStageRewardAmount(entry.id, 1) * totalKills
+            if id == "gold_mine" then result.gold = amount
+            elseif id == "black_diamond" then result.diamond = amount
+            else result.equipCount = amount end
+            addScrolls(result.scrollDrops, DC.getStageScrollEstimate(entry.id, totalKills))
         end
-        if not roll then addScrolls(result.scrollDrops, DC.getStageScrollEstimate(entry.id, kills * count)) end
         result.heroExpTotal = result.heroExp * heroCount
     else
         -- 与 BattleEnemySpawn.generateEnemyList(entry,false) 一致，Boss占一个名额。
@@ -162,9 +161,7 @@ function M.calculate(entry, heroCount, count, roll, luck, teamIdx)
         result.gold, result.playerExp = baseGold * count, baseExp * count
         result.heroExpTotal = math.floor(baseExp * multiplier) * count
         result.heroExp = math.floor(baseExp * multiplier / heroCount + 0.5) * count
-        for _ = 1, count do
-            result.heroExpBatches[#result.heroExpBatches + 1] = math.floor(baseExp * multiplier / heroCount + 0.5)
-        end
+        result.heroExpBatch = { amount = math.floor(baseExp * multiplier / heroCount + 0.5), count = count }
         if roll then
             for _ = 1, kills * count do
                 local quality = DropSystem.rollKillDrop(entry, { teamIdx = teamIdx, dropLuck = luck })

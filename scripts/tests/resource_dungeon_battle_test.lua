@@ -23,10 +23,27 @@ local function sameTree(actual, expected, label)
 end
 
 function Start()
-    local nativeRequire = require
+    local nativeRequire, nativeFile, nativeSystem = require, File, fileSystem
     local ok, err = pcall(function()
         local function noop() end
         local env = setmetatable({}, { __index = _G })
+        -- 真实模块遗漏保存替身时也只写内存，不触碰cwd或玩家文件。
+        local disk = {}
+        env.File = function(path, mode)
+            return { IsOpen = function() return true end,
+                WriteString = function(_, value) disk[path] = value; return true end,
+                ReadString = function() return disk[path] end, Close = noop, Dispose = noop }
+        end
+        env.fileSystem = {
+            FileExists = function(_, path) return disk[path] ~= nil end,
+            Delete = function(_, path) disk[path] = nil; return true end,
+            Rename = function(_, from, to)
+                if disk[from] == nil then return false end
+                disk[to], disk[from] = disk[from], nil; return true
+            end,
+        }
+        rawset(_G, "File", env.File)
+        rawset(_G, "fileSystem", env.fileSystem)
         local modules = { player = { level = 100 }, battle = { maxStageId = 2501 } }
         local actions, results = {}, {}
         local cancels = 0
@@ -280,11 +297,56 @@ function Start()
         eq(Layout.MODE, "classic", "按原宿主MODE恢复而非写死strip")
         Layout.setMode("strip")
 
+        local clockSteps = {}
+        local realProjectileUpdate, realComboUpdate, realSemUpdate = PS.update, BC.updateComboQueue, SEM.update
+        PS.update = function(dt)
+            clockSteps.projectile = dt
+            return realProjectileUpdate(dt)
+        end
+        BC.updateComboQueue = function(dt)
+            clockSteps.combo = dt
+            return realComboUpdate(dt)
+        end
+        SEM.update = function(dt, ...)
+            clockSteps.status = dt
+            return realSemUpdate(dt, ...)
+        end
+        -- 直接调用真实init，图片创建仅记录路径，不能再加载已删除的倍速图标。
+        local imagePaths = {}
+        env.nvgCreateImage = function(_, path) imagePaths[#imagePaths + 1] = path; return -1 end
+        Scene.init(nil)
+        for _, path in ipairs(imagePaths) do
+            check(not path:find("UI_ICON_kong", 1, true), "副本初始化不加载旧倍速图标")
+        end
         for _, id in ipairs(DC.RESOURCE_IDS) do
             local challenge = data(id, 1, 3, id .. "-1")
             local sourceSnapshot = cjson.encode(SC.getStage(challenge.stageEntry.id))
             local expected = Spawn.generateEnemyList(challenge.stageEntry, true)
+            modules.battle = { maxStageId = 34505, clearedStages = { ["999"] = true, ["1999"] = true } }
+            local legacyBattle = cjson.encode(modules.battle)
             Scene.open({ data = challenge, allies = { ally() } })
+            state.battleSpeed = 3 -- 旧状态残留不允许再参与真实战斗。
+            eq(Scene.cycleBattleSpeed(), false, "资源副本旧切速API为空操作")
+            local combatAlly = state.allies[1]
+            combatAlly.atkInterval, combatAlly.atkProgress = 1, 0
+            Scene.update(.25)
+            eq(DB.getElapsed(), .25, id .. "真实场景限时只累计真实dt")
+            eq(Runtime.getBerserk().getElapsed(), .25, id .. "资源狂暴时钟只累计真实dt")
+            eq(combatAlly.atkProgress, .25, id .. "攻击进度只推进四分之一秒")
+            eq(clockSteps.projectile, .25, "投射物使用原dt")
+            eq(clockSteps.combo, .25, "连击使用原dt")
+            eq(clockSteps.status, .25, "DOT/HOT状态使用原dt")
+            combatAlly.atkInterval = 100000
+            local cycle = Scene.cycleBattleSpeed
+            Scene.cycleBattleSpeed = function() error("旧按钮不得再进入切速分支") end
+            for _, size in ipairs({ {1920,1080}, {1280,800} }) do
+                local fit = math.min(size[1] / 1920, size[2] / 1080)
+                local ox, oy = (size[1] - 1920 * fit) * .5, (size[2] - 1080 * fit) * .5
+                Scene.handleInput(ox + 1500 * fit, oy + 110 * fit, size[1], size[2])
+                eq(state.confirmOpen, false, "旧按钮位置不误触撤退确认")
+            end
+            Scene.cycleBattleSpeed = cycle
+            eq(cjson.encode(modules.battle), legacyBattle, "副本真实时钟/旧点击不修改账户进度")
             Scene.draw(nil) -- 真实draw入口调用，卡组仅观测坐标/作用域，不冒充像素验收。
             unchanged()
             eq(#state.enemies, 4, id .. "同屏4")
@@ -600,6 +662,8 @@ function Start()
         print(TAG .. " ALL PASS: " .. assertions .. " assertions")
     end)
     rawset(_G, "require", nativeRequire)
+    rawset(_G, "File", nativeFile)
+    rawset(_G, "fileSystem", nativeSystem)
     if not ok then log:Write(LOG_ERROR, TAG .. " FAIL after " .. assertions .. ": " .. tostring(err)) end
     engine:Exit()
 end

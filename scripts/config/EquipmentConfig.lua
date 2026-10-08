@@ -73,8 +73,8 @@ end
 ---@param typeName string 装备子类型名
 ---@param grip string|nil 握持方式 "onehand"/"twohand"（仅武器）
 ---@param statKeys string[] 属性 key 列表
----@param tiers table[] 每个层级: { n=名称, lv={min,max}, v={val1,val2,...} }
----@param setId string|nil 显式套装归属（新增套装模板使用）
+---@param tiers table[] 每个层级: { n=名称, lv={min,max}, v={val1,val2,...}, setId=可选旧归属例外 }
+---@param setId string|nil 显式套装归属（防具组固定归属，不依赖名称推断）
 ---@param iconTemplateId string|nil 复用已有模板图标
 local function addGroup(slot, typeName, grip, statKeys, tiers, setId, iconTemplateId)
     for _, t in ipairs(tiers) do
@@ -93,7 +93,7 @@ local function addGroup(slot, typeName, grip, statKeys, tiers, setId, iconTempla
             grip = grip,
             levelRange = t.lv,
             stats = stats,
-            setId = setId,
+            setId = t.setId or setId,
             iconTemplateId = iconTemplateId,
         }
     end
@@ -298,6 +298,11 @@ addGroup("offhand", "圣物", nil, {"energyShield", "healCritRate", "healCritDmg
 
 -- ======================== 护甲（60件）========================
 
+-- 旧防具按系列补齐固定套装，A/H/S 同组默认同归属；已有效归属优先保留。
+-- 皮甲A/B：巡林余烬/夜行无面；轻甲A/B：赛道硝烟；重甲A/B：叠甲虫壳；
+-- 板甲A/B：帝国铁壁；布甲A/B：高压水脉/终焉司仪袍。旧ID、等级与属性保持。
+-- 唯一旧例外 H6 影皮头盔保留夜行无面，避免影响原有配装。
+
 -- 皮甲A（103-108）: [主] maxHp, [次1] dodge
 addGroup("armor", "皮甲", nil, {"maxHp", "dodge"}, {
     { n = "磨损皮衣", lv = {1,16},  v = {101, 1.22} },
@@ -306,7 +311,7 @@ addGroup("armor", "皮甲", nil, {"maxHp", "dodge"}, {
     { n = "巡林客外套", lv = {49,64}, v = {223, 2.67} },
     { n = "追猎者战衣", lv = {65,80}, v = {264, 3.15} },
     { n = "蛇皮软甲", lv = {81,9999}, v = {303, 3.65} },
-})
+}, "emberscout")
 
 -- 皮甲B（109-114）: [主] 生命值, [次1] 护甲, [次2] 能量护盾
 addGroup("armor", "皮甲", nil, {"maxHp", "armor", "energyShield"}, {
@@ -316,7 +321,7 @@ addGroup("armor", "皮甲", nil, {"maxHp", "armor", "energyShield"}, {
     { n = "刺客夜行服", lv = {49,64}, v = {223, 1.90, 13.35} },
     { n = "无踪者秘装", lv = {65,80}, v = {264, 2.25, 15.78} },
     { n = "夜行者风衣", lv = {81,9999}, v = {303, 2.60, 18.22} },
-})
+}, "faceless")
 
 -- 轻甲A（115-120）: [主] maxHp, [次1] physArmor
 addGroup("armor", "轻甲", nil, {"maxHp", "armor"}, {
@@ -326,7 +331,7 @@ addGroup("armor", "轻甲", nil, {"maxHp", "armor"}, {
     { n = "骑兵胸甲", lv = {49,64}, v = {223, 1.90} },
     { n = "勇士战铠", lv = {65,80}, v = {264, 2.25} },
     { n = "勇者战甲", lv = {81,9999}, v = {303, 2.60} },
-})
+}, "nitros")
 
 -- 轻甲B（121-126）: [主] maxHp, [次1] physArmor, [次2] dodge
 addGroup("armor", "轻甲", nil, {"maxHp", "armor", "dodge"}, {
@@ -336,7 +341,7 @@ addGroup("armor", "轻甲", nil, {"maxHp", "armor", "dodge"}, {
     { n = "游侠之鳞", lv = {49,64}, v = {223, 1.90, 1.33} },
     { n = "监视者之服", lv = {65,80}, v = {264, 2.25, 1.58} },
     { n = "神射手之衣", lv = {81,9999}, v = {303, 2.60, 1.82} },
-})
+}, "nitros")
 
 -- 重甲A（127-132）: [主] 生命值, [次1] 能量护盾, [次2] 生命加成%
 addGroup("armor", "重甲", nil, {"maxHp", "energyShield", "hpBonus"}, {
@@ -346,7 +351,7 @@ addGroup("armor", "重甲", nil, {"maxHp", "energyShield", "hpBonus"}, {
     { n = "骑士重铠", lv = {49,64}, v = {223, 13.35, 2.2} },
     { n = "战争之铠", lv = {65,80}, v = {264, 15.78, 2.6} },
     { n = "山岳巨铠", lv = {81,9999}, v = {303, 18.22, 3.1} },
-})
+}, "carapace")
 
 -- 重甲B（133-138）: [主] maxHp, [次1] physArmor, [次2] hpBonus
 addGroup("armor", "重甲", nil, {"maxHp", "armor", "hpBonus"}, {
@@ -356,7 +361,7 @@ addGroup("armor", "重甲", nil, {"maxHp", "armor", "hpBonus"}, {
     { n = "银光亮铠", lv = {49,64}, v = {223, 1.90, 2.2} },
     { n = "金鳞之甲", lv = {65,80}, v = {264, 2.25, 2.6} },
     { n = "龙鳞之甲", lv = {81,9999}, v = {303, 2.60, 3.1} },
-})
+}, "carapace")
 
 -- 板甲A（139-144）: [主] maxHp, [次1] hpBonus, [次2] physArmor
 addGroup("armor", "板甲", nil, {"maxHp", "hpBonus", "armor"}, {
@@ -366,7 +371,7 @@ addGroup("armor", "板甲", nil, {"maxHp", "hpBonus", "armor"}, {
     { n = "圣骑士板甲", lv = {49,64}, v = {223, 2.2, 1.90} },
     { n = "帝国之铠", lv = {65,80}, v = {264, 2.6, 2.25} },
     { n = "神圣裁决铠", lv = {81,9999}, v = {303, 3.1, 2.60} },
-})
+}, "ironwall")
 
 -- 板甲B（145-150）: [主] maxHp, [次1] hpBonus, [次2] magArmor
 addGroup("armor", "板甲", nil, {"maxHp", "hpBonus", "energyShield"}, {
@@ -376,7 +381,7 @@ addGroup("armor", "板甲", nil, {"maxHp", "hpBonus", "energyShield"}, {
     { n = "审判官板甲", lv = {49,64}, v = {223, 2.2, 1.90} },
     { n = "卫士之甲", lv = {65,80}, v = {264, 2.6, 2.25} },
     { n = "元帅之甲", lv = {81,9999}, v = {303, 3.1, 2.60} },
-})
+}, "ironwall")
 
 -- 布甲A（151-156）: [主] 生命值, [次1] 能量护盾
 addGroup("armor", "布甲", nil, {"maxHp", "energyShield"}, {
@@ -386,7 +391,7 @@ addGroup("armor", "布甲", nil, {"maxHp", "energyShield"}, {
     { n = "咒法师长袍", lv = {49,64}, v = {223, 26.72} },
     { n = "奥术师之袍", lv = {65,80}, v = {264, 31.57} },
     { n = "大贤者之袍", lv = {81,9999}, v = {303, 36.43} },
-})
+}, "tidepress")
 
 -- 布甲B（157-162）: [主] 能量护盾, [次1] 能量护盾加成%
 addGroup("armor", "布甲", nil, {"energyShield", "esBonus"}, {
@@ -396,7 +401,7 @@ addGroup("armor", "布甲", nil, {"energyShield", "esBonus"}, {
     { n = "微光者法袍", lv = {49,64}, v = {66.78, 2.2} },
     { n = "主教礼袍", lv = {65,80}, v = {78.93, 2.6} },
     { n = "光明圣袍", lv = {81,9999}, v = {91.07, 3.1} },
-})
+}, "last_rite")
 
 -- ======================== 头盔（60件）========================
 
@@ -407,8 +412,8 @@ addGroup("helmet", "皮甲", nil, {"hitValue", "maxHp"}, {
     { n = "巡林客风帽", lv = {33,48}, v = {1.44, 54} },
     { n = "追猎者面罩", lv = {49,64}, v = {1.76, 66} },
     { n = "蛇皮兜帽", lv = {65,80}, v = {2.08, 78} },
-    { n = "影皮头盔", lv = {81,9999}, v = {2.40, 90} },
-})
+    { n = "影皮头盔", lv = {81,9999}, v = {2.40, 90}, setId = "faceless" },
+}, "emberscout")
 
 -- 皮甲头盔B: [主] energyShield, [次] armor
 addGroup("helmet", "皮甲", nil, {"energyShield", "armor"}, {
@@ -418,8 +423,9 @@ addGroup("helmet", "皮甲", nil, {"energyShield", "armor"}, {
     { n = "刺客面罩", lv = {49,64}, v = {11.00, 1.54} },
     { n = "无踪者兜帽", lv = {65,80}, v = {13.00, 1.82} },
     { n = "夜行者风帽", lv = {81,9999}, v = {15.00, 2.10} },
-})
+}, "faceless")
 
+-- H13/H19 原图是胸甲：轻甲头盔临时共用 H37 金属盔，待同部位新图验收后解除。
 -- 轻甲头盔A: [主] hitValue, [次] maxHp
 addGroup("helmet", "轻甲", nil, {"hitValue", "maxHp"}, {
     { n = "陈旧链盔", lv = {1,16}, v = {0.80, 30} },
@@ -428,7 +434,7 @@ addGroup("helmet", "轻甲", nil, {"hitValue", "maxHp"}, {
     { n = "骑兵盔", lv = {49,64}, v = {1.76, 66} },
     { n = "勇士战盔", lv = {65,80}, v = {2.08, 78} },
     { n = "勇者战盔", lv = {81,9999}, v = {2.40, 90} },
-})
+}, "nitros", "H37")
 
 -- 轻甲头盔B: [主] energyShield, [次] armor
 addGroup("helmet", "轻甲", nil, {"energyShield", "armor"}, {
@@ -438,8 +444,9 @@ addGroup("helmet", "轻甲", nil, {"energyShield", "armor"}, {
     { n = "游侠盔", lv = {49,64}, v = {11.00, 1.54} },
     { n = "监视者盔", lv = {65,80}, v = {13.00, 1.82} },
     { n = "神射手盔", lv = {81,9999}, v = {15.00, 2.10} },
-})
+}, "nitros", "H37")
 
+-- H25/H31 原图是全身重铠：重甲头盔临时共用 H43 金属盔，不覆盖原 PNG。
 -- 重甲头盔A: [主] hitValue, [次] maxHp
 addGroup("helmet", "重甲", nil, {"hitValue", "maxHp"}, {
     { n = "硬铁盔", lv = {1,16}, v = {0.80, 30} },
@@ -448,7 +455,7 @@ addGroup("helmet", "重甲", nil, {"hitValue", "maxHp"}, {
     { n = "骑士盔", lv = {49,64}, v = {1.76, 66} },
     { n = "战争之盔", lv = {65,80}, v = {2.08, 78} },
     { n = "山岳巨盔", lv = {81,9999}, v = {2.40, 90} },
-})
+}, "carapace", "H43")
 
 -- 重甲头盔B: [主] energyShield, [次] armor
 addGroup("helmet", "重甲", nil, {"energyShield", "armor"}, {
@@ -458,7 +465,7 @@ addGroup("helmet", "重甲", nil, {"energyShield", "armor"}, {
     { n = "银光盔", lv = {49,64}, v = {11.00, 1.54} },
     { n = "金鳞盔", lv = {65,80}, v = {13.00, 1.82} },
     { n = "龙鳞盔", lv = {81,9999}, v = {15.00, 2.10} },
-})
+}, "carapace", "H43")
 
 -- 板甲头盔A: [主] hitValue, [次] maxHp
 addGroup("helmet", "板甲", nil, {"hitValue", "maxHp"}, {
@@ -468,7 +475,7 @@ addGroup("helmet", "板甲", nil, {"hitValue", "maxHp"}, {
     { n = "圣骑士盔", lv = {49,64}, v = {1.76, 66} },
     { n = "帝国盔", lv = {65,80}, v = {2.08, 78} },
     { n = "神圣裁决盔", lv = {81,9999}, v = {2.40, 90} },
-})
+}, "ironwall")
 
 -- 板甲头盔B: [主] energyShield, [次] armor
 addGroup("helmet", "板甲", nil, {"energyShield", "armor"}, {
@@ -478,7 +485,7 @@ addGroup("helmet", "板甲", nil, {"energyShield", "armor"}, {
     { n = "审判官盔", lv = {49,64}, v = {11.00, 1.54} },
     { n = "卫士盔", lv = {65,80}, v = {13.00, 1.82} },
     { n = "元帅盔", lv = {81,9999}, v = {15.00, 2.10} },
-})
+}, "ironwall")
 
 -- 布甲头盔A: [主] hitValue, [次] maxHp
 addGroup("helmet", "布甲", nil, {"hitValue", "maxHp"}, {
@@ -488,7 +495,7 @@ addGroup("helmet", "布甲", nil, {"hitValue", "maxHp"}, {
     { n = "咒法师帽", lv = {49,64}, v = {1.76, 66} },
     { n = "奥术师兜帽", lv = {65,80}, v = {2.08, 78} },
     { n = "大贤者冠", lv = {81,9999}, v = {2.40, 90} },
-})
+}, "tidepress")
 
 -- 布甲头盔B: [主] energyShield, [次] esBonus
 addGroup("helmet", "布甲", nil, {"energyShield", "esBonus"}, {
@@ -498,7 +505,7 @@ addGroup("helmet", "布甲", nil, {"energyShield", "esBonus"}, {
     { n = "微光者冠", lv = {49,64}, v = {22.00, 2.20} },
     { n = "主教冠", lv = {65,80}, v = {26.00, 2.60} },
     { n = "光明圣冠", lv = {81,9999}, v = {30.00, 3.00} },
-})
+}, "last_rite")
 
 -- ======================== 鞋子（60件）========================
 
@@ -510,7 +517,7 @@ addGroup("shoes", "皮甲", nil, {"atkSpeed", "agi"}, {
     { n = "巡林客靴", lv = {49,64}, v = {3.4, 1.76} },
     { n = "追猎者靴", lv = {65,80}, v = {4.0, 2.08} },
     { n = "蛇皮快靴", lv = {81,9999}, v = {4.6, 2.40} },
-})
+}, "emberscout")
 
 -- 皮甲鞋子B: [主] dodge, [次] agi
 addGroup("shoes", "皮甲", nil, {"dodge", "agi"}, {
@@ -520,7 +527,7 @@ addGroup("shoes", "皮甲", nil, {"dodge", "agi"}, {
     { n = "刺客软靴", lv = {49,64}, v = {2.20, 1.76} },
     { n = "无踪者靴", lv = {65,80}, v = {2.60, 2.08} },
     { n = "夜行者靴", lv = {81,9999}, v = {3.00, 2.40} },
-})
+}, "faceless")
 
 -- 轻甲鞋子A: [主] atkSpeed, [次] agi
 addGroup("shoes", "轻甲", nil, {"atkSpeed", "agi"}, {
@@ -530,7 +537,7 @@ addGroup("shoes", "轻甲", nil, {"atkSpeed", "agi"}, {
     { n = "骑兵靴", lv = {49,64}, v = {3.4, 1.76} },
     { n = "勇士战靴", lv = {65,80}, v = {4.0, 2.08} },
     { n = "勇者战靴", lv = {81,9999}, v = {4.6, 2.40} },
-})
+}, "nitros")
 
 -- 轻甲鞋子B: [主] dodge, [次] agi
 addGroup("shoes", "轻甲", nil, {"dodge", "agi"}, {
@@ -540,7 +547,7 @@ addGroup("shoes", "轻甲", nil, {"dodge", "agi"}, {
     { n = "游侠靴", lv = {49,64}, v = {2.20, 1.76} },
     { n = "监视者靴", lv = {65,80}, v = {2.60, 2.08} },
     { n = "神射手靴", lv = {81,9999}, v = {3.00, 2.40} },
-})
+}, "nitros")
 
 -- 重甲鞋子A: [主] atkSpeed, [次] agi
 addGroup("shoes", "重甲", nil, {"atkSpeed", "agi"}, {
@@ -550,7 +557,7 @@ addGroup("shoes", "重甲", nil, {"atkSpeed", "agi"}, {
     { n = "骑士靴", lv = {49,64}, v = {3.4, 1.76} },
     { n = "战争之靴", lv = {65,80}, v = {4.0, 2.08} },
     { n = "山岳巨靴", lv = {81,9999}, v = {4.6, 2.40} },
-})
+}, "carapace")
 
 -- 重甲鞋子B: [主] dodge, [次] agi
 addGroup("shoes", "重甲", nil, {"dodge", "agi"}, {
@@ -560,7 +567,7 @@ addGroup("shoes", "重甲", nil, {"dodge", "agi"}, {
     { n = "银光靴", lv = {49,64}, v = {2.20, 1.76} },
     { n = "金鳞靴", lv = {65,80}, v = {2.60, 2.08} },
     { n = "龙鳞靴", lv = {81,9999}, v = {3.00, 2.40} },
-})
+}, "carapace")
 
 -- 板甲鞋子A: [主] atkSpeed, [次] agi
 addGroup("shoes", "板甲", nil, {"atkSpeed", "agi"}, {
@@ -570,7 +577,7 @@ addGroup("shoes", "板甲", nil, {"atkSpeed", "agi"}, {
     { n = "圣骑士靴", lv = {49,64}, v = {3.4, 1.76} },
     { n = "帝国靴", lv = {65,80}, v = {4.0, 2.08} },
     { n = "神圣裁决靴", lv = {81,9999}, v = {4.6, 2.40} },
-})
+}, "ironwall")
 
 -- 板甲鞋子B: [主] dodge, [次] agi
 addGroup("shoes", "板甲", nil, {"dodge", "agi"}, {
@@ -580,7 +587,7 @@ addGroup("shoes", "板甲", nil, {"dodge", "agi"}, {
     { n = "审判官靴", lv = {49,64}, v = {2.20, 1.76} },
     { n = "卫士靴", lv = {65,80}, v = {2.60, 2.08} },
     { n = "元帅靴", lv = {81,9999}, v = {3.00, 2.40} },
-})
+}, "ironwall")
 
 -- 布甲鞋子A: [主] atkSpeed, [次] agi
 addGroup("shoes", "布甲", nil, {"atkSpeed", "agi"}, {
@@ -590,7 +597,7 @@ addGroup("shoes", "布甲", nil, {"atkSpeed", "agi"}, {
     { n = "咒法师鞋", lv = {49,64}, v = {3.4, 1.76} },
     { n = "奥术师靴", lv = {65,80}, v = {4.0, 2.08} },
     { n = "大贤者靴", lv = {81,9999}, v = {4.6, 2.40} },
-})
+}, "tidepress")
 
 -- 布甲鞋子B: [主] dodge, [次] agi
 addGroup("shoes", "布甲", nil, {"dodge", "agi"}, {
@@ -600,7 +607,7 @@ addGroup("shoes", "布甲", nil, {"dodge", "agi"}, {
     { n = "微光者靴", lv = {49,64}, v = {2.20, 1.76} },
     { n = "主教靴", lv = {65,80}, v = {2.60, 2.08} },
     { n = "光明圣靴", lv = {81,9999}, v = {3.00, 2.40} },
-})
+}, "last_rite")
 
 -- ======================== 饰品（36件）========================
 
@@ -697,7 +704,7 @@ addGroup("armor", "重甲", nil, {"maxHp", "armor", "hpBonus"}, {
 }, "swordgate", "A31")
 addGroup("helmet", "重甲", nil, {"hitValue", "maxHp"}, {
     { n = "门扉战盔", lv = {81,9999}, v = {2.40, 90} },
-}, "swordgate", "H25")
+}, "swordgate", "H43") -- H62 临时使用同部位金属盔，避免复用 H25 全身重铠
 addGroup("shoes", "重甲", nil, {"atkSpeed", "agi"}, {
     { n = "门扉战靴", lv = {81,9999}, v = {4.6, 2.40} },
 }, "swordgate", "S25")
@@ -714,7 +721,7 @@ addGroup("armor", "重甲", nil, {"maxHp", "armor", "hpBonus"}, {
 }, "bonehunger", "A31")
 addGroup("helmet", "重甲", nil, {"hitValue", "maxHp"}, {
     { n = "饥渴战盔", lv = {81,9999}, v = {2.40, 90} },
-}, "bonehunger", "H25")
+}, "bonehunger", "H43") -- H63 同样绕开 H25，后续按套装独立补图
 addGroup("shoes", "重甲", nil, {"atkSpeed", "agi"}, {
     { n = "饥渴战靴", lv = {81,9999}, v = {4.6, 2.40} },
 }, "bonehunger", "S25")

@@ -230,7 +230,7 @@ function View.drawFooter(vg, state, landscape)
     currentCancel:SetText(Presentation.text("稍后选择"))
     currentCancel:SetDisabled(state.pending)
     currentNotice:SetText(Presentation.text(state.retryBuffId and "仅可重试原契印"
-        or "选择保留，战斗继续；强化从下一波生效"))
+        or "选择保留，战斗继续；强化从下一层生效"))
     Surface.draw(root, vg, landscape and 1920 or 1080, landscape and 1080 or 2400)
 end
 

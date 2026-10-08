@@ -1,7 +1,7 @@
 -- ============================================================================
 -- TowerConfig - 通天塔副本配置数据表
 -- 数据来源: docs/配置文件/401特殊副本 通天塔.txt
--- 包含: 112层局外配置、10波次局内配置、35个强化词条、怪物池查询
+-- 包含: 112层局外配置、单波楼层/五层起点、35个强化词条、怪物池查询
 -- ============================================================================
 
 local okMC, MC = pcall(require, "config.MonsterConfig")
@@ -16,7 +16,12 @@ local TowerConfig = {}
 
 TowerConfig.DUNGEON_ID     = "babel_tower"
 TowerConfig.MAX_FLOOR      = 112
-TowerConfig.WAVES_PER_FLOOR = 10
+TowerConfig.WAVES_PER_FLOOR = 1
+TowerConfig.CHECKPOINT_INTERVAL = 5
+TowerConfig.ARTIFACT_DROP_RATE = 0.05
+TowerConfig.ARTIFACT_QUALITY_WEIGHTS = { 80, 18, 2 }
+TowerConfig.FIRST_EXP_MINUTES = 2
+TowerConfig.REPEAT_EXP_MINUTES = 1
 TowerConfig.DAILY_SWEEP_LIMIT = 2
 TowerConfig.UNLOCK_CONDITION  = 0305  -- 最高关卡进度大于 0305
 
@@ -35,7 +40,7 @@ TowerConfig.MONSTER_STAT_MULT = 2.0
 
 -- ======================== 局外层数配置（112层） ========================
 -- 首通钻石: 层1=150, 层2=300, 层3+=300+(层-2)*50（与 docs/配置文件/401特殊副本 通天塔.txt 一致）
--- 扫荡钻石: 首通钻石/2
+-- 重打/扫荡不发黑钻；神器按每层独立概率产出。
 -- 怪物等级: 9+层*3，最高112层=345级
 
 ---@type table[]
@@ -49,13 +54,14 @@ for i = 1, TowerConfig.MAX_FLOOR do
     TowerConfig.FLOORS[i] = {
         floor        = i,
         firstDiamond = diamond,
-        sweepDiamond = math.floor(diamond / 2),
+        sweepDiamond = 0,
         monsterLevel = math.min(9 + i * 3, 345),  -- 层1=12, 层112=345
+        wavePattern  = ((i - 1) % 10) + 1,
     }
 end
 
--- ======================== 局内波次配置（每层10波） ========================
--- 每波的各品质怪物数量
+-- ======================== 楼层敌人配置（十种波型循环，每层只打一波） ========================
+-- 保留原十种品质组合，第1/11/21层使用波型1，以此类推。
 
 ---@type table[]
 TowerConfig.WAVES = {
@@ -190,12 +196,59 @@ function TowerConfig.getFloor(floor)
     return TowerConfig.FLOORS[floor]
 end
 
---- 获取指定波次配置
----@param wave number 波次 (1~10)
+--- 每五层一组的挑战起点；层号与旧首通账本不重编号。
+---@param floor number
+---@return integer
+function TowerConfig.getCheckpointFloor(floor)
+    local level = math.max(1, math.min(TowerConfig.MAX_FLOOR, math.floor(tonumber(floor) or 1)))
+    return math.floor((level - 1) / TowerConfig.CHECKPOINT_INTERVAL) * TowerConfig.CHECKPOINT_INTERVAL + 1
+end
+
+---@param floor number
+---@return boolean
+function TowerConfig.isCheckpointFloor(floor)
+    local level = math.tointeger(tonumber(floor) or 0)
+    return level ~= nil and level >= 1 and level <= TowerConfig.MAX_FLOOR
+        and (level - 1) % TowerConfig.CHECKPOINT_INTERVAL == 0
+end
+
+---@param startFloor number
+---@return integer
+function TowerConfig.getRunEndFloor(startFloor)
+    return math.min(TowerConfig.MAX_FLOOR,
+        TowerConfig.getCheckpointFloor(startFloor) + TowerConfig.CHECKPOINT_INTERVAL - 1)
+end
+
+--- 旧档 floor 表示下一未通层，数字/字符串首通键也能证明已通终层。
+---@param bt table|nil
+---@return integer
+function TowerConfig.getHighestClearedFloor(bt)
+    local highest = math.max(0, math.min(TowerConfig.MAX_FLOOR,
+        math.floor(tonumber(bt and bt.floor) or 1) - 1))
+    for key, cleared in pairs(bt and bt.cleared or {}) do
+        local floor = math.tointeger(tonumber(key) or 0)
+        if cleared == true and floor and floor > highest and floor <= TowerConfig.MAX_FLOOR then
+            highest = floor
+        end
+    end
+    return highest
+end
+
+---@param bt table|nil
+---@return integer
+function TowerConfig.getMaxUnlockedCheckpoint(bt)
+    return TowerConfig.getCheckpointFloor(math.min(TowerConfig.MAX_FLOOR,
+        TowerConfig.getHighestClearedFloor(bt) + 1))
+end
+
+--- 获取指定波次配置；单层只有波1，敌人组合随实际层号循环。
+---@param wave number 波次 (1)
+---@param floor number|nil 实际楼层，旧调用默认第1层
 ---@return table|nil
-function TowerConfig.getWave(wave)
-    if wave < 1 or wave > TowerConfig.WAVES_PER_FLOOR then return nil end
-    return TowerConfig.WAVES[wave]
+function TowerConfig.getWave(wave, floor)
+    if wave ~= 1 then return nil end
+    local floorCfg = TowerConfig.getFloor(floor or 1)
+    return floorCfg and TowerConfig.WAVES[floorCfg.wavePattern] or nil
 end
 
 --- 按品质从怪物池随机抽取指定数量的怪物ID
@@ -213,11 +266,12 @@ function TowerConfig.rollMonsters(quality, count)
     return result
 end
 
---- 生成指定波次的完整怪物列表
----@param wave number 波次 (1~10)
+--- 生成指定楼层唯一一波的完整怪物列表
+---@param wave number 波次 (1)
+---@param floor number|nil 实际楼层
 ---@return number[] monsterIds 所有抽取的怪物ID列表
-function TowerConfig.generateWaveMonsters(wave)
-    local waveCfg = TowerConfig.getWave(wave)
+function TowerConfig.generateWaveMonsters(wave, floor)
+    local waveCfg = TowerConfig.getWave(wave, floor)
     if not waveCfg then return {} end
     local monsters = {}
     for q = 1, 5 do

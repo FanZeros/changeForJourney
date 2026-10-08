@@ -14,6 +14,9 @@ local expected={
     ja={rarities={"コモン","アンコモン","レア"},collapse="折りたたむ",expand="展開",title="獲得済みの強化",pending="未選択の暗契 ×3"},
     ko={rarities={"일반","고급","레어"},collapse="접기",expand="펼치기",title="획득한 강화",pending="미선택 계약 ×3"},
 }
+local expectedStarts={zh_CN="起点",zh_TW="起點",en="Start",ja="開始",ko="시작"}
+local expectedGroups={zh_CN="每层1波 · 每5层一组",zh_TW="每層1波 · 每5層一組",
+    en="1 wave/floor · 5 floors/run",ja="各階1ウェーブ · 5階ごとに1組",ko="층당 1웨이브 · 5층씩 한 그룹"}
 local expectedColors={{231,231,231,255},{106,190,115,255},{100,161,226,255}}
 local dimensions={{1920,1080},{1280,800}}
 ---@type NVGContextWrapper?
@@ -160,6 +163,18 @@ local function scrollCase(w,h,lang)
     local rr=route:GetLayout();local br=buffs:GetLayout()
     local rw,rh=route:GetContentSize();local bw,bh=buffs:GetContentSize()
     eq(#nodes,112,"real route112 nodes "..lang)
+    eq(uv(Sidebar.destroy,"waveLabel"):GetText(),expectedGroups[lang],"单波五层组规则独立五语 "..lang)
+    local startCount=0
+    for floor,node in ipairs(nodes) do
+        eq(node:GetChildAt(1):GetText(),tostring(floor),"完整真实路线层号 "..lang.."/"..floor)
+        if (floor-1)%5==0 then
+            startCount=startCount+1
+            local marker=node:GetChildAt(2)
+            eq(marker:GetText(),expectedStarts[lang],"checkpoint起点标记 "..lang.."/"..floor)
+            inspectText(marker,"checkpoint/"..lang.."/"..floor)
+        else eq(node:GetNumChildren(),1,"非checkpoint不标起点 "..lang.."/"..floor) end
+    end
+    eq(startCount,23,"111最后起点与112终点独立 "..lang)
     eq(#rows:GetChildren(),8,"real acquired buff8 rows "..lang)
     check(rw>0 and rh>rr.h,"left actual content exceeds viewport "..lang)
     check(bw>0 and bh>br.h,"right actual content exceeds viewport "..lang)

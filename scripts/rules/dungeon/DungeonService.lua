@@ -21,7 +21,7 @@ local persistHooks_ = {} ---@type table
 local transactions = {}
 -- Flush 会推进在线边界；它异常时 session 也属于本次候选快照。
 -- heroes/player 承载副本结算经验，失败时同样要回滚。
-local TRANSACTION_MODULES = { "dungeon", "currency", "equipment", "lootbox", "session", "heroes", "player" }
+local TRANSACTION_MODULES = { "dungeon", "currency", "equipment", "lootbox", "session", "heroes", "player", "artifacts" }
 
 --- 单机桥注入唯一写档入口的布尔结果；PDM.FlushImmediate 只是日志，不能代替。
 --- hooks 延后 Save 内 MarkOnline 的 session 通知，不承担奖励发放。

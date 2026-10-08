@@ -9,6 +9,21 @@ end
 local function eq(actual, expected, label)
     check(actual == expected, label .. ": " .. tostring(actual) .. " / " .. tostring(expected))
 end
+local function copy(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for key, item in pairs(value) do result[key] = copy(item) end
+    return result
+end
+local function same(actual, expected)
+    if type(actual) ~= type(expected) then return false end
+    if type(actual) ~= "table" then return actual == expected end
+    for key, item in pairs(expected) do
+        if not same(actual[key], item) then return false end
+    end
+    for key in pairs(actual) do if expected[key] == nil then return false end end
+    return true
+end
 local function source(name)
     local file = assert(cache:GetFile(name:gsub("%.", "/") .. ".lua"), "缺少脚本 " .. name)
     local lines = {}
@@ -25,6 +40,8 @@ local function isolated(mocks)
         if modules[name] then return modules[name] end
         assert(name:match("^config%.") or name == "systems.OfflineCalc" or name == "systems.DropSystem" or name == "systems.AttributeDef"
             or name == "systems.UnitAttributes" or name == "shared.StageUtils" or name == "core.GameState"
+            or name == "shared.artifact.ArtifactDefs" or name == "shared.artifact.ArtifactSchema"
+            or name == "core.I18nTower"
             or name == "rules.dungeon.DungeonService" or name == "rules.tower.TowerService"
             or name == "boot.StandaloneSave" or name:match("^ui%.battle%.stage%.StageSelect"),
             "禁止加载未声明业务入口 " .. name)
@@ -41,8 +58,9 @@ function Start()
         local mocks = {
             ["core.EventBus"] = { emit = function(name, data) events[#events + 1] = { name, data } end },
             ["systems.EquipmentSystem"] = {},
-            ["runtime.ClientDispatcher"] = {},
+            ["runtime.ClientDispatcher"] = { get = function() return {} end },
             ["core.I18n"] = { lookup = function(text) return text end,
+                get = function() return nil end,
                 format = function(fmt, ...) return string.format(fmt, ...) end },
             ["core.NumberUtil"] = { format = function(value) return tostring(math.floor(value)) end },
             ["core.DrawUtil"] = { drawImageCentered = function() end,
@@ -62,7 +80,18 @@ function Start()
         eq(mainPower, SRP.get(101), "主线战力保留原表")
         eq(mainEstimate, false, "主线实测状态保留")
         local coverage = 0
+        local endpoints = { gold_mine = {1711,344}, equipment_vault = {1661,334}, black_diamond = {1696,341} }
         for _, id in ipairs(DC.RESOURCE_IDS) do
+            eq(DC.MAX_FLOOR[id], endpoints[id][1], "资源全层保留最终边界" .. id)
+            eq(#DC.getChapterStageIds(id), endpoints[id][2], "章列表保留旧终点" .. id)
+            for floor = 1, DC.MAX_FLOOR[id] do
+                local cfg = DC.getFloor(id, floor)
+                local sid = DC.getStageId(id, floor)
+                local combat = SC.getStage(sid)
+                check(cfg ~= nil and combat ~= nil, "所有旧副本floor存在" .. id .. ":" .. floor)
+                check(SC.getStage(combat.sourceStageId) ~= nil, "所有副本源主线存在" .. id .. ":" .. floor)
+            end
+            eq(SC.getStage(DC.getStageId(id, DC.MAX_FLOOR[id])).sourceStageId, 34505, "最终345-5源一致" .. id)
             for _, sid in ipairs(DC.getChapterStageIds(id)) do
                 local combat = SC.getStage(sid)
                 local base = SRP.get(combat.sourceStageId)
@@ -75,6 +104,8 @@ function Start()
                 local _, perMin = Income.get(combat.sourceStageId)
                 eq(DC.getStageExpAmount(sid, 20), perMin, "经验只使用源主线ID")
                 check(perMin > 0, "资源副本经验非零")
+                local row = Resources.getRewardPreview(sid)
+                eq(row.playerExp, DC.getStageExpAmount(sid, 1) * combat.firstCount, "在线整行经验逐杀取整汇总")
                 for count = 1, 4 do
                     local rewards = DC.getStageRewards(sid, 20, count)
                     eq(rewards.adventureExp, perMin, "玩家经验不随人数叠加")
@@ -84,6 +115,30 @@ function Start()
             end
         end
         check(coverage > 40, "覆盖三种副本章节战力")
+        local TC = env.require("config.TowerConfig")
+        local StageExp = env.require("config.StageExpHelper")
+        for _, start in ipairs({1, 6, 111}) do
+            local diamond, firstExp, repeatExp = 0, 0, 0
+            for floor = start, TC.getRunEndFloor(start) do
+                local cfg = TC.getFloor(floor)
+                diamond = diamond + cfg.firstDiamond
+                firstExp = firstExp + math.floor(StageExp.getExpPerMin(cfg.monsterLevel) * 2)
+                repeatExp = repeatExp + math.floor(StageExp.getExpPerMin(cfg.monsterLevel))
+            end
+            local preview = Resources.getRewardPreview(400000 + start, nil, {babel_tower={floor=1,cleared={}}})
+            eq(preview.firstAmount, diamond, "塔本组剩余首钻汇总")
+            eq(preview.repeatAmount, 0, "塔重打预览0黑钻")
+            eq(preview.playerExp, firstExp, "塔首通2分逐层取整汇总")
+            eq(preview.repeatPlayerExp, repeatExp, "塔重打1分逐层取整汇总")
+            eq(preview.artifactDropRate, .05, "预览每层神器概率")
+            eq(table.concat(preview.artifactQualityWeights, ","), "80,18,2", "预览神器品质权重")
+            eq(preview.runEndFloor, TC.getRunEndFloor(start), "末组112截断")
+        end
+        eq(Resources.getRewardPreview(400001, nil, {babel_tower={floor=6,cleared={}}}).firstAmount, 0,
+            "旧floor6首组首奖已领")
+        local fresh = Resources.getRewardPreview(400001, nil, {babel_tower={floor=1,cleared={}}})
+        eq(Resources.getRewardPreview(400001, nil, {babel_tower={floor=1,cleared={["5"]=true}}}).firstAmount,
+            fresh.firstAmount - TC.getFloor(5).firstDiamond, "稀疏高层cleared不抹低层首奖")
         local towerPower, towerEstimated = Resources.getRecommendedPower(400001)
         eq(towerPower, SRP.get(1201) * 2, "塔同等级参考乘属性倍率")
         eq(towerEstimated, true, "塔仅作参考")
@@ -296,8 +351,8 @@ function Start()
         bridgeEnv.ClientDispatcher.set = function(name) order[#order + 1] = name end
         local Service = env.require("rules.dungeon.DungeonService")
         Service.SetPersistCallback(persist, hooks)
-        local previousPlayer = cjson.encode(modules.player)
-        local previousHeroes = cjson.encode(modules.heroes)
+        local previousPlayer = copy(modules.player)
+        local previousHeroes = copy(modules.heroes)
         for _, failure in ipairs({ "write", "rename" }) do
             failWrite, failRename = failure == "write", failure == "rename"
             local notifications = #order
@@ -306,8 +361,8 @@ function Start()
                 return true, nil, {}
             end)
             eq(committed, false, failure .. "事务失败")
-            eq(cjson.encode(modules.player), previousPlayer, failure .. "玩家经验原位回滚")
-            eq(cjson.encode(modules.heroes), previousHeroes, failure .. "队员经验原位回滚")
+            check(same(modules.player, previousPlayer), failure .. "玩家经验原位回滚")
+            check(same(modules.heroes, previousHeroes), failure .. "队员经验原位回滚")
             eq(#order, notifications, failure .. "事务零通知")
         end
         failWrite, failRename = false, false
@@ -326,9 +381,19 @@ function Start()
             dailyDay = math.floor((os.time() + 28800) / 86400), buffs = {} } }
         modules.currency = {}
         mocks["rules.character.PlayerDataManager"].MarkDirty = function() end
+        modules.artifacts = env.require("shared.artifact.ArtifactSchema").Fields.artifacts.getDefault()
+        local beforeTowerGems = modules.currency.gems or 0
         local Tower = env.require("rules.tower.TowerService")
+        -- 此处专测原经验与0钻，不让神器概率影响只读经验oracle。
+        local oldRandom = env.math
+        env.math = setmetatable({ random = function() return .99 end }, { __index = math })
         local towerOk, _, towerResult = Tower.Sweep(1)
+        env.math = oldRandom
         check(towerOk, "塔扫荡成功")
+        eq(towerResult.diamondReward, 0, "塔扫荡无黑钻")
+        eq(modules.currency.gems or 0, beforeTowerGems, "扫荡余额无黑钻变化")
+        eq(towerResult.playerExp, math.floor(StageExp.getExpPerMin(TC.getFloor(1).monsterLevel) * 10),
+            "塔扫荡保持原10分钟经验")
         check(towerResult.playerExp > 0 and towerResult.heroExpTotal > 0, "塔扫荡发两类经验")
         print(TAG .. " ALL PASS: " .. assertions .. " assertions")
     end)

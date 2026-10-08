@@ -28,6 +28,10 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
 ---@field repeatAmount number|nil
 ---@field playerExp number|nil
 ---@field repeatPlayerExp number|nil
+---@field runStartFloor number|nil
+---@field runEndFloor number|nil
+---@field artifactDropRate number|nil
+---@field artifactQualityWeights number[]|nil
 ---@field equipLevel number|nil
 ---@field equipMinQuality number|nil
 ---@field equipMaxQuality number|nil
@@ -55,7 +59,9 @@ function M.getGroups()
         }
     end
     local ids = {}
-    for floor = 1, TC.MAX_FLOOR do ids[#ids + 1] = TOWER_STAGE_BASE + floor end
+    for floor = 1, TC.MAX_FLOOR, TC.CHECKPOINT_INTERVAL do
+        ids[#ids + 1] = TOWER_STAGE_BASE + floor
+    end
     groups[#groups + 1] = {
         key = "R:babel_tower", name = "通天塔", subLabel = "",
         unlockStage = DC.UNLOCK_CONDITIONS.babel_tower,
@@ -75,6 +81,9 @@ end
 ---@param stageId number|nil
 ---@return number|nil
 function M.getDisplayStageId(stageId)
+    if M.isTowerStage(stageId) then
+        return TOWER_STAGE_BASE + TC.getCheckpointFloor(stageId - TOWER_STAGE_BASE)
+    end
     if stageId and SC.isResourceStage(stageId) then return DC.getChapterStageId(stageId) end
     return stageId
 end
@@ -107,17 +116,38 @@ end
 --- 只读展示整行击杀收益，不调用随机/发奖接口；塔首通与重打分列。
 ---@param stageId number
 ---@param entry table|nil
+---@param dungeonData table|nil 只读副本账本；省略则读取最新客户端快照。
 ---@return StageSelectRewardData|nil
-function M.getRewardPreview(stageId, entry)
+function M.getRewardPreview(stageId, entry, dungeonData)
     if M.isTowerStage(stageId) then
-        local floorData = TC.getFloor(stageId - TOWER_STAGE_BASE)
-        if not floorData then return nil end
+        local dungeon = dungeonData or ClientDispatcher.get("dungeon") or {}
+        local tower = dungeon.babel_tower or {}
+        local cleared = tower.cleared or {}
+        local legacyCleared = math.max(0, math.min(TC.MAX_FLOOR, math.floor(tonumber(tower.floor) or 1) - 1))
+        local startFloor = TC.getCheckpointFloor(stageId - TOWER_STAGE_BASE)
+        local endFloor = TC.getRunEndFloor(startFloor)
+        local firstAmount, firstExp, repeatExp = 0, 0, 0
+        for floor = startFloor, endFloor do
+            local floorData = TC.getFloor(floor)
+            if not floorData then return nil end
+            -- 按逐层首通记录与旧floor-1扣除已领取金额；稀疏高层cleared不冒充全部低层已通。
+            if floor > legacyCleared and not cleared[floor] and not cleared[tostring(floor)] then
+                firstAmount = firstAmount + floorData.firstDiamond
+            end
+            local perMinute = StageExpHelper.getExpPerMin(floorData.monsterLevel)
+            -- 首通/重打各列整组经验口径，逐层先取整再求和。
+            firstExp = firstExp + math.floor(perMinute * TC.FIRST_EXP_MINUTES)
+            repeatExp = repeatExp + math.floor(perMinute * TC.REPEAT_EXP_MINUTES)
+        end
         local def = DC.DEFINITIONS.black_diamond
+        local weights = TC.ARTIFACT_QUALITY_WEIGHTS
         return {
-            iconPath = def.rewardIcon, quality = def.quality, amount = floorData.firstDiamond,
-            isEstimate = false, firstAmount = floorData.firstDiamond, repeatAmount = floorData.sweepDiamond,
-            playerExp = math.floor(StageExpHelper.getExpPerMin(floorData.monsterLevel) * 20),
-            repeatPlayerExp = math.floor(StageExpHelper.getExpPerMin(floorData.monsterLevel) * 10),
+            iconPath = def.rewardIcon, quality = def.quality, amount = firstAmount,
+            isEstimate = false, firstAmount = firstAmount, repeatAmount = 0,
+            playerExp = firstExp, repeatPlayerExp = repeatExp,
+            runStartFloor = startFloor, runEndFloor = endFloor,
+            artifactDropRate = TC.ARTIFACT_DROP_RATE,
+            artifactQualityWeights = { weights[1], weights[2], weights[3] },
         }
     end
     local id, floor = DC.decodeStageId(stageId)
@@ -131,7 +161,8 @@ function M.getRewardPreview(stageId, entry)
     local amount = perMinute * math.max(0, combat.firstCount or 0) / 20
     local result = {
         iconPath = def.rewardIcon, quality = def.quality, amount = amount, isEstimate = true,
-        playerExp = DC.getStageExpAmount(stageId, math.max(0, combat.firstCount or 0)),
+        -- 在线每杀先取整，预览必须逐杀累加；不使用一次总击杀取整的离线口径。
+        playerExp = DC.getStageExpAmount(stageId, 1) * math.max(0, combat.firstCount or 0),
     } ---@type StageSelectRewardData
     if id == "equipment_vault" then
         local floorData = DC.getFloor(id, legacyFloor)
@@ -147,8 +178,8 @@ function M.getStageEntry(stageId)
     local floor = stageId - TOWER_STAGE_BASE
     local data = TC.getFloor(floor)
     return {
-        id = stageId, name = "通天塔 1-" .. floor,
-        stage = floor, displayChapter = 1, monsterLevel = data.monsterLevel,
+        id = stageId, name = "通天塔 第" .. floor .. "层",
+        stage = floor, monsterLevel = data.monsterLevel,
         monsters = {}, bossId = 0, tower = true,
     }
 end
@@ -169,14 +200,15 @@ end
 function M.getCurrentTowerStageId(dungeonData)
     local dungeon = dungeonData or ClientDispatcher.get("dungeon") or {}
     local tower = dungeon.babel_tower or {}
-    local floor = math.max(1, math.min(TC.MAX_FLOOR, math.floor(tonumber(tower.floor) or 1)))
-    return TOWER_STAGE_BASE + floor
+    return TOWER_STAGE_BASE + TC.getMaxUnlockedCheckpoint(tower)
 end
 
 function M.isStageUnlocked(stageId, battleData, dungeonData)
     if not battleData then battleData, dungeonData = M.getProgress() end
     if M.isTowerStage(stageId) then
-        if not M.isTowerUnlocked(battleData) then return false end
+        if not M.isTowerUnlocked(battleData) or not TC.isCheckpointFloor(stageId - TOWER_STAGE_BASE) then
+            return false
+        end
         return stageId <= M.getCurrentTowerStageId(dungeonData)
     end
     return DC.isStageUnlocked(stageId, battleData, dungeonData)

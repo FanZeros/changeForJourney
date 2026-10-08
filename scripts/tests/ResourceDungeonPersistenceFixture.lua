@@ -146,6 +146,7 @@ function M.new()
     h.Registry = env.require("shared.ModuleRegistry")
     h.Schema = env.require("shared.schemas.CharacterSchema")
     h.DC = env.require("config.DungeonConfig")
+    h.TC = env.require("config.TowerConfig") -- 与 DungeonCompat 共用真实配置，不替换旧塔历史迁移。
     h.IC = env.require("config.DungeonIdleConfig")
     h.ES = env.require("systems.EquipmentSystem")
     h.Protocol = env.require("shared.Protocol")
@@ -161,7 +162,7 @@ function M.new()
         if h.failure == "false" then return false end
         if h.failure == "nil" then return nil end
         if h.failure == "throw" then error("expected persist exception") end
-        return h.Save.Flush()
+        return h.Save.Flush(h.PDM.GetModule(1, "player")) -- 与正式本地桥相同的候选经验快照。
     end, {
         begin = function() h.queue = {}; h.beforePushes = h.pushes; h.beforeEvents = h.events end,
         finish = function(_, success)

@@ -127,25 +127,83 @@ function Start()
     runCase("tower result twelve heroes landscape and legacy close compatibility", function()
         local env, mods, stat = private()
         mods["urhox-libs/UI"] = fakeUI(stat)
-        mods["urhox-libs/UI"].MeasureTextWidth = function() return 0 end
+        -- 确定性测宽替身只检查生产字号拟合与格子几何，不冒称真实字体/像素验收。
+        local function measure(caption, size) return utf8.len(caption) * size * .62 end
+        mods["urhox-libs/UI"].MeasureTextWidth = measure
         mods["urhox-libs/UI"].Theme = { FontSize = function(s) return s end }
         mods["core.NumberUtil"] = { format = tostring }
         mods["core.DrawUtil"], mods["ui.widget.ImageCache"] = {}, {}
-        mods["core.DarkIcon"] = { drawQualityBg = noop }
+        mods["core.DarkIcon"] = { drawQualityBg = function(_, quality)
+            stat.rewardQualities[#stat.rewardQualities + 1] = quality
+        end }
         mods["ui.widget.HeroFrame"] = { draw = function() stat.heroDraws = (stat.heroDraws or 0) + 1 end }
-        mods["config.ResourceDefs"] = { DEFS = { diamond = { name = "黑晶", quality = 5 } } }
+        mods["config.ResourceDefs"] = { DEFS = {
+            diamond = { name = "黑晶", quality = 5, iconPath = "image/货币道具/UI_icon_SJ_X.png" },
+        } }
         mods["config.HeroConfig"] = { HEROES = {} }
-        mods["core.I18n"] = { get = function() return "zh_CN" end, lookup = function(s) return s end }
+        mods["core.I18n"] = { get = function() return stat.language or "zh_CN" end, lookup = function(s) return s end }
+        stat.imagePaths, stat.imagePaints, stat.rewardQualities = {}, {}, {}
         mods["ui.widget.DesignWidgetSurface"] = { init = noop, draw = function(root)
             stat.resultRoot = root; stat.resultDraws = (stat.resultDraws or 0) + 1
+            -- 调用真实ResultIcon:Render，显式CPU布局；证明图标调用路径，不证明Yoga/GPU。
+            for _, cell in ipairs(root.children[7].children) do
+                if cell.children[1] and cell.children[1].reward then
+                    local icon = cell.children[1]
+                    icon.layout = { x = icon.props.left, y = icon.props.top,
+                        w = icon.props.width, h = icon.props.height }
+                    icon:Render({})
+                end
+            end
         end }
-        env.nvgCreateImage = function() return -1 end
+        env.nvgCreateImage = function(_, path)
+            if path:find("角色图标", 1, true) then return -1 end
+            stat.imagePaths[#stat.imagePaths + 1] = path
+            return #stat.imagePaths
+        end
+        env.nvgImagePattern = function(_, _, _, _, _, _, image)
+            stat.imagePaints[#stat.imagePaints + 1] = stat.imagePaths[image]
+            return {}
+        end
+        env.nvgFillPaint = noop
         local result = compile("ui/battle/popup/BattleResultPanel.lua", env)
         local heroes, closed = {}, 0
         for i = 1, 12 do heroes[i] = { heroId = i, name = "英雄" .. i, quality = 1, totalDamage = i * 100 } end
+        local rewards = {
+            { type = "diamond", amount = 123 },
+            { type = "artifact", name = "星辉护符", quality = 2,
+                iconPath = "image/神器/UI_artifact_2.png", amount = 1 },
+            { type = "player_exp", name = "远征经验", amount = 45678 },
+            { type = "hero_exp", name = "队员经验", amount = 23456 },
+        }
+        local function rewardGeometry(root, items)
+            local panel = root.children[7]
+            eq(#panel.children, #items, "every reward retained including EXP")
+            check(panel.props.left + panel.props.width <= root.props.width
+                and panel.props.top + panel.props.height <= root.props.height, "reward panel inside canvas")
+            for i, cell in ipairs(panel.children) do
+                local item = items[i]
+                check(cell.props.left >= 0 and cell.props.top >= 0
+                    and cell.props.left + cell.props.width <= panel.props.width
+                    and cell.props.top + cell.props.height <= panel.props.height, "reward cell inside panel " .. i)
+                eq(cell.children[1].reward, item, "original complete reward instance rendered " .. i)
+                eq(cell.children[2].text, item.name or "黑晶", "actual reward name " .. i)
+                eq(cell.children[3].text, "×" .. tostring(item.amount), "actual reward amount " .. i)
+                for _, child in ipairs(cell.children) do
+                    check(child.props.left >= 0 and child.props.top >= 0
+                        and child.props.left + child.props.width <= cell.props.width
+                        and child.props.top + child.props.height <= cell.props.height, "reward child geometrically fits " .. i)
+                    if child.text then
+                        check(measure(child.text, child.props.fontSize) <= child.props.width - 4 + .000001,
+                            "production fitted label width " .. i)
+                        check(child.props.fontSize * child.props.lineHeight <= child.props.height,
+                            "production fitted label line height " .. i)
+                    end
+                end
+            end
+        end
         result.init({})
-        result.show({ layout = "tower", floor = 112, isWin = true, elapsedSecs = 125,
-            heroStats = heroes, rewards = { { type = "diamond", amount = 123 } },
+        result.show({ layout = "tower", floor = 112, wave = 1, isWin = true, elapsedSecs = 125,
+            heroStats = heroes, rewards = rewards,
             onClose = function() closed = closed + 1 end })
         for _, size in ipairs({ {1920,1080}, {1280,800} }) do
             result.draw({}, size[1], size[2])
@@ -153,6 +211,7 @@ function Start()
             eq(root.props.width, 1440, "actual horizontal content width")
             eq(root.props.height, 760, "actual horizontal content height")
             eq(root.children[1].text, "通天塔 · 通关", "clear title")
+            eq(root.children[2].text, "第112层", "actual result floor only despite wave1 input")
             eq(root.children[3].text, "总耗时 2分05秒", "elapsed visible")
             eq(#root.children[6].children, 12, "all twelve heroes retained")
             for _, cell in ipairs(root.children[6].children) do
@@ -160,12 +219,41 @@ function Start()
                 eq(cell.children[2].props.fontWeight, "normal", "host registered font only")
             end
             eq(root.children[7].children[1].children[3].text, "×123", "reward amount visible")
+            rewardGeometry(root, rewards)
+            eq(stat.imagePaints[#stat.imagePaints - 1], "image/货币道具/UI_icon_SJ_X.png", "actual diamond Render image path")
+            eq(stat.imagePaints[#stat.imagePaints], rewards[2].iconPath, "artifact iconPath used by actual Render")
+            eq(stat.rewardQualities[#stat.rewardQualities - 2], 2, "artifact quality override rendered")
             eq(stat.depth, 0, "landscape draw restores NVG state")
         end
         local oldRoot = stat.resultRoot
         result.handleInput(0, 0); result.close()
         check(oldRoot.destroyed and not result.isOpen(), "close destroys owned tree")
         eq(closed, 1, "close callback exactly once")
+        -- 真奖励可能含多件神器及两类经验；覆盖>4时生产两列路径，不丢掉后排。
+        local expandedRewards = copy(rewards)
+        for i = 1, 4 do
+            expandedRewards[#expandedRewards + 1] = { type = "artifact", quality = (i % 3) + 1,
+                name = "长名称神器" .. i .. "·保留完整实例名称与数量",
+                iconPath = "image/神器/oracle_" .. i .. ".png", amount = 1 }
+        end
+        result.show({ layout = "tower", floor = 112, wave = 1, isWin = true,
+            heroStats = heroes, rewards = expandedRewards })
+        local expectedFloors = { zh_CN = "第112层", zh_TW = "第112層", en = "Floor 112", ja = "112階", ko = "112층" }
+        for _, language in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+            stat.language = language
+            for _, size in ipairs({ {1920,1080}, {1280,800} }) do
+                result.draw({}, size[1], size[2])
+                local root = stat.resultRoot
+                eq(root.children[2].text, expectedFloors[language], "localized floor no wave fraction " .. language)
+                rewardGeometry(root, expandedRewards)
+                check(root.children[7].children[2].props.left > root.children[7].children[1].props.left,
+                    "actual multiple rewards two-column layout")
+                eq(stat.imagePaints[#stat.imagePaints], expandedRewards[#expandedRewards].iconPath,
+                    "last reward icon is actually rendered")
+                eq(stat.depth, 0, "multi-reward result restores NVG state")
+            end
+        end
+        result.close(); stat.language = "zh_CN"
         result.show({ layout = "tower", isWin = false, heroStats = heroes })
         result.draw({}, 1280, 800)
         eq(stat.resultRoot.children[1].text, "通天塔 · 失败", "defeat title")
@@ -206,6 +294,91 @@ function Start()
         local sidebar = compile("ui/tower/TowerBuffSidebar.lua", env)
         return sidebar, mods["ui.tower.TowerLayout"], stat
     end
+    runCase("checkpoint selector real draw rewards and read-only entry mapping", function()
+        local env,mods,stat=private()
+        local baseRequire=env.require
+        env.require=function(name)
+            if mods[name] then return mods[name] end
+            assert(name:match("^config%.") or name=="shared.StageUtils" or name=="systems.AttributeDef",
+                "unprepared selector dependency "..name)
+            local module=compile(name:gsub("%.","/")..".lua",env)
+            mods[name]=module
+            return module
+        end
+        local progress={maxStageId=701}
+        local dungeon={babel_tower={floor=1,cleared={}}}
+        mods["runtime.ClientDispatcher"]={get=function(name)
+            return name=="battle" and progress or (name=="dungeon" and dungeon or nil)
+        end}
+        mods["core.GameState"]={getPower=function()return 100 end}
+        mods["core.I18n"]={get=function()return "zh_CN" end,lookup=function(s)return s end,
+            format=function(s,...)return string.format(s,...)end}
+        mods["core.I18nTower"]=compile("core/I18nTower.lua",env)
+        mods["ui.tower.TowerPresentation"]=compile("ui/tower/TowerPresentation.lua",env)
+        mods["core.NumberUtil"]={format=tostring}
+        local drawn={}
+        mods["core.DrawUtil"]={drawTextStroke=function(_,_,_,s)drawn[#drawn+1]=s end,
+            drawImageCentered=noop,drawNineSlice=noop,drawImageCover=noop}
+        mods["core.DarkIcon"]={drawQualityBg=noop,draw=noop}
+        mods["systems.ButtonFeedback"]={trigger=noop}
+        mods["ui.battle.stage.BattleEnemySpawn"]={getFirstClearBonusMonsterIds=function()return {} end}
+        mods["ui.battle.stage.ExpeditionOverview"]={}
+        mods["ui.battle.scene.BattleScene"]={getMaxStageId=function()return progress.maxStageId end,
+            getStageId=function()return 101 end,getClearedStages=function()return {} end}
+        mods["ui.battle.tri.BattleTriPage"]={getTeamStageId=function()return 101 end,
+            isTerminalRaidActive=function()return false end}
+        mods["ui.hud.BottomNav"]={isAllLocked=function()return false end,isTabLocked=function()return false end}
+        mods["ui.dungeon.DungeonBattleScene"]={isOpen=function()return false end}
+        mods["ui.tower.TowerBattleScene"]={isActive=function()return false end}
+        env.nvgCreateImage=function()return -1 end;env.nvgImageSize=function()return 0,0 end
+        env.nvgDeleteImage=noop;env.nvgResetTransform=noop
+        env.nvgTextBounds=function(_,_,_,s)return utf8.len(s)*12 end
+        local resources=compile("ui/battle/stage/StageSelectResources.lua",env)
+        mods["ui.battle.stage.StageSelectResources"]=resources
+        local reward=compile("ui/battle/stage/StageSelectRewardPreview.lua",env)
+        mods["ui.battle.stage.StageSelectRewardPreview"]=reward
+        local selector=compile("ui/battle/stage/StageSelectDialog.lua",env)
+        local towerGroup=resources.getGroups()[4]
+        eq(#towerGroup.ids,23,"selector only lists 23 checkpoints")
+        for i,id in ipairs(towerGroup.ids) do
+            eq(id,400001+(i-1)*5,"checkpoint IDs stay real floors")
+            eq(resources.getStageEntry(id).name,"通天塔 第"..(id-400000).."层","entry name no chapter label")
+        end
+        eq(resources.getDisplayStageId(400112),400111,"last floor reveals its checkpoint")
+        eq(resources.getCurrentTowerStageId(dungeon),400001,"fresh tower checkpoint1")
+        check(not resources.isStageUnlocked(400006,progress,dungeon),"uncleared group cannot select6")
+        check(not resources.isStageUnlocked(400002,progress,dungeon),"noncheckpoint2 is never selectable")
+        dungeon.babel_tower.floor=6
+        eq(resources.getCurrentTowerStageId(dungeon),400006,"old floor-only save unlocks6")
+        check(resources.isStageUnlocked(400006,progress,dungeon),"old cleared5 can enter6")
+        eq(resources.getRewardPreview(400001,nil,dungeon).firstAmount,0,"cleared first group no diamond preview")
+        dungeon.babel_tower={floor=1,cleared={["5"]=true}}
+        eq(resources.getRewardPreview(400001,nil,dungeon).firstAmount,1200,"sparse5 only deducts floor5")
+        dungeon.babel_tower={floor=1,cleared={}}
+        local last=resources.getRewardPreview(400111,nil,dungeon)
+        eq(last.runEndFloor,112,"last group ends112")
+        eq(last.firstAmount,11550,"last two floors first-clear amount")
+        eq(last.repeatAmount,0,"repeat and sweep diamond0")
+        eq(last.artifactDropRate,.05,"artifact chance per floor5 percent")
+        eq(table.concat(last.artifactQualityWeights,","),"80,18,2","conditional quality weights")
+        local vg={}
+        selector.init(vg);selector.openDungeon(1,"babel_tower");env.time.elapsedTime=101
+        drawn={};selector.draw(vg)
+        local seen={};for _,s in ipairs(drawn)do seen[s]=true end
+        check(seen["第1层"] and seen["第6层"],"real selector draws floor labels")
+        check(seen["第1-5层 · 每层1波"],"real selector draws group1..5")
+        check(seen["本组剩余首通黑钻 ×1650 · 重打/扫荡0"],"remaining group first-clear visible")
+        check(seen["每层胜利神器5% · 品质1/2/3 80/18/2%"],"random artifact explicitly probability not guaranteed")
+        for _,s in ipairs(drawn)do check(not s:find("每层10波",1,true),"no ten-wave preview") end
+        local requested=0
+        selector.setOnDungeonSelect(function(_,_,floor)requested=floor;return false end)
+        selector.handleInput(600,980);eq(requested,0,"locked real row6 rejects entry")
+        dungeon.babel_tower.floor=6
+        selector.handleInput(600,980);eq(requested,6,"unlocked row6 calls checkpoint6")
+        eq(stat.actions,0,"preview does not dispatch rewards")
+        selector.close();env.require=baseRequire
+        eq(stat.depth,0,"selector drawing restores all state")
+    end)
     runCase("layout symmetry cap inverses and real mainline interiors", function()
         local env, mods = private()
         local layout = mods["ui.tower.TowerLayout"]
@@ -254,6 +427,19 @@ function Start()
         sidebar.draw({}, 1920, 1080, snapshot)
         local left, right = stat.roots[1], stat.roots[2]
         eq(#left.children[4].children[1].children, 112, "112 read-only nodes")
+        eq(left.children[2].text, "第112层", "实际层号不再章-关")
+        eq(left.children[3].text, "每层1波 · 每5层一组", "单波五层组规则可见")
+        local routeNodes = left.children[4].children[1].children
+        local starts = 0
+        for floor, node in ipairs(routeNodes) do
+            eq(node.children[1].text, tostring(floor), "路线仍保留真实112层号")
+            if (floor - 1) % 5 == 0 then
+                starts = starts + 1
+                eq(node.children[2].text, "起点", "每五层标记起点")
+            else eq(#node.children, 1, "普通层不假装可启动") end
+        end
+        eq(starts, 23, "最后起点111不裁剪112终点")
+        eq(#routeNodes[112].children, 1, "112仅终点不是启动点")
         local content = right.children[3].children[1]
         eq(#content.children, 3, "one row per id")
         local first = content.children[1]
@@ -504,6 +690,8 @@ function Start()
     end)
     local function sceneFixture()
         local env,mods,stat=private()
+        mods["urhox-libs/UI"]=fakeUI(stat)
+        mods["ui.widget.DesignWidgetSurface"]={init=noop,draw=noop}
         local panel={open=false,visible=false,version=0,pending=false,showCalls=0,clicks=0}
         function panel.close()panel.open,panel.visible=false,false;panel.version=panel.version+1 end
         function panel.isOpen()return panel.open end
@@ -542,7 +730,7 @@ function Start()
     end
     runCase("actual Scene copied snapshot open-session ABA modal routing",function()
         local scene,s,panel,tri,side,stat=sceneFixture()
-        local opts={data={runId="same",floor=5,wave=3,buffs={1,2}},teamAllies={{},{},{}}}
+        local opts={data={runId="same",floor=5,wave=1,buffs={1,2}},teamAllies={{},{},{}}}
         scene.open(opts);local key=scene.getPresentationKey()
         scene.open(opts);check(key~=scene.getPresentationKey(),"same run new open session")
         local snapshot=scene.getDisplayState();snapshot.buffIds[1]=999;eq(s.buffIds[1],1,"snapshot immutable")
@@ -561,7 +749,7 @@ function Start()
         scene.handleClick(100,300,1920,1080);eq(panel.clicks,1,"visible pick modal")
         panel.visible=false;side.action="resume_pick"
         scene.handleClick(1700,1020,1920,1080);eq(panel.showCalls,1,"hidden pick resume")
-        eq(#s.buffIds,2,"resume no buff append");eq(s.wave,3,"resume no wave advance")
+        eq(#s.buffIds,2,"resume no buff append");eq(s.wave,1,"resume keeps the one-wave floor")
         panel.visible=false;scene.handleScroll(-1,100,300,1920,1080);eq(side.scrolls,1,"hidden pick allows list")
         scene.handleDragBegin(100,300,1920,1080);eq(side.drag,1,"hidden pick drag")
         panel.visible=true;scene.handleScroll(-1,100,300,1920,1080);eq(side.scrolls,1,"visible modal no scroll")
@@ -584,16 +772,31 @@ function Start()
         mods["ui.battle.scene.BattleView"].draw=function()stat.views[#stat.views+1]=true end
         mods["ui.tower.TowerBuffSidebar"]={drawConfirmation=noop}
         mods["core.PlayerStore"].Get=function()return {}end
+        mods["core.I18n"]={get=function()return "zh_CN" end}
+        mods["core.I18nTower"]=compile("core/I18nTower.lua",env)
+        mods["ui.tower.TowerPresentation"]=compile("ui/tower/TowerPresentation.lua",env)
+        mods["core.DrawUtil"].drawTextStroke=function(_,_,_,text,_,_,r,g,b)
+            stat.hudText,stat.hudColor=text,{r,g,b}
+        end
         mods["ui.battle.popup.BattleResultPanel"].isOpen=function()return false end
         local dungeon=mods["ui.dungeon.DungeonBattle"]
         dungeon.getElapsed=function()return 5 end;dungeon.getTimeRemaining=function()return 120 end;dungeon.getRagePhase=function()return 0 end
         dungeon.onDefeat=function()stat.defeats=(stat.defeats or 0)+1 end
         local tri=compile("ui/tower/TowerTriBattle.lua",env)
-        local s=state(tri.isOpen);s.open=true;s.phase="active"
+        local s=state(tri.isOpen);s.open=true;s.phase="active";s.floor=112;s.wave=1
         for row=1,3 do s.lanes[row]={allies={},enemies={},queue={},wiped=false,cleared=false}end
         for _,size in ipairs({{1920,1080},{1280,800}})do
             stat.clips,stat.views={},{}
             tri.draw({},size[1],size[2]);eq(#stat.views,3,"three real Tri draw calls")
+            eq(stat.hudText,"第112层  剩余120s","顶部只显示实际楼层与剩余秒数")
+            for phase=1,2 do
+                dungeon.getRagePhase=function()return phase end
+                tri.draw({},size[1],size[2])
+                eq(stat.hudText,"第112层  剩余120s","狂暴阶段也保留实际层号无波次")
+                eq(stat.hudColor[1],255,"狂暴红色保持")
+                eq(stat.hudColor[2],phase==1 and 102 or 34,"狂暴与超级狂暴颜色保留")
+            end
+            dungeon.getRagePhase=function()return 0 end
             local l=mods["ui.tower.TowerLayout"].compute(size[1],size[2])
             near(stat.clips[1].x,l.center.x,"frame middle clip")
             near(stat.clips[1].w,l.center.w,"frame clip width")

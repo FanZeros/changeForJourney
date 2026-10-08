@@ -64,6 +64,7 @@ local confirmTitle = nil
 local confirmNote = nil
 local nodes = {} ---@type Panel[]
 local nodeLabels = {} ---@type Label[]
+local checkpointLabels = {} ---@type table<number, Label>
 local lastFloor, lastWave, lastPhase, lastLanguage, lastBuffKey = 0, 0, "", "", ""
 local lastRouteViewport = 0
 local action = nil ---@type string?
@@ -142,13 +143,23 @@ local function ensureRoots()
         pointerEvents = "none" }
     for floor = 1, Config.MAX_FLOOR do
         local x = floor % 2 == 0 and 300 or 126
+        local checkpoint = Config.isCheckpointFloor(floor)
         local nodeLabel = UI.Label { text = tostring(floor), fontSize = 24,
             textAlign = "center", verticalAlign = "middle", width = "100%", height = "100%",
+            paddingBottom = checkpoint and 26 or 0,
             fontColor = C.muted, pointerEvents = "none" }
         local node = UI.Panel { position = "absolute", left = x - 34,
             top = (floor - 1) * 88 + 2, width = 68, height = 68,
             backgroundColor = C.surface, borderColor = C.border, borderWidth = 2,
             borderRadius = 6, pointerEvents = "none", children = { nodeLabel } }
+        if checkpoint then
+            local marker = UI.Label { text = text("起点"), fontSize = 12,
+                position = "absolute", left = 2, bottom = 2, width = 64, height = 26,
+                fontFamily = "sans", textAlign = "center", verticalAlign = "middle",
+                whiteSpace = "nowrap", fontColor = C.gold, pointerEvents = "none" }
+            node:AddChild(marker)
+            checkpointLabels[floor] = marker
+        end
         route:AddChild(node)
         nodes[floor], nodeLabels[floor] = node, nodeLabel
     end
@@ -230,15 +241,16 @@ local function sync(snapshot, layout)
         for floor, node in ipairs(nodes) do
             local current = floor == snapshot.floor
             local passed = floor < snapshot.floor
-            node:SetStyle({ borderColor = current and C.gold or C.border,
+            node:SetStyle({ borderColor = (current or Config.isCheckpointFloor(floor)) and C.gold or C.border,
                 borderWidth = current and 3 or 2,
                 backgroundColor = current and { 66, 41, 32, 255 } or C.surface })
             nodeLabels[floor]:SetFontColor((current or passed) and C.text or C.muted)
         end
         if floorLabel then floorLabel:SetText(text("第%d层", snapshot.floor)) end
     end
-    if snapshot.wave ~= lastWave or changedLanguage then
-        if waveLabel then waveLabel:SetText(text("波次 %d/%d", snapshot.wave, Config.WAVES_PER_FLOOR)) end
+    if changedLanguage then
+        if waveLabel then waveLabel:SetText(text("每层1波 · 每5层一组")) end
+        for _, marker in pairs(checkpointLabels) do marker:SetText(text("起点")) end
     end
     if snapshot.phase ~= lastPhase or changedLanguage then
         action = snapshot.phase == "buff_pick" and "resume_pick"
@@ -259,7 +271,7 @@ local function sync(snapshot, layout)
     end
     if changedLanguage then
         routeTitle:SetText(text("塔之路线"))
-        routeNote:SetText(text("本层路线仅供查看"))
+        routeNote:SetText(text("路线只读 · 标记为每五层起点"))
         ruleNote:SetText(text("次数仅作记录，效果按原规则生效"))
         confirmTitle:SetText(text("确认撤退？"))
         confirmNote:SetText(text("本层进度将丢失"))
@@ -438,7 +450,7 @@ function Sidebar.destroy()
     toggleButton = nil
     floorLabel, waveLabel, buffTitle, routeTitle, routeNote, ruleNote = nil, nil, nil, nil, nil, nil
     actionButton, pendingButton, confirmRetreat, confirmCancel, confirmTitle, confirmNote = nil, nil, nil, nil, nil, nil
-    nodes, nodeLabels = {}, {}
+    nodes, nodeLabels, checkpointLabels = {}, {}, {}
 end
 
 return Sidebar

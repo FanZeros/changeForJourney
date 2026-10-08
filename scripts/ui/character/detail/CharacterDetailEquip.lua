@@ -8,7 +8,6 @@ local PlayerStore = require("core.PlayerStore")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local HeroConfig = require("config.HeroConfig")
 local EquipmentSystem = require("systems.EquipmentSystem")
-local EquipmentSetSystem = require("systems.EquipmentSetSystem")
 local DetailAttrs = require("ui.character.detail.CharacterDetailAttrs")
 local Stats = require("ui.character.detail.CharacterEquipStats")
 local I18n = require("core.I18n")
@@ -103,12 +102,10 @@ local function currentFallback(heroId, level)
         if ai ~= bi then return ai < bi end
         return indices[a] < indices[b]
     end)
-    local equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
-    local counts = EquipmentSetSystem.countSets(equipment, heroId,
-        EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
+    -- 降级也复用隔离属性链的摘要，不能为显示调用 getFromInventory 水合 live 背包。
     return {
         current = current, preview = nil, rows = rows,
-        currentSets = EquipmentSetSystem.summarize(counts), previewSets = {}, candidate = nil,
+        currentSets = current.attrs and current.attrs._setRows or {}, previewSets = {}, candidate = nil,
     }
 end
 
@@ -169,6 +166,7 @@ local function dataSignature(selection)
     table.sort(seqKeys)
     for _, seq in ipairs(seqKeys) do append(seq); append(inventory[seq] or inventory[tonumber(seq)]) end
     append(ClientDispatcher.get("artifacts") or PlayerStore.Get("artifacts"))
+    append((ClientDispatcher.get("talents") or PlayerStore.Get("talents") or {}).litNodes)
     return table.concat(parts, "\31")
 end
 
@@ -203,8 +201,16 @@ local function refreshData(heroId, slot)
     local failure = nil
     if ok and type(preview.build) == "function" then
         -- 仅调用公共 API；不写 eqData、不发送穿戴动作、不复制预览公式。
-        local built, value = pcall(preview.build, heroId, level, selection and selection.seq or nil, slot,
-            { includeEquipmentBonuses = panelState.attributeMode == "equipment" })
+        -- options 是完整只读来源，不是单独开关；预览内部复制后才水合/试穿。
+        -- 四模块都显式提供，缺失模块为空，保持显式空快照不回读的契约。
+        local snapshots = {
+            heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes") or {},
+            equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment") or {},
+            artifacts = ClientDispatcher.get("artifacts") or PlayerStore.Get("artifacts") or {},
+            talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents") or {},
+            includeEquipmentBonuses = panelState.attributeMode == "equipment",
+        }
+        local built, value = pcall(preview.build, heroId, level, selection and selection.seq or nil, slot, snapshots)
         if built then
             result = value
         else

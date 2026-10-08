@@ -570,9 +570,14 @@ function M.calculate(hero, context)
 
     -- 裸魔攻副通道只计其实际倍率，不顺带保留魔伤/穿透/暴击。
     local bareMagicCoefficient = 0
-    if setSix(hero) == "starless" then bareMagicCoefficient = bareMagicCoefficient + 1.2 / 8 end
+    if setSix(hero) == "starless" then
+        local cfg = ESC.SETS.starless.effect6
+        bareMagicCoefficient = bareMagicCoefficient + cfg.magRatio / cfg.interval
+    end
     if primaryDamage and setFour(hero) == "riftcrystal" and setSix(hero) == "riftcrystal" then
-        bareMagicCoefficient = bareMagicCoefficient + 0.8 * 0.15 / 5
+        local cfg = ESC.SETS.riftcrystal
+        bareMagicCoefficient = bareMagicCoefficient + cfg.effect6.magRatio
+            * cfg.effect4.procChance / cfg.effect4.maxStacks
     end
     if id == 15 and not hero._etsDisabled and hasStage(hero, 3, context) then
         local extra = owned(hero, context).extraTalent or {}

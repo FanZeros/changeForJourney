@@ -11,6 +11,7 @@ local ART = require("systems.ArtifactRuntime")
 local NumberUtil = require("core.NumberUtil")
 local BattleStats = require("systems.BattleStats")
 local GameSFX = require("systems.GameSFX")
+local EquipmentSetRuntime = require("systems.EquipmentSetRuntime")
 
 local M = {}
 
@@ -116,6 +117,7 @@ function M.bind(deps)
         finalDmg = applyGlobalDmgMult(finalDmg)
         -- 铁憨憨帝国铁壁：拦截队友伤害（连击目标与主攻击一致）
         local comboTgtIsAlly = not isAlly
+        finalDmg = EquipmentSetRuntime.onIncoming(curTgt, finalDmg, attacker)
         finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, comboTgtIsAlly, syncUnitHp, result.category)
         result.damageDealt = finalDmg
         local shieldBefore = (curTgt.attrs.energyShield or 0) + (curTgt.attrs.tempEnergyShield or 0)
@@ -135,6 +137,7 @@ function M.bind(deps)
         if hit.isBlocked then
             prefix = prefix .. "格挡 "
             color  = { 180, 180, 180 }
+            EquipmentSetRuntime.onBlocked(curTgt, attacker, hit.blockedDamage or 0, dealDamageToUnit, isAlly)
         end
 
         -- 护盾吸收灰色飘字（完全吸收时不显示 -0）
@@ -170,7 +173,7 @@ function M.bind(deps)
             BattleStats.recordTaken(curTgt, takenForStats)
         end
 
-        if isAlly then
+        if isAlly and not EquipmentSetRuntime.shouldSkipThreat(attacker) then
             TM.onDamageDealt(attacker, result.totalDamage)
         end
 

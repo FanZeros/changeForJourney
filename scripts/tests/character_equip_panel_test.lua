@@ -637,17 +637,19 @@ function Start()
         end
     end
     check(legacyRightValues == 1 and legacyInside, "属性页右下长小数按38号缩放后含描边仍在1080画布内")
-    local legacyLongTop = requiredText(tostring(12345678901234567890))
+    local legacyLongTop = requiredText(Shared.formatNumber(12345678901234567890))
     check(legacyLongTop.fontSize < 38 and legacyLongTop.x + legacyLongTop.width * 0.5 + 3 <= 1080,
         "属性页右上超长数值保持完整文本并按实际标签可用宽缩放")
     clearDraw(); Stats.drawRadar({}, { str = 38.745624, agi = 8 }, nil)
-    check(rendered("38") and not rendered("38.745624"), "雷达只显示整数避免raw六围长小数越出画布")
+    check(rendered("38.745624") and not rendered("38"), "配装雷达保留实际六围小数，用测量缩放防止越出画布")
+    clearDraw(); Stats.drawLegacy({}, { str = 38.745624, agi = 8 })
+    check(rendered("38.745624") and not rendered("38"), "属性页和配装页六围显示使用同一精度")
     -- legacy基图允许0.08视觉下限；纯差集比较允许0，低值UI不锁死两者半径相等。
     clearDraw(); Stats.drawRadar({}, { str = 0.04, agi = 1 }, { str = 0.05, agi = 1 })
     local tinyDelta = rendered("+0.01")
-    check(tinyDelta and not rendered("+0.0") and rendered("0").fontSize == 34
+    check(tinyDelta and not rendered("+0.0") and rendered("0.04").fontSize == 34
         and tinyDelta.fontSize == 32 and tinyDelta.y == layout.cy - layout.labelR - 58,
-        "低值使用raw差值+0.01且保留原整数当前值字号/坐标，不预言visualfloor几何")
+        "低值当前六围0.04与raw差值+0.01都保留精度/坐标，不预言visualfloor几何")
 
     -- 纯视觉六围过渡：原数字/差集oracle不变，动画只插值归一化轮廓。
     do
@@ -934,8 +936,10 @@ function Start()
         if not near(point[1], radar.cx) or not near(point[2], radar.cy) then allCentered = false end
     end
     check(allCentered, "空装六围落中心而不是8%视觉下限虚构增益")
-    clearDraw(); Stats.drawRadar({}, { str = 2.8597845, agi = 0.012345 }, nil, true)
-    check(rendered("+2.9") and not rendered("+2.859785"), "装备六围正常值保留一位小数，不以长raw小数撑出栏外")
+    -- 避免 .xxxxxx5 的二进制表示落在十进制中点两侧；仍独立断言六位精度，不降位数。
+    clearDraw(); Stats.drawRadar({}, { str = 2.8597846, agi = 0.012345 }, nil, true)
+    check(rendered("+2.859785") and not rendered("+2.9") and Shared.formatNumber(2.8597846) == "2.859785",
+        "装备六围保留六位小数精度，字号测量防止撑出栏外")
     local narrow = requiredText("+0.012345")
     check(narrow.fontSize > 0 and narrow.fontSize <= 34
         and narrow.x + narrow.width * 0.5 + 3 <= 1080,

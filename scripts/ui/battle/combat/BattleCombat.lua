@@ -131,16 +131,18 @@ end
 --- 从天赋投射物选项提取战斗统计元数据
 local function statMetaFromProjOpts(projOpts)
     if not projOpts then return nil end
-    if projOpts.isDot or projOpts.statCategory or projOpts.isCrit or projOpts.critEligible ~= nil
-        or projOpts.threatScale or projOpts.isRicochet or projOpts.isNightSlash then
+    if projOpts.isDot or projOpts.statCategory or projOpts.category or projOpts.isCrit or projOpts.critEligible ~= nil
+        or projOpts.threatScale or projOpts.isRicochet or projOpts.isNightSlash or projOpts.noCounter or projOpts.noThreat then
         return {
             isDot = projOpts.isDot,
-            category = projOpts.statCategory,
+            category = projOpts.statCategory or projOpts.category,
             isCrit = projOpts.isCrit,
             critEligible = projOpts.critEligible,
             threatScale = projOpts.threatScale,
             isRicochet = projOpts.isRicochet,
             isNightSlash = projOpts.isNightSlash,
+            noCounter = projOpts.noCounter,
+            noThreat = projOpts.noThreat,
         }
     end
     return nil
@@ -394,7 +396,7 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     damage = applyGlobalDmgMult(damage)
     damage = ClassGateRuntime.applyDebtTaken(target, damage)
     damage = ClassGateRuntime.absorbIncoming(target, damage)
-    damage = EquipmentSetRuntime.onIncoming(target, damage)
+    damage = EquipmentSetRuntime.onIncoming(target, damage, source)
     if damage <= 0 then return 0 end
     TAL.resetEnemyDeath(target)
     local hpBefore = target.hp
@@ -463,7 +465,8 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
             )
         end
         -- 天赋/投射物伤害仇恨（如灵月飞剑 threatScale=0.1）
-        if statMeta and statMeta.threatScale then
+        if statMeta and statMeta.threatScale and not statMeta.noThreat
+            and not EquipmentSetRuntime.shouldSkipThreat(source) then
             TM.onDamageDealt(source, actual, false, statMeta.threatScale)
         end
     end
@@ -1298,6 +1301,7 @@ local function performAttack(attacker, targetList, isAlly)
                         -- 铁憨憨帝国铁壁：拦截队友伤害（takeDamage前）
                         local tgtIsAllyForAbsorb = not isAlly
                         if isHealer then tgtIsAllyForAbsorb = isAlly end
+                        finalDmg = EquipmentSetRuntime.onIncoming(curTgt, finalDmg, attacker)
                         finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, tgtIsAllyForAbsorb, syncUnitHp, result.category)
                         finalDmg = ART.onBeforeTakeDamage(curTgt, attacker, finalDmg, tgtIsAllyForAbsorb)
                         result.damageDealt = finalDmg
@@ -1332,9 +1336,8 @@ local function performAttack(attacker, targetList, isAlly)
                             kind = kind and (kind .. "phys") or "phys"
                         end
                         if hit.isBlocked then
-                            local blockedAmt = (hit.preBlockDamage or hit.rawDamage or takenForStats or 0) - (actual or 0)
-                            if blockedAmt < 0 then blockedAmt = takenForStats or 0 end
-                            EquipmentSetRuntime.onBlocked(curTgt, attacker, blockedAmt, dealDamageToUnit)
+                            local blockedAmt = hit.blockedDamage or 0
+                            EquipmentSetRuntime.onBlocked(curTgt, attacker, blockedAmt, dealDamageToUnit, isAlly)
                         end
 
                         -- 护盾吸收灰色飘字（完全吸收时不显示 -0）
@@ -1374,13 +1377,16 @@ local function performAttack(attacker, targetList, isAlly)
                         setHitFlash(curTgt)
                         if actual > 0 then GameSFX.play("hit", BattleStats.mountedTeam()) end
 
-                        if isAlly and not RCH.shouldSkipThreat(attacker) then
+                        if isAlly and not RCH.shouldSkipThreat(attacker)
+                            and not EquipmentSetRuntime.shouldSkipThreat(attacker) then
                             local includeBaseThreat = not baseThreatCounted
                             TM.onDamageDealt(attacker, result.totalDamage, includeBaseThreat)
                             if includeBaseThreat then baseThreatCounted = true end
                         end
                         -- 条件词条：攻击后仇恨加成（每次攻击获得仇恨�?X%）�?PVP 双向触发
-                        RCH.onAfterAttack(attacker, result.totalDamage)
+                        if not EquipmentSetRuntime.shouldSkipThreat(attacker) then
+                            RCH.onAfterAttack(attacker, result.totalDamage)
+                        end
                         -- 条件词条：终结机制（攻击低血量敌人有概率秒杀）�?PVP 双向触发
                         if curTgt.hp > 0 then
                             local executed = RCH.onAfterHit(attacker, curTgt)
@@ -1549,7 +1555,7 @@ local function performAttack(attacker, targetList, isAlly)
                 setHitFlash(curTarget)
                 if actualDmg > 0 then GameSFX.play("hit", BattleStats.mountedTeam()) end
 
-                if isAlly then
+                if isAlly and not EquipmentSetRuntime.shouldSkipThreat(attacker) then
                     local includeBaseThreat = not baseThreatCounted
                     TM.onDamageDealt(attacker, actualDmg, includeBaseThreat)
                     if includeBaseThreat then baseThreatCounted = true end

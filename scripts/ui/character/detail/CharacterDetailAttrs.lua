@@ -12,6 +12,9 @@ local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local ArtifactBridge   = require("systems.ArtifactBridge")
 local EquipmentSetSystem = require("systems.EquipmentSetSystem")
+local EquipmentSetRuntime = require("systems.EquipmentSetRuntime")
+local UnitAttributes = require("systems.UnitAttributes")
+local AttributeView = require("ui.character.detail.CharacterAttributeView")
 local CF = require("systems.CombatFormula")
 
 local M = {}
@@ -185,31 +188,58 @@ local function getHeroRuntimeData(heroesData, heroId)
     return heroesData.roster[heroId] or heroesData.roster[tostring(heroId)]
 end
 
-local function applyDetailRuntimeBonuses(attrs, heroId, classId, heroesData, eqData, options)
+local function applyDetailTeamAura(unit, heroId, heroesData, eqData)
+    local _, teamIdx = findArtifactPosition(heroesData, heroId)
+    unit.teamIdx = teamIdx
+    local units = { unit }
+    -- 仅判断所属队的套装标记，不为队光环重建整个名册或执行任何开战计时器。
+    -- 空属性来源只提供 _setSix 给公共 API；数值和幂等/clone 规则仍由它处理。
+    local ids = teamIdx and getTeamSlotIds(heroesData, teamIdx) or {}
+    local seen = { [tonumber(heroId) or heroId] = true }
+    for slot = 1, 4 do
+        local sourceId = tonumber(ids[slot] or ids[tostring(slot)])
+        if sourceId and sourceId > 0 and not seen[sourceId] and HC.get(sourceId) then
+            seen[sourceId] = true
+            local counts = EquipmentSetSystem.countSets(eqData, sourceId,
+                EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
+            for _, summary in ipairs(EquipmentSetSystem.summarize(counts)) do
+                if summary.setId == "last_rite" and summary.sixActive then
+                    local sourceAttrs = UnitAttributes.create({})
+                    sourceAttrs._setSix = "last_rite"
+                    units[#units + 1] = { heroId = sourceId, teamIdx = teamIdx, attrs = sourceAttrs }
+                    break
+                end
+            end
+        end
+    end
+    EquipmentSetRuntime.applyTeamAura(units)
+end
+
+local function applyDetailRuntimeBonuses(unit, heroId, heroesData, eqData, options)
+    local attrs = unit.attrs
     local heroEq = getHeroEquipped(eqData, heroId)
     if heroEq and eqData and eqData.inventory then
         require("systems.EquipmentPower").applyEquipment(attrs, eqData, heroId)
     end
+    -- 只复用确定性四件属性，不调用 onBattleStart/条件被动/计时器。
+    EquipmentSetRuntime.applyStaticBonuses(attrs)
 
     local partySlotForArtifact, teamIdx = findArtifactPosition(heroesData, heroId)
     if partySlotForArtifact then
-        ArtifactBridge.applyToUnit(attrs, partySlotForArtifact, options and options.artifacts, teamIdx)
+        ArtifactBridge.applyToUnit(attrs, partySlotForArtifact, options.artifacts, teamIdx)
     end
+    applyDetailTeamAura(unit, heroId, heroesData, eqData)
 end
 
 local function buildHeroAttrsForDetail(heroId, level, heroesData, eqData, options)
     local heroCfg = HC.get(heroId)
     if not heroCfg then return nil, nil end
-    local hd = getHeroRuntimeData(heroesData, heroId)
-    -- 显式空表阻止 ExtraTalentSystem.getOwned 的写真档回退。
-    local extraTalent = hd and hd.extraTalent
-    if options and extraTalent == nil then extraTalent = {} end
-    local awakening = hd and hd.awakening
-    if options and awakening == nil then awakening = {} end
-    local createOptions = options and { litNodes = options.talents and options.talents.litNodes or false, silent = true } or nil
-    local unit = HC.createHero(heroId, level, hd and hd.advBranch or nil, awakening, extraTalent, createOptions)
+    local hd = getHeroRuntimeData(heroesData, heroId) or {}
+    -- 每条详情路径都在完整隔离快照中重建，缺失养成不得借本地 Owned/旧星图默认值。
+    local createOptions = { litNodes = options.talents.litNodes or false, silent = true }
+    local unit = HC.createHero(heroId, level, hd.advBranch, hd.awakening or {}, hd.extraTalent or {}, createOptions)
     if not unit or not unit.attrs then return nil, heroCfg end
-    applyDetailRuntimeBonuses(unit.attrs, heroId, heroCfg.classId, heroesData, eqData, options)
+    applyDetailRuntimeBonuses(unit, heroId, heroesData, eqData, options)
     return unit, heroCfg
 end
 
@@ -298,45 +328,36 @@ end
 ---@param heroId number|string
 ---@param heroCfg table HeroConfig 条目
 ---@param level number
----@param options? table 显式 heroes/equipment/artifacts 快照；提供时不回读存档，六围保留小数
+---@param options? table 完整 heroes/equipment/artifacts/talents 快照；提供时不回读存档
 ---@return table { left={}, right={}, stats={}, attrs=UnitAttributes }
 function M.collectAttributes(heroId, heroCfg, level, options)
-    -- 旧调用保留数据来源；预览调用只读隔离快照，禁止临时改 PlayerStore/HC。
-    local heroesData = options and deepCopy(options.heroes or {})
-        or ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
-    local eqData = options and deepCopy(options.equipment or {})
-        or ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
-    local runtimeOptions = options and { artifacts = deepCopy(options.artifacts or {}),
-        talents = deepCopy(options.talents or {}) } or nil
-    local hd = getHeroRuntimeData(heroesData, heroId)
-    local extraTalent = hd and hd.extraTalent
-    if options and extraTalent == nil then extraTalent = {} end
-    local awakening = hd and hd.awakening
-    if options and awakening == nil then awakening = {} end
-    local talents
-    if options then talents = options.talents or {}
-    else talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents") end
-    local createOptions = options and { litNodes = talents and talents.litNodes or false, silent = true } or nil
-    local hero = HC.createHero(heroId, level, hd and hd.advBranch, awakening, extraTalent, createOptions)
+    -- 两页共用完整有效属性链；默认来源也先隔离，神器/觉醒/词条规范化不能写真档。
+    local source = options or {
+        heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes"),
+        equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment"),
+        artifacts = ClientDispatcher.get("artifacts") or PlayerStore.Get("artifacts"),
+        talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents"),
+    }
+    local runtimeOptions = deepCopy({ heroes = source.heroes or {}, equipment = source.equipment or {},
+        artifacts = source.artifacts or {}, talents = source.talents or {} })
+    local heroesData, eqData = runtimeOptions.heroes, runtimeOptions.equipment
+    local hero = buildHeroAttrsForDetail(heroId, level, heroesData, eqData, runtimeOptions)
     if not hero or not hero.attrs then
         return { left = {}, right = {}, stats = {} }
     end
     local attrs = hero.attrs
 
-    -- === 应用已穿戴装备、神器属性（与战斗/战力口径一致） ===
-    applyDetailRuntimeBonuses(attrs, heroId, heroCfg.classId, heroesData, eqData, runtimeOptions)
-
     -- === 左列：基础/防御属性 ===
     local left = {}
-    left[#left + 1] = { key = AD.MAX_HP, name = "生命值", value = tostring(math.floor(attrs:get(AD.MAX_HP))) }
+    left[#left + 1] = { key = AD.MAX_HP, name = "生命值", value = AttributeView.formatNumber(attrs:get(AD.MAX_HP)) }
 
     local category = AD.getAtkCategory(heroCfg.atkType)
     if category == "physical" then
-        left[#left + 1] = { key = AD.PHYS_ATK, name = "物理攻击力", value = tostring(math.floor(attrs:get(AD.PHYS_ATK))) }
+        left[#left + 1] = { key = AD.PHYS_ATK, name = "物理攻击力", value = AttributeView.formatNumber(attrs:get(AD.PHYS_ATK)) }
     elseif category == "magical" then
-        left[#left + 1] = { key = AD.MAG_ATK, name = "魔法攻击力", value = tostring(math.floor(attrs:get(AD.MAG_ATK))) }
+        left[#left + 1] = { key = AD.MAG_ATK, name = "魔法攻击力", value = AttributeView.formatNumber(attrs:get(AD.MAG_ATK)) }
     elseif category == "healing" then
-        left[#left + 1] = { key = AD.HEAL_AMOUNT, name = "治疗量", value = tostring(math.floor(attrs:get(AD.HEAL_AMOUNT))) }
+        left[#left + 1] = { key = AD.HEAL_AMOUNT, name = "治疗量", value = AttributeView.formatNumber(attrs:get(AD.HEAL_AMOUNT)) }
     end
 
     -- 基础值在前，对应加成紧跟后面。0 也保留，避免列表提前结束。
@@ -407,7 +428,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         desc = atkDesc }
     local actualInterval = attrs:getActualInterval()
     right[#right + 1] = { key = AD.ATK_INTERVAL, name = "攻击间隔",
-        value = string.format("%.1fs", options and actualInterval or heroCfg.atkInterval),
+        value = AttributeView.formatInterval(actualInterval),
         numericValue = actualInterval }
     right[#right + 1] = { key = "_atkTargets", name = "攻击目标", value = tostring(heroCfg.atkTargets),
         desc = "普攻每次可命中的敌方目标数量" }
@@ -628,7 +649,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
     local stats = {}
     for _, st in ipairs(M.STAT_LAYOUT) do
         local val = attrs:get(st.key)
-        stats[st.key] = options and val or math.floor(val)
+        stats[st.key] = val
     end
 
     -- 数值与格式化同源，绝不从带百分号/溢出提示的字符串反解析。
@@ -694,10 +715,9 @@ local function presentationDependencies(heroId, heroCfg, level, options)
     else
         heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
         equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
-        -- 神器正式属性桥从 PlayerStore 读取，不借 Dispatcher 的陈旧镜像。
-        artifacts = PlayerStore.Get("artifacts")
+        artifacts = ClientDispatcher.get("artifacts") or PlayerStore.Get("artifacts")
         talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents")
-        litNodes = HC._getSavedLitNodes and HC._getSavedLitNodes()
+        litNodes = talents and talents.litNodes or false
     end
     local deps = { heroId = heroId, heroCfg = heroCfg, level = level, explicit = options ~= nil,
         language = require("core.I18n").get(), heroesPresent = heroes ~= nil,
@@ -719,16 +739,9 @@ local function presentationDependencies(heroId, heroCfg, level, options)
     local function addHero(id)
         if deps.heroes[id] then return end
         local hd = getHeroRuntimeData(heroes, id)
-        local fallback = {}
-        if not options and (not hd or hd.awakening == nil or hd.extraTalent == nil) then
-            -- 与 ExtraTalentSystem 的 nil 回退一致，不调用会规范化写回的 getOwned。
-            local ok, panel = pcall(require, "ui.character.panel.CharacterPanel")
-            if ok and panel.getOwnedHero then fallback = panel.getOwnedHero(id) or {} end
-        end
         deps.heroes[id] = { present = hd ~= nil, level = hd and hd.level,
             advBranch = hd and hd.advBranch, awakening = hd and hd.awakening,
-            extraTalent = hd and hd.extraTalent, fallbackAwakening = fallback.awakening,
-            fallbackExtraTalent = fallback.extraTalent, cfg = HC.get(id) }
+            extraTalent = hd and hd.extraTalent, cfg = HC.get(id) }
         local slots = getHeroEquipped(equipment, id)
         local worn = { slots = slots, items = {} }
         local inventory = equipment and equipment.inventory
@@ -739,13 +752,12 @@ local function presentationDependencies(heroId, heroCfg, level, options)
         deps.worn[id] = worn
     end
     addHero(heroId)
-    if tonumber(heroId) == 20 then
-        local _, team = findArtifactPosition(heroes, heroId)
-        local ids = team and getTeamSlotIds(heroes, team) or {}
-        for slot = 1, 4 do
-            local id = tonumber(ids[slot] or ids[tostring(slot)])
-            if id and id > 0 then addHero(id) end
-        end
+    -- 任意英雄都会受本队司仪六件光环影响；缓存依赖不能只为星门收集队友穿戴项。
+    local _, team = findArtifactPosition(heroes, heroId)
+    local ids = team and getTeamSlotIds(heroes, team) or {}
+    for slot = 1, 4 do
+        local id = tonumber(ids[slot] or ids[tostring(slot)])
+        if id and id > 0 then addHero(id) end
     end
     return deps
 end

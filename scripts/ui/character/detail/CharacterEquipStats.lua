@@ -517,7 +517,7 @@ function M.drawLegacy(vg, statValues, visual)
         local color = HEX_COLORS[i]
         local lx, ly = hexPoint(layout.HEX_CX, layout.HEX_CY, i, layout.HEX_LABEL_R)
         text(vg, lx, ly - 26, name, 30, color, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        local valueText = tostring(values[HEX_KEYS[i]] or 0)
+        local valueText = AttributeView.formatNumber(values[HEX_KEYS[i]])
         local font = radarNumberFont(vg, valueText, 38, lx, ly + 18, 160, 12, 3)
         drawTextStroke(vg, lx, ly + 18, valueText,
             font, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color[1], color[2], color[3], 3)
@@ -586,27 +586,14 @@ function M.drawRadar(vg, current, preview, equipmentMode, visual)
         local nextValue = preview and tonumber(preview[key]) or currentValue
         local color = HEX_COLORS[i]
         text(vg, lx, ly - 24, name, 26, color, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        local valueText = tostring(math.floor(currentValue))
-        if equipmentMode then
-            local amount = math.abs(currentValue) < 0.1 and string.format("%.6f", currentValue)
-                or string.format("%.1f", currentValue)
-            valueText = amount:gsub("0+$", ""):gsub("%.$", "")
-            if currentValue > 0 then valueText = "+" .. valueText end
-        end
+        local valueText = AttributeView.formatNumber(currentValue)
+        if equipmentMode and currentValue > 0 then valueText = "+" .. valueText end
         local valueFont = radarNumberFont(vg, valueText, 34, lx, ly + 16, 150, 5, 3)
         drawTextStroke(vg, lx, ly + 16, valueText,
             valueFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color[1], color[2], color[3], 3)
         local delta = nextValue - currentValue
         if preview and math.abs(delta) > 0.000001 then
-            local amount
-            if math.abs(delta - math.floor(delta + 0.5)) < 0.000001 then
-                amount = string.format("%.0f", delta)
-            elseif math.abs(delta) < 0.1 then
-                -- 小数变化不显示成 +0.0；不影响当前数值的字号和基线。
-                amount = string.format("%.6f", delta):gsub("0+$", ""):gsub("%.$", "")
-            else
-                amount = string.format("%.1f", delta)
-            end
+            local amount = AttributeView.formatNumber(delta)
             local deltaText = (delta > 0 and "+" or "") .. amount
             local deltaFont = radarNumberFont(vg, deltaText, layout.deltaFontSize,
                 lx, ly - layout.deltaOffset, 150, 5, 0)

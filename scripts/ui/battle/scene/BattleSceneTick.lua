@@ -101,8 +101,8 @@ function M.tick(ctx, logicDt)
         end
         return 0
     end,
-    dealDamage = function(target, damage, isTargetAlly, prefix, color, source)
-        return ctx.dealDamageToUnit(target, damage, isTargetAlly, prefix, color, source)
+    dealDamage = function(target, damage, isTargetAlly, prefix, color, source, meta)
+        return ctx.dealDamageToUnit(target, damage, isTargetAlly, prefix, color, source, meta)
     end,
     dealTalentDamage = function(attacker, target, damage, isTargetAlly, prefix, color, projOpts)
         return BattleCombat.dealTalentDamage(attacker, target, damage, isTargetAlly, prefix, color, projOpts, ctx.allies, ctx.enemies)

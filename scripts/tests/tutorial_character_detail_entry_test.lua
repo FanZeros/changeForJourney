@@ -1,5 +1,5 @@
 -- 详情入口专项：基于既有 tests 的 Start/pcall/engine:Exit 生命周期。
--- Runtime: .cli/UrhoXRuntime tests/tutorial_character_detail_entry_test.lua -tapcode_dir=/workspace -tool_mode -nosound -graphicsheadless
+-- Runtime: /workspace/.cli/UrhoXRuntime tests/tutorial_character_detail_entry_test.lua -tapcode_dir=/workspace/game3 -tool_mode -nosound -graphicsheadless
 -- 整模块执行真实 TM/Recovery/CharacterDetail/CharacterInput/Draw2；页面、音效、装备业务为显式内存 spy。
 -- BattleTriPage 执行资源中完整 shared helpers、draw 入口热点段、完整 handleInput；不声称整 draw/GPU 像素验收。
 -- 所有源码经 cache:GetFile/ReadLine/Dispose/load env；无玩家档、action、全局 require/package 改写或随机数调用。
@@ -170,7 +170,11 @@ function Start()
             "systems.EquipmentSystem", "systems.EquipmentPower", "systems.ButtonFeedback", "ui.widget.ImageCache" }) do mods[name] = {} end
         mods["ui.character.detail.CharacterDetailAttrs"] = { collectAttributes = noop }
         mods["ui.character.detail.CharacterDetailEquip"] = { reset = noop, endSideDrag = noop, draw = noop }
-        mods["ui.character.hero.AwakeningPanel"] = { reset = noop, setClassIcons = noop, setOwnedDataGetter = noop }
+        c.awakeningResets = {}
+        mods["ui.character.hero.AwakeningPanel"] = {
+            reset = function(id) c.awakeningResets[#c.awakeningResets + 1] = id end,
+            setClassIcons = noop, setOwnedDataGetter = noop,
+        }
         mods["ui.character.hero.HeroScenario"] = { onOpenHero = noop }
         mods["ui.battle.combat.ProjectileSystem"] = { hasProjectile = function() return false end }
         mods["ui.hud.popup.SettingsPanel"] = { isEffectsEnabled = function() return true end }
@@ -190,9 +194,23 @@ function Start()
         compile(section("ui/character/detail/CharacterDetailDraw.lua", "local DT_SLOT_SIZE =", "-- ======================== 中间部分布局常量"), "DetailDraw slots", de)
         compile(section("ui/character/detail/CharacterDetailDraw.lua", "local BTN_UNEQUIP_CX,", "-- ======================== 底部按钮布局常量"), "DetailDraw batch constants", de)
         compile(section("ui/character/detail/CharacterDetailDraw.lua", "local BTN_BACK_CX,", "-- 左右切换箭头按钮布局"), "DetailDraw tabs", de)
+        -- 新全图依赖在同一严格env执行真实模块；不开放未知require，也不把close降为空壳。
+        c.artwork = actual("ui.character.hero.AwakeningArtwork")
+        local classCalls = { heroes = {}, confirm = 0, reset = 0, branch = 0 }
+        c.classCalls = classCalls
+        mods["ui.church.ChurchClassChange"] = {
+            setHero = function(id) classCalls.heroes[#classCalls.heroes + 1] = id end,
+            handleConfirmInput = function() classCalls.confirm = classCalls.confirm + 1; return false end,
+            handleResetButton = function() classCalls.reset = classCalls.reset + 1; return false end,
+            handleBranchInput = function() classCalls.branch = classCalls.branch + 1; return false end,
+        }
+        local arrowConstants = section("ui/character/detail/CharacterDetailDraw.lua", "local DT_CARD_CX,", "-- 装备槽位")
+            .. "\n" .. section("ui/character/detail/CharacterDetailDraw.lua", "-- 左右切换箭头按钮布局", "-- 职业图标映射")
+        compile(arrowConstants, "DetailDraw real arrow/card constants", de)
         local dd = de.M
         dd.SIDE_CARD_W, dd.SIDE_CARD_H = layout.CARD_W, layout.CARD_H
-        dd.setContext, dd.draw = noop, noop
+        dd.setContext = function(ctx) c.detailState = ctx.detailState end
+        dd.draw, dd.resetRadarTransition = noop, noop
         mods["ui.character.detail.CharacterDetailDraw"] = dd
         c.detailDraw = dd
         c.detail = actual("ui.character.detail.CharacterDetail")
@@ -618,10 +636,93 @@ function Start()
                 eq(c.actions, 0, "cold restore no action/reward")
             end)
         end
+        for _, tab in ipairs({ "class", "awaken" }) do
+            runCase(tab .. " real open(hero) switches owned/unowned hero without changing tab", function()
+                local c = newContext(1920, 1080)
+                c.roster[#c.roster + 1] = { heroId = 4, owned = false, level = 1 }
+                local before, preferredCalls = copy(c.memory), 0
+                c.tm.getPreferredCharacterTab = function() preferredCalls = preferredCalls + 1; return "equip" end
+                c.detail.open(1, tab)
+                eq(c.detailState.tab, tab, "explicit class/awaken first open honored")
+                eq(c.detail.getHeroId(), 1, "first open actual hero")
+                local resets = #c.awakeningResets
+                c.detail.open(1)
+                eq(#c.awakeningResets, resets, "same hero implicit open remains no-op")
+                for _, id in ipairs({ 2, 4, 3 }) do
+                    c.clock.elapsedTime = c.clock.elapsedTime + 1
+                    c.detailState.attrScrollY, c.detailState.attrScrollMax = 120, 800
+                    c.detailState.attrTip, c.detailState.attrHits = { desc = "old hero tip" }, { { index = 1 } }
+                    c.detail.open(id)
+                    check(c.detail.isOpen() and c.detail.getHeroId() == id, "real open switches to requested hero " .. id)
+                    eq(c.detailState.tab, tab, "implicit open keeps current class/awaken tab " .. id)
+                    eq(c.detailState.tabFrom, tab, "switch does not start an unrelated tab animation")
+                    eq(c.detail.isAwakenTab(), tab == "awaken", "public awaken readback follows preserved tab")
+                    check(not c.detail.isEquipTab() and not c.warehouse.open, "class/awaken switch never acquires equipment warehouse")
+                    eq(c.awakeningResets[#c.awakeningResets], id, "new hero resets awakening selection")
+                    check(c.detailState.attrScrollY == 0 and c.detailState.attrScrollMax == 0
+                        and c.detailState.attrTip == nil and #c.detailState.attrHits == 0,
+                        "switch clears old hero scroll/tip/hit state")
+                end
+                eq(#c.awakeningResets, resets + 3, "each different hero open resets once")
+                eq(preferredCalls, 0, "opened class/awaken hero switch cannot consult tutorial default equip")
+                c.detail.open(2, "attr")
+                eq(c.detailState.tab, "attr", "explicit tab continues overriding opened view")
+                c.detail.forceClose()
+                c.detail.open(1)
+                check(c.detail.isEquipTab() and c.warehouse.open, "fresh implicit open still honors tutorial preferred equip")
+                eq(preferredCalls, 1, "fresh open tutorial preference called once")
+                c.detail.forceClose()
+                check(same(c.memory, before), "tab/hero navigation never changes heroes/equipment/tutorial save")
+                eq(c.actions, 0, "tab/hero navigation sends no action")
+            end)
+        end
+        runCase("unowned class read-only navigation blocks every class-change business delegate", function()
+            local c = newContext(1280, 800)
+            c.roster[#c.roster + 1] = { heroId = 4, owned = false, level = 1 }
+            local before = copy(c.memory)
+            c.detail.open(4, "class")
+            eq(c.detailState.tab, "class", "unowned explicit class remains class, not attr fallback")
+            local draw, calls = c.detailDraw, c.classCalls
+            local function clickTab(tab)
+                check(c.detail.handleInput(draw["BTN_TAB_" .. tab .. "_CX"], draw["BTN_TAB_" .. tab .. "_CY"]),
+                    "real detail consumes tab click " .. tab)
+            end
+            for _, point in ipairs({ { 540, 1000 }, { 540, 1600 }, { 540, 2000 },
+                { draw.BTN_UNEQUIP_CX, draw.BTN_UNEQUIP_CY }, { draw.BTN_EQUIP_CX, draw.BTN_EQUIP_CY } }) do
+                check(c.detail.handleInput(point[1], point[2]), "unowned class consumes content/button without forwarding")
+            end
+            check(#calls.heroes == 0 and calls.confirm == 0 and calls.reset == 0 and calls.branch == 0,
+                "ownership gate blocks setHero/confirm/reset/branch, not merely sendAction")
+            eq(c.detail.handleRightClick(540, 1600), false, "unowned class cannot use equipment right-click path")
+            clickTab("EQUIP")
+            eq(c.detailState.tab, "class", "unowned equip tab rejected while retaining class")
+            check(not c.warehouse.open, "rejected equip tab does not acquire warehouse")
+            clickTab("ATTR"); eq(c.detailState.tab, "attr", "unowned can leave read-only tree for attributes")
+            clickTab("CLASS"); eq(c.detailState.tab, "class", "unowned class tab click allowed without owning hero")
+            check(c.detail.handleInput(540, 1600), "reentered unowned class still consumes input")
+            check(#calls.heroes == 0 and calls.confirm == 0 and calls.reset == 0 and calls.branch == 0,
+                "reentry keeps read-only business gate")
+            c.detail.open(1)
+            eq(c.detailState.tab, "class", "owned target preserves current class view")
+            check(c.detail.handleInput(540, 1600), "owned positive control exercises genuine detail delegation")
+            eq(#calls.heroes, 1, "owned positive control setHero called once")
+            eq(calls.heroes[1], 1, "owned positive control delegates actual hero")
+            eq(calls.confirm, 1, "owned positive control confirm reached")
+            eq(calls.reset, 1, "owned positive control reset reached")
+            eq(calls.branch, 1, "owned positive control branch reached")
+            c.detail.open(4)
+            check(c.detail.handleInput(540, 1600), "back to unowned tree consumes input")
+            check(#calls.heroes == 1 and calls.confirm == 1 and calls.reset == 1 and calls.branch == 1,
+                "owned-to-unowned switch restores business gate immediately")
+            check(same(c.memory, before), "read-only tree probe leaves business snapshots unchanged")
+            eq(c.actions, 0, "read-only class probes never send action")
+            eq(#c.receipts, 0, "class view cannot forge equipment tutorial entry receipt")
+        end)
         runCase("resource execution provenance", function()
             for _, path in ipairs({ "systems/TutorialManager.lua", "ui/tutorial/TutorialPageRecovery.lua",
                 "ui/character/detail/CharacterDetail.lua", "ui/character/panel/CharacterInput.lua",
-                "ui/character/panel/CharacterPanelDraw2.lua", "ui/battle/tri/BattleTriPage.lua", "boot/StandaloneHorizon.lua" }) do
+                "ui/character/panel/CharacterPanelDraw2.lua", "ui/battle/tri/BattleTriPage.lua", "boot/StandaloneHorizon.lua",
+                "ui/character/hero/AwakeningArtwork.lua" }) do
                 check(sources[path] ~= nil, "real cache resource read " .. path)
             end
             check(#reads >= 12, "resource-loaded dependencies executed; not copied event strings")

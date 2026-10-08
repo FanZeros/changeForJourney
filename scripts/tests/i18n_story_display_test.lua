@@ -135,6 +135,91 @@ function Start()
         check(Story.lookup("unregistered", "en") == nil, "未知源文nil")
         check(Story.lookup("image/角色立绘/大狗嚼.png", "ja") == nil, "资源名不翻译")
 
+        -- 更名源文/碎片/双端商品/入场对白与动态觉醒模板均使用真实词典。
+        local renamedHC = require("config.HeroConfig")
+        local ResourceDefs = require("config.ResourceDefs")
+        local TavernConfig = require("config.TavernConfig")
+        local DialogueConfig = require("config.DialogueConfig")
+        local AwakeningConfig = require("config.AwakeningConfig")
+        local DictExtra = require("core.I18nDictExtra")
+        local ETS = require("systems.ExtraTalentSystem")
+        check(renamedHC.get(6).name == "压一压" and renamedHC.getIdByName("压一压") == 6
+            and renamedHC.get(6).talentId == "luna_lightning", "压一压只改名，英雄ID与天赋ID不改")
+        check(ResourceDefs.REWARD_NAMES["106"] == "压一压碎片"
+            and ResourceDefs.SHARD_ID_TO_HERO["106"] == 6
+            and TavernConfig.getShopItem(7).name == "压一压-碎片"
+            and TavernConfig.getShopItem(7).rewardHeroId == 6 and TavernConfig.getShopItem(7).price == 60,
+            "压一压资源/商城显示源文一致，奖励ID与价格不改")
+        check(DialogueConfig.get(6, "entry") == "Are you OK~？压一压~", "压一压真实入场对白同步")
+        local portraitPath = require("config.HeroAssetUtil").getPortraitPath(6)
+        check(portraitPath == "image/角色立绘/阿姨压_透明立绘.png",
+            "压一压展示改名仍保留既有立绘资源路径")
+        local portraitFile = cache:GetFile(portraitPath)
+        local portraitReadable = false
+        if portraitFile then
+            local readOk, header = pcall(function()
+                local bytes = {}
+                for i = 1, 8 do bytes[i] = string.char(portraitFile:ReadUByte()) end
+                return table.concat(bytes)
+            end)
+            portraitFile:Dispose()
+            portraitReadable = readOk and header == "\137PNG\r\n\26\n"
+        end
+        check(portraitReadable, "压一压既有立绘由真实资源cache读取到PNG签名")
+        check(renamedHC.get(23).talentDesc == "过量治疗先补足目标护盾，超过护盾上限的部分再转为临时护盾（最多为目标护盾上限的50%）。"
+            and AwakeningConfig.getNodeEffect(23, 2):find("20%", 1, true) ~= nil,
+            "真布基础天赋删除觉醒句，正式共鸣效果仍保留")
+        check(AwakeningConfig.getNodeEffect(17, 1):find("每次击杀永久魔法攻击+0.2", 1, true) ~= nil,
+            "蓝鱼初醒源文包含真实魔攻成长")
+        for _, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+            I18n.set(lang)
+            for _, original in ipairs({ renamedHC.get(6).name, renamedHC.getShardName(6),
+                ResourceDefs.REWARD_NAMES["106"], TavernConfig.getShopItem(7).name,
+                DialogueConfig.get(6, "entry"), AwakeningConfig.getNodeEffect(17, 1), renamedHC.get(23).talentDesc,
+                "查看全图", "点击关闭" }) do
+                local expected = lang == "zh_CN" and original or DictExtra[lang][original]
+                check(expected ~= nil and I18n.lookup(original) == expected and utf8.len(expected) ~= nil,
+                    lang .. "更名/初醒/基础天赋完整源文精确翻译")
+            end
+            local e = { stacks = 10, splitKills = 42, biteTypes = { fire = true }, tickets = { [3] = true },
+                preciseStored = 3, blockBank = 7, conquerCarry = 6, beamCharges = 2,
+                markTypes = { ice = true }, slashShadows = 4, iceStatues = 3, gatlingKills = 160 }
+            local dynamic = {
+                { 12, 1, "魔攻 +%.1f · 累计冰冻成长 +%.2f%%（总概率上限80%%）", 2, 0.5 },
+                { 15, 1, "生命上限 +%d · 累计复活成长 +%.1f%%（总概率上限80%%）", 20, 5 },
+                { 22, 1, "累计课时缩短 %.2f（最短8次攻击）", 8 },
+                { 17, 1, "魔攻 +%.1f", 2 }, { 18, 1, "暴击率 +%.1f%%", 1 },
+                { 19, 1, "魂火 +%.2f", 0.5 }, { 24, 1, "生命上限 +%d", 10 },
+                { 25, 1, "物攻 +%.1f", 3 }, { 1, 2, "图鉴 %d/8", 1 },
+                { 3, 2, "预存精准 %d/5", 3 }, { 4, 2, "武德库存 %d", 7 },
+                { 5, 2, "开场甲片 %d", 6 }, { 7, 2, "预存光线 %d/3", 2 },
+                { 8, 2, "仇种 %d/8", 1 }, { 11, 2, "斩影 %d/4", 4 },
+                { 12, 2, "冰雕 %d/3", 3 }, { 13, 2, "分裂击杀 %d · 额外弹射 +%d", 42, 5 },
+                { 15, 2, "预存票 %d", 1 }, { 22, 2, "预存连打 %d/10", 10 },
+            }
+            for _, sample in ipairs(dynamic) do
+                local template = lang == "zh_CN" and sample[3] or DictExtra[lang][sample[3]]
+                check(template ~= nil and ETS.getStageStatus(sample[1], sample[2], e)
+                    == string.format(template, table.unpack(sample, 4)), lang .. "阶段状态先翻模板后填真实数值")
+            end
+            local highGrowth = { stacks = 2000, gatlingKills = 400 }
+            local highExpected = {
+                { 12, "魔攻 +%.1f · 累计冰冻成长 +%.2f%%（总概率上限80%%）", 400, 100 },
+                { 15, "生命上限 +%d · 累计复活成长 +%.1f%%（总概率上限80%%）", 4000, 1000 },
+                { 22, "累计课时缩短 %.2f（最短8次攻击）", 12 },
+            }
+            for _, sample in ipairs(highExpected) do
+                local template = lang == "zh_CN" and sample[2] or DictExtra[lang][sample[2]]
+                check(template ~= nil and ETS.getStageStatus(sample[1], 1, highGrowth)
+                    == string.format(template, table.unpack(sample, 3)),
+                    lang .. "高层累计成长保留raw来源与实际总上限说明")
+            end
+            check(highGrowth.stacks == 2000 and highGrowth.gatlingKills == 400,
+                lang .. "高层阶段展示不修改快照")
+            check(ETS.getStageStatus(17, 3, e) == "", lang .. "蜕变不编造状态数值")
+        end
+        I18n.set("zh_CN")
+
         -- 已翻译片段必须绕 lookup：将 lookup 改为抛错，然后绘制预折行行前缀。
         I18n.set("en")
         local source = Config.OPENING.steps[1].text
@@ -375,7 +460,7 @@ function Start()
         end
         I18n.set("zh_CN")
 
-        -- 旧过场不启音频也可独立验证：第一阶段先停留；用skip保证生命周期出口。
+        -- 终焉过场不启用旧音频；保留skip生命周期并逐段验证新剧情。
         Intro.init(nil, nil)
         Intro.reset()
         local introFinishes = 0
@@ -386,6 +471,114 @@ function Start()
         Intro.skip()
         check(introFinishes == 1 and Intro.isFinished(), "过场skip仅一次")
         Intro.reset()
+        local introSources = {
+            "终焉之门，已被推开。", "三支远征队的旗帜，仍立在神殿前。",
+            "门后的路更险，但这一次，我们带着胜利前行。",
+            "公会的名册翻到新一页，伙伴的名字，一个也没有少。",
+            "远征长，整队。下一段远征，出发！",
+        }
+        local removedSources = {
+            "这就是……宿命吗？", "我终究……还是倒在这里了吗",
+            "一切的轮回，再次开始了么……", "不知能否斩断宿命，挣脱轮回呢……",
+            "远征长！远征长！",
+        }
+        local durations = { 1.5, 4.0, 7.5, 4.0, 3.5 }
+        check(#Story.INTRO == #introSources, "终焉过场只有五句当前远征剧情")
+        for i, source in ipairs(introSources) do
+            check(Story.INTRO[i] == source, "终焉阶段与新剧情逐句绑定" .. i)
+        end
+        for _, source in ipairs(Story.SOURCES) do
+            for _, removed in ipairs(removedSources) do
+                check(source ~= removed, "旧过场台词已从剧情源列表删除")
+            end
+        end
+        for _, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+            I18n.set(lang)
+            for _, source in ipairs(removedSources) do
+                check(Story.lookup(source, lang) == nil, lang .. "旧宿命/濒死词条不残留")
+            end
+            for i, source in ipairs(introSources) do
+                local translated = assert(Story.lookup(source, lang), "新终焉台词缺少翻译")
+                local _, _, typing, duration = Story.typed(translated, 0, 10, durations[i] - 0.2)
+                local callbacks = 0
+                Intro.reset()
+                Intro.start(function() callbacks = callbacks + 1 end)
+                for previous = 1, i - 1 do Intro.update(durations[previous]) end
+                local elapsed = typing * 0.43
+                Intro.update(0.2 + elapsed)
+                captures, drawCalls = {}, {}
+                Intro.draw(nil)
+                local expected = Story.typed(translated, elapsed, 10, durations[i] - 0.2)
+                check(table.concat(captures) == expected and utf8.len(expected) ~= nil,
+                    lang .. "终焉阶段" .. i .. "绘制当前译文UTF8前缀")
+                local fullElapsed = (typing + duration) * 0.5
+                Intro.update(fullElapsed - elapsed)
+                captures, drawCalls = {}, {}
+                Intro.draw(nil)
+                check(table.concat(captures) == translated and #drawCalls > 0 and #drawCalls <= 2,
+                    lang .. "终焉阶段" .. i .. "窗口内完整译文不截断")
+                for _, call in ipairs(drawCalls) do
+                    check(call.x == 540 and call.width <= 1080 * 0.88 + 0.01
+                        and call.font >= 24 and call.y >= 1200 - 88 - 0.01
+                        and call.y + call.font * 1.25 <= 1200 + 88 + 0.01,
+                        lang .. "终焉字幕位于横屏中部安全带")
+                end
+                check(callbacks == 0 and Intro.isActive(), "字幕未结束不提前推进目标关卡")
+                Intro.reset()
+                Intro.skip()
+                check(callbacks == 0, "重置取消当前过场回调")
+            end
+        end
+        I18n.set("zh_CN")
+        local naturalFinishes = 0
+        Intro.start(function() naturalFinishes = naturalFinishes + 1 end)
+        for i, duration in ipairs(durations) do
+            Intro.update(duration)
+            check(naturalFinishes == (i == #durations and 1 or 0), "自然过场仅末阶段完成回调")
+        end
+        Intro.update(100)
+        Intro.skip()
+        check(naturalFinishes == 1 and Intro.isFinished() and not Intro.isActive(), "自然完成后不重复回调")
+        Intro.reset()
+        local cancelled = 0
+        Intro.start(function() cancelled = cancelled + 1 end)
+        Intro.update(0.5)
+        Intro.reset()
+        Intro.update(100)
+        Intro.skip()
+        check(cancelled == 0 and not Intro.isActive() and not Intro.isFinished(), "读档/清档丢弃旧过场回调")
+        -- 真实背景选择及cover尺寸通过绘制出口录制；不用两份同图伪装换景。
+        local backgrounds, backgroundDraws = {}, {}
+        replace("nvgCreateImage", function(_, path)
+            backgrounds[#backgrounds + 1] = path
+            return #backgrounds
+        end)
+        replace("nvgImageSize", function(_, image)
+            if backgrounds[image] == "image/暗黑/L1_row1_forest.png" then return 1896, 720 end
+            return 1024, 1024
+        end)
+        local DrawUtil = require("core.DrawUtil")
+        local originalDrawImage = DrawUtil.drawImageCentered
+        DrawUtil.drawImageCentered = function(_, image, _, _, width, height, alpha)
+            backgroundDraws[#backgroundDraws + 1] = { path = backgrounds[image], width = width, height = height, alpha = alpha }
+        end
+        Intro.init(metricContext, nil)
+        Intro.start()
+        check(backgrounds[1] == "image/关卡地图/MAP_999.png"
+            and backgrounds[2] == "image/暗黑/L1_row1_forest.png", "神殿与远征道路使用不同素材")
+        Intro.update(durations[1]); Intro.update(durations[2]); Intro.update(durations[3] * 0.5)
+        Intro.draw(nil)
+        DrawUtil.drawImageCentered = originalDrawImage
+        check(#backgroundDraws == 2 and backgroundDraws[1].alpha == 1
+            and backgroundDraws[2].alpha == 0.5, "换景道路淡入覆盖不透明神殿，不双重淡出")
+        for _, draw in ipairs(backgroundDraws) do
+            local ratio = draw.path == backgrounds[2] and 1896 / 720 or 1
+            check(draw.width >= 1080 and draw.height >= 2400
+                and math.abs(draw.width / draw.height - ratio) < 0.001, "背景等比cover满屏，不拉伸横幅")
+        end
+        Intro.reset()
+        replace("nvgCreateImage", function() return -1 end)
+        replace("nvgImageSize", function() return 1, 1 end)
         -- 剧情职位的头像/立绘来源一致；不把历史角色编号直接当作英雄身份。
         local HeroAssets = require("config.HeroAssetUtil")
         local HC = require("config.HeroConfig")
@@ -427,7 +620,7 @@ function Start()
             == Config.getAppearance({ characterId = 10, name = "愤怒的铁匠" }),
             "两种铁匠称呼共享明确的无图映射，不回退英雄10")
         check(HC.get(21).name == "雷电麦坤" and HC.get(4).name == "接化发掌门"
-            and HC.get(6).name == "阿姨压" and HC.get(7).name == "信光机兵"
+            and HC.get(6).name == "压一压" and HC.get(7).name == "信光机兵"
             and HC.get(8).name == "愤怒的小雀", "英雄本体名字及编号未被剧情映射改写")
         check(Config.getAppearance(nil).heroId == nil
             and Config.getAppearance({ name = "旁白" }).heroId == nil, "旁白不借用头像/立绘")

@@ -139,7 +139,7 @@ HC.HEROES = {
     },
     [6] = {
         quality = 2, classId = CC.MAGE,
-        title = "电音天后", name = "阿姨压",
+        title = "电音天后", name = "压一压",
         talentName = "安可", talentDesc = "攻击附加感电，持续2秒，期间目标受到的伤害+20%。",
         talentId = "luna_lightning",
         gender = "female",
@@ -305,7 +305,7 @@ HC.HEROES = {
     [23] = {
         quality = 3, classId = CC.PRIEST,
         title = "即兴说唱王", name = "真布诗人",
-        talentName = "护盾说唱", talentDesc = "过量治疗先补足目标护盾，超过护盾上限的部分再转为临时护盾（最多为目标护盾上限的50%）。觉醒共鸣后，有盾队友的下次攻击可附带本次治疗量20%的额外伤害。",
+        talentName = "护盾说唱", talentDesc = "过量治疗先补足目标护盾，超过护盾上限的部分再转为临时护盾（最多为目标护盾上限的50%）。",
         talentId = "elwyn_energy_blessing",
         gender = "male",
         atkType = AD.ATK_HOLY, atkInterval = 1.5, atkTargets = 3,
@@ -369,7 +369,7 @@ local DMG_TYPE_DATA = {
     [3]  = { HC.DMG_PHYSICAL, "穿刺" },   -- 叮咚鸡
     [4]  = { HC.DMG_PHYSICAL, "粉碎" },   -- 接化发掌门
     [5]  = { HC.DMG_PHYSICAL, "穿刺" },   -- 叠甲怪
-    [6]  = { HC.DMG_MAGICAL,  "闪电" },   -- 阿姨压
+    [6]  = { HC.DMG_MAGICAL,  "闪电" },   -- 压一压
     [7]  = { HC.DMG_MAGICAL,  "闪电" },   -- 信光机兵
     [8]  = { HC.DMG_PHYSICAL, "斩击" },   -- 愤怒的小雀
     [9]  = { HC.DMG_HEALING,  "治疗" },   -- 卡皮巴拉
@@ -408,7 +408,7 @@ local WEARABLE_DATA = {
     [3]  = { w = {"弓箭","单手弩"},                           o = {"轻盾","重盾"} },       -- 叮咚鸡(游侠)
     [4]  = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"重盾","圣物"} },       -- 接化发掌门(骑士)
     [5]  = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 叠甲怪(战士)
-    [6]  = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 阿姨压(法师)
+    [6]  = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 压一压(法师)
     [7]  = { w = {"手铳","魔杖"},                             o = {"魔典","法珠"} },       -- 信光机兵(游侠)
     [8]  = { w = {"细剑","单手剑"},                           o = {"轻盾","重盾"} },       -- 愤怒的小雀(刺客)
     [9]  = { w = {"权杖"},                                    o = {"轻盾","圣物"} },       -- 卡皮巴拉(牧师)

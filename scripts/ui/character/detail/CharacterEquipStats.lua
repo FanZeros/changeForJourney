@@ -298,6 +298,114 @@ M.LEGACY = {
 }
 
 local HEX_KEYS = { "str", "agi", "vit", "spi", "luk", "int" }
+local RADAR_TRANSITION_SECONDS = 0.32
+
+---@class CharacterRadarVisual
+---@field current table<string, number> 仅归一化轮廓半径；不是角色六围数值
+---@field preview table<string, number>|nil
+---@field maxValue number 仅视觉尺度元数据，数字标签绝不读取
+---@field floor number 归一化视觉下限（角色0.08、装备0）
+
+local function finiteRadarNumber(value)
+    local n = tonumber(value) or 0
+    if n ~= n or n == math.huge or n == -math.huge then return 0 end
+    return n
+end
+
+---@return CharacterRadarVisual
+local function radarVisual(current, preview, equipmentMode)
+    local cleanCurrent, cleanPreview = {}, preview and {} or nil
+    for _, key in ipairs(HEX_KEYS) do
+        cleanCurrent[key] = finiteRadarNumber(current and current[key])
+        if cleanPreview then cleanPreview[key] = finiteRadarNumber(preview[key]) end
+    end
+    local maxValue = M.radarScale(cleanCurrent, cleanPreview)
+    local floor = equipmentMode and 0 or 0.08
+    ---@type CharacterRadarVisual
+    local visual = { current = {}, preview = preview and {} or nil, maxValue = maxValue, floor = floor }
+    for _, key in ipairs(HEX_KEYS) do
+        visual.current[key] = math.max(floor, math.min(1, cleanCurrent[key] / maxValue))
+        if visual.preview then
+            visual.preview[key] = math.max(floor, math.min(1, cleanPreview[key] / maxValue))
+        end
+    end
+    return visual
+end
+
+---@param before CharacterRadarVisual
+---@param target CharacterRadarVisual
+---@param progress number
+---@return CharacterRadarVisual
+local function blendRadarVisual(before, target, progress)
+    local t = math.max(0, math.min(1, progress))
+    if t >= 1 - 0.000000001 then t = 1 end -- 墙钟浮点误差不延长终帧/残留预览。
+    local eased = 1 - (1 - t) ^ 3 -- easeOutCubic，只依赖墙钟，不累加绘制帧dt。
+    local hasPreview = target.preview ~= nil or (t < 1 and before.preview ~= nil)
+    ---@type CharacterRadarVisual
+    local visual = { current = {}, preview = hasPreview and {} or nil,
+        maxValue = before.maxValue + (target.maxValue - before.maxValue) * eased,
+        floor = before.floor + (target.floor - before.floor) * eased }
+    for _, key in ipairs(HEX_KEYS) do
+        local a, b = before.current[key], target.current[key]
+        visual.current[key] = t >= 1 and b or a + (b - a) * eased
+        if visual.preview then
+            local pa = before.preview and before.preview[key] or a
+            local pb = target.preview and target.preview[key] or b
+            visual.preview[key] = t >= 1 and pb or pa + (pb - pa) * eased
+        end
+    end
+    if t >= 1 then visual.maxValue, visual.floor = target.maxValue, target.floor end
+    return visual
+end
+
+--- 每宿主创建一次私有闭包；只保存六轴视觉快照，不持有/改写真实属性与预览表。
+--- identity 必须是稳定英雄/样式key，不能传每次refresh新建的数据表。
+--- 仅identity或equipmentMode切换重开0.32s过渡；同样式数据刷新更新终点但不重置时钟。
+function M.createRadarTransition()
+    local initialized, lastEquipmentMode = false, false
+    ---@type string|number|nil
+    local lastIdentity = nil
+    local startedAt, lastTime = 0, 0
+    local source = radarVisual(nil, nil, false)
+    local target = radarVisual(nil, nil, false)
+    local transition = {}
+
+    function transition:reset()
+        initialized, lastEquipmentMode, lastIdentity = false, false, nil
+        startedAt, lastTime = 0, 0
+        source, target = radarVisual(nil, nil, false), radarVisual(nil, nil, false)
+    end
+
+    ---@param current table<string, number>|nil
+    ---@param preview table<string, number>|nil
+    ---@param equipmentMode boolean|nil
+    ---@param identity string|number|nil
+    ---@param now number|nil time.elapsedTime秒；相同时间重复绘制不会加速
+    ---@return CharacterRadarVisual
+    function transition:sample(current, preview, equipmentMode, identity, now)
+        local clock = finiteRadarNumber(now == nil and (time and time.elapsedTime or 0) or now)
+        local wallTime = initialized and math.max(lastTime, clock) or clock
+        lastTime = wallTime
+        local nextTarget = radarVisual(current, preview, equipmentMode)
+        local mode = equipmentMode == true
+        if not initialized then
+            initialized, lastIdentity, lastEquipmentMode = true, identity, mode
+            source, target = nextTarget, nextTarget
+            startedAt = wallTime - RADAR_TRANSITION_SECONDS
+        elseif lastIdentity ~= identity or lastEquipmentMode ~= mode then
+            source = blendRadarVisual(source, target, (wallTime - startedAt) / RADAR_TRANSITION_SECONDS)
+            target, startedAt = nextTarget, wallTime
+            lastIdentity, lastEquipmentMode = identity, mode
+        else
+            target = nextTarget
+        end
+        -- 每次返回独立纯视觉表，调用方修改返回值也不会污染闭包或源数据。
+        return blendRadarVisual(source, target, (wallTime - startedAt) / RADAR_TRANSITION_SECONDS)
+    end
+
+    return transition
+end
+
 local HEX_COLORS = {
     { 0xE2, 0x4A, 0x3B }, { 0x3D, 0xDC, 0x6E }, { 0xC4, 0x8A, 0x3A },
     { 0xC0, 0x58, 0xE8 }, { 0xFF, 0xD2, 0x3A }, { 0x3E, 0xC6, 0xE0 },
@@ -355,10 +463,11 @@ local function radarGrid(vg, cx, cy, radius, labelR)
     end
 end
 
-local function radarOutline(vg, values, cx, cy, radius, maxValue, color, fill, width)
+local function radarOutline(vg, values, cx, cy, radius, maxValue, color, fill, width, normalized)
     nvgBeginPath(vg)
     for i, key in ipairs(HEX_KEYS) do
-        local ratio = math.max(0.08, math.min(1, (tonumber(values[key]) or 0) / maxValue))
+        local ratio = math.max(normalized and 0 or 0.08,
+            math.min(1, (tonumber(values[key]) or 0) / maxValue))
         local x, y = hexPoint(cx, cy, i, radius * ratio)
         if i == 1 then nvgMoveTo(vg, x, y) else nvgLineTo(vg, x, y) end
     end
@@ -390,14 +499,17 @@ local function radarNumberFont(vg, label, size, x, y, maxWidth, margin, stroke)
         x, y, left, right, stroke or 0)
 end
 
---- 属性页独立放大雷达；归一化与数据口径不变，不接收或读取预览。
-function M.drawLegacy(vg, statValues)
+--- 属性页独立放大雷达；可选visual只影响轮廓，数字仍读取真实statValues。
+--- 不传visual保持原归一化、8%下限与无预览行为。
+---@param visual CharacterRadarVisual|nil
+function M.drawLegacy(vg, statValues, visual)
     local layout = M.LEGACY
     local values = statValues or {}
     local maxValue = M.radarScale(values)
     radarGrid(vg, layout.HEX_CX, layout.HEX_CY, layout.HEX_R, layout.HEX_LABEL_R)
-    radarOutline(vg, values, layout.HEX_CX, layout.HEX_CY, layout.HEX_R, maxValue,
-        { 0xE8, 0xDC, 0xC8, 200 }, { 0xC4, 0x8A, 0x3A, 70 }, 2)
+    radarOutline(vg, visual and visual.current or values, layout.HEX_CX, layout.HEX_CY,
+        layout.HEX_R, visual and 1 or maxValue,
+        { 0xE8, 0xDC, 0xC8, 200 }, { 0xC4, 0x8A, 0x3A, 70 }, 2, visual ~= nil)
     radarCenter(vg, layout.HEX_CX, layout.HEX_CY)
     nvgFontFace(vg, "sans")
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -425,7 +537,9 @@ local function radarPolygon(vg, vertices)
 end
 
 --- 淡金当前图不重染共享内区；仅增减面积/真正移动的试穿边分别用绿/红。
-function M.drawRadar(vg, current, preview, equipmentMode)
+--- visual仅替换差集几何的归一化轮廓；数字与delta仍是current/preview真实最终值。
+---@param visual CharacterRadarVisual|nil
+function M.drawRadar(vg, current, preview, equipmentMode, visual)
     local layout = M.LAYOUT.radar
     local values = current or {}
     local maxValue = M.radarScale(values, preview)
@@ -438,7 +552,8 @@ function M.drawRadar(vg, current, preview, equipmentMode)
             visualPreview[key] = math.max(visualFloor, tonumber(preview[key]) or 0)
         end
     end
-    local comparison = RadarDiff.compare(visualCurrent, visualPreview,
+    local comparison = visual and RadarDiff.compare(visual.current, visual.preview,
+        layout.cx, layout.cy, layout.r, 1) or RadarDiff.compare(visualCurrent, visualPreview,
         layout.cx, layout.cy, layout.r, maxValue)
     -- 不另设雷达scissor：最右标签cx≈999、数字完整保留在1080画布内。
     radarGrid(vg, layout.cx, layout.cy, layout.r, layout.labelR)

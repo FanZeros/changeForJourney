@@ -149,6 +149,7 @@ function DungeonBattle.enter(data, allies)
     cfg.dungeonId         = data.dungeonId or "gold_mine"
     cfg.teamIdx           = data.teamIdx or 1
     cfg.challengeId       = data.challengeId
+    cfg.runId             = data.runId
     cfg.resourceCombat    = DungeonConfig.isResourceDungeon(cfg.dungeonId)
     cfg.stageEntry        = data.stageEntry
     if cfg.resourceCombat and not cfg.stageEntry then
@@ -500,6 +501,7 @@ function DungeonBattle.onVictory()
         Client.sendAction(Protocol.ACTION_TYPES.TOWER_WAVE_WIN, {
             floor = cfg.floor,
             wave  = cfg.wave or 1,
+            runId = cfg.runId,
         })
     else
         Client.sendAction(Protocol.ACTION_TYPES.DUNGEON_WIN, {

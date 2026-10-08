@@ -137,18 +137,22 @@ function M.run()
         check(#readonly.hotspots == 0, "只读预览不产生热区")
 
         -- 字体/颜色/文字 spy，真实布局与热区不替换。
-        local texts, color, font = {}, {}, 28
-        local images, circles = {}, {}
+        local texts, color, font, align = {}, {}, 28, 0
+        local images, circles, panels, rects = {}, {}, {}, {}
         local function noop() end
         for _, name in ipairs({ "nvgFontFace", "nvgTextAlign", "nvgTextLetterSpacing", "nvgBeginPath",
             "nvgRoundedRect", "nvgRect", "nvgCircle", "nvgFill", "nvgStroke", "nvgStrokeWidth",
             "nvgStrokeColor", "nvgMoveTo", "nvgLineTo", "nvgClosePath", "nvgSave", "nvgRestore",
-            "nvgTranslate", "nvgScale", "nvgGlobalAlpha", "nvgIntersectScissor", "nvgFillPaint" }) do
+            "nvgTranslate", "nvgScale", "nvgGlobalAlpha", "nvgIntersectScissor", "nvgFillPaint", "nvgTextBox" }) do
             replace(_G, name, noop)
         end
         for i, name in ipairs({ "NVG_ALIGN_LEFT", "NVG_ALIGN_TOP", "NVG_ALIGN_MIDDLE",
             "NVG_ALIGN_CENTER", "NVG_ALIGN_RIGHT" }) do replace(_G, name, 2 ^ (i - 1)) end
         replace(_G, "nvgFontSize", function(_, value) font = value end)
+        replace(_G, "nvgTextAlign", function(_, value) align = value end)
+        replace(_G, "nvgRoundedRect", function(_, x, y, w, h)
+            rects[#rects + 1] = {x = x, y = y, w = w, h = h}
+        end)
         replace(_G, "nvgRGBA", function(r, g, b, a) return {r, g, b, a} end)
         replace(_G, "nvgFillColor", function(_, value) color = value end)
         replace(_G, "nvgCreateImage", function() return -1 end)
@@ -159,19 +163,22 @@ function M.run()
         end)
         replace(_G, "nvgCurrentTransform", function(_, matrix) matrix[1], matrix[2], matrix[3], matrix[4] = 1, 0, 0, 1 end)
         replace(_G, "nvgText", function(_, x, y, text)
-            texts[#texts + 1] = {text = text, x = x, y = y, color = color, font = font}
+            texts[#texts + 1] = {text = text, x = x, y = y, color = color, font = font, align = align}
         end)
         replace(_G, "time", { elapsedTime = 100 })
         local Draw = require("core.DrawUtil")
         replace(Draw, "drawImageCentered", function(_, image, x, y, w, h, alpha)
             images[#images + 1] = {image = image, x = x, y = y, w = w, h = h, alpha = alpha}
         end)
-        replace(Draw, "drawTextStroke", function(vg, x, y, text, size)
-            nvgFontSize(vg, size); nvgText(vg, x, y, text)
+        replace(Draw, "drawTextStroke", function(vg, x, y, text, size, alignment, r, g, b)
+            nvgFontSize(vg, size); nvgTextAlign(vg, alignment)
+            nvgFillColor(vg, nvgRGBA(r, g, b, 255)); nvgText(vg, x, y, text)
         end)
         replace(Draw, "drawDoubleChevron", noop)
         local Dark = require("core.DarkIcon")
-        replace(Dark, "drawNine", noop)
+        replace(Dark, "drawNine", function(_, _, x, y, w, h)
+            panels[#panels + 1] = {x = x, y = y, w = w, h = h}
+        end)
         replace(Dark, "drawQualityBg", noop)
         replace(Dark, "drawIconDark", noop)
         local Feedback = require("systems.ButtonFeedback")
@@ -342,6 +349,181 @@ function M.run()
         local before = #detailKt.hotspots
         Detail.drawReadOnly(vg, equip, 0, 0)
         check(#detailKt.hotspots == before, "只读比较不清主窗口热点")
+        Detail.close()
+
+        -- 装备详情配色/评级专项：真实大小入口、只读与比较均使用同一绘制实现。
+        local SC = require("config.EquipmentSetConfig")
+        local Power = require("systems.EquipmentPower")
+        replace(Power, "score", function() return 777777777 end)
+        local sample = {
+            seq = 98002, templateId = "W1", name = EC.ITEMS.W1.name, type = EC.ITEMS.W1.type,
+            slot = "weapon", quality = 3, level = 9999, ascendLevel = 4, affixMult = 2,
+            baseStats = { {"maxHp", 321}, {"armor", 12.5}, {"str", 3.5} },
+            affixes = {
+                {key = "atkSpeed", name = "攻击速度", quality = 1, value = 1.5, ascBonus = 0.5},
+                {key = "dropLuck", name = "幸运值", quality = 2, value = 7.5},
+                {key = "critRate", name = "暴击率", quality = 3, value = 4.5},
+                {key = "physPen", name = "物理穿透", quality = 4, value = 9.5},
+                {key = "finalLukBonus", name = "最终运气", quality = 5, value = 2.5, isCorrupt = true},
+            },
+        }
+        local sampleData = {inventory = {[tostring(sample.seq)] = sample}, equipped = {}}
+        replace(Store, "Get", function(module) return module == "equipment" and sampleData or nil end)
+        local function resetDetailSpy() texts, images, panels, rects, circles = {}, {}, {}, {}, {} end
+        local function textCall(text, alignment)
+            for _, call in ipairs(texts) do
+                if call.text == text and (not alignment or call.align == alignment) then return call end
+            end
+        end
+        local function colorIs(call, expected)
+            return call and call.color[1] == expected[1] and call.color[2] == expected[2]
+                and call.color[3] == expected[3]
+        end
+        local function affixValue(affix)
+            local value = ES.effectiveAffixValue(sample, affix)
+            local meta = AD.META[affix.key]
+            return "+" .. (meta.dataType == AD.TYPE_PCT and string.format("%.1f%%", value)
+                or meta.dataType == AD.TYPE_INT and tostring(math.floor(value)) or string.format("%.1f", value))
+        end
+        local function checkDetailRows(label, badgeImages)
+            local mainColor, fixedColor = {244, 237, 224}, {168, 191, 207}
+            for index, stat in ipairs(sample.baseStats) do
+                local expected = index == 1 and mainColor or fixedColor
+                local value = ES.formatBaseStatValue(stat[1], ES.effectiveBaseStatValue(sample, index))
+                check(colorIs(textCall(AD.META[stat[1]].name), expected), label .. "主/固定副名称分色 " .. index)
+                check(colorIs(textCall(value, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE), expected),
+                    label .. "主/固定副数值分色且保留升阶生效值 " .. index)
+            end
+            for index, affix in ipairs(sample.affixes) do
+                local corrupt = AC.isCorruptAffix(affix)
+                local name = textCall(affix.name)
+                local value = textCall(affixValue(affix), NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+                check(colorIs(name, corrupt and {239, 121, 255} or {232, 200, 106}), label .. "随机名称金/腐化紫 " .. index)
+                check(colorIs(value, corrupt and {226, 164, 243} or {114, 242, 245}),
+                    label .. "随机数值浅青/腐化浅紫，倍率与旧升阶投入不丢 " .. index)
+                local key = ({"D", "C", "B", "A", "S"})[index]
+                if badgeImages then
+                    check(gradeCount(key) == 1, label .. "真实评级图片 " .. key)
+                else
+                    check(textCall(key, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE) ~= nil,
+                        label .. "缺图文字评级 " .. key)
+                end
+            end
+            check(textCall("随机属性") ~= nil and textCall(EC.QUALITY[3].name) ~= nil
+                and textCall("Lv.9999") ~= nil and textCall("777777777") ~= nil,
+                label .. "随机标题/完整品质/长等级/完整战力保留")
+            check(textCall("升阶") ~= nil and #circles == 0, label .. "原升阶标记保留，不把腐化评级改紫点")
+        end
+        for _, compact in ipairs({false, true}) do
+            Detail.open(sample.seq, "weapon", nil, compact, "bag", 100, 600)
+            time.elapsedTime = time.elapsedTime + 1
+            resetDetailSpy(); Detail.draw(vg)
+            checkDetailRows(compact and "compact" or "大详情", true)
+            check(#detailKt.hotspots == #sample.baseStats + #sample.affixes, "主窗口每条属性仅一个关键词热点")
+            local h = detailKt.hotspots[#sample.baseStats + 1]
+            local image = images[1]
+            check(h.x1 > (compact and 533 or 205), "关键词名称向右给评级留空间")
+            for _, drawn in ipairs(images) do
+                if drawn.image == grade.D then image = drawn end
+            end
+            check(image.x + image.w < h.x1, "评级图片不覆盖关键词热区")
+            if compact then
+                local x = (h.x1 + 1) * 0.92 + 112 - 505 * 0.92
+                local y = (h.y1 + 1) * 0.92 + 600
+                check(detailTap(x, y) and detailKt:isOpen(), "compact徽章缩进后真实输入仍命中随机关键词")
+                local hotspotCount = #detailKt.hotspots
+                Detail.drawReadOnly(vg, sample, 0, 0)
+                check(#detailKt.hotspots == hotspotCount and detailKt:isOpen(), "只读预览不清主窗口解释与热区")
+                check(detailTap(-10, -10) and not detailKt:isOpen() and Detail.isOpen(), "compact关键词首点关说明不关闭详情")
+            end
+            Detail.close()
+        end
+        resetDetailSpy(); Detail.drawReadOnly(vg, sample, 0, 0)
+        checkDetailRows("只读", true)
+        local readonlyW, readonlyH = Detail.readOnlySize(sample)
+        check(math.abs(readonlyW - panels[1].w * 0.92) < 0.001
+            and math.abs(readonlyH - panels[1].h * 0.92) < 0.001, "只读声明尺寸与真实底板同源")
+        check(#detailKt.hotspots == 0 and textCall(I18n.t("wear")) == nil, "只读不污染主窗口热点也不显示穿戴按钮")
+
+        -- 不新增资源；未init与图片加载失败都须显示每条真实品级。
+        replace(_G, "nvgCreateImage", function() return -1 end)
+        Detail.init(vg)
+        for _, compact in ipairs({false, true}) do
+            Detail.open(sample.seq, "weapon", nil, compact, "bag", 100, 600)
+            time.elapsedTime = time.elapsedTime + 1
+            resetDetailSpy(); Detail.draw(vg)
+            checkDetailRows(compact and "compact缺图" or "大详情缺图", false)
+            Detail.close()
+        end
+        resetDetailSpy(); Detail.drawReadOnly(vg, sample, 0, 0)
+        checkDetailRows("只读缺图", false)
+        replace(_G, "nvgCreateImage", function(_, path)
+            local key = path:match("ICON_CZBZ_([DCBAS])%.png$")
+            return key and grade[key] or -1
+        end)
+        Detail.init(vg)
+
+        -- 套装和按钮按新增随机标题的实际底部下移；无主属性时不能侵占 Lv 行。
+        local setTemplate = ""
+        for id, template in pairs(EC.ITEMS) do
+            if template.slot == "weapon" and SC.getSetIdForTemplate(template) == "carapace" then
+                setTemplate = id; break
+            end
+        end
+        check(setTemplate ~= "", "布局专项真实套装模板存在")
+        sample.templateId = setTemplate
+        local allStats, allAffixes = sample.baseStats, sample.affixes
+        for _, stats in ipairs({{}, {allStats[1]}, allStats}) do
+            sample.baseStats = stats
+            for _, affixes in ipairs({{}, {allAffixes[1]}, allAffixes}) do
+                sample.affixes = affixes
+                Detail.open(sample.seq, "weapon", nil, true, "bag", 100, 600)
+                resetDetailSpy(); Detail.draw(vg)
+                local panel, setBlock = panels[1], rects[1]
+                local button = textCall(I18n.t("wear"))
+                check(panel and setBlock and button and setBlock.y + setBlock.h < button.y - 32
+                    and button.y + 32 <= panel.h - 18, "套装全文与64高按钮完整留在compact底板内")
+                local screenX = 112 + 300 * 0.92
+                check(Detail.containsPoint(screenX, 600 + (panel.h - 1) * 0.92)
+                    and not Detail.containsPoint(screenX, 600 + (panel.h + 1) * 0.92),
+                    "compact内容高度变化后底部命中边界与真实底板一致")
+                local lastValue = nil ---@type table|nil
+                for _, call in ipairs(texts) do
+                    if call.align == NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE then lastValue = call end
+                end
+                if lastValue then
+                    check(lastValue.y + 30 + 24 + 10 <= setBlock.y, "最后属性与套装保留完整内容底部间隔")
+                end
+                if #affixes > 0 then
+                    local title = textCall("随机属性")
+                    local firstValue = textCall(affixValue(affixes[1]), NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+                    check(title and firstValue and title.y + 13 + 12 + 30 == firstValue.y,
+                        "随机标题与首行使用同源布局，字号和行高不重叠")
+                    check(#stats > 0 or title.y - 13 >= 180, "无baseStats随机标题在完整Lv行下方")
+                else
+                    check(textCall("随机属性") == nil, "无随机词条不增空标题和无效高度")
+                end
+                Detail.close()
+                resetDetailSpy(); Detail.drawReadOnly(vg, sample, 0, 0)
+                local _, declaredH = Detail.readOnlySize(sample)
+                check(math.abs(declaredH - panels[1].h * 0.92) < 0.001
+                    and rects[1].y + rects[1].h < panels[1].h, "所有0/1/多属性只读尺寸含完整套装")
+            end
+        end
+        sample.baseStats, sample.affixes = allStats, allAffixes
+        local compare = {}
+        for key, value in pairs(sample) do compare[key] = value end
+        compare.seq = 98003
+        sampleData.inventory[tostring(compare.seq)] = compare
+        sampleData.equipped[1] = {weapon = compare.seq}
+        Detail.open(sample.seq, "weapon", 1, true, "bag", 100, 600)
+        resetDetailSpy(); Detail.draw(vg)
+        for _, key in ipairs({"D", "C", "B", "A", "S"}) do
+            check(gradeCount(key) == 2, "主/比较窗口均保留真实词条评级 " .. key)
+        end
+        check(#panels == 2 and #detailKt.hotspots == 8, "比较窗口只读，不增加或清除主窗口8个关键词热点")
+        local previewKt = instances[#instances]
+        check(#previewKt.hotspots == 0 and not previewKt:isOpen(), "比较及遗匣共用只读关键词实例不产生热点")
         Detail.close()
 
         -- 页签只检查当前工作台；背包另有可强化装备不能串标，资源变化实时生效。

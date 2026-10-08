@@ -568,10 +568,10 @@ function DungeonPage.requestTowerChallenge(requestedFloor)
     if not unlocked then toast(lockText or "通天塔未解锁") return false end
     local TowerConfig = require("config.TowerConfig")
     local bt = (PlayerStore.Get("dungeon") or {}).babel_tower or {}
-    local maxFloor = math.min(tonumber(bt.floor) or 1, TowerConfig.MAX_FLOOR)
-    local floor = requestedFloor == nil and math.tointeger(maxFloor)
+    local maxFloor = TowerConfig.getMaxUnlockedCheckpoint(bt)
+    local floor = requestedFloor == nil and maxFloor
         or math.tointeger(tonumber(requestedFloor) or 0)
-    if not floor or floor < 1 or floor > TowerConfig.MAX_FLOOR then
+    if not floor or not TowerConfig.isCheckpointFloor(floor) then
         toast("无效的层数")
         return false
     end
@@ -1418,6 +1418,7 @@ function DungeonPage.onActionResult(data)
             end
             local teamAllies, err = collectTowerTeams()
             if not teamAllies then
+                require("rules.tower.TowerService").Cleanup(1, data.runId)
                 toast(err or "三军攻坚条件未满足")
                 return
             end
@@ -1428,6 +1429,9 @@ function DungeonPage.onActionResult(data)
                 sendAction = function(act, params)
                     return require("runtime.GameAction").sendAction(act, params)
                 end,
+                onCleanup = function(runId)
+                    require("rules.tower.TowerService").Cleanup(1, runId)
+                end,
                 onClose    = function()
                     print("[DungeonPage] TowerBattleScene closed")
                 end,
@@ -1437,6 +1441,7 @@ function DungeonPage.onActionResult(data)
                 require("ui.battle.tri.BattleTriPage").close()
                 request.accepted = true
             else
+                require("rules.tower.TowerService").Cleanup(1, data.runId)
                 toast("通天塔战斗未能打开，请重试")
             end
         else
@@ -1454,8 +1459,8 @@ function DungeonPage.onActionResult(data)
                 .. " diamond=" .. tostring(data.diamondReward))
             dungeonState.babel_tower.dailyUsed = data.dailyUsed or 0
             dailyUsed = dungeonState.babel_tower.dailyUsed
-            local rewards = {}
-            if (data.diamondReward or 0) > 0 then
+            local rewards = data.rewards or {}
+            if #rewards == 0 and (data.diamondReward or 0) > 0 then
                 rewards[#rewards + 1] = { type = "diamond", amount = data.diamondReward }
             end
             leaveDungeonPageForReward()
@@ -1486,13 +1491,11 @@ function DungeonPage.onActionResult(data)
 
     -- 通天塔整层通关 → 转发给 TowerBattleScene + 更新本地层数
     if action == Protocol.ACTION_TYPES.TOWER_FLOOR_WIN then
-        if data.success then
-            dungeonState.babel_tower.floor = data.nextFloor or (dungeonState.babel_tower.floor + 1)
-            currentFloor = dungeonState.babel_tower.floor
-        end
         local TowerBattleScene = require("ui.tower.TowerBattleScene")
-        if TowerBattleScene.isActive() then
-            TowerBattleScene.onFloorWinResult(data)
+        if TowerBattleScene.isActive() and TowerBattleScene.onFloorWinResult(data) and data.success then
+            dungeonState.babel_tower.floor = math.max(dungeonState.babel_tower.floor,
+                data.progressFloor or data.nextFloor or dungeonState.babel_tower.floor)
+            currentFloor = dungeonState.babel_tower.floor
         end
         return
     end

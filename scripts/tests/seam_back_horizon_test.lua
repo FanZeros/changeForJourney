@@ -228,7 +228,7 @@ function Start()
             check(name ~= "main" and not name:match("[Ss]ave") and not name:match("[Pp]layer[Dd]ata"),
                 "fixture forbids main/save require: " .. name)
             if mods[name] then return mods[name] end
-            if name:match("^boot%.") then
+            if name:match("^boot%.") or name == "ui.character.hero.AwakeningArtwork" then
                 if realBoot[name] == nil then
                     local actual = originalRequire(name)
                     if name == "boot.StandaloneHorizonInput" then

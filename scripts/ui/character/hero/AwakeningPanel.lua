@@ -11,12 +11,16 @@ local HeroAssetUtil = require("config.HeroAssetUtil")
 local I18n       = require("core.I18n")
 local KeywordText = require("ui.widget.KeywordText")
 local HeroFrame = require("ui.widget.HeroFrame")
+local Artwork = require("ui.character.hero.AwakeningArtwork")
+local ETS = require("systems.ExtraTalentSystem")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
 local BF = require("systems.ButtonFeedback")
 
 local M = {}
+---@type NVGContextWrapper?
+local imageContext = nil
 
 -- 觉醒效果关键词富文本（白字与面板一致）；弹窗由 CharacterDetailDraw 帧末统一绘制
 M.kwText = KeywordText.new({ textColor = { 255, 255, 255 } })
@@ -72,6 +76,7 @@ M.BTN_CX = BTN_CX
 M.BTN_CY = BTN_CY
 M.BTN_W  = BTN_W
 M.BTN_H  = BTN_H
+M.VIEW_CX, M.VIEW_CY, M.VIEW_W, M.VIEW_H = 936, 200, 180, 52
 
 local CLASS_ICON_MAP = {
     knight   = 1, seal  = 1,
@@ -204,6 +209,8 @@ end
 -- ======================== 初始化 ========================
 
 function M.initImages(vg)
+    Artwork.close()
+    imageContext = vg
     imgBg          = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_BJ.png", 0)
     imgTitleBg     = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_1.png", 0)
     imgActivateBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
@@ -228,7 +235,7 @@ local function getActivatedNodes(heroId)
     local result = { false, false, false }
     if not getOwnedData_ then return result end
     local ownData = getOwnedData_(heroId)
-    local migrated = AKC.migrateAwakening(ownData and ownData.awakening)
+    local migrated = AKC.migrateAwakening(ownData and ownData.awakening, ownData and ownData._awk3Migrated)
     for i = 1, NODE_COUNT do
         if migrated[i] then
             result[i] = true
@@ -239,6 +246,7 @@ end
 
 ---@param heroId? number
 function M.reset(heroId)
+    Artwork.close()
     selectedNode = 1
     M.kwText:clear()   -- 切角色时清关键词弹窗/热区
     if heroId then
@@ -269,7 +277,7 @@ end
 ---@param i number 1~3
 ---@param state string "active" 已嵌合 | "next" 可嵌合 | "locked" 未解锁
 ---@param isSelected boolean
-local function drawSlice(vg, i, state, isSelected, cgImg, dw, dh, v0, sw)
+local function drawSlice(vg, i, state, isSelected, cgImg, dw, dh, v0, sw, status)
     -- 三片使用同一暗色底层与统一色调染色；解锁状态沿用原有明暗区分。
     slicePath(vg, i)
     nvgFillColor(vg, nvgRGBA(SLICE_DARK[1], SLICE_DARK[2], SLICE_DARK[3], 235))
@@ -330,9 +338,34 @@ local function drawSlice(vg, i, state, isSelected, cgImg, dw, dh, v0, sw)
     local cx = (bl + br) * 0.5
     local by = sliceY(i) + SLICES.H - 30
     if state == "active" then
-        drawTextStroke(vg, cx, by, "已嵌合",
-            22, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            244, 237, 224, 3)
+        local label = I18n.lookup("已嵌合")
+        if status and status ~= "" then label = label .. " · " .. status end
+        nvgFontFace(vg, "sans")
+        local font = 22
+        local maxW = math.min(br - bl, r0 - l0) - 20
+        nvgFontSize(vg, font)
+        while font > 18 and nvgTextBounds(vg, 0, 0, label) > maxW do
+            font = font - 1
+            nvgFontSize(vg, font)
+        end
+        -- 长累计值/译文换行而非截断或缩成不可读字号，保留所有真实增益。
+        local lines, line = {}, ""
+        for _, codepoint in utf8.codes(label) do
+            local char = utf8.char(codepoint)
+            local trial = line .. char
+            if line ~= "" and nvgTextBounds(vg, 0, 0, trial) > maxW then
+                lines[#lines + 1] = line
+                line = char
+            else
+                line = trial
+            end
+        end
+        lines[#lines + 1] = line
+        local top = by - (#lines - 1) * (font + 5)
+        for row, text in ipairs(lines) do
+            drawTextStroke(vg, cx, top + (row - 1) * (font + 5), text,
+                font, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+        end
     elseif state == "next" then
         drawTextStroke(vg, cx, by, "可嵌合",
             22, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -389,7 +422,24 @@ function M.draw(vg, heroId)
     -- 固定绘制顺序；选中只改变描边，不改变任何切片的图片覆盖范围。
     for i = 1, NODE_COUNT do
         local state = activated[i] and "active" or (i == nextNode and "next" or "locked")
-        drawSlice(vg, i, state, i == selectedNode, cgImg, dw, dh, v0, sw)
+        local ownData = getOwnedData_ and getOwnedData_(heroId)
+        local status = activated[i] and ETS.getStageStatus(heroId, i, ownData and ownData.extraTalent or {}) or ""
+        drawSlice(vg, i, state, i == selectedNode, cgImg, dw, dh, v0, sw, status)
+    end
+
+    if activatedCount == NODE_COUNT and cgImg and cgImg >= 0 then
+        local feedback = BF.begin(vg, "awp_view", M.VIEW_CX, M.VIEW_CY, M.VIEW_W, M.VIEW_H)
+        drawImageCentered(vg, imgActivateBtn, M.VIEW_CX, M.VIEW_CY, M.VIEW_W, M.VIEW_H, 0.9)
+        local label, font = I18n.lookup("查看全图"), 26
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, font)
+        while font > 18 and nvgTextBounds(vg, 0, 0, label) > M.VIEW_W - 24 do
+            font = font - 1
+            nvgFontSize(vg, font)
+        end
+        drawTextStroke(vg, M.VIEW_CX, M.VIEW_CY, label, font,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+        BF.finish(vg, feedback)
     end
 
     -- 选中切片上浮箭头（居中于斜切条顶部）
@@ -462,7 +512,28 @@ function M.draw(vg, heroId)
     BF.finish(vg, _bfAct)
 end
 
+function M.openArtwork(vg, heroId)
+    local activated = getActivatedNodes(heroId)
+    if not (activated[1] and activated[2] and activated[3]) then return false end
+    local image = resolveCG(vg, heroId)
+    if not image or image < 0 then return false end
+    local width, height = nvgImageSize(vg, image)
+    if not width or not height then return false end
+    return Artwork.open(heroId, image, width, height, function()
+        local detail = require("ui.character.detail.CharacterDetail")
+        local nodes = getActivatedNodes(heroId)
+        return detail.getHeroId() == heroId and detail.isAwakenTab()
+            and nodes[1] and nodes[2] and nodes[3]
+    end)
+end
+
 function M.handleInput(dx, dy, heroId)
+    if DrawUtil.hitTest(dx, dy, M.VIEW_CX, M.VIEW_CY, M.VIEW_W, M.VIEW_H) then
+        if imageContext and M.openArtwork(imageContext, heroId) then
+            BF.trigger("awp_view")
+            return true
+        end
+    end
     -- 效果描述关键词点击（弹窗的关闭由 CharacterDetail.handleInput 统一处理）
     if M.kwText:handleInput(dx, dy) then
         return true

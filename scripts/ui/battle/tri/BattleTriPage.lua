@@ -100,11 +100,8 @@ end
 --- 全局倍率以账户最高难度解锁，不随某队选旧关/模态按钮隐藏而降速。
 function BattleTriPage.getMaxUnlockedBattleSpeed()
     local Scene = require("ui.battle.scene.BattleScene")
-    local battle = ClientDispatcher.get("battle")
-    local savedMax = type(battle) == "table" and (tonumber(battle.maxStageId) or 0) or 0
-    -- 终焉编号并非难度顺序，先解析两份凭据再合并倍率。
-    return math.max(BattleSpeed.getMaxUnlocked(StageConfig.getDifficulty(Scene.getMaxStageId() or 0)),
-        BattleSpeed.getMaxUnlocked(StageConfig.getDifficulty(savedMax)))
+    return BattleSpeed.getAccountMaxUnlocked(ClientDispatcher.get("battle"),
+        Scene.getMaxStageId(), Scene.getClearedStages())
 end
 
 function BattleTriPage.isSpeedButtonVisible()

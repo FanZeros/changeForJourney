@@ -338,6 +338,8 @@ local StageConfig = require("config.StageConfig")
 
 DungeonConfig.RESOURCE_IDS = { "gold_mine", "equipment_vault", "black_diamond" }
 DungeonConfig.EXTRA_ENEMIES = 2
+-- 固定旧版本上界用于读档与旧终点锚点，不随新内容扩展改写历史。
+DungeonConfig.LEGACY_MAX_FLOOR = { gold_mine = 115, equipment_vault = 109, black_diamond = 115 }
 DungeonConfig.DEFINITIONS = {
     gold_mine = {
         name = "金币副本", unlockStage = 305, maxFloor = 115,
@@ -355,8 +357,16 @@ DungeonConfig.DEFINITIONS = {
         rewardType = "diamond", rewardIcon = "image/货币道具/UI_icon_SJ_X.png", quality = 5,
     },
 }
+-- 从解锁源关延伸至全部主线难度末关；终焉不作为资源关。
 for _, id in ipairs(DungeonConfig.RESOURCE_IDS) do
     local def = DungeonConfig.DEFINITIONS[id]
+    local count = 0
+    for _, stage in ipairs(StageConfig.STAGES) do
+        if not StageConfig.isTerminalTemple(stage.id) and stage.id >= def.unlockStage then
+            count = count + 1
+        end
+    end
+    def.maxFloor = count
     DungeonConfig.UNLOCK_CONDITIONS[id] = def.unlockStage
     DungeonConfig.MAX_FLOOR[id] = def.maxFloor
     DungeonConfig.DAILY_SWEEP_LIMIT[id] = 2
@@ -446,7 +456,10 @@ DungeonConfig.EQUIP_SWEEP_STEP = 25
 ---@return number
 function DungeonConfig.getEquipSweepCount(floor)
     floor = math.max(1, math.floor(tonumber(floor) or 1))
-    return DungeonConfig.EQUIP_SWEEP_BASE + (floor - 1) * DungeonConfig.EQUIP_SWEEP_STEP
+    local legacy = DungeonConfig.LEGACY_MAX_FLOOR.equipment_vault
+    -- 新高难内容继续提高产出，但按平方根放缓，避免一天生成数万件装备。
+    local rewardFloor = floor <= legacy and floor or legacy + math.ceil(math.sqrt(floor - legacy))
+    return DungeonConfig.EQUIP_SWEEP_BASE + (rewardFloor - 1) * DungeonConfig.EQUIP_SWEEP_STEP
 end
 
 --- 装备副本沿用源关卷轴掉率；扫荡券委托主线统一掉率，不另设倍率。
@@ -470,9 +483,11 @@ function DungeonConfig.getFloor(id, floor)
     if not combat then return nil end
     local result = { floor = floor, monsterLevel = combat.monsterLevel, monsters = combat.monsters }
     if id == "gold_mine" then
-        local old = DungeonConfig.getGoldMineFloor(floor)
+        local old = DungeonConfig.getGoldMineFloor(math.min(floor, DungeonConfig.LEGACY_MAX_FLOOR.gold_mine))
         if not old then return nil end
-        result.firstGold, result.sweepGold = old.firstGold, old.sweepGold
+        local extraChapters = math.max(0, math.ceil((floor - DungeonConfig.LEGACY_MAX_FLOOR.gold_mine) / 5))
+        result.firstGold = old.firstGold + extraChapters * 410000
+        result.sweepGold = math.floor(result.firstGold / 2)
     elseif id == "equipment_vault" then
         local cap = StageConfig.getMaxDropQuality(combat)
         local sweep = DungeonConfig.getEquipSweepCount(floor)
@@ -481,7 +496,9 @@ function DungeonConfig.getFloor(id, floor)
         result.equipLevel = combat.monsterLevel
         result.equipMinQuality, result.equipMaxQuality = math.min(3, cap), cap
     elseif id == "black_diamond" then
-        result.firstDiamond = 150 + (floor - 1) * 50
+        local legacy = DungeonConfig.LEGACY_MAX_FLOOR.black_diamond
+        local rewardFloor = floor <= legacy and floor or legacy + math.ceil((floor - legacy) / 5)
+        result.firstDiamond = 150 + (rewardFloor - 1) * 50
         result.sweepDiamond = math.floor(result.firstDiamond / 2)
     end
     return result
@@ -532,7 +549,8 @@ local function getChapterFloorsInternal(id)
     local floors = {}
     for floor = 1, def.maxFloor do
         local source = getSourceStage(id, floor)
-        if floor == 1 or floor == def.maxFloor or (source and source.stage == 5) then
+        if floor == 1 or floor == def.maxFloor or floor == DungeonConfig.LEGACY_MAX_FLOOR[id]
+            or (source and source.stage == 5) then
             floors[#floors + 1] = floor
         end
     end

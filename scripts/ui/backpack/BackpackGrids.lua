@@ -11,6 +11,8 @@ local EquipmentConfig = require("config.EquipmentConfig")
 local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local EquipmentWearability = require("ui.character.detail.EquipmentWearability")
 local EquipmentPower = require("systems.EquipmentPower")
+local EquipmentSystem = require("systems.EquipmentSystem")
+local AttributeDef = require("systems.AttributeDef")
 local SettingsPanel = require("ui.hud.popup.SettingsPanel")
 local AdvancementConfig = require("config.AdvancementConfig")
 local HeroConfig      = require("config.HeroConfig")
@@ -31,7 +33,7 @@ function M.bind(deps)
     local DarkIcon = deps.DarkIcon or DarkIcon
     local DrawUtil = deps.DrawUtil or DrawUtil
     local state = deps.state
-    local decomposeState = deps.decomposeState
+    local decomposeState = deps.decomposeState or {}
     local ITEM_DEFS = deps.ITEM_DEFS
     local getItemIcon = deps.getItemIcon
     local getImgCheckmark = deps.getImgCheckmark
@@ -66,7 +68,8 @@ function M.bind(deps)
         if slotFilter == "offhand" and dualMode and naturalSlot == "weapon" and grip == "onehand" then
             slotOk = true
         end
-        return tpl ~= nil and qualityChecked(quality) and slotOk,
+        local typeOk = not decomposeState.typeFilter or equipType == decomposeState.typeFilter
+        return tpl ~= nil and qualityChecked(quality) and slotOk and typeOk,
             tpl, naturalSlot, equipType, grip, level, quality
     end
 
@@ -94,7 +97,9 @@ function M.bind(deps)
     local cachedKey = ""
     local function listCacheKey(slotFilter, heroId, dualMode)
         if not PlayerStore.GetRevision then return nil end
-        local parts = { tostring(slotFilter), tostring(heroId), tostring(dualMode) }
+        local parts = { tostring(slotFilter), tostring(heroId), tostring(dualMode),
+            tostring(decomposeState.typeFilter), tostring(decomposeState.sortKey),
+            tostring(decomposeState.sortAscending == true) }
         for _, key in ipairs({ "equipment", "heroes", "artifacts", "talents" }) do
             parts[#parts + 1] = tostring(PlayerStore.GetRevision(key))
         end
@@ -152,7 +157,7 @@ function M.bind(deps)
                 entry.level, entry.quality = level, quality
                 entry.name = tpl.name or ""
                 entry.type, entry.slot, entry.grip = equipType or "", naturalSlot, grip
-                entry.enhanceLevel = equip.enhanceLevel or 0
+                entry.enhanceLevel = EquipmentSystem.getAscendLevel(equip)
                 entry.equippedByHeroId = equippedByHero[tostring(seqStr)] or nil
                 entry.canWear = filterHeroId == nil or (preview ~= nil and preview.valid == true)
                 entry.cannotEquipReason = not entry.canWear and (preview and preview.error or "角色数据未就绪") or nil
@@ -162,12 +167,57 @@ function M.bind(deps)
             end
         end
 
-        table.sort(list, function(a, b)
+        -- 属性排序只水合显示副本；精简存档中的词条 key 同样可还原，库存原对象不变。
+        local sortKey = decomposeState.sortKey
+        local attributeSort = sortKey and AttributeDef.META[sortKey] ~= nil
+        local function copyData(value)
+            if type(value) ~= "table" then return value end
+            local result = {}
+            for key, child in pairs(value) do result[key] = copyData(child) end
+            return result
+        end
+        local function attributeValue(equip)
+            -- 水合会规范腐化恢复快照，所有嵌套数据也必须与库存隔离。
+            local copy = copyData(equip)
+            EquipmentSystem.hydrate(copy)
+            local total, present = 0, false
+            for index, stat in ipairs(copy.baseStats or {}) do
+                if stat[1] == sortKey then
+                    total, present = total + EquipmentSystem.effectiveBaseStatValue(copy, index), true
+                end
+            end
+            for _, affix in ipairs(copy.affixes or {}) do
+                if affix.key == sortKey then
+                    total, present = total + EquipmentSystem.effectiveAffixValue(copy, affix), true
+                end
+            end
+            return total, present
+        end
+        for _, entry in ipairs(list) do
+            if attributeSort then entry.sortValue, entry.hasSortAttribute = attributeValue(entry) end
+        end
+        local function defaultOrder(a, b)
             if a.quality ~= b.quality then return a.quality > b.quality end
             if a.power ~= b.power then return a.power > b.power end
             if a.level ~= b.level then return a.level > b.level end
             if a.enhanceLevel ~= b.enhanceLevel then return a.enhanceLevel > b.enhanceLevel end
             return a.seq < b.seq
+        end
+        local field = ({ power = "power", quality = "quality", level = "level", ascend = "enhanceLevel" })[sortKey]
+        table.sort(list, function(a, b)
+            if attributeSort then
+                if a.hasSortAttribute ~= b.hasSortAttribute then return a.hasSortAttribute end
+                if a.sortValue ~= b.sortValue then
+                    if decomposeState.sortAscending then return a.sortValue < b.sortValue end
+                    return a.sortValue > b.sortValue
+                end
+            elseif field and a[field] ~= b[field] then
+                if decomposeState.sortAscending then return a[field] < b[field] end
+                return a[field] > b[field]
+            elseif (not sortKey or sortKey == "default") and decomposeState.sortAscending then
+                return defaultOrder(b, a)
+            end
+            return defaultOrder(a, b)
         end)
 
         cachedList, cachedSources, cachedKey = list, sources, key or ""

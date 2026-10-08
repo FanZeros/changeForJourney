@@ -23,7 +23,7 @@ local DESIGN_W = 1080
 
 -- ======================== 商品配置 ========================
 -- 数据来源：建筑-酒馆招募.txt「酒馆商店」章节
--- 英雄 ID 对应：1=大狗嚼 2=黄桃龙 3=叮咚鸡 4=接化发掌门 5=叠甲怪 6=阿姨压
+-- 英雄 ID 对应：1=大狗嚼 2=黄桃龙 3=叮咚鸡 4=接化发掌门 5=叠甲怪 6=压一压
 --               7=信光机兵 8=愤怒的小雀 9=卡皮巴拉 10=铁憨憨 11=熬夜冠军 12=雪皇
 --               13=弹弹弹 14=内鬼 15=复活吧爱人 16=万剑归宗 20=摘星星星人
 
@@ -85,7 +85,7 @@ local SHOP_ITEMS = {
         costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
-        id = 7, name = "阿姨压-碎片", quality = 4,
+        id = 7, name = "压一压-碎片", quality = 4,
         limitCycle = "daily", limitCount = -1, price = 60,
         icon = "image/角色图标/UI_icon_hero_6.png",
         costIcon = "image/货币道具/UI_icon_JGB_X.png",

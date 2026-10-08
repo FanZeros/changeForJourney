@@ -58,11 +58,13 @@ local function newContext()
     local allowed = {
         ["config.DungeonConfig"] = true, ["config.StageConfig"] = true,
         ["config.MonsterConfig"] = true, ["config.ExpTable"] = true,
+        ["config.TowerConfig"] = true, -- DungeonCompat冻结旧塔首通历史的只读配置依赖。
         ["systems.AttributeDef"] = true, ["systems.UnitAttributes"] = true,
         ["shared.dungeon.DungeonSchema"] = true, ["shared.dungeon.DungeonCompat"] = true,
         ["shared.ModuleRegistry"] = true, ["shared.schemas.CharacterSchema"] = true,
         ["shared.Protocol"] = true, ["runtime.ClientDispatcher"] = true,
         ["shared.sweep.SweepRewards"] = true,
+        ["ui.battle.tri.BattleTriStageProgress"] = true, -- Scene通关委托的正式纯逻辑模块。
     }
     env.require = function(name)
         if mocks[name] then return mocks[name] end
@@ -83,7 +85,7 @@ local function newContext()
     -- 提取完整正式函数，不复制通关算法；主线奖励出口遇到调用立即失败。
     local text = source("ui.battle.scene.BattleScene")
     local first = assert(text:find("function BattleScene.completeTriStageClear(stageId, teamIdx)", 1, true))
-    local last = assert(text:find("\n--- [终焉协同]", first, true))
+    local last = assert(text:find("\nend", first, true), "缺少完整正式通关委托函数结尾") + #"\nend"
     h.Scene = {
         adoptStageProgress = function(id) h.adopted[#h.adopted + 1] = id end,
         onFirstClear = function() error("资源通关禁止主线首奖") end,
@@ -131,10 +133,15 @@ local function legacyAndClear()
     h.Dispatcher.set("dungeon", data) -- 真实Registry先规范化，Schema再次委托；两入口均必须安全。
     eq(data.compat, compatRef, "保留compat原表引用")
     eq(data.compat.resourceClearedV1, true, "一次性迁移标记")
+    eq(data.compat.resourceProgressionV2, true, "资源扩展一次性判定标记")
+    eq(data.compat.towerSingleWaveV2, true, "单波塔历史冻结标记")
     same(data.compat.customCompat, before.compat.customCompat, "保留其他compat字段")
     eq(data.compat.monsterBuffV1, true, "保留旧难度标记")
     same(data.ancient_ruin, before.ancient_ruin, "古迹旧积累/历史不改")
-    same(data.babel_tower, before.babel_tower, "独立塔旧积累/历史不改")
+    local expectedTower = copy(before.babel_tower)
+    for floor = 1, 20 do expectedTower.cleared[floor] = true end
+    ledger(data.babel_tower, 20, "独立塔冻结历史首通")
+    same(data.babel_tower, expectedTower, "独立塔只补历史，其余字段及旧积累不改")
     eq(data.topCustom, before.topCustom, "保留未知顶层字段")
     local battle = h.Dispatcher.get("battle")
     for _, id in ipairs(h.DC.RESOURCE_IDS) do
@@ -168,7 +175,7 @@ local function legacyAndClear()
     eq(battle.maxStageId, 34505, "资源通关不抬主线max")
     same(battle.clearedStages, clearedBefore, "资源通关不动主线首通账本")
     same(data.ancient_ruin, before.ancient_ruin, "新增6/JSON之后古迹保持")
-    same(data.babel_tower, before.babel_tower, "新增6/JSON之后塔保持")
+    same(data.babel_tower, expectedTower, "新增6/JSON之后塔只保持冻结历史与原字段")
 end
 
 local function sparseAndFresh()
@@ -223,23 +230,50 @@ local function invalidAndBounds()
             noSweep(h, data, id, id .. "非法非空重复双onLoad")
             eq(data.compat.resourceClearedV1, true, id .. "记住拒绝迁移判定")
         end
-        for _, floor in ipairs({ "6.5", 6.5, -1, 0, "bad", h.DC.MAX_FLOOR[id] + 2, math.huge, 0 / 0 }) do
+        local legacyMax = h.DC.LEGACY_MAX_FLOOR[id]
+        for _, floor in ipairs({ "6.5", 6.5, -1, 0, "bad", legacyMax + 2,
+            h.DC.MAX_FLOOR[id], h.DC.MAX_FLOOR[id] + 1, h.DC.MAX_FLOOR[id] + 2, math.huge, 0 / 0 }) do
             local data = { [id] = fixture(h, floor, {}), compat = { monsterBuffV1 = true } }
             h.Dispatcher.set("dungeon", data)
             ledger(data[id], 0, id .. "非法原始floor不迁移")
+            if tonumber(floor) and tonumber(floor) > legacyMax + 1 then
+                eq(data[id].floor, 1, id .. "旧异常大floor不因新max放开")
+                eq(h.DC.isStageUnlocked(h.DC.getStageId(id, legacyMax + 2), h.Dispatcher.get("battle"), data),
+                    false, id .. "旧异常不能挑战扩展层")
+            end
+            eq(data.compat.resourceProgressionV2, true, id .. "拒绝异常后记录v2判定")
             noSweep(h, data, id, id .. "非法floor首次双onLoad")
             h.Dispatcher.set("dungeon", data)
             ledger(data[id], 0, id .. "floor规范化后也不反推历史")
             noSweep(h, data, id, id .. "非法floor重复双onLoad")
         end
-        for _, floor in ipairs({ 2, "6", h.DC.MAX_FLOOR[id], h.DC.MAX_FLOOR[id] + 1 }) do
+        for _, floor in ipairs({ 2, "6", legacyMax, legacyMax + 1, tostring(legacyMax + 1) }) do
             local data = { [id] = fixture(h, floor), compat = { monsterBuffV1 = true } }
             h.Dispatcher.set("dungeon", data)
             ledger(data[id], tonumber(floor) - 1, id .. "缺账本可信原始floor=" .. tostring(floor))
+            eq(data[id].floor, tonumber(floor), id .. "合法旧终点不重编号")
+            if tonumber(floor) == legacyMax + 1 then
+                eq(h.Sweep.isCleared(h.DC.getStageId(id, legacyMax), h.Dispatcher.get("battle"), data),
+                    true, id .. "合法旧终点保留已通资格")
+            end
             local before = copy(data)
             h.Dispatcher.set("dungeon", cjson.decode(cjson.encode(data)))
             same(h.Dispatcher.get("dungeon"), before, id .. "可信边界JSON幂等")
         end
+        -- v2有效账本允许新内容；迁移不回退合法扩展层，也不补被章节跳过的层。
+        local last = h.DC.MAX_FLOOR[id]
+        local progressed = { [id] = fixture(h, last, { [tostring(last)] = true }),
+            compat = { monsterBuffV1 = true, resourceClearedV1 = true, resourceProgressionV2 = true,
+                towerSingleWaveV2 = true } }
+        h.Dispatcher.set("dungeon", progressed)
+        eq(progressed[id].floor, last, id .. "v2合法扩展终层保留")
+        eq(progressed[id].cleared[last], true, id .. "v2扩展首通保留")
+        eq(progressed[id].cleared[last - 1], nil, id .. "v2不推断扩展跳过层")
+        eq(h.Sweep.isCleared(h.DC.getStageId(id, last), h.Dispatcher.get("battle"), progressed),
+            true, id .. "v2扩展终层可扫")
+        local snapshot = copy(progressed)
+        for _ = 1, 3 do h.Dispatcher.set("dungeon", progressed) end
+        same(progressed, snapshot, id .. "v2合法终层幂等")
     end
     local data = { gold_mine = fixture(h, 6, {}), compat = { monsterBuffV1 = true } }
     h.Compat.onLoad(data, { runMigration = true })
@@ -253,11 +287,40 @@ local function invalidAndBounds()
     end
 end
 
+local function towerHistoryV2()
+    local h = newContext()
+    for floor = 2, 113 do
+        local bt = fixture(h, floor % 2 == 0 and tostring(floor) or floor,
+            floor % 2 == 0 and {} or { [tostring(floor - 1)] = true })
+        bt.buffs = { 2, 5 }
+        local expected = copy(bt)
+        expected.floor, expected.cleared = floor, {}
+        for history = 1, floor - 1 do expected.cleared[history] = true end
+        local data = { babel_tower = bt, compat = { monsterBuffV1 = true } }
+        h.Dispatcher.set("dungeon", data)
+        ledger(bt, floor - 1, "旧塔floor=" .. floor)
+        same(bt, expected, "旧塔floor=" .. floor .. "仅冻结历史不改旧积累及其他字段")
+        eq(data.compat.towerSingleWaveV2, true, "旧塔历史冻结一次标记")
+        local snapshot = copy(data)
+        h.Schema.onLoad(data)
+        h.Schema.onServerLoad(data)
+        h.Dispatcher.set("dungeon", cjson.decode(cjson.encode(data)))
+        same(h.Dispatcher.get("dungeon"), snapshot, "旧塔floor=" .. floor .. "v2/JSON幂等")
+    end
+    local data = { babel_tower = fixture(h, 6, {}), compat = { monsterBuffV1 = true,
+        towerSingleWaveV2 = true } }
+    data.babel_tower.buffs = { 2, 5 }
+    local expected = copy(data.babel_tower)
+    h.Dispatcher.set("dungeon", data)
+    same(data.babel_tower, expected, "v2已判定塔不因floor再次补空账本")
+end
+
 function Start()
     local ok, err = pcall(function()
         legacyAndClear()
         sparseAndFresh()
         invalidAndBounds()
+        towerHistoryV2()
         print(TAG .. " ALL PASS assertions=" .. assertions .. " playerFile=false main=false rewards=false")
     end)
     if not ok then log:Write(LOG_ERROR, TAG .. " FAIL after " .. assertions .. ": " .. tostring(err)) end

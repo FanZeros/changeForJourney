@@ -233,27 +233,8 @@ local function easeInCubic(t)
     return t * t * t
 end
 
-local function getMainProgressStageId()
-    local battleData = PlayerStore.Get("battle")
-    return battleData and tonumber(battleData.maxStageId or battleData.currentStageId) or 0
-end
-
 local function getMaxUnlockedBattleSpeed()
-    local stageId = getMainProgressStageId()
-    if stageId <= 0 then return 1.0 end
-    local diff = StageConfig.getDifficulty(stageId)
-    if diff == StageConfig.DIFFICULTY_HELL or diff == StageConfig.DIFFICULTY_NIGHTMARE
-        or diff == StageConfig.DIFFICULTY_PURGATORY or diff == StageConfig.DIFFICULTY_TORMENT
-        or diff == StageConfig.DIFFICULTY_TORMENT2 or diff == StageConfig.DIFFICULTY_TORMENT3
-        or diff == StageConfig.DIFFICULTY_TORMENT4 or diff == StageConfig.DIFFICULTY_TORMENT5
-        or diff == StageConfig.DIFFICULTY_ANNIHILATION or diff == StageConfig.DIFFICULTY_ANNIHILATION2
-        or diff == StageConfig.DIFFICULTY_ANNIHILATION3 or diff == StageConfig.DIFFICULTY_ANNIHILATION4
-        or diff == StageConfig.DIFFICULTY_ANNIHILATION5 then
-        return 2.0
-    elseif diff == StageConfig.DIFFICULTY_HARD then
-        return 1.5
-    end
-    return 1.0
+    return require("ui.battle.stage.BattleSpeed").getAccountMaxUnlocked(PlayerStore.Get("battle"))
 end
 
 local function isSpeedButtonVisible()

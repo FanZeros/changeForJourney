@@ -55,7 +55,8 @@ function Start()
         local realModules = { ["boot.StandaloneHorizonInput"] = true,
             ["boot.OfflineRewardOverlay"] = true, ["boot.SeamBackGesture"] = true,
             ["boot.TerminalInput"] = true, ["boot.DecomposeMarqueeGesture"] = true,
-            ["boot.StandaloneHorizonWheel"] = true }
+            ["boot.StandaloneHorizonWheel"] = true,
+            ["ui.character.hero.AwakeningArtwork"] = true }
         local function source(name)
             if sources[name] then return sources[name] end
             local path = name:gsub("%.", "/") .. ".lua"

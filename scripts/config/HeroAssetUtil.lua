@@ -25,6 +25,8 @@ end
 ---@param heroId number
 ---@return string
 function HeroAssetUtil.getPortraitPath(heroId)
+    -- 展示改名不改变既有美术资源身份，也不要求重命名已发布的立绘。
+    if heroId == 6 then return "image/角色立绘/阿姨压_透明立绘.png" end
     local cfg = HC.get(heroId)
     if cfg and cfg.name then
         return "image/角色立绘/" .. cfg.name .. "_透明立绘.png"

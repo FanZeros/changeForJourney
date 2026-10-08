@@ -1,6 +1,6 @@
 -- ============================================================================
 -- awakening_growth_equivalence_test.lua — 觉醒1 成长层配置化等价回归
--- 验证 AwakeningGrowth（方案5 配置驱动重构）与旧硬编码链 100% 等价：
+-- 验证既有成长口径与属性映射保持，并回归 #17 补齐的任意击杀魔攻成长：
 --   1) applyGrowth：逐角色触发条件（any/burning/shocked/marked/nitroKill）
 --      与叠层字段（stacks + 专长字段）和旧 if heroId==N 链一致
 --   2) 无条件角色在未命中触发条件时不叠层（#2 非燃烧、#6 非感电、#8 非标记、#21 非氮气）
@@ -10,6 +10,9 @@
 -- 跑法：/workspace/.cli/UrhoXRuntime tests/awakening_growth_equivalence_test.lua \
 --       -tapcode_dir=/workspace/game5 -tool_mode -graphicsheadless -nosound
 -- 本测试验证纯配置增量/属性映射；ETS 公共钩子的战后结算另见生命生命周期专项。
+--   4) 非击杀角色（9/10/15/23）不叠；#17 任意击杀仅复用 stacks、阶段状态只读
+-- 跑法: ./.cli/UrhoXRuntime tests/awakening_growth_equivalence_test.lua \
+--         -tapcode_dir=<项目根> -tool_mode -graphicsheadless
 -- ============================================================================
 
 local failures = {}
@@ -63,7 +66,7 @@ function Start()
     local ok, err = pcall(function()
         -- ========== 1) 无条件击杀叠层（旧: if n1 then bump() end） ==========
         -- 注意：11/13/14/18 已改为专属口径（杠杆②），不在此列表
-        for _, hid in ipairs({ 1, 3, 4, 5, 7, 12, 19, 24, 25 }) do
+        for _, hid in ipairs({ 1, 3, 4, 5, 7, 12, 17, 19, 24, 25 }) do
             local extra = makeExtra()
             local applied = AG.applyGrowth(hid, extra, makeCtx())
             check(applied and extra.stacks == 1,
@@ -121,7 +124,7 @@ function Start()
             local miss = AG.applyGrowth(2, e2, makeCtx(nil, {}))
             check(not miss and e2.burnKills == 0 and e2.stacks == 0, "hero2 非燃烧击杀不叠层")
         end
-        do -- #6 阿姨压：仅感电击杀
+        do -- #6 压一压：仅感电击杀
             local e1 = makeExtra()
             local hit = AG.applyGrowth(6, e1, makeCtx(nil, { shocked = true }))
             check(hit and e1.shockKills == 1 and e1.stacks == 1, "hero6 感电击杀 shockKills+1 stacks+1")
@@ -157,7 +160,7 @@ function Start()
         end
 
         -- ========== 4) 无击杀叠层规则的角色（非击杀口径） ==========
-        for _, hid in ipairs({ 9, 10, 15, 17, 23 }) do
+        for _, hid in ipairs({ 9, 10, 15, 23 }) do
             local e = makeExtra()
             local applied = AG.applyGrowth(hid, e, makeCtx())
             check(not applied and e.stacks == 0,
@@ -229,9 +232,26 @@ function Start()
                     string.format("hero%d 专长字段不进属性表(旧bruteEntries无映射)", hid))
             end
         end
-        do -- #17: 无任何属性映射
+        do -- #17: 任意击杀复用既有 stacks，永久魔攻每层+0.2
             local e = makeExtra(); e.stacks = 99
-            check(#AG.buildAttrEntries(17, e) == 0, "hero17 无属性映射")
+            local original = makeExtra(); original.stacks = 99
+            local applied = AG.applyGrowth(17, e, makeCtx())
+            local entries = AG.buildAttrEntries(17, e)
+            check(applied and e.stacks == 100 and #entries == 1 and entries[1].key == AD.MAG_ATK
+                and math.abs(entries[1].flat - 20) < 1e-9, "hero17 99→100层，永久魔攻+20")
+            local onlyStacksChanged = true
+            for key, value in pairs(e) do
+                if key ~= "stacks" then
+                    if type(value) == "table" then
+                        if next(value) ~= nil then onlyStacksChanged = false end
+                    elseif value ~= original[key] then
+                        onlyStacksChanged = false
+                    end
+                end
+            end
+            for key in pairs(original) do if e[key] == nil then onlyStacksChanged = false end end
+            check(onlyStacksChanged, "hero17 仅改stacks，不新增或修改其他存档字段")
+            check(#AG.buildAttrEntries(17, makeExtra()) == 0, "hero17 零层不产魔攻条目")
         end
         do -- 0 层不产条目（旧 data.xxx > 0 守卫）
             local e = makeExtra()
@@ -250,13 +270,84 @@ function Start()
 
         -- ========== 7) RULES 全覆盖核对：与旧硬编码链的角色集合一致 ==========
         do
-            local expected = { 1,2,3,4,5,6,7,8,11,12,13,14,16,18,19,20,21,22,24,25 }
+            local expected = { 1,2,3,4,5,6,7,8,11,12,13,14,16,17,18,19,20,21,22,24,25 }
             local count = 0
             for _ in pairs(AG.RULES) do count = count + 1 end
             check(count == #expected, string.format("RULES 角色数=%d(期望%d)", count, #expected))
             for _, hid in ipairs(expected) do
                 check(AG.hasRule(hid), string.format("hero%d 在 RULES 中", hid))
             end
+        end
+        -- ========== 8) 阶段状态：真实公式、只读显式快照、调用方门禁 ==========
+        do
+            local ETS = require("systems.ExtraTalentSystem")
+            local CP = require("ui.character.panel.CharacterPanel")
+            local I18n = require("core.I18n")
+            local oldLanguage = I18n.get()
+            local oldGet, oldOwned, oldPatch = CP.getOwnedHero, ETS.getOwned, CP.patchExtraTalent
+            local reads, writes = 0, 0
+            CP.getOwnedHero = function() reads = reads + 1; error("explicit status read owned") end
+            ETS.getOwned = function() reads = reads + 1; error("explicit status called getOwned") end
+            CP.patchExtraTalent = function() writes = writes + 1; error("status wrote owned") end
+            local statusOk, statusErr = pcall(function()
+                I18n.set("zh_CN")
+                local e = { stacks = "10.9", biteTypes = { fire = true, ice = true, no = false },
+                    tickets = { [1] = true }, markTypes = { shadow = true }, iceStatues = 9,
+                    splitKills = 42, preciseStored = 3, blockBank = 7, conquerCarry = 6,
+                    beamCharges = 2, slashShadows = 4, gatlingKills = 160 }
+                local expected = {
+                    [12] = "魔攻 +2.0 · 累计冰冻成长 +0.50%（总概率上限80%）",
+                    [15] = "生命上限 +20 · 累计复活成长 +5.0%（总概率上限80%）",
+                    [17] = "魔攻 +2.0", [18] = "暴击率 +1.0%", [19] = "魂火 +0.50",
+                    [24] = "生命上限 +10", [25] = "物攻 +3.0",
+                }
+                for id, text in pairs(expected) do
+                    check(ETS.getStageStatus(id, 1, e) == text, "hero" .. id .. "初醒累计值不依赖owned觉醒")
+                end
+                check(ETS.getStageStatus(12, 1, { stacks = 2000 })
+                    == "魔攻 +400.0 · 累计冰冻成长 +100.00%（总概率上限80%）",
+                    "雪皇高层累计来源不伪装成封顶后的实际总概率")
+                check(ETS.getStageStatus(15, 1, { stacks = 240 })
+                    == "生命上限 +480 · 累计复活成长 +120.0%（总概率上限80%）",
+                    "爱人高层保留raw累计复活成长，80仅标总概率上限")
+                check(ETS.getStageStatus(22, 1, { gatlingKills = 240 })
+                    == "累计课时缩短 12.00（最短8次攻击）",
+                    "课时高层显示既有累计来源与8攻下限，不声称有效减12")
+                check(ETS.getStageStatus(22, 1, { gatlingKills = 10 })
+                    == "累计课时缩短 0.50（最短8次攻击）",
+                    "课时非零小数累计来源准确")
+                local inventory = { [1] = "图鉴 2/8", [3] = "预存精准 3/5", [4] = "武德库存 7",
+                    [5] = "开场甲片 6", [7] = "预存光线 2/3", [8] = "仇种 1/8", [11] = "斩影 4/4",
+                    [12] = "冰雕 3/3", [13] = "分裂击杀 42 · 额外弹射 +5", [15] = "预存票 1",
+                    [22] = "预存连打 10/10" }
+                for id, text in pairs(inventory) do
+                    check(ETS.getStageStatus(id, 2, e) == text, "hero" .. id .. "共鸣真实库存值")
+                end
+                for id = 1, 25 do
+                    check(ETS.getStageStatus(id, 1, e) ~= "", "hero" .. id .. "初醒状态覆盖")
+                    check(ETS.getStageStatus(id, 3, e) == "", "hero" .. id .. "蜕变不编造数值")
+                end
+                for _, id in ipairs({ 2, 6, 9, 10, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25 }) do
+                    check(ETS.getStageStatus(id, 2, e) == "", "hero" .. id .. "无真实共鸣库存不编造火种等状态")
+                end
+                check(ETS.getStageStatus(17, 1, false) == "魔攻 +0.0", "显式false不读档且显示零累计")
+                check(ETS.getStageStatus(0, 1) == "" and ETS.getStageStatus(17, 0) == ""
+                    and ETS.getStageStatus(17, 4) == "", "未知英雄/非新阶段返回空串且不读档")
+                check(e.stacks == "10.9" and e.iceStatues == 9 and e.biteTypes.no == false
+                    and e.tickets[1] == true and e.tickets["1"] == nil and e.burnKills == nil,
+                    "normalize只操作复制，原表/嵌套map/缺字段保持")
+                check(reads == 0 and writes == 0, "显式阶段状态读取owned/getOwned与持久写回均0")
+            end)
+            CP.getOwnedHero, ETS.getOwned, CP.patchExtraTalent = oldGet, oldOwned, oldPatch
+            I18n.set(oldLanguage)
+            check(statusOk, "只读阶段状态执行无异常: " .. tostring(statusErr))
+            local snapshot = { stacks = "10.9", biteTypes = { fire = true } }
+            CP.getOwnedHero = function() return { extraTalent = snapshot, awakening = {} } end
+            local omittedOk, omittedStatus = pcall(ETS.getStageStatus, 17, 1)
+            CP.getOwnedHero = oldGet
+            check(omittedOk and omittedStatus == I18n.format("魔攻 +%.1f", 2), "省略extra只读owned快照")
+            check(snapshot.stacks == "10.9" and snapshot.iceStatues == nil
+                and snapshot.biteTypes.fire == true, "省略extra也不normalize写回原档")
         end
     end)
 

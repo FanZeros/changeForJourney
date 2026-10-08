@@ -1,122 +1,74 @@
 -- ============================================================================
--- TowerHandler - 通天塔网络路由层
--- 职责: 接收客户端 Action → 调用 TowerService → 返回结果
+-- TowerHandler - 通天塔动作路由
+-- 波/层请求与回执保留本次局身份；不能用迟到回执推进新挑战。
 -- ============================================================================
 
 local TowerService = require("rules.tower.TowerService")
-local Protocol     = require("shared.Protocol")
+local Protocol = require("shared.Protocol")
 
 local handlers = {}
 
--- ── 挑战（进入通天塔） ──
-handlers[Protocol.ACTION_TYPES.TOWER_CHALLENGE] = function(uid, params)
-    local floor = params and params.floor
-    local ok, err, result = TowerService.Challenge(uid, floor)
-    if not ok then
-        return { success = false, reason = err, floor = floor }
-    end
-    return {
-        success      = true,
-        floor        = result.floor,
-        wave         = result.wave,
-        monsterLevel = result.monsterLevel,
-        monsters     = result.monsters,
-        rageTime     = result.rageTime,
-        superRageTime = result.superRageTime,
-        runId        = result.runId,
-        buffs        = result.buffs,
-        battleBg     = result.battleBg,
-    }
-end
-
--- ── 单波胜利 ──
-handlers[Protocol.ACTION_TYPES.TOWER_WAVE_WIN] = function(uid, params)
-    local floor = params and params.floor
-    local wave  = params and params.wave
-    if not floor or not wave then
-        return { success = false, reason = "缺少参数" }
-    end
-
-    local ok, err, result = TowerService.WaveWin(uid, floor, wave)
-    if not ok then
-        return { success = false, reason = err, floor = floor, wave = wave }
-    end
-    return {
-        success      = true,
-        runId        = result.runId,
-        selectionId  = result.selectionId,
-        floor        = floor,
-        wave         = wave,
-        floorCleared = result.floorCleared,
-        nextWave     = result.nextWave,
-        monsters     = result.monsters,
-        monsterLevel = result.monsterLevel,
-        buffChoices  = result.buffChoices,
-    }
-end
-
--- ── 整层通关结算 ──
-handlers[Protocol.ACTION_TYPES.TOWER_FLOOR_WIN] = function(uid, params)
-    local floor = params and params.floor
-    if not floor then
-        return { success = false, reason = "缺少参数" }
-    end
-
-    local ok, err, result = TowerService.FloorWin(uid, floor)
-    if not ok then
-        return { success = false, reason = err, floor = floor }
-    end
-    return {
-        success       = true,
-        floor         = result.floor,
-        firstClear    = result.firstClear,
-        diamondReward = result.diamondReward,
-        playerExp     = result.playerExp,
-        heroExpTotal  = result.heroExpTotal,
-        rewards       = result.rewards,
-        nextFloor     = result.nextFloor,
-    }
-end
-
--- ── 选择强化 ──
-handlers[Protocol.ACTION_TYPES.TOWER_PICK_BUFF] = function(uid, params)
+local function failed(params, reason, retryOnly)
     params = type(params) == "table" and params or {}
-    local buffId = params.buffId
-    local function failed(reason, retryOnly)
-        print("[TowerHandler] PickBuff failed run=" .. tostring(params.runId)
-            .. " selection=" .. tostring(params.selectionId) .. " request=" .. tostring(params.requestId)
-            .. " reason=" .. tostring(reason))
-        return { success = false, reason = reason, buffId = buffId,
-            runId = params.runId, selectionId = params.selectionId,
-            floor = params.floor, wave = params.wave, requestId = params.requestId,
-            retryOnly = retryOnly }
-    end
-    if not buffId then return failed("缺少参数") end
+    return { success = false, reason = reason, floor = params.floor, wave = params.wave,
+        runId = params.runId, requestId = params.requestId,
+        selectionId = params.selectionId, buffId = params.buffId, retryOnly = retryOnly }
+end
 
-    -- 桥层抛错兜底不携带身份，必须在这里捕获，避免 Scene 永久等待无从匹配的回执。
-    local called, ok, err, result = pcall(TowerService.PickBuff, uid, buffId, params)
-    if not called then
-        print("[TowerHandler] ERROR PickBuff: " .. tostring(ok))
-        -- 异常可能发生在 append/MarkDirty 后；同 selection 同卡重试，不能假定未提交。
-        return failed("强化处理异常，请重试", true)
-    end
-    if not ok then return failed(err) end
+local function receipt(params, result)
+    result.success = true
+    result.requestId = params and params.requestId
     return result
 end
 
--- ── 扫荡 ──
-handlers[Protocol.ACTION_TYPES.TOWER_SWEEP] = function(uid, params)
-    local ok, err, result = TowerService.Sweep(uid)
-    if not ok then
-        return { success = false, reason = err }
+handlers[Protocol.ACTION_TYPES.TOWER_CHALLENGE] = function(uid, params)
+    local ok, err, result = TowerService.Challenge(uid, params and params.floor)
+    if not ok then return failed(params, err) end
+    return receipt(params, result)
+end
+
+handlers[Protocol.ACTION_TYPES.TOWER_WAVE_WIN] = function(uid, params)
+    if not params or not params.floor or not params.wave then return failed(params, "缺少参数") end
+    local called, ok, err, result = pcall(TowerService.WaveWin, uid, params.floor, params.wave, params)
+    if not called then
+        print("[TowerHandler] ERROR WaveWin: " .. tostring(ok))
+        return failed(params, "楼层战斗确认异常，请重试", true)
     end
-    return {
-        success       = true,
-        sweepFloor    = result.sweepFloor,
-        diamondReward = result.diamondReward,
-        dailyUsed     = result.dailyUsed,
-        dailyMax      = result.dailyMax,
-    }
+    if not ok then return failed(params, err) end
+    return receipt(params, result)
+end
+
+handlers[Protocol.ACTION_TYPES.TOWER_FLOOR_WIN] = function(uid, params)
+    if not params or not params.floor then return failed(params, "缺少参数") end
+    local called, ok, err, result = pcall(TowerService.FloorWin, uid, params.floor, params)
+    if not called then
+        print("[TowerHandler] ERROR FloorWin: " .. tostring(ok))
+        return failed(params, "通天塔结算异常，请重试", true)
+    end
+    if not ok then return failed(params, err, true) end
+    return receipt(params, result)
+end
+
+handlers[Protocol.ACTION_TYPES.TOWER_PICK_BUFF] = function(uid, params)
+    params = type(params) == "table" and params or {}
+    if not params.buffId then return failed(params, "缺少参数") end
+    local called, ok, err, result = pcall(TowerService.PickBuff, uid, params.buffId, params)
+    if not called then
+        print("[TowerHandler] ERROR PickBuff: " .. tostring(ok))
+        return failed(params, "强化处理异常，请重试", true)
+    end
+    if not ok then return failed(params, err) end
+    return result
+end
+
+handlers[Protocol.ACTION_TYPES.TOWER_SWEEP] = function(uid, params)
+    local called, ok, err, result = pcall(TowerService.Sweep, uid)
+    if not called then
+        print("[TowerHandler] ERROR Sweep: " .. tostring(ok))
+        return failed(params, "通天塔扫荡异常，请重试", true)
+    end
+    if not ok then return failed(params, err) end
+    return receipt(params, result)
 end
 
 return { actionHandlers = handlers }

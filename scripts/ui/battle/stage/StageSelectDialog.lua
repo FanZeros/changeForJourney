@@ -21,6 +21,7 @@ local ResourceList      = require("ui.battle.stage.StageSelectResources")
 local ExpeditionOverview = require("ui.battle.stage.ExpeditionOverview")
 local ET                = require("config.ExpTable")
 local RewardPreview     = require("ui.battle.stage.StageSelectRewardPreview")
+local TowerText         = require("ui.tower.TowerPresentation")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -365,6 +366,7 @@ local function shortStageLabel(id)
     end
     local entry = ResourceList.getStageEntry(id)
     if not entry then return tostring(id) end
+    if entry.tower then return TowerText.text("第%d层", entry.stage) end
     local rel = displayChapter(id)
     return string.format("%d-%d", rel, entry.stage)
 end
@@ -700,22 +702,22 @@ local function drawChapterBackground(vg, stageId, x, y, hue, isSel, locked, back
     return true
 end
 
--- 塔每波随机出怪，规则与整层奖励单独绘制，不套资源卡面布局。
-local function drawTowerPreview(vg, entry, y, locked)
-    local vx, vy, vw, vh = cardViewport(nil, y)
+-- 塔按五层组列起点；预览只读配置/首通账本，不抽怪物或神器。
+local function drawTowerPreview(vg, entry, y, locked, dungeonData)
+    local reward = ResourceList.getRewardPreview(entry.id, entry, dungeonData)
+    if not reward then return end
+    local vx, _, vw = cardViewport(nil, y)
     nvgSave(vg)
-    nvgIntersectScissor(vg, vx, vy, vw, vh)
+    nvgIntersectScissor(vg, vx, y + 6, vw, 78)
     local color = locked and 149 or 230
-    drawFittedTitle(vg, vx + vw * 0.5, y + 28,
+    drawFittedTitle(vg, vx + vw * 0.5, y + 26,
         I18n.format("怪物 Lv.%d", entry.monsterLevel or 0), vw - 16, 28, 1,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 235, color, 194, 2)
-    drawFittedTitle(vg, vx + vw * 0.5, y + 64, "每层10波，敌人随机生成", vw - 16, 24, 1,
+    drawFittedTitle(vg, vx + vw * 0.5, y + 62,
+        TowerText.text("第%d-%d层 · 每层1波", reward.runStartFloor, reward.runEndFloor), vw - 16, 24, 1,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color, color, color, 2)
-    drawFittedTitle(vg, vx + vw * 0.5, y + 98, "三队攻坚，共同推进", vw - 16, 24, 1,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 201, 151, 59, 2)
     nvgRestore(vg)
-    RewardPreview.draw(vg, ResourceList.getRewardPreview(entry.id, entry),
-        D.MID_X + 8, y + 130, D.MID_W - 16, 34, locked)
+    RewardPreview.draw(vg, reward, D.MID_X + 8, y + 92, D.MID_W - 16, 72, locked)
 end
 
 ---@param vg any
@@ -1212,8 +1214,8 @@ function StageSelectDialog.draw(vg)
         else
             nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
         end
-        -- 塔状态上移，避开y+130..164奖励带；主线134/资源78原值不动。
-        local statusY = entry and entry.tower and 100 or layout.statusY
+        -- 塔状态位于组奖励上方；主线/资源原值不动。
+        local statusY = entry and entry.tower and 62 or layout.statusY
         nvgText(vg, x + 16, y + statusY, sub, nil)
 
         -- 推荐战力（行左中，v2.61 接线 / v2.63 图标化）：
@@ -1252,7 +1254,7 @@ function StageSelectDialog.draw(vg)
         end
 
         if entry and entry.tower then
-            drawTowerPreview(vg, entry, y, locked)
+            drawTowerPreview(vg, entry, y, locked, dungeonData)
         else
             -- 敌人卡面（行右侧横排；名称和数量随卡面一起滚动）
             local mids = stageMonsterCards(entry)

@@ -1,6 +1,7 @@
 -- ============================================================================
 -- DungeonIdleConfig - 副本挂机/离线收益配置
--- 金币副本 → 金币 | 装备副本 → 装备 | 黑钻副本/独立通天塔 → 钻石
+-- 金币副本 → 金币 | 装备副本 → 装备 | 黑钻副本 → 钻石
+-- 通天塔只在首通发黑钻，不提供挂机黑钻（神器通过实际挑战获得）。
 -- 隐藏上古遗迹仅保留旧粉尘存量领取。
 --
 -- 金币/旧粉尘的每分钟效率保持不变；黑钻保留小数，避免整数阈值跳涨。
@@ -48,8 +49,8 @@ DungeonIdleConfig.REWARD_TYPE = {
     babel_tower    = "diamond",
 }
 
---- 活跃挂机副本。旧遗迹只领取既存积累，停止新增时间。
-DungeonIdleConfig.DUNGEON_IDS = { "gold_mine", "equipment_vault", "black_diamond", "babel_tower" }
+--- 活跃挂机副本。旧遗迹只领取既存积累；塔不再新增被动收益。
+DungeonIdleConfig.DUNGEON_IDS = { "gold_mine", "equipment_vault", "black_diamond" }
 
 --- 获取指定层扫荡奖励（作为挂机效率基准）
 ---@param dungeonId string

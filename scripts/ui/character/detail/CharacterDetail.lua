@@ -314,30 +314,41 @@ end
 
 --- 打开详情界面
 ---@param heroId number
----@param tab string|nil 初始页签 "attr"|"equip"|"awaken"，未指定时由教程选择，否则默认 "attr"
+---@param tab string|nil 初始页签 "attr"|"equip"|"class"|"awaken"；打开中换人保留页签，首次由教程选择
 function CharacterDetail.open(heroId, tab)
-    local keepEquipTab = tab == nil and detailState.open and not detailState.closing and detailState.tab == "equip"
-    if keepEquipTab then
-        keepEquipTab = require("ui.character.panel.CharacterPanel").getOwnedHero(heroId) ~= nil
-    end
-    if keepEquipTab and detailState.heroId == heroId then return end
+    local keepTab = tab == nil and detailState.open and not detailState.closing
+    if not keepTab then Draw.resetRadarTransition() end
+    if keepTab and detailState.heroId == heroId then return end
+    local previousTab = detailState.tab
+    local previousHeroId = detailState.heroId
+    local previousOpenTime = detailState.openTime
+    local previousSeamTime = detailState.seamOpenTime
     detailState.open = true
     detailState.closing = false
     detailState.closeTime = 0
     detailState.heroId = heroId
-    local preferredTab = keepEquipTab and "equip" or tab
+    local preferredTab = keepTab and previousTab or tab
     if preferredTab == nil then
         preferredTab = require("systems.TutorialManager").getPreferredCharacterTab()
     end
-    local initTab = (preferredTab == "equip" or preferredTab == "awaken") and preferredTab or "attr"
+    local initTab = (preferredTab == "equip" or preferredTab == "class" or preferredTab == "awaken")
+        and preferredTab or "attr"
+    -- 未获得角色不能配装；转职页仍可只读职业树，不回退正在查看的页面。
+    if initTab == "equip" and not require("ui.character.panel.CharacterPanel").getOwnedHero(heroId) then
+        initTab = "attr"
+    end
+    local keepEquipTab = keepTab and previousTab == "equip" and initTab == "equip"
     detailState.tab = initTab
     detailState.tabFrom = initTab
     detailState.tabSwitchTime = 0
-    if not keepEquipTab then detailState.openTime = time.elapsedTime end
+    detailState.openTime = keepEquipTab and previousOpenTime or time.elapsedTime
     detailState.sideDragging = false
     CharacterDetail._EquipPanel.endSideDrag()
-    if not keepEquipTab then detailState.seamOpenTime = time.elapsedTime end
-    detailState.switchDir = nil  -- 普通打开：使用垂直滑入动画
+    detailState.seamOpenTime = keepTab and previousSeamTime or time.elapsedTime
+    detailState.prevHeroId = keepTab and previousHeroId or nil
+    detailState.switchDir = keepTab and not keepEquipTab and 1 or nil
+    detailState.switchFrom = keepTab and 0 or nil
+    detailState.cardDragX, detailState.cardDragMoved, detailState.cardDragVisual = nil, 0, 0
     detailState.attrScrollY   = 0
     detailState.attrScrollMax = 0
     detailState.attrDragging  = false
@@ -354,6 +365,8 @@ end
 --- 关闭详情界面（启动关闭动画）
 function CharacterDetail.close()
     if detailState.closing then return end
+    Draw.resetRadarTransition()
+    require("ui.character.hero.AwakeningArtwork").close()
     detailState.closing = true
     detailState.closeTime = time.elapsedTime
     syncEquipmentWarehouse()
@@ -364,6 +377,8 @@ end
 
 --- 立即关闭详情界面（跳过关闭动画，用于跨页面跳转）
 function CharacterDetail.forceClose()
+    Draw.resetRadarTransition()
+    require("ui.character.hero.AwakeningArtwork").close()
     detailState.open    = false
     detailState.closing = false
     detailState.heroId  = nil
@@ -395,8 +410,8 @@ function CharacterDetail._switchHero(direction, keepDrag)
     if nextIdx == curIdx then return end
 
     local nextHeroId = roster[nextIdx].heroId
-    -- 未获得角色只能看属性，滑过去时从配装/转职退回。
-    if not roster[nextIdx].owned and detailState.tab ~= "attr" and detailState.tab ~= "awaken" then
+    -- 未获得角色不能配装；转职与觉醒页继续只读展示，不改变当前页签。
+    if not roster[nextIdx].owned and detailState.tab == "equip" then
         detailState.tab = "attr"
         detailState.tabFrom = "attr"
         detailState.tabSwitchTime = 0
@@ -476,13 +491,18 @@ function CharacterDetail.handleEquipmentSlotTap(dx, dy)
     return selectedSlot ~= nil
 end
 
+--- 仓库下拉与角色槽共用选中上下文；只改查看部位，不发穿戴请求。
+function CharacterDetail.setEquipmentSlot(slot)
+    if not CharacterDetail.isEquipTab() then return false end
+    detailState.equipSlot = slot
+    CharacterDetail._EquipPanel.onSlotChanged(slot, detailState.heroId)
+    require("ui.backpack.BackpackPanel").setEquipmentSlotFilter(slot, detailState.heroId)
+    return true
+end
+
 --- 取消部位的统一入口，仓库按钮与右栏空白点击共用。
 function CharacterDetail.clearEquipmentSlot()
-    if not CharacterDetail.isEquipTab() then return false end
-    detailState.equipSlot = nil
-    CharacterDetail._EquipPanel.onSlotChanged(nil, detailState.heroId)
-    require("ui.backpack.BackpackPanel").setEquipmentSlotFilter(nil, detailState.heroId)
-    return true
+    return CharacterDetail.setEquipmentSlot(nil)
 end
 
 --- 浮选外第一击允许页签导航，但不放行一键装备等实际操作。
@@ -644,9 +664,8 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
-    -- Tab 切换 —— 转职区域（未获得角色只能看属性）
+    -- Tab 切换 —— 转职区域（未获得角色可只读职业树，转职服务仍校验拥有条件）
     if hitTest(dx, dy, BTN_TAB_CLASS_CX, BTN_TAB_CLASS_CY, BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H) then
-        if not require("ui.character.panel.CharacterPanel").getOwnedHero(detailState.heroId) then return true end
         if detailState.tab ~= "class" then
             detailState.tabFrom = detailState.tab
             detailState.tabSwitchTime = time.elapsedTime
@@ -679,6 +698,7 @@ function CharacterDetail.handleInput(dx, dy)
 
     -- === 转职面板输入委托（绘制已是屏幕坐标，不再额外下移）===
     if detailState.tab == "class" then
+        if not require("ui.character.panel.CharacterPanel").getOwnedHero(detailState.heroId) then return true end
         local ClassChange = require("ui.church.ChurchClassChange")
         ClassChange.setHero(detailState.heroId)
         if ClassChange.handleConfirmInput(dx, dy) then return true end

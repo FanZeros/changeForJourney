@@ -76,6 +76,11 @@ function Start()
         eq(old.gold_mine.idleAccumSec, 90061, "旧金币积累保持")
         eq(old.babel_tower.floor, 21, "塔独立进度")
         eq(old.babel_tower.buffs[2], 5, "塔强化保留")
+        eq(old.babel_tower.idleAccumSec, 7201, "单波迁移不改旧塔积累")
+        for floor = 1, 20 do eq(old.babel_tower.cleared[floor], true, "旧塔历史已领取冻结层" .. floor) end
+        eq(old.babel_tower.cleared[21], nil, "旧塔下一未通层不预授首通")
+        eq(old.compat.resourceProgressionV2, true, "旧资源扩展判定标记")
+        eq(old.compat.towerSingleWaveV2, true, "旧塔历史冻结标记")
         eq(old.customTop.keep, true, "未知旧字段保留")
         for _, id in ipairs({ "equipment_vault", "black_diamond" }) do
             eq(old[id].floor, 1, id .. "不继承旧进度")
@@ -121,7 +126,7 @@ function Start()
         eq(preMigration.black_diamond.floor, 40, "旧难度迁移不碰黑钻")
         eq(Compat.migrateMonsterBuffV1(preMigration), false, "迁移不重复")
         local replay = { compat = {}, gold_mine = { floor = 40, cleared = {} },
-            ancient_ruin = { floor = 40, cleared = {} }, babel_tower = { floor = 40 } }
+            ancient_ruin = { floor = 40, cleared = {} }, babel_tower = { floor = 40, idleAccumSec = 7201 } }
         for floor = 1, 39 do
             replay.gold_mine.cleared[tostring(floor)] = true
             replay.ancient_ruin.cleared[tostring(floor)] = true
@@ -131,6 +136,10 @@ function Start()
         local replayFloor = Compat.rollbackFloorForBuffV1(40)
         eq(replay.gold_mine.floor, replayFloor, "旧难度回退已首通层")
         eq(replay.gold_mine.monsterBuffReplayUntil, 40, "回退边界写明")
+        eq(replay.babel_tower.floor, replayFloor, "旧难度回退塔仍沿原公式")
+        for floor = 1, 39 do eq(replay.babel_tower.cleared[floor], true, "难度回退前冻结旧塔首通层" .. floor) end
+        eq(replay.babel_tower.cleared[40], nil, "旧塔回退仍不授予未通40层")
+        eq(replay.babel_tower.idleAccumSec, 7201, "旧难度回退/单波迁移不改塔旧积累")
         registered.onLoad(replay)
         local replaySnapshot = cjson.encode(replay)
         for _ = 1, 3 do
@@ -149,10 +158,24 @@ function Start()
         Compat.onLoad(replay)
         eq(replay.gold_mine.monsterBuffReplayUntil, nil, "重打抵达旧边界清除标记")
 
-        eq(DC.MAX_FLOOR.equipment_vault, 109, "装备109层")
-        eq(DC.MAX_FLOOR.black_diamond, 115, "黑钻115层")
+        eq(DC.MAX_FLOOR.gold_mine, 1711, "金币底层扩展1711层")
+        eq(DC.MAX_FLOOR.equipment_vault, 1661, "装备底层扩展1661层")
+        eq(DC.MAX_FLOOR.black_diamond, 1696, "黑钻底层扩展1696层")
+        local legacyMax = { gold_mine = 115, equipment_vault = 109, black_diamond = 115 }
         for _, id in ipairs({ "gold_mine", "equipment_vault", "black_diamond" }) do
+            eq(DC.LEGACY_MAX_FLOOR[id], legacyMax[id], id .. "旧上界固定不扩展")
             local last = DC.MAX_FLOOR[id]
+            eq(DC.DEFINITIONS[id].maxFloor, last, id .. "底层上界与定义一致")
+            local chapters = DC.getChapterFloors(id)
+            local foundLegacy = false
+            for _, anchor in ipairs(chapters) do if anchor == legacyMax[id] then foundLegacy = true end end
+            check(foundLegacy, id .. "旧终点仍为章节锚点")
+            eq(chapters[#chapters], last, id .. "新终点章节锚点")
+            local stageId = DC.getStageId(id, last)
+            eq(DC.getStage(stageId).sourceStageId, 34505, id .. "最终源关34505")
+            local decodedId, decodedFloor = DC.decodeStageId(stageId)
+            eq(decodedId, id, id .. "新终点独立ID可解码")
+            eq(decodedFloor, last, id .. "新终点层号可恢复")
             eq(IC.getIdleFloorFromSub({ floor = last, cleared = { [tostring(last)] = true } }, id), last, id .. "挂机读已通末层")
             eq(IC.getIdleFloorFromSub({ floor = 1, cleared = {} }, id), 0, id .. "新档无挂机收益")
             check(IC.getSweepReward(id, last) > 0, id .. "末层收益存在")
@@ -194,14 +217,32 @@ function Start()
                 eq(claim - IC.calcReward("black_diamond", floor - 1, 86400), 100, "阈值增长无断崖")
             end
         end
-        local towerRate = math.max(1, TC.getFloor(20).sweepDiamond / 720)
-        eq(IC.getIdlePerMin("babel_tower", 20), towerRate, "塔黑钻保留小数")
-        eq(IC.calcReward("babel_tower", 20, 172800),
-            math.floor(math.floor(IC.effectiveSeconds(172800) / 60) * towerRate * 2), "塔尾段最终取整")
-        eq(IC.getIdleFloorFromSub({ floor = 21, cleared = { [21] = true } }, "babel_tower"), 20, "独立塔保持旧挂机口径")
+        eq(TC.MAX_FLOOR, 112, "塔总112层不重编号")
+        eq(TC.WAVES_PER_FLOOR, 1, "塔每层只打一波")
+        eq(TC.CHECKPOINT_INTERVAL, 5, "塔五层一组")
+        for floor = 1, 112 do
+            local data = assert(TC.getFloor(floor))
+            local first = floor == 1 and 150 or 300 + math.max(0, floor - 2) * 50
+            eq(data.firstDiamond, first, "塔原首通黑钻保留层" .. floor)
+            eq(data.sweepDiamond, 0, "塔重复/扫荡黑钻为0层" .. floor)
+            eq(TC.getWave(1, floor), TC.WAVES[((floor - 1) % 10) + 1], "塔单波沿原波型循环层" .. floor)
+            eq(TC.getWave(2, floor), nil, "塔不开放第二波层" .. floor)
+            local checkpoint = math.floor((floor - 1) / 5) * 5 + 1
+            eq(TC.getCheckpointFloor(floor), checkpoint, "塔五层起点层" .. floor)
+            eq(TC.getRunEndFloor(floor), math.min(checkpoint + 4, 112), "塔末组截断到112层" .. floor)
+            eq(IC.getSweepReward("babel_tower", floor), 0, "塔挂机基准为0层" .. floor)
+            eq(IC.getIdlePerMin("babel_tower", floor), 0, "塔挂机效率为0层" .. floor)
+            local amount, minutes = IC.calcReward("babel_tower", floor, 172800)
+            eq(amount, 0, "塔尾段也不发黑钻层" .. floor)
+            eq(minutes, 0, "无塔挂机奖励不消费旧积累层" .. floor)
+        end
+        eq(IC.getIdleFloorFromSub({ floor = 21, cleared = { [21] = true } }, "babel_tower"), 20, "独立塔保持旧层号口径")
         eq(IC.getSweepReward("unknown", 1), 0, "未知ID无收益")
         eq(IC.REWARD_TYPE.ancient_ruin, "arcane_dust", "旧遗迹仍发粉尘")
-        for _, id in ipairs(IC.DUNGEON_IDS) do check(id ~= "ancient_ruin", "古迹停止新积累") end
+        for _, id in ipairs(IC.DUNGEON_IDS) do
+            check(id ~= "ancient_ruin", "古迹停止新积累")
+            check(id ~= "babel_tower", "塔停止新挂机积累")
+        end
 
         local modules = { dungeon = old, battle = { maxStageId = 99999 }, session = { lastOnlineTime = now - 3600 } }
         local state = { dirty = 0, flushed = 0, grants = 0, fail = false, currencyGrants = 0,
@@ -266,6 +307,18 @@ function Start()
         eq(cjson.encode(old), stored, "未知ID不创建子结构")
         local newOk = Service.Claim(0, "equipment_vault")
         eq(newOk, false, "新装备未通关不发奖")
+        local towerSnapshot = cjson.encode(old.babel_tower)
+        local currencyBefore, dirtyBefore, flushBefore = state.currencyGrants, state.dirty, state.flushed
+        local towerPreview = assert(Service.Preview(0, "babel_tower"))
+        eq(towerPreview.amount, 0, "真实Service塔预览0黑钻")
+        eq(towerPreview.accumSec, 7201, "塔预览保留旧积累")
+        local towerOk, towerError = Service.Claim(0, "babel_tower")
+        eq(towerOk, false, "真实Service塔旧积累不发黑钻")
+        eq(towerError, "暂无可领取的挂机奖励", "塔无奖励错误准确")
+        eq(state.currencyGrants, currencyBefore, "塔领奖不触发货币出口")
+        eq(state.dirty, dirtyBefore, "塔拒绝领奖不标脏")
+        eq(state.flushed, flushBefore, "塔拒绝领奖不持久化")
+        eq(cjson.encode(old.babel_tower), towerSnapshot, "塔拒绝领奖不清空旧积累或历史")
         old.equipment_vault = { floor = 109, cleared = { [109] = true }, idleAccumSec = 86437 }
         state.fail = true
         local failOk, failErr = Service.Claim(0, "equipment_vault")
@@ -296,6 +349,7 @@ function Start()
         Service.SyncOfflineOnEnter(0)
         Service.HandleIdleAccum(0, 65.5)
         eq(old.ancient_ruin.idleAccumSec, dustSec, "旧遗迹不新增在线离线积累")
+        eq(cjson.encode(old.babel_tower), towerSnapshot, "真实Service塔不新增在线离线积累，不改旧字段")
         Service.Cleanup(0)
         local function fixture(seconds, consumed)
             old.equipment_vault = { floor = 109, cleared = { [109] = true }, idleAccumSec = seconds,

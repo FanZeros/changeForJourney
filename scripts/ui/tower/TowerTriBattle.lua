@@ -29,6 +29,7 @@ local StageConfig      = require("config.StageConfig")
 local PlayerStore      = require("core.PlayerStore")
 local TowerLayout      = require("ui.tower.TowerLayout")
 local TowerBuffSidebar = require("ui.tower.TowerBuffSidebar")
+local TowerText        = require("ui.tower.TowerPresentation")
 
 local TowerTriBattle = {}
 
@@ -785,20 +786,17 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
         end
     end
 
-    local elapsed = DungeonBattle.getElapsed()
     local remaining = DungeonBattle.getTimeRemaining()
     local ragePhase = DungeonBattle.getRagePhase()
-    local timeText
+    -- 全阶段固定实际层号+剩余秒数；狂暴仅保留状态色，不恢复旧波次标题。
+    local timeText = TowerText.text("第%d层  剩余%.0fs", state.floor, remaining)
     local tr, tg, tb = 255, 255, 255
     if ragePhase == 2 then
-        timeText = string.format("超级狂暴 剩余%.0fs", remaining)
         tr, tg, tb = 255, 34, 34
     elseif ragePhase == 1 then
-        timeText = string.format("狂暴中 剩余%.0fs", remaining)
         tr, tg, tb = 255, 102, 0
-    else
-        timeText = string.format("通天塔 第%d层  波次 %d/10  剩余%.0fs", state.floor, state.wave, remaining)
-        if remaining <= 30 then tr, tg, tb = 255, 144, 144 end
+    elseif remaining <= 30 then
+        tr, tg, tb = 255, 144, 144
     end
     DrawUtil.drawTextStroke(vg, logicalW * 0.5, 28, timeText, 28,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 4)

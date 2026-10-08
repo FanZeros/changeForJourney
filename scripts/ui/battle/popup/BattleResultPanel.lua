@@ -129,23 +129,23 @@ local towerLanguage = ""
 -- 仅新增结算显示串；不改全局词典或业务数据，切语言后重建本面板。
 local towerText = {
     en = { win = "Tower · Cleared", lose = "Tower · Defeat", floor = "Floor %d",
-        wave = "Wave %d/10", time = "Elapsed %d:%02d", stats = "Damage dealt",
+        time = "Elapsed %d:%02d", stats = "Damage dealt",
         rewards = "Rewards", emptyStats = "No hero statistics", emptyRewards = "No rewards",
         close = "Click anywhere to close" },
     zh_TW = { win = "通天塔 · 通關", lose = "通天塔 · 失敗", floor = "第%d層",
-        wave = "波次 %d/10", time = "總耗時 %d分%02d秒", stats = "輸出統計",
+        time = "總耗時 %d分%02d秒", stats = "輸出統計",
         rewards = "獲得獎勵", emptyStats = "暫無角色統計", emptyRewards = "暫無獎勵",
         close = "點擊任意處關閉" },
     ja = { win = "天の塔 · クリア", lose = "天の塔 · 敗北", floor = "%d階",
-        wave = "ウェーブ %d/10", time = "所要時間 %d分%02d秒", stats = "与ダメージ",
+        time = "所要時間 %d分%02d秒", stats = "与ダメージ",
         rewards = "獲得報酬", emptyStats = "キャラ統計なし", emptyRewards = "報酬なし",
         close = "画面をタップして閉じる" },
     ko = { win = "천공의 탑 · 클리어", lose = "천공의 탑 · 패배", floor = "%d층",
-        wave = "웨이브 %d/10", time = "소요 시간 %d분 %02d초", stats = "피해량 통계",
+        time = "소요 시간 %d분 %02d초", stats = "피해량 통계",
         rewards = "획득 보상", emptyStats = "영웅 통계 없음", emptyRewards = "보상 없음",
         close = "화면을 눌러 닫기" },
     zh_CN = { win = "通天塔 · 通关", lose = "通天塔 · 失败", floor = "第%d层",
-        wave = "波次 %d/10", time = "总耗时 %d分%02d秒", stats = "输出统计",
+        time = "总耗时 %d分%02d秒", stats = "输出统计",
         rewards = "获得奖励", emptyStats = "暂无角色统计", emptyRewards = "暂无奖励",
         close = "点击任意处关闭" },
 }
@@ -263,9 +263,6 @@ local function buildTowerRoot(language)
     local text = towerText[language] or towerText.zh_CN
     local totalSecs = math.max(0, math.floor(state.elapsedSecs))
     local floorText = state.floor and string.format(text.floor, state.floor) or ""
-    if state.wave then
-        floorText = floorText .. "  ·  " .. string.format(text.wave, state.wave)
-    end
     local stats = UI.Panel { position = "absolute", left = 28, top = 196,
         width = 900, height = 432, backgroundColor = C.surface,
         borderWidth = 1, borderColor = C.border, borderRadius = 4, pointerEvents = "none" }

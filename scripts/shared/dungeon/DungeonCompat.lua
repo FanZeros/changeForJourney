@@ -1,5 +1,6 @@
 -- DungeonCompat.lua — 副本/通天塔存档兼容（新结构补全与旧难度迁移）
 local DungeonConfig = require("config.DungeonConfig")
+local TowerConfig = require("config.TowerConfig")
 
 local DungeonCompat = {}
 
@@ -90,7 +91,7 @@ local function migrateResourceClearedV1(data)
             local cleared = sub.cleared
             local noLedger = cleared == nil or (type(cleared) == "table" and next(cleared) == nil)
             local floor = math.tointeger(tonumber(sub.floor) or 0)
-            local maxFloor = DungeonConfig.MAX_FLOOR[id]
+            local maxFloor = DungeonConfig.LEGACY_MAX_FLOOR[id]
             -- floor=1 不授予首层；小数/非法/越界值不能经后续规范化变成迁移凭据。
             if noLedger and floor and floor > 1 and floor <= maxFloor + 1 then
                 local history = {}
@@ -104,12 +105,42 @@ local function migrateResourceClearedV1(data)
     data.compat.resourceClearedV1 = true
 end
 
+--- 单波爬塔保持原层号；在可能的旧难度回退之前冻结已经领取的首通历史。
+--- 无账本旧资源档只信旧上界，新内容不可由越界 floor 凭空解锁。
+local function migrateProgressionV2(data)
+    if type(data.compat) ~= "table" then data.compat = {} end
+    if not data.compat.resourceProgressionV2 then
+        for _, id in ipairs(DungeonConfig.RESOURCE_IDS) do
+            local sub = data[id]
+            if type(sub) == "table" then
+                local oldMax = DungeonConfig.LEGACY_MAX_FLOOR[id]
+                local floor = tonumber(sub.floor) or 1
+                if floor > oldMax + 1 and (type(sub.cleared) ~= "table" or next(sub.cleared) == nil) then
+                    sub.floor = 1
+                end
+            end
+        end
+        data.compat.resourceProgressionV2 = true
+    end
+    if data.compat.towerSingleWaveV2 then return end
+    local bt = data.babel_tower
+    if type(bt) == "table" then
+        local floor = math.tointeger(tonumber(bt.floor) or 0)
+        bt.cleared = type(bt.cleared) == "table" and bt.cleared or {}
+        if floor and floor > 1 and floor <= TowerConfig.MAX_FLOOR + 1 then
+            for history = 1, floor - 1 do bt.cleared[history] = true end
+        end
+    end
+    data.compat.towerSingleWaveV2 = true
+end
+
 --- 加载/接收：幂等补全结构、修正 key 和日计数；无账本旧资源档先迁移已通历史。
 --- 旧难度迁移仍只由服务端或显式 runMigration 开启，不扩展到新 ID。
 ---@param data table mod_dungeon
 ---@param opts table|nil { runMigration?: boolean }
 function DungeonCompat.onLoad(data, opts)
     migrateResourceClearedV1(data)
+    migrateProgressionV2(data)
     local today = math.floor((os.time() + 28800) / 86400)
     for _, id in ipairs({ "gold_mine", "ancient_ruin", "equipment_vault", "black_diamond", "babel_tower" }) do
         if type(data[id]) ~= "table" then

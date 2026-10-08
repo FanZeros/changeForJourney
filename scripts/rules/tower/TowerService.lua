@@ -1,22 +1,25 @@
 ---@diagnostic disable: param-type-mismatch
 -- ============================================================================
--- TowerService - 通天塔业务逻辑
--- 职责: 挑战、波次推进、整层通关、扫荡、强化选择
--- 层级: server/tower  |  通过 PDM 读写，禁止网络 IO
+-- TowerService - 112 真实层；每层一波，五层一局，逐层事务结算。
+-- 当局暗契/开奖/回执仅在内存；存档继续保留旧 floor/cleared 语义。
 -- ============================================================================
-
-local PDM         = require("rules.character.PlayerDataManager")
+local PDM = require("rules.character.PlayerDataManager")
 local TowerConfig = require("config.TowerConfig")
-local ExpTable    = require("config.ExpTable")
-local CurrencyService = require("rules.currency.CurrencyService")
+local ExpTable = require("config.ExpTable")
+local DungeonService = require("rules.dungeon.DungeonService")
+local ArtifactDefs = require("shared.artifact.ArtifactDefs")
+local ArtifactSchema = require("shared.artifact.ArtifactSchema")
 
 local TowerService = {}
-
--- 当局选择事务仅存内存；Challenge 建立新局，旧档不恢复未完成选择。
--- Service 是 buffs 唯一 append 方，回执必须深拷贝，不能与单机 PDM 共表。
 ---@type table<number, table>
 local runs = {}
+---@type table<number, table>
+local sweeps = {}
+-- 退出整理背包后可重挑本组，但同一未提交楼层的开奖不能被替换。
+---@type table<number, table>
+local pendingRewards = {}
 local runSerial = 0
+
 local function copy(value)
     if type(value) ~= "table" then return value end
     local result = {}
@@ -24,17 +27,10 @@ local function copy(value)
     return result
 end
 
--- ======================== 内部工具 ========================
-
---- 获取今日天编号（UTC+8）
 local function getTodayNum()
     return math.floor((os.time() + 28800) / 86400)
 end
 
---- 确保 babel_tower 子结构存在（兼容旧存档）
----@param dungeon table PDM dungeon 模块
----@param uid number
----@return table babel_tower 子结构
 local function ensureBT(dungeon, uid)
     if not dungeon.babel_tower then
         dungeon.babel_tower = { floor = 1, cleared = {}, dailyUsed = 0, dailyDay = 0, buffs = {} }
@@ -43,19 +39,6 @@ local function ensureBT(dungeon, uid)
     return dungeon.babel_tower
 end
 
---- 重置每日次数（如果跨天）
-local function resetDailyIfNeeded(bt)
-    local today = getTodayNum()
-    if bt.dailyDay ~= today then
-        bt.dailyUsed = 0
-        bt.dailyDay = today
-    end
-end
-
--- 三军攻坚的队伍门禁：挑战/推进/结算均需普通通关解锁三队。
--- 不影响已有通天塔扫荡（扫荡只读已通关层数，不使用编队）。
----@param uid number
----@return boolean, string|nil
 local function checkTeamUnlocks(uid)
     if ExpTable.getUnlockedTeamCount(PDM.GetModule(uid, "battle")) < ExpTable.TEAM_COUNT then
         return false, "三军攻坚需三队解锁（" .. ExpTable.getTeamUnlockText(3) .. "队伍3）"
@@ -63,170 +46,103 @@ local function checkTeamUnlocks(uid)
     return true, nil
 end
 
--- ======================== 挑战（进入通天塔战斗） ========================
+local function validFloor(floor)
+    return type(floor) == "number" and floor == math.floor(floor)
+        and floor >= 1 and floor <= TowerConfig.MAX_FLOOR
+end
 
---- 发起通天塔挑战，返回所选层+第一波的战斗配置
----@param uid number
----@param requestedFloor number|nil 缺省挑战当前层，全部通关后默认第112层
----@return boolean ok
----@return string|nil err
----@return table|nil result { floor, wave, monsterLevel, monsters, rageTime, superRageTime, buffs }
+local function matchesRun(run, request)
+    return type(request) ~= "table" or request.runId == nil or request.runId == run.id
+end
+
+-- 退出/失败只清本局；清档使用 ResetToDefault，不能把旧成功回执带进新档。
+-- 未提交奖品独立保留，退出整理后重挑同组仍复用原楼层开奖。
+function TowerService.Cleanup(uid, runId)
+    local run = runs[uid]
+    if not run or (runId ~= nil and run.id ~= runId) then return false end
+    run.pendingSelections, run.selections, run.requests = {}, {}, {}
+    run.bt.buffs = {}
+    runs[uid] = nil
+    PDM.MarkDirty(uid, "dungeon")
+    return true
+end
+
+function TowerService.ResetToDefault(uid)
+    if uid == nil then
+        for key in pairs(runs) do runs[key] = nil end
+        for key in pairs(sweeps) do sweeps[key] = nil end
+        for key in pairs(pendingRewards) do pendingRewards[key] = nil end
+    else
+        runs[uid], sweeps[uid], pendingRewards[uid] = nil, nil, nil
+    end
+end
+
+--- 挑战已解锁组起点；默认取旧 bt.floor 所在组，不改写历史进度。
 function TowerService.Challenge(uid, requestedFloor)
     local unlocked, unlockErr = checkTeamUnlocks(uid)
     if not unlocked then return false, unlockErr end
     local dungeon = PDM.GetModule(uid, "dungeon")
-    if not dungeon then
-        return false, "数据未加载"
-    end
-
+    if not dungeon then return false, "数据未加载" end
     local bt = ensureBT(dungeon, uid)
-
-    local maxFloor = math.min(tonumber(bt.floor) or 1, TowerConfig.MAX_FLOOR)
-    local floor = requestedFloor
-    if floor == nil then floor = maxFloor end
-    if type(floor) ~= "number" or floor ~= math.floor(floor) or floor < 1
-        or floor > TowerConfig.MAX_FLOOR then return false, "无效的层数" end
-    if floor > maxFloor then return false, "层数未解锁" end
-
-    local floorCfg = TowerConfig.getFloor(floor)
-    if not floorCfg then
-        return false, "层配置不存在"
+    local previous = runs[uid]
+    if previous and previous.bt == bt and previous.rewardPlan then
+        return false, "上一层奖励尚未提交，请重试结算"
     end
-
-    -- 重置当局强化（每次挑战从头开始）
+    local floor = requestedFloor
+    if floor == nil then floor = TowerConfig.getCheckpointFloor(tonumber(bt.floor) or 1) end
+    if not validFloor(floor) then return false, "无效的层数" end
+    if not TowerConfig.isCheckpointFloor(floor) then return false, "只能从五层组起点挑战" end
+    if floor > TowerConfig.getMaxUnlockedCheckpoint(bt) then return false, "层数未解锁" end
+    local floorCfg = TowerConfig.getFloor(floor)
+    if not floorCfg then return false, "层配置不存在" end
+    local monsters = TowerConfig.generateWaveMonsters(1, floor)
     bt.buffs = {}
     runSerial = runSerial + 1
     local run = { id = tostring(uid) .. ":" .. runSerial, bt = bt, floor = floor,
-        wave = 1, phase = "battle", selections = {}, waveResults = {}, requests = {},
-        pendingSelections = {} }
+        startFloor = floor, endFloor = TowerConfig.getRunEndFloor(floor), wave = 1,
+        phase = "battle", selections = {}, waveResults = {}, floorResults = {},
+        requests = {}, pendingSelections = {} }
     runs[uid] = run
     PDM.MarkDirty(uid, "dungeon")
-
-    -- 生成第一波怪物
-    local wave = 1
-    local monsters = TowerConfig.generateWaveMonsters(wave)
-
-    print(string.format("[TowerService] Challenge uid=%s floor=%d monsterLv=%d",
-        tostring(uid), floor, floorCfg.monsterLevel))
-
-    return true, nil, {
-        floor        = floor,
-        wave         = wave,
-        monsterLevel = floorCfg.monsterLevel,
-        monsters     = monsters,
-        rageTime     = TowerConfig.RAGE_TIME,
-        superRageTime = TowerConfig.SUPER_RAGE_TIME,
-        runId        = run.id,
-        buffs        = copy(bt.buffs),
-        battleBg     = TowerConfig.BATTLE_BG,
-    }
+    print(string.format("[TowerService] Challenge run=%s floors=%d-%d", run.id, floor, run.endFloor))
+    return true, nil, { success = true, floor = floor, wave = 1, runId = run.id,
+        startFloor = run.startFloor, endFloor = run.endFloor,
+        monsterLevel = floorCfg.monsterLevel, monsters = monsters,
+        rageTime = TowerConfig.RAGE_TIME, superRageTime = TowerConfig.SUPER_RAGE_TIME,
+        buffs = copy(bt.buffs), battleBg = TowerConfig.BATTLE_BG }
 end
 
--- ======================== 单波胜利 ========================
-
---- 通天塔单波胜利，生成下一波怪物或标记层通关
----@param uid number
----@param floor number 当前层
----@param wave number 刚胜利的波次
----@return boolean ok
----@return string|nil err
----@return table|nil result { nextWave, monsters, monsterLevel, floorCleared, buffChoices }
-function TowerService.WaveWin(uid, floor, wave)
+--- WaveWin 只消费单波，不发奖、不提前开下一层。
+function TowerService.WaveWin(uid, floor, wave, request)
     local unlocked, unlockErr = checkTeamUnlocks(uid)
     if not unlocked then return false, unlockErr end
+    if not validFloor(floor) then return false, "无效的层数" end
+    if wave ~= 1 then return false, "无效的波次" end
     local dungeon = PDM.GetModule(uid, "dungeon")
-    if not dungeon then
-        return false, "数据未加载"
-    end
-
+    if not dungeon then return false, "数据未加载" end
     local bt = ensureBT(dungeon, uid)
-
-    local floorCfg = TowerConfig.getFloor(floor)
-    if not floorCfg then
-        return false, "层配置不存在"
-    end
     local run = runs[uid]
-    if not run or run.bt ~= bt or run.floor ~= floor then
-        return false, "挑战未开始"
-    end
-    if type(wave) ~= "number" or wave ~= math.floor(wave) or wave < 1
-        or wave > TowerConfig.WAVES_PER_FLOOR then return false, "无效的波次" end
-    if run.waveResults[wave] then
-        print("[TowerService] replay WaveWin run=" .. run.id .. " wave=" .. wave)
-        return true, nil, copy(run.waveResults[wave])
-    end
-    if run.phase ~= "battle" or run.wave ~= wave then return false, "波次不匹配" end
-
-    -- 每波胜利后提供三选一强化选项（由客户端展示，玩家选择后调 PickBuff）
-    local buffChoices = TowerConfig.rollBuffs(3, bt.buffs)
-    local choices = {}
-    for _, buff in ipairs(buffChoices) do
-        choices[#choices + 1] = {
-            id      = buff.id,
-            quality = buff.quality,
-            name    = buff.name,
-            desc    = buff.desc,
-        }
-    end
-
-    -- 检查是否是最后一波
-    if wave >= TowerConfig.WAVES_PER_FLOOR then
-        -- 整层通关
-        print(string.format("[TowerService] WaveWin uid=%s floor=%d wave=%d → FLOOR CLEARED",
-            tostring(uid), floor, wave))
-        run.phase = "floor_win"
-        local result = { success = true, runId = run.id, floor = floor, wave = wave,
-            floorCleared = true, buffChoices = choices }
-        run.waveResults[wave] = result
-        return true, nil, copy(result)
-    end
-
-    -- 生成下一波怪物
-    local nextWave = wave + 1
-    local monsters = TowerConfig.generateWaveMonsters(nextWave)
-
-    print(string.format("[TowerService] WaveWin uid=%s floor=%d wave=%d → next=%d",
-        tostring(uid), floor, wave, nextWave))
-
-    local selectionId = run.id .. ":" .. wave
-    local result = {
-        success      = true,
-        runId        = run.id,
-        selectionId  = selectionId,
-        floor        = floor,
-        wave         = wave,
-        floorCleared = false,
-        nextWave     = nextWave,
-        monsters     = monsters,
-        monsterLevel = floorCfg.monsterLevel,
-        buffChoices  = choices,
-    }
-    -- 选择保留到本层结束，清波直接推进；未选择不能阻塞下一波。
-    run.pendingSelections[#run.pendingSelections + 1] = { id = selectionId, wave = wave, result = result }
-    run.wave = nextWave
-    run.waveResults[wave] = result
+    if not run or run.bt ~= bt or not matchesRun(run, request) then return false, "挑战已过期" end
+    if run.waveResults[floor] then return true, nil, copy(run.waveResults[floor]) end
+    if run.floor ~= floor or run.phase ~= "battle" then return false, "层数不匹配" end
+    local result = { success = true, runId = run.id, floor = floor, wave = 1, floorCleared = true }
+    run.waveResults[floor] = result
+    run.phase = "floor_win"
+    print(string.format("[TowerService] WaveWin run=%s floor=%d → floor_win", run.id, floor))
     return true, nil, copy(result)
 end
 
--- ======================== 整层通关 ========================
-
---- 通天塔经验：与同进度主线同级（首通 20 分钟当量、重打 10 分钟）。
---- 远征经验加玩家，队员经验平分给三队全部出战英雄；与副本共用同一经验助手。
----@param uid number
----@param monsterLevel number
----@param isFirstClear boolean
----@return number playerExp, number heroExpTotal
-local function grantTowerExp(uid, monsterLevel, isFirstClear)
+-- 每层经验旧值 /10：首通2分钟、重打1分钟；扫荡保留原10分钟。
+local function grantTowerExp(uid, monsterLevel, isFirstClear, minutes)
     local StageExpHelper = require("config.StageExpHelper")
     local heroes = PDM.GetModule(uid, "heroes")
     local playerData = PDM.GetModule(uid, "player")
     if type(heroes) ~= "table" or type(playerData) ~= "table" then return 0, 0 end
     local expPerMin = StageExpHelper.getExpPerMin(monsterLevel)
     if expPerMin <= 0 then return 0, 0 end
-    local playerExp = math.floor(expPerMin * (isFirstClear and 20 or 10))
+    local mins = minutes or (isFirstClear and TowerConfig.FIRST_EXP_MINUTES or TowerConfig.REPEAT_EXP_MINUTES)
+    local playerExp = math.floor(expPerMin * mins)
     if playerExp <= 0 then return 0, 0 end
-
-    -- 三队出战英雄（队1 无 teams 时回退 deployed），去重后平分。
     local deployed, seen = {}, {}
     for team = 1, ExpTable.TEAM_COUNT do
         local slots = type(heroes.teams) == "table" and heroes.teams[team]
@@ -250,10 +166,9 @@ local function grantTowerExp(uid, monsterLevel, isFirstClear)
             end
         end
     end
-
     local heroExpTotal = 0
     if #deployed > 0 then
-        heroExpTotal = math.floor(playerExp * (ExpTable.getHeroCountExpMult(#deployed)))
+        heroExpTotal = math.floor(playerExp * ExpTable.getHeroCountExpMult(#deployed))
         local perHero = math.floor(heroExpTotal / #deployed + 0.5)
         if perHero > 0 then
             local roster = heroes.roster
@@ -264,235 +179,265 @@ local function grantTowerExp(uid, monsterLevel, isFirstClear)
                     ExpTable.autoLevelUpHero(heroData)
                 end
             end
+            DungeonService.MarkRewardDirty(uid, "heroes")
         end
     end
     playerData.exp = (playerData.exp or 0) + playerExp
     ExpTable.autoLevelUpPlayer(playerData)
+    DungeonService.MarkRewardDirty(uid, "player")
     return playerExp, heroExpTotal
 end
 
---- 通天塔整层通关结算：发放奖励、推进层数
----@param uid number
----@param floor number 通关的层
----@return boolean ok
----@return string|nil err
----@return table|nil result { floor, firstClear, diamondReward, rewards, nextFloor }
-function TowerService.FloorWin(uid, floor)
-    local unlocked, unlockErr = checkTeamUnlocks(uid)
-    if not unlocked then return false, unlockErr end
-    local dungeon  = PDM.GetModule(uid, "dungeon")
-    local currency = PDM.GetModule(uid, "currency")
-    if not dungeon or not currency then
-        return false, "数据未加载"
-    end
-
-    local bt = ensureBT(dungeon, uid)
-    local run = runs[uid]
-    if not run or run.bt ~= bt or run.floor ~= floor then
-        return false, "挑战未开始"
-    end
-    if run.floorResult then
-        print("[TowerService] replay FloorWin run=" .. run.id .. " floor=" .. floor)
-        return true, nil, copy(run.floorResult)
-    end
-    if run.phase ~= "floor_win" or run.wave ~= TowerConfig.WAVES_PER_FLOOR then
-        return false, "本层尚未通关"
-    end
-    for wave = 1, TowerConfig.WAVES_PER_FLOOR do
-        if not run.waveResults[wave] then return false, "本层尚未通关" end
-    end
-
-    local floorCfg = TowerConfig.getFloor(floor)
-    if not floorCfg then
-        return false, "层配置不存在"
-    end
-
-    -- 旧档可能只有推进层数而没有 cleared 键：历史层不能再次发首通钻石。
-    -- 真正首次通关给 firstDiamond；重打完整十波仍给 sweepDiamond。
-    bt.cleared = bt.cleared or {}
-    local oldFloor = tonumber(bt.floor) or 1
-    local firstClear = not (oldFloor > floor or bt.cleared[floor] or bt.cleared[tostring(floor)])
-    local diamondReward = firstClear and floorCfg.firstDiamond or floorCfg.sweepDiamond
-
-    bt.cleared[floor] = true
-    bt.cleared[tostring(floor)] = nil
-    bt.floor = math.max(oldFloor, math.min(floor + 1, TowerConfig.MAX_FLOOR + 1))
-
-    local rewards = {}
-    if diamondReward > 0 then
-        rewards[#rewards + 1] = { type = "diamond", amount = diamondReward }
-    end
-
-    -- 通天塔经验：与同进度主线同级（首通 20 分钟当量、重打 10 分钟），发给三队出战英雄。
-    local playerExp, heroExpTotal = grantTowerExp(uid, floorCfg.monsterLevel, firstClear)
-
-    -- 先消费当局并缓存回执，奖励/MarkDirty 的同步回调不能重复发奖。
-    run.phase = "settled"
-    run.floorResult = {
-        floor         = floor,
-        firstClear    = firstClear,
-        diamondReward = diamondReward,
-        playerExp     = playerExp,
-        heroExpTotal  = heroExpTotal,
-        rewards       = rewards,
-        nextFloor     = bt.floor,
-    }
-    if diamondReward > 0 then CurrencyService.GrantReward(uid, rewards[1]) end
-
-    PDM.MarkDirty(uid, "dungeon")
-    if diamondReward > 0 then
-        PDM.MarkDirty(uid, "currency")
-    end
-    if playerExp > 0 then
-        PDM.MarkDirty(uid, "heroes")
-        PDM.MarkDirty(uid, "player")
-    end
-
-    print(string.format("[TowerService] FloorWin uid=%s floor=%d firstClear=%s diamond=%d nextFloor=%d",
-        tostring(uid), floor, tostring(firstClear), diamondReward, bt.floor))
-
-    return true, nil, copy(run.floorResult)
+-- 非抽卡免费掉落：绝不调用 ArtifactService.Draw/任务/保底计数。
+-- 连未命中也缓存，写档失败不能重新随机；实例ID交付时从当前nextId分配。
+local function rollArtifact()
+    if math.random() >= TowerConfig.ARTIFACT_DROP_RATE then return false end
+    local weights = TowerConfig.ARTIFACT_QUALITY_WEIGHTS
+    local total = weights[1] + weights[2] + weights[3]
+    local rolled = math.random() * total
+    local quality = rolled < weights[1] and 1 or (rolled < weights[1] + weights[2] and 2 or 3)
+    local artifactId = ArtifactDefs.rollArtifactId(quality)
+    if not artifactId then error("通天塔神器定义不存在") end
+    local artifact = { artifactId = artifactId, quality = quality, valueRatio = ArtifactDefs.rollValueRatio() }
+    local threatClearRatio = ArtifactDefs.rollThreatClearValueRatio(artifactId, quality)
+    if threatClearRatio ~= nil then artifact.threatClearRatio = threatClearRatio end
+    ArtifactDefs.normalizeInstanceValue(artifact)
+    return artifact
 end
 
--- ======================== 选择强化 ========================
+local function grantArtifact(uid, rolled)
+    if rolled == false then return true, nil, nil end
+    local data = PDM.GetModule(uid, "artifacts")
+    if type(data) ~= "table" then return false, "神器数据未加载，可重试结算" end
+    -- 规范化在事务内，旧bag别名/nextId会跟其他奖励一起回滚。
+    ArtifactSchema.normalizeModule(data)
+    if #data.bag >= ArtifactDefs.MAX_BAG then return false, "神器背包已满，请整理后重试结算" end
+    local nextId = data.nextId
+    for _, existing in ipairs(data.bag) do
+        nextId = math.max(nextId, (tonumber(existing.id) or 0) + 1)
+    end
+    local artifact = copy(rolled)
+    artifact.id = tostring(nextId)
+    data.nextId = nextId + 1
+    data.bag[#data.bag + 1] = artifact
+    DungeonService.MarkRewardDirty(uid, "artifacts")
+    return true, nil, artifact
+end
 
---- 玩家选择一个强化词条
----@param uid number
----@param buffId number 选择的强化ID
----@return boolean ok
----@return string|nil err
----@param request table|nil 正式请求携带 runId/selectionId/floor/wave/requestId
----@return table|nil result 独立权威快照（含本次请求身份）
+local function artifactReward(artifact)
+    -- 与ArtifactAssetUtil.getIconPath一致，只构建展示数据，不引入绘图库。
+    return { type = "artifact", amount = 1, artifact = copy(artifact),
+        artifactId = artifact.artifactId, quality = artifact.quality,
+        name = ArtifactDefs.getName(artifact),
+        iconPath = "image/神器图标/UI_icon_SQ_A" .. artifact.artifactId .. ".png" }
+end
+
+local function buildFloorPlan(uid, run, floorCfg)
+    local floor = run.floor
+    local cache = pendingRewards[uid]
+    if not cache or cache.bt ~= run.bt then
+        cache = { bt = run.bt, floors = {} }
+        pendingRewards[uid] = cache
+    end
+    local prize = cache.floors[floor]
+    if not prize then
+        local cleared = run.bt.cleared or {}
+        local oldFloor = tonumber(run.bt.floor) or 1
+        local firstClear = not (oldFloor > floor or cleared[floor] or cleared[tostring(floor)])
+        prize = { firstClear = firstClear,
+            diamondReward = firstClear and (floorCfg.firstDiamond or 0) or 0, artifact = false }
+        -- 命中/不命中均先缓存；重挑可重建run身份，但绝不重抽本层奖品。
+        cache.floors[floor] = prize
+        local called, rolled = pcall(rollArtifact)
+        if called then prize.artifact = rolled
+        else prize.error = "通天塔奖励生成失败，请联系反馈"; print("[TowerService] roll failed " .. tostring(rolled)) end
+    end
+    local plan = { floor = floor, firstClear = prize.firstClear, diamondReward = prize.diamondReward,
+        artifact = copy(prize.artifact), continueRun = floor < run.endFloor, error = prize.error }
+    run.rewardPlan = plan
+    local called, err = pcall(function()
+        if plan.continueRun then
+            plan.monsters = TowerConfig.generateWaveMonsters(1, floor + 1)
+            plan.monsterLevel = assert(TowerConfig.getFloor(floor + 1)).monsterLevel
+            plan.buffChoices = {}
+            for _, buff in ipairs(TowerConfig.rollBuffs(3, run.bt.buffs)) do
+                plan.buffChoices[#plan.buffChoices + 1] = {
+                    id = buff.id, quality = buff.quality, name = buff.name, desc = buff.desc }
+            end
+            plan.selectionId = run.id .. ":floor:" .. floor
+        end
+    end)
+    if not called then plan.error = "通天塔续层生成失败，请联系反馈"; print("[TowerService] continuation failed " .. tostring(err)) end
+    return plan
+end
+
+--- 逐层首通/经验/神器/进度一起落盘，成功后才消费楼层并开放下一层。
+function TowerService.FloorWin(uid, floor, request)
+    local unlocked, unlockErr = checkTeamUnlocks(uid)
+    if not unlocked then return false, unlockErr end
+    if not validFloor(floor) then return false, "无效的层数" end
+    local dungeon = PDM.GetModule(uid, "dungeon")
+    if not dungeon or not PDM.GetModule(uid, "currency") then return false, "数据未加载" end
+    local bt = ensureBT(dungeon, uid)
+    local run = runs[uid]
+    if not run or run.bt ~= bt or not matchesRun(run, request) then return false, "挑战已过期" end
+    if run.floorResults[floor] then return true, nil, copy(run.floorResults[floor]) end
+    if run.floor ~= floor or run.phase ~= "floor_win" or not run.waveResults[floor] then
+        return false, "本层尚未通关"
+    end
+    local floorCfg = TowerConfig.getFloor(floor)
+    if not floorCfg then return false, "层配置不存在" end
+    run.phase = "settling"
+    local plan = run.rewardPlan or buildFloorPlan(uid, run, floorCfg)
+    if plan.error then run.phase = "floor_win"; return false, plan.error end
+    local result = {}
+    local ok, err = DungeonService.CommitRewardTransaction(uid, function()
+        local granted, grantErr, artifact = grantArtifact(uid, plan.artifact)
+        if not granted then return false, grantErr end
+        if plan.diamondReward > 0
+            and not DungeonService.GrantIdleCurrency(uid, "diamond", plan.diamondReward) then
+            return false, "首通黑钻发放失败，可重试结算"
+        end
+        bt.cleared = bt.cleared or {}
+        bt.cleared[floor] = true
+        -- 不删除其他历史键，也不因为重打倒退旧floor。
+        bt.floor = math.max(tonumber(bt.floor) or 1, math.min(floor + 1, TowerConfig.MAX_FLOOR + 1))
+        if not plan.continueRun or run.abandoned then bt.buffs = {} end
+        DungeonService.MarkRewardDirty(uid, "dungeon")
+        local playerExp, heroExpTotal = grantTowerExp(uid, floorCfg.monsterLevel, plan.firstClear)
+        local rewards = {}
+        if plan.diamondReward > 0 then rewards[#rewards + 1] = { type = "diamond", amount = plan.diamondReward } end
+        if artifact then rewards[#rewards + 1] = artifactReward(artifact) end
+        result = { success = true, runId = run.id, floor = floor, wave = 1,
+            firstClear = plan.firstClear, diamondReward = plan.diamondReward,
+            playerExp = playerExp, heroExpTotal = heroExpTotal, rewards = rewards,
+            artifacts = artifact and { copy(artifact) } or {},
+            continueRun = plan.continueRun and not run.abandoned,
+            nextFloor = plan.continueRun and not run.abandoned and floor + 1 or bt.floor,
+            progressFloor = bt.floor, startFloor = run.startFloor, endFloor = run.endFloor,
+            buffs = copy(bt.buffs), selectionId = plan.selectionId,
+            buffChoices = copy(plan.buffChoices), monsters = copy(plan.monsters), monsterLevel = plan.monsterLevel }
+        return true, nil, result
+    end, function()
+        -- 通知可同步重入：必须在MarkDirty/finish前建立按floor回执并消费开奖。
+        run.floorResults[floor] = copy(result)
+        pendingRewards[uid].floors[floor] = nil
+        run.rewardPlan = nil
+        if result.continueRun then
+            if plan.selectionId and #plan.buffChoices > 0 then
+                run.pendingSelections[#run.pendingSelections + 1] = {
+                    id = plan.selectionId, floor = floor, wave = 1, result = copy(result) }
+            end
+            run.floor, run.wave, run.phase = floor + 1, 1, "battle"
+        else
+            run.phase = "settled"
+            run.pendingSelections, run.selections, run.requests = {}, {}, {}
+        end
+    end)
+    if not ok then
+        run.phase = "floor_win"
+        print(string.format("[TowerService] FloorWin retry run=%s floor=%d reason=%s", run.id, floor, tostring(err)))
+        return false, err
+    end
+    print(string.format("[TowerService] FloorWin committed run=%s floor=%d diamond=%d continue=%s",
+        run.id, floor, result.diamondReward, tostring(result.continueRun)))
+    return true, nil, copy(run.floorResults[floor])
+end
+
+--- FIFO身份是生成选择的已清层，不是run.floor；接受迟到与幂等重试。
 function TowerService.PickBuff(uid, buffId, request)
     local unlocked, unlockErr = checkTeamUnlocks(uid)
     if not unlocked then return false, unlockErr end
     local dungeon = PDM.GetModule(uid, "dungeon")
-    if not dungeon then
-        return false, "数据未加载"
-    end
-
+    if not dungeon then return false, "数据未加载" end
     local bt = ensureBT(dungeon, uid)
     local buff = TowerConfig.BUFFS_BY_ID[buffId]
-    if not buff then
-        return false, "无效的强化ID"
-    end
-
+    if not buff then return false, "无效的强化ID" end
     local run = runs[uid]
     if not run or run.bt ~= bt then return false, "挑战未开始" end
     request = request or {}
-    if request.runId ~= nil and request.runId ~= run.id then return false, "挑战已过期" end
-    if request.floor ~= nil and request.floor ~= run.floor then return false, "层数不匹配" end
-    -- 旧无 token 调用只兼容当前待选，不能在未 Challenge/清波时创造选择。
+    if not matchesRun(run, request) then return false, "挑战已过期" end
+    if run.phase ~= "battle" and run.phase ~= "floor_win" then return false, "强化选择已过期" end
     local pending = run.pendingSelections[1]
     local selectionId = request.selectionId or (pending and pending.id)
     local requestId = request.requestId
     local previous = requestId and run.requests[requestId]
     if previous and (previous.selectionId ~= selectionId or previous.buffId ~= buffId
-        or (request.wave ~= nil and request.wave ~= previous.wave)) then
-        return false, "请求编号已使用"
-    end
+        or (request.wave ~= nil and request.wave ~= previous.wave)
+        or (request.floor ~= nil and request.floor ~= previous.floor)) then return false, "请求编号已使用" end
     local accepted = selectionId and run.selections[selectionId]
     if accepted then
-        if accepted.buffId ~= buffId or (request.wave ~= nil and request.wave ~= accepted.wave) then
-            return false, "本次强化已选择"
-        end
+        if accepted.buffId ~= buffId or (request.wave ~= nil and request.wave ~= accepted.wave)
+            or (request.floor ~= nil and request.floor ~= accepted.floor) then return false, "本次强化已选择" end
         if requestId then run.requests[requestId] = accepted end
         local result = copy(accepted)
         result.requestId = requestId
-        print("[TowerService] replay PickBuff run=" .. run.id .. " selection=" .. selectionId
-            .. " request=" .. tostring(requestId))
         return true, nil, result
     end
-    if run.phase ~= "battle" or not pending or selectionId ~= pending.id
-        or (request.wave ~= nil and request.wave ~= pending.wave) then return false, "强化选择已过期" end
+    if not pending or selectionId ~= pending.id
+        or (request.wave ~= nil and request.wave ~= pending.wave)
+        or (request.floor ~= nil and request.floor ~= pending.floor) then return false, "强化选择已过期" end
     local offered = false
     for _, choice in ipairs(pending.result.buffChoices) do
         if choice.id == buffId then offered = true; break end
     end
     if not offered then return false, "强化不在本次选项中" end
-
-    -- 只消费一次 selection，跨波同卡仍合法；先记 accepted/phase 再 MarkDirty 防推送重入。
     bt.buffs[#bt.buffs + 1] = buffId
-    local result = {
-        success    = true,
-        runId      = run.id,
-        selectionId = selectionId,
-        floor      = run.floor,
-        wave       = pending.wave,
-        nextWave   = pending.result.nextWave,
-        buffId     = buffId,
-        buffName   = buff.name,
-        totalBuffs = #bt.buffs,
-        buffs      = copy(bt.buffs),
-    }
+    local result = { success = true, runId = run.id, selectionId = selectionId,
+        floor = pending.floor, wave = pending.wave, nextWave = 1,
+        nextFloor = pending.result.nextFloor, buffId = buffId, buffName = buff.name,
+        totalBuffs = #bt.buffs, buffs = copy(bt.buffs) }
     run.selections[selectionId] = result
     if requestId then run.requests[requestId] = result end
     table.remove(run.pendingSelections, 1)
     PDM.MarkDirty(uid, "dungeon")
-
-    print(string.format("[TowerService] PickBuff uid=%s run=%s selection=%s request=%s buffId=%d total=%d",
-        tostring(uid), run.id, selectionId, tostring(requestId), buffId, #bt.buffs))
+    print(string.format("[TowerService] PickBuff run=%s sourceFloor=%d currentFloor=%d buff=%d",
+        run.id, pending.floor, run.floor, buffId))
     local receipt = copy(result)
     receipt.requestId = requestId
     return true, nil, receipt
 end
 
--- ======================== 扫荡 ========================
-
---- 通天塔扫荡（消耗每日次数，获得上一层的扫荡奖励）
----@param uid number
----@return boolean ok
----@return string|nil err
----@return table|nil result { sweepFloor, diamondReward, dailyUsed, dailyMax }
+--- 扫荡原经验+独立神器概率，无黑钻；日次与奖励同一事务，失败固定开奖。
 function TowerService.Sweep(uid)
-    local dungeon  = PDM.GetModule(uid, "dungeon")
-    local currency = PDM.GetModule(uid, "currency")
-    if not dungeon or not currency then
-        return false, "数据未加载"
-    end
-
+    local dungeon = PDM.GetModule(uid, "dungeon")
+    if not dungeon or not PDM.GetModule(uid, "currency") then return false, "数据未加载" end
     local bt = ensureBT(dungeon, uid)
-    resetDailyIfNeeded(bt)
-
-    -- 检查每日次数
-    if bt.dailyUsed >= TowerConfig.DAILY_SWEEP_LIMIT then
-        return false, "今日扫荡次数已用完"
+    local today = getTodayNum()
+    local used = bt.dailyDay == today and (tonumber(bt.dailyUsed) or 0) or 0
+    if used >= TowerConfig.DAILY_SWEEP_LIMIT then return false, "今日扫荡次数已用完" end
+    local floor = TowerConfig.getHighestClearedFloor(bt)
+    if floor < 1 then return false, "至少通关1层后才能扫荡" end
+    local floorCfg = TowerConfig.getFloor(floor)
+    if not floorCfg then return false, "扫荡层配置不存在" end
+    local plan = sweeps[uid]
+    if plan and (plan.bt ~= bt or plan.day ~= today or plan.used ~= used) then plan = nil end
+    if not plan then
+        plan = { bt = bt, day = today, used = used, floor = floor, artifact = false }
+        sweeps[uid] = plan
+        local called, rolled = pcall(rollArtifact)
+        if not called then plan.error = "通天塔奖励生成失败，请联系反馈"
+        else plan.artifact = rolled end
     end
-
-    -- 必须至少通关第1层才能扫荡
-    local sweepFloor = bt.floor - 1
-    if sweepFloor < 1 then
-        return false, "至少通关1层后才能扫荡"
-    end
-
-    local floorCfg = TowerConfig.getFloor(sweepFloor)
-    if not floorCfg then
-        return false, "扫荡层配置不存在"
-    end
-
-    -- 扣除次数、发放奖励
-    bt.dailyUsed = bt.dailyUsed + 1
-    local diamondReward = floorCfg.sweepDiamond
-
-    local playerExp, heroExpTotal = grantTowerExp(uid, floorCfg.monsterLevel, false)
-    PDM.MarkDirty(uid, "heroes")
-    PDM.MarkDirty(uid, "player")
-    CurrencyService.GrantReward(uid, { type = "diamond", amount = diamondReward })
-
-    PDM.MarkDirty(uid, "dungeon")
-    PDM.MarkDirty(uid, "currency")
-
-    print(string.format("[TowerService] Sweep uid=%s floor=%d diamond=%d used=%d/%d",
-        tostring(uid), sweepFloor, diamondReward, bt.dailyUsed, TowerConfig.DAILY_SWEEP_LIMIT))
-
-    return true, nil, {
-        sweepFloor    = sweepFloor,
-        diamondReward = diamondReward,
-        playerExp     = playerExp,
-        heroExpTotal  = heroExpTotal,
-        dailyUsed     = bt.dailyUsed,
-        dailyMax      = TowerConfig.DAILY_SWEEP_LIMIT,
-    }
+    if plan.error then return false, plan.error end
+    floor, floorCfg = plan.floor, TowerConfig.getFloor(plan.floor)
+    local result = {}
+    local ok, err = DungeonService.CommitRewardTransaction(uid, function()
+        local granted, grantErr, artifact = grantArtifact(uid, plan.artifact)
+        if not granted then return false, grantErr end
+        bt.dailyUsed, bt.dailyDay = used + 1, today
+        DungeonService.MarkRewardDirty(uid, "dungeon")
+        local playerExp, heroExpTotal = grantTowerExp(uid, floorCfg.monsterLevel, false, 10)
+        result = { success = true, sweepFloor = floor, diamondReward = 0,
+            playerExp = playerExp, heroExpTotal = heroExpTotal,
+            artifacts = artifact and { copy(artifact) } or {}, rewards = {},
+            dailyUsed = bt.dailyUsed, dailyMax = TowerConfig.DAILY_SWEEP_LIMIT }
+        if artifact then result.rewards[1] = artifactReward(artifact) end
+        return true, nil, result
+    end, function() sweeps[uid] = nil end)
+    if not ok then return false, err end
+    print(string.format("[TowerService] Sweep committed uid=%s floor=%d used=%d diamond=0", tostring(uid), floor, result.dailyUsed))
+    return true, nil, copy(result)
 end
 
 return TowerService

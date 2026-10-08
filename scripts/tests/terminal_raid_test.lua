@@ -1164,7 +1164,7 @@ local function terminalFlowFixture(stageId)
     assert(load(handlerSource:sub(routerFirst, routerLast - 1), "@真实live回灌路由", "t", routerEnv))()
     router.setupDataSubscriptions()
     local syncEnv = setmetatable({ bootReady_ = true, StandaloneRT = {}, StageConfig = SC,
-        BattleScene = Scene, StandaloneSave = Save, ClientDispatcher = liveDispatcher }, { __index = _G })
+        BattleScene = Scene, BattleTriPage = Page, StandaloneSave = Save, ClientDispatcher = liveDispatcher }, { __index = _G })
     local sync = assert(load(standaloneSource:sub(syncFirst, syncLast - 1) .. "\nreturn SyncBattleState",
         "@真实SyncBattleState", "t", syncEnv))()
     local function syncBattle()

@@ -461,6 +461,8 @@ local function loadStage(stageId, skipBattleStart, deferEnter)
     -- 任意实际切关/重开都取消旧行军，避免选关后预约再次跳关。
     victoryMarch = nil
     BattleMountScope.mountDefault()
+    require("systems.ExtraTalentSystem").flush()
+    BattleCasualty.flushRewards() -- 主动换关/重开兜底，先消费旧杀敌收益再构建新场。
     local ctx = {
         currentStageId = currentStageId, stageName = stageName, maxStageId_ = maxStageId_,
         isFirstClear = isFirstClear, idleRangeText_ = idleRangeText_,
@@ -1005,6 +1007,8 @@ function BattleScene.update(dt)
         firstClearTimeLeft = firstClearTimeLeft - logicDt
         if firstClearTimeLeft <= 0 then
             firstClearTimeLeft = 0
+            require("systems.ExtraTalentSystem").flush()
+            BattleCasualty.flushRewards() -- 超时出口不经过Casualty，仍结清已触发成长和击杀收益。
             StageBerserk.exit()
             settleWaveEfficiency()
             print("[BattleScene] 首通战斗超时，自动失败")
@@ -1144,6 +1148,8 @@ function BattleScene.setEnemies(list)
 end
 --- 设置己方单位列表（DebugPanel 用）
 function BattleScene.setAllies(list)
+    require("systems.ExtraTalentSystem").flush()
+    BattleCasualty.flushRewards() -- 替换阵容前结清旧场，奖励沿用击杀时捕获的heroIds和回调。
     return getAllyLifecycle().setAllies(list)
 end
 --- 获取默认攻击间隔（供 DebugPanel 等外部模块使用）
@@ -1435,6 +1441,8 @@ function BattleScene.reloadStage(opts)
 end
 --- 重置战斗场景到初始默认状态（清除存档后调用）
 function BattleScene.resetToDefault()
+    BattleCasualty.discardRewards()
+    require("systems.ExtraTalentSystem").discard() -- TAL.reset仍会flush，清档必须先丢弃默认域待结算。
     BattleScene.cancelTriReincarnation()
     victoryMarch = nil
     return getAllyLifecycle().resetToDefault()

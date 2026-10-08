@@ -302,7 +302,9 @@ local function layoutText(vg, text, width, fontSize, opts)
     -- 属性全名无需做机制子串扫描；本地化仅发生一次。
     local segs, display
     if opts and opts.attributeKey then
-        display = I18n.lookup(text)
+        local meta = AD.META[opts.attributeKey]
+        -- 已知属性只显示稳定 key 对应的规范名；旧源名只作未知属性回退。
+        display = I18n.lookup(meta and meta.name or text)
         segs = { { text = display, keyword = true, key = "attribute:" .. opts.attributeKey } }
     else
         segs, display = splitSegments(text)

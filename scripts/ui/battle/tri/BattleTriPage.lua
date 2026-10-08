@@ -1444,6 +1444,16 @@ function BattleTriPage.getTeamStageIds()
     return result
 end
 
+--- 退出会话兜底：隐藏页面不结束战斗，只有宿主Stop显式调用这里。
+function BattleTriPage.flushPendingGrowth()
+    local ETS = require("systems.ExtraTalentSystem")
+    for _, drv in pairs(drivers) do
+        drv:activate()
+        ETS.flush()
+        if not drv.terminalRaid then drv:queuePendingKills() end
+    end
+end
+
 --- 放弃旧协同，不分发死亡事件，不通过正常收尾/奖励结算路径。
 local function discardTerminalRaid()
     require("ui.battle.tri.TerminalReincarnation").discardRaid(terminalRaid, drivers)
@@ -1488,7 +1498,7 @@ end
 -- 更新/绘制/选关/恢复临时借用各战线，正常及异常出口均恢复调用方挂载。
 BattleMountScope.wrap(BattleTriPage, {
     "open", "prepareEntry", "update", "draw", "gotoTeamStage", "setTeamStageIds", "resetToDefault", "handleInput",
-    "completeTerminalReincarnation",
+    "completeTerminalReincarnation", "flushPendingGrowth",
 }, false)
 
 return BattleTriPage

@@ -165,13 +165,13 @@ function Start()
             end
         end
         local function inScene(label)
-            eq(Layout.MODE, "classic", label .. "作用域classic")
+            eq(Layout.MODE, "strip", label .. "作用域strip")
             check(TAL.mountedUnitStates() ~= mainUnitStates, label .. "独立单位天赋表")
             check(ETS.mountedState() ~= mainExtra, label .. "独立ETS状态")
             local _, enemyY = Layout.cardPos("enemy", 1, 4)
             local _, allyY = Layout.cardPos("ally", 1, 4)
-            eq(enemyY, 804, label .. "敌方全页坐标")
-            eq(allyY, 1760, label .. "友方全页坐标")
+            eq(enemyY, Layout.STRIP_CY, label .. "敌方左右对阵坐标")
+            eq(allyY, Layout.STRIP_CY, label .. "友方左右对阵坐标")
         end
         local function data(id, floor, team, token)
             return { dungeonId = id, floor = floor, teamIdx = team, challengeId = token,
@@ -215,7 +215,7 @@ function Start()
         Draw.drawCardGroup = function(_, units, cy)
             inScene("Scene.draw")
             lifecycleCalls.draw = lifecycleCalls.draw + 1
-            eq(cy, units == state.enemies and 804 or 1760, "Scene.draw上下两排坐标")
+            eq(cy, Layout.STRIP_CY, "Scene.draw左右对阵坐标")
         end
         compile("core.DarkIcon").drawDarkScene = noop
         mocks["systems.ButtonFeedback"].begin, mocks["systems.ButtonFeedback"].finish = noop, noop
@@ -246,7 +246,7 @@ function Start()
             eq(nested[3], 7, "Scope返回尾值")
             eq(TAL.mountedUnitStates(), replacedStates, "内层reset后外层保留新表")
             eq(ETS.mountedState(), extraState, "嵌套ETS沿用副本原状态")
-            eq(Layout.MODE, "classic", "内层返回不提前恢复strip")
+            eq(Layout.MODE, "strip", "内层返回不提前恢复宿主")
         end)
         unchanged()
         Scope.run(2, function()
@@ -276,7 +276,7 @@ function Start()
         end)
         unchanged()
         Layout.setMode("classic")
-        Scope.run(1, function() eq(Layout.MODE, "classic", "classic宿主进入不变") end)
+        Scope.run(1, function() eq(Layout.MODE, "strip", "classic宿主进入副本仍使用strip") end)
         eq(Layout.MODE, "classic", "按原宿主MODE恢复而非写死strip")
         Layout.setMode("strip")
 
@@ -375,8 +375,9 @@ function Start()
         challenge = data("equipment_vault", 1, 3, "retreat")
         Scene.open({ data = challenge, allies = { ally() } })
         before = cancels
-        Scene.handleInput(540, 2186)
-        Scene.handleInput(340, 1310)
+        Scene.handleInput(1750, 110)
+        local confirmFit = math.min(1920 / 1120, 1080 / 800)
+        Scene.handleInput(960 + (340 - 540) * confirmFit, 540 + (1310 - 1100) * confirmFit)
         eq(state.battleState, "lose", "确认撤退判负")
         eq(cancels, before + 1, "撤退清单机资源pending")
         eq(Scene.onActionResult(receipt(challenge)), false, "撤退后WIN拒绝")
@@ -459,6 +460,68 @@ function Start()
         mainExtra.dirty = oldDirty
         unchanged()
 
+        -- 成长边界使用真实副本Scope，胜败/撤退提交，清档丢弃；不能消费宿主dirty哨兵。
+        local growthFlushes, growthDiscards = {}, {}
+        local originalFlush, originalDiscard = ETS.flush, ETS.discard
+        ETS.flush = function()
+            growthFlushes[#growthFlushes + 1] = ETS.mountedState()
+            return originalFlush()
+        end
+        ETS.discard = function()
+            growthDiscards[#growthDiscards + 1] = ETS.mountedState()
+            return originalDiscard()
+        end
+        local function dungeonGrowthScope()
+            return Scope.run(2, function() return ETS.mountedState() end)
+        end
+        Scene.open({ data = data("gold_mine", 1, 2, "growth-victory"), allies = { ally() } })
+        local growthScope = dungeonGrowthScope()
+        local growthCount = #growthFlushes
+        Scope.run(2, DB.onVictory)
+        eq(#growthFlushes, growthCount + 1, "副本胜利消费一次成长")
+        eq(growthFlushes[#growthFlushes], growthScope, "胜利只消费副本ETS域")
+        Scope.run(2, DB.onVictory)
+        eq(#growthFlushes, growthCount + 1, "重复胜利不重复消费")
+        Scene.close()
+        eq(growthFlushes[#growthFlushes], growthScope, "关闭兜底在副本域消费")
+        unchanged()
+        Scene.open({ data = data("gold_mine", 1, 2, "growth-defeat"), allies = { ally() } })
+        growthCount = #growthFlushes
+        Scope.run(2, DB.onDefeat)
+        eq(#growthFlushes, growthCount + 1, "副本战败提交实际成长")
+        eq(growthFlushes[#growthFlushes], growthScope, "战败只消费副本ETS域")
+        Scene.close()
+        Scene.open({ data = data("gold_mine", 1, 2, "growth-reset"), allies = { ally() } })
+        growthCount = #growthFlushes
+        Scene.forceClose(true)
+        eq(#growthFlushes, growthCount, "清档强关不能flush旧成长")
+        eq(growthDiscards[#growthDiscards], growthScope, "清档丢弃副本独立域")
+        growthCount = #growthDiscards
+        Scene.forceClose(true)
+        eq(#growthDiscards, growthCount + 1, "未打开副本时清档仍丢弃遗留域")
+        Scene.open({ data = data("gold_mine", 1, 2, "growth-debug"), allies = { ally() } })
+        local debugOwned = { extraTalent = ETS.normalize({ stacks = 10 }) }
+        cpMock.getOwnedHero = function(id) return id == 3 and debugOwned or oldOwned(id) end
+        cpMock.patchExtraTalent = function(id, extra)
+            if id == 3 then debugOwned.extraTalent = extra end
+        end
+        Scope.run(2, function() ETS.mountedState().pendingGrowth[3] = { stacks = 2 } end)
+        growthCount = #growthFlushes
+        eq(ETS.mountedState(), mainExtra, "宿主调用debug前仍挂载主线哨兵")
+        eq(DB.debugInstantWin(), true, "真实宿主debug瞬胜调用成功")
+        eq(#growthFlushes, growthCount + 1, "debug只消费一次副本成长")
+        eq(growthFlushes[#growthFlushes], growthScope, "debug瞬胜先挂载副本ETS域")
+        eq(debugOwned.extraTalent.stacks, 12, "debug实际提交副本pending成长增量")
+        eq(next(growthScope.pendingGrowth), nil, "debug清空已消费副本pending")
+        eq(ETS.mountedState(), mainExtra, "debug返回还原主线ETS挂载")
+        unchanged() -- 阴性：主线dirty原表/数据保留且没有SYNC哨兵动作。
+        eq(DB.debugInstantWin(), true, "重复debug瞬胜沿用结算状态")
+        eq(#growthFlushes, growthCount + 1, "重复debug不再次消费")
+        Scene.close()
+        cpMock.getOwnedHero, cpMock.patchExtraTalent = oldOwned, nil
+        ETS.flush, ETS.discard = originalFlush, originalDiscard
+        unchanged()
+
         -- 木桩统计入口绑定独立101桶，真实面板重置不清主线0/三队数据。
         Stats.mount(0)
         Stats.recordDamage({ heroId = 999, name = "主线哨兵" }, 4321, "physical", false)
@@ -469,10 +532,11 @@ function Start()
             Stats.recordDamage(state.allies[1], 765, "physical", false)
             check(Stats.getTotal("totalDamage", true) >= 765, "木桩伤害写独立桶")
         end)
-        Scene.handleInput(815, 2115)
+        Scene.handleInput(170, 110)
         eq(DamagePanel.isOpen(), true, "木桩打开真实统计面板")
         eq(upvalue(DamagePanel.open, "state").teamIdx, 101, "木桩面板绑定101而非主线0")
-        Scene.handleInput(540, 1195 + (1640 - 1195) * 0.8)
+        local damageFit = math.min(1920 / 1120, 1080 / 1300)
+        Scene.handleInput(960, 540 + ((1640 - 1195) * 0.8) * damageFit)
         Scope.run(1, function() eq(Stats.getTotal("totalDamage", true), 0, "只重置木桩累计桶") end)
         Stats.mount(0)
         eq(Stats.getTotal("totalDamage", true), mainAccum, "木桩重置保留主线累计")
@@ -528,7 +592,7 @@ function Start()
         -- 独立通天塔旧波次链保持TOWER_WAVE_WIN，不使用资源ID/主线stageEntry。
         Scene.open({ data = { dungeonId = "babel_tower", floor = 2, wave = 4,
             monsterLevel = 1, monsters = { 1 }, classBonus = "spoil" }, allies = { ally() } })
-        DB.onVictory()
+        Scope.run(1, DB.onVictory)
         eq(actions[#actions].action, Protocol.ACTION_TYPES.TOWER_WAVE_WIN, "独立塔胜利链保留")
         eq(actions[#actions].params.wave, 4, "独立塔波次保留")
         Scene.forceClose()

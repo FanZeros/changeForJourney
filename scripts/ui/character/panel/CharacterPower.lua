@@ -147,7 +147,7 @@ function M.bind(deps)
         return math.floor(base + extra + 0.5)
     end
 
-    local function refreshPowerCache()
+    local function refreshPowerCache(cause)
         -- 此回调可早于评分订阅者；先失效，避免原地更新后红点仍用旧快照。
         EquipmentPower.invalidate()
         local talentsData = ClientDispatcher.get("talents") or PlayerStore.Get("talents")
@@ -225,6 +225,7 @@ function M.bind(deps)
         CharacterDetail.markPowerDirty()
         EventBus.emit(GameEvents.TEAM_POWER_CHANGED, {
             powers = teamPowers,
+            cause = cause,
             ready = CharacterPanel.isHeroesDataApplied and CharacterPanel.isHeroesDataApplied() or false,
         })
     end

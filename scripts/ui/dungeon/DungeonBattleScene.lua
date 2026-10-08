@@ -688,7 +688,9 @@ function DungeonScene.open(opts)
     state.open = true
 end
 
-function DungeonScene.close()
+function DungeonScene.close(discardGrowth)
+    local ETS = require("systems.ExtraTalentSystem")
+    if discardGrowth then ETS.discard() else ETS.flush() end -- 已在DungeonScope内；清档不能提交。
     if DungeonBattle.isTrainingDummy() then DamageStatsPanel.close() end
     state.open = false
     MapAffixSystem.reset(state.allies)
@@ -709,9 +711,9 @@ end
 
 --- 强制关闭（不触发结算面板，不调用 onClose 回调）
 --- 由 TowerBattleScene 在波次结束时调用，用于关闭当前波次战斗
-function DungeonScene.forceClose()
-    if not state.open then return end
-    DungeonScene.close()
+function DungeonScene.forceClose(discardGrowth)
+    if not state.open and not discardGrowth then return end
+    DungeonScene.close(discardGrowth)
     state.battleState = BATTLE_ACTIVE
     state.resultTimer = 0
     state.resultPanelShown = false

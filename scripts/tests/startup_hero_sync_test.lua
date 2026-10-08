@@ -211,10 +211,10 @@ local function fixture()
                     record("rebuild")
                     return rebuild()
                 end
-                deps.refreshPowerCache = function()
+                deps.refreshPowerCache = function(...)
                     counts.refresh = counts.refresh + 1
                     record("refresh")
-                    return refresh()
+                    return refresh(...)
                 end
                 return bind(deps)
             end
@@ -227,9 +227,9 @@ local function fixture()
                     counts.calc = counts.calc + 1
                     return calc(...)
                 end
-                api.refreshPowerCache = function()
+                api.refreshPowerCache = function(...)
                     if not preparing then record("power-refresh") end
-                    return refresh()
+                    return refresh(...)
                 end
                 powerApi = api
                 return api
@@ -698,6 +698,7 @@ function Start()
         check(same(business, { "invalidate", "offline-service", "offline-panel", "nav" }),
             "首次业务回调相对顺序保持")
         finalCheck(f, "direct")
+        check(f.data().events[1].cause == nil, "冷档首次水合不标记升级")
         rosterCheck(f, "direct")
         local data = f.data()
         local previews = {}
@@ -765,6 +766,7 @@ function Start()
         check(same(f.data().progress[1].classes, {}), "等级成长不触发职业重建")
         check(growthBusiness[#growthBusiness] == "progress", "养成刷新仍最后执行业务回调")
         finalCheck(f, "subscription-growth")
+        check(f.data().events[1].cause == "level_up", "等级真实增加发布升级来源")
 
         check(cp.getOwnedHero(4).advBranch == input.roster["4"].advBranch,
             "原地分支夹具确实与拥有数据共享同一表")
@@ -776,6 +778,7 @@ function Start()
             and f.data().progress[1].classes[2] == true,
             "原地分支修改仍刷新队2职业，不被共享引用吞掉")
         finalCheck(f, "subscription-branch-in-place")
+        check(f.data().events[1].cause == nil, "仅转职不标记升级来源")
 
         input.teams[2].slots, input.teams[3].slots = { 0, 5, 0, 4 }, { 3, 0, 0, 0 }
         f.reset()
@@ -785,6 +788,7 @@ function Start()
             "跨队换位只失效队2/3，一队不变")
         check(#f.data().progress == 0, "编队变动不另当成长刷新")
         finalCheck(f, "subscription-layout")
+        check(f.data().events[1].cause == nil, "仅编队变动不标记升级来源")
 
         input.teams[2].slots, input.teams[3].slots = { 1, 5, 0, 4 }, { 3, 9999, 0, 0 }
         f.reset()

@@ -57,6 +57,8 @@ local function newState()
         orbitAngle = 0,
         persistAcc = 0,
         dirty = {}, ---@type table<number, ExtraTalentData>
+        pendingGrowth = {}, ---@type table<number, table<string, number>>
+        growthUnits = {}, ---@type table<number, table>
         pendingPrecise = {}, ---@type table<number, number>
         pendingConquer = {}, ---@type table<number, number>
         pendingBeams = {}, ---@type table<number, number>
@@ -124,8 +126,7 @@ function ETS.getOwned(heroId)
     if ok and CP and CP.getOwnedHero then
         local owned = CP.getOwnedHero(heroId)
         if owned then
-            owned.extraTalent = ETS.normalize(owned.extraTalent)
-            return owned.extraTalent
+            return ETS.normalize(owned.extraTalent)
         end
     end
     return ETS.normalize(nil)
@@ -237,7 +238,7 @@ function ETS.getStatusLine(heroId, extra)
         end,
         [9] = function()
             return string.format("%s · %s",
-                lockedTag(awk, 1, string.format("精神 +%.2f", extra.overflowCount * 0.05)),
+                lockedTag(awk, 1, string.format("%s +%.2f", AD.META[AD.SPI].name, extra.overflowCount * 0.05)),
                 n4 and "泉眼" or "【未解锁】泉眼")
         end,
         [10] = function()
@@ -448,13 +449,13 @@ function ETS.extraStarGates(unit)
     return math.min(2, math.floor(extra.gateStacks / 40))
 end
 
-local function persistNow(heroId, extra)
+local function persistNow(heroId, extra, alreadyPatched)
     heroId = toHeroId(heroId)
     local ok, CP = pcall(require, "ui.character.panel.CharacterPanel")
     -- dirty只是待保存标记，别让暂停战线的旧整表覆盖另一战线已提交的成长/消耗。
     local owned = ok and CP and CP.getOwnedHero and CP.getOwnedHero(heroId)
     extra = ETS.normalize(owned and owned.extraTalent or extra)
-    if ok and CP and CP.patchExtraTalent then
+    if not alreadyPatched and ok and CP and CP.patchExtraTalent then
         CP.patchExtraTalent(heroId, extra)
     end
     local sentOk, GameAction = pcall(require, "runtime.GameAction")
@@ -483,37 +484,57 @@ local function markDirty(heroId, extra)
     battle.dirty[heroId] = extra
 end
 
----@param unit table|nil
----@param extra ExtraTalentData
+-- 永久收益只记增量，不借旧整表覆盖最新拥有数据；触发条件仍在战斗当帧采集。
+local function queueGrowth(unit, changes)
+    local heroId = toHeroId(unit and unit.heroId)
+    if heroId <= 0 then return end
+    local pending = battle.pendingGrowth[heroId] or {}
+    for key, amount in pairs(changes) do
+        if type(amount) == "number" and amount > 0 then
+            pending[key] = (pending[key] or 0) + amount
+        end
+    end
+    if next(pending) then
+        battle.pendingGrowth[heroId] = pending
+        battle.growthUnits[heroId] = unit
+    end
+end
+
+-- 机制库存仍即时可用；纯永久成长不在这里刷新拥有数据或当前战斗属性。
 local function commit(unit, extra)
     local heroId = toHeroId(unit and unit.heroId)
-    local ok, CP = pcall(require, "ui.character.panel.CharacterPanel")
-    if ok and CP and CP.patchExtraTalent then
-        CP.patchExtraTalent(heroId, extra)
+    local previous = ETS.getOwned(heroId)
+    local changed = false
+    for key, value in pairs(extra) do
+        if type(value) == "table" then
+            for k, v in pairs(value) do if previous[key][k] ~= v then changed = true end end
+            for k in pairs(previous[key]) do if value[k] == nil then changed = true end end
+        elseif previous[key] ~= value then
+            changed = true
+        end
     end
+    if not changed then return end
+    local ok, CP = pcall(require, "ui.character.panel.CharacterPanel")
+    if ok and CP and CP.patchExtraTalent then CP.patchExtraTalent(heroId, extra) end
+    markDirty(heroId, extra)
+end
+
+local function applyCommittedGrowth(unit, extra)
+    local heroId = toHeroId(unit and unit.heroId)
     if ETS.hasNode(unit, 1) and unit and unit.attrs then
         local attrs = unit.attrs
-        -- attrs 是战斗血量的来源；不要用尚未同步的 unit.maxHp 计算成长差额。
         local oldHp = attrs.final[AD.HP] or unit.hp or 0
         local oldMax = attrs.final[AD.MAX_HP] or unit.maxHp or 0
-        -- 两份血量任一已记录死亡都不补血，避免死亡同步窗口里的陈旧活血复活。
+        -- 成长不是复活：任一血量来源已死亡都不补血。
         local wasAlive = oldHp > 0 and (unit.hp == nil or unit.hp > 0)
         ETS.applyToAttrs(heroId, attrs, extra, unit.awakeningNodes)
         local newMax = attrs.final[AD.MAX_HP]
         if newMax then
-            -- 成长不是复活：活单位补实际新增上限，下降时只夹到最终上限。
             local gained = math.max(0, newMax - oldMax)
             local newHp = wasAlive and math.min(newMax, oldHp + gained) or 0
-            attrs.final[AD.HP] = newHp
-            unit.hp = newHp
-            unit.maxHp = newMax
-            if not wasAlive and gained > 0 then
-                print(string.format("[ExtraTalent] hero=%d 阵亡成长仅更新上限 %s→%s，生命保持0",
-                    heroId, tostring(oldMax), tostring(newMax)))
-            end
+            attrs.final[AD.HP], unit.hp, unit.maxHp = newHp, newHp, newMax
         end
     end
-    markDirty(heroId, extra)
 end
 
 local function spawnIceStatue(deadEnemy, enemies, source)
@@ -602,7 +623,10 @@ function ETS.onEnemyDeath(deadEnemy, allies, enemies)
         hasStatus = function(u, k) return SEM.has(u, k) end,
     }
     if n1 then
-        AG.applyGrowth(heroId, extra, growthCtx)
+        local gained = ETS.normalize(nil)
+        if AG.applyGrowth(heroId, gained, growthCtx) then
+            queueGrowth(killer, gained)
+        end
     end
 
     -- 觉醒2/3 机制分支（英雄特有玩法，带专属条件/副作用，保留原逻辑）
@@ -649,7 +673,7 @@ function ETS.onBlock(unit, blockedAmt)
     if not ETS.hasNode(unit, 1) and not ETS.hasNode(unit, 4) then return end
     local extra = ETS.getOwned(4)
     if ETS.hasNode(unit, 1) then
-        extra.stacks = extra.stacks + 1
+        queueGrowth(unit, { stacks = 1 })
     end
     if ETS.hasNode(unit, 4) then
         extra.blockBank = extra.blockBank + math.max(0, math.floor(blockedAmt or 0))
@@ -665,16 +689,10 @@ function ETS.onOverflowHeal(healer, overflow)
     if overflow <= 0 then return end
     if hid == 9 then
         if not ETS.hasNode(healer, 1) then return end
-        local extra = ETS.getOwned(9)
-        extra.overflowCount = extra.overflowCount + 1
-        extra.stacks = extra.stacks + 1
-        commit(healer, extra)
+        queueGrowth(healer, { overflowCount = 1, stacks = 1 })
     elseif hid == 23 then
         if not ETS.hasNode(healer, 1) then return end
-        local extra = ETS.getOwned(23)
-        extra.shieldStacks = extra.shieldStacks + 1
-        extra.stacks = extra.stacks + 1
-        commit(healer, extra)
+        queueGrowth(healer, { shieldStacks = 1, stacks = 1 })
     end
 end
 
@@ -683,10 +701,7 @@ function ETS.onShareFatal(unit)
     if unit and unit._etsDisabled then return end
     if toHeroId(unit and unit.heroId) ~= 10 then return end
     if not ETS.hasNode(unit, 1) then return end
-    local extra = ETS.getOwned(10)
-    extra.shareCount = extra.shareCount + 1
-    extra.stacks = extra.stacks + 1
-    commit(unit, extra)
+    queueGrowth(unit, { shareCount = 1, stacks = 1 })
 end
 
 ---@param dyingUnit table
@@ -727,8 +742,7 @@ function ETS.onSuccessfulRevive(lover, revivedUnit)
     if not ETS.hasNode(lover, 1) and not ETS.hasNode(lover, 4) then return end
     local extra = ETS.getOwned(15)
     if ETS.hasNode(lover, 1) then
-        extra.stacks = extra.stacks + 1
-        extra.issuedCards = extra.issuedCards + 1
+        queueGrowth(lover, { stacks = 1, issuedCards = 1 })
     end
     if ETS.hasNode(lover, 4) and revivedUnit and revivedUnit.heroId then
         extra.tickets[tostring(revivedUnit.heroId)] = true
@@ -746,7 +760,9 @@ function ETS.onLoverDeathNuke(dyingUnit, allies, enemies, dealDmgFn)
     if toHeroId(dyingUnit and dyingUnit.heroId) ~= 15 then return end
     if not ETS.hasNode(dyingUnit, 7) then return end
     local extra = ETS.getOwned(15)
-    local cards = extra.issuedCards
+    -- 本场发卡只供即时圣核机制使用，永久计数仍等战后入账。
+    local pending = battle.pendingGrowth[15] or {}
+    local cards = extra.issuedCards + (pending.issuedCards or 0)
     if cards <= 0 or not dealDmgFn then return end
     local mag = (dyingUnit.attrs and dyingUnit.attrs:get(AD.MAG_ATK)) or 0
     local dmg = math.floor(mag * 0.6 * cards + 0.5)
@@ -877,10 +893,32 @@ function ETS.update(dt)
 end
 
 function ETS.flush()
-    for hid, extra in pairs(battle.dirty) do
-        persistNow(hid, extra)
+    local state = battle
+    local pending, units, dirty = state.pendingGrowth, state.growthUnits, state.dirty
+    -- 回执可能同步重入关卡，先消费本批标记，重复 flush 不重复入账。
+    state.pendingGrowth, state.growthUnits, state.dirty = {}, {}, {}
+    local ok, CP = pcall(require, "ui.character.panel.CharacterPanel")
+    local batched = ok and CP and CP.finishExtraTalentBatch ~= nil
+    local changed = false
+    for hid, changes in pairs(pending) do
+        local owned = ok and CP and CP.getOwnedHero and CP.getOwnedHero(hid)
+        -- 英雄删除/清档后不把旧战斗收益写回新的拥有列表。
+        if owned then
+            local extra = ETS.normalize(owned.extraTalent)
+            for key, amount in pairs(changes) do extra[key] = (extra[key] or 0) + amount end
+            if CP.patchExtraTalent then CP.patchExtraTalent(hid, extra, batched) end
+            applyCommittedGrowth(units[hid], extra)
+            dirty[hid], changed = extra, true
+            print(string.format("[ExtraTalent] 战后结算 hero=%d stacks=%d", hid, extra.stacks))
+        end
     end
-    battle.dirty = {}
+    if changed and batched then CP.finishExtraTalentBatch() end
+    for hid, extra in pairs(dirty) do persistNow(hid, extra, true) end
+end
+
+-- 清档/更换存档丢弃旧战斗账本，不将待结算成长写入新档。
+function ETS.discard()
+    battle.pendingGrowth, battle.growthUnits, battle.dirty = {}, {}, {}
 end
 
 ---@return number

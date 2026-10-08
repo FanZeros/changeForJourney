@@ -253,9 +253,20 @@ function M.bind(deps)
             lastShards = copy(shardMap)
             return {}, false
         end
+        -- 只认已完成评分的旧等级；冷档、新招募、转职及战斗成长不算升级。
+        local levelIncreased = false
+        if get("heroesDataApplied") and lastPowerState then
+            for id, own in pairs(ownedSet) do
+                local previous = lastPowerState.owned[id]
+                if previous and type(previous.level) == "number" and own.level > previous.level then
+                    levelIncreased = true
+                    break
+                end
+            end
+        end
         -- 完整缓存先于可能即时读取的编队失效/离线预览回调，且快照已 ready。
         rebuildRoster()
-        refreshPowerCache()
+        refreshPowerCache(levelIncreased and "level_up" or nil)
         rememberState()
         -- 只失效编队布局真正变化的队伍：其他行保持战斗进度不重置
         local changed = {}

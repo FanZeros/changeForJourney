@@ -230,7 +230,7 @@ function TowerScene.resetToDefault()
     TowerBuffPick.close()
     TowerBuffPick.setSendAction(nil)
     BattleResultPanel.resetToDefault()
-    TowerTriBattle.forceClose()
+    TowerTriBattle.forceClose(true) -- 清档不提交旧塔波次永久成长。
     TowerBuffRuntime.cleanup()
     print("[TowerBattleScene] resetToDefault: discarded battle/buffs/callbacks")
 end

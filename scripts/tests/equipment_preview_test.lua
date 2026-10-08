@@ -65,6 +65,116 @@ local function findTemplate(setId, slot, heroId)
     return found[1]
 end
 
+local function readSource(path)
+    local file = assert(cache:GetFile(path), "missing source " .. path)
+    local lines = {}
+    while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+    file:Dispose()
+    return table.concat(lines, "\n")
+end
+
+-- 真实调用方 → 真实 Preview → 真实 Attrs；只替读取/选中装备/绘图边界，绝不 mock build。
+local function liveCallerRegression(data)
+    local selection, latest = nil, nil
+    local clock, modules = { elapsedTime = 10 }, {}
+    local env = setmetatable({ time = clock }, { __index = _G })
+    env._G = env
+    local store = { Get = function(key) return data[key] end }
+    local stats = {
+        createRadarTransition = function() return { reset = function() end, sample = function() return {} end } end,
+        sortComparisonRows = function(rows) return rows end,
+        unionSets = function() return {} end,
+        drawHeader = function() end, drawRows = function() return 0, {} end,
+        drawSets = function() return 0 end, drawRadar = function() end,
+        drawEmptyBonuses = function() end,
+    }
+    env.require = function(name)
+        if name == "core.PlayerStore" then return store end
+        if name == "runtime.ClientDispatcher" then return { get = function(key) return store.Get(key) end } end
+        if name == "ui.character.detail.CharacterEquipStats" then return stats end
+        if name == "ui.character.equip.EquipmentDetail" then
+            return { getSelection = function() return selection end, dismissHover = function() end }
+        end
+        if name == "ui.character.detail.CharacterDetailEquip" or name == "ui.character.detail.EquipmentPreview"
+            or name == "ui.character.detail.CharacterDetailAttrs" then
+            if not modules[name] then
+                modules[name] = assert(load(readSource(name:gsub("%.", "/") .. ".lua"), "@live-caller/" .. name, "t", env))()
+            end
+            return modules[name]
+        end
+        return require(name)
+    end
+    -- 绘图消费的对象就是真实 Preview.build 的返回值，不通过替身结果掩盖 options 漏字段。
+    stats.drawRadar = function(_, currentStats)
+        latest = currentStats
+    end
+    local panel = env.require("ui.character.detail.CharacterDetailEquip")
+    local actualPreview = env.require("ui.character.detail.EquipmentPreview")
+    local actualAttrs = env.require("ui.character.detail.CharacterDetailAttrs")
+    local before = copy(data)
+    panel.reset(1)
+    panel.draw({}, 1, {})
+    local detail = actualAttrs.collectAttributes(1, HC.get(1), 70)
+    check(equal(latest, detail.stats), "真实配装调用方完整实时快照与无options属性页六围一致")
+    -- 独立按实战既有注入顺序建立 oracle，不拿被测 collectAttributes 自身当完整养成证据。
+    local frozen = copy(data)
+    local hd = frozen.heroes.roster["1"]
+    local oracle = HC.createHero(1, 70, hd.advBranch, hd.awakening, hd.extraTalent,
+        { litNodes = frozen.talents.litNodes, silent = true })
+    require("systems.EquipmentPower").applyEquipment(oracle.attrs, frozen.equipment, 1)
+    require("systems.EquipmentSetRuntime").applyStaticBonuses(oracle.attrs)
+    require("systems.ArtifactBridge").applyToUnit(oracle.attrs, 1, frozen.artifacts, 1)
+    check(equal(detail.attrs.final, oracle.attrs.final)
+        and detail.attrs.artifactExtraDamageMult == oracle.attrs.artifactExtraDamageMult,
+        "真实详情的装备/转职/觉醒追加成长/星图/神器完整属性等于独立实战注入oracle")
+    local current = actualPreview.build(1, 70, nil, nil, data)
+    check(#current.currentSets > 0 and current.currentSets[1].twoActive,
+        "真实来源当前已穿套装摘要包含激活两件")
+    -- 验证调用方返回内容，不只检查独立 Preview；drawRows/drawSets 直接截获它的真实行/摘要。
+    local drawnRows, drawnSets
+    stats.drawRows = function(_, values) drawnRows = values; return 0, {} end
+    stats.unionSets = function(values) drawnSets = values; return {} end
+    selection = { seq = 90, owner = "backpack", pinned = true }
+    panel.markDirty()
+    panel.draw({}, 1, {})
+    local expected = actualPreview.build(1, 70, 90, nil, data)
+    check(expected.preview ~= nil and expected.error == nil and equal(latest, expected.current.stats),
+        "真实调用方选中存在候选，当前属性保持真实装备与养成快照")
+    check(equal(drawnRows, expected.rows) and equal(drawnSets, expected.currentSets),
+        "真实调用方候选对比行/套装摘要等于真实Preview完整快照结果")
+    local pen = row({ rows = drawnRows }, AD.PHYS_PEN)
+    check(pen and close(pen.previewValue, row(expected, AD.PHYS_PEN).previewValue)
+        and pen.delta > 0, "真实试穿候选确有装备增益，不再错误显示装备不存在/裸属性")
+    local interval = row({ rows = drawnRows }, AD.ATK_INTERVAL)
+    check(interval and close(interval.currentValue, detail.attrs:getActualInterval())
+        and interval.value == row(current, AD.ATK_INTERVAL).value,
+        "真实调用方攻速间隔文本及number均与属性页实际加成后结果一致")
+    panel.toggleAttributeMode()
+    panel.draw({}, 1, {})
+    local bonusOptions = copy(data)
+    bonusOptions.includeEquipmentBonuses = true
+    local bonusExpected = actualPreview.build(1, 70, 90, nil, bonusOptions)
+    check(equal(drawnRows, bonusExpected.equipmentBonuses.rows)
+        and equal(latest, bonusExpected.equipmentBonuses.current.stats) and #drawnRows > 0,
+        "真实调用方装备净增益模式完整来源+flag生效，不因非nil options变空快照")
+    panel.toggleAttributeMode()
+    panel.draw({}, 1, {})
+    data.talents.litNodes[#data.talents.litNodes + 1] = 5
+    clock.elapsedTime = clock.elapsedTime + 0.3
+    panel.draw({}, 1, {})
+    local changed = actualPreview.build(1, 70, 90, nil, data)
+    check(equal(drawnRows, changed.rows) and not equal(drawnRows, expected.rows),
+        "实时星图原地改变使调用方缓存失效并重建完整实际属性")
+    data.talents = before.talents
+    check(equal(data, before), "调用方完整快照/套装计数/试穿/净增益不水合改写真档")
+    local reads, liveGet = 0, store.Get
+    store.Get = function(key) reads = reads + 1; return liveGet(key) end
+    local empty = actualPreview.build(1, 70, 90, nil, {})
+    check(reads == 0 and empty.preview == nil and empty.error == "装备不存在" and #empty.currentSets == 0,
+        "Preview显式空options仍不回读实时模块，契约未被调用方修复破坏")
+    panel.clear()
+end
+
 function Start()
     print("[equipment_preview_test] start")
     local oldGet, oldStoreGet = Dispatcher.get, Store.Get
@@ -136,14 +246,18 @@ function Start()
         check(close(row(sixResult, AD.FINAL_STR_BONUS).delta, 1.7), "魔化词条按 hydrate 回正、不吃普通词条倍率")
         local attrsOnly = Attrs.collectAttributes(1, HC.get(1), 70, six)
         check(attrsOnly.attrs ~= nil and close(attrsOnly.stats[AD.STR], attrsOnly.attrs:get(AD.STR)), "collectAttributes 显式 options 返回同源原始六围")
-        -- 旧调用允许本地回退；显式补齐测试来源，避免此兼容性断言触碰 Owned 替身。
+        -- 无options同样使用显式实时快照；缺失养成不回退到 Owned 替身。
         active.heroes.roster["1"].extraTalent = {}
         active.heroes.roster["1"].awakening = {}
         local legacy = Attrs.collectAttributes(1, HC.get(1), 70)
-        check(legacy.stats[AD.STR] == math.floor(legacy.stats[AD.STR]), "旧属性页六围整数行为保留")
+        check(close(legacy.stats[AD.STR], legacy.attrs:get(AD.STR))
+            and equal(legacy.stats, Preview.build(1, 70, nil, nil, active).current.stats),
+            "无options属性页六围不再取整，与完整实时预览精确一致")
         local oldInterval
         for _, r in ipairs(legacy.right) do if r.key == AD.ATK_INTERVAL then oldInterval = r.value end end
-        check(oldInterval == string.format("%.1fs", HC.get(1).atkInterval), "旧属性页攻击间隔格式/基准显示不变")
+        check(oldInterval == require("ui.character.detail.CharacterAttributeView").formatInterval(legacy.attrs:getActualInterval())
+            and oldInterval == row(Preview.build(1, 70, nil, nil, active), AD.ATK_INTERVAL).value,
+            "无options属性页显示实际攻击间隔，数值/格式与配装页一致")
 
         -- 3) 双手装入自动卸副手；副手装入自动卸双手主手。
         local twohand = fixture(1, 70)
@@ -195,11 +309,11 @@ function Start()
         sets.equipment.equipped["1"].weapon = 1
         local gain = Preview.build(1, 70, 2, nil, sets)
         check(gain.currentSets[1].count == 1 and gain.previewSets[1].twoActive, "套装候选由1件升为2件")
-        check(close(row(gain, AD.HP_BONUS).delta, 6), "2件纯属性进入完整预览")
+        check(close(row(gain, AD.HP_BONUS).delta, 12), "2件纯属性生命+12进入完整预览")
         sets.equipment.equipped["1"].armor = 2
         local loss = Preview.build(1, 70, 3, nil, sets)
         check(loss.currentSets[1].twoActive and not loss.previewSets[1].twoActive, "换出套装丢失2件效果")
-        check(close(row(loss, AD.HP_BONUS).delta, -6), "丢套装生命加成呈负差值")
+        check(close(row(loss, AD.HP_BONUS).delta, -12), "丢套装生命加成呈-12负差值")
         for i, slot in ipairs({ "helmet", "shoes", "accessory" }) do
             local template = findTemplate("carapace", slot, 1)
             put(sets, i + 3, template)
@@ -431,9 +545,9 @@ function Start()
             setBonus.equipment.equipped["1"].weapon = 1
             local gained = Preview.build(1, 70, 2, nil, setBonus)
             local hp, armor = row(gained.equipmentBonuses, AD.HP_BONUS), row(gained.equipmentBonuses, AD.ARMOR_BONUS)
-            check(hp and close(hp.currentValue, 0) and close(hp.previewValue, 6) and close(hp.delta, 6)
-                and armor and close(armor.currentValue, 0) and close(armor.previewValue, 4),
-                "空基础装备由1件到2件，仅套装生命+6/护甲+4进入净贡献")
+            check(hp and close(hp.currentValue, 0) and close(hp.previewValue, 12) and close(hp.delta, 12)
+                and armor and close(armor.currentValue, 0) and close(armor.previewValue, 8),
+                "空基础装备由1件到2件，仅套装生命+12/护甲+8进入净贡献")
             local hpDerived = row(gained.equipmentBonuses, AD.MAX_HP)
             check(hpDerived and close(hpDerived.currentValue, 0) and hpDerived.previewValue > 0
                 and close(hpDerived.previewValue, gained.preview.attrs:get(AD.MAX_HP) - gained.current.attrs:get(AD.MAX_HP)),
@@ -441,10 +555,10 @@ function Start()
             setBonus.equipment.equipped["1"].armor = 2
             local lost = Preview.build(1, 70, 3, nil, setBonus).equipmentBonuses
             local lostHp, lostArmor = row(lost, AD.HP_BONUS), row(lost, AD.ARMOR_BONUS)
-            check(lostHp and close(lostHp.currentValue, 6) and lostHp.value == "+6.0%"
-                and close(lostHp.previewValue, 0) and close(lostHp.delta, -6)
-                and lostArmor and close(lostArmor.currentValue, 4) and close(lostArmor.previewValue, 0),
-                "拆掉两件套贡献归0仍保留旧正增益与负试穿差值")
+            check(lostHp and close(lostHp.currentValue, 12) and lostHp.value == "+12.0%"
+                and close(lostHp.previewValue, 0) and close(lostHp.delta, -12)
+                and lostArmor and close(lostArmor.currentValue, 8) and close(lostArmor.previewValue, 0),
+                "拆掉两件套生命12/护甲8贡献归0，仍保留正增益与负试穿差值")
         end
         -- 11) 微小贡献不格式化成0；封顶来源取 uncapped 净值，不重复套绝对值 cap 文案。
         do
@@ -558,6 +672,102 @@ function Start()
                 "同队转移预览总属性/星门机制仍与真实穿戴一致")
             check(equal(transfer, transferBefore) and equal(wornOptions, wornBefore),
                 "同队装备转移预览和实际当前重建均不水合改写输入来源")
+        end
+        -- 13) 真实配装宿主传完整实时只读来源，人物养成/星图/神器不会因flag丢失。
+        do
+            local live = fixture(1, 70)
+            live.heroes.roster["1"].advBranch = { first = 103 }
+            live.heroes.roster["1"].awakening = { [1] = true }
+            live.heroes.roster["1"].extraTalent = { stacks = 123 }
+            live.talents = { litNodes = { 0, 2 } }
+            put(live, 1, findTemplate("carapace", "weapon", 1), nil, {})
+            put(live, 2, findTemplate("carapace", "armor", 1), nil, {})
+            put(live, 90, "C1", { { affixId = 1, value = 0.75 }, { affixId = 18, value = 12.5 },
+                { affixId = 25, value = 7.25 } }, {})
+            live.equipment.inventory["90"].affixMult = "2"
+            live.equipment.equipped["1"] = { weapon = 1, armor = 2 }
+            live.artifacts = { bag = { { id = "live_slow", artifactId = 13, value = 60 } },
+                equippedByTeam = { [1] = { [1] = { "live_slow" } } } }
+            liveCallerRegression(live)
+        end
+        -- 14) 确定性四件/所属队六件光环共用实战公共 API；不启动条件被动或计时器。
+        do
+            local ESR = require("systems.EquipmentSetRuntime")
+            for _, sample in ipairs({ { heroId = 3, setId = "nitros" }, { heroId = 2, setId = "starless" } }) do
+                local static = fixture(sample.heroId, 70)
+                for index, slot in ipairs({ "armor", "helmet", "shoes", "accessory" }) do
+                    put(static, index, findTemplate(sample.setId, slot, sample.heroId), nil,
+                        slot == "helmet" and { { AD.HIT_VALUE, 160 } } or {})
+                    static.equipment.equipped[tostring(sample.heroId)][slot] = index
+                end
+                local staticBefore = copy(static)
+                local dressed = Preview.build(sample.heroId, 70, nil, nil, static)
+                local oracle = HC.createHero(sample.heroId, 70, nil, {}, {}, { litNodes = false, silent = true })
+                require("systems.EquipmentPower").applyEquipment(oracle.attrs, copy(static.equipment), sample.heroId)
+                ESR.applyStaticBonuses(oracle.attrs)
+                local key = sample.setId == "nitros" and AD.COMBO_RATE or AD.MAG_PEN
+                check(dressed.current.attrs._setFour == sample.setId
+                    and close(dressed.current.attrs:get(key), oracle.attrs:get(key))
+                    and dressed.current.attrs.modifiers["set4_" .. sample.setId] ~= nil,
+                    sample.setId .. "四件属性进入真实详情/预览，等于实战确定性公共API")
+                local value = dressed.current.attrs:get(key)
+                ESR.applyStaticBonuses(dressed.current.attrs)
+                check(close(dressed.current.attrs:get(key), value) and equal(static, staticBefore),
+                    sample.setId .. "静态属性幂等且只读来源不变")
+                check(dressed.current.attrs._setBattleState == nil and dressed.current.attrs._carapaceStacks == nil,
+                    sample.setId .. "预览未启动条件战斗状态")
+            end
+
+            local aura = fixture(1, 70)
+            aura.heroes.roster["9"] = { level = 70, awakening = {}, extraTalent = {} }
+            aura.heroes.teams = { { slots = { 1, 9 } }, { slots = {} }, { slots = {} } }
+            aura.equipment.equipped["9"] = {}
+            put(aura, 80, "C1", nil, { { AD.ENERGY_SHIELD, 100 } })
+            aura.equipment.equipped["1"].accessory = 80
+            for index, slot in ipairs(EC.SLOTS) do
+                put(aura, index, findTemplate("last_rite", slot, 9), nil, {})
+                aura.equipment.equipped["9"][slot] = index
+            end
+            local auraBefore = copy(aura)
+            local withAura = Preview.build(1, 70, nil, nil, aura)
+            local cachedRead = Attrs.createPresentationCache()
+            local cachedAura = cachedRead(1, HC.get(1), 70, aura)
+            local teammateAccessory = aura.equipment.equipped["9"].accessory
+            aura.equipment.equipped["9"].accessory = nil
+            local cachedWithout = cachedRead(1, HC.get(1), 70, aura)
+            check(cachedAura ~= cachedWithout
+                and close(row({ rows = cachedAura.rows }, AD.ES_BONUS).numericValue
+                    - row({ rows = cachedWithout.rows }, AD.ES_BONUS).numericValue, 16),
+                "普通英雄属性页缓存也跟踪同队司仪穿戴，原地拆六件立即失效并显示真实-16")
+            check(cachedRead(1, HC.get(1), 70, aura) == cachedWithout,
+                "同队套装变动后暖帧复用展示，不持续重建属性")
+            aura.equipment.equipped["9"].accessory = teammateAccessory
+            local noAuraOptions = copy(aura)
+            noAuraOptions.heroes.teams[1].slots = { 1 }
+            noAuraOptions.heroes.teams[2].slots = { 9 }
+            local withoutAura = Preview.build(1, 70, nil, nil, noAuraOptions)
+            check(close(row(withAura, AD.ES_BONUS).currentValue - row(withoutAura, AD.ES_BONUS).currentValue, 16)
+                and withAura.current.attrs:get(AD.ENERGY_SHIELD) > withoutAura.current.attrs:get(AD.ENERGY_SHIELD),
+                "所属队司仪套六件光环+16实际派生护盾，另一队光环不串入")
+            local moved = copy(aura)
+            moved.heroes.teams[1].slots = { 9 }
+            local undeployed = Preview.build(1, 70, nil, nil, moved)
+            check(close(row(undeployed, AD.ES_BONUS).currentValue, row(withoutAura, AD.ES_BONUS).currentValue),
+                "未编队角色不借陈旧deployed或别队套装光环")
+            -- 同队转移司仪饰品给本人会拆六件，必须按试穿世界重算，不保留旧队友光环。
+            local accessorySeq = aura.equipment.equipped["9"].accessory
+            local transfer = Preview.build(1, 70, accessorySeq, "accessory", aura)
+            check(transfer.error == nil and transfer.preview ~= nil
+                and close(row(transfer, AD.ES_BONUS).delta, -16),
+                "同队试穿转走司仪第六件后光环丢失，真实对比显示-16")
+            local worn = copy(aura)
+            check(Eq.applyEquip(worn.equipment, accessorySeq, 1, "accessory", worn.heroes),
+                "同队六件转移真实穿戴校验成功")
+            local actual = Preview.build(1, 70, nil, nil, worn)
+            check(equal(transfer.preview.stats, actual.current.stats)
+                and close(row(transfer, AD.ES_BONUS).previewValue, row(actual, AD.ES_BONUS).currentValue),
+                "拆掉同队六件光环后的试穿与真正穿戴结果一致")
+            check(equal(aura, auraBefore), "同队光环判断/clone/转移预览不污染当前真实来源")
         end
         check(equal(owned, ownedBefore) and ownedReads == 0 and equal(HC.HEROES, configBefore),
             "净增益全部重建完成后原Owned mock与HeroConfig仍未被修改")

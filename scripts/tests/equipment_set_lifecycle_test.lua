@@ -1,5 +1,6 @@
--- B批套装生命周期回归：真实三行tick和旧单场reload，保持套装数值与星门授权。
+-- 套装生命周期回归：真实三行tick和旧单场reload，读取本轮增强数值并保持星门授权。
 local AD = require("systems.AttributeDef")
+local ESC = require("config.EquipmentSetConfig")
 local HC = require("config.HeroConfig")
 local TAL = require("systems.TalentManager")
 local SEM = require("systems.StatusEffectManager")
@@ -86,7 +87,8 @@ local function testEmber()
         "敌方余烬由真实宿主计时到2秒前")
     local before = target.hp
     BC.dealDamageToUnit(target, 100, false, "边界 ", { 255, 255, 255 }, wearer)
-    check(before - target.hp == 108, "到期前现有8%余烬受击增幅保留")
+    local expectedEmber = math.floor(100 * (1 + ESC.SETS.emberscout.effect4.damageTakenRatio))
+    check(before - target.hp == expectedEmber, "到期前增强余烬受击增幅与配置一致")
     tick(drv, 0.02)
     check(target._setEmber == nil and target._setEmberSrc == nil, "到期同时移除敌方余烬与来源")
     before = target.hp
@@ -111,7 +113,7 @@ local function testEmber()
     spreadEnemy._killedBy = spreadWearer
     spreadDrv:reportDefeatedEnemies()
     check(recipient._setEmber == 2 and recipient._setEmberSrc == spreadWearer,
-        "未到期六件余烬仍按原规则传播一次")
+        "未到期六件余烬向可用敌人传播并保留真实来源")
     check(spreadEnemy._setEmber == nil and spreadEnemy._setEmberSrc == nil,
         "完成死亡传播后死目标标记和来源均清理")
     recipient._setEmber = 0.5
@@ -150,7 +152,7 @@ end
 local function testDeadBuffExpiry()
     local drv, wearer, friend = fixture("nitros")
     wearer._setNitroT = 0.1
-    wearer.attrs:addModifier("set6_nitros_spd", { { key = AD.ATK_SPEED, flat = 12 } })
+    wearer.attrs:addModifier("set6_nitros_spd", { { key = AD.ATK_SPEED, flat = ESC.SETS.nitros.effect6.speedBonus } })
     wearer._setFacelessT = 0.1
     wearer._setEmber, wearer._setEmberSrc = 0.1, drv.enemies[1]
     freeze(drv)
@@ -167,9 +169,10 @@ local function seed(unit, source)
     unit._setSwordWin, unit._setSwordDmgWin, unit._setStarCd = 5, 777, 0.5
     unit._setNitroT, unit._setGamble = 1.5, 3
     unit._setEmber, unit._setEmberSrc = 1.5, source
-    unit.attrs:addModifier("set4_gamble", { { key = AD.CRIT_RATE, flat = 18 } })
-    unit.attrs:addModifier("set6_nitros_spd", { { key = AD.ATK_SPEED, flat = 12 } })
-    unit.attrs:addModifier("set4_bonehunger", { { key = AD.ATK_SPEED, flat = 8 } })
+    unit.attrs.tempEnergyShield = 333
+    unit.attrs:addModifier("set4_gamble", { { key = AD.CRIT_RATE, flat = ESC.SETS.gambler.effect4.critPerStack * 3 } })
+    unit.attrs:addModifier("set6_nitros_spd", { { key = AD.ATK_SPEED, flat = ESC.SETS.nitros.effect6.speedBonus } })
+    unit.attrs:addModifier("set4_bonehunger", { { key = AD.ATK_SPEED, flat = ESC.SETS.bonehunger.effect4.speedBonus } })
 end
 
 local function checkClean(unit, label)
@@ -183,6 +186,7 @@ local function checkClean(unit, label)
     check(unit.attrs.modifiers.set4_gamble == nil and unit.attrs.modifiers.set6_nitros_spd == nil
         and unit.attrs.modifiers.set4_bonehunger == nil,
         label .. "套装临时属性修改器不残留")
+    check((unit.attrs.tempEnergyShield or 0) == 0, label .. "开战/换波明确清过疗临时盾")
 end
 
 local function testRealReload()

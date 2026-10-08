@@ -418,8 +418,8 @@ local function tickLane(lane, dt)
             end
             return 0
         end,
-        dealDamage = function(target, damage, isTargetAlly, prefix, color, source)
-            return BattleCombat.dealDamageToUnit(target, damage, isTargetAlly, prefix, color, source)
+        dealDamage = function(target, damage, isTargetAlly, prefix, color, source, meta)
+            return BattleCombat.dealDamageToUnit(target, damage, isTargetAlly, prefix, color, source, meta)
         end,
         dealTalentDamage = function(attacker, target, damage, isTargetAlly, prefix, color, projOpts)
             return BattleCombat.dealTalentDamage(attacker, target, damage, isTargetAlly, prefix, color, projOpts, lane.allies, lane.enemies)

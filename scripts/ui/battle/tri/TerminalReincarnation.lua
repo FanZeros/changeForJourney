@@ -1,6 +1,7 @@
 -- 终焉胜利只结账，不切关；等主线对白/奖励真实收尾，再走既有轮回动画。
 -- 状态由 BattleScene 持有，清档/读档丢弃 pending 后旧动画 token 不再有效。
 local M = {}
+local ETS = require("systems.ExtraTalentSystem")
 
 ---@class TerminalReincarnationPending
 ---@field targetStageId number
@@ -74,7 +75,11 @@ end
 ---@param scene table
 ---@param gotoTeamStage function
 function M.retreat(raid, drivers, previous, scene, gotoTeamStage)
-    for _, drv in pairs(drivers) do drv.pendingStageId = previous or raid.stageId end
+    for _, drv in pairs(drivers) do
+        drv:activate()
+        ETS.flush() -- 协同失败时其他未全灭战线的实际成长也提交，重开前逐域结清。
+        drv.pendingStageId = previous or raid.stageId
+    end
     scene.adoptStageProgress(previous)
     gotoTeamStage(1, previous)
     require("ui.hud.BottomNav").setAllLocked(false)
@@ -95,6 +100,7 @@ function M.settleVictory(raid, drivers, settle, scene)
         drv.pendingStageId = nil
         drv:activate()
         drv:reportDefeatedEnemies()
+        ETS.flush()
     end
     settle(raid)
     scene.completeTriTerminal(raid.stageId)
@@ -116,6 +122,7 @@ function M.discardDriver(drv)
     drv.psState.projectiles, drv.combatState.comboQueue = {}, {}
     drv.onKill, drv.onDrop, drv.onStageCleared, drv.onStageChanged, drv.onAllDead = nil, nil, nil, nil, nil
     drv:activate()
+    ETS.discard() -- 清档/读档直接丢弃旧战线pending与dirty，不走战斗结算。
     require("systems.RelicConditionHandler").reset()
     require("systems.ArtifactRuntime").reset(drv.allies)
 end

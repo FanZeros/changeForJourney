@@ -36,7 +36,7 @@ function M.bind(deps)
             -- 等级/共鸣影响排序、装备门槛和正式战力，保持原完整刷新与外层通知。
             -- 旧独立 bind 调用未提供轻量出口时仍保留完整刷新契约。
             rebuildRoster()
-            refreshPowerCache()
+            refreshPowerCache(levelChanged and "level_up" or nil)
             refreshNavBadge()
         else
             -- 纯经验变化只更新现有显示快照；不创建属性上下文、不重排、不重开战斗。

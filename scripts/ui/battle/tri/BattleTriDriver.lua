@@ -190,6 +190,8 @@ function BattleTriDriver.new(teamIdx, options)
 
     --- 全灭退回上一关。第一关没有上一关，就在原地重开。
     function drv:retreatStage()
+        self:activate()
+        ETS.flush() -- 胜败都提交本线已触发的永久成长，不能借用最近一线的挂载。
         if self.terminalRaid then
             self.terminalRaid:onTeamDefeated(self.teamIdx)
             return
@@ -232,6 +234,8 @@ function BattleTriDriver.new(teamIdx, options)
         end
         local previousStageId = self.stageId
         local wasStarted = self._started == true
+        self:activate()
+        ETS.flush() -- 手动换关/阵容重开兜底：先结清旧战斗，再构建新单位。
         -- 只有真正换关才允许再次提示终焉；门禁处原地循环重开不重复弹窗。
         if previousStageId ~= stageId then self._terminalPrompted = false end
         if self.pendingKills and #self.pendingKills > 0 then
@@ -428,6 +432,7 @@ function BattleTriDriver.new(teamIdx, options)
             queue[#queue + 1] = { stageId = kill.stageId, dropOnly = true,
                 teamIdx = kill.teamIdx, dropLuck = kill.dropLuck, heroIds = kill.heroIds or heroIds }
         end
+        self.pendingKills = {} -- 先消费，升级刷新等同步回调重入start不能重复发奖。
         if self.onKill and (expReward > 0 or goldReward > 0) then
             self.onKill({
                 teamIdx = self.teamIdx,
@@ -438,7 +443,6 @@ function BattleTriDriver.new(teamIdx, options)
                 allyCount = #heroIds,
             })
         end
-        self.pendingKills = {}
     end
 
     function drv:tickRewards(dt)
@@ -784,6 +788,7 @@ function BattleTriDriver.new(teamIdx, options)
             end
             if not self._clearReported then
                 self._clearReported = true
+                ETS.flush()
                 self:queuePendingKills()
                 if self.onStageCleared then self.onStageCleared(self.teamIdx, self.stageId) end
             end

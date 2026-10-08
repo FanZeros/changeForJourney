@@ -6,6 +6,10 @@
 --   2) 无条件角色在未命中触发条件时不叠层（#2 非燃烧、#6 非感电、#8 非标记、#21 非氮气）
 --   3) buildAttrEntries：与旧 bruteEntries 逐条 key/flat 一致（含 #14 双属性、
 --      #9/#10/#15/#23 非击杀口径字段、#16/20/21/22 专长字段不产属性）
+--   4) 未在 RULES 中的角色（9/10/15/17/23）击杀不叠层
+-- 跑法：/workspace/.cli/UrhoXRuntime tests/awakening_growth_equivalence_test.lua \
+--       -tapcode_dir=/workspace/game5 -tool_mode -graphicsheadless -nosound
+-- 本测试验证纯配置增量/属性映射；ETS 公共钩子的战后结算另见生命生命周期专项。
 --   4) 非击杀角色（9/10/15/23）不叠；#17 任意击杀仅复用 stacks、阶段状态只读
 -- 跑法: ./.cli/UrhoXRuntime tests/awakening_growth_equivalence_test.lua \
 --         -tapcode_dir=<项目根> -tool_mode -graphicsheadless
@@ -48,7 +52,17 @@ local function makeCtx(killerFlags, statuses, deadFlags)
 end
 
 function Start()
-    print("[awakening_growth_equivalence_test] start")
+    print("[awakening_growth_equivalence_test] 开始配置增量与属性映射回归")
+    local originalRequire = require
+    local originalCapRule = AG.RULES[9999]
+    ---@type table<number, table>
+    local owned = {}
+    local panelMock = { getOwnedHero = function(heroId) return owned[heroId] end }
+    require = function(name)
+        if name == "systems.AttributeDef" then return AD end
+        if name == "ui.character.panel.CharacterPanel" then return panelMock end
+        return originalRequire(name)
+    end
     local ok, err = pcall(function()
         -- ========== 1) 无条件击杀叠层（旧: if n1 then bump() end） ==========
         -- 注意：11/13/14/18 已改为专属口径（杠杆②），不在此列表
@@ -186,11 +200,24 @@ function Start()
             local e9 = makeExtra(); e9.overflowCount = 40
             local g9 = AG.buildAttrEntries(9, e9)
             check(#g9 == 1 and g9[1].key == AD.SPI and math.abs(g9[1].flat - 2.0) < 1e-9,
-                "hero9 40溢出治疗→精神+2.0")
+                "hero9 40溢出治疗→魂火+2.0")
             local e23 = makeExtra(); e23.shieldStacks = 30
             local g23 = AG.buildAttrEntries(23, e23)
             check(#g23 == 1 and g23[1].key == AD.ENERGY_SHIELD and g23[1].flat == 30,
                 "hero23 30护盾层→护盾上限+30")
+        end
+        do -- #19: stacks=40 → 魂火 +2.0；展示改名不改变属性 key/数值。
+            local e = makeExtra(); e.stacks = 40
+            local got = AG.buildAttrEntries(19, e)
+            check(#got == 1 and got[1].key == AD.SPI and math.abs(got[1].flat - 2.0) < 1e-9,
+                "hero19 40击杀层→魂火+2.0，仍使用兼容spi存档键")
+            check(AD.META[AD.SPI].name == "魂火", "#9/#19共同成长属性的展示名为魂火")
+            local ETS = originalRequire("systems.ExtraTalentSystem")
+            owned[9] = { awakening = { [1] = true, _awk3Migrated = true } }
+            local status = ETS.getStatusLine(9, ETS.normalize({ overflowCount = 40 }))
+            check(status:find("魂火 +2.00", 1, true) ~= nil
+                and status:find("精神", 1, true) == nil,
+                "hero9追加技状态使用属性元数据展示魂火，不再显示旧名精神")
         end
         do -- #10: shareCount=8 → MAX_HP +24
             local e = makeExtra(); e.shareCount = 8
@@ -238,7 +265,7 @@ function Start()
             AG.RULES[9999] = { cond = "any", fields = { { "beamCharges", 1, 3 } } }
             for _ = 1, 5 do AG.applyGrowth(9999, e, makeCtx()) end
             check(e.beamCharges == 3, "cap 上限机制生效(5次→封顶3)")
-            AG.RULES[9999] = nil
+            AG.RULES[9999] = originalCapRule
         end
 
         -- ========== 7) RULES 全覆盖核对：与旧硬编码链的角色集合一致 ==========
@@ -324,6 +351,11 @@ function Start()
         end
     end)
 
+    -- 即使cap或状态展示测试异常，也不能把规则替身/require留给下一轮运行。
+    AG.RULES[9999] = originalCapRule
+    require = originalRequire
+    check(AG.RULES[9999] == originalCapRule and require == originalRequire,
+        "测试结束恢复临时cap规则和require替身")
     if not ok then
         print("[ERROR] 测试异常: " .. tostring(err))
         failures[#failures + 1] = "exception: " .. tostring(err)

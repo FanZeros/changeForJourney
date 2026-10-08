@@ -86,6 +86,11 @@ function Start()
             local stage, maxStage, ledger = 101, 101, {}
             local live = {}
             local resetCalls, titleCalls, pendingResets = 0, 0, 0
+            local openingCancels, powerResets = 0, 0
+            -- HEAD正式入口已有这些upvalue；源码段夹具需显式提供，不能删清档调用。
+            env.cancelOpening_ = function() openingCancels = openingCancels + 1 end
+            env.StandaloneRT = { entryPrepared = true, entryPreparing = true, entryRendered = true }
+            env.SpinePowerUpEffect = { resetSession = function() powerResets = powerResets + 1 end }
             local Scene = stub({ getStageId = function() return stage end,
                 getMaxStageId = function() return maxStage end,
                 getClearedStages = function() return ledger end,
@@ -155,7 +160,7 @@ function Start()
             end
             return { env = env, dispatcher = Dispatcher, state = GS, save = Save, service = Service,
                 page = Page, scene = Scene, reset = Reset, disk = disk, fault = fault, seed = seed,
-                counts = function() return resetCalls, titleCalls, pendingResets, writes end }
+                counts = function() return resetCalls, titleCalls, pendingResets, writes, openingCancels, powerResets end }
         end
 
         runCase("稀疏终焉旧档", function()
@@ -232,7 +237,11 @@ function Start()
                 eq(state[field], 0, "清档重置残留字段 " .. field)
             end
             eq(state.level, 1, "清档重置账户等级")
-            local reset, title, pending, writes = f.counts()
+            local reset, title, pending, writes, opening, power = f.counts()
+            eq(opening, 1, "正式入口取消旧开场链一次")
+            eq(power, 1, "正式入口取消旧会话战力动画一次")
+            check(not f.env.StandaloneRT.entryPrepared and not f.env.StandaloneRT.entryPreparing
+                and not f.env.StandaloneRT.entryRendered, "正式入口清除三份入场准备镜像")
             eq(reset, 1, "清档丢旧三队驱动")
             eq(pending, 1, "清档丢Boot暂存奖励")
             eq(title, 1, "正式入口回标题一次")

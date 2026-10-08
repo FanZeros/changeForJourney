@@ -382,7 +382,7 @@ addStat("生命值", {
 })
 -- Threat 已属于「仇恨」；用独立显示匹配名区分怨引值，完整原文标题沿用已有词典。
 addStat("怨引值", {
-    "影響被敵方隨機攻擊的權重，仇恨值越高越容易被集火。",
+    "影響被敵方隨機攻擊的權重，怨引值越高越容易被集火。",
     "Affects the weight used when enemies choose a random attack target. Higher threat values make concentrated attacks more likely.",
     "敵のランダム攻撃対象に選ばれる重みに影響する。ヘイト値が高いほど集中攻撃を受けやすい。",
     "적의 무작위 공격 대상이 되는 가중치에 영향을 줍니다. 위협 수치가 높을수록 집중 공격을 받기 쉽습니다.",
@@ -515,15 +515,15 @@ attributeDescriptions.finalDamageBonus = {
     "독립 곱연산 영역에서 주는 최종 피해를 백분율로 증가시킵니다.",
 }
 
---- 装备属性解释：58种词条完整四语对应；显示别名仅改变标题，不反推属性。
+--- 装备属性解释：58种词条完整四语对应；标题由稳定 key 取规范名，不使用旧存档名称。
 ---@param key string
 ---@param lang string
----@param sourceName string|nil 原词缀全名（最终智慧/最终秘识等）
+---@param sourceName string|nil 兼容旧调用参数；已知属性的标题始终使用 AD 规范名
 ---@return {key:string, title:string, desc:string}|nil
 function D.getAttribute(key, lang, sourceName)
     local meta = AD.META[key]
     if not meta or AD.getDesc(key) == "" then return nil end
-    local title = sourceName or meta.name
+    local title = meta.name or sourceName
     if lang == "zh_CN" then return { key = key, title = title, desc = AD.getDesc(key) } end
     local langIndex
     for i, language in ipairs(languages) do if language == lang then langIndex = i; break end end

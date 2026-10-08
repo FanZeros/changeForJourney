@@ -237,7 +237,9 @@ local function testTriDriverWipeFallback()
 
     local nativeRequire = require
     rawset(_G, "require", function(name)
-        if name == "boot.StandaloneSave" then return { Flush = function() return true end } end
+        if name == "boot.StandaloneSave" then
+            return { Flush = function() return true end, RequestSave = function() return true end }
+        end
         return nativeRequire(name)
     end)
     local ok, err = pcall(function() drv:tick(1 / 60) end)
@@ -569,6 +571,10 @@ local function testVictoryMarchLifecycle()
         mocks["config.StageConfig"] = SC
         mocks["core.BattleLayout"] = require("core.BattleLayout")
         mocks["systems.AttributeDef"] = require("systems.AttributeDef")
+        local extraState = {}
+        mocks["systems.ExtraTalentSystem"] = {
+            mountedState = function() return extraState end, flush = noop, discard = noop,
+        }
         mocks["shared.StageProvider"] = { Get = function() return SC end }
         mocks["ui.battle.combat.BattleCombat"] = combat
         mocks["ui.battle.scene.BattleMountScope"] = { mountDefault = noop, wrap = noop }

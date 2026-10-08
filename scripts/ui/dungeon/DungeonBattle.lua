@@ -13,6 +13,7 @@ local DungeonConfig = require("config.DungeonConfig")
 local EnemySpawn = require("ui.battle.stage.BattleEnemySpawn")
 local BattleLayout = require("core.BattleLayout")
 local CombatRuntime = require("ui.dungeon.DungeonCombatRuntime")
+local ETS = require("systems.ExtraTalentSystem")
 
 local DungeonBattle = {}
 
@@ -482,6 +483,7 @@ end
 function DungeonBattle.onVictory()
     if not active or resultPending then return end
     if cfg.trainingDummy then return end
+    ETS.flush() -- 普通副本已由DungeonScope挂载；塔宿主先逐lane结清。
 
     print(string.format("[DungeonBattle] VICTORY floor=%d elapsed=%.1fs ragePhase=%d",
         cfg.floor, elapsed, ragePhase))
@@ -518,7 +520,8 @@ end
 function DungeonBattle.debugInstantWin()
     if not active then return false end
     if resultPending then return true end
-    DungeonBattle.onVictory()
+    -- DebugPanel在宿主输入域直接调用，不能flush最近一条主线的ETS状态。
+    require("ui.dungeon.DungeonBattleScope").run(cfg.teamIdx or 1, DungeonBattle.onVictory)
     print("[DungeonBattle][Debug] 立即胜利: dungeon=" .. tostring(cfg.dungeonId)
         .. " floor=" .. tostring(cfg.floor)
         .. " wave=" .. tostring(cfg.wave or 1))
@@ -529,6 +532,7 @@ end
 --- 不再立即 exit，进入结算等待状态
 function DungeonBattle.onDefeat()
     if not active or resultPending then return end
+    ETS.flush() -- 失败/超时/撤退也保留已触发成长，先于取消挑战与结算回执。
     if cfg.resourceCombat then CombatRuntime.cancelChallenge() end
 
     print(string.format("[DungeonBattle] DEFEAT floor=%d elapsed=%.1fs", cfg.floor, elapsed))

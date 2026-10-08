@@ -532,7 +532,7 @@ function Start()
         clock.elapsedTime = 100; PowerController.init()
         bus.emit(nativeRequire("config.GameEvents").TEAM_POWER_CHANGED,{powers={100,200,300},ready=true})
         clock.elapsedTime = 102
-        bus.emit(nativeRequire("config.GameEvents").TEAM_POWER_CHANGED,{powers={150,250,350},ready=true})
+        bus.emit(nativeRequire("config.GameEvents").TEAM_POWER_CHANGED,{powers={150,250,350},ready=true,cause="level_up"})
         CardController.playRevive(100,200,function() complete=complete+1 end,"tri2")
         ResultController.play(true,function() complete=complete+1 end)
         check(PowerController.isPlaying() and CardController.isPlaying() and ResultController.isPlaying(),
@@ -587,11 +587,25 @@ function Start()
         -- 既有 Stop 夹具补齐开场/选关/塔UI依赖，不执行其真实业务或持久化。
         wrapperEnv.LetterIntro={reset=noop};wrapperEnv.ScenarioDialogue={reset=noop}
         wrapperEnv.TowerBattleScene={resetToDefault=noop};wrapperEnv.TowerBuffPick={destroy=noop}
+        -- Stop新增逐战域提交是生产依赖；只记录真实调度顺序，不启动战斗/存档。
+        local growthOrder = {}
+        local function growthStep(name) growthOrder[#growthOrder+1]=name end
+        stopMocks["systems.ExtraTalentSystem"]={flush=function() growthStep("ETS") end}
+        wrapperEnv.BattleTriPage={flushPendingGrowth=function() growthStep("Tri") end}
+        stopMocks["ui.battle.scene.BattleMountScope"]={runDefault=function(body)
+            growthStep("Default");return body()
+        end}
+        stopMocks["ui.battle.combat.BattleCasualty"]={flushRewards=function() growthStep("Rewards") end}
+        stopMocks["ui.dungeon.DungeonBattleScope"]={run=function(team,body)
+            check(team==1,"actual Stop mounts dungeon owner 1 before flush")
+            growthStep("Dungeon");return body()
+        end}
+        stopMocks["ui.tower.TowerTriBattle"]={flushPendingGrowth=function() growthStep("Tower") end}
         stopMocks["systems.StoryPlayer"]={resetAll=noop}
         stopMocks["ui.battle.stage.StageSelectDialog"]={close=noop}
         stopMocks["ui.tavern.RecruitAnim"]={destroy=noop}
         stopMocks["ui.tower.TowerBuffSidebar"]={destroy=noop}
-        wrapperEnv.RewardPopup={clearBattleRewards=noop};wrapperEnv.StandaloneSave={Flush=noop}
+        wrapperEnv.RewardPopup={clearBattleRewards=noop};wrapperEnv.StandaloneSave={Flush=function() growthStep("Save") end}
         wrapperEnv.SpinePowerUpEffect={destroy=function() stopOrder[#stopOrder+1]="Power" end}
         wrapperEnv.LevelUpPopup={destroy=function() presentationOrder[#presentationOrder+1]="LevelUp" end}
         wrapperEnv.CharacterPanel={destroyPresentation=function()
@@ -606,6 +620,8 @@ function Start()
         wrapperEnv.nvgCreateImage,wrapperEnv.nvgDeleteImage=externalCreate,externalDelete
         assert(load(stopCode,"@host-real/Stop.image-ownership","t",wrapperEnv))()
         wrapperEnv.Standalone.Stop()
+        check(table.concat(growthOrder,",")=="ETS,Tri,Default,ETS,Rewards,Dungeon,ETS,Tower,Save",
+            "actual Stop flushes each battle owner before save")
         check(wrapperEnv.bootQueue_==nil and wrapperEnv.bootReady_==false and wrapperEnv.StandaloneRT.bootReady_==false,
             "actual Stop discards suspended startup queue and both ready flags")
         check(table.concat(stopOrder,",")=="Power,Card,Result,Sprites,Surface,vgDelete","actual Stop releases controllers/images before owning vg")

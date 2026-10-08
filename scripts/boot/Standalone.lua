@@ -586,6 +586,16 @@ function Standalone.Stop()
     inventoryBadge = { ready = false, full = false, acc = 0 }
     RewardPopup.clearBattleRewards()
     require("ui.battle.stage.StageSelectDialog").close()
+    -- 逐域消费后再保存；不能只flush最后draw/update挂载的那一条战线。
+    local ETS = require("systems.ExtraTalentSystem")
+    ETS.flush() -- 兼容内置默认/非场景调用留下的当前域；后续仍逐独立域消费。
+    BattleTriPage.flushPendingGrowth()
+    require("ui.battle.scene.BattleMountScope").runDefault(function()
+        ETS.flush()
+        require("ui.battle.combat.BattleCasualty").flushRewards()
+    end)
+    require("ui.dungeon.DungeonBattleScope").run(1, ETS.flush)
+    require("ui.tower.TowerTriBattle").flushPendingGrowth()
     StandaloneSave.Flush()  -- [单机存档] 退出前立即落盘
     SpinePowerUpEffect.destroy()
     require("ui.fx.SpineCardEffect").destroy()
@@ -890,6 +900,7 @@ function Standalone.requestResetToStartScreen()
 
     -- 清档先硬关闭资源战斗，不触发旧结算/onClose；详情和规则pending也归旧会话。
     TowerBattleScene.resetToDefault()
+    DungeonBattleScene.forceClose(true) -- 清档直接丢弃副本pending/dirty，不提交旧战斗成长。
     require("rules.tower.TowerService").ResetToDefault(1)
     DungeonBattleScene.forceClose()
     DungeonPage.close()

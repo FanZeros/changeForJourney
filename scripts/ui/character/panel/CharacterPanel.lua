@@ -317,9 +317,9 @@ function CharacterPanel.getHeroDeployPosition(heroId, teamIdx)
     return ensurePower().findHeroDeployPosition(heroId, teamIdx)
 end
 
-local function refreshPowerCache()
+local function refreshPowerCache(cause)
     -- 映射hook位于原Power全部缓存完成且emit之前，不能在此事后重复排序。
-    local result = ensurePower().refreshPowerCache()
+    local result = ensurePower().refreshPowerCache(cause)
     if _heroSync then _heroSync.rememberState() end
     return result
 end
@@ -932,7 +932,7 @@ end
 --- 写入追加技永久层（本地 ownedSet + Dispatcher 镜像，不触发整表重建）
 ---@param heroId number
 ---@param extra table
-function CharacterPanel.patchExtraTalent(heroId, extra)
+function CharacterPanel.patchExtraTalent(heroId, extra, deferRefresh)
     heroId = tonumber(heroId)
     if not heroId then return end
     extra = require("systems.ExtraTalentSystem").normalize(extra)
@@ -947,10 +947,16 @@ function CharacterPanel.patchExtraTalent(heroId, extra)
             hd.extraTalent = extra
         end
     end
-    if owned then
+    if owned and not deferRefresh then
         refreshPowerCache()
         updateHeroesRefreshBaseline()
     end
+end
+
+--- 战后批量写入完成才刷新一次，避免每个英雄重复计算三队战力。
+function CharacterPanel.finishExtraTalentBatch()
+    refreshPowerCache()
+    updateHeroesRefreshBaseline()
 end
 
 --- 获取某英雄的重复获得次数（旧接口，兼容保留）

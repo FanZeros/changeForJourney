@@ -9,6 +9,7 @@ local CF               = require("systems.CombatFormula")
 local TM               = require("systems.ThreatManager")
 local SEM              = require("systems.StatusEffectManager")
 local TAL              = require("systems.TalentManager")
+local ETS              = require("systems.ExtraTalentSystem")
 local ART              = require("systems.ArtifactRuntime")
 local RCH              = require("systems.RelicConditionHandler")
 local NumberUtil       = require("core.NumberUtil")
@@ -55,6 +56,7 @@ local BATTLE_LOSE   = "lose"
 ---@field psState table
 ---@field tmState table
 ---@field talRefs table
+---@field etsState table
 ---@field beState table
 ---@field semState table
 ---@field regenAccum number
@@ -72,6 +74,7 @@ local state = {
     confirmOpen = false,
     battleSpeed = 1.0,
     onClose = nil,
+    hostExtraTalents = ETS.mountedState(),
     logicalW = 1920,
     logicalH = 1080,
 }
@@ -126,8 +129,34 @@ local function mountLane(lane)
     ProjectileSystem.mount(lane.psState)
     TM.mount(lane.tmState)
     TAL.mount(lane.talRefs)
+    ETS.mount(lane.etsState)
     BattleEffects.mount(lane.beState)
     SEM.mount(lane.semState)
+end
+
+-- 胜败/撤退/Stop统一逐lane消费；仅借用ETS挂载，不能把宿主主线待成长提交。
+local function settleGrowth(discardGrowth, onSettled)
+    local previous = ETS.mountedState()
+    local lanes, wasOpen = state.lanes, state.open
+    local ok, err = pcall(function()
+        for t = 1, TEAM_COUNT do
+            local lane = lanes[t]
+            if lane then
+                ETS.mount(lane.etsState)
+                if discardGrowth then ETS.discard() else ETS.flush() end
+                if state.lanes ~= lanes or state.open ~= wasOpen then return end
+            end
+        end
+        -- flush/胜利请求可能同步关闭或打开新波，旧回执不能再结算新波配置。
+        if onSettled and state.lanes == lanes and state.open == wasOpen then onSettled() end
+    end)
+    -- 同步回执已进入新波或close还原宿主时，不能把旧lane重新挂回去。
+    if state.lanes == lanes and state.open == wasOpen then ETS.mount(previous) end
+    if not ok then error(err, 0) end
+end
+
+function TowerTriBattle.flushPendingGrowth()
+    settleGrowth(false)
 end
 
 local function bindLaneContext(lane)
@@ -485,6 +514,8 @@ end
 
 ---@param opts table { teamAllies = { [1]=table[], [2]=table[], [3]=table[] }, data = table, onClose = function }
 function TowerTriBattle.open(opts)
+    settleGrowth(false) -- 重开/换波兜底，旧lane丢弃前先结清。
+    if not state.open then state.hostExtraTalents = ETS.mountedState() end
     state.presentationVersion = state.presentationVersion + 1
     opts = opts or {}
     state.open = true
@@ -521,6 +552,7 @@ function TowerTriBattle.open(opts)
             psState = ProjectileSystem.newState(),
             tmState = TM.newState(),
             talRefs = TAL.newBattleRefs(),
+            etsState = ETS.newState(),
             beState = BattleEffects.newFxState(),
             semState = SEM.newSemState(),
             regenAccum = 0,
@@ -542,6 +574,7 @@ function TowerTriBattle.open(opts)
 
     RCH.reset()
     ART.reset(combinedAllies)
+    ETS.mount(state.lanes[1].etsState) -- TAL.reset的隐式flush只能消费塔域，不能误结主线。
     TAL.reset()
     BattleStats.reset()
     local allForRCH = {}
@@ -570,7 +603,8 @@ function TowerTriBattle.open(opts)
         state.floor, state.wave, #combinedAllies))
 end
 
-function TowerTriBattle.close()
+function TowerTriBattle.close(discardGrowth)
+    settleGrowth(discardGrowth)
     if not state.open then return end
     state.open = false
     state.phase = BATTLE_ACTIVE
@@ -582,6 +616,7 @@ function TowerTriBattle.close()
     ProjectileSystem.mount(nil)
     TM.mount(nil)
     TAL.mount(nil)
+    ETS.mount(state.hostExtraTalents)
     BattleEffects.mount(nil)
     SEM.mount(nil)
     BattleLayout.setMode("strip")
@@ -591,10 +626,13 @@ function TowerTriBattle.close()
     print("[TowerTriBattle] close")
 end
 
-function TowerTriBattle.forceClose()
-    if not state.open then return end
+function TowerTriBattle.forceClose(discardGrowth)
+    if not state.open then
+        if discardGrowth then settleGrowth(true) end
+        return
+    end
     state.onClose = nil
-    TowerTriBattle.close()
+    TowerTriBattle.close(discardGrowth)
 end
 
 function TowerTriBattle.getAllies()
@@ -605,7 +643,7 @@ local function finishWin()
     if state.phase ~= BATTLE_ACTIVE then return end
     state.phase = BATTLE_WIN
     state.resultTimer = 0
-    DungeonBattle.onVictory()
+    settleGrowth(false, DungeonBattle.onVictory)
     print("[TowerTriBattle] 三军清波 floor=" .. tostring(state.floor) .. " wave=" .. tostring(state.wave))
 end
 
@@ -613,7 +651,7 @@ local function finishLose()
     if state.phase ~= BATTLE_ACTIVE then return end
     state.phase = BATTLE_LOSE
     state.resultTimer = 0
-    DungeonBattle.onDefeat()
+    settleGrowth(false, DungeonBattle.onDefeat)
     print("[TowerTriBattle] 攻坚失败 floor=" .. tostring(state.floor) .. " wave=" .. tostring(state.wave))
 end
 

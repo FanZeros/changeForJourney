@@ -3,6 +3,29 @@
 -- NanoVG、资源图标和只读货币 getter 使用 spy；不执行存档/网络动作。
 local M = {}
 
+-- 独立名称 oracle：不从配置/翻译实现反推期望，防止旧 name 与词典一起回流。
+-- 列顺序固定为简体、繁体、英文、日文、韩文；基础 INT/LUK/Spirit 是当前规范。
+local NAME_ORACLE = {
+    { key = "int", canonical = "秘识", legacy = "智慧",
+        titles = { "秘识", "秘識", "INT", "知力", "지력" } },
+    { key = "luk", canonical = "命数", legacy = "运气",
+        titles = { "命数", "命數", "LUK", "運", "운" } },
+    { key = "spi", canonical = "魂火", legacy = "精神",
+        titles = { "魂火", "魂火", "Spirit", "魂火", "혼화" } },
+    { key = "energyShield", canonical = "护盾", legacy = "魔法护甲",
+        titles = { "护盾", "護盾", "Shield", "シールド", "보호막" } },
+    { key = "esBonus", canonical = "护盾加成", legacy = "能量护盾加成",
+        titles = { "护盾加成", "護盾加成", "Shield bonus", "シールド補正", "보호막 보너스" } },
+    { key = "threat", canonical = "怨引值", legacy = "仇恨值",
+        titles = { "怨引值", "怨引值", "Threat", "敵視値", "위협 수치" } },
+    { key = "finalIntBonus", canonical = "最终秘识", legacy = "最终智慧", affixId = 1007,
+        titles = { "最终秘识", "最終秘識", "Final Lore", "最終秘知", "최종 비지" } },
+    { key = "finalLukBonus", canonical = "最终命数", legacy = "最终运气", affixId = 1009,
+        titles = { "最终命数", "最終命數", "Final Fate", "最終運命", "최종 운명" } },
+    { key = "finalSpiBonus", canonical = "最终魂火", legacy = "最终精神", affixId = 1010,
+        titles = { "最终魂火", "最終魂火", "Final Soulfire", "最終魂火", "최종 혼불" } },
+}
+
 function M.run()
     local count = 0
     local restores = {}
@@ -30,18 +53,64 @@ function M.run()
             for _, affix in ipairs(list) do affixes[#affixes + 1] = affix end
         end
         check(#AC.AFFIXES == 45 and #AC.CORRUPT_AFFIXES == 13, "45普通+13魔化")
-        for _, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+        for _, case in ipairs(NAME_ORACLE) do
+            check(AD.META[case.key].name == case.canonical, "AD规范名独立oracle " .. case.key)
+            if case.affixId then
+                local affix = AC.BY_ID[case.affixId]
+                check(affix.key == case.key and affix.name == case.canonical,
+                    "魔化生成源独立oracle " .. case.affixId)
+                check(affix.baseValue == 1.7 and affix.weight == 100 and affix.dataType == "pct",
+                    "仅改魔化名称不改数值 " .. case.affixId)
+            end
+        end
+        local Awaken = require("config.AwakeningConfig")
+        check(Awaken.DATA[9][1] == "【温泉本金】：过量治疗永久魂火+0.05；处于温泉状态的队友护甲+10，治疗暴击率+5%。",
+            "温泉永久魂火源文与数值")
+        check(Awaken.DATA[19][1] == "【功德积累】：每次击杀永久魂火+0.05；治疗暴击额外获得1层功德。",
+            "功德永久魂火源文与数值")
+        check(Awaken.DATA[7][1] == "【必杀库存】：每次击杀永久连击率+0.1%；连击命中有20%概率降低目标7点护盾；光线间隔缩短至每3次攻击。",
+            "必杀库存说明energyShield为护盾")
+        check(AD.getDesc("threat") == "影响被敌方随机攻击的权重，怨引值越高越容易被集火",
+            "静态怨引说明独立oracle")
+        for languageIndex, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
             I18n.set(lang)
+            for _, case in ipairs(NAME_ORACLE) do
+                local expectedTitle = case.titles[languageIndex]
+                local definition = assert(Locale.getAttribute(case.key, lang, case.legacy))
+                check(definition.key == case.key and definition.title == expectedTitle,
+                    "旧名输入新标题五语oracle " .. case.key .. lang)
+                check(definition.desc == Locale.getAttribute(case.key, lang).desc,
+                    "旧名不改变属性说明 " .. case.key .. lang)
+                local kt = Keyword.new()
+                local layout = kt:_layout(nil, case.legacy, 10000, 28, { attributeKey = case.key })
+                check(layout.displayText == expectedTitle, "属性模式规范显示 " .. case.key .. lang)
+                kt:drawAttribute(nil, case.legacy, case.key, 20, 40, 210, 28)
+                local hotspot = kt.hotspots[1]
+                check(#kt.hotspots == 1 and hotspot.key == "attribute:" .. case.key
+                    and hotspot.text == expectedTitle, "旧名按稳定key完整高亮 " .. case.key .. lang)
+                check(kt:handleInput(hotspot.x1 + 1, hotspot.y1 + 1) and kt.popup.name == expectedTitle
+                    and kt.popup.desc == definition.desc, "旧名点击弹规范标题 " .. case.key .. lang)
+                local mixed = Keyword.new()
+                mixed:drawAttribute(nil, "任意旧名仇恨精神", case.key, 20, 40, 210, 28)
+                check(#mixed.hotspots == 1 and mixed.hotspots[1].text == expectedTitle,
+                    "已知key不从任意sourceName反推 " .. case.key .. lang)
+            end
+            local unknown = Keyword.new()
+            local unknownText = "未登记旧名精神原样"
+            check(unknown:_layout(nil, unknownText, 10000, 28, {attributeKey = "unknown"}).displayText == unknownText,
+                "未知属性源名回退不改写 " .. lang)
+            check(Locale.getAttribute("unknown", lang, unknownText) == nil,
+                "未知属性不伪造解释 " .. lang)
             for _, affix in ipairs(affixes) do
                 local expected = assert(Locale.getAttribute(affix.key, lang, affix.name))
-                check(expected.title == I18n.lookup(affix.name), "完整名称不截为子词 " .. affix.key .. lang)
+                check(expected.title == I18n.lookup(AD.META[affix.key].name), "完整规范名称不截为子词 " .. affix.key .. lang)
                 check(expected.desc ~= "" and (lang == "zh_CN" or expected.desc ~= AD.getDesc(affix.key)),
                     "完整四语说明不回落简体 " .. affix.key .. lang)
                 local kt = Keyword.new()
                 local width, font = kt:drawAttribute(nil, affix.name, affix.key, 20, 40, 210, 28)
                 check(width <= 210 and font >= 8 and #kt.hotspots == 1, "缩字不越列 " .. affix.key .. lang)
                 local h = kt.hotspots[1]
-                check(h.key == "attribute:" .. affix.key and h.text == I18n.lookup(affix.name), "稳定key " .. affix.key .. lang)
+                check(h.key == "attribute:" .. affix.key and h.text == I18n.lookup(AD.META[affix.key].name), "稳定key " .. affix.key .. lang)
                 check(kt:handleInput(h.x1 + 1, h.y1 + 1) and kt.popup.desc == expected.desc
                     and kt.popup.name == expected.title, "名称与解释一一对应 " .. affix.key .. lang)
                 check(kt:handleInput(773, 2129) and not kt:isOpen(), "第二次点击只关说明 " .. affix.key .. lang)
@@ -173,6 +242,10 @@ function M.run()
         })
         Enhance.setContext(ctx); Refine.setContext(ctx)
         Enhance.updateEnhanceData(equip); Refine.updateRefineData(equip)
+        -- 原UI准备流程已有魔化数值/名称水合；只验证新增显示层不再回写水合后的实例。
+        local storedAffix = equip.affixes[2]
+        local storedName, storedKey, storedValue, storedId = storedAffix.name, storedAffix.key,
+            storedAffix.value, storedAffix.affixId
         local function keywordInstance(key)
             for i = #instances, 1, -1 do
                 local kt = instances[i]
@@ -217,12 +290,16 @@ function M.run()
         check(tap(307, 2129) and not kt:isOpen() and actions == 0, "升阶按钮首点只关说明")
         Enhance.updateEnhanceData(equip)
         check(#kt.hotspots == 0, "换装备刷新清升阶热区")
+        check(equip.affixes[2].name == storedName and equip.affixes[2].key == storedKey
+            and equip.affixes[2].value == storedValue and equip.affixes[2].affixId == storedId,
+            "显示不改变已水合词条name/key/value/id")
         local valueDrawn, corruptDrawn = false, false
         for _, t in ipairs(texts) do
             if t.text == "7.5" then valueDrawn = true end
-            if t.text == "最终运气" and t.color[1] == 0xef and t.color[3] == 0xff then corruptDrawn = true end
+            if t.text == "最终命数" and t.color[1] == 0xef and t.color[3] == 0xff then corruptDrawn = true end
+            check(t.text ~= "最终运气", "真实洗练/升阶不能回流旧名称")
         end
-        check(valueDrawn and corruptDrawn, "数值与腐化紫色名称保持")
+        check(valueDrawn and corruptDrawn, "数值与腐化紫色规范名称保持")
 
         local Store = require("core.PlayerStore")
         replace(Store, "Get", function(module)

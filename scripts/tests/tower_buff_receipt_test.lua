@@ -566,6 +566,37 @@ function Start()
             eq(Scene.isActive(),false,"旧成功清档后不打开场景")
             eq(Service.FloorWin(1,1),false,"清档旧floor缓存失效")
         end)
+        case("塔结算同步回执保持新波ETS挂载", function()
+            reset()
+            local ETS = require("systems.ExtraTalentSystem")
+            local towerState = getState(Tri.isOpen)
+            local finishWin = upvalue(Tri.update, "finishWin")
+            local oldLanes = towerState.lanes
+            ETS.mount(oldLanes[2].etsState)
+            finishWin() -- 真正塔胜利边界，Action回执同步关闭旧波并打开新波。
+            eq(sceneState.wave, 2, "真实finishWin同步推进第2波")
+            check(towerState.lanes ~= oldLanes, "同步胜利回执替换旧lane表")
+            eq(ETS.mountedState(), towerState.lanes[3].etsState, "结算返回保持新波最后lane挂载")
+            check(ETS.mountedState() ~= oldLanes[2].etsState, "结算不能重新挂回进入前的旧lane")
+            eq(opens, 2, "同步胜利只重开一次")
+        end)
+        case("塔结算同步close保持宿主ETS挂载", function()
+            reset()
+            local ETS = require("systems.ExtraTalentSystem")
+            local towerState = getState(Tri.isOpen)
+            local finishWin = upvalue(Tri.update, "finishWin")
+            local originalSender = Action.sendAction
+            local hostState = towerState.hostExtraTalents
+            ETS.mount(towerState.lanes[2].etsState)
+            Action.sendAction = function(action, params)
+                if action == AT.TOWER_WAVE_WIN then Scene.close(); return true end
+                return originalSender(action, params)
+            end
+            finishWin()
+            Action.sendAction = originalSender
+            eq(Tri.isOpen(), false, "同步胜利sender关闭塔场")
+            eq(ETS.mountedState(), hostState, "结算返回保持close已恢复的宿主ETS域")
+        end)
         Scene.close()
         require("systems.StatusEffectManager").mount(nil)
         require("ui.battle.combat.BattleCombat").mount(nil)

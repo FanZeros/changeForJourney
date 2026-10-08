@@ -284,8 +284,10 @@ local function powerFixture(realDrawing, richDrawing)
     cleanups[#cleanups + 1] = power.destroy
     local f = { power = power, bus = bus, clock = clock, draws = draws, language = language,
         record = record, events = events, logs = logs, env = env, releases = releases, powerDraws = powerDraws }
-    function f:emit(powers, activeTeam)
-        self.bus.emit(self.events.TEAM_POWER_CHANGED, { powers = powers, activeTeam = activeTeam })
+    function f:emit(powers, activeTeam, cause)
+        self.bus.emit(self.events.TEAM_POWER_CHANGED, {
+            powers = powers, activeTeam = activeTeam, cause = cause or "level_up",
+        })
     end
     function f:baseline(powers)
         self.power.init()
@@ -303,6 +305,25 @@ local function powerFixture(realDrawing, richDrawing)
 end
 
 local function runPowerEvents()
+    case("power-only-level-up-not-battle-growth-or-equipment", function()
+        local f = powerFixture(false); f:baseline()
+        for _, cause in ipairs({"battle_growth", "equipment", "awakening", "deployment", "unknown"}) do
+            f:emit({150, 250, 350}, nil, cause)
+            eq(#f.power.getDisplayRows(), 0, cause .. "静默更新不显示战力提升")
+        end
+        f.bus.emit(f.events.TEAM_POWER_CHANGED, { powers = {200, 300, 400}, ready = true })
+        eq(#f.power.getDisplayRows(), 0, "无来源快照保持静默")
+        f:emit({210, 310, 410})
+        eq(#f.power.getDisplayRows(), 3, "真实升级仍显示三队提示")
+        eq(assert(f:row(1)).base, 200, "升级基准包含先前静默增长")
+        eq(assert(f:row(1)).delta, 10, "升级提示不混入此前战斗增长")
+        f.bus.emit(f.events.TEAM_POWER_CHANGED, { powers = {210, 310, 410}, ready = true })
+        eq(#f.power.getDisplayRows(), 3, "相同静默快照不打断已有升级提示")
+        f:emit({240, 340, 440}, nil, "battle_growth")
+        eq(#f.power.getDisplayRows(), 0, "滚动期间非升级增量不并入旧提示")
+        f:emit({245, 345, 445})
+        eq(assert(f:row(1)).delta, 5, "后续升级只提示新的等级增量")
+    end)
     case("power-cold-boot-ready-false-never-seeds-zero-baseline", function()
         local f = powerFixture(false)
         for iteration = 1, 2 do
@@ -313,7 +334,7 @@ local function runPowerEvents()
             f.bus.emit(f.events.TEAM_POWER_CHANGED,{powers={0,0,0},ready=false})
             f.bus.emit(f.events.TEAM_POWER_CHANGED,{powers={100000,200000,300000},ready=true})
             eq(#f.power.getDisplayRows(),0,"first hydrated save only seeds baseline after long title wait " .. iteration)
-            f.bus.emit(f.events.TEAM_POWER_CHANGED,{powers={100000,200123,300456},ready=true})
+            f.bus.emit(f.events.TEAM_POWER_CHANGED,{powers={100000,200123,300456},ready=true,cause="level_up"})
             eq(#f.power.getDisplayRows(),2,"real teams2/3 gain after hydration " .. iteration)
             eq(assert(f:row(2)).delta,123,"hydrated team2 true delta " .. iteration)
             eq(assert(f:row(3)).delta,456,"hydrated team3 true delta " .. iteration)

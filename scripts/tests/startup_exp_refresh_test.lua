@@ -258,6 +258,17 @@ local function consistent(f, label)
     local byId = {}
     for _, row in ipairs(state.roster) do byId[row.heroId] = row end
     check(#state.roster == #f.load("config.HeroConfig").getAllIds(), label .. " 全部名册项保留")
+    for _, event in ipairs(state.events) do
+        local levelIncreased = false
+        for _, patch in pairs(state.patches) do
+            for _, hero in pairs(patch) do
+                if hero.level then levelIncreased = true end
+            end
+        end
+        if not noPersist then
+            check((event.cause == "level_up") == levelIncreased, label .. " 战力事件仅真实升级标记来源")
+        end
+    end
     for _, id in ipairs(OWNED_IDS) do
         local own, row = cp.getOwnedHero(id), byId[id]
         check(row and row.owned and row.level == own.level and row.exp == own.exp and row.maxExp == own.maxExp,

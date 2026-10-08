@@ -152,6 +152,9 @@ local function onTeamPowerChanged(data)
             previous[team] = power
             if current < stabilizeUntil or old == nil then
                 active[team] = nil
+            elseif data.cause ~= "level_up" then
+                -- 静默刷新也推进基准，不把战斗成长/换装混入下一次升级；重复快照不取消动画。
+                if power ~= old then active[team] = nil end
             elseif power ~= old then
                 local row = active[team]
                 if row then

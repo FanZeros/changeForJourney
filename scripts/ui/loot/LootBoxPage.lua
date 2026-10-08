@@ -572,6 +572,10 @@ local function entryAt(dx, dy)
 end
 
 function LootBoxPage.handleHover(dx, dy)
+    if state.open and SetFilterDialog.handleHover and SetFilterDialog.handleHover(dx, dy) then
+        clearDetail()
+        return true
+    end
     if not ready() or state.confirm or state.dragging or SetFilterDialog.isOpen() then
         clearDetail() return
     end

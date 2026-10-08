@@ -476,13 +476,18 @@ function CharacterDetail.handleEquipmentSlotTap(dx, dy)
     return selectedSlot ~= nil
 end
 
+--- 仓库下拉与角色槽共用选中上下文；只改查看部位，不发穿戴请求。
+function CharacterDetail.setEquipmentSlot(slot)
+    if not CharacterDetail.isEquipTab() then return false end
+    detailState.equipSlot = slot
+    CharacterDetail._EquipPanel.onSlotChanged(slot, detailState.heroId)
+    require("ui.backpack.BackpackPanel").setEquipmentSlotFilter(slot, detailState.heroId)
+    return true
+end
+
 --- 取消部位的统一入口，仓库按钮与右栏空白点击共用。
 function CharacterDetail.clearEquipmentSlot()
-    if not CharacterDetail.isEquipTab() then return false end
-    detailState.equipSlot = nil
-    CharacterDetail._EquipPanel.onSlotChanged(nil, detailState.heroId)
-    require("ui.backpack.BackpackPanel").setEquipmentSlotFilter(nil, detailState.heroId)
-    return true
+    return CharacterDetail.setEquipmentSlot(nil)
 end
 
 --- 浮选外第一击允许页签导航，但不放行一键装备等实际操作。

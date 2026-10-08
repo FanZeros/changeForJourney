@@ -259,7 +259,7 @@ local REF_AFFIX_TITLE_X = 470
 local REF_AFFIX_TITLE_Y = 1206
 local REF_AFFIX_TITLE_FONT = 30
 
--- 随机属性行（与基础属性相同的背景+样式）
+-- 随机属性行：独立名称/数值配色，左侧保留词条稀有度徽章。
 local REF_AFFIX_TEXT_X  = 636   -- 左对齐（缩进，留出徽章空间）
 local REF_AFFIX_GAP_TOP = 15    -- 与"随机属性"标题下方间距
 local REF_AFFIX_GAP     = 15    -- 多条随机属性间距（含背景）
@@ -307,24 +307,35 @@ local COMPACT_ICON_CY = 168
 local COMPACT_ICON_SIZE = 132
 local COMPACT_STAT_Y0 = 248
 local COMPACT_CONTENT_BOTTOM_PAD = 24
+local COMPACT_AFFIX_TITLE_FONT = 26
+local COMPACT_AFFIX_GAP = 8
 
---- 小窗内容底部：按小窗自己的紧凑坐标计算，不再沿用大面板的旧坐标。
+--- 小窗随机标题、首行与内容底部共用计算，绘制/套装/按钮/命中范围不能各算一份。
 ---@param equip table|nil
----@return number
-local function compactContentBottom(equip)
-    -- [UI 0930] 稀有度下方新增 Lv 行（中心 +40，字号 28），底部随之下移
+---@return number titleY, number firstAffixY, number contentBottom
+local function compactAffixLayout(equip)
+    -- 稀有度下方 Lv 行（中心 +40，字号 28）的完整底部，无主属性时也不能被词条覆盖。
     local bottom = COMPACT_QUALITY_Y + 58
     local statCount = equip and equip.baseStats and #equip.baseStats or 0
     if statCount > 0 then
         bottom = COMPACT_STAT_Y0 + (statCount - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
             + REF_STAT_BG_H * 0.5
     end
+    local titleY = bottom + 16 + COMPACT_AFFIX_TITLE_FONT * 0.5
+    local firstAffixY = titleY + COMPACT_AFFIX_TITLE_FONT * 0.5 + 12 + REF_AFFIX_ROW_H * 0.5
     local affixCount = equip and equip.affixes and #equip.affixes or 0
     if affixCount > 0 then
-        bottom = bottom + 16 + REF_AFFIX_ROW_H * 0.5
-            + (affixCount - 1) * (REF_AFFIX_ROW_H + 8) + REF_AFFIX_ROW_H * 0.5
+        bottom = firstAffixY + (affixCount - 1) * (REF_AFFIX_ROW_H + COMPACT_AFFIX_GAP)
+            + REF_AFFIX_ROW_H * 0.5
     end
-    return bottom + COMPACT_CONTENT_BOTTOM_PAD
+    return titleY, firstAffixY, bottom + COMPACT_CONTENT_BOTTOM_PAD
+end
+
+--- 小窗内容底部：与随机属性实际绘制位置同源，不再遗漏随机标题高度。
+---@param equip table|nil
+---@return number
+local function compactContentBottom(equip)
+    return select(3, compactAffixLayout(equip))
 end
 
 local SET_TITLE_H = 42
@@ -489,12 +500,15 @@ local panelDraw = EquipmentDetailDraw.create({
     layoutButtons = layoutButtons,
     clampDescScroll = clampDescScroll,
     compactViewHeight = compactViewHeight,
+    compactAffixLayout = compactAffixLayout,
     compactSetLines = compactSetLines,
     compactSetRowHeight = compactSetRowHeight,
     compactContentBottom = compactContentBottom,
     compactButtonRow = compactButtonRow,
     layout = {
         COMPACT_BG_W = COMPACT_BG_W,
+        COMPACT_AFFIX_TITLE_FONT = COMPACT_AFFIX_TITLE_FONT,
+        COMPACT_AFFIX_GAP = COMPACT_AFFIX_GAP,
         COMPACT_ICON_CY = COMPACT_ICON_CY,
         COMPACT_ICON_SIZE = COMPACT_ICON_SIZE,
         COMPACT_NAME_Y = COMPACT_NAME_Y,

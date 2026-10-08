@@ -371,7 +371,8 @@ end
 local function restorationSnapshot(vg)
     local saved = { context = savedContext(), matrix = currentMatrix(vg), functions = {},
         requireFn = require, class = CC.get, keyword = Draw.talentKwText, card = DrawUtil.drawCardImage,
-        display = I18n.displayText, language = I18n.get(), time = time, rows = Draw.drawAttributeRows }
+        display = I18n.displayText, language = I18n.get(), time = time, rows = Draw.drawAttributeRows,
+        legacyDesc = ETS.getDesc, stageStatus = ETS.getStageStatus }
     for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgScale", "nvgCreateImage", "nvgText",
         "nvgTextBounds", "nvgTextAlign", "nvgFontSize", "nvgImagePattern", "nvgCircle",
         "nvgRoundedRect", "nvgIntersectScissor", "nvgMoveTo", "nvgLineTo" }) do
@@ -388,6 +389,7 @@ local function restored(vg, prior)
         and Draw.talentKwText == prior.keyword and DrawUtil.drawCardImage == prior.card
         and I18n.displayText == prior.display and I18n.get() == prior.language
         and time == prior.time and Draw.drawAttributeRows == prior.rows
+        and ETS.getDesc == prior.legacyDesc and ETS.getStageStatus == prior.stageStatus
 end
 
 local function safeRun(label, body)
@@ -482,6 +484,8 @@ local function verifyDraw(vg, fixture, label)
         local kw = assert(calls.keyword)
         local title = textAt(calls, HC.get(fixture.heroId).talentName .. "：", 2012)
         check(title and near(title.x, 105) and near(title.font, 40), label .. " 真实天赋标题y2012，40号字体")
+        check(kw.text == (HC.get(fixture.heroId).talentDesc or ""),
+            label .. " 属性页仅绘制基础talentDesc，不拼接追加技/累计成长状态")
         check(near(kw.x, 105) and near(kw.y, 2048) and near(kw.w, 870),
             label .. " 真实KeywordText起点2048、折行宽870")
         check(kw.h <= 172 and kw.font >= 18 and kw.font <= 34 and kw.y + kw.h <= 2220,
@@ -804,7 +808,7 @@ local function verifyRadarNumbers(vg, label)
     check(restored(vg, prior), label .. " Stats专项恢复真实API/context/frame")
 end
 
--- 完整Draw读取真实天赋/ExtraTalent，复测fill墨迹和热区；不绑定中文输出或固定自适应字号。
+-- 完整Draw读取真实基础天赋；追加技长文单独测量回归保留，但不作为属性页oracle。
 local function verifyTalentDraw(vg, fixture, label, sharedKeyword, language)
     local prior = restorationSnapshot(vg)
     local ok, err = isolated(fixture, function(keyword, patch, defer)
@@ -821,12 +825,23 @@ local function verifyTalentDraw(vg, fixture, label, sharedKeyword, language)
             drawn.last = #calls.texts
             return drawn.h
         end)
+        local legacyDescCalls, stageStatusCalls = 0, 0
+        local legacyDesc, stageStatus = ETS.getDesc, ETS.getStageStatus
+        patch(ETS, "getDesc", function(...)
+            legacyDescCalls = legacyDescCalls + 1
+            return legacyDesc(...)
+        end)
+        patch(ETS, "getStageStatus", function(...)
+            stageStatusCalls = stageStatusCalls + 1
+            return stageStatus(...)
+        end)
         Draw.draw(vg)
-        local extra = ETS.getDesc(fixture.heroId, fixture.own.extraTalent)
-        local source = HC.get(fixture.heroId).talentDesc .. (extra ~= "" and ("\n" .. extra) or "")
+        local source = HC.get(fixture.heroId).talentDesc or ""
         check(Draw.talentKwText == sharedKeyword and drawn.text == source and near(drawn.x, 105)
             and near(drawn.y, 2048) and near(drawn.w, 870) and drawn.h <= 172
-            and keyword:lastHeight() == drawn.h, label .. " 完整Draw真实源文/成长说明/870宽172高")
+            and keyword:lastHeight() == drawn.h, label .. " 完整Draw仅基础talentDesc/870宽172高")
+        check(legacyDescCalls == 0 and stageStatusCalls == 0,
+            label .. " 属性页不调用ETS.getDesc/getStageStatus，累计状态仅归觉醒页")
         local reference = KeywordText.new()
         local height, lines = reference:measureHeight(vg, drawn.text, drawn.w, drawn.font)
         local warmH, warmLines = keyword:measureHeight(vg, drawn.text, drawn.w, drawn.font)

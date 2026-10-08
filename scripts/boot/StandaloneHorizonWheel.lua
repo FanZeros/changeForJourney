@@ -27,6 +27,7 @@ function Wheel.bind(deps)
     local DamageStatsPanel, StageSelectDialog = deps.DamageStatsPanel, deps.StageSelectDialog
     local TerminalConfirmDialog = deps.TerminalConfirmDialog
     local IntroCutscene, LetterIntro, ScenarioDialogue = deps.IntroCutscene, deps.LetterIntro, deps.ScenarioDialogue
+    local AwakeningArtwork = require("ui.character.hero.AwakeningArtwork")
 
     -- 横屏副本(5)页独占画布（全屏弹窗打开时让位）
     local function HorizonPageModalActive()
@@ -190,6 +191,13 @@ function Wheel.bind(deps)
         local marqueeGesture = gestureCtx.marqueeGesture
         local getLevelPress, cancelUnderlyingPress = gestureCtx.getLevelPress, gestureCtx.cancelUnderlyingPress
         return function(eventType, eventData)
+            local blocked = gestureCtx.artworkBlocked and gestureCtx.artworkBlocked() or false
+            AwakeningArtwork.observe(gestureCtx.RT or {}, blocked)
+            if AwakeningArtwork.hasPress() or (AwakeningArtwork.isOpen() and not blocked) then
+                AwakeningArtwork.cancelPress()
+                cancelUnderlyingPress()
+                return
+            end
             if marqueeGesture.hasPress() then marqueeGesture.observe(); return end
             -- [UpdateNoticePopup] 全窗模态吞掉滚轮
             if UpdateNoticePopup.isOpen() then return end

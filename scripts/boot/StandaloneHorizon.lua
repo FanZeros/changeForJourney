@@ -48,6 +48,7 @@ local SpinePowerUpEffect = require("ui.fx.SpinePowerUpEffect")
 local IntroCutscene      = require("ui.story.gate.IntroCutscene")
 local LetterIntro        = require("ui.story.gate.LetterIntro")
 local CharacterDetail    = require("ui.character.detail.CharacterDetail")
+local AwakeningArtwork  = require("ui.character.hero.AwakeningArtwork")
 local EquipmentBag       = require("ui.character.equip.EquipmentBag")
 local EquipCrossDrag     = require("ui.character.EquipCrossDrag")
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
@@ -157,6 +158,15 @@ local function finishFrame()
         and not TerminalConfirmDialog.isOpen() then
         SpinePowerUpEffect.draw(vg(), logicalW(), logicalH())
     end
+    -- 满觉醒影画脱离右栏 viewport，在整个游戏窗口中央以完整比例显示。
+    local artworkBlocked = StartScreen.isOpen() or DarkTitleScreen.isOpen() or LetterIntro.isOpen()
+        or IntroCutscene.isActive() or ScenarioDialogue.isActive() or RewardPopup.isOpen()
+        or PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen() or OfflineRewardPanel.isOpen()
+        or UpdateNoticePopup.isOpen() or CEPanel.isOpen() or TutorialManager.isActive()
+        or StageSelectDialog.isOpen() or SweepDialog.isOpen() or DamageStatsPanel.isOpen()
+        or TerminalConfirmDialog.isOpen() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive()
+    AwakeningArtwork.observe(RT, artworkBlocked)
+    if not artworkBlocked then AwakeningArtwork.draw(vg(), logicalW(), logicalH()) end
     -- 升级弹窗由宿主逻辑空间布局：不再借中栏 Viewport 或 1080×2400 letterbox。
     -- 所有业务/PlayerInfo/三行/通天塔绘制都已完成，Offline/Update/CE 保持原上层优先级。
     if LevelUpPopup.isOpen() then

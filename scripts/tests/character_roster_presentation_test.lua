@@ -109,7 +109,15 @@ local function setupFixture()
     fixture.originalLanguage = fixture.i18n.get()
     fixture.clock = { elapsedTime = 100 }
     fixture.captures, fixture.frameCalls, fixture.textCalls, fixture.strokes, fixture.targets = {}, {}, {}, {}, {}
+    fixture.headerAnchors, fixture.headerIcons = {}, {}
     fixture.imagePaths, fixture.imageFailures, fixture.imageCreates = {}, 0, 0
+    fixture.labelCreates,fixture.fontCreates=0,0
+    -- 仅私有模块引用转发到真实UI.Label，统计构造，不用空布局替身。
+    local observedUI=setmetatable({Label=function(props)
+        local label=UI.Label(props)
+        fixture.labelCreates=fixture.labelCreates+1
+        return label
+    end},{__index=UI})
     fixture.active, fixture.unlocked, fixture.ready, fixture.mode, fixture.ascending = 1, 3, true, "default", false
     fixture.drag = { active = false }
     fixture.HC = require("config.HeroConfig")
@@ -154,6 +162,11 @@ local function setupFixture()
             fixture.targets[key] = {cx=cx,cy=cy,w=w,h=h,panel=panel}
         end,
     }
+    env.nvgCreateFont=function(...)
+        local handle=nvgCreateFont(...)
+        fixture.fontCreates=fixture.fontCreates+1
+        return handle
+    end
     env.nvgGlobalAlpha = function(ctx, alpha)
         nvgGlobalAlpha(ctx, alpha)
         fixture.currentAlpha = alpha
@@ -181,6 +194,7 @@ local function setupFixture()
         end
     end
     env.require = function(name)
+        if name == "urhox-libs/UI" then return observedUI end
         if name == "ui.widget.DesignWidgetSurface" then return bridge end
         if name == "systems.TutorialManager" then return tutorial end
         if name == "ui.character.panel.CharacterPanel" then
@@ -208,10 +222,26 @@ local function setupFixture()
                 draw(ctx,x,y,text,size,...)
                 fixture.textCalls[#fixture.textCalls + 1] = {x=x,y=y,text=text,size=size}
             end
+            local image = mod.drawImageCentered
+            mod.drawImageCentered = function(ctx,handle,cx,cy,w,h,alpha,...)
+                image(ctx,handle,cx,cy,w,h,alpha,...)
+                if fixture.pendingHeaderTeam and w==24 and h==24
+                    and fixture.imagePaths[handle]=="image/通用图标/ICON_ZDL.png" then
+                    fixture.headerIcons[fixture.pendingHeaderTeam]={cx=cx,cy=cy,w=w,h=h,alpha=alpha,handle=handle}
+                    fixture.pendingHeaderTeam=nil
+                end
+            end
         end
         return mod
     end
     fixture.presentation = env.require("ui.character.panel.CharacterRosterPresentation")
+    local drawHeader = fixture.presentation.drawHeader
+    fixture.presentation.drawHeader = function(ctx,team,x,y,...)
+        local iconX,iconY=drawHeader(ctx,team,x,y,...)
+        fixture.headerAnchors[team]={x=iconX,y=iconY,headerX=x,headerY=y}
+        fixture.pendingHeaderTeam=team
+        return iconX,iconY
+    end
     fixture.draw = env.require("ui.character.panel.CharacterPanelDraw2")
     local D = fixture.draw
     D.setContext({
@@ -246,6 +276,7 @@ end
 local function captureStart()
     fixture.currentAlpha = 1
     fixture.captures, fixture.frameCalls, fixture.textCalls, fixture.strokes, fixture.targets = {}, {}, {}, {}, {}
+    fixture.headerAnchors, fixture.headerIcons = {}, {}
 end
 local function actualDraw(detailOpen)
     captureStart()
@@ -292,6 +323,33 @@ local function assertTextFits(widget, label)
     print(TAG .. " TEXT " .. label .. " text=" .. p.text .. " font=" .. font .. " width=" .. width
         .. " layout=" .. l.x .. "," .. l.y .. "," .. l.w .. "," .. l.h)
 end
+local function assertHeaderPowerAnchor(team, label)
+    local root=header(team)
+    local labels=root:GetChildren()
+    eq(#labels,2,label .. " only title + power Labels, no occupancy widget")
+    local power=assert(labels[2])
+    check(not power.props.text:match("^%d/4$"),label .. " no n/4 or 4/4 header text")
+    eq(power.props.textAlign,"right",label .. " power Label is right-aligned")
+    local anchor=assert(fixture.headerAnchors[team],"real drawHeader anchor absent")
+    local icon=assert(fixture.headerIcons[team],"real Draw2 header image absent")
+    local width,size=measure(power)
+    local l=power:GetAbsoluteLayout()
+    local title=labels[1]:GetAbsoluteLayout()
+    near(l.x+l.w,root:GetLayout().w,label .. " actual power right edge fixed to header right")
+    near(icon.cx,anchor.x,label .. " Draw2 consumes actual power anchor x")
+    near(icon.cy,anchor.y,label .. " Draw2 consumes actual power anchor y")
+    near(icon.cx+icon.w*.5+4,anchor.headerX+l.x+l.w-width,
+        label .. " icon right edge directly neighbors measured Label value by 4px",.05)
+    near(icon.cy,anchor.headerY+l.y+l.h*.5,label .. " icon/value vertical center")
+    check(icon.cx-icon.w*.5>=anchor.headerX+title.x+title.w,
+        label .. " actual icon never enters title Label")
+    near(icon.w,24,label .. " existing power icon width retained")
+    near(icon.h,24,label .. " existing power icon height retained")
+    near(icon.alpha,team>fixture.unlocked and .35 or 1,label .. " lock icon alpha retained")
+    assertTextFits(power,label .. "/power")
+    return icon.cx,width,size
+end
+
 local function assertUnchanged(label)
     check(same(fixture.teams,fixture.base.teams), label .. " slots untouched")
     check(same(fixture.roster,fixture.base.roster), label .. " roster ownership/level untouched")
@@ -357,43 +415,44 @@ local function runHeadersLanguage(language)
     case("actual-header-language-" .. language,function()
         fixture.i18n.set(language)
         fixture.mode,fixture.unlocked = "default",3
-        actualDraw()
-        for team=1,3 do
-            local root = header(team)
-            local labels = root:GetChildren()
-            eq(#labels,3,"actual team header three Labels " .. team)
-            eq(labels[1].props.text,string.format(EXPECTED[language][9],team),"actual displayed squad identity " .. team)
-            eq(labels[2].props.text,tostring(({3,2,1})[team]) .. "/4","actual occupied count " .. team)
-            eq(labels[3].props.text,require("core.NumberUtil").format(fixture.totals[team]),"host authoritative total not slot sum " .. team)
-            near(root:GetLayout().w,752,"actual header Yoga width")
-            near(root:GetLayout().h,44,"actual header Yoga height")
-            local left = 0
-            for i,label in ipairs(labels) do
-                local l = label:GetAbsoluteLayout()
-                near(l.x,left,"actual header nonoverlap x " .. i)
-                near(l.w,({268,72,360})[i],"actual header width " .. i)
-                if i>1 then check(l.x>=labels[i-1]:GetAbsoluteLayout().x+labels[i-1]:GetAbsoluteLayout().w+25.99,
-                    "actual team title/count/power separated " .. i) end
-                assertTextFits(label,language .. "/header" .. team .. "/label" .. i)
-                left=left+l.w+26
+        local existingHeaders={}
+        for unlocked=1,3 do
+            fixture.unlocked=unlocked
+            actualDraw()
+            local lockedFrames=0
+            for _,frame in ipairs(fixture.frameCalls) do if frame.state=="locked" then lockedFrames=lockedFrames+1 end end
+            eq(lockedFrames,(3-unlocked)*4,"real locked HeroFrames for " .. unlocked .. " unlocked teams")
+            for team=1,3 do
+                local root=header(team)
+                if existingHeaders[team] then eq(root,existingHeaders[team],"unlock/language reuses actual header tree " .. team) end
+                existingHeaders[team]=root
+                local labels=root:GetChildren()
+                local locked=team>unlocked
+                eq(#labels,2,"actual team header two Labels " .. team)
+                eq(labels[1].props.text,string.format(EXPECTED[language][9],team)
+                    .. (locked and " · " .. EXPECTED[language][10] or ""),"actual squad/lock identity " .. team)
+                eq(labels[2].props.text,locked and "—" or require("core.NumberUtil").format(fixture.totals[team]),
+                    "host authority total or locked dash, never occupancy " .. team)
+                near(root:GetLayout().w,752,"actual header Yoga width")
+                near(root:GetLayout().h,44,"actual header Yoga height")
+                for i,label in ipairs(labels) do
+                    local l=label:GetAbsoluteLayout()
+                    near(l.x,({0,392})[i],"actual title/power layout position " .. i)
+                    near(l.w,({268,360})[i],"actual header width retained " .. i)
+                    assertTextFits(label,language .. "/" .. unlocked .. "teams/header" .. team .. "/label" .. i)
+                end
+                local color=locked and {150,140,125} or ({ {90,170,255},{110,220,140},{192,132,252} })[team]
+                check(colorEqual(labels[1].props.fontColor,{color[1],color[2],color[3],locked and 155 or 255}),
+                    "actual squad color unchanged " .. team)
+                assertHeaderPowerAnchor(team,language .. "/" .. unlocked .. "teams/header" .. team)
+                if locked then
+                    check(labels[1].props.fontColor[4]<255 and labels[2].props.fontColor[4]<255,"locked header actual alpha reduced")
+                    local cx,cy=fixture.draw.avatarCenter(team,1)
+                    eq(fixture.draw.hitTestAvatarSlot(cx+fixture.draw.CONTENT_SHIFT_X,cy+fixture.draw.CONTENT_SHIFT_Y,false),nil,
+                        "locked actual avatar does not accept hit")
+                end
             end
         end
-        fixture.unlocked=1;actualDraw()
-        for team=2,3 do
-            local labels=header(team):GetChildren()
-            eq(labels[1].props.text,string.format(EXPECTED[language][9],team) .. " · " .. EXPECTED[language][10],
-                "actual locked squad title " .. team)
-            eq(labels[2].props.text,"","locked squad no false occupancy")
-            eq(labels[3].props.text,"—","locked squad no fabricated zero power")
-            check(labels[1].props.fontColor[4]<255 and labels[3].props.fontColor[4]<255,"locked header actual alpha reduced")
-            assertTextFits(labels[1],language .. "/locked-title" .. team)
-            local cx,cy=fixture.draw.avatarCenter(team,1)
-            eq(fixture.draw.hitTestAvatarSlot(cx+fixture.draw.CONTENT_SHIFT_X,cy+fixture.draw.CONTENT_SHIFT_Y,false),nil,
-                "locked actual avatar does not accept hit")
-        end
-        local locked=0
-        for _,frame in ipairs(fixture.frameCalls) do if frame.state=="locked" then locked=locked+1 end end
-        eq(locked,8,"eight actual HeroFrames locked, not just Labels")
         fixture.unlocked=3;actualDraw()
         for team=1,3 do quiet(team,1,"first unlocked snapshot " .. team) end
         assertUnchanged("header language " .. language)
@@ -485,6 +544,76 @@ local function restoreBase()
     fixture.totals,fixture.teamPowers,fixture.powers=copy(fixture.base.totals),copy(fixture.base.teamPowers),copy(fixture.base.powers)
     fixture.active,fixture.unlocked,fixture.ready=1,3,true
 end
+local function runHeaderValues()
+    case("real-header-short-long-values-fit-width-no-allocation",function()
+        restoreBase();fixture.presentation.reset();actualDraw()
+        local liveHeaders={header(1),header(2),header(3)}
+        eq(fixture.labelCreates%6,0,"only two real Labels per rebuilt team header")
+        local created,fonts,images=fixture.labelCreates,fixture.fontCreates,fixture.imageCreates
+        local values={0,9999,10000,123450,999949,999950,1000000000,9007199254740992,1e30,9999,0,1e30}
+        local numberUtil=require("core.NumberUtil")
+        for _,language in ipairs(LANGS) do
+            fixture.i18n.set(language)
+            for unlocked=1,3 do
+                fixture.unlocked=unlocked
+                local previous={}
+                for _,value in ipairs(values) do
+                    fixture.totals={value,value,value}
+                    actualDraw()
+                    for team=1,3 do
+                        eq(header(team),liveHeaders[team],"value/language/unlock update reuses real Header " .. team)
+                        local power=header(team):GetChildren()[2]
+                        eq(power.props.text,team>unlocked and "—" or numberUtil.format(value),
+                            "real NumberUtil value retained, no truncation/recalculation " .. team)
+                        local x,width=assertHeaderPowerAnchor(team,language .. "/" .. unlocked .. "teams/value" .. tostring(value) .. "/" .. team)
+                        if previous[team] then
+                            near(x-previous[team].x,previous[team].width-width,
+                                "actual icon movement follows actual Label width difference",.05)
+                        end
+                        previous[team]={x=x,width=width}
+                    end
+                end
+            end
+        end
+        -- 强制使用真实UI的自动缩字分支；长值保持NumberUtil原格式，不mock测量返回值。
+        local coreUI=require("urhox-libs/UI/Core/UI")
+        local originalAutoFit=coreUI.defaultAutoFitText
+        local ok,err=pcall(function()
+            coreUI.defaultAutoFitText=true
+            fixture.unlocked=3
+            for _,value in ipairs({1e36,0,1e36}) do
+                fixture.totals={value,value,value};actualDraw()
+                for team=1,3 do
+                    local power=header(team):GetChildren()[2]
+                    local _,_,font=assertHeaderPowerAnchor(team,"actual autofit value" .. tostring(value) .. "/" .. team)
+                    eq(power.props.text,numberUtil.format(value),"auto-fit retains full real formatted power")
+                    if value>0 then
+                        check(font<fixture.UI.Theme.FontSize(power.props.fontSize),"long value actually shrinks real Label font")
+                    else
+                        near(font,fixture.UI.Theme.FontSize(power.props.fontSize),"short value restores real Label base font")
+                    end
+                end
+            end
+        end)
+        coreUI.defaultAutoFitText=originalAutoFit
+        if not ok then error(err,0) end
+        eq(fixture.labelCreates,created,"all value/language/fit draws allocate no extra real Labels")
+        eq(fixture.fontCreates,fonts,"all header draws create no extra host fonts")
+        eq(fixture.imageCreates,images,"all header draws reuse existing power/hero images")
+        -- 空队、缺槽与满队都不重新出现人数Label，原四个真实头像仍照常绘制。
+        for count=0,4 do
+            fixture.teams[1].slots={}
+            for slot=1,4 do fixture.teams[1].slots[slot]=slot<=count
+                and {state="occupied",heroId=slot} or {state="empty"} end
+            fixture.totals[1]=43210;actualDraw()
+            eq(#header(1):GetChildren(),2,"occupancy " .. count .. "/4 has no occupancy Label")
+            eq(header(1):GetChildren()[2].props.text,numberUtil.format(43210),"occupancy cannot replace authority value")
+            assertHeaderPowerAnchor(1,"occupancy " .. count .. "/4")
+        end
+        restoreBase();fixture.presentation.reset();actualDraw();assertUnchanged("long-value fixture restored")
+    end)
+end
+
 local function runObservation()
     case("real-snapshot-wallclock-change-level-power-expire-reset",function()
         local P=fixture.presentation
@@ -516,9 +645,9 @@ local function runObservation()
         fixture.clock.elapsedTime=102.2;actualDraw()
         local gain=feedback(2,nil)
         check(gain[4]>0 and gain[4]<1,"real host team total gain produces positive header pulse")
-        eq(header(2):GetChildren()[3].props.text,require("core.NumberUtil").format(fixture.totals[2]),
+        eq(header(2):GetChildren()[2].props.text,require("core.NumberUtil").format(fixture.totals[2]),
             "actual glowing header still shows authority final value")
-        check(header(2):GetChildren()[3].props.fontColor[2]>219,"actual header power color contains pulse")
+        check(header(2):GetChildren()[2].props.fontColor[2]>219,"actual header power color contains pulse")
         near(feedback(2,1)[3],0,"total-only growth does not pulse unchanged hero")
         actualDraw();near(feedback(2,nil)[4],gain[4],"same clock multiple header Draws stable")
         fixture.clock.elapsedTime=102.7;actualDraw();quiet(2,1,"power expired")
@@ -766,7 +895,8 @@ local function runStage()
     elseif stage==12 then runObservation()
     elseif stage==13 then runActualGeometry()
     elseif stage==14 then runVisibleRoster()
-    elseif stage==15 then runLifecycle() end
+    elseif stage==15 then runHeaderValues()
+    elseif stage==16 then runLifecycle() end
 end
 local function setupVisual()
     fixture.i18n.set(state.language);fixture.mode,fixture.ascending="power",false
@@ -823,7 +953,8 @@ function HandleRosterPresentationRender(_eventType,_eventData)
                     for _,b in ipairs(root:GetChildren()) do assertTextFits(b,"visual toolbar") end
                     for t=1,3 do
                         local labels=header(t):GetChildren()
-                        eq(labels[3].props.text,require("core.NumberUtil").format(fixture.totals[t]),"visual authority team "..t)
+                        eq(labels[2].props.text,require("core.NumberUtil").format(fixture.totals[t]),"visual authority team "..t)
+                        assertHeaderPowerAnchor(t,"visual team "..t)
                         for _,label in ipairs(labels) do assertTextFits(label,"visual team "..t) end
                     end
                     local f=feedback(1,1)
@@ -840,7 +971,7 @@ function HandleRosterPresentationRender(_eventType,_eventData)
         if not ended then check(false,"actual EndFrame "..tostring(frameErr)) end
     end
     if not ok then check(false,"actual frame "..tostring(err)) end
-    if not ok or (state.visual and state.frames>=150) or (not state.visual and state.stage>=15) then summarize() end
+    if not ok or (state.visual and state.frames>=150) or (not state.visual and state.stage>=16) then summarize() end
 end
 
 function Stop()

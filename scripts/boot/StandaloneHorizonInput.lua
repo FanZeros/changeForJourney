@@ -37,6 +37,7 @@ local TerminalConfirmDialog = require("ui.battle.popup.TerminalConfirmDialog")
 local IntroCutscene      = require("ui.story.gate.IntroCutscene")
 local LetterIntro        = require("ui.story.gate.LetterIntro")
 local CharacterDetail    = require("ui.character.detail.CharacterDetail")
+local AwakeningArtwork  = require("ui.character.hero.AwakeningArtwork")
 local EquipmentBag       = require("ui.character.equip.EquipmentBag")
 local EquipCrossDrag     = require("ui.character.EquipCrossDrag")
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
@@ -312,8 +313,26 @@ function Input.bind(ctx)
     local tutorialStartX, tutorialStartY = 0, 0
     local tutorialEntryPress = nil ---@type any
 
+    local function artworkBlocked()
+        return StartScreen.isOpen() or DarkTitleScreen.isOpen() or LetterIntro.isOpen()
+            or IntroCutscene.isActive() or ScenarioDialogue.isActive() or RewardPopup.isOpen()
+            or PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen() or OfflineRewardPanel.isOpen()
+            or UpdateNoticePopup.isOpen() or CEPanel.isOpen() or TutorialManager.isActive()
+            or StageSelectDialog.isOpen() or SweepDialog.isOpen() or DamageStatsPanel.isOpen()
+            or TerminalConfirmDialog.isOpen() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive()
+    end
+
+    -- 全图持有整次指针手势，失效后的松手也不能落到原页面或后来出现的弹窗。
+    local artworkPointer = AwakeningArtwork.bindInput({ runtime = RT, blocked = artworkBlocked,
+        cancelUnderlyingPress = cancelUnderlyingPress, source = ctx.pointerSource,
+        position = function()
+            local mp = pointerPosition()
+            return toDesign(mp.x / dpr(), mp.y / dpr())
+        end })
+
     function HandleMouseButtonDownHorizon(eventType, eventData)
         local button = eventData["Button"]:GetInt()
+        if artworkPointer("down", button) then return end
         if marqueeGesture.hasPress() then
             if button ~= MOUSEB_RIGHT then marqueeGesture.cancel() end
             return
@@ -611,6 +630,7 @@ function Input.bind(ctx)
     end
 
     function HandleMouseMoveHorizon(eventType, eventData)
+        if artworkPointer("move", MOUSEB_LEFT) then return end
         if marqueeGesture.hasPress() then
             local mp = pointerPosition()
             local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
@@ -787,6 +807,8 @@ function Input.bind(ctx)
     -- 鼠标静止时也推进装备悬停计时（Standalone.HandleUpdate 每帧调用）。
     -- 移到其他格子由命中检测立即收起旧说明。
     function HandleEquipmentHoverTickHorizon()
+        AwakeningArtwork.observe(RT, artworkBlocked())
+        if AwakeningArtwork.isOpen() or AwakeningArtwork.hasPress() then return end
         ctx.observeTowerPress()
         if marqueeGesture.hasPress() then return end
         if TowerBattleScene.isActive() or towerPress then return end
@@ -823,6 +845,7 @@ function Input.bind(ctx)
     end
 
     function HandleMouseButtonUpHorizon(eventType, eventData)
+        if artworkPointer("up", eventData["Button"]:GetInt()) then return end
         if marqueeGesture.hasPress() then
             if eventData["Button"]:GetInt() == MOUSEB_RIGHT and ctx.pointerSource() == "mouse" then
                 local mp = pointerPosition()
@@ -1348,6 +1371,13 @@ function Input.bind(ctx)
     end
 
     function HandleTouchBeginHorizon(eventType, eventData)
+        if AwakeningArtwork.hasPress() or (AwakeningArtwork.isOpen() and not artworkBlocked()) then
+            AwakeningArtwork.captureTouch(eventData["TouchID"]:GetInt())
+            if activeTouchId ~= nil then return end
+            activeTouchId = eventData["TouchID"]:GetInt()
+            dispatchTouch(eventType, eventData, HandleMouseButtonDownHorizon)
+            return
+        end
         if handleTopTouch(eventData, false) then return end
         if levelUpInputActive() then
             cancelUnderlyingPress()
@@ -1378,6 +1408,10 @@ function Input.bind(ctx)
         -- 模态可能在拖拽中途出现；主指结束时即释放所有权，早退分支也不得锁住下一指。
         local releasedActive = eventData["TouchID"]:GetInt() == activeTouchId
         if releasedActive then activeTouchId = nil end
+        if AwakeningArtwork.releaseTouch(eventData["TouchID"]:GetInt()) then
+            if releasedActive then dispatchTouch(eventType, eventData, HandleMouseButtonUpHorizon) end
+            return
+        end
         if releasedActive and towerPress then
             dispatchTouch(eventType, eventData, HandleMouseButtonUpHorizon)
             return
@@ -1427,6 +1461,10 @@ function Input.bind(ctx)
     end
 
     function HandleTouchMoveHorizon(eventType, eventData)
+        if AwakeningArtwork.hasTouch(eventData["TouchID"]:GetInt()) then
+            if eventData["TouchID"]:GetInt() == activeTouchId then dispatchTouch(eventType, eventData, HandleMouseMoveHorizon) end
+            return
+        end
         if eventData["TouchID"]:GetInt() == activeTouchId and seamGesture and seamGesture.hasPress() then
             dispatchTouch(eventType, eventData, HandleMouseMoveHorizon)
             return
@@ -1454,7 +1492,7 @@ function Input.bind(ctx)
 
     HandleMouseWheelHorizon = horizonWheel.bindWheel({
         marqueeGesture = marqueeGesture, getLevelPress = function() return levelPress end,
-        cancelUnderlyingPress = cancelUnderlyingPress,
+        cancelUnderlyingPress = cancelUnderlyingPress, artworkBlocked = artworkBlocked, RT = RT,
     })
 
 end

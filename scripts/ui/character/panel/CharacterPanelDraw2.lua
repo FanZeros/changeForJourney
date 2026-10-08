@@ -446,11 +446,9 @@ function M.drawTeamAvatars(vg)
         local slots = teams[t] and teams[t].slots
         local powerCaches = getTeamPowerCaches and getTeamPowerCaches() or {}
         local cache = powerCaches[t] or {}
-        local teamPower, occupiedCount = 0, 0
+        local teamPower = 0
         for s = 1, M.MAX_SLOTS do
             teamPower = teamPower + (cache[s] or 0)
-            local slot = slots and slots[s]
-            if slot and slot.state == "occupied" and slot.heroId then occupiedCount = occupiedCount + 1 end
         end
         if getTeamTotalPower then teamPower = getTeamTotalPower(t) end
         Presentation.observe(t, slots, teamPower, activeIdx, function(heroId)
@@ -479,9 +477,9 @@ function M.drawTeamAvatars(vg)
             nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], pressed and 48 or 22))
             nvgFill(vg)
         end
-        Presentation.drawHeader(vg, t, frameX + 20, frameY + 6, tc, locked, occupiedCount, teamPower)
+        local powerIconX, powerIconY = Presentation.drawHeader(vg, t, frameX + 20, frameY + 6, tc, locked, teamPower)
         if img.power and img.power > 0 then
-            drawImageCentered(vg, img.power, frameX + 424, frameY + 28, 24, 24, locked and .35 or 1)
+            drawImageCentered(vg, img.power, powerIconX, powerIconY, 24, 24, locked and .35 or 1)
         end
         for s = 1, M.MAX_SLOTS do
             drawAvatarSlot(vg, t, s, slots and slots[s], locked)

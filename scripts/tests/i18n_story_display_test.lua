@@ -135,6 +135,91 @@ function Start()
         check(Story.lookup("unregistered", "en") == nil, "未知源文nil")
         check(Story.lookup("image/角色立绘/大狗嚼.png", "ja") == nil, "资源名不翻译")
 
+        -- 更名源文/碎片/双端商品/入场对白与动态觉醒模板均使用真实词典。
+        local renamedHC = require("config.HeroConfig")
+        local ResourceDefs = require("config.ResourceDefs")
+        local TavernConfig = require("config.TavernConfig")
+        local DialogueConfig = require("config.DialogueConfig")
+        local AwakeningConfig = require("config.AwakeningConfig")
+        local DictExtra = require("core.I18nDictExtra")
+        local ETS = require("systems.ExtraTalentSystem")
+        check(renamedHC.get(6).name == "压一压" and renamedHC.getIdByName("压一压") == 6
+            and renamedHC.get(6).talentId == "luna_lightning", "压一压只改名，英雄ID与天赋ID不改")
+        check(ResourceDefs.REWARD_NAMES["106"] == "压一压碎片"
+            and ResourceDefs.SHARD_ID_TO_HERO["106"] == 6
+            and TavernConfig.getShopItem(7).name == "压一压-碎片"
+            and TavernConfig.getShopItem(7).rewardHeroId == 6 and TavernConfig.getShopItem(7).price == 60,
+            "压一压资源/商城显示源文一致，奖励ID与价格不改")
+        check(DialogueConfig.get(6, "entry") == "Are you OK~？压一压~", "压一压真实入场对白同步")
+        local portraitPath = require("config.HeroAssetUtil").getPortraitPath(6)
+        check(portraitPath == "image/角色立绘/阿姨压_透明立绘.png",
+            "压一压展示改名仍保留既有立绘资源路径")
+        local portraitFile = cache:GetFile(portraitPath)
+        local portraitReadable = false
+        if portraitFile then
+            local readOk, header = pcall(function()
+                local bytes = {}
+                for i = 1, 8 do bytes[i] = string.char(portraitFile:ReadUByte()) end
+                return table.concat(bytes)
+            end)
+            portraitFile:Dispose()
+            portraitReadable = readOk and header == "\137PNG\r\n\26\n"
+        end
+        check(portraitReadable, "压一压既有立绘由真实资源cache读取到PNG签名")
+        check(renamedHC.get(23).talentDesc == "过量治疗先补足目标护盾，超过护盾上限的部分再转为临时护盾（最多为目标护盾上限的50%）。"
+            and AwakeningConfig.getNodeEffect(23, 2):find("20%", 1, true) ~= nil,
+            "真布基础天赋删除觉醒句，正式共鸣效果仍保留")
+        check(AwakeningConfig.getNodeEffect(17, 1):find("每次击杀永久魔法攻击+0.2", 1, true) ~= nil,
+            "蓝鱼初醒源文包含真实魔攻成长")
+        for _, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+            I18n.set(lang)
+            for _, original in ipairs({ renamedHC.get(6).name, renamedHC.getShardName(6),
+                ResourceDefs.REWARD_NAMES["106"], TavernConfig.getShopItem(7).name,
+                DialogueConfig.get(6, "entry"), AwakeningConfig.getNodeEffect(17, 1), renamedHC.get(23).talentDesc,
+                "查看全图", "点击关闭" }) do
+                local expected = lang == "zh_CN" and original or DictExtra[lang][original]
+                check(expected ~= nil and I18n.lookup(original) == expected and utf8.len(expected) ~= nil,
+                    lang .. "更名/初醒/基础天赋完整源文精确翻译")
+            end
+            local e = { stacks = 10, splitKills = 42, biteTypes = { fire = true }, tickets = { [3] = true },
+                preciseStored = 3, blockBank = 7, conquerCarry = 6, beamCharges = 2,
+                markTypes = { ice = true }, slashShadows = 4, iceStatues = 3, gatlingKills = 160 }
+            local dynamic = {
+                { 12, 1, "魔攻 +%.1f · 累计冰冻成长 +%.2f%%（总概率上限80%%）", 2, 0.5 },
+                { 15, 1, "生命上限 +%d · 累计复活成长 +%.1f%%（总概率上限80%%）", 20, 5 },
+                { 22, 1, "累计课时缩短 %.2f（最短8次攻击）", 8 },
+                { 17, 1, "魔攻 +%.1f", 2 }, { 18, 1, "暴击率 +%.1f%%", 1 },
+                { 19, 1, "魂火 +%.2f", 0.5 }, { 24, 1, "生命上限 +%d", 10 },
+                { 25, 1, "物攻 +%.1f", 3 }, { 1, 2, "图鉴 %d/8", 1 },
+                { 3, 2, "预存精准 %d/5", 3 }, { 4, 2, "武德库存 %d", 7 },
+                { 5, 2, "开场甲片 %d", 6 }, { 7, 2, "预存光线 %d/3", 2 },
+                { 8, 2, "仇种 %d/8", 1 }, { 11, 2, "斩影 %d/4", 4 },
+                { 12, 2, "冰雕 %d/3", 3 }, { 13, 2, "分裂击杀 %d · 额外弹射 +%d", 42, 5 },
+                { 15, 2, "预存票 %d", 1 }, { 22, 2, "预存连打 %d/10", 10 },
+            }
+            for _, sample in ipairs(dynamic) do
+                local template = lang == "zh_CN" and sample[3] or DictExtra[lang][sample[3]]
+                check(template ~= nil and ETS.getStageStatus(sample[1], sample[2], e)
+                    == string.format(template, table.unpack(sample, 4)), lang .. "阶段状态先翻模板后填真实数值")
+            end
+            local highGrowth = { stacks = 2000, gatlingKills = 400 }
+            local highExpected = {
+                { 12, "魔攻 +%.1f · 累计冰冻成长 +%.2f%%（总概率上限80%%）", 400, 100 },
+                { 15, "生命上限 +%d · 累计复活成长 +%.1f%%（总概率上限80%%）", 4000, 1000 },
+                { 22, "累计课时缩短 %.2f（最短8次攻击）", 12 },
+            }
+            for _, sample in ipairs(highExpected) do
+                local template = lang == "zh_CN" and sample[2] or DictExtra[lang][sample[2]]
+                check(template ~= nil and ETS.getStageStatus(sample[1], 1, highGrowth)
+                    == string.format(template, table.unpack(sample, 3)),
+                    lang .. "高层累计成长保留raw来源与实际总上限说明")
+            end
+            check(highGrowth.stacks == 2000 and highGrowth.gatlingKills == 400,
+                lang .. "高层阶段展示不修改快照")
+            check(ETS.getStageStatus(17, 3, e) == "", lang .. "蜕变不编造状态数值")
+        end
+        I18n.set("zh_CN")
+
         -- 已翻译片段必须绕 lookup：将 lookup 改为抛错，然后绘制预折行行前缀。
         I18n.set("en")
         local source = Config.OPENING.steps[1].text
@@ -535,7 +620,7 @@ function Start()
             == Config.getAppearance({ characterId = 10, name = "愤怒的铁匠" }),
             "两种铁匠称呼共享明确的无图映射，不回退英雄10")
         check(HC.get(21).name == "雷电麦坤" and HC.get(4).name == "接化发掌门"
-            and HC.get(6).name == "阿姨压" and HC.get(7).name == "信光机兵"
+            and HC.get(6).name == "压一压" and HC.get(7).name == "信光机兵"
             and HC.get(8).name == "愤怒的小雀", "英雄本体名字及编号未被剧情映射改写")
         check(Config.getAppearance(nil).heroId == nil
             and Config.getAppearance({ name = "旁白" }).heroId == nil, "旁白不借用头像/立绘")

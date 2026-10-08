@@ -5,8 +5,8 @@
 --       硬编码叠层链、以及 bruteEntries 的 `if heroId == N` 属性映射链，
 --       抽成「数据表 + 执行器」，方便后续按角色调整触发口径/成长曲线。
 --
--- ⚠️ 本文件当前为「纯等价重构」：数值与旧硬编码链 100% 一致，无任何平衡改动。
---    多元化（方案1）通过修改本表的 cond / fields / cap / curve 实现，
+-- 既有角色保留原成长口径；#17 蓝色大肥鱼补齐任意击杀 stacks+1→魔攻+0.2。
+-- 后续成长调整通过修改本表的 cond / fields / cap / curve 实现，
 --    不再回到 ExtraTalentSystem 里写 if heroId == N。
 --
 -- 两块数据：
@@ -68,6 +68,7 @@ AG.RULES = {
     -- #14 内鬼（杠杆②）：暴击击杀 ×2（原任意击杀 ×1）
     [14] = { cond = "critKill",  fields = { { "stacks", 2 } } },
     [16] = { cond = "any",       fields = { { "swordStacks", 1 }, { "stacks", 1 } } },
+    [17] = { cond = "any",       fields = { { "stacks", 1 } } },
     -- #18 老六（杠杆②）：暴击击杀 ×2（原任意击杀 ×1）
     [18] = { cond = "critKill",  fields = { { "stacks", 2 } } },
     [19] = { cond = "any",       fields = { { "stacks", 1 } } },
@@ -105,6 +106,7 @@ AG.ATTR_MAP = {
         { field = "stacks", key = AD.MAG_ATK_BONUS,  mult = 0.1 },
     },
     [15] = { { field = "stacks",        key = AD.MAX_HP,          mult = 2    } },
+    [17] = { { field = "stacks",        key = AD.MAG_ATK,         mult = 0.2  } },
     [18] = { { field = "stacks",        key = AD.CRIT_RATE,       mult = 0.1  } },
     [19] = { { field = "stacks",        key = AD.SPI,             mult = 0.05 } },
     [23] = { { field = "shieldStacks",  key = AD.ENERGY_SHIELD,   mult = 1    } },

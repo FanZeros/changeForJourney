@@ -3,7 +3,10 @@ local engineRequire = require
 local mocks = {}
 rawset(_G, "require", function(name) return mocks[name] or engineRequire(name) end)
 local noop = function() end
-local capture = { enabled = false, paths = {}, fills = {}, strokes = {}, paints = {}, labels = {} }
+local capture = { enabled = false, paths = {}, fills = {}, strokes = {}, paints = {}, labels = {}, statuses = {} }
+local expectedStatuses = { "", "", "" }
+local expectedExtra = {}
+local expectedHeroId = 1
 local path = { points = {}, closed = false }
 local fill = { kind = "color", color = {} }
 local stroke = { color = {}, width = 0 }
@@ -15,6 +18,7 @@ local hasCG = false
 local vg = {}
 local assertions = 0
 local frames = 0
+local restoreStageStatus = function() end
 
 local function check(condition, message)
     assertions = assertions + 1
@@ -30,9 +34,9 @@ end)
 rawset(_G, "time", clock)
 mocks["systems.ButtonFeedback"] = { begin = function() return false end, finish = noop }
 mocks["core.DrawUtil"] = {
-    drawTextStroke = function(_, x, y, text)
+    drawTextStroke = function(_, x, y, text, size)
         if capture.enabled then
-            capture.labels[#capture.labels + 1] = { x = x, y = y, text = text }
+            capture.labels[#capture.labels + 1] = { x = x, y = y, text = text, size = size }
         end
     end,
     drawImageCentered = noop, drawShardIcon = noop,
@@ -42,6 +46,7 @@ mocks["core.DrawUtil"] = {
 mocks["core.I18n"] = {
     lookup = function(text) return text end,
     get = function() return "zh-CN" end,
+    format = string.format,
     displayText = function(...) return nvgText(...) end,
     displayBounds = function(...) return nvgTextBounds(...) end,
 }
@@ -141,12 +146,13 @@ end
 
 local function drawFrame(Panel, heroId)
     capture.paths, capture.fills, capture.strokes, capture.paints, capture.labels = {}, {}, {}, {}, {}
+    capture.statuses = {}
     capture.enabled = true
     Panel.draw(vg, heroId)
     capture.enabled = false
     frames = frames + 1
     return { paths = capture.paths, fills = capture.fills, strokes = capture.strokes,
-        paints = capture.paints, labels = capture.labels }
+        paints = capture.paints, labels = capture.labels, statuses = capture.statuses }
 end
 
 local function samplingSignature(frame)
@@ -165,11 +171,21 @@ local function checkFrame(frame, count, selected, available, context)
     check(#frame.paths == pathsPerSlice * 3, context .. "只允许暗底/CG/罩/单框所需路径")
     check(#frame.fills == fillsPerSlice * 3, context .. "填充层数固定，无图仍保留暗底和状态罩")
     check(#frame.paints == (available and 3 or 0), context .. "三片共用CG或完整缺图回退")
-    local overlays, states = {}, {}
+    local overlays, states = {}, { {}, {}, {} }
+    local stateCenters = { 228, 540, 852 }
     for _, label in ipairs(frame.labels) do
-        if label.y == 1782 then states[#states + 1] = label.text end
+        if label.y >= 1500 and label.y <= 1782 then
+            local owner = nil
+            for i, cx in ipairs(stateCenters) do if label.x == cx then owner = i end end
+            check(owner ~= nil, context .. "状态正文必须居中于真实切片底边")
+            states[owner][#states[owner] + 1] = label
+        end
     end
-    check(#states == 3, context .. "必须真实绘制三片状态标签")
+    check(#frame.statuses == count, context .. "只对已嵌合阶调用真实ETS.getStageStatus")
+    for i, call in ipairs(frame.statuses) do
+        check(call.heroId == expectedHeroId and call.stage == i and call.extra == expectedExtra
+            and call.text == expectedStatuses[i], context .. "累计状态必须取该英雄显式extraTalent，不能读旧hero或默认档")
+    end
     for i = 1, 3 do
         for layer = 1, pathsPerSlice do
             checkPath(frame.paths[(i - 1) * pathsPerSlice + layer], polygons[i], context .. "切片" .. i)
@@ -183,8 +199,26 @@ local function checkFrame(frame, count, selected, available, context)
             and sameColor(overlay.source.color, i <= count and goldOverlay or darkOverlay),
             context .. "active金色罩22，next/locked统一暗罩110")
         overlays[i] = overlay.source.color
-        local expectedState = i <= count and "已嵌合" or (i == count + 1 and "可嵌合" or "未解锁")
-        check(states[i] == expectedState, context .. "夹具必须覆盖真实active/next/locked状态")
+        local expectedState = i <= count and ("已嵌合"
+            .. (expectedStatuses[i] ~= "" and (" · " .. expectedStatuses[i]) or ""))
+            or (i == count + 1 and "可嵌合" or "未解锁")
+        local lines = states[i]
+        check(#lines > 0 and lines[#lines].y == 1782,
+            context .. "必须真实绘制每片状态，末行仍固定1782不压阶段标题")
+        local fragments = {}
+        local maxWidth = i == 2 and 220 or 316
+        for row, line in ipairs(lines) do
+            fragments[#fragments + 1] = line.text
+            local width = 0
+            for _, cp in utf8.codes(line.text) do width = width + (cp > 127 and line.size or line.size * 0.55) end
+            check(line.size >= 18 and line.size <= 22 and width <= maxWidth + 0.00001
+                and line.y == 1782 - (#lines - row) * (line.size + 5),
+                context .. "状态逐行向上完整换行，18..22可读字号且不越斜边安全宽")
+        end
+        check(table.concat(fragments) == expectedState,
+            context .. "恢复所有相邻行后应为真实已嵌合+累计状态或next/locked，不截任何字符")
+        if i > count then check(#lines == 1 and lines[1].size == 22,
+            context .. "未嵌合next/locked保持原单行标签，不泄露累计状态") end
         if available then
             local imageFill = frame.fills[firstFill + 1]
             local paint = frame.paints[i]
@@ -238,6 +272,22 @@ function Start()
         local Panel = require("ui.character.hero.AwakeningPanel")
         local Config = require("config.AwakeningConfig")
         local KeywordText = require("ui.widget.KeywordText")
+        local ETS = require("systems.ExtraTalentSystem")
+        local Artwork = require("ui.character.hero.AwakeningArtwork")
+        check(type(Artwork.close) == "function", "AwakeningArtwork使用真实模块，不以未知require失败或空依赖掩盖")
+        local realStageStatus = ETS.getStageStatus
+        ETS.getStageStatus = function(heroId, stage, extra)
+            local text = realStageStatus(heroId, stage, extra)
+            if capture.enabled then capture.statuses[#capture.statuses + 1] = {
+                heroId = heroId, stage = stage, extra = extra, text = text } end
+            return text
+        end
+        restoreStageStatus = function() ETS.getStageStatus = realStageStatus end
+        local function prepareStatuses(heroId, extra)
+            expectedHeroId, expectedExtra = heroId, extra
+            expectedStatuses = {}
+            for stage = 1, 3 do expectedStatuses[stage] = realStageStatus(heroId, stage, extra) end
+        end
         local realDraw = Panel.kwText.draw
         local expectedY = 1963 - 139 * 0.5
         local draws = 0
@@ -277,7 +327,17 @@ function Start()
         check(draws == 3, "必须真实调用觉醒正文绘制")
         check(checks > 3, "原关键词热区回归不得因空mock而失效")
 
-        local ownedData = { shards = 150, awakening = { _awk3Migrated = true } }
+        local ownedData = { shards = 150, awakening = { _awk3Migrated = true }, extraTalent = ETS.normalize({
+            stacks = 12345, biteTypes = { slash = true, crush = true, fire = true },
+            burnKills = 6789, blockBank = 99999, shockKills = 8888, preciseStored = 5,
+            beamCharges = 3, markTypes = { slash = true, frost = true }, slashShadows = 4,
+            splitKills = 1234, tickets = { fixture = true }, gatlingKills = 2345,
+            overflowCount = 54321, shareCount = 9000, nitroKills = 56789,
+            swordStacks = 4321, gateStacks = 7654, shieldStacks = 999999,
+        }) }
+        prepareStatuses(1, ownedData.extraTalent)
+        check(expectedStatuses[1] == "生命上限 +12345" and expectedStatuses[2] == "图鉴 3/8"
+            and expectedStatuses[3] == "", "累计状态positive fixture包含真实增益/收藏而蜕变不编造持久数值")
         Panel.setOwnedDataGetter(function() return ownedData end)
         local probes = hotspotProbes()
         local selectionTimes = { 0, 0.53, 13 }
@@ -320,11 +380,45 @@ function Start()
                 end
             end
         end
+        -- 每个英雄的0/1/2/3阶段状态均取真实ETS；长数值不截字，刷新不能沿用上次累计量。
+        -- CG/单框/正文锚点断言继续经过同一个真实Panel.draw，原899帧矩阵不删。
+        local cumulativeExtra = ownedData.extraTalent
+        for heroId = 1, 25 do
+            for _, extra in ipairs({ cumulativeExtra, ETS.normalize(nil) }) do
+                local savedExtra = {}
+                for key, value in pairs(extra) do
+                    if type(value) == "table" then
+                        savedExtra[key] = {}
+                        for field, item in pairs(value) do savedExtra[key][field] = item end
+                    else savedExtra[key] = value end
+                end
+                ownedData.extraTalent = extra
+                prepareStatuses(heroId, extra)
+                for count = 0, 3 do
+                    ownedData.awakening = { _awk3Migrated = true }
+                    for stage = 1, count do ownedData.awakening[stage] = true end
+                    Panel.reset(heroId)
+                    local frame = drawFrame(Panel, heroId)
+                    checkFrame(frame, count, math.min(count + 1, 3), true,
+                        "hero=" .. heroId .. " cumulative=" .. extra.stacks .. " count=" .. count)
+                end
+                local unchanged = true
+                for key, value in pairs(savedExtra) do
+                    if type(value) == "table" then
+                        for field, item in pairs(value) do unchanged = unchanged and extra[key][field] == item end
+                        for field in pairs(extra[key]) do unchanged = unchanged and value[field] ~= nil end
+                    else unchanged = unchanged and extra[key] == value end
+                end
+                for key in pairs(extra) do unchanged = unchanged and savedExtra[key] ~= nil end
+                check(unchanged, "hero" .. heroId .. " getStageStatus/Panel.draw只读extraTalent，不归一化写回玩家值")
+            end
+        end
         check(draws == frames + 3, "每个描边/热区样本均须经过真实Panel.draw和正文绘制")
         Panel.kwText.draw = realDraw
         print("[awakening_text_layout_test] ALL PASS assertions=" .. assertions
             .. " checks=" .. checks .. " panelFrames=" .. (frames + 3))
     end)
+    restoreStageStatus()
     rawset(_G, "nvgRGBA", nativeRGBA)
     rawset(_G, "time", nativeTime)
     if not ok then

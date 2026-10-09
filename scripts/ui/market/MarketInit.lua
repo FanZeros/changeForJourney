@@ -34,15 +34,13 @@ function M.bind(deps)
         end
 
         -- 弹窗
-        -- [清理 0929] UI_TY_EJQRK.png 加载已移除：弹窗背景改由 DarkIcon.drawNine 矢量绘制，贴图从未使用
+        -- 弹窗背景由 DarkIcon.drawNine 矢量绘制
         img.buyBtnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
         img.btnMinus = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png", 0)
         img.btnPlus = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)
-        -- [暗黑化 P1-B5] 原 image/界面底板/商店/UI_SD_AN.png 贴图加载已移除（矢量绘制替代）
         -- [图标统一 0928] diamondIcon 与 gem 同贴图，复用句柄避免重复加载（无 delete，复用安全）
         img.diamondIcon = img.gem
         for i = 1, 6 do
-        -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）
         end
 
         -- 典藏（神器宝箱）图片已随页签迁移至 ChurchArtifactDrawPanel

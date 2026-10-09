@@ -13,7 +13,7 @@ local AD             = require("systems.AttributeDef")
 local CharacterPanel = require("ui.character.panel.CharacterPanel")
 local GameState      = require("core.GameState")
 local BF             = require("systems.ButtonFeedback")
-local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon       = require("core.DarkIcon")  -- 矢量九宫格
 local NumberUtil     = require("core.NumberUtil")
 local KeywordText    = require("ui.widget.KeywordText")
 local EquipmentPower = require("systems.EquipmentPower")
@@ -829,7 +829,7 @@ function M.drawConfirmPopup(vg)
     nvgTranslate(vg, -C.bgCX, -C.bgCY)
     nvgGlobalAlpha(vg, popProgress)
 
-    -- 弹窗面板背景（彩色职业底图已删除，改用深色矢量面板）
+    -- 弹窗面板背景（深色矢量面板）
     DarkIcon.drawNine(vg, "panel",
         C.bgCX - C.bgW * 0.5, C.bgCY - C.bgH * 0.5, C.bgW, C.bgH)
 

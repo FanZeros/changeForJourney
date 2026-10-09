@@ -57,7 +57,7 @@ function Viewport.finish(vg)
     nvgRestore(vg)
 end
 
---- [横屏接线 0928] 按本帧 begin 记录的变换重建指定面板的设计空间。
+--- 按本帧 begin 记录的变换重建指定面板的设计空间。
 --- 供新手引导层在各面板内容之上、用与内容一致的坐标绘制高亮/蒙层。
 --- @param vg any
 --- @param id string 面板 id ('left'|'center'|'right')

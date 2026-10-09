@@ -7,7 +7,7 @@
 ---@diagnostic disable: undefined-global
 
 local DrawUtil         = require("core.DrawUtil")
-local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
+local DarkIcon         = require("core.DarkIcon")  -- 品质底框矢量绘制
 local GameState        = require("core.GameState")
 local PlayerStore      = require("core.PlayerStore")
 local AffixConfig      = require("config.AffixConfig")
@@ -929,7 +929,7 @@ local function drawExtraResPopup(vg)
             nvgFill(vg)
         end
 
-        -- 品质背景 + 图标（小尺寸）[暗黑化 P2-A]
+        -- 品质背景 + 图标（小尺寸）
         DarkIcon.drawQualityBg(vg, opt.quality, iconX, itemY, 56, 56, 1.0)
         local icon = imgExtraRes[opt.key]
         if icon and icon >= 0 then
@@ -984,7 +984,7 @@ function M.drawPanelBottom(vg)
 
     -- 4b. 资源槽位：选中石头显示石头消耗；未选/选精粹显示精粹消耗
     if selectedExtraRes and selectedExtraRes.key ~= "essence" then
-        -- 已选择石头：显示品质背景 + 资源图标 [暗黑化 P2-A]
+        -- 已选择石头：显示品质背景 + 资源图标
         DarkIcon.drawQualityBg(vg, selectedExtraRes.quality, XL.EXTRA_ICON_CX, XL.EXTRA_ICON_CY, XL.EXTRA_ICON_SIZE, XL.EXTRA_ICON_SIZE, 1.0)
         local icon = imgExtraRes[selectedExtraRes.key]
         if icon and icon >= 0 then

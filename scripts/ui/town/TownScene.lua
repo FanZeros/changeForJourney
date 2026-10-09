@@ -16,7 +16,7 @@ local function isChurchAccessible()
     end
     return (tonumber(GameState.getLevel()) or 1) >= CHURCH_UNLOCK_LEVEL
 end
-local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
+local DarkIcon       = require("core.DarkIcon")  -- 矢量图标库
 local HorizonBg      = require("core.HorizonBg")  -- [横屏三联] 左右共享大背景
 local ExpTable   = require("config.ExpTable")
 local BF         = require("systems.ButtonFeedback")
@@ -507,7 +507,7 @@ function TownScene.draw(vg)
             SMITH_TEXT_X, SMITH_TEXT_Y, "狱火锻炉")
     end
     if smithLocked then
-        -- [关卡门控] 铁匠铺按"通关 2-4"解锁，锁标显示具体条件（原先只有锁图标）
+        -- 铁匠铺按"通关 2-4"解锁，锁标显示具体条件
         drawBuildingLockOverlay(vg, SMITH_CX, SMITH_CY, "smith", true, nil, getStageUnlockLabel("smith"))
     end
     -- [分解入仓 0929] 背包满红点已迁到仓库建筑（分解入口在仓库），铁匠铺不再显示

@@ -8,7 +8,7 @@ local NumberUtil     = require("core.NumberUtil")
 local CharacterPanel = require("ui.character.panel.CharacterPanel")
 local HeroAssetUtil   = require("config.HeroAssetUtil")
 local HeroConfig     = require("config.HeroConfig")
-local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
+local DarkIcon       = require("core.DarkIcon")  -- 矢量图标库
 local BottomNav      = require("ui.hud.BottomNav")
 local I18n           = require("core.I18n")
 local HeroFrame = require("ui.widget.HeroFrame")
@@ -26,7 +26,7 @@ local imgExpFill = -1
 local imgGoldIcon = -1   -- [三队并行] 金币图标（以角色详情页 UI_icon_JB_X 为准）
 local imgGemIcon  = -1   -- [三队并行] 钻石图标（以角色详情页 UI_icon_SJ_X 为准）
 local imgHeroIcons = {}  -- [heroId] 角色头像图标
--- [暗黑化 P0] 金币/钻石/战力/红点 图标改由 core/DarkIcon.lua 程序化矢量绘制，不再加载贴图
+-- 金币/钻石/战力/红点 图标改由 core/DarkIcon.lua 程序化矢量绘制，不再加载贴图
 
 -- ======================== 本地数据缓存（多人模式由 Client.lua 设置） ========================
 -- 设置后优先使用，未设置（nil）时回退到 GameState
@@ -177,7 +177,7 @@ end
 --- 每帧绘制（在设计空间 1080x2400 内调用）
 
 -- 页面入口（替代底栏五键）。通栏放在头像行正下方，避开金币/钻石。
--- 页面入口：横屏三栏下角色常驻右栏、城镇常驻左栏；旧日志页已移除。
+-- 页面入口：横屏三栏下角色常驻右栏、城镇常驻左栏。
 local PAGE_TABS = {
     [3] = { index = 3, nameKey = "tab_battle",  icon = "nav_battle",  hotspot = "tab_battle" },
     [5] = { index = 5, nameKey = "tab_dungeon", icon = "nav_dungeon", hotspot = "tab_dungeon" },
@@ -321,7 +321,7 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
         nameFontSize, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4)
 
-    -- #8 战力图标 + 数值: icon center(197,175+oy) 36x36, text left=220, Y=175+oy [暗黑化 P0: 余烬火焰]
+    -- #8 战力图标 + 数值: icon center(197,175+oy) 36x36, text left=220, Y=175+oy
     local displayPower = GameState.getPower()
     DarkIcon.draw(vg, "power", 197, 175 + oy, 36, 1)
     drawTextStroke(vg, 220, 175 + oy, tostring(displayPower),

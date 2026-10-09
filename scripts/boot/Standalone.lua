@@ -58,10 +58,10 @@ local LetterIntro        = require("ui.story.gate.LetterIntro")          -- [Let
 local CharacterDetail    = require("ui.character.detail.CharacterDetail")  -- [三队并行] 中缝返回键目标
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")     -- [LetterIntro] 情景对话
 local DrawUtil           = require("core.DrawUtil")
-local DarkIcon           = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库 + 画廊验收页
+local DarkIcon           = require("core.DarkIcon")  -- 矢量图标库 + 画廊验收页
 local StandaloneSave     = require("boot.StandaloneSave") -- [单机存档] 本地快照/恢复（无联网）
 local ClientMsgHandler   = require("runtime.ClientMessageHandler")
-local TutorialManager    = require("systems.TutorialManager")  -- [横屏接线 0928] 新手引导(去多人化重构时接线丢失,此处恢复)
+local TutorialManager    = require("systems.TutorialManager")  -- 新手引导(去多人化重构时接线丢失,此处恢复)
 local LocalActionBridge  = require("runtime.LocalActionBridge")
 local StandaloneBoot     = require("boot.StandaloneBoot")
 local StandaloneRT       = require("boot.StandaloneRT")
@@ -102,7 +102,7 @@ local invalidateImageCache_ = nil
 local sceneRef_ = nil  -- 保存 scene 引用，供 requestResetToStartScreen 使用
 local startScreenWasOpen_ = false
 local postStartFlowDone_ = false  -- [LetterIntro] 开场/离线收益只触发一次（等标题关闭）
-local storyBackfilled_ = false    -- [旧档补播] 已首通关卡的未领情景只补排队一次
+local storyBackfilled_ = false    -- 已首通关卡的未领情景只补排队一次
 local startFlowBegun_ = false     -- 标题已关，BGM 已起；离线结算可能还在等角色刷新
 local fontNormal = -1
 ---@type table|nil
@@ -140,7 +140,7 @@ local PRELOAD_TIME_LIMIT = 180               -- DWP 预下载等待上限（秒�
 local BG_FRAME_BUDGET = 0.003                -- 后台补载每帧时间预算（秒）
 local BG_SKIP_SIZE = 1024 * 1024             -- 后台跳过的大图阈值（1MB，保持惰性）
 
---- [一次性加载] 预载进度遮罩（全屏，W/H 为当前绘制空间尺寸；须在退出变换内调用）
+-- 预载进度遮罩（全屏，W/H 为当前绘制空间尺寸；须在退出变换内调用）
 local function DrawPreloadOverlay(vg, W, H)
     -- 进度源: DWP 下载进度（等待期主显示）；fallback 兼容旧 idx/total
     local total = (preload_.dwpTotal > 0) and preload_.dwpTotal or #preload_.list
@@ -836,7 +836,7 @@ local function tryPlayPendingStory_()
         onFinish = function()
             if scenarioId then
                 print("[Standalone] claim scenario reward id=" .. tostring(scenarioId))
-                -- [横屏接线 0928] 恢复引导触发链: claim 结果处理时 fireTutorial → onScenarioClaimed
+                -- 恢复引导触发链: claim 结果处理时 fireTutorial → onScenarioClaimed
                 ClientMsgHandler.setPendingTutorialNotify(scenarioId)
                 -- 其他情景仍沿用起播预标记；82也兼容旧中断档的预标记。
                 -- 真正发奖仍由scenarioRewardsGranted台账防重，不以起播标记代替领取。
@@ -885,7 +885,7 @@ function Standalone.requestResetToStartScreen()
     require("ui.battle.stage.StageSelectDialog").close()
     if MarketPage.isOpen()          then MarketPage.close()          end
     if TavernPage.isOpen()          then TavernPage.close()          end
-    -- [锻炉双页 0929] 锻炉强制关闭（联动仓库由其 closeAutoWarehouse 处理，这里再兜底关仓库）
+    -- 锻炉强制关闭（联动仓库由其 closeAutoWarehouse 处理，这里再兜底关仓库）
     if BlacksmithPage.isOpen()      then BlacksmithPage.forceClose() end
     if BackpackPanel.isOpen()       then BackpackPanel.close()       end
     if ChurchPage.isOpen()          then ChurchPage.close()          end
@@ -1184,7 +1184,7 @@ function HandleUpdate(eventType, eventData)
     -- [横屏接线 0928] 新手引导每帧驱动（原 ClientUpdate 接线，重构时丢失）
     -- 热点在绘制帧开始时清空，输入始终可读取最近一次实际渲染的坐标。
     TutorialManager.update(dt)
-    -- 通知引导当前所在面板（enter_panel_* 类步骤推进；tab2 日志页已移除不再通知）
+    -- 通知引导当前所在面板（enter_panel_* 类步骤推进）
     do
         local TAB_PANEL_EVENTS = { [3] = "enter_panel_battle", [5] = "enter_panel_dungeon" }
         local tutTab = BottomNav.getSelectedIndex()
@@ -1234,7 +1234,7 @@ function HandleUpdate(eventType, eventData)
     if ScenarioDialogue.isActive() then
         ScenarioDialogue.update(dt)
     else
-        -- [旧档补播] 进游戏后一次性把已首通但未领取的情景补入队（如情景82）；
+        -- 进游戏后一次性把已首通但未领取的情景补入队（如情景82）；
         -- 等数据齐（battle/session 恢复）再扫，随后由 tryPlayPendingStory_ 自然播出
         if postStartFlowDone_ and not storyBackfilled_ and ClientDispatcher.hasData() then
             storyBackfilled_ = true
@@ -1249,7 +1249,7 @@ function HandleUpdate(eventType, eventData)
         require("ui.character.hero.HeroScenario").update()
     end
 
-    -- [三行并行] 横屏专用: 战斗布局恒为 strip（竖屏 classic 已移除）
+    -- 横屏专用: 战斗布局恒为 strip
     BattleLayout.setMode("strip")
     local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)

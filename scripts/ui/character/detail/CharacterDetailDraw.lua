@@ -22,7 +22,7 @@ local ClientDispatcher  = require("runtime.ClientDispatcher")
 local EquipmentSystem   = require("systems.EquipmentSystem")
 local EquipmentPower    = require("systems.EquipmentPower")
 local BF                 = require("systems.ButtonFeedback")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local I18n = require("core.I18n")
 local KeywordText = require("ui.widget.KeywordText")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
@@ -475,10 +475,8 @@ function M.initImages(vg)
     img.midDiv2  = img.midDiv1
     AttributeView.setSharedImages({ background = img.midBg, divider = img.midDiv1, deco = img.attrDeco })
 
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnLv     = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     img.btnBack   = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     img.tabSlider = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
     img.arrowIcon = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYG2.png", 0)
@@ -846,13 +844,13 @@ function M.draw(vg)
             local scx, scy = slot.cx, slot.cy
             local eq = equippedEquip.quality or 1
 
-            DarkIcon.drawQualityBg(vg, eq, scx, scy, DT_SLOT_SIZE, DT_SLOT_SIZE, 1.0)  -- [暗黑化 P2-A]
+            DarkIcon.drawQualityBg(vg, eq, scx, scy, DT_SLOT_SIZE, DT_SLOT_SIZE, 1.0)  --
 
             local equipIconImg = CharacterDetailRef._getEquipIcon(equippedEquip.templateId)
             local iconPad = 12
             local iconSize = DT_SLOT_SIZE - iconPad * 2
             if equipIconImg >= 0 then
-                DarkIcon.drawIconDark(vg, equipIconImg, scx, scy, iconSize, iconSize, 1.0)  -- [暗黑化 P2-B]
+                DarkIcon.drawIconDark(vg, equipIconImg, scx, scy, iconSize, iconSize, 1.0)  --
             else
                 local qualityDef = EquipmentConfig.QUALITY[eq]
                 local qc = qualityDef and qualityDef.color or { 180, 180, 180 }
@@ -1236,7 +1234,7 @@ function M.draw(vg)
     nvgFontSize(vg, 40)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
 
-    -- [fix] 选中态文字画在 DarkIcon btn 深色滑块上，深棕不可读 → 改骨白（DarkIcon 铭刻色）
+    -- 选中态文字画在 DarkIcon btn 深色滑块上，深棕不可读 → 改骨白（DarkIcon 铭刻色）
     local activeColor   = nvgRGBA(0xD8, 0xC9, 0xA3, 255)
     local inactiveColor = nvgRGBA(255, 255, 255, 255)
     local curTab = detailState.tab

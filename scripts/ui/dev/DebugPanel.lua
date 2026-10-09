@@ -31,7 +31,7 @@ end
 local GameConfig = require("config.GameConfig")
 local GameState  = require("core.GameState")
 
--- Debug 面板仅认服务端推送的 GM 标记。名字白名单可被改客户端绕过，已移除。
+-- Debug 面板仅认服务端推送的 GM 标记；名字白名单可被改客户端绕过。
 local function isDebugAllowed()
     return getClient().isGM() == true
 end

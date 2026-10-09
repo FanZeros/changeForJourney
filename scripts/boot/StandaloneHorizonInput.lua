@@ -603,13 +603,13 @@ function Input.bind(ctx)
                 BackpackPanel.handleDragBegin(dx, dy)
                 return
             end
-            -- [锻炉双页 0929] 锻炉页已移中栏（center/tri 分支处理），左栏不再接管
+            -- 锻炉页已移中栏（center/tri 分支处理），左栏不再接管
             if TalentPage.isOpen() then TalentPage.handleDragBegin(dx, dy) return end
             if ChurchPage.isOpen() then ChurchPage.handleDragBegin(dx, dy) return end
             if TavernPage.isOpen() then TavernPage.handleDragBegin(dx, dy) return end
             if MarketPage.isOpen() then MarketPage.handleDragBegin(dx, dy) return end
         elseif pid == 'center' then
-            -- [锻炉双页 0929] 锻炉页在中栏：优先接管
+            -- 锻炉页在中栏：优先接管
             if BlacksmithPage.isOpen() then BlacksmithPage.handleDragBegin(dx, dy) return end
             if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleDragBegin(dx, dy) end
         elseif pid == 'right' then
@@ -796,7 +796,7 @@ function Input.bind(ctx)
             if TavernPage.isOpen() then TavernPage.handleDragMove(dx, dy) return end
             if MarketPage.isOpen() then MarketPage.handleDragMove(dx, dy) return end
         elseif pid == 'center' then
-            -- [锻炉双页 0929] 锻炉页在中栏：优先接管
+            -- 锻炉页在中栏：优先接管
             if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
             if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleDragMove(dx, dy) end
         elseif pid == 'right' then
@@ -1242,7 +1242,7 @@ function Input.bind(ctx)
                 BackpackPanel.handleInput(dx, dy)
                 return
             end
-            -- [锻炉双页 0929] 锻炉页已移中栏（center 分支处理），左栏链不再接管
+            -- 锻炉页已移中栏（center 分支处理），左栏链不再接管
             if TalentPage.isOpen() then
                 TalentPage.handleDragEnd(dx, dy)
                 if not isTap then return end
@@ -1295,7 +1295,7 @@ function Input.bind(ctx)
             if isTap then RewardPopup.handleInput(dx, dy) end
             return
         end
-        -- [锻炉双页 0929] 锻炉页在中栏：优先接管（tri 模式下中段命中映射到 center 设计坐标）
+        -- 锻炉页在中栏：优先接管（tri 模式下中段命中映射到 center 设计坐标）
         if pid == 'center' and BlacksmithPage.isOpen() then
             BlacksmithPage.handleDragEnd(dx, dy)
             if isTap then BlacksmithPage.handleInput(dx, dy) end

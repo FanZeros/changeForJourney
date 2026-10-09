@@ -5,7 +5,7 @@
 -- ============================================================================
 
 local GameConfig       = require("config.GameConfig")
-local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
+local DarkIcon         = require("core.DarkIcon")  -- 品质底框矢量绘制
 local EquipmentConfig  = require("config.EquipmentConfig")
 local HeroConfig       = require("config.HeroConfig")
 local HeroAssetUtil    = require("config.HeroAssetUtil")
@@ -1095,7 +1095,7 @@ function EquipmentBag.draw(vg, opts)
                 local q = equip.quality or 1
                 local qColor = QUALITY_BORDER[q] or QUALITY_BORDER[1]
 
-                -- 品质背景框（铺满整个格子）[暗黑化 P2-A]（矢量绘制无条件可用，原贴图+fallback 已废弃）
+                -- 品质背景框（铺满整个格子） （矢量绘制无条件可用，原贴图+fallback 已废弃）
                 DarkIcon.drawQualityBg(vg, q, cx, cy, CELL_SIZE, CELL_SIZE, 1.0)
 
                 -- 装备图标
@@ -1103,7 +1103,7 @@ function EquipmentBag.draw(vg, opts)
                 if iconImg >= 0 then
                     local iconPadding = 12
                     local iconSize = CELL_SIZE - iconPadding * 2
-                    DarkIcon.drawIconDark(vg, iconImg, cx, cy, iconSize, iconSize, 1.0)  -- [暗黑化 P2-B]
+                    DarkIcon.drawIconDark(vg, iconImg, cx, cy, iconSize, iconSize, 1.0)  --
                 else
                     -- 无图标时回退为文字显示
                     nvgFontFace(vg, "sans")

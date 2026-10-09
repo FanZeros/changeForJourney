@@ -4,7 +4,7 @@
 -- ============================================================================
 
 local DrawUtil          = require("core.DrawUtil")
-local DarkIcon          = require("core.DarkIcon")  -- [暗黑化 P1] 矢量面板/按钮
+local DarkIcon          = require("core.DarkIcon")  -- 矢量面板/按钮
 local drawTextStroke    = DrawUtil.drawTextStroke
 local hitTest           = DrawUtil.hitTest
 local BF                = require("systems.ButtonFeedback")

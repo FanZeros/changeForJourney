@@ -21,7 +21,7 @@ local SpeechBubble      = require("ui.widget.SpeechBubble")
 local BottomNav         = require("ui.hud.BottomNav")
 
 local Diag = require("systems.BattleDiag")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化] 地图压暗滤镜
+local DarkIcon = require("core.DarkIcon")  -- 地图压暗滤镜
 
 local BattleResultPanel = require("ui.battle.popup.BattleResultPanel")
 local OfflineCalc = require("systems.OfflineCalc")

@@ -37,7 +37,7 @@ local DrawUtil          = require("core.DrawUtil")
 local BF                = require("systems.ButtonFeedback")
 local ResourceDefs      = require("config.ResourceDefs")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local RewardCascade = require("ui.widget.RewardCascade")  -- 奖励逐件弹出动画（与关卡奖励同款）
 ---@class RewardCascadeTimeline : table  逐件弹出时间轴（定义见 ui/widget/RewardCascade.lua）
 local GameSFX       = require("systems.GameSFX")
@@ -598,11 +598,9 @@ end
 ---@param vg any NanoVG 上下文
 function Panel.init(vg)
     cachedVg = vg
-    -- [清理 0929] UI_TY_EJQRK.png 加载已移除：背景改由 DarkIcon.drawNine 矢量绘制，贴图从未使用
+    -- 背景由 DarkIcon.drawNine 矢量绘制
     img.progBg        = nvgCreateImage(vg, "image/进度条/UI_LXSYJDT_2.png", 0)
     img.progFill      = nvgCreateImage(vg, "image/进度条/UI_XDZJDT.png", 0)
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnGreen      = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
 
     print("[OfflineRewardPanel] init OK")

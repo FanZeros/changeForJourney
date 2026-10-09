@@ -24,7 +24,7 @@ function M.bind(deps)
     local isSoldOut = deps.isSoldOut
 
     local function drawShopCard(vg, idx, item, cx, cy)
-    -- [暗黑化 P1-B5] 矢量卡底 + 品质语义描边
+    -- 矢量卡底 + 品质语义描边
     local q = item.quality or 1
     DarkIcon.drawNine(vg, "plain",
         cx - SL.CARD_W * 0.5, cy - SL.CARD_H * 0.5,

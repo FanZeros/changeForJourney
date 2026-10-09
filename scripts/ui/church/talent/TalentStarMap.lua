@@ -9,7 +9,7 @@ local TalentStarMap = {}
 
 local TalentGlyph = require("ui.widget.TalentGlyph")
 
--- [暗黑化 P3-调整] 星图节点图标压暗档（与 DarkIcon.ICON_TINT_DARK 同档，独立常量避免反向依赖 ui 模块）
+-- 星图节点图标压暗档（与 DarkIcon.ICON_TINT_DARK 同档，独立常量避免反向依赖 ui 模块）
 local ICON_TINT_DARK = { 72, 64, 54 }
 
 -- ======================== 常量 ========================
@@ -637,7 +637,7 @@ local function drawEdges(vg)
             local litB = litNodes[idB] or false
             -- 终焉环已开放，邻接点亮即可激活
 
-            -- 决定颜色 [暗黑化] 三态: 已激活=琥珀金饰线 / 可激活=金闪 / 未激活=暗棕隐线
+            -- 决定颜色 三态: 已激活=琥珀金饰线 / 可激活=金闪 / 未激活=暗棕隐线
             local r, g, b, a
             if litA and litB then
                 r, g, b, a = 201, 151, 59, 235

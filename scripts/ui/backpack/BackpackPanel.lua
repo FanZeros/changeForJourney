@@ -10,7 +10,7 @@ local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local DrawUtil         = require("core.DrawUtil")
 local I18n             = require("core.I18n")
 local TownPageChrome   = require("ui.town.TownPageChrome")
-local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1] 矢量九宫格
+local DarkIcon         = require("core.DarkIcon")  -- 矢量九宫格
 local GameState        = require("core.GameState")
 local PlayerStore      = require("core.PlayerStore")
 local ImageCache       = require("ui.widget.ImageCache")
@@ -780,7 +780,6 @@ function Panel.init(vg)
     imgTitleBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
     imgBtnBack = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
     imgTabBg   = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     imgBtnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     imgLock      = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
@@ -1055,7 +1054,7 @@ local function drawBody(vg)
     nvgSave(vg)
     nvgTranslate(vg, 0, lowerOY)
 
-    -- 2. 下方背景框（九宫格）[暗黑化 P1: 矢量九宫格]
+    -- 2. 下方背景框（九宫格）
     DarkIcon.drawNine(vg, "panel",
         LOWER_PANEL.CX - LOWER_PANEL.W * 0.5, LOWER_PANEL.CY - LOWER_PANEL.H * 0.5,
         LOWER_PANEL.W, LOWER_PANEL.H,

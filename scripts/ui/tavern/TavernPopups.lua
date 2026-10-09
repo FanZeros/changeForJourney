@@ -13,7 +13,7 @@ local hitTest        = DrawUtil.hitTest
 local drawImageCentered      = DrawUtil.drawImageCentered
 local drawRoundedRectCentered = DrawUtil.drawRoundedRectCentered
 local BF = require("systems.ButtonFeedback")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local TavernInfo = require("ui.tavern.TavernInfo")
 
 local M = {}
@@ -302,7 +302,7 @@ local function loadHistoryData()
         historyData.stellar  = data.stellar or {}
         return
     end
-    -- 旧版扁平数组 → 归入常规招募
+    -- 扁平数组格式归入常规招募
     if data[1] then
         historyData.standard = data
         historyData.stellar  = {}
@@ -456,7 +456,6 @@ end
 function M.init(vg)
     -- 整图拉伸绘制（950x647），使用 POP 副本，调整原图不影响九宫格用法
     img.confirmBg     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK_POP.png", 0)
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     img.confirmBtnBuy = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     img.diamondBig    = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
     img.ticketBig     = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_1.png", 0)
@@ -590,9 +589,9 @@ function M.drawAll(vg)
             12,
             0, 0, 0, CF.CONTENT_A)
 
-        DarkIcon.drawQualityBg(vg, 5, CF.DIAMOND_CX, CF.DIAMOND_CY, CF.DIAMOND_W, CF.DIAMOND_H, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_5
+        DarkIcon.drawQualityBg(vg, 5, CF.DIAMOND_CX, CF.DIAMOND_CY, CF.DIAMOND_W, CF.DIAMOND_H, 1.0)  -- 原 UI_icon_ZBBJ_5
         drawImageCentered(vg, img.diamondBig, CF.DIAMOND_CX, CF.DIAMOND_CY, CF.DIAMOND_W, CF.DIAMOND_H, 1.0)
-        DarkIcon.drawQualityBg(vg, 5, CF.TICKET_CX, CF.TICKET_CY, CF.TICKET_W, CF.TICKET_H, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_5
+        DarkIcon.drawQualityBg(vg, 5, CF.TICKET_CX, CF.TICKET_CY, CF.TICKET_W, CF.TICKET_H, 1.0)  -- 原 UI_icon_ZBBJ_5
         local confirmTicketIcon = img.ticketBig
         if popupState.confirmIsStellar and img.ticketBigStellar >= 0 then
             confirmTicketIcon = img.ticketBigStellar

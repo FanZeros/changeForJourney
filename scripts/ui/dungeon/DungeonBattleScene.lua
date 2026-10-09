@@ -21,7 +21,7 @@ local BattleLayout      = require("core.BattleLayout")
 local BattleCombat      = require("ui.battle.combat.BattleCombat")
 local BattleStats       = require("systems.BattleStats")
 local BattleDraw        = require("ui.battle.scene.BattleDraw")
-local DarkIcon          = require("core.DarkIcon")  -- [暗黑化] 地图压暗滤镜
+local DarkIcon          = require("core.DarkIcon")  -- 地图压暗滤镜
 local BattleEffects     = require("ui.battle.combat.BattleEffects")
 local SpineCardEffect  = require("ui.fx.SpineCardEffect")
 local ProjectileSystem  = require("ui.battle.combat.ProjectileSystem")
@@ -126,7 +126,7 @@ local RESULT_DELAY = 1.5
 -- 最大同屏敌人数
 local MAX_FIELD = BattleLayout.MAX_PER_SIDE
 
--- 通天塔补位等待常量（死亡滑出后空位等待，已删除墓碑图）
+-- 通天塔补位等待常量（死亡滑出后空位等待）
 local TOMBSTONE_REVIVE_TIME = 2.0
 local DEATH_ANIM_DURATION   = BattleCombat.DEATH_ANIM_DURATION or 0.40
 local REVIVE_ANIM_DURATION  = BattleCombat.REVIVE_ANIM_DURATION or 0.35
@@ -232,7 +232,7 @@ local function easeInCubic(t)
     return t * t * t
 end
 
--- 兼容旧快捷键调用；副本战斗加速已删除。
+-- 兼容快捷键调用。
 function DungeonScene.cycleBattleSpeed()
     return false
 end
@@ -911,7 +911,7 @@ function DungeonScene.update(dt, battlePaused)
     local isTowerMode = (DungeonBattle.getConfig().dungeonId == "babel_tower")
 
     if isTowerMode then
-        -- ════ 通天塔模式：死亡滑出后空位等待补位（已删除墓碑图） ══════
+        -- ════ 通天塔模式：死亡滑出后空位等待补位 ══════
         for i, unit in ipairs(state.enemies) do
             if unit.hp <= 0 then
                 -- 首次检测死亡：启动死亡动画

@@ -141,7 +141,7 @@ function Wheel.bind(deps)
                 return 'tri', sx, sy
             end
             local ps = logicalH() / 1080
-            -- [锻炉双页 0929] 锻炉页占据中栏（Viewport.center，窗口 x∈[486ps,972ps]）：
+            -- 锻炉页占据中栏（Viewport.center，窗口 x∈[486ps,972ps]）：
             -- 命中该区返回 'center' + 设计坐标，交给 BlacksmithPage 输入链。
             -- 注意 tri 模式右栏被挪到窗口右缘，不能用 Viewport.hit（其 right 区与实际不符）
             if BlacksmithPage.isOpen() then
@@ -336,7 +336,7 @@ function Wheel.bind(deps)
             end
 
             -- center：主视图 Tab 页
-            -- [锻炉双页 0929] 锻炉页在中栏：优先接管
+            -- 锻炉页在中栏：优先接管
             if BlacksmithPage.isOpen() then
                 BlacksmithPage.handleScroll(wheel, msx, msy)
                 return

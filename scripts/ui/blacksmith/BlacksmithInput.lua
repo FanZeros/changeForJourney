@@ -1,6 +1,6 @@
 -- ============================================================================
 -- BlacksmithInput - BlacksmithPage 点击/拖拽/滚轮
--- [锻炉双页 0929] 重写：
+-- 重写：
 --   - 分解 tab 已迁至仓库；EquipmentBag 选择页已移除
 --   - 编队卡片/6装备槽点击移除；上半部分只有一个工作台槽
 --   - 点击工作台槽：已选装备 → 查看装备详情；空槽 → toast 提示从仓库拖入
@@ -103,9 +103,9 @@ function M.bind(deps)
         local keywordPanel = state.tab == "qianghua" and BlacksmithEnhance or BlacksmithRefine
         if keywordPanel.handleKeywordInput(dx, dy) then return true end
 
-        -- [锻炉双页 0929] 页内返回键已移除：锻炉右侧中缝返回条（seamBackList）统一接管关闭
+        -- 页内返回键已移除：锻炉右侧中缝返回条（seamBackList）统一接管关闭
 
-        -- [锻炉双页 0929] 工作台槽点击
+        -- 工作台槽点击
         if hitTest(dx, dy, WORKBENCH_CX, WORKBENCH_CY, WORKBENCH_SIZE, WORKBENCH_SIZE) then
             if state.selectedEquip and state.selectedSeq then
                 -- 已选装备：打开装备详情（compactCorner 小窗，owner="smith"）

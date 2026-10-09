@@ -24,7 +24,7 @@
 
 local NumberUtil   = require("core.NumberUtil")
 local DrawUtil     = require("core.DrawUtil")
-local DarkIcon     = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
+local DarkIcon     = require("core.DarkIcon")  -- 品质底框矢量绘制
 local ImageCache   = require("ui.widget.ImageCache")
 local ResourceDefs = require("config.ResourceDefs")
 local HeroFrame = require("ui.widget.HeroFrame")
@@ -531,7 +531,7 @@ function BRP.draw(vg, width, height)
         -- 品质背景框（优先使用 item.quality 覆盖）
         local def = RESOURCE_DEFS[item.type]
         local q = item.quality or (def and def.quality) or 1
-        DarkIcon.drawQualityBg(vg, q, cx, cy, REWARD_ICON_SIZE, REWARD_ICON_SIZE, 1.0)  -- [暗黑化 P2-A]
+        DarkIcon.drawQualityBg(vg, q, cx, cy, REWARD_ICON_SIZE, REWARD_ICON_SIZE, 1.0)  --
 
         -- 资源图标（优先使用 item.iconPath 覆盖）
         local resImg = -1

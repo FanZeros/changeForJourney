@@ -9,7 +9,7 @@ local PlayerStore   = require("core.PlayerStore")
 local BF            = require("systems.ButtonFeedback")
 local Protocol      = require("shared.Protocol")
 local DungeonIdleConfig = require("config.DungeonIdleConfig")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local ExpTable      = require("config.ExpTable")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local DungeonConfig = require("config.DungeonConfig")
@@ -119,7 +119,7 @@ local TEXT_SIZE_MD   = 40
 -- ======================== 副本数据 ========================
 
 -- 副本配置
--- [local 余量优化] 副本详情面板设计常量归组（原为顶层散落 local）
+-- 副本详情面板设计常量归组
 local DT = {
     TITLE_FONT = 60,
     TITLE_SW = 6,
@@ -635,8 +635,6 @@ function DungeonPage.init(vg)
     imgFloorBg1  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_1.png", 0)
     imgFloorBg2  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_2.png", 0)
     imgFloorBg3  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_3.png", 0)
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     imgRedDot    = nvgCreateImage(vg, "image/通用图标/ICON_HD.png", 0)
     imgChest     = nvgCreateImage(vg, "image/货币道具/UI_icon_FBBX.png", 0)
@@ -762,7 +760,7 @@ function DungeonPage.draw(vg)
                 local cy = ry + REWARD_ICON_SIZE * 0.5
 
                 -- 1) 品质背景
-                DarkIcon.drawQualityBg(vg, reward.quality or 1, cx, cy, REWARD_ICON_SIZE, REWARD_ICON_SIZE, 1.0)  -- [暗黑化 P2-A]
+                DarkIcon.drawQualityBg(vg, reward.quality or 1, cx, cy, REWARD_ICON_SIZE, REWARD_ICON_SIZE, 1.0)  --
 
                 -- 2) 资源图标（内缩绘制）
                 if not rewardIconCache[reward.icon] then
@@ -968,7 +966,7 @@ function DungeonPage.drawDetailPanel(vg)
             local cx = startX + (i - 1) * (REWARD_SZ + REWARD_GAP)
             local cy = DT.REW_BG_CY
 
-            -- 品质背景 [暗黑化 P2-A]
+            -- 品质背景
             DarkIcon.drawQualityBg(vg, reward.quality or 1, cx, cy, REWARD_SZ, REWARD_SZ, 1.0)
 
             -- 资源图标（内缩绘制）
@@ -1003,7 +1001,7 @@ function DungeonPage.drawDetailPanel(vg)
         end
     end
 
-    -- 资源副本一券一场，不再使用旧 dailyUsed 限制；塔/遗迹保留原日次。
+    -- 资源副本一券一场；塔/遗迹保留日次。
     local resourceDungeon = DungeonConfig.isResourceDungeon(detailDungeon.id)
     local ticketCount = math.max(0, math.floor(tonumber((PlayerStore.Get("currency") or {}).sweepTicket) or 0))
     local dailyRemain = math.max(0, dailyMax - dailyUsed)

@@ -374,19 +374,17 @@ function Start()
         eq(modules.currency.gems, 149, "市场不足不扣费")
 
         -- 真实面板的绘制/点击函数；仅替换绘图底层，非完整实机视觉验收。
-        local texts, costTexts, buttons, actions = {}, {}, {}, {}
+        local texts, actions = {}, {}
+        local buttons = {}
         local imagePaths, nextImage = {}, 0
+        local strokes, icons = {}, {}
         local function noop() return {} end
-        local costY = 1111 + 300
         replace(DrawUtil, "drawTextStroke", function(_, x, y, text, font, align, r, g, b)
             texts[#texts + 1] = text
-            if y == costY then costTexts[#costTexts + 1] = { text = tostring(text), x = x, r = r, g = g, b = b } end
+            strokes[#strokes + 1] = { text = tostring(text), x = x, y = y, r = r, g = g, b = b }
         end)
         replace(DrawUtil, "drawImageCentered", function(_, icon, cx, cy, w, h)
-            if cy == costY then
-                buttons.drawnIcons = buttons.drawnIcons or {}
-                buttons.drawnIcons[#buttons.drawnIcons + 1] = { icon = icon, cx = cx, w = w, h = h }
-            end
+            icons[#icons + 1] = { icon = icon, cx = cx, cy = cy, w = w, h = h }
         end)
         replace(_G, "nvgCreateImage", function(_, path)
             nextImage = nextImage + 1
@@ -421,22 +419,44 @@ function Start()
             assertions = assertions + 1
             assert(value, label)
         end
+        local function costTextsFor(chestType)
+            local top = chestType == "advanced" and 1140 or 320
+            local costY = top + 686
+            local result = {}
+            for _, stroke in ipairs(strokes) do
+                if stroke.y == costY then result[#result + 1] = stroke end
+            end
+            return result
+        end
+        local function costIconsFor(chestType)
+            local top = chestType == "advanced" and 1140 or 320
+            local costY = top + 686
+            local result = {}
+            for _, icon in ipairs(icons) do
+                if icon.cy == costY then result[#result + 1] = icon end
+            end
+            return result
+        end
+        local function resetDrawCalls()
+            texts, actions = {}, {}
+            buttons, strokes, icons = {}, {}, {}
+        end
         for _, case in ipairs(progressCases) do
             reset(case.battle)
             Panel.reset()
             eq(Panel.isArtifactChestUnlocked(), true, case.label .. "面板查询直接开放")
-            texts, costTexts, buttons, actions = {}, {}, {}, {}
-            buttons.drawnIcons = nil
+            resetDrawCalls()
             Panel.drawContent({})
-            eq(buttons.church_artifact_draw_1, true, case.label .. "绘制单抽按钮")
-            eq(buttons.church_artifact_draw_10, true, case.label .. "绘制十连按钮")
+            eq(buttons.church_artifact_draw_1_normal, true, case.label .. "绘制普通单抽按钮")
+            eq(buttons.church_artifact_draw_10_normal, true, case.label .. "绘制普通十连按钮")
             check(table.concat(texts, "|"):find("免费单抽", 1, true) ~= nil, case.label .. "免费单抽标签")
             check(table.concat(texts, "|"):find("金币", 1, true) == nil, case.label .. "宝箱文案不再承诺金币")
-            eq(costTexts[1].text, "免费", case.label .. "单抽免费成本")
-            eq(costTexts[2].text, "1500", case.label .. "无钥匙十连黑晶价")
-            eq(#(buttons.drawnIcons or {}), 1, case.label .. "免费无图标且十连仅显示黑晶")
-            eq(imagePaths[buttons.drawnIcons[1].icon], "image/货币道具/UI_icon_SJ_X.png", case.label .. "十连价格显示黑晶图标")
-            eq(Panel.handleTabInput(323, 1381), true, case.label .. "单抽点击被处理")
+            local costs = costTextsFor("normal")
+            eq(costs[1].text, "免费", case.label .. "单抽免费成本")
+            eq(costs[2].text, "1500", case.label .. "无钥匙十连黑晶价")
+            eq(#costIconsFor("normal"), 1, case.label .. "免费无图标且十连仅显示黑晶")
+            eq(imagePaths[costIconsFor("normal")[1].icon], "image/货币道具/UI_icon_SJ_X.png", case.label .. "十连价格显示黑晶图标")
+            eq(Panel.handleTabInput(320, 980), true, case.label .. "普通单抽点击被处理")
             eq(#actions, 1, case.label .. "单抽动作发出")
             eq(actions[1].params.payType, "free_daily", "未用每日免费优先")
             eq(actions[1].action, Protocol.ACTION_TYPES.ARTIFACT_DRAW, "面板抽取协议不变")
@@ -447,44 +467,44 @@ function Start()
         reset({}, 0, 6000)
         modules.artifacts.dailyFreeDrawDayId = panelToday
         Panel.reset()
-        texts, costTexts, buttons, actions = {}, {}, {}, {}
-        buttons.drawnIcons = nil
+        resetDrawCalls()
         Panel.drawContent({})
-        eq(costTexts[1].text, "150", "无钥匙付费单抽显示150黑晶")
-        eq(costTexts[2].text, "1500", "无钥匙十连显示1500黑晶")
-        eq(#(buttons.drawnIcons or {}), 2, "付费单抽和十连各显示黑晶图标")
-        eq(imagePaths[buttons.drawnIcons[1].icon], "image/货币道具/UI_icon_SJ_X.png", "单抽显示黑晶图标")
-        eq(imagePaths[buttons.drawnIcons[2].icon], "image/货币道具/UI_icon_SJ_X.png", "十连显示黑晶图标")
+        eq(costTextsFor("normal")[1].text, "150", "无钥匙付费单抽显示150黑晶")
+        eq(costTextsFor("normal")[2].text, "1500", "无钥匙十连显示1500黑晶")
+        eq(#costIconsFor("normal"), 2, "付费单抽和十连各显示黑晶图标")
+        eq(imagePaths[costIconsFor("normal")[1].icon], "image/货币道具/UI_icon_SJ_X.png", "单抽显示黑晶图标")
+        eq(imagePaths[costIconsFor("normal")[2].icon], "image/货币道具/UI_icon_SJ_X.png", "十连显示黑晶图标")
 
         reset({}, 3, 1000)
         modules.artifacts.dailyFreeDrawDayId = panelToday
         Panel.reset()
-        texts, costTexts, buttons, actions = {}, {}, {}, {}
-        buttons.drawnIcons = nil
+        resetDrawCalls()
         Panel.drawContent({})
-        eq(costTexts[1].text, "1", "有钥匙时单抽仅展示实际消耗钥匙数")
-        eq(costTexts[2].text, "3", "十连先展示现有钥匙数")
-        eq(costTexts[3].text, "1050", "十连黑晶仅补足七把钥匙")
-        eq(#(buttons.drawnIcons or {}), 3, "混合十连成本显示两种资源图标")
-        eq(imagePaths[buttons.drawnIcons[1].icon], "image/货币道具/UI_icon_HJYS.png", "单抽成本为钥匙图标")
-        eq(imagePaths[buttons.drawnIcons[2].icon], "image/货币道具/UI_icon_HJYS.png", "十连钥匙部分图标")
-        eq(imagePaths[buttons.drawnIcons[3].icon], "image/货币道具/UI_icon_SJ_X.png", "十连补购部分黑晶图标")
-        eq(costTexts[1].r, 255, "钥匙足够时成本为亮色")
-        eq(costTexts[3].r, 0x8b, "黑晶余额不足时补购价置灰")
+        local mixed = costTextsFor("normal")
+        eq(mixed[1].text, "1", "有钥匙时单抽仅展示实际消耗钥匙数")
+        eq(mixed[2].text, "3", "十连先展示现有钥匙数")
+        eq(mixed[3].text, "1050", "十连黑晶仅补足七把钥匙")
+        eq(#costIconsFor("normal"), 3, "混合十连成本显示两种资源图标")
+        eq(imagePaths[costIconsFor("normal")[1].icon], "image/货币道具/UI_icon_HJYS.png", "单抽成本为钥匙图标")
+        eq(imagePaths[costIconsFor("normal")[2].icon], "image/货币道具/UI_icon_HJYS.png", "十连钥匙部分图标")
+        eq(imagePaths[costIconsFor("normal")[3].icon], "image/货币道具/UI_icon_SJ_X.png", "十连补购部分黑晶图标")
+        eq(mixed[1].r, 255, "钥匙足够时成本为亮色")
+        eq(mixed[3].r, 0x8b, "黑晶余额不足时补购价置灰")
 
         reset({}, 10)
         modules.artifacts.dailyFreeDrawDayId = today
         actions = {}
         Panel.reset()
-        Panel.handleTabInput(783, 1381)
+        Panel.handleTabInput(760, 980)
         eq(#actions, 1, "低进度十连动作发出")
         eq(actions[1].params.count, 10, "十连次数正确")
         eq(actions[1].params.payType, "diamond", "十连保持原支付方式")
+        eq(actions[1].params.chestType, "normal", "普通卡十连使用普通档位")
         Panel.onArtifactDrawResult()
         reset({}, 0, 6000)
         actions = {}
         Panel.reset()
-        Panel.handleTabInput(783, 1381)
+        Panel.handleTabInput(760, 980)
         eq(Panel.isKeyConfirmVisible(), true, "钥匙不足仍弹补购确认")
         eq(#actions, 0, "未确认不抽取")
         time.elapsedTime = 101
@@ -494,7 +514,7 @@ function Start()
         eq(Panel.isKeyConfirmVisible(), false, "点击框外可取消补购")
         eq(#actions, 0, "取消补购不发送抽取")
         Panel.reset()
-        Panel.handleTabInput(783, 1381)
+        Panel.handleTabInput(760, 980)
         time.elapsedTime = 103
         Panel.handleTabInput(540, 1301)
         eq(#actions, 1, "确认补购后才发送抽取")
@@ -503,24 +523,24 @@ function Start()
         Panel.onArtifactDrawResult()
         reset({ maxStageId = 2305 }, 0, 7500)
         modules.artifacts.dailyFreeDrawDayId = panelToday
-        actions, texts, costTexts, buttons = {}, {}, {}, {}
-        Panel.handleTabInput(780, 690)
+        resetDrawCalls()
+        Panel.handleTabInput(540, 1200)
         eq(Panel.isArtifactChestUnlocked(), false, "高级未通关23-5锁定")
         Panel.drawContent({})
-        eq(costTexts[1].text, "750", "锁定高级仍显示单抽750")
-        eq(costTexts[2].text, "7500", "高级十连7500")
+        eq(costTextsFor("advanced")[1].text, "750", "锁定高级仍显示单抽750")
+        eq(costTextsFor("advanced")[2].text, "7500", "高级十连7500")
         local allText = table.concat(texts, "|")
         check(allText:find("通关普通23-5解锁", 1, true), "高级显示明确通关条件")
         check(allText:find("无保底", 1, true), "高级明确无保底")
         for _, qualityText in ipairs({ "普通：30%", "优质：40%", "稀有：20%", "史诗：9%", "传说：1%" }) do
             check(allText:find(qualityText, 1, true), "高级全部概率 " .. qualityText)
         end
-        Panel.handleTabInput(323, 1381)
+        Panel.handleTabInput(320, 1800)
         eq(#actions, 0, "高级锁定不发送动作")
         eq(Panel.isKeyConfirmVisible(), false, "锁定不弹补购")
         modules.battle.clearedStages = { ["2305"] = true }
         eq(Panel.isArtifactChestUnlocked(), true, "高级通关后UI开放")
-        Panel.handleTabInput(323, 1381)
+        Panel.handleTabInput(320, 1800)
         eq(Panel.isKeyConfirmVisible(), true, "高级钥匙不足确认")
         time.elapsedTime = 104
         Panel.handleTabInput(540, 1301)
@@ -529,7 +549,7 @@ function Start()
         eq(actions[1].params.payType, "diamond", "高级不使用普通免费")
         Panel.onArtifactDrawResult()
         Panel.reset()
-        actions, texts, costTexts, buttons = {}, {}, {}, {}
+        resetDrawCalls()
         Panel.drawContent({})
         allText = table.concat(texts, "|")
         for _, qualityText in ipairs({ "普通：75%", "优质：20%", "稀有：4%", "史诗：0.9%", "传说：0.1%" }) do

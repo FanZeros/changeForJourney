@@ -655,6 +655,10 @@ function EquipmentDetailDraw.create(ctx)
             powerIconSize, powerIconSize, 1.0)
         drawTextStroke(vg, powerX, COMPACT_NAME_Y, powerStr, 36,
             NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 0xf7, 0xfe, 0x77, 3)
+        if scoreContext and scoreContext.equipped then
+            drawTextStroke(vg, leftX, 204, "当前装备 · 生效数值", 26,
+                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 214, 102, 3)
+        end
 
         if equip.baseStats and #equip.baseStats > 0 then
             local boost = EquipmentSystem.getAscendBoost(equip)

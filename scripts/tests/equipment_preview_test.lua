@@ -140,7 +140,7 @@ local function liveCallerRegression(data)
     local expected = actualPreview.build(1, 70, 90, nil, data)
     check(expected.preview ~= nil and expected.error == nil and equal(latest, expected.current.stats),
         "真实调用方选中存在候选，当前属性保持真实装备与养成快照")
-    check(equal(drawnRows, expected.rows) and equal(drawnSets, expected.currentSets),
+    check(equal(drawnRows, actualAttrs.filterDisplayRows(expected.rows)) and equal(drawnSets, expected.currentSets),
         "真实调用方候选对比行/套装摘要等于真实Preview完整快照结果")
     local pen = row({ rows = drawnRows }, AD.PHYS_PEN)
     check(pen and close(pen.previewValue, row(expected, AD.PHYS_PEN).previewValue)
@@ -163,7 +163,8 @@ local function liveCallerRegression(data)
     clock.elapsedTime = clock.elapsedTime + 0.3
     panel.draw({}, 1, {})
     local changed = actualPreview.build(1, 70, 90, nil, data)
-    check(equal(drawnRows, changed.rows) and not equal(drawnRows, expected.rows),
+    check(equal(drawnRows, actualAttrs.filterDisplayRows(changed.rows))
+        and not equal(drawnRows, actualAttrs.filterDisplayRows(expected.rows)),
         "实时星图原地改变使调用方缓存失效并重建完整实际属性")
     data.talents = before.talents
     check(equal(data, before), "调用方完整快照/套装计数/试穿/净增益不水合改写真档")

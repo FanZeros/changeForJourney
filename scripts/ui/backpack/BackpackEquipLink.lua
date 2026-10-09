@@ -410,8 +410,12 @@ function M.bind(deps)
     end
     function api.openCandidate(equip, cx, cy, pinned)
         -- 保留只读动作（slot=nil），角色上下文独立于「全部」部位筛选。
-        EquipmentDetail.open(equip.seq, nil, currentHero(), true, "backpack",
+        local heroId = currentHero()
+        EquipmentDetail.open(equip.seq, nil, heroId, true, "backpack",
             cx + GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5)
+        if EquipmentDetail.setComparisonSlot then
+            EquipmentDetail.setComparisonSlot(targetSlot(equip, heroId))
+        end
         if pinned and EquipmentDetail.pin then EquipmentDetail.pin() end
     end
     function api.handleEquipClick(dx, dy)

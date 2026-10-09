@@ -21,7 +21,7 @@ local persistHooks_ = {} ---@type table
 local transactions = {}
 -- Flush 会推进在线边界；它异常时 session 也属于本次候选快照。
 -- heroes/player 承载副本结算经验，失败时同样要回滚。
-local TRANSACTION_MODULES = { "dungeon", "currency", "equipment", "lootbox", "session", "heroes", "player", "artifacts" }
+local TRANSACTION_MODULES = { "dungeon", "currency", "equipment", "lootbox", "session", "heroes", "player", "artifacts", "battle" }
 
 --- 单机桥注入唯一写档入口的布尔结果；PDM.FlushImmediate 只是日志，不能代替。
 --- hooks 延后 Save 内 MarkOnline 的 session 通知，不承担奖励发放。
@@ -144,11 +144,55 @@ function DungeonService.MarkRewardDirty(uid, name)
     markDirty(uid, name)
 end
 
--- 单机每位玩家只持有一场资源战斗；不写进存档，重启/退出后必须重新 Challenge。
+-- 单机每位玩家只持有一场资源战斗；战斗回执仅存内存，离线来源另存只读快照。
 local pendingChallenges = {} ---@type table<string, table>
 local nextChallengeId = 0
 
+--- 当前覆盖战斗的离线来源，独立于主线队伍任务与最高解锁关。
+--- 塔使用 paused 标记：只有实际挑战发奖，离线不得借原队伍的主线任务计费。
+---@param uid number
+---@param teamIdx number
+---@param source table
+function DungeonService.SetOfflineChallengeSource(uid, teamIdx, source)
+    local battle = PDM.GetModule(uid, "battle")
+    if not battle then return end
+    if type(battle.offlineChallengeSources) ~= "table" then battle.offlineChallengeSources = {} end
+    battle.offlineChallengeSources[tostring(teamIdx)] = source
+    markDirty(uid, "battle")
+end
+
+--- 结束真实运行中的覆盖战斗才清快照；冷启动没有运行态时保留上次离线来源。
+---@param uid number
+---@param sourceKind string
+function DungeonService.ClearOfflineChallengeSources(uid, sourceKind)
+    local battle = PDM.GetModule(uid, "battle")
+    local sources = battle and battle.offlineChallengeSources
+    if type(sources) ~= "table" then return end
+    local dirty = false
+    for key, source in pairs(sources) do
+        if type(source) == "table" and source.sourceKind == sourceKind then
+            sources[key] = nil
+            dirty = true
+        end
+    end
+    if dirty then markDirty(uid, "battle") end
+end
+
+--- 覆盖战斗开始/退出即保存来源；无本地持久化接线时只保留脏状态。
+---@param uid number
+function DungeonService.PersistOfflineChallengeSources(uid)
+    if type(persist_) ~= "function" or transactions[tostring(uid)] then return end
+    local called, saved = pcall(persist_, uid)
+    if not called or saved ~= true then
+        print("[DungeonService] 离线来源保存失败，等待存档重试: " .. tostring(saved))
+    end
+end
+
 function DungeonService.Cleanup(uid)
+    if pendingChallenges[tostring(uid)] then
+        DungeonService.ClearOfflineChallengeSources(uid, "dungeon")
+        DungeonService.PersistOfflineChallengeSources(uid)
+    end
     pendingChallenges[tostring(uid)] = nil
 end
 
@@ -235,7 +279,7 @@ function DungeonService.GrantEquipment(uid, dungeonId, floor, count)
     end
     local generated = {}
     for i = 1, count do
-        local quality = math.random(floorData.equipMinQuality, floorData.equipMaxQuality)
+        local quality = require("systems.DropSystem").rollQualityByProbabilities(floorData.equipQualityProbabilities)
         local equip = EquipmentSystem.generateRandom(floorData.equipLevel, quality)
         if not equip then return false, "装备生成失败" end
         generated[i] = equip
@@ -474,6 +518,12 @@ function DungeonService.Challenge(uid, dungeonId, floor, teamIdx)
             pendingChallenges[key] = pending
         end
         challengeId = pending.challengeId
+        DungeonService.ClearOfflineChallengeSources(uid, "dungeon")
+        DungeonService.SetOfflineChallengeSource(uid, team, {
+            sourceKind = "dungeon", stageId = DC.getStageId(dungeonId, floor),
+            resourceDungeonId = dungeonId, resourceFloor = floor,
+        })
+        DungeonService.PersistOfflineChallengeSources(uid)
     end
     local result = {
         dungeonId = dungeonId, floor = floor, teamIdx = team, challengeId = challengeId,
@@ -538,6 +588,9 @@ function DungeonService.Win(uid, dungeonId, floor, teamIdx, challengeId)
         rewards.dungeonId, rewards.floor, rewards.teamIdx = dungeonId, floor, team
         rewards.challengeId = challengeId
         rewards.firstClear, rewards.nextFloor = firstClear, sub.floor
+        if DC.isResourceDungeon(dungeonId) then
+            DungeonService.ClearOfflineChallengeSources(uid, "dungeon")
+        end
         return true, nil, rewards
     end, function()
         if DC.isResourceDungeon(dungeonId) then pendingChallenges[key] = nil end

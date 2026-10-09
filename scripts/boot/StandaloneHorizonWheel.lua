@@ -90,6 +90,7 @@ function Wheel.bind(deps)
             local pdx, pdy = playerInfoDesignCoords(sx, sy)
             return 'playerinfo', pdx, pdy
         end
+        if RewardPopup.isLarge() then return 'rewardlarge', sx, sy end
         -- 全局奖励弹窗：归属面板时点击路由到该面板（面板内任意点击可交互/关闭，
         -- 面板外点击 rp_out 关闭）；无归属时所有点击都路由给它（任意点击可关闭）
         if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
@@ -222,6 +223,7 @@ function Wheel.bind(deps)
                 PlayerInfoPanel.handleScroll(wheel, msx, msy)
                 return
             end
+            if RewardPopup.handleLargeScroll(wheel, csx, csy, logicalW(), logicalH()) then return end
             -- 归属面板的奖励弹窗：指针在其面板内且命中面板时滚轮滚弹窗列表
             if RewardPopup.isOpen() and not RewardPopup.currentRowTag() and RewardPopup.currentPanel() then
                 local pid2

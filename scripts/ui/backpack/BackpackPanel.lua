@@ -185,31 +185,7 @@ local SCROLL_WHEEL_STEP = 60
 local easeInOutCubic = TownPageChrome.easeInOutCubic
 
 -- ======================== 资源道具定义 ========================
-
--- key → { iconPath, quality, name, source, desc, getter }
-local ITEM_DEFS = {
-    { key = "gold",          iconPath = "image/货币道具/UI_icon_JB_X.png",   quality = 2, name = "金币",       source = "击杀/通关/任务",         desc = "强化武器，购买资源",                                       getter = function() return GameState.getGold() end },
-    { key = "gems",          iconPath = "image/货币道具/UI_icon_SJ_X.png",     quality = 5, name = "黑晶",       source = "成就/首通/活动",         desc = "酒馆招募抽卡",                                             getter = function() return GameState.getGems() end },
-    { key = "essence",       iconPath = "image/货币道具/UI_icon_JC.png",     quality = 2, name = "精粹",       source = "分解装备获得",           desc = "用于洗练装备",                                             getter = function() return GameState.getEssence() end },
-    { key = "enhanceStone",  iconPath = "image/货币道具/UI_icon_QH_1.png",   quality = 3, name = "洗练石",     source = "市场购买/任务",          desc = "洗练时使用可以只洗练数值高低，不洗练属性",                  getter = function() return GameState.getEnhanceStone() end },
-    -- seq5 degradeStone 已隐藏，不在背包显示
-    { key = "destroyStone",  iconPath = "image/货币道具/UI_icon_QH_3.png",   quality = 5, name = "点金石",     source = "市场购买/任务",          desc = "洗练时使用可将装备提品，最高提到史诗品质",                  getter = function() return GameState.getDestroyStone() end },
-    { key = "weaponScroll",    iconPath = "image/货币道具/UI_icon_JZ_WQ.png",  quality = 3, name = "武器卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getWeaponScroll() end },
-    { key = "offhandScroll",   iconPath = "image/货币道具/UI_icon_JZ_FS.png",  quality = 3, name = "副手卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getOffhandScroll() end },
-    { key = "armorScroll",     iconPath = "image/货币道具/UI_icon_JZ_HJ.png",  quality = 3, name = "护甲卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getArmorScroll() end },
-    { key = "accessoryScroll", iconPath = "image/货币道具/UI_icon_JZ_SP.png",  quality = 3, name = "饰品卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getAccessoryScroll() end },
-    { key = "helmetScroll",    iconPath = "image/货币道具/UI_icon_JZ_TK.png",  quality = 3, name = "头盔卷轴",   source = "击杀/通关/任务",       desc = "强化头盔时进行使用",                                       getter = function() return GameState.getHelmetScroll() end },
-    { key = "shoesScroll",     iconPath = "image/货币道具/UI_icon_JZ_XZ.png",  quality = 3, name = "鞋子卷轴",   source = "击杀/通关/任务",       desc = "强化鞋子时进行使用",                                       getter = function() return GameState.getShoesScroll() end },
-    { key = "recruitTicket", iconPath = "image/货币道具/UI_icon_ZMQ_1.png",  quality = 5, name = "远征招募券", source = "市场/活动/福利",         desc = "酒馆常规招募抽卡",                                       getter = function() return GameState.getRecruitTicket() end },
-    { key = "stellarRecruitTicket", iconPath = "image/货币道具/UI_icon_ZMQ_2.png", quality = 6, name = "星辰招募券", source = "活动/福利", desc = "酒馆星辰招募抽卡", getter = function() return GameState.getStellarRecruitTicket() end },
-    { key = "goldenKey", iconPath = "image/货币道具/UI_icon_HJYS.png", quality = 6, name = "黄金钥匙", source = "首通奖励/市场购买", desc = "开启神器宝箱", getter = function() return GameState.getGoldenKey() end },
-    { key = "sweepTicket",   iconPath = "image/货币道具/UI_icon_SDQ.png",    quality = 4, name = "扫荡券",     source = "活动获得/看广告获得",    desc = "可以立即扫荡获得半小时的离线收益",                          getter = function() return GameState.getSweepTicket() end },
-    { key = "tavernCoin",    iconPath = "image/货币道具/UI_icon_JGB_X.png",    quality = 3, name = "酒馆币",     source = "非UR满觉醒碎片分解",  desc = "在酒馆商店兑换自选",                                       getter = function() return GameState.getTavernCoin() end },
-    { key = "arcaneDust",    iconPath = "image/货币道具/UI_icon_ASFC.png", quality = 3, name = "奥术粉尘",   source = "上古遗迹首通/扫荡",     desc = "上古遗迹产出的神秘粉尘",                                   getter = function() return GameState.getArcaneDust() end },
-    { key = "corruptStone",  iconPath = "image/货币道具/UI_icon_FHS.png", quality = 3, name = "腐化石",     source = "关卡首通/活动/市场",      desc = "将一条普通词缀转为同类型魔化词条(数值×1.8)，并叠加一层诅咒(基础-10%/层，最多3层)",                 getter = function() return GameState.getCorruptStone() end },
-    { key = "sacredStone",   iconPath = "image/货币道具/UI_icon_SSS.png", quality = 6, name = "神圣石",     source = "关卡首通/活动/市场",      desc = "洗除装备一层腐化诅咒(基础属性恢复)，魔化词条保留；3层诅咒需3颗完全洗除", getter = function() return GameState.getSacredStone() end },
-    { key = "speedCard",     iconPath = "image/货币道具/UI_icon_JSK.png",  quality = 5, name = "加速卡",     source = "市场购买获得",          desc = "提升20%在线挂机收益，包括金币/经验/装备等；获得时即刻开始生效，持续24小时。", getter = function() return GameState.getSpeedCardDisplayCount() end, amountTextGetter = function() return GameState.formatSpeedCardRemain() end, detailAmountTextGetter = function() return "剩余:" .. GameState.formatSpeedCardRemain() end, descGetter = function() return "提升20%在线挂机收益，包括金币/经验/装备等；当前剩余时间：" .. GameState.formatSpeedCardRemain() end },
-}
+local ITEM_DEFS = require("ui.backpack.BackpackItems")
 
 -- ======================== 图片句柄 ========================
 
@@ -484,8 +460,8 @@ local function ensureBpDialogs()
     return _bpDialogs
 end
 
-local function drawWrappedText(vg, x, y, maxW, text, fontSize, r, g, b)
-    return ensureBpDialogs().drawWrappedText(vg, x, y, maxW, text, fontSize, r, g, b)
+local function drawWrappedText(vg, x, y, maxW, text, fontSize, r, g, b, measureOnly)
+    return ensureBpDialogs().drawWrappedText(vg, x, y, maxW, text, fontSize, r, g, b, measureOnly)
 end
 
 local function shouldShowTransferBtn(def)
@@ -621,10 +597,13 @@ local function drawItemDetail(vg)
     nvgTranslate(vg, -540, -1158)
     nvgGlobalAlpha(vg, progress)
 
-    -- 1. 品质背景九宫格 X=540 Y=1158 530×650
+    local descText = def.descGetter and def.descGetter() or (def.desc or "")
+    local descHeight = drawWrappedText(vg, 0, 0, 420, descText, 34, 0x72, 0x58, 0x50, true)
+    local detailHeight = 650 + math.max(0, descHeight + 40 - 176)
+    -- 用途全文占用真实高度，保持名称、数量及关闭输入的既有位置。
     local q = math.min(def.quality or 1, 6)
     DarkIcon.drawNine(vg, "panel",
-        540 - 530 * 0.5, 1158 - 650 * 0.5, 530, 650,
+        540 - 530 * 0.5, 1158 - 650 * 0.5, 530, detailHeight,
         { titleH = 400, accent = DarkIcon.QUALITY_TRIM[q] })
 
     -- 2. 道具名称 X左对齐317 Y893 字号40 白色 黑色描边4
@@ -670,16 +649,15 @@ local function drawItemDetail(vg)
         0xf7, 0xfe, 0x77, 4, nil)
 
     -- 7. 描述背景 X540 Y1333 460×176 圆角14 纯黑10%
-    local descBgW, descBgH = 460, 176
-    local descBgX = 540 - descBgW * 0.5  -- 310
-    local descBgY = 1333 - descBgH * 0.5 -- 1245
+    local descBgW, descBgH = 460, math.max(176, descHeight + 40)
+    local descBgX = 540 - descBgW * 0.5
+    local descBgY = 1245
     nvgBeginPath(vg)
     nvgRoundedRect(vg, descBgX, descBgY, descBgW, descBgH, 14)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 25))
     nvgFill(vg)
 
     -- 8. 描述文本 内间距20 字号34 颜色#725850
-    local descText = def.descGetter and def.descGetter() or (def.desc or "")
     if #descText > 0 then
         local textX = descBgX + 20
         local textY = descBgY + 20

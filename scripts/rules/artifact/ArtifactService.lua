@@ -165,50 +165,16 @@ local function validateMergeGroup(data, artifactIds, usedIds)
     return artifacts, bagIndices, baseArtifactId, newQuality, nil
 end
 
-local function rollBaseQuality()
+local function rollQuality(chest)
     local total = 0
-    for _, row in ipairs(ArtifactDefs.QUALITY_RATE) do
-        total = total + row.weight
-    end
-    local roll = math.random() * total
+    for _, row in ipairs(chest.rates) do total = total + row.weight end
+    local roll = math.random(1, total)
     local acc = 0
-    for _, row in ipairs(ArtifactDefs.QUALITY_RATE) do
+    for _, row in ipairs(chest.rates) do
         acc = acc + row.weight
-        if roll <= acc then
-            return row.quality
-        end
+        if roll <= acc then return row.quality end
     end
     return 1
-end
-
-local function rollQuality(data)
-    local nextRare = (data.pityRare or 0) + 1
-    local nextEpic = (data.pityEpic or 0) + 1
-    local quality
-    local pity = nil
-
-    if nextEpic >= ArtifactDefs.PITY_EPIC then
-        quality = 4
-        pity = "epic"
-    elseif nextRare >= ArtifactDefs.PITY_RARE then
-        quality = 3
-        pity = "rare"
-    else
-        quality = rollBaseQuality()
-    end
-
-    if quality >= 4 then
-        data.pityEpic = 0
-        data.pityRare = 0
-    elseif quality >= 3 then
-        data.pityEpic = nextEpic
-        data.pityRare = 0
-    else
-        data.pityEpic = nextEpic
-        data.pityRare = nextRare
-    end
-
-    return quality, pity
 end
 
 local function rollThreatClearValueRatio(artifactDefId, quality)
@@ -220,7 +186,7 @@ local function addCount(map, key, amount)
     map[key] = (tonumber(map[key]) or 0) + (amount or 1)
 end
 
-local function recordDrawStats(data, count, rewards)
+local function recordDrawStats(data, count, rewards, chestType)
     if type(data.drawStats) ~= "table" then data.drawStats = {} end
     local stats = data.drawStats
     stats.total = (tonumber(stats.total) or 0) + count
@@ -231,6 +197,8 @@ local function recordDrawStats(data, count, rewards)
     elseif count == 1 then
         stats.single = stats.single + 1
     end
+    if type(stats.byChest) ~= "table" then stats.byChest = {} end
+    addCount(stats.byChest, chestType, count)
     if type(stats.byQuality) ~= "table" then stats.byQuality = {} end
     if type(stats.byArtifactId) ~= "table" then stats.byArtifactId = {} end
     for _, artifact in ipairs(rewards or {}) do
@@ -239,15 +207,12 @@ local function recordDrawStats(data, count, rewards)
     end
 end
 
-local function createArtifact(data, quality)
+local function createArtifact(id, quality)
     local artifactDefId = ArtifactDefs.rollArtifactId(quality)
     if not artifactDefId then return nil, "没有可抽取的神器定义" end
 
-    local id = tostring(data.nextId or 1)
-    data.nextId = (data.nextId or 1) + 1
-
     local artifact = {
-        id = id,
+        id = tostring(id),
         artifactId = artifactDefId,
         quality = quality,
         valueRatio = ArtifactDefs.rollValueRatio(),
@@ -257,7 +222,6 @@ local function createArtifact(data, quality)
         artifact.threatClearRatio = threatClearRatio
     end
     ArtifactDefs.normalizeInstanceValue(artifact)
-    data.bag[#data.bag + 1] = artifact
     return artifact
 end
 
@@ -265,120 +229,82 @@ local function getDayId()
     return math.floor((os.time() + 28800) / 86400)
 end
 
-function ArtifactService.Draw(uid, count, payType)
+function ArtifactService.Draw(uid, count, payType, chestType)
     count = tonumber(count) or 1
-    if count ~= 1 and count ~= 10 then
-        return false, "抽取次数错误"
+    if count ~= 1 and count ~= 10 then return false, "抽取次数错误" end
+    chestType = chestType or "normal"
+    local chest = ArtifactDefs.getChest(chestType)
+    if not chest then return false, "神器宝箱类型错误" end
+    if not ArtifactDefs.isChestUnlocked(chestType, PDM.GetModule(uid, "battle")) then
+        return false, ArtifactDefs.getChestUnlockText(chestType)
     end
 
     local data = ensureData(uid)
     if not data then return false, "神器数据未加载" end
-
-    -- 宝箱直接开放，不以战斗进度解锁；费用、容量与装配门槛仍独立校验。
-
-    if #data.bag + count > ArtifactDefs.MAX_BAG then
-        return false, "神器背包已满"
-    end
-
-    local keyCost = ArtifactDefs.DRAW_KEY_COST[count]
-    if not keyCost then
-        return false, "抽取次数错误"
-    end
-
+    if #data.bag + count > ArtifactDefs.MAX_BAG then return false, "神器背包已满" end
+    local keyCost = ArtifactDefs.getDrawKeyCost(count, chestType)
+    if not keyCost then return false, "抽取次数错误" end
     local currency = PDM.GetModule(uid, "currency")
     if not currency then return false, "货币数据未加载" end
 
     payType = payType or "diamond"
-    local keysToUse = 0
-    local diamondNeeded = 0
+    local keysToUse, diamondNeeded = 0, 0
     local isFreeDaily = false
-
+    local today = getDayId()
     if payType == "free_daily" then
-        if count ~= 1 then
-            return false, "免费抽取只支持单抽"
-        end
-        local today = getDayId()
-        if (data.dailyFreeDrawDayId or 0) == today then
-            return false, "今日免费单抽已使用"
-        end
+        if not chest.dailyFree then return false, "每日免费仅限普通神器宝箱" end
+        if count ~= 1 then return false, "免费抽取只支持单抽" end
+        if (data.dailyFreeDrawDayId or 0) == today then return false, "今日免费单抽已使用" end
         isFreeDaily = true
     elseif payType == "key" then
         if (currency.goldenKey or 0) < keyCost then
             return false, "黄金钥匙不足（需要 " .. keyCost .. "）"
         end
         keysToUse = keyCost
-    else
-        payType = "diamond"
-        local available = currency.goldenKey or 0
-        keysToUse = math.min(available, keyCost)
-        local shortfall = keyCost - keysToUse
-        diamondNeeded = shortfall * ArtifactDefs.KEY_DIAMOND_PRICE
+    elseif payType == "diamond" then
+        keysToUse = math.min(currency.goldenKey or 0, keyCost)
+        diamondNeeded = (keyCost - keysToUse) * ArtifactDefs.KEY_DIAMOND_PRICE
         if (currency.gems or 0) < diamondNeeded then
             return false, "黑晶不足（需要 " .. diamondNeeded .. "）"
         end
+    else
+        return false, "神器支付方式错误"
     end
 
-    local oldKeys = currency.goldenKey or 0
-    local oldGems = currency.gems or 0
-
+    -- 全批次生成成功后再提交费用/背包/统计，失败不留下部分奖励或消耗。
+    local rewards = {}
+    for i = 1, count do
+        local quality = rollQuality(chest)
+        local artifact, err = createArtifact(data.nextId + i - 1, quality)
+        if not artifact then return false, err or "神器生成失败" end
+        rewards[#rewards + 1] = artifact
+    end
     if not isFreeDaily then
-        if keysToUse > 0 then
-            currency.goldenKey = oldKeys - keysToUse
-        end
-        if diamondNeeded > 0 then
-            currency.gems = oldGems - diamondNeeded
-        end
+        currency.goldenKey = (currency.goldenKey or 0) - keysToUse
+        currency.gems = (currency.gems or 0) - diamondNeeded
         PDM.MarkDirty(uid, "currency")
     end
-
-    local rewards = {}
-    local pityHits = {}
-    for _ = 1, count do
-        local quality, pity = rollQuality(data)
-        local artifact, err = createArtifact(data, quality)
-        if not artifact then
-            currency.goldenKey = oldKeys
-            currency.gems = oldGems
-            PDM.MarkDirty(uid, "currency")
-            return false, err or "神器生成失败"
-        end
-        data.totalDraws = (data.totalDraws or 0) + 1
-        rewards[#rewards + 1] = artifact
-        if pity then pityHits[#pityHits + 1] = pity end
-    end
-    recordDrawStats(data, count, rewards)
-    if isFreeDaily then
-        data.dailyFreeDrawDayId = getDayId()
-    end
+    for _, artifact in ipairs(rewards) do data.bag[#data.bag + 1] = artifact end
+    data.nextId = data.nextId + count
+    data.totalDraws = (data.totalDraws or 0) + count
+    recordDrawStats(data, count, rewards, chestType)
+    if isFreeDaily then data.dailyFreeDrawDayId = today end
 
     ArtifactSchema.normalizeModule(data)
     PDM.MarkDirty(uid, "artifacts")
     PDM.FlushImmediate(uid)
-
     TaskService.UpdateProgress(uid, "artifact_draw", count)
-
-    print("[ArtifactService] DRAW uid=" .. tostring(uid)
-        .. " count=" .. count
-        .. " keys=" .. keysToUse
-        .. " diamonds=" .. diamondNeeded
-        .. " freeDaily=" .. tostring(isFreeDaily)
-        .. " rewards=" .. #rewards
-        .. " pityRare=" .. tostring(data.pityRare)
-        .. " pityEpic=" .. tostring(data.pityEpic))
+    print("[ArtifactService] DRAW uid=" .. tostring(uid) .. " chest=" .. chestType
+        .. " count=" .. count .. " keys=" .. keysToUse .. " diamonds=" .. diamondNeeded
+        .. " freeDaily=" .. tostring(isFreeDaily) .. " rewards=" .. #rewards)
 
     return true, nil, {
-        count = count,
-        keyCost = keyCost,
-        keysUsed = keysToUse,
-        diamondCost = diamondNeeded,
-        freeDaily = isFreeDaily,
-        dailyFreeDrawDayId = data.dailyFreeDrawDayId or 0,
-        balance = currency.gems,
-        goldenKey = currency.goldenKey,
-        artifacts = rewards,
-        pityRare = data.pityRare,
-        pityEpic = data.pityEpic,
-        pityHits = pityHits,
+        count = count, chestType = chestType,
+        keyCost = keyCost, keysUsed = keysToUse, diamondCost = diamondNeeded,
+        freeDaily = isFreeDaily, dailyFreeDrawDayId = data.dailyFreeDrawDayId or 0,
+        balance = currency.gems, goldenKey = currency.goldenKey, artifacts = rewards,
+        -- 协议保留旧计数字段为零；它们不影响任何品质判定。
+        pityRare = 0, pityEpic = 0, pityHits = {},
     }
 end
 

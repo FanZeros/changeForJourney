@@ -4,6 +4,7 @@
 
 local DrawUtil = require("core.DrawUtil")
 local DarkIcon = require("core.DarkIcon")
+local I18n = require("core.I18n")
 local PlayerStore = require("core.PlayerStore")
 local GameState = require("core.GameState")
 
@@ -17,7 +18,8 @@ function M.bind(deps)
     local getImgBtnYellow = deps.getImgBtnYellow
     local getImgBtnGreen = deps.getImgBtnGreen
 
-    local function drawWrappedText(vg, x, y, maxW, text, fontSize, r, g, b)
+    local function drawWrappedText(vg, x, y, maxW, text, fontSize, r, g, b, measureOnly)
+        text = I18n.lookup(text)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, fontSize)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
@@ -55,7 +57,7 @@ function M.bind(deps)
                         break
                     end
                     local sub = table.concat(chars, "", lineStart, ci)
-                    local tw = nvgTextBounds(vg, 0, 0, sub)
+                    local tw = I18n.displayBounds(vg, 0, 0, sub)
                     if tw > maxW and ci > lineStart then
                         lineEnd = ci - 1
                         break
@@ -64,12 +66,13 @@ function M.bind(deps)
                 end
                 if lineEnd >= lineStart then
                     local lineStr = table.concat(chars, "", lineStart, lineEnd)
-                    nvgText(vg, x, lineY, lineStr, nil)
+                    if not measureOnly then I18n.displayText(vg, x, lineY, lineStr, nil) end
                 end
                 lineY = lineY + lineHeight
                 lineStart = lineEnd + 1
             end
         end
+        return lineY - y
     end
 
     local function shouldShowTransferBtn(def)

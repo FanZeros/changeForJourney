@@ -9,7 +9,7 @@ local ArtifactHandler = {}
 local handlers = {}
 
 handlers[Protocol.ACTION_TYPES.ARTIFACT_DRAW] = function(uid, params)
-    local ok, err, result = ArtifactService.Draw(uid, params and params.count, params and params.payType)
+    local ok, err, result = ArtifactService.Draw(uid, params and params.count, params and params.payType, params and params.chestType)
     if not ok then
         return { success = false, reason = err, action = Protocol.ACTION_TYPES.ARTIFACT_DRAW }
     end

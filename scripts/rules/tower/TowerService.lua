@@ -20,6 +20,15 @@ local sweeps = {}
 local pendingRewards = {}
 local runSerial = 0
 
+local function setOfflineTowerSource(uid, floor)
+    for teamIdx = 1, ExpTable.TEAM_COUNT do
+        DungeonService.SetOfflineChallengeSource(uid, teamIdx, {
+            sourceKind = "tower", stageId = 400000 + floor, resourceFloor = floor,
+            paused = true, sourceName = "通天塔 第" .. floor .. "层",
+        })
+    end
+end
+
 local function copy(value)
     if type(value) ~= "table" then return value end
     local result = {}
@@ -63,16 +72,22 @@ function TowerService.Cleanup(uid, runId)
     run.pendingSelections, run.selections, run.requests = {}, {}, {}
     run.bt.buffs = {}
     runs[uid] = nil
+    DungeonService.ClearOfflineChallengeSources(uid, "tower")
+    DungeonService.PersistOfflineChallengeSources(uid)
     PDM.MarkDirty(uid, "dungeon")
     return true
 end
 
 function TowerService.ResetToDefault(uid)
     if uid == nil then
-        for key in pairs(runs) do runs[key] = nil end
+        for key in pairs(runs) do
+            DungeonService.ClearOfflineChallengeSources(key, "tower")
+            runs[key] = nil
+        end
         for key in pairs(sweeps) do sweeps[key] = nil end
         for key in pairs(pendingRewards) do pendingRewards[key] = nil end
     else
+        if runs[uid] then DungeonService.ClearOfflineChallengeSources(uid, "tower") end
         runs[uid], sweeps[uid], pendingRewards[uid] = nil, nil, nil
     end
 end
@@ -103,7 +118,9 @@ function TowerService.Challenge(uid, requestedFloor)
         phase = "battle", selections = {}, waveResults = {}, floorResults = {},
         requests = {}, pendingSelections = {} }
     runs[uid] = run
+    setOfflineTowerSource(uid, floor)
     PDM.MarkDirty(uid, "dungeon")
+    DungeonService.PersistOfflineChallengeSources(uid)
     print(string.format("[TowerService] Challenge run=%s floors=%d-%d", run.id, floor, run.endFloor))
     return true, nil, { success = true, floor = floor, wave = 1, runId = run.id,
         startFloor = run.startFloor, endFloor = run.endFloor,
@@ -317,6 +334,8 @@ function TowerService.FloorWin(uid, floor, request)
             progressFloor = bt.floor, startFloor = run.startFloor, endFloor = run.endFloor,
             buffs = copy(bt.buffs), selectionId = plan.selectionId,
             buffChoices = copy(plan.buffChoices), monsters = copy(plan.monsters), monsterLevel = plan.monsterLevel }
+        if result.continueRun then setOfflineTowerSource(uid, floor + 1)
+        else DungeonService.ClearOfflineChallengeSources(uid, "tower") end
         return true, nil, result
     end, function()
         -- 通知可同步重入：必须在MarkDirty/finish前建立按floor回执并消费开奖。

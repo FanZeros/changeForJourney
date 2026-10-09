@@ -23,6 +23,7 @@ local MarketInput = require("ui.market.MarketInput")
 local MarketResults = require("ui.market.MarketResults")
 local MarketInit = require("ui.market.MarketInit")
 
+local ArtifactDefs = require("shared.artifact.ArtifactDefs")
 local MarketPage = {}
 
 --- sendAction 注入（由 Client.lua 调用 setSendAction 设置）
@@ -146,9 +147,9 @@ local SHOP_ITEMS = {
     },
     {
         id = 20, name = "黄金钥匙", quality = 6, rewardCount = 1,
-        desc = "用于开启黄金宝箱。",
+        desc = "普通神器宝箱每次1把，高级每次5把；每把价值150黑晶。",
         restockType = "permanent", limitCount = -1,
-        currency = "diamond", price = 300,
+        currency = "diamond", price = ArtifactDefs.KEY_DIAMOND_PRICE,
         icon = "image/货币道具/UI_icon_HJYS.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },

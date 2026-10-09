@@ -473,6 +473,24 @@ function DungeonConfig.getEquipDropRates(floor)
     return scrollRate, ticketRate
 end
 
+--- 装备副本每件品质使用同源主线的零幸运击杀分布；不借副本首层替换的怪物池。
+--- 数量、等级与首通当量独立于稀有度，普通/困难/高难度上限由主线配置决定。
+---@param floor number
+---@return number[]
+function DungeonConfig.getEquipQualityProbabilities(floor)
+    local source = getSourceStage("equipment_vault", floor)
+    if not source then return { 1, 0, 0, 0, 0, 0 } end
+    return require("systems.DropSystem").getStageQualityProbabilities(source)
+end
+
+--- 只骰一件品质；所有装备副本发奖入口复用此分布。
+---@param floor number
+---@return number
+function DungeonConfig.rollEquipQuality(floor)
+    return require("systems.DropSystem").rollQualityByProbabilities(
+        DungeonConfig.getEquipQualityProbabilities(floor))
+end
+
 --- 获取层配置，旧遗迹仍能按原规则结清旧数据，不挪用为新装备副本。
 ---@return table|nil
 function DungeonConfig.getFloor(id, floor)
@@ -494,7 +512,20 @@ function DungeonConfig.getFloor(id, floor)
         result.sweepEquip = sweep
         result.firstEquip = sweep * 2
         result.equipLevel = combat.monsterLevel
-        result.equipMinQuality, result.equipMaxQuality = math.min(3, cap), cap
+        result.equipQualityProbabilities = DungeonConfig.getEquipQualityProbabilities(floor)
+        result.equipMinQuality, result.equipMaxQuality = 1, cap
+        for q = 1, cap do
+            if result.equipQualityProbabilities[q] > 0 then
+                result.equipMinQuality = q
+                break
+            end
+        end
+        for q = cap, 1, -1 do
+            if result.equipQualityProbabilities[q] > 0 then
+                result.equipMaxQuality = q
+                break
+            end
+        end
     elseif id == "black_diamond" then
         local legacy = DungeonConfig.LEGACY_MAX_FLOOR.black_diamond
         local rewardFloor = floor <= legacy and floor or legacy + math.ceil((floor - legacy) / 5)
@@ -600,7 +631,7 @@ end
 ---@return number|nil 当前章末锚点；已是锚点时原样返回，不改写队伍位置
 function DungeonConfig.getChapterStageId(stageId)
     local id, floor = DungeonConfig.decodeStageId(stageId)
-    if not id then return nil end
+    if not id or not floor then return nil end
     local index = DungeonConfig.getChapterIndex(id, floor)
     if not index then return nil end
     local floors = getChapterFloorsInternal(id)
@@ -633,7 +664,7 @@ end
 
 function DungeonConfig.getStage(stageId)
     local id, floor = DungeonConfig.decodeStageId(stageId)
-    if not id then return nil end
+    if not id or not floor then return nil end
     if resourceStages[stageId] then return resourceStages[stageId] end
     local entry = DungeonConfig.getCombatEntry(id, floor)
     if not entry then return nil end
@@ -728,7 +759,7 @@ function DungeonConfig.getStageRewards(stageId, kills, heroCount)
             for _ = 1, amount do
                 rewards.equipSeeds[#rewards.equipSeeds + 1] = {
                     stageId = stageId, count = 1, level = data.equipLevel,
-                    quality = math.random(data.equipMinQuality, data.equipMaxQuality),
+                    quality = require("systems.DropSystem").rollQualityByProbabilities(data.equipQualityProbabilities),
                 }
             end
         end

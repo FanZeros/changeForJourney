@@ -76,12 +76,13 @@ local function rollQualityByStage(qw)
     return 1  -- fallback
 end
 
---- 根据怪物品质加权随机选取装备品质 (1-6)，用于击杀掉落
----@param monsterQuality number 怪物品质 1~6
----@param difficulty string|nil 关卡难度（地狱时提升 Q5/Q6 权重）
----@param luck number|nil 本队幸运快照
----@return number quality 1~6
-local function rollQualityByMonster(monsterQuality, difficulty, luck)
+--- 怪物掉落品质权重；主线、副本与离线共用难度倍率，幸运仅由调用方传入。
+---@param monsterQuality number
+---@param difficulty string|nil
+---@param luck number|nil
+---@return number[] weights
+---@return number total
+function DropSystem.getQualityWeights(monsterQuality, difficulty, luck)
     local qualityData = MC.QUALITY[monsterQuality] or MC.QUALITY[1]
     local dw = qualityData.dropWeights
     local isHighDiff = difficulty == StageConfig.DIFFICULTY_HELL
@@ -99,7 +100,7 @@ local function rollQualityByMonster(monsterQuality, difficulty, luck)
     local total = 0
     local weights = {}
     for i = 1, 6 do
-        local w = dw[i] or 0
+        local w = dw[i] or 0 --[[@as number]]
         if isHighDiff and HELL_EQUIP_WEIGHT_BOOST[i] then
             ---@diagnostic disable-next-line: assign-type-mismatch
             w = w * HELL_EQUIP_WEIGHT_BOOST[i]
@@ -109,6 +110,16 @@ local function rollQualityByMonster(monsterQuality, difficulty, luck)
         weights[i] = w
         total = total + w
     end
+    return weights, total
+end
+
+--- 根据怪物品质抽样；零幸运沿用整数区间，高品质零权重不产生掉落。
+---@param monsterQuality number
+---@param difficulty string|nil
+---@param luck number|nil
+---@return number
+function DropSystem.rollQualityByMonster(monsterQuality, difficulty, luck)
+    local weights, total = DropSystem.getQualityWeights(monsterQuality, difficulty, luck)
     if total <= 0 then return 1 end
 
     local r
@@ -144,6 +155,50 @@ local function pickMonsterQuality(stageEntry)
     return template and template.quality or 1
 end
 
+--- 一件已命中掉落的品质分布；普通怪与Boss各占一个品质池位置。
+--- 只读查询不判定是否掉装备，不消耗随机数，不包含首通最低品质。
+---@param stageEntry table
+---@return number[] probabilities
+function DropSystem.getStageQualityProbabilities(stageEntry)
+    local pool = {}
+    for _, id in ipairs(stageEntry.monsters or {}) do pool[#pool + 1] = id end
+    if (stageEntry.bossId or 0) > 0 then pool[#pool + 1] = stageEntry.bossId end
+    if #pool == 0 then pool[1] = 0 end
+    local probabilities = { 0, 0, 0, 0, 0, 0 }
+    local difficulty = stageEntry.difficulty or StageConfig.getDifficulty(stageEntry.sourceStageId or stageEntry.id)
+    local cap = StageConfig.getMaxDropQuality(stageEntry)
+    for _, monsterId in ipairs(pool) do
+        local monster = MC.MONSTERS[monsterId]
+        local weights, total = DropSystem.getQualityWeights(monster and monster.quality or 1, difficulty, 0)
+        if total <= 0 then probabilities[1] = probabilities[1] + 1 / #pool
+        else
+            for q = 1, 6 do
+                local quality = math.min(q, cap)
+                probabilities[quality] = probabilities[quality] + weights[q] / total / #pool
+            end
+        end
+    end
+    return probabilities
+end
+
+--- 对已确定的六品质概率抽样；只消耗一次随机数。
+---@param probabilities number[]
+---@return number
+function DropSystem.rollQualityByProbabilities(probabilities)
+    local roll = math.random()
+    local cumulative = 0
+    local fallback = 1
+    for q = 1, 6 do
+        local probability = probabilities[q] or 0
+        if probability > 0 then
+            fallback = q
+            cumulative = cumulative + probability
+            if roll < cumulative then return q end
+        end
+    end
+    return fallback
+end
+
 ------------------------------------------------------------------------
 -- 公开 API
 ------------------------------------------------------------------------
@@ -168,7 +223,7 @@ function DropSystem.rollKillDrop(stageEntry, context)
     -- 命中掉落：服务端随机选取一个怪物品质，再按其权重决定装备品质
     local monsterQ = pickMonsterQuality(stageEntry)
     local difficulty = StageConfig.getDifficulty(stageEntry.id)
-    local quality = rollQualityByMonster(monsterQ, difficulty, luck)
+    local quality = DropSystem.rollQualityByMonster(monsterQ, difficulty, luck)
     -- 品质上限：普通最高 4，困难 5，噩梦/地狱/炼狱/折磨(I/II/III) 6
     local maxQ = StageConfig.getMaxDropQuality(stageEntry)
     if quality > maxQ then quality = maxQ end

@@ -134,6 +134,9 @@ function Start()
             ["runtime.GameAction"] = mock({ sendAction = function() actions = actions + 1; error("禁止发送抽取action") end }),
             ["ui.hud.BottomNav"] = mock({ getSelectedIndex = function() return 3 end,
                 refreshTownBadge = function() badges = badges + 1 end }),
+            ["ui.widget.ResultRepeatFooter"] = { EXTRA_HEIGHT = 100, HINT_Y = 1334, draw = noop, hit = function() return 0 end },
+            ["ui.character.hero.AwakeningArtwork"] = mock({ bindInput = function() return noop end,
+                releaseTouch = noop, hasTouch = noop }),
             ["ui.character.panel.CharacterPanel"] = mock({ getTotalPower = function() return 0 end }),
             ["ui.battle.tri.BattleTriPage"] = mock({ isOpen = function() return mode == "tri" end }),
             ["ui.tower.TowerBattleScene"] = mock({ isActive = function() return mode == "tower" end }),
@@ -167,6 +170,9 @@ function Start()
             if not mods[name] then mods[name] = page() end
             return mods[name]
         end)
+        mods["ui.widget.RewardItemView"] = compile("ui.widget.RewardItemView")
+        mods["ui.widget.RewardLargeView"] = compile("ui.widget.RewardLargeView")
+        mods["boot.RewardGesture"] = compile("boot.RewardGesture")
         local Reward = compile("ui.hud.popup.RewardPopup")
         mods["ui.hud.popup.RewardPopup"] = Reward
         local DrawPanel = compile("ui.church.ChurchArtifactDrawPanel")
@@ -211,8 +217,8 @@ function Start()
                 "成功回包在默认focus=center时显式来源left，而非row")
             check(churchState.floatText == "获得" .. count .. "件神器", "结果件数提示准确")
             check(badges == 1 and reads == 1 and actions == 0, "结果只刷新角标/内存，不花币发action")
-            check(artifactMemory.pityRare == 2 and artifactMemory.pityEpic == 3
-                and artifactMemory.dailyFreeDrawDayId == 20000, "保底/每日标记同步到内存")
+            check(artifactMemory.pityRare == 9 and artifactMemory.pityEpic == 19
+                and artifactMemory.dailyFreeDrawDayId == 20000, "每日标记同步，保底计数保持内存原值")
             check(timeline.count == count and near(timeline.revealStart, clock.elapsedTime + Cascade.LEAD), "来源接入真实cascade")
             return result
         end
@@ -255,7 +261,7 @@ function Start()
                 and near(m.e, ox + cs * 540 * (1 - layout)) and near(m.f, oy + cs * 974 * (1 - layout))
         end
         local function visibleIcons(panel, count, expected)
-            check(#titles == 1 and titles[1].text == "神器宝箱", "结果title主体只画一次")
+            check(#titles == 1 and (titles[1].text == "神器宝箱" or titles[1].text == "普通神器宝箱"), "结果title主体只画一次")
             check(matrixCorrect(panel, count), "实际title矩阵 = frame × 宿主panel/letterbox × 奖励layout")
             local cs, ox, oy, clip = host(panel)
             check(equalRect(titles[1].clip, clip), "title宿主clip与所在栏/全窗同源")
@@ -279,7 +285,7 @@ function Start()
                     and draw.y >= draw.clip.y and draw.y <= draw.clip.y + draw.clip.h,
                     "图标中心可见，不在面板外绘制")
             end
-            check(cs > 0 and hasText("神器宝箱"), "非零宿主scale及真实结果文字")
+            check(cs > 0 and (hasText("神器宝箱") or hasText("普通神器宝箱")), "非零宿主scale及真实结果文字")
         end
         local button = { Button = { GetInt = function() return MOUSEB_LEFT end } }
         local function clickIcon()
@@ -361,6 +367,116 @@ function Start()
                 end
             end
         end
+        for _, which in ipairs({ "tri", "ordinary", "tower" }) do
+            run(which .. " 大奖励完整滚动及DPR/触摸路由", function()
+                fixture(which, 3, true)
+                local items, clicked, closed = artifacts(47), nil, 0
+                for _, item in ipairs(items) do item.type = "artifact" end
+                Reward.show("扫荡奖励", items, { panel = "left", cascade = false,
+                    onItemClick = function(item) clicked = item.id end, onClose = function() closed = closed + 1 end })
+                render(0.4)
+                check(Reward.isLarge() and #titles == 0 and #icons == 15, "超过10条走全窗5列3行，不重画小窗")
+                local l = mods["ui.widget.RewardLargeView"].layout(1920, 1080, #items)
+                local function pos(x, y)
+                    cursor.x = (RT.frameOx + x * l.scale * RT.frameScale) * RT.dpr
+                    cursor.y = (RT.frameOy + y * l.scale * RT.frameScale) * RT.dpr
+                end
+                local seen = {}
+                for _ = 1, 4 do
+                    for _, draw in ipairs(icons) do seen[draw.item.id] = true end
+                    pos(l.gx + l.gw - 68, l.footerY)
+                    HandleMouseButtonDownHorizon("MouseButtonDown", button)
+                    clock.elapsedTime = clock.elapsedTime + 0.02
+                    HandleMouseButtonUpHorizon("MouseButtonUp", button)
+                    render(0.15)
+                end
+                local total = 0; for _ in pairs(seen) do total = total + 1 end
+                check(total == 47 and closed == 0, "翻页可访问全部47条，奖励不截断、不自动关闭")
+                local expectedId = icons[#icons].item.id
+                cursor.x, cursor.y = icons[#icons].x * RT.dpr, icons[#icons].y * RT.dpr
+                local function touch(id)
+                    return { TouchID = { GetInt = function() return id end }, X = { GetInt = function() return cursor.x end },
+                        Y = { GetInt = function() return cursor.y end } }
+                end
+                HandleTouchBeginHorizon("TouchBegin", touch(11))
+                HandleTouchBeginHorizon("TouchBegin", touch(12))
+                HandleTouchEndHorizon("TouchEnd", touch(12))
+                check(clicked == nil, "副指不能抢先选物品")
+                HandleTouchEndHorizon("TouchEnd", touch(11))
+                check(clicked == expectedId and closed == 0, "主指命中最后一条详情且不重复发奖")
+                local initialId = icons[1].item.id
+                pos(l.gx + 100, l.gy + 100)
+                HandleMouseWheelHorizon("MouseWheel", { Wheel = { GetInt = function() return 4 end } })
+                render(0.1)
+                check(icons[1].item.id ~= initialId, "鼠标滚轮实际滚动奖励而不是底层页面")
+                local beforeDrag = icons[1].y
+                local function touchDrag(id, dy)
+                    return { TouchID = { GetInt = function() return id end }, X = { GetInt = function() return cursor.x end },
+                        Y = { GetInt = function() return cursor.y + dy end } }
+                end
+                HandleTouchBeginHorizon("TouchBegin", touchDrag(21, 0))
+                HandleTouchMoveHorizon("TouchMove", touchDrag(21, -90))
+                HandleTouchEndHorizon("TouchEnd", touchDrag(21, -90))
+                render(0.1)
+                check(icons[1].y ~= beforeDrag and clicked == expectedId, "触摸滑动改变列表，不伪点击物品")
+                pos(0, 0)
+                HandleMouseButtonDownHorizon("MouseButtonDown", button)
+                cursor.y = cursor.y + 100
+                HandleMouseMoveHorizon("MouseMove", {})
+                pos(0, 0)
+                HandleMouseButtonUpHorizon("MouseButtonUp", button)
+                render(0.3)
+                check(Reward.isLarge() and closed == 0, "往返拖动遮罩不伪关闭")
+                HandleMouseWheelHorizon("MouseWheel", { Wheel = { GetInt = function() return 1 end } })
+                check(lowerInputs == 0 and actions == 0, "遮罩/滚轮不穿透底层")
+                pos(0, 0); HandleMouseButtonDownHorizon("MouseButtonDown", button)
+                RT.frameScale = 0.9
+                HandleMouseButtonUpHorizon("MouseButtonUp", button)
+                render(0.3)
+                check(Reward.isLarge() and closed == 0, "帧缩放变化取消旧按压")
+                pos(0, 0); HandleMouseButtonDownHorizon("MouseButtonDown", button)
+                HandleMouseButtonUpHorizon("MouseButtonUp", button)
+                render(0.26); render(0.16)
+                check(not Reward.isOpen() and closed == 1, "主动关闭只执行一次回调")
+            end)
+        end
+        run("资源精确数量/整段翻译与只读装备详情", function()
+            fixture("ordinary")
+            local displayed, fullLookup, previews, calls = {}, false, 0, 0
+            local i18n = mods["core.I18n"]
+            local sourceDesc = "用于角色穿戴；可在铁匠铺升阶、洗练或分解。"
+            mods["core.I18n"] = { lookup = function(value)
+                if value == sourceDesc then fullLookup = true; return "FULL DESCRIPTION TRANSLATED" end
+                return value == "扫荡奖励" and "SWEEP REWARDS" or value
+            end, displayBounds = function(_, _, _, value) return #value * 8 end,
+                displayText = function(_, _, _, value) displayed[value] = true end }
+            mods["ui.widget.RewardLargeView"] = compile("ui.widget.RewardLargeView")
+            mods["ui.character.equip.EquipmentDetail"] = { readOnlySize = function() return 300, 900 end,
+                drawReadOnly = function(_, item) previews = previews + 1; check(item.destination == "lootbox", "详情保留原装备去向") end }
+            local localReward = compile("ui.hud.popup.RewardPopup")
+            localReward.init({})
+            local items = { { type = "gold", amount = 1234567, desc = sourceDesc } }
+            for i = 1, 10 do items[#items + 1] = { type = "equip", templateId = "W1", level = i, quality = 3,
+                amount = 1, destination = "lootbox" } end
+            -- 自定义资源说明用于验证整段查表；真实资源用途仍由ResourceDefs提供。
+            local oldDesc = mods["config.ResourceDefs"].DEFS.gold.desc
+            mods["config.ResourceDefs"].DEFS.gold.desc = sourceDesc
+            localReward.show("扫荡奖励", items, { cascade = false, onClose = function() calls = calls + 1 end })
+            localReward.drawLarge({}, 1920, 1080)
+            check(displayed["×1234567"] and displayed["SWEEP REWARDS · 11"] and fullLookup,
+                "精确数量、标题先翻译再拼接、描述整段先翻译再折行")
+            local l = mods["ui.widget.RewardLargeView"].layout(1920, 1080, 11)
+            local x, y = mods["ui.widget.RewardLargeView"].cell(l, 2, 0)
+            clock.elapsedTime = clock.elapsedTime + 0.4
+            localReward.handleLargePointer("end", x * l.scale, y * l.scale, 1920, 1080, true)
+            localReward.drawLarge({}, 1920, 1080)
+            check(previews == 1 and calls == 0 and actions == 0, "装备详情仅预览，无领取/装备action或关闭回调")
+            localReward.handleLargeScroll(-10, (l.dx + 30) * l.scale, (l.dy + 30) * l.scale, 1920, 1080)
+            localReward.drawLarge({}, 1920, 1080)
+            check(previews == 2 and localReward.isLarge(), "超长装备详情支持独立滚轮，不关闭奖励")
+            mods["config.ResourceDefs"].DEFS.gold.desc = oldDesc
+            mods["core.I18n"] = i18n
+        end)
         run("row只对照真实drawRegion/handleInputRegion", function()
             fixture("tri", 3, true)
             -- 前一 shared global 仍展示：新规则 row 排队不抢占，先完成实际关闭及保护期。

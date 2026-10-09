@@ -151,7 +151,8 @@ local function presentationCacheRegression()
             local oa, ob = order[a.key] or 9999, order[b.key] or 9999
             return oa < ob or (oa == ob and indices[a] < indices[b])
         end)
-        check(same(view.rows, expected) and same(view.stats, fresh.stats), label .. " cached rows/six stats equal uncached actual formulas")
+        check(same(view.rows, actual.filterDisplayRows(expected)) and same(view.stats, fresh.stats),
+            label .. " cached rows/six stats equal filtered actual formulas")
         check(view.attrs == nil, label .. " presentation does not expose mutable attrs")
     end
     local first = sample()
@@ -297,6 +298,13 @@ function Start()
         check(row(healing.current, "_effCritRate").numericValue == 0
             and row(healing.current, "_effCritRate").value == "0.0%", "治疗暴击率0%常驻且保留原始0")
         check(row(healing.preview, "_effCritRate").numericValue == 11, "治疗暴击词条使同一行0→11%")
+        check(row(healing.current, "_effCritDmg").name == "暴击治疗", "治疗倍率使用暴击治疗名称")
+        local displayed = Attrs.filterDisplayRows(healing.rows)
+        local displayKeys = {}
+        for _, item in ipairs(displayed) do displayKeys[item.key] = true end
+        check(not displayKeys[AD.FINAL_HP_BONUS] and not displayKeys[AD.FINAL_SPI_BONUS]
+            and displayKeys[AD.MAX_HP] and displayKeys["_effCritDmg"], "总属性保留实际值、不重复展示最终乘区")
+        check(row(healing.current, AD.FINAL_HP_BONUS) ~= nil, "显示过滤不删除原始预览属性")
 
         -- 用装备减值使真实物理英雄暴击率/暴伤恰好为0，再更换为空属性装备。
         local physical = fixture(1)

@@ -9,6 +9,43 @@ local function add(zh, tw, en, ja, ko)
     D.ko[zh] = ko
 end
 
+-- ===== 奖励用途与离线结算来源 =====
+add("小队%d · %s · 装备%d件", "小隊%d · %s · 裝備%d件", "Squad %d · %s · %d gear items", "小隊%d・%s・装備%d点", "소대%d · %s · 장비%d개")
+add("用于角色转职、装备升阶和市场购买。", "用於角色轉職、裝備升階和市場購買。", "Used for class advancement, gear ascension, and market purchases.", "転職、装備昇格、マーケットでの購入に使用。", "전직, 장비 승급 및 시장 구매에 사용합니다.")
+add("用于酒馆招募、神器宝箱和市场购买。", "用於酒館招募、神器寶箱和市場購買。", "Used for tavern recruitment, artifact chests, and market purchases.", "酒場の募集、神器宝箱、マーケットでの購入に使用。", "주점 모집, 신기 보물상자 및 시장 구매에 사용합니다.")
+add("用于开启神器宝箱：普通宝箱每次1把，高级宝箱每次5把。每把钥匙的购买价格为150黑晶。", "用於開啟神器寶箱：普通寶箱每次1把，高級寶箱每次5把。每把鑰匙的購買價格為150黑晶。", "Opens artifact chests: 1 key for a normal chest, 5 for an advanced chest. Each key costs 150 black crystals.", "神器宝箱の開封に使用。通常は1回1本、上級は5本。鍵1本の価格は黒晶150個。", "신기 보물상자를 엽니다. 일반은 1회 1개, 고급은 5개가 필요합니다. 열쇠 1개 가격은 흑수정 150개입니다.")
+add("用于扫荡已通关关卡：每券结算一场重复战斗奖励，不含首通奖励；主线与资源副本均按所选关卡计算。", "用於掃蕩已通關關卡：每券結算一場重複戰鬥獎勵，不含首通獎勵；主線與資源副本均按所選關卡計算。", "Sweeps a cleared stage. Each ticket grants one repeat battle's rewards, excluding first-clear rewards. Story and resource dungeons use the selected stage.", "クリア済みステージを掃討。券1枚で再戦1回分の報酬を獲得し、初回報酬は含みません。メインと資源ダンジョンは選択ステージで計算。", "완료한 스테이지를 소탕합니다. 표 1장으로 반복 전투 1회 보상을 받으며 첫 클리어 보상은 제외됩니다. 메인과 자원 던전 모두 선택한 스테이지를 기준으로 계산합니다.")
+add("用于酒馆普通远征招募，每次招募消耗1张。", "用於酒館普通遠征招募，每次招募消耗1張。", "Used for normal tavern recruitment; 1 ticket per pull.", "酒場の通常遠征募集に使用。1回につき1枚消費。", "주점 일반 원정 모집에 사용합니다. 1회에 1장을 소비합니다.")
+add("用于酒馆星辰招募，每次招募消耗1张。", "用於酒館星辰招募，每次招募消耗1張。", "Used for stellar tavern recruitment; 1 ticket per pull.", "酒場の星辰募集に使用。1回につき1枚消費。", "주점 성진 모집에 사용합니다. 1회에 1장을 소비합니다.")
+add("用于酒馆商店兑换英雄碎片等物品。", "用於酒館商店兌換英雄碎片等物品。", "Exchanged for hero shards and other items in the tavern shop.", "酒場ショップで英雄の欠片などと交換。", "주점 상점에서 영웅 조각 등과 교환합니다.")
+add("奥术材料，可在背包查看持有数量，当前没有消耗入口。", "奧術材料，可在背包查看持有數量，目前沒有消耗入口。", "An arcane material. View the amount in your bag; there is no current spending option.", "奥術素材。所持数は鞄で確認できます。現在は消費用途がありません。", "비전 재료입니다. 가방에서 보유량을 볼 수 있으며 현재 소비하는 곳은 없습니다.")
+add("小队%d · %s · 暂停离线收益", "小隊%d · %s · 暫停離線收益", "Squad %d · %s · Offline income paused", "小隊%d・%s・オフライン報酬停止", "소대%d · %s · 오프라인 수익 중지")
+add("通天塔 第%d层", "通天塔 第%d層", "Tower Floor %d", "通天塔・第%d層", "통천탑 %d층")
+add("普通神器宝箱", "普通神器寶箱", "Normal Artifact Chest", "通常神器宝箱", "일반 신기 보물상자")
+add("高级神器宝箱", "高級神器寶箱", "Advanced Artifact Chest", "上級神器宝箱", "고급 신기 보물상자")
+add("直接开放", "直接開放", "Available immediately", "最初から開放", "즉시 개방")
+add("通关普通%d-%d解锁", "通關普通%d-%d解鎖", "Clear Normal %d-%d to unlock", "ノーマル%d-%dクリアで開放", "일반 %d-%d 완료 시 개방")
+add("每抽独立随机，无保底", "每抽獨立隨機，無保底", "Every pull is independent; no guaranteed drops", "毎回独立抽選・確定保証なし", "매회 독립 추첨, 확정 보상 없음")
+add("%s：%s", "%s：%s", "%s: %s", "%s：%s", "%s: %s")
+add("每次%d黑晶或%d把黄金钥匙", "每次%d黑晶或%d把黃金鑰匙", "%d black crystals or %d golden keys per pull", "1回につき黒晶%d個または黄金の鍵%d本", "1회 흑수정 %d개 또는 황금 열쇠 %d개")
+add("优先使用钥匙，不足按150黑晶/把补齐", "優先使用鑰匙，不足按150黑晶/把補齊", "Keys first; pay 150 black crystals per missing key", "鍵を優先使用。不足分は1本につき黒晶150個", "열쇠 우선 사용, 부족분은 1개당 흑수정 150개로 충당")
+add("普通宝箱每日免费单抽一次（UTC+8）", "普通寶箱每日免費單抽一次（UTC+8）", "One free normal pull daily (UTC+8)", "通常宝箱は毎日1回無料（UTC+8）", "일반 보물상자 매일 1회 무료（UTC+8）")
+add("至臻品质不进入宝箱抽池", "至臻品質不進入寶箱抽池", "Supreme rarity is not in chest pools", "至臻品質は宝箱の抽選対象外", "지극 품질은 보물상자 추첨에 포함되지 않음")
+add("普通神器宝箱每次1把，高级每次5把", "普通神器寶箱每次1把，高級每次5把", "Normal chests use 1 key; advanced chests use 5", "通常神器宝箱は1回1本、上級は5本", "일반 신기 보물상자는 1회 1개, 고급은 5개")
+add("每把价值150黑晶", "每把價值150黑晶", "Each key is worth 150 black crystals", "1本あたり黒晶150個", "열쇠 1개는 흑수정 150개")
+add("神器宝箱类型错误", "神器寶箱類型錯誤", "Invalid artifact chest type", "神器宝箱の種類が不正です", "신기 보물상자 유형 오류")
+add("每日免费仅限普通神器宝箱", "每日免費僅限普通神器寶箱", "Daily free pulls are only for normal artifact chests", "毎日の無料抽選は通常神器宝箱のみ", "일일 무료는 일반 신기 보물상자만 가능")
+add("神器支付方式错误", "神器支付方式錯誤", "Invalid artifact payment method", "神器の支払方法が不正です", "신기 결제 방식 오류")
+add("获得时立即生效，持续24小时，使在线挂机收益提高20%；不提高离线收益。", "獲得時立即生效，持續24小時，使線上掛機收益提高20%；不提高離線收益。", "Activates immediately for 24 hours, increasing online idle income by 20%. Does not boost offline income.", "獲得時から24時間、オンライン放置報酬を20%増加。オフライン報酬には適用されません。", "획득 즉시 24시간 동안 온라인 방치 수익을 20% 높입니다. 오프라인 수익은 증가하지 않습니다.")
+add("兼容存档中的退级保护材料，当前没有使用入口。", "相容存檔中的退級保護材料，目前沒有使用入口。", "Retained for legacy saves; no current use.", "既存セーブとの互換用素材。現在は使用不可。", "기존 저장 호환용 재료로 현재 사용처가 없습니다.")
+add("用于对应部位装备升阶，提升装备主属性、固定副属性及普通随机词条。", "用於對應部位裝備升階，提升裝備主屬性、固定副屬性及普通隨機詞條。", "Ascends gear of the matching slot, improving its primary stat, fixed substats, and normal random affixes.", "対応部位の装備昇格に使用。主能力、固定副能力、通常ランダム効果を強化。", "해당 부위 장비를 승급하여 주 능력치, 고정 보조 능력치 및 일반 무작위 옵션을 강화합니다.")
+add("可获得随机部位的装备升阶卷轴。", "可獲得隨機部位的裝備升階卷軸。", "Grants a gear ascension scroll for a random slot.", "ランダム部位の装備昇格巻物を獲得。", "무작위 부위 장비 승급 두루마리를 획득합니다.")
+add("用于角色穿戴；可在铁匠铺升阶、洗练或分解。", "用於角色穿戴；可在鐵匠鋪升階、洗練或分解。", "Equipped by heroes; can be ascended, refined, or salvaged at the blacksmith.", "キャラの装備品。鍛冶屋で昇格、精錬、分解が可能。", "영웅이 착용합니다. 대장간에서 승급, 제련 또는 분해할 수 있습니다.")
+add("用于招募对应英雄和英雄觉醒。", "用於招募對應英雄和英雄覺醒。", "Used to recruit and awaken the matching hero.", "対応する英雄の募集と覚醒に使用。", "해당 영웅 모집과 각성에 사용합니다.")
+
+add("普通神器宝箱每次1把，高级每次5把；每把价值150黑晶。", "普通神器寶箱每次1把，高級每次5把；每把價值150黑晶。", "Normal artifact chests use 1 key, advanced chests use 5; each key is worth 150 black crystals.", "通常神器宝箱は1回1本、上級は5本。1本あたり黒晶150個。", "일반 신기 보물상자는 1회 1개, 고급은 5개이며 열쇠 1개는 흑수정 150개입니다.")
+add("点击物品查看详情", "點擊物品查看詳情", "Tap an item for details", "アイテムをタップして詳細を表示", "아이템을 눌러 상세 정보 보기")
+add("待鉴定装备", "待鑑定裝備", "Unidentified Gear", "未鑑定装備", "미감정 장비")
 -- ===== 两段装备教学：战斗卡与队伍头像入口 =====
 add("点击战斗中的己方角色卡，打开角色详情", "點擊戰鬥中的己方角色卡，開啟角色詳情",
     "Tap your hero's battle card to open their details", "戦闘中の味方カードをタップして詳細を開こう",

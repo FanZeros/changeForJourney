@@ -147,6 +147,10 @@ local function finishFrame()
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
     drawOrphanRowReward()
     artifactOverlay.draw(vg())
+    if not PlayerInfoPanel.isOpen() and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
+        and not IntroCutscene.isActive() and not ScenarioDialogue.isActive() then
+        RewardPopup.drawLarge(vg(), logicalW(), logicalH())
+    end
     -- 战力提示全窗居中、按队列出；非模态且不盖住剧情和奖励等高优先级内容。
     if not StartScreen.isOpen() and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
         and not IntroCutscene.isActive() and not ScenarioDialogue.isActive()

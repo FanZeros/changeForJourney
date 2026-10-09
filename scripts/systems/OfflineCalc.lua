@@ -12,11 +12,15 @@ local StageUtils = require("shared.StageUtils")
 local EquipmentSystem = require("systems.EquipmentSystem")
 local IdleIncomeConfig = require("config.IdleIncomeConfig")
 local DC = require("config.DungeonConfig")
+local DropSystem = require("systems.DropSystem")
 
 ---@class OfflineTeamSpec
 ---@field teamIdx number
 ---@field stageId number
 ---@field heroCount number
+---@field sourceKind string|nil
+---@field sourceName string|nil
+---@field paused boolean|nil
 
 ---@class OfflineTeamReward: OfflineTeamSpec
 ---@field gold number
@@ -214,9 +218,9 @@ local function calcExpectedDrops(kills, entry, stageConfig)
                 + (index <= whole % size and 1 or 0)
                 + (index == whole % size + 1 and fraction or 0)
             local template = MC.MONSTERS[monsterId]
-            local data = MC.QUALITY[template and template.quality or 1] or MC.QUALITY[1]
-            local weights, totalWeight = data.dropWeights, 0
-            for q = 1, 6 do totalWeight = totalWeight + (weights[q] or 0) end
+            local weights, totalWeight = DropSystem.getQualityWeights(
+                template and template.quality or 1,
+                entry.difficulty or SC.getDifficulty(entry.sourceStageId or entry.id), 0)
             if totalWeight <= 0 then
                 counts[1] = (counts[1] or 0) + occurrences
             else
@@ -341,7 +345,8 @@ function OfflineCalc.calcRewardsFromKills(kills, stageEntry, heroCount, stageCon
                 local monsterId = qualityPool[typeIdx]
                 local template = MC.MONSTERS[monsterId]
                 local monsterQ = template and template.quality or 1
-                quality = OfflineCalc._rollQualityByMonster(monsterQ)
+                quality = OfflineCalc._rollQualityByMonster(monsterQ,
+                    stageEntry.difficulty or SC.getDifficulty(stageEntry.sourceStageId or stageEntry.id))
             else
                 quality = 1
             end
@@ -394,21 +399,10 @@ end
 
 --- 根据怪物品质加权随机装备品质 (1-6)
 ---@param monsterQuality number 怪物品质 1~6
+---@param difficulty string|nil
 ---@return number quality 1~6
-function OfflineCalc._rollQualityByMonster(monsterQuality)
-    local qualityData = MC.QUALITY[monsterQuality] or MC.QUALITY[1]
-    local dw = qualityData.dropWeights
-    local totalWeight = 0
-    for i = 1, 6 do totalWeight = totalWeight + (dw[i] or 0) end
-    if totalWeight <= 0 then return 1 end
-
-    local roll = math.random(totalWeight)
-    local acc = 0
-    for i = 1, 6 do
-        acc = acc + (dw[i] or 0)
-        if roll <= acc then return i end
-    end
-    return 1
+function OfflineCalc._rollQualityByMonster(monsterQuality, difficulty)
+    return DropSystem.rollQualityByMonster(monsterQuality, difficulty, 0)
 end
 
 --- 合并 stageId+quality+level 相同的种子，累加 count
@@ -462,7 +456,8 @@ function OfflineCalc.buildEquipSeeds(kills, stageEntry, stageConfig)
             local monsterId = qualityPool[typeIdx]
             local template = MC.MONSTERS[monsterId]
             local monsterQ = template and template.quality or 1
-            quality = OfflineCalc._rollQualityByMonster(monsterQ)
+            quality = OfflineCalc._rollQualityByMonster(monsterQ,
+                stageEntry.difficulty or SC.getDifficulty(stageEntry.sourceStageId or stageEntry.id))
         else
             quality = 1
         end
@@ -638,17 +633,22 @@ local function calcTeamRewards(seconds, teams, stageConfig, expected)
         if teamIdx and teamIdx >= 1 and teamIdx <= (ET.TEAM_COUNT or 3)
             and not seen[teamIdx] and stageId and stageId > 0 and heroCount
             and heroCount > 0 and heroCount <= (ET.TEAM_MAX_SLOTS or 4) then
+            local paused = team.paused == true
             local entry = cfg.getStage(stageId)
-            if entry then
+            if entry or paused then
                 ---@type OfflineTeamReward
                 local reward = {
                     teamIdx = teamIdx, stageId = stageId, heroCount = heroCount,
+                    sourceKind = team.sourceKind, sourceName = team.sourceName, paused = paused,
                     gold = 0, diamond = 0, adventureExp = 0, adventurerExp = 0,
-                    equipSeeds = {}, scrollDrops = {}, kills = kills,
+                    equipSeeds = {}, scrollDrops = {}, kills = paused and 0 or kills,
                 }
-                if cfg.isResourceStage and cfg.isResourceStage(stageId) then
+                if paused then
+                    -- 覆盖战斗无离线产出时保留可解释来源，不借本队主线任务计费。
+                elseif cfg.isResourceStage and cfg.isResourceStage(stageId) then
                     -- 资源金币/黑钻/装备沿用独立效率；经验按源主线同进度发给本队。
                     local resourceKills = effective * OfflineCalc.IDLE_KILL_RATE
+                    reward.kills = math.floor(resourceKills)
                     reward.adventureExp = DC.getStageExpAmount(stageId, resourceKills)
                     reward.adventurerExp = math.floor(reward.adventureExp
                         * ET.getHeroCountExpMult(heroCount) + 0.5)
@@ -659,11 +659,13 @@ local function calcTeamRewards(seconds, teams, stageConfig, expected)
                         elseif id == "black_diamond" then reward.diamond = amount
                         elseif id == "equipment_vault" then
                             local data = DC.getFloor(id, floor)
-                            for q = data.equipMinQuality, data.equipMaxQuality do
-                                reward.equipSeeds[#reward.equipSeeds + 1] = {
-                                    stageId = stageId, quality = q, level = data.equipLevel,
-                                    count = amount / (data.equipMaxQuality - data.equipMinQuality + 1),
-                                }
+                            for q, probability in ipairs(data.equipQualityProbabilities) do
+                                if probability > 0 then
+                                    reward.equipSeeds[#reward.equipSeeds + 1] = {
+                                        stageId = stageId, quality = q, level = data.equipLevel,
+                                        count = amount * probability,
+                                    }
+                                end
                             end
                         end
                         reward.scrollDrops = DC.getStageScrollEstimate(stageId, resourceKills)

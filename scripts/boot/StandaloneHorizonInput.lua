@@ -1,8 +1,4 @@
--- ============================================================================
--- StandaloneHorizonInput - 横屏输入绑定（绘制与坐标变换由 StandaloneHorizon 提供）
--- 共享运行时与离线收益覆盖实例通过 ctx 复用。
--- ============================================================================
-
+-- 横屏指针与触摸路由；绘制、帧坐标和离线覆盖实例由宿主提供。
 local TopBar            = require("ui.hud.TopBar")
 local BottomNav         = require("ui.hud.BottomNav")
 local BattleScene       = require("ui.battle.scene.BattleScene")
@@ -44,7 +40,6 @@ local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
 local TutorialManager    = require("systems.TutorialManager")
 
 local Input = {}
-
 ---@param ctx table
 function Input.bind(ctx)
     local vg, logicalW, logicalH = ctx.vg, ctx.logicalW, ctx.logicalH
@@ -229,6 +224,7 @@ function Input.bind(ctx)
         equipmentPressPanel = nil
     end
 
+    local rewardGesture = require("boot.RewardGesture").bindHost(ctx, RewardPopup, cancelUnderlyingPress, pointerPosition)
     local terminalInput = nil ---@type table|nil
     local function terminalDown(sx, sy, button)
         terminalInput = require("boot.TerminalInput").bind({ RT = RT, logicalW = logicalW,
@@ -302,7 +298,7 @@ function Input.bind(ctx)
     end
 
     local function tutorialInputActive()
-        return TutorialManager.isActive() and TutorialManager.isInputActive()
+        return TutorialManager.isActive() and TutorialManager.isInputActive() and not RewardPopup.isLarge()
             and not LevelUpPopup.isOpen() and not OfflineRewardPanel.isOpen() and not UpdateNoticePopup.isOpen()
             and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
             and not IntroCutscene.isActive() and not ScenarioDialogue.isActive()
@@ -431,6 +427,7 @@ function Input.bind(ctx)
             levelDown(sx, sy, button)
             return
         end
+        if rewardGesture.pointer("begin", button) then return end
         if TerminalConfirmDialog.isOpen() then
             local mp = pointerPosition()
             local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
@@ -681,6 +678,7 @@ function Input.bind(ctx)
             levelMove(sx, sy)
             return
         end
+        if rewardGesture.pointer("move", MOUSEB_LEFT) then return end
         local artifactPos = pointerPosition()
         local artifactX, artifactY = toDesign(artifactPos.x / dpr(), artifactPos.y / dpr())
         if TerminalConfirmDialog.isOpen() or terminalInput then
@@ -809,8 +807,9 @@ function Input.bind(ctx)
     function HandleEquipmentHoverTickHorizon()
         AwakeningArtwork.observe(RT, artworkBlocked())
         if AwakeningArtwork.isOpen() or AwakeningArtwork.hasPress() then return end
+        rewardGesture.observe()
         ctx.observeTowerPress()
-        if marqueeGesture.hasPress() then return end
+        if RewardPopup.isLarge() or marqueeGesture.hasPress() then return end
         if TowerBattleScene.isActive() or towerPress then return end
         if OfflineRewardPanel.isOpen() or UpdateNoticePopup.isOpen() or LevelUpPopup.isOpen() or levelPress then return end
         if DarkTitleScreen.isOpen() or LetterIntro.isOpen() or IntroCutscene.isActive()
@@ -977,6 +976,7 @@ function Input.bind(ctx)
             levelUp(sx, sy, eventData["Button"]:GetInt())
             return
         end
+        if rewardGesture.pointer("end", eventData["Button"]:GetInt()) then return end
         local terminalPos = pointerPosition()
         local terminalX, terminalY = toDesign(terminalPos.x / dpr(), terminalPos.y / dpr())
         if terminalInput then

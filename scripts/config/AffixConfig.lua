@@ -71,7 +71,7 @@ AffixConfig.AFFIXES = {
    { id = 35, key = "healAmount",    dataType = "float", baseValue = 2.00,  weight = 100, name = "治疗量" },
    { id = 36, key = "healBonus",     dataType = "pct",   baseValue = 4.0,   weight = 100, name = "治疗加成" },
    { id = 37, key = "healCritRate",  dataType = "pct",   baseValue = 1.3,   weight = 100, name = "治疗暴击率" },
-   { id = 38, key = "healCritDmg",   dataType = "pct",   baseValue = 6.7,   weight = 100, name = "治疗暴击加成" },
+   { id = 38, key = "healCritDmg",   dataType = "pct",   baseValue = 6.7,   weight = 100, name = "暴击治疗" },
 
     -- ==== 新增词缀 39-42（百分比加成类）====
     { id = 39, key = "physAtkBonus", dataType = "pct",   baseValue = 1.7,   weight = 100, name = "物理攻击加成" },

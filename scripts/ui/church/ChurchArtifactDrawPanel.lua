@@ -1,8 +1,7 @@
 -- ============================================================================
 -- ChurchArtifactDrawPanel.lua
--- 教堂神器页「宝箱」子页签：神器宝箱抽取（从市场·典藏页迁移而来）
--- 职责：宝箱展示 + 保底进度 + 单抽/十连 + 黄金钥匙不足时的黑晶补购弹窗
--- 抽取协议/保底/钥匙补购逻辑与原 MarketCollection 完全一致（玩法不变）
+-- 教堂神器宝箱：普通/高级档位、品质概率、单抽/十连与黄金钥匙补购。
+-- 每次抽取独立随机；高级宝箱需要主线通关，沿用同种黄金钥匙。
 -- 坐标系 1080×2400，绘制在教堂 Tab 内容区
 -- ============================================================================
 
@@ -29,20 +28,17 @@ local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 local M = {}
 
 -- ======================== 布局常量 ========================
--- 沿用市场典藏布局，整体下移 CONTENT_OY 使其在教堂内容区更居中
+-- 设计空间由宿主 Viewport 缩放；内容坐标与命中坐标保持一致。
 local CONTENT_OY = 300
+local SELECTOR = { Y = 690, NORMAL_X = 300, ADVANCED_X = 780, W = 420, H = 100 }
 
 local COL = {
-    TITLE_CX = 540, TITLE_CY = 497 + CONTENT_OY, TITLE_FONT = 42,
+    TITLE_CX = 540, TITLE_CY = 555, TITLE_FONT = 42,
     TITLE_R = 0x7b, TITLE_G = 0x53, TITLE_B = 0x39,
     TITLE_W = 660, TITLE_H = 60,
     CHEST_CX = 536, CHEST_CY = 883 + CONTENT_OY, CHEST_W = 984, CHEST_H = 616,
     NAME_X = 795, NAME_Y = 647 + CONTENT_OY, NAME_FONT = 70,
     DESC_X = 788, DESC_Y = 746 + CONTENT_OY, DESC_FONT = 30,
-    PITY_W = 380, PITY_H = 70, PITY_R = 35, PITY_A = 128,
-    RARE_PITY_X = 782, RARE_PITY_Y = 850 + CONTENT_OY,
-    EPIC_PITY_X = 782, EPIC_PITY_Y = 934 + CONTENT_OY,
-    PITY_FONT = 30,
     BTN_ONE_X = 323, BTN_TEN_X = 783, BTN_Y = 1081 + CONTENT_OY,
     BTN_W = 316, BTN_H = 122,
     BTN_TEXT_Y = 1058 + CONTENT_OY, BTN_FONT = 32,
@@ -66,13 +62,6 @@ local KEY_CF = {
     BUY_TEXT_SIZE = 40, BUY_TEXT_R = 0x64, BUY_TEXT_G = 0x51, BUY_TEXT_B = 0x29,
 }
 
-local QUALITY_COLORS = {
-    normal = { 181, 181, 181 },
-    good   = { 162, 255, 148 },
-    rare   = { 114, 242, 245 },
-    epic   = { 239, 121, 255 },
-}
-
 local POPUP_OPEN_DUR   = 0.25
 local POPUP_CLOSE_DUR  = 0.20
 local POPUP_SCALE_FROM = 0.8
@@ -91,6 +80,9 @@ local img = {
 }
 
 local state = {
+    selectedChest = "normal",
+    pendingChest = "normal",
+    keyConfirmChest = "normal",
     keyConfirmVisible = false,
     keyConfirmClosing = false,
     keyConfirmAnimTime = 0,
@@ -140,30 +132,30 @@ local function hasArtifactFreeDraw()
     return usedDayId ~= getDayId()
 end
 
--- 保留查询接口兼容现有调用；宝箱直接开放，不再依赖噩梦进度。
-function M.isArtifactChestUnlocked()
-    return true
+function M.isArtifactChestUnlocked(chestType)
+    return ArtifactDefs.isChestUnlocked(chestType or state.selectedChest, PlayerStore.Get("battle"))
 end
 
-local function getCollectionPityLeft()
-    local artifacts = PlayerStore.Get("artifacts") or {}
-    local rareCount = tonumber(artifacts.pityRare) or 0
-    local epicCount = tonumber(artifacts.pityEpic) or 0
-    local rareLeft = ArtifactDefs.PITY_RARE - rareCount
-    local epicLeft = ArtifactDefs.PITY_EPIC - epicCount
-    return math.max(1, rareLeft), math.max(1, epicLeft)
+local function getChestUnlockText(chestType)
+    local chest = ArtifactDefs.getChest(chestType)
+    if chest and chest.unlockStage then
+        return I18n.format("通关普通%d-%d解锁", chest.unlockStage // 100, chest.unlockStage % 100)
+    end
+    return I18n.lookup(ArtifactDefs.getChestUnlockText(chestType))
 end
 
-local function getKeyCost(count)
-    if count == 1 and hasArtifactFreeDraw() then return 0 end
-    return ArtifactDefs.DRAW_KEY_COST[count] or count
+local function getKeyCost(count, chestType)
+    chestType = chestType or state.selectedChest
+    local chest = ArtifactDefs.getChest(chestType)
+    if count == 1 and chest and chest.dailyFree and hasArtifactFreeDraw() then return 0 end
+    return ArtifactDefs.getDrawKeyCost(count, chestType) or 0
 end
 
 --- 按实际支付优先序计算按钮展示：先用现有钥匙，缺口按神器宝箱单价换黑晶。
 ---@return table[] costs { {kind="key"|"gems", icon=number, amount=number} }
 ---@return boolean affordable
 local function getDrawCosts(count)
-    local required = ArtifactDefs.DRAW_KEY_COST[count] or count
+    local required = ArtifactDefs.getDrawKeyCost(count, state.selectedChest) or 0
     if count == 1 and getKeyCost(count) == 0 then return {}, true end
 
     local keys = math.max(0, tonumber(GameState.getGoldenKey()) or 0)
@@ -176,15 +168,18 @@ local function getDrawCosts(count)
     return costs, (tonumber(GameState.getGems()) or 0) >= gems
 end
 
-local function sendArtifactDraw(count)
+local function sendArtifactDraw(count, chestType)
     if state.drawPending then return false end
+    chestType = chestType or state.selectedChest
+    if not M.isArtifactChestUnlocked(chestType) then return false end
     local fn = getSendAction()
     local Protocol = getProtocol()
     if not fn or not Protocol then return false end
-    local payType = (count == 1 and hasArtifactFreeDraw()) and "free_daily" or "diamond"
+    local payType = (count == 1 and getKeyCost(count, chestType) == 0) and "free_daily" or "diamond"
     -- 请求锁在发送前设置，兼容单机桥接同步返回成功/失败。
     state.drawPending = true
-    local handled = fn(Protocol.ACTION_TYPES.ARTIFACT_DRAW, { count = count, payType = payType })
+    state.pendingChest = chestType
+    local handled = fn(Protocol.ACTION_TYPES.ARTIFACT_DRAW, { count = count, payType = payType, chestType = chestType })
     if handled == false and state.drawPending then
         state.drawPending = false
         return false
@@ -192,7 +187,8 @@ local function sendArtifactDraw(count)
     return true
 end
 
-local function openKeyConfirm(count, needKeys, diamondCost)
+local function openKeyConfirm(count, needKeys, diamondCost, chestType)
+    state.keyConfirmChest = chestType or state.selectedChest
     state.keyConfirmVisible = true
     state.keyConfirmClosing = false
     state.keyConfirmCount = count
@@ -223,12 +219,17 @@ local function getKeyConfirmAnim()
     return scale, t
 end
 
-local function checkKeyAndDraw(count)
+local function checkKeyAndDraw(count, chestType)
     if state.drawPending then showFloat("正在开启宝箱，请稍候") return false end
-    local keyCost = getKeyCost(count)
+    chestType = chestType or state.selectedChest
+    if not M.isArtifactChestUnlocked(chestType) then
+        showFloat(getChestUnlockText(chestType), 540, COL.BTN_Y - 120)
+        return false
+    end
+    local keyCost = getKeyCost(count, chestType)
     local keys = GameState.getGoldenKey()
     if keyCost <= 0 or keys >= keyCost then
-        if sendArtifactDraw(count) then
+        if sendArtifactDraw(count, chestType) then
             if state.drawPending then
                 showFloat("正在开启宝箱", count == 10 and COL.BTN_TEN_X or COL.BTN_ONE_X, COL.BTN_Y - 120)
             end
@@ -240,14 +241,14 @@ local function checkKeyAndDraw(count)
 
     local shortfall = keyCost - keys
     local diamondCost = shortfall * ArtifactDefs.KEY_DIAMOND_PRICE
-    openKeyConfirm(count, shortfall, diamondCost)
+    openKeyConfirm(count, shortfall, diamondCost, chestType)
     print(string.format("[ChurchArtifactDrawPanel] 黄金钥匙不足: 需%d 有%d 补购%d把 花费%d钻",
         keyCost, keys, shortfall, diamondCost))
     return false
 end
 
-local function getRepeatCost(count)
-    local needed = getKeyCost(count)
+local function getRepeatCost(count, chestType)
+    local needed = getKeyCost(count, chestType)
     if needed == 0 then return { parts = {}, enough = true, freeText = "今日免费" } end
     local keys = math.min(GameState.getGoldenKey() or 0, needed)
     local gems = (needed - keys) * ArtifactDefs.KEY_DIAMOND_PRICE
@@ -257,68 +258,35 @@ local function getRepeatCost(count)
     return { parts = parts, enough = (GameState.getGems() or 0) >= gems }
 end
 
-local function continueArtifactDraw(count, generation)
+local function continueArtifactDraw(count, generation, chestType)
     if generation ~= state.resultGeneration or not ctx_ or not ctx_.state
         or not ctx_.state.open or ctx_.state.closing then return end
     if count ~= 1 and count ~= 10 then return end
     print("[ChurchArtifactDrawPanel] 继续开箱 count=" .. count)
-    checkKeyAndDraw(count)
+    checkKeyAndDraw(count, chestType)
 end
 
 -- ======================== 绘制 ========================
 
-local function drawRichTextCentered(vg, x, y, fontSize, strokeWidth, segments)
+local function drawFittedText(vg, x, y, text, size, maxWidth, color, align)
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, fontSize)
-    local totalW = 0
-    for _, seg in ipairs(segments) do
-        totalW = totalW + nvgTextBounds(vg, 0, 0, seg.text)
-    end
-    local cursorX = x - totalW * 0.5
-    for _, seg in ipairs(segments) do
-        local w = nvgTextBounds(vg, 0, 0, seg.text)
-        local c = seg.color or { 255, 255, 255 }
-        drawTextStroke(vg, cursorX, y, seg.text, fontSize,
-            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-            c[1], c[2], c[3], strokeWidth, { strokeColor = { 0, 0, 0 }, italic = seg.italic == true })
-        cursorX = cursorX + w
-    end
+    nvgFontSize(vg, size)
+    local width = nvgTextBounds(vg, 0, 0, text)
+    if width > maxWidth then nvgFontSize(vg, math.max(20, size * maxWidth / width)) end
+    nvgTextAlign(vg, align or (NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE))
+    nvgFillColor(vg, nvgRGBA(color[1], color[2], color[3], 255))
+    nvgText(vg, x, y, text, nil)
 end
 
-local function drawPityText(vg, x, y, leftCount, qualityText, qualityColor)
-    drawRichTextCentered(vg, x, y, COL.PITY_FONT, 4, {
-        { text = tostring(leftCount), color = { 0xff, 0xe8, 0x28 } },
-        { text = "次内必得", color = { 255, 255, 255 } },
-        { text = qualityText, color = qualityColor },
-        { text = "神器", color = { 255, 255, 255 } },
-    })
-end
-
-local function drawCollectionLockedContent(vg)
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, COL.TITLE_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(COL.TITLE_R, COL.TITLE_G, COL.TITLE_B, 255))
-    nvgText(vg, COL.TITLE_CX, COL.TITLE_CY, "神器宝箱", nil)
-
-    drawImageCentered(vg, img.collectionChestBg, COL.CHEST_CX, COL.CHEST_CY, COL.CHEST_W, COL.CHEST_H, 0.45)
-    drawTextStroke(vg, COL.NAME_X, COL.NAME_Y, "神器宝箱", COL.NAME_FONT,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        180, 180, 180, 6, { strokeColor = { 0, 0, 0 }, italic = true })
-
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, 40)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(139, 149, 165, 255))
-    nvgText(vg, 540, 1320 + CONTENT_OY,
-        I18n.format("抵达%s难度后开放", I18n.difficulty("噩梦")), nil)
-
-    local progress = I18n.lookup(StageConfig.formatProgressDisplay(
-        (PlayerStore.Get("battle") or {}).maxStageId or 0))
-    local progressText = I18n.format("当前进度：%s", progress)
-    nvgFontSize(vg, 32)
-    local progressW = nvgTextBounds(vg, 0, 0, progressText, nil)
-    if progressW > 920 then nvgFontSize(vg, math.max(24, 32 * 920 / progressW)) end
-    nvgFillColor(vg, nvgRGBA(150, 150, 150, 220))
-    nvgText(vg, 540, 1380 + CONTENT_OY, progressText, nil)
+local function drawChestSelector(vg, chestType, cx)
+    local selected = state.selectedChest == chestType
+    local unlocked = M.isArtifactChestUnlocked(chestType)
+    local bf = BF.begin(vg, "church_artifact_chest_" .. chestType, cx, SELECTOR.Y, SELECTOR.W, SELECTOR.H)
+    DarkIcon.drawNine(vg, "btn", cx - SELECTOR.W * 0.5, SELECTOR.Y - SELECTOR.H * 0.5,
+        SELECTOR.W, SELECTOR.H, { accent = selected and "gold" or "steel" })
+    local color = unlocked and DarkIcon.Palette.BONE or DarkIcon.Palette.BONE_DIM
+    drawFittedText(vg, cx, SELECTOR.Y, I18n.lookup(ArtifactDefs.getChest(chestType).name), 38, SELECTOR.W - 40, color)
+    BF.finish(vg, bf)
 end
 
 local function drawCollectionDrawButton(vg, id, cx, countText, count)
@@ -369,12 +337,8 @@ local function drawCollectionDrawButton(vg, id, cx, countText, count)
     BF.finish(vg, bf)
 end
 
---- 「宝箱」页签背景：不显示神器装配页的顶部背景图（UI_JTSQ_BJ），
---- 改用一整块暗色底板铺满 Tab 内容区，让宝箱大图成为视觉主体。
+-- 宝箱页背景铺满设计空间，避免上下与圆角缺口透出下层内容。
 function M.drawBg(vg)
-    -- [背景兜底 0928] 宝箱 tab 下教堂背景图被 hideChurchBg 隐藏、名称牌/资源栏也不绘制，
-    -- 九宫格底板仅覆盖 y=200~2220，顶/底/圆角缺口会透出下层内容。
-    -- 先用纯色暗底铺满整屏作兜底，再叠九宫格底板，杜绝任何透出。
     nvgBeginPath(vg)
     nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
     nvgFillColor(vg, nvgRGBA(22, 20, 24, 255))
@@ -384,49 +348,53 @@ function M.drawBg(vg)
 end
 
 function M.drawContent(vg)
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, COL.TITLE_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(COL.TITLE_R, COL.TITLE_G, COL.TITLE_B, 255))
-    nvgText(vg, COL.TITLE_CX, COL.TITLE_CY, "神器宝箱", nil)
+    local chestType = state.selectedChest
+    local chest = ArtifactDefs.getChest(chestType)
+    local unlocked = M.isArtifactChestUnlocked(chestType)
+    drawFittedText(vg, COL.TITLE_CX, COL.TITLE_CY, I18n.lookup("神器宝箱"), COL.TITLE_FONT, 900, DarkIcon.Palette.BONE)
+    drawChestSelector(vg, "normal", SELECTOR.NORMAL_X)
+    drawChestSelector(vg, "advanced", SELECTOR.ADVANCED_X)
 
-    drawImageCentered(vg, img.collectionChestBg, COL.CHEST_CX, COL.CHEST_CY, COL.CHEST_W, COL.CHEST_H, 1.0)
+    drawImageCentered(vg, img.collectionChestBg, COL.CHEST_CX, COL.CHEST_CY,
+        COL.CHEST_W, COL.CHEST_H, unlocked and 1.0 or 0.45)
+    drawFittedText(vg, COL.NAME_X, COL.NAME_Y, I18n.lookup(chest.name), 44, 400, DarkIcon.Palette.BONE)
+    drawFittedText(vg, COL.DESC_X, COL.DESC_Y,
+        I18n.lookup("每抽独立随机，无保底"), COL.DESC_FONT, 400, DarkIcon.Palette.BONE_DIM)
 
-    drawTextStroke(vg, COL.NAME_X, COL.NAME_Y, "神器宝箱", COL.NAME_FONT,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, 6, { strokeColor = { 0, 0, 0 }, italic = true })
+    -- 五档概率逐行显示；传说沿用Q5黄金色与品质框，至臻不进入宝箱抽池。
+    DarkIcon.drawNine(vg, "plain", 565, 1080, 450, 230)
+    for quality = 1, 5 do
+        local probability = ArtifactDefs.getQualityProbability(chestType, quality)
+        local rateText = string.format("%g%%", probability)
+        local text = I18n.format("%s：%s", I18n.lookup(ArtifactDefs.getQualityName(quality)), rateText)
+        drawFittedText(vg, 590, 1105 + (quality - 1) * 42, text, 30, 400,
+            ArtifactDefs.getQualityColor(quality), NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    end
 
-    drawRichTextCentered(vg, COL.DESC_X, COL.DESC_Y - 18, COL.DESC_FONT, 4, {
-        { text = "获得", color = { 255, 255, 255 } },
-        { text = "普通", color = QUALITY_COLORS.normal },
-        { text = "、", color = { 255, 255, 255 } },
-        { text = "优质", color = QUALITY_COLORS.good },
-        { text = "、", color = { 255, 255, 255 } },
-    })
-    drawRichTextCentered(vg, COL.DESC_X, COL.DESC_Y + 18, COL.DESC_FONT, 4, {
-        { text = "稀有", color = QUALITY_COLORS.rare },
-        { text = "、", color = { 255, 255, 255 } },
-        { text = "史诗", color = QUALITY_COLORS.epic },
-        { text = "品质神器", color = { 255, 255, 255 } },
-    })
-
-    local rareLeft, epicLeft = getCollectionPityLeft()
-
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, COL.RARE_PITY_X - COL.PITY_W * 0.5, COL.RARE_PITY_Y - COL.PITY_H * 0.5,
-        COL.PITY_W, COL.PITY_H, COL.PITY_R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, COL.PITY_A)); nvgFill(vg)
-    drawPityText(vg, COL.RARE_PITY_X, COL.RARE_PITY_Y, rareLeft, "稀有", QUALITY_COLORS.rare)
-
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, COL.EPIC_PITY_X - COL.PITY_W * 0.5, COL.EPIC_PITY_Y - COL.PITY_H * 0.5,
-        COL.PITY_W, COL.PITY_H, COL.PITY_R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, COL.PITY_A)); nvgFill(vg)
-    drawPityText(vg, COL.EPIC_PITY_X, COL.EPIC_PITY_Y, epicLeft, "史诗", QUALITY_COLORS.epic)
-
-    local oneCost = getKeyCost(1)
-    local oneText = oneCost <= 0 and "免费单抽" or "抽1次"
+    nvgSave(vg)
+    if not unlocked then nvgGlobalAlpha(vg, 0.45) end
+    local oneText = getKeyCost(1) == 0 and "免费单抽" or "抽1次"
     drawCollectionDrawButton(vg, "church_artifact_draw_1", COL.BTN_ONE_X, oneText, 1)
     drawCollectionDrawButton(vg, "church_artifact_draw_10", COL.BTN_TEN_X, "抽10次", 10)
+    nvgRestore(vg)
+
+    local keyCost = chest.keyCost
+    drawFittedText(vg, 540, 1550, I18n.format("每次%d黑晶或%d把黄金钥匙",
+        keyCost * ArtifactDefs.KEY_DIAMOND_PRICE, keyCost), 34, 920, DarkIcon.Palette.BONE)
+    drawFittedText(vg, 540, 1610, I18n.lookup("优先使用钥匙，不足按150黑晶/把补齐"),
+        28, 920, DarkIcon.Palette.BONE_DIM)
+    drawFittedText(vg, 540, 1680, getChestUnlockText(chestType),
+        34, 920, unlocked and DarkIcon.Palette.GOLD_HI or DarkIcon.Palette.BONE_DIM)
+    if chest.dailyFree then
+        drawFittedText(vg, 540, 1740, I18n.lookup("普通宝箱每日免费单抽一次（UTC+8）"),
+            28, 920, DarkIcon.Palette.BONE_DIM)
+    elseif unlocked then
+        drawFittedText(vg, 540, 1740, I18n.lookup("已解锁"), 28, 920, DarkIcon.Palette.BONE_DIM)
+    else
+        local progress = I18n.lookup(StageConfig.formatProgressDisplay((PlayerStore.Get("battle") or {}).maxStageId or 0))
+        drawFittedText(vg, 540, 1740, I18n.format("当前进度：%s", progress), 28, 920, DarkIcon.Palette.BONE_DIM)
+    end
+    drawFittedText(vg, 540, 1820, I18n.lookup("至臻品质不进入宝箱抽池"), 28, 920, DarkIcon.Palette.BONE_DIM)
 end
 
 function M.drawKeyConfirmDialog(vg)
@@ -514,7 +482,7 @@ function M.handleTabInput(dx, dy)
             end
             local drawCount = state.keyConfirmCount
             closeKeyConfirm()
-            if sendArtifactDraw(drawCount) then
+            if sendArtifactDraw(drawCount, state.keyConfirmChest) then
                 if state.drawPending then
                     showFloat("正在开启宝箱", drawCount == 10 and COL.BTN_TEN_X or COL.BTN_ONE_X, COL.BTN_Y - 120)
                 end
@@ -530,6 +498,15 @@ function M.handleTabInput(dx, dy)
         return true
     end
 
+    -- 锁定档位仍可选中查看价格/概率，抽取按钮另行校验真实通关进度。
+    for _, option in ipairs({ { type = "normal", x = SELECTOR.NORMAL_X }, { type = "advanced", x = SELECTOR.ADVANCED_X } }) do
+        if hitTest(dx, dy, option.x, SELECTOR.Y, SELECTOR.W, SELECTOR.H) then
+            if state.drawPending then showFloat("正在开启宝箱，请稍候") return true end
+            state.selectedChest = option.type
+            BF.trigger("church_artifact_chest_" .. option.type)
+            return true
+        end
+    end
     local drawCount, btnId = nil, nil
     if hitTest(dx, dy, COL.BTN_ONE_X, COL.BTN_Y, COL.BTN_W, COL.BTN_H) then
         drawCount, btnId = 1, "church_artifact_draw_1"
@@ -551,16 +528,15 @@ function M.onArtifactDrawResult()
     state.drawPending = false
 end
 
---- ARTIFACT_DRAW 成功回包：同步保底计数 + 弹奖励
+--- ARTIFACT_DRAW 成功回包：同步免费日标记并展示对应档位的奖励。
 ---@return table[] rewards
 function M.onArtifactDrawSuccess(data)
+    local chestType = data.chestType or state.pendingChest
     M.onArtifactDrawResult()
     state.resultGeneration = state.resultGeneration + 1
     local generation = state.resultGeneration
     local artifactData = PlayerStore.Get("artifacts")
     if artifactData then
-        if data.pityRare ~= nil then artifactData.pityRare = data.pityRare end
-        if data.pityEpic ~= nil then artifactData.pityEpic = data.pityEpic end
         if data.dailyFreeDrawDayId ~= nil then
             artifactData.dailyFreeDrawDayId = data.dailyFreeDrawDayId
             state.artifactFreeDrawDayId = data.dailyFreeDrawDayId
@@ -581,11 +557,11 @@ function M.onArtifactDrawSuccess(data)
         }
     end
     if #rewards > 0 then
-        RewardPopup.show("神器宝箱", rewards, {
+        RewardPopup.show(ArtifactDefs.getChest(chestType).name, rewards, {
             panel = "left", cascade = true,
             repeatDraw = {
-                getCost = getRepeatCost,
-                onContinue = function(count) continueArtifactDraw(count, generation) end,
+                getCost = function(count) return getRepeatCost(count, chestType) end,
+                onContinue = function(count) continueArtifactDraw(count, generation, chestType) end,
             },
         })
         print("[ChurchArtifactDrawPanel] 宝箱获得动画: count=" .. #rewards .. ", panel=left")
@@ -604,7 +580,7 @@ function M.init(vg)
     img.collectionDrawBtn = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_AN.png", 0)
     img.goldenKey         = nvgCreateImage(vg, "image/货币道具/UI_icon_HJYS.png", 0)
     img.gem               = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
-    -- [图标统一 0928] diamondBig 与 gem 同贴图，复用句柄避免重复加载（无 delete，复用安全）
+    -- 大图与小图复用同一黑晶句柄。
     img.diamondBig        = img.gem
     img.confirmArrow      = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_JIANTOU.png", 0)
     if img.collectionChestBg < 0 then
@@ -614,6 +590,7 @@ function M.init(vg)
 end
 
 function M.reset()
+    state.selectedChest = "normal"
     state.keyConfirmVisible = false
     state.keyConfirmClosing = false
     state.resultGeneration = state.resultGeneration + 1

@@ -94,7 +94,7 @@ AD.FINAL_DODGE_BONUS         = "finalDodgeBonus"        -- 最终闪避（%）
 AD.HEAL_AMOUNT    = "healAmount"    -- 治疗量
 AD.HEAL_BONUS     = "healBonus"     -- 治疗加成（%）
 AD.HEAL_CRIT_RATE = "healCritRate"  -- 治疗暴击率（%）
-AD.HEAL_CRIT_DMG  = "healCritDmg"   -- 治疗暴击加成（%）
+AD.HEAL_CRIT_DMG  = "healCritDmg"   -- 暴击治疗（%）
 
 -- ======================== 六围 Key 列表 ========================
 
@@ -212,7 +212,7 @@ AD.META = {
     [AD.HEAL_AMOUNT]    = { name = "治疗量",       valueModel = 0.5,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.HEAL_BONUS]     = { name = "治疗加成",     valueModel = 25,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.HEAL_CRIT_RATE] = { name = "治疗暴击率",   valueModel = 80,   dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.HEAL_CRIT_DMG]  = { name = "治疗暴击加成", valueModel = 15,   dataType = AD.TYPE_PCT,   default = 200 },
+    [AD.HEAL_CRIT_DMG]  = { name = "暴击治疗",     valueModel = 15,   dataType = AD.TYPE_PCT,   default = 200 },
 }
 
 -- ======================== 六围派生表 ========================

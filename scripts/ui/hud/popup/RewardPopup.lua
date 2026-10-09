@@ -41,18 +41,16 @@
 --   2. 在 show() 中传入对应 type 即可
 -- ============================================================================
 
-local EquipmentConfig = require("config.EquipmentConfig")
 local DarkIcon        = require("core.DarkIcon")  -- 图标压暗绘制
 local HeroConfig      = require("config.HeroConfig")
-local NumberUtil      = require("core.NumberUtil")
-local DrawUtil        = require("core.DrawUtil")
 local ImageCache        = require("ui.widget.ImageCache")
-local ArtifactAssetUtil = require("config.ArtifactAssetUtil")
 local ResourceDefs      = require("config.ResourceDefs")
 local GameSFX           = require("systems.GameSFX")
 local RewardCascade     = require("ui.widget.RewardCascade")
 local BattleRewardQueue = require("ui.widget.BattleRewardQueue")
-local HeroFrame = require("ui.widget.HeroFrame")
+local DrawUtil = require("core.DrawUtil")
+local ItemView = require("ui.widget.RewardItemView")
+local LargeView = require("ui.widget.RewardLargeView")
 local ResultRepeatFooter = require("ui.widget.ResultRepeatFooter")
 
 local RewardPopup = {}
@@ -115,27 +113,18 @@ local HINT_FONT = 40
 local HINT_CY = PANEL_CY + PANEL_H * 0.5 - HINT_FONT - 24
 local HINT_TEXT = "点击空白处关闭"
 
--- 数量/等级角标（统一右下角角标样式）
-local BADGE_FONT   = 40
-local BADGE_STROKE = 4
-
--- 角标字号自适应：按实际文本宽度测量，太长（大数值/长名字）时等比缩小，避免溢出图标
-local BADGE_FONT_MIN = 24
-local function fitBadgeFont(vg, text)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, BADGE_FONT)
-    local w = nvgTextBounds(vg, 0, 0, text)
-    local maxW = ICON_SIZE - 20
-    if w <= maxW then return BADGE_FONT end
-    return math.max(BADGE_FONT_MIN, BADGE_FONT * maxW / w)
-end
-
 -- ======================== 资源定义表（统一引用中央注册表） ========================
 local RESOURCE_DEFS = ResourceDefs.DEFS
 
 -- ======================== 状态 ========================
 
 local state = {
+    large = false,
+    presentationVersion = 0,
+    selectedIndex = 1,
+    detailScroll = 0,
+    detailMax = 0,
+    dragTarget = nil,
     open     = false,
     rowTag   = nil,    -- [三行并行] 归属战斗行（1..3）; nil=全局弹窗（外侧显示）
     title    = "",
@@ -413,10 +402,6 @@ local function getHeroIcon(heroId)
     return img
 end
 
--- 装备图标/品质框复用共享缓存。
-local getEquipIcon = ImageCache.getEquipIcon
-local getQualityBg = ImageCache.getQualityBg
-
 --- 获取格子中心坐标（含不足两行时的垂直居中偏移）
 local function getCellCenter(row, col)
     local cx = COL_CX[col]
@@ -469,7 +454,7 @@ local function invLayoutY(y)
 end
 
 local function syncCascadeScroll()
-    if not state.cascade or state.dragging or not state.followScroll then return end
+    if state.large or not state.cascade or state.dragging or not state.followScroll then return end
     if cascadeFinished() then
         -- 全部出场后停到最底部，保证看到的是最新（最下方）的奖励
         if state.scrollMax > 0 then
@@ -494,6 +479,94 @@ local function syncCascadeScroll()
     state.scrollVel = 0
 end
 
+local function largeLayout(width, height)
+    local layout = LargeView.layout(width, height, #state.items)
+    state.scrollMax = layout.maxScroll
+    clampScroll()
+    return layout
+end
+
+function RewardPopup.isLarge()
+    return state.large and RewardPopup.isOpen()
+end
+
+function RewardPopup.getPresentationVersion()
+    return state.presentationVersion
+end
+
+function RewardPopup.cancelDrag()
+    state.dragging, state.dragMoved, state.scrollVel, state.dragTarget = false, 0, 0, nil
+end
+
+function RewardPopup.handleLargePointer(phase, x, y, width, height, tap)
+    if not RewardPopup.isLarge() then return false end
+    if not state.open then return true end
+    local l = largeLayout(width, height)
+    x, y = x / l.scale, y / l.scale
+    if state.animPhase == "closing" then return true end
+    if phase == "begin" then
+        state.dragTarget = LargeView.target(l, x, y)
+        state.dragging = state.dragTarget ~= nil
+        state.dragLastY, state.dragMoved, state.scrollVel = y, 0, 0
+        state.followScroll, state.autoScroll = false, nil
+    elseif phase == "move" and state.dragging then
+        local delta = state.dragLastY - y
+        state.dragMoved = state.dragMoved + math.abs(delta)
+        state.dragLastY = y
+        if state.dragTarget == "detail" then
+            state.detailScroll = math.max(0, math.min(state.detailMax, state.detailScroll + delta))
+        else state.scrollY = math.max(0, math.min(state.scrollMax, state.scrollY + delta)) end
+    elseif phase == "end" then
+        state.dragging = false
+        if not tap or state.dragMoved > 12 or time.elapsedTime - state.animStart < 0.05 then return true end
+        if skipCascade() then state.scrollY, state.followScroll = 0, false; return true end
+        local action, index = LargeView.hit(l, x, y, #state.items, state.scrollY, state.repeatDraw)
+        if action == "close" then RewardPopup.close()
+        elseif action == "prev" or action == "next" then
+            local step = l.rows * LargeView.ROW_H
+            state.scrollY = math.max(0, math.min(state.scrollMax, state.scrollY + (action == "next" and step or -step)))
+        elseif action == "repeat" then
+            local onContinue = state.repeatDraw.onContinue
+            state.repeatAfterClose = function() onContinue(index) end
+            RewardPopup.close()
+        elseif action == "item" then
+            state.selectedIndex, state.detailScroll, state.detailMax = index, 0, 0
+            if state.onItemClick then state.onItemClick(state.items[index], index) end
+        end
+    end
+    return true
+end
+
+function RewardPopup.handleLargeScroll(wheel, x, y, width, height)
+    if not RewardPopup.isLarge() then return false end
+    if not state.open then return true end
+    local l = largeLayout(width, height)
+    if LargeView.target(l, x / l.scale, y / l.scale) == "detail" then
+        state.detailScroll = math.max(0, math.min(state.detailMax, state.detailScroll - wheel * 60))
+    else RewardPopup.handleScroll(wheel) end
+    return true
+end
+
+function RewardPopup.drawLarge(vg, width, height)
+    if not state.open or not state.large then return end
+    local l = largeLayout(width, height)
+    local shown = state.cascade and cascadeShownCount(cascadeElapsed()) or #state.items
+    state.getResourceIcon = getResourceIcon
+    nvgSave(vg)
+    local elapsed = time.elapsedTime - state.animStart
+    if state.animPhase == "opening" then nvgGlobalAlpha(vg, math.min(1, elapsed / ANIM_OPEN_DURATION))
+    elseif state.animPhase == "closing" then nvgGlobalAlpha(vg, math.max(0, 1 - elapsed / ANIM_CLOSE_DURATION)) end
+    LargeView.draw(vg, l, state, function(context, item, cx, cy, size, index)
+        local t = cascadeT(index)
+        if not t then return end
+        nvgSave(context)
+        if t < 1 then RewardCascade.applyPop(context, cx, cy, t, 1) end
+        ItemView.draw(context, item, cx, cy, size, getResourceIcon, getHeroIcon)
+        nvgRestore(context)
+    end, cascadeFinished(), shown)
+    nvgRestore(vg)
+end
+
 -- ======================== Public API ========================
 
 --- 初始化（加载图片资源，仅调用一次）
@@ -514,6 +587,10 @@ local function showNow(title, rewards, opts)
     battleResumedAt_ = 0
     state.title    = title or "奖励"
     state.rowTag   = opts and opts.row or nil
+    state.large = not state.rowTag and #rewards > LargeView.THRESHOLD
+    state.presentationVersion = state.presentationVersion + 1
+    state.selectedIndex, state.detailScroll, state.detailMax = 1, 0, 0
+    state.dragTarget = nil
     state.subtitle = (opts and opts.subtitle) or ""
     state.scrollY = 0
     state.scrollMax = 0
@@ -602,7 +679,7 @@ local function showNow(title, rewards, opts)
     -- 非逐件弹出（整屏立即显示）且内容超出一屏时：开屏自动平滑滚到最底部，
     -- 让玩家直接看到最新（最下方）的奖励；手动拖拽/滚轮会取消该动画。
     state.autoScroll = nil
-    if not state.cascade and state.scrollMax > 0 then
+    if not state.large and not state.cascade and state.scrollMax > 0 then
         state.autoScroll = { t = 0, dur = 0.5, to = state.scrollMax }
     end
     cascade = RewardCascade.new(#state.items, {
@@ -1114,7 +1191,7 @@ end
 
 --- 弹窗内容（无遮罩; 由 draw/drawRegion 包裹）
 function RewardPopup.drawContent(vg)
-    if not state.open or not syncBattleVisibility() then return end
+    if not state.open or state.large or not syncBattleVisibility() then return end
 
     -- === 动画进度计算 ===
     local animAlpha = 1.0   -- 整体透明度
@@ -1255,204 +1332,7 @@ function RewardPopup.drawContent(vg)
                 RewardCascade.applyPop(vg, cx, cy, popT or 1.0, animAlpha)
             end
 
-            if item.type == "equip" then
-                -- ========== 装备图标 ==========
-                local q = item.quality or 1
-
-                -- 品质背景框
-                local qBgImg = getQualityBg(q)
-                if qBgImg >= 0 then
-                    drawImageCentered(vg, qBgImg, cx, cy, ICON_SIZE, ICON_SIZE, 1.0)
-                end
-
-                -- 装备图标（内缩 12px）
-                local equipImg = getEquipIcon(item.templateId)
-                if equipImg >= 0 then
-                    local iconPadding = 12
-                    local iconInner = ICON_SIZE - iconPadding * 2
-                    DarkIcon.drawIconDark(vg, equipImg, cx, cy, iconInner, iconInner, 1.0)  --
-                end
-
-                -- 满包转存的装备仍展示奖励，但明确标示实际去向。
-                if item.destination == "lootbox" then
-                    DrawUtil.drawTextStroke(vg, cx, cy - ICON_SIZE * 0.5 + 18,
-                        "已入遗匣", 27, NVG_ALIGN_CENTER + NVG_ALIGN_TOP,
-                        230, 198, 125, 3)
-                end
-                -- 等级角标（右下角，描边）
-                if item.level and item.level > 0 then
-                    do
-                        local lvlText = "Lv." .. tostring(item.level)
-                        local lvlX = cx + ICON_SIZE * 0.5 - 8
-                        local lvlY = cy + ICON_SIZE * 0.5 - 8
-                        nvgFontFace(vg, "sans")
-                        nvgFontSize(vg, fitBadgeFont(vg, lvlText))
-                        nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
-                        nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
-                        local sStep = math.pi * 2 / 16
-                        for si = 0, 15 do
-                            local sa = si * sStep
-                            nvgText(vg, lvlX + math.cos(sa) * BADGE_STROKE, lvlY + math.sin(sa) * BADGE_STROKE, lvlText, nil)
-                        end
-                        nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
-                        nvgText(vg, lvlX, lvlY, lvlText, nil)
-                    end
-                end
-            elseif item.type == "hero" then
-                -- ========== 角色头像图标（[统一角色框] 品质色描边，替代 ZBBJ 贴图底） ==========
-                local iconPadding = 12
-                local iconInner = ICON_SIZE - iconPadding * 2
-                local heroImg = getHeroIcon(item.heroId)
-                HeroFrame.draw(vg, {
-                    cx = cx, cy = cy, size = iconInner,
-                    heroId = item.heroId,
-                    iconHandle = heroImg,
-                    quality = item.quality or 3,
-                    state = "owned",
-                })
-
-                -- 名称角标（右下角，描边）
-                if item.name then
-                    local nameText = item.name
-                    local nameX = cx + ICON_SIZE * 0.5 - 8
-                    local nameY = cy + ICON_SIZE * 0.5 - 8
-                    nvgFontFace(vg, "sans")
-                    nvgFontSize(vg, fitBadgeFont(vg, nameText))
-                    nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
-                    nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
-                    local sStep = math.pi * 2 / 16
-                    for si = 0, 15 do
-                        local sa = si * sStep
-                        nvgText(vg, nameX + math.cos(sa) * BADGE_STROKE, nameY + math.sin(sa) * BADGE_STROKE, nameText, nil)
-                    end
-                    nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
-                    nvgText(vg, nameX, nameY, nameText, nil)
-                end
-            elseif item.type == "artifact" then
-                ArtifactAssetUtil.drawIcon(vg, item, cx, cy, ICON_SIZE, {})
-
-            elseif item.type == "seed" then
-                -- ========== 种子图标（待鉴定装备）==========
-                local q = item.quality or 1
-
-                -- 品质背景框
-                local qBgImg = getQualityBg(q)
-                if qBgImg >= 0 then
-                    drawImageCentered(vg, qBgImg, cx, cy, ICON_SIZE, ICON_SIZE, 1.0)
-                end
-
-                -- "?" 问号图标（居中，描边，品质色）
-                local SEED_Q_COLORS = DarkIcon.QUALITY_TRIM  -- [B-方案] 统一古卷色表
-                local qc = SEED_Q_COLORS[q] or SEED_Q_COLORS[1]
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, 80)
-                nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-                -- 描边
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 200))
-                local sStep = math.pi * 2 / 12
-                for si = 0, 11 do
-                    local sa = si * sStep
-                    nvgText(vg, cx + math.cos(sa) * 3, cy + math.sin(sa) * 3, "?", nil)
-                end
-                -- 正文（品质色）
-                nvgFillColor(vg, nvgRGBA(qc[1], qc[2], qc[3], 255))
-                nvgText(vg, cx, cy, "?", nil)
-
-                -- 数量角标（右下角，描边）
-                if item.amount and item.amount > 0 then
-                    local amtText = "×" .. NumberUtil.format(item.amount)
-                    local amtX = cx + ICON_SIZE * 0.5 - 8
-                    local amtY = cy + ICON_SIZE * 0.5 - 8
-                    nvgFontFace(vg, "sans")
-                    nvgFontSize(vg, fitBadgeFont(vg, amtText))
-                    nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
-                    nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
-                    local bStep = math.pi * 2 / 16
-                    for si = 0, 15 do
-                        local sa = si * bStep
-                        nvgText(vg, amtX + math.cos(sa) * BADGE_STROKE, amtY + math.sin(sa) * BADGE_STROKE, amtText, nil)
-                    end
-                    nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
-                    nvgText(vg, amtX, amtY, amtText, nil)
-                end
-            elseif item.type == "shard" and item.heroId then
-                -- ========== 英雄碎片 ==========
-                local heroId = tonumber(item.heroId)
-                local heroDef = HeroConfig.get(heroId)
-                local q = heroDef and heroDef.quality or 3
-
-                -- [统一角色框] 碎片：品质色描边头像 + 左上碎片角标
-                local shardSize = ICON_SIZE - 12
-                HeroFrame.draw(vg, {
-                    cx = cx, cy = cy, size = shardSize,
-                    heroId = heroId,
-                    quality = q,
-                    state = "owned",
-                })
-                local badgeSize = math.floor(shardSize * 53 / 160 + 0.5)
-                if DrawUtil._shardBadgeImg and DrawUtil._shardBadgeImg >= 0 then
-                    drawImageCentered(vg, DrawUtil._shardBadgeImg,
-                        cx - shardSize * 0.5 + badgeSize * 0.5,
-                        cy - shardSize * 0.5 + badgeSize * 0.5,
-                        badgeSize, badgeSize, 1.0)
-                end
-
-                if item.amount and item.amount > 0 then
-                    do
-                        local amtText = "×" .. NumberUtil.format(item.amount)
-                        local amtX = cx + ICON_SIZE * 0.5 - 8
-                        local amtY = cy + ICON_SIZE * 0.5 - 8
-                        nvgFontFace(vg, "sans")
-                        nvgFontSize(vg, fitBadgeFont(vg, amtText))
-                        nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
-                        nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
-                        local bStep = math.pi * 2 / 16
-                        for si = 0, 15 do
-                            local sa = si * bStep
-                            nvgText(vg, amtX + math.cos(sa) * BADGE_STROKE, amtY + math.sin(sa) * BADGE_STROKE, amtText, nil)
-                        end
-                        nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
-                        nvgText(vg, amtX, amtY, amtText, nil)
-                    end
-                end
-            else
-                local def = RESOURCE_DEFS[item.type]
-                local q = def and def.quality or 1
-
-                -- 品质背景框
-                local qBgImg = getQualityBg(q)
-                if qBgImg >= 0 then
-                    drawImageCentered(vg, qBgImg, cx, cy, ICON_SIZE, ICON_SIZE, 1.0)
-                end
-
-                -- 资源图标（内缩 12px）
-                local resImg = getResourceIcon(item.type)
-                if resImg >= 0 then
-                    local iconPadding = 12
-                    local iconInner = ICON_SIZE - iconPadding * 2
-                    drawImageCentered(vg, resImg, cx, cy, iconInner, iconInner, 1.0)
-                end
-
-                -- 数量角标（右下角，描边，K/M格式化）
-                if item.amount and item.amount > 0 then
-                    do
-                        local amtText = "×" .. NumberUtil.format(item.amount)
-                        local amtX = cx + ICON_SIZE * 0.5 - 8
-                        local amtY = cy + ICON_SIZE * 0.5 - 8
-                        nvgFontFace(vg, "sans")
-                        nvgFontSize(vg, fitBadgeFont(vg, amtText))
-                        nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
-                        nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
-                        local sStep = math.pi * 2 / 16
-                        for si = 0, 15 do
-                            local sa = si * sStep
-                            nvgText(vg, amtX + math.cos(sa) * BADGE_STROKE, amtY + math.sin(sa) * BADGE_STROKE, amtText, nil)
-                        end
-                        nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
-                        nvgText(vg, amtX, amtY, amtText, nil)
-                    end
-                end
-            end
+            ItemView.draw(vg, item, cx, cy, ICON_SIZE, getResourceIcon, getHeroIcon)
 
             nvgRestore(vg)
             if popping then

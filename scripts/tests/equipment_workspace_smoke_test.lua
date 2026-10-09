@@ -195,9 +195,14 @@ function Start()
         time = runtimeClock
         Detail.clearEquipmentSlot()
         assert(Backpack.getEquipmentSlotFilter() == nil, "取消部位不同步")
-        ED.open(2, nil, nil, true, "backpack", 500, 900)
+        ED.open(2, nil, 1, true, "backpack", 500, 900)
+        ED.setComparisonSlot("weapon")
         ED.pin()
-        assert(ED.getSelection().seq == "2" and ED.getSelection().pinned, "钉住候选快照丢失")
+        assert(ED.getSelection().seq == "2" and ED.getSelection().pinned
+            and ED.getSelection().slot == nil, "只读比较槽不得变成穿戴动作槽")
+        nvgBeginFrame(vg, 1080, 2400, 1)
+        ED.draw(vg)
+        nvgEndFrame(vg)
         local data = Preview.build(1, 60, 2)
         assert(data.preview and not data.error, "真实模板试穿被拒绝")
         assert(Dispatcher.get("equipment").equipped[1].weapon == 1, "预览意外穿戴装备")
@@ -215,7 +220,9 @@ function Start()
         assert(EquipPanel.getAttributeMode() == "equipment", "标题首击未切换装备加成")
         assert(Backpack.getEquipmentSlotFilter() == preservedSlot, "切换标题意外取消副手筛选")
         assert(ED.getSelection().pinned and ED.getSelection().seq == "2", "切换标题丢失钉住候选")
-        local bonusOptions = { includeEquipmentBonuses = true }
+        local bonusOptions = { includeEquipmentBonuses = true,
+            heroes = Dispatcher.get("heroes"), equipment = Dispatcher.get("equipment"),
+            artifacts = Dispatcher.get("artifacts"), talents = Dispatcher.get("talents") or {} }
         local bonusData = Preview.build(1, 60, nil, nil, bonusOptions)
         assert(bonusData.equipmentBonuses and #bonusData.equipmentBonuses.rows > 0, "装备净增益未构建")
         nvgBeginFrame(vg, 1080, 2400, 1)

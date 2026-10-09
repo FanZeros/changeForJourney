@@ -70,12 +70,13 @@ function Start()
         local drawCalls, stackDepth = 0, 0
         local function noop() end
         local mods = {
+            ["core.I18n"] = { lookup = function(value) return value end },
             ["config.EquipmentConfig"] = {},
             ["core.DarkIcon"] = { QUALITY_TRIM = { { 180, 180, 180 }, { 230, 220, 140 },
                 { 140, 220, 250 }, { 240, 170, 250 }, { 255, 200, 100 } }, drawIconDark = noop },
             ["config.HeroConfig"] = { get = function() return nil end },
             ["core.NumberUtil"] = { format = function(value) return tostring(value) end },
-            ["core.DrawUtil"] = { drawTextStroke = noop,
+            ["core.DrawUtil"] = { drawTextStroke = function(vg, x, y, text) env.nvgText(vg, x, y, text) end,
                 -- 新版Popup把原背景rect交给共享图片绘制叶子；保留实际尺寸/仿射记录。
                 drawImageCentered = function(vg, _, cx, cy, w, h)
                     env.nvgBeginPath(vg)
@@ -176,6 +177,9 @@ function Start()
         env.nvgLinearGradient = function() return "linear" end
         env.nvgImagePattern = function() return "image" end
 
+        mods["ui.widget.RewardItemView"] = compile("ui.widget.RewardItemView", source("ui.widget.RewardItemView", true))
+        mods["ui.widget.RewardLargeView"] = compile("ui.widget.RewardLargeView", source("ui.widget.RewardLargeView", true))
+        local rewardGestureSource = source("boot.RewardGesture", true)
         local Queue = compile("ui.widget.BattleRewardQueue", queueSource)
         mods["ui.widget.BattleRewardQueue"] = Queue
         local Cascade = compile("ui.widget.RewardCascade", cascadeSource)
@@ -957,7 +961,7 @@ function Start()
         run("普通no-row级联和onItemClick battle不自动关闭", function()
             fixture()
             local closed = 0
-            Reward.show("普通无row", rewardItems(12), { panel = "center", cascade = true,
+            Reward.show("普通无row", rewardItems(10), { panel = "center", cascade = true,
                 onClose = function() closed = closed + 1 end })
             advance(1000)
             currentTitle("普通无row", "global")
@@ -1059,6 +1063,8 @@ function Start()
             local rewardProxy = {
                 currentRowTag = function() return Reward.currentRowTag() end,
                 isOpen = function() return Reward.isOpen() end,
+                isLarge = function() return Reward.isLarge() end,
+                handleLargeScroll = function() return false end,
                 currentPanel = function() return Reward.currentPanel() end,
             }
             for _, name in ipairs({ "drawRegion", "handleDragRegion", "handleScrollRegion", "handleInputRegion" }) do
@@ -1090,6 +1096,8 @@ function Start()
                 "ui.story.ScenarioDialogue", "systems.TutorialManager", "boot.ArtifactGesture" }) do
                 routeMods[name] = closedPage()
             end
+            routeMods["ui.character.hero.AwakeningArtwork"] = { bindInput = function() return function() return false end end,
+                observe = noop, hasPress = function() return false end, isOpen = function() return false end }
             routeMods["core.BattleLayout"] = { STRIP_W = 1600, STRIP_H = 600, setMode = noop }
             routeMods["ui.widget.SoundToggle"] = { initImages = noop }
             routeMods["core.I18n"] = { lookup = function(text) return text end, format = string.format }
@@ -1157,6 +1165,7 @@ function Start()
             routeMods["boot.SeamBackGesture"] = seamChunk()
             routeMods["boot.DecomposeMarqueeGesture"] = assert(load(marqueeGestureSource,
                 "@boot.DecomposeMarqueeGesture", "t", routeEnv))()
+            routeMods["boot.RewardGesture"] = assert(load(rewardGestureSource, "@boot.RewardGesture", "t", routeEnv))()
             routeMods["boot.StandaloneHorizonWheel"] = assert(load(horizonWheelSource,
                 "@boot.StandaloneHorizonWheel", "t", routeEnv))()
             local triChunk = assert(load(triSource, "@ui.battle.tri.BattleTriPage", "t", routeEnv))
@@ -1293,9 +1302,9 @@ function Start()
             end
             equal(seamCloses, 0, "tri网格拖到seam松手不伪装成返回按钮点击")
         end)
-        run("隔离边界：四份核心和五份路由源码，只允许 spy 依赖", function()
+        run("隔离边界：核心与公共奖励路由仅加载spy依赖", function()
             equal(sourceReads, 4, "只读 Popup/Queue/Cascade/Blocker 四份实际核心源码")
-            equal(routingSourceReads, 5, "额外只读TriPage/HorizonInput/SeamBackGesture/DecomposeMarqueeGesture/HorizonWheel路由源码")
+            equal(routingSourceReads, 8, "只读战斗路由与奖励公共视图/手势源码")
             equal(forbiddenRequires, 0, "无 main、玩家存档、网络模块加载")
         end)
     end)

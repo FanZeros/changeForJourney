@@ -401,7 +401,7 @@ local function compactViewHeight(equip, withButtons)
 end
 
 local function compactCompareEquip()
-    if not detState.open or detState.slot == nil then return nil end
+    if not detState.open or not detState.heroId then return nil end
     if isClickedEquipEquipped() then return nil end
     return getComparisonEquip()
 end
@@ -601,6 +601,7 @@ function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner, anchorX, 
     detState.anchorY = tonumber(anchorY)
     detState.pinned = false
     detState.equippedView = false
+    detState.comparisonSlot = nil
     detState.descScrollY = 0
     detState.descScrollMax = 0
     detState.descDragging = false
@@ -617,6 +618,11 @@ end
 function EquipmentDetail.openEquipped(seq, slot, heroId, anchorX, anchorY)
     EquipmentDetail.open(seq, slot, heroId, true, "character", anchorX, anchorY)
     detState.equippedView = true
+end
+
+--- 只读仓库候选的比较槽，独立于穿戴动作槽。
+function EquipmentDetail.setComparisonSlot(slot)
+    detState.comparisonSlot = slot
 end
 
 function EquipmentDetail.setAnchor(anchorX, anchorY)
@@ -754,7 +760,14 @@ getComparisonEquip = function()
     local heroEquipped = EquipmentSystem.getHeroSlots(equipData, detState.heroId)
     if not heroEquipped then return nil, nil end
 
-    local slot = detState.slot
+    -- 仓库只读候选的动作槽为 nil，但比较仍按装备自然槽取当前穿戴项。
+    -- 比较槽不写入 detState.slot，不能让只读卡片出现穿戴/卸下按钮。
+    local candidate = equipData.inventory and (equipData.inventory[detState.equipSeq]
+        or equipData.inventory[tonumber(detState.equipSeq)])
+    local tpl = candidate and EquipmentConfig.ITEMS[candidate.templateId]
+    local slot = detState.slot or detState.comparisonSlot
+        or (candidate and candidate.slot) or (tpl and tpl.slot)
+    if not slot then return nil, nil end
 
     -- 直接获取该槽位的装备
     local curSeq = heroEquipped[slot]
@@ -1104,15 +1117,10 @@ function EquipmentDetail.draw(vg)
             local side = (detState.owner == "character") and -1 or 1
             nvgSave(vg)
             nvgTranslate(vg, side * (COMPACT_BG_W + 16), 0)
-            drawCompactPanel(vg, compare, "当前", false)
+            drawCompactPanel(vg, compare, "", false, { equipped = true })
             nvgRestore(vg)
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 22)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-            nvgText(vg, REF_BG_CX + side * (COMPACT_BG_W + 16), 16, "当前装备", nil)
         end
-        drawCompactPanel(vg, newEquip, btnText)
+        drawCompactPanel(vg, newEquip, btnText, nil, { equipped = isEquipped })
         -- 关键词解释气泡在内容之后、滚动裁剪之外绘制。
         affixKw:drawPopup(vg)
         for i = 1, 3 do setKw[i]:drawPopup(vg) end

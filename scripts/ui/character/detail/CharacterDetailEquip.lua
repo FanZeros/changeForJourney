@@ -225,7 +225,7 @@ local function refreshData(heroId, slot)
         result = currentFallback(heroId, level)
         if selection or failure then result.error = "属性预览暂不可用，当前装备未改变" end
     end
-    result.displayRows = Stats.sortComparisonRows(result.rows)
+    result.displayRows = Stats.sortComparisonRows(DetailAttrs.filterDisplayRows(result.rows))
     if result.equipmentBonuses then
         result.equipmentBonuses.displayRows = Stats.sortComparisonRows(result.equipmentBonuses.rows)
     end

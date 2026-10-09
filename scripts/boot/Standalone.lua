@@ -689,6 +689,7 @@ local function showOfflineRewardPanel_()
         adventureExp   = panelData.adventureExp,
         adventurerExp  = panelData.adventurerExp,
         heroExpPreview = panelData.heroExpPreview,
+        teamSources    = panelData.teamSources,
         rewards        = panelData.rewards,
         -- [7日硬顶] 封顶提示
         hardCapSeconds  = panelData.hardCapSeconds,

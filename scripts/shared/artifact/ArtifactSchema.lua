@@ -214,6 +214,7 @@ local function normalizeDrawStats(stats)
     stats.ten = math.max(0, math.floor(tonumber(stats.ten) or 0))
     stats.byQuality = normalizeCountMap(stats.byQuality)
     stats.byArtifactId = normalizeCountMap(stats.byArtifactId)
+    stats.byChest = normalizeCountMap(stats.byChest)
     return stats
 end
 
@@ -298,6 +299,7 @@ function ArtifactSchema.normalizeModule(data)
     data.drawStats = normalizeDrawStats(data.drawStats)
 
     data.nextId = math.max(1, math.floor(tonumber(data.nextId) or 1))
+    -- 保留兼容字段用于读取旧存档；抽取不读取或推进这些计数。
     data.pityRare = math.max(0, math.floor(tonumber(data.pityRare) or 0))
     data.pityEpic = math.max(0, math.floor(tonumber(data.pityEpic) or 0))
     data.totalDraws = math.max(0, math.floor(tonumber(data.totalDraws) or 0))
@@ -310,6 +312,10 @@ function ArtifactSchema.normalizeModule(data)
         local id = tostring(artifact.id or "")
         if id ~= "" and not bagById[id] then
             bagById[id] = artifact
+        end
+        local numericId = tonumber(id)
+        if numericId and numericId >= data.nextId then
+            data.nextId = math.floor(numericId) + 1
         end
     end
 
@@ -456,7 +462,7 @@ ArtifactSchema.Fields = {
         onSave = function(data)
             return ArtifactSchema.dehydrateModule(data)
         end,
-        desc = "神器背包/装配/抽取保底",
+        desc = "神器背包/装配/独立随机抽取",
     },
 }
 

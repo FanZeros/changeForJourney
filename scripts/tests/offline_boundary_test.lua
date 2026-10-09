@@ -1,5 +1,7 @@
 -- 单机在线/离线收益时间边界回归（引擎运行环境中的内存存档替身）。
+local assertions = 0
 local function eq(actual, expected, label)
+    assertions = assertions + 1
     assert(actual == expected, label .. ": " .. tostring(actual) .. " / " .. tostring(expected))
 end
 
@@ -17,7 +19,8 @@ function Start()
     local oldSnapshot, oldGet, oldUpdate, oldExport, oldImport =
         dispatcher.snapshotAll, dispatcher.get, dispatcher.handleStateUpdate,
         state.exportSave, state.importSave
-    local oldStage, oldResolve, oldCalc = stage.Get, calc.resolveIdleStageAnchors, calc.calcOfflineIdleRewards
+    local oldStage, oldResolve, oldCalc = stage.Get, calc.resolveIdleStageAnchors, calc.calcTeamOfflineRewards
+    local SC = require("config.StageConfig")
     local oldPdmGet, oldDirty = pdm.GetModule, pdm.MarkDirty
     local heroService = require("rules.hero.HeroService")
     local oldResonance = heroService.ApplyResonanceSync
@@ -40,12 +43,15 @@ function Start()
     pdm.GetModule = function(_, name) return modules[name] end
     pdm.MarkDirty = function() end
     heroService.ApplyResonanceSync = function() end
-    stage.Get = function() return {} end
+    stage.Get = function() return SC end
     calc.resolveIdleStageAnchors = function() return 101, 101 end
-    calc.calcOfflineIdleRewards = function(seconds)
+    calc.calcTeamOfflineRewards = function(seconds, teams)
         calcSeconds = seconds
-        return { seconds = seconds, maxSeconds = 43200, kills = 0,
-            adventureExp = 0, adventurerExp = calcHeroExp, gold = 7, equipSeeds = {}, scrollDrops = {} }
+        return { seconds = seconds, effectiveSeconds = seconds, maxSeconds = 43200, kills = 0,
+            adventureExp = 0, adventurerExp = calcHeroExp, gold = 7, diamond = 0, equipSeeds = {}, scrollDrops = {},
+            teamRewards = { { teamIdx = 1, stageId = 101, heroCount = teams[1] and teams[1].heroCount or 0,
+                gold = 7, diamond = 0, adventureExp = 0, adventurerExp = calcHeroExp,
+                kills = 0, equipSeeds = {}, scrollDrops = {} } } }
     end
     local temporaryFiles = {}
     fileSystem = {
@@ -175,7 +181,7 @@ function Start()
     calcHeroExp = 100
     modules.heroes = restoredHeroes
     modules.session = { lastOnlineTime = 19000, firstLoginTime = 100 }
-    modules.battle = { idleAccumSec = 0, idleHeroCount = 2 }
+    modules.battle = { currentStageId = 101, maxStageId = 101, idleAccumSec = 0, idleHeroCount = 2 }
     local sparsePanel = offline.CalcOnEnter(1)
     eq(#sparsePanel.heroExpPreview, 2, "空槽不能生成经验预览")
     eq(sparsePanel.heroExpPreview[1].expGain, 50, "经验只按真实队员平分")
@@ -213,13 +219,169 @@ function Start()
     save.Update(2)
     eq(saved().modules.currency.gold, 123, "文件可再次打开时自动重试存档")
 
+    -- 真实规则只用内存PDM；独立挑战覆盖指定队伍，冷恢复来源不借最高主线或首通奖。
+    calc.calcTeamOfflineRewards = oldCalc
+    local DC = require("config.DungeonConfig")
+    local Income = require("config.IdleIncomeConfig")
+    local Dungeon = require("rules.dungeon.DungeonService")
+    local Tower = require("rules.tower.TowerService")
+    local function resetSources()
+        offline.Cleanup(1)
+        Dungeon.Cleanup(1)
+        Tower.ResetToDefault(1)
+        modules = {
+            battle = { currentStageId = 101, maxStageId = 2305, clearedStages = {},
+                teamStageIds = { ["1"] = 101, ["2"] = 200001, ["3"] = 300001 } },
+            heroes = { roster = { [1] = { level = 1, exp = 0 }, [2] = { level = 1, exp = 0 },
+                [3] = { level = 1, exp = 0 } }, deployed = { 1 },
+                teams = { { slots = { 1 } }, { slots = { 2 } }, { slots = { 3 } } } },
+            dungeon = { gold_mine = { floor = 1, cleared = {} }, equipment_vault = { floor = 1, cleared = {} },
+                black_diamond = { floor = 1, cleared = {} }, babel_tower = { floor = 1, cleared = {}, buffs = {} } },
+            player = { level = 1, exp = 0 }, equipment = { inventory = {} }, lootbox = {},
+            currency = { gold = 0, gems = 0 }, session = { lastOnlineTime = now - 3600, firstLoginTime = 100 },
+        }
+    end
+    resetSources()
+    local ready, _, challenge = Dungeon.Challenge(1, "gold_mine", 1, 2)
+    eq(ready, true, "进行中独立金币副本挑战")
+    eq(challenge.teamIdx, 2, "独立挑战仅覆盖队2")
+    eq(modules.battle.teamStageIds["2"], 200001, "独立挑战不改队2原任务")
+    eq(modules.battle.maxStageId, 2305, "独立挑战不推主线最高")
+    save.Flush()
+    local persistedBattle = saved().modules.battle
+    eq(persistedBattle.offlineChallengeSources["2"].stageId, 100001, "覆盖来源进入唯一真实存档")
+    Dungeon.Cleanup(1)
+    eq(next(modules.battle.offlineChallengeSources), nil, "退出活跃副本清覆盖来源")
+    modules.battle = persistedBattle
+    modules.session.lastOnlineTime = now - 3600
+    Dungeon.Cleanup(1)
+    eq(modules.battle.offlineChallengeSources["2"].stageId, 100001, "冷启动Cleanup保留离线来源")
+    local panelSources = offline.CalcOnEnter(1)
+    eq(#panelSources.teamSources, 3, "三队独立来源")
+    eq(panelSources.teamSources[1].stageId, 101, "队1仍刷保存低主线")
+    eq(panelSources.teamSources[2].stageId, 100001, "队2按离线时独立挑战副本")
+    eq(panelSources.teamSources[2].sourceKind, "dungeon", "独立副本来源明确")
+    eq(panelSources.teamSources[2].sourceStageId, 305, "金币首层源主线305")
+    eq(panelSources.teamSources[3].stageId, 300001, "队3保留资源黑钻任务")
+    local goldPerMin, expPerMin = Income.get(101)
+    eq(panelSources.teamSources[1].gold, goldPerMin * 60, "低主线不偷最高主线收入")
+    eq(panelSources.teamSources[1].adventureExp, expPerMin * 60, "低主线经验使用本关")
+    eq(panelSources.teamSources[2].adventureExp, DC.getStageExpAmount(100001, 1200), "挑战队经验只用自身副本")
+    eq(panelSources.teamSources[3].adventureExp, DC.getStageExpAmount(300001, 1200), "独立黑钻队经验")
+    eq(modules.battle.offlineChallengeSources, nil, "计算捕获后消费覆盖来源")
+    eq(next(modules.dungeon.gold_mine.cleared), nil, "重登不补副本首通账本")
+    eq(modules.dungeon.gold_mine.floor, 1, "重登不推进进行中副本")
+    eq(offline.CalcOnEnter(1), panelSources, "重复进场复用奖励和来源")
+    local originalSources = panelSources.teamSources[2].stageId
+    modules.battle.teamStageIds["2"] = 2305
+    eq(panelSources.teamSources[2].stageId, originalSources, "来源不随live任务变化")
+    eq(offline.ClaimRewards(1), true, "来源奖励真实领取")
+    eq(modules.session.lastOnlineTime, now, "领取推进离线边界")
+    eq(next(modules.dungeon.gold_mine.cleared), nil, "领取也不补首通")
+
+    resetSources()
+    eq(Tower.Challenge(1, 1), true, "三队进入独立塔")
+    eq(modules.battle.offlineChallengeSources["1"].paused, true, "塔队1无离线产出标记")
+    save.Flush()
+    persistedBattle = saved().modules.battle
+    Tower.Cleanup(1)
+    eq(next(modules.battle.offlineChallengeSources), nil, "塔退出清暂停标记")
+    modules.battle = persistedBattle
+    modules.session.lastOnlineTime = now - 3600
+    Tower.ResetToDefault(1)
+    eq(modules.battle.offlineChallengeSources["1"].paused, true, "冷启动塔重置不先删快照")
+    panelSources = offline.CalcOnEnter(1)
+    eq(#panelSources.teamSources, 3, "塔三队来源仍可解释")
+    eq(panelSources.totalKills, 0, "塔离线无击杀")
+    eq(panelSources.adventureExp, 0, "塔离线不偷原主线经验")
+    eq(#panelSources.rewards, 0, "塔离线不发黑钻神器首通或原主线奖励")
+    for _, source in ipairs(panelSources.teamSources) do
+        eq(source.sourceKind, "tower", "塔各队来源")
+        eq(source.paused, true, "塔各队零产出")
+    end
+    resetSources()
+    modules.heroes.teams[1].slots = { 0 }
+    modules.battle.offlineChallengeSources = { ["1"] = { sourceKind = "tower", stageId = 400001, paused = true },
+        ["2"] = { sourceKind = "dungeon", stageId = 999999 } }
+    local eligible = offline.PreviewTeamIncome(modules.heroes, modules.battle, modules.dungeon, 3600)
+    eq(#eligible.teamRewards, 1, "空队与无效挑战不借旧主线")
+    eq(eligible.teamRewards[1].teamIdx, 3, "仅合法资源队产生收益")
+    resetSources()
+    local Drop = require("systems.DropSystem")
+    local MC = require("config.MonsterConfig")
+    local testedDifficulties = {}
+    local originalRandom = math.random
+    for floor = 1, DC.MAX_FLOOR.equipment_vault do
+        local combat = DC.getStage(DC.getStageId("equipment_vault", floor))
+        local source = SC.getStage(combat.sourceStageId)
+        local difficulty = SC.getDifficulty(source.id)
+        if not testedDifficulties[difficulty] or source.id == 2305 or source.id == 4605
+            or source.id == 6905 or source.id == 9205 or source.id == 34505 then
+            testedDifficulties[difficulty] = true
+            local probabilities = DC.getEquipQualityProbabilities(floor)
+            local oracle = { 0, 0, 0, 0, 0, 0 }
+            local monsterIds = {}
+            for _, id in ipairs(source.monsters) do monsterIds[#monsterIds + 1] = id end
+            if source.bossId > 0 then monsterIds[#monsterIds + 1] = source.bossId end
+            local high = source.id >= SC.HELL_FIRST_STAGE
+            local cap = SC.getMaxDropQuality(source)
+            for _, monsterId in ipairs(monsterIds) do
+                local weights = MC.QUALITY[MC.MONSTERS[monsterId].quality].dropWeights
+                local sum = 0
+                for q = 1, 6 do sum = sum + weights[q] * (high and q >= 5 and 3 or 1) end
+                for q = 1, 6 do
+                    local quality = math.min(q, cap)
+                    oracle[quality] = oracle[quality] + weights[q] * (high and q >= 5 and 3 or 1) / sum / #monsterIds
+                end
+            end
+            local sum = 0
+            for q = 1, 6 do
+                eq(math.abs(probabilities[q] - oracle[q]) < 1e-12, true, "副本品质与源主线同口径")
+                sum = sum + probabilities[q]
+            end
+            eq(math.abs(sum - 1) < 1e-12, true, "品质概率和为1")
+            print(string.format("[offline_boundary_test] QUALITY floor=%d source=%d Q4=%.6f%% Q5=%.6f%% Q6=%.6f%%",
+                floor, source.id, probabilities[4] * 100, probabilities[5] * 100, probabilities[6] * 100))
+            local cumulative = 0
+            for q = 1, 6 do
+                if probabilities[q] > 0 then
+                    local point = cumulative + probabilities[q] / 2
+                    math.random = function(lower) return lower or point end
+                    eq(DC.rollEquipQuality(floor), q, "统一CDF抽样区间")
+                    local stageId = DC.getStageId("equipment_vault", floor)
+                    local perMinute = require("config.DungeonIdleConfig").getIdlePerMin("equipment_vault", floor)
+                    local dropped = DC.getStageRewards(stageId, 20 / perMinute, 1)
+                    eq(dropped.equipSeeds[1].quality, q, "在线资源奖励使用同源品质")
+                end
+                cumulative = cumulative + probabilities[q]
+            end
+            math.random = originalRandom
+        end
+    end
+    local highWeights, weightTotal = Drop.getQualityWeights(5, SC.DIFFICULTY_HELL, 0)
+    eq(highWeights[5], 300, "高难度传说权重三倍")
+    eq(highWeights[6], 60, "高难度至臻权重三倍")
+    eq(weightTotal, 1210, "高难度总权重")
+    math.random = function() return 1210 end
+    eq(calc._rollQualityByMonster(5, SC.DIFFICULTY_HELL), 6, "离线品质复用高难度权重")
+    math.random = originalRandom
+    local preview = calc.previewTeamOfflineRewards(86400,
+        { { teamIdx = 1, stageId = 200001, heroCount = 1 } })
+    local probability = DC.getEquipQualityProbabilities(1)
+    local fullCount = DC.getEquipSweepCount(1) * 2
+    for _, seed in ipairs(preview.teamRewards[1].equipSeeds) do
+        eq(math.abs(seed.count - fullCount * probability[seed.quality]) < 1e-9, true,
+            "离线资源装备预览按权重而非均匀稀有度")
+    end
+
     os.time = realTime
     dispatcher.snapshotAll, dispatcher.get, dispatcher.handleStateUpdate = oldSnapshot, oldGet, oldUpdate
     state.exportSave, state.importSave = oldExport, oldImport
-    stage.Get, calc.resolveIdleStageAnchors, calc.calcOfflineIdleRewards = oldStage, oldResolve, oldCalc
+    stage.Get, calc.resolveIdleStageAnchors, calc.calcTeamOfflineRewards = oldStage, oldResolve, oldCalc
     pdm.GetModule, pdm.MarkDirty = oldPdmGet, oldDirty
     heroService.ApplyResonanceSync = oldResonance
     File, fileSystem = oldFile, oldSystem
-    print("[offline_boundary_test] ALL PASS: startup freeze, old save, pending, claim, online, crash, short, clock rollback")
+    print("[offline_boundary_test] ALL PASS assertions=" .. assertions
+        .. ": startup freeze, pending, claim, source isolation, tower pause, rarity, time boundaries")
     engine:Exit()
 end

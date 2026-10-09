@@ -36,6 +36,7 @@ local ImageCache        = require("ui.widget.ImageCache")
 local DrawUtil          = require("core.DrawUtil")
 local BF                = require("systems.ButtonFeedback")
 local ResourceDefs      = require("config.ResourceDefs")
+local I18n              = require("core.I18n")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
 local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local RewardCascade = require("ui.widget.RewardCascade")  -- 奖励逐件弹出动画（与关卡奖励同款）
@@ -206,6 +207,7 @@ local state = {
     adventureExp    = 0,
     adventurerExp   = 0,
     rewards         = {},
+    teamSources     = {},   -- 结算时冻结的各队来源，不从当前战线重新推断。
     heroExpPreview  = {},   -- 出战队员升级预览（服务端下发）
     onClaim         = nil,
     -- [奖励可点击] 点击查看的物品详情
@@ -456,9 +458,30 @@ local function hitRewardCell(dx, dy)
     return nil
 end
 
+--- 用显示译文逐字折行，显式换行保留，资源用途不被裁成单行。
+local function descriptionLines(vg, item)
+    local desc = ResourceDefs.getRewardDescription(item)
+    local source = I18n.lookup(desc)
+    local lines, line = {}, ""
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 30)
+    for _, codepoint in utf8.codes(source) do
+        local char = utf8.char(codepoint)
+        if char == "\n" then
+            lines[#lines + 1], line = line, ""
+        elseif line ~= "" and I18n.displayBounds(vg, 0, 0, line .. char) > 680 then
+            lines[#lines + 1], line = line, char
+        else
+            line = line .. char
+        end
+    end
+    if line ~= "" then lines[#lines + 1] = line end
+    return lines
+end
+
 --- 详情浮层尺寸/位置（装备=遗匣同款只读详情；资源=信息卡）
 ---@return number x, number y, number w, number h
-local function detailBounds()
+local function detailBounds(vg)
     local item = state.detailItem
     if item and item.type == "equip" and item.equip then
         local w, h = EquipmentDetail.readOnlySize(item.equip)
@@ -466,7 +489,8 @@ local function detailBounds()
         local y = math.max(PANEL_TOP + 120, 900 - h * 0.5)
         return x, y, w, h
     end
-    local w, h = 560, 300
+    local lines = descriptionLines(vg, item)
+    local w, h = 760, 280 + #lines * 38
     return CENTER_X - w * 0.5, 900 - h * 0.5, w, h
 end
 
@@ -490,7 +514,7 @@ local function drawDetailOverlay(vg)
         EquipmentDetail.drawReadOnly(vg, item.equip, x, y)
     else
         -- 资源：信息卡（图标 + 名称 + 数量）
-        local x, y, w, h = detailBounds()
+        local x, y, w, h = detailBounds(vg)
         local cx, cy = x + w * 0.5, y + h * 0.5
         DrawUtil.drawRoundedRectCentered(vg, cx, cy, w, h, 20, 24, 20, 18, 245)
         DrawUtil.drawRoundedRectCentered(vg, cx, cy, w - 8, h - 8, 16, 40, 33, 28, 255)
@@ -499,7 +523,7 @@ local function drawDetailOverlay(vg)
         local q = (def and def.quality) or 2
         -- 品质底 + 图标
         local qBgImg = ImageCache.getQualityBg(q)
-        local iconCY = cy - 40
+        local iconCY = y + 96
         if qBgImg >= 0 then
             DrawUtil.drawImageCentered(vg, qBgImg, cx, iconCY, 150, 150, 1.0)
         end
@@ -508,15 +532,23 @@ local function drawDetailOverlay(vg)
             DrawUtil.drawImageCentered(vg, resImg, cx, iconCY, 120, 120, 1.0)
         end
         -- 名称
-        local name = (def and def.name) or item.type
-        DrawUtil.drawTextStroke(vg, cx, cy + 66, name, 40,
+        local name = ResourceDefs.getRewardDisplayName(item)
+        DrawUtil.drawTextStroke(vg, cx, y + 184, name, 36,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 231, 210, 161, 4,
             { strokeColor = { 0x31, 0x24, 0x24 } })
         -- 数量
         if item.amount and item.amount > 0 then
-            DrawUtil.drawTextStroke(vg, cx, cy + 116, "x" .. NumberUtil.format(item.amount), 36,
+            DrawUtil.drawTextStroke(vg, cx, y + 228, "x" .. NumberUtil.format(item.amount), 32,
                 NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 0x63, 0xff, 0x84, 4,
                 { strokeColor = { 0x31, 0x24, 0x24 } })
+        end
+        local lines = descriptionLines(vg, item)
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 30)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+        nvgFillColor(vg, nvgRGBA(232, 220, 200, 255))
+        for index, line in ipairs(lines) do
+            I18n.displayText(vg, x + 40, y + 270 + (index - 1) * 38, line, nil)
         end
     end
 
@@ -618,6 +650,7 @@ function Panel.show(data)
     state.adventureExp   = data.adventureExp or 0
     state.adventurerExp  = data.adventurerExp or 0
     state.heroExpPreview = data.heroExpPreview or {}
+    state.teamSources    = data.teamSources or {}
     state.onClaim        = data.onClaim
     state.detailItem     = nil
     state.detailIdx      = 0
@@ -792,6 +825,26 @@ function Panel.draw(vg)
         TTL.FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         TTL.FR, TTL.FG, TTL.FB, TTL.SW,
         { strokeColor = { TTL.SR, TTL.SG, TTL.SB } })
+
+    -- 来源来自结算快照，切换战线或最高进度不改变本次说明。
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 26)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(216, 201, 163, 255))
+    for index = 1, math.min(3, #state.teamSources) do
+        local source = state.teamSources[index]
+        local entry = require("config.StageConfig").getStage(source.stageId)
+        local name = source.sourceName or (entry and entry.name) or tostring(source.stageId)
+        local translatedName = I18n.lookup(name)
+        if source.sourceKind == "tower" then
+            translatedName = I18n.format("通天塔 第%d层", (source.stageId or 400001) - 400000)
+        end
+        local label = source.paused and I18n.format("小队%d · %s · 暂停离线收益",
+            source.teamIdx or index, translatedName)
+            or I18n.format("小队%d · %s · 装备%d件", source.teamIdx or index,
+                translatedName, source.equipCount or 0)
+        I18n.displayText(vg, CENTER_X, 356 + (index - 1) * 28, label, nil)
+    end
 
     -- 远征等级经验（时间条上方）
     self_drawExpRow(vg, EXP_ROW1, state.adventureExp)

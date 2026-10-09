@@ -157,6 +157,27 @@ M.ATTR_DISPLAY_ORDER = {
     "_artifactChaosDamage", "_artifactExtraDamage", "_artifactBlockCap", "_artifactNoHeal",
 }
 
+-- 最终乘区已计入生命、攻击与六围的实际值；总属性列表不重复展示中间倍率。
+-- 属性收集仍保留完整数据，装备来源与只读预览不能丢失这些词条。
+local HIDDEN_DISPLAY_KEYS = {
+    [AD.FINAL_HP_BONUS] = true, [AD.FINAL_ARMOR_BONUS] = true,
+    [AD.FINAL_ENERGY_SHIELD_BONUS] = true, [AD.FINAL_DODGE_BONUS] = true,
+    [AD.FINAL_PHYS_ATK_BONUS] = true, [AD.FINAL_MAG_ATK_BONUS] = true,
+    [AD.FINAL_DAMAGE_BONUS] = true,
+    [AD.FINAL_STR_BONUS] = true, [AD.FINAL_AGI_BONUS] = true,
+    [AD.FINAL_INT_BONUS] = true, [AD.FINAL_VIT_BONUS] = true,
+    [AD.FINAL_LUK_BONUS] = true, [AD.FINAL_SPI_BONUS] = true,
+}
+
+--- 仅过滤显示行，不修改源数组、属性容器或装备预览差值。
+function M.filterDisplayRows(rows)
+    local visible = {}
+    for _, row in ipairs(rows or {}) do
+        if not HIDDEN_DISPLAY_KEYS[row.key] then visible[#visible + 1] = row end
+    end
+    return visible
+end
+
 local DISPLAY_ORDER_INDEX = {}
 for i, key in ipairs(M.ATTR_DISPLAY_ORDER) do DISPLAY_ORDER_INDEX[key] = i end
 
@@ -495,14 +516,15 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         effCritDmg = convertedDmg
     end
     do -- 有效暴击伤害常驻，格式与 numericValue 始终同源。
-        local dmgDesc = "实战暴击伤害倍率；神器倍率已计入。"
+        local dmgDesc = (category == "healing") and "治疗暴击时使用的治疗倍率，基础200%。"
+            or "实战暴击伤害倍率；神器倍率已计入。"
         if overflowPct > 0 then
             dmgDesc = string.format(
                 "实战暴击伤害倍率；老六觉醒Ⅲ将 %.1f 个百分点的溢出暴击率转为暴伤提升（乘算）。", overflowPct)
         end
         right[#right + 1] = {
             key = "_effCritDmg",
-            name = (category == "healing") and "治疗暴击伤害" or "暴击伤害",
+            name = (category == "healing") and "暴击治疗" or "暴击伤害",
             value = string.format("%.1f%%", effCritDmg),
             desc = dmgDesc,
         }
@@ -789,11 +811,11 @@ function M.createPresentationCache(collector)
             return originalIndex[a] < originalIndex[b]
         end)
         -- 不保存/暴露可变 UnitAttributes；保留源行顺序，排序不写 _origIdx 到返回行。
-        presentation = { rows = rows, stats = deepCopy(data.stats) }
+        presentation = { rows = M.filterDisplayRows(rows), stats = deepCopy(data.stats) }
         -- getFromInventory/追加技旧档回退可能水合数据：保存完成后的实际字段，避免次帧伪失效。
         saved = deepCopy(presentationDependencies(heroId, heroCfg, level, options))
         populated = true
-        return presentation, rows
+        return presentation, presentation.rows
     end
 end
 

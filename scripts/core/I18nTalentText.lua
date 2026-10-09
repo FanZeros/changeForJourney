@@ -47,7 +47,7 @@ local ROWS = {
     { "治疗量", "治療量", "Healing", "回復量", "치유량", "" },
     { "治疗加成", "治療加成", "Healing Bonus", "回復量補正", "치유 보너스", "%" },
     { "治疗暴击率", "治療暴擊率", "Healing Crit Rate", "回復会心率", "치유 치명타율", "%" },
-    { "治疗暴击加成", "治療暴擊加成", "Healing Crit Bonus", "回復会心補正", "치유 치명 보너스", "%" },
+    { "暴击治疗", "暴擊治療", "Critical Healing", "会心回復量", "치명타 치유", "%" },
 }
 
 ---@type table<string, string[]>
@@ -55,6 +55,7 @@ local attributes = {}
 for _, row in ipairs(ROWS) do attributes[row[1]] = row end
 -- 兼容已有天赋原文和关键词标识，不改业务 key。
 attributes["护盾伤害减免"] = attributes["护盾减伤"]
+attributes["治疗暴击加成"] = attributes["暴击治疗"]
 
 ---@type table<string, integer>
 local COLUMNS = { zh_CN = 1, zh_TW = 2, en = 3, ja = 4, ko = 5 }

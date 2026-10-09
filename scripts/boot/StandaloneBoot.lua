@@ -345,7 +345,7 @@ function M.run(rt)
     -- 订阅 lootbox 数据变化 → 刷新 LootBox UI
     ClientDispatcher.subscribe("lootbox", function(data, moduleName)
         LootBoxSystem.consolidateSeeds(data) -- 合并旧存档中按 stageId 分开的同类种子
-        -- 版本兼容：clamp 旧版高等级种子到当前关卡怪物等级
+        -- 兼容：clamp 高等级种子到当前关卡怪物等级
         local capStageId = BattleScene.getMaxStageId() or BattleScene.getCurrentStageId()
         local capEntry = capStageId and StageConfig.getStage(capStageId)
         if capEntry and capEntry.monsterLevel and capEntry.monsterLevel > 0 then

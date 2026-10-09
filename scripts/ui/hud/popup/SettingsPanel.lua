@@ -11,7 +11,7 @@ local GameBGM = require("systems.GameBGM")
 local I18n = require("core.I18n")
 
 local BF              = require("systems.ButtonFeedback")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local drawTextStroke    = DrawUtil.drawTextStroke
 local hitTest           = DrawUtil.hitTest
 

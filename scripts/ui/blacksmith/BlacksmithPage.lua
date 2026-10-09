@@ -1,6 +1,6 @@
 -- ============================================================================
 -- BlacksmithPage - 铁匠铺（狱火锻炉）界面
--- [锻炉双页 0929] 重构：
+-- 重构：
 --   1. 分解 tab 已迁移到仓库（BackpackPanel"分解"tab，复用 BlacksmithDecompose）
 --   2. 打开锻炉时自动在左栏打开仓库，锻炉本体移到中栏（双页面并排）
 --   3. 强化/洗练共用一个"装备工作台槽"：从左侧仓库拖装备进来即选中，
@@ -11,7 +11,7 @@
 
 local GameConfig       = require("config.GameConfig")
 local GameState        = require("core.GameState")
-local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
+local DarkIcon         = require("core.DarkIcon")  -- 品质底框矢量绘制
 local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
 local ImageCache       = require("ui.widget.ImageCache")  -- 共享装备图标缓存（含组首图 fallback）
 local EquipmentConfig  = require("config.EquipmentConfig")
@@ -30,7 +30,7 @@ local HeroFrame        = require("ui.widget.HeroFrame")
 local I18n             = require("core.I18n")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 
--- 子模块（[锻炉双页 0929] BlacksmithDecompose 已迁至仓库分解 tab，不再由本页驱动）
+-- 子模块（BlacksmithDecompose 已迁至仓库分解 tab，不再由本页驱动）
 local BlacksmithEnhance   = require("ui.blacksmith.BlacksmithEnhance")
 local BlacksmithRefine    = require("ui.blacksmith.BlacksmithRefine")
 local BlacksmithEnhanceCache = require("ui.blacksmith.BlacksmithEnhanceCache")
@@ -71,7 +71,7 @@ local NAME_BG_CX, NAME_BG_CY = 540, 136
 local NAME_TEXT_CX, NAME_TEXT_CY = 540, 130
 local NAME_FONT_SIZE              = 50
 
--- 4. [锻炉双页 0929] 装备工作台槽（上半部分唯一槽位，强化/洗练共用）
+-- 4. 装备工作台槽（上半部分唯一槽位，强化/洗练共用）
 -- 从左侧仓库拖装备到此槽即选中；已选中时点击可查看装备详情
 -- 2026-09-30：相对竖屏页面右移/下移 2%（+21.6/+48），落入新背景熔炉门前平台
 local WORKBENCH_CX, WORKBENCH_CY = 562, 479
@@ -93,7 +93,7 @@ local LOWER_BG_CY = DESIGN_H - LOWER_BG_H * 0.5  -- 2400 - 835 = 1565
 local TAB_BG_CX, TAB_BG_CY = 540, 2308
 local TAB_BG_W, TAB_BG_H   = 810, 143
 
--- 10. 两个滑块按钮位置（[锻炉双页 0929] 分解 tab 已迁移到仓库）
+-- 10. 两个滑块按钮位置（分解 tab 已迁移到仓库）
 local TAB_ITEMS = {
     { name = "强化", cx = 340, cy = 2308 },
     { name = "洗练", cx = 740, cy = 2308 },
@@ -127,11 +127,11 @@ local state = {
     closing    = false,
     openTime   = 0,
     closeTime  = 0,
-    -- [锻炉双页 0929] 当前选中 Tab: "qianghua" | "xilian"（分解已迁至仓库）
+    -- 当前选中 Tab: "qianghua" | "xilian"（分解已迁至仓库）
     tab        = "qianghua",
     tabFrom    = "qianghua",
     tabSwitchTime = 0,
-    -- [锻炉双页 0929] 工作台装备（由仓库拖入或预选）
+    -- 工作台装备（由仓库拖入或预选）
     selectedPartySlot = 1,           -- 保留字段：BlacksmithEnhance 请求参数兼容（服务端优先 seq）
     selectedEquipSlot = "weapon",    -- 当前装备的部位 key（决定强化卷轴类型）
     selectedEquip = nil,
@@ -409,7 +409,7 @@ local function drawWorkbenchSlot(vg)
     local slotCX, slotCY, slotSize = WORKBENCH_CX, WORKBENCH_CY, WORKBENCH_SIZE
 
     if equip then
-        -- 品质底框 + 装备图标 [暗黑化 P2-A]
+        -- 品质底框 + 装备图标
         local qIdx = math.max(1, math.min(6, equip.quality or 1))
         DarkIcon.drawQualityBg(vg, qIdx, slotCX, slotCY, slotSize, slotSize, 1.0)
         local eqIcon = getEquipIconCached(equip.templateId)
@@ -646,7 +646,7 @@ function BlacksmithPage.init(vg)
     print("[BlacksmithPage] init OK")
 end
 
---- [锻炉双页 0929] 关闭其他左栏二级页（锻炉+仓库占据左/中栏前的清场）
+-- 关闭其他左栏二级页（锻炉+仓库占据左/中栏前的清场）
 local function closeOtherLeftPages()
     local pages = {
         require("ui.loot.LootBoxPage"),
@@ -667,7 +667,7 @@ local function closeOtherLeftPages()
     if TalentPage.resetHorizonLayout then TalentPage.resetHorizonLayout() end
 end
 
---- 打开铁匠铺（[锻炉双页 0929] 自动联动打开左栏仓库）
+-- 打开铁匠铺（自动联动打开左栏仓库）
 ---@param preSelectEquip table|nil 预选装备（从装备详情跳转时传入）
 ---@param initialTab string|nil 初始 tab："qianghua"|"xilian"，默认 "qianghua"
 function BlacksmithPage.open(preSelectEquip, initialTab)
@@ -773,7 +773,7 @@ function BlacksmithPage.prepareTutorial(vg)
     return changed
 end
 
---- [锻炉双页 0929] 联动关闭自动打开的仓库
+-- 联动关闭自动打开的仓库
 local function closeAutoWarehouse()
     require("ui.backpack.BackpackPanel").releaseWarehouse("blacksmith")
 end
@@ -1008,7 +1008,7 @@ function BlacksmithPage.drawUnderlay(vg)
     end
 end
 
---- 设置分解标签红点（[锻炉双页 0929] 分解已迁至仓库，保留接口兼容旧调用，改为无操作）
+-- 设置分解标签红点（分解已迁至仓库，保留接口兼容旧调用，改为无操作）
 ---@param show boolean
 function BlacksmithPage.setDecomposeRedDot(show)
     -- no-op：红点改由 TownScene 仓库建筑呈现

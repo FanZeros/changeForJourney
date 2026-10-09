@@ -14,7 +14,7 @@ local ArtifactSchema      = require("shared.artifact.ArtifactSchema")
 local ArtifactDetailPanel = require("ui.character.hero.ArtifactDetailPanel")
 local ImageCache          = require("ui.widget.ImageCache")
 local ArtifactAssetUtil   = require("config.ArtifactAssetUtil")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -105,7 +105,7 @@ for c = 1, GRID.COLS do
 end
 
 -- 空格子背景：纯黑 10%
--- [B-方案] 原空格平涂常量已废弃（格子底改用 DarkIcon.drawNine "slot" 暗铁凹槽）
+-- 格子底使用 DarkIcon.drawNine "slot" 暗铁凹槽
 
 -- 滚动参数
 local SCROLL_FRICTION   = 0.90
@@ -624,7 +624,6 @@ function M.init(vg)
     ArtifactAssetUtil.preloadIcons()
 
     -- 顶部背景图 UI_JTSQ_BJ 已按用户要求删除（drawBg 改纯色暗底）
-    -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
     img.lowerBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png", 0)
     img.mergeBtn  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     img.rerollBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)

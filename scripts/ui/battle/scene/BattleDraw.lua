@@ -285,7 +285,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                         local esX = fillX
                         nvgSave(vg)
                         nvgScissor(vg, esX, fillY, esClipW, fillH)
-                        -- [fix] 原 UI_ZD_HPT3.png 实为 KTX2 纹理误名 .png，NanoVG 无法解码，
+                        -- 原 UI_ZD_HPT3.png 实为 KTX2 纹理误名 .png，NanoVG 无法解码，
                         -- 改用程序化青色填充（与 +护盾数值同色系），不再依赖该贴图
                         nvgBeginPath(vg)
                         nvgRect(vg, esX, fillY, esClipW, fillH)

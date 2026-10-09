@@ -24,7 +24,7 @@ local TavernShopPage    = require("ui.tavern.TavernShopPage")
 local TargetRecruitPanel = require("ui.tavern.TargetRecruitPanel")
 local BF                = require("systems.ButtonFeedback")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local I18n = require("core.I18n")
 local TavernPage = {}
 
@@ -381,9 +381,7 @@ function TavernPage.init(vg)
     img.ticketIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_X.png", 0)
     img.ticketIconStellar = loadImage(vg, UrGachaConfig.UI.ticketIconPath, "image/货币道具/UI_icon_ZMQ2_X.png")
     img.diamondIcon = loadImage(vg, "image/货币道具/UI_icon_SJ_X.png")
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnLv       = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     img.slider      = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
     -- 初始化弹窗子模块（setContext 已在模块级别调用，此处只需 init 加载图片）

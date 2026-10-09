@@ -13,7 +13,7 @@ local BF             = require("systems.ButtonFeedback")
 local PlayerStore    = require("core.PlayerStore")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local TavernConfig     = require("config.TavernConfig")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 
 local TavernShopPage = {}
 
@@ -349,8 +349,6 @@ local DLG = {
 function TavernShopPage.init(vg)
     shopImg.pageBg    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png",    0)
     shopImg.buyBtn      = nvgCreateImage(vg, "image/界面底板/商店/UI_SD_AN.png",       0)
-    -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     shopImg.buyBtnYellow= nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png",    0)
     shopImg.btnMinus    = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png",     0)
     shopImg.btnPlus     = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png",      0)
@@ -502,7 +500,7 @@ local drawPurchaseDialog
 -- ======================== 绘制单个商品卡片 ========================
 
 local function drawShopCard(vg, idx, item, cx, cy)
-    -- [暗黑化 P1-B5] 矢量卡底 + 品质语义描边
+    -- 矢量卡底 + 品质语义描边
     local q = item.quality or 1
     DarkIcon.drawNine(vg, "plain",
         cx - L.CARD_W * 0.5, cy - L.CARD_H * 0.5,
@@ -778,7 +776,7 @@ drawPurchaseDialog = function(vg)
 
     -- 品质背景 + 商品图标
     local rewardImg = shopImg.itemIcons[item.id]
-    DarkIcon.drawQualityBg(vg, item.quality or 1, DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)  -- [暗黑化 P2-A]
+    DarkIcon.drawQualityBg(vg, item.quality or 1, DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)  --
     if rewardImg and rewardImg >= 0 then
         drawImageCentered(vg, rewardImg, DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)
     end

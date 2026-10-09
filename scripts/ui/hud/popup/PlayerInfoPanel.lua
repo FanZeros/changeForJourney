@@ -20,7 +20,7 @@ local TopBar            = require("ui.hud.TopBar")
 local CharacterDetail   = require("ui.character.detail.CharacterDetail")
 
 local BF                 = require("systems.ButtonFeedback")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local HeroFrame = require("ui.widget.HeroFrame")
 local drawTextStroke     = DrawUtil.drawTextStroke
 local drawImageCentered  = DrawUtil.drawImageCentered
@@ -346,7 +346,7 @@ function PlayerInfoPanel.init(vg)
     require("ui.widget.DesignWidgetSurface").init()
     cachedVg = vg
     -- 上半部分
-    -- [清理 0929] UI_TY_EJQRK.png 加载已移除：本面板背景改由 DarkIcon.drawNine 矢量绘制，贴图从未使用
+    -- 本面板背景由 DarkIcon.drawNine 矢量绘制
     img.avatar  = nvgCreateImage(vg, "image/角色图标/UI_icon_hero_1.png", 0)
     img.power   = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
     img.expBg   = nvgCreateImage(vg, "image/进度条/UI_WJXX_JDT.png", 0)
@@ -818,7 +818,7 @@ function PlayerInfoPanel.draw(vg)
 
     BF.finish(vg, _bf1)
 
-    -- ── 7. 游玩时间（名字与装饰下划线已移除）──
+    -- ── 7. 游玩时间 ──
     drawTextStroke(vg, PLAY_TIME.X, PLAY_TIME.Y, formatPlayTime(playSeconds),
         PLAY_TIME.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         244, 237, 224, 4,

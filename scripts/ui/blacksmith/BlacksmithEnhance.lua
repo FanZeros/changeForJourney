@@ -7,7 +7,7 @@
 ---@diagnostic disable: undefined-global
 
 local DrawUtil          = require("core.DrawUtil")
-local DarkIcon          = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon          = require("core.DarkIcon")  -- 矢量九宫格
 local GameState         = require("core.GameState")
 local AffixConfig       = require("config.AffixConfig")
 local EquipmentConfig   = require("config.EquipmentConfig")
@@ -616,14 +616,14 @@ function M.drawPanelBottom(vg)
     local scrollCX = goldCX + ICON_SIZE + ICON_GAP
 
     -- 金币图标 + 数量
-    DarkIcon.drawQualityBg(vg, 2, goldCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_2
+    DarkIcon.drawQualityBg(vg, 2, goldCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)  -- 原 UI_icon_ZBBJ_2
     drawImageCentered(vg, imgGoldIcon, goldCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)
     drawResourceCount(vg, goldCX, data.ownedGold, data.costGold)
 
     -- 卷轴图标 + 数量
     local equipSlot = state.selectedEquipSlot or "weapon"
     local scrollImg = imgScrollIcon[equipSlot] or imgScrollIcon.weapon
-    DarkIcon.drawQualityBg(vg, 3, scrollCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)  -- [暗黑化 P2-A] 原卷轴品质底框 UI_icon_ZBBJ_3
+    DarkIcon.drawQualityBg(vg, 3, scrollCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)  -- 原卷轴品质底框 UI_icon_ZBBJ_3
     if scrollImg and scrollImg >= 0 then
         drawImageCentered(vg, scrollImg, scrollCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)
     end
@@ -639,7 +639,7 @@ function M.drawPanelBottom(vg)
     nvgText(vg, EB.ENH_BTN_CX, EB.ENH_BTN_CY, "升阶", nil)
     BF.finish(vg, didScale)
     local _TM = require("systems.TutorialManager")
-    -- [锻炉双页 0929] 锻炉页移中栏：热点面板从 "left" 改为 "center"
+    -- 锻炉页移中栏：热点面板从 "left" 改为 "center"
     if _TM.isActive() then _TM.registerHotspot("smith_btn_enhance", EB.ENH_BTN_CX, EB.ENH_BTN_CY, EB.ENH_BTN_W, EB.ENH_BTN_H, "center") end
 
     -- 一键强化按钮（右侧）
@@ -799,7 +799,7 @@ function M.drawConfirmDialog(vg)
     nvgTranslate(vg, -EMDLG.BG_CX, -EMDLG.BG_CY)
     nvgGlobalAlpha(vg, pAlpha)
 
-    -- 背景 [暗黑化 P1-B5] 矢量面板（原三层贴图回退已移除，矢量绘制无条件可用）
+    -- 背景 矢量面板（原三层贴图回退已移除，矢量绘制无条件可用）
     DarkIcon.drawNine(vg, "panel",
         EMDLG.BG_CX - EMDLG.BG_W * 0.5, EMDLG.BG_CY - EMDLG.BG_H * 0.5,
         EMDLG.BG_W, EMDLG.BG_H,
@@ -968,7 +968,7 @@ function M.drawConfirmDialog(vg)
     -- 确认按钮（九宫格黄色按钮，与 MarketPage BUY 按钮一致）
     local canConfirm = goldEnough and scrollEnough
     local _sc = BF.begin(vg, "bse_dlg_confirm", EMDLG.CONFIRM_CX, EMDLG.CONFIRM_CY, EMDLG.CONFIRM_W, EMDLG.CONFIRM_H)
-    -- 确认按钮 [暗黑化 P1-B3] 矢量金色按钮（原三层贴图回退已移除）
+    -- 确认按钮 矢量金色按钮（原三层贴图回退已移除）
     nvgGlobalAlpha(vg, canConfirm and 1.0 or 0.5)
     DarkIcon.drawNine(vg, "btn",
         EMDLG.CONFIRM_CX - EMDLG.CONFIRM_W * 0.5, EMDLG.CONFIRM_CY - EMDLG.CONFIRM_H * 0.5,
@@ -1131,7 +1131,7 @@ end
 ---@return boolean consumed 是否消费了该事件
 function M.handleInput(dx, dy)
     if rowKeywords:handleInput(dx, dy) then return true end
-    -- [锻炉双页 0929] 候选条已移除（选装备改为仓库拖拽），不再响应 handleCandidateClick
+    -- 候选条已移除（选装备改为仓库拖拽），不再响应 handleCandidateClick
     -- 强化按钮（升一级）
     if hitTest(dx, dy, EB.ENH_BTN_CX, EB.ENH_BTN_CY, EB.ENH_BTN_W, EB.ENH_BTN_H) then
         BF.trigger("bse_enhance")

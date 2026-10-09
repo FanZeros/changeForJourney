@@ -10,7 +10,7 @@
 
 local GameConfig       = require("config.GameConfig")
 local DrawUtil         = require("core.DrawUtil")
-local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
+local DarkIcon         = require("core.DarkIcon")  -- 品质底框矢量绘制
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local BlacksmithConfig = require("config.BlacksmithConfig")
@@ -630,7 +630,7 @@ function M.drawUpperSlot(vg)
         FJ.REWARD_SIZE, FJ.REWARD_SIZE, FJ.REWARD_RADIUS)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
     nvgFill(vg)
-    DarkIcon.drawQualityBg(vg, 2, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_2
+    DarkIcon.drawQualityBg(vg, 2, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)  -- 原 UI_icon_ZBBJ_2
     drawImageCentered(vg, imgEssenceIcon, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)
 
     drawTextStroke(vg, FJ.REWARD_CX, FJ.REWARD_CY + FJ.REWARD_SIZE * 0.5 + 30, rewardText,
@@ -709,10 +709,10 @@ function M.drawPanel(vg)
         if idx <= itemCount then
             local item = backpackItems[idx]
             local didScaleCell = BF.begin(vg, "bsd_cell_" .. idx, cx, cy, FJ.GRID_CELL, FJ.GRID_CELL)
-            DarkIcon.drawQualityBg(vg, item.quality or 1, cx, cy, FJ.GRID_CELL, FJ.GRID_CELL, 1.0)  -- [暗黑化 P2-A]
+            DarkIcon.drawQualityBg(vg, item.quality or 1, cx, cy, FJ.GRID_CELL, FJ.GRID_CELL, 1.0)  --
             local eqIcon = getEquipIconCached(item.templateId)
             if eqIcon and eqIcon > 0 then
-                DarkIcon.drawIconDark(vg, eqIcon, cx, cy, FJ.GRID_CELL - 16, FJ.GRID_CELL - 16, 1.0)  -- [暗黑化 P2-B]
+                DarkIcon.drawIconDark(vg, eqIcon, cx, cy, FJ.GRID_CELL - 16, FJ.GRID_CELL - 16, 1.0)  --
             end
 
             -- 强化角标

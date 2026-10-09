@@ -53,7 +53,7 @@ ResourceDefs.ID_TO_TYPE = {
     ["2"]  = "diamond",
     ["3"]  = "essence",
     ["4"]  = "enhance_star",
-    -- 5 已隐藏
+    -- 5：隐藏
     ["6"]  = "break_protect",
     ["7"]  = "adventure_ticket",
     ["8"]  = "sweep_ticket",

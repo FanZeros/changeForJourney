@@ -42,7 +42,7 @@
 -- ============================================================================
 
 local EquipmentConfig = require("config.EquipmentConfig")
-local DarkIcon        = require("core.DarkIcon")  -- [暗黑化 P2-B] 图标压暗绘制
+local DarkIcon        = require("core.DarkIcon")  -- 图标压暗绘制
 local HeroConfig      = require("config.HeroConfig")
 local NumberUtil      = require("core.NumberUtil")
 local DrawUtil        = require("core.DrawUtil")
@@ -64,7 +64,7 @@ local DESIGN_H = 2400
 
 -- ======================== 布局常量 ========================
 
--- [暗黑化] 去掉全屏/行内黑色叠加层：弹窗直接浮在暗黑场景上，靠光晕与面板自带对比
+-- 去掉全屏/行内黑色叠加层：弹窗直接浮在暗黑场景上，靠光晕与面板自带对比
 
 -- 奖励弹窗整体上移，避免在横屏中栏里显得偏下
 local POPUP_LIFT = 220
@@ -378,7 +378,7 @@ local resourceIconCache = {}
 -- 角色头像图标缓存: [heroId] = nvgImage handle
 local heroIconCache = {}
 
--- 装备图标/品质背景缓存已迁移至 ImageCache 共享模块（LRU 淘汰，防止 VRAM 累积）
+-- 装备图标/品质背景缓存由 ImageCache 共享模块提供（LRU 淘汰，防止 VRAM 累积）
 
 local cachedVg = nil
 
@@ -1045,7 +1045,7 @@ function RewardPopup.drawRegion(vg, rx, ry, rw, rh, rowTag)
     if not syncBattleVisibility() then return end
     if not state.open or state.rowTag ~= rowTag then return end
 
-    -- [暗黑化] 不再画行内黑色叠加层，弹窗直接嵌入行内
+    -- 不再画行内黑色叠加层，弹窗直接嵌入行内
     -- 按面板中心嵌入真实战斗行，不再以偏上的旧光晕中心定位。
     local ox, oy, fit = regionTransform(rx, ry, rw, rh)
     nvgSave(vg)
@@ -1108,7 +1108,7 @@ function RewardPopup.draw(vg)
     if not state.open or state.rowTag then return end
     if state.panel and state.panel ~= 'center' then return end
 
-    -- [暗黑化] 不再画全屏黑色叠加层，弹窗直接浮在场景上
+    -- 不再画全屏黑色叠加层，弹窗直接浮在场景上
     RewardPopup.drawContent(vg)
 end
 
@@ -1270,7 +1270,7 @@ function RewardPopup.drawContent(vg)
                 if equipImg >= 0 then
                     local iconPadding = 12
                     local iconInner = ICON_SIZE - iconPadding * 2
-                    DarkIcon.drawIconDark(vg, equipImg, cx, cy, iconInner, iconInner, 1.0)  -- [暗黑化 P2-B]
+                    DarkIcon.drawIconDark(vg, equipImg, cx, cy, iconInner, iconInner, 1.0)  --
                 end
 
                 -- 满包转存的装备仍展示奖励，但明确标示实际去向。

@@ -820,7 +820,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         else
             stageText = I18n.format("【小队%d】%s", row, I18n.lookup("待解锁"))
         end
-        -- [暗黑化] 不再画行标签底条，文字直接浮在战斗场景上
+        -- 不再画行标签底条，文字直接浮在战斗场景上
         nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))
         if terminalRaid and terminalRaid.defeated[row] then
             nvgFillColor(vg, nvgRGBA(165, 170, 190, 255))

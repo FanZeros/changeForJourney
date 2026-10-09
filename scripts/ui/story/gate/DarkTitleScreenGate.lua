@@ -3,7 +3,7 @@
 -- 全窗口（逻辑分辨率坐标）绘制：终焉之门大门背景 + 透明 LOGO 叠加 + 余烬粒子 +
 -- 金饰角标 + "轻触屏幕继续" 脉冲。点击任意位置淡出进入游戏。
 --
--- 背景：竖屏 StartScreen（1080×2400 视频标题）已移除，横屏标题为唯一标题界面。
+-- 背景：横屏标题是唯一标题界面。
 --       本模块以横屏原生比例提供标题仪式感，素材全部取自本地 workspace。
 -- 素材：image/界面底板/标题与加载/UI_TITLE_BG_GATE.png（1920×1080 大门背景）
 --       image/界面底板/标题与加载/UI_LOGO_TM.png（1920×1080 透明 LOGO，与背景同构图对位）
@@ -156,10 +156,10 @@ function DarkTitleScreen.draw(vg, w, h)
 
     if imgLogo_ >= 0 then
         local la = (0.88 + 0.12 * (0.5 + 0.5 * math.sin(t * 1.4))) * A
-        -- [fix] LOGO 以屏幕中心缩放至 50%（原先与大门口共用全屏 cover 矩形，过大）
+        -- LOGO 以屏幕中心缩放至 50%
         local LOGO_SCALE = 0.5
         local lw, lh = dw * LOGO_SCALE, dh * LOGO_SCALE
-        -- [fix] 标题上移 15% 屏高
+        -- 标题上移 15% 屏高
         local lx, ly = (w - lw) * 0.5, (h - lh) * 0.5 - h * 0.15
         local paint = nvgImagePattern(vg, lx, ly, lw, lh, 0, imgLogo_, la)
         nvgBeginPath(vg)

@@ -1,5 +1,5 @@
 -- ============================================================================
--- BlacksmithDraw - BlacksmithPage.drawPageImpl（[锻炉双页 0929] 重写）
+-- BlacksmithDraw - BlacksmithPage.drawPageImpl（重写）
 -- 中栏锻炉页：背景 + 名牌 + 装备工作台槽 + 强化/洗练双页签
 -- 整页滑入由 BlacksmithPage.draw 外层 seamSlideX(+1) 处理，本层不再分段滑动
 -- ============================================================================

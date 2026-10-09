@@ -9,7 +9,7 @@ local CC = require("config.ClassConfig")
 local GameConfig = require("config.GameConfig")
 local BattleLayout = require("core.BattleLayout")
 local DrawUtil = require("core.DrawUtil")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质框/卡底矢量绘制
+local DarkIcon = require("core.DarkIcon")  -- 品质框/卡底矢量绘制
 local ResourceDefs = require("config.ResourceDefs")
 local GachaConfig = require("config.GachaConfig")
 local UrGachaConfig = require("config.UrGachaConfig")
@@ -194,11 +194,11 @@ function RecruitAnim.init(vg)
     cachedVg = vg
     Presentation.init(vg)
     img.resultBg = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_XKJM.png", 0)
-    -- [暗黑化 P2-A] 卡底 KP_TY_N~UR 改由 drawCardBg 矢量绘制，贴图加载已移除
+    -- 卡底由 drawCardBg 矢量绘制
     for _, b in ipairs({ "R", "SR", "SSR", "UR" }) do
         img.qualityBadge[b] = nvgCreateImage(vg, "image/品质框/UI_PZBZ_" .. b .. ".png", 0)
     end
-    -- [暗黑化 P2-A] 资源图标底 UI_icon_ZBBJ_1~6 改由 DarkIcon.drawQualityBg 绘制，贴图加载已移除
+    -- 资源图标底由 DarkIcon.drawQualityBg 矢量绘制
     for i = 1, 6 do
         img.classIcons[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
     end

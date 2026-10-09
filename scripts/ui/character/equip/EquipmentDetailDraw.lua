@@ -270,7 +270,7 @@ function EquipmentDetailDraw.create(ctx)
         local q = equip.quality or 1
         local qColor = QUALITY_COLOR[q] or QUALITY_COLOR[1]
 
-        -- 1) 背景（坐标取整避免缝隙）[暗黑化 P1-B5] 矢量纯底板 + 品质语义描边
+        -- 1) 背景（坐标取整避免缝隙） 矢量纯底板 + 品质语义描边
         local bgX = math.floor(bgCX - bgW * 0.5 + 0.5)
         local bgY = math.floor(bgCY - bgH * 0.5 + 0.5)
         DarkIcon.drawNine(vg, "plain",
@@ -377,7 +377,7 @@ function EquipmentDetailDraw.create(ctx)
         local iconCY = REF_ICON_CY
         local equipIconImg = getEquipIcon(equip.templateId)
         if equipIconImg >= 0 then
-            DarkIcon.drawIconDark(vg, equipIconImg, iconCX, iconCY, REF_ICON_SIZE, REF_ICON_SIZE, 1.0)  -- [暗黑化 P2-B]
+            DarkIcon.drawIconDark(vg, equipIconImg, iconCX, iconCY, REF_ICON_SIZE, REF_ICON_SIZE, 1.0)  --
         else
             -- 无图标时回退为占位框+文字
             nvgBeginPath(vg)

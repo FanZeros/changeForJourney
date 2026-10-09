@@ -12,7 +12,7 @@ local DrawUtil          = require("core.DrawUtil")
 local NumberUtil        = require("core.NumberUtil")
 local BattleStats       = require("systems.BattleStats")
 local BF                = require("systems.ButtonFeedback")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local HeroFrame = require("ui.widget.HeroFrame")
 
 local drawTextStroke    = DrawUtil.drawTextStroke

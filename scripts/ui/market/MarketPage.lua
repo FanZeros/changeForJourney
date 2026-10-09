@@ -2,11 +2,11 @@
 -- MarketPage - 城镇市场界面（道具商店）
 -- 从城镇页面点击市场进入的二级界面
 -- 职责：市场UI 背景、资源展示、道具商品列表、购买交互
--- 单 Tab：道具（典藏·神器宝箱已迁移至教堂·神器页「宝箱」子页签）
+-- 单 Tab：道具。神器宝箱在教堂·神器页「宝箱」子页签。
 -- ============================================================================
 
 local GameConfig = require("config.GameConfig")
-local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
+local DarkIcon       = require("core.DarkIcon")  -- 矢量图标库
 local GameState  = require("core.GameState")
 local Protocol   = require("shared.Protocol")
 local drawTextStroke = require("core.DrawUtil").drawTextStroke
@@ -76,7 +76,7 @@ local TAB = {
     ACT_R = 0x81, ACT_G = 0x57, ACT_B = 0x3c,
     INA_R = 255, INA_G = 255, INA_B = 255,
     ANIM_DUR = 0.35,
-    -- 典藏（神器宝箱）已迁移至教堂·神器页「宝箱」子页签，市场只留道具
+    -- 神器宝箱在教堂·神器页「宝箱」子页签，市场只留道具
     ITEMS = {
         { name = "道具",   cx = 540, cy = 2308 },
     },
@@ -463,7 +463,7 @@ drawPurchaseDialog = function(vg)
 
     -- 5. 品质背景 + 商品图标（居中）
     DarkIcon.drawQualityBg(vg, item.quality or 1,
-        DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)  -- [暗黑化 P2-A]
+        DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)  --
     local rewardImg = img.itemIcons[idx]
     if rewardImg and rewardImg >= 0 then
         drawImageCentered(vg, rewardImg,

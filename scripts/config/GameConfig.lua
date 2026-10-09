@@ -60,7 +60,7 @@ GameConfig.Resources = {
     { key = "gems",          name = "黑晶",       giveAmount = 100  },
     { key = "essence",       name = "精粹",       giveAmount = 500  },
     { key = "enhanceStone",    name = "洗练石",     giveAmount = 10   },
-    -- degradeStone(seq5) 已隐藏，不在 Debug 面板显示
+    -- degradeStone(seq5)：不在 Debug 面板显示
     { key = "destroyStone",    name = "点金石",     giveAmount = 3    },
     { key = "weaponScroll",    name = "武器卷轴",   giveAmount = 5    },
     { key = "offhandScroll",   name = "副手卷轴",   giveAmount = 5    },

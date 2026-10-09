@@ -338,7 +338,7 @@ local StageConfig = require("config.StageConfig")
 
 DungeonConfig.RESOURCE_IDS = { "gold_mine", "equipment_vault", "black_diamond" }
 DungeonConfig.EXTRA_ENEMIES = 2
--- 固定旧版本上界用于读档与旧终点锚点，不随新内容扩展改写历史。
+-- 固定上界用于读档与终点锚点，不随新内容扩展改写。
 DungeonConfig.LEGACY_MAX_FLOOR = { gold_mine = 115, equipment_vault = 109, black_diamond = 115 }
 DungeonConfig.DEFINITIONS = {
     gold_mine = {

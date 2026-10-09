@@ -52,7 +52,7 @@ local AwakeningArtwork  = require("ui.character.hero.AwakeningArtwork")
 local EquipmentBag       = require("ui.character.equip.EquipmentBag")
 local EquipCrossDrag     = require("ui.character.EquipCrossDrag")
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
-local TutorialManager    = require("systems.TutorialManager")  -- [横屏接线 0928] 新手引导
+local TutorialManager    = require("systems.TutorialManager")  -- 新手引导
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")
 local UiToast            = require("core.UiToast")
@@ -388,7 +388,7 @@ end
 
 --- [三队并行] 中缝返回键列表：左页‹（左框柱）/ 详情›（右框柱），两级二级页可同时存在
 --- 各占一个框柱位，互不竞争（此前 if/else 单按钮，左右同开时只能活一个）
---- [锻炉双页 0929] 锻炉页移中栏：其返回条挂在锻炉右缘（中栏右分界线），三行/非三行都绘制
+-- 锻炉页移中栏：其返回条挂在锻炉右缘（中栏右分界线），三行/非三行都绘制
 -- 获得/提示框只阻断下层返回操作，不隐藏返回条；完整场景覆盖仍同时隐藏并阻断。
 ---@param forDraw boolean?
 local function seamInputBlocked(forDraw)
@@ -449,7 +449,7 @@ local function seamBackList(forDraw)
     end
 
     -- 左框柱 ‹：左栏二级页（仓库/教堂/酒馆/市场）——条贴页面右缘(前缘),同步推进
-    -- [锻炉双页 0929] 锻炉打开时仓库左栏条不画（双页整体由锻炉右侧竖栏一键关闭）
+    -- 锻炉打开时仓库左栏条不画（双页整体由锻炉右侧竖栏一键关闭）
     if tri or (BackpackPanel.isOpen() and BackpackPanel.isLeftMode() and not BlacksmithPage.isOpen()) then
         local leftClose, leftAnim, leftScale, leftId
         if tri and LootBoxPage.isOpen() then
@@ -676,7 +676,7 @@ function HandleNanoVGRenderHorizon()
         nvgScale(vg(), ss, ss)
         StartScreen.draw(vg())
         nvgRestore(vg())
-        -- [一次性加载] 预载遮罩（开始画面上层）
+        -- 预载遮罩（开始画面上层）
         if RT.preload_.active then
             RT.DrawPreloadOverlay(vg(), logicalW(), logicalH())
         end
@@ -697,7 +697,7 @@ function HandleNanoVGRenderHorizon()
     local backpackAboveForge = BlacksmithPage.isOpen()
     if not BattleTriPage.isOpen() then
         -- 左面板：功能页组（城镇 + 二级页）
-        -- [锻炉双页 0929] BlacksmithPage 已移至中面板绘制（左栏让给仓库）
+        -- BlacksmithPage 已移至中面板绘制（左栏让给仓库）
         Viewport.begin(vg(), Viewport.PANELS.left, H_ox, H_oy, H_s)
         TownScene.draw(vg())
         ChurchPage.draw(vg())
@@ -753,7 +753,7 @@ function HandleNanoVGRenderHorizon()
     end
     Viewport.finish(vg())
 
-    -- [锻炉双页 0929] 非三行模式的中缝返回条（锻炉右缘 ›；三行模式见 BattleTriPage 分支）
+    -- 非三行模式的中缝返回条（锻炉右缘 ›；三行模式见 BattleTriPage 分支）
     if not BattleTriPage.isOpen() then
         if backpackAboveForge then
             Viewport.begin(vg(), Viewport.PANELS.left, H_ox, H_oy, H_s)
@@ -878,7 +878,7 @@ function HandleNanoVGRenderHorizon()
         -- [行1 HUD] 宿主最终层级绘制：速度/扫荡/统计/选关按钮——
         -- 确保位于一切战斗行背景与框柱之上（用户实测按钮被行1背景穿帮）
         BattleTriPage.drawHud(vg(), logicalW(), logicalH())
-        -- [锻炉双页 0929] 锻炉页绘制在 tri 中栏区域（盖在战斗行之上，紧邻左栏仓库；
+        -- 锻炉页绘制在 tri 中栏区域（盖在战斗行之上，紧邻左栏仓库；
         -- 关闭竖栏挂在锻炉右缘，见 seamBackList）
         if BlacksmithPage.isOpen() then
             Viewport.begin(vg(), Viewport.PANELS.center, oxL, 0, ps)
@@ -938,7 +938,7 @@ function HandleNanoVGRenderHorizon()
         -- [LetterIntro] 开场覆盖必须在标题之后，否则信件被大门挡住且点击被吞
         HorizonDrawIntroOverlay()
         drawEquipDetailOverlay()
-        -- [横屏接线 0928] 新手引导蒙层（装备详情浮层之上，装备引导步骤高亮可见）
+        -- 新手引导蒙层（装备详情浮层之上，装备引导步骤高亮可见）
         HorizonDrawTutorialOverlay()
         EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
@@ -953,7 +953,7 @@ function HandleNanoVGRenderHorizon()
     RewardPopup.draw(vg())
     Viewport.finish(vg())
 
-    -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）
+    -- 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）
     if DarkIcon.SHOWCASE then
         nvgSave(vg())
         nvgScissor(vg(), 0, 0, logicalW(), logicalH())  -- 重置面板 intersect 裁剪
@@ -977,7 +977,7 @@ function HandleNanoVGRenderHorizon()
     HorizonDrawIntroOverlay()
     UiToast.draw(vg(), logicalW(), logicalH())
     drawEquipDetailOverlay()
-    -- [横屏接线 0928] 新手引导蒙层（装备详情浮层之上）
+    -- 新手引导蒙层（装备详情浮层之上）
     HorizonDrawTutorialOverlay()
     EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())

@@ -236,7 +236,7 @@ function StoryPlayer.followOf(id)
     return resolve(FOLLOW[id])
 end
 
---- [旧档补播 2026-09-30] 0922 联网壳删除后"首通触发情景"接线断裂，
+-- 0922 联网壳删除后"首通触发情景"接线断裂，
 --- 期间已首通关卡的老玩家（如已通 205 却从未见过情景 82）永远不会再触发。
 --- 启动时扫描 battle.clearedStages，把已首通但未领取（claimedScenarios 无记录）
 --- 的情景按关卡顺序补入队；enqueue 内部自带 introCompleted/isClaimed/去重守卫。

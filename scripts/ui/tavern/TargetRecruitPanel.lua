@@ -18,7 +18,7 @@ local drawRoundedRectCentered = DrawUtil.drawRoundedRectCentered
 local hitTest                 = DrawUtil.hitTest
 
 local PlayerStore   = require("core.PlayerStore")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local HeroFrame = require("ui.widget.HeroFrame")
 local I18n = require("core.I18n")
 
@@ -121,7 +121,7 @@ local function getActiveHeroes()
     return heroLists[state.mode] or heroLists.standard
 end
 
---- [暗黑化 P2-A] 品质框改为矢量绘制：返回品质号（standard=SSR 5 黄金 / stellar=UR 6 血钻）
+-- 品质框改为矢量绘制：返回品质号（standard=SSR 5 黄金 / stellar=UR 6 血钻）
 local function getQualityFrame(mode)
     if mode == "stellar" then
         return 6
@@ -133,7 +133,6 @@ end
 
 function M.init(vg)
     vg_ = vg
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     img.btnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     img.qualityBgStandard = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_5.png", 0)
     img.qualityBgStellar  = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_6.png", 0)

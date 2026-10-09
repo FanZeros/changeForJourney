@@ -1,6 +1,6 @@
 -- ============================================================================
 -- ScenarioDialogueConfig.lua — 情景对话数据配置（玩梗版 v2.2 · 横屏开场）
--- 开场第一幕在 LetterIntro；第二幕为 OPENING（门厅点卯），不再使用情景 1 点将。
+-- 开场第一幕在 LetterIntro；第二幕为 OPENING（门厅点卯）。
 -- 对应文档: docs/剧情总表.md
 -- characterId: 历史剧情角色编号；显示资源通过 getAppearance() 解析，职位不直接占用英雄ID。
 -- mode: "large" = 大情景(全屏覆盖), "small" = 小情景(底部横条)

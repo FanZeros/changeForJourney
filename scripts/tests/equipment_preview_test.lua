@@ -561,7 +561,14 @@ function Start()
                 and lostArmor and close(lostArmor.currentValue, 8) and close(lostArmor.previewValue, 0),
                 "拆掉两件套生命12/护甲8贡献归0，仍保留正增益与负试穿差值")
         end
-        -- 11) 微小贡献不格式化成0；封顶来源取 uncapped 净值，不重复套绝对值 cap 文案。
+        local View = require("ui.character.detail.CharacterAttributeView")
+        check(View.formatNumber(374.903051) == "374.9" and View.formatNumber(11707) == "11707"
+            and View.formatNumber(-0.01) == "0" and View.formatInterval(1.874561) == "1.9s",
+            "属性最多一位小数，整值无尾零，负零归一，间隔使用同一精度")
+        check(Eq.formatBaseStatValue(AD.PHYS_ATK, 374.903051) == "374.9"
+            and Eq.formatBaseStatValue(AD.ATK_SPEED, 12.3456) == "12.3%",
+            "当前与候选装备主副属性统一一位精度")
+        -- 11) 微小贡献仅在显示时舍入；封顶来源仍取 uncapped 净值。
         do
             local tiny = fixture(1, 70)
             tiny.includeEquipmentBonuses = true
@@ -576,20 +583,20 @@ function Start()
             local added = Preview.build(1, 70, 1, nil, tiny)
             local addedInterval = row(added.equipmentBonuses, AD.ATK_INTERVAL)
             check(addedInterval and addedInterval.previewValue < 0 and math.abs(addedInterval.previewValue) < 0.005
-                and addedInterval.deltaText:sub(1, 1) == "-" and addedInterval.deltaText:find("[1-9]") ~= nil
+                and addedInterval.deltaText == "-0s"
                 and addedInterval.beneficial == true,
-                "微小攻速试穿的负间隔deltaText保留非零数字，不显示-0.00s")
+                "微小攻速显示遵守一位精度，原始负间隔与增益判断保留")
             tiny.equipment.equipped["1"].weapon = 1
             local worn = Preview.build(1, 70, nil, nil, tiny)
             local net = worn.equipmentBonuses
             local speed, pen, interval = row(net, AD.ATK_SPEED), row(net, AD.PHYS_PEN), row(net, AD.ATK_INTERVAL)
-            check(speed and close(speed.currentValue, 0.01) and speed.value == "+0.01%"
-                and pen and close(pen.currentValue, 0.01) and pen.value == "+0.01",
-                "0.01攻速/穿透净贡献value保留非零精度，不显示+0.0")
+            check(speed and close(speed.currentValue, 0.01) and speed.value == "+0.0%"
+                and pen and close(pen.currentValue, 0.01) and pen.value == "+0.0",
+                "微小攻速和穿透仅显示一位，精确贡献不变")
             check(interval and interval.currentValue < 0 and math.abs(interval.currentValue) < 0.005
                 and close(interval.currentValue, addedInterval.previewValue)
-                and interval.value:sub(1, 1) == "-" and interval.value:find("[1-9]") ~= nil,
-                "当前微小负攻击间隔value不舍入为-0.00s")
+                and interval.value == "-0s",
+                "当前微小间隔按一位显示，不改实际负贡献")
             local shield = row(net, AD.ES_DMG_REDUCE)
             check(shield and close(shield.currentValue, 90)
                 and close(worn.current.attrs:get(AD.ES_DMG_REDUCE), 80)
@@ -608,19 +615,19 @@ function Start()
                 and close(moreShield.delta, 10) and moreShield.deltaText == "+10.0%"
                 and moreShield.beneficial == true,
                 "两侧护盾减伤均已封顶仍比较uncapped净值90到100，差值不重新套cap")
-            check(moreSpeed and close(moreSpeed.delta, 0.01) and moreSpeed.deltaText == "+0.01%"
-                and morePen and close(morePen.delta, 0.01) and morePen.deltaText == "+0.01",
-                "已有贡献微增0.01时deltaText也保留精度")
+            check(moreSpeed and close(moreSpeed.delta, 0.01) and moreSpeed.deltaText == "+0.0%"
+                and morePen and close(morePen.delta, 0.01) and morePen.deltaText == "+0.0",
+                "微小差值显示不恢复额外小数位，原始delta保留")
             local removed = Preview.build(1, 70, 2, nil, tiny).equipmentBonuses
             local lostSpeed, lostPen, slower = row(removed, AD.ATK_SPEED), row(removed, AD.PHYS_PEN),
                 row(removed, AD.ATK_INTERVAL)
-            check(lostSpeed and close(lostSpeed.previewValue, 0) and lostSpeed.deltaText == "-0.01%"
-                and lostPen and close(lostPen.previewValue, 0) and lostPen.deltaText == "-0.01",
-                "卸除微小正贡献后负deltaText不显示-0.0")
+            check(lostSpeed and close(lostSpeed.previewValue, 0) and lostSpeed.deltaText == "-0.0%"
+                and lostPen and close(lostPen.previewValue, 0) and lostPen.deltaText == "-0.0",
+                "卸除微小贡献只显示一位，负向判断不变")
             check(slower and close(slower.previewValue, 0) and slower.delta > 0
-                and slower.deltaText:sub(1, 1) == "+" and slower.deltaText:find("[1-9]") ~= nil
+                and slower.deltaText == "+0s"
                 and slower.beneficial == false,
-                "卸除微小攻速后的正间隔delta仍非零且判定减益")
+                "卸除微小攻速的间隔显示仅一位，真实正delta仍判定减益")
             local lostShield = row(removed, AD.ES_DMG_REDUCE)
             check(lostShield and close(lostShield.previewValue, 0) and close(lostShield.delta, -90)
                 and lostShield.deltaText == "-90.0%", "卸除护盾减伤的差值按uncapped贡献-90，不附cap溢出提示")

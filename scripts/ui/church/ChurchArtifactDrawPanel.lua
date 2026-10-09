@@ -12,7 +12,6 @@ local DarkIcon      = require("core.DarkIcon")
 local DrawUtil      = require("core.DrawUtil")
 local GameState     = require("core.GameState")
 local PlayerStore   = require("core.PlayerStore")
-local StageConfig   = require("config.StageConfig")
 local I18n          = require("core.I18n")
 local ArtifactDefs  = require("shared.artifact.ArtifactDefs")
 local RewardPopup   = require("ui.hud.popup.RewardPopup")
@@ -32,10 +31,9 @@ local M = {}
 local COL = {
     TITLE_CX = 540, TITLE_CY = 250, TITLE_FONT = 42,
     BTN_FONT = 32,
-    FOOTER_Y1 = 1988, FOOTER_Y2 = 2040, FOOTER_FONT = 28,
 }
 
--- 上下两档宝箱卡片：各自完整展示宝箱图、品质概率、说明与抽取按钮。
+-- 上下两档宝箱卡片：整张场景背景承载标题、品质概率与抽取按钮。
 local CARD = { X = 70, W = 940, H = 780 }
 local CARDS = {
     { type = "normal",   Y = 320 },
@@ -51,9 +49,7 @@ local function chestCardLayout(card)
         type = card.type,
         left = left, top = top,
         nameX = left + 64, nameY = top + 56,
-        noteY = top + 152, unlockY = top + 198, progressY = top + 244,
-        imageCX = left + 190, imageCY = top + 430, imageSize = 300,
-        probX = left + 372, probY = top + 280, probW = CARD.W - 428, probH = 250,
+        probX = left + 600, probY = top + 280, probW = CARD.W - 656, probH = 250,
         btnOneX = left + 250, btnTenX = left + 690,
         btnY = top + 660, btnW = 320, btnH = 130,
         btnTextY = top + 636, costY = top + 686,
@@ -362,7 +358,7 @@ function M.drawBg(vg)
     DarkIcon.drawNine(vg, "plain", 0, 200, DESIGN_W, DESIGN_H - 200 - 180)
 end
 
---- 单张宝箱卡片：标题、解锁说明、品质概率、宝箱图与抽取按钮同屏。
+--- 单张宝箱卡片：完整场景作为底板，文字与按钮由运行时叠加。
 local function drawChestCard(vg, card)
     local layout = chestCardLayout(card)
     local chestType = card.type
@@ -371,34 +367,22 @@ local function drawChestCard(vg, card)
     local selected = state.selectedChest == chestType
 
     DarkIcon.drawNine(vg, "panel", layout.left, layout.top, CARD.W, CARD.H,
-        { accent = selected and "gold" or "steel", titleH = 96 })
+        { accent = selected and "gold" or "steel" })
 
-    -- 标题与解锁状态：选中档位用金色，锁定档位置灰。
-    local titleColor = selected and DarkIcon.Palette.GOLD_HI or DarkIcon.Palette.BONE
+    -- 完整场景填满卡片内侧；外框保留，锁定档只压暗场景而不隐藏概率。
+    local image = (chestType == "advanced") and img.chestAdvanced or img.chestNormal
+    drawImageCentered(vg, image, layout.left + CARD.W * 0.5, layout.top + CARD.H * 0.5,
+        CARD.W - 24, CARD.H - 24, unlocked and 1.0 or 0.4)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, layout.left + 12, layout.top + 12, CARD.W - 24, 96, 12)
+    nvgFillColor(vg, nvgRGBA(10, 10, 12, 190))
+    nvgFill(vg)
+
+    -- 标题使用档位色，宝箱主体的材质颜色与之对应；锁定条件由点击提示提供。
+    local titleColor = chestType == "advanced" and { 198, 151, 238 } or { 192, 204, 218 }
     if not unlocked then titleColor = DarkIcon.Palette.BONE_DIM end
     drawFittedText(vg, layout.nameX, layout.nameY, I18n.lookup(chest.name), 46, 520, titleColor,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-
-    drawFittedText(vg, layout.nameX, layout.noteY, I18n.lookup("每抽独立随机，无保底"),
-        28, 520, DarkIcon.Palette.BONE_DIM, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    drawFittedText(vg, layout.nameX, layout.unlockY, getChestUnlockText(chestType),
-        28, 520, unlocked and DarkIcon.Palette.GOLD_HI or DarkIcon.Palette.BONE_DIM,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    if chest.dailyFree then
-        drawFittedText(vg, layout.nameX, layout.progressY,
-            I18n.lookup("普通宝箱每日免费单抽一次（UTC+8）"), 26, 520,
-            DarkIcon.Palette.BONE_DIM, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    elseif not unlocked then
-        local progress = I18n.lookup(StageConfig.formatProgressDisplay(
-            (PlayerStore.Get("battle") or {}).maxStageId or 0))
-        drawFittedText(vg, layout.nameX, layout.progressY, I18n.format("当前进度：%s", progress),
-            26, 520, DarkIcon.Palette.BONE_DIM, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    end
-
-    -- 宝箱图：透明底暗黑宝箱，锁定档整体压暗。
-    local image = (chestType == "advanced") and img.chestAdvanced or img.chestNormal
-    drawImageCentered(vg, image, layout.imageCX, layout.imageCY,
-        layout.imageSize, layout.imageSize, unlocked and 1.0 or 0.4)
 
     -- 五档概率：普通至传说逐行显示，锁定档仍展示但压暗。
     DarkIcon.drawNine(vg, "plain", layout.probX, layout.probY, layout.probW, layout.probH)
@@ -427,10 +411,6 @@ end
 function M.drawContent(vg)
     drawFittedText(vg, COL.TITLE_CX, COL.TITLE_CY, I18n.lookup("神器宝箱"), COL.TITLE_FONT, 900, DarkIcon.Palette.BONE)
     for _, card in ipairs(CARDS) do drawChestCard(vg, card) end
-    drawFittedText(vg, 540, COL.FOOTER_Y1, I18n.lookup("优先使用钥匙，不足按150黑晶/把补齐"),
-        COL.FOOTER_FONT, 920, DarkIcon.Palette.BONE_DIM)
-    drawFittedText(vg, 540, COL.FOOTER_Y2, I18n.lookup("至臻品质不进入宝箱抽池"),
-        COL.FOOTER_FONT, 920, DarkIcon.Palette.BONE_DIM)
 end
 
 function M.drawKeyConfirmDialog(vg)

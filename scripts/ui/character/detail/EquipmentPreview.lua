@@ -50,7 +50,7 @@ end
 
 local function formatValue(key, value)
     if key == AD.ATK_INTERVAL then return AttributeView.formatInterval(value) end
-    if MULT_KEYS[key] then return string.format("×%.2f", value) end
+    if MULT_KEYS[key] then return string.format("×%.1f", value) end
     if PCT_KEYS[key] then return string.format("%.1f%%", value) end
     if key == "_melissaStarGatePen" then return string.format("+%.1f", value) end
     return AD.formatAttrDisplayValue(key, value)
@@ -60,7 +60,7 @@ local function deltaText(key, delta)
     local sign = delta < 0 and "-" or "+"
     local amount = math.abs(delta)
     if key == AD.ATK_INTERVAL then return sign .. AttributeView.formatInterval(amount) end
-    if MULT_KEYS[key] then return sign .. string.format("%.2f", amount) end
+    if MULT_KEYS[key] then return sign .. string.format("%.1f", amount) end
     if key == "_melissaStarGatePen" then return sign .. string.format("%.1f", amount) end
     local meta = AD.getMeta(key)
     if PCT_KEYS[key] or (meta and meta.dataType == AD.TYPE_PCT) then
@@ -141,15 +141,7 @@ local function positiveBonus(key, value)
 end
 
 local function bonusText(key, value)
-    local formatted = deltaText(key, value)
-    if value ~= 0 and not formatted:find("[1-9]") then
-        local amount = string.format("%.6f", math.abs(value)):gsub("0+$", ""):gsub("%.$", "")
-        local meta = AD.getMeta(key)
-        local suffix = key == AD.ATK_INTERVAL and "s"
-            or (PCT_KEYS[key] or (meta and meta.dataType == AD.TYPE_PCT)) and "%" or ""
-        return (value < 0 and "-" or "+") .. amount .. suffix
-    end
-    return formatted
+    return deltaText(key, value)
 end
 
 local function bonusStats(source, baseline)

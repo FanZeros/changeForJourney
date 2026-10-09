@@ -49,7 +49,7 @@ local function chestCardLayout(card)
         type = card.type,
         left = left, top = top,
         nameX = left + 64, nameY = top + 56,
-        probX = left + 372, probY = top + 280, probW = CARD.W - 428, probH = 250,
+        probX = left + 600, probY = top + 280, probW = CARD.W - 656, probH = 250,
         btnOneX = left + 250, btnTenX = left + 690,
         btnY = top + 660, btnW = 320, btnH = 130,
         btnTextY = top + 636, costY = top + 686,
@@ -378,8 +378,8 @@ local function drawChestCard(vg, card)
     nvgFillColor(vg, nvgRGBA(10, 10, 12, 190))
     nvgFill(vg)
 
-    -- 标题不烘焙到图片中；锁定条件由点击提示提供。
-    local titleColor = selected and DarkIcon.Palette.GOLD_HI or DarkIcon.Palette.BONE
+    -- 标题使用档位色，宝箱主体的材质颜色与之对应；锁定条件由点击提示提供。
+    local titleColor = chestType == "advanced" and { 198, 151, 238 } or { 192, 204, 218 }
     if not unlocked then titleColor = DarkIcon.Palette.BONE_DIM end
     drawFittedText(vg, layout.nameX, layout.nameY, I18n.lookup(chest.name), 46, 520, titleColor,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)

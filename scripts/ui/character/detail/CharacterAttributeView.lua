@@ -69,7 +69,7 @@ end
 function M.formatNumber(value, decimals)
     local number = tonumber(value) or 0
     if math.type(number) == "integer" then return tostring(number) end
-    local amount = string.format("%." .. tostring(decimals or 6) .. "f", number)
+    local amount = string.format("%." .. tostring(decimals or 1) .. "f", number)
     amount = amount:gsub("0+$", ""):gsub("%.$", "")
     return amount == "-0" and "0" or amount
 end
@@ -86,7 +86,7 @@ local function formattedValue(row)
         if AD.META[row.key] and AD.formatAttrDisplayValue then
             return AD.formatAttrDisplayValue(row.key, value)
         end
-        return string.format("%.2f", value):gsub("%.?0+$", "")
+        return M.formatNumber(value)
     end
     return value ~= nil and tostring(value) or "—"
 end

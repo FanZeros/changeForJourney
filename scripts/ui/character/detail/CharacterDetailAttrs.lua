@@ -333,7 +333,7 @@ local function calcMelissaStarGatePanelInfo(heroId, level, attrs, heroesData, eq
     local mult = 1 + finalDmgBonus / 100
     local selfMagDmg = attrs:getUncapped(AD.MAG_DMG_BONUS) or 0
     local desc = string.format(
-        "星门会继承摘星星星人自身与出战队伍中贡献最高的魔法角色，最多%d名。每名角色贡献 = (魔法伤害加成 + 魔法攻击加成×25%%)×150%%；魔法穿透×150%%。7觉醒时继承范围扩展为全队，继承结果再×150%%。星门最终伤害中，本体魔伤与共鸣为乘法：基础伤害 × (1+本体魔伤%.1f%%) × 共鸣%.2f。当前共鸣魔伤+%.1f%%，共鸣魔穿+%.1f。来源：%s",
+        "星门会继承摘星星星人自身与出战队伍中贡献最高的魔法角色，最多%d名。每名角色贡献 = (魔法伤害加成 + 魔法攻击加成×25%%)×150%%；魔法穿透×150%%。7觉醒时继承范围扩展为全队，继承结果再×150%%。星门最终伤害中，本体魔伤与共鸣为乘法：基础伤害 × (1+本体魔伤%.1f%%) × 共鸣%.1f。当前共鸣魔伤+%.1f%%，共鸣魔穿+%.1f。来源：%s",
         limit, selfMagDmg, mult, finalDmgBonus, finalPen, (#sourceParts > 0 and table.concat(sourceParts, "；") or "无")
     )
     return {
@@ -535,7 +535,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         right[#right + 1] = {
             key = "_melissaStarGateResonance",
             name = "星门共鸣",
-            value = string.format("×%.2f", starGateInfo.mult),
+            value = string.format("×%.1f", starGateInfo.mult),
             desc = starGateInfo.desc,
         }
         do -- 星门是英雄20的固有机制；其穿透为0时仍显示，其他英雄不显示。
@@ -614,7 +614,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         right[#right + 1] = {
             key = "_artifactCritRateMult",
             name = "神器暴击率",
-            value = string.format("×%.2f", attrs.artifactCritRateMult),
+            value = string.format("×%.1f", attrs.artifactCritRateMult),
             desc = "神器特殊效果：最终暴击率按该倍率调整，已计入上方暴击率显示。",
         }
     end
@@ -622,7 +622,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         right[#right + 1] = {
             key = "_artifactCritDmgMult",
             name = "神器暴击伤害",
-            value = string.format("×%.2f", attrs.artifactCritDmgMult),
+            value = string.format("×%.1f", attrs.artifactCritDmgMult),
             desc = "神器特殊效果：最终暴击伤害按该倍率调整，已计入上方暴击伤害显示。",
         }
     end
@@ -646,7 +646,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         right[#right + 1] = {
             key = "_artifactExtraDamage",
             name = "额外伤害",
-            value = string.format("×%.2f", attrs.artifactExtraDamageMult),
+            value = string.format("×%.1f", attrs.artifactExtraDamageMult),
             desc = "神器特殊效果：作为独立乘区提高最终伤害。",
         }
     end

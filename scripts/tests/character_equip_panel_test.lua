@@ -107,7 +107,9 @@ function Start()
             nvgFillColor(vg, nvgRGBA(r or 255, g or 255, b or 255, 255))
             nvgText(vg, x, y, value)
         end },
-        ["ui.character.detail.CharacterDetailAttrs"] = { STAT_LAYOUT = {}, displayOrderIndex = function() return {} end },
+        ["ui.character.detail.CharacterDetailAttrs"] = { STAT_LAYOUT = {},
+            displayOrderIndex = function() return {} end,
+            filterDisplayRows = function(displayRows) return displayRows end },
         ["core.PlayerStore"] = { Get = function(key)
             if key == "heroes" then return heroes end
             if key == "equipment" then return equipment end
@@ -632,24 +634,24 @@ function Start()
     for _, call in ipairs(textCalls) do
         if call.y > 1507 and call.x > 800 and tonumber(call.value) then
             legacyRightValues = legacyRightValues + 1
-            if call.fontSize >= 38 or call.x + call.width * 0.5 + 3 > 1080
+            if call.fontSize > 38 or call.x + call.width * 0.5 + 3 > 1080
                 or call.x - call.width * 0.5 < 550 then legacyInside = false end
         end
     end
-    check(legacyRightValues == 1 and legacyInside, "属性页右下长小数按38号缩放后含描边仍在1080画布内")
+    check(legacyRightValues == 1 and legacyInside, "属性页右下数值最多一位小数且含描边仍在1080画布内")
     local legacyLongTop = requiredText(Shared.formatNumber(12345678901234567890))
     check(legacyLongTop.fontSize < 38 and legacyLongTop.x + legacyLongTop.width * 0.5 + 3 <= 1080,
         "属性页右上超长数值保持完整文本并按实际标签可用宽缩放")
     clearDraw(); Stats.drawRadar({}, { str = 38.745624, agi = 8 }, nil)
-    check(rendered("38.745624") and not rendered("38"), "配装雷达保留实际六围小数，用测量缩放防止越出画布")
+    check(rendered("38.7") and not rendered("38.745624"), "配装雷达最多保留一位小数")
     clearDraw(); Stats.drawLegacy({}, { str = 38.745624, agi = 8 })
-    check(rendered("38.745624") and not rendered("38"), "属性页和配装页六围显示使用同一精度")
+    check(rendered("38.7") and not rendered("38.745624"), "属性页和配装页六围显示使用同一精度")
     -- legacy基图允许0.08视觉下限；纯差集比较允许0，低值UI不锁死两者半径相等。
     clearDraw(); Stats.drawRadar({}, { str = 0.04, agi = 1 }, { str = 0.05, agi = 1 })
-    local tinyDelta = rendered("+0.01")
-    check(tinyDelta and not rendered("+0.0") and rendered("0.04").fontSize == 34
+    local tinyDelta = rendered("+0")
+    check(tinyDelta and not rendered("+0.01") and rendered("0").fontSize == 34
         and tinyDelta.fontSize == 32 and tinyDelta.y == layout.cy - layout.labelR - 58,
-        "低值当前六围0.04与raw差值+0.01都保留精度/坐标，不预言visualfloor几何")
+        "低值六围与差值按一位精度显示，雷达几何仍使用原始数值")
 
     -- 纯视觉六围过渡：原数字/差集oracle不变，动画只插值归一化轮廓。
     do
@@ -936,14 +938,14 @@ function Start()
         if not near(point[1], radar.cx) or not near(point[2], radar.cy) then allCentered = false end
     end
     check(allCentered, "空装六围落中心而不是8%视觉下限虚构增益")
-    -- 避免 .xxxxxx5 的二进制表示落在十进制中点两侧；仍独立断言六位精度，不降位数。
+    -- 显示精度不影响雷达的原始数值与差集几何。
     clearDraw(); Stats.drawRadar({}, { str = 2.8597846, agi = 0.012345 }, nil, true)
-    check(rendered("+2.859785") and not rendered("+2.9") and Shared.formatNumber(2.8597846) == "2.859785",
-        "装备六围保留六位小数精度，字号测量防止撑出栏外")
-    local narrow = requiredText("+0.012345")
+    check(rendered("+2.9") and not rendered("+2.859785") and Shared.formatNumber(2.8597846) == "2.9",
+        "装备六围最多一位小数")
+    local narrow = requiredText("+0")
     check(narrow.fontSize > 0 and narrow.fontSize <= 34
         and narrow.x + narrow.width * 0.5 + 3 <= 1080,
-        "微小六围增益不显示成+0或+0.0，仅在宽度需要时缩字号保留完整文本")
+        "微小六围增益使用同一精度，不因数值小而恢复多位小数")
     clearDraw(); Stats.drawRadar({}, { agi = 1234567890123 }, nil, true)
     local longEquipRadar = requiredText("+1234567890123")
     check(longEquipRadar.fontSize < 34, "超长装备六围数值按栏内可用宽度缩放")

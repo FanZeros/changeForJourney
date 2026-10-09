@@ -530,14 +530,30 @@ function Start()
         eq(costTextsFor("advanced")[1].text, "750", "锁定高级仍显示单抽750")
         eq(costTextsFor("advanced")[2].text, "7500", "高级十连7500")
         local allText = table.concat(texts, "|")
-        check(allText:find("通关普通23-5解锁", 1, true), "高级显示明确通关条件")
-        check(allText:find("无保底", 1, true), "高级明确无保底")
+        check(not allText:find("通关普通23-5解锁", 1, true), "高级卡片不显示解锁说明")
+        check(not allText:find("无保底", 1, true), "卡片不显示抽取规则说明")
+        for _, description in ipairs({ "直接开放", "普通宝箱每日免费单抽一次（UTC+8）",
+            "当前进度：", "优先使用钥匙", "至臻品质不进入宝箱抽池" }) do
+            check(not allText:find(description, 1, true), "宝箱页不显示说明 " .. description)
+        end
+        for _, chestType in ipairs({ "normal", "advanced" }) do
+            local found = false
+            for _, icon in ipairs(icons) do
+                local path = imagePaths[icon.icon] or ""
+                if path:find(chestType == "normal" and "UI_SQBX_PT" or "UI_SQBX_GJ", 1, true) then
+                    found = icon.w == 916 and icon.h == 756 and icon.cx == 540
+                        and icon.cy == (chestType == "normal" and 710 or 1530)
+                end
+            end
+            check(found, chestType .. "场景填满卡片而非独立小图标")
+        end
         for _, qualityText in ipairs({ "普通：30%", "优质：40%", "稀有：20%", "史诗：9%", "传说：1%" }) do
             check(allText:find(qualityText, 1, true), "高级全部概率 " .. qualityText)
         end
         Panel.handleTabInput(320, 1800)
         eq(#actions, 0, "高级锁定不发送动作")
         eq(Panel.isKeyConfirmVisible(), false, "锁定不弹补购")
+        eq(Panel.isArtifactChestUnlocked("advanced"), false, "隐藏文案不改变高级解锁门槛")
         modules.battle.clearedStages = { ["2305"] = true }
         eq(Panel.isArtifactChestUnlocked(), true, "高级通关后UI开放")
         Panel.handleTabInput(320, 1800)

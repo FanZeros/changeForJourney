@@ -280,14 +280,8 @@ function M.updateEnhanceData(equip)
         local meta = AD.META[key]
         local curVal = EquipmentSystem.effectiveBaseStatValue(equip, idx, curBoost, enhLv)
         local nextVal = EquipmentSystem.effectiveBaseStatValue(equip, idx, nextBoost, nextLv)
-        local precision = 2
-        local currentText = EquipmentSystem.formatBaseStatValue(key, curVal, precision)
-        local nextText = EquipmentSystem.formatBaseStatValue(key, nextVal, precision)
-        while nextVal ~= curVal and currentText == nextText and precision < 6 do
-            precision = precision + 1
-            currentText = EquipmentSystem.formatBaseStatValue(key, curVal, precision)
-            nextText = EquipmentSystem.formatBaseStatValue(key, nextVal, precision)
-        end
+        local currentText = EquipmentSystem.formatBaseStatValue(key, curVal)
+        local nextText = EquipmentSystem.formatBaseStatValue(key, nextVal)
         baseAttrs[#baseAttrs + 1] = {
             name = meta and meta.name or key,
             key = key,

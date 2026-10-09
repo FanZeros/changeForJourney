@@ -660,14 +660,14 @@ function EquipmentSystem.effectiveBaseStatValue(equip, index, mainBoost, level)
     return raw * (1 + steps * (BlacksmithConfig.ASCEND_SUB_STAT_RATIO or 0))
 end
 
---- 装备属性保留小数，避免升阶增量被整数类型显示掩盖；仅格式化，不改实际值。
+--- 装备主副属性默认显示一位小数；仅格式化，不改实际值。
 ---@param key string
 ---@param value number
----@param decimals number|nil 预览可提高精度，确保相邻两阶可辨
+---@param decimals number|nil 显式指定显示精度
 ---@return string
 function EquipmentSystem.formatBaseStatValue(key, value, decimals)
     local meta = AD.META[key]
-    local precision = decimals or 2
+    local precision = decimals or 1
     local text = string.format("%." .. precision .. "f", value)
     if precision > 1 then text = text:gsub("0+$", ""):gsub("%.$", ".0") end
     return text .. ((meta and meta.dataType == AD.TYPE_PCT) and "%" or "")

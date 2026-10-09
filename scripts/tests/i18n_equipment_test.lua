@@ -326,7 +326,8 @@ local function run()
         end
     end
     local headerDraw = DetailDraw.create({
-        detState = headerState, setKw = {}, qualityColor = { { 255, 255, 255 } }, affixBadgeKey = {},
+        detState = headerState, setKw = {}, affixKw = require("ui.widget.KeywordText").new(),
+        qualityColor = { { 255, 255, 255 } }, affixBadgeKey = {},
         getImages = function()
             return { powerIcon = 101, arrowUp = 102, arrowDown = 103, lock = 104,
                 btnGreen = -1, btnYellow = -1, btnRed = -1, affixBadge = {} }

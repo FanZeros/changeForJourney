@@ -17,7 +17,8 @@
 - 用户要求拉最新1005，截图所指为主属性下方固定副而非独立affixes；实际拉取workspace1005@907bac0f（含PR141融合）并建立feat1010/random-equipment-secondary-stats。原17份Lua及未跟踪CharacterPowerRules四文件已完整保存于命名stash preserve-root-wip-before-random-secondary-20261010，未混入新基线，素材/上传/旧game4别名原样保留。
 - 用户通过AskUserQuestion明确选择“只应用新装备”。新generate在原affixes之后按装备槽位/类型/主key定向抽取原0/1/2个副属性，去重并排主key；手铳/匕首按实际魔攻，权杖治疗，圣物通用生存，饰品六围分定位。原每副槽价值预算独立换算，pct按百分点、六围按完整派生；不新增条数、不再乘双手、不改主属性/模板/affixes/洗练规则。secondaryRoll有序基值深拷贝持久化，读档/推送/升阶/提品/腐化/净化不重骰，旧无字段装备及旧遗匣未确定种子走legacy；仓库属性排序补完整候选key。
 - 两新专项Runtime核心70359/0、真实养成/Schema/Dispatcher/遗匣/实际属性/强制异key试穿/排序613/0。其他锻造/旧投入7028、试穿147、属性稳定148、配装868、图标1291、遗匣1125/649/19cases、战力热点244、切关、扫荡85cases35282、套装44/48/291、洗练费用及终焉2302均ALL PASS且实际exit0。三套旧回归失败均在隔离纯907bac0f复现，多语13、离线1045/harness1、仓库穿戴30的完整失败多重集合各自完全相同，新增0；实际打开/read旧EqSystem且/workspace/scripts回退0。不声称全仓/设备/GPU/性能验收全过。
-- 最终官方Build成功manifest-origin.b24（643根Lua），本轮九份Lua载荷9/9逐字节及size一致，原候选资源临时本地ignore排除0混入；.project身份/default/ignore全部与构建前备份逐字节恢复，不提交。本轮九Lua+三meta，仅本地实现/预览；尚未提交、推送、创建PR或合并。未知版本只保留当前可识别结构，不宣称完全前向兼容。
+- 最终官方Build成功manifest-origin.b24（643根Lua），本轮九份Lua载荷9/9逐字节及size一致，原候选资源临时本地ignore排除0混入；.project身份/default/ignore全部与构建前备份逐字节恢复，不提交。本轮九Lua+三meta，仅本地实现/预览。未知版本只保留当前可识别结构，不宣称完全前向兼容。
+- **已提交并推送：** 功能提交d75e9414551ecb62f2aba0504ff09dcff0a20d47（12白名单=9Lua+3meta）正常push独立feat1010/random-equipment-secondary-stats，ls-remote实际exit0且远端SHA一致，workspace1005仍907bac0f未推。正式 **PR #146**：https://github.com/FanZeros/changeForJourney/pull/146，head=本任务分支/base=workspace1005，返回open/draft=false/merged=false，未自动合并发布。凭据仅进程内extraheader即时鉴权，未写入remote/Git配置/源码/日志/记忆。
 - 持续推进当前授权并如实报告结果；尊重停止/权限边界，凭据不写源码/Git配置/日志/记忆。交接需要用户决定的提交/推送/PR范围时真正AskUserQuestion给选项，不机械重复已决定的旧装政策；不直接push任何workspace系列、不强推或自动合并发布。
 
 ## 上次做了什么（2026-10-07，塔结算横屏与择契不停战）

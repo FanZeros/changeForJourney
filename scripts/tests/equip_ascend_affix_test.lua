@@ -339,7 +339,7 @@ function Start()
         -- ========== 11) 固定副词条轮转；随机词条不再新增每阶投入 ==========
         eq(BlacksmithConfig.ASCEND_SUB_STAT_RATIO, 0.05, "固定副词条步长=5%")
         newModules()
-        local fixed = putEquip(EquipmentSystem.generate("O13", 12, 4))
+        local fixed = putEquip(EquipmentSystem.generate("O13", 12, 4, { legacySecondary = true }))
         local raw = fixed.baseStats
         local oldRandom = {}
         for i, affix in ipairs(fixed.affixes) do oldRandom[i] = affix.value end
@@ -373,7 +373,7 @@ function Start()
             "随机洗练不会改变固定副升阶")
         newModules()
         local single = putEquip(EquipmentSystem.generate("O13", 12, 1))
-        local batch = putEquip(EquipmentSystem.generate("O13", 12, 1))
+        local batch = putEquip(EquipmentSystem.hydrate(cjson.decode(cjson.encode(EquipmentSystem.dehydrate(single)))))
         math.randomseed(931)
         for _ = 1, 6 do BS.AscendEquip(UID, single.seq) end
         math.randomseed(931)

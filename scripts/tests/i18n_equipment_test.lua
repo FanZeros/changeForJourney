@@ -265,7 +265,7 @@ local function run()
     end
     -- 固定副词条数值和下一阶预览实际绘制，不把随机词条当成升阶目标。
     I18n.set("zh_CN")
-    local codex = ES.generate("O13", 12, 4)
+    local codex = ES.generate("O13", 12, 4, { legacySecondary = true })
     codex.ascendLevel = 11
     state.selectedEquip, state.selectedEquipSlot = codex, "offhand"
     Enhance.updateEnhanceData(codex)

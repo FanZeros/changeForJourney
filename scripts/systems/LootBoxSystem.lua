@@ -78,7 +78,8 @@ function LootBoxSystem.revealLegacy(lootboxData)
             local level = entry.level
             if LootBoxSystem.levelCap > 0 then level = math.min(level, LootBoxSystem.levelCap) end
             while remaining > 0 do
-                local equip = EquipmentSystem.generateRandom(level, entry.quality)
+                -- 旧存档种子沿用原副属性；新入匣装备仍在生成时抽取并保存。
+                local equip = EquipmentSystem.generateRandom(level, entry.quality, { legacySecondary = true })
                 if not equip then break end
                 revealed[#revealed + 1] = {
                     quality = equip.quality, level = equip.level, count = 1,

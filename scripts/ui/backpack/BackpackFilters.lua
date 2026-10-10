@@ -2,6 +2,7 @@
 -- 筛选只改显示状态，不修改库存、职业限制或穿戴规则。
 local EquipmentConfig = require("config.EquipmentConfig")
 local AffixConfig = require("config.AffixConfig")
+local EquipmentSecondaryStats = require("systems.EquipmentSecondaryStats")
 local AD = require("systems.AttributeDef")
 local DrawUtil = require("core.DrawUtil")
 local DarkIcon = require("core.DarkIcon")
@@ -79,6 +80,7 @@ function M.bind(deps)
         for _, tpl in pairs(EquipmentConfig.ITEMS) do
             for _, stat in ipairs(tpl.stats or {}) do keys[stat[1]] = true end
         end
+        for _, key in ipairs(EquipmentSecondaryStats.getAttributeKeys()) do keys[key] = true end
         for _, affix in ipairs(AffixConfig.AFFIXES) do keys[affix.key] = true end
         for _, affix in ipairs(AffixConfig.CORRUPT_AFFIXES) do keys[affix.key] = true end
         local attrs = {}

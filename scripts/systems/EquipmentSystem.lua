@@ -8,6 +8,7 @@ local EquipmentConfig = require("config.EquipmentConfig")
 local AffixConfig     = require("config.AffixConfig")
 local BlacksmithConfig = require("config.BlacksmithConfig")
 local AD              = require("systems.AttributeDef")
+local SecondaryStats  = require("systems.EquipmentSecondaryStats")
 
 local EquipmentSystem = {}
 
@@ -383,26 +384,11 @@ end
 ---@param templateId string 装备模板 ID
 ---@param level number 装备等级
 ---@param baseStrength number 品质基础属性强度比例
+---@param secondaryRoll EquipmentSecondaryRoll|nil 实例保存的固定副抽取；nil保持旧模板
 ---@return table[] baseStats 新的 baseStats 数组 {{key, value}, ...}
-function EquipmentSystem.recalcBaseStats(templateId, level, baseStrength)
-    local tpl = EquipmentConfig.ITEMS[templateId]
-    if not tpl then return {} end
-
-    baseStrength = baseStrength or 1.0
-    local baseStats = {}
-    for _, s in ipairs(tpl.stats) do
-        local key = s[1]
-        local val = s[2]
-        local scaled = scaleByLevel(val, level) * baseStrength
-
-        local meta = AD.META[key]
-        if meta and meta.dataType == AD.TYPE_INT then
-            scaled = math.floor(scaled + 0.5)
-        end
-
-        baseStats[#baseStats + 1] = { key, scaled }
-    end
-    return baseStats
+function EquipmentSystem.recalcBaseStats(templateId, level, baseStrength, secondaryRoll)
+    local tpl = EquipmentConfig.ITEMS[templateId] or EquipmentConfig.ITEMS[tostring(templateId)]
+    return SecondaryStats.buildBaseStats(tpl, level, baseStrength, secondaryRoll)
 end
 
 -- ======================== 装备生成 ========================
@@ -411,8 +397,9 @@ end
 ---@param templateId string 装备模板 ID（如 "W1", "O5", "A12", "C3"）
 ---@param level number|nil 装备等级（nil = 在 levelRange 内随机）
 ---@param quality number|nil 品质（nil = 全品质范围随机）
+---@param options table|nil legacySecondary=true仅供旧未确定种子迁移，跳过新副抽取
 ---@return table|nil 装备实例（可序列化的纯数据表）
-function EquipmentSystem.generate(templateId, level, quality)
+function EquipmentSystem.generate(templateId, level, quality, options)
     local tpl = EquipmentConfig.ITEMS[templateId]
     if not tpl then
         print("[EquipmentSystem] template not found: " .. tostring(templateId))
@@ -439,28 +426,20 @@ function EquipmentSystem.generate(templateId, level, quality)
 
     local qualityDef = EquipmentConfig.QUALITY[quality]
 
-   -- 基础属性 → 等级缩放 → 品质强度加成
-   local baseStrength = qualityDef.baseStrength or 1.0
-   local baseStats = {}
-   for _, s in ipairs(tpl.stats) do
-       local key = s[1]
-       local val = s[2]
-       local scaled = scaleByLevel(val, level) * baseStrength
-
-       -- 整数属性取整
-       local meta = AD.META[key]
-       if meta and meta.dataType == AD.TYPE_INT then
-           scaled = math.floor(scaled + 0.5)
-       end
-
-       baseStats[#baseStats + 1] = { key, scaled }
-   end
-
-   -- 词缀（应用品质随机属性强度比例，双手武器×2）
+    -- 词缀先沿既有调用顺序生成，避免新副抽取消耗RNG改变本件词缀seed结果。
     local affixCount = qualityDef.affixCount or 0
-    local maxAffixQ  = qualityDef.maxAffixQuality or 0
-   local randomStrength = qualityDef.randomStrength or 1.0
+    local maxAffixQ = qualityDef.maxAffixQuality or 0
+    local randomStrength = qualityDef.randomStrength or 1.0
     local affixes = EquipmentSystem.rollAffixes(affixCount, maxAffixQ, level, {}, randomStrength, tpl.grip)
+
+    ---@type EquipmentSecondaryRoll|nil
+    local secondaryRoll
+    if not (type(options) == "table" and options.legacySecondary == true) then
+        secondaryRoll = SecondaryStats.roll(tpl)
+    end
+    -- 主属性始终来自tpl.stats[1]，原槽预算已含双手系数，不再额外×2。
+    local baseStats = EquipmentSystem.recalcBaseStats(templateId, level,
+        qualityDef.baseStrength or 1.0, secondaryRoll)
 
     -- 构造装备实例（纯数据，可 JSON 序列化）
     local equip = {
@@ -472,6 +451,7 @@ function EquipmentSystem.generate(templateId, level, quality)
         level      = level,
         quality    = quality,
         baseStats  = baseStats,
+        secondaryRoll = secondaryRoll,
         affixes    = affixes,
     }
 
@@ -482,8 +462,9 @@ end
 ---@param slot string "weapon"/"offhand"/"armor"/"helmet"/"shoes"/"accessory"
 ---@param level number
 ---@param quality number|nil
+---@param options table|nil 同generate的旧迁移标记
 ---@return table|nil
-function EquipmentSystem.generateBySlot(slot, level, quality)
+function EquipmentSystem.generateBySlot(slot, level, quality, options)
     local pool = EquipmentConfig.BY_SLOT[slot]
     if not pool or #pool == 0 then return nil end
 
@@ -502,17 +483,18 @@ function EquipmentSystem.generateBySlot(slot, level, quality)
     end
 
     local tid = candidates[math.random(1, #candidates)]
-    return EquipmentSystem.generate(tid, level, quality)
+    return EquipmentSystem.generate(tid, level, quality, options)
 end
 
 --- 随机生成任意装备
 ---@param level number
 ---@param quality number|nil
+---@param options table|nil 同generate的旧迁移标记
 ---@return table|nil
-function EquipmentSystem.generateRandom(level, quality)
+function EquipmentSystem.generateRandom(level, quality, options)
     local slots = EquipmentConfig.SLOTS
     local slot = slots[math.random(1, #slots)]
-    return EquipmentSystem.generateBySlot(slot, level, quality)
+    return EquipmentSystem.generateBySlot(slot, level, quality, options)
 end
 
 -- ======================== 等级穿戴限制 ========================
@@ -1352,7 +1334,9 @@ function EquipmentSystem.hydrate(equip)
         end
     end
     if equip.corruptBaseMult ~= nil then
-        equip.corruptBaseMult = tonumber(equip.corruptBaseMult) or nil
+        local mult = tonumber(equip.corruptBaseMult)
+        if not mult or mult ~= mult or mult <= 0 or mult == math.huge then mult = nil end
+        equip.corruptBaseMult = mult
     end
     EquipmentSystem.normalizeCorruptRevert(equip)
     EquipmentSystem.migrateLegacyCorruptSnapshot(equip)
@@ -1360,33 +1344,7 @@ function EquipmentSystem.hydrate(equip)
     -- 从模板还原装备基础属性（兼容 templateId 被 cjson 转成 number）
     local tpl = EquipmentConfig.ITEMS[equip.templateId]
         or EquipmentConfig.ITEMS[tostring(equip.templateId)]
-    if tpl then
-        equip.name = tpl.name
-        equip.type = tpl.type
-        equip.slot = tpl.slot
-        equip.grip = tpl.grip
-
-        -- 重算 baseStats（从 templateId+level+quality+腐化基础倍率确定性推导）
-        if not equip.baseStats then
-            local qualityDef = EquipmentConfig.QUALITY[equip.quality]
-            local baseStrength = qualityDef and qualityDef.baseStrength or 1.0
-            if equip.corruptBaseMult and equip.corruptBaseMult ~= 1 then
-                baseStrength = baseStrength * equip.corruptBaseMult
-            end
-            local baseStats = {}
-            for _, s in ipairs(tpl.stats) do
-                local key = s[1]
-                local val = s[2]
-                local scaled = scaleByLevel(val, equip.level or 1) * baseStrength
-                local meta = AD.META[key]
-                if meta and meta.dataType == AD.TYPE_INT then
-                    scaled = math.floor(scaled + 0.5)
-                end
-                baseStats[#baseStats + 1] = { key, scaled }
-            end
-            equip.baseStats = baseStats
-        end
-    end
+    SecondaryStats.restore(tpl, equip)
 
     -- 从词缀模板还原 key/name，并补齐缺失 value
     if equip.affixes then
@@ -1432,8 +1390,17 @@ function EquipmentSystem.dehydrate(equip)
         affixMult = (tonumber(equip.affixMult) or 1) > 1 and tonumber(equip.affixMult) or nil,
         corruptCount = (equip.corruptCount and equip.corruptCount > 0) and equip.corruptCount or nil,
         corruptBaseMult = (equip.corruptBaseMult and equip.corruptBaseMult ~= 1) and equip.corruptBaseMult or nil,
-        -- baseStats 省略：可从 templateId+level+quality+腐化基础倍率确定性推导，hydrate 时重算
+        -- baseStats省略：从模板+secondaryRoll+等级+品质+腐化倍率确定性重算
     }
+    if equip.secondaryRoll ~= nil then
+        local tpl = EquipmentConfig.ITEMS[equip.templateId] or EquipmentConfig.ITEMS[tostring(equip.templateId)]
+        lean.secondaryRoll = SecondaryStats.copyValidated(tpl, equip.secondaryRoll)
+    end
+    if lean.corruptBaseMult ~= nil then
+        local mult = tonumber(lean.corruptBaseMult)
+        if not mult or mult ~= mult or mult <= 0 or mult == math.huge then mult = nil end
+        lean.corruptBaseMult = mult
+    end
 
     local rev = equip.corruptRevert
     if not rev and equip.corruptOriginalAffixes and (equip.corruptCount or 0) > 0 then

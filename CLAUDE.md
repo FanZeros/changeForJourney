@@ -12,6 +12,14 @@
 4. **分支纪律**：以当前任务授权为准。本轮暗黑特效任务基于 `workspace1005@9497bfdb409c2d0fc17533e4cfc280702fe83517`，任务分支为 `feat1005/team-power-dark-effects-20261006`。用户最新明确提供即时鉴权并要求提 PR，授权提交／正常 push 本任务分支及创建目标 `workspace1005` 的 PR；不混入其他会话返回键改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布，凭据不持久化。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-10，新装备随机副属性）
+
+- 用户要求拉最新1005，截图所指为主属性下方固定副而非独立affixes；实际拉取workspace1005@907bac0f（含PR141融合）并建立feat1010/random-equipment-secondary-stats。原17份Lua及未跟踪CharacterPowerRules四文件已完整保存于命名stash preserve-root-wip-before-random-secondary-20261010，未混入新基线，素材/上传/旧game4别名原样保留。
+- 用户通过AskUserQuestion明确选择“只应用新装备”。新generate在原affixes之后按装备槽位/类型/主key定向抽取原0/1/2个副属性，去重并排主key；手铳/匕首按实际魔攻，权杖治疗，圣物通用生存，饰品六围分定位。原每副槽价值预算独立换算，pct按百分点、六围按完整派生；不新增条数、不再乘双手、不改主属性/模板/affixes/洗练规则。secondaryRoll有序基值深拷贝持久化，读档/推送/升阶/提品/腐化/净化不重骰，旧无字段装备及旧遗匣未确定种子走legacy；仓库属性排序补完整候选key。
+- 两新专项Runtime核心70359/0、真实养成/Schema/Dispatcher/遗匣/实际属性/强制异key试穿/排序613/0。其他锻造/旧投入7028、试穿147、属性稳定148、配装868、图标1291、遗匣1125/649/19cases、战力热点244、切关、扫荡85cases35282、套装44/48/291、洗练费用及终焉2302均ALL PASS且实际exit0。三套旧回归失败均在隔离纯907bac0f复现，多语13、离线1045/harness1、仓库穿戴30的完整失败多重集合各自完全相同，新增0；实际打开/read旧EqSystem且/workspace/scripts回退0。不声称全仓/设备/GPU/性能验收全过。
+- 最终官方Build成功manifest-origin.b24（643根Lua），本轮九份Lua载荷9/9逐字节及size一致，原候选资源临时本地ignore排除0混入；.project身份/default/ignore全部与构建前备份逐字节恢复，不提交。本轮九Lua+三meta，仅本地实现/预览；尚未提交、推送、创建PR或合并。未知版本只保留当前可识别结构，不宣称完全前向兼容。
+- 持续推进当前授权并如实报告结果；尊重停止/权限边界，凭据不写源码/Git配置/日志/记忆。交接需要用户决定的提交/推送/PR范围时真正AskUserQuestion给选项，不机械重复已决定的旧装政策；不直接push任何workspace系列、不强推或自动合并发布。
+
 ## 上次做了什么（2026-10-07，塔结算横屏与择契不停战）
 
 - 已正常push功能提交b59bba3a728f25bb48564402ecbda145a48aaeda，远端SHA一致；正式PR #120：https://github.com/FanZeros/changeForJourney/pull/120，head=fix1007/tower-flow-roster-labels、base=workspace1005，open/draft=false/merged=false，未自动合并发布。14白名单仅11Lua+三本人交接，sharedHEAD/index不改，基线ec1d8a61未推；规范21旧问题同基线、新增0，36单测通过。下方“成功后补”是此前过程记录。

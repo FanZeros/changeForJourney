@@ -471,6 +471,7 @@ local getPrimaryAyane = _ayane.getPrimaryAyane
 local hasAnyAyaneMark = _ayane.hasAnyAyaneMark
 
 local _luoxing = TalentLuoxing.bind({
+    getTAL_BCS = function() return TAL_BCS end,
     hasAwaken = hasAwaken,
     getState = getState,
     ensureState = ensureState,
@@ -492,6 +493,7 @@ local tryYouyeSuperCrit = _luoxing.tryYouyeSuperCrit
 local fireLuoxingFlyingSwords = _luoxing.fireLuoxingFlyingSwords
 
 local _melissa = TalentMelissa.bind({
+    getTAL_BCS = function() return TAL_BCS end,
     hasAwaken = hasAwaken,
     getState = getState,
     ensureState = ensureState,
@@ -880,6 +882,8 @@ function TAL.onBattleStart(allies, enemies)
                 local interval = getLuoxingFlyingSwordInterval(unit)
                 resetLuoxingFlyingSwordWindow(s, interval)
                 s.flyingSwordCarryover = 0
+                s.flyingSwordVolley = 0
+                s.flyingSwordBattleToken = {}
             end
 
             -- #20 摘星星星人：战斗开始时召唤永久存在的星门

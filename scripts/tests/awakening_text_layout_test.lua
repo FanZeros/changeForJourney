@@ -1,5 +1,16 @@
 -- 觉醒说明与影画切片回归：正文/关键词锚点保留，真实 Panel.draw 单层框、固定采样与热区。
 local engineRequire = require
+-- 记录器仍是确定性字体桩，不冒称真实字墨；同样封闭File/FS，禁止访问玩家档。
+local originalIO = { File = File, FileSystem = FileSystem, fileSystem = fileSystem, GetFileSystem = GetFileSystem }
+local ioCalls = 0
+local function denyIO()
+    ioCalls = ioCalls + 1
+    error("awakening layout recorder forbids File/FS access")
+end
+rawset(_G, "File", denyIO)
+rawset(_G, "FileSystem", denyIO)
+rawset(_G, "fileSystem", setmetatable({}, { __index = function() return denyIO end }))
+rawset(_G, "GetFileSystem", denyIO)
 local mocks = {}
 rawset(_G, "require", function(name) return mocks[name] or engineRequire(name) end)
 local noop = function() end
@@ -203,6 +214,7 @@ local function checkFrame(frame, count, selected, available, context)
             .. (expectedStatuses[i] ~= "" and (" · " .. expectedStatuses[i]) or ""))
             or (i == count + 1 and "可嵌合" or "未解锁")
         local lines = states[i]
+        ---@cast lines table[]
         check(#lines > 0 and lines[#lines].y == 1782,
             context .. "必须真实绘制每片状态，末行仍固定1782不压阶段标题")
         local fragments = {}
@@ -292,9 +304,19 @@ function Start()
         local expectedY = 1963 - 139 * 0.5
         local draws = 0
         local checks = 0
+        local effectMaxH = 2110 - 12 - expectedY
+        local function fittedFont(keyword, context, text)
+            local size = 36
+            while size > 18 and keyword:measureHeight(context, text, 910, size) > effectMaxH do size = size - 1 end
+            return size
+        end
         Panel.kwText.draw = function(self, context, text, x, y, width, size, lineHeight, center)
             check(y == expectedY, "觉醒说明应整体下移33设计像素")
-            check(width == 910 and size == 36 and center == 540, "说明宽度字号及居中保持")
+            local expectedFont = fittedFont(self, context, text)
+            check(width == 910 and size == expectedFont and center == 540,
+                "说明宽度居中不变，字号仅必要缩小且普通短文仍36")
+            check(self:measureHeight(context, text, width, size) <= effectMaxH,
+                "正文完整高度需在按钮前留12px")
             draws = draws + 1
             return realDraw(self, context, text, x, y, width, size, lineHeight, center)
         end
@@ -310,7 +332,7 @@ function Start()
             for node = 1, Config.NODE_COUNT do
                 local text = Config.getNodeEffect(heroId, node)
                 if text then
-                    helper:draw(vg, text, 85, expectedY, 910, 36, nil, 540)
+                    helper:draw(vg, text, 85, expectedY, 910, fittedFont(helper, vg, text), nil, 540)
                     for _, hit in ipairs(helper.hotspots) do
                         check(hit.y1 >= expectedY, "关键词热区必须跟随新正文位置")
                         check(hit.y2 <= 2110, "关键词热区不得覆盖嵌合按钮")
@@ -415,12 +437,14 @@ function Start()
         end
         check(draws == frames + 3, "每个描边/热区样本均须经过真实Panel.draw和正文绘制")
         Panel.kwText.draw = realDraw
+        check(ioCalls == 0, "记录器File/FS访问0，不读玩家档")
         print("[awakening_text_layout_test] ALL PASS assertions=" .. assertions
-            .. " checks=" .. checks .. " panelFrames=" .. (frames + 3))
+            .. " checks=" .. checks .. " panelFrames=" .. (frames + 3) .. " FileFS=" .. ioCalls)
     end)
     restoreStageStatus()
     rawset(_G, "nvgRGBA", nativeRGBA)
     rawset(_G, "time", nativeTime)
+    for key, value in pairs(originalIO) do rawset(_G, key, value) end
     if not ok then
         log:Write(LOG_ERROR, "[awakening_text_layout_test] FAIL assertions=" .. assertions .. " " .. tostring(err))
     end

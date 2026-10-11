@@ -426,6 +426,7 @@ function M.bind(deps)
                 while s.flyingSwordTimer >= interval and maxFlyingSwordTicks > 0 do
                     maxFlyingSwordTicks = maxFlyingSwordTicks - 1
                     if ctx.dealTalentDamage or ctx.dealDamage then
+                        local swordBattleToken = s.flyingSwordBattleToken
                         local okFire, fired, consumeWindow = pcall(function()
                             return fireLuoxingFlyingSwords(ally, s, enemies, true, function(tgt, dmg, isTgtAlly, pfx, clr, projOpts)
                                 if ctx.dealTalentDamage then
@@ -435,6 +436,8 @@ function M.bind(deps)
                                 end
                             end)
                         end)
+                        if getState(ally) ~= s or getTAL_BCS() ~= TAL_BCS
+                            or s.flyingSwordBattleToken ~= swordBattleToken then return end
                         if not okFire then
                             talentLog("[Talent] 万剑归宗 灵月飞剑 tick failed: " .. tostring(fired))
                             resetLuoxingFlyingSwordWindow(s, interval)

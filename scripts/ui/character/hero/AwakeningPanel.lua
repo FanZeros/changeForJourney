@@ -64,6 +64,8 @@ local SUB_TITLE_CX, SUB_TITLE_CY = 540, 1860
 local EFFECT_CX, EFFECT_CY = 540, 1963
 local EFFECT_W, EFFECT_H   = 910, 139
 local EFFECT_FONT           = 36
+local EFFECT_MIN_FONT       = 18
+local EFFECT_BUTTON_GAP     = 12 -- 长正文完整排版，给关键词点击宽容与按钮留出间距。
 -- 底栏操作：碎片标识在左、嵌合按钮在右（放大）
 local SHARD_ICON_SIZE = 114
 local SHARD_ICON_CX   = 196
@@ -172,6 +174,7 @@ local function resolveCG(vg, heroId)
     if color < 0 then
         color = nvgCreateImage(vg, HeroAssetUtil.getCardPath(heroId), 0) or -1
     end
+    ---@cast color integer
     cgCache[heroId] = color
     return color
 end
@@ -462,9 +465,17 @@ function M.draw(vg, heroId)
     nvgText(vg, SUB_TITLE_CX, SUB_TITLE_CY, nodeTitle, nil)
 
     -- 关键词富文本：觉醒效果说明中的机制词可点击弹出解释（弹窗由 CharacterDetailDraw 帧末绘制）
+    local effectTop = EFFECT_CY - EFFECT_H * 0.5
+    local effectMaxH = BTN_CY - BTN_H * 0.5 - EFFECT_BUTTON_GAP - effectTop
+    local effectFont = EFFECT_FONT
+    -- 按实际宿主字体/语言/缩放测量；短正文仍36号，不截字或改变关键词热区规则。
+    while effectFont > EFFECT_MIN_FONT
+        and M.kwText:measureHeight(vg, nodeEffect, EFFECT_W, effectFont) > effectMaxH do
+        effectFont = effectFont - 1
+    end
     M.kwText:draw(vg, nodeEffect,
-        EFFECT_CX - EFFECT_W * 0.5, EFFECT_CY - EFFECT_H * 0.5, EFFECT_W,
-        EFFECT_FONT, nil, EFFECT_CX)
+        EFFECT_CX - EFFECT_W * 0.5, effectTop, EFFECT_W,
+        effectFont, nil, EFFECT_CX)
 
     local selectedCost = AKC.getShardCost(selectedNode)
     local shardSufficient = currentShards >= selectedCost and selectedCost > 0

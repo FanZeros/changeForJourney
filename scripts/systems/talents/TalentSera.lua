@@ -4,11 +4,17 @@
 -- ============================================================================
 
 local ETS = require("systems.ExtraTalentSystem")
+local AC = require("config.AwakeningConfig")
 
 local M = {}
 
 function M.bind(deps)
     local hasAwaken = deps.hasAwaken
+    local hasAwakenStage = deps.hasAwakenStage or function(u, stage)
+        return AC.hasStage(u.awakeningNodes, stage)
+    end
+    local getState = deps.getState
+    local getBattleRefs = deps.getBattleRefs
     local talentLog = deps.talentLog
     local AD = deps.AD
 
@@ -16,7 +22,10 @@ function M.bind(deps)
 ---@param attacker table
 ---@param s table
 local function tickSeraMachineGunCount(attacker, s)
-    if not attacker.attrs then return end
+    if not attacker or not s or not attacker.attrs then return end
+    local battleRefs = getBattleRefs and getBattleRefs()
+    local battleToken = s.epicAttackBattleToken
+    if getState and getState(attacker) ~= s then return end
     s.machineGunNormalCount = (s.machineGunNormalCount or 0) + 1
     local progress = (s.machineGunProgress or 0) + 1
     ---@type number
@@ -29,7 +38,16 @@ local function tickSeraMachineGunCount(attacker, s)
     local rounds = math.floor((progress + 1e-9) / interval)
     s.machineGunProgress = math.max(0, progress - rounds * interval)
     if rounds > 0 then
-        s.machineGunShotsLeft = hasAwaken(attacker, 3) and 12 or 10
+        local extraShots = 0
+        if not attacker._etsDisabled and hasAwakenStage(attacker, 2) and hasAwakenStage(attacker, 1)
+            and tonumber(attacker.heroId) == 22 then
+            local extra = ETS.getEpicGrowth(attacker)
+            extraShots = math.min(4, math.floor(extra.gatlingKills / 40))
+        end
+        -- 只在正常门槛启动时冻结弹数；本轮击杀成长不补弹，开局预存路径不经过这里。
+        if (getState and getState(attacker) ~= s) or s.epicAttackBattleToken ~= battleToken
+            or (getBattleRefs and getBattleRefs() ~= battleRefs) then return end
+        s.machineGunShotsLeft = (hasAwaken(attacker, 3) and 12 or 10) + extraShots
         s.machineGunShotTimer = 0
         s.machineGunInBurst = true
         if hasAwaken(attacker, 4) then

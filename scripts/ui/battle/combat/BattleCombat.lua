@@ -8,6 +8,7 @@ local AD  = require("systems.AttributeDef")
 local TM  = require("systems.ThreatManager")
 local SEM = require("systems.StatusEffectManager")
 local TAL = require("systems.TalentManager")
+local ETS = require("systems.ExtraTalentSystem")
 local PS  = require("ui.battle.combat.ProjectileSystem")
 local Diag = require("systems.BattleDiag")
 local BattleLayout = require("core.BattleLayout")
@@ -415,6 +416,7 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     damage = ClassGateRuntime.applyDebtTaken(target, damage)
     damage = ClassGateRuntime.absorbIncoming(target, damage)
     damage = EquipmentSetRuntime.onIncoming(target, damage, source)
+    damage = ETS.absorbBulwarkWard(target, damage)
     if damage <= 0 then return 0 end
     TAL.resetEnemyDeath(target)
     local hpBefore = target.hp
@@ -1211,6 +1213,9 @@ local function performAttack(attacker, targetList, isAlly)
 
                             if BCS.ctx.onTalentDealDamage then
                                 local lookupList = (isAlly == isTgtAlly) and allyList or targetList
+                                if projOpts and projOpts.isRicochet and type(projOpts.epicBounceTargetList) == "table" then
+                                    lookupList = projOpts.epicBounceTargetList
+                                end
                                 for li, lu in ipairs(lookupList) do
                                     if lu == tgt then
                                         local tdCX, tdCY = getCardPos(lookupList, li)
@@ -1328,7 +1333,7 @@ local function performAttack(attacker, targetList, isAlly)
                         if isHealer then tgtIsAllyForAbsorb = isAlly end
                         -- 套装承伤修正先于死亡拦截，避免死后改变状态。
                         finalDmg = EquipmentSetRuntime.onIncoming(curTgt, finalDmg, attacker)
-                        finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, tgtIsAllyForAbsorb, syncUnitHp, result.category)
+                        finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, tgtIsAllyForAbsorb, syncUnitHp, result.category, dealDamageToUnit, { allies = allies, enemies = enemies })
                         finalDmg = ART.onBeforeTakeDamage(curTgt, attacker, finalDmg, tgtIsAllyForAbsorb)
                         result.damageDealt = finalDmg
                         TAL.resetEnemyDeath(curTgt)
@@ -1489,6 +1494,9 @@ local function performAttack(attacker, targetList, isAlly)
                             if BCS.ctx.onTalentDealDamage then
                                 -- 查找目标位置
                                 local lookupList = (isAlly == isTgtAlly) and allyList or targetList
+                                if projOpts and projOpts.isRicochet and type(projOpts.epicBounceTargetList) == "table" then
+                                    lookupList = projOpts.epicBounceTargetList
+                                end
                                 for li, lu in ipairs(lookupList) do
                                     if lu == tgt then
                                         local tdCX, tdCY = getCardPos(lookupList, li)

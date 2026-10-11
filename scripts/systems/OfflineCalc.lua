@@ -210,6 +210,7 @@ local function calcExpectedDrops(kills, entry, stageConfig)
     local size = #pool
     local cap = getMaxDropQuality(stageConfig, entry)
     local counts = {}
+    local sourceRed = cap < 6 and 0 or DropSystem.getStageQualityProbabilities(entry, 0, true)[6]
     if size == 0 then
         counts[1] = raw
     else
@@ -218,17 +219,11 @@ local function calcExpectedDrops(kills, entry, stageConfig)
                 + (index <= whole % size and 1 or 0)
                 + (index == whole % size + 1 and fraction or 0)
             local template = MC.MONSTERS[monsterId]
-            local weights, totalWeight = DropSystem.getQualityWeights(
+            local probabilities = DropSystem.getMonsterQualityProbabilities(
                 template and template.quality or 1,
-                entry.difficulty or SC.getDifficulty(entry.sourceStageId or entry.id), 0)
-            if totalWeight <= 0 then
-                counts[1] = (counts[1] or 0) + occurrences
-            else
-                for q = 1, 6 do
-                    local quality = math.min(q, cap)
-                    counts[quality] = (counts[quality] or 0)
-                        + occurrences * (weights[q] or 0) / totalWeight
-                end
+                entry.difficulty or SC.getDifficulty(entry.sourceStageId or entry.id), 0, cap, sourceRed)
+            for quality = 1, 6 do
+                counts[quality] = (counts[quality] or 0) + occurrences * probabilities[quality]
             end
         end
     end
@@ -338,6 +333,7 @@ function OfflineCalc.calcRewardsFromKills(kills, stageEntry, heroCount, stageCon
         local qualityPool = buildQualityPool(stageEntry)
         local poolSize = #qualityPool
         local maxDropQ = getMaxDropQuality(stageConfig, stageEntry)
+        local sourceRed = maxDropQ < 6 and 0 or DropSystem.getStageQualityProbabilities(stageEntry, 0, true)[6]
         for i = 1, equipCount do
             local quality
             if poolSize > 0 then
@@ -346,11 +342,10 @@ function OfflineCalc.calcRewardsFromKills(kills, stageEntry, heroCount, stageCon
                 local template = MC.MONSTERS[monsterId]
                 local monsterQ = template and template.quality or 1
                 quality = OfflineCalc._rollQualityByMonster(monsterQ,
-                    stageEntry.difficulty or SC.getDifficulty(stageEntry.sourceStageId or stageEntry.id))
+                    stageEntry.difficulty or SC.getDifficulty(stageEntry.sourceStageId or stageEntry.id), maxDropQ, sourceRed)
             else
                 quality = 1
             end
-            if quality > maxDropQ then quality = maxDropQ end
             equipSeeds[#equipSeeds + 1] = {
                 stageId = stageEntry.id,
                 quality = quality,
@@ -401,8 +396,10 @@ end
 ---@param monsterQuality number 怪物品质 1~6
 ---@param difficulty string|nil
 ---@return number quality 1~6
-function OfflineCalc._rollQualityByMonster(monsterQuality, difficulty)
-    return DropSystem.rollQualityByMonster(monsterQuality, difficulty, 0)
+---@param cap number|nil
+---@param sourceRed number|nil
+function OfflineCalc._rollQualityByMonster(monsterQuality, difficulty, cap, sourceRed)
+    return DropSystem.rollQualityByMonster(monsterQuality, difficulty, 0, cap, sourceRed)
 end
 
 --- 合并 stageId+quality+level 相同的种子，累加 count
@@ -447,6 +444,7 @@ function OfflineCalc.buildEquipSeeds(kills, stageEntry, stageConfig)
     local qualityPool = buildQualityPool(stageEntry)
     local poolSize = #qualityPool
     local maxDropQ = getMaxDropQuality(stageConfig, stageEntry)
+    local sourceRed = maxDropQ < 6 and 0 or DropSystem.getStageQualityProbabilities(stageEntry, 0, true)[6]
     local equipSeeds = {}
 
     for i = 1, equipCount do
@@ -457,11 +455,10 @@ function OfflineCalc.buildEquipSeeds(kills, stageEntry, stageConfig)
             local template = MC.MONSTERS[monsterId]
             local monsterQ = template and template.quality or 1
             quality = OfflineCalc._rollQualityByMonster(monsterQ,
-                stageEntry.difficulty or SC.getDifficulty(stageEntry.sourceStageId or stageEntry.id))
+                stageEntry.difficulty or SC.getDifficulty(stageEntry.sourceStageId or stageEntry.id), maxDropQ, sourceRed)
         else
             quality = 1
         end
-        if quality > maxDropQ then quality = maxDropQ end
         equipSeeds[#equipSeeds + 1] = {
             stageId = stageEntry.id,
             quality = quality,

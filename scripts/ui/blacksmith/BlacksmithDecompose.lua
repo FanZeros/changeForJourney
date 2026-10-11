@@ -22,6 +22,7 @@ local QualityMark      = require("ui.widget.QualityMark")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 local I18n             = require("core.I18n")
 local EquipmentText    = require("core.I18nEquipmentText")
+local AutoDecompose    = require("ui.blacksmith.BlacksmithAutoDecompose")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -71,34 +72,7 @@ local FJ = {
     DEC_TEXT_FONT_SIZE = 40,
     DEC_TEXT_R = 255, DEC_TEXT_G = 214, DEC_TEXT_B = 102,
 }
--- 自动分解弹窗常量
-FJ.POP_MASK_ALPHA = 128
-FJ.POP_BG_CX = 540; FJ.POP_BG_CY = 1111; FJ.POP_BG_W = 950; FJ.POP_BG_H = 720
-FJ.POP_TITLE_CX = 540; FJ.POP_TITLE_CY = 830; FJ.POP_TITLE_FONT = 60; FJ.POP_TITLE_STROKE = 4
-FJ.POP_DESC_CX = 540; FJ.POP_DESC_CY = 925; FJ.POP_DESC_FONT = 38; FJ.POP_DESC_MAX_W = 820
-FJ.POP_DESC_R = 0xb6; FJ.POP_DESC_G = 0xb0; FJ.POP_DESC_B = 0x9d
--- 品质方框选择行（6 个品质图标方框，与分解页品质筛选同款小图）
-FJ.POP_QBOX_COUNT = 6
-FJ.POP_QBOX_SIZE = 100; FJ.POP_QBOX_GAP = 24; FJ.POP_QBOX_CY = 1060; FJ.POP_QBOX_R = 16
-FJ.POP_QBOX_ICON_SIZE = 76
-FJ.POP_QBOX_TOTAL_W = FJ.POP_QBOX_COUNT * FJ.POP_QBOX_SIZE + (FJ.POP_QBOX_COUNT - 1) * FJ.POP_QBOX_GAP  -- 720
-FJ.POP_QBOX_FIRST_CX = 540 - FJ.POP_QBOX_TOTAL_W * 0.5 + FJ.POP_QBOX_SIZE * 0.5  -- 230
-FJ.POP_QBOX_SEL_STROKE = 5
--- 等级筛选行：减/加按钮 + 滑条（与市场购买弹窗同款交互）
-FJ.POP_LEVEL_CY = 1185
-FJ.POP_MINUS_CX = 240; FJ.POP_MINUS_CY = FJ.POP_LEVEL_CY; FJ.POP_MINUS_W = 84; FJ.POP_MINUS_H = 84
-FJ.POP_PLUS_CX = 840; FJ.POP_PLUS_CY = FJ.POP_LEVEL_CY; FJ.POP_PLUS_W = 84; FJ.POP_PLUS_H = 84
-FJ.POP_SLIDER_CX = 540; FJ.POP_SLIDER_CY = FJ.POP_LEVEL_CY; FJ.POP_SLIDER_W = 400; FJ.POP_SLIDER_H = 24; FJ.POP_SLIDER_R = 12
-FJ.POP_KNOB_SIZE = 36
-FJ.POP_KNOB_STROKE_R = 0x44; FJ.POP_KNOB_STROKE_G = 0x2d; FJ.POP_KNOB_STROKE_B = 0x19; FJ.POP_KNOB_STROKE_W = 6
-FJ.POP_LEVEL_STEP = 1
-FJ.POP_LEVEL_MAX = 60
--- 设置完成按钮
-FJ.POP_CONFIRM_CX = 540; FJ.POP_CONFIRM_CY = 1330; FJ.POP_CONFIRM_W = 410; FJ.POP_CONFIRM_H = 100
-FJ.POP_CONFIRM_TEXT_FONT = 40
-FJ.POP_CONFIRM_TEXT_R = 0x6d; FJ.POP_CONFIRM_TEXT_G = 0x4c; FJ.POP_CONFIRM_TEXT_B = 0x1d
-
--- 格子布局计算
+-- 网格派生坐标
 FJ.GRID_TOTAL_W = FJ.GRID_COLS * FJ.GRID_CELL + (FJ.GRID_COLS - 1) * FJ.GRID_GAP  -- 940
 FJ.GRID_LEFT = (DESIGN_W - FJ.GRID_TOTAL_W) * 0.5  -- 70
 FJ.GRID_FIRST_CX = FJ.GRID_LEFT + FJ.GRID_CELL * 0.5  -- 150
@@ -181,10 +155,6 @@ local fjState = {
     touchStartY = nil,
     touchStartScroll = 0,
     -- 自动分解弹窗状态
-    autoPopupOpen = false,
-    autoQuality = 0,
-    autoLevel = 0,
-    levelSliderDragging = false,  -- 等级滑条是否正在拖拽
     -- 长按检测状态
     longPressStartTime = 0,     -- 按下时间戳
     longPressStartX = 0,        -- 按下时设计空间坐标
@@ -224,9 +194,6 @@ local getProtocol      -- 延迟加载 Protocol
 
 -- 分解界面专属图片
 -- 品质筛选小图由 QualityMark 统一加载。
-local imgPopupBg = -1     -- 弹窗背景
-local imgBtnMinus = -1    -- 减按钮 UI_AN_JIAN
-local imgBtnPlus = -1     -- 加按钮 UI_AN_JIA
 local imgLock = -1        -- 锁定角标 UI_ICON_SUO
 -- [分解预览图标化 0930] 奖励图标行：vg 句柄 + 资源图标缓存（路径 → nvg 图像句柄）
 ---@type any
@@ -253,6 +220,7 @@ function M.setContext(ctx)
     EQUIP_NAME_STROKE  = ctx.EQUIP_NAME_STROKE
     getClient          = ctx.getClient
     getProtocol        = ctx.getProtocol
+    AutoDecompose.bind({ getClient = ctx.getClient, getProtocol = ctx.getProtocol })
 end
 
 --- 初始化分解界面专属图片
@@ -263,10 +231,6 @@ function M.init(vg)
     vgHandle = vg  -- 奖励图标行按需创建图像句柄
     if decomposeInited_ then return end
     decomposeInited_ = true
-    -- 整图拉伸绘制（950x647），使用 POP 副本，调整原图不影响九宫格用法
-    imgPopupBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK_POP.png", 0)
-    imgBtnMinus = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png", 0)
-    imgBtnPlus = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)
     imgLock = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
 end
 
@@ -382,7 +346,7 @@ end
 --- 右键只启动选区，不滚动、不长按、不发分解操作。
 function M.handleMarqueeBegin(dx, dy)
     M.cancelMarquee()
-    if fjState.autoPopupOpen or pendingDecompose then return false end
+    if AutoDecompose.isOpen() or pendingDecompose then return false end
     local top = FJ.GRID_FIRST_CY - FJ.GRID_CELL * 0.5
     if dx < FJ.GRID_LEFT or dx > FJ.GRID_LEFT + FJ.GRID_TOTAL_W
         or dy < top or dy > FJ.GRID_BOTTOM_Y then return false end
@@ -405,7 +369,7 @@ end
 function M.handleMarqueeMove(dx, dy)
     observeEquipmentData()
     if not marquee then return false end
-    if fjState.autoPopupOpen or EquipmentDetail.isOpen() then
+    if AutoDecompose.isOpen() or EquipmentDetail.isOpen() then
         M.cancelMarquee()
         return false
     end
@@ -454,18 +418,8 @@ end
 function M.onOpen()
     fjState.scrollY = 0
     fjState.selectedItems = {}
-    fjState.autoPopupOpen = false
-    fjState.levelSliderDragging = false
+    AutoDecompose.reset()
     pendingDecompose = false   -- 重置门控
-    -- 从服务端已保存的设置初始化自动分解参数
-    local equipData = PlayerStore.Get("equipment")
-    if equipData and equipData.settings then
-        fjState.autoQuality = equipData.settings.autoQuality or 0
-        fjState.autoLevel   = equipData.settings.autoLevel   or 0
-    else
-        fjState.autoQuality = 0
-        fjState.autoLevel   = 0
-    end
     M.refreshBackpackItems()
 end
 
@@ -473,7 +427,7 @@ end
 function M.onTabSwitch()
     fjState.scrollY = 0
     fjState.selectedItems = {}
-    fjState.autoPopupOpen = false
+    AutoDecompose.reset()
     pendingDecompose = false   -- 重置门控
     M.refreshBackpackItems()
 end
@@ -486,21 +440,13 @@ end
 --- 自动分解弹窗是否打开
 ---@return boolean
 function M.isPopupOpen()
-    return fjState.autoPopupOpen
+    return AutoDecompose.isOpen()
 end
 
 --- 直接打开自动分解弹窗（供外部调用，如从战利品面板跳转）
 function M.openAutoPopup()
-    if marquee then M.cancelMarquee() end
-    -- 同步最新的服务端设置
-    local equipData = PlayerStore.Get("equipment")
-    if equipData and equipData.settings then
-        fjState.autoQuality = equipData.settings.autoQuality or 0
-        fjState.autoLevel   = equipData.settings.autoLevel   or 0
-    end
-    fjState.autoPopupOpen = true
-    fjState.levelSliderDragging = false
-    print("[BlacksmithDecompose] openAutoPopup")
+    M.cancelMarquee()
+    AutoDecompose.open()
 end
 
 -- ======================== 绘制 ========================
@@ -805,292 +751,34 @@ function M.drawPanel(vg)
     end
     nvgRestore(vg)
 
-    -- 4. 自动分解按钮 UI_AN_HUANG
-    local didScaleAuto = BF.begin(vg, "bsd_auto", FJ.AUTO_BTN_CX, FJ.AUTO_BTN_CY, FJ.AUTO_BTN_W, FJ.AUTO_BTN_H)
-    drawImageCentered(vg, imgReplaceBtn, FJ.AUTO_BTN_CX, FJ.AUTO_BTN_CY, FJ.AUTO_BTN_W, FJ.AUTO_BTN_H, 1.0)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, FJ.AUTO_TEXT_FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(FJ.AUTO_TEXT_R, FJ.AUTO_TEXT_G, FJ.AUTO_TEXT_B, 255))
-    nvgText(vg, FJ.AUTO_BTN_CX, FJ.AUTO_BTN_CY, "自动分解", nil)
-    BF.finish(vg, didScaleAuto)
+    -- 设置入口与立即分解使用不同语义色。
+    AutoDecompose.drawEntry(vg, FJ.AUTO_BTN_CX, FJ.AUTO_BTN_CY, FJ.AUTO_BTN_W, FJ.AUTO_BTN_H, FJ.AUTO_TEXT_FONT_SIZE)
 
-    -- 5. 分解按钮 UI_AN_LV
-    local didScaleDec = BF.begin(vg, "bsd_decompose", FJ.DEC_BTN_CX, FJ.DEC_BTN_CY, FJ.DEC_BTN_W, FJ.DEC_BTN_H)
-    drawImageCentered(vg, imgEnhBtn, FJ.DEC_BTN_CX, FJ.DEC_BTN_CY, FJ.DEC_BTN_W, FJ.DEC_BTN_H, 1.0)
-    nvgFillColor(vg, nvgRGBA(FJ.DEC_TEXT_R, FJ.DEC_TEXT_G, FJ.DEC_TEXT_B, 255))
+    -- 分解操作以血红边框提示，空选择或等待回执时禁用视觉反馈。
+    local enabled = not pendingDecompose and next(fjState.selectedItems) ~= nil
+    local didScaleDec = enabled and BF.begin(vg, "bsd_decompose", FJ.DEC_BTN_CX, FJ.DEC_BTN_CY, FJ.DEC_BTN_W, FJ.DEC_BTN_H)
+    DarkIcon.drawNine(vg, "btn", FJ.DEC_BTN_CX - FJ.DEC_BTN_W / 2, FJ.DEC_BTN_CY - FJ.DEC_BTN_H / 2,
+        FJ.DEC_BTN_W, FJ.DEC_BTN_H, { accent = enabled and DarkIcon.Palette.BLOOD_HI or DarkIcon.Palette.STEEL_M,
+            alpha = enabled and 1 or 0.45, radius = 16 })
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, FJ.DEC_TEXT_FONT_SIZE)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(216, 201, 163, enabled and 255 or 140))
     nvgText(vg, FJ.DEC_BTN_CX, FJ.DEC_BTN_CY, "分解", nil)
     BF.finish(vg, didScaleDec)
 end
 
---- 第 i 个品质方框的中心 X
----@param i integer 1-6
----@return number
-local function qboxCX(i)
-    return FJ.POP_QBOX_FIRST_CX + (i - 1) * (FJ.POP_QBOX_SIZE + FJ.POP_QBOX_GAP)
-end
-
---- 等级滑条比例（0=无，1=满级上限）
----@return number
-local function levelSliderFrac()
-    return math.max(0, math.min(1, fjState.autoLevel / FJ.POP_LEVEL_MAX))
-end
-
---- 由滑条 X 坐标换算等级（吸附到 STEP 档位）
----@param dx number
----@return integer
-local function levelFromSliderX(dx)
-    local sliderL = FJ.POP_SLIDER_CX - FJ.POP_SLIDER_W * 0.5
-    local frac = math.max(0, math.min(1, (dx - sliderL) / FJ.POP_SLIDER_W))
-    local steps = FJ.POP_LEVEL_MAX / FJ.POP_LEVEL_STEP
-    return math.floor(frac * steps + 0.5) * FJ.POP_LEVEL_STEP
-end
-
---- 滑条命中区域高度（含滑块溢出）
----@return number
-local function sliderHitH()
-    return math.max(FJ.POP_SLIDER_H, FJ.POP_KNOB_SIZE) + 20
-end
-
---- 按当前选中条件生成描述分段（品质名用品质色，其余灰白）
----@return {text:string, r:integer, g:integer, b:integer}[]
-local function buildConditionSegments()
-    local gr, gg, gb = FJ.POP_DESC_R, FJ.POP_DESC_G, FJ.POP_DESC_B
-    local segs = {}
-    local function addGray(text)
-        segs[#segs + 1] = { text = text, r = gr, g = gg, b = gb }
-    end
-    if fjState.autoQuality > 0 then
-        local qCfg = QUALITY_CONFIG[fjState.autoQuality]
-        if qCfg then
-            segs[#segs + 1] = { text = qCfg.name, r = qCfg.r, g = qCfg.g, b = qCfg.b }
-        end
-        addGray(I18n.get() == "zh_CN" and "级及以下" or I18n.format("%s品质及以下", ""))
-    end
-    if fjState.autoQuality > 0 and fjState.autoLevel > 0 then
-        addGray("且")
-    end
-    if fjState.autoLevel > 0 then
-        addGray(I18n.format("%s级及以下", tostring(fjState.autoLevel)))
-    end
-    if #segs == 0 then
-        addGray("未设置条件，掉落装备不会自动分解")
-        return segs
-    end
-    addGray("的装备会在掉落时自动分解")
-    return segs
-end
-
---- 绘制自动分解弹窗
+--- 自动设置独立模块保留原公开接口与坐标空间。
 function M.drawAutoDecomposePopup(vg)
-    if not fjState.autoPopupOpen then return end
-
-    -- 1. 黑色 50% 遮罩
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, FJ.POP_MASK_ALPHA))
-    nvgFill(vg)
-
-    -- 2. 弹窗背景
-    drawImageCentered(vg, imgPopupBg, FJ.POP_BG_CX, FJ.POP_BG_CY, FJ.POP_BG_W, FJ.POP_BG_H, 1.0)
-
-    -- 3. 标题
-    drawTextStroke(vg, FJ.POP_TITLE_CX, FJ.POP_TITLE_CY, "设置自动分解",
-        FJ.POP_TITLE_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, FJ.POP_TITLE_STROKE)
-
-    -- 4. 描述文本（分段绘制：品质名品质色，其余灰白；超宽自动缩字号）
-    local segs = buildConditionSegments()
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, FJ.POP_DESC_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    local function measureSegs()
-        local total = 0
-        for _, s in ipairs(segs) do
-            s.w = nvgTextBounds(vg, 0, 0, s.text)
-            total = total + s.w
-        end
-        return total
-    end
-    local totalW = measureSegs()
-    if totalW > FJ.POP_DESC_MAX_W then
-        nvgFontSize(vg, math.max(26, math.floor(FJ.POP_DESC_FONT * FJ.POP_DESC_MAX_W / totalW)))
-        totalW = measureSegs()
-    end
-    local segX = FJ.POP_DESC_CX - totalW * 0.5
-    for _, s in ipairs(segs) do
-        nvgFillColor(vg, nvgRGBA(s.r, s.g, s.b, 255))
-        nvgText(vg, segX, FJ.POP_DESC_CY, s.text, nil)
-        segX = segX + s.w
-    end
-
-    -- 5. 品质方框选择（6 个品质图标方框，选中高亮描边）
-    for i = 1, FJ.POP_QBOX_COUNT do
-        local cx = qboxCX(i)
-        local selected = (fjState.autoQuality == i)
-        local didScaleQ = BF.begin(vg, "bsd_qbox_" .. i, cx, FJ.POP_QBOX_CY, FJ.POP_QBOX_SIZE, FJ.POP_QBOX_SIZE)
-
-        -- 方框底板
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg,
-            cx - FJ.POP_QBOX_SIZE * 0.5, FJ.POP_QBOX_CY - FJ.POP_QBOX_SIZE * 0.5,
-            FJ.POP_QBOX_SIZE, FJ.POP_QBOX_SIZE, FJ.POP_QBOX_R)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, selected and 60 or 25))
-        nvgFill(vg)
-
-        -- 品质小图
-        QualityMark.draw(vg, i, cx, FJ.POP_QBOX_CY - 8, FJ.POP_QBOX_ICON_SIZE, selected and 1.0 or 0.55)
-
-        -- 品质名（小字，置于方框内底部）
-        local qCfg = QUALITY_CONFIG[i]
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 24)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(qCfg.r, qCfg.g, qCfg.b, selected and 255 or 160))
-        nvgText(vg, cx, FJ.POP_QBOX_CY + 34, qCfg.name, nil)
-
-        -- 选中描边
-        if selected then
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg,
-                cx - FJ.POP_QBOX_SIZE * 0.5, FJ.POP_QBOX_CY - FJ.POP_QBOX_SIZE * 0.5,
-                FJ.POP_QBOX_SIZE, FJ.POP_QBOX_SIZE, FJ.POP_QBOX_R)
-            nvgStrokeColor(vg, nvgRGBA(qCfg.r, qCfg.g, qCfg.b, 255))
-            nvgStrokeWidth(vg, FJ.POP_QBOX_SEL_STROKE)
-            nvgStroke(vg)
-        end
-        BF.finish(vg, didScaleQ)
-    end
-
-    -- 6. 减按钮（0 档时半透明）
-    local didScaleMinus = BF.begin(vg, "bsd_minus", FJ.POP_MINUS_CX, FJ.POP_MINUS_CY, FJ.POP_MINUS_W, FJ.POP_MINUS_H)
-    drawImageCentered(vg, imgBtnMinus, FJ.POP_MINUS_CX, FJ.POP_MINUS_CY,
-        FJ.POP_MINUS_W, FJ.POP_MINUS_H, fjState.autoLevel <= 0 and 0.4 or 1.0)
-    BF.finish(vg, didScaleMinus)
-
-    -- 7. 加按钮（满档时半透明）
-    local didScalePlus = BF.begin(vg, "bsd_plus", FJ.POP_PLUS_CX, FJ.POP_PLUS_CY, FJ.POP_PLUS_W, FJ.POP_PLUS_H)
-    drawImageCentered(vg, imgBtnPlus, FJ.POP_PLUS_CX, FJ.POP_PLUS_CY,
-        FJ.POP_PLUS_W, FJ.POP_PLUS_H, fjState.autoLevel >= FJ.POP_LEVEL_MAX and 0.4 or 1.0)
-    BF.finish(vg, didScalePlus)
-
-    -- 8. 滑条背景
-    local sliderL = FJ.POP_SLIDER_CX - FJ.POP_SLIDER_W * 0.5
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, sliderL, FJ.POP_SLIDER_CY - FJ.POP_SLIDER_H * 0.5,
-        FJ.POP_SLIDER_W, FJ.POP_SLIDER_H, FJ.POP_SLIDER_R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 51))
-    nvgFill(vg)
-
-    -- 已填充部分
-    local frac = levelSliderFrac()
-    local fillW = FJ.POP_SLIDER_W * frac
-    if fillW > 0 then
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, sliderL, FJ.POP_SLIDER_CY - FJ.POP_SLIDER_H * 0.5,
-            fillW, FJ.POP_SLIDER_H, FJ.POP_SLIDER_R)
-        nvgFillColor(vg, nvgRGBA(255, 255, 255, 80))
-        nvgFill(vg)
-    end
-
-    -- 9. 滑块（圆形，纯白+描边）
-    local knobX = sliderL + FJ.POP_SLIDER_W * frac
-    nvgBeginPath(vg)
-    nvgCircle(vg, knobX, FJ.POP_SLIDER_CY, FJ.POP_KNOB_SIZE * 0.5)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgFill(vg)
-    nvgStrokeColor(vg, nvgRGBA(FJ.POP_KNOB_STROKE_R, FJ.POP_KNOB_STROKE_G, FJ.POP_KNOB_STROKE_B, 255))
-    nvgStrokeWidth(vg, FJ.POP_KNOB_STROKE_W)
-    nvgStroke(vg)
-
-    -- 10. 设置完成按钮
-    local didScaleConfirm = BF.begin(vg, "bsd_confirm", FJ.POP_CONFIRM_CX, FJ.POP_CONFIRM_CY, FJ.POP_CONFIRM_W, FJ.POP_CONFIRM_H)
-    drawImageCentered(vg, imgReplaceBtn, FJ.POP_CONFIRM_CX, FJ.POP_CONFIRM_CY,
-        FJ.POP_CONFIRM_W, FJ.POP_CONFIRM_H, 1.0)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, FJ.POP_CONFIRM_TEXT_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(FJ.POP_CONFIRM_TEXT_R, FJ.POP_CONFIRM_TEXT_G, FJ.POP_CONFIRM_TEXT_B, 255))
-    nvgText(vg, FJ.POP_CONFIRM_CX, FJ.POP_CONFIRM_CY, "设置完成", nil)
-    BF.finish(vg, didScaleConfirm)
+    AutoDecompose.draw(vg)
 end
 
--- ======================== 输入处理 ========================
-
---- 处理自动分解弹窗输入（优先级最高）
----@param dx number 设计空间 X
----@param dy number 设计空间 Y
----@return boolean 是否消费事件
 function M.handlePopupInput(dx, dy)
-    -- 装备详情面板优先拦截（详情打开期间无条件消费，防穿透到弹窗/背包）
     if EquipmentDetail.isOpen() then
         EquipmentDetail.handleInput(dx, dy)
         return true
     end
-    if not fjState.autoPopupOpen then return false end
-
-    -- 品质方框选择（1-6，再次点击已选中的方框则取消为"无"）
-    for i = 1, FJ.POP_QBOX_COUNT do
-        local cx = qboxCX(i)
-        if hitTest(dx, dy, cx, FJ.POP_QBOX_CY, FJ.POP_QBOX_SIZE, FJ.POP_QBOX_SIZE) then
-            BF.trigger("bsd_qbox_" .. i)
-            if fjState.autoQuality == i then
-                fjState.autoQuality = 0
-                print("[BlacksmithDecompose] 品质筛选取消: 无")
-            else
-                fjState.autoQuality = i
-                print("[BlacksmithDecompose] 品质筛选选择: " .. QUALITY_CONFIG[i].name .. "级及以下")
-            end
-            return true
-        end
-    end
-    -- 等级减按钮
-    if hitTest(dx, dy, FJ.POP_MINUS_CX, FJ.POP_MINUS_CY, FJ.POP_MINUS_W, FJ.POP_MINUS_H) then
-        BF.trigger("bsd_minus")
-        fjState.autoLevel = math.max(0, fjState.autoLevel - FJ.POP_LEVEL_STEP)
-        print("[BlacksmithDecompose] 等级筛选降低: " .. (fjState.autoLevel == 0 and "无" or fjState.autoLevel))
-        return true
-    end
-    -- 等级加按钮
-    if hitTest(dx, dy, FJ.POP_PLUS_CX, FJ.POP_PLUS_CY, FJ.POP_PLUS_W, FJ.POP_PLUS_H) then
-        BF.trigger("bsd_plus")
-        fjState.autoLevel = math.min(FJ.POP_LEVEL_MAX, fjState.autoLevel + FJ.POP_LEVEL_STEP)
-        print("[BlacksmithDecompose] 等级筛选提高: " .. fjState.autoLevel)
-        return true
-    end
-    -- 滑条点击（整个滑条区域 + 滑块溢出范围），并进入拖拽
-    if hitTest(dx, dy, FJ.POP_SLIDER_CX, FJ.POP_SLIDER_CY, FJ.POP_SLIDER_W + FJ.POP_KNOB_SIZE, sliderHitH()) then
-        fjState.levelSliderDragging = true
-        fjState.autoLevel = levelFromSliderX(dx)
-        print("[BlacksmithDecompose] 滑条点击等级: " .. (fjState.autoLevel == 0 and "无" or fjState.autoLevel))
-        return true
-    end
-    -- 设置完成按钮
-    if hitTest(dx, dy, FJ.POP_CONFIRM_CX, FJ.POP_CONFIRM_CY, FJ.POP_CONFIRM_W, FJ.POP_CONFIRM_H) then
-        BF.trigger("bsd_confirm")
-        fjState.autoPopupOpen = false
-        -- 发送自动分解设置到服务端保存
-        getClient().sendAction(getProtocol().ACTION_TYPES.SET_AUTO_DECOMPOSE, {
-            autoQuality = fjState.autoQuality,
-            autoLevel   = fjState.autoLevel,
-        })
-        local qLabel = fjState.autoQuality == 0 and "无" or QUALITY_CONFIG[fjState.autoQuality].name
-        local lLabel = fjState.autoLevel == 0 and "无" or tostring(fjState.autoLevel)
-        print("[BlacksmithDecompose] 自动分解设置保存 - 品质:" .. qLabel .. " 等级:" .. lLabel)
-        return true
-    end
-    -- 点击弹窗背景外区域：关闭弹窗并保存设置
-    if not hitTest(dx, dy, FJ.POP_BG_CX, FJ.POP_BG_CY, FJ.POP_BG_W, FJ.POP_BG_H) then
-        fjState.autoPopupOpen = false
-        getClient().sendAction(getProtocol().ACTION_TYPES.SET_AUTO_DECOMPOSE, {
-            autoQuality = fjState.autoQuality,
-            autoLevel   = fjState.autoLevel,
-        })
-        print("[BlacksmithDecompose] 点击空白关闭自动分解面板")
-        return true
-    end
-    -- 弹窗内部空白区域消费事件（防止穿透）
-    return true
+    return AutoDecompose.handleInput(dx, dy)
 end
 
 --- 处理分解面板输入（品质筛选、分解按钮、自动分解按钮、格子点击）
@@ -1129,7 +817,6 @@ function M.handleInput(dx, dy)
 
     -- 分解按钮
     if hitTest(dx, dy, FJ.DEC_BTN_CX, FJ.DEC_BTN_CY, FJ.DEC_BTN_W, FJ.DEC_BTN_H) then
-        BF.trigger("bsd_decompose")
         -- 门控：等待上次请求完成
         if pendingDecompose then
             print("[BlacksmithDecompose] 分解请求等待中，忽略重复点击")
@@ -1144,6 +831,7 @@ function M.handleInput(dx, dy)
             end
         end
         if #selectedSeqs > 0 then
+            BF.trigger("bsd_decompose")
             pendingDecompose = true
             pendingDecomposeTime = time.elapsedTime
             getClient().sendAction(getProtocol().ACTION_TYPES.DECOMPOSE_EQUIP, { seqs = selectedSeqs })
@@ -1157,8 +845,7 @@ function M.handleInput(dx, dy)
     -- 自动分解按钮
     if hitTest(dx, dy, FJ.AUTO_BTN_CX, FJ.AUTO_BTN_CY, FJ.AUTO_BTN_W, FJ.AUTO_BTN_H) then
         BF.trigger("bsd_auto")
-        fjState.autoPopupOpen = true
-        print("[BlacksmithDecompose] 打开自动分解弹窗")
+        M.openAutoPopup()
         return true
     end
 
@@ -1204,14 +891,7 @@ function M.handleDragBegin(dx, dy)
         EquipmentDetail.handleDragBegin(dx, dy)
         return true
     end
-    -- 自动分解弹窗打开时：滑条拖拽优先，且不滚动背包
-    if fjState.autoPopupOpen then
-        if hitTest(dx, dy, FJ.POP_SLIDER_CX, FJ.POP_SLIDER_CY, FJ.POP_SLIDER_W + FJ.POP_KNOB_SIZE, sliderHitH()) then
-            fjState.levelSliderDragging = true
-            fjState.autoLevel = levelFromSliderX(dx)
-        end
-        return
-    end
+    if AutoDecompose.dragBegin(dx, dy) then return true end
     fjState.touchStartY = dy
     fjState.touchStartScroll = fjState.scrollY
 
@@ -1249,12 +929,7 @@ function M.handleDragMove(dx, dy)
         EquipmentDetail.handleDragMove(dx, dy)
         return true
     end
-    -- 滑条拖拽中：跟随 X 更新等级
-    if fjState.levelSliderDragging then
-        fjState.autoLevel = levelFromSliderX(dx)
-        return
-    end
-    if fjState.autoPopupOpen then return end
+    if AutoDecompose.dragMove(dx) then return true end
     -- 长按检测：移动超限则取消
     if fjState.longPressActive then
         local moveDist = math.abs(dx - fjState.longPressStartX) + math.abs(dy - fjState.longPressStartY)
@@ -1280,11 +955,7 @@ function M.handleDragEnd(dx, dy)
         EquipmentDetail.handleDragEnd(dx, dy)
         return true
     end
-    if fjState.levelSliderDragging then
-        fjState.levelSliderDragging = false
-        print("[BlacksmithDecompose] 滑条拖拽结束，等级: " .. (fjState.autoLevel == 0 and "无" or fjState.autoLevel))
-    end
-    if fjState.autoPopupOpen then return end
+    if AutoDecompose.dragEnd() then return true end
     fjState.touchStartY = nil
     -- 重置长按状态
     fjState.longPressActive = false
@@ -1316,7 +987,7 @@ end
 ---@param dx number 左栏设计坐标 X
 ---@param dy number 左栏设计坐标 Y
 function M.handleHover(dx, dy)
-    if fjState.autoPopupOpen or marquee then return end
+    if AutoDecompose.isOpen() or marquee then return end
     local item = M.peekCellAt(dx, dy)
     if not item or not item.seq then
         fjState.hoverSeq = nil
@@ -1359,7 +1030,7 @@ end
 ---@param dx number|nil
 ---@param dy number|nil
 function M.handleScroll(wheel, dx, dy)
-    if fjState.autoPopupOpen or marquee then return end
+    if AutoDecompose.isOpen() or marquee then return end
     if EquipmentDetail.isOpen() then
         if dx == nil or EquipmentDetail.containsPoint(dx, dy) then
             EquipmentDetail.handleScroll(wheel, dx, dy)
@@ -1383,6 +1054,10 @@ end
 --- ClientMessageHandler 会广播给多个模块，靠门控避免双重弹奖励。
 ---@param data table action result 数据
 function M.onActionResult(data)
+    if data.action == require("shared.Protocol").ACTION_TYPES.SET_AUTO_DECOMPOSE then
+        AutoDecompose.onActionResult(data)
+        return
+    end
     -- 仅本模块发起的分解请求响应才释放门控并弹奖励：
     -- isDecomposeResp 防无关响应（锁定/强化等）提前解锁导致重复提交；
     -- wasPending 防其他入口（装备详情「立即分解」）的广播回执双重弹奖励

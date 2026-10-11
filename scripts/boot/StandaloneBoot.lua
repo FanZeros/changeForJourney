@@ -55,6 +55,23 @@ local SCROLL_DROP_TO_REWARD = {
     sweepTicket     = "sweep_ticket",
 }
 
+-- 仅新生成的首通/暂存击杀装备使用；已有库存与遗匣领取不追溯分解。
+-- 生成发生在判定前，保持原有模板/词条 RNG 消费顺序。
+local function deliverBattleEquipment(lootboxData, equipData, equip)
+    if not equip.locked and BlacksmithConfig.shouldAutoDecompose(equipData and equipData.settings, equip.quality, equip.level) then
+        local essence = BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
+        GameState.setEssence(GameState.getEssence() + essence)
+        if lootboxData then
+            BlacksmithConfig.recordAutoDecompose(lootboxData, equip.quality, equip.level, essence)
+        end
+        print("[Standalone] 首通掉落自动分解 q=" .. equip.quality .. " lv=" .. equip.level .. " essence=+" .. essence)
+        return { type = "essence", amount = essence }
+    end
+    local destination = LootBoxSystem.deliverEquipment(lootboxData, equipData, equip)
+    return { type = "equip", templateId = equip.templateId, quality = equip.quality,
+        level = equip.level, destination = destination }
+end
+
 --- 取出暂存掉落；背包满时完整存入遗匣。
 ---@param deferNotify boolean|nil 首通统一投递后再通知，独立掉落结算仍即时通知
 ---@return table[], boolean
@@ -69,14 +86,7 @@ local function takePendingFcRewards(deferNotify)
     for _, seed in ipairs(dropSeeds) do
         local equip = EquipmentSystem.generateRandom(seed.level, seed.quality)
         if equip then
-            local destination = LootBoxSystem.deliverEquipment(lootboxData, equipData, equip)
-            rewards[#rewards + 1] = {
-                type       = "equip",
-                templateId = equip.templateId,
-                quality    = equip.quality,
-                level      = equip.level,
-                destination = destination,
-            }
+            rewards[#rewards + 1] = deliverBattleEquipment(lootboxData, equipData, equip)
         else
             LootBoxSystem.addSeed(lootboxData, 0, seed.quality, seed.level)
         end
@@ -691,14 +701,7 @@ function M.run(rt)
         local equipData = ClientDispatcher.get("equipment")
         local lootboxData = ClientDispatcher.get("lootbox")
         for _, equip in ipairs(fcEquips) do
-            local destination = LootBoxSystem.deliverEquipment(lootboxData, equipData, equip)
-            rewards[#rewards + 1] = {
-                type       = "equip",
-                templateId = equip.templateId,
-                quality    = equip.quality,
-                level      = equip.level,
-                destination = destination,
-            }
+            rewards[#rewards + 1] = deliverBattleEquipment(lootboxData, equipData, equip)
         end
         -- 固定首通装备与暂存击杀装备全部投递后，统一刷新一次装备派生数据。
         -- 首通卷轴（每个独立随机，按类型聚合）

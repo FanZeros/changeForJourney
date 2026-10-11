@@ -271,7 +271,7 @@ local function testProtocolValidation()
         for _, field in ipairs({ "count", "teamIdx", "times" }) do
             run("协议nil-only默认 " .. action .. "/" .. field .. "=false", function()
                 local h = F.new(); F.install(h, 0); h.forbidRNG = true
-                local params = { stageId = 100001, dungeonId = "gold_mine", floor = 1, teamIdx = 1 }
+                local params = { stageId = 100001, dungeonId = "gold_mine", floor = 1, teamIdx = 1 } ---@type table
                 params[field] = false
                 local at = h.require("shared.Protocol").ACTION_TYPES
                 local handler = h.require(action == "SWEEP" and "rules.sweep.SweepHandler" or "rules.dungeon.DungeonHandler")
@@ -633,7 +633,13 @@ local function testRandomReplay()
             eq(h.seed, oracle.seed, "每杀RNG终态相同，不少骰/多骰/改序")
             eq(h.rngCalls, oracle.rngCalls, "随机消费次数严格相同")
             eq(#result.equips, #expectedEquips, "原逐杀接口全装备数相同")
-            check(#expectedEquips > 1, "夹具覆盖背包满后入遗匣")
+            if not h.SC.isResourceStage(stage) then
+                check(#expectedEquips > 1, "主线夹具覆盖背包满后入遗匣")
+            end
+            -- 控量后11券可能不足两件；不把随机未溢出当业务失败。
+            -- 后续testFullBag仍以真实强制命中覆盖资源溢出，这里核自然骰的完整分流。
+            eq(result.inventoryCount, math.min(1, #expectedEquips), "原199件库存按实际空位交付")
+            eq(result.lootboxCount, math.max(0, #expectedEquips - 1), "自然逐杀全部溢出完整入遗匣")
             for index, equip in ipairs(expectedEquips) do
                 equip.seq = result.equips[index].equip.seq
                 same(result.equips[index].equip, equip, "完整装备内容和顺序相同")
@@ -753,6 +759,246 @@ local function testRollback()
     end)
 end
 
+local function testAutoDecompose()
+    for _, stage in ipairs({ 1905, 200001 }) do
+        run("自动分解精确分类/完整RNG/已有实例保持 " .. stage, function()
+            local a, b = F.new(), F.new(); F.install(a, 199); F.install(b, 199)
+            local config = b.require("config.BlacksmithConfig")
+            a.data.equipment.settings = { autoQuality = 0, autoLevel = 0 }
+            b.data.equipment.settings = { autoQuality = 6, autoLevel = 0 }
+            local old = F.copy(b.data.equipment.inventory["1"])
+            old.testNested = { preserved = { 9, 11 } }
+            a.LS.addEquipment(a.data.lootbox, F.copy(old)); b.LS.addEquipment(b.data.lootbox, old)
+            local inventoryBefore, seedsBefore = F.copy(b.data.equipment.inventory), F.copy(b.data.lootbox.seeds)
+            local _, _, ra = a.Sweep.Sweep(1, 11, 2, stage)
+            local ok, err, rb = b.Sweep.Sweep(1, 11, 2, stage)
+            check(ok and ra, "开关两次真实扫荡成功 " .. tostring(err))
+            check(ra.equipCount > 0, "生成夹具非零")
+            local amount = 0
+            for _, reward in ipairs(ra.equips) do
+                amount = amount + config.calcAutoDecomposeEssence(reward.quality, reward.level)
+            end
+            eq(rb.equipCount, ra.equipCount, "生成总数不随开关变化")
+            eq(rb.autoDecomposeCount, ra.equipCount, "全部新增装备分解")
+            eq(rb.autoDecomposeEssence, amount, "精粹严格等于生成装备逐件求和")
+            eq(#rb.equips, 0, "已分解不再冒充可领装备")
+            eq(next(rb.equipByQuality), nil, "已分解不在保留品质数量")
+            eq(rb.inventoryCount + rb.lootboxCount, 0, "分解不占容量")
+            same(b.data.equipment.inventory, inventoryBefore, "已有库存不追溯分解")
+            same(b.data.lootbox.seeds, seedsBefore, "已有遗匣完整实例不追溯分解")
+            eq(b.data.currency.essence, amount, "真实精粹一次到账")
+            eq(b.data.lootbox.autoDecomposeNotice.count, ra.equipCount, "新notice计数")
+            eq(b.data.lootbox.autoDecomposeNotice.essence, amount, "notice与真实账款一致")
+            eq(b.disk.currency.essence, amount, "候选保存含精粹")
+            same(b.disk.lootbox.autoDecomposeNotice, b.data.lootbox.autoDecomposeNotice, "notice和货币同次保存")
+            eq(b.rngCalls, a.rngCalls, "开关不增减随机消费")
+            eq(b.seed, a.seed, "开关RNG终态相同")
+            for _, key in ipairs({ "gold", "diamond", "playerExp", "heroExp", "scrollCount", "ticketLeft" }) do
+                eq(rb[key], ra[key], "其他奖励保持 " .. key)
+            end
+            same(rb.scrollDrops, ra.scrollDrops, "卷轴RNG顺序保持")
+            eq(b.persists, 1, "精粹/券/notice同一原子保存")
+        end)
+    end
+    run("自动分解AND/锁定实例/完整保留引用", function()
+        local h = F.new(); F.install(h, 0)
+        local config = h.require("config.BlacksmithConfig")
+        h.data.equipment.settings = { autoQuality = 3, autoLevel = 7 }
+        local definitions = { { 1, 1, true }, { 7, 3 }, { 60, 1 }, { 7, 6 } }
+        local generated = {}
+        -- 只控制新生成的四件奖励，结算/交付/事务/配置保持真实。
+        h.Rewards.calculate = function()
+            local equips = {}
+            for _, definition in ipairs(definitions) do
+                local equip = assert(h.ES.generateRandom(definition[1], definition[2]))
+                equip.locked = definition[3]
+                equips[#equips + 1], generated[#generated + 1] = equip, equip
+            end
+            return { equips = equips, equipCount = #equips, gold = 0, diamond = 0,
+                heroExp = 0, playerExp = 0, scrollDrops = {}, scrollCount = 0 }
+        end
+        local ok, err, result = h.Sweep.Sweep(1, 1, 1, 1905)
+        check(ok, "双条件锁定真实结算 " .. tostring(err))
+        eq(result.autoDecomposeCount, 1, "仅第二件双条件命中且未锁定")
+        eq(result.autoDecomposeEssence, config.calcAutoDecomposeEssence(3, 7), "第二件精粹")
+        eq(#result.equips, 3, "其余三件保留")
+        eq(result.equips[1].equip, generated[1], "锁定完整实例")
+        eq(result.equips[2].equip, generated[3], "不合等级保留原实例")
+        eq(result.equips[3].equip, generated[4], "不合品质保留原实例")
+        eq(result.equipCount, #result.equips + result.autoDecomposeCount, "原总掉落数守恒")
+    end)
+    for _, failure in ipairs({ "false", "nil", "throw" }) do
+        run("自动精粹与notice落盘失败原位回滚 " .. failure, function()
+            local h = F.new(); F.install(h, 200); h.forceRandom = 0
+            h.data.equipment.settings = { autoQuality = 6, autoLevel = 0 }
+            h.data.currency.essence = 123
+            h.data.lootbox.autoDecomposeNotice = { count = 2, essence = 17, seq = 3, at = 1, lastQuality = 1 }
+            h.failure = failure
+            local sawCandidate = false
+            h.beforePersist = function()
+                sawCandidate = true
+                check(h.data.currency.essence > 123, "实际候选先加入新精粹")
+                check(h.data.lootbox.autoDecomposeNotice.count > 2, "实际候选包含新增notice")
+                eq(h.notifications + h.events, 0, "持久化前静默")
+            end
+            assertRollback(h, function() return h.Sweep.Sweep(1, 1, 2, 200001) end, "自动精粹/notice " .. failure)
+            check(sawCandidate, "确实到保存失败边界而非早期拒绝")
+            h.failure, h.beforePersist = "", nil
+            local ok, err, result = h.Sweep.Sweep(1, 1, 2, 200001)
+            check(ok, "失败后可以重试 " .. tostring(err))
+            eq(h.data.currency.essence, 123 + result.autoDecomposeEssence, "成功仅发本次精粹")
+            eq(h.data.currency.sweepTicket, 29, "成功仅扣一次券")
+        end)
+    end
+    run("满包无遗匣时全部分解可结算/保留件仍拒绝", function()
+        local h = F.new(); F.install(h, 200); h.forceRandom = 0; h.data.lootbox = nil
+        h.data.equipment.settings = { autoQuality = 6, autoLevel = 0 }
+        local old = F.copy(h.data.equipment)
+        local ok, err, result = h.Sweep.Sweep(1, 1, 1, 1905)
+        check(ok, "全分解无需新装备容器 " .. tostring(err))
+        check(result.autoDecomposeCount > 0, "全分解有真实生成")
+        same(h.data.equipment, old, "满包已有装备保持")
+        eq(h.data.currency.essence, result.autoDecomposeEssence, "无遗匣照常精粹到账")
+        local b = F.new(); F.install(b, 200); b.forceRandom = 0; b.data.lootbox = nil
+        b.data.equipment.settings = { autoQuality = 1, autoLevel = 1 }
+        -- 真实1905等级超过1，因此必有保留件。
+        assertRollback(b, function() return b.Sweep.Sweep(1, 1, 1, 1905) end, "有保留件无容器")
+        eq(b.persists, 0, "有保留件未提前提交")
+    end)
+end
+
+local function testResourceAutoDecompose()
+    local function prepare(mode, settings, count)
+        local h = F.new(); F.install(h, count or 200)
+        h.data.equipment.settings = F.copy(settings)
+        h.data.currency.essence = 123
+        local sub = h.data.dungeon.equipment_vault
+        if mode == "win" then sub.floor, sub.cleared = 1, {}
+        else sub.floor, sub.cleared, sub.idleAccumSec = 2, { [1] = true }, 86400 end
+        local AT = h.require("shared.Protocol").ACTION_TYPES
+        local handlers = h.require("rules.dungeon.DungeonHandler").actionHandlers
+        local request = { dungeonId = "equipment_vault", floor = 1, teamIdx = 2 }
+        if mode == "win" then
+            -- 挑战开始的离线来源单独保存不在奖励事务里；本夹具只核奖励commit。
+            -- 原resource_transaction入口另外覆盖来源真实File保存。
+            local persistSource = h.Transaction.PersistOfflineChallengeSources
+            h.Transaction.PersistOfflineChallengeSources = function() end
+            h.committed = true -- 准许挑战来源的原普通PDM通知，奖励begin仍恢复false。
+            local reply = handlers[AT.DUNGEON_CHALLENGE](1, request)
+            h.Transaction.PersistOfflineChallengeSources = persistSource
+            check(reply.success, "实际资源挑战已锁定 " .. tostring(reply.reason))
+            request.challengeId = reply.challengeId
+        end
+        h.dirty, h.notifications, h.events, h.persists, h.finishes = {}, 0, 0, 0, {}
+        h.seed, h.rngCalls, h.wallet, h.disk = 101, 0, F.copy(h.data.currency), F.copy(h.data)
+        h.operation = function()
+            return handlers[mode == "win" and AT.DUNGEON_WIN or AT.DUNGEON_IDLE_CLAIM](1, request)
+        end
+        return h
+    end
+    for _, mode in ipairs({ "win", "idle" }) do
+        run("资源新" .. mode .. "精粹同事务/回包显示/RNG完全保持", function()
+            local a = prepare(mode, { autoQuality = 0, autoLevel = 0 })
+            local b = prepare(mode, { autoQuality = 6, autoLevel = 0 })
+            local config = b.require("config.BlacksmithConfig")
+            local old = F.copy(b.data.equipment.inventory["1"])
+            old.testNested = { legacy = { 19, 29 } }
+            a.LS.addEquipment(a.data.lootbox, F.copy(old)); b.LS.addEquipment(b.data.lootbox, old)
+            local inventoryBefore, seedBefore = F.copy(b.data.equipment.inventory), F.copy(b.data.lootbox.seeds)
+            local ra, rb = a.operation(), b.operation()
+            check(ra.success and rb.success, "两个实际资源Handler都成功")
+            check(#ra.equips > 0, "真实首通/挂机奖励非零")
+            local amount = 0
+            for _, equip in ipairs(ra.equips) do amount = amount + config.calcAutoDecomposeEssence(equip.quality, equip.level) end
+            eq(rb.autoDecomposeCount, #ra.equips, "资源实际回包含新分解件数")
+            eq(rb.autoDecomposeEssence, amount, "资源实际回包含精确精粹")
+            eq(#rb.equips, 0, "资源已分解无可领装备")
+            eq(rb.inventoryCount + rb.lootboxCount, 0, "资源新分解不占格")
+            eq(b.data.currency.essence, 123 + amount, "资源规则层一次加精粹")
+            eq(b.disk.currency.essence, 123 + amount, "精粹真实候选mock保存")
+            eq(b.data.lootbox.autoDecomposeNotice.count, #ra.equips, "notice件数同步")
+            same(b.disk.lootbox.autoDecomposeNotice, b.data.lootbox.autoDecomposeNotice, "notice与奖励同次保存")
+            same(b.data.equipment.inventory, inventoryBefore, "原库存原样保持")
+            same(b.data.lootbox.seeds, seedBefore, "原遗匣原样保持")
+            eq(a.seed, b.seed, "原品质生成及卷轴RNG终态保持")
+            eq(a.rngCalls, b.rngCalls, "原RNG消费量保持")
+            same(a.data.dungeon, b.data.dungeon, "首通/积累消费不受自动分解影响")
+            same(a.data.heroes, b.data.heroes, "经验成长不受自动分解影响")
+            same(ra.scrollDrops, rb.scrollDrops, "卷轴和券仍原结果")
+            local rewards = b.require("ui.dungeon.DungeonRewards")
+            local before = F.copy(b.data)
+            for _ = 1, 2 do
+                local list, seen = rewards.build(rb), 0
+                for _, item in ipairs(list) do
+                    if item.type == "essence" then seen = seen + 1; eq(item.amount, amount, "实际popup组装精确精粹") end
+                    check(item.type ~= "equip", "全分解popup不冒充装备")
+                end
+                eq(seen, 1, "实际popup只有一项精粹")
+            end
+            same(b.data, before, "重复展示纯只读不再次发精粹")
+            if mode == "win" then
+                eq(b.operation().success, false, "成功后旧首通pending无法再次发奖")
+                eq(b.data.currency.essence, 123 + amount, "旧pending不会重复精粹")
+            else eq(rb.amount, #ra.equips, "挂机原amount总生成数保持") end
+        end)
+        for _, failure in ipairs({ "false", "nil", "throw" }) do
+            run("资源自动" .. mode .. "/" .. failure .. "精粹notice首通扣时回滚", function()
+                local h = prepare(mode, { autoQuality = 6, autoLevel = 0 })
+                h.data.lootbox.autoDecomposeNotice = { seq = 5, count = 3, essence = 7, at = 1 }
+                h.failure = failure
+                local actualCandidate = false
+                h.beforePersist = function()
+                    actualCandidate = true
+                    check(h.data.currency.essence > 123, "失败前真实候选含新精粹")
+                    check(h.data.lootbox.autoDecomposeNotice.count > 3, "失败前真实候选含notice")
+                end
+                assertRollback(h, function() return h.operation().success end, "资源自动 " .. mode .. failure)
+                check(actualCandidate, "确认抵达persist失败而非门禁")
+                h.failure, h.beforePersist = "", nil
+                local result = h.operation()
+                check(result.success, "失败后原请求保留可以重试")
+                eq(h.data.currency.essence, 123 + result.autoDecomposeEssence, "重试精粹只成功一次")
+            end)
+        end
+    end
+    run("GrantEquipment关闭前置拒绝零RNG/开启全分解无匣/缺币拒绝", function()
+        local h = F.new(); F.install(h, 200); h.data.lootbox = nil
+        h.data.equipment.settings = { autoQuality = 0, autoLevel = 0 }; h.forbidRNG = true
+        eq(h.Transaction.GrantEquipment(1, "equipment_vault", 1, 6), false, "关闭仍生成前拒绝")
+        eq(h.rngCalls, 0, "关闭旧前置拒绝零RNG")
+        h.data.equipment.settings = { autoQuality = 6, autoLevel = 0 }; h.forbidRNG = false
+        local ok, err, result = h.Transaction.CommitRewardTransaction(1, function()
+            return h.Transaction.GrantEquipment(1, "equipment_vault", 1, 6)
+        end)
+        check(ok, "开启全分解无需遗匣 " .. tostring(err))
+        eq(result.autoDecomposeCount, 6, "无匣全部新分解")
+        eq(h.ES.getInventoryCount(h.data.equipment), 200, "原库存不追溯")
+        local b = F.new(); F.install(b, 0)
+        b.data.equipment.settings, b.data.currency = { autoQuality = 6, autoLevel = 0 }, nil
+        local before = F.copy(b.data)
+        local accepted, reason = b.Transaction.GrantEquipment(1, "equipment_vault", 1, 6)
+        eq(accepted, false, "命中但缺币不能丢装备")
+        eq(reason, "货币数据未加载", "缺币有明确失败回执")
+        same(b.data, before, "缺币拒绝未交付/未通知/未修改任何模块")
+    end)
+    run("资源锁定新装备保留原实例与旧0shape", function()
+        local h = prepare("win", { autoQuality = 6, autoLevel = 0 })
+        local original, generated = h.ES.generateRandom, {}
+        h.ES.generateRandom = function(...)
+            local equip = assert(original(...)); equip.locked = true
+            generated[#generated + 1] = equip
+            return equip
+        end
+        local result = h.operation()
+        check(result.success, "锁定资源奖励仍成功")
+        eq(result.autoDecomposeCount, nil, "全部锁定无新增auto字段")
+        eq(result.autoDecomposeEssence, nil, "全部锁定无新增精粹字段")
+        eq(h.data.currency.essence, 123, "锁定不分解")
+        eq(#result.equips, #generated, "锁定原件全部保留")
+        for index, equip in ipairs(generated) do eq(result.equips[index].equip, equip, "完整锁定实例不重建") end
+    end)
+end
+
 local function testMoreTickets()
     local h = F.new(); F.install(h, 0); h.forbidRNG = true
     near(h.Drop.getSweepTicketRate(0), 0.12, "券更多最低12%")
@@ -786,6 +1032,8 @@ function Start()
     testRandomReplay()
     run("满包完整入遗匣/领取不重骰", testFullBag)
     testRollback()
+    testAutoDecompose()
+    testResourceAutoDecompose()
     run("券更多统一掉率", testMoreTickets)
     run("隔离不污染全局require/math/package", function()
         eq(require, requireBefore, "全局require不变")

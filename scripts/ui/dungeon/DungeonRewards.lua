@@ -11,6 +11,10 @@ function M.build(data)
         if data.rewardType == kind and data.amount ~= nil then amount = data.amount end
         if amount > 0 then rewards[#rewards + 1] = { type = kind, amount = amount } end
     end
+    -- 仅展示规则层已经同事务入账的自动分解精粹，绝不在UI再次发奖。
+    if (data.autoDecomposeEssence or 0) > 0 then
+        rewards[#rewards + 1] = { type = "essence", amount = data.autoDecomposeEssence }
+    end
     for _, item in ipairs(data.equips or {}) do
         -- 回执含完整装备及 destination，RewardPopup 可按原实例展示遗匣去向。
         local reward = {}

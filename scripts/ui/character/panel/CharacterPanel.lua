@@ -614,8 +614,10 @@ function CharacterPanel.init(vg)
     end)
 
     -- 监听神器数据变更 → 装配/卸下后刷新战斗力与战斗待定快照
-    PlayerStore.Subscribe("artifacts", function()
-        refreshPowerCache()
+    PlayerStore.Subscribe("artifacts", function(data)
+        -- MarkDirty 同步先于回执；在旧正式缓存尚存时一次评分，回执不再补刷新。
+        local cause = require("shared.artifact.ArtifactSchema").takeEquipNotificationCause(data)
+        refreshPowerCache(cause)
         refreshNavBadge()
         local ok, BS = pcall(require, "ui.battle.scene.BattleScene")
         if ok and BS and BS.refreshAllyStats then

@@ -90,10 +90,12 @@ local function fixture(data)
     modules["core.GameState"] = {
         getEssence = function() return wallet.essence end,
         setEssence = function(value) wallet.essence = value end,
+        getSweepTicket = function() return wallet.sweepTicket or 0 end,
+        setSweepTicket = function(value) wallet.sweepTicket = value end,
         exportSave = function() return copy(records.currency or wallet) end,
         syncFromCurrency = function(value) wallet = copy(value) end,
     }
-    modules["core.PlayerStore"] = { Get = function(key) return records[key] end }
+    modules["core.PlayerStore"] = { Get = function(key) return records[key] end, Subscribe = noop }
     modules["runtime.ClientDispatcher"] = { get = function(key) return records[key] end }
     modules["rules.character.PlayerDataManager"] = {
         GetModule = function(_, key) return records[key] end,
@@ -108,6 +110,13 @@ local function fixture(data)
     modules["shared.schemas.CharacterSchema"] = { Fields = {} }
     modules["systems.GameSFX"] = { play = noop, playHit = noop, playHeroAttack = noop,
         playMonsterAttack = noop, playDeath = noop, playUI = noop }
+    -- Driver测试只验战斗/掉落快照；战力显示出口不用UI库构树，也不替换业务模块。
+    modules["ui.fx.SpinePowerUpEffect"] = { play = noop, playPowerUp = noop }
+    -- Driver真实读取BattleScene首通账本，保留Scene业务，只隔离顶层加载的两个纯显示页。
+    modules["ui.battle.stage.SweepDialog"] = { init = noop, draw = noop, drawButton = noop,
+        handleInput = function() return false end, handleButtonInput = function() return false end }
+    modules["ui.battle.popup.BattleResultPanel"] = { init = noop, draw = noop,
+        isOpen = function() return false end, handleInput = noop }
     modules["ui.hud.popup.SettingsPanel"] = {
         isEffectsEnabled = function() return false end,
         isDamageTextEnabled = function() return true end,
@@ -376,20 +385,21 @@ local function testAttributes()
     near(ES.convertAscBonusForRefine(oldBonus.affixes[1], toLucky), 1,
         "旧装备水合后固定投入按真实价值转幸运，不按栏位倍率二次放大")
 
-    -- 正式客户端/规则层装备战力函数均抽取源码执行，不复制计价公式。
-    local HC = f.require("config.HeroConfig")
-    for _, item in ipairs({ { "ui.character.equip.EquipmentDetail", "-- ======================== 属性格式化" },
-        { "rules.equipment.EquipmentService", "-- ======================== GM 给装备" } }) do
-        local text = slice(source(item[1]), "local EXCLUDED_KEYS_BY_DMG_TYPE =", item[2])
-        local env = setmetatable({ AD = AD, HC = HC, EquipmentSystem = ES }, { __index = f.env })
-        local power = compile(text .. "\nreturn calcEquipPower", item[1] .. "/正式计价", env)
-        local plain = copy(equip)
-        plain.affixes = {}
-        for _, id in ipairs({ 0, 1, 2, 4 }) do
-            local hero = id > 0 and id or nil
-            eq(power(equip, hero), power(plain, hero), "幸运不抬装备战力 " .. item[1] .. " 英雄" .. id)
-        end
+    -- 客户端详情已改为EquipmentPower.score委托，规则服务不再保留旧私有计价函数。
+    -- 抽取真实委托函数，公共计价模块亦编译真实源码，不复刻旧公式。
+    local detailText = slice(source("ui.character.equip.EquipmentDetail"),
+        "local function calcEquipPower(", "local function replacementGain(")
+    local powerEnv = setmetatable({ EquipmentPower = f.require("systems.EquipmentPower") }, { __index = f.env })
+    local detailPower = compile(detailText .. "\nreturn calcEquipPower", "详情真实计价委托", powerEnv)
+    local plain = copy(equip)
+    plain.affixes = {}
+    for _, id in ipairs({ 0, 1, 2, 4 }) do
+        local hero = id > 0 and id or nil
+        eq(detailPower(equip, hero), detailPower(plain, hero), "幸运不抬详情委托战力 英雄" .. id)
+        eq(f.require("systems.EquipmentPower").score(equip, hero),
+            f.require("systems.EquipmentPower").score(plain, hero), "幸运不抬公共装备计价 英雄" .. id)
     end
+    local HC = f.require("config.HeroConfig")
     local heroData = { heroes = { deployed = { 1 }, roster = { [1] = { level = 10 } } },
         equipment = { inventory = {}, equipped = { ["1"] = { accessory = 99001 } } } } ---@type table
     local items = heroData.equipment.inventory
@@ -511,9 +521,16 @@ local function testZeroLuckReplay()
             sameShape = sameShape and actualTrace == trace
             sameTail = sameTail and actualTail == tail
         end
-        check(sameResults, "零幸运逐64种子×32击杀与git旧参考品质/未命中相同 stage=" .. id)
-        check(sameShape, "零幸运 RNG 调用次数、无参/整数区间形态相同 stage=" .. id)
-        check(sameTail, "零幸运最终随机状态不漂移 stage=" .. id)
+        local raw = D.getStageQualityProbabilities(stage, 0, true)
+        if raw[6] >= D.MIN_RED_PROBABILITY or (stage.dropRate or 0) <= 0 then
+            check(sameResults, "已有高红率/无掉落零幸运与旧参考逐种子同结果 stage=" .. id)
+            check(sameShape, "已有高红率/无掉落保留旧 RNG 形态 stage=" .. id)
+            check(sameTail, "已有高红率/无掉落最终随机状态不漂移 stage=" .. id)
+        else
+            -- 早期品质骰需从千分整数改为浮点才能表达万分之一；不可再要求旧品质/随机尾同值。
+            eq(raw[6], 0, "低红率基线仍按旧cap为零 stage=" .. id)
+            near(D.getStageQualityProbabilities(stage)[6], 0.0001, "仅新增极小至臻尾 stage=" .. id)
+        end
     end
 end
 
@@ -561,7 +578,7 @@ local function testQualityDistribution()
                 local t = (i - 0.5) / 2048
                 local actual = draw(stage, luck, t)
                 counts[actual] = counts[actual] + 1
-                if (MC.QUALITY[monsterQ].dropWeights[actual] or 0) <= 0 then zeroClosed = false end
+                if actual ~= 6 and (MC.QUALITY[monsterQ].dropWeights[actual] or 0) <= 0 then zeroClosed = false end
                 if luck > 0 and actual < draw(stage, 0, t) then monotone = false end
             end
             for q = 1, 6 do
@@ -570,7 +587,7 @@ local function testQualityDistribution()
             end
         end
         check(monotone, "同分位幸运增加不降低品质，怪Q" .. monsterQ)
-        check(zeroClosed, "幸运不开放原0权重品质，怪Q" .. monsterQ)
+        check(zeroClosed, "除至臻微小尾外，幸运不开放原0权重品质，怪Q" .. monsterQ)
         -- 零分位特别覆盖 Q5/Q6 怪物的前导0，不把浮点0误判为Q1。
         local weights = expectedWeights(monsterQ, 200, true)
         local first = 1
@@ -580,7 +597,8 @@ local function testQualityDistribution()
     for _, entry in ipairs({ { 105, 4 }, { 2405, 5 }, { 4705, 6 }, { 7005, 6 }, { 9305, 6 } }) do
         local stage = copy(assert(SC.getStage(entry[1])))
         stage.monsters, stage.bossId, stage.dropRate = { assert(monsterIds[6]) }, 0, 1
-        eq(draw(stage, 200, 0.999999), entry[2], "幸运不突破真实难度/红装上限 stage=" .. entry[1])
+        eq(draw(stage, 200, 0.999999), 6, "所有难度极小至臻机会，不改通用cap stage=" .. entry[1])
+        eq(SC.getMaxDropQuality(stage), entry[2], "普通/困难非至臻及点金上限未解除 stage=" .. entry[1])
     end
     -- 所有既有高难分支继续保持 Q5/Q6 的三倍权重，不只检查地狱一档。
     for _, id in ipairs({ 7005, 9305, 11605, 13905, 16205, 18505, 20805, 23105, 25405, 27705, 30005, 32305 }) do
@@ -596,6 +614,37 @@ local function testQualityDistribution()
             acc = acc + weights[q]
         end
     end
+    -- 独立确定性尾部边界，不依赖大样本碰运气；每件只沿既有品质骰。
+    for _, stageId in ipairs({ 101, 105, 2401, 4701, 7001 }) do
+        local stage = copy(assert(SC.getStage(stageId)))
+        stage.dropRate = 1
+        local probabilities = D.getStageQualityProbabilities(stage)
+        near(probabilities[6], 0.0001, "无红来源的每件概率恰为万分之一 stage=" .. stageId)
+        eq(draw(stage, 0, 0.99995), 6, "零幸运尾区也可出红 stage=" .. stageId)
+        check(draw(stage, 0, 0.9998) ~= 6, "尾区外不凭空保底红 stage=" .. stageId)
+        quantile, floatCalls = 0.99995, 0
+        D.rollKillDrop(stage, { teamIdx = 1, dropLuck = 0 })
+        eq(floatCalls, 2, "只原掉落骰+品质骰，无额外红装骰 stage=" .. stageId)
+    end
+    local early = copy(assert(SC.getStage(101)))
+    early.dropRate = 0.05
+    quantile, floatCalls = 0.99995, 0
+    f.env.math.random = function(lower)
+        if lower then return lower end
+        floatCalls = floatCalls + 1
+        return floatCalls == 1 and 0.051 or 0.99995
+    end
+    eq(D.rollKillDrop(early), nil, "极小红尾不提高原掉装备概率")
+    eq(floatCalls, 1, "未命中不骰品质/红尾")
+    f.env.math.random = function(lower, upper)
+        if lower then return lower end
+        return 0.99995
+    end
+    local firstClear = D.generateFirstClearEquips(SC.getStage(101))
+    eq(firstClear[1].quality, 6, "真实首通四档qw随机也有红尾")
+    eq(firstClear[1].level, 1, "前期红装沿原等级不是高等级模板奖励")
+    check(firstClear[1].secondaryRoll ~= nil and #firstClear[1].affixes == 2,
+        "前期红装正常生成副属性与至臻词缀")
 end
 
 -- 真实 StandaloneBoot 的 applyKillDrop 和三队 wrapper；没有复制分发/分解算法。
@@ -613,7 +662,7 @@ local function bootDropFixture(f)
     env.LootBox = { updateSeedData = function() updates = updates + 1 end, addSeedHint = noop }
     env.BattleScene = { setOnEnemyDrop = function(callback) handlers.single = callback end }
     env.BattleTriPage = { setOnDrop = function(callback) handlers.tri = callback end }
-    local text = slice(source("boot.StandaloneBoot"), "    local function applyKillDrop(data)",
+    local text = slice(source("boot.StandaloneBoot"), "    local function addKillEquipment(",
         "    BattleTriPage.setOnStageClear(")
     compile(text, "Boot真实掉落与wrapper", env)
     assert(type(handlers.single) == "function" and type(handlers.tri) == "function", "真实Boot回调未注册")
@@ -901,27 +950,49 @@ local function testExcludedRewardPaths()
             baseStats = {}, affixes = { { affixId = 45, key = "dropLuck", value = luck } } }
         f.data.equipment.equipped["1"] = { accessory = 999 }
     end
-    for _, path in ipairs({ "主线扫荡", "装备副本" }) do
-        local function reward(luck)
+    Dungeon.SetPersistCallback(function() return true end) -- 封闭内存提交出口，不调用玩家File。
+    local Rewards = f.require("shared.sweep.SweepRewards")
+    -- 主线扫荡已按本队幸运逐杀；以真实在线同源接口核对应，而非旧固定件数常量。
+    for seed = 1, 8 do
+        for _, luck in ipairs({ 0, 200 }) do
             restore(luck)
-            if path == "主线扫荡" then
-                local ok, err, result = Sweep.Sweep(1, 1, 1)
+            local expected = seeded(seed, function()
+                return Rewards.calculate(SC.getStage(4705), 1, 1, true, luck, 1)
+            end)
+            restore(luck)
+            local actual = seeded(seed, function()
+                local ok, err, receipt = Sweep.Sweep(1, 1, 1)
                 assert(ok, "真实扫荡失败 " .. tostring(err))
-                eq(result.equipCount, Sweep.EQUIP_DROP_COUNT, "主线扫荡固定件数不因幸运改变")
-                return result
+                return receipt
+            end)
+            eq(actual.equipCount, expected.equipCount, "主线扫荡与逐杀同源件数 幸运" .. luck .. " 种子" .. seed)
+            eq(actual.gold, expected.gold, "主线扫荡金币与逐杀同源")
+            check(equal(actual.scrollDrops, expected.scrollDrops), "主线扫荡卷轴与逐杀同源")
+            local equips = {}
+            for index, reward in ipairs(actual.equips) do
+                -- 真实deliverEquipment入包会写入seq；oracle先生成后尚未交付。
+                -- 按实际nextSeq逐件走真实addToInventory，对比完整字段，不能删seq放宽same。
+                local oracleBag = { inventory = {}, nextSeq = index }
+                f.require("systems.EquipmentSystem").addToInventory(oracleBag, expected.equips[index])
+                eq(reward.equip.seq, index, "实际交付序号与原nextSeq一致")
+                equips[#equips + 1] = reward.equip
             end
-            local ok, err, result = Dungeon.GrantEquipment(1, "equipment_vault", 1, 6)
+            check(equal(equips, expected.equips), "主线扫荡品质/完整装备生成与真实逐杀+交付oracle一致")
+            eq(actual.ticketLeft, 19, "一券一场成本不因红尾/幸运改变")
+        end
+        local function dungeonReward(luck)
+            restore(luck)
+            local ok, err, receipt = Dungeon.GrantEquipment(1, "equipment_vault", 1, 6)
             assert(ok, "真实装备副本失败 " .. tostring(err))
-            eq(#result.equips, 6, "装备副本固定奖励件数不因幸运改变")
-            return result
+            eq(#receipt.equips, 6, "显式交付六件不因幸运改变")
+            return receipt
         end
-        for seed = 1, 8 do
-            local a, trace, tail = seeded(seed, function() return reward(0) end)
-            local b, nextTrace, nextTail = seeded(seed, function() return reward(200) end)
-            check(equal(a, b), path .. "真实服务幸运0/200逐种子装备/品质/奖励一致 种子" .. seed)
-            check(trace == nextTrace and tail == nextTail, path .. "真实服务RNG形态/次数/终态一致 种子" .. seed)
-        end
+        local a, trace, tail = seeded(seed, function() return dungeonReward(0) end)
+        local b, nextTrace, nextTail = seeded(seed, function() return dungeonReward(200) end)
+        check(equal(a, b), "装备副本服务不借主线幸运，内容一致 种子" .. seed)
+        check(trace == nextTrace and tail == nextTail, "装备副本服务RNG形态/次数/终态一致 种子" .. seed)
     end
+    Dungeon.SetPersistCallback(nil)
     local DC = f.require("config.DungeonConfig")
     local entry = assert(DC.getCombatEntry("equipment_vault", 1))
     eq(entry.mode, "resource_dungeon", "真实装备副本combat entry带排除mode")

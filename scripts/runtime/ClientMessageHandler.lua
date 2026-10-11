@@ -395,6 +395,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          end
              if data.action == Protocol.ACTION_TYPES.CONVERT_UR_SHARD
              or data.action == Protocol.ACTION_TYPES.RESTORE_UR_SHARD_CONVERT
+             or data.action == Protocol.ACTION_TYPES.SET_AUTO_DECOMPOSE
              or data.action == Protocol.ACTION_TYPES.DECOMPOSE_EQUIP
              or data.action == Protocol.ACTION_TYPES.EQUIP_ITEM then
              -- 穿戴/分解失败也转发仓库，释放自己的待响应状态并显示拒绝原因。
@@ -666,6 +667,9 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      if (data.action == Protocol.ACTION_TYPES.SWEEP or isResourceSweep) and data.success then
          local rewards = {}
          if (data.gold or 0) > 0 then rewards[#rewards + 1] = { type = "gold", amount = data.gold } end
+         if (data.autoDecomposeEssence or 0) > 0 then
+             rewards[#rewards + 1] = { type = "essence", amount = data.autoDecomposeEssence }
+         end
          if (data.diamond or 0) > 0 then rewards[#rewards + 1] = { type = "diamond", amount = data.diamond } end
          for _, equip in ipairs(data.equips or {}) do
              -- 保留完整实例、去向与附加字段，只负责展示，不重新生成/交付装备。

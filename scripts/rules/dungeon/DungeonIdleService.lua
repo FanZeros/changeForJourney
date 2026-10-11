@@ -272,6 +272,8 @@ function DungeonIdleService.Claim(uid, dungeonId)
             equips     = equipmentResult.equips,
             inventoryCount = equipmentResult.inventoryCount,
             lootboxCount = equipmentResult.lootboxCount,
+            autoDecomposeCount = equipmentResult.autoDecomposeCount,
+            autoDecomposeEssence = equipmentResult.autoDecomposeEssence,
             scrollDrops = equipmentResult.scrollDrops,
             playerExp  = playerExp,
             heroExpTotal = heroExp,

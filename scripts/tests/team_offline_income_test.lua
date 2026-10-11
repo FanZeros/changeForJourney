@@ -79,7 +79,152 @@ local function seedSignature(seeds)
     return table.concat(parts, ";")
 end
 
+local function runAutoDecomposeCases()
+    local F = require("tests.SweepRegressionFixture")
+    local function fixture(settings, count)
+        local h = F.new(); F.install(h, count or 0)
+        h.data.equipment.settings = copy(settings)
+        h.data.currency.essence = 17
+        h.data.session.lastOnlineTime = 1791199400
+        h.modules["rules.character.PlayerDataManager"].MarkDirty = function(_, key)
+            h.dirty[key] = (h.dirty[key] or 0) + 1
+        end
+        h.modules["rules.hero.HeroService"] = {
+            ApplyResonanceSync = function() end, SyncHeroLevelsToPlayerLevel = function() end,
+        }
+        h.modules["ui.character.panel.CharacterPanel"] = {
+            isHeroesDataApplied = function() return false end,
+        }
+        h.Offline = h.require("rules.offline.OfflineService")
+        h.generated = {}
+        local original = h.ES.generateRandom
+        h.ES.generateRandom = function(level, quality)
+            local equip = original(level, quality)
+            if equip then
+                if h.lockGenerated then equip.locked = true end
+                h.generated[#h.generated + 1] = { equip = equip, value = F.copy(equip) }
+            end
+            return equip
+        end
+        return h
+    end
+    local function pendingOf(service)
+        for index = 1, 30 do
+            local name, value = debug.getupvalue(service.HasPendingRewards, index)
+            if name == "pendingRewards" then return value end
+            if not name then break end
+        end
+        error("真实OfflineService缺少pendingRewards upvalue")
+    end
+    local function equipRows(panel)
+        local result = {}
+        for _, row in ipairs(panel.rewards) do if row.type == "equip" then result[#result + 1] = row end end
+        return result
+    end
+    for _, settings in ipairs({ { autoQuality = 6, autoLevel = 0 }, { autoQuality = 3, autoLevel = 60 },
+        { autoQuality = 0, autoLevel = 1 } }) do
+        runCase("auto_new_drop", stable(settings), function()
+            local a, b = fixture({ autoQuality = 0, autoLevel = 0 }, 200), fixture(settings, 200)
+            local config = b.require("config.BlacksmithConfig")
+            local old = assert(b.ES.generate("W1", 1, 1)); old.testNested = { old = { 1, 2 } }
+            b.LS.addEquipment(b.data.lootbox, old)
+            local inventoryBefore, oldSeed = F.copy(b.data.equipment.inventory), F.copy(b.data.lootbox.seeds[1])
+            a.seed, b.seed, a.rngCalls, b.rngCalls = 121, 121, 0, 0
+            local pa, pb = a.Offline.CalcOnEnter(1), b.Offline.CalcOnEnter(1)
+            check(pa and pb, "真实离线预览产生", pb, "panel")
+            eq(a.rngCalls, b.rngCalls, "开关离线分解随机次数不变")
+            eq(a.seed, b.seed, "开关离线分解RNG终态不变")
+            eq(#a.generated, #b.generated, "全部原掉落仍然生成")
+            check(#a.generated > 0, "实际生成掉落非零", #a.generated, ">0")
+            local expected, expectedAmount, kept = 0, 0, {}
+            for index, entry in ipairs(a.generated) do
+                eq(stable(entry.value), stable(b.generated[index].value), "完整新装备与关闭设置同序同值")
+                if config.shouldAutoDecompose(settings, entry.equip.quality, entry.equip.level) then
+                    expected = expected + 1
+                    expectedAmount = expectedAmount + config.calcAutoDecomposeEssence(entry.equip.quality, entry.equip.level)
+                else kept[#kept + 1] = b.generated[index].equip end
+            end
+            eq(pb.autoDecomposeCount or 0, expected, "新离线预览精确分类数量")
+            eq(pb.autoDecomposeEssence or 0, expectedAmount, "新离线预览精粹精确")
+            eq(b.data.currency.essence, 17, "预览不提前发精粹")
+            eq(b.data.lootbox.autoDecomposeNotice, nil, "预览不提前发布notice")
+            eq(stable(b.data.equipment.inventory), stable(inventoryBefore), "预览不修改库存")
+            local rows = equipRows(pb)
+            eq(#rows, #kept, "面板仅保留未分解装备")
+            for index, equip in ipairs(kept) do eq(rows[index].equip, equip, "面板使用原生成实例") end
+            local rng = b.rngCalls
+            b.data.equipment.settings = { autoQuality = 0, autoLevel = 0 }
+            eq(b.Offline.CalcOnEnter(1), pb, "待领重复预览不重算")
+            eq(b.rngCalls, rng, "待领重复预览零RNG")
+            local ok, err, result = b.Offline.ClaimRewards(1)
+            eq(ok, true, "真实领取成功 " .. tostring(err))
+            eq(result.autoDecomposeCount or 0, expected, "领取不因设置改变重分流")
+            eq(result.autoDecomposeEssence or 0, expectedAmount, "领取精粹同预览")
+            eq(b.data.currency.essence, 17 + expectedAmount, "精粹只领取时加一次")
+            eq(b.rngCalls, rng, "领取不重骰")
+            eq(#result.lootboxEquips, #kept, "满包只保管保留装备")
+            for index, equip in ipairs(kept) do
+                eq(result.lootboxEquips[index].equip, equip, "满包不重建实例")
+            end
+            eq(stable(b.data.lootbox.seeds[1]), stable(oldSeed), "原遗匣旧实例完全保持")
+            eq(stable(b.data.equipment.inventory), stable(inventoryBefore), "满包旧库存不追溯分解")
+            if expected > 0 then
+                eq(b.data.lootbox.autoDecomposeNotice.count, expected, "notice只含本次新分解")
+                eq(b.data.lootbox.autoDecomposeNotice.essence, expectedAmount, "notice与一次实领一致")
+            end
+            local after = stable(b.data)
+            eq(b.Offline.ClaimRewards(1), false, "重复领取拒绝")
+            eq(stable(b.data), after, "重复领取不重复精粹或notice")
+        end)
+    end
+    for _, locked in ipairs({ false, true }) do
+        runCase("auto_old_pending", locked and "开启规则仍保留锁定新装备" or "旧pending无新字段保留未锁定原件", function()
+        local h = fixture(locked and { autoQuality = 6, autoLevel = 0 } or {}, 0)
+        h.lockGenerated = locked
+        local panel = h.Offline.CalcOnEnter(1)
+        local pending = pendingOf(h.Offline)[1].rewards
+        -- 旧快照结构：grantedEquips存在，autoDecompose字段完全缺失。
+        eq(pending.autoDecomposeEquips, nil, "旧pending无新字段")
+        eq(pending.autoDecomposeEssence, nil, "旧pending无新精粹字段")
+        h.data.equipment.settings = { autoQuality = 6, autoLevel = 0 }
+        local rng = h.rngCalls
+        local ok, err, result = h.Offline.ClaimRewards(1)
+        eq(ok, true, "旧pending按旧结果交付 " .. tostring(err))
+        eq(result.autoDecomposeCount, nil, "旧pending不会新增分解")
+        eq(h.data.currency.essence, 17, "锁定或旧pending不重分类")
+        eq(h.rngCalls, rng, "旧pending交付不重骰")
+        eq(h.ES.getInventoryCount(h.data.equipment), #h.generated, "旧pending原件全部入库")
+        for _, row in ipairs(equipRows(panel)) do
+            eq(h.data.equipment.inventory[tostring(row.equip.seq)], row.equip, "锁定原件保持原引用")
+        end
+        end)
+    end
+    runCase("auto_missing_container", "旧pending满包缺遗匣无提前发奖", function()
+        local h = fixture({}, 200)
+        local panel = h.Offline.CalcOnEnter(1)
+        h.data.equipment.settings = { autoQuality = 6, autoLevel = 0 }
+        h.data.lootbox = nil
+        local before, rng = stable(h.data), h.rngCalls
+        eq(h.Offline.ClaimRewards(1), false, "旧pending保留件缺安全容器拒绝")
+        eq(stable(h.data), before, "拒绝不提前发币/精粹/经验")
+        eq(h.Offline.CalcOnEnter(1), panel, "拒绝仍保留旧pending实例")
+        eq(h.rngCalls, rng, "拒绝和重推不再骰装备")
+    end)
+end
+
 function Start()
+    runAutoDecomposeCases()
+    -- 仅专项入口不执行已知上游收益锚点旧断言；默认仍完整保留原回归。
+    for _, argument in ipairs(GetArguments()) do
+        if argument == "-auto-decompose-only" then
+            print(TAG .. " AUTO SUMMARY cases=" .. cases .. " assertions=" .. assertions
+                .. " failures=" .. failures .. " harnessErrors=" .. harnessErrors)
+            engine:Exit()
+            if failures > 0 or harnessErrors > 0 then error(TAG .. " auto decomposition failed") end
+            print(TAG .. " AUTO ALL PASS")
+            return
+        end
+    end
     local ok, err = pcall(function()
         local Calc = require("systems.OfflineCalc")
         local SC = require("config.StageConfig")

@@ -6,6 +6,7 @@ local EquipmentSystem = require("systems.EquipmentSystem")
 local EquipmentPower = require("systems.EquipmentPower")
 local LootBoxSystem = require("systems.LootBoxSystem")
 local DropSystem = require("systems.DropSystem")
+local BlacksmithConfig = require("config.BlacksmithConfig")
 local Transaction = require("rules.dungeon.DungeonService")
 
 local SweepService = { SWEEP_COST = Rewards.COST }
@@ -56,19 +57,31 @@ function SweepService.Sweep(uid, count, teamIdx, stageId)
     local lootbox = PDM.GetModule(uid, "lootbox")
     local ok, err, result = Transaction.CommitRewardTransaction(uid, function()
         local rewards = Rewards.calculate(entry, #ids, times, true, luck, team)
-        if EquipmentSystem.getInventoryCount(equipment) + #rewards.equips > EquipmentSystem.MAX_INVENTORY
+        -- 所有新装备仍按旧顺序生成；分流不再消费 RNG，也不扫描已有库存/遗匣。
+        local keptEquips, decomposedEquips = {}, {}
+        local autoEssence = 0
+        for _, equip in ipairs(rewards.equips) do
+            if not equip.locked and BlacksmithConfig.shouldAutoDecompose(equipment.settings, equip.quality, equip.level) then
+                decomposedEquips[#decomposedEquips + 1] = equip
+                autoEssence = autoEssence + BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
+            else
+                keptEquips[#keptEquips + 1] = equip
+            end
+        end
+        if EquipmentSystem.getInventoryCount(equipment) + #keptEquips > EquipmentSystem.MAX_INVENTORY
             and not lootbox then return false, "遗匣数据未加载" end
         -- 掉落全部生成成功后才交付；持久化/交付失败由同一事务原位回滚。
         currency.sweepTicket = owned - cost
         currency.gold = (currency.gold or 0) + rewards.gold
         currency.gems = (currency.gems or 0) + rewards.diamond
+        if autoEssence > 0 then currency.essence = (currency.essence or 0) + autoEssence end
         for field, amount in pairs(rewards.scrollDrops) do
             currency[field] = (currency[field] or 0) + amount
         end
         Transaction.MarkRewardDirty(uid, "currency")
         local granted, byQuality = {}, {}
         local inventoryCount, lootboxCount = 0, 0
-        for _, equip in ipairs(rewards.equips) do
+        for _, equip in ipairs(keptEquips) do
             local destination = LootBoxSystem.deliverEquipment(lootbox, equipment, equip)
             if destination == "lootbox" then lootboxCount = lootboxCount + 1
             else inventoryCount = inventoryCount + 1 end
@@ -78,7 +91,17 @@ function SweepService.Sweep(uid, count, teamIdx, stageId)
             byQuality[equip.quality] = (byQuality[equip.quality] or 0) + 1
         end
         if inventoryCount > 0 then Transaction.MarkRewardDirty(uid, "equipment") end
-        if lootboxCount > 0 then Transaction.MarkRewardDirty(uid, "lootbox") end
+        if autoEssence > 0 and lootbox then
+            for _, equip in ipairs(decomposedEquips) do
+                local essence = BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
+                BlacksmithConfig.recordAutoDecompose(lootbox, equip.quality, equip.level, essence)
+            end
+        end
+        if lootboxCount > 0 or (autoEssence > 0 and lootbox) then Transaction.MarkRewardDirty(uid, "lootbox") end
+        if autoEssence > 0 then
+            rewards.autoDecomposeCount = #decomposedEquips
+            rewards.autoDecomposeEssence = autoEssence
+        end
         rewards.playerProgress, rewards.heroProgress = Progress.Apply(heroes, ids, player, rewards)
         if rewards.heroExp > 0 then Transaction.MarkRewardDirty(uid, "heroes") end
         if rewards.playerExp > 0 then Transaction.MarkRewardDirty(uid, "player") end

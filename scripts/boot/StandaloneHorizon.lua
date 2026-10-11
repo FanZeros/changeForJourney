@@ -378,7 +378,8 @@ local function HorizonDimSidePanels()
         HeroRosterPanel.isVisible() or PlayerInfoPanel.isOpen() or
         RewardPopup.isOpen() or
         OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() or
-        SpinePowerUpEffect.isPlaying() or IntroCutscene.isActive()
+        IntroCutscene.isActive()
+    -- 战力浮层只是穿透提示，不压暗可继续点击、拖拽和滚动的侧栏。
     if not modalOpen then return end
 
     local w = Viewport.PW * H_s

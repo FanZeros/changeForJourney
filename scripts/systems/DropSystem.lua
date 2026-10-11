@@ -10,6 +10,26 @@ local AD              = require("systems.AttributeDef")
 
 local DropSystem = {}
 
+-- 只针对新随机装备的极小至臻机会；不放开其他品质/点金进度门槛。
+DropSystem.MIN_RED_PROBABILITY = 0.0001
+
+--- 已按旧规则合并品质上限的分布加入至臻尾部，原至臻概率更高时原样保留。
+--- 无随机、无原地修改；非至臻按同一比例扣回，总件数与非至臻相对构成不变。
+---@param probabilities number[]
+---@param sourceRed number|nil 整关旧至臻概率，缺省使用当前分布
+---@return number[]
+function DropSystem.withMinimumRedProbability(probabilities, sourceRed)
+    local red = probabilities[6] or 0
+    local reference = sourceRed == nil and red or sourceRed
+    if reference >= DropSystem.MIN_RED_PROBABILITY then return probabilities end
+    local adjusted = {} ---@type number[]
+    -- 条件怪物分布也使用整关红率决定提升幅度，已有高难关不因低品质怪额外增红。
+    local added = (DropSystem.MIN_RED_PROBABILITY - reference) / (1 - reference)
+    for q = 1, 5 do adjusted[q] = (probabilities[q] or 0) * (1 - added) end
+    adjusted[6] = red + (1 - red) * added
+    return adjusted
+end
+
 --- 有效幸运值：非法/负数归零，按本队合计封顶，避免异常值污染随机区间。
 ---@param value number|nil
 ---@return number
@@ -55,25 +75,24 @@ local HELL_EQUIP_WEIGHT_BOOST = {
 -- 内部工具
 ------------------------------------------------------------------------
 
---- 根据关卡品质权重表加权随机选取装备品质 (1-4)，用于首通奖励
+--- 根据原四档关卡权重与最低品质抽样，加入极小至臻尾部，用于新首通随机装备。
 ---@param qw number[] 权重数组 {q1, q2, q3, q4}（来自 stageEntry.qw）
----@return number quality 1~4
-local function rollQualityByStage(qw)
+---@param minQuality number|nil
+---@return number quality 1~6
+local function rollQualityByStage(qw, minQuality)
     local total = 0
     for i = 1, 4 do
         total = total + (qw[i] or 0)
     end
-    if total <= 0 then return 1 end
+    if total <= 0 then return minQuality or 1 end
 
-    local r = math.random(1, total)
-    local acc = 0
-    for i = 1, 4 do
-        acc = acc + (qw[i] or 0)
-        if r <= acc then
-            return i
-        end
+    -- 首通仍只借原四档权重/最低品质，同一品质骰加入至臻尾部，不加额外判定。
+    local probabilities = { 0, 0, 0, 0, 0, 0 }
+    for q = 1, 4 do
+        local quality = math.max(minQuality or 1, q)
+        probabilities[quality] = probabilities[quality] + (qw[q] or 0) / total
     end
-    return 1  -- fallback
+    return DropSystem.rollQualityByProbabilities(DropSystem.withMinimumRedProbability(probabilities))
 end
 
 --- 怪物掉落品质权重；主线、副本与离线共用难度倍率，幸运仅由调用方传入。
@@ -113,14 +132,42 @@ function DropSystem.getQualityWeights(monsterQuality, difficulty, luck)
     return weights, total
 end
 
---- 根据怪物品质抽样；零幸运沿用整数区间，高品质零权重不产生掉落。
+--- 先沿用原品质上限，再加入仅至臻的微小例外；不影响点金/固定品质配置。
 ---@param monsterQuality number
 ---@param difficulty string|nil
 ---@param luck number|nil
+---@param cap number|nil
+---@param sourceRed number|nil 整关旧红率；保留高于底线关的条件怪物分布
+---@return number[] probabilities
+function DropSystem.getMonsterQualityProbabilities(monsterQuality, difficulty, luck, cap, sourceRed)
+    local weights, total = DropSystem.getQualityWeights(monsterQuality, difficulty, luck)
+    local probabilities = { 0, 0, 0, 0, 0, 0 }
+    if total <= 0 then probabilities[1] = 1
+    else
+        for q = 1, 6 do
+            local quality = math.min(q, cap or 6)
+            probabilities[quality] = probabilities[quality] + weights[q] / total
+        end
+    end
+    return DropSystem.withMinimumRedProbability(probabilities, sourceRed)
+end
+
+--- 一次品质随机；已有整关至臻概率足够时保留旧整数区间及幸运抽样。
+---@param monsterQuality number
+---@param difficulty string|nil
+---@param luck number|nil
+---@param cap number|nil
+---@param sourceRed number|nil
 ---@return number
-function DropSystem.rollQualityByMonster(monsterQuality, difficulty, luck)
+function DropSystem.rollQualityByMonster(monsterQuality, difficulty, luck, cap, sourceRed)
     local weights, total = DropSystem.getQualityWeights(monsterQuality, difficulty, luck)
     if total <= 0 then return 1 end
+    local red = sourceRed
+    if red == nil then red = (cap or 6) < 6 and 0 or weights[6] / total end
+    if red < DropSystem.MIN_RED_PROBABILITY then
+        return DropSystem.rollQualityByProbabilities(
+            DropSystem.getMonsterQualityProbabilities(monsterQuality, difficulty, luck, cap, red))
+    end
 
     local r
     if (luck or 0) > 0 then r = math.random() * total
@@ -128,7 +175,7 @@ function DropSystem.rollQualityByMonster(monsterQuality, difficulty, luck)
     local acc = 0
     for i = 1, 6 do
         acc = acc + weights[i]
-        if weights[i] > 0 and r <= acc then return i end
+        if weights[i] > 0 and r <= acc then return math.min(i, cap or 6) end
     end
     return 1
 end
@@ -158,8 +205,10 @@ end
 --- 一件已命中掉落的品质分布；普通怪与Boss各占一个品质池位置。
 --- 只读查询不判定是否掉装备，不消耗随机数，不包含首通最低品质。
 ---@param stageEntry table
+---@param luck number|nil
+---@param raw boolean|nil 内部旧概率查询，不包含至臻尾部
 ---@return number[] probabilities
-function DropSystem.getStageQualityProbabilities(stageEntry)
+function DropSystem.getStageQualityProbabilities(stageEntry, luck, raw)
     local pool = {}
     for _, id in ipairs(stageEntry.monsters or {}) do pool[#pool + 1] = id end
     if (stageEntry.bossId or 0) > 0 then pool[#pool + 1] = stageEntry.bossId end
@@ -169,7 +218,7 @@ function DropSystem.getStageQualityProbabilities(stageEntry)
     local cap = StageConfig.getMaxDropQuality(stageEntry)
     for _, monsterId in ipairs(pool) do
         local monster = MC.MONSTERS[monsterId]
-        local weights, total = DropSystem.getQualityWeights(monster and monster.quality or 1, difficulty, 0)
+        local weights, total = DropSystem.getQualityWeights(monster and monster.quality or 1, difficulty, luck or 0)
         if total <= 0 then probabilities[1] = probabilities[1] + 1 / #pool
         else
             for q = 1, 6 do
@@ -178,7 +227,8 @@ function DropSystem.getStageQualityProbabilities(stageEntry)
             end
         end
     end
-    return probabilities
+    if raw then return probabilities end
+    return DropSystem.withMinimumRedProbability(probabilities)
 end
 
 --- 对已确定的六品质概率抽样；只消耗一次随机数。
@@ -223,10 +273,9 @@ function DropSystem.rollKillDrop(stageEntry, context)
     -- 命中掉落：服务端随机选取一个怪物品质，再按其权重决定装备品质
     local monsterQ = pickMonsterQuality(stageEntry)
     local difficulty = StageConfig.getDifficulty(stageEntry.id)
-    local quality = DropSystem.rollQualityByMonster(monsterQ, difficulty, luck)
-    -- 品质上限：普通最高 4，困难 5，噩梦/地狱/炼狱/折磨(I/II/III) 6
     local maxQ = StageConfig.getMaxDropQuality(stageEntry)
-    if quality > maxQ then quality = maxQ end
+    local rawProbabilities = DropSystem.getStageQualityProbabilities(stageEntry, luck, true)
+    local quality = DropSystem.rollQualityByMonster(monsterQ, difficulty, luck, maxQ, rawProbabilities[6])
     print(string.format("[DropSystem] rollKillDrop: HIT roll=%.4f monsterQ=%d → equipQ=%d (cap=%d luck=%.2f)", roll, monsterQ, quality, maxQ, luck))
     return quality
 end
@@ -258,7 +307,7 @@ function DropSystem.generateFirstClearEquips(stageEntry)
         local qw = stageEntry.qw
         local quality = minQ
         if qw and #qw > 0 then
-            local rolled = rollQualityByStage(qw)
+            local rolled = rollQualityByStage(qw, minQ)
             if rolled > quality then
                 quality = rolled
             end

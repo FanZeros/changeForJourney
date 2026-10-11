@@ -131,12 +131,13 @@ local function testReceipts()
     local first = assert(text:find("     -- 主线与资源扫荡回执统一展示", 1, true), "缺少真实扫荡展示尾段")
     local last = assert(text:find("\n end\n", first, true), "缺少真实ActionResult尾段边界")
     local fragment = text:sub(first, last - 1)
-    local function receipt(action, id, perHero, total)
+    local function receipt(action, id, perHero, total, autoEssence)
         local popup, closed, logs = {}, 0, 0
         local equipment = { seq = 75, templateId = "W1", quality = 4, level = 11, slot = "weapon",
             equip = { seq = 75, affixes = { { key = "hp", value = 2 } } }, destination = "lootbox", custom = "retain" }
         local data = { action = action, dungeonId = id, success = true, gold = 5, diamond = 17,
             playerExp = 123, heroExp = perHero, heroExpTotal = total, teamIdx = 2,
+            autoDecomposeEssence = autoEssence,
             equips = { equipment }, scrollDrops = { weaponScroll = 3 } }
         local env = { data = data, pairs = pairs, ipairs = ipairs, tostring = tostring, table = table,
             Protocol = { ACTION_TYPES = { SWEEP = "sweep", DUNGEON_SWEEP = "dungeon_sweep" } },
@@ -158,10 +159,15 @@ local function testReceipts()
         eq(popup.title, "扫荡奖励", "两资源协议使用统一奖励标题")
         eq(closed, 1, "奖励前只关闭一次扫荡窗")
         eq(logs, 1, "记录一次自动关闭")
-        eq(#popup.rewards, 4, "金币/黑晶/完整装备/卷轴四项")
-        eq(popup.rewards[2].type, "diamond", "黑晶用现有diamond资源类型")
-        eq(popup.rewards[2].amount, 17, "黑晶金额透传")
-        local reward = popup.rewards[3]
+        local offset = autoEssence and autoEssence > 0 and 1 or 0
+        eq(#popup.rewards, 4 + offset, "基础四项与实际自动分解精粹")
+        if offset == 1 then
+            eq(popup.rewards[2].type, "essence", "真实自动分解精粹展示")
+            eq(popup.rewards[2].amount, autoEssence, "精粹金额透传不重算")
+        end
+        eq(popup.rewards[2 + offset].type, "diamond", "黑晶用现有diamond资源类型")
+        eq(popup.rewards[2 + offset].amount, 17, "黑晶金额透传")
+        local reward = popup.rewards[3 + offset]
         eq(reward.equip, equipment.equip, "完整装备实例不被重造")
         eq(reward.destination, "lootbox", "遗匣目的地保留")
         eq(reward.seq, 75, "装备附加序号保留")
@@ -179,6 +185,9 @@ local function testReceipts()
     receipt("dungeon_sweep", "black_diamond", 61, 122)
     receipt("sweep", nil, nil, 122)
     receipt("dungeon_sweep", "ancient_ruin", 61, 122)
+    receipt("sweep", nil, 61, 122, 37)
+    receipt("dungeon_sweep", "black_diamond", 61, 122, 37)
+    receipt("sweep", nil, 61, 122, 0)
 end
 
 function Start()

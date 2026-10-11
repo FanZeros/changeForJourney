@@ -324,12 +324,22 @@ local function canInstall(artifact, target)
     if target.subSlot > getUnlockedSubSlotCount() then
         return false, "远征等级达到" .. tostring(ArtifactSchema.getSubSlotUnlockLevel(target.subSlot)) .. "级解锁"
     end
-    local occupiedTeam = ArtifactSchema.findEquippedSlotAnyTeam(getArtifactData(), artifact.id)
-    if occupiedTeam and occupiedTeam ~= target.teamIdx then
-        return false, "神器已安装在队伍" .. tostring(occupiedTeam) .. "，请先卸下再安装到其他队伍"
+    local sourceTeam, sourceSlot, sourceSub = ArtifactSchema.findEquippedSlotAnyTeam(getArtifactData(), artifact.id)
+    if sourceTeam and sourceTeam > getUnlockedTeamCount() then
+        return false, ExpTable.getTeamUnlockText(sourceTeam) .. "队伍" .. sourceTeam
     end
-    if hasSameTypeInSlot(target.slot, artifact, target.subSlot, target.teamIdx) then
+    if sourceSub and sourceSub > getUnlockedSubSlotCount() then
+        return false, "远征等级达到" .. tostring(ArtifactSchema.getSubSlotUnlockLevel(sourceSub)) .. "级解锁"
+    end
+    local samePartySlot = sourceTeam == target.teamIdx and sourceSlot == target.slot
+    -- 同号位两格互换会移走旧来源，预检不能把它当作仍占用的相邻格。
+    if not samePartySlot and hasSameTypeInSlot(target.slot, artifact, target.subSlot, target.teamIdx) then
         return false, "同一槽位不能佩戴相同类型神器"
+    end
+    local displaced = getEquippedArtifact(target.slot, target.subSlot, target.teamIdx)
+    if sourceTeam and displaced and not samePartySlot
+        and hasSameTypeInSlot(sourceSlot, displaced, sourceSub, sourceTeam) then
+        return false, "来源槽位不能佩戴相同类型神器"
     end
     return true
 end
@@ -548,7 +558,7 @@ local function getEquipActionState(artifact, location, slot, subSlot, teamIdx)
     return {
         label = team and "已安装" or "安装",
         enabled = not team and not state.equipRequestPending,
-        hint = team and ("已安装在队伍" .. team .. "，请先卸下") or nil,
+        hint = team and "装配位置已变，请重新打开详情或拖动已装神器" or nil,
     }
 end
 
@@ -1006,7 +1016,6 @@ function M.handleTabInput(dx, dy)
                         return true
                     end
                     local pendingArtifact = getPendingEquipArtifact()
-                    local occupiedTeam = pendingArtifact and ArtifactSchema.findEquippedSlotAnyTeam(getArtifactData(), pendingArtifact.id)
                     local equipped = getEquippedArtifact(i, subSlot, t)
                     local locked = subSlot > unlockedSubSlots
                     if locked and pendingArtifact then
@@ -1015,10 +1024,6 @@ function M.handleTabInput(dx, dy)
                     elseif locked and not equipped then
                         local unlockLevel = ArtifactSchema.getSubSlotUnlockLevel(subSlot)
                         showFloat("远征等级达到" .. tostring(unlockLevel) .. "级解锁", cx, cy - 70)
-                    elseif pendingArtifact and occupiedTeam and occupiedTeam ~= t then
-                        showFloat("神器已安装在队伍" .. tostring(occupiedTeam) .. "，请先卸下", cx, cy - 70)
-                    elseif pendingArtifact and hasSameTypeInSlot(i, pendingArtifact, subSlot, t) then
-                        showFloat("同一槽位不能佩戴相同类型神器", cx, cy - 70)
                     elseif pendingArtifact and Protocol then
                         installArtifact(pendingArtifact, hitSlot(dx, dy))
                     elseif pendingArtifact then

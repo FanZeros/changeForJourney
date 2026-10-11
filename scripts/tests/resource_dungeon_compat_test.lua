@@ -180,9 +180,9 @@ function Start()
             eq(IC.getIdleFloorFromSub({ floor = 1, cleared = {} }, id), 0, id .. "新档无挂机收益")
             check(IC.getSweepReward(id, last) > 0, id .. "末层收益存在")
         end
-        -- 本段验证挂机累积算法（与件数成长正交），钉回旧固定当量 3 复现原数值。
-        local realBase, realStep = DC.EQUIP_SWEEP_BASE, DC.EQUIP_SWEEP_STEP
-        DC.EQUIP_SWEEP_BASE, DC.EQUIP_SWEEP_STEP = 3, 0
+        -- 本段验证挂机累积算法（与本轮控量正交），只在私有配置环境冻结基准3。
+        local realCount = DC.getEquipSweepCount
+        DC.getEquipSweepCount = function() return 3 end
         local equip = assert(DC.getFloor("equipment_vault", 109))
         local equipSweep = DC.getEquipSweepCount(109)
         eq(equip.sweepEquip, equipSweep, "装备扫荡随层成长")
@@ -449,9 +449,92 @@ function Start()
         eq(old.equipment_vault.idleAccumSec, 3600, "补算成功后重复进入幂等")
         Service.Cleanup(0)
         check(Service.Cleanup ~= nil, "清理接口存在")
-        DC.EQUIP_SWEEP_BASE, DC.EQUIP_SWEEP_STEP = realBase, realStep
+        DC.getEquipSweepCount = realCount
         local realSweep = DC.getEquipSweepCount(109)
-        check(realSweep > 3 and DC.getFloor("equipment_vault", 109).sweepEquip == realSweep, "装备件数随层成长生效")
+        check(realSweep > 3 and DC.getFloor("equipment_vault", 109).sweepEquip == realSweep, "装备控量曲线恢复真实基准")
+        -- 独立验收完整六档节点，不读取生产私有曲线作为期望值。
+        local SC = env.require("config.StageConfig")
+        local Drop = env.require("systems.DropSystem")
+        local start = Drop.getStageQualityProbabilities(SC.getStage(1305))
+        local nodes = {
+            { chapter = 13, amount = 20, p = start },
+            { chapter = 23, amount = 40, p = { .20, .25, .2699, .25, .03, .0001 } },
+            { chapter = 46, amount = 60, p = { .10, .20, .269, .35, .08, .001 } },
+            { chapter = 69, amount = 80, p = { .05, .15, .255, .42, .12, .005 } },
+            { chapter = 92, amount = 100, p = { .01, .10, .2475, .45, .18, .0125 } },
+            { chapter = 345, amount = 140, p = { 0, .02, .15, .45, .35, .03 } },
+        }
+        local lastCount, lastTails = 0, { 0, 0, 0 }
+        local nativeMath = env.math
+        local privateMath = {} ---@type table<string, any>
+        for key, value in pairs(math) do privateMath[key] = value end
+        env.math = privateMath
+        local rngCalls = 0
+        local point = 0.5
+        privateMath.random = function(a, b)
+            rngCalls = rngCalls + 1
+            if a then return a end
+            return rngCalls == 1 and point or .99995
+        end
+        for floor = 1, DC.MAX_FLOOR.equipment_vault do
+            local stageId = DC.getStageId("equipment_vault", floor)
+            local entry = DC.getStage(stageId)
+            local source = SC.getStage(entry.sourceStageId)
+            local sourceBefore = cjson.encode(source)
+            local progress = source.chapter + (source.stage - 5) / 5
+            local left, right, t = nodes[#nodes], nodes[#nodes], 0
+            for i = 2, #nodes do
+                if progress <= nodes[i].chapter then
+                    left, right = nodes[i - 1], nodes[i]
+                    t = math.max(0, (progress - left.chapter) / (right.chapter - left.chapter))
+                    break
+                end
+            end
+            local count = DC.getEquipSweepCount(floor)
+            eq(count, math.floor(left.amount + (right.amount - left.amount) * t + .5), "全层数量独立插值floor=" .. floor)
+            check(count >= lastCount and count >= 20 and count <= 140, "全层少量缓增无换难度回退")
+            lastCount = count
+            local data = DC.getFloor("equipment_vault", floor)
+            eq(data.firstEquip, count * 2, "全层首通为两倍基准")
+            eq(IC.calcReward("equipment_vault", floor, 86400), count * 2, "全层24h为两倍基准")
+            local p = DC.getEquipQualityProbabilities(floor)
+            local sum = 0
+            for q = 1, 6 do
+                check(math.abs(p[q] - (left.p[q] + (right.p[q] - left.p[q]) * t)) < 1e-12,
+                    "全层六档独立插值floor=" .. floor .. " Q" .. q)
+                check(p[q] >= 0, "全层品质非负")
+                sum = sum + p[q]
+            end
+            check(math.abs(sum - 1) < 1e-12 and p[6] >= .0001 - 1e-12, "全层归一与微小红尾")
+            local tails = { p[4] + p[5] + p[6], p[5] + p[6], p[6] }
+            for index, tail in ipairs(tails) do
+                check(tail + 1e-12 >= lastTails[index], "Q4+/Q5+/Q6全层非降")
+            end
+            lastTails = tails
+            local expected = count / 14400
+            check(math.abs(DC.getStageRewardAmount(stageId, 1) - expected) < 1e-12,
+                "每杀期望保持数量/14400")
+            -- 每杀不足一件不是必0：概率取整区间内恰一件；区间外0件。
+            point, rngCalls = expected / 2, 0
+            local dropped = DC.getStageRewards(stageId, 1, 1)
+            eq(#dropped.equipSeeds, 1, "每层一杀可命中一件")
+            eq(rngCalls, 4, "原数量/品质/卷轴/券四骰，无新增红骰")
+            point, rngCalls = (expected + 1) / 2, 0
+            eq(#DC.getStageRewards(stageId, 1, 1).equipSeeds, 0, "每层数量区间外不保底装备")
+            eq(rngCalls, 3, "未中装备只原数量/卷轴/券三骰")
+            p[1] = -100
+            check(DC.getEquipQualityProbabilities(floor)[1] >= 0, "查询数组独立不污染后续掉落")
+            eq(cjson.encode(source), sourceBefore, "独立品质不反写主线配置")
+        end
+        env.math = nativeMath
+        eq(DC.getEquipSweepCount(0), 20, "下界钳制开局")
+        eq(DC.getEquipSweepCount(DC.MAX_FLOOR.equipment_vault + 9999), 140, "超末层数量钳制")
+        local endP = DC.getEquipQualityProbabilities(DC.MAX_FLOOR.equipment_vault + 9999)
+        eq(endP[6], .03, "超末层品质钳制")
+        eq(IC.calcReward("equipment_vault", 1, 2159), 0, "首件36分钟前不提前发")
+        local firstAmount, firstMinutes = IC.calcReward("equipment_vault", 1, 2160)
+        eq(firstAmount, 1, "首件36分钟可领非必0")
+        eq(firstMinutes, 36, "首件扣最小整数分钟")
         local sid = DC.getStageId("equipment_vault", 109)
         local drops = DC.getStageRewards(sid, 1200)
         local scrollSum, ticketSum = 0, 0

@@ -6,7 +6,7 @@
 --   3) calcAutoDecomposeEssence 与手动分解基础公式一致
 --   4) recordAutoDecompose 通知 seq 递增、累计 count/essence、带时间戳
 --   5) DecomposeEquip 重复 seq 拒绝（防刷精粹），正常分解奖励正确且库存删除
---   6) 真实红装获取：噩梦击杀/离线种子/炼狱首通/点金石提品，低难度不越界
+--   6) 真实红装获取：前期极小尾/噩梦击杀/离线种子/炼狱首通/点金石提品，点金门槛不变
 -- 跑法: ./.cli/UrhoXRuntime tests/auto_decompose_regress_test.lua \
 --         -tapcode_dir=. -tool_mode -graphicsheadless
 -- ============================================================================
@@ -143,6 +143,18 @@ local function testRarityMultiselect()
         -- NanoVG 边界替身先于模块加载；不替换被局部缓存的 DrawUtil 绘制函数。
         -- 同一真实模块实例通过 onOpen/resetFixture 重置，不依赖加载缓存隔离。
         local M = require("ui.blacksmith.BlacksmithDecompose")
+        -- 保存设置由真实服务回执确认；此旧多选专项只隔离落盘边界。
+        patch(require("boot.StandaloneSave"), "Flush", function() return true end)
+        patch(GameAction, "sendAction", function(action, params)
+            actions[#actions + 1] = { action = action, params = copy(params) }
+            if action == Protocol.ACTION_TYPES.SET_AUTO_DECOMPOSE then
+                local service = require("rules.equipment.EquipmentService")
+                local accepted, reason, q, level = service.SetAutoDecompose(1, params.autoQuality, params.autoLevel)
+                M.onActionResult({ action = action, success = accepted, reason = reason,
+                    autoQuality = q, autoLevel = level })
+            end
+            return true
+        end)
         M.init({})  -- 设置真实 vgHandle/懒加载图标缓存，详情与品质图初始化仅替换边界。
         M.setContext({
             imgGoldQBg = 74001, imgEssenceIcon = 74002, imgEnhBtn = 74003,
@@ -939,6 +951,19 @@ end
 
 function Start()
     print(PREFIX .. "start")
+    local nativeFile, nativeFileSystem = File, fileSystem
+    local storageAccess = 0
+    rawset(_G, "File", function()
+        storageAccess = storageAccess + 1
+        error("自动分解专项禁止玩家文件读写", 0)
+    end)
+    rawset(_G, "fileSystem", {
+        FileExists = function(_, path)
+            if path == "gacha_history.json" then return false end
+            storageAccess = storageAccess + 1
+            error("自动分解专项禁止未知文件查询: " .. tostring(path), 0)
+        end,
+    })
 
     -- ========== 1) 共享判定语义 ==========
     check(BC.shouldAutoDecompose(nil, 1, 1) == false, "settings=nil 不分解")
@@ -1057,8 +1082,28 @@ function Start()
 
         for _, fixture in ipairs({ { 105, 4 }, { 2405, 5 }, { 4705, 6 }, { 7005, 6 } }) do
             local stage = assert(SC.getStage(fixture[1]), "真实关卡夹具不存在")
+            eq(SC.getMaxDropQuality(stage), fixture[2], "原常规/点金品质上限不变 stage=" .. fixture[1])
+            local function forceQuality(quantile)
+                local floatCalls = 0
+                math.random = function(minValue, maxValue)
+                    if minValue ~= nil then return maxValue or minValue end
+                    floatCalls = floatCalls + 1
+                    -- 第一骰命中装备；第二浮点骰为早期品质，后续生成沿原确定性夹具。
+                    return floatCalls == 2 and quantile or 0
+                end
+            end
+            forceQuality(0.99995)
             local equip = DropSystem.generateKillDrop(stage)
-            eq(equip and equip.quality, fixture[2], "真实击杀掉落品质边界 stage=" .. fixture[1])
+            eq(equip and equip.quality, 6, "真实击杀掉落包含至臻尾部 stage=" .. fixture[1])
+            if fixture[2] < 6 then
+                forceQuality(0.9998)
+                local nonRed = DropSystem.generateKillDrop(stage)
+                eq(nonRed and nonRed.quality, fixture[2], "极小尾外仍沿原最高非红品质 stage=" .. fixture[1])
+            end
+        end
+        math.random = function(minValue, maxValue)
+            if minValue == nil then return 0 end
+            return maxValue or minValue
         end
         eq(OfflineCalc._rollQualityByMonster(5), 6, "传说怪物离线随机池包含红装")
         eq(OfflineCalc._rollQualityByMonster(6), 6, "至臻怪物离线随机池包含红装")
@@ -1152,6 +1197,9 @@ function Start()
     testRarityMultiselect()
 
     -- ========== 汇总 ==========
+    eq(storageAccess, 0, "全程无玩家文件访问或未知文件查询")
+    rawset(_G, "File", nativeFile)
+    rawset(_G, "fileSystem", nativeFileSystem)
     if #failures > 0 then
         print(PREFIX .. "RESULT FAIL " .. #failures)
         for _, f in ipairs(failures) do print(PREFIX .. "  - " .. f) end

@@ -313,13 +313,13 @@ function Start()
     local originalRandom = math.random
     for floor = 1, DC.MAX_FLOOR.equipment_vault do
         local combat = DC.getStage(DC.getStageId("equipment_vault", floor))
-        local source = SC.getStage(combat.sourceStageId)
+        local source = assert(SC.getStage(combat.sourceStageId))
         local difficulty = SC.getDifficulty(source.id)
         if not testedDifficulties[difficulty] or source.id == 2305 or source.id == 4605
             or source.id == 6905 or source.id == 9205 or source.id == 34505 then
             testedDifficulties[difficulty] = true
             local probabilities = DC.getEquipQualityProbabilities(floor)
-            local oracle = { 0, 0, 0, 0, 0, 0 }
+            local oracle = { 0, 0, 0, 0, 0, 0 } ---@type number[]
             local monsterIds = {}
             for _, id in ipairs(source.monsters) do monsterIds[#monsterIds + 1] = id end
             if source.bossId > 0 then monsterIds[#monsterIds + 1] = source.bossId end
@@ -334,12 +334,19 @@ function Start()
                     oracle[quality] = oracle[quality] + weights[q] * (high and q >= 5 and 3 or 1) / sum / #monsterIds
                 end
             end
+            if oracle[6] < 0.0001 then
+                local scale = (1 - 0.0001) / (1 - oracle[6])
+                for q = 1, 5 do oracle[q] = oracle[q] * scale end
+                oracle[6] = 0.0001
+            end
+            local mainProbabilities = Drop.getStageQualityProbabilities(source)
             local sum = 0
             for q = 1, 6 do
-                eq(math.abs(probabilities[q] - oracle[q]) < 1e-12, true, "副本品质与源主线同口径")
+                eq(math.abs(mainProbabilities[q] - oracle[q]) < 1e-12, true, "主线品质保留原怪池与微小至臻尾")
+                eq(probabilities[q] >= 0, true, "副本独立品质非负")
                 sum = sum + probabilities[q]
             end
-            eq(math.abs(sum - 1) < 1e-12, true, "品质概率和为1")
+            eq(math.abs(sum - 1) < 1e-12, true, "副本独立品质概率和为1")
             print(string.format("[offline_boundary_test] QUALITY floor=%d source=%d Q4=%.6f%% Q5=%.6f%% Q6=%.6f%%",
                 floor, source.id, probabilities[4] * 100, probabilities[5] * 100, probabilities[6] * 100))
             local cumulative = 0
@@ -357,6 +364,25 @@ function Start()
             end
             math.random = originalRandom
         end
+    end
+    for _, stageId in ipairs({ 101, 105, 2401, 4701, 7001 }) do
+        local stage = assert(SC.getStage(stageId))
+        local previousRandom = math.random
+        local calls = 0
+        math.random = function(lower)
+            calls = calls + 1
+            return lower or 0.99995
+        end
+        local seeds = calc.buildEquipSeeds(20, stage)
+        eq(seeds[1].quality, 6, "离线独立种子入口微小尾可出红 stage=" .. stageId)
+        eq(calls, 1, "整数一件仅一次品质骰 stage=" .. stageId)
+        math.random = previousRandom
+        local queried = calc.previewTeamOfflineRewards(3600, { { teamIdx = 1, stageId = stageId, heroCount = 1 } })
+        local redExpected = 0
+        for _, seed in ipairs(queried.teamRewards[1].equipSeeds) do
+            if seed.quality == 6 then redExpected = redExpected + seed.count end
+        end
+        eq(redExpected > 0, true, "离线期望不把红尾抹为零 stage=" .. stageId)
     end
     local highWeights, weightTotal = Drop.getQualityWeights(5, SC.DIFFICULTY_HELL, 0)
     eq(highWeights[5], 300, "高难度传说权重三倍")

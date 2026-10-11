@@ -14,6 +14,11 @@ function ActionResult.bind(deps)
     --- 服务端操作结果回调
     ---@param data table
     return function(data)
+        if data.action == Protocol.ACTION_TYPES.SET_AUTO_DECOMPOSE then
+            -- 设置回执与手动分解分开，仓库/锻炉是否可见都不影响保存确认。
+            BlacksmithDecompose.onActionResult(data)
+            return
+        end
         equipLink.onActionResult(data)
         if data.action == Protocol.ACTION_TYPES.DECOMPOSE_EQUIP then
             -- [分解入仓 0929] 分解请求由 BlacksmithDecompose（仓库分解 tab）发出，

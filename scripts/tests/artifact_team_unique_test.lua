@@ -36,6 +36,17 @@ function Start()
         print(TAG .. " PASS " .. name)
     end
     local ok, err = pcall(function()
+        -- 模块导入可能触发酒馆历史检查；只允许查询为不存在，绝不回退到玩家文件。
+        local storageAccess = 0
+        replace(_G, "File", function()
+            storageAccess = storageAccess + 1
+            error("神器专项禁止玩家文件读写", 0)
+        end)
+        replace(_G, "fileSystem", { FileExists = function(_, path)
+            if path == "gacha_history.json" then return false end
+            storageAccess = storageAccess + 1
+            error("神器专项禁止未知文件查询: " .. tostring(path), 0)
+        end })
         local Schema = require("shared.artifact.ArtifactSchema")
         local Service = require("rules.artifact.ArtifactService")
         local Handler = require("rules.artifact.ArtifactHandler")
@@ -135,7 +146,7 @@ function Start()
         end)
 
         local uid = 984218
-        local modules = { artifacts = fresh(), player = { level = 60 }, battle = { maxStageId = 1906 } }
+        local modules = { artifacts = fresh(), player = { level = 60 }, battle = { maxStageId = 1906 } } ---@type table
         local pushes, flushes = 0, 0
         PDM.Setup({ serverDispatcher = { pushModule = function(sentUid, name)
             eq(sentUid, uid, "服务测试独立uid")
@@ -147,46 +158,57 @@ function Start()
         replace(PDM, "FlushImmediate", function(sentUid) flushes = flushes + 1 return realFlush(sentUid) end)
         cleanups[#cleanups + 1] = function() PDM.RemovePlayer(uid, true) PDM.RemovePlayer(1, true) PDM.Setup({}) end
         local equipHandler = Handler.actionHandlers[Protocol.ACTION_TYPES.ARTIFACT_EQUIP]
-        run("真实Service跨队拒绝零状态零推送", function()
+        run("真实Service跨队原位交换且失败零状态零推送", function()
             eq(Service.Equip(uid, "1", 1, 1, 1), true, "队1首装")
             eq(Service.Equip(uid, "3", 2, 1, 2), true, "队2已有目标")
+            local bagRef, equippedRef = modules.artifacts.bag, modules.artifacts.equippedByTeam
+            local sourceRow, targetRow = equippedRef[1][1], equippedRef[2][2]
             local before, p, f = signature(modules), pushes, flushes
-            local success, reason = Service.Equip(uid, "1", 2, 1, 2)
-            eq(success, false, "拒绝跨队复用")
-            check(tostring(reason or ""):find("先卸下", 1, true), "明确先卸下")
-            eq(signature(modules), before, "拒绝不改原队或目标")
-            eq(pushes, p, "拒绝不标脏推送")
-            eq(flushes, f, "拒绝不Flush")
+            local success, reason, result = Service.Equip(uid, "1", 2, 1, 2)
+            eq(success, true, "跨队直接交换")
+            eq(reason, nil, "合法交换无需先卸下")
+            eq(Schema.getEquippedId(modules.artifacts, 1, 1, 1), "3", "旧目标回来源队原位")
+            eq(Schema.getEquippedId(modules.artifacts, 2, 1, 2), "1", "指定实例移到目标")
+            eq(modules.artifacts.bag, bagRef, "交换保bag引用")
+            eq(modules.artifacts.equippedByTeam, equippedRef, "交换保装配表引用")
+            eq(equippedRef[1][1], sourceRow, "交换保来源行引用")
+            eq(equippedRef[2][2], targetRow, "交换保目标行引用")
+            eq(result.cause, "artifact_equip", "成功交换explicit cause")
+            eq(pushes, p + 1, "交换只推一次完整最终状态")
+            eq(flushes, f + 1, "沿原Flush规则一次")
             eq(Service.Equip(uid, "2", 1, 1, 2), true, "同类型另实例分队合法")
-            eq(Service.Equip(uid, "1", 4, 2, 1), true, "同队换槽")
-            eq(Schema.getEquippedId(modules.artifacts, 1, 1, 1), nil, "同队清原位")
-            eq(Service.Unequip(uid, 4, 2, 1), true, "明确卸原队")
+            eq(Service.Equip(uid, "1", 4, 2, 1), true, "跨队空位移动")
+            eq(Schema.getEquippedId(modules.artifacts, 2, 1, 2), nil, "空位移动清原位")
+            eq(Service.Unequip(uid, 4, 2, 1), true, "明确卸来源")
             eq(Service.Equip(uid, "1", 4, 2, 3), true, "卸后可装另队")
             for _, mode in ipairs({ "long", "et", "e" }) do
                 local raw = { bag = { artifact(1), artifact(2) }, nextId = 3 }
-                if mode == "long" then raw.equippedByTeam = { ["1"] = { ["2"] = { ["1"] = 1 } } }
-                elseif mode == "et" then raw.et = { ["1"] = { ["2"] = 1 } }
-                else raw.e = { ["2"] = { ["1"] = "1" } } end
+                if mode == "long" then raw.equippedByTeam = { ["2"] = { ["2"] = { ["1"] = 1 } } }
+                elseif mode == "et" then raw.et = { ["2"] = { ["2"] = 1 } }
+                else raw.e = { ["2"] = { ["2"] = "1" } } end
                 modules.artifacts = raw
-                local bagRef = raw.bag
+                modules.player.level, modules.battle.maxStageId = mode == "e" and 30 or 60, 905
+                local originalBag = raw.bag
                 before, p, f = signature(raw), pushes, flushes
-                eq(Service.Equip(uid, "1", 1, 1, 2), false, mode .. "未迁移旧档拒绝")
+                eq(Service.Equip(uid, "1", 1, 1, 1), false, mode .. "未迁移旧档来源锁定拒绝")
                 eq(signature(raw), before, mode .. "拒绝不normalize旧档")
-                eq(raw.bag, bagRef, mode .. "拒绝保表身份")
+                eq(raw.bag, originalBag, mode .. "拒绝保表身份")
                 eq(pushes, p, "旧档拒绝不推送")
                 eq(flushes, f, "旧档拒绝不Flush")
             end
+            modules.player.level, modules.battle.maxStageId = 60, 1906
             modules.artifacts = fresh()
             Service.Equip(uid, "1", 1, 1, 1)
+            Schema.setEquippedId(modules.artifacts, 1, 2, "2", 2)
             local params = { artifactId = "1", teamIdx = 2, slot = 1, subSlot = 1, requestId = "rejected" }
             local response = equipHandler(uid, params)
-            eq(response.success, false, "真实Handler拒绝")
+            eq(response.success, false, "真实Handler同type拒绝")
             for _, key in ipairs({ "requestId", "artifactId", "teamIdx", "slot", "subSlot" }) do
                 eq(response[key], params[key], "失败回显" .. key)
             end
-            params.artifactId, params.requestId = "2", "accepted"
+            params.artifactId, params.requestId = "3", "accepted"
             response = equipHandler(uid, params)
-            eq(response.success, true, "真实Handler合法另实例")
+            eq(response.success, true, "真实Handler合法另类型")
             eq(response.requestId, "accepted", "成功回显requestId")
             modules.artifacts = fresh()
             modules.artifacts.bag = { artifact(1), artifact(2), artifact(3) }
@@ -196,6 +218,154 @@ function Start()
             eq(Service.Merge(uid, { "1", "2", "3" }), false, "队2占用不能合成")
             eq(Service.Reroll(uid, { "1", "2" }), false, "队2占用不能置换")
             eq(signature(modules.artifacts), before, "消耗拒绝保bag")
+        end)
+        run("两方向同type/资格/实例完整校验与同格幂等", function()
+            local function fixture()
+                modules.artifacts = fresh()
+                modules.player.level, modules.battle.maxStageId = 60, 1906
+                Schema.setEquippedId(modules.artifacts, 1, 1, "1", 1)
+                Schema.setEquippedId(modules.artifacts, 2, 1, "3", 2)
+            end
+            for _, mode in ipairs({ "source_type", "target_type", "source_level", "source_team", "target_missing", "source_duplicate", "target_duplicate", "bag_duplicate" }) do
+                fixture()
+                if mode == "source_type" then Schema.setEquippedId(modules.artifacts, 1, 2, "4", 1)
+                    for _, a in ipairs(modules.artifacts.bag) do if a.id == "4" then a.artifactId = 6 end end
+                elseif mode == "target_type" then Schema.setEquippedId(modules.artifacts, 2, 2, "2", 2)
+                elseif mode == "source_level" then
+                    Schema.setEquippedId(modules.artifacts, 1, 2, "1", 1) modules.player.level = 30
+                elseif mode == "source_team" then
+                    Schema.setEquippedId(modules.artifacts, 1, 1, "1", 3) modules.battle.maxStageId = 1001
+                elseif mode == "target_missing" then modules.artifacts.equippedByTeam[2][2][1] = "999"
+                elseif mode == "source_duplicate" then modules.artifacts.equippedByTeam[2][3] = { [1] = "1" }
+                elseif mode == "target_duplicate" then modules.artifacts.equippedByTeam[1][3] = { [1] = "3" }
+                elseif mode == "bag_duplicate" then modules.artifacts.bag[#modules.artifacts.bag + 1] = artifact(1) end
+                local before, p, f = signature(modules), pushes, flushes
+                eq(Service.Equip(uid, "1", 2, 1, 2), false, mode .. "交换拒绝")
+                eq(signature(modules), before, mode .. "失败不半交换/不迁移")
+                eq(pushes, p, mode .. "失败零推送")
+                eq(flushes, f, mode .. "失败零Flush")
+            end
+            fixture()
+            local before, p, f = signature(modules), pushes, flushes
+            local success, _, result = Service.Equip(uid, "1", 1, 1, 1)
+            eq(success, true, "同格重试成功")
+            eq(result.changed, false, "同格不产生操作delta")
+            eq(result.cause, nil, "同格无提升cause")
+            eq(signature(modules), before, "同格不改模块")
+            eq(pushes, p, "同格不重复推送")
+            eq(flushes, f, "同格不重复Flush")
+            Schema.setEquippedId(modules.artifacts, 1, 2, "3", 1)
+            eq(Service.Equip(uid, "1", 1, 2, 1), true, "同号位不同type两格互换")
+            eq(Schema.getEquippedId(modules.artifacts, 1, 1, 1), "3", "同号位旧目标回原子格")
+            eq(Schema.getEquippedId(modules.artifacts, 1, 2, 1), "1", "同号位来源移目标子格")
+            for id = 1, 5 do eq(countRefs(modules.artifacts, id), (id == 1 or id == 3) and 1 or 0, "最终实例唯一" .. id) end
+        end)
+
+        run("真实Service推送贯通正式队伍缓存与神器正增特效", function()
+            local CP = require("ui.character.panel.CharacterPanel")
+            local Power = require("ui.character.panel.CharacterPower")
+            local Effect = require("ui.fx.SpinePowerUpEffect")
+            local Bus = require("core.EventBus")
+            local Events = require("config.GameEvents")
+            local Draw = require("ui.character.panel.CharacterPanelDraw2")
+            local Detail = require("ui.character.detail.CharacterDetail")
+            local Tri = require("ui.battle.tri.BattleTriPage")
+            local Scene = require("ui.battle.scene.BattleScene")
+            local Nav = require("ui.hud.BottomNav")
+            local function noop() end
+            replace(Draw, "initImages", noop)
+            replace(Detail, "init", noop)
+            replace(Tri, "refreshHeroProgressTeams", noop)
+            replace(Scene, "refreshAllyStats", noop)
+            replace(Nav, "setBadge", noop)
+            replace(Nav, "refreshTownBadge", noop)
+            local clock = { elapsedTime = 200 }
+            replace(_G, "time", clock)
+            local fullRefreshes = 0
+            local bind = Power.bind
+            replace(Power, "bind", function(deps)
+                local bound = bind(deps)
+                local refresh = bound.refreshPowerCache
+                bound.refreshPowerCache = function(cause)
+                    fullRefreshes = fullRefreshes + 1
+                    return refresh(cause)
+                end
+                bound.refreshNavBadge = noop -- 仅隔离与正式战力无关的角标/纹理预热。
+                return bound
+            end)
+            Store.Cleanup() Dispatcher.reset() Store.Init()
+            local heroes = { roster = { [1] = { level = 30 }, [2] = { level = 30 }, [3] = { level = 30 } },
+                deployed = { 1, 0, 0, 0 }, teams = { { slots = { 1, 0, 0, 0 } },
+                    { slots = { 2, 0, 0, 0 } }, { slots = { 3, 0, 0, 0 } } } }
+            Dispatcher.set("equipment", { inventory = {}, equipped = {} })
+            Dispatcher.set("talents", { litNodes = {} })
+            Dispatcher.set("battle", { maxStageId = 2001 })
+            Dispatcher.set("player", { level = 60 })
+            local artifacts = fresh()
+            artifacts.bag = { artifact(1, 5), artifact(3, 5) }
+            artifacts.bag[1].quality, artifacts.bag[2].quality = 1, 6
+            Dispatcher.set("artifacts", artifacts)
+            Dispatcher.set("heroes", heroes)
+            CP.init(nil) CP.setHeroesData(Dispatcher.get("heroes"))
+            local snapshots = {}
+            local function observe(data) snapshots[#snapshots + 1] = copy(data) end
+            Bus.on(Events.TEAM_POWER_CHANGED, observe)
+            cleanups[#cleanups + 1] = function() Effect.destroy() Bus.off(Events.TEAM_POWER_CHANGED, observe) end
+            Effect.init()
+            Dispatcher.set("artifacts", Dispatcher.get("artifacts"), { normalized = true })
+            clock.elapsedTime = clock.elapsedTime + 3
+            local live = Dispatcher.getAll()
+            PDM.AttachLocalModules(uid, live)
+            PDM.Setup({ serverDispatcher = { pushModule = function(sentUid, name, value)
+                eq(sentUid, uid, "真实评分链独立uid")
+                Dispatcher.set(name, value, { normalized = true })
+            end } })
+            local function row(team)
+                for _, value in ipairs(Effect.getDisplayRows()) do if value.teamIdx == team then return value end end
+            end
+            local oldPower, count, scores = CP.getTotalPower(1), #snapshots, fullRefreshes
+            local response = equipHandler(uid, { artifactId = "1", teamIdx = 1, slot = 1, subSlot = 1, requestId = "power1" })
+            eq(response.success, true, "真实Handler安装成功")
+            eq(fullRefreshes, scores + 1, "同步神器推送完整评分恰好一次")
+            eq(#snapshots, count + 1, "完整队伍事件恰好一次")
+            eq(snapshots[#snapshots].cause, "artifact_equip", "成功cause不是伪level_up")
+            eq(assert(row(1)).base, oldPower, "旧正式队伍缓存作为显示基准")
+            eq(assert(row(1)).power, CP.getTotalPower(1), "新正式队伍缓存作为显示终值")
+            check(assert(row(1)).delta > 0, "实际神器安装正式战力正增")
+            eq(Schema.takeEquipNotificationCause(live.artifacts), nil, "cause已消费且不残留")
+            eq(equipHandler(uid, { artifactId = "3", teamIdx = 2, slot = 1, subSlot = 1 }).success, true, "高品质神器装另一队")
+            clock.elapsedTime = clock.elapsedTime + 6 Effect.update(0)
+            local old1, old2 = CP.getTotalPower(1), CP.getTotalPower(2)
+            scores, count = fullRefreshes, #snapshots
+            response = equipHandler(uid, { artifactId = "3", teamIdx = 1, slot = 1, subSlot = 1, requestId = "swap" })
+            eq(response.success, true, "真实Handler跨队交换成功")
+            eq(fullRefreshes, scores + 1, "两队交换仍一次完整评分")
+            eq(#snapshots, count + 1, "两队交换发完整事件一次")
+            check(CP.getTotalPower(1) > old1 and CP.getTotalPower(2) < old2, "真实公式两队一增一减")
+            eq(assert(row(1)).delta, CP.getTotalPower(1) - old1, "增队只显示自己的精确delta")
+            eq(row(2), nil, "减队不伪装一队总净增")
+            eq(snapshots[#snapshots].powers[2], CP.getTotalPower(2), "完整事件仍带减队真实新值")
+            scores, count = fullRefreshes, #snapshots
+            response = equipHandler(uid, { artifactId = "3", teamIdx = 1, slot = 1, subSlot = 1, requestId = "retry" })
+            eq(response.success, true, "同位置重试成功回执")
+            eq(fullRefreshes, scores, "重试不重复评分使delta归零")
+            eq(#snapshots, count, "重试不发伪变化")
+            eq(response.cause, nil, "重试无cause")
+            local before = signature(live.artifacts)
+            response = equipHandler(uid, { artifactId = "missing", teamIdx = 2, slot = 2, subSlot = 1 })
+            eq(response.success, false, "实例失败真实回执")
+            eq(signature(live.artifacts), before, "失败保完整装配")
+            eq(fullRefreshes, scores, "失败不评分")
+            Dispatcher.set("artifacts", live.artifacts, { normalized = true })
+            eq(snapshots[#snapshots].cause, nil, "普通再推送不复用成功cause")
+            local scopeOk = pcall(Schema.withEquipNotification, live.artifacts, function() error("notification boundary") end)
+            eq(scopeOk, false, "发布异常仍明确传回")
+            eq(Schema.takeEquipNotificationCause(live.artifacts), nil, "发布异常finally清cause")
+            eq(live.artifacts.cause, nil, "cause不写玩家模块")
+            eq(Schema.dehydrateModule(copy(live.artifacts)).cause, nil, "cause不进入存档结构")
+            Effect.destroy() Bus.off(Events.TEAM_POWER_CHANGED, observe)
+            Store.Cleanup() Dispatcher.reset()
+            PDM.RemovePlayer(uid, true)
         end)
 
         -- 生产链保真：UI -> GameAction -> LocalActionBridge -> Handler/Service
@@ -456,19 +626,20 @@ function Start()
             reset() selectBag("1")
             Schema.setEquippedId(data(), 1, 1, "1", 1)
             clickSlot(2, 1, 1)
-            eq(#requests, 0, "候选被别队占用不发送")
-            check(churchState.floatText:find("先卸下", 1, true), "UI跨队明确拒绝")
-            eq(Schema.getEquippedId(data(), 1, 1, 1), "1", "不误卸原队")
-            Panel.reset() clickSlot(1, 1, 1)
+            eq(#requests, 1, "实时来源已装后仍可直接跨队移动")
+            check(not churchState.floatText:find("先卸下", 1, true), "UI不再要求先卸下")
+            eq(Schema.getEquippedId(data(), 1, 1, 1), nil, "跨队移动清原位")
+            eq(Schema.getEquippedId(data(), 1, 1, 2), "1", "实时来源移动目标落地")
+            Panel.reset() clickSlot(2, 1, 1)
             eq(Detail.isPinned(), true, "保留GitHub点击钉住详情")
             paint.texts = {} Detail.draw({})
             local positionText = table.concat(paint.texts, "|")
-            check(positionText:find("队伍1 · 前锋 · 第1格", 1, true), "已装详情保留位置提示")
+            check(positionText:find("队伍2 · 前锋 · 第1格", 1, true), "已装详情保留位置提示")
             for _, xOffset in ipairs({ 133, 397 }) do
                 local slotX, slotY = slotDetailPoint(xOffset)
                 Panel.handleTabInput(slotX, slotY)
-                eq(Schema.getEquippedId(data(), 1, 1, 1), "1", "已装详情旧操作区不改变装配")
-                eq(#requests, 0, "已装详情旧操作区不派取下/洗练")
+                eq(Schema.getEquippedId(data(), 1, 1, 2), "1", "已装详情旧操作区不改变装配")
+                eq(#requests, 1, "已装详情旧操作区不派取下/洗练")
             end
             local slotX, slotY = slotDetailPoint(397)
             Schema.setEquippedId(data(), 1, 1, "1", 2) clickSlot(2, 1, 1)
@@ -481,6 +652,7 @@ function Start()
             eq(Schema.getEquippedId(data(), 1, 1, 2), "2", "保留替换实体")
             eq(storageCalls, 0, "生产链零存档调用")
         end)
+        eq(storageAccess, 0, "全程无玩家文件访问或未知文件查询")
         check(cases >= 9 and assertions >= 170, "防空通过：执行全部迁移场景")
     end)
     for i = #cleanups, 1, -1 do pcall(cleanups[i]) end

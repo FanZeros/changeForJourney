@@ -6,6 +6,7 @@ local PDM = require("rules.character.PlayerDataManager")
 local DC = require("config.DungeonConfig")
 local EquipmentSystem = require("systems.EquipmentSystem")
 local LootBoxSystem = require("systems.LootBoxSystem")
+local BlacksmithConfig = require("config.BlacksmithConfig")
 local ExpTable = require("config.ExpTable")
 local TeamSlots = require("shared.heroes.TeamSlots")
 local GameState = require("core.GameState")
@@ -274,16 +275,33 @@ function DungeonService.GrantEquipment(uid, dungeonId, floor, count)
     local lootbox = PDM.GetModule(uid, "lootbox")
     if not count or count < 0 or not floorData then return false, "装备奖励配置无效" end
     if not equipment then return false, "装备数据未加载" end
-    if EquipmentSystem.getInventoryCount(equipment) + count > EquipmentSystem.MAX_INVENTORY and not lootbox then
+    local autoSettings = equipment.settings
+    local autoEnabled = autoSettings and ((tonumber(autoSettings.autoQuality) or 0) > 0
+        or (tonumber(autoSettings.autoLevel) or 0) > 0)
+    -- 关闭规则时保留旧前置容量拒绝（零生成/RNG）；开启后只为保留件检查容器。
+    if not autoEnabled and EquipmentSystem.getInventoryCount(equipment) + count > EquipmentSystem.MAX_INVENTORY and not lootbox then
         return false, "遗匣数据未加载"
     end
-    local generated = {}
-    for i = 1, count do
+    -- 仅equipment_vault本次新生成首通/挂机奖励；已入库/入匣和旧pending均不扫描。
+    -- 所有品质与装备仍按原顺序完整生成，之后的分流不消费随机。
+    local generated, decomposed = {}, {}
+    local autoEssence = 0
+    for _ = 1, count do
         local quality = require("systems.DropSystem").rollQualityByProbabilities(floorData.equipQualityProbabilities)
         local equip = EquipmentSystem.generateRandom(floorData.equipLevel, quality)
         if not equip then return false, "装备生成失败" end
-        generated[i] = equip
+        if not equip.locked and BlacksmithConfig.shouldAutoDecompose(autoSettings, equip.quality, equip.level) then
+            decomposed[#decomposed + 1] = equip
+            autoEssence = autoEssence + BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
+        else
+            generated[#generated + 1] = equip
+        end
     end
+    if EquipmentSystem.getInventoryCount(equipment) + #generated > EquipmentSystem.MAX_INVENTORY and not lootbox then
+        return false, "遗匣数据未加载"
+    end
+    local currency = autoEssence > 0 and PDM.GetModule(uid, "currency") or nil
+    if autoEssence > 0 and not currency then return false, "货币数据未加载" end
     local result = { equips = {}, inventoryCount = 0, lootboxCount = 0 }
     for _, equip in ipairs(generated) do
         local destination = LootBoxSystem.deliverEquipment(lootbox, equipment, equip)
@@ -295,7 +313,18 @@ function DungeonService.GrantEquipment(uid, dungeonId, floor, count)
         }
     end
     if result.inventoryCount > 0 then markDirty(uid, "equipment") end
-    if result.lootboxCount > 0 then markDirty(uid, "lootbox") end
+    if autoEssence > 0 then
+        currency.essence = (currency.essence or 0) + autoEssence
+        markDirty(uid, "currency")
+        if lootbox then
+            for _, equip in ipairs(decomposed) do
+                local essence = BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
+                BlacksmithConfig.recordAutoDecompose(lootbox, equip.quality, equip.level, essence)
+            end
+        end
+        result.autoDecomposeCount, result.autoDecomposeEssence = #decomposed, autoEssence
+    end
+    if result.lootboxCount > 0 or (autoEssence > 0 and lootbox) then markDirty(uid, "lootbox") end
     return true, nil, result
 end
 

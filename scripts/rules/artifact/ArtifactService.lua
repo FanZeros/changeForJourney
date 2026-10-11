@@ -308,7 +308,7 @@ function ArtifactService.Draw(uid, count, payType, chestType)
     }
 end
 
---- 装配到指定队伍：同实例全队唯一，跨队必须先明确卸下
+--- 装配/移动/互换：两方向资格全部校验通过后，原位一次提交装配引用。
 function ArtifactService.Equip(uid, artifactId, slot, subSlot, teamIdx)
     slot = tonumber(slot)
     subSlot = tonumber(subSlot) or 1
@@ -320,51 +320,127 @@ function ArtifactService.Equip(uid, artifactId, slot, subSlot, teamIdx)
         return false, "无效的神器格子"
     end
 
-    -- 队伍通关门槛与下面的神器子格等级门槛独立，规则层不能只依赖 UI 禁点。
     local battleProgress = PDM.GetModule(uid, "battle")
-    if teamIdx > ExpTable.getUnlockedTeamCount(battleProgress) then
-        return false, string.format("队伍%d尚未解锁（%s）", teamIdx, ExpTable.getTeamUnlockText(teamIdx))
+    local unlockedTeams = ExpTable.getUnlockedTeamCount(battleProgress)
+    local unlockedSubSlots = ArtifactSchema.getUnlockedSubSlotCount(getPlayerLevel(uid))
+    local function checkPosition(team, sub)
+        if team > unlockedTeams then
+            return false, string.format("队伍%d尚未解锁（%s）", team, ExpTable.getTeamUnlockText(team))
+        end
+        if sub > unlockedSubSlots then
+            return false, "远征等级达到" .. tostring(ArtifactSchema.getSubSlotUnlockLevel(sub))
+                .. "级后解锁第" .. tostring(sub) .. "神器格"
+        end
+        return true
     end
-    local playerLevel = getPlayerLevel(uid)
-    if subSlot > ArtifactSchema.getUnlockedSubSlotCount(playerLevel) then
-        local unlockLevel = ArtifactSchema.getSubSlotUnlockLevel(subSlot)
-        return false, "远征等级达到" .. tostring(unlockLevel) .. "级后解锁第" .. tostring(subSlot) .. "神器格"
-    end
+    local allowed, reason = checkPosition(teamIdx, subSlot)
+    if not allowed then return false, reason end
 
-    -- 跨队拒绝必须在normalize前：不能因失败重建旧档、卸原队或覆盖目标。
-    local rawData = PDM.GetModule(uid, "artifacts")
-    local occupiedTeam = findEquippedAnyTeam(rawData, artifactId)
-    if occupiedTeam and occupiedTeam ~= teamIdx then
-        return false, "神器已安装在队伍" .. tostring(occupiedTeam) .. "，请先卸下再安装到其他队伍"
-    end
-    local data = ensureData(uid)
+    local data = PDM.GetModule(uid, "artifacts")
     if not data then return false, "神器数据未加载" end
+    local sourceTeam, sourceSlot, sourceSub = findEquippedAnyTeam(data, artifactId)
+    if sourceTeam then
+        allowed, reason = checkPosition(sourceTeam, sourceSub)
+        if not allowed then return false, reason end
+    end
+    local targetId = ArtifactSchema.getEquippedId(data, slot, subSlot, teamIdx)
 
-    local _idx, artifact = findBagIndex(data, artifactId)
-    if not artifact then return false, "神器不存在" end
+    -- 验证用隔离副本：失败不能借 normalize 卸旧位、删重复引用或迁移原档。
+    local function copy(value)
+        if type(value) ~= "table" then return value end
+        local result = {}
+        for k, v in pairs(value) do result[k] = copy(v) end
+        return result
+    end
+    local normalized = copy(data)
+    ArtifactSchema.normalizeModule(normalized)
+    local candidate = copy(normalized)
+    local function uniqueInstance(id)
+        local count, found = 0, nil
+        for _, item in ipairs(candidate.bag) do
+            if tostring(item.id) == tostring(id) then count, found = count + 1, item end
+        end
+        if count ~= 1 then return nil end
+        local refs = 0
+        for team = 1, ArtifactSchema.TEAM_COUNT do
+            for s = 1, ArtifactSchema.SLOT_COUNT do
+                for sub = 1, ArtifactSchema.SUB_SLOT_COUNT do
+                    if tostring(ArtifactSchema.getEquippedId(data, s, sub, team) or "") == tostring(id) then
+                        refs = refs + 1
+                    end
+                end
+            end
+        end
+        return refs <= 1 and found or nil
+    end
+    local artifact = uniqueInstance(artifactId)
+    if not artifact then return false, "神器不存在或实例不唯一" end
+    local displaced = targetId and uniqueInstance(targetId) or nil
+    if targetId and not displaced then return false, "目标神器不存在或实例不唯一" end
+    local normalizedTeam, normalizedSlot, normalizedSub = findEquippedAnyTeam(candidate, artifact.id)
+    if normalizedTeam ~= sourceTeam or normalizedSlot ~= sourceSlot or normalizedSub ~= sourceSub
+        or tostring(ArtifactSchema.getEquippedId(candidate, slot, subSlot, teamIdx) or "") ~= tostring(targetId or "") then
+        return false, "神器装配数据异常，请重新加载"
+    end
 
-    if hasSameTypeInSlot(data, slot, artifact, subSlot, teamIdx) then
+    local result = { artifactId = tostring(artifact.id), slot = slot, subSlot = subSlot, teamIdx = teamIdx,
+        sourceTeamIdx = sourceTeam, sourceSlot = sourceSlot, sourceSubSlot = sourceSub,
+        replacedArtifactId = targetId and tostring(targetId) or nil, changed = false }
+    if sourceTeam == teamIdx and sourceSlot == slot and sourceSub == subSlot then
+        return true, nil, result -- 同位重试幂等，不评分/推送、不产生虚假提升。
+    end
+
+    local function writeCell(module, team, s, sub, id)
+        local byTeam = module.equippedByTeam
+        local equipped = byTeam[team] or {}
+        byTeam[team] = equipped
+        local row = equipped[s] or {}
+        equipped[s] = row
+        row[sub] = id and tostring(id) or nil
+    end
+    local function finishRows(module)
+        -- 两格写完才清空行：同号位移到空子格保留原行引用，不能先删再新建。
+        for _, team in pairs(module.equippedByTeam) do
+            for s, row in pairs(team) do if not next(row) then team[s] = nil end end
+        end
+        for team, equipped in pairs(module.equippedByTeam) do
+            if not next(equipped) then module.equippedByTeam[team] = nil end
+        end
+        module.equipped = module.equippedByTeam[1] or {}
+    end
+    -- 先构成最终两格，再检查同号位同类型；互换同一号位两子格不会误撞旧来源。
+    if sourceTeam then writeCell(candidate, sourceTeam, sourceSlot, sourceSub, targetId) end
+    writeCell(candidate, teamIdx, slot, subSlot, artifact.id)
+    finishRows(candidate)
+    if hasSameTypeInSlot(candidate, slot, artifact, subSlot, teamIdx) then
         return false, "同一槽位不能佩戴相同类型神器"
     end
-
-    -- 同队换槽照常移动；跨队占用已拒绝，不用setter偷偷转移来源。
-    local currentSlot, currentSubSlot = ArtifactSchema.findEquippedSlot(data, artifact.id, teamIdx)
-    if currentSlot then
-        ArtifactSchema.setEquippedId(data, currentSlot, currentSubSlot or 1, nil, teamIdx)
+    if sourceTeam and displaced and hasSameTypeInSlot(candidate, sourceSlot, displaced, sourceSub, sourceTeam) then
+        return false, "来源槽位不能佩戴相同类型神器"
     end
-    ArtifactSchema.setEquippedId(data, slot, subSlot, artifact.id, teamIdx)
 
-    ArtifactSchema.normalizeModule(data)
-    PDM.MarkDirty(uid, "artifacts")
+    -- 正常运行态保留 bag/实例/装配表与未清空行引用；仅旧结构成功时沿用原迁移。
+    local function sameValue(a, b)
+        if type(a) ~= type(b) then return false end
+        if type(a) ~= "table" then return a == b end
+        for k, v in pairs(a) do if not sameValue(v, b[k]) then return false end end
+        for k in pairs(b) do if a[k] == nil then return false end end
+        return true
+    end
+    if not sameValue(data, normalized) then ArtifactSchema.normalizeModule(data) end
+    -- 此区间无 yield/回调；目标旧神器送回已装来源，bag 来源则旧目标仍在 bag。
+    if sourceTeam then writeCell(data, sourceTeam, sourceSlot, sourceSub, targetId) end
+    writeCell(data, teamIdx, slot, subSlot, artifact.id)
+    finishRows(data)
+    result.changed, result.cause = true, "artifact_equip"
+    ArtifactSchema.withEquipNotification(data, function() PDM.MarkDirty(uid, "artifacts") end)
     PDM.FlushImmediate(uid)
 
     print("[ArtifactService] EQUIP uid=" .. tostring(uid)
-        .. " team=" .. tostring(teamIdx)
-        .. " slot=" .. tostring(slot)
-        .. " subSlot=" .. tostring(subSlot)
-        .. " artifactId=" .. tostring(artifact.id))
-
-    return true, nil, { artifactId = tostring(artifact.id), slot = slot, subSlot = subSlot, teamIdx = teamIdx }
+        .. " team=" .. tostring(teamIdx) .. " slot=" .. tostring(slot) .. " subSlot=" .. tostring(subSlot)
+        .. " artifactId=" .. tostring(artifact.id) .. " sourceTeam=" .. tostring(sourceTeam)
+        .. " replaced=" .. tostring(targetId))
+    return true, nil, result
 end
 
 --- [三队适配] 卸下指定队伍的装配（teamIdx 缺省 1）

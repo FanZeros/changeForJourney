@@ -6,6 +6,27 @@ function Start()
     ---@type fun(name: string): any
     local originalRequire = _G.require
     local originalInput, originalTime = rawget(_G, "input"), rawget(_G, "time")
+    local nativeCache = cache
+    ---@type any
+    local originalIO = {}
+    local ioAttempts = 0
+    for _, key in ipairs({ "File", "FileSystem", "fileSystem", "io", "cache" }) do
+        originalIO[key] = { value = rawget(_G, key) }
+    end
+    local function denyIO()
+        ioAttempts = ioAttempts + 1
+        error("offline_overlay_horizon_test 禁止玩家 File/FS 与未知资源接口")
+    end
+    local closedIO = setmetatable({}, { __index = function() return denyIO end })
+    rawset(_G, "File", denyIO)
+    rawset(_G, "FileSystem", denyIO)
+    rawset(_G, "fileSystem", closedIO)
+    rawset(_G, "io", closedIO)
+    local sourcePaths = {}
+    rawset(_G, "cache", setmetatable({ GetFile = function(_, path)
+        if not sourcePaths[path] then return denyIO() end
+        return nativeCache:GetFile(path)
+    end }, { __index = function() return denyIO end }))
     local originalGlobals, originalNvg, originalRT, originalViewport = {}, {}, {}, {}
     local originalLoadedHorizon = package.loaded["boot.StandaloneHorizon"]
     ---@type any
@@ -55,8 +76,11 @@ function Start()
         local realModules = { ["boot.StandaloneHorizonInput"] = true,
             ["boot.OfflineRewardOverlay"] = true, ["boot.SeamBackGesture"] = true,
             ["boot.TerminalInput"] = true, ["boot.DecomposeMarqueeGesture"] = true,
-            ["boot.StandaloneHorizonWheel"] = true,
+            ["boot.RewardGesture"] = true,
+            ["boot.StandaloneHorizonWheel"] = true, ["ui.tower.TowerLayout"] = true,
             ["ui.character.hero.AwakeningArtwork"] = true }
+        sourcePaths["boot/StandaloneHorizon.lua"] = true
+        for name in pairs(realModules) do sourcePaths[name:gsub("%.", "/") .. ".lua"] = true end
         local function source(name)
             if sources[name] then return sources[name] end
             local path = name:gsub("%.", "/") .. ".lua"
@@ -98,7 +122,7 @@ function Start()
             draggingCard = false, closeOnClaim = false, notice = false, story = false,
             title = false, letter = false, ce = false, pip = false, talent = false,
             task = false, towerTri = false, reward = false, dungeon = false, towerFloor = 7,
-            tutorial = false, levelVersion = 1,
+            tutorial = false, levelVersion = 1, power = false,
             tavern = false, market = false, church = false, smith = false, loot = false,
             sweep = false, stats = false, stage = false, intro = false, terminal = false,
             recruitBusy = false, targetRecruit = false, tavernBlocking = false,
@@ -407,6 +431,11 @@ function Start()
             }),
             ["ui.tower.TowerBattleScene"] = page("tower", {
                 isActive = function() return state.mode == "tower" end,
+                -- 正式TowerScene.getLayout也仅委托此纯几何；不能以mock=false替代现存接口。
+                getLayout = function(width, height)
+                    return compiled["ui.tower.TowerLayout"].compute(width, height)
+                end,
+                getPresentationKey = function() return "fixture:" .. tostring(state.towerFloor) end,
                 draw = function() if state.task then snapshot("tower") end end,
                 close = function() count("tower.close"); state.mode = "ordinary"; state.towerFloor = 0 end,
             }),
@@ -428,6 +457,7 @@ function Start()
             ["runtime.GameAction"] = mock({ sendAction = function() count("action"); return false end }),
         }
         mods["ui.fx.SpinePowerUpEffect"] = mock({
+            isPlaying = function() return state.power end,
             draw = function(_, width, height) record("power.draw", width, height) end,
         })
         -- Runtime 的 require 可绕过 package.preload/loaded，所以拦截 _G.require 的动态依赖。
@@ -442,6 +472,7 @@ function Start()
             if not mods[name] then mods[name] = page(name) end
             return mods[name]
         end)
+        compiled["ui.tower.TowerLayout"] = compile("ui.tower.TowerLayout")
 
         local function invoke(handler, event)
             local fn = rawget(_G, handler)
@@ -486,8 +517,14 @@ function Start()
         end
         local function checkNoLowerInput(label, allowed)
             local leaked = {}
+            for _, event in ipairs(events) do
+                if event.name == "character.handleDragEnd" then
+                    -- CE/Update/跨栏取消的原生产出口固定(-1,-1)，释放来源不等于底层业务点击。
+                    check(event.x == -1 and event.y == -1, label .. " 角色取消只准(-1,-1)，不得携真实落队坐标")
+                end
+            end
             for name, amount in pairs(calls) do
-                if amount > 0 and not (allowed and allowed[name])
+                if amount > 0 and name ~= "character.handleDragEnd" and not (allowed and allowed[name])
                     and not name:match("^offline%.") and not name:match("^cross%.")
                     and (name:match("%.handle") or name == "action" or name == "seam.close" or name == "detail.close") then
                     leaked[#leaked + 1] = name .. "=" .. amount
@@ -514,7 +551,7 @@ function Start()
             state.notice, state.story, state.title, state.letter, state.ce = false, false, false, false, false
             state.pip, state.talent = false, false
             state.task, state.towerTri, state.reward, state.dungeon, state.towerFloor = false, false, false, false, 7
-            state.tutorial, state.levelVersion = false, 1
+            state.tutorial, state.levelVersion, state.power = false, 1, false
             state.tavern, state.market, state.church, state.smith, state.loot = false, false, false, false, false
             state.sweep, state.stats, state.stage, state.intro, state.terminal = false, false, false, false, false
             state.recruitBusy, state.targetRecruit, state.tavernBlocking = false, false, false
@@ -1091,9 +1128,14 @@ function Start()
                     checkXY("task.handleDragMove", 540, 1000, "塔Task drag")
                     check(n("task.handleInput") == 0 and n("task.handleDragEnd") == 1, "拖动不领取但结束Task拖拽")
                     clearCalls()
+                    positionWindow(485, 505)
+                    click()
+                    checkXY("task.handleInput", 485 / 0.45, 505 / 0.45, "真实左栏半开边界内沿包含")
+                    clearCalls()
                     positionWindow(486, 505)
                     click()
-                    checkXY("task.handleInput", 1080, 505 / 0.45, "左栏边界包含")
+                    check(n("task.handleInput") == 0 and n("tower.handleClick") == 0,
+                        "真实TowerLayout左栏[0,486)，精确486边界消费但不点穿Task或塔")
                     clearCalls()
                     positionWindow(250, 505)
                     invoke("HandleMouseWheelHorizon", wheel)
@@ -1275,6 +1317,108 @@ function Start()
                 and n("tri.handleDragEnd") == 0 and n("tri.handleInput") == 0,
                 label .. " seam capture不伪装成tri手势")
         end
+        -- 非交互战力提示只替身视觉控制器；实际 Down/Move/Up/Touch/Wheel 和页面出口仍走原宿主。
+        -- 真 UI 树 HitTest 由独立组件专项覆盖，本夹具不以 isPlaying 查询代替输入调用。
+        local powerStart = { cases = caseCount, assertions = assertions, failures = failures }
+        local function drawPower()
+            state.power = true
+            local before = n("power.draw")
+            invoke("HandleNanoVGRenderHorizon")
+            check(n("power.draw") == before + 1, "输入期间战力提示确实经过真实finishFrame绘制")
+        end
+        for _, mode in ipairs({ "ordinary", "tri" }) do
+            for _, kind in ipairs({ "mouse", "touch" }) do
+                for _, moment in ipairs({ "beforeDown", "afterDown" }) do
+                    for _, zone in ipairs({ "left", "center", "right" }) do
+                        for _, drag in ipairs({ false, true }) do
+                            runCase("Power非阻断 " .. mode .. " " .. kind .. " " .. moment
+                                .. " " .. zone .. (drag and " drag" or " tap/wheel"), function()
+                                fixture(mode, 2, true, false)
+                                state.smith = mode == "ordinary"
+                                invoke("HandleNanoVGRenderHorizon")
+                                local target = zone == "left" and "backpack"
+                                    or zone == "right" and "character" or (mode == "tri" and "tri" or "smith")
+                                local note, panel = viewport.getNote(zone), viewport.PANELS[zone]
+                                local windowX = zone == "center" and 760
+                                    or note.ox + panel.bx * note.s + 500 * note.s * viewport.DS
+                                -- touch()只传物理整数；按现有pointer的四舍五入反算精确逻辑坐标，不放宽断言容差。
+                                local px, py = framePosition(windowX, 600)
+                                local x = kind == "touch" and (math.floor(px + 0.5) / RT.dpr - RT.frameOx) / RT.frameScale or windowX
+                                local y = kind == "touch" and (math.floor(py + 0.5) / RT.dpr - RT.frameOy) / RT.frameScale or 600
+                                local expectedX = target == "tri" and x
+                                    or (x - note.ox - panel.bx * note.s) / (note.s * viewport.DS)
+                                local expectedY = target == "tri" and y or (y - note.oy) / (note.s * viewport.DS)
+                                clearCalls()
+                                if moment == "beforeDown" then drawPower() end
+                                positionWindow(1800, 50) -- touch专用事件坐标，不能借用鼠标落点。
+                                pointer(kind, "down", x, y)
+                                checkXY(target .. ".handleDragBegin", expectedX, expectedY, "战力提示不吞Down")
+                                if moment == "afterDown" then drawPower() end
+                                if drag then
+                                    pointer(kind, "move", x, y + 40)
+                                    checkXY(target .. ".handleDragMove", expectedX,
+                                        target == "tri" and y + 40 or (y + 40 - note.oy) / (note.s * viewport.DS),
+                                        "战力提示不取消来源拖动")
+                                end
+                                clock.elapsedTime = clock.elapsedTime + 0.2
+                                pointer(kind, "up", x, drag and y + 40 or y)
+                                check(n(target .. ".handleDragEnd") > 0, "来源实际收到Up结束而非只查询提示状态")
+                                check(n(target .. ".handleInput") == (drag and 0 or 1),
+                                    "旧按压不被战力提示取消，真拖动仍不伪点击")
+                                if not drag then
+                                    checkXY(target .. ".handleInput", expectedX, expectedY, "提示覆盖时点击仍投原页面")
+                                    clearCalls()
+                                    positionWindow(x, y)
+                                    invoke("HandleMouseWheelHorizon", wheel)
+                                    check(n(target .. ".handleScroll") >= 1, "播放中滚轮仍到原页面实际出口")
+                                    if zone ~= "center" then
+                                        check(n((zone == "left" and "character" or "backpack") .. ".handleScroll") == 0,
+                                            "滚轮不因提示改投另一侧栏")
+                                    end
+                                end
+                                check(n("cross.cancel") == 0 and n("seam.close") == 0 and n("action") == 0
+                                    and n("level.handleInput") == 0 and n("offline.input") == 0,
+                                    "纯提示不触发modal取消/关闭/领奖/业务action")
+                            end)
+                        end
+                    end
+                    runCase("Power装备旧拖放 " .. kind .. " " .. moment, function()
+                        fixture("tri", 3, true, false)
+                        state.grid = true
+                        positionPanel("left", 140, 1060)
+                        local x = (cursor.x / RT.dpr - RT.frameOx) / RT.frameScale
+                        local y = (cursor.y / RT.dpr - RT.frameOy) / RT.frameScale
+                        clearCalls()
+                        if moment == "beforeDown" then drawPower() end
+                        pointer(kind, "down", x, y)
+                        check(n("cross.arm") == 1 and state.armed, "真实Horizon下按仍arm原仓库装备")
+                        if moment == "afterDown" then drawPower() end
+                        pointer(kind, "move", x + 50, y)
+                        clock.elapsedTime = clock.elapsedTime + 0.2
+                        pointer(kind, "up", x + 50, y)
+                        check(n("cross.move") == 1 and n("cross.finish") == 1 and n("cross.cancel") == 0
+                            and not state.armed, "提示出现不取消装备手势，仍走既有finish出口")
+                        check(n("backpack.handleInput") == 0 and n("action") == 0, "拖动不变成装备点击或真实发奖")
+                    end)
+                    runCase("Power返回旧按压 " .. kind .. " " .. moment, function()
+                        local x, y = seamFixture("tavern", 2, true)
+                        if moment == "beforeDown" then drawPower() end
+                        pointer(kind, "down", x, y)
+                        if moment == "afterDown" then drawPower() end
+                        pointer(kind, "move", x, y)
+                        clock.elapsedTime = clock.elapsedTime + 0.2
+                        pointer(kind, "up", x, y)
+                        check(n("tavern.close") == 1 and n("seam.close") == 1 and not state.tavern,
+                            "战力提示播放/中途出现后真实seam旧按压仍关闭一次")
+                        noTri("Power不把seam改投战斗")
+                        check(n("cross.cancel") == 0 and n("action") == 0, "提示不额外取消手势或发送action")
+                    end)
+                end
+            end
+        end
+        print("[offline_overlay_horizon_test] Power nonblocking coverage: " .. (caseCount - powerStart.cases)
+            .. " cases, " .. (assertions - powerStart.assertions) .. " assertions, "
+            .. (failures - powerStart.failures) .. " failures")
         for _, kind in ipairs({ "mouse", "touch" }) do
             for _, dpr in ipairs({ 1, 2, 3 }) do
                 for _, transformed in ipairs({ false, true }) do
@@ -1521,8 +1665,11 @@ function Start()
         end)
     end)
     if not ok then check(false, "Start exception: " .. tostring(err)) end
+    print("[offline_overlay_horizon_test] IO guard: attempts=" .. ioAttempts .. ", source-only cache")
+    check(ioAttempts == 0, "全程玩家 File/FS 与非白名单 cache 访问为零")
 
     -- 无论断言/模块异常，都恢复 require、引擎全局、真实 RT/Viewport 与全部 NanoVG stub。
+    for key, saved in pairs(originalIO) do rawset(_G, key, saved.value) end
     rawset(_G, "require", originalRequire)
     rawset(_G, "input", originalInput)
     rawset(_G, "time", originalTime)

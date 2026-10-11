@@ -483,10 +483,30 @@ function OfflineService.CalcOnEnter(uid)
         panelData.rewards[#panelData.rewards + 1] = { type = "diamond", amount = rewards.diamond }
     end
 
-    -- 装备种子立刻生成真实装备，展示和领取共用同一批
-    local grantedEquips = materializeEquipSeeds(rewards.equipSeeds)
+    -- 装备仍全部按旧顺序生成；只在新掉落预览时按已保存条件分流。
+    -- 分流快照与实例一起保留，重推/领取不重骰、不把旧遗匣或库存追溯分解。
+    local generatedEquips = materializeEquipSeeds(rewards.equipSeeds)
+    local equipData = PDM.GetModule(uid, "equipment")
+    local autoSettings = equipData and equipData.settings
+    local grantedEquips, decomposedEquips = {}, {}
+    local autoEssence = 0
+    for _, equip in ipairs(generatedEquips) do
+        if not equip.locked and BlacksmithConfig.shouldAutoDecompose(autoSettings, equip.quality, equip.level) then
+            decomposedEquips[#decomposedEquips + 1] = equip
+            autoEssence = autoEssence + BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
+        else
+            grantedEquips[#grantedEquips + 1] = equip
+        end
+    end
     rewards.grantedEquips = grantedEquips
     appendEquipPreviewItems(panelData.rewards, grantedEquips)
+    if autoEssence > 0 then
+        rewards.autoDecomposeEquips = decomposedEquips
+        rewards.autoDecomposeEssence = autoEssence
+        panelData.rewards[#panelData.rewards + 1] = { type = "essence", amount = autoEssence }
+        panelData.autoDecomposeCount = #decomposedEquips
+        panelData.autoDecomposeEssence = autoEssence
+    end
 
     -- 卷轴掉落
     appendScrollPreviewItems(panelData.rewards, rewards.scrollDrops)
@@ -540,8 +560,10 @@ function OfflineService.ClaimRewards(uid)
     -- 1) 金币/黑钻；本地字段仍是 gems，展示/回执保持 diamond。
     local goldAmount = math.floor(rewards.gold or 0)
     local diamondAmount = math.floor(rewards.diamond or 0)
+    local autoEssence = rewards.autoDecomposeEssence or 0
     currency.gold = (currency.gold or 0) + goldAmount
     currency.gems = (currency.gems or 0) + diamondAmount
+    if autoEssence > 0 then currency.essence = (currency.essence or 0) + autoEssence end
     PDM.MarkDirty(uid, "currency")
 
     -- 2) 每队英雄只领取本队经验，忽略可过期/可篡改的面板 expGain。
@@ -596,9 +618,17 @@ function OfflineService.ClaimRewards(uid)
         PDM.MarkDirty(uid, "equipment")
     end
     if lootboxCount > 0 then
-        PDM.MarkDirty(uid, "lootbox")
         print("[OfflineService] 满包装备已入遗匣=" .. lootboxCount
             .. " uid=" .. tostring(uid))
+    end
+    if autoEssence > 0 and lootboxData then
+        for _, equip in ipairs(rewards.autoDecomposeEquips or {}) do
+            local essence = BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
+            BlacksmithConfig.recordAutoDecompose(lootboxData, equip.quality, equip.level, essence)
+        end
+    end
+    if lootboxCount > 0 or (autoEssence > 0 and lootboxData) then
+        PDM.MarkDirty(uid, "lootbox")
     end
 
     -- 5) 卷轴掉落 → 货币
@@ -635,6 +665,8 @@ function OfflineService.ClaimRewards(uid)
         heroExpGrants = heroExpGrants,
         playerExp = playerExp,
         lootboxEquips = lootboxEquips,
+        autoDecomposeCount = autoEssence > 0 and #(rewards.autoDecomposeEquips or {}) or nil,
+        autoDecomposeEssence = autoEssence > 0 and autoEssence or nil,
     }
 end
 

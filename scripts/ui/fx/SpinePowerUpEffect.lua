@@ -152,9 +152,12 @@ local function onTeamPowerChanged(data)
             previous[team] = power
             if current < stabilizeUntil or old == nil then
                 active[team] = nil
-            elseif data.cause ~= "level_up" then
-                -- 静默刷新也推进基准，不把战斗成长/换装混入下一次升级；重复快照不取消动画。
+            elseif data.cause ~= "level_up" and data.cause ~= "artifact_equip" then
+                -- 非成功安装/交换或升级仍静默推进基准；重复快照不取消已有动画。
                 if power ~= old then active[team] = nil end
+            elseif data.cause == "artifact_equip" and power < old then
+                -- 本次交换减值队立即撤去旧增益行，不能借先前升级/安装基准伪装本次正增。
+                active[team] = nil
             elseif power ~= old then
                 local row = active[team]
                 if row then

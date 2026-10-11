@@ -447,19 +447,41 @@ function DungeonConfig.getCombatEntry(id, floor)
     return entry
 end
 
---- 装备副本每层产出随层成长；首通按两次扫荡当量。
-DungeonConfig.EQUIP_SWEEP_BASE = 80
-DungeonConfig.EQUIP_SWEEP_STEP = 25
+-- 装备副本控量提质：12h效率基准只缓增；首通/完整24h为两倍。
+-- 数值是挂机效率当量，不是每券固定件数；一券仍按实际逐杀概率取整。
+-- 以源主线章节末为锚点，换难度不随普通怪池回落，也不改变敌人/等级/卷轴。
+local equipRewardNodes = {
+    { chapter = 13, count = 20 }, -- 开局品质保留原Q1..4比例，只加入万分之一至臻。
+    { chapter = 23, count = 40, probabilities = { 0.20, 0.25, 0.2699, 0.25, 0.03, 0.0001 } },
+    { chapter = 46, count = 60, probabilities = { 0.10, 0.20, 0.269, 0.35, 0.08, 0.001 } },
+    { chapter = 69, count = 80, probabilities = { 0.05, 0.15, 0.255, 0.42, 0.12, 0.005 } },
+    { chapter = 92, count = 100, probabilities = { 0.01, 0.10, 0.2475, 0.45, 0.18, 0.0125 } },
+    { chapter = 345, count = 140, probabilities = { 0, 0.02, 0.15, 0.45, 0.35, 0.03 } },
+}
 
---- 装备副本指定层的一次扫荡当量（挂机 24h = 两次）。
+local function getEquipRewardSegment(floor)
+    local maxFloor = DungeonConfig.MAX_FLOOR.equipment_vault
+    local level = math.min(maxFloor, math.max(1, math.floor(tonumber(floor) or 1)))
+    local source = getSourceStage("equipment_vault", level)
+    -- 13-5为起点；每个小关增加0.2章，章节末恰好落在配置锚点上。
+    local progress = source and (source.chapter + ((source.stage or 5) - 5) / 5) or 13
+    for index = 2, #equipRewardNodes do
+        local left, right = equipRewardNodes[index - 1], equipRewardNodes[index]
+        if progress <= right.chapter then
+            local ratio = math.max(0, (progress - left.chapter) / (right.chapter - left.chapter))
+            return left, right, ratio
+        end
+    end
+    local last = equipRewardNodes[#equipRewardNodes]
+    return last, last, 0
+end
+
+--- 装备副本指定层的12h效率基准（完整24h = 两倍），超末层钳制。
 ---@param floor number
 ---@return number
 function DungeonConfig.getEquipSweepCount(floor)
-    floor = math.max(1, math.floor(tonumber(floor) or 1))
-    local legacy = DungeonConfig.LEGACY_MAX_FLOOR.equipment_vault
-    -- 新高难内容继续提高产出，但按平方根放缓，避免一天生成数万件装备。
-    local rewardFloor = floor <= legacy and floor or legacy + math.ceil(math.sqrt(floor - legacy))
-    return DungeonConfig.EQUIP_SWEEP_BASE + (rewardFloor - 1) * DungeonConfig.EQUIP_SWEEP_STEP
+    local left, right, ratio = getEquipRewardSegment(floor)
+    return math.floor(left.count + (right.count - left.count) * ratio + 0.5)
 end
 
 --- 装备副本沿用源关卷轴掉率；扫荡券委托主线统一掉率，不另设倍率。
@@ -473,14 +495,23 @@ function DungeonConfig.getEquipDropRates(floor)
     return scrollRate, ticketRate
 end
 
---- 装备副本每件品质使用同源主线的零幸运击杀分布；不借副本首层替换的怪物池。
---- 数量、等级与首通当量独立于稀有度，普通/困难/高难度上限由主线配置决定。
+--- 装备副本独立稀有度曲线；只在开局借原Q1..4比例，不随怪池/难度重置。
+--- 每件至臻最少万分之一，后续Q4+、Q5+、Q6累计概率单调提升；不影响点金门槛。
 ---@param floor number
 ---@return number[]
 function DungeonConfig.getEquipQualityProbabilities(floor)
-    local source = getSourceStage("equipment_vault", floor)
-    if not source then return { 1, 0, 0, 0, 0, 0 } end
-    return require("systems.DropSystem").getStageQualityProbabilities(source)
+    if not equipRewardNodes[1].probabilities then
+        local first = getSourceStage("equipment_vault", 1)
+        if not first then return { 1, 0, 0, 0, 0, 0 } end
+        equipRewardNodes[1].probabilities = require("systems.DropSystem").getStageQualityProbabilities(first)
+    end
+    local left, right, ratio = getEquipRewardSegment(floor)
+    local probabilities = {}
+    for quality = 1, 6 do
+        probabilities[quality] = left.probabilities[quality]
+            + (right.probabilities[quality] - left.probabilities[quality]) * ratio
+    end
+    return probabilities -- 独立数组，查询方不能污染后续品质抽样。
 end
 
 --- 只骰一件品质；所有装备副本发奖入口复用此分布。
@@ -513,14 +544,15 @@ function DungeonConfig.getFloor(id, floor)
         result.firstEquip = sweep * 2
         result.equipLevel = combat.monsterLevel
         result.equipQualityProbabilities = DungeonConfig.getEquipQualityProbabilities(floor)
+        -- 点金/常规掉落上限仍用原cap；展示范围包含仅随机掉落的极小至臻例外。
         result.equipMinQuality, result.equipMaxQuality = 1, cap
-        for q = 1, cap do
+        for q = 1, 6 do
             if result.equipQualityProbabilities[q] > 0 then
                 result.equipMinQuality = q
                 break
             end
         end
-        for q = cap, 1, -1 do
+        for q = 6, 1, -1 do
             if result.equipQualityProbabilities[q] > 0 then
                 result.equipMaxQuality = q
                 break

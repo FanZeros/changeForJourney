@@ -526,6 +526,8 @@ local triggerMelissaStarGates = _melissa.triggerMelissaStarGates
 local updateMelissaStarGate = _melissa.updateMelissaStarGate
 
 local _alex = TalentAlex.bind({
+    getState = getState,
+    hasAwakenStage = hasAwakenStage,
     hasAwaken = hasAwaken,
     talentLog = talentLog,
     AD = AD,
@@ -545,6 +547,9 @@ local findLivingElwyn = _elwyn.findLivingElwyn
 local tryElwynInvulnOnEsBreak = _elwyn.tryElwynInvulnOnEsBreak
 
 local _sera = TalentSera.bind({
+    getState = getState,
+    getBattleRefs = function() return TAL_BCS end,
+    hasAwakenStage = hasAwakenStage,
     hasAwaken = hasAwaken,
     talentLog = talentLog,
     AD = AD,
@@ -552,6 +557,9 @@ local _sera = TalentSera.bind({
 local tickSeraMachineGunCount = _sera.tickSeraMachineGunCount
 
 local _suhua = TalentSuhua.bind({
+    getState = getState,
+    getBattleRefs = function() return TAL_BCS end,
+    hasAwakenStage = hasAwakenStage,
     hasAwaken = hasAwaken,
     talentLog = talentLog,
     AD = AD,
@@ -560,6 +568,9 @@ local _suhua = TalentSuhua.bind({
 local runSuhuaNightSlash = _suhua.runSuhuaNightSlash
 
 local _rosa = TalentRosa.bind({
+    getState = getState,
+    getBattleRefs = function() return TAL_BCS end,
+    hasAwakenStage = hasAwakenStage,
     hasAwaken = hasAwaken,
     AD = AD,
 })
@@ -694,6 +705,7 @@ bindTalentDamageTaken()
 local _modDmg
 local function bindTalentModifyDamage()
     _modDmg = TalentModifyDamage.bind({
+        calcTalentFixedDamage = calcTalentFixedDamage,
         getState = getState,
         ensureState = ensureState,
         hasAdv = hasAdv,
@@ -787,6 +799,7 @@ bindTalentUpdate()
 --- 重置所有天赋状态（关卡切换时调用）
 function TAL.reset()
     ETS.flush()
+    ETS.invalidateSupportBattle()
     state = {}
     TAL_BCS.bAllies  = {}
     TAL_BCS.bEnemies = {}
@@ -821,6 +834,25 @@ function TAL.onBattleStart(allies, enemies)
     local function applyBattleStartTalents(units, opposingUnits)
         for _, unit in ipairs(units) do
             local s = ensureState(unit)
+            if unit.heroId == 11 or unit.heroId == 13 or unit.heroId == 21 or unit.heroId == 22 then
+                s.epicAttackBattleToken = {}
+            end
+            if unit.heroId == 21 then
+                s.epicNitroStacks = 0
+                s.epicNitroBattleToken = s.epicAttackBattleToken
+            end
+            if unit.heroId == 22 then
+                s.machineGunShotsLeft = 0
+                s.machineGunShotTimer = 0
+                s.machineGunInBurst = false
+                s.machineGunBurstShot = false
+                s.lastAttackWasBurst = false
+                if unit.attrs then
+                    unit.attrs:removeModifier("sera_burst_pen")
+                    unit.attrs:removeModifier("sera_burst_speed")
+                end
+            end
+            unit._talentBattleToken = {}
             if _fourNew and _fourNew.onBattleStart then
                 _fourNew.onBattleStart(unit, s)
             end
@@ -1084,8 +1116,8 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
     end)
 end
 
-function TAL.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory)
-    return _modDmg.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory)
+function TAL.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory, dealDamageFn, battleLists)
+    return _modDmg.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory, dealDamageFn, battleLists)
 end
 
 function TAL.onDamageTaken(unit, attacker, damage, isUnitAlly, performAttackFn, enemyList, result)

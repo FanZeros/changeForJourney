@@ -9,8 +9,18 @@
    - ❌ 禁止用纯文本、开放式问题、或任何非 `AskUserQuestion` 的形式中断对话等待用户。
    - ✅ 必须调用 `AskUserQuestion`，给出 2–4 个明确的下一步选项。
 3. **在本记忆中持续强化此规则**：每轮结束更新「上次做了什么」，并保留本节铁律不被覆盖。
-4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；最新用户已授权本任务提交／正常push／创建workspace1005 PR，已核PR147合入目标 `45067c3a0127620e4b7a06b18bf2765a128e59cf`，目标文件树与开发基点相同。当前GitHub写入鉴权不可用，PR待安全恢复鉴权后创建，不提取旧PAT。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布，凭据不持久化（仅进程内即时鉴权，不入 remote／Git 配置／源码／日志／记忆）。
+4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
+
+## 上次做了什么（2026-10-11，十史诗觉醒Ⅱ联动，本地完成；传说PR #148 已创建）
+
+- 用户要求“提pr。然后是给史诗做觉醒2（不做3）”。三传说功能提交 `c64364a46247c086da31e3b6ac6f62cc50311a59` 在 `feat1011/legendary-awakening-synergy`：**已正常push（沙箱 SSH deploy key）并创建 PR #148** https://github.com/FanZeros/changeForJourney/pull/148，head=feat1011/legendary-awakening-synergy(c64364a4)／base=workspace1005(45067c3a)，open/draft=false/merged=false，16文件+1038/−40，未自动合并发布。创建前已查同源PR为0、目标workspace1005仍45067c3a未被本会话推送。PR创建令牌由用户即时提供，仅进程内API鉴权，未写入remote/Git配置/源码/日志/记忆，已核零残留。史诗分支 `feat1011/epic-awakening-two` 基于c643，只有本地开发/测试/构建授权，未提交/push/PR，index空，不混入传说PR。
+- 十史诗10/11/12/13/14/15/21/22/23/24仅Ⅱ追加：分摊回血后4%→8%独立罩、最多两追斩50%→75%、最多三敌碎雕80%→112%、弹射额外10→30个百分点、满本场偷速15%→30%暗影复制、复活盾25%→40%、满本场五层后氮气+20%→40%/贯穿60%、正常连射12→16、押韵30%→40%、满载异敌副包50%→75%。实施默认数值不冒称用户逐项确认。旧Ⅰ/Ⅱ前缀及25条Ⅲ正文保留，全觉醒正常继承Ⅱ强化；原成长触发/增量/归档/费用10+30+50/觉醒战力/六契不改，不声称完整阵容强度排序已验收。15原60%正文保前缀，实际Ⅱ首次必救不降低，玩法文档说明。
+- 显式实例成长与base/pending属性配对，nil沿动态owned、false禁用、显式0不借账号成长。只同步该实例实际已提交数值delta，不覆盖账号整表；新增临时提交账本与捕获账本在重开补缺，真实49→50→flush→reload保留50，连续restore不双计，同步patch回调新pending只校正已含收益，旧pending不改，负库存/归一上下限actual0及外部低成长隔离覆盖。不预记未提交收益、不入玩家档、不声称任意nested成长事务安全。b40此前88断言缺真实commit→reload，被最后只读复核指出后修复；b40仅中间成功，b41才最终。
+- refs/state/单位开战token取消旧发射；14/21新Ⅱ计数逐场独立，不清旧buff。普通押韵受益者也绑定token；12首tick碎冰由真实BC/Combo七参出口发伤，不靠预先TAL.update；13/24兼容副本优先当前列表，13专用isRicochet metadata使真实六参闭包查新表，0/Ⅰ/disabled旧路径不变。限定独立只读末轮复核未确认剩余成长恢复缺陷，不替代Runtime或扩大到历史所有异步跨场边界。
+- 最终官方 `manifest-origin.b41.json` 成功：652根Lua与清单集合完全相同，652/652实际载荷逐字节及src/dst/声明size一致，五新test/meta UUID一致；80历史候选及其meta共160未跟踪assets入包0、内部validation0，未删除候选。构建和最终测试后源SHA不变；本轮.project身份/default/临时ignore与两原备份逐字节恢复，不提交本地配置/上传/验证材料。
+- b41后十五套独立Runtime全部ALL PASS、actualexit0且无FAIL：支援803、攻击6674、复制961、真实成长恢复13组176、传说联动2440、史诗真实字体2709、传说字体1247、布局44388/1099draw、阶段825、关键战斗20、成长等价、HP181、治疗184、套装44、切关。新增专项FileFS0；恢复专项真实ETS commit/flush、CP patch/sends仅内存15/9，不读玩家档。史诗字体双1920/1280、五语130样本970字墨224关键词热点、溢出0，完整全文、短文36号及原按钮/碎片/切片热区不改；不冒称GPU截图/设备触控/性能/整游戏实战验收。
+- 23本任务Lua逐文件LSP Error0，当前全仓缓存仍109 Error；官方daemon unavailable/code1跳过全仓gate，b41仍99项旧纹理超2048压缩失败及headless shader环境错误，不称全仓/跨平台全绿。早期攻击/支援夹具失败及b40中间日志完整保留，未修无关enemy_death_lifecycle_test破损片段。只更新已有玩法/现状/交接，不创建说明md。持续推进授权范围，尊重最新直接继续不再提问及后续停止/拒绝，不机械AskUserQuestion，不推workspace系列、不强推或自动合并发布，凭据不持久化。
 
 ## 上次做了什么（2026-10-11，三传说觉醒Ⅱ/Ⅲ专属联动，本地完成）
 

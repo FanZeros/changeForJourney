@@ -17,8 +17,9 @@ function M.bind(deps)
     local talentLog = deps.talentLog
     local getTAL_BCS = deps.getTAL_BCS
     local getMAS = deps.getMAS
+    local calcTalentFixedDamage = deps.calcTalentFixedDamage
 
-    local function modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory)
+    local function modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory, dealDamageFn, battleLists)
         local TAL_BCS = getTAL_BCS()
         if damage <= 0 then return damage end
 
@@ -27,7 +28,23 @@ function M.bind(deps)
             damage = math.floor(damage * (1 - (target._hakimiWard.red or 0.18)) + 0.5)
         end
 
-        damage = ETS.absorbWithIceStatue(target, damage, TAL_BCS.bEnemies)
+        local targetState = getState(target)
+        local battleState, battleToken = ETS.mountedState(), ETS.mountedState().supportBattleToken
+        local allyRefs, enemyRefs = TAL_BCS.bAllies, TAL_BCS.bEnemies
+        local function currentBattle(source, sourceState, unitToken)
+            return getTAL_BCS() == TAL_BCS and TAL_BCS.bAllies == allyRefs and TAL_BCS.bEnemies == enemyRefs
+                and ETS.mountedState() == battleState and battleState.supportBattleToken == battleToken
+                and getState(target) == targetState
+                and (not source or (getState(source) == sourceState and source._talentBattleToken == unitToken))
+        end
+        local iceEnemies = battleLists and battleLists.enemies or enemyRefs
+        damage = ETS.absorbWithIceStatue(target, damage, iceEnemies, {
+            calcDamage = calcTalentFixedDamage, dealDamage = dealDamageFn or TAL_BCS.dealDamage,
+            captureSourceState = getState, isCurrent = currentBattle,
+        })
+        if damage <= 0 then return 0 end
+        if not currentBattle() then return damage end
+        damage = ETS.absorbBulwarkWard(target, damage)
         if damage <= 0 then return 0 end
 
         -- 真布诗人觉醒7：无敌期间免疫伤害
@@ -36,7 +53,6 @@ function M.bind(deps)
         end
 
         -- 受伤者是铁憨憨自己则不触发吸收（避免循环）
-        local targetState = getState(target)
         if targetState and targetState.heroId == 10 then
             -- 觉醒7: 铁憨憨自身受伤防秒杀
             if hasAwaken(target, 7) and targetState.bulwarkDmgCapCd <= 0 and target.attrs then
@@ -122,12 +138,15 @@ function M.bind(deps)
             end
         end
 
-        -- 对铁憨憨造成转移伤害
+        -- 对铁憨憨造成转移伤害，独立余护先消费，不做致死后的HP回补。
         local rebHpBefore = rebecca.hp
+        local rebeccaToken = rebecca._talentBattleToken
+        transferDmg = ETS.absorbBulwarkWard(rebecca, transferDmg)
         rebecca.attrs:takeDamage(transferDmg)
         rebecca.hp = rebecca.attrs:get(AD.HP)
         if rebecca.hp < 0 then rebecca.hp = 0 end
         if syncHpFn then syncHpFn(rebecca) end
+        if not currentBattle(rebecca, rebeccaState, rebeccaToken) then return damage - absorbedFromAlly end
         -- 转移伤害致死时设置死亡动画标记
         if rebecca.hp <= 0 and rebHpBefore > 0 then
             local overkill = math.max(0, transferDmg - rebHpBefore)
@@ -139,10 +158,11 @@ function M.bind(deps)
         if hasAwaken(rebecca, 2) and rebeccaState.bulwarkHealCd <= 0 and rebecca.hp > 0 then
             local maxHp = rebecca.attrs.final[AD.MAX_HP] or 1
             local heal = math.floor(maxHp * 0.02 + 0.5)
-            rebecca.attrs:heal(heal)
+            local actual = rebecca.attrs:heal(heal)
             rebecca.hp = rebecca.attrs:get(AD.HP)
-            if syncHpFn then syncHpFn(rebecca) end
+            if actual > 0 then ETS.refreshBulwarkWard(rebecca) end
             rebeccaState.bulwarkHealCd = 3.0
+            if syncHpFn then syncHpFn(rebecca) end
         end
 
         -- 返回减少后的伤害给目标

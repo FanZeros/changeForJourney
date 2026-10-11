@@ -585,6 +585,9 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent, options
     -- 对手单位禁止读写本地 extraTalent
     if extraTalent == false then
         unit._etsDisabled = true
+    elseif extraTalent ~= nil and hero.quality == 3 then
+        -- 史诗Ⅱ显式战斗快照不借账号成长；省略参数仍沿旧动态 owned 来源。
+        unit._epicAwakeningGrowth = require("systems.ExtraTalentSystem").normalize(type(extraTalent) == "table" and extraTalent or nil)
     end
 
     -- 天赋星图运行时节点集合（供 TalentManager 检查 RUNTIME_ONLY 节点）

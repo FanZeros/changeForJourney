@@ -3,10 +3,18 @@
 -- Bound via M.bind(deps); original local function names preserved.
 -- ============================================================================
 
+local ETS = require("systems.ExtraTalentSystem")
+local AC = require("config.AwakeningConfig")
+
 local M = {}
 
 function M.bind(deps)
     local hasAwaken = deps.hasAwaken
+    local hasAwakenStage = deps.hasAwakenStage or function(u, stage)
+        return AC.hasStage(u.awakeningNodes, stage)
+    end
+    local getState = deps.getState
+    local getBattleRefs = deps.getBattleRefs
     local talentLog = deps.talentLog
     local AD = deps.AD
     local CF = deps.CF
@@ -20,6 +28,16 @@ function M.bind(deps)
 ---@param targetList table
 ---@param dealDmgFn function
 local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealDmgFn)
+    if not attacker or not attacker.attrs or not s or not target or not targetList or not dealDmgFn then return end
+    if s.suhuaSlashActive and s.suhuaSlashActive.battleToken == s.epicAttackBattleToken then return end
+    local battleRefs = getBattleRefs and getBattleRefs()
+    local battleToken = s.epicAttackBattleToken
+    local function currentBattle()
+        return (not getState or getState(attacker) == s)
+            and (not getBattleRefs or getBattleRefs() == battleRefs)
+            and s.epicAttackBattleToken == battleToken
+    end
+    if not currentBattle() then return end
     -- 觉醒2: 攻击速度+15%（永久，首次添加）
     if hasAwaken(attacker, 2) and not s.awakSuhuaAtkSpd then
         s.awakSuhuaAtkSpd = true
@@ -46,6 +64,17 @@ local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealD
     local slashInterval = 4
     if hasAwaken(attacker, 3) then slashInterval = 3 end
     if s.atkCount % slashInterval ~= 0 then return end
+
+    -- 本轮开始时冻结斩影/已提交Ⅰ击杀成长；不消费库存，也不借本轮击杀续斩。
+    local followCount, followRatio = 0, 0.5
+    if not attacker._etsDisabled and hasAwakenStage(attacker, 2) and tonumber(attacker.heroId) == 11 then
+        local extra = ETS.getEpicGrowth(attacker)
+        followCount = math.min(2, math.floor(extra.slashShadows / 2))
+        if hasAwakenStage(attacker, 1) then
+            -- Ⅰ每次通宵斩击杀记2 stacks，50次击杀=100 stacks。
+            followRatio = 0.5 * (1 + math.min(0.5, math.floor(extra.stacks / 100) * 0.125))
+        end
+    end
 
     -- 觉醒1: 伤害系数200%→250%
     local slashMult = 2.0
@@ -110,7 +139,12 @@ local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealD
 
     -- 发射斩击（不检测hp > 0，即使目标被普攻击杀也发射）
     local sides = { 1, -1, 0.5 }  -- 贝塞尔方向：左、右、微偏
+    local followShots = {}
+    local active = { battleToken = battleToken }
+    s.suhuaSlashActive = active
+    local ok, err = pcall(function()
     for si = 1, slashCount do
+        if not currentBattle() or (attacker.hp or 0) <= 0 then return end
         local st = slashTargets[si]
 
         -- 针对每个目标独立计算护甲抗性和类型倍率
@@ -145,16 +179,40 @@ local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealD
             atkType = atkType,
             critEligible = true,
             isNightSlash = true,
+            sourceAttacker = attacker,
         }
         if allSame then
             opts.bezierSide = sides[si] or (si % 2 == 1 and 1 or -1)
+        end
+        if si <= followCount then
+            followShots[#followShots + 1] = { target = st, damage = dmg, isCrit = isCrit, side = opts.bezierSide }
         end
         -- 同步伤害可能立即分发死亡，必须先提供本次斩击归因。
         attacker._nightSlashKill = true
         dealDmgFn(st, dmg, not isAlly, "通宵斩", { 255, 50, 80 }, opts)
     end
-
-    talentLog("[Talent] 熬夜冠军 通宵斩：" .. slashCount .. "道斩击(基础=" .. math.floor(baseSlashDmg) .. ")")
+    for _, shot in ipairs(followShots) do
+        if not currentBattle() or (attacker.hp or 0) <= 0 then return end
+        -- 复制同目标普通斩的已结算伤害/暴击/元素；不再次抽暴击或结算护甲。
+        -- 与普通斩一样允许已死目标发射，由原投射物路径处理，不另找目标重算。
+        attacker._nightSlashKill = true
+        dealDmgFn(shot.target, math.max(1, math.floor(shot.damage * followRatio + 0.5)), not isAlly,
+            "斩影追斩", { 255, 100, 130 }, {
+                sourceAttacker = attacker,
+                isNightSlash = true,
+                isCrit = shot.isCrit,
+                statCategory = "physical",
+                atkType = atkType,
+                critEligible = false,
+                bezierSide = shot.side,
+            })
+    end
+    end)
+    if s.suhuaSlashActive == active then s.suhuaSlashActive = nil end
+    if not ok then error(err, 0) end
+    if not currentBattle() then return end
+    talentLog("[Talent] 熬夜冠军 通宵斩：" .. slashCount .. "道斩击+" .. followCount
+        .. "道追斩(基础=" .. math.floor(baseSlashDmg) .. ")")
 end
 
     return {

@@ -120,7 +120,7 @@ function M.bind(deps)
         -- 铁憨憨帝国铁壁：拦截队友伤害（连击目标与主攻击一致）
         local comboTgtIsAlly = not isAlly
         finalDmg = EquipmentSetRuntime.onIncoming(curTgt, finalDmg, attacker)
-        finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, comboTgtIsAlly, syncUnitHp, result.category)
+        finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, comboTgtIsAlly, syncUnitHp, result.category, dealDamageToUnit, { allies = allies, enemies = enemies })
         result.damageDealt = finalDmg
         local shieldBefore = (curTgt.attrs.energyShield or 0) + (curTgt.attrs.tempEnergyShield or 0)
         local actual = curTgt.attrs:takeDamage(finalDmg, result.resistance)
@@ -195,6 +195,9 @@ function M.bind(deps)
             end
             if getBCS().ctx.onTalentDealDamage then
                 local lookupList = (isAlly == isTgtAlly) and allyList or targetList
+                if projOpts and projOpts.isRicochet and type(projOpts.epicBounceTargetList) == "table" then
+                    lookupList = projOpts.epicBounceTargetList
+                end
                 for li, lu in ipairs(lookupList) do
                     if lu == tgt then
                         local tdCX, tdCY = getCardPos(lookupList, li)

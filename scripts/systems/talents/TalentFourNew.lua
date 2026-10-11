@@ -5,6 +5,7 @@
 local AD = require("systems.AttributeDef")
 local TM = require("systems.ThreatManager")
 local ETS = require("systems.ExtraTalentSystem")
+local AC = require("config.AwakeningConfig")
 
 local M = {}
 
@@ -25,6 +26,7 @@ function M.bind(deps)
         elseif s.heroId == 19 then
             s.hakimiMerit = 0
         elseif s.heroId == 24 then
+            s.loadingBattleToken = {}
             s.loadingBar = 0
             s.loadingIdle = 0
             s.loadingFlushing = false
@@ -157,33 +159,75 @@ function M.bind(deps)
                 end
             end
 
-            if s.heroId == 24 then
+            if s.heroId == 24 and not s.loadingFlushing then
                 s.loadingIdle = (s.loadingIdle or 0) + dt
                 local capPct = hasAwakenStage(ally, 2) and 0.14 or 0.10
                 local cap = math.floor((ally.maxHp or 1) * capPct + 0.5)
                 local idleLimit = hasAwakenStage(ally, 3) and 4.0 or 6.0
                 if (s.loadingBar or 0) > 0 and ((s.loadingBar >= cap) or s.loadingIdle >= idleLimit) then
                     local bar = s.loadingBar
+                    local full = cap > 0 and bar >= cap
                     s.loadingBar = 0
                     s.loadingIdle = 0
+                    local refs = getTAL_BCS and getTAL_BCS()
+                    local initialEnemies = refs and refs.bEnemies
+                    local token = s.loadingBattleToken
+                    local function currentBattle()
+                        return getState(ally) == s and s.loadingBattleToken == token
+                            and (getTAL_BCS and getTAL_BCS()) == refs and (ally.hp or 0) > 0
+                    end
+                    local function liveEnemies()
+                        -- 兼容副本可能只替换update实参而没刷refs；入口以本轮实参为准。
+                        -- 同步回调确实写入新refs列表时，副包才改用该新列表。
+                        if refs and refs.bEnemies ~= initialEnemies then return refs.bEnemies or {} end
+                        return enemies or initialEnemies or {}
+                    end
                     local tgt = nil
-                    for _, e in ipairs(enemies or {}) do
+                    for _, e in ipairs(liveEnemies()) do
                         if (e.hp or 0) > 0 then tgt = e break end
                     end
-                    if tgt and dealDamage then
-                        local dmg = bar
-                        if calcTalentFixedDamage then
-                            dmg = select(1, calcTalentFixedDamage(ally, tgt, bar, {
-                                atkType = AD.ATK_CRUSH,
-                            })) or bar
+                    if tgt and (dealDamage or (ctx and ctx.dealTalentDamage)) then
+                        -- 副包倍率在主包发射前冻结，不提前消费/夹带pending成长。
+                        local parallel = full and not ally._etsDisabled and AC.hasStage(ally.awakeningNodes, 2)
+                        local stacks = parallel and AC.hasStage(ally.awakeningNodes, 1) and ETS.getEpicGrowth(ally).stacks or 0
+                        local parallelBase = math.floor(bar * (0.50 + math.min(0.25, math.floor(stacks / 50) * 0.05)) + 0.5)
+                        local function fire(target, base, prefix)
+                            if not currentBattle() or (target.hp or 0) <= 0 then return false end
+                            local dmg, critical = base, false
+                            if calcTalentFixedDamage then
+                                dmg, critical = calcTalentFixedDamage(ally, target, base, { atkType = AD.ATK_CRUSH })
+                                dmg = dmg or base
+                            end
+                            if not currentBattle() or (target.hp or 0) <= 0 then return false end
+                            local meta = {
+                                instantDamage = true, statCategory = "physical", atkType = AD.ATK_CRUSH,
+                                isCrit = critical, critEligible = false,
+                            }
+                            s.loadingFlushing = true
+                            local ok, err
+                            if ctx.dealTalentDamage then
+                                ok, err = pcall(ctx.dealTalentDamage, ally, target, dmg, false, prefix, { 180, 180, 200 }, meta)
+                            else
+                                ok, err = pcall(dealDamage, target, dmg, false, prefix, { 180, 180, 200 }, ally, meta)
+                            end
+                            if s.loadingBattleToken == token then s.loadingFlushing = false end
+                            if not ok then error(err, 0) end
+                            return true
                         end
-                        dealDamage(tgt, dmg, true, "缓冲 ", { 180, 180, 200 }, {
-                            instantDamage = true,
-                            statCategory = "physical",
-                            atkType = AD.ATK_CRUSH,
-                        })
-                        TM.addThreat(ally, math.floor(bar * 0.8 + 0.5))
-                        talentLog("[Talent] 加载中 缓冲圈吐出 " .. tostring(dmg))
+                        if fire(tgt, bar, "缓冲 ") and currentBattle() then
+                            TM.addThreat(ally, math.floor(bar * 0.8 + 0.5))
+                            talentLog("[Talent] 加载中 缓冲圈吐出 " .. tostring(bar))
+                            if parallel and not ally._etsDisabled and AC.hasStage(ally.awakeningNodes, 2) then
+                                -- 同场补敌可换列表；副包只寻找另一不同活敌，绝不回打主目标。
+                                for _, other in ipairs(liveEnemies()) do
+                                    if other ~= tgt and (other.hp or 0) > 0 then
+                                        fire(other, parallelBase, "并行缓冲 ")
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                        if not currentBattle() then return end
                     end
                 end
             end

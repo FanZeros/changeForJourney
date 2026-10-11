@@ -18,7 +18,8 @@
 - 复用两既有测试。宿主专项真实 UI/Yoga/HitTest/PointerEvent 验证鼠标按下后提示出现、触摸按下后提示重定向时底层点击/滚轮/移动/抬起继续，提示不换根、不抢焦点、不清 pressed、不注册模态栈；提示绘制出口为显式布局记录，不冒称该段 GPU 绘制。输入专项真实 Horizon/Input/Wheel/Seam 覆盖普通/三行、左中右、鼠标/触摸、提示先出现/按下后出现及点击/滚轮/拖拽/神器手势/返回条共64组696断言，原业务modal反例保留。两个测试 File/FS 封闭，不读取玩家档。
 - 最终官方 `manifest-origin.b32` 成功，645根Lua与构建前冻结源集合完全相同，构建后源SHA不变，实际载荷645/645逐字节及声明size一致，候选/内部验证0入包；`.project`身份/默认补字段/临时ignore均与两构建前备份逐字节恢复。构建后五套真实Runtime全部ALL PASS/actualexit0：宿主226/0、横屏364组3118断言（原104组1080与新增64组696）、神器403/11组、拖放2713/20组及切关。另战力逻辑765/29组与真实UI字体766/27组ALL PASS/exit0。
 - 三本轮Lua逐文件LSP Error0；官方全仓LSP gate仍daemon unavailable/code1跳过，旧地图1080×2400/max2048压缩warning及headless音频/shader环境错误保留，不称全仓静态/跨平台/设备触控/GPU/性能或整游戏实战验收全过。宿主前五轮旧segment夹具缺BattleClock、drawLarge、Artwork、SidePanelBattlePause、Stop/Tower依赖导致失败，原记录保留，仅补真实依赖或明确spy，未为测试改生产；横屏前轮触摸整数坐标/合法(-1,-1)取消/半开486边界夹具失败亦保留，最终严格原门禁通过。
-- 当前仍 `fix1011/auto-decompose-save-flow@52e1fac8`，index空；此前自动分解/掉落/神器dirty成果、stash及上传候选保持，未提交/push/PR/合并/发布，不继承历史鉴权，不推workspace系列/强推/自动合并发布，不重启用户停止的旧神器代理。持续推进已授权范围并如实交接，尊重停止/权限/安全边界；当前明确直接继续不再提问，不机械AskUserQuestion，确需用户决定时才用真实选项工具；凭据不写源码/配置/日志/记忆。
+- **已提交并推送，PR 已创建：** 35 文件功能提交 `d5024d52adb8735f58783c3299e0e75f3a66bab3`（3 文档 + 32 Lua，+1861/-611）已正常 push 独立 `fix1011/auto-decompose-save-flow`，远端 SHA 与本地一致，基线 `workspace1005` 仍 52e1fac8 未推。正式 **PR #147**：https://github.com/FanZeros/changeForJourney/pull/147，head=本任务分支/base=workspace1005，返回 open/draft=false/merged=false/mergeable=true，未自动合并发布。本轮经用户 AskUserQuestion 明确选择提供 PAT 后创建；令牌仅进程内即时鉴权，未写入 remote/Git 配置/源码/日志/记忆。
+- 本轮提交前核对：35 改动文件全部落在 `scripts/`、`docs/`、`CLAUDE.md`，无敏感串；未跟踪的 141 项（技能目录、`_uploads/`、候选素材）按分支纪律未纳入。此前自动分解/掉落/神器 dirty 成果随本次提交，stash 与上传候选保持原样。不重启用户停止的旧神器代理，不推 workspace 系列/强推/自动合并发布。
 
 ## 上次做了什么（2026-10-11，装备宝库控量提质与神器直接互换，本地完成）
 

@@ -17,7 +17,7 @@ local DESIGN_H = GameConfig.Design.HEIGHT
 local TalentPage = {}
 
 -- 横屏古树页相对左栏的宽度倍率。
--- 1.8 = 在原先 1.5 基础上再加宽约 20%，多出的部分从左侧盖住战斗区。
+-- 1.8 = 在 1.5 基础上再加宽约 20%，多出的部分从左侧盖住战斗区。
 TalentPage.HORIZON_WIDTH_SCALE = 1.8
 
 local ANIM = {

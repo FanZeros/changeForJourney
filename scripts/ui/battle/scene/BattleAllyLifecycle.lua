@@ -22,6 +22,15 @@ local BattleLayout = require("core.BattleLayout")
 
 local M = {}
 
+---@param value any
+---@return any
+local function copyEpicGrowth(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for key, item in pairs(value) do result[key] = copyEpicGrowth(item) end
+    return result
+end
+
 function M.getLiveAttackInterval(unit, fallback)
     if unit and unit.attrs and unit.attrs.getActualInterval then
         local attrInterval = unit.attrs:getActualInterval()
@@ -135,7 +144,7 @@ function M.bind(deps)
     local function resetBattle()
         set("battleActive", true)
         set("battleTimeoutElapsed", 0)
-        if get("isFirstClear") then
+        if get("isFirstClear") and not getStageConfig().isTerminalTemple(get("currentStageId")) then
             set("firstClearTimeLeft", require("config.GameConfig").Battle.TIME_LIMIT_SEC)
         else
             set("firstClearTimeLeft", nil)
@@ -266,6 +275,12 @@ function M.bind(deps)
                         u._pendingArtifactEffects = artifactEffects or {}
                         u._pendingSnapshot = newUnit.attrs
                         u._pendingArmorType = newUnit.armorType
+                        if newUnit.quality == 3 then
+                            -- 不触碰当前波成长；nil/显式零也须替换上一次 pending。
+                            u._pendingEpicAwakeningGrowth = copyEpicGrowth(newUnit._epicAwakeningGrowth)
+                            u._hasPendingEpicAwakeningGrowth = true
+                            u._pendingEpicCommittedGrowthDelta = copyEpicGrowth(u._epicCommittedGrowthDelta)
+                        end
                         -- 必须无条件写回，nil 也代表明确重置，不能保留上一职业/觉醒节点。
                         u.classId = newUnit.classId
                         u.classBranchId = newUnit.classBranchId

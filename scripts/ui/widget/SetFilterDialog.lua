@@ -10,6 +10,7 @@ local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local BF = require("systems.ButtonFeedback")
 local I18n = require("core.I18n")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
+local KeywordText = require("ui.widget.KeywordText")
 
 local SetFilterDialog = {}
 local text = DrawUtil.drawTextStroke
@@ -24,6 +25,9 @@ local NAME_X = 186
 local CHECK = { cx = 938, size = 54 }
 local COUNT_X = CHECK.cx - CHECK.size * 0.5 - 32
 local BTN = { cy = 1836, w = 300, h = 96, clearCX = 330, doneCX = 750 }
+-- 图标热区与整行筛选热区分离；说明卡始终限制在左栏设计区域内。
+local ICON = { cx = DOT.cx + 24, size = 58, hit = 72 }
+local TIP = { w = 680, pad = 24, gap = 14, margin = 24, maxH = 2352 }
 
 local imgCheck = -1
 local inited = false
@@ -37,6 +41,19 @@ local onChange_ = nil
 local onDone_ = nil
 ---@type (fun(): table<string, integer>)|nil
 local getCounts_ = nil
+---@type string|nil
+local hoverKey_ = nil
+---@type string|nil
+local pinnedKey_ = nil
+---@type { key: string, x: number, y: number, w: number, h: number }|nil
+local tipBounds_ = nil
+-- 复用装备描述的完整句子本地化、UTF-8 折行与金色关键词，不创建第二套 UI 管线。
+local tipText_ = KeywordText.new()
+
+local function clearExplanation()
+    hoverKey_, pinnedKey_, tipBounds_ = nil, nil, nil
+    tipText_:clear()
+end
 
 local function ensureInit(vg)
     if inited or not vg then return end
@@ -67,6 +84,7 @@ end
 ---@param sel table<string, boolean> 勾选集合：键=套装id 或 "none"（无套装）；空集合=全部
 ---@param opts? { onChange?: fun(), onDone?: fun(), getCounts?: fun(): table<string, integer> }
 function SetFilterDialog.open(sel, opts)
+    clearExplanation()
     sel_ = sel
     onChange_ = opts and opts.onChange or nil
     onDone_ = opts and opts.onDone or nil
@@ -77,6 +95,7 @@ function SetFilterDialog.open(sel, opts)
 end
 
 function SetFilterDialog.close()
+    clearExplanation()
     if not open_ then return end
     open_ = false
     sel_, onChange_, onDone_, getCounts_ = nil, nil, nil, nil
@@ -100,6 +119,136 @@ end
 
 local function rowCY(index)
     return ROW.top + (index - 1) * ROW.h + ROW.h * 0.5
+end
+
+local function iconRow(dx, dy)
+    for index, row in ipairs(buildRows()) do
+        if DrawUtil.hitTest(dx, dy, ICON.cx, rowCY(index), ICON.hit, ICON.hit) then
+            return row
+        end
+    end
+    return nil
+end
+
+local function insideTip(dx, dy)
+    local bounds = tipBounds_
+    if not bounds or bounds.key ~= (hoverKey_ or pinnedKey_) then return false end
+    return DrawUtil.hitTest(dx, dy, bounds.x + bounds.w * 0.5,
+        bounds.y + bounds.h * 0.5, bounds.w, bounds.h)
+end
+
+--- 当前说明的只读快照；原始完整描述直接来自套装表，永不反写业务数据。
+---@return { key: string, name: string, pinned: boolean, color: number[], effects: { pieces: integer, desc: string }[], note: string|nil }|nil
+function SetFilterDialog.getExplanation()
+    local key = hoverKey_ or pinnedKey_
+    if not open_ or not key then return nil end
+    local def = EquipmentSetConfig.get(key)
+    if key ~= SetFilterDialog.NONE_KEY and not def then return nil end
+    local effects = {}
+    if def then
+        for _, pieces in ipairs({ 2, 4, 6 }) do
+            effects[#effects + 1] = { pieces = pieces, desc = def["desc" .. pieces] or "暂无效果说明" }
+        end
+    end
+    return {
+        key = key, name = def and def.name or "无套装", pinned = key == pinnedKey_,
+        color = def and { def.color[1], def.color[2], def.color[3] } or { 181, 166, 143 },
+        effects = effects,
+        note = not def and "无套装装备不计入任何套装的件数，不提供2/4/6件套装效果。" or nil,
+    }
+end
+
+--- 调用方在自身 hover 逻辑之前转交；移出左栏传 (-1,-1)，只清悬停不清点击钉住。
+--- 打开时恒返回 true，避免穿透到仓库/遗匣列表的装备说明。
+---@param dx number 左栏设计坐标
+---@param dy number 左栏设计坐标
+---@return boolean
+function SetFilterDialog.handleHover(dx, dy)
+    if not open_ then return false end
+    local row = iconRow(dx, dy)
+    if row then
+        if hoverKey_ ~= row.key then tipBounds_ = nil end
+        hoverKey_ = row.key
+    elseif not insideTip(dx, dy) then
+        if hoverKey_ then tipBounds_ = nil end
+        hoverKey_ = nil
+    end
+    return true
+end
+
+-- 描述/标题/提示统一用 KeywordText 完整折行；极长文案缩放整卡而不裁掉末尾。
+local function explanationLayout(vg, explanation)
+    local width = TIP.w - TIP.pad * 2
+    local blocks = {}
+    local function add(content, font, lineH, color, gap)
+        local height = tipText_:measureHeight(vg, content, width, font, lineH)
+        blocks[#blocks + 1] = { text = content, font = font, lineH = lineH,
+            height = height, color = color, gap = gap }
+    end
+    add(explanation.name, 36, 46, explanation.color, 10)
+    if explanation.note then
+        add(explanation.note, 30, 40, { 232, 220, 200 }, 10)
+    else
+        for _, effect in ipairs(explanation.effects) do
+            add(I18n.format("%d件", effect.pieces), 28, 36, explanation.color, 4)
+            add(effect.desc, 30, 40, { 232, 220, 200 }, 14)
+        end
+    end
+    add(explanation.pinned and "已钉住 · 再点图标取消" or "点击图标钉住说明", 24, 32,
+        { 181, 166, 143 }, 0)
+    local height = TIP.pad * 2
+    for _, block in ipairs(blocks) do height = height + block.height + block.gap end
+    return blocks, height
+end
+
+local function drawExplanation(vg)
+    local explanation = SetFilterDialog.getExplanation()
+    if not explanation then tipBounds_ = nil return end
+    local anchorY = PANEL.cy
+    for index, row in ipairs(buildRows()) do
+        if row.key == explanation.key then anchorY = rowCY(index) break end
+    end
+    local blocks, contentH = explanationLayout(vg, explanation)
+    local scale = math.min(1, (TIP.maxH - 4) / contentH)
+    if scale < 1 then
+        -- 字体栅格测量会受缩放影响；在最终缩放下重测，不能沿用缩放前的行数裁掉尾行。
+        for _ = 1, 4 do
+            nvgSave(vg)
+            nvgScale(vg, scale, scale)
+            blocks, contentH = explanationLayout(vg, explanation)
+            nvgRestore(vg)
+            if contentH * scale <= TIP.maxH then break end
+            scale = scale * (TIP.maxH - 4) / (contentH * scale)
+        end
+    end
+    local width, height = TIP.w * scale, contentH * scale
+    local left = math.max(TIP.margin, math.min(ICON.cx + ICON.hit * 0.5 + TIP.gap,
+        1080 - TIP.margin - width))
+    -- 优先放在来源行上方，顶端空间不足翻到下方，避免遮住同一行名称/勾选框。
+    local above = anchorY - ROW.h * 0.5 - TIP.gap - height
+    local desiredTop = above >= TIP.margin and above or anchorY + ROW.h * 0.5 + TIP.gap
+    local top = math.max(TIP.margin, math.min(desiredTop, 2400 - TIP.margin - height))
+    tipBounds_ = { key = explanation.key, x = left, y = top, w = width, h = height }
+    nvgSave(vg)
+    nvgTranslate(vg, left, top)
+    nvgScale(vg, scale, scale)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, 0, 0, TIP.w, contentH, 16)
+    nvgFillColor(vg, nvgRGBA(31, 23, 17, 250))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(explanation.color[1], explanation.color[2], explanation.color[3], 220))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+    local y = TIP.pad
+    tipText_:beginFrame()
+    for _, block in ipairs(blocks) do
+        tipText_.textColor = block.color
+        -- 说明卡整体消费点击；这里只复用关键词配色，不嵌套会越界的第二层弹窗。
+        tipText_:draw(vg, block.text, TIP.pad, y, TIP.w - TIP.pad * 2,
+            block.font, block.lineH, nil, true, { interactive = false })
+        y = y + block.height + block.gap
+    end
+    nvgRestore(vg)
 end
 
 local function toggle(key)
@@ -158,8 +307,19 @@ function SetFilterDialog.draw(vg)
         nvgRoundedRect(vg, ROW.x + 24, cy - ROW.h * 0.5 + 6, ROW.w - 48, ROW.h - 12, 12)
         nvgFillColor(vg, nvgRGBA(255, 244, 214, checked and 26 or 12))
         nvgFill(vg)
+        -- 图标悬停/钉住只强调徽记，不借用整行的筛选按压反馈。
+        if row.key == hoverKey_ or row.key == pinnedKey_ then
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, ICON.cx - ICON.hit * 0.5, cy - ICON.hit * 0.5,
+                ICON.hit, ICON.hit, 12)
+            nvgFillColor(vg, nvgRGBA(255, 215, 110, 38))
+            nvgFill(vg)
+            nvgStrokeColor(vg, nvgRGBA(255, 215, 110, 220))
+            nvgStrokeWidth(vg, 2)
+            nvgStroke(vg)
+        end
         -- 套装徽记取代色点；无套装或加载失败保持灰圈/配色兜底。
-        if not row.color or not EquipmentSetIcon.draw(vg, row.key, DOT.cx + 24, cy, 58, 1) then
+        if not row.color or not EquipmentSetIcon.draw(vg, row.key, ICON.cx, cy, ICON.size, 1) then
             nvgBeginPath(vg)
             nvgCircle(vg, DOT.cx + 24, cy, DOT.r)
             local color = row.color or { 90, 84, 74 }
@@ -203,12 +363,26 @@ function SetFilterDialog.draw(vg)
 
     drawButton(vg, "sfd_clear", BTN.clearCX, BTN.cy, BTN.w, BTN.h, "清空", "gold")
     drawButton(vg, "sfd_done", BTN.doneCX, BTN.cy, BTN.w, BTN.h, "完成", "green")
+    -- 说明卡最后绘制，不能被后续筛选行/底部按钮盖住。
+    drawExplanation(vg)
 end
 
 --- 模态输入：打开时恒返回 true（消费全部点击）。
 ---@return boolean
 function SetFilterDialog.handleInput(dx, dy)
     if not open_ then return false end
+    -- 徽记点击只开/钉住说明，绝不写勾选集合或触发 onChange。
+    local icon = iconRow(dx, dy)
+    if icon then
+        local same = pinnedKey_ == icon.key
+        clearExplanation()
+        if not same then pinnedKey_ = icon.key end
+        print("[SetFilterDialog] explanation " .. icon.key .. " pinned=" .. tostring(not same))
+        return true
+    end
+    -- 浮卡遮住的底层行/按钮不能收到点击；点击卡外则关闭说明并按原筛选契约处理。
+    if insideTip(dx, dy) then return true end
+    clearExplanation()
     if DrawUtil.hitTest(dx, dy, BTN.clearCX, BTN.cy, BTN.w, BTN.h) then
         BF.trigger("sfd_clear")
         clearAll()

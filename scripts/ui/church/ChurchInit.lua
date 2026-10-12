@@ -40,10 +40,9 @@ function M.bind(deps)
         img.nameBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
         img.btnBack  = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
         img.tabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
-        -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
         img.plus     = nvgCreateImage(vg, "image/通用图标/UI_ICON_JIA.png", 0)
 
-        -- 转职相关图片（彩色职业背景 UI_ZZBJ 已删除）
+        -- 转职相关图片（彩色职业背景由矢量绘制）
         -- 转职树分叉线已改为代码矢量绘制，UI_ZZXT_1Z/2Z 贴图不再加载
         -- 职业图标（基础/一转/二转）按需加载，避免启动同步解码 42 张
 
@@ -59,10 +58,7 @@ function M.bind(deps)
         img.expBarFill = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT2.png", 0)
         img.deployed   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_CZZ.png", 0)
 
-        -- 转职确认弹窗改用深色矢量面板（彩色职业底图 UI_ZYTS 已删除）
-        -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
-        -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_FANG.png 贴图加载已移除（矢量绘制替代）
-        -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
+        -- 转职确认弹窗用深色矢量面板
         img.goldCoin    = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
         img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
         img.resDiamond = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
@@ -72,7 +68,6 @@ function M.bind(deps)
         img.tfPointGlow   = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HG.png", 0)
         img.tfSliderThumb = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HK.png", 0)
 
-        -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HONG.png 贴图加载已移除（矢量绘制替代）
         img.tfInfoIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_TS.png", 0)
 
         -- 天赋星图由 TalentPage.init 负责，教堂不再抢初始化

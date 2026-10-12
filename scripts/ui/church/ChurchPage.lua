@@ -6,7 +6,7 @@
 -- nvgSpineCreate / nvgSpineRender 是引擎内置全局函数（NanoVG Spine 扩展）
 
 local GameConfig       = require("config.GameConfig")
-local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0]
+local DarkIcon       = require("core.DarkIcon")  --
 local DrawUtil         = require("core.DrawUtil")
 local TownPageChrome   = require("ui.town.TownPageChrome")
 local drawTextStroke   = DrawUtil.drawTextStroke
@@ -85,7 +85,7 @@ local TAB = {
     SLIDER_W = 300, SLIDER_H = 112,
     INSET_TOP = 10, INSET_BOTTOM = 10, INSET_LEFT = 70, INSET_RIGHT = 70,
     FONT_SIZE = 32,
-    ACTIVE_R = 0xD8, ACTIVE_G = 0xC9, ACTIVE_B = 0xA3,  -- [fix] 深色滑块上深棕不可读 → 骨白
+    ACTIVE_R = 0xD8, ACTIVE_G = 0xC9, ACTIVE_B = 0xA3,  -- 深色滑块上深棕不可读 → 骨白
     INACTIVE_R = 255, INACTIVE_G = 255, INACTIVE_B = 255,
     ANIM_DUR = 0.35,
 }
@@ -153,15 +153,15 @@ local function clearPowerCache()
     rosterPowerCache = {}
 end
 
--- 转职布局常量和数据表已迁移至 ChurchClassChange.lua
+-- 转职布局常量和数据表位于 ChurchClassChange.lua
 -- 父模块通过 ClassChange.XXX 访问导出数据
 
--- 转职数据表已迁移至 ChurchClassChange.lua
+-- 转职数据表位于 ChurchClassChange.lua
 -- 通过 ClassChange.CLASS_NUM / ClassChange.ADV2 / ClassChange.FIRST_ADV_BRANCHES 等访问
 
 -- CLASS_DISPLAY_NAMES / FIRST_ADV_BRANCHES / SECOND_ADV_BRANCHES
 -- ADV_BRANCH_ATTRS / ADV_BRANCH_TALENT / ADV_COST / CONFIRM
--- → 已迁移至 ChurchClassChange.lua（通过 ClassChange.XXX 访问）
+-- → 位于 ChurchClassChange.lua（通过 ClassChange.XXX 访问）
 
 -- ======================== 状态 ========================
 
@@ -256,8 +256,8 @@ local img = {
     slider      = -1,   -- UI_AN_2.png
     plus        = -1,   -- UI_ICON_JIA.png
     -- 转职相关
-    -- 彩色职业背景 UI_ZZBJ 已删除
-    -- 转职树分叉线已改为代码矢量绘制（UI_ZZXT_1Z/2Z 贴图已删除）
+    -- 彩色职业背景由矢量绘制
+    -- 转职树分叉线由代码矢量绘制
     classIcons2 = {},    -- UI_icon_ZY_{序号}.png（按职业序号索引）
     heroCards   = {},    -- 角色卡牌图片缓存
     -- 角色列表
@@ -270,7 +270,7 @@ local img = {
     expBarFill  = -1,    -- UI_JSMB_JYT2.png 经验条填充
     deployed    = -1,    -- UI_JSJM_CZZ.png 出战中标识
     -- 转职确认弹窗
-    -- 彩色职业提示背景 UI_ZYTS 已删除
+    -- 彩色职业提示背景由矢量绘制
     confirmBtn  = -1,    -- UI_AN_LV.png 确认按钮
     cancelBtn   = -1,    -- UI_AN_FANG.png 取消按钮（灰色）
     resetConfBg = -1,    -- UI_TY_EJQRK.png 重置确认九宫格背景
@@ -292,7 +292,7 @@ local img = {
 -- 列表卡片战斗力缓存 { [heroId] = power }
 local rosterPowerCache = {}
 
--- Spine 天赋背景（spineTfBg）已迁移至 ChurchTalentPanel.lua
+-- Spine 天赋背景（spineTfBg）位于 ChurchTalentPanel.lua
 
 -- ======================== 缓动函数（TownPageChrome） ========================
 local easeOutCubic   = TownPageChrome.easeOutCubic
@@ -428,11 +428,11 @@ end
 
 -- ensureSpineTfBgLoaded / drawTalentBg / drawTalentContent / openTalentDetail
 -- closeTalentDetail / isTfDetailVisible / drawTalentDetailPanel
--- → 已迁移至 ChurchTalentPanel.lua（通过 TalentPanel.xxx 调用）
+-- → 位于 ChurchTalentPanel.lua（通过 TalentPanel.xxx 调用）
 --
 -- drawClassChangeBg / drawBranchOverlay / drawClassChangeContent
 -- drawTabContent / openConfirmPopup / closeConfirmPopup / drawClassConfirmPopup
--- → 已迁移至 ChurchClassChange.lua（通过 ClassChange.xxx 调用）
+-- → 位于 ChurchClassChange.lua（通过 ClassChange.xxx 调用）
 --- 绘制角色列表（一比一复刻角色面板 CharacterPanel 的远征队员列表）
 local _rosterDraw
 local function bindRosterDraw()

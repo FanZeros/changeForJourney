@@ -11,7 +11,6 @@
 local GameConfig        = require("config.GameConfig")
 local SC                = require("config.StageConfig")
 local MC                = require("config.MonsterConfig")
-local SRP               = require("config.StageRecommendPower")
 local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
 local DrawUtil          = require("core.DrawUtil")
 local DarkIcon          = require("core.DarkIcon")
@@ -22,6 +21,7 @@ local ResourceList      = require("ui.battle.stage.StageSelectResources")
 local ExpeditionOverview = require("ui.battle.stage.ExpeditionOverview")
 local ET                = require("config.ExpTable")
 local RewardPreview     = require("ui.battle.stage.StageSelectRewardPreview")
+local TowerText         = require("ui.tower.TowerPresentation")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -66,7 +66,7 @@ local function titleLines(vg, source, width, fontSize)
     return lines
 end
 
-local function drawFittedTitle(vg, x, y, source, width, fontSize, maxLines, align, r, g, b, stroke)
+local function drawFittedTitle(vg, x, y, source, width, fontSize, maxLines, align, r, g, b, stroke, opts)
     local size = fontSize
     local lines = titleLines(vg, source, width, size)
     local function tooLarge()
@@ -86,13 +86,13 @@ local function drawFittedTitle(vg, x, y, source, width, fontSize, maxLines, alig
     local topY = y - (#lines - 1) * lineHeight * 0.5
     for index, line in ipairs(lines) do
         drawTextStroke(vg, x, topY + (index - 1) * lineHeight, line, size,
-            align, r, g, b, stroke)
+            align, r, g, b, stroke, opts)
     end
 end
 
 local StageSelectDialog = {}
 local onDungeonSelect = nil ---@type fun(dungeonId: string, teamIdx: number, floor: number): boolean|nil
-local TAB_Y, TAB_W, TAB_H = 814, 90, 46
+local TAB_Y, TAB_W, TAB_H = 808, 90, 46
 local MAIN_TAB_X, DUNGEON_TAB_X = 150, 250
 
 function StageSelectDialog.setOnDungeonSelect(callback)
@@ -189,11 +189,10 @@ local CH_HUES = {
     { 0x4a, 0x3f, 0x63 }, { 0x5a, 0x30, 0x33 }, { 0x3d, 0x53, 0x3a }, { 0x59, 0x4d, 0x2e },
 }
 
-local imgBtn = -1
-local imgBg  = -1
-local imgAct = -1
-local imgLock = -1
-
+local imgBtn, imgBg, imgAct, imgLock = -1, -1, -1, -1
+local imageVg = nil ---@type any
+local imageBatch = {} -- 每次init独立身份；合作式加载让出后，旧批次不能写回新context。
+local imagesReady = false
 local state = {
     view      = "selector",
     fromOverview = false,
@@ -367,6 +366,7 @@ local function shortStageLabel(id)
     end
     local entry = ResourceList.getStageEntry(id)
     if not entry then return tostring(id) end
+    if entry.tower then return TowerText.text("第%d层", entry.stage) end
     local rel = displayChapter(id)
     return string.format("%d-%d", rel, entry.stage)
 end
@@ -380,15 +380,18 @@ local monsterCards = {}
 ---@param monsterId number
 ---@return integer
 local function ensureMonsterCard(vg, monsterId)
-    local img = monsterCards[monsterId]
+    local batch, cards = imageBatch, monsterCards
+    local img = cards[monsterId]
     if img and img >= 0 then return img end
     local artId = require("config.MonsterConfig").getCardArtId(monsterId)
-    img = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", artId), 0)
-    if img and img >= 0 then
-        monsterCards[monsterId] = img
-        return img
+    local loaded = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", artId), 0)
+    ---@cast loaded integer|nil
+    if imageBatch ~= batch or imageVg ~= vg or not imagesReady then return -1 end
+    if loaded and loaded >= 0 then
+        cards[monsterId] = loaded
+        return loaded
     end
-    monsterCards[monsterId] = nil
+    cards[monsterId] = nil
     return -1
 end
 
@@ -622,8 +625,7 @@ local function drawTerminalGuide(vg, rowY, locked)
     local sources = {
         "最多三队一起上场，不必三队全部存活。",
         "同编号敌人跨队共享生命，击败全部三名敌人即可通关。",
-        I18n.format("限时 %d 秒；全部参战队伍失守或超时则失败。",
-            (GameConfig.Battle and GameConfig.Battle.TIME_LIMIT_SEC) or 300),
+        "不限时；全部参战队伍失守才失败。",
         "胜利进入下一难度，失败退回本难度最后一关。",
     }
     for index, source in ipairs(sources) do
@@ -652,25 +654,30 @@ local chapterBackgrounds = {}
 ---@type table<string, number>
 local chapterBackgroundRetry = {}
 local function ensureChapterBackground(vg, stageId, background)
+    local batch = imageBatch
+    local backgrounds, retries = chapterBackgrounds, chapterBackgroundRetry
     local path = background or SC.getBattleBackground(stageId)
-    local image = chapterBackgrounds[path]
+    local image = backgrounds[path]
     if image and image >= 0 then return image end
     local now = time.elapsedTime
-    if chapterBackgroundRetry[path] and now < chapterBackgroundRetry[path] then return -1 end
+    if retries[path] and now < retries[path] then return -1 end
     local loaded = nvgCreateImage(vg, path, 0) or -1
+    if imageBatch ~= batch or imageVg ~= vg or not imagesReady then return -1 end
     if loaded >= 0 then
-        chapterBackgrounds[path] = loaded
-        chapterBackgroundRetry[path] = nil
+        backgrounds[path] = loaded
+        retries[path] = nil
         print("[StageSelectDialog] 章节背景已加载: " .. path)
     else
-        chapterBackgroundRetry[path] = now + 2
+        retries[path] = now + 2
         print("[StageSelectDialog] 章节背景暂不可用，稍后重试: " .. path)
     end
     return loaded
 end
 
 local function drawChapterBackground(vg, stageId, x, y, hue, isSel, locked, background)
+    local batch = imageBatch
     local image = ensureChapterBackground(vg, stageId, background)
+    if imageBatch ~= batch or imageVg ~= vg or not imagesReady then return false end
     local srcW, srcH = 0, 0
     if image >= 0 then srcW, srcH = nvgImageSize(vg, image) end
     nvgBeginPath(vg)
@@ -692,37 +699,54 @@ local function drawChapterBackground(vg, stageId, x, y, hue, isSel, locked, back
         nvgFillColor(vg, nvgRGBA(hue[1], hue[2], hue[3], 170))
     end
     nvgFill(vg)
+    return true
 end
 
--- 塔每波随机出怪，规则与整层奖励单独绘制，不套资源卡面布局。
-local function drawTowerPreview(vg, entry, y, locked)
-    local vx, vy, vw, vh = cardViewport(nil, y)
+-- 塔按五层组列起点；预览只读配置/首通账本，不抽怪物或神器。
+local function drawTowerPreview(vg, entry, y, locked, dungeonData)
+    local reward = ResourceList.getRewardPreview(entry.id, entry, dungeonData)
+    if not reward then return end
+    local vx, _, vw = cardViewport(nil, y)
     nvgSave(vg)
-    nvgIntersectScissor(vg, vx, vy, vw, vh)
+    nvgIntersectScissor(vg, vx, y + 6, vw, 78)
     local color = locked and 149 or 230
-    drawFittedTitle(vg, vx + vw * 0.5, y + 28,
+    drawFittedTitle(vg, vx + vw * 0.5, y + 26,
         I18n.format("怪物 Lv.%d", entry.monsterLevel or 0), vw - 16, 28, 1,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 235, color, 194, 2)
-    drawFittedTitle(vg, vx + vw * 0.5, y + 64, "每层10波，敌人随机生成", vw - 16, 24, 1,
+    drawFittedTitle(vg, vx + vw * 0.5, y + 62,
+        TowerText.text("第%d-%d层 · 每层1波", reward.runStartFloor, reward.runEndFloor), vw - 16, 24, 1,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color, color, color, 2)
-    drawFittedTitle(vg, vx + vw * 0.5, y + 98, "三队攻坚，共同推进", vw - 16, 24, 1,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 201, 151, 59, 2)
     nvgRestore(vg)
-    RewardPreview.draw(vg, ResourceList.getRewardPreview(entry.id, entry),
-        D.MID_X + 8, y + 130, D.MID_W - 16, 34, locked)
+    RewardPreview.draw(vg, reward, D.MID_X + 8, y + 104, D.MID_W - 16, 44, locked)
 end
 
 ---@param vg any
 function StageSelectDialog.init(vg)
-    for _, image in pairs(chapterBackgrounds) do nvgDeleteImage(vg, image) end
+    -- 同VG保留原init契约：释放章节缓存并重新请求静态图，奖励缓存也重置。
+    -- 换VG时旧context可能已经销毁，只丢弃句柄，不能用新VG删除旧图片。
+    if imageVg == vg then
+        for _, image in pairs(chapterBackgrounds) do nvgDeleteImage(vg, image) end
+    else
+        monsterCards = {}
+    end
+    local batch = {}
+    imageBatch, imageVg, imagesReady = batch, vg, false
     chapterBackgrounds, chapterBackgroundRetry = {}, {}
-    imgBtn = nvgCreateImage(vg, "image/通用图标/UI_ICON_XG.png", 0)
-    -- 九宫格拉伸用法（950x1117），保留原图；整图拉伸用法（950x647）走 UI_TY_EJQRK_POP 副本
-    imgBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
-    imgAct = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
-    imgLock = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
+    titleLayoutCache, titleLayoutKeys = {}, {}
+    imgBtn, imgBg, imgAct, imgLock = -1, -1, -1, -1
     RewardPreview.init(vg)
-    print(string.format("[StageSelectDialog] 主线行%d/资源行%d，视窗%d；资源按击杀预估无额外奖",
+    local button = nvgCreateImage(vg, "image/通用图标/UI_ICON_XG.png", 0)
+    if imageBatch ~= batch then return end
+    -- 九宫格拉伸用法（950x1117），保留原图；整图拉伸用法（950x647）走 UI_TY_EJQRK_POP 副本
+    local background = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
+    if imageBatch ~= batch then return end
+    local action = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
+    if imageBatch ~= batch then return end
+    local lock = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
+    if imageBatch ~= batch then return end
+    -- nvgCreateImage可合作式yield；四图加载调用全部返回后才原子发布本批结果。
+    imgBtn, imgBg, imgAct, imgLock, imagesReady = button, background, action, lock, true
+    print(string.format("[StageSelectDialog] 主线行%d/资源行%d，视窗%d；副本显示战力、奖励与经验",
         MAIN_ROW_LAYOUT.rowHeight, RESOURCE_ROW_LAYOUT.rowHeight, ROW_VIEWPORT_HEIGHT))
     print(string.format("[StageSelectDialog] init OK; layout TAB_Y=%d TAB_W=%d TAB_H=%d "
         .. "MAIN_TAB_X=%d DUNGEON_TAB_X=%d CH_Y0=%d ROW_Y0=%d",
@@ -968,6 +992,7 @@ end
 
 ---@param vg any
 function StageSelectDialog.drawButton(vg)
+    if imageVg ~= vg or not imagesReady then return end
     local _ds = BF.begin(vg, "stage_sel_btn", BTN_CX, BTN_CY, BTN_W, BTN_H)
     if imgBtn >= 0 then
         drawImageCentered(vg, imgBtn, BTN_CX, BTN_CY, ICON_W, ICON_H, 1.0)
@@ -986,7 +1011,8 @@ end
 
 ---@param vg any
 function StageSelectDialog.draw(vg)
-    if not state.open then return end
+    if not state.open or imageVg ~= vg or not imagesReady then return end
+    local batch = imageBatch
     local scale = getAnimScale()
     if scale <= 0.01 then return end
     if state.view == "overview" then ExpeditionOverview.draw(vg, scale) return end
@@ -1058,7 +1084,9 @@ function StageSelectDialog.draw(vg)
         local firstId = g.ids and g.ids[1]
         local chapterLocked = stageLocked(firstId, maxOrder, battleData, dungeonData)
 
-        drawChapterBackground(vg, firstId, x, y, hue, isSel, chapterLocked, g.background)
+        if not drawChapterBackground(vg, firstId, x, y, hue, isSel, chapterLocked, g.background) then
+            nvgRestore(vg) return
+        end
         if isSel then
             nvgBeginPath(vg)
             nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
@@ -1071,15 +1099,20 @@ function StageSelectDialog.draw(vg)
         -- 章节按钮文字：解锁=亮色，锁定=灰蓝色
         local chR, chG, chB = 235, 230, 210
         if chapterLocked then chR, chG, chB = 0x8b, 0x95, 0xa5 end
-        local singleTitle = g.resourceDungeonId or g.isTower
+        local unlockHint = chapterLocked and g.unlockStage
+            and I18n.format("%s 解锁", shortStageLabel(g.unlockStage)) or nil
+        local singleTitle = (g.resourceDungeonId or g.isTower) and not unlockHint
         drawFittedTitle(vg, cx, y + D.CH_BTN_H * (singleTitle and 0.5 or 0.34),
             g.name, D.CH_W - 18, 26, 2,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, chR, chG, chB, 3)
         if chapterLocked and imgLock >= 0 then
             drawImageCentered(vg, imgLock, x + D.CH_W - 22, y + 22, 30, 30, 0.9)
         end
-        if not singleTitle then
-            -- 主线章节/终焉保留原副标题，副本每类只显示居中名称。
+        if unlockHint then
+            drawFittedTitle(vg, cx, y + D.CH_BTN_H * 0.8, unlockHint, D.CH_W - 18, 20, 1,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, chR, chG, chB, 2)
+        elseif not singleTitle then
+            -- 主线章节/终焉保留原副标题，已解锁副本仅显示居中名称。
             local rel = g.subLabel or tostring(SC.getRelativeChapter(g.key)) .. " 章"
             rel = type(g.key) == "string" and I18n.difficulty(rel) or I18n.lookup(rel)
             nvgFontFace(vg, "sans")
@@ -1181,8 +1214,8 @@ function StageSelectDialog.draw(vg)
         else
             nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
         end
-        -- 塔状态上移，避开y+130..164奖励带；主线134/资源78原值不动。
-        local statusY = entry and entry.tower and 100 or layout.statusY
+        -- 塔状态位于组奖励上方；主线/资源原值不动。
+        local statusY = entry and entry.tower and 62 or layout.statusY
         nvgText(vg, x + 16, y + statusY, sub, nil)
 
         -- 推荐战力（行左中，v2.61 接线 / v2.63 图标化）：
@@ -1192,12 +1225,10 @@ function StageSelectDialog.draw(vg)
         --   + 纯数字（与 TopBar 玩家战力同图标，玩家一看即懂是战力比较）。
         --   ≈ 模糊前缀取消——外推关仅以蓝灰数字色区分，不做文本标注。
         -- 三态：实测(数字与玩家总战力比较着色) / 外推(蓝灰) / 无数据(不绘制)。
-        -- 布局：图标 18px 中心 (x+25, y+84)，数字左缘 x+38；左栏可用宽
-        -- ~124px（CARD_X-MID_X-边距），最长 5 位数（ml92 外推上限 ~2.9e4）
-        -- 20 号字 ~55px，38+55=93px < 124px 不撞卡面。
+        -- 布局：图标中心 x+25，数字左缘 x+38；副本大数缩写并适配可用宽度。
+        -- 主线仍保留原完整数字，锁定行的图标与文字透明度一致。
         ---@type number|nil, boolean|nil
-        local recPower, recExtr
-        if not ResourceList.isTowerStage(id) then recPower, recExtr = SRP.get(id) end
+        local recPower, recExtr = ResourceList.getRecommendedPower(id, entry)
         if recPower then
             local rr, rg, rb
             if recExtr then
@@ -1215,13 +1246,15 @@ function StageSelectDialog.draw(vg)
             end
             local iconAlpha = (locked and 140 or 255) / 255
             DarkIcon.draw(vg, "power", x + 25, y + layout.powerY, 18, iconAlpha)
-            drawTextStroke(vg, x + 38, y + layout.powerY, tostring(recPower), 20,
-                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+            local isDungeon = ResourceList.getGroupKey(id) ~= nil
+            local powerText = isDungeon and require("core.NumberUtil").format(recPower) or tostring(recPower)
+            drawFittedTitle(vg, x + 38, y + layout.powerY, powerText,
+                D.CARD_X - x - 46, 20, 1, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
                 rr, rg, rb, 2, { alpha = iconAlpha })
         end
 
         if entry and entry.tower then
-            drawTowerPreview(vg, entry, y, locked)
+            drawTowerPreview(vg, entry, y, locked, dungeonData)
         else
             -- 敌人卡面（行右侧横排；名称和数量随卡面一起滚动）
             local mids = stageMonsterCards(entry)
@@ -1237,6 +1270,11 @@ function StageSelectDialog.draw(vg)
                 local monsterId = info.id
                 local cardCX = D.CARD_X + 2 + (ci - 1) * (cardW + layout.cardGap) + cardW * 0.5 - offset
                 local card = ensureMonsterCard(vg, monsterId)
+                if imageBatch ~= batch or imageVg ~= vg or not imagesReady then
+                    -- 卡面clip、关卡视窗clip、弹窗transform依次恢复。
+                    nvgRestore(vg) nvgRestore(vg) nvgRestore(vg)
+                    return
+                end
                 if card >= 0 then
                     drawImageCover(vg, card, cardCX, cardCY, cardW, cardH, locked and 0.4 or 1.0)
                 else
@@ -1289,6 +1327,10 @@ function StageSelectDialog.draw(vg)
                     x + 8, y + REWARD_BAND_Y, D.MID_W - 16, REWARD_BAND_HEIGHT, locked)
             end
         end
+        if imageBatch ~= batch or imageVg ~= vg or not imagesReady then
+            nvgRestore(vg) nvgRestore(vg) -- 关卡视窗clip、弹窗transform
+            return
+        end
         if SC.isTerminalTemple(id) then drawTerminalGuide(vg, y, locked) end
     end
     nvgRestore(vg)
@@ -1305,28 +1347,6 @@ function StageSelectDialog.draw(vg)
         nvgRoundedRect(vg, vx0 + vw0 + 8, thumbY, 5, thumbH, 2.5)
         nvgFillColor(vg, nvgRGBA(201, 151, 59, 220))
         nvgFill(vg)
-    end
-    if layout.compact then
-        -- 四分类下方的左栏空区，仅画说明，不新增热区或挤占右侧关卡视窗。
-        local noteCX, noteW = D.CH_X + D.CH_W * 0.5, D.CH_W
-        local align = NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE
-        drawFittedTitle(vg, noteCX, 1320, "按击杀结算", noteW, 20, 1,
-            align, 201, 151, 59, 2)
-        drawFittedTitle(vg, noteCX, 1346, "非额外通关奖励", noteW, 20, 1,
-            align, 201, 151, 59, 2)
-        if sel.resourceDungeonId == "equipment_vault" then
-            drawFittedTitle(vg, noteCX, 1390, "装备随机掉落", noteW, 18, 1,
-                align, 182, 176, 157, 2)
-            drawFittedTitle(vg, noteCX, 1416, "按设置入包/分解", noteW, 18, 1,
-                align, 182, 176, 157, 2)
-            drawFittedTitle(vg, noteCX, 1442, "或进入遗匣", noteW, 18, 1,
-                align, 182, 176, 157, 2)
-        else
-            drawFittedTitle(vg, noteCX, 1390, "一关约主线一章", noteW, 18, 1,
-                align, 182, 176, 157, 2)
-            drawFittedTitle(vg, noteCX, 1416, "末关保留原跨度", noteW, 18, 1,
-                align, 182, 176, 157, 2)
-        end
     end
     nvgRestore(vg)
 end

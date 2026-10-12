@@ -12,6 +12,9 @@ local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local ArtifactBridge   = require("systems.ArtifactBridge")
 local EquipmentSetSystem = require("systems.EquipmentSetSystem")
+local EquipmentSetRuntime = require("systems.EquipmentSetRuntime")
+local UnitAttributes = require("systems.UnitAttributes")
+local AttributeView = require("ui.character.detail.CharacterAttributeView")
 local CF = require("systems.CombatFormula")
 
 local M = {}
@@ -154,6 +157,27 @@ M.ATTR_DISPLAY_ORDER = {
     "_artifactChaosDamage", "_artifactExtraDamage", "_artifactBlockCap", "_artifactNoHeal",
 }
 
+-- 最终乘区已计入生命、攻击与六围的实际值；总属性列表不重复展示中间倍率。
+-- 属性收集仍保留完整数据，装备来源与只读预览不能丢失这些词条。
+local HIDDEN_DISPLAY_KEYS = {
+    [AD.FINAL_HP_BONUS] = true, [AD.FINAL_ARMOR_BONUS] = true,
+    [AD.FINAL_ENERGY_SHIELD_BONUS] = true, [AD.FINAL_DODGE_BONUS] = true,
+    [AD.FINAL_PHYS_ATK_BONUS] = true, [AD.FINAL_MAG_ATK_BONUS] = true,
+    [AD.FINAL_DAMAGE_BONUS] = true,
+    [AD.FINAL_STR_BONUS] = true, [AD.FINAL_AGI_BONUS] = true,
+    [AD.FINAL_INT_BONUS] = true, [AD.FINAL_VIT_BONUS] = true,
+    [AD.FINAL_LUK_BONUS] = true, [AD.FINAL_SPI_BONUS] = true,
+}
+
+--- 仅过滤显示行，不修改源数组、属性容器或装备预览差值。
+function M.filterDisplayRows(rows)
+    local visible = {}
+    for _, row in ipairs(rows or {}) do
+        if not HIDDEN_DISPLAY_KEYS[row.key] then visible[#visible + 1] = row end
+    end
+    return visible
+end
+
 local DISPLAY_ORDER_INDEX = {}
 for i, key in ipairs(M.ATTR_DISPLAY_ORDER) do DISPLAY_ORDER_INDEX[key] = i end
 
@@ -185,31 +209,58 @@ local function getHeroRuntimeData(heroesData, heroId)
     return heroesData.roster[heroId] or heroesData.roster[tostring(heroId)]
 end
 
-local function applyDetailRuntimeBonuses(attrs, heroId, classId, heroesData, eqData, options)
+local function applyDetailTeamAura(unit, heroId, heroesData, eqData)
+    local _, teamIdx = findArtifactPosition(heroesData, heroId)
+    unit.teamIdx = teamIdx
+    local units = { unit }
+    -- 仅判断所属队的套装标记，不为队光环重建整个名册或执行任何开战计时器。
+    -- 空属性来源只提供 _setSix 给公共 API；数值和幂等/clone 规则仍由它处理。
+    local ids = teamIdx and getTeamSlotIds(heroesData, teamIdx) or {}
+    local seen = { [tonumber(heroId) or heroId] = true }
+    for slot = 1, 4 do
+        local sourceId = tonumber(ids[slot] or ids[tostring(slot)])
+        if sourceId and sourceId > 0 and not seen[sourceId] and HC.get(sourceId) then
+            seen[sourceId] = true
+            local counts = EquipmentSetSystem.countSets(eqData, sourceId,
+                EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
+            for _, summary in ipairs(EquipmentSetSystem.summarize(counts)) do
+                if summary.setId == "last_rite" and summary.sixActive then
+                    local sourceAttrs = UnitAttributes.create({})
+                    sourceAttrs._setSix = "last_rite"
+                    units[#units + 1] = { heroId = sourceId, teamIdx = teamIdx, attrs = sourceAttrs }
+                    break
+                end
+            end
+        end
+    end
+    EquipmentSetRuntime.applyTeamAura(units)
+end
+
+local function applyDetailRuntimeBonuses(unit, heroId, heroesData, eqData, options)
+    local attrs = unit.attrs
     local heroEq = getHeroEquipped(eqData, heroId)
     if heroEq and eqData and eqData.inventory then
         require("systems.EquipmentPower").applyEquipment(attrs, eqData, heroId)
     end
+    -- 只复用确定性四件属性，不调用 onBattleStart/条件被动/计时器。
+    EquipmentSetRuntime.applyStaticBonuses(attrs)
 
     local partySlotForArtifact, teamIdx = findArtifactPosition(heroesData, heroId)
     if partySlotForArtifact then
-        ArtifactBridge.applyToUnit(attrs, partySlotForArtifact, options and options.artifacts, teamIdx)
+        ArtifactBridge.applyToUnit(attrs, partySlotForArtifact, options.artifacts, teamIdx)
     end
+    applyDetailTeamAura(unit, heroId, heroesData, eqData)
 end
 
 local function buildHeroAttrsForDetail(heroId, level, heroesData, eqData, options)
     local heroCfg = HC.get(heroId)
     if not heroCfg then return nil, nil end
-    local hd = getHeroRuntimeData(heroesData, heroId)
-    -- 显式空表阻止 ExtraTalentSystem.getOwned 的写真档回退。
-    local extraTalent = hd and hd.extraTalent
-    if options and extraTalent == nil then extraTalent = {} end
-    local awakening = hd and hd.awakening
-    if options and awakening == nil then awakening = {} end
-    local createOptions = options and { litNodes = options.talents and options.talents.litNodes or false, silent = true } or nil
-    local unit = HC.createHero(heroId, level, hd and hd.advBranch or nil, awakening, extraTalent, createOptions)
+    local hd = getHeroRuntimeData(heroesData, heroId) or {}
+    -- 每条详情路径都在完整隔离快照中重建，缺失养成不得借本地 Owned/旧星图默认值。
+    local createOptions = { litNodes = options.talents.litNodes or false, silent = true }
+    local unit = HC.createHero(heroId, level, hd.advBranch, hd.awakening or {}, hd.extraTalent or {}, createOptions)
     if not unit or not unit.attrs then return nil, heroCfg end
-    applyDetailRuntimeBonuses(unit.attrs, heroId, heroCfg.classId, heroesData, eqData, options)
+    applyDetailRuntimeBonuses(unit, heroId, heroesData, eqData, options)
     return unit, heroCfg
 end
 
@@ -282,7 +333,7 @@ local function calcMelissaStarGatePanelInfo(heroId, level, attrs, heroesData, eq
     local mult = 1 + finalDmgBonus / 100
     local selfMagDmg = attrs:getUncapped(AD.MAG_DMG_BONUS) or 0
     local desc = string.format(
-        "星门会继承摘星星星人自身与出战队伍中贡献最高的魔法角色，最多%d名。每名角色贡献 = (魔法伤害加成 + 魔法攻击加成×25%%)×150%%；魔法穿透×150%%。7觉醒时继承范围扩展为全队，继承结果再×150%%。星门最终伤害中，本体魔伤与共鸣为乘法：基础伤害 × (1+本体魔伤%.1f%%) × 共鸣%.2f。当前共鸣魔伤+%.1f%%，共鸣魔穿+%.1f。来源：%s",
+        "星门会继承摘星星星人自身与出战队伍中贡献最高的魔法角色，最多%d名。每名角色贡献 = (魔法伤害加成 + 魔法攻击加成×25%%)×150%%；魔法穿透×150%%。7觉醒时继承范围扩展为全队，继承结果再×150%%。星门最终伤害中，本体魔伤与共鸣为乘法：基础伤害 × (1+本体魔伤%.1f%%) × 共鸣%.1f。当前共鸣魔伤+%.1f%%，共鸣魔穿+%.1f。来源：%s",
         limit, selfMagDmg, mult, finalDmgBonus, finalPen, (#sourceParts > 0 and table.concat(sourceParts, "；") or "无")
     )
     return {
@@ -298,45 +349,36 @@ end
 ---@param heroId number|string
 ---@param heroCfg table HeroConfig 条目
 ---@param level number
----@param options? table 显式 heroes/equipment/artifacts 快照；提供时不回读存档，六围保留小数
+---@param options? table 完整 heroes/equipment/artifacts/talents 快照；提供时不回读存档
 ---@return table { left={}, right={}, stats={}, attrs=UnitAttributes }
 function M.collectAttributes(heroId, heroCfg, level, options)
-    -- 旧调用保留数据来源；预览调用只读隔离快照，禁止临时改 PlayerStore/HC。
-    local heroesData = options and deepCopy(options.heroes or {})
-        or ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
-    local eqData = options and deepCopy(options.equipment or {})
-        or ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
-    local runtimeOptions = options and { artifacts = deepCopy(options.artifacts or {}),
-        talents = deepCopy(options.talents or {}) } or nil
-    local hd = getHeroRuntimeData(heroesData, heroId)
-    local extraTalent = hd and hd.extraTalent
-    if options and extraTalent == nil then extraTalent = {} end
-    local awakening = hd and hd.awakening
-    if options and awakening == nil then awakening = {} end
-    local talents
-    if options then talents = options.talents or {}
-    else talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents") end
-    local createOptions = options and { litNodes = talents and talents.litNodes or false, silent = true } or nil
-    local hero = HC.createHero(heroId, level, hd and hd.advBranch, awakening, extraTalent, createOptions)
+    -- 两页共用完整有效属性链；默认来源也先隔离，神器/觉醒/词条规范化不能写真档。
+    local source = options or {
+        heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes"),
+        equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment"),
+        artifacts = ClientDispatcher.get("artifacts") or PlayerStore.Get("artifacts"),
+        talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents"),
+    }
+    local runtimeOptions = deepCopy({ heroes = source.heroes or {}, equipment = source.equipment or {},
+        artifacts = source.artifacts or {}, talents = source.talents or {} })
+    local heroesData, eqData = runtimeOptions.heroes, runtimeOptions.equipment
+    local hero = buildHeroAttrsForDetail(heroId, level, heroesData, eqData, runtimeOptions)
     if not hero or not hero.attrs then
         return { left = {}, right = {}, stats = {} }
     end
     local attrs = hero.attrs
 
-    -- === 应用已穿戴装备、神器属性（与战斗/战力口径一致） ===
-    applyDetailRuntimeBonuses(attrs, heroId, heroCfg.classId, heroesData, eqData, runtimeOptions)
-
     -- === 左列：基础/防御属性 ===
     local left = {}
-    left[#left + 1] = { key = AD.MAX_HP, name = "生命值", value = tostring(math.floor(attrs:get(AD.MAX_HP))) }
+    left[#left + 1] = { key = AD.MAX_HP, name = "生命值", value = AttributeView.formatNumber(attrs:get(AD.MAX_HP)) }
 
     local category = AD.getAtkCategory(heroCfg.atkType)
     if category == "physical" then
-        left[#left + 1] = { key = AD.PHYS_ATK, name = "物理攻击力", value = tostring(math.floor(attrs:get(AD.PHYS_ATK))) }
+        left[#left + 1] = { key = AD.PHYS_ATK, name = "物理攻击力", value = AttributeView.formatNumber(attrs:get(AD.PHYS_ATK)) }
     elseif category == "magical" then
-        left[#left + 1] = { key = AD.MAG_ATK, name = "魔法攻击力", value = tostring(math.floor(attrs:get(AD.MAG_ATK))) }
+        left[#left + 1] = { key = AD.MAG_ATK, name = "魔法攻击力", value = AttributeView.formatNumber(attrs:get(AD.MAG_ATK)) }
     elseif category == "healing" then
-        left[#left + 1] = { key = AD.HEAL_AMOUNT, name = "治疗量", value = tostring(math.floor(attrs:get(AD.HEAL_AMOUNT))) }
+        left[#left + 1] = { key = AD.HEAL_AMOUNT, name = "治疗量", value = AttributeView.formatNumber(attrs:get(AD.HEAL_AMOUNT)) }
     end
 
     -- 基础值在前，对应加成紧跟后面。0 也保留，避免列表提前结束。
@@ -407,7 +449,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         desc = atkDesc }
     local actualInterval = attrs:getActualInterval()
     right[#right + 1] = { key = AD.ATK_INTERVAL, name = "攻击间隔",
-        value = string.format("%.1fs", options and actualInterval or heroCfg.atkInterval),
+        value = AttributeView.formatInterval(actualInterval),
         numericValue = actualInterval }
     right[#right + 1] = { key = "_atkTargets", name = "攻击目标", value = tostring(heroCfg.atkTargets),
         desc = "普攻每次可命中的敌方目标数量" }
@@ -474,14 +516,15 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         effCritDmg = convertedDmg
     end
     do -- 有效暴击伤害常驻，格式与 numericValue 始终同源。
-        local dmgDesc = "实战暴击伤害倍率；神器倍率已计入。"
+        local dmgDesc = (category == "healing") and "治疗暴击时使用的治疗倍率，基础200%。"
+            or "实战暴击伤害倍率；神器倍率已计入。"
         if overflowPct > 0 then
             dmgDesc = string.format(
                 "实战暴击伤害倍率；老六觉醒Ⅲ将 %.1f 个百分点的溢出暴击率转为暴伤提升（乘算）。", overflowPct)
         end
         right[#right + 1] = {
             key = "_effCritDmg",
-            name = (category == "healing") and "治疗暴击伤害" or "暴击伤害",
+            name = (category == "healing") and "暴击治疗" or "暴击伤害",
             value = string.format("%.1f%%", effCritDmg),
             desc = dmgDesc,
         }
@@ -492,7 +535,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         right[#right + 1] = {
             key = "_melissaStarGateResonance",
             name = "星门共鸣",
-            value = string.format("×%.2f", starGateInfo.mult),
+            value = string.format("×%.1f", starGateInfo.mult),
             desc = starGateInfo.desc,
         }
         do -- 星门是英雄20的固有机制；其穿透为0时仍显示，其他英雄不显示。
@@ -571,7 +614,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         right[#right + 1] = {
             key = "_artifactCritRateMult",
             name = "神器暴击率",
-            value = string.format("×%.2f", attrs.artifactCritRateMult),
+            value = string.format("×%.1f", attrs.artifactCritRateMult),
             desc = "神器特殊效果：最终暴击率按该倍率调整，已计入上方暴击率显示。",
         }
     end
@@ -579,7 +622,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         right[#right + 1] = {
             key = "_artifactCritDmgMult",
             name = "神器暴击伤害",
-            value = string.format("×%.2f", attrs.artifactCritDmgMult),
+            value = string.format("×%.1f", attrs.artifactCritDmgMult),
             desc = "神器特殊效果：最终暴击伤害按该倍率调整，已计入上方暴击伤害显示。",
         }
     end
@@ -603,7 +646,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         right[#right + 1] = {
             key = "_artifactExtraDamage",
             name = "额外伤害",
-            value = string.format("×%.2f", attrs.artifactExtraDamageMult),
+            value = string.format("×%.1f", attrs.artifactExtraDamageMult),
             desc = "神器特殊效果：作为独立乘区提高最终伤害。",
         }
     end
@@ -628,7 +671,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
     local stats = {}
     for _, st in ipairs(M.STAT_LAYOUT) do
         local val = attrs:get(st.key)
-        stats[st.key] = options and val or math.floor(val)
+        stats[st.key] = val
     end
 
     -- 数值与格式化同源，绝不从带百分号/溢出提示的字符串反解析。
@@ -661,6 +704,119 @@ function M.collectAttributes(heroId, heroCfg, level, options)
     end
 
     return { left = left, right = right, stats = stats, attrs = attrs }
+end
+
+-- ======================== 属性页只读展示缓存 ========================
+-- collectAttributes 仍逐调用返回独立属性容器（预览/战斗不能共享可变 attrs）。
+-- 只有每个详情宿主私有的展示闭包复用行与六围；不在英雄之间或宿主之间共享。
+local function sameValue(a, b)
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return a == b end
+    for key, value in pairs(a) do
+        if not sameValue(value, b[key]) then return false end
+    end
+    for key in pairs(b) do if a[key] == nil then return false end end
+    return true
+end
+
+local function presentationDependencies(heroId, heroCfg, level, options)
+    ---@type table|nil
+    local heroes = nil
+    ---@type table|nil
+    local equipment = nil
+    ---@type table|nil
+    local artifacts = nil
+    ---@type table|nil
+    local talents = nil
+    ---@type table|boolean|nil
+    local litNodes = nil
+    if options ~= nil then
+        heroes, equipment = options.heroes or {}, options.equipment or {}
+        artifacts, talents = options.artifacts or {}, options.talents or {}
+        litNodes = talents.litNodes or false
+    else
+        heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
+        equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
+        artifacts = ClientDispatcher.get("artifacts") or PlayerStore.Get("artifacts")
+        talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents")
+        litNodes = talents and talents.litNodes or false
+    end
+    local deps = { heroId = heroId, heroCfg = heroCfg, level = level, explicit = options ~= nil,
+        language = require("core.I18n").get(), heroesPresent = heroes ~= nil,
+        artifacts = artifacts, litNodes = litNodes,
+        talents = talents and talents.litNodes, teams = {}, heroes = {}, worn = {} }
+    -- 非英雄模块版本也区分 ClearCache/Cleanup → 同内容重入；纯经验发布不进入 key。
+    if not options and PlayerStore.GetRevision then
+        deps.equipmentRevision = PlayerStore.GetRevision("equipment")
+        deps.artifactsRevision = PlayerStore.GetRevision("artifacts")
+        deps.talentsRevision = PlayerStore.GetRevision("talents")
+        deps.storeHeroesPresent = PlayerStore.Get("heroes") ~= nil
+    end
+    for team = 1, 3 do
+        local ids = getTeamSlotIds(heroes, team)
+        local slots = {}
+        for slot = 1, 4 do slots[slot] = ids[slot] or ids[tostring(slot)] or false end
+        deps.teams[team] = slots
+    end
+    local function addHero(id)
+        if deps.heroes[id] then return end
+        local hd = getHeroRuntimeData(heroes, id)
+        deps.heroes[id] = { present = hd ~= nil, level = hd and hd.level,
+            advBranch = hd and hd.advBranch, awakening = hd and hd.awakening,
+            extraTalent = hd and hd.extraTalent, cfg = HC.get(id) }
+        local slots = getHeroEquipped(equipment, id)
+        local worn = { slots = slots, items = {} }
+        local inventory = equipment and equipment.inventory
+        for _, slot in ipairs(EquipmentConfig.SLOTS) do
+            local seq = slots and slots[slot]
+            if seq then worn.items[slot] = inventory and (inventory[tostring(seq)] or inventory[seq]) or false end
+        end
+        deps.worn[id] = worn
+    end
+    addHero(heroId)
+    -- 任意英雄都会受本队司仪六件光环影响；缓存依赖不能只为星门收集队友穿戴项。
+    local _, team = findArtifactPosition(heroes, heroId)
+    local ids = team and getTeamSlotIds(heroes, team) or {}
+    for slot = 1, 4 do
+        local id = tonumber(ids[slot] or ids[tostring(slot)])
+        if id and id > 0 then addHero(id) end
+    end
+    return deps
+end
+
+--- 创建宿主私有展示读取器。返回的行/六围只供该宿主绘制，不供预览修改。
+--- 不改 collectAttributes 的独立返回值契约；缺省 collector 仍使用真实属性管线。
+---@param collector? function
+---@return function
+function M.createPresentationCache(collector)
+    collector = collector or M.collectAttributes
+    local saved = {} ---@type table
+    local presentation = {} ---@type table
+    local populated = false
+    return function(heroId, heroCfg, level, options)
+        local deps = presentationDependencies(heroId, heroCfg, level, options)
+        if populated and sameValue(deps, saved) then return presentation, presentation.rows end
+        local data = collector(heroId, heroCfg, level, options)
+        local columns = deepCopy({ data.left, data.right })
+        local rows, originalIndex = {}, {}
+        for _, column in ipairs(columns) do
+            for _, row in ipairs(column) do
+                rows[#rows + 1] = row
+                originalIndex[row] = #rows
+            end
+        end
+        table.sort(rows, function(a, b)
+            local oa, ob = DISPLAY_ORDER_INDEX[a.key] or 9999, DISPLAY_ORDER_INDEX[b.key] or 9999
+            if oa ~= ob then return oa < ob end
+            return originalIndex[a] < originalIndex[b]
+        end)
+        -- 不保存/暴露可变 UnitAttributes；保留源行顺序，排序不写 _origIdx 到返回行。
+        presentation = { rows = M.filterDisplayRows(rows), stats = deepCopy(data.stats) }
+        -- getFromInventory/追加技旧档回退可能水合数据：保存完成后的实际字段，避免次帧伪失效。
+        saved = deepCopy(presentationDependencies(heroId, heroCfg, level, options))
+        populated = true
+        return presentation, presentation.rows
+    end
 end
 
 return M

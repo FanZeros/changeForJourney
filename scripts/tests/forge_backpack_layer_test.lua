@@ -109,7 +109,8 @@ function Start()
         RT.vg, RT.logicalW, RT.logicalH, RT.windowW, RT.windowH = {}, 1920, 1080, 1920, 1080
         RT.dpr, RT.bootReady_, RT.preload_ = 1, true, { active = false }
         require = function(name)
-            if name == "boot.StandaloneHorizonInput" or name == "boot.OfflineRewardOverlay" or name == "boot.SeamBackGesture" then
+            if name == "boot.StandaloneHorizonInput" or name == "boot.OfflineRewardOverlay" or name == "boot.SeamBackGesture"
+                or name == "boot.DecomposeMarqueeGesture" or name == "boot.StandaloneHorizonWheel" then
                 return originalRequire(name)
             end
             if not mods[name] then mods[name] = mock() end

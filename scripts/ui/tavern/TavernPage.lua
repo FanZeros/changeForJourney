@@ -24,7 +24,7 @@ local TavernShopPage    = require("ui.tavern.TavernShopPage")
 local TargetRecruitPanel = require("ui.tavern.TargetRecruitPanel")
 local BF                = require("systems.ButtonFeedback")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local I18n = require("core.I18n")
 local TavernPage = {}
 
@@ -381,9 +381,7 @@ function TavernPage.init(vg)
     img.ticketIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_X.png", 0)
     img.ticketIconStellar = loadImage(vg, UrGachaConfig.UI.ticketIconPath, "image/货币道具/UI_icon_ZMQ2_X.png")
     img.diamondIcon = loadImage(vg, "image/货币道具/UI_icon_SJ_X.png")
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnLv       = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     img.slider      = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
     -- 初始化弹窗子模块（setContext 已在模块级别调用，此处只需 init 加载图片）
@@ -417,6 +415,8 @@ local pendingGachaPull = false
 local pendingGachaPullTime = 0       -- 发送时间戳
 ---@type number|nil
 local pendingGachaCount = nil
+---@type string|nil
+local pendingGachaPoolId = nil
 local GACHA_PULL_TIMEOUT   = 8       -- 超时秒数（缩短至8秒，更快恢复）
 
 local function notifyRecruitStarted(count)
@@ -426,7 +426,7 @@ end
 
 local function failPendingRecruit()
     local count = pendingGachaCount
-    pendingGachaPull, pendingGachaCount = false, nil
+    pendingGachaPull, pendingGachaCount, pendingGachaPoolId = false, nil, nil
     if count then
         require("systems.TutorialManager").notifyEvent(count == 10 and "gacha10_failed" or "gacha_failed")
     end
@@ -515,6 +515,8 @@ function TavernPage.close()
     state.closing = true
     state.closeTime = time.elapsedTime
     TavernPopups.resetAll()
+    -- 结果页随酒馆离开收尾；不能留下不可见的招募忙碌状态。
+    if RecruitAnim.isPlaying() then RecruitAnim.close() end
     print("[TavernPage] 关闭酒馆（动画）")
 end
 
@@ -541,6 +543,7 @@ function TavernPage.forceClose()
     state.open = false
     state.closing = false
     TavernPopups.resetAll()
+    if RecruitAnim.isPlaying() then RecruitAnim.close() end
 end
 
 --- 返回打开/关闭动画进度 (0=完全关闭, 1=完全打开)
@@ -587,6 +590,7 @@ local function doRecruitDirect(count, forcePayType)
         pendingGachaPull = true
         pendingGachaPullTime = time.elapsedTime
         pendingGachaCount = count
+        pendingGachaPoolId = poolId
         -- 单机桥可同步回执，必须先进入等待步骤，再发送实际请求。
         notifyRecruitStarted(count)
         local handled = _sendAction(Protocol.ACTION_TYPES.GACHA_PULL,
@@ -659,7 +663,18 @@ local function doRecruit(count)
     doRecruitDirect(count)
 end
 
-RecruitAnim.setOnAgain(function(count)
+RecruitAnim.setOnAgain(function(count, poolId)
+    -- 继续抽取当前结果所属池；异步回执期间页面可能切池或重新打开。
+    if poolId then
+        for index, pool in ipairs(pools) do
+            if pool.id == poolId then
+                state.selectedPool = index
+                refreshPoolMeta()
+                syncDisplayData()
+                break
+            end
+        end
+    end
     doRecruit(count)
 end)
 
@@ -697,21 +712,21 @@ local function drawPityText(vg, cx, cy)
     nvgFontSize(vg, PITY_TEXT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
 
-    -- 先用缓存宽度计算总宽度以居中
+    -- 说明按钮左缘894；保底文案仅占左侧完整预算，长译文按实宽拟合。
     local totalW = 0
     for _, seg in ipairs(segments) do
-        local w = getCachedTextWidth(vg, seg.text, PITY_TEXT_SIZE)
-        seg.w = w
-        totalW = totalW + w
+        seg.text = I18n.lookup(seg.text)
+        seg.w = getCachedTextWidth(vg, seg.text, PITY_TEXT_SIZE)
+        totalW = totalW + seg.w
     end
-
-    -- 从居中起始位置绘制
-    local startX = cx - totalW * 0.5
-    local curX = startX
+    local left, right = 50, PITY_ICON_BG_CX - PITY_ICON_BG_W * 0.5 - 24
+    local factor = math.min(1, (right - left) / math.max(1, totalW))
+    nvgFontSize(vg, PITY_TEXT_SIZE * factor)
+    local curX = (left + right - totalW * factor) * 0.5
     for _, seg in ipairs(segments) do
         nvgFillColor(vg, nvgRGBA(seg.color[1], seg.color[2], seg.color[3], 255))
-        nvgText(vg, curX, cy, seg.text, nil)
-        curX = curX + seg.w
+        I18n.displayText(vg, curX, cy, seg.text, nil)
+        curX = curX + seg.w * factor
     end
 end
 
@@ -856,12 +871,18 @@ local function drawPageImpl(vg)
         -- ============ 6. 保底提示背景条 ============
         drawImageCentered(vg, img.pityBg, PITY_BG_CX, PITY_BG_CY, PITY_BG_W, PITY_BG_H, 1.0)
 
-        -- ============ 7. 保底提示图标背景（复用 timerBg） ============
+        -- ============ 7-8. 旧铜描边骨白说明入口，沿用原90x90反馈/点击区域 ============
         local _s2 = BF.begin(vg, "tavern_pity", PITY_ICON_BG_CX, PITY_ICON_BG_CY, PITY_ICON_BG_W, PITY_ICON_BG_H)
-        drawImageCentered(vg, img.timerBg, PITY_ICON_BG_CX, PITY_ICON_BG_CY, PITY_ICON_BG_W, PITY_ICON_BG_H, 1.0)
-
-        -- ============ 8. 保底提示图标 ============
-        drawImageCentered(vg, img.pityIcon, PITY_ICON_CX, PITY_ICON_CY, PITY_ICON_W, PITY_ICON_H, 1.0)
+        DarkIcon.drawNine(vg, "btn", PITY_ICON_BG_CX - PITY_ICON_BG_W * 0.5,
+            PITY_ICON_BG_CY - 32, PITY_ICON_BG_W, 64, { accent = { 155, 120, 76 } })
+        nvgFontFace(vg, "sans")
+        local infoText = I18n.lookup("说明")
+        nvgFontSize(vg, 28)
+        local infoW = I18n.displayBounds(vg, 0, 0, infoText)
+        if infoW > PITY_ICON_BG_W - 16 then nvgFontSize(vg, 28 * (PITY_ICON_BG_W - 16) / infoW) end
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
+        I18n.displayText(vg, PITY_ICON_BG_CX, PITY_ICON_BG_CY, infoText, nil)
         BF.finish(vg, _s2)
 
         -- ============ 9a. 指定招募/星辉指定UP提示文本 ==========
@@ -1255,7 +1276,8 @@ function TavernPage.onActionResult(data)
     end
 
     local requestCount = pendingGachaCount
-    pendingGachaPull, pendingGachaCount = false, nil
+    local requestPoolId = pendingGachaPoolId
+    pendingGachaPull, pendingGachaCount, pendingGachaPoolId = false, nil, nil
     print("[TavernPage] pendingGachaPull released (action=" .. tostring(data.action) .. " success=" .. tostring(data.success) .. ")")
 
     if not data.success then
@@ -1272,8 +1294,9 @@ function TavernPage.onActionResult(data)
         return
     end
 
-    -- 记录历史
-    TavernPopups.recordHistory(data.gachaResults, data.poolId or getSelectedPoolId())
+    local resultPoolId = data.poolId or requestPoolId or getSelectedPoolId()
+    -- 记录历史，冻结本次请求池，不拿页面后来的选中池解释旧结果。
+    TavernPopups.recordHistory(data.gachaResults, resultPoolId)
 
     -- 同步保底计数
     if data.pity then
@@ -1297,12 +1320,20 @@ function TavernPage.onActionResult(data)
         require("systems.TutorialManager").onRecruitCompleted(data.gachaResults, requestCount)
     end
 
+    -- 页面在请求在途时可能被配装仓库替换，仍消费真实回执与教程目标，
+    -- 但不启动永远无法绘制/点击关闭的结果页。
+    if not state.open or state.closing then
+        require("ui.character.hero.HeroScenario").onRecruitResults(data.gachaResults)
+        print("[TavernPage] 酒馆已关闭，招募结果完成收尾")
+        return
+    end
+
     -- 播放招募动画
     RecruitAnim.start(data.gachaResults, function()
         syncDisplayData()
         print("[TavernPage] 招募动画结束（服务端模式）")
         require("ui.character.hero.HeroScenario").onRecruitResults(data.gachaResults)
-    end, nil, getSelectedPoolId())
+    end, requestCount, resultPoolId)
 end
 
 -- ======================== 拖拽/滚动支持 ========================

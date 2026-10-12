@@ -8,6 +8,7 @@ local AD = require("systems.AttributeDef")
 local Eq = require("systems.EquipmentSystem")
 local Sets = require("systems.EquipmentSetSystem")
 local Attrs = require("ui.character.detail.CharacterDetailAttrs")
+local AttributeView = require("ui.character.detail.CharacterAttributeView")
 local Dispatcher = require("runtime.ClientDispatcher")
 local PlayerStore = require("core.PlayerStore")
 
@@ -48,8 +49,8 @@ local function numericValue(data, key, row)
 end
 
 local function formatValue(key, value)
-    if key == AD.ATK_INTERVAL then return string.format("%.1fs", value) end
-    if MULT_KEYS[key] then return string.format("×%.2f", value) end
+    if key == AD.ATK_INTERVAL then return AttributeView.formatInterval(value) end
+    if MULT_KEYS[key] then return string.format("×%.1f", value) end
     if PCT_KEYS[key] then return string.format("%.1f%%", value) end
     if key == "_melissaStarGatePen" then return string.format("+%.1f", value) end
     return AD.formatAttrDisplayValue(key, value)
@@ -58,8 +59,8 @@ end
 local function deltaText(key, delta)
     local sign = delta < 0 and "-" or "+"
     local amount = math.abs(delta)
-    if key == AD.ATK_INTERVAL then return sign .. string.format("%.2fs", amount) end
-    if MULT_KEYS[key] then return sign .. string.format("%.2f", amount) end
+    if key == AD.ATK_INTERVAL then return sign .. AttributeView.formatInterval(amount) end
+    if MULT_KEYS[key] then return sign .. string.format("%.1f", amount) end
     if key == "_melissaStarGatePen" then return sign .. string.format("%.1f", amount) end
     local meta = AD.getMeta(key)
     if PCT_KEYS[key] or (meta and meta.dataType == AD.TYPE_PCT) then
@@ -67,7 +68,7 @@ local function deltaText(key, delta)
         return sign .. string.format("%.1f%%", amount)
     end
     if meta and meta.dataType == AD.TYPE_FLOAT then return sign .. string.format("%.1f", amount) end
-    return sign .. tostring(math.floor(amount + 0.5))
+    return sign .. AttributeView.formatNumber(amount)
 end
 
 local function mergeRows(current, preview)
@@ -140,15 +141,7 @@ local function positiveBonus(key, value)
 end
 
 local function bonusText(key, value)
-    local formatted = deltaText(key, value)
-    if value ~= 0 and not formatted:find("[1-9]") then
-        local amount = string.format("%.6f", math.abs(value)):gsub("0+$", ""):gsub("%.$", "")
-        local meta = AD.getMeta(key)
-        local suffix = key == AD.ATK_INTERVAL and "s"
-            or (PCT_KEYS[key] or (meta and meta.dataType == AD.TYPE_PCT)) and "%" or ""
-        return (value < 0 and "-" or "+") .. amount .. suffix
-    end
-    return formatted
+    return deltaText(key, value)
 end
 
 local function bonusStats(source, baseline)

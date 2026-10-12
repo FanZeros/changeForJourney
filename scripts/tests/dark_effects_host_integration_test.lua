@@ -13,6 +13,15 @@ end
 local function noop() end
 
 function Start()
+    local nativeFile, nativeFileSystem, nativeFileSystemClass = File, fileSystem, FileSystem
+    local storageAccess = 0
+    local function denyStorage()
+        storageAccess = storageAccess + 1
+        error("宿主特效专项禁止玩家文件读写", 0)
+    end
+    rawset(_G, "File", denyStorage)
+    rawset(_G, "FileSystem", denyStorage)
+    rawset(_G, "fileSystem", setmetatable({}, { __index = function() return denyStorage end }))
     local ok, err = pcall(function()
         local nativeRequire = require
         local Layout = nativeRequire("core.BattleLayout")
@@ -39,6 +48,7 @@ function Start()
         local function environment(mocks, fields)
             local env = setmetatable(fields or {}, { __index = _G })
             env.time = clock
+            env._G = env
             env.File = function() error("host integration forbids player File access") end
             env.require = function(name)
                 if mocks and mocks[name] then return mocks[name] end
@@ -173,6 +183,7 @@ function Start()
         end } }
         local pageEnv = environment(pageMocks, { BattleLayout = Layout, COL_COUNT = 3,
             drivers = fixtureDrivers, isOpen_ = true,
+            entryPreparation = nativeRequire("ui.battle.tri.BattleEntryPreparation").new(),
             BattleMountScope = { run = function(body) return body() end },
             BattleTriPage = { invalidateTeams = function(teams) invalidations[#invalidations + 1] = teams end } })
         local refresh = assert(load(refreshCode .. "\nreturn BattleTriPage.refreshHeroProgressTeams",
@@ -260,6 +271,7 @@ function Start()
         local driverCode = segment("ui/battle/tri/BattleTriDriver.lua",
             "        -- 倒下的人先试瞬时拦截复活", "        -- 存活统计")
         local driverEnv = environment(deathMocks, { BattleLayout = Layout, BattleCombat = combatSpy,
+            BattleClock = compile("ui/battle/combat/BattleClock.lua"),
             ART = ART, TAL = TAL, TM = removal, SEM = removal })
         local driverDeath = assert(load("return function(self, allies)\n" .. driverCode .. "\nend",
             "@host-real/Driver.tick.death", "t", driverEnv))()
@@ -288,6 +300,7 @@ function Start()
         local dungeonCode = segment("ui/dungeon/DungeonBattleScene.lua",
             "    local function notifyTowerAllyDeath(unit)", "    -- [阵亡紧凑] 退场完成 → 移队尾")
         local dungeonEnv = environment(deathMocks, { BattleLayout = Layout, BattleCombat = combatSpy,
+            BattleClock = compile("ui/battle/combat/BattleClock.lua"),
             SpineCardEffect = Card, ART = ART, TAL = TAL, TM = removal, SEM = removal,
             getCardCX = combatSpy.getCardCX, syncUnitHp = noop, isTowerMode = true,
             DungeonBattle = { onAllyDeath = function() towerDeaths = towerDeaths + 1 end } })
@@ -383,13 +396,13 @@ function Start()
 
         -- 精确执行真实class尾层draw，确认与旧礼拜堂scope严格分离且开关生效。
         local classDrawCode = segment("ui/character/detail/CharacterDetailDraw.lua",
-            "    -- === 转职确认/重置弹窗、飘字与程序化转职特效", "    -- === 装备背包覆盖层 ===")
+            "    -- === 转职确认弹窗、飘字与程序化转职特效", "    -- === 装备背包覆盖层 ===")
         detailState.tab = "class"
         local classVG = {}
         local classEnv = environment({ ["ui.fx.SpineCardEffect"] = Card,
             ["ui.hud.popup.SettingsPanel"] = Settings,
             ["ui.church.ChurchClassChange"] = { drawConfirmPopup = noop,
-                drawResetConfirmPopup = noop, drawFloatText = noop } }, { detailState = detailState, vg = classVG })
+                drawFloatText = noop } }, { detailState = detailState, vg = classVG })
         local classDraw = assert(load("return function()\n" .. classDrawCode .. "\nend",
             "@host-real/Detail.class.tail", "t", classEnv))()
         drawBefore = #draws; classDraw()
@@ -461,11 +474,313 @@ function Start()
         smithState.open = false; resultPlaying = true; smith.drawPageImpl(smithVG)
         check(#resultDraws == 1, "Blacksmith closed page does not draw")
 
+        -- 真实finishFrame全窗门控；逐个高优先级宿主让位，仍完成本帧收尾。
+        local frameCode = segment("boot/StandaloneHorizon.lua", "local function finishFrame()", "local function toDesign(sx, sy)")
+        local gates = { "StartScreen", "DarkTitleScreen", "LetterIntro", "IntroCutscene", "ScenarioDialogue",
+            "RewardPopup", "PlayerInfoPanel", "LevelUpPopup", "OfflineRewardPanel", "UpdateNoticePopup",
+            "CEPanel", "TutorialManager", "StageSelectDialog", "SweepDialog", "DamageStatsPanel", "TerminalConfirmDialog" }
+        local gateState, frameDraws, frameEnds, frameDepth = {}, {}, 0, 0
+        local frameVG = {}
+        local frameFields = { vg = function() return frameVG end, logicalW = function() return 1920 end,
+            logicalH = function() return 1080 end, applyFrame = noop, drawOrphanRowReward = noop,
+            artifactOverlay = { draw = noop }, OfflineRewardOverlay = { draw = noop }, drawUpdateNotice = noop,
+            nvgSave = function() frameDepth = frameDepth + 1 end,
+            nvgRestore = function() frameDepth = frameDepth - 1 end,
+            nvgResetTransform = noop, nvgResetScissor = noop, nvgScissor = noop,
+            nvgEndFrame = function() frameEnds = frameEnds + 1 end,
+            SpinePowerUpEffect = { draw = function(ctx,w,h) frameDraws[#frameDraws+1]={ctx,w,h} end },
+            RT = {}, AwakeningArtwork = { observe = noop, draw = noop },
+            DungeonBattleScene = { isOpen = function() return false end },
+            TowerBattleScene = { isActive = function() return false end } }
+        for _, name in ipairs(gates) do
+            frameFields[name] = { isOpen = function() return gateState[name] == true end,
+                isActive = function() return gateState[name] == true end, draw = noop, drawLarge = noop }
+        end
+        local frameEnv = environment({},frameFields)
+        frameEnv._G = frameEnv
+        local finishFrame = assert(load(frameCode.."\nreturn finishFrame", "@host-real/finishFrame", "t", frameEnv))()
+        finishFrame()
+        check(#frameDraws==1 and frameDraws[1][1]==frameVG and frameDraws[1][2]==1920 and frameDraws[1][3]==1080,
+            "actual finishFrame draws one global Power with logical whole-window geometry")
+        for _, name in ipairs(gates) do
+            local drawsBefore, endsBefore = #frameDraws,frameEnds
+            gateState[name] = true; finishFrame(); gateState[name] = false
+            check(#frameDraws==drawsBefore,"actual Power yields to "..name)
+            check(frameEnds==endsBefore+1 and frameDepth==0,"blocked "..name.." still closes native frame")
+        end
+        finishFrame(); check(#frameDraws==2,"Power resumes after blockers close")
+
+        -- 精确执行正式侧栏遮罩：非交互提示不能伪装成禁用态，真正模态仍压暗。
+        local dimCode = segment("boot/StandaloneHorizon.lua", "local function HorizonDimSidePanels()",
+            "--- [三队并行] 中缝返回键列表")
+        local dimState, dimRects, dimFills = {}, {}, 0
+        local dimFields = { vg = function() return frameVG end, H_s = 1, H_ox = 10, H_oy = 20,
+            Viewport = { PW = 300, PH = 600, PANELS = { right = { bx = 900 } } },
+            nvgBeginPath = noop, nvgRect = function(_, x, y, w, h)
+                dimRects[#dimRects + 1] = { x, y, w, h }
+            end,
+            nvgRGBA = function(r, g, b, a) return {r, g, b, a} end,
+            nvgFillColor = function(_, color) check(color[4] == 140, "原模态压暗透明度保持") end,
+            nvgFill = function() dimFills = dimFills + 1 end,
+            SpinePowerUpEffect = { isPlaying = function() return dimState.power == true end } }
+        local dimGates = { "HeroRosterPanel", "PlayerInfoPanel", "RewardPopup",
+            "OfflineRewardPanel", "LevelUpPopup", "IntroCutscene" }
+        for _, name in ipairs(dimGates) do
+            dimFields[name] = { isVisible = function() return dimState[name] == true end,
+                isOpen = function() return dimState[name] == true end,
+                isActive = function() return dimState[name] == true end }
+        end
+        local dim = assert(load(dimCode .. "\nreturn HorizonDimSidePanels",
+            "@host-real/HorizonDimSidePanels", "t", environment({}, dimFields)))()
+        dim(); check(#dimRects == 0 and dimFills == 0, "无模态不压暗侧栏")
+        dimState.power = true
+        dim(); check(#dimRects == 0 and dimFills == 0, "战力提示播放不压暗侧栏")
+        for _, name in ipairs(dimGates) do
+            local rectsBefore, fillsBefore = #dimRects, dimFills
+            dimState[name] = true; dim(); dimState[name] = false
+            check(#dimRects == rectsBefore + 2 and dimFills == fillsBefore + 1,
+                "真正模态仍压暗两侧 " .. name)
+            local leftRect, rightRect = dimRects[#dimRects - 1], dimRects[#dimRects]
+            check(leftRect[1] == 10 and rightRect[1] == 910 and leftRect[2] == 20
+                and leftRect[3] == 300 and leftRect[4] == 600, "侧栏遮罩几何不变 " .. name)
+        end
+        local fillsBefore = dimFills
+        dim(); check(dimFills == fillsBefore, "业务模态关闭后只剩战力提示不残留压暗")
+
+        -- 真实控件/Yoga/FindWidgetAt/PointerEvent，不把 pointerEvents 字符串检查当事件验收。
+        -- 只绘制记录器与布局捕获，不声称原生GPU/设备触控；不挂载提示、不接玩家档。
+        local UI = nativeRequire("urhox-libs/UI")
+        local Surface = nativeRequire("ui.widget.DesignWidgetSurface")
+        local PointerEvent = nativeRequire("urhox-libs/UI/Core/PointerEvent")
+        Surface.init()
+        local oldRoot, oldFocus = UI.GetRoot(), UI.GetFocus()
+        local pointerCalls = { down = 0, up = 0, move = 0, click = 0, cancel = 0, wheel = 0 }
+        local target = UI.Panel { width = 760, height = 506, pointerEvents = "auto",
+            position = "absolute", left = 580, top = 287,
+            onPointerDown = function() pointerCalls.down = pointerCalls.down + 1 end,
+            onPointerUp = function() pointerCalls.up = pointerCalls.up + 1 end,
+            onPointerMove = function() pointerCalls.move = pointerCalls.move + 1 end,
+            onPointerCancel = function() pointerCalls.cancel = pointerCalls.cancel + 1 end,
+            onClick = function() pointerCalls.click = pointerCalls.click + 1 end }
+        target.OnWheel = function() pointerCalls.wheel = pointerCalls.wheel + 1 end
+        local targetRoot = UI.Panel { width = 1920, height = 1080, pointerEvents = "box-none",
+            children = { target } }
+        UI.SetRoot(targetRoot)
+        UI.Layout()
+        local pointerBus = compile("core/EventBus.lua")
+        local events = nativeRequire("config.GameEvents")
+        ---@type Panel?
+        local capturedCard = nil
+        local layoutCalls = 0
+        local powerMocks = { ["core.EventBus"] = pointerBus, ["config.GameEvents"] = events,
+            ["core.I18n"] = { get = function() return "zh_CN" end },
+            ["ui.fx.DarkEffectSprites"] = { drawPower = noop, release = noop, preload = noop },
+            ["ui.widget.DesignWidgetSurface"] = { init = Surface.init,
+                draw = function(root, _, w, h)
+                    YGNodeCalculateLayout(root.node, w, h, YGDirectionLTR)
+                    capturedCard, layoutCalls = root, layoutCalls + 1
+                end } }
+        local pointerPower = compile("ui/fx/SpinePowerUpEffect.lua", powerMocks,
+            { nvgSave = noop, nvgRestore = noop, nvgTranslate = noop, nvgScale = noop })
+        local function emitPower(values, cause)
+            pointerBus.emit(events.TEAM_POWER_CHANGED, { powers = values, ready = true, cause = cause })
+        end
+        local function pointer(kind, id, pointerType, x, y)
+            local scale = UI.GetScale()
+            UI.HandlePointerEvent(PointerEvent.new(kind, { pointerId = id, pointerType = pointerType,
+                x = x * scale, y = y * scale, button = MOUSEB_LEFT,
+                buttons = kind == PointerEvent.Types.PointerUp and PointerEvent.Buttons.None
+                    or PointerEvent.Buttons.Primary, isPrimary = true }))
+        end
+        local function drawPower()
+            local overlays = #UI.GetOverlayStack()
+            local focus, pressed = UI.GetFocus(), UI.GetPressedWidget()
+            pointerPower.draw(frameVG, 1920, 1080)
+            check(UI.GetRoot() == targetRoot and UI.GetFocus() == focus
+                and UI.GetPressedWidget() == pressed, "真实提示绘制不替换根/抢焦点/清按压")
+            check(#UI.GetOverlayStack() == overlays, "真实提示不注册模态浮层")
+            check(UI.FindWidgetAt(960, 540) == target, "提示覆盖中心命中仍是底层控件")
+        end
+        clock.elapsedTime = 100; pointerPower.init(); emitPower({100, 200, 300})
+        check(UI.FindWidgetAt(960, 540) == target, "无提示底层命中基准")
+        pointer(PointerEvent.Types.PointerMove, 0, PointerEvent.PointerTypes.Mouse, 960, 540)
+        pointer(PointerEvent.Types.PointerDown, 0, PointerEvent.PointerTypes.Mouse, 960, 540)
+        clock.elapsedTime = 103; emitPower({150, 250, 350}, "artifact_equip"); drawPower()
+        check(pointerPower.isPlaying() and layoutCalls == 1 and capturedCard ~= nil,
+            "真实神器提示确实进入三队控件布局")
+        local function checkTransparent(widget)
+            check(widget.props.pointerEvents == "none", "提示控件子树全部显式输入穿透")
+            for _, child in ipairs(widget:GetChildren()) do checkTransparent(child) end
+        end
+        checkTransparent(assert(capturedCard))
+        pointer(PointerEvent.Types.PointerMove, 0, PointerEvent.PointerTypes.Mouse, 965, 542)
+        UI.HandleWheel(0, -1)
+        pointer(PointerEvent.Types.PointerUp, 0, PointerEvent.PointerTypes.Mouse, 960, 540)
+        check(pointerCalls.down == 1 and pointerCalls.up == 1 and pointerCalls.click == 1
+            and pointerCalls.move >= 2 and pointerCalls.wheel == 1 and pointerCalls.cancel == 0,
+            "鼠标按压中出现提示仍收到移动/滚轮/抬起/点击且不取消")
+        pointer(PointerEvent.Types.PointerDown, 7, PointerEvent.PointerTypes.Touch, 960, 540)
+        emitPower({160, 260, 360}, "level_up"); drawPower()
+        check(UI.GetPressedWidgetForPointer(7) == target, "升级提示重定向不抢触摸按压")
+        pointer(PointerEvent.Types.PointerMove, 7, PointerEvent.PointerTypes.Touch, 970, 540)
+        pointer(PointerEvent.Types.PointerUp, 7, PointerEvent.PointerTypes.Touch, 960, 540)
+        check(pointerCalls.down == 2 and pointerCalls.up == 2 and pointerCalls.click == 2
+            and pointerCalls.cancel == 0, "触摸移动与抬起点击不被提示吞掉")
+        pointerPower.destroy()
+        UI.SetRoot(oldRoot); UI.SetFocus(oldFocus); targetRoot:Destroy()
+
+        -- 真实HandleUpdate完整最早分支，不复制advance；未boot/标题早返前必须更新全部特效。
+        local updateCode = segment("boot/Standalone.lua", "function HandleUpdate(eventType, eventData)", "    -- [DWP 异步预下载]")
+        local updateOrder, receivedDt = {}, {}
+        local function updateEffect(name)
+            return { update = function(dt) updateOrder[#updateOrder+1]=name; receivedDt[name]=dt end }
+        end
+        local updateEnv = environment({ ["ui.fx.SpineCardEffect"]=updateEffect("Card"),
+            ["ui.fx.SpineResultEffect"]=updateEffect("Result"), ["ui.dev.CEPanel"]={pollHotkey=noop} },
+            { PlayerStore=updateEffect("Store"), SpinePowerUpEffect=updateEffect("Power"),
+            SidePanelBattlePause={refresh=noop},
+            pumpBootQueue_=noop, bootReady_=false, StartScreen={isOpen=function() return true end,update=noop},
+            DarkTitleScreen={isOpen=function() return true end,update=noop} })
+        updateEnv.PlayerStore.Update = updateEnv.PlayerStore.update
+        local update = assert(load(updateCode.."\nend\nreturn HandleUpdate", "@host-real/HandleUpdate.boot-early-return", "t", updateEnv))()
+        local event = { TimeStep={GetFloat=function() return 250 end} }
+        update("Update",event)
+        check(table.concat(updateOrder,",")=="Store,Power,Card,Result","unbooted true host updates all effects before early-return")
+        check(receivedDt.Power==250 and receivedDt.Card==250 and receivedDt.Result==250,"large dt forwarded once without host speed scaling")
+
+        -- 真清档视觉段：只运行唯一生产锚点，注入真实三个controller而不是复制reset规则。
+        local visualReset = segment("boot/Standalone.lua", "    -- 清档先取消旧会话特效", "    -- 3. 重置 GameState")
+        local backend = {drawCard=noop,drawResult=noop,drawPower=noop,preload=noop,release=noop,destroy=noop}
+        local function controllerEnv(extra)
+            local env = environment({ ["ui.fx.DarkEffectSprites"]=backend, ["core.BattleLayout"]=Layout,
+                ["core.EventBus"]=extra and extra.bus or {}, ["config.GameEvents"]=nativeRequire("config.GameEvents"),
+                ["core.I18n"]={get=function() return "zh_CN" end} }, {nvgSave=noop,nvgRestore=noop})
+            env._G = env
+            return env
+        end
+        local bus = assert(load(source("core/EventBus.lua"),"@host-real/EventBus","t",controllerEnv()))()
+        local CardController = assert(load(source("ui/fx/SpineCardEffect.lua"),"@host-real/Card","t",controllerEnv()))()
+        local ResultController = assert(load(source("ui/fx/SpineResultEffect.lua"),"@host-real/Result","t",controllerEnv()))()
+        local PowerController = assert(load(source("ui/fx/SpinePowerUpEffect.lua"),"@host-real/Power","t",controllerEnv({bus=bus})))()
+        local complete = 0
+        clock.elapsedTime = 100; PowerController.init()
+        bus.emit(nativeRequire("config.GameEvents").TEAM_POWER_CHANGED,{powers={100,200,300},ready=true})
+        clock.elapsedTime = 102
+        bus.emit(nativeRequire("config.GameEvents").TEAM_POWER_CHANGED,{powers={150,250,350},ready=true,cause="level_up"})
+        CardController.playRevive(100,200,function() complete=complete+1 end,"tri2")
+        ResultController.play(true,function() complete=complete+1 end)
+        check(PowerController.isPlaying() and CardController.isPlaying() and ResultController.isPlaying(),
+            "three actual controllers active before real clear-session segment")
+        local resetEnv = environment({["ui.fx.SpineCardEffect"]=CardController,["ui.fx.SpineResultEffect"]=ResultController},
+            {SpinePowerUpEffect=PowerController})
+        assert(load(visualReset,"@host-real/reset.visual","t",resetEnv))()
+        clock.elapsedTime = 200; CardController.update(0); ResultController.update(0); PowerController.update(0)
+        check(complete==0 and not CardController.isPlaying() and not ResultController.isPlaying() and not PowerController.isPlaying(),
+            "real clear session cancels all old effects without completion or stale rows")
+        bus.emit(nativeRequire("config.GameEvents").TEAM_POWER_CHANGED,{powers={9000,9000,9000},ready=false})
+        bus.emit(nativeRequire("config.GameEvents").TEAM_POWER_CHANGED,{powers={8000,8000,8000},ready=true})
+        check(#PowerController.getDisplayRows()==0,"new first hydrated account never reports old-to-new gain")
+        PowerController.destroy(); CardController.destroy(); ResultController.destroy()
+
+        -- 真实Standalone.Start图片wrapper段，ctx/flags/path键与删除缓存失效不污染_G。
+        local wrapperCode = segment("boot/Standalone.lua", "    -- 2.5 图片去重按context+flags+path隔离", "    -- 3. Font")
+        local createdImages, deletedImages, handle = {}, {}, 0
+        -- 宿主图片miss调用真实checkpoint；主线程无active queue时按实际实现直通。
+        local StartupQueue = compile("boot/StartupQueue.lua")
+        local wrapperEnv = environment({}, {StandaloneRT={}, StartupQueue=StartupQueue,
+            nvgCreateImage=function(ctx,path,flags)
+            handle=handle+1; createdImages[#createdImages+1]={ctx,path,flags,handle}; return handle
+        end, nvgDeleteImage=function(ctx,id) deletedImages[#deletedImages+1]={ctx,id} end})
+        wrapperEnv._G=wrapperEnv
+        local nativeCreate, nativeDelete = nvgCreateImage,nvgDeleteImage
+        assert(load(wrapperCode,"@host-real/Start.image-wrapper","t",wrapperEnv))()
+        local ctxA,ctxB={},{ }
+        local first=wrapperEnv.nvgCreateImage(ctxA,"same.png",0)
+        check(wrapperEnv.nvgCreateImage(ctxA,"same.png",0)==first and #createdImages==1,"same ctx/path/flags reuses actual host wrapper handle")
+        local second=wrapperEnv.nvgCreateImage(ctxB,"same.png",0)
+        local flagged=wrapperEnv.nvgCreateImage(ctxA,"same.png",1)
+        check(second~=first and flagged~=first and #createdImages==3,"real host wrapper separates context and flags")
+        wrapperEnv.nvgDeleteImage(ctxA,first)
+        local fresh=wrapperEnv.nvgCreateImage(ctxA,"same.png",0)
+        check(fresh~=first and #deletedImages==1,"deleted same-path handle never reused")
+        check(wrapperEnv.nvgCreateImage(ctxB,"same.png",0)==second,"one ctx delete does not invalidate other ctx")
+        check(nvgCreateImage==nativeCreate and nvgDeleteImage==nativeDelete,"host wrapper test never rewrites native global functions")
+
+        local stopCode=segment("boot/Standalone.lua","function Standalone.Stop()","--- 标题关闭后按真实离线时长结算")
+        local stopOrder, presentationOrder, presentationDestroys = {}, {}, 0
+        local stopMocks={ ["ui.fx.SpineCardEffect"]={destroy=function() stopOrder[#stopOrder+1]="Card" end},
+            ["ui.fx.SpineResultEffect"]={destroy=function() stopOrder[#stopOrder+1]="Result" end},
+            ["ui.fx.DarkEffectSprites"]={destroy=function() stopOrder[#stopOrder+1]="Sprites" end},
+            ["ui.widget.DesignWidgetSurface"]={shutdown=function()
+                stopOrder[#stopOrder+1]="Surface";presentationOrder[#presentationOrder+1]="Surface"
+            end},
+            ["ui.battle.stage.StageSelectDialog"]={close=noop} }
+        wrapperEnv.Standalone={};wrapperEnv.vg=ctxA
+        -- PR116 Stop同时清理启动队列与共享ready镜像；仅提供其真实宿主上下文。
+        wrapperEnv.StandaloneRT={bootReady_=true};wrapperEnv.bootQueue_={};wrapperEnv.bootReady_=true
+        -- 既有 Stop 夹具补齐开场/选关/塔UI依赖，不执行其真实业务或持久化。
+        wrapperEnv.LetterIntro={reset=noop};wrapperEnv.ScenarioDialogue={reset=noop}
+        wrapperEnv.TowerBattleScene={resetToDefault=noop};wrapperEnv.TowerBuffPick={destroy=noop}
+        -- Stop新增逐战域提交是生产依赖；只记录真实调度顺序，不启动战斗/存档。
+        local growthOrder = {}
+        local function growthStep(name) growthOrder[#growthOrder+1]=name end
+        stopMocks["systems.ExtraTalentSystem"]={flush=function() growthStep("ETS") end}
+        wrapperEnv.BattleTriPage={flushPendingGrowth=function() growthStep("Tri") end}
+        stopMocks["ui.battle.scene.BattleMountScope"]={runDefault=function(body)
+            growthStep("Default");return body()
+        end}
+        stopMocks["ui.battle.combat.BattleCasualty"]={flushRewards=function() growthStep("Rewards") end}
+        stopMocks["ui.dungeon.DungeonBattleScope"]={run=function(team,body)
+            check(team==1,"actual Stop mounts dungeon owner 1 before flush")
+            growthStep("Dungeon");return body()
+        end}
+        stopMocks["ui.tower.TowerTriBattle"]={flushPendingGrowth=function() growthStep("Tower") end}
+        stopMocks["systems.StoryPlayer"]={resetAll=noop}
+        stopMocks["ui.battle.stage.StageSelectDialog"]={close=noop}
+        stopMocks["ui.tavern.RecruitAnim"]={destroy=noop}
+        stopMocks["ui.tower.TowerBuffSidebar"]={destroy=noop}
+        stopMocks["ui.character.hero.AwakeningArtwork"]={destroy=noop}
+        stopMocks["rules.tower.TowerService"]={ResetToDefault=function(uid)
+            check(uid==1,"Stop塔重置沿真实单机用户且不访问存档")
+        end}
+        wrapperEnv.RewardPopup={clearBattleRewards=noop};wrapperEnv.StandaloneSave={Flush=function() growthStep("Save") end}
+        wrapperEnv.SpinePowerUpEffect={destroy=function() stopOrder[#stopOrder+1]="Power" end}
+        wrapperEnv.LevelUpPopup={destroy=function() presentationOrder[#presentationOrder+1]="LevelUp" end}
+        wrapperEnv.CharacterPanel={destroyPresentation=function()
+            presentationDestroys=presentationDestroys+1;presentationOrder[#presentationOrder+1]="Character"
+        end}
+        wrapperEnv.nvgDelete=function() stopOrder[#stopOrder+1]="vgDelete" end
+        local originalWrapperRequire=wrapperEnv.require
+        wrapperEnv.require=function(name) return stopMocks[name] or originalWrapperRequire(name) end
+        local ownedCreate,ownedDelete=wrapperEnv.nvgCreateImage,wrapperEnv.nvgDeleteImage
+        local externalCreate=function(...) return ownedCreate(...) end
+        local externalDelete=function(...) return ownedDelete(...) end
+        wrapperEnv.nvgCreateImage,wrapperEnv.nvgDeleteImage=externalCreate,externalDelete
+        assert(load(stopCode,"@host-real/Stop.image-ownership","t",wrapperEnv))()
+        wrapperEnv.Standalone.Stop()
+        check(table.concat(growthOrder,",")=="ETS,Tri,Default,ETS,Rewards,Dungeon,ETS,Tower,Save",
+            "actual Stop flushes each battle owner before save")
+        check(wrapperEnv.bootQueue_==nil and wrapperEnv.bootReady_==false and wrapperEnv.StandaloneRT.bootReady_==false,
+            "actual Stop discards suspended startup queue and both ready flags")
+        check(table.concat(stopOrder,",")=="Power,Card,Result,Sprites,Surface,vgDelete","actual Stop releases controllers/images before owning vg")
+        check(presentationDestroys==1 and table.concat(presentationOrder,",")=="LevelUp,Character,Surface",
+            "actual Stop destroys character presentation exactly once after LevelUp and before Surface")
+        check(wrapperEnv.nvgCreateImage==externalCreate and wrapperEnv.nvgDeleteImage==externalDelete,"actual Stop preserves newer external wrapper owners")
+        local oldCreateCount=#createdImages
+        local afterStop1=wrapperEnv.nvgCreateImage(ctxA,"same.png",0)
+        local afterStop2=wrapperEnv.nvgCreateImage(ctxA,"same.png",0)
+        check(afterStop1~=afterStop2 and #createdImages==oldCreateCount+2,"external closure through retired wrapper directly creates, never uses old context cache")
+        check(wrapperEnv.invalidateImageCache_==nil and wrapperEnv.originalImageCreate_==nil and wrapperEnv.imageCreateWrapper_==nil,"Stop clears session-owned cache hooks")
+
         check(sources["ui/battle/tri/BattleTriDriver.lua"] and sources["ui/dungeon/DungeonBattleScene.lua"]
             and sources["ui/battle/combat/BattleCasualty.lua"] and sources["ui/church/ChurchResults.lua"],
             "all seven host production sources actually loaded")
     end)
     if not ok then failures = failures + 1; print(TAG .. " HARNESS_ERROR " .. tostring(err)) end
+    check(storageAccess == 0, "全程没有玩家文件读写或文件系统访问")
+    rawset(_G, "File", nativeFile)
+    rawset(_G, "FileSystem", nativeFileSystemClass)
+    rawset(_G, "fileSystem", nativeFileSystem)
     print(string.format("%s RESULT %d checks, %d failures %s", TAG, checks, failures, failures == 0 and "ALL PASS" or "FAILED"))
     if engine then engine:Exit() end
 end

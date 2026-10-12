@@ -158,6 +158,7 @@ function M.bind(deps)
         local hero = tonumber(heroId)
         if filterSlot == normalized and filterHero == hero then return end
         local clearPinned = normalized ~= nil or filterHero ~= hero
+        if filterSlot ~= normalized and deps.clearTypeFilter then deps.clearTypeFilter() end
         filterSlot, filterHero = normalized, hero
         state.scrollY, state.scrollVel, state.dragging = 0, 0, false
         -- 取消部位到全部、且仍是同一英雄时，钉住候选依然合法。
@@ -238,7 +239,18 @@ function M.bind(deps)
         return true
     end
 
-    -- 教程显式恢复与普通 acquire 分离：只有此入口可解除同会话手动关仓抑制。
+    -- 真正进入配装才恢复仓库：锻炉仍持有时，旧手动关闭抑制不能阻断新的配装入口。
+    -- 普通 acquire/每帧更新不走此入口，玩家在本次配装中主动关闭仍不会被强制弹回。
+    function api.enterEquipmentWarehouse(heroId, slot)
+        if owners.equipment then return api.acquireWarehouse("equipment", heroId, slot) end
+        suppressed = false
+        if state.closing then
+            state.open, state.closing = false, false
+        end
+        return api.acquireWarehouse("equipment", heroId, slot)
+    end
+
+    -- 教程可在同会话内显式恢复；普通 acquire 保持不自动重开契约。
     -- 重复 ensure 不重新 open、不重置滚动，也不持续关闭玩家刚钉住的候选。
     ---@param heroId number|string|nil
     ---@param slot string|nil
@@ -398,8 +410,12 @@ function M.bind(deps)
     end
     function api.openCandidate(equip, cx, cy, pinned)
         -- 保留只读动作（slot=nil），角色上下文独立于「全部」部位筛选。
-        EquipmentDetail.open(equip.seq, nil, currentHero(), true, "backpack",
+        local heroId = currentHero()
+        EquipmentDetail.open(equip.seq, nil, heroId, true, "backpack",
             cx + GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5)
+        if EquipmentDetail.setComparisonSlot then
+            EquipmentDetail.setComparisonSlot(targetSlot(equip, heroId))
+        end
         if pinned and EquipmentDetail.pin then EquipmentDetail.pin() end
     end
     function api.handleEquipClick(dx, dy)
@@ -437,6 +453,10 @@ function M.bind(deps)
     end
 
     function api.handleHover(dx, dy)
+        if state.open and SetFilterDialog.handleHover and SetFilterDialog.handleHover(dx, dy) then
+            api.clearCandidate(false)
+            return true
+        end
         if state.open and not state.closing and state.tab == "decompose" and not SetFilterDialog.isOpen() then
             deps.ensureDecomposeReady()
             deps.BlacksmithDecompose.handleHover(dx, dy)

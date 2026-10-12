@@ -9,24 +9,79 @@ ArtifactDefs.DRAW_KEY_COST = {
     [10] = 10,
 }
 
---- 黄金钥匙不足时，钻石快速购买单价
-ArtifactDefs.KEY_DIAMOND_PRICE = 600
-
----@deprecated 旧版纯钻石消耗，保留兼容引用
-ArtifactDefs.DRAW_COST = {
-    [1] = 400,
-    [10] = 4000,
-}
-
-ArtifactDefs.PITY_RARE = 20
-ArtifactDefs.PITY_EPIC = 100
+ArtifactDefs.KEY_DIAMOND_PRICE = 150
 ArtifactDefs.MAX_BAG = 300
 
+-- 品质权重按万分比配置；每次抽取独立，不累计保底。
 ArtifactDefs.QUALITY_RATE = {
-    { quality = 1, weight = 75 },
-    { quality = 2, weight = 20 },
-    { quality = 3, weight = 4 },
-    { quality = 4, weight = 1 },
+    { quality = 1, weight = 7500 },
+    { quality = 2, weight = 2000 },
+    { quality = 3, weight = 400 },
+    { quality = 4, weight = 90 },
+    { quality = 5, weight = 10 },
+}
+ArtifactDefs.ADVANCED_QUALITY_RATE = {
+    { quality = 1, weight = 3000 },
+    { quality = 2, weight = 4000 },
+    { quality = 3, weight = 2000 },
+    { quality = 4, weight = 900 },
+    { quality = 5, weight = 100 },
+}
+
+ArtifactDefs.CHESTS = {
+    normal = { name = "普通神器宝箱", keyCost = 1, rates = ArtifactDefs.QUALITY_RATE, dailyFree = true },
+    advanced = { name = "高级神器宝箱", keyCost = 5, rates = ArtifactDefs.ADVANCED_QUALITY_RATE, unlockStage = 2305 },
+}
+
+-- 无档位的调用使用普通宝箱，未知档位不得降级绕过校验。
+function ArtifactDefs.getChest(chestType)
+    return ArtifactDefs.CHESTS[chestType or "normal"]
+end
+
+function ArtifactDefs.getDrawKeyCost(count, chestType)
+    local chest = ArtifactDefs.getChest(chestType)
+    if not chest or not ArtifactDefs.DRAW_KEY_COST[count] then return nil end
+    return ArtifactDefs.DRAW_KEY_COST[count] * chest.keyCost
+end
+
+function ArtifactDefs.getChestUnlockText(chestType)
+    local chest = ArtifactDefs.getChest(chestType)
+    if not chest then return "神器宝箱类型错误" end
+    if not chest.unlockStage then return "直接开放" end
+    return string.format("通关普通%d-%d解锁", chest.unlockStage // 100, chest.unlockStage % 100)
+end
+
+-- 通关台账兼容数字/字符串键；无完整台账的存档只能凭严格越过目标的主线进度解锁。
+function ArtifactDefs.isChestUnlocked(chestType, battle)
+    local chest = ArtifactDefs.getChest(chestType)
+    if not chest then return false end
+    if not chest.unlockStage then return true end
+    if type(battle) ~= "table" then return false end
+    local cleared = type(battle.clearedStages) == "table" and battle.clearedStages or {}
+    local stageId = chest.unlockStage
+    if cleared[stageId] == true or cleared[tostring(stageId)] == true then return true end
+    local StageConfig = require("config.StageConfig")
+    local maxId = tonumber(battle.maxStageId) or 0
+    if not StageConfig.getStage(maxId) or StageConfig.isResourceStage(maxId) then return false end
+    local previous = StageConfig.getTerminalPrevStageId(maxId)
+    return (previous and previous >= stageId) or maxId > stageId
+end
+
+function ArtifactDefs.getQualityProbability(chestType, quality)
+    local chest = ArtifactDefs.getChest(chestType)
+    if not chest then return 0 end
+    local total, weight = 0, 0
+    for _, row in ipairs(chest.rates) do
+        total = total + row.weight
+        if row.quality == quality then weight = row.weight end
+    end
+    return total > 0 and weight * 100 / total or 0
+end
+
+-- 兼容普通宝箱的纯钻石报价；实际支付优先消耗同种黄金钥匙。
+ArtifactDefs.DRAW_COST = {
+    [1] = ArtifactDefs.KEY_DIAMOND_PRICE,
+    [10] = ArtifactDefs.KEY_DIAMOND_PRICE * 10,
 }
 
 ArtifactDefs.QUALITY_NAMES = {

@@ -65,12 +65,12 @@ add("点击右侧1-1关卡，进入黄金矿洞",
     "右の1-1ステージを選び、黄金鉱山に入ろう。",
     "오른쪽 1-1 스테이지를 선택해 황금 광산에 입장하자.")
 
--- 旧过场仍可重播，先译全文，再按译文长度压缩打字窗口。
-intro("这就是……宿命吗？", "這就是……宿命嗎？", "So this is... fate?", "これが……宿命なのか？", "이것이…… 숙명인가?")
-intro("我终究……还是倒在这里了吗", "我終究……還是倒在這裡了嗎", "In the end... is this where I fall?", "結局……ここで倒れてしまったのか", "결국…… 여기서 쓰러지고 만 건가")
-intro("一切的轮回，再次开始了么……", "一切的輪迴，再次開始了麼……", "Has the cycle begun all over again...?", "すべての輪廻が、また始まったのか……", "모든 윤회가 다시 시작된 건가……")
-intro("不知能否斩断宿命，挣脱轮回呢……", "不知能否斬斷宿命，掙脫輪迴呢……", "Can I sever fate and break free of the cycle...?", "宿命を断ち、輪廻から抜け出せるだろうか……", "숙명을 끊고 윤회에서 벗어날 수 있을까……")
-intro("远征长！远征长！", "遠征長！遠征長！", "Marshal! Marshal!", "遠征長！遠征長！", "원정장! 원정장!")
+-- 终焉胜利后的远征承接，五句依次对应过场的五段；不再保留旧宿命/濒死台词。
+intro("终焉之门，已被推开。", "終焉之門，已被推開。", "The Gate of the End stands open.", "終焉の門は、開かれた。", "종언의 문이 열렸다.")
+intro("三支远征队的旗帜，仍立在神殿前。", "三支遠征隊的旗幟，仍立在神殿前。", "The banners of all three squads still stand before the temple.", "三つの遠征隊の旗は、今も神殿の前に立っている。", "세 원정부대의 깃발은 여전히 신전 앞에 서 있다.")
+intro("门后的路更险，但这一次，我们带着胜利前行。", "門後的路更險，但這一次，我們帶著勝利前行。", "The road beyond is harsher, but this time we carry our victory forward.", "門の先の道はさらに険しい。それでも今度は、勝利を携えて進む。", "문 너머의 길은 더 험하다. 하지만 이번에는 승리를 품고 앞으로 나아간다.")
+intro("公会的名册翻到新一页，伙伴的名字，一个也没有少。", "公會的名冊翻到新一頁，夥伴的名字，一個也沒有少。", "The guild roster turns to a new page. Not a single companion's name is missing.", "組合の名簿は新しい頁へ。仲間の名前は、一つも欠けていない。", "공회의 명부가 새 장으로 넘어간다. 동료의 이름은 하나도 빠지지 않았다.")
+intro("远征长，整队。下一段远征，出发！", "遠征長，整隊。下一段遠征，出發！", "Marshal, form up. Onward to the next expedition!", "遠征長、隊列を整えて。次の遠征へ、出発！", "원정장, 대열을 정비하자. 다음 원정으로, 출발!")
 
 -- 开场第二幕：门厅点卯（OPENING）。角色译名沿用 I18nDictExtra。
 add("叫！信拆完了？门外三条命都在等你签字。再磨蹭，我先把门牌啃了。",
@@ -128,6 +128,33 @@ add("叮咚~下一步：出门。落单勿慌，先听铃声。远征长，可�
     "Ding-dong~ Next step: head out. If separated, stay calm and listen for the bell. Marshal, you may sign now.",
     "ピンポン〜次の手順：出発。はぐれても慌てず、まず鈴の音を聞くこと。遠征長、署名どうぞ。",
     "띵동~ 다음 단계: 출문. 떨어져도 당황하지 말고 먼저 종소리를 들을 것. 원정장, 이제 서명하면 됩니다.")
+
+-- 首通战报与真实关卡一致：1-2为天狗/酸与，1-5的首领为雷神。
+add("嘶——天狗的爪子是真疼！毛都拍乱了！没事！狗子抗造！叫！",
+    "嘶——天狗的爪子是真疼！毛都拍亂了！沒事！狗子耐打！汪！",
+    "Yow—the Tiangou's claws really hurt! My fur's a mess! It's fine! This dog's tough! Woof!",
+    "痛っ——天狗の爪、ほんと痛い！毛まで乱れちゃった！平気！この犬は丈夫！ワン！",
+    "아야——천구의 발톱은 정말 아프네! 털이 다 헝클어졌어! 괜찮아! 이 개는 튼튼하니까! 멍!")
+add("咦？！硬铁重衣！穿上它，天狗再挠就纯属给我按摩了！我穿我穿！远征长帮我扣扣子！",
+    "咦？！硬鐵重衣！穿上它，天狗再抓就純屬給我按摩了！我穿我穿！遠征長幫我扣釦子！",
+    "Huh?! Heavy Iron Armor! With this on, the Tiangou's scratching will just be a massage! Gimme! Marshal, help me with the buckles!",
+    "えっ？！硬鉄の重装衣！これを着れば、天狗の引っかきなんてマッサージだよ！着る着る！遠征長、留め具を手伝って！",
+    "어?! 경철 중갑! 이걸 입으면 천구가 할퀴어도 그냥 마사지겠네! 입을래, 입을래! 원정장, 버클 좀 채워 줘!")
+add("叮咚~战报：遭遇酸与，利爪来袭，手臂轻微刮伤。防护等级不足，需升级。",
+    "叮咚~戰報：遭遇酸與，利爪來襲，手臂輕微刮傷。防護等級不足，需升級。",
+    "Ding-dong~ Battle report: encountered a Suanyu. Claw attack, minor scratches on the arm. Protection insufficient. Upgrade required.",
+    "ピンポン〜戦闘報告：酸与と遭遇。鋭い爪による攻撃、腕に軽い擦り傷。防御等級、不足。強化が必要。",
+    "띵동~ 전투 보고: 산여와 조우. 날카로운 발톱 공격, 팔에 가벼운 찰과상. 방호 등급 부족, 강화 필요.")
+add("呼——雷神的雷是真猛！毛都电竖了！不过没掉毛，整体打满分！叫！",
+    "呼——雷神的雷是真猛！毛都電豎了！不過沒掉毛，整體打滿分！汪！",
+    "Whew—the Thunder God's lightning packs a punch! My fur's standing on end! Didn't lose any, though. Full marks overall! Woof!",
+    "ふう——雷神の雷、すごかった！毛が逆立っちゃったよ！でも抜けてないし、総合満点！ワン！",
+    "휴——뇌신의 번개는 정말 세네! 털이 전부 곤두섰어! 그래도 빠진 털은 없으니 종합 만점! 멍!")
+add("成功了！黄桃龙打败雷神了！远征长快夸我！夸完请吃饭！",
+    "成功了！黃桃龍打敗雷神了！遠征長快誇我！誇完請吃飯！",
+    "We did it! Peach Drake beat the Thunder God! Praise me, Marshal! Then treat me to dinner!",
+    "やった！黄桃竜、雷神を倒したよ！遠征長、早く褒めて！褒めたらご飯もおごって！",
+    "성공했어! 황도룡이 뇌신을 이겼어! 원정장, 빨리 칭찬해 줘! 칭찬하고 나면 밥도 사 줘!")
 
 -- 代表性剧情：城门、神器登记、酒馆招募、第二章潜能引导。
 add("卫兵", "衛兵", "Guard", "衛兵", "경비병")

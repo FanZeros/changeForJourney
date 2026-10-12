@@ -231,14 +231,29 @@ function DungeonIdleService.Claim(uid, dungeonId)
     local ok, commitErr, receipt = DungeonService.CommitRewardTransaction(uid, function()
         local sub = getSub(dungeon, dungeonId)
         local equipmentResult = {} ---@type table
+        -- 当前层配置：既供装备当量折算，也供结算经验取怪物等级（旧代码误传 uid 当 floor）。
+        local floorData = DungeonConfig.getFloor(dungeonId, preview.idleFloor)
         if preview.rewardType == "equip" then
             -- 生成、容量检查、实际交付与扣时在一个保存事务内。
             local okGrant, grantErr, result = DungeonService.GrantEquipment(
                 uid, dungeonId, preview.idleFloor, preview.amount)
             if not okGrant then return false, grantErr or "装备奖励发放失败" end
             equipmentResult = result or {}
+            -- 与扫荡同口径补卷轴/扫荡券：一次扫荡当量 = 本次发奖件数 / sweepEquip。
+            local sweepPerUnit = floorData and floorData.sweepEquip or 0
+            local sweepCount = sweepPerUnit > 0
+                and math.max(1, math.floor((preview.amount + sweepPerUnit - 1) / sweepPerUnit)) or 0
+            if sweepCount > 0 then
+                equipmentResult.scrollDrops = DungeonService.GrantEquipScrolls(uid, preview.idleFloor, sweepCount)
+            end
         elseif not DungeonService.GrantIdleCurrency(uid, preview.rewardType, preview.amount) then
             return false, "奖励发放失败"
+        end
+
+        -- 挂机结算经验：与同进度主线同级，按实际结算分钟数发放。
+        local playerExp, heroExp = 0, 0
+        if floorData and claimMinutes > 0 then
+            playerExp, heroExp = DungeonService.GrantIdleExp(uid, 1, floorData.monsterLevel, claimMinutes)
         end
 
         sub.idleAccumSec = math.max(0, (sub.idleAccumSec or 0) - claimSec)
@@ -257,6 +272,11 @@ function DungeonIdleService.Claim(uid, dungeonId)
             equips     = equipmentResult.equips,
             inventoryCount = equipmentResult.inventoryCount,
             lootboxCount = equipmentResult.lootboxCount,
+            autoDecomposeCount = equipmentResult.autoDecomposeCount,
+            autoDecomposeEssence = equipmentResult.autoDecomposeEssence,
+            scrollDrops = equipmentResult.scrollDrops,
+            playerExp  = playerExp,
+            heroExpTotal = heroExp,
             idleConsumedSec = sub.idleConsumedSec,
         }
     end)

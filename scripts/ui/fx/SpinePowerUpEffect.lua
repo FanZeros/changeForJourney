@@ -1,20 +1,25 @@
--- 三队战力提升：保留旧模块路径，表现改为全窗居中的暗铁铭牌与新 UI 文字。
--- 只展示正式缓存的净增加值，不改变公式、编队或当前波的战斗快照。
+-- 三队战力提升：图片铭牌、Spine 分层仪式与新 UI 数字滚动。
+-- 主行显示小队总战力与固定净增量；辅助行保留权威旧→新与净增，不回写战力、编队或当前波快照。
 local UI = require("urhox-libs/UI")
 local Surface = require("ui.widget.DesignWidgetSurface")
 local EventBus = require("core.EventBus")
 local GameEvents = require("config.GameEvents")
 local I18n = require("core.I18n")
-local Effects = require("ui.fx.DarkEffectPrimitives")
+local Effects = require("ui.fx.DarkEffectSprites")
 
 local Effect = {}
 local TEAM_COUNT, STABILIZE_DELAY, DURATION = 3, 2, 3.2
-local WIDTH, HEADER_H, ROW_H = 760, 66, 76
+local WIDTH, HEADER_H, ROW_H = 760, 218, 96
+local COUNT_DELAY, COUNT_TIME = .12, .93
 ---@class TeamPowerPresentation
 ---@field power number
 ---@field base number
 ---@field delta number
 ---@field startedAt number
+---@field duration number
+---@field tweenAt number
+---@field fromPower number
+---@field fromDelta number
 ---@type table<number, TeamPowerPresentation>
 local active = {}
 ---@type table<number, number>
@@ -22,6 +27,8 @@ local previous = {}
 local initialized, disabled = false, false
 ---@type number
 local stabilizeUntil = 0
+local plaqueToken = {}
+local plaqueStartedAt, plaqueDuration = 0, DURATION
 ---@type Panel?
 local card = nil
 ---@type Label?
@@ -32,13 +39,19 @@ local rowPanels = {}
 local teamLabels = {}
 ---@type Label[]
 local valueLabels = {}
+---@type Label[]
+local remainingLabels = {}
+---@type Panel[]
+local powerIcons = {}
+---@type Label[]
+local rangeLabels = {}
 
 local TEXT = {
-    zh_CN = { title = "战力提升", team = "小队 %d", value = "%s   +%s" },
-    zh_TW = { title = "戰力提升", team = "小隊 %d", value = "%s   +%s" },
-    en = { title = "POWER INCREASED", team = "TEAM %d", value = "%s   +%s" },
-    ja = { title = "戦力上昇", team = "部隊 %d", value = "%s   +%s" },
-    ko = { title = "전투력 상승", team = "팀 %d", value = "%s   +%s" },
+    zh_CN = { title = "战力提升", team = "小队 %d" },
+    zh_TW = { title = "戰力提升", team = "小隊 %d" },
+    en = { title = "POWER INCREASED", team = "TEAM %d" },
+    ja = { title = "戦力上昇", team = "部隊 %d" },
+    ko = { title = "전투력 상승", team = "팀 %d" },
 }
 
 local function now()
@@ -55,33 +68,83 @@ local function powerValue(value)
     if type(value) ~= "number" or value ~= value or math.abs(value) == math.huge or value < 0 then
         return nil
     end
+    -- 避免 integer 上界自加后溢出；大数保留原有限值，由格式化处理显示。
+    if math.type(value) == "integer" then return value end
     return math.floor(value + 0.5)
 end
 
 local function formatPower(value)
-    local full = string.format("%.0f", value)
-    -- 极端大值采用科学记数，避免有限但数百位的字符串越出铭牌。
+    local full = math.type(value) == "integer" and tostring(value) or string.format("%.0f", value)
     if #full > 18 then return string.format("%.3e", value) end
     return full
 end
 
+local function clamp(value)
+    return math.max(0, math.min(1, value))
+end
+
+local function displayDuration(delta)
+    -- 大幅提升多留一会儿，最多5秒；重复快照与下降不能续期。
+    if delta >= 100000 then return DURATION + 1.8 end
+    if delta >= 10000 then return DURATION + 1.2 end
+    if delta >= 1000 then return DURATION + .6 end
+    return DURATION
+end
+
+---@param row TeamPowerPresentation
+---@param current number
+local function sample(row, current)
+    local available = math.max(.000001, row.startedAt + row.duration - row.tweenAt)
+    local delay = math.min(COUNT_DELAY, available * .12)
+    -- 下降不延长提示，但计数压入原到期前，并预留15%时间显示准确终值。
+    local countTime = math.min(COUNT_TIME, (available - delay) * .85)
+    local progress = clamp((current - row.tweenAt - delay) / countTime)
+    -- 减速滚动：末帧直接返回权威整数，不能因浮点插值显示少一或越过目标。
+    if progress >= 1 then return row.power, row.delta, progress end
+    if progress <= 0 then return row.fromPower, row.fromDelta, progress end
+    local ease = 1 - (1 - progress) ^ 3
+    local function interpolate(from, target)
+        if from == target then return target end
+        -- 大integer之间的小增量先算整数步幅，避免先转double丢失低位。
+        if math.type(from) == "integer" and math.type(target) == "integer" then
+            local distance = math.abs(target - from)
+            if distance < 9007199254740992 then
+                local step = math.floor(distance * ease + .5)
+                return from < target and from + step or from - step
+            end
+        end
+        -- 凸组合避免 target-from 的超大浮点差溢出；只改显示值。
+        local value = from * (1 - ease) + target * ease
+        return math.max(math.min(from, target), math.min(math.max(from, target), math.floor(value + .5)))
+    end
+    return interpolate(row.fromPower, row.power), interpolate(row.fromDelta, row.delta), progress
+end
+
+local function releasePlaque()
+    Effects.release(plaqueToken)
+    plaqueToken = {}
+end
+
 local function clearExpired()
     local current = now()
+    local hadRows = next(active) ~= nil
     for team = 1, TEAM_COUNT do
         local row = active[team]
-        if row and current - row.startedAt >= DURATION then active[team] = nil end
+        if row and current - row.startedAt >= row.duration then active[team] = nil end
     end
+    if hadRows and next(active) == nil then releasePlaque() end
 end
 
 local function onTeamPowerChanged(data)
     if not initialized or type(data) ~= "table" or type(data.powers) ~= "table" then return end
-    -- 开机player同步可能先发布空队，不能把标题停留后的首次读档当作战力增长。
     if data.ready == false then
         previous, active = {}, {}
+        releasePlaque()
         return
     end
     clearExpired()
     local current = now()
+    local restartPlaque = false
     for team = 1, TEAM_COUNT do
         local power = powerValue(data.powers[team])
         if power then
@@ -89,19 +152,46 @@ local function onTeamPowerChanged(data)
             previous[team] = power
             if current < stabilizeUntil or old == nil then
                 active[team] = nil
+            elseif data.cause ~= "level_up" and data.cause ~= "artifact_equip" then
+                -- 非成功安装/交换或升级仍静默推进基准；重复快照不取消已有动画。
+                if power ~= old then active[team] = nil end
+            elseif data.cause == "artifact_equip" and power < old then
+                -- 本次交换减值队立即撤去旧增益行，不能借先前升级/安装基准伪装本次正增。
+                active[team] = nil
             elseif power ~= old then
                 local row = active[team]
                 if row then
-                    -- 连续穿卸／升阶显示本段净提升，不把下降前旧增量叠入新结果。
+                    local displayed, gain = sample(row, current)
                     row.power, row.delta = power, math.max(0, power - row.base)
-                    if row.delta == 0 then active[team] = nil
-                    elseif power > old then row.startedAt = current end
+                    if row.delta == 0 then
+                        active[team] = nil
+                    else
+                        -- 连续成长从当前画面接续，不退回最初值；下降不重新延长生命周期。
+                        row.fromPower, row.fromDelta, row.tweenAt = displayed, gain, current
+                        if power > old then
+                            row.startedAt, row.duration = current, displayDuration(row.delta)
+                            restartPlaque = true
+                        end
+                    end
                 elseif power > old then
-                    active[team] = { power = power, base = old, delta = power - old, startedAt = current }
+                    restartPlaque = true
+                    active[team] = {
+                        power = power, base = old, delta = power - old, startedAt = current,
+                        duration = displayDuration(power - old),
+                        tweenAt = current, fromPower = old, fromDelta = 0,
+                    }
                     print(string.format("[TeamPowerEffect] 小队%d 战力%s→%s (+%s)", team,
                         formatPower(old), formatPower(power), formatPower(power - old)))
                 end
             end
+        end
+    end
+    -- 最新行重启铭牌需换播放token；同token的时长固定，短行先到期不能改变Spine时钟。
+    if restartPlaque or next(active) == nil then
+        releasePlaque()
+        plaqueStartedAt, plaqueDuration = current, DURATION
+        for _, row in pairs(active) do
+            plaqueDuration = math.max(plaqueDuration, row.startedAt + row.duration - current)
         end
     end
 end
@@ -110,7 +200,7 @@ local function ensureCard()
     if card then return end
     Surface.init()
     title = UI.Label {
-        text = "", height = 42, fontSize = 22, alignSelf = "center", whiteSpace = "nowrap",
+        text = "", height = 54, fontSize = 23, alignSelf = "center", whiteSpace = "nowrap",
         textAlign = "center", verticalAlign = "middle", fontColor = {216, 201, 163, 255},
         pointerEvents = "none",
     }
@@ -118,45 +208,61 @@ local function ensureCard()
     local children = { title }
     for team = 1, TEAM_COUNT do
         local teamLabel = UI.Label {
-            text = "", height = 25, fontSize = 13, alignSelf = "center", whiteSpace = "nowrap",
+            text = "", height = 23, fontSize = 13, alignSelf = "center", whiteSpace = "nowrap",
             textAlign = "center", verticalAlign = "middle", fontColor = {150, 138, 110, 255},
             pointerEvents = "none",
         }
         local valueLabel = UI.Label {
-            text = "", height = 43, fontSize = 27, alignSelf = "center", whiteSpace = "nowrap",
+            text = "", height = 44, fontSize = 27, alignSelf = "center", whiteSpace = "nowrap",
             textAlign = "center", verticalAlign = "middle", fontColor = {240, 199, 94, 255},
+            pointerEvents = "none",
+        }
+        local powerIcon = UI.Panel {
+            width = 30, height = 30, flexShrink = 0, backgroundFit = "contain",
+            backgroundImage = "image/通用图标/ICON_ZDL.png", pointerEvents = "none",
+        }
+        local remainingLabel = UI.Label {
+            text = "", height = 44, fontSize = 18, whiteSpace = "nowrap",
+            textAlign = "center", verticalAlign = "middle", fontColor = {194, 166, 105, 255},
+            pointerEvents = "none",
+        }
+        local valueLine = UI.Panel {
+            height = 44, flexDirection = "row", gap = 8, alignItems = "center",
+            alignSelf = "center", pointerEvents = "none",
+            children = { powerIcon, valueLabel, remainingLabel },
+        }
+        local rangeLabel = UI.Label {
+            text = "", height = 22, fontSize = 12, alignSelf = "center", whiteSpace = "nowrap",
+            textAlign = "center", verticalAlign = "middle", fontColor = {162, 152, 134, 255},
             pointerEvents = "none",
         }
         local panel = UI.Panel {
             width = "100%", height = ROW_H, alignItems = "center", pointerEvents = "none",
-            children = { teamLabel, valueLabel },
+            children = { teamLabel, valueLine, rangeLabel },
         }
         ---@cast teamLabel Label
         ---@cast valueLabel Label
-        teamLabels[team] = teamLabel
-        valueLabels[team] = valueLabel
+        ---@cast remainingLabel Label
+        ---@cast rangeLabel Label
+        teamLabels[team], valueLabels[team], rangeLabels[team] = teamLabel, valueLabel, rangeLabel
+        remainingLabels[team], powerIcons[team] = remainingLabel, powerIcon
         rowPanels[team] = panel
         children[#children + 1] = panel
     end
     card = UI.Panel {
-        width = WIDTH, height = HEADER_H + ROW_H, padding = {12, 90, 12, 90},
+        width = WIDTH, height = HEADER_H + ROW_H, padding = {82, 90, 82, 90},
         alignItems = "center", pointerEvents = "none", children = children,
     }
-    print("[TeamPowerEffect] 三队暗铁铭牌已就绪，无 Spine 资源依赖")
+    print("[TeamPowerEffect] 三队图片铭牌与数字滚动已就绪")
 end
 
--- 文字使用自动宽度单行Label，不设控件opacity/transform/clip。
--- 透明度逐色相乘；正常绘制不建立UI嵌套状态帧，不改写任何引擎全局入口。
-local function drawSurface(root, vg, width, height)
-    Surface.draw(root, vg, width, height)
-end
-
-local function fade(elapsed)
-    return math.max(0, math.min(1, elapsed / 0.24, (DURATION - elapsed) / 0.45))
+local function fade(elapsed, duration)
+    return math.max(0, math.min(1, elapsed / 0.24, (duration - elapsed) / 0.45))
 end
 
 function Effect.resetSession()
     previous, active = {}, {}
+    releasePlaque()
     stabilizeUntil = now() + STABILIZE_DELAY
     disabled = false
 end
@@ -168,7 +274,7 @@ function Effect.init()
     EventBus.on(GameEvents.TEAM_POWER_CHANGED, onTeamPowerChanged)
 end
 
--- 生命周期只由真实时钟决定；标题、塔／副本或未 draw 都能结束稳定期和播放。
+-- 同帧多次update/draw/query只采样真实时钟；隐藏时不会积压实例或延长提示。
 function Effect.update(_dt)
     if initialized then clearExpired() end
 end
@@ -178,16 +284,23 @@ function Effect.isPlaying()
     return not disabled and next(active) ~= nil
 end
 
--- 返回副本，便于回归核对；调用者不能修改内部基准或计时。
 function Effect.getDisplayRows()
     clearExpired()
-    local rows = {}
+    local rows, current = {}, now()
     for team = 1, TEAM_COUNT do
         local row = active[team]
-        if row then rows[#rows + 1] = {
-            teamIdx = team, power = row.power, delta = row.delta,
-            elapsed = math.max(0, now() - row.startedAt),
-        } end
+        if row then
+            local displayed, gain, progress = sample(row, current)
+            local settle = clamp((current - row.tweenAt - COUNT_DELAY - COUNT_TIME) / .28)
+            rows[#rows + 1] = {
+                teamIdx = team, power = row.power, base = row.base, delta = row.delta,
+                displayPower = displayed, displayDelta = gain,
+                -- 两端都是integer时先做整数差，不先转double；下降时不能显示负的剩余增量。
+                displayRemaining = math.max(0, row.power - displayed), progress = progress,
+                pulse = progress >= 1 and math.sin(settle * math.pi) or 0,
+                elapsed = math.max(0, current - row.startedAt), duration = row.duration,
+            }
+        end
     end
     return rows
 end
@@ -204,18 +317,14 @@ function Effect.getGeometry(width, height)
     return (width - WIDTH * scale) * 0.5, (height - cardHeight * scale) * 0.5, scale, cardHeight
 end
 
---- 宿主 finishFrame 的逻辑屏幕空间调用，不借任何左栏／中栏 Viewport。
+--- 全窗逻辑坐标的finishFrame调用；图片与文字共享宿主transform，不借三栏Viewport。
 function Effect.draw(vg, width, height)
     if not vg or not Effect.isPlaying() then return end
-    local screenWidth = width or 1080
-    local screenHeight = height or 2400
+    local screenWidth, screenHeight = width or 1080, height or 2400
     if not finitePositive(screenWidth) or not finitePositive(screenHeight) then return end
     local rows = Effect.getDisplayRows()
     local left, top, scale, cardHeight = Effect.getGeometry(screenWidth, screenHeight)
-    local elapsed = DURATION
-    for _, row in ipairs(rows) do elapsed = math.min(elapsed, row.elapsed) end
-    -- 铭牌使用最新一队的时间轴；各行文字保留自己的淡入／淡出。
-    local alpha = math.min(1, elapsed / 0.24, (DURATION - elapsed) / 0.45)
+    local elapsed, duration = math.max(0, now() - plaqueStartedAt), plaqueDuration
     local saved = false
     local ok, caught = pcall(function()
         ensureCard()
@@ -224,53 +333,71 @@ function Effect.draw(vg, width, height)
         local text = TEXT[I18n.get()] or TEXT.zh_CN
         currentTitle:SetText(text.title)
         currentCard:SetHeight(cardHeight)
-        currentTitle:SetFontColor({216, 201, 163, math.floor(fade(elapsed) * 255 + 0.5)})
+        currentTitle:SetFontColor({216, 201, 163, math.floor(fade(elapsed, duration) * 255 + 0.5)})
         for team = 1, TEAM_COUNT do rowPanels[team]:Hide() end
         for _, row in ipairs(rows) do
-            rowPanels[row.teamIdx]:Show()
-            local rowAlpha = math.floor(fade(row.elapsed) * 255 + 0.5)
-            teamLabels[row.teamIdx]:SetFontColor({150, 138, 110, rowAlpha})
-            valueLabels[row.teamIdx]:SetFontColor({240, 199, 94, rowAlpha})
-            teamLabels[row.teamIdx]:SetText(string.format(text.team, row.teamIdx))
-            local value = string.format(text.value, formatPower(row.power), formatPower(row.delta))
-            -- 先设字号再更新文本，让自动宽度按本帧字号测量；避免缩字后沿用旧宽度。
-            -- 两个18位整数仍保留完整值，用18号字收进580宽内容区，不截断战力。
-            valueLabels[row.teamIdx]:SetFontSize(#value > 36 and 18 or (#value > 30 and 20 or 27))
-            valueLabels[row.teamIdx]:SetText(value)
+            local team = row.teamIdx
+            rowPanels[team]:Show()
+            local rowAlpha = math.floor(fade(row.elapsed, row.duration) * 255 + 0.5)
+            teamLabels[team]:SetFontColor({150, 138, 110, rowAlpha})
+            local pulse = row.pulse
+            valueLabels[team]:SetFontColor({240 + math.floor(pulse * 15),
+                199 + math.floor(pulse * 31), 94 + math.floor(pulse * 72), rowAlpha})
+            remainingLabels[team]:SetFontColor({194, 166, 105, rowAlpha})
+            -- Panel背景图交给ImageCache按路径复用；只改变透明度，不逐帧加载或替换图标。
+            powerIcons[team]:SetOpacity(rowAlpha / 255)
+            rangeLabels[team]:SetFontColor({162, 152, 134, math.floor(rowAlpha * .82)})
+            teamLabels[team]:SetText(string.format(text.team, team))
+            local value = formatPower(row.displayPower)
+            local remaining = "+" .. formatPower(row.delta)
+            -- 按两端位数预算整组宽度（图标30 + 两个gap16），包含终值脉冲；18位双数也不越过580。
+            -- 用同字体的等宽数字预算，净增量保持固定；先字号后文本刷新真实自动宽度。
+            local valueDigits = math.max(#formatPower(row.base), #formatPower(row.power), #value)
+            local remainingDigits = #formatPower(row.delta)
+            local valueWidth = UI.MeasureTextWidth(string.rep("8", valueDigits), UI.Theme.FontSize(28.4), "sans")
+            local remainingWidth = UI.MeasureTextWidth("+" .. string.rep("8", remainingDigits), UI.Theme.FontSize(18), "sans")
+            local fontSize = 27 * math.min(1, 530 / math.max(1, valueWidth + remainingWidth))
+            valueLabels[team]:SetFontSize(fontSize + pulse * 1.4 * fontSize / 27)
+            remainingLabels[team]:SetFontSize(fontSize * 2 / 3)
+            valueLabels[team]:SetText(value)
+            remainingLabels[team]:SetText(remaining)
+            -- 辅助行始终使用权威快照，不随displayDelta从0滚动；连续增减只在真实回执后更新。
+            rangeLabels[team]:SetText(formatPower(row.base) .. "  →  " .. formatPower(row.power)
+                .. "  ·  +" .. formatPower(row.delta))
         end
         nvgSave(vg)
         saved = true
         nvgTranslate(vg, left, top)
         nvgScale(vg, scale, scale)
-        Effects.drawPower(vg, WIDTH * 0.5, cardHeight * 0.5, WIDTH, cardHeight, elapsed, DURATION, math.max(0, alpha))
-        drawSurface(currentCard, vg, WIDTH, cardHeight)
+        Effects.drawPower(vg, WIDTH * .5, cardHeight * .5, WIDTH, cardHeight, elapsed,
+            duration, fade(elapsed, duration), plaqueToken)
+        Surface.draw(currentCard, vg, WIDTH, cardHeight)
     end)
     local failure = ok and "" or tostring(caught)
     if saved then
         local restored, restoreError = pcall(nvgRestore, vg)
-        if not restored then
-            ok = false
-            failure = tostring(restoreError)
-        end
+        if not restored then ok, failure = false, tostring(restoreError) end
     end
     if not ok and not disabled then
-        disabled = true
-        active = {}
+        disabled, active = true, {}
+        releasePlaque()
         print("[TeamPowerEffect] 绘制已安全停用，业务继续: " .. failure)
     end
 end
 
-function Effect.preload(_vg)
-    -- 兼容旧调用；程序化效果无贴图／骨架需要预加载。
+function Effect.preload(vg)
+    Effects.preload(vg)
 end
 
 function Effect.destroy()
     EventBus.off(GameEvents.TEAM_POWER_CHANGED, onTeamPowerChanged)
     initialized = false
     previous, active = {}, {}
+    releasePlaque()
     if card then card:Destroy() end
     card, title = nil, nil
-    rowPanels, teamLabels, valueLabels = {}, {}, {}
+    rowPanels, teamLabels, valueLabels, rangeLabels = {}, {}, {}, {}
+    remainingLabels, powerIcons = {}, {}
     disabled = false
 end
 

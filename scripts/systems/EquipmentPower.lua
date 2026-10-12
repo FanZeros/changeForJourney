@@ -7,6 +7,7 @@ local HC = require("config.HeroConfig")
 local Eq = require("systems.EquipmentSystem")
 local EC = require("config.EquipmentConfig")
 local Sets = require("systems.EquipmentSetSystem")
+local ESR = require("systems.EquipmentSetRuntime")
 local ArtifactBridge = require("systems.ArtifactBridge")
 local CombatPower = require("systems.CombatPower")
 local AVC = require("config.AdvancementConfig")
@@ -77,13 +78,8 @@ local function buildUnit(ctx, heroId, equipment)
     for key, value in pairs(seed) do unit[key] = value end
     unit.attrs = seed.attrs:clone()
     M.applyEquipment(unit.attrs, equipment, heroId)
-    -- 只执行确定性的开战属性，不运行条件被动/计时器或写战斗状态。
-    if unit.attrs._setFour == "nitros" then
-        local extra = math.min(10, math.floor(unit.attrs:get(AD.HIT_VALUE) / 80) * 2)
-        if extra > 0 then unit.attrs:addModifier("set4_nitros", { { key = AD.COMBO_RATE, flat = extra } }) end
-    elseif unit.attrs._setFour == "starless" then
-        unit.attrs:addModifier("set4_starless", { { key = AD.MAG_PEN, flat = 8 } })
-    end
+    -- 确定性四件与实战/UI共用；不运行条件被动或写战斗状态。
+    ESR.applyStaticBonuses(unit.attrs)
     local slot, team = M.findPosition(ctx.heroesData, heroId)
     unit.partySlot, unit.teamIdx = slot, team
     if slot then unit.artifactEffects = ArtifactBridge.applyToUnit(unit.attrs, slot, ctx.artifactsData, team) end
@@ -91,17 +87,7 @@ local function buildUnit(ctx, heroId, equipment)
 end
 
 local function applyTeamAura(units)
-    local active = false
-    for _, unit in ipairs(units) do
-        if unit.attrs._setSix == "last_rite" then active = true break end
-    end
-    if active then
-        for _, unit in ipairs(units) do
-            -- 队友旧快照可能被复用：克隆后再挂光环，避免污染 current 基准。
-            unit.attrs = unit.attrs:clone()
-            unit.attrs:addModifier("set6_last_rite", { { key = AD.ES_BONUS, flat = 8 } })
-        end
-    end
+    ESR.applyTeamAura(units)
 end
 
 local function powerFor(ctx, unit, units, equipment)
@@ -137,29 +123,9 @@ local function readSnapshot(options, key)
     return copy(require("core.PlayerStore").Get(key) or {})
 end
 
-function M.buildContext(heroId, options)
-    local id = tonumber(heroId)
-    if not id or not HC.get(id) then return nil end
-    local ctx = {
-        heroId = id,
-        heroesData = readSnapshot(options, "heroes"),
-        equipmentData = readSnapshot(options, "equipment"),
-        artifactsData = readSnapshot(options, "artifacts"),
-        talentsData = readSnapshot(options, "talents"),
-        seeds = {}, teamUnits = {}, memo = {}, scores = {},
-    }
-    if options and options.heroData then
-        ctx.heroesData.roster = ctx.heroesData.roster or {}
-        ctx.heroesData.roster[id] = copy(options.heroData)
-    end
-    ctx.equipmentData.inventory = ctx.equipmentData.inventory or {}
-    ctx.equipmentData.equipped = ctx.equipmentData.equipped or {}
-    for key, item in pairs(ctx.equipmentData.inventory) do
-        if type(item) == "table" then
-            Eq.hydrate(item)
-            item.seq = tonumber(item.seq or key) or item.seq
-        end
-    end
+-- 两种上下文共用同一裸种子/有效装备/本队光环/神器与正式估值管线。
+local function finishContext(ctx)
+    local id = ctx.heroId
     local roster = ctx.heroesData.roster or {}
     local function seedFor(sourceId)
         if ctx.seeds[sourceId] then return end
@@ -195,6 +161,130 @@ function M.buildContext(heroId, options)
     applyTeamAura(ctx.teamUnits)
     ctx.currentPower = powerFor(ctx, ctx.hero, ctx.teamUnits, ctx.equipmentData)
     return ctx
+end
+
+-- 隔离库存只在同一装备版本内共享：applyEquip 写 equipped，hydrate 会写库存及嵌套词条。
+-- 必须先深拷贝/水合，不能把 PlayerStore 的 live inventory 交给任何试穿路径。
+---@type table|nil
+local sharedEquipmentSnapshot
+---@type table|nil
+local sharedEquipmentSource
+local sharedEquipmentRevision = -1
+local function equipmentSnapshot(options)
+    if options ~= nil then return readSnapshot(options, "equipment") end
+    local store = require("core.PlayerStore")
+    local source = store.Get("equipment")
+    local revision = store.GetRevision and store.GetRevision("equipment") or 0
+    -- 无revision的旧宿主不能证明同引用仍是同版本：直接build必须保持逐调用新快照。
+    if store.GetRevision and sharedEquipmentSnapshot and sharedEquipmentSource == source
+        and sharedEquipmentRevision == revision then return sharedEquipmentSnapshot end
+    sharedEquipmentSource, sharedEquipmentRevision = source, revision
+    sharedEquipmentSnapshot = copy(source or {})
+    sharedEquipmentSnapshot.inventory = sharedEquipmentSnapshot.inventory or {}
+    sharedEquipmentSnapshot.equipped = sharedEquipmentSnapshot.equipped or {}
+    for key, item in pairs(sharedEquipmentSnapshot.inventory) do
+        if type(item) == "table" then
+            Eq.hydrate(item)
+            item.seq = tonumber(item.seq or key) or item.seq
+        end
+    end
+    return sharedEquipmentSnapshot
+end
+
+-- 通用上下文保留完整隔离库存；显式 options 仍有独立副本，缺省来源按装备版本共享。
+function M.buildContext(heroId, options)
+    local id = tonumber(heroId)
+    if not id or not HC.get(id) then return nil end
+    local ctx = {
+        heroId = id,
+        heroesData = readSnapshot(options, "heroes"),
+        equipmentData = equipmentSnapshot(options),
+        artifactsData = readSnapshot(options, "artifacts"),
+        talentsData = readSnapshot(options, "talents"),
+        seeds = {}, teamUnits = {}, memo = {}, scores = {},
+    }
+    if options and options.heroData then
+        ctx.heroesData.roster = ctx.heroesData.roster or {}
+        ctx.heroesData.roster[id] = copy(options.heroData)
+    end
+    ctx.equipmentData.inventory = ctx.equipmentData.inventory or {}
+    ctx.equipmentData.equipped = ctx.equipmentData.equipped or {}
+    if options ~= nil then
+        for key, item in pairs(ctx.equipmentData.inventory) do
+            if type(item) == "table" then
+                Eq.hydrate(item)
+                item.seq = tonumber(item.seq or key) or item.seq
+            end
+        end
+    end
+    return finishContext(ctx)
+end
+
+-- 仅供当前穿戴战力批次：模块快照一次，库存源只读，按本队实际六槽取副本。
+-- 不跨通知缓存，也不传给 evaluate/score；它不承诺包含未穿戴候选。
+function M.createWornBatch(options)
+    local equipment = options and options.equipment
+    if options == nil then equipment = require("core.PlayerStore").Get("equipment") end
+    return {
+        heroesData = readSnapshot(options, "heroes"),
+        artifactsData = readSnapshot(options, "artifacts"),
+        talentsData = readSnapshot(options, "talents"),
+        equipmentData = { inventory = {}, equipped = copy(equipment and equipment.equipped or {}) },
+        sourceInventory = equipment and equipment.inventory or {},
+        copiedKeys = {}, copySeen = {},
+    }
+end
+
+local function copyWornItems(batch, heroId)
+    local slots = Eq.getHeroSlots(batch.equipmentData, heroId) or {}
+    for _, slot in ipairs(EC.SLOTS) do
+        local seq = slots[slot]
+        if seq then
+            -- 与 getFromInventory 完全相同：字符串键优先，原 seq 键后备。
+            -- 保留槽表（含无效副手），让旧双手/去重/五算六规则原样判断。
+            local key = tostring(seq)
+            local item = batch.sourceInventory[key]
+            if not item then key, item = seq, batch.sourceInventory[seq] end
+            if item and not batch.copiedKeys[key] then
+                batch.copiedKeys[key] = true
+                local snapshot = copy(item, batch.copySeen)
+                if type(snapshot) == "table" then
+                    Eq.hydrate(snapshot)
+                    snapshot.seq = tonumber(snapshot.seq or key) or snapshot.seq
+                end
+                batch.equipmentData.inventory[key] = snapshot
+            end
+        end
+    end
+end
+
+-- 与 buildContext 的 currentPower 同口径，但只水合目标及真实所属队穿戴项。
+-- heroData 的覆盖仅属于本上下文，不污染批次里其他英雄的队友种子。
+function M.buildWornContext(heroId, options, batch)
+    local id = tonumber(heroId)
+    if not id or not HC.get(id) then return nil end
+    batch = batch or M.createWornBatch(options)
+    local heroes = batch.heroesData
+    if options and options.heroData then
+        local overridden = {}
+        for key, value in pairs(heroes) do overridden[key] = value end
+        overridden.roster = {}
+        for key, value in pairs(heroes.roster or {}) do overridden.roster[key] = value end
+        overridden.roster[id] = copy(options.heroData)
+        heroes = overridden
+    end
+    copyWornItems(batch, id)
+    local _, team = M.findPosition(heroes, id)
+    local ids = team and idsForTeam(heroes, team) or {}
+    for slot = 1, 4 do
+        local sourceId = numericId(ids[slot] or ids[tostring(slot)])
+        if sourceId and sourceId > 0 and HC.get(sourceId) then copyWornItems(batch, sourceId) end
+    end
+    return finishContext({
+        heroId = id, heroesData = heroes, equipmentData = batch.equipmentData,
+        artifactsData = batch.artifactsData, talentsData = batch.talentsData,
+        seeds = {}, teamUnits = {}, memo = {}, scores = {},
+    })
 end
 
 local function equipmentCopy(ctx)
@@ -261,7 +351,8 @@ local function withoutPiece(ctx, equipment, seq)
     return powerFor(ctx, unit, units, stripped)
 end
 
-function M.evaluate(ctx, seq, targetSlot)
+-- 角标只需净提升；完整评分随后在同一 memo 结果上懒补单件贡献。
+function M.evaluateGain(ctx, seq, targetSlot)
     if not ctx then return nil end
     local item = Eq.getFromInventory(ctx.equipmentData, seq)
     if not item then return nil end
@@ -280,6 +371,7 @@ function M.evaluate(ctx, seq, targetSlot)
     -- 双手在副手的占位只是显示，不执行一次非法副手穿戴。
     if slot == "offhand" and item.grip == "twohand"
         and tostring(currentSlots.weapon) == tostring(seq) then alreadyEquipped = true end
+    ---@type table|nil
     local result
     if alreadyEquipped then
         result = { valid = true, gain = 0, currentPower = ctx.currentPower,
@@ -287,10 +379,18 @@ function M.evaluate(ctx, seq, targetSlot)
     else
         result = M.evaluateLoadout(ctx, { [slot] = seq })
     end
-    if result and result.valid then
+    -- evaluateLoadout 的 power=0 是占位值，不能冒充已经求过 withoutPiece。
+    if result and result.valid then result.power = nil end
+    ctx.memo[key] = result
+    return result
+end
+
+function M.evaluate(ctx, seq, targetSlot)
+    local result = M.evaluateGain(ctx, seq, targetSlot)
+    if result and result.valid and result.power == nil then
+        ---@cast result table<string, any>
         result.power = result.previewPower - withoutPiece(ctx, result.equipment, seq)
     end
-    ctx.memo[key] = result
     return result
 end
 
@@ -363,11 +463,15 @@ local cached = {}
 local subscribed = false
 function M.invalidate()
     cached = {}
+    sharedEquipmentSnapshot, sharedEquipmentSource = nil, nil
+    sharedEquipmentRevision = -1
 end
 
 function M.getContext(heroId)
     local store = require("core.PlayerStore")
-    if not subscribed then
+    -- Store 在通知订阅者前递增 revision；晚注册的失效回调会误清本次刷新刚造的 ctx。
+    -- 仅为无 revision 的旧夹具/调用方保留订阅兜底。
+    if not store.GetRevision and not subscribed then
         for _, key in ipairs({ "heroes", "equipment", "artifacts", "talents" }) do
             store.Subscribe(key, M.invalidate)
         end
@@ -417,7 +521,9 @@ function M.score(equip, heroId, targetSlot)
     local unit = {}
     for field, value in pairs(ctx.hero) do unit[field] = value end
     unit.attrs = ctx.hero.attrs:clone()
-    Eq.applyToUnit(unit.attrs, equip, "power_preview", Eq.getAscendBoost(equip))
+    ---@type any modifierId支持字符串标签；此值不是库存序号。
+    local previewSeq = "power_preview"
+    Eq.applyToUnit(unit.attrs, equip, previewSeq, Eq.getAscendBoost(equip))
     local units = {}
     for _, old in ipairs(ctx.teamUnits) do units[#units + 1] = old.heroId == ctx.heroId and unit or old end
     local value = math.floor(powerFor(ctx, unit, units, ctx.equipmentData) - ctx.currentPower + 0.5)

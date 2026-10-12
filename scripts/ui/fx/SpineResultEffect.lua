@@ -1,7 +1,8 @@
--- 程序化成功/失败特效；保留旧模块/API 名称，不持有原生 Spine 资源。
+-- 暗黑成功/失败特效：独占 Spine + 分层 PNG + 程序化矢量兜底，保留旧模块/API。
 -- 宿主在提前 return 前调用 update(dt)，绘制同样采样全局真实时间。
 -- update/draw/isPlaying 不累加 dt，同帧多次调用不会重复推进动画。
 local SpineResultEffect = {}
+local Sprites = require("ui.fx.DarkEffectSprites")
 local DURATION_SUCCESS, DURATION_FAILURE = 1.6667, 1.3333
 local playbackId = 0
 local disabled = false
@@ -11,6 +12,7 @@ local disabled = false
 ---@field startedAt number
 ---@field duration number
 ---@field onComplete function|nil
+---@field token table
 ---@type DarkResultPlayback|nil
 local current = nil
 
@@ -30,8 +32,9 @@ local function finishPlayback(id)
     current = nil -- 先脱离旧记录：回调重入 play/stop/destroy 不受旧收尾影响。
     local cb = entry.onComplete
     entry.onComplete = nil
+    Sprites.release(entry.token) -- 先释放旧 token，完成回调新建播放不受旧收尾影响。
     print("[SpineResultEffect] 完成 id=" .. id)
-    if cb then
+    if cb and playbackId == id then
         local ok, err = pcall(cb)
         if not ok then print("[SpineResultEffect] 完成回调失败: " .. tostring(err)) end
     end
@@ -45,12 +48,14 @@ end
 local function disableEffect(id, reason)
     -- 绘制过程中重入 play/stop 后，旧播放错误不得取消替代的新播放。
     if not current or current.id ~= id or playbackId ~= id then return end
-    current.onComplete = nil -- 保留已有视觉故障契约：取消，不触发完成。
+    local entry = current
+    entry.onComplete = nil -- 保留已有视觉故障契约：取消，不触发完成。
     current = nil
     if not disabled then
         disabled = true
         print("[SpineResultEffect] 视觉已停用，业务继续: " .. tostring(reason))
     end
+    Sprites.release(entry.token)
 end
 
 --- 新 play 替换旧播放并取消旧回调，隐藏页面的旧播放同样取消。
@@ -63,9 +68,12 @@ function SpineResultEffect.play(isSuccess, onComplete)
         print("[SpineResultEffect] 拒绝无效播放参数")
         return
     end
+    local replaced = current
+    if replaced then replaced.onComplete = nil end
     playbackId = playbackId + 1
     current = { id = playbackId, success = not not isSuccess, startedAt = now,
-        duration = isSuccess and DURATION_SUCCESS or DURATION_FAILURE, onComplete = onComplete }
+        duration = isSuccess and DURATION_SUCCESS or DURATION_FAILURE, onComplete = onComplete, token = {} }
+    if replaced then Sprites.release(replaced.token) end
     print("[SpineResultEffect] 播放" .. (isSuccess and "成功" or "失败") .. " id=" .. playbackId)
 end
 
@@ -83,8 +91,10 @@ end
 
 function SpineResultEffect.stop()
     playbackId = playbackId + 1
-    if current then current.onComplete = nil end
+    local stopped = current
+    if stopped then stopped.onComplete = nil end
     current = nil
+    if stopped then Sprites.release(stopped.token) end
 end
 
 --- 使用调用者坐标空间；绘制异常时仍恢复其 NanoVG 状态。
@@ -107,11 +117,10 @@ function SpineResultEffect.draw(vg, cx, cy, size, alpha)
     if opacity <= 0 then return end
     local saved = false
     local ok, err = pcall(function()
-        local primitives = require("ui.fx.DarkEffectPrimitives")
         nvgSave(vg)
         saved = true
-        primitives.drawResult(vg, entry.success, cx, cy, target,
-            math.max(0, now - entry.startedAt), entry.duration, opacity)
+        Sprites.drawResult(vg, entry.success, cx, cy, target,
+            math.max(0, now - entry.startedAt), entry.duration, opacity, entry.token)
     end)
     if saved then
         local restored, restoreErr = pcall(nvgRestore, vg)
@@ -121,7 +130,9 @@ function SpineResultEffect.draw(vg, cx, cy, size, alpha)
 end
 
 ---@param vg? any
-function SpineResultEffect.preload(vg) end -- 幂等空操作：不分配原生对象或缓存资源。
+function SpineResultEffect.preload(vg)
+    Sprites.preload(vg) -- 共享一次 PNG 预热；按播放 token 延迟创建独占原生实例。
+end
 
 function SpineResultEffect.destroy()
     SpineResultEffect.stop()

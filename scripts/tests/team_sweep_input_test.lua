@@ -19,7 +19,12 @@ function Start()
         local GameState = require("core.GameState")
         local PDM = require("rules.character.PlayerDataManager")
         local ExpTable = require("config.ExpTable")
-        local IdleIncome = require("config.IdleIncomeConfig")
+        local Spawn = require("ui.battle.stage.BattleEnemySpawn")
+        local StageConfig = require("config.StageConfig")
+        local DropSystem = require("systems.DropSystem")
+        local Transaction = require("rules.dungeon.DungeonService")
+        local Registry = require("shared.ModuleRegistry")
+        local Schema = require("shared.schemas.CharacterSchema")
         local CharacterPanel = require("ui.character.panel.CharacterPanel")
         local Driver = require("ui.battle.tri.BattleTriDriver")
         local Scene = require("ui.battle.scene.BattleScene")
@@ -38,12 +43,39 @@ function Start()
         local modules = {}
         local activeTeam = 1
         local request = {}
-        local dirty = 0
+        local dirty, persists, committed = 0, 0, false
+        local persisted, wallet = {}, {}
+        local function copy(value)
+            if type(value) ~= "table" then return value end
+            local result = {}
+            for key, child in pairs(value) do result[key] = copy(child) end
+            return result
+        end
         local uid = 991010
         replace(Dispatcher, "get", function(name) return modules[name] end)
         replace(Store, "Get", function(name) return modules[name] end)
         replace(PDM, "GetModule", function(_, name) return modules[name] end)
-        replace(PDM, "MarkDirty", function() dirty = dirty + 1 end)
+        replace(PDM, "MarkDirty", function()
+            eq(committed, true, "持久化成功之前不得推送候选模块")
+            dirty = dirty + 1
+        end)
+        replace(GameState, "exportSave", function() return copy(wallet) end)
+        replace(GameState, "syncFromCurrency", function(value) wallet = copy(value) end)
+        -- 仅数据保存/双onLoad边界mock，不跑Boot，不读取任何玩家存档。
+        -- 新规则必须真实执行CommitRewardTransaction，不能用FlushImmediate日志替代保存。
+        for _, name in ipairs({ "currency", "heroes", "player", "equipment", "lootbox" }) do
+            local registered = Registry.find(name)
+            if registered then replace(registered, "onLoad", function() end) end
+            local schema = Schema.Fields[name]
+            if schema then replace(schema, "onLoad", function() end) end
+        end
+        Transaction.SetPersistCallback(function()
+            eq(dirty, 0, "mock持久化边界前零通知")
+            persists = persists + 1
+            persisted, committed = copy(modules), true
+            return true
+        end, { begin = function() committed = false end, finish = function() end })
+        restores[#restores + 1] = function() Transaction.SetPersistCallback(nil) end
         replace(GameState, "getSweepTicket", function() return modules.currency.sweepTicket end)
         replace(CharacterPanel, "getActiveTeamIdx", function() return activeTeam end)
         replace(SFX, "playUIClick", function() end)
@@ -61,10 +93,14 @@ function Start()
         replace(StatsDialog, "isOpen", function() return false end)
         replace(StageDialog, "isOpen", function() return false end)
         replace(TerminalDialog, "isOpen", function() return false end)
-        replace(Dialog, "onSweep", function(count, teamIdx)
+        -- 用确定逐杀掉落保证容量/实际批数断言有意义；装备生成与交付仍走真实实现。
+        replace(DropSystem, "rollKillDrop", function() return 2 end)
+        replace(DropSystem, "rollScrollDrop", function() return "weaponScroll" end)
+        replace(DropSystem, "rollSweepTicket", function() error("扫荡不允许返券") end)
+        replace(Dialog, "onSweep", function(count, teamIdx, stageId)
             request.calls = (request.calls or 0) + 1
-            request.count, request.teamIdx = count, teamIdx
-            request.ok, request.err, request.result = Service.Sweep(uid, count, teamIdx)
+            request.count, request.teamIdx, request.stageId = count, teamIdx, stageId
+            request.ok, request.err, request.result = Service.Sweep(uid, count, teamIdx, stageId)
         end)
 
         local function reset(active, progress)
@@ -81,11 +117,13 @@ function Start()
                 },
                 currency = { gold = 40, sweepTicket = 5 },
                 player = { level = 100, exp = 17 },
-                equipment = { inventory = {} },
+                equipment = { inventory = {}, equipped = {}, nextSeq = 1 },
+                lootbox = { seeds = {} }, dungeon = {}, session = {},
             }
             for heroId = 1, 6 do modules.heroes.roster[heroId] = { level = 100, exp = 0 } end
             modules.heroes.roster[25] = { level = 100, exp = 0 }
-            request, dirty = {}, 0
+            request, dirty, persists, committed = {}, 0, 0, false
+            persisted, wallet = {}, copy(modules.currency)
             Page.open()
             eq(Page.isOpen(), true, "真实Page已打开")
         end
@@ -117,15 +155,25 @@ function Start()
             eq(request.teamIdx, targetTeam, "Dialog默认目标队")
             eq(request.result.teamIdx, targetTeam, "Service结算目标队")
             eq(modules.currency.sweepTicket, 4, "仅扣一张账户扫荡券")
-            local goldPerMin, expPerMin = IdleIncome.get(1905)
+            local entry = assert(StageConfig.getStage(request.stageId))
+            local enemies = Spawn.generateEnemyList(entry, false)
+            local gold, playerExp = 0, 0
+            for _, enemy in ipairs(enemies) do
+                gold, playerExp = gold + enemy.goldReward, playerExp + enemy.expReward
+            end
+            eq(request.stageId, 1905, "真实目标stageId从Dialog透传")
+            eq(request.result.stageId, request.stageId, "Service结算原目标而不是当前前进关")
             local targetCount = targetTeam -- 夹具队1/2/3分别1/2/3人，含空槽。
-            local expTotal = math.floor(math.floor(expPerMin * Service.REWARD_MINUTES)
-                * ExpTable.heroCountExpMult[targetCount])
-            local perHero = math.floor(expTotal / targetCount + 0.5)
+            local expTotal = math.floor(playerExp * ExpTable.heroCountExpMult[targetCount])
+            local perHero = math.floor(playerExp * ExpTable.heroCountExpMult[targetCount] / targetCount + 0.5)
             eq(perHero > 0 and perHero < ExpTable.getHeroExpForLevel(100), true, "经验真实且不触发跨队共鸣")
-            eq(request.result.heroExp, perHero, "每人经验遵守真实经济公式")
-            eq(modules.currency.gold, 40 + math.floor(goldPerMin * Service.REWARD_MINUTES), "金币账户仅发一次")
-            eq(modules.player.exp, 17, "扫荡不追加远征经验")
+            eq(request.result.heroExp, perHero, "每人经验遵守真实单场怪物奖励公式")
+            eq(request.result.heroExpTotal, expTotal, "报告英雄经验池遵守真实公式")
+            eq(modules.currency.gold, 40 + gold, "金币账户仅发单场怪物奖励一次")
+            eq(modules.player.exp, 17 + playerExp, "扫荡追加准确单场远征经验")
+            eq(persists, 1, "确认只提交一次持久化")
+            eq(persisted.currency.sweepTicket, 4, "扣券与奖励在同一保存快照")
+            eq(persisted.player.exp, 17 + playerExp, "经验在通知前完整保存")
             local targetIds = {}
             for _, heroId in ipairs(modules.heroes.teams[targetTeam].slots) do
                 if heroId > 0 then targetIds[heroId] = true end
@@ -135,7 +183,9 @@ function Start()
                 eq(hero.level, 100, "旁队等级保持hero" .. heroId)
             end
             eq(require("systems.EquipmentSystem").getInventoryCount(modules.equipment),
-                Service.EQUIP_DROP_COUNT, "真实装备掉落仅一批")
+                #enemies, "确定逐杀每怪掉一件，单场仅一批")
+            eq(request.result.equipCount, #enemies, "装备数来自真实逐杀次数")
+            eq(modules.currency.weaponScroll, #enemies, "逐杀卷轴仅一批")
         end
         local function verifyBlocked(label)
             confirm()
@@ -143,6 +193,7 @@ function Start()
             eq(modules.currency.sweepTicket, 5, label .. "不扣券")
             eq(modules.currency.gold, 40, label .. "不发账户金币")
             eq(dirty, 0, label .. "不脏写")
+            eq(persists, 0, label .. "不持久化")
             for heroId, hero in pairs(modules.heroes.roster) do eq(hero.exp, 0, label .. "不误发hero" .. heroId) end
         end
         local cases = 0

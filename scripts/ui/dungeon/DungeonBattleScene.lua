@@ -21,12 +21,13 @@ local BattleLayout      = require("core.BattleLayout")
 local BattleCombat      = require("ui.battle.combat.BattleCombat")
 local BattleStats       = require("systems.BattleStats")
 local BattleDraw        = require("ui.battle.scene.BattleDraw")
-local DarkIcon          = require("core.DarkIcon")  -- [暗黑化] 地图压暗滤镜
+local DarkIcon          = require("core.DarkIcon")  -- 地图压暗滤镜
 local BattleEffects     = require("ui.battle.combat.BattleEffects")
 local SpineCardEffect  = require("ui.fx.SpineCardEffect")
 local ProjectileSystem  = require("ui.battle.combat.ProjectileSystem")
 local RCH              = require("systems.RelicConditionHandler")
 local ART              = require("systems.ArtifactRuntime")
+local BattleClock      = require("ui.battle.combat.BattleClock")
 
 local GameConfig = require("config.GameConfig")
 local StageConfig = require("config.StageConfig")
@@ -125,7 +126,7 @@ local RESULT_DELAY = 1.5
 -- 最大同屏敌人数
 local MAX_FIELD = BattleLayout.MAX_PER_SIDE
 
--- 通天塔补位等待常量（死亡滑出后空位等待，已删除墓碑图）
+-- 通天塔补位等待常量（死亡滑出后空位等待）
 local TOMBSTONE_REVIVE_TIME = 2.0
 local DEATH_ANIM_DURATION   = BattleCombat.DEATH_ANIM_DURATION or 0.40
 local REVIVE_ANIM_DURATION  = BattleCombat.REVIVE_ANIM_DURATION or 0.35
@@ -164,7 +165,6 @@ local imgMapBabelTower = -1  -- 通天塔地图
 local imgMapLegacy    = -1  -- 旧遗迹/木桩保留原 MAP_FB1
 local imgShadow       = -1
 local imgRetreatBtn   = -1
-local imgSpeedIcon    = -1
 local imgEnemyTag     = -1
 local imgAllyTags     = {}
 
@@ -194,7 +194,6 @@ local state = {
     confirmClosing = false,
     confirmOpenTime  = 0,
     confirmCloseTime = 0,
-    battleSpeed = 1.0,
 }
 
 -- 背景动效
@@ -233,83 +232,9 @@ local function easeInCubic(t)
     return t * t * t
 end
 
-local function getMainProgressStageId()
-    local battleData = PlayerStore.Get("battle")
-    return battleData and tonumber(battleData.maxStageId or battleData.currentStageId) or 0
-end
-
-local function getMaxUnlockedBattleSpeed()
-    local stageId = getMainProgressStageId()
-    if stageId <= 0 then return 1.0 end
-    local diff = StageConfig.getDifficulty(stageId)
-    if diff == StageConfig.DIFFICULTY_HELL or diff == StageConfig.DIFFICULTY_NIGHTMARE
-        or diff == StageConfig.DIFFICULTY_PURGATORY or diff == StageConfig.DIFFICULTY_TORMENT
-        or diff == StageConfig.DIFFICULTY_TORMENT2 or diff == StageConfig.DIFFICULTY_TORMENT3
-        or diff == StageConfig.DIFFICULTY_TORMENT4 or diff == StageConfig.DIFFICULTY_TORMENT5
-        or diff == StageConfig.DIFFICULTY_ANNIHILATION or diff == StageConfig.DIFFICULTY_ANNIHILATION2
-        or diff == StageConfig.DIFFICULTY_ANNIHILATION3 or diff == StageConfig.DIFFICULTY_ANNIHILATION4
-        or diff == StageConfig.DIFFICULTY_ANNIHILATION5 then
-        return 2.0
-    elseif diff == StageConfig.DIFFICULTY_HARD then
-        return 1.5
-    end
-    return 1.0
-end
-
-local function isSpeedButtonVisible()
-    return state.open and state.battleState == BATTLE_ACTIVE
-        and not state.confirmOpen and not state.confirmClosing
-        and getMaxUnlockedBattleSpeed() > 1.0
-        and not BattleResultPanel.isOpen()
-end
-
-local function getBattleLogicDt(dt)
-    local maxSpeed = getMaxUnlockedBattleSpeed()
-    if state.battleSpeed > maxSpeed then
-        state.battleSpeed = maxSpeed
-    end
-    if isSpeedButtonVisible() then
-        return dt * state.battleSpeed
-    end
-    return dt
-end
-
-local function getSpeedText()
-    if state.battleSpeed == 1.5 then
-        return "X1.5"
-    elseif state.battleSpeed >= 2.0 then
-        return "X2"
-    end
-    return "X1"
-end
-
-local function drawSpeedButton(vg)
-    if not isSpeedButtonVisible() then return end
-    local alpha = state.battleSpeed > 1.0 and 1.0 or 0.82
-    drawImageCentered(vg, imgSpeedIcon, 987, 311, 130, 143, alpha)
-    drawTextStroke(vg, 987, 305,
-        getSpeedText(), 52,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 6,
-        { strokeColor = { 0x36, 0x77, 0x78 } })
-end
-
+-- 兼容快捷键调用。
 function DungeonScene.cycleBattleSpeed()
-    if not isSpeedButtonVisible() then return false end
-    local maxSpeed = getMaxUnlockedBattleSpeed()
-    if state.battleSpeed < 1.5 and maxSpeed >= 1.5 then
-        state.battleSpeed = 1.5
-    elseif state.battleSpeed < 2.0 and maxSpeed >= 2.0 then
-        state.battleSpeed = 2.0
-    else
-        state.battleSpeed = 1.0
-    end
-    print("[DungeonBattleScene] 副本战斗倍速切换: " .. getSpeedText())
-    return true
-end
-
-local function handleSpeedButtonInput(dx, dy)
-    if math.abs(dx - 987) > 65 or math.abs(dy - 311) > 71.5 then return false end
-    return DungeonScene.cycleBattleSpeed()
+    return false
 end
 
 --- 九宫格绘制
@@ -516,7 +441,6 @@ function DungeonScene.init(vg)
     -- 阴影板绘制为 1080x556（源图 1080x610 压扁），使用 SHADOW 副本，调整原图不影响其他用法
     imgShadow        = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY_SHADOW.png", 0)
     imgRetreatBtn    = nvgCreateImage(vg, "image/按钮/UI_AN_HONG.png", 0)
-    imgSpeedIcon     = nvgCreateImage(vg, "image/通用图标/UI_ICON_kong.png", 0)
     imgEnemyTag      = nvgCreateImage(vg, "image/通用图标/ICON_ZY_XG.png", 0)
     for i = 1, 6 do
         imgAllyTags[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
@@ -555,10 +479,6 @@ function DungeonScene.open(opts)
         regenAccum = 0
         state.confirmOpen = false
         state.confirmClosing = false
-        state.battleSpeed = getMaxUnlockedBattleSpeed()
-        if opts.data and opts.data.trainingDummy then
-            state.battleSpeed = 1.0
-        end
 
         -- 通知 DungeonBattle 模块进入副本模式
         local data = opts.data or {}
@@ -688,7 +608,9 @@ function DungeonScene.open(opts)
     state.open = true
 end
 
-function DungeonScene.close()
+function DungeonScene.close(discardGrowth)
+    local ETS = require("systems.ExtraTalentSystem")
+    if discardGrowth then ETS.discard() else ETS.flush() end -- 已在DungeonScope内；清档不能提交。
     if DungeonBattle.isTrainingDummy() then DamageStatsPanel.close() end
     state.open = false
     MapAffixSystem.reset(state.allies)
@@ -709,9 +631,9 @@ end
 
 --- 强制关闭（不触发结算面板，不调用 onClose 回调）
 --- 由 TowerBattleScene 在波次结束时调用，用于关闭当前波次战斗
-function DungeonScene.forceClose()
-    if not state.open then return end
-    DungeonScene.close()
+function DungeonScene.forceClose(discardGrowth)
+    if not state.open and not discardGrowth then return end
+    DungeonScene.close(discardGrowth)
     state.battleState = BATTLE_ACTIVE
     state.resultTimer = 0
     state.resultPanelShown = false
@@ -830,11 +752,6 @@ function DungeonScene.draw(vg, width, height)
     drawTextStroke(vg, 1750, 110, DungeonBattle.isTrainingDummy() and "退出" or "撤退", 36,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
     BF.finish(vg, feedback)
-    if isSpeedButtonVisible() then
-        drawImageCentered(vg, imgSpeedIcon, 1500, 110, 100, 110, 1.0)
-        drawTextStroke(vg, 1500, 110, getSpeedText(), 38,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
-    end
     if DungeonBattle.isTrainingDummy() then
         drawTextStroke(vg, 170, 110, "统计", 36,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
@@ -858,7 +775,9 @@ function DungeonScene.draw(vg, width, height)
     end
 end
 
-function DungeonScene.update(dt)
+---@param dt number
+---@param battlePaused boolean|nil 侧栏暂停，确认/结算UI仍用真实dt
+function DungeonScene.update(dt, battlePaused)
     if not state.open then return end
 
     -- 确认弹窗关闭动画
@@ -870,22 +789,23 @@ function DungeonScene.update(dt)
         end
     end
 
-    -- 背景漂移
-    bgAnimTimer = bgAnimTimer + dt
+    local freezeActiveBattle = battlePaused == true and state.battleState == BATTLE_ACTIVE
+    if not freezeActiveBattle then
+        -- 背景漂移及战斗卡牌/弹字都冻结，不让恢复首帧跳过退场或浮字。
+        bgAnimTimer = bgAnimTimer + dt
 
-    -- 投射物与连击队列跟随战斗 logicDt；纯视觉用真实 dt（2 倍速时不叠加算力）
-    local logicDtForFx = (state.battleState == BATTLE_ACTIVE) and getBattleLogicDt(dt) or dt
-    if state.battleState == BATTLE_ACTIVE then
-        ProjectileSystem.update(logicDtForFx)
-        BattleCombat.updateComboQueue(logicDtForFx)
+        -- 投射物/连击携带伤害回调，不能作为暂停期间的纯视觉继续更新。
+        if state.battleState == BATTLE_ACTIVE then
+            ProjectileSystem.update(dt)
+            BattleCombat.updateComboQueue(dt)
+        end
+        BattleEffects.update(dt)
+        BattleCombat.updateCardAnims(dt)
+        BattleCombat.updateFloatingTexts(dt)
+        BattleCombat.updateHitFlashes(dt)
     end
 
-    BattleEffects.update(dt)
-    BattleCombat.updateCardAnims(dt)
-    BattleCombat.updateFloatingTexts(dt)
-    BattleCombat.updateHitFlashes(dt)
-
-    -- 结算面板更新
+    -- 结算面板更新（真实dt，不随侧栏暂停）
     BattleResultPanel.update(dt)
 
     -- 战斗结束后的结算延迟阶段
@@ -920,8 +840,10 @@ function DungeonScene.update(dt)
         return
     end
 
+    if freezeActiveBattle then return end
+
     -- ==== 以下为 BATTLE_ACTIVE 阶段逻辑 ====
-    local logicDt = getBattleLogicDt(dt)
+    local logicDt = dt
 
     -- DungeonBattle 计时（狂暴阶段检测，狂暴加成施加到怪物与己方单位）
     DungeonBattle.update(logicDt, state.enemies, state.allies)
@@ -989,7 +911,7 @@ function DungeonScene.update(dt)
     local isTowerMode = (DungeonBattle.getConfig().dungeonId == "babel_tower")
 
     if isTowerMode then
-        -- ════ 通天塔模式：死亡滑出后空位等待补位（已删除墓碑图） ══════
+        -- ════ 通天塔模式：死亡滑出后空位等待补位 ══════
         for i, unit in ipairs(state.enemies) do
             if unit.hp <= 0 then
                 -- 首次检测死亡：启动死亡动画
@@ -1140,7 +1062,7 @@ function DungeonScene.update(dt)
                 TM.removeUnit(unit)
                 SEM.removeUnit(unit)
                 unit._fallenPending = true
-                unit._fallenAt = time.elapsedTime
+                unit._fallenAt = BattleClock.now()
                 BattleCombat.setCardAnim(unit, {
                     state = "dying", timer = 0, lungeDir = 1,
                     knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0,
@@ -1150,7 +1072,7 @@ function DungeonScene.update(dt)
         end
     end
     -- [阵亡紧凑] 退场完成 → 移队尾 → 存活者前移一格（含卡住兜底）
-    require("ui.battle.scene.BattleAllyReset").compactFallen(state.allies, time.elapsedTime)
+    require("ui.battle.scene.BattleAllyReset").compactFallen(state.allies, BattleClock.now())
     allyAlive = BattleCombat.getAliveUnits(state.allies)
 
     if #allyAlive == 0 and #state.allies > 0 then
@@ -1235,12 +1157,13 @@ function DungeonScene.update(dt)
     -- ---- 状态效果（DOT/HOT） ----
     reportDefeatedEnemies()
     local okSem, semErr = pcall(SEM.update, logicDt, {
-        onDot = function(unit, source, dmg)
+        onDot = function(unit, source, dmg, isBurnCrit)
             local isUnitAlly = false
             for _, u in ipairs(state.allies) do
                 if u == unit then isUnitAlly = true; break end
             end
-            dealDamageToUnit(unit, dmg, isUnitAlly, "灼烧 ", {255, 120, 30}, source, { isDot = true })
+            dealDamageToUnit(unit, dmg, isUnitAlly, "灼烧 ", {255, 120, 30}, source,
+                { isDot = true, atkType = AD.ATK_FIRE, floatKind = "burn", isCrit = isBurnCrit })
         end,
         onHot = function(unit, source, heal)
             if unit.attrs and unit.hp > 0 then
@@ -1257,7 +1180,7 @@ function DungeonScene.update(dt)
                     for ii, u in ipairs(list) do
                         if u == unit then cx = getCardCX(list, ii); break end
                     end
-                    addFloatingText("恢复 +" .. tostring(actual), cx, cy, {0, 255, 82}, false)
+                    BattleCombat.addCombatNumber(unit, actual, cx, cy, { channel = "heal", atkType = AD.ATK_HOLY })
                 end
             end
         end,
@@ -1276,8 +1199,8 @@ function DungeonScene.update(dt)
             end
             return 0
         end,
-        dealDamage = function(target, damage, isTargetAlly, prefix, color, source)
-            return dealDamageToUnit(target, damage, isTargetAlly, prefix, color, source)
+        dealDamage = function(target, damage, isTargetAlly, prefix, color, source, meta)
+            return dealDamageToUnit(target, damage, isTargetAlly, prefix, color, source, meta)
         end,
         dealTalentDamage = function(attacker, target, damage, isTargetAlly, prefix, color, projOpts)
             return BattleCombat.dealTalentDamage(attacker, target, damage, isTargetAlly, prefix, color, projOpts, state.allies, state.enemies)
@@ -1373,10 +1296,6 @@ function DungeonScene.handleInput(dx, dy, width, height)
     if DungeonBattle.isTrainingDummy() and hitTest(dx, dy, 170, 110, 150, 90) then
         DamageStatsPanel.open(100 + (DungeonBattle.getConfig().teamIdx or 1))
         return true
-    end
-
-    if isSpeedButtonVisible() and hitTest(dx, dy, 1500, 110, 100, 110) then
-        return DungeonScene.cycleBattleSpeed()
     end
 
     -- 撤退按钮

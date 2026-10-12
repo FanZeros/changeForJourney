@@ -35,6 +35,7 @@ local dict = {
 }
 
 local additions = {
+    { "%s 解锁", "%s 解鎖", "Unlock at %s", "%sで解放", "%s 해금" },
     { "资源副本", "資源副本", "Resource Dungeons", "資源ダンジョン", "자원 던전" },
     { "独立通天塔 · 三军攻坚", "獨立通天塔 · 三軍攻堅", "Independent Tower · Three Teams", "独立した通天塔 · 3チームで挑戦", "독립 통천탑 · 3개 팀 도전" },
     { "扫荡最高已通层", "掃蕩最高已通層", "Sweep highest cleared floor", "最高クリア階を一掃", "최고 클리어 층 소탕" },

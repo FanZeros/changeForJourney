@@ -44,7 +44,7 @@ function Start()
 
         -- 每个用例有新 Dispatcher/MessageHandler/Scene/Restore/Boot/Page/Driver实例，
         -- 不修改引擎 require 单例，不运行 Standalone 全入口/Save 以免读取玩家存档。
-        local function newProcess(data)
+        local function newProcess(data, fullEnemyWave)
             local ctx = { firstCalls = 0, restoreCalls = 0, syncCalls = 0, flushes = 0,
                 confirmations = {}, popups = {}, drivers = {}, wallet = {} } ---@type any
             local deps = {} ---@type table<string, any>
@@ -72,6 +72,10 @@ function Start()
             ctx.dispatcher = deps["runtime.ClientDispatcher"]
             deps["boot.StandaloneSave"] = { Flush = function() ctx.flushes = ctx.flushes + 1; return true end }
             deps["core.PlayerStore"] = stub({ Get = function(name) return ctx.dispatcher.get(name) end })
+            -- 只替换PDM查表出口，不初始化或读写真实玩家档。
+            deps["rules.character.PlayerDataManager"] = { GetModule = function(_, name)
+                return ctx.dispatcher.get(name)
+            end }
             deps["shared.StageProvider"] = { Get = function() return SC end }
             deps["systems.OfflineCalc"] = {
                 resolveIdleStageAnchors = function(snapshot) return snapshot.maxStageId, snapshot.maxStageId end,
@@ -114,6 +118,10 @@ function Start()
                 assignEnemiesToField = function(list) return list, {} end,
                 getFirstClearBonusMonsterIds = function() return nil end,
             }
+            -- 金币专项保留真实总怪数、场上分配和后备补位，只替换怪物数值。
+            if fullEnemyWave then
+                deps["ui.battle.stage.BattleEnemySpawn"] = compile("ui.battle.stage.BattleEnemySpawn")
+            end
             deps["ui.character.panel.CharacterPanel"] = stub({
                 getTeamSignature = function(team) return "syntheticTeam" .. team end,
                 getDeployedTeam = function(team) return { { hp = 100, maxHp = 100, heroId = team, atkProgress = 0 } } end,
@@ -136,6 +144,8 @@ function Start()
             deps["ui.battle.scene.BattleDataRestore"] = compile("ui.battle.scene.BattleDataRestore")
             deps["ui.battle.stage.BattleStageNavLogic"] = compile("ui.battle.stage.BattleStageNavLogic")
             deps["ui.battle.stage.BattleStageLoad"] = compile("ui.battle.stage.BattleStageLoad")
+            deps["ui.battle.tri.BattleTriStageProgress"] = compile("ui.battle.tri.BattleTriStageProgress")
+            deps["ui.battle.tri.TerminalSceneFlow"] = compile("ui.battle.tri.TerminalSceneFlow")
             deps["ui.battle.scene.BattleScene"] = compile("ui.battle.scene.BattleScene")
             ctx.scene = deps["ui.battle.scene.BattleScene"]
             local realRestore = ctx.scene.setBattleData
@@ -164,7 +174,11 @@ function Start()
             ctx.page = deps["ui.battle.tri.BattleTriPage"]
             -- 使用真实采集器；只替换落盘出口，不以手抄快照掩盖永久账本回归。
             deps["boot.StandaloneSave"] = compile("boot.StandaloneSave")
-            deps["boot.StandaloneSave"].Flush = function() ctx.flushes = ctx.flushes + 1; return true end
+            deps["boot.StandaloneSave"].Flush = function()
+                ctx.flushes = ctx.flushes + 1
+                ctx.lastSavedGold = ctx.wallet.gold
+                return true
+            end
             deps["boot.StandaloneSave"].SetBattlePage(ctx.page)
             -- 先提供真实 Page 再让 Boot 接线，首通与击杀/掉落出口均使用现有接口。
             deps["boot.StandaloneBoot"] = compile("boot.StandaloneBoot")
@@ -177,6 +191,7 @@ function Start()
             ctx.page.open()
             env.BattleScene, env.ClientDispatcher, env.cjson = ctx.scene, ctx.dispatcher, cjson
             env.StandaloneSave, env.StageConfig, env.bootReady_ = deps["boot.StandaloneSave"], SC, true
+            env.StandaloneRT, env.BattleTriPage = {}, ctx.page
             local sync = assert(load(syncSource .. "\nreturn SyncBattleState", "@正式B01/SyncBattleState", "t", env))()
             local publish = ctx.dispatcher.publishLive
             ctx.dispatcher.publishLive = function(name, snapshot)
@@ -185,6 +200,29 @@ function Start()
             end
             ctx.sync = sync
             ctx.battle = function() return ctx.dispatcher.get("battle") end
+            ctx.enqueueEquipment = function()
+                local sequence = {}
+                deps["systems.DropSystem"].rollKillDrop = function() sequence[#sequence + 1] = "kill"; return 1 end
+                deps["systems.DropSystem"].generateFirstClearEquips = function()
+                    sequence[#sequence + 1] = "first"
+                    return { { templateId = "W1", quality = 1, level = 1 } }
+                end
+                deps["systems.EquipmentSystem"].generateRandom = function()
+                    sequence[#sequence + 1] = "pending"
+                    return { templateId = "O1", quality = 1, level = 1 }
+                end
+                deps["systems.LootBoxSystem"].deliverEquipment = function(_, _, item)
+                    sequence[#sequence + 1] = "deliver:" .. item.templateId
+                    return "inventory"
+                end
+                -- 经真实 Driver 注入回调进入首通暂存，不手抄暂存奖励逻辑。
+                local driver = assert(ctx.drivers[1])
+                driver.onDrop({ stageId = 34505, teamIdx = 1, dropOnly = true, dropLuck = 0 })
+                local notifications = {}
+                ctx.dispatcher.subscribe("equipment", function() notifications.equipment = (notifications.equipment or 0) + 1 end)
+                ctx.dispatcher.subscribe("lootbox", function() notifications.lootbox = (notifications.lootbox or 0) + 1 end)
+                return sequence, notifications
+            end
             ctx.win = function(team, id)
                 local driver = assert(ctx.drivers[team], "队伍未解锁")
                 driver:start(id)
@@ -218,7 +256,9 @@ function Start()
             local label = "34505首通队" .. firstTeam
             local ctx = newProcess(seeded(34505, 34505))
             eq(SC.getNextStageId(34505), nil, label .. " 正式配置没有后继")
+            local beforeFirstFlush = ctx.flushes
             ctx.win(firstTeam, 34505)
+            eq(ctx.flushes - beforeFirstFlush, 1, label .. " 账本和奖励只同步提交一次")
             eq(ctx.firstCalls, 1, label .. " 首次回调1")
             eq(ctx.wallet.gold, SC.getStage(34505).fcGold, label .. " 首次金币86300")
             dualMark(ctx, 34505, label .. " 首胜")
@@ -227,7 +267,9 @@ function Start()
             check(ctx.syncCalls > 0 and ctx.restoreCalls == restoreBefore, label .. " 真Sync/publishLive已执行且不回灌活战斗")
             dualMark(ctx, 34505, label .. " 六秒同步后")
             local gold, exp, gems, calls = ctx.wallet.gold, ctx.wallet.exp, ctx.wallet.gems, ctx.firstCalls
+            local beforeRepeatFlush = ctx.flushes
             ctx.win(firstTeam, 34505)
+            eq(ctx.flushes, beforeRepeatFlush, label .. " 重复挂机通关不即时全量写盘")
             print(PREFIX .. "EVIDENCE " .. label .. " gold=" .. gold .. "->" .. ctx.wallet.gold
                 .. " exp=" .. exp .. "->" .. ctx.wallet.exp .. " gems=" .. gems .. "->" .. ctx.wallet.gems)
             eq(ctx.firstCalls, calls, label .. " 再胜回调增量0")
@@ -242,6 +284,27 @@ function Start()
             eq(ctx.battle().sentinel.value, "保留非进度字段", label .. " 嵌套非进度字段未丢")
             ctx.page.close()
         end
+
+        local rewards = newProcess(seeded(34505, 34505))
+        local sequence, notifications = rewards.enqueueEquipment()
+        rewards.win(1, 34505)
+        eq(table.concat(sequence, ","), "kill,first,deliver:W1,pending,deliver:O1",
+            "固定与暂存装备生成投递顺序保持")
+        eq(notifications.equipment, 1, "同次首通两个装备来源只刷新装备一次")
+        eq(notifications.lootbox, 1, "同次首通两个装备来源只刷新遗匣一次")
+        local equipmentRewards = {}
+        for _, item in ipairs(rewards.popups[#rewards.popups].rewards) do
+            if item.type == "equip" then equipmentRewards[#equipmentRewards + 1] = item.templateId end
+        end
+        eq(table.concat(equipmentRewards, ","), "W1,O1", "奖励显示顺序和完整装备来源保持")
+        rewards.page.close()
+
+        local single = newProcess(seeded(34505, 34505))
+        local beforeSingleFlush = single.flushes
+        single.scene.onFirstClear(34505)
+        eq(single.flushes - beforeSingleFlush, 1, "默认单队首通保留一次即时提交")
+        eq(single.lastSavedGold, SC.getStage(34505).fcGold, "默认单队在奖励到账之后提交")
+        single.page.close()
 
         -- JSON模拟进程重启，不能只复用旧Scene账本或引用复制。
         local first = newProcess(seeded(34505, 34505))
@@ -334,7 +397,18 @@ function Start()
         eq(ctx.drivers[1]:getAdvanceStageId(), 999, "2305推进目标仍是待确认终焉")
         ctx.drivers[1]:advanceStage()
         eq(ctx.drivers[1].stageId, 2305, "2305驱动仍停末关")
-        eq(ctx.drivers[1].active, false, "2305驱动等玩家确认")
+        -- 未确认终焉时不能停摆：队伍必须继续在原关战斗，只弹出一次确认。
+        check(ctx.drivers[1].active, "2305未确认终焉仍继续战斗")
+        check(ctx.drivers[1].marchTimer == 0, "2305未确认终焉不残留行军")
+        check(not ctx.drivers[1].marchNotice, "2305未确认终焉不显示前进提示")
+        check(#ctx.drivers[1].enemies + #ctx.drivers[1].enemyQueue > 0, "2305未确认终焉重新出怪")
+        local confirmCount = #ctx.confirmations
+        ctx.drivers[1]:start(2305)
+        eq(#ctx.confirmations, confirmCount, "2305同关重开不重复弹确认")
+        ctx.drivers[1].introTimer = 0
+        for _, enemy in ipairs(ctx.drivers[1].enemies) do enemy.hp = 0 end
+        for _, enemy in ipairs(ctx.drivers[1].enemyQueue) do enemy.hp = 0 end
+        ctx.drivers[1]:tick(1.1)
         eq(ctx.confirmations[1], 999, "2305真实Scene.nextStage弹999确认")
         eq(ctx.scene.getStageId(), 2305, "未确认不进入999或轮回")
         ctx.page.close()
@@ -353,6 +427,60 @@ function Start()
         eq(ctx.battle().battleMode, "idle", "已通旧关重开保持挂机模式")
         eq(ctx.firstCalls, 0, "旧关启动与同步不补发历史首通")
         ctx.page.close()
+
+        -- 资源选关必须清完整波后进入下一层；重打已通层也前进，失败退层不丢首通。
+        local DC = nativeRequire("config.DungeonConfig")
+        for team = 1, 3 do
+            local resource = newProcess(seeded(1001, 4905), true)
+            local dungeon = {}
+            for _, dungeonId in ipairs(DC.RESOURCE_IDS) do
+                dungeon[dungeonId] = { floor = 1, cleared = {} }
+            end
+            resource.dispatcher.set("dungeon", dungeon)
+            local firstId = DC.getStageId("gold_mine", 1)
+            -- 资源关按章节锚点推进，不能写死层号；以正式关卡链为准。
+            local nextId = SC.getNextStageId(firstId)
+            for attempt = 1, 2 do
+                local label = "金币首层队" .. team .. (attempt == 1 and "首通" or "重打")
+                check(resource.page.gotoTeamStage(team, firstId), label .. "真实选关")
+                local driver = resource.drivers[team]
+                driver.introTimer = 0
+                eq(#driver.enemies + #driver.enemyQueue, SC.getStage(firstId).idleCount, label .. "真实整波怪数")
+                check(#driver.enemyQueue > 0, label .. "存在后备怪物")
+                for _, enemy in ipairs(driver.enemies) do enemy.hp = 0 end
+                resource.page.update(1.1)
+                check(not driver._clearReported and driver.marchTimer == 0, label .. "场上怪物倒下不是整波胜利")
+                local ticks = 0
+                while not driver._clearReported and ticks < 400 do
+                    for _, enemy in ipairs(driver.enemies) do enemy.hp = 0 end
+                    resource.page.update(0.1)
+                    ticks = ticks + 1
+                end
+                check(driver._clearReported and driver.marchTimer > 0, label .. "整波胜利进入行军")
+                eq(#driver.enemies + #driver.enemyQueue, 0, label .. "整波已清空")
+                eq(driver.stageId, firstId, label .. "行军结束前仍显示首层")
+                local sub = resource.dispatcher.get("dungeon").gold_mine
+                check(sub.cleared[1] == true or sub.cleared["1"] == true, label .. "独立已通账本")
+                check(DC.isStageUnlocked(nextId, resource.battle(), resource.dispatcher.get("dungeon")),
+                    label .. "下一章节锚点已解锁")
+                resource.sync(1.1)
+                resource.page.update(driver.marchTimer - 0.1)
+                eq(driver.stageId, firstId, label .. "未满两秒不提前换层")
+                resource.page.update(0.2)
+                eq(driver.stageId, nextId, label .. "自动进入下一章节锚点")
+                eq(resource.battle().teamStageIds[tostring(team)], nextId, label .. "队伍位置同步")
+                eq(resource.scene.getMaxStageId(), 4905, label .. "不改变主线最高关")
+                eq(resource.firstCalls, 0, label .. "不触发主线首通奖励")
+            end
+            local driver = resource.drivers[team]
+            driver.introTimer = 0
+            for _, ally in ipairs(driver.allies) do ally.hp = 0 end
+            resource.page.update(0.1)
+            eq(driver.stageId, firstId, "金币第二层全灭会退回首层队" .. team)
+            check(DC.isStageUnlocked(nextId, resource.battle(), resource.dispatcher.get("dungeon")),
+                "退回首层仍保留下一层解锁队" .. team)
+            resource.page.close()
+        end
 
         -- 显式清档沿真实Dispatcher.reset + Scene.resetToDefault，Sync旧键缓存不是事实来源。
         ctx = newProcess(seeded(34505, 34505))

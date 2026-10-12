@@ -56,7 +56,8 @@ function Start()
     for key, value in pairs(mods["boot.StandaloneRT"]) do RT[key] = value end
     require = function(name)
         if name == "core.Viewport" or name == "boot.StandaloneHorizonInput" or name == "boot.SeamBackGesture"
-            or name == "boot.OfflineRewardOverlay" then return originalRequire(name) end
+            or name == "boot.OfflineRewardOverlay" or name == "boot.DecomposeMarqueeGesture"
+            or name == "boot.StandaloneHorizonWheel" then return originalRequire(name) end
         if name == "boot.StandaloneRT" then return RT end
         if not mods[name] then mods[name] = mock() end
         return mods[name]

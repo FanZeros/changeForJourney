@@ -39,12 +39,34 @@ function Start()
         local Driver = require("ui.battle.tri.BattleTriDriver")
         local Casualty = require("ui.battle.combat.BattleCasualty")
         local DungeonScene = require("ui.dungeon.DungeonBattleScene")
+        local DungeonScope = require("ui.dungeon.DungeonBattleScope")
+        local DC = require("config.DungeonConfig")
+        local Layout = require("core.BattleLayout")
         local DB = require("ui.dungeon.DungeonBattle")
         local Tower = require("ui.tower.TowerTriBattle")
         local CP = require("ui.character.panel.CharacterPanel")
         local GameAction = require("runtime.GameAction")
         local Dispatcher = require("runtime.ClientDispatcher")
         local BattleScene = require("ui.battle.scene.BattleScene")
+        local PS = require("ui.battle.combat.ProjectileSystem")
+        local TM = require("systems.ThreatManager")
+        local FX = require("ui.battle.combat.BattleEffects")
+        local RCH = require("systems.RelicConditionHandler")
+        local Stats = require("systems.BattleStats")
+        local Layout = require("core.BattleLayout")
+        local mounts = { BC, TAL, ETS, SEM, PS, TM, FX, RCH }
+        local testExtraStates = {}
+        local originalMounts = {}
+        for i, module in ipairs(mounts) do originalMounts[i] = module.mountedState() end
+        local originalUnits, originalTeam, originalLayout = TAL.mountedUnitStates(), Stats.mountedTeam(), Layout.MODE
+        restores[#restores + 1] = function()
+            for i, module in ipairs(mounts) do module.mount(originalMounts[i]) end
+            TAL.mountUnitStates(originalUnits)
+            Stats.mount(originalTeam)
+            Layout.setMode(originalLayout)
+            check(ETS.mountedState() == originalMounts[3] and TAL.mountedUnitStates() == originalUnits,
+                "测试结束还原原 ETS 账本与 TAL 单位状态，不消费宿主待结算成长")
+        end
         local own = {}
         local actions = {}
         local oldGet = Dispatcher.get
@@ -57,6 +79,16 @@ function Start()
             local owned = own[tonumber(id)]
             if owned then owned.extraTalent = ETS.normalize(extra) end
         end)
+        patch(CP, "finishExtraTalentBatch", function() end)
+        local oldNewExtraState = ETS.newState
+        patch(ETS, "newState", function()
+            local state = oldNewExtraState()
+            testExtraStates[#testExtraStates + 1] = state
+            return state
+        end)
+        restores[#restores + 1] = function()
+            for _, state in ipairs(testExtraStates) do ETS.mount(state); ETS.discard() end
+        end
         patch(GameAction, "sendAction", function(action, data)
             actions[#actions + 1] = { action = action, data = data }
         end)
@@ -73,16 +105,37 @@ function Start()
         end)
 
         local function clear()
-            TAL.reset()
-            TAL.mount(nil)
-            SEM.mount(nil)
-            SEM.reset()
-            BC.mount(nil)
-            BC.reset()
+            -- 换夹具前丢弃所有测试战线剩余账本；先挂载新状态，绝不 reset/flush 原宿主状态。
+            for _, state in ipairs(testExtraStates) do ETS.mount(state); ETS.discard() end
+            TAL.mount(TAL.newBattleRefs())
+            TAL.mountUnitStates(TAL.newUnitStates())
+            ETS.mount(ETS.newState())
+            SEM.mount(SEM.newSemState())
+            BC.mount(BC.newState("enemy-death-test"))
+            PS.mount(PS.newState())
+            TM.mount(TM.newState())
+            FX.mount(FX.newFxState())
+            RCH.mount(RCH.newState())
             own = {}
             events = {}
             frozenAtDeath = {}
             actions = {}
+        end
+
+        local function pendingGrowth(id, key, expected, message, state)
+            local pending = (state or ETS.mountedState()).pendingGrowth[id] or {}
+            check(own[id].extraTalent[key] == 0 and (pending[key] or 0) == expected,
+                message .. "（战中 owned 不变，仅 pendingGrowth 入账）")
+        end
+
+        local function flushGrowth(id, key, expected, message)
+            ETS.flush()
+            check(own[id].extraTalent[key] == expected and next(ETS.mountedState().pendingGrowth) == nil,
+                message .. "（flush 后拥有数据与预期一致，账本已消费）")
+            local sent = #actions
+            ETS.flush()
+            check(own[id].extraTalent[key] == expected and #actions == sent,
+                message .. "（重复 flush 不重复成长/持久化）")
         end
 
         local function hero(id, first, second)
@@ -121,12 +174,15 @@ function Start()
             clear()
             local dog, e1, e2 = hero(1, true), enemy(), enemy()
             local drv = driver({ dog }, { e1, e2 })
+            local oldHp, oldMaxHp = dog.hp, dog.maxHp
             kill(e1, dog)
             kill(e2, dog)
             drv:reportDefeatedEnemies()
             drv:reportDefeatedEnemies()
             check(events[e1] == 1 and events[e2] == 1, "同帧双死、两次真实扫描，每只事件一次")
-            check(own[1].extraTalent.stacks == 2, "生产大狗 ETS 击杀成长准确两层")
+            pendingGrowth(1, "stacks", 2, "生产大狗 ETS 击杀成长准确两层")
+            check(dog.hp == oldHp and dog.maxHp == oldMaxHp
+                and dog.attrs.final[AD.MAX_HP] == oldMaxHp, "本场连续击杀不提前刷新永久成长战斗属性")
             check(drv.kills == 2 and #drv.pendingKills == 2, "三行奖励账本独立，每只奖励一次")
             check(e1._killedBy == dog, "死亡后击杀来源保留到事件/奖励消费")
             e1.attrs:fillHp()
@@ -135,8 +191,12 @@ function Start()
             check(e1._talEnemyDeathReported == nil and e1._killedBy == nil, "复活存活扫描恢复标记并清旧归因")
             kill(e1, dog)
             drv:reportDefeatedEnemies()
-            check(events[e1] == 2 and own[1].extraTalent.stacks == 3, "同一敌人复活再死重新分发成长")
+            check(events[e1] == 2, "同一敌人复活再死重新分发成长事件")
+            pendingGrowth(1, "stacks", 3, "同一敌人复活再死重新分发成长")
             check(drv.kills == 3 and #drv.pendingKills == 3, "复活后的奖励不被永久锁死")
+            flushGrowth(1, "stacks", 3, "三次真实击杀战后结算")
+            check(dog.hp == oldHp + 3 and dog.maxHp == oldMaxHp + 3,
+                "战后 flush 才更新大狗永久生命与上限")
         end)
 
         case("延迟补位前冻结事件", function()
@@ -183,6 +243,7 @@ function Start()
             TAL.onBattleStart({ dog }, { e })
             kill(e, dog)
             TAL.onEnemyDeath(e, { dog }, { e }) -- 命中端已经即时分发
+            pendingGrowth(1, "stacks", 1, "旧单场即时死亡仅记录一次待结算成长")
             local rewards, victories = 0, 0
             local ctx = {
                 allies = { dog }, enemies = { e }, enemyQueue = {},
@@ -200,6 +261,7 @@ function Start()
             local consumed = Casualty.process(ctx, 0.01)
             Casualty.process(ctx, 0.01)
             check(consumed and events[e] == 1 and own[1].extraTalent.stacks == 1, "旧单场消费已有死亡事件不重复成长")
+            flushGrowth(1, "stacks", 1, "旧单场结算已 flush 的成长保持幂等")
             check(rewards == 1 and victories == 1 and ctx.clearedStages[101] == true, "旧单场奖励及首通记账未破坏")
         end)
 
@@ -209,8 +271,108 @@ function Start()
             local drv = driver({ dog }, { e })
             BC.dealDamageToUnit(e, e.maxHp * 100, false, "", nil, dog)
             drv:tick(0)
-            check(events[e] == 1 and own[1].extraTalent.stacks == 1 and e._killedBy == dog,
-                "生产大狗经真实 drv mounted 伤害/tick 击杀成长一次")
+            check(events[e] == 1 and e._killedBy == dog,
+                "生产大狗经真实 drv mounted 伤害/tick 击杀归因一次")
+            pendingGrowth(1, "stacks", 1, "生产大狗经真实 drv mounted 伤害/tick 击杀成长一次")
+            flushGrowth(1, "stacks", 1, "真实驱动伤害成长战后结算")
+        end)
+
+        case("蓝鱼任意击杀永久魔攻与重复死亡", function()
+            clear()
+            local fish, e1, e2 = hero(17, true), enemy(), enemy()
+            local baseMag = fish.attrs:get(AD.MAG_ATK)
+            local drv = driver({ fish }, { e1, e2 })
+            -- 非潮湿/非暴击目标，经真实伤害立即分发，宿主扫描只能消费同一生命一次。
+            BC.dealDamageToUnit(e1, e1.maxHp * 100, false, "", nil, fish)
+            drv:reportDefeatedEnemies()
+            drv:reportDefeatedEnemies()
+            check(events[e1] == 1 and own[17].extraTalent.stacks == 1
+                and math.abs(fish.attrs:get(AD.MAG_ATK) - baseMag - 0.2) < 1e-8,
+                "蓝鱼普通击杀经真实伤害/扫描只加1层，永久魔攻+0.2")
+            SEM.apply(e2, SEM.VULNERABLE, 3, fish, { fromFatFish = true, mult = 0.30 })
+            BC.dealDamageToUnit(e2, e2.maxHp * 100, false, "", nil, fish, { isDot = true })
+            drv:reportDefeatedEnemies()
+            check(events[e2] == 1 and own[17].extraTalent.stacks == 2
+                and math.abs(fish.attrs:get(AD.MAG_ATK) - baseMag - 0.4) < 1e-8,
+                "蓝鱼潮湿/DOT击杀同样加1，二次累计永久魔攻+0.4")
+            e1.attrs:fillHp(); BC.syncUnitHp(e1)
+            drv:reportDefeatedEnemies()
+            BC.dealDamageToUnit(e1, e1.maxHp * 100, false, "", nil, fish)
+            drv:reportDefeatedEnemies()
+            check(events[e1] == 2 and own[17].extraTalent.stacks == 3
+                and math.abs(fish.attrs:get(AD.MAG_ATK) - baseMag - 0.6) < 1e-8,
+                "蓝鱼复活敌人再死重新成长，扫描不重复，累计+0.6")
+            local rebuilt = assert(HC.createHero(17, 1, nil, own[17].awakening, own[17].extraTalent))
+            check(math.abs(rebuilt.attrs:get(AD.MAG_ATK) - fish.attrs:get(AD.MAG_ATK)) < 1e-8,
+                "蓝鱼既有stacks重建得到同一永久魔攻，无新增档字段")
+        end)
+
+        case("蓝鱼未觉醒与敌方禁用", function()
+            clear()
+            local fish, target = hero(17), enemy()
+            local baseMag = fish.attrs:get(AD.MAG_ATK)
+            local drv = driver({ fish }, { target })
+            BC.dealDamageToUnit(target, target.maxHp * 100, false, "", nil, fish)
+            drv:reportDefeatedEnemies()
+            check(events[target] == 1 and own[17].extraTalent.stacks == 0
+                and fish.attrs:get(AD.MAG_ATK) == baseMag,
+                "蓝鱼未觉醒仍分发真实死亡，但不成长/加魔攻")
+            clear()
+            local enemyFish = assert(HC.createHero(17, 1, nil,
+                { [1] = true, _awk3Migrated = true }, false))
+            local ally = hero(1, true)
+            local enemyDrv = driver({ ally }, { enemyFish })
+            own[17] = { awakening = { [1] = true, _awk3Migrated = true }, extraTalent = ETS.normalize(nil) }
+            BC.dealDamageToUnit(ally, ally.maxHp * 100, true, "", nil, enemyFish)
+            enemyDrv:reportDefeatedEnemies()
+            check(enemyFish._etsDisabled == true and own[17].extraTalent.stacks == 0,
+                "敌方蓝鱼extraTalent=false真实击杀不写本地成长")
+            local fakeTarget = enemy()
+            kill(fakeTarget, enemyFish)
+            TAL.onEnemyDeath(fakeTarget, { enemyFish }, { fakeTarget })
+            check(events[fakeTarget] == 1 and own[17].extraTalent.stacks == 0,
+                "敌方禁用标记即使走敌死钩也不叠层")
+        end)
+
+        case("蓝鱼潮湿溅射阶段与致死时序", function()
+            for stage = 0, 3 do
+                clear()
+                local fish, target, splash = hero(17, stage >= 1, stage >= 2), enemy(), enemy()
+                if stage >= 3 then
+                    fish.awakeningNodes[3], own[17].awakening[3] = true, true
+                end
+                local drv = driver({ fish }, { target, splash })
+                local baseMag = fish.attrs:get(AD.MAG_ATK)
+                local observedBase, wetBeforeDamage, insideEvents = 0, false, -1
+                TAL.onAfterAttack(fish, target, { category = "magical", totalDamage = 1 }, true,
+                    { target, splash }, function(tgt, dmg)
+                        observedBase = dmg
+                        wetBeforeDamage = SEM.has(target, SEM.VULNERABLE) and not SEM.has(tgt, SEM.VULNERABLE)
+                    end, { fish })
+                local wet = SEM.get(target, SEM.VULNERABLE)
+                local splashWet = SEM.get(splash, SEM.VULNERABLE)
+                check(wet and splashWet and wetBeforeDamage and wet.data.fromFatFish
+                    and math.abs(wet.remaining - (stage >= 1 and 3 or 2)) < 1e-8
+                    and wet.data.mult == (stage >= 1 and 0.30 or 0.20)
+                    and wet.data.atkSpeedDebuff == (stage >= 2 and 10 or nil)
+                    and wet.data.critVuln == (stage >= 3 and 10 or nil),
+                    "蓝鱼阶段" .. stage .. "主目标先潮湿/溅射后潮湿，持续增伤减速易暴击原样")
+                check(observedBase > 0, "蓝鱼阶段" .. stage .. "仍执行真实溅射计算")
+                -- 同一敌人只剩1HP，真实额伤会致死；成长只在本轮后攻击结束分发。
+                splash.attrs.final[AD.HP], splash.hp = 1, 1
+                TAL.onAfterAttack(fish, target, { category = "magical", totalDamage = 1 }, true,
+                    { target, splash }, function(tgt, dmg, isAlly, prefix, color, opts)
+                        BC.dealTalentDamage(fish, tgt, dmg, isAlly, prefix, color, opts)
+                        insideEvents = events[tgt] or 0
+                    end, { fish })
+                check(insideEvents == 0 and splash.hp <= 0 and events[splash] == 1
+                    and own[17].extraTalent.stacks == (stage >= 1 and 1 or 0),
+                    "蓝鱼阶段" .. stage .. "同步溅射死亡仍在整轮后攻击末尾消费，已觉醒才成长")
+                check(math.abs(fish.attrs:get(AD.MAG_ATK) - baseMag - (stage >= 1 and 0.2 or 0)) < 1e-8,
+                    "蓝鱼阶段" .. stage .. "魔攻增长不回插改本次溅射")
+                drv:reportDefeatedEnemies()
+                check(events[splash] == 1, "蓝鱼阶段" .. stage .. "溅射后死亡扫描仍幂等")
+            end
         end)
 
         case("真实额伤/DOT与连击", function()
@@ -311,11 +473,13 @@ function Start()
                 end, { nitro })
             math.random = oldRandom
             check(procOk, "首次氮气执行无异常：" .. tostring(procErr))
-            check(nitroTarget.hp <= 0 and own[21].extraTalent.nitroKills == 1,
-                "首次同步氮气致死条件已前置，成长不漏记")
+            check(nitroTarget.hp <= 0 and nitroTarget._killedBy == nitro,
+                "首次同步氮气致死条件已前置，真实击杀归因保留")
+            pendingGrowth(21, "nitroKills", 1, "首次同步氮气致死条件已前置，成长不漏记")
             nitroDriver:reportDefeatedEnemies()
-            check(own[21].extraTalent.nitroKills == 1 and events[nitroTarget] == 1,
-                "氮气即时分发与宿主扫描去重")
+            check(events[nitroTarget] == 1, "氮气即时分发与宿主扫描去重")
+            pendingGrowth(21, "nitroKills", 1, "氮气宿主扫描不重复待结算成长")
+            flushGrowth(21, "nitroKills", 1, "氮气首次触发成长战后结算")
         end)
 
         case("后攻击死亡队列异常与战线隔离", function()
@@ -333,10 +497,11 @@ function Start()
             local refs = TAL.mountedState()
             check(not okHook and refs.deathHookDepth == 0 and #refs.pendingDeaths == 0,
                 "后攻击异常仍恢复深度并清空死亡队列，保留失败反馈")
-            check(events[target] == 1 and own[1].extraTalent.stacks == 1,
-                "异常前已发生的真实死亡仍只消费一次")
+            check(events[target] == 1, "异常前已发生的真实死亡仍只消费一次")
+            pendingGrowth(1, "stacks", 1, "异常前真实死亡成长仍只消费一次")
             drv:reportDefeatedEnemies()
             check(events[target] == 1, "异常后的宿主扫描不重复死亡")
+            flushGrowth(1, "stacks", 1, "后攻击异常已触发成长战后结算")
 
             clear()
             local dogA, targetA = hero(1, true), enemy()
@@ -356,6 +521,15 @@ function Start()
                 end, { dogA })
             check(events[targetA] == 1 and events[targetB] == 1,
                 "嵌套切换挂载战线，各线死亡队列分别消费")
+            check(targetA._killedBy == dogA and targetB._killedBy == dogB,
+                "嵌套战线不串击杀来源")
+            pendingGrowth(1, "stacks", 1, "嵌套战线A不串待结算成长", laneA.etsState)
+            pendingGrowth(3, "stacks", 1, "嵌套战线B不串待结算成长", laneB.etsState)
+            laneB:activate()
+            flushGrowth(3, "stacks", 1, "战线B独立 flush")
+            check(own[1].extraTalent.stacks == 0, "flush B 不提前消费 A 待结算成长")
+            laneA:activate()
+            flushGrowth(1, "stacks", 1, "战线A独立 flush")
             check(own[1].extraTalent.stacks == 1 and own[3].extraTalent.stacks == 1,
                 "嵌套战线不串击杀来源和成长")
         end)
@@ -376,22 +550,51 @@ function Start()
                 { marked, nextEnemy }, function(tgt, dmg, isAlly, prefix, color, opts)
                     BC.dealTalentDamage(ayane, tgt, dmg, isAlly, prefix, color, opts)
                 end, { ayane })
-            check(marked.hp <= 0 and own[8].extraTalent.stacks == 2,
-                "小雀同步斩杀死亡消费前仍有原标记，专属击杀成长加2")
+            check(marked.hp <= 0, "小雀同步斩杀真实致死")
+            pendingGrowth(8, "stacks", 2, "小雀同步斩杀死亡消费前仍有原标记，专属击杀成长加2")
             check(own[8].extraTalent.markTypes[tostring(AD.ATK_SLASH)] == true,
                 "小雀斩杀记录死亡目标攻击类型")
             check(SEM.has(nextEnemy, SEM.MARKED) and not SEM.has(marked, SEM.MARKED),
                 "击杀成长读取后再转标，只留下一个活敌标记")
             drv:reportDefeatedEnemies()
-            check(events[marked] == 1 and own[8].extraTalent.stacks == 2,
-                "小雀斩杀后扫描不重复成长或转标")
+            check(events[marked] == 1 and SEM.has(nextEnemy, SEM.MARKED) and not SEM.has(marked, SEM.MARKED),
+                "小雀斩杀后扫描不重复死亡或转标")
+            pendingGrowth(8, "stacks", 2, "小雀斩杀后扫描不重复成长或转标")
+            flushGrowth(8, "stacks", 2, "小雀标记斩杀成长战后结算")
         end)
 
+        local function dungeonScope(fn)
+            return require("ui.dungeon.DungeonBattleScope").run(1, fn)
+        end
+
+        local function dungeonEnemies()
+            return dungeonScope(function() return BC.mountedState().ctx.getEnemies() end)
+        end
+
         local function dungeonOpen(id, allies, count)
-            DungeonScene.open({ allies = allies, data = {
+            local data = {
                 dungeonId = id, floor = 1, wave = 1, monsterLevel = 1,
                 monsters = { { id = 1, count = count } }, rageTime = 999, superRageTime = 9999,
-            } })
+            }
+            if require("config.DungeonConfig").isResourceDungeon(id) then
+                -- 当前 Challenge 契约：资源副本使用 stageEntry，不再读取旧 monsters.count。
+                data.stageEntry = { id = 101, chapter = 1, mode = "resource_dungeon", monsters = { 1 },
+                    monsterLevel = 1, bossId = 0, firstCount = count, idleCount = count }
+            end
+            DungeonScene.open({ allies = allies, data = data })
+            return dungeonEnemies()
+                dungeonId = id, floor = 1, teamIdx = 1, wave = 1, monsterLevel = 1,
+                monsters = { { id = 1, count = count } }, rageTime = 999, superRageTime = 9999,
+            }
+            if DC.isResourceDungeon(id) then
+                -- 正式工厂返回独立entry副本；只定制夹具数量/怪物，不写全局关卡配置。
+                local entry = assert(DC.getCombatEntry(id, 1))
+                entry.firstCount, entry.idleCount = count, count
+                entry.monsters, entry.monsterLevel, entry.bossId = { 1 }, 1, 0
+                data.stageEntry = entry
+            end
+            DungeonScene.open({ allies = allies, data = data })
+            -- 必须在正式Scope.run内调用：Scene.open返回后宿主BC/SEM会还原。
             return BC.mountedState().ctx.getEnemies()
         end
 
@@ -399,29 +602,91 @@ function Start()
             clear()
             local snow = hero(12, true, true)
             local enemies = dungeonOpen("gold_mine", { snow }, 2)
-            for _, e in ipairs(enemies) do SEM.apply(e, SEM.FROZEN, 10, snow, {}); kill(e, snow) end
+            local original = { table.unpack(enemies) }
+            dungeonScope(function()
+                for _, e in ipairs(enemies) do SEM.apply(e, SEM.FROZEN, 10, snow, {}); kill(e, snow) end
+            end)
             DungeonScene.update(0)
+            check(events[original[1]] == 1 and events[original[2]] == 1
+                and frozenAtDeath[original[1]] and frozenAtDeath[original[2]],
+                "普通副本 open/update 同帧全灭先发两次事件，冻结条件尚在")
+            dungeonScope(function()
+                pendingGrowth(12, "stacks", 2, "副本最后敌人成长战中不变")
+                check(own[12].extraTalent.iceStatues == 2 and #ETS.getIceStatues() == 2,
+                    "副本最后敌人冻结仍可生成正式冰雕")
+            end)
+            DungeonScene.update(0)
+            check(events[original[1]] == 1, "副本死亡退场阶段不重复死亡")
+            DungeonScene.update(BC.DEATH_ANIM_DURATION + 0.01)
             local pending, won = DB.getResultState()
-            check(events[enemies[1]] == 1 and events[enemies[2]] == 1 and pending and won,
-                "普通副本 open/update 同帧全灭先发两次事件再 onVictory")
-            check(own[12].extraTalent.iceStatues == 2 and #ETS.getIceStatues() == 2, "副本最后敌人冻结仍可生成正式冰雕")
-            DungeonScene.update(0)
-            check(events[enemies[1]] == 1, "副本结算延迟阶段不重复死亡")
+            check(pending and won and #dungeonEnemies() == 0,
+                "普通副本退场完成后 onVictory，最后敌人成长已 flush")
+            dungeonScope(function() flushGrowth(12, "stacks", 2, "副本最后敌人战后成长") end)
             DungeonScene.forceClose()
+            DungeonScope.run(1, function()
+                local snow = hero(12, true, true)
+                local enemies = dungeonOpen("gold_mine", { snow }, 2)
+                local e1, e2 = assert(enemies[1]), assert(enemies[2])
+                for _, e in ipairs(enemies) do SEM.apply(e, SEM.FROZEN, 10, snow, {}); kill(e, snow) end
+                DungeonScene.update(0)
+                local pending = DB.getResultState()
+                check(events[e1] == 1 and events[e2] == 1 and not pending,
+                    "资源副本同帧全灭立即分发两次死亡，正式退场前不抢跑胜利")
+                check(own[12].extraTalent.iceStatues == 2 and #ETS.getIceStatues() == 2,
+                    "副本最后敌人冻结仍可生成正式冰雕")
+                DungeonScene.update((BC.DEATH_ANIM_DURATION or 0.4) + 0.01)
+                local finished, won = DB.getResultState()
+                check(finished and won and #enemies == 0, "资源副本最后敌人退场完成才正式 onVictory")
+                DungeonScene.update(0)
+                check(events[e1] == 1 and events[e2] == 1, "副本结算延迟阶段不重复死亡")
+                DungeonScene.forceClose()
+            end)
         end)
 
         case("副本真实方法换批补位", function()
             clear()
             local dog = hero(1, true)
             local first = dungeonOpen("gold_mine", { dog }, 6)
+            local original = { table.unpack(first) }
             for _, e in ipairs(first) do kill(e, dog) end
             DungeonScene.update(0)
-            local current = BC.mountedState().ctx.getEnemies()
-            check(#first == 5 and #current == 1 and current ~= first, "普通副本真实全灭换批、补位新单位")
             local allOnce = true
-            for _, e in ipairs(first) do if events[e] ~= 1 then allOnce = false end end
-            check(allOnce and own[1].extraTalent.stacks == 5, "丢弃旧敌人数组前五个死亡事件全到达")
+            for _, e in ipairs(original) do if events[e] ~= 1 then allOnce = false end end
+            check(#original == Layout.MAX_PER_SIDE and allOnce,
+                "普通副本当前四槽原敌人退场前死亡事件全到达")
+            dungeonScope(function() pendingGrowth(1, "stacks", #original, "副本整排击杀待结算成长") end)
+            DungeonScene.update(BC.DEATH_ANIM_DURATION + 0.01)
+            local current = dungeonEnemies()
+            check(#current == 1 and current == first and current[1] ~= original[1],
+                "普通副本真实逐名退场后原数组补位新单位")
+            DungeonScene.update(0.4)
+            check(#current == 2, "资源副本后备依正式补位间隔继续进场")
             DungeonScene.forceClose()
+            check(own[1].extraTalent.stacks == #original, "副本退出才 flush 整排击杀成长，不串到主线")
+            DungeonScope.run(1, function()
+                local dog = hero(1, true)
+                local field = dungeonOpen("gold_mine", { dog }, 6)
+                local first = {}
+                for _, e in ipairs(field) do first[#first + 1] = e; kill(e, dog) end
+                DungeonScene.update(0)
+                local allOnce = true
+                for _, e in ipairs(first) do if events[e] ~= 1 then allOnce = false end end
+                check(#first == Layout.MAX_PER_SIDE and allOnce and own[1].extraTalent.stacks == #first,
+                    "资源副本旧场上数组退场前，全部死亡事件与成长恰好各一次")
+                DungeonScene.update((BC.DEATH_ANIM_DURATION or 0.4) + 0.01)
+                local current = BC.mountedState().ctx.getEnemies()
+                local oldGone = true
+                for _, currentEnemy in ipairs(current) do
+                    for _, oldEnemy in ipairs(first) do
+                        if currentEnemy == oldEnemy then oldGone = false end
+                    end
+                end
+                check(#current == 1 and oldGone, "资源副本正式逐只退场补位，首个新单位不复用旧敌人")
+                DungeonScene.update(0.4)
+                check(#current == 6 - #first and own[1].extraTalent.stacks == #first,
+                    "资源副本补位冷却后补足队列，旧死亡不重复成长")
+                DungeonScene.forceClose()
+            end)
         end)
 
         case("副本旧塔模式延迟退场", function()
@@ -429,7 +694,7 @@ function Start()
             local snow = hero(12, true, true)
             local enemies = dungeonOpen("babel_tower", { snow }, 6)
             local dead = enemies[1]
-            SEM.apply(dead, SEM.FROZEN, 10, snow, {})
+            dungeonScope(function() SEM.apply(dead, SEM.FROZEN, 10, snow, {}) end)
             kill(dead, snow)
             DungeonScene.update(0.01)
             DungeonScene.update(0.01)
@@ -437,6 +702,20 @@ function Start()
             DungeonScene.update(2.5)
             check(enemies[1] ~= dead and events[dead] == 1, "旧塔实际原位补位不重复旧单位死亡")
             DungeonScene.forceClose()
+            DungeonScope.run(1, function()
+                local snow = hero(12, true, true)
+                local enemies = dungeonOpen("babel_tower", { snow }, 6)
+                local dead = enemies[1]
+                SEM.apply(dead, SEM.FROZEN, 10, snow, {})
+                kill(dead, snow)
+                DungeonScene.update(0.01)
+                DungeonScene.update(0.01)
+                check(events[dead] == 1 and dead.reviveTimer < 0 and frozenAtDeath[dead],
+                    "旧塔副本动画延迟不延迟事件、重复扫描幂等")
+                DungeonScene.update(2.5)
+                check(enemies[1] ~= dead and events[dead] == 1, "旧塔实际原位补位不重复旧单位死亡")
+                DungeonScene.forceClose()
+            end)
         end)
 
         case("三行塔真实 open/update", function()
@@ -508,6 +787,7 @@ function Start()
                 end
                 local finishCalls = 0
                 local bossRefs, allBosses = {}, {}
+                patch(BattleScene, "updateTriReincarnation", function() return true end)
                 patch(BattleScene, "completeTriTerminal", function()
                     finishCalls = finishCalls + 1
                     local allOnce, eventCount = #allBosses == 9, 0
@@ -549,8 +829,8 @@ function Start()
                     Page.update(0)
                     check(raid.pools[index].hp == 0 and raid.hp > 0 and finishCalls == 0 and not raid.finished,
                         "仅打空前" .. index .. "个池，真实 Page 不提前胜利/解绑")
-                    check(own[1].extraTalent.stacks == index,
-                        "每个编号池只有末击实际命中实例给予大狗一层成长")
+                    pendingGrowth(1, "stacks", index,
+                        "每个编号池只有末击实际命中实例给予大狗一层成长", drivers[3].etsState)
                 end
                 Page.update(0)
                 check(finishCalls == 1 and raid.finished and raid.won == true and raid.hp == 0,
@@ -564,7 +844,8 @@ function Start()
                         if events[boss] ~= 1 then allOnce = false end
                         eventCount = eventCount + (events[boss] or 0)
                     end
-                    check(drivers[row].terminalRaid == nil, "胜利真实宿主解除共享池绑定，队" .. row)
+                    check(drivers[row].terminalRaid == raid and drivers[row].stageId == SC.TERMINAL_NORMAL,
+                        "胜利真实宿主保留共享池待轮回，队" .. row)
                 end
                 check(noFakeSource and actualSources, "同步死亡不伪造六个未命中实例杀手，三次实杀保留末击源")
                 check(allOnce and eventCount == 9, "九个死亡事件总数恰好9，不因三次跨线扫描重复")

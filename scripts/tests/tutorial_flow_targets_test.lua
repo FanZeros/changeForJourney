@@ -50,7 +50,7 @@ local function eventCount(name)
 end
 local draw = { hitTest = function(x, y, cx, cy, w, h)
     return math.abs(x - cx) <= w * 0.5 and math.abs(y - cy) <= h * 0.5
-end, drawImageCentered = noop, seamSlideX = function() return 0 end }
+end, drawImageCentered = noop, drawTextStroke = noop, seamSlideX = function() return 0 end }
 stub("core.DrawUtil", draw)
 stub("core.DarkIcon", { drawQualityBg = noop, drawIconDark = noop, drawNine = noop })
 stub("systems.GameSFX", { play = noop, playUIMove = noop })
@@ -106,6 +106,12 @@ nvgTextBounds = function() return 40 end
 
 local function testConfig()
     local config = require("config.TutorialConfig")
+    check(config[1].steps[1].highlight == "battle_hero_detail" and config[1].steps[1].entrySource == "battle"
+        and config[1].steps[1].pointerTarget and config[1].steps[1].advanceOn == "character_detail_opened",
+        "第一段先教真实战斗卡打开详情")
+    check(config[2].steps[1].highlight == "character_slot_1" and config[2].steps[1].entrySource == "avatar"
+        and config[2].steps[1].pointerTarget and config[2].steps[1].advanceOn == "character_detail_opened",
+        "第二段先教真实队伍头像打开详情")
     check(#config[1].steps == 3 and config[1].steps[3].advanceOn == "equipment_equipped",
         "group1 teaches existing shortcut and waits for successful equip")
     check(config[1].steps[3].highlight == "equip_item_gifted"
@@ -121,6 +127,13 @@ local function testCharacterTab()
     stub("systems.AttributeDef", {})
     stub("config.ExpTable", {})
     stub("systems.EquipmentSystem", {})
+    stub("systems.EquipmentPower", {
+        getContext = function(heroId) return { heroId = heroId } end,
+        evaluate = function(_, seq)
+            return { valid = wearability.canEquip(inventoryState, seq), gain = 0 }
+        end,
+        score = function() return 0 end,
+    })
     stub("systems.ButtonFeedback", { trigger = noop })
     stub("ui.character.equip.EquipmentBag", {})
     stub("ui.character.detail.CharacterDetailAttrs", { collectAttributes = function() return {} end })
@@ -362,7 +375,7 @@ local function testBlacksmithPreparation()
     stub("systems.AttributeDef", {})
     stub("config.ExpTable", {})
     stub("config.HeroAssetUtil", { preloadIcons = noop })
-    stub("ui.fx.SpineResultEffect", {})
+    stub("ui.fx.SpineResultEffect", { preload = noop })
     stub("ui.widget.ImageCache", { init = noop, getEquipIcon = function() return -1 end })
     stub("ui.blacksmith.BlacksmithEnhanceCache", {})
     local smithState = {}
@@ -372,7 +385,7 @@ local function testBlacksmithPreparation()
         updateEnhanceData = function() counts.enhance = counts.enhance + 1 end,
         onOpen = function() counts.opens = counts.opens + 1 end,
     })
-    stub("ui.blacksmith.BlacksmithRefine", { setContext = noop, init = noop,
+    stub("ui.blacksmith.BlacksmithRefine", { setContext = noop, init = noop, clearHover = noop,
         updateRefineData = function() counts.refine = counts.refine + 1 end })
     local smithInventory = { inventory = {
         ["1"] = { templateId = "missing", ascendLevel = 0 },
@@ -425,6 +438,13 @@ local function testBlacksmithPreparation()
 end
 
 local function testTaskForceClose()
+    -- 只测页生命周期：真实 TaskConfig 构造读取正式等级上限，成就刷新留在业务边界。
+    stub("config.ExpTable", { PLAYER_MAX_LEVEL = 200 })
+    local taskServiceCalls = { count = 0, uid = 0 }
+    stub("rules.task.TaskService", { RefreshAchievements = function(uid)
+        taskServiceCalls.count = taskServiceCalls.count + 1
+        taskServiceCalls.uid = uid
+    end })
     testStubs["ui.story.task.TaskPage"], package.loaded["ui.story.task.TaskPage"] = nil, nil
     package.preload["ui.story.task.TaskPage"] = nil
     local task = require("ui.story.task.TaskPage")
@@ -435,6 +455,8 @@ local function testTaskForceClose()
         "task force close cancels open/closing/drag state immediately")
     task.forceClose()
     check(not task.isOpen(), "task force close is idempotent")
+    check(taskServiceCalls.count == 1 and taskServiceCalls.uid == 1,
+        "task lifecycle calls only the isolated achievement-refresh boundary")
 end
 
 function Start()

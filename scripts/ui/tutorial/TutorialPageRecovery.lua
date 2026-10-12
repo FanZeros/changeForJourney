@@ -17,6 +17,8 @@ local function isOpen(p)
     return p.isOpen and p.isOpen() == true
 end
 local function isClosing(p)
+    -- 锻炉滑入有错峰延迟，不能用未来openTime与closeTime比较推断真实关闭状态。
+    if p.isClosing then return p.isClosing() == true end
     if not p.getSeamAnim then return false end
     local opened, closed = p.getSeamAnim()
     return type(closed) == "number" and closed > 0
@@ -38,9 +40,10 @@ local function closeLeft(keep)
 end
 local function firstHero(store)
     local panel = page("ui.character.panel.CharacterPanel")
-    local slots = panel.getTeamSlotsData and panel.getTeamSlotsData()
-    local first = slots and slots[1]
-    if first and first.state == "occupied" and first.heroId then return tonumber(first.heroId) end
+    local slots = panel.getTeamSlotsData and panel.getTeamSlotsData(1)
+    for _, slot in ipairs(slots or {}) do
+        if slot.state == "occupied" and slot.heroId then return tonumber(slot.heroId) end
+    end
     local heroes = store and store.Get("heroes")
     local deployed = heroes and heroes.deployed
     return deployed and tonumber(deployed[1]) or nil
@@ -86,8 +89,51 @@ function M.isBlocked(target)
     return false
 end
 
+local STORY_PAGES = {
+    church = "ui.church.ChurchPage", tavern = "ui.tavern.TavernPage",
+    smith = "ui.blacksmith.BlacksmithPage",
+}
+
+--- 剧情按真实菜单归属播放，不能把锻炉队列带入酒馆或其他菜单。
+function M.getStoryPlace()
+    for _, place in ipairs({ "smith", "tavern", "church" }) do
+        local p = page(STORY_PAGES[place])
+        if isOpen(p) and not isClosing(p) then return place end
+    end
+    for _, path in ipairs(LEFT_PAGES) do
+        if isOpen(page(path)) then return "other" end
+    end
+    local nav = page("ui.hud.BottomNav").getSelectedIndex()
+    if nav == 4 then return "town" end
+    -- 正式三行页签是3，左栏城镇与中栏主线同时可见，不能靠旧tab4判断离场。
+    if nav == 3 and isOpen(page("ui.battle.tri.BattleTriPage")) then return "battle_town" end
+    return "battle"
+end
+
+--- 只豁免当前剧情所属菜单；锻炉联动仓库属于同一操作区。
+---@param place string|nil
+function M.isPendingStoryBlocked(place)
+    if M.isBlocked() then return true end
+    if place == "tavern" then
+        local tavern = page(STORY_PAGES.tavern)
+        if tavern.isRecruitBusy and tavern.isRecruitBusy() then return true end
+    end
+    local owner = place and STORY_PAGES[place]
+    local smith = place == "smith" and page(STORY_PAGES.smith)
+    local smithOpen = smith and isOpen(smith) and not isClosing(smith)
+    for _, path in ipairs(LEFT_PAGES) do
+        local p = page(path)
+        if isOpen(p) and (path ~= owner or isClosing(p)) then
+            local smithWarehouse = smithOpen and path == "ui.backpack.BackpackPanel"
+                and not isClosing(p)
+            if not smithWarehouse then return true end
+        end
+    end
+    return false
+end
+
 --- 返回是否改变页面；宿主据此等待动画结束，再显示/放行引导目标。
-function M.prepare(vg, store, target, newHeroId, initial)
+function M.prepare(vg, store, target, newHeroId, initial, equipmentHeroId)
     if not target then return false end
     local tavern = page("ui.tavern.TavernPage")
     if tavern.isRecruitBusy and tavern.isRecruitBusy() then return false end
@@ -110,6 +156,19 @@ function M.prepare(vg, store, target, newHeroId, initial)
     if TOWN_TARGETS[target] then
         changed = closeLeft({}) or changed
         changed = detailClosed() or changed
+    elseif target == "battle_hero_detail" then
+        changed = detailClosed() or changed
+        changed = closeLeft({}) or changed
+        changed = prepareRoster(nil, initial) or changed
+        if nav.getSelectedIndex and nav.getSelectedIndex() ~= 3 then
+            nav.setSelectedIndex(3)
+            changed = true
+        end
+        local tri = page("ui.battle.tri.BattleTriPage")
+        if not isOpen(tri) then
+            tri.open()
+            changed = isOpen(tri) or changed
+        end
     elseif target == "character_slot_1" or target == "character_new_hero" then
         changed = detailClosed() or changed
         changed = closeLeft({}) or changed
@@ -117,7 +176,7 @@ function M.prepare(vg, store, target, newHeroId, initial)
     elseif target == "equip_slot_weapon" or target == "equip_btn_auto" or target == "equip_item_gifted" then
         changed = closeLeft({ ["ui.backpack.BackpackPanel"] = true }) or changed
         changed = prepareRoster(nil, initial) or changed
-        local heroId = firstHero(store)
+        local heroId = equipmentHeroId or firstHero(store)
         if heroId and (not isOpen(detail) or isClosing(detail) or not detail.isEquipTab or not detail.isEquipTab()
             or detail.getHeroId() ~= heroId) then
             detail.open(heroId, "equip")

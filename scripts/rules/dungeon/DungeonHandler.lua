@@ -15,8 +15,11 @@ local function response(ok, err, result)
 end
 
 handlers[Protocol.ACTION_TYPES.DUNGEON_SWEEP] = function(uid, params)
-    local id = params and params.dungeonId or "gold_mine"
-    return response(DungeonService.Sweep(uid, id))
+    params = params or {}
+    local id = params.dungeonId == nil and "gold_mine" or params.dungeonId
+    local count = params.count
+    if count == nil then count = params.times end
+    return response(DungeonService.Sweep(uid, id, params.teamIdx, params.floor, count))
 end
 
 local function battleResponse(params, ok, err, result)

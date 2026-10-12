@@ -1,4 +1,6 @@
--- 程序化暗黑特效专项（独立 Runtime；不加载 main/Boot，不读取玩家档）。
+-- 暗黑特效专项（独立 Runtime；不加载 main/Boot，不读取玩家档）。
+-- 保留三队与controller生命周期；Sprites依赖在这些case中受控映射，真实资源另由rich入口验收。
+-- 纯矢量fallback自身契约仍覆盖几何/逐色alpha，不再把它的禁图像约束误称为整套Rich需求。
 -- 基于 scaffold-2d 的 Start/Stop 与 NanoVGRender 范式；测试帧采用模式 B：逻辑尺寸 + DPR。
 -- 真实源码通过只读 ResourceCache 编译到隔离 env：EventBus 不是替身；UI/Surface/Yoga/Label 不是替身。
 -- 图元记录器只用于几何、颜色和故障注入，不代表原生 GPU/手机触控或视觉性能验收。
@@ -170,12 +172,44 @@ local function primitiveFixture()
     return fixture
 end
 
+-- Visual backend dependencies are actual sources compiled in a private native env.
+local function visualRichBackend()
+    if visual.backend then return visual.backend end
+    local env=environment({elapsedTime=100},{})
+    for key,value in pairs(_G) do if type(key)=="string" and key:match("^nvg") then env[key]=value end end
+    if visual.pngOnly then env.nvgSpineCreate=nil;env.nvgSpineRender=nil end
+    local modules={}
+    local allowed={ ["ui.fx.DarkEffectSprites"]=true,["ui.fx.DarkEffectPrimitives"]=true,
+        ["core.DarkIcon"]=true,["core.DrawUtil"]=true,["core.BattleLayout"]=true }
+    env.require=function(name)
+        assert(allowed[name],"unexpected visual rich dependency "..name)
+        if modules[name] then return modules[name] end
+        local path=name:gsub("%.","/")..".lua"
+        local mod=assert(load(readSource(path),"@visual-private/"..path,"t",env))()
+        modules[name]=mod;return mod
+    end
+    visual.backend=env.require("ui.fx.DarkEffectSprites")
+    return visual.backend
+end
+local function expectedPower(value)
+    local full=math.type(value)=="integer" and tostring(value) or string.format("%.0f",value)
+    return #full>18 and string.format("%.3e",value) or full
+end
+
+local function expectedRange(base, power, delta)
+    return expectedPower(base) .. "  →  " .. expectedPower(power) .. "  ·  +" .. expectedPower(delta)
+end
+
 local function controllerFixture(path, effects)
     local logs, clock = {}, { elapsedTime = 100.0 }
     local env = environment(clock, logs)
     local record = recorder(env)
+    -- 受控后端保留controller调用/取消合同；资源行为属于独立rich专项。
+    effects.preload = effects.preload or function() end
+    effects.release = effects.release or function() end
+    effects.destroy = effects.destroy or function() end
     env.require = function(name)
-        if name == "ui.fx.DarkEffectPrimitives" then return effects end
+        if name == "ui.fx.DarkEffectSprites" then return effects end
         if name == "core.BattleLayout" then return require(name) end
         error("unexpected controller dependency: " .. name, 0)
     end
@@ -187,7 +221,7 @@ local function controllerFixture(path, effects)
 end
 
 -- 真 EventBus 源码每个case独立实例，spy只转发真实on/off回调。
-local function powerFixture(realDrawing)
+local function powerFixture(realDrawing, richDrawing)
     local logs, clock = {}, { elapsedTime = 100.0 }
     local env = environment(clock, logs)
     local events = require("config.GameEvents")
@@ -217,12 +251,25 @@ local function powerFixture(realDrawing)
     local effects
     local record = recorder(env)
     if realDrawing then
-        -- drawSurface must observe the SAME synchronous global entrypoints as the real UI library.
-        env._G = _G
+        -- 原生入口只复制到私有env，不把env._G指向共享_G；UI库保持真实原生绘制。
         effects = require("ui.fx.DarkEffectPrimitives")
-        for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgTranslate", "nvgScale" }) do env[name] = _G[name] end
+        for key, value in pairs(_G) do
+            if type(key) == "string" and key:match("^nvg") then env[key] = value end
+        end
     else
         effects = { drawPower = function() error("non-render test unexpectedly drew", 0) end }
+    end
+    local backend = richDrawing and visualRichBackend()
+        or { drawPower = effects.drawPower, preload = function() end, destroy = function() end }
+    local releases, powerDraws = {}, {}
+    if not richDrawing then
+        backend.release = function(token) releases[#releases + 1] = token end
+        local actualDrawPower=backend.drawPower
+        backend.drawPower=function(vg,cx,cy,width,height,elapsed,duration,alpha,token)
+            -- 只记录调用参数，继续执行真实图元；UI树、Surface与布局仍走原生产实现。
+            powerDraws[#powerDraws+1]={elapsed=elapsed,duration=duration,alpha=alpha,token=token,height=height}
+            return actualDrawPower(vg,cx,cy,width,height,elapsed,duration,alpha,token)
+        end
     end
     env.require = function(name)
         if name == "core.EventBus" then return bus end
@@ -230,15 +277,17 @@ local function powerFixture(realDrawing)
         if name == "urhox-libs/UI" then return require("urhox-libs/UI") end
         if name == "ui.widget.DesignWidgetSurface" then return bridge end
         if name == "core.I18n" then return { get = function() return language.value end } end
-        if name == "ui.fx.DarkEffectPrimitives" then return effects end
+        if name == "ui.fx.DarkEffectSprites" then return backend end
         error("unexpected Power dependency: " .. name, 0)
     end
     local power = compile("ui/fx/SpinePowerUpEffect.lua", env)
     cleanups[#cleanups + 1] = power.destroy
     local f = { power = power, bus = bus, clock = clock, draws = draws, language = language,
-        record = record, events = events, logs = logs, env = env }
-    function f:emit(powers, activeTeam)
-        self.bus.emit(self.events.TEAM_POWER_CHANGED, { powers = powers, activeTeam = activeTeam })
+        record = record, events = events, logs = logs, env = env, releases = releases, powerDraws = powerDraws }
+    function f:emit(powers, activeTeam, cause)
+        self.bus.emit(self.events.TEAM_POWER_CHANGED, {
+            powers = powers, activeTeam = activeTeam, cause = cause or "level_up",
+        })
     end
     function f:baseline(powers)
         self.power.init()
@@ -256,6 +305,50 @@ local function powerFixture(realDrawing)
 end
 
 local function runPowerEvents()
+    case("power-only-level-up-not-battle-growth-or-equipment", function()
+        local f = powerFixture(false); f:baseline()
+        for _, cause in ipairs({"battle_growth", "equipment", "awakening", "deployment", "unknown"}) do
+            f:emit({150, 250, 350}, nil, cause)
+            eq(#f.power.getDisplayRows(), 0, cause .. "静默更新不显示战力提升")
+        end
+        f.bus.emit(f.events.TEAM_POWER_CHANGED, { powers = {200, 300, 400}, ready = true })
+        eq(#f.power.getDisplayRows(), 0, "无来源快照保持静默")
+        f:emit({210, 310, 410})
+        eq(#f.power.getDisplayRows(), 3, "真实升级仍显示三队提示")
+        eq(assert(f:row(1)).base, 200, "升级基准包含先前静默增长")
+        eq(assert(f:row(1)).delta, 10, "升级提示不混入此前战斗增长")
+        f.bus.emit(f.events.TEAM_POWER_CHANGED, { powers = {210, 310, 410}, ready = true })
+        eq(#f.power.getDisplayRows(), 3, "相同静默快照不打断已有升级提示")
+        f:emit({240, 340, 440}, nil, "battle_growth")
+        eq(#f.power.getDisplayRows(), 0, "滚动期间非升级增量不并入旧提示")
+        f:emit({245, 345, 445})
+        eq(assert(f:row(1)).delta, 5, "后续升级只提示新的等级增量")
+    end)
+    case("artifact-equip-positive-net-swap-does-not-borrow-source-team", function()
+        local f = powerFixture(false); f:baseline({100, 200, 300})
+        f:emit({130, 200, 300}, nil, "artifact_equip")
+        eq(#f.power.getDisplayRows(), 1, "成功神器安装只提示真实增队")
+        eq(assert(f:row(1)).base, 100, "神器安装保正式旧值")
+        eq(assert(f:row(1)).delta, 30, "神器安装真实正增")
+        f.clock.elapsedTime = f.clock.elapsedTime + 4
+        f.power.update(0)
+        f:emit({110, 220, 300}, nil, "artifact_equip")
+        eq(f:row(1), nil, "跨队来源减值不能伪提示正增")
+        eq(assert(f:row(2)).base, 200, "目标队用自己的正式旧值")
+        eq(assert(f:row(2)).power, 220, "目标队真实新值")
+        eq(assert(f:row(2)).delta, 20, "不使用两队合计/一队假净增")
+        local before = assert(f:row(2)).elapsed
+        f:emit({110, 220, 300}, nil, "artifact_equip")
+        near(assert(f:row(2)).elapsed, before, "同位重试/重复快照不延长")
+        f:emit({110, 220, 300}, nil, "artifact_equip_failed")
+        eq(#f.power.getDisplayRows(), 1, "失败无新变化不制造额外行")
+        f:emit({120, 230, 300}, nil, "artifact_unequip")
+        eq(#f.power.getDisplayRows(), 0, "卸下/其他刷新仍静默不伪装备cause")
+        f:emit({170, 240, 300})
+        f:emit({150, 250, 300}, nil, "artifact_equip")
+        eq(f:row(1), nil, "交换下降不能保留先前升级正净增冒充本次提升")
+        check(f:row(2) ~= nil, "交换增队独立保留自己的提升")
+    end)
     case("power-cold-boot-ready-false-never-seeds-zero-baseline", function()
         local f = powerFixture(false)
         for iteration = 1, 2 do
@@ -266,7 +359,7 @@ local function runPowerEvents()
             f.bus.emit(f.events.TEAM_POWER_CHANGED,{powers={0,0,0},ready=false})
             f.bus.emit(f.events.TEAM_POWER_CHANGED,{powers={100000,200000,300000},ready=true})
             eq(#f.power.getDisplayRows(),0,"first hydrated save only seeds baseline after long title wait " .. iteration)
-            f.bus.emit(f.events.TEAM_POWER_CHANGED,{powers={100000,200123,300456},ready=true})
+            f.bus.emit(f.events.TEAM_POWER_CHANGED,{powers={100000,200123,300456},ready=true,cause="level_up"})
             eq(#f.power.getDisplayRows(),2,"real teams2/3 gain after hydration " .. iteration)
             eq(assert(f:row(2)).delta,123,"hydrated team2 true delta " .. iteration)
             eq(assert(f:row(3)).delta,456,"hydrated team3 true delta " .. iteration)
@@ -363,6 +456,249 @@ local function runPowerEvents()
         eq(#f.power.getDisplayRows(), 0, "destroy clears row state")
         f:baseline({20, 40, 60}); f:emit({21, 42, 63})
         eq(#f.power.getDisplayRows(), 3, "init after destroy subscribes and starts fresh")
+    end)
+    case("power-count-up-integers-authoritative-target-and-final-snap", function()
+        local f = powerFixture(false); f:baseline({100,200,300})
+        f:emit({150,250,350})
+        local row = assert(f:row(1))
+        eq(row.base,100,"count-up exposes unchanged original base")
+        eq(row.power,150,"count-up authoritative target never becomes sample")
+        eq(row.delta,50,"count-up authoritative delta never becomes sample")
+        eq(row.displayPower,100,"initial display begins at old power")
+        eq(row.displayDelta,0,"initial display begins with zero increase")
+        eq(row.displayRemaining,50,"initial remaining increase is full authority gap")
+        eq(row.progress,0,"initial display has delay phase")
+        f.power.update(1e9)
+        eq(assert(f:row(1)).displayPower,100,"large dt alone cannot advance numeric animation")
+        f.clock.elapsedTime = 102.12
+        eq(assert(f:row(1)).displayPower,100,"count delay boundary keeps old integer")
+        f.clock.elapsedTime = 102.585
+        row = assert(f:row(1))
+        check(row.progress > 0 and row.progress < 1,"middle numeric progress is interior")
+        check(row.displayPower > 100 and row.displayPower < 150,"middle power is visibly rolling")
+        check(row.displayDelta > 0 and row.displayDelta < 50,"middle delta is visibly rolling")
+        eq(row.displayRemaining,150-row.displayPower,"remaining decreases exactly as total rolls up")
+        eq(row.displayPower,math.floor(row.displayPower),"middle power stays integral")
+        eq(row.displayDelta,math.floor(row.displayDelta),"middle increase stays integral")
+        eq(row.power,150,"query does not mutate authority")
+        eq(row.delta,50,"middle query does not mutate authority delta")
+        f.clock.elapsedTime = 103.050001
+        row = assert(f:row(1))
+        eq(row.displayPower,150,"numeric completion snaps to exact target")
+        eq(row.displayDelta,50,"numeric completion snaps to exact delta")
+        eq(row.displayRemaining,0,"numeric completion leaves zero remaining increase")
+        eq(row.progress,1,"completion progress exactly one")
+        f.clock.elapsedTime = 103.19
+        check(assert(f:row(1)).pulse > 0,"numeric completion has bounded settle pulse")
+        f.clock.elapsedTime = 103.4
+        check(math.abs(assert(f:row(1)).pulse) < 1e-12,"settle pulse returns to normal font")
+        local copied = f.power.getDisplayRows()
+        copied[1].base,copied[1].displayPower,copied[1].progress = -1,-1,-1
+        row = assert(f:row(1))
+        eq(row.base,100,"base copy cannot mutate internal tween")
+        eq(row.displayPower,150,"sample copy cannot mutate internal tween")
+        eq(row.progress,1,"progress copy cannot mutate internal tween")
+    end)
+    case("power-mid-roll-retarget-rise-and-drop-do-not-jump-or-extend-drop", function()
+        local f = powerFixture(false); f:baseline({100,200,300})
+        f:emit({200,250,350})
+        f.clock.elapsedTime = 102.5
+        local before = assert(f:row(1))
+        f:emit({240,250,350})
+        local retarget = assert(f:row(1))
+        eq(retarget.displayPower,before.displayPower,"continuous rise retargets from currently visible integer")
+        eq(retarget.displayDelta,before.displayDelta,"continuous rise retargets current visible increase")
+        eq(retarget.base,100,"continuous rise preserves segment net baseline")
+        eq(retarget.delta,140,"continuous rise remains net gain not sum of animations")
+        near(retarget.elapsed,0,"rise retains original restart deadline contract")
+        f.clock.elapsedTime = 102.9
+        local rolling = assert(f:row(1))
+        check(rolling.displayPower >= before.displayPower,"new rise never rolls backward")
+        f:emit({170,250,350})
+        local falling = assert(f:row(1))
+        eq(falling.displayPower,rolling.displayPower,"positive-net drop retargets exact current sample")
+        eq(falling.displayRemaining,0,"decline clamps negative remaining gap without changing sampled total")
+        eq(falling.delta,70,"drop authoritative net recomputed")
+        near(falling.elapsed,.4,"drop must not extend original rise lifetime")
+        f.clock.elapsedTime = 104.31
+        falling = assert(f:row(1))
+        eq(falling.displayPower,170,"drop finishes to exact new target")
+        eq(falling.displayDelta,70,"drop finishes to exact new net")
+        f.clock.elapsedTime = 105.21
+        eq(f:row(2),nil,"unrelated older team expires during retarget")
+        check(f:row(1) ~= nil,"only newer rise remains")
+        f.clock.elapsedTime = 105.71
+        eq(f:row(1),nil,"positive-net drop did not postpone original rise deadline")
+        f:emit({200,250,350}); f.clock.elapsedTime = 105.9
+        f:emit({170,250,350})
+        eq(f:row(1),nil,"net-zero drop cancels rolling presentation")
+    end)
+    case("power-late-decline-finishes-before-original-expiry-and-integer-low-bits",function()
+        local f=powerFixture(false);f:baseline({100,200,300});f:emit({200,200,300})
+        f.clock.elapsedTime=105;eq(assert(f:row(1)).displayPower,200,"before late decline count settled")
+        f:emit({150,200,300})
+        near(assert(f:row(1)).elapsed,3,"late decline preserves original age")
+        eq(assert(f:row(1)).displayPower,200,"late decline starts from current shown value")
+        f.clock.elapsedTime=105.19
+        eq(assert(f:row(1)).displayPower,150,"late decline exact target held before 3.2 deadline")
+        eq(assert(f:row(1)).displayDelta,50,"late decline exact net held before 3.2 deadline")
+        f.clock.elapsedTime=105.201;eq(f:row(1),nil,"late decline never extends deadline")
+        f:baseline({math.maxinteger-2,0,0});local started=f.clock.elapsedTime
+        f:emit({math.maxinteger,0,0})
+        f.clock.elapsedTime=started+.3
+        local row=assert(f:row(1))
+        eq(row.displayPower,math.maxinteger-1,"integer upper bound small-step preserves low bits")
+        eq(row.displayDelta,1,"integer upper-bound middle gain one")
+        check(row.displayRemaining==1 and math.type(row.displayRemaining)=="integer",
+            "integer upper-bound remaining preserves exact low bit and integer type")
+        f.clock.elapsedTime=started+1.4
+        eq(assert(f:row(1)).displayPower,math.maxinteger,"integer upper-bound exact final authority")
+        f:baseline({123456789012345671,0,0});started=f.clock.elapsedTime
+        f:emit({123456789012345681,0,0});f.clock.elapsedTime=started+1.4
+        eq(assert(f:row(1)).displayPower,123456789012345681,"18 digit odd final integer remains exact")
+        eq(assert(f:row(1)).delta,10,"18 digit odd net no double rounding")
+    end)
+    case("power-growth-retires-plaque-token-drop-preserves-native-timeline",function()
+        local f=powerFixture(false);f:baseline()
+        local count=#f.releases;f:emit({200,200,300})
+        check(#f.releases>count,"first growth starts fresh plaque token")
+        f.clock.elapsedTime=102.5;count=#f.releases
+        f:emit({240,200,300})
+        check(#f.releases>count,"continuous growth retires advanced native plaque before elapsed restarts")
+        count=#f.releases;f.clock.elapsedTime=102.6;f:emit({220,200,300})
+        eq(#f.releases,count,"positive-net decrease does not restart or retire plaque native timeline")
+    end)
+    -- 时长只由权威净增分档；阈值两侧、重复快照和只读查询不得改计时。
+    case("power-net-duration-threshold-both-sides-and-readonly-query",function()
+        for _,entry in ipairs({{999,3.2},{1000,3.8},{9999,3.8},{10000,4.4},{99999,4.4},{100000,5}}) do
+            local delta,duration=entry[1],entry[2]
+            local f=powerFixture(false);f:baseline();local started=f.clock.elapsedTime
+            f:emit({100+delta,200,300})
+            local row=assert(f:row(1))
+            near(row.duration,duration,"duration threshold full net "..delta)
+            eq(row.delta,delta,"threshold retains exact net "..delta)
+            eq(row.displayRemaining,delta,"readonly initial gap retained "..delta)
+            row.duration,row.delta,row.displayRemaining=-1,-1,-1
+            f.clock.elapsedTime=started+1.4
+            row=assert(f:row(1))
+            near(row.duration,duration,"query copy cannot change duration "..delta)
+            eq(row.delta,delta,"query copy cannot change full net "..delta)
+            eq(row.displayRemaining,0,"readonly query still settles to zero "..delta)
+            eq(row.displayPower,100+delta,"threshold exact settled authority "..delta)
+            local releases=#f.releases
+            f:emit({100+delta,200,300});f.power.update(1e9)
+            near(assert(f:row(1)).elapsed,1.4,"same snapshot and large dt cannot restart age "..delta)
+            eq(#f.releases,releases,"same snapshot cannot restart plaque "..delta)
+            f.clock.elapsedTime=started+duration-.01
+            row=assert(f:row(1))
+            eq(row.displayPower,row.power,"exact final total held until threshold expiry "..delta)
+            eq(row.delta,delta,"full net held until threshold expiry "..delta)
+            f:emit({100+delta,200,300})
+            f.clock.elapsedTime=started+duration+.001
+            eq(f:row(1),nil,"late duplicate cannot extend threshold expiry "..delta)
+        end
+    end)
+    case("power-large-gain-longer-hold-and-drop-never-renews-duration",function()
+        local f=powerFixture(false);f:baseline();f:emit({100100,200,300})
+        f.clock.elapsedTime=105.3
+        local row=assert(f:row(1))
+        near(row.duration,5,"large gain outlives original 3.2-second window")
+        eq(row.displayPower,100100,"large gain holds readable exact final total after 3.2 seconds")
+        eq(row.delta,100000,"large gain holds complete net after count finishes")
+        local releases=#f.releases
+        f.clock.elapsedTime=106.8;f:emit({600,200,300})
+        row=assert(f:row(1))
+        near(row.duration,5,"decline below every bonus threshold cannot replace original duration")
+        near(row.elapsed,4.8,"late decline keeps original age")
+        eq(row.delta,500,"late decline updates actual net without summing gains")
+        eq(#f.releases,releases,"late decline cannot restart plaque")
+        f.clock.elapsedTime=106.99
+        row=assert(f:row(1))
+        eq(row.displayPower,600,"late large decline completes to exact authority before old expiry")
+        eq(row.displayDelta,500,"late large decline completes exact net before old expiry")
+        eq(row.displayRemaining,0,"late decline readonly remaining never goes negative")
+        f:emit({600,200,300});f.clock.elapsedTime=107.001
+        eq(f:row(1),nil,"neither decline nor duplicate extends large-gain expiry")
+    end)
+    case("power-three-teams-independent-net-duration-and-expiry",function()
+        local f=powerFixture(false);f:baseline();f:emit({1099,200,300})
+        f.clock.elapsedTime=102.5;f:emit({1099,1200,300})
+        f.clock.elapsedTime=103;f:emit({1099,1200,100300})
+        for team,duration in ipairs({3.2,3.8,5}) do
+            near(assert(f:row(team)).duration,duration,"independent duration for squad "..team)
+        end
+        f.clock.elapsedTime=103.5;f:emit({1099,10200,100300})
+        near(assert(f:row(1)).elapsed,1.5,"team2 growth leaves team1 start untouched")
+        near(assert(f:row(2)).elapsed,0,"only team2 growth restarts age")
+        near(assert(f:row(2)).duration,4.4,"team2 cumulative net reaches next duration bucket")
+        near(assert(f:row(3)).elapsed,.5,"team2 growth leaves team3 start untouched")
+        f.clock.elapsedTime=105.201;f.power.update(0)
+        eq(f:row(1),nil,"short team expires at own deadline")
+        check(f:row(2)~=nil and f:row(3)~=nil,"both longer teams survive short expiry")
+        f.clock.elapsedTime=107.89;f:emit({1099,10200,100300})
+        eq(#f.power.getDisplayRows(),2,"duplicate cannot resurrect expired team1")
+        f.clock.elapsedTime=107.901;f.power.update(0)
+        eq(f:row(2),nil,"renewed team2 expires at its own 4.4-second deadline")
+        eq(assert(f:row(3)).displayPower,100300,"team3 final total still readable after team2 expires")
+        f.clock.elapsedTime=108.001;eq(#f.power.getDisplayRows(),0,"last squad expires at own five-second deadline")
+    end)
+    -- 连续小回执以初始基线算净增，不能只拿最后一次增幅分档或把历次净增相加。
+    case("power-rapid-growth-cumulative-net-crosses-duration-buckets",function()
+        local f=powerFixture(false);f:baseline()
+        local started=f.clock.elapsedTime
+        for index,entry in ipairs({{200,3.2},{1100,3.8},{10100,4.4},{100100,5}}) do
+            f.clock.elapsedTime=started+(index-1)*.1
+            local before=f:row(1)
+            f:emit({entry[1],200,300})
+            local row=assert(f:row(1))
+            eq(row.base,100,"rapid growth preserves original base "..index)
+            eq(row.delta,entry[1]-100,"rapid growth complete net not last increment or sum "..index)
+            near(row.duration,entry[2],"rapid cumulative net crosses duration bucket "..index)
+            near(row.elapsed,0,"real rapid growth restarts only this row "..index)
+            if before then
+                eq(row.displayPower,before.displayPower,"rapid growth keeps visible total continuity "..index)
+                eq(row.displayDelta,before.displayDelta,"rapid growth keeps query sample continuity "..index)
+            end
+        end
+        f.clock.elapsedTime=started+1.7
+        local row=assert(f:row(1))
+        eq(row.displayPower,100100,"rapid final total snaps exactly")
+        eq(row.delta,100000,"rapid final full net remains authoritative")
+        eq(row.displayRemaining,0,"rapid final readonly remaining gap zero")
+        f.clock.elapsedTime=started+5.29;f:emit({100100,200,300})
+        eq(assert(f:row(1)).displayPower,100100,"rapid final total held near renewed expiry")
+        f.clock.elapsedTime=started+5.301;eq(f:row(1),nil,"rapid duplicate cannot extend final five-second deadline")
+    end)
+    case("power-extreme-final-values-three-team-cap-and-release", function()
+        local f = powerFixture(false)
+        local targets = {math.maxinteger,999999999999999872,1e300}
+        f:baseline({0,0,0})
+        local payload = {targets[1],targets[2],targets[3]}
+        for team = 4, 1000 do payload[team] = 999999 end
+        payload[0],payload[-1] = 999,999
+        f:emit(payload)
+        eq(#f.power.getDisplayRows(),3,"large incoming team list is limited to three legal squads")
+        f.clock.elapsedTime = 103.4
+        for team, target in ipairs(targets) do
+            local row = assert(f:row(team))
+            eq(row.power,target,"large authoritative target exact team "..team)
+            eq(row.displayPower,target,"large final power exact team "..team)
+            eq(row.displayDelta,target,"large final delta exact team "..team)
+            check(finite(row.displayPower) and row.displayPower >= 0,"large final sample finite team "..team)
+        end
+        local releases = #f.releases
+        f.clock.elapsedTime = 106.99
+        eq(#f.power.getDisplayRows(),3,"extreme gains retain all three rows before five-second expiry")
+        f.clock.elapsedTime = 107.001; f.power.update(0)
+        check(#f.releases > releases,"last-row wallclock expiry releases plaque visual token")
+        releases = #f.releases
+        f.power.update(0); f.power.isPlaying(); f.power.getDisplayRows()
+        eq(#f.releases,releases,"expired queries do not repeatedly release detached token")
+        f:emit({100,100,100}); releases = #f.releases
+        f.power.resetSession()
+        check(#f.releases > releases,"clear session explicitly releases visual token")
+        eq(#f.power.getDisplayRows(),0,"cleared session drops rolling rows")
+        eq(f.env._G,f.env,"effect global namespace is private env")
     end)
 end
 
@@ -512,7 +848,7 @@ local function runCardLifecycle()
         local f = controllerFixture("ui/fx/SpineCardEffect.lua", effects)
         local callbacks = {level = 0, job = 0, revive = 0, dungeon = 0}
         f.effect.preload(nil); f.effect.preload(f.vg)
-        eq(f.record.forbidden, 0, "Card preload never touches Spine or images")
+        eq(f.record.forbidden, 0, "受控Card后端preload不旁路原生入口")
         f.effect.playLevelUp(100, 200, function() callbacks.level = callbacks.level + 1 end)
         f.effect.playJobChange(300, 400, function() callbacks.job = callbacks.job + 1 end)
         f.effect.playRevive(500, 600, function() callbacks.revive = callbacks.revive + 1 end)
@@ -592,7 +928,7 @@ local function runCardLifecycle()
         f.effect.destroy(); f.effect.destroy()
         f.clock.elapsedTime = 200; f.effect.update(0)
         eq(canceled, 0, "destroy cancels callbacks rather than completes them")
-        eq(f.record.forbidden, 0, "Card lifecycle uses no native Spine/image calls")
+        eq(f.record.forbidden, 0, "受控Card生命周期只通过Sprites后端访问资源")
     end)
     case("card-procedural-fault-keeps-timed-business-callback", function()
         local calls, complete = 0, 0
@@ -609,7 +945,38 @@ local function runCardLifecycle()
         eq(calls, 1, "Card procedural fault visually disables once")
         f.clock.elapsedTime = 101.34; f.effect.update(0)
         eq(complete, 1, "Card visual failure preserves natural completion business callback")
-        eq(f.record.forbidden, 0, "Card fault never falls back to Spine/image")
+        eq(f.record.forbidden, 0, "Card故障不旁路受控Sprites依赖")
+    end)
+    case("card-cap-32-drops-oldest-and-size-overloads", function()
+        local samples,completed,released={},{},{}
+        local f=controllerFixture("ui/fx/SpineCardEffect.lua", {drawCard=function(_,kind,cx,cy,w,h,elapsed,duration,alpha,token)
+            samples[#samples+1]={kind=kind,cx=cx,w=w,h=h,token=token}
+        end,release=function(token) released[#released+1]=token end})
+        for index=1,40 do
+            f.effect.playRevive(index,200,function() completed[index]=(completed[index] or 0)+1 end,"tri"..((index-1)%3+1))
+        end
+        f.clock.elapsedTime=100.2
+        for team=1,3 do f.effect.draw(f.vg,"tri"..team) end
+        eq(#samples,32,"Card queue bounded at 32 across many simultaneous squads")
+        local survivors={}
+        for _,entry in ipairs(samples) do survivors[entry.cx]=true end
+        for index=1,8 do check(not survivors[index],"oldest record canceled at cap "..index) end
+        for index=9,40 do check(survivors[index],"new record survives global cap "..index) end
+        f.clock.elapsedTime=100.91; f.effect.update(1e9)
+        for index=1,40 do eq(completed[index] or 0,index<=8 and 0 or 1,"cap preserves surviving callback only "..index) end
+        check(#released>=40,"overflow and expiry release detached visual tokens")
+        f.effect.playLevelUp(101,200,nil,{width=120,height=210})
+        f.effect.playJobChange(102,200,nil,130,220)
+        f.effect.playRevive(103,200,nil,"dungeon",{size=140})
+        f.clock.elapsedTime=101.1; samples={}
+        f.effect.draw(f.vg,"battle"); f.effect.draw(f.vg,"church"); f.effect.draw(f.vg,"dungeon")
+        eq(#samples,3,"all three documented size overloads play")
+        eq(samples[1].w,120,"scope omitted table explicit width")
+        eq(samples[1].h,210,"scope omitted table explicit height")
+        eq(samples[2].w,130,"scope omitted numeric width")
+        eq(samples[2].h,220,"scope omitted numeric height")
+        eq(samples[3].w,140,"scope plus table size")
+        near(samples[3].h,140*955/538,"table size height uses actual card aspect")
     end)
 end
 
@@ -639,7 +1006,7 @@ local function runResultLifecycle()
         f.clock.elapsedTime = 200; f.effect.update(0)
         eq(completed, 2, "Result stop cancels callback")
         f.effect.destroy(); f.effect.destroy()
-        eq(f.record.forbidden, 0, "Result preload/lifecycle has no native create/load/images")
+        eq(f.record.forbidden, 0, "受控Result生命周期只通过Sprites后端访问资源")
     end)
     case("result-callback-throw-and-reentry", function()
         local count = 0
@@ -691,7 +1058,7 @@ local function runResultLifecycle()
         f.effect.draw(f.vg, 500, 600, 160)
         eq(draws, 2, "Result explicit destroy permits repaired procedural replay")
         check(f.effect.isPlaying(), "repaired Result replay valid")
-        eq(f.record.forbidden, 0, "Result fault never loads a Spine fallback")
+        eq(f.record.forbidden, 0, "Result故障不旁路受控Sprites依赖")
     end)
     case("result-old-draw-fault-cannot-cancel-reentrant-new-play", function()
         local complete = 0
@@ -734,7 +1101,7 @@ local function runPowerUI(vg)
     if currentStage <= 6 then case("power-real-ui-yoga-host-" .. currentStage, function()
         local UI = require("urhox-libs/UI")
         local f = realPowerFixture()
-        if currentStage == 1 then f:baseline(); f:emit({123456, 234567, 345678}); f.clock.elapsedTime = 102.6 end
+        if currentStage == 1 then f:baseline(); f:emit({123456, 234567, 345678}); f.clock.elapsedTime = 103.4 end
         local hosts = { {1920,1080,1}, {3840,2160,2}, {2560,1080,1},
             {1080,2400,3}, {800,600,1}, {360,640,2} }
         for _, host in ipairs({hosts[currentStage]}) do
@@ -752,6 +1119,7 @@ local function runPowerUI(vg)
             local layout = root:GetLayout()
             near(layout.w, 760, "real Yoga root width")
             near(layout.h, cardHeight, "real Yoga root height matches geometry")
+            near(cardHeight,506,"three-row plaque reserves 218 header/padding plus 3x96 rows")
             near(capture.width, layout.w, "Surface width matches actual root")
             near(capture.height, layout.h, "Surface height matches actual root")
             eq(root.props.pointerEvents, "none", "Power UI never captures game input")
@@ -761,20 +1129,45 @@ local function runPowerUI(vg)
             near(header:GetAbsoluteLayout().x + header:GetAbsoluteLayout().w*.5, layout.w*.5,
                 "real title Label center aligned")
             eq(header.props.textAlign, "center", "title text alignment center")
+            check(header:GetAbsoluteLayout().y>=81.999,"actual title below plaque top border reserved 82")
             local expected = {123456,234567,345678}
             for team = 1, 3 do
                 local row = children[team + 1]
                 check(row:IsVisible(), "real team row visible " .. team)
                 local labels = row:GetChildren()
-                local teamLabel, valueLabel = labels[1], labels[2] ---@type Label, Label
+                local teamLabel, valueLine, rangeLabel = labels[1], labels[2], labels[3] ---@type Label, Panel, Label
+                local main = valueLine:GetChildren()
+                local icon, valueLabel, remainingLabel = main[1], main[2], main[3] ---@type Panel, Label, Label
+                eq(#labels,3,"real row retains team/combined value line plus range Label "..team)
                 eq(teamLabel:GetText(), "小队 " .. team, "real team Label identity " .. team)
-                check(valueLabel:GetText():find(tostring(expected[team]),1,true) ~= nil,
-                    "real value Label contains team power " .. team)
-                check(valueLabel:GetText():find("+",1,true) ~= nil, "real value Label displays delta")
+                local base = ({100,200,300})[team]
+                eq(rangeLabel:GetText(),expectedRange(base,expected[team],expected[team]-base),
+                    "range shows authority old-to-new plus net gain team "..team)
+                local range = rangeLabel:GetAbsoluteLayout()
+                local rangeWidth = hostTextWidth(vg,rangeLabel)
+                check(rangeWidth > 0 and rangeWidth <= range.w+1 and range.w <= 580.001,
+                    "real range Label fits content and actual font team "..team)
+                near(range.x+range.w*.5,layout.w*.5,"real range centered",.50001)
+                check(range.y+range.h <= layout.h-81.999,"range stays above reserved plaque bottom border")
+                eq(valueLabel:GetText(),expectedPower(expected[team]),
+                    "real value Label is exact team total only " .. team)
+                check(not valueLabel:GetText():find("+",1,true), "real main value has no gain prefix or suffix")
                 local cell = valueLabel:GetAbsoluteLayout()
-                near(cell.x + cell.w*.5, layout.w*.5, "real team value Label centered", .50001)
+                local combined = valueLine:GetAbsoluteLayout()
+                near(combined.x + combined.w*.5, layout.w*.5, "real icon/total/remaining combination centered", .50001)
+                if currentStage==1 and team==1 then
+                    check(#main==3 and valueLine.props.flexDirection=="row"
+                        and icon.props.backgroundImage=="image/通用图标/ICON_ZDL.png"
+                        and icon.props.backgroundFit=="contain", "real main line reuses power icon Panel with contain")
+                    check(remainingLabel:GetText()=="+"..expectedPower(expected[team]-base)
+                        and remainingLabel.props.fontSize<valueLabel.props.fontSize,
+                        "real completed smaller Label retains full net increase")
+                end
                 check(cell.w > 0 and cell.h > 0 and cell.y + cell.h <= layout.h + .001,
                     "real Label width/height inside root")
+                near(row:GetLayout().h,96,"real rich team row height")
+                check(cell.y >= teamLabel:GetAbsoluteLayout().y+teamLabel:GetAbsoluteLayout().h-.001
+                    and range.y >= cell.y+cell.h-.001,"three row labels never overlap team "..team)
                 eq(valueLabel.props.textAlign, "center", "real numeric text centered")
                 local textWidth = hostTextWidth(vg, valueLabel)
                 check(textWidth > 0 and textWidth <= cell.w + 1 and cell.w <= 580 + .001,
@@ -787,7 +1180,7 @@ local function runPowerUI(vg)
         local f = realPowerFixture()
         if currentStage == 7 then
             f:baseline({0,0,0}); f:emit({1e300, 987654321098765, 123456789})
-            f.clock.elapsedTime = f.clock.elapsedTime + .5
+            f.clock.elapsedTime = f.clock.elapsedTime + 1.4
         end
         local languages = {{"zh_CN","战力提升"},{"zh_TW","戰力提升"},{"en","POWER INCREASED"},
             {"ja","戦力上昇"},{"ko","전투력 상승"}}
@@ -801,11 +1194,20 @@ local function runPowerUI(vg)
             eq(header:GetText(), expected, "real localized title " .. language)
             for team = 1, 3 do
                 local labels = children[team+1]:GetChildren()
-                local value = labels[2] ---@type Label
+                local value = labels[2]:GetChildren()[2] ---@type Label
+                local range = labels[3] ---@type Label
+                local rangeLayout = range:GetAbsoluteLayout()
+                local rangeWidth = hostTextWidth(vg,range)
+                local row = assert(f:row(team))
+                eq(range:GetText(),expectedRange(row.base,row.power,row.delta),
+                    "localized auxiliary retains exact authority range and net "..language.."/"..team)
+                check(rangeWidth > 0 and rangeWidth <= rangeLayout.w+1 and rangeLayout.w <= 580.001,
+                    "localized extreme range actual font fits "..language.."/"..team)
                 local layout = value:GetAbsoluteLayout()
                 local text = value:GetText()
-                check(#text < 100 and text:find("+",1,true) ~= nil,
-                    "extreme finite number compact and retains increase " .. language .. "/" .. team)
+                eq(text,expectedPower(row.displayPower),
+                    "extreme finite main value is exact total only " .. language .. "/" .. team)
+                check(#text < 100,"extreme finite number remains compact " .. language .. "/" .. team)
                 local textWidth = hostTextWidth(vg, value)
                 check(textWidth > 0 and textWidth <= layout.w + 1 and layout.w <= 580 + .001,
                     "long actual multilingual text auto-width inside content area " .. language .. "/" .. team
@@ -817,21 +1219,29 @@ local function runPowerUI(vg)
     elseif currentStage <= 16 then case("power-real-ui-font-transition-" .. currentStage, function()
         local f = realPowerFixture()
         local values = {987654321098765, 123456, 987654321098765,
-            999999999999999872, 999999999999999872}
+            123456789012345671, 123456789012345671}
         local index = currentStage - 11
         local value = values[index]
         if index < 5 then
             f:baseline({0,0,0}); f:emit({0,value,0})
-            f.clock.elapsedTime = f.clock.elapsedTime + .5
+            f.clock.elapsedTime = f.clock.elapsedTime + 1.4
         end
         f.power.draw(vg,1920,1080)
         local root = assert(f.draws[#f.draws]).root
-        local label = root:GetChildren()[3]:GetChildren()[2] ---@type Label
+        local valueLine = root:GetChildren()[3]:GetChildren()[2] ---@type Panel
+        local label = valueLine:GetChildren()[2] ---@type Label
         local layout = label:GetAbsoluteLayout()
         local text = label:GetText()
-        local formatted = string.format("%.0f", value)
-        eq(text, formatted .. "   +" .. formatted,
-            "long/short/18-digit Power retains exact integer display frame " .. index)
+        local formatted = expectedPower(value)
+        eq(text, formatted,
+            "long/short/18-digit Power retains exact total-only display frame " .. index)
+        local range = root:GetChildren()[3]:GetChildren()[3] ---@type Label
+        eq(range:GetText(),expectedRange(0,value,value),
+            "long/short auxiliary retains exact authority and net frame " .. index)
+        local rangeLayout = range:GetAbsoluteLayout()
+        local rangeMeasured = hostTextWidth(vg,range)
+        check(rangeMeasured > 0 and rangeMeasured <= rangeLayout.w + 1 and rangeLayout.w <= 580.001,
+            "long/short/18-digit auxiliary actual width stays inside 580 frame=" .. index)
         check(not text:find("e",1,true), "up to 18 digits not replaced by scientific notation")
         local measured = hostTextWidth(vg,label)
         print(TAG .. string.format(" [UI WIDTH] frame=%d bytes=%d font=%s measured=%s layout=%s value=%s",
@@ -840,13 +1250,14 @@ local function runPowerUI(vg)
             "consecutive long/short/integer-max actual width stays inside 580 frame=" .. index
             .. " measured=" .. tostring(measured) .. " layout=" .. tostring(layout.w)
             .. " font=" .. tostring(label.props.fontSize))
-        near(layout.x + layout.w*.5,root:GetLayout().w*.5,
-            "consecutive font change actual Label centered",.50001)
+        local combined = valueLine:GetAbsoluteLayout()
+        near(combined.x + combined.w*.5,root:GetLayout().w*.5,
+            "consecutive font change actual combination centered",.50001)
         if index == 2 then
             eq(label.props.fontSize,27,"long to short restores normal font")
             check(layout.w < uiState.transitionWidth,"long to short recomputes narrower auto width")
         elseif index == 3 then
-            check(label.props.fontSize < 27,"short to long reduces font before measurement")
+            check(label.props.fontSize>18 and label.props.fontSize<=27,"15-digit total retains readable paired font budget")
             check(layout.w > uiState.transitionWidth,"short to long recomputes larger auto width")
         elseif index == 5 then
             near(layout.w,uiState.transitionWidth,"unchanged maximum integer width stable next frame")
@@ -862,6 +1273,7 @@ local function runPowerUI(vg)
         f.clock.elapsedTime = f.clock.elapsedTime + .5
         f.power.draw(vg, 1920,1080)
         local root = assert(f.draws[#f.draws]).root
+        near(root:GetLayout().h,314,"single-team plaque reserves header218 plus row96")
         local children = root:GetChildren()
         check(not children[2]:IsVisible() and children[3]:IsVisible() and not children[4]:IsVisible(),
             "only team2 shown, hidden rows genuinely leave Yoga layout")
@@ -875,7 +1287,164 @@ local function runPowerUI(vg)
         f.power.draw(vg,1920,1080)
         eq(#f.draws,before+1,"Power draws again after invalid host")
     end)
-    elseif currentStage == 18 then case("power-real-label-render-fault-recovers-outer-state", function()
+    elseif currentStage <= 24 then case("power-real-ui-rolling-range-and-retarget-"..currentStage,function()
+        local f=realPowerFixture()
+        if currentStage==18 then
+            f:baseline({100,200,300}); f:emit({200,350,500})
+            uiState.rollStarted=f.clock.elapsedTime
+            uiState.rangeTexts={}
+        end
+        local offsets={[18]=0,[19]=.585,[20]=.585,[21]=1.985,[22]=2,[23]=2.585,[24]=3.1}
+        f.clock.elapsedTime=uiState.rollStarted+offsets[currentStage]
+        if currentStage==20 then
+            local old=assert(f:row(2)); uiState.oldSample=old.displayPower
+            f:emit({200,450,500})
+            eq(assert(f:row(2)).displayPower,uiState.oldSample,"real UI retarget keeps current middle sample")
+        elseif currentStage==22 then
+            local old=assert(f:row(2)); uiState.fallSample=old.displayPower
+            f:emit({200,400,500})
+            eq(assert(f:row(2)).displayPower,uiState.fallSample,"real UI decline keeps current displayed total")
+            eq(assert(f:row(2)).delta,200,"real UI decline auxiliary uses reduced authority net")
+        end
+        f.power.draw(vg,1920,1080)
+        local root=assert(f.draws[#f.draws]).root
+        for team=1,3 do
+            local row=assert(f:row(team))
+            local labels=root:GetChildren()[team+1]:GetChildren()
+            local value,range=labels[2]:GetChildren()[2],labels[3] ---@type Label, Label
+            local remaining=labels[2]:GetChildren()[3] ---@type Label
+            eq(value:GetText(),expectedPower(row.displayPower),
+                "real main UI text is sampled integer total only team "..team)
+            eq(remaining:GetText(),"+"..expectedPower(row.delta),
+                "real smaller net Label stays authoritative throughout rolling team "..team)
+            check(not value:GetText():find("+",1,true),"rolling main value never draws displayDelta team "..team)
+            eq(range:GetText(),expectedRange(row.base,row.power,row.delta),
+                "real UI auxiliary remains authoritative team "..team)
+            if currentStage==18 then
+                uiState.rangeTexts[team]=range:GetText()
+            elseif (currentStage==20 or currentStage==22) and team==2 then
+                check(range:GetText()~=uiState.rangeTexts[team],"real authority retarget updates only team2 auxiliary")
+                uiState.rangeTexts[team]=range:GetText()
+            else
+                eq(range:GetText(),uiState.rangeTexts[team],
+                    "auxiliary exact old-new-net unchanged across start/middle/final team "..team.." stage "..currentStage)
+            end
+            for _,label in ipairs({value,range}) do
+                local l=label:GetAbsoluteLayout()
+                local w=hostTextWidth(vg,label)
+                check(w>0 and w<=l.w+1 and l.w<=580.001,"rolling real font layout in bounds team "..team)
+            end
+            if currentStage==18 then
+                eq(row.displayPower,row.base,"first visible rolling UI retains old integer team "..team)
+                eq(row.displayDelta,0,"first visible rolling sample still starts with zero gain team "..team)
+                check(range:GetText():find("+"..expectedPower(row.delta),1,true)~=nil,
+                    "first auxiliary shows full authority net, not sampled zero team "..team)
+            elseif currentStage==19 then
+                check(row.displayPower>row.base and row.displayPower<row.power,"actual middle UI has not jumped to final team "..team)
+            elseif currentStage==21 or currentStage==24 then
+                eq(row.displayPower,row.power,"real UI final integer target exact team "..team)
+                eq(row.displayDelta,row.delta,"real UI final gain sample exact team "..team)
+            elseif currentStage==23 and team==2 then
+                check(row.displayPower<uiState.fallSample and row.displayPower>row.power,
+                    "real declining main value rolls between current display and reduced authority")
+            end
+        end
+    end)
+    elseif currentStage == 25 then case("power-real-ui-worst-three-18-digit-range",function()
+        local f=realPowerFixture()
+        local base,target=100000000000000000,999999999999999999
+        local delta=target-base
+        f:baseline({base,0,0}); f:emit({target,0,0})
+        local started=f.clock.elapsedTime
+        local expected=expectedRange(base,target,delta)
+        -- 超大净增保留到5秒，4.4秒仍须展示准确终值和完整净增而不是已清零的剩余查询。
+        for index,offset in ipairs({0,.585,1.4,4.4}) do
+            f.clock.elapsedTime=started+offset
+            f.power.draw(vg,1920,1080)
+            local root=assert(f.draws[#f.draws]).root
+            local labels=root:GetChildren()[2]:GetChildren()
+            local valueLine=labels[2] ---@type Panel
+            local main=valueLine:GetChildren()
+            local icon,value,remaining=main[1],main[2],main[3] ---@type Panel, Label, Label
+            local range=labels[3] ---@type Label
+            local row=assert(f:row(1))
+            eq(value:GetText(),expectedPower(row.displayPower),"worst-18-digit main exact sample "..index)
+            eq(remaining:GetText(),"+"..expectedPower(row.delta),"worst-18-digit fixed full net increase "..index)
+            eq(range:GetText(),expected,"worst-three-18-digit auxiliary unchanged start/middle/final "..index)
+            check(value.props.fontSize>18 and value.props.fontSize<=27
+                and remaining.props.fontSize<value.props.fontSize,"worst-18-digit paired font budget "..index)
+            eq(range.props.fontSize,12,"worst-three-18-digit auxiliary retains original font "..index)
+            for _,label in ipairs({value,remaining,range}) do
+                local layout=label:GetAbsoluteLayout()
+                local measured=hostTextWidth(vg,label)
+                check(measured>0 and measured<=layout.w+1 and layout.w<=580.001,
+                    "worst-three-18-digit actual font fits 580 sample="..index.." measured="..measured.." layout="..layout.w)
+            end
+            local combined=valueLine:GetAbsoluteLayout()
+            local iconLayout=icon:GetAbsoluteLayout()
+            local remainingLayout=remaining:GetAbsoluteLayout()
+            check(combined.w<=580.001 and iconLayout.x>=combined.x-.001
+                and remainingLayout.x+remainingLayout.w<=combined.x+combined.w+.001,
+                "worst-18-digit icon and both numbers fit combined 580 budget "..index)
+            near(combined.x+combined.w*.5,root:GetLayout().w*.5,"worst-18-digit combination centered "..index,.50001)
+            local rangeLayout=range:GetAbsoluteLayout()
+            near(rangeLayout.x+rangeLayout.w*.5,root:GetLayout().w*.5,"worst-18-digit authority range centered "..index,.50001)
+            near(icon.props.opacity,value.props.fontColor[4]/255,"power icon shares numeric fade alpha "..index)
+            if uiState.powerIcon then eq(icon,uiState.powerIcon,"power frames reuse same image Panel "..index) end
+            uiState.powerIcon=icon
+            if index==1 then eq(row.displayPower,base,"worst-18-digit start preserves exact base")
+            elseif index==2 then check(row.displayPower>base and row.displayPower<target,"worst-18-digit middle truly interpolates")
+            else eq(row.displayPower,target,"worst-18-digit final exact authority") end
+        end
+    end)
+    elseif currentStage == 26 then case("power-real-ui-shared-plaque-duration-fixed-across-short-row-expiry",function()
+        local f=realPowerFixture();f:baseline({100,200,300})
+        local started=f.clock.elapsedTime
+        f:emit({100100,200,300})
+        f.clock.elapsedTime=started+.3;f.power.draw(vg,1920,1080)
+        local original=assert(f.powerDraws[#f.powerDraws])
+        near(original.duration,5,"first large-gain plaque has five-second timeline")
+        near(original.elapsed,.3,"first plaque uses original growth clock")
+        f.clock.elapsedTime=started+.5;f:emit({100100,250,300})
+        f.clock.elapsedTime=started+.8;f.power.draw(vg,1920,1080)
+        local restarted=assert(f.powerDraws[#f.powerDraws])
+        check(restarted.token~=original.token,"real second-team growth creates fresh plaque token")
+        near(restarted.duration,4.5,"new plaque covers remaining large-row deadline not short-row 3.2")
+        near(restarted.elapsed,.3,"new plaque clock bound to latest genuine growth")
+        local releases=#f.releases
+        local previousElapsed=restarted.elapsed
+        -- 小增队3.7秒先到期，铭牌不能切回旧大增队的age或改变同token的动画duration。
+        for index,offset in ipairs({3.69,3.701,4.4}) do
+            f.clock.elapsedTime=started+offset
+            f:emit({100100,250,300});f.power.update(1e9)
+            local calls=#f.powerDraws
+            f.power.draw(vg,1920,1080)
+            eq(#f.powerDraws,calls+1,"large-row remainder still draws plaque "..index)
+            local sample=assert(f.powerDraws[#f.powerDraws])
+            eq(sample.token,restarted.token,"short-row expiry preserves plaque token "..index)
+            near(sample.duration,4.5,"short-row expiry preserves fixed plaque duration "..index)
+            near(sample.elapsed,offset-.5,"plaque elapsed stays bound to token start "..index)
+            check(sample.elapsed>previousElapsed,"plaque elapsed monotonic through short expiry "..index)
+            check(sample.elapsed<sample.duration and sample.alpha>0,"surviving large-row plaque stays visible "..index)
+            eq(#f.releases,releases,"duplicate and partial expiry never retire plaque "..index)
+            previousElapsed=sample.elapsed
+            local root=assert(f.draws[#f.draws]).root
+            local children=root:GetChildren()
+            check(children[2]:IsVisible(),"large-gain UI row remains visible "..index)
+            eq(children[3]:IsVisible(),index==1,"short-gain row disappears only at own deadline "..index)
+            near(sample.height,index==1 and 410 or 314,"real plaque compacts rows without changing timeline "..index)
+            local main=children[2]:GetChildren()[2]:GetChildren()
+            local value,net=main[2],main[3] ---@type Label, Label
+            eq(value:GetText(),"100100","surviving large-gain exact final total readable "..index)
+            eq(net:GetText(),"+100000","surviving large-gain full net readable "..index)
+        end
+        f.clock.elapsedTime=started+5.001
+        local calls=#f.powerDraws
+        f.power.draw(vg,1920,1080)
+        eq(#f.powerDraws,calls,"last-row expiry stops plaque draw")
+        check(#f.releases>releases,"last-row expiry finally retires shared plaque token")
+    end)
+    elseif currentStage == 27 then case("power-real-label-render-fault-recovers-outer-state", function()
         local f = realPowerFixture()
         f:baseline(); f:emit({110,220,330}); f.clock.elapsedTime = f.clock.elapsedTime + .5
         f.power.draw(vg,1920,1080)
@@ -918,6 +1487,7 @@ local function configureVisual()
     for _, arg in ipairs(GetArguments()) do
         if arg == "-dark-visual" then visual.enabled = true end
         if arg == "-dark-power-only" then visual.powerOnly = true end
+        if arg == "-dark-png" then visual.pngOnly = true end
         if arg == "-dark-ui-only" then testMode.uiOnly = true end
         if arg == "-dark-logic-only" then testMode.logicOnly = true end
         local sample = arg:match("^%-dark%-sample=(.+)$")
@@ -941,15 +1511,15 @@ local function configureVisual()
 end
 
 local function setupVisual(vg)
-    local primitives = require("ui.fx.DarkEffectPrimitives")
+    local rich = visualRichBackend()
     local function nativeFixture(path)
-        local f = controllerFixture(path, primitives)
+        local f = controllerFixture(path, rich)
         for key, value in pairs(_G) do
             if type(key) == "string" and key:match("^nvg") then f.env[key] = value end
         end
         return f
     end
-    visual.power = powerFixture(true)
+    visual.power = powerFixture(true, true)
     visual.power.language.value = visual.language
     visual.power:baseline({10000, 20000, 30000})
     local values = {123456, 234567, 345678}
@@ -984,7 +1554,7 @@ local function setupVisual(vg)
             textAlign="center", verticalAlign="middle", fontColor={216,201,163,255}, pointerEvents="none",
             position="absolute", left=({125,475,835,1195,1555})[index], top=520}
     end
-    children[#children+1] = UI.Label {text=string.format("sample %.2fs | teams %d | %s | real UI / cards / procedural paths",
+    children[#children+1] = UI.Label {text=string.format("sample %.2fs | teams %d | %s | real UI / cards / Spine + textures",
         visual.sample, visual.teams, visual.language), width="100%", height=45, fontSize=14,
         textAlign="center", fontColor={150,138,110,255}, pointerEvents="none", position="absolute", top=1010}
     visual.caption = UI.Panel {width=1920,height=1080,pointerEvents="none",children=children}
@@ -995,7 +1565,25 @@ end
 local function drawVisual(vg)
     nvgBeginPath(vg); nvgRect(vg,0,0,1920,1080)
     nvgFillColor(vg,nvgRGBA(13,11,9,255)); nvgFill(vg)
-    if visual.powerOnly then visual.power.power.draw(vg,1920,1080); return end
+    if visual.powerOnly then
+        visual.power.power.draw(vg,1920,1080)
+        if not visual.powerChecked then
+            visual.powerChecked=true
+            local root=assert(visual.power.draws[#visual.power.draws],"actual visual Power surface missing").root
+            for team=1,visual.teams do
+                local row=assert(visual.power:row(team))
+                local labels=root:GetChildren()[team+1]:GetChildren()
+                local value,range=labels[2]:GetChildren()[2],labels[3] ---@type Label, Label
+                eq(value:GetText(),expectedPower(row.displayPower),"visual actual main total only team "..team)
+                eq(range:GetText(),expectedRange(team*10000,({123456,234567,345678})[team],
+                    ({123456,234567,345678})[team]-team*10000),"visual auxiliary authority independent of sample team "..team)
+                print(TAG.." VISUAL VALUE team="..team.." sample="..visual.sample
+                    .." main="..value:GetText().." auxiliary="..range:GetText())
+            end
+            print(TAG.." VISUAL ASSERTIONS assertions="..totals.assertions.." failures="..totals.failures)
+        end
+        return
+    end
     -- Power actual controller is centered in a bounded top host; its UI tree/Surface/labels are real.
     visual.power.power.draw(vg,1920,470)
     for index, center in ipairs({250,600,960}) do
@@ -1063,9 +1651,16 @@ function HandleDarkEffectsTestRender(_eventType, _eventData)
         if not frameOk then check(false, "real NanoVG frame completion: " .. tostring(frameErr)) end
     end
     if not ok then check(false, "real UI suite exception: " .. tostring(err)) end
-    if not ok or (not visual.enabled and uiState.stage >= 18) then summarize() end
+    if not ok or (not visual.enabled and uiState.stage >= 27) then summarize() end
 end
 
 function Stop()
-    if renderContext then nvgDelete(renderContext); renderContext = nil end
+    for i=#cleanups,1,-1 do pcall(cleanups[i]) end
+    if visual.backend then pcall(visual.backend.destroy);visual.backend=nil end
+    if visual.caption then pcall(function() visual.caption:Destroy() end);visual.caption=nil end
+    if renderContext then
+        for _,image in ipairs(visual.images) do if image>0 then nvgDeleteImage(renderContext,image) end end
+        visual.images={}
+        nvgDelete(renderContext); renderContext = nil
+    end
 end

@@ -306,6 +306,375 @@ local function context(heroId, slot, branch, main, off, level)
         [99] = { armor = seqByTemplate.A31 } }
 end
 
+-- 新筛选专项独立运行：不借用下方全模板 applyEquip oracle，不改变旧断言。
+-- 评分只用确定性 mock；筛选/排序/缓存与词条水合执行真实生产模块。
+local function runDetailedFilters()
+    local Filters = require("ui.backpack.BackpackFilters")
+    local Affixes = require("config.AffixConfig")
+    local AD = require("systems.AttributeDef")
+    local Sets = require("config.EquipmentSetConfig")
+    local Power = require("systems.EquipmentPower")
+    local savedGet, savedRevision = Store.Get, Store.GetRevision
+    local savedScore, savedContext, savedEvaluate = Power.score, Power.getContext, Power.evaluate
+    local source = { equipment = { inventory = {}, equipped = {} },
+        heroes = { roster = { [1] = { level = 100 } } }, artifacts = {}, talents = {} }
+    local revisions = { equipment = 1, heroes = 1, artifacts = 1, talents = 1 }
+    local settings = { sortAscending = false, setFilter = {} }
+    local view = { open = true, tab = "equip", scrollY = 0 }
+    ---@type string|nil
+    local slot = nil
+    ---@type number|nil
+    local hero = nil
+    local dual = false
+    local selectedQualities, changes, scoreCalls = {}, 0, 0
+    Store.Get = function(key) return source[key] end
+    Store.GetRevision = function(key) return revisions[key] or 0 end
+    Power.score = function(equip) scoreCalls = scoreCalls + 1; return equip.testPower or 0 end
+    Power.getContext = function(id) return { heroId = id } end
+    Power.evaluate = function() return { valid = true, gain = 0, power = 0 } end
+    local function qualityMatches(q) return not next(selectedQualities) or selectedQualities[q] == true end
+    local smallGrids = Grids.bind({ GRID = GRID, CELL_COL_CX = cells, DESIGN_W = 1080,
+        state = view, decomposeState = settings, ITEM_DEFS = {}, DrawUtil = Draw,
+        getEquipmentSlotFilter = function() return slot, hero end,
+        qualityChecked = qualityMatches,
+        setChecked = function(tid)
+            return not next(settings.setFilter)
+                or settings.setFilter[Sets.getSetIdForTemplate(EC.ITEMS[tid]) or "none"] == true
+        end,
+        calcScrollMax = function() return 0 end, clampScroll = function() end,
+    })
+    local toolbar = Filters.bind({ filters = settings, GRID = GRID,
+        getSlot = function() return slot end, setSlot = function(value) slot = value end,
+        isDualWield = function() return dual end,
+        onChange = function() changes = changes + 1 end,
+        clearQualitySets = function() selectedQualities, settings.setFilter = {}, {} end,
+    })
+    local function install(inventory)
+        source.equipment = { inventory = inventory, equipped = {} }
+        revisions.equipment = revisions.equipment + 1
+    end
+    local function ids(list)
+        local out = {}
+        for _, entry in ipairs(list) do out[#out + 1] = tostring(entry.seq) end
+        return table.concat(out, ",")
+    end
+    local function order(expected, label) check(ids(smallGrids.getEquipList()) == expected, label) end
+    local function optionValues(options)
+        local values, unique = {}, true
+        for _, option in ipairs(options) do
+            if values[option.value] then unique = false end
+            values[option.value] = true
+        end
+        return values, unique
+    end
+    -- 按实际工具条坐标选菜单项；覆盖滚轮后的第八行而不访问私有 menu。
+    local function choose(key, value)
+        local x = key == "type" and 765 or 295
+        local y = GRID.FIRST_ROW_TOP - (key == "sort" and 136 or 226)
+        local options, index = toolbar.getOptions(key), nil
+        for i, option in ipairs(options) do if option.value == value then index = i; break end end
+        if not index then error("missing toolbar option " .. key .. ":" .. tostring(value)) end
+        if not toolbar.handleInput(x, y) or not toolbar.isOpen() then error("menu did not open: " .. key) end
+        toolbar.handleScroll(#options) -- 已选项可能让菜单自动滚动，先归零再定位。
+        local scroll = math.max(0, index - 8)
+        toolbar.handleScroll(-scroll)
+        local h = math.min(8, #options) * 62 + 12
+        local top = math.min(y + 43, GRID.CLIP_BOTTOM - h)
+        toolbar.handleInput(x, top + 6 + (index - scroll - 0.5) * 62)
+    end
+    local ok, err = pcall(function()
+        local slotValues, uniqueSlots = optionValues(toolbar.getOptions("slot"))
+        local expectedSlots = { all = true }
+        for _, value in ipairs(EC.SLOTS) do expectedSlots[value] = true end
+        check(uniqueSlots and deepEqual(slotValues, expectedSlots), "detailed slot options cover all six slots exactly once")
+        local attrs = {}
+        for _, tpl in pairs(EC.ITEMS) do for _, stat in ipairs(tpl.stats or {}) do attrs[stat[1]] = true end end
+        for _, affix in ipairs(Affixes.AFFIXES) do attrs[affix.key] = true end
+        for _, affix in ipairs(Affixes.CORRUPT_AFFIXES) do attrs[affix.key] = true end
+        local expectedSorts = { default = true, power = true, quality = true, level = true, ascend = true }
+        for key in pairs(attrs) do expectedSorts[key] = true end
+        local sortValues, uniqueSorts = optionValues(toolbar.getOptions("sort"))
+        check(uniqueSorts and deepEqual(sortValues, expectedSorts),
+            "detailed sorts include five modes plus every fixed, normal and corrupt attribute")
+        for _, target in ipairs({ "all", "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }) do
+            for _, allowDual in ipairs({ false, true }) do
+                slot, dual = target ~= "all" and target or nil, allowDual
+                local expectedTypes = { all = true }
+                for _, tpl in pairs(EC.ITEMS) do
+                    if not slot or tpl.slot == slot or (allowDual and slot == "offhand"
+                        and tpl.slot == "weapon" and tpl.grip == "onehand") then expectedTypes[tpl.type] = true end
+                end
+                local typeValues, uniqueTypes = optionValues(toolbar.getOptions("type"))
+                check(uniqueTypes and deepEqual(typeValues, expectedTypes),
+                    "detailed types match structural slot " .. target .. ", dual=" .. tostring(allowDual))
+            end
+        end
+        slot, dual = nil, false
+        choose("type", EC.ITEMS.W1.type)
+        check(settings.typeFilter == EC.ITEMS.W1.type and not toolbar.isOpen(), "type menu writes selected subtype and closes")
+        choose("slot", "armor")
+        check(slot == "armor" and settings.typeFilter == nil, "slot change clears stale subtype")
+        choose("slot", "all"); choose("type", "all")
+        check(slot == nil and settings.typeFilter == nil, "all slot and type remove structural restrictions")
+        for key in pairs(expectedSorts) do
+            choose("sort", key)
+            check(settings.sortKey == (key ~= "default" and key or nil), "sort menu writes stable key " .. key)
+        end
+        local beforeChanges = changes
+        toolbar.handleInput(605, GRID.FIRST_ROW_TOP - 136)
+        check(settings.sortAscending == true and changes == beforeChanges + 1, "order control selects ascending and invalidates display")
+        toolbar.handleInput(605, GRID.FIRST_ROW_TOP - 136)
+        check(settings.sortAscending == false, "order control selects descending")
+        toolbar.handleInput(295, GRID.FIRST_ROW_TOP - 136)
+        toolbar.handleInput(10, GRID.CLIP_BOTTOM + 20)
+        check(not toolbar.isOpen() and changes == beforeChanges + 2 and not toolbar.handleScroll(1),
+            "outside menu dismissal and closed scroll never change filters")
+        slot, settings.typeFilter, settings.sortKey, settings.sortAscending = "armor", "stale", "str", true
+        selectedQualities[6], settings.setFilter.none = true, true
+        toolbar.reset()
+        check(slot == nil and settings.typeFilter == nil and settings.sortKey == nil
+            and settings.sortAscending == false and not next(selectedQualities) and not next(settings.setFilter),
+            "reset clears slot, subtype, order, quality and set selections")
+
+        -- 冷存档只含 templateId；逐部位 + 逐类型独立验证 AND 筛选与套装基础计数。
+        local inventory = {}
+        for i, tid in ipairs({ "W1", "W13", "W7", "O7", "A31", "H1", "S1", "C1" }) do
+            inventory[tostring(i)] = { templateId = tid, level = 1, quality = i % 2 + 1 }
+        end
+        install(inventory)
+        local structuralBefore = deepCopy(source)
+        for _, target in ipairs(EC.SLOTS) do
+            slot = target
+            for _, option in ipairs(toolbar.getOptions("type")) do
+                settings.typeFilter = option.value ~= "all" and option.value or nil
+                local expectedIds = {}
+                for key, equip in pairs(inventory) do
+                    local tpl = EC.ITEMS[equip.templateId]
+                    if tpl.slot == target and (not settings.typeFilter or tpl.type == settings.typeFilter) then expectedIds[key] = true end
+                end
+                local actualIds, count = {}, 0
+                for _, entry in ipairs(smallGrids.getEquipList()) do actualIds[tostring(entry.seq)] = true end
+                for _, amount in pairs(smallGrids.getSetCounts()) do count = count + amount end
+                local n = 0; for _ in pairs(expectedIds) do n = n + 1 end
+                check(deepEqual(actualIds, expectedIds) and count == n,
+                    "slot AND subtype filters list and base counts: " .. target .. "/" .. option.value)
+            end
+        end
+        check(deepEqual(source, structuralBefore), "structural filters leave cold source and hero inventory unchanged")
+        slot, hero = "offhand", 1
+        source.heroes.roster[1].advBranch = { first = 104, second = 207 }
+        revisions.heroes = revisions.heroes + 1
+        settings.typeFilter = EC.ITEMS.W1.type
+        check(ids(smallGrids.getEquipList()) == "1", "dual offhand AND subtype adds matching onehand but excludes ordinary offhand and twohand")
+        selectedQualities[1] = true
+        check(#smallGrids.getEquipList() == 0, "dual offhand AND subtype AND quality never unions excluded candidates")
+        selectedQualities = { [2] = true }
+        check(ids(smallGrids.getEquipList()) == "1", "dual offhand matching quality restores selected onehand")
+        slot, hero, settings.typeFilter, selectedQualities = nil, nil, nil, {}
+        source.heroes.roster[1].advBranch = nil
+        revisions.heroes = revisions.heroes + 1
+        -- pairs 遍历模板无序，任取套装可能撞上基础库存已有套装，破坏精确1/0期望。
+        -- 按模板ID稳定选择基础库存完全没有的真实套装，不放宽下方交集断言。
+        local occupiedSets, templateIds = {}, {}
+        for _, equip in pairs(inventory) do
+            local id = Sets.getSetIdForTemplate(EC.ITEMS[equip.templateId])
+            if id then occupiedSets[id] = true end
+        end
+        for tid in pairs(EC.ITEMS) do templateIds[#templateIds + 1] = tid end
+        table.sort(templateIds)
+        ---@type string|nil
+        local setTid = nil
+        ---@type string|nil
+        local setId = nil
+        for _, tid in ipairs(templateIds) do
+            local id = Sets.getSetIdForTemplate(EC.ITEMS[tid])
+            if id and not occupiedSets[id] then setTid, setId = tid, id; break end
+        end
+        check(setTid ~= nil, "detailed set fixture includes a real affiliated template")
+        inventory["9"] = { templateId = setTid, level = 1, quality = 2 }
+        revisions.equipment = revisions.equipment + 1
+        settings.setFilter[setId] = true
+        check(ids(smallGrids.getEquipList()) == "9" and smallGrids.getSetCounts()[setId] == 1,
+            "set selection retains matching template while base count includes its instance")
+        selectedQualities[1] = true
+        check(#smallGrids.getEquipList() == 0 and smallGrids.getSetCounts()[setId] == 0,
+            "set AND quality intersection hides selected set rather than unioning qualities")
+        selectedQualities, settings.setFilter = {}, {}
+        inventory["9"] = nil
+        revisions.equipment = revisions.equipment + 1
+
+        install({
+            ["1"] = { templateId = "W1", quality = 1, level = 50, ascendLevel = 9, testPower = 10 },
+            [2] = { templateId = "W1", quality = 3, level = 20, ascendLevel = 2, testPower = 30 },
+            ["3"] = { templateId = "W1", quality = 3, level = 40, ascendLevel = 7, testPower = 20 },
+            [4] = { templateId = "W1", quality = 3, level = 20, ascendLevel = 2, testPower = 30 },
+            ["5"] = { templateId = "W1", quality = 2, level = 10, ascendLevel = 4, testPower = 40 },
+        })
+        local orders = {
+            { key = "default", descending = "2,4,3,5,1", ascending = "1,5,3,4,2" },
+            { key = "power", descending = "5,2,4,3,1", ascending = "1,3,2,4,5" },
+            { key = "quality", descending = "2,4,3,5,1", ascending = "1,5,2,4,3" },
+            { key = "level", descending = "1,3,2,4,5", ascending = "5,2,4,3,1" },
+            { key = "ascend", descending = "1,3,5,2,4", ascending = "2,4,5,3,1" },
+        }
+        local sortBefore = deepCopy(source)
+        for _, mode in ipairs(orders) do
+            choose("sort", mode.key)
+            settings.sortAscending = false; order(mode.descending, mode.key .. " descending has deterministic tie order")
+            settings.sortAscending = true; order(mode.ascending, mode.key .. " ascending has deterministic tie order")
+        end
+        check(deepEqual(source, sortBefore), "numeric modes never hydrate ascendLevel-only source")
+
+        -- 每个属性都测试固定+重复随机词条合计、显式零与缺属性；5件而非巨大试穿矩阵。
+        for key in pairs(attrs) do
+            check(AD.META[key] ~= nil, "sortable attribute has metadata: " .. key)
+            local affixTpl = Affixes.BY_KEY[key]
+            local function affix(value)
+                return { affixId = affixTpl and tostring(affixTpl.id) or nil,
+                    key = not affixTpl and key or nil, quality = 0, value = tostring(value) }
+            end
+            install({
+                [1] = { templateId = "W1", level = 1, quality = 1, baseStats = { { key, 10 } }, affixes = { affix(2), affix(3) } },
+                [2] = { templateId = "W1", level = 1, quality = 1, baseStats = { { key, 8 } }, affixes = { affix(1) } },
+                [3] = { templateId = "W1", level = 1, quality = 6, baseStats = {}, affixes = {} },
+                [4] = { templateId = "W1", level = 1, quality = 1, baseStats = { { key, 0 } }, affixes = {} },
+                [5] = { templateId = "W1", level = 1, quality = 1, baseStats = { { key, -2 } }, affixes = {} },
+            })
+            local before = deepCopy(source)
+            settings.sortKey, settings.sortAscending = key, false
+            order("1,2,4,5,3", key .. " descending sums fixed and repeated random attributes, missing stays last")
+            local values, presence = {}, {}
+            for _, entry in ipairs(smallGrids.getEquipList()) do values[entry.seq], presence[entry.seq] = entry.sortValue, entry.hasSortAttribute end
+            check(values[1] == 15 and values[2] == 9 and values[4] == 0 and values[5] == -2
+                and presence[4] == true and presence[3] == false, key .. " projection distinguishes zero/negative from missing")
+            settings.sortAscending = true
+            order("5,4,2,1,3", key .. " ascending still puts missing after zero/negative")
+            check(deepEqual(source, before), key .. " attribute hydration never rewrites nested source")
+        end
+
+        -- 真正精简、冷词条 key 缺失，含会被 hydrate 规范化的嵌套腐化回退快照。
+        install({ ["1"] = { templateId = "W1", level = 1, quality = 1, ascendLevel = 2,
+            affixMult = "1.5", affixes = { { affixId = "1", value = "7", ascBonus = "2" } },
+            corruptRevert = { baseMult = "1", affixCount = "1", patches = {
+                { ["1"] = "s", ["2"] = "1", ["3"] = "3", layer = "1" } } } } })
+        settings.sortKey, settings.sortAscending = "str", false
+        local coldBefore = deepCopy(source)
+        local cold = smallGrids.getEquipList()[1]
+        local fixed = 0
+        for index, stat in ipairs(EC.ITEMS.W1.stats) do
+            if stat[1] == "str" then
+                local steps = index == 1 and 2 or math.floor((2 - (index - 1)) / (#EC.ITEMS.W1.stats - 1)) + 1
+                fixed = fixed + stat[2] * (1 + math.max(0, steps) * 0.05)
+            end
+        end
+        check(cold and cold.hasSortAttribute == true and math.abs(cold.sortValue - (fixed + 7 * 1.5 + 2)) < 1e-9,
+            "cold affixId hydration includes fixed ascend, affix multiplier and ascBonus")
+        check(deepEqual(source, coldBefore) and source.equipment.inventory["1"].affixes[1].key == nil
+            and source.equipment.inventory["1"].baseStats == nil,
+            "cold nested corruptRevert and slim affixes stay byte-value unchanged after display hydration")
+        install({ [1] = { templateId = "W1", level = 1, quality = 1, baseStats = {},
+            affixMult = 9, affixes = { { affixId = "1001", quality = 0, value = "6", ascBonus = "99" } } } })
+        settings.sortKey = "finalPhysAtkBonus"
+        local corruptBefore = deepCopy(source)
+        local corrupt = smallGrids.getEquipList()[1]
+        check(corrupt and corrupt.sortValue == 6 and corrupt.hasSortAttribute == true,
+            "cold corrupt attribute does not receive ordinary affix multiplier or ascBonus")
+        check(deepEqual(source, corruptBefore), "cold corrupt hydration leaves source quality/key/ascBonus unchanged")
+
+        -- 独立缓存夹具：只在模拟正式 Store 版本通知时修改库存，滚动不评分。
+        install(inventory)
+        settings.sortKey, settings.sortAscending, settings.typeFilter = nil, false, nil
+        selectedQualities, settings.setFilter, slot, hero = {}, {}, nil, nil
+        local current = smallGrids.getEquipList()
+        local calls = scoreCalls
+        view.scrollY = 500
+        check(smallGrids.getEquipList() == current and scoreCalls == calls, "cache reuses list across repeated calls and scroll")
+        local function refresh(label)
+            local nextList = smallGrids.getEquipList()
+            check(nextList ~= current, "cache key refreshes " .. label)
+            current = nextList
+            local scored = scoreCalls
+            check(smallGrids.getEquipList() == current and scoreCalls == scored, "cache settles after " .. label)
+        end
+        settings.sortKey = "level"; refresh("sort key")
+        settings.sortAscending = true; refresh("sort direction")
+        settings.typeFilter = EC.ITEMS.W1.type; refresh("subtype")
+        settings.typeFilter = nil; refresh("subtype clear")
+        slot = "weapon"; refresh("slot")
+        hero = 1; refresh("hero context")
+        slot = "offhand"; refresh("offhand slot")
+        source.heroes.roster[1].advBranch = { first = 104, second = 207 }; refresh("dual wield context")
+        selectedQualities[1] = true; refresh("in-place quality selection")
+        selectedQualities[2] = true; refresh("in-place second quality selection")
+        settings.setFilter.none = true; refresh("in-place set selection")
+        settings.setFilter.none = nil; refresh("in-place set deselection")
+        for _, key in ipairs({ "equipment", "heroes", "artifacts", "talents" }) do
+            revisions[key] = revisions[key] + 1; refresh(key .. " revision")
+            source[key] = deepCopy(source[key]); refresh(key .. " source replacement")
+        end
+        slot, hero, selectedQualities = nil, nil, {}
+        settings.typeFilter, settings.setFilter = nil, {}
+        current = smallGrids.getEquipList()
+        source.equipment.inventory["99"] = { templateId = "W1", quality = 1, level = 1 }
+        revisions.equipment = revisions.equipment + 1; refresh("published inventory insertion")
+        check(#current == 9, "cache inventory revision exposes inserted candidate")
+        source.equipment.inventory["99"] = nil
+        revisions.equipment = revisions.equipment + 1; refresh("published inventory removal")
+        check(#current == 8, "cache inventory revision removes deleted candidate")
+        source.equipment = nil
+        current = smallGrids.getEquipList()
+        check(#current == 0, "cache source clear discards all previous candidates")
+        install(inventory); refresh("equipment source restore")
+        check(#current == 8, "cache source restore rebuilds after clear")
+        Store.GetRevision = nil
+        current = smallGrids.getEquipList()
+        local fresh = smallGrids.getEquipList()
+        check(fresh ~= current and #fresh == 8, "revision-less fixture rebuilds instead of retaining stale list")
+    end)
+    Store.Get, Store.GetRevision = savedGet, savedRevision
+    Power.score, Power.getContext, Power.evaluate = savedScore, savedContext, savedEvaluate
+    check(Store.Get == savedGet and Store.GetRevision == savedRevision and Power.score == savedScore
+        and Power.getContext == savedContext and Power.evaluate == savedEvaluate,
+        "detailed fixture restores Store and power APIs before legacy tests")
+    if not ok then error(err) end
+end
+
+local function runSharedReentry()
+    for _, closing in ipairs({ false, true }) do
+        local api, s, c = fixture()
+        check(type(api.enterEquipmentWarehouse) == "function", "genuine equipment entry API exists")
+        if not api.enterEquipmentWarehouse then return end
+        api.acquireWarehouse("blacksmith")
+        api.onManualClose(); s.open, s.closing = closing, closing
+        local opens = c.opens
+        check(api.acquireWarehouse("blacksmith") == false and c.opens == opens,
+            "smith repeat acquire respects shared manual-close suppression")
+        check(api.enterEquipmentWarehouse("1", "armor") == true and s.open and not s.closing
+            and s.tab == "equip" and c.opens == opens + 1,
+            "genuine equipment enter restores shared suppressed warehouse, closing=" .. tostring(closing))
+        local selectedSlot, selectedHero = api.getEquipmentSlotFilter()
+        check(selectedSlot == "armor" and selectedHero == 1, "genuine entry applies normalized hero and selected slot")
+        s.scrollY = 620
+        api.acquireWarehouse("equipment", 1, "armor")
+        check(c.opens == opens + 1 and s.scrollY == 620, "ordinary repeated equipment acquire never reopens restored warehouse")
+        api.releaseWarehouse("equipment")
+        check(s.open and not s.closing and c.closes == 0 and api.getEquipmentSlotFilter() == nil,
+            "equipment release preserves original smith holder and restores smith filter")
+        api.acquireWarehouse("blacksmith")
+        check(c.opens == opens + 1 and s.scrollY == 0, "smith still owns restored warehouse without duplicate reopen")
+        api.releaseWarehouse("blacksmith")
+        check(c.closes == 1 and s.closing, "last smith release closes restored auto session")
+    end
+end
+
+local function runIndependent(label, run)
+    local beforePasses, beforeFailures = passes, failures
+    local ok, err = pcall(run)
+    if not ok then check(false, label .. " exception: " .. tostring(err)) end
+    print("[backpack_equip_link_test " .. label .. "] passes=" .. (passes - beforePasses)
+        .. " failures=" .. (failures - beforeFailures))
+end
+
 local function runFilter()
     local seq = 0
     for tid in pairs(EC.ITEMS) do
@@ -739,6 +1108,8 @@ local function runSourceParity()
 end
 
 function Start()
+    runIndependent("detailed_filters", runDetailedFilters)
+    runIndependent("shared_reentry", runSharedReentry)
     local ok, err = pcall(function() runLifecycle(); runTutorialEnsure(); runFilter(); runSetCounts(); runSourceParity() end)
     if not ok then failures = failures + 1; print("[FAIL] exception: " .. tostring(err)) end
     print("[backpack_equip_link_test] " .. (failures == 0 and "ALL PASS" or "FAILURES=" .. failures) .. " (" .. passes .. " assertions)")

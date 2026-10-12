@@ -94,7 +94,7 @@ AD.FINAL_DODGE_BONUS         = "finalDodgeBonus"        -- 最终闪避（%）
 AD.HEAL_AMOUNT    = "healAmount"    -- 治疗量
 AD.HEAL_BONUS     = "healBonus"     -- 治疗加成（%）
 AD.HEAL_CRIT_RATE = "healCritRate"  -- 治疗暴击率（%）
-AD.HEAL_CRIT_DMG  = "healCritDmg"   -- 治疗暴击加成（%）
+AD.HEAL_CRIT_DMG  = "healCritDmg"   -- 暴击治疗（%）
 
 -- ======================== 六围 Key 列表 ========================
 
@@ -212,7 +212,7 @@ AD.META = {
     [AD.HEAL_AMOUNT]    = { name = "治疗量",       valueModel = 0.5,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.HEAL_BONUS]     = { name = "治疗加成",     valueModel = 25,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.HEAL_CRIT_RATE] = { name = "治疗暴击率",   valueModel = 80,   dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.HEAL_CRIT_DMG]  = { name = "治疗暴击加成", valueModel = 15,   dataType = AD.TYPE_PCT,   default = 200 },
+    [AD.HEAL_CRIT_DMG]  = { name = "暴击治疗",     valueModel = 15,   dataType = AD.TYPE_PCT,   default = 200 },
 }
 
 -- ======================== 六围派生表 ========================
@@ -237,7 +237,7 @@ AD.DESC = {
     [AD.RESISTANCE]       = "通常只能通过护甲转化而来",
     [AD.ENERGY_SHIELD]    = "受伤时先扣除护盾，护盾扣完后才扣生命。回复速度跟体质：体质越高，受伤后等待越短，每秒回复越多。护盾上限随等级成长：额外获得最大生命8%的护盾，六围派生护盾每级再放大5%。",
     [AD.DODGE]            = "影响被命中概率，命中率=(命中值+150)/(闪避值+150)",
-    [AD.THREAT]           = "影响被敌方随机攻击的权重，仇恨值越高越容易被集火",
+    [AD.THREAT]           = "影响被敌方随机攻击的权重，怨引值越高越容易被集火",
     [AD.HP_REGEN]         = "每秒恢复的生命值，可被治疗属性增幅",
     [AD.ATK_HEAL]         = "每次攻击时回复的生命值，可被治疗属性增幅",
     [AD.PHYS_BLOCK_RATE]  = "有概率格挡物理伤害，格挡后只受到(1-格挡比例)的伤害，上限100%",

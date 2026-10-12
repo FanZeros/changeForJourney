@@ -12,7 +12,7 @@ local HorizonBg = {}
 function HorizonBg.init(_vg)
 end
 
---- 左右栏底色。UI_CZ_BJ 已删除，可见画面由石框、关卡图和各页底板覆盖。
+--- 左右栏底色。可见画面由石框、关卡图和各页底板覆盖。
 ---@param vg any
 ---@param _half number 0=画布左半（左面板） 1=画布右半（右面板）
 ---@param alpha number 透明度 0-1

@@ -382,7 +382,7 @@ addStat("生命值", {
 })
 -- Threat 已属于「仇恨」；用独立显示匹配名区分怨引值，完整原文标题沿用已有词典。
 addStat("怨引值", {
-    "影響被敵方隨機攻擊的權重，仇恨值越高越容易被集火。",
+    "影響被敵方隨機攻擊的權重，怨引值越高越容易被集火。",
     "Affects the weight used when enemies choose a random attack target. Higher threat values make concentrated attacks more likely.",
     "敵のランダム攻撃対象に選ばれる重みに影響する。ヘイト値が高いほど集中攻撃を受けやすい。",
     "적의 무작위 공격 대상이 되는 가중치에 영향을 줍니다. 위협 수치가 높을수록 집중 공격을 받기 쉽습니다.",
@@ -442,6 +442,99 @@ addStat("魂火", {
     "1ポイントにつきシールド2.5、シールド補正0.5%、状態異常耐性0.1%、回復量1、回復強化0.4%、HP10を追加する。",
     "1포인트마다 보호막2.5, 보호막 보너스0.5%, 상태 이상 저항0.1%, 치유량1, 회복 보너스0.4%, 체력10이 증가합니다.",
 })
+
+-- 装备词条按稳定 AttributeDef key 查询，不扩大全局机制词表（最终力量不能拆成力量）。
+-- 已有属性解释复用上面的四语定义，缺口仅在此显示层补齐，不修改战斗/存档字符串。
+local AD = require("systems.AttributeDef")
+---@type table<string, string[]>
+local attributeDescriptions = {
+    atkHeal = {
+        "每次攻擊時回復的生命值，可被治療屬性增幅。",
+        "HP restored on each attack. Can be increased by healing stats.",
+        "攻撃するたびに回復するHP。回復能力によって増幅できる。",
+        "공격할 때마다 회복하는 체력으로, 치유 능력치로 증가시킬 수 있습니다.",
+    },
+    abnormalRes = {
+        "減少受到的異常狀態持續時間，上限80%。",
+        "Reduces the duration of status effects received. Capped at 80%.",
+        "受ける状態異常の持続時間を短縮する。上限80%。",
+        "받는 상태 이상의 지속시간을 줄입니다. 상한은 80%입니다.",
+    },
+    dmgBonus = {
+        "通用傷害加成，同時作用於物理傷害與魔法傷害。",
+        "General damage bonus, applying to both physical and magic damage.",
+        "物理ダメージと魔法ダメージの両方に適用される共通ダメージ補正。",
+        "물리 피해와 마법 피해 모두에 적용되는 공통 피해 보너스입니다.",
+    },
+    healAmount = {
+        "單位基礎治療量。", "The unit's base healing amount.",
+        "ユニットの基本回復量。", "유닛의 기본 치유량입니다.",
+    },
+    healCritDmg = {
+        "基礎200%，治療暴擊時額外乘以該值。",
+        "Base 200%. Critical healing is multiplied by this value.",
+        "基本200%。回復会心時にこの値を追加で掛ける。",
+        "기본 200%. 치유 치명타 시 이 값을 추가로 곱합니다.",
+    },
+    energyShield = {
+        "受傷時先扣除護盾，護盾扣完後才扣生命。回復速度跟體質：體質越高，受傷後等待越短，每秒回復越多。護盾上限隨等級成長：額外獲得最大生命8%的護盾，六圍派生護盾每級再放大5%。",
+        "Damage depletes Shield before HP. Higher VIT shortens the wait after damage and increases recovery per second. Shield scales with level: adds Shield equal to 8% of max HP, and Shield derived from the six base stats grows by another 5% per level.",
+        "被ダメージはシールドを先に消費し、なくなるとHPを消費する。体力が高いほど被弾後の待ち時間が短くなり、毎秒の回復が増える。最大HPの8%を追加シールドとして獲得し、六つの基本能力から派生するシールドはレベルごとにさらに5%増加する。",
+        "피격 시 보호막을 먼저 소모한 뒤 체력을 차감합니다. 체질이 높을수록 피격 후 대기시간이 짧고 초당 회복량이 많습니다. 최대 체력의 8%를 추가 보호막으로 얻으며, 기본 6능력치에서 파생되는 보호막은 레벨마다 추가로 5% 증가합니다.",
+    },
+}
+
+-- 完整魔化名称/旧别名都通过同一 key 对应最终乘区，不混淆普通百分比加成。
+local finalTargets = {
+    finalPhysAtkBonus = "physAtk", finalMagAtkBonus = "magAtk", finalHpBonus = "maxHp",
+    finalStrBonus = "str", finalAgiBonus = "agi", finalIntBonus = "int",
+    finalVitBonus = "vit", finalLukBonus = "luk", finalSpiBonus = "spi",
+    finalArmorBonus = "armor", finalEnergyShieldBonus = "energyShield", finalDodgeBonus = "dodge",
+}
+local finalTemplates = {
+    "最終乘區百分比增加%s", "Increases %s by a percentage in the final multiplicative layer.",
+    "最終乗算枠で%sを割合増加させる。", "최종 곱연산 영역에서 %s을(를) 백분율로 증가시킵니다.",
+}
+local derivedNotes = {
+    "，並重新計算六圍派生。", " Recalculates stats derived from the six base stats.",
+    "六つの基本能力から派生する能力値を再計算する。", " 기본 6능력치에서 파생되는 능력치를 다시 계산합니다.",
+}
+for key, target in pairs(finalTargets) do
+    local descriptions = {}
+    for i, lang in ipairs(languages) do
+        local name = assert(Equipment[lang][AD.META[target].name])
+        descriptions[i] = string.format(finalTemplates[i], name)
+        if AD.FINAL_BASE_STAT_BONUS[target] then descriptions[i] = descriptions[i] .. derivedNotes[i] end
+    end
+    attributeDescriptions[key] = descriptions
+end
+attributeDescriptions.finalDamageBonus = {
+    "作為獨立乘區百分比提高造成的最終傷害。",
+    "Increases final damage dealt by a percentage in an independent multiplicative layer.",
+    "独立した乗算枠で与える最終ダメージを割合増加させる。",
+    "독립 곱연산 영역에서 주는 최종 피해를 백분율로 증가시킵니다.",
+}
+
+--- 装备属性解释：58种词条完整四语对应；标题由稳定 key 取规范名，不使用旧存档名称。
+---@param key string
+---@param lang string
+---@param sourceName string|nil 兼容旧调用参数；已知属性的标题始终使用 AD 规范名
+---@return {key:string, title:string, desc:string}|nil
+function D.getAttribute(key, lang, sourceName)
+    local meta = AD.META[key]
+    if not meta or AD.getDesc(key) == "" then return nil end
+    local title = meta.name or sourceName
+    if lang == "zh_CN" then return { key = key, title = title, desc = AD.getDesc(key) } end
+    local langIndex
+    for i, language in ipairs(languages) do if language == lang then langIndex = i; break end end
+    if not langIndex then return nil end
+    local existing = definitions[lang][meta.name]
+    local descriptions = attributeDescriptions[key]
+    local desc = descriptions and descriptions[langIndex]
+        or (existing and existing.desc) or Equipment[lang][AD.getDesc(key)]
+    if not desc then return nil end
+    return { key = key, title = Equipment[lang][title] or (existing and existing.title) or title, desc = desc }
+end
 
 --- 精确完整原文查询；未知文本和无效语言返回 nil，供 I18n.lookup 原文回退。
 ---@param text any

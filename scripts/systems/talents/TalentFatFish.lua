@@ -102,6 +102,7 @@ function M.bind(deps)
                 dealDmgFn(splashTarget, dmg, not isAlly, "喷水 ", { 80, 180, 255 }, {
                     instantDamage = true,
                     statCategory = "magical",
+                    atkType = AD.ATK_ICE,
                 })
                 applyWet(attacker, splashTarget)
             end

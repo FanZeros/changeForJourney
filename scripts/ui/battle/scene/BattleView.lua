@@ -19,14 +19,20 @@ local STRIP_W = BattleLayout.STRIP_W   -- 948
 local STRIP_H = BattleLayout.STRIP_H   -- 360
 
 -- ---- 贴图（幂等）----
-local img = { loaded = false, map = -1, enemyTag = -1 }
+local img = { loaded = false, map = -1, mapAttempted = false, enemyTag = -1 }
+---@type any
+local imageVg = nil
 
 --- 初始化贴图（幂等）
 ---@param vg any
 function BattleView.init(vg)
+    if imageVg ~= vg then
+        imageVg = vg
+        img = { loaded = false, map = -1, mapAttempted = false, enemyTag = -1 }
+    end
     if img.loaded then return end
     img.loaded   = true
-    img.map      = nvgCreateImage(vg, "image/关卡地图/MAP_1.png", 0)
+    -- 三行宿主已铺L1背景，不初始化永远被skipBg跳过的MAP_1。
     img.enemyTag = nvgCreateImage(vg, "image/通用图标/ICON_ZY_XG.png", 0)
     print(string.format("[BattleView] 敌我卡框 %.2fx%.2f，参考比例538:955，宽度/间距不变",
         BattleLayout.CARD_W, BattleLayout.CARD_H))
@@ -40,13 +46,17 @@ end
 function BattleView.draw(vg, b, bgImg, skipBg)
     local allies = b.allies or {}
     local enemies = b.enemies or {}
+    if not skipBg and bgImg == nil and not img.mapAttempted then
+        img.mapAttempted = true
+        img.map = nvgCreateImage(vg, "image/关卡地图/MAP_1.png", 0) or -1
+    end
     local mapImg = bgImg or img.map
 
     -- 1) 地图底带（覆盖战场带）
     -- [修复] skipBg 时整块跳过——否则 else 的纯色填充会盖掉 L1 垫底层
     if not skipBg then
         if mapImg and mapImg >= 0 then
-            local paint = nvgImagePattern(vg, 0, 0, STRIP_W, STRIP_H, 0, mapImg, 1.0)
+            local paint = nvgImagePattern(vg, 0, 0, STRIP_W, STRIP_H, 0, mapImg, 1.0) --[[@as NVGpaint]]
             nvgBeginPath(vg)
             nvgRect(vg, 0, 0, STRIP_W, STRIP_H)
             nvgFillPaint(vg, paint)

@@ -28,6 +28,7 @@ local I18nEquipmentText = require("core.I18nEquipmentText")
 ---@class EquipmentDetailDrawContext
 ---@field detState table 共用活状态，绘制写回热区和滚动范围
 ---@field setKw KeywordTextInstance[] 原面板持有的关键词实例
+---@field affixKw KeywordTextInstance 属性词条关键词实例
 ---@field getImages fun(): EquipmentDetailDrawImages init 后的实时图片句柄
 ---@field layout table<string, number> 不可变布局常量，与输入计算同源
 ---@field qualityColor number[][]
@@ -41,12 +42,22 @@ local I18nEquipmentText = require("core.I18nEquipmentText")
 ---@field layoutButtons function
 ---@field clampDescScroll function
 ---@field compactViewHeight function
+---@field compactAffixLayout function
 ---@field compactSetLines function
 ---@field compactSetRowHeight function
 ---@field compactContentBottom function
 ---@field compactButtonRow function
 
 local EquipmentDetailDraw = {}
+
+-- 主属性仅为 baseStats[1]；固定副属性不借用主属性白色，也不冒充随机词条。
+-- 关键词组件会自行设色，必须同时传 keywordColor；外围 nvgFillColor 不能替代它。
+local MAIN_STAT_COLOR = { 244, 237, 224 }
+local FIXED_STAT_COLOR = { 168, 191, 207 }
+local RANDOM_NAME_COLOR = { 0xE8, 0xC8, 0x6A }
+local RANDOM_VALUE_COLOR = { 0x72, 0xF2, 0xF5 }
+local CORRUPT_NAME_COLOR = { 0xef, 0x79, 0xff }
+local CORRUPT_VALUE_COLOR = { 0xe2, 0xa4, 0xf3 }
 
 -- 标题行已经是完整译文的片段。描边也走raw出口，禁止全局draw hook重译局部词。
 local function drawTitleRow(vg, x, y, text, font, stroke)
@@ -108,11 +119,48 @@ local function titleLayout(vg, text, width, preferredFont, minimumFont, lockSize
     return rows, font, widest
 end
 
+-- 套装正文语义纹章独立于装备角标偏好；32px适配现有42px标题带。
+-- 缺资源仍画旧铜菱形徽记，不把套装正文退化为只有文字。
+local function drawSetTitle(vg, setDef, text, x, y, width, font)
+    local size, gap = 32, 10
+    local cx = x + size * 0.5
+    -- 图片成功时也会设置FillPaint，必须完整恢复调用方的文字填充状态。
+    nvgSave(vg)
+    if not EquipmentSetIcon.draw(vg, setDef.id, cx, y, size, 1.0) then
+        local col = setDef.color or { 232, 208, 122, 255 }
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y - size * 0.5, size, size, 5)
+        nvgFillColor(vg, nvgRGBA(26, 24, 30, 255))
+        nvgFill(vg)
+        nvgStrokeColor(vg, nvgRGBA(col[1], col[2], col[3], 230))
+        nvgStrokeWidth(vg, 2)
+        nvgStroke(vg)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, cx, y - 10)
+        nvgLineTo(vg, cx + 8, y)
+        nvgLineTo(vg, cx, y + 10)
+        nvgLineTo(vg, cx - 8, y)
+        nvgClosePath(vg)
+        nvgStroke(vg)
+    end
+    nvgRestore(vg)
+    local textX = x + size + gap
+    local available = math.max(1, width - size - gap)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, font)
+    local measured = I18n.displayBounds(vg, 0, 0, text)
+    if measured > available then nvgFontSize(vg, font * available / measured) end
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    I18n.displayText(vg, textX, y, text, nil)
+end
+
 --- 只捕获共享引用、不可变布局与函数；不捕获尚未初始化的图片数值。
 ---@param ctx EquipmentDetailDrawContext
 function EquipmentDetailDraw.create(ctx)
     local detState = ctx.detState
     local setKw = ctx.setKw
+    local affixKw = ctx.affixKw or require("ui.widget.KeywordText").new()
+    local previewKw = require("ui.widget.KeywordText").new()
     local QUALITY_COLOR = ctx.qualityColor
     local AFFIX_BADGE_KEY = ctx.affixBadgeKey
     local drawImageCentered = ctx.drawImageCentered
@@ -124,11 +172,14 @@ function EquipmentDetailDraw.create(ctx)
     local layoutButtons = ctx.layoutButtons
     local clampDescScroll = ctx.clampDescScroll
     local compactViewHeight = ctx.compactViewHeight
+    local compactAffixLayout = ctx.compactAffixLayout
     local compactSetLines = ctx.compactSetLines
     local compactSetRowHeight = ctx.compactSetRowHeight
     local compactContentBottom = ctx.compactContentBottom
     local compactButtonRow = ctx.compactButtonRow
     local COMPACT_BG_W = ctx.layout.COMPACT_BG_W
+    local COMPACT_AFFIX_TITLE_FONT = ctx.layout.COMPACT_AFFIX_TITLE_FONT
+    local COMPACT_AFFIX_GAP = ctx.layout.COMPACT_AFFIX_GAP
     local COMPACT_ICON_CY = ctx.layout.COMPACT_ICON_CY
     local COMPACT_ICON_SIZE = ctx.layout.COMPACT_ICON_SIZE
     local COMPACT_NAME_Y = ctx.layout.COMPACT_NAME_Y
@@ -179,6 +230,22 @@ function EquipmentDetailDraw.create(ctx)
     local SET_GAP = ctx.layout.SET_GAP
     local SET_TITLE_H = ctx.layout.SET_TITLE_H
 
+    -- 大小详情共用评级入口；缺图仍显示真实 D/C/B/A/S，腐化不改评级为紫点。
+    local function drawAffixBadge(vg, affix, badgeImages, cx, cy)
+        local aq = tonumber(affix.quality) or 1
+        local badgeKey = AFFIX_BADGE_KEY[aq] or "D"
+        local badgeImg = badgeImages[badgeKey] or -1
+        if badgeImg >= 0 then
+            drawImageCentered(vg, badgeImg, cx, cy, REF_BADGE_W, REF_BADGE_H, 1.0)
+        else
+            local def = AffixConfig.QUALITY[aq] or AffixConfig.QUALITY[1]
+            local hex = def.color
+            drawTextStroke(vg, cx, cy, badgeKey, 28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                tonumber(hex:sub(1, 2), 16) or 181, tonumber(hex:sub(3, 4), 16) or 181,
+                tonumber(hex:sub(5, 6), 16) or 181, 3)
+        end
+    end
+
     --- 绘制单个装备面板（新装备或当前装备）
     ---@param vg any NanoVG 上下文
     ---@param equip table 装备实例
@@ -203,7 +270,7 @@ function EquipmentDetailDraw.create(ctx)
         local q = equip.quality or 1
         local qColor = QUALITY_COLOR[q] or QUALITY_COLOR[1]
 
-        -- 1) 背景（坐标取整避免缝隙）[暗黑化 P1-B5] 矢量纯底板 + 品质语义描边
+        -- 1) 背景（坐标取整避免缝隙） 矢量纯底板 + 品质语义描边
         local bgX = math.floor(bgCX - bgW * 0.5 + 0.5)
         local bgY = math.floor(bgCY - bgH * 0.5 + 0.5)
         DarkIcon.drawNine(vg, "plain",
@@ -249,16 +316,30 @@ function EquipmentDetailDraw.create(ctx)
             or EquipmentConfig.ITEMS[tostring(equip.templateId)]
         local setId = EquipmentSetConfig.getSetIdForTemplate(tpl)
         local setDef = setId and EquipmentSetConfig.get(setId) or nil
-        if setDef then
-            typeName = I18n.format("%s · %s", I18n.lookup(typeName), I18n.lookup(setDef.name))
-        else
-            typeName = I18n.lookup(typeName)
-        end
+        typeName = I18n.lookup(typeName)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, REF_TYPE_FONT)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-        nvgText(vg, REF_TYPE_X + offsetX, REF_TYPE_Y, typeName, nil)
+        local typeX = REF_TYPE_X + offsetX
+        if setDef then
+            local prefix = typeName .. " · "
+            local setName = I18n.lookup(setDef.name)
+            local available = math.max(1, bgX + bgW - 24 - typeX)
+            local prefixW = I18n.displayBounds(vg, 0, 0, prefix)
+            local setW = I18n.displayBounds(vg, 0, 0, setName)
+            local font = REF_TYPE_FONT
+            if prefixW + setW + 42 > available then
+                font = font * math.max(1, available - 42) / math.max(1, prefixW + setW)
+                nvgFontSize(vg, font)
+                prefixW = I18n.displayBounds(vg, 0, 0, prefix)
+            end
+            I18n.displayText(vg, typeX, REF_TYPE_Y, prefix, nil)
+            drawSetTitle(vg, setDef, setName, typeX + prefixW, REF_TYPE_Y,
+                available - prefixW, font)
+        else
+            I18n.displayText(vg, typeX, REF_TYPE_Y, typeName, nil)
+        end
 
         -- 4) 品质文本 - 左对齐 X578 Y861 字号30 品质色 描边4
         local qualityDef = EquipmentConfig.QUALITY[q]
@@ -296,7 +377,7 @@ function EquipmentDetailDraw.create(ctx)
         local iconCY = REF_ICON_CY
         local equipIconImg = getEquipIcon(equip.templateId)
         if equipIconImg >= 0 then
-            DarkIcon.drawIconDark(vg, equipIconImg, iconCX, iconCY, REF_ICON_SIZE, REF_ICON_SIZE, 1.0)  -- [暗黑化 P2-B]
+            DarkIcon.drawIconDark(vg, equipIconImg, iconCX, iconCY, REF_ICON_SIZE, REF_ICON_SIZE, 1.0)  --
         else
             -- 无图标时回退为占位框+文字
             nvgBeginPath(vg)
@@ -342,6 +423,8 @@ function EquipmentDetailDraw.create(ctx)
         detState.descScrollMax = scrollMax
         clampDescScroll()
         local descH = math.max(80, pinnedCY - 56 - DESC_TOP)
+        affixKw:beginFrame()
+        local keywordClip = { bgX, DESC_TOP + detState.descScrollY, bgW, descH }
         nvgSave(vg)
         nvgIntersectScissor(vg, bgX, DESC_TOP, bgW, descH)
         nvgTranslate(vg, 0, -detState.descScrollY)
@@ -351,20 +434,24 @@ function EquipmentDetailDraw.create(ctx)
             for i, s in ipairs(equip.baseStats) do
                 local statCY = REF_STAT_BG_Y0 + (i - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
 
-                -- 11) 属性行：不要底色阴影，只留文字
+                -- 仅首条为主属性；其余固定副属性用蓝灰色，不与随机金色名称混淆。
                 local sName = getStatName(s[1])
+                local statColor = i == 1 and MAIN_STAT_COLOR or FIXED_STAT_COLOR
+                affixKw.textColor = statColor
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, REF_STAT_FONT)
                 nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
-                nvgText(vg, REF_STAT_TEXT_X + offsetX, statCY, sName, nil)
+                nvgFillColor(vg, nvgRGBA(statColor[1], statColor[2], statColor[3], 255))
+                affixKw:drawAttribute(vg, sName, s[1], REF_STAT_TEXT_X + offsetX, statCY,
+                    REF_STAT_VAL_X - REF_STAT_TEXT_X - 220, REF_STAT_FONT,
+                    { clip = keywordClip, keywordColor = statColor })
 
-                -- 属性值含装备升阶加成
+                -- 属性值含装备升阶加成，主/固定副各自与名称同色。
                 local rawVal = EquipmentSystem.effectiveBaseStatValue(equip, i, ascendBoost)
                 local sVal = EquipmentSystem.formatBaseStatValue(s[1], rawVal)
                 drawTextStroke(vg, REF_STAT_VAL_X + offsetX, statCY, sVal,
                     REF_STAT_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, 4)
+                    statColor[1], statColor[2], statColor[3], 4)
             end
         end
 
@@ -396,50 +483,35 @@ function EquipmentDetailDraw.create(ctx)
             for i, affix in ipairs(equip.affixes) do
                 local affixY = firstAffixY + (i - 1) * (REF_AFFIX_ROW_H + REF_AFFIX_GAP)
                 local isCorrupt = AffixConfig.isCorruptAffix(affix)
-                local aq = affix.quality or 1
-                local badgeKey = AFFIX_BADGE_KEY[aq] or "D"
-                local badgeImg = imgAffixBadge[badgeKey] or -1
+                drawAffixBadge(vg, affix, imgAffixBadge, REF_BADGE_CX + offsetX, affixY)
 
-                -- 词缀行不铺底色阴影
-                if isCorrupt then
-                    local r = math.min(REF_BADGE_W, REF_BADGE_H) * 0.28
-                    nvgBeginPath(vg)
-                    nvgCircle(vg, REF_BADGE_CX + offsetX, affixY, r)
-                    nvgFillColor(vg, nvgRGBA(0x9B, 0x4D, 0xFF, 255))
-                    nvgFill(vg)
-                    nvgBeginPath(vg)
-                    nvgCircle(vg, REF_BADGE_CX + offsetX, affixY, r)
-                    nvgStrokeWidth(vg, 2)
-                    nvgStrokeColor(vg, nvgRGBA(0xE0, 0xB0, 0xFF, 220))
-                    nvgStroke(vg)
-                elseif badgeImg >= 0 then
-                    drawImageCentered(vg, badgeImg,
-                        REF_BADGE_CX + offsetX, affixY,
-                        REF_BADGE_W, REF_BADGE_H, 1.0)
-                end
-
-                -- 16) 词缀名称 - 左对齐 X636 字号34 颜色725850（与基础属性相同）
+                -- 随机名称金色、数值浅青；腐化名称/数值分别用亮紫与浅紫。
+                local nameColor = isCorrupt and CORRUPT_NAME_COLOR or RANDOM_NAME_COLOR
+                local valueColor = isCorrupt and CORRUPT_VALUE_COLOR or RANDOM_VALUE_COLOR
                 local affName = I18n.lookup(affix.name or "?")
+                affixKw.textColor = nameColor
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, REF_STAT_FONT)
                 nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(0xE8, 0xC8, 0x6A, 255))
-                nvgText(vg, REF_AFFIX_TEXT_X + offsetX, affixY, affName, nil)
+                nvgFillColor(vg, nvgRGBA(nameColor[1], nameColor[2], nameColor[3], 255))
+                local nameW = affixKw:drawAttribute(vg, affName, affix.key,
+                    REF_AFFIX_TEXT_X + offsetX, affixY, REF_STAT_VAL_X - REF_AFFIX_TEXT_X - 180,
+                    REF_STAT_FONT, { clip = keywordClip, keywordColor = nameColor })
 
                 -- 升阶副属性加成标记（金色小字"升阶"，ascBonus>0 时显示）
                 local ascB = tonumber(affix.ascBonus) or 0
                 if ascB > 0 and not isCorrupt then
-                    local nameW = nvgTextBounds(vg, 0, 0, affName) or 0
+                    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
                     nvgFontSize(vg, 22)
                     nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, 235))
                     nvgText(vg, REF_AFFIX_TEXT_X + offsetX + nameW + 8, affixY, "升阶", nil)
                 end
 
-                -- 词缀数值 - 右对齐 X1016 字号34 白色 描边4（与基础属性相同；生效值含栏位倍率）
+                -- 保留生效值与原格式，仅调整配色；腐化不与普通随机数值混色。
                 local affVal = "+" .. formatStatValue(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix))
                 drawTextStroke(vg, REF_STAT_VAL_X + offsetX, affixY, affVal,
                     REF_STAT_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, 4)
+                    valueColor[1], valueColor[2], valueColor[3], 4)
             end
         end
 
@@ -512,6 +584,9 @@ function EquipmentDetailDraw.create(ctx)
         local qColor = QUALITY_COLOR[q] or QUALITY_COLOR[1]
         local panelW = COMPACT_BG_W
         local panelH = compactViewHeight(equip, showActions ~= false)
+        local rowKw = showActions == false and previewKw or affixKw
+        rowKw:beginFrame()
+        local rowOpts = { interactive = showActions ~= false }
         local panelX = REF_BG_CX - panelW * 0.5
         local leftX = panelX + COMPACT_PAD_TOP
         local rightX = panelX + panelW - COMPACT_PAD_TOP
@@ -580,44 +655,62 @@ function EquipmentDetailDraw.create(ctx)
             powerIconSize, powerIconSize, 1.0)
         drawTextStroke(vg, powerX, COMPACT_NAME_Y, powerStr, 36,
             NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 0xf7, 0xfe, 0x77, 3)
+        if scoreContext and scoreContext.equipped then
+            drawTextStroke(vg, leftX, 204, "当前装备 · 生效数值", 26,
+                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 214, 102, 3)
+        end
 
-        local bottom = COMPACT_QUALITY_Y + 18
         if equip.baseStats and #equip.baseStats > 0 then
             local boost = EquipmentSystem.getAscendBoost(equip)
             for i, stat in ipairs(equip.baseStats) do
                 local y = COMPACT_STAT_Y0 + (i - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
                 local raw = EquipmentSystem.effectiveBaseStatValue(equip, i, boost)
+                local statColor = i == 1 and MAIN_STAT_COLOR or FIXED_STAT_COLOR
+                rowKw.textColor = statColor
+                rowOpts.keywordColor = statColor
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, 36)
                 nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
-                nvgText(vg, leftX, y, getStatName(stat[1]), nil)
+                nvgFillColor(vg, nvgRGBA(statColor[1], statColor[2], statColor[3], 255))
+                rowKw:drawAttribute(vg, getStatName(stat[1]), stat[1], leftX, y,
+                    rightX - leftX - 200, 36, rowOpts)
                 drawTextStroke(vg, rightX, y, EquipmentSystem.formatBaseStatValue(stat[1], raw), 36,
-                    NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-                bottom = y + REF_STAT_BG_H * 0.5
+                    NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, statColor[1], statColor[2], statColor[3], 3)
             end
         end
         if equip.affixes and #equip.affixes > 0 then
-            local firstY = bottom + 16 + REF_AFFIX_ROW_H * 0.5
+            local titleY, firstY = compactAffixLayout(equip)
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, COMPACT_AFFIX_TITLE_FONT)
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0x91, 0x8f, 0x88, 255))
+            nvgText(vg, leftX, titleY, "随机属性", nil)
+            local nameX = leftX + REF_BADGE_W + 14
             for i, affix in ipairs(equip.affixes) do
-                local y = firstY + (i - 1) * (REF_AFFIX_ROW_H + 8)
+                local y = firstY + (i - 1) * (REF_AFFIX_ROW_H + COMPACT_AFFIX_GAP)
+                local isCorrupt = AffixConfig.isCorruptAffix(affix)
+                local nameColor = isCorrupt and CORRUPT_NAME_COLOR or RANDOM_NAME_COLOR
+                local valueColor = isCorrupt and CORRUPT_VALUE_COLOR or RANDOM_VALUE_COLOR
+                drawAffixBadge(vg, affix, imgAffixBadge, leftX + REF_BADGE_W * 0.5, y)
+                rowKw.textColor = nameColor
+                rowOpts.keywordColor = nameColor
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, 36)
                 nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(0xE8, 0xC8, 0x6A, 255))
+                nvgFillColor(vg, nvgRGBA(nameColor[1], nameColor[2], nameColor[3], 255))
                 local cName = I18n.lookup(affix.name or "?")
-                nvgText(vg, leftX, y, cName, nil)
+                local cNameW = rowKw:drawAttribute(vg, cName, affix.key, nameX, y,
+                    rightX - nameX - 200, 36, rowOpts)
                 -- 升阶副属性加成标记（金色小字"升阶"，ascBonus>0 时显示）
                 local cAscB = tonumber(affix.ascBonus) or 0
-                if cAscB > 0 and not AffixConfig.isCorruptAffix(affix) then
-                    local cNameW = nvgTextBounds(vg, 0, 0, cName) or 0
+                if cAscB > 0 and not isCorrupt then
+                    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
                     nvgFontSize(vg, 20)
                     nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, 235))
-                    nvgText(vg, leftX + cNameW + 6, y, "升阶", nil)
+                    nvgText(vg, nameX + cNameW + 6, y, "升阶", nil)
                 end
                 drawTextStroke(vg, rightX, y, "+" .. formatStatValue(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix)), 36,
-                    NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-                bottom = y + REF_AFFIX_ROW_H * 0.5
+                    NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, valueColor[1], valueColor[2], valueColor[3], 3)
             end
         end
 
@@ -640,7 +733,8 @@ function EquipmentDetailDraw.create(ctx)
             nvgFontSize(vg, 30)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
-            nvgText(vg, leftX + 8, sectionTop + 22, setLines[1].text, nil)
+            drawSetTitle(vg, setDef, setLines[1].text, leftX + 8, sectionTop + 22,
+                rightX - leftX - 16, 30)
             local rowTop = sectionTop + SET_TITLE_H
             local mainPanel = (showActions ~= false)  -- 仅主面板关键词可点（对比/只读预览不交互）
             for i = 2, #setLines do

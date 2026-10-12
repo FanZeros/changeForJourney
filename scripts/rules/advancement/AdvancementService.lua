@@ -89,7 +89,7 @@ function AdvancementService.AdvanceClass(uid, heroId, branchId, advLevel)
     }
 end
 
---- 重置英雄转职（清除 advBranch，返还50%金币消耗）
+--- 重置英雄转职（清除 advBranch，全额返还已付转职配置金币）
 ---@param uid number
 ---@param heroId number
 ---@return boolean ok
@@ -111,15 +111,15 @@ function AdvancementService.ResetClass(uid, heroId)
         return false, "未拥有该英雄"
     end
 
-    -- 计算返还金币：已消耗的50%
+    -- 逐级按已选分支全额返还配置金币；重复重置不会再次返还。
     local refundGold = 0
     local advBranch = hero.advBranch
     if advBranch then
         if advBranch.first then
-            refundGold = refundGold + math.floor(AVC.COST[1].gold * 0.5)
+            refundGold = refundGold + AVC.COST[1].gold
         end
         if advBranch.second then
-            refundGold = refundGold + math.floor(AVC.COST[2].gold * 0.5)
+            refundGold = refundGold + AVC.COST[2].gold
         end
     end
 

@@ -72,9 +72,9 @@ DialogueConfig.LINES = {
         victory = "赢了？哼，我才不是特意出力...白饭可以加餐了。",
     },
 
-    -- #6 阿姨压 · 电音天后 · 法师 —— Are you OK·电音女王
+    -- #6 压一压 · 电音天后 · 法师 —— Are you OK·电音女王
     [6] = {
-        entry   = "Are you OK~？阿姨压~",
+        entry   = "Are you OK~？压一压~",
         crit    = "这个音调，满分~！",
         kill    = "谢谢侬~败得很配合~",
         death   = "话筒...掉了...演出...散场了...",

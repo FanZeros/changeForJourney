@@ -37,6 +37,12 @@ local function runBattleLedgerCases(nativeRequire)
         ["ui.battle.tri.BattleTriDriver"] = true,
         ["ui.battle.tri.BattleTriPage"] = true,
         ["ui.battle.tri.TerminalRaid"] = true,
+        ["ui.battle.tri.TerminalSceneFlow"] = true,
+        ["ui.battle.tri.TerminalReincarnation"] = true,
+        ["ui.battle.tri.BattleTriStageProgress"] = true,
+        ["ui.battle.tri.BattleEntryPreparation"] = true,
+        ["ui.battle.stage.BattleSpeed"] = true,
+        ["boot.StandaloneSave"] = true,
         ["ui.battle.stage.BattleEnemySpawn"] = true,
         ["boot.StandaloneBoot"] = true,
         ["runtime.ClientDispatcher"] = true,
@@ -66,6 +72,7 @@ local function runBattleLedgerCases(nativeRequire)
             gameState["set" .. suffix] = function(value) wallet[field] = value end
         end
         modules["config.StageConfig"] = SC
+        modules["shared.battle.BattleSchema"] = schema
         modules["systems.AttributeDef"] = AD
         modules["config.ExpTable"] = stub({ TEAM_COUNT = 3, getUnlockedTeamCount = function() return 1 end })
         modules["shared.StageProvider"] = { Get = function() return SC end }
@@ -83,7 +90,7 @@ local function runBattleLedgerCases(nativeRequire)
             getTeamSignature = function() return "ledger-team-1" end,
             getDeployedTeam = function() return { ally } end })
         modules["ui.battle.stage.BattleStageNav"] = { NAV = {} }
-        modules["ui.battle.stage.BattleSpeed"] = { MAX_SPEED = 1 }
+        -- 倍率实现真实执行，仅绘图为叶子替身。
         modules["ui.battle.stage.BattleStageLoad"] = { load = function(ctx, id)
             ctx.currentStageId = id
             ctx.isFirstClear = not ctx.clearedStages[id]
@@ -98,11 +105,11 @@ local function runBattleLedgerCases(nativeRequire)
         modules["systems.OfflineCalc"] = { resolveIdleStageAnchors = function() return stageId, stageId end,
             calcOnlineIdleRewards = function() return {} end }
         modules["systems.BattleTimeout"] = { calcMult = function() return 1 end }
+        modules["systems.CombatFormula"] = { calcHpRegen = function() return 0 end }
         modules["systems.DropSystem"] = stub({ generateFirstClearEquips = function() return {} end,
             generateFirstClearScrolls = function() return nil end,
             rollKillDrop = function() return nil end, rollScrollDrop = function() return nil end })
         modules["systems.LootBoxSystem"] = stub({ getTotalCount = function() return 0 end })
-        modules["boot.StandaloneSave"] = { Flush = function() saves = saves + 1 end }
         modules["ui.story.gate.LetterIntro"] = { isOpen = function() return false end }
         modules["ui.story.gate.IntroCutscene"] = { isActive = function() return false end }
         modules["ui.story.ScenarioDialogue"] = { isActive = function() return false end }
@@ -113,6 +120,7 @@ local function runBattleLedgerCases(nativeRequire)
                 newBattleRefs = function() return {} end, newFxState = function() return {} end,
                 newSemState = function() return {} end })
         end
+        modules["ui.battle.combat.BattleCombat"].newState = function() return { ctx = {} } end
         env.require = function(name)
             if modules[name] then return modules[name] end
             local module
@@ -144,6 +152,16 @@ local function runBattleLedgerCases(nativeRequire)
             end
             return update(json)
         end
+        local publish = Dispatcher.publishLive
+        Dispatcher.publishLive = function(name, data)
+            if name == "battle" then
+                updates = updates + 1
+                outgoing[#outgoing + 1] = cjson.decode(cjson.encode(data))
+            end
+            return publish(name, data)
+        end
+        local Save = env.require("boot.StandaloneSave")
+        Save.Flush = function() saves = saves + 1 end
         -- 测试模块仅在独立 Dispatcher 中注入；不经玩家存档 RestoreData。
         Dispatcher.set("equipment", { inventory = {}, equipped = {}, nextSeq = 1 })
         Dispatcher.set("lootbox", { seeds = {} })
@@ -166,6 +184,7 @@ local function runBattleLedgerCases(nativeRequire)
         end
         local syncSource = assert(source("boot.Standalone"):match("(local battleSync =.-)\nlocal physW"))
         env.BattleScene, env.ClientDispatcher, env.cjson = Scene, Dispatcher, cjson
+        env.StandaloneSave, env.StageConfig, env.bootReady_, env.StandaloneRT = Save, SC, true, {}
         local sync = assert(load(syncSource .. "\nreturn SyncBattleState", "@正式SyncBattleState", "t", env))()
         local Driver = env.require("ui.battle.tri.BattleTriDriver")
         local makeDriver = Driver.new
@@ -175,8 +194,10 @@ local function runBattleLedgerCases(nativeRequire)
             drivers[team] = driver
             return driver
         end
+        local Page = env.require("ui.battle.tri.BattleTriPage")
+        Save.SetBattlePage(Page)
         return { scene = Scene, dispatcher = Dispatcher, wallet = wallet, env = env, drivers = drivers,
-            page = env.require("ui.battle.tri.BattleTriPage"), sync = sync,
+            page = Page, sync = sync,
             firstCalls = function() return firstCalls end,
             counters = function() return updates, restores, saves end,
             outgoing = outgoing, lastRestoreData = function() return lastRestoreData end }
@@ -209,15 +230,16 @@ local function runBattleLedgerCases(nativeRequire)
             and f.scene.getClearedStages()[34505], "第一次真实胜利写入双源且回调一次")
         local gold = SC.getStage(34505).fcGold
         check(f.wallet.gold == gold, "第一次真实Boot金币到账86300")
+        local _, beforeRestores = f.counters()
         f.sync(1.1)
         check(f.scene.getClearedStages()[34505] and marked(f.dispatcher.get("battle"), 34505),
-            "第一次同步恢复保持最高关双源首通")
+            "第一次实时同步保持最高关双源首通")
         f.sync(1.1)
         check(f.scene.getClearedStages()[34505] and marked(f.dispatcher.get("battle"), 34505),
-            "第二次同步恢复不能把丢标传播到永久账本")
+            "第二次实时同步不能把丢标传播到永久账本")
         local updates, restored = f.counters()
-        check(updates >= 2 and restored >= 2 and f.lastRestoreData() == f.dispatcher.get("battle"),
-            "真实Dispatcher→Msg→Scene Restore确已执行而非手工回灌")
+        check(updates >= 2 and restored == beforeRestores and f.lastRestoreData() ~= f.dispatcher.get("battle"),
+            "真实Dispatcher→publishLive保留账本但不回灌Scene Restore")
         firstDriver:update(1)
         check(firstDriver.stageId == 34505 and not firstDriver._clearReported, "无下一关经真实advanceStage重开")
         victory(f)
@@ -428,7 +450,13 @@ function Start()
         }
         replace(_G, "require", function(name)
             if mocks[name] then return mocks[name] end
-            mocks[name] = stub()
+            if name == "ui.battle.tri.BattleTriStageProgress" or name == "ui.battle.tri.TerminalSceneFlow"
+                or name == "ui.battle.tri.TerminalReincarnation" or name == "ui.battle.tri.BattleEntryPreparation"
+                or name == "ui.battle.stage.BattleSpeed" then
+                mocks[name] = compile(name)
+            else
+                mocks[name] = stub()
+            end
             return mocks[name]
         end)
         replace(_G, "time", { elapsedTime = 100 })
@@ -463,6 +491,9 @@ function Start()
         end)
         local Page = compile("ui.battle.tri.BattleTriPage")
         mocks["ui.battle.tri.BattleTriPage"] = Page
+        local Save = compile("boot.StandaloneSave")
+        Save.SetBattlePage(Page)
+        mocks["boot.StandaloneSave"].CaptureBattleProgress = Save.CaptureBattleProgress
         Page.open()
         check(drivers[1] and drivers[2] and not drivers[3], "905通关后只有前两队存在")
         local combat = nativeRequire("ui.battle.combat.BattleCombat")
@@ -525,7 +556,9 @@ function Start()
         check(notifications > 0 and flushes > 0, "首通实际通知数据镜像并请求持久化")
         -- 执行正式每秒镜像函数，证明不是只验证手抄同步逻辑。
         local syncSource = assert(source("boot.Standalone"):match("(local battleSync =.-)\nlocal physW"))
-        local env = setmetatable({ BattleScene = Scene, ClientDispatcher = Dispatcher, cjson = cjson }, { __index = _G })
+        local env = setmetatable({ BattleScene = Scene, ClientDispatcher = Dispatcher, cjson = cjson,
+            StandaloneSave = mocks["boot.StandaloneSave"], StageConfig = SC,
+            bootReady_ = true, StandaloneRT = {} }, { __index = _G })
         local sync = assert(load(syncSource .. "\nreturn SyncBattleState", "@正式SyncBattleState", "t", env))()
         sync(1.1)
         check(modules.battle.clearedStages["1905"] and modules.battle.clearedStages["2305"],

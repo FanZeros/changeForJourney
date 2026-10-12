@@ -115,48 +115,86 @@ end
 
 -- ======================== 装备可提升判断 ========================
 
+-- 同一隔离装备快照只建一次未穿戴候选索引；六槽/多英雄不再重复扫全库存与占用表。
+-- 类型/槽位来自已水合副本，不读取或水合 PlayerStore 的真实库存项。
+local upgradeCandidates = { equipment = false, bySlot = {} }
+local function candidatesForUpgrade(equipment)
+    if upgradeCandidates.equipment == equipment then return upgradeCandidates.bySlot end
+    local occupied, bySlot = {}, {}
+    for _, heroSlots in pairs(equipment.equipped or {}) do
+        if type(heroSlots) == "table" then
+            for _, seq in pairs(heroSlots) do
+                local id = tonumber(seq)
+                if id then occupied[id] = true end
+            end
+        end
+    end
+    for seq in pairs(equipment.inventory or {}) do
+        local id = tonumber(seq)
+        if id and not occupied[id] then
+            local item = EquipmentSystem.getFromInventory(equipment, seq)
+            if item and item.slot then
+                local entry = { seq = seq, item = item }
+                bySlot[item.slot] = bySlot[item.slot] or {}
+                bySlot[item.slot][#bySlot[item.slot] + 1] = entry
+                -- 合法双持副手的自然槽仍是 weapon；不能只按自然槽过滤掉它。
+                if item.slot == "weapon" and item.grip == "onehand" then
+                    bySlot.offhand = bySlot.offhand or {}
+                    bySlot.offhand[#bySlot.offhand + 1] = entry
+                end
+            end
+        end
+    end
+    upgradeCandidates = { equipment = equipment, bySlot = bySlot }
+    return bySlot
+end
+
 --- 检查指定槽位是否有真实净战力提升（共享模拟包含双手卸槽、套装及职业有效属性）。
 ---@param heroId number
 ---@param slotName string "weapon"|"offhand"|"armor"|"helmet"|"shoes"|"accessory"
 ---@param equipData table PlayerStore.Get("equipment") 返回的数据
 ---@param ctx table|nil 同一次六槽检查共用的评分上下文
+---@param checkpoint? fun() 仅角标调度可传入让出预算，不影响正式战力/评分调用
 ---@return boolean
-function CharacterDetail._hasUpgradeForSlot(heroId, slotName, equipData, ctx)
+function CharacterDetail._hasUpgradeForSlot(heroId, slotName, equipData, ctx, checkpoint)
     if not equipData or not equipData.inventory then return false end
     ctx = ctx or EquipmentPower.getContext(heroId)
     if not ctx then return false end
-
-    -- 保留自动装备候选边界：不把其他英雄/其他槽已穿戴的装备当作仓库升级。
-    local equippedSeqNums = {}
-    for _, heroSlots in pairs(equipData.equipped or {}) do
-        if type(heroSlots) == "table" then
-            for _, eqSeq in pairs(heroSlots) do
-                local seqNum = tonumber(eqSeq)
-                if seqNum then equippedSeqNums[seqNum] = true end
+    ctx.upgradeSlotResults = ctx.upgradeSlotResults or {}
+    if ctx.upgradeSlotResults[slotName] ~= nil then return ctx.upgradeSlotResults[slotName] end
+    local candidates = candidatesForUpgrade(ctx.equipmentData)[slotName] or {}
+    local level = EquipmentSystem.getHeroLevel(ctx.heroesData, heroId)
+    local wearable = EquipmentSystem.getWearableTypeSet(heroId, slotName)
+    local weaponTypes = EquipmentSystem.getWearableTypeSet(heroId, "weapon")
+    for _, candidate in ipairs(candidates) do
+        if checkpoint then checkpoint() end
+        local item = candidate.item
+        local types = wearable
+        if slotName == "offhand" and item.slot == "weapon" then types = weaponTypes end
+        -- 只剔除必然拒绝项；主副手同/异类型与自动卸槽仍由权威 evaluator 校验。
+        if (not types or types[item.type]) and EquipmentSystem.checkLevelGate(level, item) then
+            local preview = EquipmentPower.evaluateGain(ctx, candidate.seq, slotName)
+            if preview and preview.valid and preview.gain > 1e-6 then
+                ctx.upgradeSlotResults[slotName] = true
+                return true
             end
         end
     end
-    for seq in pairs(equipData.inventory) do
-        local seqNum = tonumber(seq)
-        if seqNum and not equippedSeqNums[seqNum] then
-            -- 不预判自然槽/职业/等级：副手单手武器与自动卸槽由 evaluator 统一处理。
-            local preview = EquipmentPower.evaluate(ctx, seq, slotName)
-            if preview and preview.valid and preview.gain > 1e-6 then return true end
-        end
-    end
+    ctx.upgradeSlotResults[slotName] = false
     return false
 end
 
 --- 检查指定英雄是否有任意槽位可提升（用于入口链路角标）。
 ---@param heroId number
+---@param checkpoint? fun() 仅异步角标调度传入；旧同步调用保持原返回契约
 ---@return boolean
-function CharacterDetail.hasAnyUpgradeForHero(heroId)
+function CharacterDetail.hasAnyUpgradeForHero(heroId, checkpoint)
     local equipData = PlayerStore.Get("equipment")
     if not equipData then return false end
     local ctx = EquipmentPower.getContext(heroId)
     if not ctx then return false end
     for _, slot in ipairs(DT_SLOTS) do
-        if CharacterDetail._hasUpgradeForSlot(heroId, slot.slot, equipData, ctx) then return true end
+        if CharacterDetail._hasUpgradeForSlot(heroId, slot.slot, equipData, ctx, checkpoint) then return true end
     end
     return false
 end
@@ -276,30 +314,41 @@ end
 
 --- 打开详情界面
 ---@param heroId number
----@param tab string|nil 初始页签 "attr"|"equip"|"awaken"，未指定时由教程选择，否则默认 "attr"
+---@param tab string|nil 初始页签 "attr"|"equip"|"class"|"awaken"；打开中换人保留页签，首次由教程选择
 function CharacterDetail.open(heroId, tab)
-    local keepEquipTab = tab == nil and detailState.open and not detailState.closing and detailState.tab == "equip"
-    if keepEquipTab then
-        keepEquipTab = require("ui.character.panel.CharacterPanel").getOwnedHero(heroId) ~= nil
-    end
-    if keepEquipTab and detailState.heroId == heroId then return end
+    local keepTab = tab == nil and detailState.open and not detailState.closing
+    if not keepTab then Draw.resetRadarTransition() end
+    if keepTab and detailState.heroId == heroId then return end
+    local previousTab = detailState.tab
+    local previousHeroId = detailState.heroId
+    local previousOpenTime = detailState.openTime
+    local previousSeamTime = detailState.seamOpenTime
     detailState.open = true
     detailState.closing = false
     detailState.closeTime = 0
     detailState.heroId = heroId
-    local preferredTab = keepEquipTab and "equip" or tab
+    local preferredTab = keepTab and previousTab or tab
     if preferredTab == nil then
         preferredTab = require("systems.TutorialManager").getPreferredCharacterTab()
     end
-    local initTab = (preferredTab == "equip" or preferredTab == "awaken") and preferredTab or "attr"
+    local initTab = (preferredTab == "equip" or preferredTab == "class" or preferredTab == "awaken")
+        and preferredTab or "attr"
+    -- 未获得角色不能配装；转职页仍可只读职业树，不回退正在查看的页面。
+    if initTab == "equip" and not require("ui.character.panel.CharacterPanel").getOwnedHero(heroId) then
+        initTab = "attr"
+    end
+    local keepEquipTab = keepTab and previousTab == "equip" and initTab == "equip"
     detailState.tab = initTab
     detailState.tabFrom = initTab
     detailState.tabSwitchTime = 0
-    if not keepEquipTab then detailState.openTime = time.elapsedTime end
+    detailState.openTime = keepEquipTab and previousOpenTime or time.elapsedTime
     detailState.sideDragging = false
     CharacterDetail._EquipPanel.endSideDrag()
-    if not keepEquipTab then detailState.seamOpenTime = time.elapsedTime end
-    detailState.switchDir = nil  -- 普通打开：使用垂直滑入动画
+    detailState.seamOpenTime = keepTab and previousSeamTime or time.elapsedTime
+    detailState.prevHeroId = keepTab and previousHeroId or nil
+    detailState.switchDir = keepTab and not keepEquipTab and 1 or nil
+    detailState.switchFrom = keepTab and 0 or nil
+    detailState.cardDragX, detailState.cardDragMoved, detailState.cardDragVisual = nil, 0, 0
     detailState.attrScrollY   = 0
     detailState.attrScrollMax = 0
     detailState.attrDragging  = false
@@ -316,6 +365,8 @@ end
 --- 关闭详情界面（启动关闭动画）
 function CharacterDetail.close()
     if detailState.closing then return end
+    Draw.resetRadarTransition()
+    require("ui.character.hero.AwakeningArtwork").close()
     detailState.closing = true
     detailState.closeTime = time.elapsedTime
     syncEquipmentWarehouse()
@@ -326,6 +377,8 @@ end
 
 --- 立即关闭详情界面（跳过关闭动画，用于跨页面跳转）
 function CharacterDetail.forceClose()
+    Draw.resetRadarTransition()
+    require("ui.character.hero.AwakeningArtwork").close()
     detailState.open    = false
     detailState.closing = false
     detailState.heroId  = nil
@@ -357,8 +410,8 @@ function CharacterDetail._switchHero(direction, keepDrag)
     if nextIdx == curIdx then return end
 
     local nextHeroId = roster[nextIdx].heroId
-    -- 未获得角色只能看属性，滑过去时从配装/转职退回。
-    if not roster[nextIdx].owned and detailState.tab ~= "attr" and detailState.tab ~= "awaken" then
+    -- 未获得角色不能配装；转职与觉醒页继续只读展示，不改变当前页签。
+    if not roster[nextIdx].owned and detailState.tab == "equip" then
         detailState.tab = "attr"
         detailState.tabFrom = "attr"
         detailState.tabSwitchTime = 0
@@ -438,13 +491,18 @@ function CharacterDetail.handleEquipmentSlotTap(dx, dy)
     return selectedSlot ~= nil
 end
 
+--- 仓库下拉与角色槽共用选中上下文；只改查看部位，不发穿戴请求。
+function CharacterDetail.setEquipmentSlot(slot)
+    if not CharacterDetail.isEquipTab() then return false end
+    detailState.equipSlot = slot
+    CharacterDetail._EquipPanel.onSlotChanged(slot, detailState.heroId)
+    require("ui.backpack.BackpackPanel").setEquipmentSlotFilter(slot, detailState.heroId)
+    return true
+end
+
 --- 取消部位的统一入口，仓库按钮与右栏空白点击共用。
 function CharacterDetail.clearEquipmentSlot()
-    if not CharacterDetail.isEquipTab() then return false end
-    detailState.equipSlot = nil
-    CharacterDetail._EquipPanel.onSlotChanged(nil, detailState.heroId)
-    require("ui.backpack.BackpackPanel").setEquipmentSlotFilter(nil, detailState.heroId)
-    return true
+    return CharacterDetail.setEquipmentSlot(nil)
 end
 
 --- 浮选外第一击允许页签导航，但不放行一键装备等实际操作。
@@ -606,9 +664,8 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
-    -- Tab 切换 —— 转职区域（未获得角色只能看属性）
+    -- Tab 切换 —— 转职区域（未获得角色可只读职业树，转职服务仍校验拥有条件）
     if hitTest(dx, dy, BTN_TAB_CLASS_CX, BTN_TAB_CLASS_CY, BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H) then
-        if not require("ui.character.panel.CharacterPanel").getOwnedHero(detailState.heroId) then return true end
         if detailState.tab ~= "class" then
             detailState.tabFrom = detailState.tab
             detailState.tabSwitchTime = time.elapsedTime
@@ -641,9 +698,9 @@ function CharacterDetail.handleInput(dx, dy)
 
     -- === 转职面板输入委托（绘制已是屏幕坐标，不再额外下移）===
     if detailState.tab == "class" then
+        if not require("ui.character.panel.CharacterPanel").getOwnedHero(detailState.heroId) then return true end
         local ClassChange = require("ui.church.ChurchClassChange")
         ClassChange.setHero(detailState.heroId)
-        if ClassChange.handleResetConfirmInput(dx, dy) then return true end
         if ClassChange.handleConfirmInput(dx, dy) then return true end
         if ClassChange.handleResetButton(dx, dy) then return true end
         if ClassChange.handleBranchInput(dx, dy) then return true end

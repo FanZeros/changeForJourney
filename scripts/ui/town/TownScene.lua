@@ -16,11 +16,12 @@ local function isChurchAccessible()
     end
     return (tonumber(GameState.getLevel()) or 1) >= CHURCH_UNLOCK_LEVEL
 end
-local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
+local DarkIcon       = require("core.DarkIcon")  -- 矢量图标库
 local HorizonBg      = require("core.HorizonBg")  -- [横屏三联] 左右共享大背景
 local ExpTable   = require("config.ExpTable")
 local BF         = require("systems.ButtonFeedback")
 local LootBox    = require("ui.loot.LootBox")
+local TownExpeditionIcon = require("ui.town.TownExpeditionIcon")
 
 local TownScene = {}
 
@@ -92,12 +93,18 @@ local EXPEDITION_CX, EXPEDITION_CY, EXPEDITION_W, EXPEDITION_H = 520, 1440, 192,
 local EXPEDITION_LBL_CX, EXPEDITION_LBL_CY, EXPEDITION_LBL_W, EXPEDITION_LBL_H = 520, 1610, 220, 80
 local EXPEDITION_HIT_CX, EXPEDITION_HIT_CY, EXPEDITION_HIT_W, EXPEDITION_HIT_H = 520, 1480, 220, 340
 local EXPEDITION_IMAGE_PATH = "image/城镇建筑/UI_CZ_EXPEDITION_GATE.png"
+local EXPEDITION_ICON_CX, EXPEDITION_ICON_CY, EXPEDITION_ICON_SZ = 460, 1610, 48
+local EXPEDITION_TEXT_X, EXPEDITION_TEXT_Y = 550, 1610
 
 -- ---- 下方建筑 ----
 
 -- 教堂（略向右，避免贴死左缘）
 local CHURCH_CX,  CHURCH_CY  = 211,  1400
 local CHURCH_W,   CHURCH_H   = 344,  688
+-- 只缩立绘：底边始终1744，标签、按压轴心、教程与原建筑点击范围不漂移。
+local CHURCH_ART_SCALE = 0.85
+local CHURCH_ART_W, CHURCH_ART_H = CHURCH_W * CHURCH_ART_SCALE, CHURCH_H * CHURCH_ART_SCALE
+local CHURCH_ART_CY = CHURCH_CY + (CHURCH_H - CHURCH_ART_H) * 0.5
 local CHURCH_LBL_CX, CHURCH_LBL_CY = 238, 1720
 local CHURCH_LBL_W,  CHURCH_LBL_H  = 361, 113
 local CHURCH_ICON_CX, CHURCH_ICON_CY = 148, 1714
@@ -214,7 +221,7 @@ local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
     if img < 0 or alpha <= 0.01 then return end
     local x = cx - w * 0.5
     local y = cy - h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
+    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha) --[[@as NVGpaint]]
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
@@ -286,6 +293,7 @@ local function drawNineSlice(vg, img, dx, dy, dw, dh, iTop, iRight, iBottom, iLe
 
     if sMW <= 0 or sMH <= 0 then
         local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, img, 1.0)
+        ---@cast paint NVGpaint
         nvgBeginPath(vg)
         nvgRect(vg, dx, dy, dw, dh)
         nvgFillPaint(vg, paint)
@@ -327,12 +335,13 @@ local function drawNineSlice(vg, img, dx, dy, dw, dh, iTop, iRight, iBottom, iLe
         if pw > 0 and ph > 0 and sw > 0 and sh > 0 then
             local scaleX = pw / sw
             local scaleY = ph / sh
+            ---@type NVGpaint
             local paint = nvgImagePattern(vg,
                 px - sx * scaleX,
                 py - sy * scaleY,
                 srcW * scaleX,
                 srcH * scaleY,
-                0, img, 1.0)
+                0, img, 1.0) --[[@as NVGpaint]]
             nvgBeginPath(vg)
             nvgRect(vg, px, py, pw, ph)
             nvgFillPaint(vg, paint)
@@ -423,6 +432,7 @@ local townVg_ = nil
 local townImgsLoaded_ = false
 
 function TownScene.init(vg)
+    if townVg_ ~= vg then townImgsLoaded_ = false end
     townVg_ = vg
 end
 
@@ -459,6 +469,11 @@ local function ensureTownImages(vg)
     imgLock        = nvgCreateImage(ctx, "image/通用图标/UI_ICON_SUO.png", 0)
 end
 
+--- 启动队列内预热；与绘制共用幂等加载，不让第一帧城镇集中解码。
+function TownScene.preload(vg)
+    ensureTownImages(vg)
+end
+
 function TownScene.draw(vg)
     ensureTownImages(vg)
     -- 0) 处理延迟回调
@@ -492,7 +507,7 @@ function TownScene.draw(vg)
             SMITH_TEXT_X, SMITH_TEXT_Y, "狱火锻炉")
     end
     if smithLocked then
-        -- [关卡门控] 铁匠铺按"通关 2-4"解锁，锁标显示具体条件（原先只有锁图标）
+        -- 铁匠铺按"通关 2-4"解锁，锁标显示具体条件
         drawBuildingLockOverlay(vg, SMITH_CX, SMITH_CY, "smith", true, nil, getStageUnlockLabel("smith"))
     end
     -- [分解入仓 0929] 背包满红点已迁到仓库建筑（分解入口在仓库），铁匠铺不再显示
@@ -548,11 +563,11 @@ function TownScene.draw(vg)
         drawFlashOverlay(vg, imgExpedition, EXPEDITION_CX, EXPEDITION_CY, EXPEDITION_W, EXPEDITION_H,
             getClickFlashAlpha("expedition"))
     end
-    DarkIcon.drawNine(vg, "plain", EXPEDITION_LBL_CX - EXPEDITION_LBL_W * 0.5,
-        EXPEDITION_LBL_CY - EXPEDITION_LBL_H * 0.5, EXPEDITION_LBL_W, EXPEDITION_LBL_H)
-    drawTextStroke(vg, EXPEDITION_LBL_CX, EXPEDITION_LBL_CY, "远征",
-        LABEL_FONT_SIZE, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, LABEL_STROKE_WIDTH)
+    drawBuildingLabel(vg,
+        EXPEDITION_LBL_CX, EXPEDITION_LBL_CY, EXPEDITION_LBL_W, EXPEDITION_LBL_H,
+        EXPEDITION_ICON_CX, EXPEDITION_ICON_CY, EXPEDITION_ICON_SZ, -1,
+        EXPEDITION_TEXT_X, EXPEDITION_TEXT_Y, "远征")
+    TownExpeditionIcon.draw(vg, EXPEDITION_ICON_CX, EXPEDITION_ICON_CY, EXPEDITION_ICON_SZ)
     BF.finish(vg, expeditionFeedback)
 
     -- ---- 下方建筑 ----
@@ -596,10 +611,10 @@ function TownScene.draw(vg)
     local churchLocked = not _TM.isBuildingUnlocked("church") or not isChurchAccessible()
     local _bfChurch = (not churchLocked) and BF.begin(vg, "town_church", CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H) or false
     if churchLocked then
-        drawImageSilhouette(vg, imgChurch, CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H, 0.85)
+        drawImageSilhouette(vg, imgChurch, CHURCH_CX, CHURCH_ART_CY, CHURCH_ART_W, CHURCH_ART_H, 0.85)
     else
-        drawImageDarkTint(vg, imgChurch, CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H, 1.0)
-        drawFlashOverlay(vg, imgChurch, CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H, getClickFlashAlpha("church"))
+        drawImageDarkTint(vg, imgChurch, CHURCH_CX, CHURCH_ART_CY, CHURCH_ART_W, CHURCH_ART_H, 1.0)
+        drawFlashOverlay(vg, imgChurch, CHURCH_CX, CHURCH_ART_CY, CHURCH_ART_W, CHURCH_ART_H, getClickFlashAlpha("church"))
         drawBuildingLabel(vg,
             CHURCH_LBL_CX, CHURCH_LBL_CY, CHURCH_LBL_W, CHURCH_LBL_H,
             CHURCH_ICON_CX, CHURCH_ICON_CY, CHURCH_ICON_SZ, imgIconChurch,
@@ -801,9 +816,12 @@ function TownScene.handleInput(dx, dy)
         return true
     end
 
-    -- 教堂点击检测
-    if dx >= CHURCH_CX - CHURCH_W * 0.5 and dx <= CHURCH_CX + CHURCH_W * 0.5
-       and dy >= CHURCH_CY - CHURCH_H * 0.5 and dy <= CHURCH_CY + CHURCH_H * 0.5 then
+    -- 教堂点击检测：保留原建筑热区，并覆盖未缩小的完整标签。
+    local churchArtHit = dx >= CHURCH_CX - CHURCH_W * 0.5 and dx <= CHURCH_CX + CHURCH_W * 0.5
+        and dy >= CHURCH_CY - CHURCH_H * 0.5 and dy <= CHURCH_CY + CHURCH_H * 0.5
+    local churchLabelHit = math.abs(dx - CHURCH_LBL_CX) <= CHURCH_LBL_W * 0.5
+        and math.abs(dy - CHURCH_LBL_CY) <= CHURCH_LBL_H * 0.5
+    if churchArtHit or churchLabelHit then
         if not _TM.isBuildingUnlocked("church") or not isChurchAccessible() then
             print("[TownScene] 教堂未解锁（引导或等级30）")
             return true

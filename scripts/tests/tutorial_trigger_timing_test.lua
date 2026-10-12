@@ -86,6 +86,19 @@ function Start()
         TM.update(1)
         check(leaves == restoredLeaves + 1, "离场恢复只初始化补一次，不每帧排队")
         reset(); TM.startGroup(6); talentOpen = true
+        TM.notifyEvent("click_highlight"); TM.update(0.6)
+        check(TM.getCurrentHighlight() == "talent_node_area", "古树打开后进入学习节点步骤")
+        TM.registerHotspot("talent_node_area", 100, 100, 80, 80, "left")
+        check(not TM.handleClick(100, 100, "left"), "节点点击仍放行真实天赋页面处理")
+        TM.notifyEvent("click_highlight")
+        check(TM.getCurrentHighlight() == "talent_node_area" and not TM.isGroupCompleted(6),
+            "节点点击或通用高亮事件不冒充天赋学习成功")
+        local learnedLeaves, learnedCloses = leaves, talentCloses
+        TM.notifyEvent("talent_learned"); TM.notifyEvent("talent_learned")
+        check(TM.isGroupCompleted(6) and not talentOpen and talentCloses == learnedCloses + 1,
+            "真实talent_learned才完成古树组并关闭一次目标页")
+        check(leaves == learnedLeaves + 1, "重复学习成功通知不重复排离场剧情")
+        reset(); TM.startGroup(6); talentOpen = true
         local before, beforeCloses = leaves, talentCloses
         TM.skipCurrentGroup(); TM.skipCurrentGroup()
         check(leaves == before + 1 and TM.isGroupCompleted(6), "古树完成或跳过只补一次教堂离场剧情")
@@ -135,6 +148,47 @@ function Start()
         end
         reset(); TM.setNewHeroId(1); TM.onScenarioClaimed(32); TM.update(0.25)
         check(TM.getCurrentGroup() == 9, "角色存在但未在目标槽时仍正常上阵教学")
+
+        -- 只读取CMH两个相邻完整helper；不加载整CMH/主入口，不接真实PlayerStore或存档。
+        local file = assert(cache:GetFile("runtime/ClientMessageHandler.lua"), "CMH source unavailable")
+        local lines = {}; while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+        file:Dispose()
+        local source = table.concat(lines, "\n")
+        local first = assert(source:find(" local function isTalentNodeLit(", 1, true))
+        local last = assert(source:find("\n --- 操作结果", first, true))
+        for _, mode in ipairs({"immediate", "delayed", "timeout", "reset_all", "deactivate"}) do
+            reset(); TM.startGroup(6); TM.notifyEvent("click_highlight"); talentOpen = true
+            local talents = { litNodes = mode == "immediate" and {0, 12} or {0} }
+            local wait = {} ---@type any
+            local refreshes, learned = 0, 0
+            local env = { tonumber = tonumber, ipairs = ipairs, pairs = pairs, pcall = pcall,
+                print = function() end, tostring = tostring, ChurchPage = false,
+                TalentPage = { syncTalentFromStore = function() refreshes = refreshes + 1 end },
+                PlayerStore = { Get = function(key) assert(key == "talents"); return talents end,
+                    WaitForChange = function(key, opts) assert(key == "talents"); wait = opts end },
+                TutorialManager = { notifyEvent = function(name)
+                    assert(name == "talent_learned"); learned = learned + 1; TM.notifyEvent(name)
+                end } }
+            local chunk = assert(load(source:sub(first, last - 1) .. "\nreturn finishTalentActionWhenSynced",
+                "@runtime/ClientMessageHandler.lua", "t", env))
+            local finishAction = chunk()
+            finishAction({mode = (mode == "reset_all" or mode == "deactivate") and mode or "activate", nodeId = 12})
+            if mode == "delayed" or mode == "timeout" then
+                check(wait.timeout == 5 and refreshes == 0 and learned == 0,
+                    "未同步激活只等待，不刷新或完成 " .. mode)
+                check(not wait.compare(talents, talents) and not wait.compare(talents, {litNodes = {0, 13}}),
+                    "等待拒绝原引用或非目标节点")
+                local synced = {litNodes = {0, 12}}
+                check(wait.compare(talents, synced), "等待识别目标节点已同步")
+                talents = synced
+                if mode == "delayed" then wait.onChange() else wait.onTimeout() end
+            else check(next(wait) == nil, "已同步操作不注册等待 " .. mode) end
+            local success = mode == "immediate" or mode == "delayed"
+            check(refreshes == 1 and learned == (success and 1 or 0),
+                "CMH仅成功同步激活通知学习，超时/重置只刷新 " .. mode)
+            check(TM.isGroupCompleted(6) == success,
+                "CMH真实helper完成状态符合操作结果 " .. mode)
+        end
 
         check(persisted > 0, "待触发queue已经持久化")
         print("[tutorial_trigger_timing_test] ALL PASS: " .. count .. " assertions")

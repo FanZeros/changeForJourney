@@ -9,6 +9,16 @@ local EquipmentSetRuntime = require("systems.EquipmentSetRuntime")
 
 local M = {}
 
+-- HeroConfig 已规范化的史诗成长是实例数据；基线/待提交/当前波不能共用可变表。
+---@param value any
+---@return any
+local function copyEpicGrowth(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for key, item in pairs(value) do result[key] = copyEpicGrowth(item) end
+    return result
+end
+
 -- 显示序号会因空槽压缩、阵亡紧凑而变化；属性和神器只能取真实编队号位。
 ---@param u table
 ---@param characterPanel table
@@ -35,9 +45,20 @@ function M.createSnapshot(u)
         u._baseSnapshot = u.attrs:clone()
     end
     u._baseArmorType = u.armorType
+    u._baseEpicAwakeningGrowth = nil
+    u._hasBaseEpicAwakeningGrowth = nil
+    u._baseEpicCommittedGrowthDelta = nil
+    if u.quality == 3 and u._epicAwakeningGrowth ~= nil then
+        u._baseEpicAwakeningGrowth = copyEpicGrowth(u._epicAwakeningGrowth)
+        u._hasBaseEpicAwakeningGrowth = true
+        u._baseEpicCommittedGrowthDelta = copyEpicGrowth(u._epicCommittedGrowthDelta)
+    end
     u._pendingSnapshot = nil
     u._pendingArmorType = nil
     u._pendingArtifactEffects = nil
+    u._pendingEpicAwakeningGrowth = nil
+    u._hasPendingEpicAwakeningGrowth = nil
+    u._pendingEpicCommittedGrowthDelta = nil
 end
 
 --- 从快照恢复单位属性
@@ -49,6 +70,15 @@ function M.restoreFromSnapshot(u)
         u._baseSnapshot = u._pendingSnapshot
         -- 新属性快照已携带装备类型；没有独立 pending 字段时也不能被旧波类型覆盖。
         u._baseArmorType = u._pendingArmorType or u._pendingSnapshot.armorType or u._baseArmorType
+        if u.quality == 3 and u._hasPendingEpicAwakeningGrowth then
+            -- has 标记区分「没有伴随成长」与「明确清为 nil，回到动态 owned」。
+            u._baseEpicAwakeningGrowth = copyEpicGrowth(u._pendingEpicAwakeningGrowth)
+            u._hasBaseEpicAwakeningGrowth = true
+            u._baseEpicCommittedGrowthDelta = copyEpicGrowth(u._pendingEpicCommittedGrowthDelta)
+        end
+        u._pendingEpicAwakeningGrowth = nil
+        u._hasPendingEpicAwakeningGrowth = nil
+        u._pendingEpicCommittedGrowthDelta = nil
         u._pendingSnapshot = nil
         if u._pendingArtifactEffects ~= nil then
             u.artifactEffects = #u._pendingArtifactEffects > 0 and u._pendingArtifactEffects or nil
@@ -72,6 +102,32 @@ function M.restoreFromSnapshot(u)
         -- 旧波临时倍率必须从旧 attrs 撤销，不能在新干净快照上再做一次除法。
         require("systems.ArtifactRuntime").reset({ u })
         u.attrs = u._baseSnapshot:clone()
+        if u.quality == 3 and u._hasBaseEpicAwakeningGrowth then
+            local growth = copyEpicGrowth(u._baseEpicAwakeningGrowth)
+            if type(growth) == "table" then
+                -- 仅采信 ETS 实际提交的累计差量；裸 live/账号新值不回灌旧快照。
+                local current = u._epicCommittedGrowthDelta or {}
+                local captured = u._baseEpicCommittedGrowthDelta or {}
+                local changed = false
+                for key, amount in pairs(current) do
+                    local delta = amount - (captured[key] or 0)
+                    if delta ~= 0 and type(growth[key]) == "number" then
+                        growth[key] = growth[key] + delta
+                        changed = true
+                    end
+                end
+                if changed then
+                    local ETS = require("systems.ExtraTalentSystem")
+                    growth = ETS.normalize(growth)
+                    -- 使用原成长公式与 HP 保留规则，不另造属性/回血口径。
+                    ETS.applyToAttrs(u.heroId, u.attrs, growth, u.awakeningNodes)
+                    u._baseSnapshot = u.attrs:clone()
+                    u._baseEpicAwakeningGrowth = copyEpicGrowth(growth)
+                end
+                u._baseEpicCommittedGrowthDelta = copyEpicGrowth(u._epicCommittedGrowthDelta)
+            end
+            u._epicAwakeningGrowth = growth
+        end
         if u._baseArmorType then u.attrs.armorType = u._baseArmorType end
         u.armorType = u.attrs.armorType
         u.atkType = u.attrs.atkType
@@ -142,6 +198,9 @@ function M.resetAllyUnit(u, allies, syncUnitHp)
                     u.advBranch = newUnit.advBranch
                     u.advTalentIds = newUnit.advTalentIds
                     u.awakeningNodes = newUnit.awakeningNodes
+                    if newUnit.quality == 3 then
+                        u._epicAwakeningGrowth = copyEpicGrowth(newUnit._epicAwakeningGrowth)
+                    end
                 end
             end
             M.createSnapshot(u)

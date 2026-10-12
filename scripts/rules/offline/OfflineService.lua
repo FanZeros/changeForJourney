@@ -178,6 +178,8 @@ local function collectOfflineTeams(heroesData, battleData, stageConfig, dungeonD
     -- 非表但非空值不是旧档缺字段，不以 currentStageId 绕过脏队表。
     if battleData.teamStageIds ~= nil and type(battleData.teamStageIds) ~= "table" then return result end
     local savedStages = type(battleData.teamStageIds) == "table" and battleData.teamStageIds or {}
+    local challengeSources = type(battleData.offlineChallengeSources) == "table"
+        and battleData.offlineChallengeSources or {}
     local maxId = math.tointeger(tonumber(battleData.maxStageId) or 0)
     local maxPrevious = maxId and stageConfig.getTerminalPrevStageId(maxId)
     local maxRank = maxPrevious and maxPrevious + 0.5 or maxId or 0
@@ -188,7 +190,28 @@ local function collectOfflineTeams(heroesData, battleData, stageConfig, dungeonD
         local stageId = (type(value) == "number" or type(value) == "string")
             and math.tointeger(tonumber(value) or 0) or nil
         local heroCount = counts[teamIdx] or 0
-        if stageId and stageId > 0 and heroCount > 0 and stageConfig.getStage(stageId) then
+        local challenge = challengeSources[tostring(teamIdx)] or challengeSources[teamIdx]
+        if challenge ~= nil then
+            -- 明确覆盖来源不能因无效快照退回主线；塔三队参与，离线只保留零产出说明。
+            if type(challenge) == "table" and heroCount > 0 then
+                local sourceId = math.tointeger(tonumber(challenge.stageId) or 0)
+                if challenge.sourceKind == "tower" and challenge.paused == true then
+                    local TC = require("config.TowerConfig")
+                    local floor = sourceId and sourceId - 400000 or 0
+                    if sourceId and floor >= 1 and floor <= TC.MAX_FLOOR then
+                        result[#result + 1] = { teamIdx = teamIdx, stageId = sourceId,
+                            heroCount = heroCount, sourceKind = "tower", paused = true,
+                            sourceName = "通天塔 第" .. floor .. "层" }
+                    end
+                elseif challenge.sourceKind == "dungeon" and sourceId
+                    and DC.decodeStageId(sourceId)
+                    and DC.isStageUnlocked(sourceId, battleData, dungeonData) then
+                    local entry = stageConfig.getStage(sourceId)
+                    result[#result + 1] = { teamIdx = teamIdx, stageId = sourceId,
+                        heroCount = heroCount, sourceKind = "dungeon", sourceName = entry and entry.name }
+                end
+            end
+        elseif stageId and stageId > 0 and heroCount > 0 and stageConfig.getStage(stageId) then
             local allowed = true
             if stageConfig.isResourceStage and stageConfig.isResourceStage(stageId) then
                 allowed = DC.isStageUnlocked(stageId, battleData, dungeonData)
@@ -287,6 +310,35 @@ local function appendScrollPreviewItems(list, scrollDrops)
     end
 end
 
+--- 结算来源只读副本；面板不得按当前界面、最高主线或首通奖励重新推断。
+---@param rewards OfflineTeamRewards
+---@param stageConfig table
+---@return table[]
+local function buildTeamSources(rewards, stageConfig)
+    local sources = {}
+    for _, reward in ipairs(rewards.teamRewards or {}) do
+        local entry = stageConfig.getStage(reward.stageId)
+        local id, floor = DC.decodeStageId(reward.stageId)
+        local sourceStageId = entry and (entry.sourceStageId or entry.id) or nil
+        local equipCount = 0
+        for _, seed in ipairs(reward.equipSeeds or {}) do equipCount = equipCount + (seed.count or 0) end
+        local scrollDrops = {}
+        for key, amount in pairs(reward.scrollDrops or {}) do scrollDrops[key] = amount end
+        sources[#sources + 1] = {
+            teamIdx = reward.teamIdx, stageId = reward.stageId, sourceStageId = sourceStageId,
+            sourceKind = reward.sourceKind or (id and "resource" or "main"),
+            sourceName = reward.sourceName or (entry and entry.name) or "未知来源",
+            resourceDungeonId = id, resourceFloor = floor,
+            heroCount = reward.heroCount, paused = reward.paused == true,
+            gold = reward.gold, diamond = reward.diamond,
+            adventureExp = reward.adventureExp, adventurerExp = reward.adventurerExp,
+            kills = reward.kills, equipCount = equipCount, scrollDrops = scrollDrops,
+            seconds = rewards.seconds, effectiveSeconds = rewards.effectiveSeconds,
+        }
+    end
+    return sources
+end
+
 -- ======================== 生命周期 ========================
 
 --- 获取今日 UTC+8 日期字符串
@@ -368,6 +420,10 @@ function OfflineService.CalcOnEnter(uid)
 
     -- 不满足最低离线时间
     if offlineSeconds < OfflineCalc.MIN_SECONDS then
+        if battleData and battleData.offlineChallengeSources ~= nil then
+            battleData.offlineChallengeSources = nil
+            PDM.MarkDirty(uid, "battle")
+        end
         print("[OfflineService] offline too short: " .. math.floor(offlineSeconds) .. "s uid=" .. tostring(uid))
         return
     end
@@ -386,6 +442,11 @@ function OfflineService.CalcOnEnter(uid)
     local dungeonData = PDM.GetModule(uid, "dungeon")
     local teams = collectOfflineTeams(heroesData, battleData, stageConfig, dungeonData)
     local rewards = OfflineCalc.calcTeamOfflineRewards(offlineSeconds, teams, stageConfig)
+    -- 覆盖战斗在冷启动不恢复；本次参数已捕获，待领期间靠内存奖励防重。
+    if battleData.offlineChallengeSources ~= nil then
+        battleData.offlineChallengeSources = nil
+        PDM.MarkDirty(uid, "battle")
+    end
     if not rewards then
         print("[OfflineService] no offline rewards generated uid=" .. tostring(uid))
         return
@@ -400,6 +461,7 @@ function OfflineService.CalcOnEnter(uid)
         adventurerExp  = rewards.adventurerExp,
         diamond        = rewards.diamond,
         heroExpPreview = buildHeroExpPreview(heroesData, rewards, battleData),
+        teamSources    = buildTeamSources(rewards, stageConfig),
         rewards        = {},
         -- [7日硬顶] 面板展示封顶信息
         hardCapSeconds  = rewards.hardCapSeconds or OfflineCalc.HARD_CAP_SECONDS,
@@ -421,10 +483,30 @@ function OfflineService.CalcOnEnter(uid)
         panelData.rewards[#panelData.rewards + 1] = { type = "diamond", amount = rewards.diamond }
     end
 
-    -- 装备种子立刻生成真实装备，展示和领取共用同一批
-    local grantedEquips = materializeEquipSeeds(rewards.equipSeeds)
+    -- 装备仍全部按旧顺序生成；只在新掉落预览时按已保存条件分流。
+    -- 分流快照与实例一起保留，重推/领取不重骰、不把旧遗匣或库存追溯分解。
+    local generatedEquips = materializeEquipSeeds(rewards.equipSeeds)
+    local equipData = PDM.GetModule(uid, "equipment")
+    local autoSettings = equipData and equipData.settings
+    local grantedEquips, decomposedEquips = {}, {}
+    local autoEssence = 0
+    for _, equip in ipairs(generatedEquips) do
+        if not equip.locked and BlacksmithConfig.shouldAutoDecompose(autoSettings, equip.quality, equip.level) then
+            decomposedEquips[#decomposedEquips + 1] = equip
+            autoEssence = autoEssence + BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
+        else
+            grantedEquips[#grantedEquips + 1] = equip
+        end
+    end
     rewards.grantedEquips = grantedEquips
     appendEquipPreviewItems(panelData.rewards, grantedEquips)
+    if autoEssence > 0 then
+        rewards.autoDecomposeEquips = decomposedEquips
+        rewards.autoDecomposeEssence = autoEssence
+        panelData.rewards[#panelData.rewards + 1] = { type = "essence", amount = autoEssence }
+        panelData.autoDecomposeCount = #decomposedEquips
+        panelData.autoDecomposeEssence = autoEssence
+    end
 
     -- 卷轴掉落
     appendScrollPreviewItems(panelData.rewards, rewards.scrollDrops)
@@ -478,8 +560,10 @@ function OfflineService.ClaimRewards(uid)
     -- 1) 金币/黑钻；本地字段仍是 gems，展示/回执保持 diamond。
     local goldAmount = math.floor(rewards.gold or 0)
     local diamondAmount = math.floor(rewards.diamond or 0)
+    local autoEssence = rewards.autoDecomposeEssence or 0
     currency.gold = (currency.gold or 0) + goldAmount
     currency.gems = (currency.gems or 0) + diamondAmount
+    if autoEssence > 0 then currency.essence = (currency.essence or 0) + autoEssence end
     PDM.MarkDirty(uid, "currency")
 
     -- 2) 每队英雄只领取本队经验，忽略可过期/可篡改的面板 expGain。
@@ -534,9 +618,17 @@ function OfflineService.ClaimRewards(uid)
         PDM.MarkDirty(uid, "equipment")
     end
     if lootboxCount > 0 then
-        PDM.MarkDirty(uid, "lootbox")
         print("[OfflineService] 满包装备已入遗匣=" .. lootboxCount
             .. " uid=" .. tostring(uid))
+    end
+    if autoEssence > 0 and lootboxData then
+        for _, equip in ipairs(rewards.autoDecomposeEquips or {}) do
+            local essence = BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
+            BlacksmithConfig.recordAutoDecompose(lootboxData, equip.quality, equip.level, essence)
+        end
+    end
+    if lootboxCount > 0 or (autoEssence > 0 and lootboxData) then
+        PDM.MarkDirty(uid, "lootbox")
     end
 
     -- 5) 卷轴掉落 → 货币
@@ -573,6 +665,8 @@ function OfflineService.ClaimRewards(uid)
         heroExpGrants = heroExpGrants,
         playerExp = playerExp,
         lootboxEquips = lootboxEquips,
+        autoDecomposeCount = autoEssence > 0 and #(rewards.autoDecomposeEquips or {}) or nil,
+        autoDecomposeEssence = autoEssence > 0 and autoEssence or nil,
     }
 end
 

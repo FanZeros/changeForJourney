@@ -1,3 +1,76 @@
+## 塔结算横屏与择契不停战（2026-10-07）
+
+- 已正常push14白名单功能b59bba3a728f25bb48564402ecbda145a48aaeda且ls-remote同SHA；PR120 https://github.com/FanZeros/changeForJourney/pull/120，head任务分支/baseworkspace1005，open/draft=false/merged=false，不称CI/合并发布。sharedHEAD/index保持，未推基线；21旧规范问题同ec1d8a61新增0，36单测通过。成功后仅三本人交接追加，不重复建PR或混peer。下方未push措辞属此前过程。
+
+- 用户要求塔胜败结算横屏、三选一可留着不选且战斗继续、右栏排序文字修复；完成后新分支正常push与workspace1005 PR，测试勿复杂化。独立fix1007/tower-flow-roster-labels固定ec1d8a61父，不切共享HEAD/index，不夹并行教程/数据去重/.project/上传/验证/无关meta。
+- 1440×760塔结算最多12英雄，普通副本不改；FIFO未选组本层内保留，清波直接下一波，选择只追加一次并下一波生效，不重置当前敌人/计时/投射物。右待选入口恢复原组，失败/退出/本层结算清理；sans/normal修复排序字体。
+- 现有回执450/0、布局967/0、名册6661/0、真实侧栏16291/0均exit0；11Lua单文件LSP无Error，官方b2/593Lua与11载荷字节/size一致。不称全仓/设备/性能/完整实战视觉通过；只三个旧测试小增量，不新增大测试框架。
+- 持续推进当前授权，最新要求直接继续不机械提问；只正常push独立任务分支，不推workspace系列/强推/自动合并发布，尊重停止与权限边界，凭据不进源码/配置/日志/记忆。Git实际结果成功后另补，不提前称已推或已建PR。
+## 上场与结算数据刷新去重（2026-10-07）
+
+- 本轮用户要求查上场/结算重复排序、战力和装备模拟，完成后正常push/PR，测试勿复杂化。固定ec1d8a61父，九文件功能08c6c4569555f5da45e0bc45de7acecac6650cc0已正常push并核远端SHA，独立 `perf1007/data-refresh-dedup`；正式PR #121：https://github.com/FanZeros/changeForJourney/pull/121，base=workspace1005/open/draft=false/merged=false，未推基线/自动合并发布。
+- 玩家解锁空槽不评分，heroes冻结最后评分值门禁；纯exp保引用、失败回滚不预先清cache、成功上场最终同步full1，legacy回调先刷新后读取。批次只合并末尾派生刷新，逐英雄共鸣/持久化及公式/倍率/奖励/存档保持；编辑队不评分、power排序不排旧缓存。
+- 官方b3成功593Lua/9载荷一致；现有Sync855/Exp780/Sort557均0失败、原atomic/drag/切关/预估120通过，纯Git候选三核心亦实际exit0。只两个旧test补计数/两batch例，不建框架。逐文件LSP无Error、规范21旧问题同父新增0、36单测过；host160/1与entry46/9旧夹具依赖失败保留，不混修，不称设备FPS/全面不卡/全仓全绿。
+- 持续推进当前授权，最新明确直接继续不机械提问；尊重停止/权限/安全边界。独立index/ref、sharedHEAD/index保持，九路径+三本人块不夹塔/教程/.project/上传/内证/玩家档，不推workspace系列/强推/合并发布，凭据不进源码/配置/日志/记忆。
+
+## 右栏排序与总战力主值交接（2026-10-07）
+
+- **已正常push并核验：** 最终26白名单提交a313445e9c31810e9cd9887354674e138a696259正常push独立feat1007/roster-sort-total-power-20261007，push／ls-remote实际exit0、远端SHA一致，workspace1005仍81266ee8未推。正式PR #119：https://github.com/FanZeros/changeForJourney/pull/119，base=workspace1005／head=本任务，open／draft=false／merged=false／mergeable未计算，不称CI通过、已合并或发布。提交包含23源码/meta＋3本人交接，目标PR117优化保持，塔WIP／.project／内证／玩家档／凭据不混入；下面“未push／PR”均属此前过程记录。成功后仅三交接补记正常push，不重复创建PR。
+
+- **最终本地验证与融合（下列为此前过程记录）：** 源码融合提交6c965dd6eb33e371c9345f73a4119b462ee65caa／tree6c66f056保留外部PR117目标81266ee8；相对目标23源码/meta路径＝19Lua＋4meta，不含塔。最终七核心排序557／启动669／host167／入口474／经验762双维／入场229／Save747全部0断言失败且exit0；所有读取源图与最终Git对象一致、共享回退0。纯exp五模式保持Down／引用／缓存，共鸣旁队与候补升级全刷新；两新目标夹具仅补真实依赖与rebuild计数，原业务断言逆构逐字节保留。最新招募5161／Horizon1334／副本6185断言过且exit0，focused5314断言过但rawFAIL／exit1仅106.19ms软件尖峰。main240帧20/20、198帧解锁／239Update／240Render／Stop完成，玩家档读取0／仅新隔离档写1，Lua／资源0，rawFAIL只17软件尖峰；原150帧18/20未ready与副本45秒超时保留。Save原65秒超时及1失败保留，同源812与候选180秒预算各747/0，不定性必现基线失败。最终本人官方b10成功／593根Lua，17非bootUUID-hash载荷bytes/size一致，两共享boot含塔hunk另Git-only验证，不称19全载荷或纯候选build；36安装源＋两个新test逐文件Error0，不称全仓。21旧规范问题同812新增0／36单测完整OK。6303UI、七多语样片与Power612＋672／Rich2784来自同展示源固定676验证，不冒充新目标GPU／设备验收。仅本块三交接追加，尚未push／PR，成功后再补真实结果；sharedHEAD676/index空、不推workspace系列／强推／合并发布，凭据不持久化。
+
+- 当前用户授权小队UI/短促反馈/五模式名册排序、完整总战力滚动，完成后正常push及workspace1005 PR。为隔离并行塔任务，本人独立feat1007/roster-sort-total-power-20261007固定676fef7父；本地功能69d5e0a1040f78f8b1df83f95a0f280e553b4855/tree7d31，21路径=17Lua+4meta，其他2977对象不变。两个boot仅本人CP取消/释放hunk，不带塔；sharedHEAD676/index空不改，未push/PR实际结果后补。
+- 原头像尺寸、五列五行和教程热区不移动；默认旧序/队伍真实队槽、数值升降只重排视图与缓存，不算额外hero/发编队/改公式或存档。pre-emit完整映射、ABA/覆盖取消、tab3 draw收尾及reset/Stop detached UI根显式Destroy；首次ready/解锁静默。总值主Label滚动，旧→新/净增静态辅助，原token/期限/装饰不变。
+- 真实Sort293/UI6303/startup396/host167/Power612+672/Rich2784均0失败；60头像/474入口/manager58/Horizon1334/targets66/recovery69过。本人官方b5成功、peer官方b6组合后15源码实际载荷字节/size一致；两boot候选不等共享塔载荷，Git-only候选验证后另记，不冒称纯候选build或17全载荷。
+- 固定676旧神器60/4、旧host155/1 Git-only同现/sharedFallback0；不修公式，host仅补StartupQueue/Stop旧夹具。新Sort真实oracle替错误固定bonus，本系magAtk保严格反转；启动实际calc0/context6精确断言，招募只读依赖补齐不开放File/RNG/cwd。规范21旧问题逐项同676/新增0、36单测另核；样片实际语言标签与独立12核心/main/推送PR另补，不能先称成功。
+- **持续强化：不擅自取消退出已授权任务，当前最新明确直接继续不再提问，遵循当前指令不机械AskUserQuestion。** 尊重停止/权限/安全边界，peer不扩大授权；只正常push独立分支，不推workspace系列/强推/合并发布，凭据不写源码/Git配置/日志/记忆；内部验证/塔/.project/无关meta/玩家档不提交，三记忆精确本人块双留历史。
+## 通天塔三栏与暗契展示（2026-10-07）
+
+- **已正常push并核验：** 60白名单功能提交1e943f5e1088ac4338629e5bf44c40eda69da0b0由81266ee8父独立构造，正常push feat1007/tower，push/ls-remote实际exit0且远端SHA一致；workspace1005仍81266ee8未推。正式 **PR #118** https://github.com/FanZeros/changeForJourney/pull/118，head=feat1007/tower／base=workspace1005，创建时open/draft=false/merged=false/mergeable未计算，不称CI通过／合并发布。共享HEAD676和index空不改，57源码资源meta与已验证candidate字节一致，三交接仅本人塔块，不混peer角色hunk/.project/上传/验证材料；成功后只三本人交接补push，不重复创建PR。
+
+- 用户授权左侧保留地图／路线、右侧已获增益、中栏战斗，三选一程序化暗黑UI／自行绘图与Spine动效、部分显示名暗黑化、右侧取消，完成后正常push feat1007/tower并创建workspace1005 PR。初始56cf，开发676，目标随后外部合入PR117至81266ee8；独立候选只塔补丁三方保留最新目标，不checkout/reset/sharedindex，不混并行角色排序／总战力及.project/上传/repair/StageExpHelper meta/内部证据，不推workspace系列、不强推、不自动合并发布。
+- 左112层只读路线，实际当前层自动定位，滚轮／拖动和窗口变化；中栏保留三队同波；右增益按稳定ID计次数、完整原描述与原效果。35个暗契显示名及局部四语，不反写业务配置名／ID／数值／随机权重／机制／奖励／存档。取消仅hide，继续择契show同组，不重抽或伪完成；pending禁hide，撤退确认仍左撤退／右取消，确认期间原计时不改。
+- 三选一新UI文字／按钮与程序暗铁旧铜骨白血红装饰，10透明PNG+1024图集+Spine4.2.43 JSON/atlas共13资源／meta；七实体纹章，awaken0.8→idle3真实时间，token独占native、故障单次PNG再几何、同时间变换刷新不叠正dt、单Unload清引用。28生成器／资源／meta冻结逐字节相同，342016图集区域像素、2px挤边、透明RGB0、确定性重绘通过。
+- 两侧detached ScrollView真实content0导致滚动/定位无效，已仅塔Sidebar布局后UpdateContentSize+clamp，最后按floor或实际viewport高度变化定位，稳定手动scroll不重置。name内容右2px处理真实英文War-Fueled Frenzy边缘1.027px超出，不截串或放宽容差。确认TextBoxBounds行metrics不等字墨，临时放大三值已撤回；20旧误判记录保留，最终metrics只DIAG，不称已修未经确认的字墨裁切。
+- 真实原回执289/0，只有旧初始化改实际选关入口且123原断言语句保留；native90/0／mock358/0，UI Spine与PNG各362cases58447/0（1050完整描述）、CPU三栏专项774/0及新真实UI侧栏10cases16281/0均实际通过。严格教程共享focused12/5312业务ALL PASS，raw1环境spike；dungeon13/6183与切关ALL PASS。旧dungeon_team_selection仍旧detailDungeon断言失败，固定676完整隔离同现，不伪造旧入口或混修生产。规范36单测实际通过；候选21旧规范问题同父／新增0，不称全仓清零。
+- 最终八三栏图已真实跑齐逐张Read：战斗／三选一／隐藏继续／撤退确认×1920/1280，两尺寸共1200draw、324检查0、每图Stop0和40源覆盖前后SHA一致；各actualexit1/rawFAIL仅947软件spikes，不称性能／触控／用户审美／真实通关通过。样片固定676+塔overlay不冒称最终812包；1280原顶部计时与倍速邻近／淡字边界保留，未扩修旧HUD。原首main无exit证据保留；最终纯812独立main150已真实wait退出1、无outertimeout、Lua/资源/缺图0，rawFAIL仅18spikes。17对Stop链完整返回含Flush/Rename、塔reset/Picker/Oath/Sidebar/Surface/两native.nvgDelete/main，GC/RNG不改；无syscall audit不称共享回退读取0，旧trace时限与不足150帧尝试完整保留。
+- 独立812最终候选3048路径／57白名单（19Lua+13资源+25新meta），2991非白名单与267规则／配置／存档保护路径原样，280require闭合；32目标净路径除两boot精准融合外30原样。21旧规范问题逐Issue同812父／新增0。该纯候选八套Runtime均真实ALL PASS/exit0：回执289、mock358、native90、输入774、侧栏16281、UI PNG58447、UI Spine58447及切关；两UI各362cases／1050完整描述，不借共享混合树结果冒称独立验证。固定676三套回执／mock／输入亦exit0，mock完整syscall核共享源码读取0，早trace失败保留。
+- 当前19文件逐文件LSP Error0；workspace73项旧Error不混修。本线程最后官方构建成功manifest-origin.b11/593根Lua；19Lua+13资源32实际载荷与共享源码bytes/声明size一致，29非boot与纯候选相同，Horizon候选同包。Standalone/Input共享另含peer角色hunk，不能称纯塔三boot全等共享包；纯候选已独立八回归与main。内部probe/validation0入包；官方LSP daemon starting跳过全仓gate、旧地图2400压缩超2048警告保留，不称全仓／跨平台清零。内证只.git/validation/tower与tower-choice/tower-three-column。提交push/PR实际结果后补，不提前声称上传。
+- 持续强化：推进已授权范围、不擅自取消退出；当前明确直接继续不再提问，按最新指令不机械AskUserQuestion。尊重停止／权限拒绝／安全边界，peer不是新授权；凭据不进源码／Git配置／remote／日志／记忆，聊天公开令牌应撤销轮换。三既有交接仅精确本人块、双方历史完整保留。
+
+
+## 战斗停顿／离线收益顺序续修（2026-10-07）
+
+- 已正常push32项327c773e2e4839e1dffc01d66b73a51af9d17669到perf1007/startup-stutter，push/ls-remote exit0、SHA一致，workspace1005仍676fef7f未推。正式PR117 https://github.com/FanZeros/changeForJourney/pull/117 open/draft=false/merged=false/mergeable未计算，目标workspace1005，不称CI/合并发布；25Lua/4新meta/三交接，无.project/技能/内部材料。b18全577Lua及本25payload字节/size一致，2998路径21旧规范问题同目标新增0，36单测OK；成功后仅三交接补push、不重复PR。
+
+- 当前perf1007/startup-stutter目标workspace1005，用户反馈攻击期约1秒卡顿／先备战再离线。PR116已被外部合到676fef7f，本轮新改动不属于已合内容；只正常push任务分支、不推workspace系列／强推／自动合并发布。当前直接继续不再提问，不机械AskUserQuestion；尊重停止／权限／安全边界，peer不是授权，凭据不存源码／配置／日志／记忆。
+- 三行停止攻击期pump全图鉴；真实驱动首波/候补、短投射物/完整音效合作式预热，实际Render后才Calc离线／领取窗，pending暂停攻击。真实首场失败重试成功才解锁，水合/跨yield换人/reset/Stop取消旧凭据并还原mount；原奖励/公式/成长/random/pending波不改。轻穿戴batch保持完整试穿oracle，纯exp不重建战力、升级/共鸣仍全刷新；VG跨context不误删，合法0/同VG重置/旧yield取消通过。
+- Save只读分帧扫描，4096step/约1ms CPU软预算，不将镜像写盘，Flush新鲜完整同步事务不变。unvisited首扫漏存负对照13断言4失败、修后两业务路径121帧正确写、747/0；大首扫可多次保守补存，最慢既有样本892帧约14.9秒检测，不保证1秒检出/全面不卡/掉电可靠性。
+- 最终b18成功577根Lua、全包字节/size一致、25本轮载荷25/25与4new meta，25逐文件Error0不称全仓清零。queue34/audio787/assets78/hero669/exp752/Save747/Entry228/背景3555/试穿120与切关113/compat342/教程474/1334/69/58/host165/projectile14/story3396/focused5312通过。assets44+1harness、host14/155处依赖失败保留，补真实fixture不删断言；原3/4/9等基线失败不混修。
+- 同de5266f9 probe旧a7de8树vs本轮1200Update/1201Render/异常0，wall峰Update89→22/Render69→54ms、battle解码141→9；ready95→142/首战262→348帧。最终另复测1200/1201/20步/异常缺图0、Update33/Render39ms，ready143/首战349；Save封闭stub非玩家存档恢复，软件墙钟不等设备FPS/锁步/视觉。大库存真实Flush仍同步尖峰。
+- .project本人生成改动逐字节还原；36policy单测OK，候选2998路径／21旧规范问题逐项同目标、新增0；commit/push/新PR结果已见本节首条。内证只.git，技能／两无关meta不提交，三既有交接仅本人块、双方历史保留。
+
+## 两段装备教程入口交接（2026-10-07）
+
+- **本轮Git已实证完成：** 功能6df707f3固定13b7父、保留PR112目标5fca1d82后的1eb0999be743e6d1f8a81538abe9d869966389a1正常push教程独立分支，push／ls-remote exit0远端一致，不推workspace1005。PR114 https://github.com/FanZeros/changeForJourney/pull/114 已open／draft=false／merged=false／mergeable未计算，baseworkspace1005，不称CI通过／合并发布。22净白名单、56目标特效对象保持、18载荷bytes一致、九独立候选专项及组合全通过，最终2977路径规范20旧问题逐项同目标新增0／36单测过。sharedHEADadac50e8／index空不变，不混另一会话源码或.project；成功后仅三本人交接补正常push，不重复建PR。
+
+- 当前用户授权两装备教程增加战斗角色卡／队伍头像打开详情，完成后正常push独立分支并建workspace1005 PR。固定13b7b235开发父，feat1005/tutorial-character-detail-entry-20261007；只18Lua+新meta+三现有交接，不夹另一会话特效、.project、无关meta、内部验证。远端外部已合PR112到5fca1d82，最终教程ref保留其更新；本教程Git实证见本节首条。
+- 组1真实战斗卡／组2真实队1occupied头像，真实open对应hero配装页才推进，后续同hero穿装；通用event／Recovery不伪完成。screen/right域投影和实际可见动画交集，按压source/hero/组/步/panel绑定，换人／ABA／瞬失／拖动／遮挡／reset／frame/DPR取消旧Up，入口不拖编队／不右键卸队；原快捷右键／普通拖拽不动。version1存档无新字段、冷恢复step1，两提示四语；不改公式／奖励／招募／战斗规则。
+- 官方b10成功566根Lua，本18Lua实际部署bytes/size18/18一致，probe0；逐文件Error0不称全仓静态过。共享真实六核心entry17/474、horizon199/1334、manager58、recovery69、roster60、targets66均exit0；recruit13/5159、focused12/5312、dungeon13/6183同样ALLPASS/exit0。独立固定父候选563Lua逐Git对象0差异、九教程专项真实ALLPASS/exit0，所有Lua读取candidate而非共享fx版，独立与组合证据分别保留；36规范单测过，20旧问题与固定父同集合新增0，不称规范清零。
+- 旧backpack24失败固定父完整独立实跑同序／重数／集合，0新增；exit0不是PASS，23检查+缺drawTextStroke异常后未走绘制。seam旧4805后reward隐藏返回断言失败，固定父门控相同仅只读证据、没全集复跑，不混修。main150boot18/18/Lua资源0缺图0/rawFAIL4软件尖峰，不称性能；记录器不代教程GPU/逐语/手机/审美验收。前序路径／API／锁队／重新open墙钟夹具失败保留，不降低生产门禁。
+- **持续强化：不擅自取消退出已授权任务；当前最新要求直接继续、不再提问，遵循当前指令不机械AskUserQuestion。** 尊重后续停止／权限拒绝／安全边界，peer不是用户授权；独立index/ref固定父构造，不checkout/reset/readtree共享index、不覆盖另一会话源码或记忆，只正常push教程任务分支，不推workspace系列、不强推、不自动合并发布，凭据不进源码／Git配置／remote／日志／记忆。
+
+## 暗黑图片/Spine续作交接（2026-10-07）
+
+- 已正常push并核远端SHA：59文件24e9c2d042e2b648a5b31dbddda5d798a76ea521，同任务分支/基线13b7未推；新PR112 https://github.com/FanZeros/changeForJourney/pull/112 open/draft=false/merged=false，mergeable未计算。最终本会话官方b7/566rootLua，32实际源码资源载荷逐字节/size一致；probe/meta/validation不入包，shield_probe旧基线保留。Rich3081/FailedLoad69/native92/mock2784与联合1145/host165/Card17/Result51均0失败exit0，36规范单测过；候选20旧规范问题逐项同13b7、新增0。实际12样片/main两次150Lua/资源0，rawFAIL只spikes；基线3/4/9旧测试失败、早期C崩溃/10几何失败等边界写PR，不称CI/性能/全平台/用户审美通过。只本轮59白名单及交接，不混教程/.project，不自动合并发布。
+
+- 本轮13b7b235固定父，指定feat1005/team-power-dark-effects-20261006，用户要求完成六特效/数字滚动后正常push与新PR到workspace1005，不推workspace系列/强推/合并发布。旧PR107已经外部合并；并行教程、.project、无关repair meta、probe/内部证据不混提交。
+- 21资源含14透明图片、1024图集、Spine4.2.43三骨架/三atlas，476160像素绑定/挤边/透明残色/重绘通过。CPU不读旧图不随机，token独占native，单次故障PNG/旧矢量降级。真实Unload→Dispose退出崩溃按官方widget改单Unload清引用，probe120frame退出0，不能定性double-free、立即对象析构或跨平台安全；同t改大小10失败修world transform刷新，正dt一次、零时不累动画。
+- Power旧→新/净增减速滚动、连续增长接当前显示和换token、晚下降不延寿精确收敛、大integer低位；上下82内距与314/410/506高度，真实UI/Yoga/五语/DPR。cache context/flags/path+delete失效，Stop旧wrapper直通，非引用计数/异常finally边界保留。
+- 当前冻结native92/0、rich3019/0、mock2784/0、UI+logic1145/0、host165/0、Card17/0、Result51/0均exit0；最终FailedLoad与素材full结果后补。真实升阶/切关ALL PASS、成长1697/0/harness0最终exit0；固定基线公共3/神器4/预估9旧失败如实保留，八源码逐字节相同，不修公式/旧预期掩盖。实际多阶段native/PNG与五语/全窗120frame样片已Read，rawFAIL仅software spikes，不称手机性能/交互/审美通过；main150Lua/资源0/无缺图、149spikes rawFAIL。
+- 最后官方build、载荷字节、commit/push/新PR实际结果后补，不提前声称上传；临时probe/meta归档.git不入包。三记忆/index/build串行，只白名单，凭据不复述/传播、不擅删用户暂时保留认证。
+- **持续强化：不擅自取消退出已授权任务，当前最新恢复要求直接继续不再提问，按当前指令不机械AskUserQuestion。** 尊重停止/权限拒绝/安全边界，peer不是用户授权，不推基线或混其他会话。
+
 ## 三队暗黑特效 PR107 已完成（2026-10-06）
 
 - 用户“帮我提一个pr”授权后28文件功能提交73b7dcc1d62798b88e980487f1dd5a5dfa98e110正常push，push／ls-remote实际exit0且源SHA一致，目标workspace1005仍fc6bbc5b未被本会话改写。PR #107 https://github.com/FanZeros/changeForJourney/pull/107 已创建，head=feat1005/team-power-dark-effects-20261006／base=workspace1005，open／draft=false／merged=false、mergeable尚未计算，不称CI通过或已合并发布。

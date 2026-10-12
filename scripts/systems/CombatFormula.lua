@@ -404,8 +404,11 @@ function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
     dmg = CF.applyFinalDamageBonus(attacker, dmg)
 
     -- 格挡
+    -- 保留格挡真正挡掉的原伤，不把护盾吸收或护甲减伤当成反伤基数。
+    hit.preBlockDamage = dmg
     local isBlocked, blockMult = CF.rollBlock(blockRate, blockRatio)
     hit.isBlocked = isBlocked
+    hit.blockedDamage = isBlocked and math.max(0, dmg * (1 - blockMult)) or 0
     if isBlocked then
         dmg = dmg * blockMult
     end

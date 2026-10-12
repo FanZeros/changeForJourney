@@ -8,7 +8,7 @@ local HEROES = {
     { id = 3,  meme = "叮咚鸡",       q = "R",   qc = {160,160,160}, job = "游侠", orig = "琳达",     title = "等通知哨兵", art = true  },
     { id = 4,  meme = "接化发掌门",   q = "SR",  qc = {162,160,255}, job = "骑士", orig = "塞西莉亚", title = "浑元形意宗师", art = false },
     { id = 5,  meme = "叠甲怪",       q = "SR",  qc = {162,160,255}, job = "战士", orig = "维多利亚", title = "叠甲战神",   art = true  },
-    { id = 6,  meme = "阿姨压",   q = "SR",  qc = {162,160,255}, job = "法师", orig = "露娜",     title = "电音天后",   art = false },
+    { id = 6,  meme = "压一压",   q = "SR",  qc = {162,160,255}, job = "法师", orig = "露娜",     title = "电音天后",   art = false },
     { id = 7,  meme = "信光机兵",     q = "SR",  qc = {162,160,255}, job = "游侠", orig = "星织",     title = "光之巨人", art = false },
     { id = 8,  meme = "愤怒的小雀",   q = "SR",  qc = {162,160,255}, job = "刺客", orig = "绫音",     title = "弹弓怒鸟",     art = false },
     { id = 9,  meme = "卡皮巴拉",     q = "SR",  qc = {162,160,255}, job = "牧师", orig = "芙罗拉",   title = "温泉教主", art = true  },

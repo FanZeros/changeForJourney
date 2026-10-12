@@ -8,7 +8,6 @@ local PlayerStore = require("core.PlayerStore")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local HeroConfig = require("config.HeroConfig")
 local EquipmentSystem = require("systems.EquipmentSystem")
-local EquipmentSetSystem = require("systems.EquipmentSetSystem")
 local DetailAttrs = require("ui.character.detail.CharacterDetailAttrs")
 local Stats = require("ui.character.detail.CharacterEquipStats")
 local I18n = require("core.I18n")
@@ -18,6 +17,8 @@ local CACHE_SECONDS = 0.2
 local SCROLL_FRICTION = 0.90
 local SCROLL_MIN_VEL = 0.5
 local slotHover = { key = nil, since = 0 }
+-- 本宿主私有，不能与属性页共享动画状态；数字/真实预览不进入此闭包。
+local radarTransition = Stats.createRadarTransition()
 
 local function clearSlotHover()
     slotHover.key, slotHover.since = nil, 0
@@ -101,12 +102,10 @@ local function currentFallback(heroId, level)
         if ai ~= bi then return ai < bi end
         return indices[a] < indices[b]
     end)
-    local equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
-    local counts = EquipmentSetSystem.countSets(equipment, heroId,
-        EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
+    -- 降级也复用隔离属性链的摘要，不能为显示调用 getFromInventory 水合 live 背包。
     return {
         current = current, preview = nil, rows = rows,
-        currentSets = EquipmentSetSystem.summarize(counts), previewSets = {}, candidate = nil,
+        currentSets = current.attrs and current.attrs._setRows or {}, previewSets = {}, candidate = nil,
     }
 end
 
@@ -167,6 +166,7 @@ local function dataSignature(selection)
     table.sort(seqKeys)
     for _, seq in ipairs(seqKeys) do append(seq); append(inventory[seq] or inventory[tonumber(seq)]) end
     append(ClientDispatcher.get("artifacts") or PlayerStore.Get("artifacts"))
+    append((ClientDispatcher.get("talents") or PlayerStore.Get("talents") or {}).litNodes)
     return table.concat(parts, "\31")
 end
 
@@ -201,8 +201,16 @@ local function refreshData(heroId, slot)
     local failure = nil
     if ok and type(preview.build) == "function" then
         -- 仅调用公共 API；不写 eqData、不发送穿戴动作、不复制预览公式。
-        local built, value = pcall(preview.build, heroId, level, selection and selection.seq or nil, slot,
-            { includeEquipmentBonuses = panelState.attributeMode == "equipment" })
+        -- options 是完整只读来源，不是单独开关；预览内部复制后才水合/试穿。
+        -- 四模块都显式提供，缺失模块为空，保持显式空快照不回读的契约。
+        local snapshots = {
+            heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes") or {},
+            equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment") or {},
+            artifacts = ClientDispatcher.get("artifacts") or PlayerStore.Get("artifacts") or {},
+            talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents") or {},
+            includeEquipmentBonuses = panelState.attributeMode == "equipment",
+        }
+        local built, value = pcall(preview.build, heroId, level, selection and selection.seq or nil, slot, snapshots)
         if built then
             result = value
         else
@@ -217,7 +225,7 @@ local function refreshData(heroId, slot)
         result = currentFallback(heroId, level)
         if selection or failure then result.error = "属性预览暂不可用，当前装备未改变" end
     end
-    result.displayRows = Stats.sortComparisonRows(result.rows)
+    result.displayRows = Stats.sortComparisonRows(DetailAttrs.filterDisplayRows(result.rows))
     if result.equipmentBonuses then
         result.equipmentBonuses.displayRows = Stats.sortComparisonRows(result.equipmentBonuses.rows)
     end
@@ -301,7 +309,11 @@ function M.draw(vg, heroId, detailState)
     clampScroll("sets")
     local displayCurrent = display.current or {}
     local displayPreview = display.preview
-    Stats.drawRadar(vg, displayCurrent.stats, displayPreview and displayPreview.stats or nil, equipmentMode)
+    -- 只以英雄/样式切换开动画，不把0.2s缓存签名或每帧新建表当作动画key。
+    local styleKey = tostring(heroId) .. "|" .. panelState.attributeMode
+    local visual = radarTransition:sample(displayCurrent.stats,
+        displayPreview and displayPreview.stats or nil, equipmentMode, styleKey, now())
+    Stats.drawRadar(vg, displayCurrent.stats, displayPreview and displayPreview.stats or nil, equipmentMode, visual)
 end
 
 function M.onSlotChanged(slot, heroId)
@@ -316,8 +328,8 @@ function M.markDirty()
     clearTip()
 end
 
---- clear/reset 都废弃候选缓存和属性说明，不遗留上一位角色热区。
-function M.clear()
+--- 清缓存/热区与滚动；活动页切英雄可保留独立雷达视觉闭包。
+local function clearPanelData()
     clearSlotHover()
     panelState.data = nil
     panelState.cacheKey = nil
@@ -335,8 +347,18 @@ function M.clear()
     clearTip()
 end
 
+--- 关闭/显式clear释放全部视觉状态；重新首绘静默，不泄漏上一位角色。
+function M.clear()
+    clearPanelData()
+    radarTransition:reset()
+end
+
 function M.reset(heroId, slot)
-    M.clear()
+    -- 上层活动配装页换英雄也调用reset；只此边沿保留当前视觉形状连续过渡。
+    -- reset(nil)是关闭，同英雄reset是重新进入；二者必须清动画。
+    local changingHero = heroId ~= nil and panelState.heroId ~= nil and panelState.heroId ~= heroId
+    clearPanelData()
+    if not changingHero then radarTransition:reset() end
     panelState.heroId = heroId
     panelState.slot = slot
 end

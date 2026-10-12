@@ -13,7 +13,7 @@ TavernConfig.DAY_SECONDS   = 86400
 
 -- ======================== 商品配置 ========================
 -- 与 TavernShopPage.lua 的客户端 SHOP_ITEMS 保持同步
--- 英雄 ID: 1=大狗嚼 2=黄桃龙 3=叮咚鸡 4=接化发掌门 5=叠甲怪 6=阿姨压
+-- 英雄 ID: 1=大狗嚼 2=黄桃龙 3=叮咚鸡 4=接化发掌门 5=叠甲怪 6=压一压
 --          7=信光机兵 8=愤怒的小雀 9=卡皮巴拉 10=铁憨憨 11=熬夜冠军 12=雪皇
 --          13=弹弹弹 14=内鬼 15=复活吧爱人 16=万剑归宗 20=摘星星星人
 
@@ -30,7 +30,7 @@ TavernConfig.SHOP_ITEMS = {
     -- R 碎片（品质4）
     { id = 5,  name = "接化发掌门-碎片", limitCycle = "daily", limitCount = -1, price = 60,  rewardType = "shard", rewardHeroId = 4,  rewardCount = 1 },
     { id = 6,  name = "叠甲怪-碎片", limitCycle = "daily", limitCount = -1, price = 60,  rewardType = "shard", rewardHeroId = 5,  rewardCount = 1 },
-    { id = 7,  name = "阿姨压-碎片",    limitCycle = "daily", limitCount = -1, price = 60,  rewardType = "shard", rewardHeroId = 6,  rewardCount = 1 },
+    { id = 7,  name = "压一压-碎片",    limitCycle = "daily", limitCount = -1, price = 60,  rewardType = "shard", rewardHeroId = 6,  rewardCount = 1 },
     { id = 8,  name = "信光机兵-碎片",    limitCycle = "daily", limitCount = -1, price = 60,  rewardType = "shard", rewardHeroId = 7,  rewardCount = 1 },
     { id = 9,  name = "愤怒的小雀-碎片",    limitCycle = "daily", limitCount = -1, price = 60,  rewardType = "shard", rewardHeroId = 8,  rewardCount = 1 },
     { id = 10, name = "卡皮巴拉-碎片",  limitCycle = "daily", limitCount = -1, price = 60,  rewardType = "shard", rewardHeroId = 9,  rewardCount = 1 },

@@ -6,6 +6,7 @@ local PDM = require("rules.character.PlayerDataManager")
 local DC = require("config.DungeonConfig")
 local EquipmentSystem = require("systems.EquipmentSystem")
 local LootBoxSystem = require("systems.LootBoxSystem")
+local BlacksmithConfig = require("config.BlacksmithConfig")
 local ExpTable = require("config.ExpTable")
 local TeamSlots = require("shared.heroes.TeamSlots")
 local GameState = require("core.GameState")
@@ -20,7 +21,8 @@ local persistHooks_ = {} ---@type table
 ---@type table<string, table>
 local transactions = {}
 -- Flush 会推进在线边界；它异常时 session 也属于本次候选快照。
-local TRANSACTION_MODULES = { "dungeon", "currency", "equipment", "lootbox", "session" }
+-- heroes/player 承载副本结算经验，失败时同样要回滚。
+local TRANSACTION_MODULES = { "dungeon", "currency", "equipment", "lootbox", "session", "heroes", "player", "artifacts", "battle" }
 
 --- 单机桥注入唯一写档入口的布尔结果；PDM.FlushImmediate 只是日志，不能代替。
 --- hooks 延后 Save 内 MarkOnline 的 session 通知，不承担奖励发放。
@@ -143,11 +145,55 @@ function DungeonService.MarkRewardDirty(uid, name)
     markDirty(uid, name)
 end
 
--- 单机每位玩家只持有一场资源战斗；不写进存档，重启/退出后必须重新 Challenge。
+-- 单机每位玩家只持有一场资源战斗；战斗回执仅存内存，离线来源另存只读快照。
 local pendingChallenges = {} ---@type table<string, table>
 local nextChallengeId = 0
 
+--- 当前覆盖战斗的离线来源，独立于主线队伍任务与最高解锁关。
+--- 塔使用 paused 标记：只有实际挑战发奖，离线不得借原队伍的主线任务计费。
+---@param uid number
+---@param teamIdx number
+---@param source table
+function DungeonService.SetOfflineChallengeSource(uid, teamIdx, source)
+    local battle = PDM.GetModule(uid, "battle")
+    if not battle then return end
+    if type(battle.offlineChallengeSources) ~= "table" then battle.offlineChallengeSources = {} end
+    battle.offlineChallengeSources[tostring(teamIdx)] = source
+    markDirty(uid, "battle")
+end
+
+--- 结束真实运行中的覆盖战斗才清快照；冷启动没有运行态时保留上次离线来源。
+---@param uid number
+---@param sourceKind string
+function DungeonService.ClearOfflineChallengeSources(uid, sourceKind)
+    local battle = PDM.GetModule(uid, "battle")
+    local sources = battle and battle.offlineChallengeSources
+    if type(sources) ~= "table" then return end
+    local dirty = false
+    for key, source in pairs(sources) do
+        if type(source) == "table" and source.sourceKind == sourceKind then
+            sources[key] = nil
+            dirty = true
+        end
+    end
+    if dirty then markDirty(uid, "battle") end
+end
+
+--- 覆盖战斗开始/退出即保存来源；无本地持久化接线时只保留脏状态。
+---@param uid number
+function DungeonService.PersistOfflineChallengeSources(uid)
+    if type(persist_) ~= "function" or transactions[tostring(uid)] then return end
+    local called, saved = pcall(persist_, uid)
+    if not called or saved ~= true then
+        print("[DungeonService] 离线来源保存失败，等待存档重试: " .. tostring(saved))
+    end
+end
+
 function DungeonService.Cleanup(uid)
+    if pendingChallenges[tostring(uid)] then
+        DungeonService.ClearOfflineChallengeSources(uid, "dungeon")
+        DungeonService.PersistOfflineChallengeSources(uid)
+    end
     pendingChallenges[tostring(uid)] = nil
 end
 
@@ -229,16 +275,33 @@ function DungeonService.GrantEquipment(uid, dungeonId, floor, count)
     local lootbox = PDM.GetModule(uid, "lootbox")
     if not count or count < 0 or not floorData then return false, "装备奖励配置无效" end
     if not equipment then return false, "装备数据未加载" end
-    if EquipmentSystem.getInventoryCount(equipment) + count > EquipmentSystem.MAX_INVENTORY and not lootbox then
+    local autoSettings = equipment.settings
+    local autoEnabled = autoSettings and ((tonumber(autoSettings.autoQuality) or 0) > 0
+        or (tonumber(autoSettings.autoLevel) or 0) > 0)
+    -- 关闭规则时保留旧前置容量拒绝（零生成/RNG）；开启后只为保留件检查容器。
+    if not autoEnabled and EquipmentSystem.getInventoryCount(equipment) + count > EquipmentSystem.MAX_INVENTORY and not lootbox then
         return false, "遗匣数据未加载"
     end
-    local generated = {}
-    for i = 1, count do
-        local quality = math.random(floorData.equipMinQuality, floorData.equipMaxQuality)
+    -- 仅equipment_vault本次新生成首通/挂机奖励；已入库/入匣和旧pending均不扫描。
+    -- 所有品质与装备仍按原顺序完整生成，之后的分流不消费随机。
+    local generated, decomposed = {}, {}
+    local autoEssence = 0
+    for _ = 1, count do
+        local quality = require("systems.DropSystem").rollQualityByProbabilities(floorData.equipQualityProbabilities)
         local equip = EquipmentSystem.generateRandom(floorData.equipLevel, quality)
         if not equip then return false, "装备生成失败" end
-        generated[i] = equip
+        if not equip.locked and BlacksmithConfig.shouldAutoDecompose(autoSettings, equip.quality, equip.level) then
+            decomposed[#decomposed + 1] = equip
+            autoEssence = autoEssence + BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
+        else
+            generated[#generated + 1] = equip
+        end
     end
+    if EquipmentSystem.getInventoryCount(equipment) + #generated > EquipmentSystem.MAX_INVENTORY and not lootbox then
+        return false, "遗匣数据未加载"
+    end
+    local currency = autoEssence > 0 and PDM.GetModule(uid, "currency") or nil
+    if autoEssence > 0 and not currency then return false, "货币数据未加载" end
     local result = { equips = {}, inventoryCount = 0, lootboxCount = 0 }
     for _, equip in ipairs(generated) do
         local destination = LootBoxSystem.deliverEquipment(lootbox, equipment, equip)
@@ -250,14 +313,82 @@ function DungeonService.GrantEquipment(uid, dungeonId, floor, count)
         }
     end
     if result.inventoryCount > 0 then markDirty(uid, "equipment") end
-    if result.lootboxCount > 0 then markDirty(uid, "lootbox") end
+    if autoEssence > 0 then
+        currency.essence = (currency.essence or 0) + autoEssence
+        markDirty(uid, "currency")
+        if lootbox then
+            for _, equip in ipairs(decomposed) do
+                local essence = BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
+                BlacksmithConfig.recordAutoDecompose(lootbox, equip.quality, equip.level, essence)
+            end
+        end
+        result.autoDecomposeCount, result.autoDecomposeEssence = #decomposed, autoEssence
+    end
+    if result.lootboxCount > 0 or (autoEssence > 0 and lootbox) then markDirty(uid, "lootbox") end
     return true, nil, result
+end
+
+--- 一次扫荡当量对应的卷轴与扫荡券：与挂机同口径（24h 挂机 = 两次扫荡）。
+---@param floor number
+---@return number scrollPerSweep, number ticketPerSweep
+local function equipScrollPerSweep(floor)
+    local scrollRate, ticketRate = DC.getEquipDropRates(floor)
+    local idle = require("config.DungeonIdleConfig")
+    local fullMinutes = idle.MAX_ACCUM_MIN
+    local fullSeconds = idle.FULL_RATE_SEC
+    local function perSweep(rate)
+        return math.max(1, math.floor(rate * fullSeconds / fullMinutes))
+    end
+    return perSweep(scrollRate), perSweep(ticketRate)
+end
+
+--- 把卷轴/扫荡券写入货币；只发配置里存在的字段。
+---@param uid number
+---@param floor number
+---@param sweepCount number 本次发奖的扫荡当量数（首通=2，扫荡/挂机=1）
+---@return table scrollDrops
+local function grantEquipScrolls(uid, floor, sweepCount)
+    local currency = PDM.GetModule(uid, "currency")
+    if not currency then return {} end
+    local scrollPerSweep, ticketPerSweep = equipScrollPerSweep(floor)
+    local scrollTotal = scrollPerSweep * sweepCount
+    local ticketTotal = ticketPerSweep * sweepCount
+    local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
+    local drops = {}
+    for _ = 1, scrollTotal do
+        local st = scrollTypes[math.random(1, #scrollTypes)]
+        drops[st] = (drops[st] or 0) + 1
+    end
+    for field, count in pairs(drops) do
+        currency[field] = (currency[field] or 0) + count
+    end
+    if ticketTotal > 0 then
+        currency.sweepTicket = (currency.sweepTicket or 0) + ticketTotal
+        drops.sweepTicket = ticketTotal
+    end
+    markDirty(uid, "currency")
+    return drops
+end
+
+--- 公开入口：装备副本卷轴/扫荡券发放（供挂机领取在同一事务内调用）。
+---@param uid number
+---@param floor number
+---@param sweepCount number
+---@return table scrollDrops
+function DungeonService.GrantEquipScrolls(uid, floor, sweepCount)
+    return grantEquipScrolls(uid, floor, sweepCount)
 end
 
 local function grantRewards(uid, id, floorData, firstClear)
     if id == "equipment_vault" then
-        local count = firstClear and floorData.firstEquip or floorData.sweepEquip
-        return DungeonService.GrantEquipment(uid, id, floorData.floor, count)
+        local sweep = floorData.sweepEquip or 0
+        local count = firstClear and (floorData.firstEquip or sweep * 2) or sweep
+        local ok, err, result = DungeonService.GrantEquipment(uid, id, floorData.floor, count)
+        if not ok then return false, err end
+        result = result or {}
+        -- 首通=两次扫荡当量，扫荡=一次；与挂机同口径补卷轴与扫荡券。
+        result.scrollDrops = grantEquipScrolls(uid, floorData.floor, firstClear and 2 or 1)
+        return true, nil, result
     end
     local currency = PDM.GetModule(uid, "currency")
     if not currency then return false, "数据未加载" end
@@ -271,7 +402,101 @@ local function grantRewards(uid, id, floorData, firstClear)
     return true, nil, { gold = gold, diamond = diamond, dust = dust }
 end
 
-function DungeonService.Sweep(uid, dungeonId)
+--- 副本结算经验：与同进度主线同级（首通=两次扫荡当量=20 分钟，重复通关=10 分钟）。
+--- 与挂机领取共用 GrantIdleExp，避免两处口径漂移。
+---@param uid number
+---@param teamIdx number|nil
+---@param monsterLevel number
+---@param isFirstClear boolean
+---@return number playerExp, number heroExpTotal
+local function grantDungeonExp(uid, teamIdx, monsterLevel, isFirstClear)
+    return DungeonService.GrantIdleExp(uid, teamIdx, monsterLevel, isFirstClear and 20 or 10)
+end
+
+--- 公开入口：副本结算经验（按分钟数发放，供挂机领取在同一事务内调用）。
+---@param uid number
+---@param teamIdx number|nil
+---@param monsterLevel number
+---@param minutes number
+---@return number playerExp, number heroExpTotal
+function DungeonService.GrantIdleExp(uid, teamIdx, monsterLevel, minutes)
+    local ExpTable = require("config.ExpTable")
+    local StageExpHelper = require("config.StageExpHelper")
+    local heroes = PDM.GetModule(uid, "heroes")
+    local playerData = PDM.GetModule(uid, "player")
+    if type(heroes) ~= "table" or type(playerData) ~= "table" then return 0, 0 end
+    local expPerMin = StageExpHelper.getExpPerMin(monsterLevel)
+    local mins = math.floor(tonumber(minutes) or 0)
+    if expPerMin <= 0 or mins <= 0 then return 0, 0 end
+    local playerExp = math.floor(expPerMin * mins)
+    if playerExp <= 0 then return 0, 0 end
+
+    local team = math.tointeger(tonumber(teamIdx) or 1) or 1
+    local slots = type(heroes.teams) == "table" and heroes.teams[team]
+        and heroes.teams[team].slots or nil
+    local deployed = {}
+    if type(slots) == "table" then
+        for _, heroId in ipairs(slots) do
+            local id = math.tointeger(tonumber(heroId) or 0)
+            if id and id > 0 then deployed[#deployed + 1] = id end
+        end
+    end
+    if #deployed == 0 and team == 1 and type(heroes.deployed) == "table" then
+        for _, heroId in ipairs(heroes.deployed) do
+            local id = math.tointeger(tonumber(heroId) or 0)
+            if id and id > 0 then deployed[#deployed + 1] = id end
+        end
+    end
+
+    local heroExpTotal = 0
+    if #deployed > 0 then
+        heroExpTotal = math.floor(playerExp * (ExpTable.getHeroCountExpMult(#deployed)))
+        local perHero = math.floor(heroExpTotal / #deployed + 0.5)
+        if perHero > 0 then
+            local roster = heroes.roster
+            for _, heroId in ipairs(deployed) do
+                local heroData = type(roster) == "table" and (roster[heroId] or roster[tostring(heroId)])
+                if type(heroData) == "table" then
+                    heroData.exp = (heroData.exp or 0) + perHero
+                    ExpTable.autoLevelUpHero(heroData)
+                end
+            end
+            markDirty(uid, "heroes")
+        end
+    end
+    playerData.exp = (playerData.exp or 0) + playerExp
+    ExpTable.autoLevelUpPlayer(playerData)
+    markDirty(uid, "player")
+    return playerExp, heroExpTotal
+end
+
+---@param uid number
+---@param dungeonId string
+---@param teamIdx number|nil 结算经验发放队伍，缺省队1
+function DungeonService.Sweep(uid, dungeonId, teamIdx, floor, count)
+    -- 资源旧协议也走一券一场，不再从12小时挂机基准发奖；旧遗迹仍按旧日次结清。
+    if DC.isResourceDungeon(dungeonId) then
+        local dungeon = PDM.GetModule(uid, "dungeon")
+        local battle = PDM.GetModule(uid, "battle")
+        if not dungeon or not battle then return false, "数据未加载" end
+        local sub = dungeon[dungeonId]
+        local targetFloor = floor
+        if targetFloor == nil then
+            local rules = require("shared.sweep.SweepRewards")
+            for candidate = DC.getHighestClearedFloor(sub, dungeonId), 1, -1 do
+                if rules.isCleared(DC.getStageId(dungeonId, candidate), battle, dungeon) then
+                    targetFloor = candidate
+                    break
+                end
+            end
+        end
+        local stageId = DC.getStageId(dungeonId, targetFloor)
+        if not stageId then return false, "暂无可扫荡层" end
+        local ok, err, rewards = require("rules.sweep.SweepService").Sweep(uid, count, teamIdx, stageId)
+        if not ok then return false, err end
+        rewards.dungeonId, rewards.sweepFloor = dungeonId, targetFloor
+        return true, nil, rewards
+    end
     local sub, _, err = getUnlockedData(uid, dungeonId)
     if not sub then return false, err end
     local today = math.floor((os.time() + 28800) / 86400)
@@ -287,6 +512,9 @@ function DungeonService.Sweep(uid, dungeonId)
         if not granted then return false, rewardErr end
         sub.dailyUsed, sub.dailyDay = used + 1, today
         markDirty(uid, "dungeon")
+        -- 扫荡经验：10 分钟当量，与同进度主线同级，发给指定队伍。
+        local playerExp, heroExp = grantDungeonExp(uid, teamIdx, floorData.monsterLevel, false)
+        rewards.playerExp, rewards.heroExpTotal = playerExp, heroExp
         rewards.dungeonId, rewards.sweepFloor = dungeonId, floor
         rewards.dailyUsed, rewards.dailyMax = sub.dailyUsed, limit
         return true, nil, rewards
@@ -319,6 +547,12 @@ function DungeonService.Challenge(uid, dungeonId, floor, teamIdx)
             pendingChallenges[key] = pending
         end
         challengeId = pending.challengeId
+        DungeonService.ClearOfflineChallengeSources(uid, "dungeon")
+        DungeonService.SetOfflineChallengeSource(uid, team, {
+            sourceKind = "dungeon", stageId = DC.getStageId(dungeonId, floor),
+            resourceDungeonId = dungeonId, resourceFloor = floor,
+        })
+        DungeonService.PersistOfflineChallengeSources(uid)
     end
     local result = {
         dungeonId = dungeonId, floor = floor, teamIdx = team, challengeId = challengeId,
@@ -377,9 +611,15 @@ function DungeonService.Win(uid, dungeonId, floor, teamIdx, challengeId)
         end
         if sub.floor < DC.MAX_FLOOR[dungeonId] then sub.floor = sub.floor + 1 end
         markDirty(uid, "dungeon")
+        -- 副本经验：首通 20 分钟当量、重复通关 10 分钟，与同进度主线同级。
+        local playerExp, heroExp = grantDungeonExp(uid, team, floorData.monsterLevel, firstClear)
+        rewards.playerExp, rewards.heroExpTotal = playerExp, heroExp
         rewards.dungeonId, rewards.floor, rewards.teamIdx = dungeonId, floor, team
         rewards.challengeId = challengeId
         rewards.firstClear, rewards.nextFloor = firstClear, sub.floor
+        if DC.isResourceDungeon(dungeonId) then
+            DungeonService.ClearOfflineChallengeSources(uid, "dungeon")
+        end
         return true, nil, rewards
     end, function()
         if DC.isResourceDungeon(dungeonId) then pendingChallenges[key] = nil end

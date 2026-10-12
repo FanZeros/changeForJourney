@@ -87,7 +87,7 @@ local function refresh()
         for key, count in pairs(reward and reward.scrollDrops or {}) do
             if key ~= "sweepTicket" then scrolls = scrolls + count end
         end
-        local status = "按当前关卡估算"
+        local status = "按当前关卡收益"
         if team > unlocked then status = ET.getTeamUnlockText(team)
         elseif occupied == 0 then status = "未上阵队员，暂无收益"
         elseif not reward then status = "暂无有效挂机关卡"
@@ -118,14 +118,14 @@ function M.init(vg)
     end
 end
 
-local function metric(vg, x, y, label, value, icon, expected)
+local function metric(vg, x, y, label, value, icon)
     if icons[icon] and icons[icon] >= 0 then
         DrawUtil.drawImageCentered(vg, icons[icon], x + 18, y + 10, 34, 34, 1)
     else
         DarkIcon.draw(vg, icon == "equip" and "relicbox" or "merit", x + 18, y + 10, 30, 1)
     end
     text(vg, x + 42, y, label, 20, 105, DIM)
-    text(vg, x + 42, y + 29, (expected and "≈" or "") .. amount(value), 28, 105, GOLD)
+    text(vg, x + 42, y + 29, amount(value), 28, 105, GOLD)
 end
 
 function M.draw(vg, scale)
@@ -137,7 +137,7 @@ function M.draw(vg, scale)
     nvgTranslate(vg, -540, -1195)
     DarkIcon.drawNine(vg, "panel", D.x, D.y, D.w, D.h, { titleH = 157, radius = 24 })
     text(vg, 540, 707, "远征收益概览", 44, 650, GOLD, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    text(vg, 540, 765, "1小时预估 · 离线基准 · 选择队伍后选关", 25, 760, BONE,
+    text(vg, 540, 765, "1小时收益 · 离线基准 · 选择队伍后选关", 25, 760, BONE,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     DarkIcon.drawNine(vg, "btn", D.closeX - 24, D.closeY - 24, 48, 48)
     text(vg, D.closeX, D.closeY, "×", 35, 40, BONE, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -160,14 +160,14 @@ function M.draw(vg, scale)
         local diamond = SC.isResourceStage(row.stageId or 0)
             and require("config.DungeonConfig").decodeStageId(row.stageId) == "black_diamond"
         metric(vg, 504, y + 67, diamond and "黑晶" or "金币",
-            diamond and reward.diamond or reward.gold, diamond and "diamond" or "gold", false)
-        metric(vg, 657, y + 67, "远征经验", reward.adventureExp, "exp", false)
+            diamond and reward.diamond or reward.gold, diamond and "diamond" or "gold")
+        metric(vg, 657, y + 67, "远征经验", reward.adventureExp, "exp")
         local perHero = reward.heroCount and math.floor((reward.adventurerExp or 0) / reward.heroCount + 0.5) or 0
-        metric(vg, 810, y + 67, "每名队员经验", perHero, "hero_exp", false)
-        metric(vg, 504, y + 137, "装备/件", row.equipment, "equip", true)
-        metric(vg, 657, y + 137, "卷轴合计/张", row.scrolls, "random_scroll", true)
+        metric(vg, 810, y + 67, "每名队员经验", perHero, "hero_exp")
+        metric(vg, 504, y + 137, "装备/件", row.equipment, "equip")
+        metric(vg, 657, y + 137, "卷轴合计/张", row.scrolls, "random_scroll")
         metric(vg, 810, y + 137, "扫荡券/张", reward.scrollDrops and reward.scrollDrops.sweepTicket,
-            "sweep_ticket", true)
+            "sweep_ticket")
         local buttonX, buttonY = 782, y + 198
         DarkIcon.drawNine(vg, "btn", buttonX, buttonY, 170, 38,
             { accent = row.unlocked and "gold" or nil, alpha = row.unlocked and 1 or 0.45 })
@@ -175,9 +175,9 @@ function M.draw(vg, scale)
             row.unlocked and GOLD or DIM, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     end
     text(vg, 540, 1622, "三队合计：金币 " .. amount(snapshot.gold) .. "  黑晶 "
-        .. amount(snapshot.diamond) .. "  装备 ≈" .. amount(snapshot.equipment) .. " 件",
+        .. amount(snapshot.diamond) .. "  装备 " .. amount(snapshot.equipment) .. " 件",
         26, 860, GOLD, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    text(vg, 540, 1670, "≈为随机掉落期望，不保证每小时获得；六种卷轴均匀随机。", 21, 865, DIM,
+    text(vg, 540, 1670, "六种卷轴均匀随机掉落。", 21, 865, DIM,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     text(vg, 540, 1705, "在线受击杀效率影响；不含首通大奖、分解精粹及24小时后的衰减。", 21, 865, DIM,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)

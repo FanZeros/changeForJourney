@@ -133,7 +133,7 @@ local function handleInput(dx, dy)
         end
     end
 
-    -- 道具 Tab：商品购买按钮（典藏页签已迁移至教堂·神器宝箱）
+    -- 道具 Tab：商品购买按钮（神器宝箱在教堂·神器页）
     if state.tab == "items" then
         for idx, item in ipairs(SHOP_ITEMS) do
             local col = ((idx - 1) % SL.CARD_COLS)

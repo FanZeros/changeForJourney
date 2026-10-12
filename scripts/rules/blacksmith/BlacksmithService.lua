@@ -435,7 +435,8 @@ recalcBaseStatsForEquip = function(equip)
     if equip.corruptBaseMult and equip.corruptBaseMult ~= 1 then
         baseStrength = baseStrength * equip.corruptBaseMult
     end
-    local baseStats = EquipmentSystem.recalcBaseStats(equip.templateId, equip.level or 1, baseStrength)
+    local baseStats = EquipmentSystem.recalcBaseStats(equip.templateId, equip.level or 1,
+        baseStrength, equip.secondaryRoll)
     if #baseStats > 0 then
         equip.baseStats = baseStats
     end
@@ -1000,13 +1001,7 @@ function BlacksmithService.RefineReplace(uid, seq)
         local oldQ = equip.quality
         equip.quality = pending.upgradedQuality
 
-        -- 用新品质的 baseStrength 重算基础属性
-        local newQDef = EquipmentConfig.QUALITY[pending.upgradedQuality]
-        local newBaseStrength = newQDef and newQDef.baseStrength or 1.0
-        local newBaseStats = EquipmentSystem.recalcBaseStats(equip.templateId, equip.level or 1, newBaseStrength)
-        if #newBaseStats > 0 then
-            equip.baseStats = newBaseStats
-        end
+        recalcBaseStatsForEquip(equip)
 
         print("[BlacksmithService] REFINE_REPLACE UPGRADE quality "
             .. tostring(oldQ) .. " → " .. tostring(equip.quality))

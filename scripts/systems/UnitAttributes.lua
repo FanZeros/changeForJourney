@@ -545,7 +545,10 @@ function UnitAttributes:initEnergyShield(previousMaxES)
         end
     else
         self.energyShield = 0
-        self.tempEnergyShield = 0
+        -- 临时盾来自过疗/词条，独立于常规盾上限；只在开战/换波边界显式清理。
+        if self.tempEnergyShield == nil then
+            self.tempEnergyShield = 0
+        end
     end
 end
 

@@ -1,4 +1,4 @@
--- 竖屏开始画面已移除。保留空模块，避免 240db7b 的 require 在启动时找不到文件而黑屏。
+-- 空模块占位：保留该文件，避免 require 在启动时找不到文件而黑屏。
 local StartScreen = {}
 
 function StartScreen.init() end

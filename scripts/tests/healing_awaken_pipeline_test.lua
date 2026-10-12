@@ -216,7 +216,8 @@ local function testHealingAbilitiesRetained()
     shieldTarget.attrs.energyShield = 0
     heal(shieldDriver, shieldHealer)
     local result = afterEvents[#afterEvents] and afterEvents[#afterEvents].result
-    check(result and result.overhealAmount > 0 and shieldTarget.attrs.energyShield > 0,
+    check(result and result.overhealAmount > 0
+        and (shieldTarget.attrs.energyShield or 0) + (shieldTarget.attrs.tempEnergyShield or 0) > 0,
         "正式过量治疗仍调用司仪袍转盾")
 end
 

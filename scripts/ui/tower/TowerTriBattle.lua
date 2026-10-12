@@ -9,6 +9,7 @@ local CF               = require("systems.CombatFormula")
 local TM               = require("systems.ThreatManager")
 local SEM              = require("systems.StatusEffectManager")
 local TAL              = require("systems.TalentManager")
+local ETS              = require("systems.ExtraTalentSystem")
 local ART              = require("systems.ArtifactRuntime")
 local RCH              = require("systems.RelicConditionHandler")
 local NumberUtil       = require("core.NumberUtil")
@@ -26,7 +27,10 @@ local HeroConfig       = require("config.HeroConfig")
 local BF               = require("systems.ButtonFeedback")
 local DrawUtil         = require("core.DrawUtil")
 local StageConfig      = require("config.StageConfig")
-local PlayerStore      = require("core.PlayerStore")
+local TowerLayout      = require("ui.tower.TowerLayout")
+local TowerBuffSidebar = require("ui.tower.TowerBuffSidebar")
+local TowerText        = require("ui.tower.TowerPresentation")
+local BattleClock      = require("ui.battle.combat.BattleClock")
 
 local TowerTriBattle = {}
 
@@ -52,12 +56,14 @@ local BATTLE_LOSE   = "lose"
 ---@field psState table
 ---@field tmState table
 ---@field talRefs table
+---@field etsState table
 ---@field beState table
 ---@field semState table
 ---@field regenAccum number
 
 local state = {
     open = false,
+    presentationVersion = 0,
     phase = BATTLE_ACTIVE,
     lanes = {},
     allAllies = {},
@@ -66,40 +72,13 @@ local state = {
     resultTimer = 0,
     resultPanelShown = false,
     confirmOpen = false,
-    battleSpeed = 1.0,
     onClose = nil,
+    hostExtraTalents = ETS.mountedState(),
     logicalW = 1920,
     logicalH = 1080,
 }
 
 local inited = false
-
-local function getMainProgressStageId()
-    local battleData = PlayerStore.Get("battle")
-    return battleData and tonumber(battleData.maxStageId or battleData.currentStageId) or 0
-end
-
-local function getMaxUnlockedBattleSpeed()
-    local stageId = getMainProgressStageId()
-    if stageId <= 0 then return 1.0 end
-    local diff = StageConfig.getDifficulty(stageId)
-    if diff == StageConfig.DIFFICULTY_HARD then return 1.5 end
-    if diff and diff ~= StageConfig.DIFFICULTY_NORMAL then return 2.0 end
-    return 1.0
-end
-
-local function getBattleLogicDt(dt)
-    local maxSpeed = getMaxUnlockedBattleSpeed()
-    if state.battleSpeed > maxSpeed then state.battleSpeed = maxSpeed end
-    if maxSpeed > 1.0 then return dt * state.battleSpeed end
-    return dt
-end
-
-local function getSpeedText()
-    if state.battleSpeed >= 2.0 then return "X2" end
-    if state.battleSpeed >= 1.5 then return "X1.5" end
-    return "X1"
-end
 
 local function collectAllAllies()
     local list = {}
@@ -132,8 +111,34 @@ local function mountLane(lane)
     ProjectileSystem.mount(lane.psState)
     TM.mount(lane.tmState)
     TAL.mount(lane.talRefs)
+    ETS.mount(lane.etsState)
     BattleEffects.mount(lane.beState)
     SEM.mount(lane.semState)
+end
+
+-- 胜败/撤退/Stop统一逐lane消费；仅借用ETS挂载，不能把宿主主线待成长提交。
+local function settleGrowth(discardGrowth, onSettled)
+    local previous = ETS.mountedState()
+    local lanes, wasOpen = state.lanes, state.open
+    local ok, err = pcall(function()
+        for t = 1, TEAM_COUNT do
+            local lane = lanes[t]
+            if lane then
+                ETS.mount(lane.etsState)
+                if discardGrowth then ETS.discard() else ETS.flush() end
+                if state.lanes ~= lanes or state.open ~= wasOpen then return end
+            end
+        end
+        -- flush/胜利请求可能同步关闭或打开新波，旧回执不能再结算新波配置。
+        if onSettled and state.lanes == lanes and state.open == wasOpen then onSettled() end
+    end)
+    -- 同步回执已进入新波或close还原宿主时，不能把旧lane重新挂回去。
+    if state.lanes == lanes and state.open == wasOpen then ETS.mount(previous) end
+    if not ok then error(err, 0) end
+end
+
+function TowerTriBattle.flushPendingGrowth()
+    settleGrowth(false)
 end
 
 local function bindLaneContext(lane)
@@ -175,9 +180,7 @@ end
 local function resetLaneVisuals()
     local s = BattleCombat.mountedState()
     if s then
-        s.floatingTexts = {}
-        s.pendingFt = {}
-        s.ftSpawnCd = 0
+        BattleCombat.clearFloatingTexts()
         s.cardAnims = {}
         s.hitFlashes = {}
         s.hpBuffers = {}
@@ -319,7 +322,7 @@ local function tickLane(lane, dt)
                 TM.removeUnit(unit)
                 SEM.removeUnit(unit)
                 unit._fallenPending = true
-                unit._fallenAt = time.elapsedTime
+                unit._fallenAt = BattleClock.now()
                 BattleCombat.setCardAnim(unit, {
                     state = "dying", timer = 0, lungeDir = 1,
                     knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0,
@@ -332,7 +335,7 @@ local function tickLane(lane, dt)
     end
     -- [阵亡紧凑] 退场完成 → 移队尾 → 存活者前移一格（含卡住兜底）
     local allies = lane.allies
-    require("ui.battle.scene.BattleAllyReset").compactFallen(allies, time.elapsedTime)
+    require("ui.battle.scene.BattleAllyReset").compactFallen(allies, BattleClock.now())
     local allyAlive = BattleCombat.getAliveUnits(allies)
     if #allyAlive == 0 and #lane.allies > 0 then
         lane.wiped = true
@@ -379,12 +382,13 @@ local function tickLane(lane, dt)
     TM.update(dt)
     reportDefeatedEnemies(lane)
     SEM.update(dt, {
-        onDot = function(unit, source, dmg)
+        onDot = function(unit, source, dmg, isBurnCrit)
             local isUnitAlly = false
             for _, u in ipairs(lane.allies) do
                 if u == unit then isUnitAlly = true; break end
             end
-            BattleCombat.dealDamageToUnit(unit, dmg, isUnitAlly, "灼烧 ", { 255, 120, 30 }, source, { isDot = true })
+            BattleCombat.dealDamageToUnit(unit, dmg, isUnitAlly, "灼烧 ", { 255, 120, 30 }, source,
+                { isDot = true, atkType = AD.ATK_FIRE, floatKind = "burn", isCrit = isBurnCrit })
         end,
         onHot = function(unit, source, heal)
             if unit.attrs and unit.hp > 0 then
@@ -400,7 +404,7 @@ local function tickLane(lane, dt)
                     for ii, uu in ipairs(list) do
                         if uu == unit then cx, cy = BattleCombat.getCardPos(list, ii); break end
                     end
-                    BattleCombat.addFloatingText("恢复 +" .. NumberUtil.format(actual), cx, cy, { 0, 255, 82 }, false)
+                    BattleCombat.addCombatNumber(unit, actual, cx, cy, { channel = "heal", atkType = AD.ATK_HOLY })
                 end
             end
         end,
@@ -414,8 +418,8 @@ local function tickLane(lane, dt)
             end
             return 0
         end,
-        dealDamage = function(target, damage, isTargetAlly, prefix, color, source)
-            return BattleCombat.dealDamageToUnit(target, damage, isTargetAlly, prefix, color, source)
+        dealDamage = function(target, damage, isTargetAlly, prefix, color, source, meta)
+            return BattleCombat.dealDamageToUnit(target, damage, isTargetAlly, prefix, color, source, meta)
         end,
         dealTalentDamage = function(attacker, target, damage, isTargetAlly, prefix, color, projOpts)
             return BattleCombat.dealTalentDamage(attacker, target, damage, isTargetAlly, prefix, color, projOpts, lane.allies, lane.enemies)
@@ -491,6 +495,9 @@ end
 
 ---@param opts table { teamAllies = { [1]=table[], [2]=table[], [3]=table[] }, data = table, onClose = function }
 function TowerTriBattle.open(opts)
+    settleGrowth(false) -- 重开/换波兜底，旧lane丢弃前先结清。
+    if not state.open then state.hostExtraTalents = ETS.mountedState() end
+    state.presentationVersion = state.presentationVersion + 1
     opts = opts or {}
     state.open = true
     state.phase = BATTLE_ACTIVE
@@ -498,9 +505,6 @@ function TowerTriBattle.open(opts)
     state.resultPanelShown = false
     state.confirmOpen = false
     state.onClose = opts.onClose
-    state.battleSpeed = 1.0
-    local maxSpeed = getMaxUnlockedBattleSpeed()
-    if maxSpeed > 1.0 then state.battleSpeed = 1.0 end
 
     local data = opts.data or {}
     state.floor = data.floor or 1
@@ -526,6 +530,7 @@ function TowerTriBattle.open(opts)
             psState = ProjectileSystem.newState(),
             tmState = TM.newState(),
             talRefs = TAL.newBattleRefs(),
+            etsState = ETS.newState(),
             beState = BattleEffects.newFxState(),
             semState = SEM.newSemState(),
             regenAccum = 0,
@@ -547,6 +552,7 @@ function TowerTriBattle.open(opts)
 
     RCH.reset()
     ART.reset(combinedAllies)
+    ETS.mount(state.lanes[1].etsState) -- TAL.reset的隐式flush只能消费塔域，不能误结主线。
     TAL.reset()
     BattleStats.reset()
     local allForRCH = {}
@@ -575,7 +581,8 @@ function TowerTriBattle.open(opts)
         state.floor, state.wave, #combinedAllies))
 end
 
-function TowerTriBattle.close()
+function TowerTriBattle.close(discardGrowth)
+    settleGrowth(discardGrowth)
     if not state.open then return end
     state.open = false
     state.phase = BATTLE_ACTIVE
@@ -587,6 +594,7 @@ function TowerTriBattle.close()
     ProjectileSystem.mount(nil)
     TM.mount(nil)
     TAL.mount(nil)
+    ETS.mount(state.hostExtraTalents)
     BattleEffects.mount(nil)
     SEM.mount(nil)
     BattleLayout.setMode("strip")
@@ -596,10 +604,13 @@ function TowerTriBattle.close()
     print("[TowerTriBattle] close")
 end
 
-function TowerTriBattle.forceClose()
-    if not state.open then return end
+function TowerTriBattle.forceClose(discardGrowth)
+    if not state.open then
+        if discardGrowth then settleGrowth(true) end
+        return
+    end
     state.onClose = nil
-    TowerTriBattle.close()
+    TowerTriBattle.close(discardGrowth)
 end
 
 function TowerTriBattle.getAllies()
@@ -610,7 +621,7 @@ local function finishWin()
     if state.phase ~= BATTLE_ACTIVE then return end
     state.phase = BATTLE_WIN
     state.resultTimer = 0
-    DungeonBattle.onVictory()
+    settleGrowth(false, DungeonBattle.onVictory)
     print("[TowerTriBattle] 三军清波 floor=" .. tostring(state.floor) .. " wave=" .. tostring(state.wave))
 end
 
@@ -618,11 +629,13 @@ local function finishLose()
     if state.phase ~= BATTLE_ACTIVE then return end
     state.phase = BATTLE_LOSE
     state.resultTimer = 0
-    DungeonBattle.onDefeat()
+    settleGrowth(false, DungeonBattle.onDefeat)
     print("[TowerTriBattle] 攻坚失败 floor=" .. tostring(state.floor) .. " wave=" .. tostring(state.wave))
 end
 
-function TowerTriBattle.update(dt)
+---@param dt number
+---@param battlePaused boolean|nil 侧栏暂停，不消费战斗/连击/判胜
+function TowerTriBattle.update(dt, battlePaused)
     if not state.open then return end
     BattleLayout.setMode("strip")
     local triScale = BattleLayout.CARD_SCALE or 0.48
@@ -637,6 +650,9 @@ function TowerTriBattle.update(dt)
                 state.resultPanelShown = true
                 local _, _, elapsedSecs = DungeonBattle.getResultState()
                 BattleResultPanel.show({
+                    layout = "tower",
+                    floor = state.floor,
+                    wave = state.wave,
                     isWin = false,
                     elapsedSecs = elapsedSecs,
                     heroStats = BattleStats.buildHeroDamageStats(state.allAllies, HeroConfig.HEROES),
@@ -659,7 +675,10 @@ function TowerTriBattle.update(dt)
         return
     end
 
-    local logicDt = getBattleLogicDt(dt)
+    if battlePaused then return end
+
+    -- 三条塔战线与整层限时共用真实 dt，不依赖账户难度或旧倍率状态。
+    local logicDt = dt
     DungeonBattle.update(logicDt, collectFieldEnemies(), state.allAllies)
     ART.update(logicDt, state.allAllies)
 
@@ -713,22 +732,35 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
     TowerTriBattle.init(vg)
     BattleLayout.setMode("strip")
 
-    BattleTriPage.drawL1Underlay(vg, logicalW, logicalH, "image/战斗背景/通天塔.png")
-    BattleTriPage.drawL0(vg, logicalW, logicalH)
+    local layout = TowerLayout.compute(logicalW, logicalH)
+    local transform = TowerLayout.battleTransform(layout)
+    -- 仅框体背景使用局部裁切变换；人物条带仍按中栏可用矩形等比绘制。
+    nvgSave(vg)
+    nvgIntersectScissor(vg, layout.center.x, layout.center.y, layout.center.w, layout.center.h)
+    nvgTranslate(vg, transform.x, transform.y)
+    nvgScale(vg, transform.scaleX, transform.scaleY)
+    nvgTranslate(vg, -transform.cropX, 0)
+    BattleTriPage.drawL1Underlay(vg, transform.referenceW, transform.referenceH, "image/战斗背景/通天塔.png")
+    BattleTriPage.drawL0(vg, transform.referenceW, transform.referenceH)
+    nvgRestore(vg)
 
+    local interiors = {}
     local contentScale = 1.0
     for row = 1, TEAM_COUNT do
-        local ix, iy, iw, ih = BattleTriPage.getInteriorRectFor(row, logicalW, logicalH)
-        if iw and ih then
+        local ix, iy, iw, ih = BattleTriPage.getInteriorRectFor(row, transform.referenceW, transform.referenceH)
+        if ix and iw and ih then
+            local x, y, w, h = TowerLayout.mapInterior(layout, ix, iy, iw, ih)
+            interiors[row] = { x = x, y = y, w = w, h = h }
             contentScale = math.min(contentScale,
-                math.min(iw / BattleLayout.STRIP_W, ih / BattleLayout.STRIP_H))
+                math.min(w / BattleLayout.STRIP_W, h / BattleLayout.STRIP_H))
         end
     end
 
     for row = 1, TEAM_COUNT do
         local lane = state.lanes[row]
-        local ix, iy, iw, ih = BattleTriPage.getInteriorRectFor(row, logicalW, logicalH)
-        if lane and ix then
+        local rect = interiors[row]
+        if lane and rect then
+            local ix, iy, iw, ih = rect.x, rect.y, rect.w, rect.h
             local dw = BattleLayout.STRIP_W * contentScale
             local dh = BattleLayout.STRIP_H * contentScale
             nvgSave(vg)
@@ -765,121 +797,72 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
         end
     end
 
-    local elapsed = DungeonBattle.getElapsed()
     local remaining = DungeonBattle.getTimeRemaining()
     local ragePhase = DungeonBattle.getRagePhase()
-    local timeText
+    -- 全阶段固定实际层号+剩余秒数；狂暴仅保留状态色，不恢复旧波次标题。
+    local timeText = TowerText.text("第%d层  剩余%.0fs", state.floor, remaining)
     local tr, tg, tb = 255, 255, 255
     if ragePhase == 2 then
-        timeText = string.format("超级狂暴 剩余%.0fs", remaining)
         tr, tg, tb = 255, 34, 34
     elseif ragePhase == 1 then
-        timeText = string.format("狂暴中 剩余%.0fs", remaining)
         tr, tg, tb = 255, 102, 0
-    else
-        timeText = string.format("通天塔 第%d层  波次 %d/10  剩余%.0fs", state.floor, state.wave, remaining)
-        if remaining <= 30 then tr, tg, tb = 255, 144, 144 end
+    elseif remaining <= 30 then
+        tr, tg, tb = 255, 144, 144
     end
     DrawUtil.drawTextStroke(vg, logicalW * 0.5, 28, timeText, 28,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 4)
 
-    -- 撤退
-    local rx, ry, rw, rh = logicalW * 0.5, logicalH - 42, 220, 56
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, rx - rw * 0.5, ry - rh * 0.5, rw, rh, 10)
-    nvgFillColor(vg, nvgRGBA(90, 28, 28, 220))
-    nvgFill(vg)
-    DrawUtil.drawTextStroke(vg, rx, ry, "撤退", 26,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 220, 220, 3)
-
-    -- 倍速
-    if getMaxUnlockedBattleSpeed() > 1.0 and state.phase == BATTLE_ACTIVE then
-        local sx, sy = logicalW - 70, 40
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, sx - 48, sy - 22, 96, 44, 8)
-        nvgFillColor(vg, nvgRGBA(20, 28, 36, 210))
-        nvgFill(vg)
-        DrawUtil.drawTextStroke(vg, sx, sy, getSpeedText(), 22,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 220, 235, 255, 3)
-    end
-
     if state.confirmOpen then
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, logicalW, logicalH)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 160))
-        nvgFill(vg)
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, logicalW * 0.5 - 280, logicalH * 0.5 - 140, 560, 280, 16)
-        nvgFillColor(vg, nvgRGBA(28, 22, 20, 245))
-        nvgFill(vg)
-        DrawUtil.drawTextStroke(vg, logicalW * 0.5, logicalH * 0.5 - 70, "确认撤退？", 36,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 230, 200, 4)
-        DrawUtil.drawTextStroke(vg, logicalW * 0.5, logicalH * 0.5 - 20, "本层进度将丢失", 24,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 200, 180, 160, 3)
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, logicalW * 0.5 - 220, logicalH * 0.5 + 50, 180, 56, 10)
-        nvgFillColor(vg, nvgRGBA(140, 40, 40, 240))
-        nvgFill(vg)
-        DrawUtil.drawTextStroke(vg, logicalW * 0.5 - 130, logicalH * 0.5 + 78, "撤退", 26,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, logicalW * 0.5 + 40, logicalH * 0.5 + 50, 180, 56, 10)
-        nvgFillColor(vg, nvgRGBA(70, 70, 70, 240))
-        nvgFill(vg)
-        DrawUtil.drawTextStroke(vg, logicalW * 0.5 + 130, logicalH * 0.5 + 78, "取消", 26,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+        TowerBuffSidebar.drawConfirmation(vg, logicalW, logicalH)
     end
 
     if BattleResultPanel.isOpen() then
-        local fit = math.min(logicalW / 1080, logicalH / 2400)
-        nvgSave(vg)
-        nvgTranslate(vg, (logicalW - 1080 * fit) * 0.5, (logicalH - 2400 * fit) * 0.5)
-        nvgScale(vg, fit, fit)
-        BattleResultPanel.draw(vg)
-        nvgRestore(vg)
+        BattleResultPanel.draw(vg, logicalW, logicalH)
     end
 end
 
-local function hitBox(x, y, cx, cy, w, h)
-    return math.abs(x - cx) <= w * 0.5 and math.abs(y - cy) <= h * 0.5
-end
-
+-- 兼容旧快捷键调用；通天塔不再提供战斗加速。
 function TowerTriBattle.cycleBattleSpeed()
-    if getMaxUnlockedBattleSpeed() <= 1.0 or state.phase ~= BATTLE_ACTIVE then
-        return false
-    end
-    local maxSpeed = getMaxUnlockedBattleSpeed()
-    if state.battleSpeed < 1.5 and maxSpeed >= 1.5 then
-        state.battleSpeed = 1.5
-    elseif state.battleSpeed < 2.0 and maxSpeed >= 2.0 then
-        state.battleSpeed = 2.0
-    else
-        state.battleSpeed = 1.0
-    end
-    print("[TowerTriBattle] speed " .. getSpeedText())
+    return false
+end
+
+function TowerTriBattle.isConfirmationOpen()
+    return state.open and state.confirmOpen
+end
+
+function TowerTriBattle.getPresentationKey()
+    return state.presentationVersion .. ":" .. tostring(state.open) .. ":" .. state.phase .. ":" .. tostring(state.confirmOpen)
+        .. ":" .. tostring(state.resultPanelShown)
+end
+
+function TowerTriBattle.requestRetreat()
+    if not state.open or state.phase ~= BATTLE_ACTIVE or BattleResultPanel.isOpen() then return false end
+    BF.trigger("tower_tri_retreat")
+    state.presentationVersion = state.presentationVersion + 1
+    state.confirmOpen = true
     return true
 end
 
-function TowerTriBattle.handleClick(wx, wy)
+function TowerTriBattle.handleClick(wx, wy, width, height)
     if not state.open then return true end
-    local logicalW, logicalH = state.logicalW, state.logicalH
+    local logicalW, logicalH = width or state.logicalW, height or state.logicalH
+    local layout = TowerLayout.compute(logicalW, logicalH)
 
     if BattleResultPanel.isOpen() then
-        local fit = math.min(logicalW / 1080, logicalH / 2400)
-        local dx = (wx - (logicalW - 1080 * fit) * 0.5) / fit
-        local dy = (wy - (logicalH - 2400 * fit) * 0.5) / fit
-        BattleResultPanel.handleInput(dx, dy)
+        BattleResultPanel.handleInput(wx, wy)
         return true
     end
 
     if state.confirmOpen then
-        if hitBox(wx, wy, logicalW * 0.5 - 130, logicalH * 0.5 + 78, 180, 56) then
+        local dialog = TowerLayout.confirm(layout)
+        if TowerLayout.contains(dialog.retreat, wx, wy) then
             BF.trigger("tower_tri_retreat_ok")
             state.confirmOpen = false
             finishLose()
             return true
         end
-        if hitBox(wx, wy, logicalW * 0.5 + 130, logicalH * 0.5 + 78, 180, 56) then
+        if TowerLayout.contains(dialog.cancel, wx, wy) then
+            state.presentationVersion = state.presentationVersion + 1
             state.confirmOpen = false
             return true
         end
@@ -888,15 +871,6 @@ function TowerTriBattle.handleClick(wx, wy)
 
     if state.phase ~= BATTLE_ACTIVE then return true end
 
-    if getMaxUnlockedBattleSpeed() > 1.0 and hitBox(wx, wy, logicalW - 70, 40, 96, 44) then
-        return TowerTriBattle.cycleBattleSpeed()
-    end
-
-    if hitBox(wx, wy, logicalW * 0.5, logicalH - 42, 220, 56) then
-        BF.trigger("tower_tri_retreat")
-        state.confirmOpen = true
-        return true
-    end
     return true
 end
 

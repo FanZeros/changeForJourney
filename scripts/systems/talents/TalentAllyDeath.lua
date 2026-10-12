@@ -17,8 +17,21 @@ function M.bind(deps)
     local getTAL_BCS = deps.getTAL_BCS
 
     local function onAllyDeath(dyingUnit, allies, syncHpFn)
+        if (dyingUnit.hp or 0) > 0 then return false end
+        dyingUnit._etsBulwarkWard = nil
         local TAL_BCS = getTAL_BCS()
-        if ETS.tryTicketRevive(dyingUnit, allies, syncHpFn) then
+        local state, token = ETS.mountedState(), ETS.mountedState().supportBattleToken
+        local dyingState, dyingToken = getState(dyingUnit), dyingUnit._talentBattleToken
+        local allyRefs, enemyRefs = TAL_BCS.bAllies, TAL_BCS.bEnemies
+        local function currentBattle(source, sourceState, sourceToken)
+            return getTAL_BCS() == TAL_BCS and TAL_BCS.bAllies == allyRefs and TAL_BCS.bEnemies == enemyRefs
+                and ETS.mountedState() == state and state.supportBattleToken == token
+                and getState(dyingUnit) == dyingState and dyingUnit._talentBattleToken == dyingToken
+                and (not source or (getState(source) == sourceState and source._talentBattleToken == sourceToken))
+        end
+        if ETS.tryTicketRevive(dyingUnit, allies, syncHpFn, {
+            isCurrent = currentBattle, captureSourceState = getState,
+        }) then
             return true
         end
 
@@ -89,13 +102,16 @@ function M.bind(deps)
                     end
 
                     if math.random() < reviveRate then
+                        local loverToken = ally._talentBattleToken
                         elizState.reviveUsed[dyingUnit] = true
+                        dyingUnit._etsBulwarkWard = nil
                         if dyingUnit.attrs then
                             dyingUnit.attrs:fillHp()
-                            syncHpFn(dyingUnit)
+                            dyingUnit.hp = dyingUnit.attrs:get(AD.HP)
                         else
                             dyingUnit.hp = dyingUnit.maxHp
                         end
+                        if not currentBattle(ally, elizState, loverToken) then return true end
 
                         -- 觉醒2: 被复活的角色5秒内受治疗效果30%（标记在单位上，任何治疗者都生效果
                         if hasAwaken(ally, 2) then
@@ -108,11 +124,13 @@ function M.bind(deps)
                         if hasAwaken(ally, 6) then
                             local shieldAmt = math.floor((dyingUnit.maxHp or 1) * 0.20 + 0.5)
                             dyingUnit.shield = { amount = shieldAmt, timer = 5.0 }
-                            talentLog("[Talent] 复活吧爱人 觉醒6: " .. (dyingUnit.name or "复活者") .. " 获得护盾 " .. shieldAmt)
+                            ETS.applyLoverReviveShield(ally, dyingUnit)
+                            talentLog("[Talent] 复活吧爱人 觉醒6: " .. (dyingUnit.name or "复活者") .. " 获得护盾 " .. dyingUnit.shield.amount)
                         end
 
                         talentLog("[Talent] 复活吧爱人 圣光复活: " .. (dyingUnit.name or "?") .. " 被复活！(概率=" .. math.floor(reviveRate * 100) .. "%)")
                         ETS.onSuccessfulRevive(ally, dyingUnit)
+                        if currentBattle(ally, elizState, loverToken) and syncHpFn then syncHpFn(dyingUnit) end
                         return true
                     else
                         elizState.reviveUsed[dyingUnit] = true

@@ -10,7 +10,7 @@ local TalentStarMap = require("ui.church.talent.TalentStarMap")
 local TalentNodeDefs = require("shared.talent.TalentNodeDefs")
 local TalentEffect  = require("systems.TalentEffect")
 local BF            = require("systems.ButtonFeedback")
-local DarkIcon      = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon      = require("core.DarkIcon")  -- 矢量九宫格
 local KeywordText   = require("ui.widget.KeywordText")
 local I18n          = require("core.I18n")
 local TalentText    = require("core.I18nTalentText")
@@ -543,7 +543,7 @@ function M.drawDetailPanel(vg)
     nvgTranslate(vg, -TFD.bgCX, -TFD.bgCY)
     nvgGlobalAlpha(vg, progress)
 
-    -- 2. 面板背景 [暗黑化 P1-B5] 矢量纯底板（按天赋颜色语义描边）
+    -- 2. 面板背景 矢量纯底板（按天赋颜色语义描边）
     local color = node.color or "无"
     if color == "无" then color = "紫" end  -- 起始点使用紫色背景
     DarkIcon.drawNine(vg, "plain",
@@ -565,7 +565,7 @@ function M.drawDetailPanel(vg)
         255, 255, 255, TFD.nameStroke,
         { strokeColor = { 0x28, 0x28, 0x28 } })
 
-    -- 4. 天赋图标 [暗黑化 P2-10] 矢量符号（铭牌+系色）
+    -- 4. 天赋图标 矢量符号（铭牌+系色）
     TalentStarMap.drawTalentIcon(vg, state.tfDetailNodeId, TFD.iconCX, TFD.iconCY, TFD.iconW, 1.0)
 
     -- 5. 信息文本背景框（纯黑 5% 不透明度，圆角14）
@@ -672,7 +672,7 @@ function M.drawOverviewPanel(vg)
     nvgTranslate(vg, -TOV.bgCX, -TOV.bgCY)
     nvgGlobalAlpha(vg, alpha / 255)
 
-    -- 1. 弹窗底 [暗黑化 P1-B5] 矢量面板
+    -- 1. 弹窗底 矢量面板
     DarkIcon.drawNine(vg, "panel",
         TOV.bgCX - TOV.bgW * 0.5, TOV.bgCY - TOV.bgH * 0.5,
         TOV.bgW, TOV.bgH,

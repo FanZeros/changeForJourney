@@ -146,7 +146,7 @@ function M.load(ctx, stageId, skipBattleStart)
     -- 重置战斗状态
     ctx.battleActive = true
     ctx.battleTimeoutElapsed = 0   -- 新的一场战斗：超时增伤计时清零
-    if ctx.isFirstClear then
+    if ctx.isFirstClear and not stageConfig.isTerminalTemple(stageId) then
         ctx.firstClearTimeLeft = require("config.GameConfig").Battle.TIME_LIMIT_SEC
     else
         ctx.firstClearTimeLeft = nil

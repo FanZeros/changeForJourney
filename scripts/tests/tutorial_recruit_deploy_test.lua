@@ -1,13 +1,13 @@
 -- 专项只读业务验证，采用 scaffold-2d 的 Start/Stop 生命周期，不初始化 UI/main/真实档。
 -- cwd=/home/Maker/tutorial-onboarding-validation-20261006
 -- /home/Maker/resource-dungeon-visual-validation-20261006/.cli/UrhoXRuntime
--- tests/tutorial_recruit_deploy_test.lua -tapcode_dir=/workspace/changeForJourney-workspace1005
+-- tests/tutorial_recruit_deploy_test.lua -tapcode_dir=/workspace
 -- -tool_mode -nosound -graphicsheadless -validate -validate-frames=60 -validate-timeout=45
 -- -validate-output=/home/Maker/tutorial-onboarding-validation-20261006/recruit-deploy-validate.json
 -- 完整真实 TM/TavernPage/CharacterDeploy/CharacterInput/Draw2；Panel getter/名册命中
 -- 仅抽完整闭包。动作、存储、动画、剧情与装饰均为显式内存替身。
 -- 不执行其他旧测试，不把 mock 的成功事件冒充生产事件，不创建 GPU/截图。
-local PROJECT = "/workspace/changeForJourney-workspace1005"
+local PROJECT = "/workspace"
 local CWD = "/home/Maker/tutorial-onboarding-validation-20261006"
 local TAG = "[tutorial_recruit_deploy_test] "
 local ROOT = ""
@@ -31,7 +31,7 @@ local SOURCE_FILES = {
     ["core.I18nStory"] = PROJECT .. "/scripts/core/I18nStory.lua",
 }
 local FRAGMENTS_ONLY = { ["ui.character.panel.CharacterPanel"] = true }
-local nativeFile = File
+local nativeFile, nativeCache = File, cache
 local sources, reads, contexts = {}, {}, {} ---@type any
 local checks, groups, failures = 0, 0, 0
 local hostLoaded, hostGlobals = {}, {} ---@type any
@@ -58,15 +58,17 @@ local function source(name)
     assert(path:sub(1, #PROJECT + 9) == PROJECT .. "/scripts/" and path:sub(-4) == ".lua"
         and not path:find("..", 1, true), "fixed absolute Lua source only")
     if sources[name] then return sources[name] end
-    -- native File 不进入任何生产 env，只允许此固定路径表与 FILE_READ；不得读取玩家文件。
-    local file = assert(nativeFile(path, FILE_READ), "source File unavailable " .. path)
+    -- cache 只在宿主读取已白名单化的脚本资源；不进入任何生产 env，不读玩家文件。
+    local resource = path:sub(#PROJECT + 10)
+    local file = assert(nativeCache:GetFile(resource), "source cache File unavailable " .. resource)
     local ok, text = pcall(function()
-        assert(file:IsOpen(), "source open failed " .. path)
+        assert(file:IsOpen(), "source open failed " .. resource)
+        assert(file:GetMode() == FILE_READ, "source must be read-only " .. resource)
         local lines = {}; while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
         return table.concat(lines, "\n")
     end)
     file:Dispose(); assert(ok, text)
-    sources[name] = text; reads[#reads + 1] = path; return text
+    sources[name] = text; reads[#reads + 1] = resource; return text
 end
 local function section(name, first, last)
     local text = source(name)
@@ -101,7 +103,8 @@ local function newContext(options)
         activeTeam = options.activeTeam or 1, unlockedTeams = options.unlockedTeams or 3,
         drag = { active = false, moved = false }, selection = { active = false },
         scrolling = false, scroll = 0, scrollLastY = 0, scrollDelta = 0, velocity = 0,
-        animPlaying = false, allowConfirm = true, canPull = true, sendMode = "pending",
+        animPlaying = false, animPending = {}, animCallbacks = 0,
+        allowConfirm = true, canPull = true, sendMode = "pending",
         callbackMode = "accept", nextResults = {}, font = 24, stack = 0,
         memory = { session = { claimedScenarios = {}, unrelatedLedger = { keep = 17 },
             tutorialProgress = { version = 1, completed = {}, queue = {} } },
@@ -136,6 +139,8 @@ local function newContext(options)
     e.math.random = function() return deny("RNG") end
     e.math.randomseed = function() return deny("RNG seed") end
     e._G, e.time, e.H_SEAM_BACK, e.H_TRI_L0 = e, c.clock, true, false
+    e.graphics = { GetWidth = function() return 1458 end, GetHeight = function() return 1080 end,
+        GetDPR = function() return 1 end }
     e.print = noop
     for key, value in pairs(_G) do
         if type(key) == "string" and (key:match("^NVG_") or key:match("^MOUSEB_")) then e[key] = value end
@@ -184,7 +189,17 @@ local function newContext(options)
     mock("ui.hud.BottomNav", { setTabLocked = noop, setSelectedIndex = function(idx) c.nav = idx end,
         getSelectedIndex = function() return c.nav end })
     mock("ui.story.ScenarioDialogue", { isActive = function() return c.story end })
-    mock("ui.hud.popup.RewardPopup", { isOpen = function() return c.reward end })
+    mock("ui.hud.popup.RewardPopup", { isOpen = function() return c.reward end,
+        currentPanel = function() return "right" end, currentRowTag = function() return nil end })
+    -- 正式Input在首个手势缓存覆盖层引用；只显式提供只读API，不开放文件或未知依赖。
+    for _, name in ipairs({ "ui.hud.popup.OfflineRewardPanel", "ui.hud.popup.LevelUpPopup",
+        "ui.hud.popup.UpdateNoticePopup", "ui.hud.popup.PlayerInfoPanel", "ui.story.gate.DarkTitleScreenGate",
+        "ui.story.gate.StartScreen", "ui.story.gate.LetterIntro", "ui.battle.popup.TerminalConfirmDialog",
+        "ui.dungeon.DungeonBattleScene", "ui.dev.CEPanel" }) do
+        mock(name, { isOpen = function() return false end })
+    end
+    mock("ui.story.gate.IntroCutscene", { isActive = function() return false end })
+    mock("ui.tower.TowerBattleScene", { isActive = function() return false end })
     mock("systems.StoryPlayer", { onPlace = noop, followOf = function() return nil end })
     mock("ui.tutorial.TutorialOverlay", { layout = function(_, _, target)
         return { hole = target, skip = { cx = 10, cy = 10, w = 5, h = 5 } } end, draw = noop })
@@ -205,6 +220,12 @@ local function newContext(options)
         c.stories[#c.stories + 1] = copy(results) end })
     mock("ui.character.detail.CharacterDetail", { isOpen = function() return false end,
         open = function() c.detailOpened = c.detailOpened + 1 end })
+    -- 新右栏装饰不属于招募业务；几何/输入仍执行完整正式Draw2。
+    mock("ui.character.panel.CharacterRosterPresentation", { reset = noop, observe = noop,
+        finishObservation = noop, drawHeader = noop, drawSort = noop,
+        getFeedback = function() return false, false, 0, 0 end,
+        hitTestSort = function() return nil end, setSortInteraction = noop,
+        clearSortInteraction = noop, setTeamInteraction = noop, clearTeamInteraction = noop })
     mock("systems.GachaSystem", { canPull = function() return c.canPull, "ticket" end,
         setPityCounts = noop, getSSRPityRemain = function() return 80 end,
         pull = function(count, payType)
@@ -228,6 +249,15 @@ local function newContext(options)
         start = function(results, callback, count, pool)
             c.animPlaying = true
             c.anims[#c.anims + 1] = { results = copy(results), finish = callback, count = count, pool = pool }
+            c.animPending[#c.animPending + 1] = callback
+        end,
+        close = function()
+            -- 与真实RecruitAnim一致：先释放忙碌状态并取走整批回调，再调用；重复关闭不重复消费。
+            c.animPlaying = false
+            local callbacks = c.animPending; c.animPending = {}
+            for _, callback in ipairs(callbacks) do
+                c.animCallbacks = c.animCallbacks + 1; callback()
+            end
         end })
     mock("ui.tavern.TavernShopPage", { init = noop, resetScroll = noop, syncPurchasedFromStore = noop,
         isPendingBuy = function() return false end, update = noop, drawContent = noop,
@@ -373,7 +403,7 @@ local function newContext(options)
     c.tick = function(dt) c.clock.elapsedTime = c.clock.elapsedTime + dt; c.tm.update(dt) end
     c.finishAnim = function(index)
         local animation = assert(c.anims[index or #c.anims], "animation callback not captured")
-        c.animPlaying = false; animation.finish(); return animation.finish
+        c.modules["ui.tavern.RecruitAnim"].close(); return animation.finish
     end
     c.send = function(mode)
         c.sendMode = mode or "pending"
@@ -550,6 +580,41 @@ local function recruitSuccessCases()
                 eq(queued(c, 9), 0, "active9 never duplicated into queue")
                 audit(c)
             end
+        end
+    end
+end
+local function recruitCloseCases()
+    for _, mode in ipairs({"forceClose", "close"}) do
+        for _, timing in ipairs({"after-result", "in-flight"}) do
+            local c = newContext(); begin8(c, "active"); c.send(); c.request(10)
+            if timing == "in-flight" then
+                c.page[mode](); c.page[mode]()
+                check(c.page.isRecruitBusy(), "closing must preserve in-flight request " .. mode)
+            end
+            local savedBefore = #c.persists
+            c.receipt(ownedResults())
+            eq(#c.persists, savedBefore + 1, "recruit8 and queued9 saved in one snapshot " .. mode .. timing)
+            local saved = c.persists[#c.persists]
+            check(saved.completed["8"] and saved.newHeroId == 18 and same(saved.queue, {9}),
+                "first success save contains completed8 and actual target/queue9")
+            if timing == "after-result" then
+                check(c.page.isRecruitBusy() and c.animPlaying, "visible result stays busy before close")
+                eq(#c.stories, 0, "HeroScenario waits for visible result close callback")
+                c.tick(1); check(c.tm.getCurrentGroup() ~= 9, "result animation gates queued9")
+                c.page[mode](); c.page[mode]()
+            end
+            eq(#c.anims, timing == "after-result" and 1 or 0, "closed/closing receipt starts no hidden animation")
+            eq(c.animCallbacks, timing == "after-result" and 1 or 0, "result close callback consumed once")
+            check(not c.animPlaying and not c.page.isRecruitBusy(), "close clears result/request busy " .. mode .. timing)
+            eq(#c.stories, 1, "successful result reaches HeroScenario exactly once")
+            c.modules["ui.tavern.RecruitAnim"].close()
+            eq(#c.stories, 1, "idle animation close does not repeat old callback")
+            if mode == "close" then
+                c.clock.elapsedTime = c.clock.elapsedTime + 0.4
+                eq(c.page.getAnimProgress(), 0, "ordinary close reaches end of page transition")
+            else check(not c.page.isOpen(), "forceClose closes page immediately") end
+            eq(queued(c, 9), 1, "close retains one actual new-hero tutorial")
+            activate9(c); audit(c)
         end
     end
 end
@@ -804,11 +869,14 @@ local function finalAudit()
     for key,value in pairs(_G) do
         local actual=hostGlobals[key]; check(actual==value or type(actual)=="number" and type(value)=="number" and actual~=actual and value~=value,"no host global added " .. tostring(key))
     end
-    for _, path in ipairs(reads) do
-        local allowed=false; for _, permitted in pairs(SOURCE_FILES) do if path==permitted then allowed=true end end
-        check(allowed,"native File read fixed allowlisted source " .. path)
+    for _, resource in ipairs(reads) do
+        local allowed=false; for _, permitted in pairs(SOURCE_FILES) do
+            if resource==permitted:sub(#PROJECT+10) then allowed=true end
+        end
+        check(allowed,"cache read exact allowlisted script resource " .. resource)
     end
     eq(File,nativeFile,"native File unchanged")
+    eq(cache,nativeCache,"native cache unchanged")
     check(#contexts>0 and #reads>0,"actual production loaded under strict capability audit")
 end
 local function runCase(label, fn)
@@ -827,6 +895,7 @@ function Start()
     runCase("strict-loader-denials-independent-env-deepcopy",safetyCases)
     runCase("config9-rear4-legacy-map-and-real-Panel-getters",configAndGetterCases)
     runCase("real-Tavern-local-deferred-sync-single-ten-active-queued-absent8",recruitSuccessCases)
+    runCase("real-Tavern-close-forceClose-result-inflight-callback-once-and-auto9",recruitCloseCases)
     runCase("real-animation-callback-duplicate-and-quiet-priority-dedup",duplicateAndPriorityCases)
     runCase("all-duplicate-newness-stale-target-and-completed-skip",allDuplicateCases)
     runCase("request-failure-timeout-disconnect-orphan-no-premature9",failureCases)

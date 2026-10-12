@@ -22,7 +22,7 @@ function Start()
             session = { introCompleted = true, initialHeroId = 1, claimedScenarios = {} },
             player = {}, heroes = { roster = {} },
         }
-        local notices, flushes, firstCalls = 0, 0, 0
+        local notices, flushes, firstCalls, requests = 0, 0, 0, 0
         local disk = {}
         local mocks = {}
         local function noop() end
@@ -36,8 +36,8 @@ function Start()
             f:Dispose()
             return table.concat(lines, "\n")
         end
-        local function compile(name)
-            return assert(load(source(name), "@" .. name, "t", _G))()
+        local function compile(name, env)
+            return assert(load(source(name), "@" .. name, "t", env or _G))()
         end
         local dispatcher = {
             get = function(name) return modules[name] end,
@@ -85,10 +85,8 @@ function Start()
                 newBattleRefs = function() return {} end, newFxState = function() return {} end,
                 newSemState = function() return {} end })
         end
-        mocks["ui.battle.stage.BattleEnemySpawn"] = {
-            generateEnemyList = function() return { { hp = 1 } } end,
-            assignEnemiesToField = function(list) return list, {} end,
-        }
+        -- 出怪与首通附加怪阶段使用真实模块，不能遗漏 Driver 新的生产 helper。
+        mocks["ui.battle.stage.BattleEnemySpawn"] = compile("ui.battle.stage.BattleEnemySpawn")
         rawset(_G, "require", function(name)
             if mocks[name] then return mocks[name] end
             mocks[name] = stub()
@@ -109,6 +107,9 @@ function Start()
         mocks["boot.StandaloneSave"] = { Flush = function()
             flushes = flushes + 1
             return Save.Flush()
+        end, RequestSave = function()
+            requests = requests + 1
+            Save.RequestSave()
         end }
         local Story = compile("systems.StoryPlayer")
         mocks["systems.StoryPlayer"] = Story
@@ -121,13 +122,135 @@ function Start()
             drivers[t] = drv
             return drv
         end }
-        local Page = compile("ui.battle.tri.BattleTriPage")
+        mocks["ui.battle.tri.TerminalReincarnation"] = compile("ui.battle.tri.TerminalReincarnation")
+        mocks["ui.battle.tri.BattleEntryPreparation"] = compile("ui.battle.tri.BattleEntryPreparation")
+        mocks["ui.battle.stage.BattleSpeed"] = compile("ui.battle.stage.BattleSpeed")
+        scene.battleSpeed = 1
+        local pageEnv = setmetatable({}, { __index = _G })
+        -- 本专项只记录HUD叶子，不创建NanoVG上下文；不动其他用例的引擎全局。
+        for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgTranslate", "nvgScale" }) do
+            pageEnv[name] = noop
+        end
+        local Page = compile("ui.battle.tri.BattleTriPage", pageEnv)
         mocks["ui.battle.tri.BattleTriPage"] = Page
         Page.open()
         check(Page.getTeamStageId(1) == 1001 and Page.getTeamStageId(2) == 203
             and Page.getTeamStageId(3) == 2504, "三队按独立存档关卡启动")
         check(modules.battle.currentStageId == 1001 and modules.battle.idleAccumSec == 17,
             "二三队初始化不覆盖一队关卡和挂机字段")
+        local clockFrames = {}
+        for row = 1, 3 do
+            local originalUpdate = drivers[row].update
+            drivers[row].update = function(self, realDt, logicDt)
+                clockFrames[row] = { realDt, logicDt }
+                return originalUpdate(self, realDt, logicDt)
+            end
+        end
+        scene.battleSpeed = 3
+        check(Page.getMaxUnlockedBattleSpeed() == 1 and not Page.isSpeedButtonVisible()
+            and Page.getBattleLogicDt(.25) == .25, "三队兼容接口恒为真实速度")
+        local originalClock = Page.getBattleLogicDt
+        Page.getBattleLogicDt = function() error("真实Page不应再调用旧倍率接口") end
+        Page.update(.25)
+        Page.getBattleLogicDt = originalClock
+        for row = 1, 3 do
+            check(clockFrames[row][1] == .25 and clockFrames[row][2] == .25,
+                "真实Page只传原dt给队" .. row .. "的真实Driver.update")
+        end
+
+        -- 旧倍速位置现在应命中实际扫荡按钮，而非专用倍速分支先吞掉点击。
+        -- 只替换绘图/按钮叶子，执行真实drawHud与handleInput并观测队号/关卡。
+        local sweep = mocks["ui.battle.stage.SweepDialog"]
+        local stats = mocks["ui.battle.popup.DamageStatsPanel"]
+        local selector = mocks["ui.battle.stage.StageSelectDialog"]
+        local sound = mocks["ui.widget.SoundToggle"]
+        local draws, inputs = {}, {}
+        local function drawSpy(kind)
+            return function() draws[#draws + 1] = kind end
+        end
+        local function inputSpy(kind)
+            return function(_, _, team, stageId) inputs[#inputs + 1] = { kind, team, stageId }; return true end
+        end
+        sweep.drawButton, stats.drawButton = drawSpy("sweep"), drawSpy("stats")
+        selector.drawButton, sound.drawButton = drawSpy("stage"), drawSpy("sound")
+        sweep.handleButtonInput = inputSpy("sweep")
+        stats.handleButtonInput = inputSpy("stats")
+        selector.handleButtonInput = inputSpy("stage")
+        scene.isSpeedButtonVisible = function() error("HUD不应查询已删倍速") end
+        scene.drawSpeedButton = function() error("HUD不应绘制已删倍速") end
+        scene.handleSpeedButtonInput = function() error("HUD不应命中已删倍速") end
+        local region
+        for i = 1, 20 do
+            local key, value = debug.getupvalue(Page.getInteriorRect, i)
+            if key == "region" then region = value break end
+        end
+        assert(region, "缺少真实页面坐标状态")
+        for _, size in ipairs({ {1920,1080}, {1280,800} }) do
+            region.w, region.h = size[1], size[2]
+            draws, inputs = {}, {}
+            Page.drawHud(nil, size[1], size[2])
+            check(table.concat(draws, ",") == "sweep,stats,stage,sound,sweep,stats,stage,sound,sweep,stats,stage,sound",
+                "三队各绘制四项HUD，没有额外倍速绘制")
+            for row = 1, 3 do
+                local x, y, w = Page.getInteriorRect(row)
+                local oldSpeedX, hudY = x + w - 4 - 29 - 17, y + 29 + 2
+                check(Page.handleInput(oldSpeedX, hudY), "旧倍速位置正常路由实际HUD")
+                local last = inputs[#inputs]
+                check(last and last[1] == "sweep" and last[2] == row and last[3] == drivers[row].stageId,
+                    "旧倍速位置不吞掉队" .. row .. "真实扫荡按钮点击")
+            end
+        end
+        region.w, region.h = 948, 1080
+
+        -- 键盘与CE均编译正式模块，图形/业务出口只记录，不读写玩家档。
+        local keys, queriedKeys, helpTexts, toastCount = {}, {}, {}, 0
+        local soundOn = true
+        local devModules = {
+            ["core.UiToast"] = { show = function() toastCount = toastCount + 1 end },
+            ["ui.story.gate.DarkTitleScreenGate"] = { isOpen = function() return false end },
+            ["ui.character.hero.AwakeningArtwork"] = { isOpen = function() return false end },
+            ["ui.hud.popup.RedeemCodePanel"] = { isOpen = function() return false end },
+            ["ui.dev.GMConsolePanel"] = { isOpen = function() return false end },
+            ["ui.hud.popup.SettingsPanel"] = { isSoundOn = function() return soundOn end,
+                setSoundOn = function(on) soundOn = on end },
+            ["rules.gm.CEService"] = {},
+        }
+        local devEnv = setmetatable({ input = {
+            GetKeyPress = function(_, key) queriedKeys[key] = true; return keys[key] == true end,
+            GetQualifierDown = function() return false end,
+        }, require = function(name) return assert(devModules[name], "未准备的测试依赖 " .. name) end }, { __index = _G })
+        for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgFontFace", "nvgTextAlign", "nvgBeginPath",
+            "nvgRoundedRect", "nvgFillColor", "nvgFill", "nvgStrokeColor", "nvgStrokeWidth", "nvgStroke",
+            "nvgFontSize", "nvgIntersectScissor" }) do devEnv[name] = noop end
+        devEnv.nvgRGBA = function(...) return { ... } end
+        devEnv.nvgText = function(_, _, _, text) helpTexts[#helpTexts + 1] = text end
+        local shortcuts = compile("ui.dev.KeyboardShortcuts", devEnv)
+        keys[KEY_F] = true
+        shortcuts.update()
+        check(not queriedKeys[KEY_F] and toastCount == 0, "F不再注册为快捷键，也不显示切速提示")
+        keys[KEY_M] = true
+        shortcuts.update()
+        check(not soundOn and toastCount == 1, "F与M同帧不吞掉正常音效快捷键")
+        keys = { [KEY_H] = true }
+        shortcuts.update()
+        shortcuts.draw({}, 1920, 1080)
+        for _, text in ipairs(helpTexts) do check(not text:find("倍速", 1, true), "快捷键说明无倍速功能") end
+        local CE = compile("ui.dev.CERuntime", devEnv)
+        devModules["ui.dev.CERuntime"] = CE
+        local panel = compile("ui.dev.CEPanel", devEnv)
+        helpTexts = {}
+        panel.toggle()
+        panel.draw({}, 1920, 1080)
+        for _, text in ipairs(helpTexts) do check(not text:find("倍速", 1, true), "CE面板无倍速按钮") end
+        local beforeToast = toastCount
+        panel.run("speed")
+        check(toastCount == beforeToast and not CE.isSpeedOn(), "旧CE动作ID不会切速或提示功能开启")
+        check(CE.setSpeedOn(true) == false and CE.installSpeedHook() == false
+            and CE.toggleSpeed() == false, "旧CE倍速接口恒为false")
+        check(CE.toggleGodMode() and CE.isGodMode(), "无敌测试开关不被误删")
+        CE.setGodMode(false)
+        panel.toggle()
+
         for series = 1, 14 do
             local terminalId = series * 1000 - 1
             local previous = SC.getTerminalPrevStageId(terminalId)
@@ -147,7 +270,10 @@ function Start()
         Page.gotoTeamStage(3, 2504)
         while Story.take() do end
         Entries.reset()
+        local beforeMoveFlush, beforeMoveRequest = flushes, requests
         check(Page.gotoTeamStage(2, 204), "二队可手动进入已解锁关卡")
+        check(flushes == beforeMoveFlush and requests == beforeMoveRequest + 1,
+            "普通换关只请求保存，不在交互帧全量写盘")
         local story = Story.take()
         check(story and story.scenarioId == 41 and Story.take() == nil, "二队手动换关触发真实入关剧情41一次")
         local beforeFlush = flushes
@@ -191,7 +317,10 @@ function Start()
         modules.session.introCompleted = true
         Entries.reset()
         drivers[2]:start(205)
+        local beforeRetreatFlush, beforeRetreatRequest = flushes, requests
         drivers[2]:retreatStage()
+        check(flushes == beforeRetreatFlush and requests == beforeRetreatRequest + 2,
+            "退关两个保存入口都只合并请求，不重复写盘")
         check(drivers[2].stageId == 204 and modules.battle.teamStageIds["2"] == 204,
             "二队失败退关也保存实际当前关")
         story = Story.take()
@@ -230,8 +359,11 @@ function Start()
                     setAccountProgress(previous, { [previous] = true })
                     drivers[t]:start(previous)
                     drivers[t]:advanceStage()
-                    check(drivers[t].stageId == previous and not drivers[t].active,
-                        "队" .. t .. "终焉" .. id .. "未通仍停末关不伪造轮回")
+                    -- 终焉未确认不能停摆：停在末关并继续在原关刷怪，不伪造轮回。
+                    check(drivers[t].stageId == previous and drivers[t].active,
+                        "队" .. t .. "终焉" .. id .. "未通仍停末关继续刷本关不伪造轮回")
+                    check(#drivers[t].enemies + #drivers[t].enemyQueue > 0,
+                        "队" .. t .. "终焉" .. id .. "未通仍重新出怪")
                 end
             end
         end
@@ -291,16 +423,16 @@ function Start()
             and Page.getTeamStageId(3) == 2505, "重新创建页面和驱动后仍恢复各队当前关")
         check(modules.battle.idleAccumSec == 17 and notices > 0, "恢复保留其他字段并使用正式通知出口")
         -- 终焉协同仍由页面接管；胜负收尾后的三队位置全部写入同一存档。
+        local terminalTarget
         scene.completeTriTerminal = function(id)
-            local target = SC.getReincarnationTarget(SC.getDifficulty(id))
-            mainStage = target
-            modules.battle.currentStageId = target
-            modules.battle.maxStageId = math.max(modules.battle.maxStageId, target)
+            terminalTarget = SC.getReincarnationTarget(SC.getDifficulty(id))
+            modules.battle.maxStageId = math.max(modules.battle.maxStageId, terminalTarget)
             cleared[id] = true
             modules.battle.clearedStages[tostring(id)] = true
             Save.Flush()
             return true
         end
+        scene.updateTriReincarnation = function() return true end
         maxStage, cleared = 999, { [2305] = 1 }
         modules.battle.teamStageIds["1"] = 2305
         check(not Page.gotoTeamStage(1, 999), "终焉最高节点不接受非true的末关通关标记")
@@ -335,8 +467,17 @@ function Start()
         Page.update(0)
         Page.update(0)
         for t = 1, 3 do
+            check(drivers[t].stageId == 999 and modules.battle.teamStageIds[tostring(t)] == 2305,
+                "队" .. t .. "胜利仍停终焉，待轮回保存末关")
+        end
+        check(terminalTarget == 2401 and Page.completeTerminalReincarnation(terminalTarget), "模拟动画完成统一三队目标进场")
+        mainStage = terminalTarget
+        modules.battle.currentStageId = terminalTarget
+        modules.battle.teamStageIds = { ["1"] = terminalTarget, ["2"] = terminalTarget, ["3"] = terminalTarget }
+        Save.Flush()
+        for t = 1, 3 do
             check(drivers[t].stageId == 2401 and modules.battle.teamStageIds[tostring(t)] == 2401,
-                "队" .. t .. "终焉胜利后的目标关已入档")
+                "队" .. t .. "动画完成后的目标关已入档")
         end
         local terminalSave = cjson.decode(disk["standalone_save.json"])
         check(terminalSave.modules.battle.teamStageIds["2"] == 2401

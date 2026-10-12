@@ -1,6 +1,6 @@
--- 本轮适配：整套 Spine 改为程序化，本文件移除旧原生 Create/Load/监听/Unload/Dispose 57场景1220断言。
--- 新专项：真实程序化 Result controller 生命周期、draw故障隔离、callback重入/抛错、非法输入。
--- 不代表保留原生 Spine GPU 覆盖；不读取玩家档，只读 ResourceCache 源码+独立env。
+-- Result controller专项：保留生命周期、draw故障隔离、callback重入/抛错、非法输入。
+-- Sprites后端受控注入；原生Spine与纹理/释放由rich入口单独验收，不禁止正式资源。
+-- 不读取玩家档，只读 ResourceCache 正式源码+独立env；不冒称保留历史1220原生断言。
 -- 运行：UrhoXRuntime tests/spine_result_effect_test.lua -tapcode_dir=. -tool_mode -graphicsheadless
 local totals={assertions=0,failures=0,cases=0}
 local source=""
@@ -26,8 +26,9 @@ local function fixture()
     env.nvgSpineCreate=function() stats.forbidden=stats.forbidden+1;error("Spine forbidden") end
     env.nvgSpineRender=env.nvgSpineCreate;env.nvgCreateImage=env.nvgSpineCreate
     env.require=function(name)
-        assert(name=="ui.fx.DarkEffectPrimitives",name)
-        return {drawResult=function(_,success,cx,cy,size,elapsed,duration,alpha)
+        assert(name=="ui.fx.DarkEffectSprites",name)
+        return {preload=function() end,release=function() end,destroy=function() end,
+            drawResult=function(_,success,cx,cy,size,elapsed,duration,alpha)
             stats.draws=stats.draws+1
             stats.args={success,cx,cy,size,elapsed,duration,alpha}
             stats.reenter()
@@ -54,7 +55,7 @@ local function run()
         eq(f.stats.callbacks,2,"两次callback各一次")
         eq(f.stats.draws,0,"无draw确无原语执行")
         f.effect.update(0);f.effect.isPlaying();eq(f.stats.callbacks,2,"重复query无二次callback")
-        eq(f.stats.forbidden,0,"Result完全无Spine/图像")
+        eq(f.stats.forbidden,0,"controller不旁路受控Sprites后端")
     end)
     case("draw-arguments-alpha-and-replace",function()
         local f=fixture();local old=0
@@ -109,7 +110,7 @@ local function run()
         f.stats.throw=false;f.effect.destroy();f.effect.play(false);f.effect.draw(f.vg,500,600,160)
         eq(f.stats.draws,2,"显式destroy可恢复")
         check(f.effect.isPlaying(),"修复后重播正常")
-        eq(f.stats.forbidden,0,"无原生fallback")
+        eq(f.stats.forbidden,0,"故障controller不旁路受控Sprites恢复资源")
     end)
     case("old-fault-does-not-cancel-reentrant-replacement",function()
         local f=fixture();f.stats.throw=true

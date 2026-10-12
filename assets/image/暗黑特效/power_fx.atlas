@@ -1,0 +1,103 @@
+atlas.png
+size: 1024, 1024
+format: RGBA8888
+filter: Linear, Linear
+repeat: none
+nameplate
+  rotate: false
+  xy: 4, 4
+  size: 640, 144
+  orig: 640, 144
+  offset: 0, 0
+  index: -1
+copper_wing
+  rotate: false
+  xy: 652, 4
+  size: 256, 96
+  orig: 256, 96
+  offset: 0, 0
+  index: -1
+gate_leaf
+  rotate: false
+  xy: 916, 4
+  size: 96, 320
+  orig: 96, 320
+  offset: 0, 0
+  index: -1
+rift_light
+  rotate: false
+  xy: 4, 332
+  size: 80, 320
+  orig: 80, 320
+  offset: 0, 0
+  index: -1
+smoke_flame
+  rotate: false
+  xy: 92, 332
+  size: 192, 256
+  orig: 192, 256
+  offset: 0, 0
+  index: -1
+soul_flame
+  rotate: false
+  xy: 292, 332
+  size: 128, 192
+  orig: 128, 192
+  offset: 0, 0
+  index: -1
+seal_plate
+  rotate: false
+  xy: 428, 332
+  size: 192, 192
+  orig: 192, 192
+  offset: 0, 0
+  index: -1
+rune_ring
+  rotate: false
+  xy: 628, 332
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+impact_glow
+  rotate: false
+  xy: 4, 660
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+rune_strip
+  rotate: false
+  xy: 268, 660
+  size: 128, 256
+  orig: 128, 256
+  offset: 0, 0
+  index: -1
+seal_shard
+  rotate: false
+  xy: 404, 660
+  size: 64, 96
+  orig: 64, 96
+  offset: 0, 0
+  index: -1
+ember
+  rotate: false
+  xy: 476, 660
+  size: 32, 64
+  orig: 32, 64
+  offset: 0, 0
+  index: -1
+ash_flake
+  rotate: false
+  xy: 516, 660
+  size: 64, 64
+  orig: 64, 64
+  offset: 0, 0
+  index: -1
+light_sweep
+  rotate: false
+  xy: 588, 660
+  size: 256, 64
+  orig: 256, 64
+  offset: 0, 0
+  index: -1

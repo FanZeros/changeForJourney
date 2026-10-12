@@ -7,79 +7,28 @@ local DrawUtil = require("core.DrawUtil")
 local BF       = require("systems.ButtonFeedback")
 local Protocol = require("shared.Protocol")
 local KeywordText = require("ui.widget.KeywordText")
+local ChoiceView = require("ui.tower.TowerChoiceView")
+local OathEffect = require("ui.tower.TowerOathEffect")
 
 local Panel = {}
 
 -- 关键词热区使用当前设计空间；draw/handleClick 共用布局及反变换。
 local kwCards = {}
 for i = 1, 3 do
-    kwCards[i] = KeywordText.new({ textColor = { 0x5f, 0x37, 0x37 } })
+    kwCards[i] = KeywordText.new({ textColor = { 231, 219, 195 } })
 end
 
--- ======================== 设计分辨率 ========================
-
-local DESIGN_W = 1080
-local DESIGN_H = 2400
-
--- ======================== 布局常量 ========================
-
--- 1. 全屏遮罩
-local MASK_A = 128  -- 纯黑50%
-
--- 2. 标题 "通天塔"（左对齐 X=82）
-local TITLE = { X = 82, Y = 410, FONT = 50, SW = 6 }
-
--- 3. 层数 "第X层"（斜体，与通天塔左对齐 X=82）
-local FLOOR_TEXT = { X = 82, Y = 500, FONT = 80, SW = 6, SKEW = -12 }
-
--- 4. 提示 "选择一项强化"
-local HINT = { X = 869, Y = 515, FONT = 50, SW = 6 }
-
--- 5. 强化卡片布局（以第一张卡片为基准）
-local CARD = {
-    CX = 540, FIRST_CY = 744,  -- 第一张卡片中心
-    W = 998, H = 321,
-    GAP = 47,                    -- 卡片间距
-    -- 名称（相对卡片左上角偏移）
-    NAME_X = 103, NAME_Y_OFF = 47,  -- 相对card top
-    NAME_FONT = 50, NAME_SW = 5,
-    NAME_STROKE_R = 0x3f, NAME_STROKE_G = 0x3f, NAME_STROKE_B = 0x3f,
-    -- 品质文本
-    QUALITY_X = 949, QUALITY_Y_OFF = 46,
-    QUALITY_FONT = 50, QUALITY_SW = 5,
-    -- 介绍文本段落区域（中心Y=782相对屏幕，转为相对card top的偏移）
-    DESC_CX = 540, DESC_Y_OFF = 140,  -- 区域顶边相对card top
-    DESC_W = 864, DESC_H = 117,
-    DESC_FONT = 38,
-    DESC_R = 0x5f, DESC_G = 0x37, DESC_B = 0x37,
-}
-CARD.STEP = CARD.H + CARD.GAP  -- 368
-
-local function cardRect(index, landscape)
-    if landscape then return 360 + (index - 1) * 600, 620, 550, 540 end
-    return CARD.CX, CARD.FIRST_CY + (index - 1) * CARD.STEP, CARD.W, CARD.H
-end
-
-local function overlayFit(width, height)
-    local fit = math.min(width / 1920, height / 1080)
-    return fit, (width - 1920 * fit) * 0.5, (height - 1080 * fit) * 0.5
-end
-
--- 品质显示映射（强化品质1/2/3 → 稀有/史诗/传说）
-local QUALITY_DISPLAY = {
-    [1] = { name = "稀有", r = 0x72, g = 0xf2, b = 0xf5 },  -- 蓝色
-    [2] = { name = "史诗", r = 0xef, g = 0x79, b = 0xff },  -- 紫色
-    [3] = { name = "传说", r = 0xff, g = 0xed, b = 0x00 },  -- 金色
-}
-
--- ======================== 图片句柄 ========================
-
-local imgCardBg = {}  -- UI_TTTSXY_1/2/3.png
+-- 绘制与命中共用固定设计区，装饰动画只作用于图形，不移动可点击卡片。
+local cardRect = ChoiceView.cardRect
+local overlayFit = ChoiceView.fit
 
 -- ======================== 状态 ========================
 
 local state = {
     open = false,
+    visible = false,
+    openedAt = 0,
+    version = 0,
     floor = 1,
     choices = {},     -- { {id, quality, name, desc}, ... } 最多3个
     onPick = nil,     -- function(buffId, requestId) 请求前锁 Scene，不代表选择成功
@@ -92,7 +41,10 @@ local state = {
 }
 
 -- NanoVG 上下文
+---@type NVGContextWrapper?
 local vg_ = nil
+---@type table[]
+local effectTokens = {}
 
 -- ======================== sendAction 注入 ========================
 
@@ -113,9 +65,12 @@ function Panel.init(vg)
     vg_ = vg
     if towerBuffInited_ then return end
     towerBuffInited_ = true
-    for i = 1, 3 do
-        imgCardBg[i] = nvgCreateImage(vg, "image/界面底板/副本秘境/UI_TTTSXY_" .. i .. ".png", 0)
-    end
+    OathEffect.preload(vg)
+end
+
+local function releaseEffects()
+    for _, token in ipairs(effectTokens) do OathEffect.release(token) end
+    effectTokens = {}
 end
 
 --- 打开面板，展示三选一
@@ -128,7 +83,11 @@ function Panel.open(floor, choices, onPick, request, onError)
     if not towerBuffInited_ and vg_ then
         Panel.init(vg_)
     end
-    state.open = true
+    releaseEffects()
+    for i = 1, 3 do effectTokens[i] = {} end
+    state.open, state.visible = true, true
+    state.openedAt = time.elapsedTime or 0
+    state.version = state.version + 1
     state.floor = floor or 1
     state.choices = choices or {}
     state.onPick = onPick
@@ -144,7 +103,9 @@ function Panel.open(floor, choices, onPick, request, onError)
 end
 
 function Panel.close()
-    state.open = false
+    state.open, state.visible = false, false
+    state.version = state.version + 1
+    releaseEffects()
     state.choices = {}
     state.onPick = nil
     state.onError = nil
@@ -199,110 +160,78 @@ function Panel.isOpen()
     return state.open
 end
 
+-- 取消仅收起弹窗，保留本次待选身份；右侧「继续择契」返回同一组卡。
+function Panel.isVisible()
+    return state.open and state.visible
+end
+
+function Panel.hide()
+    if not state.open or state.pending then return false end
+    state.visible = false
+    state.version = state.version + 1
+    for i = 1, 3 do kwCards[i]:clear() end
+    return true
+end
+
+function Panel.show()
+    if not state.open then return false end
+    state.visible = true
+    state.version = state.version + 1
+    return true
+end
+
+function Panel.getPresentationKey()
+    return tostring(state.version) .. ":" .. tostring(state.pending)
+end
+
+function Panel.destroy()
+    Panel.close()
+    ChoiceView.destroyWidgets()
+    OathEffect.destroy()
+    towerBuffInited_, vg_ = false, nil
+end
+
 -- ======================== 渲染 ========================
 
 function Panel.draw(vg, width, height)
-    if not state.open then return end
+    if not Panel.isVisible() then return end
     local landscape = width ~= nil and height ~= nil
+    local fit, ox, oy = overlayFit(width, height)
+    if fit <= 0 then return end
+    local ok, caught
     nvgSave(vg)
-    if landscape then
+    ok, caught = xpcall(function()
         nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, width, height)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, MASK_A))
+        nvgRect(vg, 0, 0, width or 1080, height or 2400)
+        nvgFillColor(vg, nvgRGBA(7, 8, 10, 218))
         nvgFill(vg)
-        local fit, ox, oy = overlayFit(width, height)
-        nvgTranslate(vg, ox, oy)
-        nvgScale(vg, fit, fit)
-    end
-
-    -- 1. 旧调用保留竖版；横屏只拟合1920×1080内容，不缩整张竖版画布。
-    if not landscape then
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, MASK_A))
-        nvgFill(vg)
-    end
-
-    -- 2. 标题
-    DrawUtil.drawTextStroke(vg, landscape and 90 or TITLE.X, landscape and 100 or TITLE.Y, "通天塔",
-        TITLE.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        255, 255, 255, TITLE.SW,
-        { strokeColor = { 0, 0, 0 } })
-
-    -- 3. 层数 "第X层"（斜体，左对齐与通天塔对齐）
-    nvgSave(vg)
-    nvgTranslate(vg, landscape and 90 or FLOOR_TEXT.X, landscape and 205 or FLOOR_TEXT.Y)
-    nvgSkewX(vg, FLOOR_TEXT.SKEW * math.pi / 180)
-    DrawUtil.drawTextStroke(vg, 0, 0, "第" .. state.floor .. "层",
-        FLOOR_TEXT.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        255, 255, 255, FLOOR_TEXT.SW,
-        { strokeColor = { 0, 0, 0 } })
-    nvgRestore(vg)
-
-    -- 4. 提示 "选择一项强化"
-    DrawUtil.drawTextStroke(vg, landscape and 1430 or HINT.X, landscape and 205 or HINT.Y, "选择一项强化",
-        HINT.FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, HINT.SW,
-        { strokeColor = { 0, 0, 0 } })
-
-    -- 5. 强化卡片
-    for i, choice in ipairs(state.choices) do
-        local cardCX, cardCY, cardW, cardH = cardRect(i, landscape)
-        local cardTop = cardCY - cardH * 0.5
-        local cardLeft = cardCX - cardW * 0.5
-
-        -- 按钮反馈与点击使用同一张卡的范围。
-        local _bf = BF.begin(vg, "tower_buff_" .. i, cardCX, cardCY, cardW, cardH)
-
-        -- 5.1) 卡片背景（按品质选图）
-        local bgIdx = math.min(math.max(choice.quality or 1, 1), 3)
-        local bgImg = imgCardBg[bgIdx]
-        if bgImg and bgImg > 0 then
-            DrawUtil.drawImageCentered(vg, bgImg, cardCX, cardCY, cardW, cardH, 1.0)
+        if landscape then
+            nvgTranslate(vg, ox, oy)
+            nvgScale(vg, fit, fit)
         end
-
-        -- 5.2) 强化名称（左对齐）
-        local nameY = cardTop + (landscape and 85 or CARD.NAME_Y_OFF)
-        DrawUtil.drawTextStroke(vg, landscape and (cardLeft + 35) or CARD.NAME_X, nameY, choice.name or "",
-            landscape and 40 or CARD.NAME_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-            255, 255, 255, CARD.NAME_SW,
-            { strokeColor = { CARD.NAME_STROKE_R, CARD.NAME_STROKE_G, CARD.NAME_STROKE_B } })
-
-        -- 5.3) 品质文本（右侧）
-        local qDisplay = QUALITY_DISPLAY[choice.quality] or QUALITY_DISPLAY[1]
-        local qualityY = cardTop + (landscape and 145 or CARD.QUALITY_Y_OFF)
-        DrawUtil.drawTextStroke(vg, landscape and (cardLeft + cardW - 35) or CARD.QUALITY_X, qualityY, qDisplay.name,
-            landscape and 32 or CARD.QUALITY_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-            qDisplay.r, qDisplay.g, qDisplay.b, CARD.QUALITY_SW,
-            { strokeColor = { CARD.NAME_STROKE_R, CARD.NAME_STROKE_G, CARD.NAME_STROKE_B } })
-
-        -- 5.4) 介绍文本段落区域（关键词可点击）
-        local descY = cardTop + (landscape and 220 or CARD.DESC_Y_OFF)
-        local descLeft = landscape and (cardLeft + 35) or (CARD.DESC_CX - CARD.DESC_W * 0.5)
-        local descW, descH = landscape and (cardW - 70) or CARD.DESC_W, landscape and 240 or CARD.DESC_H
-        nvgSave(vg)
-        nvgIntersectScissor(vg, descLeft, descY, descW, descH)
-        kwCards[i]:draw(vg, choice.desc or "", descLeft, descY, descW, landscape and 34 or CARD.DESC_FONT)
-        nvgRestore(vg)
-
-        BF.finish(vg, _bf)
-    end
-
-    -- 6. 关键词解释气泡（最上层，盖住所有卡片）
-    for i = 1, 3 do
-        kwCards[i]:drawPopup(vg)
-    end
+        ChoiceView.drawHeader(vg, state, landscape)
+        local elapsed = math.max(0, (time.elapsedTime or 0) - state.openedAt)
+        for i, choice in ipairs(state.choices) do
+            if i <= 3 then
+                ChoiceView.drawCard(vg, i, choice, state, landscape, kwCards[i], elapsed, effectTokens[i])
+            end
+        end
+        ChoiceView.drawFooter(vg, state, landscape)
+        for i = 1, 3 do ChoiceView.drawKeywordPopup(vg, kwCards[i], i, landscape) end
+    end, debug.traceback)
     nvgRestore(vg)
+    if not ok then error(caught, 0) end
 end
 
 -- ======================== 输入处理 ========================
 
 function Panel.handleClick(dx, dy, width, height)
-    if not state.open then return false end
+    if not Panel.isVisible() then return false end
     if state.pending then return true end
     local landscape = width ~= nil and height ~= nil
     if landscape then
         local fit, ox, oy = overlayFit(width, height)
+        if fit <= 0 then return true end
         dx, dy = (dx - ox) / fit, (dy - oy) / fit
     end
 
@@ -312,6 +241,11 @@ function Panel.handleClick(dx, dy, width, height)
             kwCards[i]:closePopup()
             return true
         end
+    end
+    local cancelX, cancelY, cancelW, cancelH = ChoiceView.cancelRect(landscape)
+    if DrawUtil.hitTest(dx, dy, cancelX, cancelY, cancelW, cancelH) then
+        Panel.hide()
+        return true
     end
     -- 命中关键词 → 弹解释（必须先于整卡 hitTest，否则点 desc 关键词会误选卡）
     for i = 1, 3 do

@@ -11,6 +11,9 @@ local EquipmentConfig = require("config.EquipmentConfig")
 local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local EquipmentWearability = require("ui.character.detail.EquipmentWearability")
 local EquipmentPower = require("systems.EquipmentPower")
+local EquipmentSystem = require("systems.EquipmentSystem")
+local AttributeDef = require("systems.AttributeDef")
+local SettingsPanel = require("ui.hud.popup.SettingsPanel")
 local AdvancementConfig = require("config.AdvancementConfig")
 local HeroConfig      = require("config.HeroConfig")
 local CharacterPanel  = require("ui.character.panel.CharacterPanel")
@@ -30,7 +33,7 @@ function M.bind(deps)
     local DarkIcon = deps.DarkIcon or DarkIcon
     local DrawUtil = deps.DrawUtil or DrawUtil
     local state = deps.state
-    local decomposeState = deps.decomposeState
+    local decomposeState = deps.decomposeState or {}
     local ITEM_DEFS = deps.ITEM_DEFS
     local getItemIcon = deps.getItemIcon
     local getImgCheckmark = deps.getImgCheckmark
@@ -65,7 +68,8 @@ function M.bind(deps)
         if slotFilter == "offhand" and dualMode and naturalSlot == "weapon" and grip == "onehand" then
             slotOk = true
         end
-        return tpl ~= nil and qualityChecked(quality) and slotOk,
+        local typeOk = not decomposeState.typeFilter or equipType == decomposeState.typeFilter
+        return tpl ~= nil and qualityChecked(quality) and slotOk and typeOk,
             tpl, naturalSlot, equipType, grip, level, quality
     end
 
@@ -87,9 +91,44 @@ function M.bind(deps)
         return counts
     end
 
+    -- 绘制、点击、悬停共用列表；只在数据版本/筛选改变时重建，滚动不重复评分排序。
+    local cachedList = {}
+    local cachedSources = {}
+    local cachedKey = ""
+    local function listCacheKey(slotFilter, heroId, dualMode)
+        if not PlayerStore.GetRevision then return nil end
+        local parts = { tostring(slotFilter), tostring(heroId), tostring(dualMode),
+            tostring(decomposeState.typeFilter), tostring(decomposeState.sortKey),
+            tostring(decomposeState.sortAscending == true) }
+        for _, key in ipairs({ "equipment", "heroes", "artifacts", "talents" }) do
+            parts[#parts + 1] = tostring(PlayerStore.GetRevision(key))
+        end
+        for quality = 1, #EquipmentConfig.QUALITY do
+            parts[#parts + 1] = qualityChecked(quality) and "1" or "0"
+        end
+        -- 筛选集合很小；冻结值而非引用，可识别弹窗对同一集合的原地勾选。
+        local selected = {}
+        for key, value in pairs(decomposeState.setFilter or {}) do
+            if value then selected[#selected + 1] = tostring(key) end
+        end
+        table.sort(selected)
+        parts[#parts + 1] = table.concat(selected, ",")
+        return table.concat(parts, "|")
+    end
+
     local function getEquipList()
         local equipData = PlayerStore.Get("equipment")
-        if not equipData or not equipData.inventory then return {} end
+        if not equipData or not equipData.inventory then
+            cachedList, cachedSources, cachedKey = {}, {}, ""
+            return cachedList
+        end
+        local slotFilter, filterHeroId, _, dualMode = filterContext()
+        local key = listCacheKey(slotFilter, filterHeroId, dualMode)
+        local sources = { equipData, PlayerStore.Get("heroes"),
+            PlayerStore.Get("artifacts"), PlayerStore.Get("talents") }
+        if key and key == cachedKey and sources[1] == cachedSources[1]
+            and sources[2] == cachedSources[2] and sources[3] == cachedSources[3]
+            and sources[4] == cachedSources[4] then return cachedList end
 
         local equippedByHero = {}
         if equipData.equipped then
@@ -103,7 +142,6 @@ function M.bind(deps)
         end
 
         local list = {}
-        local slotFilter, filterHeroId, _, dualMode = filterContext()
         -- 一次列表复用角色上下文；评分器缓存单件模拟，不逐帧逐件重建 HeroCombat。
         local powerContext = filterHeroId ~= nil and EquipmentPower.getContext(filterHeroId) or nil
         for seqStr, equip in pairs(equipData.inventory) do
@@ -119,7 +157,7 @@ function M.bind(deps)
                 entry.level, entry.quality = level, quality
                 entry.name = tpl.name or ""
                 entry.type, entry.slot, entry.grip = equipType or "", naturalSlot, grip
-                entry.enhanceLevel = equip.enhanceLevel or 0
+                entry.enhanceLevel = EquipmentSystem.getAscendLevel(equip)
                 entry.equippedByHeroId = equippedByHero[tostring(seqStr)] or nil
                 entry.canWear = filterHeroId == nil or (preview ~= nil and preview.valid == true)
                 entry.cannotEquipReason = not entry.canWear and (preview and preview.error or "角色数据未就绪") or nil
@@ -129,14 +167,60 @@ function M.bind(deps)
             end
         end
 
-        table.sort(list, function(a, b)
+        -- 属性排序只水合显示副本；精简存档中的词条 key 同样可还原，库存原对象不变。
+        local sortKey = decomposeState.sortKey
+        local attributeSort = sortKey and AttributeDef.META[sortKey] ~= nil
+        local function copyData(value)
+            if type(value) ~= "table" then return value end
+            local result = {}
+            for key, child in pairs(value) do result[key] = copyData(child) end
+            return result
+        end
+        local function attributeValue(equip)
+            -- 水合会规范腐化恢复快照，所有嵌套数据也必须与库存隔离。
+            local copy = copyData(equip)
+            EquipmentSystem.hydrate(copy)
+            local total, present = 0, false
+            for index, stat in ipairs(copy.baseStats or {}) do
+                if stat[1] == sortKey then
+                    total, present = total + EquipmentSystem.effectiveBaseStatValue(copy, index), true
+                end
+            end
+            for _, affix in ipairs(copy.affixes or {}) do
+                if affix.key == sortKey then
+                    total, present = total + EquipmentSystem.effectiveAffixValue(copy, affix), true
+                end
+            end
+            return total, present
+        end
+        for _, entry in ipairs(list) do
+            if attributeSort then entry.sortValue, entry.hasSortAttribute = attributeValue(entry) end
+        end
+        local function defaultOrder(a, b)
             if a.quality ~= b.quality then return a.quality > b.quality end
             if a.power ~= b.power then return a.power > b.power end
             if a.level ~= b.level then return a.level > b.level end
             if a.enhanceLevel ~= b.enhanceLevel then return a.enhanceLevel > b.enhanceLevel end
             return a.seq < b.seq
+        end
+        local field = ({ power = "power", quality = "quality", level = "level", ascend = "enhanceLevel" })[sortKey]
+        table.sort(list, function(a, b)
+            if attributeSort then
+                if a.hasSortAttribute ~= b.hasSortAttribute then return a.hasSortAttribute end
+                if a.sortValue ~= b.sortValue then
+                    if decomposeState.sortAscending then return a.sortValue < b.sortValue end
+                    return a.sortValue > b.sortValue
+                end
+            elseif field and a[field] ~= b[field] then
+                if decomposeState.sortAscending then return a[field] < b[field] end
+                return a[field] > b[field]
+            elseif (not sortKey or sortKey == "default") and decomposeState.sortAscending then
+                return defaultOrder(b, a)
+            end
+            return defaultOrder(a, b)
         end)
 
+        cachedList, cachedSources, cachedKey = list, sources, key or ""
         return list
     end
 
@@ -229,27 +313,23 @@ function M.bind(deps)
                     nvgText(vg, lvlX, lvlY, lvlText, nil)
                 end
 
-                -- 单件贡献用战力图标加数值显示，等级与套装徽记仍保留原位。
-                do
+                -- 单件贡献位于等级上方，保留右下等级及左下套装徽记占位。
+                if SettingsPanel.isEquipmentPowerEnabled() then
                     local powerText = tostring(equip.power or 0)
-                    local powerFont = 26
-                    local powerIconSize, powerGap = 24, 4
-                    local rightX = cx + GRID.CELL_SIZE * 0.45
-                    local powerY = cy + GRID.CELL_SIZE * 0.15
+                    local powerFont, iconSize, gap = 26, 22, 4
                     nvgFontFace(vg, "sans")
                     nvgFontSize(vg, powerFont)
                     local textW = nvgTextBounds(vg, 0, 0, powerText) or 0
-                    local maxW = GRID.CELL_SIZE * 0.62
-                    if textW + powerIconSize + powerGap > maxW and textW > 0 then
-                        powerFont = powerFont * (maxW - powerIconSize - powerGap) / textW
-                    end
+                    local maxW = GRID.CELL_SIZE * 0.62 - iconSize - gap
+                    if textW > maxW then powerFont = powerFont * maxW / textW end
                     nvgFontSize(vg, powerFont)
-                    textW = nvgTextBounds(vg, 0, 0, powerText) or 0
-                    DrawUtil.drawTextStroke(vg, rightX, powerY,
-                        powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
+                    local fittedW = nvgTextBounds(vg, 0, 0, powerText) or 0
+                    local right, bottom = cx + GRID.CELL_SIZE * 0.45, cy + GRID.CELL_SIZE * 0.15
+                    DarkIcon.draw(vg, "power", right - fittedW - gap - iconSize * .5,
+                        bottom - iconSize * .5, iconSize, 1)
+                    DrawUtil.drawTextStroke(vg, right, bottom,
+                        powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM,
                         244, 237, 224, 3)
-                    DarkIcon.draw(vg, "power", rightX - textW - powerGap - powerIconSize * 0.5,
-                        powerY, powerIconSize, 1.0)
                 end
 
                 if equip.enhanceLevel and equip.enhanceLevel > 0 then

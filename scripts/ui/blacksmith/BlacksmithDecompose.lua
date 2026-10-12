@@ -220,7 +220,17 @@ function M.setContext(ctx)
     EQUIP_NAME_STROKE  = ctx.EQUIP_NAME_STROKE
     getClient          = ctx.getClient
     getProtocol        = ctx.getProtocol
-    AutoDecompose.bind({ getClient = ctx.getClient, getProtocol = ctx.getProtocol })
+    AutoDecompose.setContext(ctx)
+    AutoDecompose.bind({
+        getClient = ctx.getClient,
+        getProtocol = ctx.getProtocol,
+        -- 正式设置读取走服务端已存值；拿不到时模块自行回退 PlayerStore。
+        getSettings = function()
+            local ok, svc = pcall(require, "rules.equipment.EquipmentService")
+            if ok and svc and svc.GetAutoDecomposeSettings then return svc.GetAutoDecomposeSettings(1) end
+            return nil
+        end,
+    })
 end
 
 --- 初始化分解界面专属图片
@@ -228,6 +238,7 @@ local decomposeInited_ = false
 function M.init(vg)
     QualityMark.init(vg)
     EquipmentDetail.init(vg)
+    AutoDecompose.init(vg)
     vgHandle = vg  -- 奖励图标行按需创建图像句柄
     if decomposeInited_ then return end
     decomposeInited_ = true

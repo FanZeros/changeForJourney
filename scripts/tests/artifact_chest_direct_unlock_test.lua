@@ -541,8 +541,9 @@ function Start()
             for _, icon in ipairs(icons) do
                 local path = imagePaths[icon.icon] or ""
                 if path:find(chestType == "normal" and "UI_SQBX_PT" or "UI_SQBX_GJ", 1, true) then
-                    found = icon.w == 916 and icon.h == 756 and icon.cx == 540
-                        and icon.cy == (chestType == "normal" and 710 or 1530)
+                    -- 自动兑换行加高20px，场景仍填满卡片内侧且原抽取按钮坐标不变。
+                    found = icon.w == 916 and icon.h == 776 and icon.cx == 540
+                        and icon.cy == (chestType == "normal" and 720 or 1540)
                 end
             end
             check(found, chestType .. "场景填满卡片而非独立小图标")

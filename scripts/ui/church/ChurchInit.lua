@@ -111,6 +111,7 @@ function M.bind(deps)
             getClient        = getClient,
             getProtocol      = getProtocol,
             getDispatcher    = getDispatcher,
+            isAutoExchangeInputReady = deps.isAutoExchangeInputReady,
         }
         -- 天赋面板上下文由 TalentPage 独占注入，教堂不再 setContext
         ctx.getClassIcon2 = getClassIcon2

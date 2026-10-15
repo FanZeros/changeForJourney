@@ -15,6 +15,8 @@ local drawRoundedRectCentered = DrawUtil.drawRoundedRectCentered
 local BF = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local TavernInfo = require("ui.tavern.TavernInfo")
+local SettingsPanel = require("ui.hud.popup.SettingsPanel")
+local AutoExchangeOption = require("ui.widget.AutoDiamondExchangeOption")
 
 local M = {}
 
@@ -103,8 +105,8 @@ local HIST = {
 
 local CF = {
     MASK_A    = 128,
-    CX = 540,  CY = 1110,
-    W  = 950,  H  = 647,
+    CX = 540,  CY = 1160,
+    W  = 950,  H  = 747,
     TITLE_CX = 540, TITLE_CY = 856, TITLE_SIZE = 50, TITLE_STROKE_W = 6,
     SUB_CX = 540, SUB_CY = 967, SUB_SIZE = 40,
     SUB_R = 0xB6, SUB_G = 0xB0, SUB_B = 0x9D,
@@ -114,6 +116,7 @@ local CF = {
     TICKET_CX = 664, TICKET_CY = 1122, TICKET_W = 160, TICKET_H = 160,
     BADGE_SIZE = 40, BADGE_STROKE_W = 5, BADGE_OX = 60, BADGE_OY = 55,
     BUY_CX = 540, BUY_CY = 1301, BUY_W = 410, BUY_H = 100,
+    AUTO_CX = 540, AUTO_CY = 1410, AUTO_W = 820,
     BUY_TEXT_SIZE = 40, BUY_TEXT_R = 0x64, BUY_TEXT_G = 0x51, BUY_TEXT_B = 0x29,
     BTN_INSET_TOP = 10, BTN_INSET_BOTTOM = 10, BTN_INSET_LEFT = 40, BTN_INSET_RIGHT = 40,
 }
@@ -454,6 +457,7 @@ end
 
 --- 初始化弹窗资源
 function M.init(vg)
+    AutoExchangeOption.init()
     -- 整图拉伸绘制（950x647），使用 POP 副本，调整原图不影响九宫格用法
     img.confirmBg     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK_POP.png", 0)
     img.confirmBtnBuy = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
@@ -477,9 +481,27 @@ function M.openInfo()
     print("[TavernPopups] 打开招募说明弹窗")
 end
 
---- 检查招募券是否足够，不足时弹出确认框
+local function exchangeScope(isStellar)
+    return isStellar and "gacha_stellar" or "gacha_standard"
+end
+
+-- 页面和补购弹窗共享同一偏好；只绘制/切换选项，不招募。
+function M.drawAutoExchangeOption(vg, cx, cy, disabled)
+    local isStellar = isStellarPoolId(getActivePoolId())
+    local costCfg = isStellar and UrGachaConfig.Cost or GachaConfig.Cost
+    AutoExchangeOption.draw(vg, exchangeScope(isStellar), cx, cy, CF.AUTO_W,
+        costCfg.SINGLE_DIAMOND, disabled)
+end
+
+function M.handleAutoExchangeInput(dx, dy, cx, cy, disabled)
+    return AutoExchangeOption.handleInput(dx, dy, exchangeScope(isStellarPoolId(getActivePoolId())),
+        cx, cy, CF.AUTO_W, disabled)
+end
+
+--- 检查招募券；已授权自动兑换时只返回明确支付方式，消费仍由原招募入口执行。
 ---@param count number 1 或 10
 ---@return boolean canProceed 是否可以直接执行招募
+---@return string? payType 自动补缺口使用 diamond，不走旧全额报价 fallback。
 function M.checkAndShowConfirm(count)
     local poolId = getSelectedPoolId and getSelectedPoolId() or "standard"
     local isStellar = poolId == UrGachaConfig.POOL_ID or poolId == "stellar"
@@ -495,6 +517,16 @@ function M.checkAndShowConfirm(count)
 
     local diamondPerTicket = costCfg.SINGLE_DIAMOND
     local diamondCost = shortfall * diamondPerTicket
+
+    if SettingsPanel.isAutoDiamondExchangeEnabled(exchangeScope(isStellar)) then
+        if GameState.getGems() < diamondCost then
+            M.showFloatText("黑晶不足", DESIGN_W * 0.5, DESIGN_H * 0.42)
+            print("[TavernPopups] 自动兑换余额不足 pool=" .. poolId .. " need=" .. diamondCost)
+            return false
+        end
+        print("[TavernPopups] 自动兑换 pool=" .. poolId .. " tickets=" .. shortfall .. " gems=" .. diamondCost)
+        return true, "diamond"
+    end
 
     openPopup("confirm")
     popupState.confirmCount       = count
@@ -647,6 +679,9 @@ function M.drawAll(vg)
         nvgFillColor(vg, nvgRGBA(CF.BUY_TEXT_R, CF.BUY_TEXT_G, CF.BUY_TEXT_B, 255))
         nvgText(vg, CF.BUY_CX, CF.BUY_CY, "购买", nil)
         BF.finish(vg, _bfBuy)
+        AutoExchangeOption.draw(vg, exchangeScope(popupState.confirmIsStellar),
+            CF.AUTO_CX, CF.AUTO_CY, CF.AUTO_W,
+            (popupState.confirmIsStellar and UrGachaConfig.Cost or GachaConfig.Cost).SINGLE_DIAMOND)
 
         nvgRestore(vg)
     end
@@ -825,6 +860,11 @@ function M.handleInput(dx, dy)
 
     -- 确认框
     if popupState.confirmVisible then
+        local scale = getPopupAnim()
+        local optionX = DESIGN_W * 0.5 + (dx - DESIGN_W * 0.5) / scale
+        local optionY = DESIGN_H * 0.5 + (dy - DESIGN_H * 0.5) / scale
+        if AutoExchangeOption.handleInput(optionX, optionY, exchangeScope(popupState.confirmIsStellar),
+            CF.AUTO_CX, CF.AUTO_CY, CF.AUTO_W) then return true end
         -- 购买按钮
         if hitTest(dx, dy, CF.BUY_CX, CF.BUY_CY, CF.BUY_W, CF.BUY_H) then
             BF.trigger("tp_confirm")

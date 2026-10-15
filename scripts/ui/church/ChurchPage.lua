@@ -506,6 +506,11 @@ local function bindChurchInit()
         ClassChange = ClassChange,
         ArtifactPanel = ArtifactPanel,
         ArtifactDrawPanel = ArtifactDrawPanel,
+        isAutoExchangeInputReady = function()
+            return state.open and not state.closing
+                and time.elapsedTime - state.openTime >= ANIM.OPEN_DUR
+                and (state.tabFrom == state.tab or time.elapsedTime - state.tabSwitchTime >= TAB.ANIM_DUR)
+        end,
         getDispatcher = getDispatcher,
         getClient = getClient,
         getProtocol = getProtocol,

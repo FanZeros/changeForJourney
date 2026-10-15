@@ -839,10 +839,10 @@ function Panel.draw(vg)
         if source.sourceKind == "tower" then
             translatedName = I18n.format("通天塔 第%d层", (source.stageId or 400001) - 400000)
         end
+        -- 只说明各队离线刷的关卡来源，不展示装备件数等具体产出。
         local label = source.paused and I18n.format("小队%d · %s · 暂停离线收益",
             source.teamIdx or index, translatedName)
-            or I18n.format("小队%d · %s · 装备%d件", source.teamIdx or index,
-                translatedName, source.equipCount or 0)
+            or I18n.format("小队%d · %s", source.teamIdx or index, translatedName)
         I18n.displayText(vg, CENTER_X, 356 + (index - 1) * 28, label, nil)
     end
 

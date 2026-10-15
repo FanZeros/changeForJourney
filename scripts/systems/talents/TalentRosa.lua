@@ -21,10 +21,15 @@ local function tryRosaBounce(attacker, s, target, isAlly, targetList, dealDmgFn,
     if not attacker or not attacker.attrs or not s or not target or not result or not dealDmgFn or not targetList then return end
     local battleRefs = getBattleRefs and getBattleRefs()
     local battleToken = s.epicAttackBattleToken
+    local unitBattleToken = attacker._talentBattleToken
     local function currentBattle()
         return (not getState or getState(attacker) == s)
             and (not getBattleRefs or getBattleRefs() == battleRefs)
             and s.epicAttackBattleToken == battleToken
+            and attacker._talentBattleToken == unitBattleToken
+    end
+    local function currentChain()
+        return currentBattle() and (attacker.hp or 0) > 0
     end
     if not currentBattle() then return end
     -- 觉醒1: 攻速10%（永久，首次添加）
@@ -67,18 +72,18 @@ local function tryRosaBounce(attacker, s, target, isAlly, targetList, dealDmgFn,
     local increasingBounce = hasAwaken(attacker, 4)
     local allowRepeatBounce = hasAwaken(attacker, 7)
 
+    -- 每次主命中独立持有一条链；新普攻不取消已在飞行的旧链。
     local hitTargets = { [target] = true }
-    s.rosaBounceGen = (s.rosaBounceGen or 0) + 1
-    local bounceGen = s.rosaBounceGen
+    local failedTargets = {}
 
     local initialRefTargets = battleRefs and (isAlly and battleRefs.bEnemies or battleRefs.bAllies)
     local function pickBounceTarget(chainFrom)
         local candidates = {}
         local currentRefTargets = battleRefs and (isAlly and battleRefs.bEnemies or battleRefs.bAllies)
         -- 入口实参可能比兼容副本refs更新；只在本轮开始后refs真正换表时跟进。
-        local liveTargets = resonating and currentRefTargets ~= initialRefTargets and currentRefTargets or targetList
+        local liveTargets = currentRefTargets ~= initialRefTargets and currentRefTargets or targetList
         for _, u in ipairs(liveTargets or {}) do
-            if u.hp > 0 and u ~= chainFrom then
+            if u.hp > 0 and u ~= chainFrom and not failedTargets[u] then
                 if not allowRepeatBounce and hitTargets[u] then
                     -- skip
                 else
@@ -90,8 +95,8 @@ local function tryRosaBounce(attacker, s, target, isAlly, targetList, dealDmgFn,
         return candidates[math.random(#candidates)], liveTargets
     end
 
-    local function fireBounce(bi, chainFrom)
-        if not currentBattle() or bounceGen ~= s.rosaBounceGen or (attacker.hp or 0) <= 0 then return end
+    local function fireBounce(bi, chainFrom, fromX, fromY)
+        if not currentChain() then return end
         if bi > bounceCount then return end
 
         local dmgMult = 0.5 + resonanceBonus
@@ -104,27 +109,40 @@ local function tryRosaBounce(attacker, s, target, isAlly, targetList, dealDmgFn,
         local bounceTarget, liveTargets = pickBounceTarget(chainFrom)
         if not bounceTarget then return end
 
-        hitTargets[bounceTarget] = true
         local landed = false
         dealDmgFn(bounceTarget, bounceDmg, not isAlly, "弹射 ", { 180, 220, 255 }, {
             sourceAttacker = attacker,
             bounceFromUnit = chainFrom,
+            bounceFromX = fromX,
+            bounceFromY = fromY,
             target = bounceTarget,
             isRicochet = true,
+            chainProjectile = true,
+            isCurrentChain = currentChain,
             epicBounceTargetList = resonating and liveTargets or nil,
             isCrit = isCrit,
             statCategory = category,
             atkType = atkType,
             critEligible = false,
-            onProjectileLand = function()
-                if landed or not currentBattle() or bounceGen ~= s.rosaBounceGen then return end
+            onProjectileLand = function(hx, hy, landedTarget, didHit)
+                if landed then return end
                 landed = true
-                fireBounce(bi + 1, bounceTarget)
+                if not currentChain() then return end
+                if didHit == false then
+                    -- 飞行中死/移除不算命中，不推进段数/倍率，也不把死目标位置当新起点。
+                    failedTargets[bounceTarget] = true
+                    fireBounce(bi, chainFrom, fromX, fromY)
+                    return
+                end
+                -- 兼容无参落地测试桩；正式回调以实际命中对象和坐标为准。
+                local hitTarget = landedTarget or bounceTarget
+                hitTargets[hitTarget] = true
+                fireBounce(bi + 1, hitTarget, hx, hy)
             end,
         })
     end
 
-    fireBounce(1, target)
+    fireBounce(1, target, result.projectileHitX, result.projectileHitY)
 end
 
     return { tryRosaBounce = tryRosaBounce }

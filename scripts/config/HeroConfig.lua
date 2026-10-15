@@ -144,6 +144,7 @@ HC.HEROES = {
         talentId = "luna_lightning",
         gender = "female",
         atkType = AD.ATK_LIGHTNING, atkInterval = 3.2, atkTargets = 3,
+        attackChain = true, -- 闪电命中后，从上一敌人继续传导到下一目标。
         dmgSpread = 0.30, atkCoeff = 2.46,
         baseStats  = { str = 1.95,  agi = 5.85,  int = 9.75, vit = 3.90,  luk = 5.85,  spi = 3.90 },
         growthStats = { str = 0.00,  agi = 0.50,  int = 1.00,  vit = 0.00,  luk = 0.50,  spi = 0.00 },
@@ -554,6 +555,7 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent, options
     unit.talentName  = hero.talentName
     unit.talentDesc  = hero.talentDesc
     unit.atkTargets  = hero.atkTargets
+    unit.attackChain = hero.attackChain == true
     unit.dmgSpread   = hero.dmgSpread
     unit.atkCoeff    = hero.atkCoeff
     unit.dmgMainType = hero.dmgMainType

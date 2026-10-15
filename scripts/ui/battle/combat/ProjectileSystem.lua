@@ -46,6 +46,7 @@ local CONFIGS = {
     [3] = {
         type = "fly", imgKey = "EF_ATK_3",
         imgW = 200, imgH = 200, duration = 0.50,
+        chainProjectile = true,
         trail = { 255, 255, 255 },
         arc = "shallow",
     },
@@ -62,6 +63,7 @@ local CONFIGS = {
         type = "lightning", imgKey = "EF_ATK_6",
         imgW = 200, imgH = 200, duration = 0.35,
         hitRatio = 0.3,
+        chainProjectile = true,
     },
     -- 7: 能量子弹 — 无额外处理（此处 melee 英雄的 ID 序列在下方补完）
     [7] = {
@@ -103,6 +105,7 @@ local CONFIGS = {
     [13] = {
         type = "fly", imgKey = "EF_ATK_13",
         imgW = 200, imgH = 200, duration = 0.50,
+        chainProjectile = true,
         trail = { 180, 80, 255 },
         arc = "shallow",
     },
@@ -598,8 +601,11 @@ local function assignFlightLane(proj)
     local side = lane * math.min(34, dist * 0.045)
     local nx = -dy / dist * side
     local ny = dx / dist * side
-    proj.endX = proj.endX + nx * 0.15
-    proj.endY = proj.endY + ny * 0.15
+    -- 弹射连接必须首尾相接，分道只改变中途弧线，不能挪走敌人上的落点。
+    if not proj.chainProjectile then
+        proj.endX = proj.endX + nx * 0.15
+        proj.endY = proj.endY + ny * 0.15
+    end
     proj.laneX = nx
     proj.laneY = ny
     local base = proj.cfg.duration or 0.5
@@ -1102,6 +1108,7 @@ function ProjectileSystem.spawnByKey(effectKey, startX, startY, endX, endY, onAr
         onArrive = onArrive,
         arrived  = false,
         target   = opts and opts.target or nil,
+        chainProjectile = (opts and opts.chainProjectile) or cfg.chainProjectile or false,
     }
 
     -- 贝塞尔曲线：随机弯曲方向
@@ -1160,6 +1167,7 @@ function ProjectileSystem.spawn(heroId, startX, startY, endX, endY, onArrive, op
         onArrive = onArrive,
         arrived  = false,
         target   = opts and opts.target or nil,
+        chainProjectile = (opts and opts.chainProjectile) or cfg.chainProjectile or false,
     }
 
     -- 贝塞尔曲线：随机弯曲方向
@@ -1225,6 +1233,7 @@ function ProjectileSystem.spawnSkill(heroId, startX, startY, endX, endY, onArriv
         onArrive = onArrive,
         arrived  = false,
         target   = opts and opts.target or nil,
+        chainProjectile = (opts and opts.chainProjectile) or cfg.chainProjectile or false,
     }
 
     -- 贝塞尔曲线：设置弯曲方向
@@ -1277,6 +1286,8 @@ function ProjectileSystem.spawnTalent(talentProjKey, startX, startY, endX, endY,
         endY     = endY,
         onArrive = onArrive,
         arrived  = false,
+        target   = opts and opts.target or nil,
+        chainProjectile = (opts and opts.chainProjectile) or cfg.chainProjectile or false,
     }
 
     if cfg.type == "bezier" then
@@ -1300,9 +1311,14 @@ end
 --- 每帧更新
 function ProjectileSystem.update(dt)
     starGateDrawTime = starGateDrawTime + dt
+    local updateState = PS_BCS
+    local projectiles = updateState.projectiles
+    -- 本帧命中新生的下一跳留到下一帧，不能重复消费当前整帧 dt。
+    local remaining = #projectiles
     local i = 1
-    while i <= #PS_BCS.projectiles do
-        local proj = PS_BCS.projectiles[i]
+    while remaining > 0 and i <= #projectiles do
+        remaining = remaining - 1
+        local proj = projectiles[i]
         proj.timer = proj.timer + dt
 
         -- [单发穿透] 按飞行进度依次触发沿线命中事件
@@ -1317,13 +1333,14 @@ function ProjectileSystem.update(dt)
                 playAtkSfxOnHit(proj)
                 if ev.onHit then
                     safeInvokeProjectileCallback("pierce-hit", ev.onHit)
+                    if PS_BCS ~= updateState or updateState.projectiles ~= projectiles then return end
                 end
             end
         end
 
         -- 目标死亡检测：如果投射物跟踪的目标已死亡，立即触发到达并快速消失
         -- 防止治疗投射物飞向已死亡目标的视觉问题
-        if not proj.arrived and not proj.hitResolved and proj.target and proj.target.hp and proj.target.hp <= 0 then
+        if not proj.chainProjectile and not proj.arrived and not proj.hitResolved and proj.target and proj.target.hp and proj.target.hp <= 0 then
             proj.hitResolved = true
             proj.arrived = true
             playAtkSfxOnHit(proj)
@@ -1368,8 +1385,9 @@ function ProjectileSystem.update(dt)
             end
         end
         -- 加一点淡出余量（duration 后多保留 0.15s 用于淡出动画）
+        if PS_BCS ~= updateState or updateState.projectiles ~= projectiles then return end
         if proj.timer >= duration + 0.15 then
-            table.remove(PS_BCS.projectiles, i)
+            table.remove(projectiles, i)
         else
             i = i + 1
         end

@@ -146,18 +146,47 @@ function M.bind(deps)
                         otherAlive[#otherAlive + 1] = u
                     end
                 end
-                -- 散射到最多2个其他目标（加上原目标共3个）
+                -- 最多2个额外目标：上一跳真实落地后才从命中敌人继续发射。
+                -- 本链记住已尝试目标，失效目标不耗命中段数，也不会反复重试。
                 local scatterCount = math.min(2, #otherAlive)
-                for si = 1, scatterCount do
-                    local ri = math.random(#otherAlive)
-                    local st = otherAlive[ri]
-                    if st.hp > 0 then
-                        dealDmgFn(st, scatterDmg, not isAlly, "散射 ", { 200, 255, 200 })
+                local attempted = { [target] = true }
+                local initialTargets = TAL_BCS and (isAlly and TAL_BCS.bEnemies or TAL_BCS.bAllies)
+                local function fireScatter(si, chainFrom, fromX, fromY)
+                    if not stillCurrentAttack() or si > scatterCount then return end
+                    local candidates = {}
+                    local currentTargets = TAL_BCS and (isAlly and TAL_BCS.bEnemies or TAL_BCS.bAllies)
+                    local liveTargets = currentTargets ~= initialTargets and currentTargets or targetList
+                    for _, u in ipairs(liveTargets or {}) do
+                        if u.hp > 0 and not attempted[u] then candidates[#candidates + 1] = u end
                     end
-                    table.remove(otherAlive, ri)
+                    if #candidates == 0 then return end
+                    local st = candidates[math.random(#candidates)]
+                    attempted[st] = true
+                    local landed = false
+                    dealDmgFn(st, scatterDmg, not isAlly, "散射 ", { 200, 255, 200 }, {
+                        sourceAttacker = attacker,
+                        bounceFromUnit = chainFrom,
+                        bounceFromX = fromX,
+                        bounceFromY = fromY,
+                        target = st,
+                        chainProjectile = true,
+                        isCurrentChain = stillCurrentAttack,
+                        onProjectileLand = function(hx, hy, landedTarget, didHit)
+                            if landed then return end
+                            landed = true
+                            if not stillCurrentAttack() then return end
+                            if didHit == false then
+                                fireScatter(si, chainFrom, fromX, fromY)
+                                return
+                            end
+                            -- 无参旧测试桩默认命中st；明确false绝不视作命中。
+                            fireScatter(si + 1, landedTarget or st, hx, hy)
+                        end,
+                    })
                 end
+                fireScatter(1, target, result.projectileHitX, result.projectileHitY)
                 if scatterCount > 0 then
-                    talentLog("[Talent] 叮咚鸡 觉醒7：散射命中 " .. scatterCount .. " 个额外目标")
+                    talentLog("[Talent] 叮咚鸡 觉醒7：散射连锁最多命中 " .. scatterCount .. " 个额外目标")
                 end
             end
         end

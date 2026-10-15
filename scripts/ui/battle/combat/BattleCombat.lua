@@ -21,6 +21,7 @@ local GameSFX = require("systems.GameSFX")
 local BattleCombatFx = require("ui.battle.combat.BattleCombatFx")
 local BattleCombatAnim = require("ui.battle.combat.BattleCombatAnim")
 local BattleCombatCombo = require("ui.battle.combat.BattleCombatCombo")
+local BattleAttackChain = require("ui.battle.combat.BattleAttackChain")
 local ClassGateRuntime = require("systems.ClassGateRuntime")
 local EquipmentSetRuntime = require("systems.EquipmentSetRuntime")
 
@@ -42,6 +43,7 @@ local function newState(id)
         comboQueue      = {},
         unitDamageAccum = {},
         ctx             = {},
+        chainToken      = {}, -- 换波时使已发射弹射链失效。
     }
 end
 local defaultState = newState("default")
@@ -591,6 +593,9 @@ function BattleCombat.resolveTalentProjStart(attacker, projOpts, allyList, enemy
     allyList = allyList or BCS.ctx.getAllies()
     enemyList = enemyList or BCS.ctx.getEnemies()
 
+    if projOpts and type(projOpts.bounceFromX) == "number" and type(projOpts.bounceFromY) == "number" then
+        return projOpts.bounceFromX, projOpts.bounceFromY
+    end
     if projOpts and projOpts.bounceFromUnit then
         local from = projOpts.bounceFromUnit
         for li, u in ipairs(enemyList) do
@@ -691,6 +696,22 @@ function BattleCombat.onTalentDealDamage(attacker, target, tgtCX, tgtCY, prefix,
     local projectileStatMeta = statMetaFromProjOpts(projOpts, attacker)
     allyList = allyList or BCS.ctx.getAllies()
     enemyList = enemyList or BCS.ctx.getEnemies()
+    local hitState, hitToken = BCS, BCS.chainToken
+    local hitPS, hitProjectiles = PS.mountedState(), PS.mountedState().projectiles
+    local function validChain()
+        return not (projOpts and projOpts.chainProjectile) or
+            (BCS == hitState and hitState.chainToken == hitToken
+                and PS.mountedState() == hitPS and hitPS.projectiles == hitProjectiles
+                and (not projOpts.isCurrentChain or projOpts.isCurrentChain()))
+    end
+    local function liveChainTarget()
+        if not target or (target.hp or 0) <= 0 or not target.attrs or target.artifactUntargetable then return false end
+        local alliesNow = BCS.ctx.getAllies and BCS.ctx.getAllies() or allyList
+        local enemiesNow = BCS.ctx.getEnemies and BCS.ctx.getEnemies() or enemyList
+        for _, unit in ipairs(alliesNow) do if unit == target then return true end end
+        for _, unit in ipairs(enemiesNow) do if unit == target then return true end end
+        return false
+    end
 
     if not attacker or not attacker.heroId then
         if applyDamage then applyDamage() end
@@ -745,11 +766,14 @@ function BattleCombat.onTalentDealDamage(attacker, target, tgtCX, tgtCY, prefix,
     local function onProjectileHit()
         if projOpts and projOpts._hitResolved then return end
         if projOpts then projOpts._hitResolved = true end
-
-        if applyDamage then applyDamage() end
-        tryRecordOnHit()
+        if not validChain() then return end
+        -- 活目标全额吸盾也算命中；死亡/离场则不扣伤害，从上一命中点重选。
+        local didHit = not (projOpts and projOpts.chainProjectile) or liveChainTarget()
+        if didHit and applyDamage then applyDamage() end
+        if not validChain() then return end
+        if didHit then tryRecordOnHit() end
         if projOpts and projOpts.onProjectileLand then
-            projOpts.onProjectileLand()
+            projOpts.onProjectileLand(endX, endY, target, didHit)
         end
         return buildFlybackContinuation()
     end
@@ -1025,7 +1049,36 @@ local function performAttack(attacker, targetList, isAlly)
 
     -- [单发穿透] 多目标攻击收集为一次穿透弹的命中事件（替代逐目标各丢一弹）
     local piercePack = nil
-    if atkTargets > 1 and not isHealer and not skipProjectile and BCS.ctx.onPierceAttack then
+    local chainPack = attacker.attackChain and not isHealer and not skipProjectile
+        and { events = {}, hitTargets = {} } or nil
+    local chainState, chainToken = BCS, BCS.chainToken
+    local chainPS, chainProjectiles = PS.mountedState(), PS.mountedState().projectiles
+    local attackerToken = attacker._talentBattleToken
+    local function isCurrentChain()
+        return BCS == chainState and chainState.chainToken == chainToken
+            and PS.mountedState() == chainPS and chainPS.projectiles == chainProjectiles
+            and attacker._talentBattleToken == attackerToken and (attacker.hp or 0) > 0
+    end
+    local function resolveChainTarget(target)
+        local liveTargets = isAlly and BCS.ctx.getEnemies() or BCS.ctx.getAllies()
+        local unit, index = resolveUnitInList(liveTargets, target, {
+            heroId = target.heroId, instanceId = target.instanceId,
+        })
+        local function valid(u)
+            return u and (u.hp or 0) > 0 and u.attrs
+                and not u.artifactUntargetable and not chainPack.hitTargets[u]
+        end
+        if not valid(unit) then
+            unit, index = nil, nil
+            for li, candidate in ipairs(liveTargets) do
+                if valid(candidate) then unit, index = candidate, li; break end
+            end
+        end
+        if not unit then return nil end
+        local x, y = getCardPos(liveTargets, index)
+        return unit, x, y, index, liveTargets
+    end
+    if atkTargets > 1 and not chainPack and not isHealer and not skipProjectile and BCS.ctx.onPierceAttack then
         piercePack = { events = {} }
     end
 
@@ -1247,14 +1300,27 @@ local function performAttack(attacker, targetList, isAlly)
                     }
 
                     -- 将伤害应用包装成闭包，支持投射物延迟伤害
-                    local function applyHit()
+                    local function applyHit(chainTarget)
+                        if chainPack and not isCurrentChain() then return end
                         local liveTargetList
                         if isAlly then
                             liveTargetList = BCS.ctx.getEnemies and BCS.ctx.getEnemies() or targetList
                         else
                             liveTargetList = BCS.ctx.getAllies and BCS.ctx.getAllies() or targetList
                         end
-                        local resolved, resolvedIdx = resolveDamageTarget(liveTargetList, curTgt, tgtStableId, attacker, isAlly)
+                        local resolved, resolvedIdx
+                        if chainPack then
+                            -- 链弹只能结算实际飞向的对象；失效时交回发射器重选再飞。
+                            for li, unit in ipairs(liveTargetList) do
+                                if unit == chainTarget and (unit.hp or 0) > 0 and unit.attrs
+                                    and not unit.artifactUntargetable and not chainPack.hitTargets[unit] then
+                                    resolved, resolvedIdx = unit, li
+                                    break
+                                end
+                            end
+                        else
+                            resolved, resolvedIdx = resolveDamageTarget(liveTargetList, curTgt, tgtStableId, attacker, isAlly)
+                        end
                         if not resolved then
                             return
                         end
@@ -1264,6 +1330,9 @@ local function performAttack(attacker, targetList, isAlly)
                             Diag.onAttrsNil(curTgt, "applyHit")
                             return
                         end
+                        result.projectileHitTarget = curTgt
+                        result.projectileHitX, result.projectileHitY = curTgtCX, curTgtCY
+                        if chainPack then chainPack.hitTargets[curTgt] = true end
                         local semMult = SEM.getDamageTakenMult(curTgt)
                         local hpBefore = curTgt.hp
                         local hit = result.hits[1]
@@ -1491,7 +1560,27 @@ local function performAttack(attacker, targetList, isAlly)
                                 dealDamageToUnit(tgt, dmg, isTgtAlly, pfx or "", clr or {255, 238, 96}, sourceAttacker, meta)
                             end
 
-                            if BCS.ctx.onTalentDealDamage then
+                            if projOpts and projOpts.chainProjectile then
+                                if projOpts.isCurrentChain and not projOpts.isCurrentChain() then return end
+                                local lookupList = isTgtAlly and BCS.ctx.getAllies() or BCS.ctx.getEnemies()
+                                local li = findUnitIndex(lookupList, tgt)
+                                if li then
+                                    local tdCX, tdCY = getCardPos(lookupList, li)
+                                    local sourceAttacker = projOpts.sourceAttacker or attacker
+                                    if BCS.ctx.onTalentDealDamage then
+                                        BCS.ctx.onTalentDealDamage(sourceAttacker, tgt, tdCX, tdCY,
+                                            pfx, doTalentDamage, projOpts)
+                                    else
+                                        local didHit = (tgt.hp or 0) > 0 and tgt.attrs and not tgt.artifactUntargetable
+                                        if didHit then doTalentDamage() end
+                                        if projOpts.onProjectileLand then
+                                            projOpts.onProjectileLand(tdCX, tdCY, tgt, not not didHit)
+                                        end
+                                    end
+                                elseif projOpts.onProjectileLand then
+                                    projOpts.onProjectileLand(nil, nil, tgt, false)
+                                end
+                            elseif BCS.ctx.onTalentDealDamage then
                                 -- 查找目标位置
                                 local lookupList = (isAlly == isTgtAlly) and allyList or targetList
                                 if projOpts and projOpts.isRicochet and type(projOpts.epicBounceTargetList) == "table" then
@@ -1525,6 +1614,10 @@ local function performAttack(attacker, targetList, isAlly)
                     -- 通知 BattleScene：由场景决定立即/延迟伤害
                     if skipProjectile then
                         applyHit()  -- 攻击者不可寻址，跳过投射物动画直接生效
+                    elseif chainPack then
+                        chainPack.events[#chainPack.events + 1] = {
+                            target = curTgt, result = result, applyHit = applyHit,
+                        }
                     elseif piercePack then
                         -- [单发穿透] 只收集结算事件, 由一发穿透弹沿线依次触发
                         piercePack.events[#piercePack.events + 1] = {
@@ -1585,6 +1678,22 @@ local function performAttack(attacker, targetList, isAlly)
         end -- curTarget alive check
     end -- target loop
 
+    if chainPack and #chainPack.events > 0 then
+        if Diag.logEnabled then
+            print("[BattleCombat] 闪电弹射启动 段数=" .. tostring(#chainPack.events))
+        end
+        BattleAttackChain.start(chainPack, attacker, atkCX, atkCY, {
+            isCurrent = isCurrentChain,
+            resolve = resolveChainTarget,
+            emit = function(source, target, sx, sy, tx, ty, result, onHit)
+                if BCS.ctx.onAttackHit then
+                    BCS.ctx.onAttackHit(source, target, sx, sy, tx, ty, result, onHit)
+                else
+                    onHit()
+                end
+            end,
+        })
+    end
     -- [单发穿透] 目标收集完毕 → 发射一发穿透弹（无收集/无宿主支持时各目标已走原路径）
     if piercePack and #piercePack.events > 0 then
         BCS.ctx.onPierceAttack(attacker, atkCX, atkCY, piercePack)
@@ -1705,6 +1814,7 @@ function BattleCombat.reset()
     BCS.hitFlashes    = {}
     BCS.hpBuffers     = {}
     BCS.comboQueue    = {}
+    BCS.chainToken    = {}
     BCS.unitDamageAccum = {}
     BattleStats.reset()   -- 战斗统计随每波战斗清零（仅统计本次战斗）
 end

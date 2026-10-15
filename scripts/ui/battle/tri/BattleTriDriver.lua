@@ -161,6 +161,10 @@ function BattleTriDriver.new(teamIdx, options)
             globalDmgMult = require("systems.BattleTimeout").calcMult(drv._timeoutElapsed or 0),
             -- [三战场独立发音] 攻击命中回调：投射物表现 + 音效（与行1 BattleScene 同逻辑；
             -- spawn 落到本行 mount 的 psState，各行互不干扰）
+            onTalentDealDamage = function(attacker, target, tgtCX, tgtCY, prefix, applyDamage, projOpts)
+                BattleCombat.onTalentDealDamage(attacker, target, tgtCX, tgtCY,
+                    prefix, applyDamage, projOpts, drv.allies, drv.enemies)
+            end,
             onAttackHit = function(attacker, target, atkCX, atkCY, tgtCX, tgtCY, result, applyHit)
                 local hasHeroEffect = attacker.heroId
                                       and ProjectileSystem.hasHeroEffect(attacker.heroId)

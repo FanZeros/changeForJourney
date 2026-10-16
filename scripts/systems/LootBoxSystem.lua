@@ -5,6 +5,7 @@
 local EquipmentSystem = require("systems.EquipmentSystem")
 local BlacksmithConfig = require("config.BlacksmithConfig")
 local EquipmentQuery = require("systems.EquipmentQuery")
+local EquipmentPower = require("systems.EquipmentPower")
 
 local LootBoxSystem = {}
 -- 只用于旧版种子迁移，不影响已经确定的装备。
@@ -130,24 +131,45 @@ function LootBoxSystem.claimGroup(lootboxData, index, equipData)
     return { entry.equip }, false
 end
 
---- 可选品质+套装+部位/类型 AND 过滤，只处理页面显示范围。
---- detailFilter 追加在旧参数后，不改变倒序领取与背包容量截断规则。
+--- 可选品质+套装+部位/类型 AND 过滤；领取优先级固定为通用评分降序。
+--- 只水合副本，不因领取顺序改写原遗匣数组或装备；同分保持原条目顺序。
 function LootBoxSystem.claimAll(lootboxData, equipData, quality, setFilter, detailFilter)
-    local claimed = {}
-    for index = #lootboxData.seeds, 1, -1 do
-        local entry = lootboxData.seeds[index]
+    local claimed, candidates = {}, {}
+    local free = math.max(0, EquipmentSystem.MAX_INVENTORY - EquipmentSystem.getInventoryCount(equipData))
+    for index, entry in ipairs(lootboxData.seeds or {}) do
         if EquipmentQuery.matches(entry.equip, quality, setFilter, detailFilter) then
-            local group, bagFull = LootBoxSystem.claimGroup(lootboxData, index, equipData)
-            for _, equip in ipairs(group) do claimed[#claimed + 1] = equip end
-            if bagFull then return claimed, true end
+            if free == 0 then return claimed, true end
+            local score = EquipmentPower.genericScore(EquipmentQuery.hydrateCopy(entry.equip))
+            if score ~= score or score == math.huge or score == -math.huge then score = 0 end
+            candidates[#candidates + 1] = { index = index, equip = entry.equip, score = score }
         end
     end
-    return claimed, false
+    table.sort(candidates, function(a, b)
+        if a.score ~= b.score then return a.score > b.score end
+        return a.index < b.index
+    end)
+    local removed = {}
+    for rank = 1, math.min(free, #candidates) do
+        local candidate = candidates[rank]
+        EquipmentSystem.addToInventory(equipData, candidate.equip)
+        claimed[#claimed + 1] = candidate.equip
+        removed[#removed + 1] = candidate.index
+    end
+    -- 原索引只在全部取入后倒序删除，防止高分排序与数组移动造成错领/漏领。
+    table.sort(removed, function(a, b) return a > b end)
+    for _, index in ipairs(removed) do table.remove(lootboxData.seeds, index) end
+    return claimed, #candidates > free
+end
+
+--- 整理转存不进入遗匣回收；锁定保护同时覆盖单件右键与一键回收。
+function LootBoxSystem.canDecompose(entry)
+    return entry ~= nil and entry.equip ~= nil
+        and not entry.equip.locked and entry.source ~= "curation"
 end
 
 local function decomposeValue(entry)
+    if not LootBoxSystem.canDecompose(entry) then return 0, 0 end
     local equip = entry.equip
-    if not equip then return 0, 0 end
     local cost = BlacksmithConfig.QUALITY_COST[equip.quality]
     if not cost then return 0, 0 end
     return math.floor(cost.decBase * (1 + (equip.level or 1) * cost.decScale)), 1

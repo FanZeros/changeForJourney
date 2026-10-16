@@ -18,6 +18,9 @@ local I18n = require("core.I18n")
 local BackpackFilters = require("ui.backpack.BackpackFilters")
 local EquipmentQuery = require("systems.EquipmentQuery")
 local EquipmentSystem = require("systems.EquipmentSystem")
+local LootBoxSystem = require("systems.LootBoxSystem")
+local Curation = require("ui.loot.InventoryCurationDialog")
+local CurationText = require("core.I18nInventoryCuration")
 
 local LootBoxPage = {}
 local W, H = 1080, 2400
@@ -32,6 +35,7 @@ local BACK = { cx = 958, cy = 2308, w = 144, h = 120 }
 local ACTION_CX, ACTION_W, ACTION_H = 873, 202, 112
 local BTN_W, BTN_H, BTN_Y = 420, 108, 2210
 local BTN_CLAIM_CX, BTN_DECOMPOSE_CX = 320, 760
+local CURATION = {cx = 840, cy = 608, w = 340, h = 68}
 local CONFIRM = { cx = 540, cy = 1200, w = 860, h = 460, btnY = 1340 }
 local OPEN_DUR, CLOSE_DUR = TownPageChrome.OPEN_DUR, TownPageChrome.CLOSE_DUR
 local text = DrawUtil.drawTextStroke
@@ -50,7 +54,7 @@ local state = {
     qualitySet = {}, -- [quality]=true 勾选的稀有度档；空集合=全部（不筛选）
     ---@type table<string, boolean>
     setFilter = {}, -- [setId]=true / ["none"]=true 勾选的套装；空集合=全部（不筛选）
-    count = 0, pendingCount = 0, scrollY = 0, maxScrollY = 0,
+    count = 0, pendingCount = 0, recyclableCount = 0, protectedCount = 0, scrollY = 0, maxScrollY = 0,
     dragging = false, dragStartY = 0, dragStartScroll = 0, dragMoved = false,
     decompose = false, confirm = false,
     lastClickX = 540, lastClickY = BTN_Y,
@@ -106,6 +110,7 @@ local function clearDetail()
 end
 
 local function finishClose()
+    Curation.cancelSource("lootbox")
     clearDetail()
     SetFilterDialog.close()
     filterBar.close()
@@ -216,7 +221,7 @@ end
 
 local function rebuildSummary()
     state.summary = {}
-    state.count, state.pendingCount = 0, 0
+    state.count, state.pendingCount, state.recyclableCount, state.protectedCount = 0, 0, 0, 0
     local sortKey = state.sortKey
     local field = ({ power = "power", quality = "quality", level = "level", ascend = "enhanceLevel" })[sortKey]
     local attributeSort = sortKey ~= nil and sortKey ~= "default" and field == nil
@@ -240,6 +245,9 @@ local function rebuildSummary()
                     display.sortValue, display.hasSortAttribute = EquipmentQuery.attributeValue(display.equip, sortKey)
                 end
                 state.count = state.count + 1
+                display.recycleProtected = not LootBoxSystem.canDecompose(entry)
+                if display.recycleProtected then state.protectedCount = state.protectedCount + 1
+                else state.recyclableCount = state.recyclableCount + 1 end
             else
                 display.power = 0
                 state.pendingCount = state.pendingCount + (entry.count or 1)
@@ -315,6 +323,7 @@ end
 
 ---@param summary table[]|nil
 function LootBoxPage.open(summary)
+    Curation.cancelSource("lootbox")
     state.qualitySet, state.setFilter, state.scrollY = {}, {}, 0
     state.slotFilter, state.typeFilter, state.sortKey, state.sortAscending = nil, nil, nil, false
     state.dragging, state.dragMoved, state.confirm = false, false, false
@@ -333,6 +342,7 @@ end
 
 function LootBoxPage.show(summary) LootBoxPage.open(summary or {}) end
 function LootBoxPage.close()
+    Curation.cancelSource("lootbox")
     if not state.open or state.closing then return end
     state.closing, state.closeTime = true, time.elapsedTime
     state.dragging, state.confirm = false, false
@@ -350,6 +360,7 @@ function LootBoxPage.forceClose()
 end
 -- hide 保留旧的立即隐藏语义，用于主流程切页/重置。
 function LootBoxPage.hide() LootBoxPage.forceClose() end
+function LootBoxPage.isCurationSourceReady() return ready() end
 function LootBoxPage.isOpen() return state.open end
 function LootBoxPage.isVisible() return state.open end
 function LootBoxPage.isDetailOpen() return state.detailIndex ~= nil end
@@ -525,6 +536,15 @@ local function drawEntry(vg, entry, index, cy)
         text(vg, 294, cy + 59, "暂不可领取或回收", 28,
             NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 181, 166, 143, 2)
     end
+    if equip and entry.recycleProtected then
+        local protectedText = CurationText.text(entry.source == "curation" and "整理转存 · 受保护"
+            or "受保护装备不参与回收")
+        nvgFontSize(vg, 18)
+        local protectedWidth = nvgTextBounds(vg, 0, 0, protectedText)
+        local protectedSize = math.min(18, 18 * 448 / math.max(1, protectedWidth))
+        text(vg, 294, cy + 85, protectedText, protectedSize,
+            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
+    end
     nvgRestore(vg)
     drawButton(vg, "lbp_claim_" .. index,
         ACTION_CX, cy, ACTION_W, ACTION_H, equip and "领取" or "待整理",
@@ -542,7 +562,13 @@ local function drawConfirmation(vg)
     local font = math.min(36, 36 * (CONFIRM.w - 80) / math.max(1, rangeWidth))
     text(vg, 540, 1150, range, font,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
-    text(vg, 540, 1210, string.format(I18n.lookup("共 %d 件，回收后无法撤回"), state.count), 34,
+    local eligibleText = CurationText.text("可回收 %d 件（已排除受保护装备）", state.recyclableCount)
+    nvgFontSize(vg, 28)
+    local eligibleWidth = nvgTextBounds(vg, 0, 0, eligibleText)
+    local eligibleSize = math.min(28, 28 * (CONFIRM.w - 80) / math.max(1, eligibleWidth))
+    text(vg, 540, 1210, eligibleText, eligibleSize,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 226, 149, 135, 2)
+    text(vg, 540, 1260, CurationText.text("回收后无法撤销"), 24,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 226, 149, 135, 2)
     drawButton(vg, "lbp_cancel", 330, CONFIRM.btnY, 330, 96, "取消", "gold", true)
     drawButton(vg, "lbp_confirm", 750, CONFIRM.btnY, 330, 96, "确认回收", "red", true)
@@ -567,9 +593,18 @@ function LootBoxPage.draw(vg)
         NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 216, 201, 163, 3)
     drawFilters(vg)
     filterBar.draw(vg)
+    Curation.drawEntry(vg, CURATION.cx, CURATION.cy, CURATION.w, CURATION.h)
+    local claimHint = CurationText.text("一键领取按通用评分优先，与列表排序无关")
+    nvgFontFace(vg, "sans"); nvgFontSize(vg, 22)
+    local hintWidth = nvgTextBounds(vg, 0, 0, claimHint)
+    local hintSize = math.min(22, 22 * 590 / math.max(1, hintWidth))
+    text(vg, 48, CURATION.cy, claimHint, hintSize, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 216,201,163,2)
     local statusText = string.format(I18n.lookup("%s · 待领取 %d 件"), filterName(), state.count)
     if state.pendingCount > 0 then
         statusText = statusText .. string.format(I18n.lookup(" · 待整理 %d 件"), state.pendingCount)
+    end
+    if state.protectedCount > 0 then
+        statusText = statusText .. CurationText.text(" · 保护 %d 件", state.protectedCount)
     end
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 28)
@@ -607,7 +642,7 @@ function LootBoxPage.draw(vg)
     drawButton(vg, "lbp_claim_all", BTN_CLAIM_CX, BTN_Y, BTN_W, BTN_H,
         filtered and "领取勾选" or "一键领取", "gold", hasItems)
     drawButton(vg, "lbp_decompose_all", BTN_DECOMPOSE_CX, BTN_Y, BTN_W, BTN_H,
-        filtered and "回收勾选" or "一键回收", "red", hasItems)
+        filtered and "回收勾选" or "一键回收", "red", state.recyclableCount > 0)
     TownPageChrome.drawBack(vg, BACK)
     if not state.confirm and state.detailIndex then
         local entry = state.summary[state.detailIndex]
@@ -683,6 +718,10 @@ function LootBoxPage.handleRightClick(dx, dy)
     local entry = entryAt(dx, dy)
     if not entry or not entry.equip then return true end
     clearDetail()
+    if entry.recycleProtected then
+        LootBoxPage.showToast(CurationText.text("受保护装备不参与回收"))
+        return true
+    end
     print("[LootBoxPage] right-click recycle index=" .. tostring(entry.sourceIndex))
     action("decompose", onDecomposeOne, entry.sourceIndex)
     return true
@@ -742,6 +781,13 @@ function LootBoxPage.handleInput(dx, dy)
             return true
         end
     end
+    if DrawUtil.hitTest(dx, dy, CURATION.cx, CURATION.cy, CURATION.w, CURATION.h) then
+        clearDetail()
+        state.dragging, state.confirm = false, false
+        filterBar.close()
+        Curation.open("lootbox")
+        return true
+    end
     if DrawUtil.hitTest(dx, dy, BTN_CLAIM_CX, BTN_Y, BTN_W, BTN_H) then
         clearDetail()
         if state.count > 0 then
@@ -752,7 +798,7 @@ function LootBoxPage.handleInput(dx, dy)
     end
     if DrawUtil.hitTest(dx, dy, BTN_DECOMPOSE_CX, BTN_Y, BTN_W, BTN_H) then
         clearDetail()
-        if state.count > 0 then BF.trigger("lbp_decompose_all") state.confirm = true end
+        if state.recyclableCount > 0 then BF.trigger("lbp_decompose_all") state.confirm = true end
         return true
     end
     local entry = entryAt(dx, dy)

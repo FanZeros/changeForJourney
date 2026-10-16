@@ -772,8 +772,8 @@ end
 
 -- ======================== 背包操作 ========================
 
---- 背包容量上限（200 件 × ~180B/件 dehydrated ≈ 36KB，安全低于 50KB 分片阈值）
-EquipmentSystem.MAX_INVENTORY = 200
+--- 背包容量上限；较大的模块仍由既有分发层按需分片。
+EquipmentSystem.MAX_INVENTORY = 500
 
 --- 获取背包当前装备数量
 ---@param equipData table 玩家装备模块数据

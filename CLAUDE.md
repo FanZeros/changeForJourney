@@ -12,6 +12,28 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-16，Shift＋右键锁定与仓库整合，待提交PR）
+
+- 用户确认Shift＋右键方案并授权完成后一并提交、正常push独立任务分支和创建workspace1005 PR；本次鉴权只在进程内即时使用，凭据不写源码/Git配置/remote/日志/记忆。保留原dirty后无冲突快进至最新目标ebbf8c0d（含PR151/152），当前feat1016/equipment-inventory-curation；不pop旧性能stash、不读玩家档、不推workspace系列/强推/自动合并发布。
+- 仓库装备页Shift＋右键只提交真实库存实例锁定/解锁，普通右键快捷穿戴/角色操作/遗匣回收原样保留。不支持来源、遮挡、空白、动画及筛选拒绝不回落普通动作。单在途、单调lockRequestId＋seq匹配、3秒超时；正常拒绝及Bridge异常保留身份，匹配权威回执才提示。删除大小详情锁按钮同步桥后的二次本地反转；详情原锁按钮/热区保留，不扩做遗匣锁定。
+- 官方b24后七套实际ALL PASS/exit0/无timeout：真实锁定10组227、Horizon左右Shift/DPR/遮挡/普通右键924、真仓库锻炉smoke、装备生命周期、教程恢复69、优选UI322、切关。新增锁定专项封闭File/FS，原生委托0；真实Handler/Service/Bridge/CMH及大小详情draw/input覆盖，不冒称设备触控/GPU/性能验收。优选本轮核心2826、领取120、冷恢复34及overflow19/19亦通过；首轮旧rewardGesture替身和新test通用点击音误计已仅修夹具，原业务断言不降。
+- 官方b24成功，666根Lua与实际载荷666/666字节/声明size一致、源冻结无变化、内部validation0入包；两.project与本轮备份逐字节恢复。候选45路径、20旧规范问题同ebbf新增0，36规范单测通过。部分HorizonInput/EquipmentDetail旧类型源诊断仍在、官方LSP daemon unavailable/code1跳过gate，headless音频/shader错误保留，不称全仓静态/回归全绿；旧link30筛选失败及教程旧依赖不混修。持续推进已授权范围，尊重停止/拒绝/安全边界，按最新直接继续不机械提问。尚未提交/push/创建PR，实际成功后另补结果；内证只.git/validation/equipment-lock1016。
+
+## 上次做了什么（2026-10-16，角色详情与锻炉左仓库联动修复，本地完成）
+
+- 用户反馈角色详情打开后再进锻炉左侧消失，并询问右键锁定。沿当前 `feat1016/equipment-inventory-curation@1827629a` 保留前轮500容量/优选dirty；无commit/push/PR/合并发布授权，不pop性能stash、不读玩家档。普通右键已有仓库快捷穿戴/遗匣回收，本轮不改绑；Shift＋右键仅建议，未冒称用户确认或已实装。
+- 确认可达链：配装owner仍在，手动关仓或其他左页让位留下suppressed；新开锻炉旧普通acquire被拦，锻炉暗底下无仓库。新增显式enterBlacksmithWarehouse/acquireForBlacksmith，正常打开及教程opening采用；仅新owner恢复，普通重复申请/更新继续尊重手动关闭。右详情不强关，双owner释放与手动仓库恢复契约不改。
+- 真Detail/Backpack/Forge集成旧生产＋新增test实际FAIL“锻炉重新开仓仍被旧关闭动画清掉”，新生产正常/教程×动画中/结束后及属性详情路径ALL PASS/exit0；生命周期、教程恢复69、优选UI322、切关亦通过，File/FS原生委托0。link新增77/0，旧模块对照新增56失败含8条真实状态失败；完整link仍30旧筛选失败，新旧失败多重集合完全相同、新增0，不称全集通过。旧层级artworkPointer布尔替身异常和tutorial_flow_targets resetRadarTransition缺替身均修前修后同现；后者仅同步新锻炉stub接口，未混修旧依赖。headless音频/shader错误保留，不称GPU/设备交互/性能验收。
+- 官方b23成功，663根Lua与实际部署载荷663/663逐字节及声明size一致，内部validation0入包；六本轮Lua逐文件无Error，有Warning，全仓官方gate仍daemon unavailable/code1跳过，不称全仓静态清零。两.project本人构建生成字段与本轮原备份逐字节恢复、index空，内证只.git/validation/forge-warehouse-entry1016。持续推进已授权范围，尊重停止/拒绝/安全边界；按最新直接继续不机械提问，不推workspace系列/强推/自动合并发布，凭据不持久化。
+
+## 上次做了什么（2026-10-16，500件仓库与手动一键优选，本地完成）
+
+- 用户通过选项确认“500件＋一键优选”。基于已fetch的 `workspace1005@1827629a9324dc8ae619336dfc9dce97674b7f46` 新建 `feat1016/equipment-inventory-curation`，仅本地开发/测试/构建；没有本轮commit/push/PR/合并/发布授权，不继承旧分支凭据或授权。
+- 原 `perf1007/data-refresh-stutter@b99cc833` 的未提交优化与交接完整保存于命名stash `3687ce3340786b8c5723dc7f91f0a0bee11c427a`，14份内部备份SHA全部一致；冲突的旧未跟踪StageExpHelper.meta另存stash `dc1a4624a16cbc6ea9376e001b5ff1817c13eb08`。两stash均不pop、不混入新功能，不读取玩家档、不删除无关技能/meta。
+- 容量500；手动预览/确认联合仓库遗匣，同slot/type/grip严格高分置换、同分保留、空位低占用组优先。全英雄已穿戴、锁定、套装、养成投入、腐化及待洗练库存件原位保护；通用评分不是角色最佳配装。完整原件转存source=curation，遗匣单件/批量回收拒绝该来源及锁定件；入仓分配新安全seq，不复用原号重挂pending。不是每掉落后台自动交换，不自动分解/重骰/发资源。
+- 权威token/全字段原表边/revision/待洗练状态确认，原子Flush失败原位恢复别名；成功后equipment与lootbox各一次通知。官方b22后最终十一Runtime均实际ALL PASS/exit0/无timeout：核心31场景2826/0、领取回收120/0、虚拟保存1551＋独立冷恢复34/0、原overflow19/19、真实UI/Yoga/字体/完整Input及Bridge→Service→Flush→CMH 322/0、原遗匣页1125/0、筛选649/0、滚动10/0、装备生命周期及切关。五核心与九UI冻结SHA无差异；真实设备触控/GPU截图/用户审美未验收。首轮字体/Surface时序与新增四处nvgTextBounds尾参多返回值错误均已修，原失败记录保留，不归咎旧替身。旧horizon artworkPointer替身异常与快捷candidate只读1失败固定1827629a完整隔离同现，未混修，不称全仓全绿。
+- 完整Preview＋Apply含虚拟Save软件CPU：500库存/500遗匣116.237ms，500/10000为1232.718ms；仍同步，不称设备I/O、FPS或全面不卡。只读复核未确认新增阻塞，旧同进程清档未清Blacksmith pending生命周期边界未扩修。36规范单测通过，候选20旧问题同基线、新增0；本轮21Lua逐文件Error0不称全仓静态清零。官方b22成功、663根Lua与实际UUID-hash载荷663/663逐字节及声明size一致、validation0入包；官方LSP daemon unavailable/code1跳过全仓gate，headless音频/shader错误保留。`.project`本人生成身份/default已与两原备份逐字节恢复，源码及部署一致。内证只 `.git/validation/inventory-curation1016`，没有commit/push/PR/合并发布；不推workspace系列/强推。持续推进已授权范围，尊重停止/权限与安全边界；当前明确直接继续不再提问，不机械AskUserQuestion，凭据不进源码/配置/日志/记忆。
+
 ## 上次做了什么（2026-10-11，十史诗觉醒Ⅱ联动，本地完成；传说PR #148 已创建）
 
 - 用户要求“提pr。然后是给史诗做觉醒2（不做3）”。三传说功能提交 `c64364a46247c086da31e3b6ac6f62cc50311a59` 在 `feat1011/legendary-awakening-synergy`：**已正常push（沙箱 SSH deploy key）并创建 PR #148** https://github.com/FanZeros/changeForJourney/pull/148，head=feat1011/legendary-awakening-synergy(c64364a4)／base=workspace1005(45067c3a)，open/draft=false/merged=false，16文件+1038/−40，未自动合并发布。创建前已查同源PR为0、目标workspace1005仍45067c3a未被本会话推送。PR创建令牌由用户即时提供，仅进程内API鉴权，未写入remote/Git配置/源码/日志/记忆，已核零残留。史诗分支 `feat1011/epic-awakening-two` 基于c643，只有本地开发/测试/构建授权，未提交/push/PR，index空，不混入传说PR。

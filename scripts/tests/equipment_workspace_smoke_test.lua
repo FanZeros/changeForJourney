@@ -261,6 +261,59 @@ function Start()
         local Chrome = require("ui.town.TownPageChrome")
         local DrawUtil = require("core.DrawUtil")
         Forge.init(vg)
+        -- 配装详情保留时，手动关仓不应阻断下一次明确进入锻炉。
+        -- 分别覆盖关闭动画中、关闭已完成；普通 acquire 的抑制契约另由 link 专项保留。
+        for _, entryCase in ipairs({
+            { closeFinished = false, tutorial = false }, { closeFinished = true, tutorial = false },
+            { closeFinished = false, tutorial = true }, { closeFinished = true, tutorial = true },
+        }) do
+            Forge.forceClose()
+            Detail.forceClose()
+            Backpack.close()
+            time.elapsedTime = time.elapsedTime + 1
+            Backpack.update(1)
+            Detail.open(1, "equip")
+            time.elapsedTime = time.elapsedTime + 1
+            Backpack.update(1)
+            assert(Backpack.isOpen() and Detail.isEquipTab(), "锻炉联动夹具未建立配装仓库")
+            Backpack.close()
+            if entryCase.closeFinished then
+                time.elapsedTime = time.elapsedTime + 1
+                Backpack.update(1)
+                assert(not Backpack.isOpen(), "关仓动画结束夹具仍打开")
+            end
+            if entryCase.tutorial then
+                assert(Forge.prepareTutorial(vg), "教程首次恢复锻炉未执行")
+            else
+                Forge.open()
+            end
+            assert(Backpack.isOpen() and Backpack.isLeftMode(), "进入锻炉未恢复被配装抑制的左仓库")
+            assert(Detail.isEquipTab() and Detail.getHeroId() == 1, "打开锻炉不应强制关闭或切走右侧配装")
+            time.elapsedTime = time.elapsedTime + 1
+            Backpack.update(1)
+            assert(Backpack.isOpen() and Backpack.getAnimProgress() == 1,
+                "锻炉重新开仓仍被旧关闭动画清掉")
+            Forge.forceClose()
+            assert(Backpack.isOpen() and Detail.isEquipTab(), "锻炉释放不能误关详情仍持有的仓库")
+            Detail.forceClose()
+            time.elapsedTime = time.elapsedTime + 1
+            Backpack.update(1)
+            assert(not Backpack.isOpen(), "双持有者均释放后自动仓库未关闭")
+        end
+        -- 属性详情不申请仓库，但同样不能妨碍新进入锻炉。
+        Detail.open(1, "attr")
+        Forge.open()
+        assert(Backpack.isOpen() and Backpack.isLeftMode() and not Detail.isEquipTab()
+            and Detail.getHeroId() == 1, "属性详情打开时锻炉未正常开左仓库")
+        Detail.forceClose()
+        time.elapsedTime = time.elapsedTime + 1
+        Backpack.update(1)
+        assert(Backpack.isOpen(), "关闭属性详情不应释放锻炉仓库")
+        Forge.forceClose()
+        time.elapsedTime = time.elapsedTime + 1
+        Backpack.update(1)
+        -- 保留原手动仓库与锻炉双页绘制验证。
+        Backpack.open("left")
         Forge.open()
         time.elapsedTime = time.elapsedTime + 2
         local oldNamePlate, oldImage = Chrome.drawNamePlate, DrawUtil.drawImageCentered

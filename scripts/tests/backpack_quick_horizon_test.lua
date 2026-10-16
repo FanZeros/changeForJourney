@@ -1,5 +1,5 @@
 -- 仓库横屏快速手势回归：真实 Horizon + Viewport，页面/Link API 为 spy。
--- 只验证路由边界，不模拟穿戴事务；Link 的 handleEquipClick/Right 实现另测。
+-- 验证普通右键与 Shift 右键隔离路由，不模拟穿戴/锁定事务；Link 实现另测。
 -- Runtime: tests/backpack_quick_horizon_test.lua -tapcode_dir=. -tool_mode -graphicsheadless
 function Start()
     ---@type fun(name: string): any
@@ -47,9 +47,17 @@ function Start()
             offline = false, levelup = false, playerinfo = false, updateNotice = false,
             title = false, letter = false, intro = false, dialogue = false, ce = false,
             sweep = false, damage = false, stage = false, terminal = false,
+            dungeon = false, leftShift = false, rightShift = false, lockAccepted = true,
         }
         local cursor = { x = 0, y = 0 }
-        _G.input = { GetMousePosition = function() return cursor end }
+        _G.input = {
+            GetMousePosition = function() return cursor end,
+            GetKeyDown = function(_, key)
+                if key == KEY_LSHIFT then return state.leftShift end
+                if key == KEY_RSHIFT then return state.rightShift end
+                return false
+            end,
+        }
         _G.time = { elapsedTime = 100 }
         local clock = 100
         local candidate = { seq = 7, slot = "helmet", templateId = "H1" }
@@ -62,6 +70,7 @@ function Start()
             handleEquipRight = function() count("apiRight"); return true end,
         }
         local marqueeCoords = { begin = {}, move = {}, finish = {} }
+        local lockCoords = {}
         local function canMarquee()
             return state.warehouse and state.leftMode and state.decompose and not state.closing
                 and not state.autoPopup and not state.setFilter and not state.itemDetail
@@ -114,6 +123,15 @@ function Start()
                 if hitGrid(x, y) then return api.handleEquipRight(candidate) end
                 return false
             end,
+            handleLockRightClick = function(x, y)
+                count("backpackLock")
+                lockCoords[#lockCoords + 1] = { x = x, y = y }
+                -- 页面只模拟真实格/过滤/在途拒绝；不以spy冒充锁定业务已经执行。
+                if state.setFilter or state.autoPopup or state.itemDetail or state.closing
+                    or state.decompose or not hitGrid(x, y) or not state.lockAccepted then return false end
+                count("apiLock")
+                return true
+            end,
         })
         local equipmentDetail = mock({
             isOpen = function() return state.detail end,
@@ -142,6 +160,11 @@ function Start()
             ["core.Viewport"] = viewport,
             ["ui.backpack.BackpackPanel"] = warehouse,
             ["ui.character.equip.EquipmentDetail"] = equipmentDetail,
+            ["ui.character.hero.AwakeningArtwork"] = mock({
+                -- 真实宿主保存 bindInput 返回的函数；不能沿用缺字段统一返回false的替身。
+                bindInput = function() return function() return false end end,
+            }),
+            ["ui.dungeon.DungeonBattleScene"] = mock({ isOpen = function() return state.dungeon end }),
             ["ui.character.EquipCrossDrag"] = crossDrag,
             ["ui.character.panel.CharacterPanel"] = mock({
                 isDraggingCard = function() return state.draggingCard end,
@@ -152,7 +175,10 @@ function Start()
                 handleDragEnd = function() count("characterEnd") end,
             }),
             ["ui.character.detail.CharacterDetail"] = mock({ isEquipTab = function() return true end }),
-            ["ui.battle.tri.BattleTriPage"] = mock({ isOpen = function() return state.tri end }),
+            ["ui.battle.tri.BattleTriPage"] = mock({
+                isOpen = function() return state.tri end,
+                handleRightClick = function() count("triRight"); return true end,
+            }),
             ["ui.hud.BottomNav"] = { getSelectedIndex = function() return state.nav end },
             ["ui.hud.popup.RewardPopup"] = mock({
                 isOpen = function() return state.modal end,
@@ -197,6 +223,7 @@ function Start()
         _G.require = function(name)
             if name == "boot.StandaloneHorizonInput" or name == "boot.OfflineRewardOverlay"
                 or name == "boot.SeamBackGesture" or name == "boot.DecomposeMarqueeGesture"
+                or name == "boot.RewardGesture" or name == "boot.TerminalInput"
                 or name == "boot.StandaloneHorizonWheel" then
                 return originalRequire(name)
             end
@@ -226,9 +253,10 @@ function Start()
             state.armed, state.dragging, state.draggingCard = false, false, false
             for _, key in ipairs({ "decompose", "marquee", "autoPopup", "setFilter", "itemDetail", "closing",
                 "offline", "levelup", "playerinfo", "updateNotice", "title", "letter", "intro", "dialogue",
-                "ce", "sweep", "damage", "stage", "terminal" }) do state[key] = false end
-            state.beginAccepted, state.nav = true, 3
+                "ce", "sweep", "damage", "stage", "terminal", "dungeon", "leftShift", "rightShift" }) do state[key] = false end
+            state.beginAccepted, state.lockAccepted, state.nav = true, true, 3
             marqueeCoords = { begin = {}, move = {}, finish = {} }
+            lockCoords = {}
             resetRT({ logicalW = 1920, logicalH = 1080, dpr = 1, bootReady_ = true })
             viewport._notes = {}
             H_ox, H_oy, H_s = viewport.layout(1920, 1080)
@@ -268,6 +296,84 @@ function Start()
             check(n("backpackRight") == 1 and n("apiRight") == 1, prefix .. "右键 down/up 只派发一次")
             check(n("backpackInput") == 0 and n("arm") == 0 and n("finish") == 0,
                 prefix .. "右键不混入左键/装备拖拽")
+            check(n("backpackLock") == 0 and n("apiLock") == 0, prefix .. "普通右键不进入锁定分支")
+
+            local function shiftExclusive(label)
+                noEquipmentSend(prefix .. label)
+                check(n("backpackRight") == 0 and n("characterRight") == 0 and n("triRight") == 0
+                    and n("lootRight") == 0 and n("marqueeBegin") == 0 and n("marqueeEnd") == 0,
+                    prefix .. label .. " 不回落穿戴/角色卸队/战斗背包/遗匣回收/分解框选")
+                check(n("backpackInput") == 0 and n("arm") == 0 and n("finish") == 0,
+                    prefix .. label .. " 不混入左键或跨栏拖放")
+            end
+            for _, shift in ipairs({ "leftShift", "rightShift" }) do
+                fixture(tri); state[shift] = true
+                position("left", 140, 1060)
+                HandleMouseButtonDownHorizon("MouseButtonDown", right)
+                check(n("backpackLock") == 1 and n("apiLock") == 1,
+                    prefix .. shift .. "真实Down只派发一次库存锁定入口")
+                local point = lockCoords[1] or {}
+                check(math.abs((point.x or -1) - 140) < 0.00001 and math.abs((point.y or -1) - 1060) < 0.00001,
+                    prefix .. shift .. "传入当前左栏设计坐标")
+                -- 抬起之前释放Shift、移到别栏，旧Up也不能再锁一次或执行普通右键。
+                state[shift] = false
+                position("right", 140, 1060)
+                HandleMouseButtonUpHorizon("MouseButtonUp", right)
+                check(n("backpackLock") == 1 and n("apiLock") == 1, prefix .. shift .. "Up不二次派发")
+                shiftExclusive(shift .. "成功")
+            end
+
+            fixture(tri); state.leftShift, state.rightShift = true, true
+            realDownUp("left", 140, 1060, clock, right)
+            check(n("backpackLock") == 1 and n("apiLock") == 1, prefix .. "同时按双Shift仍只派发一次")
+            shiftExclusive("双Shift")
+
+            for _, rejected in ipairs({ "setFilter", "autoPopup", "itemDetail", "closing", "decompose", "grid", "lockAccepted" }) do
+                fixture(tri); state.leftShift = true
+                state[rejected] = rejected ~= "grid" and rejected ~= "lockAccepted"
+                realDownUp("left", 140, 1060, clock, right)
+                check(n("backpackLock") == 1 and n("apiLock") == 0,
+                    prefix .. rejected .. "库存入口拒绝/空格也不伪造锁动作")
+                shiftExclusive(rejected .. "拒绝")
+            end
+
+            for _, blocked in ipairs({ "task", "loot", "warehouse", "leftMode", "modal", "offline",
+                "levelup", "playerinfo", "updateNotice", "dungeon", "dungeonPage" }) do
+                fixture(tri); state.rightShift = true
+                if blocked == "dungeonPage" then state.nav = 5
+                else state[blocked] = blocked ~= "warehouse" and blocked ~= "leftMode" end
+                realDownUp("left", 140, 1060, clock, right)
+                check(n("backpackLock") == 0 and n("apiLock") == 0,
+                    prefix .. blocked .. "遮挡/非库存来源不调用锁入口")
+                shiftExclusive(blocked .. "阻断")
+            end
+            for _, panel in ipairs({ "center", "right" }) do
+                fixture(tri); state.leftShift = true
+                realDownUp(panel, 140, 1060, clock, right)
+                check(n("backpackLock") == 0 and n("apiLock") == 0, prefix .. panel .. "不借库存锁动作")
+                shiftExclusive("非左栏 " .. panel)
+            end
+
+            fixture(tri); state.detail, state.pinned, state.overlayPoint, state.leftShift = true, true, true, true
+            realDownUp("left", 140, 1060, clock, right)
+            check(n("backpackLock") == 0 and n("apiLock") == 0 and n("closePin") == 0,
+                prefix .. "详情浮层覆盖实际格时既不锁背后装备也不关闭详情")
+            shiftExclusive("详情浮层覆盖")
+            fixture(tri); state.detail, state.pinned, state.leftShift = true, true, true
+            realDownUp("left", 140, 1060, clock, right)
+            check(n("backpackLock") == 1 and n("apiLock") == 1 and n("closePin") == 0,
+                prefix .. "详情未覆盖鼠标实际格时仍可锁库存且不关闭详情")
+            shiftExclusive("详情未覆盖")
+
+            fixture(tri); state.rightShift = true
+            RT.dpr, RT.frameScale, RT.frameOx, RT.frameOy = 2, 0.8, 37, 23
+            realDownUp("left", 140, 1060, clock, right)
+            local lockPoint = lockCoords[1] or {}
+            check(n("backpackLock") == 1 and n("apiLock") == 1
+                and math.abs((lockPoint.x or -1) - 140) < 0.00001
+                and math.abs((lockPoint.y or -1) - 1060) < 0.00001,
+                prefix .. "Shift锁定DPR2+frame缩放偏移坐标无重复换算")
+            shiftExclusive("DPR2锁定")
 
             fixture(tri)
             realDownUp("left", 140, 1060, clock)

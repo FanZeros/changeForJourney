@@ -400,7 +400,7 @@ local function testBlacksmithPreparation()
         equip.slot = equip.templateId == "A1" and "armor" or "weapon"
     end, getAscendLevel = function(equip) return equip.ascendLevel or equip.enhanceLevel or 0 end })
     stub("ui.backpack.BackpackPanel", {
-        acquireWarehouse = function() counts.holds = counts.holds + 1 end,
+        acquireForBlacksmith = function() counts.holds = counts.holds + 1 end,
         releaseWarehouse = function() counts.releases = counts.releases + 1 end,
     })
     for _, path in ipairs({ "ui.loot.LootBoxPage", "ui.church.talent.TalentPage", "ui.church.ChurchPage",

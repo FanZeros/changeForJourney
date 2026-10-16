@@ -574,6 +574,8 @@ function Standalone.Start()
 end
 
 function Standalone.Stop()
+    require("ui.loot.InventoryCurationDialog").reset()
+    require("rules.equipment.InventoryCurationService").Cleanup(1)
     if Standalone.cancelOpening then Standalone.cancelOpening() end
     LetterIntro.reset()
     ScenarioDialogue.reset()
@@ -871,6 +873,8 @@ Standalone.cancelOpening = cancelOpening_
 --- 清除存档后重置客户端状态并回到开始界面
 --- 由 DebugPanel 的 reset_save 处理器调用
 function Standalone.requestResetToStartScreen()
+    require("ui.loot.InventoryCurationDialog").reset()
+    require("rules.equipment.InventoryCurationService").Cleanup(1)
     local TAG = "[Standalone][DIAG-RESET]"
     local t0 = os.clock()
     cancelOpening_()

@@ -31,6 +31,7 @@ local BackpackGrids    = require("ui.backpack.BackpackGrids")
 local BackpackEquipLink = require("ui.backpack.BackpackEquipLink")
 local BackpackFilters = require("ui.backpack.BackpackFilters")
 local HeroFrame        = require("ui.widget.HeroFrame")
+local Curation = require("ui.loot.InventoryCurationDialog")
 
 local Panel = {}
 
@@ -806,6 +807,7 @@ end
 ---@param mode? boolean|"left" true=全窗居中模态；"left"=横屏左栏页；nil/false=内嵌
 ---@param initialTab? string "equip"|"item"|"decompose"，默认 "equip"
 local function openPage(mode, initialTab)
+    Curation.cancelSource("backpack")
     BlacksmithDecompose.cancelMarquee()
     if mode == "left" then
         hostMode_ = "left"
@@ -846,6 +848,7 @@ end
 
 -- 动画操作与持有操作分离：自动 release 不冒充玩家手动关闭。
 local function closePage()
+    Curation.cancelSource("backpack")
     BlacksmithDecompose.cancelMarquee()
     if not state.open or state.closing then return end
     state.closing = true
@@ -912,6 +915,10 @@ function Panel.releaseWarehouse(owner) equipLink.releaseWarehouse(owner) end
 function Panel.acquireForEquipment(heroId, slotOrNil)
     return equipLink.enterEquipmentWarehouse(heroId, slotOrNil)
 end
+--- 仅显式新入锻炉恢复仓库；重复持有仍尊重本次手动关闭。
+function Panel.acquireForBlacksmith()
+    return equipLink.enterBlacksmithWarehouse()
+end
 --- 仅教程显式恢复左栏配装仓库；普通 acquire 保持不自动重开契约。
 ---@param heroId number|string|nil
 ---@param slot string|nil
@@ -928,6 +935,13 @@ function Panel.getEquipmentSlotFilter() return equipLink.getEquipmentSlotFilter(
 
 --- 是否打开
 ---@return boolean
+function Panel.onCurationCommitted()
+    equipLink.clearCandidate(true)
+end
+function Panel.isCurationSourceReady()
+    return state.open and not state.closing and state.tab == "equip"
+        and time.elapsedTime - state.openTime >= ANIM_OPEN_DUR
+end
 function Panel.isOpen()
     return state.open
 end
@@ -1103,6 +1117,7 @@ local function drawBody(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(CAP_TEXT.R, CAP_TEXT.G, CAP_TEXT.B, 255))
         nvgText(vg, CAP_TEXT.X, 2050, capStr, nil)
+        if state.tab == "equip" then Curation.drawEntry(vg, 540, 2150, 410, 90) end
     end
 
     -- 8. 返回按钮（[横屏左栏] 窗口模式由宿主中缝侧边返回条接管，页内不画）
@@ -1383,6 +1398,13 @@ function Panel.handleInput(dx, dy)
         return true
     end
 
+    if state.tab == "equip" and Panel.isCurationSourceReady()
+        and DrawUtil.hitTest(dx, dy, 540, 2150, 410, 90) then
+        equipLink.clearCandidate(true)
+        if filterBar then filterBar.close() end
+        Curation.open("backpack")
+        return true
+    end
     -- 装备 tab：稀有度勾选（1-6 档可多选，常驻显示筛选）
     if state.tab == "equip" then
         -- 套装筛选入口按钮（弹窗内勾选实时生效，网格随 setChecked 过滤）
@@ -1431,6 +1453,11 @@ function Panel.haltScroll() equipLink.haltScroll() end
 function Panel.handleHover(dx, dy)
     if filterBar and filterBar.isOpen() then equipLink.clearCandidate(false); return end
     equipLink.handleHover(dx, dy)
+end
+function Panel.handleLockRightClick(dx, dy)
+    if hostMode_ ~= "left" or time.elapsedTime - state.openTime < ANIM_OPEN_DUR
+        or (filterBar and filterBar.isOpen()) then return true end
+    return equipLink.handleLockRightClick(dx, dy)
 end
 function Panel.handleRightClick(dx, dy)
     if filterBar and filterBar.isOpen() then return true end

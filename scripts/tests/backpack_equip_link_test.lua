@@ -667,6 +667,96 @@ local function runSharedReentry()
     end
 end
 
+local function runBlacksmithReentry()
+    check(type(Link.bind) == "function", "blacksmith reentry uses production warehouse link")
+    for _, yielded in ipairs({ false, true }) do
+        for _, closing in ipairs({ false, true }) do
+            for _, releaseSmithFirst in ipairs({ false, true }) do
+                local api, s, c = fixture()
+                check(type(api.enterBlacksmithWarehouse) == "function", "genuine blacksmith entry API exists")
+                -- 旧模块负对照继续走原 acquire，以实际恢复状态失败而非缺方法异常证明故障。
+                local enterBlacksmith = api.enterBlacksmithWarehouse or function() return api.acquireWarehouse("blacksmith") end
+                api.enterEquipmentWarehouse("1", "armor")
+                local page = leftPages["ui.market.MarketPage"]
+                page.open = yielded
+                if yielded then
+                    api.update()
+                    check(s.closing and page.open, "other left page makes equipment warehouse yield")
+                else
+                    api.onManualClose()
+                    s.closing = true
+                end
+                s.open, s.closing = closing, closing
+                local opens, closes = c.opens, c.closes
+                api.acquireWarehouse("equipment", 1, "armor")
+                api.update()
+                check(c.opens == opens and s.open == closing and s.closing == closing,
+                    "ordinary equipment acquire/update never undo warehouse close")
+                check(enterBlacksmith() == true and s.open and not s.closing
+                    and c.mode == "left" and s.tab == "equip" and c.opens == opens + 1 and not page.open,
+                    "new blacksmith entry restores warehouse: yielded=" .. tostring(yielded)
+                        .. " closing=" .. tostring(closing))
+                local slot, hero = api.getEquipmentSlotFilter()
+                check(slot == nil and hero == nil, "blacksmith entry clears temporary equipment filter")
+                s.scrollY = 620
+                api.acquireWarehouse("blacksmith")
+                enterBlacksmith()
+                api.update()
+                check(c.opens == opens + 1 and s.scrollY == 620 and not s.closing,
+                    "repeated blacksmith acquire/entry/update preserves open warehouse and scroll")
+                if releaseSmithFirst then
+                    api.releaseWarehouse("blacksmith")
+                    slot, hero = api.getEquipmentSlotFilter()
+                    check(s.open and not s.closing and c.closes == closes and slot == "armor" and hero == 1,
+                        "smith release restores equipment holder without closing warehouse")
+                    api.releaseWarehouse("equipment")
+                else
+                    api.releaseWarehouse("equipment")
+                    slot, hero = api.getEquipmentSlotFilter()
+                    check(s.open and not s.closing and c.closes == closes and slot == nil and hero == nil,
+                        "equipment release preserves blacksmith holder and unfiltered warehouse")
+                    api.releaseWarehouse("blacksmith")
+                end
+                check(s.closing and c.closes == closes + 1, "last owner release closes restored auto warehouse once")
+                api.releaseWarehouse("blacksmith")
+                api.releaseWarehouse("equipment")
+                check(c.closes == closes + 1, "duplicate releases do not close warehouse twice")
+            end
+        end
+    end
+
+    for _, closing in ipairs({ false, true }) do
+        local api, s, c = fixture()
+        local enterBlacksmith = api.enterBlacksmithWarehouse or function() return api.acquireWarehouse("blacksmith") end
+        enterBlacksmith()
+        api.onManualClose()
+        s.open, s.closing = closing, closing
+        local opens = c.opens
+        check(api.acquireWarehouse("blacksmith") == false and enterBlacksmith() == false,
+            "already-held blacksmith entry respects manual-close suppression")
+        api.update()
+        check(c.opens == opens and s.open == closing and s.closing == closing,
+            "closed current smith session never reopens on repeated entry or update")
+        api.releaseWarehouse("blacksmith")
+        s.open, s.closing = false, false
+        check(enterBlacksmith() == true and c.opens == opens + 1 and s.open,
+            "next genuine blacksmith session opens after prior owner release")
+    end
+
+    local api, s, c = fixture()
+    s.open, s.tab, s.scrollY = true, "item", 380
+    api.onManualOpen()
+    local enterBlacksmith = api.enterBlacksmithWarehouse or function() return api.acquireWarehouse("blacksmith") end
+    enterBlacksmith()
+    api.enterEquipmentWarehouse(1, "helmet")
+    api.releaseWarehouse("blacksmith")
+    check(s.open and not s.closing and api.getEquipmentSlotFilter() == "helmet" and c.opens == 0,
+        "explicit smith/equipment share preexisting manual warehouse without reopening")
+    api.releaseWarehouse("equipment")
+    check(s.open and not s.closing and s.tab == "item" and s.scrollY == 380 and c.closes == 0,
+        "final release restores manual warehouse view and never closes it")
+end
+
 local function runIndependent(label, run)
     local beforePasses, beforeFailures = passes, failures
     local ok, err = pcall(run)
@@ -1110,6 +1200,7 @@ end
 function Start()
     runIndependent("detailed_filters", runDetailedFilters)
     runIndependent("shared_reentry", runSharedReentry)
+    runIndependent("blacksmith_reentry", runBlacksmithReentry)
     local ok, err = pcall(function() runLifecycle(); runTutorialEnsure(); runFilter(); runSetCounts(); runSourceParity() end)
     if not ok then failures = failures + 1; print("[FAIL] exception: " .. tostring(err)) end
     print("[backpack_equip_link_test] " .. (failures == 0 and "ALL PASS" or "FAILURES=" .. failures) .. " (" .. passes .. " assertions)")

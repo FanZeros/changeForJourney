@@ -1,3 +1,21 @@
+## Shift＋右键锁定与仓库整合（2026-10-16，待提交PR）
+
+- 用户确认Shift＋右键并授权500容量/优选、左仓库修复及快捷锁定一并提交、正常push任务分支、创建workspace1005 PR；本次凭据只进程内即时鉴权，不写源码/remote/Git配置/日志/记忆。保留dirty后无冲突ff至最新ebbf8c0d，分支feat1016/equipment-inventory-curation，不pop旧性能stash、不读玩家档、不推workspace系列/强推/自动合并发布。
+- Shift＋右键仅仓库equip真实库存，普通右键不改；不支持来源/遮挡/空白/筛选/动画不回落穿戴/回收/框选。单在途、lockRequestId＋seq、超时/旧回执隔离；正常拒绝和Bridge异常均带身份。真实同步桥只权威翻转一次，删除两详情锁按钮的第二次本地翻转，不扩做遗匣锁定。
+- 最终官方b24后七Runtime ALL PASS/exit0/无timeout：锁实链10组227、左右Shift真实Horizon924、真锻炉smoke、生命周期、教程69、优选UI322、切关；File/FS原生委托0。优选核心2826/领取120/冷恢复34/overflow19亦本轮通过。b24的666根Lua实际载荷字节/size全部一致、源冻结无变化、validation0入包，两.project与本轮备份逐字节恢复。45白名单候选20旧规范问题同ebbf/新增0，36单测通过。HorizonInput/EquipmentDetail旧类型诊断及官方daemon失败跳过gate、headless音频/shader错误保留，不称全仓/设备/GPU/性能全绿。持续推进授权，尊重停止/拒绝/安全边界，按最新直接继续不机械提问；尚未commit/push/PR，成功后补真实结果，内证仅.git/validation/equipment-lock1016。
+
+## 角色详情与锻炉左仓库联动修复（2026-10-16，本地完成）
+
+- 用户反馈详情打开再入锻炉左栏消失。保留当前500容量/优选dirty，沿feat1016/equipment-inventory-curation@1827629a仅本地修复/测试/官方build，不pop旧stash、不读玩家档、不commit/push/PR/合并发布。右键已有仓库快捷穿戴/遗匣回收，Shift＋右键锁定仅建议、未获确认/未改绑。
+- 显式新锻炉owner通过enterBlacksmithWarehouse/acquireForBlacksmith清旧配装关仓/左页让位suppressed，普通重复acquire/update不重开；正常open和教程opening接入。右详情保留，双owner释放及手动view恢复不改。新增link77/0，旧模块负对照新增56失败含8条状态失败；全集30旧筛选失败逐多重集合相同、新增0。真实smoke旧生产复现旧closing清仓，新生产正常/教程×动画中/结束后及属性路径ALL PASS；生命周期、教程69、优选UI322、切关亦实际通过。测试原生File/FS委托0，不代GPU/设备/性能验收。
+- 官方b23成功、663根Lua全实际载荷字节/声明size一致、validation0入包，六Lua逐文件Error0有Warning；全仓build gate仍daemon unavailable/code1跳过，headless音频/shader错误保留。旧层级artworkPointer替身与教程resetRadarTransition依赖失败修前修后同现，不混修；仅同步教程新锻炉stub接口。两.project与本轮备份逐字节恢复、源码冻结一致、index空。持续推进授权范围，尊重停止/权限/安全边界，最新直接继续不机械AskUserQuestion；不推workspace系列/强推/自动合并发布，不保存凭据，内证只.git/validation/forge-warehouse-entry1016。
+
+## 500件仓库与手动一键优选（2026-10-16，本地完成）
+
+- 用户选项确认500件＋手动优选，独立 `feat1016/equipment-inventory-curation@1827629a`；仅本地实现/测试/构建，不继承旧push/PR授权，不推workspace系列/强推/合并发布。原性能dirty完整保留于3687ce33命名stash，14份备份SHA全部一致；旧StageExpHelper.meta另dc1a4624 stash，不pop混入，不读玩家档。
+- 全库预览/确认、同slot/type/grip严格通用评分升级、空位低占用组优先；库存穿戴/锁定/套装/投入/腐化/pending保护。原件不水合重骰，转存source=curation防遗匣单批回收；入仓新安全seq隔离旧pending，Flush失败恢复原表别名/字段，成功才双模块通知。不是后台自动交换或自动分解，不称角色最优配装。
+- 最终官方b22成功、663根Lua实际载荷663/663字节/声明size一致、内部validation0入包；21本轮Lua逐文件Error0、不代全仓。构建后十一Runtime均ALL PASS/exit0/无timeout：核心31场景2826/0、领取回收120/0、虚拟保存1551＋独立冷恢复34/0、原overflow19/19、真实UI/字体/Input/Bridge到CMH 322/0、原遗匣页1125/0、筛选649/0、滚动10、生命周期及切关；五核心/九UI冻结SHA一致。新增nvgTextBounds尾参展开真实错误已四处local width修正，首轮失败保留不称旧stub问题。旧horizon替身异常及quick只读1失败固定1827629a同现、不混修；旧跨清档Blacksmith pending生命周期边界不扩修。软件CPU完整500/500=116.237ms、500/10000=1232.718ms（虚拟Save），不承诺设备I/O/FPS/不卡。36规范单测过、候选20旧问题同基线新增0；官方LSP daemon失败跳过全仓gate、headless音频/shader错误保留，不称GPU/触控/用户审美已验收。两.project原备份逐字节恢复；没有commit/push/PR。所有新测试封闭File/FS，内证只.git/validation/inventory-curation1016，不读玩家档。持续推进当前授权，尊重停止/权限/安全边界，当前最新直接继续不机械提问，凭据不持久化。
+
 ## 塔结算横屏与择契不停战（2026-10-07）
 
 - 已正常push14白名单功能b59bba3a728f25bb48564402ecbda145a48aaeda且ls-remote同SHA；PR120 https://github.com/FanZeros/changeForJourney/pull/120，head任务分支/baseworkspace1005，open/draft=false/merged=false，不称CI/合并发布。sharedHEAD/index保持，未推基线；21旧规范问题同ec1d8a61新增0，36单测通过。成功后仅三本人交接追加，不重复建PR或混peer。下方未push措辞属此前过程。

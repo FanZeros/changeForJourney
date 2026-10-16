@@ -57,6 +57,7 @@ local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")
 local UiToast            = require("core.UiToast")
 local KeyboardShortcuts  = require("ui.dev.KeyboardShortcuts")
+local Curation = require("ui.loot.InventoryCurationDialog")
 
 local function vg() return RT.vg end
 local function logicalW() return RT.logicalW or 0 end
@@ -171,6 +172,8 @@ local function finishFrame()
         or TerminalConfirmDialog.isOpen() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive()
     AwakeningArtwork.observe(RT, artworkBlocked)
     if not artworkBlocked then AwakeningArtwork.draw(vg(), logicalW(), logicalH()) end
+    -- 优选自持全窗组件与 token；每条 early-return 绘制路径同样观测遮挡失效。
+    Curation.draw(vg(), logicalW(), logicalH())
     -- 升级弹窗由宿主逻辑空间布局：不再借中栏 Viewport 或 1080×2400 letterbox。
     -- 所有业务/PlayerInfo/三行/通天塔绘制都已完成，Offline/Update/CE 保持原上层优先级。
     if LevelUpPopup.isOpen() then

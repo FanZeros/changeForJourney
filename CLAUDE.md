@@ -12,12 +12,12 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
-## 上次做了什么（2026-10-16，Shift＋右键锁定与仓库整合，待提交PR）
+## 上次做了什么（2026-10-16，Shift＋右键锁定与仓库整合，本地已提交，PR认证阻塞）
 
 - 用户确认Shift＋右键方案并授权完成后一并提交、正常push独立任务分支和创建workspace1005 PR；本次鉴权只在进程内即时使用，凭据不写源码/Git配置/remote/日志/记忆。保留原dirty后无冲突快进至最新目标ebbf8c0d（含PR151/152），当前feat1016/equipment-inventory-curation；不pop旧性能stash、不读玩家档、不推workspace系列/强推/自动合并发布。
 - 仓库装备页Shift＋右键只提交真实库存实例锁定/解锁，普通右键快捷穿戴/角色操作/遗匣回收原样保留。不支持来源、遮挡、空白、动画及筛选拒绝不回落普通动作。单在途、单调lockRequestId＋seq匹配、3秒超时；正常拒绝及Bridge异常保留身份，匹配权威回执才提示。删除大小详情锁按钮同步桥后的二次本地反转；详情原锁按钮/热区保留，不扩做遗匣锁定。
 - 官方b24后七套实际ALL PASS/exit0/无timeout：真实锁定10组227、Horizon左右Shift/DPR/遮挡/普通右键924、真仓库锻炉smoke、装备生命周期、教程恢复69、优选UI322、切关。新增锁定专项封闭File/FS，原生委托0；真实Handler/Service/Bridge/CMH及大小详情draw/input覆盖，不冒称设备触控/GPU/性能验收。优选本轮核心2826、领取120、冷恢复34及overflow19/19亦通过；首轮旧rewardGesture替身和新test通用点击音误计已仅修夹具，原业务断言不降。
-- 官方b24成功，666根Lua与实际载荷666/666字节/声明size一致、源冻结无变化、内部validation0入包；两.project与本轮备份逐字节恢复。候选45路径、20旧规范问题同ebbf新增0，36规范单测通过。部分HorizonInput/EquipmentDetail旧类型源诊断仍在、官方LSP daemon unavailable/code1跳过gate，headless音频/shader错误保留，不称全仓静态/回归全绿；旧link30筛选失败及教程旧依赖不混修。持续推进已授权范围，尊重停止/拒绝/安全边界，按最新直接继续不机械提问。尚未提交/push/创建PR，实际成功后另补结果；内证只.git/validation/equipment-lock1016。
+- 官方b24成功，666根Lua与实际载荷666/666字节/声明size一致、源冻结无变化、内部validation0入包；两.project与本轮备份逐字节恢复。候选45路径、20旧规范问题同ebbf新增0，36规范单测通过。部分HorizonInput/EquipmentDetail旧类型源诊断仍在、官方LSP daemon unavailable/code1跳过gate，headless音频/shader错误保留，不称全仓静态/回归全绿；旧link30筛选失败及教程旧依赖不混修。持续推进已授权范围，尊重停止/拒绝/安全边界，按最新直接继续不机械提问。本地功能提交cdbf570675a2988668104c202b8fbf4f3837590e已成功，45对象与冻结源码逐字节一致、index空；尚未push或创建PR。当前执行沙箱没有本次凭据环境变量且无法读取宿主原会话记录，未把令牌转入工具参数/文件来绕过边界，认证未执行；远端只读核验尚无同名任务分支。目标随后外部合入PR153到0d1c7d11（仓库职业筛选），与本任务BackpackPanel及两测试有文件交集，已只读获取但尚未融合/验证，不声称相对该新目标无冲突。内证只.git/validation/equipment-lock1016。
 
 ## 上次做了什么（2026-10-16，角色详情与锻炉左仓库联动修复，本地完成）
 

@@ -26,6 +26,7 @@ local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local I18n = require("core.I18n")
 local KeywordText = require("ui.widget.KeywordText")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
+local QuickEquipActivity = require("ui.character.detail.QuickEquipActivity")
 
 local drawTextStroke = DrawUtil.drawTextStroke
 
@@ -974,14 +975,16 @@ function M.draw(vg)
         BF.finish(vg, _ds1)
     end
     do
+        local pending = require("runtime.LocalActionBridge").isQuickEquipPending()
         local bx, by = BTN_EQUIP_CX - BTN_BATCH_W * 0.5, BTN_EQUIP_CY - BTN_BATCH_H * 0.5
-        DarkIcon.drawNine(vg, "btn", bx, by, BTN_BATCH_W, BTN_BATCH_H, { accent = "green" })
+        DarkIcon.drawNine(vg, "btn", bx, by, BTN_BATCH_W, BTN_BATCH_H, { accent = pending and { 141, 95, 65 } or "green" })
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 38)
+        nvgFontSize(vg, pending and 30 or 38)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
+        nvgFillColor(vg, pending and nvgRGBA(231, 192, 135, 255) or nvgRGBA(244, 237, 224, 255))
         local _ds = BF.begin(vg, "equip_all", BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H)
-        nvgText(vg, BTN_EQUIP_CX, BTN_EQUIP_CY, I18n.t("equip_all"), nil)
+        if pending then QuickEquipActivity.draw(vg, BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H, time.elapsedTime) end
+        nvgText(vg, BTN_EQUIP_CX, BTN_EQUIP_CY, I18n.t(pending and "equip_calculating" or "equip_all"), nil)
         BF.finish(vg, _ds)
         local _TM = require("systems.TutorialManager")
         if _TM.isActive() then _TM.registerHotspot("equip_btn_auto", BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H, "right") end

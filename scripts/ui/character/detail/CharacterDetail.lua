@@ -603,13 +603,13 @@ function CharacterDetail.handleInput(dx, dy)
     if detailState.tab == "equip"
        and math.abs(dx - Draw.BTN_EQUIP_CX) <= Draw.BTN_BATCH_W * 0.5
        and math.abs(dy - Draw.BTN_EQUIP_CY) <= Draw.BTN_BATCH_H * 0.5 then
+        if require("runtime.LocalActionBridge").isQuickEquipPending() then return true end
         BF.trigger("equip_all")
         print("[CharacterDetail] 一键装备: heroId=" .. tostring(detailState.heroId))
         require("runtime.GameAction").sendAction(
             require("shared.Protocol").ACTION_TYPES.EQUIP_ALL_BEST,
             { heroId = detailState.heroId }
         )
-        require("systems.GameSFX").play("install")
         return true
     end
 

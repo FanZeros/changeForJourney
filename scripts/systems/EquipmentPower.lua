@@ -14,13 +14,16 @@ local AVC = require("config.AdvancementConfig")
 
 local M = {}
 
-local function copy(value, seen)
+local function copy(value, seen, checkpoint)
     if type(value) ~= "table" then return value end
     seen = seen or {}
     if seen[value] then return seen[value] end
     local out = {}
     seen[value] = out
-    for key, item in pairs(value) do out[key] = copy(item, seen) end
+    for key, item in pairs(value) do
+        out[key] = copy(item, seen, checkpoint)
+        if checkpoint then checkpoint() end
+    end
     return out
 end
 
@@ -103,8 +106,23 @@ end
 local function previewUnits(ctx, equipment)
     local units = {}
     for _, old in ipairs(ctx.teamUnits) do
-        -- 同队光环/供给排名会随本人换装改变，整队始终从裸种子重建。
-        units[#units + 1] = buildUnit(ctx, old.heroId, equipment)
+        local fixed = ctx.fixedTeammates and ctx.fixedTeammates[old.heroId]
+        local unchanged = fixed ~= nil
+        if fixed then
+            local before = Eq.getHeroSlots(ctx.equipmentData, old.heroId) or {}
+            local after = Eq.getHeroSlots(equipment, old.heroId) or {}
+            for _, slot in ipairs(EC.SLOTS) do
+                if before[slot] ~= after[slot] then unchanged = false break end
+            end
+        end
+        if unchanged then
+            -- 独立外壳保留未加光环的起点；光环内部按需 clone attrs，估值只读。
+            local unit = {}
+            for key, value in pairs(fixed) do unit[key] = value end
+            units[#units + 1] = unit
+        else
+            units[#units + 1] = buildUnit(ctx, old.heroId, equipment)
+        end
     end
     local target
     for _, unit in ipairs(units) do
@@ -119,7 +137,7 @@ local function previewUnits(ctx, equipment)
 end
 
 local function readSnapshot(options, key)
-    if options ~= nil then return copy(options[key] or {}) end
+    if options ~= nil then return copy(options[key] or {}, nil, options.checkpoint) end
     return copy(require("core.PlayerStore").Get(key) or {})
 end
 
@@ -157,6 +175,15 @@ local function finishContext(ctx)
     if not seen[id] then ctx.teamUnits[#ctx.teamUnits + 1] = buildUnit(ctx, id, ctx.equipmentData) end
     for _, unit in ipairs(ctx.teamUnits) do
         if unit.heroId == id then ctx.hero = unit break end
+    end
+    if ctx.fixedTeammates then
+        for _, unit in ipairs(ctx.teamUnits) do
+            if unit.heroId ~= id then
+                local fixed = {}
+                for key, value in pairs(unit) do fixed[key] = value end
+                ctx.fixedTeammates[unit.heroId] = fixed
+            end
+        end
     end
     applyTeamAura(ctx.teamUnits)
     ctx.currentPower = powerFor(ctx, ctx.hero, ctx.teamUnits, ctx.equipmentData)
@@ -202,6 +229,7 @@ function M.buildContext(heroId, options)
         artifactsData = readSnapshot(options, "artifacts"),
         talentsData = readSnapshot(options, "talents"),
         seeds = {}, teamUnits = {}, memo = {}, scores = {},
+        fixedTeammates = options and options.cacheFixedTeammates and {} or nil,
     }
     if options and options.heroData then
         ctx.heroesData.roster = ctx.heroesData.roster or {}
@@ -215,6 +243,7 @@ function M.buildContext(heroId, options)
                 Eq.hydrate(item)
                 item.seq = tonumber(item.seq or key) or item.seq
             end
+            if options.checkpoint then options.checkpoint() end
         end
     end
     return finishContext(ctx)

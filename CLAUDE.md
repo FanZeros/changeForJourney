@@ -12,6 +12,25 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-16，一键装备分帧＋等待动画，已push并创建 PR #158）
+
+- 用户最新明确“pr”，即授权提交、正常push独立任务分支并创建workspace1005 PR。本轮功能提交 `26477fa746fc328c12d95e9d3491e84aa1c59b01`（19白名单=10生产Lua＋2测试Lua＋3新meta＋4交接，+1601/−19）已正常push `perf1016/quick-equip-latency`，push/ls-remote实际exit0、远端SHA与本地一致。正式 **PR #158**：https://github.com/FanZeros/changeForJourney/pull/158，head=perf1016/quick-equip-latency(26477fa7)／base=workspace1005(2869bfe6，含PR155/156)，open/draft=false/merged=false/mergeable=true，未自动合并发布。创建前查同源PR=0、目标未被本会话推送。凭据经本机既有 credential store 进程内使用，未写入remote（仍为干净URL）／Git配置／源码／日志／记忆，已核零残留；建议撤销轮换该令牌。不混入无关untracked（.agent技能目录/_uploads/repair meta）、本地.project／验证材料。
+- 分帧优化保持原选装结果：完整候选不截top-N、seq升序、原贪心顺序、严格gain>bestGain及同分先到者、最终仅一次写目标英雄六槽；私有原始快照与试穿副本分离，4ms软预算/4096检查点，Bridge单任务、epoch/refs/revision与最终完整值校验、Stop/reset/GM清档取消；纯名册exp/maxExp原地更新保留。计算中仅防重复一键，其他页面正常；五语提示，真实完成回执才install，专用quickEquipId回执不串洗练页。ctx内队友外壳缓存仅一键显式开启且逐槽guard、变化回退重建；目标/套装光环/神器/共鸣/正式公式不改。
+- 新增60行QuickEquipActivity纯绘制等待动画（暗铁旧铜左双弧反转、下方六菱微光循环、内框柔呼吸、文字亮铜），仅pending且按钮实际绘制时调用，不显示假百分比、不新增弹窗/输入层、不载新图片/字体/音效或随机，不改坐标/完整五语/30号/busy门禁/搜索/预算/存档。
+
+## 上次做了什么（2026-10-16，计算中按钮等待动画，本地完成）
+
+- 用户要求计算中好看的动画；沿perf1016/quick-equip-latency保留前轮分帧dirty，不提交/push/PR/合并发布。新增60行QuickEquipActivity纯绘制模块和meta，原DetailDraw仅pending调用；沿DarkIcon暗铁旧铜，左双弧反转、下方六枚菱光循环、内框柔呼吸、文字亮铜。不显示假百分比，不新增弹窗/输入层，不改坐标/完整五语/30号/busy门禁，不载新图片/字体/音效或随机，不改搜索/预算/存档。
+- 扩原UI专项，真实Activity.draw与NanoVG委托、五语字墨避让、A→B→A同time严格复现、异time旋转/opacity变化、宿主非默认font/fill/stroke/alpha/clip/transform恢复、pending-only/切页关闭恢复及原输入覆盖；最终构建后1244断言/28帧ALL PASS/actualexit0/无timeout，FileFS/RNG0。完整旧源异步46组18405、试穿147、生命周期、切关、优选UI322亦本轮实际ALL PASS/exit0，非视觉核心SHA与前轮相同；不冒称GPU截图/设备触控/动画性能验收。
+- 官方b28成功，669根Lua实际UUID-hash载荷669/669字节/声明size一致、源冻结不变，三新增源码meta UUID一致、内部validation/oracle0入包；两.project与本轮备份逐字节恢复。动画与test逐文件LSP Error0，Draw旧诊断保留，官方daemon unavailable/code1跳过gate、headless音频/shader错误保留，不称全仓全绿。19任务路径候选20旧规范问题同9a2e5575/新增0，内证.git/validation/quick-equip1016/animation。持续推进授权范围、尊重停止/拒绝/安全边界；按最新直接继续不机械提问，不推workspace系列/强推/自动合并发布，不持久化凭据。
+
+## 上次做了什么（2026-10-16，角色一键装备分帧优化，本地完成）
+
+- 用户明确授权“保持原选装结果，分帧计算、完成后一次穿戴”。固定 `9a2e5575`（PR154已外部合入），独立 `perf1016/quick-equip-latency`；仅本地开发/测试/官方构建，没有本轮commit/push/PR/合并发布授权，不混PR156文档分支、不pop旧stash、不读玩家档。
+- 完整候选/seq升序/原贪心顺序/严格gain及同分规则不改；私有原始快照与试穿分离，复制/水合/扫描/每组合均可分帧，4ms软预算/4096检查点。Bridge单任务、epoch/refs/revision和最终完整值校验，Stop/reset/GM清档取消；纯名册exp/maxExp原地更新保留，等级/成长/队伍及通知版变化取消。完成一次写目标六槽、沿原保存调度；通知异常不伪报未穿戴，重入不擦新任务。计算中仅防重复一键，其他页正常；五语提示，真实完成回执才install，专用回执不串入洗练页。仅一键ctx缓存未加光环队友外壳、逐槽guard，变化回退重建；目标/套装光环/神器/共鸣/正式公式不改，不截候选、不冒称六槽全局最优或磁盘原子事务。
+- 最终官方b27成功，668根Lua与冻结源集合完全相同、668/668实际UUID-hash载荷逐字节/声明size一致，两新test/meta UUID一致，内部validation/oracle/launcher入包0；两.project与本轮备份逐字节恢复。构建后八套独立Runtime全部ALL PASS/actualexit0/无timeout：完整旧源oracle异步46组18032断言、真实UI/Noto五语805/26帧、试穿147、操作148、生命周期、切关、仓库优选UI322、教程恢复69；668源SHA一致，新增FileFS/RNG0。构建前完整oracle46/18198及标准无旧树46/16972亦通过，标准明确NOT RUN外部oracle。首次极端池准备不足和UI渐变计数夹具失败保留，仅修夹具、不降业务断言。
+- 最终软件CPU三样本200/500普通/500异型双持：旧同步628.064/3445.720/4912.329ms，新分帧总CPU395.641/2082.435/2848.104ms，93/493/639帧，理论60Hz等待1.55/8.22/10.65秒；三个样本单片max11.060/8.309/13.470ms，全集其他边界仍有124.280ms软件尖峰，不称每帧硬≤4ms、设备FPS/全面不卡。500全同型只验证真实进入搜索后可取消，不称最坏完成时长；最终完整比较/属性单次计算/通知仍同步。五核心及两新test逐文件LSP Error0，四修改文件旧KeywordText/teams/args诊断源行同基线保留；官方daemon unavailable/code1跳过gate，不称全仓静态/设备GPU/触控/整游戏实战全绿。旧快捷只读candidate1失败固定9a2e5575独立同现，不混修；候选17路径20旧规范问题同基线/新增0，36规范单测过。内证仅.git/validation/quick-equip1016，HEAD/index保持、未提交推送。持续推进授权范围，尊重停止/拒绝/安全边界，最新明确直接继续不再提问，不机械AskUserQuestion；不推workspace系列/强推/自动合并发布，凭据不持久化。
+
 ## 上次做了什么（2026-10-16，Shift＋右键锁定与仓库整合，已push并创建 PR #154）
 
 - 用户确认Shift＋右键方案并授权完成后一并提交、正常push独立任务分支和创建workspace1005 PR；本次鉴权只在进程内即时使用，凭据不写源码/Git配置/remote/日志/记忆。保留原dirty后无冲突快进至最新目标ebbf8c0d（含PR151/152），当前feat1016/equipment-inventory-curation；不pop旧性能stash、不读玩家档、不推workspace系列/强推/自动合并发布。

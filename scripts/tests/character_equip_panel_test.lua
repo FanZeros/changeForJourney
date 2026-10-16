@@ -1183,6 +1183,15 @@ function Start()
         "生命值截图正文使用生命上限与死亡规则")
     check(actualAD.getDesc(actualAD.ARMOR_BONUS) == "百分比增加护甲。",
         "护甲加成补齐已有关键词说明")
+    check(actualAD.getDesc(actualAD.ABNORMAL_RES) ==
+        "减少受到的异常状态持续时间，实际减免最多80%，即持续时间最短为原来的20%。面板显示封顶前总值；括号内(+数值)为超出上限的未生效溢出量，不是额外加成。战术标记不受影响。",
+        "异常抗性说明区分原始值、未生效溢出和实际上限")
+    check(actualAD.getCap(actualAD.ABNORMAL_RES) == 80
+        and actualAD.formatAttrDisplayValue(actualAD.ABNORMAL_RES, 120.6) == "120.6% (+40.6%)",
+        "补充说明不改异常抗性上限或面板数值格式")
+    local formula = originalRequire("systems.CombatFormula")
+    check(math.abs(formula.calcAbnormalDuration(5, 120.6) - 1) < 0.000001,
+        "120.6%原始抗性仍仅减免80%，5秒异常变1秒")
     for _, supplied in ipairs({ "装备来源说明", "动态暴击与神器说明", "" }) do
         local row = { key = actualAD.MAX_HP, name = "生命值", value = "100", desc = supplied }
         local expected = supplied ~= "" and supplied or actualAD.getDesc(actualAD.MAX_HP)

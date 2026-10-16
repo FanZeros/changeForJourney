@@ -455,10 +455,10 @@ local attributeDescriptions = {
         "공격할 때마다 회복하는 체력으로, 치유 능력치로 증가시킬 수 있습니다.",
     },
     abnormalRes = {
-        "減少受到的異常狀態持續時間，上限80%。",
-        "Reduces the duration of status effects received. Capped at 80%.",
-        "受ける状態異常の持続時間を短縮する。上限80%。",
-        "받는 상태 이상의 지속시간을 줄입니다. 상한은 80%입니다.",
+        "減少受到的異常狀態持續時間，實際減免最多80%，即持續時間最短為原來的20%。面板顯示封頂前總值；括號內(+數值)為超出上限的未生效溢出量，不是額外加成。戰術標記不受影響。",
+        "Reduces received status-effect duration by up to 80%, leaving at least 20% of the base duration. The panel shows the total before the cap; (+value) in parentheses is overflow above the cap, not an extra bonus, and has no effect. Tactical marks are unaffected.",
+        "受ける状態異常の持続時間を最大80%短縮し、元の持続時間の20%以上が残る。表示値は上限適用前の合計で、括弧内の(+数値)は上限超過分。追加補正ではなく効果もない。戦術マークには適用されない。",
+        "받는 상태 이상의 지속시간을 최대 80% 줄이며, 기본 지속시간의 최소 20%가 남습니다. 표시값은 상한 적용 전 합계이며, 괄호 안의(+수치)는 상한 초과분으로 추가 보너스가 아니며 효과가 없습니다. 전술 표식에는 적용되지 않습니다.",
     },
     dmgBonus = {
         "通用傷害加成，同時作用於物理傷害與魔法傷害。",

@@ -187,6 +187,18 @@ function RunCurationUiTest()
         end
         for _,lang in ipairs({"zh_CN","zh_TW","en","ja","ko"}) do
             Lang.set(lang); draw(); assertTree(captured)
+            local footer=captured.children[5]
+            for _,button in ipairs(footer.children) do
+                local face=Theme.FontFace(button.props.fontFamily,button.props.fontWeight)
+                check(button.props.text~="","localized button text "..lang)
+                check(nvgFindFont(vg,face)>=0,"button font registered in host vg: "..face)
+                nvgFontFace(vg,face);nvgFontSize(vg,Theme.FontSize(button.props.fontSize))
+                local measured=nvgTextBounds(vg,0,0,button.props.text)
+                local b=button:GetAbsoluteLayout()
+                check(measured>0 and measured<b.w-32,"actual button font measures caption "..lang)
+            end
+            check(footer.children[1].props.text==Text.text("取消"),"localized cancel "..lang)
+            check(footer.children[2].props.text==Text.text("确认优选"),"localized confirm "..lang)
             check(captured.children[1]:GetText()==Text.text("优选预览"),"localized title "..lang)
         end
         Lang.set("zh_CN");draw()

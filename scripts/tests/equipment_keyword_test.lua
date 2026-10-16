@@ -74,6 +74,13 @@ function M.run()
             "静态怨引说明独立oracle")
         for languageIndex, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
             I18n.set(lang)
+            local resistance = assert(Locale.getAttribute(AD.ABNORMAL_RES, lang))
+            local overflowWords = { "未生效溢出量", "未生效溢出量", "overflow above the cap", "上限超過分", "상한 초과분" }
+            local markWords = { "战术标记", "戰術標記", "Tactical marks", "戦術マーク", "전술 표식" }
+            check(resistance.desc:find("80%", 1, true) and resistance.desc:find("20%", 1, true)
+                and resistance.desc:find(overflowWords[languageIndex], 1, true)
+                and resistance.desc:find(markWords[languageIndex], 1, true),
+                "异常抗性五语说明包含有效上限、溢出和标记例外 " .. lang)
             for _, case in ipairs(NAME_ORACLE) do
                 local expectedTitle = case.titles[languageIndex]
                 local definition = assert(Locale.getAttribute(case.key, lang, case.legacy))

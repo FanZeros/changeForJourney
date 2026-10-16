@@ -60,10 +60,10 @@ local function runTests()
     replace(Feedback, "finish", function() end)
 
     -- Headless draw 是调用链测试，不创建 GPU/NanoVG context，也不产出伪截图。
-    local drawCalls = {}
+    local drawCalls, rawTextCalls, fontSize = {}, {}, 0
     local DrawUtil = require("core.DrawUtil")
-    replace(DrawUtil, "drawTextStroke", function(_, x, y, caption)
-        drawCalls[#drawCalls + 1] = { x = x, y = y, text = caption }
+    replace(DrawUtil, "drawTextStroke", function(_, x, y, caption, size)
+        drawCalls[#drawCalls + 1] = { x = x, y = y, text = caption, size = size }
     end)
     replace(DrawUtil, "drawImageCentered", function() end)
     local Chrome = require("ui.town.TownPageChrome")
@@ -82,6 +82,10 @@ local function runTests()
         "nvgStrokeWidth", "nvgStroke", "nvgTextAlign", "nvgText" }) do
         replace(_G, name, function() end)
     end
+    replace(_G, "nvgFontSize", function(_, size) fontSize = size end)
+    replace(_G, "nvgText", function(_, x, y, caption)
+        rawTextCalls[#rawTextCalls + 1] = { x=x, y=y, text=caption, size=fontSize }
+    end)
     replace(_G, "nvgRGBA", function() return {} end)
     replace(_G, "nvgTextBounds", function(_, _, _, caption) return #caption * 16, {0, 0, #caption * 16, 16} end)
     replace(require("core.I18n"), "displayBounds", function(_, _, _, caption) return #caption * 16 end)
@@ -331,6 +335,26 @@ local function runTests()
     Page.handleInput(180, 1256)
     eq(Page.isDetailOpen(), true, "排序后点击第三行打开详情")
     local drawn = drawChecked()
+    local sortHints = {}
+    for _, call in ipairs(rawTextCalls) do
+        if call.text == "属性排序合计固定与随机词条；无该属性的装备置后" then sortHints[#sortHints+1] = call end
+    end
+    eq(#sortHints, 1, "遗匣排序说明只绘制一处，不叠加共享默认说明")
+    local sortHint, claimHint = sortHints[1], nil
+    for index = drawn+1, #drawCalls do
+        local call = drawCalls[index]
+        if call.text == "一键领取按通用评分优先，与列表排序无关" then claimHint=call end
+    end
+    check(claimHint ~= nil, "一键领取说明保留")
+    eq(sortHint.x, 48, "排序说明在按钮左侧")
+    eq(sortHint.y, 590, "排序说明第一行")
+    eq(claimHint.y, 626, "领取说明第二行")
+    check(sortHint.y+sortHint.size/2+2 < claimHint.y-claimHint.size/2-2, "说明行的字高与描边不重叠")
+    for _, hint in ipairs({sortHint,claimHint}) do
+        local measured = #hint.text*16*hint.size/22
+        check(hint.x+measured+2 < 670, "限宽说明不会覆盖优选按钮")
+        check(hint.y+hint.size/2+2 < 660, "说明不会覆盖列表")
+    end
     check(detailCalls[#detailCalls] ~= tieA.equip, "点击详情不持有来源装备")
     eq(detailCalls[#detailCalls].name, tieA.equip.name, "点击详情使用排序后第三行水合副本")
     check(textAt(drawn, 294, 716, million.equip.name), "首行实际绘制百万装备")

@@ -1,12 +1,13 @@
 -- 基于 scaffold-2d 的 Start/Update/Stop 与官方 NanoVGRender 宿主帧。
 -- 真实遗匣Page/通用筛选条/属性菜单绘制；私有require环境禁止Boot、玩家File和持久化。
--- Runtime截图写外部验证目录；-lootbox-preview=page|menu，125帧自动退出。
-local mode = "menu"
+-- Runtime截图写外部验证目录；-lootbox-preview=page|menu|dialog，-lootbox-lang指定语言。
+local mode, language = "menu", "zh_CN"
 for _, argument in ipairs(GetArguments()) do
     mode = argument:match("^%-lootbox%-preview=(.+)$") or mode
+    language = argument:match("^%-lootbox%-lang=(.+)$") or language
 end
 local vg = nil ---@type NVGContextWrapper?
-local page, bar, viewport = {}, {}, {} ---@type table, table, table
+local page, bar, viewport, dialog = {}, {}, {}, {} ---@type table, table, table, table
 local source, snapshot = {}, {} ---@type table[], table[]
 local frames, rendered, fileCalls, actions = 0, 0, 0, 0
 local errors = {} ---@type string[]
@@ -46,7 +47,7 @@ function Start()
         end })
         local modules = {
             ["systems.GameSFX"] = { playUIMove = function() end, playUIClick = function() end },
-            ["core.PlayerStore"] = { Get = function() return nil end },
+            ["core.PlayerStore"] = { Get = function() return nil end, GetRevision = function() return 0 end },
             ["runtime.ClientDispatcher"] = { get = function() return nil end },
         }
         env.package = { loaded = modules, preload = {}, path = "" }
@@ -92,6 +93,21 @@ function Start()
         page.handleInput(295, 573 + (wanted - scroll - 0.5) * 62)
         assert(bar.getState().sortKey == "str", "通过真实菜单设置属性排序")
         if mode == "menu" then page.handleInput(295, 524) end
+        env.require("core.I18n").set(language)
+        if mode == "dialog" then
+            modules["runtime.GameAction"] = { sendAction = function(action, params)
+                if action == "PreviewInventoryCuration" then
+                    dialog.onActionResult({action=action,requestId=params.requestId,success=true,
+                        token="visual-only",moveInCount=292,moveOutCount=0,protectedCount=196})
+                elseif action ~= "CancelInventoryCuration" then
+                    noAction()
+                end
+                return true
+            end }
+            dialog = env.require("ui.loot.InventoryCurationDialog")
+            dialog.bindHost({sourceValid=function() return true end})
+            assert(dialog.open("lootbox"), "只读弹窗预览")
+        end
         SubscribeToEvent("Update", "LootboxFilterPreviewUpdate")
         SubscribeToEvent(vg, "NanoVGRender", "LootboxFilterPreviewRender")
         print("[lootbox_filter_preview] START real Page + Viewport left mode=" .. mode)
@@ -128,6 +144,7 @@ function LootboxFilterPreviewRender()
         engine:Exit()
     end
     viewport.finish(vg)
+    if mode == "dialog" then dialog.draw(vg, 1920, 1080) end
     nvgRestore(vg)
     nvgEndFrame(vg)
 end
@@ -135,6 +152,7 @@ function Stop()
     check(rendered > 0, "真实Page没有渲染")
     check(equal(source, snapshot), "预览改写来源装备")
     check(fileCalls == 0 and actions == 0, "预览发生玩家IO或领取回收")
+    if dialog.reset then dialog.reset() end
     if page.forceClose then page.forceClose() end
     if vg then nvgDelete(vg); vg = nil end
     print(string.format("[lootbox_filter_preview] SUMMARY mode=%s frames=%d rendered=%d failures=%d file=%d actions=%d",

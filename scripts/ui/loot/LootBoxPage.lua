@@ -293,7 +293,7 @@ end
 
 -- 只绑定通用工具条，不引入仓库英雄/双持上下文；状态与菜单均属于本页。
 filterBar = BackpackFilters.bind({
-    filters = state, GRID = GRID,
+    filters = state, GRID = GRID, sortHint = false,
     getSlot = function() return state.slotFilter end,
     setSlot = function(slot) state.slotFilter = slot end,
     clearQualitySets = function() state.qualitySet, state.setFilter = {}, {} end,
@@ -594,11 +594,13 @@ function LootBoxPage.draw(vg)
     drawFilters(vg)
     filterBar.draw(vg)
     Curation.drawEntry(vg, CURATION.cx, CURATION.cy, CURATION.w, CURATION.h)
+    -- 说明分两行放在按钮左侧，右界638，留出32像素间隔，不改任何命中坐标。
+    filterBar.drawSortHint(vg, 48, CURATION.cy - 18, 590, 22)
     local claimHint = CurationText.text("一键领取按通用评分优先，与列表排序无关")
     nvgFontFace(vg, "sans"); nvgFontSize(vg, 22)
     local hintWidth = nvgTextBounds(vg, 0, 0, claimHint)
     local hintSize = math.min(22, 22 * 590 / math.max(1, hintWidth))
-    text(vg, 48, CURATION.cy, claimHint, hintSize, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 216,201,163,2)
+    text(vg, 48, CURATION.cy + 18, claimHint, hintSize, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 216,201,163,2)
     local statusText = string.format(I18n.lookup("%s · 待领取 %d 件"), filterName(), state.count)
     if state.pendingCount > 0 then
         statusText = statusText .. string.format(I18n.lookup(" · 待整理 %d 件"), state.pendingCount)

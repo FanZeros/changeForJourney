@@ -21,6 +21,10 @@ local assertions, failures, renderCount = 0, 0, 0
 ---@type NVGContextWrapper?
 local canvas = nil
 local finished = false
+local previewResistance = false
+for _, argument in ipairs(GetArguments()) do
+    if argument == "-abnormal-res-preview" then previewResistance = true end
+end
 local cards, icons = {}, {}
 
 local function check(ok, message)
@@ -1135,11 +1139,63 @@ function HandleCharacterDetailLayoutRender()
     report()
 end
 
+function HandleAbnormalResistancePreview()
+    if not canvas then return end
+    M.beginFrame(canvas)
+    local fixture = M.fixture(shortHero())
+    local AD = require("systems.AttributeDef")
+    local ok, err = isolated(fixture, function(_, patch)
+        local collect = Attrs.collectAttributes
+        patch(Attrs, "collectAttributes", function(...)
+            local attributes = collect(...)
+            for _, row in ipairs(attributes.left) do
+                if row.key == AD.ABNORMAL_RES then
+                    row.value = AD.formatAttrDisplayValue(row.key, 120.6)
+                end
+            end
+            return attributes
+        end)
+        Draw.draw(canvas)
+        local selected
+        for _, hit in ipairs(fixture.state.attrHits) do
+            if hit.key == AD.ABNORMAL_RES then selected = hit; break end
+        end
+        -- 滚动让目标行进入底部可见区域，提示使用生产位置/换行，不改玩家数据。
+        if not selected then
+            local rowIndex
+            for i, row in ipairs(fixture.state.cachedLeft) do
+                if row.key == AD.ABNORMAL_RES then rowIndex = i; break end
+            end
+            assert(rowIndex, "异常抗性真实属性行")
+            fixture.state.attrScrollY = math.max(0, (rowIndex - 1) * View.ATTRIBUTE_STYLE.rowStep - 6 * View.ATTRIBUTE_STYLE.rowStep)
+            Draw.draw(canvas)
+            for _, hit in ipairs(fixture.state.attrHits) do
+                if hit.key == AD.ABNORMAL_RES then selected = hit; break end
+            end
+        end
+        assert(selected, "异常抗性可见行")
+        fixture.state.attrTip = {name=AD.META[AD.ABNORMAL_RES].name,desc=AD.getDesc(AD.ABNORMAL_RES),
+            boxCX=View.ATTRIBUTE_STYLE.boxCX,boxTopY=selected.y,area="attr"}
+        Draw.draw(canvas)
+    end)
+    M.endFrame(canvas)
+    assert(ok, err)
+end
+
 function Start()
     print(PREFIX .. " START 真实渲染/隔离fixture，不使用PlayerStore/boot/存档")
     local ok, err = xpcall(function()
         canvas = assert(nvgCreate(1))
         M.init(canvas)
+        if previewResistance then
+            SubscribeToEvent(canvas, "NanoVGRender", "HandleAbnormalResistancePreview")
+            local frames = 0
+            SubscribeToEvent("Update", function()
+                frames = frames + 1
+                if frames >= 125 then engine:Exit() end
+            end)
+            return
+        end
         SubscribeToEvent(canvas, "NanoVGRender", "HandleCharacterDetailLayoutRender")
         -- 误用graphicsheadless时明确失败，不能无渲染却报通过。
         SubscribeToEvent("Update", function()

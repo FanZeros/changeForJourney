@@ -231,6 +231,20 @@ function M.bind(deps)
             if option.value == selected then menu.scroll = math.max(0, math.min(index - 1, #menu.options - 8)); break end
         end
     end
+    -- 遗匣与优选入口共享底行，由宿主指定说明位置；其他页面保持原布局。
+    function api.drawSortHint(vg, x, y, width, size)
+        local hint = I18n.lookup("属性排序合计固定与随机词条；无该属性的装备置后")
+        size = size or 25
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, size)
+        if width then
+            local measured = nvgTextBounds(vg, 0, 0, hint)
+            nvgFontSize(vg, math.min(size, size * width / math.max(1, measured)))
+        end
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(216, 201, 163, 255))
+        nvgText(vg, x, y, hint, nil)
+    end
     function api.draw(vg)
         local types = filters.typeFilter and highlightedTypes() or {}
         for _, control in ipairs(controls()) do
@@ -244,11 +258,9 @@ function M.bind(deps)
                 caption(label(control.key), control.w - 30, vg, control.x + control.w * 0.5, control.y, color)
             end
         end
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 25)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(216, 201, 163, 255))
-        nvgText(vg, 80, GRID.FIRST_ROW_TOP - 66, "属性排序合计固定与随机词条；无该属性的装备置后", nil)
+        if deps.sortHint ~= false then
+            api.drawSortHint(vg, 80, GRID.FIRST_ROW_TOP - 66)
+        end
     end
     function api.drawOverlay(vg)
         if not api.isOpen() then return end

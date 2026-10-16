@@ -161,9 +161,12 @@ local function ensureTree()
         metrics[i] = value
         countRow:AddChild(value)
     end
+    -- 子树画在宿主 vg 上，只使用宿主已注册的 sans，不能继承主题的 sans-bold。
     confirm = UI.Button { width = 395, height = 76, text = "", fontSize = 28, textColor = C.bone,
+        fontFamily = "sans", fontWeight = "normal",
         backgroundColor = {82,62,33,255}, borderColor = C.gold, borderWidth = 1, borderRadius = 8 }
     cancel = UI.Button { width = 395, height = 76, text = "", fontSize = 28, textColor = C.bone,
+        fontFamily = "sans", fontWeight = "normal",
         backgroundColor = {43,36,29,255}, borderColor = {135,99,49,255}, borderWidth = 1, borderRadius = 8 }
     root = UI.Panel { width = W, height = H, padding = 40, gap = 16,
         backgroundColor = {25,22,19,255}, borderWidth = 3, borderColor = {135,99,49,255}, borderRadius = 18,

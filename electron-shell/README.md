@@ -7,10 +7,13 @@
 ```
 electron-shell/
   package.json
-  main.js          内置 http + BrowserWindow
-  icon.png         512x512
-  game/            打过补丁的 dist（不入库）
-  release/         构筑产物（不入库）
+  main.js            内置 http + BrowserWindow
+  icon.png           512x512 源图
+  icon.ico           多尺寸图标（由 icon.png 生成，见下）
+  make_icon_ico.mjs  icon.png → icon.ico
+  patch_win_icon.mjs 把图标与版本信息写进 exe
+  game/              打过补丁的 dist（不入库）
+  release/           构筑产物（不入库）
 ```
 
 `game/` 相对官方 `dist/` 的补丁：
@@ -19,6 +22,36 @@ electron-shell/
 - 去掉水印、调试桥
 - CSS 隐藏 fab + MutationObserver 移除 eruda
 - WebSocket shim：登录服改连 `ws://127.0.0.1:1/` → skipping login
+
+## exe 图标与版本信息
+
+`package.json` 里 `build.win.signAndEditExecutable: false` 是为了在**无 wine** 的 Linux
+上也能打包：electron-builder 写 exe 图标/版本信息靠 rcedit，而 rcedit 是 Windows PE，
+Linux 上必须经 wine 转发。跳过它的代价是 exe 会保留 Electron 默认图标与
+`Electron 33.2.0` 版本信息。
+
+`patch_win_icon.mjs` 用纯 JS 的 [resedit](https://github.com/jet2jet/resedit-js) 直接改 PE
+资源补上这一步，不依赖 wine，Windows/Linux/macOS 行为一致。`pack_release.py` 在
+electron-builder 产出 exe 后自动调用它，无需手动介入。
+
+- 图标：`icon.ico`（16/24/32/48/64/128/256 七种尺寸），缺失或早于 `icon.png` 时由
+  `make_icon_ico.mjs` 自动重新生成
+- 版本信息：`ProductName` / `FileDescription` / `FileVersion` / `ProductVersion` 取自
+  `package.json` 的 `version` 与固定产品名
+- 幂等：重复执行结果一致；只替换图标组与版本字符串，不动 asar 完整性校验等其他资源
+
+手动补打（正常流程不需要）：
+
+```bash
+cd electron-shell
+node make_icon_ico.mjs                                          # 需要时重新生成 ico
+node patch_win_icon.mjs --exe release/win-unpacked/ZhongYanZhiMen.exe \
+  --icon icon.ico --version 1.0.10 \
+  --product-name ZhongYanZhiMen --description "终焉之门·单机版"
+```
+
+`main.js` 的窗口图标用 `icon.png`，它已列入 `build.files` 打进 asar；两者配合覆盖
+exe 图标（资源管理器/任务栏/快捷方式）与运行时窗口图标。
 
 ## PC 发行包代码保护现状（2026-09-24 审核）
 

@@ -147,6 +147,15 @@ def which_npm() -> str:
     return ""
 
 
+def which_node() -> str:
+    for name in ("node.exe", "node"):
+        p = shutil.which(name)
+        if p:
+            return p
+    die("找不到 node，请先安装 Node.js")
+    return ""
+
+
 def which_python() -> str:
     return sys.executable
 
@@ -908,6 +917,50 @@ def run_builder() -> None:
     exe = UNPACKED / "ZhongYanZhiMen.exe"
     if not exe.exists():
         die("构筑失败：找不到 %s" % exe)
+    patch_win_icon(exe)
+
+
+def patch_win_icon(exe: Path) -> None:
+    """把自定义图标与版本信息写进 exe。
+
+    electron-builder 靠 rcedit 写这些资源，而 rcedit 在 Linux 上要 wine；
+    package.json 用 signAndEditExecutable:false 跳过它以免依赖 wine，代价是 exe
+    保留 Electron 默认图标。这里用纯 JS 的 resedit 补上，跨平台一致。
+    """
+    script = SHELL / "patch_win_icon.mjs"
+    if not script.exists():
+        die("找不到 %s" % script)
+    icon = ensure_icon_ico()
+    ver = read_version()
+    cmd = [
+        which_node(), str(script),
+        "--exe", str(exe),
+        "--icon", str(icon),
+        "--version", ver,
+        "--product-name", "ZhongYanZhiMen",
+        "--description", "终焉之门·单机版",
+    ]
+    log("写入 exe 图标与版本信息 v%s …" % ver)
+    subprocess.check_call(cmd, cwd=str(SHELL))
+    log("已写入 exe 图标与版本信息")
+
+
+def ensure_icon_ico() -> Path:
+    """返回 icon.ico；缺失或早于 icon.png 时由 icon.png 重新生成。"""
+    icon = SHELL / "icon.ico"
+    source = SHELL / "icon.png"
+    if not source.exists():
+        die("找不到 %s" % source)
+    if icon.exists() and icon.stat().st_mtime >= source.stat().st_mtime:
+        return icon
+    script = SHELL / "make_icon_ico.mjs"
+    if not script.exists():
+        die("找不到 %s，无法生成 icon.ico" % script)
+    log("由 icon.png 生成 icon.ico …")
+    subprocess.check_call([which_node(), str(script)], cwd=str(SHELL))
+    if not icon.exists():
+        die("生成 icon.ico 失败")
+    return icon
 
 
 def make_zip(ver: str) -> Path:

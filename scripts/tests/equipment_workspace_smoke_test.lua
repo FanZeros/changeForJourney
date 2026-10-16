@@ -11,9 +11,12 @@ local Preview = require("ui.character.detail.EquipmentPreview")
 
 function Start()
     local screenshotReview, equippedReview = false, false
+    local warehouseClassReview, warehouseTypeReview = false, false
     for _, arg in ipairs(GetArguments()) do
         if arg == "-forge-review" then screenshotReview = true end
         if arg == "-equipped-review" then equippedReview = true end
+        if arg == "-warehouse-class-review" then warehouseClassReview = true end
+        if arg == "-warehouse-type-review" then warehouseTypeReview = true end
     end
     local ok, err = pcall(function()
         Store.Init()
@@ -34,6 +37,37 @@ function Start()
         Backpack.init(vg)
         Detail.open(1, "equip")
         assert(Backpack.isOpen() and Backpack.isLeftMode(), "配装入口未自动开启左仓库")
+        if warehouseClassReview or warehouseTypeReview then
+            -- 冻结到开合动画结束；仅操作内存夹具和生产筛选，不发送穿戴动作。
+            local VP = require("core.Viewport")
+            time = { elapsedTime = time.elapsedTime + 2 }
+            Backpack.update(1)
+            if warehouseTypeReview then
+                Detail.handleEquipmentSlotTap(325, 598)
+                assert(Backpack.getEquipmentSlotFilter() == "weapon", "类型截图未建立主手筛选")
+                Backpack.handleInput(765, 444)
+            else
+                Backpack.handleInput(540, 534)
+                Backpack.handleInput(540, 738) -- all/seal/spoil：选中当前大狗嚼的职业。
+                Backpack.handleInput(540, 534)
+            end
+            SubscribeToEvent(vg, "NanoVGRender", function()
+                local dpr = graphics:GetDPR()
+                local logicalW, logicalH = graphics:GetWidth() / dpr, graphics:GetHeight() / dpr
+                local ox, oy, scale = VP.layout(logicalW, logicalH)
+                nvgBeginFrame(vg, logicalW, logicalH, dpr)
+                VP.begin(vg, VP.PANELS.left, ox, oy, scale)
+                Backpack.draw(vg)
+                VP.finish(vg)
+                VP.begin(vg, VP.PANELS.right, ox, oy, scale)
+                Detail.draw(vg)
+                VP.finish(vg)
+                nvgEndFrame(vg)
+            end)
+            assert(Dispatcher.get("equipment").equipped[1].weapon == 1,
+                "职业/类型截图不得修改穿戴映射")
+            return
+        end
         local Draw = require("ui.character.detail.CharacterDetailDraw")
         local slots = {}
         for _, slot in ipairs(Draw.DT_SLOTS) do slots[slot.slot] = slot end
@@ -310,6 +344,6 @@ function Start()
     end)
     if ok then print("[equipment_workspace_smoke_test] ALL PASS")
     else print("[equipment_workspace_smoke_test] FAIL: " .. tostring(err)) end
-    if (screenshotReview or equippedReview) and ok then return end
+    if (screenshotReview or equippedReview or warehouseClassReview or warehouseTypeReview) and ok then return end
     engine:Exit()
 end

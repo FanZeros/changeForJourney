@@ -326,6 +326,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
 
  --- 操作结果
  function M.handleActionResult(eventType, eventData)
+     ---@type table
      local data
      if type(eventType) == "table" and eventType.action ~= nil then
          data = eventType
@@ -334,6 +335,16 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          local ok
          ok, data = pcall(cjson.decode, dataStr)
          if not ok then return end
+     end
+     -- 优选回执单独路由，成功/失败同一身份门禁，不落入领取/奖励等通用分支。
+     if data.action == "PreviewInventoryCuration" or data.action == "ApplyInventoryCuration"
+         or data.action == "CancelInventoryCuration" then
+         if data.action == "ApplyInventoryCuration" and data.success then
+             EquipmentDetail.close()
+             if BackpackPanel.onCurationCommitted then BackpackPanel.onCurationCommitted() end
+         end
+         require("ui.loot.InventoryCurationDialog").onActionResult(data)
+         return
      end
      if data.action == "server_diag" then
         print("[Client][SDIAG] " .. tostring(data.message or data.reason or ""))
@@ -397,6 +408,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
              or data.action == Protocol.ACTION_TYPES.RESTORE_UR_SHARD_CONVERT
              or data.action == Protocol.ACTION_TYPES.SET_AUTO_DECOMPOSE
              or data.action == Protocol.ACTION_TYPES.DECOMPOSE_EQUIP
+             or data.action == Protocol.ACTION_TYPES.TOGGLE_EQUIP_LOCK
              or data.action == Protocol.ACTION_TYPES.EQUIP_ITEM then
              -- 穿戴/分解失败也转发仓库，释放自己的待响应状态并显示拒绝原因。
              local BackpackPanel = require("ui.backpack.BackpackPanel")

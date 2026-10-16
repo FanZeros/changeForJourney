@@ -93,6 +93,20 @@ local function loadHandlers()
             print("[LocalActionBridge] skip " .. pack[1] .. ": " .. tostring(mod))
         end
     end
+    -- 单机优选动作由桥接层适配；服务只返回权威 token/统计，客户端不传装备名单。
+    for _, action in ipairs({ "PreviewInventoryCuration", "ApplyInventoryCuration", "CancelInventoryCuration" }) do
+        handlers_[action] = function(uid, params)
+            if action == "ApplyInventoryCuration" and (deferredTaskPushes_ or publishingDungeonRewards_) then
+                return { success = false, reason = "busy", requestId = params.requestId }
+            end
+            local service = require("rules.equipment.InventoryCurationService")
+            local success, reason, payload = service[action](uid, params.token)
+            local result = {}
+            for key, value in pairs(payload or {}) do result[key] = value end
+            result.success, result.reason, result.requestId = success, reason, params.requestId
+            return result
+        end
+    end
     local n = 0
     for _ in pairs(handlers_) do n = n + 1 end
     print("[LocalActionBridge] handlers loaded: " .. n)
@@ -420,6 +434,29 @@ function M.init()
             publishingDungeonRewards_ = false
         end,
     })
+    require("rules.equipment.InventoryCurationService").SetPersistCallback(function()
+        return require("boot.StandaloneSave").Flush()
+    end, {
+        begin = function()
+            -- 不覆盖另一事务的暂存队列；服务在 begin 成功后才可修改数据。
+            assert(deferredTaskPushes_ == nil and not publishingDungeonRewards_, "curation notification hold busy")
+            deferredTaskPushes_ = {}
+        end,
+        finish = function(_uid, success)
+            local pushes = deferredTaskPushes_ or {}
+            deferredTaskPushes_ = nil
+            if not success then return end
+            publishingDungeonRewards_ = true
+            -- 按最终原表发布，lootbox 不再次规范化/揭示旧种子，也不消费随机。
+            for _, name in ipairs({ "equipment", "lootbox" }) do
+                if pushes[name] then
+                    local ok, err = pcall(ClientDispatcher.set, name, pushes[name], { normalized = true })
+                    if not ok then print("[LocalActionBridge] curation notify failed: " .. tostring(err)) end
+                end
+            end
+            publishingDungeonRewards_ = false
+        end,
+    })
     print("[LocalActionBridge] init uid=" .. LOCAL_UID)
 end
 
@@ -464,7 +501,10 @@ function M.dispatch(action, params)
     local ok, result = pcall(handler, LOCAL_UID, params)
     if not ok then
         print("[LocalActionBridge] handler error action=" .. tostring(action) .. ": " .. tostring(result))
-        result = { success = false, action = action, reason = "本地处理失败" }
+        result = { success = false, action = action, reason = "本地处理失败", requestId = params.requestId }
+        if action == AT.TOGGLE_EQUIP_LOCK then
+            result.seq, result.lockRequestId = params.seq, params.lockRequestId
+        end
     elseif result == nil then
         print("[LocalActionBridge] async/no-result action=" .. tostring(action))
         return true

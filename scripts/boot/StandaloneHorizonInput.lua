@@ -38,6 +38,7 @@ local EquipmentBag       = require("ui.character.equip.EquipmentBag")
 local EquipCrossDrag     = require("ui.character.EquipCrossDrag")
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
 local TutorialManager    = require("systems.TutorialManager")
+local Curation = require("ui.loot.InventoryCurationDialog")
 
 local Input = {}
 ---@param ctx table
@@ -318,6 +319,30 @@ function Input.bind(ctx)
             or TerminalConfirmDialog.isOpen() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive()
     end
 
+    local function curationFrameKey()
+        return table.concat({logicalW(), logicalH(), RT.frameScale or 1,
+            RT.frameOx or 0, RT.frameOy or 0, dpr()}, ":")
+    end
+    Curation.bindHost({
+        blocked = function()
+            return artworkBlocked() or AwakeningArtwork.isOpen() or not bootReady_()
+                or TaskPage.isOpen() or TalentPage.isOpen() or ChurchPage.isOpen()
+                or TavernPage.isOpen() or MarketPage.isOpen()
+        end,
+        sourceValid = function(source)
+            if source == "lootbox" then return LootBoxPage.isCurationSourceReady() end
+            return source == "backpack" and not LootBoxPage.isOpen() and BackpackPanel.isCurationSourceReady()
+        end,
+        frameKey = curationFrameKey,
+        cancelUnderlying = cancelUnderlyingPress,
+    })
+    local function curationPointer(kind, button)
+        if not Curation.isOpen() and not Curation.hasPress() then return false end
+        local mp = pointerPosition()
+        local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+        return Curation.pointer(kind, button, sx, sy, ctx.pointerSource(), logicalW(), logicalH(), curationFrameKey())
+    end
+
     -- 全图持有整次指针手势，失效后的松手也不能落到原页面或后来出现的弹窗。
     local artworkPointer = AwakeningArtwork.bindInput({ runtime = RT, blocked = artworkBlocked,
         cancelUnderlyingPress = cancelUnderlyingPress, source = ctx.pointerSource,
@@ -328,6 +353,7 @@ function Input.bind(ctx)
 
     function HandleMouseButtonDownHorizon(eventType, eventData)
         local button = eventData["Button"]:GetInt()
+        if curationPointer("down", button) then return end
         if artworkPointer("down", button) then return end
         if marqueeGesture.hasPress() then
             if button ~= MOUSEB_RIGHT then marqueeGesture.cancel() end
@@ -492,6 +518,18 @@ function Input.bind(ctx)
         if button == MOUSEB_RIGHT then
             if RewardPopup.isOpen() or OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() then return end
             local pid, dx, dy = HorizonResolveMouse()
+            if input:GetKeyDown(KEY_LSHIFT) or input:GetKeyDown(KEY_RSHIFT) then
+                -- 修饰右键独立消费，不得在空格/遮挡/不支持的页面回落成穿戴或回收。
+                if DungeonBattleScene.isOpen() or HorizonPageModalActive() then return end
+                local mp = pointerPosition()
+                local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+                if equipOverlayDesign(sx, sy) then return end
+                if pid == 'left' and not LootBoxPage.isOpen() and not TaskPage.isOpen()
+                    and BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
+                    BackpackPanel.handleLockRightClick(dx, dy)
+                end
+                return
+            end
             if pid == 'tri' then
                 BattleTriPage.handleRightClick(dx, dy)
                 return
@@ -627,6 +665,7 @@ function Input.bind(ctx)
     end
 
     function HandleMouseMoveHorizon(eventType, eventData)
+        if curationPointer("move", MOUSEB_LEFT) then return end
         if artworkPointer("move", MOUSEB_LEFT) then return end
         if marqueeGesture.hasPress() then
             local mp = pointerPosition()
@@ -805,6 +844,8 @@ function Input.bind(ctx)
     -- 鼠标静止时也推进装备悬停计时（Standalone.HandleUpdate 每帧调用）。
     -- 移到其他格子由命中检测立即收起旧说明。
     function HandleEquipmentHoverTickHorizon()
+        Curation.observe()
+        if Curation.isOpen() or Curation.hasPress() then return end
         AwakeningArtwork.observe(RT, artworkBlocked())
         if AwakeningArtwork.isOpen() or AwakeningArtwork.hasPress() then return end
         rewardGesture.observe()
@@ -844,6 +885,7 @@ function Input.bind(ctx)
     end
 
     function HandleMouseButtonUpHorizon(eventType, eventData)
+        if curationPointer("up", eventData["Button"]:GetInt()) then return end
         if artworkPointer("up", eventData["Button"]:GetInt()) then return end
         if marqueeGesture.hasPress() then
             if eventData["Button"]:GetInt() == MOUSEB_RIGHT and ctx.pointerSource() == "mouse" then
@@ -1371,6 +1413,12 @@ function Input.bind(ctx)
     end
 
     function HandleTouchBeginHorizon(eventType, eventData)
+        if Curation.isOpen() or Curation.hasPress() then
+            if activeTouchId ~= nil then return end
+            activeTouchId = eventData["TouchID"]:GetInt()
+            dispatchTouch(eventType, eventData, HandleMouseButtonDownHorizon)
+            return
+        end
         if AwakeningArtwork.hasPress() or (AwakeningArtwork.isOpen() and not artworkBlocked()) then
             AwakeningArtwork.captureTouch(eventData["TouchID"]:GetInt())
             if activeTouchId ~= nil then return end
@@ -1408,6 +1456,10 @@ function Input.bind(ctx)
         -- 模态可能在拖拽中途出现；主指结束时即释放所有权，早退分支也不得锁住下一指。
         local releasedActive = eventData["TouchID"]:GetInt() == activeTouchId
         if releasedActive then activeTouchId = nil end
+        if Curation.isOpen() or Curation.hasPress() then
+            if releasedActive then dispatchTouch(eventType, eventData, HandleMouseButtonUpHorizon) end
+            return
+        end
         if AwakeningArtwork.releaseTouch(eventData["TouchID"]:GetInt()) then
             if releasedActive then dispatchTouch(eventType, eventData, HandleMouseButtonUpHorizon) end
             return
@@ -1461,6 +1513,10 @@ function Input.bind(ctx)
     end
 
     function HandleTouchMoveHorizon(eventType, eventData)
+        if Curation.isOpen() or Curation.hasPress() then
+            if eventData["TouchID"]:GetInt() == activeTouchId then dispatchTouch(eventType, eventData, HandleMouseMoveHorizon) end
+            return
+        end
         if AwakeningArtwork.hasTouch(eventData["TouchID"]:GetInt()) then
             if eventData["TouchID"]:GetInt() == activeTouchId then dispatchTouch(eventType, eventData, HandleMouseMoveHorizon) end
             return
@@ -1490,10 +1546,14 @@ function Input.bind(ctx)
         dispatchTouch(eventType, eventData, HandleMouseMoveHorizon)
     end
 
-    HandleMouseWheelHorizon = horizonWheel.bindWheel({
+    local ordinaryWheel = horizonWheel.bindWheel({
         marqueeGesture = marqueeGesture, getLevelPress = function() return levelPress end,
         cancelUnderlyingPress = cancelUnderlyingPress, artworkBlocked = artworkBlocked, RT = RT,
     })
+    HandleMouseWheelHorizon = function(eventType, eventData)
+        if Curation.consumeScroll() then return end
+        ordinaryWheel(eventType, eventData)
+    end
 
 end
 

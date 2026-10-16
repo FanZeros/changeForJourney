@@ -22,6 +22,18 @@ local BlacksmithService = {}
 -- 服务端洗练待定状态 pendingRefines[uid][seqStr] = { affixes = {...} }
 local pendingRefines = {}
 
+--- 整理只读保护查询；不向调用方暴露或消费待洗练内容。
+---@param uid number
+---@param seq number|string
+---@return boolean
+function BlacksmithService.hasPendingRefine(uid, seq)
+    local pending = pendingRefines[uid]
+    if not pending then return false end
+    local numberSeq = tonumber(seq)
+    return pending[tostring(seq)] ~= nil
+        or (numberSeq ~= nil and (pending[numberSeq] ~= nil or pending[tostring(numberSeq)] ~= nil))
+end
+
 local SLOT_SCROLL_MAP = BlacksmithConfig.SLOT_SCROLL_MAP
 local MAX_ENHANCE_LV  = BlacksmithConfig.MAX_ENHANCE_LEVEL
 

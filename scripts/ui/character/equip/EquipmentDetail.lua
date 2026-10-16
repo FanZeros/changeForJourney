@@ -867,9 +867,8 @@ function EquipmentDetail.handleInput(dx, dy)
                 seq = tonumber(detState.equipSeq),
             })
         end
-        newEquip.locked = (not newEquip.locked) or nil
-        print("[EquipmentDetail] 切换装备锁定 seq=" .. tostring(detState.equipSeq)
-            .. " locked=" .. tostring(newEquip.locked == true))
+        -- 由权威装备推送刷新；单机同步桥已改同一实例，不能再反转第二次。
+        print("[EquipmentDetail] 请求切换装备锁定 seq=" .. tostring(detState.equipSeq))
         return true
     end
 
@@ -989,10 +988,8 @@ function EquipmentDetail.handleInput(dx, dy)
                 seq = tonumber(detState.equipSeq),
             })
         end
-        -- 乐观更新本地缓存，立即刷新锁图标
-        newEquip.locked = (not newEquip.locked) or nil
-        print("[EquipmentDetail] 切换装备锁定 seq=" .. tostring(detState.equipSeq)
-            .. " locked=" .. tostring(newEquip.locked == true))
+        -- 由权威装备推送刷新；单机同步桥已改同一实例，不能再反转第二次。
+        print("[EquipmentDetail] 请求切换装备锁定 seq=" .. tostring(detState.equipSeq))
         return true
     end
 

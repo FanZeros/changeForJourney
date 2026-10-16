@@ -712,7 +712,7 @@ function BlacksmithPage.open(preSelectEquip, initialTab)
     BlacksmithEnhance.onOpen()
 
     -- 仅打开边沿持有，已开的仓库不反复 open/reset；配装与锻炉可无缝交接。
-    require("ui.backpack.BackpackPanel").acquireWarehouse("blacksmith")
+    require("ui.backpack.BackpackPanel").acquireForBlacksmith()
 end
 
 --- 教程恢复强化页，只选择库存内模板有效且未满阶的装备，不发送强化/穿戴操作。
@@ -755,7 +755,7 @@ function BlacksmithPage.prepareTutorial(vg)
         _enhanceCache.dirty = true
         require("systems.GameSFX").playUIMove(1)
         BlacksmithEnhance.onOpen()
-        require("ui.backpack.BackpackPanel").acquireWarehouse("blacksmith")
+        require("ui.backpack.BackpackPanel").acquireForBlacksmith()
         changed = true
     end
     if opening or switching then

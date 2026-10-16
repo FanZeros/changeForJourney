@@ -59,7 +59,19 @@ function M.bind(deps)
         return slotFilter, filterHeroId, heroes, dualMode
     end
 
-    -- 列表与数量共用品质/部位规则；可穿戴状态只灰显，不改变候选数量。
+    local classKey = false
+    local classChecker = EquipmentWearability.createClassChecker(nil)
+    local function matchesClass(equip)
+        local classId = decomposeState.classFilter
+        if classId == "all" then classId = nil end
+        if classKey ~= classId then
+            classKey = classId
+            classChecker = EquipmentWearability.createClassChecker(classId)
+        end
+        return classChecker(equip)
+    end
+
+    -- 列表与数量共用品质/部位/类型/职业规则；可穿戴状态只灰显，不改变候选数量。
     local function matchesBaseFilter(equip, slotFilter, dualMode)
         local tpl = EquipmentConfig.ITEMS[equip.templateId]
         local naturalSlot, equipType, grip, level = EquipmentWearability.getFields(equip)
@@ -69,7 +81,7 @@ function M.bind(deps)
             slotOk = true
         end
         local typeOk = not decomposeState.typeFilter or equipType == decomposeState.typeFilter
-        return tpl ~= nil and qualityChecked(quality) and slotOk and typeOk,
+        return tpl ~= nil and qualityChecked(quality) and slotOk and typeOk and matchesClass(equip),
             tpl, naturalSlot, equipType, grip, level, quality
     end
 
@@ -98,7 +110,7 @@ function M.bind(deps)
     local function listCacheKey(slotFilter, heroId, dualMode)
         if not PlayerStore.GetRevision then return nil end
         local parts = { tostring(slotFilter), tostring(heroId), tostring(dualMode),
-            tostring(decomposeState.typeFilter), tostring(decomposeState.sortKey),
+            tostring(decomposeState.typeFilter), tostring(decomposeState.classFilter), tostring(decomposeState.sortKey),
             tostring(decomposeState.sortAscending == true) }
         for _, key in ipairs({ "equipment", "heroes", "artifacts", "talents" }) do
             parts[#parts + 1] = tostring(PlayerStore.GetRevision(key))

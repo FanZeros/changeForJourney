@@ -8,7 +8,16 @@ local DrawUtil = require("core.DrawUtil")
 local DarkIcon = require("core.DarkIcon")
 local I18n = require("core.I18n")
 local SettingsPanel = require("ui.hud.popup.SettingsPanel")
+local ClassConfig = require("config.ClassConfig")
+local HeroConfig = require("config.HeroConfig")
+local EquipmentWearability = require("ui.character.detail.EquipmentWearability")
+local HeroFrame = require("ui.widget.HeroFrame")
+local UI = require("urhox-libs/UI")
+local Surface = require("ui.widget.DesignWidgetSurface")
 local M = {}
+
+local CLASS_IDS = { "seal", "spoil", "rift", "echo", "mask", "debt" }
+local WHITE = { 244, 237, 224, 255 }
 
 local SORTS = {
     { value = "default", label = "默认排序" },
@@ -23,14 +32,67 @@ function M.bind(deps)
     local menu = { key = nil, options = {}, scroll = 0, x = 0, y = 0, w = 0, h = 0,
         dragging = false, dragY = 0, dragScroll = 0, moved = false }
     local api = {}
-    local function caption(value, width, vg, x, y)
+    ---@type table<string, {root: Panel, text: Label}>
+    local classViews = {}
+    function api.init(_vg)
+        if deps.enableClassFilter then Surface.init() end
+    end
+    local function currentHeroId()
+        return deps.getHeroId and deps.getHeroId() or nil
+    end
+    local function currentClassId()
+        local heroId = currentHeroId()
+        local hero = heroId and HeroConfig.get(tonumber(heroId))
+        return hero and ClassConfig.normalize(hero.classId) or nil
+    end
+    local function classColor(classId)
+        return classId ~= nil and classId == currentClassId() and HeroFrame.GOLD_HI or WHITE
+    end
+    local function classCaption(vg, text, classId, x, y, width, height, viewKey)
+        local view = classViews[viewKey]
+        if not view then
+            local textLabel = UI.Label { text = "", fontSize = 22.5, minFontSize = 12,
+                fontFamily = "sans", fontWeight = "normal", verticalAlign = "middle",
+                textAlign = "center", width = "100%", height = "100%", flexShrink = 1 }
+            view = { text = textLabel, root = UI.Panel { width = width - 80, height = height,
+                pointerEvents = "none", children = { textLabel } } }
+            classViews[viewKey] = view
+        end
+        view.root:SetWidth(width - 80)
+        view.root:SetHeight(height)
+        view.text:SetText(I18n.lookup(text))
+        view.text:SetFontColor(classColor(classId))
+        nvgSave(vg)
+        nvgTranslate(vg, x + 62, y - height * 0.5)
+        Surface.draw(view.root, vg, width - 80, height)
+        nvgRestore(vg)
+        local images = HeroFrame.getImages()
+        local index = classId and HeroFrame.CLASS_ICON_MAP[classId]
+        local icon = images.vg == vg and index and images.classIcons[index] or -1
+        if icon and icon >= 0 then
+            DrawUtil.drawImageCentered(vg, icon, x + 34, y, 44, 44, 1)
+        else
+            -- 「全部」或资源未就绪用同尺寸菱形；不新建图片/字体、不抢输入。
+            nvgBeginPath(vg)
+            nvgMoveTo(vg, x + 34, y - 14)
+            nvgLineTo(vg, x + 48, y)
+            nvgLineTo(vg, x + 34, y + 14)
+            nvgLineTo(vg, x + 20, y)
+            nvgClosePath(vg)
+            nvgStrokeWidth(vg, 2)
+            nvgStrokeColor(vg, nvgRGBA(212, 175, 90, 255))
+            nvgStroke(vg)
+        end
+    end
+    local function caption(value, width, vg, x, y, color)
         local text = I18n.lookup(value)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 30)
         local measured = I18n.displayBounds(vg, 0, 0, text)
         local size = math.min(30, 30 * width / math.max(1, measured))
+        color = color or WHITE
         DrawUtil.drawTextStroke(vg, x, y, text, size,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 2)
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color[1], color[2], color[3], 2)
     end
     local function changed()
         deps.onChange()
@@ -42,7 +104,7 @@ function M.bind(deps)
     function api.isOpen() return menu.key ~= nil end
     function api.getState() return filters end
     function api.reset()
-        filters.typeFilter, filters.sortKey, filters.sortAscending = nil, nil, false
+        filters.typeFilter, filters.classFilter, filters.sortKey, filters.sortAscending = nil, nil, nil, false
         deps.setSlot(nil)
         if deps.clearQualitySets then deps.clearQualitySets() end
         api.close()
@@ -92,14 +154,42 @@ function M.bind(deps)
         for _, attr in ipairs(attrs) do options[#options + 1] = attr end
         return options
     end
+    local function classOptions()
+        local options = { { value = "all", label = "全部职业" } }
+        for _, classId in ipairs(CLASS_IDS) do
+            options[#options + 1] = { value = classId, label = ClassConfig.get(classId).name }
+        end
+        return options
+    end
+    -- 同一类型可能有多个模板；只要当前部位中一种可穿，该类型就作黄色提示。
+    -- 每次绘制重新读当前详情角色和主副手，换人/转职/装备回包不借旧菜单快照。
+    local function highlightedTypes()
+        local result = {}
+        local heroId = currentHeroId()
+        if not heroId or not deps.PlayerStore then return result end
+        local checker = EquipmentWearability.createTypeChecker(deps.PlayerStore.Get("equipment"),
+            heroId, deps.PlayerStore.Get("heroes"))
+        local slot = deps.getSlot()
+        for _, tpl in pairs(EquipmentConfig.ITEMS) do
+            if checker(tpl, slot) then result[tpl.type] = true end
+        end
+        return result
+    end
+    local function selectedValue(key)
+        if key == "slot" then return deps.getSlot() or "all" end
+        if key == "type" then return filters.typeFilter or "all" end
+        if key == "class" then return ClassConfig.normalize(filters.classFilter) or "all" end
+        return filters.sortKey or "default"
+    end
     function api.getOptions(key)
         if key == "slot" then return slotOptions() end
         if key == "type" then return typeOptions() end
+        if key == "class" and deps.enableClassFilter then return classOptions() end
         return sortOptions()
     end
     local function controls()
-        local y1, y2 = GRID.FIRST_ROW_TOP - 226, GRID.FIRST_ROW_TOP - 136
-        return {
+        local y1, y2 = GRID.FIRST_ROW_TOP - (deps.enableClassFilter and 316 or 226), GRID.FIRST_ROW_TOP - 136
+        local result = {
             { key = "slot", x = 80, y = y1, w = 430, h = 70 },
             { key = "type", x = 530, y = y1, w = 470, h = 70 },
             { key = "sort", x = 80, y = y2, w = 430, h = 70 },
@@ -107,10 +197,18 @@ function M.bind(deps)
             { key = "icons", x = 700, y = y2, w = 160, h = 70 },
             { key = "reset", x = 880, y = y2, w = 120, h = 70 },
         }
+        if deps.enableClassFilter then
+            result[#result + 1] = { key = "class", x = 80, y = GRID.FIRST_ROW_TOP - 226, w = 920, h = 70 }
+        end
+        return result
     end
     local function label(key)
         if key == "slot" then return "部位 · " .. (EquipmentConfig.SLOT_NAME[deps.getSlot()] or "全部") end
         if key == "type" then return "类型 · " .. (filters.typeFilter or "全部") end
+        if key == "class" then
+            local class = ClassConfig.get(filters.classFilter)
+            return I18n.lookup("适用职业") .. " · " .. I18n.lookup(class and class.name or "全部")
+        end
         if key == "sort" then
             local sort = filters.sortKey or "default"
             for _, option in ipairs(SORTS) do
@@ -128,17 +226,23 @@ function M.bind(deps)
         menu.scroll, menu.x, menu.w = 0, control.x, control.w
         menu.h = math.min(8, #menu.options) * 62 + 12
         menu.y = math.min(control.y + control.h * 0.5 + 8, GRID.CLIP_BOTTOM - menu.h)
-        local selected = control.key == "slot" and (deps.getSlot() or "all")
-            or control.key == "type" and (filters.typeFilter or "all") or (filters.sortKey or "default")
+        local selected = selectedValue(control.key)
         for index, option in ipairs(menu.options) do
             if option.value == selected then menu.scroll = math.max(0, math.min(index - 1, #menu.options - 8)); break end
         end
     end
     function api.draw(vg)
+        local types = filters.typeFilter and highlightedTypes() or {}
         for _, control in ipairs(controls()) do
             DarkIcon.drawNine(vg, "btn", control.x, control.y - control.h * 0.5, control.w, control.h,
                 { accent = menu.key == control.key and "green" or "gold" })
-            caption(label(control.key), control.w - 30, vg, control.x + control.w * 0.5, control.y)
+            if control.key == "class" then
+                classCaption(vg, label("class"), ClassConfig.normalize(filters.classFilter),
+                    control.x, control.y, control.w, control.h, "trigger")
+            else
+                local color = control.key == "type" and types[filters.typeFilter] and HeroFrame.GOLD_HI or WHITE
+                caption(label(control.key), control.w - 30, vg, control.x + control.w * 0.5, control.y, color)
+            end
         end
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 25)
@@ -151,8 +255,8 @@ function M.bind(deps)
         nvgSave(vg)
         DarkIcon.drawNine(vg, "plain", menu.x, menu.y, menu.w, menu.h, { accent = "gold" })
         nvgIntersectScissor(vg, menu.x + 5, menu.y + 5, menu.w - 10, menu.h - 10)
-        local selected = menu.key == "slot" and (deps.getSlot() or "all")
-            or menu.key == "type" and (filters.typeFilter or "all") or (filters.sortKey or "default")
+        local selected = selectedValue(menu.key)
+        local types = menu.key == "type" and highlightedTypes() or {}
         for row = 1, math.min(8, #menu.options) do
             local option = menu.options[row + menu.scroll]
             if option then
@@ -163,7 +267,13 @@ function M.bind(deps)
                     nvgFillColor(vg, nvgRGBA(72, 65, 42, 255))
                     nvgFill(vg)
                 end
-                caption(option.label, menu.w - 42, vg, menu.x + menu.w * 0.5, y)
+                if menu.key == "class" then
+                    local classId = option.value ~= "all" and option.value or nil
+                    classCaption(vg, option.label, classId, menu.x + 8, y, menu.w - 16, 58, option.value)
+                else
+                    caption(option.label, menu.w - 42, vg, menu.x + menu.w * 0.5, y,
+                        types[option.value] and HeroFrame.GOLD_HI or WHITE)
+                end
             end
         end
         if #menu.options > 8 then
@@ -189,6 +299,8 @@ function M.bind(deps)
                         deps.setSlot(option.value ~= "all" and option.value or nil)
                     elseif menu.key == "type" then
                         filters.typeFilter = option.value ~= "all" and option.value or nil
+                    elseif menu.key == "class" then
+                        filters.classFilter = option.value ~= "all" and option.value or nil
                     else
                         filters.sortKey = option.value ~= "default" and option.value or nil
                     end
@@ -247,7 +359,11 @@ end
 -- 宿主仅提供状态与列表联动；部位上下文、输入模态隔离集中在筛选模块。
 function M.bindWarehouse(filters, GRID, state, equipLink, PlayerStore)
     return M.bind({
-        filters = filters, GRID = GRID,
+        filters = filters, GRID = GRID, enableClassFilter = true, PlayerStore = PlayerStore,
+        getHeroId = function()
+            local detail = require("ui.character.detail.CharacterDetail")
+            return detail.getHeroId and detail.getHeroId() or nil
+        end,
         getSlot = function() return equipLink.getEquipmentSlotFilter() end,
         setSlot = function(slot)
             local detail = require("ui.character.detail.CharacterDetail")
@@ -256,7 +372,9 @@ function M.bindWarehouse(filters, GRID, state, equipLink, PlayerStore)
             equipLink.setEquipmentSlotFilter(slot, heroId)
         end,
         isDualWield = function()
-            local _, heroId = equipLink.getEquipmentSlotFilter()
+            local detail = require("ui.character.detail.CharacterDetail")
+            local _, filterHeroId = equipLink.getEquipmentSlotFilter()
+            local heroId = detail.getHeroId and detail.getHeroId() or filterHeroId
             local heroes = PlayerStore.Get("heroes")
             local roster = heroes and heroes.roster
             local hero = heroId and roster and (roster[heroId] or roster[tostring(heroId)])

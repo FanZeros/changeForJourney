@@ -574,6 +574,7 @@ function Standalone.Start()
 end
 
 function Standalone.Stop()
+    LocalActionBridge.cancelQuickEquip()
     require("ui.loot.InventoryCurationDialog").reset()
     require("rules.equipment.InventoryCurationService").Cleanup(1)
     if Standalone.cancelOpening then Standalone.cancelOpening() end
@@ -873,6 +874,7 @@ Standalone.cancelOpening = cancelOpening_
 --- 清除存档后重置客户端状态并回到开始界面
 --- 由 DebugPanel 的 reset_save 处理器调用
 function Standalone.requestResetToStartScreen()
+    LocalActionBridge.cancelQuickEquip()
     require("ui.loot.InventoryCurationDialog").reset()
     require("rules.equipment.InventoryCurationService").Cleanup(1)
     local TAG = "[Standalone][DIAG-RESET]"
@@ -1014,6 +1016,7 @@ function HandleUpdate(eventType, eventData)
     SidePanelBattlePause.refresh()
     -- 等待回执使用真实帧时间；标题/暂停不阻断超时，也不另订阅 Update 覆盖主循环。
     PlayerStore.Update(dt)
+    LocalActionBridge.updateQuickEquip()
     -- 特效用真实时钟收尾，不随战斗倍速，不被标题／剧情提前返回冻结。
     SpinePowerUpEffect.update(dt)
     require("ui.fx.SpineCardEffect").update(dt)

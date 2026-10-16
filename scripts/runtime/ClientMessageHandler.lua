@@ -356,6 +356,19 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          .. " mailPush=" .. tostring(data.mailPush)
          .. " announcementPush=" .. tostring(data.announcementPush))
 
+     if data.action == Protocol.ACTION_TYPES.EQUIP_ALL_BEST and data.quickEquipId then
+         local key = "equip_failed"
+         if data.success then
+             key = data.notificationFailed and "equip_notify_fail"
+                 or ((tonumber(data.changes) or 0) > 0 and "equip_done" or "equip_no_gain")
+             if (tonumber(data.changes) or 0) > 0 then require("systems.GameSFX").play("install") end
+         elseif data.reason == "quick_equip_stale" then
+             key = "equip_stale"
+         end
+         require("core.UiToast").show(require("core.I18n").t(key))
+         if data.success then TutorialManager.notifyEvent("equipment_equipped") end
+         return -- 异步回执不转发给计算期间新打开的锻炉等无关页面。
+     end
      if not data.success then
          print("[Client] action failed: action=" .. tostring(data.action)
              .. " reason=" .. tostring(data.reason))

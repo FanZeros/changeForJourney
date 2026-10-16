@@ -23,6 +23,13 @@ local publishedPlayer_ = {}
 ---@type table<string, table>|nil
 local deferredTaskPushes_ = nil
 local publishingDungeonRewards_ = false
+---@type table|nil
+local quickEquipJob_ = nil
+local quickEquipEpoch_ = 0
+local quickEquipSerial_ = 0
+local QUICK_EQUIP_BUDGET = 0.004
+local QUICK_EQUIP_STEPS = 4096
+local QUICK_EQUIP_KEYS = { "equipment", "heroes", "artifacts", "talents" }
 
 --- GameState 单机提交钩子；这里只镜像 player，不反向调用 syncPlayerData。
 --- init 前也可使用，确保升级事件观察者的 PDM 与 Dispatcher 已同源。
@@ -460,6 +467,87 @@ function M.init()
     print("[LocalActionBridge] init uid=" .. LOCAL_UID)
 end
 
+-- 一键装备独占一个私有计算任务；其余动作仍沿原同步路径，数据变化让旧任务失效。
+function M.isQuickEquipPending()
+    return quickEquipJob_ ~= nil
+end
+
+function M.cancelQuickEquip()
+    quickEquipEpoch_ = quickEquipEpoch_ + 1
+    quickEquipJob_ = nil
+end
+
+local function quickEquipCurrent(job)
+    if quickEquipJob_ ~= job or job.epoch ~= quickEquipEpoch_ then return false end
+    local store = require("core.PlayerStore")
+    for _, name in ipairs(QUICK_EQUIP_KEYS) do
+        if PDM.GetModule(LOCAL_UID, name) ~= job.sources[name]
+            or store.GetRevision(name) ~= job.revisions[name] then return false end
+    end
+    return true
+end
+
+local function startQuickEquip(handler, params)
+    if quickEquipJob_ then return true end
+    quickEquipSerial_ = quickEquipSerial_ + 1
+    local store = require("core.PlayerStore")
+    local job = { epoch = quickEquipEpoch_, id = quickEquipSerial_, heroId = params.heroId,
+        sources = {}, revisions = {}, steps = 0, deadline = 0, committed = false }
+    for _, name in ipairs(QUICK_EQUIP_KEYS) do
+        job.sources[name] = PDM.GetModule(LOCAL_UID, name)
+        job.revisions[name] = store.GetRevision(name)
+    end
+    local control = {
+        isCurrent = function() return quickEquipCurrent(job) end,
+        checkpoint = function()
+            job.steps = job.steps + 1
+            if job.steps >= QUICK_EQUIP_STEPS or os.clock() >= job.deadline then
+                if not quickEquipCurrent(job) then error("quick_equip_stale", 0) end
+                coroutine.yield()
+                if not quickEquipCurrent(job) then error("quick_equip_stale", 0) end
+            end
+        end,
+        onCommitted = function(result) job.committed = result end,
+    }
+    job.worker = coroutine.create(function()
+        return handler(LOCAL_UID, { heroId = job.heroId }, control)
+    end)
+    quickEquipJob_ = job
+    return true
+end
+
+-- 由宿主每帧驱动一次；4ms是软预算，单次属性重建/最终提交不在中途切开。
+function M.updateQuickEquip()
+    local job = quickEquipJob_
+    if not job or deferredTaskPushes_ or publishingDungeonRewards_ then return end
+    ---@type table
+    local result
+    if not quickEquipCurrent(job) then
+        result = { success = false, reason = "quick_equip_stale" }
+    else
+        job.steps, job.deadline = 0, os.clock() + QUICK_EQUIP_BUDGET
+        local ok, value = coroutine.resume(job.worker)
+        -- MarkDirty同步订阅可能清档或排入新任务，旧任务绝不清理/回执新会话。
+        if quickEquipJob_ ~= job or job.epoch ~= quickEquipEpoch_ then return end
+        if ok and coroutine.status(job.worker) ~= "dead" then return end
+        if ok and type(value) == "table" then
+            result = value
+        else
+            print("[LocalActionBridge] quick equip failed: " .. tostring(value))
+            if job.committed then
+                result = job.committed
+                result.notificationFailed = true
+            else
+                result = { success = false, reason = value == "quick_equip_stale"
+                    and "quick_equip_stale" or "quick_equip_failed" }
+            end
+        end
+    end
+    quickEquipJob_ = nil
+    result.action, result.heroId, result.quickEquipId = Protocol.ACTION_TYPES.EQUIP_ALL_BEST, job.heroId, job.id
+    deliverActionResult(result)
+end
+
 ---@param action string
 ---@param params table|nil
 ---@return boolean handled
@@ -487,6 +575,8 @@ function M.dispatch(action, params)
     M.syncPlayerIntoPdm()
 
     local AT = Protocol.ACTION_TYPES
+    if action == AT.GM_RESET_SAVE then M.cancelQuickEquip() end
+    if action == AT.EQUIP_ALL_BEST then return startQuickEquip(handler, params) end
     if action == AT.GUILD_ENTER then
         local fallback = tryLocalCloudFallback(action, params)
         if fallback then

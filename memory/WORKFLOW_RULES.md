@@ -1,3 +1,14 @@
+## 计算中按钮等待动画（2026-10-16，本地完成）
+
+- 用户要求等待动画，沿perf1016/quick-equip-latency保留分帧dirty，仅新增QuickEquipActivity/meta并接DetailDraw pending，暗铁旧铜双弧反转/六菱循环/内框呼吸/亮铜文字。纯绘制不建纹理字体/音效/RNG/输入层，不假进度、不改原坐标/完整五语/调度/选装/存档；结束/切离不绘制。原UI专项扩到1244断言/28真实NanoVGRender帧、构建后ALL PASS/actualexit0/无timeout，字墨避让、A→B→A精确复现和非默认NVG状态恢复、原输入语义保留，FileFS/RNG0；旧源异步46/18405、试穿147、生命周期、切关、优选UI322亦实际通过。无GPU截图/设备/性能验收承诺。
+- 官方b28成功669根Lua实际载荷字节/size全一致、三新meta UUID一致、源冻结不变、内部验证0入包，两.project与本轮备份逐字节恢复。动画/test LSP Error0，Draw旧诊断/官方daemon unavailable跳过gate/headless环境错误保留；候选19任务路径20旧规范问题同基线/新增0，不称全仓全绿。内证只.git/validation/quick-equip1016/animation，未提交/push/PR/合并发布、不混前轮授权。持续推进且尊重停止/拒绝/安全边界，最新直接继续不机械AskUserQuestion；不推workspace系列/强推/自动合并发布，不持久化凭据。
+
+## 角色一键装备分帧优化（2026-10-16，本地完成）
+
+- 用户明确选择“保持原选装结果，分帧计算、完成后一次穿戴”；独立perf1016/quick-equip-latency固定9a2e5575，仅本地实现/验证/build，无本轮commit/push/PR/合并发布授权，不混PR156文档分支、不pop旧stash、不读玩家档。完整候选/seq/原贪心顺序/严格gain与同分规则保持，4ms软预算/4096检查点，原始快照和水合工作副本分离；refs/revision/epoch及最终完整值校验、Stop/reset/GM清档取消。纯名册exp/maxExp原地更新保留，其余评分/成长/队伍变更拒旧答案。完成无yield一次写目标六槽、沿原保存调度；通知异常保留已提交成功、重入不擦新任务。计算中只防重复一键，五语提示/完成回执install/不串洗练；ctx内pre-aura队友缓存逐槽guard且目标始终重建，公式/奖励/存档格式不改。
+- 官方b27成功，668根Lua全实际载荷逐字节/size一致，两test/meta UUID一致，内部oracle/validation/launcher0入包；两.project与原备份逐字节恢复，668冻结源无变化。构建后八Runtime ALL PASS/actualexit0/无timeout：完整旧源oracle46组18032、真实UI/Noto五语805/26帧、试穿147、操作148、生命周期、切关、优选UI322、教程69；新增FileFS/RNG0。构建前完整oracle46/18198、标准无旧树46/16972亦通过（外部oracle明确NOT RUN）；两首次夹具失败完整保留，仅修真实搜索等待/渐变Fill记录，不降断言。
+- 最终软件CPU200/500普通/500异型双持旧同步628.064/3445.720/4912.329ms，新分帧总CPU395.641/2082.435/2848.104ms、93/493/639帧，理论60Hz1.55/8.22/10.65秒；三样本max11.060/8.309/13.470ms，其他边界仍有124.280ms软件尖峰，不称硬4ms/FPS/全面不卡，500全同型仅进入搜索后取消、不测最坏完成。五核心及两test LSP Error0，四修改文件旧KeywordText/teams/args诊断源行同基线；官方daemon unavailable/code1跳过gate、headless音频/shader错误保留，不称全仓/设备/GPU/触控/整游戏实战验收全过。旧快捷candidate只读1失败固定基线同现不混修；候选17路径20旧规范问题同基线新增0、36规范单测过。内证只.git/validation/quick-equip1016，HEAD/index保持，未提交推送。持续推进授权范围，尊重停止/权限/安全边界；最新直接继续不再提问，不机械AskUserQuestion，不推workspace系列/强推/自动合并发布，凭据不持久化。
+
 ## Shift＋右键锁定与仓库整合（2026-10-16，已push并创建 PR #154）
 
 - 用户确认Shift＋右键并授权500容量/优选、左仓库修复及快捷锁定一并提交、正常push任务分支、创建workspace1005 PR；本次凭据只进程内即时鉴权，不写源码/remote/Git配置/日志/记忆。保留dirty后无冲突ff至最新ebbf8c0d，分支feat1016/equipment-inventory-curation，不pop旧性能stash、不读玩家档、不推workspace系列/强推/自动合并发布。

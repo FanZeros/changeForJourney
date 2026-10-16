@@ -179,21 +179,41 @@ end
 --- 仅在一键装备开始时复制数据，水合/候选试穿均不修改 PDM 的活表。
 ---@param value any
 ---@return any
-local function copyEquipData(value)
+local function copyEquipData(value, checkpoint)
     if type(value) ~= "table" then return value end
     local copy = {}
     for key, entry in pairs(value) do
-        copy[key] = copyEquipData(entry)
+        copy[key] = copyEquipData(entry, checkpoint)
+        if checkpoint then checkpoint() end
     end
     return copy
+end
+
+-- 只有名册条目的纯经验展示值不参与评分；等级/成长/队伍及其他字段仍完整校验。
+local function sameEquipData(actual, expected, scope)
+    if type(actual) ~= type(expected) then return false end
+    if type(expected) ~= "table" then return actual == expected end
+    for key, value in pairs(expected) do
+        if not (scope == "hero" and (key == "exp" or key == "maxExp")) then
+            local childScope = scope == "heroes" and key == "roster" and "roster"
+                or (scope == "roster" and "hero" or nil)
+            if not sameEquipData(actual[key], value, childScope) then return false end
+        end
+    end
+    for key in pairs(actual) do
+        if not (scope == "hero" and (key == "exp" or key == "maxExp"))
+            and expected[key] == nil then return false end
+    end
+    return true
 end
 
 --- 一键装备：按真实整套战力的正向净收益选择合法候选。
 --- 普通槽逐槽优化；主副手联合枚举，避免双手/双持转换被单槽基准阻塞。
 ---@param uid number
 ---@param heroId number|nil
+---@param control table|nil 单机分帧检查点；不传时保留同步调用契约
 ---@return boolean ok, string? err, table? result
-function EquipmentService.EquipAllBest(uid, heroId)
+function EquipmentService.EquipAllBest(uid, heroId, control)
     local equipData = PDM.GetModule(uid, "equipment")
     if not equipData then return false, "数据未加载" end
 
@@ -204,6 +224,15 @@ function EquipmentService.EquipAllBest(uid, heroId)
     local heroesData = PDM.GetModule(uid, "heroes")
     local artifactsData = PDM.GetModule(uid, "artifacts")
     local talentsData = PDM.GetModule(uid, "talents")
+    local checkpoint = control and control.checkpoint
+    local sources = { equipment = equipData, heroes = heroesData, artifacts = artifactsData, talents = talentsData }
+    local snapshots = {}
+    if control then
+        for _, name in ipairs({ "equipment", "heroes", "artifacts", "talents" }) do
+            snapshots[name] = copyEquipData(sources[name], checkpoint)
+        end
+        heroesData, artifactsData, talentsData = snapshots.heroes, snapshots.artifacts, snapshots.talents
+    end
     local hd = heroesData and heroesData.roster
         and (heroesData.roster[heroId] or heroesData.roster[tostring(heroId)])
     local dualMode = AVC.getDualWieldMode(hd and hd.advBranch)
@@ -214,18 +243,19 @@ function EquipmentService.EquipAllBest(uid, heroId)
     end
 
     ---@type table
-    local workingEquip = copyEquipData(equipData)
+    local workingEquip = copyEquipData(control and snapshots.equipment or equipData, checkpoint)
     local inventory = workingEquip.inventory
     EquipmentSystem.ensureHeroSlots(workingEquip, heroId)
     for _, equip in pairs(inventory) do
         if type(equip) == "table" then
             EquipmentSystem.hydrate(equip)
         end
+        if checkpoint then checkpoint() end
     end
 
     -- 只排除其他英雄的物品；本英雄主副手必须能作为组合候选（含互换）。
     local occupiedByOthers = {}
-    for hid, slots in pairs(equipData.equipped or {}) do
+    for hid, slots in pairs(workingEquip.equipped or {}) do
         if tonumber(hid) ~= heroId and type(slots) == "table" then
             for _, seq in pairs(slots) do
                 local seqNum = tonumber(seq)
@@ -266,6 +296,7 @@ function EquipmentService.EquipAllBest(uid, heroId)
                 end
             end
         end
+        if checkpoint then checkpoint() end
     end
     for _, pool in pairs(candidates) do
         table.sort(pool)
@@ -281,6 +312,8 @@ function EquipmentService.EquipAllBest(uid, heroId)
             equipment = equipment,
             artifacts = artifactsData,
             talents = talentsData,
+            checkpoint = checkpoint,
+            cacheFixedTeammates = true,
         })
     end
 
@@ -292,11 +325,13 @@ function EquipmentService.EquipAllBest(uid, heroId)
         local best = nil
         local bestGain = 0
         for _, seq in ipairs(candidates[slotName]) do
-            local evaluated = EquipmentPower.evaluate(ctx, seq, slotName)
+            -- 搜索只比较净提升，不计算详情展示才需要的“拆掉该件”贡献。
+            local evaluated = EquipmentPower.evaluateGain(ctx, seq, slotName)
             if evaluated.valid and evaluated.gain > bestGain then
                 best = evaluated
                 bestGain = evaluated.gain
             end
+            if checkpoint then checkpoint() end
         end
         return best
     end
@@ -340,6 +375,7 @@ function EquipmentService.EquipAllBest(uid, heroId)
                         bestGain = evaluated.gain
                     end
                 end
+                if checkpoint then checkpoint() end
             end
         end
         return best
@@ -370,6 +406,19 @@ function EquipmentService.EquipAllBest(uid, heroId)
         end
     end
 
+    -- 原始快照与工作副本分开；跨帧期间任何相关模块改变均不提交旧答案。
+    -- 最后的完整比较到六槽写入之间没有检查点，不会拼接不同帧的状态。
+    if control then
+        if not control.isCurrent() then return false, "quick_equip_stale" end
+        for _, name in ipairs({ "equipment", "heroes", "artifacts", "talents" }) do
+            local live = PDM.GetModule(uid, name)
+            if live ~= sources[name]
+                or not sameEquipData(live, snapshots[name], name == "heroes" and "heroes" or nil) then
+                return false, "quick_equip_stale"
+            end
+        end
+    end
+
     -- 只提交本英雄已验证的最终槽位，不把试穿的其他英雄/背包表覆盖回活表。
     -- changed 统计最终真实不同的槽位（含双手换装卸掉副手），不统计中间试换次数。
     local initialSlots = EquipmentSystem.getHeroSlots(equipData, heroId) or {}
@@ -386,6 +435,9 @@ function EquipmentService.EquipAllBest(uid, heroId)
         local liveSlots = EquipmentSystem.ensureHeroSlots(equipData, heroId)
         for _, slotName in ipairs(EquipmentConfig.SLOTS) do
             liveSlots[slotName] = finalSlots[slotName] or nil
+        end
+        if control and control.onCommitted then
+            control.onCommitted({ success = true, heroId = heroId, changes = changed })
         end
         PDM.MarkDirty(uid, "equipment")
     end

@@ -12,6 +12,12 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-16，一键装备分帧＋等待动画，已push并创建 PR #158）
+
+- 用户最新明确“pr”，即授权提交、正常push独立任务分支并创建workspace1005 PR。本轮功能提交 `26477fa746fc328c12d95e9d3491e84aa1c59b01`（19白名单=10生产Lua＋2测试Lua＋3新meta＋4交接，+1601/−19）已正常push `perf1016/quick-equip-latency`，push/ls-remote实际exit0、远端SHA与本地一致。正式 **PR #158**：https://github.com/FanZeros/changeForJourney/pull/158，head=perf1016/quick-equip-latency(26477fa7)／base=workspace1005(2869bfe6，含PR155/156)，open/draft=false/merged=false/mergeable=true，未自动合并发布。创建前查同源PR=0、目标未被本会话推送。凭据经本机既有 credential store 进程内使用，未写入remote（仍为干净URL）／Git配置／源码／日志／记忆，已核零残留；建议撤销轮换该令牌。不混入无关untracked（.agent技能目录/_uploads/repair meta）、本地.project／验证材料。
+- 分帧优化保持原选装结果：完整候选不截top-N、seq升序、原贪心顺序、严格gain>bestGain及同分先到者、最终仅一次写目标英雄六槽；私有原始快照与试穿副本分离，4ms软预算/4096检查点，Bridge单任务、epoch/refs/revision与最终完整值校验、Stop/reset/GM清档取消；纯名册exp/maxExp原地更新保留。计算中仅防重复一键，其他页面正常；五语提示，真实完成回执才install，专用quickEquipId回执不串洗练页。ctx内队友外壳缓存仅一键显式开启且逐槽guard、变化回退重建；目标/套装光环/神器/共鸣/正式公式不改。
+- 新增60行QuickEquipActivity纯绘制等待动画（暗铁旧铜左双弧反转、下方六菱微光循环、内框柔呼吸、文字亮铜），仅pending且按钮实际绘制时调用，不显示假百分比、不新增弹窗/输入层、不载新图片/字体/音效或随机，不改坐标/完整五语/30号/busy门禁/搜索/预算/存档。
+
 ## 上次做了什么（2026-10-16，计算中按钮等待动画，本地完成）
 
 - 用户要求计算中好看的动画；沿perf1016/quick-equip-latency保留前轮分帧dirty，不提交/push/PR/合并发布。新增60行QuickEquipActivity纯绘制模块和meta，原DetailDraw仅pending调用；沿DarkIcon暗铁旧铜，左双弧反转、下方六枚菱光循环、内框柔呼吸、文字亮铜。不显示假百分比，不新增弹窗/输入层，不改坐标/完整五语/30号/busy门禁，不载新图片/字体/音效或随机，不改搜索/预算/存档。

@@ -1,3 +1,8 @@
+## 一键装备分帧＋等待动画（2026-10-16，已push并创建 PR #158）
+
+- 用户最新明确“pr”，授权提交、正常push独立任务分支、创建workspace1005 PR。功能提交 `26477fa746fc328c12d95e9d3491e84aa1c59b01`（19白名单=10生产Lua＋2测试Lua＋3新meta＋4交接，+1601/−19）已正常push `perf1016/quick-equip-latency`，远端SHA一致。**PR #158** https://github.com/FanZeros/changeForJourney/pull/158，head=perf1016/quick-equip-latency(26477fa7)／base=workspace1005(2869bfe6，含PR155/156)，open/draft=false/merged=false/mergeable=true，未自动合并发布；创建前同源PR=0。凭据经本机既有 credential store 进程内使用，未写入remote/Git配置/源码/日志/记忆，已核零残留；建议撤销轮换。不混无关untracked（.agent技能目录/_uploads/repair meta）与本地.project/验证材料，不推workspace系列/强推/自动合并发布。
+- 分帧保持原选装结果：完整候选/seq升序/原贪心顺序/严格gain与同分先到者、最终一次写目标六槽；4ms软预算/4096检查点、Bridge单任务、epoch/refs/revision与最终完整值校验、Stop/reset/GM清档取消；纯名册exp/maxExp原地更新保留。计算中仅防重复一键、其他页正常，五语提示、真实完成才install、专用回执不串洗练。新增60行QuickEquipActivity纯绘制等待动画（旧铜双弧反转/六菱微光/内框呼吸/亮铜文字），不假进度、不新增输入层、不载资源/随机、不改坐标/五语/搜索/预算/存档。
+
 ## 计算中按钮等待动画（2026-10-16，本地完成）
 
 - 用户要求等待动画，沿perf1016/quick-equip-latency保留分帧dirty，仅新增QuickEquipActivity/meta并接DetailDraw pending，暗铁旧铜双弧反转/六菱循环/内框呼吸/亮铜文字。纯绘制不建纹理字体/音效/RNG/输入层，不假进度、不改原坐标/完整五语/调度/选装/存档；结束/切离不绘制。原UI专项扩到1244断言/28真实NanoVGRender帧、构建后ALL PASS/actualexit0/无timeout，字墨避让、A→B→A精确复现和非默认NVG状态恢复、原输入语义保留，FileFS/RNG0；旧源异步46/18405、试穿147、生命周期、切关、优选UI322亦实际通过。无GPU截图/设备/性能验收承诺。

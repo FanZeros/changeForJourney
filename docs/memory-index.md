@@ -94,7 +94,8 @@
 | `docs/游戏背景画风与提示词规范.md` | 背景美术规范 |
 | `docs/剧情背景规划与提示词.md` | 剧情背景与提示词 |
 | `docs/角色CG制作规范.md` | 觉醒 CG 制作规范 |
-| `docs/装备图片待办-20261008.md` | 装备图标现状与待办 |
+| `docs/装备图标待办.md` | 装备图标现状与待补清单 |
 | `docs/persona.md` | 协作者画像与协作偏好 |
-| `docs/pc-protection-research-0927.md` | PC 包保护方案 |
-| `docs/pc-obfuscation-similarity-0928.md` | 混淆效果实测 |
+| `docs/build/打包与构建命令.md` | 构建/打包/上传/校验命令速查 |
+| `docs/build/代码保护方案.md` | PC 包保护方案 |
+| `docs/build/混淆效果实测.md` | 混淆效果实测 |

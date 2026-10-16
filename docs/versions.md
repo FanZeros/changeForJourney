@@ -7,7 +7,7 @@
 | 项 | 值 |
 |---|---|
 | 游戏版本 | `1.0.7`（`.project/project.json` → `version`） |
-| 项目 ID | `m_bz83` |
+| 项目 ID | `m_tfv3` |
 | 入口 | `main.lua`（`scripts/main.lua` → `boot/Standalone.lua`） |
 | 运行形态 | 单机（`multiplayer.enabled=false`） |
 | 屏幕方向 | 横屏（`landscape`） |
@@ -19,7 +19,7 @@
 - **构建**：官方 MCP `build` 工具，`scriptsPath=scripts`，入口 `main.lua`。产物输出到 `dist/`，包含全部 Lua 与资源。
 - **资源引用模式**：`.project/resources.json` 为全量引用（`groups.default=["**"]`），资源打包不依赖单独的资源清单模块。
 - **PC 离线包**：`electron-shell/`（内置 Node http 服务直发 COOP/COEP，127.0.0.1 可信来源，免登录，广告为预览实现）。`electron-shell/README.md` 描述工程结构与补丁项。
-- **发布包代码保护**：见 `docs/pc-protection-research-0927.md`（方案评估）与 `docs/pc-obfuscation-similarity-0928.md`（混淆效果实测）。
+- **发布包代码保护**：见 `docs/build/代码保护方案.md`（方案评估）与 `docs/build/混淆效果实测.md`（混淆效果实测）；全部构建/打包命令见 `docs/build/打包与构建命令.md`。
 
 ## 已知发布注意
 

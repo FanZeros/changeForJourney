@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """终焉之门 · L1 保守 Lua 混淆器（作用域安全重命名）。
 
-设计目标（与 docs/pc-protection-research-0927.md 的 L1 一致）：
+设计目标（与 docs/build/代码保护方案.md 的 L1 一致）：
   * 只重命名 **局部绑定**：文件级 local、函数参数、for 循环变量、local function、
     嵌套匿名函数的 local。
   * **永不改名**：全局名（引擎 API / require 到的模块 / 未声明标识符）、

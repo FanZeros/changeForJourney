@@ -10,7 +10,7 @@ local function add(zh, tw, en, ja, ko)
 end
 
 -- ===== 奖励用途与离线结算来源 =====
-add("小队%d · %s · 装备%d件", "小隊%d · %s · 裝備%d件", "Squad %d · %s · %d gear items", "小隊%d・%s・装備%d点", "소대%d · %s · 장비%d개")
+add("小队%d · %s", "小隊%d · %s", "Squad %d · %s", "小隊%d・%s", "소대%d · %s")
 add("用于角色转职、装备升阶和市场购买。", "用於角色轉職、裝備升階和市場購買。", "Used for class advancement, gear ascension, and market purchases.", "転職、装備昇格、マーケットでの購入に使用。", "전직, 장비 승급 및 시장 구매에 사용합니다.")
 add("用于酒馆招募、神器宝箱和市场购买。", "用於酒館招募、神器寶箱和市場購買。", "Used for tavern recruitment, artifact chests, and market purchases.", "酒場の募集、神器宝箱、マーケットでの購入に使用。", "주점 모집, 신기 보물상자 및 시장 구매에 사용합니다.")
 add("用于开启神器宝箱：普通宝箱每次1把，高级宝箱每次5把。每把钥匙的购买价格为150黑晶。", "用於開啟神器寶箱：普通寶箱每次1把，高級寶箱每次5把。每把鑰匙的購買價格為150黑晶。", "Opens artifact chests: 1 key for a normal chest, 5 for an advanced chest. Each key costs 150 black crystals.", "神器宝箱の開封に使用。通常は1回1本、上級は5本。鍵1本の価格は黒晶150個。", "신기 보물상자를 엽니다. 일반은 1회 1개, 고급은 5개가 필요합니다. 열쇠 1개 가격은 흑수정 150개입니다.")

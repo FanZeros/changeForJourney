@@ -112,4 +112,68 @@ function M.canEquip(equipData, seq, heroId, slot, heroesData)
     return M.createChecker(equipData, heroId, heroesData)(seq, slot)
 end
 
+-- 职业筛选只看自然槽位/类型，按该职业全部英雄的配置取并集。
+-- 不借当前角色等级、拥有状态或转职；具体是否能穿仍由原预检灰显。
+---@param classId string|nil
+---@return function checker (equip) -> boolean
+function M.createClassChecker(classId)
+    if classId == nil then return function() return true end end
+    local CC = require("config.ClassConfig")
+    local normalized = CC.normalize(classId)
+    if not CC.get(normalized) then return function() return false end end
+    local typesBySlot, unrestricted = {}, {}
+    for _, heroId in ipairs(HeroConfig.getIdsByClass(normalized)) do
+        for _, slot in ipairs(EquipmentConfig.SLOTS) do
+            local types = EquipmentSystem.getWearableTypeSet(heroId, slot)
+            if types == nil then
+                unrestricted[slot] = true
+            else
+                typesBySlot[slot] = typesBySlot[slot] or {}
+                for equipType, allowed in pairs(types) do
+                    if allowed then typesBySlot[slot][equipType] = true end
+                end
+            end
+        end
+    end
+    return function(equip)
+        local slot, equipType = M.getFields(equip)
+        return unrestricted[slot] == true or (typesBySlot[slot] ~= nil and typesBySlot[slot][equipType] == true)
+    end
+end
+
+-- 类型黄色提示忽略装备等级，但保留当前角色类型限制与实际主副手搭配。
+-- 仅添加内存候选，与 createChecker 共用完整只读规则，不调用 applyEquip。
+---@param equipData table|nil
+---@param heroId number|string|nil
+---@param heroesData table|nil
+---@return function checker (template, targetSlot?) -> boolean
+function M.createTypeChecker(equipData, heroId, heroesData)
+    local heroN = tonumber(heroId)
+    if not heroN or not HeroConfig.get(heroN) then return function() return false end end
+    local source = equipData or {}
+    local mainSlots = EquipmentSystem.getHeroSlots(source, heroN) or {}
+    local inventory = {}
+    for _, slot in ipairs({ "weapon", "offhand" }) do
+        local seq = mainSlots[slot]
+        local equip = readInventory(source, seq)
+        if equip then inventory[tostring(seq)] = equip end
+    end
+    local candidateSeq = -1
+    while inventory[tostring(candidateSeq)] ~= nil do candidateSeq = candidateSeq - 1 end
+    local candidate = { level = 1 }
+    inventory[tostring(candidateSeq)] = candidate
+    local checker = M.createChecker({ inventory = inventory, equipped = source.equipped }, heroN, nil)
+    -- createChecker 的 nil heroes 不检查等级，但双持仍必须读当前转职。
+    local hd = heroesData and heroesData.roster
+        and (heroesData.roster[heroN] or heroesData.roster[tostring(heroN)])
+    if hd then
+        checker = M.createChecker({ inventory = inventory, equipped = source.equipped }, heroN,
+            { roster = { [heroN] = { level = 9999, advBranch = hd.advBranch } } })
+    end
+    return function(tpl, slot)
+        candidate.slot, candidate.type, candidate.grip = tpl.slot, tpl.type, tpl.grip
+        return checker(candidateSeq, slot or tpl.slot)
+    end
+end
+
 return M

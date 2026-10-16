@@ -91,7 +91,7 @@ local GRID = {
     -- 总宽 = 5*160 + 4*30 = 920, 左边距 = (1080-920)/2 = 80
     MARGIN_LEFT = 80,
     -- 第一行顶部 Y
-    FIRST_ROW_TOP = 940, -- 品质/套装条与两行详细筛选保持独立空间
+    FIRST_ROW_TOP = 1030, -- 品质/套装条与三行详细筛选保持独立空间
     -- 裁剪底部（上移为按钮留出空间）
     CLIP_BOTTOM = 2020,
 }
@@ -133,7 +133,7 @@ local function applyLayout(compact)
     end
     if compact then
         LOWER_PANEL.CY, LOWER_PANEL.H = 1300, 2100
-        GRID.FIRST_ROW_TOP, GRID.CLIP_BOTTOM = 670, 1980
+        GRID.FIRST_ROW_TOP, GRID.CLIP_BOTTOM = 760, 1980
         GRID_TITLE.Y, PZSX.CY = 330, 325
         SET_BTN.CY = 325
         CAP_TEXT.Y = 2230
@@ -206,6 +206,7 @@ local decomposeState = {
     qualitySet = {},       -- [quality]=true 勾选的稀有度档；空集合=不按稀有度限制
     setFilter = {},        -- [setId]=true / ["none"]=true 勾选的套装；空集合=不按套装限制
     typeFilter = nil,      -- 装备子类型；nil=全部
+    classFilter = nil,     -- 适用职业；nil=全部，不自动跟随当前角色改变筛选
     sortKey = nil,         -- nil=默认；属性 key 按固定+随机生效值合计排序
     sortAscending = false,
 }
@@ -754,6 +755,8 @@ end
 ---@param vg any NanoVG 上下文
 function Panel.init(vg)
     vg_ = vg
+    if filterBar then filterBar.init(vg) end
+    HeroFrame.initImages(vg)
     imgTopBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_BB_BJ.png", 0)
     imgTitleBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
     imgBtnBack = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
@@ -865,11 +868,12 @@ local equipLink = BackpackEquipLink.bind({
     clearTypeFilter = function() decomposeState.typeFilter = nil end,
     clearTutorialFilters = function()
         local changed = next(decomposeState.qualitySet) ~= nil or next(decomposeState.setFilter) ~= nil
-            or decomposeState.typeFilter ~= nil or decomposeState.sortKey ~= nil
+            or decomposeState.typeFilter ~= nil or decomposeState.classFilter ~= nil or decomposeState.sortKey ~= nil
             or decomposeState.sortAscending
         if changed then
             decomposeState.qualitySet, decomposeState.setFilter = {}, {}
-            decomposeState.typeFilter, decomposeState.sortKey, decomposeState.sortAscending = nil, nil, false
+            decomposeState.typeFilter, decomposeState.classFilter = nil, nil
+            decomposeState.sortKey, decomposeState.sortAscending = nil, false
         end
         if filterBar then filterBar.close() end
         return changed

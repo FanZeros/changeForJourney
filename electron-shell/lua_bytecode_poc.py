@@ -3,7 +3,7 @@
 """终焉之门 · L2 Lua 5.4 字节码 POC（可行性探针，不接入发行）。
 
 目的：验证「把混淆/原始 Lua 源码编译为 Lua 5.4 字节码」这条强化路线，
-以及**回答 L2 的两个前置未知**（见 docs/pc-protection-research-0927.md §L2）：
+以及**回答 L2 的两个前置未知**（见 docs/build/代码保护方案.md §L2）：
 
   Q1. WASM Lua VM 是否接受字节码 chunk（而不是只认文本源码）？
   Q2. manifest 记录的 hash/size 是否为引擎运行时强校验（改内容即拒载）？
@@ -15,7 +15,7 @@
   * 打印字节码头、体积变化、SHA256，便于人工核对。
 
 Q1/Q2 的**最终结论必须在真实 UrhoX WASM Runtime 上跑**（沙箱没有引擎 wasm 资产）。
-步骤见同目录 README 与 docs/pc-protection-research-0927.md §L2「POC 步骤」。
+步骤见同目录 README 与 docs/build/代码保护方案.md §L2「POC 步骤」。
 
 用法：
   python3 lua_bytecode_poc.py --file scripts/shared/StageProvider.lua

@@ -54,7 +54,7 @@ python3 electron-shell/obfuscation_trial.py --all-scripts --source-root . --outp
 
 ## L1 作用域安全混淆器 + L2 字节码 POC（2026-09-27，`feat927/ele-protection-research-0927`）
 
-调研结论见 `docs/pc-protection-research-0927.md`。本节是把其中 **L1（AST 重命名）**
+调研结论见 `../docs/build/代码保护方案.md`。本节是把其中 **L1（AST 重命名）**
 落地为可用脚本，并为 **L2（Lua 5.4 字节码）** 准备可行性探针。**均未接入正式打包流水线**，
 `pack_release.py` / `build_local_windows.bat` 完全没调用它们。
 

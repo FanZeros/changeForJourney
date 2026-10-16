@@ -34,6 +34,7 @@ local state = {
     showSetIcons = true,  -- 装备格左下角套装徽记
     showEquipmentPower = false,  -- 仅控制方形装备格内的战力显示
     pauseBattleOnSidePanels = false,  -- 左操作页/右角色详情打开时暂停战斗（独立本地偏好）
+    autoDiamondExchange = {},  -- 各招募池/宝箱档位独立授权，只省略补购确认，不主动消费。
     -- 滑块拖拽
     draggingSlider = nil,  -- nil / "bgm" / "sfx"
 }
@@ -138,6 +139,10 @@ local SIDE_PANEL_PAUSE_LABELS = {
 -- ======================== 本地设置持久化 ========================
 
 local SETTINGS_SAVE_FILE = "settings_volume.json"
+local AUTO_EXCHANGE_SCOPES = {
+    gacha_standard = true, gacha_stellar = true,
+    artifact_normal = true, artifact_advanced = true,
+}
 
 --- 保存设置到本地文件
 local function saveSettings()
@@ -152,6 +157,12 @@ local function saveSettings()
             showSetIcons = state.showSetIcons ~= false,
             showEquipmentPower = state.showEquipmentPower == true,
             pauseBattleOnSidePanels = state.pauseBattleOnSidePanels == true,
+            autoDiamondExchange = {
+                gacha_standard = state.autoDiamondExchange.gacha_standard == true,
+                gacha_stellar = state.autoDiamondExchange.gacha_stellar == true,
+                artifact_normal = state.autoDiamondExchange.artifact_normal == true,
+                artifact_advanced = state.autoDiamondExchange.artifact_advanced == true,
+            },
             language = I18n.get(),
         })
         if ok then
@@ -166,6 +177,7 @@ local function loadSettings()
     -- 缺字段旧档及无档均使用默认关闭，不沿用上一份设置的开启值。
     state.showEquipmentPower = false
     state.pauseBattleOnSidePanels = false
+    state.autoDiamondExchange = {}
     if not fileSystem:FileExists(SETTINGS_SAVE_FILE) then return end
     local file = File(SETTINGS_SAVE_FILE, FILE_READ)
     if not file:IsOpen() then return end
@@ -191,6 +203,11 @@ local function loadSettings()
         if type(data.showSetIcons) == "boolean" then state.showSetIcons = data.showSetIcons end
         state.showEquipmentPower = data.showEquipmentPower == true
         state.pauseBattleOnSidePanels = data.pauseBattleOnSidePanels == true
+        if type(data.autoDiamondExchange) == "table" then
+            for scope in pairs(AUTO_EXCHANGE_SCOPES) do
+                state.autoDiamondExchange[scope] = data.autoDiamondExchange[scope] == true
+            end
+        end
         if type(data.language) == "string" then
             I18n.set(data.language)
         end
@@ -316,6 +333,25 @@ function SettingsPanel.setPauseBattleOnSidePanelsEnabled(enabled)
     state.pauseBattleOnSidePanels = enabled == true
     saveSettings()
     print("[SettingsPanel] 侧栏打开时暂停战斗：" .. tostring(state.pauseBattleOnSidePanels))
+end
+
+--- 当前池/宝箱是否允许缺口自动兑换；未知范围永不默认授权。
+---@param scope string
+---@return boolean
+function SettingsPanel.isAutoDiamondExchangeEnabled(scope)
+    return AUTO_EXCHANGE_SCOPES[scope] == true and state.autoDiamondExchange[scope] == true
+end
+
+--- 仅持久化提示偏好，开启本身不购买、不开箱、不发送任何游戏动作。
+---@param scope string
+---@param enabled boolean
+function SettingsPanel.setAutoDiamondExchangeEnabled(scope, enabled)
+    if not AUTO_EXCHANGE_SCOPES[scope] then return end
+    local value = enabled == true
+    if SettingsPanel.isAutoDiamondExchangeEnabled(scope) == value then return end
+    state.autoDiamondExchange[scope] = value
+    saveSettings()
+    print("[SettingsPanel] 黑晶自动兑换 " .. scope .. "=" .. tostring(value))
 end
 
 function SettingsPanel.isEffectsEnabled()

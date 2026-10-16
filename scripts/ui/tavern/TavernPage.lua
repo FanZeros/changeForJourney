@@ -147,6 +147,7 @@ local BTN_10_W, BTN_10_H   = 410, 100
 local BTN_TARGET_CX, BTN_TARGET_CY = 540, 2068
 local BTN_TARGET_W, BTN_TARGET_H   = 410, 100
 local BTN_TARGET_FONT = 40
+local AUTO_EXCHANGE_CX, AUTO_EXCHANGE_CY = 540, 2180
 
 -- 21. 底部滑块（与教堂一致）
 local TAB_BG_CX, TAB_BG_CY = 540, 2308
@@ -655,12 +656,11 @@ TavernPopups.setContext({
 --- 执行招募（外部入口，含确认框检查）
 ---@param count number 1 或 10
 local function doRecruit(count)
-    -- 检查招募券是否足够，不足则弹确认框
-    if not TavernPopups.checkAndShowConfirm(count) then
-        return
-    end
-    -- 招募券足够，直接执行
-    doRecruitDirect(count)
+    if pendingGachaPull then return end
+    local canProceed, payType = TavernPopups.checkAndShowConfirm(count)
+    if not canProceed then return end
+    -- 自动兑换明确沿用规则层混合支付，已有券优先、黑晶只补本次缺口。
+    doRecruitDirect(count, payType)
 end
 
 RecruitAnim.setOnAgain(function(count, poolId)
@@ -1027,6 +1027,8 @@ local function drawPageImpl(vg)
             nvgText(vg, BTN_TARGET_CX, BTN_TARGET_CY, "指定UP角色", nil)
             BF.finish(vg, _s6)
         end
+        TavernPopups.drawAutoExchangeOption(vg, AUTO_EXCHANGE_CX, AUTO_EXCHANGE_CY,
+            pendingGachaPull or state.closing or time.elapsedTime - state.openTime < ANIM_DURATION)
     end -- state.tab ~= "shop"
 
     -- ============ 18. 返回按钮 ============
@@ -1148,6 +1150,11 @@ function TavernPage.handleInput(dx, dy)
         -- 商店标签页输入转发
         if TavernShopPage.handleInput(dx, dy) then return true end
     else
+        -- 开关随整页滑入；动画期间只消费该行点击，不以尚未对齐的热区切换花费授权。
+        if time.elapsedTime - state.openTime < ANIM_DURATION
+            and math.abs(dy - AUTO_EXCHANGE_CY) <= 28 then return true end
+        if TavernPopups.handleAutoExchangeInput(dx, dy, AUTO_EXCHANGE_CX, AUTO_EXCHANGE_CY,
+            pendingGachaPull) then return true end
         -- 保底提示图标（招募说明）→ 打开说明弹窗
         if hitTest(dx, dy, PITY_ICON_BG_CX, PITY_ICON_BG_CY, PITY_ICON_BG_W, PITY_ICON_BG_H) then
             BF.trigger("tavern_pity")

@@ -16,6 +16,8 @@ local I18n          = require("core.I18n")
 local ArtifactDefs  = require("shared.artifact.ArtifactDefs")
 local RewardPopup   = require("ui.hud.popup.RewardPopup")
 local BF            = require("systems.ButtonFeedback")
+local SettingsPanel = require("ui.hud.popup.SettingsPanel")
+local AutoExchangeOption = require("ui.widget.AutoDiamondExchangeOption")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -34,7 +36,7 @@ local COL = {
 }
 
 -- 上下两档宝箱卡片：整张场景背景承载标题、品质概率与抽取按钮。
-local CARD = { X = 70, W = 940, H = 780 }
+local CARD = { X = 70, W = 940, H = 800 }
 local CARDS = {
     { type = "normal",   Y = 320 },
     { type = "advanced", Y = 1140 },
@@ -53,13 +55,14 @@ local function chestCardLayout(card)
         btnOneX = left + 250, btnTenX = left + 690,
         btnY = top + 660, btnW = 320, btnH = 130,
         btnTextY = top + 636, costY = top + 686,
+        autoExchangeY = top + 756,
     }
 end
 
 -- 黄金钥匙不足时的快速购买确认框（居中模态）
 local KEY_CF = {
     MASK_A = 128,
-    CX = 540, CY = 1110, W = 950, H = 647,
+    CX = 540, CY = 1160, W = 950, H = 747,
     TITLE_CX = 540, TITLE_CY = 856, TITLE_SIZE = 50, TITLE_STROKE_W = 6,
     SUB_CX = 540, SUB_CY = 967, SUB_SIZE = 40,
     SUB_R = 0xB6, SUB_G = 0xB0, SUB_B = 0x9D,
@@ -69,6 +72,7 @@ local KEY_CF = {
     KEY_CX = 664, KEY_CY = 1122, KEY_W = 160, KEY_H = 160,
     BADGE_SIZE = 40, BADGE_STROKE_W = 5, BADGE_OX = 60, BADGE_OY = 55,
     BUY_CX = 540, BUY_CY = 1301, BUY_W = 410, BUY_H = 100,
+    AUTO_CX = 540, AUTO_CY = 1410, AUTO_W = 820,
     BUY_TEXT_SIZE = 40, BUY_TEXT_R = 0x64, BUY_TEXT_G = 0x51, BUY_TEXT_B = 0x29,
 }
 
@@ -107,6 +111,11 @@ local state = {
 }
 
 local ctx_ = nil
+
+-- 页面/页签滑动时热区尚未对齐，只禁用新增偏好，不改变原抽取按钮业务。
+local function autoExchangeInputReady()
+    return not ctx_ or not ctx_.isAutoExchangeInputReady or ctx_.isAutoExchangeInputReady()
+end
 
 -- ======================== 辅助 ========================
 
@@ -263,6 +272,23 @@ local function checkKeyAndDraw(count, chestType)
 
     local shortfall = keyCost - keys
     local diamondCost = shortfall * ArtifactDefs.KEY_DIAMOND_PRICE
+    if SettingsPanel.isAutoDiamondExchangeEnabled("artifact_" .. chestType) then
+        if GameState.getGems() < diamondCost then
+            showFloat("黑晶不足", 540, layout.btnY - 150)
+            print("[ChurchArtifactDrawPanel] 自动兑换余额不足 chest=" .. chestType .. " need=" .. diamondCost)
+            return false
+        end
+        print("[ChurchArtifactDrawPanel] 自动兑换 chest=" .. chestType
+            .. " keys=" .. shortfall .. " gems=" .. diamondCost)
+        if not sendArtifactDraw(count, chestType) then
+            showFloat("开箱请求未发送，请重试", 540, layout.btnY - 150)
+            return false
+        end
+        if state.drawPending then
+            showFloat("正在开启宝箱", count == 10 and layout.btnTenX or layout.btnOneX, layout.btnY - 150)
+        end
+        return true
+    end
     openKeyConfirm(count, shortfall, diamondCost, chestType)
     print(string.format("[ChurchArtifactDrawPanel] 黄金钥匙不足: 需%d 有%d 补购%d把 花费%d钻",
         keyCost, keys, shortfall, diamondCost))
@@ -406,6 +432,8 @@ local function drawChestCard(vg, card)
         { cx = layout.btnTenX, btnY = layout.btnY, btnW = layout.btnW, btnH = layout.btnH,
             btnTextY = layout.btnTextY, costY = layout.costY, type = chestType }, "抽10次", 10)
     nvgRestore(vg)
+    AutoExchangeOption.draw(vg, "artifact_" .. chestType, 540, layout.autoExchangeY, KEY_CF.AUTO_W,
+        ArtifactDefs.KEY_DIAMOND_PRICE, state.drawPending or not unlocked or not autoExchangeInputReady())
 end
 
 function M.drawContent(vg)
@@ -478,6 +506,8 @@ function M.drawKeyConfirmDialog(vg)
     nvgFillColor(vg, nvgRGBA(KEY_CF.BUY_TEXT_R, KEY_CF.BUY_TEXT_G, KEY_CF.BUY_TEXT_B, 255))
     nvgText(vg, KEY_CF.BUY_CX, KEY_CF.BUY_CY, "购买", nil)
     BF.finish(vg, _bfBuy)
+    AutoExchangeOption.draw(vg, "artifact_" .. state.keyConfirmChest,
+        KEY_CF.AUTO_CX, KEY_CF.AUTO_CY, KEY_CF.AUTO_W, ArtifactDefs.KEY_DIAMOND_PRICE)
 
     nvgRestore(vg)
 end
@@ -489,6 +519,12 @@ function M.handleTabInput(dx, dy)
     if state.keyConfirmVisible then
         if state.keyConfirmClosing then return true end
         if time.elapsedTime - state.keyConfirmAnimTime < 0.05 then return true end
+
+        local scale = getKeyConfirmAnim()
+        local optionX = KEY_CF.CX + (dx - KEY_CF.CX) / scale
+        local optionY = KEY_CF.CY + (dy - KEY_CF.CY) / scale
+        if AutoExchangeOption.handleInput(optionX, optionY, "artifact_" .. state.keyConfirmChest,
+            KEY_CF.AUTO_CX, KEY_CF.AUTO_CY, KEY_CF.AUTO_W) then return true end
 
         if hitTest(dx, dy, KEY_CF.BUY_CX, KEY_CF.BUY_CY, KEY_CF.BUY_W, KEY_CF.BUY_H) then
             BF.trigger("church_artifact_key_confirm")
@@ -515,9 +551,19 @@ function M.handleTabInput(dx, dy)
         return true
     end
 
+    -- 动画期间整行消费，避免可见checkbox和尚未平移的卡片热区错位。
+    if not autoExchangeInputReady() then
+        for _, card in ipairs(CARDS) do
+            if math.abs(dy - chestCardLayout(card).autoExchangeY) <= AutoExchangeOption.HEIGHT * 0.5 then return true end
+        end
+    end
     -- 两档宝箱同页展示：点击卡片任意非按钮区域即选中该档位（锁定档也可查看价格与概率）。
     for _, card in ipairs(CARDS) do
         if hitTest(dx, dy, CARD.X + CARD.W * 0.5, card.Y + CARD.H * 0.5, CARD.W, CARD.H) then
+            local optionLayout = chestCardLayout(card)
+            if AutoExchangeOption.handleInput(dx, dy, "artifact_" .. card.type, 540,
+                optionLayout.autoExchangeY, KEY_CF.AUTO_W,
+                state.drawPending or not M.isArtifactChestUnlocked(card.type)) then return true end
             for _, layout in ipairs({ chestCardLayout(card) }) do
                 if hitTest(dx, dy, layout.btnOneX, layout.btnY, layout.btnW, layout.btnH) then
                     BF.trigger("church_artifact_draw_1_" .. card.type)
@@ -596,6 +642,7 @@ function M.setContext(ctx)
 end
 
 function M.init(vg)
+    AutoExchangeOption.init()
     img.chestNormal       = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_SQBX_PT.png", 0)
     img.chestAdvanced     = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_SQBX_GJ.png", 0)
     img.collectionDrawBtn = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_AN.png", 0)

@@ -277,7 +277,8 @@ local function newContext(options)
         get = function(id) return { name = "测试角色" .. tostring(id) } end })
     mock("shared.Protocol", { ACTION_TYPES = { GACHA_PULL = "gacha_pull", TAVERN_SHOP_BUY = "tavern_shop_buy" } })
     mock("core.I18n", { t = function(text) return text == "tavern" and "酒馆" or text end,
-        get = function() return "zh_CN" end, lookup = function(text) return text end })
+        get = function() return "zh_CN" end, lookup = function(text) return text end,
+        displayBounds = env.nvgTextBounds, displayText = env.nvgText })
     mock("runtime.ClientDispatcher", {
         get = function(name) return ctx.memory[name] end,
         subscribe = function(name, callback) ctx.subscribers[name] = callback end,
@@ -314,6 +315,8 @@ local function newContext(options)
         showFloatText = function(text, x, y) ctx.messages[#ctx.messages + 1] = { text = text, x = x, y = y } end,
         formatGachaFailReason = tostring,
         drawAll = noop, update = noop, openInfo = noop,
+        drawAutoExchangeOption = noop,
+        handleAutoExchangeInput = function() return false end,
         handleInput = function() return true end,
         handleDragBegin = noop, handleDragMove = noop, handleDragEnd = noop, handleScroll = noop,
     })

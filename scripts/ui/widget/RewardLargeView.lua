@@ -113,11 +113,15 @@ local function drawDetail(vg, l, state)
     if item.destination == "lootbox" then text(vg, 6, y, I18n.lookup("已入遗匣"), 24); y = y + 32 end
     if item.type == "equip" and item.templateId then
         local detail = require("ui.character.equip.EquipmentDetail")
-        local dw, dh = detail.readOnlySize(item)
+        -- 奖励包装的type是equip；卡片必须读取内层实例，旧摘要则由模板补齐显示字段。
+        -- 水合仅作用于深拷贝，同一副本用于尺寸和绘制，不回写回执或遗匣装备。
+        local source = type(item.equip) == "table" and item.equip or item
+        local equip = require("systems.EquipmentQuery").hydrateCopy(source)
+        local dw, dh = detail.readOnlySize(equip)
         local fit = math.min(1, (l.dw - 8) / math.max(1, dw))
         nvgSave(vg)
         nvgScale(vg, fit, fit)
-        detail.drawReadOnly(vg, item, 4 / fit, y / fit)
+        detail.drawReadOnly(vg, equip, 4 / fit, y / fit)
         nvgRestore(vg)
         y = y + dh * fit
     else

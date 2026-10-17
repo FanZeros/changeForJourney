@@ -73,7 +73,7 @@ local function fixture(options)
     local counts = { starts = 0, updates = 0, images = 0, pumps = 0, calc = 0,
         shown = 0, flush = 0, reconcile = 0, checked = 0, starter = 0, random = 0,
         mutations = 0, claims = 0, readonly = 0, tick = 0, firstStage = 0, inventoryScans = 0,
-        saveRequests = 0 }
+        saveRequests = 0, letterStarts = 0, titleDraws = 0 }
     local trace, drivers, loaded, loading, sources, images, cardHandles = {}, {}, {}, {}, {}, {}, {}
     local clock = { elapsedTime = 100 }
     local controls = { imageFailure = nil, failPrepare = false, failClaim = false, failFirstStage = false,
@@ -161,7 +161,7 @@ local function fixture(options)
     TAL.getConquerStacks = function() return 0 end
     TAL.resetEnemyDeath = noop
     ETS.normalize = function(value) return value or {} end
-    ETS.applyToAttrs, ETS.drawOrbit, ETS.drawIceStatues = noop, noop, noop
+    ETS.applyToAttrs, ETS.drawOrbit, ETS.drawIceStatues, ETS.flush, ETS.discard = noop, noop, noop, noop, noop
     local Status = stateModule("status")
     Status.getVisuals = function() return {} end
     local Threat, Conditions = stateModule("threat"), stateModule("conditions")
@@ -278,11 +278,16 @@ local function fixture(options)
     title.isOpen = function() return controls.titleOpen end
     title.isFading = function() return controls.titleFading end
     title.setReady = function(value) controls.titleReady = value end
+    title.update = function(dt) if controls.titleUpdate then controls.titleUpdate(dt) end end
+    title.draw = function() counts.titleDraws = counts.titleDraws + 1 end
     title.open, title.reopen = function() controls.titleOpen = true end, function() controls.titleOpen = true end
     mocks["ui.story.gate.DarkTitleScreenGate"] = title
     local letter = passive()
     letter.isOpen = function() return controls.letterOpen end
-    letter.start = function(callback) controls.letterOpen = true; controls.letterFinish = callback; record("letter") end
+    letter.start = function(callback)
+        counts.letterStarts = counts.letterStarts + 1
+        controls.letterOpen = true; controls.letterFinish = callback; record("letter")
+    end
     letter.reset = function() controls.letterOpen = false; controls.letterFinish = nil end
     mocks["ui.story.gate.LetterIntro"] = letter
     mocks["runtime.GameAction"] = { sendAction = function(action)
@@ -324,6 +329,16 @@ local function fixture(options)
         "ui.tower.TowerBuffSidebar" }) do
         if not mocks[name] then mocks[name] = passive() end
     end
+    mocks["ui.battle.scene.BattlePauseOverlay"] = { init = noop, draw = noop, destroy = noop }
+    mocks["ui.loot.InventoryCurationDialog"] = { reset = noop }
+    mocks["rules.equipment.InventoryCurationService"] = { Cleanup = noop }
+    mocks["rules.tower.TowerService"] = { ResetToDefault = noop }
+    mocks["ui.character.hero.AwakeningArtwork"] = { destroy = noop }
+    mocks["ui.dungeon.DungeonBattleScope"] = { run = function(_, fn) fn() end }
+    mocks["ui.tower.TowerTriBattle"] = { flushPendingGrowth = noop }
+    mocks["ui.battle.combat.BattleCasualty"] = { flushRewards = noop }
+    -- 侧页暂停不属于入场夹具；所有操作页均关闭，保持默认不暂停。
+    mocks["ui.battle.scene.SidePanelBattlePause"] = { refresh = function() return false end }
     mocks["ui.hud.TopBar"].markAvatarViewed, mocks["ui.hud.TopBar"].setTotalPower = noop, noop
     mocks["ui.hud.BottomNav"].setBadge, mocks["ui.hud.BottomNav"].refreshTownBadge = noop, noop
     mocks["ui.hud.BottomNav"].refreshUnlockState = noop
@@ -375,8 +390,10 @@ local function fixture(options)
         ["ui.battle.tri.BattleTriPage"] = true, ["ui.battle.tri.BattleTriDriver"] = true,
         ["ui.battle.tri.BattleEntryPreparation"] = true,
         ["ui.battle.scene.BattleMountScope"] = true, ["ui.battle.scene.BattleDraw"] = true,
+        ["ui.battle.scene.DamageTypeIcon"] = true,
         ["ui.battle.scene.BattleView"] = true, ["ui.battle.stage.BattleEnemySpawn"] = true,
         ["ui.battle.combat.BattleCombatAnim"] = true, ["ui.battle.stage.BattleSpeed"] = true,
+        ["ui.battle.combat.BattleClock"] = true,
         ["ui.character.panel.CharacterPanel"] = true, ["ui.character.panel.CharacterHeroSync"] = true,
         ["ui.character.panel.CharacterRosterSort"] = true,
         ["systems.AttributeDef"] = true, ["systems.UnitAttributes"] = true, ["systems.BattleTimeout"] = true,
@@ -916,19 +933,64 @@ function Start()
         check(renderIndex > 0 and calcIndex > renderIndex, "真实trace顺序prepare→render-finish→Calc")
         check(f.counts.random == 0 and f.counts.mutations == 0, "准备/待领/首intro帧无攻击发奖random或玩家File")
     end)
+    scenario("Horizon标题淡出按新旧档精确归属", function()
+        local text = section(source("boot/StandaloneHorizon.lua"), "    local titleOwnsFrame =",
+            "    if titleOwnsFrame then")
+        local controls = { open = true, fading = true, session = {}, heroes = {}, imports = 0 }
+        local env = { type = type, pairs = pairs, DarkTitleScreen = {
+            isOpen = function() return controls.open end, isFading = function() return controls.fading end },
+            require = function(name)
+                assert(name == "runtime.ClientDispatcher", "unexpected title gate import " .. name)
+                controls.imports = controls.imports + 1
+                return { get = function(key) return controls[key] end }
+            end }
+        local owns = assert(load("return function()\n" .. text .. "\nreturn titleOwnsFrame\nend",
+            "@entry-real/Horizon.titleOwnsFrame", "t", env))()
+        check(owns(), "新档空角色fading标题独占")
+        controls.heroes = { roster = { [1] = { level = 1 } } }
+        check(owns(), "新档single fading标题独占")
+        controls.session = { introCompleted = true }
+        check(not owns(), "introCompleted旧档fading放行三行")
+        controls.session, controls.heroes = {}, { roster = { [1] = { level = 1 }, [2] = { level = 2 } } }
+        check(not owns(), "多角色旧档fading放行三行，不依赖intro标记")
+        for _, roster in ipairs({ false, "malformed", { [1] = false, [2] = 7, [3] = {}, [4] = { level = 1 } } }) do
+            controls.heroes = { roster = roster }
+            local ok, value = pcall(owns)
+            check(ok and value, "malformed roster不crash且不能虚算第二角色")
+        end
+        controls.fading = false; local imports = controls.imports
+        check(owns() and controls.imports == imports, "未fade标题独占无需新dispatcher import")
+        controls.open = false
+        check(not owns() and controls.imports == imports, "已关闭放行且不加载dispatcher")
+    end)
     scenario("新档单人升级三人", function()
         local f = fixture({ newSave = true, single = true, stage = 101, maxStage = 101 })
         f.budget(); f.tri.prepareEntry(f.context)
         check(#f.drivers == 1 and #f.drivers[1].allies == 1, "开场前旧single驱动真实一人")
         f.rt.entryPrepared, f.rt.entryRendered = true, true
         setvalue(f.prepare, "entryPrepared_", true)
-        local old = f.drivers[1].allies
+        local old, frozen = f.drivers[1].allies, f.snapshot()
         f.controls.titleOpen, f.controls.titleFading = true, true
+        for _ = 1, 4 do f.step(); f.render() end
+        check(f.counts.letterStarts == 0 and f.counts.starter == 0 and not f.controls.letterOpen
+            and f.counts.updates == 0 and f.counts.pumps == 0 and same(f.snapshot(), frozen),
+            "新档fading只画标题，不启动信件/授人/推进战斗")
+        check(f.counts.titleDraws == 4, "新档fading原Horizon分支每帧由标题独占")
+        -- 使用完整真实title模块的update关闭；回写控制桩供生产HandleUpdate同帧后续查询。
+        local realTitle = assert(load(source("ui/story/gate/DarkTitleScreenGate.lua"),
+            "@entry-real/DarkTitleScreenGate.same-frame", "t", f.env))()
+        realTitle.open(); realTitle.setReady(true); realTitle.update(1.35); realTitle.handleTap(); realTitle.update(0.549)
+        f.controls.titleUpdate = function(dt)
+            realTitle.update(dt)
+            f.controls.titleOpen, f.controls.titleFading = realTitle.isOpen(), realTitle.isFading()
+        end
         f.step()
-        check(f.counts.starter == 1 and f.controls.letterOpen and not f.rt.entryPrepared and not f.rt.entryRendered,
-            "grant_starter_trio真实开场闭包失效旧prepared/rendered")
-        check(f.drivers[1].allies == old and #old == 1, "信件期间不偷偷tick重建single")
-        f.controls.titleOpen = false
+        check(not realTitle.isOpen() and f.counts.letterStarts == 1 and f.counts.starter == 1
+            and f.controls.letterOpen and not f.rt.entryPrepared and not f.rt.entryRendered,
+            "真实title.update关闭当帧沿既有分流启动信件一次并失效旧ready")
+        for _ = 1, 4 do f.step() end
+        check(f.counts.letterStarts == 1 and f.counts.starter == 1 and f.counts.updates == 0
+            and f.drivers[1].allies == old and #old == 1, "信件期间重复Update不重启/授人/tick旧single")
         f.controls.letterOpen = false
         local starts = f.counts.starts
         assert(f.controls.letterFinish)()
@@ -1040,8 +1102,14 @@ function Start()
         check(f.counts.images == imageCount and f.counts.calc == 0,
             "新标题Update不恢复旧挂起images/Calc")
         f.controls.titleOpen, f.controls.titleFading = true, true
-        f.step()
-        check(f.counts.starter == 1 and f.controls.letterOpen, "清档重新走一次三人开场")
+        local frozen = f.snapshot()
+        for _ = 1, 4 do f.step() end
+        check(f.counts.letterStarts == 0 and f.counts.starter == 0 and not f.controls.letterOpen
+            and f.counts.updates == 0 and same(f.snapshot(), frozen), "清档新标题fading等待，不启动信件或推进战斗")
+        f.controls.titleOpen, f.controls.titleFading = false, false
+        f.step(); f.step()
+        check(f.counts.letterStarts == 1 and f.counts.starter == 1 and f.controls.letterOpen,
+            "清档title关闭后既有分流只启动一次三人开场")
     end)
     scenario("外部回执已水合但旧prepared", function()
         local f = fixture({ single = true, stage = 101, maxStage = 101 })

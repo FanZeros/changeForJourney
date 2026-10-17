@@ -7,6 +7,27 @@ local function check(value, label)
     assert(value, label)
 end
 local function near(a, b) return type(a) == "number" and math.abs(a - b) < 0.00001 end
+local function deepCopy(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for key, child in pairs(value) do result[key] = deepCopy(child) end
+    return result
+end
+local function deepEqual(a, b)
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return a == b end
+    for key, value in pairs(a) do if not deepEqual(value, b[key]) then return false end end
+    for key in pairs(b) do if a[key] == nil then return false end end
+    return true
+end
+local function detachedCopy(a, b)
+    if type(b) ~= "table" then return true end
+    if type(a) ~= "table" or a == b then return false end
+    for key, value in pairs(b) do
+        if type(value) == "table" and not detachedCopy(a[key], value) then return false end
+    end
+    return true
+end
 
 function Start()
     ---@type fun(name: string): any
@@ -18,9 +39,30 @@ function Start()
     local SFX = originalRequire("systems.GameSFX")
     local savedRT, savedGlobals, savedNotes = {}, {}, VP._notes
     local savedIcon, savedNew, savedPlay = Asset.drawIcon, Cascade.new, SFX.play
+    local savedRandom, savedRandomseed = math.random, math.randomseed
+    local ioCalls, randomCalls = 0, 0
     for k, v in pairs(RT) do savedRT[k] = v end
     for k, v in pairs(_G) do savedGlobals[k] = v end
     local ok, err = pcall(function()
+        local function forbiddenIo()
+            ioCalls = ioCalls + 1
+            error("只读奖励测试禁止玩家 File/FileSystem/io")
+        end
+        local fs = setmetatable({}, { __index = function() return forbiddenIo end })
+        for _, name in ipairs({ "File", "FileSystem", "GetFileSystem" }) do rawset(_G, name, forbiddenIo) end
+        rawset(_G, "fileSystem", fs)
+        rawset(_G, "io", fs)
+        for _, name in ipairs({ "random", "randomseed" }) do
+            math[name] = function()
+                randomCalls = randomCalls + 1
+                error("只读奖励测试禁止抽取/重骰/改变随机种子")
+            end
+        end
+        -- 关键装备查询链始终是真实现；在 require 替身安装前解析它们的真实纯依赖。
+        local EquipmentQuery = originalRequire("systems.EquipmentQuery")
+        local EquipmentSystem = originalRequire("systems.EquipmentSystem")
+        local EquipmentConfig = originalRequire("config.EquipmentConfig")
+        local AffixConfig = originalRequire("config.AffixConfig")
         local function noop() return false end
         ---@return any
         local function mock(fields)
@@ -121,7 +163,25 @@ function Start()
                 handleClick = function() lowerInputs = lowerInputs + 1; return false end })
         end
         local artifactMemory = {}
+        local forbiddenTransaction = setmetatable({}, { __index = function(_, method)
+            return function()
+                actions = actions + 1
+                error("只读奖励测试禁止领取/装备/存档事务 " .. tostring(method))
+            end
+        end })
         local mods = {
+            ["systems.EquipmentQuery"] = EquipmentQuery, ["systems.EquipmentSystem"] = EquipmentSystem,
+            ["config.EquipmentConfig"] = EquipmentConfig, ["config.AffixConfig"] = AffixConfig,
+            -- Horizon默认没有装备浮窗；真正只读卡片必须显式安装detailSpy，不能被noop悄悄吞掉。
+            ["ui.character.equip.EquipmentDetail"] = mock({
+                readOnlySize = function() error("装备详情尚未安装尺寸spy") end,
+                drawReadOnly = function() error("装备详情尚未安装绘制spy") end,
+            }),
+            ["boot.StandaloneSave"] = forbiddenTransaction,
+            ["rules.character.PlayerDataManager"] = forbiddenTransaction,
+            ["rules.offline.OfflineService"] = forbiddenTransaction,
+            ["systems.LootBoxSystem"] = forbiddenTransaction,
+            ["runtime.LocalActionBridge"] = forbiddenTransaction,
             ["boot.StandaloneRT"] = RT, ["core.Viewport"] = VP,
             ["config.ArtifactAssetUtil"] = Asset, ["ui.widget.RewardCascade"] = Cascade, ["systems.GameSFX"] = SFX,
             ["core.PlayerStore"] = mock({ Get = function(key)
@@ -147,6 +207,7 @@ function Start()
             ["core.DarkIcon"] = originalRequire("core.DarkIcon"),
         }
         for _, name in ipairs({ "config.GameConfig", "config.EquipmentConfig", "config.HeroConfig", "core.NumberUtil",
+            "config.BlacksmithConfig", "systems.AttributeDef", "systems.EquipmentSecondaryStats", "config.EquipmentSetConfig",
             "ui.widget.ImageCache", "config.ResourceDefs", "ui.widget.HeroFrame", "ui.widget.BattleRewardQueue", "config.StageConfig", "core.I18n",
             "shared.artifact.ArtifactDefs", "shared.Protocol" }) do mods[name] = originalRequire(name) end
         -- cache:GetFile 是只读项目资源，不走玩家存档 File；load 创建独立实例，不操作 package.loaded。
@@ -166,8 +227,18 @@ function Start()
             assert(chunk, why)
             return chunk()
         end
+        local criticalDependencies = {
+            ["ui.character.equip.EquipmentDetail"] = true,
+            ["systems.EquipmentQuery"] = true, ["systems.EquipmentSystem"] = true,
+            ["config.EquipmentConfig"] = true, ["config.AffixConfig"] = true,
+            ["config.BlacksmithConfig"] = true, ["systems.AttributeDef"] = true,
+            ["systems.EquipmentSecondaryStats"] = true, ["config.EquipmentSetConfig"] = true,
+        }
         rawset(_G, "require", function(name)
-            if not mods[name] then mods[name] = page() end
+            if not mods[name] then
+                assert(not criticalDependencies[name], "重要装备依赖不能由page fallback吞掉 " .. name)
+                mods[name] = page()
+            end
             return mods[name]
         end)
         mods["ui.widget.RewardItemView"] = compile("ui.widget.RewardItemView")
@@ -301,6 +372,27 @@ function Start()
             local passed, why = pcall(fn)
             if passed then print("[PASS] chest_reward_horizon_test " .. label)
             else failures = failures + 1; print("[FAIL] chest_reward_horizon_test " .. label .. ": " .. tostring(why)) end
+        end
+
+        local function detailSpy()
+            local spy = { sizes = {}, draws = {} }
+            mods["ui.character.equip.EquipmentDetail"] = {
+                readOnlySize = function(item)
+                    check(type(item) == "table" and item.type ~= "equip" and item.name ~= nil and item.name ~= "???",
+                        "尺寸读取真实装备子类型与恢复后的名字，不读取reward wrapper")
+                    check(type(item.baseStats) == "table" and #item.baseStats > 0,
+                        "尺寸测量收到完整基础属性")
+                    spy.sizes[#spy.sizes + 1] = item
+                    return 300, 900
+                end,
+                drawReadOnly = function(_, item, x, y)
+                    local index = #spy.draws + 1
+                    check(spy.sizes[index] == item and #spy.sizes == index,
+                        "每次尺寸/绘制共用同一个实际显示copy，而不是二次水合或原始wrapper")
+                    spy.draws[index] = { item = item, x = x, y = y, m = matrix(), clip = copy(ctx.clip) }
+                end,
+            }
+            return spy
         end
 
         for _, count in ipairs({ 1, 10 }) do
@@ -442,7 +534,8 @@ function Start()
         end
         run("资源精确数量/整段翻译与只读装备详情", function()
             fixture("ordinary")
-            local displayed, fullLookup, previews, calls = {}, false, 0, 0
+            local displayed, fullLookup, calls = {}, false, 0
+            local spy = detailSpy()
             local i18n = mods["core.I18n"]
             local sourceDesc = "用于角色穿戴；可在铁匠铺升阶、洗练或分解。"
             mods["core.I18n"] = { lookup = function(value)
@@ -451,13 +544,12 @@ function Start()
             end, displayBounds = function(_, _, _, value) return #value * 8 end,
                 displayText = function(_, _, _, value) displayed[value] = true end }
             mods["ui.widget.RewardLargeView"] = compile("ui.widget.RewardLargeView")
-            mods["ui.character.equip.EquipmentDetail"] = { readOnlySize = function() return 300, 900 end,
-                drawReadOnly = function(_, item) previews = previews + 1; check(item.destination == "lootbox", "详情保留原装备去向") end }
             local localReward = compile("ui.hud.popup.RewardPopup")
             localReward.init({})
             local items = { { type = "gold", amount = 1234567, desc = sourceDesc } }
             for i = 1, 10 do items[#items + 1] = { type = "equip", templateId = "W1", level = i, quality = 3,
                 amount = 1, destination = "lootbox" } end
+            local snapshot = deepCopy(items)
             -- 自定义资源说明用于验证整段查表；真实资源用途仍由ResourceDefs提供。
             local oldDesc = mods["config.ResourceDefs"].DEFS.gold.desc
             mods["config.ResourceDefs"].DEFS.gold.desc = sourceDesc
@@ -470,13 +562,130 @@ function Start()
             clock.elapsedTime = clock.elapsedTime + 0.4
             localReward.handleLargePointer("end", x * l.scale, y * l.scale, 1920, 1080, true)
             localReward.drawLarge({}, 1920, 1080)
-            check(previews == 1 and calls == 0 and actions == 0, "装备详情仅预览，无领取/装备action或关闭回调")
+            check(#spy.draws == 1 and calls == 0 and actions == 0, "装备详情仅预览，无领取/装备action或关闭回调")
+            local preview = spy.draws[1].item
+            check(preview.name == EquipmentConfig.ITEMS.W1.name and preview.type == EquipmentConfig.ITEMS.W1.type,
+                "无equip旧摘要恢复模板真名与子类型，不显示???/equip")
+            check(preview.level == 10 and preview.quality == 3 and preview.slot == "weapon" and preview.grip == "onehand",
+                "摘要保持已排序等级/品质并恢复部位与握持")
+            local strength = EquipmentConfig.QUALITY[3].baseStrength * (1 + 9 * EquipmentConfig.LEVEL_SCALE)
+            for index, stat in ipairs(EquipmentConfig.ITEMS.W1.stats) do
+                check(preview.baseStats[index][1] == stat[1] and near(preview.baseStats[index][2], stat[2] * strength),
+                    "摘要确定性恢复模板属性 " .. index)
+            end
+            check(preview ~= items[11] and deepEqual(items, snapshot), "无equip摘要显示copy不回写源回执")
+            check(displayed["已入遗匣"] and items[11].destination == "lootbox" and items[11].amount == 1,
+                "外层去向/数量仍原样展示与保留，不要求内层copy携带destination")
             localReward.handleLargeScroll(-10, (l.dx + 30) * l.scale, (l.dy + 30) * l.scale, 1920, 1080)
             localReward.drawLarge({}, 1920, 1080)
-            check(previews == 2 and localReward.isLarge(), "超长装备详情支持独立滚轮，不关闭奖励")
+            check(#spy.draws == 2 and localReward.isLarge(), "超长装备详情支持独立滚轮，不关闭奖励")
+            check(spy.draws[2].m.f < spy.draws[1].m.f and deepEqual(items, snapshot),
+                "只滚详情变换，第二次渲染仍不修改原奖励")
+            check(reads == 0 and ioCalls == 0 and randomCalls == 0, "摘要详情不读玩家数据/触档/消耗随机")
             mods["config.ResourceDefs"].DEFS.gold.desc = oldDesc
             mods["core.I18n"] = i18n
         end)
+        for _, cold in ipairs({ false, true }) do
+            run(cold and "冷嵌套实例水合与JSON腐化快照" or "nested实例优先且包装伪属性不渗入真实卡片", function()
+                fixture("ordinary")
+                local spy, closed, clicked = detailSpy(), 0, {}
+                local templateId = cold and "W7" or "W1"
+                local tpl = EquipmentConfig.ITEMS[templateId]
+                local nested = {
+                    id = cold and "cold-instance-id" or "actual-instance-id", seq = 417,
+                    templateId = templateId, level = cold and "23" or 17, quality = cold and 5 or 4,
+                    ascendLevel = cold and "9" or 12, locked = not cold,
+                    affixes = { { affixId = cold and "16" or 16, quality = 3, value = 31.25,
+                        ascBonus = cold and "2.75" or 2.75 } },
+                    corruptCount = 2, corruptBaseMult = 1.5,
+                    corruptRevert = { baseMult = cold and "1.25" or 1.25,
+                        affixCount = cold and "1" or 1,
+                        patches = { cold and { ["1"] = "s", ["2"] = "1", ["3"] = 24.5, layer = "2" }
+                            or { "s", 1, 24.5, layer = 2 } } },
+                }
+                if not cold then
+                    nested.name, nested.type, nested.slot, nested.grip = "实例真名·试炼长剑", tpl.type, tpl.slot, tpl.grip
+                    nested.baseStats = { { "physAtk", 71.125 }, { "hitValue", 4.625 }, { "atkSpeed", 6.875 } }
+                end
+                local item = { type = "equip", id = "wrong-outer-id", templateId = cold and "W1" or "W7",
+                    level = 99, quality = 6, amount = 7, destination = "lootbox", equip = nested,
+                    baseStats = { { "magAtk", 987654 } },
+                    affixes = { { affixId = 17, key = "magAtk", value = 888888 } },
+                    ascendLevel = 100, locked = cold,
+                    corruptRevert = { baseMult = 999, affixCount = 88, patches = {} } }
+                local items = { item }
+                for i = 1, 10 do items[#items + 1] = { type = "gold", amount = i } end
+                local snapshot, configSnapshot = deepCopy(items), deepCopy(tpl)
+                local large = mods["ui.widget.RewardLargeView"]
+                local localReward = compile("ui.hud.popup.RewardPopup")
+                localReward.init({})
+                localReward.show("离线收益", items, { cascade = false,
+                    onClose = function() closed = closed + 1 end,
+                    onItemClick = function(got, index) clicked = { item = got, index = index } end })
+                clock.elapsedTime = clock.elapsedTime + 0.4
+                localReward.update(0.4)
+                local l = large.layout(1920, 1080, #items)
+                local x, y = large.cell(l, 11, 0)
+                localReward.handleLargePointer("begin", x * l.scale, y * l.scale, 1920, 1080, false)
+                localReward.handleLargePointer("end", x * l.scale, y * l.scale, 1920, 1080, true)
+                check(clicked.item == item and clicked.index == 11, "选择仍回传原始外层回执与排序index，不交付显示copy")
+                texts = {}
+                localReward.drawLarge({}, 1920, 1080)
+                check(#spy.draws == 1 and #spy.sizes == 1, "真实RewardPopup只绘制一张已选装备卡")
+                local preview = spy.draws[1].item
+                check(preview ~= nested and preview ~= item and detachedCopy(preview, nested),
+                    "显示对象及baseStats/affixes/腐化patch递归独立，绝不借用源表")
+                check(preview.id == nested.id and preview.seq == nested.seq and preview.templateId == nested.templateId,
+                    "嵌套实例id/seq/templateId优先于包装伪身份")
+                check(preview.name == (cold and tpl.name or nested.name) and preview.type == tpl.type
+                    and preview.slot == tpl.slot and preview.grip == tpl.grip,
+                    "真实实例名字与模板子类型/部位/握持完整，不显示???/equip")
+                check(preview.level == (cold and 23 or 17) and preview.quality == nested.quality
+                    and preview.ascendLevel == (cold and 9 or 12) and preview.enhanceLevel == preview.ascendLevel
+                    and preview.locked == nested.locked, "内层等级/品质/升阶/锁定胜过外层伪养成")
+                check(preview.destination == nil and preview.amount == nil and preview.equip == nil,
+                    "卡片只收实际装备，不把外层去向/计数混入内层")
+                check(item.destination == "lootbox" and item.amount == 7 and hasText("已入遗匣") and hasText("×7"),
+                    "外层去向及精确数量展示保留，奖励计数不变")
+                if cold then
+                    local strength = EquipmentConfig.QUALITY[5].baseStrength * 1.5
+                        * (1 + 22 * EquipmentConfig.LEVEL_SCALE)
+                    for index, stat in ipairs(tpl.stats) do
+                        check(preview.baseStats[index][1] == stat[1] and near(preview.baseStats[index][2], stat[2] * strength),
+                            "冷实例按内层等级/品质/腐化倍率恢复真实模板属性 " .. index)
+                    end
+                    check(nested.name == nil and nested.type == nil and nested.baseStats == nil,
+                        "冷原实例仍未水合，不回写缺失展示字段")
+                else
+                    check(deepEqual(preview.baseStats, nested.baseStats), "完整实例的实际baseStats不被外层/模板替换")
+                end
+                local affix = preview.affixes[1]
+                check(#preview.affixes == 1 and affix.affixId == 16 and affix.key == AffixConfig.BY_ID[16].key
+                    and affix.name == AffixConfig.BY_ID[16].name and affix.value == 31.25 and affix.ascBonus == 2.75,
+                    "实际词缀恢复key/name但保留value/升阶投入，不读外层伪魔攻")
+                check(preview.corruptCount == 2 and preview.corruptBaseMult == 1.5
+                    and preview.corruptRevert.baseMult == 1.25 and preview.corruptRevert.affixCount == 1,
+                    "腐化次数/倍率/还原快照来自内层")
+                local patch = preview.corruptRevert.patches[1]
+                check(patch[1] == "s" and patch[2] == 1 and patch[3] == 24.5 and patch.layer == 2
+                    and patch["1"] == nil and patch["2"] == nil and patch["3"] == nil,
+                    "JSON字符串键腐化patch仅在copy内规范化")
+                local value, present = EquipmentQuery.attributeValue(preview, "magAtk")
+                check(not present and value == 0, "实际属性查询不包含外层伪magAtk")
+                check(deepEqual(items, snapshot) and deepEqual(tpl, configSnapshot),
+                    "首帧后原奖励/嵌套实例/模板全字段deep equal，无重计数与配置污染")
+                localReward.handleLargeScroll(-2, (l.dx + 30) * l.scale, (l.dy + 30) * l.scale, 1920, 1080)
+                localReward.drawLarge({}, 1920, 1080)
+                check(#spy.draws == 2 and spy.draws[2].m.f < spy.draws[1].m.f,
+                    "长详情独立滚动且每帧size/draw仍同copy")
+                check(spy.draws[2].item ~= preview and deepEqual(spy.draws[2].item, preview),
+                    "重复绘制生成独立等价快照，不累乘属性/消费随机")
+                check(deepEqual(items, snapshot) and deepEqual(tpl, configSnapshot),
+                    "选择及独立滚动后所有源对象仍deep equal")
+                check(localReward.isLarge() and closed == 0 and actions == 0 and reads == 0
+                    and ioCalls == 0 and randomCalls == 0, "全程只读预览不关闭/领取/发送action/读档/写档/随机")
+            end)
+        end
         run("row只对照真实drawRegion/handleInputRegion", function()
             fixture("tri", 3, true)
             -- 前一 shared global 仍展示：新规则 row 排队不抢占，先完成实际关闭及保护期。
@@ -514,8 +723,11 @@ function Start()
                 "drawRegion的实际matrix逆投射由handleInputRegion消费")
             nvgEndFrame({})
         end)
+        check(ioCalls == 0 and randomCalls == 0, "整套奖励回归原生File/FS与随机委托为0")
+        print("[chest_reward_horizon_test] readonly: File/FS/io=" .. ioCalls .. " RNG=" .. randomCalls .. " nativeDelegation=0")
     end)
     if not ok then failures = failures + 1; print("[FAIL] chest_reward_horizon_test Start: " .. tostring(err)) end
+    math.random, math.randomseed = savedRandom, savedRandomseed
     rawset(_G, "require", originalRequire)
     Asset.drawIcon, Cascade.new, SFX.play = savedIcon, savedNew, savedPlay
     VP._notes = savedNotes

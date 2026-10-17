@@ -276,6 +276,7 @@ function Start()
             ["ui.battle.tri.BattleTriDriver"] = { new = forbidden },
             ["ui.battle.stage.StageSelectDialog"] = { init = noop },
             ["ui.widget.SoundToggle"] = { initImages = noop },
+            ["ui.battle.scene.BattlePauseOverlay"] = { init = noop },
         }
         for _, name in ipairs({ "systems.ThreatManager", "systems.TalentManager", "ui.battle.combat.BattleEffects",
             "systems.StatusEffectManager", "ui.hud.popup.RewardPopup", "ui.battle.stage.SweepDialog",
@@ -338,6 +339,9 @@ function Start()
             -- Stop新接入的外围呈现/故事清理，只记录可调用性，不启动实际故事或塔场景。
             ["systems.StoryPlayer"] = { resetAll = noop }, ["ui.tavern.RecruitAnim"] = { destroy = noop },
             ["ui.tower.TowerBuffSidebar"] = { destroy = noop },
+            ["ui.battle.scene.BattlePauseOverlay"] = { destroy = noop },
+            ["ui.loot.InventoryCurationDialog"] = { reset = noop },
+            ["rules.equipment.InventoryCurationService"] = { Cleanup = noop },
             ["ui.widget.DesignWidgetSurface"] = { shutdown = noop },
             ["systems.ExtraTalentSystem"] = { flush = noop },
             ["ui.battle.scene.BattleMountScope"] = { runDefault = function(fn) fn() end },

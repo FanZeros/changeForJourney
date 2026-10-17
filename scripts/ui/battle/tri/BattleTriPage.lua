@@ -1,5 +1,6 @@
 -- 三行独立驱动，中段战斗区486,0,948,1080；左右保留经营/角色面板。
 -- 每行己方/敌方各四槽；队一沿用主线进度，未解锁行显示条件与编队预览。
+local BattlePauseOverlay = require("ui.battle.scene.BattlePauseOverlay")
 local BattleLayout = require("core.BattleLayout")
 local BattleView   = require("ui.battle.scene.BattleView")
 local BattleCombat = require("ui.battle.combat.BattleCombat")
@@ -475,6 +476,7 @@ function BattleTriPage.init(vg)
     end
     if inited then return end
     inited = true
+    BattlePauseOverlay.init()
     BattleView.init(vg)
     imgL0 = nvgCreateImage(vg, "image/暗黑/L0_stone_frame.png", 0)
     StageSelectDialog.init(vg)
@@ -796,6 +798,15 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             end
             nvgRestore(vg)
         end
+    end
+
+    -- 灰层只覆盖已解锁战场，操作HUD/选关弹窗仍画在它之上。
+    for row = 1, math.min(COL_COUNT, unlocked) do
+        local ix, iy, iw, ih = interiorRect(row, logicalW, logicalH)
+        local drv = drivers[row]
+        local active = battleReady and drv ~= nil and drv.active == true and #drv.allies > 0
+            and (not terminalRaid or (not terminalRaid.finished and not terminalRaid.defeated[row]))
+        BattlePauseOverlay.draw(vg, ix, iy, iw, ih, active)
     end
 
     -- ===== UI 层（窗口坐标）=====

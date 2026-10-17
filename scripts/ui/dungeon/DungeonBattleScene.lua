@@ -4,6 +4,7 @@
 -- 职责: 副本战斗的渲染、更新、输入处理、结算
 -- ============================================================================
 
+local BattlePauseOverlay = require("ui.battle.scene.BattlePauseOverlay")
 local CF  = require("systems.CombatFormula")
 local AD  = require("systems.AttributeDef")
 local TM  = require("systems.ThreatManager")
@@ -432,6 +433,7 @@ local dungeonBattleVg_ = nil
 function DungeonScene.init(vg)
     if dungeonBattleInited_ then return end
     dungeonBattleInited_ = true
+    BattlePauseOverlay.init()
     dungeonBattleVg_ = vg
     imgMapGoldMine   = nvgCreateImage(vg, DungeonConfig.DEFINITIONS.gold_mine.cardImage, 0)
     imgMapEquipment = nvgCreateImage(vg, DungeonConfig.DEFINITIONS.equipment_vault.cardImage, 0)
@@ -747,6 +749,7 @@ function DungeonScene.draw(vg, width, height)
     end
     nvgRestore(vg)
 
+    BattlePauseOverlay.draw(vg, 0, 260, 1920, 680, state.battleState == BATTLE_ACTIVE)
     local feedback = BF.begin(vg, "dbs_retreat", 1750, 110, 260, 90)
     drawImageCentered(vg, imgRetreatBtn, 1750, 110, 260, 90, 1.0)
     drawTextStroke(vg, 1750, 110, DungeonBattle.isTrainingDummy() and "退出" or "撤退", 36,

@@ -12,6 +12,7 @@ local BattleEffects    = require("ui.battle.combat.BattleEffects")
 local ProjectileSystem = require("ui.battle.combat.ProjectileSystem")
 local BattleCombat     = require("ui.battle.combat.BattleCombat")
 local BattleLayout     = require("core.BattleLayout")
+local SettingsPanel    = require("ui.hud.popup.SettingsPanel")
 
 local BattleView = {}
 
@@ -80,13 +81,19 @@ function BattleView.draw(vg, b, bgImg, skipBg)
     require("systems.ExtraTalentSystem").drawIceStatues(vg)
 
     -- 4) 飘字 / 特效 / 投射物 / 星门（均为 mounted 状态内容；坐标即条带坐标）
-    BattleDraw.drawFloatingTexts(vg)
-    BattleEffects.draw(vg)
-    ProjectileSystem.draw(vg)
-    ProjectileSystem.drawStarGates(vg, allies, BattleLayout.STRIP_CY,
-        BattleCombat.getCardCX, true, BattleCombat.getCardCY)
-    ProjectileSystem.drawStarGates(vg, enemies, BattleLayout.STRIP_CY,
-        BattleCombat.getCardCX, false, BattleCombat.getCardCY)
+    -- 必要卡牌进出场照常绘制；独立数字偏好不跟随特效偏好。
+    if SettingsPanel.isDamageNumbersEnabled() then
+        BattleDraw.drawFloatingTexts(vg)
+    end
+    if SettingsPanel.isEffectsEnabled() then
+        BattleEffects.draw(vg)
+        ProjectileSystem.draw(vg)
+        ProjectileSystem.drawStarGates(vg, allies, BattleLayout.STRIP_CY,
+            BattleCombat.getCardCX, true, BattleCombat.getCardCY)
+        ProjectileSystem.drawStarGates(vg, enemies, BattleLayout.STRIP_CY,
+            BattleCombat.getCardCX, false, BattleCombat.getCardCY)
+    end
+    -- 这里只门控绘制，宿主update继续回收特效/投射物，绝不跳过命中回调。
 end
 
 return BattleView

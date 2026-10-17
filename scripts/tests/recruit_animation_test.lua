@@ -14,6 +14,7 @@ local TAG = "[recruit_animation_test] "
 local SOURCE_FILES = {
     ["ui.tavern.RecruitTimeline"] = "ui/tavern/RecruitTimeline.lua",
     ["ui.tavern.RecruitAnim"] = "ui/tavern/RecruitAnim.lua",
+    ["ui.tavern.RecruitMotion"] = "ui/tavern/RecruitMotion.lua",
 }
 local nativeFile, nativeCache, nativeTime = File, cache, time
 local nativeGlobals = {} ---@type table<string, any>
@@ -66,7 +67,7 @@ end
 local function noop() end
 local function span(count) return CARD + math.max(0, count - 1) * DELAY end
 
--- 只允许两份真实源码。先尝试固定绝对 File，再尝试脚本资源根下的 cache:GetFile。
+-- 只允许三份真实源码（含纯视觉RecruitMotion）。先固定绝对 File，再脚本资源根cache:GetFile。
 -- 缓存的是源码字符串，不修改 package.loaded；每个 env 独立执行同一份真实字节。
 local function source(name)
     local relative = assert(SOURCE_FILES[name], "source denied: " .. tostring(name))
@@ -207,7 +208,28 @@ local function newContext(options)
         assert(finite(alpha) and alpha >= 0 and alpha <= 1, "invalid global alpha")
         ctx.transform.alpha = alpha
     end
-    env.nvgRGBA = function(r, g, b, a) return { r, g, b, a } end
+    env.nvgRGBA = function(r, g, b, a)
+        assert(finite({ r, g, b, a }) and a >= 0 and a <= 255, "invalid color alpha")
+        return { r, g, b, a }
+    end
+    -- 新纯视觉helper全部留在本闭包，不把fake VG传给native。
+    env.nvgMoveTo = function(_, x, y)
+        assert(finite({ x, y }), "non-finite edge move")
+        ctx.edgeStart = { x = x, y = y }
+    end
+    env.nvgLineTo = function(_, x, y)
+        assert(finite({ x, y }), "non-finite edge line")
+        ctx.edgeEnd = { x = x, y = y }
+    end
+    env.nvgStrokeWidth = function(_, width)
+        assert(finite(width) and width > 0 and width <= 2, "short edge must stay thin")
+        ctx.edgeWidth = width
+    end
+    env.nvgStrokeColor = function(_, color) ctx.edgeColor = color end
+    env.nvgStroke = function()
+        record("backEdge", { from = copy(ctx.edgeStart), to = copy(ctx.edgeEnd),
+            color = copy(ctx.edgeColor), width = ctx.edgeWidth })
+    end
     env.nvgBeginPath = function() ctx.shape, ctx.paint = {}, nil end
     env.nvgRect = function(_, x, y, w, h)
         assert(finite({ x, y, w, h }) and w > 0 and h > 0, "invalid rectangle")
@@ -898,6 +920,32 @@ local function renderCases()
     end
 end
 
+local function motionPurityCases()
+    local ctx = newContext()
+    ctx.start(heroes(1), nil, 1, "standard")
+    local at = INTRO + .12
+    local first = copy(ctx.draw(at))
+    local beforeMemory = copy(ctx.memory)
+    local beforeClock = ctx.clock.elapsedTime
+    local beforeLoads = #ctx.loads
+    local edge = calls(ctx, "backEdge")
+    eq(#edge, 10, "real helper emits only ten short edge segments")
+    check(ctx.executions["ui.tavern.RecruitMotion"] == 1, "new helper executes real whitelisted source")
+    ctx.draw(INTRO + .20)
+    check(same(first, ctx.draw(at)), "actual RecruitAnim A-B-A deterministic sampling")
+    for _ = 1, 20 do check(same(first, ctx.draw(at, false)), "repeated actual draw unchanged") end
+    eq(#ctx.loads, beforeLoads, "new motion does not create image handles")
+    eq(ctx.clock.elapsedTime, beforeClock, "draw never advances time")
+    check(same(ctx.memory, beforeMemory), "draw never mutates player memory")
+    ctx.draw(INTRO + CARD)
+    eq(#calls(ctx, "backEdge"), 0, "edge never covers front/rarity/name")
+    ctx.clock.elapsedTime = 0/0
+    ctx.calls = {}
+    ctx.anim.draw(ctx.vg)
+    eq(#ctx.calls, 0, "invalid time returns without graphics calls")
+    safe(ctx)
+end
+
 local function finalSafetyCases()
     for _, ctx in ipairs(contexts) do safe(ctx) end
     eq(File, nativeFile, "runtime File unchanged")
@@ -905,7 +953,7 @@ local function finalSafetyCases()
     eq(time, nativeTime, "runtime clock unchanged")
     for name, value in pairs(nativeGlobals) do eq(rawget(_G, name), value, "runtime global unchanged " .. name) end
     for name in pairs(SOURCE_FILES) do eq(package.loaded[name], initialLoaded[name], "runtime package.loaded unchanged " .. name) end
-    eq(#sourceReads, 2, "exactly two actual source files cached once")
+    eq(#sourceReads, 3, "exactly three actual source files cached once")
     for _, read in ipairs(sourceReads) do
         local allowed = false
         for _, relative in pairs(SOURCE_FILES) do if read.path == ROOT .. "/scripts/" .. relative then allowed = true end end
@@ -942,6 +990,7 @@ function Start()
         { "repeat-next-frame-settled-dismiss-closes", repeatFreshSettledDismissCases },
         { "close-notifies-destroy-cancels", closeDestroyCases },
         { "recorded-front-back-finite-stack-and-no-draw-time-advance", renderCases },
+        { "real-motion-determinism-endpoint-no-image-or-player-mutation", motionPurityCases },
         { "final-no-RNG-transactions-player-IO-or-global-mutation", finalSafetyCases },
     }
     for _, test in ipairs(tests) do

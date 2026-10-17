@@ -247,7 +247,7 @@ local function newContext()
     env.require = function(name)
         if ctx.deps[name] ~= nil then return ctx.deps[name] end
         local permitted = name:match("^config%.") or name == "core.EventBus" or name == "core.I18nStory"
-            or name == "ui.story.StoryDisplay" or name == "ui.story.ScenarioDialogue"
+            or name == "ui.story.StoryDisplay" or name == "ui.story.StoryCinematicMotion" or name == "ui.story.ScenarioDialogue"
             or name == "ui.story.gate.LetterIntro" or name == "ui.story.gate.DarkTitleScreenGate"
             or name == "systems.StoryPlayer" or name == "ui.character.hero.HeroScenario"
             or name == "ui.tutorial.TutorialPageRecovery"
@@ -423,8 +423,8 @@ local function frameCases()
     local _, bari = bar(ctx)
     local avatar, ai = find(ctx, "avatar")
     check(bi < pi and pi < bari and bari < ai, "layer order bg < entering portrait < dialogue bar < avatar")
-    near(backdrop.w, 1920, "bg covers frame width")
-    near(backdrop.h, 1080, "bg covers frame height")
+    near(backdrop.w, (select(3, ctx.env.require("ui.story.StoryCinematicMotion").cover(0.125, 1920, 1080))), "bg sampled cover width")
+    near(backdrop.h, (select(4, ctx.env.require("ui.story.StoryCinematicMotion").cover(0.125, 1920, 1080))), "bg sampled cover height")
     near(portrait.h, 1080 * 0.72, "small portrait original size")
     near(avatar.alpha, 1, "avatar original visibility")
     eq(called, 0, "loading/drawing never finishes or awards")
@@ -475,8 +475,8 @@ local function allScenarioFrames()
                 local backdrop, bi = find(ctx, "image", cfg.background)
                 local _, bari = bar(ctx)
                 check(backdrop ~= nil, "all80 first visible frame has configured environment " .. id)
-                near(backdrop.w, size[1], "all80 background uses supplied logical width " .. id)
-                near(backdrop.h, size[2], "all80 background uses supplied logical height " .. id)
+                near(backdrop.w, (select(3, ctx.env.require("ui.story.StoryCinematicMotion").cover(0.3, size[1], size[2]))), "all80 sampled width " .. id)
+                near(backdrop.h, (select(4, ctx.env.require("ui.story.StoryCinematicMotion").cover(0.3, size[1], size[2]))), "all80 sampled height " .. id)
                 if bari then check(bi < bari, "all80 environment below dialogue " .. id) end
                 eq(ctx.dialogue.isFullscreen(), cfg.mode == "large", "all80 keeps mode " .. id)
                 eq(ctx.dialogue.getProgress(), 1, "all80 first frame not step advance " .. id)
@@ -531,8 +531,8 @@ local function eyeCases()
     eq(#images(ctx, portraitPath(ctx, ctx.config.SCENARIO_38.steps[1])), 1, "eyeOpen uses static portrait, not removed")
     eq(bar(ctx), nil, "eyeOpen hides dialogue")
     local fills = {}
-    for _, call in ipairs(ctx.calls) do if call.kind == "fill" then fills[#fills + 1] = call end end
-    eq(#fills, 3, "eyeOpen foundation plus two lids")
+    for _, call in ipairs(ctx.calls) do if call.kind == "fill" and call.rect and not call.rect.rounded and not call.paint then fills[#fills + 1] = call end end
+    eq(#fills, 3, "eyeOpen foundation plus two lids; environmental gradients are underneath")
     eq(fills[2].rect.h, 540, "first frame upper eyelid half height")
     eq(fills[3].rect.y, 540, "first frame lower eyelid half height")
     ctx.dialogue.update(1); ctx.draw()

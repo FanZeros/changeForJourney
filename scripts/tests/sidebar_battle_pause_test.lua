@@ -250,6 +250,8 @@ function Start()
         mods["runtime.ClientDispatcher"] = stub({ get = function() return {} end, hasData = function() return false end })
         mods["ui.tutorial.TutorialPageRecovery"] = stub({ getStoryPlace = function() return "town" end })
         env.HandleEquipmentHoverTickHorizon = noop
+        -- 仅补新增展示同步边界，不替换被测战斗分派/暂停/回包/存档流程。
+        env.SyncPowerPresentationHorizon = noop
         compile("boot.Standalone", env)
         local function set(name, value)
             for i = 1, 100 do

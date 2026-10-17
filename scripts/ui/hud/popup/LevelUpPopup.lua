@@ -258,14 +258,28 @@ local function drawGlow(vg, x, y, scale, alpha)
     ---@cast glowOuter NVGcolor
     nvgFillPaint(vg, nvgRadialGradient(vg, cx, cy, 60 * scale, radius, glowInner, glowOuter))
     nvgFill(vg)
+    -- 铜金光只沿框体边缘行进，数字与奖励按钮阅读区保持净空。
+    local reveal = math.min(1, state.elapsed / ENTER_DURATION)
+    local accent = alpha * math.sin(math.min(1, state.elapsed / 1.1) * math.pi)
+    local inset, lineLength = 12 * scale, 150 * scale * reveal
+    if accent > 0.001 then
+        nvgBeginPath(vg)
+        nvgRect(vg, x + inset, y + inset, lineLength, 1.5 * scale)
+        nvgRect(vg, x + (780 - 12) * scale - lineLength, y + (466 - 12) * scale,
+            lineLength, 1.5 * scale)
+        nvgFillColor(vg, nvgRGBA(225, 186, 111, math.floor(accent * 120)))
+        nvgFill(vg)
+    end
     -- 固定数量余烬，不分配粒子对象、不使用 additive/白色背景。
     for index = 1, 14 do
-        local phase = (state.elapsed * 0.16 + index * 0.071) % 1
-        local px = x + ((index * 137) % 780) * scale
-        local py = y + (466 - phase * 520) * scale
+        local phase = (state.elapsed * (0.08 + index % 4 * 0.012) + index * 0.071) % 1
+        local side = index % 2 == 0 and 1 or -1
+        local px = x + (390 + side * (404 + index % 4 * 7)
+            + math.sin(state.elapsed * 0.55 + index) * 4) * scale
+        local py = y + (466 - phase * 480) * scale
         nvgBeginPath(vg)
         nvgCircle(vg, px, py, (index % 2 + 1) * scale)
-        nvgFillColor(vg, nvgRGBA(201, 151, 59, math.floor((1 - phase) * alpha * 88)))
+        nvgFillColor(vg, nvgRGBA(201, 151, 59, math.floor(math.sin(phase * math.pi) * alpha * 88)))
         nvgFill(vg)
     end
 end

@@ -246,6 +246,8 @@ function Start()
         local viewMocks = { ["ui.battle.scene.BattleDraw"] = Draw,
             ["ui.battle.combat.BattleEffects"] = { draw = noop },
             ["ui.battle.combat.ProjectileSystem"] = PS, ["ui.battle.combat.BattleCombat"] = combat,
+            ["ui.hud.popup.SettingsPanel"] = { isEffectsEnabled = function() return true end,
+                isDamageNumbersEnabled = function() return true end },
             ["systems.ExtraTalentSystem"] = { drawIceStatues = noop } }
         local View = compile("ui/battle/scene/BattleView.lua", viewMocks)
         local mapPath = "image/关卡地图/MAP_1.png"
@@ -351,6 +353,7 @@ function Start()
             ["ui.character.hero.AwakeningArtwork"] = { destroy = noop },
             ["rules.tower.TowerService"] = { ResetToDefault = noop } }, {
             LetterIntro = { reset = noop }, ScenarioDialogue = { reset = noop },
+            LocalActionBridge = { cancelQuickEquip = noop },
             CharacterPanel = { destroyPresentation = noop }, TowerBattleScene = { resetToDefault = noop },
             TowerBuffPick = { destroy = noop },
             StartupQueue = Queue, StandaloneRT = {}, DarkTitleScreen = title, vg = context,

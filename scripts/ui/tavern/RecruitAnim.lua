@@ -18,6 +18,7 @@ local HeroAssetUtil = require("config.HeroAssetUtil")
 local RepeatDrawButton = require("ui.widget.RepeatDrawButton")
 local Timeline = require("ui.tavern.RecruitTimeline")
 local Presentation = require("ui.tavern.RecruitPresentation")
+local Motion = require("ui.tavern.RecruitMotion")
 local drawTextStroke = DrawUtil.drawTextStroke
 local drawImageCenteredUtil = DrawUtil.drawImageCentered
 
@@ -585,6 +586,8 @@ end
 
 function RecruitAnim.draw(vg)
     if state.phase == "idle" then return end
+    local now = time.elapsedTime
+    if type(now) ~= "number" or now ~= now or math.abs(now) == math.huge then return end
 
     -- =================== 全局淡出透明度 ===================
     local globalAlpha = 1.0
@@ -645,6 +648,9 @@ function RecruitAnim.draw(vg)
                 nvgTranslate(vg, -pos.x, -drawY)
                 if not pose.front then
                     Presentation.drawBack(vg, pos.x, drawY, CARD_W, HERO_CARD_H, pose.alpha)
+                    local localProgress = (time.elapsedTime - state.cardStartT - (i - 1) * Timeline.CARD_DELAY)
+                        / Timeline.CARD_DURATION
+                    Motion.drawBackEdge(vg, pos.x, drawY, CARD_W, HERO_CARD_H, localProgress, pose.alpha)
                 elseif item.type == "hero" then
                     drawCharacterCard(vg, pos.x, drawY, item, pose.alpha)
                 elseif item.type == "shard" then

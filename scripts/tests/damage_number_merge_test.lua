@@ -378,11 +378,14 @@ function Start()
             posForList = function(_, index) return 300 + index, 180 end,
             hitWeight = function() return 1 end,
         }
+        local projectileState = { projectiles = {} }
         local mocks = {
             ["systems.CombatFormula"] = Formula, ["systems.AttributeDef"] = AD,
             ["systems.ThreatManager"] = { onDamageDealt = noop, onHealingDone = noop, getThreat = function() return 1 end },
             ["systems.StatusEffectManager"] = { getDamageTakenMult = function() return 1 end },
-            ["systems.TalentManager"] = Talent, ["ui.battle.combat.ProjectileSystem"] = {},
+            ["systems.TalentManager"] = Talent,
+            ["ui.battle.combat.ProjectileSystem"] = { mountedState = function() return projectileState end },
+            ["systems.ExtraTalentSystem"] = { absorbBulwarkWard = function(_, damage) return damage end },
             ["systems.BattleDiag"] = { logEnabled = false }, ["core.BattleLayout"] = layout,
             ["systems.RelicConditionHandler"] = Relic, ["systems.ArtifactRuntime"] = Artifact,
             ["systems.MapAffixSystem"] = { getHealReduce = function() return 0 end, shouldSuppressCrit = function() return false end,
@@ -391,9 +394,11 @@ function Start()
             ["ui.battle.combat.BattleCombatFx"] = Fx, ["ui.battle.combat.BattleCombatAnim"] = animations,
             ["systems.ClassGateRuntime"] = { applyDebtTaken = function(_, d) return d end,
                 absorbIncoming = function(_, d) return d end, tryDeferDeath = function() return false end },
-            ["systems.EquipmentSetRuntime"] = { onIncoming = function(_, d) return d end, onBlocked = noop },
+            ["systems.EquipmentSetRuntime"] = { onIncoming = function(_, d) return d end,
+                onBlocked = noop, shouldSkipThreat = function() return false end },
         }
         mocks["ui.battle.combat.BattleCombatCombo"] = compile("ui/battle/combat/BattleCombatCombo.lua", mocks)
+        mocks["ui.battle.combat.BattleAttackChain"] = compile("ui/battle/combat/BattleAttackChain.lua", {})
         local Combat, combatEnv = compile("ui/battle/combat/BattleCombat.lua", mocks)
         local function unit(heroId, atkType, hp, maxHp, shield)
             local attrs = { atkType = atkType, final = { [AD.HP] = hp, [AD.MAX_HP] = maxHp, [AD.ENERGY_SHIELD] = shield or 0 },

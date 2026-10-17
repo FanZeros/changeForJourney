@@ -1113,6 +1113,8 @@ function Start()
                 getClearedStages = function() return routeMods["runtime.ClientDispatcher"].get("battle").clearedStages or {} end,
                 pumpBattleCards = function() pumps = pumps + 1; error("routing禁止全图鉴pump") end }
             -- 新增入场/挂载helper只用于零解锁空驱动的路由夹具；不替代本专项被测输入/绘制。
+            -- PR161暂停层在本零驱动路由夹具为空表现seam；原奖励输入/绘制断言不变。
+            routeMods["ui.battle.scene.BattlePauseOverlay"] = { init = noop, draw = noop }
             routeMods["ui.battle.combat.BattleCombatAnim"] = {}
             routeMods["systems.RelicConditionHandler"] = closedPage()
             routeMods["ui.battle.stage.BattleSpeed"] = {}
@@ -1133,6 +1135,7 @@ function Start()
             routeMods["ui.dev.CEPanel"].handleWheel = function() return false end
             routeMods["ui.dev.CEPanel"].handleDown = function() return false end
             routeMods["ui.dev.CEPanel"].handleUp = function() return false end
+            routeMods["ui.loot.InventoryCurationDialog"] = closedPage()
             routeMods["ui.loot.LootBox"].handleDragEnd = noop
             routeMods["ui.character.EquipCrossDrag"].isArmed = function() return false end
             routeMods["ui.character.panel.CharacterPanel"].isDraggingCard = function() return false end

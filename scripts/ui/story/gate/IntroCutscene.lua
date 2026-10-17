@@ -3,10 +3,11 @@
 -- 沿用宿主的全屏绘制与完成回调，不重播新手开场，不改首通/奖励/关卡进度。
 -- ============================================================================
 
-local DrawUtil = require("core.DrawUtil")
 local GameConfig = require("config.GameConfig")
 local Story = require("core.I18nStory")
 local Display = require("ui.story.StoryDisplay")
+local Motion = require("ui.story.StoryCinematicMotion")
+local presentationElapsed_ = 0
 
 local IntroCutscene = {}
 local DW = GameConfig.Design.WIDTH
@@ -38,13 +39,8 @@ local function drawBlack(alpha)
     nvgFill(vg_)
 end
 
-local function drawBackground(image, alpha, zoom)
-    if image < 0 or alpha <= 0.01 then return end
-    local width, height = nvgImageSize(vg_, image)
-    if width <= 0 or height <= 0 then return end
-    local scale = math.max(DW / width, DH / height) * zoom
-    DrawUtil.drawImageCentered(vg_, image, DW * 0.5, DH * 0.5,
-        width * scale, height * scale, alpha)
+local function drawBackground(image, alpha, elapsed)
+    Motion.drawImage(vg_, image, elapsed, DW, DH, alpha)
 end
 
 local function drawCaption()
@@ -89,6 +85,7 @@ local function finish()
     finished = true
     local callback = onFinishCb
     onFinishCb = nil
+    presentationElapsed_ = 0 -- 回调可能同步开启下一过场，先清旧视觉
     print("[IntroCutscene] 终焉远征过场结束")
     if callback then callback() end
 end
@@ -98,6 +95,7 @@ end
 function IntroCutscene.init(vg, _sceneRef)
     if vg_ ~= vg then
         imgTemple, imgRoad = -1, -1
+        presentationElapsed_ = 0
     end
     vg_ = vg
 end
@@ -108,6 +106,7 @@ function IntroCutscene.start(onFinish)
     active = true
     finished = false
     phase, phaseT = 1, 0
+    presentationElapsed_ = 0
     onFinishCb = onFinish
     print("[IntroCutscene] 开始终焉远征过场")
 end
@@ -117,6 +116,7 @@ function IntroCutscene.isFinished() return finished end
 
 function IntroCutscene.update(dt)
     if not active then return end
+    presentationElapsed_ = presentationElapsed_ + math.max(0, dt)
     phaseT = phaseT + math.max(0, dt)
     if phaseT >= PHASE_DURATIONS[phase] then
         phase = phase + 1
@@ -129,26 +129,31 @@ end
 function IntroCutscene.draw(_vg)
     if not active then return end
     nvgSave(vg_)
-    nvgScissor(vg_, 0, 0, DW, DH)
+    nvgIntersectScissor(vg_, 0, 0, DW, DH)
     drawBlack(1)
     local progress = easeInOut(phaseT / PHASE_DURATIONS[phase])
+    local templeElapsed = math.max(0, presentationElapsed_ - PHASE_DURATIONS[1])
+    local roadElapsed = math.max(0, templeElapsed - PHASE_DURATIONS[2])
     if phase == 2 then
-        drawBackground(imgTemple, progress, 1 + progress * 0.04)
+        drawBackground(imgTemple, progress, templeElapsed)
         drawBlack(0.35)
     elseif phase == 3 then
         -- 道路覆盖不透明神殿，避免两层同时淡出造成中途亮度下陷。
-        drawBackground(imgTemple, 1, 1.04)
-        drawBackground(imgRoad, progress, 1.04 - progress * 0.04)
+        drawBackground(imgTemple, 1, templeElapsed)
+        drawBackground(imgRoad, progress, roadElapsed)
         drawBlack(0.35)
     elseif phase == 4 then
-        drawBackground(imgRoad, 1, 1 + progress * 0.02)
+        drawBackground(imgRoad, 1, roadElapsed)
         drawBlack(0.35)
     elseif phase == 5 then
-        drawBackground(imgRoad, 1 - progress, 1.02)
+        drawBackground(imgRoad, 1 - progress, roadElapsed)
         drawBlack(0.35)
     end
+    local environmentAlpha = phase == 2 and progress or (phase == 5 and 1 - progress or 1)
+    if phase >= 2 and (imgTemple >= 0 or imgRoad >= 0) then
+        Motion.atmosphere(vg_, presentationElapsed_, DW, DH, environmentAlpha, "cool")
+    end
     drawCaption()
-    nvgResetScissor(vg_)
     nvgRestore(vg_)
 end
 
@@ -161,6 +166,7 @@ end
 function IntroCutscene.reset()
     active, finished = false, false
     phase, phaseT = 0, 0
+    presentationElapsed_ = 0
     onFinishCb = nil
     print("[IntroCutscene] 终焉远征过场已重置")
 end

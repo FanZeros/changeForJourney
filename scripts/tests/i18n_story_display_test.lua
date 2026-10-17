@@ -558,9 +558,12 @@ function Start()
             return 1024, 1024
         end)
         local DrawUtil = require("core.DrawUtil")
-        local originalDrawImage = DrawUtil.drawImageCentered
-        DrawUtil.drawImageCentered = function(_, image, _, _, width, height, alpha)
-            backgroundDraws[#backgroundDraws + 1] = { path = backgrounds[image], width = width, height = height, alpha = alpha }
+        local originalDrawImage = DrawUtil.drawImageCover
+        DrawUtil.drawImageCover = function(_, image, _, _, width, height, alpha)
+            local sw, sh = nvgImageSize(metricContext, image)
+            local scale = math.max(width / sw, height / sh)
+            backgroundDraws[#backgroundDraws + 1] = { path = backgrounds[image], width = sw * scale,
+                height = sh * scale, alpha = alpha }
         end
         Intro.init(metricContext, nil)
         Intro.start()
@@ -568,7 +571,7 @@ function Start()
             and backgrounds[2] == "image/暗黑/L1_row1_forest.png", "神殿与远征道路使用不同素材")
         Intro.update(durations[1]); Intro.update(durations[2]); Intro.update(durations[3] * 0.5)
         Intro.draw(nil)
-        DrawUtil.drawImageCentered = originalDrawImage
+        DrawUtil.drawImageCover = originalDrawImage
         check(#backgroundDraws == 2 and backgroundDraws[1].alpha == 1
             and backgroundDraws[2].alpha == 0.5, "换景道路淡入覆盖不透明神殿，不双重淡出")
         for _, draw in ipairs(backgroundDraws) do

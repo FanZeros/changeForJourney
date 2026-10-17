@@ -22,6 +22,25 @@ local PRESS_DUR   = 0.06   -- 按下缩小动画时长
 local RELEASE_DUR = 0.12   -- 松开恢复动画时长
 local MIN_SCALE   = 0.92   -- 按下时的最小缩放
 
+-- 按下快收、松开轻弹；保持原输入/音效与时长，只采样绘制缩放。
+local function pressScale(info, now)
+    local t = math.max(0, math.min(1, (now - info.t0) / PRESS_DUR))
+    return 1 - (1 - MIN_SCALE) * (1 - (1 - t) ^ 3)
+end
+
+local function startRelease(info, now)
+    info.releaseScale = info.phase == "press" and pressScale(info, now) or MIN_SCALE
+    info.phase, info.releaseT0 = "release", now
+end
+
+local function releaseScale(info, now)
+    local t = math.max(0, math.min(1, (now - info.releaseT0) / RELEASE_DUR))
+    local u = t - 1
+    local ease = 1 + 1.55 * u * u * u + 0.55 * u * u
+    local from = info.releaseScale or MIN_SCALE
+    return from + (1 - from) * ease
+end
+
 -- ======================== 全局按下状态 ========================
 local pressX, pressY = -9999, -9999   -- 当前按下的设计坐标
 local isPressed = false               -- 鼠标/触摸是否处于按下状态
@@ -54,8 +73,7 @@ function M.trigger(key)
     local info = active[key]
     if info and (info.phase == "press" or info.phase == "hold") then
         -- 按钮已在按下状态，切换到恢复
-        info.phase = "release"
-        info.releaseT0 = time.elapsedTime
+        startRelease(info, time.elapsedTime)
     else
         -- 没有按下记录（可能是拖拽后触发、或其他情况），做一次快速弹跳
         active[key] = {
@@ -105,8 +123,7 @@ function M.begin(vg, key, cx, cy, w, h)
     if info.phase == "press" then
         local elapsed = now - info.t0
         if elapsed < PRESS_DUR then
-            local t = elapsed / PRESS_DUR
-            s = 1.0 - (1.0 - MIN_SCALE) * t
+            s = pressScale(info, now)
         else
             info.phase = "hold"
         end
@@ -117,8 +134,7 @@ function M.begin(vg, key, cx, cy, w, h)
         s = MIN_SCALE
         if not isPressed then
             -- 鼠标已松开但 trigger 未调用（拖拽出按钮区域等），直接恢复
-            info.phase = "release"
-            info.releaseT0 = now
+            startRelease(info, now)
         end
     end
 
@@ -129,10 +145,7 @@ function M.begin(vg, key, cx, cy, w, h)
             active[key] = nil
             return false
         end
-        local t = elapsed / RELEASE_DUR
-        -- ease-out cubic
-        t = 1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t)
-        s = MIN_SCALE + (1.0 - MIN_SCALE) * t
+        s = releaseScale(info, now)
     end
 
     nvgSave(vg)

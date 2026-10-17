@@ -113,7 +113,14 @@ local state = {
     layout      = nil,
     floor       = nil,
     wave        = nil,
+    visualElapsed = 0,   -- 只供结算入场表现，不参与关卡/奖励/关闭时序。
 }
+
+local RESULT_REVEAL_TIME = 0.28
+local function resultAlpha()
+    local t = math.max(0, math.min(1, state.visualElapsed / RESULT_REVEAL_TIME))
+    return 0.82 + 0.18 * (1 - (1 - t) ^ 3)
+end
 
 -- 塔专用横向内容画布，与普通副本的竖版坐标完全隔离。
 local TOWER_W, TOWER_H = 1440, 760
@@ -348,6 +355,7 @@ local function drawTower(vg, width, height)
         nvgFill(vg)
         nvgTranslate(vg, (width - TOWER_W * scale) * 0.5, (height - TOWER_H * scale) * 0.5)
         nvgScale(vg, scale, scale)
+        nvgGlobalAlpha(vg, resultAlpha())
         if root then Surface.draw(root, vg, TOWER_W, TOWER_H) end
     end, debug.traceback)
     nvgRestore(vg)
@@ -378,6 +386,7 @@ function BRP.show(opts)
     state.layout      = opts.layout == "tower" and "tower" or nil
     state.floor       = opts.floor
     state.wave        = opts.wave
+    state.visualElapsed = 0
     print("[BattleResultPanel] show: " .. (state.isWin and "WIN" or "LOSE")
         .. " heroes=" .. #state.heroStats
         .. " rewards=" .. #state.rewards)
@@ -400,6 +409,7 @@ function BRP.resetToDefault()
     state.open, state.isWin = false, false
     state.onClose, state.layout, state.floor, state.wave = nil, nil, nil, nil
     state.elapsedSecs, state.heroStats, state.rewards = 0, {}, {}
+    state.visualElapsed = 0
 end
 
 --- 是否打开
@@ -408,9 +418,12 @@ function BRP.isOpen()
     return state.open
 end
 
---- 更新（结算面板不再播旋转光效）
----@param _dt number
-function BRP.update(_dt)
+--- 更新：仅渐显结算内容，不移动按钮、不新增等待或旋转光效。
+---@param dt number
+function BRP.update(dt)
+    if not state.open then return end
+    if type(dt) ~= "number" or dt ~= dt or math.abs(dt) == math.huge then return end
+    state.visualElapsed = math.min(RESULT_REVEAL_TIME, state.visualElapsed + math.max(0, dt))
 end
 
 --- 处理点击（点击任意位置关闭）
@@ -454,6 +467,10 @@ function BRP.draw(vg, width, height)
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
         nvgFill(vg)
     end
+
+    -- 内容只渐显，不整体缩放/平移，点击和统计位置始终保持稳定。
+    nvgSave(vg)
+    nvgGlobalAlpha(vg, resultAlpha())
 
     -- === 3. 消耗时间（结算底板已移除） ===
     local totalSecs = math.floor(state.elapsedSecs)
@@ -565,6 +582,7 @@ function BRP.draw(vg, width, height)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, HINT_CX, HINT_CY, "点击空白处关闭", nil)
+    nvgRestore(vg)
     if width and height then nvgRestore(vg) end
 end
 

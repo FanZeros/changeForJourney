@@ -17,6 +17,7 @@ add("适用职业", "適用職業", "Usable by", "適用職業", "사용 직업"
 add("全部职业", "全部職業", "All classes", "全職業", "모든 직업")
 
 -- ===== 奖励用途与离线结算来源 =====
+add("小队%d", "小隊%d", "Squad %d", "小隊%d", "소대%d")
 add("小队%d · %s", "小隊%d · %s", "Squad %d · %s", "小隊%d・%s", "소대%d · %s")
 add("用于角色转职、装备升阶和市场购买。", "用於角色轉職、裝備升階和市場購買。", "Used for class advancement, gear ascension, and market purchases.", "転職、装備昇格、マーケットでの購入に使用。", "전직, 장비 승급 및 시장 구매에 사용합니다.")
 add("用于酒馆招募、神器宝箱和市场购买。", "用於酒館招募、神器寶箱和市場購買。", "Used for tavern recruitment, artifact chests, and market purchases.", "酒場の募集、神器宝箱、マーケットでの購入に使用。", "주점 모집, 신기 보물상자 및 시장 구매에 사용합니다.")

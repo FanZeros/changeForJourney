@@ -206,6 +206,8 @@ local state = {
     multiplier      = 1.0,
     adventureExp    = 0,
     adventurerExp   = 0,
+    playerStartLevel = nil, ---@type number|nil
+    playerEndLevel   = nil, ---@type number|nil
     rewards         = {},
     teamSources     = {},   -- 结算时冻结的各队来源，不从当前战线重新推断。
     heroExpPreview  = {},   -- 出战队员升级预览（服务端下发）
@@ -242,7 +244,8 @@ local ANIM_CLOSE_DUR = 0.20
 -- 队员升级动画参数
 local HERO_ANIM_DELAY = 0.55   -- 弹窗开完后停顿多久开始发放
 local HERO_ANIM_STAGGER = 0.1  -- 相邻队员错开的秒数
-local HERO_EXP_PER_SEC = 0.34  -- 经验发放速度（占总经验比例/秒），1/0.34 ≈ 2.9 秒发完
+local HERO_ANIM_TICKS_PER_SEC = 1000000  -- 仅显示时钟按最近微秒归一，不逐帧舍入 dt
+local HERO_ANIM_DURATION_TICKS = 5000000 -- 约 5 秒发完，不随帧率加速
 
 -- 奖励逐件弹出参数：前段保留仪式感，后段按总件数加速。
 local CASCADE_INTERVAL = 0.14  -- 前 10 件间隔
@@ -339,29 +342,33 @@ local function itemAccent(item)
     return trim[1], trim[2], trim[3]
 end
 
---- 统计实际有人的队伍数（空队不占高度）
----@param groups table[]
----@return integer
-local function heroRowCount(groups)
-    local n = 0
-    for t = 1, HERO_ROW.VISIBLE do
-        if #groups[t] > 0 then n = n + 1 end
+--- 按实际队号匹配来源，来源数组可以乱序，旧数据按数组位置兼容。
+local function sourceForTeam(teamIdx)
+    for index, source in ipairs(state.teamSources) do
+        if (source.teamIdx or index) == teamIdx then return source end
     end
-    return n
+    return nil
 end
 
---- 第 order 条有人的队伍行的上缘 Y（order 从 1 起，空队已被跳过）
-local function heroRowTop(order)
-    return HERO_ROW.TOP + (order - 1) * (HERO_ROW.H + HERO_ROW.GAP)
+--- 有来源但无经验的队伍仍显示说明（例如通天塔暂停离线收益）。
+local function heroRowHeight(members, source)
+    if #members > 0 then return HERO_ROW.H end
+    return source and 48 or 0
 end
 
---- 队员区实际占用的高度
+--- 绘制和输入共用队伍并集高度，来源专用行也纳入奖励区定位。
 ---@param groups table[]
 ---@return number
 local function heroBlockHeight(groups)
-    local n = heroRowCount(groups)
-    if n <= 0 then return 0 end
-    return n * HERO_ROW.H + (n - 1) * HERO_ROW.GAP
+    local height = 0
+    for t = 1, HERO_ROW.VISIBLE do
+        local rowH = heroRowHeight(groups[t], sourceForTeam(t))
+        if rowH > 0 then
+            if height > 0 then height = height + HERO_ROW.GAP end
+            height = height + rowH
+        end
+    end
+    return height
 end
 
 --- 按队伍把预览分成 1..3 行，每行最多 4 人。
@@ -561,57 +568,49 @@ local function drawDetailOverlay(vg)
     nvgRestore(vg)
 end
 
---- 初始化队员升级动画状态（把每条预览的经验从 0 逐级累积到最终等级）
---- 动画口径与服务端一致：在「原始等级/原始经验」上逐级消耗待发放经验。
+--- 初始化动画只读副本，使用与正式英雄升级相同的经验曲线。
 local function resetHeroAnim()
     local anim = {}
     for i, item in ipairs(state.heroExpPreview) do
+        local start = ExpTable.simulateHeroExp(item.startLevel or item.level or 1, item.startExp or 0, 0)
         anim[i] = {
-            level  = item.startLevel or item.level or 1,
-            exp    = item.startExp or 0,
-            remain = item.expGain or 0,
+            level  = start.level,
+            exp    = start.exp,
+            remain = start.capped and 0 or math.max(0, math.floor(item.expGain or 0)),
+            issued = 0,
+            capped = start.capped,
         }
     end
     state.heroAnim = anim
     state.heroTime = 0
 end
 
---- 推进队员升级动画：把 remain 里的经验按等级曲线逐级消耗
+--- 累计目标减去已发经验，只消费本帧增量；达到满级后动画正常完成。
 local function updateHeroAnim(dt)
     if #state.heroAnim == 0 then return end
     if state.animPhase ~= "open" and state.animPhase ~= "opening" then return end
     state.heroTime = state.heroTime + dt
-    if state.heroTime < HERO_ANIM_DELAY then return end
+    -- 只归一累计显示时间，避免整数经验边界被不同帧率的浮点尾差提前/延后。
+    local ticks = math.floor(state.heroTime * HERO_ANIM_TICKS_PER_SEC + 0.5)
+    local delayTicks = math.floor(HERO_ANIM_DELAY * HERO_ANIM_TICKS_PER_SEC)
+    local staggerTicks = math.floor(HERO_ANIM_STAGGER * HERO_ANIM_TICKS_PER_SEC)
+    if ticks < delayTicks then return end
 
-    local elapsed = state.heroTime - HERO_ANIM_DELAY
     for i, a in ipairs(state.heroAnim) do
-        -- 相邻队员错开 0.1 秒开始发放
-        local budget = (elapsed - (i - 1) * HERO_ANIM_STAGGER) * HERO_EXP_PER_SEC
-        if budget < 0 then budget = 0 end
+        local progress = math.max(0, math.min(HERO_ANIM_DURATION_TICKS,
+            ticks - delayTicks - (i - 1) * staggerTicks))
         local item = state.heroExpPreview[i]
-        local total = (item and item.expGain) or 0
+        local total = math.max(0, math.floor((item and item.expGain) or 0))
         if total > 0 and a.remain > 0 then
-            local want = math.floor(total * math.min(1, budget))
-            if want > a.remain then want = a.remain end
-            -- 逐级消耗
-            local consumed = 0
-            while want > consumed do
-                if a.capped then break end
-                local needed = ExpTable.getHeroExpForLevel(a.level) or 0
-                if needed <= 0 then a.capped = true break end
-                local room = needed - a.exp
-                local step = want - consumed
-                if step >= room then
-                    consumed = consumed + room
-                    a.exp = 0
-                    a.level = a.level + 1
-                    if ExpTable.isHeroMaxLevel(a.level) then a.capped = true end
-                else
-                    a.exp = a.exp + step
-                    consumed = consumed + step
-                end
+            -- 先转浮点乘法，避免大额经验乘 tick 发生 Lua integer 溢出。
+            local target = math.floor(total * 1.0 * progress / HERO_ANIM_DURATION_TICKS)
+            local want = math.max(0, math.min(a.remain, target - a.issued))
+            if want > 0 then
+                local nextValue = ExpTable.simulateHeroExp(a.level, a.exp, want)
+                a.level, a.exp, a.capped = nextValue.level, nextValue.exp, nextValue.capped
+                a.issued = a.issued + want
+                a.remain = nextValue.capped and 0 or a.remain - want
             end
-            a.remain = a.remain - consumed
         end
     end
 end
@@ -651,6 +650,16 @@ function Panel.show(data)
     state.adventurerExp  = data.adventurerExp or 0
     state.heroExpPreview = data.heroExpPreview or {}
     state.teamSources    = data.teamSources or {}
+    -- 只读玩家副本，领取口径为经验取整后沿正式曲线连续升级。
+    -- 数字在 show 时冻结；绘制和切语言不重复预估，也不写回玩家模块。
+    state.playerStartLevel, state.playerEndLevel = nil, nil
+    local player = ClientDispatcher.get("player")
+    if player then
+        local beforeLevel = player.level or 1
+        local preview = { level = beforeLevel, exp = (player.exp or 0) + math.floor(state.adventureExp) }
+        ExpTable.autoLevelUpPlayer(preview)
+        state.playerStartLevel, state.playerEndLevel = beforeLevel, preview.level
+    end
     state.onClaim        = data.onClaim
     state.detailItem     = nil
     state.detailIdx      = 0
@@ -826,28 +835,12 @@ function Panel.draw(vg)
         TTL.FR, TTL.FG, TTL.FB, TTL.SW,
         { strokeColor = { TTL.SR, TTL.SG, TTL.SB } })
 
-    -- 来源来自结算快照，切换战线或最高进度不改变本次说明。
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 26)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(216, 201, 163, 255))
-    for index = 1, math.min(3, #state.teamSources) do
-        local source = state.teamSources[index]
-        local entry = require("config.StageConfig").getStage(source.stageId)
-        local name = source.sourceName or (entry and entry.name) or tostring(source.stageId)
-        local translatedName = I18n.lookup(name)
-        if source.sourceKind == "tower" then
-            translatedName = I18n.format("通天塔 第%d层", (source.stageId or 400001) - 400000)
-        end
-        -- 只说明各队离线刷的关卡来源，不展示装备件数等具体产出。
-        local label = source.paused and I18n.format("小队%d · %s · 暂停离线收益",
-            source.teamIdx or index, translatedName)
-            or I18n.format("小队%d · %s", source.teamIdx or index, translatedName)
-        I18n.displayText(vg, CENTER_X, 356 + (index - 1) * 28, label, nil)
+    -- 远征等级经验与本次领取前后的等级（时间条上方）
+    local playerLevels = nil ---@type string|nil
+    if state.playerStartLevel and state.playerEndLevel then
+        playerLevels = "Lv." .. tostring(state.playerStartLevel) .. " → Lv." .. tostring(state.playerEndLevel)
     end
-
-    -- 远征等级经验（时间条上方）
-    self_drawExpRow(vg, EXP_ROW1, state.adventureExp)
+    self_drawExpRow(vg, EXP_ROW1, state.adventureExp, playerLevels)
 
     -- 7. 离线时间进度条背景
     DrawUtil.drawImageCentered(vg, img.progBg,
@@ -964,65 +957,101 @@ end
 
 -- ======================== 内部绘制函数 ========================
 
---- 绘制经验行（背景 + 标签 + 值）
-function self_drawExpRow(vg, cfg, value)
-    -- 背景框
+--- 经验标签、前后等级、奖励值共用实测宽度预算，完整保留五语文字。
+function self_drawExpRow(vg, cfg, value, levels)
     DrawUtil.drawRoundedRectCentered(vg,
         cfg.CX, cfg.CY, cfg.W, cfg.H, cfg.R,
         0, 0, 0, 13)
-    -- 标签（左对齐）
+    local label = I18n.lookup(cfg.LABEL)
+    local valText = "+" .. NumberUtil.format(value)
     local font = cfg.FONT or 40
+    local levelFont = 32
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, font)
+    local labelW = I18n.displayBounds(vg, 0, 0, label)
+    local valueW = I18n.displayBounds(vg, 0, 0, valText)
+    nvgFontSize(vg, levelFont)
+    local levelW = levels and I18n.displayBounds(vg, 0, 0, levels) or 0
+    local gapW = levels and 48 or 24
+    local scale = math.min(1, (cfg.VALUE_X - cfg.LABEL_X - gapW) / (labelW + valueW + levelW))
+    nvgFontSize(vg, font * scale)
+    labelW = I18n.displayBounds(vg, 0, 0, label)
+    valueW = I18n.displayBounds(vg, 0, 0, valText)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(cfg.LABEL_R, cfg.LABEL_G, cfg.LABEL_B, 255))
-    nvgText(vg, cfg.LABEL_X, cfg.CY, cfg.LABEL, nil)
-    -- 值（右对齐，绿色描边）；数值文本过长时缩字号避免溢出/压到标签
-    local valText = "+" .. NumberUtil.format(value)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, font)
-    local maxW = cfg.VALUE_X - cfg.LABEL_X - nvgTextBounds(vg, 0, 0, cfg.LABEL) - 24
-    local valFont = font
-    if maxW > 40 then
-        local w = nvgTextBounds(vg, 0, 0, valText)
-        if w > maxW then
-            valFont = math.max(28, font * maxW / w)
-        end
+    I18n.displayText(vg, cfg.LABEL_X, cfg.CY, label, nil)
+    if levels then
+        nvgFontSize(vg, levelFont * scale)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(216, 201, 163, 255))
+        local left, right = cfg.LABEL_X + labelW + 24, cfg.VALUE_X - valueW - 24
+        I18n.displayText(vg, (left + right) * 0.5, cfg.CY, levels, nil)
     end
     DrawUtil.drawTextStroke(vg, cfg.VALUE_X, cfg.CY, valText,
-        valFont, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
+        font * scale, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
         cfg.VALUE_R, cfg.VALUE_G, cfg.VALUE_B, cfg.VALUE_SW)
+end
+
+--- 完整来源在对应队经验区显示，按译文测量缩字而不截掉关卡名。
+local function drawTeamSource(vg, source, teamIdx, cy, textTop, textBottom)
+    local entry = require("config.StageConfig").getStage(source.stageId)
+    local name = source.sourceName or (entry and entry.name) or tostring(source.stageId)
+    local translatedName = I18n.lookup(name)
+    if source.sourceKind == "tower" then
+        translatedName = I18n.format("通天塔 第%d层", (source.stageId or 400001) - 400000)
+    end
+    local label = source.paused and I18n.format("小队%d · %s · 暂停离线收益", teamIdx, translatedName)
+        or I18n.format("小队%d · %s", teamIdx, translatedName)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 22)
+    local width = I18n.displayBounds(vg, 0, 0, label)
+    local font = width > ROW_W - 48 and 22 * (ROW_W - 48) / width or 22
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    -- 字体字墨上下缘不一定对称；保留位置，按实际测量缩号，留出行底空隙。
+    while true do
+        nvgFontSize(vg, font)
+        local bounds = {}
+        I18n.displayBounds(vg, CENTER_X, cy, label, nil, bounds)
+        local above, below = cy - bounds[2], bounds[4] - cy
+        local fit = math.min(1, above > 0 and (cy - textTop) / above or 1,
+            below > 0 and (textBottom - cy) / below or 1)
+        if fit >= 1 then break end
+        font = font * math.min(0.95, fit)
+    end
+    nvgFillColor(vg, nvgRGBA(216, 201, 163, 255))
+    I18n.displayText(vg, CENTER_X, cy, label, nil)
 end
 
 --- 绘制队员升级列表：一行一个队伍，队伍内头像横向均分
 function self_drawHeroExpList(vg)
     local preview = state.heroExpPreview
-    if #preview == 0 then return end
-
     local groups = groupHeroPreview(preview)
     local viewH = heroBlockHeight(groups)
+    if viewH <= 0 then return end
     local animDone = heroAnimDone()
     local cellW = (ROW_W - HERO_ROW.PAD_X * 2) / HERO_ROW.SLOTS
 
     nvgSave(vg)
     nvgScissor(vg, ROW_L, HERO_ROW.TOP, ROW_W, math.max(viewH, 1))
 
-    local order = 0
+    local top = HERO_ROW.TOP
     for t = 1, HERO_ROW.VISIBLE do
         local members = groups[t]
-        if #members > 0 then
-            order = order + 1
-            local top = heroRowTop(order)
-            local cy  = top + HERO_ROW.H * 0.5
+        local source = sourceForTeam(t)
+        local rowH = heroRowHeight(members, source)
+        if rowH > 0 then
+            local cy = top + rowH * 0.5
 
-            -- 行底 + 队伍名
-            DrawUtil.drawRoundedRectCentered(vg, CENTER_X, cy, ROW_W, HERO_ROW.H, 12,
+            -- 行底 + 队伍名；来源专用行直接显示完整说明。
+            DrawUtil.drawRoundedRectCentered(vg, CENTER_X, cy, ROW_W, rowH, 12,
                 0, 0, 0, HERO_ROW.BG_A)
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 20)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0xff, 0xd6, 0x66, 255))
-            nvgText(vg, ROW_L + 14, top + 16, "小队" .. t, nil)
+            if #members > 0 then
+                nvgFontFace(vg, "sans")
+                nvgFontSize(vg, 20)
+                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+                nvgFillColor(vg, nvgRGBA(0xff, 0xd6, 0x66, 255))
+                I18n.displayText(vg, ROW_L + 14, top + 16, I18n.format("小队%d", t), nil)
+            end
 
             for s = 1, #members do
                 local item = members[s]
@@ -1034,7 +1063,7 @@ function self_drawHeroExpList(vg)
                 local curLevel = (a and a.level) or item.level or 1
                 local curExp   = (a and a.exp) or 0
                 local maxExp   = ExpTable.getHeroExpForLevel(curLevel) or 0
-                if item.capped or (a and a.capped) then maxExp = 0 end
+                if a and a.capped then maxExp = 0 end
 
                 -- 按本队实际人数居中，避免人少时头像被拉到两边
                 local cellCX = CENTER_X + (s - (#members + 1) * 0.5) * cellW
@@ -1054,9 +1083,9 @@ function self_drawHeroExpList(vg)
                     state = "owned",
                 })
 
-                -- 经验进度条（头像下方，格子内居中）
-                local barW  = cellW - 36
-                local barCY = iconCY + HERO_ROW.ICON * 0.5 + 16
+                -- 经验条与实际头像框等宽，收紧垂直间距给关卡说明留空。
+                local barW  = HERO_ROW.ICON - 10
+                local barCY = iconCY + barW * 0.5 + 12
                 local barX  = cellCX - barW * 0.5
                 nvgBeginPath(vg)
                 nvgRoundedRect(vg, barX, barCY - HERO_ROW.BAR_H * 0.5, barW, HERO_ROW.BAR_H,
@@ -1067,7 +1096,7 @@ function self_drawHeroExpList(vg)
                 local ratio = 0
                 if maxExp > 0 then
                     ratio = math.max(0, math.min(1, curExp / maxExp))
-                elseif (item.capped or (a and a.capped)) then
+                elseif a and a.capped then
                     ratio = 1
                 end
                 if ratio > 0 then
@@ -1101,6 +1130,11 @@ function self_drawHeroExpList(vg)
                 nvgFillColor(vg, nvgRGBA(lvR, lvG, lvB, 255))
                 nvgText(vg, cellCX, barCY + 22, lvText, nil)
             end
+            if source then
+                drawTeamSource(vg, source, t, #members > 0 and top + 206 or cy,
+                    #members > 0 and top + 193 or top + 2, top + rowH - 2)
+            end
+            top = top + rowH + HERO_ROW.GAP
         end
     end
 

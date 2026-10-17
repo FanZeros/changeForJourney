@@ -798,6 +798,7 @@ bindTalentUpdate()
 
 --- 重置所有天赋状态（关卡切换时调用）
 function TAL.reset()
+    ClassGateRuntime.resetFusionBattle(TAL_BCS.bAllies, TAL_BCS.bEnemies)
     ETS.flush()
     ETS.invalidateSupportBattle()
     state = {}
@@ -819,6 +820,7 @@ end
 ---@param allies table 己方单位列表
 ---@param enemies table 敌方单位列表
 function TAL.onBattleStart(allies, enemies)
+    ClassGateRuntime.resetFusionBattle(TAL_BCS.bAllies, TAL_BCS.bEnemies)
     TAL_BCS.bAllies  = allies
     TAL_BCS.bEnemies = enemies
     -- 先清双方本场套装残留，避免开战天赋把旧临时属性折算到新场。
@@ -1107,7 +1109,7 @@ end
 function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
     return runAfterAttackWithDeaths(function()
         local r = _after.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
-        ClassGateRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, attackerAllies)
+        ClassGateRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, attackerAllies, targetList)
         EquipmentSetRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, targetList)
         if result and result.category ~= "healing" and result.totalDamage then
             EquipmentSetRuntime.addSwordWindowDamage(attacker, result.totalDamage)
@@ -1117,7 +1119,8 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
 end
 
 function TAL.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory, dealDamageFn, battleLists)
-    return _modDmg.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory, dealDamageFn, battleLists)
+    local finalDamage = _modDmg.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory, dealDamageFn, battleLists)
+    return ClassGateRuntime.modifyFusionIncoming(target, finalDamage)
 end
 
 function TAL.onDamageTaken(unit, attacker, damage, isUnitAlly, performAttackFn, enemyList, result)
@@ -1130,6 +1133,10 @@ end
 ---@param syncHpFn function syncUnitHp(unit) 的引用
 ---@return boolean 是否阻止死亡（true=复活）
 function TAL.onAllyDeath(dyingUnit, allies, syncHpFn)
+    if (dyingUnit.hp or 0) <= 0 and ClassGateRuntime.tryFusionDeferDeath(dyingUnit) then
+        if syncHpFn then syncHpFn(dyingUnit) end
+        return true
+    end
     return _allyDeath.onAllyDeath(dyingUnit, allies, syncHpFn)
 end
 
@@ -1171,7 +1178,7 @@ function TAL.onEnemyDeath(deadEnemy, allies, enemies)
     -- _killedBy* 和 SEM 状态此时仍可见；由宿主随后负责清理。
     deadEnemy._talEnemyDeathReported = true
     local r = _enemyDeath.onEnemyDeath(deadEnemy, allies, enemies)
-    ClassGateRuntime.onEnemyDeath(deadEnemy, allies)
+    ClassGateRuntime.onEnemyDeath(deadEnemy, allies, enemies)
     EquipmentSetRuntime.onEnemyDeath(deadEnemy, allies, enemies)
     return r
 end

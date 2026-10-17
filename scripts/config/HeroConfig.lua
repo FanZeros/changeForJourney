@@ -450,6 +450,7 @@ end
 ---@param options table|nil 只读重建可显式指定 litNodes，并关闭重复诊断日志
 ---@return table|nil 战斗单位 { name, level, hp, maxHp, atkProgress, attrs, heroId, classId, ... }
 function HC.createHero(heroId, level, advBranch, awakening, extraTalent, options)
+    ---@type table|nil 数据表循环补齐 dmgMainType/dmgSubType，不能仅推断字面量字段。
     local hero = HC.HEROES[heroId]
     if not hero then
         print("[HeroConfig] 未知英雄 ID: " .. tostring(heroId))
@@ -563,16 +564,7 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent, options
 
     -- 转职信息（供 TalentManager / UI 使用）
     unit.advBranch   = advBranch
-    unit.advTalentIds = {}
-    if advBranch then
-        local branches = AVC.getAllBranches(advBranch)
-        for _, bId in ipairs(branches) do
-            local bCfg = AVC.get(bId)
-            if bCfg and bCfg.talentId then
-                unit.advTalentIds[#unit.advTalentIds + 1] = bCfg.talentId
-            end
-        end
-    end
+    unit.advTalentIds = AVC.getTalentIds(advBranch)
     -- [DIAG-ADV] 牧师转职排查：打印创建时的 advTalentIds
     if (heroId == 9 or heroId == 15) and not (options and options.silent) then
         local tidStr = #unit.advTalentIds > 0 and table.concat(unit.advTalentIds, ",") or "EMPTY"

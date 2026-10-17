@@ -6,6 +6,7 @@ local AD  = require("systems.AttributeDef")
 local CF  = require("systems.CombatFormula")
 local SEM = require("systems.StatusEffectManager")
 local ETS = require("systems.ExtraTalentSystem")
+local CGR = require("systems.ClassGateRuntime")
 
 local M = {}
 
@@ -142,6 +143,10 @@ function M.bind(deps)
         local rebHpBefore = rebecca.hp
         local rebeccaToken = rebecca._talentBattleToken
         transferDmg = ETS.absorbBulwarkWard(rebecca, transferDmg)
+        -- 此处绕过普通承伤入口；仅初始化的新225补门缝，不重入TAL/重复分摊。
+        if rebecca._fusionToken and hasAdv(rebecca, "gate_225_fusion") then
+            transferDmg = CGR.modifyFusionIncoming(rebecca, transferDmg)
+        end
         rebecca.attrs:takeDamage(transferDmg)
         rebecca.hp = rebecca.attrs:get(AD.HP)
         if rebecca.hp < 0 then rebecca.hp = 0 end

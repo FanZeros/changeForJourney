@@ -429,18 +429,26 @@ function M.evaluateAdvancement(ctx, branchId)
     local branch = AVC.get(branchId)
     local definition = ctx and HC.get(ctx.heroId)
     if not definition or not branch or branch.baseClass ~= definition.classId then return nil end
-    ctx.advancementMemo = ctx.advancementMemo or {}
-    if ctx.advancementMemo[branchId] then return ctx.advancementMemo[branchId] end
     local roster = ctx.heroesData.roster or {}
     local data = roster[ctx.heroId] or roster[tostring(ctx.heroId)] or {}
+    local first = branch.parentBranch
+    if branch.parentBranches then
+        -- 已有一转必须沿真实合法路径估值；未转职的详情才可用首父只读预览。
+        local actualFirst = data.advBranch and data.advBranch.first
+        first = actualFirst or branch.parentBranches[1]
+        if not AVC.isParentBranch(branchId, first) then return nil end
+    end
+    ctx.advancementMemo = ctx.advancementMemo or {}
+    local memoKey = tostring(branchId) .. ":" .. tostring(first)
+    if ctx.advancementMemo[memoKey] then return ctx.advancementMemo[memoKey] end
     local beforeData = copy(data)
     local afterData = copy(data)
     if branch.advLevel == AVC.ADV_FIRST then
         beforeData.advBranch = nil
         afterData.advBranch = { first = branchId }
     else
-        beforeData.advBranch = { first = branch.parentBranch }
-        afterData.advBranch = { first = branch.parentBranch, second = branchId }
+        beforeData.advBranch = { first = first }
+        afterData.advBranch = { first = first, second = branchId }
     end
     local options = {
         heroes = ctx.heroesData, equipment = ctx.equipmentData,
@@ -455,7 +463,7 @@ function M.evaluateAdvancement(ctx, branchId)
         currentPower = before.currentPower, previewPower = after.currentPower,
         gain = after.currentPower - before.currentPower,
     }
-    ctx.advancementMemo[branchId] = result
+    ctx.advancementMemo[memoKey] = result
     return result
 end
 

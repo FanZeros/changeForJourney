@@ -74,6 +74,27 @@ local function sortedKeys(value)
     return keys
 end
 
+-- 下限是原位保护的绝对占用，上限是实际供应；固定数组顺序打平。
+-- 不均分“扣掉保护后的新增量”：保护多的组等其他组水位追平才继续增加。
+local function waterfill(buckets, budget)
+    local used = 0
+    for _, bucket in ipairs(buckets) do
+        bucket.target = bucket.lower
+        used = used + bucket.lower
+    end
+    while used < budget do
+        local selected = nil ---@type table|nil
+        for _, bucket in ipairs(buckets) do
+            if bucket.target < bucket.upper and (not selected or bucket.target < selected.target) then
+                selected = bucket
+            end
+        end
+        if not selected then break end
+        selected.target = selected.target + 1
+        used = used + 1
+    end
+end
+
 --- options.hasPendingRefine(seq) 是规则层只读闭包，不是客户端参数。
 --- moveIn/moveOut 仅携原数据索引；原装备及种子不水合、不重排、不改字段。
 ---@param equipment table
@@ -120,10 +141,11 @@ function M.plan(equipment, lootbox, options)
         end
     end
     local pools = {}
+    local unclassified = 0 -- 无有效分组的保护库存也占仓位，不能拿它的容量再分配。
     local function groupFor(key, view)
         if not pools[key] then
             pools[key] = { key = key, slot = view.slot, type = view.type, grip = view.grip,
-                inventory = 0, protected = 0, candidates = {}, removable = {}, cursor = 1 }
+                inventory = 0, protected = 0, candidates = {}, removable = {} }
         end
         return pools[key]
     end
@@ -192,6 +214,8 @@ function M.plan(equipment, lootbox, options)
         if row.pool then
             row.pool.inventory = row.pool.inventory + 1
             if not next(row.reasons) then row.pool.removable[#row.pool.removable + 1] = row end
+        else
+            unclassified = unclassified + 1
         end
     end
     for index, seed in ipairs(seeds) do
@@ -209,53 +233,63 @@ function M.plan(equipment, lootbox, options)
             end
         end
     end
-    local groups = {}
-    for _, pool in pairs(pools) do
-        groups[#groups + 1] = pool
-        table.sort(pool.candidates, function(a, b)
+    local groups, slotBuckets, bySlot = {}, {}, {}
+    for _, slot in ipairs(EC.SLOTS) do
+        local bucket = { slot = slot, lower = 0, upper = 0, groups = {} }
+        slotBuckets[#slotBuckets + 1], bySlot[slot] = bucket, bucket
+    end
+    for _, pool in pairs(pools) do groups[#groups + 1] = pool end
+    table.sort(groups, function(a, b) return a.key < b.key end)
+    for _, pool in ipairs(groups) do
+        pool.lower, pool.upper = pool.protected, pool.inventory + #pool.candidates
+        local bucket = bySlot[pool.slot]
+        bucket.lower = bucket.lower + pool.lower
+        bucket.upper = bucket.upper + pool.upper
+        bucket.groups[#bucket.groups + 1] = pool
+    end
+    -- 先平衡六部位，再在部位内平衡slot/type/grip。稀缺组到供应上限后余量回流。
+    waterfill(slotBuckets, capacity - unclassified)
+    for _, bucket in ipairs(slotBuckets) do waterfill(bucket.groups, bucket.target) end
+    for _, pool in ipairs(groups) do
+        local ranked = {}
+        for _, row in ipairs(pool.removable) do ranked[#ranked + 1] = row end
+        for _, row in ipairs(pool.candidates) do ranked[#ranked + 1] = row end
+        table.sort(ranked, function(a, b)
             if a.score ~= b.score then return a.score > b.score end
+            -- 同分先保原件，再小seq；遗匣按原始index。保护原件不进入竞争池。
+            if a.source ~= b.source then return a.source == "inventory" end
+            if a.source == "inventory" then return keyLess(a.key, b.key) end
             return a.index < b.index
         end)
+        local keep, selected = {}, 0
+        local growth = math.max(0, pool.target - pool.inventory)
+        for index = 1, pool.target - pool.protected do
+            local row = ranked[index]
+            if row.source == "inventory" then
+                keep[row.key] = true
+            else
+                selected = selected + 1
+                plan.moveIn[#plan.moveIn + 1] = { index = row.index, group = row.group, score = row.score,
+                    reason = selected <= growth and "fill" or "upgrade" }
+            end
+        end
         table.sort(pool.removable, function(a, b)
             if a.score ~= b.score then return a.score < b.score end
-            -- 同分优先留较早的仓库序号。
             return keyLess(b.key, a.key)
         end)
-    end
-    table.sort(groups, function(a, b) return a.key < b.key end)
-    local function take(pool, reason)
-        local row = pool.candidates[pool.cursor]
-        if not row then return nil end
-        pool.cursor = pool.cursor + 1
-        plan.moveIn[#plan.moveIn + 1] = { index = row.index, group = row.group, score = row.score, reason = reason }
-        return row
-    end
-    -- 先规划空位而非先搬空：低占用组优先，每次取本组最高分；组名稳定打平。
-    local free = capacity - #keys
-    while free > 0 do
-        local selected = nil ---@type table|nil
-        for _, pool in ipairs(groups) do
-            if pool.candidates[pool.cursor]
-                and (not selected or pool.inventory < selected.inventory) then selected = pool end
+        local shrink = math.max(0, pool.inventory - pool.target)
+        local removed = 0
+        for _, row in ipairs(pool.removable) do
+            if not keep[row.key] then
+                removed = removed + 1
+                plan.moveOut[#plan.moveOut + 1] = { key = row.key, seq = row.seq, group = row.group,
+                    score = row.score, reason = removed <= shrink and "balance" or "upgrade" }
+            end
         end
-        if not selected then break end
-        take(selected, "fill")
-        selected.inventory = selected.inventory + 1
-        free = free - 1
-    end
-    -- 每组保留既有仓位配额；严格高分才能替换未保护原件，跨组不以分数挤占。
-    for _, pool in ipairs(groups) do
-        for _, old in ipairs(pool.removable) do
-            local candidate = pool.candidates[pool.cursor]
-            if not candidate or candidate.score <= old.score then break end
-            take(pool, "upgrade")
-            plan.moveOut[#plan.moveOut + 1] = {
-                key = old.key, seq = old.seq, group = old.group, score = old.score, reason = "upgrade",
-            }
-        end
+        -- quota不变/扩张时，原件只会输给严格高分；收缩时多余原件安全转存遗匣。
         plan.groups[#plan.groups + 1] = { key = pool.key, slot = pool.slot, type = pool.type,
-            grip = pool.grip, inventory = pool.inventory, protected = pool.protected,
-            remaining = #pool.candidates - pool.cursor + 1 }
+            grip = pool.grip, inventory = pool.target, protected = pool.protected,
+            remaining = #pool.candidates - selected, target = pool.target }
     end
     plan.moveInCount, plan.moveOutCount = #plan.moveIn, #plan.moveOut
     plan.protectedCount = plan.protected.inventory

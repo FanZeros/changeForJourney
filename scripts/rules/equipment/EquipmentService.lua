@@ -10,6 +10,7 @@ local EquipmentPower  = require("systems.EquipmentPower")
 local EquipmentConfig = require("config.EquipmentConfig")
 local AVC             = require("config.AdvancementConfig")
 local HC              = require("config.HeroConfig")
+local SuccessContext  = require("shared.SuccessNotificationContext")
 
 local EquipmentService = {}
 
@@ -116,7 +117,11 @@ function EquipmentService.EquipItem(uid, seq, heroId, slot)
     if not ok then
         return false, err
     end
-    PDM.MarkDirty(uid, "equipment")
+    -- 同格重发仍沿原发布契约，但不借成功来源重启表现。
+    local changed = tonumber(result.oldSeq) ~= seqN or result.unequippedSlots ~= nil
+    SuccessContext.withNotification(equipData, "equipment", changed and "equipment_equip" or nil, function()
+        PDM.MarkDirty(uid, "equipment")
+    end)
     print("[EquipmentService] EQUIP uid=" .. tostring(uid)
         .. " heroId=" .. tostring(result.heroId) .. " slot=" .. tostring(result.slot)
         .. " seq=" .. tostring(result.seq)
@@ -439,7 +444,9 @@ function EquipmentService.EquipAllBest(uid, heroId, control)
         if control and control.onCommitted then
             control.onCommitted({ success = true, heroId = heroId, changes = changed })
         end
-        PDM.MarkDirty(uid, "equipment")
+        SuccessContext.withNotification(equipData, "equipment", "equipment_equip", function()
+            PDM.MarkDirty(uid, "equipment")
+        end)
     end
 
     print("[EquipmentService] EQUIP_ALL_BEST uid=" .. tostring(uid)

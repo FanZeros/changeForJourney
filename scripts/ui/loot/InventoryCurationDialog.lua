@@ -188,13 +188,15 @@ function M.draw(vg, width, height)
     local values = {p.moveInCount or 0, p.moveOutCount or 0, p.protectedCount or 0}
     for i = 1, 3 do metrics[i]:SetText(Text.text(countKeys[i], values[i])) end
     body:SetText(Text.text("仓库容量：%d 件", EquipmentSystem.MAX_INVENTORY) .. "\n"
-        .. Text.text("同部位、同类型装备按通用评分优选，不代表特定英雄的最佳配装。") .. "\n"
-        .. Text.text("整理全部仓库与遗匣，不受筛选或排序影响。仓库中的已穿戴、锁定、套装、投入、腐化及待洗练装备原位保护。") .. "\n"
-        .. Text.text("只转存，不分解。整理转存到遗匣的装备受保护，不参与回收。"))
+        .. Text.text("按部位平衡仓位，同类装备按通用评分优选，并非英雄最佳配装。") .. "\n"
+        .. Text.text("整理全仓库与遗匣，忽略筛选与排序。已穿戴、锁定、套装、投入、腐化、待洗练及异常库存原位保护。") .. "\n"
+        .. Text.text("只转存不分解，转存遗匣装备受保护，不参与回收。保护占满仓库时无法腾位。"))
     local busy = S.phase == "loading" or S.phase == "applying"
     local noChange = S.phase == "ready" and values[1] + values[2] == 0
+    local fullProtected = noChange and values[3] >= EquipmentSystem.MAX_INVENTORY
     local caption = S.phase == "loading" and "正在生成预览…"
-        or S.phase == "applying" and "正在整理…" or noChange and "没有需要移动的装备" or S.reason
+        or S.phase == "applying" and "正在整理…" or fullProtected and "仓库全部受保护，无法腾位"
+        or noChange and "没有需要移动的装备" or S.reason
     status:SetText(S.phase == "done" and Text.text(caption, values[1], values[2]) or Text.text(caption))
     confirm:SetDisabled(busy or noChange or S.phase == "done")
     confirm:SetText(Text.text(S.phase == "invalid" and "重新预览" or busy and "正在整理…" or "确认优选"))

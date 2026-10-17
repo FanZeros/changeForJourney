@@ -737,7 +737,7 @@ local function run()
         local h = newHarness(F, largeSpec(), true)
         start(h)
         local order, after = {}, false
-        local env = { bootReady_ = false,
+        local env = { bootReady_ = false, SyncPowerPresentationHorizon = noop,
             SidePanelBattlePause = { refresh = function() order[#order + 1] = "pause" end },
             PlayerStore = { Update = function() order[#order + 1] = "store" end },
             LocalActionBridge = { updateQuickEquip = function()

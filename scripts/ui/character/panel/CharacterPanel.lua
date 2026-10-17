@@ -26,6 +26,7 @@ local CharacterHeroSync = require("ui.character.panel.CharacterHeroSync")
 local CharacterPower    = require("ui.character.panel.CharacterPower")
 local CharacterProgress = require("ui.character.panel.CharacterProgress")
 local CharacterRosterSort = require("ui.character.panel.CharacterRosterSort")
+local SuccessContext      = require("shared.SuccessNotificationContext")
 
 local CharacterPanel = {}
 
@@ -596,9 +597,10 @@ function CharacterPanel.init(vg)
     -- 回调，CharacterPanel 的回调会先于 PlayerStore 缓存更新触发，导致
     -- refreshNavBadge() 里 PlayerStore.Get("equipment") 拿到旧数据，角标不刷新。
     -- PlayerStore.Subscribe 的回调在 PlayerStore 更新缓存后才触发，保证数据最新。
-    PlayerStore.Subscribe("equipment", function()
-        -- 装备不改变名册拥有/等级/排序；刷新已覆盖名册与三队缓存，勿重复建英雄。
-        refreshPowerCache()
+    PlayerStore.Subscribe("equipment", function(data)
+        -- 首次权威成功通知一次消费后评分；回执/重发不补刷、不借旧cause。
+        local cause = SuccessContext.takeCause(data, "equipment")
+        refreshPowerCache(cause)
         refreshNavBadge()
         -- 装备晚于 heroes 到达时，setAllies 快照不含词缀；需刷新战斗 pending 快照
         local ok, BS = pcall(require, "ui.battle.scene.BattleScene")
@@ -608,8 +610,9 @@ function CharacterPanel.init(vg)
     end)
 
     -- 监听天赋数据变更 → 立即刷新战斗力缓存（不能只标记脏，因为用户可能在教堂页面，CharacterPanel 不 draw）
-    ClientDispatcher.subscribe("talents", function()
-        refreshPowerCache()
+    ClientDispatcher.subscribe("talents", function(data)
+        local cause = SuccessContext.takeCause(data, "talents")
+        refreshPowerCache(cause)
         refreshNavBadge()
     end)
 

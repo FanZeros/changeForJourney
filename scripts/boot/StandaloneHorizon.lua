@@ -140,7 +140,23 @@ local function drawUpdateNotice()
     nvgRestore(vg())
 end
 
+-- 唯一战力表现遮挡名单，Update和所有finishFrame复用。暂停/普通侧页不算遮挡。
+-- Settings嵌在PlayerInfo内；其黑层由PlayerInfo.isOpen覆盖，无需另借输入门禁。
+function SyncPowerPresentationHorizon()
+    local opening = not RT.bootReady_ or RT.entryPreparing == true
+        or StartScreen.isOpen() or DarkTitleScreen.isOpen() or LetterIntro.isOpen()
+        or IntroCutscene.isActive()
+    local blocked = opening or ScenarioDialogue.isActive() or RewardPopup.isOpen()
+        or PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen() or OfflineRewardPanel.isOpen()
+        or UpdateNoticePopup.isOpen() or CEPanel.isOpen() or TutorialManager.isActive()
+        or StageSelectDialog.isOpen() or SweepDialog.isOpen() or DamageStatsPanel.isOpen()
+        or TerminalConfirmDialog.isOpen() or Curation.isOpen()
+    SpinePowerUpEffect.setPresentationBlocked(blocked, opening)
+    return blocked
+end
+
 local function finishFrame()
+    local powerBlocked = SyncPowerPresentationHorizon()
     nvgSave(vg())
     nvgResetTransform(vg())
     applyFrame()
@@ -153,14 +169,7 @@ local function finishFrame()
         RewardPopup.drawLarge(vg(), logicalW(), logicalH())
     end
     -- 战力提示全窗居中、按队列出；非模态且不盖住剧情和奖励等高优先级内容。
-    if not StartScreen.isOpen() and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
-        and not IntroCutscene.isActive() and not ScenarioDialogue.isActive()
-        and not RewardPopup.isOpen() and not PlayerInfoPanel.isOpen()
-        and not LevelUpPopup.isOpen() and not OfflineRewardPanel.isOpen()
-        and not UpdateNoticePopup.isOpen() and not CEPanel.isOpen()
-        and not TutorialManager.isActive() and not StageSelectDialog.isOpen()
-        and not SweepDialog.isOpen() and not DamageStatsPanel.isOpen()
-        and not TerminalConfirmDialog.isOpen() then
+    if not powerBlocked then
         SpinePowerUpEffect.draw(vg(), logicalW(), logicalH())
     end
     -- 满觉醒影画脱离右栏 viewport，在整个游戏窗口中央以完整比例显示。

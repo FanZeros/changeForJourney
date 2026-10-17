@@ -1015,10 +1015,12 @@ function HandleUpdate(eventType, eventData)
     local dt = eventData["TimeStep"]:GetFloat()
     -- UI/回执仍用真实时间；先冻结战斗绝对时钟，标题/开场提前返回也不补暂停时长。
     SidePanelBattlePause.refresh()
+    -- 遮挡只冻结战力表现；在异步提交/Store回执前同步，不错过首次通知。
+    SyncPowerPresentationHorizon()
     -- 等待回执使用真实帧时间；标题/暂停不阻断超时，也不另订阅 Update 覆盖主循环。
     PlayerStore.Update(dt)
     LocalActionBridge.updateQuickEquip()
-    -- 特效用真实时钟收尾，不随战斗倍速，不被标题／剧情提前返回冻结。
+    -- 战力仅表现时钟受真实遮挡冻结，其他特效仍用原时钟，不随战斗倍速。
     SpinePowerUpEffect.update(dt)
     require("ui.fx.SpineCardEffect").update(dt)
     require("ui.fx.SpineResultEffect").update(dt)

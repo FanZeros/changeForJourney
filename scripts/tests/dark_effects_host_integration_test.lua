@@ -211,6 +211,7 @@ function Start()
                 clip = clip, depth = #stack }
         end
         local triFields = { BattleLayout = Layout, COL_COUNT = 3, drivers = fixtureDrivers,
+            BattlePauseOverlay = { draw = noop },
             terminalRaid = nil, unlocked = 3, logicalW = 474, logicalH = 540,
             interiorRect = function(row) return 10, 20 + (row - 1) * 190, 474, 180 end,
             nvgSave = function()
@@ -475,10 +476,10 @@ function Start()
         check(#resultDraws == 1, "Blacksmith closed page does not draw")
 
         -- 真实finishFrame全窗门控；逐个高优先级宿主让位，仍完成本帧收尾。
-        local frameCode = segment("boot/StandaloneHorizon.lua", "local function finishFrame()", "local function toDesign(sx, sy)")
+        local frameCode = segment("boot/StandaloneHorizon.lua", "function SyncPowerPresentationHorizon()", "local function toDesign(sx, sy)")
         local gates = { "StartScreen", "DarkTitleScreen", "LetterIntro", "IntroCutscene", "ScenarioDialogue",
             "RewardPopup", "PlayerInfoPanel", "LevelUpPopup", "OfflineRewardPanel", "UpdateNoticePopup",
-            "CEPanel", "TutorialManager", "StageSelectDialog", "SweepDialog", "DamageStatsPanel", "TerminalConfirmDialog" }
+            "CEPanel", "TutorialManager", "StageSelectDialog", "SweepDialog", "DamageStatsPanel", "TerminalConfirmDialog", "Curation" }
         local gateState, frameDraws, frameEnds, frameDepth = {}, {}, 0, 0
         local frameVG = {}
         local frameFields = { vg = function() return frameVG end, logicalW = function() return 1920 end,
@@ -488,8 +489,9 @@ function Start()
             nvgRestore = function() frameDepth = frameDepth - 1 end,
             nvgResetTransform = noop, nvgResetScissor = noop, nvgScissor = noop,
             nvgEndFrame = function() frameEnds = frameEnds + 1 end,
-            SpinePowerUpEffect = { draw = function(ctx,w,h) frameDraws[#frameDraws+1]={ctx,w,h} end },
-            RT = {}, AwakeningArtwork = { observe = noop, draw = noop },
+            SpinePowerUpEffect = { setPresentationBlocked = noop,
+                draw = function(ctx,w,h) frameDraws[#frameDraws+1]={ctx,w,h} end },
+            RT = { bootReady_ = true }, AwakeningArtwork = { observe = noop, draw = noop },
             DungeonBattleScene = { isOpen = function() return false end },
             TowerBattleScene = { isActive = function() return false end } }
         for _, name in ipairs(gates) do
@@ -638,7 +640,8 @@ function Start()
         local updateEnv = environment({ ["ui.fx.SpineCardEffect"]=updateEffect("Card"),
             ["ui.fx.SpineResultEffect"]=updateEffect("Result"), ["ui.dev.CEPanel"]={pollHotkey=noop} },
             { PlayerStore=updateEffect("Store"), SpinePowerUpEffect=updateEffect("Power"),
-            SidePanelBattlePause={refresh=noop},
+            SidePanelBattlePause={refresh=noop}, SyncPowerPresentationHorizon=noop,
+            LocalActionBridge={updateQuickEquip=noop},
             pumpBootQueue_=noop, bootReady_=false, StartScreen={isOpen=function() return true end,update=noop},
             DarkTitleScreen={isOpen=function() return true end,update=noop} })
         updateEnv.PlayerStore.Update = updateEnv.PlayerStore.update
@@ -716,6 +719,10 @@ function Start()
             end},
             ["ui.battle.stage.StageSelectDialog"]={close=noop} }
         wrapperEnv.Standalone={};wrapperEnv.vg=ctxA
+        wrapperEnv.LocalActionBridge={cancelQuickEquip=noop}
+        stopMocks["ui.loot.InventoryCurationDialog"]={reset=noop}
+        stopMocks["rules.equipment.InventoryCurationService"]={Cleanup=noop}
+        stopMocks["ui.battle.scene.BattlePauseOverlay"]={destroy=noop}
         -- PR116 Stop同时清理启动队列与共享ready镜像；仅提供其真实宿主上下文。
         wrapperEnv.StandaloneRT={bootReady_=true};wrapperEnv.bootQueue_={};wrapperEnv.bootReady_=true
         -- 既有 Stop 夹具补齐开场/选关/塔UI依赖，不执行其真实业务或持久化。

@@ -1,4 +1,5 @@
--- 真实优选规划/服务/Schema/StandaloneSave专项；不读写玩家档、不加载Boot、不使用全局RNG。
+-- 真实优选规划/服务/Schema/StandaloneSave专项；不加载Boot、不使用全局RNG。
+-- 仅native落盘case使用独立validation HOME及专用绝对文件路径，绝不读写玩家档。
 local F = require("tests.InventoryCurationFixture")
 local TAG = "[inventory_curation_test]"
 local assertions, failures, cases = 0, 0, 0
@@ -110,7 +111,7 @@ local function planningTests()
         same(bag, before, "oversized read only")
         eq(h.randomCalls, 0, "plan no random")
     end)
-    run("same slot/type/grip partition, rare groups fill before saturated", function()
+    run("same slot/type/grip scores with balanced full-bag cross-group allocation", function()
         local h = new()
         local base = F.item(h, "W1", 1)
         local variants = { "slot", "type", "grip" }
@@ -127,14 +128,21 @@ local function planningTests()
             local different = F.item(h, selected, 999, 6)
             check(h.Query.hydrateCopy(different)[field] ~= base[field], "real hydration preserves distinct " .. field)
             local p = plan(h, F.bag(h, 500), F.box({ different }))
-            eq(p.moveInCount, 0, "cannot cross " .. field)
-            eq(p.moveOutCount, 0, "no unrelated eviction " .. field)
+            eq(p.moveInCount, 1, "zero allocation group may enter full bag " .. field)
+            eq(p.moveOutCount, 1, "saturated group gives up one slot " .. field)
+            eq(p.counts.inventoryAfter, 500, "cross-group capacity conserved " .. field)
+            eq(p.moveOut[1].reason, "balance", "cross-group eviction is quota shrink " .. field)
+            eq(#p.groups, 2, "still separate scoring groups " .. field)
         end
         local candidates = { F.item(h, "W1", 999, 6), F.item(h, "C1", 1, 1), F.item(h, "C1", 50, 1) }
         local p = plan(h, F.bag(h, 499), F.box(candidates))
-        eq(p.moveIn[1].index, 3, "empty accessory group filled with its highest, not global highest weapon")
-        eq(p.moveIn[1].reason, "fill", "fill reason")
-        check(p.moveInCount >= 1, "rare allocation exists")
+        local accessory = {}
+        for _, row in ipairs(p.moveIn) do
+            if row.index ~= 1 then accessory[#accessory + 1] = row.index; eq(row.reason, "fill", "expanded group fill") end
+        end
+        same(accessory, { 3, 2 }, "accessory group independently takes highest first")
+        eq(p.moveInCount, 3, "scarce accessory supply plus same-group weapon upgrade")
+        eq(p.moveOutCount, 2, "one quota shrink and one strict upgrade")
         eq(h.randomCalls, 0, "partition no random")
     end)
     run("stable equal candidate score and deterministic repeated pure plans", function()
@@ -271,6 +279,182 @@ local function planningTests()
             "same full instance in bag and seed denied")
         eq(h.Curation.plan(bag, { seeds = { [1] = {}, [3] = {} } }), nil, "sparse seed array denied")
         eq(h.randomCalls, 0, "invalid no random")
+    end)
+end
+
+local function groupForItem(h, result, item)
+    local view = h.Query.hydrateCopy(item)
+    for _, group in ipairs(result.groups) do
+        if group.slot == view.slot and group.type == view.type and group.grip == view.grip then return group end
+    end
+    error("missing planned group " .. tostring(view.slot))
+end
+local function slotCounts(result)
+    local counts = {}
+    for _, group in ipairs(result.groups) do counts[group.slot] = (counts[group.slot] or 0) + group.inventory end
+    return counts
+end
+-- 从原始源重算最终选择，不依赖规划器的target自行证明容量/每组最高分。
+local function assertSelection(h, bag, box, result)
+    local removed, selected, byGroup, originalGroups = {}, {}, {}, {}
+    for _, row in ipairs(result.moveOut) do removed[row.key] = true end
+    for _, row in ipairs(result.moveIn) do selected[row.index] = true end
+    local count = 0
+    for key, item in pairs(bag.inventory) do
+        local group = groupForItem(h, result, item)
+        originalGroups[group.key] = (originalGroups[group.key] or 0) + 1
+        if not removed[key] then
+            count = count + 1
+            byGroup[group.key] = (byGroup[group.key] or 0) + 1
+        end
+    end
+    for index, seed in ipairs(box.seeds) do
+        if selected[index] then
+            count = count + 1
+            local group = groupForItem(h, result, seed.equip)
+            byGroup[group.key] = (byGroup[group.key] or 0) + 1
+        end
+    end
+    eq(count, result.counts.inventoryAfter, "actual selected count matches receipt")
+    check(count <= 500, "actual selected count bounded")
+    for _, group in ipairs(result.groups) do
+        eq(byGroup[group.key] or 0, group.inventory, "group actual final count")
+        eq(group.target, group.inventory, "group target is final inventory count")
+        check(group.inventory >= group.protected, "protected lower respected")
+        local minKept, maxDropped = math.huge, -math.huge
+        local droppedOriginal = 0
+        for key, item in pairs(bag.inventory) do
+            if groupForItem(h, result, item).key == group.key then
+                local score = h.Power.genericScore(h.Query.hydrateCopy(item))
+                if removed[key] then maxDropped = math.max(maxDropped, score); droppedOriginal = droppedOriginal + 1
+                elseif not item.locked and h.Query.getSetId(item) == "none" then minKept = math.min(minKept, score) end
+            end
+        end
+        for index, seed in ipairs(box.seeds) do
+            if groupForItem(h, result, seed.equip).key == group.key then
+                local score = h.Power.genericScore(h.Query.hydrateCopy(seed.equip))
+                if selected[index] then minKept = math.min(minKept, score) else maxDropped = math.max(maxDropped, score) end
+            end
+        end
+        check(minKept >= maxDropped, "each group selects its highest available score")
+        if droppedOriginal > 0 and group.inventory >= (originalGroups[group.key] or 0) then
+            for key, item in pairs(bag.inventory) do
+                if removed[key] and groupForItem(h, result, item).key == group.key then
+                    check(minKept > h.Power.genericScore(h.Query.hydrateCopy(item)), "unchanged/growing quota only strict upgrades")
+                end
+            end
+        end
+    end
+end
+
+local function balancedPlanningTests()
+    run("500 high weapons admit a lower-score scarce accessory without loss", function()
+        local h = new()
+        local bag = F.bag(h, 500)
+        for key in pairs(bag.inventory) do
+            local item = F.item(h, "W1", 9999)
+            item.seq = tonumber(key)
+            bag.inventory[key] = item
+        end
+        local accessory = F.item(h, "C1", 1)
+        check(h.Power.genericScore(h.Query.hydrateCopy(accessory)) < h.Power.genericScore(h.Query.hydrateCopy(bag.inventory["1"])),
+            "incoming accessory really has lower general score")
+        local box = F.box({ accessory })
+        local before, aliases = F.copy({bag, box}), F.aliases({bag, box})
+        local p = plan(h, bag, box)
+        same(incoming(p), {1}, "zero-slot accessory admitted")
+        same(outgoing(p), {"500"}, "quota shrink retains earlier equal weapons")
+        eq(p.moveOut[1].reason, "balance", "not a cross-type score comparison")
+        same(slotCounts(p), {weapon=499, accessory=1}, "scarce supply returns surplus to weapons")
+        assertSelection(h, bag, box, p)
+        same({bag, box}, before, "lower-score rebalance is pure")
+        F.assertAliases(aliases)
+        eq(h.randomCalls, 0, "lower-score no RNG")
+    end)
+    run("six-slot absolute waterfill then subtype and grip waterfill with per-group highest", function()
+        local h = new()
+        local EC = h.require("config.EquipmentConfig")
+        -- 私有夹具模板单独覆盖同type不同grip，正式配置/生产文件不修改。
+        EC.ITEMS.CURATION_GRIP = F.copy(EC.ITEMS.W1)
+        EC.ITEMS.CURATION_GRIP.id, EC.ITEMS.CURATION_GRIP.grip = "CURATION_GRIP", "twohand"
+        local box = {seeds={}}
+        for _, id in ipairs({"W1", "W7", "CURATION_GRIP", "O1", "O7", "A1", "H1", "S1", "C1"}) do
+            for i = 1, 100 do
+                local item = F.item(h, id, i, 1)
+                box.seeds[#box.seeds+1] = {equip=item, count=1, quality=item.quality, level=item.level}
+            end
+        end
+        local bag = F.bag(h, 500)
+        local before, aliases = F.copy({bag, box}), F.aliases({bag, box})
+        local p = plan(h, bag, box)
+        same(slotCounts(p), {weapon=84, offhand=84, armor=83, helmet=83, shoes=83, accessory=83}, "EC.SLOTS fixed remainder tie")
+        local weapon, offhand = {}, {}
+        for _, group in ipairs(p.groups) do
+            if group.slot == "weapon" then weapon[#weapon+1] = group.inventory end
+            if group.slot == "offhand" then offhand[#offhand+1] = group.inventory end
+        end
+        same(weapon, {28,28,28}, "weapon slot split by type and grip")
+        same(offhand, {42,42}, "offhand subtypes split independently")
+        eq(p.counts.inventoryAfter, 500, "two-layer final500")
+        eq(p.counts.inventoryBefore + p.counts.lootboxBefore, p.counts.inventoryAfter + p.counts.lootboxAfter, "combined count conserved")
+        assertSelection(h, bag, box, p)
+        same(plan(h, bag, box), p, "two-layer ties deterministic")
+        same({bag, box}, before, "all deep source fields unchanged")
+        F.assertAliases(aliases)
+        eq(h.randomCalls, 0, "two-layer score no RNG")
+    end)
+    run("scarce subtype surplus returns within slot and blocked seeds provide no supply", function()
+        local h = new()
+        local bag = F.bag(h, 500)
+        local items = {}
+        for i = 1, 3 do items[#items+1] = F.item(h, "W7", i) end
+        for i = 1, 7 do items[#items+1] = F.item(h, "C1", i) end
+        for i = 1, 200 do items[#items+1] = F.item(h, "O1", i) end
+        local box = F.box(items)
+        for i = 11, #box.seeds do box.seeds[i].count = 2 end -- 完整对象但count非法，不算upper。
+        box.seeds[#box.seeds+1] = {quality=6, level=999, count=500} -- legacy不生成。
+        local p = plan(h, bag, box)
+        same(slotCounts(p), {weapon=493, accessory=7, offhand=0}, "invalid/legacy upper excluded and scarce slot surplus returns")
+        eq(groupForItem(h, p, F.item(h,"W7")).inventory, 3, "scarce weapon subtype capped at three")
+        eq(groupForItem(h, p, bag.inventory["1"]).inventory, 490, "weapon surplus returned to abundant subtype")
+        eq(p.counts.legacyPending, 1, "legacy pending retained")
+        eq(p.protected.lootbox, 203, "200 invalid complete rows plus three valid set seeds protected")
+        eq(p.moveInCount, 10, "only eligible ten admitted")
+        eq(p.moveOutCount, 10, "ten displaced to reliquary")
+        eq(p.counts.inventoryAfter, 500, "no holes from insufficient supply")
+    end)
+    run("protected absolute lower, unclassified occupancy and all-protected full no-op", function()
+        local h = new()
+        local bag = F.bag(h, 500)
+        for i = 1, 300 do bag.inventory[tostring(i)].locked = true end
+        local items = {}
+        for _ = 1, 400 do items[#items+1] = F.item(h,"C1",1) end
+        local p = plan(h, bag, F.box(items))
+        same(slotCounts(p), {weapon=300, accessory=200}, "absolute protected300, not protection plus equal new100")
+        eq(p.protectedCount, 300, "protected lower counted")
+        for _, row in ipairs(p.moveOut) do check(tonumber(row.seq)>300, "all original locked preserved") end
+        local subtypeItems = {}
+        for _ = 1, 400 do subtypeItems[#subtypeItems+1] = F.item(h,"W31",1) end
+        local subtypePlan = plan(h, bag, F.box(subtypeItems))
+        eq(groupForItem(h,subtypePlan,bag.inventory["1"]).inventory,300,"subtype absolute protected lower300")
+        eq(groupForItem(h,subtypePlan,subtypeItems[1]).inventory,200,"subtype waterfill not protection plus equal extra")
+        eq(subtypePlan.counts.inventoryAfter,500,"subtype lower preserves full capacity")
+        for i = 1, 17 do bag.inventory[tostring(i)] = {seq=i, templateId="missing", opaque={index=i}} end
+        for i = 18, 500 do bag.inventory[tostring(i)].locked = nil end
+        p = plan(h, bag, F.box(items))
+        same(slotCounts(p), {weapon=242, accessory=241}, "U17 leaves483 allocatable with fixed slot tie")
+        eq(p.protectedCount, 17, "unclassified inventory protected")
+        eq(p.counts.inventoryAfter, 500, "U consumes capacity exactly once")
+        for _, row in ipairs(p.moveOut) do check(tonumber(row.seq)>17, "unclassified originals stay") end
+        for _, item in pairs(bag.inventory) do item.locked = true end
+        local before = F.copy(bag)
+        p = plan(h, bag, F.box(items))
+        eq(p.protectedCount, 500, "full protected500 including unknown")
+        eq(p.moveInCount, 0, "no incoming when no releasable capacity")
+        eq(p.moveOutCount, 0, "all protected no outgoing")
+        eq(p.changed, false, "all protected no-op")
+        same(bag, before, "all protected source unchanged")
+        eq(h.randomCalls, 0, "protected and unclassified no RNG")
     end)
 end
 
@@ -516,9 +700,179 @@ local function serviceTests()
     end)
 end
 
+local function balancedServiceTests()
+    run("partial protected seed lower is idempotent while movable capacity remains", function()
+        local h = new()
+        local modules = F.modules(h, 500)
+        for i = 1, 50 do modules.equipment.inventory[tostring(i)].locked = true end
+        local items = {}
+        for _ = 1, 20 do
+            local item = F.item(h,"W1",500); item.locked=true; items[#items+1]=item
+        end
+        for _, id in ipairs({"W31", "O1", "C1"}) do
+            for i = 1, 300 do
+                local item = F.item(h,id,i)
+                if id=="C1" and i>280 then item.locked=true end
+                items[#items+1]=item
+            end
+        end
+        modules.lootbox=F.box(items)
+        h:attach(modules); h:connectService()
+        local p=preview(h)
+        same(slotCounts(p),{weapon=167,offhand=167,accessory=166},"partial-protected three-slot fixed tie")
+        local swordQuota = groupForItem(h,p,modules.equipment.inventory["1"]).inventory
+        check(swordQuota==83 or swordQuota==84,"weapon subtypes split167 with stable remainder")
+        apply(h,p.token)
+        local after=F.copy(modules)
+        local flushes=h.flushCalls
+        h:resetNotifications()
+        local p2=preview(h)
+        eq(p2.protectedCount,257,"50 incumbents plus20 sword plus20 accessory and167 set offhands protected")
+        check(p2.protectedCount<500,"regression really retains movable capacity")
+        same(slotCounts(p2),slotCounts(p),"partial-protected slot lower growth keeps absolute quota")
+        for index,group in ipairs(p.groups) do eq(p2.groups[index].inventory,group.inventory,"partial-protected subtype quota stable") end
+        eq(p2.changed,false,"partial-protected second plan no churn")
+        apply(h,p2.token)
+        same(modules,after,"partial-protected second apply graph stable")
+        eq(h.flushCalls,flushes,"partial-protected no second write")
+        eq(#h.notificationOrder,0,"partial-protected no second publish")
+        eq(h.randomCalls,0,"partial-protected no RNG")
+    end)
+    run("protected seeds become lower without two-round slot or subtype drift", function()
+        local h = new()
+        local modules = F.modules(h, 500)
+        local items = {}
+        for _, id in ipairs({"W5", "O1", "A1", "H1", "S1", "C1"}) do
+            for i = 1, 100 do
+                local item = F.item(h, id, 100+i)
+                if id == "O1" then item.locked = true end
+                if id == "C1" then
+                    if i%2 == 0 then item.refineCount = 1 else item.corruptCount = 1 end
+                end
+                items[#items+1] = item
+            end
+        end
+        modules.lootbox = F.box(items)
+        h:attach(modules); h:connectService()
+        local original, count = objectSet(modules)
+        local p = preview(h)
+        same(slotCounts(p), {weapon=84, offhand=84, armor=83, helmet=83, shoes=83, accessory=83}, "first protected-seed allocation")
+        apply(h, p.token)
+        conserved(modules, original, count)
+        local after, disk = F.copy(modules), F.copy(h.disk)
+        h:resetNotifications()
+        local p2 = preview(h)
+        same(slotCounts(p2), slotCounts(p), "new protected lower does not repartition absolute slots")
+        eq(p2.protectedCount, 500, "every selected protected seed now original protected inventory")
+        eq(p2.changed, false, "second preview idempotent")
+        eq(p2.moveInCount, 0, "second incoming0")
+        eq(p2.moveOutCount, 0, "second outgoing0")
+        apply(h, p2.token)
+        same(modules, after, "second apply no fields or seq drift")
+        same(h.disk, disk, "second apply no rewrite")
+        eq(h.flushCalls, 1, "only first apply flushed")
+        eq(#h.notificationOrder, 0, "idempotent apply no notification")
+        eq(h.randomCalls, 0, "protected seed rounds no RNG")
+    end)
+    run("balanced service real native save conservation and failed Rename rollback", function()
+        local h = new()
+        local modules = F.modules(h, 500)
+        local items = {}
+        for _, id in ipairs({"O1", "A1", "H1", "S1", "C1"}) do
+            for i = 1, 100 do items[#items+1] = F.item(h,id,i) end
+        end
+        modules.lootbox = F.box(items)
+        local identity = 0
+        local function mark(item)
+            identity = identity + 1
+            item.curationValidationId = tostring(identity)
+            item.opaqueValidation = {tag="native-curation", values={identity,7,11}, flag=true}
+        end
+        for _, item in pairs(modules.equipment.inventory) do mark(item) end
+        for _, seed in ipairs(modules.lootbox.seeds) do mark(seed.equip) end
+        h:attach(modules); h:connectService()
+        -- 唯一native委托在本case；Runtime由launcher以独立HOME运行。
+        -- 正式保存逻辑仍传standalone文件名，但此封闭映射只操作专项文件，从不接触玩家档。
+        local validationDir = "/home/Maker/power-curation-validation-20261017/native-data/"
+        local paths = { ["standalone_save.json"]=validationDir .. "inventory_curation_validation.json",
+            ["standalone_save.pending.json"]=validationDir .. "inventory_curation_validation.pending.json" }
+        local function path(name)
+            local mapped = paths[name]
+            assert(mapped, "native path outside test allowlist")
+            return mapped
+        end
+        local nativeFs, nativeFile = fileSystem, File
+        check(nativeFs:CreateDir(validationDir), "dedicated native validation directory")
+        h.env.File = function(name, mode) h.fileCalls=h.fileCalls+1; return nativeFile(path(name), mode) end
+        h.env.fileSystem = {
+            FileExists=function(_,name) return nativeFs:FileExists(path(name)) end,
+            Delete=function(_,name) return nativeFs:Delete(path(name)) end,
+            Rename=function(_,from,to)
+                eq(from,"standalone_save.pending.json","real Flush pending path")
+                eq(to,"standalone_save.json","real Flush final path")
+                if h.rejectNativeRename then return false end
+                local success = nativeFs:Rename(path(from),path(to))
+                h.committed = success == true
+                return success
+            end,
+        }
+        local function saved()
+            local file = nativeFile(paths["standalone_save.json"],FILE_READ)
+            check(file and file:IsOpen(), "native save physically exists")
+            local text = file:ReadString()
+            file:Close(); file:Dispose()
+            check(type(text)=="string" and #text>0,"native save bytes readable")
+            return text, cjson.decode(text)
+        end
+        check(h.Save.Flush(), "real Flush baseline saved to native disk")
+        local baseline = saved()
+        local p = preview(h)
+        same(slotCounts(p), {weapon=84, offhand=84, armor=83, helmet=83, shoes=83, accessory=83}, "native plan balanced six slots")
+        local before, aliases = F.copy(modules), F.aliases(modules)
+        local state = h.require("core.GameState").exportSave()
+        local original, count = objectSet(modules)
+        h:resetNotifications(); h.rejectNativeRename = true
+        eq(h.Service.ApplyInventoryCuration(1,p.token),false,"real Flush rename failure refused")
+        same(modules,before,"balanced transfer deep rollback")
+        F.assertAliases(aliases)
+        same(h.require("core.GameState").exportSave(),state,"native failure GameState unchanged")
+        eq(saved(),baseline,"failed native commit leaves prior disk bytes intact")
+        eq(nativeFs:FileExists(paths["standalone_save.pending.json"]),false,"failed native pending cleaned")
+        eq(#h.notificationOrder,0,"failed native commit no notifications")
+        h.rejectNativeRename = false
+        apply(h,p.token)
+        eq(h.flushCalls,2,"same token retries real failed commit once")
+        eq(h.pushes.equipment,1,"native success equipment once")
+        eq(h.pushes.lootbox,1,"native success lootbox once")
+        conserved(modules,original,count)
+        local _, disk = saved()
+        local diskObjects, diskCount, bagCount = {}, 0, 0
+        local function observe(item)
+            local id = item.curationValidationId
+            check(type(id)=="string" and not diskObjects[id],"native serialized object exists exactly once")
+            diskObjects[id], diskCount = naked(item), diskCount+1
+        end
+        for _, item in pairs(disk.modules.equipment.inventory) do observe(item); bagCount=bagCount+1 end
+        for _, seed in ipairs(disk.modules.lootbox.seeds) do observe(seed.equip) end
+        eq(bagCount,500,"native final inventory500")
+        eq(diskCount,count,"native total object count conserved")
+        for item, fields in pairs(original) do
+            -- 活对象上面已精确deep equal；磁盘按现有cjson双精度编码口径比较，不能把JSON舍入误判为整理改值。
+            same(diskObjects[item.curationValidationId],cjson.decode(cjson.encode(fields)),"native every encoded non-seq field conserved")
+        end
+        local p2 = preview(h)
+        eq(p2.changed,false,"native balanced plan second preview no-op")
+        same(slotCounts(p2),slotCounts(p),"protected armor seeds do not drift next round")
+        print(TAG .. " NATIVE_SAVE inventory=500 total=" .. diskCount .. " rename_failure_rollback=PASS file=" .. paths["standalone_save.json"])
+        eq(h.randomCalls,0,"native plan apply retry no RNG")
+    end)
+end
+
 local function main()
     planningTests()
+    balancedPlanningTests()
     serviceTests()
+    balancedServiceTests()
     print(TAG .. " SUMMARY cases=" .. cases .. " assertions=" .. assertions .. " failures=" .. failures)
     if failures == 0 then print(TAG .. " ALL PASS") end
 end

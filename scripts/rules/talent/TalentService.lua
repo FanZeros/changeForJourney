@@ -8,6 +8,7 @@
 local PDM            = require("rules.character.PlayerDataManager")
 local TalentNodeDefs = require("shared.talent.TalentNodeDefs")
 local TalentsSchema  = require("shared.talents.TalentsSchema")
+local SuccessContext = require("shared.SuccessNotificationContext")
 
 local TalentService = {}
 
@@ -86,7 +87,9 @@ function TalentService.Activate(uid, nodeId)
     table.insert(talents.litNodes, nodeId)
 
     -- === 持久化（MarkDirty 是同步内存操作，不会抛异常） ===
-    PDM.MarkDirty(uid, "talents")
+    SuccessContext.withNotification(talents, "talents", "talent_activate", function()
+        PDM.MarkDirty(uid, "talents")
+    end)
     PDM.FlushImmediate(uid)
 
     print("[TalentService] Activate uid=" .. tostring(uid)

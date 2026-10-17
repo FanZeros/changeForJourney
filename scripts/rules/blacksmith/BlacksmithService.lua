@@ -14,6 +14,14 @@ local ExpTable         = require("config.ExpTable")
 local TaskService      = require("rules.task.TaskService")
 local StageConfig      = require("config.StageConfig")
 local AD               = require("systems.AttributeDef")
+local SuccessContext   = require("shared.SuccessNotificationContext")
+
+-- 仅最终装备数值已提交的通知；预览/取消/分解仍走普通 MarkDirty。
+local function publishEquipmentSuccess(uid, equipData, cause)
+    SuccessContext.withNotification(equipData, "equipment", cause, function()
+        PDM.MarkDirty(uid, "equipment")
+    end)
+end
 
 local QUALITY_COST  = BlacksmithConfig.QUALITY_COST
 
@@ -145,7 +153,7 @@ function BlacksmithService.AscendEquip(uid, seq)
     local gainedAffixes, multUps = rollAscendAffixes(equip, currentLv, nextLv)
     if pendingRefines[uid] then pendingRefines[uid][tostring(seq)] = nil end
     PDM.MarkDirty(uid, "currency")
-    PDM.MarkDirty(uid, "equipment")
+    publishEquipmentSuccess(uid, equipData, "equipment_ascend")
     TaskService.UpdateProgress(uid, "enhance", 1)
     print("[BlacksmithService] ASCEND uid=" .. tostring(uid)
         .. " seq=" .. tostring(seq) .. " lv=" .. nextLv
@@ -195,7 +203,7 @@ function BlacksmithService.AscendEquipToLevel(uid, seq, targetLevel)
     local gainedAffixes, multUps = rollAscendAffixes(equip, currentLv, targetLevel)
     if pendingRefines[uid] then pendingRefines[uid][tostring(seq)] = nil end
     PDM.MarkDirty(uid, "currency")
-    PDM.MarkDirty(uid, "equipment")
+    publishEquipmentSuccess(uid, equipData, "equipment_ascend")
     TaskService.UpdateProgress(uid, "enhance", targetLevel - currentLv)
     print("[BlacksmithService] ASCEND_MAX uid=" .. tostring(uid)
         .. " seq=" .. tostring(seq) .. " lv " .. currentLv .. "→" .. targetLevel
@@ -670,7 +678,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         end
 
         PDM.MarkDirty(uid, "currency")
-        PDM.MarkDirty(uid, "equipment")
+        publishEquipmentSuccess(uid, equipData, "equipment_refine")
         PDM.FlushImmediate(uid)
 
         print("[BlacksmithService] REFINE+CLEANSE uid=" .. tostring(uid)
@@ -889,7 +897,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         end
 
         PDM.MarkDirty(uid, "currency")
-        PDM.MarkDirty(uid, "equipment")
+        publishEquipmentSuccess(uid, equipData, "equipment_refine")
         PDM.FlushImmediate(uid)
 
         print("[BlacksmithService] REFINE+AUTO_REPLACE uid=" .. tostring(uid)
@@ -918,7 +926,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         end
 
         PDM.MarkDirty(uid, "currency")
-        PDM.MarkDirty(uid, "equipment")
+        publishEquipmentSuccess(uid, equipData, "equipment_refine")
         PDM.FlushImmediate(uid)
 
         print("[BlacksmithService] REFINE+CORRUPT uid=" .. tostring(uid)
@@ -1021,7 +1029,7 @@ function BlacksmithService.RefineReplace(uid, seq)
 
     pendingRefines[uid][seqStr] = nil
 
-    PDM.MarkDirty(uid, "equipment")
+    publishEquipmentSuccess(uid, equipData, "equipment_refine")
 
     print("[BlacksmithService] REFINE_REPLACE uid=" .. tostring(uid)
         .. " seq=" .. seqStr

@@ -25,6 +25,12 @@ local active = {}
 ---@type table<number, number>
 local previous = {}
 local initialized, disabled = false, false
+local presentationBlocked, growthSuppressed = false, false
+local pausedTime, blockedWallAt, blockedPresentationAt = 0, 0, 0
+local GROWTH_CAUSES = {
+    level_up = true, artifact_equip = true, equipment_equip = true,
+    equipment_ascend = true, equipment_refine = true, talent_activate = true,
+}
 ---@type number
 local stabilizeUntil = 0
 local plaqueToken = {}
@@ -58,6 +64,11 @@ local function now()
     local value = time.elapsedTime
     if type(value) ~= "number" or value ~= value or math.abs(value) == math.huge then return 0 end
     return value
+end
+
+-- 业务/开场稳定期仍用墙钟；只有三行提示、计数及Spine播放用可见时钟。
+local function presentationNow()
+    return presentationBlocked and blockedPresentationAt or now() - pausedTime
 end
 
 local function finitePositive(value)
@@ -126,7 +137,7 @@ local function releasePlaque()
 end
 
 local function clearExpired()
-    local current = now()
+    local current = presentationNow()
     local hadRows = next(active) ~= nil
     for team = 1, TEAM_COUNT do
         local row = active[team]
@@ -143,20 +154,20 @@ local function onTeamPowerChanged(data)
         return
     end
     clearExpired()
-    local current = now()
+    local current = presentationNow()
     local restartPlaque = false
     for team = 1, TEAM_COUNT do
         local power = powerValue(data.powers[team])
         if power then
             local old = previous[team]
             previous[team] = power
-            if current < stabilizeUntil or old == nil then
+            if now() < stabilizeUntil or growthSuppressed or old == nil then
                 active[team] = nil
-            elseif data.cause ~= "level_up" and data.cause ~= "artifact_equip" then
-                -- 非成功安装/交换或升级仍静默推进基准；重复快照不取消已有动画。
+            elseif not GROWTH_CAUSES[data.cause] then
+                -- 非成功通知仍静默推进基准；重复快照不取消已有动画。
                 if power ~= old then active[team] = nil end
-            elseif data.cause == "artifact_equip" and power < old then
-                -- 本次交换减值队立即撤去旧增益行，不能借先前升级/安装基准伪装本次正增。
+            elseif data.cause ~= "level_up" and power < old then
+                -- 换装/养成减值队撤去旧增益，不能借之前基准伪装本次正增。
                 active[team] = nil
             elseif power ~= old then
                 local row = active[team]
@@ -264,7 +275,29 @@ function Effect.resetSession()
     previous, active = {}, {}
     releasePlaque()
     stabilizeUntil = now() + STABILIZE_DELAY
+    presentationBlocked, growthSuppressed = false, false
+    pausedTime, blockedWallAt, blockedPresentationAt = 0, 0, 0
     disabled = false
+end
+
+-- 宿主按真实遮挡同步，不冻结业务/回执时钟。只保三个最新队伍行，无无限队列。
+-- 开场/未ready与暂时模态不同：前者只推进baseline，不积攒登录假增长。
+function Effect.setPresentationBlocked(blocked, suppressGrowth)
+    if not initialized then return end
+    blocked, suppressGrowth = blocked == true, suppressGrowth == true
+    if growthSuppressed ~= suppressGrowth then
+        growthSuppressed = suppressGrowth
+        if suppressGrowth then active = {}; releasePlaque() end
+    end
+    if presentationBlocked == blocked then return end
+    if blocked then
+        clearExpired()
+        blockedPresentationAt, blockedWallAt = presentationNow(), now()
+        presentationBlocked = true
+    else
+        pausedTime = pausedTime + math.max(0, now() - blockedWallAt)
+        presentationBlocked = false
+    end
 end
 
 function Effect.init()
@@ -274,7 +307,7 @@ function Effect.init()
     EventBus.on(GameEvents.TEAM_POWER_CHANGED, onTeamPowerChanged)
 end
 
--- 同帧多次update/draw/query只采样真实时钟；隐藏时不会积压实例或延长提示。
+-- 同帧多次update/draw/query不重复累加；只在宿主明确遮挡时冻结表现寿命。
 function Effect.update(_dt)
     if initialized then clearExpired() end
 end
@@ -286,7 +319,7 @@ end
 
 function Effect.getDisplayRows()
     clearExpired()
-    local rows, current = {}, now()
+    local rows, current = {}, presentationNow()
     for team = 1, TEAM_COUNT do
         local row = active[team]
         if row then
@@ -319,12 +352,12 @@ end
 
 --- 全窗逻辑坐标的finishFrame调用；图片与文字共享宿主transform，不借三栏Viewport。
 function Effect.draw(vg, width, height)
-    if not vg or not Effect.isPlaying() then return end
+    if not vg or presentationBlocked or not Effect.isPlaying() then return end
     local screenWidth, screenHeight = width or 1080, height or 2400
     if not finitePositive(screenWidth) or not finitePositive(screenHeight) then return end
     local rows = Effect.getDisplayRows()
     local left, top, scale, cardHeight = Effect.getGeometry(screenWidth, screenHeight)
-    local elapsed, duration = math.max(0, now() - plaqueStartedAt), plaqueDuration
+    local elapsed, duration = math.max(0, presentationNow() - plaqueStartedAt), plaqueDuration
     local saved = false
     local ok, caught = pcall(function()
         ensureCard()
@@ -393,6 +426,8 @@ function Effect.destroy()
     EventBus.off(GameEvents.TEAM_POWER_CHANGED, onTeamPowerChanged)
     initialized = false
     previous, active = {}, {}
+    presentationBlocked, growthSuppressed = false, false
+    pausedTime, blockedWallAt, blockedPresentationAt = 0, 0, 0
     releasePlaque()
     if card then card:Destroy() end
     card, title = nil, nil

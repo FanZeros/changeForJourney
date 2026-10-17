@@ -28,6 +28,7 @@ local HeroAssetUtil    = require("config.HeroAssetUtil")
 local HeroConfig       = require("config.HeroConfig")
 local HeroFrame        = require("ui.widget.HeroFrame")
 local I18n             = require("core.I18n")
+local NumberUtil       = require("core.NumberUtil")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 
 -- 子模块（BlacksmithDecompose 已迁至仓库分解 tab，不再由本页驱动）
@@ -162,15 +163,9 @@ end
 
 -- ======================== 词缀值格式化 ========================
 
---- 大数值缩写（超过4位数用 K/M 等单位）
+--- 大数值缩写统一走公共 NumberUtil（k/M/B/T），与洗练、奖励等处保持一致。
 local function formatCompact(n)
-    if n >= 1000000 then
-        return string.format("%.1fM", n / 1000000)
-    elseif n >= 10000 then
-        return string.format("%.1fK", n / 1000)
-    else
-        return tostring(n)
-    end
+    return NumberUtil.format(n)
 end
 
 local function formatAffixValue(key, value, affixId)

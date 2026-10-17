@@ -19,10 +19,9 @@ local rateGoldText = nil
 ---@type string|nil
 local rateExpText = nil
 
+--- 挂机速率数值统一走公共 NumberUtil（k/M/B/T），不再单独用千分位。
 local function formatNumber(n)
-    local s = tostring(math.floor(n + 0.5))
-    local out = s:reverse():gsub("(%d%d%d)", "%1,")
-    return tostring(out):reverse():gsub("^,", "")
+    return require("core.NumberUtil").format(n)
 end
 
 function LootBox.setRates(goldPerMin, expPerMin)

@@ -535,7 +535,7 @@ drawPurchaseDialog = function(vg)
     -- 12. 消耗资源组合 "图标×N"
     local actualPrice = getActualPrice(item)
     local totalCost = actualPrice * state.buyQuantity
-    local costStr = "×" .. tostring(totalCost)
+    local costStr = "×" .. NumberUtil.format(totalCost)
     local dialogCostIcon = img.coinIcon
     if item.currency == "diamond" then
         dialogCostIcon = img.diamondIcon or img.coinIcon

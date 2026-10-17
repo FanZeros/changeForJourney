@@ -6,6 +6,7 @@
 -- ============================================================================
 
 local GameState      = require("core.GameState")
+local NumberUtil     = require("core.NumberUtil")
 local DrawUtil       = require("core.DrawUtil")
 local drawTextStroke = DrawUtil.drawTextStroke
 local Protocol       = require("shared.Protocol")
@@ -567,7 +568,7 @@ local function drawShopCard(vg, idx, item, cx, cy)
         DarkIcon.drawNine(vg, "btn", cx - L.BTN_W * 0.5, btnCY - L.BTN_H * 0.5, L.BTN_W, L.BTN_H, { accent = "gold" })
 
         -- 消耗图标 + 价格居中
-        local priceStr = tostring(item.price)
+        local priceStr = NumberUtil.format(item.price)
         nvgFontFace(vg, "sans"); nvgFontSize(vg, L.BTN_FONT)
         local textW  = nvgTextBounds(vg, 0, 0, priceStr)
         local totalW = L.BTN_ICON_W + 4 + textW
@@ -839,7 +840,7 @@ drawPurchaseDialog = function(vg)
 
     -- 消耗资源
     local totalCost = item.price * shopState.buyQuantity
-    local costStr   = "×" .. tostring(totalCost)
+    local costStr   = "×" .. NumberUtil.format(totalCost)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, DLG.COST_FONT)
     local costTextW  = nvgTextBounds(vg, 0, 0, costStr)
     local costTotalW = DLG.COST_ICON_SIZE + 4 + costTextW

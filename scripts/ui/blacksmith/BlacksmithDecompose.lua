@@ -21,6 +21,7 @@ local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
 local QualityMark      = require("ui.widget.QualityMark")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 local I18n             = require("core.I18n")
+local NumberUtil       = require("core.NumberUtil")
 local EquipmentText    = require("core.I18nEquipmentText")
 local AutoDecompose    = require("ui.blacksmith.BlacksmithAutoDecompose")
 
@@ -545,7 +546,7 @@ local function drawRewardIconRow(vg, entries, showLabel)
             end
         end
         -- 数量角标（右下，黑描边白字，与格子等级角标同风格）
-        local numText = tostring(entry.amount)
+        local numText = NumberUtil.format(entry.amount)
         local numX = cx + FJ.RW_ICON_SIZE * 0.5 - 4
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, FJ.RW_NUM_FONT)
@@ -569,7 +570,7 @@ function M.drawUpperSlot(vg)
     -- 显示文本
     local rewardText
     if selCount > 0 then
-        rewardText = I18n.format("精粹 +%s", tostring(previewEssence))
+        rewardText = I18n.format("精粹 +%s", NumberUtil.format(previewEssence))
     else
         rewardText = "分解奖励"
     end

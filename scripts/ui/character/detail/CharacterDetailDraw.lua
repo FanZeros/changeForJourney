@@ -23,6 +23,7 @@ local EquipmentSystem   = require("systems.EquipmentSystem")
 local EquipmentPower    = require("systems.EquipmentPower")
 local BF                 = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
+local NumberUtil = require("core.NumberUtil")
 local I18n = require("core.I18n")
 local KeywordText = require("ui.widget.KeywordText")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
@@ -691,7 +692,7 @@ function M.draw(vg)
         -- 分项计价原型口径，按英雄伤害类别区别计价物攻/魔攻/治疗属性
         if SHOW_ESTIMATE then
             local estimate = getCachedEstimate(id)
-            drawTextStroke(vg, 0, powerY + 26, "预估 " .. tostring(estimate),
+            drawTextStroke(vg, 0, powerY + 26, "预估 " .. NumberUtil.format(estimate),
                 18, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 178, 216, 255, 3)
         end
         -- 职业标（右下）

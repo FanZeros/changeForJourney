@@ -16,6 +16,7 @@ local DrawUtil          = require("core.DrawUtil")
 local DarkIcon          = require("core.DarkIcon")
 local GameState         = require("core.GameState")
 local I18n              = require("core.I18n")
+local NumberUtil        = require("core.NumberUtil")
 local BF                = require("systems.ButtonFeedback")
 local ResourceList      = require("ui.battle.stage.StageSelectResources")
 local ExpeditionOverview = require("ui.battle.stage.ExpeditionOverview")
@@ -1246,8 +1247,8 @@ function StageSelectDialog.draw(vg)
             end
             local iconAlpha = (locked and 140 or 255) / 255
             DarkIcon.draw(vg, "power", x + 25, y + layout.powerY, 18, iconAlpha)
-            local isDungeon = ResourceList.getGroupKey(id) ~= nil
-            local powerText = isDungeon and require("core.NumberUtil").format(recPower) or tostring(recPower)
+            -- 推荐战力统一缩写，避免普通关与副本关两套显示。
+            local powerText = NumberUtil.format(recPower)
             drawFittedTitle(vg, x + 38, y + layout.powerY, powerText,
                 D.CARD_X - x - 46, 20, 1, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
                 rr, rg, rb, 2, { alpha = iconAlpha })
@@ -1301,7 +1302,7 @@ function StageSelectDialog.draw(vg)
                 -- 紧凑行数量留在卡面底部，横滚条/奖励带另占固定区域。
                 local numberY = layout.compact and (cardCY + cardH * 0.5 - 8)
                     or (cardCY + cardH * 0.5 + layout.numberOffset)
-                drawTextStroke(vg, cardCX, numberY, "x" .. tostring(info.count), 18,
+                drawTextStroke(vg, cardCX, numberY, "x" .. NumberUtil.format(info.count), 18,
                     NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 214, 120, 2,
                     { alpha = locked and 0.55 or 1 })
             end

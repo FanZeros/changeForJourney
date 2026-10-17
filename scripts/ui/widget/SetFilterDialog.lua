@@ -9,6 +9,7 @@ local DarkIcon = require("core.DarkIcon")
 local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local BF = require("systems.ButtonFeedback")
 local I18n = require("core.I18n")
+local NumberUtil = require("core.NumberUtil")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 local KeywordText = require("ui.widget.KeywordText")
 
@@ -338,7 +339,7 @@ function SetFilterDialog.draw(vg)
         nvgRestore(vg)
         if counts then
             local count = counts[row.key] or 0
-            local countText = tostring(count)
+            local countText = NumberUtil.format(count)
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 34)
             local countWidth = nvgTextBounds(vg, 0, 0, countText)

@@ -16,6 +16,7 @@ local BlacksmithConfig = require("config.BlacksmithConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local AD               = require("systems.AttributeDef")
 local I18n             = require("core.I18n")
+local NumberUtil       = require("core.NumberUtil")
 local MaterialTip      = require("ui.blacksmith.RefineMaterialTip")
 local KeywordText      = require("ui.widget.KeywordText")
 local rowKeywords = KeywordText.new()
@@ -853,13 +854,7 @@ function M.drawPanel(vg)
 end
 
 --- 绘制资源数量 "owned/cost" 居中于指定 cx
---- 数字缩写：超过4位数转为 k 格式（如 12345 → "12.3k"）
-local function formatShortNum(n)
-    if n >= 10000 then
-        return string.format("%.1fk", n / 1000)
-    end
-    return tostring(n)
-end
+--- 大数值统一走公共 NumberUtil（k/M/B/T），不再使用局部只进 k 的写法。
 
 ---@param vg any
 ---@param cx number 居中 X
@@ -873,8 +868,8 @@ local function drawResCount(vg, cx, ownedVal, costVal)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 204))
     nvgFill(vg)
 
-    local ownedStr = formatShortNum(ownedVal)
-    local costStr  = formatShortNum(costVal)
+    local ownedStr = NumberUtil.format(ownedVal)
+    local costStr  = NumberUtil.format(costVal)
     local enough = ownedVal >= costVal
     local oR, oG, oB
     if enough then
@@ -958,7 +953,7 @@ local function drawExtraResPopup(vg)
         end
         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(180, 170, 150, 200))
-        nvgText(vg, popupLeft + popupW - 16, itemY, "x" .. ownedCount, nil)
+        nvgText(vg, popupLeft + popupW - 16, itemY, "x" .. NumberUtil.format(ownedCount), nil)
     end
 end
 

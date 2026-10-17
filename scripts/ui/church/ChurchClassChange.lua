@@ -119,8 +119,9 @@ local INIT_LABEL_CX, INIT_LABEL_CY = 542, 1178
 local INIT_LABEL_FONT               = 40
 
 -- 一转分叉线保留既有矢量几何与基础→一转金色行为。
+-- 线体宽度随一转节点对齐二转中心同步收窄（412 = 2×206），双腿正好落在 340/740 正上方。
 local BRANCH_LINE_CX, BRANCH_LINE_CY = 540, 1464
-local BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H = 484, 298
+local BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H = 412, 298
 local BRANCH_LINE_BAR_RATIO = 152 / 298
 -- 分叉线线宽（旧贴图实测 12px）
 local LINE_THICK = 12
@@ -131,16 +132,16 @@ local INIT_ICON_W, INIT_ICON_H   = 166, 166
 local INIT_NAME_CX, INIT_NAME_CY = 540, 1364
 local INIT_NAME_FONT              = 40
 
--- 一转分支1 图标 & 名称
-local BR1_ICON_CX, BR1_ICON_CY = 307, 1616
+-- 一转分支1 图标 & 名称（与二转千面同列 340，保证黄色路径竖直）
+local BR1_ICON_CX, BR1_ICON_CY = 340, 1616
 local BR1_ICON_W, BR1_ICON_H   = 166, 166
-local BR1_NAME_CX, BR1_NAME_CY = 307, 1693
+local BR1_NAME_CX, BR1_NAME_CY = 340, 1693
 local BR1_NAME_FONT             = 40
 
--- 一转分支2 图标 & 名称
-local BR2_ICON_CX, BR2_ICON_CY = 776, 1616
+-- 一转分支2 图标 & 名称（与二转致命面同列 740）
+local BR2_ICON_CX, BR2_ICON_CY = 740, 1616
 local BR2_ICON_W, BR2_ICON_H   = 166, 166
-local BR2_NAME_CX, BR2_NAME_CY = 775, 1693
+local BR2_NAME_CX, BR2_NAME_CY = 740, 1693
 local BR2_NAME_FONT             = 40
 
 -- 二转 & 锁定遮罩布局

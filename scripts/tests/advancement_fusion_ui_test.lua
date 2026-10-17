@@ -192,11 +192,14 @@ function Start()
             local unique = 0
             for _, count in pairs(counts) do unique = unique + 1; check(count == 1, cid .. " 唯一图标不重画") end
             check(unique == 5 and counts[fusion] == 1, cid .. " 实际 draw 五节点共享仅一次")
+            -- 融合两线并排：左父亮左线 528、右线压暗；两条专属竖线同样按父着色。
             check(isWhite(lineColor(140, 1820), 255) and isWhite(lineColor(340, 1820), 255)
-                and isWhite(lineColor(540, 1800), 255) and isWhite(lineColor(740, 1800), 77), cid .. " 左父三路亮/右父暗")
+                and isWhite(lineColor(528, 1800), 255) and isWhite(lineColor(552, 1800), 77)
+                and isWhite(lineColor(740, 1800), 77), cid .. " 左父三路亮/右父暗")
             draw(hero, parents[2])
             check(isWhite(lineColor(740, 1820), 255) and isWhite(lineColor(940, 1820), 255)
-                and isWhite(lineColor(540, 1800), 255) and isWhite(lineColor(340, 1800), 77), cid .. " 右父三路亮/左父暗")
+                and isWhite(lineColor(552, 1800), 255) and isWhite(lineColor(528, 1800), 77)
+                and isWhite(lineColor(340, 1800), 77), cid .. " 右父三路亮/左父暗")
             for side = 1, 2 do
                 for _, id in ipairs(AVC.SECOND_BRANCHES[parents[side]]) do
                     own.advBranch = { first = parents[side] }
@@ -215,9 +218,12 @@ function Start()
             for side = 1, 2 do
                 local selectedParent = side == 1 and parents[1] or parents[2]
                 draw(hero, selectedParent, fusion)
-                -- 中心交点与中干是共享必经段 → 金；另一父通向融合的横杆不误亮。
+                -- 该父自己的融合线是必经段 → 金；另一父通向融合的线不误亮。
+                local ownStem = side == 1 and 528 or 552
+                local otherStem = side == 1 and 552 or 528
                 local otherBarX = side == 1 and 640 or 440
-                check(isGold(lineColor(540, 1800)) and isGold(lineColor(540, 1848))
+                check(isGold(lineColor(ownStem, 1800)) and isGold(lineColor(ownStem, 1848))
+                    and not isGold(lineColor(otherStem, 1800))
                     and not isGold(lineColor(otherBarX, 1758))
                     and not isGold(lineColor(340, 1820)) and not isGold(lineColor(740, 1820)), cid .. " 融合仅真实父路径金色 side=" .. side)
             end
@@ -231,10 +237,10 @@ function Start()
                 end
             end
             draw(hero, nil, nil, 1)
-            check(isWhite(lineColor(540, 1800), 89) and isWhite(lineColor(340, 1800), 89)
+            check(isWhite(lineColor(528, 1800), 89) and isWhite(lineColor(340, 1800), 89)
                 and textAt("达到Lv" .. AVC.COST[1].level .. "解锁"), cid .. " 双阶段锁罩灰线")
             draw(hero, parents[1], nil, AVC.COST[2].level - 1)
-            check(isWhite(lineColor(540, 1848), 89) and textAt("达到Lv" .. AVC.COST[2].level .. "解锁"), cid .. " 二转锁罩布局")
+            check(isWhite(lineColor(528, 1848), 89) and textAt("达到Lv" .. AVC.COST[2].level .. "解锁"), cid .. " 二转锁罩布局")
         end
 
         local cid, hero = CC.KNIGHT, heroes[CC.KNIGHT]
@@ -286,9 +292,9 @@ function Start()
         check(not UI.handleBranchInput(-10, 1641) and not UI.handleBranchInput(1090, 1641)
             and not UI.handleResetButton(-10, 1940), "外栏输入不吞")
         check(not UI.handleBranchInput(540, 1941), "未逆树平移的旧Y不误命中节点")
-        check(UI.handleBranchInput(307, 1616 - 300), "原一转左节点命中保留")
+        check(UI.handleBranchInput(340, 1616 - 300), "一转左节点对齐千面后命中")
         close(); UI.setHero(hero)
-        check(UI.handleBranchInput(776, 1616 - 300), "原一转右节点命中保留")
+        check(UI.handleBranchInput(740, 1616 - 300), "一转右节点对齐致命面后命中")
         close(); UI.setHero(hero)
         check(UI.handleBranchInput(540, 1295 - 300), "基础职业详情保留")
         close(); UI.setHero(hero)
@@ -306,7 +312,7 @@ function Start()
         end
         -- 二转直角线的终点必须落在166图标真实顶边，不向非节点伸尾。
         draw(hero, parents[1], fusion)
-        local terminals = { 140, 340, 540, 740, 940 }
+        local terminals = { 140, 340, 528, 552, 740, 940 }
         local terminalCount = 0
         for _, record in ipairs(state.rects) do
             local r = record.rect
@@ -320,7 +326,7 @@ function Start()
                 end
             end
         end
-        check(terminalCount == 5, "五条二转终段精确止于图边")
+        check(terminalCount == 6, "六条终段（融合两条）精确止于图边")
         -- 横竖线交点不得由两段矩形重叠覆盖（半透明叠加会变亮）。
         local thin = {}
         for _, record in ipairs(state.rects) do
@@ -338,8 +344,34 @@ function Start()
                 if ox > 0 and oy > 0 then overlap = overlap + 1 end
             end
         end
-        check(#thin >= 13 and overlap == 0, "二转线段互不重叠（交点不叠加变亮）")
-        check(isGold(lineColor(540, 1430)) and not isGold(lineColor(750, 1467)), "原基础到一转当前路径金线保留")
+        check(#thin >= 12 and overlap == 0, "二转线段互不重叠（交点不叠加变亮）")
+        -- 融合节点无相由左右父各引一条竖线并排接入，不再共用单条中干。
+        local fusionStems = {}
+        for _, record in ipairs(state.rects) do
+            local r = record.rect
+            if r.w == 12 and r.y == 1758 - 6 - 300 and r.y + r.h == 1858 - 300
+                and r.x + r.w * 0.5 ~= 540 then
+                local cx = r.x + r.w * 0.5
+                if cx > 500 and cx < 580 then fusionStems[#fusionStems + 1] = cx end
+            end
+        end
+        table.sort(fusionStems)
+        check(#fusionStems == 2 and fusionStems[2] - fusionStems[1] == 12 + 12,
+            "融合两条并排竖线，中缝12px，不再共用单条中干")
+        check(#fusionStems == 2 and (fusionStems[1] + fusionStems[2]) * 0.5 == 540,
+            "融合两线以节点中心540对称")
+        -- 一转与二转中心对齐：两条黄色路径应各为一条直竖线（无横向小折）。
+        local stemCx = {}
+        for _, record in ipairs(state.rects) do
+            local r = record.rect
+            if r.w == 12 and r.y + r.h == 1858 - 300 and (r.x + r.w * 0.5 == 340 or r.x + r.w * 0.5 == 740) then
+                stemCx[#stemCx + 1] = r.x + r.w * 0.5
+            end
+        end
+        table.sort(stemCx)
+        check(#stemCx == 2 and stemCx[1] == 340 and stemCx[2] == 740,
+            "一转中心与二转中心对齐（340/740 竖直贯通）")
+        check(isGold(lineColor(540, 1430)) and not isGold(lineColor(740, 1467)), "原基础到一转当前路径金线保留")
         draw(hero, nil)
         check(isWhite(lineColor(540, 1430), 255), "未一转基础分叉白亮保留")
 

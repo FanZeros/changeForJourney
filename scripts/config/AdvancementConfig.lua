@@ -1,7 +1,7 @@
 -- ============================================================================
 -- AdvancementConfig - 转职配置数据表
 -- 数据来源: docs/配置文件/职业配置.txt
--- 包含: 12个一转 + 24个二转（六门契）。数字ID保留，talentId 已换；207/220 双持 id 保留
+-- 包含: 12个一转 + 30个二转（六门契，含6个双父融合）。旧数字ID/天赋/双持保留
 -- ============================================================================
 
 local AD = require("systems.AttributeDef")
@@ -498,6 +498,92 @@ AVC.BRANCHES = {
         talentId = "gate_224_punish",
         combatPower = 20,
     },
+
+    -- ===== 双父融合：仅继承两一转天赋，不追加旧二转机制或另一份一转属性 =====
+    [225] = {
+        name = "合闸", baseClass = CC.KNIGHT, advLevel = 2,
+        parentBranches = { 101, 102 },
+        statBonus = {
+            { key = AD.VIT, flat = 5 },
+            { key = AD.SPI, flat = 5 },
+            { key = AD.MAX_HP, pct = 8 },
+        },
+        talentName = "合闸",
+        talentDesc = "同时获得门闩与闸门：门缝的伤害储存上限提高50%，释放时50%转向当前敌人；填满时强制嘲讽敌人2秒，并清除30%的储存伤害。",
+        talentId = "gate_225_fusion",
+        talentIds = { "gate_101_latch", "gate_102_sluice" },
+        combatPower = 20,
+    },
+    [226] = {
+        name = "骸王", baseClass = CC.WARRIOR, advLevel = 2,
+        parentBranches = { 103, 104 },
+        statBonus = {
+            { key = AD.STR, flat = 5 },
+            { key = AD.VIT, flat = 5 },
+            { key = AD.PHYS_ATK, pct = 8 },
+        },
+        talentName = "骸王",
+        talentDesc = "同时获得骨市与剥壳：骸骨上限提高至18，消耗时回复4%已损失生命；击杀精英或首领时获得3层骸骨，消耗骸骨的攻击优先选择护甲克制优势目标。",
+        talentId = "gate_226_fusion",
+        talentIds = { "gate_103_bone_market", "gate_104_peel" },
+        combatPower = 20,
+    },
+    [227] = {
+        name = "叠隙", baseClass = CC.MAGE, advLevel = 2,
+        parentBranches = { 105, 106 },
+        statBonus = {
+            { key = AD.INT, flat = 5 },
+            { key = AD.SPI, flat = 5 },
+            { key = AD.MAG_ATK, pct = 8 },
+        },
+        talentName = "叠隙",
+        talentDesc = "同时获得错位与深缝：裂隙触发间隔缩短至6秒，裂痕叠满3层时额外造成魔法攻击力60%的伤害；裂隙期间攻击轮流附加火焰、冰霜、闪电或暗影伤害类型。",
+        talentId = "gate_227_fusion",
+        talentIds = { "gate_105_offset", "gate_106_deep" },
+        combatPower = 20,
+    },
+    [228] = {
+        name = "复调", baseClass = CC.RANGER, advLevel = 2,
+        parentBranches = { 107, 108 },
+        statBonus = {
+            { key = AD.AGI, flat = 5 },
+            { key = AD.LUK, flat = 5 },
+            { key = AD.PHYS_DMG_BONUS, flat = 8 },
+        },
+        talentName = "复调",
+        talentDesc = "同时获得残响与叠声：回响有相当于自身暴击率40%的概率暴击，延迟缩短至0.8秒；同一目标身上第2个回响改为70%伤害，最多2个。",
+        talentId = "gate_228_fusion",
+        talentIds = { "gate_107_aftertone", "gate_108_stacktone" },
+        combatPower = 20,
+    },
+    [229] = {
+        name = "无相", baseClass = CC.ASSASSIN, advLevel = 2,
+        parentBranches = { 109, 110 },
+        statBonus = {
+            { key = AD.LUK, flat = 5 },
+            { key = AD.AGI, flat = 5 },
+            { key = AD.ATK_SPEED, flat = 8 },
+        },
+        talentName = "无相",
+        talentDesc = "同时获得借面与剥面：复制目标护甲克制时，若目标会治疗，下次攻击获得8%吸血，否则获得持续4秒的8%攻速；复制的目标死亡时，使其相邻敌人的护甲降低20%，持续2秒。",
+        talentId = "gate_229_fusion",
+        talentIds = { "gate_109_borrow", "gate_110_stripface" },
+        combatPower = 20,
+    },
+    [230] = {
+        name = "赦祷", baseClass = CC.PRIEST, advLevel = 2,
+        parentBranches = { 111, 112 },
+        statBonus = {
+            { key = AD.SPI, flat = 5 },
+            { key = AD.VIT, flat = 5 },
+            { key = AD.HEAL_BONUS, flat = 10 },
+        },
+        talentName = "赦祷",
+        talentDesc = "同时获得延祷与领忏：延缓可同时存在于2名队友；债结束时，按债期受到伤害的10%治疗全队（有上限）。",
+        talentId = "gate_230_fusion",
+        talentIds = { "gate_111_defer2", "gate_112_confess" },
+        combatPower = 20,
+    },
 }
 
 -- ======================== 一转分支映射 ========================
@@ -513,30 +599,52 @@ AVC.FIRST_BRANCHES = {
 }
 
 -- ======================== 二转分支映射 ========================
--- firstBranchId → { branchId1, branchId2 }
+-- firstBranchId → { 原二转1, 原二转2, 双父融合 }
 
 AVC.SECOND_BRANCHES = {
-    [101] = { 201, 202 },
-    [102] = { 203, 204 },
-    [103] = { 205, 206 },
-    [104] = { 207, 208 },
-    [105] = { 209, 210 },
-    [106] = { 211, 212 },
-    [107] = { 213, 214 },
-    [108] = { 215, 216 },
-    [109] = { 217, 218 },
-    [110] = { 219, 220 },
-    [111] = { 221, 222 },
-    [112] = { 223, 224 },
+    [101] = { 201, 202, 225 },
+    [102] = { 203, 204, 225 },
+    [103] = { 205, 206, 226 },
+    [104] = { 207, 208, 226 },
+    [105] = { 209, 210, 227 },
+    [106] = { 211, 212, 227 },
+    [107] = { 213, 214, 228 },
+    [108] = { 215, 216, 228 },
+    [109] = { 217, 218, 229 },
+    [110] = { 219, 220, 229 },
+    [111] = { 221, 222, 230 },
+    [112] = { 223, 224, 230 },
 }
 
 -- ======================== 辅助方法 ========================
 
 --- 获取转职分支配置
----@param branchId number 101~224
+---@param branchId number 101~230
 ---@return table|nil
 function AVC.get(branchId)
     return AVC.BRANCHES[branchId]
+end
+
+--- 是否为此二转的前置一转；融合还要求两个父配置均为同职业的真实一转。
+--- 旧单父分支仍只按原 parentBranch 比对，不收紧旧存档/校验契约。
+---@param branchId number
+---@param firstId number|nil
+---@return boolean
+function AVC.isParentBranch(branchId, firstId)
+    local branch = AVC.BRANCHES[branchId]
+    if not branch or not firstId then return false end
+    if not branch.parentBranches then return branch.parentBranch == firstId end
+    local parents = branch.parentBranches
+    if branch.advLevel ~= AVC.ADV_SECOND or #parents ~= 2 or parents[1] == parents[2] then
+        return false
+    end
+    for _, parentId in ipairs(parents) do
+        local parent = AVC.BRANCHES[parentId]
+        if not parent or parent.advLevel ~= AVC.ADV_FIRST or parent.baseClass ~= branch.baseClass then
+            return false
+        end
+    end
+    return parents[1] == firstId or parents[2] == firstId
 end
 
 --- 获取英雄当前最高的转职分支 ID
@@ -562,6 +670,33 @@ function AVC.getAllBranches(advBranch)
         list[#list + 1] = advBranch.second
     end
     return list
+end
+
+--- 天赋与属性分开枚举：先真实 first/second，再补合法融合的两父天赋并去重。
+--- 非法融合（缺一转/跨职业父/错误阶段）既不激活标记，也不借用两父效果。
+---@param advBranch table|nil
+---@return string[]
+function AVC.getTalentIds(advBranch)
+    if not advBranch then return {} end
+    local ids, seen = {}, {}
+    local function add(talentId)
+        if talentId and not seen[talentId] then
+            seen[talentId] = true
+            ids[#ids + 1] = talentId
+        end
+    end
+    for _, branchId in ipairs(AVC.getAllBranches(advBranch)) do
+        local cfg = AVC.BRANCHES[branchId]
+        if cfg and (not cfg.parentBranches or
+            (advBranch.second == branchId and AVC.isParentBranch(branchId, advBranch.first))) then
+            add(cfg.talentId)
+        end
+    end
+    local second = advBranch and AVC.BRANCHES[advBranch.second]
+    if second and second.parentBranches and AVC.isParentBranch(advBranch.second, advBranch.first) then
+        for _, talentId in ipairs(second.talentIds or {}) do add(talentId) end
+    end
+    return ids
 end
 
 --- 应用转职属性加成到 UnitAttributes
@@ -630,8 +765,12 @@ function AVC.canAdvance(heroLevel, gold, advLevel, classId, branchId, advBranch)
             return false, "已完成二转"
         end
         -- 校验前置一转匹配
-        if branch.parentBranch ~= advBranch.first then
+        if not AVC.isParentBranch(branchId, advBranch.first) then
             return false, "前置一转不匹配"
+        end
+        -- 仅新增融合收紧职业一致性；旧二转不重新校验 classId。
+        if branch.parentBranches and branch.baseClass ~= classId then
+            return false, "职业不匹配"
         end
     end
 
@@ -643,13 +782,8 @@ end
 ---@param talentId string 天赋 ID（如 "adv_207_weapon_master"）
 ---@return boolean
 function AVC.hasTalent(advBranch, talentId)
-    if not advBranch then return false end
-    local branches = AVC.getAllBranches(advBranch)
-    for _, bId in ipairs(branches) do
-        local cfg = AVC.BRANCHES[bId]
-        if cfg and cfg.talentId == talentId then
-            return true
-        end
+    for _, id in ipairs(AVC.getTalentIds(advBranch)) do
+        if id == talentId then return true end
     end
     return false
 end

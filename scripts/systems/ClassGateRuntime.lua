@@ -9,6 +9,9 @@ local CC = require("config.ClassConfig")
 
 local CGR = {}
 
+-- 仅 225–230 融合使用；弱键绑定不写入 attrs，因此 clone/存档不会复制旧 owner。
+local fusionOwners = setmetatable({}, { __mode = "k" })
+
 local function cid(unit)
     return unit and CC.normalize(unit.classId) or nil
 end
@@ -19,6 +22,102 @@ local function hasGate(unit, talentId)
         if tid == talentId then return true end
     end
     return false
+end
+
+local function fusionId(unit)
+    for id = 225, 230 do
+        if hasGate(unit, "gate_" .. id .. "_fusion") then return id end
+    end
+    return nil
+end
+
+local function inList(unit, units)
+    for _, candidate in ipairs(units or {}) do if candidate == unit then return true end end
+    return false
+end
+
+local function formulaOwner(attrsOrUnit)
+    local binding = attrsOrUnit and fusionOwners[attrsOrUnit]
+    if binding and binding.unit.attrs == attrsOrUnit
+        and binding.unit._fusionToken == binding.token then
+        return binding.unit
+    end
+    return attrsOrUnit
+end
+
+local function validFusionDefer(unit)
+    local healer = unit and unit._gateDeferHealer
+    return healer and fusionId(healer) == 230 and unit._fusionDeferToken ~= nil
+        and healer._fusionToken == unit._fusionDeferToken
+end
+
+local function clearFusionDefer(unit)
+    if not unit or not unit._fusionDeferToken then return end
+    unit._gateDefer, unit._gateDeferHealer, unit._gateDeferChance = nil, nil, nil
+    unit._gateDebtT, unit._gateDebtTaken, unit._gateWarPray = nil, nil, nil
+    unit._gateWarPrayHit, unit._fusionDeferToken = nil, nil
+end
+
+local function clearStrip(target)
+    if not target then return end
+    if target.attrs then target.attrs:removeModifier("gate_fusion_strip") end
+    target._fusionStripT, target._fusionStripSource, target._fusionStripToken = nil, nil, nil
+end
+
+--- 仅清融合本场状态；reset/start 在替换战线引用前调用，不扫别的并行队伍。
+---@param allies table[]|nil
+---@param enemies table[]|nil
+function CGR.resetFusionBattle(allies, enemies)
+    for _, units in ipairs({ allies or {}, enemies or {} }) do
+        for _, u in ipairs(units) do
+            clearFusionDefer(u)
+            if u._fusionStripT then clearStrip(u) end
+            if u._fusionToken then
+                if u.attrs then
+                    fusionOwners[u.attrs] = nil
+                    u.attrs:removeModifier("gate_spoil_spd")
+                    u.attrs:removeModifier("gate_fusion_borrow")
+                    if u._fusionBaseAtkType then u.attrs.atkType = u._fusionBaseAtkType end
+                end
+                if u._fusionBaseAtkType then u.atkType = u._fusionBaseUnitAtkType end
+                for target in pairs(u._fusionStripTargets or {}) do
+                    if target._fusionStripSource == u then clearStrip(target) end
+                end
+                for target in pairs(u._fusionDeferTargets or {}) do
+                    if target._gateDeferHealer == u then clearFusionDefer(target) end
+                end
+                for target in pairs(u._fusionRiftTargets or {}) do
+                    if target._fusionRiftSource == u then
+                        target._riftStacks, target._fusionRiftSource = nil, nil
+                    end
+                end
+                u._gateCap, u._gateStored, u._gateEnemyRatio = nil, nil, nil
+                u._spoilBones, u._spoilReady, u._spoilCap, u._spoilLastTarget = nil, nil, nil, nil
+                u._riftCd, u._riftLeft, u._riftCycle = nil, nil, nil
+                u._echoQueue = nil
+                u._maskTarget, u._maskWindow, u._maskArmorStrike = nil, nil, nil
+                u._fusionBorrowT, u._fusionBorrowLeech = nil, nil
+                u._deferCount = nil
+                u._fusionStripTargets, u._fusionDeferTargets, u._fusionRiftTargets = nil, nil, nil
+                u._fusionBaseAtkType, u._fusionBaseUnitAtkType, u._fusionToken = nil, nil, nil
+            end
+        end
+    end
+end
+
+local function grantBorrow(unit, target)
+    if fusionId(unit) ~= 229 or not hasGate(unit, "gate_109_borrow")
+        or not target or (target.hp or 0) <= 0 then return end
+    local atkType = target.attrs and target.attrs.atkType or target.atkType
+    unit._fusionBorrowLeech = AD.getAtkCategory(atkType) == "healing"
+    -- 治疗目标只等待下一次实际扣血普攻；4秒仅限非治疗目标的攻速。
+    unit._fusionBorrowT = not unit._fusionBorrowLeech and 4 or nil
+    if unit.attrs then
+        unit.attrs:removeModifier("gate_fusion_borrow")
+        if not unit._fusionBorrowLeech then
+            unit.attrs:addModifier("gate_fusion_borrow", { { key = AD.ATK_SPEED, flat = 8 } })
+        end
+    end
 end
 
 local function maxHpOf(unit)
@@ -42,7 +141,16 @@ end
 ---@param allies table[]
 ---@param enemies table[]
 function CGR.onBattleStart(allies, enemies)
+    CGR.resetFusionBattle(allies, enemies)
     for _, u in ipairs(allies or {}) do
+        if fusionId(u) then
+            u._fusionToken = {}
+            if u.attrs then
+                fusionOwners[u.attrs] = { unit = u, token = u._fusionToken }
+                u._fusionBaseAtkType = u.attrs.atkType
+                u._fusionBaseUnitAtkType = u.atkType
+            end
+        end
         local id = cid(u)
         if id == CC.SEAL then
             local cap = maxHpOf(u) * 0.12
@@ -69,6 +177,7 @@ function CGR.onBattleStart(allies, enemies)
             u._maskTarget = t
             u._maskWindow = 0
             u._maskArmorStrike = false
+            grantBorrow(u, t)
         elseif id == CC.DEBT then
             -- 延缓层挂在队友身上，司仪本人只负责施加
         elseif id == CC.ECHO then
@@ -84,7 +193,11 @@ end
 ---@return number
 function CGR.adjustTypeMult(attacker, defender, typeMult)
     if not attacker or not typeMult then return typeMult end
+    attacker, defender = formulaOwner(attacker), formulaOwner(defender)
     local id = cid(attacker)
+    if fusionId(attacker) == 229 and attacker._maskTarget and defender == attacker._maskTarget.attrs then
+        defender = attacker._maskTarget
+    end
     if id == CC.RIFT and (attacker._riftLeft or 0) > 0 then
         typeMult = typeMult + (1.25 - typeMult) * 0.5
     end
@@ -99,6 +212,7 @@ end
 ---@param rawArmor number
 ---@return number
 function CGR.adjustArmor(attacker, rawArmor)
+    attacker = formulaOwner(attacker)
     if cid(attacker) == CC.MASK and attacker._maskArmorStrike then
         attacker._maskArmorStrike = false
         local keep = 0.80
@@ -133,6 +247,10 @@ end
 ---@param target table
 ---@return boolean
 function CGR.tryDeferDeath(target)
+    if target and target._fusionDeferToken and not validFusionDefer(target) then
+        clearFusionDefer(target)
+        return false
+    end
     if not target or not target._gateDefer then return false end
     if target._gateDeferChance and math.random() > target._gateDeferChance then
         target._gateDefer = false
@@ -161,12 +279,28 @@ end
 ---@param damage number
 ---@return number
 function CGR.applyDebtTaken(target, damage)
+    if target and target._fusionDeferToken and not validFusionDefer(target) then
+        clearFusionDefer(target)
+    end
     if target and (target._gateDebtT or 0) > 0 then
         local out = damage * 1.15
         target._gateDebtTaken = (target._gateDebtTaken or 0) + out
         return out
     end
     return damage
+end
+
+--- 普攻入口在 TAL 调用；附伤已经由 BC 调 absorb/applyDebt，不能在这里重复接线。
+function CGR.modifyFusionIncoming(target, damage)
+    if validFusionDefer(target) then damage = CGR.applyDebtTaken(target, damage) end
+    if fusionId(target) == 225 and target._fusionToken then
+        damage = CGR.absorbIncoming(target, damage)
+    end
+    return damage
+end
+
+function CGR.tryFusionDeferDeath(target)
+    return validFusionDefer(target) and CGR.tryDeferDeath(target) or false
 end
 
 --- 过量治疗 → 延缓层（每人 1 层）
@@ -176,6 +310,22 @@ end
 function CGR.onOverheal(healer, target, overheal)
     if cid(healer) ~= CC.DEBT then return end
     if not target or overheal <= 0 then return end
+    if fusionId(healer) == 230 then
+        if not healer._fusionToken then return end
+        healer._fusionDeferTargets = healer._fusionDeferTargets or {}
+        local count = 0
+        for unit in pairs(healer._fusionDeferTargets) do
+            if validFusionDefer(unit) and (unit.hp or 0) > 0
+                and (unit._gateDefer or (unit._gateDebtT or 0) > 0) then
+                count = count + 1
+            else
+                clearFusionDefer(unit)
+                healer._fusionDeferTargets[unit] = nil
+            end
+        end
+        healer._deferCount = count
+        if validFusionDefer(target) and (target._gateDebtT or 0) > 0 then return end
+    end
     local cap = hasGate(healer, "gate_111_defer2") and 2 or 1
     healer._deferCount = healer._deferCount or 0
     if target._gateDefer then return end
@@ -185,6 +335,10 @@ function CGR.onOverheal(healer, target, overheal)
     target._gateWarPray = hasGate(healer, "gate_221_war")
     target._gateDeferChance = hasGate(healer, "gate_222_blood") and 0.40 or 1
     healer._deferCount = healer._deferCount + 1
+    if fusionId(healer) == 230 then
+        target._fusionDeferToken = healer._fusionToken
+        healer._fusionDeferTargets[target] = true
+    end
     if hasGate(healer, "gate_224_punish") then
         healer._punishReady = overheal
     end
@@ -199,13 +353,36 @@ local function extraHitPct(attacker)
     return physAtkOf(attacker)
 end
 
+-- 226 仅骸骨额击改选；不调用 CF.calcAttack/TM.selectTarget，避免消耗普攻 RNG。
+-- 优势以正式 AD 基础克制表 >1 定义；倍率并列保留原目标，否则列表顺序稳定择首。
+local function spoilExtraTarget(attacker, target, targets)
+    if fusionId(attacker) ~= 226 or not hasGate(attacker, "gate_104_peel") then return target end
+    local function valid(unit)
+        return unit and (unit.hp or 0) > 0 and unit.attrs and unit.attrs:isAlive()
+            and not unit.artifactUntargetable
+    end
+    local atkType = attacker.attrs and attacker.attrs.atkType or attacker.atkType
+    local best = valid(target) and target or nil
+    local bestMult = best and AD.getTypeMult(atkType, best.attrs.armorType or best.armorType) or 1
+    bestMult = math.max(1, bestMult)
+    for _, unit in ipairs(targets or {}) do
+        if valid(unit) then
+            local mult = AD.getTypeMult(atkType, unit.attrs.armorType or unit.armorType)
+            if mult > bestMult then best, bestMult = unit, mult end
+            if not best then best = unit end
+        end
+    end
+    return best
+end
+
 ---@param attacker table
 ---@param target table
 ---@param result table
 ---@param isAlly boolean
 ---@param dealDmgFn function
 ---@param allies table[]|nil
-function CGR.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, allies)
+---@param targets table[]|nil
+function CGR.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, allies, targets)
     if not attacker or not result or result.isMiss then return end
     local id = cid(attacker)
     if id == CC.ECHO and dealDmgFn and target and isAlly then
@@ -228,6 +405,7 @@ function CGR.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, allies)
         attacker._echoQueue[#attacker._echoQueue + 1] = {
             t = delay, target = target, dmg = dmg,
             crit = hasGate(attacker, "gate_214_eye") or hasGate(attacker, "gate_107_aftertone"),
+            token = fusionId(attacker) == 228 and attacker._fusionToken or nil,
         }
     elseif id == CC.SPOIL then
         if target then
@@ -240,7 +418,11 @@ function CGR.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, allies)
                 attacker._spoilLastTarget = target
             end
         end
-        if attacker._spoilReady and dealDmgFn and target and (target.hp or 0) > 0 then
+        local extraTarget = target
+        if attacker._spoilReady and fusionId(attacker) == 226 then
+            extraTarget = spoilExtraTarget(attacker, target, targets)
+        end
+        if attacker._spoilReady and dealDmgFn and extraTarget and (extraTarget.hp or 0) > 0 then
             attacker._spoilReady = false
             local extraMul = 0.40
             if hasGate(attacker, "gate_206_bone_debt") then extraMul = 0.80 end
@@ -262,7 +444,7 @@ function CGR.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, allies)
             end
             local extra = extraHitPct(attacker) * extraMul
             if extra > 0 then
-                dealDmgFn(target, extra, not isAlly, "拾骸 ", { 200, 160, 90 }, {
+                dealDmgFn(extraTarget, extra, not isAlly, "拾骸 ", { 200, 160, 90 }, {
                     instantDamage = true,
                 })
             end
@@ -277,6 +459,11 @@ function CGR.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, allies)
             end
         end
     elseif id == CC.RIFT and (attacker._riftLeft or 0) > 0 and target then
+        if fusionId(attacker) == 227 then
+            attacker._fusionRiftTargets = attacker._fusionRiftTargets or {}
+            attacker._fusionRiftTargets[target] = true
+            target._fusionRiftSource = attacker
+        end
         local add = hasGate(attacker, "gate_209_mass") and 0.7 or 1
         if hasGate(attacker, "gate_209_mass") then
             -- 群缝：给全体敌人加层，由调用方 enemies 不在此；退化为当前目标 *1
@@ -306,6 +493,14 @@ function CGR.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, allies)
             attacker.atkType = nxt
         end
     elseif id == CC.MASK then
+        -- 借面只消费一次实际普攻扣血；miss/全盾不消费，也不从额伤或连击另计吸血。
+        if fusionId(attacker) == 229 and attacker._fusionBorrowLeech
+            and (result.actualDamage or 0) > 0
+            and (attacker.hp or 0) > 0 and attacker.attrs then
+            attacker.attrs:heal(result.actualDamage * 0.08)
+            attacker.hp = attacker.attrs:get(AD.HP)
+            attacker._fusionBorrowLeech = false
+        end
         if hasGate(attacker, "gate_219_lethal") and result.isCrit and not attacker._lethalUsed then
             attacker.atkProgress = 1.0
             attacker._lethalUsed = true
@@ -321,9 +516,30 @@ function CGR.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, allies)
     end
 end
 
+-- 邻域: [不受影响] [i-1 削甲] [i 死亡复制目标] [i+1 削甲] [不受影响]
+-- 只用本战线原列表相邻槽位，不穿越空槽/死者，不触碰其他队。
+-- ARMOR=PHYS_ARMOR；MAG_ARMOR 是护盾别名。pct=-20 为百分点，刷新同 id 不叠加。
+local function stripNeighbors(source, deadEnemy, enemies)
+    local index
+    for i, enemy in ipairs(enemies or {}) do
+        if enemy == deadEnemy then index = i; break end
+    end
+    if not index then return end
+    source._fusionStripTargets = source._fusionStripTargets or {}
+    for _, i in ipairs({ index - 1, index + 1 }) do
+        local target = enemies[i]
+        if target and (target.hp or 0) > 0 and target.attrs and not target.artifactUntargetable then
+            target.attrs:addModifier("gate_fusion_strip", { { key = AD.ARMOR, pct = -20 } })
+            target._fusionStripT, target._fusionStripSource, target._fusionStripToken = 2, source, source._fusionToken
+            source._fusionStripTargets[target] = true
+        end
+    end
+end
+
 ---@param deadEnemy table
 ---@param allies table[]
-function CGR.onEnemyDeath(deadEnemy, allies)
+---@param enemies table[]|nil
+function CGR.onEnemyDeath(deadEnemy, allies, enemies)
     for _, ally in ipairs(allies or {}) do
         if (ally.hp or 0) > 0 then
             local id = cid(ally)
@@ -349,11 +565,17 @@ function CGR.onEnemyDeath(deadEnemy, allies)
                     })
                 end
             elseif id == CC.MASK then
-                ally._maskWindow = 3
-                ally._maskArmorStrike = true
-                ally._maskTarget = nil
-                if hasGate(ally, "gate_110_stripface") then
-                    ally._maskSplash = 2
+                local isFusion = fusionId(ally) == 229
+                if not isFusion or ally._maskTarget == deadEnemy then
+                    if isFusion and hasGate(ally, "gate_110_stripface") then
+                        stripNeighbors(ally, deadEnemy, enemies)
+                    end
+                    ally._maskWindow = 3
+                    ally._maskArmorStrike = true
+                    ally._maskTarget = nil
+                    if hasGate(ally, "gate_110_stripface") and not isFusion then
+                        ally._maskSplash = 2
+                    end
                 end
             end
         end
@@ -366,9 +588,40 @@ end
 ---@param ctx table|nil { dealDamage: fun }
 function CGR.update(dt, allies, enemies, ctx)
     local dealDmg = ctx and ctx.dealDamage
+    local function periodicDamage(source, target, damage, isTargetAlly, prefix, color, opts)
+        if fusionId(source) then
+            if ctx and ctx.dealTalentDamage then
+                return ctx.dealTalentDamage(source, target, damage, isTargetAlly, prefix, color, opts)
+            end
+            if dealDmg then return dealDmg(target, damage, isTargetAlly, prefix, color, source, opts) end
+        elseif dealDmg then
+            -- 原非融合六参口径不改；融合明确保留伤害来源并把 opts 放到 meta。
+            return dealDmg(target, damage, isTargetAlly, prefix, color, opts)
+        end
+    end
     local TM = require("systems.ThreatManager")
 
+    for _, target in ipairs(enemies or {}) do
+        if target._fusionStripT then
+            local source = target._fusionStripSource
+            target._fusionStripT = target._fusionStripT - dt
+            if target._fusionStripT <= 0 or (target.hp or 0) <= 0
+                or not source or source._fusionToken ~= target._fusionStripToken then
+                clearStrip(target)
+                if source and source._fusionStripTargets then source._fusionStripTargets[target] = nil end
+            end
+        end
+    end
+
     for _, u in ipairs(allies or {}) do
+        if u._fusionDeferToken and (not validFusionDefer(u) or (u.hp or 0) <= 0) then
+            local healer = u._gateDeferHealer
+            if healer and healer._fusionDeferTargets then
+                healer._fusionDeferTargets[u] = nil
+                healer._deferCount = math.max(0, (healer._deferCount or 1) - 1)
+            end
+            clearFusionDefer(u)
+        end
         if (u._gateDebtT or 0) > 0 then
             u._gateDebtT = u._gateDebtT - dt
             if u._gateDebtT <= 0 then
@@ -390,11 +643,26 @@ function CGR.update(dt, allies, enemies, ctx)
                 if src then src._deferCount = math.max(0, (src._deferCount or 1) - 1) end
                 u._gateDebtT = nil
                 u._gateDebtTaken = nil
+                if u._fusionDeferToken then
+                    if src and src._fusionDeferTargets then src._fusionDeferTargets[u] = nil end
+                    clearFusionDefer(u)
+                end
             end
         end
 
         local id = cid(u)
-        if (u.hp or 0) <= 0 then goto cont end
+        if (u.hp or 0) <= 0 then
+            if fusionId(u) == 228 then u._echoQueue = {} end
+            if fusionId(u) == 229 then
+                u._fusionBorrowT, u._fusionBorrowLeech = nil, nil
+                if u.attrs then u.attrs:removeModifier("gate_fusion_borrow") end
+            end
+            if fusionId(u) == 227 and u._fusionBaseAtkType and u.attrs then
+                u.attrs.atkType, u.atkType = u._fusionBaseAtkType, u._fusionBaseUnitAtkType
+                u._riftLeft = 0
+            end
+            goto cont
+        end
 
         if id == CC.SEAL then
             local stored = u._gateStored or 0
@@ -426,7 +694,7 @@ function CGR.update(dt, allies, enemies, ctx)
                         if (e.hp or 0) > 0 then tgt = e; break end
                     end
                     if tgt then
-                        dealDmg(tgt, toEnemy, false, "门缝 ", { 160, 140, 200 }, {
+                        periodicDamage(u, tgt, toEnemy, false, "门缝 ", { 160, 140, 200 }, {
                             instantDamage = true, noCounter = true,
                         })
                     end
@@ -440,6 +708,9 @@ function CGR.update(dt, allies, enemies, ctx)
         elseif id == CC.RIFT then
             if (u._riftLeft or 0) > 0 then
                 u._riftLeft = u._riftLeft - dt
+                if u._riftLeft <= 0 and fusionId(u) == 227 and u.attrs and u._fusionBaseAtkType then
+                    u.attrs.atkType, u.atkType = u._fusionBaseAtkType, u._fusionBaseUnitAtkType
+                end
             else
                 local cdNeed = hasGate(u, "gate_105_offset") and 6 or 8
                 u._riftCd = (u._riftCd or cdNeed) - dt
@@ -455,9 +726,13 @@ function CGR.update(dt, allies, enemies, ctx)
                 while i <= #q do
                     local job = q[i]
                     job.t = job.t - dt
+                    local current = fusionId(u) ~= 228 or
+                        (job.token == u._fusionToken and inList(job.target, enemies)
+                            and (job.target.hp or 0) > 0 and not job.target.artifactUntargetable)
+                    if not current then job.t = 0 end
                     if job.t <= 0 then
                         local tgt = job.target
-                        if tgt and (tgt.hp or 0) > 0 then
+                        if current and tgt and (tgt.hp or 0) > 0 then
                             local dmg = job.dmg
                             if job.crit and u.attrs then
                                 local cr = u.attrs:get(AD.CRIT_RATE) or 0
@@ -465,10 +740,10 @@ function CGR.update(dt, allies, enemies, ctx)
                                     dmg = dmg * (1 + (u.attrs:get(AD.CRIT_DMG) or 100) / 100)
                                 end
                             end
-                            dealDmg(tgt, dmg, false, "回响 ", { 180, 210, 160 }, {
+                            periodicDamage(u, tgt, dmg, false, "回响 ", { 180, 210, 160 }, {
                                 instantDamage = true, threatScale = 0.10,
                             })
-                            TM.addThreat(u, dmg * 0.10)
+                            if fusionId(u) ~= 228 then TM.addThreat(u, dmg * 0.10) end
                             if hasGate(u, "gate_213_wind") and u.attrs then
                                 u._windEcho = math.min(3, (u._windEcho or 0) + 1)
                                 u.attrs:addModifier("gate_wind_echo", {
@@ -483,6 +758,13 @@ function CGR.update(dt, allies, enemies, ctx)
                 end
             end
         elseif id == CC.MASK then
+            if (u._fusionBorrowT or 0) > 0 then
+                u._fusionBorrowT = u._fusionBorrowT - dt
+                if u._fusionBorrowT <= 0 then
+                    u._fusionBorrowT = nil
+                    if u.attrs then u.attrs:removeModifier("gate_fusion_borrow") end
+                end
+            end
             u._maskStill = (u._maskStill or 0) + dt
             if hasGate(u, "gate_218_thousand") and u._maskStill >= 5 and u.attrs then
                 u.attrs:addModifier("gate_thousand", { { key = AD.ATK_SPEED, flat = 40 } })
@@ -493,6 +775,7 @@ function CGR.update(dt, allies, enemies, ctx)
                     for _, e in ipairs(enemies or {}) do
                         if (e.hp or 0) > 0 then
                             u._maskTarget = e
+                            grantBorrow(u, e)
                             break
                         end
                     end

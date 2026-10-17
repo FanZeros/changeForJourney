@@ -1,3 +1,9 @@
+## 离线经验布局与慢动画（2026-10-17，已push并创建 PR #164）
+
+- 用户提供PAT授权“pr下”；功能提交 `b692aef4`＋合并提交 `d616c601`（无冲突合入 `workspace1005@5514b104`含PR163）已push `fix1017/offline-exp-layout`，远端SHA与本地一致。正式 **PR #164** https://github.com/FanZeros/changeForJourney/pull/164，head任务分支／base=workspace1005，open/draft=false/merged=false/mergeable=true(clean)，7文件+904/−117，未自动合并发布；创建前同源open PR=0。凭据经 `-c credential.helper= -c http.extraheader` 一次性进程内鉴权，不写remote/Git配置/源码/日志/记忆；本地config既有 `credential.helper=store` 未用未改，建议撤销轮换。不混 `.gitignore`（任务前既有）／`.agent`／`_uploads`／repair meta／`standalone_save.json`（未读）。
+- 关卡来源移各队经验行末，条宽等于真实头像118；塔无经验仍48高来源行，共用布局/领取热区。远征行只读玩家副本调用正式ExpTable并冻结前后级，缺player不伪造，不写Dispatcher/玩家档。修每帧重复累计消费为target-issued，当前cap清remain、最终item.capped不提前填满；默认每英雄约5秒、原延迟/错开与奖励时间轴保留。累计UI时间取最近微秒，只改预览不改收益/经验表/领奖/存档/RNG；五语全文实测字墨必要缩号，不截串。
+- 官方b30成功、682根Lua实际载荷字节/size全一致、冻结源不变、validation0入包、两.project与本轮备份逐字节恢复。构建后四独立Runtime actualexit0/无timeout/ALL PASS：展示4972断言8组116draw4743Bounds（原1194主体逐字节保留、FileFS/RNG0）、收益607、只读详情51组1383及切关。严格边界与字体36失败修生产后归零，原失败和旧Panel90/618负对照保留，不加epsilon、不降断言。三任务Lua Error0；官方daemon unavailable/code1跳过gate、headless音频/shader错误保留，不称设备GPU/触控/性能/全仓清零。旧Input GetKeyDown及hero_sync缺依赖固定HEAD独立同现不混修。内证仅.git/validation/offline-exp1017。
+
 ## 离线经验布局与慢动画（2026-10-17，本地完成）
 
 - 当前 `fix1017/offline-exp-layout@1e1692cd` 仅本地开发/测试/官方build，无新commit/push/PR/合并发布授权，不继承PR158许可；PR158已外部合入目标。关卡来源移各队经验行末，条宽等于真实头像118；塔无经验仍48高来源行，共用布局/领取热区。远征行只读玩家副本调用正式ExpTable并冻结前后级，缺player不伪造，不写Dispatcher/玩家档。

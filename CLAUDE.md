@@ -12,6 +12,12 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-17，离线经验布局与慢动画，已push并创建 PR #164）
+
+- **已正常push并核验：** 功能提交 `b692aef4`（7白名单=1生产Lua＋1词典＋1专项test＋2文档＋2交接，+904/−117）与合并提交 `d616c601`（无冲突合入远端 `workspace1005@5514b104`，含PR163动画优化）已push `fix1017/offline-exp-layout`，远端SHA=`d616c601f4e3a3ffea244cce81c9d5e572ccfb3e`与本地一致。正式 **PR #164**：https://github.com/FanZeros/changeForJourney/pull/164，head=fix1017/offline-exp-layout／base=workspace1005，open/draft=false/merged=false/mergeable=true(clean)，7文件+904/−117，未自动合并发布。创建前查同源open PR=0。凭据经 `-c credential.helper= -c http.extraheader` 一次性进程内鉴权，未写入remote（仍干净URL）／Git配置／源码／日志／记忆；remote本地config的 `credential.helper=store` 为既有、本会话未用未改，建议撤销轮换该PAT。不混无关 `.gitignore`（本任务前已存在，checkout保留）、`.agent`技能目录／`_uploads`／repair meta／`standalone_save.json`（未读）。
+- 用户截图四项：小队关卡移到各自经验行末、角色经验条缩至实际头像框118宽、经验动画放慢（默认每英雄约5秒）、远征经验行补 `Lv.前 → Lv.后`。塔暂停且零英雄经验仍有48高来源行，绘制/奖励定位/领取热区共用队伍并集高度。修原动画每帧重复消费累计经验（改累计目标减issued、只消费本帧增量），累计显示时间取最近微秒消除30/60/120fps浮点尾差；只改预览，不改收益/经验表/领取/存档/RNG。远征等级只读复制玩家副本走正式ExpTable并冻结，缺player不伪造、不写Dispatcher。
+- 官方b30成功，682根Lua实际UUID-hash载荷682/682逐字节/声明size一致、冻结源不变、内部validation0入包；两.project本人生成字段与本轮备份逐字节恢复。构建后四独立Runtime全部ALL PASS/actualexit0/无timeout：展示专项4972断言8组116draw4743原生Bounds（原1194cascade主体逐字节保留、FileFS/RNG0）、收益边界607、只读奖励详情51组1383及切关。严格边界与五语字墨曾36失败，修生产后归零，原失败与两旧Panel负对照（90/618失败）保留，未加epsilon、未降断言。三任务Lua逐文件Error0；官方daemon unavailable/code1跳过全仓gate、headless音频/shader错误保留。旧Input GetKeyDown与hero_sync缺依赖固定HEAD独立同现，不混修、不算通过。
+
 ## 上次做了什么（2026-10-17，离线经验布局与慢动画，本地完成）
 
 - 按用户截图将冻结的小队关卡来源移到对应经验行末，英雄经验条缩至实际头像框118宽；塔暂停且零英雄经验仍有48高来源行，绘制和领取热区共用队伍并集高度。远征经验行显示打开时只读玩家副本经正式ExpTable预估的 `Lv.前 → Lv.后`，缺玩家不伪造，切语言/绘制不重估、不写原表。只补小队模板四语，完整来源按真实字墨缩号，不截关卡名。

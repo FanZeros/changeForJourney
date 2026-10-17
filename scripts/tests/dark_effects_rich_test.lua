@@ -64,6 +64,7 @@ end
 local function loadRich(env,stats)
     local modules={}
     local allowed={ ["ui.fx.DarkEffectSprites"]=true,["ui.fx.DarkEffectPrimitives"]=true,
+        ["ui.fx.DarkRitualMotion"]=true,
         ["core.DarkIcon"]=true,["core.DrawUtil"]=true,["core.BattleLayout"]=true }
     env.require=function(name)
         assert(allowed[name],"unexpected rich dependency "..name)

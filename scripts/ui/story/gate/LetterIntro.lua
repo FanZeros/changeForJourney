@@ -18,6 +18,8 @@ local LetterIntro = {}
 local I18n = require("core.I18n")
 local Story = require("core.I18nStory")
 local Display = require("ui.story.StoryDisplay")
+local Motion = require("ui.story.StoryCinematicMotion")
+local presentation_ = Motion.new()
 
 -- ======================== 信件内容（blocks × lines） ========================
 local BLOCKS = {
@@ -59,6 +61,7 @@ local C_DIM  = { 150, 142, 124 }
 local C_BG   = { 4, 4, 7 }
 
 -- ======================== 状态 ========================
+---@type NVGContextWrapper?
 local vg_       = nil
 local imgDesk_  = -1
 local active    = false
@@ -68,6 +71,7 @@ local revealT   = 0
 local sealedT   = 0
 local fadeT     = 0
 local totalT    = 0
+---@type function?
 local onFinishCb = nil
 
 local LINE_REVEAL = 0.45
@@ -154,21 +158,13 @@ local function letterLayout(vg, w, h, units)
     return layout
 end
 
---- 16:9 图 cover 铺满窗口（与 DarkTitleScreen 同一套算法）
-local function coverRect(w, h, imgAR)
-    local winAR = w / h
-    local dw, dh
-    if winAR > imgAR then
-        dw, dh = w, w / imgAR
-    else
-        dh, dw = h, h * imgAR
-    end
-    return (w - dw) * 0.5, (h - dh) * 0.5, dw, dh
-end
-
 -- ======================== 生命周期 ========================
 ---@param vg NVGContextWrapper?
 function LetterIntro.init(vg)
+    if vg_ ~= vg then
+        imgDesk_ = -1
+        Motion.reset(presentation_)
+    end
     vg_ = vg
 end
 
@@ -198,6 +194,8 @@ function LetterIntro.start(onFinish, options)
     fadeT       = 0
     totalT      = 0
     onFinishCb  = onFinish
+    Motion.reset(presentation_)
+    Motion.present(presentation_, "image/剧情/背景/STORY_BG_01.png", imgDesk_, "warm")
     print("[LetterIntro] started")
 end
 
@@ -206,6 +204,7 @@ function LetterIntro.isOpen()
 end
 
 function LetterIntro.reset()
+    Motion.reset(presentation_)
     active = false
     state = "reveal"
     blockIdx = 1
@@ -242,6 +241,7 @@ end
 function LetterIntro.update(dt)
     if not active then return end
     totalT = totalT + dt
+    Motion.update(presentation_, dt)
     if state == "reveal" then
         revealT = revealT + dt
         local cur = lineCount(blockIdx)
@@ -264,6 +264,7 @@ function LetterIntro.update(dt)
         fadeT = fadeT + dt
         if fadeT >= FADE_DUR then
             active = false
+            Motion.reset(presentation_) -- 回调可能同步开始下一封信，必须先清旧视觉
             print("[LetterIntro] finished")
             if onFinishCb then
                 local cb = onFinishCb
@@ -281,11 +282,13 @@ end
 local function drawLetter(vg, w, h)
     if not active then return end
     if w <= 0 or h <= 0 then return end
-    ensureLetterImages()
 
     local fade = 1.0
-    if state == "fading" then fade = 1.0 - fadeT / FADE_DUR end
-    local flicker = 0.93 + 0.05 * math.sin(totalT * 11.0) + 0.02 * math.sin(totalT * 23.7)
+    if state == "fading" then fade = math.max(0, 1.0 - fadeT / FADE_DUR) end
+    -- 低频光只影响桌案，已揭示的墨迹保持稳定。
+    local flicker = 1
+    nvgSave(vg)
+    nvgIntersectScissor(vg, 0, 0, w, h)
 
     -- 1) 全屏暗底（盖住左右城镇/角色面板）
     nvgBeginPath(vg)
@@ -294,16 +297,9 @@ local function drawLetter(vg, w, h)
     nvgFill(vg)
 
     -- 2) 背景：全程书斋桌案，不切火漆特写
-    local imgAR = 16 / 9
-    local dx, dy, dw, dh = coverRect(w, h, imgAR)
-    local bgImg = imgDesk_
-    local bgA = fade * flicker
-    if bgImg >= 0 then
-        local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, bgImg, bgA)
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, w, h)
-        nvgFillPaint(vg, paint)
-        nvgFill(vg)
+    if imgDesk_ >= 0 then
+        Motion.draw(presentation_, vg, w, h, fade)
+        Motion.atmosphere(vg, totalT, w, h, fade, "warm", true)
     end
 
     -- 3) 整封译文决定布局；逐段揭示不跳版，小屏优先扩板而非缩成微字。
@@ -385,6 +381,7 @@ local function drawLetter(vg, w, h)
             nvgStroke(vg)
         end
     end
+    nvgRestore(vg)
 end
 
 LetterIntro.draw = drawLetter

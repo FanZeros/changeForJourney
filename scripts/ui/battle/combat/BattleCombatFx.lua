@@ -168,10 +168,10 @@ function M.getHitFlashAlpha(BCS, unit)
     if not SettingsPanel.isEffectsEnabled() then return 0 end
     local flash = BCS.hitFlashes[unit]
     if not flash then return 0 end
-    local t = flash.timer / HIT_FLASH_DURATION
-    local alpha = (1 - t) * 180
-    if t < 0.3 then alpha = 200 end
-    return math.max(0, math.floor(alpha))
+    -- 局部低亮回声替代长平台闪白；仍在原0.3秒寿命内，不做hitstop。
+    local t = math.max(0, math.min(1, flash.timer / HIT_FLASH_DURATION))
+    local q = 1 - t
+    return math.floor(72 * q * q * q)
 end
 
 function M.clearHitFlash(BCS, unit) BCS.hitFlashes[unit] = nil end

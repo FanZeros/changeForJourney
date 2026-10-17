@@ -42,10 +42,13 @@ function M.card(elapsed, index)
     local front = flip >= 0.5
     local scaleX = math.max(0.045, math.abs(math.cos(flip * math.pi)))
     local glowT = clamp((t - 0.55) / 0.45)
+    -- 入场透明度与翻面判定不变；位移减为96px，末段3px回弹在原落位点归零。
+    local landing = clamp(t / 0.45)
+    local recoil = landing > 0.6 and landing < 1 and math.sin((landing - 0.6) / 0.4 * math.pi) * 3 or 0
     return {
         visible = localT > 0, front = front, alpha = arrival,
-        offsetY = 170 * (1 - arrival), scaleX = scaleX,
-        scale = 0.88 + arrival * 0.12,
+        offsetY = 96 * (1 - arrival) - recoil, scaleX = scaleX,
+        scale = 0.94 + arrival * 0.06,
         glow = front and math.sin(glowT * math.pi) or 0,
         settled = t >= 1,
     }

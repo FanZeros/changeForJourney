@@ -5,7 +5,17 @@
 -- ============================================================================
 
 local BattleLayout = require("core.BattleLayout")
+local SettingsPanel = require("ui.hud.popup.SettingsPanel")
+local Motion = require("ui.battle.combat.BattleMotionPolish")
 local BattleEffects = {}
+-- 全部均为可回收的纯视觉记录；保留旧setup的RNG消费，不裁掉业务投射物。
+local MAX_EFFECTS = 48
+local MAX_MOTION_LAYERS = 12
+local MAX_FX_POOL = 48
+local MAX_PARTICLE_POOL = 192
+local MOTION_INTERVAL = 0.26
+BattleEffects.MAX_EFFECTS = MAX_EFFECTS
+BattleEffects.MAX_MOTION_LAYERS = MAX_MOTION_LAYERS
 -- [多实例] 活动特效列表随战斗 mount 切换; fxPool/particlePool 对象池全局共享
 local function newFxState()
     return { effects = {} }
@@ -73,7 +83,27 @@ local function releaseFx(fx)
     end
     -- 清空引用字段
     fx.def = nil
-    fxPool[#fxPool + 1] = fx
+    fx._motionColor, fx._motionDir = nil, nil
+    -- 回收数组保留粒子table供复用，但不无限持有峰值时创建的数组。
+    while #particlePool > MAX_PARTICLE_POOL do particlePool[#particlePool] = nil end
+    if #fxPool < MAX_FX_POOL then fxPool[#fxPool + 1] = fx end
+end
+
+-- 先完成旧setup再限流；即便开关关闭/命中压力很大，旧随机调用顺序仍不变。
+local function appendFx(fx)
+    local list = BE_BCS.effects
+    while #list >= MAX_EFFECTS do releaseFx(table.remove(list, 1)) end
+    if SettingsPanel.isEffectsEnabled() and fx.type ~= "silver_flash" then
+        local layers, recent = 0, false
+        for _, other in ipairs(list) do
+            if other._motionColor then layers = layers + 1 end
+            if other.timer < MOTION_INTERVAL and math.abs(other.tgtX - fx.tgtX) < 28
+                and math.abs(other.tgtY - fx.tgtY) < 28 then recent = true end
+        end
+        -- 无无界落点索引；多hit/DOT/HOT只保原层，低频重要落点才加窄弧/三碎片。
+        if not recent and layers < MAX_MOTION_LAYERS then Motion.setupImpact(fx) end
+    end
+    list[#list + 1] = fx
 end
 
 --- 从池中获取一个粒子数组（或新建），并重设大小
@@ -737,7 +767,7 @@ function BattleEffects.spawn(armorType, tgtX, tgtY)
         def.setup(fx)
     end
 
-    BE_BCS.effects[#BE_BCS.effects + 1] = fx
+    appendFx(fx)
 end
 
 --- 雷电麦坤「银光」触发闪光
@@ -754,7 +784,7 @@ function BattleEffects.spawnSilverFlash(tgtX, tgtY)
     if SILVER_FLASH_EFFECT.setup then
         SILVER_FLASH_EFFECT.setup(fx)
     end
-    BE_BCS.effects[#BE_BCS.effects + 1] = fx
+    appendFx(fx)
 end
 
 --- 天赋/弹射等附加 VFX（由 BattleCombat 或场景回调触发）
@@ -785,12 +815,15 @@ end
 
 --- 绘制所有活跃特效（默认 alpha 混合，不改全局混合模式避免污染后续 UI）
 function BattleEffects.draw(vg)
+    -- classic/dungeon同样调用此共享出口；关效果不冻结寿命或重放旧粒子。
+    if not SettingsPanel.isEffectsEnabled() then return end
     for _, fx in ipairs(BE_BCS.effects) do
         local t = fx.timer / fx.duration
         local def = fx.def
         if def.draw then
             nvgSave(vg)
             def.draw(fx, vg, t)
+            if fx._motionColor then Motion.drawImpact(fx, vg, t, fxScale) end
             nvgRestore(vg)
         end
     end
@@ -798,7 +831,17 @@ end
 
 --- 清除所有特效
 function BattleEffects.reset()
+    -- 换波/关页也回收到同一有限池，不把旧场景粒子或增强标记遗留给下一挂载。
+    for _, fx in ipairs(BE_BCS.effects) do releaseFx(fx) end
     BE_BCS.effects = {}
+end
+
+--- 有界池统计只供独立压力验收，不读取时钟或其他场景数据。
+function BattleEffects.getPoolStats()
+    local layers = 0
+    for _, fx in ipairs(BE_BCS.effects) do if fx._motionColor then layers = layers + 1 end end
+    return { effects = #fxPool, particleArrays = #particlePool, motionLayers = layers,
+        maxEffects = MAX_FX_POOL, maxParticleArrays = MAX_PARTICLE_POOL }
 end
 
 --- 获取当前活跃特效数量（调试用）

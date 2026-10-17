@@ -31,6 +31,8 @@ local overlayLayout_ = nil ---@type any
 local stepElapsed_ = 0
 local recoveryElapsed_, settleRemaining_, missingElapsed_ = 0, 0, 0
 local RECOVERY_INTERVAL, PAGE_SETTLE_TIME = 0.5, 0.45
+-- 目标持续不可见的自动跳过阈值（秒）；沿用超时只结束当前组，不伪造业务回执。
+local MISSING_TARGET_TIMEOUT = 2
 local triggerQuiet_ = 0
 local TRIGGER_QUIET_TIME = 0.25
 ---@type fun()?
@@ -344,6 +346,8 @@ function TutorialManager.setOverlayRect(w, h, hs)
     end
     local Overlay = require("ui.tutorial.TutorialOverlay")
     overlayLayout_ = Overlay.layout(w, h, target)
+    -- 用裁剪后的可见目标统一绘制/输入/缺失计时；屏幕外热点不算“有目标”。
+    overlay_ = { w = w, h = h, hs = overlayLayout_.hs }
 end
 local function hit(rect, x, y)
     return rect and DrawUtil.hitTest(x, y, rect.cx, rect.cy, rect.w, rect.h)
@@ -501,7 +505,8 @@ prepareResume = function()
         end
     end
     if current and Recovery.prepare(vg_, store_, current.highlight, newHeroId_, initial, equipmentHeroId_) then
-        settleRemaining_, missingElapsed_ = PAGE_SETTLE_TIME, 0
+        -- 反复恢复页面不能重置缺失计时，否则故障目标会永久卡住。
+        settleRemaining_ = PAGE_SETTLE_TIME
         hotspots_, overlay_.hs, overlayLayout_ = {}, nil, nil
     end
 end
@@ -530,9 +535,19 @@ function TutorialManager.update(dt)
         groupElapsed_, stepElapsed_ = groupElapsed_ + dt, stepElapsed_ + dt
         recoveryElapsed_ = recoveryElapsed_ + dt
         settleRemaining_ = math.max(0, settleRemaining_ - dt)
-        if overlay_.hs and settleRemaining_ == 0 then missingElapsed_ = 0
+        local current = step()
+        -- 只有“有目标且目标可见”才清零计时；隐形/无目标步骤不参与缺失超时。
+        if not current or current.invisible or not current.highlight
+            or (overlay_.hs and settleRemaining_ == 0) then
+            missingElapsed_ = 0
         else missingElapsed_ = missingElapsed_ + dt end
         if resumePending_ or recoveryElapsed_ >= RECOVERY_INTERVAL then prepareResume() end
+        if current and not current.invisible and current.highlight and missingElapsed_ >= MISSING_TARGET_TIMEOUT then
+            print("[TutorialManager] 引导目标持续不可见，自动跳过: " .. activeGroup_ .. "/" .. activeStep_
+                .. " target=" .. current.highlight)
+            -- 沿用手动跳过，只结束当前组；不伪造业务回执或重复发奖。
+            finish()
+        end
     end
     if activeGroup_ == 8 and step() and step().invisible and stepElapsed_ > 12 then
         TutorialManager.notifyEvent("gacha10_failed")
@@ -575,11 +590,11 @@ function TutorialManager.draw()
     local Overlay = require("ui.tutorial.TutorialOverlay")
     local alpha = animState_ == "in" and math.min(1, animT_ / 0.25) or 1
     local text = current.invisible and "" or current.text
-    if not current.invisible and not overlay_.hs and missingElapsed_ < 2 then
+    if not current.invisible and not overlay_.hs and missingElapsed_ < MISSING_TARGET_TIMEOUT then
         text = "正在准备引导页面，请稍候…"
     end
     local hs = current.invisible and nil or overlay_.hs
     overlayLayout_ = Overlay.draw(vg_, overlay_.w, overlay_.h, hs, text, elapsed_, groupElapsed_, alpha,
-        current.invisible == true, activeGroup_ == 9, missingElapsed_ < 2)
+        current.invisible == true, activeGroup_ == 9, missingElapsed_ < MISSING_TARGET_TIMEOUT)
 end
 return TutorialManager

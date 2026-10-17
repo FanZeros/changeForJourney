@@ -1,3 +1,10 @@
+## 离线经验布局与慢动画（2026-10-17，本地完成）
+
+- 当前 `fix1017/offline-exp-layout@1e1692cd` 仅本地开发/测试/官方build，无新commit/push/PR/合并发布授权，不继承PR158许可；PR158已外部合入目标。关卡来源移各队经验行末，条宽等于真实头像118；塔无经验仍48高来源行，共用布局/领取热区。远征行只读玩家副本调用正式ExpTable并冻结前后级，缺player不伪造，不写Dispatcher/玩家档。
+- 修每帧重复累计消费为target-issued，当前cap清remain、最终item.capped不提前填满；默认每英雄约5秒、原延迟/错开与奖励时间轴保留。累计UI时间取最近微秒（不是逐帧舍入dt），只改预览不改收益/经验表/领奖/存档/RNG；五语全文实测字墨必要缩号，不截串。严格边界与字体36失败修生产后4972/0，原失败和旧Panel90/618负对照保留，不降实际经验断言。
+- 官方b30成功、682根Lua实际载荷字节/size全一致、冻结源不变、validation0入包、两.project与本轮备份逐字节恢复。构建后四独立Runtime actualexit0/无timeout/ALL PASS：展示4972断言8组116draw4743Bounds（原1194主体逐字节保留、FileFS/RNG0）、收益607、只读详情51组1383及切关。三任务Lua Error0；官方daemon unavailable/code1跳过gate、headless音频/shader错误保留，不称设备GPU/触控/性能/全仓清零。旧Input GetKeyDown及hero_sync缺依赖固定HEAD独立同现不混修。
+- Service/ExpTable/Standalone/RewardLargeView/EquipmentQuery等保护路径逐字节保持，原.gitignore/repair meta指纹不变，不读玩家档/凭据、不pop旧stash、不夹上传/本地配置/内证。持续推进授权范围、尊重停止/拒绝/安全边界；最新直接继续不机械AskUserQuestion，不推workspace系列/强推/自动合并发布，凭据不进源码/配置/日志/记忆。内证仅.git/validation/offline-exp1017。
+
 ## 一键装备分帧＋等待动画（2026-10-16，已push并创建 PR #158）
 
 - 用户最新明确“pr”，授权提交、正常push独立任务分支、创建workspace1005 PR。功能提交 `26477fa746fc328c12d95e9d3491e84aa1c59b01`（19白名单=10生产Lua＋2测试Lua＋3新meta＋4交接，+1601/−19）已正常push `perf1016/quick-equip-latency`，远端SHA一致。**PR #158** https://github.com/FanZeros/changeForJourney/pull/158，head=perf1016/quick-equip-latency(26477fa7)／base=workspace1005(2869bfe6，含PR155/156)，open/draft=false/merged=false/mergeable=true，未自动合并发布；创建前同源PR=0。凭据经本机既有 credential store 进程内使用，未写入remote/Git配置/源码/日志/记忆，已核零残留；建议撤销轮换。不混无关untracked（.agent技能目录/_uploads/repair meta）与本地.project/验证材料，不推workspace系列/强推/自动合并发布。

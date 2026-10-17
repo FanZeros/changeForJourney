@@ -1181,7 +1181,7 @@ function self_drawRewardGrid(vg, shiftY)
                 end
                 -- 数量角标（右上角，仅 count>1 时显示）
                 if item.count and item.count > 1 then
-                    local cntText = "x" .. tostring(item.count)
+                    local cntText = "x" .. NumberUtil.format(item.count)
                     local bx2 = cx + ICON_SIZE * 0.5 - 8
                     local by2 = cy - ICON_SIZE * 0.5 + 8
                     nvgFontFace(vg, "sans")

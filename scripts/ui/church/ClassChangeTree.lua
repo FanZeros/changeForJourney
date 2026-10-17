@@ -33,35 +33,44 @@ function T.getNodes(classId)
 end
 
 -- 所有路径从一转图标真实底边 y=1699 出发，止于二转图标真实顶边 y=1858。
--- 两父主干在横杆（y=1758）汇入，中心只在 x=540 交点垂直下探一次：
---   307                    776
---    |                      |
--- 140+---+---340---+---540---+---740---+---940   y=1758（两横线交一点）
---  |       |        |        |        |
--- [1]     [2]      [3]      [4]      [5]          y=1858（图标顶边）
+-- 一转中心与二转中心对齐：借面 340 落在千面正上方，剥面 740 落在致命面正上方，
+-- 两条黄色主路径各自成为一条直竖线，不再有横向小折。
+-- 融合节点无相(540)由左右父各引一条竖线并排接入（中缝 4px），不再共用单条中干：
+--      340                       740
+--       |                         |
+-- 140+--+------+---+---+---------+--+---940   y=1758（两父横杆各自延伸到融合线）
+--  |      |    |L  |R         |     |
+-- [1]    [2]  [3] [3]        [5]   [4]       y=1858（图标顶边）
+-- 静面  千面  无相(左/右)    致命面 双面
 -- 每段列出其下游节点；线段按竖线切成互不重叠的矩形，交点只由一条线覆盖，
--- 避免半透明段叠加导致交点更亮；共用横杆只着色真正经过该段的路径。
+-- 避免半透明段叠加导致交点更亮；横杆只着色真正经过该段的路径。
 local LINE_THICK = 12
 local HALF = LINE_THICK * 0.5
 local BAR_TOP, BAR_BOT = 1758 - HALF, 1758 + HALF
 local ICON_TOP, ICON_BOT = 1699, 1858
+-- 一转中心与二转中心对齐后的坐标（原 307/776 会让黄色路径横向错位）
+local BR1_CX, BR2_CX = 340, 740
+-- 融合节点无相的两条并排竖线：以 540 为中缝左右各一条，中缝留一线宽便于辨认
+local CENTER_GAP = 12
+local FUSION_LX = 540 - CENTER_GAP * 0.5 - LINE_THICK
+local FUSION_RX = 540 + CENTER_GAP * 0.5
 local EDGES = {
     -- 父线主干：一转底边 → 横杆下沿（覆盖自身与横杆的交点）
-    { side = 1, x = 307 - HALF, y = ICON_TOP, w = LINE_THICK, h = BAR_BOT - ICON_TOP, dest = { 1, 2, 3 } },
-    { side = 2, x = 776 - HALF, y = ICON_TOP, w = LINE_THICK, h = BAR_BOT - ICON_TOP, dest = { 3, 4, 5 } },
+    { side = 1, x = BR1_CX - HALF, y = ICON_TOP, w = LINE_THICK, h = BAR_BOT - ICON_TOP, dest = { 1, 2, 3 } },
+    { side = 2, x = BR2_CX - HALF, y = ICON_TOP, w = LINE_THICK, h = BAR_BOT - ICON_TOP, dest = { 3, 4, 5 } },
     -- 横杆：按竖线切成互不重叠的小段（每段止于相邻竖线外沿）
-    { side = 1, x = 140 + HALF, y = BAR_TOP, w = (307 - HALF) - (140 + HALF), h = LINE_THICK, dest = { 1 } },
-    { side = 1, x = 307 + HALF, y = BAR_TOP, w = (340 - HALF) - (307 + HALF), h = LINE_THICK, dest = { 2, 3 } },
-    { side = 1, x = 340 + HALF, y = BAR_TOP, w = (540 - HALF) - (340 + HALF), h = LINE_THICK, dest = { 3 } },
-    { side = 2, x = 540 + HALF, y = BAR_TOP, w = (740 - HALF) - (540 + HALF), h = LINE_THICK, dest = { 3 } },
-    { side = 2, x = 740 + HALF, y = BAR_TOP, w = (776 - HALF) - (740 + HALF), h = LINE_THICK, dest = { 3, 4 } },
-    { side = 2, x = 776 + HALF, y = BAR_TOP, w = (940 - HALF) - (776 + HALF), h = LINE_THICK, dest = { 5 } },
-    -- 竖线：横杆上沿 → 二转图标顶边（中心竖线唯一覆盖 x=540 交点）
+    { side = 1, x = 140 + HALF, y = BAR_TOP, w = (BR1_CX - HALF) - (140 + HALF), h = LINE_THICK, dest = { 1 } },
+    { side = 1, x = BR1_CX + HALF, y = BAR_TOP, w = FUSION_LX - (BR1_CX + HALF), h = LINE_THICK, dest = { 3 } },
+    { side = 2, x = FUSION_RX + LINE_THICK, y = BAR_TOP, w = (BR2_CX - HALF) - (FUSION_RX + LINE_THICK), h = LINE_THICK, dest = { 3 } },
+    { side = 2, x = BR2_CX + HALF, y = BAR_TOP, w = (940 - HALF) - (BR2_CX + HALF), h = LINE_THICK, dest = { 5 } },
+    -- 竖线：横杆上沿 → 二转图标顶边
     { side = 1, x = 140 - HALF, y = BAR_TOP, w = LINE_THICK, h = ICON_BOT - BAR_TOP, dest = { 1 } },
-    { side = 1, x = 340 - HALF, y = BAR_TOP, w = LINE_THICK, h = ICON_BOT - BAR_TOP, dest = { 2 } },
-    { side = 0, x = 540 - HALF, y = BAR_TOP, w = LINE_THICK, h = ICON_BOT - BAR_TOP, dest = { 3 } },
-    { side = 2, x = 740 - HALF, y = BAR_TOP, w = LINE_THICK, h = ICON_BOT - BAR_TOP, dest = { 4 } },
+    { side = 1, x = FUSION_LX, y = BAR_TOP, w = LINE_THICK, h = ICON_BOT - BAR_TOP, dest = { 3 } },
+    { side = 2, x = FUSION_RX, y = BAR_TOP, w = LINE_THICK, h = ICON_BOT - BAR_TOP, dest = { 3 } },
     { side = 2, x = 940 - HALF, y = BAR_TOP, w = LINE_THICK, h = ICON_BOT - BAR_TOP, dest = { 5 } },
+    -- 一转正下方二转竖线：横杆下沿 → 图标顶边（主干已覆盖横杆处，互不重叠）
+    { side = 1, x = BR1_CX - HALF, y = BAR_BOT, w = LINE_THICK, h = ICON_BOT - BAR_BOT, dest = { 2 } },
+    { side = 2, x = BR2_CX - HALF, y = BAR_BOT, w = LINE_THICK, h = ICON_BOT - BAR_BOT, dest = { 4 } },
 }
 
 --- 返回可直接以已有矢量矩形风格填充的线段（无 NanoVG/存档/输入副作用）。
@@ -84,9 +93,7 @@ function T.getLineSegments(classId, advBranch, heroLevel, locked)
     local result = {}
     for _, edge in ipairs(EDGES) do
         local active
-        if edge.side == 0 then
-            active = (not first and levelOk) or first == parents[1] or first == parents[2]
-        elseif edge.side == 1 then
+        if edge.side == 1 then
             active = (not first and levelOk) or first == parents[1]
         else
             active = (not first and levelOk) or first == parents[2]

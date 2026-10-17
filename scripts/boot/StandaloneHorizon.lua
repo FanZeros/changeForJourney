@@ -649,9 +649,22 @@ function HandleNanoVGRenderHorizon()
         return
     end
 
-    -- 标题未淡出：只画标题。bootReady_() 提前解锁后默认 tab 仍是战斗，
-    -- 但 BattleTriPage 要等标题关闭才 open；若此时画中栏会闪一帧竖屏 BattleScene。
-    if DarkTitleScreen.isOpen() and not DarkTitleScreen.isFading() then
+    -- 标题未淡出时只画标题；新档淡出期间也保持独占，避免露出旧竖屏战场。
+    -- 旧档仍提前绘制已准备的三行战斗，保持原来的入场/首帧门禁。
+    local titleOwnsFrame = DarkTitleScreen.isOpen() and not DarkTitleScreen.isFading()
+    if DarkTitleScreen.isFading() then
+        local dispatcher = require("runtime.ClientDispatcher")
+        local session = dispatcher.get("session") or {}
+        local heroes = dispatcher.get("heroes") or {}
+        local ownedCount = 0
+        if type(heroes.roster) == "table" then
+            for _, hero in pairs(heroes.roster) do
+                if type(hero) == "table" and hero.level then ownedCount = ownedCount + 1 end
+            end
+        end
+        titleOwnsFrame = session.introCompleted ~= true and ownedCount <= 1
+    end
+    if titleOwnsFrame then
         nvgBeginPath(vg())
         nvgRect(vg(), 0, 0, logicalW(), logicalH())
         nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))

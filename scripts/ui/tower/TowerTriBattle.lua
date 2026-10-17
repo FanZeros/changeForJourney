@@ -4,6 +4,7 @@
 -- 不复活、不独立推关（与 BattleTriDriver 挂机语义隔离）
 -- ============================================================================
 
+local BattlePauseOverlay = require("ui.battle.scene.BattlePauseOverlay")
 local AD               = require("systems.AttributeDef")
 local CF               = require("systems.CombatFormula")
 local TM               = require("systems.ThreatManager")
@@ -477,6 +478,7 @@ end
 function TowerTriBattle.init(vg)
     if inited then return end
     inited = true
+    BattlePauseOverlay.init()
     BattleView.init(vg)
     BattleTriPage.init(vg)
     BattleEffects.init(vg)
@@ -770,6 +772,8 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
             mountLane(lane)
             BattleView.draw(vg, { allies = lane.allies, enemies = lane.enemies }, nil, true)
             nvgRestore(vg)
+            BattlePauseOverlay.draw(vg, ix, iy, iw, ih,
+                state.phase == BATTLE_ACTIVE and not lane.cleared and not lane.wiped)
 
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 22)

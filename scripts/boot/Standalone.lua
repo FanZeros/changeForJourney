@@ -613,6 +613,7 @@ function Standalone.Stop()
     require("rules.tower.TowerService").ResetToDefault(1)
     TowerBuffPick.destroy()
     require("ui.tower.TowerBuffSidebar").destroy()
+    require("ui.battle.scene.BattlePauseOverlay").destroy()
     require("ui.widget.DesignWidgetSurface").shutdown()
     -- 不覆盖其他所有者后装的hook；让仍被引用的旧wrapper直通，再只撤下本会话包装。
     if invalidateImageCache_ then invalidateImageCache_() end
@@ -1100,29 +1101,30 @@ function HandleUpdate(eventType, eventData)
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.update(dt)
         startScreenWasOpen_ = true
-        if not DarkTitleScreen.isFading() then
+        if DarkTitleScreen.isOpen() and not DarkTitleScreen.isFading() then
             return
         end
-        local sessionData = ClientDispatcher.get("session") or {}
-        local heroesData = ClientDispatcher.get("heroes") or {}
-        local ownedCount = 0
-        if type(heroesData.roster) == "table" then
-            for _, hero in pairs(heroesData.roster) do
-                if type(hero) == "table" and hero.level then
-                    ownedCount = ownedCount + 1
+        if DarkTitleScreen.isOpen() then
+            local sessionData = ClientDispatcher.get("session") or {}
+            local heroesData = ClientDispatcher.get("heroes") or {}
+            local ownedCount = 0
+            if type(heroesData.roster) == "table" then
+                for _, hero in pairs(heroesData.roster) do
+                    if type(hero) == "table" and hero.level then
+                        ownedCount = ownedCount + 1
+                    end
                 end
             end
-        end
-        local introDone = sessionData.introCompleted == true or ownedCount > 1
-        if not introDone and not LetterIntro.isOpen() then
-            print("[Standalone] cover game before intro")
-            startIntroChain_()
-        end
-        if introDone and BottomNav.getSelectedIndex() == 3
-            and not BattleTriPage.isOpen()
-            and not DungeonBattleScene.isOpen()
-            and not TowerBattleScene.isActive() then
-            BattleTriPage.open()
+            local introDone = sessionData.introCompleted == true or ownedCount > 1
+            -- 新档等标题开门过渡结束再启序章，避免信件立即盖住动画。
+            -- 下方既有 postStartFlowDone_ 分流负责启动，期间不推进后台战斗。
+            if not introDone then return end
+            if BottomNav.getSelectedIndex() == 3
+                and not BattleTriPage.isOpen()
+                and not DungeonBattleScene.isOpen()
+                and not TowerBattleScene.isActive() then
+                BattleTriPage.open()
+            end
         end
     end
 

@@ -9,6 +9,9 @@ local function add(zh, tw, en, ja, ko)
     D.ko[zh] = ko
 end
 
+-- ===== 暂停战场状态 =====
+add("战斗已暂停", "戰鬥已暫停", "Battle paused", "戦闘一時停止", "전투 일시 정지")
+
 -- ===== 仓库适用职业筛选 =====
 add("适用职业", "適用職業", "Usable by", "適用職業", "사용 직업")
 add("全部职业", "全部職業", "All classes", "全職業", "모든 직업")

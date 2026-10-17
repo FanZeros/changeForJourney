@@ -3,6 +3,7 @@
 -- 坐标系: 设计分辨率 1080x2400，所有位置为中心点坐标
 -- ============================================================================
 
+local BattlePauseOverlay = require("ui.battle.scene.BattlePauseOverlay")
 local AD  = require("systems.AttributeDef")
 local ART = require("systems.ArtifactRuntime")
 local MAS = require("systems.MapAffixSystem")
@@ -574,6 +575,7 @@ end
 -- ======================== Public API ========================
 
 function BattleScene.init(vg)
+    BattlePauseOverlay.init()
     -- 新NanoVG上下文不能复用旧卡牌句柄或已完成队列；同上下文切关不失效。
     if vg_ ~= vg then
         battleCardQueue = nil
@@ -807,6 +809,8 @@ function BattleScene.draw(vg)
 
     -- 15.2 台词气泡（在浮动文字之上、战利品之下）
     SpeechBubble.draw(vg)
+    -- 兼容竖向设计空间的宿主缩放，状态文字与横屏战场保持可读尺寸。
+    BattlePauseOverlay.draw(vg, 0, 0, MAP_W, MAP_H, battleActive, MAP_H / 1080)
 
     -- 15.5 战利品箱子已迁至全局左下角（Client 左栏层绘制），此处不再绘制
 

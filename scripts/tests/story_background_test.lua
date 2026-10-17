@@ -79,7 +79,7 @@ local function newContext()
     ctx.env = env
     local function record(kind, data)
         data = data or {}
-        data.kind, data.tx, data.ty = kind, ctx.tx, ctx.ty
+        data.kind, data.tx, data.ty, data.clip = kind, ctx.tx, ctx.ty, copy(ctx.clip)
         ctx.calls[#ctx.calls + 1] = data
         return data
     end
@@ -118,6 +118,9 @@ local function newContext()
     env.nvgBeginPath = function() ctx.shape, ctx.paint = nil, nil end
     env.nvgRect = function(_, x, y, w, h) ctx.shape = { x = x, y = y, w = w, h = h } end
     env.nvgRoundedRect = function(_, x, y, w, h) ctx.shape = { x = x, y = y, w = w, h = h, rounded = true } end
+    env.nvgCircle = function(_, x, y, r) ctx.shape = { x = x, y = y, r = r, circle = true } end
+    env.nvgRadialGradient = function(_, ...) return record("radial", { args = { ... } }) end
+    env.nvgLinearGradient = function(_, ...) return record("linear", { args = { ... } }) end
     env.nvgFillColor = function(_, color) ctx.color = color end
     env.nvgFillPaint = function(_, paint) ctx.paint = paint end
     env.nvgFill = function() record("fill", { rect = ctx.shape, color = ctx.color, paint = ctx.paint }) end
@@ -126,24 +129,39 @@ local function newContext()
         return { image = image }
     end
     env.nvgSave = function()
-        ctx.stack[#ctx.stack + 1] = { ctx.tx, ctx.ty }
+        ctx.stack[#ctx.stack + 1] = { ctx.tx, ctx.ty, ctx.font, copy(ctx.clip), ctx.color,
+            ctx.face, ctx.align, ctx.strokeWidth, ctx.strokeColor }
         record("save")
     end
     env.nvgRestore = function()
         local previous = assert(table.remove(ctx.stack), "unbalanced nvgRestore")
-        ctx.tx, ctx.ty = previous[1], previous[2]
-        record("restore")
+        ctx.tx, ctx.ty, ctx.font, ctx.clip, ctx.color = previous[1], previous[2], previous[3], previous[4], previous[5]
+        ctx.face, ctx.align, ctx.strokeWidth, ctx.strokeColor = previous[6], previous[7], previous[8], previous[9]; record("restore")
     end
-    env.nvgScissor = function(_, x, y, w, h) record("scissor", { x = x, y = y, w = w, h = h }) end
-    env.nvgResetScissor = function() record("resetScissor") end
+    env.nvgScissor = function(_, x, y, w, h)
+        ctx.clip = { x = x + ctx.tx, y = y + ctx.ty, w = w, h = h }; record("scissor", { x = x, y = y, w = w, h = h })
+    end
+    env.nvgIntersectScissor = function(_, x, y, w, h)
+        local previous = ctx.clip
+        local clip = { x = x + ctx.tx, y = y + ctx.ty, w = w, h = h }
+        if previous then
+            local right, bottom = math.min(clip.x + w, previous.x + previous.w), math.min(clip.y + h, previous.y + previous.h)
+            clip.x, clip.y = math.max(clip.x, previous.x), math.max(clip.y, previous.y)
+            clip.w, clip.h = math.max(0, right - clip.x), math.max(0, bottom - clip.y)
+        end
+        ctx.clip = clip
+        record("intersectScissor", { x = x, y = y, w = w, h = h })
+    end
+    env.nvgResetScissor = function() ctx.clip = nil; record("resetScissor") end
     env.nvgTranslate = function(_, x, y)
         ctx.tx, ctx.ty = ctx.tx + x, ctx.ty + y
         record("translate", { x = x, y = y })
     end
     env.nvgFontSize = function(_, size) ctx.font = size end
+    env.nvgFontFace = function(_, face) ctx.face = face end; env.nvgTextAlign = function(_, align) ctx.align = align end
+    env.nvgStrokeWidth = function(_, width) ctx.strokeWidth = width end; env.nvgStrokeColor = function(_, color) ctx.strokeColor = color end
     env.nvgText = function(_, x, y, text) record("text", { x = x, y = y, text = text }); return 0 end
-    for _, name in ipairs({ "nvgStrokeColor", "nvgStrokeWidth", "nvgStroke", "nvgFontFace",
-        "nvgTextAlign", "nvgTextLineHeight", "nvgMoveTo", "nvgLineTo" }) do env[name] = noop end
+    for _, name in ipairs({ "nvgStroke", "nvgTextLineHeight", "nvgMoveTo", "nvgLineTo" }) do env[name] = noop end
     ctx.deps["core.I18n"] = {
         get = function() return "zh_CN" end, lookup = function(text) return text end,
         t = function(text) return text end, displayName = function(id) return id end,
@@ -1031,20 +1049,66 @@ local function letterTitleCases()
     eq(done, 1, "letter original 0.6s finish once")
     letter.start(); eq(ctx.loadCount(bg(1)), 1, "letter reuses successful desk image")
     letter.reset()
-    local title = ctx.env.require("ui.story.gate.DarkTitleScreenGate")
-    title.init(ctx.vg); title.open(); title.setReady(false)
-    ctx.calls = {}; title.draw(ctx.vg, 1920, 1080)
-    local gate, gi = find(ctx, "image", TITLE)
-    local logo, li = find(ctx, "image", LOGO)
-    check(gi < li, "same-path title replacement stays behind existing logo")
-    near(gate.w, 1920, "title background original cover geometry")
-    near(logo.w, 960, "title existing logo scale unchanged")
-    title.handleTap(); eq(title.isFading(), false, "title resource-readiness gate remains")
-    title.setReady(true); title.handleTap(); title.update(0.275)
-    ctx.calls = {}; title.draw(ctx.vg, 1920, 1080)
-    near(find(ctx, "image", TITLE).alpha, 0.5, "title background retains 0.55s fade")
-    title.update(0.3); eq(title.isOpen(), false, "title closes on original timing")
     ctx.assertSafe()
+end
+local function titleEntryCases()
+    local ctx = newContext(); local languageSets, persists, randomCalls = 0, 0, 0; local i18n = ctx.deps["core.I18n"]
+    i18n.LANGS, i18n.set = { { id = "zh_CN" }, { id = "en" } }, function() languageSets = languageSets + 1 end
+    ctx.deps["ui.hud.popup.SettingsPanel"] = { persistLanguage = function() persists = persists + 1 end }
+    local function noRandom() randomCalls = randomCalls + 1; error("title must not consume/reseed game RNG") end
+    ctx.env.math = setmetatable({ random = noRandom, randomseed = noRandom }, { __index = math })
+    local title = ctx.env.require("ui.story.gate.DarkTitleScreenGate"); title.init(ctx.vg); title.init(ctx.vg); title.open(); title.setReady(false)
+    local function state() return { ctx.tx, ctx.ty, ctx.font, copy(ctx.clip), ctx.color, ctx.face, ctx.align, ctx.strokeWidth, ctx.strokeColor } end
+    local function draw(w, h)
+        local before, loads, modules = copy(state()), #ctx.loads, copy(ctx.modules); ctx.calls = {}; title.draw(ctx.vg, w or 1920, h or 1080)
+        check(#ctx.stack == 0 and same(state(), before), "title draw balances saves and restores transform/scissor/font/color/stroke")
+        check(#ctx.loads == loads and same(ctx.modules, modules), "title draw never loads resources or mutates gameplay")
+    end
+    local function maskAlpha()
+        for _, call in ipairs(ctx.calls) do
+            if call.kind == "fill" and not call.paint and call.rect and call.rect.w == 1920 and call.rect.h == 1080 and call.color.r == 6 then return call.color.a end
+        end
+        error("missing title entrance dark curtain")
+    end
+    draw(); near(find(ctx, "image", LOGO).alpha, 0, "entry starts logo alpha0"); eq(maskAlpha(), 245, "entry starts dark curtain")
+    title.handleTap(); check(not title.isReady() and not title.isFading(), "not-ready tap cannot start exit")
+    title.update(0.675); draw(); near(find(ctx, "image", LOGO).alpha, (0.94 + 0.06 * math.sin(0.675 * 1.4)) * 0.5, "half-reveal logo alpha")
+    eq(maskAlpha(), 122, "half-reveal curtain alpha"); local frame = copy(ctx.calls); title.open(); title.update(-1); draw(); check(same(ctx.calls, frame), "open/negative dt do not restart reveal")
+    title.update(0.675); draw(); eq(maskAlpha(), 0, "1.35s reveal fully removes curtain")
+    local gate, gi = find(ctx, "image", TITLE); local logo, li = find(ctx, "image", LOGO)
+    check(gi < li, "title background stays below logo"); near(gate.w, 1920, "original cover geometry"); near(logo.w, 960, "original logo scale")
+    near(logo.alpha, 0.94 + 0.06 * math.sin(1.35 * 1.4), "1.35s logo fully revealed")
+    local embers = 0; for _, call in ipairs(ctx.calls) do
+        if call.kind == "fill" and call.rect and call.rect.circle and not call.paint and call.color.r == 235 then
+            embers = embers + 1; check(call.color.a >= 0 and call.color.a <= 150, "ember alpha bounded")
+        end
+    end
+    eq(embers, 28, "28 deterministic procedural embers"); frame = copy(ctx.calls); draw(); check(same(ctx.calls, frame), "draw does not advance timer")
+    local btn = title._langBtn; check(title.handleLanguageTap(btn.x + 1, btn.y + 1), "language button usable before ready"); draw(); local hit = title._langHits[2]
+    check(title.handleLanguageTap(hit.x + 1, hit.y + 1) and not title.isFading() and languageSets == 1 and persists == 1, "language choice consumes tap, sets/persists once, no continue")
+    title.handleLanguageTap(btn.x + 1, btn.y + 1); draw(); check(title.handleLanguageTap(1900, 10), "menu blank tap only dismisses")
+    title.setReady(true); title.handleLanguageTap(btn.x + 1, btn.y + 1); draw(); title.handleTap(); check(title.isReady() and title.isOpen() and title.isFading(), "ready click starts exit, not instant close")
+    draw(); eq(#title._langHits, 0, "continue closes language popup")
+    title.update(0.275); draw(); local halves = images(ctx, TITLE); eq(#halves, 2, "exactly two gate halves")
+    for half, image in ipairs(halves) do
+        near(image.alpha, 0.5, "0.275s gate alpha0.5"); near(image.x, half == 1 and -76.8 or 76.8, "halves shift outward4% width")
+        check(same(image.clip, { x = (half - 1) * 960, y = 0, w = 960, h = 1080 }), "half clips intersect viewport")
+    end
+    eq(#images(ctx, LOGO), 1, "logo stays undivided"); near(find(ctx, "image", LOGO).x, 480, "logo never follows gate shift")
+    frame = copy(ctx.calls); title.handleTap(); draw(); check(same(ctx.calls, frame), "duplicate continue cannot reset exit")
+    check(title.handleLanguageTap(hit.x + 1, hit.y + 1) and title.handleLanguageTap(btn.x + 1, btn.y + 1)
+        and title.handleLanguageTap(-10, -10) and languageSets == 1 and persists == 1, "fade swallows stale language/blank taps without set/persist")
+    title.update(0.274); check(title.isOpen() and title.isFading(), "0.549s still open"); title.update(0.001)
+    check(not title.isOpen() and not title.isFading(), "0.55s exit closes exactly"); title.handleTap(); title.update(10); draw()
+    check(#ctx.calls == 0 and not title.handleLanguageTap(btn.x + 1, btn.y + 1), "closed draw/update/taps inert")
+    title.setReady(false); title.reopen(); check(title.isOpen() and title.isReady() and not title.isFading(), "reopen resets exit and unlocks ready")
+    draw(); eq(maskAlpha(), 245, "reopen resets curtain"); near(find(ctx, "image", LOGO).alpha, 0, "reopen resets reveal timer")
+    ctx.tx, ctx.ty, ctx.font, ctx.face, ctx.align, ctx.strokeWidth = 11, 17, 23, "host", NVG_ALIGN_LEFT, 3
+    ctx.clip, ctx.color, ctx.strokeColor = { x = 30, y = 40, w = 700, h = 400 }, { r = 1 }, { r = 2 }
+    title.update(1.35); title.handleTap(); title.update(0.275); draw(1280, 720); halves = images(ctx, TITLE)
+    near(halves[1].x, -51.2, "logical1280 left shift"); near(halves[2].x, 51.2, "logical1280 right shift")
+    local callCount = #ctx.calls; title.draw(ctx.vg, 0, 720); title.draw(ctx.vg, 1280, 0); eq(#ctx.calls, callCount, "invalid viewport inert")
+    check(randomCalls == 0 and ctx.loadCount(TITLE) == 1 and ctx.loadCount(LOGO) == 1, "init cache, draw/update/reopen use no resource loads or game RNG"); ctx.assertSafe()
 end
 local function heroCases()
     for _, hero in ipairs({ 18, 19, 24, 25 }) do
@@ -1413,7 +1477,8 @@ function Start()
         { "building-story-gate-keeps-original-tutorial-priority", buildingGateCases },
         { "eight-building-pages-pause-battle-Boot-queues", buildingBootCases },
         { "eight-building-pages-Hero-owned-or-blocked-reentry", buildingHeroCases },
-        { "letter-study-and-same-path-title", letterTitleCases }, { "HeroScenario-background-and-claim-dedup", heroCases },
+        { "letter-study", letterTitleCases }, { "title-reveal-ready-door-exit-language-and-state", titleEntryCases },
+        { "HeroScenario-background-and-claim-dedup", heroCases },
         { "all80-place-FIFO-and-205-branch-before82", placeQueueCases },
         { "real-menu-auto-story-and-deferred-never-consumed-by-pump", menuBootCases },
         { "real-Boot-full-intro-continuous-original-segments-and-reset", bootChainCases },

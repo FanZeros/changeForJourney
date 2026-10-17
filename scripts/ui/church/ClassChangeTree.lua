@@ -33,36 +33,39 @@ function T.getNodes(classId)
 end
 
 -- 所有路径从一转图标真实底边 y=1699 出发，止于二转图标真实顶边 y=1858。
--- 两侧融合来线使用 x=510/570 独立通道，至 y=1830 才汇合：
+-- 两父主干在横杆（y=1758）汇入，中心只在 x=540 交点垂直下探一次：
 --   307                    776
 --    |                      |
--- 140+---340---510   570---740+---940   y=1758
---  |      |     |     |     |     |
---  |      |     +--+--+     |     |    y=1830
---  |      |        |       |     |
--- [1]    [2]      [3]     [4]   [5]    y=1858（图标顶边）
--- 每段列出其下游节点；共用横杆只着色真正经过该段的路径，不误亮邻节点竖腿。
+-- 140+---+---340---+---540---+---740---+---940   y=1758（两横线交一点）
+--  |       |        |        |        |
+-- [1]     [2]      [3]      [4]      [5]          y=1858（图标顶边）
+-- 每段列出其下游节点；线段按竖线切成互不重叠的矩形，交点只由一条线覆盖，
+-- 避免半透明段叠加导致交点更亮；共用横杆只着色真正经过该段的路径。
+local LINE_THICK = 12
+local HALF = LINE_THICK * 0.5
+local BAR_TOP, BAR_BOT = 1758 - HALF, 1758 + HALF
+local ICON_TOP, ICON_BOT = 1699, 1858
 local EDGES = {
-    { side = 1, x1 = 307, y1 = 1699, x2 = 307, y2 = 1758, dest = { 1, 2, 3 } },
-    { side = 1, x1 = 140, y1 = 1758, x2 = 307, y2 = 1758, dest = { 1 } },
-    { side = 1, x1 = 307, y1 = 1758, x2 = 340, y2 = 1758, dest = { 2, 3 } },
-    { side = 1, x1 = 340, y1 = 1758, x2 = 510, y2 = 1758, dest = { 3 } },
-    { side = 1, x1 = 140, y1 = 1758, x2 = 140, y2 = 1858, dest = { 1 } },
-    { side = 1, x1 = 340, y1 = 1758, x2 = 340, y2 = 1858, dest = { 2 } },
-    { side = 1, x1 = 510, y1 = 1758, x2 = 510, y2 = 1830, dest = { 3 } },
-    { side = 1, x1 = 510, y1 = 1830, x2 = 540, y2 = 1830, dest = { 3 } },
-    { side = 2, x1 = 776, y1 = 1699, x2 = 776, y2 = 1758, dest = { 3, 4, 5 } },
-    { side = 2, x1 = 570, y1 = 1758, x2 = 740, y2 = 1758, dest = { 3 } },
-    { side = 2, x1 = 740, y1 = 1758, x2 = 776, y2 = 1758, dest = { 3, 4 } },
-    { side = 2, x1 = 776, y1 = 1758, x2 = 940, y2 = 1758, dest = { 5 } },
-    { side = 2, x1 = 740, y1 = 1758, x2 = 740, y2 = 1858, dest = { 4 } },
-    { side = 2, x1 = 940, y1 = 1758, x2 = 940, y2 = 1858, dest = { 5 } },
-    { side = 2, x1 = 570, y1 = 1758, x2 = 570, y2 = 1830, dest = { 3 } },
-    { side = 2, x1 = 540, y1 = 1830, x2 = 570, y2 = 1830, dest = { 3 } },
-    { side = 0, x1 = 540, y1 = 1830, x2 = 540, y2 = 1858, dest = { 3 } },
+    -- 父线主干：一转底边 → 横杆下沿（覆盖自身与横杆的交点）
+    { side = 1, x = 307 - HALF, y = ICON_TOP, w = LINE_THICK, h = BAR_BOT - ICON_TOP, dest = { 1, 2, 3 } },
+    { side = 2, x = 776 - HALF, y = ICON_TOP, w = LINE_THICK, h = BAR_BOT - ICON_TOP, dest = { 3, 4, 5 } },
+    -- 横杆：按竖线切成互不重叠的小段（每段止于相邻竖线外沿）
+    { side = 1, x = 140 + HALF, y = BAR_TOP, w = (307 - HALF) - (140 + HALF), h = LINE_THICK, dest = { 1 } },
+    { side = 1, x = 307 + HALF, y = BAR_TOP, w = (340 - HALF) - (307 + HALF), h = LINE_THICK, dest = { 2, 3 } },
+    { side = 1, x = 340 + HALF, y = BAR_TOP, w = (540 - HALF) - (340 + HALF), h = LINE_THICK, dest = { 3 } },
+    { side = 2, x = 540 + HALF, y = BAR_TOP, w = (740 - HALF) - (540 + HALF), h = LINE_THICK, dest = { 3 } },
+    { side = 2, x = 740 + HALF, y = BAR_TOP, w = (776 - HALF) - (740 + HALF), h = LINE_THICK, dest = { 3, 4 } },
+    { side = 2, x = 776 + HALF, y = BAR_TOP, w = (940 - HALF) - (776 + HALF), h = LINE_THICK, dest = { 5 } },
+    -- 竖线：横杆上沿 → 二转图标顶边（中心竖线唯一覆盖 x=540 交点）
+    { side = 1, x = 140 - HALF, y = BAR_TOP, w = LINE_THICK, h = ICON_BOT - BAR_TOP, dest = { 1 } },
+    { side = 1, x = 340 - HALF, y = BAR_TOP, w = LINE_THICK, h = ICON_BOT - BAR_TOP, dest = { 2 } },
+    { side = 0, x = 540 - HALF, y = BAR_TOP, w = LINE_THICK, h = ICON_BOT - BAR_TOP, dest = { 3 } },
+    { side = 2, x = 740 - HALF, y = BAR_TOP, w = LINE_THICK, h = ICON_BOT - BAR_TOP, dest = { 4 } },
+    { side = 2, x = 940 - HALF, y = BAR_TOP, w = LINE_THICK, h = ICON_BOT - BAR_TOP, dest = { 5 } },
 }
 
 --- 返回可直接以已有矢量矩形风格填充的线段（无 NanoVG/存档/输入副作用）。
+--- 各矩形互不重叠：交点只由一条线覆盖，半透明段不会叠加变亮。
 ---@param classId string
 ---@param advBranch table|nil
 ---@param heroLevel number
@@ -77,15 +80,16 @@ function T.getLineSegments(classId, advBranch, heroLevel, locked)
     local first = advBranch and advBranch.first
     local second = advBranch and advBranch.second
     local legalSecond = first and second and AVC.isParentBranch(second, first)
+    local levelOk = heroLevel >= AVC.COST[1].level
     local result = {}
-    local half = 6
     for _, edge in ipairs(EDGES) do
-        local parentId = edge.side == 1 and parents[1] or parents[2]
-        local active = not first and heroLevel >= AVC.COST[1].level
-            or first == parentId
+        local active
         if edge.side == 0 then
-            active = not first and heroLevel >= AVC.COST[1].level
-                or first == parents[1] or first == parents[2]
+            active = (not first and levelOk) or first == parents[1] or first == parents[2]
+        elseif edge.side == 1 then
+            active = (not first and levelOk) or first == parents[1]
+        else
+            active = (not first and levelOk) or first == parents[2]
         end
         local gold = false
         if active and legalSecond then
@@ -94,16 +98,9 @@ function T.getLineSegments(classId, advBranch, heroLevel, locked)
             end
         end
         local alpha = locked and 0.35 or (active and (not second or gold) and 1 or 0.3)
-        local x, y, w, h
-        if edge.y1 == edge.y2 then
-            x, y = edge.x1 - half, edge.y1 - half
-            w, h = edge.x2 - edge.x1 + half * 2, half * 2
-        else
-            x, y = edge.x1 - half, math.max(1699, edge.y1 - half)
-            w, h = half * 2, math.min(1858, edge.y2 + half) - y
-        end
         result[#result + 1] = {
-            x = x, y = y, w = w, h = h, alpha = alpha, gold = gold and not locked,
+            x = edge.x, y = edge.y, w = edge.w, h = edge.h,
+            alpha = alpha, gold = gold and not locked,
         }
     end
     return result

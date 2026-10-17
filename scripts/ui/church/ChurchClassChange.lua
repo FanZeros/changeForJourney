@@ -602,7 +602,7 @@ function M.drawContent(vg)
         local st1 = firstBranchState(advBranch, branches[1].id, heroLevel)
         local st2 = firstBranchState(advBranch, branches[2].id, heroLevel)
 
-        -- 每父三去向；融合两侧来线直到图标上方才汇合，逐段着色不误亮另一父。
+        -- 每父三去向；两父横杆在中心交点汇合后共用一条中干下探，逐段着色不误亮另一父。
         local lockedLine2 = heroLevel < ADV2.secondLevel and not (advBranch and advBranch.second)
         if not lockedLine2 then
             drawSecondBranchLines(vg, classId, advBranch, heroLevel, false)

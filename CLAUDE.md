@@ -12,6 +12,12 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-18，战斗飘字正式接入并创建 PR #171）
+
+- 用户提供 GitHub PAT 并要求提 PR。核实 PR #168（独立样片）已由外部 merged、该 head 无开放 PR；`workspace1005` 远端已前进到 `c4b0351e`。提交 `8bb97d8d`（6 文件 +224/−286：新增 `BattleFloatImpact.lua`+meta、`BattleDraw` 委托、两个测试删旧外观断言、本交接）已正常 push `feat1018/battle-float-impact-preview`（远端 SHA 一致）。创建正式 **PR #171**：https://github.com/FanZeros/changeForJourney/pull/171，head=`feat1018/battle-float-impact-preview`(8bb97d8d)／base=workspace1005(c4b0351e)，open/draft=false/merged=false，未自动合并发布。
+- 鉴权仅经 `-c credential.helper= -c http.extraheader` 进程内一次性使用；核 remote 仍 SSH、config 无 credential/extraheader、FETCH_HEAD 无令牌残留。聊天/工具输入转录已暴露该 PAT，不能称全部日志零残留，应撤销轮换。未推 workspace1005、不强推、不自动合并发布。
+- 未纳入本次提交的本地改动：`.gitignore`（本任务前已存在的反向差异，含移除 battle_lab/screenshots/.env 等忽略规则）与大量未跟踪候选图/`_uploads`/`.tmp-headless`，按白名单纪律保持原样，不混入 PR。
+
 ## 上次做了什么（2026-10-18，战斗飘字正式接入，本地完成）
 
 - 用户明确“删除相关断言，只制作”，直接接入正式绘制，不再询问实现深度。新增 `ui/battle/scene/BattleFloatImpact.lua` 纯绘制模块及官方生成 meta，`BattleDraw.drawFloatingTexts` 委托；普通短弹稳读、暴击裂印三碎片与分带擦除、治疗展开聚合、吸盾压缩折收。保留原属性徽记，显式 holy damage 不误判治疗；不依赖 tests 样片、不增加图片/Spine/音效/随机，不读玩家档、不运行 main。

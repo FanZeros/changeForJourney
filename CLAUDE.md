@@ -12,6 +12,22 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-18，战斗飘字正式接入，本地完成）
+
+- 用户明确“删除相关断言，只制作”，直接接入正式绘制，不再询问实现深度。新增 `ui/battle/scene/BattleFloatImpact.lua` 纯绘制模块及官方生成 meta，`BattleDraw.drawFloatingTexts` 委托；普通短弹稳读、暴击裂印三碎片与分带擦除、治疗展开聚合、吸盾压缩折收。保留原属性徽记，显式 holy damage 不误判治疗；不依赖 tests 样片、不增加图片/Spine/音效/随机，不读玩家档、不运行 main。
+- `BattleCombatFx`／`BattleCombat`／`BattleCombatCombo`／main 与 HEAD 逐字节相同；原金额合并、0.2秒窗口、15条全线预算、0.7秒硬回收、统计/成长/发奖/存档规则不改。四类样片时间仅映射到原0.7秒，未移植不同真实寿命或每目标三条回收；当前本帧分轨可能在回收后重排，不声称密集战场无重叠。
+- 删除 `damage_number_merge_test` 与 `startup_assets_test` 锁死240上浮/持续缩字/旧alpha/9道文字的绘制断言块，保留业务与其他效果断言，适配正式模块依赖，不新增断言矩阵。保留测试未全过：damage 的40项检查通过后遇到 FourNew 未声明 ExtraTalentSystem 依赖（RESULT 40/1 FAILED）；startup RESULT 1290/26 FAILED，26项在投射物/闪电旧外观，虽退出0仍不计通过。未做纯HEAD对照，不定性已证实基线失败，不扩修旁支。
+- 最终官方 `manifest-origin.b48.json` 构建成功，702根Lua；仅四本轮Lua实际UUID-hash载荷逐字节/声明size4/4一致，候选GPTClean/背景试稿/23章候选目录与zip及内部验证匹配0入包。四本轮Lua逐文件 severity1 Error0，官方daemon unavailable/code1跳过全仓gate，不称全仓静态全绿。两张正式绘制固定字龄矩阵（1920×1080入场/1280×800收尾）已实际渲染并读图，Lua/资源0，raw FAIL仅932.089/267.987ms软件尖峰；不等于正式字体/三行/塔/副本动态实战或设备性能/触控验收。
+- 本轮 `.project` 身份/临时ignore/多人默认字段已与本轮两原备份逐字节恢复；保留原.gitignore、本地交接及其他未跟踪文件，不pop旧stash。仍 `feat1018/battle-float-impact-preview@ca38af84`，仅本地制作/build，未暂存/提交/push/更新PR。PR #168仍只含先前样片，不冒称正式接入已上传；不推workspace系列、不强推、不自动合并发布、不使用历史凭据。持续推进授权范围并尊重停止/拒绝/安全边界，当前最新明确直接继续不再提问，不机械收尾问询。
+
+## 上次做了什么（2026-10-18，战斗飘字「克制重击」独立动态样片，已 push 并创建 PR #168）
+
+- 用户提供 GitHub PAT 并要求提 PR。核实 PR #148／#147／#146 均已 merged，开放 PR=0；基线 `workspace1005` 已外部前进到 `be9f8104`（含 #164–#167），本地 HEAD `b1cfbeb5` 是其祖先（无独有内容）。从最新基线新建 `feat1018/battle-float-impact-preview`，仅提交 3 个新样片 Lua ＋ 各自 meta（6 文件 +779），未带工作区其余未跟踪内容。
+- **已正常 push 并创建 PR #168**：https://github.com/FanZeros/changeForJourney/pull/168，head=feat1018/battle-float-impact-preview（`ca38af84`）／base=workspace1005（`be9f8104`），创建时open/draft=false/merged=false，未自动合并发布。推送与 PR 创建经用户即时提供的 PAT 进程内鉴权，未持久化到 remote／Git 配置／源码／项目记忆；核 remote 仍 SSH、config 无 credential/extraheader、FETCH_HEAD 无令牌残留。聊天/工具输入转录已暴露凭据，不能称全部日志零残留，应撤销轮换；正式接入轮未再使用凭据或查询PR实时状态。
+- 样片含普通轻弹、暴击裂印三碎片、治疗展开聚合、吸盾压缩折收、同步新旧节奏与 948×360 比例三行模拟／放大、暂停／继续／重播／密集开关。该样片提交未改正式 BattleCombatFx／BattleDraw／main 及玩法、统计、成长、发奖、存档，未运行 main 或读写玩家档；后续本地正式绘制接入见上条，不属于该6文件提交。
+- 新基线上 `combat_float_style_test.lua` 8111 断言 ALL PASS／actualexit0；真实 UI 布局与 OnClick 回调15检查来自先前b45，不冒称新基线单独复验。1920×1080 渲染无 Lua／资源错误、STOP 正常释放；报告 FAIL 仅为软件渲染帧尖峰，不称性能／设备触控／用户审美验收通过。
+- 为切分支曾把本地 CLAUDE.md／.gitignore 暂存并移开旧版 `BlacksmithAutoDecompose.lua`（基线 a3853f98 已含478行正式版，旧279行仅留备份，未回灌活动树）；正式接入轮已核活动文件478行。`auto_decompose_settings_test.lua` 等仍保持未跟踪，未混入本 PR。当前本地交接和.gitignore有未提交改动，不称仅在stash或工作区干净，不pop旧stash。
+
 ## 上次做了什么（2026-10-17，离线经验布局与慢动画，已push并创建 PR #164）
 
 - **已正常push并核验：** 功能提交 `b692aef4`（7白名单=1生产Lua＋1词典＋1专项test＋2文档＋2交接，+904/−117）与合并提交 `d616c601`（无冲突合入远端 `workspace1005@5514b104`，含PR163动画优化）已push `fix1017/offline-exp-layout`，远端SHA=`d616c601f4e3a3ffea244cce81c9d5e572ccfb3e`与本地一致。正式 **PR #164**：https://github.com/FanZeros/changeForJourney/pull/164，head=fix1017/offline-exp-layout／base=workspace1005，open/draft=false/merged=false/mergeable=true(clean)，7文件+904/−117，未自动合并发布。创建前查同源open PR=0。凭据经 `-c credential.helper= -c http.extraheader` 一次性进程内鉴权，未写入remote（仍干净URL）／Git配置／源码／日志／记忆；remote本地config的 `credential.helper=store` 为既有、本会话未用未改，建议撤销轮换该PAT。不混无关 `.gitignore`（本任务前已存在，checkout保留）、`.agent`技能目录／`_uploads`／repair meta／`standalone_save.json`（未读）。

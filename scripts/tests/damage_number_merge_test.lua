@@ -1,5 +1,5 @@
 -- 即时伤害数字专项：隔离执行完整生产模块；不加载玩家档，不改全局RNG。
--- GPU/战斗外围有限spy，真实Fx/Combo/BattleCombat/Draw/Icon/NumberUtil均完整load。
+-- 战斗外围有限spy；真实Fx/Combo/BattleCombat/Icon/NumberUtil完整load，-review单独显示新效果。
 local TAG = "[damage_number_merge_test]"
 local assertions, failures = 0, 0
 local function check(value, label)
@@ -35,10 +35,11 @@ local function startReview()
         ["ui.battle.scene.DamageTypeIcon"] = Icon,
         ["ui.hud.popup.SettingsPanel"] = { isEffectsEnabled = function() return true end } })
     local Util = module("core/DrawUtil.lua", { ["core.BattleLayout"] = {} })
+    local Impact = module("ui/battle/scene/BattleFloatImpact.lua", { ["ui.battle.scene.DamageTypeIcon"] = Icon })
     reviewDraw = module("ui/battle/scene/BattleDraw.lua", {
         ["systems.StatusEffectManager"] = {}, ["systems.TalentManager"] = {}, ["core.NumberUtil"] = Number,
         ["core.BattleLayout"] = { CARD_W = 100, CARD_H = 100 }, ["core.DrawUtil"] = Util,
-        ["systems.ExtraTalentSystem"] = {}, ["config.HeroAssetUtil"] = {}, ["ui.battle.scene.DamageTypeIcon"] = Icon,
+        ["systems.ExtraTalentSystem"] = {}, ["config.HeroAssetUtil"] = {}, ["ui.battle.scene.BattleFloatImpact"] = Impact,
     })
     local bcs = { floatingTexts = {}, ftPool = {}, combatNumberIndex = {} }
     local names = { "斩击 / SLASH", "粉碎 / CRUSH", "穿刺 / PIERCE", "火焰 / FIRE",
@@ -147,7 +148,7 @@ function Start()
             return n
         end
         local Number = compile("core/NumberUtil.lua", {})
-        local Icon, iconEnv = compile("ui/battle/scene/DamageTypeIcon.lua", { ["systems.AttributeDef"] = AD })
+        local Icon = compile("ui/battle/scene/DamageTypeIcon.lua", { ["systems.AttributeDef"] = AD })
         local Fx = compile("ui/battle/combat/BattleCombatFx.lua", {
             ["core.NumberUtil"] = Number, ["ui.battle.scene.DamageTypeIcon"] = Icon,
             ["ui.hud.popup.SettingsPanel"] = { isEffectsEnabled = function() return true end },
@@ -161,13 +162,13 @@ function Start()
         Fx.updateFloatingTexts(bcs, 0.1)
         local merged = Fx.addCombatNumber(bcs, target, 250, 300, 180, fire)
         check(merged == first and #bcs.floatingTexts == 1 and first.amount == 350 and first.text == "350"
-            and near(first.timer, 0.1) and first.duration == 0.7 and first.pulseTimer > 0,
-            "同目标火100+250原数相加350，寿命不续，轻微pulse")
+            and near(first.timer, 0.1) and first.duration == 0.7,
+            "同目标火100+250原数相加350，寿命不续")
         Fx.addCombatNumber(bcs, target, 50, 300, 180, {
             channel = "damage", atkType = AD.ATK_FIRE, isCrit = true, isBlocked = true, isDot = true,
         })
         check(first.amount == 400 and first.isCrit and first.isBlocked and first.isDot
-            and first.fontSize == 160 and #bcs.floatingTexts == 1,
+            and #bcs.floatingTexts == 1,
             "普通/暴击/格挡/DOT同火合并且保留全部角标")
         local other = { monsterId = 1 }
         Fx.addCombatNumber(bcs, other, 9, 300, 180, fire)
@@ -227,116 +228,12 @@ function Start()
         check(#lanes[1].floatingTexts == 0 and lanes[2].floatingTexts[1].amount == 11
             and lanes[3].floatingTexts[1].amount == 1, "同hero引用跨三BCS隔离，重置一栏不污染另两栏")
 
-        -- GPU记录器：真实图标轮廓与真实DrawUtil描边，矩阵/alpha栈隔离。
-        local rec = { calls = {}, matrix = { 1, 0, 0, 1, 0, 0 }, alpha = 0.63,
-            font = 13, stack = {}, color = { 1, 2, 3, 255 } }
-        local gpu = {}
-        local function emit(name, ...)
-            local c = { name = name, args = { ... }, alpha = rec.alpha, color = rec.color }
-            rec.calls[#rec.calls + 1] = c
-            return c
-        end
-        local function point(x, y)
-            local m = rec.matrix
-            return m[1] * x + m[3] * y + m[5], m[2] * x + m[4] * y + m[6]
-        end
-        gpu.nvgSave = function()
-            rec.stack[#rec.stack + 1] = { matrix = rec.matrix, alpha = rec.alpha, font = rec.font, color = rec.color }
-        end
-        gpu.nvgRestore = function()
-            local s = assert(table.remove(rec.stack))
-            rec.matrix, rec.alpha, rec.font, rec.color = s.matrix, s.alpha, s.font, s.color
-        end
-        gpu.nvgTranslate = function(_, x, y)
-            local m = rec.matrix
-            rec.matrix = { m[1], m[2], m[3], m[4], m[5] + m[1] * x + m[3] * y, m[6] + m[2] * x + m[4] * y }
-        end
-        gpu.nvgScale = function(_, x, y)
-            local m = rec.matrix
-            rec.matrix = { m[1] * x, m[2] * x, m[3] * y, m[4] * y, m[5], m[6] }
-        end
-        gpu.nvgGlobalAlpha = function(_, a) rec.alpha = a; emit("alpha", a) end
-        gpu.nvgFontSize = function(_, s) rec.font = s end
-        gpu.nvgFillColor = function(_, color) rec.color = color end
-        gpu.nvgRGBA = function(...) return { ... } end
-        gpu.nvgStrokeColor = function(_, color) emit("strokeColor", color) end
-        gpu.nvgLinearGradient = function(_, ...) return emit("gradient", ...) end
-        gpu.nvgTextBounds = function(_, _, _, text) return #text * rec.font * 0.6 end
-        gpu.nvgText = function(_, x, y, text)
-            local c = emit("text", text); c.x, c.y = point(x, y); c.size = rec.font * rec.matrix[1]
-        end
-        for _, name in ipairs({ "nvgMoveTo", "nvgLineTo", "nvgQuadTo", "nvgCircle", "nvgRect", "nvgRoundedRect" }) do
-            gpu[name] = function(_, ...)
-                local c = emit(name, ...); c.x, c.y = point(c.args[1], c.args[2])
-            end
-        end
-        for _, name in ipairs({ "nvgBeginPath", "nvgClosePath", "nvgFill", "nvgStroke", "nvgStrokeWidth",
-            "nvgFontFace", "nvgTextAlign", "nvgFillPaint" }) do gpu[name] = function(_, ...) emit(name, ...) end end
-        for name, fn in pairs(gpu) do iconEnv[name] = fn end
-        local Util, utilEnv = compile("core/DrawUtil.lua", { ["core.BattleLayout"] = {} })
-        for name, fn in pairs(gpu) do utilEnv[name] = fn end
-        local Draw, drawEnv = compile("ui/battle/scene/BattleDraw.lua", {
-            ["systems.StatusEffectManager"] = {}, ["systems.TalentManager"] = {}, ["core.NumberUtil"] = Number,
-            ["core.BattleLayout"] = { CARD_W = 100, CARD_H = 100 }, ["core.DrawUtil"] = Util,
-            ["systems.ExtraTalentSystem"] = {}, ["config.HeroAssetUtil"] = {}, ["ui.battle.scene.DamageTypeIcon"] = Icon,
-        })
-        for name, fn in pairs(gpu) do drawEnv[name] = fn end
-        local function named(name)
-            local found = {}; for _, c in ipairs(rec.calls) do if c.name == name then found[#found + 1] = c end end
-            return found
-        end
-        local seen = {}
-        for atkType = 1, 8 do
-            rec.calls = {}
-            Icon.draw(nil, { channel = "damage", atkType = atkType }, 100, 200, 72)
-            local signature = {}
-            for _, c in ipairs(rec.calls) do
-                if c.name == "nvgMoveTo" or c.name == "nvgLineTo" or c.name == "nvgQuadTo" or c.name == "nvgCircle" then
-                    signature[#signature + 1] = c.name .. ":" .. table.concat(c.args, ",")
-                end
-            end
-            local sig = table.concat(signature, ";")
-            check(sig ~= "" and not seen[sig] and #named("gradient") > 0 and #named("nvgStroke") > 0,
-                "AD属性" .. atkType .. "有独立轮廓/暗铁边/骨白属性高光")
-            seen[sig] = true
-            check(rec.alpha == 0.63 and #rec.stack == 0 and rec.matrix[1] == 1, "属性绘制恢复父alpha/缩放 " .. atkType)
-        end
         for _, kind in ipairs({ "phys", "magic", "burn", "block", "shield", "heal", "crit", "critblockmagic" }) do
             check(Icon.resolve(nil, kind) ~= nil, "旧kind可解析 " .. kind)
         end
         check(Icon.resolve(nil, "未知") == nil and Icon.resolve(nil, "") == nil, "未知/空kind不留空图标占位")
         local resolved = Icon.resolve({ channel = "damage", atkType = AD.ATK_HOLY }, "heal")
         check(resolved.channel == "damage" and resolved.atkType == AD.ATK_HOLY, "显式damage不会被holy/旧heal语义覆盖")
-        Fx.resetFloatingTexts(bcs)
-        local drawNumber = Fx.addCombatNumber(bcs, target, 123, 300, 180, fire)
-        Draw.setContext({ combat = { getFloatingTexts = function() return bcs.floatingTexts end } })
-        rec.calls = {}; Draw.drawFloatingTexts(nil)
-        local textCalls = named("text")
-        check(#textCalls == 9 and textCalls[9].args[1] == "123" and textCalls[9].alpha == 1
-            and textCalls[9].color[1] == 255 and near(drawNumber.timer, 0), "初生真实Draw即显9道字/描边，无alpha0帧")
-        local initialSize = textCalls[9].size
-        Fx.addCombatNumber(bcs, target, 200, 300, 180, fire)
-        rec.calls = {}; Draw.drawFloatingTexts(nil)
-        check(named("text")[9].size > initialSize and named("text")[9].args[1] == "323",
-            "叠加立即改总值并真实绘制轻微放大pulse")
-        drawNumber.timer = drawNumber.duration * 0.9
-        drawNumber.pulseTimer = 0
-        rec.calls = {}; Draw.drawFloatingTexts(nil)
-        local fade = named("text")[9].alpha
-        local once = #named("alpha") == 1 and near(fade, 102 / 255)
-        for _, c in ipairs(named("strokeColor")) do once = once and c.args[1][4] == 255 and near(c.alpha, fade) end
-        for _, c in ipairs(named("gradient")) do once = once and c.args[5][4] == 255 and c.args[6][4] == 255 end
-        check(once and rec.alpha == 0.63 and #rec.stack == 0, "末段alpha仅外层一次，图标不双乘且完整恢复父状态")
-        rec.calls = {}
-        Icon.draw(nil, { channel = "damage", atkType = AD.ATK_FIRE, isCrit = true, isBlocked = true, isDot = true }, 0, 0, 72)
-        local corners = { crit = false, block = false, dot = false }
-        for _, c in ipairs(named("nvgMoveTo")) do
-            if near(c.x, 25) and near(c.y, -24 - 27 * 0.34) then corners.crit = true end
-            if near(c.x, 25) and near(c.y, 24 - 28 * 0.34) then corners.block = true end
-        end
-        for _, c in ipairs(named("nvgCircle")) do if near(c.x, -24) and near(c.y, 24) then corners.dot = true end end
-        check(corners.crit and corners.block and corners.dot and #rec.stack == 0,
-            "暴击右上/格挡右下/DOT左下三个角标均存在且不盖属性主体")
 
         -- 命中管线：完整BC/Combo，外围公式返回固定单次结果，不重写结算。
         local stats = { damage = 0, hits = 0, heal = 0, taken = 0, dot = 0, deaths = 0, attackResults = 0 }
@@ -575,7 +472,7 @@ function Start()
             "高ping到期按真实30HP显示穿刺数字，不回退斩击")
         Combat.clearFloatingTexts()
         for _, path in ipairs({ "ui/battle/combat/BattleCombatFx.lua", "ui/battle/combat/BattleCombat.lua",
-            "ui/battle/combat/BattleCombatCombo.lua", "ui/battle/scene/BattleDraw.lua", "ui/battle/scene/DamageTypeIcon.lua" }) do
+            "ui/battle/combat/BattleCombatCombo.lua", "ui/battle/scene/DamageTypeIcon.lua" }) do
             check(sources[path] ~= nil, "完整真实模块执行 " .. path)
         end
     end, debug.traceback)

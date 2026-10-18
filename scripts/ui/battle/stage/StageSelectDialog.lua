@@ -850,8 +850,9 @@ end
 --- 幂等恢复教程首层。只调整视图，不切关；稳定后不反复重开或重置动画。
 ---@return boolean
 function StageSelectDialog.prepareTutorial()
+    if not teamSelectionAllowed(1) then return false end
     local key = "R:gold_mine"
-    local changed = not state.open or state.section ~= "dungeon"
+    local changed = not state.open or state.view ~= "selector" or state.section ~= "dungeon"
         or state.targetTeam ~= 1 or tostring(state.selKey) ~= key
         or state.chScroll ~= 0 or (state.rowScroll[key] or 0) ~= 0
     if not changed then return false end

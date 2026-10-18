@@ -57,7 +57,7 @@ function Start()
     mods["ui.character.panel.CharacterPanel"] = {
         getTeamSlotsData = function() return { { state = "occupied", heroId = 1 } } end,
         getActiveTeamIdx = function() return team end,
-        prepareTutorial = function() team = 1; prepares = prepares + 1 end,
+        prepareTutorial = function() local changed = team ~= 1; team = 1; prepares = prepares + 1; return changed end,
     }
     local detail = mods["ui.character.detail.CharacterDetail"]
     local detailState = views["ui.character.detail.CharacterDetail"]
@@ -95,7 +95,7 @@ function Start()
     require = function(name) return mods[name] or nativeRequire(name) end
     local Recovery = nativeRequire("ui.tutorial.TutorialPageRecovery")
     local TM = nativeRequire("systems.TutorialManager")
-    local data = { session = { claimedScenarios = {} }, heroes = { deployed = { 1 }, roster = { [1] = { level = 100 } } },
+    local data = { session = { claimedScenarios = {} }, heroes = { deployed = { 1 }, roster = { [1] = { level = 100 }, [2] = { level = 100 } } },
         equipment = { inventory = {}, equipped = {} } }
     local store = { Get = function(key) return data[key] end }
     local function tick(dt) clock.elapsedTime = clock.elapsedTime + dt; TM.update(dt) end
@@ -208,6 +208,77 @@ function Start()
         reset(8); tavernState.open = false; story = true; tick(1)
         check(not tavernState.open, "剧情不被页面恢复打断")
         story = false; tick(0.5); check(tavernState.open, "剧情结束恢复")
+        local panel = mods["ui.character.panel.CharacterPanel"]
+        panel.getOwnedHero = function(id) return data.heroes.roster[id] end
+        data.heroes.roster[2] = nil; detailState.open, detailState.tab = false, "attr"
+        local beforeOpen = detailState.opens
+        Recovery.prepare({}, store, "equip_slot_weapon", 1, false, 2, true)
+        check(detailState.opens == beforeOpen and not detailState.open,
+            "英雄数据未到不反复打开属性页冒充配装恢复")
+        data.heroes.roster[2] = { level = 100 }
+        Recovery.prepare({}, store, "equip_slot_weapon", 1, false, 2, true)
+        check(detailState.open and detailState.tab == "equip" and hero == 2,
+            "数据晚到后强制打开正确英雄配装，不换成首槽英雄")
+        local forcedBag = false
+        bag.ensureTutorialEquipment = function(id, slot, force)
+            forcedBag = id == 2 and slot == "weapon" and force == true
+            return false
+        end
+        Recovery.prepare({}, store, "equip_item_gifted", 1, false, 2, true)
+        check(forcedBag, "强恢复传递真实英雄及武器定位请求到仓库")
+        detailState.open = false
+        local positioned = false
+        panel.prepareTutorial = function(id)
+            local changed = not positioned and id == 2
+            positioned = positioned or id == 2
+            return changed
+        end
+        check(Recovery.prepare({}, store, "character_new_hero", 2, false, nil, true) and positioned,
+            "初次准备之后目标丢失仍能重新定位新增英雄")
+        check(not Recovery.prepare({}, store, "character_new_hero", 2, false, nil, true),
+            "名册强恢复按实际变化返回，稳定后不重置动画")
+        reset(8); tavernState.open = false; tick(3)
+        check(tavernState.open and not TM.isGroupCompleted(8) and TM.getCurrentHighlight() == "tavern_btn_gacha10",
+            "大dt同帧打开页面后保持教程，不按缺失时长完成组")
+        for _, key in ipairs({ "equip_slot_weapon", "equip_item_gifted", "character_new_hero", "talent_node_area",
+            "tavern_btn_gacha10", "smith_btn_enhance", "dungeon_gold_mine", "building_church" }) do
+            check(Recovery.canRestoreTarget(key), "已知目标有明确恢复路由: " .. key)
+        end
+        check(not Recovery.canRestoreTarget("building_guild"), "已删除页面不伪造恢复能力")
+        story = true; tavernState.open = false
+        check(not Recovery.prepare({}, store, "tavern_btn_gacha10", nil, false, nil, true) and not tavernState.open,
+            "直接强制恢复入口也不打断高优先级剧情")
+        story = false
+        local seamOpen = clock.elapsedTime
+        smithState.open = true
+        smith.getSeamAnim = function() return seamOpen + 0.12, 0, 0.45, 0.38 end
+        clock.elapsedTime = seamOpen + 0.5
+        check(not Recovery.isTargetReady("smith_btn_enhance"), "锻炉错峰滑入未结束不能把静态热点当成可点击按钮")
+        clock.elapsedTime = seamOpen + 0.6
+        check(Recovery.isTargetReady("smith_btn_enhance"), "锻炉按实际错峰及动画时长就绪")
+        smithState.open = false
+        check(not Recovery.isTargetReady("smith_btn_enhance"), "页面关闭后旧热点不能冒充就绪")
+
+        -- 读取正式选关恢复完整函数；视图用内存替身，不执行进关动作。
+        local file = assert(cache:GetFile("ui/battle/stage/StageSelectDialog.lua"))
+        local lines = {}; while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+        file:Dispose()
+        local source = table.concat(lines, "\n")
+        local prepareSource = assert(source:match("(function StageSelectDialog.prepareTutorial.-)\nfunction StageSelectDialog.close"))
+        local allowed, opens = true, 0
+        local state = { open = true, view = "overview", section = "dungeon", targetTeam = 1,
+            selKey = "R:gold_mine", chScroll = 0, rowScroll = {}, chDragMoved = true, cardDragMoved = true }
+        local selector = { openDungeon = function() opens = opens + 1; state.open, state.view = true, "selector" end }
+        local env = setmetatable({ state = state, StageSelectDialog = selector,
+            teamSelectionAllowed = function() return allowed end, resetCardScroll = function() end }, { __index = _G })
+        assert(load(prepareSource, "@正式选关恢复", "t", env))()
+        check(selector.prepareTutorial() and state.view == "selector" and opens == 1,
+            "总览保留gold字段也强制切回真正的黄金矿洞选关页")
+        check(state.chDragMoved and state.cardDragMoved and not selector.prepareTutorial() and opens == 1,
+            "选关恢复幂等并保留旧拖拽失效标记")
+        allowed = false; state.view = "overview"
+        check(not selector.prepareTutorial() and state.view == "overview" and opens == 1,
+            "终焉或全局锁拒绝强开，不改视图也不假报成功")
         check(actions == 0, "全部恢复路径不发送穿戴招募领奖动作")
         print("[tutorial_page_recovery_test] ALL PASS: " .. count .. " assertions")
     end)

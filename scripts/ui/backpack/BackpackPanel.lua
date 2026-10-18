@@ -926,9 +926,10 @@ end
 --- 仅教程显式恢复左栏配装仓库；普通 acquire 保持不自动重开契约。
 ---@param heroId number|string|nil
 ---@param slot string|nil
+---@param force? boolean 缺失目标时定位真实候选。
 ---@return boolean changed
-function Panel.ensureTutorialEquipment(heroId, slot)
-    return equipLink.ensureTutorialEquipment(heroId, slot)
+function Panel.ensureTutorialEquipment(heroId, slot, force)
+    return equipLink.ensureTutorialEquipment(heroId, slot, force)
 end
 function Panel.releaseForEquipment() Panel.releaseWarehouse("equipment") end
 function Panel.setEquipmentSlotFilter(slotOrNil, heroId)

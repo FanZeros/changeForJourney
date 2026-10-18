@@ -10,7 +10,7 @@ local BattleLayout = require("core.BattleLayout")
 local DrawUtil = require("core.DrawUtil")
 local ETS = require("systems.ExtraTalentSystem")
 local HeroAssetUtil = require("config.HeroAssetUtil")
-local DamageTypeIcon = require("ui.battle.scene.DamageTypeIcon")
+local BattleFloatImpact = require("ui.battle.scene.BattleFloatImpact")
 
 local BattleDraw = {}
 
@@ -28,11 +28,6 @@ local TAG_SIZE = 64
 -- 血条
 local HP_BAR_W, HP_BAR_H = 168, 28
 local HP_BAR_PADDING = 4
-
--- 浮动文字
-local FLOAT_TOTAL_FRAMES = 20
-local FLOAT_MOVE_DIST    = 240
-local FLOAT_VISUAL_SCALE = 0.7
 
 -- 职业图标映射
 local CLASS_ICON_MAP = {
@@ -388,49 +383,15 @@ end
 
 function BattleDraw.drawFloatingTexts(vg)
     local texts = combat.getFloatingTexts()
+    local slots = {}
+    local bounds = BattleLayout.MODE == "strip"
+        and { x = 0, y = 0, w = BattleLayout.STRIP_W, h = BattleLayout.STRIP_H } or nil
     for _, ft in ipairs(texts) do
-        local frame = (ft.timer / ft.duration) * FLOAT_TOTAL_FRAMES
-        local t = frame / FLOAT_TOTAL_FRAMES
-
-        local drawX = ft.x + ft.dirX * FLOAT_MOVE_DIST * t
-        local drawY = ft.y + ft.dirY * FLOAT_MOVE_DIST * t
-
-        local pulse = (ft.pulseTimer or 0) / 0.12
-        local scale = (1.0 - 0.75 * t) * (1 + 0.12 * pulse)
-        local fontSize = math.max(1, math.floor(ft.fontSize * scale))
-
-        -- 初生即完全清晰；仅最后5帧淡出，不等合并窗口或淡入。
-        local alpha = frame <= 15 and 255 or math.floor(255 * (1.0 - (frame - 15) / 5))
-        alpha = math.max(0, math.min(255, alpha))
-
-        if alpha > 0 then
-            nvgSave(vg)
-            -- 以当前飘字中心缩放整组文字、图标、描边，不缩短飘动轨迹。
-            nvgTranslate(vg, drawX, drawY)
-            nvgScale(vg, FLOAT_VISUAL_SCALE, FLOAT_VISUAL_SCALE)
-            nvgTranslate(vg, -drawX, -drawY)
-            nvgGlobalAlpha(vg, alpha / 255)
-            local textW = 0
-            if ft.text and ft.text ~= "" then
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, fontSize)
-                textW = nvgTextBounds(vg, 0, 0, ft.text) or fontSize
-            end
-            local iconSize = math.max(22, fontSize * 0.92)
-            local visual = DamageTypeIcon.resolve(ft, ft.kind)
-            local color = ft.color or (visual and DamageTypeIcon.color(visual)) or { 255, 255, 255 }
-            local tr, tg, tb = color[1], color[2], color[3]
-            local gap = 2
-            local iconW = visual and iconSize * 0.92 or 0
-            local textX = drawX + (visual and (iconW + gap) * 0.5 or 0)
-            drawTextStroke(vg, textX, drawY, ft.text,
-                fontSize, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                tr, tg, tb, 5)
-            if visual then
-                DamageTypeIcon.draw(vg, visual, textX - textW * 0.5 - gap - iconW * 0.5, drawY, iconSize)
-            end
-            nvgRestore(vg)
-        end
+        -- 同目标/同锚点展示分轨；只在本帧分组，不持有退场目标、不回收或改动原批次。
+        local key = ft.target or (tostring(ft.x) .. ":" .. tostring(ft.y))
+        local slot = (slots[key] or 0) + 1
+        slots[key] = slot
+        BattleFloatImpact.draw(vg, ft, slot, bounds)
     end
 end
 

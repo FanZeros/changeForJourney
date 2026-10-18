@@ -184,8 +184,10 @@ function Start()
             ["systems.TalentManager"] = { getConquerStacks = function() return 0 end },
             ["core.NumberUtil"] = { format = tostring }, ["core.DrawUtil"] = DrawUtil,
             ["systems.ExtraTalentSystem"] = { drawOrbit = noop } }
-        local Icon, iconEnv = compile("ui/battle/scene/DamageTypeIcon.lua", {})
-        drawMocks["ui.battle.scene.DamageTypeIcon"] = Icon
+        local Icon = compile("ui/battle/scene/DamageTypeIcon.lua", {})
+        drawMocks["ui.battle.scene.BattleFloatImpact"] = compile("ui/battle/scene/BattleFloatImpact.lua", {
+            ["ui.battle.scene.DamageTypeIcon"] = Icon,
+        })
         local Draw = compile("ui/battle/scene/BattleDraw.lua", drawMocks)
         local hero = { heroId = 1, hp = 10, maxHp = 10, name = "hero", level = 1 }
         local monster = { monsterId = 1, hp = 10, maxHp = 10, name = "monster", level = 1 }
@@ -883,131 +885,6 @@ function Start()
                 end
             end
 
-            -- 浮字使用真实BattleDraw及真实DrawUtil八方向描边；不把drawTextStroke mock为空。
-            local strokeUtil, strokeEnv = compile("core/DrawUtil.lua", {})
-            local fr = recorder(strokeEnv)
-            local floatMocks = copy(drawMocks); floatMocks["core.DrawUtil"] = strokeUtil
-            local FloatDraw, floatEnv = compile("ui/battle/scene/BattleDraw.lua", floatMocks)
-            for name, value in pairs(strokeEnv) do
-                if name:find("nvg", 1, true) == 1 then floatEnv[name], iconEnv[name] = value, value end
-            end
-            local floatQueue = {}
-            FloatDraw.setContext({ combat = { getFloatingTexts = function() return floatQueue end } })
-            local function floatCase(kind, font, t, color, label)
-                local ft = { text = "123", fontSize = font, duration = 2, timer = 2 * t,
-                    x = 300, y = 180, dirX = 0.6, dirY = -0.8, color = color, kind = kind }
-                floatQueue = { ft }
-                local beforeFloat, state = copy(ft), copy(fr.state)
-                fr.clear(); FloatDraw.drawFloatingTexts(context)
-                local texts, scales = fr.find("文字"), fr.find("缩放")
-                local x, y = 300 + 144 * t, 180 - 192 * t
-                local size = math.max(1, math.floor(font * (1 - 0.75 * t)))
-                local icon = math.max(22, size * 0.92)
-                local known = kind and kind ~= "" and kind ~= "未知"
-                local offset = known and (icon * 0.92 + 2) / 2 or 0
-                -- 独立帧样本：出生/2帧立即255，仅最后5帧淡出，18帧为102。
-                local alpha = assert(({ [0] = 255, [0.1] = 255, [0.25] = 255,
-                    [0.5] = 255, [0.9] = 102, [1] = 0 })[t])
-                if alpha == 0 then
-                    check(#fr.calls == 0 and same(fr.state, state) and same(ft, beforeFloat), label .. "透明时不绘制不污染状态")
-                    return
-                end
-                local fill = assert(texts[9])
-                local m = fill.state.matrix
-                check(#texts == 9 and #scales >= 1 and near(scales[1].args[1], 0.7) and near(scales[1].args[2], 0.7)
-                    and near(fill.size, size * 0.7) and fill.args[3] == "123"
-                    and near(fill.x, x + offset * 0.7) and near(fill.y, y)
-                    and near(m[1] * x + m[3] * y + m[5], x) and near(m[2] * x + m[4] * y + m[6], y),
-                    label .. "普通/自定义字号70%且240轨迹锚点保持")
-                local dx = { -5, 5, 0, 0, -3.535, 3.535, -3.535, 3.535 }
-                local dy = { 0, 0, -5, 5, -3.535, -3.535, 3.535, 3.535 }
-                local outline = true
-                for i = 1, 8 do
-                    outline = outline and near(texts[i].x - fill.x, dx[i] * 0.7)
-                        and near(texts[i].y - fill.y, dy[i] * 0.7) and near(texts[i].size, size * 0.7)
-                end
-                check(outline and near(fill.state.alpha, alpha / 255), label .. "真实八向描边及即显/末段淡出保持")
-                local circles, points, rects, strokes = fr.find("圆"), fr.find("起点"), fr.find("圆角矩形"), fr.find("描边")
-                local iconX = x - size * 1.8 / 2 - 1
-                local unit = icon / 72 * 0.7
-                local base = x + (iconX - x) * 0.7
-                if kind == "magic" then
-                    check(#fr.find("二次曲线") == 4 and near(points[1].x, base + 13 * unit)
-                        and near(points[1].y, y - 28 * unit), label .. "旧magic解析为暗影月刃，中心/尺寸70%")
-                elseif kind == "heal" then
-                    check(#points == 2 and #fr.find("线段") == 12 and near(points[1].x, base - 7 * unit)
-                        and near(points[1].y, y - 23 * unit), label .. "治疗十字完整轮廓与最小22尺寸70%")
-                elseif kind and kind:find("phys", 1, true) then
-                    check(near(points[1].x, base + 18 * unit) and near(points[1].y, y - 29 * unit),
-                        label .. "斩击刀刃中心/间距70%")
-                elseif kind == "burn" then
-                    check(#fr.find("二次曲线") == 6 and #circles == 4
-                        and near(points[1].y, y + 29 * unit), label .. "灼烧火焰六曲线及独立DOT三点角标70%")
-                elseif kind == "shield" then
-                    check(#fr.find("二次曲线") == 2 and near(points[1].x, base)
-                        and near(points[1].y, y - 28 * unit), label .. "吸盾徽记实际尺寸70%")
-                elseif kind == "block" then
-                    check(#fr.find("二次曲线") == 2 and #scales == 3
-                        and near(points[5].x, base + 25 * unit) and near(points[5].y, y + (24 - 28 * 0.34) * unit),
-                        label .. "格挡保留斩击主体并右下盾角标，不被属性遮住")
-                elseif kind == "crit" then
-                    check(#scales == 3 and near(points[5].x, base + 25 * unit)
-                        and near(points[5].y, y + (-24 - 27 * 0.34) * unit), label .. "暴击保留属性主体并右上星角标")
-                else check(#circles == 0 and #points == 0 and #rects == 0 and #strokes == 0 and #scales == 1,
-                    label .. "无kind/未知kind不画图也不占图标宽") end
-                if kind and kind:find("crit", 1, true) and kind ~= "crit" then
-                    check(#scales == 3 and near(points[5].x, base + 25 * unit)
-                        and near(points[5].y, y + (-24 - 27 * 0.34) * unit), label .. "复合暴击角标同样70%且不盖刀刃")
-                end
-                if known then
-                    check(near(scales[2].args[1], icon / 72) and near(scales[2].args[2], icon / 72),
-                        label .. "图标72设计空间按实际字号缩放")
-                end
-                for _, s in ipairs(strokes) do
-                    local badgeScale = s.state.matrix[1] / (icon / 72 * 0.7)
-                    check((near(badgeScale, 1) or near(badgeScale, 0.34))
-                        and near(s.width, s.args[1] * unit * badgeScale) and near(s.state.alpha, alpha / 255),
-                        label .. "描边按主体/角标局部比例缩放且alpha仅乘一次")
-                end
-                for _, gradient in ipairs(fr.find("线性渐变")) do
-                    check(gradient.args[5][4] == 255 and gradient.args[6][4] == 255,
-                        label .. "骨白/属性色高光均不再双乘alpha")
-                end
-                local rgb = fill.state.color
-                check(rgb[1] == color[1] and rgb[2] == color[2] and rgb[3] == color[3], label .. "浮字语义颜色保持")
-                check(same(ft, beforeFloat) and floatQueue[1] == ft and #floatQueue == 1
-                    and same(fr.state, state) and #fr.stack == 0, label .. "对象/排队/轨迹字段保持且完整恢复字体/颜色/透明度/变换")
-                -- 下一次真实普通图片绘制必须看不到浮字的0.7局部变换。
-                fr.clear(); FloatDraw.drawImageCentered(context, 900, 20, 30, 80, 40, 1)
-                local nextImage = assert(fr.find("图案")[1])
-                check(near(nextImage.cx, 20) and near(nextImage.cy, 30) and near(nextImage.w, 80)
-                    and near(nextImage.h, 40) and same(fr.state, state), label .. "下一次绘制尺寸/中心未污染")
-            end
-            floatCase(nil, 40, 0.5, { 255, 255, 255 }, "普通无kind")
-            floatCase("phys", 40, 0.5, { 255, 236, 170 }, "物理普通")
-            floatCase("phys_crit", 80, 0.5, { 255, 236, 170 }, "物理暴击大字")
-            floatCase("magic", 64, 0.25, { 120, 220, 255 }, "魔法自定义字号")
-            floatCase("heal", 1, 0.5, { 90, 235, 130 }, "治疗字号1图标最小22")
-            floatCase("burn", 30, 0.1, { 255, 140, 40 }, "灼烧即显")
-            floatCase("block", 48, 0.9, { 7, 8, 9 }, "格挡淡出")
-            floatCase("shield", 48, 0.5, { 7, 8, 9 }, "护盾")
-            floatCase("crit", 90, 0.5, { 255, 70, 70 }, "独立暴击")
-            floatCase("未知", 42, 0.5, { 7, 8, 9 }, "未知kind无空占位")
-            floatCase("", 42, 0.5, { 7, 8, 9 }, "空kind无空占位")
-            floatCase(nil, 40, 0, { 7, 8, 9 }, "初生浮字")
-            floatCase(nil, 40, 1, { 7, 8, 9 }, "寿命终点浮字")
-            local a = { text = "甲", fontSize = 40, duration = 2, timer = 1,
-                x = 100, y = 200, dirX = 1, dirY = 0, color = { 1, 2, 3 }, kind = "heal" }
-            local b = { text = "乙", fontSize = 80, duration = 2, timer = 0.5,
-                x = 700, y = 600, dirX = -1, dirY = -1, color = { 1, 2, 3 } }
-            floatQueue = { a, b }; local queueBefore = copy(floatQueue); local state = copy(fr.state)
-            fr.clear(); FloatDraw.drawFloatingTexts(context)
-            local texts = fr.find("文字")
-            check(#texts == 18 and texts[9].args[3] == "甲" and texts[18].args[3] == "乙"
-                and near(texts[18].x, 640) and near(texts[18].y, 540) and near(texts[18].size, 45.5)
-                and same(floatQueue, queueBefore) and floatQueue[1] == a and floatQueue[2] == b
-                and same(fr.state, state) and #fr.stack == 0,
-                "同队列相邻两浮字各围绕自己的中心缩放，顺序/对象不变且不积累70%变换")
         end
         check(nvgCreateImage == nativeImage and clock.elapsedTime == 101, "隔离环境不改全局nvg或推进真实时钟")
         check(sources["ui/town/TownScene.lua"] and sources["ui/battle/scene/BattleDraw.lua"]

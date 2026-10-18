@@ -300,12 +300,24 @@ function Start()
         check(not Tri.isOpen() and Tri.getTeamStageId(1) == nil and Tri.getTeamStageId(2) == nil,
             "Tri预热不open/不创建驱动")
         check(same(progress, progressBefore) and sideEffects == 0, "Tri预热不推进battle/不发回执/不改存档进度")
-        check(pathCount(Tri.resolveBackgroundPath(201)) > 0
-            and pathCount(Tri.resolveBackgroundPath(1001)) > 0 and pathCount(Tri.resolveBackgroundPath(2001)) > 0,
-            "Tri首屏按一队真实关及二三锁定章节预热")
+        local forestPath = "image/暗黑/L1_row1_forest.png"
+        local chapter10Path, chapter20Path = Tri.resolveBackgroundPath(1001), Tri.resolveBackgroundPath(2001)
+        check(pathCount(Tri.resolveBackgroundPath(201)) > 0 and pathCount(forestPath) == 1
+            and pathCount(chapter10Path) == 0 and pathCount(chapter20Path) == 0,
+            "Tri首屏按一队真实关预热，二三锁队共用章1林景且不加载10/20章")
+        check(#loads - before == 3, "Tri已有View context首预热只新增L0、一队章2与共享林景")
         local triWarm = #loads
         Tri.preload(context)
         check(#loads == triWarm, "Tri重复预热不重载L0/行背景")
+        drawBefore = #patterns
+        Tri.drawL1Underlay(context, 1920, 1080)
+        check(#loads == triWarm and #patterns - drawBefore == 3
+            and patterns[drawBefore + 2].path == forestPath and patterns[drawBefore + 3].path == forestPath
+            and patterns[drawBefore + 2].image == patterns[drawBefore + 3].image,
+            "锁队真实首underlay复用同一林景句柄，不把10/20章加载转移到draw")
+        check(pathCount(chapter10Path) == 0 and pathCount(chapter20Path) == 0
+            and same(progress, progressBefore) and not Tri.isOpen() and sideEffects == 0,
+            "锁队首绘仍不加载10/20章、不建驱动、不改真实队关或进度")
         progress.maxStageId = 1906
         Tri.preload(context)
         check(pathCount(Tri.resolveBackgroundPath(301)) > 0 and pathCount(Tri.resolveBackgroundPath(401)) > 0,
@@ -332,10 +344,54 @@ function Start()
         check(#loads - before == 2, "Draw新context重载两在场卡面，不借旧direct缓存")
         before = #loads; Tri.preload(freshContext)
         check(#loads - before == 4, "Tri新context重载L0与三行背景，不借旧L1")
+        do
+            local lockedProgress = { currentStageId = 101, maxStageId = 101,
+                teamStageIds = { ["2"] = 301, ["3"] = 401 }, clearedStages = {} }
+            local lockedSnapshot = copy(lockedProgress)
+            local lockedMocks = setmetatable({
+                ["runtime.ClientDispatcher"] = { get = function(key) return key == "battle" and lockedProgress or nil end },
+                ["ui.battle.scene.BattleScene"] = { getStageId = function() return lockedProgress.currentStageId end },
+            }, { __index = triMocks })
+            local LockedTri = compile("ui/battle/tri/BattleTriPage.lua", lockedMocks)
+            local lockedContext = {}
+            before = #loads; drawBefore = #patterns
+            LockedTri.preload(lockedContext)
+            check(#loads - before == 3 and pathCount(forestPath) == 2,
+                "章1新档冷预热只加载tag、L0与一张林景，三行不重复解码")
+            LockedTri.drawL1Underlay(lockedContext, 1920, 1080)
+            check(#loads - before == 3 and #patterns - drawBefore == 3
+                and patterns[drawBefore + 1].image == patterns[drawBefore + 2].image
+                and patterns[drawBefore + 2].image == patterns[drawBefore + 3].image,
+                "章1首绘三行共享已热林景句柄，首draw新增图片0")
+            check(same(lockedProgress, lockedSnapshot) and not LockedTri.isOpen() and sideEffects == 0,
+                "锁队背景替换不改二三队301/401存档或创建战斗")
+            lockedProgress.maxStageId = 906
+            before = #loads; LockedTri.preload(lockedContext)
+            check(#loads - before == 1 and images[count] == LockedTri.resolveBackgroundPath(301),
+                "仅解锁二队时只热其真实章3，三队继续共用林景")
+            lockedProgress.maxStageId = 1906
+            before = #loads; LockedTri.preload(lockedContext)
+            check(#loads - before == 1 and images[count] == LockedTri.resolveBackgroundPath(401)
+                and lockedProgress.teamStageIds["2"] == 301 and lockedProgress.teamStageIds["3"] == 401,
+                "三队解锁后只热真实章4，实际队关未被锁定展示替换")
+            lockedProgress.maxStageId = 101
+            before = #loads; drawBefore = #patterns
+            LockedTri.preload(lockedContext); LockedTri.drawL1Underlay(lockedContext, 1920, 1080)
+            check(#loads == before and patterns[drawBefore + 2].path == forestPath
+                and patterns[drawBefore + 3].path == forestPath,
+                "已热真实章后重新锁队仍切回林景，无新增解码")
+            check(LockedTri.resolveBackgroundPath(1001) == "image/战斗背景/悬魂瀑布.png"
+                and LockedTri.resolveBackgroundPath(2001) == "image/战斗背景/恶灵岔路.png"
+                and pathCount(chapter10Path) == 0 and pathCount(chapter20Path) == 0,
+                "锁队不改10/20实际章节解析，只是不加载不可参战背景")
+        end
 
         -- 真Standalone wrapper/队列配置/pump/Stop边界；不require生产入口或启动存档。
         local Queue = compile("boot/StartupQueue.lua", {})
-        local title = compile("ui/story/gate/DarkTitleScreenGate.lua", { ["core.I18n"] = {} })
+        local titleI18n = { t = function(key) return key end, get = function() return "zh" end,
+            displayName = function() return "简体中文" end, LANGS = {} }
+        local title, titleEnv = compile("ui/story/gate/DarkTitleScreenGate.lua", { ["core.I18n"] = titleI18n })
+        titleEnv.nvgIntersectScissor, titleEnv.nvgLinearGradient = noop, function() return {} end
         title.open(); title.setReady(false)
         local boundary = environment({ ["ui.battle.stage.StageSelectDialog"] = { close = noop },
             ["ui.fx.SpineCardEffect"] = { destroy = noop }, ["ui.fx.SpineResultEffect"] = { destroy = noop },
@@ -378,10 +434,37 @@ function Start()
         local pumpCode = section("boot/Standalone.lua", "local function pumpBootQueue_()", "-- [一次性加载] 三段式加载")
         assert(load(configCode, "@startup-real/Standalone.queue-config", "t", boundary))()
         local pump = assert(load(pumpCode .. "\nreturn pumpBootQueue_", "@startup-real/Standalone.pump", "t", boundary))()
+        local renderedFrames, renderedAtFinish = 0, false
+        local renderEnv = environment({}, {
+            RT = boundary.StandaloneRT, DarkTitleScreen = title,
+            vg = function() return boundary.vg end,
+            bootReady_ = function() return boundary.StandaloneRT.bootReady_ == true end,
+            seamGesture = { cancelIfBlocked = noop }, TutorialManager = { clearHotspots = noop },
+            HorizonUpdateTransform = noop, horizonInputContext = {}, applyFrame = noop,
+            windowW = function() return 1920 end, windowH = function() return 1080 end,
+            logicalW = function() return 1920 end, logicalH = function() return 1080 end,
+            dpr = function() return 1 end, nvgBeginFrame = noop,
+            finishFrame = function()
+                renderedAtFinish = boundary.StandaloneRT.bootRendered == true
+                renderedFrames = renderedFrames + 1
+            end,
+        })
+        assert(load(section("boot/StandaloneHorizon.lua", "function HandleNanoVGRenderHorizon()",
+            "    -- 标题未淡出时只画标题") .. "\nend", "@startup-real/Horizon.boot-render", "t", renderEnv))()
+        before = #loads
+        pump(); pump(); title.handleTap()
+        check(#loads == before and boundary.bootQueue_.index == 0 and boundary.bootQueue_.worker == nil
+            and not boundary.StandaloneRT.bootRendered and not title.isReady() and not title.isFading(),
+            "真实bootRendered前连续Update不泵启动队列、不加载图片或放行标题")
+        renderEnv.HandleNanoVGRenderHorizon()
+        check(renderedFrames == 1 and not renderedAtFinish and boundary.StandaloneRT.bootRendered
+            and boundary.bootQueue_.index == 0,
+            "真实Horizon启动分支完成finishFrame后才发布bootRendered，Render本身不泵")
         before = #loads
         pump(); title.handleTap()
-        check(#loads - before <= 2 and boundaryCompleted == 0 and not title.isFading()
-            and not boundary.StandaloneRT.bootReady_, "合作式半初始化让出时title未ready且不能进入")
+        check(#loads - before == 2 and boundary.bootQueue_.worker ~= nil and boundaryCompleted == 0
+            and not title.isFading() and not title.isReady() and not boundary.StandaloneRT.bootReady_,
+            "合作式半初始化让出时title未ready且不能进入")
         local warmTown, warmEnv = compile("ui/town/TownScene.lua", townMocks)
         warmEnv.nvgCreateImage = boundary.nvgCreateImage
         warmTown.init(context)
@@ -397,47 +480,121 @@ function Start()
         check(done and frames == 10 and #loads == before, "合作式Town预热19张分10泵，首完整draw新增0")
         assert(load(section("boot/Standalone.lua", "function Standalone.Stop()", "--- 标题关闭后按真实离线时长结算"),
             "@startup-real/Standalone.Stop", "t", boundary))()
+        local stoppedQueue = boundary.bootQueue_
         boundary.Standalone.Stop(); pump()
         check(boundary.bootQueue_ == nil and not boundary.StandaloneRT.bootReady_ and boundaryCompleted == 0,
             "真实Stop丢弃挂起worker，后续pump不恢复已释放context")
+        check(stoppedQueue.worker ~= nil and not boundary.StandaloneRT.bootRendered
+            and boundary.StandaloneRT.bootError == nil and boundary.vg == nil,
+            "Stop清理渲染凭据、错误与context，旧挂起协程不再属于宿主")
+        -- 只构造新的隔离队列场景，不声称半初始化模块支持同VM重启。
+        boundary.vg = context
         boundary.bootSteps = {
             { "firstStage", function() resumedAfterStop = resumedAfterStop + 1 end },
             { "BattleAssets", function() end },
         }
         assert(load(configCode, "@startup-real/Standalone.fresh-queue", "t", boundary))()
         pump()
+        check(resumedAfterStop == 0 and boundary.bootQueue_.index == 0 and not title.isReady(),
+            "新隔离队列仍等待新的真实启动Render，不能沿用Stop前凭据")
+        renderEnv.HandleNanoVGRenderHorizon(); pump()
         check(resumedAfterStop == 1 and triMocks.ready == true and not boundary.StandaloneRT.bootReady_
             and not title.isReady(), "首场准备成功后解除战斗门禁，但标题继续等待素材步骤")
         pump()
-        check(boundaryCompleted == 0 and boundary.StandaloneRT.bootReady_ and title.isReady(),
+        check(boundaryCompleted == 0 and boundary.StandaloneRT.bootReady_ and title.isReady()
+            and boundary.bootQueue_ == nil and boundary.StandaloneRT.bootError == nil,
             "全部启动步骤结束后独立解锁标题")
+        pump()
+        check(resumedAfterStop == 1, "成功队列完成后重复pump不重跑首场准备")
         title.setReady(false); triMocks.ready = false
+        boundary.StandaloneRT.bootRendered = false
+        local afterFirstFailure = 0
         boundary.bootSteps = {
             { "firstStage", function() error("EXPECTED_FIRST_STAGE_FAILURE") end },
-            { "BattleAssets", function() end },
+            { "BattleAssets", function() afterFirstFailure = afterFirstFailure + 1 end },
         }
         assert(load(configCode, "@startup-real/Standalone.first-stage-failure", "t", boundary))()
-        pump()
-        check(not triMocks.ready and not boundary.StandaloneRT.bootReady_,
-            "首场准备抛错时不解除BattleTri门禁")
-        pump()
-        check(title.isReady() and boundary.StandaloneRT.bootReady_ and not triMocks.ready,
-            "后续素材步骤成功也不能恢复失败首场的BattleTri门禁")
+        renderEnv.HandleNanoVGRenderHorizon(); pump()
+        check(not triMocks.ready and not boundary.StandaloneRT.bootReady_ and not title.isReady()
+            and boundary.bootQueue_.stopOnError and boundary.bootQueue_.failed
+            and tostring(boundary.StandaloneRT.bootError):find("EXPECTED_FIRST_STAGE_FAILURE", 1, true),
+            "首场准备抛错时不解除BattleTri门禁，保留failed与bootError凭据")
+        local failedQueue, firstError = boundary.bootQueue_, boundary.StandaloneRT.bootError
+        for _ = 1, 3 do pump(); title.handleTap() end
+        check(not title.isReady() and not title.isFading() and not boundary.StandaloneRT.bootReady_
+            and not triMocks.ready and afterFirstFailure == 0,
+            "首场关键失败后后续素材步骤不执行，标题与BattleTri始终锁定")
+        check(boundary.bootQueue_ == failedQueue and failedQueue.index == 1 and failedQueue.worker == nil
+            and boundary.StandaloneRT.bootError == firstError,
+            "首场失败后反复Update不丢弃错误队列、不重跑半初始化或伪装成功")
+        assert(load(section("boot/Standalone.lua", "StandaloneRT.retryStartup = function()",
+            "--- 标题关闭后按真实离线时长结算"), "@startup-real/Standalone.retry-startup", "t", boundary))()
+        check(boundary.StandaloneRT.retryStartup() == false and boundary.StandaloneRT.bootError == firstError,
+            "bootError不能走入场retryStartup重跑，必须重新进入游戏")
+        boundary.Standalone.Stop()
+        check(boundary.bootQueue_ == nil and boundary.StandaloneRT.bootError == nil
+            and not boundary.StandaloneRT.bootRendered and not boundary.StandaloneRT.bootReady_,
+            "错误退出Stop清除失败凭据但仍不解锁标题")
         title.setReady(false); triMocks.ready = false
+        boundary.vg = context
+        local assetAttempts, afterAssetFailure = 0, 0
         boundary.bootSteps = {
             { "firstStage", function() end },
-            { "BattleAssets", function() error("EXPECTED_ASSET_FAILURE") end },
+            { "BattleAssets", function() assetAttempts = assetAttempts + 1; error("EXPECTED_ASSET_FAILURE") end },
+            { "BattleEntry", function() afterAssetFailure = afterAssetFailure + 1 end },
         }
         assert(load(configCode, "@startup-real/Standalone.failed-assets", "t", boundary))()
+        renderEnv.HandleNanoVGRenderHorizon(); pump()
+        check(triMocks.ready and not boundary.StandaloneRT.bootReady_ and not title.isReady(),
+            "首场准备成功只解除BattleTri门禁，素材未完成不提前放行标题")
         pump()
-        check(triMocks.ready and not boundary.StandaloneRT.bootReady_,
-            "首场准备成功后即使素材步骤失败也保留战斗容错")
-        pump()
-        check(title.isReady() and triMocks.ready and boundary.StandaloneRT.bootReady_,
-            "素材失败沿用旧启动容错且不遗留BattleTri冻结")
+        check(not title.isReady() and not title.isFading() and triMocks.ready
+            and not boundary.StandaloneRT.bootReady_ and boundary.bootQueue_.failed
+            and tostring(boundary.StandaloneRT.bootError):find("EXPECTED_ASSET_FAILURE", 1, true),
+            "素材关键失败保留已成功首场凭据，但停止启动且不解锁标题")
+        local assetQueue, assetError = boundary.bootQueue_, boundary.StandaloneRT.bootError
+        for _ = 1, 3 do pump(); title.handleTap() end
+        check(assetAttempts == 1 and afterAssetFailure == 0 and boundary.bootQueue_ == assetQueue
+            and assetQueue.index == 2 and assetQueue.worker == nil and boundary.StandaloneRT.bootError == assetError,
+            "素材失败不自动重试、不继续BattleEntry、不遗失失败凭据")
+        check(boundary.StandaloneRT.retryStartup() == false and not title.isReady()
+            and not boundary.StandaloneRT.bootReady_, "素材bootError同样拒绝半初始化重跑与标题点击")
+        do
+            local texts = {}
+            titleEnv.nvgText = function(_, x, y, text) texts[#texts + 1] = { x = x, y = y, text = text } end
+            title.init(context)
+            local gateHandle = count
+            local savedTitle = { title.isOpen(), title.isReady(), title.isFading() }
+            before = #loads
+            renderEnv.HandleNanoVGRenderHorizon()
+            check(#loads == before and texts[#texts].text == "启动未完成，请重新进入游戏"
+                and same(savedTitle, { title.isOpen(), title.isReady(), title.isFading() })
+                and boundary.bootQueue_ == assetQueue,
+                "真实Horizon bootError覆盖层显示重新进入而非重试，不推进半初始化")
+            title.setReady(true); title.handleTap(); title.update(1); title.setReady(false)
+            check(not title.isOpen(), "loading复用场景先真实淡出并关闭标题，不重开标题")
+            for _, size in ipairs({ { 1920, 1080 }, { 1080, 2400 } }) do
+                for _, failed in ipairs({ false, true }) do
+                    before = #loads; drawBefore = #patterns
+                    title.drawLoading(context, size[1], size[2], 37, failed)
+                    local paint = patterns[#patterns]
+                    check(#loads == before and #patterns - drawBefore == 1 and paint.image == gateHandle
+                        and paint.alpha == 1 and not title.isOpen() and not title.isReady(),
+                        "closed title真实loading复用不透明已热gate且不改就绪 " .. size[1] .. "/" .. tostring(failed))
+                    check(paint.w >= size[1] and paint.h >= size[2] and math.abs(paint.w / paint.h - 16 / 9) < 0.000001
+                        and math.abs(paint.x + paint.w * 0.5 - size[1] * 0.5) < 0.000001
+                        and math.abs(paint.y + paint.h * 0.5 - size[2] * 0.5) < 0.000001,
+                        "真实loading横竖屏cover完整居中不拉伸 " .. size[1] .. "/" .. tostring(failed))
+                    check(texts[#texts].text == (failed and "进入准备失败，轻触重试" or "loading_res  37%"),
+                        "真实loading入场失败与进度提示仍可见 " .. size[1] .. "/" .. tostring(failed))
+                end
+            end
+            title.open(); title.setReady(false)
+        end
         -- 可选只读边界复现，审查输出不冒称支持同VM完整重启；不改生产修复。
         for _, arg in ipairs(GetArguments()) do
             if arg == "-assets-audit-stop-restart" then
+                boundary.Standalone.Stop()
                 local partialTown, partialEnv = compile("ui/town/TownScene.lua", townMocks)
                 local fakeVG, freshVG = {}, {}
                 boundary.vg = fakeVG
@@ -447,6 +604,7 @@ function Start()
                 partialTown.init(fakeVG)
                 boundary.bootSteps = { { "Town", function() partialTown.preload(fakeVG) end } }
                 assert(load(configCode, "@startup-audit/partial-town", "t", boundary))()
+                renderEnv.HandleNanoVGRenderHorizon()
                 before = #loads; pump()
                 local partialLoads = #loads - before
                 boundary.Standalone.Stop()

@@ -452,11 +452,12 @@ local function getBackgroundImage(vg, path)
 end
 
 local function ensureRowBg(vg, row, unlocked, stageId)
-    -- 锁定队展示待解锁章节；解锁后按各队实际战斗进度切回背景。
+    -- 锁队共用已热的林景，不为不可参战的队伍解码第10/20章两张大图。
+    -- 预热与绘制同走此函数，解锁后才切各队真实背景，不能把开销搬到首draw。
     ---@type string
     local path
     if row > unlocked then
-        path = CHAPTER_BG[row == 2 and 10 or 20]
+        path = CHAPTER_BG[1]
     else
         path = BattleTriPage.resolveBackgroundPath(stageId or BattleTriPage.getTeamStageId(row))
     end

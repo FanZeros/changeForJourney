@@ -58,6 +58,18 @@ function Start()
             Queue.checkpoint()
         end } }, { maxImages = 1, clock = function() return clock end })
         check(nested:pump() and nestedFinished, "嵌套协程不会占用启动资源计数")
+        check(queue.failed and queue.error ~= nil, "继续容错的队列也保留失败凭据")
+        local afterFailure, failureReports = 0, 0
+        local critical = Queue.new({
+            { "critical", function() error("expected critical failure") end },
+            { "forbidden", function() afterFailure = afterFailure + 1 end },
+        }, { stopOnError = true, onComplete = function(_, _, _, success)
+            check(not success, "关键失败回调不伪成功")
+            failureReports = failureReports + 1
+        end })
+        check(critical:pump() and critical.failed, "关键失败终止队列而非进入半成品后续步")
+        for _ = 1, 20 do check(critical:pump(), "失败队列稳定结束") end
+        check(afterFailure == 0 and failureReports == 1, "失败不自动重跑、不反复发完成回调")
         check(Queue.new({}):pump(), "空队列立即完成")
     end, debug.traceback)
     if not ok then failures[#failures + 1] = tostring(err) end

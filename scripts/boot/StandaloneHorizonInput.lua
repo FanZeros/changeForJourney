@@ -351,8 +351,15 @@ function Input.bind(ctx)
             return toDesign(mp.x / dpr(), mp.y / dpr())
         end })
 
+    local function startupBlocksInput()
+        if RT.bootError then return true end
+        return (RT.entryPreparing or RT.entryError) and not LetterIntro.isOpen()
+            and not IntroCutscene.isActive() and not ScenarioDialogue.isActive()
+    end
+
     function HandleMouseButtonDownHorizon(eventType, eventData)
         local button = eventData["Button"]:GetInt()
+        if startupBlocksInput() then return end
         if curationPointer("down", button) then return end
         if artworkPointer("down", button) then return end
         if marqueeGesture.hasPress() then
@@ -665,6 +672,7 @@ function Input.bind(ctx)
     end
 
     function HandleMouseMoveHorizon(eventType, eventData)
+        if startupBlocksInput() then return end
         if curationPointer("move", MOUSEB_LEFT) then return end
         if artworkPointer("move", MOUSEB_LEFT) then return end
         if marqueeGesture.hasPress() then
@@ -885,6 +893,11 @@ function Input.bind(ctx)
     end
 
     function HandleMouseButtonUpHorizon(eventType, eventData)
+        if startupBlocksInput() then
+            pressValid = false
+            if eventData["Button"]:GetInt() == MOUSEB_LEFT and RT.retryStartup then RT.retryStartup() end
+            return
+        end
         if curationPointer("up", eventData["Button"]:GetInt()) then return end
         if artworkPointer("up", eventData["Button"]:GetInt()) then return end
         if marqueeGesture.hasPress() then

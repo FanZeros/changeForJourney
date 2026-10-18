@@ -115,10 +115,16 @@ local entryPrepared_ = false
 local firstStageStep_ = nil
 
 local function pumpBootQueue_()
-    if not bootQueue_ then return end
+    if not bootQueue_ or StandaloneRT.bootError or not StandaloneRT.bootRendered then return end
     -- 整个init可在真实图片缓存未命中时让出；缓存命中不占解码额度。
     -- 每帧只恢复一次，不把多个轻步骤与下一个重步骤挤到同一帧。
     if bootQueue_:pump() then
+        if bootQueue_.failed then
+            StandaloneRT.bootError = tostring(bootQueue_.error)
+            DarkTitleScreen.setReady(false)
+            print("[Standalone] boot stopped after critical failure")
+            return
+        end
         bootQueue_ = nil
         bootReady_ = true
         StandaloneRT.bootReady_ = true
@@ -361,6 +367,8 @@ function Standalone.Start()
     inventoryBadge = { ready = false, full = false, acc = 0 }
     entryQueue_, entryPrepared_ = nil, false
     StandaloneRT.entryPrepared, StandaloneRT.entryPreparing, StandaloneRT.entryRendered = false, false, false
+    StandaloneRT.bootError, StandaloneRT.entryError = nil, nil
+    StandaloneRT.bootRendered = false
     BattleTriPage.setBattleReady(false)
     StandaloneSave.SetBattlePage(BattleTriPage)
     -- 0. PlayerStore 初始化：单机模式下此前从未调用（仅多人 Client.lua 调），
@@ -447,7 +455,7 @@ function Standalone.Start()
     DarkTitleScreen.setReady(false)
     DarkTitleScreen.open()
     local bootSteps = {
-        { "LetterIntro", function() LetterIntro.init(vg) end },
+        { "LetterIntro", function() LetterIntro.init(vg); LetterIntro.preload() end },
         { "TopBar", function() TopBar.init(vg) end },
         { "BottomNav", function() BottomNav.init(vg) end },
         { "BattleScene", function() BattleScene.init(vg) end },
@@ -497,7 +505,7 @@ function Standalone.Start()
             GameSFX.preload("hit")
         end },
         { "BattleEntry", function()
-            entryPrepared_ = BattleTriPage.prepareEntry(vg)
+            entryPrepared_ = assert(BattleTriPage.prepareEntry(vg), "首场入场准备未完成")
             StandaloneRT.entryPrepared = entryPrepared_
         end },
     }
@@ -505,8 +513,10 @@ function Standalone.Start()
         if step[1] == "firstStage" then firstStageStep_ = step[2] break end
     end
     bootQueue_ = StartupQueue.new(bootSteps, {
+        stopOnError = true,
         onComplete = function(index, name, elapsed, ok, err)
-            -- 只有首场准备步骤完整成功后才解除战斗门禁；后续素材预热失败仍可沿用旧容错。
+            -- 只有首场准备完整成功才解除战斗门禁；缺图仍沿素材模块自身的返回值容错。
+            -- 未捕获的初始化异常停止队列，不能把后续结束伪装成全局就绪。
             if name == "firstStage" and ok then BattleTriPage.setBattleReady(true) end
             if not ok then
                 print("[Standalone] boot step FAIL " .. name .. ": " .. tostring(err))
@@ -585,6 +595,8 @@ function Standalone.Stop()
     bootQueue_ = nil
     entryQueue_, entryPrepared_ = nil, false
     StandaloneRT.entryPrepared, StandaloneRT.entryPreparing, StandaloneRT.entryRendered = false, false, false
+    StandaloneRT.bootError, StandaloneRT.entryError = nil, nil
+    StandaloneRT.bootRendered = false
     bootReady_ = false
     StandaloneRT.bootReady_ = false
     inventoryBadge = { ready = false, full = false, acc = 0 }
@@ -629,6 +641,7 @@ function Standalone.Stop()
         nvgDelete(vg)
         vg = nil
     end
+    StandaloneRT.vg = nil
 end
 
 --- 入场重建只发生在开局/清档，不在攻击期同步加载，也不推进离线待领期间的战斗。
@@ -638,8 +651,10 @@ local function prepareEntry_()
         StandaloneRT.entryPrepared, StandaloneRT.entryRendered = false, false
     end
     if entryPrepared_ then return true end
+    if StandaloneRT.entryError then return false end
     if not entryQueue_ then
         StandaloneRT.entryPreparing = true
+        StandaloneRT.entryPercent, StandaloneRT.entryStep = 0, "firstStageRetry"
         StandaloneRT.entryRendered = false
         entryQueue_ = StartupQueue.new({
             { "firstStageRetry", function()
@@ -649,11 +664,25 @@ local function prepareEntry_()
                 end
             end },
             { "BattleEntry", function()
-                entryPrepared_ = BattleTriPage.prepareEntry(vg)
+                entryPrepared_ = assert(BattleTriPage.prepareEntry(vg), "入场准备凭据失效")
             end },
-        }, { onComplete = function(_, _, _, ok, err)
-            if not ok then print("[Standalone] 入场战斗准备失败: " .. tostring(err)) end
+        }, { stopOnError = true, onComplete = function(index, name, _, ok, err)
+            StandaloneRT.entryStep, StandaloneRT.entryPercent = name, index * 50
+            if not ok then
+                StandaloneRT.entryError = tostring(err)
+                print("[Standalone] 入场战斗准备失败: " .. tostring(err))
+            end
         end })
+    end
+    return false
+end
+
+StandaloneRT.retryStartup = function()
+    if StandaloneRT.entryError then
+        -- 失败步骤可能已写驱动签名但未完成敌波；明确重试必须废除半成品凭据。
+        BattleTriPage.invalidateTeams()
+        StandaloneRT.entryError = nil
+        return true
     end
     return false
 end
@@ -869,6 +898,8 @@ local function startIntroChain_()
     local token = openingFlowToken_
     GameBGM.setScene("letter", { fromStart = true })
     LetterIntro.start(function() playOpening_(token) end)
+    -- 三人已经水合；把入场预热藏在信件/对白期间，不等最后一段关掉再退回暗屏。
+    prepareEntry_()
 end
 Standalone.cancelOpening = cancelOpening_
 
@@ -987,6 +1018,8 @@ function Standalone.requestResetToStartScreen()
     startFlowBegun_ = false
     entryQueue_, entryPrepared_ = nil, false
     StandaloneRT.entryPrepared, StandaloneRT.entryPreparing, StandaloneRT.entryRendered = false, false, false
+    StandaloneRT.bootError, StandaloneRT.entryError = nil, nil
+    StandaloneRT.bootRendered = false
     print(string.format("%s step11: startScreenWasOpen_=true clock=%.4f", TAG, os.clock()))
 
     -- 12. 回到标题。不能重跑 Start，否则事件重复注册并把页面叠坏。
@@ -1038,7 +1071,19 @@ function HandleUpdate(eventType, eventData)
             StandaloneRT.entryPrepared = entryPrepared_
             StandaloneRT.entryPreparing = false
         end
+        -- 入场预热不推进战斗/离线，但不能冻结正在播放的信件和对白。
+        if openingFlowActive_ then
+            if LetterIntro.isOpen() then LetterIntro.update(dt)
+            elseif ScenarioDialogue.isActive() then ScenarioDialogue.update(dt) end
+        end
         -- 完成当帧也先交给渲染；下一帧才允许离线计算与领取窗出现。
+        return
+    end
+    if StandaloneRT.entryError then
+        if openingFlowActive_ then
+            if LetterIntro.isOpen() then LetterIntro.update(dt)
+            elseif ScenarioDialogue.isActive() then ScenarioDialogue.update(dt) end
+        end
         return
     end
 
@@ -1357,37 +1402,37 @@ function HandleUpdate(eventType, eventData)
 end
 
 function HandleMouseButtonDown(eventType, eventData)
-    if not bootReady_ or StandaloneRT.entryPreparing then return end
+    if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleMouseButtonDownHorizon(eventType, eventData)
 end
 
 function HandleMouseMove(eventType, eventData)
-    if not bootReady_ or StandaloneRT.entryPreparing then return end
+    if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleMouseMoveHorizon(eventType, eventData)
 end
 
 function HandleMouseButtonUp(eventType, eventData)
-    if not bootReady_ or StandaloneRT.entryPreparing then return end
+    if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleMouseButtonUpHorizon(eventType, eventData)
 end
 
 function HandleTouchBegin(eventType, eventData)
-    if not bootReady_ or StandaloneRT.entryPreparing then return end
+    if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleTouchBeginHorizon(eventType, eventData)
 end
 
 function HandleTouchMove(eventType, eventData)
-    if not bootReady_ or StandaloneRT.entryPreparing then return end
+    if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleTouchMoveHorizon(eventType, eventData)
 end
 
 function HandleTouchEnd(eventType, eventData)
-    if not bootReady_ or StandaloneRT.entryPreparing then return end
+    if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleTouchEndHorizon(eventType, eventData)
 end
@@ -1398,7 +1443,7 @@ function HandleScreenMode(eventType, eventData)
 end
 
 function HandleMouseWheel(eventType, eventData)
-    if not bootReady_ or StandaloneRT.entryPreparing then return end
+    if not bootReady_ or StandaloneRT.entryPreparing or StandaloneRT.entryError then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleMouseWheelHorizon(eventType, eventData)
 end

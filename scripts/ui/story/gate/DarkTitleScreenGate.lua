@@ -163,6 +163,33 @@ local function drawGateLight(vg, w, h, reveal, opening, alpha)
     end
 end
 
+-- 复用已加载的大门作为稳定入场底，不重新打开标题或触发它的淡出动画。
+-- 全程不加载新资源、不修改存档/就绪状态。
+function DarkTitleScreen.drawLoading(vg, w, h, percent, failed, message)
+    nvgSave(vg)
+    nvgBeginPath(vg); nvgRect(vg, 0, 0, w, h)
+    if imgGate_ > 0 then
+        local dw = math.max(w, h * 16 / 9)
+        local dh = dw * 9 / 16
+        local paint = nvgImagePattern(vg, (w - dw) * 0.5, (h - dh) * 0.5, dw, dh, 0, imgGate_, 1)
+        ---@cast paint NVGpaint
+        nvgFillPaint(vg, paint)
+    else
+        nvgFillColor(vg, nvgRGBA(14, 14, 22, 255))
+    end
+    nvgFill(vg)
+    nvgBeginPath(vg); nvgRect(vg, 0, 0, w, h)
+    nvgFillColor(vg, nvgRGBA(6, 6, 10, 100)); nvgFill(vg)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, math.max(20, math.min(w * 0.024, 32)))
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 255))
+    local text = message or (failed and "进入准备失败，轻触重试"
+        or string.format("%s  %d%%", I18n.t("loading_res"), math.floor(percent or 0)))
+    nvgText(vg, w * 0.5, h * 0.78, text, nil)
+    nvgRestore(vg)
+end
+
 -- ============================================================================
 -- 绘制（全窗口逻辑坐标：调用方先 nvgResetTransform，传入 logicalW/logicalH）
 -- ============================================================================

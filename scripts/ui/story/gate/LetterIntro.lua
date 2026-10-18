@@ -180,6 +180,11 @@ local function ensureLetterImages()
     end
 end
 
+-- 首信背景在标题队列内预热，开门切换当帧不再同步解码大图。
+function LetterIntro.preload()
+    ensureLetterImages()
+end
+
 ---@param options table|nil
 function LetterIntro.start(onFinish, options)
     ensureLetterImages()

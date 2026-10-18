@@ -12,6 +12,9 @@ local M = {}
 ---@field images number
 ---@field clock fun(): number
 ---@field onComplete fun(index:number, name:string, elapsed:number, ok:boolean, err:any)|nil
+---@field stopOnError boolean
+---@field failed boolean
+---@field error any
 local Queue = {}
 Queue.__index = Queue
 
@@ -30,6 +33,7 @@ function M.new(steps, options)
         frameStart = 0, stepStart = 0, images = 0,
         clock = options.clock or function() return time.elapsedTime end,
         onComplete = options.onComplete,
+        stopOnError = options.stopOnError == true, failed = false, error = nil,
     }, Queue)
 end
 
@@ -46,6 +50,7 @@ end
 --- 每帧最多恢复一次；任务结束也不在同帧追赶下一步。
 ---@return boolean done
 function Queue:pump()
+    if self.failed and self.stopOnError then return true end
     if self.index >= #self.steps and not self.worker then return true end
     if not self.worker then
         self.index = self.index + 1
@@ -62,11 +67,12 @@ function Queue:pump()
     if not ok or coroutine.status(self.worker) == "dead" then
         local step = self.steps[self.index]
         self.worker = nil
+        if not ok then self.failed, self.error = true, err end
         if self.onComplete then
             self.onComplete(self.index, step[1], self.clock() - self.stepStart, ok, err)
         end
     end
-    return self.index >= #self.steps and not self.worker
+    return (self.failed and self.stopOnError) or (self.index >= #self.steps and not self.worker)
 end
 
 return M

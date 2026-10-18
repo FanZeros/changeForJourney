@@ -1,11 +1,13 @@
--- Startup regression/performance probe. Baseline: 5fca1d82; same probe for later A/B.
+-- Startup regression/performance probe. Reference source: be9f8104; same probe for A/B.
 -- Based on scaffold-2d's Start/Update/Stop lifecycle and equipment_ascend_freeze_repro's
 -- cache:GetFile -> load(..., env) isolation. Never require main/Standalone in host _G.
 -- Run from /workspace in a FRESH Runtime process (no official build required):
--- ./.cli/UrhoXRuntime tests/startup_performance_probe.lua -tapcode_dir=. -tool_mode -graphicssurfaceless
--- Add -startup-enter to tap the ready title, let the REAL compact LetterIntro finish,
--- and sample at least 180 battle Update AND NanoVGRender callbacks with starter trio.
+-- ./.cli/UrhoXRuntime tests/startup_performance_probe.lua -tapcode_dir=. -tool_mode -graphicsheadless
+-- Add -startup-enter to tap the ready title, let the REAL LetterIntro finish, advance
+-- opening dialogue through its public input API, and sample >=180 REAL driver Update
+-- AND NanoVGRender -> BattleTriPage -> BattleView callbacks with the starter trio.
 -- Options: -startup-frames=180 (minimum 180), -startup-max-frames=1800, -startup-top=8.
+-- -startup-observe-only diagnoses opening stalls without supplying dialogue input.
 -- Native TimeStep/random consumption/GC remain unchanged. CPU = os.clock (process CPU,
 -- may include driver workers); wall = native time.elapsedTime, NOT TimeStep/FPS/GPU time.
 -- Module/function timings are inclusive; nested totals must NOT be added together.
@@ -19,21 +21,39 @@ local nativeRequire, nativeLoad, nativeCache = require, load, cache
 local nativeTime, nativeClock, nativePrint = time, os.clock, print
 local nativeSubscribe, nativeCoroutine = SubscribeToEvent, coroutine
 local nativeCreateImage, nativeDeleteImage = nvgCreateImage, nvgDeleteImage
+-- Isolated loader exports are dynamic tables, not engine type declarations.
+---@type table<string, any>
+local projectModules = {}
+---@type table<string, any>
+local metrics = {}
+---@type table<string, any>
+local errors = {}
+---@type table<number, any>
+local driverRefs = {}
+---@type table<string, any>
+local eventImageStats = {}
 ---@type table
-local ctx = { modules = {}, loading = {}, engineModules = {}, metrics = {}, errors = {},
+local ctx = { modules = projectModules, loading = {}, engineModules = {}, metrics = metrics, errors = errors,
     scopes = {}, images = {}, requests = {}, frames = 0, renders = 0, phase = "load",
     enter = false, sampleFrames = 180, maxFrames = 1800, top = 8, seed = 20261007,
     sourceRoot = "/workspace",
     done = false, started = false, stopped = false, bootDone = false, bootSteps = 0,
-    titleReadyFrame = -1, bootDoneFrame = -1, battleFirstFrame = -1, entered = false,
+    titleReadyFrame = -1, bootDoneFrame = -1, firstStageReadyFrame = -1, battleFirstFrame = -1, entered = false,
     requireCalls = 0, sourceLoads = 0, sourceBytes = 0, engineCalls = 0,
     loadDepth = 0, requireCpu = 0, requireWall = 0,
     fileAttempts = 0, fsQueries = 0, denied = 0, saveCalls = {}, productionLines = 0,
     requestDepth = 0, requestHookInstalled = false, contextIds = {}, nextContextId = 0,
     activeImages = {}, updateTasks = 0, drawTasks = 0, initTasks = 0, frameBootTasks = 0,
     frameLoads = 0, frameImages = 0, frameRequests = 0, dtTotal = 0, dtMax = 0,
-    frameWork = {}, observedFrames = {}, eventImageStats = {}, imageOwners = {},
-    battleUpdates = 0, battleRenders = 0, renderPending = false, endRequested = false, driverRefs = {} }
+    frameWork = {}, observedFrames = {}, eventImageStats = eventImageStats, imageOwners = {},
+    battleUpdates = 0, battleRenders = 0, renderPending = false, endRequested = false, driverRefs = driverRefs,
+    driverStats = {}, moduleNames = {}, moduleIdentityChecks = 0, chain = {}, observeOnly = false,
+    driverUpdateCalls = 0, driverTickCalls = 0, driverViewCalls = 0, attackCalls = 0,
+    scenarioRenderedFrame = -1, nextDialogueTap = 0, dialogueTaps = 0, letterFinished = false,
+    lastPhase = false, eventName = false }
+local function chain(message)
+    ctx.chain[#ctx.chain + 1] = { frame = ctx.frames, text = message }
+end
 local overrides = {}
 local env = setmetatable({}, { __index = function(_, key)
     local value = overrides[key]
@@ -48,19 +68,19 @@ end
 local function capture(name, err)
     local message = tostring(err)
     local key = name .. "|" .. message
-    local item = ctx.errors[key]
+    local item = errors[key]
     if not item then
         item = { name = name, message = message, count = 0, firstFrame = ctx.frames }
-        ctx.errors[key] = item
+        errors[key] = item
     end
     item.count = item.count + 1
 end
 local function metric(key)
-    local m = ctx.metrics[key]
+    local m = metrics[key]
     if not m then
         m = { name = key, calls = 0, cpu = 0, wall = 0, span = 0, cpuMax = 0,
             wallMax = 0, errors = 0, cpuFrame = 0, wallFrame = 0 }
-        ctx.metrics[key] = m
+        metrics[key] = m
     end
     return m
 end
@@ -189,6 +209,14 @@ env.print = function(...)
         ctx.frameBootTasks = ctx.frameBootTasks + 1
     end
     if line:find("boot queue complete", 1, true) then ctx.bootDone = true end
+    if line:find("[LetterIntro] finished", 1, true) then ctx.letterFinished = true end
+    if line:find("[Standalone] intro chain finished", 1, true) then ctx.openingFinished = true end
+    for _, marker in ipairs({ "[LetterIntro] started", "[LetterIntro] finished", "[StoryPlayer] opening ",
+        "[StoryPlayer] deferred opening finished ", "[Standalone] intro chain finished",
+        "[HeroService] starter trio ready", "[Standalone] grant starter trio", "[TriDriver]",
+        "[Standalone] no offline reward", "[Standalone] 入场战斗准备失败", "boot queue complete" }) do
+        if line:find(marker, 1, true) then chain(line); break end
+    end
     if line:find(" FAIL ", 1, true) or line:find("ERROR", 1, true) or line:find("failed:", 1, true) then
         capture("production.log", line)
     end
@@ -301,17 +329,85 @@ local function instrument(name, module)
         local factory = assert(module.new)
         module.new = function(team, ...)
             local drv = factory(team, ...)
-            ctx.driverRefs[team] = drv
+            assert(type(drv) == "table" and drv.teamIdx == team, "real driver factory identity changed")
+            driverRefs[team] = drv
+            local stats = { starts = 0, updates = 0, ticks = 0, views = 0, attacks = 0 }
+            ctx.driverStats[drv] = stats
+            chain("driver factory team=" .. tostring(team) .. " instance=" .. tostring(drv))
+            -- update/tick/start live on EACH factory result, not the module export.
+            -- Keep colon self, return arity and production error propagation intact.
+            for _, method in ipairs({ "start", "update", "tick" }) do
+                local original = assert(drv[method], "real driver API missing: " .. method)
+                drv[method] = function(self, ...)
+                    assert(self == drv, "real driver self identity changed")
+                    observeWork()
+                    if method == "start" then ctx.initTasks = ctx.initTasks + 1
+                    else ctx.updateTasks = ctx.updateTasks + 1 end
+                    local canTick = method == "tick" and drv.active == true and #drv.allies > 0
+                        and ctx.eventName == "Update"
+                    local result = table.pack(measured("driver|team" .. tostring(team) .. "." .. method, original, self, ...))
+                    if method == "start" then
+                        stats.starts = stats.starts + 1
+                        local ids = {}
+                        for _, ally in ipairs(drv.allies) do ids[#ids + 1] = tostring(ally.heroId or ally.id) end
+                        chain("driver start team=" .. tostring(team) .. " stage=" .. tostring(drv.stageId)
+                            .. " allies=" .. table.concat(ids, ",") .. " enemies=" .. #drv.enemies)
+                    elseif method == "update" then
+                        stats.updates = stats.updates + 1
+                        if team == 1 and ctx.eventName == "Update" then ctx.driverUpdateCalls = ctx.driverUpdateCalls + 1 end
+                    elseif canTick then
+                        stats.ticks = stats.ticks + 1
+                        if team == 1 then ctx.driverTickCalls = ctx.driverTickCalls + 1 end
+                    end
+                    return table.unpack(result, 1, result.n)
+                end
+            end
             return drv
+        end
+    elseif name == "ui.battle.scene.BattleView" then
+        local original = assert(module.draw)
+        module.draw = function(vg, state, ...)
+            local result = table.pack(original(vg, state, ...))
+            -- A real row draw must receive the captured driver's EXACT live lists.
+            local drv = driverRefs[1]
+            if ctx.eventName == "NanoVGRender" and drv and drv.active == true and state
+                and state.allies == drv.allies and state.enemies == drv.enemies and #drv.allies > 0 then
+                ctx.driverViewCalls = ctx.driverViewCalls + 1
+                ctx.driverStats[drv].views = ctx.driverStats[drv].views + 1
+            end
+            return table.unpack(result, 1, result.n)
+        end
+    elseif name == "ui.battle.combat.BattleCombat" then
+        local original = assert(module.performAttack)
+        module.performAttack = function(attacker, targets, isAlly, ...)
+            local result = table.pack(original(attacker, targets, isAlly, ...))
+            local drv = driverRefs[1]
+            if ctx.eventName == "Update" and drv and drv.active == true and isAlly == true
+                and targets == drv.enemies then
+                for _, ally in ipairs(drv.allies) do
+                    if ally == attacker then
+                        ctx.attackCalls = ctx.attackCalls + 1
+                        ctx.driverStats[drv].attacks = ctx.driverStats[drv].attacks + 1
+                        break
+                    end
+                end
+            end
+            return table.unpack(result, 1, result.n)
+        end
+    elseif name == "ui.story.ScenarioDialogue" then
+        local original = assert(module.draw)
+        module.draw = function(...)
+            local result = table.pack(original(...))
+            if module.isActive() and ctx.eventName == "NanoVGRender" then ctx.scenarioRenderedFrame = ctx.frames end
+            return table.unpack(result, 1, result.n)
         end
     end
     if name == "ui.battle.tri.BattleTriPage" then
         local original = assert(module.setBattleReady)
         module.setBattleReady = function(ready)
             local result = table.pack(original(ready))
-            if ready == true then
-                ctx.bootDone = true
-                if ctx.bootDoneFrame < 0 then ctx.bootDoneFrame = ctx.frames end
+            if ready == true and ctx.firstStageReadyFrame < 0 then
+                ctx.firstStageReadyFrame = ctx.frames
             end
             return table.unpack(result, 1, result.n)
         end
@@ -328,7 +424,7 @@ local function loadProject(name)
         end
         return nativeRequire(name) -- no library source reload, no host require override.
     end
-    if ctx.modules[name] ~= nil then return ctx.modules[name] end
+    if projectModules[name] ~= nil then return projectModules[name] end
     assert(not ctx.loading[name], "isolated cyclic require " .. tostring(name))
     ctx.loading[name] = true
     ctx.sourceLoads, ctx.frameLoads = ctx.sourceLoads + 1, ctx.frameLoads + 1
@@ -352,7 +448,12 @@ local function loadProject(name)
     if module == nil then module = true end
     if name == "boot.StandaloneSave" then saveStub(module) end
     instrument(name, module)
-    ctx.modules[name], ctx.loading[name] = module, nil
+    if type(module) == "table" then
+        local previous = ctx.moduleNames[module]
+        if previous and previous ~= name then chain("module export alias " .. previous .. " = " .. name) end
+        ctx.moduleNames[module] = previous or name
+    end
+    projectModules[name], ctx.loading[name] = module, nil
     return module
 end
 env.require = loadProject
@@ -371,24 +472,37 @@ local function installRequestHook()
     ctx.requestHookInstalled = true
 end
 local function phase()
-    local title = ctx.modules["ui.story.gate.DarkTitleScreenGate"]
-    local letter = ctx.modules["ui.story.gate.LetterIntro"]
-    local tri = ctx.modules["ui.battle.tri.BattleTriPage"]
+    local title = projectModules["ui.story.gate.DarkTitleScreenGate"]
+    local letter = projectModules["ui.story.gate.LetterIntro"]
+    local tri = projectModules["ui.battle.tri.BattleTriPage"]
     if not title then return "load" end
     if title.isOpen() then return title.isFading() and "title-fade" or "title" end
     if letter and letter.isOpen() then return "letter" end
-    local rt = ctx.modules["boot.StandaloneRT"]
-    if rt and rt.entryPreparing then return "entering" end
-    local dispatcher = ctx.modules["runtime.ClientDispatcher"]
+    local rt = projectModules["boot.StandaloneRT"]
+    local dispatcher = projectModules["runtime.ClientDispatcher"]
     local session = dispatcher and dispatcher.get("session")
-    if ctx.bootDone and tri and tri.isOpen() and session and session.introCompleted == true then return "battle" end
+    -- introCompleted is written BEFORE the full letter + four opening dialogues.
+    -- An open tri page may still show an old one-hero driver beneath those overlays.
+    local dialogue = projectModules["ui.story.ScenarioDialogue"]
+    local cutscene = projectModules["ui.story.gate.IntroCutscene"]
+    if session and session.deferredOpening == true then return "opening-dialogue" end
+    if dialogue and dialogue.isActive() then return "dialogue" end
+    if cutscene and cutscene.isActive() then return "cutscene" end
+    if rt and (rt.bootError or rt.entryError) then return "startup-error" end
+    if rt and rt.entryPreparing then return "entering" end
+    local offline = projectModules["rules.offline.OfflineService"]
+    if offline and offline.HasPendingRewards(1) then return "offline" end
+    local pause = projectModules["ui.battle.scene.SidePanelBattlePause"]
+    if pause and pause.shouldPause() then return "side-panel-paused" end
+    if ctx.bootDone and tri and tri.isOpen() and session and session.introCompleted == true
+        and (not rt or (rt.entryPrepared == true and rt.entryRendered == true)) then return "battle" end
     return "entering"
 end
 local function tasksForFrame(label)
     local key = "tasks|" .. label
     local m = metric(key)
     m.calls = m.calls + 1
-    -- count instrumented exported init/update/draw + project loads + actual decodes.
+    -- count exported init/update/draw + real driver start/update/tick + source loads/decodes.
     -- These are observable work calls, NOT all Lua calls or a scheduler queue length.
     local tasks = ctx.initTasks + ctx.updateTasks + ctx.drawTasks + ctx.frameLoads + ctx.frameImages
     m.cpu = m.cpu + tasks -- print this separately as task counts, never as time.
@@ -396,8 +510,8 @@ local function tasksForFrame(label)
     m.wall = m.wall + ctx.frameBootTasks
     m.wallMax = math.max(m.wallMax, ctx.frameBootTasks)
     ctx.observedFrames[ctx.frames] = true
-    local images = ctx.eventImageStats[label]
-    if not images then images = { calls = 0, decodes = 0, max = 0, maxFrame = 0, loads = 0, requests = 0 }; ctx.eventImageStats[label] = images end
+    local images = eventImageStats[label]
+    if not images then images = { calls = 0, decodes = 0, max = 0, maxFrame = 0, loads = 0, requests = 0 }; eventImageStats[label] = images end
     images.calls, images.decodes = images.calls + 1, images.decodes + ctx.frameImages
     images.loads, images.requests = images.loads + ctx.frameLoads, images.requests + ctx.frameRequests
     if ctx.frameImages > images.max then images.max, images.maxFrame = ctx.frameImages, ctx.frames end
@@ -418,34 +532,79 @@ local function ranked(prefix, count, score)
     for i = 1, math.min(count, #list) do printMetric(list[i]) end
 end
 local function checkTrio()
-    local dispatcher = ctx.modules["runtime.ClientDispatcher"]
-    local panel = ctx.modules["ui.character.panel.CharacterPanel"]
-    local scene = ctx.modules["ui.battle.scene.BattleScene"]
-    if not dispatcher or not panel or not scene then return false end
+    local dispatcher = projectModules["runtime.ClientDispatcher"]
+    local panel = projectModules["ui.character.panel.CharacterPanel"]
+    local driver = driverRefs[1]
+    if not dispatcher or not panel or not driver then return false, "missing dispatcher/panel/real driver" end
     local heroes = dispatcher.get("heroes")
-    if not heroes or not heroes.roster then return false end
+    if not heroes or not heroes.roster then return false, "missing real hero roster" end
     for id = 1, 3 do
-        if not (heroes.roster[id] or heroes.roster[tostring(id)]) then return false end
+        if not (heroes.roster[id] or heroes.roster[tostring(id)]) then return false, "roster missing hero " .. id end
     end
-    local team = panel.getDeployedTeam(1)
-    -- 三行已经接管时验证实际参战驱动，不用已暂停的兼容Scene旧单人快照替代。
-    local driver = ctx.driverRefs[1]
-    local allies = driver and driver.allies or scene.getAllies()
-    if #team ~= 3 or #allies ~= 3 then return false end
+    -- Read only the slot layout, NOT getDeployedTeam (which constructs fresh units,
+    -- resets HP and touches runtime bridges/randomness). Assert real captured allies.
+    local layout = panel.getTeamSlotLayout(1)
+    if #layout ~= 4 or tonumber(layout[1]) ~= 1 or tonumber(layout[2]) ~= 2
+        or tonumber(layout[3]) ~= 3 or tonumber(layout[4]) ~= 0 then
+        return false, "starter slot layout=" .. table.concat(layout, ",")
+    end
+    if driver.teamSignature ~= panel.getTeamSignature(1) then return false, "driver has stale team signature" end
+    if driver.active ~= true or #driver.allies ~= 3 then
+        return false, "real driver active=" .. tostring(driver.active) .. " allies=" .. #driver.allies
+    end
     local seen = {}
-    for _, ally in ipairs(allies) do seen[ally.heroId or ally.id] = true end
-    return seen[1] == true and seen[2] == true and seen[3] == true
+    for _, ally in ipairs(driver.allies) do
+        local id = tonumber(ally.heroId or ally.id)
+        if not id or seen[id] or not ally.attrs then return false, "invalid/duplicate real ally" end
+        seen[id] = true
+    end
+    return seen[1] == true and seen[2] == true and seen[3] == true, "driver allies must be exactly 1,2,3"
+end
+local function diagnoseBattle()
+    local dispatcher = projectModules["runtime.ClientDispatcher"]
+    local panel = projectModules["ui.character.panel.CharacterPanel"]
+    local rt = projectModules["boot.StandaloneRT"]
+    local session = dispatcher and dispatcher.get("session") or {}
+    local driver = driverRefs[1]
+    local layout = panel and panel.getTeamSlotLayout(1) or {}
+    local ids = {}
+    for _, ally in ipairs(driver and driver.allies or {}) do ids[#ids + 1] = tostring(ally.heroId or ally.id) end
+    local update = metrics["update|ui.battle.tri.BattleTriPage.update"]
+    local draw = metrics["draw|ui.battle.tri.BattleTriPage.draw"]
+    nativePrint(string.format("%s BATTLE_EVIDENCE phase=%s module_identity_checks=%d slot_layout=%s driver=%s live_allies=%s signature_matches=%s tri_updates=%d tri_draws=%d driver_updates=%d active_driver_ticks=%d exact_driver_views=%d ally_attacks=%d intro_completed=%s deferred_opening=%s deferred_index=%s entry_prepared=%s entry_rendered=%s opening_finished=%s dialogue_taps=%d observe_only=%s",
+        TAG, phase(), ctx.moduleIdentityChecks, table.concat(layout, ","), tostring(driver), table.concat(ids, ","),
+        tostring(driver and panel and driver.teamSignature == panel.getTeamSignature(1)),
+        update and update.calls or 0, draw and draw.calls or 0, ctx.driverUpdateCalls, ctx.driverTickCalls,
+        ctx.driverViewCalls, ctx.attackCalls, tostring(session.introCompleted), tostring(session.deferredOpening),
+        tostring(session.deferredOpeningIndex), tostring(rt and rt.entryPrepared), tostring(rt and rt.entryRendered),
+        tostring(ctx.openingFinished), ctx.dialogueTaps, tostring(ctx.observeOnly)))
+    for _, item in ipairs(ctx.chain) do nativePrint(TAG .. " CHAIN frame=" .. item.frame .. " " .. item.text) end
 end
 local function summarize(reason)
     if not ctx.bootDone then capture("assert", "full boot/firstStage did not finish") end
     if ctx.enter then
-        if not checkTrio() then capture("assert", "REAL starter trio not deployed in BattleScene") end
+        local trio, detail = checkTrio()
+        if not trio then capture("assert", "REAL starter trio not deployed in BattleTriDriver: " .. tostring(detail)) end
+        local rt = projectModules["boot.StandaloneRT"]
+        local dispatcher = projectModules["runtime.ClientDispatcher"]
+        local session = dispatcher and dispatcher.get("session") or {}
+        if not ctx.letterFinished or session.deferredOpening ~= false
+            or session.deferredOpeningCompletedVersion ~= 1 or ctx.openingFinished ~= true then
+            capture("assert", "real letter/four-step opening completion chain unfinished")
+        end
+        if not rt or rt.entryPrepared ~= true or rt.entryRendered ~= true then
+            capture("assert", "real entry preparation/first rendered frame unfinished")
+        end
         if ctx.battleUpdates < ctx.sampleFrames or ctx.battleRenders < ctx.sampleFrames then
             capture("assert", "insufficient real battle callbacks")
         end
-        local update = ctx.metrics["update|ui.battle.tri.BattleTriPage.update"]
-        local draw = ctx.metrics["draw|ui.battle.tri.BattleTriPage.draw"]
-        if not update or update.calls == 0 or not draw or draw.calls == 0 then capture("assert", "battle driver/draw never ran") end
+        local update = metrics["update|ui.battle.tri.BattleTriPage.update"]
+        local draw = metrics["draw|ui.battle.tri.BattleTriPage.draw"]
+        if not update or update.calls == 0 or not draw or draw.calls == 0
+            or ctx.driverUpdateCalls == 0 or ctx.driverTickCalls == 0 or ctx.driverViewCalls == 0 then
+            capture("assert", "real battle driver/update/view chain never ran")
+        end
+        if ctx.attackCalls == 0 then capture("assert", "real starter ally attack never ran") end
     elseif ctx.frames < ctx.sampleFrames or ctx.renders < ctx.sampleFrames then
         capture("assert", "insufficient real title callbacks")
     end
@@ -462,10 +621,10 @@ local function summarize(reason)
     end
     local errorCount, uniqueErrors = 0, 0
     for _, item in pairs(ctx.errors) do errorCount, uniqueErrors = errorCount + item.count, uniqueErrors + 1 end
-    nativePrint(string.format("%s SUMMARY result=%s reason=%s mode=%s updates=%d renders=%d battle_updates=%d battle_renders=%d boot_steps_logged=%d full_boot=%s title_ready_frame=%d full_boot_frame=%d battle_first_frame=%d dt_total_s=%.3f dt_max_s=%.6f cpu_process_ms=%.3f wall_process_ms=%.3f error_observations=%d unique_errors=%d",
+    nativePrint(string.format("%s SUMMARY result=%s reason=%s mode=%s updates=%d renders=%d battle_updates=%d battle_renders=%d boot_steps_logged=%d full_boot=%s title_ready_frame=%d full_boot_frame=%d firstStage_ready_frame=%d battle_first_frame=%d dt_total_s=%.3f dt_max_s=%.6f cpu_process_ms=%.3f wall_process_ms=%.3f error_observations=%d unique_errors=%d",
         TAG, uniqueErrors == 0 and "PASS" or "FAIL", reason, ctx.enter and "enter" or "title", ctx.frames, ctx.renders,
         ctx.battleUpdates, ctx.battleRenders, ctx.bootSteps, tostring(ctx.bootDone), ctx.titleReadyFrame, ctx.bootDoneFrame,
-        ctx.battleFirstFrame, ctx.dtTotal, ctx.dtMax, (nativeClock() - ctx.beginCpu) * 1000, (wall() - ctx.beginWall) * 1000, errorCount, uniqueErrors))
+        ctx.firstStageReadyFrame, ctx.battleFirstFrame, ctx.dtTotal, ctx.dtMax, (nativeClock() - ctx.beginCpu) * 1000, (wall() - ctx.beginWall) * 1000, errorCount, uniqueErrors))
     local engineUnique = 0
     for _ in pairs(ctx.engineModules) do engineUnique = engineUnique + 1 end
     nativePrint(string.format("%s LOAD require_calls=%d project_source_loads=%d source_bytes=%d engine_require_calls=%d engine_unique=%d persistence_serialization=excluded production_lines_summarized=%d",
@@ -474,20 +633,21 @@ local function summarize(reason)
         TAG, decodeCalls, uniqueImages, failures, repeatedKeys, repeatLive, requestCalls, requestDuplicates))
     local nativeCpuTotal, nativeWallTotal = 0, 0
     for key in pairs(ctx.images) do
-        local m = ctx.metrics["decode|" .. key]
+        local m = metrics["decode|" .. key]
         nativeCpuTotal, nativeWallTotal = nativeCpuTotal + m.cpu, nativeWallTotal + m.wall
     end
     nativePrint(string.format("%s TOTAL nonnested_source_require_cpu_ms=%.3f nonnested_source_require_wall_ms=%.3f native_image_cpu_ms=%.3f native_image_wall_ms=%.3f",
         TAG, ctx.requireCpu, ctx.requireWall, nativeCpuTotal, nativeWallTotal))
     nativePrint(string.format("%s ISOLATION real_File_calls=0 real_fs_queries=0 closed_File_attempts=%d empty_fs_queries=%d denied_operations=%d seed=%d gc=unchanged timestep=native",
         TAG, ctx.fileAttempts, ctx.fsQueries, ctx.denied, ctx.seed))
+    diagnoseBattle()
     local keys = {}
     for key in pairs(ctx.metrics) do
         if key:match("^event|") or key:match("^probe|") or key:match("^tasks|") then keys[#keys + 1] = key end
     end
     table.sort(keys)
     for _, key in ipairs(keys) do
-        local m = ctx.metrics[key]
+        local m = metrics[key]
         if key:match("^tasks|") then
             nativePrint(string.format("%s TASKS %s callbacks=%d observed_work_calls=%d max_per_callback=%d max_frame=%d boot_steps_logged=%d boot_steps_max_per_callback=%d",
                 TAG, key, m.calls, m.cpu, m.cpuMax, m.cpuFrame, m.wall, m.wallMax))
@@ -499,6 +659,7 @@ local function summarize(reason)
     ranked("decode|", ctx.top, "cpuMax")
     ranked("update|", ctx.top, "cpuMax")
     ranked("draw|", ctx.top, "cpuMax")
+    ranked("driver|", ctx.top, "cpuMax")
     local totalFrames, totalTasks, maxTasks, maxTaskFrame = 0, 0, 0, 0
     for frame in pairs(ctx.observedFrames) do
         local tasks = ctx.frameWork[frame] or 0
@@ -511,7 +672,7 @@ local function summarize(reason)
     for key in pairs(ctx.eventImageStats) do eventKeys[#eventKeys + 1] = key end
     table.sort(eventKeys)
     for _, key in ipairs(eventKeys) do
-        local item = ctx.eventImageStats[key]
+        local item = eventImageStats[key]
         nativePrint(string.format("%s FRAME_IMAGES %s callbacks=%d native_decodes=%d max_decodes_per_callback=%d max_frame=%d source_loads=%d post_Start_requests=%d",
             TAG, key, item.calls, item.decodes, item.max, item.maxFrame, item.loads, item.requests))
     end
@@ -525,7 +686,7 @@ local function summarize(reason)
     end
     local townImages = {}
     for key, item in pairs(ctx.images) do
-        if item.owner == "draw|ui.town.TownScene.draw" then townImages[#townImages + 1] = ctx.metrics["decode|" .. key] end
+        if item.owner == "draw|ui.town.TownScene.draw" then townImages[#townImages + 1] = metrics["decode|" .. key] end
     end
     table.sort(townImages, function(a, b) return a.cpu == b.cpu and a.name < b.name or a.cpu > b.cpu end)
     for i = 1, math.min(ctx.top, #townImages) do printMetric(townImages[i]) end
@@ -533,11 +694,11 @@ local function summarize(reason)
     for key in pairs(ctx.saveCalls) do saveKeys[#saveKeys + 1] = key end
     table.sort(saveKeys)
     for _, key in ipairs(saveKeys) do nativePrint(TAG .. " SAVE_STUB " .. key .. " calls=" .. ctx.saveCalls[key]) end
-    local errors = {}
-    for _, item in pairs(ctx.errors) do errors[#errors + 1] = item end
-    table.sort(errors, function(a, b) return a.name .. a.message < b.name .. b.message end)
-    for i = 1, math.min(ctx.top, #errors) do
-        local item = errors[i]
+    local errorItems = {} ---@type any[]
+    for _, item in pairs(ctx.errors) do errorItems[#errorItems + 1] = item end
+    table.sort(errorItems, function(a, b) return a.name .. a.message < b.name .. b.message end)
+    for i = 1, math.min(ctx.top, #errorItems) do
+        local item = errorItems[i]
         nativePrint(TAG .. " ERROR op=" .. item.name .. " count=" .. item.count .. " first_frame=" .. item.firstFrame
             .. " " .. item.message:sub(1, 1600):gsub("\n", " | "))
     end
@@ -555,7 +716,7 @@ local function resetFrameCounters()
     ctx.frameLoads, ctx.frameImages, ctx.frameRequests = 0, 0, 0
 end
 local function afterUpdate()
-    local title = ctx.modules["ui.story.gate.DarkTitleScreenGate"]
+    local title = projectModules["ui.story.gate.DarkTitleScreenGate"]
     if title and title.isReady() then
         if ctx.titleReadyFrame < 0 then ctx.titleReadyFrame = ctx.frames end
         if ctx.enter and not ctx.entered then
@@ -563,9 +724,24 @@ local function afterUpdate()
             measured("probe|tap-ready-title", title.handleTap)
         end
     end
+    if ctx.entered and ctx.enter and not ctx.observeOnly and ctx.letterFinished then
+        local dialogue = projectModules["ui.story.ScenarioDialogue"]
+        -- Supply one normal dialogue tap per >=0.15 native seconds AFTER a real
+        -- render. Never skip(), invoke onFinish, edit session or construct units.
+        -- advance() itself handles typing/eye/dismissal and the real callback chain.
+        if dialogue and dialogue.isActive() and ctx.scenarioRenderedFrame >= ctx.frames - 1
+            and wall() >= ctx.nextDialogueTap then
+            measured("probe|dialogue-tap", dialogue.advance)
+            ctx.dialogueTaps = ctx.dialogueTaps + 1
+            ctx.nextDialogueTap = wall() + 0.15
+        end
+    end
     if ctx.bootDone and ctx.bootDoneFrame < 0 then ctx.bootDoneFrame = ctx.frames end
     ctx.phase = phase()
-    if ctx.phase == "battle" and ctx.battleFirstFrame < 0 then ctx.battleFirstFrame = ctx.frames end
+    if ctx.phase ~= ctx.lastPhase then
+        chain("phase=" .. ctx.phase)
+        ctx.lastPhase = ctx.phase
+    end
 end
 -- String-named production globals MUST resolve in env, not host _G. Register REAL
 -- engine callbacks, forwarding the original event type/data and sender scope.
@@ -587,16 +763,27 @@ env.SubscribeToEvent = function(sender, eventName, callback)
             ctx.renders = ctx.renders + 1
             resetFrameCounters()
         end
+        local previousEvent = ctx.eventName
+        local updatesBefore, ticksBefore, viewsBefore = ctx.driverUpdateCalls, ctx.driverTickCalls, ctx.driverViewCalls
+        ctx.eventName = eventName
         local ok = guarded("event|" .. eventName .. "|" .. label, fn, eventType, eventData)
         if eventName == "Update" or eventName == "NanoVGRender" then tasksForFrame(eventName .. "|" .. label) end
+        ctx.eventName = previousEvent
         if not ok then finish("callback-error"); return end
         if eventName == "Update" then
-            if label == "battle" then ctx.battleUpdates = ctx.battleUpdates + 1 end
+            -- Count only real active starter driver work, never state labels alone.
+            if label == "battle" and ctx.driverUpdateCalls > updatesBefore and ctx.driverTickCalls > ticksBefore
+                and checkTrio() then
+                ctx.battleUpdates = ctx.battleUpdates + 1
+                if ctx.battleFirstFrame < 0 then ctx.battleFirstFrame = ctx.frames end
+            end
             local observed = guarded("probe|observe", afterUpdate)
             if not observed then finish("control-error"); return end
             if ctx.frames >= ctx.maxFrames then ctx.endRequested = true end
         elseif eventName == "NanoVGRender" then
-            if label == "battle" then ctx.battleRenders = ctx.battleRenders + 1 end
+            if label == "battle" and ctx.driverViewCalls > viewsBefore and checkTrio() then
+                ctx.battleRenders = ctx.battleRenders + 1
+            end
             ctx.renderPending = false
             local enough = ctx.enter and ctx.battleUpdates >= ctx.sampleFrames and ctx.battleRenders >= ctx.sampleFrames
                 or not ctx.enter and ctx.bootDone and ctx.frames >= ctx.sampleFrames and ctx.renders >= ctx.sampleFrames
@@ -613,6 +800,7 @@ function Start()
         local root = arg:match("^%-tapcode_dir=(.+)$")
         if root then ctx.sourceRoot = root:gsub("/+$", "") end
         if arg == "-startup-enter" then ctx.enter = true end
+        if arg == "-startup-observe-only" then ctx.observeOnly = true end
         local key, value = arg:match("^%-startup%-([%a%-]+)=(%d+)$")
         local n = tonumber(value)
         if key == "frames" and n then ctx.sampleFrames = math.max(180, math.min(10000, math.floor(n)))
@@ -620,14 +808,23 @@ function Start()
         elseif key == "top" and n then ctx.top = math.max(1, math.min(20, math.floor(n))) end
     end
     ctx.maxFrames = math.max(ctx.maxFrames, ctx.sampleFrames)
-    nativePrint(string.format("%s INPUT baseline=5fca1d82 source_root=%s mode=%s sample_frames=%d max_frames=%d seed=%d CPU=os.clock wall=time.elapsedTime save=isolated",
-        TAG, ctx.sourceRoot, ctx.enter and "enter" or "title", ctx.sampleFrames, ctx.maxFrames, ctx.seed))
+    nativePrint(string.format("%s INPUT reference_source=be9f8104 source_root=%s mode=%s sample_frames=%d max_frames=%d seed=%d CPU=os.clock wall=time.elapsedTime save=isolated dialogue_input=%s",
+        TAG, ctx.sourceRoot, ctx.enter and "enter" or "title", ctx.sampleFrames, ctx.maxFrames, ctx.seed,
+        ctx.observeOnly and "none" or "public-advance-after-real-render"))
     math.randomseed(ctx.seed) -- exactly once; probe never draws random numbers or stops GC.
     local ok = guarded("probe|load-and-Start", function()
         local standalone = loadProject("boot.Standalone")
         ctx.started = true
         measured("probe|Standalone.Start", standalone.Start)
         installRequestHook()
+        for _, name in ipairs({ "ui.battle.tri.BattleTriPage", "ui.character.panel.CharacterPanel",
+            "runtime.ClientDispatcher", "ui.battle.scene.BattleView" }) do
+            local expected = assert(projectModules[name], "missing startup identity " .. name)
+            assert(loadProject(name) == expected and env.package.loaded[name] == expected,
+                "startup require identity changed: " .. name)
+            ctx.moduleIdentityChecks = ctx.moduleIdentityChecks + 1
+            chain("module identity " .. name .. " = " .. tostring(expected))
+        end
     end)
     if not ok then finish("start-error"); return end
     -- End even if renderer never sends NanoVGRender (do NOT synthesize a draw).
@@ -643,7 +840,7 @@ function Stop()
         -- Remove ONLY our outer request hook, so real Standalone.Stop's identity
         -- checks can restore its own hooks. Stop() is called without fake arguments.
         if ctx.requestHookInstalled then env.nvgCreateImage = requestOriginal.value end
-        local standalone = ctx.modules["boot.Standalone"]
+        local standalone = projectModules["boot.Standalone"]
         if standalone and standalone.Stop then
             local ok, err = guarded("probe|Standalone.Stop", standalone.Stop)
             nativePrint(TAG .. " STOP real_contract=true save=stub ok=" .. tostring(ok)

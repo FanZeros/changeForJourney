@@ -143,7 +143,7 @@ end
 -- 唯一战力表现遮挡名单，Update和所有finishFrame复用。暂停/普通侧页不算遮挡。
 -- Settings嵌在PlayerInfo内；其黑层由PlayerInfo.isOpen覆盖，无需另借输入门禁。
 function SyncPowerPresentationHorizon()
-    local opening = not RT.bootReady_ or RT.entryPreparing == true
+    local opening = not RT.bootReady_ or RT.entryPreparing == true or RT.entryError ~= nil
         or StartScreen.isOpen() or DarkTitleScreen.isOpen() or LetterIntro.isOpen()
         or IntroCutscene.isActive()
     local blocked = opening or ScenarioDialogue.isActive() or RewardPopup.isOpen()
@@ -638,14 +638,20 @@ function HandleNanoVGRenderHorizon()
     nvgFill(vg())
     applyFrame()
 
-    -- 分帧启动中：只画标题，避免未 init 的城镇/战斗模块被绘制
-    if not bootReady_() or RT.entryPreparing then
+    -- 分帧启动/失败只画稳定覆盖层，不能访问半成品的城镇/战斗。
+    if not bootReady_() or RT.entryPreparing or RT.entryError then
         nvgBeginPath(vg())
         nvgRect(vg(), 0, 0, logicalW(), logicalH())
         nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
         nvgFill(vg())
-        if DarkTitleScreen.isOpen() then
+        if RT.bootError then
+            DarkTitleScreen.drawLoading(vg(), logicalW(), logicalH(), 0, true, "启动未完成，请重新进入游戏")
+        elseif DarkTitleScreen.isOpen() then
             DarkTitleScreen.draw(vg(), logicalW(), logicalH())
+        elseif LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then
+            HorizonDrawIntroOverlay()
+        elseif RT.entryPreparing or RT.entryError then
+            DarkTitleScreen.drawLoading(vg(), logicalW(), logicalH(), RT.entryPercent or 0, RT.entryError ~= nil)
         elseif StartScreen.isOpen() then
             local ss = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
@@ -655,6 +661,7 @@ function HandleNanoVGRenderHorizon()
             nvgRestore(vg())
         end
         finishFrame()
+        if not bootReady_() then RT.bootRendered = true end
         return
     end
 

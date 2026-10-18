@@ -278,12 +278,41 @@ function M.bind(deps)
         return api.acquireWarehouse("blacksmith")
     end
 
+    -- 与绘制/点击共用候选真源；仅缺失目标时定位，不重排或修改库存。
+    local function focusTutorialEquipment(slot)
+        if slot ~= "weapon" or not deps.getEquipList then return false end
+        local list = deps.getEquipList()
+        local firstIndex = nil ---@type integer|nil
+        for index, equip in ipairs(list) do
+            if equip.slot == "weapon" and equip.canWear == true then
+                local row = math.floor((index - 1) / GRID.COLS)
+                local top = GRID.FIRST_ROW_TOP + row * (GRID.CELL_SIZE + GRID.GAP) - state.scrollY
+                if top >= GRID.FIRST_ROW_TOP and top + GRID.CELL_SIZE <= GRID.CLIP_BOTTOM then
+                    return false
+                end
+                firstIndex = firstIndex or index
+            end
+        end
+        if not firstIndex then return false end
+        local row = math.floor((firstIndex - 1) / GRID.COLS)
+        local rows = math.ceil(math.max(#list, 35) / GRID.COLS)
+        local maxScroll = math.max(0, rows * (GRID.CELL_SIZE + GRID.GAP) - GRID.GAP
+            - (GRID.CLIP_BOTTOM - GRID.FIRST_ROW_TOP))
+        local scroll = math.min(maxScroll, row * (GRID.CELL_SIZE + GRID.GAP))
+        if scroll == state.scrollY and state.scrollVel == 0 and not state.dragging then return false end
+        state.scrollY, state.scrollVel, state.dragging = scroll, 0, false
+        dragPress = nil
+        api.clearCandidate(true)
+        return true
+    end
+
     -- 教程可在同会话内显式恢复；普通 acquire 保持不自动重开契约。
     -- 重复 ensure 不重新 open、不重置滚动，也不持续关闭玩家刚钉住的候选。
     ---@param heroId number|string|nil
     ---@param slot string|nil
+    ---@param force? boolean 缺失热点时定位真实可穿候选，普通检查不改滚动。
     ---@return boolean changed
-    function api.ensureTutorialEquipment(heroId, slot)
+    function api.ensureTutorialEquipment(heroId, slot, force)
         local hero = tonumber(heroId)
         local normalized = SLOT_NAMES[slot] and slot or nil
         local changed = not tutorialPrepared or suppressed or not owners.equipment
@@ -296,7 +325,7 @@ function M.bind(deps)
             local page = getLeftPage(path, false)
             if page and page.isOpen and page.isOpen() then changed = true; break end
         end
-        if not changed then return false end
+        if not changed then return force == true and focusTutorialEquipment(normalized) end
 
         if not owners.equipment then
             if not next(owners) and state.open and not state.closing and manualHeld then
@@ -323,6 +352,7 @@ function M.bind(deps)
         api.clearCandidate(true)
         applyFilter(normalized, hero)
         tutorialPrepared = true
+        if force then focusTutorialEquipment(normalized) end
         return true
     end
 

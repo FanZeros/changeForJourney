@@ -31,11 +31,12 @@ local overlayLayout_ = nil ---@type any
 local stepElapsed_ = 0
 local recoveryElapsed_, settleRemaining_, missingElapsed_ = 0, 0, 0
 local RECOVERY_INTERVAL, PAGE_SETTLE_TIME = 0.5, 0.45
--- 目标持续不可见的自动跳过阈值（秒）；沿用超时只结束当前组，不伪造业务回执。
+-- 已知目标先强制恢复页面，未知/已删除目标仍保留超时兜底。
 local MISSING_TARGET_TIMEOUT = 2
+local forceRecoveryElapsed_ = 0
 local triggerQuiet_ = 0
 local TRIGGER_QUIET_TIME = 0.25
----@type fun()?
+---@type fun(force?: boolean)?
 local prepareResume
 
 local function invalidateDetailEntryPress()
@@ -45,7 +46,7 @@ end
 local function resetTarget()
     invalidateDetailEntryPress()
     resumePending_ = true
-    recoveryElapsed_, settleRemaining_, missingElapsed_ = 0, 0, 0
+    recoveryElapsed_, settleRemaining_, missingElapsed_, forceRecoveryElapsed_ = 0, 0, 0, 0
     overlayLayout_, overlay_.hs = nil, nil
 end
 
@@ -333,7 +334,10 @@ function TutorialManager.isInputActive()
 end
 function TutorialManager.setOverlayRect(w, h, hs)
     local target = hs
-    if settleRemaining_ > 0 then target = nil end
+    local current = step()
+    local Recovery = require("ui.tutorial.TutorialPageRecovery")
+    if settleRemaining_ > 0 or (current and Recovery.isTargetReady
+        and not Recovery.isTargetReady(current.highlight)) then target = nil end
     overlay_ = { w = w, h = h, hs = target }
     if detailEntryPress_ then
         local current = step()
@@ -432,7 +436,7 @@ function TutorialManager.init(vg, playerStore, persist)
     animState_, animT_, groupElapsed_, stepElapsed_ = "idle", 0, 0, 0
     overlayLayout_, restored_, resumePending_ = nil, false, false
     overlay_.hs = nil
-    recoveryElapsed_, settleRemaining_, missingElapsed_, triggerQuiet_ = 0, 0, 0, 0
+    recoveryElapsed_, settleRemaining_, missingElapsed_, forceRecoveryElapsed_, triggerQuiet_ = 0, 0, 0, 0, 0
     print("[TutorialManager] 初始化，等待会话数据恢复")
 end
 local function restore()
@@ -482,7 +486,7 @@ local function restore()
         save()
     end
 end
-prepareResume = function()
+prepareResume = function(force)
     local current = step()
     if not current or current.invisible then resumePending_ = false; return end
     local Recovery = require("ui.tutorial.TutorialPageRecovery")
@@ -504,8 +508,9 @@ prepareResume = function()
             return
         end
     end
-    if current and Recovery.prepare(vg_, store_, current.highlight, newHeroId_, initial, equipmentHeroId_) then
-        -- 反复恢复页面不能重置缺失计时，否则故障目标会永久卡住。
+    if current and Recovery.prepare(vg_, store_, current.highlight, newHeroId_, initial, equipmentHeroId_, force) then
+        -- 页面定位变化使旧按下失效，但不推进步骤或清掉缺失状态。
+        invalidateDetailEntryPress()
         settleRemaining_ = PAGE_SETTLE_TIME
         hotspots_, overlay_.hs, overlayLayout_ = {}, nil, nil
     end
@@ -536,16 +541,28 @@ function TutorialManager.update(dt)
         recoveryElapsed_ = recoveryElapsed_ + dt
         settleRemaining_ = math.max(0, settleRemaining_ - dt)
         local current = step()
-        -- 只有“有目标且目标可见”才清零计时；隐形/无目标步骤不参与缺失超时。
+        local Recovery = require("ui.tutorial.TutorialPageRecovery")
+        -- 隐形等待不需要热点；真实可见目标恢复后才结束缺失周期。
         if not current or current.invisible or not current.highlight
             or (overlay_.hs and settleRemaining_ == 0) then
-            missingElapsed_ = 0
-        else missingElapsed_ = missingElapsed_ + dt end
-        if resumePending_ or recoveryElapsed_ >= RECOVERY_INTERVAL then prepareResume() end
-        if current and not current.invisible and current.highlight and missingElapsed_ >= MISSING_TARGET_TIMEOUT then
-            print("[TutorialManager] 引导目标持续不可见，自动跳过: " .. activeGroup_ .. "/" .. activeStep_
+            missingElapsed_, forceRecoveryElapsed_ = 0, 0
+        else
+            missingElapsed_, forceRecoveryElapsed_ = missingElapsed_ + dt, forceRecoveryElapsed_ + dt
+        end
+        local force = current and not current.invisible and current.highlight
+            and forceRecoveryElapsed_ >= MISSING_TARGET_TIMEOUT and settleRemaining_ == 0
+        if force then
+            forceRecoveryElapsed_ = 0
+            print("[TutorialManager] 目标缺失，强制恢复页面: " .. activeGroup_ .. "/" .. activeStep_
                 .. " target=" .. current.highlight)
-            -- 沿用手动跳过，只结束当前组；不伪造业务回执或重复发奖。
+            prepareResume(true)
+        elseif resumePending_ or recoveryElapsed_ >= RECOVERY_INTERVAL then
+            prepareResume()
+        end
+        if current and not current.invisible and current.highlight and missingElapsed_ >= MISSING_TARGET_TIMEOUT
+            and not (Recovery.canRestoreTarget and Recovery.canRestoreTarget(current.highlight)) then
+            print("[TutorialManager] 目标无恢复路由，跳过: " .. activeGroup_ .. "/" .. activeStep_
+                .. " target=" .. current.highlight)
             finish()
         end
     end
@@ -589,12 +606,14 @@ function TutorialManager.draw()
     if not current then return end
     local Overlay = require("ui.tutorial.TutorialOverlay")
     local alpha = animState_ == "in" and math.min(1, animT_ / 0.25) or 1
+    local Recovery = require("ui.tutorial.TutorialPageRecovery")
+    local preparing = not current.invisible and not overlay_.hs
+        and (missingElapsed_ < MISSING_TARGET_TIMEOUT
+            or (Recovery.canRestoreTarget and Recovery.canRestoreTarget(current.highlight)))
     local text = current.invisible and "" or current.text
-    if not current.invisible and not overlay_.hs and missingElapsed_ < MISSING_TARGET_TIMEOUT then
-        text = "正在准备引导页面，请稍候…"
-    end
+    if preparing then text = "正在准备引导页面，请稍候…" end
     local hs = current.invisible and nil or overlay_.hs
     overlayLayout_ = Overlay.draw(vg_, overlay_.w, overlay_.h, hs, text, elapsed_, groupElapsed_, alpha,
-        current.invisible == true, activeGroup_ == 9, missingElapsed_ < MISSING_TARGET_TIMEOUT)
+        current.invisible == true, activeGroup_ == 9, preparing == true)
 end
 return TutorialManager

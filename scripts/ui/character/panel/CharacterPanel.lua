@@ -1272,20 +1272,31 @@ function CharacterPanel.setActiveTeam(idx)
     return true
 end
 
---- 教程定位只改变名册视图，不改阵容或发送动作。
+--- 教程定位只改变名册视图，不改阵容或发送动作；稳定位置不重置手势。
+---@return boolean changed
 function CharacterPanel.prepareTutorial(heroId)
-    CharacterPanel.setActiveTeam(1)
-    scrollY, scrollVelocity, isDragging = 0, 0, false
+    local targetScroll = 0
     if heroId then
+        local found = false
         for i, entry in ipairs(heroRoster) do
             if tonumber(entry.heroId) == tonumber(heroId) then
                 local row = math.ceil(i / MAX_PER_ROW)
-                scrollY = math.max(0, ROW1_CY + (row - 1) * ROW_SPACING - SCROLL_TOP - Draw.ROSTER_ICON * 0.5)
-                clampScroll()
+                targetScroll = math.max(0, ROW1_CY + (row - 1) * ROW_SPACING - SCROLL_TOP - Draw.ROSTER_ICON * 0.5)
+                found = true
                 break
             end
         end
+        if not found then return false end
     end
+    targetScroll = math.min(scrollMaxY, targetScroll)
+    local changed = activeTeamIdx ~= 1 or scrollY ~= targetScroll or scrollVelocity ~= 0
+        or isDragging or dragState.active or selectSlotState.active
+    if not changed then return false end
+    if not CharacterPanel.setActiveTeam(1) then return false end
+    if _input and _input.cancelRosterInteraction then _input.cancelRosterInteraction() end
+    selectSlotState.active, selectSlotState.slotIndex = false, nil
+    scrollY, scrollVelocity, isDragging = targetScroll, 0, false
+    return true
 end
 
 --- 查询详情界面是否打开（供外部判断是否需要隐藏 TopBar/BottomNav）

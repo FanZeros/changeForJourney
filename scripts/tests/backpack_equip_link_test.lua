@@ -164,8 +164,11 @@ local function runTutorialEnsure()
     local s = { open = false, closing = false, tab = "item", scrollY = 0, scrollVel = 0,
         qualitySet = { [6] = true }, setFilter = { none = true } }
     local c = { opens = 0, closes = 0, mode = "window" }
+    local list = {}
+    for index = 1, 60 do list[index] = { slot = "weapon", canWear = index == 60 } end
     local item = { open = true }
     local api = Link.bind({ state = s, GRID = GRID, CELL_COL_CX = cells,
+        getEquipList = function() return list end,
         EquipmentDetail = Detail, DrawUtil = Draw, SetFilterDialog = filterDialog, itemDetState = item,
         getLeftPage = function(path) return leftPages[path] end,
         getHostMode = function() return c.mode end,
@@ -198,6 +201,22 @@ local function runTutorialEnsure()
     check(api.ensureTutorialEquipment(1, "weapon") == false and s.scrollY == 600
         and Detail.isPinned() and c.opens == 1 and filterDialogState.closes == closed,
         "stable tutorial ensure preserves scroll and candidate without repeated cleanup")
+    check(api.ensureTutorialEquipment(1, "weapon", true) and c.opens == 1,
+        "强制恢复定位后页合法武器，不重开仓库")
+    local row = math.floor((60 - 1) / GRID.COLS)
+    local top = GRID.FIRST_ROW_TOP + row * (GRID.CELL_SIZE + GRID.GAP) - s.scrollY
+    check(top >= GRID.FIRST_ROW_TOP and top + GRID.CELL_SIZE <= GRID.CLIP_BOTTOM,
+        "末页合法武器完整位于真实裁剪区")
+    local focusedScroll = s.scrollY
+    Detail.open(1, nil, nil, true, "backpack"); Detail.pin()
+    check(not api.ensureTutorialEquipment(1, "weapon", true) and s.scrollY == focusedScroll and Detail.isPinned(),
+        "已有完整可见目标时强制检查仍幂等，不清候选")
+    list[60].canWear = false; s.scrollY = 0
+    check(not api.ensureTutorialEquipment(1, "weapon", true) and s.scrollY == 0,
+        "无合法武器不造候选、不伪造恢复成功")
+    list[60].canWear = true
+    check(api.ensureTutorialEquipment(1, "weapon", true) and c.opens == 1,
+        "合法武器数据晚到后可以重新定位")
     check(api.ensureTutorialEquipment(2, "helmet") == true and s.scrollY == 0
         and not Detail.isOpen() and c.opens == 1,
         "tutorial changed hero/slot refreshes filter and clears candidate, never reopens")

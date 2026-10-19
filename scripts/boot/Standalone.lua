@@ -486,6 +486,11 @@ function Standalone.Start()
             -- [单机存档] 回灌战斗进度（须在阵容同步前：setBattleData 先切到存档关卡，
             -- 随后 setAllies + reloadStage 用恢复出的阵容重载同一关卡）
             StandaloneSave.ApplyBattleProgress()
+            -- 旧档在UI订阅建立前已恢复；首场不能拿面板的临时默认阵容预热。
+            local restoredHeroes = ClientDispatcher.get("heroes")
+            if restoredHeroes and not CharacterPanel.isHeroesDataApplied() then
+                CharacterPanel.setHeroesData(restoredHeroes)
+            end
             TopBar.markAvatarViewed()
             TopBar.setTotalPower(CharacterPanel.getTotalPower())
             local initialTeam = CharacterPanel.getDeployedTeam()

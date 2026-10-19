@@ -1008,15 +1008,19 @@ local function drawTeamSource(vg, source, teamIdx, cy, textTop, textBottom)
     local font = width > ROW_W - 48 and 22 * (ROW_W - 48) / width or 22
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     -- 字体字墨上下缘不一定对称；保留位置，按实际测量缩号，留出行底空隙。
-    while true do
+    -- 有界迭代：测量边界若不随字号收敛也不能死循环，最多缩到明显小于原字号即止。
+    for _ = 1, 24 do
         nvgFontSize(vg, font)
         local bounds = {}
         I18n.displayBounds(vg, CENTER_X, cy, label, nil, bounds)
-        local above, below = cy - bounds[2], bounds[4] - cy
+        local above = cy - (bounds[2] or cy)
+        local below = (bounds[4] or cy) - cy
         local fit = math.min(1, above > 0 and (cy - textTop) / above or 1,
             below > 0 and (textBottom - cy) / below or 1)
         if fit >= 1 then break end
-        font = font * math.min(0.95, fit)
+        local nextFont = font * math.min(0.95, fit)
+        if not (nextFont > 0) or nextFont >= font then break end
+        font = nextFont
     end
     nvgFillColor(vg, nvgRGBA(216, 201, 163, 255))
     I18n.displayText(vg, CENTER_X, cy, label, nil)

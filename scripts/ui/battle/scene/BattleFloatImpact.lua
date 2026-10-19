@@ -111,6 +111,8 @@ local function decoration(vg, style, p, width, size)
     end
 end
 
+-- 组内坐标：徽记贴左、数字在右，整组以 width 居中（装饰/擦除都按整组对称）。
+-- 调用方先把原点平移到「数字中心」，因此这里再左移 groupShift，使数字落回锚点。
 local function glyph(vg, ft, visual, rgb, size, icon, width)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, size)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
@@ -140,7 +142,8 @@ function M.draw(vg, ft, slot, bounds)
     local p = pose(ft, style, preset, side)
     if p.alpha <= 0 then return end
     local baseSize = ft.baseFontSize or ((ft.fontSize or 80) / (ft.isCrit and 2 or 1))
-    local size = math.max(1, baseSize * 0.7 * preset.size)
+    -- 0.5：数字居中到卡位后按卡宽收敛；旧 0.7 在 4 卡条带里数字比卡还宽。
+    local size = math.max(1, baseSize * 0.5 * preset.size)
     local rgb = visual and preset.color or ft.color or preset.color
     nvgSave(vg)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, size)
@@ -162,6 +165,8 @@ function M.draw(vg, ft, slot, bounds)
         nvgIntersectScissor(vg, bounds.x, bounds.y, bounds.w, bounds.h)
     end
     nvgTranslate(vg, x, y); nvgRotate(vg, p.angle); nvgScale(vg, p.sx * fit, p.sy * fit)
+    -- 徽记占位会把数字整体推右 (icon+7)/2（局部坐标）；整组左移等量，使数字落在目标锚点上。
+    if icon > 0 then nvgTranslate(vg, -(icon + 7) * 0.5, 0) end
     nvgGlobalAlpha(vg, p.alpha)
     if visual then decoration(vg, style, p, width, size) end
     if p.out > 0 and (style == "damage" or style == "crit") then

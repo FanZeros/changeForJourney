@@ -19,6 +19,9 @@ local StageSelectDialog = require("ui.battle.stage.StageSelectDialog")
 local TerminalConfirmDialog = require("ui.battle.popup.TerminalConfirmDialog")
 local TerminalRaid = require("ui.battle.tri.TerminalRaid")
 local SoundToggle       = require("ui.widget.SoundToggle")  -- [音效开关] 行1 HUD 快捷按钮
+local DarkIcon          = require("core.DarkIcon")
+local DrawUtil          = require("core.DrawUtil")
+local BF                = require("systems.ButtonFeedback")
 local EquipmentBag      = require("ui.character.equip.EquipmentBag")
 local StageConfig       = require("config.StageConfig")
 local BattleStats       = require("systems.BattleStats")
@@ -35,6 +38,21 @@ local BattleTriPage = {}
 
 local COL_COUNT = ExpTable.TEAM_COUNT or 3
 
+-- 终焉撤退二次确认弹窗布局（设计空间 1080×2400，与进入确认弹窗同套九宫格风格）。
+local RETREAT_DLG = {
+    BG_CX = 540, BG_CY = 1100, BG_W = 950, BG_H = 647,
+    TITLE_CY = 847, TITLE_FONT = 60, TITLE_SW = 6,
+    TITLE_SR = 0x46, TITLE_SG = 0x2f, TITLE_SB = 0x20,
+    SUB_CY = 970, SUB_FONT = 40,
+    LINE1_CY = 1060, LINE_FONT = 38,
+    LINE2_CY = 1120,
+    OK_CX = 340, OK_CY = 1310, OK_W = 310, OK_H = 100, OK_FONT = 40,
+    OK_TR = 0x60, OK_TG = 0x23, OK_TB = 0x23,
+    CANCEL_CX = 740, CANCEL_CY = 1310, CANCEL_W = 310, CANCEL_H = 100, CANCEL_FONT = 40,
+    CANCEL_TR = 0x50, CANCEL_TG = 0x46, CANCEL_TB = 0x3c,
+    OPEN_DUR = 0.25, CLOSE_DUR = 0.20, SCALE_FROM = 0.8, SCALE_TO = 1.0,
+}
+
 -- ---- 状态 ----
 local isOpen_ = false
 local inited = false
@@ -46,6 +64,8 @@ local entryPreparation = require("ui.battle.tri.BattleEntryPreparation").new()
 ---@type table<number|string, number>|nil
 local restoredStageIds = nil
 local terminalRaid = nil
+-- 终焉撤退二次确认；与进入确认弹窗同套模态，打开期间独占战斗输入。
+local retreatDialog = { open = false, closing = false, openTime = 0, closeTime = 0 }
 local applyingTerminalDestination = false
 local l1Images = {}       -- 同一路径共用句柄，切场景不删除其他行仍在使用的贴图
 local l1Failures = {}     -- 加载失败只提示一次，后续帧仍允许重试
@@ -69,6 +89,16 @@ end
 local function dialogToDesign(wx, wy)
     local ox, oy, fit = BattleTriPage.getDialogTransform()
     return (wx - ox) / fit, (wy - oy) / fit
+end
+
+--- 终焉撤退按钮（行1 右上角，窗口坐标）；绘制与命中同源。
+---@param ix number
+---@param iy number
+---@param iw number
+---@return { cx: number, cy: number, w: number, h: number }
+function BattleTriPage.getRetreatButtonRect(ix, iy, iw)
+    local w, h = 130, 60
+    return { cx = ix + iw - 12 - w * 0.5, cy = iy + 44, w = w, h = h }
 end
 
 --- 击杀奖励回调注入（宿主与 BattleScene.setOnEnemyKill 同源）
@@ -283,6 +313,8 @@ local function clearTerminalRaid()
         if drivers[row] then drivers[row].terminalRaid = nil end
     end
     terminalRaid = nil
+    -- 协同结束时若撤退确认还开着（如被超时打断），一并清掉避免残留挡下一局。
+    retreatDialog.open, retreatDialog.closing = false, false
 end
 
 startTerminalRaid = function(stageId)
@@ -342,6 +374,124 @@ local function finishTerminalRaid(won)
         StageConfig.getTerminalPrevStageId(stageId), BattleScene, BattleTriPage.gotoTeamStage)
 end
 
+-- ---- 终焉撤退二次确认 ----
+local function easeOutCubic(t) local u = 1 - t return 1 - u * u * u end
+local function easeInCubic(t) return t * t * t end
+
+local function retreatAnim()
+    if retreatDialog.closing then
+        local t = math.min(1.0, (time.elapsedTime - retreatDialog.closeTime) / RETREAT_DLG.CLOSE_DUR)
+        local e = easeInCubic(t)
+        return RETREAT_DLG.SCALE_TO + (RETREAT_DLG.SCALE_FROM - RETREAT_DLG.SCALE_TO) * e, 1.0 - e, t >= 1.0
+    end
+    local t = math.min(1.0, (time.elapsedTime - retreatDialog.openTime) / RETREAT_DLG.OPEN_DUR)
+    local e = easeOutCubic(t)
+    return RETREAT_DLG.SCALE_FROM + (RETREAT_DLG.SCALE_TO - RETREAT_DLG.SCALE_FROM) * e, e, false
+end
+
+--- 撤退确认是否独占输入；与进入确认弹窗同套模态。
+function BattleTriPage.isRetreatDialogOpen()
+    return retreatDialog.open or retreatDialog.closing
+end
+
+function BattleTriPage.openRetreatDialog()
+    if not terminalRaid or terminalRaid.finished or BattleTriPage.isRetreatDialogOpen() then return end
+    retreatDialog.open = true
+    retreatDialog.closing = false
+    retreatDialog.openTime = time.elapsedTime
+    print("[BattleTriPage] 终焉撤退确认弹窗打开")
+end
+
+local function closeRetreatDialog()
+    if retreatDialog.closing then return end
+    retreatDialog.closing = true
+    retreatDialog.closeTime = time.elapsedTime
+end
+
+--- 玩家确认撤退：走与超时/全灭一致的退关路径（判负退回本难度末关）。
+local function confirmRetreat()
+    retreatDialog.open, retreatDialog.closing = false, false
+    if not terminalRaid or terminalRaid.finished then return end
+    terminalRaid.retreated = true
+    terminalRaid:finish(false)
+end
+
+local function drawRetreatDialog(vg)
+    if not retreatDialog.open and not retreatDialog.closing then return end
+    local C = RETREAT_DLG
+    local pScale, pAlpha, done = retreatAnim()
+    if retreatDialog.closing and done then
+        retreatDialog.closing, retreatDialog.open = false, false
+        return
+    end
+    if pAlpha <= 0 then return end
+
+    nvgBeginPath(vg)
+    nvgRect(vg, 0, 0, 1080, 2400)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(128 * pAlpha)))
+    nvgFill(vg)
+
+    nvgSave(vg)
+    nvgTranslate(vg, C.BG_CX, C.BG_CY)
+    nvgScale(vg, pScale, pScale)
+    nvgTranslate(vg, -C.BG_CX, -C.BG_CY)
+    nvgGlobalAlpha(vg, pAlpha)
+
+    DarkIcon.drawNine(vg, "panel", C.BG_CX - C.BG_W * 0.5, C.BG_CY - C.BG_H * 0.5, C.BG_W, C.BG_H, { titleH = 40 })
+    local title = "\u{26a0} " .. I18n.lookup("确认撤退？")
+    DrawUtil.drawTextStroke(vg, C.BG_CX, C.TITLE_CY, title, C.TITLE_FONT,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, C.TITLE_SW,
+        { strokeColor = { C.TITLE_SR, C.TITLE_SG, C.TITLE_SB } })
+
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, C.SUB_FONT)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
+    nvgText(vg, C.BG_CX, C.SUB_CY, I18n.lookup("本场战斗将判定为失败"), nil)
+
+    nvgFontSize(vg, C.LINE_FONT)
+    nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
+    nvgText(vg, C.BG_CX, C.LINE1_CY, I18n.lookup("撤退不会消耗挑战次数"), nil)
+    nvgText(vg, C.BG_CX, C.LINE2_CY, I18n.lookup("可以随时重新挑战本层"), nil)
+
+    DarkIcon.drawNine(vg, "btn", C.OK_CX - C.OK_W * 0.5, C.OK_CY - C.OK_H * 0.5, C.OK_W, C.OK_H, { accent = "red" })
+    nvgFontFace(vg, "sans"); nvgFontSize(vg, C.OK_FONT)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(C.OK_TR, C.OK_TG, C.OK_TB, 255))
+    nvgText(vg, C.OK_CX, C.OK_CY, I18n.lookup("撤退"), nil)
+
+    DarkIcon.drawNine(vg, "btn", C.CANCEL_CX - C.CANCEL_W * 0.5, C.CANCEL_CY - C.CANCEL_H * 0.5, C.CANCEL_W, C.CANCEL_H, { accent = "green" })
+    nvgFontFace(vg, "sans"); nvgFontSize(vg, C.CANCEL_FONT)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(C.CANCEL_TR, C.CANCEL_TG, C.CANCEL_TB, 255))
+    nvgText(vg, C.CANCEL_CX, C.CANCEL_CY, I18n.lookup("取消"), nil)
+
+    nvgRestore(vg)
+end
+
+--- 撤退弹窗输入（设计空间坐标）；打开时独占战斗操作。
+---@return boolean consumed
+local function handleRetreatInput(dx, dy)
+    local C = RETREAT_DLG
+    if retreatDialog.closing then return true end
+    if (time.elapsedTime - retreatDialog.openTime) < C.OPEN_DUR then return true end
+    if dx >= C.OK_CX - C.OK_W * 0.5 and dx <= C.OK_CX + C.OK_W * 0.5
+        and dy >= C.OK_CY - C.OK_H * 0.5 and dy <= C.OK_CY + C.OK_H * 0.5 then
+        confirmRetreat()
+        return true
+    end
+    if dx >= C.CANCEL_CX - C.CANCEL_W * 0.5 and dx <= C.CANCEL_CX + C.CANCEL_W * 0.5
+        and dy >= C.CANCEL_CY - C.CANCEL_H * 0.5 and dy <= C.CANCEL_CY + C.CANCEL_H * 0.5 then
+        closeRetreatDialog()
+        return true
+    end
+    if dx < C.BG_CX - C.BG_W * 0.5 or dx > C.BG_CX + C.BG_W * 0.5
+        or dy < C.BG_CY - C.BG_H * 0.5 or dy > C.BG_CY + C.BG_H * 0.5 then
+        closeRetreatDialog()
+    end
+    return true
+end
+
 --- 只由完成/skip动画出口调用，三队实际进场后由Scene统一持久化。
 function BattleTriPage.completeTerminalReincarnation(stageId)
     if not terminalRaid or not terminalRaid.won or not terminalRaid.settlementStarted then return false end
@@ -365,6 +515,7 @@ function BattleTriPage.close() isOpen_ = false end
 
 --- 幂等初始化（贴图）
 local imgL0 = nil
+local imgRetreatBtn = -1
 
 -- [修复] 锁定行专用空状态: 锁定行绘制前挂载, 避免把行1 的飘字/特效/投射物
 -- 重复画到行2/3（此前未挂载, BCS 上残留的是最近一次更新的状态）
@@ -480,6 +631,7 @@ function BattleTriPage.init(vg)
     BattlePauseOverlay.init()
     BattleView.init(vg)
     imgL0 = nvgCreateImage(vg, "image/暗黑/L0_stone_frame.png", 0)
+    imgRetreatBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HONG.png", 0)
     StageSelectDialog.init(vg)
     SoundToggle.initImages(vg)
 end
@@ -567,6 +719,10 @@ function BattleTriPage.update(dt)
         end
         if terminalRaid.hp <= 0 then
             terminalRaid:finish(true)
+        elseif terminalRaid.elapsed >= require("config.GameConfig").Battle.TIME_LIMIT_SEC then
+            -- 终焉限时与普通首通一致：超时判负，沿用全灭的退场展示与退关路径。
+            terminalRaid.timedOut = true
+            terminalRaid:finish(false)
         end
     end
     if terminalRaid and terminalRaid.finished then
@@ -594,6 +750,11 @@ function BattleTriPage.update(dt)
         end
     end
     TerminalConfirmDialog.update()
+    -- 撤退确认关闭动画；完成后清态，避免残留挡住下一局。
+    if retreatDialog.closing then
+        local _, _, done = retreatAnim()
+        if done then retreatDialog.closing, retreatDialog.open = false, false end
+    end
 end
 -- [暗黑替换 v2] L0 框体图（用户素材, 1672x941, 三个透明内矩形）+ 分层渲染
 local PLATE_AR = 1672 / 941
@@ -837,9 +998,11 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         if terminalRaid and terminalRaid.defeated[row] then
             nvgFillColor(vg, nvgRGBA(165, 170, 190, 255))
         end
-        -- 普通战斗给右上 HUD 留空；按最终译文测宽，不改行高/按钮热区。
+        -- 普通战斗给右上 HUD 留空；终焉行1 给撤退按钮留空；按最终译文测宽。
         local labelW = iw - 56
-        if not terminalRaid and row <= unlocked then
+        if terminalRaid and row == 1 and row <= unlocked then
+            labelW = math.max(1, iw - 130 - 24)
+        elseif not terminalRaid and row <= unlocked then
             local hudCount = 4
             labelW = math.max(1, iw - 116 - (hudCount - 1) * 58)
         end
@@ -868,12 +1031,21 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgRestore(vg)
         end
 
-        -- [终焉协同] 生命由各 Boss 卡牌血条展示，行1 标明不限时。
+        -- [终焉协同] 行1 显示剩余限时倒计时；生命仍由各 Boss 卡牌血条展示。
         if terminalRaid and row == 1 and row <= unlocked then
+            local limit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
+            local remain = math.max(0, math.ceil(limit - (terminalRaid.elapsed or 0)))
+            local mm = math.floor(remain / 60)
+            local ss = remain % 60
             nvgFontSize(vg, 22)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
-            nvgText(vg, ix + 28, iy + 55, I18n.lookup("不限时"), nil)
+            -- 剩余不足 30 秒转红，提示即将超时判负。
+            if remain <= 30 then
+                nvgFillColor(vg, nvgRGBA(230, 90, 90, 255))
+            else
+                nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
+            end
+            nvgText(vg, ix + 28, iy + 55, string.format(I18n.lookup("限时 %d:%02d"), mm, ss), nil)
         end
 
         local killed, total
@@ -924,9 +1096,8 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         end
     end
 
-    -- [对话框覆盖] 选关/扫荡/统计/终焉确认：按当前横屏可用区域放大到 2 倍。
-    if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
-        or TerminalConfirmDialog.isOpen() then
+    -- [对话框覆盖] 选关/扫荡/统计：按当前横屏可用区域放大到 2 倍。
+    if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
         local ox, oy, fit = BattleTriPage.getDialogTransform(logicalW, logicalH)
         nvgSave(vg)
         nvgScissor(vg, 0, 0, logicalW, logicalH)
@@ -935,9 +1106,6 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         if SweepDialog.isOpen() then SweepDialog.draw(vg) end
         if DamageStatsPanel.isOpen() then DamageStatsPanel.draw(vg) end
         if StageSelectDialog.isOpen() then StageSelectDialog.draw(vg) end
-        if TerminalConfirmDialog.isOpen() then
-            TerminalConfirmDialog.draw(vg, BattleScene.getStageId(), function() return StageConfig end)
-        end
         nvgRestore(vg)
     end
 
@@ -953,6 +1121,21 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         EquipmentBag.drawOverlay(vg)
     else
         EquipmentBag.setOverlayRegion(nil)
+    end
+
+    -- [终焉确认/撤退] 最高模态：最后绘制，盖住行1 奖励与装备覆盖层，
+    -- 与输入优先级一致，避免「看到的是奖励弹窗、点下去命中终焉弹窗」的错位。
+    if TerminalConfirmDialog.isOpen() or BattleTriPage.isRetreatDialogOpen() then
+        local ox, oy, fit = BattleTriPage.getDialogTransform(logicalW, logicalH)
+        nvgSave(vg)
+        nvgScissor(vg, 0, 0, logicalW, logicalH)
+        nvgTranslate(vg, ox, oy)
+        nvgScale(vg, fit, fit)
+        if TerminalConfirmDialog.isOpen() then
+            TerminalConfirmDialog.draw(vg, BattleScene.getStageId(), function() return StageConfig end)
+        end
+        drawRetreatDialog(vg)
+        nvgRestore(vg)
     end
 end
 
@@ -1015,8 +1198,20 @@ end
 --- 已解锁的其他队伍与第一行保持同一套按钮。
 function BattleTriPage.drawHud(vg, logicalW, logicalH)
     if not isOpen_ then return end
+    -- 终焉进行中：只画一个撤退按钮（行1 右上角），其余 HUD 让位。
+    if terminalRaid then
+        if terminalRaid.finished or BattleTriPage.isRetreatDialogOpen() then return end
+        local ix, iy, iw = interiorRect(1, logicalW, logicalH)
+        local bt = BattleTriPage.getRetreatButtonRect(ix, iy, iw)
+        local ds = BF.begin(vg, "tri_retreat", bt.cx, bt.cy, bt.w, bt.h)
+        DrawUtil.drawImageCentered(vg, imgRetreatBtn, bt.cx, bt.cy, bt.w, bt.h, 1)
+        DrawUtil.drawTextStroke(vg, bt.cx, bt.cy, I18n.lookup("撤退"), 30,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+        BF.finish(vg, ds)
+        return
+    end
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
-        or TerminalConfirmDialog.isOpen() or terminalRaid then
+        or TerminalConfirmDialog.isOpen() then
         return
     end
     local ix1, iy1, iw1, ih1 = interiorRect(1, logicalW, logicalH)
@@ -1118,6 +1313,13 @@ end
 function BattleTriPage.handleInput(wx, wy)
     if not isOpen_ then return false end
 
+    -- 终焉撤退确认优先级最高：打开时独占战斗输入，避免点到底层。
+    if BattleTriPage.isRetreatDialogOpen() then
+        local dx, dy = dialogToDesign(wx, wy)
+        handleRetreatInput(dx, dy)
+        return true
+    end
+
     if TerminalConfirmDialog.isOpen() then
         local dx, dy = dialogToDesign(wx, wy)
         TerminalConfirmDialog.handleInput(dx, dy, function(nextId)
@@ -1168,8 +1370,16 @@ function BattleTriPage.handleInput(wx, wy)
         return true
     end
 
-    -- 终焉只锁战斗操作；上方覆盖层和行1 奖励仍沿用各自的输入保护。
-    if terminalRaid then return true end
+    -- 终焉只锁战斗操作；行1 撤退按钮与上方覆盖层仍沿用各自的输入保护。
+    if terminalRaid then
+        if not terminalRaid.finished then
+            local bt = BattleTriPage.getRetreatButtonRect(ix1, iy1, iw1)
+            if math.abs(wx - bt.cx) <= bt.w * 0.5 and math.abs(wy - bt.cy) <= bt.h * 0.5 then
+                BattleTriPage.openRetreatDialog()
+            end
+        end
+        return true
+    end
 
     local hudScale = 0.44  -- 与 drawHud 一致，约原尺寸 80%
     local hudPad = 4

@@ -615,6 +615,28 @@ local function layoutTests()
             for _, data in ipairs(dataCases) do verifyLayout(f, data, lang .. "/" .. data.label) end
         end
     end)
+
+    -- 挂机结算来源行按字墨缩号；若测量边界不随字号收敛，绘制必须终止而不是死循环。
+    scenario("来源缩号测量不收敛时有界终止", function()
+        local f = newFixture()
+        local originalBounds = f.i18n.displayBounds
+        -- 模拟测量退化：无论字号多大都返回同一组偏大边界，fit 永远 < 1。
+        f.i18n.displayBounds = function(vg, x, y, text, _endp, out)
+            if type(out) == "table" then
+                out[1], out[2], out[3], out[4] = x - 600, y - 400, x + 600, y + 400
+            end
+            return 1200
+        end
+        local done = pcall(function()
+            show(f, { heroExpPreview = { heroPreview(f.exp, 1, 1, 1, 1, 100) },
+                teamSources = { { teamIdx = 1, stageId = 101 } },
+                rewards = { { type = "gold", amount = 10 } } })
+            f.clock.elapsedTime = 101; f.panel.update(0)
+            drawFrame(f)
+        end)
+        f.i18n.displayBounds = originalBounds
+        verify(done, "测量不收敛时来源行绘制有界终止不死循环")
+    end)
 end
 
 local function playerTests()

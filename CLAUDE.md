@@ -12,6 +12,84 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-19，删除预览诊断代码并提交修复 PR）
+
+- 用户确认卡死已解决（“可以了”），要求删除预览诊断 bug 并提交 PR。
+- 清理：将全部临时诊断文件还原到 HEAD——`boot/StandaloneRT.lua`（诊断HUD/停点门禁还原为精简版）、`boot/StandaloneHorizon.lua`（渲染里程碑）、`boot/StartupQueue.lua`（队列 yield 标记）、`ui/story/gate/DarkTitleScreenGate.lua`（标题计时快照）、`tests/startup_performance_probe.lua`/`startup_queue_test.lua`/`team_offline_income_test.lua`/`story_background_test.lua`（诊断与长离线专项）。生产代码已核零残留 `traceMark/traceBegin/traceEnd/FreezeTrace/drawTrace` 等诊断引用。
+- 保留真实修复：`ui/hud/popup/OfflineRewardPanel.lua` 来源行缩号改有界迭代（挂机结算死循环根因）；`boot/Standalone.lua` 首场 heroes 水合（旧档首场阵容）；`boot/StandaloneRT.lua` 补真实运行时字段声明消除基线 LSP Error。
+- 验证：官方构建成功；`offline_reward_cascade_test` ALL PASS 4975断言/cases9（含新增“来源缩号测量不收敛时有界终止”回归）、`offline_boundary_test` ALL PASS 607断言、真实入场探针 PASS（1919U/1920R、750战斗帧、异常0）。
+- 危险反向差异 `.gitignore`（移除 `.git-credentials`/`standalone_save.json`/`engine-docs/` 等忽略规则）与本地 `.project` 已还原、不提交。
+- 提交独立分支并创建 workspace1005 PR。
+
+## 上次做了什么（2026-10-19，修复挂机结算来源行缩号死循环；发现运行时读dist）
+
+- 用户明确“疑似是因为结算挂机收益导致的，修复下”。本轮据此定位并修复 `ui/hud/popup/OfflineRewardPanel.lua` 的 `drawTeamSource`：来源行按字墨缩号用 `while true` 无界循环，`font = font * math.min(0.95, fit)`；若测量边界不随字号收敛（`fit` 恒 < 1），font 每轮等比缩小但永不满足 `fit >= 1` → 死循环，主循环冻死。这正是挂机收益面板显示/结算时走到的绘制路径。
+- 修复：改为 `for _ = 1, 24` 有界迭代（与 `CharacterAttributeView` 同模式），并对 `bounds[2]/bounds[4]` 做 nil 兜底、`nextFont` 非正或未变小时 break。不改变正常缩号结果与五语完整文字；只消除无界循环。
+- **关键环境发现（此前多轮踩坑根因）**：本机 UrhoXRuntime 测试**从 `dist` 打包副本经 `cache:GetFile` 读取脚本**，不是直接读 `scripts/` 源文件。改完源码**必须重新 build** 才会生效；否则测试跑的是旧包（本轮实测：改后 `cases` 仍 8、加 DEBUG print 不输出，构建后才出现第 9 个场景）。此前“改诊断代码→本地测试通过→用户预览仍卡死”很可能因源码未 build 进 dist。
+- 验证：`OfflineRewardPanel.lua` 与 `offline_reward_cascade_test.lua` severity1 Error0；构建后 `offline_reward_cascade_test` ALL PASS 4975断言/cases9（新增“来源缩号测量不收敛时有界终止”回归，模拟 displayBounds 恒返回固定偏大边界，绘制必须有界终止）；`offline_boundary_test` ALL PASS 607断言（含 startup freeze/pending/claim/来源隔离/塔暂停/稀有度/时间边界，真实 `OfflineRewardPanel.show`）；旧档入场探针 SUMMARY PASS/actualexit0（1038U/1039R、750战斗、三停点各 wait=1/returned=1）。dist 与源码大小一致已核。两 `.project` 已与 call-before 逐字节 cmp0 恢复。未提交/push/PR。用户需完整重启预览（不清档）确认挂机结算不再卡死。
+
+## 上次做了什么（2026-10-19，定位并修复诊断HUD导致的启动冻结）
+
+- 用户明确“卡死没有解决啊，能不能解决下？”。本轮不再只做诊断，直接修。此前 `/opt/log/dev/user_script.log` Read失败，本轮符号链接已可读，取到真实部署日志 `Web(Win32)_m_y673_1.0.7_user_script.log`（用户跑的正是 log5 版本）。
+- 日志确证：主循环在标题点击后进入游戏那一帧（U=188/R=189，render `end reason=tri` 完整收尾）之后**彻底冻结**，6秒内零新帧、连120帧心跳都没有，进程随后被关闭；所有已追踪调用都正常返回。结合上一张 log4 用户截图 HUD 停在“Render 当前标记：diagnostic HUD begin”，指向**诊断HUD绘制开始后未返回**。
+- 根因（本轮新增诊断代码自身的缺陷，非游戏玩法）：①`StandaloneRT.drawTrace` 在 `nvgSave` 之后若中途抛异常会跳过 `nvgRestore`，破坏 NanoVG 状态栈，后续帧渲染崩坏→主循环停；②三处同步调用（BGM/SFX/离线）的停点门禁要求“诊断HUD真实呈现一帧”才放行，HUD一旦画不成即**永久等待**，标题永不关闭。
+- 修复：`drawTrace` 整体包 `pcall` 并保证 `nvgRestore` 执行，失败即置 `hudFailed` 永久禁用HUD、不再污染宿主帧；`initTrace` 包 `pcall`；`traceBeforeCall` 增加等待上限（240帧）到点放行并禁用HUD。诊断工具任何失败都**放行启动**，绝不成为新的卡死源。不改变玩法、存档、战斗、离线事务与原有门禁语义。
+- 验证：两文件 severity1 Error0；`startup_queue_test` 77/0/actualexit0（新增“绘制异常不外传/失效后放行”断言，原同帧HUD+Render契约保留）；旧档SUMMARY PASS/actualexit0（1078U/1079R、750战斗、三停点各 wait=1/returned=1）、新档 -startup-enter PASS/actualexit0（1943/1944、750战斗、真实三人/信件/四对白）。官方构建成功，两 `.project` 已与 call-before 备份逐字节 cmp0 恢复；九任务源码仅 StandaloneRT 与 startup_queue_test 变化，其余七份与冻结一致。未提交/push/PR。用户仍需完整重启预览（不清档）确认冻结是否消失。
+
+## 上次做了什么（2026-10-18，用户近淡出末帧截图续查，预呈现同步调用停点）
+
+- 已实际Read最新用户1a63d08a截图：freeze1018-log4-timing、U294/R295、完成294/294、dt=0.009827/非正连续0、title/fading=true、exit=0.548557001/0.55、alpha=0.00262363424、entryPrepared/rendered=true、postStart=false。当前Render比收尾多1合法；该图不证明dt始终0或Lua无限循环，下一有效Update可能关标题并进入同步音乐/音效/离线整链，若其不返回仍显示上一帧。未得到新部署原生日志，不称用户卡死已解决。
+- 新freeze1018-log5-call-boundary：第10行独立“同步停点”，BGM.start、SFX.start、离线核算与面板showOfflineRewardPanel三整调用各先等待一帧真实HUD子树返回和同一Render收尾，再由下次Update执行；返回后记“已返回”。drawnHudRender/completedHudRender同帧身份防跨帧拼凑，重复等待不重置基线；Start/Stop/清档清等待、音频phase及epoch，真实音频调用返回后epoch检查。finishIntro首次等待false不伪postStart完成，下一Update重试，不重播四段/补发starter。不拆离线事务、不造dt/强关标题/解除原门禁，不改Save/OfflineService/BGM/SFX/玩法或存档。独立只读未确认正常新旧档/取消路径新增永久门禁；不等同全生命周期Runtime或浏览器GPU呈现fence。
+- 最后源码修改后已官方构建成功，九任务Lua逐文件severity1 Error0，九源码末尾SHA与call-source-sha冻结完全相同、diff-check0；两.project仅本人身份/候选临时ignore/默认字段已逐字节与project-call-before/settings-call-before恢复cmp0，恢复后不再build。最终官方b69成功；manifest-origin当前与b69逐字节相同，根scripts Lua清单702/702集合一致、缺失/额外0，九任务实际UUID-hash载荷逐字节/声明size9/9一致，五候选前缀与内部validation在origin及client/server清单匹配0，未全702逐字节审计。实际build日志daemon unavailable/code1、全仓LSP gate跳过，不称全仓静态清零。五保护文件.gitignore/StandaloneSave/OfflineService/GameBGM/GameSFX指纹与本轮前相同。
+- 构建后最终真实独立Runtime：旧档SUMMARY PASS/actualexit0，1069Update/1070Render、750战斗Update/754Render、751tick/9攻击、hero1 Lv12/105；新档明确-startup-enter及max3500，1987/1988、750/751、750tick/19攻击、真实三人/信件/四对白完成。三个停点各wait1/returned1且真实同帧HUD证据通过；每档7布局样本/126native bounds，18行Yoga/实际全文/末行7次通过，行外111仍DIAG/tight_pixel_ink未断言，Stop HUD_RELEASED=true、异常0、FileFS封闭/Save stub。不把最初误跑的newsave title-only 750/751、战斗0当新档入场验证。队列含握手失败/无Render/跨帧/取消/reset反例77/0/actualexit0；故事原完整组通过，6235检查仍1个STORY_BG_01.png.meta读取失败，未跳过、未称全集通过。
+- 新既有team_offline测试显式-startup-long-offline-only：59/60/24h/7d/7d+1共5场景55断言0失败/0harness/actualexit0，真OfflineService/OfflineCalc/EquipmentSystem，私有时钟/RNG与FileFS拒绝，不读玩家档、不领取/保存。最后24h生成1440装备/CPU120.869ms；7d生成10080/CPU846.311ms；7d+1同10080/CPU773.451ms。七日上限及pending不重骰保持；不是完整玩家档/Web设备/面板排序/真实I/O实测，不据此认定用户永久卡死根因或立即分帧收益。两人工入场档仍近期在线，不混称覆盖长离线全Boot。
+- log5本轮未另做像素截图复跑：旧命令/技能路径有限查询不可用后停止扩查，log4 PNG不冒称log5；真实UI/Yoga同帧观察不等浏览器GPU/触控/性能验收。现需用户完整重启预览但不清档，以新版本“同步停点”现场继续定位。HEAD992b8c86、fix1018/latest-game-freeze、index空，未提交/push/PR/合并发布，不继承旧PAT授权、不读凭据/完整玩家档；原候选/_uploads/stash保持，内证仅.git/validation/freeze1018。持续推进当前授权、尊重停止/拒绝/安全边界，最新直接继续不机械AskUserQuestion、不推workspace系列/强推/自动合并发布。
+
+## 上次做了什么（2026-10-18，用户卡住截图续查，补齐上屏计时诊断）
+
+- 已实际读取用户f03df180截图：log3-screen、U393正常收尾、R394/HUD中采样、title/fading=true、postStart=false、entryPrepared/rendered=true。HUD当前R比完成R多1是绘制顺序合法结果，recent落后是限量采样；单图不能证明同步循环或此后计数停止。postStart门禁解释driver不tick/卡面入场alpha0、名字血条仍在及0%进度，但不是卡死根因。两路只读确认正常标题累计0.55秒必关、正式scripts未确认全局time改写；不把测试脚本污染能力、提前return路径或图片失败当用户根因。
+- 新freeze1018-log4-timing：Update原事件dt、time.timeStep/elapsedTime/差量、累计dt/非正连续；标题真实update/fade次数、原输入/应用dt、exitTime/0.55、alpha/精确零/ready；所有Update收尾补采标题数值与状态，战斗gate显式postStart。18个真实UI Label/508高、原Start一次初始化/Stop销毁/宿主帧/点击穿透保留。RT复制标题标量快照，probe与真实Gate和原生事件精确比较、复制不可反写。未补伪dt/强关标题/解除门禁/改剧情离线顺序/GC/RNG/存档；Gate绘制仅同值cast解决LSP类型。
+- 最终官方b67成功、702根Lua清单集合一致；七任务Lua实际UUID-hash载荷逐字节/声明size7/7一致，五候选前缀与内部validation匹配0。后续全702审计及b63历史清单同源读取工具exit1无输出，不计成功、不称全包逐字节或历史清单复验完成。五本轮修改Lua逐文件severity1 Error0；官方daemon unavailable/code1跳过全仓gate，不称全仓静态清零。
+- b67后人工旧档SUMMARY PASS/actualexit0：1062Update/1063Render、750战斗Update/751Render、751tick/9攻击，hero1 Lv12/105；新档2011/2012、750/751、750tick/19攻击，真实三人/信件/四对白完成。两档标题exit0.55/alpha精确0、HUD标题与时间数值全一致；4相位72原生bounds、严格18行Yoga框与8/9/18实际全文、第18非空4次通过，异常0/Stop HUD_RELEASED=true、FileFS原生0/Save stub。队列本轮58/0/actualexit0。真实玩家旧档/Web触控/设备性能未验收。
+- 字墨初版断言将native bounds当tight像素墨导致两档FAIL（旧63/16类，日志固定底超3.764、18号字体bounds高29），原失败保留；只读未证其是像素裁切，未改生产UI或加epsilon。最终明确原生bounds有效/非空/与行相交，63个行外量保留DIAG、tight_pixel_ink=not_asserted；保留真实Yoga/全文/三明确相位断言，测量沿原尾参且异常只记probe后继续原绘制，所有宿主/实例函数恢复。b63真实1280×800/360帧350帧PNG已Read，两新增行及最后日志可读；rawFAIL/exit1只358软件尖峰、Lua/资源/缺图0，不冒称b67新像素/数学字墨全过或性能通过。
+- story_background首轮6104/2失败：cache读取不到STORY_BG_01.png.meta，以及抽取开场段漏外部prepareEntry_；仅补记录依赖spy及新/旧开场预热门禁断言，原业务断言保留，b64后6232/1失败，标题零/负/无效dt停留及正常恢复精确收尾、完整开场组通过，metadata组仍失败且未跳过/伪造。不把exit0当全集通过，不定性纯HEAD Runtime基线失败。最终构建无.meta入包是原元数据处理口径，不为了测试把全部meta加入发布资源。
+- 两.project仅本轮身份/临时ignore/默认字段恢复并核timing-before两备份；实际卡死根因仍待用户新log4真实预览数值，需完整重启预览但不清档，不让用户重复F12或旧图。HEAD992b8c86、fix1018/latest-game-freeze，未提交/push/PR/合并发布；原.gitignore文件SHA04b6d926不变、index空、候选/_uploads/stash保持，内证仅.git/validation/freeze1018。持续推进授权并尊重停止/拒绝/安全边界，最新直接继续不机械提问，不推workspace系列/强推/自动合并发布，不读取完整玩家档或历史凭据。
+
+## 上次做了什么（2026-10-18，预览看不到日志，改为自动上屏诊断）
+
+- 用户反馈“日志在预览看不到”。只读查询未证实当前SCE预览日志面板菜单/快捷键，不再要求F12；保留print并在StandaloneRT集中双写最近8条内存记录。新增临时自动显示的UI.Label/Panel诊断栏，版本freeze1018-log3-screen、U/R及实际已收尾计数、两路最后标记/门禁状态、独立未收尾记录与最近日志；点击穿透，不注册输入/模态、不读玩家档、不上传日志、不写存档。不解除故事/离线/战斗门禁，原首场heroes水合保留。
+- 复用DesignWidgetSurface与既有1920×1080设计帧/宿主字体，finishFrame统一帧末显示，Start创建一次、Stop在Surface.shutdown之前Destroy。首版b59在首Render惰性UI.Init触发原生nvgSetRenderOrderUrho错误，新档actual139；旧档虽SUMMARY PASS仍有此原生错误，不计该版安全通过。已按真实错误修为Start/RecalcLayout后initTrace，draw缺Panel仅return，b60/b61无此错误；原失败记录保留。只读复核未确认新阻塞/吞输入/正常恢复缺陷，指出probe仅计调用会放过early-return，已补实际子树返回后计数与Stop销毁断言。
+- 最终官方b61成功，702根Lua清单，5任务Lua实际UUID-hash载荷逐字节/声明size5/5一致，五候选前缀与内部validation匹配0。四新增/修改Lua逐文件severity1 Error0；官方daemon unavailable/code1跳过全仓gate，不称全仓静态清零。两.project仅本轮身份/ignore/默认字段恢复，与screen-before两备份逐字节一致，恢复后不再build。
+- b61最终人工旧档SUMMARY PASS/actualexit0：1061Update/1062Render、750战斗Update/751Render、751tick/9攻击，首驱动hero1 Lv12/105；新档2007/2008、750/751、750tick/19攻击，真实三人/信件/四对白完成。两档诊断draw与completed_subtrees均1062/2008、recent8、snapshot复制不暴露原表，Stop实际HUD_RELEASED=true，异常0/unfinished0/limit0、FileFS原生0/Save stub。队列58/0/actualexit0。人工档不代表用户完整档案/Web设备/触控，未再称实际卡死已解决。
+- b60修正版真实1280×800渲染360帧、350帧PNG已Read，诊断版本/两路计数/门禁/8条日志清晰可见；Lua0/资源0/缺图0、Stop成功，rawFAIL/actualexit1仅358软件Frame time spike，不称性能通过。b61仅加返回后计数/释放断言，视觉实现同b60，不冒称另有b61像素复跑。同步调用真正不返回时无法刷新画面，上屏只能留下已呈现帧，不保证最后begin可见；HUD采样在endRender之前，当前R比已收尾R多1正常，不误判循环。
+- 当前实际用户预览是否加载上屏版及卡死停点仍待截图，不读完整玩家档或清档、不使用历史凭据。HEAD992b8c86、分支fix1018/latest-game-freeze、index空，未提交/push/PR/合并发布；原.gitignore差异指纹不变、候选/_uploads/stash保持。内证仅.git/validation/freeze1018；持续推进授权且尊重停止/拒绝/安全边界，最新直接继续不提问，不机械AskUserQuestion，不推workspace系列/强推/自动合并发布。
+
+## 上次做了什么（2026-10-18，部署仍卡死，先加入限量停点日志）
+
+- 用户最新明确“没有，明显死循环了，能不能先打日志啥的”。本轮不再用人工新旧档PASS替代实际部署验收；新增临时 `[FreezeTrace] version=freeze1018-log2`，U/R序号、Update/Render begin/end、关键调用前后CPU耗时、boot/entry/title/opening/postStart/dialogue/letter及离线待领/侧页暂停门禁状态。原首场heroes水合修法保留，未改战斗、奖励、故事等待、存档规则或清档。
+- Standalone覆盖TimeStep、回执/一键/特效、boot/entry队列、悬停、状态同步、Save.Update、标题更新、首场水合/重载、离线prepare/Reconcile/Calc/Checked/Flush、教程、BGM、故事、战斗派发及末尾页面更新；全部主Update提前return带reason。Horizon覆盖VG/变换/nvgBeginFrame、三行L1/L0/左右/角色/战斗/HUD/覆盖层与finishFrame逐段及nvgEndFrame，主Render各return带reason。StartupQueue追加resume begin/complete/status与checkpoint yield/resumed，仅诊断不改变合作式顺序；图片cache未命中才记decode前后，不扫/输出玩家数据。
+- 日志每路前2帧、状态变化当前＋后2帧、首次标题fading当前＋后8帧；boot和首次入场分别6000详情硬限、每阶段128状态、每路120采样、全会话64心跳（每120回调）。只读复核指出预算未预留/旧pending误归解码后已修：首次fading单独重置限额保U/R，实际callback kind归属，unfinished限8且不被详情抑制；unfinished仅证明前回调未收尾，不能称死循环。没有debug hook、捕获吞异常、解除门禁、改变GC/RNG或库代码。
+- probe的FreezeTrace即时nativePrint，不等最终summary。log1初测新旧均PASS，但标题closed当帧未重新采样导致离线细标记缺失，日志校验确有失败并修生产在title更新后观察状态；未降业务断言。最终官方b58后旧档1063Update/1064Render、750战斗Update/751Render、751tick/9攻击，新档2016/2017、750/751、750tick/19攻击，均SUMMARY PASS/actualexit0/异常0、FileFS原生0/Save stub；日志各2374/2220条、unfinished0/limit0，真实queue/yield/entry armed/帧末/心跳存在，旧档CalcOnEnter前后可见。队列58/0/actualexit0来自同最终未变Queue源码的b56后专项，不冒称b58另跑。
+- 官方b56/b57/b58成功，最终702根Lua清单及5任务Lua实际UUID-hash载荷逐字节/size5/5一致、validation0入包；五类候选前缀b56审计0，最后保持同临时ignore，不另称全702字节审计。五任务逐文件severity1 Error0；官方LSP daemon unavailable/code1跳过全仓gate，不称全仓/设备GPU/触控/性能全绿。本轮未另跑真实像素，旧b54截图不冒称b58。两.project仅本人生成身份/默认/临时ignore已与本轮log1-before两备份cmp0，恢复后不再次build。
+- /opt/log/dev/user_script.log仍Read Internal error、tail exit1无内容，未取得新部署日志，不定性它就是挂死。当前实际用户卡死根因仍待新日志；built含版本标记不等于用户已运行。只本地日志制作/测试/build，HEAD992b8c86、index空，未提交/push/PR/合并发布；原.gitignore/_uploads/候选/stash保持，不读真实玩家档或凭据。内证.git/validation/freeze1018；持续推进授权并尊重停止/拒绝/安全边界，最新直接继续不提问，不机械AskUserQuestion、不推workspace系列/强推/自动合并发布。
+
+## 上次做了什么（2026-10-18，用户旧档截图续查，首场阵容时序本地修复）
+
+- 用户纠正“部署的还是卡死在这里”：此前新档通过不能证明旧档部署不卡死。此前实际部署日志恢复Lv9/19模块/roster1，却首场准备默认三人，title tap后未见closed；随后本轮读取/opt/log/dev/user_script.log失败，没有新增部署里程碑证据，不称用户Web永久卡死已解决。
+- 确认旧档在UI订阅建立前已恢复，CharacterPanel.init临时默认阵容未立即消费既有heroes。仅Standalone.firstStage在ApplyBattleProgress之后、构造首场之前用isHeroesDataApplied guard应用已恢复heroes；不直接改CP.init，避免重复初始化快路径和战力提示基线回归。未通知/写Dispatcher或玩家档，不改伤害、成长、奖励、公式、编队规则或飘字。StandaloneRT补缺失类型源字段、SyncBattleState仅同引用注解；Horizon仅首次入场记录begin/roster/battle/finish成对里程碑。
+- 扩已有startup_performance_probe，File/FS封闭、Save stub，人工Lv9/hero1 Lv12/stage105/slots1,0,0,0；右栏左→右逻辑4/3/2/1，现夹具最右前锋与截图一致，不误改slot4。原版负对照明确首驱动默认三人FAIL，虽然actualexit0不计通过；初版对白无人advance的750帧等待不是同步卡死，完善后仅真实draw之后走public advance，不声称触控路由验收。最终b55旧档SUMMARY PASS/actualexit0：1064Update/1065Render、750战斗Update/751Render、751driver tick、9攻击、首驱动一次即hero1/105、异常0，七条生产Render里程碑成对返回。新档最终PASS/actualexit0：2016/2017、750/751、750tick/19攻击，三人1/2/3、真实信件/四段对白完成；首次1800帧观察不足533战斗帧FAIL原日志保留，延长max到3500，不降低750断言。队列专项58/0/actualexit0。
+- b54人工旧档1280×800实际渲染680帧，650帧PNG已Read，卡面/攻击/关卡6%可见；保存stub、游戏内正常提示也可出现，不等于用户完整档案/浏览器GPU/触控。rawFAIL/actualexit1仅678软件Frame time spike，Lua0/资源0/缺图0，Stop成功；不称性能通过。独立只读未确认排序栏默认uniform边框/正常UI参数或Tutorial/Offline无限循环，不据推测扩修库；alpha0首入场合法外观可解释卡面消失，不足解释永久卡死。
+- 最终官方b55成功，702根Lua清单；四任务Lua实际UUID-hash载荷逐字节/声明size4/4一致，候选与内部validation匹配0。b54全702/702实际核验成功，b55全量审计工具异常无输出未计通过，不混称最后全包审计完成。四任务Lua逐文件severity1 Error0；官方daemon unavailable/code1跳过全仓gate，旧全仓诊断不混修。两.project只还原本轮身份/候选ignore/多人默认字段，已与本轮oldsave-before两备份cmp0；不再次build污染配置。
+- 仍fix1018/latest-game-freeze@992b8c86，仅本地修复/测试/官方构建，未暂存/提交/push/PR/合并发布，不继承旧PAT或PR授权。原.gitignore/候选/_uploads/stash保持，不读真实玩家档、清档或持久化凭据；内证仅.git/validation/freeze1018。持续推进授权且尊重停止/拒绝/安全边界，按最新直接继续不机械AskUserQuestion，不推workspace系列/强推/自动合并发布。用户下一次完整重启预览无需清档；仍卡住时以新部署里程碑继续定位，不再次用新档PASS替代旧档验收。
+
+## 上次做了什么（2026-10-18，拉取最新1005排查卡死，本地诊断）
+
+- 按用户“拉取最新workspace1005看看，游戏卡死”，fetch并从c85e7c0b安全快进到`992b8c86`，独立本地`fix1018/latest-game-freeze`。最新目标已外部合入PR171（7948ac24）及PR170启动卡死/黑闪修复（992b8c86）；未由本会话合并发布，不继承旧PAT/PR授权。原.gitignore差异SHA与未跟踪路径清单保持，不pop旧stash、不读玩家档，不提交/push。
+- 确认本地原预览仍b48，缺最新启动修复；官方b49/b50已成功重建最新源码。b50全部702根Lua集合与实际UUID-hash载荷逐字节/声明size702/702一致。b49全包1665项584408627字节，临时本地前缀ignore后b50为1618项488130510字节；不删候选、不手写dist，尚有独立候选总览jpg，最终更宽前缀再排除。这是包体清理，不证明候选是卡死根因。
+- b49真实隔离开场probe实际exit0且SUMMARY PASS：592Update/593Render、180真实driver tick/181战斗Render、26攻击，真实三人1/2/3及0空槽，信件/四段对白真实推进，entryPrepared/rendered均true、异常0、202图片加载失败0/重复解码0；FileFS原生调用0、保存stub，不代玩家旧档/设备性能/触控验收。软件Update墙峰627.998ms，仍有卡顿，不称全面不卡或永久卡死已修。
+- 队列专项34/0实际exit0。入场专项最新包17组63断言13失败，均未声明BattleFloatImpact及初次失败污染fixture.loading后误报Tri循环，未修改测试/生产掩盖；第一次未build探针确实执行旧源码并报FAIL，后新构建结果不混用。全仓LSP缓存987 Error，Standalone两Error、Queue仅Warning，未全仓修静态，不称全绿。只读两路排查未确认正常生产无限循环/递归；首Render异常门禁与失败背景逐帧重试仅条件风险，不作为用户卡死根因。
+- b50净化后同源真实probe复验实际exit0、SUMMARY PASS：592Update/593Render、180tick/181战斗Render/26攻击、异常0、202加载失败0/重复解码0、FileFS原生0，完整信件/四对白/入场链完成。随后更宽候选前缀官方b51成功，1617项487577816字节，702源Lua集合及实际载荷逐字节/声明size702/702一致、五类候选与validation匹配0；Lua一直未改，同源真实probe来自b50不冒称b51另跑。两.project最终与本轮原始版cmp0，原.gitignore差异SHA及未跟踪路径清单保持；配置恢复后不再次build污染身份。仅本地拉取/诊断/构建，Runtime Lua与992b8c86原样，未提交/push；尊重当前“直接继续不再提问”，不机械AskUserQuestion，遵守后续停止/权限和安全边界，不推workspace系列/强推/自动合并发布，凭据不持久化。
+
 ## 上次做了什么（2026-10-18，战斗飘字正式接入并创建 PR #171）
 
 - 用户提供 GitHub PAT 并要求提 PR。核实 PR #168（独立样片）已由外部 merged、该 head 无开放 PR；`workspace1005` 远端已前进到 `c4b0351e`。提交 `8bb97d8d`（6 文件 +224/−286：新增 `BattleFloatImpact.lua`+meta、`BattleDraw` 委托、两个测试删旧外观断言、本交接）已正常 push `feat1018/battle-float-impact-preview`（远端 SHA 一致）。创建正式 **PR #171**：https://github.com/FanZeros/changeForJourney/pull/171，head=`feat1018/battle-float-impact-preview`(8bb97d8d)／base=workspace1005(c4b0351e)，open/draft=false/merged=false，未自动合并发布。

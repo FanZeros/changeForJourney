@@ -530,77 +530,119 @@ local function testPageNoTimeLimit()
     for _, entry in ipairs(SC.STAGES) do
         if SC.isTerminalTemple(entry.id) then terminals[#terminals + 1] = entry.id end
     end
-    check(#terminals == 14 and timeLimit == 300, "全部14座终焉均覆盖，普通旧上限仍为300秒")
+    check(#terminals == 14 and timeLimit == 300, "全部14座终焉均覆盖，普通上限仍为300秒")
     for _, stageId in ipairs(terminals) do
-        for _, won in ipairs({ true, false }) do
-            case("终焉不限时后" .. (won and "胜利" or "全灭") .. stageId, function()
-                local Page, drivers, raid, observed = openTestPage(nil, stageId)
-                patch(require("ui.battle.scene.BattleScene"), "battleSpeed", 3)
-                check(Page.getBattleLogicDt(.25) == .25 and not Page.isSpeedButtonVisible(),
-                    "终焉真实Page兼容接口不读取旧三倍速字段")
-                patch(Page, "getBattleLogicDt", function() error("共享用时不得依赖旧倍率解析") end)
-                -- 仅拉长夹具攻击间隔，真实驱动仍推进状态、攻击进度与增伤时钟。
+        -- 未超时：战斗与共享用时继续累计，不误退关/不提前结算。
+        case("终焉未超时继续战斗" .. stageId, function()
+            local Page, drivers, raid, observed = openTestPage(nil, stageId)
+            patch(require("ui.battle.scene.BattleScene"), "battleSpeed", 3)
+            check(Page.getBattleLogicDt(.25) == .25 and not Page.isSpeedButtonVisible(),
+                "终焉真实Page兼容接口不读取旧三倍速字段")
+            patch(Page, "getBattleLogicDt", function() error("共享用时不得依赖旧倍率解析") end)
+            for row = 1, 3 do
+                for _, unit in ipairs({ drivers[row].allies[1], table.unpack(drivers[row].enemies) }) do
+                    unit.attrs.final[AD.ATK_INTERVAL], unit.attrs.final[AD.ATK_SPEED] = 1000000000, 0
+                    unit.atkProgress = 0.5
+                end
+            end
+            for _, dt in ipairs({ timeLimit - 1, 0.5 }) do
+                local before = raid.elapsed
+                local progress = drivers[1].enemies[1].atkProgress
+                Page.update(dt)
+                check(raid.elapsed == before + dt and not raid.finished and raid.hp > 0,
+                    "未达上限仍战斗且共享用时继续累计 " .. stageId .. "/" .. raid.elapsed)
+                check(observed.retreats == 0 and observed.victories == 0 and #observed.rewards == 0,
+                    "未超时不误退关、不提前结算奖励")
                 for row = 1, 3 do
-                    for _, unit in ipairs({ drivers[row].allies[1], table.unpack(drivers[row].enemies) }) do
-                        unit.attrs.final[AD.ATK_INTERVAL], unit.attrs.final[AD.ATK_SPEED] = 1000000000, 0
-                        unit.atkProgress = 0.5
-                    end
+                    check(drivers[row].terminalRaid == raid and drivers[row].stageId == stageId
+                        and not raid.defeated[row] and drivers[row].allies[1].hp > 0
+                        and not drivers[row]._terminalStopped
+                        and drivers[row]._timeoutElapsed == raid.elapsed
+                        and drivers[row].combatState.ctx.globalDmgMult == timeout.calcMult(raid.elapsed),
+                        "未超时不冻结活队/共享绑定/增伤时钟，队" .. row)
                 end
-                for _, dt in ipairs({ timeLimit - 1, 1, 1, timeLimit }) do
-                    local before = raid.elapsed
-                    local progress = drivers[1].enemies[1].atkProgress
-                    Page.update(dt)
-                    check(raid.elapsed == before + dt and not raid.finished and raid.hp > 0,
-                        "达到/超过旧上限仍战斗且共享用时继续累计 " .. stageId .. "/" .. raid.elapsed)
-                    check(observed.retreats == 0 and observed.victories == 0 and #observed.rewards == 0,
-                        "长战斗不误退关、不提前结算奖励")
-                    for row = 1, 3 do
-                        check(drivers[row].terminalRaid == raid and drivers[row].stageId == stageId
-                            and not raid.defeated[row] and drivers[row].allies[1].hp > 0
-                            and not drivers[row]._terminalStopped
-                            and drivers[row]._timeoutElapsed == raid.elapsed
-                            and drivers[row].combatState.ctx.globalDmgMult == timeout.calcMult(raid.elapsed),
-                            "超旧上限不冻结活队/共享绑定/增伤时钟，队" .. row)
-                    end
-                    check(drivers[1].enemies[1].atkProgress > progress, "超旧上限敌人攻击进度仍推进")
+                check(drivers[1].enemies[1].atkProgress > progress, "未超时敌人攻击进度仍推进")
+            end
+        end)
+        -- 达到上限：超时判负，走全灭的退场展示与退关路径。
+        case("终焉超时判负退关" .. stageId, function()
+            local Page, drivers, raid, observed = openTestPage(nil, stageId)
+            for row = 1, 3 do
+                for _, unit in ipairs({ drivers[row].allies[1], table.unpack(drivers[row].enemies) }) do
+                    unit.attrs.final[AD.ATK_INTERVAL], unit.attrs.final[AD.ATK_SPEED] = 1000000000, 0
                 end
-                if won then
-                    for index = 1, 3 do
-                        killPool(raid, 3, index)
-                        Page.update(0)
-                        check((index < 3 and not raid.finished and observed.victories == 0)
-                            or (index == 3 and raid.won and observed.victories == 1),
-                            "超旧上限后仍须全部编号池清空才胜利，池" .. index)
-                    end
-                    check(#observed.rewards == 3 and observed.retreats == 0, "长战斗胜利只结算三个Boss奖励")
-                    Page.update(timeLimit)
-                    check(observed.victories == 1 and #observed.rewards == 3, "长战斗胜利重复更新奖励仍幂等")
-                else
-                    for row = 1, 3 do
-                        local ally = drivers[row].allies[1]
-                        ally.hp, ally.attrs.final[AD.HP] = 0, 0
-                        Page.update(0)
-                        check(raid.defeated[row] and (row < 3 and not raid.finished
-                            or row == 3 and raid.finished and raid.won == false),
-                            "超旧上限后只在全部参战队显式失守时失败，队" .. row)
-                    end
-                    check(observed.retreats == 0 and raid.finishElapsed == 0 and #observed.rewards == 0,
-                        "长战斗全灭当帧仍保留延迟退场且不发奖")
-                    Page.update(TerminalRaid.FAILURE_HOLD_SEC - 0.01)
-                    check(observed.retreats == 0, "长战斗全灭不足展示门槛仍不退关")
-                    Page.update(0.02)
-                    check(observed.retreats == 1 and observed.victories == 0 and #observed.rewards == 0,
-                        "长战斗全灭展示结束仅退关一次且无奖励")
-                    for row = 1, 3 do
-                        check(drivers[row].terminalRaid == nil
-                            and drivers[row].stageId == SC.getTerminalPrevStageId(stageId),
-                            "长战斗全灭仍统一回到本难度末关，队" .. row)
-                    end
-                end
-            end)
-        end
+            end
+            Page.update(timeLimit - 1)
+            check(not raid.finished and raid.hp > 0, "距上限1秒仍在战斗 " .. stageId)
+            Page.update(1)
+            check(raid.finished == true and raid.won == false and raid.timedOut == true,
+                "达到上限即超时判负 " .. stageId)
+            check(observed.retreats == 0 and #observed.rewards == 0, "超时当帧保留退场展示且不发奖")
+            Page.update(TerminalRaid.FAILURE_HOLD_SEC + 0.02)
+            check(observed.retreats == 1 and observed.victories == 0 and #observed.rewards == 0,
+                "超时展示结束仅退关一次且无奖励 " .. stageId)
+            for row = 1, 3 do
+                check(drivers[row].terminalRaid == nil
+                    and drivers[row].stageId == SC.getTerminalPrevStageId(stageId),
+                    "超时统一退回本难度末关，队" .. row)
+            end
+        end)
+        -- 胜利：全部编号池清空仍按胜利结算（不受超时影响）。
+        case("终焉未超时胜利" .. stageId, function()
+            local Page, drivers, raid, observed = openTestPage(nil, stageId)
+            for index = 1, 3 do
+                killPool(raid, 3, index)
+                Page.update(0)
+                check((index < 3 and not raid.finished and observed.victories == 0)
+                    or (index == 3 and raid.won and observed.victories == 1),
+                    "未超时仍须全部编号池清空才胜利，池" .. index)
+            end
+            check(#observed.rewards == 3 and observed.retreats == 0, "胜利只结算三个Boss奖励")
+            Page.update(timeLimit)
+            check(observed.victories == 1 and #observed.rewards == 3, "胜利后重复更新奖励仍幂等")
+        end)
     end
 end
+
+-- 玩家主动撤退：二次确认打开独占输入，确认后走与超时/全灭一致的退关路径。
+local function testPageRetreat()
+    local Page, drivers, raid, observed = openTestPage()
+    check(Page.isRetreatDialogOpen() == false, "初始无撤退确认弹窗")
+    Page.openRetreatDialog()
+    check(Page.isRetreatDialogOpen() == true and not raid.finished, "打开撤退确认不立即结束战斗")
+    -- 打开动画期间输入被吞；推进真实时钟到动画结束后再点击。
+    time.elapsedTime = time.elapsedTime + 0.3
+    -- 确认按钮（设计空间 OK_CX=340, OK_CY=1310）：与 handleInput 的 dialogToDesign 同源变换。
+    local ox, oy, fit = Page.getDialogTransform()
+    Page.handleInput(ox + 340 * fit, oy + 1310 * fit)
+    check(raid.finished == true and raid.won == false and raid.retreated == true,
+        "确认撤退即判负")
+    check(observed.retreats == 0 and #observed.rewards == 0, "撤退当帧保留退场展示且不发奖")
+    Page.update(0)  -- 首帧仅观测到失败，不累计退场计时
+    Page.update(TerminalRaid.FAILURE_HOLD_SEC + 0.02)
+    check(observed.retreats == 1 and observed.victories == 0 and #observed.rewards == 0,
+        "撤退展示结束仅退关一次且无奖励")
+    for row = 1, 3 do
+        check(drivers[row].terminalRaid == nil and drivers[row].stageId == SC.getTerminalPrevStageId(TERMINAL),
+            "撤退统一退回本难度末关，队" .. row)
+    end
+end
+
+-- 取消撤退：弹窗关闭，战斗继续，不判负。
+local function testPageRetreatCancel()
+    local Page, drivers, raid, observed = openTestPage()
+    Page.openRetreatDialog()
+    time.elapsedTime = time.elapsedTime + 0.3
+    local ox, oy, fit = Page.getDialogTransform()
+    Page.handleInput(ox + 740 * fit, oy + 1310 * fit)  -- CANCEL_CX
+    check(Page.isRetreatDialogOpen() == true, "取消动画期间仍视为打开（closing）")
+    time.elapsedTime = time.elapsedTime + 0.3
+    Page.update(0.3)
+    check(Page.isRetreatDialogOpen() == false, "取消动画结束后弹窗关闭")
+    check(not raid.finished and observed.retreats == 0 and #observed.rewards == 0,
+        "取消撤退不判负、不退关")
+end
+
 
 local function testPageLargeDtFailure()
     local Page, drivers, raid, observed = openTestPage()
@@ -1056,7 +1098,7 @@ local function testPageTerminalDraw()
     local Page, drivers, raid, observed, _, _, _, texts, rectangles, fills = openTerminalUIFixture()
     local limit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
     local I18n = require("core.I18n")
-    -- 真实卡牌绘制执行（不是替换 BattleView.draw）；五语与旧上限前后都保持不限时。
+    -- 真实卡牌绘制执行（不是替换 BattleView.draw）；五语下 row1 显示限时倒计时。
     local initialLanguage = I18n.get()
     defer(function() I18n.set(initialLanguage) end)
     for _, language in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
@@ -1065,7 +1107,9 @@ local function testPageTerminalDraw()
             raid.elapsed = elapsed
             local textStart, rectStart, fillStart = #texts, #rectangles, #fills
             Page.draw({}, 1920, 1080)
-            local expected = I18n.lookup("不限时")
+            local remain = math.max(0, math.ceil(limit - elapsed))
+            local expected = string.format(I18n.lookup("限时 %d:%02d"),
+                math.floor(remain / 60), remain % 60)
             local timeCount, sharedText, cardHp = 0, 0, 0
             local x, y = Page.getInteriorRect(1)
             for i = textStart + 1, #texts do
@@ -1075,7 +1119,7 @@ local function testPageTerminalDraw()
                 end
                 if record.text:find(I18n.lookup("共享生命"), 1, true) then sharedText = sharedText + 1 end
             end
-            check(timeCount == 1, language .. "终焉row1不限时文案/位置不受用时影响 " .. elapsed)
+            check(timeCount == 1, language .. "终焉row1限时倒计时文案/位置随用时刷新 " .. elapsed)
             check(sharedText == 0, "终焉不绘制额外共享生命文字 elapsed=" .. elapsed)
             check(#rectangles == rectStart, "终焉三行不绘制额外共享总血条圆角矩形 elapsed=" .. elapsed)
             for i = fillStart + 1, #fills do
@@ -1085,7 +1129,7 @@ local function testPageTerminalDraw()
             end
             check(cardHp == 12, "真实 BattleView/BattleDraw 仍绘制九 Boss 与三英雄各自血条 elapsed=" .. elapsed)
         end
-        check(language == "zh_CN" or I18n.lookup("不限时") ~= "不限时", language .. "不限时HUD有正式翻译")
+        check(language == "zh_CN" or I18n.lookup("限时 %d:%02d") ~= "限时 %d:%02d", language .. "限时HUD有正式翻译")
     end
     check(not raid.finished and observed.retreats == 0 and observed.victories == 0,
         "draw 不改变终焉结算/退关状态")
@@ -1467,13 +1511,15 @@ function Start()
         case("真实终焉 start/空队/signature", testTerminalStartAndSignature)
         case("三队均空立即判负但完整绑定", testAllEmptyTeamsRaid)
         case("真实 Page 失败延迟", testPageFailureHold)
-        case("真实 Page 全14座终焉不限时及后续胜败", testPageNoTimeLimit)
+        case("真实 Page 全14座终焉限时及后续胜败", testPageNoTimeLimit)
+        case("真实 Page 终焉撤退确认", testPageRetreat)
+        case("真实 Page 终焉撤退取消", testPageRetreatCancel)
         case("真实 Page 大dt首次失败边界", testPageLargeDtFailure)
         case("真实单场全14座终焉load/reset/残留timer与普通限时", testSingleSceneNoTimeLimit)
         case("副本/通天塔/实验室300秒规则保护", testOtherTimeLimitsUnchanged)
         case("真实 Page 即时胜利和奖励口径", testPageImmediateVictoryAndRewards)
         case("真实终焉 row1 奖励输入/覆盖层/战斗锁", testPageRowRewardInput)
-        case("真实终焉draw五语不限时且保留卡牌生命", testPageTerminalDraw)
+        case("真实终焉draw五语限时且保留卡牌生命", testPageTerminalDraw)
         case("旧倍速兼容与真实Scene时钟及点击", testAccountSpeedRemoved)
         case("真实主线轮回/首通去重", testCompleteTriTerminal)
     end)

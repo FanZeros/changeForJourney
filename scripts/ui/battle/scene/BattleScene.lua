@@ -981,7 +981,7 @@ function BattleScene.update(dt)
     -- 首通、重打与挂机共用真实时钟，不再经过可替换的旧倍率接口。
     local logicDt = dt
 
-    -- 终焉不限时；即使切关或恢复留下首通计时器，也不能据此判负。
+    -- 终焉由三行协同战自管限时；清掉单队首通计时器，避免两套计时互相判负。
     if getStageConfig().isTerminalTemple(currentStageId) then firstClearTimeLeft = nil end
     -- 普通首通战斗限时：超时自动失败（与全灭同逻辑）
     if isFirstClear and firstClearTimeLeft then

@@ -78,7 +78,27 @@ function M.isOpen()
     return confirmDialog.open or confirmDialog.closing
 end
 
+--- 是否有更高优先级的全窗模态正占据屏幕；此时推迟终焉确认，避免被盖住又抢输入。
+local function blockedByHigherModal()
+    local ok, RewardPopup = pcall(require, "ui.hud.popup.RewardPopup")
+    if ok and RewardPopup.isOpen() then return true end
+    local ok2, LevelUpPopup = pcall(require, "ui.hud.popup.LevelUpPopup")
+    if ok2 and LevelUpPopup.isOpen() then return true end
+    local ok3, OfflineRewardPanel = pcall(require, "ui.hud.popup.OfflineRewardPanel")
+    if ok3 and OfflineRewardPanel.isOpen() then return true end
+    local ok4, UpdateNoticePopup = pcall(require, "ui.hud.popup.UpdateNoticePopup")
+    if ok4 and UpdateNoticePopup.isOpen() then return true end
+    return false
+end
+
 function M.open(nextId)
+    -- 奖励/升级/离线/公告弹窗仍在时只登记待确认，等它们关掉再真正弹出，
+    -- 从源头避免「终焉确认被盖住」与视觉层/命中层错位。
+    if blockedByHigherModal() then
+        confirmDialog.pendingOpenId = nextId
+        return
+    end
+    confirmDialog.pendingOpenId = nil
     confirmDialog.open = true
     confirmDialog.closing = false
     confirmDialog.openTime = time.elapsedTime
@@ -165,6 +185,14 @@ function M.draw(vg, currentStageId, getStageConfig)
 end
 
 function M.update()
+    -- 延迟打开：更高优先级弹窗关闭后，把登记的待确认真正弹出。
+    if not confirmDialog.open and not confirmDialog.closing and confirmDialog.pendingOpenId ~= nil then
+        if not blockedByHigherModal() then
+            local nextId = confirmDialog.pendingOpenId
+            confirmDialog.pendingOpenId = nil
+            M.open(nextId)
+        end
+    end
     if confirmDialog.closing then
         local _, _, done = getConfirmAnim()
         if done then

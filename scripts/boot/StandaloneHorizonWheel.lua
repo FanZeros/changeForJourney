@@ -223,6 +223,8 @@ function Wheel.bind(deps)
                 PlayerInfoPanel.handleScroll(wheel, msx, msy)
                 return
             end
+            -- 终焉确认高于奖励提示，滚轮也不能操作被盖住的大小奖励。
+            if TerminalConfirmDialog.isOpen() then return end
             if RewardPopup.handleLargeScroll(wheel, csx, csy, logicalW(), logicalH()) then return end
             -- 归属面板的奖励弹窗：指针在其面板内且命中面板时滚轮滚弹窗列表
             if RewardPopup.isOpen() and not RewardPopup.currentRowTag() and RewardPopup.currentPanel() then
@@ -268,10 +270,6 @@ function Wheel.bind(deps)
                 return
             end
 
-            if TerminalConfirmDialog.isOpen() then
-                if BattleTriPage.isOpen() then BattleTriPage.handleScroll(wheel, csx, csy) end
-                return
-            end
             -- 古树打开且指针在页面上时，滚轮只做星图缩放，不交给战斗区
             if TalentPage.isOpen() then
                 syncTalentPageLayout()

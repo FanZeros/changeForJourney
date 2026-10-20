@@ -654,7 +654,12 @@ function BattleScene.init(vg)
     print("[BattleScene] init OK (deferred loadStage)")
 end
 
-function BattleScene.draw(vg)
+--- 横屏宿主复用原关卡与配置出口，仅调整确认框的绘制层级。
+function BattleScene.drawTerminalConfirm(vg)
+    TerminalConfirmDialog.draw(vg, currentStageId, getStageConfig)
+end
+
+function BattleScene.draw(vg, deferTerminalConfirm)
     -- [启动优化] 地图背景惰性解码：首次 draw 前再创建（单帧只解一张）
     if pendingMapBgPath_ and vg then
         local t0 = time.elapsedTime
@@ -866,8 +871,8 @@ function BattleScene.draw(vg)
     -- ---- 战斗统计面板（在扫荡弹窗之上、终焉确认弹窗之下） ----
     DamageStatsPanel.draw(vg)
 
-    -- ---- 终焉神殿确认弹窗（最上层绘制） ----
-    TerminalConfirmDialog.draw(vg, currentStageId, getStageConfig)
+    -- 横屏宿主延后到奖励提示之上；独立调用仍保留原绘制顺序。
+    if not deferTerminalConfirm then BattleScene.drawTerminalConfirm(vg) end
 
     -- ---- 副本结算面板（最顶层） ----
     BattleResultPanel.draw(vg)

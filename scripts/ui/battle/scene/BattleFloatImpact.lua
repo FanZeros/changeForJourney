@@ -138,7 +138,9 @@ function M.draw(vg, ft, slot, bounds)
     local style = visual and (visual.channel == "heal" and "heal" or visual.channel == "shield" and "shield"
         or visual.isCrit and "crit" or "damage") or "damage"
     local preset = PRESETS[style]
-    local side = slot % 2 == 0 and 1 or -1
+    -- 正式批次使用出生身份；别让前一条回收后slot变化翻转存活文字的轨迹。
+    local sequence = ft.visualSequence or slot
+    local side = sequence % 2 == 0 and 1 or -1
     local p = pose(ft, style, preset, side)
     if p.alpha <= 0 then return end
     local baseSize = ft.baseFontSize or ((ft.fontSize or 80) / (ft.isCrit and 2 or 1))
@@ -152,11 +154,13 @@ function M.draw(vg, ft, slot, bounds)
     local width = textWidth + icon + (icon > 0 and 7 or 0)
     -- 仅压缩整组显示宽度，不截金额或改格式；外层宿主的缩放/裁剪继续生效。
     local fit = bounds and math.min(1, 200 / math.max(1, width)) or 1
-    local row = (slot - 1) % 3
-    local column = math.floor((slot - 1) / 3)
-    local x = ft.x + p.x + (row == 1 and -12 or row == 2 and 12 or 0)
-        + (column > 0 and (column % 2 == 0 and -1 or 1) * math.ceil(column / 2) * 28 or 0)
-    local y = ft.y + p.y + (row == 1 and -76 or row == 2 and 76 or -4)
+    -- 出生错位固定，合并与其他批次退场均不重新排队；兼容旧手工飘字时也只小幅错开。
+    local spreadX = ft.spreadX or ((sequence * 17) % 57 - 28)
+    local spreadY = ft.spreadY or ((sequence * 47) % 145 - 72)
+    local progress = clamp(ft.timer / ft.duration, 0, 1)
+    local drift = ease(progress)
+    local x = ft.x + spreadX + p.x + side * drift * 6
+    local y = ft.y + spreadY + p.y - drift * 22
     if bounds then
         local mx = math.min(bounds.w * 0.5, width * p.sx * fit * 0.5 + 48 * fit)
         local my = math.min(bounds.h * 0.5, math.max(size * p.sy * fit * 0.7, 34) + 6)

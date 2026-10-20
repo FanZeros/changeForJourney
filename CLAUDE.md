@@ -12,6 +12,21 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-20，终焉确认框高于奖励提示，本地完成）
+
+- 用户截图中“自动分解15430件”是无row的RewardPopup，不是UiToast；原Horizon先画Scene/Tri终焉确认再画奖励，造成反盖。现实际主线宿主传defer，finishFrame在小奖励与drawLarge之后统一补画一次确认，普通模式复用center Viewport note，tri复用原getDialogTransform及Scene配置出口；独立draw省略参数保留旧行为，不双画遮罩。不改入关按钮、自动分解收益、奖励生命周期、战斗或存档。
+- 终焉期间RewardGesture阻断大型奖励旧按压，Wheel在奖励前吞滚轮；关闭后新手势恢复，旧Up不穿透。标题/信件/剧情/PIP/教程/tab5让位条件及LevelUp/Offline/Update/CE更高层保留。只读复核未确认新增可复现回归，不替代Runtime/设备验收。
+- 最终官方b77成功，1617项/702根Lua；七本轮Lua实际UUID-hash载荷逐字节及声明size7/7一致，六类候选与内部validation匹配0；七Lua逐文件severity1 Error0（仍有Warning），不称全仓清零。构建后四独立Runtime实际ALL PASS/exit0：Horizon412组5521断言（新增48组终焉专项，FileFS尝试0）、奖励32组3036断言、终焉2302断言及切关。覆盖普通/tri、DPR1/2/3、frame变换、归属面板/无row/large、鼠标/触摸/滚轮和上层遮挡；叶子绘制记录器不是本轮真实像素或设备触控验收，未跑main/读玩家档。
+- 首轮Horizon缺GetKeyDown、奖励旧优选spy缺bindHost，另一次新增GetKeyDown签名漏self均有失败记录；只补夹具真实接口与类型，原业务断言保留，最终复跑全过，不冒称原失败已纯HEAD证明。原飘字三LuaSHA与本轮前一致；两.project已与本轮before逐字节恢复cmp0。仅本地修复/测试/build，无commit/push/PR/合并发布。持续推进授权并尊重停止/权限/安全边界，当前直接继续不再提问，不机械AskUserQuestion，不推workspace系列/强推/自动合并发布，凭据不持久化。
+
+## 上次做了什么（2026-10-20，伤害飘字稳定错位，本地完成）
+
+- 用户要求拉取最新并研究其他游戏的做法，改善固定三档飘字。已 fetch `workspace1005@fb8695f2`（外部已合 PR172/173），建立独立本地 `feat1020/combat-float-stagger`；保留原字号0.5与数字居中，不继承前轮提交/推送授权。
+- 原绘制按每帧slot固定上中下，旧批回收会使存活数字换位。现在Fx出生时写visualSequence/spreadX/spreadY，15个近目标二维候选、有限扁椭圆近似避让；Impact按出生身份短漂，合并/回收不重排正式批次。不消费RNG，不改金额/伤害/统计/奖励/存档、0.2秒合并窗、0.7秒寿命及每BCS15条预算。只是改善错位，实际字墨不保证零重叠，极密六条仍有局部挤压；旧手工无字段ft使用兼容fallback，不保证换slot稳定。
+- 调研核实《星际战甲》33.6.0官方Enhanced Damage Numbers侧重可读性、缩放与暴击优先；GW2-SCT为第三方分区插件，不当作游戏原生规则。Classic Floating Combat Text公开描述仅作防重叠思路参考，未核实其具体算法，不照搬优先级/寿命规则。
+- 最终官方构建成功，1610项/702根Lua，本轮三Lua实际UUID-hash载荷逐字节与声明size3/3一致，候选/内部validation匹配0；三Lua逐文件severity1 Error0（仍有Warning），不称全仓静态清零。最终包错位专项415/0、切关ALL PASS及受控新档入场180战斗Update/181Render、异常0均actualexit0；入场FileFS封闭、Save stub。三阶段八卡受控图已实际Read，非完整实战/设备验收；三份渲染raw FAIL各仅2个软件帧尖峰，Lua/资源错误0，不称性能通过。
+- 默认damage全集431/3失败含后半FourNew队列/source断言与nil异常；motion139/1缺Impact依赖并超时，pause276/1 tri active dispatch失败。未做纯HEAD对照，不称已证实基线失败、不改旁支掩盖。仅本地两生产Lua和一个原test，保留前轮CLAUDE本地行及无关未跟踪内容；无commit/push/PR/合并发布。本轮.project身份/临时ignore/默认字段按两before备份恢复并核字节一致，不提交。持续推进授权、尊重停止/权限/安全边界；按最新直接继续不再提问，不机械AskUserQuestion，不推workspace系列/强推/自动合并发布，凭据不持久化。
+
 ## 上次做了什么（2026-10-19，删除预览诊断代码并提交修复 PR）
 
 - 用户确认卡死已解决（“可以了”），要求删除预览诊断 bug 并提交 PR。
@@ -20,6 +35,7 @@
 - 验证：官方构建成功；`offline_reward_cascade_test` ALL PASS 4975断言/cases9（含新增“来源缩号测量不收敛时有界终止”回归）、`offline_boundary_test` ALL PASS 607断言、真实入场探针 PASS（1919U/1920R、750战斗帧、异常0）。
 - 危险反向差异 `.gitignore`（移除 `.git-credentials`/`standalone_save.json`/`engine-docs/` 等忽略规则）与本地 `.project` 已还原、不提交。
 - 提交独立分支并创建 workspace1005 PR。
+- **已提交并推送，PR 已创建**：功能提交 `557fd011`（5文件 +128/−3：`OfflineRewardPanel.lua` 有界缩号、`Standalone.lua` 首场 heroes 水合、`StandaloneRT.lua` 字段声明、`offline_reward_cascade_test.lua` 回归、本交接）已正常 push 独立分支 `fix1019/offline-settle-freeze`（PUSH_EXIT=0）。正式 **PR #172**：https://github.com/FanZeros/changeForJourney/pull/172，head=`fix1019/offline-settle-freeze`(557fd011)／base=`workspace1005`(992b8c86)，open/draft=false/merged=false，未自动合并发布。鉴权经 `-c credential.helper= -c http.extraheader` 进程内一次性使用；核 remote 仍 SSH、config 无 credential/extraheader、无令牌残留。未推 workspace1005、不强推、不自动合并发布。用户本轮提供的 PAT 已在聊天暴露，应撤销轮换。
 
 ## 上次做了什么（2026-10-19，修复挂机结算来源行缩号死循环；发现运行时读dist）
 

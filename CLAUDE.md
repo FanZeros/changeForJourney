@@ -12,6 +12,12 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-20，两项战斗修复已提交并推送，PR待创建鉴权）
+
+- 用户明确“提交pr”，授权一并提交飘字稳定错位与终焉确认层级修复。功能提交 `2f67b28171e61e654f1eca4dd9738da976351a9c`（11白名单文件，+859/−35）已正常push独立 `feat1020/combat-float-stagger`；push与ls-remote实际exit0，远端SHA一致。基线 `workspace1005@fb8695f2`，提交前fetch确认双方独有0/0；未推workspace系列、强推、合并或发布。未夹带.project、上传、候选、技能或内部验证材料。
+- 本轮未再修改Lua，沿用最终官方b77及此前交接的专项验证；仓库规范36单测实际通过，暂存3306路径20项问题与HEAD逐项完全相同、新增0，不称规范全绿。飘字default/motion/pause遗留失败与像素/设备/性能验收限制仍保留，不冒称全测试通过。
+- PR尚未创建：匿名GitHub API查同源open PR为0；当前gh不存在、token环境为空、配置的HTTPS credential接口无可用凭据，SSH推送可用不代表可创建PR。未挖历史PAT、未存任何令牌；待安全PR鉴权或用户通过GitHub比较页创建，不能编造PR编号。后续只正常push当前任务分支，查重后创建base=workspace1005的PR，不自动合并发布；持续推进授权并尊重停止、拒绝及安全边界。
+
 ## 上次做了什么（2026-10-20，终焉确认框高于奖励提示，本地完成）
 
 - 用户截图中“自动分解15430件”是无row的RewardPopup，不是UiToast；原Horizon先画Scene/Tri终焉确认再画奖励，造成反盖。现实际主线宿主传defer，finishFrame在小奖励与drawLarge之后统一补画一次确认，普通模式复用center Viewport note，tri复用原getDialogTransform及Scene配置出口；独立draw省略参数保留旧行为，不双画遮罩。不改入关按钮、自动分解收益、奖励生命周期、战斗或存档。

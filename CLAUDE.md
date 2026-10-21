@@ -17,7 +17,7 @@
 - 用户最新明确“提交pr”，授权CE一天离线奖励、洗练材料保持与副本默认最高可挑战行一并提交、正常push独立 `feat1021/ce-offline-day` 并创建workspace1005 PR。不推workspace系列、不强推、不自动合并发布，不混.project/上传/候选/技能/内部验证或玩家档；持续推进并尊重停止、拒绝及安全边界，当前按直接继续不机械提问，凭据不持久化。
 - 实时fetch确认前轮战斗修复已由外部通过PR #176合入；目标最新 `9fe619f4` 含PR #175推荐战力平滑，本分支无冲突快进保留两上游Lua，不重复提交前轮修复。融合后官方b82成功1595项/703根Lua，12任务Lua及两上游Lua实际UUID-hash载荷逐字节/声明size14/14一致，候选/validation匹配0；两.project与本轮before逐字节恢复2/2。12任务逐文件severity1 Error0；上游DungeonConfig第27行已有idx类型Error未混修，不称全仓清零。
 - b82后六独立Runtime全部ALL PASS/actualexit0：材料83、塔/副本19组4404、固定费、装备集成613、切关及CE33组345026；12任务源冻结保持，规范36单测OK。默认equipment_keyword配色失败仍保留，不宣称全集/像素/设备触控/性能/真实档案或WASM磁盘验收通过。
-- 当前进程GH/GITHUB令牌环境为空、无gh、标准HTTPS credential接口未返回凭据，无法用摘要中已省略的PAT创建PR；不挖历史转录/凭据文件、不编造PR编号。先完成白名单提交与沙箱SSH正常push，实际结果后补；当前分支API查重无PR，后续安全API鉴权可用时查重后创建，不重复外部已合PR176。
+- 功能提交 `7ba0d6d1eb1e42fdc79983f3f1586fa1d931ff56` 已正常push独立 `feat1021/ce-offline-day`；push与ls-remote实际exit0、远端SHA一致，目标workspace1005仍 `9fe619f4` 未被本会话推送。14白名单文件+1455/−76，无.project/上传/候选/技能/内证；暂存3308路径20旧规范问题与基线逐项一致、新增0，36单测OK。当前进程GH/GITHUB令牌环境为空、无gh、标准HTTPS credential接口未返回凭据，无法用摘要中已省略的PAT创建PR；不挖历史转录/凭据文件、不编造PR编号。PR尚未创建，安全API鉴权可用时先查重再创建base=workspace1005，不重复外部已合PR176；用户可通过GitHub比较页直接创建，公开PAT应撤销轮换。
 
 ## 上次做了什么（2026-10-21，洗练材料保持与副本最高层定位，本地完成）
 

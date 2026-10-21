@@ -14,6 +14,8 @@
 
 ## 上次做了什么（2026-10-21，PR #177 冲突融合与最终验证）
 
+- **已正常push并确认冲突消除**：融合提交 `fdffcaee7684d837080353b70ad3169d22274fb1` 已推现有源 `feat1021/battle-float-attr-colors`，push／ls-remote实际exit0且SHA一致；GitHub PR #177 返回open／draft=false／merged=false／mergeable=true／mergeable_state=clean，base=`workspace1005@2d23c6ad`，4文件+75/−17。未推目标、未强推、未创建重复PR或自动合并发布。3314路径规范20项与目标逐项一致、新增0；下面“成功后补记”为此前过程记录。
+
 - 用户要求解决PR177 conflict并继续；从源 `feat1021/battle-float-attr-colors@e0ed36dc` 建立本地 `fix/pr177-conflicts-20261021`，唯一内容冲突为BattleFloatImpact。保留源八属性实色／顶部高光／ft.color优先，同时保留目标0.5字号、数字居中、出生visualSequence及固定spread错位；未改金额、伤害、统计、奖励、RNG、存档、0.2秒合并窗、0.7秒寿命与15预算。Icon只补等价NVGcolor类型收窄，原test增加正式Fx→Impact颜色记录及36组颜色／时间检查，原位置及业务断言保留。
 - 初次融合提交 `b3f0cd51` 保留目标d22fc550；推送前fetch发现目标外部合入PR179酒馆及PR180扫荡到 `2d23c6ad`，再次无冲突同步，目标37个净路径全部保留。相对最新目标仅三任务Lua及本交接净改动，不把外部合并当本会话操作、不重复创建PR。
 - 最终官方b84成功，1591项／706根Lua实际UUID-hash载荷706/706逐字节及声明size一致，候选／内部validation匹配0；两.project与本轮before逐字节恢复2/2，源码冻结不变。三任务Lua逐文件severity1 Error0（test仍有Warning），不称全仓清零。最终包两独立Runtime均ALL PASS／actualexit0：飘字523断言及切关；36规范单测通过。配色验证为CPU调用记录，不是GPU像素／字体字墨／设备触控或性能验收；未运行默认damage后半命中全集，不冒称旧失败已消失。

@@ -159,16 +159,10 @@ function UrGachaConfig.getShardStardustValue(heroId)
     return 0
 end
 
--- ======================== 指定UP角色 ========================
-
-UrGachaConfig.TargetUp = {
-    UR_TARGET_RATE = 50,  -- 抽到 UR 时，50% 概率转为玩家指定的 UP 角色
-}
-
 -- ======================== UI 资产 ========================
 
 UrGachaConfig.UI = {
-    bgPath          = "image/界面底板/酒馆抽卡/UI_KCBJ_2.png",
+    bgPath          = "image/界面底板/酒馆抽卡/UI_KCBJ_1.png",
     poolTabPath     = "image/界面底板/酒馆抽卡/UI_TAVERN_RECRUIT_ORDER_STELLAR.png",
     ticketIconPath  = "image/货币道具/UI_icon_ZMQ2_X.png",
     portraitPattern = "image/界面底板/酒馆抽卡/KCLH_%d.png",

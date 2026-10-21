@@ -41,6 +41,7 @@ local inited = false
 ---@type any
 local imageVg = nil
 local battleReady = true  -- 分帧启动/读档期间由宿主关闭
+---@type table<number, table>
 local drivers = {}        -- [1]/[2]/[3] = BattleTriDriver
 local entryPreparation = require("ui.battle.tri.BattleEntryPreparation").new()
 ---@type table<number|string, number>|nil
@@ -599,6 +600,7 @@ end
 local PLATE_AR = 1672 / 941
 -- 透明内矩形（归一化, 由图像 alpha 分析测得）
 -- [等距化] 左右缝柱=行缝=37: x0=(486*941/1080+37)/1672, x1=1-同款
+---@type table<number, { x0: number, y0: number, x1: number, y1: number }>
 local INTERIORS = {
     { x0 = 0.2835, y0 = 0.0117, x1 = 0.7201, y1 = 0.3103 },
     { x0 = 0.2835, y0 = 0.3475, x1 = 0.7207, y1 = 0.6482 },
@@ -730,7 +732,7 @@ function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH, fixedBgPath)
 end
 
 --- 三行战斗区主绘制（L0 已由宿主铺底; 本函数画战斗内容层 + UI 层）
-function BattleTriPage.draw(vg, logicalW, logicalH)
+function BattleTriPage.draw(vg, logicalW, logicalH, deferTerminalConfirm)
     if not isOpen_ then return end
     BattleTriPage.init(vg)
     BattleLayout.setMode("strip")
@@ -926,7 +928,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
 
     -- [对话框覆盖] 选关/扫荡/统计/终焉确认：按当前横屏可用区域放大到 2 倍。
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
-        or TerminalConfirmDialog.isOpen() then
+        or (TerminalConfirmDialog.isOpen() and not deferTerminalConfirm) then
         local ox, oy, fit = BattleTriPage.getDialogTransform(logicalW, logicalH)
         nvgSave(vg)
         nvgScissor(vg, 0, 0, logicalW, logicalH)
@@ -935,7 +937,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         if SweepDialog.isOpen() then SweepDialog.draw(vg) end
         if DamageStatsPanel.isOpen() then DamageStatsPanel.draw(vg) end
         if StageSelectDialog.isOpen() then StageSelectDialog.draw(vg) end
-        if TerminalConfirmDialog.isOpen() then
+        if TerminalConfirmDialog.isOpen() and not deferTerminalConfirm then
             TerminalConfirmDialog.draw(vg, BattleScene.getStageId(), function() return StageConfig end)
         end
         nvgRestore(vg)

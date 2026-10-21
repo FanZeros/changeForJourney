@@ -503,6 +503,7 @@ function Start()
             "nvgClosePath", "nvgCircle", "nvgRect", "nvgFill", "nvgStroke", "nvgStrokeWidth",
             "nvgFillColor", "nvgStrokeColor", "nvgFillPaint", "nvgTextAlign" }) do fields[name] = noop end
         fields.nvgRGBA = function(r, g, b, a) return { r, g, b, a } end
+        fields.nvgFillColor = function(_, color) recorder.current.fillColor = copyValue(color) end
         fields.nvgLinearGradient = function(...) return { ... } end
         fields.nvgSave = function()
             recorder.saves = recorder.saves + 1
@@ -532,7 +533,7 @@ function Start()
         end
         fields.nvgText = function(_, x, y, text)
             recorder.calls[#recorder.calls + 1] = { kind = "text", x = x, y = y, text = text,
-                fontSize = recorder.current.fontSize }
+                fontSize = recorder.current.fontSize, fillColor = copyValue(recorder.current.fillColor) }
         end
         -- 不给未知nvg接口回落到原生：新接口若出现必须显式补记录器，避免假VG进入引擎。
         setmetatable(fields, { __index = function(_, key)
@@ -651,6 +652,42 @@ function Start()
         for _, slot in ipairs({ 1, 4, 8 }) do
             local legacy = recordedDraw(compatibility, slot, stripBounds)
             check(legacy.world ~= nil and #legacy.texts > 0, "无visualSequence兼容ft仍可绘制slot=" .. slot)
+        end
+        -- 融合回归：真实Fx→Impact→文字实色与高光；不是GPU像素或字体字墨验收。
+        local colorCases = {
+            { meta = { channel = "damage", atkType = AD.ATK_SLASH }, rgb = { 246, 228, 182 } },
+            { meta = { channel = "damage", atkType = AD.ATK_CRUSH }, rgb = { 214, 170, 112 } },
+            { meta = { channel = "damage", atkType = AD.ATK_PIERCE }, rgb = { 150, 236, 196 } },
+            { meta = { channel = "damage", atkType = AD.ATK_FIRE }, rgb = { 255, 146, 62 } },
+            { meta = { channel = "damage", atkType = AD.ATK_ICE }, rgb = { 118, 214, 255 } },
+            { meta = { channel = "damage", atkType = AD.ATK_LIGHTNING }, rgb = { 176, 168, 255 } },
+            { meta = { channel = "damage", atkType = AD.ATK_SHADOW }, rgb = { 190, 128, 236 } },
+            { meta = { channel = "damage", atkType = AD.ATK_HOLY }, rgb = { 255, 214, 86 } },
+            { meta = { channel = "damage", atkType = AD.ATK_FIRE, isCrit = true }, rgb = { 255, 90, 82 } },
+            { meta = { channel = "heal", atkType = AD.ATK_HOLY, isCrit = true }, rgb = { 90, 235, 130 } },
+            { meta = { channel = "shield", atkType = AD.ATK_FIRE, isCrit = true }, rgb = { 184, 196, 212 } },
+            { meta = { channel = "damage", atkType = AD.ATK_FIRE, color = { 31, 73, 119 } }, rgb = { 31, 73, 119 } },
+        }
+        for index, entry in ipairs(colorCases) do
+            local colorState = state()
+            local ft = Fx.addCombatNumber(colorState, {}, 321, 474, 180, entry.meta)
+            for _, timer in ipairs({ 0.02, 0.30, 0.64 }) do
+                ft.timer = timer
+                local drawn = recordedDraw(ft, 3, stripBounds)
+                local expectedBase = { entry.rgb[1], entry.rgb[2], entry.rgb[3], 255 }
+                local expectedHighlight = {}
+                for i = 1, 3 do expectedHighlight[i] = math.floor(0.55 * 255 + entry.rgb[i] * 0.45) end
+                expectedHighlight[4] = 150
+                local correct = #drawn.texts > 0 and #drawn.texts % 6 == 0
+                for i, text in ipairs(drawn.texts) do
+                    local pass = (i - 1) % 6
+                    local expected = pass < 4 and { 18, 15, 16, 255 }
+                        or pass == 4 and expectedBase or expectedHighlight
+                    correct = correct and sameValue(text.fillColor, expected)
+                end
+                check(correct, "文字四向描边/宿主实色/顶部高光及退出分带保留 " .. index .. "/" .. timer)
+            end
+            Fx.resetFloatingTexts(colorState)
         end
         -- 兼容ft只保证可画，不断言不同slot位置稳定；视觉RNG拒绝包括Fx/Impact/Icon全部路径。
         check(rngCalls == 0, "Fx出生/合并/回收与真实Impact/Icon draw均未消费或重置RNG")

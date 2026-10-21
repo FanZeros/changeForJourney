@@ -12,6 +12,15 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-21，PR #177 冲突融合与最终验证）
+
+- **已正常push并确认冲突消除**：融合提交 `fdffcaee7684d837080353b70ad3169d22274fb1` 已推现有源 `feat1021/battle-float-attr-colors`，push／ls-remote实际exit0且SHA一致；GitHub PR #177 返回open／draft=false／merged=false／mergeable=true／mergeable_state=clean，base=`workspace1005@2d23c6ad`，4文件+75/−17。未推目标、未强推、未创建重复PR或自动合并发布。3314路径规范20项与目标逐项一致、新增0；下面“成功后补记”为此前过程记录。
+
+- 用户要求解决PR177 conflict并继续；从源 `feat1021/battle-float-attr-colors@e0ed36dc` 建立本地 `fix/pr177-conflicts-20261021`，唯一内容冲突为BattleFloatImpact。保留源八属性实色／顶部高光／ft.color优先，同时保留目标0.5字号、数字居中、出生visualSequence及固定spread错位；未改金额、伤害、统计、奖励、RNG、存档、0.2秒合并窗、0.7秒寿命与15预算。Icon只补等价NVGcolor类型收窄，原test增加正式Fx→Impact颜色记录及36组颜色／时间检查，原位置及业务断言保留。
+- 初次融合提交 `b3f0cd51` 保留目标d22fc550；推送前fetch发现目标外部合入PR179酒馆及PR180扫荡到 `2d23c6ad`，再次无冲突同步，目标37个净路径全部保留。相对最新目标仅三任务Lua及本交接净改动，不把外部合并当本会话操作、不重复创建PR。
+- 最终官方b84成功，1591项／706根Lua实际UUID-hash载荷706/706逐字节及声明size一致，候选／内部validation匹配0；两.project与本轮before逐字节恢复2/2，源码冻结不变。三任务Lua逐文件severity1 Error0（test仍有Warning），不称全仓清零。最终包两独立Runtime均ALL PASS／actualexit0：飘字523断言及切关；36规范单测通过。配色验证为CPU调用记录，不是GPU像素／字体字墨／设备触控或性能验收；未运行默认damage后半命中全集，不冒称旧失败已消失。
+- 持续推进授权范围，尊重停止／权限拒绝与安全边界；按当前直接继续不机械提问。只正常push现有PR177源分支，不推workspace系列／强推／自动合并或发布，不混.project／上传／候选／技能／玩家档或内部证据，不读取历史凭据。实际push及PR状态须成功后补记，当前未冒称远端已更新。
+
 ## 上次做了什么（2026-10-21，扫荡优化 PR #180 已创建）
 
 - **已正常push并创建正式 PR #180**：https://github.com/FanZeros/changeForJourney/pull/180，head=`perf1021/sweep-large-batch`（`69be6a7a`）／base=`workspace1005`（`548fc57a`），创建时open／draft=false／merged=false／mergeable未计算；push与ls-remote实际exit0、远端SHA与本地一致。29任务白名单+2166/−236，未推workspace系列、不强推、不自动合并或发布；下方“尚未push／PR”为此前过程记录。不夹原.gitignore／上传／玩家档／本地.project／无关meta／内部验证。

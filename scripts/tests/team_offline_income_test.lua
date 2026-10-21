@@ -81,8 +81,10 @@ end
 
 local function runAutoDecomposeCases()
     local F = require("tests.SweepRegressionFixture")
+    local capacity = require("systems.EquipmentSystem").MAX_INVENTORY
     local function fixture(settings, count)
         local h = F.new(); F.install(h, count or 0)
+        ---@cast h.data table
         h.data.equipment.settings = copy(settings)
         h.data.currency.essence = 17
         h.data.session.lastOnlineTime = 1791199400
@@ -108,6 +110,7 @@ local function runAutoDecomposeCases()
         end
         return h
     end
+    ---@return table
     local function pendingOf(service)
         for index = 1, 30 do
             local name, value = debug.getupvalue(service.HasPendingRewards, index)
@@ -124,11 +127,13 @@ local function runAutoDecomposeCases()
     for _, settings in ipairs({ { autoQuality = 6, autoLevel = 0 }, { autoQuality = 3, autoLevel = 60 },
         { autoQuality = 0, autoLevel = 1 } }) do
         runCase("auto_new_drop", stable(settings), function()
-            local a, b = fixture({ autoQuality = 0, autoLevel = 0 }, 200), fixture(settings, 200)
+            local a, b = fixture({ autoQuality = 0, autoLevel = 0 }, capacity), fixture(settings, capacity)
             local config = b.require("config.BlacksmithConfig")
             local old = assert(b.ES.generate("W1", 1, 1)); old.testNested = { old = { 1, 2 } }
             b.LS.addEquipment(b.data.lootbox, old)
-            local inventoryBefore, oldSeed = F.copy(b.data.equipment.inventory), F.copy(b.data.lootbox.seeds[1])
+            local lootbox = b.data.lootbox
+            ---@cast lootbox table
+            local inventoryBefore, oldSeed = F.copy(b.data.equipment.inventory), F.copy(lootbox.seeds[1])
             a.seed, b.seed, a.rngCalls, b.rngCalls = 121, 121, 0, 0
             local pa, pb = a.Offline.CalcOnEnter(1), b.Offline.CalcOnEnter(1)
             check(pa and pb, "真实离线预览产生", pb, "panel")
@@ -166,11 +171,11 @@ local function runAutoDecomposeCases()
             for index, equip in ipairs(kept) do
                 eq(result.lootboxEquips[index].equip, equip, "满包不重建实例")
             end
-            eq(stable(b.data.lootbox.seeds[1]), stable(oldSeed), "原遗匣旧实例完全保持")
+            eq(stable(lootbox.seeds[1]), stable(oldSeed), "原遗匣旧实例完全保持")
             eq(stable(b.data.equipment.inventory), stable(inventoryBefore), "满包旧库存不追溯分解")
             if expected > 0 then
-                eq(b.data.lootbox.autoDecomposeNotice.count, expected, "notice只含本次新分解")
-                eq(b.data.lootbox.autoDecomposeNotice.essence, expectedAmount, "notice与一次实领一致")
+                eq(lootbox.autoDecomposeNotice.count, expected, "notice只含本次新分解")
+                eq(lootbox.autoDecomposeNotice.essence, expectedAmount, "notice与一次实领一致")
             end
             local after = stable(b.data)
             eq(b.Offline.ClaimRewards(1), false, "重复领取拒绝")
@@ -183,6 +188,7 @@ local function runAutoDecomposeCases()
         h.lockGenerated = locked
         local panel = h.Offline.CalcOnEnter(1)
         local pending = pendingOf(h.Offline)[1].rewards
+        ---@cast pending table
         -- 旧快照结构：grantedEquips存在，autoDecompose字段完全缺失。
         eq(pending.autoDecomposeEquips, nil, "旧pending无新字段")
         eq(pending.autoDecomposeEssence, nil, "旧pending无新精粹字段")
@@ -200,7 +206,7 @@ local function runAutoDecomposeCases()
         end)
     end
     runCase("auto_missing_container", "旧pending满包缺遗匣无提前发奖", function()
-        local h = fixture({}, 200)
+        local h = fixture({}, capacity)
         local panel = h.Offline.CalcOnEnter(1)
         h.data.equipment.settings = { autoQuality = 6, autoLevel = 0 }
         h.data.lootbox = nil

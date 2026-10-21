@@ -185,6 +185,7 @@ end
 local ANIM_OPEN_DUR = 0.18
 
 -- 章节横幅色调（8 色循环，参考图每章一色的效果）
+---@type number[][]
 local CH_HUES = {
     { 0x3e, 0x5a, 0x40 }, { 0x6b, 0x46, 0x2f }, { 0x33, 0x4a, 0x63 }, { 0x2f, 0x5a, 0x5c },
     { 0x4a, 0x3f, 0x63 }, { 0x5a, 0x30, 0x33 }, { 0x3d, 0x53, 0x3a }, { 0x59, 0x4d, 0x2e },
@@ -239,6 +240,7 @@ end
 
 --- 沿官方关卡链收集全链（不随进度截断，终焉神殿后进入下一难度）
 --- 返回 ids 与链序表 order[id]=序号
+---@return number[], table<number, number>
 local function collectAllIds()
     local ids = {}
     ---@type table<number, number>
@@ -265,6 +267,7 @@ end
 --- 章节组：{{ key=chapter|"T<神殿id>", name=, subLabel=, ids={} } 按进度顺序}
 --- [单难度终焉] 终焉神殿不再合并成一个 "T" 组，每座神殿独立成组，
 --- 沿关卡链自然追加在对应难度第 23 章之后（如困难 23 章 → 困难终焉 → 噩梦 1 章）
+---@return StageSelectGroup[], table<number, number>
 local function collectChapterGroups()
     local ids, order = collectAllIds()
     local groups = {}
@@ -322,6 +325,7 @@ local function ensureCache()
         state.cacheTerminalUnlocked = terminalUnlocked
         state.cacheMaxOrder = (maxStage and order[maxStage]) or ids_of(groups)
         if terminalUnlocked then
+            ---@cast nextId number
             state.cacheMaxOrder = order[nextId] or state.cacheMaxOrder
         end
     end
@@ -523,6 +527,23 @@ local function groupTarget(group)
         or ResourceList.getDisplayStageId(currentStageId())
 end
 
+--- 默认定位与当前任务标记分开；使用实际可选行和同一解锁规则，不切换任务。
+---@param group StageSelectGroup|nil
+local function revealDungeonDefault(group)
+    if not group or not (group.resourceDungeonId or group.isTower) then return end
+    local battle, dungeon = ResourceList.getProgress()
+    local target = group.ids[1]
+    for index = #group.ids, 1, -1 do
+        local id = group.ids[index]
+        if ResourceList.isStageUnlocked(id, battle, dungeon) then
+            target = id
+            break
+        end
+    end
+    revealStage(group, target)
+    print("[StageSelectDialog] 副本默认定位: " .. tostring(group.key) .. " stage=" .. tostring(target))
+end
+
 ---@param group StageSelectGroup|nil
 local function rowAt(group, x, y)
     if not group or not inRowViewport(x, y) then return nil end
@@ -607,6 +628,7 @@ local function switchSection(section)
             and stageGroupKey(stageId) or nil
         locateGroup(groups, key, key and stageId or nil)
     end
+    if section == "dungeon" then revealDungeonDefault(selectedGroup(groups)) end
 end
 
 local function cardRowAt(groups, x, y)
@@ -776,6 +798,7 @@ local function locateTeam(teamIdx)
     state.section = isDungeon and "dungeon" or "main"
     local groups = currentGroups()
     locateGroup(groups, stageGroupKey(curStage), curStage)
+    if isDungeon then revealDungeonDefault(selectedGroup(groups)) end
 end
 
 ---@param teamIdx number|nil 多队战斗行号；行 HUD 保持直接进入该队选关。
@@ -825,25 +848,14 @@ function StageSelectDialog.openDungeon(teamIdx, dungeonId)
     else locateTeam(team) end
     switchSection("dungeon")
     local groups = currentGroups()
-    local targetId = currentStageId()
-    local key = stageGroupKey(targetId)
+    local key = state.selKey
     if dungeonId == "babel_tower" then
-        targetId = ResourceList.getCurrentTowerStageId()
         key = "R:babel_tower"
-    elseif dungeonId then
-        local DC = require("config.DungeonConfig")
-        local dungeon = require("runtime.ClientDispatcher").get("dungeon") or {}
-        if DC.isResourceDungeon(dungeonId) then
-            local currentDungeon = targetId and DC.decodeStageId(targetId)
-            if currentDungeon ~= dungeonId then
-                local floor = math.min(DC.MAX_FLOOR[dungeonId],
-                    DC.getHighestClearedFloor(dungeon[dungeonId], dungeonId) + 1)
-                targetId = DC.getStageId(dungeonId, floor)
-            end
-            key = "R:" .. dungeonId
-        end
+    elseif dungeonId and require("config.DungeonConfig").isResourceDungeon(dungeonId) then
+        key = "R:" .. dungeonId
     end
-    locateGroup(groups, key, targetId)
+    locateGroup(groups, key)
+    revealDungeonDefault(selectedGroup(groups))
     resetCardScroll()
 end
 
@@ -1424,7 +1436,11 @@ function StageSelectDialog.handleInput(x, y)
             BF.trigger("stage_sel_ch")
             if tostring(state.selKey) ~= tostring(g.key) then resetCardScroll() end
             state.selKey = g.key
-            if state.rowScroll[tostring(g.key)] == nil then revealStage(g, groupTarget(g)) end
+            if state.section == "dungeon" then
+                revealDungeonDefault(g)
+            elseif state.rowScroll[tostring(g.key)] == nil then
+                revealStage(g, groupTarget(g))
+            end
             return true
         end
     end

@@ -49,6 +49,8 @@ local DropSystem = require("systems.DropSystem")
 ---@field hardCapSeconds number
 ---@field cappedByHardCap boolean
 ---@field grantedEquips table[]|nil
+---@field autoDecomposeEquips table[]|nil
+---@field autoDecomposeEssence number|nil
 
 local OfflineCalc = {}
 

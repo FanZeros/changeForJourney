@@ -41,6 +41,7 @@ function M.run()
     local ok, err = pcall(function()
         local I18n = require("core.I18n")
         local Keyword = require("ui.widget.KeywordText")
+        ---@cast Keyword {new: fun(opts?: table): table<string, any>}
         local Locale = require("core.I18nKeywords")
         local AC = require("config.AffixConfig")
         local AD = require("systems.AttributeDef")
@@ -75,11 +76,15 @@ function M.run()
         for languageIndex, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
             I18n.set(lang)
             local resistance = assert(Locale.getAttribute(AD.ABNORMAL_RES, lang))
+            ---@type string[]
             local overflowWords = { "未生效溢出量", "未生效溢出量", "overflow above the cap", "上限超過分", "상한 초과분" }
+            ---@type string[]
             local markWords = { "战术标记", "戰術標記", "Tactical marks", "戦術マーク", "전술 표식" }
+            local overflowWord = overflowWords[languageIndex] --[[@as string]]
+            local markWord = markWords[languageIndex] --[[@as string]]
             check(resistance.desc:find("80%", 1, true) and resistance.desc:find("20%", 1, true)
-                and resistance.desc:find(overflowWords[languageIndex], 1, true)
-                and resistance.desc:find(markWords[languageIndex], 1, true),
+                and resistance.desc:find(overflowWord, 1, true)
+                and resistance.desc:find(markWord, 1, true),
                 "异常抗性五语说明包含有效上限、溢出和标记例外 " .. lang)
             for _, case in ipairs(NAME_ORACLE) do
                 local expectedTitle = case.titles[languageIndex]
@@ -362,6 +367,7 @@ function M.run()
         local SC = require("config.EquipmentSetConfig")
         local Power = require("systems.EquipmentPower")
         replace(Power, "score", function() return 777777777 end)
+        ---@type table<string, any>
         local sample = {
             seq = 98002, templateId = "W1", name = EC.ITEMS.W1.name, type = EC.ITEMS.W1.type,
             slot = "weapon", quality = 3, level = 9999, ascendLevel = 4, affixMult = 2,
@@ -605,9 +611,282 @@ function M.run()
     return count
 end
 
+-- 独立洗练材料回归：真实 Page/Refine/Enhance 与公开输入/推送/回执，不运行主游戏。
+-- -refine-material-only；图形、只读资源与动作传输为 spy，File/FS/云/RNG 一律拒绝。
+function M.runRefineMaterial()
+    local count, denied = 0, 0
+    local restores = {}
+    local function replace(owner, key, value)
+        local old = owner[key]
+        restores[#restores + 1] = function() owner[key] = old end
+        owner[key] = value
+    end
+    local function check(value, label)
+        count = count + 1
+        assert(value, label)
+    end
+    local function copy(value)
+        if type(value) ~= "table" then return value end
+        local result = {}
+        for key, child in pairs(value) do result[key] = copy(child) end
+        return result
+    end
+    local function refuse()
+        denied = denied + 1
+        error("refine-material forbids File/FS/cloud/RNG")
+    end
+    local ok, err = xpcall(function()
+        replace(_G, "File", refuse)
+        replace(_G, "fileSystem", setmetatable({}, {__index = refuse}))
+        replace(_G, "clientCloud", setmetatable({}, {__index = refuse}))
+        replace(math, "random", refuse)
+        replace(math, "randomseed", refuse)
+        replace(_G, "time", {elapsedTime = 100})
+        -- 引擎 require 不保证读取 package.loaded 替身；三真实模块用资源源码+独立环境加载。
+        local fixtureModules = {}
+        local function noop() end
+        for _, name in ipairs({"ui.loot.LootBoxPage", "ui.story.task.TaskPage",
+            "ui.church.talent.TalentPage", "ui.church.ChurchPage", "ui.tavern.TavernPage",
+            "ui.market.MarketPage"}) do
+            fixtureModules[name] = {isOpen = function() return false end}
+        end
+        fixtureModules["ui.backpack.BackpackPanel"] = {
+            acquireForBlacksmith = noop, releaseWarehouse = noop,
+        }
+        fixtureModules["systems.GameSFX"] = {playUIMove = noop}
+        local notices = {}
+        fixtureModules["core.UiToast"] = {show = function(text) notices[#notices + 1] = text end}
+        ---@type {action: string, params: {seq: number, extraResource: string?, lockedIndices: number[]?}}[]
+        local actions = {}
+        fixtureModules["runtime.GameAction"] = {sendAction = function(action, params)
+            local types = require("shared.Protocol").ACTION_TYPES
+            assert(action == types.REFINE_EQUIP or action == types.REFINE_REPLACE,
+                "refine-material forbids unrelated action " .. tostring(action))
+            actions[#actions + 1] = {action = action, params = copy(params)}
+        end}
+        local State = require("core.GameState")
+        local owned = {essence = 0, enhanceStone = 3, destroyStone = 9, corruptStone = 3, sacredStone = 3}
+        for key, getter in pairs({essence = "getEssence", enhanceStone = "getEnhanceStone",
+            destroyStone = "getDestroyStone", corruptStone = "getCorruptStone", sacredStone = "getSacredStone"}) do
+            local resourceKey = key
+            replace(State, getter, function() return owned[resourceKey] end)
+        end
+        for _, getter in ipairs({"getGold", "getWeaponScroll", "getOffhandScroll", "getArmorScroll",
+            "getHelmetScroll", "getShoesScroll", "getAccessoryScroll", "getLevel"}) do
+            replace(State, getter, function() return 100 end)
+        end
+        local Store = require("core.PlayerStore")
+        local subscriptions = {}
+        replace(Store, "Subscribe", function(key, callback) subscriptions[key] = callback end)
+        replace(Store, "WaitForChange", function() return noop end)
+        local equipment = {inventory = {}, equipped = {}}
+        replace(Store, "Get", function(key) return key == "equipment" and equipment or nil end)
+        local Dispatcher = require("runtime.ClientDispatcher")
+        replace(Dispatcher, "get", function(key) return key == "equipment" and equipment or nil end)
+        replace(require("systems.TutorialManager"), "isActive", function() return false end)
+        replace(require("config.HeroAssetUtil"), "preloadIcons", noop)
+        replace(require("ui.widget.ImageCache"), "init", noop)
+        replace(require("ui.fx.SpineResultEffect"), "preload", noop)
+        local Feedback = require("systems.ButtonFeedback")
+        replace(Feedback, "begin", function() return false end)
+        replace(Feedback, "finish", noop)
+        replace(Feedback, "trigger", noop)
+        local paths, nextImage = {}, 100
+        replace(_G, "nvgCreateImage", function(_, path)
+            if not paths[path] then nextImage = nextImage + 1; paths[path] = nextImage end
+            return paths[path]
+        end)
+        for _, name in ipairs({"nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgFillColor",
+            "nvgBeginPath", "nvgRoundedRect", "nvgFill", "nvgStroke", "nvgStrokeWidth",
+            "nvgStrokeColor"}) do replace(_G, name, noop) end
+        for i, name in ipairs({"NVG_ALIGN_LEFT", "NVG_ALIGN_MIDDLE", "NVG_ALIGN_CENTER",
+            "NVG_ALIGN_RIGHT"}) do replace(_G, name, 2 ^ (i - 1)) end
+        replace(_G, "nvgRGBA", function() return 0 end)
+        replace(_G, "nvgTextBounds", function(_, _, _, text) return #text * 10 end)
+        local texts, materialImage = {}, -1
+        replace(_G, "nvgText", function(_, x, y, text)
+            texts[#texts + 1] = {x = x, y = y, text = text}
+        end)
+        local Draw = require("core.DrawUtil")
+        replace(Draw, "drawImageCentered", function(_, image, x, y)
+            if x == 540 and y == 1889 then materialImage = image end
+        end)
+        local Dark = require("core.DarkIcon")
+        replace(Dark, "drawQualityBg", noop)
+        replace(Dark, "drawIconDark", noop)
+        local ES = require("systems.EquipmentSystem")
+        local Config = require("config.BlacksmithConfig")
+        local Protocol = require("shared.Protocol")
+        -- 仅此三生产文件从已构建资源加载，其他真实依赖仍沿引擎 require/共享缓存。
+        local sources = {
+            ["ui.blacksmith.BlacksmithPage"] = "ui/blacksmith/BlacksmithPage.lua",
+            ["ui.blacksmith.BlacksmithRefine"] = "ui/blacksmith/BlacksmithRefine.lua",
+            ["ui.blacksmith.BlacksmithEnhance"] = "ui/blacksmith/BlacksmithEnhance.lua",
+        }
+        local env = setmetatable({}, {__index = _G})
+        local originalRequire = require
+        local function fixtureRequire(name)
+            if fixtureModules[name] then return fixtureModules[name] end
+            local path = sources[name]
+            if not path then return originalRequire(name) end
+            local file = assert(cache:GetFile(path), "missing real source " .. path)
+            local lines = {}
+            while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+            file:Dispose()
+            local module = assert(load(table.concat(lines, "\n"), "@refine-material/" .. path, "t", env))()
+            fixtureModules[name] = module
+            return module
+        end
+        env.require = fixtureRequire
+        local Page = fixtureRequire("ui.blacksmith.BlacksmithPage")
+        local Refine = fixtureRequire("ui.blacksmith.BlacksmithRefine")
+        local vg = {}
+        Page.init(vg)
+        check(type(subscriptions.equipment) == "function", "真实Page.init注册装备订阅")
+        local function makeEquip(seq)
+            local equip = {seq = seq, templateId = "W1", level = 1, quality = 3, ascendLevel = 0,
+                affixes = {{key = "dropLuck", name = "幸运值", quality = 2, value = 7.5}}}
+            return ES.hydrate(equip)
+        end
+        local a, b = makeEquip(98601), makeEquip(98602)
+        equipment.inventory[tostring(a.seq)], equipment.inventory[tostring(b.seq)] = a, b
+        Page.open(a, "xilian")
+        local function selectMaterial(index)
+            check(Refine.handleInput(540, 1889), "打开真实材料选择")
+            -- 真 MaterialTip.bounds：bottom1801、top1385，padding8，每行80。
+            check(Refine.handleInput(540, 1433 + (index - 1) * 80), "选择真实材料行 " .. index)
+        end
+        local function request(expectedKey, label)
+            local before = #actions
+            check(Refine.handleInput(773, 2129), label .. "点击被消费")
+            check(#actions == before + 1, label .. "零精粹仍可发石头请求（未经draw修正费用）")
+            local sent = actions[#actions]
+            check(sent.action == Protocol.ACTION_TYPES.REFINE_EQUIP
+                and sent.params.extraResource == expectedKey, label .. "请求保持材料 " .. expectedKey)
+            return sent
+        end
+        local function material(key, label, expectedOwned, expectedCost)
+            texts, materialImage = {}, -1
+            Refine.drawPanelBottom(vg)
+            local icons = {enhanceStone = "UI_icon_QH_1.png", destroyStone = "UI_icon_QH_3.png",
+                corruptStone = "UI_icon_FHS.png", sacredStone = "UI_icon_SSS.png", essence = "UI_icon_JC.png"}
+            check(materialImage == paths["image/货币道具/" .. icons[key]], label .. "资源槽图标")
+            local Number = require("core.NumberUtil")
+            local ownedText, costText = false, false
+            for _, call in ipairs(texts) do
+                if call.y == 1977 then
+                    if call.text == Number.format(expectedOwned) then ownedText = true end
+                    if call.text == "/" .. Number.format(expectedCost) then costText = true end
+                end
+            end
+            check(ownedText and costText, label .. "拥有/费用显示不暗换精粹")
+        end
+        local function push(equip)
+            local refreshed = copy(equip)
+            equipment.inventory[tostring(refreshed.seq)] = refreshed
+            subscriptions.equipment(equipment)
+            return refreshed
+        end
+        local function preview(seq)
+            local affixes = {{key = "dropLuck", name = "幸运值", quality = 3, value = 12.5}}
+            Page.onActionResult({success = true, refinePreview = affixes, refineSeq = seq})
+            check(Refine.hasPreview(), "真实预览回执保留待替换")
+            return affixes
+        end
+        selectMaterial(2)
+        request("enhanceStone", "首次洗练")
+        owned.enhanceStone = 2
+        a = push(a) -- 正式消息可能先推装备，后派预览。
+        request("enhanceStone", "推送先于预览")
+        preview(a.seq)
+        a = push(a)
+        check(Refine.hasPreview(), "已有预览时推送不重建预览")
+        request("enhanceStone", "预览后推送")
+        local before = #actions
+        Refine.handleInput(310, 2129)
+        check(#actions == before + 1 and actions[#actions].action == Protocol.ACTION_TYPES.REFINE_REPLACE
+            and actions[#actions].params.seq == a.seq, "装备推送未清待替换seq/词条")
+        Page.onActionResult({success = true, refineReplaced = true})
+        check(not Refine.hasPreview() and a.affixes[1].value == 12.5, "替换回执应用原预览并清预览")
+        a = push(a)
+        request("enhanceStone", "替换后推送")
+        Page.onActionResult({success = false, reason = "模拟洗练石不足"})
+        check(notices[#notices] == "模拟洗练石不足", "失败仍走原失败提示")
+        request("enhanceStone", "失败后再次请求")
+        owned.enhanceStone = 0
+        a = push(a)
+        request("enhanceStone", "耗尽后不回退精粹")
+        material("enhanceStone", "耗尽后", 0, 1)
+        local previewAffixes = preview(a.seq)
+        Page.onActionResult({success = false, reason = "模拟替换失败"})
+        check(Refine.hasPreview(), "失败不丢已有预览")
+        before = #actions
+        Refine.handleInput(310, 2129)
+        check(#actions == before + 1 and actions[#actions].params.seq == a.seq,
+            "失败后仍可提交原预览替换")
+        Page.onActionResult({success = true, refineReplaced = true})
+        check(a.affixes == previewAffixes, "替换使用真实pending词条引用")
+        owned.essence = 10000
+        check(Page.setEquipBySeq(b.seq), "真实拖入换件入口")
+        before = #actions
+        Refine.handleInput(773, 2129) -- 不先draw，必须已经重算默认精粹费用。
+        check(#actions == before + 1 and actions[#actions].params.extraResource == nil
+            and actions[#actions].params.seq == b.seq, "主动换件默认清材料")
+        material("essence", "主动换件", owned.essence,
+            Config.calcRefineEssenceCost(b.quality, b.level, b.grip))
+        for index, key in ipairs({"enhanceStone", "destroyStone", "corruptStone", "sacredStone"}) do
+            Page.setSelectedEquip(b)
+            selectMaterial(index + 1)
+            b = push(b)
+            request(key, "其他材料同seq推送 " .. key)
+            local extraCost = key == "destroyStone" and b.quality or 1
+            material(key, "其他材料 " .. key, owned[key], extraCost)
+        end
+        Page.setSelectedEquip(b) -- 主动重选同件也沿旧默认重置，不把所有调用都改成保留。
+        material("essence", "主动重选同件", owned.essence,
+            Config.calcRefineEssenceCost(b.quality, b.level, b.grip))
+        selectMaterial(2)
+        Page.setSelectedEquip(nil)
+        material("essence", "主动清空", owned.essence, 0)
+        Page.setSelectedEquip(b)
+        material("essence", "清空后重新选件", owned.essence,
+            Config.calcRefineEssenceCost(b.quality, b.level, b.grip))
+        selectMaterial(2)
+        equipment.inventory[tostring(b.seq)] = nil
+        subscriptions.equipment(equipment)
+        before = #actions
+        Refine.handleInput(773, 2129)
+        check(#actions == before, "删除推送清工作台，不派旧装备请求")
+        material("essence", "装备删除", owned.essence, 0)
+        Page.setSelectedEquip(a)
+        material("essence", "删除后选其他件", owned.essence,
+            Config.calcRefineEssenceCost(a.quality, a.level, a.grip))
+        selectMaterial(2)
+        owned.essence = 0
+        Page.setSelectedEquip(b)
+        before = #actions
+        Refine.handleInput(773, 2129)
+        check(#actions == before and notices[#notices] == "精粹不足，无法洗练",
+            "换件清石头后首个输入即按精粹收费，不借上次cost0")
+        Page.forceClose()
+        check(denied == 0 and count >= 80, "完整真实UI回归，无File/FS/云/RNG访问")
+    end, debug.traceback)
+    for i = #restores, 1, -1 do restores[i]() end
+    assert(ok, tostring(err) .. " (" .. count .. " assertions)")
+    print("REFINE MATERIAL: ALL PASS (" .. count .. " assertions; FileFS/cloud/RNG=0)")
+    return count
+end
+
 function Start()
-    local ok, err = pcall(M.run)
-    if not ok then print("EQUIPMENT KEYWORD: FAIL " .. tostring(err)); log:Write(LOG_ERROR, tostring(err)) end
+    local focused = false
+    for _, argument in ipairs(type(GetArguments) == "function" and GetArguments() or {}) do
+        if argument == "-refine-material-only" then focused = true end
+    end
+    local ok, err = pcall(focused and M.runRefineMaterial or M.run)
+    if not ok then
+        local tag = focused and "REFINE MATERIAL" or "EQUIPMENT KEYWORD"
+        print(tag .. ": FAIL " .. tostring(err)); log:Write(LOG_ERROR, tostring(err))
+    end
     engine:Exit()
 end
 

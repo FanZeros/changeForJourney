@@ -63,6 +63,37 @@ function CEService.giveAllResources()
     return toast("全资源 +1M，加速卡 +7天（" .. given .. " 项）")
 end
 
+local offlineDayBusy = false
+
+function CEService.giveOfflineDayRewards()
+    if offlineDayBusy then return toast("离线奖励正在发放") end
+    local standalone = require("boot.Standalone")
+    if not standalone.isRewardReady() then return toast("请先完成游戏入场") end
+    local Offline = require("rules.offline.OfflineService")
+    if Offline.HasPendingRewards(UID) then return toast("请先领取已有离线奖励") end
+    if require("ui.hud.popup.OfflineRewardPanel").isOpen() then
+        return toast("请先关闭离线奖励面板")
+    end
+    offlineDayBusy = true
+    local called, message = pcall(function()
+        ensureReady()
+        local Save = require("boot.StandaloneSave")
+        local battle = PDM.GetModule(UID, "battle")
+        local snapshot = battle and Save.CaptureBattleProgress(battle)
+        local ok, err = Offline.GrantDebugDayRewards(UID, snapshot)
+        if not ok then return "获得失败: " .. tostring(err) end
+        -- 发奖与保存重试分开，沿用唯一存档调度，不修改真实离线时间或再次发奖。
+        Save.RequestSave()
+        return "已获得一天（24小时）离线奖励，满包装备进入遗匣"
+    end)
+    offlineDayBusy = false
+    if not called then
+        print("[CE][ERROR] offline day: " .. tostring(message))
+        return toast("离线奖励发放异常，请检查日志；不要连续重试")
+    end
+    return toast(message)
+end
+
 function CEService.unlockAllHeroes()
     ensureReady()
     local HeroConfig = require("config.HeroConfig")

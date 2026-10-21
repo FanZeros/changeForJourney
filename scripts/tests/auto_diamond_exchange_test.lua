@@ -3,8 +3,8 @@
 -- File/PDM/动画/控件底层是显式内存替身；确认、支付选择、请求锁与混合扣费均调用真实生产模块。
 -- NanoVG/控件记录仅证明接线与设计坐标，不代表 GPU、截图或实机视觉验收。
 -- 本脚本不构建；由主线程统一 LSP/官方 build，再按需从 tests/auto_diamond_exchange_test.lua 运行。
--- 可选 -auto-exchange-review：仅真实UI控件/Surface截图；用-screenshot-frame/-validate退出，不运行正常业务回归。
--- 建议截图1440×1600：左侧保留1080×2400设计空间×0.45，右侧四scope五语言按820×56近景显示。
+-- 可选 -auto-exchange-review：真实控件审阅；-auto-exchange-popup-review -pool=stellar|standard：真实Page/Popups完整购买框。
+-- 两种review均复用内存fixture，用-screenshot-frame/-validate退出；不读取玩家档或发送业务动作。
 
 local TAG = "[auto_diamond_exchange_test] "
 local SCOPES = { "gacha_standard", "gacha_stellar", "artifact_normal", "artifact_advanced" }
@@ -12,7 +12,7 @@ local SOURCES = {}
 for _, name in ipairs({
     "ui.hud.popup.SettingsPanel", "ui.widget.AutoDiamondExchangeOption", "ui.widget.DesignWidgetSurface",
     "ui.tavern.TavernPopups", "ui.tavern.TavernPage", "ui.tavern.TavernRecruitOrders",
-    "ui.church.ChurchArtifactDrawPanel", "core.DrawUtil", "systems.GachaSystem",
+    "ui.church.ChurchArtifactDrawPanel", "core.DrawUtil", "core.DarkIcon", "ui.town.TownPageChrome", "systems.GachaSystem",
     "rules.gacha.GachaService", "rules.gacha.UrGachaService", "rules.artifact.ArtifactService",
     "shared.artifact.ArtifactDefs", "shared.artifact.ArtifactSchema", "shared.Protocol",
     "config.GachaConfig", "config.UrGachaConfig", "config.HeroConfig", "config.ExpTable",
@@ -71,8 +71,9 @@ local function source(name)
 end
 
 -- 命中区域 oracle 独立于生产常量，边界含端点，边外 0.001 不切偏好。
--- 酒馆页：  x130..950, y2152..2208   (540,2180), 820×56
--- 所有确认：x130..950, y1382..1438   (540,1410), 820×56；购买(540,1301)，互不重叠。
+-- 主页面旧开关(540,2180)/指定UP(540,2068)均无绘制/热区，不可授权或发请求。
+-- 酒馆确认：x160..920, y1395..1495 (540,1445), 760×100；购买(540,1320)。
+-- 神器确认保持：x130..950, y1382..1438 (540,1410), 820×56；购买(540,1301)。
 -- 普通卡：  x130..950, y1048..1104   (540,1076), 820×56；抽取按钮 y915..1045。
 -- 高级卡：  x130..950, y1868..1924   (540,1896), 820×56；抽取按钮 y1735..1865。
 -- 卡片开关与按钮留3px净空；中心/边界不触发抽取；模态优先，不穿透底层高级卡。
@@ -155,13 +156,18 @@ local function fixture()
     env.nvgFontSize = function(_, size) f.font = size end
     env.nvgTextBounds = function(_, _, _, text) return (utf8.len(text) or #text) * f.font * 0.6 end
     env.nvgText = function(_, x, y, text)
-        f.texts = f.texts or {}; f.texts[#f.texts + 1] = { text = text, x = x, y = y }
+        f.texts = f.texts or {}; f.texts[#f.texts + 1] = { text = text, x = x, y = y, font = f.font }
     end
     env.nvgRGBA, env.nvgRGBAf = function(...) return { ... } end, function(...) return { ... } end
-    env.nvgImagePattern, env.nvgImagePatternTinted = function() return {} end, function() return {} end
+    env.nvgImagePattern = function(_, x, y, w, h, _, handle)
+        f.images = f.images or {}; f.images[#f.images + 1] = { path = f.imagePaths[handle], x = x, y = y, w = w, h = h }
+        return {}
+    end
+    env.nvgImagePatternTinted = function() return {} end
+    f.imagePaths = {}
     env.nvgCreateImage = function(_, path)
         assert(type(path) == "string" and path:sub(1, 6) == "image/", "仅图片资源允许模拟句柄")
-        f.imageCount = (f.imageCount or 0) + 1; return f.imageCount
+        f.imageCount = (f.imageCount or 0) + 1; f.imagePaths[f.imageCount] = path; return f.imageCount
     end
     env.nvgImageSize = function() return 1080, 2400 end
     env.YGNodeCalculateLayout = noop
@@ -229,9 +235,7 @@ local function fixture()
     mock("ui.tavern.TavernShopPage", { init = noop, resetScroll = noop, syncPurchasedFromStore = noop,
         drawContent = noop, update = noop, handleInput = function() return false end,
         isPendingBuy = function() return false end })
-    mock("ui.tavern.TargetRecruitPanel", { init = noop, draw = noop, isOpen = function() return f.targetOpen end,
-        close = function() f.targetOpen = false end, open = function() f.targetOpen = true end,
-        handleInput = function() return true end })
+    -- 不提供任何旧指定面板替身：require即失败，不能用noop掩盖残留初始化/绘制/输入。
     mock("systems.GameSFX", { playUIMove = noop })
     mock("systems.StoryPlayer", { onPlace = noop })
     mock("systems.TutorialManager", { notifyEvent = function(name) f.events[#f.events + 1] = name end,
@@ -345,23 +349,37 @@ local function noActions(f, before, label)
     eq(#f.actions, before or 0, label .. "零新增Action")
     f.safe()
 end
-local function optionAt(f, cx, cy, scope, price)
+local function optionAt(f, cx, cy, scope, price, width)
+    width = width or 820
+    local gacha = scope:sub(1, 6) == "gacha_"
+    local height = gacha and 100 or 56
     local found = nil ---@type any
     for _, entry in ipairs(f.surfaces) do
-        if entry.x == cx - 410 and entry.y == cy - 28 and entry.w == 820 and entry.h == 56 then
+        if entry.x == cx - width * 0.5 and entry.y == cy - height * 0.5 and entry.w == width and entry.h == height then
             found = entry
         end
     end
     check(found ~= nil, scope .. "实际Surface位置/宽高符合设计oracle")
     local checkbox = nil ---@type any
     local labels = {} ---@type string[]
+    local labelWidgets = {} ---@type any[]
     local function visit(w)
         if w.kind == "Checkbox" then checkbox = w end
-        if w.kind == "Label" then labels[#labels + 1] = w.props.text end
+        if w.kind == "Label" then labels[#labels + 1] = w.props.text; labelWidgets[#labelWidgets + 1] = w end
         for _, child in ipairs(w.children) do visit(child) end
     end
     visit(found.root)
     check(checkbox ~= nil and #labels == 2, "真实Widget建立Checkbox + 两个Label")
+    eq(labelWidgets[1].props.height, gacha and 48 or 30, "标题高度仅酒馆保留下伸字形空间")
+    eq(labelWidgets[1].props.fontSize, gacha and 24 or 28, "标题字号不改变神器")
+    eq(labelWidgets[2].props.height, gacha and 40 or 26, "hint高度不改变神器")
+    eq(labelWidgets[2].props.fontSize, gacha and 20 or 22, "hint字号不改变神器")
+    if gacha then
+        local column = found.root.children[2]
+        eq(column.props.flexDirection, "column", "酒馆文字列显式column")
+        eq(column.props.gap, 8, "酒馆两行间距8")
+        check(48 + 8 + 40 <= 100, "两行与间距完整落在100px行内，神器仍56px")
+    end
     eq(checkbox.props.checked, f.settings.isAutoDiamondExchangeEnabled(scope), scope .. "勾选值由真实设置同步")
     check(table.concat(labels, "|"):find(tostring(price), 1, true) ~= nil, "提示显示真实单价而非消费按钮")
     eq(f.uiOptions.scale, "隔离默认缩放", "真实DesignWidgetSurface使用UI.Scale.DEFAULT")
@@ -437,13 +455,14 @@ local function widgetAndLayout()
             local price = index == 1 and 180 or (index == 2 and 900 or 150)
             f.surfaces = {}; option.draw(f.vg, scope, 540, 1410, 820, price, false)
             optionAt(f, 540, 1410, scope, price)
-            for _, point in ipairs({ { 130, 1410 }, { 950, 1410 }, { 540, 1382 }, { 540, 1438 }, { 540, 1410 } }) do
+            local halfH = index <= 2 and 50 or 28
+            for _, point in ipairs({ { 130, 1410 }, { 950, 1410 }, { 540, 1410 - halfH }, { 540, 1410 + halfH }, { 540, 1410 } }) do
                 local old, writes = f.settings.isAutoDiamondExchangeEnabled(scope), f.writes
                 check(option.handleInput(point[1], point[2], scope, 540, 1410, 820, false), "整行及边界可点击")
                 eq(f.settings.isAutoDiamondExchangeEnabled(scope), not old, "整行只切当前偏好")
                 eq(f.writes, writes + 1, "一次开关只保存一次")
             end
-            for _, point in ipairs({ { 129.999, 1410 }, { 950.001, 1410 }, { 540, 1381.999 }, { 540, 1438.001 } }) do
+            for _, point in ipairs({ { 129.999, 1410 }, { 950.001, 1410 }, { 540, 1410 - halfH - 0.001 }, { 540, 1410 + halfH + 0.001 } }) do
                 local old, writes = f.settings.isAutoDiamondExchangeEnabled(scope), f.writes
                 eq(option.handleInput(point[1], point[2], scope, 540, 1410, 820, false), false, "边外不命中")
                 eq(f.settings.isAutoDiamondExchangeEnabled(scope), old, "边外不改变偏好")
@@ -458,18 +477,25 @@ local function widgetAndLayout()
     noActions(f, 0, "独立Widget多语言绘制/点击")
     for _, scope in ipairs(SCOPES) do f.settings.setAutoDiamondExchangeEnabled(scope, false) end
     local page = f.tavern("standard")
-    f.surfaces = {}; page.draw(f.vg); optionAt(f, 540, 2180, "gacha_standard", 180)
-    page.handleInput(540, 2180)
-    check(f.settings.isAutoDiamondExchangeEnabled("gacha_standard"), "酒馆页桥点击实际行")
-    page.handleInput(815, 545)
-    f.surfaces = {}; page.draw(f.vg); optionAt(f, 540, 2180, "gacha_stellar", 900)
-    eq(f.settings.isAutoDiamondExchangeEnabled("gacha_stellar"), false, "换池显示独立关闭")
-    page.handleInput(540, 2180)
+    for _, pool in ipairs({ "standard", "stellar" }) do
+        page.handleInput(pool == "stellar" and 815 or 275, 545)
+        f.surfaces = {}; page.draw(f.vg)
+        eq(#f.surfaces, 0, "双池主页面都不绘制AutoExchange")
+        local writes, snapshot = f.writes, copy(f.memory)
+        for _, point in ipairs({ {130,2180}, {540,2152}, {540,2180}, {950,2208},
+            {335,2018}, {540,2068}, {745,2118} }) do page.handleInput(point[1], point[2]) end
+        eq(f.writes, writes, "主页面旧开关/指定UP边界及中心不保存授权")
+        eq(f.settings.isAutoDiamondExchangeEnabled("gacha_" .. pool), false, "旧热区保持当前池自动兑换关闭")
+        check(same(f.memory, snapshot), "旧热区不更改内存数据")
+        noActions(f, 0, "双池旧热区")
+        eq(f.popups.isRecruitConfirmOpen(), false, "旧热区不打开购买框")
+    end
     page.handleInput(740, 2308)
     local writes = f.writes
     f.surfaces = {}; page.draw(f.vg)
     eq(#f.surfaces, 0, "商店不绘制招募开关")
-    page.handleInput(540, 2180); eq(f.writes, writes, "商店不接收招募开关")
+    page.handleInput(540, 2180); page.handleInput(540, 2068)
+    eq(f.writes, writes, "商店不接收旧开关/指定UP")
     local panel = f.artifact()
     f.surfaces = {}; panel.drawContent(f.vg)
     optionAt(f, 540, 1076, "artifact_normal", 150); optionAt(f, 540, 1896, "artifact_advanced", 150)
@@ -480,7 +506,7 @@ local function widgetAndLayout()
     eq(f.settings.isAutoDiamondExchangeEnabled("artifact_advanced"), true, "高级卡实际行只切高级")
     noActions(f, 0, "页面开关/卡池切换/商店/宝箱开关")
 
-    -- 页面滑入期间只禁用新增开关；点击移动中的勾框或旧静止热区不能误授权。
+    -- 旧主页面开关在滑入期间和稳定后都无效；神器页签仍保留原动画保护。
     local moving = fixture()
     local movingPage = moving.tavern("standard")
     movingPage.open()
@@ -490,7 +516,7 @@ local function widgetAndLayout()
     eq(moving.writes, movingWrites, "酒馆滑入动画不误切偏好")
     eq(moving.settings.isAutoDiamondExchangeEnabled("gacha_standard"), false, "滑入期间保持关闭")
     moving.step(0.2); movingPage.handleInput(540, 2180)
-    eq(moving.settings.isAutoDiamondExchangeEnabled("gacha_standard"), true, "酒馆动画完成后开关可用")
+    eq(moving.settings.isAutoDiamondExchangeEnabled("gacha_standard"), false, "酒馆动画完成后也没有旧开关热区")
     local movingPanel = moving.artifact()
     local ready = false
     movingPanel.setContext({ state = moving.host, getProtocol = function() return moving.protocol end,
@@ -519,15 +545,15 @@ local function tavernConfirmAndAuto()
             eq(canProceed, false, "默认关闭缺券必须确认")
             eq(payment, nil, "确认前不提供自动支付许可")
             eq(f.popups.isRecruitConfirmOpen(), true, "默认缺券modal打开")
-            f.step(); f.surfaces = {}; f.popups.drawAll(f.vg); optionAt(f, 540, 1410, scope, price)
+            f.step(); f.surfaces = {}; f.popups.drawAll(f.vg); optionAt(f, 540, 1445, scope, price, 760)
             local snapshot, writes = copy(f.memory), f.writes
-            page.handleInput(540, 1410)
+            page.handleInput(540, 1445)
             eq(f.settings.isAutoDiamondExchangeEnabled(scope), true, "确认框当前scope开启")
             eq(f.writes, writes + 1, "确认框切换仅保存偏好")
             eq(f.popups.isRecruitConfirmOpen(), true, "切偏好不会自动购买/关闭当前modal")
             check(same(f.memory, snapshot), "确认框开关不扣券/黑晶")
             noActions(f, 0, "当前modal开启偏好")
-            page.handleInput(540, 1301)
+            page.handleInput(540, 1320)
             oneAction(f, 0, f.protocol.ACTION_TYPES.GACHA_PULL, count, "diamond", pool)
             f.release(); f.popups.resetAll()
             f.settings.setAutoDiamondExchangeEnabled(scope, false)
@@ -597,9 +623,12 @@ local function tavernEntrypointsAndGates()
             f.animPlaying = true; before = #f.actions
             page.handleInput(540, 2180); page.handleInput(314, 1902)
             noActions(f, before, "结果动画优先")
-            f.animPlaying, f.targetOpen = false, true
-            page.handleInput(540, 2180); page.handleInput(314, 1902)
-            noActions(f, before, "指定UP模态优先")
+            f.animPlaying = false
+            page.handleInput(540, 2180); page.handleInput(540, 2068)
+            noActions(f, before, "旧开关/指定UP热区无效")
+            page.handleInput(314, 1902)
+            oneAction(f, before, f.protocol.ACTION_TYPES.GACHA_PULL, 1, count > 1 and "ticket" or "diamond", pool)
+            eq(page.isRecruitBusy(), false, "移除指定面板后正常招募仍可通过同步失败释放锁")
         end
     end
     local f = fixture(); local page = f.tavern("stellar")
@@ -614,6 +643,100 @@ local function tavernEntrypointsAndGates()
     page.handleInput(314, 1902)
     check(f.popups.isRecruitConfirmOpen(), "普通开启不授权星辰")
     noActions(f, 0, "两卡池授权隔离")
+end
+
+local function tavernPopupLayout()
+    for _, pool in ipairs({ "standard", "stellar" }) do
+        local f = fixture(); local page = f.tavern(pool)
+        local price, scope = pool == "standard" and 180 or 900, "gacha_" .. pool
+        f.resetMemory(3, price * 7)
+        page.handleInput(766, 1902)
+        check(f.popups.isRecruitConfirmOpen(), "真实十连按钮打开完整确认框")
+        f.step(); f.images, f.texts, f.surfaces = {}, {}, {}; page.draw(f.vg)
+        optionAt(f, 540, 1445, scope, price, 760)
+        local panelFound, diamondFound, ticketFound, titleFound, subtitleFound, buyFound = false, false, false, false, false, false
+        for _, image in ipairs(f.images) do
+            panelFound = panelFound or (image.x == 65 and image.y == 736.5 and image.w == 950 and image.h == 847)
+            diamondFound = diamondFound or (image.x == 335 and image.y == 1045 and image.w == 160 and image.h == 160)
+            ticketFound = ticketFound or (image.x == 584 and image.y == 1045 and image.w == 160 and image.h == 160)
+        end
+        for _, text in ipairs(f.texts) do
+            titleFound = titleFound or (text.text == "招募券不足" and text.x == 540 and text.y == 814)
+            subtitleFound = subtitleFound or (text.text == "是否使用黑晶快速购买" and text.y == 980 and text.font == 36)
+            buyFound = buyFound or (text.text == "购买" and text.x == 540 and text.y == 1320)
+        end
+        check(panelFound, "确认背景中心540,1160尺寸950×847")
+        check(diamondFound and ticketFound, "兑换双图标中心y1125")
+        check(titleFound and subtitleFound and buyFound, "真实标题/说明字号/购买位置符合新布局")
+        -- 新行四边含端点；旧820宽两翼与新边界外不授权，也不能触发购买。
+        local writes = f.writes
+        for _, point in ipairs({ {130,1445}, {950,1445}, {159.999,1445},
+            {920.001,1445}, {540,1394.999}, {540,1495.001} }) do page.handleInput(point[1], point[2]) end
+        eq(f.writes, writes, "旧宽度两翼与新边界外不切偏好")
+        for _, point in ipairs({ {160,1445}, {920,1445}, {540,1395}, {540,1495} }) do
+            local before = f.settings.isAutoDiamondExchangeEnabled(scope)
+            page.handleInput(point[1], point[2])
+            eq(f.settings.isAutoDiamondExchangeEnabled(scope), not before, "新行边界含端点")
+        end
+        noActions(f, 0, "布局与命中边界仅偏好切换")
+        eq(f.popups.isRecruitConfirmOpen(), true, "点行边界保持确认框")
+        page.handleInput(540, 1320); page.handleInput(540, 1320)
+        oneAction(f, 0, f.protocol.ACTION_TYPES.GACHA_PULL, 10, "diamond", pool)
+        f.release()
+    end
+end
+
+local function stellarLegacyTargetIgnored()
+    -- 强制保底排除品质随机；相同随机序列跨不同旧目标必须产生完全相同结果/费用/保底。
+    -- 再以自然概率命中UR，证明正常权重池的16/20/25三角色均可出现，而非固定某个UP。
+    for _, forced in ipairs({ true, false }) do
+        local seen = {}
+        for index, roll in ipairs({ 0.1, 0.5, 0.9 }) do
+            local baseline = nil ---@type any
+            for _, old in ipairs({ { id = 16 }, { id = 20 }, { id = 25 }, { id = "16" }, { id = 999 }, {} }) do
+                local f = fixture(); f.resetMemory(1, 0)
+                local config = f.real("config.UrGachaConfig")
+                f.memory.currency.stellarTargetUpHeroId = old.id
+                if forced then f.memory.currency.urPityUR = config.Pity.UR_THRESHOLD - 1 end
+                local sequence = forced and { roll } or { 0.001, roll }
+                local consumed = 0
+                f.env.math.random = function(...)
+                    eq(select("#", ...), 0, "真实UR权重抽取使用无参随机")
+                    consumed = consumed + 1
+                    return assert(sequence[consumed], "UR不应额外读取指定UP随机")
+                end
+                if old.id == nil then
+                    setmetatable(f.memory.currency, { __index = function(_, key)
+                        assert(key ~= "stellarTargetUpHeroId", "UR抽取不得读取不存在的旧指定UP字段")
+                    end })
+                end
+                local ok, reason, result = f.real("rules.gacha.UrGachaService").Pull(987654, 1, "ticket")
+                check(ok and result ~= nil, "真实UR服务成功：" .. tostring(reason))
+                eq(consumed, #sequence, "旧目标不改变随机消费序列")
+                eq(result.gachaResults[1].quality, config.QUALITY_UR, "强制/自然UR都走真实UR组")
+                eq(result.gachaResults[1].heroId, ({16,20,25})[index], "按正常池权重出现三UR之一")
+                eq(rawget(f.memory.currency, "stellarTargetUpHeroId"), old.id, "抽取不迁移/重写旧目标")
+                local comparable = { result = result, currency = copy(f.memory.currency), heroes = copy(f.memory.heroes),
+                    dirty = f.dirty, flushes = f.flushes, tasks = copy(f.taskCalls) }
+                comparable.currency.stellarTargetUpHeroId = nil
+                if baseline then check(same(comparable, baseline), "同随机不同旧heroId不影响结果/费用/保底/发奖")
+                else baseline = comparable end
+                seen[result.gachaResults[1].heroId] = true
+                noActions(f, 0, "真实规则仅内存PDM，无客户端Action")
+            end
+        end
+        check(seen[16] and seen[20] and seen[25], "正常三UR均可抽到")
+    end
+    for _, entry in ipairs({ {}, { value = false }, { value = 0 }, { value = 16 }, { value = 20 },
+        { value = 25 }, { value = -1 }, { value = 999 }, { value = "16" }, { value = {} } }) do
+        local f = fixture(); f.memory.currency.stellarTargetUpHeroId = 20
+        local before = copy(f.memory)
+        local ok = f.real("rules.gacha.UrGachaService").SetTargetUp(987654, entry.value)
+        eq(ok, false, "SetTargetUp无论入参都拒绝")
+        check(same(f.memory, before), "拒绝设置不写入/清除旧数据")
+        eq(f.dirty + f.flushes + #f.taskCalls, 0, "拒绝设置无dirty/flush/任务")
+        noActions(f, 0, "拒绝旧目标设置")
+    end
 end
 
 local function artifactConfirmAndAuto()
@@ -821,54 +944,103 @@ local function safety()
     end
 end
 
--- review仅增加真实绘制出口，正常8组回归继续使用上面的隔离绘图替身。
+-- review仅开放绘图，正常回归仍使用上面的隔离绘图替身。
 ---@type NVGContextWrapper?
 local reviewVG = nil
 local reviewFixture = nil ---@type any
 local reviewFrames = 0
 local REVIEW_LANGUAGES = { "zh_CN", "zh_TW", "en", "ja", "ko" }
 local REVIEW_PRICES = { 180, 900, 150, 150 }
+local REVIEW_NVG = {
+    "nvgSave", "nvgRestore", "nvgTranslate", "nvgScale", "nvgGlobalAlpha", "nvgBeginPath", "nvgRect",
+    "nvgRoundedRect", "nvgFillColor", "nvgFillPaint", "nvgFill", "nvgStrokeColor", "nvgStrokeWidth", "nvgStroke",
+    "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgTextBounds", "nvgText", "nvgScissor", "nvgIntersectScissor",
+    "nvgResetScissor", "nvgFontBlur", "nvgMoveTo", "nvgLineTo", "nvgClosePath", "nvgCircle", "nvgLineCap",
+    "nvgLineJoin", "nvgSkewX", "nvgImagePattern", "nvgImagePatternTinted", "nvgCreateImage", "nvgImageSize",
+    "nvgRGBA", "nvgRGBAf", "nvgLinearGradient", "nvgRadialGradient", "nvgBoxGradient", "nvgBezierTo", "nvgPathWinding",
+    "nvgRoundedRectVarying",
+}
 
 local function wantsReview()
-    for _, arg in ipairs(GetArguments()) do if arg == "-auto-exchange-review" then return true end end
-    return false
+    local mode, pool = nil, "stellar" ---@type string?, string
+    for _, arg in ipairs(GetArguments()) do
+        if arg == "-auto-exchange-review" then mode = "widgets" end
+        if arg == "-auto-exchange-popup-review" then mode = "popup" end
+        local selected = arg:match("^%-pool=(.+)$")
+        if selected then pool = selected end
+    end
+    assert(pool == "stellar" or pool == "standard", "review -pool必须为stellar或standard")
+    return mode, pool
 end
 
-local function startReview()
+local function startReview(mode, pool)
     local f = fixture()
     reviewFixture = f
-    -- 仅允许引擎UI库与其ImageCache，不把生产Settings或main交给真实require。
+    -- 只开放引擎控件/绘图；Page、Popups、Settings仍由同一白名单load(env)加载。
     f.deps["urhox-libs/UI"] = require("urhox-libs/UI")
     f.deps["urhox-libs/UI/Core/ImageCache"] = require("urhox-libs/UI/Core/ImageCache")
-    for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgTranslate", "nvgScale", "nvgGlobalAlpha" }) do
-        f.env[name] = assert(_G[name], "review缺少真实绘图API：" .. name)
-    end
-    f.env.YGNodeCalculateLayout = YGNodeCalculateLayout
+    for _, name in ipairs(REVIEW_NVG) do f.env[name] = assert(_G[name], "review缺少真实绘图API：" .. name) end
+    f.env.YGNodeCalculateLayout, f.env.NVG_HOLE, f.env.NVG_SOLID = YGNodeCalculateLayout, NVG_HOLE, NVG_SOLID
+    f.deps["core.I18n"].displayText, f.deps["core.I18n"].displayBounds = nvgText, nvgTextBounds
     f.send = function() error("review禁止发送任何Action") end
     reviewVG = assert(nvgCreate(1), "review无法创建NanoVG上下文")
-    f.vg = reviewVG
-    -- 宿主和真实UI采用同一sans名字/字体；仅在Start建立一次，不逐帧创建字体。
+    f.vg, f.reviewMode, f.reviewPool = reviewVG, mode, pool
     assert(nvgCreateFont(reviewVG, "sans", "Fonts/NotoSansCJKkr-Bold.otf") >= 0, "review字体载入失败")
     f.option = f.real("ui.widget.AutoDiamondExchangeOption")
     f.surface = f.real("ui.widget.DesignWidgetSurface")
     f.option.init()
-    f.settings.setAutoDiamondExchangeEnabled("gacha_standard", true)
-    f.settings.setAutoDiamondExchangeEnabled("artifact_normal", true)
+    if mode == "popup" then
+        -- 完整购买框还原真实装饰与页面壳，不手工画一个近似框冒充生产弹窗。
+        f.deps["core.DarkIcon"], f.deps["ui.town.TownPageChrome"] = nil, nil
+        -- 品质框资源叶子只缓存真实PNG句柄，不引入EquipmentConfig/装备服务或玩家缓存。
+        local qualityImages = {}
+        f.deps["ui.widget.ImageCache"] = { getQualityBg = function(quality)
+            if qualityImages[quality] == nil then
+                assert(quality >= 1 and quality <= 6, "review只允许6张正式品质框资源")
+                qualityImages[quality] = nvgCreateImage(reviewVG, "image/品质框/UI_icon_ZBBJ_" .. quality .. ".png", 0)
+            end
+            return qualityImages[quality]
+        end }
+        f.real("core.DarkIcon"); f.real("ui.town.TownPageChrome")
+        f.resetMemory(3, 9000)
+        local page = f.tavern(pool)
+        page.handleInput(766, 1902)
+        check(f.popups.isRecruitConfirmOpen(), "review复用真实十连入口打开购买框")
+        f.step(1) -- 内存时间稳定在弹窗动画完成后，不驱动真实服务器/玩家时钟。
+    else
+        f.settings.setAutoDiamondExchangeEnabled("gacha_standard", true)
+        f.settings.setAutoDiamondExchangeEnabled("artifact_normal", true)
+    end
     f.reviewMemory, f.reviewWrites = copy(f.memory), f.writes
     SubscribeToEvent(reviewVG, "NanoVGRender", "HandleAutoExchangeReview")
-    print(TAG .. "REVIEW READY：真实Checkbox/Label/Surface；设置仅内存，四scope五语言；请用截图/validate参数结束")
+    print(TAG .. "REVIEW READY mode=" .. mode .. " pool=" .. pool .. "；真实NVG/Surface；内存资源/时间/偏好，无玩家档/业务请求")
+end
+
+local function drawPopupReview()
+    local f, vg = reviewFixture, assert(reviewVG)
+    -- 模式A：1080×2400设计空间，DPR修正后contain；绘制生产Page（含真实Popups与Surface）。
+    local w, h, dpr = graphics:GetWidth(), graphics:GetHeight(), graphics:GetDPR()
+    local logicalW, logicalH = w / dpr, h / dpr
+    local scale = math.min(logicalW / 1080, logicalH / 2400)
+    nvgBeginFrame(vg, logicalW, logicalH, dpr)
+    nvgSave(vg)
+    nvgTranslate(vg, (logicalW - 1080 * scale) * 0.5, (logicalH - 2400 * scale) * 0.5)
+    nvgScale(vg, scale, scale)
+    f.page.draw(vg)
+    nvgRestore(vg)
+    nvgEndFrame(vg)
 end
 
 local function drawReview()
-    local f, vg = reviewFixture, reviewVG
-    -- 模式A：明确1440×1600审阅板；物理/DPR -> 逻辑分辨率，再等比映射审阅板。
-    -- 左侧1080×2400页面固定0.45缩放；右侧不缩放820×56近景，不伪称完整游戏页面。
+    local f, vg = reviewFixture, assert(reviewVG)
+    -- 模式A：明确1440×2560审阅板；物理/DPR -> 逻辑分辨率，再等比映射审阅板。
+    -- 左侧1080×2400页面固定0.45缩放；右侧酒馆760×100/神器820×56，不伪称完整游戏页面。
     local w, h, dpr = graphics:GetWidth(), graphics:GetHeight(), graphics:GetDPR()
     local logicalW, logicalH = w / dpr, h / dpr
-    local scale = math.min(logicalW / 1440, logicalH / 1600)
+    local scale = math.min(logicalW / 1440, logicalH / 2560)
     nvgBeginFrame(vg, logicalW, logicalH, dpr)
     nvgSave(vg)
-    nvgTranslate(vg, (logicalW - 1440 * scale) * 0.5, (logicalH - 1600 * scale) * 0.5)
+    nvgTranslate(vg, (logicalW - 1440 * scale) * 0.5, (logicalH - 2560 * scale) * 0.5)
     nvgScale(vg, scale, scale)
     local function rect(x, y, width, height, color)
         nvgBeginPath(vg); nvgRoundedRect(vg, x, y, width, height, 10)
@@ -879,9 +1051,9 @@ local function drawReview()
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(225, 217, 199, 255)); nvgText(vg, x, y, message, nil)
     end
-    rect(0, 0, 1440, 1600, { 16, 16, 20 })
+    rect(0, 0, 1440, 2560, { 16, 16, 20 })
     text(24, 46, "自动兑换 · 真实UI隔离审阅", 32)
-    text(24, 90, "左：设计位置×0.45   右：820×56近景 / 4scope × 5语言", 23)
+    text(24, 90, "左：设计位置×0.45   右：酒馆100px / 神器56px，4scope × 5语言", 23)
     text(24, 130, "设置仅内存；没有玩家档、购买、招募、开箱或联网动作", 20)
     nvgSave(vg)
     nvgTranslate(vg, 24, 180); nvgScale(vg, 0.45, 0.45)
@@ -890,22 +1062,24 @@ local function drawReview()
     f.deps["core.I18n"].set("zh_CN")
     for _, placement in ipairs({
         { index = 3, y = 1076, label = "普通神器卡 (540,1076)" },
-        { index = 2, y = 1410, label = "星辰确认框选项 (540,1410)" },
+        { index = 2, y = 1445, label = "星辰确认框选项 (540,1445)" },
         { index = 4, y = 1896, label = "高级神器卡 (540,1896)" },
-        { index = 1, y = 2180, label = "常规招募页 (540,2180)" },
     }) do
         text(130, placement.y - 55, placement.label, 30)
-        f.option.draw(vg, SCOPES[placement.index], 540, placement.y, 820, REVIEW_PRICES[placement.index], false)
+        local index = math.floor(placement.index)
+        f.option.draw(vg, SCOPES[index], 540, placement.y, index == 2 and 760 or 820,
+            REVIEW_PRICES[index], false)
     end
     nvgRestore(vg)
     text(24, 1308, "仅控件/坐标审阅，不模拟整页背景或业务", 19)
     for languageIndex, language in ipairs(REVIEW_LANGUAGES) do
-        local top = 168 + (languageIndex - 1) * 290
-        rect(552, top, 864, 280, { 28, 26, 29 })
+        local top = 168 + (languageIndex - 1) * 450
+        rect(552, top, 864, 440, { 28, 26, 29 })
         text(574, top + 22, language .. " · 常规 / 星辰 / 普通神器 / 高级神器", 20)
         f.deps["core.I18n"].set(language)
         for scopeIndex, scope in ipairs(SCOPES) do
-            f.option.draw(vg, scope, 984, top + 68 + (scopeIndex - 1) * 60, 820, REVIEW_PRICES[scopeIndex], false)
+            f.option.draw(vg, scope, 984, top + 90 + (scopeIndex - 1) * 106,
+                scopeIndex <= 2 and 760 or 820, REVIEW_PRICES[scopeIndex], false)
         end
     end
     nvgRestore(vg)
@@ -920,7 +1094,20 @@ local function drawReview()
 end
 
 function HandleAutoExchangeReview()
-    local ok, err = pcall(drawReview)
+    local ok, err = pcall(function()
+        if reviewFixture.reviewMode == "popup" then
+            drawPopupReview()
+            reviewFrames = reviewFrames + 1
+            if reviewFrames == 1 then
+                local f = reviewFixture
+                noActions(f, 0, "完整真实购买框审阅")
+                check(same(f.memory, f.reviewMemory), "完整购买框绘制不改玩家内存")
+                eq(f.writes, f.reviewWrites, "完整购买框不重复保存设置")
+                check(f.popups.isRecruitConfirmOpen(), "完整购买框保持打开供截图")
+                print(TAG .. "POPUP REVIEW FIRST FRAME PASS pool=" .. f.reviewPool .. "；视觉质量须实际截图审阅")
+            end
+        else drawReview() end
+    end)
     if not ok then
         log:Write(LOG_ERROR, TAG .. "REVIEW FAIL " .. tostring(err))
         engine:Exit()
@@ -934,8 +1121,9 @@ function Stop()
 end
 
 function Start()
-    if wantsReview() then
-        local ok, err = pcall(startReview)
+    local mode, pool = wantsReview()
+    if mode then
+        local ok, err = pcall(startReview, mode, pool)
         if not ok then
             log:Write(LOG_ERROR, TAG .. "REVIEW INIT FAIL " .. tostring(err))
             engine:Exit(); error(TAG .. "REVIEW INIT FAIL " .. tostring(err))
@@ -947,6 +1135,8 @@ function Start()
         { "真实Widget与页面Surface/点击/多语言接线", widgetAndLayout },
         { "酒馆confirm开关/单抽十连自动缺口支付", tavernConfirmAndAuto },
         { "酒馆原继续入口/pending先行/同步回执/门禁", tavernEntrypointsAndGates },
+        { "完整真实购买框新布局/边界/确认防重入", tavernPopupLayout },
+        { "旧目标不影响UR权重/同随机保底/设置拒绝无dirty", stellarLegacyTargetIgnored },
         { "宝箱confirm开关/单抽十连自动缺口支付", artifactConfirmAndAuto },
         { "宝箱原继续入口/pending/免费/已有钥匙/解锁", artifactEntrypointsAndGates },
         { "真实三规则服务混合扣费与权威余额变化拒绝", authoritativePayments },

@@ -441,6 +441,9 @@ function DungeonConfig.getCombatEntry(id, floor)
     -- 资源连续关不应在借用主线下一章首关时从28/32名敌人骤降至12名。
     entry.firstCount = sourceEnemyCounts[id][floor] + DungeonConfig.EXTRA_ENEMIES
     entry.idleCount = entry.firstCount
+    -- firstCount 取自历史最大敌数；推荐战力必须用同一基准做分母，否则遇到
+    -- 难度切换处敌数骤降的源关会把比值放大到 1.78×，相邻层出现锯齿。
+    entry.enemyCountBaseline = sourceEnemyCounts[id][floor]
     entry.firstClearBonusMonster, entry.firstClearBonusMonsters = nil, nil
     entry.maxFieldEnemies = 4
     entry.mode = "resource_dungeon"

@@ -12,6 +12,12 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-21，扫荡优化提交与最新基线融合）
+
+- 用户最新明确“做pr”，授权本次扫荡优化提交、正常push独立 `perf1021/sweep-large-batch` 并创建base=`workspace1005`的PR；不推workspace系列、不强推、不自动合并或发布。29白名单功能提交 `8d1484a3` 已完成；融合最新目标 `548fc57a` 为 `31553588`，代码自动合并，仅交接文本冲突双方保留。CE就绪检查、推荐战力基准字段及其余21个目标净路径逐字节保留，不夹原.gitignore／上传／玩家档／本地.project／内部验证。
+- 融合后官方b33成功，705根Lua及实际UUID-hash载荷705/705逐字节与声明size一致，三新meta一致、源冻结不变、内部验证及审核候选0入包，两.project与本轮before逐字节恢复。两个重叠Lua逐文件无severity1 Error（仍有Warning），不称全仓清零。此前215组旧源oracle和四关各100k等结果属于b32同源验证，不冒称融合后全量重跑。b33后七个独立Runtime实际ALL PASS／actualexit0／无timeout：真实小连链v5三组721断言（87／129／91pump、每组save/token/receipt各1）、Bridge87、UI16组5732、十万项展示522092、资源compat46439、切关及真实UI/Yoga/Surface等待树209／12Render。小链PDM/Store/Save为内存边界、页面释放spy；UI16控件树spy与真实等待树分开留证，不代设备GPU／触控／磁盘验收。相对最新目标3314路径20旧规范问题、新增0，36规范单测实际通过。下面“仅本地／无PR授权”等为此前过程记录，当前授权以上述最新请求为准；尚未push或创建PR，成功后补真实结果。
+- 鉴权仅通过标准credential接口返回值在进程内即时使用，不写remote／Git配置／源码／项目记忆，不挖历史转录或凭据文件。公开PAT应撤销轮换；持续推进并尊重停止、权限拒绝及安全边界，按当前直接继续不机械提问。
+
 ## 上次做了什么（2026-10-21，十万次扫荡分帧与统一到账，本地实现）
 
 - 用户在诊断后明确选择“分帧，最后统一到账”。独立 `perf1021/sweep-large-batch` 固定最新 `workspace1005@a590320d`；仅本地实现／测试／官方构建，无本轮commit/push/PR/合并发布授权，HEAD与index保持。不读玩家档／凭据、不pop旧stash，不混原.gitignore／上传／无关meta／内部验证；持续推进授权范围并尊重停止、权限拒绝与安全边界，当前明确直接继续不机械提问，不推workspace系列／强推／自动合并发布，凭据不持久化。

@@ -22,7 +22,14 @@ local D = { x = 65, y = 570, w = 950, h = 1250, cx = 540, cy = 1195,
     confirmY = 1700, stepY = 1510, sliderX = 340, sliderW = 400,
     categoryY = 731, maxX = 857, maxY = 1435 }
 local state = { open = false, openTime = 0, count = 1, teamIdx = 1, stageId = nil,
-    sliderDragging = false, lastPreview = -1, preview = nil, reason = "", kind = "main" }
+    sliderDragging = false, lastPreview = -1, preview = nil, reason = "", kind = "main",
+    requestId = nil, failure = "" } ---@type table
+-- 不重用页面身份；先登记再发送，兼容同步拒绝回执和关闭后重开的迟到回执。
+local requestSequence = 0
+local workProgress = nil ---@type ProgressBar?
+local pendingTree = nil ---@type Panel?
+local pendingLabel = nil ---@type Label?
+local pendingProgress = nil ---@type ProgressBar?
 local root = nil ---@type Panel?
 local stageLabel = nil ---@type Label?
 local quantity = nil ---@type Label?
@@ -43,6 +50,28 @@ local categories = { "main", "gold_mine", "equipment_vault", "black_diamond" }
 local names = { main = "主线", gold_mine = "金币副本", equipment_vault = "装备副本", black_diamond = "黑晶副本" }
 local C = { bone = { 244, 237, 224, 255 }, dim = { 159, 151, 140, 255 }, gold = { 231, 192, 116, 255 },
     green = { 149, 190, 129, 255 }, track = { 52, 45, 35, 255 }, border = { 88, 69, 43, 255 } }
+
+local function sweepWork()
+    local bridge = require("runtime.LocalActionBridge")
+    local work = bridge.getSweepState and bridge.getSweepState() or nil
+    local pending = bridge.isSweepPending and bridge.isSweepPending() or false
+    return state.requestId ~= nil or pending, work
+end
+
+local function workStatus(work)
+    local phase = work and work.phase or "queued"
+    -- 展示组装/归并排序可能多轮重置计数；只标明整理，避免误作全程百分比倒退。
+    if phase == "presentation" or phase == "present" then return I18n.lookup("整理奖励"), 0, false end
+    local caption = phase == "commit" and "正在结算" or (phase == "generate" and "生成奖励" or "处理中")
+    local completed, total = tonumber(work and work.completed), tonumber(work and work.total)
+    if completed and total and completed == completed and total == total
+        and total > 0 and total < math.huge and completed >= 0 and completed < math.huge then
+        local done = math.floor(math.min(completed, total))
+        local all = math.floor(total)
+        if all > 0 then return I18n.format("%s · %d / %d", I18n.lookup(caption), done, all), done / all, true end
+    end
+    return I18n.lookup(caption), 0, false
+end
 
 local function label(text, x, y, width, size, color)
     return UI.Label { text = I18n.lookup(text), position = "absolute", left = x, top = y,
@@ -65,8 +94,10 @@ end
 
 local function destroyTree()
     if root then root:Destroy() end
+    if pendingTree then pendingTree:Destroy() end
+    pendingTree, pendingLabel, pendingProgress = nil, nil, nil
     root, stageLabel, quantity, ticketLabel, statusLabel, confirmButton = nil, nil, nil, nil, nil, nil
-    maxButton, minusIcon, plusIcon = nil, nil, nil
+    maxButton, minusIcon, plusIcon, workProgress = nil, nil, nil, nil
     metrics, categoryButtons, playerView, memberViews = {}, {}, {}, {}
 end
 
@@ -162,7 +193,12 @@ local function ensureTree()
     confirmButton = button("扫荡", 270, 1080, 410, 100)
     confirmButton:SetStyle({ fontSize = 38, backgroundImage = "image/按钮/UI_AN_HUANG.png", backgroundFit = "fill" })
     root:AddChild(confirmButton)
-    statusLabel = label("", 45, 1181, 860, 22, C.dim)
+    workProgress = progressBar(270, 1184, 410, C.gold)
+    workProgress:SetStyle({ height = 8 })
+    workProgress:SetVisible(false)
+    root:AddChild(workProgress)
+    statusLabel = label("", 45, 1196, 860, 22, C.dim)
+    statusLabel:SetStyle({ height = 36 })
     root:AddChild(statusLabel)
 end
 
@@ -257,7 +293,7 @@ function M.open(teamIdx, preferredStageId)
     team = math.tointeger(tonumber(team) or 0)
     if not team or team < 1 or team > ET.TEAM_COUNT then return end
     state.open, state.openTime, state.count, state.teamIdx = true, time.elapsedTime, 1, team
-    state.sliderDragging = false
+    state.sliderDragging, state.requestId, state.failure = false, nil, ""
     local battle = Store.Get("battle") or {}
     local tasks = battle.teamStageIds or {}
     local current = preferredStageId or tasks[tostring(team)] or tasks[team] or (team == 1 and battle.currentStageId)
@@ -269,9 +305,22 @@ function M.open(teamIdx, preferredStageId)
 end
 
 function M.close()
-    state.open, state.sliderDragging = false, false
+    state.open, state.sliderDragging, state.requestId, state.failure = false, false, nil, ""
 end
 function M.isOpen() return state.open end
+
+-- 只有本次页面发出的匹配回执才能结束等待或关闭页面；无id旧回执只展示奖励。
+function M.onActionResult(data)
+    if not state.open or state.requestId == nil or data.sweepRequestId ~= state.requestId then return false end
+    state.requestId, state.sliderDragging = nil, false
+    if data.success == true then
+        M.close()
+    else
+        state.failure = data.reason or "扫荡失败，请重试"
+        state.lastPreview = -1
+    end
+    return true
+end
 
 function M.drawButton(vg)
     if sweepImage < 0 then return end
@@ -281,13 +330,16 @@ end
 
 function M.draw(vg)
     if not state.open then return end
+    local busy, work = sweepWork()
     local limit = maxCount()
-    local count = math.max(1, math.min(state.count, math.max(1, limit)))
-    if state.count ~= count then state.count = count; state.lastPreview = -1 end
-    if time.elapsedTime - state.lastPreview >= 0.5 or I18n.get() ~= lastLanguage then refresh() end
+    if not busy then
+        local count = math.max(1, math.min(state.count, math.max(1, limit)))
+        if state.count ~= count then state.count = count; state.lastPreview = -1 end
+        if time.elapsedTime - state.lastPreview >= 0.5 or I18n.get() ~= lastLanguage then refresh() end
+    end
     if I18n.get() ~= lastLanguage then destroyTree(); lastLanguage = I18n.get() end
     ensureTree()
-    local preview = state.preview or {}
+    local preview = state.preview or {} ---@type table
     stageLabel:SetText(state.stageId and I18n.lookup(SC.getStageDisplayName(state.stageId)) or I18n.lookup("尚无可扫荡关卡"))
     local values = { preview.gold or 0, preview.diamond or 0, preview.playerExp or 0,
         preview.heroExp or 0, preview.equipCount or 0, preview.scrollCount or 0 }
@@ -311,23 +363,29 @@ function M.draw(vg)
     end
     for i, b in ipairs(categoryButtons) do
         local active = categories[i] == state.kind
+        b:SetDisabled(busy)
         b:SetStyle({ borderColor = active and C.gold or C.border,
             backgroundColor = active and { 82, 62, 33, 255 } or { 40, 34, 27, 255 } })
     end
-    minusIcon:SetStyle({ opacity = state.count > 1 and 1 or 0.4 })
-    plusIcon:SetStyle({ opacity = state.count < limit and 1 or 0.4 })
-    maxButton:SetDisabled(limit <= 1 or state.count == limit)
-    local canConfirm = limit >= state.count and state.preview ~= nil
+    minusIcon:SetStyle({ opacity = not busy and state.count > 1 and 1 or 0.4 })
+    plusIcon:SetStyle({ opacity = not busy and state.count < limit and 1 or 0.4 })
+    maxButton:SetDisabled(busy or limit <= 1 or state.count == limit)
+    local canConfirm = not busy and limit >= state.count and state.preview ~= nil
     confirmButton:SetDisabled(not canConfirm)
-    confirmButton:SetText(I18n.lookup(canConfirm and "扫荡" or (state.reason ~= "" and "无法扫荡" or "扫荡券不足")))
-    statusLabel:SetText(I18n.lookup(state.reason))
+    confirmButton:SetText(I18n.lookup(busy and "处理中" or (canConfirm and "扫荡"
+        or (state.reason ~= "" and "无法扫荡" or "扫荡券不足"))))
+    local status, fractionDone, hasProgress = workStatus(work)
+    statusLabel:SetText(busy and status or I18n.lookup(state.failure ~= "" and state.failure or state.reason))
+    workProgress:SetVisible(busy and hasProgress)
+    workProgress:SetValue(busy and fractionDone or 0)
     local t = math.min(1, math.max(0, (time.elapsedTime - state.openTime) / 0.18))
     local scale = t * (1 + 0.08 * math.sin(t * math.pi))
     if scale <= 0.01 then return end
     nvgSave(vg)
     nvgTranslate(vg, D.cx, D.cy); nvgScale(vg, scale * 0.8, scale * 0.8)
     nvgTranslate(vg, D.x - D.cx, D.y - D.cy)
-    Surface.draw(root, vg, D.w, D.h)
+    local drawRoot = root --[[@as Panel]]
+    Surface.draw(drawRoot, vg, D.w, D.h)
     local fraction = limit > 1 and (state.count - 1) / (limit - 1) or 0
     nvgBeginPath(vg); nvgRoundedRect(vg, 275, 928, 400, 24, 12)
     nvgFillColor(vg, nvgRGBA(75, 65, 50, 255)); nvgFill(vg)
@@ -340,8 +398,36 @@ function M.draw(vg)
     nvgRestore(vg)
 end
 
+-- 专属等待帧也服务旧入口/外部关页；不打开页面、不认领旧任务、不读预估或玩家档。
+function M.drawPending(vg)
+    local busy, work = sweepWork()
+    if not busy then return end
+    if state.open then M.draw(vg); return end
+    if I18n.get() ~= lastLanguage then destroyTree(); lastLanguage = I18n.get() end
+    if not pendingTree then
+        Surface.init()
+        pendingTree = UI.Panel { width = 820, height = 220, backgroundColor = { 25, 22, 19, 250 },
+            borderWidth = 3, borderColor = C.border, borderRadius = 18 }
+        pendingLabel = label("处理中", 35, 32, 750, 30, C.gold)
+        pendingTree:AddChild(pendingLabel)
+        pendingProgress = progressBar(35, 112, 750, C.gold)
+        pendingTree:AddChild(pendingProgress)
+        pendingTree:AddChild(label("扫荡处理中，请稍候", 35, 145, 750, 24, C.dim))
+    end
+    local status, fraction, hasProgress = workStatus(work)
+    pendingLabel:SetText(status)
+    pendingProgress:SetValue(fraction)
+    pendingProgress:SetVisible(hasProgress)
+    nvgSave(vg)
+    nvgTranslate(vg, D.cx - 328, D.cy - 88)
+    nvgScale(vg, 0.8, 0.8)
+    Surface.draw(pendingTree, vg, 820, 220)
+    nvgRestore(vg)
+end
+
 function M.handleInput(x, y)
     if not state.open then return false end
+    if sweepWork() then state.sliderDragging = false; return true end
     x, y = designPoint(x, y)
     if inside(x, y, D.x + 870, D.y + 57.5, 70, 65) then M.close(); return true end
     state.count = math.max(1, math.min(state.count, math.max(1, maxCount())))
@@ -363,8 +449,19 @@ function M.handleInput(x, y)
     if inside(x, y, 540, D.confirmY, 410, 100) then
         refresh()
         if state.preview and maxCount() >= state.count then
+            requestSequence = requestSequence + 1
+            local requestId = "sweep-ui:" .. tostring(requestSequence)
+            state.requestId, state.failure, state.sliderDragging = requestId, "", false
             BF.trigger("sweep_dlg_confirm")
-            if M.onSweep then M.onSweep(state.count, state.teamIdx, state.stageId) end
+            local ok, accepted = pcall(function()
+                if not M.onSweep then return false end
+                return M.onSweep(state.count, state.teamIdx, state.stageId, requestId)
+            end)
+            -- 业务失败回执可能同步返回；不能覆盖它的理由或误清回调里新开的页面。
+            if state.open and state.requestId == requestId and (not ok or accepted == false) then
+                state.requestId, state.failure = nil, "扫荡请求未受理，请重试"
+                if not ok then print("[SweepDialog] 请求异常: " .. tostring(accepted)) end
+            end
         else print("[SweepDialog] 拒绝扫荡: " .. state.reason) end
         return true
     end
@@ -374,6 +471,7 @@ end
 
 function M.handleDragBegin(x, y)
     if not state.open then return false end
+    if sweepWork() then state.sliderDragging = false; return true end
     x, y = designPoint(x, y)
     if maxCount() > 1 and inside(x, y, 540, D.stepY, 436, 56) then
         state.sliderDragging = true; sliderCount(x)
@@ -381,6 +479,7 @@ function M.handleDragBegin(x, y)
     return true
 end
 function M.handleDragMove(x, _y)
+    if sweepWork() then state.sliderDragging = false; return state.open end
     if not state.sliderDragging then return false end
     local dx = D.cx + (x - D.cx) / 0.8
     sliderCount(dx); return true

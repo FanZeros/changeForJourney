@@ -589,6 +589,9 @@ function Standalone.Start()
 end
 
 function Standalone.Stop()
+    LocalActionBridge.cancelSweep("stop")
+    SweepDialog.close()
+    require("ui.battle.combat.BattleClock").setPaused(false)
     LocalActionBridge.cancelQuickEquip()
     require("ui.loot.InventoryCurationDialog").reset()
     require("rules.equipment.InventoryCurationService").Cleanup(1)
@@ -911,6 +914,9 @@ Standalone.cancelOpening = cancelOpening_
 --- 清除存档后重置客户端状态并回到开始界面
 --- 由 DebugPanel 的 reset_save 处理器调用
 function Standalone.requestResetToStartScreen()
+    LocalActionBridge.cancelSweep("reset")
+    SweepDialog.close()
+    require("ui.battle.combat.BattleClock").setPaused(false)
     LocalActionBridge.cancelQuickEquip()
     require("ui.loot.InventoryCurationDialog").reset()
     require("rules.equipment.InventoryCurationService").Cleanup(1)
@@ -1051,6 +1057,13 @@ end
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
     local dt = eventData["TimeStep"]:GetFloat()
+    -- 扫荡私有生成独占共享 RNG：必须先 pump 再 return，而非在入口饿死 worker。
+    -- 连同完成当帧也不运行存档/战斗/剧情/抽卡/音频与特效 Update；Render 仍独立呈现进度。
+    if LocalActionBridge.isSweepPending() then
+        require("ui.battle.combat.BattleClock").setPaused(true)
+        LocalActionBridge.updateSweep()
+        return
+    end
     -- UI/回执仍用真实时间；先冻结战斗绝对时钟，标题/开场提前返回也不补暂停时长。
     SidePanelBattlePause.refresh()
     -- 遮挡只冻结战力表现；在异步提交/Store回执前同步，不错过首次通知。

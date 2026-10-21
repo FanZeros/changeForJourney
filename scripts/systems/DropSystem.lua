@@ -87,7 +87,7 @@ local function rollQualityByStage(qw, minQuality)
     if total <= 0 then return minQuality or 1 end
 
     -- 首通仍只借原四档权重/最低品质，同一品质骰加入至臻尾部，不加额外判定。
-    local probabilities = { 0, 0, 0, 0, 0, 0 }
+    local probabilities = { 0, 0, 0, 0, 0, 0 } ---@type number[]
     for q = 1, 4 do
         local quality = math.max(minQuality or 1, q)
         probabilities[quality] = probabilities[quality] + (qw[q] or 0) / total
@@ -141,7 +141,7 @@ end
 ---@return number[] probabilities
 function DropSystem.getMonsterQualityProbabilities(monsterQuality, difficulty, luck, cap, sourceRed)
     local weights, total = DropSystem.getQualityWeights(monsterQuality, difficulty, luck)
-    local probabilities = { 0, 0, 0, 0, 0, 0 }
+    local probabilities = { 0, 0, 0, 0, 0, 0 } ---@type number[]
     if total <= 0 then probabilities[1] = 1
     else
         for q = 1, 6 do
@@ -213,7 +213,7 @@ function DropSystem.getStageQualityProbabilities(stageEntry, luck, raw)
     for _, id in ipairs(stageEntry.monsters or {}) do pool[#pool + 1] = id end
     if (stageEntry.bossId or 0) > 0 then pool[#pool + 1] = stageEntry.bossId end
     if #pool == 0 then pool[1] = 0 end
-    local probabilities = { 0, 0, 0, 0, 0, 0 }
+    local probabilities = { 0, 0, 0, 0, 0, 0 } ---@type number[]
     local difficulty = stageEntry.difficulty or StageConfig.getDifficulty(stageEntry.sourceStageId or stageEntry.id)
     local cap = StageConfig.getMaxDropQuality(stageEntry)
     for _, monsterId in ipairs(pool) do
@@ -276,7 +276,9 @@ function DropSystem.rollKillDrop(stageEntry, context)
     local maxQ = StageConfig.getMaxDropQuality(stageEntry)
     local rawProbabilities = DropSystem.getStageQualityProbabilities(stageEntry, luck, true)
     local quality = DropSystem.rollQualityByMonster(monsterQ, difficulty, luck, maxQ, rawProbabilities[6])
-    print(string.format("[DropSystem] rollKillDrop: HIT roll=%.4f monsterQ=%d → equipQ=%d (cap=%d luck=%.2f)", roll, monsterQ, quality, maxQ, luck))
+    if not (context and context.silent) then
+        print(string.format("[DropSystem] rollKillDrop: HIT roll=%.4f monsterQ=%d → equipQ=%d (cap=%d luck=%.2f)", roll, monsterQ, quality, maxQ, luck))
+    end
     return quality
 end
 
@@ -355,8 +357,9 @@ end
 
 --- 判定一次击杀是否掉落卷轴
 ---@param stageEntry StageEntry 关卡配置条目
+---@param options table|nil silent仅关闭本次日志，不改变随机判定
 ---@return string|nil scrollType 卷轴类型字符串，nil=未掉落
-function DropSystem.rollScrollDrop(stageEntry)
+function DropSystem.rollScrollDrop(stageEntry, options)
     local rate = stageEntry.scrollDropRate or 0
     if rate <= 0 then return nil end
 
@@ -364,7 +367,9 @@ function DropSystem.rollScrollDrop(stageEntry)
     if roll > rate then return nil end
 
     local scrollType = randomScrollType()
-    print(string.format("[DropSystem] rollScrollDrop: HIT! roll=%.4f <= rate=%.4f, type=%s", roll, rate, scrollType))
+    if not (options and options.silent) then
+        print(string.format("[DropSystem] rollScrollDrop: HIT! roll=%.4f <= rate=%.4f, type=%s", roll, rate, scrollType))
+    end
     return scrollType
 end
 

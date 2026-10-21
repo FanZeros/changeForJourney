@@ -1,3 +1,11 @@
+## 十万次扫荡分帧与统一到账（2026-10-21，本地完成）
+
+- 用户明确选择“分帧，最后统一到账”；独立 `perf1021/sweep-large-batch` 固定最新 `workspace1005@a590320d`，本轮仅本地实现／测试／官方构建，无commit/push/PR/合并发布授权，HEAD/index保持。持续推进授权范围并尊重停止、权限拒绝和安全边界；当前要求直接继续不机械提问，不推workspace系列／强推／自动合并发布。不读玩家档／凭据、不pop旧stash，不混原.gitignore／上传／无关meta／本地.project／内证，凭据不持久化。
+- 私有快照分帧生成／分类，原逐杀RNG顺序／完整装备／自动分解／整次事务保持；请求级缓存确定配置、单次库存计数和汇总日志。Bridge单任务＋请求身份／epoch／refs／revision与最终完整值校验，等待暂停背景战斗和冲突输入，真实UI显示生成进度；最后无yield一次扣券／发奖／保存，失败原位恢复。到账后CMH包装和稳定排序分帧，opaque token一次消费；展示异常先释放所属请求身份、明示已到账，不伪报重试。取消不回滚已消费RNG，不跨进程恢复。
+- 官方b32成功，704根Lua实际UUID-hash载荷704/704逐字节与声明size一致，三新meta一致、源冻结不变、内部验证0入包，两.project与本轮before逐字节恢复。21任务Lua中19逐文件Error0，两宿主8条旧诊断源行同HEAD；官方daemon unavailable/code1跳过全仓gate、headless环境错误保留。候选3312路径20旧规范问题同基线、新增0，36规范单测过；不称全仓／设备／GPU／性能全绿。
+- 固定旧源oracle215组32485746断言、四关各100k自然RNG5组67179266断言、十万项展示522092、真实Bridge小连链1093、构建后UI16组5732／宿主87与真UI/Yoga/Surface等待209／12渲染帧均ALL PASS／actualexit0／无timeout。小链完整Popup.show/showNow实际消费token，v4 Registry替身／1093断言、v5真实Registry及Schema／689断言均实际ALL PASS／exit0，断言数随yield帧数变化；PDM／Store／Dispatcher／Save仍为明确内存边界、页面释放为spy，等待树Bridge为状态stub，三种覆盖分别留证。ticket7组70、resource compat46439、切关亦通过。原完整扫荡test与固定a590各102组97过5失败／51377断言，失败完整文本及重数一致、新增0，未改旧200容量断言；资源rules旧28/12亦基线同现，overflow受封闭业务File仅11/19未完成、不计通过。原quick-v2／large-v1超时与夹具失败保留，不降低断言、不开放玩家档。
+- 真实尾段Registry／Schema各4次onLoad＋内存cjson 21139649字节，主线100k自然49765装备prepare CPU8.206秒、commit0.826秒（内含编码0.641秒）；非完整StandaloneSave／真实磁盘／WASM测量。4ms仅软预算，最终核对／交付／规范化／编码／保存／通知仍同步，不称十万全面不卡。全部704源与b32最终冻结一致，内证仅 `.git/validation/sweep1021`，未提交推送。
+
 ## 离线经验布局与慢动画（2026-10-17，已push并创建 PR #164）
 
 - 用户提供PAT授权“pr下”；功能提交 `b692aef4`＋合并提交 `d616c601`（无冲突合入 `workspace1005@5514b104`含PR163）已push `fix1017/offline-exp-layout`，远端SHA与本地一致。正式 **PR #164** https://github.com/FanZeros/changeForJourney/pull/164，head任务分支／base=workspace1005，open/draft=false/merged=false/mergeable=true(clean)，7文件+904/−117，未自动合并发布；创建前同源open PR=0。凭据经 `-c credential.helper= -c http.extraheader` 一次性进程内鉴权，不写remote/Git配置/源码/日志/记忆；本地config既有 `credential.helper=store` 未用未改，建议撤销轮换。不混 `.gitignore`（任务前既有）／`.agent`／`_uploads`／repair meta／`standalone_save.json`（未读）。

@@ -14,6 +14,7 @@ local ExpTable      = require("config.ExpTable")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local DungeonConfig = require("config.DungeonConfig")
 local DungeonRewards = require("ui.dungeon.DungeonRewards")
+local resourceSweep = DungeonRewards.newSweepIdentity()
 
 local DungeonPage = {}
 
@@ -281,38 +282,11 @@ local function getFloorRewards(dungeonId, floor)
     return 0, 0
 end
 
---- 预览当前副本可领取挂机奖励
----@param dungeonId string
----@return number amount
----@return number accumSec
 local function getIdleClaimPreview(dungeonId)
-    local dungeon = PlayerStore.Get("dungeon")
-    if not dungeon then return 0, 0 end
-    local sub = dungeon[dungeonId]
-    if not sub then return 0, 0 end
-    local idleFloor = DungeonIdleConfig.getIdleFloorFromSub(sub, dungeonId)
-    local accumSec = sub.idleAccumSec or 0
-    local amount = DungeonIdleConfig.calcReward(dungeonId, idleFloor, accumSec, sub.idleConsumedSec)
-    return amount, accumSec
+    return DungeonRewards.idleClaimPreview(dungeonId, PlayerStore.Get("dungeon"))
 end
-
-local function getIdleMaxHourText()
-    local hours = math.floor((DungeonIdleConfig.FULL_RATE_SEC or 0) / 3600 + 0.5)
-    return tostring(hours) .. "h"
-end
-
---- 格式化挂机累积时长（显示用，不截断）
----@param sec number
----@return string
-local function formatIdleDuration(sec)
-    sec = math.floor(tonumber(sec) or 0)
-    local h = math.floor(sec / 3600)
-    local m = math.floor((sec % 3600) / 60)
-    if h > 0 then
-        return string.format("%d:%02d", h, m)
-    end
-    return tostring(m) .. "分"
-end
+local getIdleMaxHourText = DungeonRewards.idleMaxHourText
+local formatIdleDuration = DungeonRewards.formatIdleDuration
 
 --- 判断副本是否已解锁
 ---@param dungeonId string
@@ -610,6 +584,7 @@ end
 function DungeonPage.close()
     clearPendingChallenge()
     pendingSweep, pendingSweepTime = false, 0
+    resourceSweep.clear()
     pendingIdleClaim, pendingIdleClaimTime = false, 0
     detailOpen, detailDungeon, detailTeamIdx = false, nil, nil
 end
@@ -1104,7 +1079,7 @@ function DungeonPage.update(dt)
             clearPendingChallenge()
         end
     end
-    if pendingSweep then
+    if pendingSweep and not resourceSweep.isPending() then
         pendingSweepTime = pendingSweepTime + dt
         if pendingSweepTime >= PENDING_TIMEOUT then pendingSweep, pendingSweepTime = false, 0 end
     end
@@ -1190,10 +1165,13 @@ function DungeonPage.handleInput(dx, dy)
                     local teamIdx = detailTeamIdx or require("ui.character.panel.CharacterPanel").getActiveTeamIdx()
                     -- 资源兼容入口同样一券一场；显式冻结最高已通层，不靠处理时再猜。
                     local params = { dungeonId = dId, teamIdx = teamIdx }
-                    if resourceDungeon then params.count, params.floor = 1, highest end
-                    require("runtime.GameAction").sendAction(
-                        Protocol.ACTION_TYPES.DUNGEON_SWEEP, params
-                    )
+                    if resourceDungeon then
+                        params.count, params.floor = 1, highest
+                        resourceSweep.send(params, function(request)
+                            return require("runtime.GameAction").sendAction(Protocol.ACTION_TYPES.DUNGEON_SWEEP, request)
+                        end)
+                        pendingSweep = resourceSweep.isPending()
+                    else require("runtime.GameAction").sendAction(Protocol.ACTION_TYPES.DUNGEON_SWEEP, params) end
                 end
             end
             return true
@@ -1276,19 +1254,20 @@ end
 function DungeonPage.onActionResult(data)
     local action = data.action
 
+    -- 资源兼容入口由请求身份单独清理；旧遗迹/塔仍走原回执路径。
+    if action == Protocol.ACTION_TYPES.DUNGEON_SWEEP and DungeonConfig.isResourceDungeon(data.dungeonId) then
+        if not resourceSweep.consume(data) then return end
+        pendingSweep, pendingSweepTime = false, 0
+        if data.success and detailOpen and detailDungeon and detailDungeon.id == data.dungeonId then
+            leaveDungeonPageForReward()
+        end
+        return
+    end
     -- 扫荡结果
     if action == Protocol.ACTION_TYPES.DUNGEON_SWEEP then
         pendingSweep, pendingSweepTime = false, 0
         if data.success then
             local dId = data.dungeonId or "gold_mine"
-            if DungeonConfig.isResourceDungeon(dId) then
-                -- 新资源回执由 ClientMessageHandler 一次展示完整奖励与经验。
-                -- 先关闭遮挡副本页；不再更新旧日次，也不重复打开奖励弹窗。
-                local overflow = DungeonRewards.overflowText(data)
-                if overflow then toast(overflow) end
-                leaveDungeonPageForReward()
-                return
-            end
             print("[DungeonPage] SWEEP OK: floor=" .. tostring(data.sweepFloor)
                 .. " gold=" .. tostring(data.gold)
                 .. " dust=" .. tostring(data.dust)

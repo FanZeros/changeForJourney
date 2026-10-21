@@ -57,4 +57,56 @@ function M.rewardLabel(dungeonId)
     return "金币"
 end
 
+local DungeonIdleConfig = require("config.DungeonIdleConfig")
+
+-- 每个页面实例自己的请求槽；关闭即释放，不让迟到回执清新页面的pending。
+function M.newSweepIdentity()
+    local sequence, active = 0, nil ---@type integer, table?
+    return {
+        clear = function() active = nil end,
+        isPending = function() return active ~= nil end,
+        send = function(params, send)
+            if active then return false end
+            sequence = sequence + 1
+            params.sweepRequestId = "dungeon-sweep:" .. tostring(sequence)
+            local request = { id = params.sweepRequestId, dungeonId = params.dungeonId,
+                teamIdx = params.teamIdx, floor = params.floor }
+            active = request
+            local called, accepted = pcall(send, params)
+            if not called or accepted == false then
+                if active == request then active = nil end
+                return false
+            end
+            return true
+        end,
+        consume = function(data)
+            local request = active
+            if not request or data.sweepRequestId ~= request.id or data.dungeonId ~= request.dungeonId
+                or (data.teamIdx ~= nil and data.teamIdx ~= request.teamIdx)
+                or (data.sweepFloor ~= nil and data.sweepFloor ~= request.floor) then return false end
+            active = nil
+            return true
+        end,
+    }
+end
+
+function M.idleClaimPreview(dungeonId, dungeon)
+    local sub = dungeon and dungeon[dungeonId]
+    if not sub then return 0, 0 end
+    local idleFloor = DungeonIdleConfig.getIdleFloorFromSub(sub, dungeonId)
+    local accumSec = sub.idleAccumSec or 0
+    return DungeonIdleConfig.calcReward(dungeonId, idleFloor, accumSec, sub.idleConsumedSec), accumSec
+end
+
+function M.idleMaxHourText()
+    return tostring(math.floor((DungeonIdleConfig.FULL_RATE_SEC or 0) / 3600 + 0.5)) .. "h"
+end
+
+function M.formatIdleDuration(sec)
+    sec = math.floor(tonumber(sec) or 0)
+    local h, m = math.floor(sec / 3600), math.floor((sec % 3600) / 60)
+    if h > 0 then return string.format("%d:%02d", h, m) end
+    return tostring(m) .. "分"
+end
+
 return M

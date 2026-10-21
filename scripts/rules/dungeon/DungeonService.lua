@@ -58,6 +58,15 @@ local function markDirty(uid, name)
     else PDM.MarkDirty(uid, name) end
 end
 
+--- 只读预检：私有扫荡准备前失败应零RNG；最终事务仍再次检查，不以预检替代锁。
+---@param uid number
+---@return boolean, string|nil
+function DungeonService.CanCommitRewardTransaction(uid)
+    if transactions[tostring(uid)] then return false, "副本结算处理中" end
+    if type(persist_) ~= "function" then return false, "副本持久化未接线" end
+    return true
+end
+
 --- 奖励、计数、积累一起提交；异常/false/nil 均回滚，成功后才通知和消费挑战。
 ---@param uid number
 ---@param operation fun(): boolean, string|nil, table|nil

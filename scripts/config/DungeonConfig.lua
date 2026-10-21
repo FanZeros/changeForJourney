@@ -8,6 +8,7 @@ local DungeonConfig = {}
 -- ======================== 职业增益循环 ========================
 
 --- 职业增益类型（每5层循环: 战士→法师→射手→刺客→牧师）
+---@type string[]
 DungeonConfig.CLASS_BONUS_CYCLE = {
     "spoil",     -- 拾骸者（原战士）
     "rift",      -- 裂隙使（原法师）
@@ -24,7 +25,9 @@ DungeonConfig.CLASS_BONUS_VALUE = 0.20  -- +20% 伤害/治疗
 ---@return string 职业标识
 function DungeonConfig.getClassBonus(floor)
     local idx = ((floor - 1) % 5) + 1
-    return DungeonConfig.CLASS_BONUS_CYCLE[idx]
+    local bonus = DungeonConfig.CLASS_BONUS_CYCLE[idx]
+    ---@cast bonus string
+    return bonus
 end
 
 -- ======================== 狂暴机制 ========================
@@ -771,9 +774,62 @@ function DungeonConfig.getStageScrollEstimate(stageId, kills)
     return estimate
 end
 
+-- 请求级逐杀上下文：只缓存确定配置，不缓存/预取随机结果。
+-- 原 getStageRewards 保持独立实现；同关反复击杀可复用此闭包，骰序完全相同。
+---@param stageId number
+---@param kills number
+---@param heroCount number|nil
+---@return function
+function DungeonConfig.createStageRewardsContext(stageId, kills, heroCount)
+    local id, floor = DungeonConfig.decodeStageId(stageId)
+    local valid = id ~= nil and (tonumber(kills) or 0) > 0
+    local exp = valid and DungeonConfig.getStageExpAmount(stageId, kills) or 0
+    local multiplier = require("config.ExpTable").getHeroCountExpMult(heroCount or 1)
+    local heroExp = math.floor(exp * multiplier + 0.5)
+    local raw = valid and DungeonConfig.getStageRewardAmount(stageId, kills) or 0
+    local data = id == "equipment_vault" and DungeonConfig.getFloor(id, floor) or nil
+    local scrollRate, ticketRate = 0, 0
+    if id == "equipment_vault" then scrollRate, ticketRate = DungeonConfig.getEquipDropRates(floor) end
+    local killsN = math.max(0, tonumber(kills) or 0)
+    local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
+    local function rollCount(rate)
+        local rawCount = killsN * rate
+        local amount = math.floor(rawCount)
+        if math.random() < rawCount - amount then amount = amount + 1 end
+        return amount
+    end
+    return function()
+        local rewards = { gold = 0, diamond = 0, adventureExp = 0, adventurerExp = 0, equipSeeds = {}, scrollDrops = {} }
+        if not valid then return rewards end
+        rewards.adventureExp, rewards.adventurerExp = exp, heroExp
+        local amount = math.floor(raw)
+        -- 即使小数部分为零，仍保留原来的一次判定骰。
+        if math.random() < raw - amount then amount = amount + 1 end
+        if id == "gold_mine" then rewards.gold = amount
+        elseif id == "black_diamond" then rewards.diamond = amount
+        elseif id == "equipment_vault" then
+            for _ = 1, amount do
+                rewards.equipSeeds[#rewards.equipSeeds + 1] = {
+                    stageId = stageId, count = 1, level = data.equipLevel,
+                    quality = require("systems.DropSystem").rollQualityByProbabilities(data.equipQualityProbabilities),
+                }
+            end
+            -- 必须先完成所有品质骰，再卷轴数量/类型，最后券数量；装备生成在调用方其后。
+            for _ = 1, rollCount(scrollRate) do
+                local key = scrollTypes[math.random(1, #scrollTypes)]
+                rewards.scrollDrops[key] = (rewards.scrollDrops[key] or 0) + 1
+            end
+            local tickets = rollCount(ticketRate)
+            if tickets > 0 then rewards.scrollDrops.sweepTicket = tickets end
+        end
+        return rewards
+    end
+end
+
 -- 在线每次击杀与离线固定杀怪效率复用原每分钟收益，不把一次扫荡变为无限波大奖。
 ---@param heroCount number|nil 实际领取队伍人数，旧调用默认一人
-function DungeonConfig.getStageRewards(stageId, kills, heroCount)
+function DungeonConfig.getStageRewards(stageId, kills, heroCount, context)
+    if context then return context() end
     local id, floor = DungeonConfig.decodeStageId(stageId)
     local rewards = { gold = 0, diamond = 0, adventureExp = 0, adventurerExp = 0, equipSeeds = {}, scrollDrops = {} }
     if not id or (tonumber(kills) or 0) <= 0 then return rewards end

@@ -1,4 +1,6 @@
-## 扫荡优化PR推进（2026-10-21）
+## 扫荡优化 PR #180 已创建（2026-10-21）
+
+- **已正常push并创建正式PR #180**：https://github.com/FanZeros/changeForJourney/pull/180，head=`perf1021/sweep-large-batch@69be6a7a`／base=`workspace1005@548fc57a`，创建时open／draft=false／merged=false／mergeable未计算；push及ls-remote实际exit0，远端SHA一致。29白名单+2166/−236，不推基线、不强推、不自动合并发布，不夹原.gitignore／上传／玩家档／本地.project／内部验证；下方尚未push／PR为此前记录。
 
 - 最新用户“做pr”授权提交／正常push独立 `perf1021/sweep-large-batch`／创建workspace1005 PR，不推基线、不强推、不自动合并发布。功能提交 `8d1484a3`（29白名单）与融合 `31553588` 已完成，目标 `548fc57a` 的CE／推荐战力／酒馆更新保留；仅交接冲突双方保留，不夹原.gitignore／玩家档／上传／本地.project／内部验证。下方无提交授权是此前记录，不覆盖最新授权。
 - 融合官方b33成功，705根Lua实际载荷bytes／size705/705、三新meta一致、源冻结不变、内部验证及审核候选0入包，两.project逐字节恢复；两个重叠Lua逐文件无severity1 Error，不称全仓清零。b33后七独立Runtime实际ALL PASS／actualexit0／无timeout：真实小连链v5三组721（87/129/91pump、save/token/receipt各1）、Bridge87、UI16组5732、十万项展示522092、资源compat46439、切关与真实等待树209／12Render。小链保存内存／页面释放spy、UI16控件树spy与真UI/Yoga/Surface等待分别留证，不代完整Boot／GPU／触控／磁盘验收。相对最新目标3314路径20旧规范问题、新增0，36规范单测过。旧215组及四100k oracle只按b32原同源结果报告，不伪称融合后全量重跑。尚未push或创建PR，实际成功后补记。

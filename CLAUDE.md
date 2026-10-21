@@ -12,7 +12,9 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
-## 上次做了什么（2026-10-21，扫荡批量概率抽样，PR推进中）
+## 上次做了什么（2026-10-21，扫荡批量概率抽样 PR #181 已创建）
+
+- **已正常push并创建正式PR #181**：https://github.com/FanZeros/changeForJourney/pull/181，head=`perf1021/sweep-batch-sampling@4ac268a8`／base=`workspace1005@f44d97a1`，创建时open/draft=false/merged=false。13白名单文件+1586/−147，push与ls-remote实际exit0、远端SHA一致，未推workspace系列/强推/自动合并或发布；本地原.gitignore/上传/玩家档/无关meta与内部证据未纳入。鉴权经标准credential接口返回值进程内一次性使用，未写入remote/Git配置/源码/日志或记忆。下方“成功后补”为此前过程记录。
 
 - 用户明确不必逐场计算并要求完成PR；PR180已由外部合并，基于最新 `workspace1005@f44d97a1` 新建 `perf1021/sweep-batch-sampling`。本轮允许改变旧随机序列：二项批量计数、资源整数部分加二项尾数、六类卷轴条件多项分配；完整装备仍逐件原生成器、原顺序分类与有限仓位/遗匣交付，不用期望数量替代实物。幸运/怪池/Boss/品质cap/红尾及原私有分帧、取消、校验和一次到账事务保持。数学分布受双精度及离散RNG边界限制，不承诺旧同seed装备/RNG消费一致。
 - 官方b34成功，708根Lua实际载荷逐字节/声明size708/708一致，三新meta一致、内部验证/审核候选0入包，两.project与本轮构建前逐字节恢复、源冻结不变。任务Lua逐文件severity1 Error0（仍有Warning）；全仓缓存874 Error未混修，不称全仓清零。规范36单测通过，候选3320路径20旧问题、新增0。

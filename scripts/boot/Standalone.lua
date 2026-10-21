@@ -114,6 +114,12 @@ local entryPrepared_ = false
 ---@type function|nil
 local firstStageStep_ = nil
 
+--- CE 发奖仅在真实开场/离线初算完成后开放，不以面板可见作为就绪依据。
+function Standalone.isRewardReady()
+    return bootReady_ and postStartFlowDone_ and StandaloneRT.entryRendered == true
+        and not StandaloneRT.entryPreparing and not StandaloneRT.entryError
+end
+
 local function pumpBootQueue_()
     if not bootQueue_ or StandaloneRT.bootError or not StandaloneRT.bootRendered then return end
     -- 整个init可在真实图片缓存未命中时让出；缓存命中不占解码额度。
@@ -257,6 +263,7 @@ local function SyncBattleState(dt)
     candidate.clearedStages = mergedCleared
     local liveTeams = BattleTriPage.getTeamStageIds()
     if type(liveTeams) == "table" then
+        ---@cast liveTeams table
         local savedTeams = type(battle.teamStageIds) == "table" and battle.teamStageIds or {}
         local ids = {}
         for team = 1, 3 do

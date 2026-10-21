@@ -1,10 +1,16 @@
 -- 塔三栏布局/正式宿主输入专项；基于既有Start+cache资源加载+隔离env范式。
 -- 执行完整生产Layout/Sidebar/Scene/Tri/Input；UI树为显式CPU替身，不冒称真实Yoga/GPU。
 -- 不加载main、不读玩家存档、不发Action、不调用随机数；规则专项另外独立保留。
+-- -dungeon-default-only：仅新增默认定位专项；省略flag仍执行全部旧case与新case。
+-- 统一build后在既有隔离cwd运行；本专项从cache:GetFile白名单读完整生产源码，不读源码绝对路径。
 function Start()
     assert(fileSystem:GetCurrentDir():gsub("/+$", "") == "/home/Maker/game4-validation/stage-regression",
         "isolated stage regression cwd required")
     local TAG = "[tower_layout_integration_test] "
+    local dungeonDefaultOnly = false
+    for _, argument in ipairs(GetArguments()) do
+        if argument == "-dungeon-default-only" then dungeonDefaultOnly = true end
+    end
     local checks, cases, failures = 0, 0, 0
     local sources = {}
     local function check(value, message)
@@ -43,6 +49,7 @@ function Start()
         return chunk()
     end
     local function runCase(name, fn)
+        if dungeonDefaultOnly and name:sub(1, 16) ~= "dungeon default " then return end
         cases = cases + 1
         local ok, err = xpcall(fn, debug.traceback)
         if ok then print(TAG .. "PASS " .. name)
@@ -595,6 +602,14 @@ function Start()
             mod.isOpen=function()return c.overlays[path]==true end
             mod.isActive=mod.isOpen
         end
+        -- 本专项的RewardPopup只模拟既有小奖励遮挡；大型奖励不打开。
+        -- 使用真实RewardGesture.bindHost，不能让generic.bindHost返回boolean掩盖依赖契约。
+        mods["ui.hud.popup.RewardPopup"].isLarge=function()return false end
+        mods["ui.hud.popup.RewardPopup"].getPresentationVersion=function()return 1 end
+        mods["ui.hud.popup.RewardPopup"].cancelDrag=noop
+        mods["ui.hud.popup.RewardPopup"].handleLargePointer=function()
+            error("large reward pointer is outside tower host fixture")
+        end
         mods["ui.hud.BottomNav"].getSelectedIndex=function()return 3 end
         mods["ui.character.panel.CharacterPanel"].handleDragEnd=noop
         mods["ui.battle.tri.BattleTriPage"].handleScroll=function()c.ordinary=c.ordinary+1;return false end
@@ -620,6 +635,7 @@ function Start()
             rawset(t,key,value)
         end})
         mods["boot.DecomposeMarqueeGesture"] = compile("boot/DecomposeMarqueeGesture.lua",env)
+        mods["boot.RewardGesture"] = compile("boot/RewardGesture.lua",env)
         mods["boot.StandaloneHorizonWheel"] = compile("boot/StandaloneHorizonWheel.lua",env)
         local inputMod=compile("boot/StandaloneHorizonInput.lua",env)
         inputMod.bind(ctx)
@@ -831,7 +847,8 @@ function Start()
         mods["core.I18nTower"]=compile("core/I18nTower.lua",env)
         mods["ui.tower.TowerPresentation"]=compile("ui/tower/TowerPresentation.lua",env)
         mods["core.DrawUtil"].drawTextStroke=function(_,_,_,text,_,_,r,g,b)
-            stat.hudText,stat.hudColor=text,{r,g,b}
+            local color = {r,g,b} ---@type number[]
+            stat.hudText,stat.hudColor=text,color
         end
         mods["ui.battle.popup.BattleResultPanel"].isOpen=function()return false end
         local dungeon=mods["ui.dungeon.DungeonBattle"]
@@ -870,6 +887,313 @@ function Start()
         tri.handleClick(d.retreat.x+90,d.retreat.y+28,1280,800)
         eq(s.phase,"lose","left retreat original defeat phase")
         eq(stat.defeats,1,"left retreat existing defeat exactly once")
+    end)
+    -- 默认定位独立fixture：只执行完整Dialog/Resources/Overview及只读配置。
+    -- Overview收益计算为显式纯内存spy，不加载真实OfflineService/玩家档/战斗驱动。
+    local function dungeonDefaultFixture()
+        local allowed = {}
+        for _, name in ipairs({ "GameConfig", "StageConfig", "DungeonConfig", "DungeonIdleConfig",
+            "StageRecommendPower", "StageExpHelper", "IdleIncomeConfig", "ExpTable", "TowerConfig", "ResourceDefs" }) do
+            allowed["config." .. name] = "config/" .. name .. ".lua"
+        end
+        for _, suffix in ipairs({ "Normal", "Hard", "Nightmare", "Hell", "Purgatory", "Torment", "Torment2",
+            "Torment3", "Torment4", "Torment5", "Annihilation", "Annihilation2", "Annihilation3",
+            "Annihilation4", "Annihilation5" }) do
+            allowed["config.StageConfig_" .. suffix] = "config/StageConfig_" .. suffix .. ".lua"
+        end
+        for _, name in ipairs({ "StageSelectDialog", "StageSelectResources", "ExpeditionOverview" }) do
+            allowed["ui.battle.stage." .. name] = "ui/battle/stage/" .. name .. ".lua"
+        end
+        local stat = { io = 0, rng = 0, actions = 0, gotos = 0, notifications = 0, depth = 0,
+            preview = 0, loaded = {}, text = {}, plain = {} } ---@type any
+        local function denied() stat.io = stat.io + 1; error("default-target native IO/event forbidden") end
+        local env = { assert = assert, error = error, type = type, tonumber = tonumber, tostring = tostring,
+            pairs = pairs, ipairs = ipairs, next = next, select = select, pcall = pcall,
+            setmetatable = setmetatable, getmetatable = getmetatable, rawget = rawget,
+            math = copy(math), table = copy(table), string = copy(string), utf8 = utf8,
+            print = noop, time = { elapsedTime = 100 },
+            NVG_ALIGN_LEFT = NVG_ALIGN_LEFT, NVG_ALIGN_RIGHT = NVG_ALIGN_RIGHT,
+            NVG_ALIGN_CENTER = NVG_ALIGN_CENTER, NVG_ALIGN_MIDDLE = NVG_ALIGN_MIDDLE,
+            NVG_ALIGN_TOP = NVG_ALIGN_TOP, NVG_ALIGN_BOTTOM = NVG_ALIGN_BOTTOM }
+        env._G = env
+        env.math.random = function() stat.rng = stat.rng + 1; error("default-target RNG forbidden") end
+        env.math.randomseed = env.math.random
+        for _, key in ipairs({ "File", "GetFileSystem", "GetCache", "GetEngine", "loadfile", "dofile",
+            "SendEvent", "SubscribeToEvent" }) do env[key] = denied end
+        for _, key in ipairs({ "fileSystem", "cache", "engine", "io", "os", "package", "network",
+            "clientCloud", "serverCloud" }) do
+            env[key] = setmetatable({}, { __index = denied, __newindex = denied })
+        end
+        local c = { progress = { maxStageId = 2305, clearedStages = {} }, sceneMax = 2305,
+            dungeon = { gold_mine = { floor = 1, cleared = { ["51"] = true } },
+                equipment_vault = { floor = 1, cleared = { [51] = true } },
+                black_diamond = { floor = 1, cleared = { ["51"] = true } },
+                babel_tower = { floor = 1, cleared = { ["50"] = true } } },
+            teams = { 100001, 200001, 300001 },
+            heroes = { roster = {}, teams = {} }, stat = stat, vg = {}, env = env } ---@type any
+        for team = 1, 3 do
+            c.heroes.roster[team] = { level = 20 }
+            c.heroes.teams[team] = { slots = { team, 0, 0, 0 } }
+        end
+        local function business() stat.actions = stat.actions + 1; error("default-target action forbidden") end
+        local modules = {
+            ["runtime.ClientDispatcher"] = { get = function(key)
+                if key == "battle" then return c.progress end
+                if key == "dungeon" then return c.dungeon end
+                if key == "heroes" then return c.heroes end
+            end },
+            ["runtime.GameAction"] = { sendAction = business },
+            ["core.GameState"] = { getPower = function() return 100 end },
+            ["core.I18n"] = { get = function() return "zh_CN" end, lookup = function(s) return s end,
+                difficulty = function(s) return s end, format = function(s, ...) return string.format(s, ...) end },
+            ["core.NumberUtil"] = { format = tostring },
+            ["core.DarkIcon"] = { draw = noop, drawNine = noop, drawQualityBg = noop,
+                Palette = { GOLD_HI = { 255, 210, 90 }, BONE = { 240, 230, 210 }, BONE_DIM = { 160, 150, 130 } } },
+            ["core.DrawUtil"] = { drawTextStroke = function(_, x, y, text)
+                stat.text[#stat.text + 1] = { x = x, y = y, text = text }
+            end, drawImageCentered = noop, drawNineSlice = noop, drawImageCover = noop },
+            ["config.MonsterConfig"] = { MONSTERS = {}, getName = function() return "测试敌人" end,
+                getCardArtId = function(id) return id end },
+            ["systems.ButtonFeedback"] = { trigger = noop },
+            ["ui.battle.stage.BattleEnemySpawn"] = { getFirstClearBonusMonsterIds = function() return {} end },
+            ["ui.battle.stage.StageSelectRewardPreview"] = { init = noop, draw = noop },
+            ["ui.tower.TowerPresentation"] = { text = function(s, ...) return string.format(s, ...) end },
+            ["ui.hud.BottomNav"] = { isAllLocked = function() return false end, isTabLocked = function() return false end },
+            ["ui.dungeon.DungeonBattleScene"] = { isOpen = function() return false end },
+            ["ui.tower.TowerBattleScene"] = { isActive = function() return false end },
+            ["ui.character.panel.CharacterPanel"] = { getActiveTeamIdx = function() return 2 end },
+            ["ui.widget.HeroFrame"] = { initImages = noop, draw = noop },
+            ["systems.TutorialManager"] = { registerHotspot = noop, notifyEvent = function()
+                stat.notifications = stat.notifications + 1; error("tutorial progress forbidden")
+            end },
+            ["systems.DropSystem"] = { getStageQualityProbabilities = function() return { .2, .25, .2699, .25, .03, .0001 } end },
+            ["rules.offline.OfflineService"] = { PreviewTeamIncome = function(_, battle, dungeon, seconds)
+                stat.preview = stat.preview + 1
+                eq(seconds, 3600, "Overview preserves pure one-hour preview")
+                check(dungeon == c.dungeon, "Overview reads current ledger")
+                for team = 1, 3 do eq(battle.teamStageIds[tostring(team)], c.teams[team], "Overview current team snapshot") end
+                return { teamRewards = {}, gold = 0, diamond = 0 }
+            end },
+            ["ui.battle.tri.BattleTriPage"] = { getTeamStageId = function(team) return c.teams[team] end,
+                isTerminalRaidActive = function() return false end, gotoTeamStage = function()
+                    stat.gotos = stat.gotos + 1; error("default locate cannot goto")
+                end },
+            ["ui.battle.scene.BattleScene"] = { getStageId = function() return c.teams[1] end,
+                getMaxStageId = function() return c.sceneMax end,
+                getClearedStages = function() return c.progress.clearedStages end },
+        }
+        env.require = function(name)
+            if modules[name] then return modules[name] end
+            local path = assert(allowed[name], "default-target dependency denied " .. tostring(name))
+            stat.loaded[path] = true
+            local chunk, err = load(read(path), "@resource:" .. path, "t", env)
+            assert(chunk, err)
+            local result = chunk()
+            modules[name] = result
+            return result
+        end
+        env.nvgSave = function() stat.depth = stat.depth + 1 end
+        env.nvgRestore = function() stat.depth = stat.depth - 1; check(stat.depth >= 0, "default-target balanced parent state") end
+        for _, key in ipairs({ "nvgTranslate", "nvgScale", "nvgBeginPath", "nvgRect", "nvgRoundedRect",
+            "nvgFillColor", "nvgFill", "nvgStrokeColor", "nvgStroke", "nvgStrokeWidth", "nvgFontFace",
+            "nvgFontSize", "nvgTextAlign", "nvgIntersectScissor", "nvgScissor", "nvgResetTransform" }) do env[key] = noop end
+        env.nvgText = function(_, x, y, text) stat.plain[#stat.plain + 1] = { x = x, y = y, text = text } end
+        env.nvgRGBA = function(...) return { ... } end
+        env.nvgCreateImage = function() return -1 end
+        env.nvgImageSize = function() return 0, 0 end
+        env.nvgDeleteImage = noop
+        env.nvgTextBounds = function(_, _, _, text) return (utf8.len(text) or #text) * 12 end
+        c.selector = env.require("ui.battle.stage.StageSelectDialog")
+        c.resources = modules["ui.battle.stage.StageSelectResources"]
+        c.state = state(c.selector.close)
+        c.selector.init(c.vg)
+        function c.group(id)
+            for _, group in ipairs(c.resources.getGroups()) do
+                if group.key == "R:" .. id then return group end
+            end
+            error("missing dungeon group " .. id)
+        end
+        function c.draw()
+            env.time.elapsedTime = env.time.elapsedTime + 1
+            stat.text, stat.plain = {}, {}
+            c.selector.draw(c.vg)
+            eq(stat.depth, 0, "default-target restores all NanoVG state")
+        end
+        function c.first()
+            c.selector.handleScroll(1000, 350, 1000)
+            eq(c.state.rowScroll[tostring(c.state.selKey)], 0, "manual wheel reaches first row")
+        end
+        -- 独立设计坐标oracle；仅验证目标真实行完全在固定890视窗，不调用生产reveal/default帮助函数。
+        function c.visible(id, floor, label)
+            local group = c.group(id)
+            local target = id == "babel_tower" and 400000 + floor
+                or ({ gold_mine = 100000, equipment_vault = 200000, black_diamond = 300000 })[id] + floor
+            local index
+            for i, stage in ipairs(group.ids) do if stage == target then index = i end end
+            check(index ~= nil, label .. " target must be an actual selectable ID")
+            eq(c.state.selKey, "R:" .. id, label .. " keeps dungeon group")
+            local offset = c.state.rowScroll[group.key] or 0
+            local step, height = id == "babel_tower" and 178 or 150, id == "babel_tower" and 168 or 140
+            local top = 790 + (index - 1) * step - offset
+            check(top >= 786 and top + height <= 1676, label .. " fully reveals highest real row")
+            check(offset >= 0 and offset <= math.max(0, #group.ids * step - 10 + 4 - 890), label .. " bounded scroll")
+        end
+        function c.finish(before)
+            local function same(a, b)
+                if type(a) ~= type(b) then return false end
+                if type(a) ~= "table" then return a == b end
+                for key, value in pairs(a) do if not same(value, b[key]) then return false end end
+                for key in pairs(b) do if a[key] == nil then return false end end
+                return true
+            end
+            check(same(before, { c.progress, c.dungeon, c.teams, c.heroes }), "navigation never mutates progress/ledger/team/hero data")
+            eq(stat.io, 0, "File/FS/cache/cloud/event calls forbidden")
+            eq(stat.rng, 0, "default locate consumes no RNG")
+            eq(stat.actions, 0, "default locate dispatches no reward/action")
+            eq(stat.gotos, 0, "default locate never switches battle")
+            eq(stat.notifications, 0, "default locate does not complete tutorial")
+            eq(stat.depth, 0, "default fixture drawing balanced")
+            check(stat.loaded["ui/battle/stage/StageSelectDialog.lua"] and stat.loaded["ui/battle/stage/StageSelectResources.lua"]
+                and stat.loaded["ui/battle/stage/ExpeditionOverview.lua"], "full production modules loaded from packaged cache")
+            c.selector.close()
+        end
+        return c
+    end
+    runCase("dungeon default three resources and explicit teams preserve low task", function()
+        local c = dungeonDefaultFixture()
+        local before = copy({ c.progress, c.dungeon, c.teams, c.heroes })
+        for team, id in ipairs({ "gold_mine", "equipment_vault", "black_diamond" }) do
+            c.selector.open(team)
+            eq(c.state.targetTeam, team, "explicit team is retained")
+            c.visible(id, 56, "open low task with sparse high clear")
+            c.draw()
+            for _, call in ipairs(c.stat.plain) do
+                check(call.text ~= "当前" and call.text ~= "当前章节", "highest default is not relabeled current task")
+            end
+            c.first(); c.draw()
+            local current = false
+            for _, call in ipairs(c.stat.plain) do if call.text == "当前" then current = true end end
+            check(current, "real draw keeps current marker on old first task")
+            c.selector.close()
+        end
+        c.finish(before)
+    end)
+    runCase("dungeon default explicit unspecified open and mainline section transitions", function()
+        local c = dungeonDefaultFixture()
+        c.teams = { 101, 1401, 2001 }
+        local before = copy({ c.progress, c.dungeon, c.teams, c.heroes })
+        c.selector.open(3)
+        eq(c.state.section, "main", "ordinary open preserves mainline")
+        eq(c.state.selKey, 20, "mainline team chapter not overwritten")
+        c.selector.handleInput(250, 808)
+        c.visible("gold_mine", 56, "first switch main to dungeon")
+        c.selector.openDungeon(3, "equipment_vault")
+        eq(c.state.targetTeam, 3, "explicit dungeon team preserved")
+        c.visible("equipment_vault", 56, "explicit dungeon from main task")
+        c.finish(before)
+        c.teams[2] = 300001
+        local secondBefore = copy({ c.progress, c.dungeon, c.teams, c.heroes })
+        c.selector.openDungeon(2)
+        eq(c.state.targetTeam, 2, "unspecified dungeon uses supplied team")
+        c.visible("black_diamond", 56, "unspecified uses task group not first resource")
+        c.finish(secondBefore)
+        c.teams[2] = 1401
+        local thirdBefore = copy({ c.progress, c.dungeon, c.teams, c.heroes })
+        c.selector.openDungeon(2)
+        c.visible("gold_mine", 56, "unspecified main task falls back first resource")
+        c.finish(thirdBefore)
+    end)
+    runCase("dungeon default cached category and section use latest ledger", function()
+        local c = dungeonDefaultFixture()
+        c.selector.openDungeon(2, "equipment_vault"); c.first()
+        local old = c.dungeon.equipment_vault
+        old.cleared = { [81] = true }
+        local before = copy({ c.progress, c.dungeon, c.teams, c.heroes })
+        c.selector.handleInput(200, 1012)
+        c.visible("equipment_vault", 86, "same selected category refreshes cached row")
+        c.first()
+        c.selector.handleInput(150, 808)
+        eq(c.state.section, "main", "switch back to main")
+        c.selector.handleInput(250, 808)
+        c.visible("equipment_vault", 86, "cached section reentry uses high ledger")
+        c.first(); c.selector.close(); c.selector.openDungeon(2, "equipment_vault")
+        c.visible("equipment_vault", 86, "close and reopen discards stale manual row")
+        c.first(); c.selector.openDungeon(2, "equipment_vault")
+        c.visible("equipment_vault", 86, "already-open explicit request also relocalizes")
+        c.finish(before)
+    end)
+    runCase("dungeon default manual wheel drag and drawing never snap back", function()
+        local c = dungeonDefaultFixture()
+        c.selector.openDungeon(1, "gold_mine"); c.visible("gold_mine", 56, "initial high target")
+        c.first()
+        local before = copy({ c.progress, c.dungeon, c.teams, c.heroes })
+        for _ = 1, 3 do c.draw(); eq(c.state.rowScroll["R:gold_mine"], 0, "draw respects manual first row") end
+        c.selector.handleScroll(-2, 350, 1000)
+        local wheelOffset = c.state.rowScroll["R:gold_mine"]
+        eq(wheelOffset, 300, "wheel applies two compact rows")
+        c.draw(); eq(c.state.rowScroll["R:gold_mine"], wheelOffset, "draw preserves wheel offset")
+        c.selector.handleDragBegin(350, 1000)
+        c.selector.handleDragMove(350, 900)
+        c.selector.handleDragEnd()
+        eq(c.state.rowScroll["R:gold_mine"], 400, "manual vertical drag applies delta")
+        c.draw(); eq(c.state.rowScroll["R:gold_mine"], 400, "draw preserves drag offset")
+        c.finish(before)
+    end)
+    runCase("dungeon default all locked fallback and full resources last actual anchors", function()
+        local c = dungeonDefaultFixture()
+        c.progress.maxStageId, c.sceneMax = 101, 101
+        c.selector.openDungeon(1, "gold_mine")
+        c.visible("gold_mine", 1, "locked resource fallback")
+        check(not c.resources.isStageUnlocked(100001), "all resource rows truly locked")
+        c.selector.openDungeon(1, "babel_tower")
+        c.visible("babel_tower", 1, "locked tower fallback")
+        check(not c.resources.isStageUnlocked(400001), "tower locked by real mainline gate")
+        c.selector.close()
+        c.progress.maxStageId, c.sceneMax = 2305, 2305
+        for _, id in ipairs({ "gold_mine", "equipment_vault", "black_diamond" }) do
+            local last = id == "equipment_vault" and 109 or 115
+            c.dungeon[id] = { floor = last, cleared = { [tostring(last)] = true } }
+        end
+        local before = copy({ c.progress, c.dungeon, c.teams, c.heroes })
+        for team, id in ipairs({ "gold_mine", "equipment_vault", "black_diamond" }) do
+            c.selector.openDungeon(team, id)
+            c.visible(id, id == "equipment_vault" and 109 or 115, "full resource clamps final anchor")
+        end
+        c.finish(before)
+    end)
+    runCase("dungeon default tower sparse checkpoint and full112 stay111", function()
+        local c = dungeonDefaultFixture()
+        c.selector.openDungeon(3, "babel_tower")
+        c.visible("babel_tower", 51, "sparse clear50 unlocks checkpoint51")
+        c.first(); c.draw(); eq(c.state.rowScroll["R:babel_tower"], 0, "tower draw also respects manual wheel")
+        c.dungeon.babel_tower = { floor = 112, cleared = { ["112"] = true } }
+        local before = copy({ c.progress, c.dungeon, c.teams, c.heroes })
+        c.selector.close(); c.selector.openDungeon(3, "babel_tower")
+        c.visible("babel_tower", 111, "112 fully clear maps last checkpoint111")
+        local group = c.group("babel_tower")
+        eq(group.ids[#group.ids], 400111, "no invented checkpoint116 or row112")
+        c.finish(before)
+    end)
+    runCase("dungeon default real Overview team chain and tutorial forced first row", function()
+        local c = dungeonDefaultFixture()
+        local before = copy({ c.progress, c.dungeon, c.teams, c.heroes })
+        c.selector.openOverview()
+        eq(c.state.view, "overview", "actual Overview opened")
+        eq(c.stat.preview, 1, "actual Overview refresh reached pure preview spy")
+        c.selector.handleInput(867, 1527)
+        eq(c.state.view, "selector", "real Overview row3 click enters selector")
+        eq(c.state.targetTeam, 3, "Overview selects clicked team not active team2")
+        c.visible("black_diamond", 56, "real Overview to resource task default")
+        c.selector.openDungeon(3, "equipment_vault")
+        check(c.selector.prepareTutorial(), "tutorial restores team1 gold first row")
+        eq(c.state.targetTeam, 1, "tutorial explicitly binds team1")
+        c.visible("gold_mine", 1, "tutorial keeps first chapter")
+        eq(c.state.rowScroll["R:gold_mine"], 0, "tutorial overrides highest default with zero scroll")
+        local opened = c.state.openTime
+        check(not c.selector.prepareTutorial(), "stable tutorial preparation idempotent")
+        eq(c.state.openTime, opened, "tutorial does not restart animation")
+        c.draw(); eq(c.state.rowScroll["R:gold_mine"], 0, "draw cannot undo forced tutorial first row")
+        c.finish(before)
     end)
     print(TAG.."SUMMARY cases="..cases.." checks="..checks.." failures="..failures)
     print(TAG..(failures==0 and "ALL PASS" or "FAILED"))

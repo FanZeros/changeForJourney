@@ -19,6 +19,7 @@ local I18n             = require("core.I18n")
 local NumberUtil       = require("core.NumberUtil")
 local MaterialTip      = require("ui.blacksmith.RefineMaterialTip")
 local KeywordText      = require("ui.widget.KeywordText")
+---@type table<string, any>
 local rowKeywords = KeywordText.new()
 
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -487,7 +488,9 @@ local function applyRefineDisplayFromEquip(equip)
 end
 
 --- 根据选中装备更新洗练面板数据
-function M.updateRefineData(equip)
+---@param equip table|nil
+---@param preserveMaterial boolean|nil 仅同一工作台装备的数据推送保留材料；主动选择默认重置
+function M.updateRefineData(equip, preserveMaterial)
     M.clearKeywords()
     MaterialTip.clear()
     if not equip then
@@ -509,13 +512,13 @@ function M.updateRefineData(equip)
         return
     end
 
+    -- 必须在重算费用前决定材料；耗尽也保留原选择，由原材料不足路径拒绝，不能暗退精粹。
+    if not preserveMaterial then selectedExtraRes = nil end
     applyRefineDisplayFromEquip(equip)
     -- 重置洗练动画
     refineAnim.type = nil
     refineAnim.oldAfter = nil
     refineAnim.replaceSnapshot = nil
-    -- 重置额外资源选择
-    selectedExtraRes = nil
     extraResPopupOpen = false
 end
 

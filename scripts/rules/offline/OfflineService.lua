@@ -29,6 +29,10 @@ local OfflineService = {}
 -- 内存中暂存的一份待领取离线奖励（不持久化）；重推不重新计算/骰装备。
 ---@type table<number, OfflinePendingReward>
 local pendingRewards = {}
+---@type table<number, boolean>
+local delivering = {}
+---@type table<number, boolean>
+local debugGrantFailed = {}
 
 -- ======================== 常量 ========================
 
@@ -62,6 +66,27 @@ local function materializeEquipSeeds(equipSeeds)
         end
     end
     return equips
+end
+
+--- 正式离线与 CE 共用装备确定化/自动分解；只生成一次，不在交付时重骰。
+local function prepareEquipment(rewards, equipData)
+    local generatedEquips = materializeEquipSeeds(rewards.equipSeeds)
+    local autoSettings = equipData and equipData.settings
+    local grantedEquips, decomposedEquips = {}, {}
+    local autoEssence = 0
+    for _, equip in ipairs(generatedEquips) do
+        if not equip.locked and BlacksmithConfig.shouldAutoDecompose(autoSettings, equip.quality, equip.level) then
+            decomposedEquips[#decomposedEquips + 1] = equip
+            autoEssence = autoEssence + BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
+        else
+            grantedEquips[#grantedEquips + 1] = equip
+        end
+    end
+    rewards.grantedEquips = grantedEquips
+    if autoEssence > 0 then
+        rewards.autoDecomposeEquips = decomposedEquips
+        rewards.autoDecomposeEssence = autoEssence
+    end
 end
 
 local function appendEquipPreviewItems(list, equips)
@@ -368,6 +393,7 @@ end
 ---@param uid number
 ---@return table|nil panelData  有离线奖励时返回面板数据，否则 nil
 function OfflineService.CalcOnEnter(uid)
+    if delivering[uid] then return nil end
     -- 已有未领取的奖励 → 直接返回
     if pendingRewards[uid] then
         print("[OfflineService] resending pending offline reward uid=" .. tostring(uid))
@@ -485,26 +511,12 @@ function OfflineService.CalcOnEnter(uid)
 
     -- 装备仍全部按旧顺序生成；只在新掉落预览时按已保存条件分流。
     -- 分流快照与实例一起保留，重推/领取不重骰、不把旧遗匣或库存追溯分解。
-    local generatedEquips = materializeEquipSeeds(rewards.equipSeeds)
-    local equipData = PDM.GetModule(uid, "equipment")
-    local autoSettings = equipData and equipData.settings
-    local grantedEquips, decomposedEquips = {}, {}
-    local autoEssence = 0
-    for _, equip in ipairs(generatedEquips) do
-        if not equip.locked and BlacksmithConfig.shouldAutoDecompose(autoSettings, equip.quality, equip.level) then
-            decomposedEquips[#decomposedEquips + 1] = equip
-            autoEssence = autoEssence + BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
-        else
-            grantedEquips[#grantedEquips + 1] = equip
-        end
-    end
-    rewards.grantedEquips = grantedEquips
-    appendEquipPreviewItems(panelData.rewards, grantedEquips)
+    prepareEquipment(rewards, PDM.GetModule(uid, "equipment"))
+    appendEquipPreviewItems(panelData.rewards, rewards.grantedEquips)
+    local autoEssence = rewards.autoDecomposeEssence or 0
     if autoEssence > 0 then
-        rewards.autoDecomposeEquips = decomposedEquips
-        rewards.autoDecomposeEssence = autoEssence
         panelData.rewards[#panelData.rewards + 1] = { type = "essence", amount = autoEssence }
-        panelData.autoDecomposeCount = #decomposedEquips
+        panelData.autoDecomposeCount = #rewards.autoDecomposeEquips
         panelData.autoDecomposeEssence = autoEssence
     end
 
@@ -524,21 +536,11 @@ end
 
 -- ======================== 领取离线收益 ========================
 
---- 领取离线收益
+--- 正式领取与 CE 共用交付；待领清理和真实在线边界由正式入口单独处理。
 ---@param uid number
+---@param rewards OfflineTeamRewards
 ---@return boolean ok, string? err, table? result
-function OfflineService.ClaimRewards(uid)
-    local pending = pendingRewards[uid]
-    if not pending then
-        return false, "无待领取的离线收益"
-    end
-    local rewards = pending.rewards
-
-    local sessionData = PDM.GetModule(uid, "session")
-    if not sessionData then
-        return false, "session 数据未加载"
-    end
-
+local function deliverRewards(uid, rewards)
     local currency   = PDM.GetModule(uid, "currency")
     local heroesData = PDM.GetModule(uid, "heroes")
     local playerData = PDM.GetModule(uid, "player")
@@ -647,17 +649,6 @@ function OfflineService.ClaimRewards(uid)
         PDM.MarkDirty(uid, "currency")
     end
 
-    -- 清理待领取
-    pendingRewards[uid] = nil
-
-    -- 领取成功后更新 lastOnlineTime
-    local newLOT = os.time()
-    sessionData.lastOnlineTime = newLOT
-    PDM.MarkDirty(uid, "session")
-
-    print("[OfflineService] claimed offline rewards uid=" .. tostring(uid)
-        .. " gold=" .. goldAmount .. " diamond=" .. diamondAmount)
-
     return true, nil, {
         gold      = goldAmount,
         diamond   = diamondAmount,
@@ -668,6 +659,68 @@ function OfflineService.ClaimRewards(uid)
         autoDecomposeCount = autoEssence > 0 and #(rewards.autoDecomposeEquips or {}) or nil,
         autoDecomposeEssence = autoEssence > 0 and autoEssence or nil,
     }
+end
+
+--- 正式领取保留原待领和在线时间语义；同步通知重入不能再次交付。
+---@param uid number
+---@return boolean ok, string? err, table? result
+function OfflineService.ClaimRewards(uid)
+    if delivering[uid] then return false, "离线奖励正在发放" end
+    local pending = pendingRewards[uid]
+    if not pending then return false, "无待领取的离线收益" end
+    local sessionData = PDM.GetModule(uid, "session")
+    if not sessionData then return false, "session 数据未加载" end
+    delivering[uid] = true
+    local called, ok, err, result = pcall(function()
+        local granted, reason, receipt = deliverRewards(uid, pending.rewards)
+        if not granted then return false, reason end
+        pendingRewards[uid] = nil
+        sessionData.lastOnlineTime = os.time()
+        PDM.MarkDirty(uid, "session")
+        print("[OfflineService] claimed offline rewards uid=" .. tostring(uid)
+            .. " gold=" .. receipt.gold .. " diamond=" .. receipt.diamond)
+        return true, nil, receipt
+    end)
+    delivering[uid] = nil
+    if not called then error(ok, 0) end
+    return ok == true, err, result
+end
+
+--- CE 额外获得一天收益：不占正式 pending，不消费挑战来源，不改真实在线时间。
+---@param uid number
+---@param battleSnapshot table|nil 只读即时进度；省略时使用已加载的保存快照
+---@return boolean ok, string? err, table? result
+function OfflineService.GrantDebugDayRewards(uid, battleSnapshot)
+    if delivering[uid] then return false, "离线奖励正在发放" end
+    if debugGrantFailed[uid] then return false, "上次发放异常，请重启后检查奖励，勿重复领取" end
+    if pendingRewards[uid] then return false, "请先领取已有离线奖励" end
+    for _, name in ipairs({ "session", "currency", "heroes", "player", "equipment", "lootbox", "battle" }) do
+        if type(PDM.GetModule(uid, name)) ~= "table" then return false, "数据未加载: " .. name end
+    end
+    local heroesData = PDM.GetModule(uid, "heroes")
+    local battleData = battleSnapshot or PDM.GetModule(uid, "battle")
+    local equipData = PDM.GetModule(uid, "equipment")
+    if type(heroesData.roster) ~= "table" or type(equipData.inventory) ~= "table" then
+        return false, "英雄或装备数据未就绪"
+    end
+    delivering[uid] = true
+    local called, ok, err, result = pcall(function()
+        local config = StageProvider.Get()
+        local teams = collectOfflineTeams(heroesData, battleData, config, PDM.GetModule(uid, "dungeon"))
+        local rewards = OfflineCalc.calcTeamOfflineRewards(86400, teams, config)
+        if not rewards or rewards.kills <= 0 then return false, "当前没有可产出离线奖励的队伍" end
+        prepareEquipment(rewards, equipData)
+        print("[OfflineService] CE day ready uid=" .. tostring(uid)
+            .. " seconds=86400 teams=" .. #rewards.teamRewards .. " kills=" .. rewards.kills)
+        return deliverRewards(uid, rewards)
+    end)
+    delivering[uid] = nil
+    if not called then
+        -- 交付沿用正式原地写入；异常可能已经部分到账，本会话禁重发而非假装回滚。
+        debugGrantFailed[uid] = true
+        error(ok, 0)
+    end
+    return ok == true, err, result
 end
 
 -- ======================== 标记开场剧情完成 ========================

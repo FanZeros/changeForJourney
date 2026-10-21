@@ -239,7 +239,8 @@ local hitTest = DrawUtil.hitTest
 
 --- 应用工作台装备（同步强化/洗练子模块）
 ---@param equip table|nil
-local function applySelectedEquip(equip)
+---@param preserveMaterial boolean|nil 同 selectedSeq 的被动刷新才保留洗练材料
+local function applySelectedEquip(equip, preserveMaterial)
     if not equip then
         state.selectedEquip = nil
         state.selectedSeq = nil
@@ -253,7 +254,7 @@ local function applySelectedEquip(equip)
     state.selectedSeq = equip.seq
     state.selectedEquipSlot = equip.slot or "weapon"
     BlacksmithEnhance.updateEnhanceData(equip)
-    BlacksmithRefine.updateRefineData(equip)
+    BlacksmithRefine.updateRefineData(equip, preserveMaterial)
 end
 
 --- 按 seq 从背包/已穿戴中查找装备并放入工作台（EquipCrossDrag 拖放入口）
@@ -826,7 +827,8 @@ function BlacksmithPage.onEquipmentDataUpdate(equipmentData)
                 state.selectedEquip = refreshed
                 BlacksmithRefine.refreshCostOnly()
             else
-                applySelectedEquip(refreshed)
+                -- 同 selectedSeq 的服务端刷新不是主动换件，保留玩家材料选择。
+                applySelectedEquip(refreshed, true)
             end
         else
             print("[BlacksmithPage] 工作台装备 seq=" .. tostring(state.selectedSeq) .. " 已不存在，清空")

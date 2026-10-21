@@ -52,8 +52,14 @@ local DrawUtil = require("core.DrawUtil")
 local ItemView = require("ui.widget.RewardItemView")
 local LargeView = require("ui.widget.RewardLargeView")
 local ResultRepeatFooter = require("ui.widget.ResultRepeatFooter")
+local RewardPreparation = require("ui.widget.RewardPreparation")
 
 local RewardPopup = {}
+
+--- 大批奖励在私有任务中完成整理，show 时只消费完整结果。
+function RewardPopup.prepareRewards(rewards, checkpoint)
+    return RewardPreparation.prepare(rewards, checkpoint)
+end
 
 -- ======================== 设计分辨率 ========================
 
@@ -608,60 +614,65 @@ local function showNow(title, rewards, opts)
     -- 跟随触发面板：显式 opts.panel 优先，否则取横屏当前焦点面板（全局 H_focusPanel）
     state.panel = (opts and opts.panel) or (H_focusPanel or nil)
 
-    -- 排序：资源类排前，角色/装备类排后
-    local resources = {}
-    local heroes = {}
-    local equips = {}
-    local artifacts = {}
-    for _, item in ipairs(rewards) do
-        if item.type == "hero" then
-            heroes[#heroes + 1] = item
-        elseif item.type == "equip" then
-            equips[#equips + 1] = item
-        elseif item.type == "artifact" then
-            artifacts[#artifacts + 1] = item
-        else
-            resources[#resources + 1] = item
+    local preparedItems = RewardPreparation.take(opts and opts.preparedRewards, rewards)
+    if preparedItems then
+        state.items = preparedItems
+    else
+        -- 排序：资源类排前，角色/装备类排后
+        local resources = {}
+        local heroes = {}
+        local equips = {}
+        local artifacts = {}
+        for _, item in ipairs(rewards) do
+            if item.type == "hero" then
+                heroes[#heroes + 1] = item
+            elseif item.type == "equip" then
+                equips[#equips + 1] = item
+            elseif item.type == "artifact" then
+                artifacts[#artifacts + 1] = item
+            else
+                resources[#resources + 1] = item
+            end
         end
-    end
 
-    -- 角色按品质降序排列
-    table.sort(heroes, function(a, b)
-        local qa = a.quality or 1
-        local qb = b.quality or 1
-        return qa > qb
-    end)
+        -- 角色按品质降序排列
+        table.sort(heroes, function(a, b)
+            local qa = a.quality or 1
+            local qb = b.quality or 1
+            return qa > qb
+        end)
 
-    -- 装备按品质降序、等级降序排列
-    table.sort(equips, function(a, b)
-        local qa = a.quality or 1
-        local qb = b.quality or 1
-        if qa ~= qb then return qa > qb end
-        local la = a.level or 1
-        local lb = b.level or 1
-        return la > lb
-    end)
+        -- 装备按品质降序、等级降序排列
+        table.sort(equips, function(a, b)
+            local qa = a.quality or 1
+            local qb = b.quality or 1
+            if qa ~= qb then return qa > qb end
+            local la = a.level or 1
+            local lb = b.level or 1
+            return la > lb
+        end)
 
-    -- 神器按品质降序排列
-    table.sort(artifacts, function(a, b)
-        local qa = a.quality or 1
-        local qb = b.quality or 1
-        return qa > qb
-    end)
+        -- 神器按品质降序排列
+        table.sort(artifacts, function(a, b)
+            local qa = a.quality or 1
+            local qb = b.quality or 1
+            return qa > qb
+        end)
 
-    -- 合并：资源在前，角色居中，装备在后，神器最后
-    state.items = {}
-    for _, item in ipairs(resources) do
-        state.items[#state.items + 1] = item
-    end
-    for _, item in ipairs(heroes) do
-        state.items[#state.items + 1] = item
-    end
-    for _, item in ipairs(equips) do
-        state.items[#state.items + 1] = item
-    end
-    for _, item in ipairs(artifacts) do
-        state.items[#state.items + 1] = item
+        -- 合并：资源在前，角色居中，装备在后，神器最后
+        state.items = {}
+        for _, item in ipairs(resources) do
+            state.items[#state.items + 1] = item
+        end
+        for _, item in ipairs(heroes) do
+            state.items[#state.items + 1] = item
+        end
+        for _, item in ipairs(equips) do
+            state.items[#state.items + 1] = item
+        end
+        for _, item in ipairs(artifacts) do
+            state.items[#state.items + 1] = item
+        end
     end
 
     -- 计算滚动最大值

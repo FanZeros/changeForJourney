@@ -102,15 +102,39 @@ function LootBoxSystem.revealLegacy(lootboxData)
     return converted
 end
 
+--- 单个无yield交付批次的局部计数器；默认调用仍逐次扫描/记录日志。
+--- 不跨请求缓存、不承担并发锁；库存引用或nextSeq异常变化时安全回退重扫。
+function LootBoxSystem.createDeliveryContext(equipData, options)
+    return { owner = equipData, inventory = equipData.inventory,
+        count = EquipmentSystem.getInventoryCount(equipData), nextSeq = equipData.nextSeq,
+        summaryLogs = options and options.summaryLogs == true, overflow = 0 }
+end
+
 ---@return string destination
-function LootBoxSystem.deliverEquipment(lootboxData, equipData, equip)
-    if not EquipmentSystem.isInventoryFull(equipData) then
+function LootBoxSystem.deliverEquipment(lootboxData, equipData, equip, context)
+    local batch = context and context.owner == equipData and context or nil
+    if batch and (batch.inventory ~= equipData.inventory or batch.nextSeq ~= equipData.nextSeq) then
+        batch.inventory, batch.nextSeq = equipData.inventory, equipData.nextSeq
+        batch.count = EquipmentSystem.getInventoryCount(equipData)
+    end
+    local full = batch and batch.count >= EquipmentSystem.MAX_INVENTORY
+        or not batch and EquipmentSystem.isInventoryFull(equipData)
+    if not full then
+        -- 脏nextSeq可能覆盖已有键；与原addToInventory保持一致，不虚增计数。
+        local existed = equipData.inventory[tostring(equipData.nextSeq or 1)] ~= nil
         EquipmentSystem.addToInventory(equipData, equip)
+        if batch then
+            if not existed then batch.count = batch.count + 1 end
+            batch.nextSeq = equipData.nextSeq
+        end
         return "inventory"
     end
     LootBoxSystem.addEquipment(lootboxData, equip)
-    print("[LootBoxSystem] 背包溢出已入遗匣: " .. tostring(equip.templateId)
-        .. " q=" .. tostring(equip.quality) .. " lv=" .. tostring(equip.level))
+    if batch then batch.overflow = batch.overflow + 1 end
+    if not (batch and batch.summaryLogs) then
+        print("[LootBoxSystem] 背包溢出已入遗匣: " .. tostring(equip.templateId)
+            .. " q=" .. tostring(equip.quality) .. " lv=" .. tostring(equip.level))
+    end
     return "lootbox"
 end
 

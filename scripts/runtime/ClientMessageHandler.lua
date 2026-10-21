@@ -325,6 +325,56 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
  end
 
  --- 操作结果
+ local function isSweepResult(data)
+     return data.action == Protocol.ACTION_TYPES.SWEEP
+         or (data.action == Protocol.ACTION_TYPES.DUNGEON_SWEEP
+             and require("config.DungeonConfig").isResourceDungeon(data.dungeonId))
+ end
+
+ -- 完整私有展示候选：Bridge协程在到账后调用，组装/排序均完成才交给最终回执。
+ -- 此处不发奖、不关页面、不修改源装备；checkpoint可yield，活事务不调用它。
+ function M.prepareSweepPresentation(data, checkpoint)
+     if data.success ~= true or not isSweepResult(data) then return nil end
+     local rewards, equips = {}, data.equips or {}
+     if (data.gold or 0) > 0 then rewards[#rewards + 1] = { type = "gold", amount = data.gold } end
+     if (data.autoDecomposeEssence or 0) > 0 then
+         rewards[#rewards + 1] = { type = "essence", amount = data.autoDecomposeEssence }
+     end
+     if (data.diamond or 0) > 0 then rewards[#rewards + 1] = { type = "diamond", amount = data.diamond } end
+     for i, equip in ipairs(equips) do
+         -- SweepService已提供完整只读展示行，可复用而不为巨量装备再复制一层。
+         local reward = equip
+         if equip.type ~= "equip" then
+             reward = {}
+             for key, value in pairs(equip) do reward[key] = value end
+             reward.type = "equip" -- 旧回执无type时只在副本补齐。
+         end
+         rewards[#rewards + 1] = reward
+         if checkpoint then checkpoint("presentation", i, #equips) end
+     end
+     local scrollMap = { weaponScroll = "weapon_scroll", offhandScroll = "offhand_scroll",
+         armorScroll = "armor_scroll", accessoryScroll = "accessory_scroll",
+         helmetScroll = "helmet_scroll", shoesScroll = "shoes_scroll" }
+     for field, count in pairs(data.scrollDrops or {}) do
+         local kind = scrollMap[field]
+         if kind and count > 0 then rewards[#rewards + 1] = { type = kind, amount = count } end
+     end
+     local summary = {}
+     local NumberUtil = require("core.NumberUtil")
+     local I18n = require("core.I18n")
+     if (data.playerExp or 0) > 0 then
+         summary[#summary + 1] = I18n.format("远征经验 +%s", NumberUtil.format(data.playerExp))
+     end
+     if (data.heroExp or 0) > 0 then
+         summary[#summary + 1] = I18n.format("队%d每名队员经验 +%s", data.teamIdx or 1, NumberUtil.format(data.heroExp))
+     elseif (data.heroExpTotal or 0) > 0 then
+         summary[#summary + 1] = I18n.format("队员经验合计 +%s", NumberUtil.format(data.heroExpTotal))
+     end
+     local popup = RewardPopup or require("ui.hud.popup.RewardPopup")
+     return { version = 1, rewards = rewards, subtitle = table.concat(summary, " · "),
+         preparedRewards = checkpoint and popup.prepareRewards(rewards, checkpoint) or nil }
+ end
+
  function M.handleActionResult(eventType, eventData)
      ---@type table
      local data
@@ -368,6 +418,33 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          require("core.UiToast").show(require("core.I18n").t(key))
          if data.success then TutorialManager.notifyEvent("equipment_equipped") end
          return -- 异步回执不转发给计算期间新打开的锻炉等无关页面。
+     end
+     if isSweepResult(data) then
+         local SweepDialog = require("ui.battle.stage.SweepDialog")
+         local shown, showError = true, nil
+         if data.success == true then
+             shown, showError = pcall(function()
+                 local presentation = data.sweepPresentation
+                 if not presentation or presentation.version ~= 1 then presentation = M.prepareSweepPresentation(data) end
+                 RewardPopup.show("扫荡奖励", presentation.rewards, { subtitle = presentation.subtitle,
+                     preparedRewards = presentation.preparedRewards })
+             end)
+         end
+         -- 正常show返回后才关页；已到账后的展示异常也必须先释放两个所属identity，
+         -- 再运行可能失败的提示。某一页cleanup异常不能跳过另一页。
+         local cleaned, cleanupError = pcall(SweepDialog.onActionResult, data)
+         if not cleaned then print("[ClientMessageHandler] sweep dialog cleanup failed: " .. tostring(cleanupError)) end
+         if data.action == Protocol.ACTION_TYPES.DUNGEON_SWEEP and DungeonPage and DungeonPage.onActionResult then
+             local pageCleaned, pageError = pcall(DungeonPage.onActionResult, data)
+             if not pageCleaned then print("[ClientMessageHandler] sweep page cleanup failed: " .. tostring(pageError)) end
+         end
+         if data.success ~= true then
+             require("core.UiToast").show(require("core.I18n").lookup(data.reason or "扫荡失败，请重试"))
+         elseif not shown then
+             print("[ClientMessageHandler] sweep committed, presentation failed: " .. tostring(showError))
+             require("core.UiToast").show(require("core.I18n").lookup("扫荡奖励已到账，展示失败"))
+         end
+         return -- 专属回执不通知计算期间新开的锻炉、商店等无关页面。
      end
      if not data.success then
          print("[Client] action failed: action=" .. tostring(data.action)
@@ -686,49 +763,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          RewardPopup.show("离线装备已入遗匣", data.lootboxEquips, { panel = "left" })
      end
 
-     -- 主线与资源扫荡回执统一展示；旧遗迹/塔仍由 DungeonPage 走兼容路径。
-     local isResourceSweep = data.action == Protocol.ACTION_TYPES.DUNGEON_SWEEP
-         and require("config.DungeonConfig").isResourceDungeon(data.dungeonId)
-     if (data.action == Protocol.ACTION_TYPES.SWEEP or isResourceSweep) and data.success then
-         local rewards = {}
-         if (data.gold or 0) > 0 then rewards[#rewards + 1] = { type = "gold", amount = data.gold } end
-         if (data.autoDecomposeEssence or 0) > 0 then
-             rewards[#rewards + 1] = { type = "essence", amount = data.autoDecomposeEssence }
-         end
-         if (data.diamond or 0) > 0 then rewards[#rewards + 1] = { type = "diamond", amount = data.diamond } end
-         for _, equip in ipairs(data.equips or {}) do
-             -- 保留完整实例、去向与附加字段，只负责展示，不重新生成/交付装备。
-             local reward = {}
-             for key, value in pairs(equip) do reward[key] = value end
-             reward.type = "equip"
-             rewards[#rewards + 1] = reward
-         end
-         for scrollField, count in pairs(data.scrollDrops or {}) do
-             local SCROLL_MAP = { weaponScroll = "weapon_scroll", offhandScroll = "offhand_scroll", armorScroll = "armor_scroll", accessoryScroll = "accessory_scroll", helmetScroll = "helmet_scroll", shoesScroll = "shoes_scroll" }
-             local rk = SCROLL_MAP[scrollField]
-             if rk and count > 0 then rewards[#rewards + 1] = { type = rk, amount = count } end
-         end
-         -- 奖励弹窗出现时自动关闭扫荡弹窗，避免两层弹窗叠在一起
-         local SweepDialog = require("ui.battle.stage.SweepDialog")
-         if SweepDialog.isOpen() then
-             SweepDialog.close()
-             print("[ClientMessageHandler] sweep reward popup shown, SweepDialog auto-closed")
-         end
-         -- 经验不是可点击道具；按回执区分远征经验、每人经验与旧版全队合计。
-         local summary = {}
-         local NumberUtil = require("core.NumberUtil")
-         if (data.playerExp or 0) > 0 then
-             summary[#summary + 1] = "远征经验 +" .. NumberUtil.format(data.playerExp)
-         end
-         if (data.heroExp or 0) > 0 then
-             summary[#summary + 1] = "队" .. tostring(data.teamIdx or 1)
-                 .. "每名队员经验 +" .. NumberUtil.format(data.heroExp)
-         elseif (data.heroExpTotal or 0) > 0 then
-             -- 旧回执未提供每人值时不根据当前编队反推，避免换队后显示错误。
-             summary[#summary + 1] = "队员经验合计 +" .. NumberUtil.format(data.heroExpTotal)
-         end
-         RewardPopup.show("扫荡奖励", rewards, { subtitle = table.concat(summary, " · ") })
-     end
  end
 
  --- 状态更新（服务端推送的模块数据）

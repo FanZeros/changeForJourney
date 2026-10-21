@@ -12,6 +12,31 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-21，扫荡优化 PR #180 已创建）
+
+- **已正常push并创建正式 PR #180**：https://github.com/FanZeros/changeForJourney/pull/180，head=`perf1021/sweep-large-batch`（`69be6a7a`）／base=`workspace1005`（`548fc57a`），创建时open／draft=false／merged=false／mergeable未计算；push与ls-remote实际exit0、远端SHA与本地一致。29任务白名单+2166/−236，未推workspace系列、不强推、不自动合并或发布；下方“尚未push／PR”为此前过程记录。不夹原.gitignore／上传／玩家档／本地.project／无关meta／内部验证。
+
+- 用户最新明确“做pr”，授权本次扫荡优化提交、正常push独立 `perf1021/sweep-large-batch` 并创建base=`workspace1005`的PR；不推workspace系列、不强推、不自动合并或发布。29白名单功能提交 `8d1484a3` 已完成；融合最新目标 `548fc57a` 为 `31553588`，代码自动合并，仅交接文本冲突双方保留。CE就绪检查、推荐战力基准字段及其余21个目标净路径逐字节保留，不夹原.gitignore／上传／玩家档／本地.project／内部验证。
+- 融合后官方b33成功，705根Lua及实际UUID-hash载荷705/705逐字节与声明size一致，三新meta一致、源冻结不变、内部验证及审核候选0入包，两.project与本轮before逐字节恢复。两个重叠Lua逐文件无severity1 Error（仍有Warning），不称全仓清零。此前215组旧源oracle和四关各100k等结果属于b32同源验证，不冒称融合后全量重跑。b33后七个独立Runtime实际ALL PASS／actualexit0／无timeout：真实小连链v5三组721断言（87／129／91pump、每组save/token/receipt各1）、Bridge87、UI16组5732、十万项展示522092、资源compat46439、切关及真实UI/Yoga/Surface等待树209／12Render。小链PDM/Store/Save为内存边界、页面释放spy；UI16控件树spy与真实等待树分开留证，不代设备GPU／触控／磁盘验收。相对最新目标3314路径20旧规范问题、新增0，36规范单测实际通过。下面“仅本地／无PR授权”等为此前过程记录，当前授权以上述最新请求为准；尚未push或创建PR，成功后补真实结果。
+- 鉴权仅通过标准credential接口返回值在进程内即时使用，不写remote／Git配置／源码／项目记忆，不挖历史转录或凭据文件。公开PAT应撤销轮换；持续推进并尊重停止、权限拒绝及安全边界，按当前直接继续不机械提问。
+
+## 上次做了什么（2026-10-21，十万次扫荡分帧与统一到账，本地实现）
+
+- 用户在诊断后明确选择“分帧，最后统一到账”。独立 `perf1021/sweep-large-batch` 固定最新 `workspace1005@a590320d`；仅本地实现／测试／官方构建，无本轮commit/push/PR/合并发布授权，HEAD与index保持。不读玩家档／凭据、不pop旧stash，不混原.gitignore／上传／无关meta／内部验证；持续推进授权范围并尊重停止、权限拒绝与安全边界，当前明确直接继续不机械提问，不推workspace系列／强推／自动合并发布，凭据不持久化。
+- 私有候选分帧生成／分类，原逐杀RNG顺序、完整装备、自动分解及整次事务保持；请求内缓存确定资源配置、一次库存计数、汇总日志。Bridge单任务、请求ID／refs／revision／epoch与最终全值校验；等待期间背景战斗／冲突输入暂停、真实UI进度可刷新，Stop/reset取消。最后无yield一次扣券／发奖／保存，失败原位恢复；已到账后的展示异常先清请求身份并提示已到账，不重复发奖或伪报业务失败。CMH包装及稳定分组排序亦分帧，opaque token一次消费；整理只状态不假百分比。取消不回滚已消耗RNG，不跨进程恢复。
+- 官方b32成功，704根Lua实际UUID-hash载荷704/704逐字节／声明size一致，三新meta UUID一致、源冻结不变、内部validation0入包，两.project与本轮before逐字节恢复。21任务Lua中19逐文件Error0；Standalone及HorizonInput共8条旧诊断源行与HEAD相同，未混修。官方LSP daemon unavailable/code1跳过全仓gate，headless音频／shader错误保留，不称全仓静态／设备／GPU／性能全绿。候选3312路径20旧规范问题同基线、新增0，36规范单测通过。
+- 固定旧源完整oracle专项215组32485746断言ALL PASS；四关各100000券自然RNG专项5组67179266断言ALL PASS，含100万／280万／320万／320万杀及完整装备49765／0／4412／0，奖励／RNG／保存候选与旧源一致，均actualexit0／无timeout。十万项展示522092断言通过；Bridge宿主87检查构建后通过，真实UI/Yoga/Surface等待树209断言／12渲染帧通过。真实尾段Registry及Schema各4次onLoad、完整内存JSON21139649字节，100k主线prepare CPU8.206秒、commit0.826秒（内含编码0.641秒），不是完整StandaloneSave／真实磁盘／WASM或设备FPS测量。4ms仅软预算，最终校验／交付／规范化／编码／保存／通知仍同步，不能称全部不卡。
+- 原quick-v2／large-v1超时记录保留；资源规则旧“28/12敌人数”失败已在固定HEAD同现，overflow夹具到11/19后因封闭业务File未完成，不计通过、不开放玩家档。原完整扫荡test与固定a590均102组97过5失败／51377断言，失败文本及重数完全相同、新增0，未改其旧200容量断言；不把actualexit0或runner PASS代替业务通过。其余回归ticket7组70断言、resource compat46439及切关ALL PASS／actualexit0。内证仅 `.git/validation/sweep1021`。
+- 最后小型真实连链v4的1093断言ALL PASS／actualexit0／无timeout：真实Bridge worker/pump→Handler→Service→原Transaction→CMH→RewardPreparation→完整Popup.show/showNow，主线100／1000券及金币100券分别140／208／148次pump，每组仅一次内存保存／成功回执、真实token一次消费、再pump不重复到账。v5进一步替换为真实Registry／Schema，三组83／119／89次pump、689断言亦ALL PASS／actualexit0／无timeout；断言数随实际yield帧数变化、不降业务断言。PDM/Dispatcher/Store/GameState/Save仍明确内存边界、页面释放为UI spy，不冒称完整Boot／磁盘／绘制链；前三轮依赖／基线采样／资源handler注册夹具失败保留。构建后UI原专项16组5732断言复跑0失败／actualexit0／无timeout，七源hash不变；字体为真实Noto五语，控件宿主spy与上述真UI等待树分别留证。所有704源最终仍与b32冻结一致，未提交推送。
+
+## 上次做了什么（2026-10-21，十万次扫荡卡顿排查，尚未修改玩法）
+
+- 用户要求拉最新排查十万次扫荡卡死。已通过显式代理fetch `workspace1005@a590320d`（含PR176），建立独立本地 `perf1021/sweep-large-batch`，保留原.gitignore与未跟踪内容；无commit/push/PR/合并发布授权。未读取玩家档/凭据，不pop旧stash、不启动main；内部探针只.git/validation/sweep1021，依赖从冻结scripts绝对路径读取，不借dist旧包。
+- 已复现同步长阻塞而非本样本死循环：首层金币十万场280万逐杀，CPU39.412秒（calculate39.390）；首层装备十万场320万逐杀，CPU73.634秒（calculate73.452），4553完整装备、9791009次私有RNG；实际exit0/无timeout/ALL PASS。主线1905十万场100万杀/49702件/CPU9.978秒，其中生成5.248秒、交付1.846秒、库存计数1.509秒（嵌套耗时不相加）；新增Lua堆约110MiB是结束前后差值、非峰值，日志149135条仅计数未输出。主线一万场另CPU0.951秒。测量含计数探针、业务日志只计数不输出，Registry/Schema为夹具替身、persist只内存计数，明确不包含正式规范化/真实JSON存档/通知/UI/设备耗时，不称完整端到端性能。默认45000旧专项强制尾骰基本无装备，不能证明十万真实掉落不卡。
+- 资源每杀重建相同getFloor/getCombatEntry/收益/品质配置是主要可消除重复；主线仍百万逐杀生成完整装备。交付每件重新扫描最多500库存，满包后O(500E)而非无界O(E²)；逐件日志、全遗匣规范化/JSON保存/通知摘要与奖励排序又增尾段峰值。奖励大页已有可见区虚拟绘制，不是每帧画全部奖励。只加等待动画或把live事务直接yield不安全：共享活表/自动保存/并发动作/回滚会互相污染，全局RNG跨帧亦可能交错。
+- 建议先冻结不变结算上下文/一次空位计数/汇总日志，再设计私有分帧生成与最后核验原子提交；严格原全局RNG需串行其他随机消费者，最终完整保存仍可能长帧。可恢复分批能限制单批负担，但改变十万场全有全无语义、需任务进度/幂等持久化，须用户选择后实施。持续推进已授权范围，尊重停止/拒绝/安全边界；不推workspace系列/强推/自动合并发布，不持久化凭据。
+- 拉新后已官方b31构建成功，701根Lua实际载荷701/701逐字节/声明size一致，与探针冻结源同源，内部probe0入包；两.project仅本人构建身份/default已与本轮前备份逐字节恢复。全仓LSP汇总968 Error未混修，不称全仓静态通过；未修改生产Lua/测试，不冒称修复已完成。下一步真实决策通过AskUserQuestion，不机械扩权。
+
 ## 上次做了什么（2026-10-21，CE与两项交互修复提交推进）
 
 - 用户最新明确“提交pr”，授权CE一天离线奖励、洗练材料保持与副本默认最高可挑战行一并提交、正常push独立 `feat1021/ce-offline-day` 并创建workspace1005 PR。不推workspace系列、不强推、不自动合并发布，不混.project/上传/候选/技能/内部验证或玩家档；持续推进并尊重停止、拒绝及安全边界，当前按直接继续不机械提问，凭据不持久化。

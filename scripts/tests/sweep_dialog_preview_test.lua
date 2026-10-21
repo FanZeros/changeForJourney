@@ -38,7 +38,11 @@ end
 local function setup()
     local h = F.new()
     F.install(h)
-    local captured = { previews = {}, args = {}, calls = {}, actualSweep = 0 }
+    local captured = { previews = {}, args = {}, calls = {}, actualSweep = 0, pending = false }
+    h.modules["runtime.LocalActionBridge"] = {
+        getSweepState = function() return captured.work end,
+        isSweepPending = function() return captured.pending end,
+    }
     local function widget(kind)
         return function(props)
             local w = { kind = kind, props = props, children = props.children or {} }
@@ -81,8 +85,9 @@ local function setup()
     end
     h.Transaction.SetPersistCallback(function() error("预览专项禁止持久化") end)
     local dialog = h.require("ui.battle.stage.SweepDialog")
-    dialog.onSweep = function(count, team, stage)
-        captured.calls[#captured.calls + 1] = { count = count, team = team, stage = stage }
+    dialog.onSweep = function(count, team, stage, requestId)
+        captured.calls[#captured.calls + 1] = { count = count, team = team, stage = stage, requestId = requestId }
+        return false -- 旧预览矩阵只记录参数，不接受/启动实际扫荡。
     end
     h.forbidRNG = true
     local function click(x, y) return dialog.handleInput(point(x, y)) end
@@ -211,6 +216,7 @@ function Start()
         click(798, 1510)
         draw()
         local result, args = out.previews[#out.previews], out.args[#out.args]
+        local playerProgress = assert(result.playerProgress) ---@type table
         eq(args.n, 10, "Preview真实十参签名")
         eq(args[10], h.data.player, "最后一参是player数据引用")
         eq(result.playerProgress ~= nil, true, "不虚构/遗漏playerProgress")
@@ -220,10 +226,10 @@ function Start()
             expected.exp = expected.exp - h.ET.player[expected.level]
             expected.level = expected.level + 1
         end
-        eq(result.playerProgress.level, expected.level, "玩家预估新等级")
-        eq(result.playerProgress.exp, expected.exp, "玩家预估本级剩余")
-        eq(result.playerProgress.maxExp, h.ET.player[expected.level], "玩家新本级阈值")
-        eq(result.playerProgress.beforeLevel, 1, "玩家原等级")
+        eq(playerProgress.level, expected.level, "玩家预估新等级")
+        eq(playerProgress.exp, expected.exp, "玩家预估本级剩余")
+        eq(playerProgress.maxExp, h.ET.player[expected.level], "玩家新本级阈值")
+        eq(playerProgress.beforeLevel, 1, "玩家原等级")
         eq(expected.level > 1, true, "覆盖跨级不是原值")
         local format = h.require("ui.battle.stage.StageSelectRewardPreview").formatEstimate
         checkProgress(at(out.tree, 45, 520), result.playerProgress, format)
@@ -337,6 +343,338 @@ function Start()
         click(857, 1435); click(798, 1510); click(740, 1510); click(540, 1700)
         eq(#out.calls, 3, "耗尽不能发请求")
         readonly(h, out, before)
+    end)
+    run("真实阶段计数、处理中所有调节与关闭输入防重复", function()
+        local h, dialog, out, click, draw = setup()
+        local before = F.copy(h.data)
+        local acceptedId = ""
+        dialog.onSweep = function(count, team, stage, requestId)
+            acceptedId = requestId
+            out.calls[#out.calls + 1] = { count = count, team = team, stage = stage, requestId = requestId }
+            out.pending = true
+            out.work = { sweepRequestId = requestId, pending = true, phase = "generate", completed = 7, total = 30 }
+            return true
+        end
+        dialog.open(2, 1905)
+        click(857, 1435)
+        click(540, 1700)
+        eq(type(acceptedId), "string", "提交业务字符串身份")
+        local previewCount = #out.previews
+        draw()
+        eq(#out.previews, previewCount, "处理中不重复昂贵预估")
+        eq(at(out.tree, 270, 1080).props.disabled, true, "确认禁用")
+        eq(at(out.tree, 270, 1080).props.text, "处理中", "等待按钮明确")
+        eq(at(out.tree, 45, 1196).props.text, "生成奖励 · 7 / 30", "真实阶段计数不是墙钟百分比")
+        near(at(out.tree, 270, 1184).props.value, 7 / 30, "真实进度条")
+        eq(at(out.tree, 270, 1184).props.showLabel, false, "不显示假全程百分比")
+        for _, position in ipairs({ { 540, 1700 }, { 282, 1510 }, { 798, 1510 }, { 857, 1435 },
+            { 740, 1510 }, { 212.5, 731 }, { 935, 627.5 }, { 0, 0 } }) do
+            eq(click(position[1], position[2]), true, "等待期间吞输入")
+        end
+        dialog.handleDragBegin(point(540, 1510))
+        dialog.handleDragMove(point(100, 1510)); dialog.handleDragEnd()
+        draw()
+        eq(#out.calls, 1, "重复按与拖动不再发送")
+        eq(dialog.isOpen(), true, "等待不被关闭")
+        eq(at(out.tree, 175, 842).props.text, "扫荡次数：30", "请求数量冻结")
+        for i = 1, 4 do eq(at(out.tree, 45 + (i - 1) * 217, 135).props.disabled, true, "分类禁用") end
+        out.work.phase, out.work.completed, out.work.total = "presentation", 300, 300
+        draw()
+        eq(at(out.tree, 45, 1196).props.text, "整理奖励", "阶段100%仍只标整理不是业务完成")
+        eq(at(out.tree, 270, 1184).props.visible, false, "整理阶段隐藏多轮重置进度")
+        eq(dialog.isOpen(), true, "阶段100%不提前关框")
+        readonly(h, out, before)
+        out.pending = false
+        eq(dialog.onActionResult({ sweepRequestId = acceptedId, success = false, reason = "模拟保存失败" }), true, "匹配失败消费")
+        draw()
+        eq(at(out.tree, 270, 1080).props.disabled, false, "失败恢复确认")
+        eq(at(out.tree, 45, 1196).props.text, "模拟保存失败", "保留权威失败原因")
+        click(282, 1510); draw()
+        eq(at(out.tree, 175, 842).props.text, "扫荡次数：29", "失败恢复调节")
+    end)
+    run("同步回执身份、旧回执与关闭重开不关新页面", function()
+        local _, dialog, out, click, draw = setup()
+        local ids = {}
+        dialog.onSweep = function(_, _, _, requestId)
+            ids[#ids + 1] = requestId
+            eq(dialog.onActionResult({ sweepRequestId = requestId, success = false, reason = "同步拒绝" }), true, "先登记再同步回执")
+            return false
+        end
+        dialog.open(1, 1905); click(540, 1700); draw()
+        eq(at(out.tree, 45, 1196).props.text, "同步拒绝", "外层不覆盖同步原因")
+        dialog.onSweep = function(_, _, _, requestId) ids[#ids + 1] = requestId; return true end
+        click(540, 1700)
+        local first = ids[#ids]
+        dialog.close(); dialog.open(2, 905)
+        eq(dialog.onActionResult({ sweepRequestId = first, success = true }), false, "关闭重开不认旧成功")
+        eq(dialog.isOpen(), true, "新页保留")
+        click(540, 1700)
+        local second = ids[#ids]
+        eq(second ~= first, true, "新请求不复用身份")
+        eq(dialog.onActionResult({ sweepRequestId = first, success = false }), false, "迟到失败不清新等待")
+        eq(dialog.onActionResult({ success = true }), false, "无id旧回执不关闭新页")
+        draw(); eq(at(out.tree, 270, 1080).props.disabled, true, "新请求仍等待")
+        eq(dialog.onActionResult({ sweepRequestId = second, success = true }), true, "匹配成功才关闭")
+        eq(dialog.isOpen(), false, "真正成功收尾")
+    end)
+    run("外部任务、未知进度与legacy关闭态自持等待树", function()
+        local h, dialog, out, click, draw = setup()
+        out.pending, out.work = true, { phase = "queued" }
+        dialog.open(1, 1905); draw()
+        eq(at(out.tree, 45, 1196).props.text, "处理中", "未知total不捏造数值")
+        eq(at(out.tree, 270, 1184).props.value, 0, "未知total无伪进度")
+        click(540, 1700); eq(#out.calls, 0, "全局任务防重复")
+        eq(dialog.onActionResult({ sweepRequestId = "legacy-id", success = true }), false, "旁路回执不认领")
+        dialog.close()
+        local previews = #out.previews
+        dialog.drawPending({})
+        eq(dialog.isOpen(), false, "等待出口不打开业务页面")
+        eq(out.width, 820, "legacy等待树宽")
+        eq(out.height, 220, "legacy等待树高")
+        eq(at(out.tree, 35, 32).props.text, "处理中", "关闭态真实等待")
+        eq(#out.previews, previews, "关闭态不做预估")
+        out.work = { phase = "presentation", completed = 12, total = 24 }
+        dialog.drawPending({})
+        eq(at(out.tree, 35, 32).props.text, "整理奖励", "legacy整理不显示阶段回退")
+        eq(at(out.tree, 35, 112).props.visible, false, "legacy整理隐藏进度")
+        eq(h.rngCalls, 0, "等待树零随机")
+    end)
+    run("CMH完整候选可yield、全装备保留且最终一次展示后匹配关框", function()
+        local h, dialog, out, click = setup()
+        local shown, tokens, toasts = {}, {}, {}
+        local popup = {
+            prepareRewards = function(rewards, checkpoint)
+                checkpoint("presentation", 0, #rewards)
+                local token = { rewards = rewards }
+                tokens[#tokens + 1] = token
+                return token
+            end,
+            show = function(title, rewards, opts)
+                eq(dialog.isOpen(), true, "show前仍开框")
+                shown[#shown + 1] = { title = title, rewards = rewards, opts = opts }
+            end,
+        }
+        h.modules["ui.hud.popup.RewardPopup"] = popup
+        h.modules["core.UiToast"] = { show = function(text) toasts[#toasts + 1] = text end }
+        for _, name in ipairs({ "ui.loot.LootBox", "ui.loot.LootBoxPage", "ui.blacksmith.BlacksmithPage",
+            "ui.backpack.BackpackPanel", "ui.church.ChurchPage", "ui.church.talent.TalentPage", "ui.tavern.TavernPage",
+            "ui.market.MarketPage", "ui.dungeon.DungeonPage", "ui.dungeon.DungeonBattleScene", "ui.dev.GMConsolePanel",
+            "ui.hud.TopBar", "ui.battle.scene.BattleScene", "ui.character.equip.EquipmentDetail",
+            "ui.hud.popup.RedeemCodePanel", "systems.TutorialManager" }) do
+            h.modules[name] = {}
+        end
+        local cmh = h.require("runtime.ClientMessageHandler")
+        cmh.setup({ sendAction = function() error("禁止发送旁支动作") end, ui = {} })
+        local id = ""
+        dialog.onSweep = function(_, _, _, requestId) id = requestId; return true end
+        dialog.open(1, 1905); click(540, 1700)
+        local protocol = h.require("shared.Protocol")
+        local data = { action = protocol.ACTION_TYPES.SWEEP, success = true, sweepRequestId = id,
+            gold = 13, diamond = 5, autoDecomposeEssence = 7, playerExp = 11, heroExp = 17,
+            heroExpTotal = 100, teamIdx = 2, equips = {}, scrollDrops = { weaponScroll = 4 } }
+        for i = 1, 1024 do
+            data.equips[i] = { type = "equip", templateId = "W1", quality = i % 6 + 1, level = i,
+                equip = { seq = i, marker = { intact = true } }, destination = i < 500 and "inventory" or "lootbox" }
+        end
+        data.equips[1024].type = nil -- 兼容旧回执只能补副本，不改原表。
+        local before = F.copy(data)
+        local co = coroutine.create(function()
+            return cmh.prepareSweepPresentation(data, function(phase, done, total)
+                eq(phase, "presentation", "私有展示检查点阶段")
+                eq(done >= 0 and done <= total, true, "真实检查点边界")
+                coroutine.yield()
+            end)
+        end)
+        local presentation
+        repeat
+            local ok, value = coroutine.resume(co)
+            eq(ok, true, "预处理协程正常")
+            eq(#shown, 0, "处理中不展示半奖励")
+            eq(dialog.isOpen(), true, "处理中不关框")
+            if coroutine.status(co) == "dead" then presentation = value end
+        until coroutine.status(co) == "dead"
+        eq(presentation.version, 1, "候选版本")
+        eq(#presentation.rewards, 1028, "1024装备与四类资源完整无截断")
+        eq(presentation.preparedRewards, tokens[1], "完整排序token")
+        eq(presentation.rewards[4], data.equips[1], "新完整行只读复用")
+        eq(presentation.rewards[1027] ~= data.equips[1024], true, "旧行补type副本")
+        eq(presentation.rewards[1027].equip, data.equips[1024].equip, "旧行完整实例保留")
+        eq(F.equal(data, before), true, "全量预处理不改源数据")
+        eq(presentation.subtitle:find("队2每名队员经验 +17", 1, true) ~= nil, true, "回执每人经验摘要")
+        data.sweepPresentation = presentation
+        cmh.handleActionResult(data)
+        eq(#shown, 1, "最终只展示一次")
+        eq(shown[1].rewards, presentation.rewards, "不重新包装全量数组")
+        eq(shown[1].opts.preparedRewards, presentation.preparedRewards, "透传opaque token")
+        eq(dialog.isOpen(), false, "完整show返回后匹配关框")
+        dialog.open(1, 905)
+        cmh.handleActionResult({ action = protocol.ACTION_TYPES.SWEEP, success = false,
+            sweepRequestId = id, reason = "迟到失败" })
+        eq(dialog.isOpen(), true, "CMH迟到失败不关新页")
+        eq(#toasts, 1, "失败专属提示")
+        local resourceResults = 0
+        local identity = h.require("ui.dungeon.DungeonRewards").newSweepIdentity()
+        h.modules["ui.dungeon.DungeonPage"].onActionResult = function(result)
+            resourceResults = resourceResults + 1
+            identity.consume(result)
+        end
+        click(540, 1700)
+        local throwId = id
+        popup.show = function() error("模拟show异常") end
+        cmh.handleActionResult({ action = protocol.ACTION_TYPES.DUNGEON_SWEEP, dungeonId = "gold_mine",
+            success = true, sweepRequestId = throwId, gold = 1 })
+        eq(dialog.isOpen(), false, "已到账show异常仍释放所属等待")
+        eq(resourceResults, 1, "show异常仍通知资源匹配释放")
+        eq(toasts[#toasts], "扫荡奖励已到账，展示失败", "异常明确已到账不诱导业务重试")
+        local params = { dungeonId = "gold_mine", teamIdx = 2, floor = 3 }
+        identity.send(params, function() return true end)
+        h.modules["core.UiToast"].show = function()
+            eq(identity.isPending(), false, "toast前资源所属身份已释放")
+            error("模拟toast异常")
+        end
+        local feedbackOk = pcall(cmh.handleActionResult, { action = protocol.ACTION_TYPES.DUNGEON_SWEEP,
+            dungeonId = params.dungeonId, teamIdx = params.teamIdx, success = true,
+            sweepRequestId = params.sweepRequestId, gold = 1 })
+        eq(feedbackOk, false, "故障toast真实抛出不伪称成功")
+        eq(identity.isPending(), false, "show与toast双异常仍释放资源身份")
+        local fresh = { dungeonId = "gold_mine", teamIdx = 2, floor = 3 }
+        identity.send(fresh, function() return true end)
+        h.modules["core.UiToast"].show = function(text) toasts[#toasts + 1] = text end
+        cmh.handleActionResult({ action = protocol.ACTION_TYPES.DUNGEON_SWEEP,
+            dungeonId = params.dungeonId, teamIdx = params.teamIdx, success = true,
+            sweepRequestId = params.sweepRequestId, gold = 1 })
+        eq(identity.isPending(), true, "迟到show异常不清新资源请求")
+        identity.clear()
+        dialog.open(1, 905); click(540, 1700)
+        local prepareId = id
+        local prepare = cmh.prepareSweepPresentation
+        cmh.prepareSweepPresentation = function() error("模拟prepare异常") end
+        cmh.handleActionResult({ action = protocol.ACTION_TYPES.SWEEP, success = true, sweepRequestId = prepareId })
+        eq(dialog.isOpen(), false, "已到账prepare异常释放等待")
+        dialog.open(1, 905)
+        cmh.handleActionResult({ action = protocol.ACTION_TYPES.SWEEP, success = true, sweepRequestId = prepareId })
+        eq(dialog.isOpen(), true, "迟到prepare异常不关新页")
+        cmh.prepareSweepPresentation = prepare
+        eq(#shown, 1, "展示异常不重试show或重复奖励")
+        eq(h.rngCalls, 0, "展示不消费随机")
+        eq(h.persists, 0, "展示不再次保存")
+    end)
+    run("资源旧入口身份失败恢复、独立busy与关闭重开迟到隔离", function()
+        local h = setup()
+        local rewards = h.require("ui.dungeon.DungeonRewards")
+        local identity = rewards.newSweepIdentity()
+        local sent = {}
+        local function send(params) sent[#sent + 1] = F.copy(params); return true end
+        local function request() return { dungeonId = "gold_mine", teamIdx = 2, floor = 3, count = 1 } end
+        for _, reason in ipairs({ "缺少数据", "暂无可扫荡层", "生成失败", "busy" }) do
+            local params = request()
+            eq(identity.send(params, send), true, "资源请求受理")
+            eq(identity.isPending(), true, "资源进入pending")
+            local unrelated = request()
+            eq(identity.send(unrelated, send), false, "独立busy不覆盖在途身份")
+            eq(unrelated.sweepRequestId, nil, "busy不伪造新身份")
+            eq(identity.consume({ dungeonId = "gold_mine", sweepRequestId = params.sweepRequestId,
+                success = false, reason = reason }), true, "匹配失败立即清pending " .. reason)
+            eq(identity.isPending(), false, "失败恢复不用等超时")
+        end
+        local old, fresh = request(), request()
+        identity.send(old, send); identity.clear(); identity.send(fresh, send)
+        eq(fresh.sweepRequestId ~= old.sweepRequestId, true, "资源重开新身份")
+        for _, wrong in ipairs({ { dungeonId = "gold_mine", sweepRequestId = old.sweepRequestId },
+            { dungeonId = "equipment_vault", sweepRequestId = fresh.sweepRequestId },
+            { dungeonId = "gold_mine", sweepRequestId = fresh.sweepRequestId, teamIdx = 1 },
+            { dungeonId = "gold_mine", sweepRequestId = fresh.sweepRequestId, sweepFloor = 2 },
+            { dungeonId = "gold_mine" } }) do
+            eq(identity.consume(wrong), false, "旧id/旁路/错误归属不消费")
+            eq(identity.isPending(), true, "新pending保持")
+        end
+        eq(identity.consume({ dungeonId = "gold_mine", sweepRequestId = fresh.sweepRequestId,
+            teamIdx = 2, sweepFloor = 3, success = true }), true, "匹配成功消费")
+        eq(identity.isPending(), false, "成功释放")
+        eq(identity.send(request(), function() return false end), false, "发送拒绝恢复")
+        eq(identity.isPending(), false, "拒绝无挂起")
+        eq(identity.send(request(), function() error("模拟发送异常") end), false, "发送异常恢复")
+        eq(identity.isPending(), false, "异常无挂起")
+        -- 本轮只搬独立展示helper；原时长/缺副本预览语义保持。
+        eq(rewards.formatIdleDuration(3661), "1:01", "展示helper小时语义")
+        eq(rewards.formatIdleDuration(59), "0分", "展示helper分钟语义")
+        eq(select(1, rewards.idleClaimPreview("gold_mine", {})), 0, "缺副本预览0")
+    end)
+    run("真实DungeonPage资源回执清pending不关重开新页", function()
+        local h = setup()
+        local nav, calls = 5, {}
+        h.modules["ui.hud.BottomNav"] = { getSelectedIndex = function() return nav end,
+            setSelectedIndex = function(index) nav = index end }
+        h.modules["core.DrawUtil"].hitTest = function(x, y, cx, cy, w, height)
+            return math.abs(x - cx) <= w / 2 and math.abs(y - cy) <= height / 2
+        end
+        h.env.nvgCreateImage = function() return 1 end
+        h.modules["runtime.GameAction"] = { sendAction = function(_, params) calls[#calls + 1] = F.copy(params); return true end }
+        -- 仅测试副本注入旧详情状态；生产没有新增调试API，原handleInput/onActionResult完整执行。
+        local f = assert(cache:GetFile("ui/dungeon/DungeonPage.lua"))
+        local lines = {}; while not f:IsEof() do lines[#lines + 1] = f:ReadLine() end; f:Dispose()
+        local source = table.concat(lines, "\n")
+        local seam = [[
+function DungeonPage.testLegacyOpen()
+    detailOpen, detailDungeon, detailTeamIdx = true, { id = "gold_mine" }, 2
+    currentFloor, dailyUsed, dailyMax = 4, 0, 2
+end
+function DungeonPage.testResourcePending() return resourceSweep.isPending(), pendingSweep end
+return DungeonPage]]
+        source = source:gsub("return DungeonPage%s*$", function() return seam end)
+        local page = assert(load(source, "@sweep-test/DungeonPage", "t", h.env))()
+        page.init({}); page.testLegacyOpen(); page.handleInput(330, 1633)
+        eq(#calls, 1, "真实旧按钮发送一次")
+        local first = calls[1]
+        eq(type(first.sweepRequestId), "string", "真实旧入口带id")
+        page.onActionResult({ action = h.require("shared.Protocol").ACTION_TYPES.DUNGEON_SWEEP,
+            dungeonId = "gold_mine", sweepRequestId = first.sweepRequestId, success = false })
+        eq(select(1, page.testResourcePending()), false, "真实失败立即释放identity")
+        eq(select(2, page.testResourcePending()), false, "真实失败立即释放pendingSweep")
+        page.handleInput(330, 1633)
+        eq(#calls, 2, "失败可再次提交")
+        local old = calls[2]
+        page.close(); page.testLegacyOpen(); page.handleInput(330, 1633)
+        local fresh = calls[3]
+        page.onActionResult({ action = h.require("shared.Protocol").ACTION_TYPES.DUNGEON_SWEEP,
+            dungeonId = "gold_mine", sweepRequestId = old.sweepRequestId, success = true })
+        eq(nav, 5, "迟到成功不关新页面")
+        eq(select(2, page.testResourcePending()), true, "迟到不清新pending")
+        page.onActionResult({ action = h.require("shared.Protocol").ACTION_TYPES.DUNGEON_SWEEP,
+            dungeonId = "gold_mine", sweepRequestId = fresh.sweepRequestId, success = true })
+        eq(nav, 3, "匹配成功离开原资源页")
+        eq(select(2, page.testResourcePending()), false, "匹配清pending")
+    end)
+    run("真实Noto五语等待/失败字墨与百万杀计数不越框", function()
+        local h = setup()
+        local dictionary = h.require("core.I18nDictExtra")
+        local vg = assert(nvgCreate(1))
+        local ok, err = pcall(function()
+            eq(nvgCreateFont(vg, "sans", "Fonts/NotoSansCJKkr-Bold.otf") >= 0, true, "真实宿主Noto字体")
+            nvgBeginFrame(vg, 1920, 1080, 1)
+            nvgFontFace(vg, "sans")
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+            for _, lang in ipairs({ "zh", "zh_TW", "en", "ja", "ko" }) do
+                local function tr(text) return lang == "zh" and text or assert(dictionary[lang][text], lang .. text) end
+                local texts = { tr("处理中"), tr("整理奖励"), tr("正在结算"), tr("扫荡失败，请重试"),
+                    tr("扫荡请求未受理，请重试"), tr("扫荡处理中，请稍候"),
+                    string.format(tr("%s · %d / %d"), tr("生成奖励"), 100000, 100000),
+                    string.format(tr("%s · %d / %d"), tr("生成奖励"), 9999999, 10000000) }
+                for _, sizeWidth in ipairs({ { 22, 860 }, { 30, 750 } }) do
+                    nvgFontSize(vg, sizeWidth[1])
+                    for _, text in ipairs(texts) do
+                        local bounds = {}
+                        local advance = nvgTextBounds(vg, 0, 0, text, bounds)
+                        eq(advance > 0, true, "真实文字非空 " .. lang)
+                        eq(bounds[3] - bounds[1] <= sizeWidth[2], true, "真实字墨内宽 " .. lang .. " " .. text)
+                        eq(advance <= sizeWidth[2], true, "真实advance内宽 " .. lang)
+                    end
+                end
+            end
+            nvgEndFrame(vg)
+        end)
+        nvgDelete(vg)
+        if not ok then error(err) end
     end)
     print(string.format("[sweep_dialog_preview_test] SUMMARY cases=%d failures=%d assertions=%d",
         cases, #failures, assertions))

@@ -1,10 +1,26 @@
 -- 扫荡共用规则：已通关关卡的一场重复战斗，不含首通大奖或挂机时长。
--- 预估只读；实际掉落复用在线逐杀接口。扫荡不产券，避免券自循环。
+-- 预估只读；实际掉落批量抽取数量，逐件生成完整装备。扫荡不产券，避免券自循环。
 local SC = require("config.StageConfig")
 local DC = require("config.DungeonConfig")
 local MC = require("config.MonsterConfig")
 local ET = require("config.ExpTable")
 local DropSystem = require("systems.DropSystem")
+local BatchRandom = require("shared.sweep.BatchRandom")
+local EquipmentSystem = require("systems.EquipmentSystem")
+
+---@class SweepCalculatedReward
+---@field gold number
+---@field diamond number
+---@field playerExp number
+---@field heroExp number
+---@field heroExpTotal number
+---@field equipCount number
+---@field equips table[]
+---@field scrollDrops table<string, number>
+---@field ticketDrop number
+---@field kills number
+---@field scrollCount number?
+---@field heroExpBatch {amount: number, count: number}?
 
 local M = { COST = 1 }
 
@@ -106,12 +122,43 @@ local function addScrolls(target, source)
     end
 end
 
+local SCROLL_TYPES = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
+
+-- 每杀 floor(raw)+Bernoulli(frac) 的总和；不能对 raw*总杀数只做一次随机取整。
+local function roundedTotal(raw, trials, checkpoint)
+    local base = math.floor(raw)
+    return base * trials + BatchRandom.binomial(trials, raw - base, nil, checkpoint)
+end
+
+-- 独立卷轴先抽总数，再按条件二项分布拆六类，保留多项分布及类别间负相关。
+local function rollScrolls(target, amount, checkpoint)
+    local remaining = amount
+    for index, key in ipairs(SCROLL_TYPES) do
+        local value = index == #SCROLL_TYPES and remaining
+            or BatchRandom.binomial(remaining, 1 / (#SCROLL_TYPES - index + 1), nil, checkpoint)
+        if value > 0 then target[key] = value end
+        remaining = remaining - value
+    end
+end
+
+local function generateEquips(result, amount, level, rollQuality, checkpoint)
+    if checkpoint then checkpoint("generate", 0, amount) end
+    for index = 1, amount do
+        -- 品质按掉落顺序独立抽取，不按品质分组，以免改变有限仓位优先接收的分布。
+        local equip = EquipmentSystem.generateRandom(level, rollQuality())
+        if not equip then error("扫荡装备生成失败") end
+        result.equips[#result.equips + 1] = equip
+        if checkpoint then checkpoint("generate", index, amount) end
+    end
+end
+
 --- 返回值只供界面/扫荡结算，预估装备数允许小数，不能当实际装备交付。
---- control.checkpoint 只能暂停私有计算；一杀的全部随机/装备生成完成后才交还调度器。
---- 调用方负责全局RNG独占，不能把此检查点用于live奖励事务。
+--- 批量计数保持独立击杀的奖励分布，不保留旧版同seed逐件结果或RNG消费序列。
+--- 调用方负责全局RNG独占，检查点只暂停私有计算，绝不用于live奖励事务。
 function M.calculate(entry, heroCount, count, roll, luck, teamIdx, control)
     local checkpoint = control and control.checkpoint
     local dropContext = { teamIdx = teamIdx, dropLuck = luck, silent = control and control.summaryLogs == true }
+    ---@type SweepCalculatedReward
     local result = { gold = 0, diamond = 0, playerExp = 0, heroExp = 0, heroExpTotal = 0,
         equipCount = 0, equips = {}, scrollDrops = {}, ticketDrop = 0, kills = 0 }
     local kills = math.max(0, math.floor(entry.idleCount or 0))
@@ -125,21 +172,24 @@ function M.calculate(entry, heroCount, count, roll, luck, teamIdx, control)
         result.heroExp = perHero * totalKills
         result.heroExpBatch = { amount = perHero, count = totalKills }
         if roll then
-            -- 每杀继续调用原 RNG 接口（含资源券判定，但不交付券），不合并随机掉落。
-            local rollRewards = DC.createStageRewardsContext(entry.id, 1, heroCount)
-            if checkpoint then checkpoint("generate", 0, totalKills) end
-            for index = 1, totalKills do
-                local rewards = DC.getStageRewards(entry.id, 1, heroCount, rollRewards)
-                result.gold = result.gold + rewards.gold
-                result.diamond = result.diamond + rewards.diamond
-                addScrolls(result.scrollDrops, rewards.scrollDrops)
-                for _, seed in ipairs(rewards.equipSeeds) do
-                    local equip = require("systems.EquipmentSystem").generateRandom(seed.level, seed.quality)
-                    if not equip then error("扫荡装备生成失败") end
-                    result.equips[#result.equips + 1] = equip
-                end
-                if checkpoint then checkpoint("generate", index, totalKills) end
+            -- 只抽每杀随机尾数的总和，金币/黑晶不再为数百万个空击杀建临时奖励表。
+            local sampleCheckpoint = checkpoint and function() return checkpoint("generate", 0, 0) end or nil
+            local id, floor = DC.decodeStageId(entry.id)
+            assert(id and floor, "扫荡资源副本配置无效")
+            local amount = roundedTotal(DC.getStageRewardAmount(entry.id, 1), totalKills, sampleCheckpoint)
+            if id == "gold_mine" then result.gold = amount
+            elseif id == "black_diamond" then result.diamond = amount
+            else
+                local data = assert(DC.getFloor(id, floor), "扫荡装备副本配置无效")
+                local scrollRate = DC.getEquipDropRates(floor)
+                local scrolls = roundedTotal(scrollRate, totalKills, sampleCheckpoint)
+                rollScrolls(result.scrollDrops, scrolls, sampleCheckpoint)
+                -- 扫荡不发券，不再为必定丢弃的资源券消耗随机数。
+                generateEquips(result, amount, data.equipLevel, function()
+                    return DropSystem.rollQualityByProbabilities(data.equipQualityProbabilities)
+                end, checkpoint)
             end
+            if id ~= "equipment_vault" and checkpoint then checkpoint("generate", 0, 0) end
         else
             -- 纯预估只查询一次每杀期望，不遍历 count 场或生成 count*kills 数组。
             local id = DC.decodeStageId(entry.id)
@@ -170,19 +220,14 @@ function M.calculate(entry, heroCount, count, roll, luck, teamIdx, control)
         result.heroExp = math.floor(baseExp * multiplier / heroCount + 0.5) * count
         result.heroExpBatch = { amount = math.floor(baseExp * multiplier / heroCount + 0.5), count = count }
         if roll then
-            if checkpoint then checkpoint("generate", 0, totalKills) end
-            for index = 1, totalKills do
-                local quality = DropSystem.rollKillDrop(entry, dropContext)
-                if quality then
-                    local equip = require("systems.EquipmentSystem").generateRandom(entry.monsterLevel, quality)
-                    if not equip then error("扫荡装备生成失败") end
-                    result.equips[#result.equips + 1] = equip
-                end
-                local scroll = DropSystem.rollScrollDrop(entry, dropContext)
-                if scroll then result.scrollDrops[scroll] = (result.scrollDrops[scroll] or 0) + 1 end
-                if checkpoint then checkpoint("generate", index, totalKills) end
-            end
+            local sampleCheckpoint = checkpoint and function() return checkpoint("generate", 0, 0) end or nil
+            local rate, rollQuality = DropSystem.createKillDropContext(entry, dropContext)
+            local amount = BatchRandom.binomial(totalKills, rate, nil, sampleCheckpoint)
+            local scrollRate = math.max(0, math.min(1, entry.scrollDropRate or 0))
+            rollScrolls(result.scrollDrops, BatchRandom.binomial(totalKills, scrollRate, nil, sampleCheckpoint), sampleCheckpoint)
+            generateEquips(result, amount, entry.monsterLevel, rollQuality, checkpoint)
         else
+            ---@type number
             local rate = math.min(1, (entry.dropRate or 0) * (1 + (luck or 0) / 100))
             result.equipCount = kills * count * rate
             result.scrollCount = kills * count * (entry.scrollDropRate or 0)

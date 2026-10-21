@@ -22,6 +22,25 @@ local function run(label, callback)
     if ok then passed = passed + 1; print(TAG .. "PASS " .. label)
     else failures[#failures + 1] = label .. " => " .. tostring(err); print(TAG .. "FAIL " .. failures[#failures]) end
 end
+-- 仅本测试的旧端点故障注入：forceRandom=0/0.999999 分别显式要求全命中/不命中。
+-- 新二项采样的均匀数端点不再有这个含义，常量源还可能触发Gamma安全拒绝。
+-- 只包装每个h私有的BatchRandom，不改共用fixture；自然随机/新版回放一律走真实算法。
+---@return table
+local function newHarness()
+    local h = F.new()
+    local batch = h.require("shared.sweep.BatchRandom")
+    local original = batch.binomial
+    batch.binomial = function(n, p, random, checkpoint)
+        if (h.forceRandom == 0 or h.forceRandom == 0.999999) and n > 0 and p > 0 and p < 1 then
+            if checkpoint and checkpoint() == false then error("批量随机已取消", 0) end
+            h.env.math.random() -- 端点注入也遵守forbidRNG，并计入私有seed/calls。
+            return h.forceRandom == 0 and math.floor(n) or 0
+        end
+        return original(n, p, random, checkpoint)
+    end
+    return h
+end
+
 local function preview(h, team, stage, count)
     local d = h.data
     return h.Sweep.Preview(d.heroes, d.battle, d.dungeon, d.equipment,
@@ -55,7 +74,7 @@ local function assertRollback(h, operation, label)
 end
 
 local function testMainBattle()
-    local h = F.new(); F.install(h, 0)
+    local h = newHarness(); F.install(h, 0)
     local entry = assert(h.SC.getStage(6705))
     check(entry.monsterLevel > 60, "真实夹具必须超过旧60级上限")
     check(entry.bossId > 0, "真实夹具有Boss")
@@ -112,7 +131,7 @@ end
 
 local function testResourceRounding()
     for _, id in ipairs({ "gold_mine", "black_diamond", "equipment_vault" }) do
-        local h = F.new(); F.install(h, 0)
+        local h = newHarness(); F.install(h, 0)
         local stage = h.DC.getStageId(id, 1)
         local entry = assert(h.SC.getStage(stage))
         local expPerKill = h.DC.getStageExpAmount(stage, 1)
@@ -136,8 +155,9 @@ local function testResourceRounding()
                 eq(result.scrollDrops.sweepTicket, nil, "资源估算剔除票券")
             end
         end
-        -- 在线逐杀接口作为独立oracle，固定RNG复播证明实际奖励与每杀1完全同源。
-        local oracle = F.new(); F.install(oracle, 0)
+        -- 仅端点故障注入以在线逐杀接口核对取整/全命中奖励；不是自然RNG同seed契约。
+        -- 自然概率的完整装备/卷轴/seed/calls回放另见testRandomReplay，真实分布另有概率专项。
+        local oracle = newHarness(); F.install(oracle, 0)
         h.forceRandom, oracle.forceRandom = 0, 0
         local expectedGold, expectedDiamond, expectedExp, expectedHero, expectedEquips, expectedScrolls = 0, 0, 0, 0, 0, {}
         for _ = 1, entry.idleCount do
@@ -166,7 +186,7 @@ local function testResourceRounding()
 end
 
 local function testPreviewPurity()
-    local h = F.new(); F.install(h, 200)
+    local h = newHarness(); F.install(h, h.ES.MAX_INVENTORY)
     local equipment = assert(h.ES.generate("C1", 70, 4))
     equipment.seq, equipment.testNested = 999, { preserved = true }
     h.data.equipment.inventory["999"] = equipment
@@ -198,7 +218,7 @@ local function testGuards()
         { "text", "abc" }, { "infinity", math.huge }, { "nan", 0/0 }, { "boolean", false } }
     for _, input in ipairs(invalid) do
         run("非法次数 " .. input[1], function()
-            local h = F.new(); F.install(h, 0); h.forbidRNG = true
+            local h = newHarness(); F.install(h, 0); h.forbidRNG = true
             local before = F.copy(h.data)
             local result = preview(h, 1, 1905, input[2])
             eq(result, nil, "Preview严格拒绝非法次数")
@@ -222,7 +242,7 @@ local function testGuards()
     }
     for _, guard in ipairs(guards) do
         run("门禁 " .. guard[1], function()
-            local h = F.new(); F.install(h, 0); guard[2](h); h.forbidRNG = true
+            local h = newHarness(); F.install(h, 0); guard[2](h); h.forbidRNG = true
             local before = F.copy(h.data)
             eq(preview(h, guard[3], guard[4], 1), nil, "Preview拒绝门禁")
             eq(h.Sweep.Sweep(1, 1, guard[3], guard[4]), false, "Sweep拒绝门禁")
@@ -231,7 +251,7 @@ local function testGuards()
         end)
     end
     run("合法数字字符串/缺省次数", function()
-        local h = F.new(); F.install(h, 0)
+        local h = newHarness(); F.install(h, 0)
         eq(assert(preview(h, "1", "1905", "10")).cost, 10, "合法字符串10券10场")
         eq(assert(preview(h, 1, 1905)).cost, 1, "Preview缺省1场")
         eq(h.Sweep.Sweep(1, nil, 1, 1905), true, "Sweep缺省1场")
@@ -242,7 +262,7 @@ end
 local function testProtocolParity()
     for _, id in ipairs({ "gold_mine", "black_diamond", "equipment_vault" }) do
         for _, count in ipairs({ 1, 3, 10 }) do
-            local a, b = F.new(), F.new(); F.install(a, 199); F.install(b, 199)
+            local a, b = newHarness(), newHarness(); F.install(a, a.ES.MAX_INVENTORY - 1); F.install(b, b.ES.MAX_INVENTORY - 1)
             -- 同RNG、同数据，两个真实Handler必须交付同样奖励，只允许副本标签差异。
             local protocol = a.require("shared.Protocol").ACTION_TYPES
             local stage = a.DC.getStageId(id, 1)
@@ -270,7 +290,7 @@ local function testProtocolValidation()
     for _, action in ipairs({ "SWEEP", "DUNGEON_SWEEP" }) do
         for _, field in ipairs({ "count", "teamIdx", "times" }) do
             run("协议nil-only默认 " .. action .. "/" .. field .. "=false", function()
-                local h = F.new(); F.install(h, 0); h.forbidRNG = true
+                local h = newHarness(); F.install(h, 0); h.forbidRNG = true
                 local params = { stageId = 100001, dungeonId = "gold_mine", floor = 1, teamIdx = 1 } ---@type table
                 params[field] = false
                 local at = h.require("shared.Protocol").ACTION_TYPES
@@ -284,7 +304,7 @@ local function testProtocolValidation()
         end
     end
     run("资源默认目标从稀疏账本回退真实已通6层", function()
-        local h = F.new(); F.install(h, 0)
+        local h = newHarness(); F.install(h, 0)
         h.data.dungeon.gold_mine = { floor = 11, cleared = { [6] = true } }
         h.data.battle.teamStageIds[1] = 100011
         eq(h.Rewards.resolveDefaultStage(h.data.battle, h.data.dungeon, 1), 100006,
@@ -297,7 +317,7 @@ local function testProtocolValidation()
         same(h.data.dungeon, before.dungeon, "默认回退不补写跳过层")
     end)
     run("终焉999等价进度两个资源协议同门禁", function()
-        local a, b = F.new(), F.new(); F.install(a, 0); F.install(b, 0)
+        local a, b = newHarness(), newHarness(); F.install(a, 0); F.install(b, 0)
         a.data.battle.maxStageId, b.data.battle.maxStageId = 999, 999
         local okA, errA, ra = a.Sweep.Sweep(1, 1, 1, 200001)
         local okB, errB, rb = b.Transaction.Sweep(1, "equipment_vault", 1, 1, 1)
@@ -384,7 +404,7 @@ local function testExpOrder()
     for _, stage in ipairs({ 101, 100001, 200001, 300001 }) do
         for _, count in ipairs({ 1, 3 }) do
             run("经验升级共鸣顺序 " .. stage .. "/" .. count .. "场", function()
-                local h = F.new(); F.install(h, 0); h.forceRandom = 0.999999
+                local h = newHarness(); F.install(h, 0); h.forceRandom = 0.999999
                 h.data.heroes.roster = {}
                 for id = 1, 6 do h.data.heroes.roster[id] = { level = id <= 2 and 1 or 2, exp = id <= 2 and 19 or 0 } end
                 h.data.heroes.teams = { { slots = { 1, 2, 0, 0 } }, { slots = {} }, { slots = {} } }
@@ -472,7 +492,7 @@ local function testGrowthPreview()
     for _, kind in ipairs({ "resonance", "multilevel", "capped", "cap-boundary" }) do
         for _, stage in ipairs({ 101, 6705, 100001, 200001, 300001 }) do
             run("四人精确成长 " .. kind .. "/" .. stage, function()
-                local h = F.new(); F.install(h, 0)
+                local h = newHarness(); F.install(h, 0)
                 local ids = configureGrowth(h, kind)
                 h.forceRandom = 0.999999
                 local count = kind == "multilevel" and (stage == 101 and 130 or 30) or 3
@@ -502,7 +522,7 @@ local function testGrowthPreview()
         end
     end
     run("可选player不改变旧参数位置/字符串槽位纯读", function()
-        local h = F.new(); F.install(h, 0)
+        local h = newHarness(); F.install(h, 0)
         local ids = configureGrowth(h, "resonance")
         for id, hero in pairs(F.copy(h.data.heroes.roster)) do
             h.data.heroes.roster[tostring(id)], h.data.heroes.roster[id] = hero, nil
@@ -528,7 +548,7 @@ end
 local function testLargeSweep()
     for _, stage in ipairs({ 101, 100001 }) do
         run("45000券一次执行/恒定经验空间 " .. stage, function()
-            local h = F.new(); F.install(h, 0)
+            local h = newHarness(); F.install(h, 0)
             local ids = configureGrowth(h, stage == 101 and "resonance" or "stable")
             h.data.currency.sweepTicket = 45000
             local expected, playerExpected = growthOracle(h, ids, stage, 45000)
@@ -554,25 +574,57 @@ local function testLargeSweep()
             same(h.data, before, "45000场预估不改输入")
             h.env.math.floor = originalFloor
             h.forbidRNG, h.forceRandom = false, 0.999999
-            local rolls, originalRoll = 0, h.SC.isResourceStage(stage) and h.DC.getStageRewards or h.Drop.rollKillDrop
-            local function counted(...)
-                rolls = rolls + 1
-                return originalRoll(...)
+            -- 端点注入只隔离随机奖励；计数算法不再逐杀调用旧接口。
+            local killRolls, scrollRolls, resourceRolls = 0, 0, 0
+            local originalKill, originalScroll, originalResource = h.Drop.rollKillDrop, h.Drop.rollScrollDrop, h.DC.getStageRewards
+            h.Drop.rollKillDrop = function(...)
+                killRolls = killRolls + 1
+                return originalKill(...)
             end
-            if h.SC.isResourceStage(stage) then h.DC.getStageRewards = counted else h.Drop.rollKillDrop = counted end
+            h.Drop.rollScrollDrop = function(...)
+                scrollRolls = scrollRolls + 1
+                return originalScroll(...)
+            end
+            h.DC.getStageRewards = function(...)
+                resourceRolls = resourceRolls + 1
+                return originalResource(...)
+            end
+            local expectedGold = 0
+            if h.SC.isResourceStage(stage) then
+                -- 无命中端点仍应发每杀确定的整数部分，不按整场期望截一次。
+                expectedGold = math.floor(h.DC.getStageRewardAmount(stage, 1)) * entry.idleCount * 45000
+            else
+                for _, enemy in ipairs(h.Spawn.generateEnemyList(entry, false)) do
+                    expectedGold = expectedGold + enemy.goldReward * 45000
+                end
+            end
             calls = 0
             local ok, err, result = h.Sweep.Sweep(1, "45000", 1, stage)
             check(ok, "45000券合法一次执行 " .. tostring(err))
             eq(h.data.currency.sweepTicket, 0, "45000券一次扣完")
             eq(h.persists, 1, "45000场同一原子交易只持久化一次")
-            eq(rolls, entry.idleCount * 45000, "随机掉落仍每杀一次原接口")
+            eq(killRolls, 0, "批量计数不调用旧逐杀装备接口")
+            eq(scrollRolls, 0, "批量计数不调用旧逐杀卷轴接口")
+            eq(resourceRolls, 0, "批量计数不构造旧逐杀资源奖励")
+            eq(result.kills, entry.idleCount * 45000, "未遍历空击杀但完整保留杀数")
+            eq(result.gold, expectedGold, "45000场固定金币完整保留")
+            eq(h.data.currency.gold, before.currency.gold + expectedGold, "45000场固定金币实际一次到账")
+            eq(result.diamond, 0, "主线/金币副本不额外发黑晶")
+            eq(result.playerExp, raw.playerExp, "45000场远征经验完整保留")
+            eq(result.heroExp, raw.heroExp, "45000场逐人经验完整保留")
+            eq(result.heroExpTotal, raw.heroExpTotal, "45000场英雄总经验完整保留")
+            eq(result.equipCount, 0, "无命中注入不生成装备")
+            eq(result.scrollCount, 0, "无命中注入不生成卷轴")
+            eq(result.ticketDrop, 0, "大批扫荡不返券")
             assertProgress(h, result, ids, expected, playerExpected, before)
             same(result.heroProgress, estimate.heroProgress, "45000场预估与实际成长一致")
+            same(result.playerProgress, estimate.playerProgress, "45000场玩家预估与实际成长一致")
             same(h.data.heroes.roster, expected, "45000场全名册精确等于慢速oracle")
+            same(h.data.player, playerExpected, "45000场完整玩家成长及附加字段一致")
         end)
     end
     run("大批存档失败/成长和45000券原位回滚", function()
-        local h = F.new(); F.install(h, 0)
+        local h = newHarness(); F.install(h, 0)
         configureGrowth(h, "resonance")
         h.data.currency.sweepTicket = 45000
         h.forceRandom, h.failure = 0.999999, "false"
@@ -580,7 +632,7 @@ local function testLargeSweep()
     end)
     run("券余额决定上界/低券不足拒绝零RNG", function()
         for _, owned in ipairs({ 0, 1, 2, 11, 45000 }) do
-            local h = F.new(); F.install(h, 0)
+            local h = newHarness(); F.install(h, 0)
             h.data.currency.sweepTicket, h.forbidRNG = owned, true
             local before = F.copy(h.data)
             local ok, err = h.Sweep.Sweep(1, owned + 1, 1, 1905)
@@ -594,7 +646,7 @@ local function testLargeSweep()
                 eq(h.data.currency.sweepTicket, 0, "低券刚好可用余额全部扣除")
             end
         end
-        local h = F.new(); F.install(h, 0)
+        local h = newHarness(); F.install(h, 0)
         h.data.currency.sweepTicket, h.forceRandom = 2.9, 0.999999
         local ok, err, receipt = h.Sweep.Sweep(1, 2, 1, 1905)
         check(ok, "旧档小数券余额合法交易后日志不抛错 " .. tostring(err))
@@ -606,55 +658,55 @@ end
 
 local function testRandomReplay()
     for _, stage in ipairs({ 1905, 200001 }) do
-        run("11场逐杀RNG/完整装备原序复播 " .. stage, function()
-            local h, oracle = F.new(), F.new(); F.install(h, 199); F.install(oracle, 199)
-            local entry = assert(h.SC.getStage(stage))
-            local count, expectedEquips, scrolls = 11, {}, {}
-            local gold, diamond = 0, 0
-            for _ = 1, entry.idleCount * count do
-                if h.SC.isResourceStage(stage) then
-                    local value = oracle.DC.getStageRewards(stage, 1, 2)
-                    gold, diamond = gold + value.gold, diamond + value.diamond
-                    for field, amount in pairs(value.scrollDrops) do
-                        if field ~= "sweepTicket" then scrolls[field] = (scrolls[field] or 0) + amount end
-                    end
-                    for _, seed in ipairs(value.equipSeeds) do
-                        expectedEquips[#expectedEquips + 1] = assert(oracle.ES.generateRandom(seed.level, seed.quality))
-                    end
-                else
-                    local quality = oracle.Drop.rollKillDrop(entry, { teamIdx = 2, dropLuck = 0 })
-                    if quality then expectedEquips[#expectedEquips + 1] = assert(oracle.ES.generateRandom(entry.monsterLevel, quality)) end
-                    local scroll = oracle.Drop.rollScrollDrop(entry)
-                    if scroll then scrolls[scroll] = (scrolls[scroll] or 0) + 1 end
-                end
-            end
+        run("11场新版批量RNG/完整装备原序复播 " .. stage, function()
+            -- 独立私有环境直接calculate参考，再运行被测Sweep；不拿Service自身当oracle。
+            -- 用户已授权同分布而非旧逐杀同seed；此处无forceRandom，无BatchRandom stub。
+            local h, oracle = F.new(), F.new()
+            local cap = h.ES.MAX_INVENTORY
+            F.install(h, cap - 1); F.install(oracle, oracle.ES.MAX_INVENTORY - 1)
+            -- 新算法更改seed映射；选择自然非零样本保留原溢出覆盖，不强制命中/改掉率。
+            local seed = stage == 1905 and 3926 or 40000
+            h.env.math.randomseed(seed); oracle.env.math.randomseed(seed)
+            local count = 11
+            local expected = oracle.Rewards.calculate(assert(oracle.SC.getStage(stage)), 2, count, true, 0, 2)
+            local expectedEquips, scrolls = expected.equips, expected.scrollDrops
+            eq(h.forceRandom, nil, "被测Sweep使用自然随机源")
+            eq(oracle.forceRandom, nil, "新版参考使用自然随机源")
+            eq(oracle.persists + oracle.notifications + oracle.events, 0, "独立calculate不执行Service事务")
             local ok, err, result = h.Sweep.Sweep(1, count, 2, stage)
-            check(ok, "11场逐杀RNG执行 " .. tostring(err))
-            eq(h.seed, oracle.seed, "每杀RNG终态相同，不少骰/多骰/改序")
-            eq(h.rngCalls, oracle.rngCalls, "随机消费次数严格相同")
-            eq(#result.equips, #expectedEquips, "原逐杀接口全装备数相同")
+            check(ok, "11场批量RNG执行 " .. tostring(err))
+            eq(h.seed, oracle.seed, "新版calculate与Sweep的RNG终态相同")
+            eq(h.rngCalls, oracle.rngCalls, "新版随机消费次数严格相同")
+            eq(#result.equips, #expectedEquips, "新版参考全装备数相同")
             if not h.SC.isResourceStage(stage) then
                 check(#expectedEquips > 1, "主线夹具覆盖背包满后入遗匣")
             end
-            -- 控量后11券可能不足两件；不把随机未溢出当业务失败。
-            -- 后续testFullBag仍以真实强制命中覆盖资源溢出，这里核自然骰的完整分流。
-            eq(result.inventoryCount, math.min(1, #expectedEquips), "原199件库存按实际空位交付")
-            eq(result.lootboxCount, math.max(0, #expectedEquips - 1), "自然逐杀全部溢出完整入遗匣")
+            -- 控量后11券可能不足两件；不把自然未溢出当业务失败。
+            -- testFullBag以显式端点注入覆盖资源溢出，这里核自然骰的完整分流。
+            eq(result.inventoryCount, math.min(1, #expectedEquips), "正式cap-1库存按实际空位交付")
+            eq(result.lootboxCount, math.max(0, #expectedEquips - 1), "自然批量全部溢出完整入遗匣")
             for index, equip in ipairs(expectedEquips) do
                 equip.seq = result.equips[index].equip.seq
                 same(result.equips[index].equip, equip, "完整装备内容和顺序相同")
             end
-            same(result.scrollDrops, scrolls, "原卷轴掉落完全一致/不返券")
-            if h.SC.isResourceStage(stage) then eq(result.gold, gold, "资源原金币"); eq(result.diamond, diamond, "资源原黑晶") end
+            same(result.scrollDrops, scrolls, "新版卷轴掉落完全一致/不返券")
+            eq(result.gold, expected.gold, "新版参考金币完整一致")
+            eq(result.diamond, expected.diamond, "新版参考黑晶完整一致")
+            for _, field in ipairs({ "playerExp", "heroExp", "heroExpTotal", "kills", "equipCount", "scrollCount", "ticketDrop" }) do
+                eq(result[field], expected[field], "新版完整奖励一致 " .. field)
+            end
             eq(h.data.currency.sweepTicket, 19, "仍按一券一场扣11券")
         end)
     end
 end
 
 local function testFullBag()
-    for _, initial in ipairs({ 0, 199, 200, 201 }) do
+    -- 从真实ES导出容量，不再把旧200当作业务上限；保留空包/差一格/满包/旧超容四边界。
+    local capacitySource = newHarness()
+    local cap = capacitySource.ES.MAX_INVENTORY
+    for _, initial in ipairs({ 0, cap - 1, cap, cap + 1 }) do
         for _, stage in ipairs({ 1905, 200001 }) do
-            local h = F.new(); F.install(h, initial); h.forceRandom = 0
+            local h = newHarness(); F.install(h, initial); h.forceRandom = 0
             local generated = {}
             local original = h.ES.generateRandom
             h.ES.generateRandom = function(level, quality)
@@ -667,7 +719,7 @@ local function testFullBag()
             local ok, err, result = h.Sweep.Sweep(1, 1, 1, stage)
             check(ok, "满包真实扫荡成功 " .. tostring(err))
             check(#generated > 0, "强制命中确实生成装备")
-            local direct = math.min(#generated, math.max(0, 200 - initial))
+            local direct = math.min(#generated, math.max(0, h.ES.MAX_INVENTORY - initial))
             eq(result.equipCount, #generated, "报告总数包含所有遗匣装备")
             eq(result.inventoryCount, direct, "按实际容量入包")
             eq(result.lootboxCount, #generated - direct, "全部溢出保管")
@@ -690,7 +742,7 @@ local function testFullBag()
                 eq(#items, 0, "满包领取不吞装备")
                 eq(full, true, "满包提示")
                 h.ES.removeFromInventory(h.data.equipment, 1)
-                if initial > 200 then h.ES.removeFromInventory(h.data.equipment, 2) end
+                if initial > h.ES.MAX_INVENTORY then h.ES.removeFromInventory(h.data.equipment, 2) end
                 local claimed = h.LS.claimAll(h.data.lootbox, h.data.equipment)
                 eq(#claimed, 1, "腾出一格只领原实例")
             end
@@ -702,7 +754,7 @@ local function testRollback()
     for _, stage in ipairs({ 1905, 200001 }) do
         for _, failure in ipairs({ "generation-nil", "generation-throw", "delivery", "false", "nil", "throw", "onLoad" }) do
             run("原位回滚 " .. stage .. "/" .. failure, function()
-                local h = F.new(); F.install(h, 199); h.forceRandom = 0
+                local h = newHarness(); F.install(h, h.ES.MAX_INVENTORY - 1); h.forceRandom = 0
                 local originalGenerate, originalDeliver = h.ES.generateRandom, h.LS.deliverEquipment
                 local generated, delivered = 0, 0
                 if failure:match("^generation") then
@@ -726,7 +778,7 @@ local function testRollback()
                         if name == "currency" then data.gold = -999; error("expected onLoad exception") end
                     end
                 else
-                    h.failure = failure
+                    h.failure = failure --[[@as string]]
                     h.beforePersist = function()
                         -- 模拟双onLoad/Flush替换子表并更改session；旧外部别名也必须恢复。
                         h.data.equipment.inventory = {}
@@ -747,13 +799,13 @@ local function testRollback()
         end
     end
     run("未接持久化fail-closed", function()
-        local h = F.new(); F.install(h, 0); h.forbidRNG = true
+        local h = newHarness(); F.install(h, 0); h.forbidRNG = true
         h.Transaction.SetPersistCallback(nil)
         assertRollback(h, function() return h.Sweep.Sweep(1, 1, 1, 1905) end, "无持久化")
         eq(h.rngCalls, 0, "无接线不消费掉落RNG")
     end)
     run("满包缺遗匣原位拒绝", function()
-        local h = F.new(); F.install(h, 200); h.forceRandom = 0; h.data.lootbox = nil
+        local h = newHarness(); F.install(h, h.ES.MAX_INVENTORY); h.forceRandom = 0; h.data.lootbox = nil
         assertRollback(h, function() return h.Sweep.Sweep(1, 1, 1, 1905) end, "缺遗匣")
         eq(h.persists, 0, "缺安全容器不保存")
     end)
@@ -762,7 +814,10 @@ end
 local function testAutoDecompose()
     for _, stage in ipairs({ 1905, 200001 }) do
         run("自动分解精确分类/完整RNG/已有实例保持 " .. stage, function()
-            local a, b = F.new(), F.new(); F.install(a, 199); F.install(b, 199)
+            -- 与自然回放一样使用真实BatchRandom；端点注入不参与开关等价性对照。
+            local a, b = F.new(), F.new(); F.install(a, a.ES.MAX_INVENTORY - 1); F.install(b, b.ES.MAX_INVENTORY - 1)
+            local seed = stage == 1905 and 3926 or 40000
+            a.env.math.randomseed(seed); b.env.math.randomseed(seed)
             local config = b.require("config.BlacksmithConfig")
             a.data.equipment.settings = { autoQuality = 0, autoLevel = 0 }
             b.data.equipment.settings = { autoQuality = 6, autoLevel = 0 }
@@ -801,7 +856,7 @@ local function testAutoDecompose()
         end)
     end
     run("自动分解AND/锁定实例/完整保留引用", function()
-        local h = F.new(); F.install(h, 0)
+        local h = newHarness(); F.install(h, 0)
         local config = h.require("config.BlacksmithConfig")
         h.data.equipment.settings = { autoQuality = 3, autoLevel = 7 }
         local definitions = { { 1, 1, true }, { 7, 3 }, { 60, 1 }, { 7, 6 } }
@@ -829,11 +884,11 @@ local function testAutoDecompose()
     end)
     for _, failure in ipairs({ "false", "nil", "throw" }) do
         run("自动精粹与notice落盘失败原位回滚 " .. failure, function()
-            local h = F.new(); F.install(h, 200); h.forceRandom = 0
+            local h = newHarness(); F.install(h, h.ES.MAX_INVENTORY); h.forceRandom = 0
             h.data.equipment.settings = { autoQuality = 6, autoLevel = 0 }
             h.data.currency.essence = 123
             h.data.lootbox.autoDecomposeNotice = { count = 2, essence = 17, seq = 3, at = 1, lastQuality = 1 }
-            h.failure = failure
+            h.failure = failure --[[@as string]]
             local sawCandidate = false
             h.beforePersist = function()
                 sawCandidate = true
@@ -851,7 +906,7 @@ local function testAutoDecompose()
         end)
     end
     run("满包无遗匣时全部分解可结算/保留件仍拒绝", function()
-        local h = F.new(); F.install(h, 200); h.forceRandom = 0; h.data.lootbox = nil
+        local h = newHarness(); F.install(h, h.ES.MAX_INVENTORY); h.forceRandom = 0; h.data.lootbox = nil
         h.data.equipment.settings = { autoQuality = 6, autoLevel = 0 }
         local old = F.copy(h.data.equipment)
         local ok, err, result = h.Sweep.Sweep(1, 1, 1, 1905)
@@ -859,7 +914,7 @@ local function testAutoDecompose()
         check(result.autoDecomposeCount > 0, "全分解有真实生成")
         same(h.data.equipment, old, "满包已有装备保持")
         eq(h.data.currency.essence, result.autoDecomposeEssence, "无遗匣照常精粹到账")
-        local b = F.new(); F.install(b, 200); b.forceRandom = 0; b.data.lootbox = nil
+        local b = newHarness(); F.install(b, b.ES.MAX_INVENTORY); b.forceRandom = 0; b.data.lootbox = nil
         b.data.equipment.settings = { autoQuality = 1, autoLevel = 1 }
         -- 真实1905等级超过1，因此必有保留件。
         assertRollback(b, function() return b.Sweep.Sweep(1, 1, 1, 1905) end, "有保留件无容器")
@@ -869,7 +924,7 @@ end
 
 local function testResourceAutoDecompose()
     local function prepare(mode, settings, count)
-        local h = F.new(); F.install(h, count or 200)
+        local h = newHarness(); F.install(h, count or h.ES.MAX_INVENTORY)
         h.data.equipment.settings = F.copy(settings)
         h.data.currency.essence = 123
         local sub = h.data.dungeon.equipment_vault
@@ -945,7 +1000,7 @@ local function testResourceAutoDecompose()
             run("资源自动" .. mode .. "/" .. failure .. "精粹notice首通扣时回滚", function()
                 local h = prepare(mode, { autoQuality = 6, autoLevel = 0 })
                 h.data.lootbox.autoDecomposeNotice = { seq = 5, count = 3, essence = 7, at = 1 }
-                h.failure = failure
+                h.failure = failure --[[@as string]]
                 local actualCandidate = false
                 h.beforePersist = function()
                     actualCandidate = true
@@ -962,7 +1017,7 @@ local function testResourceAutoDecompose()
         end
     end
     run("GrantEquipment关闭前置拒绝零RNG/开启全分解无匣/缺币拒绝", function()
-        local h = F.new(); F.install(h, 200); h.data.lootbox = nil
+        local h = newHarness(); F.install(h, h.ES.MAX_INVENTORY); h.data.lootbox = nil
         h.data.equipment.settings = { autoQuality = 0, autoLevel = 0 }; h.forbidRNG = true
         eq(h.Transaction.GrantEquipment(1, "equipment_vault", 1, 6), false, "关闭仍生成前拒绝")
         eq(h.rngCalls, 0, "关闭旧前置拒绝零RNG")
@@ -972,8 +1027,8 @@ local function testResourceAutoDecompose()
         end)
         check(ok, "开启全分解无需遗匣 " .. tostring(err))
         eq(result.autoDecomposeCount, 6, "无匣全部新分解")
-        eq(h.ES.getInventoryCount(h.data.equipment), 200, "原库存不追溯")
-        local b = F.new(); F.install(b, 0)
+        eq(h.ES.getInventoryCount(h.data.equipment), h.ES.MAX_INVENTORY, "原库存不追溯")
+        local b = newHarness(); F.install(b, 0)
         b.data.equipment.settings, b.data.currency = { autoQuality = 6, autoLevel = 0 }, nil
         local before = F.copy(b.data)
         local accepted, reason = b.Transaction.GrantEquipment(1, "equipment_vault", 1, 6)
@@ -1000,7 +1055,7 @@ local function testResourceAutoDecompose()
 end
 
 local function testMoreTickets()
-    local h = F.new(); F.install(h, 0); h.forbidRNG = true
+    local h = newHarness(); F.install(h, 0); h.forbidRNG = true
     near(h.Drop.getSweepTicketRate(0), 0.12, "券更多最低12%")
     near(h.Drop.getSweepTicketRate(0.05), 0.20, "常规掉率20%=卷轴四倍")
     near(h.Drop.getSweepTicketRate(0.2), 0.40, "券掉率最高40%")

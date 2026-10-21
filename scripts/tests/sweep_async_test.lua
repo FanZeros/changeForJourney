@@ -1,6 +1,7 @@
 -- 分帧扫荡真实规则专项；不启动main/Boot，不读写玩家档，不构建。
+-- 新版批量计数保持分布，但不保留旧逐杀同seed装备/RNG序列；新版同seed逐件完整复现另行断言。
 -- 外部冻结源码loader可传SWEEP_ASYNC_OPTIONS.oracleSource(relativeLuaPath)，固定旧树a590320d。
--- 未提供旧树明确NOT RUN；本文件不把当前实现当作历史oracle。
+-- 旧树仅作固定收益/成长口径及未改resource context骰序oracle；缺旧树明确NOT RUN，不冒称历史逐件一致。
 local F = require("tests.SweepRegressionFixture")
 local TAG = "[sweep_async_test] "
 local options = rawget(_G, "SWEEP_ASYNC_OPTIONS") or {}
@@ -130,6 +131,15 @@ local function configure(fixture, config)
     h.data.battle.clearedStages[101] = true
     h.seed, h.rngCalls = config.seed or 1021, 0
     h.forceRandom = config.forceRandom
+    if config.forceRandom == 0 and fixture == F then
+        -- 仅故障/取消/满包等端点夹具：旧forceRandom=0意为所有p>0命中，
+        -- 新几何二项采样的0不具此含义，显式替换该私有h内的计数采样器。
+        -- 不替换全局或夹具文件；自然RNG复现/大样本绝不走此stub，不作概率验证。
+        h.require("shared.sweep.BatchRandom").binomial = function(n, p, _, checkpoint)
+            if checkpoint then checkpoint() end
+            return p > 0 and n or 0
+        end
+    end
     h.disk, h.wallet = F.copy(h.data), F.copy(h.data.currency)
     return h
 end
@@ -138,8 +148,8 @@ end
 -- 小样本还在每个control.check完整比较；大样本每个yield与prepare完成比较全树及原引用。
 local function prepare(h, config, extra)
     local before = snapshot(h)
-    local stats = { checkpoints = 0, checks = 0, yields = 0, perPhase = {}, last = {},
-        maxCpu = 0, resumed = 0, committed = 0 }
+    local stats = { checkpoints = 0, checks = 0, yields = 0, perPhase = {}, last = {}, totals = {},
+        yieldPhases = {}, maxCpu = 0, resumed = 0, committed = 0 }
     local control = extra or {}
     local budget = config.budget or 512
     local cancelled = false
@@ -157,8 +167,10 @@ local function prepare(h, config, extra)
         check(phases[phase], "checkpoint只在私有准备阶段 " .. tostring(phase))
         check(type(done) == "number" and done >= 0, "checkpoint进度非负")
         check(type(total) == "number" and total >= 0, "checkpoint总数非负")
+        if phase ~= "prepare" then check(done <= total, "已知生成/分类进度不超总量") end
         if stats.last[phase] ~= nil then check(done >= stats.last[phase], "同phase进度不倒退 " .. phase) end
-        stats.last[phase] = done
+        -- 批量采样尚未知装备数时generate 0/0；随后逐件阶段0/实际装备数，不新增phase。
+        stats.last[phase], stats.totals[phase] = done, total
         stats.checkpoints = stats.checkpoints + 1
         stats.perPhase[phase] = (stats.perPhase[phase] or 0) + 1
         if checkpointExtra then checkpointExtra(phase, done, total) end
@@ -167,6 +179,7 @@ local function prepare(h, config, extra)
         end
         if stats.checkpoints % budget == 0 or config.cancelPhase == phase then
             stats.yields = stats.yields + 1
+            stats.yieldPhases[phase] = (stats.yieldPhases[phase] or 0) + 1
             if config.count == 100000 and stats.yields % 128 == 0 then
                 print(TAG .. "LARGE PROGRESS stage=" .. tostring(config.stage) .. " phase=" .. phase
                     .. " done=" .. done .. " total=" .. total .. " yields=" .. stats.yields)
@@ -223,17 +236,100 @@ local function committed(h, candidate, stats)
     return done[3]
 end
 
-local function parity(h, old, result, expected)
-    same(result, expected, "固定a590320d完整回执/装备字段/顺序严格一致")
-    same(h.data, old.data, "固定旧树全部模块值严格一致")
-    same(h.wallet, old.wallet, "固定旧树GameState严格一致")
-    same(h.disk, old.disk, "固定旧树保存候选严格一致")
-    same(h.dirty, old.dirty, "固定旧树通知集合与次数一致")
-    eq(h.notifications, old.notifications, "固定旧树总通知数")
-    eq(h.events, old.events, "固定旧树余额事件")
-    eq(h.rngCalls, old.rngCalls, "固定旧树RNG消费数量")
-    eq(h.seed, old.seed, "固定旧树RNG最终状态")
-    eq(h.persists, old.persists, "固定旧树保存次数")
+-- 新版自身复现不是历史oracle：两独立私有env同seed，分帧与同步包装必须逐件完全一致。
+local function reproducible(h, replay, result, expected)
+    same(result, expected, "新版同seed完整回执/全部装备字段/顺序严格复现（非旧逐杀一致）")
+    eq(#result.equips, #expected.equips, "新版同seed完整装备件数")
+    for index, equip in ipairs(result.equips) do
+        same(equip, expected.equips[index], "新版同seed逐件完整复现 " .. index)
+    end
+    same(h.data, replay.data, "新版同seed全部模块值严格复现")
+    same(h.wallet, replay.wallet, "新版同seed GameState严格复现")
+    same(h.disk, replay.disk, "新版同seed保存候选严格复现")
+    same(h.dirty, replay.dirty, "新版同seed通知集合与次数复现")
+    eq(h.notifications, replay.notifications, "新版同seed总通知数")
+    eq(h.events, replay.events, "新版同seed余额事件")
+    eq(h.rngCalls, replay.rngCalls, "新版同seed RNG消费数量复现")
+    eq(h.seed, replay.seed, "新版同seed RNG最终状态复现")
+    eq(h.persists, replay.persists, "新版同seed保存次数")
+    same(h.finishes, replay.finishes, "新版同seed事务收尾复现")
+end
+
+local function replayCurrent(h, result, config)
+    check(config.forceRandom == nil, "正式新版复现只用自然RNG，不stub采样")
+    local replay = configure(F, config)
+    local ok, err, expected = replay.Sweep.Sweep(1, config.count, 1, config.stage)
+    check(ok, "新版同步包装同seed复现成功 " .. tostring(err))
+    reproducible(h, replay, result, expected)
+end
+
+local function conserved(h, result, config, stats)
+    local initial = config.initial or 0
+    local available = math.max(0, h.ES.MAX_INVENTORY - initial)
+    eq(result.inventoryCount, math.min(#result.equips, available), "500件实际空位精确交付")
+    eq(result.lootboxCount, #result.equips - result.inventoryCount, "保留装备完整守恒")
+    eq(result.equipCount, #result.equips + (result.autoDecomposeCount or 0), "生成装备=保留件+自动分解件，无截断")
+    eq(h.ES.getInventoryCount(h.data.equipment), initial + result.inventoryCount, "实际库存新增件数守恒")
+    eq(h.LS.getTotalCount(h.data.lootbox), 1 + result.lootboxCount, "实际遗匣旧件加新增件守恒")
+    same(h.data.lootbox.seeds[1], stats.before.data.lootbox.seeds[1], "已有完整装备及嵌套字段不重抽/不追溯分解")
+    local entry = assert(h.SC.getStage(config.stage))
+    eq(result.count, config.count, "不截扫荡场数")
+    eq(result.kills, entry.idleCount * config.count, "不截扫荡总杀数")
+    eq(stats.last.generate, result.equipCount, "生成末进度为实际装备数，不是逐杀数")
+    eq(stats.totals.generate, result.equipCount, "生成最终total为实际装备数（采样期间允许0/0未知）")
+    eq(stats.last.classify, result.equipCount, "全部生成装备均完成分类")
+    eq(result.ticketDrop, 0, "扫荡不额外产券")
+    if initial == 500 then eq(result.inventoryCount, 0, "真满包不再装入新装备") end
+    if (config.auto or {}).autoQuality == 6 and (config.auto or {}).autoLevel == 0 then
+        eq(#result.equips, 0, "全品质自动分解不保留新掉落")
+        eq(result.autoDecomposeCount or 0, result.equipCount, "全品质分解覆盖全部生成件")
+    end
+end
+
+-- 只比旧固定收益及成长，不要求随机装备/卷轴/通知分支或RNG序列等同旧版。
+local function fixedParity(h, old, result, expected, config)
+    for _, key in ipairs({ "count", "kills", "stageId", "teamIdx", "ticketLeft", "ticketDrop",
+        "dropLuck", "playerExp", "heroExp", "heroExpTotal" }) do
+        eq(result[key], expected[key], "固定a590320d非随机口径 " .. key)
+    end
+    same(result.playerProgress, expected.playerProgress, "固定旧树玩家成长回执")
+    same(result.heroProgress, expected.heroProgress, "固定旧树逐英雄/共鸣成长回执")
+    for _, name in ipairs({ "heroes", "player", "battle", "dungeon", "artifacts", "talents", "session" }) do
+        same(h.data[name], old.data[name], "固定旧树非掉落模块 " .. name)
+        same(h.disk[name], old.disk[name], "固定旧树保存成长/固定模块 " .. name)
+    end
+    eq(h.persists, old.persists, "固定旧树同样只保存一次")
+    eq(h.events, old.events, "固定旧树余额事件次数")
+    eq(h.data.currency.sweepTicket, old.data.currency.sweepTicket, "固定旧树统一扣券口径")
+    for _, key in ipairs({ "level", "exp", "maxExp" }) do
+        eq(h.wallet[key], old.wallet[key], "固定旧树GameState成长字段 " .. key)
+    end
+    local id = old.DC.decodeStageId(config.stage)
+    if not id then
+        eq(result.gold, expected.gold, "主线固定金币保持旧口径")
+        eq(result.diamond, expected.diamond, "主线固定黑晶保持旧口径")
+        eq(h.data.currency.gold, old.data.currency.gold, "主线实际金币到账保持旧口径")
+    else
+        -- 旧每杀floor(raw)+Bernoulli(frac)，新只改变这些独立尾数的采样序列。
+        -- 支持区间是严格数学边界，不以旧的一次随机结果或epsilon当概率oracle。
+        local raw = old.DC.getStageRewardAmount(config.stage, 1)
+        eq(h.DC.getStageRewardAmount(config.stage, 1), raw, "资源每杀期望沿用旧配置")
+        if id ~= "equipment_vault" then
+            local key = id == "gold_mine" and "gold" or "diamond"
+            local minimum, maximum = math.floor(raw) * result.kills, math.ceil(raw) * result.kills
+            for _, value in ipairs({ result[key], expected[key] }) do
+                check(value % 1 == 0 and value >= minimum and value <= maximum,
+                    "新旧资源随机舍入落在逐杀严格支持区间 " .. key)
+            end
+            local estimate = h.Rewards.calculate(h.SC.getStage(config.stage), 4, config.count, false, 0, 1)
+            eq(estimate[key], raw * result.kills, "资源只读期望=旧每杀raw乘完整杀数")
+            eq(result[id == "gold_mine" and "diamond" or "gold"], 0, "资源不借用另一类货币")
+            eq(#result.equips, 0, "金币/黑晶副本不借用主线装备掉落")
+        else
+            eq(result.gold, expected.gold, "装备副本固定金币保持旧口径")
+            eq(result.diamond, expected.diamond, "装备副本固定黑晶保持旧口径")
+        end
+    end
 end
 
 local function testPurity()
@@ -258,37 +354,44 @@ local function testPurity()
 end
 
 local function testOracle(oldFixture)
-    if not oldFixture then print(TAG .. "NOT RUN fixed a590320d oracle: provide oracleSource"); return end
+    if not oldFixture then print(TAG .. "NOT RUN fixed a590320d收益/成长oracle: provide oracleSource; 新版同seed复现仍完整运行") end
     for _, stage in ipairs({ 1905, 100001, 200001, 300001 }) do
         for _, initial in ipairs({ 0, 499, 500 }) do
             for _, auto in ipairs({ {}, { autoQuality = 6, autoLevel = 0 }, { autoQuality = 2, autoLevel = 30 } }) do
-                run("固定旧源码同seed/完整顺序/容量/自动分解 " .. stage .. "/" .. initial .. "/" .. tostring(auto.autoQuality or 0), function()
+                run("新版同seed逐件复现/旧固定收益口径/容量/自动分解 " .. stage .. "/" .. initial .. "/" .. tostring(auto.autoQuality or 0), function()
                     local config = { stage = stage, count = 31, initial = initial, auto = auto, seed = 1021 }
-                    local h, old = configure(F, config), configure(oldFixture, config)
+                    local h = configure(F, config)
                     local candidate, reason, stats = prepare(h, config)
                     check(candidate ~= nil, "私有候选成功 " .. tostring(reason))
-                    local ok, err, expected = old.Sweep.Sweep(1, config.count, 1, stage)
-                    check(ok, "固定旧源码oracle成功 " .. tostring(err))
                     local result = committed(h, candidate, stats)
-                    parity(h, old, result, expected)
-                    local available = math.max(0, h.ES.MAX_INVENTORY - initial)
-                    eq(result.inventoryCount, math.min(#result.equips, available), "500件实际空位精确交付")
-                    eq(result.lootboxCount, #result.equips - result.inventoryCount, "保留装备完整守恒")
-                    if initial == 500 then eq(result.inventoryCount, 0, "真满包不再装入新装备") end
+                    replayCurrent(h, result, config)
+                    conserved(h, result, config, stats)
+                    if oldFixture then
+                        local old = configure(oldFixture, config)
+                        local ok, err, expected = old.Sweep.Sweep(1, config.count, 1, stage)
+                        check(ok, "固定旧源码oracle成功 " .. tostring(err))
+                        fixedParity(h, old, result, expected, config)
+                    end
                 end)
             end
         end
     end
     for _, growth in ipairs({ "resonance", "cap", "capped" }) do
         for _, stage in ipairs({ 101, 100001, 200001 }) do
-            run("固定旧源码成长/共鸣/满级边界 " .. growth .. "/" .. stage, function()
+            run("新版成长复现/旧共鸣满级口径 " .. growth .. "/" .. stage, function()
                 local config = { stage = stage, count = 30, growth = growth, initial = 0, seed = 881 }
-                local h, old = configure(F, config), configure(oldFixture, config)
+                local h = configure(F, config)
                 local candidate, reason, stats = prepare(h, config)
                 check(candidate ~= nil, "成长准备成功 " .. tostring(reason))
-                local ok, err, expected = old.Sweep.Sweep(1, config.count, 1, stage)
-                check(ok, "旧成长oracle成功 " .. tostring(err))
-                parity(h, old, committed(h, candidate, stats), expected)
+                local result = committed(h, candidate, stats)
+                replayCurrent(h, result, config)
+                conserved(h, result, config, stats)
+                if oldFixture then
+                    local old = configure(oldFixture, config)
+                    local ok, err, expected = old.Sweep.Sweep(1, config.count, 1, stage)
+                    check(ok, "旧成长oracle成功 " .. tostring(err))
+                    fixedParity(h, old, result, expected, config)
+                end
             end)
         end
     end
@@ -480,13 +583,25 @@ local function testFailures(oldFixture)
                     eq(h.finishes[1], false, "失败finish(false)")
                 end
                 rollback(h, before, kind)
+                -- 故障中的RNG消费也只要求新版自身可复现，不锁旧逐杀序列。
+                local replay = configure(F, config)
+                failure(replay, kind)
+                local replayBefore = snapshot(replay)
+                local replayCandidate, _, replayStats = prepare(replay, config)
+                if kind:match("^generation") then eq(replayCandidate, nil, "新版同故障仍在生成阶段失败")
+                else
+                    check(replayCandidate ~= nil, "新版同故障完整准备后提交")
+                    eq(replay.Sweep.CommitSweep(1, replayCandidate, replayStats.control), false, "新版同故障提交失败")
+                    eq(h.Sweep.CommitSweep(1, candidate, stats.control), false, "提交失败候选也只能消费一次")
+                end
+                rollback(replay, replayBefore, "新版故障复现 " .. kind)
+                eq(h.seed, replay.seed, "新版同故障RNG终态复现")
+                eq(h.rngCalls, replay.rngCalls, "新版同故障RNG消费复现")
                 if oldFixture then
                     local old = configure(oldFixture, config)
                     failure(old, kind)
                     eq(old.Sweep.Sweep(1, config.count, 1, stage), false, "固定旧树相同故障同样失败")
-                    same(h.data, old.data, "新旧相同故障最终全值一致")
-                    eq(h.seed, old.seed, "故障RNG终态保持")
-                    eq(h.rngCalls, old.rngCalls, "故障RNG次数保持")
+                    same(h.data, old.data, "新旧相同故障最终全值一致，不比较旧随机序列")
                 end
             end)
         end
@@ -587,7 +702,7 @@ end
 
 local function testLarge(oldFixture)
     for _, stage in ipairs({ 1905, 100001, 200001, 300001 }) do
-        run("100000券自然RNG完整完成/逐片yield " .. stage, function()
+        run("100000券自然RNG完整场数/杀数/实际装备进度 " .. stage, function()
             local config = { stage = stage, count = 100000, initial = 500, seed = 1021, budget = 4096 }
             local h = configure(F, config)
             print(TAG .. "LARGE BEGIN stage=" .. stage .. " count=" .. config.count)
@@ -596,22 +711,30 @@ local function testLarge(oldFixture)
             stats.prepareCpu = os.clock() - start
             print(TAG .. "LARGE PREPARED stage=" .. stage .. " cpu=" .. stats.prepareCpu .. " yields=" .. stats.yields)
             check(candidate ~= nil, "100k真实候选完成 " .. tostring(reason))
-            check(stats.yields > 1, "100k必须分多片真实yield")
+            check((stats.yieldPhases.prepare or 0) > 0, "大库存私有prepare必须真实yield且保持全树/引用一致")
+            -- 金币/黑晶批量常量计数没有逐kill帧，100k本身不要求多yield。
+            -- 主线/装备副本仍须按实际完整装备生成与分类分片，不能同步跳过全部生成。
+            if stage == 1905 or stage == 200001 then
+                check(stats.yields > 1 and (stats.yieldPhases.generate or 0) > 0, "千件自然装备真实分帧生成")
+            end
             eq(stats.resumed, stats.yields + 1, "每非末片真实yield后才能继续")
             local entry = assert(h.SC.getStage(stage))
-            eq(stats.last.generate, entry.idleCount * config.count, "生成阶段逐杀完整到总量")
             local result = committed(h, candidate, stats)
             eq(result.kills, entry.idleCount * config.count, "100k无截断总杀数")
             eq(result.count, config.count, "100k无截断场数")
+            conserved(h, result, config, stats)
+            replayCurrent(h, result, config)
             if oldFixture then
                 local old = configure(oldFixture, config)
                 local ok, err, expected = old.Sweep.Sweep(1, config.count, 1, stage)
-                check(ok, "旧100k完整执行 " .. tostring(err))
-                parity(h, old, result, expected)
-            else print(TAG .. "NOT RUN 100k fixed-source oracle " .. stage) end
+                check(ok, "旧100k完整执行，仅比较固定收益/成长口径 " .. tostring(err))
+                fixedParity(h, old, result, expected, config)
+            else print(TAG .. "NOT RUN 100k fixed-source收益/成长oracle " .. stage .. "; 新版复现非旧逐件一致") end
             if stage == 1905 or stage == 200001 then
                 check(result.equipCount > 1000, "自然RNG真实千件以上装备，不用强制零掉落")
                 eq(result.lootboxCount, #result.equips, "真满包全部保留装备进遗匣")
+            else
+                eq(result.equipCount, 0, "金币/黑晶常量计数无需生成装备")
             end
             print(TAG .. string.format("LARGE stage=%d kills=%d checkpoints=%d yields=%d resumes=%d prepareCpu=%.6f maxSliceCpu=%.6f commitCpu=%.6f rng=%d equips=%d",
                 stage, result.kills, stats.checkpoints, stats.yields, stats.resumed, stats.prepareCpu,

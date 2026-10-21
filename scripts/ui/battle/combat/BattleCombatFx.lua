@@ -12,6 +12,13 @@ local FLOAT_DURATION = 0.7
 local MERGE_WINDOW = 0.2
 local MAX_FLOATING_TEXTS = 15
 local HIT_FLASH_DURATION = 0.3
+-- 出生候选围绕受击点交错，而不是固定上/中/下三排；单位为战场设计坐标。
+local SPREAD_POINTS = {
+    { 0, -6 }, { -20, -54 }, { 24, 46 }, { 28, -28 },
+    { -24, 72 }, { 12, -76 }, { -28, 20 }, { 24, -64 },
+    { -8, 58 }, { 16, -18 }, { 8, 82 }, { -16, -42 },
+    { 32, 8 }, { -32, -86 }, { -4, 34 },
+}
 M.FLOAT_DURATION = FLOAT_DURATION
 M.MERGE_WINDOW = MERGE_WINDOW
 M.MAX_FLOATING_TEXTS = MAX_FLOATING_TEXTS
@@ -51,6 +58,30 @@ local function releaseFt(BCS, ft)
     if #BCS.ftPool < MAX_FLOATING_TEXTS then BCS.ftPool[#BCS.ftPool + 1] = ft end
 end
 
+-- 只在出生时挑一次空位；最多15×15次距离比较，不搬动已显示的数字。
+-- 用扁椭圆近似读数区：横向140、纵向48，优先纵向留白，邻卡也参与避让。
+local function chooseSpread(BCS, cx, cy, sequence)
+    local bestX, bestY, bestScore = 0.0, 0.0, -1.0
+    for step = 1, #SPREAD_POINTS do
+        local candidate = SPREAD_POINTS[(sequence + step - 2) % #SPREAD_POINTS + 1]
+        ---@cast candidate number[]
+        local x, y = cx + candidate[1], cy + candidate[2]
+        local score = math.huge
+        for _, ft in ipairs(BCS.floatingTexts) do
+            local progress = math.min(1, ft.timer / ft.duration)
+            local drift = (1 - (1 - progress) ^ 3) * 22
+            local dx = (x - ft.x - (ft.spreadX or 0)) / 140
+            local dy = (y - ft.y - (ft.spreadY or 0) + drift) / 48
+            score = math.min(score, dx * dx + dy * dy)
+        end
+        if score > bestScore then
+            bestX, bestY, bestScore = candidate[1], candidate[2], score
+        end
+        if score >= 1 then break end
+    end
+    return bestX, bestY
+end
+
 local function spawn(BCS, text, cx, cy, color, isCrit, fontSize, kind)
     ensureState(BCS)
     while #BCS.floatingTexts >= MAX_FLOATING_TEXTS do
@@ -63,6 +94,8 @@ local function spawn(BCS, text, cx, cy, color, isCrit, fontSize, kind)
     local entry = acquireFt(BCS)
     entry.text = text
     entry.x, entry.y = cx, cy
+    entry.visualSequence = BCS.ftSequence
+    entry.spreadX, entry.spreadY = chooseSpread(BCS, cx, cy, BCS.ftSequence)
     entry.dirX, entry.dirY = math.cos(angle), math.sin(angle)
     entry.timer, entry.duration = 0, FLOAT_DURATION
     entry.color = color or { 255, 255, 255 }

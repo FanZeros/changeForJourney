@@ -79,8 +79,11 @@ local function polygon(vg, points)
     nvgClosePath(vg)
 end
 local function finish(vg, color)
-    nvgFillPaint(vg, nvgLinearGradient(vg, -12, -25, 18, 26,
-        nvgRGBA(248, 239, 215, 255), nvgRGBA(color[1], color[2], color[3], 255)))
+    local light = nvgRGBA(248, 239, 215, 255)
+    local base = nvgRGBA(color[1], color[2], color[3], 255)
+    ---@cast light NVGcolor
+    ---@cast base NVGcolor
+    nvgFillPaint(vg, nvgLinearGradient(vg, -12, -25, 18, 26, light, base))
     nvgFill(vg)
     nvgStrokeColor(vg, nvgRGBA(27, 29, 35, 255))
     nvgStrokeWidth(vg, 3)

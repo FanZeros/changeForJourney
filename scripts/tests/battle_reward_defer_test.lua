@@ -1059,7 +1059,9 @@ function Start()
         end)
         run("真实TriPage内框、绘制与drag/scroll路由，Horizon外帧缩放滚轮", function()
             fixture()
-            local routed, clientReads, pumps = {}, 0, 0
+            ---@type { name: string, args: any[] }[]
+            local routed = {}
+            local clientReads, pumps = 0, 0
             local rewardProxy = {
                 currentRowTag = function() return Reward.currentRowTag() end,
                 isOpen = function() return Reward.isOpen() end,
@@ -1136,6 +1138,11 @@ function Start()
             routeMods["ui.dev.CEPanel"].handleDown = function() return false end
             routeMods["ui.dev.CEPanel"].handleUp = function() return false end
             routeMods["ui.loot.InventoryCurationDialog"] = closedPage()
+            -- 本夹具不打开优选确认，但真实宿主仍会绑定、观察其手势状态。
+            routeMods["ui.loot.InventoryCurationDialog"].bindHost = noop
+            routeMods["ui.loot.InventoryCurationDialog"].observe = noop
+            routeMods["ui.loot.InventoryCurationDialog"].hasPress = function() return false end
+            routeMods["ui.loot.InventoryCurationDialog"].consumeScroll = function() return false end
             routeMods["ui.loot.LootBox"].handleDragEnd = noop
             routeMods["ui.character.EquipCrossDrag"].isArmed = function() return false end
             routeMods["ui.character.panel.CharacterPanel"].isDraggingCard = function() return false end

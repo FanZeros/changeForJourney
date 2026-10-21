@@ -155,7 +155,26 @@ function SyncPowerPresentationHorizon()
     return blocked
 end
 
-local function finishFrame()
+-- 只由本帧实际绘制的主线宿主申请；大小奖励之后绘一次，避免双遮罩。
+local function drawTerminalConfirm(mode)
+    if not mode or not TerminalConfirmDialog.isOpen() then return end
+    if StartScreen.isOpen() or DarkTitleScreen.isOpen() or LetterIntro.isOpen()
+        or IntroCutscene.isActive() or ScenarioDialogue.isActive() or PlayerInfoPanel.isOpen()
+        or TutorialManager.isActive() or BottomNav.getSelectedIndex() == 5 then return end
+    nvgSave(vg())
+    if mode == "tri" then
+        local ox, oy, fit = BattleTriPage.getDialogTransform(logicalW(), logicalH())
+        nvgTranslate(vg(), ox, oy)
+        nvgScale(vg(), fit, fit)
+        BattleScene.drawTerminalConfirm(vg())
+    elseif Viewport.beginFromNote(vg(), "center") then
+        BattleScene.drawTerminalConfirm(vg())
+        Viewport.finish(vg())
+    end
+    nvgRestore(vg())
+end
+
+local function finishFrame(terminalMode)
     local powerBlocked = SyncPowerPresentationHorizon()
     nvgSave(vg())
     nvgResetTransform(vg())
@@ -168,6 +187,7 @@ local function finishFrame()
         and not IntroCutscene.isActive() and not ScenarioDialogue.isActive() then
         RewardPopup.drawLarge(vg(), logicalW(), logicalH())
     end
+    drawTerminalConfirm(terminalMode)
     -- 战力提示全窗居中、按队列出；非模态且不盖住剧情和奖励等高优先级内容。
     if not powerBlocked then
         SpinePowerUpEffect.draw(vg(), logicalW(), logicalH())
@@ -732,6 +752,7 @@ function HandleNanoVGRenderHorizon()
     -- 锻炉与左栏仓库同时打开时，仓库延后到锻炉之上绘制。
     -- 记录本帧状态，关闭动画在 draw 内结束后仍只绘制仓库一次。
     local backpackAboveForge = BlacksmithPage.isOpen()
+    local terminalMode = nil ---@type string|nil
     if not BattleTriPage.isOpen() then
         -- 左面板：功能页组（城镇 + 二级页）
         -- BlacksmithPage 已移至中面板绘制（左栏让给仓库）
@@ -772,7 +793,8 @@ function HandleNanoVGRenderHorizon()
             CharacterPanel.draw(vg())
         elseif tabIndex == 3 then
             if not BattleTriPage.isOpen() then
-                BattleScene.draw(vg())
+                BattleScene.draw(vg(), true)
+                terminalMode = "ordinary"
             end
             -- [三栏并行] 三栏页打开时中面板留空，全窗绘制见 Viewport.finish 之后
         elseif tabIndex == 5 then
@@ -910,7 +932,7 @@ function HandleNanoVGRenderHorizon()
         CharacterPanel.draw(vg())
         Viewport.finish(vg())
         -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
-        BattleTriPage.draw(vg(), logicalW(), logicalH())
+        BattleTriPage.draw(vg(), logicalW(), logicalH(), true)
         if RT.entryPrepared then RT.entryRendered = true end
         -- [行1 HUD] 宿主最终层级绘制：速度/扫荡/统计/选关按钮——
         -- 确保位于一切战斗行背景与框柱之上（用户实测按钮被行1背景穿帮）
@@ -979,7 +1001,7 @@ function HandleNanoVGRenderHorizon()
         HorizonDrawTutorialOverlay()
         EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
-        finishFrame()
+        finishFrame("tri")
         return
     end
 
@@ -1019,7 +1041,7 @@ function HandleNanoVGRenderHorizon()
     EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
 
-    finishFrame()
+    finishFrame(terminalMode)
 end
 
 horizonInputContext = {

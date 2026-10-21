@@ -52,7 +52,7 @@ end
 function M.bindHost(ctx, popup, cancelUnderlyingPress, pointerPosition)
     local panels = { "ui.dev.CEPanel", "ui.hud.popup.PlayerInfoPanel", "ui.hud.popup.OfflineRewardPanel",
         "ui.hud.popup.LevelUpPopup", "ui.hud.popup.UpdateNoticePopup", "ui.story.gate.DarkTitleScreenGate",
-        "ui.story.gate.LetterIntro" }
+        "ui.story.gate.LetterIntro", "ui.battle.popup.TerminalConfirmDialog" }
     local blockers = {}
     for _, name in ipairs(panels) do blockers[#blockers + 1] = require(name) end
     local intro, story = require("ui.story.gate.IntroCutscene"), require("ui.story.ScenarioDialogue")

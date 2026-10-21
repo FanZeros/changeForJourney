@@ -111,6 +111,8 @@ local function decoration(vg, style, p, width, size)
     end
 end
 
+-- 组内坐标：徽记贴左、数字在右，整组以 width 居中（装饰/擦除都按整组对称）。
+-- 调用方先把原点平移到「数字中心」，因此这里再左移 groupShift，使数字落回锚点。
 local function glyph(vg, ft, visual, rgb, size, icon, width)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, size)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
@@ -143,11 +145,14 @@ function M.draw(vg, ft, slot, bounds)
     local style = visual and (visual.channel == "heal" and "heal" or visual.channel == "shield" and "shield"
         or visual.isCrit and "crit" or "damage") or "damage"
     local preset = PRESETS[style]
-    local side = slot % 2 == 0 and 1 or -1
+    -- 正式批次使用出生身份；别让前一条回收后slot变化翻转存活文字的轨迹。
+    local sequence = ft.visualSequence or slot
+    local side = sequence % 2 == 0 and 1 or -1
     local p = pose(ft, style, preset, side)
     if p.alpha <= 0 then return end
     local baseSize = ft.baseFontSize or ((ft.fontSize or 80) / (ft.isCrit and 2 or 1))
-    local size = math.max(1, baseSize * 0.7 * preset.size)
+    -- 0.5：数字居中到卡位后按卡宽收敛；旧 0.7 在 4 卡条带里数字比卡还宽。
+    local size = math.max(1, baseSize * 0.5 * preset.size)
     -- 优先用宿主按属性算好的颜色（斩击/粉碎/穿刺/火/冰/雷/暗/圣各自一色，
     -- 治疗绿、吸盾灰、暴击红）；preset.color 只作兜底，否则 8 种伤害同色。
     local rgb = ft.color or preset.color
@@ -158,11 +163,13 @@ function M.draw(vg, ft, slot, bounds)
     local width = textWidth + icon + (icon > 0 and 7 or 0)
     -- 仅压缩整组显示宽度，不截金额或改格式；外层宿主的缩放/裁剪继续生效。
     local fit = bounds and math.min(1, 200 / math.max(1, width)) or 1
-    local row = (slot - 1) % 3
-    local column = math.floor((slot - 1) / 3)
-    local x = ft.x + p.x + (row == 1 and -12 or row == 2 and 12 or 0)
-        + (column > 0 and (column % 2 == 0 and -1 or 1) * math.ceil(column / 2) * 28 or 0)
-    local y = ft.y + p.y + (row == 1 and -76 or row == 2 and 76 or -4)
+    -- 出生错位固定，合并与其他批次退场均不重新排队；兼容旧手工飘字时也只小幅错开。
+    local spreadX = ft.spreadX or ((sequence * 17) % 57 - 28)
+    local spreadY = ft.spreadY or ((sequence * 47) % 145 - 72)
+    local progress = clamp(ft.timer / ft.duration, 0, 1)
+    local drift = ease(progress)
+    local x = ft.x + spreadX + p.x + side * drift * 6
+    local y = ft.y + spreadY + p.y - drift * 22
     if bounds then
         local mx = math.min(bounds.w * 0.5, width * p.sx * fit * 0.5 + 48 * fit)
         local my = math.min(bounds.h * 0.5, math.max(size * p.sy * fit * 0.7, 34) + 6)
@@ -171,6 +178,8 @@ function M.draw(vg, ft, slot, bounds)
         nvgIntersectScissor(vg, bounds.x, bounds.y, bounds.w, bounds.h)
     end
     nvgTranslate(vg, x, y); nvgRotate(vg, p.angle); nvgScale(vg, p.sx * fit, p.sy * fit)
+    -- 徽记占位会把数字整体推右 (icon+7)/2（局部坐标）；整组左移等量，使数字落在目标锚点上。
+    if icon > 0 then nvgTranslate(vg, -(icon + 7) * 0.5, 0) end
     nvgGlobalAlpha(vg, p.alpha)
     if visual then decoration(vg, style, p, width, size) end
     if p.out > 0 and (style == "damage" or style == "crit") then

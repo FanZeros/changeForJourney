@@ -357,7 +357,24 @@ function Input.bind(ctx)
             and not IntroCutscene.isActive() and not ScenarioDialogue.isActive()
     end
 
+    local function cancelSweepPress()
+        cancelUnderlyingPress()
+        if tutorialEntryPress then TutorialManager.cancelDetailEntryPress() end
+        tutorialEntryPress, tutorialPress, tutorialBlockedPress = nil, false, false
+        levelPress, levelMoved, levelTouchId, offlineTouchId = false, false, nil, nil
+        levelTouches = {}
+        towerPress = nil
+        SweepDialog.handleDragEnd()
+    end
+    ctx.cancelSweepPress = cancelSweepPress
+    local function sweepBlocksInput()
+        if not require("runtime.LocalActionBridge").isSweepPending() then return false end
+        cancelSweepPress()
+        return true
+    end
+
     function HandleMouseButtonDownHorizon(eventType, eventData)
+        if sweepBlocksInput() then return end
         local button = eventData["Button"]:GetInt()
         if startupBlocksInput() then return end
         if curationPointer("down", button) then return end
@@ -672,6 +689,7 @@ function Input.bind(ctx)
     end
 
     function HandleMouseMoveHorizon(eventType, eventData)
+        if sweepBlocksInput() then return end
         if startupBlocksInput() then return end
         if curationPointer("move", MOUSEB_LEFT) then return end
         if artworkPointer("move", MOUSEB_LEFT) then return end
@@ -893,6 +911,7 @@ function Input.bind(ctx)
     end
 
     function HandleMouseButtonUpHorizon(eventType, eventData)
+        if sweepBlocksInput() then return end
         if startupBlocksInput() then
             pressValid = false
             if eventData["Button"]:GetInt() == MOUSEB_LEFT and RT.retryStartup then RT.retryStartup() end
@@ -1426,6 +1445,7 @@ function Input.bind(ctx)
     end
 
     function HandleTouchBeginHorizon(eventType, eventData)
+        if sweepBlocksInput() then activeTouchId = nil; return end
         if Curation.isOpen() or Curation.hasPress() then
             if activeTouchId ~= nil then return end
             activeTouchId = eventData["TouchID"]:GetInt()
@@ -1466,6 +1486,7 @@ function Input.bind(ctx)
     end
 
     function HandleTouchEndHorizon(eventType, eventData)
+        if sweepBlocksInput() then activeTouchId = nil; return end
         -- 模态可能在拖拽中途出现；主指结束时即释放所有权，早退分支也不得锁住下一指。
         local releasedActive = eventData["TouchID"]:GetInt() == activeTouchId
         if releasedActive then activeTouchId = nil end
@@ -1526,6 +1547,7 @@ function Input.bind(ctx)
     end
 
     function HandleTouchMoveHorizon(eventType, eventData)
+        if sweepBlocksInput() then activeTouchId = nil; return end
         if Curation.isOpen() or Curation.hasPress() then
             if eventData["TouchID"]:GetInt() == activeTouchId then dispatchTouch(eventType, eventData, HandleMouseMoveHorizon) end
             return
@@ -1564,6 +1586,7 @@ function Input.bind(ctx)
         cancelUnderlyingPress = cancelUnderlyingPress, artworkBlocked = artworkBlocked, RT = RT,
     })
     HandleMouseWheelHorizon = function(eventType, eventData)
+        if sweepBlocksInput() then return end
         if Curation.consumeScroll() then return end
         ordinaryWheel(eventType, eventData)
     end

@@ -107,7 +107,11 @@ local function addScrolls(target, source)
 end
 
 --- 返回值只供界面/扫荡结算，预估装备数允许小数，不能当实际装备交付。
-function M.calculate(entry, heroCount, count, roll, luck, teamIdx)
+--- control.checkpoint 只能暂停私有计算；一杀的全部随机/装备生成完成后才交还调度器。
+--- 调用方负责全局RNG独占，不能把此检查点用于live奖励事务。
+function M.calculate(entry, heroCount, count, roll, luck, teamIdx, control)
+    local checkpoint = control and control.checkpoint
+    local dropContext = { teamIdx = teamIdx, dropLuck = luck, silent = control and control.summaryLogs == true }
     local result = { gold = 0, diamond = 0, playerExp = 0, heroExp = 0, heroExpTotal = 0,
         equipCount = 0, equips = {}, scrollDrops = {}, ticketDrop = 0, kills = 0 }
     local kills = math.max(0, math.floor(entry.idleCount or 0))
@@ -122,8 +126,10 @@ function M.calculate(entry, heroCount, count, roll, luck, teamIdx)
         result.heroExpBatch = { amount = perHero, count = totalKills }
         if roll then
             -- 每杀继续调用原 RNG 接口（含资源券判定，但不交付券），不合并随机掉落。
-            for _ = 1, totalKills do
-                local rewards = DC.getStageRewards(entry.id, 1, heroCount)
+            local rollRewards = DC.createStageRewardsContext(entry.id, 1, heroCount)
+            if checkpoint then checkpoint("generate", 0, totalKills) end
+            for index = 1, totalKills do
+                local rewards = DC.getStageRewards(entry.id, 1, heroCount, rollRewards)
                 result.gold = result.gold + rewards.gold
                 result.diamond = result.diamond + rewards.diamond
                 addScrolls(result.scrollDrops, rewards.scrollDrops)
@@ -132,6 +138,7 @@ function M.calculate(entry, heroCount, count, roll, luck, teamIdx)
                     if not equip then error("扫荡装备生成失败") end
                     result.equips[#result.equips + 1] = equip
                 end
+                if checkpoint then checkpoint("generate", index, totalKills) end
             end
         else
             -- 纯预估只查询一次每杀期望，不遍历 count 场或生成 count*kills 数组。
@@ -163,15 +170,17 @@ function M.calculate(entry, heroCount, count, roll, luck, teamIdx)
         result.heroExp = math.floor(baseExp * multiplier / heroCount + 0.5) * count
         result.heroExpBatch = { amount = math.floor(baseExp * multiplier / heroCount + 0.5), count = count }
         if roll then
-            for _ = 1, kills * count do
-                local quality = DropSystem.rollKillDrop(entry, { teamIdx = teamIdx, dropLuck = luck })
+            if checkpoint then checkpoint("generate", 0, totalKills) end
+            for index = 1, totalKills do
+                local quality = DropSystem.rollKillDrop(entry, dropContext)
                 if quality then
                     local equip = require("systems.EquipmentSystem").generateRandom(entry.monsterLevel, quality)
                     if not equip then error("扫荡装备生成失败") end
                     result.equips[#result.equips + 1] = equip
                 end
-                local scroll = DropSystem.rollScrollDrop(entry)
+                local scroll = DropSystem.rollScrollDrop(entry, dropContext)
                 if scroll then result.scrollDrops[scroll] = (result.scrollDrops[scroll] or 0) + 1 end
+                if checkpoint then checkpoint("generate", index, totalKills) end
             end
         else
             local rate = math.min(1, (entry.dropRate or 0) * (1 + (luck or 0) / 100))

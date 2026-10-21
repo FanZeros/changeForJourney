@@ -106,18 +106,18 @@ local HIST = {
 local CF = {
     MASK_A    = 128,
     CX = 540,  CY = 1160,
-    W  = 950,  H  = 747,
-    TITLE_CX = 540, TITLE_CY = 856, TITLE_SIZE = 50, TITLE_STROKE_W = 6,
-    SUB_CX = 540, SUB_CY = 967, SUB_SIZE = 40,
+    W  = 950,  H  = 847,
+    TITLE_CX = 540, TITLE_CY = 814, TITLE_SIZE = 50, TITLE_STROKE_W = 6,
+    SUB_CX = 540, SUB_CY = 980, SUB_SIZE = 36,
     SUB_R = 0xB6, SUB_G = 0xB0, SUB_B = 0x9D,
-    CONTENT_CX = 540, CONTENT_CY = 1121, CONTENT_W = 800, CONTENT_H = 218, CONTENT_A = 13,
-    ARROW_CX = 540, ARROW_CY = 1123, ARROW_W = 48, ARROW_H = 48,
-    DIAMOND_CX = 415, DIAMOND_CY = 1122, DIAMOND_W = 160, DIAMOND_H = 160,
-    TICKET_CX = 664, TICKET_CY = 1122, TICKET_W = 160, TICKET_H = 160,
+    CONTENT_CX = 540, CONTENT_CY = 1125, CONTENT_W = 800, CONTENT_H = 218, CONTENT_A = 13,
+    ARROW_CX = 540, ARROW_CY = 1125, ARROW_W = 48, ARROW_H = 48,
+    DIAMOND_CX = 415, DIAMOND_CY = 1125, DIAMOND_W = 160, DIAMOND_H = 160,
+    TICKET_CX = 664, TICKET_CY = 1125, TICKET_W = 160, TICKET_H = 160,
     BADGE_SIZE = 40, BADGE_STROKE_W = 5, BADGE_OX = 60, BADGE_OY = 55,
-    BUY_CX = 540, BUY_CY = 1301, BUY_W = 410, BUY_H = 100,
-    AUTO_CX = 540, AUTO_CY = 1410, AUTO_W = 820,
-    BUY_TEXT_SIZE = 40, BUY_TEXT_R = 0x64, BUY_TEXT_G = 0x51, BUY_TEXT_B = 0x29,
+    BUY_CX = 540, BUY_CY = 1320, BUY_W = 410, BUY_H = 100,
+    AUTO_CX = 540, AUTO_CY = 1445, AUTO_W = 760,
+    BUY_TEXT_SIZE = 40, BUY_TEXT_R = 0xFF, BUY_TEXT_G = 0xD6, BUY_TEXT_B = 0x66,
     BTN_INSET_TOP = 10, BTN_INSET_BOTTOM = 10, BTN_INSET_LEFT = 40, BTN_INSET_RIGHT = 40,
 }
 
@@ -316,7 +316,7 @@ end
 loadHistoryData()
 
 local function formatNowTime()
-    local t = os.date("*t")
+    local t = os.date("*t") --[[@as {year: integer, month: integer, day: integer, hour: integer, min: integer, sec: integer}]]
     return string.format("%d/%d/%d/%02d:%02d:%02d", t.year, t.month, t.day, t.hour, t.min, t.sec)
 end
 
@@ -458,7 +458,7 @@ end
 --- 初始化弹窗资源
 function M.init(vg)
     AutoExchangeOption.init()
-    -- 整图拉伸绘制（950x647），使用 POP 副本，调整原图不影响九宫格用法
+    -- 确认框按实际内容留出标题栏、说明区及自动兑换区。
     img.confirmBg     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK_POP.png", 0)
     img.confirmBtnBuy = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     img.diamondBig    = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
@@ -483,19 +483,6 @@ end
 
 local function exchangeScope(isStellar)
     return isStellar and "gacha_stellar" or "gacha_standard"
-end
-
--- 页面和补购弹窗共享同一偏好；只绘制/切换选项，不招募。
-function M.drawAutoExchangeOption(vg, cx, cy, disabled)
-    local isStellar = isStellarPoolId(getActivePoolId())
-    local costCfg = isStellar and UrGachaConfig.Cost or GachaConfig.Cost
-    AutoExchangeOption.draw(vg, exchangeScope(isStellar), cx, cy, CF.AUTO_W,
-        costCfg.SINGLE_DIAMOND, disabled)
-end
-
-function M.handleAutoExchangeInput(dx, dy, cx, cy, disabled)
-    return AutoExchangeOption.handleInput(dx, dy, exchangeScope(isStellarPoolId(getActivePoolId())),
-        cx, cy, CF.AUTO_W, disabled)
 end
 
 --- 检查招募券；已授权自动兑换时只返回明确支付方式，消费仍由原招募入口执行。
@@ -866,7 +853,7 @@ function M.handleInput(dx, dy)
         if AutoExchangeOption.handleInput(optionX, optionY, exchangeScope(popupState.confirmIsStellar),
             CF.AUTO_CX, CF.AUTO_CY, CF.AUTO_W) then return true end
         -- 购买按钮
-        if hitTest(dx, dy, CF.BUY_CX, CF.BUY_CY, CF.BUY_W, CF.BUY_H) then
+        if hitTest(optionX, optionY, CF.BUY_CX, CF.BUY_CY, CF.BUY_W, CF.BUY_H) then
             BF.trigger("tp_confirm")
             if GameState.getGems() < popupState.confirmDiamondCost then
                 M.showFloatText("资源不足", CF.BUY_CX, CF.BUY_CY)
@@ -881,7 +868,7 @@ function M.handleInput(dx, dy)
             return true
         end
         -- 点击外部关闭
-        if not hitTest(dx, dy, CF.CX, CF.CY, CF.W, CF.H) then
+        if not hitTest(optionX, optionY, CF.CX, CF.CY, CF.W, CF.H) then
             closePopup("confirm")
             print("[TavernPopups] 关闭确认框")
         end

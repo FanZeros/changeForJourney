@@ -30,6 +30,12 @@ local quickEquipSerial_ = 0
 local QUICK_EQUIP_BUDGET = 0.004
 local QUICK_EQUIP_STEPS = 4096
 local QUICK_EQUIP_KEYS = { "equipment", "heroes", "artifacts", "talents" }
+---@type table|nil
+local sweepJob_ = nil
+local sweepEpoch_, sweepSerial_ = 0, 0
+local sweepLastState_ = { pending = false, phase = "idle", completed = 0, total = 0 }
+local SWEEP_KEYS = { "currency", "battle", "heroes", "player", "equipment", "dungeon", "lootbox", "artifacts", "talents" }
+local SWEEP_BUDGET, SWEEP_STEPS = 0.004, 4096
 
 --- GameState 单机提交钩子；这里只镜像 player，不反向调用 syncPlayerData。
 --- init 前也可使用，确保升级事件观察者的 PDM 与 Dispatcher 已同源。
@@ -519,7 +525,7 @@ end
 -- 由宿主每帧驱动一次；4ms是软预算，单次属性重建/最终提交不在中途切开。
 function M.updateQuickEquip()
     local job = quickEquipJob_
-    if not job or deferredTaskPushes_ or publishingDungeonRewards_ then return end
+    if sweepJob_ or not job or deferredTaskPushes_ or publishingDungeonRewards_ then return end
     ---@type table
     local result
     if not quickEquipCurrent(job) then
@@ -548,10 +554,191 @@ function M.updateQuickEquip()
     deliverActionResult(result)
 end
 
+-- 扫荡持有唯一私有 worker。pending 包括提交后的完整奖励呈现准备；宿主据此独占 RNG。
+function M.isSweepPending()
+    return sweepJob_ ~= nil
+end
+
+function M.getSweepState()
+    local source = sweepJob_ and sweepJob_.state or sweepLastState_
+    local copy = {}
+    for key, value in pairs(source) do copy[key] = value end
+    return copy
+end
+
+function M.cancelSweep(reason)
+    sweepEpoch_ = sweepEpoch_ + 1
+    local job = sweepJob_
+    sweepJob_ = nil
+    if not job then return end
+    job.state.pending = false
+    -- Stop/reset 丢弃的是展示协程，不把已到账的成功改成可重试失败。
+    job.state.phase = job.committed and "complete" or "cancelled"
+    job.state.success = job.committed and true or false
+    job.state.reason = reason or "sweep_cancelled"
+    sweepLastState_ = job.state
+end
+
+local function sweepCurrent(job)
+    if sweepJob_ ~= job or job.epoch ~= sweepEpoch_ then return false, "sweep_cancelled" end
+    -- 自己提交会正常触发 revision；提交后仅检查生命周期，不把自身通知当成外部改档。
+    if job.committed then return true end
+    local store = require("core.PlayerStore")
+    for _, name in ipairs(SWEEP_KEYS) do
+        if PDM.GetModule(LOCAL_UID, name) ~= job.sources[name]
+            or store.GetRevision(name) ~= job.revisions[name] then return false, "sweep_stale" end
+    end
+    return true
+end
+
+local function sweepIdentity(job, result)
+    result.action = job.action
+    result.requestId, result.sweepRequestId = job.params.requestId, job.id
+    if result.teamIdx == nil then result.teamIdx = job.params.teamIdx end
+    if result.stageId == nil then result.stageId = job.params.stageId end
+    if job.action == Protocol.ACTION_TYPES.DUNGEON_SWEEP then
+        if result.dungeonId == nil then result.dungeonId = job.params.dungeonId or "gold_mine" end
+        if result.sweepFloor == nil then result.sweepFloor = job.params.floor end
+    end
+    return result
+end
+
+local function prepareSweepPresentation(job, result, checkpoint)
+    if result.success ~= true then return end
+    local Msg = require("runtime.ClientMessageHandler")
+    -- 预排序仅处理私有回执；这里可让出，已提交 live 状态绝不再次扣券或发奖。
+    if Msg.prepareSweepPresentation then
+        result.sweepPresentation = Msg.prepareSweepPresentation(result, function(a, b, c)
+            -- 呈现 helper 可用(done,total)或(phase,done,total)，对外统一阶段。
+            if type(a) == "string" then checkpoint("presentation", b, c)
+            else checkpoint("presentation", a, b) end
+        end)
+    end
+end
+
+local function startSweep(action, handler, params)
+    if sweepJob_ or quickEquipJob_ or deferredTaskPushes_ or publishingDungeonRewards_ then
+        deliverActionResult({ success = false, action = action, reason = "sweep_busy",
+            requestId = params.requestId, sweepRequestId = params.sweepRequestId or params.requestId,
+            dungeonId = action == Protocol.ACTION_TYPES.DUNGEON_SWEEP and (params.dungeonId or "gold_mine") or nil,
+            teamIdx = params.teamIdx, stageId = params.stageId })
+        return true
+    end
+    sweepSerial_ = sweepSerial_ + 1
+    local request = {}
+    -- 请求仅冻结协议标量，不暴露 worker/candidate 给 UI。
+    for _, key in ipairs({ "count", "times", "teamIdx", "stageId", "dungeonId", "floor", "requestId", "sweepRequestId" }) do
+        request[key] = params[key]
+    end
+    local id = request.sweepRequestId or request.requestId or ("sweep-bridge:" .. tostring(sweepSerial_))
+    local job = { epoch = sweepEpoch_, serial = sweepSerial_, id = id, params = request, action = action,
+        sources = {}, revisions = {}, steps = 0, deadline = 0, committed = false,
+        state = { pending = true, phase = "queued", completed = 0, total = 0, requestId = id,
+            sweepRequestId = id, count = request.count or request.times, action = action,
+            teamIdx = request.teamIdx, stageId = request.stageId } }
+    local store = require("core.PlayerStore")
+    for _, name in ipairs(SWEEP_KEYS) do
+        job.sources[name] = PDM.GetModule(LOCAL_UID, name)
+        job.revisions[name] = store.GetRevision(name)
+    end
+    local function checkpoint(phase, completed, total)
+        local current, reason = sweepCurrent(job)
+        if not current then error(reason, 0) end
+        job.state.phase = phase or job.state.phase
+        job.state.completed, job.state.total = completed or 0, total or 0
+        job.steps = job.steps + 1
+        if job.steps >= SWEEP_STEPS or os.clock() >= job.deadline then
+            coroutine.yield()
+            local resumed, resumedReason = sweepCurrent(job)
+            if not resumed then error(resumedReason, 0) end
+        end
+    end
+    local control = {
+        check = function() return sweepCurrent(job) end,
+        isCancelled = function() return not sweepCurrent(job) end,
+        checkpoint = checkpoint,
+        summaryLogs = true,
+        onCommitted = function(result)
+            job.committed = sweepIdentity(job, result)
+            job.committed.success = true
+            job.state.phase = "presentation"
+        end,
+    }
+    job.worker = coroutine.create(function()
+        local result = handler(LOCAL_UID, request, control)
+        if type(result) ~= "table" then error("sweep_no_result", 0) end
+        sweepIdentity(job, result)
+        if result.success == true then
+            -- 兼容服务在无通知路径返回成功；正式 Service 在通知前先 onCommitted。
+            job.committed = result
+            checkpoint("presentation", 0, 0)
+            prepareSweepPresentation(job, result, checkpoint)
+        end
+        return result
+    end)
+    sweepJob_ = job
+    print("[LocalActionBridge] sweep queued id=" .. tostring(id))
+    return true
+end
+
+-- 每帧最多恢复一次，且必须在任何战斗/动效/自动保存前调用。
+function M.updateSweep()
+    local job = sweepJob_
+    if not job or job.delivering or deferredTaskPushes_ or publishingDungeonRewards_ then return end
+    local current, reason = sweepCurrent(job)
+    local result = nil ---@type table|nil
+    if not current then
+        result = { success = false, reason = reason }
+    else
+        job.steps, job.deadline = 0, os.clock() + SWEEP_BUDGET
+        local ok, value = coroutine.resume(job.worker)
+        if sweepJob_ ~= job or job.epoch ~= sweepEpoch_ then return end
+        if ok and coroutine.status(job.worker) ~= "dead" then return end
+        if ok and type(value) == "table" then result = value
+        elseif job.committed then
+            result = job.committed
+            result.success, result.notificationFailed = true, true
+            -- 已提交的呈现失败只降级完整同步呈现，不伪造业务失败/重试。
+            print("[LocalActionBridge] sweep committed, presentation fallback: " .. tostring(value))
+        else
+            print("[LocalActionBridge] sweep failed: " .. tostring(value))
+            result = { success = false, reason = value == "sweep_stale" and "sweep_stale" or "sweep_failed" }
+        end
+    end
+    sweepIdentity(job, result)
+    job.delivering = true
+    deliverActionResult(result)
+    -- 回执内可能 Stop/reset；旧任务不能清除新会话任务或重发终态。
+    if sweepJob_ ~= job or job.epoch ~= sweepEpoch_ then return end
+    job.state.pending, job.state.success = false, result.success == true
+    job.state.phase = result.success == true and "complete" or "failed"
+    job.state.reason = result.reason
+    sweepLastState_, sweepJob_ = job.state, nil
+end
+
 ---@param action string
 ---@param params table|nil
 ---@return boolean handled
 function M.dispatch(action, params)
+    -- 事务提交发布中不能重入任何动作（包括GM）；等通知整段完成再允许生命周期切换。
+    if publishingDungeonRewards_ or deferredTaskPushes_ then return false end
+    params = params or {}
+    local AT = Protocol.ACTION_TYPES
+    if action == AT.GM_RESET_SAVE then
+        M.cancelSweep("reset")
+        M.cancelQuickEquip()
+    elseif sweepJob_ then
+        -- 在镜像同步之前拒绝所有业务动作；不让 UI、热键或同步通知消耗 RNG/改模块。
+        -- 重发同一在途身份不提前终结原请求，其他请求得到各自唯一 busy 回执。
+        local id = params.sweepRequestId or params.requestId
+        if action ~= sweepJob_.action or id ~= sweepJob_.id then
+            deliverActionResult({ success = false, action = action, reason = "sweep_busy",
+                requestId = params.requestId, sweepRequestId = id,
+                dungeonId = action == AT.DUNGEON_SWEEP and (params.dungeonId or "gold_mine") or nil,
+                teamIdx = params.teamIdx, stageId = params.stageId })
+        end
+        return true
+    end
     -- 已落盘奖励的模块通知尚未发布完，拒绝同步重入，避免旧玩家镜像覆盖新经验。
     if publishingDungeonRewards_ then return false end
     if not inited_ then
@@ -574,8 +761,13 @@ function M.dispatch(action, params)
     syncCurrencyIntoPdm()
     M.syncPlayerIntoPdm()
 
-    local AT = Protocol.ACTION_TYPES
-    if action == AT.GM_RESET_SAVE then M.cancelQuickEquip() end
+    if action == AT.SWEEP then return startSweep(action, handler, params) end
+    if action == AT.DUNGEON_SWEEP then
+        local sweepHandler = require("rules.sweep.SweepHandler")
+        if sweepHandler.isResourceSweep(params) then
+            return startSweep(action, sweepHandler.resourceSweep, params)
+        end
+    end
     if action == AT.EQUIP_ALL_BEST then return startQuickEquip(handler, params) end
     if action == AT.GUILD_ENTER then
         local fallback = tryLocalCloudFallback(action, params)
@@ -616,6 +808,7 @@ end
 ---@return boolean ok
 ---@return string? reason
 function M.setTeams(teamLayouts)
+    if sweepJob_ then return false, "sweep_busy" end
     if not inited_ then M.init() end
     local heroes = ClientDispatcher.get("heroes")
     if not heroes then return false, "英雄数据未加载" end

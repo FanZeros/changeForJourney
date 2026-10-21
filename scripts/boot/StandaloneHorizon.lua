@@ -647,6 +647,26 @@ end
 
 function HandleNanoVGRenderHorizon()
     if not vg() then return end
+    -- 私有扫荡期间不调用任何后台 draw/finishFrame：部分绘制会惰性创建随机动效或奖励。
+    -- 唯一等待树只用真实时间与已发布进度，既不消耗 RNG，也不阻塞下帧 Update pump。
+    if require("runtime.LocalActionBridge").isSweepPending() then
+        HorizonUpdateTransform()
+        if horizonInputContext.cancelSweepPress then horizonInputContext.cancelSweepPress() end
+        nvgBeginFrame(vg(), windowW(), windowH(), dpr())
+        nvgBeginPath(vg())
+        nvgRect(vg(), 0, 0, windowW(), windowH())
+        nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
+        nvgFill(vg())
+        applyFrame()
+        local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+        nvgSave(vg())
+        nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+        nvgScale(vg(), fit, fit)
+        SweepDialog.drawPending(vg())
+        nvgRestore(vg())
+        nvgEndFrame(vg())
+        return
+    end
     seamGesture.cancelIfBlocked()
     TutorialManager.clearHotspots()
     HorizonUpdateTransform()

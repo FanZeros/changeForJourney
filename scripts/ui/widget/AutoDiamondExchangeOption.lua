@@ -4,7 +4,11 @@ local Surface = require("ui.widget.DesignWidgetSurface")
 local SettingsPanel = require("ui.hud.popup.SettingsPanel")
 local I18n = require("core.I18n")
 
-local M = { HEIGHT = 56 }
+local M = { HEIGHT = 56, GACHA_HEIGHT = 100 }
+
+local function heightFor(scope)
+    return scope:sub(1, 6) == "gacha_" and M.GACHA_HEIGHT or M.HEIGHT
+end
 
 -- 在宿主init阶段创建UI上下文；不能在NanoVGRender回调内首次设置渲染顺序。
 function M.init()
@@ -29,27 +33,35 @@ local TEXT = {
 
 local function viewFor(scope, width)
     local view = views[scope]
-    if view then return view end
+    if view then
+        view.root:SetWidth(width)
+        return view
+    end
     Surface.init()
+    local isGacha = scope:sub(1, 6) == "gacha_"
+    local height = heightFor(scope)
     local checkbox = UI.Checkbox {
-        width = 40, height = M.HEIGHT, size = 32, flexShrink = 0,
+        width = 40, height = height, size = 32, flexShrink = 0,
         checked = false, borderRadius = 5,
         checkedBgColor = { 196, 160, 90, 255 }, checkmarkColor = { 26, 18, 10, 255 },
         uncheckedBgColor = { 35, 30, 28, 255 }, uncheckedBorderColor = { 150, 125, 88, 255 },
     }
     local title = UI.Label {
-        text = "", width = "100%", height = 30, fontSize = 28,
+        text = "", width = "100%", height = isGacha and 48 or 30, fontSize = isGacha and 24 or 28,
+        flexShrink = 0,
         fontFamily = "sans", fontColor = { 246, 224, 177, 255 }, verticalAlign = "middle",
     }
     local hint = UI.Label {
-        text = "", width = "100%", height = 26, fontSize = 22,
+        text = "", width = "100%", height = isGacha and 40 or 26, fontSize = isGacha and 20 or 22,
+        flexShrink = 0,
         fontFamily = "sans", fontColor = { 205, 195, 177, 255 }, verticalAlign = "middle",
     }
     local root = UI.Panel {
-        width = width, height = M.HEIGHT, flexDirection = "row", alignItems = "center", gap = 14,
+        width = width, height = height, flexDirection = "row", alignItems = "center", gap = 14,
         children = {
             checkbox,
-            UI.Panel { flex = 1, minWidth = 0, flexShrink = 1, height = M.HEIGHT,
+            UI.Panel { flex = 1, minWidth = 0, flexShrink = 1, height = height,
+                flexDirection = "column", justifyContent = "center", gap = isGacha and 8 or 0,
                 children = { title, hint } },
         },
     }
@@ -60,6 +72,7 @@ end
 
 function M.draw(vg, scope, cx, cy, width, price, disabled)
     local view = viewFor(scope, width)
+    local height = heightFor(scope)
     local text = TEXT[I18n.get()] or TEXT.zh_CN
     view.checkbox:SetChecked(SettingsPanel.isAutoDiamondExchangeEnabled(scope))
     view.checkbox:SetDisabled(disabled == true)
@@ -67,15 +80,15 @@ function M.draw(vg, scope, cx, cy, width, price, disabled)
     local template = scope:sub(1, 6) == "gacha_" and text.ticket or text.key
     view.hint:SetText(string.format(template, price))
     nvgSave(vg)
-    nvgTranslate(vg, cx - width * 0.5, cy - M.HEIGHT * 0.5)
+    nvgTranslate(vg, cx - width * 0.5, cy - height * 0.5)
     if disabled then nvgGlobalAlpha(vg, 0.5) end
-    Surface.draw(view.root, vg, width, M.HEIGHT)
+    Surface.draw(view.root, vg, width, height)
     nvgRestore(vg)
 end
 
 -- 宿主先处理模态/动画/在途请求，再传入同一套设计坐标，整行均可点。
 function M.handleInput(dx, dy, scope, cx, cy, width, disabled)
-    if math.abs(dx - cx) > width * 0.5 or math.abs(dy - cy) > M.HEIGHT * 0.5 then return false end
+    if math.abs(dx - cx) > width * 0.5 or math.abs(dy - cy) > heightFor(scope) * 0.5 then return false end
     if not disabled then
         SettingsPanel.setAutoDiamondExchangeEnabled(scope,
             not SettingsPanel.isAutoDiamondExchangeEnabled(scope))

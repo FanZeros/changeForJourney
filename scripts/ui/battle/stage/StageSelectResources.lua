@@ -107,7 +107,10 @@ function M.getRecommendedPower(stageId, entry)
         local base = sourceId and SRP.get(sourceId)
         local source = sourceId and SC.getStage(sourceId)
         if not base or not source then return nil end
-        local ratio = math.max(1, (combat.firstCount or 0) / math.max(1, source.firstCount or 1))
+        -- 分母用 firstCount 的生成基准（历史最大敌数），不用当前源关敌数：
+        -- 难度切换处的源关可能只有 18/21/26 只，按它放大相邻层会出现锯齿。
+        local baseline = combat.enemyCountBaseline or source.firstCount or 1
+        local ratio = math.max(1, (combat.firstCount or 0) / math.max(1, baseline))
         return math.ceil(base * ratio / 5) * 5, true
     end
     return SRP.get(stageId)

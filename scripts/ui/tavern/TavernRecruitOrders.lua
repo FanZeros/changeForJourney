@@ -13,12 +13,11 @@ M.W, M.H = 450, 650
 
 local STANDARD_PATH = "image/界面底板/酒馆抽卡/UI_TAVERN_RECRUIT_ORDER_STANDARD.png"
 local TITLE_SIZE, TITLE_MAX_W = 40, 270
-local TIME_Y, STATUS_Y = 383, 810
+local STATUS_Y = 810
 
 ---@class TavernRecruitOrder
 ---@field id string
 ---@field name string
----@field timeText string
 ---@field cx number
 ---@field cy number
 ---@field textX number
@@ -35,13 +34,12 @@ local inited = false
 function M.createPools()
     return {
         {
-            id = M.POOL_ID_STANDARD, name = "常规招募", timeText = "永久",
+            id = M.POOL_ID_STANDARD, name = "常规招募",
             cx = 275, cy = 545, textX = 275, textY = 345,
             imagePath = STANDARD_PATH, enabled = true, unlocked = true,
         },
         {
             id = M.POOL_ID_STELLAR, name = UrGachaConfig.POOL_NAME,
-            timeText = UrGachaConfig.getTimeDisplayText(),
             cx = UrGachaConfig.UI.poolTabCx, cy = UrGachaConfig.UI.poolTabCy,
             textX = UrGachaConfig.UI.poolTextX, textY = UrGachaConfig.UI.poolTextY,
             imagePath = UrGachaConfig.UI.poolTabPath,
@@ -55,7 +53,6 @@ function M.refreshPoolMeta(pools)
     local stellar = pools[2]
     if not stellar then return end
     stellar.name = UrGachaConfig.POOL_NAME
-    stellar.timeText = UrGachaConfig.getTimeDisplayText()
     stellar.cx, stellar.cy = UrGachaConfig.UI.poolTabCx, UrGachaConfig.UI.poolTabCy
     stellar.textX, stellar.textY = UrGachaConfig.UI.poolTextX, UrGachaConfig.UI.poolTextY
     local currency = ClientDispatcher.get("currency")
@@ -179,8 +176,6 @@ local function drawOrder(vg, pool, selected)
 
     drawLabel(vg, pool.textX, pool.textY, pool.name, TITLE_SIZE, TITLE_MAX_W,
         248, 235, 205, locked and 0.8 or 1.0)
-    drawLabel(vg, pool.cx, TIME_Y, pool.timeText, 18, TITLE_MAX_W,
-        221, 207, 183, locked and 0.65 or 1.0)
 
     if locked then
         drawLock(vg, pool.cx + 136, 331)

@@ -13,15 +13,17 @@ local M = {}
 ---@field color? number[]
 ---@field fontSize? number
 
+-- 飘字实色使用（本引擎 nvgText 不支持渐变），八属性拉开色相便于瞬时分辨：
+-- 斩击暖白 / 粉碎褐 / 穿刺青绿 / 火焰橙 / 冰霜蓝 / 闪电青紫 / 暗影紫 / 神圣金黄。
 local COLORS = {
-    [AD.ATK_SLASH] = { 244, 227, 184 },
-    [AD.ATK_CRUSH] = { 222, 182, 128 },
-    [AD.ATK_PIERCE] = { 212, 232, 218 },
-    [AD.ATK_FIRE] = { 255, 148, 65 },
-    [AD.ATK_ICE] = { 126, 218, 255 },
-    [AD.ATK_LIGHTNING] = { 222, 198, 255 },
-    [AD.ATK_SHADOW] = { 188, 144, 231 },
-    [AD.ATK_HOLY] = { 255, 232, 148 },
+    [AD.ATK_SLASH] = { 246, 228, 182 },
+    [AD.ATK_CRUSH] = { 214, 170, 112 },
+    [AD.ATK_PIERCE] = { 150, 236, 196 },
+    [AD.ATK_FIRE] = { 255, 146, 62 },
+    [AD.ATK_ICE] = { 118, 214, 255 },
+    [AD.ATK_LIGHTNING] = { 176, 168, 255 },
+    [AD.ATK_SHADOW] = { 190, 128, 236 },
+    [AD.ATK_HOLY] = { 255, 214, 86 },
 }
 local LEGACY_TYPES = {
     { "slash", AD.ATK_SLASH }, { "crush", AD.ATK_CRUSH }, { "pierce", AD.ATK_PIERCE },

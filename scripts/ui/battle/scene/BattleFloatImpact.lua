@@ -115,14 +115,21 @@ local function glyph(vg, ft, visual, rgb, size, icon, width)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, size)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
     local textX = -width * 0.5 + icon + (icon > 0 and 7 or 0)
+    -- 深色描边保证任何底色上都可读。
     nvgFillColor(vg, nvgRGBA(18, 15, 16, 255))
     for _, offset in ipairs(OUTLINE) do nvgText(vg, textX + offset[1], offset[2], ft.text) end
-    local light = nvgRGBA(255, 247, 223, 255)
-    local base = nvgRGBA(rgb[1], rgb[2], rgb[3], 255)
-    ---@cast light NVGcolor
-    ---@cast base NVGcolor
-    nvgFillPaint(vg, nvgLinearGradient(vg, 0, -size * 0.35, 0, size * 0.4, light, base))
+    -- 本引擎的 nvgText 不支持渐变填充（实测渐变文字会回落成首色），
+    -- 因此用实色属性色：文字主体为属性色，上缘叠一条提亮高光保留立体感。
+    nvgFillColor(vg, nvgRGBA(rgb[1], rgb[2], rgb[3], 255))
     nvgText(vg, textX, 0, ft.text)
+    local hi = math.min(255, math.floor(0.55 * 255 + rgb[1] * 0.45))
+    local hg = math.min(255, math.floor(0.55 * 255 + rgb[2] * 0.45))
+    local hb = math.min(255, math.floor(0.55 * 255 + rgb[3] * 0.45))
+    nvgSave(vg)
+    nvgIntersectScissor(vg, textX - size, -size * 0.52, width + size * 2, size * 0.30)
+    nvgFillColor(vg, nvgRGBA(hi, hg, hb, 150))
+    nvgText(vg, textX, 0, ft.text)
+    nvgRestore(vg)
     if icon > 0 then DamageTypeIcon.draw(vg, visual, -width * 0.5 + icon * 0.5, 0, icon) end
 end
 
@@ -141,7 +148,9 @@ function M.draw(vg, ft, slot, bounds)
     if p.alpha <= 0 then return end
     local baseSize = ft.baseFontSize or ((ft.fontSize or 80) / (ft.isCrit and 2 or 1))
     local size = math.max(1, baseSize * 0.7 * preset.size)
-    local rgb = visual and preset.color or ft.color or preset.color
+    -- 优先用宿主按属性算好的颜色（斩击/粉碎/穿刺/火/冰/雷/暗/圣各自一色，
+    -- 治疗绿、吸盾灰、暴击红）；preset.color 只作兜底，否则 8 种伤害同色。
+    local rgb = ft.color or preset.color
     nvgSave(vg)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, size)
     local textWidth = nvgTextBounds(vg, 0, 0, ft.text) or size

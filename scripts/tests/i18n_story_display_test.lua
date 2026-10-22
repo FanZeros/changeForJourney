@@ -523,6 +523,21 @@ function Start()
                         and call.y + call.font * 1.25 <= 1200 + 88 + 0.01,
                         lang .. "终焉字幕位于横屏中部安全带")
                 end
+                for _, size in ipairs({ {1920,1080}, {1280,800}, {1024,768}, {844,390} }) do
+                    local w, h = size[1], size[2]
+                    local scale = math.min(w / 1920, h / 1080)
+                    captures, drawCalls = {}, {}
+                    Intro.draw(nil, w, h)
+                    check(table.concat(captures) == translated and #drawCalls > 0 and #drawCalls <= 2,
+                        lang .. "终焉横屏阶段" .. i .. "完整译文不截断")
+                    for _, call in ipairs(drawCalls) do
+                        check(call.x == w * 0.5 and call.width <= w * 0.88 + 0.01
+                            and call.font >= 24 * scale and call.font <= 58 * scale
+                            and call.y >= h * 0.5 - 88 * scale - 0.01
+                            and call.y + call.font * 1.25 <= h * 0.5 + 88 * scale + 0.01,
+                            lang .. "终焉横屏窗口字幕居中且独立缩放")
+                    end
+                end
                 check(callbacks == 0 and Intro.isActive(), "字幕未结束不提前推进目标关卡")
                 Intro.reset()
                 Intro.skip()
@@ -553,10 +568,7 @@ function Start()
             backgrounds[#backgrounds + 1] = path
             return #backgrounds
         end)
-        replace("nvgImageSize", function(_, image)
-            if backgrounds[image] == "image/暗黑/L1_row1_forest.png" then return 1896, 720 end
-            return 1024, 1024
-        end)
+        replace("nvgImageSize", function() return 1920, 1080 end)
         local DrawUtil = require("core.DrawUtil")
         local originalDrawImage = DrawUtil.drawImageCover
         DrawUtil.drawImageCover = function(_, image, _, _, width, height, alpha)
@@ -567,15 +579,15 @@ function Start()
         end
         Intro.init(metricContext, nil)
         Intro.start()
-        check(backgrounds[1] == "image/关卡地图/MAP_999.png"
-            and backgrounds[2] == "image/暗黑/L1_row1_forest.png", "神殿与远征道路使用不同素材")
+        check(backgrounds[1] == "image/剧情/背景/STORY_TERMINAL_TEMPLE.png"
+            and backgrounds[2] == "image/剧情/背景/STORY_TERMINAL_ROAD.png", "神殿与远征道路使用不同的专用横屏素材")
         Intro.update(durations[1]); Intro.update(durations[2]); Intro.update(durations[3] * 0.5)
         Intro.draw(nil)
         DrawUtil.drawImageCover = originalDrawImage
         check(#backgroundDraws == 2 and backgroundDraws[1].alpha == 1
             and backgroundDraws[2].alpha == 0.5, "换景道路淡入覆盖不透明神殿，不双重淡出")
         for _, draw in ipairs(backgroundDraws) do
-            local ratio = draw.path == backgrounds[2] and 1896 / 720 or 1
+            local ratio = 1920 / 1080
             check(draw.width >= 1080 and draw.height >= 2400
                 and math.abs(draw.width / draw.height - ratio) < 0.001, "背景等比cover满屏，不拉伸横幅")
         end

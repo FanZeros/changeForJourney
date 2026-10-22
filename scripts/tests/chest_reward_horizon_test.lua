@@ -181,7 +181,8 @@ function Start()
             ["rules.character.PlayerDataManager"] = forbiddenTransaction,
             ["rules.offline.OfflineService"] = forbiddenTransaction,
             ["systems.LootBoxSystem"] = forbiddenTransaction,
-            ["runtime.LocalActionBridge"] = forbiddenTransaction,
+            ["runtime.LocalActionBridge"] = setmetatable({ isSweepPending = function() return false end },
+                getmetatable(forbiddenTransaction)),
             ["boot.StandaloneRT"] = RT, ["core.Viewport"] = VP,
             ["config.ArtifactAssetUtil"] = Asset, ["ui.widget.RewardCascade"] = Cascade, ["systems.GameSFX"] = SFX,
             ["core.PlayerStore"] = mock({ Get = function(key)
@@ -208,7 +209,7 @@ function Start()
         }
         for _, name in ipairs({ "config.GameConfig", "config.EquipmentConfig", "config.HeroConfig", "core.NumberUtil",
             "config.BlacksmithConfig", "systems.AttributeDef", "systems.EquipmentSecondaryStats", "config.EquipmentSetConfig",
-            "ui.widget.ImageCache", "config.ResourceDefs", "ui.widget.HeroFrame", "ui.widget.BattleRewardQueue", "config.StageConfig", "core.I18n",
+            "ui.widget.ImageCache", "config.ResourceDefs", "ui.widget.HeroFrame", "ui.widget.BattleRewardQueue", "ui.widget.RewardPreparation", "config.StageConfig", "core.I18n",
             "shared.artifact.ArtifactDefs", "shared.Protocol" }) do mods[name] = originalRequire(name) end
         -- cache:GetFile 是只读项目资源，不走玩家存档 File；load 创建独立实例，不操作 package.loaded。
         local function source(name)
@@ -248,6 +249,7 @@ function Start()
         mods["ui.hud.popup.RewardPopup"] = Reward
         local DrawPanel = compile("ui.church.ChurchArtifactDrawPanel")
         local Results = compile("ui.church.ChurchResults")
+        ---@type any, any
         local Defs, Protocol = mods["shared.artifact.ArtifactDefs"], mods["shared.Protocol"]
         mods["boot.SeamBackGesture"] = compile("boot.SeamBackGesture")
         mods["boot.DecomposeMarqueeGesture"] = compile("boot.DecomposeMarqueeGesture")
@@ -328,6 +330,7 @@ function Start()
             local cs, ox, oy = host(panel)
             local layout = count <= 5 and 0.7 or 1
             local m = titles[1].m
+            ---@cast m any
             return near(m.a, cs * layout) and near(m.d, cs * layout) and near(m.b, 0) and near(m.c, 0)
                 and near(m.e, ox + cs * 540 * (1 - layout)) and near(m.f, oy + cs * 974 * (1 - layout))
         end
@@ -532,6 +535,40 @@ function Start()
                 check(not Reward.isOpen() and closed == 1, "主动关闭只执行一次回调")
             end)
         end
+        run("同类奖励同步/预处理聚合与最终布局阈值", function()
+            fixture("ordinary")
+            local preparation = mods["ui.widget.RewardPreparation"]
+            local localReward = compile("ui.hud.popup.RewardPopup")
+            localReward.init({})
+            local first = { type = "diamond", amount = 100 }
+            local source = {}
+            for index = 1, 60 do source[index] = first end
+            for _, async in ipairs({ false, true }) do
+                local token = async and localReward.prepareRewards(source, function() end) or nil
+                localReward.show("功绩奖励", source, { cascade = false, preparedRewards = token })
+                check(not localReward.isLarge() and timeline.count == 1,
+                    "六十条同类汇总一格且不用全窗大页 " .. tostring(async))
+                check(first.amount == 100 and #source == 60, "显示不修改共享配置或奖励回执")
+                if token then check(preparation.take(token, source) == nil, "show恰一次消费完整聚合token") end
+            end
+            local selected = {}
+            local token = localReward.prepareRewards(source, function() end)
+            localReward.show("逐项交互", source, { cascade = false, preparedRewards = token,
+                onItemClick = function(item, index) selected = { item, index } end })
+            check(localReward.isLarge() and timeline.count == 60,
+                "逐项回调拒绝聚合token并保留全部六十对象/索引")
+            clock.elapsedTime = clock.elapsedTime + 0.4
+            local l = mods["ui.widget.RewardLargeView"].layout(1920, 1080, 60)
+            local x, y = mods["ui.widget.RewardLargeView"].cell(l, 2, 0)
+            localReward.handleLargePointer("end", x * l.scale, y * l.scale, 1920, 1080, true)
+            check(selected[1] == first and selected[2] == 2, "逐项模式仍回传原始资源和第二项索引")
+            local mixed = { first, first }
+            for index = 1, 10 do mixed[#mixed + 1] = { type = "equip", templateId = "W1", quality = 3, level = index } end
+            localReward.show("混合奖励", mixed, { cascade = false })
+            check(localReward.isLarge() and timeline.count == 11,
+                "合并后仍超过十项时保留全窗及完整装备")
+            check(actions == 0 and ioCalls == 0 and randomCalls == 0, "聚合展示不发奖/存档/随机")
+        end)
         run("资源精确数量/整段翻译与只读装备详情", function()
             fixture("ordinary")
             local displayed, fullLookup, calls = {}, false, 0
@@ -547,6 +584,7 @@ function Start()
             local localReward = compile("ui.hud.popup.RewardPopup")
             localReward.init({})
             local items = { { type = "gold", amount = 1234567, desc = sourceDesc } }
+            ---@cast items any[]
             for i = 1, 10 do items[#items + 1] = { type = "equip", templateId = "W1", level = i, quality = 3,
                 amount = 1, destination = "lootbox" } end
             local snapshot = deepCopy(items)
@@ -564,6 +602,7 @@ function Start()
             localReward.drawLarge({}, 1920, 1080)
             check(#spy.draws == 1 and calls == 0 and actions == 0, "装备详情仅预览，无领取/装备action或关闭回调")
             local preview = spy.draws[1].item
+            ---@cast preview any
             check(preview.name == EquipmentConfig.ITEMS.W1.name and preview.type == EquipmentConfig.ITEMS.W1.type,
                 "无equip旧摘要恢复模板真名与子类型，不显示???/equip")
             check(preview.level == 10 and preview.quality == 3 and preview.slot == "weapon" and preview.grip == "onehand",

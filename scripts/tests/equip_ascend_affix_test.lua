@@ -293,9 +293,9 @@ function Start()
         eq(normalAffixCount(e10), 4, "洗练后词条数不变")
 
         -- 洗练石（保种类重随数值）同样不丢倍率
-        local okS = BS.RefineEquip(UID, e10.seq, "enhanceStone")
-        check(okS, "洗练石可用")
-        BS.RefineReplace(UID, e10.seq)
+        local okS, _, stoneResult = BS.RefineEquip(UID, e10.seq, "enhanceStone")
+        check(okS and stoneResult and stoneResult.autoReplaced, "洗练石可用且自动替换")
+        check(not BS.RefineReplace(UID, e10.seq), "洗练石不产生待确认替换")
         eq(EquipmentSystem.getAffixMult(e10), 1.2, "洗练石路径倍率不丢")
 
         -- 存档往返保留倍率
@@ -367,8 +367,9 @@ function Start()
         local restored = EquipmentSystem.hydrate(cjson.decode(cjson.encode(lean)))
         check(math.abs(EquipmentSystem.effectiveBaseStatValue(restored, 2) - entries[2].flat) < 1e-9,
             "固定副增长JSON往返不丢失也不叠加")
-        check(BS.RefineEquip(UID, fixed.seq, "enhanceStone"), "洗练石成功")
-        check(BS.RefineReplace(UID, fixed.seq), "洗练替换成功")
+        local stoneOk, _, stoneResult = BS.RefineEquip(UID, fixed.seq, "enhanceStone")
+        check(stoneOk and stoneResult and stoneResult.autoReplaced, "洗练石成功且立即生效")
+        check(not BS.RefineReplace(UID, fixed.seq), "洗练石无需额外替换确认")
         check(math.abs(EquipmentSystem.effectiveBaseStatValue(fixed, 2) - entries[2].flat) < 1e-9,
             "随机洗练不会改变固定副升阶")
         newModules()

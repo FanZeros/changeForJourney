@@ -129,7 +129,7 @@ local function recalcRefineEssenceCost()
         equip.level or 1,
         equip.grip)
     local lockedCount = 0
-    if not (selectedExtraRes and (selectedExtraRes.key == "destroyStone" or selectedExtraRes.key == "corruptStone" or selectedExtraRes.key == "sacredStone")) then
+    if not isStoneKey(selectedExtraRes and selectedExtraRes.key) then
         lockedCount = getLockedCountForSeq(equip.seq)
     end
     local extraKey = selectedExtraRes and selectedExtraRes.key or nil
@@ -588,13 +588,10 @@ local function drawRefineAttrRows(vg, attrs, firstY, panelLeft, offsetX, alpha, 
     end
 end
 
---- 洗练前词缀行是否显示锁定按钮（点金石提品/腐化石魔化/神圣石净化不涉及锁词缀）
+--- 仅精粹洗练显示锁定按钮；石头不使用普通洗练的锁定状态。
 ---@return boolean
 local function shouldShowAffixLocks()
-    if selectedExtraRes and (selectedExtraRes.key == "destroyStone" or selectedExtraRes.key == "corruptStone" or selectedExtraRes.key == "sacredStone") then
-        return false
-    end
-    return true
+    return not isStoneKey(selectedExtraRes and selectedExtraRes.key)
 end
 
 --- 当前选中装备的锁定绘制参数
@@ -1102,12 +1099,12 @@ function M.handleInput(dx, dy)
             local extraKey = selectedExtraRes and selectedExtraRes.key or nil
             local affixCount = #(state.selectedEquip.affixes or {})
             local lockedCount = getLockedCountForSeq(seq)
-            if extraKey ~= "destroyStone" and extraKey ~= "corruptStone" and extraKey ~= "sacredStone" and affixCount > 0 and lockedCount >= affixCount then
+            if not isStoneKey(extraKey) and affixCount > 0 and lockedCount >= affixCount then
                 showRefineToast("至少保留1条词缀未锁定")
             elseif GameState.getEssence() < refineData.costEssence then
                 showRefineToast("精粹不足，无法洗练")
             else
-                local lockedIndices = getLockedIndicesArray(seq)
+                local lockedIndices = not isStoneKey(extraKey) and getLockedIndicesArray(seq) or {}
                 print("[BlacksmithRefine] 洗练按钮点击 seq=" .. tostring(seq)
                     .. " extraRes=" .. tostring(extraKey)
                     .. " locked=" .. #lockedIndices)
@@ -1150,7 +1147,26 @@ function M.onActionResult(data)
         return true
     end
 
-    -- 洗练结果预览（缓存新词缀，等待"替换"确认）
+    -- 洗练石由规则层直接生效；次数取权威值，装备推送先到也不能再加一次。
+    if data.refinePreview and data.autoReplaced and data.refineCount ~= nil then
+        if state.pendingRefineSeq and tostring(state.pendingRefineSeq) == tostring(data.refineSeq) then
+            state.pendingRefineAffixes = nil
+            state.pendingRefineSeq = nil
+        end
+        if not state.selectedEquip or tostring(state.selectedEquip.seq) ~= tostring(data.refineSeq) then
+            return true
+        end
+        state.selectedEquip.affixes = data.refinePreview
+        state.selectedEquip.refineCount = BlacksmithConfig.clampRefineCount(data.refineCount)
+        M.updateRefineData(state.selectedEquip, true)
+        autoReplaceScheduled = false
+        qualityUpgradeInfo = nil
+        corruptResultInfo = nil
+        print("[BlacksmithRefine] 洗练石已自动替换 seq=" .. tostring(data.refineSeq))
+        return true
+    end
+
+    -- 普通洗练预览或其他石头即时结果
     if data.refinePreview then
         -- 点金石后期出口：品质不变，随机一条普通词缀品级 +1
         if data.autoReplaced and data.affixGradeUp and not data.upgradedQuality then
@@ -1372,7 +1388,7 @@ function M.onActionResult(data)
             return true
         end
 
-        -- 普通洗练/洗练石路径：展示新词缀预览，等待替换确认
+        -- 普通精粹洗练：展示新词缀预览，等待替换确认
         state.pendingRefineAffixes = data.refinePreview
         state.pendingRefineSeq = data.refineSeq
         -- 快照旧的 after 数据（用于滑出动画）

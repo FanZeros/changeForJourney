@@ -12,6 +12,38 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-22，三项成果提交与PR推进）
+
+- 用户最新明确“pr”，授权本次奖励汇总／远征等级奖励增强、终焉按各队原任务续接、洗练石忽略锁定并自动替换一并提交，正常push独立 `feat1022/reward-summary-expedition`，创建base=`workspace1005`的PR；不推workspace系列、不强推、不自动合并发布。33文件白名单为29个既有改动及两个终焉测试模块／meta，不纳入.project、上传、候选、技能、无关meta、玩家档或内部验证。
+- 提交前fetch目标已外部合入PR182／183／184至 `9579f6cd`，准备保留这些更新并复验；目标新增Boot的StandaloneSave引用／具名编队回调及遗匣通知冷基线须保留。33文件候选与原基线同20项旧规范问题、新增0，不称全仓规范清零。当前标准HTTPS credential接口无凭据，环境无GH/GITHUB令牌；SSH可推送不等于可创建PR，不挖历史凭据／转录，不提前声称push或PR成功。实际提交、融合构建与测试、推送／PR结果随后据实补记。
+- 持续推进授权范围，尊重停止、权限拒绝与安全边界；按当前直接继续不机械提问，凭据不持久化，不混其他会话改动，不自动合并发布。
+
+## 上次做了什么（2026-10-22，洗练石忽略属性锁并自动替换，本地完成）
+
+- 用户要求“洗练石 不应该锁定属性，并且自动替换”。保留当前 `feat1022/reward-summary-expedition` 奖励／终焉全部dirty；仅本地修改、测试与官方build，无提交／push／PR／合并发布授权，未暂存外发、不读玩家档或凭据、不运行main、不清档。洗练石权威层忽略无锁／部分锁／全锁及旧非法锁payload，全部普通词条重随机；保留属性类型、keepHigher、魔化固定、升阶投入与倍率、固定1石成本。候选完整生成后无yield扣石／累计／应用并清同装备旧pending，其他装备pending保留；普通精粹锁定和手动替换不变。
+- UI石头不显示／响应锁、不携带旧锁、不被全锁拒绝；成功立即重建当前装备显示并清预览，不再发RefineReplace。按refineSeq隔离换件晚回执、按权威refineCount赋值防推送先到双计；保留材料选择与耗尽不暗退精粹。资源说明及关键词四语同步；独立只读复核未确认新增阻塞。已有通知／任务回调异常不回滚已提交装备，PDM.FlushImmediate仅日志，不冒称磁盘原子事务或跨进程幂等。
+- 最终官方b92成功，1616项／711根Lua实际UUID-hash载荷711/711逐字节与声明size一致，源集合一致、候选／内部validation0匹配，前序八生产指纹不变；两.project与本轮before逐字节恢复2/2。b91曾漏排一张edited_GPTClean候选，首次包审计失败保留，补本地忽略后b92通过，不删除候选。五主线程Lua逐文件severity1 Error0；服务及业务测试8条Error落未改旧源行，官方daemon unavailable/code1跳过全仓gate，旧超2048纹理压缩及headless环境错误保留，不称全仓／平台／设备全绿。
+- b92后八独立Runtime全部业务ALL PASS／actualexit0／无timeout：价值与石头规则7190、材料UI专项95、随机副属性集成593、关键词五语7108，以及腐化、升阶词条、固定费用和切关。规则覆盖同seed无锁oracle与RNG消费、keepHigher／腐化patch／ascBonus／倍率、旧pending隔离、候选异常不先扣费／次数封顶；UI覆盖全锁／无锁请求／普通手动替换、同件推送／重复及异件回执／旧预览清除／耗尽保持。UI为真实模块与输入链配边界spy，业务保存仅内存PDM，不等GPU像素／设备触控／真实磁盘／WASM或性能验收；未跑旧equipment_keyword默认全集。首轮b91同源八项亦全过，内证仅 `.git/validation/refine-stone1022`。
+- 持续推进授权范围并尊重停止、权限拒绝与安全边界；按当前直接继续不机械提问，不推workspace系列／强推／自动合并发布，不混本地配置／上传／候选／技能／内部验证，不持久化凭据。
+
+## 上次做了什么（2026-10-22，终焉按各队原任务续接，本地完成）
+
+- 用户要求终焉后主线进新主线、副本继续副本。保留 `feat1022/reward-summary-expedition@4e6ba8f6` 上项奖励全部dirty与九源码指纹，不继承历史外发授权；本轮仅本地实现／测试／官方build，未暂存、提交、push、PR、合并或发布，不读玩家档／凭据、不运行main、不清档。真正进入前冻结各队合法资源任务及pending预约；胜利原主线到新难度首关，失败主线保留原末关规则，资源队胜败均回原资源关。通天塔独立接管不纳入本常驻任务链，activeTeam编辑选择不改。
+- 五生产Lua分离新主线解锁与队1实际目的地，修入口capture、逐队胜败重开、getter／onStageChanged／Scene／Boot安全点覆盖；队1资源真实load及回调不伪进主线、不污染max。闭Page即使无driver也以非终焉Scene为权威，Scene已终焉接管用恢复任务；来源绑定raid／token，reset／load丢弃，返回数组不暴露原表。复用已有teamStageIds，不增玩家档字段；原三编号共享生命池、奖励／首通去重及成长结账不改。独立只读复核未确认新增问题，不代Runtime验收。
+- 最终官方b90成功，1594项／711根Lua实际UUID-hash载荷711/711逐字节及声明size一致，源集合一致、候选及内部validation0入包，两.project与本轮before逐字节恢复2/2；九奖励源码保持。四生产及五测试逐文件severity1 Error0，Boot五Error均未改旧源行（两StandaloneSave全局、三旧回调返回），全仓缓存840 Error未混修，不称全仓静态清零。规范36单测实际OK，3324候选路径20旧问题同HEAD、新增0；第一次含本地构建身份的候选审计失败保留，排除本地配置后通过。
+- b90后六独立Runtime均业务通过／actualexit0／无timeout：终焉7136、三队存档2073、清档10组189、资源兼容46439、塔／副本19组4404及切关。终焉保原纯主线case并新增155子case（63混合来源胜败、三资源×三队预约胜败、Nav冷／热／确认、Scene与旧saved双向、隐式接管、reset／旧token／重复skip），资源返回后真Driver.update；三队63组合经真Flush／JSON／新Save／Schema／新Page冷恢复。保存边界为封闭内存File，完整链夹具叶子／Capture spy，不等设备GPU／触控／真实磁盘／WASM或性能验收。
+- 同最终包另六奖励回归全部ALL PASS／actualexit0／无timeout：展示522502、领奖24组178716、远征模型3组23027、弹窗52组1394、奖励32组3036及轨道7284。首轮终焉7111断言217失败原记录保留，仅补uid1 battle/dungeon权威存储与客户端同表夹具、reset后真实ready步骤，不降业务断言；旧清档缺取消依赖也只补spy。错误cwd导致资源visual／塔旧基线timeout、旧dungeon_team_selection缺EquipmentSecondaryStats依赖失败均保留，不计通过、不扩修。最终塔正确隔离cwd通过，资源覆盖以compat为准，未冒称visual／独立选队全集通过。
+- 内证仅 `.git/validation/terminal-return1022`，两新测试模块meta由官方build生成；原上传／候选／技能／无关meta和前序成果保留。持续推进授权范围并尊重停止、权限拒绝与安全边界；按当前直接继续不机械提问，不推workspace系列／强推／自动合并发布，凭据不持久化。
+
+## 上次做了什么（2026-10-22，同类奖励汇总与远征等级奖励增强，本地完成）
+
+- 用户要求同类奖励不再重复几十条黑晶100，并按等级×5%增强远征奖励。基于最新 `workspace1005@4e6ba8f6` 建立本地 `feat1022/reward-summary-expedition`，保留外部已合PR177/181；仅本地实现/测试/官方构建，未提交/push/PR/合并发布，不继承历史外发授权，不读玩家档/凭据、不清档。
+- RewardPreparation统一普通同步及扫荡预处理入口：注册资源按协议类型及完整标量元数据求和，浅拷贝展示项不改共享配置/回执；装备/英雄/神器/种子/嵌套或未知项保留，碎片按heroId隔离，别名/品质/去向不同不混合，整数元数据不转浮点误合并，超精确数量上限保留多项。逐项onItemClick关闭聚合并保留原对象/索引，token绑定原数组/长度/模式且一次消费；最终展示条数决定大窗。正式扫荡仍256步checkpoint，不宣称任意无token十万项show均分帧。
+- TaskConfig仅level组复制并一次换算 `floor(base*(20+target)/20)`，以节点目标等级而非当前等级计算、线性不复利；九里程碑与200bonus全覆盖，ID/台账/轮换/其他功绩不改。bonus Lv1/100/200为105/600/1100，全200bonus120500；含Lv100礼包全页黑晶125540、同级5640。已达成未领用新版，已领不清账、不补差额。真实209业务记录仍独立，一次保存后Popup展示八资源。
+- 最终官方b88成功，1592项/709根Lua全部实际UUID-hash载荷709/709逐字节及声明size一致，源码集合一致、候选/内部validation0入包；两.project已与本轮before逐字节恢复2/2。九任务Lua逐文件severity1 Error0（仍有Warning），官方daemon unavailable/code1跳过全仓gate，不称全仓清零。规范36单测实际exit0，3320路径20旧问题同HEAD、新增0。
+- b88最终九独立Runtime全部业务通过/actualexit0/无timeout：展示522502、弹窗52组1394、战斗奖励32组3036、扫荡UI16组5732、升级110、切关，以及远征模型3组23027/领奖24组178716/轨道7284。含399组目标级与满级节点领取对照、同节点连点、209→8真实角标、已领拒绝、Rename失败回滚及内存JSON冷恢复。CPU绘制记录器/内存File不是设备GPU/触控/真实磁盘或性能验收；未跑main，headless环境音频/shader错误保留。
+- 早期夹具失败完整保留：两交互缺isSweepPending纯状态依赖；远征缺明确Bridge注册及纯配置依赖；预期Rename失败被原pcall审计误记。仅补明确真实依赖/只注册边界spy及单次armed私有sentinel，未知错误审计/原18事务/业务断言保留，不将先前exit0当通过。内证仅 `.git/validation/reward1022`，上传/候选/技能/meta及本地配置不混提交。持续推进并尊重停止/拒绝/安全边界，按本轮直接继续不机械提问，不推workspace系列/强推/自动合并发布，凭据不持久化。
+
 ## 上次做了什么（2026-10-21，扫荡批量概率抽样 PR #181 已创建）
 
 - **已正常push并创建正式PR #181**：https://github.com/FanZeros/changeForJourney/pull/181，head=`perf1021/sweep-batch-sampling@4ac268a8`／base=`workspace1005@f44d97a1`，创建时open/draft=false/merged=false。13白名单文件+1586/−147，push与ls-remote实际exit0、远端SHA一致，未推workspace系列/强推/自动合并或发布；本地原.gitignore/上传/玩家档/无关meta与内部证据未纳入。鉴权经标准credential接口返回值进程内一次性使用，未写入remote/Git配置/源码/日志或记忆。下方“成功后补”为此前过程记录。

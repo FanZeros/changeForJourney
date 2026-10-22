@@ -1,4 +1,4 @@
--- 远征展示模型回归：真实配置与规则，断言不改玩家档、不改变任何原奖励。
+-- 远征展示模型回归：真实配置与规则，展示不改玩家档或已换算的奖励配置。
 function Start()
     local assertions, cases = 0, 0
     local function check(value, label)
@@ -29,11 +29,25 @@ function Start()
         local levels = {5, 10, 20, 30, 50, 80, 100, 150, 200}
         local kinds = {"essence", "adventure_ticket", "enhance_star", "arcane_dust", "sweep_ticket",
             "stellar_ticket", "diamond", "gold", "essence"}
+        -- 固定旧基值作为独立oracle；不用生产配置反推期望值。
         local amounts = {150, 2, 2, 600, 1, 1, 840, 120000, 6000}
+        local scaledAmounts = {187, 3, 4, 1500, 3, 5, 5040, 1020000, 66000}
+        local metadata = {
+            essence = {icon = "image/货币道具/UI_icon_JC.png", quality = 2},
+            adventure_ticket = {icon = "image/货币道具/UI_icon_ZMQ_1.png", quality = 5},
+            enhance_star = {icon = "image/货币道具/UI_icon_QH_1.png", quality = 3},
+            arcane_dust = {icon = "image/货币道具/UI_icon_ASFC.png", quality = 3},
+            sweep_ticket = {icon = "image/货币道具/UI_icon_SDQ.png", quality = 4},
+            stellar_ticket = {icon = "image/货币道具/UI_icon_ZMQ_2.png", quality = 6},
+            diamond = {icon = "image/货币道具/UI_icon_SJ_X.png", quality = 5},
+            gold = {icon = "image/货币道具/UI_icon_JB_X.png", quality = 2},
+        }
         local configBefore = copy(Config.ACHIEVEMENT)
         local levelTasksBefore = copy(Config.LEVEL_TASKS)
         local originalByLevel = {}
-        for i, lv in ipairs(levels) do originalByLevel[lv] = { type = kinds[i], amount = amounts[i] } end
+        for i, lv in ipairs(levels) do
+            originalByLevel[lv] = { type = kinds[i], amount = amounts[i], scaled = scaledAmounts[i] }
+        end
         local function bonusId(lv) return "a_plv_bonus_v1_" .. lv end
         runCase("九个原礼包及200个独立bonus配置", function()
             check(Exp.PLAYER_MAX_LEVEL == 200, "最高等级200")
@@ -48,17 +62,25 @@ function Start()
                     if def.id:match("^a_plv_%d+$") then originalCount = originalCount + 1
                     else
                         check(def.id == bonusId(def.target), "新增ID版本稳定")
-                        check(def.reward.type == "diamond" and def.reward.amount == 100, "每级新增100黑晶")
+                        check(def.reward.type == "diamond" and def.reward.amount == 100 + 5 * def.target,
+                            "每级bonus按固定100基值线性增强")
                         bonusCount, totalBonus = bonusCount + 1, totalBonus + def.reward.amount
                     end
                 end
             end
-            check(originalCount == 9 and bonusCount == 200 and totalBonus == 20000, "原9项外加20000黑晶")
+            check(originalCount == 9 and bonusCount == 200 and totalBonus == 120500,
+                "原9项与200项bonus均保留，bonus总额120500")
             for lv = 1, 200 do
                 local defs = Config.LEVEL_TASKS[lv]
                 local original = originalByLevel[lv]
                 check(#defs == (original and 2 or 1), "每级所有任务 " .. lv)
                 check(defs[#defs] == Config.findById(bonusId(lv)), "bonus同源且最后 " .. lv)
+                local bonus = Config.findById(bonusId(lv)).reward
+                check(bonus.amount == 100 + lv * 5 and bonus.icon == metadata.diamond.icon
+                    and bonus.quality == metadata.diamond.quality, "200级固定基值独立oracle及元数据 " .. lv)
+                if lv > 1 then
+                    check(bonus ~= Config.findById(bonusId(lv - 1)).reward, "不同节点不共享可变reward " .. lv)
+                end
                 for _, def in ipairs(defs) do
                     check(def.target == lv and def.group == "level", "按级索引无串级 " .. lv)
                     check(Config.findById(def.id) == def, "配置索引同表 " .. def.id)
@@ -66,8 +88,13 @@ function Start()
                 if original then
                     local def = Config.findById("a_plv_" .. lv)
                     check(defs[1] == def, "原礼包第一项 " .. lv)
-                    check(def.reward.type == original.type and def.reward.amount == original.amount,
-                        "保留原奖励 " .. lv)
+                    -- 用加法+整除的独立写法检查向下取整与一次线性增强，Lv5的187.5须落187。
+                    local expected = original.amount + (original.amount * lv // 20)
+                    check(expected == original.scaled and def.reward.type == original.type and def.reward.amount == expected,
+                        "原礼包按节点目标等级换算一次 " .. lv)
+                    local meta = metadata[original.type]
+                    check(def.reward.icon == meta.icon and def.reward.quality == meta.quality,
+                        "原礼包图标与品质不变 " .. lv)
                 end
             end
             local heroRewards = {
@@ -107,9 +134,10 @@ function Start()
                     check(row.level == target and row.taskId == bonusId(target), "稳定bonus行ID " .. target)
                     check(row.current == (target == lv), "仅当前等级高亮 " .. target)
                     if row.current then currentCount = currentCount + 1 end
+                    ---@type table[]
                     local defs = Config.LEVEL_TASKS[target]
                     check(#row.tasks == #defs and #row.rewards == #defs, "完整展示同级全部奖励 " .. target)
-                    check(row.reward == Config.findById(bonusId(target)).reward, "主奖励为bonus100 " .. target)
+                    check(row.reward == Config.findById(bonusId(target)).reward, "主奖励为增强后的bonus " .. target)
                     check(row.status == (target <= lv and Config.STATUS.CLAIMABLE or Config.STATUS.LOCKED),
                         "行等级状态 " .. target)
                     for index, item in ipairs(row.tasks) do
@@ -189,7 +217,7 @@ function Start()
         check(byId.team_slots and byId.artifact_slot_1 and byId.artifact_slot_2, "跨级不丢早期解锁")
         check(byId.enhance_cap.unlockName == "装备强化上限 Lv.60", "成长保留最终上限")
         check(byId.church.level == Exp.CHURCH_UNLOCK_LEVEL, "礼拜堂门槛同源")
-        check(Progress.rewardLabel(Config.findById("a_plv_100").reward) == "黑晶 × 840", "黑晶未改币种")
+        check(Progress.rewardLabel(Config.findById("a_plv_100").reward) == "黑晶 × 5040", "黑晶未改币种")
         check(#Progress.getRangeUnlocks(60,30) == 0, "降级不庆祝解锁")
         local I18n = require("core.I18n")
         local dictionary = require("core.I18nExpedition")

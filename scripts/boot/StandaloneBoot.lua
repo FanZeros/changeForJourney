@@ -626,12 +626,14 @@ function M.run(rt)
                 battle.clearedStages[tostring(clearedNum)] = true
                 local nextId = StageConfig.getNextStageId(clearedNum)
                 if StageConfig.isTerminalTemple(clearedNum) then
-                    -- 通关账本解锁目标，但当前/三队存档仍回末关，动画完成才写目标。
+                    -- 三队Scene已冻结逐队安全点；此处只更新共享解锁，不覆盖资源来源。
                     local previous = StageConfig.getTerminalPrevStageId(clearedNum)
                     local target = StageConfig.getReincarnationTarget(StageConfig.getDifficulty(clearedNum))
-                    battle.currentStageId = previous
+                    if saveAtCompletion or type(battle.teamStageIds) ~= "table" then
+                        battle.currentStageId = previous
+                        battle.teamStageIds = { ["1"] = previous, ["2"] = previous, ["3"] = previous }
+                    end
                     battle.maxStageId = math.max(tonumber(battle.maxStageId) or 0, target or previous)
-                    battle.teamStageIds = { ["1"] = previous, ["2"] = previous, ["3"] = previous }
                     battle.battleMode = "idle"
                 elseif teamIdx ~= 1 then
                     local progressId = nextId and not StageConfig.isTerminalTemple(nextId)

@@ -26,17 +26,20 @@ function M.bind(deps)
         for _, key in ipairs({ "searchingTimer", "defeatTimer", "reincarnationTimer", "victoryMarch" }) do set(key, nil) end
         local token = get("reincarnationToken") + 1
         set("reincarnationToken", token)
+        local Page = require("ui.battle.tri.BattleTriPage")
+        local destinations = Page.getTerminalReturnStageIds(stageId, targetId, token)
         set("pendingReincarnation", { targetStageId = targetId, terminalStageId = stageId,
             fromDifficulty = SC.getDifficulty(stageId), toDifficulty = SC.getDifficulty(targetId),
-            triTerminal = true, token = token, timer = 0, animationStarted = false })
+            triTerminal = true, token = token, timer = 0, animationStarted = false,
+            returnStageIds = destinations })
         BottomNav.setAllLocked(true)
         if type(battle) == "table" then
             battle.clearedStages = savedCleared
             savedCleared[tostring(stageId)] = true
             battle.maxStageId = maxStage
-            local previous = SC.getTerminalPrevStageId(stageId)
-            battle.currentStageId, battle.battleMode = previous, "idle"
-            battle.teamStageIds = { ["1"] = previous, ["2"] = previous, ["3"] = previous }
+            local safe = Page.getTerminalReturnStageIds(stageId, SC.getTerminalPrevStageId(stageId), token)
+            battle.currentStageId, battle.battleMode = safe[1], "idle"
+            battle.teamStageIds = { ["1"] = safe[1], ["2"] = safe[2], ["3"] = safe[3] }
         end
         -- 首通闭包排62/69及结算奖励；此前绝不loadStage或通知目标入场。
         if wasFirstClear then deps.scene.onFirstClear(stageId, 1) end
@@ -70,28 +73,31 @@ function M.bind(deps)
         if not pending then return false end
         if not pending.triTerminal then return deps.nav.completeReincarnation() end
         if not pending.animationStarted then return false end
-        -- 保留NavLogic现有加载/复位；兼容Scene不能先发目标通知或存档。
+        local destinations = pending.returnStageIds
+            or { pending.targetStageId, pending.targetStageId, pending.targetStageId }
+        local actualStage = destinations[1]
+        -- 解锁目标仍为新主线；兼容Scene实际只加载队1目的地，资源队不虚假进入主线。
         set("completingTriReincarnation", true)
-        local ok, err = pcall(deps.nav.completeReincarnation)
+        local ok, err = pcall(deps.nav.completeReincarnation, actualStage)
         set("completingTriReincarnation", false)
         if not ok then error(err) end
         local Page = require("ui.battle.tri.BattleTriPage")
         if Page.isTerminalRaidActive() then
-            Page.completeTerminalReincarnation(pending.targetStageId)
+            Page.completeTerminalReincarnation(pending.targetStageId, pending.token)
         else
-            require("ui.battle.stage.StageEntryEvents").notify(pending.targetStageId, 1)
+            require("ui.battle.stage.StageEntryEvents").notify(actualStage, 1)
         end
         local battle = Dispatcher.get("battle")
         if type(battle) == "table" then
-            local target = pending.targetStageId
-            battle.currentStageId, battle.maxStageId = target, get("maxStageId_")
-            battle.teamStageIds = { ["1"] = target, ["2"] = target, ["3"] = target }
+            battle.currentStageId, battle.maxStageId = actualStage, get("maxStageId_")
+            battle.teamStageIds = { ["1"] = destinations[1], ["2"] = destinations[2], ["3"] = destinations[3] }
             local cleared = battle.clearedStages or {}
-            battle.battleMode = (cleared[target] == true or cleared[tostring(target)] == true) and "idle" or "firstClear"
+            battle.battleMode = (SC.isResourceStage(actualStage)
+                or cleared[actualStage] == true or cleared[tostring(actualStage)] == true) and "idle" or "firstClear"
         end
         BottomNav.setAllLocked(false)
         local changed = get("onStageChangedCallback")
-        if changed then changed(pending.targetStageId) end
+        if changed then changed(actualStage) end
         if type(battle) == "table" then
             Dispatcher.notifySubscribers("battle")
             require("boot.StandaloneSave").Flush()

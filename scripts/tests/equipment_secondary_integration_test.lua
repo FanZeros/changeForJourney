@@ -216,11 +216,18 @@ local function blacksmithTests(Eq, EC, AD, AC)
                 local refineOk, refineErr, preview = BS.RefineEquip(uid, equip.seq, resource)
                 check(refineOk and preview and type(preview.refinePreview) == "table",
                     label .. " actual " .. resource .. " preview: " .. tostring(refineErr))
-                check(same(equip.affixes, beforeAffixes) and same(equip.baseStats, beforeStats),
-                    label .. " pending " .. resource .. " does not apply preview early")
-                secondaryMatches(equip, roll, label .. " pending " .. resource)
-                check(BS.RefineReplace(uid, equip.seq), label .. " actual " .. resource .. " replace succeeds")
-                secondaryMatches(equip, roll, label .. " replaced " .. resource)
+                if resource == "enhanceStone" then
+                    check(preview and preview.autoReplaced and equip.affixes == preview.refinePreview,
+                        label .. " stone applies actual result immediately")
+                    check(not BS.hasPendingRefine(uid, equip.seq) and not BS.RefineReplace(uid, equip.seq),
+                        label .. " stone leaves no pending manual replacement")
+                else
+                    check(same(equip.affixes, beforeAffixes) and same(equip.baseStats, beforeStats),
+                        label .. " pending " .. resource .. " does not apply preview early")
+                    check(BS.hasPendingRefine(uid, equip.seq), label .. " essence retains pending preview")
+                    check(BS.RefineReplace(uid, equip.seq), label .. " actual " .. resource .. " replace succeeds")
+                end
+                secondaryMatches(equip, roll, label .. " refined " .. resource)
                 check(same(equip.baseStats, beforeStats), label .. " random affix replace does not reroll fixed stats")
             end
 

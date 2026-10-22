@@ -47,6 +47,9 @@ local entryPreparation = require("ui.battle.tri.BattleEntryPreparation").new()
 ---@type table<number|string, number>|nil
 local restoredStageIds = nil
 local terminalRaid = nil
+local Reincarnation = require("ui.battle.tri.TerminalReincarnation")
+---@type TerminalReturnOrigins|nil
+local terminalOrigins = nil
 local applyingTerminalDestination = false
 local l1Images = {}       -- 同一路径共用句柄，切场景不删除其他行仍在使用的贴图
 local l1Failures = {}     -- 加载失败只提示一次，后续帧仍允许重试
@@ -83,6 +86,19 @@ function BattleTriPage.isOpen() return isOpen_ end
 --- 与 HUD 同源：终焉失败退场仍被接管，直到共享协同战正式清理才允许选关。
 ---@return boolean
 function BattleTriPage.isTerminalRaidActive() return terminalRaid ~= nil end
+
+-- 实际进入前调用，不在打开确认框时冻结；不创建驱动，也不暴露可写来源表。
+function BattleTriPage.captureTerminalOrigins(stageId)
+    if terminalRaid or not StageConfig.isTerminalTemple(stageId) then return false end
+    terminalOrigins = Reincarnation.captureOrigins(stageId, drivers, restoredStageIds,
+        ClientDispatcher.get("battle"), require("ui.battle.scene.BattleScene").getStageId(), isOpen_)
+    return true
+end
+
+function BattleTriPage.getTerminalReturnStageIds(stageId, mainDestination, token)
+    local origins = terminalRaid and terminalRaid.returnOrigins or terminalOrigins
+    return Reincarnation.returnStages(origins, stageId, mainDestination, token)
+end
 
 function BattleTriPage.setBattleReady(ready)
     battleReady = ready == true
@@ -176,6 +192,11 @@ local startTerminalRaid
 local function ensureDrivers()
     local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     local BattleScene = require("ui.battle.scene.BattleScene")
+    local sceneStage = BattleScene.getStageId()
+    if StageConfig.isTerminalTemple(sceneStage) and not terminalRaid
+        and (not terminalOrigins or terminalOrigins.terminalStageId ~= sceneStage) then
+        BattleTriPage.captureTerminalOrigins(sceneStage)
+    end
     for t = 1, COL_COUNT do
         if unlocked >= t and not drivers[t] then
             local Driver = require("ui.battle.tri.BattleTriDriver")
@@ -200,8 +221,7 @@ local function ensureDrivers()
                 local battle = ClientDispatcher.get("battle")
                 if type(battle) == "table" then
                     if type(battle.teamStageIds) ~= "table" then battle.teamStageIds = {} end
-                    local savedId = StageConfig.isTerminalTemple(stageId)
-                        and StageConfig.getTerminalPrevStageId(stageId) or stageId
+                    local savedId = Reincarnation.safeStage(stageId, teamIdx, terminalOrigins)
                     local key = tostring(teamIdx)
                     local changed = battle.teamStageIds[key] ~= savedId
                         or (teamIdx == 1 and battle.currentStageId ~= savedId)
@@ -287,6 +307,9 @@ local function clearTerminalRaid()
 end
 
 startTerminalRaid = function(stageId)
+    if not terminalOrigins or terminalOrigins.terminalStageId ~= stageId then
+        BattleTriPage.captureTerminalOrigins(stageId)
+    end
     clearTerminalRaid()
     local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     for row = 1, math.min(COL_COUNT, unlocked) do
@@ -294,6 +317,7 @@ startTerminalRaid = function(stageId)
         drivers[row]._syncedMainStage = stageId
     end
     terminalRaid = TerminalRaid.new(stageId, drivers)
+    terminalRaid.returnOrigins = terminalOrigins
     for row = 1, math.min(COL_COUNT, unlocked) do
         drivers[row].terminalRaid = terminalRaid
     end
@@ -339,17 +363,21 @@ local function finishTerminalRaid(won)
         return
     end
     clearTerminalRaid()
-    require("ui.battle.tri.TerminalReincarnation").retreat(raid, drivers,
+    Reincarnation.retreat(raid, drivers,
         StageConfig.getTerminalPrevStageId(stageId), BattleScene, BattleTriPage.gotoTeamStage)
+    terminalOrigins = nil
 end
 
 --- 只由完成/skip动画出口调用，三队实际进场后由Scene统一持久化。
-function BattleTriPage.completeTerminalReincarnation(stageId)
+function BattleTriPage.completeTerminalReincarnation(stageId, token)
     if not terminalRaid or not terminalRaid.won or not terminalRaid.settlementStarted then return false end
+    local destinations = BattleTriPage.getTerminalReturnStageIds(terminalRaid.stageId, stageId, token)
+    if not destinations then return false end
     clearTerminalRaid()
     entryPreparation.invalidate()
-    require("ui.battle.tri.TerminalReincarnation").enterTeams(drivers, stageId,
-        function(value) applyingTerminalDestination = value end)
+    Reincarnation.enterTeams(drivers, stageId,
+        function(value) applyingTerminalDestination = value end, destinations)
+    terminalOrigins = nil
     return true
 end
 
@@ -1368,7 +1396,7 @@ end
 --- 三队实时快照。预约只用于存档连续性，不改变正在行军的战线实际关卡。
 ---@return number[]|nil
 function BattleTriPage.getTeamStageIds()
-    if not next(drivers) and not restoredStageIds then return nil end
+    if not next(drivers) and not restoredStageIds and not terminalOrigins then return nil end
     local battle = ClientDispatcher.get("battle")
     local saved = type(battle) == "table" and battle.teamStageIds or {}
     saved = type(saved) == "table" and saved or {}
@@ -1382,9 +1410,8 @@ function BattleTriPage.getTeamStageIds()
             or tonumber(saved[tostring(team)] or saved[team])
             or (team == 1 and type(battle) == "table" and tonumber(battle.currentStageId))
             or StageConfig.NORMAL_FIRST_STAGE
-        -- 协同是临时运行态，读档回到末关，不允许单队恢复终焉。
-        result[team] = StageConfig.isTerminalTemple(stageId)
-            and (StageConfig.getTerminalPrevStageId(stageId) or StageConfig.NORMAL_FIRST_STAGE) or stageId
+        -- 协同只落逐队安全点：资源原预约，主线末关；真实恢复不会重启终焉。
+        result[team] = Reincarnation.safeStage(stageId, team, terminalOrigins)
     end
     return result
 end
@@ -1402,10 +1429,10 @@ end
 --- 放弃旧协同，不分发死亡事件，不通过正常收尾/奖励结算路径。
 local function discardTerminalRaid()
     require("ui.battle.tri.TerminalReincarnation").discardRaid(terminalRaid, drivers)
-    terminalRaid = nil
+    terminalRaid, terminalOrigins = nil, nil
 end
 
-local discardDriver = require("ui.battle.tri.TerminalReincarnation").discardDriver
+local discardDriver = Reincarnation.discardDriver
 
 --- 只在真实恢复时回灌，周期同步必须仅采集；接受数组或规范字符串键表。
 ---@param stageIds table<number|string, number>

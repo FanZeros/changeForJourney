@@ -101,6 +101,16 @@ function Start()
         end,
     }
     mocks["rules.offline.OfflineService"] = offline
+    -- Bridge.init无条件接线非目标事务；只验注册接口，不运行副本/扫荡/库存整理。
+    local function registrationOnly(name, fail)
+        return setmetatable({SetPersistCallback = function(callback, hooks)
+            assert(type(callback) == "function" and type(hooks) == "table"
+                and type(hooks.begin) == "function" and type(hooks.finish) == "function", name .. "注册协议")
+        end}, {__index = function(_, key) return fail("禁止非目标业务 " .. name .. "." .. tostring(key)) end})
+    end
+    for _, name in ipairs({"rules.dungeon.DungeonService", "rules.equipment.InventoryCurationService"}) do
+        mocks[name] = registrationOnly(name, error)
+    end
     -- 非目标 Handler 不加载业务依赖；GM 测试使用真实 PDM 的反向 player MarkDirty 路径。
     mocks["rules.gm.GMHandler"] = { actionHandlers = {
         gm_player_level_up = function(uid)
@@ -175,15 +185,34 @@ function Start()
         local Protocol = require("shared.Protocol")
         local ups, playerNotifications = {}, 0
         local rewardNotices = 0
-        local levelTasks, allLevelTasks, heroRewards = {}, {}, {}
+        local levelTasks, allLevelTasks, heroRewards, bonusRewards = {}, {}, {}, {}
         for _, task in ipairs(Config.ACHIEVEMENT) do
             if task.group == "level" then
                 allLevelTasks[#allLevelTasks + 1] = task
-                if task.id:match("^a_plv_%d+$") then levelTasks[#levelTasks + 1] = task end
+                if task.id:match("^a_plv_%d+$") then levelTasks[#levelTasks + 1] = task
+                else bonusRewards[task.reward] = true end
             elseif task.group == "hero" then heroRewards[task.id] = copy(task.reward) end
         end
         eq(#levelTasks, 9, "保留全部九个现有远征奖励")
         eq(#allLevelTasks, 209, "原九项外加200项独立bonus")
+        -- 固定旧基值oracle，独立于生产reward.amount，不借配置自身证明数值正确。
+        local milestoneBases = {
+            [5] = {type="essence", amount=150}, [10] = {type="adventure_ticket", amount=2},
+            [20] = {type="enhance_star", amount=2}, [30] = {type="arcane_dust", amount=600},
+            [50] = {type="sweep_ticket", amount=1}, [80] = {type="stellar_ticket", amount=1},
+            [100] = {type="diamond", amount=840}, [150] = {type="gold", amount=120000},
+            [200] = {type="essence", amount=6000},
+        }
+        local function expectedReward(task)
+            local base = task.id:match("^a_plv_%d+$") and milestoneBases[task.target]
+                or {type="diamond", amount=100}
+            return {type=base.type, amount=base.amount + (base.amount * task.target // 20)}
+        end
+        for _, task in ipairs(allLevelTasks) do
+            local expected = expectedReward(task)
+            eq(task.reward.type, expected.type, "209项独立基值币种 " .. task.id)
+            eq(task.reward.amount, expected.amount, "209项按目标等级线性增强一次 " .. task.id)
+        end
         local originalRewards = {}
         for _, task in ipairs(levelTasks) do originalRewards[task.id] = copy(task.reward) end
         local function bonusId(level) return "a_plv_bonus_v1_" .. level end
@@ -262,9 +291,10 @@ function Start()
         local function addRewards(expected, entries, skipped)
             for _, task in ipairs(entries) do
                 if not (skipped or {})[task.id] then
-                    local key = Currency.REWARD_TO_CURRENCY[task.reward.type]
+                    local reward = expectedReward(task)
+                    local key = Currency.REWARD_TO_CURRENCY[reward.type]
                     assert(key, "等级奖励须能映射currency " .. task.id)
-                    expected[key] = (expected[key] or 0) + task.reward.amount
+                    expected[key] = (expected[key] or 0) + reward.amount
                 end
             end
             return expected
@@ -342,7 +372,7 @@ function Start()
             local result = dispatch(task.id)
             eq(result.success, true, "单领成功")
             eq(result.reward.type, reward.type, "保留原奖励type")
-            eq(result.reward.amount, reward.amount, "保留原奖励amount")
+            eq(result.reward.amount, reward.amount, "保留配置增强后reward.amount")
             eq(Dispatcher.get("currency")[key], balance + reward.amount, "实际发奖")
             eq(Dispatcher.get("task").achClaimed[task.id], true, "成功才记永久账本")
             local saved = cjson.decode(memory[savePath])
@@ -533,7 +563,7 @@ function Start()
                     Currency.GrantReward = function(uid, reward)
                         calls = calls + 1
                         local success = grant(uid, reward)
-                        if reward.type == "diamond" and reward.amount == 100 then grantedBonus = true end
+                        if bonusRewards[reward] and success == true then grantedBonus = true end
                         -- 节点第二项bonus已真实发出；整页至少发完一个bonus再在下一项失败。
                         if (batch == "node" and calls == 2) or (batch == "page" and grantedBonus and calls == 6) then
                             if throws then error("injected failure after real bonus grant") end
@@ -600,7 +630,7 @@ function Start()
                     expected[key] = (expected[key] or 0) + reward.amount
                 end
             end
-            for level = 1, 200 do expected.gems = expected.gems + 100 end
+            for level = 1, 200 do expected.gems = expected.gems + 100 + 5 * level end
             local before = writeCount
             local result = all()
             eq(result.success, true, "一键成功")
@@ -656,7 +686,7 @@ function Start()
                 end
             end
         end)
-        runCase("整页209项全部累计/旧礼包全领仍补20000及真实存档往返", function()
+        runCase("整页209项全部累计/旧礼包全领仍补120500及真实存档往返", function()
             for _, skipOriginals in ipairs({false, true}) do
                 local history = {a_retired_task=true, ["a_hero_4"]=true}
                 if skipOriginals then
@@ -672,15 +702,15 @@ function Start()
                 local writesBefore = writeCount
                 expectClaims(all(), expectedIds, "整页全部累计")
                 eq(#expectedIds, skipOriginals and 200 or 209, "原已领只补新bonus")
-                eq(expected.gems, skipOriginals and 20020 or 20860, "20000bonus加原840黑晶")
+                eq(expected.gems, skipOriginals and 120520 or 125560, "120500bonus加原礼包增强后5040黑晶")
                 if not skipOriginals then
-                    eq(expected.gold, 120100, "原120000金币累计")
-                    eq(expected.essence, 6150, "原150加6000精粹累计")
-                    eq(expected.recruitTicket, 2, "原招募券累计")
-                    eq(expected.enhanceStone, 2, "原强化星累计")
-                    eq(expected.arcaneDust, 600, "原奥术粉尘累计")
-                    eq(expected.sweepTicket, 1, "原扫荡券累计")
-                    eq(expected.stellarRecruitTicket, 1, "原星耀券累计")
+                    eq(expected.gold, 1020100, "原礼包增强后1020000金币累计")
+                    eq(expected.essence, 66187, "原礼包增强后187加66000精粹累计")
+                    eq(expected.recruitTicket, 3, "原招募券增强后累计")
+                    eq(expected.enhanceStone, 4, "原强化星增强后累计")
+                    eq(expected.arcaneDust, 1500, "原奥术粉尘增强后累计")
+                    eq(expected.sweepTicket, 3, "原扫荡券增强后累计")
+                    eq(expected.stellarRecruitTicket, 5, "原星耀券增强后累计")
                 end
                 eq(writeCount, writesBefore + 1, "200级整页原子一批写档")
                 expectBalances(expected, "全部累计奖励")
@@ -731,7 +761,7 @@ function Start()
             eq(dispatch("a_plv_5").reason, "already_claimed", "老档重复领取仍拒绝")
             local gemsBefore = State.getGems()
             expectClaims(all(5), {bonusId(5)}, "老档旧已领仍补bonus")
-            eq(State.getGems(), gemsBefore + 100, "老档新增黑晶真实发放")
+            eq(State.getGems(), gemsBefore + 125, "老档新增黑晶按Lv5节点增强后真实发放")
             eq(Dispatcher.get("task").achClaimed.a_plv_10, true, "老档另一礼包台账不受影响")
             flushBaseline()
             before = #ups
@@ -759,10 +789,43 @@ function Start()
             eq(cjson.decode(memory[savePath]).modules.session.lastOnlineTime, now, "成功才落在线边界")
             check(renameCount > 0, "真实进入Rename接口")
         end)
-        -- 保留原事务回归计数；下方是另外的完整源码实例，不借用旧fixture状态。
+        -- 原18个runCase仍逐一执行；断言数随新oracle与奖励值增加，不锁死历史总数。
         eq(cases, 18, "原18例完整保留")
-        -- 此断言之前原18例仍为17325个断言，额外门禁不计作旧覆盖。
-        eq(assertions - 1, 17325, "原17325断言完整保留")
+        runCase("全200节点在目标级及满级领取同额，已领不补差额", function()
+            for target = 1, 200 do
+                local expectedIds = {}
+                local entries = Config.LEVEL_TASKS[target]
+                for _, task in ipairs(entries) do expectedIds[#expectedIds + 1] = task.id end
+                local atTarget = {}
+                for _, current in ipairs(target < 200 and {target, 200} or {200}) do
+                    setFixture(current, {a_legacy_history = true})
+                    local expected = addRewards(copy(Dispatcher.get("currency")), entries)
+                    local writesBefore = writeCount
+                    local result = all(target)
+                    expectClaims(result, expectedIds, "目标Lv" .. target .. "当前Lv" .. current)
+                    for index, task in ipairs(entries) do
+                        local oracle = expectedReward(task)
+                        eq(result.rewards[index].type, oracle.type, "未领旧节点币种 " .. task.id)
+                        eq(result.rewards[index].amount, oracle.amount, "不按当前等级重复增强 " .. task.id)
+                        if current == target then atTarget[index] = copy(result.rewards[index])
+                        else same(result.rewards[index], atTarget[index], "同节点不同当前等级完整奖励一致 " .. task.id) end
+                    end
+                    expectBalances(expected, "独立基值oracle实际到账 " .. target .. "/" .. current)
+                    eq(writeCount, writesBefore + 1, "指定节点仅一次提交")
+                    eq(rewardNotices, 1, "指定节点只发布一次成功货币通知")
+                    local currency = copy(Dispatcher.get("currency"))
+                    local previous = memory[savePath]
+                    for _, task in ipairs(entries) do
+                        eq(dispatch(task.id).reason, "already_claimed", "已领不补增强差额 " .. task.id)
+                    end
+                    eq(all(target).reason, "nothing_to_claim", "已领节点不补发 " .. target)
+                    same(Dispatcher.get("currency"), currency, "已领拒绝后余额不变")
+                    eq(writeCount, writesBefore + 1, "已领拒绝不再写档")
+                    eq(memory[savePath], previous, "已领拒绝旧档字节不变")
+                    eq(rewardNotices, 1, "已领拒绝不新增货币通知")
+                end
+            end
+        end)
 
         -- 每次factory都重建业务/Schema/UI模型；仅可传入内存JSON字符串。
         -- 不加载main、Standalone启动器、真实PlayerStore/OfflineService，不使用package.loaded。
@@ -770,8 +833,10 @@ function Start()
             ---@type table<string, any>
             local h = { loaded = {}, errors = {}, trace = {}, results = {}, shows = {}, toasts = {},
                 files = {}, writes = 0, renames = 0, grants = 0, fail = "", clock = {elapsedTime = 100},
-                view = {}, sfx = {}, leafCalls = {} }
+                view = {}, sfx = {}, leafCalls = {}, renameFailures = 0, expectedRenameCaught = 0 }
             if json then h.files[savePath] = json end
+            local renameFailure = setmetatable({}, {__tostring = function() return "替换未完成（测试注入）" end})
+            local renameFailureArmed = false
             local function note(kind, data)
                 h.trace[#h.trace + 1] = {kind = kind, data = data}
             end
@@ -781,12 +846,21 @@ function Start()
             end
             local function noop() end
             local env = {
-                assert = assert, error = error, pairs = pairs, ipairs = ipairs, next = next,
+                assert = assert, error = function(message, level)
+                    if renameFailureArmed and message == "替换未完成" then
+                        renameFailureArmed = false
+                        error(renameFailure, 0) -- 只标识实际注入的本次Rename失败，不按错误文本宽泛放行。
+                    end
+                    error(message, level or 1)
+                end, pairs = pairs, ipairs = ipairs, next = next,
                 type = type, tostring = tostring, tonumber = tonumber, select = select,
                 pcall = function(fn, ...)
                     local result = table.pack(pcall(fn, ...))
-                    if not result[1] then h.errors[#h.errors + 1] = "pcall: " .. tostring(result[2]) end
-                    return table.unpack(result, 1, result.n) -- 保留nil/多返回值，不豁免任何异常。
+                    if not result[1] then
+                        if result[2] == renameFailure then h.expectedRenameCaught = h.expectedRenameCaught + 1
+                        else h.errors[#h.errors + 1] = "pcall: " .. tostring(result[2]) end
+                    end
+                    return table.unpack(result, 1, result.n) -- 保留nil/多返回值及原success=false。
                 end, xpcall = xpcall, rawset = rawset, rawget = rawget,
                 setmetatable = setmetatable, getmetatable = getmetatable,
                 math = math, string = string, table = table, cjson = cjson,
@@ -838,13 +912,16 @@ function Start()
                     allowed(src); allowed(dest)
                     if src ~= pendingPath or dest ~= savePath then bad("unexpected Rename direction") end
                     h.renames = h.renames + 1
-                    if h.fail == "rename" then note("rename_failed"); return false end
+                    if h.fail == "rename" then
+                        h.renameFailures, renameFailureArmed = h.renameFailures + 1, true
+                        note("rename_failed"); return false
+                    end
                     h.files[dest], h.files[src] = h.files[src], nil
                     note("rename_ok", h.files[dest])
                     return true
                 end,
             }
-            -- 全部图形/SFX边界为显式spy；draw逻辑、排序、42行裁剪与输入滚动仍走完整Popup。
+            -- 图形/SFX原生边界为显式spy；文字描边、物品绘制、整理与布局走真实模块。
             for _, key in ipairs({"nvgSave", "nvgRestore", "nvgTranslate", "nvgScale", "nvgGlobalAlpha",
                 "nvgBeginPath", "nvgRect", "nvgRoundedRect", "nvgCircle", "nvgFillColor", "nvgFill",
                 "nvgStrokeColor", "nvgStrokeWidth", "nvgStroke", "nvgFillPaint", "nvgRotate",
@@ -856,7 +933,7 @@ function Start()
             env.nvgImagePattern = function() return {} end
             env.nvgRadialGradient = function() return {} end
             env.nvgLinearGradient = function() return {} end
-            -- 跟踪真实nvgText当前颜色和仿射变换，正文与16笔描边分开验收。
+            -- 跟踪真实nvgText当前颜色和仿射变换，正文与描边分开验收。
             local paint = {a = 1, b = 0, c = 0, d = 1, x = 0, y = 0, color = {}}
             local paintStack = {}
             env.nvgSave = function() paintStack[#paintStack + 1] = copy(paint) end
@@ -886,6 +963,9 @@ function Start()
             for _, name in ipairs(ignoredHandlers) do leaf[name] = {} end
             leaf["rules.gm.GMHandler"] = {}
             leaf["rules.redeem.RedeemService"] = {Init = noop}
+            for _, name in ipairs({"rules.dungeon.DungeonService", "rules.equipment.InventoryCurationService"}) do
+                leaf[name] = registrationOnly(name, bad)
+            end
             leaf["rules.offline.OfflineService"] = {HasPendingRewards = function() return false end,
                 MarkOnline = function() bad("unexpected offline MarkOnline") end}
             leaf["core.PlayerStore"] = setmetatable({}, {__index = function(_, key)
@@ -899,8 +979,6 @@ function Start()
             leaf["systems.TalentEffect"] = {}
             leaf["core.I18n"] = {lookup = function(value) return value end, format = string.format,
                 difficulty = function(value) return value end}
-            leaf["core.DrawUtil"] = {drawTextStroke = noop, drawImageCentered = noop,
-                seamSlideX = function() return 0 end}
             leaf["core.DarkIcon"] = {drawQualityBg = noop, draw = noop, drawIconDark = noop,
                 QUALITY_TRIM = {{1,2,3},{1,2,3},{1,2,3},{1,2,3},{1,2,3},{1,2,3}}}
             leaf["ui.town.TownPageChrome"] = {OPEN_DUR = 0.3, CLOSE_DUR = 0.3,
@@ -935,9 +1013,13 @@ function Start()
             sources["ui.story.task.TaskPage"], sources["config.ExpeditionProgress"] = true, true
             sources["ui.hud.popup.RewardPopup"], sources["ui.widget.RewardCascade"] = true, true
             sources["ui.widget.BattleRewardQueue"], sources["core.NumberUtil"] = true, true
+            for _, name in ipairs({"ui.widget.RewardPreparation", "config.ResourceDefs", "ui.widget.RewardItemView",
+                "ui.widget.RewardLargeView", "ui.widget.ResultRepeatFooter", "ui.widget.RepeatDrawButton",
+                "core.DrawUtil", "core.BattleLayout"}) do sources[name] = true end
             for name in pairs(configs) do sources[name] = true end
-            for _, name in ipairs({"config.EquipmentConfig", "config.ScenarioDialogueConfig", "config.TavernConfig",
-                "config.ClassConfig", "config.AdvancementConfig", "systems.AttributeDef", "systems.UnitAttributes",
+            for _, name in ipairs({"config.EquipmentConfig", "config.ScenarioDialogueConfig", "config.StoryBackgroundConfig", "config.TavernConfig",
+                "config.ClassConfig", "config.AdvancementConfig", "config.TowerConfig", "config.MonsterConfig",
+                "systems.AttributeDef", "systems.UnitAttributes",
                 "config.StageConfig_Normal", "config.StageConfig_Hard", "config.StageConfig_Nightmare",
                 "config.StageConfig_Hell", "config.StageConfig_Purgatory", "config.StageConfig_Torment",
                 "config.StageConfig_Torment2", "config.StageConfig_Torment3", "config.StageConfig_Torment4",
@@ -1122,18 +1204,18 @@ function Start()
                         text = "×" .. h.formatAmount(item.amount)}
                 end
             end
-            eq(#bodies, #expected, "实际nvgText白色正文角标数，不计16笔描边")
+            eq(#bodies, #expected, "实际nvgText白色正文角标数，不计描边")
             local positions = {}
             for index, want in ipairs(expected) do
                 local body = bodies[index]
                 eq(body.text, want.text, "角标实际正文对应奖励项 " .. want.index)
-                eq(body.x, want.x, "角标布局X对应行列 " .. want.index)
-                eq(body.y, want.y, "角标布局Y对应scrollY " .. want.index)
+                eq(body.x, 72, "真实ItemView角标局部X " .. want.index)
+                eq(body.y, 72, "真实ItemView角标局部Y " .. want.index)
                 check(math.abs(body.designX - (540 + (want.x - 540) * scale)) < 0.000001,
                     "角标变换后设计X " .. want.index)
                 check(math.abs(body.designY - (974 + (want.y - 974) * scale)) < 0.000001,
                     "角标变换后设计Y " .. want.index)
-                local position = tostring(body.x) .. ":" .. tostring(body.y)
+                local position = tostring(body.designX) .. ":" .. tostring(body.designY)
                 eq(positions[position], nil, "每个实际正文坐标唯一 " .. want.index)
                 positions[position], body.index = true, want.index
             end
@@ -1149,17 +1231,18 @@ function Start()
                 eq(h.grants, 2, "旧礼包与bonus各发一次")
                 eq(h.writes, 1, "连点只有一批写入")
                 eq(h.renames, 1, "连点只有一次替换")
-                eq(h.State.getGems(), 960, "Lv100旧840加bonus100共940")
+                eq(h.State.getGems(), 5660, "Lv100礼包5040加bonus600共5640")
                 eq(h.Dispatcher.get("task").achClaimed.a_plv_100, true, "旧礼包独立账本")
                 eq(h.Dispatcher.get("task").achClaimed[bonusId(100)], true, "bonus独立账本")
                 local items = popupState(h).items
-                eq(#items, 2, "真Popup保存同级两项未聚合")
-                eq(items[1].amount + items[2].amount, 940, "真Popup同级940可观察")
+                eq(#items, 1, "同级同完整元数据diamond仅展示一项，回执仍两项")
+                same(items[1], {type="diamond", amount=5640, quality=5,
+                    icon="image/货币道具/UI_icon_SJ_X.png"}, "真Popup同级聚合保留完整元数据")
+                same(h.shows[1].rewards, h.results[1].data.rewards, "聚合不反写原两项业务回执")
                 h.clock.elapsedTime = h.clock.elapsedTime + 0.4; h.Popup.update(0.4)
                 local shown = drawPopup(h)
-                eq(#shown, 2, "真实draw实际两项正文角标")
-                eq(shown[1].text, "×840", "旧礼包实际角标正文")
-                eq(shown[2].text, "×100", "bonus实际角标正文且坐标独立")
+                eq(#shown, 1, "真实draw仅一项聚合正文角标")
+                eq(shown[1].text, "×5640", "礼包与bonus合计实际正文，不重复展示")
                 h.clock.elapsedTime = h.clock.elapsedTime + 10; h.Popup.update(10)
                 check(h.Popup.isOpen(), "非战斗主动领奖超过3秒仍打开")
                 eq(popupState(h).animPhase, "open", "非战斗不开始自动关闭")
@@ -1167,7 +1250,7 @@ function Start()
                 audit(h)
             end
         end)
-        runCase("真实Page200级整页209项20840黑晶单popup42行滚到末端", function()
+        runCase("真实Page200级整页209业务记录聚合八项完整资源且不改回执", function()
             local h = newChain()
             chainFixture(h, 200)
             openNode(h, 200)
@@ -1176,50 +1259,56 @@ function Start()
             eq(h.grants, 209, "整页每项一次真实GrantReward")
             eq(h.writes, 1, "整页209项一次写入")
             eq(h.renames, 1, "整页一次Rename")
-            eq(h.State.getGems(), 20860, "真实全页20840增量")
+            eq(h.State.getGems(), 125560, "真实全页125540增量")
             eq(h.Page.getExpeditionClaimableCount(), 0, "全页模型已全部领取")
             local state = popupState(h)
-            eq(#state.items, 209, "真Popup包含209不是聚合资源数")
-            eq(math.ceil(#state.items / 5), 42, "真Popup42行")
-            eq(state.scrollMax, 7200, "真布局42行可滚7200设计单位")
-            local gems = 0
-            for index, item in ipairs(state.items) do
-                same(item, h.shows[1].rewards[index], "真Popup完整同序项 " .. index)
-                if item.type == "diamond" then gems = gems + item.amount end
-            end
-            eq(gems, 20840, "真Popup完整20840不是余额")
+            -- 独立固定合计及完整元数据oracle，不调用生产prepare计算期望、不仅按type猜合并。
+            local expected = {
+                {type="essence", amount=66187, icon="image/货币道具/UI_icon_JC.png", quality=2},
+                {type="adventure_ticket", amount=3, icon="image/货币道具/UI_icon_ZMQ_1.png", quality=5},
+                {type="enhance_star", amount=4, icon="image/货币道具/UI_icon_QH_1.png", quality=3},
+                {type="arcane_dust", amount=1500, icon="image/货币道具/UI_icon_ASFC.png", quality=3},
+                {type="sweep_ticket", amount=3, icon="image/货币道具/UI_icon_SDQ.png", quality=4},
+                {type="stellar_ticket", amount=5, icon="image/货币道具/UI_icon_ZMQ_2.png", quality=6},
+                {type="diamond", amount=125540, icon="image/货币道具/UI_icon_SJ_X.png", quality=5},
+                {type="gold", amount=1020000, icon="image/货币道具/UI_icon_JB_X.png", quality=2},
+            }
+            same(state.items, expected, "真Popup按首出现顺序聚合完整八项")
+            eq(state.large, false, "聚合后八项使用普通两行，不沿旧209项全窗")
+            eq(math.ceil(#state.items / 5), 2, "聚合八项真实两行")
+            eq(state.scrollMax, 0, "两行无需旧42行7200滚动")
+            eq(state.autoScroll, nil, "聚合后不创建无意义自动滚动")
+            local expectedReceipts = {}
+            for _, task in ipairs(allLevelTasks) do expectedReceipts[#expectedReceipts + 1] = copy(task.reward) end
+            same(h.results[1].data.rewards, expectedReceipts, "209独立业务回执保持原金额与元数据")
+            same(h.shows[1].rewards, expectedReceipts, "show入口209原奖励不被聚合反写")
             h.clock.elapsedTime = h.clock.elapsedTime + 0.5; h.Popup.update(0.5)
-            eq(state.scrollY, state.scrollMax, "真实autoScroll半秒到末端")
-            h.Popup.handleScroll(1000)
-            eq(state.scrollY, 0, "真实滚轮回顶并取消自动滚动")
-            eq(state.autoScroll, nil, "手动滚动取消autoScroll")
-            local visibleCount, covered = 0, {}
-            -- 逐窗口按实际白色正文的行列/scrollY验收；同为100也必须各占独立坐标。
-            for start = 1, 201, 10 do
-                if start > 1 then h.Popup.handleScroll(-6) end
-                local bodies = drawPopup(h)
-                local inWindow = {}
-                for _, body in ipairs(bodies) do inWindow[body.index] = true end
-                local last = math.min(209, start + 9)
-                for index = start, last do
-                    local row = math.ceil(index / 5)
-                    local cy = 918 + (row - 1) * 180 - state.scrollY
-                    check(cy >= 838 and cy <= 1178, "第" .. index .. "项中心确实滚入窗口")
-                    eq(inWindow[index], true, "第" .. index .. "项确实有实际角标正文")
-                    eq(covered[index], nil, "累计209正文不以邻窗口重复代替")
-                    covered[index] = true
-                    visibleCount = visibleCount + 1
-                end
+            local bodies = drawPopup(h)
+            eq(#bodies, 8, "实际nvgText绘出全部八项合计正文")
+            for index, body in ipairs(bodies) do
+                eq(body.index, index, "两行聚合正文各占唯一坐标 " .. index)
+                eq(body.text, "×" .. h.formatAmount(expected[index].amount), "固定合计实际角标 " .. index)
             end
-            eq(visibleCount, 209, "完整遍历所有209实际正文而非仅format调用")
-            for index = 1, 209 do eq(covered[index], true, "209项实际正文覆盖 " .. index) end
-            eq(state.scrollY, 7200, "滚轮末端精确钳制")
-            local tail = drawPopup(h)
-            eq(tail[#tail].index, 209, "真实draw末项209对应行列")
-            eq(tail[#tail].text, "×" .. h.formatAmount(state.items[209].amount), "真实draw末项209正文")
+            h.Popup.handleScroll(1000)
+            eq(state.scrollY, 0, "无溢出滚轮上界钳制")
+            h.Popup.handleScroll(-1000)
+            eq(state.scrollY, 0, "无溢出滚轮下界钳制")
+            same(state.items, expected, "滚轮不改聚合金额或元数据")
             h.clock.elapsedTime = h.clock.elapsedTime + 10; h.Popup.update(10)
             check(h.Popup.isOpen(), "全页主动领奖也不3秒自动关")
-            eq(#h.shows, 1, "滚动及update不新增popup")
+            eq(#h.shows, 1, "绘制及update不新增popup")
+            local base = {type="diamond", amount=2, quality=5, icon="original.png"}
+            local extra, iconVariant, qualityVariant = copy(base), copy(base), copy(base)
+            extra.amount, iconVariant.amount, qualityVariant.amount = 3, 7, 11
+            iconVariant.icon, qualityVariant.quality = "other.png", 4
+            local variants = {base, extra, iconVariant, qualityVariant}
+            local beforeVariants = copy(variants)
+            h.Popup.show("元数据聚合边界", variants)
+            local merged = copy(base); merged.amount = 5
+            same(state.items, {merged, iconVariant, qualityVariant}, "同type不同icon或quality保持独立")
+            same(variants, beforeVariants, "元数据边界展示不反写来源")
+            eq(h.grants, 209, "纯展示元数据边界不再发奖")
+            eq(h.writes, 1, "纯展示不再写档")
             audit(h)
         end)
         runCase("真实clear Page单领经CMH data.reward分支及真任务奖励Popup", function()
@@ -1242,6 +1331,7 @@ function Start()
             for _ = 1, 3 do eq(h.Page.handleInput(900, 570), true, "真实clear首行连续点击") end
             audit(h)
             eq(#h.results, 1, "单领仅一次回执")
+            ---@type table
             local result = h.results[1].data
             eq(result.action, Protocol.ACTION_TYPES.CLAIM_TASK, "真实Page路由单领Action")
             eq(result.success, true, "真实单领成功")
@@ -1291,6 +1381,8 @@ function Start()
             local currency, ledger = copy(h.Dispatcher.get("currency")), copy(h.Dispatcher.get("task").achClaimed)
             h.fail = "rename"
             eq(h.Page.handleInput(x, previousY), true, "旧节点rename失败")
+            eq(h.renameFailures, 1, "旧节点确实注入一次Rename失败")
+            eq(h.expectedRenameCaught, 1, "仅实际注入的Rename私有异常被捕获一次")
             audit(h)
             eq(#h.results, 2, "成功后失败回执仍完整")
             eq(h.results[2].data.reason, "save_failed", "后一次明确保存失败")
@@ -1302,7 +1394,7 @@ function Start()
             eq(h.files[savePath], oldJSON, "失败旧JSON保持")
             same(h.Dispatcher.get("currency"), currency, "已有成功余额不增减")
             same(h.Dispatcher.get("task").achClaimed, ledger, "已有成功台账保持")
-            eq(h.State.getGems(), 960, "成功940不被失败领奖影响")
+            eq(h.State.getGems(), 5660, "成功5640不被失败领奖影响")
             audit(h)
         end)
         runCase("rename失败真实Toast无新popup，冷重建JSON恢复未领重试及再次冷恢复防重", function()
@@ -1314,6 +1406,8 @@ function Start()
             local ledger = copy(h.Dispatcher.get("task").achClaimed)
             h.fail = "rename"
             eq(h.Page.handleInput(x, y), true, "真实Page失败请求")
+            eq(h.renameFailures, 1, "真实Page确实注入一次Rename失败")
+            eq(h.expectedRenameCaught, 1, "仅本次Rename私有异常被捕获一次")
             audit(h)
             eq(#h.results, 1, "失败仍有ActionResult")
             eq(h.results[1].data.success, false, "rename失败结果")
@@ -1343,7 +1437,7 @@ function Start()
             receipt(cold, 2)
             eq(cold.writes, 1, "冷恢复重试只写一次")
             eq(cold.grants, 2, "重试同级各发一次")
-            eq(cold.State.getGems(), 960, "恢复重试只增940")
+            eq(cold.State.getGems(), 5660, "恢复重试只增5640")
             local finalJSON = cold.files[savePath]
             local again = newChain(finalJSON)
             eq(again.restored, true, "再冷建初始化前Restore成功")
@@ -1354,7 +1448,7 @@ function Start()
             eq(again.grants, 0, "两种Restore重复没有发奖")
             eq(again.writes, 0, "两种Restore重复没有落盘")
             eq(#again.shows, 0, "两种Restore重复没有成功popup")
-            eq(again.State.getGems(), 960, "冷重建余额940仅一次")
+            eq(again.State.getGems(), 5660, "冷重建余额5640仅一次")
             eq(again.files[savePath], finalJSON, "冷恢复重复不改JSON")
             -- 强制重复Action也验真实CMH失败：Page自己的状态守卫未发请求不能代替后端幂等。
             eq(again.Action.sendAction(Protocol.ACTION_TYPES.CLAIM_ALL_TASKS, {scope = "level", level = 100}), true,

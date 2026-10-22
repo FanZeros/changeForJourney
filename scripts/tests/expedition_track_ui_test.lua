@@ -475,8 +475,8 @@ local function runTests()
             check(row.level == level and row.taskId == bonusId(level) and #row.tasks == #tasks,
                 "200模型每级只有一个聚合row Lv." .. level)
             local bonus = TaskConfig.findById(bonusId(level))
-            check(bonus.target == level and bonus.reward.type == "diamond" and bonus.reward.amount == 100,
-                "每级新增独立100黑晶奖励 Lv." .. level)
+            check(bonus.target == level and bonus.reward.type == "diamond" and bonus.reward.amount == 100 + 5 * level,
+                "每级bonus按节点等级增强且独立ID稳定 Lv." .. level)
             for index, task in ipairs(tasks) do
                 totalTasks = totalTasks + 1
                 check(row.tasks[index].taskId == task.id and row.tasks[index].reward == task.reward,
@@ -487,7 +487,7 @@ local function runTests()
         end
         check(totalTasks == 209 and currentCount == 1 and model.rows[30].current, "九里程碑加200新任务聚合200行/唯一当前等级")
         check(model.rows[5].tasks[1].status == STATUS.CLAIMED and model.rows[5].tasks[2].status == STATUS.CLAIMABLE,
-            "旧里程碑已领与新增100黑晶可领分别保留")
+            "旧里程碑已领与增强bonus可领分别保留")
 
         Page.open("level")
         local summary, content = draw()
@@ -566,14 +566,14 @@ local function runTests()
             check(#snapshot().rows[level].tasks == 2 and panel:FindById("state_1").props.text == "已领取"
                 and panel:FindById("state_2").props.text == "每级额外奖励"
                 and panel:FindById("reward_2").props.text == I18n.lookup(ResourceDefs.DEFS.diamond.name)
-                and panel:FindById("amount_2").props.text == "× 100"
-                and not panel:FindById("claim").props.disabled, "九个里程碑分别展示旧已领及新增100可领 Lv." .. level)
+                and panel:FindById("amount_2").props.text == "× " .. tostring(100 + 5 * level)
+                and not panel:FindById("claim").props.disabled, "九个里程碑分别展示旧已领及增强bonus可领 Lv." .. level)
             assertVisible(summary, content, snapshot(), false)
         end
-        -- 英文长名称不能吞掉独立数量；校验真实旧奖励840/120k及新增100。
+        -- 英文长名称不能吞掉独立数量；真实增强礼包5040/1.02M及对应bonus仍分项显示。
         I18n.set("en")
-        for _, case in ipairs({ { level = 100, amount = 840, text = "× 840" },
-            { level = 150, amount = 120000, text = "× 120k" } }) do
+        for _, case in ipairs({ { level = 100, amount = 5040, text = "× 5040" },
+            { level = 150, amount = 1020000, text = "× 1M" } }) do
             summary, content = scrollTo(content, (case.level - 2) * STEP)
             local panel = rowFor(content, case.level)
             local reward = TaskConfig.findById("a_plv_" .. case.level).reward
@@ -581,8 +581,8 @@ local function runTests()
                 and panel:FindById("reward_1").props.text == I18n.lookup(ResourceDefs.DEFS[reward.type].name)
                 and panel:FindById("amount_1").props.text == case.text
                 and panel:FindById("reward_2").props.text == I18n.lookup(ResourceDefs.DEFS.diamond.name)
-                and panel:FindById("amount_2").props.text == "× 100",
-                "英文真实奖励名称与数量独立保留 " .. case.text .. " / × 100 Lv." .. case.level)
+                and panel:FindById("amount_2").props.text == "× " .. tostring(100 + 5 * case.level),
+                "英文真实奖励名称与增强数量独立保留 " .. case.text .. " Lv." .. case.level)
             assertVisible(summary, content, snapshot(), false)
             stableDraw("英文独立数量" .. case.text .. "重复draw")
         end
@@ -723,7 +723,7 @@ local function runTests()
             check(panel:FindById("reward_1").props.text == I18n.lookup(ResourceDefs.DEFS[sourceTask.reward.type].name)
                 and panel:FindById("amount_1").props.text == "× " .. NumberUtil.format(sourceTask.reward.amount)
                 and panel:FindById("reward_2").props.text == I18n.lookup(ResourceDefs.DEFS.diamond.name)
-                and panel:FindById("amount_2").props.text == "× 100"
+                and panel:FindById("amount_2").props.text == "× 250"
                 and panel:FindById("state_1").props.text == I18n.lookup("已领取")
                 and panel:FindById("state_2").props.text == I18n.lookup("每级额外奖励")
                 and panel:FindById("claim").props.text == I18n.lookup("领取"), language .. "多项奖励/各自台账/领取同步翻译")
@@ -766,7 +766,7 @@ local function runTests()
                 end
             end
             check(panel:FindById("amount_1").props.text == "× " .. NumberUtil.format(sourceTask.reward.amount)
-                and panel:FindById("amount_2").props.text == "× 100"
+                and panel:FindById("amount_2").props.text == "× 250"
                 and panel:FindById("amount_1").props.fontSize == 27 * 0.75
                 and panel:FindById("amount_2").props.fontSize == 27 * 0.75,
                 "任意长名称/状态缩字不挤掉独立数量 width=" .. case.width)

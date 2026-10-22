@@ -793,41 +793,76 @@ function M.runRefineMaterial()
             check(Refine.hasPreview(), "真实预览回执保留待替换")
             return affixes
         end
-        selectMaterial(2)
-        request("enhanceStone", "首次洗练")
-        owned.enhanceStone = 2
-        a = push(a) -- 正式消息可能先推装备，后派预览。
-        request("enhanceStone", "推送先于预览")
-        preview(a.seq)
-        a = push(a)
-        check(Refine.hasPreview(), "已有预览时推送不重建预览")
-        request("enhanceStone", "预览后推送")
+        owned.essence = 10000
+        check(Refine.handleInput(476, 1432), "精粹路径锁定唯一词条")
         local before = #actions
+        Refine.handleInput(773, 2129)
+        check(#actions == before and notices[#notices] == "至少保留1条词缀未锁定",
+            "精粹全锁仍拒绝")
+        selectMaterial(2)
+        check(not Refine.handleInput(476, 1432), "洗练石不响应隐藏锁热区")
+        owned.essence = 0
+        local stoneRequest = request("enhanceStone", "全锁后首次洗练石")
+        check(stoneRequest.params.lockedIndices == nil, "洗练石不发送遗留锁")
+        owned.enhanceStone = 2
+        local applied = {{key = "dropLuck", name = "幸运值", quality = 3, value = 12.5}}
+        a.affixes, a.refineCount = applied, 1
+        a = push(a) -- 正式消息可能先推权威装备，后派即时结果。
+        request("enhanceStone", "推送先于即时回执")
+        local function autoApplied(seq, affixes, refineCount)
+            Page.onActionResult({success = true, autoReplaced = true, refinePreview = affixes,
+                refineSeq = seq, refineCount = refineCount, newQuality = 3})
+        end
+        autoApplied(a.seq, applied, 1)
+        check(not Refine.hasPreview() and a.affixes == applied and a.refineCount == 1,
+            "即时回执无需替换且不重复累计已推送次数")
+        before = #actions
         Refine.handleInput(310, 2129)
-        check(#actions == before + 1 and actions[#actions].action == Protocol.ACTION_TYPES.REFINE_REPLACE
-            and actions[#actions].params.seq == a.seq, "装备推送未清待替换seq/词条")
-        Page.onActionResult({success = true, refineReplaced = true})
-        check(not Refine.hasPreview() and a.affixes[1].value == 12.5, "替换回执应用原预览并清预览")
+        check(#actions == before, "自动替换后无REFINE_REPLACE请求")
+        autoApplied(a.seq, applied, 1)
+        check(a.refineCount == 1 and not Refine.hasPreview(), "重复即时回执不多加次数")
         a = push(a)
-        request("enhanceStone", "替换后推送")
+        request("enhanceStone", "即时结果后推送")
         Page.onActionResult({success = false, reason = "模拟洗练石不足"})
-        check(notices[#notices] == "模拟洗练石不足", "失败仍走原失败提示")
+        check(notices[#notices] == "模拟洗练石不足" and a.refineCount == 1,
+            "失败仍提示且不改变已生效装备")
         request("enhanceStone", "失败后再次请求")
         owned.enhanceStone = 0
         a = push(a)
         request("enhanceStone", "耗尽后不回退精粹")
         material("enhanceStone", "耗尽后", 0, 1)
+        owned.essence = 10000
+        selectMaterial(1)
+        before = #actions
+        Refine.handleInput(773, 2129)
+        check(#actions == before and notices[#notices] == "至少保留1条词缀未锁定",
+            "切回精粹保留原锁状态，不被洗练石改动")
+        check(Refine.handleInput(476, 1432), "精粹可解除原锁")
         local previewAffixes = preview(a.seq)
+        a = push(a)
+        check(Refine.hasPreview(), "普通精粹已有预览时推送仍保留预览")
         Page.onActionResult({success = false, reason = "模拟替换失败"})
-        check(Refine.hasPreview(), "失败不丢已有预览")
+        check(Refine.hasPreview(), "失败不丢已有普通预览")
         before = #actions
         Refine.handleInput(310, 2129)
-        check(#actions == before + 1 and actions[#actions].params.seq == a.seq,
-            "失败后仍可提交原预览替换")
+        check(#actions == before + 1 and actions[#actions].action == Protocol.ACTION_TYPES.REFINE_REPLACE
+            and actions[#actions].params.seq == a.seq, "普通精粹仍需手动替换")
         Page.onActionResult({success = true, refineReplaced = true})
-        check(a.affixes == previewAffixes, "替换使用真实pending词条引用")
-        owned.essence = 10000
+        check(a.affixes == previewAffixes and not Refine.hasPreview(), "普通替换使用真实pending词条引用")
+        preview(a.seq)
+        selectMaterial(2)
+        autoApplied(a.seq, applied, 20)
+        check(not Refine.hasPreview() and a.refineCount == 20, "洗练石清旧精粹预览并接受封顶次数")
+        before = #actions
+        Refine.handleInput(310, 2129)
+        check(#actions == before, "旧预览不可再次提交覆盖自动结果")
         check(Page.setEquipBySeq(b.seq), "真实拖入换件入口")
+        preview(b.seq)
+        local bAffixes, bCount = b.affixes, b.refineCount
+        autoApplied(a.seq, applied, 20)
+        check(b.affixes == bAffixes and b.refineCount == bCount and Refine.hasPreview(),
+            "其他装备晚回执不改当前装备或清当前预览")
+        Page.onActionResult({success = true, refineReplaced = true})
         before = #actions
         Refine.handleInput(773, 2129) -- 不先draw，必须已经重算默认精粹费用。
         check(#actions == before + 1 and actions[#actions].params.extraResource == nil

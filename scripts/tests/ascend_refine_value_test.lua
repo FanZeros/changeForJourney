@@ -54,6 +54,7 @@ local function same(actual, expected)
 end
 
 local ES = require("systems.EquipmentSystem")
+local EC = require("config.EquipmentConfig")
 local AC = require("config.AffixConfig")
 local AD = require("systems.AttributeDef")
 local PDM = require("rules.character.PlayerDataManager")
@@ -295,10 +296,11 @@ local function testFractionalIntAndNoBonus()
     local stonePreview = preview(e, {}, "enhanceStone")
     eq(stonePreview[1].key, "maxHp", "enhance stone keeps same INT key")
     near(stonePreview[1].ascBonus, 0.65, "enhance stone preserves exact same-key fraction")
-    check(same(e.affixes, stoneBefore), "enhance stone preview leaves old affixes untouched")
+    check(e.affixes == stonePreview, "enhance stone applies returned affixes immediately")
     check(stonePreview[1].value >= stoneBefore[1].value, "enhance stone keeps existing higher-value guarantee")
-    replace(e)
-    near(e.affixes[1].ascBonus, 0.65, "enhance stone replacement preserves exact fraction")
+    check(not BS.hasPendingRefine(UID, e.seq), "enhance stone leaves no pending replacement")
+    check(not BS.RefineReplace(UID, e.seq), "enhance stone needs no manual replacement")
+    near(e.affixes[1].ascBonus, 0.65, "enhance stone immediate replacement preserves exact fraction")
 
     newModules()
     local noBonus = putEquip({ affix("str", 1), affix("agi", 2, 0) })
@@ -354,11 +356,163 @@ local function testLocksAndCorruptSlots()
 
     local stoneBefore = copy(e.affixes)
     local sp = preview(e, {}, "enhanceStone", { 1 })
-    check(same(sp[1], stoneBefore[1]), "enhance stone also preserves locked ordinary slot")
+    eq(sp[1].key, stoneBefore[1].key, "enhance stone keeps formerly locked ordinary type")
+    check(sp[1].value >= stoneBefore[1].value, "enhance stone retains keepHigher for formerly locked slot")
     check(same(sp[2], stoneBefore[2]), "enhance stone also preserves corrupt middle slot")
     near(sp[3].ascBonus, stoneBefore[3].ascBonus, "enhance stone same-key unlocked bonus is unchanged")
-    replace(e)
+    check(e.affixes == sp and not BS.hasPendingRefine(UID, e.seq), "enhance stone applies mixed slots without pending")
+    check(not BS.RefineReplace(UID, e.seq), "enhance stone rejects redundant manual replacement")
     near(e.affixes[3].ascBonus, stoneBefore[3].ascBonus, "enhance stone replacement does not compound bonus")
+end
+
+local function testStoneImmediateIgnoresLocks()
+    local originalStoneRoll = ES.rerollAffixValuesWithLocks
+    local originalDirty, originalFlush = PDM.MarkDirty, PDM.FlushImmediate
+    local originalProgress = TaskService.UpdateProgress
+    local SuccessContext = require("shared.SuccessNotificationContext")
+    local ran, runErr = pcall(function()
+        local lockCases = {
+            { name = "no locks" },
+            { name = "partial locks", locks = { 1, 3 } },
+            { name = "all locks", locks = { 1, 2, 3 } },
+            { name = "stale malformed locks", locks = "ignored" },
+        }
+        for _, case in ipairs(lockCases) do
+            newModules()
+            local e = putEquip({ affix("str", 0.01, 0.32), affix("finalPhysAtkBonus", 5),
+                affix("agi", 10 ^ 9, 0.65) })
+            local beforeAffixes, beforeBase = copy(e.affixes), copy(e.baseStats)
+            e.corruptCount, e.corruptBaseMult = 1, 0.9
+            e.corruptRevert = { affixCount = 3, patches = {
+                { "c", 2, affix("vit", 7, 0.125), layer = 1 },
+            } }
+            local beforeRevert = copy(e.corruptRevert)
+            local magic = e.affixes[2]
+            local oldPreview = preview(e, { { key = "maxHp", value = 123 }, { key = "critRate", value = 3 } })
+            local other = putEquip({ affix("str", 2) })
+            local otherPreview = preview(other, { { key = "energyShield", value = 4 } })
+            check(BS.hasPendingRefine(UID, e.seq) and BS.hasPendingRefine(UID, other.seq),
+                case.name .. " starts with genuine independent pending previews")
+            local beforeCurrency = copy(modules.currency)
+            local countBefore = e.refineCount or 0
+            local maxQ = assert(EC.QUALITY[e.quality], "fixture quality required")
+            -- 相同种子的真实底层重随作为无锁基准；独立按旧槽逐条取较高值。
+            math.randomseed(1022)
+            local plainExpected = originalStoneRoll({ copy(beforeAffixes[1]), copy(beforeAffixes[3]) },
+                maxQ.maxAffixQuality, e.level, maxQ.randomStrength, e.grip, nil)
+            local nextExpected = math.random()
+            check(plainExpected[1].value > beforeAffixes[1].value, case.name .. " real roll improves low first slot")
+            check(plainExpected[2].value < beforeAffixes[3].value, case.name .. " real roll exercises keepHigher on last slot")
+            local expected = { plainExpected[1], beforeAffixes[2], copy(beforeAffixes[3]) }
+            expected[1].ascBonus = beforeAffixes[1].ascBonus
+            local rolls, dirty, flushes, progress = 0, {}, 0, 0
+            ES.rerollAffixValuesWithLocks = function(list, quality, level, strength, grip, locks)
+                rolls = rolls + 1
+                eq(#list, 2, case.name .. " removes only corrupt slot before actual reroll")
+                check(not locks or next(locks) == nil, case.name .. " no lock reaches actual reroll")
+                return originalStoneRoll(list, quality, level, strength, grip, locks)
+            end
+            PDM.MarkDirty = function(_, field)
+                dirty[field] = (dirty[field] or 0) + 1
+                check(same(e.affixes, expected) and not BS.hasPendingRefine(UID, e.seq),
+                    case.name .. " commits affixes and clears stale pending before " .. field .. " notification")
+                eq(modules.currency.enhanceStone, beforeCurrency.enhanceStone - 1,
+                    case.name .. " deduction is committed before " .. field .. " notification")
+                if field == "equipment" then
+                    eq(SuccessContext.takeCause(modules.equipment, "equipment"), "equipment_refine",
+                        case.name .. " publishes one real applied refine success")
+                end
+            end
+            PDM.FlushImmediate = function() flushes = flushes + 1 end
+            TaskService.UpdateProgress = function(_, task, amount)
+                eq(task, "refine", case.name .. " task kind")
+                eq(amount, 1, case.name .. " task increment")
+                progress = progress + 1
+            end
+            math.randomseed(1022)
+            local requestLocks = case.locks
+            -- 故意覆盖旧客户端非法 payload；类型收窄只供静态分析，不改变传入值。
+            ---@cast requestLocks table|nil
+            local ok, err, result = BS.RefineEquip(UID, e.seq, "enhanceStone", requestLocks)
+            local nextActual = math.random()
+            ES.rerollAffixValuesWithLocks = originalStoneRoll
+            PDM.MarkDirty, PDM.FlushImmediate = originalDirty, originalFlush
+            TaskService.UpdateProgress = originalProgress
+            check(ok and result and result.autoReplaced, case.name .. " accepts and auto-replaces: " .. tostring(err))
+            assert(ok and result, "stone result required")
+            eq(result.refineSeq, e.seq, case.name .. " response preserves target sequence")
+            eq(result.newQuality, e.quality, case.name .. " response preserves equipment quality")
+            eq(result.refineCount, e.refineCount, case.name .. " response carries authoritative committed count")
+            check(result.refinePreview == e.affixes and same(e.affixes, expected),
+                case.name .. " response and committed full affixes match real no-lock oracle")
+            check(e.affixes[2] == magic, case.name .. " keeps original corrupt instance in middle slot")
+            check(same(beforeAffixes[2], magic), case.name .. " keeps every corrupt field")
+            check(e.corruptCount == 1 and e.corruptBaseMult == 0.9 and same(e.corruptRevert, beforeRevert),
+                case.name .. " preserves curse layer and future cleanse patch")
+            check(not same(oldPreview, e.affixes), case.name .. " applies original equipment reroll, not stale preview")
+            check(same(e.baseStats, beforeBase), case.name .. " does not modify fixed base stats")
+            eq(e.refineCount, countBefore + 1, case.name .. " increments count once")
+            local currencyExpected = copy(beforeCurrency)
+            currencyExpected.enhanceStone = currencyExpected.enhanceStone - 1
+            check(same(modules.currency, currencyExpected), case.name .. " charges exactly one stone and no essence/other currency")
+            eq(rolls, 1, case.name .. " rerolls all ordinary slots exactly once")
+            eq(nextActual, nextExpected, case.name .. " locks do not change real RNG consumption")
+            eq(dirty.currency, 1, case.name .. " currency notification once")
+            eq(dirty.equipment, 1, case.name .. " equipment notification once")
+            eq(flushes, 1, case.name .. " existing flush boundary once, no real File")
+            eq(progress, 1, case.name .. " progress once")
+            check(not BS.hasPendingRefine(UID, e.seq) and not BS.RefineReplace(UID, e.seq),
+                case.name .. " old same-sequence preview cannot overwrite applied stone result")
+            replace(other)
+            check(same(other.affixes, otherPreview), case.name .. " leaves other sequence pending untouched")
+        end
+
+        -- 校验失败、候选生成异常均不能扣石/累计次数/清掉已付费的普通预览。
+        for _, failure in ipairs({ "insufficient stone", "candidate error" }) do
+            newModules()
+            local e = putEquip({ affix("str", 1, 0.32) })
+            local pending = preview(e, { { key = "maxHp", value = 5 } })
+            if failure == "insufficient stone" then modules.currency.enhanceStone = 0 end
+            local equipBefore, currencyBefore = copy(e), copy(modules.currency)
+            local dirtyBefore = copy(dirtyCount)
+            local rolls = 0
+            ES.rerollAffixValuesWithLocks = function()
+                rolls = rolls + 1
+                error("controlled stone candidate failure")
+            end
+            local callOk, accepted = pcall(BS.RefineEquip, UID, e.seq, "enhanceStone", { 1 })
+            ES.rerollAffixValuesWithLocks = originalStoneRoll
+            check(failure == "insufficient stone" and callOk and accepted == false
+                    or failure == "candidate error" and not callOk,
+                failure .. " rejects without pretending success")
+            eq(rolls, failure == "insufficient stone" and 0 or 1, failure .. " expected roll boundary")
+            check(same(e, equipBefore) and same(modules.currency, currencyBefore), failure .. " preserves all equipment and currency")
+            check(same(dirtyCount, dirtyBefore), failure .. " sends no dirty notification")
+            check(BS.hasPendingRefine(UID, e.seq), failure .. " preserves existing paid pending preview")
+            replace(e)
+            check(same(e.affixes, pending), failure .. " previous manual replacement remains usable")
+        end
+
+        -- 权威次数沿原上限，不因即时回包/客户端刷新额外增加。
+        newModules()
+        local capped = putEquip({ affix("str", 1) })
+        capped.refineCount = 20
+        local cappedOk, _, cappedResult = BS.RefineEquip(UID, capped.seq, "enhanceStone", { 1 })
+        check(cappedOk and cappedResult and cappedResult.autoReplaced and cappedResult.refineCount == 20
+                and capped.refineCount == 20 and not BS.hasPendingRefine(UID, capped.seq),
+            "stone committed count and response both respect existing cap 20")
+
+        newModules()
+        local e = putEquip({ affix("str", 1), affix("agi", 2) })
+        local before, currencyBefore = copy(e), copy(modules.currency)
+        local ok = BS.RefineEquip(UID, e.seq, "essence", { 1, 2 })
+        check(not ok and same(e, before) and same(modules.currency, currencyBefore),
+            "ordinary essence still rejects all-locked request without charging")
+    end)
+    ES.rerollAffixValuesWithLocks = originalStoneRoll
+    PDM.MarkDirty, PDM.FlushImmediate = originalDirty, originalFlush
+    TaskService.UpdateProgress = originalProgress
+    check(ran, "stone immediate/no-lock cases completed: " .. tostring(runErr))
 end
 
 local function testCorruptCleanseRestoration()
@@ -551,6 +705,7 @@ function Start()
         testPreviewReplace()
         testFractionalIntAndNoBonus()
         testLocksAndCorruptSlots()
+        testStoneImmediateIgnoresLocks()
         testCorruptCleanseRestoration()
         testInvalidValueNoCharge()
         testMissingConfigNoCharge()

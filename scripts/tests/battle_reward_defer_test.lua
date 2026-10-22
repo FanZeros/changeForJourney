@@ -39,6 +39,7 @@ function Start()
         local popupSource = source("ui.hud.popup.RewardPopup")
         local cascadeSource = source("ui.widget.RewardCascade")
         local queueSource = source("ui.widget.BattleRewardQueue")
+        local preparationSource = source("ui.widget.RewardPreparation")
         local blockerSource = source("boot.BattleRewardOverlay")
         local triSource = source("ui.battle.tri.BattleTriPage", true)
         local horizonInputSource = source("boot.StandaloneHorizonInput", true)
@@ -177,6 +178,7 @@ function Start()
         env.nvgLinearGradient = function() return "linear" end
         env.nvgImagePattern = function() return "image" end
 
+        mods["ui.widget.RewardPreparation"] = compile("ui.widget.RewardPreparation", preparationSource)
         mods["ui.widget.RewardItemView"] = compile("ui.widget.RewardItemView", source("ui.widget.RewardItemView", true))
         mods["ui.widget.RewardLargeView"] = compile("ui.widget.RewardLargeView", source("ui.widget.RewardLargeView", true))
         local rewardGestureSource = source("boot.RewardGesture", true)
@@ -1100,6 +1102,7 @@ function Start()
             end
             routeMods["ui.character.hero.AwakeningArtwork"] = { bindInput = function() return function() return false end end,
                 observe = noop, hasPress = function() return false end, isOpen = function() return false end }
+            routeMods["runtime.LocalActionBridge"] = { isSweepPending = function() return false end }
             routeMods["core.BattleLayout"] = { STRIP_W = 1600, STRIP_H = 600, setMode = noop }
             routeMods["ui.widget.SoundToggle"] = { initImages = noop }
             routeMods["core.I18n"] = { lookup = function(text) return text end, format = string.format }
@@ -1313,7 +1316,7 @@ function Start()
             equal(seamCloses, 0, "tri网格拖到seam松手不伪装成返回按钮点击")
         end)
         run("隔离边界：核心与公共奖励路由仅加载spy依赖", function()
-            equal(sourceReads, 4, "只读 Popup/Queue/Cascade/Blocker 四份实际核心源码")
+            equal(sourceReads, 5, "只读 Popup/Queue/Preparation/Cascade/Blocker 五份实际核心源码")
             equal(routingSourceReads, 8, "只读战斗路由与奖励公共视图/手势源码")
             equal(forbiddenRequires, 0, "无 main、玩家存档、网络模块加载")
         end)

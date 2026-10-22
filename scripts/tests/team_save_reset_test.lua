@@ -141,6 +141,8 @@ function Start()
             env.ClientDispatcher, env.BattleTriPage = Dispatcher, Page
             for _, name in ipairs({ "TowerBattleScene", "DungeonBattleScene", "DungeonPage",
                 "ClientMsgHandler", "ScenarioDialogue" }) do env[name] = stub() end
+            env.LocalActionBridge = { cancelSweep = noop, cancelQuickEquip = noop }
+            env.SweepDialog = { close = noop }
             env.StandaloneBoot = { resetPendingBattleRewards = function() pendingResets = pendingResets + 1 end }
             env.DarkTitleScreen = { reopen = function() titleCalls = titleCalls + 1 end }
             env.LootBoxPage = { isVisible = function() return false end }
@@ -270,8 +272,10 @@ function Start()
             eq(conflict.teamCurrentStageIds, nil, "onLoad删除迁移后的旧队表")
             for difficulty = 1, 14 do
                 local terminalId = difficulty * 1000 - 1
+                ---@type table
                 local data = { currentStageId = tostring(terminalId), maxStageId = tostring(terminalId),
                     teamStageIds = { terminalId, terminalId, terminalId }, clearedStages = {} }
+                ---@cast data table
                 Schema.Fields.battle.onLoad(data)
                 eq(data.currentStageId, terminalId, "onLoad实时终焉不退 " .. terminalId)
                 eq(data.teamStageIds["3"], terminalId, "onLoad实时三队终焉不退 " .. terminalId)
@@ -282,6 +286,7 @@ function Start()
             end
             local ahead = { currentStageId = 101, maxStageId = 1001,
                 teamStageIds = { 101, 2001, 1901 }, clearedStages = { ["905"] = true } }
+            ---@cast ahead table
             Schema.normalizeTeamStageIds(ahead, true)
             eq(ahead.teamStageIds["2"], 101, "越过共享上限的脏队位置被拒绝")
             eq(ahead.teamStageIds["3"], 101, "锁队位置被拒绝")

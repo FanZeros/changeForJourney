@@ -14,7 +14,8 @@
 
 ## 上次做了什么（2026-10-22，纯货币扫荡长等待与孤儿处理中，本地修复）
 
-- 用户反馈黑晶1-58／95961券仍“处理中”。独立本地 `fix1022/sweep-resource-stall@b1b86b55`，不继承PR181外发授权；本轮无commit/push/PR/合并发布。精确对应旧floor281/stage300281/source6205、3070752杀，远征55077007872／每人34423129920；正常整数经验有界，未把大数字或小数经验条件退化定为用户唯一根因，未读取玩家档或取得最新部署日志。
+- 用户反馈黑晶1-58／95961券仍“处理中”，随后明确“提交pr”。已在独立 `fix1022/sweep-resource-stall` 完成本地修复、测试、官方构建并提交／正常push／创建PR。**PR #183**：https://github.com/FanZeros/changeForJourney/pull/183，head=`fix1022/sweep-resource-stall@946344ec`／base=`workspace1005@4e6ba8f6`（含外部已合PR181），创建时open／draft=false／merged=false，6文件 +289/−9。提交前把本地快进到最新目标（本地无独有提交，纯ff），未推workspace系列、未强推、未自动合并或发布；鉴权经既有credential store进程内读取使用，令牌未写入remote／Git配置／源码／日志／记忆，remote仍为干净URL。只暂存6项白名单，原`.gitignore`／`_uploads`／`__pycache__`／无关meta／`standalone_save.json`保持未提交。
+- 精确对应旧floor281/stage300281/source6205、3070752杀，远征55077007872／每人34423129920；正常整数经验有界，未把大数字或小数经验条件退化定为用户唯一根因，未读取玩家档或取得最新部署日志。
 - 金币／黑晶Prepare只深捕获currency/battle/heroes/player/dungeon并复制heroes，不扫描旧equipment/lootbox/artifacts/talents、不计算幸运及零装备交付context；九根引用、正式Bridge九revision、原完整事务回滚及同步保存保留，主线／装备副本原路径不改。相同人工490库存＋50000遗匣／95961券宿主前后：prepare检查点1678608→179、pump6738→6、Prepare CPU28.386983→0.026920秒，RNG109／装备0／展示1行／save/token各1，actualexit0／无timeout。仅内存O(1)保存边界，Commit仍1.876285秒同步大尾段，不称真实磁盘／设备FPS／全面不卡或用户现场已解决。
 - SweepDialog点击反馈独立pcall，真实ButtonFeedback音效异常仍发送一次；只在Bridge无worker且同完整请求ID、pending=false、明确boolean终态时兜底清等待，成功收尾后同次draw/input/drag不重发。失败／取消输入恢复可同次重试；不重放业务或失败奖励展示，单条Bridge末态不是永久回执队列。原CMH末尾toast异常已先清身份，不作为新增漏洞。
 - 官方b35成功，708根Lua实际UUID-hash载荷逐字节及声明size708/708一致，内部validation/审核候选0入包、源冻结不变，两.project与本轮before逐字节恢复。四任务Lua逐文件severity1 Error0，官方daemon unavailable/code1跳过全仓gate，不称全仓清零。规范候选3320路径20旧问题/新增0，36校验单测OK。

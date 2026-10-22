@@ -417,6 +417,96 @@ function Start()
         eq(dialog.onActionResult({ sweepRequestId = second, success = true }), true, "匹配成功才关闭")
         eq(dialog.isOpen(), false, "真正成功收尾")
     end)
+    run("真实点击音异常不截断发送，业务拒绝与同步回执不挂等待", function()
+        for _, mode in ipairs({ "accepted", "rejected", "throw", "sync-failure", "sync-success" }) do
+            local h, dialog, out, click, draw = setup()
+            local before = F.copy(h.data)
+            local feedback = h.modules["systems.ButtonFeedback"]
+            h.modules["systems.ButtonFeedback"] = nil
+            local realFeedback = h.require("systems.ButtonFeedback")
+            feedback.trigger = realFeedback.trigger
+            local sounds, ids = 0, {}
+            h.modules["systems.GameSFX"] = { playUIClick = function()
+                sounds = sounds + 1
+                error("模拟真实点击音异常")
+            end }
+            dialog.onSweep = function(_, _, _, requestId)
+                ids[#ids + 1] = requestId
+                if mode == "throw" then error("模拟业务异常") end
+                if mode == "sync-failure" or mode == "sync-success" then
+                    dialog.onActionResult({ sweepRequestId = requestId, success = mode == "sync-success",
+                        reason = "同步权威拒绝" })
+                end
+                return mode ~= "rejected" and mode ~= "sync-failure"
+            end
+            dialog.open(1, 1905)
+            eq(click(540, 1700), true, "反馈异常不传播 " .. mode)
+            eq(sounds, 1, "真实BF确实调用失败音效 " .. mode)
+            eq(#ids, 1, "反馈失败仍仅发送一次 " .. mode)
+            eq(type(ids[1]), "string", "业务身份完整")
+            if mode == "accepted" then
+                draw()
+                eq(at(out.tree, 270, 1080).props.disabled, true, "受理后仍等待权威回执")
+                click(540, 1700)
+                eq(#ids, 1, "等待不重复发送")
+                dialog.onActionResult({ sweepRequestId = ids[1], success = false, reason = "稍后失败" })
+                draw()
+                eq(at(out.tree, 45, 1196).props.text, "稍后失败", "正常失败恢复")
+            elseif mode == "sync-success" then
+                eq(dialog.isOpen(), false, "同步成功关闭")
+                dialog.open(1, 1905)
+            else
+                draw()
+                eq(at(out.tree, 270, 1080).props.disabled, false, "拒绝异常释放等待 " .. mode)
+                eq(at(out.tree, 45, 1196).props.text,
+                    mode == "sync-failure" and "同步权威拒绝" or "扫荡请求未受理，请重试", "保留真实失败原因")
+            end
+            dialog.onSweep = function(_, _, _, requestId) ids[#ids + 1] = requestId; return false end
+            click(540, 1700)
+            eq(#ids, 2, "恢复后可再次发送")
+            eq(ids[2] ~= ids[1], true, "失败音效不能复用请求身份")
+            readonly(h, out, before)
+        end
+    end)
+    run("仅匹配Bridge真实终态恢复丢失回执，不重发业务", function()
+        for _, phase in ipairs({ "complete", "failed", "cancelled" }) do
+            for _, entry in ipairs({ "draw", "input", "drag" }) do
+                local h, dialog, out, click, draw = setup()
+                local before = F.copy(h.data)
+                local id, calls = "", 0
+                dialog.onSweep = function(_, _, _, requestId) id = requestId; calls = calls + 1; return true end
+                dialog.open(1, 1905); click(540, 1700)
+                local invalid = {
+                    { sweepRequestId = "other", pending = false, phase = phase, success = true },
+                    { sweepRequestId = id, pending = true, phase = phase, success = true },
+                    { sweepRequestId = id, pending = false, phase = "generate", success = true },
+                    { sweepRequestId = id, pending = false, phase = phase },
+                }
+                for _, work in ipairs(invalid) do
+                    out.work = work; draw()
+                    eq(dialog.isOpen(), true, "不消费不可信或其他终态")
+                    eq(at(out.tree, 270, 1080).props.disabled, true, "未匹配仍等待")
+                end
+                out.work = { sweepRequestId = id, pending = false, phase = phase,
+                    success = phase == "complete", reason = "权威终态原因" }
+                out.pending = true; draw()
+                eq(dialog.isOpen(), true, "worker在途不消费旧终态")
+                out.pending = false
+                if entry == "input" then click(540, 1700)
+                elseif entry == "drag" then dialog.handleDragBegin(point(540, 1510))
+                else draw() end
+                eq(calls, phase == "complete" and 1 or (entry == "input" and 2 or 1), "成功收尾同次输入不能重发")
+                if phase == "complete" then
+                    eq(dialog.isOpen(), false, "已到账关闭等待不重试")
+                elseif entry ~= "input" then
+                    draw()
+                    eq(at(out.tree, 45, 1196).props.text, "权威终态原因", "失败取消保留权威原因")
+                    eq(at(out.tree, 270, 1080).props.disabled, false, "失败取消允许新操作")
+                end
+                readonly(h, out, before)
+            end
+        end
+    end)
     run("外部任务、未知进度与legacy关闭态自持等待树", function()
         local h, dialog, out, click, draw = setup()
         out.pending, out.work = true, { phase = "queued" }

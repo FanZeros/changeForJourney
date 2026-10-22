@@ -646,6 +646,156 @@ local function testFailures(oldFixture)
     end)
 end
 
+-- 纯货币副本不把已有装备/遗匣当作本次奖励输入；正式事务仍保留完整回滚快照。
+-- __pairs只在Prepare期间拒绝访问，提交前撤下，不能借此要求事务跳过原子回滚保护。
+local function testCurrencyFastPath()
+    for _, stage in ipairs({ 100001, 300001 }) do
+        run("纯货币五万旧装备Prepare不访问无关大树 " .. stage, function()
+            local config = { stage = stage, count = 95961, initial = 0, seed = 1022 }
+            local h = configure(F, config)
+            local equipment, lootbox = h.data.equipment, h.data.lootbox
+            local filler = assert(h.ES.generate("W1", 1, 1))
+            for index = 1, 50000 do
+                equipment.inventory[tostring(index)] = F.copy(filler)
+                lootbox.seeds[index] = { quality = 1, level = 1, count = 1,
+                    equip = F.copy(filler), source = "idle" }
+            end
+            equipment.nextSeq = 50001
+            local pairCalls, checkpoints = 0, 0
+            local function refusePairs()
+                pairCalls = pairCalls + 1
+                error("纯货币Prepare不得遍历旧装备/遗匣")
+            end
+            local poison = { __pairs = refusePairs }
+            for _, value in ipairs({ equipment, equipment.inventory, lootbox, lootbox.seeds,
+                h.data.artifacts, h.data.talents }) do setmetatable(value, poison) end
+            h.require("systems.EquipmentPower").buildWornContext = function()
+                error("纯货币Prepare不得计算幸运穿戴上下文")
+            end
+            local inventoryCount = h.ES.getInventoryCount
+            h.ES.getInventoryCount = function() error("纯货币Prepare不得扫描库存") end
+            h.LS.createDeliveryContext = function() error("零装备Commit不得创建交付上下文") end
+            local control = { summaryLogs = true, check = function() return true end,
+                checkpoint = function(phase)
+                    check(phases[phase], "纯货币检查点仍为合法准备阶段")
+                    checkpoints = checkpoints + 1
+                end }
+            local candidate, reason = h.Sweep.PrepareSweep(1,
+                { count = config.count, teamIdx = 1, stageId = stage }, control)
+            for _, value in ipairs({ equipment, equipment.inventory, lootbox, lootbox.seeds,
+                h.data.artifacts, h.data.talents }) do setmetatable(value, nil) end
+            h.ES.getInventoryCount = inventoryCount
+            check(candidate ~= nil, "巨大无关大树拒绝遍历时Prepare仍成功 " .. tostring(reason))
+            eq(pairCalls, 0, "根与内层大表完全不调用pairs")
+            check(checkpoints > 0 and checkpoints < 4096, "五万无关装备不放大准备检查点")
+            eq(h.data.currency.sweepTicket, config.count, "Prepare不扣券")
+            eq(h.persists, 0, "Prepare不保存")
+            eq(h.notifications, 0, "Prepare不通知")
+            local ok, err, result = h.Sweep.CommitSweep(1, candidate, control)
+            check(ok, "撤销毒化后原事务完整提交成功 " .. tostring(err))
+            eq(result.equipCount, 0, "纯货币不产生装备")
+            eq(#result.equips, 0, "纯货币装备交付为空")
+            eq(result.scrollCount, 0, "纯货币不产生卷轴")
+            eq(result.inventoryCount, 0, "纯货币不向已有库存加装备")
+            eq(result.lootboxCount, 0, "纯货币不向已有遗匣加装备")
+            eq(h.data.equipment, equipment, "原装备根引用保留")
+            eq(h.data.lootbox, lootbox, "原遗匣根引用保留")
+            eq(inventoryCount(equipment), 50000, "人工五万旧库存完整保留")
+            eq(#lootbox.seeds, 50000, "人工五万旧遗匣完整保留")
+            same(equipment.inventory["50000"], filler, "末件原装备全部字段保留")
+            same(lootbox.seeds[50000].equip, filler, "末件遗匣原装备全部字段保留")
+            eq(h.persists, 1, "原事务只保存一次")
+            eq(h.data.currency.sweepTicket, 0, "原事务统一扣券")
+            eq(h.Sweep.CommitSweep(1, candidate, control), false, "成功候选仍单次消费")
+            print(TAG .. "CURRENCY_FAST stage=" .. stage .. " oldInventory=50000 oldLootbox=50000 checkpoints=" .. checkpoints)
+        end)
+        for _, name in ipairs({ "currency", "battle", "heroes", "player", "dungeon" }) do
+            for _, kind in ipairs({ "value", "nested" }) do
+                run("纯货币相关模块深值变化拒绝 " .. stage .. "/" .. name .. "/" .. kind, function()
+                    local config = { stage = stage, count = 1, initial = 0 }
+                    local h = configure(F, config)
+                    h.data[name].currencyFastProbe = { nested = { value = 7 } }
+                    local candidate, reason, stats = prepare(h, config)
+                    check(candidate ~= nil, "相关模块guard候选成功 " .. tostring(reason))
+                    if kind == "value" then h.data[name].currencyFastProbe.nested.value = 8
+                    else h.data[name].currencyFastProbe.nested = F.copy(h.data[name].currencyFastProbe.nested) end
+                    local changed = snapshot(h)
+                    local ok, err = h.Sweep.CommitSweep(1, candidate, stats.control)
+                    eq(ok, false, "相关模块改变拒绝提交")
+                    eq(err, "sweep_stale", "相关深值/等值换表明确stale")
+                    untouched(h, changed, "拒绝保留外部变更")
+                    eq(h.Sweep.CommitSweep(1, candidate, stats.control), false, "stale候选单次消费")
+                end)
+            end
+        end
+        for _, name in ipairs({ "currency", "battle", "heroes", "player", "equipment", "dungeon", "lootbox", "artifacts", "talents" }) do
+            run("纯货币九模块根替换仍拒绝 " .. stage .. "/" .. name, function()
+                local config = { stage = stage, count = 1 }
+                local h = configure(F, config)
+                local candidate, reason, stats = prepare(h, config)
+                check(candidate ~= nil, "根引用guard候选成功 " .. tostring(reason))
+                h.data[name] = F.copy(h.data[name])
+                local changed = snapshot(h)
+                local ok, err = h.Sweep.CommitSweep(1, candidate, stats.control)
+                eq(ok, false, "九模块根替换拒绝提交")
+                eq(err, "sweep_stale", "根替换明确stale")
+                untouched(h, changed, "根替换拒绝不覆盖")
+                eq(h.Sweep.CommitSweep(1, candidate, stats.control), false, "根替换失败候选单次消费")
+            end)
+        end
+        for _, name in ipairs({ "equipment", "lootbox" }) do
+            run("纯货币无关内层变化仍尊重Bridge控制拒绝 " .. stage .. "/" .. name, function()
+                local config = { stage = stage, count = 1 }
+                local h = configure(F, config)
+                h.data[name].currencyFastProbe = { value = 7 }
+                local current = true
+                local candidate, reason, stats = prepare(h, config, { check = function()
+                    return current, "sweep_stale"
+                end })
+                check(candidate ~= nil, "控制guard候选成功 " .. tostring(reason))
+                h.data[name].currencyFastProbe.value = 8
+                current = false -- 模拟Bridge从revision观察到外部修改；服务不自行猜测通知历史。
+                local changed = snapshot(h)
+                local ok, err = h.Sweep.CommitSweep(1, candidate, stats.control)
+                eq(ok, false, "control拒绝时无关内层变化也不提交")
+                eq(err, "sweep_stale", "保留control明确拒绝原因")
+                untouched(h, changed, "控制拒绝不覆盖最新内层")
+                current = true
+                eq(h.Sweep.CommitSweep(1, candidate, stats.control), false, "恢复control不复活已消费候选")
+            end)
+        end
+        run("纯货币完成准备后取消仍单次消费 " .. stage, function()
+            local config = { stage = stage, count = 1 }
+            local h = configure(F, config)
+            local candidate, reason, stats = prepare(h, config)
+            check(candidate ~= nil, "取消夹具完整候选 " .. tostring(reason))
+            local before = snapshot(h)
+            stats.control.isCancelled = function() return true end
+            local ok, err = h.Sweep.CommitSweep(1, candidate, stats.control)
+            eq(ok, false, "取消候选不能提交")
+            eq(err, "sweep_cancelled", "取消明确原因")
+            untouched(h, before, "取消不扣券不通知不保存")
+            stats.control.isCancelled = function() return false end
+            eq(h.Sweep.CommitSweep(1, candidate, stats.control), false, "取消过的token不能重放")
+        end)
+        for _, kind in ipairs({ "false", "nil", "throw", "onLoad" }) do
+            run("纯货币仍使用原完整回滚事务 " .. stage .. "/" .. kind, function()
+                local config = { stage = stage, count = 1, initial = 2 }
+                local h = configure(F, config)
+                failure(h, kind)
+                local before = snapshot(h)
+                local candidate, reason, stats = prepare(h, config)
+                check(candidate ~= nil, "纯货币失败夹具准备成功 " .. tostring(reason))
+                eq(h.Sweep.CommitSweep(1, candidate, stats.control), false, "纯货币原事务失败")
+                rollback(h, before, "纯货币失败 " .. kind)
+                eq(stats.committed, 0, "纯货币失败不发到账标记")
+                eq(h.finishes[1], false, "纯货币失败释放原事务")
+                eq(h.Sweep.CommitSweep(1, candidate, stats.control), false, "回滚后的候选也不能重放")
+            end)
+        end
+    end
+end
+
 local function testPresentation()
     run("100000项展示整理分帧/同类稳定/原引用/单次token", function()
         local h = F.new()
@@ -711,7 +861,11 @@ local function testLarge(oldFixture)
             stats.prepareCpu = os.clock() - start
             print(TAG .. "LARGE PREPARED stage=" .. stage .. " cpu=" .. stats.prepareCpu .. " yields=" .. stats.yields)
             check(candidate ~= nil, "100k真实候选完成 " .. tostring(reason))
-            check((stats.yieldPhases.prepare or 0) > 0, "大库存私有prepare必须真实yield且保持全树/引用一致")
+            if stage == 1905 or stage == 200001 then
+                check((stats.yieldPhases.prepare or 0) > 0, "装备路径大库存私有prepare必须真实yield且保持全树/引用一致")
+            else
+                check((stats.perPhase.prepare or 0) < 4096, "纯货币不因已有500装备强制大树扫描")
+            end
             -- 金币/黑晶批量常量计数没有逐kill帧，100k本身不要求多yield。
             -- 主线/装备副本仍须按实际完整装备生成与分类分片，不能同步跳过全部生成。
             if stage == 1905 or stage == 200001 then
@@ -750,6 +904,9 @@ function Start()
     local oldFixture = oracleFixture()
     local mode = options.mode or "quick"
     if mode ~= "large" then
+        testCurrencyFastPath()
+    end
+    if mode ~= "large" and mode ~= "currency-fast" then
         testPurity()
         testOracle(oldFixture)
         testResourceContexts(oldFixture)

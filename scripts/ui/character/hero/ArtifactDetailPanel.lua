@@ -1,6 +1,6 @@
 -- ============================================================================
--- ArtifactDetailPanel - 神器详情浮层：背包神器可操作，已装神器仅展示位置。
--- 坐标系: 设计分辨率 1080x2400；悬停/钉住浮层复用同一套详情与操作
+-- ArtifactDetailPanel - 神器详情只读浮层：展示名称、效果、比例与装配位置。
+-- 坐标系: 设计分辨率 1080x2400；悬停/钉住浮层复用同一套详情
 -- ============================================================================
 
 local DrawUtil          = require("core.DrawUtil")
@@ -13,9 +13,17 @@ local ImageCache        = require("ui.widget.ImageCache")
 local ArtifactAssetUtil   = require("config.ArtifactAssetUtil")
 
 local ArtifactDetailPanel = {}
+---@class ArtifactDetailKeywords: KeywordTextInstance
+---@field textColor number[]
+---@field clear fun(self: ArtifactDetailKeywords)
+---@field beginFrame fun(self: ArtifactDetailKeywords)
+---@field draw fun(self: ArtifactDetailKeywords, ...: any)
+---@field setPopupTransform fun(self: ArtifactDetailKeywords, transform: function)
+---@field drawPopup fun(self: ArtifactDetailKeywords, vg: any)
+---@field handleInput fun(self: ArtifactDetailKeywords, x: number, y: number): boolean
 local effectKeywords = require("ui.widget.KeywordText").new({
     textColor = { 0xb7, 0xa5, 0x94 }, popupMaxW = 500,
-})
+}) --[[@as ArtifactDetailKeywords]]
 
 -- ======================== 动画常量 ========================
 
@@ -98,29 +106,6 @@ local ARTIFACT_ICON = {
     W = 220, H = 220,
 }
 
--- 详情页仅为背包神器保留安装入口；已装神器只显示位置，不提供取下/洗练快捷操作。
-local BTN_EQUIP = {
-    CX = 408, CY = 1496,
-    W = 210, H = 100,
-    NP_T = 15, NP_R = 60, NP_B = 15, NP_L = 60,
-    FONT = 38,
-    TEXT_R = 0xd8, TEXT_G = 0xc9, TEXT_B = 0xa3, TEXT_A = 230,
-}
-
-local BTN_REFINE = {
-    CX = 672, CY = 1496,
-    W = 250, H = 100,
-    NP_T = 15, NP_R = 60, NP_B = 15, NP_L = 60,
-    FONT = 34,
-    TEXT_R = 0xd8, TEXT_G = 0xc9, TEXT_B = 0xa3, TEXT_A = 230,
-}
-
-local REFINE_COST = {
-    X = 672, Y = 1564,
-    FONT = 24,
-    R = 0x72, G = 0x58, B = 0x50,
-}
-
 -- ======================== 图片资源 ========================
 
 local imgPowerIcon = -1
@@ -142,6 +127,17 @@ local imgPowerIcon = -1
 ---@field slot number|nil
 ---@field subSlot number|nil
 ---@field teamIdx number|nil
+---@field visible boolean
+---@field opening boolean
+---@field closing boolean
+---@field openTime number
+---@field closeTime number
+---@field location string
+---@field floating boolean
+---@field hover boolean
+---@field pinned boolean
+---@field panelCX number
+---@field panelCY number
 ---@type ArtifactDetailState
 local state = {
     visible   = false,
@@ -175,7 +171,7 @@ local function getEquipActionState()
     return equipActionStateGetter_(state.artifact, state.location, state.slot, state.subSlot, state.teamIdx) or fallback
 end
 
---- 已装神器详情仅显示只读位置提示；背包候选保留安装入口。
+--- 已装神器详情显示只读位置提示。
 local function getEquipActionHint()
     local action = getEquipActionState()
     if action.hint then return action.hint end
@@ -338,14 +334,6 @@ local function getThreatClearRatio(artifact)
     end
     if ratio == nil then return nil end
     return math.max(0, math.min(10000, math.floor(tonumber(ratio) or 0)))
-end
-
-local function canRefineArtifact(artifact)
-    local mainRatio = getMainValueRatio(artifact)
-    local threatClearRatio = getThreatClearRatio(artifact)
-    if mainRatio and mainRatio < 10000 then return true end
-    if threatClearRatio and threatClearRatio < 10000 then return true end
-    return false
 end
 
 local function appendRatioAfterFirst(text, valueText, ratioText)
@@ -561,7 +549,7 @@ function ArtifactDetailPanel.draw(vg)
     nvgTranslate(vg, -BG.CX, -BG.CY)
     nvgGlobalAlpha(vg, progress)
 
-    local q = math.max(1, math.min(tonumber(artifact.quality) or 1, 6))
+    local q = math.floor(math.max(1, math.min(tonumber(artifact.quality) or 1, 6)))
     DarkIcon.drawNine(vg, "panel",
         BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5,
         BG.W, BG.H,
@@ -643,7 +631,6 @@ function ArtifactDetailPanel.draw(vg)
         nvgFillColor(vg, nvgRGBA(DESC_TEXT.R, DESC_TEXT.G, DESC_TEXT.B, 180))
         nvgText(vg, DESC_BG.CX, DESC_BG.CY, "暂无神器效果", nil)
     end
-    local equipAction = getEquipActionState()
     local equipHint = getEquipActionHint()
     if equipHint then
         nvgFontFace(vg, "sans")
@@ -651,60 +638,6 @@ function ArtifactDetailPanel.draw(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(210, 190, 150, 230))
         nvgText(vg, BG.CX, 1430, equipHint, nil)
-    end
-
-    if state.location ~= "slot" then
-        local _bfEq = BF.begin(vg, "artifact_detail_equip", BTN_EQUIP.CX, BTN_EQUIP.CY, BTN_EQUIP.W, BTN_EQUIP.H)
-        nvgSave(vg)
-        if not equipAction.enabled then nvgGlobalAlpha(vg, 0.45) end
-        DarkIcon.drawNine(vg, "btn",
-            BTN_EQUIP.CX - BTN_EQUIP.W * 0.5,
-            BTN_EQUIP.CY - BTN_EQUIP.H * 0.5,
-            BTN_EQUIP.W, BTN_EQUIP.H,
-            { accent = "green", radius = BTN_EQUIP.H * 0.3 })
-        nvgRestore(vg)
-        BF.finish(vg, _bfEq)
-
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, BTN_EQUIP.FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(BTN_EQUIP.TEXT_R, BTN_EQUIP.TEXT_G, BTN_EQUIP.TEXT_B, BTN_EQUIP.TEXT_A))
-        nvgText(vg, BTN_EQUIP.CX, BTN_EQUIP.CY, equipAction.label, nil)
-    end
-
-    if state.location == "bag" then
-        local canRefine = canRefineArtifact(artifact)
-        local _bfRefine = BF.begin(vg, "artifact_detail_refine_value", BTN_REFINE.CX, BTN_REFINE.CY, BTN_REFINE.W, BTN_REFINE.H)
-        nvgSave(vg)
-        if not canRefine then nvgGlobalAlpha(vg, 0.45) end
-        DarkIcon.drawNine(vg, "btn",
-            BTN_REFINE.CX - BTN_REFINE.W * 0.5,
-            BTN_REFINE.CY - BTN_REFINE.H * 0.5,
-            BTN_REFINE.W, BTN_REFINE.H,
-            { accent = "green", radius = BTN_REFINE.H * 0.3 })
-        nvgRestore(vg)
-        BF.finish(vg, _bfRefine)
-
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, BTN_REFINE.FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        if canRefine then
-            nvgFillColor(vg, nvgRGBA(BTN_REFINE.TEXT_R, BTN_REFINE.TEXT_G, BTN_REFINE.TEXT_B, BTN_REFINE.TEXT_A))
-        else
-            nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
-        end
-        nvgText(vg, BTN_REFINE.CX, BTN_REFINE.CY, canRefine and "洗练数值" or "已满值", nil)
-
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, REFINE_COST.FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        if canRefine then
-            nvgFillColor(vg, nvgRGBA(REFINE_COST.R, REFINE_COST.G, REFINE_COST.B, 220))
-            nvgText(vg, REFINE_COST.X, REFINE_COST.Y, "消耗1点特权点", nil)
-        else
-            nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
-            nvgText(vg, REFINE_COST.X, REFINE_COST.Y, "数值已达到上限", nil)
-        end
     end
 
     nvgRestore(vg)
@@ -738,31 +671,8 @@ function ArtifactDetailPanel.handleTap(tx, ty)
         return true -- 兼容旧居中弹窗：点击遮罩关闭且不穿透
     end
 
-    -- 点击本体（包括背包操作按钮）钉住；之后移出详情不自动关闭。
+    -- 点击只读本体仅钉住详情，旧安装/洗练区域不再触发任何业务操作。
     ArtifactDetailPanel.pin()
-    local artifact = state.artifact
-    if state.location ~= "slot"
-        and hitTest(lx, ly, BTN_EQUIP.CX, BTN_EQUIP.CY, BTN_EQUIP.W, BTN_EQUIP.H) then
-        if not getEquipActionState().enabled then return true end
-        BF.trigger("artifact_detail_equip")
-        print("[ArtifactDetailPanel] equip id=" .. tostring(artifact.id) .. " location=" .. state.location)
-        if onEquipCallback_ then
-            onEquipCallback_(artifact, state.location, state.slot, state.subSlot, state.teamIdx)
-        end
-        return true
-    end
-
-    if state.location == "bag"
-        and hitTest(lx, ly, BTN_REFINE.CX, BTN_REFINE.CY, BTN_REFINE.W, BTN_REFINE.H) then
-        if not canRefineArtifact(artifact) then return true end
-        BF.trigger("artifact_detail_refine_value")
-        print("[ArtifactDetailPanel] refine id=" .. tostring(artifact.id))
-        if onRefineCallback_ then
-            onRefineCallback_(artifact, state.location, state.slot, state.subSlot)
-        end
-        return true
-    end
-
     return true
 end
 

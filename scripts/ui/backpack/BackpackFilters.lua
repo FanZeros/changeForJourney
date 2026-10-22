@@ -27,8 +27,14 @@ local SORTS = {
     { value = "ascend", label = "升阶等级" },
 }
 
+-- 魔化属性仅退出可选菜单，不改词条配置、装备数据或生效计算。
+local CORRUPT_SORT_KEYS = {}
+for _, affix in ipairs(AffixConfig.CORRUPT_AFFIXES) do CORRUPT_SORT_KEYS[affix.key] = true end
+
 function M.bind(deps)
     local filters, GRID = deps.filters, deps.GRID
+    -- 两个宿主均使用运行时状态；接入旧选择时只回退排序键，保留其他筛选和方向。
+    if CORRUPT_SORT_KEYS[filters.sortKey] then filters.sortKey = nil end
     local menu = { key = nil, options = {}, scroll = 0, x = 0, y = 0, w = 0, h = 0,
         dragging = false, dragY = 0, dragScroll = 0, moved = false }
     local api = {}
@@ -144,7 +150,8 @@ function M.bind(deps)
         end
         for _, key in ipairs(EquipmentSecondaryStats.getAttributeKeys()) do keys[key] = true end
         for _, affix in ipairs(AffixConfig.AFFIXES) do keys[affix.key] = true end
-        for _, affix in ipairs(AffixConfig.CORRUPT_AFFIXES) do keys[affix.key] = true end
+        -- 显式按魔化 key 排除，也防止模板/副属性来源重新将它们带回菜单。
+        for key in pairs(CORRUPT_SORT_KEYS) do keys[key] = nil end
         local attrs = {}
         for key in pairs(keys) do
             local meta = AD.META[key]

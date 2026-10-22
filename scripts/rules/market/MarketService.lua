@@ -36,7 +36,6 @@ local SHOP_ITEMS = {
     [14] = { name = "点金石",       rewardType = "break_protect",         currency = "diamond", price = 250, rewardCount = 1,    restockType = "permanent", limitCount = -1 },
     [22] = { name = "腐化石",       rewardType = "corrupt_stone",         currency = "diamond", price = 250, rewardCount = 1,    restockType = "permanent", limitCount = -1 },
     [15] = { name = "奥术粉尘",     rewardType = "arcane_dust",           currency = "diamond", price = 90,  rewardCount = 300,  restockType = "permanent", limitCount = -1 },
-    [16] = { name = "金币",         rewardType = "gold",                  currency = "diamond", price = 94,  rewardCount = 6000, restockType = "permanent", limitCount = -1 },
     [17] = { name = "精粹",         rewardType = "essence",               currency = "diamond", price = 94,  rewardCount = 600,  restockType = "permanent", limitCount = -1 },
     [20] = { name = "黄金钥匙",     rewardType = "golden_key",            currency = "diamond", price = ArtifactDefs.KEY_DIAMOND_PRICE, rewardCount = 1, restockType = "permanent", limitCount = -1 },
 }

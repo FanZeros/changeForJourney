@@ -345,24 +345,49 @@ function Start()
         local f=fixture(); local i=f.intro
         i.start(function() f.callbacks=f.callbacks+1 end)
         i.update(1.5); i.update(2); f.draw(i)
-        local temple=f.image("image/关卡地图/MAP_999.png")
+        local temple=f.image("image/剧情/背景/STORY_TERMINAL_TEMPLE.png")
         near(temple.alpha,0.5,"temple phase2 alpha midpoint")
         stationary(f,i,function() return {up(i.update,"presentationElapsed_"),up(i.update,"phase"),up(i.update,"phaseT"),i.isActive(),f.callbacks} end)
         i.update(2); i.update(3.75); f.draw(i)
-        near(f.image("image/关卡地图/MAP_999.png").alpha,1,"temple opaque throughout road crossfade")
-        near(f.image("image/暗黑/L1_row1_forest.png").alpha,0.5,"road phase3 alpha midpoint")
+        near(f.image("image/剧情/背景/STORY_TERMINAL_TEMPLE.png").alpha,1,"temple opaque throughout road crossfade")
+        near(f.image("image/剧情/背景/STORY_TERMINAL_ROAD.png").alpha,0.5,"road phase3 alpha midpoint")
         for _,lang in ipairs({"zh_CN","en","ja","ko","zh_TW"}) do
             local elapsed=up(i.update,"presentationElapsed_"); f.language=lang; f.draw(i)
             eq(up(i.update,"presentationElapsed_"),elapsed,"language does not advance intro time")
             eq(f.callbacks,0,"caption never invokes finish")
         end
         i.update(3.75); i.update(4); i.update(1.75); f.draw(i)
-        near(f.image("image/暗黑/L1_row1_forest.png").alpha,0.5,"phase5 fades road")
+        near(f.image("image/剧情/背景/STORY_TERMINAL_ROAD.png").alpha,0.5,"phase5 fades road")
         near(up(i.update,"presentationElapsed_"),18.75,"timeline elapsed at phase5 middle")
         i.update(1.749); eq(f.callbacks,0,"no finish before20.5")
         i.update(0.001); eq(f.callbacks,1,"original five phases total20.5s")
         check(i.isFinished() and not i.isActive(),"natural finish flags unchanged")
         i.skip(); i.update(100); eq(f.callbacks,1,"duplicate intro finish inert")
+        f.safe()
+    end)
+    case("intro horizontal viewport preserves scene and caption anchors", function()
+        local f = fixture(); local i = f.intro
+        i.start(nil); i.update(1.5); i.update(3)
+        for _, size in ipairs({ {1920,1080}, {1280,800}, {1024,768}, {844,390} }) do
+            local w, h = size[1], size[2]
+            f.calls = {}
+            i.draw(f.vg, w, h)
+            local temple = f.image("image/剧情/背景/STORY_TERMINAL_TEMPLE.png")
+            check(temple and temple.w >= w and temple.w <= w * 1.03
+                and temple.h >= h and temple.h <= h * 1.03, "background uses viewport not portrait canvas")
+            near(temple.x, w * (0.5 + 0.0018 * math.sin(3 * 0.065)), "horizontal camera center")
+            local captions = 0
+            for _, c in ipairs(f.calls) do
+                if c.kind == "text" then
+                    near(c.x, w * 0.5, "caption stays horizontally centered")
+                    check(c.y >= h * 0.35 and c.y <= h * 0.65, "caption stays in middle safe band")
+                    captions = captions + 1
+                end
+            end
+            check(captions > 0 and captions <= 2, "caption displayed without portrait crop")
+            eq(#f.stack, 0, "horizontal draw balances VG state")
+            near(f.tx, 0, "no portrait translation x"); near(f.ty, 0, "no portrait translation y")
+        end
         f.safe()
     end)
     case("intro skip/reset and sync-chain visual reset before callback", function()

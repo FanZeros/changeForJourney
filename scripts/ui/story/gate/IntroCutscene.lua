@@ -31,19 +31,19 @@ local function easeInOut(t)
     return t < 0.5 and 2 * t * t or 1 - (-2 * t + 2)^2 / 2
 end
 
-local function drawBlack(alpha)
+local function drawBlack(alpha, w, h)
     if alpha <= 0.01 then return end
     nvgBeginPath(vg_)
-    nvgRect(vg_, 0, 0, DW, DH)
+    nvgRect(vg_, 0, 0, w, h)
     nvgFillColor(vg_, nvgRGBA(0, 0, 0, math.floor(alpha * 255)))
     nvgFill(vg_)
 end
 
-local function drawBackground(image, alpha, elapsed)
-    Motion.drawImage(vg_, image, elapsed, DW, DH, alpha)
+local function drawBackground(image, alpha, elapsed, w, h)
+    Motion.drawImage(vg_, image, elapsed, w, h, alpha)
 end
 
-local function drawCaption()
+local function drawCaption(w, h, scale)
     local source = Story.INTRO[phase]
     local elapsed = phaseT - 0.2
     if not source or elapsed <= 0 then return end
@@ -58,25 +58,26 @@ local function drawCaption()
     end
     nvgFontFace(vg_, "sans")
     nvgTextAlign(vg_, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
-    local font, rows = Display.fitLayout(vg_, text, DW * 0.88, 176, 58, 24, 1.25)
-    -- 长英文不能靠三行小字挤入高度；横屏中部固定最多两行，完整译文按宽度缩字。
-    while #rows > 2 and font > 24 do
-        font = font - 1
-        rows = Display.layoutText(vg_, text, DW * 0.88, font)
+    local minFont = 24 * scale
+    local font, rows = Display.fitLayout(vg_, text, w * 0.88, 176 * scale, 58 * scale, minFont, 1.25)
+    -- 字幕单独按窗口缩放，不跟随旧竖屏 cover 放大，完整译文最多两行。
+    while #rows > 2 and font > minFont do
+        font = math.max(minFont, font - scale)
+        rows = Display.layoutText(vg_, text, w * 0.88, font)
     end
     nvgFontSize(vg_, font)
     nvgFillColor(vg_, nvgRGBA(255, 255, 255, math.floor(alpha * 255)))
-    Display.drawRows(vg_, DW * 0.5, DH * 0.5 - #rows * font * 1.25 * 0.5,
+    Display.drawRows(vg_, w * 0.5, h * 0.5 - #rows * font * 1.25 * 0.5,
         rows, Story.length(visible), font * 1.25)
 end
 
 local function ensureImages()
     if not vg_ then return end
     if imgTemple < 0 then
-        imgTemple = nvgCreateImage(vg_, "image/关卡地图/MAP_999.png", 0)
+        imgTemple = nvgCreateImage(vg_, "image/剧情/背景/STORY_TERMINAL_TEMPLE.png", 0) or -1
     end
     if imgRoad < 0 then
-        imgRoad = nvgCreateImage(vg_, "image/暗黑/L1_row1_forest.png", 0)
+        imgRoad = nvgCreateImage(vg_, "image/剧情/背景/STORY_TERMINAL_ROAD.png", 0) or -1
     end
 end
 
@@ -125,35 +126,41 @@ function IntroCutscene.update(dt)
     end
 end
 
--- 宿主已应用设计空间变换；此处不另开 NanoVG frame，不改变输入坐标。
-function IntroCutscene.draw(_vg)
+-- 宿主传入逻辑窗口尺寸；只对背景做等比 cover，不二次放大竖屏画布。
+---@param _vg any
+---@param width number?
+---@param height number?
+function IntroCutscene.draw(_vg, width, height)
     if not active then return end
+    local w, h = width or DW, height or DH
+    if w <= 0 or h <= 0 then return end
+    local scale = width and math.min(w / 1920, h / 1080) or 1
     nvgSave(vg_)
-    nvgIntersectScissor(vg_, 0, 0, DW, DH)
-    drawBlack(1)
+    nvgIntersectScissor(vg_, 0, 0, w, h)
+    drawBlack(1, w, h)
     local progress = easeInOut(phaseT / PHASE_DURATIONS[phase])
     local templeElapsed = math.max(0, presentationElapsed_ - PHASE_DURATIONS[1])
     local roadElapsed = math.max(0, templeElapsed - PHASE_DURATIONS[2])
     if phase == 2 then
-        drawBackground(imgTemple, progress, templeElapsed)
-        drawBlack(0.35)
+        drawBackground(imgTemple, progress, templeElapsed, w, h)
+        drawBlack(0.35, w, h)
     elseif phase == 3 then
         -- 道路覆盖不透明神殿，避免两层同时淡出造成中途亮度下陷。
-        drawBackground(imgTemple, 1, templeElapsed)
-        drawBackground(imgRoad, progress, roadElapsed)
-        drawBlack(0.35)
+        drawBackground(imgTemple, 1, templeElapsed, w, h)
+        drawBackground(imgRoad, progress, roadElapsed, w, h)
+        drawBlack(0.35, w, h)
     elseif phase == 4 then
-        drawBackground(imgRoad, 1, roadElapsed)
-        drawBlack(0.35)
+        drawBackground(imgRoad, 1, roadElapsed, w, h)
+        drawBlack(0.35, w, h)
     elseif phase == 5 then
-        drawBackground(imgRoad, 1 - progress, roadElapsed)
-        drawBlack(0.35)
+        drawBackground(imgRoad, 1 - progress, roadElapsed, w, h)
+        drawBlack(0.35, w, h)
     end
     local environmentAlpha = phase == 2 and progress or (phase == 5 and 1 - progress or 1)
     if phase >= 2 and (imgTemple >= 0 or imgRoad >= 0) then
-        Motion.atmosphere(vg_, presentationElapsed_, DW, DH, environmentAlpha, "cool")
+        Motion.atmosphere(vg_, presentationElapsed_, w, h, environmentAlpha, "cool")
     end
-    drawCaption()
+    drawCaption(w, h, scale)
     nvgRestore(vg_)
 end
 

@@ -394,13 +394,14 @@ local function runDetailedFilters()
         check(uniqueSlots and deepEqual(slotValues, expectedSlots), "detailed slot options cover all six slots exactly once")
         local attrs = {}
         for _, tpl in pairs(EC.ITEMS) do for _, stat in ipairs(tpl.stats or {}) do attrs[stat[1]] = true end end
+        for _, key in ipairs(require("systems.EquipmentSecondaryStats").getAttributeKeys()) do attrs[key] = true end
         for _, affix in ipairs(Affixes.AFFIXES) do attrs[affix.key] = true end
-        for _, affix in ipairs(Affixes.CORRUPT_AFFIXES) do attrs[affix.key] = true end
+        for _, affix in ipairs(Affixes.CORRUPT_AFFIXES) do attrs[affix.key] = nil end
         local expectedSorts = { default = true, power = true, quality = true, level = true, ascend = true }
         for key in pairs(attrs) do expectedSorts[key] = true end
         local sortValues, uniqueSorts = optionValues(toolbar.getOptions("sort"))
         check(uniqueSorts and deepEqual(sortValues, expectedSorts),
-            "detailed sorts include five modes plus every fixed, normal and corrupt attribute")
+            "detailed sorts include five modes plus fixed, secondary and normal attributes, excluding corrupt")
         for _, target in ipairs({ "all", "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }) do
             for _, allowDual in ipairs({ false, true }) do
                 slot, dual = target ~= "all" and target or nil, allowDual
@@ -670,7 +671,9 @@ local function runClassFilters()
     local hadUI = UI.GetNVGContext() ~= nil
     local classes = { "seal", "spoil", "rift", "echo", "mask", "debt" }
     local legacy = { "knight", "warrior", "mage", "ranger", "assassin", "priest" }
-    local union, members, tids = {}, {}, {}
+    ---@type table<string, table<string, {types: table<string, boolean>, unrestricted: boolean}>>
+    local union = {}
+    local members, tids = {}, {}
     for _, classId in ipairs(classes) do union[classId], members[classId] = {}, {} end
     -- Oracle 独立枚举所有配置英雄，而非拥有名册、当前角色或新 helper。
     for _, hid in ipairs(HC.getAllIds()) do
@@ -686,6 +689,7 @@ local function runClassFilters()
     end
     local function classOracle(cid, tpl)
         if cid == nil or cid == "all" then return true end
+        ---@type {types: table<string, boolean>, unrestricted: boolean}?
         local bucket = union[CC.normalize(cid)] and union[CC.normalize(cid)][tpl.slot]
         return bucket ~= nil and (bucket.unrestricted or bucket.types[tpl.type] == true)
     end
@@ -693,6 +697,7 @@ local function runClassFilters()
     table.sort(tids)
     local source = { equipment = { inventory = {}, equipped = {} }, heroes = { roster = {} }, artifacts = {}, talents = {} }
     local revisions, scoreCalls = { equipment = 1, heroes = 1, artifacts = 1, talents = 1 }, 0
+    ---@type {qualitySet: table, setFilter: table, sortAscending: boolean, classFilter: string?, typeFilter: string?, sortKey: string?}
     local settings = { qualitySet = {}, setFilter = {}, sortAscending = false }
     local state = { open = true, tab = "equip", scrollY = 0 }
     local selection = { slot = nil, hero = nil, current = 1 }

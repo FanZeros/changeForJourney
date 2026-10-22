@@ -551,7 +551,7 @@ local function getEquipActionState(artifact, location, slot, subSlot, teamIdx)
         return {
             label = unchanged and "取下" or "位置已变",
             enabled = unchanged and not state.equipRequestPending,
-            hint = unchanged and ("队伍" .. team .. " · " .. SLOT_POS_NAME[currentSlot] .. " · 第" .. currentSub .. "格")
+            hint = unchanged and ("队伍" .. team .. " · " .. SLOT_POS_NAME[currentSlot or slot or 1] .. " · 第" .. currentSub .. "格")
                 or "装配位置已变，请重新打开详情",
         }
     end
@@ -1047,7 +1047,7 @@ function M.handleTabInput(dx, dy)
                             state.selectedSlot = i
                             state.selectedSubSlot = subSlot
                         end
-                        showFloat("先在背包神器详情中点击安装", cx, cy - 70)
+                        showFloat("将背包神器拖到槽位安装", cx, cy - 70)
                     end
                     print(string.format("[ChurchArtifactPanel] slot click t%d %d:%d", t, i, subSlot))
                     return true

@@ -190,10 +190,10 @@ add("神圣石", { "神聖石", "Holy Stone", "神聖石", "성석" },
 })
 add("洗练石", { "洗練石", "Reforge Stone", "洗練石", "재련석" },
     { "洗練石", "Reforge Stone", "洗練石", "재련석" }, {
-    "洗練的附加材料：保留詞綴屬性種類不變，重新隨機品質等級和數值（可跨等級變化）。\n保底只升不降：每條詞綴取新舊數值中的較高者。",
-    "An extra Reforge material: keeps affix stat types unchanged while rerolling quality grades and values, including changes across grades.\nGuaranteed no downgrade: each affix keeps the higher of its old and new values.",
-    "洗練の追加素材。効果の能力種類を保ったまま品質等級と数値を再抽選する（等級をまたぐ変化も可能）。\n低下しない保証：各効果は新旧の数値のうち高い方を採用する。",
-    "재련 추가 재료. 옵션의 능력치 유형을 유지한 채 품질 등급과 수치를 다시 무작위로 정하며, 등급이 달라질 수도 있습니다.\n하락 방지 보장: 각 옵션은 이전과 새 수치 중 높은 값을 유지합니다.",
+    "洗練的附加材料：保留詞綴屬性種類，忽略鎖定，重新隨機全部普通詞綴的品級與數值，魔化詞條不變。\n保底只升不降：每條詞綴取新舊數值中的較高者。結果自動替換，無需確認。",
+    "An extra Reforge material: keeps affix stat types, ignores locks, and rerolls the grades and values of all normal affixes. Demonic affixes remain unchanged.\nGuaranteed no downgrade: each affix keeps the higher of its old and new values. Results are applied automatically without confirmation.",
+    "洗練の追加素材。能力の種類を保ち、ロックを無視してすべての通常効果の等級と数値を再抽選する。魔化効果は変わらない。\n低下しない保証：各効果は新旧の数値のうち高い方を採用する。結果は確認不要で自動適用される。",
+    "재련 추가 재료. 능력치 유형을 유지하고 잠금을 무시하여 모든 일반 옵션의 등급과 수치를 다시 무작위로 정합니다. 마화 옵션은 유지됩니다.\n하락 방지 보장: 각 옵션은 이전과 새 수치 중 높은 값을 유지합니다. 확인 없이 결과가 자동 적용됩니다.",
 })
 add("点金石", { "點金石", "Gold Stone", "点金石", "점금석" },
     { "點金石", "Gold Stone", "点金石", "점금석" }, {
@@ -203,10 +203,10 @@ add("点金石", { "點金石", "Gold Stone", "点金石", "점금석" },
     "재련 추가 재료. 재련 시 현재 진행도에서 허용되는 상한까지 장비 등급을 높입니다.\n등급이 상한이면 무작위 일반 옵션 하나의 등급을 대신 높이며, 최대 S등급입니다.",
 })
 add("洗练", { "洗練", "Reforge", "洗練", "재련" }, { "洗練", "Reforge", "洗練", "재련" }, {
-    "重新隨機裝備詞綴數值：不選附加或選精粹時消耗固定精粹（費用不隨次數增加）；選擇洗練石／點金石／腐化石／神聖石時不再消耗精粹，只消耗對應石頭。\n可鎖定詞條（鎖定後單次精粹費用提高）。",
-    "Rerolls gear affix values. With no extra material or with essence selected, the essence cost is fixed and does not rise with reforge count. Choosing Reforge Stone, Gold Stone, Corrupt Stone, or Holy Stone costs only that stone, not essence.\nAffixes can be locked; locking increases the essence cost per reforge.",
-    "装備効果の数値を再抽選する。追加素材なし、または精粋を選ぶ場合は固定量の精粋を消費し、回数で費用は増えない。洗練石・点金石・腐化石・神聖石を選ぶ場合は精粋を消費せず、該当の石だけを消費する。\n効果はロック可能（ロックすると1回あたりの精粋費用が増える）。",
-    "장비 옵션 수치를 다시 무작위로 정합니다. 추가 재료를 선택하지 않거나 정수를 선택하면 고정된 정수 비용을 소모하며, 재련 횟수에 따라 늘지 않습니다. 재련석, 점금석, 부화석, 성석을 선택하면 정수 없이 해당 돌만 소모합니다.\n옵션을 잠글 수 있으며, 잠그면 재련 1회당 정수 비용이 증가합니다.",
+    "重新隨機裝備詞綴數值：不選附加或選精粹時消耗固定精粹（費用不隨次數增加）；選擇洗練石／點金石／腐化石／神聖石時不再消耗精粹，只消耗對應石頭。\n僅普通精粹洗練可鎖定詞條（鎖定後單次精粹費用提高），結果需手動替換；洗練石忽略鎖定並自動替換。",
+    "Rerolls gear affix values. With no extra material or with essence selected, the essence cost is fixed and does not rise with reforge count. Choosing Reforge Stone, Gold Stone, Corrupt Stone, or Holy Stone costs only that stone, not essence.\nOnly normal essence reforging allows affix locks, which increase essence cost, and requires manual replacement. Reforge Stone ignores locks and applies results automatically.",
+    "装備効果の数値を再抽選する。追加素材なし、または精粋を選ぶ場合は固定量の精粋を消費し、回数で費用は増えない。洗練石・点金石・腐化石・神聖石を選ぶ場合は精粋を消費せず、該当の石だけを消費する。\n通常の精粋洗練のみ効果をロックでき、ロック数に応じて費用が増え、結果は手動で適用する。洗練石はロックを無視し、結果を自動適用する。",
+    "장비 옵션 수치를 다시 무작위로 정합니다. 추가 재료를 선택하지 않거나 정수를 선택하면 고정된 정수 비용을 소모하며, 재련 횟수에 따라 늘지 않습니다. 재련석, 점금석, 부화석, 성석을 선택하면 정수 없이 해당 돌만 소모합니다.\n일반 정수 재련에서만 옵션 잠금이 가능하며 잠금 수에 따라 정수 비용이 증가하고 결과를 수동 적용해야 합니다. 재련석은 잠금을 무시하고 결과를 자동 적용합니다.",
 })
 
 -- 星图40项：既有完整属性名优先复用装备词典，未登记名称使用天赋标签。

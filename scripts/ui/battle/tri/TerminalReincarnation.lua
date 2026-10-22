@@ -2,6 +2,53 @@
 -- 状态由 BattleScene 持有，清档/读档丢弃 pending 后旧动画 token 不再有效。
 local M = {}
 local ETS = require("systems.ExtraTalentSystem")
+local SC = require("config.StageConfig")
+
+---@class TerminalReturnOrigins
+---@field terminalStageId number
+---@field resources table<number, number>
+---@field token number|nil
+
+-- 只冻结合法资源任务；主线由本次终焉的胜败目的地决定，塔UI定位ID不参与。
+---@return TerminalReturnOrigins
+function M.captureOrigins(stageId, drivers, restored, battle, mainStage, pageOpen)
+    local saved = type(battle) == "table" and battle.teamStageIds or {}
+    saved = type(saved) == "table" and saved or {}
+    local resources = {}
+    for team = 1, 3 do
+        local drv = drivers[team]
+        local source = (drv and (drv.pendingStageId or drv.stageId))
+            or (restored and (restored[tostring(team)] or restored[team]))
+            or saved[tostring(team)] or saved[team]
+        if team == 1 and not pageOpen and mainStage and not SC.isTerminalTemple(mainStage) then
+            source = (drv and drv.stageId == mainStage and drv.pendingStageId) or mainStage
+        elseif team == 1 and not source then
+            source = type(battle) == "table" and battle.currentStageId or mainStage
+        end
+        local id = tonumber(source)
+        if id and id % 1 == 0 and SC.getStage(id) and SC.isResourceStage(id) then resources[team] = id end
+    end
+    return { terminalStageId = stageId, resources = resources }
+end
+
+---@param origins TerminalReturnOrigins|nil
+---@return number[]|nil
+function M.returnStages(origins, terminalStageId, mainDestination, token)
+    if origins and origins.terminalStageId == terminalStageId then
+        if token ~= nil and origins.token ~= nil and origins.token ~= token then return nil end
+        if token ~= nil then origins.token = token end
+        return { origins.resources[1] or mainDestination, origins.resources[2] or mainDestination,
+            origins.resources[3] or mainDestination }
+    end
+    return { mainDestination, mainDestination, mainDestination }
+end
+
+-- 终焉期间对外只暴露逐队安全点；不把协同关或临时来源对象写入存档。
+function M.safeStage(stageId, team, origins)
+    if not SC.isTerminalTemple(stageId) then return stageId end
+    return origins and origins.terminalStageId == stageId and origins.resources[team]
+        or SC.getTerminalPrevStageId(stageId) or SC.NORMAL_FIRST_STAGE
+end
 
 ---@class TerminalReincarnationPending
 ---@field targetStageId number
@@ -12,6 +59,7 @@ local ETS = require("systems.ExtraTalentSystem")
 ---@field token number
 ---@field timer number
 ---@field animationStarted boolean
+---@field returnStageIds number[]|nil
 
 local function isBlocked()
     local Reward = require("ui.hud.popup.RewardPopup")
@@ -53,15 +101,17 @@ end
 ---@param drivers table
 ---@param stageId number
 ---@param setApplying function
-function M.enterTeams(drivers, stageId, setApplying)
+---@param destinations number[]|nil
+function M.enterTeams(drivers, stageId, setApplying, destinations)
     setApplying(true)
     local ok, err = pcall(function()
         for row = 1, 3 do
             local drv = drivers[row]
             if drv then
+                local destination = destinations and destinations[row] or stageId
                 drv.pendingStageId = nil
-                drv._syncedMainStage = stageId
-                drv:start(stageId)
+                drv._syncedMainStage = destination
+                drv:start(destination)
             end
         end
     end)
@@ -75,17 +125,21 @@ end
 ---@param scene table
 ---@param gotoTeamStage function
 function M.retreat(raid, drivers, previous, scene, gotoTeamStage)
-    for _, drv in pairs(drivers) do
+    local destinations = M.returnStages(raid.returnOrigins, raid.stageId, previous or raid.stageId)
+    for row, drv in pairs(drivers) do
         drv:activate()
         ETS.flush() -- 协同失败时其他未全灭战线的实际成长也提交，重开前逐域结清。
-        drv.pendingStageId = previous or raid.stageId
+        drv.pendingStageId = destinations[row]
     end
-    scene.adoptStageProgress(previous)
-    gotoTeamStage(1, previous)
+    scene.adoptStageProgress(destinations[1])
+    gotoTeamStage(1, destinations[1])
     require("ui.hud.BottomNav").setAllLocked(false)
     require("systems.GameBGM").setScene("battle")
     for row = 2, 3 do
-        if drivers[row] then drivers[row]:start(previous or raid.stageId) end
+        if drivers[row] then
+            drivers[row]._syncedMainStage = destinations[row]
+            drivers[row]:start(destinations[row])
+        end
     end
     print(string.format("[BattleTriPage] 终焉失败，三队协同结束 stage=%d", raid.stageId))
 end

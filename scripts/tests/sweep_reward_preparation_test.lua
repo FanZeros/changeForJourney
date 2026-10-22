@@ -61,6 +61,97 @@ local function exercise(count)
     print("[sweep_reward_preparation_test] count=" .. count .. " frames=" .. frames .. " checkpoints=" .. calls)
 end
 
+local function summary(source, mergeResources)
+    local token = Preparation.prepare(source, function() end, mergeResources)
+    return assert(Preparation.take(token, source, mergeResources))
+end
+
+local function exerciseStacks()
+    local first = { type = "diamond", amount = 100, quality = 5, icon = "black-crystal" }
+    local source = {}
+    for index = 1, 60 do source[index] = first end
+    local items = summary(source)
+    check(#items == 1 and items[1].amount == 6000, "六十条黑晶100汇总成一条6000")
+    check(first.amount == 100 and #source == 60 and items[1] ~= first, "共享配置奖励不被原地累加")
+    check(summary(source)[1].amount == 6000, "重复整理不重复累加源配置")
+    local interactive = summary(source, false)
+    check(#interactive == 60 and interactive[1] == first and interactive[60] == first,
+        "逐项回调模式保留全部对象和索引")
+    local token = Preparation.prepare(source, function() end)
+    check(Preparation.take(token, source, false) == nil, "聚合token不能用于逐项交互模式")
+    check(#assert(Preparation.take(token, source)) == 1, "错误模式不误消费token")
+    token = Preparation.prepare(source, function() end)
+    source[#source + 1] = first
+    check(Preparation.take(token, source) == nil, "token保留原始输入长度校验而非聚合长度")
+    source[#source] = nil
+    check(#assert(Preparation.take(token, source)) == 1, "恢复原长度后完整token仍可用")
+
+    local equip = { type = "equip", templateId = "W1", amount = 1, quality = 3,
+        level = 10, equip = { seq = 1, affixes = { { value = 3 } } } }
+    local shard1, shard2 = { type = "shard", heroId = 1, amount = 2 }, { type = "shard", heroId = 2, amount = 3 }
+    local nested = { type = "gold", amount = 4, extra = {} }
+    local mixed = {
+        { type = "gold", amount = 7 }, { type = "diamond", amount = 100 },
+        shard1, shard2, { type = "gold", amount = 11 },
+        { type = "shard", heroId = 1, amount = 5 }, equip, equip,
+        { type = "hero", heroId = 1 }, { type = "hero", heroId = 1 },
+        { type = "artifact", artifactId = 1 }, { type = "artifact", artifactId = 1 },
+        nested, nested,
+        { type = "seed", quality = 3, level = 10, amount = 1 },
+        { type = "seed", quality = 3, level = 10, amount = 1 },
+    }
+    items = summary(mixed)
+    check(#items == 14, "仅合法同类资源求和，不丢装备/英雄/神器/种子/嵌套项")
+    check(items[1].type == "gold" and items[1].amount == 18 and items[2].type == "diamond",
+        "不同资源不合并，首次出现顺序不变")
+    check(items[3].heroId == 1 and items[3].amount == 7 and items[4].heroId == 2 and items[4].amount == 3,
+        "同英雄碎片求和，不同英雄碎片严格隔离")
+    check(shard1.amount == 2 and shard2.amount == 3, "碎片源数量不变")
+    check(items[5] == nested and items[6] == nested, "含嵌套元数据的资源不猜测叠加")
+    check(items[11] == equip and items[12] == equip and equip.equip.affixes[1].value == 3,
+        "同模板甚至同引用的独立装备展示均保留，不水合词缀")
+
+    local boundaries = {
+        { type = "gold", amount = 1, quality = 2 }, { quality = 2, amount = 2, type = "gold" },
+        { type = "gold", amount = 3, quality = 3 }, { type = "gold", amount = 4, destination = "lootbox" },
+        { type = "gold", amount = 5, destination = "inventory" },
+        { type = "refine_stone", amount = 1 }, { type = "enhance_star", amount = 1 },
+        { type = "gold", amount = 0 }, { type = "gold", amount = -1 },
+        { type = "gold", amount = 0.5 }, { type = "gold", amount = math.huge },
+        { type = "unknown", amount = 1 }, { type = "unknown", amount = 2 },
+        { type = "gold", amount = 9007199254740991 }, { type = "gold", amount = 1 },
+    }
+    items = summary(boundaries)
+    check(#items == #boundaries - 1 and items[1].amount == 3,
+        "字段顺序不影响同类，品质/去向/协议别名及非法数量保持独立")
+    check(items[#items - 1].amount == 9007199254740991 and items[#items].amount == 1,
+        "超过精确整数上限不静默舍入丢数量")
+
+    local identities = summary({
+        { type = "shard", heroId = 9007199254740992, amount = 1 },
+        { type = "shard", heroId = 9007199254740993, amount = 2 },
+    })
+    check(#identities == 2 and identities[1].heroId ~= identities[2].heroId,
+        "Lua整数元数据不经浮点格式化而误合并相邻ID")
+
+    local large = {}
+    for index = 1, 100000 do large[index] = { type = "diamond", amount = 100 } end
+    local frames, result = 0, nil
+    local co = coroutine.create(function()
+        result = Preparation.prepare(large, function() coroutine.yield() end)
+    end)
+    while coroutine.status(co) ~= "dead" do
+        local ok, reason = coroutine.resume(co)
+        assert(ok, reason)
+        frames = frames + 1
+        check(large[1].amount == 100 and large[#large].amount == 100, "十万资源分帧期间不改来源")
+    end
+    items = assert(Preparation.take(result, large))
+    check(frames > 10 and #items == 1 and items[1].amount == 10000000,
+        "十万同类资源分帧聚合，数量精确守恒")
+    print("[sweep_reward_preparation_test] stacks=100000 frames=" .. frames)
+end
+
 function Start()
     local random, randomseed, oldFile, oldFs = math.random, math.randomseed, File, fileSystem
     local function denied() error("奖励整理禁止RNG或玩家文件") end
@@ -68,6 +159,7 @@ function Start()
     fileSystem = setmetatable({}, { __index = function() return denied end })
     local ok, reason = pcall(function()
         for _, count in ipairs({ 0, 1, 17, 1000, 100000 }) do exercise(count) end
+        exerciseStacks()
         local source = { { type = "gold" } }
         local accepted = pcall(Preparation.prepare, source, function() error("expected cancel") end)
         check(not accepted, "准备取消不发布token")

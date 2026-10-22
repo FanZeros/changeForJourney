@@ -14,6 +14,7 @@ function Start()
         local ExpTable = nativeRequire("config.ExpTable")
         local Schema = nativeRequire("shared.battle.BattleSchema")
         local ScenarioConfig = nativeRequire("config.ScenarioDialogueConfig")
+        local DC = nativeRequire("config.DungeonConfig")
         local mainStage, maxStage, cleared = 1001, 4905, {}
         local modules = {
             battle = { currentStageId = mainStage, maxStageId = maxStage,
@@ -24,6 +25,10 @@ function Start()
         }
         local notices, flushes, firstCalls, requests = 0, 0, 0, 0
         local disk = {}
+        local ioCounts = { read = 0, write = 0, rename = 0 }
+        local function safeSavePath(path)
+            assert(path == "standalone_save.json" or path == "standalone_save.pending.json", "禁止真实/未知文件路径 " .. tostring(path))
+        end
         local mocks = {}
         local function noop() end
         local function stub(fields)
@@ -65,6 +70,7 @@ function Start()
         mocks["runtime.ClientDispatcher"] = dispatcher
         mocks["ui.battle.scene.BattleScene"] = scene
         mocks["config.StageConfig"] = SC
+        mocks["config.DungeonConfig"] = DC
         mocks["shared.battle.BattleSchema"] = Schema
         mocks["core.BattleLayout"] = nativeRequire("core.BattleLayout")
         mocks["systems.AttributeDef"] = nativeRequire("systems.AttributeDef")
@@ -94,14 +100,19 @@ function Start()
         end)
         rawset(_G, "time", { elapsedTime = 100 })
         rawset(_G, "File", function(path, mode)
+            safeSavePath(path)
             return { IsOpen = function() return true end,
-                WriteString = function(_, data) disk[path] = data return true end,
-                ReadString = function() return disk[path] end, Close = noop }
+                WriteString = function(_, data) ioCounts.write = ioCounts.write + 1; disk[path] = data return true end,
+                ReadString = function() ioCounts.read = ioCounts.read + 1; return disk[path] end, Close = noop, Dispose = noop }
         end)
         rawset(_G, "fileSystem", {
-            FileExists = function(_, path) return disk[path] ~= nil end,
-            Delete = function(_, path) disk[path] = nil end,
-            Rename = function(_, from, to) disk[to] = disk[from] disk[from] = nil return true end,
+            FileExists = function(_, path) safeSavePath(path); return disk[path] ~= nil end,
+            Delete = function(_, path) safeSavePath(path); disk[path] = nil end,
+            Rename = function(_, from, to)
+                safeSavePath(from); safeSavePath(to)
+                ioCounts.rename = ioCounts.rename + 1
+                disk[to] = disk[from] disk[from] = nil return true
+            end,
         })
         local Save = compile("boot.StandaloneSave")
         mocks["boot.StandaloneSave"] = { Flush = function()
@@ -133,6 +144,7 @@ function Start()
         end
         local Page = compile("ui.battle.tri.BattleTriPage", pageEnv)
         mocks["ui.battle.tri.BattleTriPage"] = Page
+        Save.SetBattlePage(Page)
         Page.open()
         check(Page.getTeamStageId(1) == 1001 and Page.getTeamStageId(2) == 203
             and Page.getTeamStageId(3) == 2504, "三队按独立存档关卡启动")
@@ -418,6 +430,8 @@ function Start()
         mocks["ui.battle.tri.TerminalRaid"] = compile("ui.battle.tri.TerminalRaid")
         mocks["config.GameConfig"] = nativeRequire("config.GameConfig")
         Page = compile("ui.battle.tri.BattleTriPage")
+        mocks["ui.battle.tri.BattleTriPage"] = Page
+        Save.SetBattlePage(Page)
         Page.open()
         check(Page.getTeamStageId(1) == 1001 and Page.getTeamStageId(2) == 204
             and Page.getTeamStageId(3) == 2505, "重新创建页面和驱动后仍恢复各队当前关")
@@ -484,6 +498,81 @@ function Start()
             and terminalSave.modules.battle.teamStageIds["3"] == 2401,
             "终焉胜利实际Flush包含二三队目标关")
         Page.close()
+
+        -- 新资源来源冷恢复矩阵：真实Capture→Flush→内存JSON→新Save/Schema→新Page/Driver。
+        -- Scene/出怪叶子边界沿原专项，不把Capture spy冒称完整持久化。
+        local sourceChoices = { 1001 }
+        for _, id in ipairs(DC.RESOURCE_IDS) do sourceChoices[#sourceChoices + 1] = assert(DC.getChapterStageIds(id)[3]) end
+        local resourceCases = 0
+        for a = 1, #sourceChoices do
+            for b = 1, #sourceChoices do
+                for c = 1, #sourceChoices do
+                    if a ~= 1 or b ~= 1 or c ~= 1 then
+                        resourceCases = resourceCases + 1
+                        local expected = { sourceChoices[a], sourceChoices[b], sourceChoices[c] }
+                        mainStage, maxStage, cleared = expected[1], 4905, { ["1905"] = true }
+                        modules = { battle = { currentStageId = mainStage, maxStageId = maxStage,
+                            clearedStages = cleared, teamStageIds = { ["1"] = expected[1], ["2"] = expected[2], ["3"] = expected[3] },
+                            idleAccumSec = 17 }, session = { introCompleted = true, initialHeroId = 1, claimedScenarios = {} },
+                            dungeon = {}, player = {}, heroes = { roster = {} } }
+                        for _, id in ipairs(DC.RESOURCE_IDS) do
+                            local sub = { floor = DC.MAX_FLOOR[id], cleared = {} }
+                            for floor = 1, DC.MAX_FLOOR[id] do sub.cleared[tostring(floor)] = true end
+                            modules.dungeon[id] = sub
+                        end
+                        drivers = {}
+                        Page = compile("ui.battle.tri.BattleTriPage", pageEnv)
+                        mocks["ui.battle.tri.BattleTriPage"] = Page
+                        Save = compile("boot.StandaloneSave")
+                        Save.SetBattlePage(Page)
+                        Page.open()
+                        for row = 1, 3 do
+                            check(Page.getTeamStageId(row) == expected[row], "资源矩阵实际来源队" .. row)
+                            check(not SC.isResourceStage(expected[row]) or DC.isStageUnlocked(expected[row], modules.battle, modules.dungeon),
+                                "资源矩阵使用真实解锁与合法台账队" .. row)
+                        end
+                        local writeBefore, renameBefore = ioCounts.write, ioCounts.rename
+                        check(Save.Flush(), "资源来源真实Flush成功")
+                        check(ioCounts.write == writeBefore + 1 and ioCounts.rename == renameBefore + 1,
+                            "资源来源完整编码与一次内存原子Rename")
+                        local savedJson = disk["standalone_save.json"]
+                        local encoded = cjson.decode(savedJson)
+                        for row = 1, 3 do check(encoded.modules.battle.teamStageIds[tostring(row)] == expected[row], "JSON保存实际资源/主线队" .. row) end
+                        check(encoded.modules.battle.currentStageId == expected[1]
+                            and encoded.modules.battle.maxStageId == 4905, "队1资源不抬高共享主线max")
+                        check(encoded.modules.battle.returnStageIds == nil and encoded.modules.battle.terminalOrigins == nil,
+                            "资源快照不保存临时终焉来源token")
+                        Page.close()
+                        modules, drivers = {}, {}
+                        Save = compile("boot.StandaloneSave") -- 新模块，无旧Save detector/restore状态。
+                        local readsBefore = ioCounts.read
+                        check(Save.RestoreData() and ioCounts.read > readsBefore, "新Save真实RestoreData读取内存JSON")
+                        Save.ApplyBattleProgress()
+                        Page = compile("ui.battle.tri.BattleTriPage", pageEnv)
+                        mocks["ui.battle.tri.BattleTriPage"] = Page
+                        Save.SetBattlePage(Page)
+                        Page.open()
+                        for row = 1, 3 do
+                            check(Page.getTeamStageId(row) == expected[row]
+                                and modules.battle.teamStageIds[tostring(row)] == expected[row], "Schema与新Driver冷恢复同一来源队" .. row)
+                            if SC.isResourceStage(expected[row]) then
+                                local drv = drivers[row]
+                                check(drv.active and #drv.enemies + #drv.enemyQueue > 0, "冷恢复资源重建怪池队" .. row)
+                                drv:update(0.01, 0.01)
+                                check(drv.stageId == expected[row] and drv.active, "冷恢复资源后真实update继续队" .. row)
+                            end
+                        end
+                        check(modules.battle.maxStageId == 4905 and modules.battle.idleAccumSec == 17,
+                            "冷恢复保留共享主线最高关及原挂机字段")
+                        check(Save.Flush(), "冷恢复后再保存仍成功")
+                        local afterRestore = cjson.decode(disk["standalone_save.json"])
+                        for row = 1, 3 do check(afterRestore.modules.battle.teamStageIds[tostring(row)] == expected[row], "二次保存不把资源重新拉回主线队" .. row) end
+                        Page.close()
+                    end
+                end
+            end
+        end
+        check(resourceCases == 63, "完整覆盖非全主线的63种三队资源/主线组合冷恢复")
         local lab = Driver.new(2, { battleLab = true, allyFactory = function() return {} end })
         local labCalls = 0
         lab.onStageChanged = function() labCalls = labCalls + 1 end

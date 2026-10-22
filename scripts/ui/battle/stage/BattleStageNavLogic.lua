@@ -52,6 +52,7 @@ function M.bind(deps)
     end
 
     local function doEnterTerminalTemple(nextId)
+        require("ui.battle.tri.BattleTriPage").captureTerminalOrigins(nextId)
         applyStageSwitch(nextId, get("BG_ZOOM_FWD_TARGET"), "确认进入终焉神殿")
         BottomNav.setAllLocked(true)
         require("systems.GameBGM").setScene("samsara", { fromStart = true })
@@ -170,6 +171,9 @@ function M.bind(deps)
         set("reincarnationTimer", nil)
         set("pendingReincarnation", nil)
         set("bgTransAnim", { timer = 0, zoomTarget = get("BG_ZOOM_FWD_TARGET") })
+        if stageConfig.isTerminalTemple(stageId) then
+            require("ui.battle.tri.BattleTriPage").captureTerminalOrigins(stageId)
+        end
         loadStage(stageId, true, opts and opts.deferEnter == true)
         set("regenAccum", 0)
         restoreAllies(getAllies, resetAllyUnit)
@@ -183,7 +187,7 @@ function M.bind(deps)
         return true
     end
 
-    local function completeReincarnation()
+    local function completeReincarnation(destinationStageId)
         local pendingReincarnation = get("pendingReincarnation")
         if not pendingReincarnation then
             print("[BattleScene] completeReincarnation called but no pending data")
@@ -202,12 +206,13 @@ function M.bind(deps)
 
         require("systems.GameBGM").setScene("battle")
         set("bgTransAnim", { timer = 0, zoomTarget = get("BG_ZOOM_FWD_TARGET") })
-        loadStage(pr.targetStageId, true)
+        local destination = destinationStageId or pr.targetStageId
+        loadStage(destination, true)
         set("regenAccum", 0)
         restoreAllies(getAllies, resetAllyUnit)
         startBattleTalents()
         local cb = get("onStageChangedCallback")
-        if cb then cb(pr.targetStageId) end
+        if cb then cb(destination) end
         print("[BattleScene] 轮回完成 → " .. tostring(get("stageName"))
             .. " (难度: " .. tostring(pr.toDifficulty) .. ")")
     end

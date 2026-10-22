@@ -55,6 +55,14 @@ local function sweepWork()
     local bridge = require("runtime.LocalActionBridge")
     local work = bridge.getSweepState and bridge.getSweepState() or nil
     local pending = bridge.isSweepPending and bridge.isSweepPending() or false
+    -- 回执展示链异常也可能已清 worker；只消费 Bridge 保留的同身份真实终态。
+    -- 不能仅凭 pending=false 解锁，否则会把未受理或其他请求误当成功。
+    if not pending and state.open and state.requestId ~= nil and work
+        and work.sweepRequestId == state.requestId and work.pending == false
+        and (work.phase == "complete" or work.phase == "failed" or work.phase == "cancelled")
+        and type(work.success) == "boolean" then
+        M.onActionResult({ sweepRequestId = work.sweepRequestId, success = work.success, reason = work.reason })
+    end
     return state.requestId ~= nil or pending, work
 end
 
@@ -331,6 +339,7 @@ end
 function M.draw(vg)
     if not state.open then return end
     local busy, work = sweepWork()
+    if not state.open then return end
     local limit = maxCount()
     if not busy then
         local count = math.max(1, math.min(state.count, math.max(1, limit)))
@@ -428,6 +437,7 @@ end
 function M.handleInput(x, y)
     if not state.open then return false end
     if sweepWork() then state.sliderDragging = false; return true end
+    if not state.open then return true end
     x, y = designPoint(x, y)
     if inside(x, y, D.x + 870, D.y + 57.5, 70, 65) then M.close(); return true end
     state.count = math.max(1, math.min(state.count, math.max(1, maxCount())))
@@ -452,7 +462,9 @@ function M.handleInput(x, y)
             requestSequence = requestSequence + 1
             local requestId = "sweep-ui:" .. tostring(requestSequence)
             state.requestId, state.failure, state.sliderDragging = requestId, "", false
-            BF.trigger("sweep_dlg_confirm")
+            -- 点击反馈失败不能截断业务发送，留下没有 worker 的等待身份。
+            local feedbackOk, feedbackErr = pcall(BF.trigger, "sweep_dlg_confirm")
+            if not feedbackOk then print("[SweepDialog] 点击反馈异常: " .. tostring(feedbackErr)) end
             local ok, accepted = pcall(function()
                 if not M.onSweep then return false end
                 return M.onSweep(state.count, state.teamIdx, state.stageId, requestId)
@@ -472,6 +484,7 @@ end
 function M.handleDragBegin(x, y)
     if not state.open then return false end
     if sweepWork() then state.sliderDragging = false; return true end
+    if not state.open then return true end
     x, y = designPoint(x, y)
     if maxCount() > 1 and inside(x, y, 540, D.stepY, 436, 56) then
         state.sliderDragging = true; sliderCount(x)

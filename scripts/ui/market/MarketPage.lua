@@ -130,14 +130,6 @@ local SHOP_ITEMS = {
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
-        id = 16, name = "金币", quality = 1, rewardCount = 6000,
-        desc = "通用货币，用于装备强化和升阶。",
-        restockType = "permanent", limitCount = -1,
-        currency = "diamond", price = 94,
-        icon = "image/货币道具/UI_icon_JB_X.png",
-        costIcon = "image/货币道具/UI_icon_SJ_X.png",
-    },
-    {
         id = 17, name = "精粹", quality = 2, rewardCount = 600,
         desc = "用于装备洗练。",
         restockType = "permanent", limitCount = -1,

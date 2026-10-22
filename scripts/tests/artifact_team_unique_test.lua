@@ -1,5 +1,5 @@
 -- Tap神器全队唯一/请求身份回归适配：真实生产装配链，所有夹具只在内存中。
--- 不启动main、不加载/读写存档；绘图spy只定位GitHub当前布局和锚定详情按钮。
+-- 不启动main、不加载/读写存档；绘图spy只定位当前槽位、拖动来源和只读详情。
 local TAG = "[artifact_team_unique_test]"
 local assertions, cases = 0, 0
 local function check(value, label)
@@ -481,7 +481,7 @@ function Start()
             paint.slots, paint.icons, paint.buttons, paint.texts, paint.panels = {}, {}, {}, {}, {}
             Panel.drawContent({})
         end
-        local function clickSlot(team, slot, sub)
+        local function tapSlot(team, slot, sub)
             draw()
             local cell = paint.slots[((team - 1) * Schema.SLOT_COUNT + slot - 1) * Schema.SUB_SLOT_COUNT + sub]
             check(cell ~= nil, "使用当前公开绘制定位槽位")
@@ -495,14 +495,7 @@ function Start()
             check(panel ~= nil, "已装详情公开绘制存在")
             return panel.x + (xOffset or 265), panel.y + 797
         end
-        local function equipBagDetail()
-            paint.buttons, paint.texts = {}, {}
-            Detail.draw({})
-            eq(#paint.buttons, 2, "背包详情保留安装和洗练按钮")
-            local button = paint.buttons[1]
-            check(button ~= nil, "背包详情绘制安装按钮")
-            Panel.handleTabInput(button.x, button.y)
-        end
+        local selectedArtifactId = ""
         local function selectBag(id)
             draw()
             local point = {}
@@ -513,7 +506,38 @@ function Start()
             check(point.x ~= nil, "公开绘制中找到未装实例" .. id)
             Panel.handleTabInput(point.x, point.y)
             eq(Detail.getSelection().artifactId, tostring(id), "GitHub锚定详情保持实例身份")
-            equipBagDetail()
+            paint.buttons, paint.texts, paint.panels = {}, {}, {}
+            Detail.draw({})
+            eq(#paint.buttons, 0, "背包详情不再绘制安装和洗练按钮")
+            local panel = paint.panels[1]
+            check(panel ~= nil, "背包只读详情公开绘制存在")
+            local count = #requests
+            for _, xOffset in ipairs({ 133, 397 }) do
+                Panel.handleTabInput(panel.x + xOffset, panel.y + 797)
+                eq(#requests, count, "背包旧操作区不发送安装/洗练")
+                eq(Detail.isPinned(), true, "背包旧操作区只保留钉住详情")
+            end
+            selectedArtifactId = tostring(id) -- 测试手势来源，不写生产pending。
+        end
+        local function dragSelectedToSlot(team, slot, sub)
+            draw()
+            local point = {}
+            for _, icon in ipairs(paint.icons) do
+                if icon.id == selectedArtifactId and icon.size == 160 then point = icon break end
+            end
+            check(point.x ~= nil, "公开绘制中找到当前拖动来源" .. selectedArtifactId)
+            local cell = paint.slots[((team - 1) * Schema.SLOT_COUNT + slot - 1) * Schema.SUB_SLOT_COUNT + sub]
+            check(cell ~= nil, "公开绘制定位拖放目标槽位")
+            Panel.handleDragBegin(point.x, point.y)
+            Panel.handleDragMove(point.x + 15, point.y)
+            if Panel.isItemDragging() then
+                Panel.handleDragMove(cell.x, cell.y)
+                eq(Panel.handleDragEnd(cell.x, cell.y), true, "来源拖到目标按真实装配手势处理")
+            else
+                -- 请求pending时只会建立滚动手势；水平试拖不改变后续来源坐标。
+                Panel.handleDragEnd(point.x + 15, point.y)
+            end
+            Panel.cancelPointer()
         end
         local function reset()
             Panel.reset()
@@ -535,16 +559,16 @@ function Start()
         end
         run("第二队生产同步安装成功立即解锁", function()
             reset()
-            selectBag("1") clickSlot(1, 1, 1)
+            selectBag("1") dragSelectedToSlot(1, 1, 1)
             eq(Schema.getEquippedId(data(), 1, 1, 1), "1", "首件生产落地")
             eq(receipts[1].success, true, "真实生产成功回执")
             check(churchState.floatText ~= "正在安装神器", "同步send返回不覆盖成功提示")
-            selectBag("2") clickSlot(2, 1, 1)
+            selectBag("2") dragSelectedToSlot(2, 1, 1)
             eq(#requests, 2, "首件同步成功后第二件可发")
             eq(Schema.getEquippedId(data(), 1, 1, 2), "2", "第二队生产安装落地")
             eq(countRefs(data(), "1"), 1, "首件全队唯一")
             eq(countRefs(data(), "2"), 1, "第二件全队唯一")
-            selectBag("3") clickSlot(2, 2, 1)
+            selectBag("3") dragSelectedToSlot(2, 2, 1)
             eq(#requests, 3, "第二队成功之后继续解锁")
         end)
         run("失败回执及发送false/抛错后重试", function()
@@ -556,14 +580,14 @@ function Start()
                     elseif mode == "legacy_receipt" then deliver({}, false) return true
                     elseif mode == "send_false" then return false else error("fixture send error") end
                 end
-                clickSlot(2, 1, 1)
+                dragSelectedToSlot(2, 1, 1)
                 eq(Schema.getEquippedId(data(), 1, 1, 2), nil, mode .. "失败不写目标")
                 if mode == "service_reject" then
                     eq(receipts[1].success, false, "真实Handler等级失败")
                     eq(receipts[1].requestId, requests[1].requestId, "生产失败保请求身份")
                 end
                 uiLevel = 60 Dispatcher.set("player", { level = 60 }) sender = Action.sendAction
-                clickSlot(2, 1, 1)
+                dragSelectedToSlot(2, 1, 1)
                 eq(#requests, 2, mode .. "立即重试")
                 eq(Schema.getEquippedId(data(), 1, 1, 2), "1", mode .. "重试生产落地")
             end
@@ -572,7 +596,7 @@ function Start()
             for _, closed in ipairs({ false, true }) do
                 for _, success in ipairs({ false, true }) do
                     reset() selectBag("1") sender = function() return true end
-                    clickSlot(2, 1, 1) clickSlot(2, 1, 1)
+                    dragSelectedToSlot(2, 1, 1) dragSelectedToSlot(2, 1, 1)
                     eq(#requests, 1, "等待回执禁止重发")
                     churchState.open = not closed
                     local before = churchState.floatText
@@ -582,7 +606,7 @@ function Start()
                     if closed then eq(churchState.floatText, before, "闭页收尾不覆盖提示") end
                     churchState.open, sender = true, Action.sendAction
                     if success then selectBag("2") end
-                    clickSlot(2, 2, 1)
+                    dragSelectedToSlot(2, 2, 1)
                     eq(#requests, 2, "回执释放后可发")
                     eq(Schema.getEquippedId(data(), 2, 1, 2), success and "2" or "1", "收尾后真实落地")
                 end
@@ -590,47 +614,47 @@ function Start()
         end)
         run("超时同目标重试不接受迟到成功失败回执", function()
             reset() selectBag("1") sender = function() return true end
-            clickSlot(2, 1, 1)
+            dragSelectedToSlot(2, 1, 1)
             check(type(PlayerStore.Update) == "function", "PlayerStore.Update由主循环驱动等待")
-            advance(6) clickSlot(2, 1, 1)
+            advance(6) dragSelectedToSlot(2, 1, 1)
             eq(#requests, 2, "超时允许同目标重试")
             check(requests[1].requestId ~= requests[2].requestId, "同目标请求身份不同")
             for _, success in ipairs({ true, false }) do
                 local before = churchState.floatText
                 deliver(requests[1], success)
                 eq(churchState.floatText, before, "迟到回执不盖新提示")
-                clickSlot(2, 1, 1)
+                dragSelectedToSlot(2, 1, 1)
                 eq(#requests, 2, "迟到回执不解锁新请求")
             end
-            deliver(requests[2], false) sender = Action.sendAction clickSlot(2, 1, 1)
+            deliver(requests[2], false) sender = Action.sendAction dragSelectedToSlot(2, 1, 1)
             eq(#requests, 3, "当前失败正确释放")
             eq(Schema.getEquippedId(data(), 1, 1, 2), "1", "当前失败后生产落地")
         end)
         run("旧timer取消/reset后身份不复用", function()
             reset() selectBag("1") sender = function() return true end
-            clickSlot(2, 1, 1) advance(4) deliver(requests[1], false)
-            clickSlot(2, 1, 1) advance(2) clickSlot(2, 1, 1)
+            dragSelectedToSlot(2, 1, 1) advance(4) deliver(requests[1], false)
+            dragSelectedToSlot(2, 1, 1) advance(2) dragSelectedToSlot(2, 1, 1)
             eq(#requests, 2, "取消旧timer不提前清新pending")
             local old = copy(requests[1])
             Panel.reset()
             local before = churchState.floatText
             deliver(old, true)
             eq(churchState.floatText, before, "reset后旧回执不展示")
-            selectBag("1") clickSlot(2, 1, 1)
+            selectBag("1") dragSelectedToSlot(2, 1, 1)
             eq(#requests, 3, "reset后新请求可发")
             check(requests[3].requestId ~= old.requestId, "reset不复用请求身份")
-            deliver(old, false) clickSlot(2, 1, 1)
+            deliver(old, false) dragSelectedToSlot(2, 1, 1)
             eq(#requests, 3, "reset前旧回执不影响新请求")
         end)
         run("GitHub钉住详情实时占用与已装详情只读", function()
             reset() selectBag("1")
             Schema.setEquippedId(data(), 1, 1, "1", 1)
-            clickSlot(2, 1, 1)
+            dragSelectedToSlot(2, 1, 1)
             eq(#requests, 1, "实时来源已装后仍可直接跨队移动")
             check(not churchState.floatText:find("先卸下", 1, true), "UI不再要求先卸下")
             eq(Schema.getEquippedId(data(), 1, 1, 1), nil, "跨队移动清原位")
             eq(Schema.getEquippedId(data(), 1, 1, 2), "1", "实时来源移动目标落地")
-            Panel.reset() clickSlot(2, 1, 1)
+            Panel.reset() tapSlot(2, 1, 1)
             eq(Detail.isPinned(), true, "保留GitHub点击钉住详情")
             paint.texts = {} Detail.draw({})
             local positionText = table.concat(paint.texts, "|")
@@ -642,7 +666,7 @@ function Start()
                 eq(#requests, 1, "已装详情旧操作区不派取下/洗练")
             end
             local slotX, slotY = slotDetailPoint(397)
-            Schema.setEquippedId(data(), 1, 1, "1", 2) clickSlot(2, 1, 1)
+            Schema.setEquippedId(data(), 1, 1, "1", 2) tapSlot(2, 1, 1)
             Schema.setEquippedId(data(), 1, 1, "2", 2)
             paint.texts = {} Detail.draw({})
             check(table.concat(paint.texts, "|"):find("位置已变", 1, true), "旧详情实时禁用")

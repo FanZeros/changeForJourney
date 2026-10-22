@@ -51,19 +51,20 @@ function Start()
 
         -- 绘图 spy 记录真实 drawIcon 实例及最终坐标；仿射变换仅用于观测公共绘制输出。
         -- 不读 Panel/Details 的闭包、upvalue、debug 接口。
-        local paint = { icons = {}, texts = {}, panels = {}, outlines = {}, colors = {}, stack = {},
-            sx = 1, sy = 1, tx = 0, ty = 0, stroke = {} }
+        local paint = { icons = {}, texts = {}, panels = {}, buttons = {}, feedback = {}, triggers = {},
+            outlines = {}, colors = {}, stack = {}, sx = 1, sy = 1, tx = 0, ty = 0, stroke = {} }
         local function noop() end
         local function screen(x, y)
             return paint.tx + x * paint.sx, paint.ty + y * paint.sy
         end
         local function clearPaint()
             paint.icons, paint.texts, paint.panels, paint.outlines, paint.colors, paint.stack = {}, {}, {}, {}, {}, {}
+            paint.buttons, paint.feedback, paint.triggers = {}, {}, {}
             paint.sx, paint.sy, paint.tx, paint.ty = 1, 1, 0, 0
         end
         for _, name in ipairs({ "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgFillColor",
             "nvgBeginPath", "nvgRect", "nvgFill", "nvgCircle", "nvgStrokeWidth", "nvgStroke",
-            "nvgIntersectScissor", "nvgGlobalAlpha", "nvgFillPaint" }) do
+            "nvgIntersectScissor", "nvgGlobalAlpha", "nvgFillPaint", "nvgTextLetterSpacing" }) do
             replace(_G, name, noop)
         end
         replace(_G, "nvgCreateImage", function() return -1 end)
@@ -101,13 +102,18 @@ function Start()
             local sx, sy = screen(x, y)
             if kind == "panel" then
                 paint.panels[#paint.panels + 1] = { x = sx, y = sy, w = w * paint.sx, h = h * paint.sy }
+            elseif kind == "btn" then
+                paint.buttons[#paint.buttons + 1] = { x = sx, y = sy, w = w, h = h }
             end
         end)
         replace(Dark, "drawQualityBg", noop)
         replace(Dark, "drawIconDark", noop)
-        replace(BF, "begin", function() return false end)
+        replace(BF, "begin", function(_, id)
+            paint.feedback[#paint.feedback + 1] = id
+            return false
+        end)
         replace(BF, "finish", noop)
-        replace(BF, "trigger", noop)
+        replace(BF, "trigger", function(id) paint.triggers[#paint.triggers + 1] = id end)
         local realDrawIcon = Asset.drawIcon
         replace(Asset, "drawIcon", function(vg, artifact, cx, cy, size, opts)
             if artifact then
@@ -169,11 +175,27 @@ function Start()
             end }
         end
         Panel.setContext(context)
+        local detailEquipCalls, detailRefineCalls = 0, 0
+        local setOnEquip, setOnRefine = Details.setOnEquip, Details.setOnRefine
+        replace(Details, "setOnEquip", function(fn)
+            setOnEquip(fn and function(...)
+                detailEquipCalls = detailEquipCalls + 1
+                return fn(...)
+            end)
+        end)
+        replace(Details, "setOnRefine", function(fn)
+            setOnRefine(fn and function(...)
+                detailRefineCalls = detailRefineCalls + 1
+                return fn(...)
+            end)
+        end)
         Panel.init(vg)
         Details.setOnClose(function() closeCalls = closeCalls + 1 end)
         cleanups[#cleanups + 1] = function()
             Panel.reset()
             Details.setOnClose(nil)
+            Details.setOnEquip(nil)
+            Details.setOnRefine(nil)
             Panel.setContext(nil)
             PDM.RemovePlayer(uid, true)
             PDM.Setup({})
@@ -225,9 +247,10 @@ function Start()
             eq(#paint.panels, 1, "真实详情只绘制一个面板")
             return paint.panels[1]
         end
-        local function detailButton(kind)
+        -- 已删除按钮的历史中心位置，只用于反证旧热区失效；不从当前按钮绘制推导。
+        local function legacyActionPoint(kind)
             local rect = detailRect()
-            local actionX = { equip = 133, ["slot-action"] = 265, refine = 397 }
+            local actionX = { equip = 133, refine = 397 }
             return rect.x + actionX[kind], rect.y + 797
         end
         local function reset(level, progress, count)
@@ -236,6 +259,7 @@ function Start()
             sent, results, held = {}, {}, {}
             bridge.rejectNext, bridge.throwNext, bridge.holdAck = false, false, false
             pushes, equipCalls, unequipCalls, closeCalls = 0, 0, 0, 0
+            detailEquipCalls, detailRefineCalls = 0, 0
             context.state = {}
             Dispatcher.clearModuleData()
             Store.ClearCache()
@@ -691,31 +715,100 @@ function Start()
             invariantNoConsume("详情本体点击")
         end)
 
-        run("真实详情按钮精确来源和点击安装失败连续重试", function()
+        run("背包槽位悬停钉住模态详情全只读", function()
+            for _, location in ipairs({ "bag", "slot" }) do
+                for _, mode in ipairs({ "hover", "pinned", "modal" }) do
+                    for _, ratio in ipairs({ 4321, 10000 }) do
+                        reset()
+                        if location == "slot" then bagDrag("108", 3, 4, 2) end
+                        local a = artifact("108") -- 真实双数值定义，兼顾未满值和满值详情。
+                        a.valueRatio, a.threatClearRatio = ratio, ratio
+                        Defs.normalizeInstanceValue(a)
+                        local opts = { hover = mode == "hover", anchor = { x = 844, y = 1154, w = 160, h = 160 } }
+                        if mode == "modal" then opts = nil end
+                        Details.show(a, location, location == "slot" and 4 or nil,
+                            location == "slot" and 2 or nil, location == "slot" and 3 or nil, opts)
+                        clock.elapsedTime = clock.elapsedTime + 1
+                        Details.update(1)
+                        eq(Details.isPinned(), mode ~= "hover", "详情初始悬停/钉住模式准确")
+                        local rect = detailRect()
+                        eq(rect.w, 530, "只读详情保留原宽度")
+                        eq(rect.h, 894, "只读详情保留原高度")
+                        local text = {}
+                        for _, call in ipairs(paint.texts) do text[#text + 1] = tostring(call.text) end
+                        local allText = table.concat(text)
+                        for _, forbidden in ipairs({ "安装", "取下", "洗练数值", "已满值", "特权点", "数值已达到上限" }) do
+                            check(not allText:find(forbidden, 1, true), "详情不绘制操作/成本 " .. forbidden)
+                        end
+                        check(allText:find(Defs.getName(a), 1, true), "只读详情保留神器名称")
+                        check(allText:find(Defs.getQualityName(a.quality), 1, true), "只读详情保留品质")
+                        check(allText:find("神器效果", 1, true), "只读详情保留效果标题")
+                        local ratioText = "（" .. string.format("%.1f%%", ratio / 100) .. "）"
+                        local _, ratioCount = allText:gsub(ratioText:gsub("%%", "%%%%"):gsub("%.", "%%."), "")
+                        check(ratioCount >= 2, "只读详情保留主副数值比例")
+                        eq(#paint.buttons, 0, "详情不绘制任何按钮九宫格")
+                        eq(#paint.feedback, 0, "详情不登记任何按钮反馈热区")
+                        if location == "slot" then
+                            check(allText:find("队伍3", 1, true), "已装详情保留准确队伍")
+                            check(allText:find("后卫", 1, true), "已装详情保留准确号位")
+                            check(allText:find("第2格", 1, true), "已装详情保留准确子格")
+                        end
+                        local before, currency, count = cjson.encode(data()), cjson.encode(Store.Get("currency")), #sent
+                        local equips, unequips, pushed = equipCalls, unequipCalls, pushes
+                        for _, kind in ipairs({ "equip", "refine" }) do
+                            local px, py = legacyActionPoint(kind)
+                            eq(Details.containsPoint(px, py), true, "旧操作中心仍位于详情本体")
+                            eq(Panel.handleTabInput(px, py), true, "旧操作区域仅由只读本体消费")
+                            eq(Details.isPinned(), true, "旧操作区域点击只能钉住详情")
+                            eq(Details.getSelection().artifactId, "108", "旧操作区域点击保留选择")
+                            eq(Details.getSelection().location, location, "旧操作区域点击保留来源")
+                            eq(#paint.triggers, 0, "旧操作区域不触发按钮反馈")
+                            eq(detailEquipCalls, 0, "旧安装热区不调用兼容onEquip")
+                            eq(detailRefineCalls, 0, "旧洗练热区不调用兼容onRefine")
+                            eq(#sent, count, "旧操作区域不发送业务动作")
+                            eq(equipCalls, equips, "旧操作区域不调用Equip服务")
+                            eq(unequipCalls, unequips, "旧操作区域不调用Unequip服务")
+                            eq(pushes, pushed, "旧操作区域不产生数据推送")
+                            eq(cjson.encode(data()), before, "旧操作区域不修改神器数据")
+                            eq(cjson.encode(Store.Get("currency")), currency, "旧操作区域不消耗任何货币")
+                        end
+                        invariantNoConsume("全模式只读详情")
+                    end
+                end
+            end
+        end)
+
+        run("旧详情热区不登记待装且拖放失败可连续重试", function()
             reset()
             local x, y = bagPoint("112")
             Panel.handleTabInput(x, y)
             eq(Details.isPinned(), true, "背包点击打开pin详情")
-            local ex, ey = detailButton("equip")
-            eq(Panel.handleTabInput(ex, ey), true, "详情安装按钮真实命中")
-            eq(#sent, 0, "按钮先选目标不提前装配")
-            eq(Details.isVisible(), false, "选择安装后详情关闭")
-            bridge.rejectNext = true
+            for _, kind in ipairs({ "equip", "refine" }) do
+                local ex, ey = legacyActionPoint(kind)
+                eq(Panel.handleTabInput(ex, ey), true, "旧详情操作区域只读消费")
+                eq(#sent, 0, "旧详情操作区域不派动作")
+                eq(Details.isVisible(), true, "旧详情操作区域不关闭详情等待装配")
+            end
             local tx, ty = slotPoint(1, 3, 1)
             Panel.handleTabInput(tx, ty)
-            eq(#sent, 1, "点击目标发真实安装")
-            eq(results[1].success, false, "点击安装真实服务同步失败")
+            eq(#sent, 0, "旧安装区域点击后再点槽位也不装配")
+            eq(equipped(1, 3, 1), nil, "旧热区不会登记隐含待装实例")
+            bridge.rejectNext = true
+            bagDrag("112", 1, 3, 1)
+            eq(#sent, 1, "拖放目标发真实安装")
+            eq(results[1].success, false, "拖放安装真实服务同步失败")
+            eq(equipped(1, 3, 1), nil, "拖放失败不修改目标")
+            bagDrag("112", 1, 3, 1)
+            eq(#sent, 2, "失败后直接重新拖放可重试")
+            eq(results[2].success, true, "拖放重试真实成功")
             Panel.handleTabInput(tx, ty)
-            eq(#sent, 2, "失败仍保留候选再次目标点击可重试")
-            eq(results[2].success, true, "点击重试真实成功")
-            Panel.handleTabInput(tx, ty)
-            eq(Details.getSelection().artifactId, "112", "成功清pending后点击已装打开详情")
+            eq(Details.getSelection().artifactId, "112", "成功后点击已装打开详情")
             eq(Details.getSelection().location, "slot", "详情装配来源")
             eq(Details.getSelection().teamIdx, 1, "详情装配队伍")
             eq(Details.getSelection().slot, 3, "详情装配号位")
             eq(Details.getSelection().subSlot, 1, "详情装配子格")
             for _, kind in ipairs({ "equip", "refine" }) do
-                ex, ey = detailButton(kind)
+                local ex, ey = legacyActionPoint(kind)
                 eq(Panel.handleTabInput(ex, ey), true, "已装详情旧操作区域点击被消费")
                 eq(#sent, 2, "已装详情点击不新增业务动作")
                 eq(actionCount(Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP), 0, "已装详情不派取下动作")
@@ -723,15 +816,17 @@ function Start()
                 eq(Details.isPinned(), true, "只读点击保持详情pin")
                 eq(Details.getSelection().slot, 3, "只读详情保留准确号位")
             end
-            invariantNoConsume("点击安装重试与已装详情只读")
+            eq(detailEquipCalls, 0, "拖放装配不经过详情onEquip")
+            eq(detailRefineCalls, 0, "只读详情不触发onRefine")
+            invariantNoConsume("旧热区失效与拖放重试")
         end)
 
         run("拖动经过洗练安装按钮及原格不执行点击", function()
             reset()
             local x, y = bagPoint("112")
             hoverAt(x, y)
-            local ex, ey = detailButton("equip")
-            local rx, ry = detailButton("refine")
+            local ex, ey = legacyActionPoint("equip")
+            local rx, ry = legacyActionPoint("refine")
             eq(Panel.handleDragBegin(x, y), true, "悬停来源原格仍可拖动")
             eq(Details.isVisible(), false, "来源开始拖动关闭详情")
             Panel.handleDragMove(rx, ry)

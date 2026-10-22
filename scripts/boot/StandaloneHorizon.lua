@@ -331,7 +331,7 @@ local function HorizonDrawPageModal(_unused_vg)
     nvgRestore(vg())
 end
 
---- [LetterIntro] 开场链全窗口覆盖：信件与情景都用逻辑分辨率横屏绘制；旧过场用 cover 裁切避免竖条
+--- 开场链全窗口覆盖：信件、情景与终焉过场都使用逻辑窗口尺寸。
 local function HorizonDrawIntroOverlay()
     if not (LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()) then
         return
@@ -346,11 +346,7 @@ local function HorizonDrawIntroOverlay()
     elseif ScenarioDialogue.isActive() then
         ScenarioDialogue.draw(logicalW(), logicalH())
     elseif IntroCutscene.isActive() then
-        local lw, lh = logicalW(), logicalH()
-        local ss = math.max(lw / 1080, lh / 2400)
-        nvgTranslate(vg(), (lw - 1080 * ss) * 0.5, (lh - 2400 * ss) * 0.5)
-        nvgScale(vg(), ss, ss)
-        IntroCutscene.draw(vg())
+        IntroCutscene.draw(vg(), logicalW(), logicalH())
     end
     nvgRestore(vg())
 end

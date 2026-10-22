@@ -11,6 +11,7 @@ local Transaction = require("rules.dungeon.DungeonService")
 
 local SweepService = { SWEEP_COST = Rewards.COST }
 local GUARDED_MODULES = { "currency", "battle", "heroes", "player", "equipment", "dungeon", "lootbox", "artifacts", "talents" }
+local RESOURCE_SOURCES = { currency = true, battle = true, heroes = true, player = true, dungeon = true }
 -- token不暴露候选装备/快照；任何提交尝试都消费，失败不能重放带已分配seq的候选。
 local prepared = setmetatable({}, { __mode = "k" }) ---@type table<table, table>
 
@@ -127,6 +128,7 @@ function SweepService.PrepareSweep(uid, args, control)
     if not ids then return nil, teamErr end
     local entry, stageErr = Rewards.resolveStage(battle, sources.dungeon, team, args.stageId)
     if not entry then return nil, stageErr end
+    local resourceOnly = entry.resourceDungeonId == "gold_mine" or entry.resourceDungeonId == "black_diamond"
     local cost, owned = times * Rewards.COST, tonumber(currency.sweepTicket) or 0
     if owned ~= owned or owned == math.huge or owned < cost then return nil, "扫荡券不足" end
     local ready, readyErr = Transaction.CanCommitRewardTransaction(uid)
@@ -135,10 +137,17 @@ function SweepService.PrepareSweep(uid, args, control)
     local called, candidate, err = pcall(function()
         local records, byTable, counter = {}, {}, { value = 0 }
         if checkpoint then checkpoint("prepare", 0, 0) end
-        for _, name in ipairs(GUARDED_MODULES) do capture(sources[name], records, byTable, checkpoint, counter) end
-        -- 只复制幸运/分解需要的四模块，不把整个已有遗匣再深拷贝一遍。
+        -- 纯货币副本不读取装备/遗匣内容，也不受幸运或自动分解影响。
+        -- 全部根引用仍校验；深层值只冻结本次结算实际读取/修改的模块。
+        for _, name in ipairs(GUARDED_MODULES) do
+            if not resourceOnly or RESOURCE_SOURCES[name] then
+                capture(sources[name], records, byTable, checkpoint, counter)
+            end
+        end
+        -- 主线/装备副本仍复制幸运与分解上下文；纯货币只需私有编队副本。
         local copies, snapshot = {}, {}
-        for _, name in ipairs({ "heroes", "equipment", "artifacts", "talents" }) do
+        local copiedModules = resourceOnly and { "heroes" } or { "heroes", "equipment", "artifacts", "talents" }
+        for _, name in ipairs(copiedModules) do
             snapshot[name] = copyCaptured(sources[name], byTable, copies, checkpoint, counter)
         end
         local data = { uid = uid, control = control, sources = sources, records = records,
@@ -157,7 +166,7 @@ function SweepService.PrepareSweep(uid, args, control)
         for index, id in ipairs(ids) do
             if capturedIds[index] ~= id then return nil, "sweep_stale" end
         end
-        local luck = getLuck(ids, snapshot.heroes, snapshot.equipment, snapshot.artifacts, snapshot.talents)
+        local luck = resourceOnly and 0 or getLuck(ids, snapshot.heroes, snapshot.equipment, snapshot.artifacts, snapshot.talents)
         data.rewards = Rewards.calculate(entry, #ids, times, true, luck, team,
             control and { checkpoint = checkpoint, summaryLogs = control.summaryLogs } or nil)
         local equips = data.rewards.equips
@@ -171,7 +180,8 @@ function SweepService.PrepareSweep(uid, args, control)
             end
             if checkpoint then checkpoint("classify", index, #equips) end
         end
-        if EquipmentSystem.getInventoryCount(snapshot.equipment) + #data.keptEquips > EquipmentSystem.MAX_INVENTORY
+        if #data.keptEquips > 0
+            and EquipmentSystem.getInventoryCount(snapshot.equipment) + #data.keptEquips > EquipmentSystem.MAX_INVENTORY
             and not sources.lootbox then return nil, "遗匣数据未加载" end
         local valid, checkErr = checkControl(control)
         if not valid then return nil, checkErr end
@@ -209,7 +219,8 @@ function SweepService.CommitSweep(uid, token, control)
         Transaction.MarkRewardDirty(uid, "currency")
         local granted, byQuality = {}, {}
         local inventoryCount, lootboxCount = 0, 0
-        local delivery = LootBoxSystem.createDeliveryContext(equipment, { summaryLogs = control and control.summaryLogs })
+        local delivery = #keptEquips > 0
+            and LootBoxSystem.createDeliveryContext(equipment, { summaryLogs = control and control.summaryLogs }) or nil
         for _, equip in ipairs(keptEquips) do
             local destination = LootBoxSystem.deliverEquipment(lootbox, equipment, equip, delivery)
             if destination == "lootbox" then lootboxCount = lootboxCount + 1

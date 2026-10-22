@@ -11,6 +11,7 @@ local EquipmentSystem   = require("systems.EquipmentSystem")
 local LootBoxSystem     = require("systems.LootBoxSystem")
 local BlacksmithConfig  = require("config.BlacksmithConfig")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
+local StandaloneSave    = require("boot.StandaloneSave")
 local TopBar            = require("ui.hud.TopBar")
 local BattleStats       = require("systems.BattleStats")
 local BottomNav         = require("ui.hud.BottomNav")
@@ -143,7 +144,10 @@ function M.run(rt)
 
     -- 5.1 阵容变更回调：角色面板出战变动 → 同步战斗画面 → 重载关卡 → 更新 TopBar 战力
     -- [三队并行] 回调携带 teamIdx：队1 同步战斗画面；队2/3 编队先本地生效（并行战斗 Phase 3 接入）
-    CharacterPanel.setOnTeamChanged(function(teamIdx, otherTeamIdx)
+    ---@param teamIdx number
+    ---@param otherTeamIdx number?
+    ---@return boolean
+    local function onTeamChanged(teamIdx, otherTeamIdx)
         teamIdx = tonumber(teamIdx) or 1
         -- [累计统计] 队伍编成变更 → 自动重置该队累计统计（含跨队拖拽的另一队）
         BattleStats.resetAccumForTeam(teamIdx)
@@ -182,7 +186,8 @@ function M.run(rt)
             print("[Standalone] 阵容变更，当前无出战英雄")
         end
         return true
-    end, true)
+    end
+    CharacterPanel.setOnTeamChanged(onTeamChanged, true)
 
     -- 养成刷新由 CharacterPanel 冻结差异检测唯一负责；此回调只保留归属诊断。
     -- 不再次失效编队/刷新默认 Scene，避免同一次成长重复重开战斗。
@@ -376,8 +381,8 @@ function M.run(rt)
         LootBox.updateSeedData(data)
         print("[Standalone] lootbox data updated, seedCount=" .. LootBoxSystem.getTotalCount(data))
     end)
-    -- 存档恢复早于订阅注册，首次打开也必须能看到已保存的遗匣。
-    LootBox.updateSeedData(ClientDispatcher.get("lootbox"))
+    -- 存档恢复早于订阅注册；恢复遗匣并静默建立通知基线，不重弹历史收益。
+    LootBox.updateSeedData(ClientDispatcher.get("lootbox"), { resetNotice = true })
 
     -- 主线挂机与资源关的装备共用遗匣/自动分解路径，入匣时确定装备内容。
     local function addKillEquipment(stageId, quality, level)

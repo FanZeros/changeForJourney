@@ -282,6 +282,23 @@ function DropSystem.rollKillDrop(stageEntry, context)
     return quality
 end
 
+--- 请求级命中后品质抽样：批量扫荡只跳过空击杀，不改怪物池/幸运/难度/至臻规则。
+--- 返回的概率只用于独立击杀计数，闭包仍按真实掉落顺序逐件骰品质。
+---@param stageEntry StageEntry
+---@param context table|nil
+---@return number, function
+function DropSystem.createKillDropContext(stageEntry, context)
+    local luck = getDropLuck(stageEntry, context)
+    local rate = math.max(0, math.min(1, stageEntry.dropRate or 0))
+    if luck > 0 then rate = math.min(1, math.max(0, stageEntry.dropRate or 0) * (1 + luck / 100)) end
+    local difficulty = StageConfig.getDifficulty(stageEntry.id)
+    local maxQ = StageConfig.getMaxDropQuality(stageEntry)
+    local raw = DropSystem.getStageQualityProbabilities(stageEntry, luck, true)
+    return rate, function()
+        return DropSystem.rollQualityByMonster(pickMonsterQuality(stageEntry), difficulty, luck, maxQ, raw[6])
+    end
+end
+
 --- 为一次击杀掉落生成装备实例
 ---@param stageEntry StageEntry
 ---@param context table|nil 主线小队幸运快照

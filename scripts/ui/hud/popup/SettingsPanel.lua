@@ -7,6 +7,7 @@
 local cjson = cjson
 local DrawUtil = require("core.DrawUtil")
 local RedeemCodePanel = require("ui.hud.popup.RedeemCodePanel")
+local PerformancePanel = require("ui.dev.PerformancePanel")
 local GameBGM = require("systems.GameBGM")
 local I18n = require("core.I18n")
 
@@ -105,16 +106,14 @@ local TOGGLE = {
     TEXT_FONT = 28,
 }
 
--- 9. 兑换码按钮
+-- 9. 兑换码 / 性能诊断共用原来一行，不增加面板高度。
 local CODE_BTN = {
-    CX = 540, CY = 1660, W = 410, H = 100,
+    CX = 340, CY = 1660, W = 350, H = 100,
 }
+local PERFORMANCE_BTN = { CX = 740, W = 350, H = 100 }
 
--- 10. 兑换码文本
-local CODE_TXT = {
-    X = 540, Y = 1660, FONT = 40,
-    A = 179,  -- 纯黑 70%
-}
+-- 10. 入口文本
+local CODE_TXT = { FONT = 40 }
 
 local LANG_CHIP_W, LANG_CHIP_H, LANG_CHIP_GAP = 150, 44, 10
 local LANG_ROW_GAP = 10
@@ -266,6 +265,8 @@ end
 --- 初始化（加载图片资源，仅调用一次）
 function SettingsPanel.init(vg)
     RedeemCodePanel.init(vg)
+    -- 共享 UI 上下文必须在初始化/用户事件创建，不能首度在 render 中改变顺序。
+    PerformancePanel.init()
 
     -- 加载本地保存的设置并应用（含静音标志）
     loadSettings()
@@ -473,6 +474,9 @@ end
 function SettingsPanel.handleInput(dx, dy)
     if not state.open or state.closing then return true end
 
+    -- 性能诊断由主循环独立绘制/转发指针；这里仅阻止旧式点击穿透。
+    if PerformancePanel.isOpen() then return true end
+
     -- RedeemCodePanel 优先拦截（最顶层）
     if RedeemCodePanel.isOpen() then
         RedeemCodePanel.handleInput(dx, dy)
@@ -543,12 +547,20 @@ function SettingsPanel.handleInput(dx, dy)
         return true
     end
 
+    if hitTest(dx, dy, PERFORMANCE_BTN.CX, REDEEM_CODE_CY, PERFORMANCE_BTN.W, PERFORMANCE_BTN.H) then
+        state.draggingSlider = nil
+        BF.trigger("set_performance")
+        PerformancePanel.open()
+        return true
+    end
+
     -- 弹窗内部消费事件
     return true
 end
 
 --- 拖拽开始
 function SettingsPanel.handleDragBegin(dx, dy)
+    if PerformancePanel.isOpen() then state.draggingSlider = nil; return true end
     if not state.open or state.closing then return false end
 
     -- 检查是否在滑块1区域
@@ -572,6 +584,7 @@ end
 
 --- 拖拽移动
 function SettingsPanel.handleDragMove(dx, dy)
+    if PerformancePanel.isOpen() then state.draggingSlider = nil; return true end
     if not state.draggingSlider then return false end
 
     if state.draggingSlider == "bgm" then
@@ -713,6 +726,25 @@ local function drawToggleItem(vg, itemCY, label, enabled, fitLabel)
 
 end
 
+-- 两个入口共用布局常量。embedded 的 oy 只用于反馈的宿主坐标，绘制沿用外层平移。
+local function drawEntryButton(vg, key, rect, caption, oy)
+    local feedback = BF.begin(vg, key, rect.CX, REDEEM_CODE_CY + (oy or 0), rect.W, rect.H)
+    DarkIcon.drawNine(vg, "btn", rect.CX - rect.W * 0.5, REDEEM_CODE_CY - rect.H * 0.5,
+        rect.W, rect.H, { accent = "gold" })
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, CODE_TXT.FONT)
+    local measured = nvgTextBounds(vg, 0, 0, caption)
+    nvgFontSize(vg, math.min(CODE_TXT.FONT, CODE_TXT.FONT * (rect.W - 32) / math.max(1, measured)))
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
+    nvgText(vg, rect.CX, REDEEM_CODE_CY, caption, nil)
+    BF.finish(vg, feedback)
+end
+local function drawEntryButtons(vg, oy)
+    drawEntryButton(vg, "set_code", CODE_BTN, I18n.t("redeem_code"), oy)
+    drawEntryButton(vg, "set_performance", PERFORMANCE_BTN, "性能诊断", oy)
+end
+
 -- ============================================================================
 -- Draw
 -- ============================================================================
@@ -780,19 +812,8 @@ function SettingsPanel.draw(vg)
     drawToggleItem(vg, SIDE_PANEL_PAUSE_CY, SIDE_PANEL_PAUSE_LABELS[I18n.get()] or SIDE_PANEL_PAUSE_LABELS.zh_CN,
         SettingsPanel.isPauseBattleOnSidePanelsEnabled(), true)
 
-    -- ── 9. 兑换码按钮（暖金，不再用绿色贴图）──
-    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, REDEEM_CODE_CY, CODE_BTN.W, CODE_BTN.H)
-    DarkIcon.drawNine(vg, "btn",
-        CODE_BTN.CX - CODE_BTN.W * 0.5, REDEEM_CODE_CY - CODE_BTN.H * 0.5,
-        CODE_BTN.W, CODE_BTN.H, { accent = "gold" })
-
-    -- ── 10. "兑换码" 文本 ──
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, CODE_TXT.FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-    nvgText(vg, CODE_TXT.X, REDEEM_CODE_CY, I18n.t("redeem_code"), nil)
-    BF.finish(vg, _bf1)
+    -- 兑换码 / 性能诊断并排，原行高度保持 100。
+    drawEntryButtons(vg, 0)
 
     nvgRestore(vg)
 
@@ -818,16 +839,7 @@ function SettingsPanel.drawEmbedded(vg, yOffset)
     drawToggleItem(vg, EQUIPMENT_POWER_CY, I18n.t("show_equipment_power"), SettingsPanel.isEquipmentPowerEnabled())
     drawToggleItem(vg, SIDE_PANEL_PAUSE_CY, SIDE_PANEL_PAUSE_LABELS[I18n.get()] or SIDE_PANEL_PAUSE_LABELS.zh_CN,
         SettingsPanel.isPauseBattleOnSidePanelsEnabled(), true)
-    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, REDEEM_CODE_CY + oy, CODE_BTN.W, CODE_BTN.H)
-    DarkIcon.drawNine(vg, "btn",
-        CODE_BTN.CX - CODE_BTN.W * 0.5, REDEEM_CODE_CY - CODE_BTN.H * 0.5,
-        CODE_BTN.W, CODE_BTN.H, { accent = "gold" })
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, CODE_TXT.FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-    nvgText(vg, CODE_TXT.X, REDEEM_CODE_CY, I18n.t("redeem_code"), nil)
-    BF.finish(vg, _bf1)
+    drawEntryButtons(vg, oy)
     nvgRestore(vg)
     RedeemCodePanel.draw(vg)
 end
@@ -838,6 +850,7 @@ end
 ---@param yOffset number|nil
 ---@return boolean consumed
 function SettingsPanel.handleEmbeddedInput(dx, dy, yOffset)
+    if PerformancePanel.isOpen() then return true end
     if RedeemCodePanel.isOpen() then
         RedeemCodePanel.handleInput(dx, dy)
         return true
@@ -882,6 +895,12 @@ function SettingsPanel.handleEmbeddedInput(dx, dy, yOffset)
         RedeemCodePanel.open()
         return true
     end
+    if hitTest(dx, ly, PERFORMANCE_BTN.CX, REDEEM_CODE_CY, PERFORMANCE_BTN.W, PERFORMANCE_BTN.H) then
+        state.draggingSlider = nil
+        BF.trigger("set_performance")
+        PerformancePanel.open()
+        return true
+    end
     return false
 end
 
@@ -890,6 +909,7 @@ end
 ---@param yOffset number|nil
 ---@return boolean
 function SettingsPanel.handleEmbeddedDragBegin(dx, dy, yOffset)
+    if PerformancePanel.isOpen() then state.draggingSlider = nil; return true end
     if RedeemCodePanel.isOpen() then return true end
     local oy = yOffset or EMBED_Y_OFFSET
     local ly = dy - oy

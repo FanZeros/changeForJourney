@@ -183,6 +183,11 @@ local function handleConfirm()
 end
 
 function KeyboardShortcuts.update()
+    local performance = require("ui.dev.PerformancePanel")
+    if performance.isOpen() then
+        if pressed(KEY_ESCAPE) then performance.close() end
+        return
+    end
     if blockedByTitle() then return end
     if ctrlDown() then return end
 

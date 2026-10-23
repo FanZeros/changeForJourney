@@ -520,6 +520,8 @@ function TutorialManager.update(dt)
     if detailEntryPress_ and not TutorialManager.isInputActive() then invalidateDetailEntryPress() end
     if not restored_ then restore() end
     if not activeGroup_ then
+        -- 恢复会话可能补回待触发组；只在恢复后确认空闲，保留真实时间与安静窗口语义。
+        if #queue_ == 0 then triggerQuiet_ = 0; return end
         local Recovery = require("ui.tutorial.TutorialPageRecovery")
         local reward = require("ui.hud.popup.RewardPopup")
         local tavern = require("ui.tavern.TavernPage")

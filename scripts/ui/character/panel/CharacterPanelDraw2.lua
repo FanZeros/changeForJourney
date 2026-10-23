@@ -432,6 +432,23 @@ function M.drawTeamAvatars(vg)
     local teams = getTeams()
     local unlockedCnt = getUnlockedTeamCount() or 1
     local activeIdx = getActiveTeamIdx and getActiveTeamIdx() or 1
+    -- 本次绘制首次观察等级时建索引；不跨帧缓存，不为锁定/未就绪/空队扫描名册。
+    local rosterLevels = {}
+    local rosterIndexed = false
+    local function observedLevel(heroId)
+        if not rosterIndexed then
+            local roster = getHeroRoster and getHeroRoster() or {}
+            for _, entry in ipairs(roster) do
+                local id = entry.heroId
+                -- 与原线性查找一致：首个同ID条目优先，不按owned过滤，缺等级默认1。
+                if id ~= nil and id == id and rosterLevels[id] == nil then
+                    rosterLevels[id] = entry.level or 1
+                end
+            end
+            rosterIndexed = true
+        end
+        return rosterLevels[heroId] or 1
+    end
     for t = 1, M.TEAM_TAB_COUNT do
         local locked = t > unlockedCnt
         local _, rowCy = avatarCenter(t, 1)
@@ -451,11 +468,7 @@ function M.drawTeamAvatars(vg)
             teamPower = teamPower + (cache[s] or 0)
         end
         if getTeamTotalPower then teamPower = getTeamTotalPower(t) end
-        Presentation.observe(t, slots, teamPower, activeIdx, function(heroId)
-            local owned = getHeroRoster and getHeroRoster() or {}
-            for _, entry in ipairs(owned) do if entry.heroId == heroId then return entry.level or 1 end end
-            return 1
-        end, isHeroesDataApplied(), locked)
+        Presentation.observe(t, slots, teamPower, activeIdx, observedLevel, isHeroesDataApplied(), locked)
         local hovered, pressed, selectedPulse, powerPulse = Presentation.getFeedback(t)
         nvgBeginPath(vg)
         nvgRoundedRect(vg, frameX, frameY, frameW, frameH, 16)

@@ -420,7 +420,7 @@ function Start()
             local f = fixture(); local m = f.monitor
             -- 私有玩家数据只是陷阱；生产模块不能访问宿主真实资料。
             f.env.player = { userId = "PRIVATE_SENTINEL", name = "PRIVATE_SENTINEL", wallet = { gold = 999 } }
-            f.loaded["ui.character.panel.CharacterPanel"] = { isOpen = function() return true end,
+            f.loaded["ui.character.panel.CharacterPanel"] = { isDetailOpen = function() return true end,
                 playerName = "PRIVATE_SENTINEL", payload = f.env.player }
             local rt = runtime(f)
             m.start(); rt.updateBefore(); f.section("主循环.Update", 4, 2); f.advance(60); rt.updateBefore(); m.mark(f.env.player)
@@ -548,18 +548,21 @@ function Start()
                 end
             end)
         end
-        for _, fault in ipairs({ "context", "beginFrame", "Panel.update" }) do
+        for _, fault in ipairs({ "context", "explicit-context", "beginFrame", "Panel.update" }) do
             run("runtime " .. fault .. " throws / original Update preserved", function()
                 for _, businessThrows in ipairs({ false, true }) do
                     local f = fixture(); local rt = runtime(f); local m = f.monitor
                     local label = fault .. (businessThrows and "/business-error" or "/returns")
                     m.start(); m.beginFrame("城镇"); f.frame(16)
                     local getterCalls = 0
-                    if fault == "context" then
-                        f.loaded["ui.character.panel.CharacterPanel"] = { isOpen = function()
+                    if fault == "context" or fault == "explicit-context" then
+                        local getter = { isDetailOpen = function()
                             getterCalls = getterCalls + 1
                             error("injected context getter failure", 0)
                         end }
+                        if fault == "explicit-context" then
+                            f.env.require("boot.PerformanceHooks").register({ ["ui.character.panel.CharacterPanel"] = getter })
+                        else f.loaded["ui.character.panel.CharacterPanel"] = getter end
                     elseif fault == "beginFrame" then f.wallFault = true
                     else f.panelFault = true end
                     local businessError, ref = {}, {}
@@ -588,7 +591,7 @@ function Start()
                         eq(result[5], 9, label .. " value return retained")
                         eq(result[6], nil, label .. " trailing return nil")
                     end
-                    if fault == "context" then eq(getterCalls, 1, label .. " actual loaded-module getter threw") end
+                    if fault == "context" or fault == "explicit-context" then eq(getterCalls, 1, label .. " actual resolved-module getter threw") end
                     if fault == "beginFrame" then eq(f.wallReads, 3, label .. " actual frame clock threw") end
                     if fault == "Panel.update" then
                         eq(f.panelUpdates, 1, label .. " actual panel update threw")
@@ -603,7 +606,7 @@ function Start()
                     else eq(again.n, 6, label .. " later nil returns retained") end
                     eq(f.wallReads, wallReads, label .. " later Update zero wall reads")
                     eq(f.cpuReads, cpuReads, label .. " later Update zero CPU reads")
-                    if fault == "context" then eq(getterCalls, 1, label .. " stopped diagnostic never calls getter again") end
+                    if fault == "context" or fault == "explicit-context" then eq(getterCalls, 1, label .. " stopped diagnostic never calls getter again") end
                 end
             end)
         end
@@ -791,6 +794,130 @@ function Start()
             eq(calls, 1, "business called once"); eq(values.n, 3, "hook multiple returns")
             eq(values[1], "arg", "hook arg identity"); eq(values[2], nil, "hook nil preserved")
             eq(section(f.monitor.snapshot(), "主线战斗.update").calls, 1, "one timing record after repeated install")
+        end)
+        run("Hooks explicit references with empty loaded / precedence / replacement", function()
+            local f = fixture(); local hooks = f.env.require("boot.PerformanceHooks")
+            local calls = 0
+            local business = { update = function(ref) calls = calls + 1; f.advance(3, 1); return ref, nil end }
+            local name = "ui.battle.scene.BattleScene"
+            eq(f.loaded[name], nil, "realistic cache has no business module")
+            hooks.installStandalone({ BattleScene = business })
+            eq(hooks.getModule(name), business, "registered exact table reachable without loaded entry")
+            eq(f.loaded[name], nil, "registry does not fabricate package.loaded entries")
+            local wrapped = business.update
+            eq(hooks.install(), 0, "boot completion reinstall adds no duplicate wrappers")
+            eq(business.update, wrapped, "registered wrapper identity stable")
+            local fallback = { update = function() error("wrong fallback used", 0) end }
+            f.loaded[name] = fallback
+            hooks.install(); eq(hooks.getModule(name), business, "explicit reference beats shadow cache")
+            eq(business.update, wrapped, "shadow cache cannot change live wrapper")
+            local ref = {}
+            f.monitor.start(); f.monitor.beginFrame("主线战斗")
+            local result = table.pack(business.update(ref)) ---@type any
+            eq(calls, 1, "explicit business called once"); eq(result.n, 2, "trailing nil preserved")
+            eq(result[1], ref, "explicit business argument identity")
+            f.frame(60)
+            eq(section(f.monitor.snapshot(), "主线战斗.update").calls, 1, "explicit section measured")
+            business.update = function() calls = calls + 1; return "replaced" end
+            eq(hooks.install(), 1, "init-redefined export repaired by second install")
+            local repaired = business.update
+            hooks.install(); eq(business.update, repaired, "repaired export not double wrapped")
+            eq(business.update(), "replaced", "replacement semantics retained")
+            local fresh = { update = function() return "new-table" end }
+            hooks.install({ [name] = fresh })
+            eq(hooks.getModule(name), fresh, "hot-reloaded explicit table can replace registration")
+            eq(fresh.update(), "new-table", "new explicit table wrapped")
+            hooks.register({ [name] = false })
+            eq(hooks.getModule(name), fresh, "invalid registration cannot hide live table")
+            f.loaded["not-a-module"] = true
+            eq(hooks.getModule("not-a-module"), nil, "non-table cache marker ignored")
+            eq(#f.requires, 3, "all explicit installs require no business")
+        end)
+        run("Hooks expanded synchronous coarse exports / empty cache", function()
+            local f = fixture(); local hooks = f.env.require("boot.PerformanceHooks")
+            local specs = {
+                { "ui.character.panel.CharacterPanel", "角色面板", { "updateBadges", "addHeroesExp", "finishExtraTalentBatch" } },
+                { "ui.battle.tri.BattleTriPage", "三队总览", { "drawL1Underlay", "drawL0", "drawHud", "refreshHeroProgressTeams" } },
+                { "ui.story.ScenarioDialogue", "剧情对话", { "update", "draw" } },
+                { "systems.TutorialManager", "新手引导", { "update", "draw" } },
+                { "ui.character.hero.HeroRosterPanel", "英雄名册", { "draw" } },
+            }
+            local modules, originals = {}, {}
+            for _, spec in ipairs(specs) do
+                local module = {} ---@type table<string, function>
+                for _, key in ipairs(spec[3]) do
+                    local label = spec[2] .. "." .. key
+                    module[key] = function(a, b) f.advance(2, 1); return a, nil, b, nil end
+                    originals[label] = module[key]
+                end
+                modules[spec[1]] = module
+            end
+            eq(hooks.install(modules), 12, "all requested coarse exports installed")
+            eq(hooks.install(), 0, "all coarse exports idempotent")
+            f.monitor.start(); f.monitor.beginFrame("角色/三队战斗")
+            local ref = {}
+            for _, spec in ipairs(specs) do
+                local module = modules[spec[1]]
+                eq(f.loaded[spec[1]], nil, "business cache remains empty")
+                for _, key in ipairs(spec[3]) do
+                    local label = spec[2] .. "." .. key
+                    check(module[key] ~= originals[label], "wrapped " .. label)
+                    local result = table.pack(module[key](ref, 7)) ---@type any
+                    eq(result.n, 4, "coarse returns " .. label)
+                    eq(result[1], ref, "coarse reference " .. label); eq(result[3], 7, "coarse arg " .. label)
+                end
+            end
+            f.frame(60)
+            local snapshot = f.monitor.snapshot()
+            eq(#snapshot.sections, 12, "every coarse export reachable in actual Monitor")
+            for _, spec in ipairs(specs) do
+                for _, key in ipairs(spec[3]) do
+                    eq(section(snapshot, spec[2] .. "." .. key).calls, 1, "one call per expanded export")
+                end
+            end
+        end)
+        run("Runtime explicit contexts / CharacterPanel detail getter / cache fallback", function()
+            local f = fixture(); local rt = runtime(f); local hooks = f.env.require("boot.PerformanceHooks")
+            local states = { detail = true, roster = true, story = true, tutorial = true, sweep = false }
+            local name = "ui.character.panel.CharacterPanel"
+            local character = { isDetailOpen = function() return states.detail end,
+                isOpen = function() error("CharacterPanel has no isOpen API", 0) end }
+            hooks.register({ [name] = character,
+                ["ui.character.hero.HeroRosterPanel"] = { isVisible = function() return states.roster end },
+                ["ui.story.ScenarioDialogue"] = { isActive = function() return states.story end },
+                ["systems.TutorialManager"] = { isActive = function() return states.tutorial end },
+                ["runtime.LocalActionBridge"] = { isSweepPending = function() return states.sweep end } })
+            eq(f.loaded[name], nil, "context available with empty cache")
+            f.loaded[name] = { isDetailOpen = function() error("shadow cache queried", 0) end }
+            local m = f.monitor
+            m.start(); rt.updateBefore(0.01); f.advance(60)
+            states.detail, states.roster, states.story, states.tutorial = false, false, false, false
+            rt.updateBefore(0.01)
+            eq(m.snapshot().recentSlow[1].context, "角色/英雄名册/剧情对话/新手引导", "fixed explicit context enums combined")
+            f.advance(60); states.sweep = true; rt.updateBefore(0.01)
+            eq(m.snapshot().recentSlow[2].context, "标题/城镇/其他", "closed detail not permanently tagged character")
+            f.advance(60); states.sweep = false
+            f.loaded["ui.backpack.BackpackPanel"] = { isOpen = function() return true end }
+            rt.updateBefore(0.01)
+            eq(m.snapshot().recentSlow[3].context, "扫荡处理中", "explicit bridge keeps sweep precedence")
+            f.advance(60); rt.updateBefore(0.01)
+            eq(m.snapshot().recentSlow[4].context, "仓库", "unregistered modules still use loaded fallback")
+            check(m.isEnabled(), "explicit context getters did not fail diagnostics")
+        end)
+        run("Hooks installation failure isolated / subsequent boot install recovers", function()
+            local f = fixture(); local hooks = f.env.require("boot.PerformanceHooks"); local m = f.monitor
+            local original = function() return "business-continues" end
+            local business = { update = original }
+            local wrap = m.wrap
+            m.start(); m.wrap = function() error("injected hook wrap failure", 0) end
+            eq(hooks.install({ ["ui.battle.scene.BattleScene"] = business }), 0, "diagnostic install error swallowed")
+            eq(m.isEnabled(), false, "install failure stops diagnostics only")
+            eq(business.update, original, "failed wrap never overwrites business")
+            eq(business.update(), "business-continues", "business continues after diagnostic failure")
+            m.wrap = wrap
+            eq(hooks.install(), 1, "later boot-completion install retries failed export")
+            check(business.update ~= original, "retry wrapper installed")
+            eq(hooks.install(), 0, "retry remains idempotent")
         end)
         run("isolation audit / only three current source reads", function()
             eq(#reads, 3, "exactly three production Lua files read")

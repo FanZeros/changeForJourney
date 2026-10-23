@@ -2,6 +2,7 @@
 local Monitor = require("core.PerformanceMonitor")
 local Panel = require("ui.dev.PerformancePanel")
 local RT = require("boot.StandaloneRT")
+local Hooks = require("boot.PerformanceHooks")
 local M = {}
 local foreground = true
 local installedHandlers = {}
@@ -13,7 +14,7 @@ local function install(name, factory)
     _G[name] = handler
 end
 local function opened(name, key)
-    local module = package.loaded[name]
+    local module = Hooks.getModule(name)
     return module and type(module[key]) == "function" and module[key]() or false
 end
 local function context()
@@ -22,7 +23,15 @@ local function context()
         { "ui.battle.stage.SweepDialog", "isOpen", "扫荡" },
         { "ui.hud.popup.PlayerInfoPanel", "isOpen", "玩家设置" },
         { "ui.hud.popup.OfflineRewardPanel", "isOpen", "离线奖励" },
-        { "ui.character.panel.CharacterPanel", "isOpen", "角色" },
+        { "ui.character.panel.CharacterPanel", "isDetailOpen", "角色" },
+        { "ui.character.hero.HeroRosterPanel", "isVisible", "英雄名册" },
+        { "ui.story.ScenarioDialogue", "isActive", "剧情对话" },
+        { "ui.story.gate.IntroCutscene", "isActive", "开场剧情" },
+        { "ui.story.gate.LetterIntro", "isOpen", "先祖来信" },
+        { "ui.story.gate.DarkTitleScreenGate", "isOpen", "标题" },
+        { "systems.TutorialManager", "isActive", "新手引导" },
+        { "ui.blacksmith.BlacksmithPage", "isOpen", "锻炉" },
+        { "ui.church.talent.TalentPage", "isOpen", "天赋" },
         { "ui.backpack.BackpackPanel", "isOpen", "仓库" },
         { "ui.loot.LootBoxPage", "isOpen", "遗匣" },
         { "ui.church.ChurchPage", "isOpen", "礼拜堂" },

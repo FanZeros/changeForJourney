@@ -163,6 +163,9 @@ function Start()
             modules.heroes = { roster = {}, teams = {}, deployed = {} }
             modules.lootbox, modules.equipment, modules.player = { seeds = {} }, { inventory = {} }, {}
             ctx.dispatcher.set("battle", data)
+            deps["core.PerformanceMonitor"] = compile("core.PerformanceMonitor")
+            deps["ui.battle.tri.TerminalReincarnation"] = compile("ui.battle.tri.TerminalReincarnation")
+            deps["ui.battle.tri.BattleEntryPreparation"] = compile("ui.battle.tri.BattleEntryPreparation")
             deps["ui.battle.tri.BattleTriDriver"] = compile("ui.battle.tri.BattleTriDriver")
             local makeDriver = deps["ui.battle.tri.BattleTriDriver"].new
             deps["ui.battle.tri.BattleTriDriver"].new = function(team, options)

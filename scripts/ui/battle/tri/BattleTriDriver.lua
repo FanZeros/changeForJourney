@@ -972,6 +972,12 @@ function BattleTriDriver.new(teamIdx, options)
         self:tick(dt, logicDt)
     end
 
+    -- 每个驱动创建时接线，涵盖诊断开启前已存在和后来解锁的队伍。
+    local Monitor = require("core.PerformanceMonitor")
+    local label = "队伍" .. tostring(teamIdx)
+    drv.update = Monitor.wrap(label .. ".update", drv.update)
+    drv.tick = Monitor.wrap(label .. ".tick", drv.tick)
+    drv.start = Monitor.wrap(label .. ".start", drv.start)
     return drv
 end
 

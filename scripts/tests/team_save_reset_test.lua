@@ -69,7 +69,7 @@ function Start()
                 end }),
                 ["rules.currency.CurrencyService"] = stub(), ["rules.hero.HeroService"] = stub(),
             }
-            local real = { ["core.GameState"] = true, ["runtime.ClientDispatcher"] = true,
+            local real = { ["core.PerformanceMonitor"] = true, ["core.GameState"] = true, ["runtime.ClientDispatcher"] = true,
                 ["boot.StandaloneSave"] = true, ["rules.offline.OfflineService"] = true }
             env.require = function(name)
                 if modules[name] then return modules[name] end

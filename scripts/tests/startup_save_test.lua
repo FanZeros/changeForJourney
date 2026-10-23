@@ -1,9 +1,11 @@
 -- 存档分帧检测专项：真实 StandaloneSave 源码/原生 cjson，File/FileSystem 全内存。
 -- 不加载 Boot，不读取/修改玩家档。-save-baseline 仅统计旧版序列化热点，不运行新版断言。
+-- -performance-enabled 私有加载并开启真实Monitor；独立假双时钟/采样stub，保留原全部存档断言。
 local TAG = "[startup_save_test]"
 local assertions, failures, cases, harnessErrors = 0, 0, 0, 0
-local baseline, firstScanOnly = false, false
+local baseline, firstScanOnly, performanceEnabled = false, false, false
 for _, arg in ipairs(GetArguments()) do
+    if arg == "-performance-enabled" then performanceEnabled = true end
     if arg == "-save-baseline" then baseline = true end
     if arg == "-save-firstscan-only" then firstScanOnly = true end
 end
@@ -41,13 +43,48 @@ local function source(path)
     return table.concat(lines, "\n")
 end
 local function upvalue(fn, name)
-    for index = 1, 100 do
-        local found, value = debug.getupvalue(fn, index)
-        if not found then break end
-        if found == name then return value end
+    local seen = {}
+    local function find(target)
+        if type(target) ~= "function" or seen[target] then return nil end
+        seen[target] = true
+        local wrapped = nil ---@type function?
+        for index = 1, 100 do
+            local found, value = debug.getupvalue(target, index)
+            if not found then break end
+            if found == name then return value end
+            -- 只沿PerformanceMonitor.wrap的fn闭包链；不遍历_ENV/模块/其它业务upvalue。
+            if found == "fn" and type(value) == "function" then wrapped = value end
+        end
+        if wrapped then return find(wrapped) end
     end
+    return find(fn)
 end
 local saveSource = ""
+local monitorSource = ""
+local performanceMonitors = {} ---@type any[]
+local function isolatedMonitor()
+    -- 与预算测试f.clockQueries/slowClock完全独立；仅供真实Monitor使用的稳定单调假时钟。
+    local clock = { wallMs = 0, cpuSeconds = 0 }
+    local monitorEnv = {
+        assert = assert, error = error, type = type, pairs = pairs, ipairs = ipairs,
+        pcall = pcall, setmetatable = setmetatable, tostring = tostring,
+        math = copy(math), string = copy(string), table = copy(table), coroutine = copy(coroutine),
+        cjson = { encode = cjson.encode, decode = cjson.decode }, print = function() end,
+        time = { GetSystemTime = function() clock.wallMs = clock.wallMs + 0.01; return clock.wallMs end },
+        os = { clock = function() clock.cpuSeconds = clock.cpuSeconds + 0.000001; return clock.cpuSeconds end },
+        collectgarbage = function(kind) assert(kind == "count"); return 1024 end,
+        cache = { GetTotalMemoryUse = function() return 0 end },
+        graphics = { GetNumBatches = function() return 0 end, GetNumPrimitives = function() return 0 end },
+        File = function() error("save performance mode forbids monitor export") end,
+        fileSystem = setmetatable({}, { __index = function() error("save performance mode forbids monitor filesystem") end }),
+    } ---@type any
+    monitorEnv._G = monitorEnv
+    local monitor = assert(load(monitorSource, "@startup-save/core/PerformanceMonitor.lua", "t", monitorEnv))()
+    monitor.start()
+    monitor.beginFrame("存档专项")
+    performanceMonitors[#performanceMonitors + 1] = monitor
+    return monitor
+end
 local Schema
 local function fixture(count)
     local f = { now = 200000, pending = false, fault = "", disk = {}, encodes = 0,
@@ -164,7 +201,13 @@ local function fixture(count)
                 end
             end },
     }
-    env.require = function(name) return mocks[name] or require(name) end
+    env.require = function(name)
+        if performanceEnabled and name == "core.PerformanceMonitor" then
+            if not mocks[name] then mocks[name] = isolatedMonitor() end
+            return mocks[name]
+        end
+        return mocks[name] or require(name)
+    end
     f.save = assert(load(saveSource, "@startup-save/StandaloneSave.lua", "t", env))()
     f.page = { getTeamStageIds = function()
         if f.captureFault then error("expected capture failure") end
@@ -176,6 +219,7 @@ local function fixture(count)
     f.save.CaptureBattleProgress = function(value) f.captures = f.captures + 1 return capture(value) end
     function f.update(dt)
         local started = os.clock()
+        if performanceEnabled then mocks["core.PerformanceMonitor"].beginFrame("存档专项") end
         f.save.Update(dt or 1 / 60)
         return (os.clock() - started) * 1000
     end
@@ -258,6 +302,7 @@ end
 function Start()
     Schema = require("shared.battle.BattleSchema")
     saveSource = source(baseline and "tests/StandaloneSave.baseline.lua" or "boot/StandaloneSave.lua")
+    if performanceEnabled then monitorSource = source("core/PerformanceMonitor.lua") end
     if not baseline then firstScanUnvisitedTest() end
     if firstScanOnly then
         print(string.format("%s FIRSTSCAN_SUMMARY cases=%d assertions=%d failures=%d harnessErrors=%d",
@@ -783,8 +828,27 @@ function Start()
                 idlePeak, flushPeak, directFlushMs, serializedBytes, latencyFrames, (os.clock() - started) * 1000))
         end
     end)
-    print(string.format("%s SUMMARY baseline=%s cases=%d assertions=%d failures=%d harnessErrors=%d", TAG,
-        tostring(baseline), cases, assertions, failures, harnessErrors))
+    if performanceEnabled then
+        run("enabled performance wrappers actually recorded safe save work", function()
+            local encodedCalls, totalSections = 0, 0
+            check(#performanceMonitors > 0, "private real monitors were loaded")
+            for _, monitor in ipairs(performanceMonitors) do
+                check(monitor.isEnabled(), "private monitor remains enabled for all original save assertions")
+                monitor.beginFrame("存档专项") -- 闭合最后同步操作，查询真实生产快照而非替代计数。
+                local snapshot = monitor.snapshot()
+                totalSections = totalSections + #snapshot.sections
+                for _, stat in ipairs(snapshot.sections) do
+                    if stat.name == "存档.JSON编码" then encodedCalls = encodedCalls + stat.calls end
+                end
+            end
+            check(totalSections > 0, "enabled wrappers committed real section samples")
+            check(encodedCalls > 0, "real JSON encode wrapper executed enabled path")
+            print(TAG .. " PERFORMANCE_ENABLED monitors=" .. #performanceMonitors .. " sections=" .. totalSections
+                .. " encodeCalls=" .. encodedCalls)
+        end)
+    end
+    print(string.format("%s SUMMARY baseline=%s cases=%d assertions=%d failures=%d harnessErrors=%d performanceEnabled=%s", TAG,
+        tostring(baseline), cases, assertions, failures, harnessErrors, tostring(performanceEnabled)))
     if failures > 0 then log:Write(LOG_ERROR, TAG .. " FAILED") end
     engine:Exit()
 end

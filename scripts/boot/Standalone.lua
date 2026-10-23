@@ -135,6 +135,7 @@ local function pumpBootQueue_()
         bootReady_ = true
         StandaloneRT.bootReady_ = true
         StandaloneRT.vg = vg
+        require("boot.PerformanceHooks").install()
         DarkTitleScreen.setReady(true)
         print("[Standalone] boot queue complete, title unlocked")
     end
@@ -575,6 +576,9 @@ function Standalone.Start()
     -- 5.1~5.3 接线延后到 bootWiring
 
     -- 6. Events
+    require("boot.PerformanceRuntime").installHandlers()
+    require("boot.PerformanceHooks").install()
+    SubscribeToEvent("InputFocus", "HandlePerformanceFocus")
     SubscribeToEvent(vg, "NanoVGRender", "HandleNanoVGRender")
     SubscribeToEvent("Update", "HandleUpdate")
 
@@ -596,6 +600,8 @@ function Standalone.Start()
 end
 
 function Standalone.Stop()
+    require("core.PerformanceMonitor").stop()
+    require("ui.dev.PerformancePanel").close()
     LocalActionBridge.cancelSweep("stop")
     SweepDialog.close()
     require("ui.battle.combat.BattleClock").setPaused(false)
@@ -921,6 +927,7 @@ Standalone.cancelOpening = cancelOpening_
 --- 清除存档后重置客户端状态并回到开始界面
 --- 由 DebugPanel 的 reset_save 处理器调用
 function Standalone.requestResetToStartScreen()
+    require("ui.dev.PerformancePanel").close()
     LocalActionBridge.cancelSweep("reset")
     SweepDialog.close()
     require("ui.battle.combat.BattleClock").setPaused(false)
@@ -1055,6 +1062,12 @@ end
 -- Global event handlers (SubscribeToEvent requires global function names)
 -- ============================================================================
 
+---@param eventType string
+---@param eventData InputFocusEventData
+function HandlePerformanceFocus(eventType, eventData)
+    require("boot.PerformanceRuntime").focus(eventData)
+end
+
 function HandleNanoVGRender(eventType, eventData)
     ---@diagnostic disable-next-line: undefined-global
     return HandleNanoVGRenderHorizon(eventType, eventData)
@@ -1082,7 +1095,9 @@ function HandleUpdate(eventType, eventData)
     SpinePowerUpEffect.update(dt)
     require("ui.fx.SpineCardEffect").update(dt)
     require("ui.fx.SpineResultEffect").update(dt)
-    require("ui.dev.CEPanel").pollHotkey()
+    if not require("ui.dev.PerformancePanel").isOpen() then
+        require("ui.dev.CEPanel").pollHotkey()
+    end
     -- 分帧启动：每帧 1 个模块 init，标题可先画出来
     pumpBootQueue_()
     if not bootReady_ then

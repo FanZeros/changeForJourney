@@ -73,6 +73,7 @@ function Start()
         mocks["config.DungeonConfig"] = DC
         mocks["shared.battle.BattleSchema"] = Schema
         mocks["core.BattleLayout"] = nativeRequire("core.BattleLayout")
+        mocks["core.PerformanceMonitor"] = nativeRequire("core.PerformanceMonitor") -- 默认关闭真实wrap，未知依赖stub不能抹掉tick/编码函数。
         mocks["systems.AttributeDef"] = nativeRequire("systems.AttributeDef")
         mocks["config.MonsterConfig"] = nativeRequire("config.MonsterConfig")
         mocks["config.ExpTable"] = ExpTable
@@ -223,6 +224,7 @@ function Start()
             ["ui.character.hero.AwakeningArtwork"] = { isOpen = function() return false end },
             ["ui.hud.popup.RedeemCodePanel"] = { isOpen = function() return false end },
             ["ui.dev.GMConsolePanel"] = { isOpen = function() return false end },
+            ["ui.dev.PerformancePanel"] = { isOpen = function() return false end, close = noop },
             ["ui.hud.popup.SettingsPanel"] = { isSoundOn = function() return soundOn end,
                 setSoundOn = function(on) soundOn = on end },
             ["rules.gm.CEService"] = {},

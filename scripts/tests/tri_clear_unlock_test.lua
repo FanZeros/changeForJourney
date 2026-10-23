@@ -32,6 +32,7 @@ local function runBattleLedgerCases(nativeRequire)
     local AD = nativeRequire("systems.AttributeDef")
     local schema = nativeRequire("shared.battle.BattleSchema")
     local real = {
+        ["core.PerformanceMonitor"] = true,
         ["ui.battle.scene.BattleScene"] = true,
         ["ui.battle.scene.BattleDataRestore"] = true,
         ["ui.battle.tri.BattleTriDriver"] = true,
@@ -195,6 +196,7 @@ local function runBattleLedgerCases(nativeRequire)
             return driver
         end
         local Page = env.require("ui.battle.tri.BattleTriPage")
+        env.BattleTriPage = Page -- 完整Sync片段读取实时三队预约；与Save同源，不能另造进度表。
         Save.SetBattlePage(Page)
         return { scene = Scene, dispatcher = Dispatcher, wallet = wallet, env = env, drivers = drivers,
             page = Page, sync = sync,
@@ -308,10 +310,11 @@ local function runBattleLedgerCases(nativeRequire)
         f.sync(1.1)
         local sent = f.outgoing[#f.outgoing]
         check(marked(sent, 102) and marked(sent, 103), "正式Sync合并本地独有与镜像独有首通")
-        check(sent.clearedStages["102"] == true and sent.clearedStages["103"] == true,
+        local sentCleared = sent.clearedStages --[[@as table]]
+        check(sentCleared["102"] == true and sentCleared["103"] == true,
             "Sync双源数字键统一为字符串永久键")
-        check(sent.clearedStages["103.0"] == nil and not marked(sent, 106)
-            and sent.clearedStages["not-a-stage"] == nil, "decimal关号规范为唯一整数键且false/非法键不标通")
+        check(sentCleared["103.0"] == nil and not marked(sent, 106)
+            and sentCleared["not-a-stage"] == nil, "decimal关号规范为唯一整数键且false/非法键不标通")
         local before = #f.outgoing
         -- 固定两份输入都为两条，隔离内容比较和数量比较；不是显式reset入口。
         f.scene.getClearedStages()[102], f.scene.getClearedStages()[103] = nil, nil
@@ -437,7 +440,7 @@ function Start()
             ["runtime.ClientDispatcher"] = Dispatcher, ["core.PlayerStore"] = Store,
             ["config.StageConfig"] = SC, ["config.ExpTable"] = ExpTable,
             ["systems.StoryPlayer"] = Story, ["core.GameState"] = gameState,
-            ["boot.StandaloneSave"] = { Flush = function() flushes = flushes + 1 end },
+            ["boot.StandaloneSave"] = { Flush = function() flushes = flushes + 1 end, RequestSave = noop },
             ["systems.DropSystem"] = stub({ generateFirstClearEquips = function() return {} end,
                 generateFirstClearScrolls = function() return nil end }),
             ["systems.LootBoxSystem"] = stub({ getTotalCount = function() return 0 end }),
@@ -447,6 +450,7 @@ function Start()
                 popups[#popups + 1] = { title = title, rewards = rewards, opts = opts }
             end }),
             ["core.I18n"] = nativeRequire("core.I18n"),
+            ["core.PerformanceMonitor"] = nativeRequire("core.PerformanceMonitor"), -- 默认关闭真实wrap，不能被noop替成nil方法。
         }
         replace(_G, "require", function(name)
             if mocks[name] then return mocks[name] end
@@ -556,7 +560,7 @@ function Start()
         check(notifications > 0 and flushes > 0, "首通实际通知数据镜像并请求持久化")
         -- 执行正式每秒镜像函数，证明不是只验证手抄同步逻辑。
         local syncSource = assert(source("boot.Standalone"):match("(local battleSync =.-)\nlocal physW"))
-        local env = setmetatable({ BattleScene = Scene, ClientDispatcher = Dispatcher, cjson = cjson,
+        local env = setmetatable({ BattleScene = Scene, BattleTriPage = Page, ClientDispatcher = Dispatcher, cjson = cjson,
             StandaloneSave = mocks["boot.StandaloneSave"], StageConfig = SC,
             bootReady_ = true, StandaloneRT = {} }, { __index = _G })
         local sync = assert(load(syncSource .. "\nreturn SyncBattleState", "@正式SyncBattleState", "t", env))()

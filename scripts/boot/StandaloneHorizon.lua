@@ -214,6 +214,7 @@ local function finishFrame(terminalMode)
     end
     drawUpdateNotice()
     CEPanel.draw(vg(), logicalW(), logicalH())
+    require("ui.dev.PerformancePanel").draw(vg(), logicalW(), logicalH())
     nvgRestore(vg())
     nvgEndFrame(vg())
 end
@@ -660,6 +661,7 @@ function HandleNanoVGRenderHorizon()
         nvgScale(vg(), fit, fit)
         SweepDialog.drawPending(vg())
         nvgRestore(vg())
+        require("ui.dev.PerformancePanel").draw(vg(), logicalW(), logicalH())
         nvgEndFrame(vg())
         return
     end

@@ -21,6 +21,8 @@ local GameState        = require("core.GameState")
 local BattleScene      = require("ui.battle.scene.BattleScene")
 local BattleSchema     = require("shared.battle.BattleSchema")
 local OfflineService   = require("rules.offline.OfflineService")
+local PerformanceMonitor = require("core.PerformanceMonitor")
+local encodeJson = PerformanceMonitor.wrap("存档.JSON编码", function(value) return cjson.encode(value) end)
 
 local StandaloneSave = {}
 
@@ -41,7 +43,7 @@ end
 function StandaloneSave.CaptureBattleProgress(battle)
     local copy = {}
     for key, value in pairs(battle) do copy[key] = value end
-    local live = battlePage and battlePage.getTeamStageIds()
+    local live = battlePage and battlePage.getTeamStageIds() --[[@as table?]]
     if type(live) == "table" then
         local sceneMax = tonumber(BattleScene.getMaxStageId()) or 0
         local savedMax = tonumber(battle.maxStageId) or 0
@@ -129,7 +131,7 @@ end
 --- liveBattle 是额外脏检测输入：原地进度/预约无需先等 dispatcher 通知。
 --- 真正落盘仍只用 buildSaveData/CaptureBattleProgress 的新鲜完整转换。
 local function detectorSource()
-    local live = battlePage and battlePage.getTeamStageIds()
+    local live = battlePage and battlePage.getTeamStageIds() --[[@as table?]]
     local liveBattle = nil
     if type(live) == "table" then
         liveBattle = {
@@ -302,6 +304,8 @@ local function buildSaveData(candidatePlayer)
     }, all, sourceState
 end
 
+buildSaveData = PerformanceMonitor.wrap("存档.快照构建", buildSaveData)
+
 ---@class SaveCommitModule
 ---@field source table
 ---@field values table
@@ -335,7 +339,7 @@ local function encodeSave(candidatePlayer)
                     expected = copyCommitFields(source) }
             end
         end
-        return cjson.encode(current), committed
+        return encodeJson(current), committed
     end)
     if not ok or type(json) ~= "string" then
         print("[StandaloneSave] encode 失败: " .. tostring(json))
@@ -391,6 +395,21 @@ local function deleteTempFile()
     if not ok then print("[StandaloneSave] 临时文件清理失败: " .. tostring(err)) end
 end
 
+local writeCandidateFile = PerformanceMonitor.wrap("存档.文件写入关闭替换", function(json, checkEpoch, closeFile, setFile)
+    if not fileSystem or not fileSystem.Rename then error("无安全替换接口") end
+    local target = File(TEMP_SAVE_FILE, FILE_WRITE)
+    setFile(target)
+    checkEpoch()
+    if not target or target:IsOpen() ~= true then error("无法打开临时文件") end
+    checkEpoch()
+    if target:WriteString(json) ~= true then error("写入未完成") end
+    checkEpoch()
+    local closed, closeErr = closeFile()
+    if not closed then error(closeErr) end
+    checkEpoch()
+    if fileSystem:Rename(TEMP_SAVE_FILE, SAVE_FILE) ~= true then error("替换未完成") end
+end)
+
 local function writeFile(candidatePlayer)
     -- 同一临时文件只允许一个写者；重入不能假报成功，也不能截断外层候选。
     if writing then StandaloneSave.RequestSave(); return false end
@@ -433,18 +452,8 @@ local function writeFile(candidatePlayer)
         json, commitReceipt = encodeSave(candidatePlayer)
         if not json then error("编码失败") end
         checkEpoch()
-        if not fileSystem or not fileSystem.Rename then error("无安全替换接口") end
-        file = File(TEMP_SAVE_FILE, FILE_WRITE)
-        checkEpoch()
-        if not file or file:IsOpen() ~= true then error("无法打开临时文件") end
-        checkEpoch()
-        if file:WriteString(json) ~= true then error("写入未完成") end
-        checkEpoch()
-        local closed, closeErr = closeFile()
-        if not closed then error(closeErr) end
-        checkEpoch()
-        -- Rename返回true就是提交点；此后Wipe/Restore是新的生命周期，不能反报旧事务失败。
-        if fileSystem:Rename(TEMP_SAVE_FILE, SAVE_FILE) ~= true then error("替换未完成") end
+        -- 同步阶段计时不额外写文件；保留临时文件→完整关闭→Rename的原提交点。
+        writeCandidateFile(json, checkEpoch, closeFile, function(target) file = target end)
     end)
     if not ok then
         closeFile()
@@ -505,6 +514,9 @@ local function writeFile(candidatePlayer)
     print("[StandaloneSave] 存档落盘 bytes=" .. #json)
     return true
 end
+
+advanceDetector = PerformanceMonitor.wrap("存档.分帧脏检测", advanceDetector)
+writeFile = PerformanceMonitor.wrap("存档.完整提交", writeFile)
 
 --- 恢复纯数据（GameState + Dispatcher 各模块）
 --- ⚠️ 必须在 Standalone.Start() 的 UI/数据初始化之前调用

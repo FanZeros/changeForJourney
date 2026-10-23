@@ -89,8 +89,22 @@ local function fixture()
         "SendEvent", "SendRemoteEvent", "SubscribeToEvent", "GetUserId", "GetUserNickname" }) do
         env[key] = function() return deny(key) end
     end
-    env.os = { clock = function() f.cpuReads = f.cpuReads + 1; return f.cpuSeconds end }
-    env.time = { GetSystemTime = function() f.wallReads = f.wallReads + 1; return f.wallMs end }
+    env.os = { clock = function()
+        f.cpuReads = f.cpuReads + 1
+        if f.cpuFault then error("injected process clock failure", 0) end
+        return f.cpuSeconds
+    end }
+    -- 原生绑定要求类静态调用 Time:GetSystemTime()，实例 time 调用必须是回归陷阱。
+    env.Time = { GetSystemTime = function(receiver)
+        assert(receiver == env.Time, "system clock must use the Time class receiver")
+        f.wallReads = f.wallReads + 1
+        if f.wallFault then error("injected system clock failure", 0) end
+        return f.wallMs
+    end }
+    env.time = { GetSystemTime = function()
+        f.legacyWallReads = (f.legacyWallReads or 0) + 1
+        error("argument #1 is Time; Time expected (instance time clock forbidden)", 0)
+    end }
     env.collectgarbage = function(kind)
         assert(kind == "count", "cannot collect real heap")
         f.memoryReads = f.memoryReads + 1
@@ -144,7 +158,10 @@ local function fixture()
     local panel = {
         isOpen = function() return f.panelOpen end,
         resetPointer = function() f.resets = f.resets + 1 end,
-        update = function(dt) f.lastPanelDt = dt; f.panelUpdates = f.panelUpdates + 1 end,
+        update = function(dt)
+            f.lastPanelDt = dt; f.panelUpdates = f.panelUpdates + 1
+            if f.panelFault then error("injected Panel.update failure", 0) end
+        end,
         handlePointer = function(kind, x, y, id)
             f.pointers[#f.pointers + 1] = { kind = kind, x = x, y = y, id = id }
             return f.consumeTail == true
@@ -198,6 +215,20 @@ local function runtime(f)
     local rt = f.env.require("boot.PerformanceRuntime")
     rt.installHandlers()
     return rt
+end
+local function stoppedWithoutClocks(f, label)
+    local m = f.monitor
+    eq(m.isEnabled(), false, label .. " diagnostic stopped")
+    local s = m.snapshot()
+    eq(s.enabled, false, label .. " snapshot stopped")
+    eq(s.frames, 1, label .. " completed frame retained")
+    eq(#s.sections, 0, label .. " failed/open work never committed")
+    local wallReads, cpuReads, memoryReads = f.wallReads, f.cpuReads, f.memoryReads
+    m.beginFrame("停止后"); eq(m.begin("停止后"), nil, label .. " stopped begin")
+    m.finish(nil); eq(m.mark(), false, label .. " stopped mark")
+    eq(f.wallReads, wallReads, label .. " stopped zero wall reads")
+    eq(f.cpuReads, cpuReads, label .. " stopped zero CPU reads")
+    eq(f.memoryReads, memoryReads, label .. " stopped zero memory reads")
 end
 local function keysOnly(value, allowed, label)
     local count = 0
@@ -453,6 +484,129 @@ function Start()
             near(section(s, "异常").totalWallMs, 3, "throw duration measured")
             near(section(s, "成功").totalCpuMs, 2, "wrap CPU measured")
         end)
+        for _, stage in ipairs({ "begin", "finish" }) do
+            run("wrap " .. stage .. " clock throws / business once / nils and errors", function()
+                for _, clock in ipairs({ "wall", "cpu" }) do
+                    for _, businessThrows in ipairs({ false, true }) do
+                        local f = fixture(); local m = f.monitor
+                        local label = stage .. "/" .. clock .. (businessThrows and "/business-error" or "/returns")
+                        m.start(); m.beginFrame("城镇"); f.frame(16)
+                        local calls = 0
+                        local ref, businessError = {}, {}
+                        local function injectClockFault()
+                            if clock == "wall" then f.wallFault = true else f.cpuFault = true end
+                        end
+                        local wrapped = m.wrap("故障段", function(...)
+                            calls = calls + 1
+                            local args = table.pack(...) ---@type any
+                            eq(args.n, 4, label .. " argument count")
+                            eq(args[1], ref, label .. " argument reference")
+                            eq(args[2], nil, label .. " middle argument nil")
+                            eq(args[3], 7, label .. " argument value")
+                            eq(args[4], nil, label .. " trailing argument nil")
+                            if calls == 1 then
+                                if stage == "begin" then
+                                    eq(m.isEnabled(), false, label .. " fail stops before fallback business")
+                                else
+                                    eq(m.isEnabled(), true, label .. " begin succeeded before business")
+                                    injectClockFault() -- 只有生产finish调用时钟时才抛；不替换begin/finish算法。
+                                end
+                            end
+                            f.advance(3, 1)
+                            if businessThrows then error(businessError, 0) end
+                            return nil, ref, nil, 9, nil
+                        end)
+                        local wallBefore, cpuBefore = f.wallReads, f.cpuReads
+                        if stage == "begin" then injectClockFault() end
+                        local result = table.pack(pcall(wrapped, ref, nil, 7, nil)) ---@type any
+                        eq(calls, 1, label .. " business called exactly once")
+                        if businessThrows then
+                            eq(result[1], false, label .. " business error propagates")
+                            eq(result[2], businessError, label .. " business error identity survives diagnostic fault")
+                            eq(result.n, 2, label .. " no extra error returns")
+                        else
+                            eq(result[1], true, label .. " diagnostic failure cannot escape")
+                            eq(result.n, 6, label .. " complete return count including pcall")
+                            eq(result[2], nil, label .. " first return nil")
+                            eq(result[3], ref, label .. " return reference")
+                            eq(result[4], nil, label .. " middle return nil")
+                            eq(result[5], 9, label .. " return value")
+                            eq(result[6], nil, label .. " trailing return nil")
+                        end
+                        check(clock == "wall" and f.wallReads > wallBefore or clock == "cpu" and f.cpuReads > cpuBefore,
+                            label .. " injected clock actually reached")
+                        stoppedWithoutClocks(f, label)
+                        local wallReads, cpuReads = f.wallReads, f.cpuReads
+                        local after = table.pack(pcall(wrapped, ref, nil, 7, nil)) ---@type any
+                        eq(calls, 2, label .. " stopped wrapper still calls business once")
+                        eq(after[1], not businessThrows, label .. " stopped path preserves outcome")
+                        if businessThrows then eq(after[2], businessError, label .. " stopped error identity")
+                        else eq(after.n, 6, label .. " stopped path retains nil return count") end
+                        eq(f.wallReads, wallReads, label .. " stopped wrap zero wall reads")
+                        eq(f.cpuReads, cpuReads, label .. " stopped wrap zero CPU reads")
+                    end
+                end
+            end)
+        end
+        for _, fault in ipairs({ "context", "beginFrame", "Panel.update" }) do
+            run("runtime " .. fault .. " throws / original Update preserved", function()
+                for _, businessThrows in ipairs({ false, true }) do
+                    local f = fixture(); local rt = runtime(f); local m = f.monitor
+                    local label = fault .. (businessThrows and "/business-error" or "/returns")
+                    m.start(); m.beginFrame("城镇"); f.frame(16)
+                    local getterCalls = 0
+                    if fault == "context" then
+                        f.loaded["ui.character.panel.CharacterPanel"] = { isOpen = function()
+                            getterCalls = getterCalls + 1
+                            error("injected context getter failure", 0)
+                        end }
+                    elseif fault == "beginFrame" then f.wallFault = true
+                    else f.panelFault = true end
+                    local businessError, ref = {}, {}
+                    local updateEvent = event({ TimeStep = 0.025 })
+                    f.env.HandleUpdate = function(kind, data)
+                        f.calls.HandleUpdate = (f.calls.HandleUpdate or 0) + 1
+                        eq(kind, "Update", label .. " event type preserved")
+                        eq(data, updateEvent, label .. " event identity preserved")
+                        eq(m.isEnabled(), false, label .. " diagnostic stops before original Update")
+                        if businessThrows then error(businessError, 0) end
+                        return nil, ref, nil, 9, nil
+                    end
+                    rt.installHandlers()
+                    local result = table.pack(pcall(f.env.HandleUpdate, "Update", updateEvent)) ---@type any
+                    eq(f.calls.HandleUpdate, 1, label .. " original Update called exactly once")
+                    if businessThrows then
+                        eq(result[1], false, label .. " original Update error propagates")
+                        eq(result[2], businessError, label .. " original error identity retained")
+                        eq(result.n, 2, label .. " only original business error returned")
+                    else
+                        eq(result[1], true, label .. " diagnostic error cannot block original Update")
+                        eq(result.n, 6, label .. " original nil return count")
+                        eq(result[2], nil, label .. " first return nil")
+                        eq(result[3], ref, label .. " reference return retained")
+                        eq(result[4], nil, label .. " middle return nil")
+                        eq(result[5], 9, label .. " value return retained")
+                        eq(result[6], nil, label .. " trailing return nil")
+                    end
+                    if fault == "context" then eq(getterCalls, 1, label .. " actual loaded-module getter threw") end
+                    if fault == "beginFrame" then eq(f.wallReads, 3, label .. " actual frame clock threw") end
+                    if fault == "Panel.update" then
+                        eq(f.panelUpdates, 1, label .. " actual panel update threw")
+                        near(f.lastPanelDt, 0.025, label .. " original panel dt preserved")
+                    end
+                    stoppedWithoutClocks(f, label)
+                    local wallReads, cpuReads = f.wallReads, f.cpuReads
+                    local again = table.pack(pcall(f.env.HandleUpdate, "Update", updateEvent)) ---@type any
+                    eq(f.calls.HandleUpdate, 2, label .. " later Update still called exactly once")
+                    eq(again[1], not businessThrows, label .. " later Update keeps original outcome")
+                    if businessThrows then eq(again[2], businessError, label .. " later business error retained")
+                    else eq(again.n, 6, label .. " later nil returns retained") end
+                    eq(f.wallReads, wallReads, label .. " later Update zero wall reads")
+                    eq(f.cpuReads, cpuReads, label .. " later Update zero CPU reads")
+                    if fault == "context" then eq(getterCalls, 1, label .. " stopped diagnostic never calls getter again") end
+                end
+            end)
+        end
         run("yieldable coroutine skipped / outer resume measured per frame", function()
             local f = fixture(); local m = f.monitor
             m.start(); m.beginFrame("城镇")
@@ -644,7 +798,10 @@ function Start()
                 check(path == "core/PerformanceMonitor.lua" or path == "boot/PerformanceRuntime.lua"
                     or path == "boot/PerformanceHooks.lua", "source read whitelist")
             end
-            for _, f in ipairs(contexts) do eq(#f.denied, 0, "no forbidden access even if caught internally") end
+            for _, f in ipairs(contexts) do
+                eq(#f.denied, 0, "no forbidden access even if caught internally")
+                eq(f.legacyWallReads or 0, 0, "instance time clock never used even if its error was caught")
+            end
             for name, value in pairs(nativeLoaded) do eq(value, originalLoaded[name], "host package.loaded unchanged " .. name) end
             for name, value in pairs(originalLoaded) do eq(nativeLoaded[name], value, "host module retained " .. name) end
             eq(cache, nativeCache, "host cache unchanged")

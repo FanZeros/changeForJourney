@@ -62,6 +62,7 @@ end
 local saveSource = ""
 local monitorSource = ""
 local performanceMonitors = {} ---@type any[]
+local performanceClocks = {} ---@type any[]
 local function isolatedMonitor()
     -- 与预算测试f.clockQueries/slowClock完全独立；仅供真实Monitor使用的稳定单调假时钟。
     local clock = { wallMs = 0, cpuSeconds = 0 }
@@ -70,7 +71,11 @@ local function isolatedMonitor()
         pcall = pcall, setmetatable = setmetatable, tostring = tostring,
         math = copy(math), string = copy(string), table = copy(table), coroutine = copy(coroutine),
         cjson = { encode = cjson.encode, decode = cjson.decode }, print = function() end,
-        time = { GetSystemTime = function() clock.wallMs = clock.wallMs + 0.01; return clock.wallMs end },
+        Time = {}, -- 下方安装仅接受Time类receiver的静态时钟fixture。
+        time = { GetSystemTime = function()
+            clock.legacyWallReads = (clock.legacyWallReads or 0) + 1
+            error("argument #1 is Time; Time expected (instance time clock forbidden)", 0)
+        end },
         os = { clock = function() clock.cpuSeconds = clock.cpuSeconds + 0.000001; return clock.cpuSeconds end },
         collectgarbage = function(kind) assert(kind == "count"); return 1024 end,
         cache = { GetTotalMemoryUse = function() return 0 end },
@@ -79,10 +84,16 @@ local function isolatedMonitor()
         fileSystem = setmetatable({}, { __index = function() error("save performance mode forbids monitor filesystem") end }),
     } ---@type any
     monitorEnv._G = monitorEnv
+    monitorEnv.Time.GetSystemTime = function(receiver)
+        assert(receiver == monitorEnv.Time, "system clock must use the Time class receiver")
+        clock.wallMs = clock.wallMs + 0.01
+        return clock.wallMs
+    end
     local monitor = assert(load(monitorSource, "@startup-save/core/PerformanceMonitor.lua", "t", monitorEnv))()
     monitor.start()
     monitor.beginFrame("存档专项")
     performanceMonitors[#performanceMonitors + 1] = monitor
+    performanceClocks[#performanceClocks + 1] = clock
     return monitor
 end
 local Schema
@@ -840,6 +851,10 @@ function Start()
                 for _, stat in ipairs(snapshot.sections) do
                     if stat.name == "存档.JSON编码" then encodedCalls = encodedCalls + stat.calls end
                 end
+            end
+            for _, clock in ipairs(performanceClocks) do
+                eq(clock.legacyWallReads or 0, 0, "enabled real Monitor never used instance time clock")
+                check(clock.wallMs > 0, "enabled real Monitor used private static Time clock")
             end
             check(totalSections > 0, "enabled wrappers committed real section samples")
             check(encodedCalls > 0, "real JSON encode wrapper executed enabled path")

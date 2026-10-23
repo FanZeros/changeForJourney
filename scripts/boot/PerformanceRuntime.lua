@@ -45,9 +45,14 @@ function M.focus(eventData)
 end
 function M.updateBefore(dt)
     if Monitor.isEnabled() then
-        Monitor.beginFrame(context(), not foreground and "background" or (Panel.isOpen() and "panel" or nil))
+        local ok = pcall(function()
+            local exclusion = not foreground and "background" or (Panel.isOpen() and "panel" or nil)
+            Monitor.beginFrame(exclusion and "诊断面板/后台" or context(), exclusion)
+        end)
+        if not ok then Monitor.fail("帧采样") end
     end
-    Panel.update(dt or 0)
+    -- 只保护诊断逻辑，原始Update仍在外层执行一次，业务错误照常传播。
+    if not pcall(Panel.update, dt or 0) then Monitor.fail("诊断面板更新") end
 end
 local function coords(px, py)
     local dpr = RT.dpr or 1

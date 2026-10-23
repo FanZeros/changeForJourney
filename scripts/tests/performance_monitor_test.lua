@@ -426,6 +426,7 @@ function Start()
             m.start(); rt.updateBefore(); f.section("主循环.Update", 4, 2); f.advance(60); rt.updateBefore(); m.mark(f.env.player)
             local text = m.getReport()
             eq(m.isEnabled(), false, "getReport stops collection")
+            check(text:find("性能诊断报告 v4", 1, true), "round-two build has explicit v4 identifier")
             check(text:find("inclusive", 1, true) and text:find("CPU", 1, true) and text:find("GPU", 1, true), "report caveats readable")
             check(not text:find("PRIVATE_SENTINEL", 1, true), "report never serializes player/module payload")
             local s = reportData(text)
@@ -836,7 +837,7 @@ function Start()
         run("Hooks expanded synchronous coarse exports / empty cache", function()
             local f = fixture(); local hooks = f.env.require("boot.PerformanceHooks")
             local specs = {
-                { "ui.character.panel.CharacterPanel", "角色面板", { "updateBadges", "addHeroesExp", "finishExtraTalentBatch" } },
+                { "ui.character.panel.CharacterPanel", "角色面板", { "updateBadges", "addHeroesExp", "patchExtraTalent", "finishExtraTalentBatch" } },
                 { "ui.battle.tri.BattleTriPage", "三队总览", { "drawL1Underlay", "drawL0", "drawHud", "refreshHeroProgressTeams" } },
                 { "ui.story.ScenarioDialogue", "剧情对话", { "update", "draw" } },
                 { "systems.TutorialManager", "新手引导", { "update", "draw" } },
@@ -852,7 +853,7 @@ function Start()
                 end
                 modules[spec[1]] = module
             end
-            eq(hooks.install(modules), 12, "all requested coarse exports installed")
+            eq(hooks.install(modules), 13, "all requested coarse exports installed")
             eq(hooks.install(), 0, "all coarse exports idempotent")
             f.monitor.start(); f.monitor.beginFrame("角色/三队战斗")
             local ref = {}
@@ -869,7 +870,7 @@ function Start()
             end
             f.frame(60)
             local snapshot = f.monitor.snapshot()
-            eq(#snapshot.sections, 12, "every coarse export reachable in actual Monitor")
+            eq(#snapshot.sections, 13, "every coarse export reachable in actual Monitor")
             for _, spec in ipairs(specs) do
                 for _, key in ipairs(spec[3]) do
                     eq(section(snapshot, spec[2] .. "." .. key).calls, 1, "one call per expanded export")

@@ -33,7 +33,7 @@ local function install()
         { "ui.battle.scene.BattleView", { "draw" }, "战斗表现" },
         { "ui.battle.combat.BattleEffects", { "update", "draw" }, "战斗特效" },
         { "ui.battle.combat.ProjectileSystem", { "update", "draw" }, "弹道" },
-        { "ui.character.panel.CharacterPanel", { "update", "updateBadges", "draw", "refreshPower", "getTotalPower", "addHeroesExp", "finishExtraTalentBatch" }, "角色面板" },
+        { "ui.character.panel.CharacterPanel", { "update", "updateBadges", "draw", "refreshPower", "getTotalPower", "addHeroesExp", "patchExtraTalent", "finishExtraTalentBatch" }, "角色面板" },
         { "ui.character.hero.HeroRosterPanel", { "draw" }, "英雄名册" },
         { "ui.story.ScenarioDialogue", { "update", "draw" }, "剧情对话" },
         { "ui.story.gate.IntroCutscene", { "update", "draw" }, "开场剧情" },

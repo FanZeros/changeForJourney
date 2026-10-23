@@ -102,8 +102,32 @@ local function setupFixture()
     surface.init()
     vg = assert(nvgCreate(1), "actual host NanoVG context missing")
     check(vg ~= UI.GetNVGContext(), "real host context differs from UI private font context")
-    check(nvgCreateFont(vg, "sans", FONT) >= 0, "real host registers only multilingual sans")
+    local hostFont = nvgCreateFont(vg, "sans", FONT)
+    check(hostFont >= 0, "real host registers only multilingual sans")
+    eq(nvgFindFont(vg, "sans"), hostFont, "native font lookup returns the actual host font handle")
     check(nvgFindFont(vg, "sans-bold") < 0, "real host has no implicit sans-bold alias")
+    -- 原生绑定烟雾：不另开BeginFrame；复用已创建的独立测试vg，save/restore守住宿主。
+    -- 兼容原生填参和返回table两种形式，不能只让假fixture的矩阵写法通过。
+    local function nativeMatrix()
+        local matrix = {}
+        local returned = nvgCurrentTransform(vg, matrix)
+        if type(returned) == "table" then matrix = returned end
+        check(#matrix == 6, "native transform exposes all six components")
+        for i = 1, 6 do check(type(matrix[i]) == "number", "native transform numeric component " .. i) end
+        return matrix
+    end
+    local beforeMatrix = nativeMatrix()
+    nvgSave(vg)
+    nvgResetTransform(vg)
+    nvgScale(vg, .375, .625)
+    nvgTranslate(vg, 7, 11)
+    local scaledMatrix = nativeMatrix()
+    near(scaledMatrix[1], .375, "native transform reads actual x scale")
+    near(scaledMatrix[2], 0, "native transform reads actual x shear")
+    near(scaledMatrix[3], 0, "native transform reads actual y shear")
+    near(scaledMatrix[4], .625, "native transform reads actual y scale")
+    nvgRestore(vg)
+    check(same(nativeMatrix(), beforeMatrix), "native transform smoke restores host matrix")
     fixture.UI, fixture.surface = UI, surface
     fixture.i18n = require("core.I18n")
     fixture.originalLanguage = fixture.i18n.get()

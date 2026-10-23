@@ -118,16 +118,19 @@ end
 -- 同一隔离装备快照只建一次未穿戴候选索引；六槽/多英雄不再重复扫全库存与占用表。
 -- 类型/槽位来自已水合副本，不读取或水合 PlayerStore 的真实库存项。
 local upgradeCandidates = { equipment = false, bySlot = {} }
-local function candidatesForUpgrade(equipment)
+local function candidatesForUpgrade(equipment, checkpoint)
     if upgradeCandidates.equipment == equipment then return upgradeCandidates.bySlot end
+    -- 不把 occupied/bySlot 放进共享缓存后再yield：同步详情可在任意帧穿插读取。
     local occupied, bySlot = {}, {}
     for _, heroSlots in pairs(equipment.equipped or {}) do
         if type(heroSlots) == "table" then
             for _, seq in pairs(heroSlots) do
                 local id = tonumber(seq)
                 if id then occupied[id] = true end
+                if checkpoint then checkpoint() end
             end
         end
+        if checkpoint then checkpoint() end
     end
     for seq in pairs(equipment.inventory or {}) do
         local id = tonumber(seq)
@@ -144,7 +147,9 @@ local function candidatesForUpgrade(equipment)
                 end
             end
         end
+        if checkpoint then checkpoint() end
     end
+    if upgradeCandidates.equipment == equipment then return upgradeCandidates.bySlot end
     upgradeCandidates = { equipment = equipment, bySlot = bySlot }
     return bySlot
 end
@@ -162,7 +167,7 @@ function CharacterDetail._hasUpgradeForSlot(heroId, slotName, equipData, ctx, ch
     if not ctx then return false end
     ctx.upgradeSlotResults = ctx.upgradeSlotResults or {}
     if ctx.upgradeSlotResults[slotName] ~= nil then return ctx.upgradeSlotResults[slotName] end
-    local candidates = candidatesForUpgrade(ctx.equipmentData)[slotName] or {}
+    local candidates = candidatesForUpgrade(ctx.equipmentData, checkpoint)[slotName] or {}
     local level = EquipmentSystem.getHeroLevel(ctx.heroesData, heroId)
     local wearable = EquipmentSystem.getWearableTypeSet(heroId, slotName)
     local weaponTypes = EquipmentSystem.getWearableTypeSet(heroId, "weapon")
@@ -191,7 +196,18 @@ end
 function CharacterDetail.hasAnyUpgradeForHero(heroId, checkpoint)
     local equipData = PlayerStore.Get("equipment")
     if not equipData then return false end
-    local ctx = EquipmentPower.getContext(heroId)
+    ---@type table|nil
+    local ctx
+    if checkpoint then
+        ---@type boolean|nil
+        local stale
+        repeat
+            ctx, stale = EquipmentPower.getBadgeContext(heroId, checkpoint)
+            if stale then checkpoint() end
+        until not stale
+    else
+        ctx = EquipmentPower.getContext(heroId)
+    end
     if not ctx then return false end
     for _, slot in ipairs(DT_SLOTS) do
         if CharacterDetail._hasUpgradeForSlot(heroId, slot.slot, equipData, ctx, checkpoint) then return true end

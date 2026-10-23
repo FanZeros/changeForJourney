@@ -259,9 +259,20 @@ function M.bind(deps)
     end
 
     local function badgeVersion()
-        local parts = {}
+        local parts, deployed = {}, {}
+        -- 每次版本采样只扫一次三队；既用于签名，也交给本版本任务判定出战。
+        local teams = get("teams") or {}
+        for team = 1, TEAM_COUNT do
+            local slots = (teams[team] or teams[tostring(team)] or {}).slots or {}
+            for slot = 1, MAX_SLOTS do
+                local entry = slots[slot] or {}
+                appendSignature(parts, entry.state)
+                appendSignature(parts, entry.heroId)
+                if entry.state == "occupied" and entry.heroId ~= nil then deployed[entry.heroId] = true end
+            end
+        end
         for _, key in ipairs({ "equipment", "artifacts", "talents" }) do
-            parts[#parts + 1] = tostring(PlayerStore.GetRevision(key))
+            parts[#parts + 1] = tostring(PlayerStore.GetRevision and PlayerStore.GetRevision(key) or 0)
         end
         local owned = get("ownedSet") or {}
         local ids = {}
@@ -274,18 +285,8 @@ function M.bind(deps)
             appendSignature(parts, hero.advBranch)
             appendSignature(parts, hero.awakening)
             appendSignature(parts, hero.extraTalent)
-            appendSignature(parts, CharacterPanel.isHeroDeployed(id))
         end
-        for team = 1, TEAM_COUNT or 0 do
-            local teams = get("teams") or {}
-            local slots = (teams[team] or teams[tostring(team)] or {}).slots or {}
-            for slot = 1, MAX_SLOTS do
-                local entry = slots[slot] or {}
-                appendSignature(parts, entry.state)
-                appendSignature(parts, entry.heroId)
-            end
-        end
-        return table.concat(parts, "|")
+        return table.concat(parts, "|"), { ids = ids, deployed = deployed }
     end
 
     local function badgeCheckpoint()
@@ -295,11 +296,11 @@ function M.bind(deps)
         end
     end
 
-    local function buildEquipmentBadges(checkpoint)
+    local function buildEquipmentBadges(checkpoint, state)
         local result = {}
-        for heroId in pairs(get("ownedSet") or {}) do
+        for _, heroId in ipairs(state.ids) do
             if checkpoint then checkpoint() end
-            result[heroId] = CharacterPanel.isHeroDeployed(heroId)
+            result[heroId] = state.deployed[heroId]
                 and CharacterDetail.hasAnyUpgradeForHero(heroId, checkpoint) or false
         end
         return result
@@ -321,23 +322,28 @@ function M.bind(deps)
 
     -- 显式调用仍同步返回；生产导航通知走下面的预算队列。
     local function refreshUpgradeBadgeCache()
-        local result = buildEquipmentBadges()
+        local revision, state = badgeVersion()
+        local result = buildEquipmentBadges(nil, state)
         if PlayerStore.GetRevision then
-            completedRevision, completedEquipmentBadges = badgeVersion(), result
+            completedRevision, completedEquipmentBadges = revision, result
             badgeJob, badgeRevision = nil, completedRevision
         end
         return publishUpgradeBadges(result)
     end
 
+    local function queueBadges(revision, state)
+        if completedRevision == revision then
+            badgeJob = nil
+        elseif not badgeJob or badgeRevision ~= revision then
+            badgeRevision = revision
+            badgeJob = coroutine.create(function() return buildEquipmentBadges(badgeCheckpoint, state) end)
+        end
+    end
+
     local function refreshNavBadge()
         if PlayerStore.GetRevision then
-            local revision = badgeVersion()
-            if completedRevision == revision then
-                badgeJob = nil
-            elseif not badgeJob or badgeRevision ~= revision then
-                badgeRevision = revision
-                badgeJob = coroutine.create(function() return buildEquipmentBadges(badgeCheckpoint) end)
-            end
+            local revision, state = badgeVersion()
+            queueBadges(revision, state)
             -- 金币/碎片只刷新小规模养成条件，不取消仍有效的全库存任务。
             publishUpgradeBadges(completedEquipmentBadges)
         else
@@ -348,8 +354,14 @@ function M.bind(deps)
 
     local function updateBadges()
         if not badgeJob then return end
-        -- 同引用原地更新也由版本识别；丢弃旧任务，避免混用前后两次装备结果。
-        if badgeRevision ~= badgeVersion() then refreshNavBadge() end
+        -- 一次Update仅采样一次结构签名（不只信heroes revision，保留原地变更检测）。
+        -- resume到返回之间不执行其他游戏更新；结束时可复用本次采样，不再扫三队/名册。
+        local revision, state = badgeVersion()
+        if badgeRevision ~= revision then
+            queueBadges(revision, state)
+            publishUpgradeBadges(completedEquipmentBadges)
+            BottomNav.refreshTownBadge()
+        end
         if not badgeJob then return end
         local job = badgeJob
         badgeSteps, badgeDeadline = 0, os.clock() + BADGE_CPU_BUDGET
@@ -359,10 +371,8 @@ function M.bind(deps)
             print("[CharacterPower] 角标预算任务失败: " .. tostring(result))
         elseif coroutine.status(job) == "dead" then
             badgeJob = nil
-            if badgeRevision == badgeVersion() then
-                completedRevision, completedEquipmentBadges = badgeRevision, result
-                publishUpgradeBadges(result)
-            end
+            completedRevision, completedEquipmentBadges = revision, result
+            publishUpgradeBadges(result)
         end
     end
 

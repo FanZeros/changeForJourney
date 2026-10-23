@@ -19,6 +19,9 @@ function Start()
     local published, badge, town = {}, false, 0
     local owned = { [1] = {}, [2] = {}, [3] = {} }
     local target = false
+    local teams = { { slots = { { state = "occupied", heroId = 1 } } },
+        { slots = { { state = "occupied", heroId = 2 } } }, { slots = {} } }
+    local teamReads, deploymentCalls = 0, 0
     local store = { GetRevision = function(key) return revisions[key] or 0 end }
     local detail = {
         hasAwakeningUpgrade = function(id) return id == 3 end,
@@ -41,18 +44,27 @@ function Start()
         return Power.bind({
             AD = { STR = "str", AGI = "agi", INT = "int", VIT = "vit", LUK = "luk", SPI = "spi",
                 HP = "hp", ATK_INTERVAL = "interval", PHYS_RES = "pr", MAG_RES = "mr" },
-            PlayerStore = store, CharacterDetail = detail,
-            CharacterPanel = { isHeroDeployed = function(id) return id ~= 3 end },
+            PlayerStore = store, CharacterDetail = detail, TEAM_COUNT = 3, MAX_SLOTS = 4,
+            CharacterPanel = { isHeroDeployed = function(id)
+                deploymentCalls = deploymentCalls + 1
+                return id ~= 3
+            end },
             BottomNav = { setBadge = function(_, v) badge = v end,
                 refreshTownBadge = function() town = town + 1 end },
-            get = function(key) if key == "ownedSet" then return owned end end,
+            get = function(key)
+                if key == "ownedSet" then return owned end
+                if key == "teams" then teamReads = teamReads + 1; return teams end
+            end,
             set = function(key, value) if key == "upgradeBadgeCache" then published = value end end,
         })
     end
     local scheduler = bind()
     scheduler.refreshNavBadge()
     check(calls == 0 and town == 1, "请求只排队，不在数据通知里扫描候选")
+    check(teamReads == 1 and deploymentCalls == 0, "单次版本只读一次三队，不再逐英雄扫描部署")
+    local beforeTeams = teamReads
     scheduler.updateBadges()
+    check(teamReads == beforeTeams + 1, "单次Update仅采样一次版本")
     check(calls > 0 and calls <= 128, "单次驱动按时间/候选预算让出")
     check(published[2] == false and published[3] == true, "只提前发布轻量养成，不发布部分装备角标")
     local function finish()

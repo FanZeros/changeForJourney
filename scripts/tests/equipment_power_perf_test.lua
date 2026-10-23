@@ -125,7 +125,7 @@ local function fixture(noRevisions)
     local function resetCounts() for key in pairs(counts) do counts[key] = 0 end end
     return { EP = EP, Eq = Eq, EC = EC, HC = HC, AD = AD, AVC = AVC, ESC = ESC, detail = detail,
         modules = modules, counts = counts, setData = setData, notify = notify, reset = resetCounts,
-        subscriptions = subscriptions, store = store, inventoryTables = inventoryTables }
+        subscriptions = subscriptions, store = store, inventoryTables = inventoryTables, env = env }
 end
 
 local function dataFor(ids)
@@ -446,6 +446,147 @@ local function badgeCases(f)
         "optional candidate hook yields and final badge matches synchronous result")
 end
 
+local function coldBudgetCases()
+    local f = fixture()
+    local data = dataFor({ 1, 2 })
+    for seq = 1, 500 do put(data, seq, "C1", {}) end
+    local original = copy(data)
+    local function drain(co)
+        local result, stale
+        for _ = 1, 50000 do
+            local ok, value, invalid = coroutine.resume(co)
+            assert(ok, value)
+            result, stale = value, invalid
+            if coroutine.status(co) == "dead" then return result, stale end
+        end
+        error("cold badge coroutine did not finish")
+    end
+    local steps = 0
+    local function checkpoint()
+        steps = steps + 1
+        if steps % 32 == 0 then coroutine.yield() end
+    end
+    f.setData(data)
+    f.reset()
+    local co = coroutine.create(function() return f.EP.getBadgeContext(1, checkpoint) end)
+    assert(coroutine.resume(co))
+    check(f.counts.power == 0 and f.counts.hydrate == 0,
+        "real cold context yields during deep copy before first hydrate/power")
+    local ctx = drain(co)
+    check(ctx and f.counts.hydrate == 500 and close(ctx.currentPower, f.EP.buildWornContext(1).currentPower),
+        "real cold full inventory is hydrated completely and exact current power retained")
+    check(f.EP.getContext(1) == ctx and f.EP.getContext(2).equipmentData == ctx.equipmentData,
+        "completed badge context and equipment share normal synchronous cache identity")
+    check(equal(data, original), "cold async copy/hydrate never changes player source")
+
+    -- 真冷复制中同步读取不能看到半份库存；完成时优先保留同步缓存。
+    f.setData(data)
+    f.reset()
+    steps = 0
+    co = coroutine.create(function() return f.EP.getBadgeContext(1, checkpoint) end)
+    assert(coroutine.resume(co))
+    local sync = f.EP.getContext(1)
+    local count = 0
+    for _ in pairs(sync.equipmentData.inventory) do count = count + 1 end
+    check(count == 500 and sync.currentPower ~= nil, "interleaved synchronous getContext sees only complete 500-item context")
+    check(drain(co) == sync and f.EP.getContext(1) == sync,
+        "async completion does not replace same-version synchronous context or snapshot")
+
+    -- 显式失效即使revision/引用不变，也不能由旧协程重新填入缓存。
+    f.setData(data)
+    steps = 0
+    co = coroutine.create(function() return f.EP.getBadgeContext(1, checkpoint) end)
+    assert(coroutine.resume(co))
+    f.EP.invalidate()
+    data.equipment.inventory["500"].baseStats = { { f.AD.MAX_HP, 1234 } }
+    local invalid, stale = drain(co)
+    check(invalid == nil and stale == true, "generation changed during cold preparation discards old context")
+    sync = f.EP.getContext(1)
+    check(sync.equipmentData.inventory["500"].baseStats[1][2] == 1234,
+        "old preparation cannot republish stale shared equipment after invalidate")
+    -- 完整装备已发布、英雄ctx尚未完成时也核revision，不能把旧ctx登记到新版本。
+    f.setData(data)
+    f.reset()
+    steps = 0
+    co = coroutine.create(function() return f.EP.getBadgeContext(1, function() coroutine.yield() end) end)
+    for _ = 1, 20000 do
+        assert(coroutine.resume(co))
+        if f.counts.hydrate == 500 then break end
+    end
+    check(f.counts.hydrate == 500 and f.counts.power == 0, "revision cancellation fixture reaches post-hydrate pre-context checkpoint")
+    data.equipment.inventory["500"].baseStats[1][2] = 2345
+    f.notify("equipment")
+    invalid, stale = drain(co)
+    check(invalid == nil and stale == true, "same-reference notification during finish preparation rejects stale context")
+    sync = f.EP.getContext(1)
+    check(sync.equipmentData.inventory["500"].baseStats[1][2] == 2345,
+        "new revision receives complete fresh inventory after cancelled prepare")
+    data.equipment.inventory["500"].baseStats = {}
+    f.setData(data)
+    steps = 0
+    ctx = f.EP.getContext(1)
+    f.reset()
+    co = coroutine.create(function() return f.detail.hasAnyUpgradeForHero(1, checkpoint) end)
+    assert(coroutine.resume(co))
+    check(f.counts.gain == 0, "real candidate occupied/index preparation yields before evaluator")
+    -- 索引未完成时同步查询仍检查完整库存，不借异步半成品。
+    check(not f.detail.hasAnyUpgradeForHero(1), "synchronous badge during index build has complete authoritative result")
+    check(drain(co) == false, "candidate index completed after interleaved read remains equivalent")
+
+    -- 真实调度器 + 真实getBadgeContext/候选索引/evaluateGain，持续原地经验通知。
+    f = fixture()
+    data = dataFor({ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 18, 20 })
+    for seq = 1, 500 do put(data, seq, "C1", {}) end
+    f.setData(data)
+    f.reset()
+    local owned, teams, published = {}, {}, {}
+    for id, row in pairs(data.heroes.roster) do owned[tonumber(id)] = row end
+    for t, team in pairs(data.heroes.teams) do
+        teams[t] = { slots = {} }
+        for slot, id in ipairs(team.slots) do teams[t].slots[slot] = { state = "occupied", heroId = id } end
+    end
+    local now = 0
+    local schedulerEnv = setmetatable({ os = { clock = function() now = now + 0.0001; return now end },
+        require = function(name)
+            if name == "core.EventBus" or name == "config.GameEvents" then return {} end
+            if name == "ui.church.ChurchPage" then return { hasAdvanceForHero = function() return false end } end
+            return f.env.require(name)
+        end }, { __index = f.env })
+    local Power = assert(load(source("ui/character/panel/CharacterPower.lua"), "@real-cold-scheduler", "t", schedulerEnv))()
+    f.detail.hasAwakeningUpgrade = function() return false end
+    local scheduler = Power.bind({ AD = f.AD, PlayerStore = f.store, CharacterDetail = f.detail,
+        TEAM_COUNT = 3, MAX_SLOTS = 4, CharacterPanel = {},
+        BottomNav = { setBadge = function() end, refreshTownBadge = function() end },
+        get = function(key) if key == "teams" then return teams elseif key == "ownedSet" then return owned end end,
+        set = function(key, value) if key == "upgradeBadgeCache" then published = value end end })
+    scheduler.refreshNavBadge()
+    scheduler.updateBadges()
+    check(f.counts.hydrate == 0 and f.counts.power == 0, "real scheduler first 1ms slice yields inside cold context copy")
+    scheduler.cancelBadgeRefresh()
+    check(next(published) == nil, "cancel mid cold context publishes no partial hero results")
+    scheduler.refreshNavBadge()
+    local frames = 0
+    while f.counts.gain < 6000 and frames < 20000 do
+        frames = frames + 1
+        for _, row in pairs(data.heroes.roster) do row.exp = frames end
+        for _, team in pairs(data.heroes.teams) do team.exp = frames end
+        f.notify("heroes")
+        f.notify("currency")
+        scheduler.refreshNavBadge()
+        scheduler.updateBadges()
+    end
+    -- 最后一个候选后仍可能有一次预算yield，给完整结果提交留出尾帧。
+    for _ = 1, 20 do scheduler.updateBadges() end
+    local heroes = 0
+    for _, value in pairs(published) do heroes = heroes + 1; check(value == false, "real full inventory equivalent candidate badge") end
+    check(frames < 20000 and heroes == 12 and f.counts.gain == 6000 and f.counts.hydrate == 500,
+        "real exp/currency stream finishes all 12 heroes/full 500 inventory without starvation or repeated hydration")
+    scheduler.cancelBadgeRefresh()
+    local gains = f.counts.gain
+    scheduler.updateBadges()
+    check(f.counts.gain == gains and next(published) == nil, "cancel completed real scheduler clears cache and stays idle")
+end
+
 local function performance(f, count)
     local ids = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 18, 20 }
     local data = dataFor(ids)
@@ -485,6 +626,7 @@ function Start()
         scoringCases(f)
         cacheCases(f)
         badgeCases(f)
+        coldBudgetCases()
         performance(f, 500)
         performance(f, 1000)
     end)

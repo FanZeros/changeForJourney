@@ -11,6 +11,46 @@ local ExpTable = require("config.ExpTable")
 local TutorialManager = require("systems.TutorialManager")
 local HeroFrame = require("ui.widget.HeroFrame")
 local Presentation = require("ui.character.panel.CharacterRosterPresentation")
+local NumberUtil = require("core.NumberUtil")
+local I18n = require("core.I18n")
+
+-- 只缓存战力的文本布局，不缓存卡面或位置。宿主仍拥有BeginFrame/设计缩放。
+local POWER_LAYOUT_LIMIT = 128
+local powerLayouts = {} ---@type table
+local powerLayoutCount = 0
+local powerLayoutScope = {} ---@type table
+local powerLayoutEnabled = false
+local powerLayoutVg = false ---@type any
+
+local function resetPowerLayouts()
+    powerLayouts, powerLayoutScope = {}, {}
+    powerLayoutCount = 0
+    powerLayoutEnabled = false
+end
+
+-- sans在宿主Start中创建；setContext/initImages/resetPresentation是其生命周期边界。
+-- font句柄、语言及实际宿主像素/线性变换变化也必须重新测量；平移不影响局部advance。
+local function preparePowerLayouts(vg)
+    powerLayoutEnabled = false
+    if not nvgFindFont or not nvgCurrentTransform or not graphics then resetPowerLayouts(); return end
+    local font = nvgFindFont(vg, "sans")
+    if not font or font < 0 then resetPowerLayouts(); return end
+    local matrix = {}
+    local returned = nvgCurrentTransform(vg, matrix)
+    if type(returned) == "table" then matrix = returned end
+    if not matrix[1] or not matrix[2] or not matrix[3] or not matrix[4] then resetPowerLayouts(); return end
+    local scope = { vg, font, "sans", I18n.get(), graphics:GetWidth(), graphics:GetHeight(),
+        graphics:GetDPR(), matrix[1], matrix[2], matrix[3], matrix[4], nvgTextBounds, NumberUtil.format }
+    local changed = #scope ~= #powerLayoutScope
+    for i = 1, #scope do
+        if scope[i] ~= powerLayoutScope[i] then changed = true; break end
+    end
+    if changed then
+        powerLayouts, powerLayoutCount, powerLayoutScope = {}, 0, scope
+    end
+    powerLayoutVg = vg
+    powerLayoutEnabled = true
+end
 
 local drawImageCentered  = DrawUtil.drawImageCentered
 local drawImageCover     = DrawUtil.drawImageCover
@@ -211,12 +251,14 @@ function M.setContext(ctx)
     getTeamTotalPower    = ctx.getTeamTotalPower
     getRosterSort       = ctx.getRosterSort or function() return "default", false end
     isHeroesDataApplied = ctx.isHeroesDataApplied or function() return true end
+    resetPowerLayouts()
     Presentation.reset()
 end
 
 -- ======================== 图片初始化 ========================
 
 function M.initImages(vg)
+    resetPowerLayouts()
     img.vg = vg
     -- panelBg 2MB+，首次绘制再加载
     img.listBg     = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_0.png", 0)
@@ -340,6 +382,33 @@ local function teamColor(idx, locked)
     return TEAM_COLORS[idx] or TEAM_COLOR_GRAY
 end
 
+-- 单次draw的部署快照：与getHeroDeployTeams相同的严格ID比较、#slots边界及队号升序。
+-- 同队重复槽只产生一个标签；NaN永不相等，不能作为索引。锁队不贡献名册标签。
+local NIL_HERO_ID = {}
+local function rosterTeamTags(teams, unlockedCnt)
+    local tagsByHero = {}
+    for t = 1, M.TEAM_TAB_COUNT do
+        if t <= unlockedCnt then
+            local slots = teams[t] and teams[t].slots
+            if slots then
+                local seen = {}
+                for i = 1, #slots do
+                    local slot = slots[i]
+                    local id = slot.heroId
+                    if id == nil then id = NIL_HERO_ID end
+                    if slot.state == "occupied" and id == id and not seen[id] then
+                        seen[id] = true
+                        local tags = tagsByHero[id] or {}
+                        tags[#tags + 1] = { text = tostring(t), color = teamColor(t, false) }
+                        tagsByHero[id] = tags
+                    end
+                end
+            end
+        end
+    end
+    return tagsByHero
+end
+
 --- 第 teamIdx 队第 slotIdx 个头像的中心
 --- 右侧为前锋（1 号），与战斗条带里我方从右向左排布一致
 ---@param teamIdx number
@@ -358,19 +427,43 @@ M.AV_SIZE = AV_SIZE
 M.avatarCenter = avatarCenter
 
 local function drawHeroPower(vg, cx, cy, width, power, fontSize)
-    local powerText = require("core.NumberUtil").format(power or 0)
+    power = power or 0
     local iconSize, gap = fontSize, 4
+    -- NaN不能作table key；无效/非数字值仍走原format与测量，不改变其报错/显示语义。
+    local cacheable = powerLayoutEnabled and powerLayoutVg == vg
+        and type(power) == "number" and power == power
+        and width == width and fontSize == fontSize
+    local byWidth = cacheable and powerLayouts[power]
+    local bySize = byWidth and byWidth[width]
+    local layout = bySize and bySize[fontSize]
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, fontSize)
-    local textW = nvgTextBounds(vg, 0, 0, powerText)
-    local available = width - iconSize - gap - 8
-    if textW > available then
-        fontSize = math.max(14, math.floor(fontSize * available / textW))
+    local powerText, textW
+    if layout then
+        powerText, textW, fontSize = layout.text, layout.width, layout.size
+        nvgFontSize(vg, fontSize)
+    else
+        powerText = NumberUtil.format(power)
         nvgFontSize(vg, fontSize)
         textW = nvgTextBounds(vg, 0, 0, powerText)
+        local available = width - iconSize - gap - 8
+        local initialSize = fontSize
+        if textW > available then
+            fontSize = math.max(14, math.floor(fontSize * available / textW))
+            nvgFontSize(vg, fontSize)
+            textW = nvgTextBounds(vg, 0, 0, powerText)
+        end
+        if cacheable then
+            if powerLayoutCount >= POWER_LAYOUT_LIMIT then powerLayouts, powerLayoutCount = {}, 0 end
+            byWidth = powerLayouts[power] or {}
+            bySize = byWidth[width] or {}
+            bySize[initialSize] = { text = powerText, width = textW, size = fontSize }
+            byWidth[width], powerLayouts[power] = bySize, byWidth
+            powerLayoutCount = powerLayoutCount + 1
+        end
     end
     local startX = cx - (iconSize + gap + textW) * 0.5
     drawImageCentered(vg, img.power, startX + iconSize * 0.5, cy, iconSize, iconSize, 1)
+    -- 每帧仍绘制原8方向描边+填充，不缓存坐标/alpha/图元。
     drawTextStroke(vg, startX + iconSize + gap, cy, powerText, fontSize,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 247, 254, 119, 2)
 end
@@ -427,10 +520,12 @@ end
 
 --- 三队头像同时显示。右侧栏不画角色整卡，点头像才进卡面。
 ---@param vg any
-function M.drawTeamAvatars(vg)
+function M.drawTeamAvatars(vg, teamsSnapshot, unlockedSnapshot)
+    preparePowerLayouts(vg)
     if not getTeams or not getUnlockedTeamCount then return end
-    local teams = getTeams()
-    local unlockedCnt = getUnlockedTeamCount() or 1
+    local teams = teamsSnapshot or getTeams()
+    local unlockedCnt = unlockedSnapshot
+    if unlockedCnt == nil then unlockedCnt = getUnlockedTeamCount() or 1 end
     local activeIdx = getActiveTeamIdx and getActiveTeamIdx() or 1
     -- 本次绘制首次观察等级时建索引；不跨帧缓存，不为锁定/未就绪/空队扫描名册。
     local rosterLevels = {}
@@ -598,7 +693,10 @@ function M.hitTestTeamTabs(dx, dy)
     return nil
 end
 
-M.resetPresentation = Presentation.reset
+function M.resetPresentation()
+    resetPowerLayouts()
+    Presentation.reset()
+end
 
 function M.hitTestRosterSort(dx, dy)
     return Presentation.hitTestSort(dx - M.CONTENT_SHIFT_X, dy - M.CONTENT_SHIFT_Y)
@@ -676,7 +774,10 @@ function M.draw(vg, scrollY, detailOpen)
         M.clearSortInteraction()
         M.clearTeamInteraction()
     end
-    M.drawTeamAvatars(vg)
+    local unlockedCnt = getUnlockedTeamCount and getUnlockedTeamCount() or 1
+    local teamsSnapshot = getTeams and getTeams()
+    M.drawTeamAvatars(vg, teamsSnapshot, unlockedCnt)
+    local tagsByHero = teamsSnapshot and rosterTeamTags(teamsSnapshot, unlockedCnt) or nil
     local sortMode, ascending = getRosterSort()
     Presentation.drawSort(vg, sortMode, ascending)
 
@@ -751,11 +852,16 @@ function M.draw(vg, scrollY, detailOpen)
         local isOwned = entry.owned
         local draggingThis = dragState and dragState.active and dragState.heroId == entry.heroId
         -- [统一角色框] 名册网格：品质描边 + 全套角标（等级/职业/队伍/碎片/可提升）+ 名字
-        local deployTeams = getHeroDeployTeams and getHeroDeployTeams(entry.heroId) or nil
-        local teamTags = {}
-        local unlockedCnt = getUnlockedTeamCount and getUnlockedTeamCount() or 1
-        if deployTeams then
-            for _, t in ipairs(deployTeams) do
+        local teamTags
+        if tagsByHero then
+            local id = entry.heroId
+            if id == nil then id = NIL_HERO_ID end
+            teamTags = (id == id and tagsByHero[id]) or {}
+        else
+            -- 兼容仅注入旧getter的独立宿主；正式宿主使用上面的单次部署映射。
+            local deployTeams = getHeroDeployTeams and getHeroDeployTeams(entry.heroId) or nil
+            teamTags = {}
+            for _, t in ipairs(deployTeams or {}) do
                 if t <= unlockedCnt then
                     teamTags[#teamTags + 1] = { text = tostring(t), color = teamColor(t, false) }
                 end

@@ -219,7 +219,7 @@ function M.snapshot()
         return a.totalWallMs > b.totalWallMs
     end)
     return {
-        schemaVersion = 1, monitorVersion = "2026-10-23-v4", enabled = enabled, stoppedReason = stoppedReason,
+        schemaVersion = 1, monitorVersion = "2026-10-24-v5", enabled = enabled, stoppedReason = stoppedReason,
         elapsedSeconds = totalMs / 1000, frames = totalFrames, fps = totalMs > 0 and totalFrames * 1000 / totalMs or 0,
         frameMs = { p50 = percentile(0.5), p95 = percentile(0.95), p99 = percentile(0.99), max = peakMs },
         percentileWindowFrames = sampleCount,
@@ -238,7 +238,7 @@ function M.getReport()
     if cachedReport ~= "" then return cachedReport end
     local s = M.snapshot()
     local lines = {
-        "性能诊断报告 v4 · 2026-10-23",
+        "性能诊断报告 v5 · 2026-10-24",
         string.format("有效采样 %.1f秒 / %d帧 / 平均 %.1f FPS", s.elapsedSeconds, s.frames, s.fps),
         string.format("最近%d有效帧 P50 %.1f / P95 %.1f / P99 %.1f ms；本轮最大 %.1f ms", s.percentileWindowFrames,
             s.frameMs.p50, s.frameMs.p95, s.frameMs.p99, s.frameMs.max),

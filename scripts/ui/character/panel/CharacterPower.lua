@@ -147,7 +147,128 @@ function M.bind(deps)
         return math.floor(base + extra + 0.5)
     end
 
-    local function refreshPowerCache(cause)
+    local pendingExtraHeroes = {}
+    ---@type table|nil
+    local lastRefreshState = nil
+    local COMBAT_FIELDS = { "level", "advBranch", "awakening", "extraTalent" }
+    local RESOURCE_KEYS = { "equipment", "artifacts", "talents" }
+
+    local function copyPowerValue(value)
+        if type(value) ~= "table" then return value end
+        local result = {}
+        for key, item in pairs(value) do result[key] = copyPowerValue(item) end
+        return result
+    end
+
+    local function samePowerValue(a, b)
+        if type(a) ~= type(b) then return false end
+        if type(a) ~= "table" then return a == b end
+        for key, value in pairs(a) do if not samePowerValue(value, b[key]) then return false end end
+        for key in pairs(b) do if a[key] == nil then return false end end
+        return true
+    end
+
+    -- 冻结小规模战斗输入，不复制/扫描库存。只有明确 patch 的 extraTalent 可以不同；
+    -- 经验/金币不参与评分。无版本宿主、冷缓存、未声明变化和结构变化一律全量。
+    local function refreshState()
+        local heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes") or {}
+        local state = { owned = {}, sources = {}, teams = {}, roster = {}, resources = {},
+            sourceTeams = copyPowerValue(heroes.teams), deployed = copyPowerValue(heroes.deployed) }
+        for name, roster in pairs({ owned = get("ownedSet") or {}, sources = heroes.roster or {} }) do
+            for id, hero in pairs(roster) do
+                local values = {}
+                for _, field in ipairs(COMBAT_FIELDS) do values[field] = copyPowerValue(hero[field]) end
+                state[name][id] = values
+            end
+        end
+        local teams = get("teams") or {}
+        for t = 1, TEAM_COUNT do
+            local slots = (teams[t] or teams[tostring(t)] or {}).slots or {}
+            local values = {}
+            for i = 1, MAX_SLOTS do
+                local slot = slots[i]
+                values[i] = { state = slot and slot.state, heroId = slot and slot.heroId }
+            end
+            state.teams[t] = values
+        end
+        for i, entry in ipairs(get("heroRoster") or {}) do
+            state.roster[i] = { heroId = entry.heroId, owned = entry.owned }
+        end
+        for _, key in ipairs(RESOURCE_KEYS) do
+            state.resources[key] = { source = ClientDispatcher.get(key) or PlayerStore.Get(key),
+                revision = PlayerStore.GetRevision and PlayerStore.GetRevision(key) }
+        end
+        return state
+    end
+
+    local function extraDependencyClosure(current)
+        local previous = lastRefreshState
+        if not previous or not PlayerStore.GetRevision or not next(pendingExtraHeroes) then return nil end
+        for _, key in ipairs(RESOURCE_KEYS) do
+            local a, b = previous.resources[key], current.resources[key]
+            if a.source ~= b.source or a.revision ~= b.revision then return nil end
+        end
+        for _, key in ipairs({ "teams", "sourceTeams", "deployed", "roster" }) do
+            if not samePowerValue(previous[key], current[key]) then return nil end
+        end
+        for _, key in ipairs({ "owned", "sources" }) do
+            for id, hero in pairs(current[key]) do
+                local old = previous[key][id]
+                if not old then return nil end
+                for _, field in ipairs(COMBAT_FIELDS) do
+                    if not (field == "extraTalent" and pendingExtraHeroes[tonumber(id) or id])
+                        and not samePowerValue(old[field], hero[field]) then return nil end
+                end
+            end
+            for id in pairs(previous[key]) do if not current[key][id] then return nil end end
+        end
+        -- 保留未评分名册/槽缓存不能当作暖缓存；外部清缓存也必须回退。
+        local rosterCache, teamCaches = get("rosterPowerCache") or {}, get("teamPowerCaches") or {}
+        if not samePowerValue(previous.rosterPowers, rosterCache)
+            or not samePowerValue(previous.slotPowers, teamCaches) then return nil end
+        local affected = {}
+        for id in pairs(pendingExtraHeroes) do affected[id] = true end
+        -- 本地槽位与正式 buildWornContext 消费的 heroes 队表都纳入闭包。
+        -- 不按活动队猜测，也不假设成长仅影响本人（光环/星门会读队友属性）。
+        local rows = {}
+        for t = 1, TEAM_COUNT do
+            local ids = {}
+            for i, slot in ipairs(current.teams[t]) do
+                if slot.state == "occupied" then ids[i] = tonumber(slot.heroId) end
+            end
+            rows[#rows + 1] = ids
+            local source = current.sourceTeams and (current.sourceTeams[t] or current.sourceTeams[tostring(t)])
+            rows[#rows + 1] = source and source.slots or (not current.sourceTeams and t == 1 and current.deployed) or {}
+        end
+        local changed = true
+        while changed do
+            changed = false
+            for _, ids in ipairs(rows) do
+                local members, touches = {}, false
+                for i = 1, MAX_SLOTS do
+                    local value = ids[i] or ids[tostring(i)]
+                    local id = tonumber(type(value) == "table" and value.heroId or value)
+                    if id and id > 0 then members[#members + 1] = id; touches = touches or affected[id] end
+                end
+                if touches then
+                    for _, id in ipairs(members) do
+                        if not affected[id] then affected[id], changed = true, true end
+                    end
+                end
+            end
+        end
+        return affected
+    end
+
+    local function markExtraTalentDirty(heroId)
+        pendingExtraHeroes[heroId] = true
+    end
+
+    local function refreshPowerCache(cause, extraTalentOnly)
+        local current = refreshState()
+        local affected = extraTalentOnly and extraDependencyClosure(current) or nil
+        -- 全量入口同时消费待结算集合，避免其跨初始化/换队/全局通知泄漏。
+        pendingExtraHeroes, lastRefreshState = {}, nil
         -- 此回调可早于评分订阅者；先失效，避免原地更新后红点仍用旧快照。
         EquipmentPower.invalidate()
         local talentsData = ClientDispatcher.get("talents") or PlayerStore.Get("talents")
@@ -179,7 +300,9 @@ function M.bind(deps)
         if heroRoster and rosterPowerCache then
             for i, entry in ipairs(heroRoster) do
                 if entry.owned then
-                    rosterPowerCache[i] = powerForRefresh(entry.heroId)
+                    if not affected or affected[tonumber(entry.heroId) or entry.heroId] then
+                        rosterPowerCache[i] = powerForRefresh(entry.heroId)
+                    end
                 else
                     rosterPowerCache[i] = 0
                 end
@@ -201,7 +324,7 @@ function M.bind(deps)
                 local slot = slots[i]
                 local heroId = slot and tonumber(slot.heroId)
                 if slot and slot.state == "occupied" and heroId and ownedSet[heroId] then
-                    if cache then cache[i] = powerForRefresh(heroId, i, t) end
+                    if cache and (not affected or affected[heroId]) then cache[i] = powerForRefresh(heroId, i, t) end
                     deployedCount = deployedCount + 1
                 elseif cache then
                     cache[i] = 0
@@ -220,6 +343,14 @@ function M.bind(deps)
             for i = 1, MAX_SLOTS do teamTotal = teamTotal + (cache[i] or 0) end
             teamPowers[t] = teamTotal
         end
+        -- powerRefreshed 可同步重排名册；保存最终索引与值，不能记排序前的结构。
+        current.roster = {}
+        for i, entry in ipairs(get("heroRoster") or {}) do
+            current.roster[i] = { heroId = entry.heroId, owned = entry.owned }
+        end
+        current.rosterPowers = copyPowerValue(get("rosterPowerCache") or {})
+        current.slotPowers = copyPowerValue(teamPowerCaches)
+        lastRefreshState = current
         -- 顶栏与选关继续使用队1，专用提示使用完整快照。
         GameState.setPower(teamPowers[1] or 0)
         CharacterDetail.markPowerDirty()
@@ -390,6 +521,7 @@ function M.bind(deps)
         calcHeroPower = calcHeroPower,
         calcHeroEstimate = calcHeroEstimate,
         refreshPowerCache = refreshPowerCache,
+        markExtraTalentDirty = markExtraTalentDirty,
         refreshUpgradeBadgeCache = refreshUpgradeBadgeCache,
         refreshNavBadge = refreshNavBadge,
         updateBadges = updateBadges,

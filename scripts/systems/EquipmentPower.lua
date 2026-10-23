@@ -252,7 +252,7 @@ function M.buildContext(heroId, options)
     ctx.equipmentData.inventory = ctx.equipmentData.inventory or {}
     ctx.equipmentData.equipped = ctx.equipmentData.equipped or {}
     if options ~= nil then hydrateSnapshot(ctx.equipmentData, options.checkpoint) end
-    return finishContext(ctx)
+    return finishContext(ctx, options and options.checkpoint)
 end
 
 -- 仅供当前穿戴战力批次：模块快照一次，库存源只读，按本队实际六槽取副本。
@@ -648,12 +648,11 @@ function M.getBadgeContext(heroId, checkpoint)
     return ctx
 end
 
-function M.score(equip, heroId, targetSlot)
-    if not heroId then return M.genericScore(equip) end
-    if not equip then return 0 end
-    local ctx = M.getContext(heroId)
-    if not ctx then return 0 end
-    local seq = equip.seq
+-- 私有跨帧列表必须在冻结的上下文中评分，不能在每件上重新取得 live getContext。
+-- seqOverride 用于尚未带 seq 的精简库存；同步 score 的查找/回退口径保持不变。
+function M.scoreInContext(ctx, equip, targetSlot, seqOverride)
+    if not equip or not ctx then return 0 end
+    local seq = equip.seq or seqOverride
     if not seq then
         local source = ctx.sourceEquipment
         for key, item in pairs(source and source.inventory or {}) do
@@ -678,6 +677,12 @@ function M.score(equip, heroId, targetSlot)
     local value = math.floor(powerFor(ctx, unit, units, ctx.equipmentData) - ctx.currentPower + 0.5)
     ctx.scores[key] = value
     return value
+end
+
+function M.score(equip, heroId, targetSlot)
+    if not heroId then return M.genericScore(equip) end
+    if not equip then return 0 end
+    return M.scoreInContext(M.getContext(heroId), equip, targetSlot)
 end
 
 return M

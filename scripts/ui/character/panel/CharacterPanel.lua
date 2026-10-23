@@ -318,9 +318,9 @@ function CharacterPanel.getHeroDeployPosition(heroId, teamIdx)
     return ensurePower().findHeroDeployPosition(heroId, teamIdx)
 end
 
-local function refreshPowerCache(cause)
+local function refreshPowerCache(cause, extraTalentOnly)
     -- 映射hook位于原Power全部缓存完成且emit之前，不能在此事后重复排序。
-    local result = ensurePower().refreshPowerCache(cause)
+    local result = ensurePower().refreshPowerCache(cause, extraTalentOnly)
     if _heroSync then _heroSync.rememberState() end
     return result
 end
@@ -944,6 +944,7 @@ function CharacterPanel.patchExtraTalent(heroId, extra, deferRefresh)
     local owned = ownedSet[heroId]
     if owned then
         owned.extraTalent = extra
+        ensurePower().markExtraTalentDirty(heroId)
     end
     local disp = ClientDispatcher.get("heroes")
     if disp and disp.roster then
@@ -953,14 +954,14 @@ function CharacterPanel.patchExtraTalent(heroId, extra, deferRefresh)
         end
     end
     if owned and not deferRefresh then
-        refreshPowerCache()
+        refreshPowerCache(nil, true)
         updateHeroesRefreshBaseline()
     end
 end
 
 --- 战后批量写入完成才刷新一次，避免每个英雄重复计算三队战力。
 function CharacterPanel.finishExtraTalentBatch()
-    refreshPowerCache()
+    refreshPowerCache(nil, true)
     updateHeroesRefreshBaseline()
 end
 

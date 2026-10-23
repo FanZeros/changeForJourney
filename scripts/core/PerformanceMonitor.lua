@@ -20,7 +20,8 @@ local memoryAt = -1
 local stoppedReason = "未开始"
 local cachedReport = ""
 local function wall()
-    return time:GetSystemTime() / 1000
+    -- GetSystemTime 是静态绑定；实例 time:GetSystemTime() 会在原生运行库中报参数类型错误。
+    return Time:GetSystemTime() / 1000
 end
 local function cpu() return os.clock() end
 local function finite(n) return type(n) == "number" and n == n and n >= 0 and n < math.huge end
@@ -117,6 +118,14 @@ function M.stop()
     epoch = epoch + 1
     print("[Performance] 停止诊断 frames=" .. totalFrames)
 end
+-- 诊断异常仅关闭采集，不能中断游戏；不把业务异常或玩家参数写入报告。
+function M.fail(stage)
+    if not enabled then return end
+    M.stop()
+    stoppedReason = "诊断异常，已自动停止（" .. stage .. "）"
+    cachedReport = ""
+    print("[Performance] " .. stoppedReason .. "；游戏继续运行")
+end
 -- context 必须由宿主固定枚举构造，禁止传玩家名称或业务payload。
 ---@param context string
 ---@param exclusion string?
@@ -174,9 +183,13 @@ end
 function M.wrap(name, fn)
     return function(...)
         if not enabled or not current or current.excluded or coroutine.isyieldable() then return fn(...) end
-        local token = M.begin(name)
+        local ok, token = pcall(M.begin, name)
+        if not ok then
+            M.fail("分段开始")
+            return fn(...)
+        end
         local result = table.pack(pcall(fn, ...))
-        M.finish(token)
+        if not pcall(M.finish, token) then M.fail("分段结束") end
         if not result[1] then error(result[2], 0) end
         return table.unpack(result, 2, result.n)
     end
@@ -206,7 +219,7 @@ function M.snapshot()
         return a.totalWallMs > b.totalWallMs
     end)
     return {
-        schemaVersion = 1, monitorVersion = "2026-10-22-v1", enabled = enabled, stoppedReason = stoppedReason,
+        schemaVersion = 1, monitorVersion = "2026-10-23-v2", enabled = enabled, stoppedReason = stoppedReason,
         elapsedSeconds = totalMs / 1000, frames = totalFrames, fps = totalMs > 0 and totalFrames * 1000 / totalMs or 0,
         frameMs = { p50 = percentile(0.5), p95 = percentile(0.95), p99 = percentile(0.99), max = peakMs },
         percentileWindowFrames = sampleCount,
@@ -225,7 +238,7 @@ function M.getReport()
     if cachedReport ~= "" then return cachedReport end
     local s = M.snapshot()
     local lines = {
-        "性能诊断报告 v1 · 2026-10-22",
+        "性能诊断报告 v2 · 2026-10-23",
         string.format("有效采样 %.1f秒 / %d帧 / 平均 %.1f FPS", s.elapsedSeconds, s.frames, s.fps),
         string.format("最近%d有效帧 P50 %.1f / P95 %.1f / P99 %.1f ms；本轮最大 %.1f ms", s.percentileWindowFrames,
             s.frameMs.p50, s.frameMs.p95, s.frameMs.p99, s.frameMs.max),

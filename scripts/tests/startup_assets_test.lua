@@ -211,10 +211,11 @@ function Start()
         clock.elapsedTime = 101
         Town.preload(nil)
         local warm = #loads
-        check(warm == 19, "Town真实预热保留原19图，白色远征导航使用独立矢量")
+        check(warm == 18, "Town真实预热保留18张在用图，不加载已矢量替代的功绩图标")
+        check(pathCount("image/通用图标/ICON_CZ_GJ.png") == 0, "功绩矢量名牌不再加载旧PNG")
         local townPaths = {
             "image/界面底板/城镇世界/UI_CZ_YX.png", "image/通用图标/ICON_CZ_YX.png",
-            "image/界面底板/城镇世界/UI_CZ_GJ.png", "image/通用图标/ICON_CZ_GJ.png",
+            "image/界面底板/城镇世界/UI_CZ_GJ.png",
             "image/界面底板/城镇世界/UI_CZ_CK.png", "image/通用图标/ICON_CZ_TJP.png",
             "image/界面底板/城镇世界/UI_CZ_JT.png", "image/界面底板/城镇世界/UI_CZ_TREE.png",
             "image/城镇建筑/UI_CZ_EXPEDITION_GATE.png", "image/界面底板/城镇世界/UI_CZ_JG.png",
@@ -238,7 +239,7 @@ function Start()
         ColdTown.init(context)
         local before = #loads
         ColdTown.draw(context)
-        check(#loads - before == 19, "独立cold真模块首draw仍19张，证明warm对照非空绘制")
+        check(#loads - before == 18, "独立cold真模块首draw仍18张，证明warm对照非空绘制")
 
         local combat = {
             getCardAnimOffsetY = function() return 0 end, getChargeOffsetY = function() return 0 end,
@@ -404,7 +405,7 @@ function Start()
         check(pathCount(mapPath) == 1, "Tri自身预热没有额外加载默认MAP_1")
         local freshContext = {}
         before = #loads; Town.init(freshContext); Town.preload(freshContext)
-        check(#loads - before == 19, "Town新context完整重载19图，不借旧context")
+        check(#loads - before == 18, "Town新context完整重载18图，不借旧context")
         before = #loads; View.init(freshContext); View.draw(freshContext, {}, nil, true)
         check(#loads - before == 1 and pathCount(mapPath) == 1, "View新context只重载tag，skipBg仍不读map")
         imageContext.imgHeroCards, imageContext.imgMonsterCards = {}, {}
@@ -468,7 +469,7 @@ function Start()
             ["ui.fx.SpineCardEffect"] = { destroy = noop }, ["ui.fx.SpineResultEffect"] = { destroy = noop },
             ["ui.fx.DarkEffectSprites"] = { destroy = noop },
             -- Stop新接入的外围呈现/故事清理，只记录可调用性，不启动实际故事或塔场景。
-            ["systems.StoryPlayer"] = { resetAll = noop }, ["ui.tavern.RecruitAnim"] = { destroy = noop },
+            ["systems.StoryPlayer"] = { resetAll = noop }, ["ui.tavern.RecruitAnim"] = { destroy = noop }, ["ui.church.ArtifactDrawAnim"] = { destroy = noop },
             ["ui.tower.TowerBuffSidebar"] = { destroy = noop },
             ["ui.battle.scene.BattlePauseOverlay"] = { destroy = noop },
             ["ui.loot.InventoryCurationDialog"] = { reset = noop },
@@ -553,7 +554,7 @@ function Start()
             check(#loads - before <= 2, "真实Town preload/host wrapper每泵至多两新图 " .. frames)
         end
         before = #loads; warmTown.draw(context)
-        check(done and frames == 10 and #loads == before, "合作式Town预热19张分10泵，首完整draw新增0")
+        check(done and frames == 9 and #loads == before, "合作式Town预热18张分9泵，首完整draw新增0")
         assert(load(section("boot/Standalone.lua", "function Standalone.Stop()", "--- 标题关闭后按真实离线时长结算"),
             "@startup-real/Standalone.Stop", "t", boundary))()
         local stoppedQueue = boundary.bootQueue_
@@ -687,7 +688,7 @@ function Start()
                 partialTown.init(freshVG)
                 before = #loads; partialTown.preload(freshVG)
                 print(string.format("%s AUDIT stop_restart same_module=true partial_loads=%d fresh_context_loads=%d incomplete=%s",
-                    TAG, partialLoads, #loads - before, tostring(partialLoads < 19 and #loads == before)))
+                    TAG, partialLoads, #loads - before, tostring(partialLoads < 18 and #loads == before)))
             end
         end
         -- 视觉专项仍执行完整真实模块；有限替身仅涵盖GPU、音效出口、队号和浮字输入。

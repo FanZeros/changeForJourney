@@ -114,8 +114,6 @@ local imgShadow   = -1
 local imgHeroCards   = {}   -- imgHeroCards[heroId] = nvg image handle
 local imgMonsterCards = {}  -- imgMonsterCards[monsterId] = nvg image handle
 local imgHpBg     = -1
-local imgHpFill   = -1
-local imgEsFill   = -1
 local imgBtnBack  = -1
 local imgBtnFwd   = -1
 local imgBtnIcon  = -1
@@ -596,8 +594,6 @@ function BattleScene.init(vg)
     -- 否则 BattleDraw 会 fallback 到 imgMonsterCards[1]（怪物1的贴图）。
     -- 战斗卡牌改到首次进战斗时分帧加载（见 loadStage → ensureBattleCards）
     imgHpBg     = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HP1.png", 0)
-    imgHpFill   = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HPT2.png", 0)
-    imgEsFill   = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HPT3.png", 0)
     imgBtnBack  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYGA.png", 0)
     imgBtnFwd     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYGB.png", 0)
     imgBtnFwdGrey = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYG.png", 0)
@@ -633,8 +629,6 @@ function BattleScene.init(vg)
         imgHeroCards    = imgHeroCards,
         imgMonsterCards = imgMonsterCards,
         imgHpBg         = imgHpBg,
-        imgHpFill       = imgHpFill,
-        imgEsFill       = imgEsFill,
         imgAllyTags     = imgAllyTags,
     })
 

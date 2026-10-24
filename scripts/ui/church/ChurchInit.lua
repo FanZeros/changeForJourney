@@ -1,5 +1,5 @@
 -- ============================================================================
--- ChurchInit - 教堂资源加载 / 订阅 / 子模块注入（玩法不变）
+-- ChurchInit - 教堂资源加载 / 订阅 / 神器子模块注入
 -- ============================================================================
 
 local M = {}
@@ -7,122 +7,50 @@ local M = {}
 function M.bind(deps)
     local img = deps.img
     local state = deps.state
-    local ANIM = deps.ANIM
-    local easeOutCubic = deps.easeOutCubic
-    local easeInCubic = deps.easeInCubic
-    local TalentStarMap = deps.TalentStarMap
-    local TalentPanel = deps.TalentPanel
-    local ClassChange = deps.ClassChange  -- 转职已迁出，保留注入但不使用
     local ArtifactPanel = deps.ArtifactPanel
     local ArtifactDrawPanel = deps.ArtifactDrawPanel
     local getDispatcher = deps.getDispatcher
     local getClient = deps.getClient
     local getProtocol = deps.getProtocol
-    local getClassIcon2 = deps.getClassIcon2
     local syncTalentLitNodes = deps.syncTalentLitNodes
-    local clearPowerCache = deps.clearPowerCache
 
     local inited = false
+    ---@type any
     local vgCache = nil
 
     local function refreshTownBadge()
         local okBN, BN = pcall(require, "ui.hud.BottomNav")
-        if okBN and BN and BN.refreshTownBadge then
-            BN.refreshTownBadge()
-        end
+        if okBN and BN and BN.refreshTownBadge then BN.refreshTownBadge() end
     end
 
     local function init(vg)
         if inited then return end
         inited = true
         vgCache = vg
-        img.bg       = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTZZBJ.png", 0)
-        img.nameBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
-        img.btnBack  = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
-        img.tabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
-        img.plus     = nvgCreateImage(vg, "image/通用图标/UI_ICON_JIA.png", 0)
+        img.nameBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
+        img.tabBg = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
+        img.iconUp = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
 
-        -- 转职相关图片（彩色职业背景由矢量绘制）
-        -- 转职树分叉线已改为代码矢量绘制，UI_ZZXT_1Z/2Z 贴图不再加载
-        -- 职业图标（基础/一转/二转）按需加载，避免启动同步解码 42 张
-
-        -- 角色列表背景（与角色面板相同）
-        img.listBg = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_0.png", 0)
-        -- 职业小图标（角色卡牌左上角）
-        for i = 1, 6 do
-            img.classIcons[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
-        end
-
-        -- 卡片详情图片（与角色面板相同）
-        img.expBarBg   = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT1.png", 0)
-        img.expBarFill = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT2.png", 0)
-        img.deployed   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_CZZ.png", 0)
-
-        -- 转职确认弹窗用深色矢量面板
-        img.goldCoin    = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
-        img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
-        img.resDiamond = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
-
-        -- 天赋面板图片
-        img.tfBg          = nvgCreateImage(vg, "image/界面底板/终焉古树/UI_GS_TFBJ_dark.png", 0)
-        img.tfPointGlow   = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HG.png", 0)
-        img.tfSliderThumb = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HK.png", 0)
-
-        img.tfInfoIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_TS.png", 0)
-
-        -- 天赋星图由 TalentPage.init 负责，教堂不再抢初始化
-
-        -- 订阅天赋数据变更，自动同步星图渲染状态 + 刷新角标
+        -- 古树持有星图上下文；教堂只保留数据同步与入口角标刷新。
         getDispatcher().subscribe("talents", function()
             local okTP, TP = pcall(require, "ui.church.talent.TalentPage")
-            if okTP and TP and TP.syncTalentFromStore then
-                TP.syncTalentFromStore()
-            else
-                syncTalentLitNodes()
-            end
-            clearPowerCache()
+            if okTP and TP and TP.syncTalentFromStore then TP.syncTalentFromStore()
+            else syncTalentLitNodes() end
             refreshTownBadge()
         end)
+        getDispatcher().subscribe("player", refreshTownBadge)
 
-        -- 订阅玩家数据变更（升级 → 天赋点上限增加 → 刷新角标）
-        getDispatcher().subscribe("player", function()
-            clearPowerCache()
-            refreshTownBadge()
-        end)
-
-        -- 订阅英雄数据变更（等级/共鸣变化 → 刷新战力缓存）
-        getDispatcher().subscribe("heroes", function()
-            clearPowerCache()
-        end)
-
-        -- 订阅装备变更（穿戴/卸下影响战力预览）
-        getDispatcher().subscribe("equipment", function()
-            clearPowerCache()
-        end)
-
-        -- 构造共享上下文，注入到子模块
         local ctx = {
-            state            = state,
-            img              = img,
-            easeOutCubic     = easeOutCubic,
-            easeInCubic      = easeInCubic,
-            POPUP_ANIM_DUR   = ANIM.POPUP_DUR,
-            POPUP_SCALE_FROM = ANIM.POPUP_SCALE_FROM,
-            getClient        = getClient,
-            getProtocol      = getProtocol,
-            getDispatcher    = getDispatcher,
+            state = state,
+            getClient = getClient,
+            getProtocol = getProtocol,
             isAutoExchangeInputReady = deps.isAutoExchangeInputReady,
         }
-        -- 天赋面板上下文由 TalentPage 独占注入，教堂不再 setContext
-        ctx.getClassIcon2 = getClassIcon2
-        -- 转职页已迁到右侧栏角色详情，图片与状态由 ChurchClassChange 自管
         ArtifactPanel.setContext(ctx)
         ArtifactPanel.init(vg)
-        -- 神器宝箱页签（市场典藏迁移）：注入同一共享上下文
         ArtifactDrawPanel.setContext(ctx)
         ArtifactDrawPanel.init(vg)
-
-        print("[ChurchPage] init OK")
+        print("[ChurchPage] init OK: 神器/宝箱，已移除旧选人资源")
     end
 
     return {

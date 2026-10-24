@@ -7,34 +7,15 @@ local TownPageChrome = require("ui.town.TownPageChrome")
 local M = {}
 
 function M.bind(deps)
-    local ANIM = deps.ANIM
-    local CHAR_SLOT = deps.CHAR_SLOT
-    local ClassChange = deps.ClassChange  -- 转职已迁出，保留注入但不使用
-    local TalentPanel = deps.TalentPanel
     local ArtifactPanel = deps.ArtifactPanel
     local ArtifactDrawPanel = deps.ArtifactDrawPanel
-    local TownPageChrome = deps.TownPageChrome
     local TAB_ITEMS = deps.TAB_ITEMS
     local TAB_KEYS = deps.TAB_KEYS
     local TAB = deps.TAB
-    local CHURCH = deps.CHURCH
-    local ROSTER = deps.ROSTER
-    local DESIGN_W = deps.DESIGN_W
-    local DESIGN_H = deps.DESIGN_H
-    local clampRosterScroll = deps.clampRosterScroll
-    local isRosterVisible = deps.isRosterVisible
-    local isInRosterScrollArea = deps.isInRosterScrollArea
-    local expandSlot = deps.expandSlot
-    local collapseSlot = deps.collapseSlot
-    local selectHero = deps.selectHero
-    local getOwnedHeroList = deps.getOwnedHeroList
     local forceClose = deps.forceClose
     ---@type fun()
     local closeChurch = deps.closePage
-    local resetRosterScrollState = deps.resetRosterScrollState
-    local TalentStarMap = deps.TalentStarMap
     local state = deps.state
-    local hitTest = deps.hitTest
 
     local function handleInput(dx, dy)
         if not state.open then return false end
@@ -97,17 +78,6 @@ function M.bind(deps)
                     state.tab = newTab
                     require("systems.GameSFX").playUIMove(2)
 
-                    if newTab ~= "shenqi" then
-                        state._deferClearHero = true
-                        -- 冻结槽位动画（不独立收起，整体跟 tab 一起滑走）
-                        if state.slotExpanded then
-                            state.slotExpanded = false
-                        end
-                        state.slotAnimDir = 0  -- 停止独立动画
-                    else
-                        state._deferClearHero = false
-                    end
-
                     print("[ChurchPage] 切换到 " .. newTab)
                 end
                 return true
@@ -117,22 +87,13 @@ function M.bind(deps)
         return true  -- 教堂打开时消费所有点击
     end
 
-    -- ======================== 拖拽三段式 ========================
-
-    -- ======================== 拖拽三段式 → 委托 TalentPanel ========================
+    -- ======================== 神器拖拽三段式 ========================
 
     --- 拖拽开始
     ---@return boolean consumed
     local function handleDragBegin(dx, dy)
         if not state.open or state.closing then return false end
         if ArtifactDrawPanel.isAnimationPlaying and ArtifactDrawPanel.isAnimationPlaying() then return true end
-
-        if isRosterVisible() and isInRosterScrollArea(dx, dy) then
-            state.rosterDragging = true
-            state.rosterLastDragY = dy
-            state.rosterScrollVelocity = 0
-            return true
-        end
 
         if state.tab ~= "shenqi" then return false end
         return ArtifactPanel.handleDragBegin(dx, dy)
@@ -144,15 +105,6 @@ function M.bind(deps)
         if not state.open or state.closing then return false end
         if ArtifactDrawPanel.isAnimationPlaying and ArtifactDrawPanel.isAnimationPlaying() then return true end
 
-        if state.rosterDragging then
-            local delta = state.rosterLastDragY - dy
-            state.rosterScrollY = state.rosterScrollY + delta
-            state.rosterLastDragY = dy
-            state.rosterScrollVelocity = -delta
-            clampRosterScroll()
-            return true
-        end
-
         if state.tab ~= "shenqi" then return false end
         return ArtifactPanel.handleDragMove(dx, dy)
     end
@@ -160,14 +112,7 @@ function M.bind(deps)
     --- 拖拽结束
     local function handleDragEnd(dx, dy)
         if not state.open or state.closing then return end
-        if ArtifactDrawPanel.isAnimationPlaying and ArtifactDrawPanel.isAnimationPlaying() then
-            state.rosterDragging = false
-            return
-        end
-        if state.rosterDragging then
-            state.rosterDragging = false
-            return
-        end
+        if ArtifactDrawPanel.isAnimationPlaying and ArtifactDrawPanel.isAnimationPlaying() then return end
         if state.tab == "shenqi" then
             ArtifactPanel.handleDragEnd(dx, dy)
         end
@@ -180,12 +125,6 @@ function M.bind(deps)
     local function handleScroll(wheel, msx, msy)
         if not state.open or state.closing then return end
         if ArtifactDrawPanel.isAnimationPlaying and ArtifactDrawPanel.isAnimationPlaying() then return end
-        if isRosterVisible() and (msx == nil or isInRosterScrollArea(msx, msy)) then
-            state.rosterScrollY = state.rosterScrollY - wheel * 80
-            state.rosterScrollVelocity = 0
-            clampRosterScroll()
-            return
-        end
         if state.tab == "shenqi" then
             ArtifactPanel.handleScroll(wheel, msx, msy)
         end

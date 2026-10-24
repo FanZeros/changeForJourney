@@ -104,6 +104,7 @@ local AFFIX_BADGE_KEY = { "D", "C", "B", "A", "S" }
 local imgPowerIcon   = -1
 local imgArrowUp     = -1
 local imgArrowDown   = -1
+local comparisonArrowsReady = false
 local imgBtnGreen    = -1
 local imgBtnRed      = -1   -- UI_AN_HONG.png（立即分解按钮）
 local imgLock        = -1   -- UI_ICON_SUO.png（装备锁定图标）
@@ -619,8 +620,8 @@ local drawCompactPanel = panelDraw.drawCompactPanel
 ---@param vg any NanoVG 上下文
 function EquipmentDetail.init(vg)
     imgPowerIcon = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
-    imgArrowUp   = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
-    imgArrowDown = nvgCreateImage(vg, "image/通用图标/ICON_down.png", 0)
+    imgArrowUp, imgArrowDown = -1, -1
+    comparisonArrowsReady = false
     imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     imgBtnRed    = nvgCreateImage(vg, "image/按钮/UI_AN_HONG.png", 0)
     imgLock      = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
@@ -1177,6 +1178,12 @@ function EquipmentDetail.draw(vg)
         return
     end
 
+    -- 非紧凑兼容入口才使用比较箭头，不在日常小窗初始化时加载。
+    if hasCurrent and powerDiff and powerDiff ~= 0 and not comparisonArrowsReady then
+        imgArrowUp = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
+        imgArrowDown = nvgCreateImage(vg, "image/通用图标/ICON_down.png", 0)
+        comparisonArrowsReady = true
+    end
     -- 只画被点开的这一件，不再左右各铺一份完整说明
     local singleOffsetX = SINGLE_BG_CX - REF_BG_CX
     local showDecompose = (not isEquipped) and (not newEquip.locked)

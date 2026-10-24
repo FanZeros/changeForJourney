@@ -320,19 +320,14 @@ local img = {
     slotAccessory = -1,
     midBg         = -1,
     midExpBg      = -1,
-    midExpFill    = -1,
     midDiv1       = -1,
     attrDeco      = -1,
     midDiv2       = -1,
-    btnBack       = -1,
     tabBg         = -1,
-    tabSlider     = -1,
     btnHong       = -1,
     btnLv         = -1,
     arrowIcon     = -1,   -- 切换箭头图标 UI_YWJM_XYG2（默认向右）
 }
-
-local imgQualityBadges = {}
 
 -- 来自 CharacterPanel 的共享图片（通过 setContext 注入）
 local imgHeroCards   = {}
@@ -447,13 +442,7 @@ function M.initImages(vg)
 
     img.midBg      = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_0.png", 0)
     img.midExpBg   = nvgCreateImage(vg, "image/进度条/UI_JSXQ_JYT1.png", 0)
-    img.midExpFill = nvgCreateImage(vg, "image/进度条/UI_JSXQ_JYT2.png", 0)
     img.midDiv1    = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_FGXJ.png", 0)
-
-    imgQualityBadges["R"]   = nvgCreateImage(vg, "image/品质框/UI_PZBZ_R.png", 0)
-    imgQualityBadges["SR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SR.png", 0)
-    imgQualityBadges["SSR"] = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SSR.png", 0)
-    imgQualityBadges["UR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_UR.png", 0)
 
     img.attrDeco = nvgCreateImage(vg, "image/通用图标/ICON_XX.png", 0)
     -- [图标统一 0928] midDiv2 与 midDiv1 同贴图，复用句柄避免重复加载（无 delete，复用安全）
@@ -461,8 +450,6 @@ function M.initImages(vg)
     AttributeView.setSharedImages({ background = img.midBg, divider = img.midDiv1, deco = img.attrDeco })
 
     img.btnLv     = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-    img.btnBack   = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
-    img.tabSlider = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
     img.arrowIcon = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYG2.png", 0)
     img.slotSelected = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJPXZTBBJ.png", 0)

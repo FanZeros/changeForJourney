@@ -30,21 +30,6 @@ local RecruitAnim = {}
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
 local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 
--- ======================== 品质映射 ========================
-
-local QUALITY_TAG = {
-    [0] = "N",
-    [1] = "R",
-    [2] = "SR",
-    [3] = "SSR",
-    [4] = "UR",
-}
-
-local function qualityToBadgeTag(quality)
-    if quality == 4 then return "UR" end
-    return QUALITY_TAG[quality] or "R"
-end
-
 -- classId → 图标编号
 local CLASS_NUM = {
     [CC.KNIGHT]   = 1,
@@ -60,7 +45,6 @@ local CLASS_NUM = {
 -- 资源卡保留原高度；只有英雄展示按可见卡框比例缩高。
 local CARD_W, CARD_H = 198, 438
 local HERO_CARD_H = BattleLayout.cardHeightForWidth(CARD_W)
-local QUALITY_BADGE_W, QUALITY_BADGE_H = 107, 47
 
 -- 资源类卡片
 local RES_ICON_BG_W, RES_ICON_BG_H = 100, 100
@@ -114,7 +98,6 @@ local cachedVg = nil
 local img = {
     resultBg     = -1,
     cardBg       = {},
-    qualityBadge = {},
     resIconBg    = {},
     classIcons   = {},
     heroCards    = {},
@@ -196,10 +179,6 @@ function RecruitAnim.init(vg)
     cachedVg = vg
     Presentation.init(vg)
     img.resultBg = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_XKJM.png", 0)
-    -- 卡底由 drawCardBg 矢量绘制
-    for _, b in ipairs({ "R", "SR", "SSR", "UR" }) do
-        img.qualityBadge[b] = nvgCreateImage(vg, "image/品质框/UI_PZBZ_" .. b .. ".png", 0)
-    end
     -- 资源图标底由 DarkIcon.drawQualityBg 矢量绘制
     for i = 1, 6 do
         img.classIcons[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
@@ -243,6 +222,7 @@ end
 function RecruitAnim.start(results, onClose, count, poolId)
     local list = results or {}
     local ordered = {}
+    ---@type table<number, table>
     local buckets = { {}, {}, {} }
     for i = 1, #list do
         local item = list[i]
@@ -406,9 +386,6 @@ local function drawResourceCard(vg, cx, cy, item, alpha)
         { strokeColor = { 0, 0, 0 } }
     )
 
-    -- [稀有度显示] 烧字徽章（R/SR/SSR/UR 图）不再显示；保留品质色卡边作隐晦标识
-    -- local badgeImg = img.qualityBadge[qualityToBadgeTag(item.quality)]
-
     -- 资源名称（上移25px：OFFSET从44增到69）
     local resName = def and def.name or "未知"
     local nameCY = cy + CARD_H * 0.5 - RES_NAME_OFFSET_BOTTOM
@@ -508,8 +485,6 @@ local function drawDupeToShardCard(vg, cx, cy, item, alpha)
     -- 重复英雄仍使用同一新卡面。
     drawHeroCard(vg, heroId, cx, cy, alpha)
 
-    -- [稀有度显示] 烧字徽章不再显示
-
     local combinedAlpha = alpha * _fadeAlpha
     nvgSave(vg)
     nvgGlobalAlpha(vg, combinedAlpha)
@@ -538,8 +513,6 @@ local function drawDecomposeCard(vg, cx, cy, item, alpha)
 
     -- 分解英雄仍使用同一新卡面。
     drawHeroCard(vg, heroId, cx, cy, alpha)
-
-    -- [稀有度显示] 烧字徽章不再显示
 
     local combinedAlpha = alpha * _fadeAlpha
     nvgSave(vg)

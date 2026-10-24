@@ -37,7 +37,6 @@ local imgIconWarehouse = -1 -- 仓库图标
 local imgLootBox = -1       -- 遗匣地点立绘 UI_CZ_YX
 local imgIconLoot = -1      -- 遗匣名牌图标 ICON_CZ_YX
 local imgTask = -1          -- 功绩地点立绘 UI_CZ_GJ
-local imgIconTask = -1      -- 功绩名牌图标 ICON_CZ_GJ
 
 local imgIconChurch = -1 -- 教堂图标
 local imgIconTree   = -1 -- 古树图标
@@ -445,7 +444,6 @@ local function ensureTownImages(vg)
     imgLootBox     = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_YX.png", 0) or -1
     imgIconLoot    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_YX.png", 0) or -1
     imgTask        = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_GJ.png", 0) or -1
-    imgIconTask    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_GJ.png", 0) or -1
     -- 这两张建筑立绘的旧文件名与实际内容相反；图标仍按功能名引用。
     imgSmith       = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_CK.png", 0)
     imgIconSmith   = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_TJP.png", 0)

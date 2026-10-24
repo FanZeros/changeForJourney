@@ -28,7 +28,6 @@ TowerConfig.DAILY_SWEEP_LIMIT = 2
 TowerConfig.UNLOCK_CONDITION  = 0305  -- 最高关卡进度大于 0305
 
 -- 战斗场景资源
-TowerConfig.CARD_IMAGE     = "UI_FBRK_3.png"
 TowerConfig.BATTLE_BG      = "MAP_FB3.png"
 
 -- 狂暴参数（与副本共享）

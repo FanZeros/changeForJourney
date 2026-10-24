@@ -578,7 +578,7 @@ function EquipmentDetailDraw.create(ctx)
     ---@param showActions boolean|nil
     local function drawCompactPanel(vg, equip, btnText, showActions, scoreContext)
         local images = ctx.getImages()
-        local imgPowerIcon, imgArrowUp, imgArrowDown = images.powerIcon, images.arrowUp, images.arrowDown
+        local imgPowerIcon = images.powerIcon
         local imgBtnGreen, imgBtnRed = images.btnGreen, images.btnRed
         local imgLock, imgAffixBadge = images.lock, images.affixBadge
         local q = equip.quality or 1

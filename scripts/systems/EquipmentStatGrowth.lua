@@ -61,6 +61,22 @@ function Growth.refineUnitValue(equip, key)
     return staticUnitValue(key) * Growth.getMultiplier(equip, key)
 end
 
+--- 两类来源曲线共用双手预算规则；不写回输入，不让极大输入先乘C溢出。
+---@param curves table|nil
+---@param equip table|nil
+---@param key string
+---@param value number
+---@return number
+local function scaleSourceBonus(curves, equip, key, value)
+    local limit = curves and curves[key]
+    if not limit or value <= 0 then return value end
+    local tpl = equip and EC.ITEMS[equip.templateId]
+    local slot = equip and (equip.slot or (tpl and tpl.slot))
+    local grip = equip and (equip.grip or (tpl and tpl.grip))
+    local budget = limit * ((slot == "weapon" and grip == "twohand") and 2 or 1)
+    return budget / (1 + budget / value)
+end
+
 --- 直给暴率按来源递减；双手主武器预算翻倍，非目标属性保持原值。
 ---@param equip table|nil
 ---@param key string
@@ -68,15 +84,17 @@ end
 ---@param source string
 ---@return number
 function Growth.scaleCritRate(equip, key, value, source)
-    local curves = EC.CRIT_RATE_CURVE[source]
-    local limit = curves and curves[key]
-    if not limit or value <= 0 then return value end
-    local tpl = equip and EC.ITEMS[equip.templateId]
-    local slot = equip and (equip.slot or (tpl and tpl.slot))
-    local grip = equip and (equip.grip or (tpl and tpl.grip))
-    local budget = limit * ((slot == "weapon" and grip == "twohand") and 2 or 1)
-    -- 避免大历史词条先乘C溢出，正向收益始终单调递增。
-    return budget / (1 + budget / value)
+    return scaleSourceBonus(EC.CRIT_RATE_CURVE[source], equip, key, value)
+end
+
+--- 普通装备优势/劣势伤害按单条来源递减，角色总值和六围派生不在此处理。
+---@param equip table|nil
+---@param key string
+---@param value number
+---@param source string
+---@return number
+function Growth.scaleTypeBonus(equip, key, value, source)
+    return scaleSourceBonus(EC.TYPE_BONUS_CURVE[source], equip, key, value)
 end
 
 return Growth

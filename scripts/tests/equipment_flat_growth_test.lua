@@ -132,6 +132,7 @@ local GROWTH = {
 local FLAT_KEYS = { "maxHp", "hpRegen", "atkHeal", "physAtk", "magAtk", "energyShield" }
 local LEVELS = { 1, 49, 50, 51, 75, 99, 100, 101, 150, 199, 200, 201, 9999 }
 -- 每行依次对应生命组/攻击组/护盾组；显式边界表再校验插值oracle，防止同错。
+---@type number[][]
 local BOUNDARY = {
     { 1, 1, 1 }, { 1, 1, 1 }, { 1, 1, 1 }, { 1.016, 1.012, 1.02 },
     { 1.4, 1.3, 1.5 }, { 1.784, 1.588, 1.98 }, { 1.8, 1.6, 2 },
@@ -150,8 +151,12 @@ local function factor(key, level)
 end
 local CRIT_BASE = { critRate = 8, physCritRate = 10, magCritRate = 10, healCritRate = 10 }
 local CRIT_AFFIX = { critRate = 4, physCritRate = 5, magCritRate = 5, healCritRate = 5 }
-local function crit(key, value, isAffix, double)
+local TYPE_BASE = { minDmgBonus = 30, maxDmgBonus = 30 }
+local TYPE_AFFIX = { minDmgBonus = 20, maxDmgBonus = 20 }
+-- 两类来源曲线的独立常数oracle；不调用生产helper或读取生产曲线生成期望。
+local function sourceBonus(key, value, isAffix, double)
     local limit = (isAffix and CRIT_AFFIX or CRIT_BASE)[key]
+        or (isAffix and TYPE_AFFIX or TYPE_BASE)[key]
     if not limit or value <= 0 then return value end
     local budget = limit * (double or 1)
     return budget / (1 + budget / value)
@@ -194,11 +199,11 @@ local function baseExpected(equip, index, boost, ascend)
         if ascend >= position then steps = math.floor((ascend - position) / count) + 1 end
     end
     local value = row[2] * (index == 1 and (1 + boost) or (1 + steps * 0.05))
-    return crit(row[1], value * factor(row[1], equip.level), false,
+    return sourceBonus(row[1], value * factor(row[1], equip.level), false,
         equip.slot == "weapon" and equip.grip == "twohand" and 2 or 1)
 end
 local function affixExpected(equip, row)
-    return crit(row.key, (row.value * (equip.affixMult or 1) + (row.ascBonus or 0))
+    return sourceBonus(row.key, (row.value * (equip.affixMult or 1) + (row.ascBonus or 0))
         * factor(row.key, equip.level), true,
         equip.slot == "weapon" and equip.grip == "twohand" and 2 or 1)
 end
@@ -212,9 +217,12 @@ local function testBoundaries(f)
     check(same(f.EC.FLAT_STAT_GROWTH, GROWTH), "成长配置仅六key及既定100/200级常数")
     noRNG(f, function()
         for _, key in ipairs(FLAT_KEYS) do
+            ---@type integer
             local group = key == "energyShield" and 3 or (key == "physAtk" or key == "magAtk") and 2 or 1
             for i, level in ipairs(LEVELS) do
-                local wanted = assert(BOUNDARY[i], "缺少边界oracle")[group]
+                local boundary = BOUNDARY[i]
+                assert(boundary, "缺少边界oracle")
+                local wanted = boundary[group]
                 local equip = { level = level, ascendLevel = 17, heroLevel = 9999 }
                 local before = copy(equip)
                 eq(factor(key, level), wanted, key .. " 独立oracle边界" .. level)
@@ -313,9 +321,9 @@ local function testExclusions(f)
                     affixes = { { key = key, value = 11.125, ascBonus = 0.375 } } }
                 local before = copy(equip)
                 eq(f.ES.getFlatStatGrowthMultiplier(equip, key), 1, key .. " 非白名单无成长")
-                local main, sub = crit(key, 17.125 * 2.5, false, 2), crit(key, 9.25 * 2.5, false, 2)
+                local main, sub = sourceBonus(key, 17.125 * 2.5, false, 2), sourceBonus(key, 9.25 * 2.5, false, 2)
                 local ordinary = key:sub(1, 5) == "final" and 11.125
-                    or crit(key, 11.125 * 2.3 + 0.375, true, 2)
+                    or sourceBonus(key, 11.125 * 2.3 + 0.375, true, 2)
                 eq(f.ES.effectiveBaseStatValue(equip, 1), main, key .. " 主沿用旧公式/旧暴击曲线")
                 eq(f.ES.effectiveBaseStatValue(equip, 2), sub, key .. " 副沿用旧公式/旧暴击曲线")
                 eq(f.ES.effectiveAffixValue(equip, equip.affixes[1]), ordinary, key .. " 词缀沿用旧公式/旧暴击曲线")

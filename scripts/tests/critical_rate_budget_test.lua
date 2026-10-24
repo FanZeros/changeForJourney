@@ -126,7 +126,9 @@ local function baseExpected(item, i, boost, double)
     local steps = i == 1 and 0 or math.floor(((item.ascendLevel or 0) + count - i + 1) / count)
     local raw = row[2] * (i == 1 and (1 + boost) or (1 + steps * 0.05))
         * flatGrowth(row[1], item.level)
-    return curve(raw, BASE[row[1]] and BASE[row[1]] * double)
+    local typeBudget = (row[1] == "maxDmgBonus" or row[1] == "minDmgBonus") and 30 * double or nil
+    local typed = curve(raw, typeBudget)
+    return curve(typed, BASE[row[1]] and BASE[row[1]] * double)
 end
 
 local function testCurve(f)

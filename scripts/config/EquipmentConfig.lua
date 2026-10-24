@@ -36,6 +36,13 @@ EquipmentConfig.CRIT_RATE_CURVE = {
     affix = { critRate = 4, physCritRate = 5, magCritRate = 5, healCritRate = 5 },
 }
 
+-- 优势/劣势伤害只约束普通装备直给来源，不改克制公式、角色派生或原始存档。
+-- 单条渐近预算；双手主武器预算翻倍，品质/等级/升阶仍保留递减后的正收益。
+EquipmentConfig.TYPE_BONUS_CURVE = {
+    base = { maxDmgBonus = 30, minDmgBonus = 30 },
+    affix = { maxDmgBonus = 20, minDmgBonus = 20 },
+}
+
 -- ======================== 槽位定义 ========================
 
 EquipmentConfig.SLOTS = { "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }

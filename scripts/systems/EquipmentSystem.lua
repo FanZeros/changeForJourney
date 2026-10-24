@@ -608,10 +608,9 @@ function EquipmentSystem.getSecondaryAscendCount(equip, index, level)
     return math.floor((ascend - position) / count) + 1
 end
 
---- 直给暴率来源曲线由纯数值模块计算；保留统一公共出口。
-function EquipmentSystem.scaleCritRate(equip, key, value, source)
-    return StatGrowth.scaleCritRate(equip, key, value, source)
-end
+-- 装备来源软预算公共出口；角色总属性不经过这里。
+EquipmentSystem.scaleCritRate = StatGrowth.scaleCritRate
+EquipmentSystem.scaleTypeBonus = StatGrowth.scaleTypeBonus
 
 --- 基础主/副词条统一生效值；升阶预览、属性管线与详情/战力共用。
 ---@param equip table
@@ -636,7 +635,8 @@ function EquipmentSystem.effectiveBaseStatValue(equip, index, mainBoost, level)
         value = raw * (1 + steps * (BlacksmithConfig.ASCEND_SUB_STAT_RATIO or 0))
     end
     local grown = value * EquipmentSystem.getFlatStatGrowthMultiplier(equip, stat[1])
-    return EquipmentSystem.scaleCritRate(equip, stat[1], grown, "base")
+    local cappedCrit = EquipmentSystem.scaleCritRate(equip, stat[1], grown, "base")
+    return EquipmentSystem.scaleTypeBonus(equip, stat[1], cappedCrit, "base")
 end
 
 --- 装备主副属性默认显示一位小数；仅格式化，不改实际值。
@@ -673,6 +673,7 @@ function EquipmentSystem.effectiveAffixValue(equip, affix)
     if not AffixConfig.isCorruptAffix(affix) then
         value = (value * EquipmentSystem.getAffixMult(equip) + (tonumber(affix.ascBonus) or 0))
             * EquipmentSystem.getFlatStatGrowthMultiplier(equip, affix.key)
+        value = EquipmentSystem.scaleTypeBonus(equip, affix.key, value, "affix")
     end
     return EquipmentSystem.scaleCritRate(equip, affix.key, value, "affix")
 end

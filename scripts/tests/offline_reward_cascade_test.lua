@@ -13,7 +13,8 @@ local rootFixture = nil
 local finished = false
 local native = { text = nvgText, bounds = nvgTextBounds, size = nvgFontSize,
     face = nvgFontFace, align = nvgTextAlign, save = nvgSave, restore = nvgRestore,
-    rounded = nvgRoundedRect, fill = nvgFill, color = nvgFillColor, rgba = nvgRGBA }
+    rounded = nvgRoundedRect, fill = nvgFill, color = nvgFillColor, rgba = nvgRGBA,
+    scissor = nvgScissor, intersect = nvgIntersectScissor, resetClip = nvgResetScissor }
 
 local function sourceText(name)
     local path = name:gsub("%.", "/") .. ".lua"
@@ -54,7 +55,7 @@ local function newFixture()
     local f = { mods = {}, clock = { elapsedTime = 100 }, player = false, gets = 0,
         writes = 0, io = 0, rng = 0, images = 0, sounds = {}, sims = {}, playerSims = {},
         texts = {}, strokeTexts = {}, heroes = {}, fills = {}, rows = {}, drawErrors = {},
-        colorArgs = {}, font = 22, align = NVG_ALIGN_LEFT, color = {}, stack = {}, depth = 0 }
+        colorArgs = {}, clips = {}, font = 22, align = NVG_ALIGN_LEFT, color = {}, stack = {}, depth = 0 }
     local env = setmetatable({}, { __index = _G })
     env._G, env.time = env, f.clock
     local function deniedIO()
@@ -118,15 +119,27 @@ local function newFixture()
     env.nvgCreateImage = function() f.images = f.images + 1; return -1 end
     env.nvgSave = function(vg)
         f.depth = f.depth + 1
-        f.stack[f.depth] = { font = f.font, align = f.align, color = f.color }
+        f.stack[f.depth] = { font = f.font, align = f.align, color = f.color, clip = f.clip }
         return native.save(vg)
     end
     env.nvgRestore = function(vg)
         local saved = assert(f.stack[f.depth], "NVG restore必须配对save") --[[@as any]]
-        f.font, f.align, f.color = saved.font, saved.align, saved.color
+        f.font, f.align, f.color, f.clip = saved.font, saved.align, saved.color, saved.clip
         f.stack[f.depth] = nil; f.depth = f.depth - 1
         return native.restore(vg)
     end
+    env.nvgScissor = function(vg, x, y, w, h)
+        f.clip = { x, y, x + w, y + h }
+        f.clips[#f.clips + 1] = copy(f.clip)
+        return native.scissor(vg, x, y, w, h)
+    end
+    env.nvgIntersectScissor = function(vg, x, y, w, h)
+        local prior = f.clip or { x, y, x + w, y + h }
+        f.clip = { math.max(x, prior[1]), math.max(y, prior[2]),
+            math.min(x + w, prior[3]), math.min(y + h, prior[4]) }
+        return native.intersect(vg, x, y, w, h)
+    end
+    env.nvgResetScissor = function(vg) f.clip = nil; return native.resetClip(vg) end
     env.nvgFontFace = function(vg, face) return native.face(vg, face) end
     env.nvgFontSize = function(vg, size) f.font = size; return native.size(vg, size) end
     env.nvgTextAlign = function(vg, align) f.align = align; return native.align(vg, align) end
@@ -147,7 +160,7 @@ local function newFixture()
         local width = native.bounds(vg, x, y, text, endp, bounds)
         suite.bounds = suite.bounds + 1
         f.texts[#f.texts + 1] = { x = x, y = y, text = text, font = f.font,
-            align = f.align, width = width, b = bounds, color = copy(f.color) }
+            align = f.align, width = width, b = bounds, color = copy(f.color), clip = copy(f.clip) }
         return native.text(vg, x, y, text, endp)
     end
     local rawBeginPath = nvgBeginPath
@@ -204,6 +217,8 @@ local function newFixture()
     f.cascade = loadPrivate("ui.widget.RewardCascade")
     f.panel = loadPrivate("ui.hud.popup.OfflineRewardPanel")
     f.state = upvalue(f.panel.show, "state")
+    assert(fontVG, "fixture必须先创建真实字体VG")
+    f.panel.init(fontVG) -- 首次show/输入即使用与draw相同VG，图片仍为私有-1边界。
     return f
 end
 
@@ -238,7 +253,7 @@ local function advanceTo(f, target, fps)
 end
 local function drawFrame(f)
     f.texts, f.strokeTexts, f.heroes, f.fills, f.rows, f.drawErrors = {}, {}, {}, {}, {}, {}
-    f.lastRect = nil
+    f.lastRect, f.clips = nil, {}
     native.save(fontVG)
     f.panel.draw(fontVG)
     native.restore(fontVG)
@@ -461,128 +476,216 @@ local function animationTests()
     end)
 end
 
--- 测试独立布局oracle：队1..3并集；有英雄220高，无英雄但有来源48高，gap14。
-local function layoutOracle(preview, sources)
+-- 独立真实字体oracle：不调用生产wrap/layout，也不从生产行高反推期望。
+-- 常量来自设计契约；Unicode累计advance宽度贪心分段（不是UTF-8字节计数）。
+local function sourceLabel(f, source)
+    if source.sourceKind == "tower" then
+        return f.i18n.format("通天塔 第%d层", (source.stageId or 400001) - 400000)
+    end
+    local entry = f.load("config.StageConfig").getStage(source.stageId)
+    return f.i18n.lookup(source.sourceName or (entry and entry.name) or tostring(source.stageId))
+end
+local function fontLines(text)
+    native.save(fontVG); native.face(fontVG, "sans"); native.size(fontVG, 56)
+    native.align(fontVG, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+    local lines, paragraphs = {}, {}
+    local start = 1
+    for at in text:gmatch("()\n") do
+        paragraphs[#paragraphs + 1] = text:sub(start, at - 1); start = at + 1
+    end
+    if start <= #text then paragraphs[#paragraphs + 1] = text:sub(start) end
+    for _, paragraph in ipairs(paragraphs) do
+        local chars, prefix = {}, { 0 }
+        for _, point in utf8.codes(paragraph) do
+            local char = utf8.char(point)
+            chars[#chars + 1] = char
+            local width = native.bounds(fontVG, 0, 0, char, nil)
+            suite.bounds = suite.bounds + 1
+            prefix[#chars + 1] = prefix[#chars] + width
+        end
+        if #chars == 0 then lines[#lines + 1] = "" end
+        local first = 1
+        while first <= #chars do
+            local last = first
+            while last < #chars and prefix[last + 2] - prefix[first] <= 416 do last = last + 1 end
+            lines[#lines + 1] = table.concat(chars, "", first, last)
+            first = last + 1
+        end
+    end
+    native.restore(fontVG)
+    return lines
+end
+local function layoutOracle(f, data)
+    local preview, sources = data.heroExpPreview or {}, data.teamSources or {}
     local groups, src = { {}, {}, {} }, {}
     local explicit = false
     for _, item in ipairs(preview) do if item.teamIdx then explicit = true break end end
     for index, item in ipairs(preview) do
-        local team = explicit and (item.teamIdx or 1) or math.floor((index - 1) / 4) + 1
-        if team >= 1 and team <= 3 then groups[team][#groups[team] + 1] = item end
+        local team = explicit and math.max(1, math.min(3, item.teamIdx or 1)) or math.ceil(index / 4)
+        if team <= 3 and #groups[team] < 4 then groups[team][#groups[team] + 1] = item end
     end
-    for index, item in ipairs(sources) do src[item.teamIdx or index] = item end
-    local rows, top = {}, 710
+    for index, source in ipairs(sources) do
+        local team = source.teamIdx or index
+        if not src[team] then src[team] = source end
+    end
+    local rows, blockH = {}, 0
     for team = 1, 3 do
-        if #groups[team] > 0 or src[team] then
-            local h = #groups[team] > 0 and 220 or 48
-            rows[#rows + 1] = { team = team, members = groups[team], source = src[team], top = top, h = h }
-            top = top + h + 14
+        local members, source = groups[team], src[team]
+        if #members > 0 or source then
+            local name = source and sourceLabel(f, source) or ""
+            local status = source and source.paused and f.i18n.lookup("暂停离线收益") or ""
+            local lines, statuses = fontLines(name), fontLines(status)
+            local h = math.min(420, math.max(#members > 0 and 220 or 100,
+                100 + (#lines + #statuses) * 92))
+            local sourceH = math.max(0, h - 100 - #statuses * 92)
+            rows[#rows + 1] = { team = team, members = members, source = source, name = name,
+                lines = lines, status = statuses, top = 710 + blockH, h = h, sourceH = sourceH,
+                maxScroll = math.max(0, #lines * 92 - sourceH) }
+            blockH = blockH + h + 14
         end
     end
-    local blockH = #rows > 0 and top - 710 - 14 or 0
-    return rows, blockH
+    if #rows > 0 then blockH = blockH - 14 end
+    local rewardTop = 710 + blockH + 24
+    local rewardH = math.min(552, 2400 - 40 - rewardTop - 180)
+    local gridRows = math.ceil(math.max(#(data.rewards or {}), 1) / 10)
+    return { rows = rows, height = blockH, rewardTop = rewardTop, rewardH = rewardH,
+        clipTop = rewardTop + 12, clipH = rewardH - 24, claimCY = rewardTop + rewardH + 80,
+        scrollMax = math.max(0, gridRows * 120 + (gridRows - 1) * 12 - (rewardH - 24)) }
 end
-local function sourceLabel(f, source, team)
-    local entry = f.load("config.StageConfig").getStage(source.stageId)
-    local name = source.sourceName or (entry and entry.name) or tostring(source.stageId)
-    name = f.i18n.lookup(name)
-    if source.sourceKind == "tower" then
-        name = f.i18n.format("通天塔 第%d层", (source.stageId or 400001) - 400000)
+-- 仅用于核对缓存/scroll；任何期望均来自上方native字体oracle。
+local function cachedLayout(f)
+    return upvalue(upvalue(f.env.self_drawHeroExpList, "teamRows"), "teamLayout")
+end
+local function checkInk(text, left, top, right, bottom, label)
+    verify(type(text.b[1]) == "number" and type(text.b[4]) == "number", label .. "真实字墨有效")
+    verify(text.b[1] >= left and text.b[3] <= right, label .. "左右不越界 b="
+        .. table.concat(text.b, ","))
+    -- 不以scissor交集冒充字墨完整：TOP字体可能negative bearing，必须报告而非加epsilon。
+    verify(text.b[2] >= top and text.b[4] <= bottom, label .. "上下字墨完整 b="
+        .. table.concat(text.b, ",") .. " area=" .. top .. "," .. bottom)
+end
+local function verifySourceFrame(f, frame, expected, offset, label, seen)
+    local x, textTop = -236, expected.top + 88
+    local header = textsAt(frame, expected.top, function(t)
+        return t.text == f.i18n.format("小队%d", expected.team)
+    end)
+    equal(#header, 1, label .. "独立队名")
+    if header[1] then
+        equal(header[1].font, 60, label .. "队名60号")
+        checkInk(header[1], -260, expected.top, 220, expected.top + 88, label .. "队名字墨")
     end
-    return source.paused and f.i18n.format("小队%d · %s · 暂停离线收益", team, name)
-        or f.i18n.format("小队%d · %s", team, name)
+    local visible = 0
+    for index, line in ipairs(expected.lines) do
+        local y = textTop + (index - 1) * 92 - offset
+        if y + 92 > textTop and y < textTop + expected.sourceH then
+            visible = visible + 1
+            local found = textsAt(frame, y, function(t) return t.x == x and t.text == line end)
+            equal(#found, 1, label .. "完整来源行" .. index)
+            if found[1] then
+                local text = found[1] --[[@as any]]
+                equal(text.font, 56, label .. "来源56号不缩字")
+                verify(math.abs(text.font * .45 * 1280 / 1920 - 16.8) < 1e-12,
+                    label .. "1280稳定字号16.8px")
+                verify(text.b[1] >= -240 and text.b[3] <= 192, label .. "来源左区宽度/不侵右头像")
+                verify(text.clip and text.clip[1] == -240 and text.clip[2] == textTop
+                    and text.clip[3] == 192 and text.clip[4] == textTop + expected.sourceH,
+                    label .. "独立来源clip不含状态")
+                if y >= textTop and y + 92 <= textTop + expected.sourceH then
+                    checkInk(text, -240, textTop, 204, textTop + expected.sourceH, label .. "可整读来源行" .. index)
+                end
+                if seen and text.b[2] >= textTop and text.b[4] <= textTop + expected.sourceH then
+                    seen[index] = line
+                end
+            end
+        end
+    end
+    local drawn = 0
+    for _, text in ipairs(frame.texts) do
+        if text.font == 56 and text.color[1] == 232 and text.y >= textTop - 92
+            and text.y < textTop + expected.sourceH then drawn = drawn + 1 end
+    end
+    equal(drawn, visible, label .. "可见来源无多画/漏画")
+    for index, line in ipairs(expected.status) do
+        local y = textTop + expected.sourceH + (index - 1) * 92
+        local found = textsAt(frame, y, function(t) return t.x == x and t.text == line end)
+        equal(#found, 1, label .. "暂停状态固定底部" .. index)
+        if found[1] then
+            equal(found[1].font, 56, label .. "状态56号")
+            checkInk(found[1], -240, y, 204, expected.top + expected.h, label .. "状态字墨")
+        end
+    end
 end
 local function verifyLayout(f, data, label)
-    local rows, blockH = layoutOracle(data.heroExpPreview or {}, data.teamSources or {})
-    show(f, data); f.clock.elapsedTime = 101; f.panel.update(0)
+    local expected = layoutOracle(f, data)
+    show(f, data)
+    -- 首次draw前先让真实输入建缓存，不能使用无VG的56等宽退化布局。
+    verify(f.panel.handleInput(-250, 700), label .. "首次输入消费且不领取")
+    local cacheBefore = cachedLayout(f)
+    verify(cacheBefore.context == fontVG, label .. "开前输入采用已init真实VG")
+    f.clock.elapsedTime = 101; f.panel.update(0)
     local frame = drawFrame(f)
+    verify(cachedLayout(f) == cacheBefore, label .. "input/draw复用同缓存")
+    equal(cacheBefore.height, expected.height, label .. "独立字体并集高度")
+    equal(#cacheBefore.rows, #expected.rows, label .. "队伍并集行数")
     local heroCount = 0
-    for _, row in ipairs(rows) do
+    for index, row in ipairs(expected.rows) do
+        local cached = cacheBefore.rows[index]
+        equal(cached.h, row.h, label .. "队" .. row.team .. "动态高度")
+        verify(same(cached.lines, row.lines) and same(cached.status, row.status), label .. "独立Unicode换行")
+        equal(cached.maxScroll, row.maxScroll, label .. "来源独立滚动上限")
         local matched = false
         for _, rect in ipairs(frame.rows) do
             if rect.w == 1600 and rect.h == row.h and rect.cy == row.top + row.h / 2 then matched = true end
         end
-        verify(matched, label .. "队" .. row.team .. "独立高度" .. row.h)
-        if row.source then
-            local expected = sourceLabel(f, row.source, row.team)
-            local y = row.h == 220 and row.top + 206 or row.top + 24
-            local found = textsAt(frame, y, function(text) return text.text == expected end)
-            equal(#found, 1, label .. "来源最终译文完整且对应team行末")
-            if found[1] then
-                verify(found[1].font <= 22 and found[1].font > 0, label .. "来源22号上限/必要缩字")
-                if data.label == "来源长译文字缩号不截串" then
-                    verify(found[1].font < 22, label .. "超宽完整来源必须真实缩字号")
-                end
-                verify(found[1].b[1] >= -260 - .05 and found[1].b[3] <= 1340 + .05,
-                    label .. "来源真实Noto字墨在行内不截串")
-                verify(found[1].b[2] >= row.top and found[1].b[4] <= row.top + row.h,
-                    label .. "来源真实字墨未越过220/48行上下缘 font=" .. found[1].font
-                        .. " y=" .. found[1].y .. " b2=" .. tostring(found[1].b[2])
-                        .. " b4=" .. tostring(found[1].b[4]) .. " bottom=" .. (row.top + row.h))
-                if row.h == 220 then
-                    for _, text in ipairs(frame.texts) do
-                        if text.text:find("^Lv%.") and text.y > row.top and text.y < row.top + 200 then
-                            verify(text.b[4] + 1 <= found[1].b[2],
-                                label .. "来源top206真实字墨与英雄等级top173无重叠")
-                        end
-                    end
-                end
-            end
-        end
-        for _, item in ipairs(row.members) do
+        verify(matched, label .. "真实行底跟随高度")
+        verifySourceFrame(f, frame, row, 0, label .. "/队" .. row.team)
+        for slot, item in ipairs(row.members) do
             heroCount = heroCount + 1
             local hero
             for _, call in ipairs(frame.heroes) do if call.heroId == item.heroId then hero = call break end end
             verify(hero ~= nil, label .. "真实HeroFrame英雄" .. item.heroId)
             if hero then
                 equal(hero.size, 118, label .. "HeroFrame实际118")
-                local actualRect = hero.rects[1] and hero.rects[1].rect
-                verify(actualRect and actualRect.w == 118 and actualRect.h == 118,
-                    label .. "HeroFrame真实路径118×118，非只spy参数")
-                verify(hero.cy > row.top and hero.cy < row.top + 150, label .. "英雄归属正确team行")
-                local bars = heroBars(frame)
+                equal(hero.cx, 780 + (slot - (#row.members + 1) / 2) * 268, label .. "右栏center780/cell268")
+                equal(hero.cy, row.top + (row.h - 220) / 2 + 80, label .. "头像随动态行居中")
+                verify(hero.cx - 59 >= 220 and hero.cx + 59 <= 1340, label .. "右头像不侵左区")
+                local rect = hero.rects[1] and hero.rects[1].rect
+                verify(rect and rect.w == 118 and rect.h == 118, label .. "真实头像路径118×118")
                 local base
-                for _, bar in ipairs(bars) do
-                    if bar.color[1] == 0 and math.abs(bar.rect.x + bar.rect.w / 2 - hero.cx) < .000001
-                        and bar.rect.y > row.top and bar.rect.y < row.top + 190 then base = bar break end
+                for _, bar in ipairs(heroBars(frame)) do
+                    if bar.color[1] == 0 and bar.rect.x == hero.cx - 59 and bar.rect.y == hero.cy + 65 then base = bar end
                 end
                 verify(base ~= nil, label .. "真实NVG经验底条存在")
                 if base then equal(base.rect.w, 118, label .. "经验条宽等于118头像") end
             end
         end
     end
-    equal(#frame.heroes, heroCount, label .. "不伪造零preview英雄")
-    local expectedSources = 0
-    for _, row in ipairs(rows) do if row.source then expectedSources = expectedSources + 1 end end
-    local drawnSources = 0
-    for _, text in ipairs(frame.texts) do
-        for _, row in ipairs(rows) do
-            if row.source and text.text == sourceLabel(f, row.source, row.team) then
-                drawnSources = drawnSources + 1
-                verify(text.y >= 710, label .. "来源不能留在312标题附近")
-            end
-        end
+    equal(#frame.heroes, heroCount, label .. "不伪造source-only英雄")
+    local claim = textsAt(frame, expected.claimCY, function(text) return text.text == f.i18n.lookup("领取") end)
+    equal(#claim, 1, label .. "动态奖励/领取共布局")
+    verify(expected.claimCY + 100 <= 2360, label .. "面板底保留40设计单位")
+    local reward = false
+    for _, rect in ipairs(frame.rows) do
+        if rect.w == 1600 and rect.h == expected.rewardH
+            and rect.cy == expected.rewardTop + expected.rewardH / 2 then reward = true end
     end
-    equal(drawnSources, expectedSources, label .. "所有来源各绘制一次")
-    local claimCY = 710 + blockH + 24 + 552 + 30 + 50
-    local claim = textsAt(frame, claimCY, function(text) return text.text == f.i18n.lookup("领取") end)
-    equal(#claim, 1, label .. "奖励/领取动态跟随队伍并集")
-    -- 真输入共用layoutNow，不依靠绘制观察器替身伪造热区。
+    verify(reward, label .. "奖励H=min552,设计剩余空间")
+    equal(f.state.scrollMax, expected.scrollMax, label .. "动态奖励scrollMax")
     local attempts = 0
     f.state.onClaim = function() attempts = attempts + 1; return attempts > 1 end
-    verify(f.panel.handleInput(540, claimCY - 70), label .. "按钮外仍消费不领取")
-    equal(attempts, 0, label .. "按钮外不可误领")
-    verify(f.panel.handleInput(540, claimCY), label .. "新布局领取热区")
-    equal(attempts, 1, label .. "真实失败回执仍可重试")
+    verify(f.panel.handleInput(540, expected.claimCY - 70), label .. "按钮外消费")
+    equal(attempts, 0, label .. "按钮外不领取")
+    verify(f.panel.handleInput(540, expected.claimCY), label .. "动态领取热区")
+    equal(attempts, 1, label .. "失败回执保留")
     verify(f.panel.isOpen(), label .. "失败不关闭")
-    verify(f.panel.handleInput(540, claimCY), label .. "热区提前重试")
+    verify(f.panel.handleInput(540, expected.claimCY), label .. "真实失败后重试")
     equal(attempts, 2, label .. "第二次成功")
     advance(f, .25); verify(not f.panel.isOpen(), label .. "领取关闭")
     checkNoIO(f, label)
     return frame
 end
 local function layoutTests()
-    scenario("三队/乱序来源/团队并集/source-only/旧无team五语完整文字", function()
+    scenario("新版左栏五语1至4人/12人/来源并集和名称回退", function()
         local f = newFixture()
         local dataCases = {
             { label = "三队乱序", heroExpPreview = {
@@ -592,50 +695,199 @@ local function layoutTests()
                 { teamIdx = 2, stageId = 400077, sourceKind = "tower", paused = true } } },
             { label = "team2-only", heroExpPreview = { heroPreview(f.exp, 2, 2, 2, 1, 100) },
                 teamSources = { { teamIdx = 2, stageId = 2305 } } },
-            { label = "塔零preview", heroExpPreview = {},
-                teamSources = { { teamIdx = 3, stageId = 400120, sourceKind = "tower", paused = true } } },
-            { label = "来源队1＋英雄队2并集", heroExpPreview = { heroPreview(f.exp, 2, 2, 2, 1, 100) },
+            { label = "塔零preview", teamSources = { { teamIdx = 3, stageId = 400120,
+                sourceKind = "tower", sourceName = "不能覆盖塔层", paused = true } } },
+            { label = "来源队1＋英雄队2", heroExpPreview = { heroPreview(f.exp, 2, 2, 2, 1, 100) },
                 teamSources = { { teamIdx = 1, stageId = 400055, sourceKind = "tower", paused = true } } },
-            { label = "三source-only", heroExpPreview = {}, teamSources = {
-                { teamIdx = 3, stageId = 2305 }, { teamIdx = 1, stageId = 101 },
-                { teamIdx = 2, stageId = 400001, sourceKind = "tower", paused = true } } },
+            { label = "三source-only", teamSources = { { teamIdx = 3, stageId = 2305 },
+                { teamIdx = 1, stageId = 101 }, { teamIdx = 2, stageId = 400001, sourceKind = "tower", paused = true } } },
             { label = "旧无team无来源", heroExpPreview = {
                 heroPreview(f.exp, 1, nil, 1, 1, 100), heroPreview(f.exp, 2, nil, 2, 1, 100),
                 heroPreview(f.exp, 3, nil, 3, 1, 100), heroPreview(f.exp, 4, nil, 4, 1, 100),
                 heroPreview(f.exp, 5, nil, 5, 1, 100) } },
-            { label = "旧无team来源", heroExpPreview = { heroPreview(f.exp, 1, nil, 1, 1, 100) },
-                teamSources = { { stageId = 101 }, { stageId = 301 } } },
-            { label = "完全空旧预览", heroExpPreview = {} },
-            { label = "来源长译文字缩号不截串", heroExpPreview = {
-                heroPreview(f.exp, 1, 1, 1, 1, 100) }, teamSources = { { teamIdx = 1, stageId = 101,
-                sourceName = string.rep("悬魂瀑布 · Long translated source · ", 5), paused = true } } },
+            { label = "旧来源数组队号", teamSources = { { stageId = 101 }, { stageId = 301 } } },
+            { label = "完全空旧预览" },
+            { label = "未知kind保名称", teamSources = { { stageId = -999, sourceKind = "future", sourceName = "自定来源" } } },
+            { label = "未知关回退ID", teamSources = { { stageId = -999 } } },
+            { label = "缺关回退nil", teamSources = { {} } },
+            { label = "空名称source-only最小100", teamSources = { { stageId = 101, sourceName = "" } } },
+            { label = "三长来源奖励区压缩", teamSources = {
+                { stageId = 101, sourceName = string.rep("长来源 Long Source ", 6), paused = true },
+                { stageId = 301, sourceName = string.rep("悬魂瀑布 Écho ", 6), paused = true },
+                { stageId = 701, sourceName = string.rep("終焉への道 한글 ", 6), paused = true } } },
+            { label = "换行Unicode", teamSources = { { stageId = 101,
+                sourceName = "悬魂瀑布\nÁg Écho 한글\n終焉への道", paused = true } } },
         }
+        for count = 1, 4 do
+            local data = { label = count .. "人", heroExpPreview = {}, teamSources = { { stageId = 101 } } }
+            for id = 1, count do data.heroExpPreview[id] = heroPreview(f.exp, id, 1, id, 1, 100) end
+            dataCases[#dataCases + 1] = data
+        end
+        for _, legacy in ipairs({ false, true }) do
+            local data = { label = legacy and "旧12人" or "12人", heroExpPreview = {}, teamSources = {
+                { stageId = 101 }, { stageId = 2305 }, { stageId = 400120, sourceKind = "tower", paused = true } } }
+            for id = 1, 12 do data.heroExpPreview[id] = heroPreview(f.exp, id,
+                legacy and nil or math.ceil(id / 4), 1, 1, 100) end
+            -- Lua and/or不能生成nil，显式清理旧格式，防测试悄悄仍走新格式。
+            if legacy then for _, item in ipairs(data.heroExpPreview) do item.teamIdx = nil end end
+            dataCases[#dataCases + 1] = data
+        end
         for _, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
             verify(f.i18n.set(lang), "真实I18n切语言")
             for _, data in ipairs(dataCases) do verifyLayout(f, data, lang .. "/" .. data.label) end
         end
     end)
-
-    -- 挂机结算来源行按字墨缩号；若测量边界不随字号收敛，绘制必须终止而不是死循环。
-    scenario("来源缩号测量不收敛时有界终止", function()
-        local f = newFixture()
-        local originalBounds = f.i18n.displayBounds
-        -- 模拟测量退化：无论字号多大都返回同一组偏大边界，fit 永远 < 1。
-        f.i18n.displayBounds = function(vg, x, y, text, _endp, out)
-            if type(out) == "table" then
-                out[1], out[2], out[3], out[4] = x - 600, y - 400, x + 600, y + 400
+    scenario("长来源五语完整可滚动拼接/状态固定/奖励滚动隔离", function()
+        for _, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+            local f = newFixture(); f.i18n.set(lang)
+            local data = { heroExpPreview = { heroPreview(f.exp, 1, 1, 1, 1, 100) },
+                teamSources = { { stageId = 101, sourceName = string.rep("悬魂瀑布 Long Écho 한글 ", 8), paused = true } },
+                rewards = { { type = "gold", amount = 10 } } }
+            local expected = layoutOracle(f, data); local row = expected.rows[1]
+            show(f, data); f.clock.elapsedTime = 101; f.panel.update(0)
+            equal(row.h, 420, "长来源上限420")
+            verify(row.maxScroll > 0 and row.sourceH >= 92, "长名称有整行可读滚动区")
+            local seen, offset = {}, 0
+            -- 1/4行步长也覆盖中途可整读位置，不能只在行顶对齐时采样误判其余行不可读。
+            for step = 0, math.ceil(row.maxScroll / 23) do
+                if step > 0 then f.panel.handleScroll(-.25, -100, row.top + 89); offset = math.min(row.maxScroll, step * 23) end
+                local frame = drawFrame(f)
+                verifySourceFrame(f, frame, row, offset, lang .. "/长来源/" .. step, seen)
+                equal(cachedLayout(f).rows[1].scroll, offset, "来源滚轮独立92步进/clamp")
+                equal(f.state.scrollY, 0, "来源滚轮不移动奖励")
             end
-            return 1200
+            for index, line in ipairs(row.lines) do equal(seen[index], line, lang .. "每行真实字墨曾完整可读" .. index) end
+            local joined = {}; for index = 1, #row.lines do joined[index] = seen[index] or "<未完整显示>" end
+            equal(table.concat(joined), row.name, lang .. "滚动拼接全文无省略/截字")
+            f.panel.handleDragBegin(-100, row.top + 90)
+            f.panel.handleDragMove(-100, row.top + 90 + row.maxScroll + 100)
+            f.panel.handleDragEnd(-100, row.top + 90)
+            equal(cachedLayout(f).rows[1].scroll, 0, "来源拖动到顶clamp")
+            f.panel.handleDragBegin(-100, row.top + 90)
+            f.panel.handleDragMove(-100, row.top + 90 - 35)
+            f.panel.handleDragEnd(-100, row.top + 55)
+            equal(cachedLayout(f).rows[1].scroll, math.min(35, row.maxScroll), "来源拖动真实35")
+            equal(f.state.scrollY, 0, "来源拖动奖励不动")
+            checkNoIO(f, "长来源")
         end
-        local done = pcall(function()
-            show(f, { heroExpPreview = { heroPreview(f.exp, 1, 1, 1, 1, 100) },
-                teamSources = { { teamIdx = 1, stageId = 101 } },
-                rewards = { { type = "gold", amount = 10 } } })
-            f.clock.elapsedTime = 101; f.panel.update(0)
-            drawFrame(f)
-        end)
-        f.i18n.displayBounds = originalBounds
-        verify(done, "测量不收敛时来源行绘制有界终止不死循环")
+    end)
+    scenario("短来源整个左信息行吞滚轮拖动不落奖励", function()
+        local f = newFixture()
+        local data = { teamSources = { { stageId = 101, sourceName = "A" } }, rewards = {} }
+        for id = 1, 80 do data.rewards[id] = { type = "gold", amount = id } end
+        local expected = layoutOracle(f, data); local row = expected.rows[1]
+        show(f, data); f.clock.elapsedTime = 110; f.panel.update(0)
+        f.panel.handleInput(-250, 700)
+        equal(row.maxScroll, 0, "短来源确实无需来源滚动")
+        for _, y in ipairs({ row.top, row.top + 40, row.top + 89, row.top + row.h - 1 }) do
+            local scroll, follow = f.state.scrollY, f.state.followScroll
+            f.panel.handleScroll(-1, -100, y)
+            equal(f.state.scrollY, scroll, "左短行滚轮不能落奖励 y=" .. y)
+            equal(f.state.followScroll, follow, "左短行滚轮不取消奖励自动跟随")
+            f.panel.handleDragBegin(-100, y)
+            f.panel.handleDragMove(-100, y - 50)
+            f.panel.handleDragEnd(-100, y - 50)
+            equal(f.state.scrollY, scroll, "左短行拖动不能落奖励 y=" .. y)
+            equal(f.state.followScroll, follow, "左短行拖动不取消奖励自动跟随")
+            equal(cachedLayout(f).rows[1].scroll, 0, "短来源滚动保持0")
+        end
+        checkNoIO(f, "短来源输入隔离")
+    end)
+    scenario("切语言/refresh首draw前动态奖励命中拖动滚轮及领取重试", function()
+        local f = newFixture()
+        local data = { heroExpPreview = { heroPreview(f.exp, 1, 1, 1, 1, 100) },
+            teamSources = { { stageId = 400120, sourceKind = "tower", paused = true } }, rewards = {} }
+        for id = 1, 80 do data.rewards[id] = { type = "gold", amount = id } end
+        local attempts = 0
+        data.onClaim = function() attempts = attempts + 1; return attempts > 1 end
+        show(f, data); advance(f, 10)
+        local prior = false
+        for _, lang in ipairs({ "zh_CN", "en", "ja", "ko", "zh_TW" }) do
+            local oldCache = prior
+            f.i18n.set(lang)
+            local languageLayout = layoutOracle(f, data)
+            f.panel.handleInput(-250, 700) -- 只切语言，不借refresh清缓存掩盖失效问题。
+            local languageCache = cachedLayout(f)
+            equal(languageCache.language, lang, "仅切语言首次输入重建布局")
+            equal(languageCache.height, languageLayout.height, "仅切语言独立字体高度")
+            if oldCache then verify(languageCache ~= oldCache, "仅语言变化使旧缓存失效") end
+            local fresh = { heroPreview(f.exp, 1, 1, 1, 1, 100) }
+            if lang ~= "zh_CN" then fresh[2] = heroPreview(f.exp, 2, 2, 1, 1, 100) end
+            local rewards, reveal = f.state.rewards, f.state.cascade.revealStart
+            f.panel.refreshHeroPreview(fresh); data.heroExpPreview = fresh
+            verify(f.state.rewards == rewards and f.state.cascade.revealStart == reveal, "refresh保奖励/cascade身份")
+            local expected = layoutOracle(f, data)
+            f.panel.handleScroll(10000, 500, expected.clipTop + 1)
+            equal(f.state.scrollY, 0, "切语言/refresh开前滚轮新clip归顶")
+            equal(f.state.scrollMax, expected.scrollMax, "动态新奖励scrollMax")
+            local cache = cachedLayout(f)
+            verify(cache.context == fontVG and cache.language == lang, "切语言首次输入缓存真实字体")
+            if prior then verify(cache ~= prior, "切语言/refresh废弃旧缓存") end
+            prior = cache
+            -- 十列中心独立计算：总宽1344居中540，首列-72，步长136。
+            verify(f.panel.handleInput(-72, expected.clipTop - 1), "clip外消费")
+            equal(f.state.detailIdx, 0, "动态clip上方不能开详情")
+            verify(f.panel.handleInput(-72, expected.clipTop + 60), "首次draw前新奖励中心命中")
+            equal(f.state.detailIdx, 1, "独立网格第一项")
+            verify(f.state.detailItem == rewards[1], "详情为真实奖励对象")
+            f.panel.handleInput(540, expected.claimCY)
+            equal(attempts, 0, "有详情先关闭不穿透领取")
+            equal(f.state.detailIdx, 0, "详情关闭")
+            f.panel.handleScroll(-1, 500, expected.clipTop + 60)
+            equal(f.state.scrollY, math.min(60, expected.scrollMax), "奖励滚轮60独立步进")
+            f.panel.handleDragBegin(500, expected.clipTop + 60)
+            f.panel.handleDragMove(500, expected.clipTop + 10)
+            f.panel.handleDragEnd(500, expected.clipTop + 10)
+            equal(f.state.scrollY, math.min(110, expected.scrollMax), "动态clip奖励拖动50")
+            local frame = drawFrame(f)
+            verify(cachedLayout(f) == cache, "动态input/draw共缓存")
+            local clipFound = false
+            for _, clip in ipairs(f.clips) do
+                if same(clip, { -248, expected.clipTop, 1328, expected.clipTop + expected.clipH }) then clipFound = true end
+            end
+            verify(clipFound, "真实NVG奖励clip跟随动态高度")
+            equal(#textsAt(frame, expected.claimCY, function(t) return t.text == f.i18n.lookup("领取") end), 1,
+                "动态领取文字和热区同坐标")
+        end
+        local expected = layoutOracle(f, data)
+        f.panel.handleInput(540, expected.claimCY); equal(attempts, 1, "动态领取失败")
+        verify(f.panel.isOpen(), "失败保留")
+        f.panel.handleInput(540, expected.claimCY); equal(attempts, 2, "动态领取重试成功")
+        advance(f, .25); verify(not f.panel.isOpen(), "成功关闭")
+        verify(not f.panel.handleInput(540, expected.claimCY), "关闭不消费")
+        checkNoIO(f, "动态输入")
+    end)
+    -- 原不收敛目的保留：新固定56号逐码点换行也必须有界，不能只删除旧缩号case。
+    scenario("来源测量退化/异常有界终止不进入缩号死循环", function()
+        for _, mode in ipairs({ "constant", "zero", "nan", "throw" }) do
+            local f, calls = newFixture(), 0
+            local text = string.rep("悬魂瀑布 Long ", 8)
+            local original = f.i18n.displayBounds
+            f.i18n.displayBounds = function(vg, x, y, value, _endp, out)
+                -- 只注入逐码点来源测量，不能把NaN传到无关经验行的字号/原生绘制。
+                if utf8.len(value) ~= 1 then return original(vg, x, y, value, _endp, out) end
+                calls = calls + 1
+                if calls > utf8.len(text) + 100 then error("测量调用无界", 0) end
+                if mode == "throw" then error("private native measurement failure", 0) end
+                if type(out) == "table" then out[1], out[2], out[3], out[4] = x - 600, y - 400, x + 600, y + 400 end
+                if mode == "zero" then return 0 elseif mode == "nan" then return 0 / 0 end
+                return 1200
+            end
+            local done, err = pcall(function()
+                show(f, { heroExpPreview = { heroPreview(f.exp, 1, 1, 1, 1, 100) },
+                    teamSources = { { stageId = 101, sourceName = text } } })
+                f.clock.elapsedTime = 101; f.panel.update(0)
+                -- draw以生产pcall日志明确异常，不将其误称正常绘制成功。
+                if mode == "throw" then f.panel.handleInput(0, 0) else drawFrame(f) end
+            end)
+            f.i18n.displayBounds = original
+            verify(calls > 0 and calls <= utf8.len(text) + 100, mode .. "测量有限调用")
+            if mode == "throw" then
+                verify(not done and tostring(err):find("private native measurement failure", 1, true) ~= nil,
+                    "测量抛异常有限返回且不伪造成功")
+            else verify(done, mode .. "失真测量有界终止") end
+            checkNoIO(f, "测量异常")
+        end
     end)
 end
 
@@ -893,13 +1145,13 @@ local function cascadeTests()
     suite.checks = suite.checks + assertions
     print("[offline_reward_cascade_test] 原cascade全部保留: " .. assertions .. " assertions")
     checkNoIO(rootFixture, "原cascade")
-    fontVG = assert(nvgCreate(1), "真实字体专项VG创建失败")
-    verify(nvgCreateFont(fontVG, "sans", "Fonts/NotoSansCJKkr-Bold.otf") >= 0,
-        "仅注册一次真实宿主sans Noto字体")
     SubscribeToEvent(fontVG, "NanoVGRender", "HandleOfflineCascadeRender")
 end
 
 function Start()
+    fontVG = assert(nvgCreate(1), "真实字体专项VG创建失败")
+    verify(nvgCreateFont(fontVG, "sans", "Fonts/NotoSansCJKkr-Bold.otf") >= 0,
+        "仅注册一次真实宿主sans Noto字体")
     local ok, err = xpcall(cascadeTests, debug.traceback)
     if not ok then
         verify(false, "Start专项异常 " .. tostring(err))

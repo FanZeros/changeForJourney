@@ -94,9 +94,14 @@ function Overlay.bind(panel, runtime)
         panel.handleDragEnd(-1, -1)
     end
 
-    function api.handleWheel(wheel)
+    function api.handleWheel(wheel, x, y)
         if not panel.isOpen() then return false end
-        panel.handleScroll(wheel)
+        if x and y then
+            local dx, dy = api.toDesign(x, y)
+            panel.handleScroll(wheel, dx, dy)
+        else
+            panel.handleScroll(wheel)
+        end
         return true
     end
 

@@ -14,7 +14,12 @@ rawset(_G, "GetFileSystem", denyIO)
 local mocks = {}
 rawset(_G, "require", function(name) return mocks[name] or engineRequire(name) end)
 local noop = function() end
-local capture = { enabled = false, paths = {}, fills = {}, strokes = {}, paints = {}, labels = {}, statuses = {} }
+local capture = { enabled = false, paths = {}, fills = {}, strokes = {}, paints = {}, labels = {},
+    statuses = {}, texts = {}, icons = {}, restored = {} }
+local fontSize, fontFace, textAlign = 36, "sans", 0
+local fontStack = {}
+local hitTests = {}
+local feedbacks = {}
 local expectedStatuses = { "", "", "" }
 local expectedExtra = {}
 local expectedHeroId = 1
@@ -43,15 +48,30 @@ rawset(_G, "nvgRGBA", function(r, g, b, a)
     return color
 end)
 rawset(_G, "time", clock)
-mocks["systems.ButtonFeedback"] = { begin = function() return false end, finish = noop }
+mocks["systems.ButtonFeedback"] = {
+    begin = function(_, id, cx, cy, width, height)
+        if capture.enabled then feedbacks[#feedbacks + 1] = {
+            id = id, cx = cx, cy = cy, width = width, height = height } end
+        return false
+    end,
+    finish = noop,
+}
 mocks["core.DrawUtil"] = {
     drawTextStroke = function(_, x, y, text, size)
         if capture.enabled then
-            capture.labels[#capture.labels + 1] = { x = x, y = y, text = text, size = size }
+            capture.labels[#capture.labels + 1] = { x = x, y = y, text = text, size = size,
+                incomingSize = fontSize, incomingFace = fontFace, incomingAlign = textAlign }
         end
     end,
-    drawImageCentered = noop, drawShardIcon = noop,
-    hitTest = function() return false end,
+    drawImageCentered = noop,
+    drawShardIcon = function(_, heroId, x, y, size, alpha)
+        if capture.enabled then capture.icons[#capture.icons + 1] = {
+            heroId = heroId, x = x, y = y, size = size, alpha = alpha } end
+    end,
+    hitTest = function(px, py, cx, cy, width, height)
+        hitTests[#hitTests + 1] = { px = px, py = py, cx = cx, cy = cy, width = width, height = height }
+        return false
+    end,
 }
 -- KeywordText 当前使用的语言/原文绘制出口仍接既有确定性测量 mock。
 mocks["core.I18n"] = {
@@ -61,9 +81,16 @@ mocks["core.I18n"] = {
     displayText = function(...) return nvgText(...) end,
     displayBounds = function(...) return nvgTextBounds(...) end,
 }
-for _, name in ipairs({ "nvgFontFace", "nvgTextAlign", "nvgSave", "nvgRestore" }) do
-    rawset(_G, name, noop)
-end
+rawset(_G, "nvgFontFace", function(_, face) fontFace = face end)
+rawset(_G, "nvgTextAlign", function(_, align) textAlign = align end)
+rawset(_G, "nvgSave", function()
+    fontStack[#fontStack + 1] = { size = fontSize, face = fontFace, align = textAlign, fill = fill }
+end)
+rawset(_G, "nvgRestore", function()
+    local state = assert(table.remove(fontStack), "NanoVG save/restore must balance")
+    fontSize, fontFace, textAlign, fill = state.size, state.face, state.align, state.fill
+    if capture.enabled then capture.restored[#capture.restored + 1] = state end
+end)
 rawset(_G, "nvgBeginPath", function()
     path = { points = {}, closed = false }
     if capture.enabled then capture.paths[#capture.paths + 1] = path end
@@ -110,7 +137,6 @@ end)
 rawset(_G, "nvgImagePatternTinted", function(_, ox, oy, dw, dh, angle, image, color)
     return imagePaint(ox, oy, dw, dh, angle, image, nil, colorArgs[color])
 end)
-local fontSize = 36
 rawset(_G, "nvgFontSize", function(_, size) fontSize = size end)
 rawset(_G, "nvgTextBounds", function(_, _, _, text)
     local width = 0
@@ -118,7 +144,12 @@ rawset(_G, "nvgTextBounds", function(_, _, _, text)
     return width
 end)
 local titles = {}
-rawset(_G, "nvgText", function(_, x, y, text) titles[#titles + 1] = { x = x, y = y, text = text } end)
+rawset(_G, "nvgText", function(_, x, y, text)
+    titles[#titles + 1] = { x = x, y = y, text = text }
+    if capture.enabled then capture.texts[#capture.texts + 1] = {
+        x = x, y = y, text = text, size = fontSize, face = fontFace, align = textAlign,
+        width = nvgTextBounds(vg, 0, 0, text), color = fill.color } end
+end)
 
 -- 独立写出设计几何，不读取/新增生产 API；捕获每次真实路径以发现 expand 或额外框。
 local polygons = {
@@ -157,13 +188,15 @@ end
 
 local function drawFrame(Panel, heroId)
     capture.paths, capture.fills, capture.strokes, capture.paints, capture.labels = {}, {}, {}, {}, {}
-    capture.statuses = {}
+    capture.statuses, capture.texts, capture.icons, capture.restored = {}, {}, {}, {}
+    feedbacks = {}
     capture.enabled = true
     Panel.draw(vg, heroId)
     capture.enabled = false
     frames = frames + 1
     return { paths = capture.paths, fills = capture.fills, strokes = capture.strokes,
-        paints = capture.paints, labels = capture.labels, statuses = capture.statuses }
+        paints = capture.paints, labels = capture.labels, statuses = capture.statuses,
+        texts = capture.texts, icons = capture.icons, restored = capture.restored, feedbacks = feedbacks }
 end
 
 local function samplingSignature(frame)
@@ -263,6 +296,41 @@ local function checkFrame(frame, count, selected, available, context)
     check(buttonText == expectedButton, context .. "只切换查看，不放宽前阶嵌合门禁")
 end
 
+local function checkShardText(frame, count, cost)
+    local text = nil
+    for _, item in ipairs(frame.texts) do
+        if item.x == 271 and item.y == 2160 then
+            check(text == nil, "碎片数字只能绘制一行，不截字/重复叠绘")
+            text = item
+        end
+    end
+    check(text ~= nil, "真实Panel.draw必须在原(271,2160)绘制碎片数")
+    check(text.text == tostring(count) .. "/" .. cost, "完整拥有/需求原样显示，不省略或改变库存")
+    check(text.face == "sans" and text.align == NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        "碎片字体与左对齐/垂直居中保持不变")
+    check(text.size > 0 and text.size <= ((count >= 100 or cost >= 100) and 48 or 66),
+        "三位数及以上主动小于旧66号，其他数优先旧字号")
+    check(text.width <= 177 + 0.00001 and text.x + text.width <= 448 + 0.00001,
+        "完整拥有/需求不越177安全宽，距原按钮左缘460至少12")
+    local expectedColor = count >= cost and { 0x72, 0xe9, 0xff, 255 } or { 0x8b, 0x95, 0xa5, 255 }
+    check(sameColor(text.color, expectedColor), "足够/不足碎片配色不能随字号改变")
+    check(#frame.icons == 1 and frame.icons[1].heroId == 1 and frame.icons[1].x == 196
+        and frame.icons[1].y == 2160 and frame.icons[1].size == 114 and frame.icons[1].alpha == 1,
+        "碎片图标保持原中心/尺寸/透明度")
+    local button = frame.labels[#frame.labels]
+    local restored = frame.restored[#frame.restored]
+    check(restored ~= nil and button.incomingSize == restored.size
+        and button.incomingFace == restored.face and button.incomingAlign == restored.align
+        and #fontStack == 0, "局部缩号必须save/restore，不泄漏给后续按钮文字")
+    check(button.x == 720 and button.y == 2160 and button.size == 46,
+        "后续按钮文字仍原中心及46号")
+    local feedback = frame.feedbacks[#frame.feedbacks]
+    check(feedback.id == "awp_activate" and feedback.cx == 720 and feedback.cy == 2160
+        and feedback.width == 520 and feedback.height == 100,
+        "按钮反馈区域不随碎片文字缩号改变")
+    return text.size
+end
+
 local function hotspotProbes()
     local probes = {}
     for _, t in ipairs({ 0, 0.5, 1 }) do
@@ -348,6 +416,49 @@ function Start()
         check(nodeTitle and Panel.BTN_CY == 2160, "阶段标题与嵌合按钮保持原位")
         check(draws == 3, "必须真实调用觉醒正文绘制")
         check(checks > 3, "原关键词热区回归不得因空mock而失效")
+
+        -- 数字边界回归只替换显式库存；仍走真实Panel.draw，不加载main或玩家档。
+        local shardFixture = { shards = 99, awakening = { _awk3Migrated = true }, extraTalent = {} }
+        Panel.setOwnedDataGetter(function() return shardFixture end)
+        local sizes = {}
+        for stage = 1, 3 do
+            Panel.reset(1)
+            check(Panel.handleInput(centers[stage], 1056, 1), "碎片用例仍按原切片热区选择阶段")
+            for _, count in ipairs({ 0, 9, 99, 100, 999, 1000, 999999999999999, 99, 9 }) do
+                shardFixture.shards = count
+                local frame = drawFrame(Panel, 1)
+                local size = checkShardText(frame, count, Config.getShardCost(stage))
+                local initial = count >= 100 and 48 or 66
+                local width = #(tostring(count) .. "/" .. Config.getShardCost(stage)) * initial * 0.55
+                if width <= 177 then
+                    check(size == initial, "不溢出的短库存恢复原66号，三位数采用48号")
+                end
+                if stage == 1 then
+                    if sizes[count] then check(size == sizes[count], "大库存返回99/9后恢复本次应有字号，不沿用上次缩号") end
+                    sizes[count] = size
+                end
+                local button = frame.labels[#frame.labels]
+                local expected = stage > 1 and "需先嵌合前阶" or (count < 10 and "碎片不足" or "嵌合")
+                check(button.text == expected, "数字缩号不改变后续按钮文案或激活条件")
+            end
+        end
+        check(sizes[100] < sizes[99] and sizes[1000] < sizes[100]
+            and sizes[999999999999999] < sizes[1000], "三位数主动缩小，四位/更长按实际完整串继续缩小")
+        local realCost = Config.getShardCost
+        Config.getShardCost = function() return 100 end -- 未来三位需求的显式夹具，不改配置/业务文件。
+        shardFixture.shards = 9
+        Panel.reset(1)
+        local costFrame = drawFrame(Panel, 1)
+        Config.getShardCost = realCost
+        check(checkShardText(costFrame, 9, 100) == 48, "拥有仅一位但需求三位也主动小字号")
+        check(Panel.BTN_CX == 720 and Panel.BTN_CY == 2160 and Panel.BTN_W == 520 and Panel.BTN_H == 100,
+            "数字适配不改变原按钮中心/宽高导出值")
+        hitTests = {}
+        Panel.kwText:clear()
+        Panel.handleInput(720, 2160, 1) -- hitTest记录但固定不命中，禁止发送真实嵌合请求。
+        local hit = hitTests[#hitTests]
+        check(hit and hit.cx == 720 and hit.cy == 2160 and hit.width == 520 and hit.height == 100,
+            "handleInput仍使用原嵌合热区，不跟文字宽度移动")
 
         local ownedData = { shards = 150, awakening = { _awk3Migrated = true }, extraTalent = ETS.normalize({
             stacks = 12345, biteTypes = { slash = true, crush = true, fire = true },

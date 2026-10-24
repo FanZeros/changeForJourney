@@ -407,6 +407,11 @@ function Start()
         local panelNow = 1800000000
         local panelToday = math.floor((panelNow + 28800) / 86400)
         replace(os, "time", function() return panelNow end)
+        -- 本测试只验权威规则与旧面板费用，不把假VG传入新表现的原生图片/UI接口。
+        -- 动画时序由artifact_draw_animation_test使用私有叶替身单独验证。
+        replace(package.loaded, "ui.church.ArtifactDrawAnim", {
+            init = noop, close = noop, isPlaying = function() return false end,
+        })
         local Panel = require("ui.church.ChurchArtifactDrawPanel")
         Panel.setContext({
             state = {}, getProtocol = function() return Protocol end,

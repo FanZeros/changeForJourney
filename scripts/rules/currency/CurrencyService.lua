@@ -6,6 +6,7 @@
 
 local PDM = require("rules.character.PlayerDataManager")
 local ResourceDefs = require("config.ResourceDefs")
+local HeroShardService = require("rules.hero.HeroShardService")
 
 local CurrencyService = {}
 
@@ -64,26 +65,14 @@ local function normalizeReward(reward)
     return reward
 end
 
--- 碎片独立写 heroes：先校验，再原位修改，通知完成后才输出成功日志。
+-- 碎片由统一服务先规划，再原位写 heroes/currency，保留封顶、溢出转币及实际回执。
 local function grantShard(uid, reward)
-    local heroId = tonumber(reward.heroId)
-    local amount = tonumber(reward.amount)
-    if not heroId or not amount or amount <= 0 then
-        print("[CurrencyService] invalid shard reward: heroId=" .. tostring(reward.heroId)
-            .. " amount=" .. tostring(reward.amount))
-        return false
+    local ok, err, receipt = HeroShardService.Grant(uid, reward.heroId, reward.amount)
+    if not ok then
+        print("[CurrencyService] invalid shard reward: " .. tostring(err))
+        return false, nil, err
     end
-    local heroes = PDM.GetModule(uid, "heroes")
-    if not heroes then return false end
-    if not heroes.roster then heroes.roster = {} end
-    if not heroes.roster[heroId] then
-        heroes.roster[heroId] = { shards = 0, _shardMigrated = true }
-    end
-    heroes.roster[heroId].shards = (heroes.roster[heroId].shards or 0) + amount
-    PDM.MarkDirty(uid, "heroes")
-    print("[CurrencyService] GrantReward shard uid=" .. tostring(uid)
-        .. " heroId=" .. heroId .. " +" .. amount)
-    return true
+    return true, receipt
 end
 
 -- 货币奖励按当前公开映射及激活表分流，查询顺序保持在访问 PDM 前后原位置。
@@ -119,6 +108,7 @@ end
 ---@param uid number
 ---@param reward table { type=string, amount=number, heroId=number|nil }
 ---@return boolean success
+---@return table|nil receipt 实际碎片/酒馆币回执
 function CurrencyService.GrantReward(uid, reward)
     reward = normalizeReward(reward)
     if reward.type == "shard" then

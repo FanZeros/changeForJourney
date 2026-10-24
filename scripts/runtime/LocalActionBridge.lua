@@ -470,6 +470,24 @@ function M.init()
             publishingDungeonRewards_ = false
         end,
     })
+    -- 旧库存需连同补偿酒馆币一起提交，不能在单模块 Schema 中截断碎片。
+    local Shards = require("rules.hero.HeroShardService")
+    local previewOk, previewErr, preview = Shards.ReconcileAll(LOCAL_UID, { preview = true, silent = true })
+    if previewOk and preview and preview.changed then
+        local DungeonService = require("rules.dungeon.DungeonService")
+        local saved, saveErr = DungeonService.CommitRewardTransaction(LOCAL_UID, function()
+            local ok, err, result = Shards.ReconcileAll(LOCAL_UID, { silent = true })
+            if not ok then return false, err end
+            DungeonService.MarkRewardDirty(LOCAL_UID, "heroes")
+            DungeonService.MarkRewardDirty(LOCAL_UID, "currency")
+            return true, nil, result
+        end)
+        if not saved then
+            print("[LocalActionBridge] 碎片库存归并未提交，保留原库存: " .. tostring(saveErr))
+        end
+    elseif not previewOk then
+        print("[LocalActionBridge] 碎片库存归并预检失败，保留原库存: " .. tostring(previewErr))
+    end
     print("[LocalActionBridge] init uid=" .. LOCAL_UID)
 end
 

@@ -7,6 +7,11 @@
 -- 两种review均复用内存fixture，用-screenshot-frame/-validate退出；不读取玩家档或发送业务动作。
 
 local TAG = "[auto_diamond_exchange_test] "
+local ROOT = "/workspace/changeForJourney"
+for _, argument in ipairs(type(GetArguments) == "function" and GetArguments() or {}) do
+    local directory = argument:match("^%-tapcode_dir=(.+)$")
+    if directory then ROOT = directory:gsub("/+$", "") end
+end
 local SCOPES = { "gacha_standard", "gacha_stellar", "artifact_normal", "artifact_advanced" }
 local SOURCES = {}
 for _, name in ipairs({
@@ -14,6 +19,11 @@ for _, name in ipairs({
     "ui.tavern.TavernPopups", "ui.tavern.TavernPage", "ui.tavern.TavernRecruitOrders",
     "ui.church.ChurchArtifactDrawPanel", "core.DrawUtil", "core.DarkIcon", "ui.town.TownPageChrome", "systems.GachaSystem",
     "rules.gacha.GachaService", "rules.gacha.UrGachaService", "rules.artifact.ArtifactService",
+    "shared.heroes.HeroShardPolicy", "rules.hero.HeroShardService", "ui.tavern.RecruitAnim",
+    "ui.tavern.RecruitTimeline", "core.NumberUtil", "config.ResourceDefs",
+    "rules.hero.HeroHandler", "rules.hero.HeroService", "rules.awakening.AwakeningHandler",
+    "rules.awakening.AwakeningService", "shared.heroes.HeroResonance", "shared.heroes.TeamSlots",
+    "runtime.ClientMessageHandler",
     "shared.artifact.ArtifactDefs", "shared.artifact.ArtifactSchema", "shared.Protocol",
     "config.GachaConfig", "config.UrGachaConfig", "config.HeroConfig", "config.ExpTable",
     "config.ClassConfig", "config.AdvancementConfig", "config.AwakeningConfig", "systems.AttributeDef",
@@ -56,7 +66,8 @@ end
 local function source(name)
     local path = assert(SOURCES[name], "拒绝未列入白名单的源码：" .. tostring(name))
     if not sources[name] then
-        local file = assert(nativeCache:GetFile(path), "缺少真实生产源码：" .. path)
+        assert(ROOT:sub(1, 1) == "/" and not ROOT:find("..", 1, true), "非法-tapcode_dir源码根")
+        local file = assert(nativeCache:GetFile(path), "缺少真实生产源码：" .. ROOT .. "/scripts/" .. path)
         local ok, text = pcall(function()
             local lines = {}
             while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
@@ -84,6 +95,8 @@ local function fixture()
         messages = {}, now = 1800000000, clock = { elapsedTime = 100 }, sendMode = "pending",
         vg = {}, tx = 0, ty = 0, sx = 1, sy = 1, stack = {}, font = 24,
         memory = {}, host = { open = true, closing = false }, animPlaying = false, targetOpen = false,
+        artifactAnimPlaying = false, artifactAnimCalls = {}, rewardPopupCalls = {},
+        artifactAnimInit = 0, artifactAnimCloses = 0, artifactAnimDestroys = 0,
     } ---@type any
     fixtures[#fixtures + 1] = f
     local env = {} ---@type any
@@ -156,7 +169,9 @@ local function fixture()
     env.nvgFontSize = function(_, size) f.font = size end
     env.nvgTextBounds = function(_, _, _, text) return (utf8.len(text) or #text) * f.font * 0.6 end
     env.nvgText = function(_, x, y, text)
-        f.texts = f.texts or {}; f.texts[#f.texts + 1] = { text = text, x = x, y = y, font = f.font }
+        f.texts = f.texts or {}; f.texts[#f.texts + 1] = { text = text, x = x, y = y, font = f.font,
+            worldX = f.tx + x * f.sx, worldY = f.ty + y * f.sy,
+            width = (utf8.len(text) or #text) * f.font * 0.6 * f.sx }
     end
     env.nvgRGBA, env.nvgRGBAf = function(...) return { ... } end, function(...) return { ... } end
     env.nvgImagePattern = function(_, x, y, w, h, _, handle)
@@ -207,6 +222,7 @@ local function fixture()
         t = function(text) return text end, lookup = function(text) return text end, format = string.format,
         displayText = env.nvgText, displayBounds = env.nvgTextBounds })
     mock("ui.hud.popup.RedeemCodePanel", { init = noop })
+    mock("ui.dev.PerformancePanel", { init = noop, isOpen = function() return false end, open = noop })
     mock("systems.GameBGM", { setMasterGain = noop })
     mock("core.DarkIcon", { Palette = { BONE = { 240, 230, 210 }, BONE_DIM = { 170, 160, 150 } },
         drawNine = noop, drawQualityBg = noop })
@@ -222,7 +238,7 @@ local function fixture()
         FlushImmediate = function() f.flushes = f.flushes + 1 end })
     mock("rules.task.TaskService", { UpdateProgress = function(_, event, count) f.taskCalls[#f.taskCalls + 1] = { event, count } end,
         RefreshAchievements = noop })
-    mock("rules.hero.HeroService", {}) -- 测试 roster 全员已拥有，禁止进入新英雄业务工厂。
+    mock("rules.hero.HeroService", { GetNewHeroStartLevel = function() return 1 end }) -- 仅提供起始等级报价；发奖仍走真实Service。
     mock("rules.currency.CurrencyService", {}) -- 神器 Draw 直接使用真实服务内的混合扣费，不调用其他货币业务。
     mock("core.EventBus", {})
     mock("config.GameEvents", {})
@@ -232,6 +248,29 @@ local function fixture()
         isPlaying = function() return f.animPlaying end, draw = noop, update = noop,
         handleInput = function() return true end, close = function() f.animPlaying = false end,
         start = function(_, _, count, poolId) f.animCount, f.animPool, f.animPlaying = count, poolId, true end })
+    -- 神器动画是显式spy：测试实际成功接线/冻结继续闭包，不模拟动画时序或替换业务。
+    mock("ui.church.ArtifactDrawAnim", {
+        init = function(vg) eq(vg, f.vg, "神器动画init收到宿主VG"); f.artifactAnimInit = f.artifactAnimInit + 1 end,
+        start = function(rewards, onClose, count, chestType, opts)
+            f.artifactAnimCalls[#f.artifactAnimCalls + 1] = { rewards = copy(rewards), original = rewards,
+                onClose = onClose, count = count, chestType = chestType, options = opts }
+            if f.artifactAnimThrow then error("内存动画启动失败") end
+            if f.artifactAnimReject or f.artifactAnimInit == 0 then return false end
+            f.repeatDraw = opts
+            f.artifactAnimPlaying = true
+            return true
+        end,
+        update = function(dt) f.artifactAnimUpdated = dt end,
+        draw = function(vg) eq(vg, f.vg, "动画draw透传宿主VG"); f.artifactAnimDraws = (f.artifactAnimDraws or 0) + 1 end,
+        handleInput = function(dx, dy)
+            f.artifactAnimInputPoint = { dx, dy }
+            f.artifactAnimInputs = (f.artifactAnimInputs or 0) + 1; return true
+        end,
+        dismiss = function() f.artifactAnimDismisses = (f.artifactAnimDismisses or 0) + 1; return f.artifactAnimPlaying end,
+        close = function() f.artifactAnimCloses = f.artifactAnimCloses + 1; f.artifactAnimPlaying = false end,
+        destroy = function() f.artifactAnimDestroys = f.artifactAnimDestroys + 1; f.artifactAnimPlaying = false end,
+        isPlaying = function() return f.artifactAnimPlaying end,
+    })
     mock("ui.tavern.TavernShopPage", { init = noop, resetScroll = noop, syncPurchasedFromStore = noop,
         drawContent = noop, update = noop, handleInput = function() return false end,
         isPendingBuy = function() return false end })
@@ -241,7 +280,10 @@ local function fixture()
     mock("systems.TutorialManager", { notifyEvent = function(name) f.events[#f.events + 1] = name end,
         isActive = function() return false end, onRecruitCompleted = noop })
     mock("ui.character.hero.HeroScenario", { onRecruitResults = noop })
-    mock("ui.hud.popup.RewardPopup", { show = function(_, _, options) f.repeatDraw = options.repeatDraw end })
+    mock("ui.hud.popup.RewardPopup", { show = function(title, rewards, options)
+        f.rewardPopupCalls[#f.rewardPopupCalls + 1] = { title = title, rewards = copy(rewards), options = options }
+        f.repeatDraw = options.repeatDraw
+    end })
     mock("ui.town.TownPageChrome", { easeOutCubic = function(t) return 1 - (1 - t) ^ 3 end,
         easeInCubic = function(t) return t ^ 3 end, drawNamePlate = noop, drawBack = noop,
         hitBack = function() return false end, drawTabBar = noop,
@@ -803,8 +845,17 @@ local function artifactEntrypointsAndGates()
             eq(#f.actions, 1, "宝箱pending不跨卡发送")
             eq(panel.isKeyConfirmVisible(), false, "pending不打开modal")
             f.insideSend = nil
-            panel.onArtifactDrawSuccess({ chestType = chest, artifacts = { { id = "内存1", artifactId = 1, quality = 1, value = 1 } } })
-            check(type(f.repeatDraw) == "table" and type(f.repeatDraw.onContinue) == "function", "真实成功处理注册原继续回调")
+            local success = { chestType = chest, artifacts = {} }
+            for i = 1, count do success.artifacts[i] = { id = "内存" .. i, artifactId = 1, quality = 1, value = i, valueRatio = 0.37 } end
+            local successSnapshot = copy(success)
+            panel.onArtifactDrawSuccess(success)
+            eq(#f.artifactAnimCalls, 1, "真实成功恰好交给神器动画一次")
+            eq(#f.rewardPopupCalls, 0, "正常动画与RewardPopup不能双重展示同一回执")
+            eq(f.artifactAnimInit, 1, "面板init接入动画init一次")
+            eq(f.artifactAnimCalls[1].count, count, "动画收到当前真实整批奖励张数")
+            eq(f.artifactAnimCalls[1].chestType, chest, "动画宝箱由实际回执冻结")
+            check(same(success, successSnapshot), "成功接线不修改实际回执")
+            check(type(f.repeatDraw) == "table" and type(f.repeatDraw.onContinue) == "function", "真实动画成功处理注册原继续回调")
             local repeatDraw = f.repeatDraw
             panel.handleTabInput(540, chest == "normal" and 1200 or 400)
             local before = #f.actions
@@ -813,11 +864,12 @@ local function artifactEntrypointsAndGates()
             f.release(); f.settings.setAutoDiamondExchangeEnabled(scope, false)
             before = #f.actions; repeatDraw.onContinue(count)
             check(panel.isKeyConfirmVisible(), "继续入口关闭偏好后恢复确认")
+            eq(panel.isAnimationPlaying(), false, "继续补购modal不能被旧动画遮挡")
             noActions(f, before, "宝箱继续关闭")
             panel.reset(); f.settings.setAutoDiamondExchangeEnabled(scope, true)
             repeatDraw.onContinue(count)
             noActions(f, before, "过期generation继续无效")
-            panel.onArtifactDrawSuccess({ chestType = chest, artifacts = { { id = "内存2", artifactId = 1, quality = 1 } } })
+            panel.onArtifactDrawSuccess({ chestType = chest, artifacts = { { id = "内存2", artifactId = 1, quality = 1, value = 1 } } })
             f.host.open = false; f.repeatDraw.onContinue(count)
             noActions(f, before, "宿主关闭不允许继续")
             f.host.open, f.host.closing = true, true; f.repeatDraw.onContinue(count)
@@ -856,6 +908,108 @@ local function artifactEntrypointsAndGates()
     panel.handleTabInput(320, 1800)
     check(panel.isKeyConfirmVisible(), "普通开启不授权高级")
     noActions(f, 0, "宝箱档位授权隔离")
+end
+
+local function artifactAnimationBridge()
+    for _, mode in ipairs({ "playing", "start_false", "start_throw", "not_initialized" }) do
+        local f = fixture()
+        local panel = mode == "not_initialized" and f.real("ui.church.ChurchArtifactDrawPanel") or f.artifact()
+        if mode == "not_initialized" then
+            f.panel = panel
+            panel.setContext({ state = f.host, getProtocol = function() return f.protocol end,
+                getClient = function() return { sendAction = f.send } end })
+        end
+        f.artifactAnimReject, f.artifactAnimThrow = mode == "start_false", mode == "start_throw"
+        f.resetMemory(0, 150, 4)
+        f.settings.setAutoDiamondExchangeEnabled("artifact_advanced", true)
+        local data = { chestType = "advanced", count = 1, artifacts = { { id = "receipt_exact_identity", artifactId = 2,
+            quality = 5, value = 73.8, valueRatio = 7182, threatClearValue = 63.4, threatClearRatio = 8933 } } }
+        local dataBefore, memoryBefore = copy(data), copy(f.memory)
+        f.host.floatText = "旧请求提示"
+        local rewards = panel.onArtifactDrawSuccess(data)
+        eq(#f.artifactAnimCalls, 1, "成功回执只尝试一次动画start " .. mode)
+        eq(#f.rewardPopupCalls, mode == "playing" and 0 or 1, "只有start失败/无init结果兜底同一展示 " .. mode)
+        eq(panel.isAnimationPlaying(), mode == "playing", "playing门面透传真实状态spy " .. mode)
+        eq(f.artifactAnimCloses, mode == "playing" and 0 or 1, "失败fallback先close残留表现 " .. mode)
+        eq(f.host.floatText, nil, "success清除旧开启提示 " .. mode)
+        eq(panel.isKeyConfirmVisible(), false, "success清除旧钥匙确认 " .. mode)
+        check(same(data, dataBefore) and same(f.memory, memoryBefore), "展示不修改原回执或内存币/背包 " .. mode)
+        eq(rewards[1].id, "receipt_exact_identity", "实际实例id不丢失 " .. mode)
+        eq(rewards[1].artifactId, 2, "实际类型id不丢失 " .. mode)
+        eq(rewards[1].quality, 5, "实际品质不升质 " .. mode)
+        eq(rewards[1].valueRatio, 7182, "实际ratio不重算 " .. mode)
+        eq(rewards[1].value, 73.8, "真实X字段不改 " .. mode)
+        eq(rewards[1].threatClearValue, 63.4, "真实Y字段不取缺省中点 " .. mode)
+        eq(rewards[1].threatClearRatio, 8933, "真实Y ratio不重算 " .. mode)
+        local opts = assert(f.repeatDraw)
+        local cost = opts.getCost(1)
+        eq(cost.parts[1].type, "golden_key", "原继续报价优先现有钥匙")
+        eq(cost.parts[1].amount, 4, "高级单抽实际四把现有钥匙")
+        eq(cost.parts[2].type, "diamond", "缺口仍黑晶")
+        eq(cost.parts[2].amount, 150, "缺口价保持150，不变全额750")
+        eq(cost.enough, true, "缺口恰好够继续")
+        panel.handleTabInput(540, 400) -- 宿主所选普通不改变本回执冻结的高级报价/继续。
+        cost = opts.getCost(10)
+        eq(cost.parts[1].amount, 4, "选中普通后高级十连仍使用已有4把")
+        eq(cost.parts[2].amount, 6900, "选中普通后继续仍冻结高级50把需求")
+        eq(cost.enough, false, "十连真实冻结报价不可降级普通")
+        panel.drawAnimation(f.vg); eq(f.artifactAnimDraws, 1, "面板drawAnimation透传一次")
+        panel.updateAnimation(0.125); eq(f.artifactAnimUpdated, 0.125, "面板updateAnimation透传dt")
+        check(panel.handleAnimationInput(222, 333), "面板handleAnimationInput透传消费")
+        check(same(f.artifactAnimInputPoint, {222,333}), "面板input维持设计坐标")
+        eq(panel.dismissAnimation(), mode == "playing", "dismissAnimation透传返回值")
+        local before = #f.actions
+        local closes = f.artifactAnimCloses
+        panel.closeAnimation()
+        eq(f.artifactAnimCloses, closes + 1, "closeAnimation只关闭自身动画一次")
+        opts.onContinue(1)
+        noActions(f, before, "显式closeAnimation使旧generation继续失效 " .. mode)
+        panel.onArtifactDrawSuccess(data)
+        local old = f.repeatDraw
+        panel.reset()
+        old.onContinue(1)
+        noActions(f, before, "reset使新generation继续也失效 " .. mode)
+        eq(panel.isAnimationPlaying(), false, "reset关闭动画")
+    end
+    local synchronous = fixture(); local syncPanel = synchronous.artifact()
+    synchronous.resetMemory(0, 7500, 0)
+    synchronous.settings.setAutoDiamondExchangeEnabled("artifact_advanced", true)
+    local oldReceipt = { chestType = "advanced", count = 10, artifacts = {} }
+    for i = 1, 10 do oldReceipt.artifacts[i] = { id = "old_sync_" .. i, artifactId = 1, quality = 1, value = 123.4 } end
+    syncPanel.onArtifactDrawSuccess(oldReceipt)
+    local current = synchronous.repeatDraw
+    synchronous.insideSend = function(action)
+        eq(action, synchronous.protocol.ACTION_TYPES.ARTIFACT_DRAW, "sync只使用原神器Action")
+        syncPanel.onArtifactDrawSuccess({ chestType = "advanced", count = 1,
+            artifacts = { { id = "next_sync_result", artifactId = 2, quality = 5, value = 73.8, threatClearValue = 63.4 } } })
+    end
+    current.onContinue(1)
+    oneAction(synchronous, 0, synchronous.protocol.ACTION_TYPES.ARTIFACT_DRAW, 1, "diamond", "advanced")
+    eq(#synchronous.artifactAnimCalls, 2, "同步成功回执直接开启下一批一次")
+    eq(synchronous.artifactAnimCalls[2].rewards[1].id, "next_sync_result", "下一批真正同步结果未被旧批覆盖")
+    eq(syncPanel.isAnimationPlaying(), true, "旧continue返回后新animation仍playing")
+    synchronous.insideSend = nil
+    current.onContinue(1)
+    noActions(synchronous, 1, "同步新成功generation使上一批继续失效")
+    synchronous.repeatDraw.onContinue(1)
+    oneAction(synchronous, 1, synchronous.protocol.ACTION_TYPES.ARTIFACT_DRAW, 1, "diamond", "advanced")
+    synchronous.release()
+    synchronous.settings.setAutoDiamondExchangeEnabled("artifact_advanced", false)
+    synchronous.repeatDraw.onContinue(1)
+    check(syncPanel.isKeyConfirmVisible(), "当前generation继续关闭动画但可恢复补购modal")
+    eq(syncPanel.isAnimationPlaying(), false, "当前generation补购modal不被动画覆盖")
+
+    local pending = fixture(); local panel = pending.artifact()
+    pending.resetMemory(0, 150, 0)
+    pending.settings.setAutoDiamondExchangeEnabled("artifact_normal", true)
+    panel.handleTabInput(320, 980)
+    oneAction(pending, 0, pending.protocol.ACTION_TYPES.ARTIFACT_DRAW, 1, "diamond", "normal")
+    panel.reset()
+    panel.handleTabInput(320, 980)
+    noActions(pending, 1, "动画reset不可清业务pending后重复发送")
+    panel.onArtifactDrawResult()
+    panel.handleTabInput(320, 980)
+    oneAction(pending, 1, pending.protocol.ACTION_TYPES.ARTIFACT_DRAW, 1, "diamond", "normal")
 end
 
 local function authoritativePayments()
@@ -929,6 +1083,122 @@ local function authoritativePayments()
             eq(f.dirty + f.flushes + #f.taskCalls, 0, "神器拒绝不落盘/推进任务")
         end
     end
+end
+
+local function actualShardPresentation()
+    local f = fixture()
+    f.deps["ui.tavern.RecruitAnim"] = nil
+    f.deps["core.BattleLayout"] = { cardHeightForWidth = function(w) return w * 955 / 538 end }
+    f.deps["config.HeroAssetUtil"] = { ensureCard = function() return -1 end }
+    f.deps["ui.widget.RepeatDrawButton"] = { draw = noop }
+    f.deps["ui.tavern.RecruitMotion"] = { drawBackEdge = noop }
+    local drawn = 0
+    f.deps["ui.tavern.RecruitPresentation"] = { init = noop, destroy = noop, drawIntro = noop,
+        drawCardGlow = function() drawn = drawn + 1 end, drawBack = noop, drawLabels = noop }
+    local anim = f.real("ui.tavern.RecruitAnim")
+    anim.init(f.vg)
+    local closed = 0
+    local results = {
+        { type = "dupe_to_shard", heroId = 16, quality = 4, shardGain = 2, amount = 2, tavernCoin = 3600, overflowShards = 8 },
+        { type = "decompose", heroId = 16, quality = 4, shardGain = 0, amount = 0, tavernCoin = 4500, overflowShards = 10 },
+        { type = "hero", heroId = 16, quality = 4, isNew = true, shardGain = 0, amount = 0, tavernCoin = 4500, overflowShards = 10 },
+        { type = "shard", heroId = 16, quality = 4, shardGain = 1, amount = 1, tavernCoin = 900, overflowShards = 2 },
+    }
+    f.deps["core.DrawUtil"].drawShardIcon = noop -- 头像资源是叶子替身，数量/分卡/布局仍走真实RecruitAnim。
+    for index, result in ipairs(results) do
+        local before = copy(result)
+        drawn, f.texts = 0, {}
+        anim.start({ result }, function() closed = closed + 1 end, 1, "stellar")
+        f.clock.elapsedTime = f.clock.elapsedTime + 4; anim.update(4); anim.draw(f.vg)
+        eq(drawn, 1, "单抽混合/纯币/新卡始终一张结果")
+        local textSet = {}
+        for _, text in ipairs(f.texts) do
+            textSet[text.text] = true
+            if text.text:find("→", 1, true) then
+                check(text.width <= (index == 4 and 178 or 168), "实际奖励文本经缩宽不超过卡内可用宽度")
+                check(text.worldX >= 441 and text.worldX <= 639, "奖励文字锚点保持原单抽卡内")
+            end
+        end
+        check(textSet["→酒馆币×" .. tostring(result.tavernCoin)], "本次实际酒馆币没有丢失")
+        if result.shardGain > 0 then
+            check(textSet[index == 4 and "X1" or "→碎片×2"], "实际保留片数可见")
+        else
+            check(not textSet["→碎片×10"] and not textSet["→碎片×0"], "纯币/新卡不伪造默认10或0碎片")
+        end
+        check(same(result, before), "表现不修改业务回执")
+        eq(#f.stack, 0, "实际奖励绘制save/restore平衡")
+        anim.close(); eq(closed, index, "关闭回调恰好一次")
+    end
+    local popups = f.real("ui.tavern.TavernPopups")
+    popups.recordHistory(results, "stellar")
+    local history = cjson.decode(f.files["gacha_history.json"]).stellar
+    eq(#history, 4, "混合奖励历史仍一抽一行")
+    check(history[4].name:find("→碎片×2→酒馆币×3600", 1, true), "混合历史包含实际两种奖励")
+    check(history[3].name:find("→酒馆币×4500", 1, true) and not history[3].name:find("碎片", 1, true), "完全转币历史不假报碎片")
+    check(history[2].name:find("→酒馆币×4500", 1, true), "首次新卡的旧片归并币进入历史")
+    noActions(f, 0, "真实动画/历史只有内存白名单File，无业务重发")
+end
+
+local function overflowHandlerPresentation()
+    local f = fixture()
+    -- 两项业务/Handler/CMH均真实；额外天赋规范化及页面渲染是明确叶子边界。
+    f.deps["rules.hero.HeroService"] = nil
+    f.deps["systems.ExtraTalentSystem"] = { normalize = function(value) return value or {} end }
+    f.deps["config.ScenarioDialogueConfig"] = {}
+    local popups, pageResults, opened = {}, {}, {}
+    f.deps["ui.hud.popup.RewardPopup"] = { show = function(title, rewards, options)
+        popups[#popups + 1] = { title = title, rewards = copy(rewards), options = options or {} }
+    end }
+    f.deps["ui.character.hero.HeroScenario"] = { onOpenHero = function(heroId) opened[#opened + 1] = heroId end }
+    for _, name in ipairs({ "ui.loot.LootBox", "ui.loot.LootBoxPage", "ui.blacksmith.BlacksmithPage",
+        "ui.backpack.BackpackPanel", "ui.church.ChurchPage", "ui.church.talent.TalentPage", "ui.tavern.TavernPage",
+        "ui.market.MarketPage", "ui.dungeon.DungeonPage", "ui.dungeon.DungeonBattleScene", "ui.dev.GMConsolePanel",
+        "ui.hud.TopBar", "ui.battle.scene.BattleScene", "ui.character.equip.EquipmentDetail", "systems.LootBoxSystem" }) do
+        local pageName = name
+        f.deps[name] = { onActionResult = function(data) pageResults[#pageResults + 1] = { pageName, data.action } end }
+    end
+    local cmh = f.real("runtime.ClientMessageHandler")
+    cmh.setup({ sendAction = function() error("回执展示不能发送动作") end, ui = {} })
+    local heroHandler = f.real("rules.hero.HeroHandler").actionHandlers
+    local awakeningHandler = f.real("rules.awakening.AwakeningHandler")
+    for _, kind in ipairs({ "synthesize", "awaken" }) do
+        for _, shards in ipairs({ kind == "synthesize" and 120 or 110, kind == "synthesize" and 100 or 90 }) do
+            f.resetMemory(0, 0)
+            local heroId = 16
+            f.memory.heroes.roster[heroId] = { shards = shards, level = kind == "awaken" and 1 or nil,
+                awakening = { _awk3Migrated = true }, _awk3Migrated = true }
+            local action = kind == "synthesize" and f.protocol.ACTION_TYPES.SYNTHESIZE_HERO or f.protocol.ACTION_TYPES.ACTIVATE_AWAKENING
+            local result = kind == "synthesize" and heroHandler[action](987654, { heroId = heroId })
+                or awakeningHandler[action](987654, { heroId = heroId, nodeIndex = 1 })
+            eq(result.success, true, "真实Handler和Service处理旧库存成功")
+            local overflow = shards == 120 or shards == 110
+            eq(result.overflowShards, overflow and 20 or 0, "Handler不截断本次超额片回执")
+            eq(result.tavernCoin, overflow and 9000 or 0, "Handler透传实际UR币而不是库存余额")
+            eq(f.memory.heroes.roster[heroId].shards, kind == "synthesize" and 90 or 80, "真实扣片后只留后续需求容量")
+            eq(f.memory.currency.tavernCoin, result.tavernCoin, "真实规则与回执币一致")
+            local before = copy(f.memory)
+            local popupBefore, pageBefore = #popups, #pageResults
+            result.action = action
+            cmh.handleActionResult(result)
+            eq(#popups - popupBefore, kind == "synthesize" and 1 or (overflow and 1 or 0), "成功只展示一次实际奖励，无币觉醒不造弹窗")
+            check(#pageResults > pageBefore, "原页面成功回调没有被币展示截断")
+            check(same(f.memory, before), "消息展示不二次扣片或发币")
+            if kind == "synthesize" then
+                local popup = popups[#popups]
+                eq(popup.rewards[1].type, "hero", "合成仍展示真实英雄")
+                eq(#popup.rewards, overflow and 2 or 1, "合成英雄与实际币同一弹窗")
+                if overflow then eq(popup.rewards[2].amount, 9000, "合成旧片归并币实际可见") end
+                local openedBefore = #opened
+                popup.options.onClose()
+                eq(#opened, openedBefore + 1, "合成原英雄后续回调仍触发")
+                eq(opened[#opened], heroId, "合成回调绑定正确英雄")
+            elseif overflow then
+                eq(popups[#popups].rewards[1].type, "tavernCoin", "觉醒溢出不伪造新碎片")
+                eq(popups[#popups].rewards[1].amount, 9000, "觉醒实际归并币可见")
+            end
+        end
+    end
+    noActions(f, 0, "合成/觉醒Handler到UI回执仅内存，无业务重发")
 end
 
 local function safety()
@@ -1139,7 +1409,10 @@ function Start()
         { "旧目标不影响UR权重/同随机保底/设置拒绝无dirty", stellarLegacyTargetIgnored },
         { "宝箱confirm开关/单抽十连自动缺口支付", artifactConfirmAndAuto },
         { "宝箱原继续入口/pending/免费/已有钥匙/解锁", artifactEntrypointsAndGates },
+        { "神器动画单展示与fallback/实际X_Y/冻结费用/close代际/pending", artifactAnimationBridge },
         { "真实三规则服务混合扣费与权威余额变化拒绝", authoritativePayments },
+        { "实际碎片/混合币/新整卡动画与历史不造额外结果", actualShardPresentation },
+        { "真实合成觉醒Service和Handler透传旧库存币与消息展示闭环", overflowHandlerPresentation },
         { "所有夹具无真实存档/账号/网络/全局污染", safety },
     }) do
         groups = groups + 1

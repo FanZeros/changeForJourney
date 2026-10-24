@@ -16,6 +16,8 @@ local BlacksmithConfig = require("config.BlacksmithConfig")
 local CurrencyService  = require("rules.currency.CurrencyService")
 local MonsterConfig    = require("config.MonsterConfig")
 local HeroService      = require("rules.hero.HeroService")
+local HeroShardService = require("rules.hero.HeroShardService")
+local HeroShardPolicy = require("shared.heroes.HeroShardPolicy")
 local IdleSettleService = require("rules.offline.IdleSettleService")
 
 local BattleService = {}
@@ -1094,22 +1096,16 @@ function BattleService._claimScenarioRewardCore(uid, scenarioId, preClaimed)
                 return false, "关卡未通关"
             end
         end
-        if not heroes.roster then heroes.roster = {} end
-        local hid = rewardDef.heroId
-        if not heroes.roster[hid] then
-            heroes.roster[hid] = { shards = 0, _shardMigrated = true }
-        end
-        heroes.roster[hid].shards = (heroes.roster[hid].shards or 0) + (rewardDef.amount or 0)
+        local ok, err, receipt = HeroShardService.Grant(uid, rewardDef.heroId, rewardDef.amount,
+            { silent = true })
+        if not ok then return false, err end
         sessionData.claimedScenarios[scenarioKey] = true
-        PDM.MarkDirty(uid, "heroes")
+        HeroShardService.MarkDirty(uid, receipt)
         PDM.MarkDirty(uid, "session")
-        print("[BattleService] scenario shard uid=" .. tostring(uid)
-            .. " scenarioId=" .. tostring(scenarioId)
-            .. " heroId=" .. tostring(hid) .. " shards=+" .. tostring(rewardDef.amount))
-        return true, nil, {
-            rewardType = "shard",
-            reward = { heroId = hid, amount = rewardDef.amount or 0 },
-        }
+        return true, nil, { rewardType = "shard", reward = {
+            heroId = receipt.heroId, amount = receipt.shardGain, shardGain = receipt.shardGain,
+            tavernCoin = receipt.tavernCoin, overflowShards = receipt.overflowShards,
+        } }
     end
 
     -- 以下为需要英雄关卡校验的情景（角色专属装备/英雄奖励）
@@ -1146,9 +1142,8 @@ function BattleService._claimHeroReward(uid, sessionData, scenarioKey, rewardDef
     -- 过滤已拥有的英雄
     local pool = {}
     for _, hid in ipairs(rewardDef.heroPool) do
-        if not heroes.roster[hid] then
-            pool[#pool + 1] = hid
-        end
+        local entry = heroes.roster[hid] or heroes.roster[tostring(hid)]
+        if not HeroShardPolicy.isOwned(entry) then pool[#pool + 1] = hid end
     end
     if #pool == 0 then
         pool = rewardDef.heroPool
@@ -1156,21 +1151,10 @@ function BattleService._claimHeroReward(uid, sessionData, scenarioKey, rewardDef
 
     local chosenHeroId = pool[math.random(#pool)]
     local heroCfg = HeroConfig.get(chosenHeroId)
-    local isNew = not heroes.roster[chosenHeroId]
-
-    if isNew then
-        heroes.roster[chosenHeroId] = {
-            level = 1, exp = 0, maxExp = 10,
-            classId = heroCfg and heroCfg.classId or 1,
-            dupeCount = 0,
-        }
-    else
-        local hero = heroes.roster[chosenHeroId]
-        local oldDupe = hero.dupeCount or 0
-        if oldDupe < 7 then
-            hero.dupeCount = oldDupe + 1
-        end
-    end
+    local ok, err, receipt = HeroShardService.GrantHero(uid, chosenHeroId,
+        { silent = true, startLevel = HeroService.GetNewHeroStartLevel(uid) })
+    if not ok then return false, err end
+    local isNew = receipt.isNew
 
     -- 自动上阵
     local autoDeploy = false
@@ -1184,7 +1168,7 @@ function BattleService._claimHeroReward(uid, sessionData, scenarioKey, rewardDef
 
     sessionData.claimedScenarios[scenarioKey] = true
 
-    PDM.MarkDirty(uid, "heroes")
+    HeroShardService.MarkDirty(uid, receipt)
     PDM.MarkDirty(uid, "session")
 
     local heroQuality = heroCfg and heroCfg.quality or 1
@@ -1201,6 +1185,10 @@ function BattleService._claimHeroReward(uid, sessionData, scenarioKey, rewardDef
             name     = heroCfg and heroCfg.name or "未知",
             quality  = heroQuality,
             isNew    = isNew,
+            shardGain = receipt.shardGain,
+            amount = receipt.shardGain,
+            tavernCoin = receipt.tavernCoin,
+            overflowShards = receipt.overflowShards,
         },
     }
 end

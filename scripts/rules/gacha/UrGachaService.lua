@@ -4,10 +4,9 @@
 
 local PDM            = require("rules.character.PlayerDataManager")
 local UrGachaConfig  = require("config.UrGachaConfig")
-local HeroConfig     = require("config.HeroConfig")
-local ExpTable       = require("config.ExpTable")
 local TaskService    = require("rules.task.TaskService")
 local HeroService    = require("rules.hero.HeroService")
+local HeroShardService = require("rules.hero.HeroShardService")
 
 local UrGachaService = {}
 
@@ -110,61 +109,6 @@ local function rollStellarQuality(currency)
     return Q.QUALITY_R
 end
 
-local function grantHeroResult(uid, heroes, currency, poolItem, index, results)
-    local heroId = poolItem.heroId
-    local heroEntry = heroes.roster[heroId]
-    local isNew = not heroEntry or not heroEntry.level
-    if isNew then
-        local existingShards = heroEntry and heroEntry.shards or 0
-        local cfg = HeroConfig.get(heroId)
-        local startLv = HeroService.GetNewHeroStartLevel(uid)
-        heroes.roster[heroId] = {
-            level = startLv, exp = 0,
-            maxExp = ExpTable.getHeroExpForLevel(startLv) or 0,
-            classId = cfg and cfg.classId or 1,
-            dupeCount = 0,
-            shards = existingShards,
-            awakening = { _awk3Migrated = true },
-            extraTalent = require("systems.ExtraTalentSystem").normalize(nil),
-            _shardMigrated = true,
-            _awk3Migrated = true,
-        }
-        results[#results + 1] = {
-            type = "hero", heroId = heroId, quality = poolItem.quality,
-            isNew = true, index = index,
-        }
-        return
-    end
-
-    local hero = heroes.roster[heroId]
-    if require("config.AwakeningConfig").isFullyAwakened(hero.awakening) then
-        local heroCfg = HeroConfig.get(heroId)
-        if heroCfg and tonumber(heroCfg.quality) == HeroConfig.QUALITY_UR then
-            -- UR满觉醒后仍保留为碎片，不自动分解为酒馆币
-            local shardGain = HeroConfig.SHARD_DUPE_CONVERT
-            hero.shards = (hero.shards or 0) + shardGain
-            results[#results + 1] = {
-                type = "dupe_to_shard", heroId = heroId, quality = poolItem.quality,
-                shardGain = shardGain, index = index,
-            }
-        else
-            local tavernCoins = poolItem.stardustValue or 0
-            currency.tavernCoin = (currency.tavernCoin or 0) + tavernCoins
-            results[#results + 1] = {
-                type = "decompose", heroId = heroId, quality = poolItem.quality,
-                tavernCoin = tavernCoins, index = index,
-            }
-        end
-    else
-        local shardGain = HeroConfig.SHARD_DUPE_CONVERT
-        hero.shards = (hero.shards or 0) + shardGain
-        results[#results + 1] = {
-            type = "dupe_to_shard", heroId = heroId, quality = poolItem.quality,
-            shardGain = shardGain, index = index,
-        }
-    end
-end
-
 --- 星辰招募抽卡
 ---@param uid number
 ---@param count number|nil
@@ -183,9 +127,11 @@ function UrGachaService.Pull(uid, count, payType)
         return false, unlockReason or "星辰招募尚未开放"
     end
 
-    count = tonumber(count) or 1
-    if count < 1 then count = 1 end
-    if count > 10 then count = 10 end
+    count = count == nil and 1 or tonumber(count)
+    if count ~= 1 and count ~= 10 then return false, "招募次数只能为1或10" end
+    local liveHeroes, liveCurrency = heroes, currency
+    heroes = HeroShardService.CopyHeroes(liveHeroes)
+    currency = HeroShardService.CopyTable(liveCurrency)
 
     payType = payType or "diamond"
     local ticketCost = (count == 10) and UrGachaConfig.Cost.TEN_TICKET or UrGachaConfig.Cost.SINGLE_TICKET
@@ -219,18 +165,27 @@ function UrGachaService.Pull(uid, count, payType)
     for i = 1, count do
         local quality = rollStellarQuality(currency)
         local poolItem = rollItemInQuality(quality)
-        if poolItem and poolItem.type == "hero" then
-            grantHeroResult(uid, heroes, currency, poolItem, i, results)
-        else
-            results[#results + 1] = {
-                type = "hero", heroId = UrGachaConfig.getUpHeroId(),
-                quality = UrGachaConfig.QUALITY_UR, isNew = false, index = i,
-            }
-            print("[UrGachaService] WARNING: 无池条目 quality=" .. tostring(quality))
+        if not poolItem or poolItem.type ~= "hero" then
+            return false, "星辰招募奖励配置异常"
         end
+        local plan, planErr = HeroShardService.PlanHeroFor(heroes, currency, poolItem.heroId,
+            { startLevel = HeroService.GetNewHeroStartLevel(uid) })
+        if not plan then return false, planErr end
+        local applied, applyErr = HeroShardService.ApplyTo(heroes, currency, plan)
+        if not applied then return false, applyErr end
+        results[#results + 1] = {
+            type = plan.type, heroId = plan.heroId, quality = poolItem.quality,
+            isNew = plan.isNew, index = i, shardGain = plan.shardGain, amount = plan.amount,
+            tavernCoin = plan.tavernCoin, overflowShards = plan.overflowShards,
+        }
     end
 
     recordDrawStats(currency, UrGachaConfig.POOL_ID, count, ticketsToUse, ticketCost - ticketsToUse, results)
+
+    -- 奖励全部规划成功后统一提交，非法库存/币溢出不消耗券与保底。
+    HeroShardService.CommitRoster(liveHeroes, heroes)
+    for key, value in pairs(currency) do liveCurrency[key] = value end
+    heroes, currency = liveHeroes, liveCurrency
 
     PDM.MarkDirty(uid, "currency")
     PDM.MarkDirty(uid, "heroes")

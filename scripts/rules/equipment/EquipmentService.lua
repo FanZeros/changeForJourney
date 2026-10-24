@@ -411,15 +411,61 @@ function EquipmentService.EquipAllBest(uid, heroId, control)
         end
     end
 
-    -- 原始快照与工作副本分开；跨帧期间任何相关模块改变均不提交旧答案。
-    -- 最后的完整比较到六槽写入之间没有检查点，不会拼接不同帧的状态。
+    -- 装备/神器/天赋变化会改变候选库或估值，保留原完整快照门禁。
+    -- heroes 的经验通知与永久成长不取消搜索；有评分变化时在无 yield 尾段
+    -- 以最新英雄/团队/光环重新试穿已选六槽，不重扫全库或覆回旧英雄数据。
     if control then
         if not control.isCurrent() then return false, "quick_equip_stale" end
-        for _, name in ipairs({ "equipment", "heroes", "artifacts", "talents" }) do
+        for _, name in ipairs({ "equipment", "artifacts", "talents" }) do
             local live = PDM.GetModule(uid, name)
-            if live ~= sources[name]
-                or not sameEquipData(live, snapshots[name], name == "heroes" and "heroes" or nil) then
+            if live ~= sources[name] or not sameEquipData(live, snapshots[name]) then
                 return false, "quick_equip_stale"
+            end
+        end
+        local latestHeroes = PDM.GetModule(uid, "heroes")
+        if not sameEquipData(latestHeroes, snapshots.heroes, "heroes") then
+            local latestRoster = latestHeroes and latestHeroes.roster
+            local owned = latestRoster and (latestRoster[heroId] or latestRoster[tostring(heroId)])
+            if not owned or not owned.level then return false, "quick_equip_stale" end
+
+            -- 仅复制所有已穿戴及选定候选；人数/槽位有界，不再复制500件库存。
+            -- buildContext仍会在独立副本中水合，绝不对live装备或英雄试穿。
+            local equipment = { inventory = {}, equipped = copyEquipData(equipData.equipped or {}) }
+            local function includeSlots(slots)
+                for _, slotName in ipairs(EquipmentConfig.SLOTS) do
+                    local seq = slots[slotName]
+                    if seq then
+                        local key = tostring(seq)
+                        local item = equipData.inventory[key] or equipData.inventory[seq]
+                        if item and not equipment.inventory[key] then
+                            equipment.inventory[key] = copyEquipData(item)
+                        end
+                    end
+                end
+            end
+            for _, slots in pairs(equipment.equipped) do
+                if type(slots) == "table" then includeSlots(slots) end
+            end
+            local chosen = EquipmentSystem.getHeroSlots(workingEquip, heroId) or {}
+            includeSlots(chosen)
+            local ctx = EquipmentPower.buildContext(heroId, {
+                heroes = latestHeroes, equipment = equipment,
+                artifacts = artifactsData, talents = talentsData,
+            })
+            if not ctx then return false, "quick_equip_stale" end
+            local changes = {}
+            local hasChanges = false
+            local before = EquipmentSystem.getHeroSlots(equipData, heroId) or {}
+            for _, slotName in ipairs(EquipmentConfig.SLOTS) do
+                changes[slotName] = chosen[slotName] or false
+                if tostring(before[slotName]) ~= tostring(chosen[slotName]) then hasChanges = true end
+            end
+            if hasChanges then
+                local verified = EquipmentPower.evaluateLoadout(ctx, changes)
+                if not verified or not verified.valid or not (verified.gain > 0) then
+                    return false, "quick_equip_stale"
+                end
+                workingEquip = verified.equipment
             end
         end
     end

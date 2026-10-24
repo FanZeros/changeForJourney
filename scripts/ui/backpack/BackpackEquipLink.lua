@@ -177,7 +177,8 @@ function M.bind(deps)
         local clearPinned = normalized ~= nil or filterHero ~= hero
         if filterSlot ~= normalized and deps.clearTypeFilter then deps.clearTypeFilter() end
         filterSlot, filterHero = normalized, hero
-        state.scrollY, state.scrollVel, state.dragging = 0, 0, false
+        if not state.closing then state.scrollY = 0 end
+        state.scrollVel, state.dragging = 0, false
         -- 取消部位到全部、且仍是同一英雄时，钉住候选依然合法。
         api.clearCandidate(clearPinned)
     end

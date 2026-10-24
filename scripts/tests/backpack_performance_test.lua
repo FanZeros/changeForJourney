@@ -466,8 +466,25 @@ local function runTests()
     panel.handleInput(540, 2308); f.update()
     check(#f.list() == 0, "leaving equip tab cancels private work")
     panel.handleInput(274, 2308); f.update()
+    f.draw()
+    local drawnBeforeClose = copy(f.drawIds)
+    check(#drawnBeforeClose > 0, "close fixture has actually rendered equipment")
     panel.close(); f.update()
-    check(#f.list() == 0, "close cancels private list immediately")
+    panel.releaseForEquipment()
+    f.draw()
+    check(panel.isOpen() and equal(drawnBeforeClose, f.drawIds), "closing keeps equipment artwork with page instead of clearing first")
+    check(panel.peekEquipAt(160, 840) == nil, "closing visual snapshot cannot be clicked")
+    -- 退场时即使后台装备版本变化，也只绘制原只读快照，不恢复评分任务。
+    local beforeCloseCounts = copy(f.counts)
+    f.notify("equipment")
+    f.env.time.elapsedTime = f.env.time.elapsedTime + 0.1
+    f.update(); f.draw()
+    check(equal(drawnBeforeClose, f.drawIds) and equal(beforeCloseCounts, f.counts),
+        "closing snapshot survives background notifications without scoring/hydration/IO")
+    f.env.time.elapsedTime = f.env.time.elapsedTime + 1
+    f.update(); f.draw()
+    check(not panel.isOpen() and #f.drawIds == 0 and #f.list() == 0,
+        "animation completion drops artwork and private work together")
     panel.open("left", "equip"); panel.setEquipmentSlotFilter(nil, 1)
     f.draw(); check(#f.drawIds == 0, "reentry never publishes prior session partial list")
     f.update()

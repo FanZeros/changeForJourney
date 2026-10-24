@@ -558,6 +558,7 @@ function M.bind(deps)
         getPresentedEquipList = lists.getPresentedList,
         update = lists.update,
         cancel = lists.cancel,
+        freezeForClose = lists.freezeForClose,
         getSetCounts = getSetCounts,
         drawEquipGrid = drawEquipGrid,
         buildItemList = buildItemList,

@@ -1,11 +1,11 @@
 -- ============================================================================
 -- corrupt_convert_test.lua — 腐化构筑模型回归（2026-09-30 用户拍板方案二）
 -- 规则：
---   腐化石 = 一条普通词缀转同类型魔化词条（数值×1.8）+ 叠一层诅咒（基础×0.9，最多3层）
+--   腐化石 = 一条普通词缀按静态价值换算为同类型魔化词条（预算×1.8，含目标模板保底）+ 叠一层诅咒
 --   神圣石 = 逐层洗除诅咒（魔化词条保留），不耗精粹
 --   腐化后仍可洗练（精粹×2），魔化词条在普通洗练/洗练石中保持固定
 -- 验证：
---   1) 转换：条数不变、恰1条魔化、数值≥原×1.8、层数/诅咒倍率/patch layer 正确
+--   1) 转换：条数不变、恰1条魔化、预算换算正确、层数/诅咒倍率/patch layer 正确
 --   2) 诅咒：baseStats 按 0.9^层 缩放
 --   3) 腐化态洗练：普通洗练/洗练石可用且魔化词条不变
 --   4) 神圣石逐层回退：先退第2层转换，再退第1层；第3次拒绝
@@ -108,7 +108,11 @@ function Start()
     local orig1 = p1 and p1[3] or nil
     check(orig1 ~= nil, "patch 保存转换前原词条")
     if orig1 then
-        check(c1v >= (tonumber(orig1.value) or 0) * 1.8 - 1, "魔化数值≥原数值×1.8")
+        -- 本夹具只含力量/敏捷；独立冻结完整派生价值，避免拿被测换算函数当oracle。
+        local sourceUnits = { str = 1.5, agi = 1.495 }
+        local targetValue = (tonumber(orig1.value) or 0) * assert(sourceUnits[orig1.key]) / 0.6
+        local templateFloor = 1.7 * (1 + (e.level - 1) * 0.05)
+        near(c1v, math.max(targetValue, templateFloor) * 1.8, "魔化按来源/目标预算换算")
     end
     eq(e.corruptCount, 1, "诅咒1层")
     near(tonumber(e.corruptBaseMult), 0.9, "诅咒倍率0.9")

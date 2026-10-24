@@ -15,7 +15,15 @@ local function statusLog(msg)
 end
 
 local SEM = {}
+---@class StatusEffectEntry
+---@field remaining number
+---@field source table
+---@field data table
+---@field tickTimer number
+---@class StatusEffectState
+---@field effects table<table, table<string, StatusEffectEntry>>
 -- [多实例] 状态效果表随战斗 mount 切换（避免并行战斗 DOT/HOT 多重 tick）
+---@return StatusEffectState
 local function newSemState()
     return { effects = {} }
 end
@@ -56,9 +64,9 @@ end
 function SEM.apply(unit, effectType, baseDuration, source, data)
     if not unit or unit.hp <= 0 then return end
 
-    -- 异常抗性减免（MARKED 不受抗性影响，属于战术标记）
+    -- HOT 是正面治疗；MARKED 是战术标记，均不受异常抗性缩时。
     local duration = baseDuration
-    if effectType ~= SEM.MARKED and unit.attrs then
+    if effectType ~= SEM.MARKED and effectType ~= SEM.HOT and unit.attrs then
         local abnormalRes = unit.attrs:get(AD.ABNORMAL_RES) or 0
         duration = CF.calcAbnormalDuration(baseDuration, abnormalRes)
     end
@@ -102,12 +110,15 @@ function SEM.apply(unit, effectType, baseDuration, source, data)
         d.stacks = 1
     end
 
-    -- 同类型刷新（覆盖）
+    -- HOT 刷新只换来源/数据/持续时间，保留已经走过的秒跳进度。
+    -- 使用新效果身份：tick 回调中的刷新不会被旧效果的到期清理误删。
+    local previous = SEM_BCS.effects[unit][effectType]
+    local tickTimer = effectType == SEM.HOT and previous and previous.tickTimer or 0
     SEM_BCS.effects[unit][effectType] = {
         remaining = duration,
         source    = source,
         data      = d,
-        tickTimer = 0,  -- DOT/HOT 每秒 tick 计时器
+        tickTimer = tickTimer,  -- 普通燃烧覆盖仍重置；叠层燃烧走上方原规则
     }
 
     statusLog("[SEM] " .. unit.name .. " 获得 " .. effectType .. " (" .. string.format("%.1f", duration) .. "s)")
@@ -143,7 +154,7 @@ end
 --- 获取指定效果数据
 ---@param unit table
 ---@param effectType string
----@return table|nil
+---@return StatusEffectEntry|nil
 function SEM.get(unit, effectType)
     if SEM_BCS.effects[unit] then
         return SEM_BCS.effects[unit][effectType]
@@ -249,35 +260,57 @@ function SEM.getVisuals(unit)
     return result
 end
 
---- 每帧更新：倒计时、DOT/HOT tick
+-- 仅吸收秒跳/到期计算的浮点舍入误差，不把整帧 dt 当容差。
+local TIME_EPSILON = 1e-9
+
+--- 每帧更新：只消耗有效生命周期内的 dt，先完成到期边界的秒跳再清理。
 ---@param dt number 帧间隔（秒）
 ---@param callbacks table { onDot=function(unit,source,damage), onHot=function(unit,source,heal) }
 function SEM.update(dt, callbacks)
+    if not (dt > 0) or dt == math.huge then return end
     callbacks = callbacks or {}
+    local state, effects = SEM_BCS, SEM_BCS.effects
 
-    for unit, unitEffects in pairs(SEM_BCS.effects) do
-        -- 跳过已死亡单位
+    -- 回调可以施加/移除状态、清场甚至切换 mount。固定本帧身份，新增效果从下帧计时。
+    local pending = {}
+    for unit, unitEffects in pairs(effects) do
+        for effectType, effect in pairs(unitEffects) do
+            pending[#pending + 1] = { unit = unit, unitEffects = unitEffects,
+                effectType = effectType, effect = effect }
+        end
+    end
+
+    for _, entry in ipairs(pending) do
+        if SEM_BCS ~= state or state.effects ~= effects then return end
+        local unit, unitEffects = entry.unit, entry.unitEffects
+        local effectType, effect = entry.effectType, entry.effect
+        local function isCurrent()
+            return SEM_BCS == state and state.effects == effects
+                and effects[unit] == unitEffects and unitEffects[effectType] == effect
+        end
+
         if unit.hp <= 0 then
-            SEM_BCS.effects[unit] = nil
-        else
-            local toRemove = {}
-
-            for effectType, effect in pairs(unitEffects) do
-                -- 倒计时
-                effect.remaining = effect.remaining - dt
-
-                if effect.remaining <= 0 then
-                    toRemove[#toRemove + 1] = effectType
-                else
-                    -- DOT tick（燃烧）
-                    if effectType == SEM.BURNING and callbacks.onDot then
-                        effect.tickTimer = effect.tickTimer + dt
-                        while effect.tickTimer >= 1.0 do
-                            effect.tickTimer = effect.tickTimer - 1.0
+            effects[unit] = nil
+        elseif isCurrent() then
+            local activeDt = math.min(dt, math.max(0, effect.remaining))
+            local onTick = effectType == SEM.BURNING and callbacks.onDot
+                or effectType == SEM.HOT and callbacks.onHot
+            if onTick then
+                -- 分段走到每个秒跳：回调刷新时只继承已经走过的相位，不能继承整帧未来跳数。
+                -- activeDt 固定在本帧原效果生命周期内，超期 dt 不再结算。
+                local left = activeDt
+                while left > 0 and unit.hp > 0 and isCurrent() do
+                    local step = math.min(left, math.max(0, 1.0 - effect.tickTimer))
+                    effect.remaining = math.max(0, effect.remaining - step)
+                    effect.tickTimer = effect.tickTimer + step
+                    left = left - step
+                    if effect.tickTimer + TIME_EPSILON >= 1.0 then
+                        effect.tickTimer = math.max(0, effect.tickTimer - 1.0)
+                        if effectType == SEM.BURNING then
                             local dps = effect.data.dps or 0
                             if dps > 0 then
                                 local tickDmg = math.floor(dps + 0.5)
-                                -- 燃烧暴击支持（觉醒 Hero2 Node3/6）
+                                -- 燃烧暴击支持（觉醒 Hero2 Node3/6），原骰序/倍率不变。
                                 local isBurnCrit = false
                                 if effect.data.canCrit then
                                     local cr = effect.data.critRate or 0
@@ -287,34 +320,32 @@ function SEM.update(dt, callbacks)
                                         tickDmg = math.floor(tickDmg * (1 + cd / 100) + 0.5)
                                     end
                                 end
-                                callbacks.onDot(unit, effect.source, tickDmg, isBurnCrit)
+                                onTick(unit, effect.source, tickDmg, isBurnCrit)
                             end
-                        end
-                    end
-
-                    -- HOT tick（持续治疗）
-                    if effectType == SEM.HOT and callbacks.onHot then
-                        effect.tickTimer = effect.tickTimer + dt
-                        while effect.tickTimer >= 1.0 do
-                            effect.tickTimer = effect.tickTimer - 1.0
+                        else
                             local hps = effect.data.hps or 0
                             if hps > 0 then
-                                callbacks.onHot(unit, effect.source, math.floor(hps + 0.5))
+                                onTick(unit, effect.source, math.floor(hps + 0.5))
                             end
                         end
                     end
+                    -- 叠层燃烧在回调内原位刷新 remaining，继续保留其叠层/来源规则。
+                    if effect.remaining <= TIME_EPSILON then break end
                 end
+            else
+                -- 没有对应回调时仍倒计时，不补记未处理的 DOT/HOT 秒跳（保留原约定）。
+                effect.remaining = math.max(0, effect.remaining - activeDt)
             end
 
-            -- 移除到期效果
-            for _, effectType in ipairs(toRemove) do
-                unitEffects[effectType] = nil
-                statusLog("[SEM] " .. unit.name .. " 的 " .. effectType .. " 效果到期")
-            end
-
-            -- 清理空表
-            if not next(unitEffects) then
-                SEM_BCS.effects[unit] = nil
+            if SEM_BCS ~= state or state.effects ~= effects then return end
+            if unit.hp <= 0 then
+                effects[unit] = nil
+            elseif isCurrent() then
+                if effect.remaining <= TIME_EPSILON then
+                    unitEffects[effectType] = nil
+                    statusLog("[SEM] " .. unit.name .. " 的 " .. effectType .. " 效果到期")
+                end
+                if not next(unitEffects) then effects[unit] = nil end
             end
         end
     end

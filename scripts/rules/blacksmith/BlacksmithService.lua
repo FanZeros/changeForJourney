@@ -7,6 +7,7 @@
 
 local PDM              = require("rules.character.PlayerDataManager")
 local EquipmentSystem  = require("systems.EquipmentSystem")
+local SecondaryStats   = require("systems.EquipmentSecondaryStats")
 local EquipmentConfig  = require("config.EquipmentConfig")
 local AffixConfig      = require("config.AffixConfig")
 local BlacksmithConfig = require("config.BlacksmithConfig")
@@ -259,10 +260,15 @@ local function pickUpgradableAffix(affixes)
     return candidates[math.random(1, #candidates)]
 end
 
+---@class BlacksmithConvertibleAffix
+---@field key string
+---@field affixId number|string|nil
+
 --- 腐化石转换：从普通（非魔化）词缀中随机选一条可转换的
----@param affixes table[]
+---@param affixes BlacksmithConvertibleAffix[]
 ---@return number|nil index, table|nil corruptTpl
 local function pickConvertibleAffix(affixes)
+    ---@type integer[]
     local candidates = {}
     for i, affix in ipairs(affixes or {}) do
         if not AffixConfig.isCorruptAffix(affix) then
@@ -273,19 +279,29 @@ local function pickConvertibleAffix(affixes)
         end
     end
     if #candidates == 0 then return nil, nil end
+    ---@type integer
     local idx = candidates[math.random(1, #candidates)]
-    return idx, AffixConfig.BY_KEY[AffixConfig.NORMAL_TO_CORRUPT_KEY[affixes[idx].key]]
+    local selected = affixes[idx]
+    local corruptKey = AffixConfig.NORMAL_TO_CORRUPT_KEY[selected.key]
+    return idx, AffixConfig.BY_KEY[corruptKey]
 end
 
---- 腐化石转换：把指定普通词缀替换为同类型魔化词条（数值 = 原数值 ×1.8，按模板口径重算后取高）
+--- 腐化石转换：先把原始 value 的静态预算换成目标属性等价值，再与目标模板保底取高、×1.8。
+--- pct 按每个百分点计价，六围包含完整派生；即使同为 pct 也不能直接比较裸数值。
+--- 不把栏位倍率或 ascBonus 烘入魔化 value：前者仍留在装备，后者由回退快照保留。
 ---@param affix table 原普通词缀
 ---@param corruptTpl table 魔化模板
 ---@param equip table
 ---@return table newAffix
 local function buildConvertedAffix(affix, corruptTpl, equip)
     local oldValue = tonumber(affix.value) or 0
+    local oldUnit = SecondaryStats.unitValue(affix.key)
+    local targetUnit = SecondaryStats.unitValue(corruptTpl.key)
+    assert(oldUnit > 0 and oldUnit < math.huge and targetUnit > 0 and targetUnit < math.huge,
+        "腐化转换缺少有效属性价值配置: " .. tostring(affix.key) .. " -> " .. tostring(corruptTpl.key))
+    local targetValue = oldValue * (oldUnit / targetUnit)
     local tplValue = EquipmentSystem.calcCorruptAffixValue(corruptTpl, equip)
-    local value = math.max(oldValue * CORRUPT_CONVERT_VALUE_MULT, tplValue * CORRUPT_CONVERT_VALUE_MULT)
+    local value = math.max(targetValue, tplValue) * CORRUPT_CONVERT_VALUE_MULT
     if corruptTpl.dataType == "int" then
         value = math.floor(value + 0.5)
     end
@@ -445,7 +461,8 @@ local function buildConvertedAffixes(equip, rev)
     local layer = getCorruptCount(equip) + 1
     local before = copyAffix(result[idx])
     result[idx] = buildConvertedAffix(before, corruptTpl, equip)
-    rev.patches[#rev.patches + 1] = { "c", idx, before, layer = layer }
+    -- v2 标记只写新转换，随原词条快照持久化；不据此猜测或自动改写旧魔化值。
+    rev.patches[#rev.patches + 1] = { "c", idx, before, layer = layer, valueVersion = 2 }
     return result, { index = idx, before = before, after = result[idx] }
 end
 
@@ -724,7 +741,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
                 and (tonumber(oldAff.ascBonus) or 0) > 0 then
                 for _, candidate in ipairs(AffixConfig.AFFIXES) do
                     if not AffixConfig.isCorruptAffix(candidate) then
-                        local valid, reason = pcall(EquipmentSystem.convertAscBonusForRefine, oldAff, candidate)
+                        local valid, reason = pcall(EquipmentSystem.convertAscBonusForRefine, oldAff, candidate, equip)
                         if not valid then return false, tostring(reason) end
                     end
                 end
@@ -877,7 +894,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
             if oldAff and newAff
                 and not AffixConfig.isCorruptAffix(oldAff)
                 and not AffixConfig.isCorruptAffix(newAff) then
-                newAff.ascBonus = EquipmentSystem.convertAscBonusForRefine(oldAff, newAff)
+                newAff.ascBonus = EquipmentSystem.convertAscBonusForRefine(oldAff, newAff, equip)
                 if newAff.ascBonus and oldAff.key ~= newAff.key then
                     convertedAscSlots = convertedAscSlots + 1
                 end

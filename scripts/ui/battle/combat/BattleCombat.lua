@@ -706,8 +706,8 @@ function BattleCombat.onTalentDealDamage(attacker, target, tgtCX, tgtCY, prefix,
     end
     local function liveChainTarget()
         if not target or (target.hp or 0) <= 0 or not target.attrs or target.artifactUntargetable then return false end
-        local alliesNow = BCS.ctx.getAllies and BCS.ctx.getAllies() or allyList
-        local enemiesNow = BCS.ctx.getEnemies and BCS.ctx.getEnemies() or enemyList
+        local alliesNow = BCS.ctx.getAllies and BCS.ctx.getAllies() or allyList ---@type table[]
+        local enemiesNow = BCS.ctx.getEnemies and BCS.ctx.getEnemies() or enemyList ---@type table[]
         for _, unit in ipairs(alliesNow) do if unit == target then return true end end
         for _, unit in ipairs(enemiesNow) do if unit == target then return true end end
         return false
@@ -1404,6 +1404,10 @@ local function performAttack(attacker, targetList, isAlly)
                         local shieldAfter = (curTgt.attrs.energyShield or 0) + (curTgt.attrs.tempEnergyShield or 0)
                         local takenForStats = actual + math.max(0, shieldBefore - shieldAfter)
                         ART.checkShieldBreak(curTgt, shieldBefore)
+                        -- 与通用伤害一致：按总盾归零判断，先分发神器，再回复星图盾。
+                        if shieldBefore > 0 and shieldAfter <= 0 then
+                            TAL.onStarShieldBreak(curTgt)
+                        end
                         syncUnitHp(curTgt)
                         healAfterPrimaryHit(actual)
 

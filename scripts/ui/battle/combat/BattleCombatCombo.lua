@@ -127,6 +127,10 @@ function M.bind(deps)
         local shieldAfter = (curTgt.attrs.energyShield or 0) + (curTgt.attrs.tempEnergyShield or 0)
         local takenForStats = actual + math.max(0, shieldBefore - shieldAfter)
         ART.checkShieldBreak(curTgt, shieldBefore)
+        -- 与普攻/通用伤害一致，不能让星图回复掩盖神器的破盾检查。
+        if shieldBefore > 0 and shieldAfter <= 0 then
+            TAL.onStarShieldBreak(curTgt)
+        end
         syncUnitHp(curTgt)
 
         -- 合并仅涉及真实HP/吸盾数字，连击公式和每次统计保持独立。

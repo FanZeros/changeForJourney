@@ -21,6 +21,21 @@ EquipmentConfig.QUALITY = {
 
 EquipmentConfig.LEVEL_SCALE = 0.05  -- 每级 +5%
 
+-- 固定数值只在装备生效出口补偿，不改模板、随机预算或存档原值。
+-- 1~50级为1；下列两项依次为100级、200级倍率，区间线性插值，200级以上封顶。
+EquipmentConfig.FLAT_STAT_GROWTH = {
+    maxHp = { 1.8, 2.8 }, hpRegen = { 1.8, 2.8 }, atkHeal = { 1.8, 2.8 },
+    physAtk = { 1.6, 2.4 }, magAtk = { 1.6, 2.4 }, energyShield = { 2.0, 3.5 },
+}
+
+-- 直给暴击率按来源递减：生效值 = C * 原值 / (C + 原值)。
+-- 仅影响装备消费，不写回原始词条；命数派生、暴伤和英雄专属溢出不受影响。
+-- 双手主武器的 C 翻倍，与占用两个手部槽位的预算对应。
+EquipmentConfig.CRIT_RATE_CURVE = {
+    base = { critRate = 8, physCritRate = 10, magCritRate = 10, healCritRate = 10 },
+    affix = { critRate = 4, physCritRate = 5, magCritRate = 5, healCritRate = 5 },
+}
+
 -- ======================== 槽位定义 ========================
 
 EquipmentConfig.SLOTS = { "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }

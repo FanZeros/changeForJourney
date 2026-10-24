@@ -114,6 +114,56 @@ function Start()
         check(raw.unitLevel == 1 and raw:get(AD.ENERGY_SHIELD) >= 30,
             "UnitAttributes.create 缺省 unitLevel=1，INT 派生护盾正常（含 HP 锚定）")
 
+        -- 9) 最终护盾必须放大完整三层，不只放大常规层；重复重算不复乘。
+        for _, level in ipairs({ 1, 50, 100, 200 }) do
+            for _, bonus in ipairs({ -25, 0, 10, 50, 100 }) do
+                local cfg = {
+                    unitLevel = level, maxHp = 1000, int = 20, vit = 10, spi = 8,
+                    energyShield = 100, esBonus = 15, finalHpBonus = 20,
+                    finalEnergyShieldBonus = bonus,
+                }
+                local attrs = UnitAttributes.create(cfg)
+                local derived = 20 * 3 + 10 * 2 + 8 * 2.5
+                -- HP先取整再吃最终生命；常规esBonus含秘识/魂火各0.5pp。
+                local hp = math.floor((1000 + 20 * 8 + 10 * 33 + 8 * 10) * 1.2 + 0.5)
+                local regular = (100 + derived) * (1 + (15 + 20 * 0.5 + 8 * 0.5) / 100)
+                local expected = (regular + hp * 0.08 + derived * (level - 1) * 0.05) * (1 + bonus / 100)
+                local label = " Lv" .. level .. " final=" .. bonus
+                check(math.abs(attrs:get(AD.ENERGY_SHIELD) - expected) < 1e-7,
+                    "最终护盾完整乘区" .. label)
+                check(math.abs(attrs:getUncapped(AD.ENERGY_SHIELD) - expected) < 1e-7,
+                    "护盾未截断值同步" .. label)
+                attrs.energyShield = 17
+                attrs.tempEnergyShield = 23
+                attrs.esRegenCooldown = 1.2
+                attrs:recalc()
+                check(math.abs(attrs:get(AD.ENERGY_SHIELD) - expected) < 1e-7
+                    and attrs.energyShield == 17 and attrs.tempEnergyShield == 23,
+                    "重算不复乘、不凭空补盾" .. label)
+                local clone = attrs:clone()
+                clone:recalc()
+                check(math.abs(clone:get(AD.ENERGY_SHIELD) - expected) < 1e-7
+                    and clone.energyShield == 17, "克隆重算一致" .. label)
+                attrs:fillHp()
+                check(attrs.energyShield == 17, "普通满血不补盾" .. label)
+                local hpBeforeFill = attrs:get(AD.HP)
+                attrs:fillEnergyShield()
+                check(math.abs(attrs.energyShield - expected) < 1e-7
+                    and attrs.esRegenCooldown == 0 and attrs.tempEnergyShield == 23
+                    and attrs:get(AD.HP) == hpBeforeFill, "显式入场补盾只补常规盾" .. label)
+            end
+        end
+
+        local noShieldFinal = UnitAttributes.create({ maxHp = 1000, unitLevel = 100,
+            finalEnergyShieldBonus = 100 })
+        check(noShieldFinal:get(AD.ENERGY_SHIELD) == 0, "仅有最终护盾百分比不凭空开启成长盾")
+        ss.enabled = false
+        local offFinal = UnitAttributes.create({ maxHp = 1000, energyShield = 100,
+            esBonus = 20, finalEnergyShieldBonus = 50, unitLevel = 100 })
+        check(math.abs(offFinal:get(AD.ENERGY_SHIELD) - 180) < 1e-7,
+            "禁用成长层仍只乘一次常规与最终护盾")
+        ss.enabled = true
+
         print(string.format("[summary] hpRatio=%.2f derivedLevelFactor=%.2f | 雷神Lv345护盾/HP=%.2f%% | 法师Lv200护盾/HP=%.1f%%",
             hpRatio, lvFactor, ratioHigh * 100, ratio200 * 100))
     end)

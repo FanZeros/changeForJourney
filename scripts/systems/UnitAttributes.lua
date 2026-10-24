@@ -6,6 +6,31 @@
 
 local AD = require("systems.AttributeDef")
 
+---@class JourneyUnitAttributes
+---@field armorType number
+---@field atkType number
+---@field unitLevel number
+---@field base table<string, number>
+---@field derived table<string, number>
+---@field flatMod table<string, number>
+---@field pctMod table<string, number>
+---@field final table<string, number>
+---@field modifiers table<string, table[]>
+---@field atkCoeff number|nil
+---@field dmgSpread number|nil
+---@field critOverflowRatio number|nil
+---@field artifactIgnoreArmor number|nil
+---@field artifactCritRateMult number|nil
+---@field artifactCritDmgMult number|nil
+---@field artifactExtraDamageMult number|nil
+---@field artifactBlockCap number|nil
+---@field artifactChaosDamageMult number|nil
+---@field artifactChaosDefenseDisabled boolean|nil
+---@field artifactPowerBonus number|nil
+---@field artifactNoHeal boolean|nil
+---@field _setFour string|nil
+---@field _setSix string|nil
+---@field _setRows table[]|nil
 local UnitAttributes = {}
 UnitAttributes.__index = UnitAttributes
 
@@ -370,10 +395,12 @@ function UnitAttributes:recalc()
         self._uncapped[AD.ENERGY_SHIELD] = self.final[AD.ENERGY_SHIELD]
     end
 
-    -- 4.9) 魔化最终属性：最后一层乘区，作用于已完成常规加成后的目标属性
+    -- 4.9) 魔化最终属性；最终护盾延后至成长层完成后，只乘一次完整护盾。
     if AD.FINAL_ATTR_BONUS then
         for targetKey, bonusKey in pairs(AD.FINAL_ATTR_BONUS) do
-            applyFinalBonus(targetKey, bonusKey)
+            if targetKey ~= AD.ENERGY_SHIELD then
+                applyFinalBonus(targetKey, bonusKey)
+            end
         end
     end
     for baseStat, bonus in pairs(finalBaseStatBonus) do
@@ -387,10 +414,9 @@ function UnitAttributes:recalc()
     self.final[AD.RESISTANCE] = (0.01 * armor) / (0.01 * armor + 1) * 100
     self._uncapped[AD.RESISTANCE] = self.final[AD.RESISTANCE]
 
-    -- 5.5) 护盾成长层（Shield Scaling）—— 详见 AttributeDef.SHIELD_SCALING 注释
-    --   问题：护盾三来源全是线性增长，而 HP/伤害随等级指数爆炸，中后期护盾占比塌到≈0。
-    --   修法：把护盾锚定到指数增长的 HP（hpRatio），并给派生护盾一个随等级放大的因子。
-    --   门控：仅对「本身已有护盾来源」的单位生效（preGrowthES > 0），不给无盾单位凭空加盾。
+    -- 5.5) 护盾成长层：常规盾 + HP锚定 + 六围派生等级成长。
+    --   门控：成长前必须已有护盾来源，不给无盾单位凭空加盾。
+    --   常规 esBonus 保持只作用于常规层，最终护盾在三层合并后统一放大。
     local ss = AD.SHIELD_SCALING
     if ss and ss.enabled then
         local preGrowthES = self.final[AD.ENERGY_SHIELD] or 0
@@ -400,7 +426,7 @@ function UnitAttributes:recalc()
             local lvl = self.unitLevel or 1
             if lvl < 1 then lvl = 1 end
             local levelFactor = 1 + (lvl - 1) * (ss.derivedLevelFactor or 0)
-            -- HP 锚定 + 派生等级放大；附加层不再被 esBonus/finalESBonus 二次放大
+            -- 成长层不再吃常规 esBonus；最终护盾在层合并后统一计算。
             local extra = maxHpFinal * (ss.hpRatio or 0) + derivedES * (levelFactor - 1)
             if extra > 0 then
                 local newES = preGrowthES + extra
@@ -409,6 +435,7 @@ function UnitAttributes:recalc()
             end
         end
     end
+    applyFinalBonus(AD.ENERGY_SHIELD, AD.FINAL_ENERGY_SHIELD_BONUS)
 
     -- 6) 恢复战斗 HP（不让公式覆盖运行时血量）
     --    savedHp 为 nil 仅在首次 create → recalc 时，此时 final[HP] 保持公式值（由 fillHp 初始化）
@@ -437,6 +464,13 @@ function UnitAttributes:fillHp()
     -- 失败回退会先满血，再由开战天赋 addModifier 触发 recalc。
     -- recalc 默认保留死亡时的 0 血；这次满血必须覆盖该保留值。
     self._forceFullHpOnRecalc = true
+end
+
+--- 出战初始化：显式补满常规护盾，不改变临时盾或 HP。
+--- 不在 fillHp/recalc 中隐式调用，避免战斗治疗或属性刷新凭空补盾。
+function UnitAttributes:fillEnergyShield()
+    self.energyShield = math.max(0, self.final[AD.ENERGY_SHIELD] or 0)
+    self.esRegenCooldown = 0
 end
 
 --- 扣血（不低于 0）

@@ -251,6 +251,207 @@ local function testMissOverhealAndRetarget()
         and original._hakimiWard == nil, "飞行中原目标死亡，按落地实际重选目标只分发一次")
 end
 
+-- ======================== 最低血比例与落地重评 ========================
+--- 自定义血量夹具：队友可设不同最大生命；healer 自身保持满血满盾。
+local function hpFixture(healerId, specs, atkTargets)
+    local healer = hero(healerId)
+    local allies = { healer } ---@type table[]
+    for i, spec in ipairs(specs) do
+        local u = hero(spec.heroId or (i % 2 == 0 and 2 or 1))
+        u.attrs:setBase(AD.MAX_HP, spec.maxHp)
+        u.attrs:fillHp()
+        -- 英雄等级会放大基础生命；按用例声明的精确上限覆盖，保证比例可精确构造。
+        u.attrs.final[AD.MAX_HP] = spec.maxHp
+        u.maxHp = spec.maxHp
+        if spec.ratio then
+            setHp(u, math.floor(spec.maxHp * spec.ratio))
+        else
+            setHp(u, math.min(spec.hp, spec.maxHp))
+        end
+        allies[#allies + 1] = u
+    end
+    local driver = Driver.new(941 + #specs, {
+        battleLab = true, timeLimit = 10,
+        allyFactory = function() return allies end,
+    })
+    driver:start(101)
+    healer.atkTargets = atkTargets or 1
+    healer.attrs:setBase(AD.HEAL_CRIT_RATE, 0)
+    healer.attrs:setBase(AD.HEAL_AMOUNT, 1000)
+    healer.attrs:fillHp()
+    for _, u in ipairs(allies) do
+        -- 常规盾补满，避免“缺盾”把满血单位算成治疗候选。
+        u.attrs.energyShield = u.attrs.final[AD.ENERGY_SHIELD] or 0
+        u.attrs.tempEnergyShield = 0
+        BC.syncUnitHp(u)
+    end
+    afterEvents = {}
+    return driver, healer, allies
+end
+
+local function launch(driver, healer)
+    driver.mount()
+    driver.bindContext()
+    BC.performAttack(healer, driver.enemies, true)
+end
+
+local function settle()
+    for _ = 1, 90 do PS.update(1 / 60) end
+end
+
+local function testLowestHpRatioPriority()
+    -- A 绝对损失 60000（40%），B 绝对损失 9000（10%）：应救 B。
+    local driver, healer, allies = hpFixture(19, {
+        { maxHp = 100000, hp = 40000 },
+        { maxHp = 10000, hp = 1000 },
+    })
+    local beforeA, beforeB = allies[2].hp, allies[3].hp
+    launch(driver, healer)
+    settle()
+    check(allies[3].hp > beforeB, "按血比例而非绝对生命选人：10% 的 B 获得治疗")
+    check(allies[2].hp == beforeA, "40% 的 A 绝对缺口更大但不抢治疗")
+    check(afterEvents[1] and afterEvents[1].target == allies[3], "正式后处理目标为最低比例 B")
+end
+
+local function testSameRatioPrefersLargerMissing()
+    -- 同英雄同上限、同为 50%：A 的绝对缺口更大，应优先 A。
+    local driver, healer, allies = hpFixture(19, {
+        { heroId = 1, maxHp = 100000, ratio = 0.5 },
+        { heroId = 1, maxHp = 20000, ratio = 0.5 },
+    })
+    local beforeLarge, beforeSmall = allies[2].hp, allies[3].hp
+    launch(driver, healer)
+    settle()
+    check(allies[2].hp > beforeLarge and allies[3].hp == beforeSmall,
+        "同血比例时优先缺口更大的队友 A=" .. allies[2].hp .. "/" .. tostring(allies[2].maxHp)
+        .. " B=" .. allies[3].hp .. "/" .. tostring(allies[3].maxHp))
+end
+
+local function testHealerItselfCanBeLowest()
+    local driver, healer, allies = hpFixture(19, {
+        { maxHp = 100000, hp = 90000 },
+    })
+    setHp(healer, math.floor(healer.maxHp * 0.1))
+    local beforeSelf, beforeAlly = healer.hp, allies[2].hp
+    launch(driver, healer)
+    settle()
+    check(healer.hp > beforeSelf and allies[2].hp == beforeAlly,
+        "治疗者自身血比例最低时优先自疗")
+end
+
+local function testLandingRetargetsWhenOriginalFilled()
+    local driver, healer, allies = hpFixture(19, {
+        { maxHp = 100000, hp = 10000 },
+        { maxHp = 100000, hp = 50000 },
+    })
+    launch(driver, healer)
+    check(PS.getActiveCount() == 1 and #afterEvents == 0, "治疗投射物尚在飞行")
+    setHp(allies[2], allies[2].maxHp)
+    setHp(allies[3], 1000)
+    local beforeB = allies[3].hp
+    settle()
+    check(allies[2].hp == allies[2].maxHp and allies[3].hp > beforeB,
+        "落地时原目标已满血，改救当前最低比例队友")
+    check(afterEvents[1] and afterEvents[1].target == allies[3], "落地重选目标为残血队友")
+end
+
+local function testLandingRetargetsWhenRatioReversed()
+    local driver, healer, allies = hpFixture(19, {
+        { maxHp = 100000, hp = 10000 },
+        { maxHp = 100000, hp = 30000 },
+    })
+    launch(driver, healer)
+    setHp(allies[2], 60000)
+    setHp(allies[3], 20000)
+    local beforeA, beforeB = allies[2].hp, allies[3].hp
+    settle()
+    check(allies[3].hp > beforeB and allies[2].hp == beforeA,
+        "飞行中比例逆转后，落地改救新的最低比例队友")
+end
+
+local function testMultiTargetLandingNoDuplicate()
+    local driver, healer, allies = hpFixture(19, {
+        { maxHp = 100000, hp = 10000 },
+        { maxHp = 100000, hp = 20000 },
+    }, 2)
+    launch(driver, healer)
+    settle()
+    check(#afterEvents == 2, "双目标治疗各落地一次")
+    check(afterEvents[1] and afterEvents[2] and afterEvents[1].target ~= afterEvents[2].target,
+        "同一次多目标治疗不重复选同一队友")
+    local healed = {}
+    for _, event in ipairs(afterEvents) do
+        healed[event.target] = (healed[event.target] or 0) + 1
+    end
+    check(healed[allies[2]] == 1 and healed[allies[3]] == 1, "两名低血队友各获得一次治疗")
+end
+
+local function testLandingSkipsInvalidTargets()
+    local driver, healer, allies = hpFixture(19, {
+        { maxHp = 100000, hp = 10000 },
+        { maxHp = 100000, hp = 50000 },
+    })
+    launch(driver, healer)
+    allies[2].artifactUntargetable = true
+    local beforeB = allies[3].hp
+    settle()
+    check(allies[3].hp > beforeB, "落地时原目标不可选，改救其他合法队友")
+
+    local d2, h2, a2 = hpFixture(19, {
+        { maxHp = 100000, hp = 10000 },
+        { maxHp = 100000, hp = 50000 },
+    })
+    launch(d2, h2)
+    local removed = a2[2]
+    table.remove(a2, 2)
+    local beforeC = a2[2].hp
+    settle()
+    check(removed.hp == 10000 and a2[2].hp > beforeC,
+        "落地时原目标已不在队伍，改救现存合法队友")
+end
+
+local function testDamageSurvivesFirstAttackRecalc()
+    -- 出战 fillHp 会留下“下次重算满血”标记；首次攻击天赋加属性触发 recalc 时，
+    -- 若标记还在，残血会被悄悄拉满，治疗者判定满血，整场不再治疗。
+    local driver, healer, ally = fixture(19, 0)
+    for _, enemy in ipairs(driver.enemies) do
+        enemy.attrs:setBase(AD.MAX_HP, 1e12)
+        enemy.attrs:fillHp()
+        enemy.attrs._forceFullHpOnRecalc = nil
+        enemy.attrs:setBase(AD.PHYS_ATK, 0)
+        enemy.attrs:setBase(AD.MAG_ATK, 0)
+        enemy.maxHp, enemy.hp = 1e12, 1e12
+    end
+    -- 大狗嚼 1 号：HP<70% 首次攻击必定触发“衔骨狂”加属性 → recalc。
+    local target = ally
+    local maxHp = target.attrs:get(AD.MAX_HP)
+    setHp(target, math.floor(maxHp * 0.5))
+    target.attrs:takeDamage(math.floor(maxHp * 0.01))
+    BC.syncUnitHp(target)
+    check(target.attrs._forceFullHpOnRecalc == nil, "受到伤害即消耗出战满血标记")
+    local damagedAttr = target.attrs:get(AD.HP)
+    local damagedUnit = target.hp
+    local applied = 0
+    local oldAfter = TAL.onAfterAttack
+    TAL.onAfterAttack = function(attacker, tgt, result, ...)
+        if result and result.category == "healing" then
+            applied = applied + (result.appliedHealAmount or 0)
+        end
+        return oldAfter(attacker, tgt, result, ...)
+    end
+    for _ = 1, 60 * 6 do
+        driver:update(1 / 60)
+        PS.update(1 / 60)
+    end
+    TAL.onAfterAttack = oldAfter
+    check(target.attrs:get(AD.HP) <= damagedAttr + applied + 1,
+        "首次攻击触发天赋重算后残血不被暗中拉满 attrHp=" .. target.attrs:get(AD.HP)
+        .. " damaged=" .. damagedAttr)
+    check(target.attrs:get(AD.HP) < target.attrs:get(AD.MAX_HP), "修复后仍处于受伤状态")
+    check(applied > 0, "奶妈对唯一受伤队友产生真实治疗 applied=" .. applied)
+    check(target.hp > damagedUnit, "受伤队友实际回血")
+end
+
 local function testNormalAttackSets()
     for _, setId in ipairs({ "emberscout", "gambler", "swordgate" }) do
         local driver, attacker = fixture(18, 0)
@@ -366,6 +567,15 @@ function Start()
         testNormalAttackSets()
         testLegalHealerLoadout()
         testDamageHeroesOnce()
+        -- 随机敏感用例之后追加，避免改变既有用例的攻击/暴击随机序列。
+        testLowestHpRatioPriority()
+        testSameRatioPrefersLargerMissing()
+        testHealerItselfCanBeLowest()
+        testLandingRetargetsWhenOriginalFilled()
+        testLandingRetargetsWhenRatioReversed()
+        testMultiTargetLandingNoDuplicate()
+        testLandingSkipsInvalidTargets()
+        testDamageSurvivesFirstAttackRecalc()
     end)
     TAL.onAfterAttack = oldAfter
     if not ok then

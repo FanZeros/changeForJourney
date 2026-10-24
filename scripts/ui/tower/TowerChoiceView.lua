@@ -155,8 +155,15 @@ function View.drawHeader(vg, state, landscape)
     local currentTitle, currentFloor, currentHint, root = title, floorLabel, hint, header
     if not currentTitle or not currentFloor or not currentHint or not root then return end
     currentTitle:SetText(Presentation.text("塔之暗契"))
-    currentFloor:SetText(Presentation.text("第%d层", state.floor))
-    currentHint:SetText(Presentation.text("三枚契印 · 择一承受"))
+    currentFloor:SetText(Presentation.text("第%d层", state.currentFloor or state.floor))
+    local expires = state.request and tonumber(state.request.expiresFloor)
+    if expires then
+        -- expiresFloor 当层仍可选择，进入下一层才过期，故包含当前层。
+        local remaining = math.max(0, expires - (state.currentFloor or state.floor) + 1)
+        currentHint:SetText(Presentation.text("此机会剩余%d层（含本层）", remaining))
+    else
+        currentHint:SetText(Presentation.text("三枚契印 · 择一承受"))
+    end
     Surface.draw(root, vg, landscape and 1920 or 1080, landscape and 1080 or 2400)
 end
 
@@ -194,7 +201,9 @@ function View.drawCard(vg, index, choice, state, landscape, keyword, elapsed, to
     widgets.quality:SetFontSize(qualitySize * .75)
     widgets.quality:SetText(qualityText)
     widgets.quality:SetFontColor({color[1], color[2], color[3], 255})
-    widgets.action:SetText(Presentation.text(picked and "正在铭刻" or "铭刻"))
+    local renewal = state.renewalById and state.renewalById[tostring(choice.id)] == true
+    widgets.action:SetText(Presentation.text(renewal and (picked and "正在续期" or "续期")
+        or (picked and "正在铭刻" or "铭刻")))
     widgets.action:SetDisabled(not allowed)
     withState(vg, function()
         nvgTranslate(vg, x, y)
@@ -229,8 +238,17 @@ function View.drawFooter(vg, state, landscape)
     if not currentCancel or not currentNotice or not root then return end
     currentCancel:SetText(Presentation.text("稍后选择"))
     currentCancel:SetDisabled(state.pending)
-    currentNotice:SetText(Presentation.text(state.retryBuffId and "仅可重试原契印"
-        or "选择保留，战斗继续；强化从下一层生效"))
+    local noticeText = ""
+    if state.leaseContext then
+        noticeText = Presentation.text("下层生效（第%d层） · 持续10层", (state.currentFloor or state.floor) + 1)
+        if state.retryBuffId then
+            noticeText = Presentation.text("仅可重试原契印") .. " · " .. noticeText
+        end
+    else
+        noticeText = Presentation.text(state.retryBuffId and "仅可重试原契印"
+            or "选择保留，战斗继续；强化从下一层生效")
+    end
+    currentNotice:SetText(noticeText)
     Surface.draw(root, vg, landscape and 1920 or 1080, landscape and 1080 or 2400)
 end
 

@@ -1,6 +1,6 @@
 -- ============================================================================
 -- TowerBattleScene - 通天塔战斗场景（状态管理器）
--- 三行攻坚：每真实层一波、五层一局，逐层提交后自动继续，暗契跨本组保留。
+-- 三行攻坚：每真实层一波，逐层提交后连续登塔，暗契按层租期生效。
 -- ============================================================================
 
 local TowerTriBattle     = require("ui.tower.TowerTriBattle")
@@ -45,13 +45,15 @@ local state = {
 
     -- 强化
     buffIds  = {},   -- Service 回执的独立快照，Scene 禁止 append 权威 buffs
+    buffLeases = {},
+    buffRevision = 0,
     pendingBuffChoices = nil,
     runId = nil,
     pendingSelection = nil,
     choiceQueue = {},
     unappliedBuffIds = {}, -- 择契不重开当前层，新强化在下一层开始应用。
     startFloor = 1,
-    endFloor = 5,
+    endFloor = TowerConfig.MAX_FLOOR,
     floorReceipts = {},
     runRewards = {},
     runPlayerExp = 0,
@@ -95,6 +97,56 @@ local function copy(value)
     return result
 end
 
+local function validBuffSnapshot(data)
+    if type(data.buffLeases) ~= "table" or type(data.buffRevision) ~= "number"
+        or data.buffRevision < 0 or data.buffRevision ~= math.floor(data.buffRevision)
+        or type(data.pendingSelections) ~= "table" then return false end
+    local seen = {}
+    for _, lease in ipairs(data.buffLeases) do
+        if type(lease) ~= "table" or not TowerConfig.BUFFS_BY_ID[lease.id] or seen[lease.id]
+            or type(lease.effectiveFloor) ~= "number" or type(lease.expiresFloor) ~= "number"
+            or lease.effectiveFloor ~= math.floor(lease.effectiveFloor)
+            or lease.expiresFloor ~= math.floor(lease.expiresFloor)
+            or lease.expiresFloor < lease.effectiveFloor then return false end
+        seen[lease.id] = true
+    end
+    local selectionIds = {}
+    for _, issued in ipairs(data.pendingSelections) do
+        if type(issued) ~= "table" or type(issued.id) ~= "string" or selectionIds[issued.id]
+            or type(issued.floor) ~= "number" or type(issued.expiresFloor) ~= "number"
+            or issued.expiresFloor ~= issued.floor + TowerConfig.CHOICE_DURATION_FLOORS
+            or type(issued.result) ~= "table" or type(issued.result.buffChoices) ~= "table" then return false end
+        selectionIds[issued.id] = true
+    end
+    return true
+end
+
+local function adoptBuffSnapshot(data)
+    if type(data.buffLeases) ~= "table" or type(data.buffRevision) ~= "number"
+        or data.buffRevision <= state.buffRevision then return false end
+    local ids, seen = {}, {}
+    for _, lease in ipairs(data.buffLeases) do
+        if type(lease) ~= "table" or not TowerConfig.BUFFS_BY_ID[lease.id] or seen[lease.id]
+            or type(lease.effectiveFloor) ~= "number" or type(lease.expiresFloor) ~= "number"
+            or lease.expiresFloor < lease.effectiveFloor then return false end
+        seen[lease.id] = true
+        ids[#ids + 1] = lease.id
+    end
+    state.buffLeases, state.buffIds = copy(data.buffLeases), ids
+    state.buffRevision = data.buffRevision
+    return true
+end
+
+local function activeBuffIds()
+    local ids = {}
+    for _, lease in ipairs(state.buffLeases) do
+        if lease.effectiveFloor <= state.floor and lease.expiresFloor >= state.floor then
+            ids[#ids + 1] = lease.id
+        end
+    end
+    return ids
+end
+
 local function cleanupRun()
     if state.cleanupDone then return end
     state.cleanupDone = true
@@ -109,6 +161,7 @@ local function clearChoices()
     TowerBuffPick.close()
     state.pendingSelection, state.pendingBuffChoices = nil, nil
     state.choiceQueue, state.unappliedBuffIds, state.buffIds = {}, {}, {}
+    state.buffLeases, state.buffRevision = {}, 0
 end
 
 local function resetFloorStats()
@@ -152,11 +205,16 @@ local function buildFloorHeroStats()
     return heroStats
 end
 
-local function applyBuffsToAllTeams(buffIds)
-    local teams = state.teamAllies or {}
-    for t = 1, 3 do
-        TowerBuffRuntime.applyStatBuffs(teams[t] or {}, buffIds)
+-- 仅汇总已由逐层事务发放的收益；终局/撤退面板不再发奖。
+local function buildRunRewards()
+    local rewards = copy(state.runRewards)
+    if state.runPlayerExp > 0 then
+        rewards[#rewards + 1] = { type = "player_exp", name = "远征经验", amount = state.runPlayerExp }
     end
+    if state.runHeroExpTotal > 0 then
+        rewards[#rewards + 1] = { type = "hero_exp", name = "队员经验", amount = state.runHeroExpTotal }
+    end
+    return rewards
 end
 
 -- ======================== Public API ========================
@@ -170,6 +228,8 @@ function TowerScene.getDisplayState()
     return { floor = state.floor, wave = state.wave, phase = state.phase,
         startFloor = state.startFloor, endFloor = state.endFloor,
         monsterLevel = state.monsterLevel, buffIds = copyBuffIds(state.buffIds),
+        buffLeases = copy(state.buffLeases),
+        choiceExpiresFloor = state.choiceQueue[1] and state.choiceQueue[1].expiresFloor,
         pendingChoices = #state.choiceQueue,
         inputModal = TowerTriBattle.isConfirmationOpen() or BattleResultPanel.isOpen() }
 end
@@ -209,6 +269,8 @@ function TowerScene.open(opts)
     state.choiceQueue, state.unappliedBuffIds = {}, {}
     state.runId = opts.data.runId
     state.buffIds = copyBuffIds(opts.data.buffs)
+    state.buffLeases, state.buffRevision = {}, -1
+    adoptBuffSnapshot(opts.data)
     state.onClose = opts.onClose
     state.sendAction = opts.sendAction
     state.teamAllies = opts.teamAllies
@@ -226,21 +288,8 @@ function TowerScene.open(opts)
 
     TowerBuffPick.setSendAction(state.sendAction)
 
-    local okBuff, buffErr = pcall(function()
-        applyBuffsToAllTeams(state.buffIds)
-        TowerBuffRuntime.initMechanics(state.buffIds)
-    end)
-    if not okBuff then
-        print("[TowerBattleScene] ERROR init tower buffs: " .. tostring(buffErr))
-        state.phase = "error"
-        state.errorMessage = "通天塔强化初始化失败，请退出后重试"
-        return
-    end
-
     local okOpen = TowerScene._openWaveBattle(opts.data.monsters)
-    if not okOpen then
-        return
-    end
+    if not okOpen then return end
 
     print("[TowerBattleScene] open floor=" .. state.floor .. " wave=" .. state.wave
         .. " teams=" .. tostring(#(state.teamAllies[1] or {})) .. "/"
@@ -278,9 +327,10 @@ function TowerScene.resetToDefault()
     state.floorReceipts, state.runRewards = {}, {}
     state.runPlayerExp, state.runHeroExpTotal = 0, 0
     state.settlementRequest, state.settlementElapsed = nil, 0
-    state.startFloor, state.endFloor = 1, 5
+    state.startFloor, state.endFloor = 1, TowerConfig.MAX_FLOOR
     state.allies, state.teamAllies = nil, nil
     state.buffIds, state.floorHeroDamage = {}, {}
+    state.buffLeases, state.buffRevision = {}, 0
     state.pendingBuffChoices, state.serverFloorResult = nil, nil
     state.pendingSelection = nil
     state.choiceQueue, state.unappliedBuffIds = {}, {}
@@ -301,11 +351,7 @@ function TowerScene._openWaveBattle(monsters)
     state.currentWaveStartTime = BattleClock.now() or 0
     -- 择契与当前波分离：不重置敌人、计时、投射物或机制计数。
     local okBuff, buffErr = pcall(function()
-        if #state.unappliedBuffIds > 0 then
-            applyBuffsToAllTeams(state.unappliedBuffIds)
-            state.unappliedBuffIds = {}
-        end
-        TowerBuffRuntime.initMechanics(state.buffIds)
+        TowerBuffRuntime.prepareFloor(state.allies or {}, activeBuffIds())
     end)
     if not okBuff then
         print("[TowerBattleScene] ERROR prepare wave buffs: " .. tostring(buffErr))
@@ -338,10 +384,28 @@ function TowerScene._openWaveBattle(monsters)
         .. tostring(#(state.teamAllies[3] or {}))
         .. " monsters=" .. tostring(monsters and #monsters or 0))
 
+    local version, runId, floor = state.sessionVersion, state.runId, state.floor
+    local function currentWave()
+        return state.active and state.sessionVersion == version and state.runId == runId
+            and state.floor == floor and state.phase == "battle"
+    end
     local ok, err = pcall(function()
         TowerTriBattle.open({
             teamAllies = state.teamAllies,
             data       = data,
+            onResult = function(opts)
+                if not currentWave() then return end
+                -- 失败/主动撤退也显示本局已到账收益，不把本层当成已通关。
+                local _, _, elapsed = DungeonBattle.getResultState()
+                local currentElapsed = math.max(0, elapsed or 0)
+                opts.elapsedSecs = state.totalElapsedSecs + currentElapsed
+                opts.rewards = buildRunRewards()
+                clearChoices()
+                cleanupRun()
+                if not currentWave() then return end -- 清理通知可能同步清档或打开新局。
+                TowerBuffRuntime.cleanup()
+                BattleResultPanel.show(opts)
+            end,
             onClose    = function()
                 print("[TowerBattleScene] onClose triggered, phase=" .. tostring(state.phase))
                 if state.phase == "battle" or state.phase == "error" then
@@ -378,8 +442,31 @@ local function openQueuedChoice(visible)
         pending.buffId, pending.requestId = buffId, requestId
         return true
     end, { runId = pending.runId, selectionId = pending.selectionId,
-        floor = pending.floor, wave = pending.wave }, TowerScene.onPickBuffResult)
+        floor = pending.floor, wave = pending.wave, expiresFloor = pending.expiresFloor,
+        currentFloor = state.floor, renewalIds = copyBuffIds(state.buffIds) }, TowerScene.onPickBuffResult)
+    TowerBuffPick.setContext(state.floor, state.buffLeases)
     if not visible then TowerBuffPick.hide() end
+end
+
+local function syncSelections(data, visible)
+    local oldPending = state.pendingSelection
+    local existing, queue = {}, {}
+    for _, pending in ipairs(state.choiceQueue) do existing[pending.selectionId] = pending end
+    for _, issued in ipairs(data.pendingSelections or {}) do
+        if issued.expiresFloor >= state.floor then
+            queue[#queue + 1] = existing[issued.id] or { runId = state.runId,
+                selectionId = issued.id, floor = issued.floor, wave = 1,
+                expiresFloor = issued.expiresFloor, data = copy(issued.result) }
+        end
+    end
+    state.choiceQueue = queue
+    if oldPending ~= queue[1] then
+        TowerBuffPick.close()
+        state.pendingSelection = nil
+        openQueuedChoice(visible)
+    else
+        TowerBuffPick.setContext(state.floor, state.buffLeases)
+    end
 end
 
 --- 同一已清层结算重试；sender失败/超时仅释放本次请求，不关闭或开新层。
@@ -441,27 +528,22 @@ function TowerScene.onPickBuffResult(data)
         print("[TowerBattleScene] TOWER_PICK_BUFF failed: " .. tostring(data.reason))
         return
     end
-    -- 必须恰好追加当前选择的一份权威快照，不能只靠 buffId 回执推进。
-    local ids = data.buffs
-    if type(ids) ~= "table" or #ids ~= #state.buffIds + 1 or ids[#ids] ~= pending.buffId
-        or data.totalBuffs ~= #ids or data.nextWave ~= 1
-        or data.nextFloor ~= pending.data.nextFloor then
-        print("[TowerBattleScene] ignore incomplete PickBuff snapshot request=" .. tostring(data.requestId))
-        return
-    end
-    for i, id in ipairs(state.buffIds) do if ids[i] ~= id then return end end
-    local buffId = pending.buffId
+    -- 续期/到期可改变长度；按单调版本采纳完整权威租约，旧回执不能倒退新层状态。
+    if not validBuffSnapshot(data) or data.nextWave ~= 1 then return end
     local visible = TowerBuffPick.isVisible()
-    state.buffIds = copyBuffIds(ids)
-    table.remove(state.choiceQueue, 1)
-    state.pendingSelection = nil -- 先消费身份，迟到回执不能重复加入待应用列表。
-    state.pendingBuffChoices = nil
-    state.unappliedBuffIds[#state.unappliedBuffIds + 1] = buffId
-    TowerBuffPick.close()
-    openQueuedChoice(visible)
+    if data.buffRevision > state.buffRevision then
+        if not adoptBuffSnapshot(data) then return end
+        syncSelections(data, visible)
+    else
+        -- 更高版本Floor已确认此选择，不重写快照，只消费匹配的旧面板身份。
+        table.remove(state.choiceQueue, 1)
+        state.pendingSelection = nil
+        TowerBuffPick.close()
+        openQueuedChoice(visible)
+    end
     print("[TowerBattleScene] accepted PickBuff selection=" .. pending.selectionId
-        .. " request=" .. tostring(data.requestId) .. " total=" .. #state.buffIds
-        .. " battle wave unchanged=" .. state.wave)
+        .. " request=" .. tostring(data.requestId) .. " revision=" .. state.buffRevision
+        .. " battle unchanged floor=" .. state.floor)
 end
 
 local function accumulateRewards(data)
@@ -499,39 +581,45 @@ function TowerScene.onFloorWinResult(data)
         print("[TowerBattleScene] FloorWin retry floor=" .. state.floor .. " reason=" .. tostring(data.reason))
         return false
     end
-    if type(data.rewards) ~= "table" or type(data.continueRun) ~= "boolean" then return false end
+    if type(data.rewards) ~= "table" or type(data.continueRun) ~= "boolean"
+        or not validBuffSnapshot(data) then return false end
     if data.continueRun then
         if state.floor >= state.endFloor or data.nextFloor ~= state.floor + 1
             or type(data.monsters) ~= "table" or type(data.monsterLevel) ~= "number"
             or not data.selectionId or type(data.buffChoices) ~= "table" then return false end
     elseif state.floor ~= state.endFloor then return false end
+    local adopted = data.buffRevision > state.buffRevision
+    if adopted and not adoptBuffSnapshot(data) then return false end
     -- 在推进/打开战斗的同步回调前消费身份与奖励。
     state.floorReceipts[data.floor] = copy(data)
     state.settlementRequest, state.settlementElapsed = nil, 0
     accumulateRewards(data)
     if data.continueRun then
-        local first = #state.choiceQueue == 0
-        if #data.buffChoices > 0 then
-            state.choiceQueue[#state.choiceQueue + 1] = { runId = data.runId,
-                selectionId = data.selectionId, floor = data.floor, wave = 1, data = copy(data) }
-        end
+        local visible = #state.choiceQueue == 0 or TowerBuffPick.isVisible()
         state.floor, state.wave, state.monsterLevel = data.nextFloor, 1, data.monsterLevel
         state.phase = "battle"
-        -- 不使用FloorWin的buffs覆盖Scene：未送达Pick回执尚不能提前生效。
+        if adopted then
+            syncSelections(data, visible)
+        else
+            -- 更晚的Pick可能先于本层回执到达；只移除已过期限，不回滚快照。
+            local live = {}
+            for _, pending in ipairs(state.choiceQueue) do
+                if pending.expiresFloor >= state.floor then live[#live + 1] = {
+                    id=pending.selectionId, floor=pending.floor, expiresFloor=pending.expiresFloor,
+                    result=pending.data } end
+            end
+            syncSelections({pendingSelections=live}, visible)
+        end
         if not TowerScene._openWaveBattle(data.monsters) then return true end
-        if first and #state.choiceQueue > 0 then openQueuedChoice(true) end
         print("[TowerBattleScene] continued floor=" .. state.floor .. " wave=1")
     else
         state.serverFloorResult = copy(data)
         clearChoices()
         cleanupRun()
         TowerBuffRuntime.cleanup()
-        local rewards = copy(state.runRewards)
-        rewards[#rewards + 1] = { type = "player_exp", name = "远征经验", amount = state.runPlayerExp }
-        rewards[#rewards + 1] = { type = "hero_exp", name = "队员经验", amount = state.runHeroExpTotal }
         BattleResultPanel.show({ layout = "tower", floor = state.floor, wave = 1,
             isWin = true, elapsedSecs = state.totalElapsedSecs, heroStats = buildFloorHeroStats(),
-            rewards = rewards, onClose = function() TowerScene.close() end })
+            rewards = buildRunRewards(), onClose = function() TowerScene.close() end })
     end
     return true
 end
@@ -712,7 +800,7 @@ function TowerScene.handleClick(dx, dy, logicalW, logicalH)
     logicalH = logicalH or 2400
 
     if state.phase == "floor_win" and BattleResultPanel.isOpen() then
-        BattleResultPanel.handleInput(dx, dy)
+        BattleResultPanel.handleInput(dx, dy, logicalW, logicalH)
         return true
     elseif state.phase == "settlement_retry" then
         local scale, ox, oy = settlementFit(logicalW, logicalH)

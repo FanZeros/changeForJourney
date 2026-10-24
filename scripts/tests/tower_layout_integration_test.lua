@@ -111,6 +111,7 @@ function Start()
         function Widget:SetText(text) self.text = text end
         function Widget:SetHeight(height) self.props.height = height end
         function Widget:SetFontColor(color) self.color = color end
+        function Widget:SetFontSize(size) self.props.fontSize = size end
         function Widget:SetDisabled(value) self.disabled = value end
         function Widget:SetVisible(value) self.props.visible = value end
         function Widget:SetStyle(props) for key, value in pairs(props) do self.props[key] = value end end
@@ -160,12 +161,20 @@ function Start()
         mods["config.HeroConfig"] = { HEROES = {} }
         mods["core.I18n"] = { get = function() return stat.language or "zh_CN" end, lookup = function(s) return s end }
         stat.imagePaths, stat.imagePaints, stat.rewardQualities = {}, {}, {}
-        mods["ui.widget.DesignWidgetSurface"] = { init = noop, draw = function(root)
+        -- BRP传入CPU vg替身；所有会触及原生上下文的调用必须留在私有env。
+        env.nvgGlobalAlpha = noop
+        env.nvgTranslate = function(_, x, y) stat.resultOffset = { x = x, y = y } end
+        env.nvgScale = function(_, x, y) stat.resultScale = { x = x, y = y } end
+        mods["ui.widget.DesignWidgetSurface"] = { init = noop, draw = function(root, _, width, height)
             stat.resultRoot = root; stat.resultDraws = (stat.resultDraws or 0) + 1
+            eq(width, 1440, "Surface receives real tower design width")
+            eq(height, 760, "Surface receives real tower design height")
+            stat.renderedRewards = {}
             -- 调用真实ResultIcon:Render，显式CPU布局；证明图标调用路径，不证明Yoga/GPU。
             for _, cell in ipairs(root.children[7].children) do
                 if cell.children[1] and cell.children[1].reward then
                     local icon = cell.children[1]
+                    stat.renderedRewards[#stat.renderedRewards + 1] = icon.reward
                     icon.layout = { x = icon.props.left, y = icon.props.top,
                         w = icon.props.width, h = icon.props.height }
                     icon:Render({})
@@ -192,17 +201,24 @@ function Start()
             { type = "player_exp", name = "远征经验", amount = 45678 },
             { type = "hero_exp", name = "队员经验", amount = 23456 },
         }
-        local function rewardGeometry(root, items)
+        local function rewardGeometry(root, items, page)
+            page = page or 1
             local panel = root.children[7]
-            eq(#panel.children, #items, "every reward retained including EXP")
+            local pages = math.max(1, math.ceil(#items / 8))
+            local first = (page - 1) * 8 + 1
+            local visible = math.min(8, #items - first + 1)
+            eq(#panel.children, visible + (pages > 1 and 3 or 0), "page contains all rewards and only three navigation widgets")
+            eq(#stat.renderedRewards, visible, "every visible reward executes real ResultIcon Render")
             check(panel.props.left + panel.props.width <= root.props.width
                 and panel.props.top + panel.props.height <= root.props.height, "reward panel inside canvas")
-            for i, cell in ipairs(panel.children) do
-                local item = items[i]
+            for i = 1, visible do
+                local cell, item = panel.children[i], items[first + i - 1]
                 check(cell.props.left >= 0 and cell.props.top >= 0
                     and cell.props.left + cell.props.width <= panel.props.width
-                    and cell.props.top + cell.props.height <= panel.props.height, "reward cell inside panel " .. i)
-                eq(cell.children[1].reward, item, "original complete reward instance rendered " .. i)
+                    and cell.props.top + cell.props.height <= (pages > 1 and 370 or panel.props.height),
+                    "reward cell inside panel and above navigation " .. i)
+                eq(cell.children[1].reward, item, "original complete reward instance rendered " .. (first + i - 1))
+                eq(stat.renderedRewards[i], item, "real Render retains reward order " .. (first + i - 1))
                 eq(cell.children[2].text, item.name or "黑晶", "actual reward name " .. i)
                 eq(cell.children[3].text, "×" .. tostring(item.amount), "actual reward amount " .. i)
                 for _, child in ipairs(cell.children) do
@@ -215,6 +231,20 @@ function Start()
                         check(child.props.fontSize * child.props.lineHeight <= child.props.height,
                             "production fitted label line height " .. i)
                     end
+                end
+            end
+            if pages > 1 then
+                local previous, indicator, nextButton = panel.children[visible + 1], panel.children[visible + 2], panel.children[visible + 3]
+                eq(previous.text, "<", "previous navigation text")
+                eq(nextButton.text, ">", "next navigation text")
+                eq(indicator.text, page .. " / " .. pages, "actual page indicator")
+                eq(previous.props.disabled, page == 1, "previous disabled only on first page")
+                eq(nextButton.props.disabled, page == pages, "next disabled only on last page")
+                for _, button in ipairs({ previous, nextButton }) do
+                    eq(panel.props.left + button.props.left, button == previous and 968 or 1288, "navigation design left")
+                    eq(panel.props.left + button.props.left + button.props.width, button == previous and 1080 or 1400, "navigation design right")
+                    eq(panel.props.top + button.props.top, 566, "navigation design top")
+                    eq(panel.props.top + button.props.top + button.props.height, 614, "navigation design bottom")
                 end
             end
         end
@@ -271,6 +301,112 @@ function Start()
             end
         end
         result.close(); stat.language = "zh_CN"
+        -- 长局独立神器不合并：跨8项边界、整页尾和非整页尾，通过真实公开API往返遍历。
+        -- 点击坐标使用宿主逻辑尺寸；contain画布1440x760，拟合分母1504x824（外64边距）。
+        for _, count in ipairs({ 9, 16, 115 }) do
+            for _, size in ipairs({ {1920,1080}, {1280,800}, {1504,824}, {800,1000} }) do
+                local w, h = size[1], size[2]
+                local scale = math.min(w / 1504, h / 824)
+                local ox, oy = (w - 1440 * scale) / 2, (h - 760 * scale) / 2
+                local many = copy(rewards)
+                for i = #many + 1, count do
+                    many[i] = { type = "artifact", quality = (i % 3) + 1,
+                        name = "独立神器" .. i .. "·完整名称与数量",
+                        iconPath = "image/神器/paging_" .. i .. ".png", amount = i }
+                end
+                local before, seen = copy(many), {}
+                local pages, page, pageClosed = math.ceil(count / 8), 1, 0
+                stat.language = "zh_CN"
+                result.show({ layout = "tower", floor = 112, heroStats = heroes, rewards = many,
+                    onClose = function() pageClosed = pageClosed + 1 end })
+                local function drawPage()
+                    local paintsBefore = #stat.imagePaints
+                    result.draw({}, w, h)
+                    near(stat.resultScale.x, scale, "draw contain scale x includes64 margin")
+                    near(stat.resultScale.y, scale, "draw contain scale y includes64 margin")
+                    near(stat.resultOffset.x, ox, "draw centered logical offset x")
+                    near(stat.resultOffset.y, oy, "draw centered logical offset y")
+                    rewardGeometry(stat.resultRoot, many, page)
+                    local painted = 0
+                    for _, item in ipairs(stat.renderedRewards) do
+                        local path = item.iconPath or (item.type == "diamond" and "image/货币道具/UI_icon_SJ_X.png")
+                        if path then
+                            painted = painted + 1
+                            eq(stat.imagePaints[paintsBefore + painted], path, "real paginated icon draw keeps independent reward path")
+                        end
+                    end
+                    eq(#stat.imagePaints - paintsBefore, painted, "only current page reward icons drawn")
+                    eq(stat.depth, 0, "paginated drawing restores private NVG state")
+                end
+                local function click(x, y, target, label)
+                    local old = stat.resultRoot
+                    eq(result.handleInput(ox + x * scale, oy + y * scale, w, h), true, label .. " consumed")
+                    check(result.isOpen(), label .. " keeps summary open")
+                    eq(pageClosed, 0, label .. " never invokes completion")
+                    if target ~= page then check(old.destroyed, label .. " destroys stale page tree") end
+                    page = target
+                    drawPage()
+                    if old.destroyed then check(stat.resultRoot ~= old, label .. " rebuilds own page tree")
+                    else eq(stat.resultRoot, old, label .. " reuses unchanged page tree") end
+                end
+                drawPage()
+                click(1024, 590, 1, "first-page previous clamps")
+                -- 奖励实体、面板四角、页码和按钮边外空隙均不能误关或翻页。
+                for _, point in ipairs({ {980,220}, {1184,590}, {956.5,196.5}, {1411.5,196.5},
+                    {956.5,627.5}, {1411.5,627.5}, {967.5,590}, {1080.5,590},
+                    {1287.5,590}, {1400.5,590}, {1344,565.5}, {1344,614.5} }) do
+                    click(point[1], point[2], 1, "reward area and navigation gaps")
+                end
+                for expectedPage = 1, pages do
+                    eq(page, expectedPage, "forward traversal reaches each page exactly")
+                    for _, item in ipairs(stat.renderedRewards) do
+                        check(not seen[item], "independent reward appears once in forward traversal")
+                        seen[item] = true
+                    end
+                    if expectedPage < pages then
+                        click(1344, 590, expectedPage + 1, "next mapped to host logical dimensions")
+                        if expectedPage == 1 then
+                            local old = stat.resultRoot
+                            stat.language = "en"; drawPage()
+                            check(old.destroyed and stat.resultRoot ~= old, "locale rebuild preserves current reward page")
+                        end
+                    end
+                end
+                local seenCount = 0
+                for _ in pairs(seen) do seenCount = seenCount + 1 end
+                eq(seenCount, count, "all independent rewards visited without loss or duplication")
+                for _, item in ipairs(many) do check(seen[item], "every original reward instance reachable") end
+                click(1344, 590, pages, "last-page next clamps")
+                click(980, 220, pages, "last-page reward click is not completion")
+                for target = pages - 1, 1, -1 do click(1024, 590, target, "previous preserves exact page contents") end
+                click(1024, 590, 1, "returned first-page previous clamps")
+                -- scale=1专项精确覆盖按钮四条包含边界；其他窗口已验证contain逆映射。
+                if w == 1504 and h == 824 then
+                    for _, point in ipairs({ {1288,590}, {1400,590}, {1344,566}, {1344,614} }) do
+                        click(point[1], point[2], 2, "next inclusive design edge")
+                        click(1024, 590, 1, "return from next edge")
+                    end
+                    for _, point in ipairs({ {968,590}, {1080,590}, {1024,566}, {1024,614} }) do
+                        click(1344, 590, 2, "prepare previous edge")
+                        click(point[1], point[2], 1, "previous inclusive design edge")
+                    end
+                end
+                eq(#many, count, "pagination never truncates source reward list")
+                for i, item in ipairs(many) do
+                    for key, value in pairs(before[i]) do eq(item[key], value, "pagination leaves source reward field intact " .. i .. "/" .. key) end
+                end
+                local finalRoot, drawCount = stat.resultRoot, stat.resultDraws
+                eq(result.handleInput(ox + 720 * scale, oy + 650 * scale, w, h), true, "final blank click consumed")
+                check(not result.isOpen() and finalRoot.destroyed, "blank click closes and destroys final tree")
+                eq(pageClosed, 1, "final blank completes exactly once after all paging")
+                eq(result.handleInput(ox + 720 * scale, oy + 650 * scale, w, h), false, "closed summary no longer consumes input")
+                result.close(); result.draw({}, w, h)
+                eq(pageClosed, 1, "repeated close never repeats callback")
+                eq(stat.resultDraws, drawCount, "closed result never redraws stale page")
+                eq(stat.actions, 0, "pagination dispatches no business action or reward grant")
+            end
+        end
+        stat.language = "zh_CN"
         result.show({ layout = "tower", isWin = false, heroStats = heroes })
         result.draw({}, 1280, 800)
         eq(stat.resultRoot.children[1].text, "通天塔 · 失败", "defeat title")
@@ -389,7 +525,7 @@ function Start()
         drawn={};selector.draw(vg)
         local seen={};for _,s in ipairs(drawn)do seen[s]=true end
         check(seen["第1层"] and seen["第6层"],"real selector draws floor labels")
-        check(seen["第1-5层 · 每层1波"],"real selector draws group1..5")
+        check(seen["本段1-5层 · 可连续登塔"],"real selector draws section1..5 with continuous climb")
         check(seen["首通奖励 ×1650"],"remaining group first-clear summary visible")
         check(not seen["本组剩余首通黑钻 ×1650 · 重打/扫荡0"],"selector hides repeat/sweep explanation")
         check(not seen["每层胜利神器5% · 品质1/2/3 80/18/2%"],"selector hides detailed drop probabilities")
@@ -484,7 +620,7 @@ function Start()
         local left, right = stat.roots[1], stat.roots[2]
         eq(#left.children[4].children[1].children, 112, "112 read-only nodes")
         eq(left.children[2].text, "第112层", "实际层号不再章-关")
-        eq(left.children[3].text, "每层1波 · 每5层一组", "单波五层组规则可见")
+        eq(left.children[3].text, "每层1波 · 连续登塔", "单波连续登塔规则可见")
         local routeNodes = left.children[4].children[1].children
         local starts = 0
         for floor, node in ipairs(routeNodes) do
@@ -739,7 +875,7 @@ function Start()
         mods["ui.tower.TowerOathEffect"]={release=noop,destroy=noop}
         local panel=compile("ui/tower/TowerBuffPick.lua",env)
         local choices={mods["config.TowerConfig"].BUFFS_BY_ID[1],mods["config.TowerConfig"].BUFFS_BY_ID[2]}
-        local receipt={runId="r1",selectionId="s1",floor=1,wave=1}
+        local receipt={runId="r1",selectionId="s1",floor=1,wave=1,currentFloor=6,expiresFloor=9,renewalIds={1}}
         panel.open(1,choices,nil,receipt)
         local s=state(panel.isOpen)
         local request=s.request
@@ -748,6 +884,15 @@ function Start()
         check(panel.isOpen() and not panel.isVisible(),"hidden still outstanding")
         check(key~=panel.getPresentationKey(),"hide updates version")
         check(s.choices==choices and s.request==request,"hide retains choices request")
+        local leases={{id="2",effectiveFloor=7,expiresFloor=16},{id=1,effectiveFloor=1,expiresFloor=6}}
+        check(panel.setContext(7,leases),"hidden outstanding panel accepts context")
+        eq(s.currentFloor,7,"context updates displayed floor not source")
+        check(not panel.isVisible() and s.choices==choices and s.request==request,"context keeps hidden same cards and identity")
+        eq(request.floor,1,"source floor never rewritten");eq(request.selectionId,"s1","selection identity never rewritten")
+        eq(request.currentFloor,6,"signed request presentation field not rewritten")
+        check(s.renewalById["2"] and not s.renewalById["1"],"numeric string owned ID and expired lease renewal flags")
+        key=panel.getPresentationKey();panel.setContext(7,leases)
+        eq(panel.getPresentationKey(),key,"unchanged context preserves presentation version")
         check(panel.show() and panel.isVisible(),"show restores same cards")
         check(s.choices==choices and s.request==request,"show no reroll or new selection")
         s.pending=true;s.pendingRequest={buffId=1,requestId="q1"}
@@ -756,8 +901,70 @@ function Start()
         check(not panel.hide(),"pending cannot hide")
         eq(panel.getPresentationKey(),key,"rejected hide keeps version")
         check(s.pendingRequest==pending and s.pending,"pending identity retained")
-        eq(stat.actions,0,"hide show no gameplay dispatch")
+        s.pendingTime=3.25;s.retryBuffId=1
+        panel.setContext(8,{})
+        check(s.pendingRequest==pending and s.pending and s.pendingTime==3.25,"setContext never clears or resets in-flight pending")
+        eq(s.retryBuffId,1,"setContext retains uncertain same-card retry lock")
+        check(next(s.renewalById)==nil and s.leaseContext,"empty leases clears ownership but remains timed mode")
+        eq(s.request,request,"pending context keeps signed request object")
+        eq(leases[1].expiresFloor,16,"context leaves input lease untouched")
+        panel.close();eq(panel.setContext(9,leases),false,"closed context no-op")
+        panel.open(1,choices,nil,{runId="legacy",selectionId="old",floor=1,wave=1})
+        check(not s.leaseContext and next(s.renewalById)==nil,"legacy open resets timed mode and renewal flags")
+        panel.setContext(2,nil)
+        check(not s.leaseContext and s.currentFloor==2,"nil leases legacy context only updates displayed floor")
+        eq(stat.actions,0,"hide show context no gameplay dispatch")
         panel.destroy()
+    end)
+    runCase("choice lease next floor renewal deadlines five languages and legacy view",function()
+        local env,mods,stat=private()
+        mods["urhox-libs/UI"]=fakeUI(stat)
+        mods["core.I18n"]={get=function()return stat.language or "zh_CN" end}
+        mods["core.I18nTower"]=compile("core/I18nTower.lua",env)
+        mods["ui.tower.TowerPresentation"]=compile("ui/tower/TowerPresentation.lua",env)
+        mods["ui.tower.TowerOathEffect"]={draw=noop,drawIcon=noop}
+        mods["ui.widget.DesignWidgetSurface"]={init=noop,draw=function(root)stat.root=root end}
+        env.nvgClosePath=noop;env.nvgLinearGradient=function()return {} end;env.nvgFillPaint=noop
+        env.nvgTextBounds=function(_,_,_,caption)return utf8.len(caption)*8 end
+        local view=compile("ui/tower/TowerChoiceView.lua",env)
+        local oracle={
+            zh_CN={renew="续期",renewing="正在续期",inscribe="铭刻",header="此机会剩余%d层（含本层）",footer="下层生效（第%d层） · 持续10层"},
+            zh_TW={renew="續期",renewing="正在續期",inscribe="銘刻",header="此機會剩餘%d層（含本層）",footer="下層生效（第%d層） · 持續10層"},
+            en={renew="Renew",renewing="Renewing",inscribe="Inscribe",header="Choice: %d floors left (including this floor)",footer="Active next floor (%d) · Lasts 10 floors"},
+            ja={renew="更新",renewing="更新中",inscribe="刻印",header="この選択機会：残り%d階（この階を含む）",footer="次の階（%d階）から有効 · 10階持続"},
+            ko={renew="갱신",renewing="갱신 중",inscribe="각인",header="이번 선택 기회: %d개 층 남음(현재 층 포함)",footer="다음 층(%d층)부터 적용 · 10개 층 지속"},
+        }
+        local keyword={measureHeight=function()return 24 end,draw=noop,hotspots={}}
+        local s={floor=1,currentFloor=6,request={expiresFloor=9},leaseContext=true,renewalById={["1"]=true},pending=false}
+        for _,lang in ipairs({"zh_CN","zh_TW","en","ja","ko"})do
+            stat.language=lang;local words=oracle[lang]
+            for _,wide in ipairs({true,false})do
+                for _,boundary in ipairs({{6,4},{9,1},{10,0}})do
+                    s.currentFloor=boundary[1];view.drawHeader({},s,wide)
+                    eq(stat.root.children[3].text,string.format(words.header,boundary[2]),"inclusive choice deadline "..lang)
+                end
+                s.currentFloor=6;view.drawFooter({},s,wide)
+                eq(stat.root.children[1].text,string.format(words.footer,7),"6 picks active7 for10 floors "..lang)
+                for id=1,2 do
+                    local choice=mods["config.TowerConfig"].BUFFS_BY_ID[id]
+                    s.pending=false;s.pendingRequest=nil
+                    view.drawCard({},id,choice,s,wide,keyword,0,{})
+                    eq(stat.root.children[3].text,id==1 and words.renew or words.inscribe,"owned renewal vs new inscription "..lang)
+                    check(not stat.root.children[3].disabled,"idle choice enabled "..lang)
+                end
+                s.pending=true;s.pendingRequest={buffId=1}
+                view.drawCard({},1,mods["config.TowerConfig"].BUFFS_BY_ID[1],s,wide,keyword,0,{})
+                eq(stat.root.children[3].text,words.renewing,"in-flight owned card renews "..lang)
+                check(stat.root.children[3].disabled,"pending renewal button locked "..lang)
+                s.pending=false;s.pendingRequest=nil
+            end
+        end
+        stat.language="zh_CN"
+        local legacy={floor=3,pending=false}
+        view.drawHeader({},legacy,true);eq(stat.root.children[3].text,"三枚契印 · 择一承受","legacy header unchanged")
+        view.drawFooter({},legacy,true);eq(stat.root.children[1].text,"选择保留，战斗继续；强化从下一层生效","legacy footer unchanged")
+        view.destroyWidgets();eq(stat.depth,0,"choice view balances all private drawing states")
+        eq(stat.actions,0,"choice view never grants or sends gameplay")
     end)
     local function sceneFixture()
         local env,mods,stat=private()

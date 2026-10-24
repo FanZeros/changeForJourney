@@ -14,9 +14,16 @@ local expected={
     ja={rarities={"コモン","アンコモン","レア"},collapse="折りたたむ",expand="展開",title="獲得済みの強化",pending="未選択の暗契 ×3"},
     ko={rarities={"일반","고급","레어"},collapse="접기",expand="펼치기",title="획득한 강화",pending="미선택 계약 ×3"},
 }
+local expectedLeaseText={
+    zh_CN={next="下层生效",remaining="剩余%d层",pending="待选 ×3 · 剩余%d层",rule="下层生效 · 持续10层；同名续期"},
+    zh_TW={next="下層生效",remaining="剩餘%d層",pending="待選 ×3 · 剩餘%d層",rule="下層生效 · 持續10層；同名續期"},
+    en={next="Active next floor",remaining="%d floors left",pending="Pacts ×3 · %d floors left",rule="Active next floor · Lasts 10 floors; same pact renews"},
+    ja={next="次の階から有効",remaining="残り%d階",pending="未選択 ×3 · 残り%d階",rule="次の階から10階持続 · 同じ契印は更新"},
+    ko={next="다음 층부터 적용",remaining="%d개 층 남음",pending="미선택 ×3 · %d개 층 남음",rule="다음 층부터 10개 층 지속 · 같은 계약은 갱신"},
+}
 local expectedStarts={zh_CN="起点",zh_TW="起點",en="Start",ja="開始",ko="시작"}
-local expectedGroups={zh_CN="每层1波 · 每5层一组",zh_TW="每層1波 · 每5層一組",
-    en="1 wave/floor · 5 floors/run",ja="各階1ウェーブ · 5階ごとに1組",ko="층당 1웨이브 · 5층씩 한 그룹"}
+local expectedClimbRules={zh_CN="每层1波 · 连续登塔",zh_TW="每層1波 · 連續登塔",
+    en="1 wave/floor · Continuous climb",ja="各階1ウェーブ · 連続登塔",ko="층당 1웨이브 · 연속 등반"}
 local expectedColors={{231,231,231,255},{106,190,115,255},{100,161,226,255}}
 local dimensions={{1920,1080},{1280,800}}
 ---@type NVGContextWrapper?
@@ -155,6 +162,7 @@ local function scrollCase(w,h,lang)
     total.cases=total.cases+1
     I18n.set(lang)
     createSidebar();snapshot.floor=17;snapshot.wave=9;snapshot.phase="battle";snapshot.inputModal=false;snapshot.pendingChoices=0
+    snapshot.buffLeases=nil;snapshot.choiceExpiresFloor=nil
     snapshot.buffIds={1,2,3,4,5,6,7,8}
     settle(w,h)
     local route=uv(Sidebar.destroy,"routeScroll");local buffs=uv(Sidebar.destroy,"buffScroll")
@@ -163,7 +171,7 @@ local function scrollCase(w,h,lang)
     local rr=route:GetLayout();local br=buffs:GetLayout()
     local rw,rh=route:GetContentSize();local bw,bh=buffs:GetContentSize()
     eq(#nodes,112,"real route112 nodes "..lang)
-    eq(uv(Sidebar.destroy,"waveLabel"):GetText(),expectedGroups[lang],"单波五层组规则独立五语 "..lang)
+    eq(uv(Sidebar.destroy,"waveLabel"):GetText(),expectedClimbRules[lang],"单波连续登塔规则独立五语 "..lang)
     local startCount=0
     for floor,node in ipairs(nodes) do
         eq(node:GetChildAt(1):GetText(),tostring(floor),"完整真实路线层号 "..lang.."/"..floor)
@@ -309,6 +317,53 @@ local function scrollCase(w,h,lang)
     eq(fingerprint(Config.BUFFS),configBefore,"no formal buff rule/config mutation "..lang)
     print(TAG.." CASE COMPLETE "..lang.." "..w.."x"..h.." checks="..total.checks.." failed="..total.failed.." route="..rw.."/"..rh.." buffs="..bw.."/"..bh)
 end
+local function leaseCase(w,h,lang)
+    total.cases=total.cases+1
+    I18n.set(lang);createSidebar()
+    snapshot={floor=6,wave=1,phase="battle",buffIds={1,2,3,4},pendingChoices=3,
+        choiceExpiresFloor=9,inputModal=false,buffLeases={{id=1,effectiveFloor=7,expiresFloor=16}}}
+    local before=fingerprint(snapshot)
+    settle(w,h)
+    local content=uv(Sidebar.destroy,"buffContent")
+    local title=uv(Sidebar.destroy,"buffTitle");local pending=uv(Sidebar.destroy,"pendingButton")
+    local rule=uv(Sidebar.destroy,"ruleNote");local oracle=expectedLeaseText[lang]
+    local function duration() return content:GetChildAt(1):GetChildAt(1):GetChildAt(2):GetChildAt(2) end
+    eq(#content:GetChildren(),1,"leases优先于兼容buffIds "..lang)
+    eq(title:GetText(),expected[lang].title.."  1","租约数量不按旧buffIds计数 "..lang)
+    eq(duration():GetText(),oracle.next.." · "..string.format(oracle.remaining,10),"6选7..16下层生效10层 "..lang)
+    eq(pending.props.text,string.format(oracle.pending,4),"来源6最后可选9包含当前4层 "..lang)
+    eq(rule:GetText(),oracle.rule,"五语10层与同名续期说明 "..lang)
+    inspectText(duration(),"lease-next/"..lang);inspectText(pending,"lease-pending/"..lang)
+    inspectText(rule,"lease-rule/"..lang)
+    eq(fingerprint(snapshot),before,"首次绘制不改lease和pending快照 "..lang)
+    local old=content:GetChildAt(1)
+    settle(w,h);eq(content:GetChildAt(1),old,"同层相同租约不重建 "..lang)
+    snapshot.floor=7;settle(w,h)
+    check(content:GetChildAt(1)~=old,"ID不变换层也按leases key更新 "..lang)
+    eq(duration():GetText(),string.format(oracle.remaining,10),"生效层7仍完整10层 "..lang)
+    snapshot.floor=9;settle(w,h)
+    eq(duration():GetText(),string.format(oracle.remaining,8),"当前9租约剩8层 "..lang)
+    eq(pending.props.text,string.format(oracle.pending,1),"最后可选9仍剩1层 "..lang)
+    snapshot.floor=10;settle(w,h)
+    eq(pending.props.text,string.format(oracle.pending,0),"进入10旧快照期限不显示负数 "..lang)
+    snapshot.floor=16;settle(w,h)
+    eq(duration():GetText(),string.format(oracle.remaining,1),"租约最后16仍剩1层 "..lang)
+    snapshot.floor=17;settle(w,h)
+    eq(duration():GetText(),string.format(oracle.remaining,0),"过期旧快照不显示负数 "..lang)
+    snapshot.buffLeases[1]={id=1,effectiveFloor=18,expiresFloor=27};settle(w,h)
+    eq(duration():GetText(),oracle.next.." · "..string.format(oracle.remaining,10),"同ID续期字段刷新 "..lang)
+    inspectText(duration(),"lease-renewed/"..lang)
+    snapshot.buffLeases={};settle(w,h)
+    eq(content:GetChildAt(1):GetText(),({zh_CN="暂无强化",zh_TW="暫無強化",en="No boons yet",ja="強化はまだない",ko="아직 강화 없음"})[lang],"空leases不复活旧ID "..lang)
+    eq(title:GetText(),expected[lang].title.."  0","空租约数量0 "..lang)
+    snapshot.buffLeases=nil;snapshot.choiceExpiresFloor=nil;snapshot.buffIds={1,1};settle(w,h)
+    eq(duration():GetText(),expected[lang].rarities[1].."  ×2","去掉leases恢复旧无租约fixture "..lang)
+    eq(pending.props.text,expected[lang].pending,"旧pending仅数量显示保持 "..lang)
+    snapshot.pendingChoices=0;settle(w,h);eq(pending:IsVisible(),false,"pending归零按钮隐藏 "..lang)
+    Sidebar.destroy()
+    eq(fingerprint(Config.BUFFS),configBefore,"期限绘制不改真实配置 "..lang)
+    print(TAG.." LEASE COMPLETE "..lang.." "..w.."x"..h.." checks="..total.checks.." failed="..total.failed)
+end
 function Start()
     for _,arg in ipairs(GetArguments()) do
         if arg=="-tower-sidebar-preview" then preview=true end
@@ -348,6 +403,7 @@ function HandleSidebarNative()
         local lang=langs[(index-1)%#langs+1]
         local dims=assert(dimensions[dimensionsIndex],"invalid dimensions case")
         scrollCase(dims[1],dims[2],lang)
+        leaseCase(dims[1],dims[2],lang)
         if index==#langs*#dimensions then finished=true end
     end,debug.traceback)
     nvgEndFrame(ctx)

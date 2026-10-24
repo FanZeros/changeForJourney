@@ -26,6 +26,18 @@ add("尚未缔结暗契", "尚未締結暗契", "No dark pact sealed yet", "暗�
 add("全部小队共享", "全部小隊共享", "Shared by all squads", "全小隊で共有", "모든 소대가 공유")
 add("本层有效", "本層有效", "This floor only", "この階のみ有効", "현재 층에서만 유효")
 add("铭刻", "銘刻", "Inscribe", "刻印", "각인")
+add("续期", "續期", "Renew", "更新", "갱신")
+add("正在续期", "正在續期", "Renewing", "更新中", "갱신 중")
+add("此机会剩余%d层（含本层）", "此機會剩餘%d層（含本層）",
+    "Choice: %d floors left (including this floor)",
+    "この選択機会：残り%d階（この階を含む）", "이번 선택 기회: %d개 층 남음(현재 층 포함)")
+add("剩余%d层", "剩餘%d層", "%d floors left", "残り%d階", "%d개 층 남음")
+add("下层生效", "下層生效", "Active next floor", "次の階から有効", "다음 층부터 적용")
+add("下层生效（第%d层） · 持续10层", "下層生效（第%d層） · 持續10層",
+    "Active next floor (%d) · Lasts 10 floors", "次の階（%d階）から有効 · 10階持続", "다음 층(%d층)부터 적용 · 10개 층 지속")
+add("下层生效 · 持续10层；同名续期", "下層生效 · 持續10層；同名續期",
+    "Active next floor · Lasts 10 floors; same pact renews",
+    "次の階から10階持続 · 同じ契印は更新", "다음 층부터 10개 층 지속 · 같은 계약은 갱신")
 add("正在铭刻", "正在銘刻", "Inscribing", "刻印中", "각인 중")
 add("正在铭刻...", "正在銘刻...", "Inscribing...", "刻印中...", "각인 중...")
 add("仅可重试原契印", "僅可重試原契印", "Retry only the original seal", "元の契印のみ再試行可能", "원래 인장만 다시 시도할 수 있습니다")
@@ -36,8 +48,9 @@ add("确认撤退？", "確認撤退？", "Retreat?", "撤退しますか？", "
 add("本层进度将丢失", "本層進度將丟失", "Progress on this floor will be lost", "この階の進行状況は失われます", "현재 층의 진행 상황이 사라집니다")
 add("第%d层", "第%d層", "Floor %d", "%d階", "%d층")
 add("第%d层  剩余%.0fs", "第%d層  剩餘%.0fs", "Floor %d  %.0fs left", "%d階  残り%.0f秒", "%d층  남은 시간 %.0f초")
+add("本段%d-%d层 · 可连续登塔", "本段%d-%d層 · 可連續登塔", "Section %d-%d · Continuous climb", "区間%d-%d階 · 連続登塔可能", "구간 %d-%d층 · 연속 등반 가능")
 add("第%d-%d层 · 每层1波", "第%d-%d層 · 每層1波", "Floors %d-%d · 1 wave each", "%d-%d階 · 各階1ウェーブ", "%d-%d층 · 층당 1웨이브")
-add("每层1波 · 每5层一组", "每層1波 · 每5層一組", "1 wave/floor · 5 floors/run", "各階1ウェーブ · 5階ごとに1組", "층당 1웨이브 · 5층씩 한 그룹")
+add("每层1波 · 连续登塔", "每層1波 · 連續登塔", "1 wave/floor · Continuous climb", "各階1ウェーブ · 連続登塔", "층당 1웨이브 · 연속 등반")
 add("起点", "起點", "Start", "開始", "시작")
 add("路线只读 · 标记为每五层起点", "路線唯讀 · 標記為每五層起點", "View-only route · Starts every 5 floors", "閲覧専用 · 印は5階ごとの開始点", "경로는 확인 전용 · 표시는 5층마다 시작점")
 add("首通奖励 ×%s", "首通獎勵 ×%s", "First-clear reward ×%s", "初回報酬 ×%s", "첫 클리어 보상 ×%s")
@@ -70,6 +83,8 @@ add("展开", "展開", "Expand", "展開", "펼치기")
 add("暂无强化", "暫無強化", "No boons yet", "強化はまだない", "아직 강화 없음")
 add("继续择契", "繼續擇契", "Resume Pact Choice", "契印選びを続ける", "계약 선택 계속")
 add("待选暗契 ×%d", "待選暗契 ×%d", "Pending Pacts ×%d", "未選択の暗契 ×%d", "미선택 계약 ×%d")
+add("待选 ×%d · 剩余%d层", "待選 ×%d · 剩餘%d層", "Pacts ×%d · %d floors left",
+    "未選択 ×%d · 残り%d階", "미선택 ×%d · %d개 층 남음")
 add("稍后选择", "稍後選擇", "Choose Later", "後で選ぶ", "나중에 선택")
 add("选择保留，战斗继续；强化从下一层生效", "選擇保留，戰鬥繼續；強化從下一層生效",
     "Choices stay available; battle continues. Boons apply next floor.",

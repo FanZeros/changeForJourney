@@ -114,6 +114,7 @@ local state = {
     floor       = nil,
     wave        = nil,
     visualElapsed = 0,   -- 只供结算入场表现，不参与关卡/奖励/关闭时序。
+    rewardPage = 1,
 }
 
 local RESULT_REVEAL_TIME = 0.28
@@ -295,13 +296,17 @@ local function buildTowerRoot(language)
     local rewards = UI.Panel { position = "absolute", left = 956, top = 196,
         width = 456, height = 432, backgroundColor = C.surface,
         borderWidth = 1, borderColor = C.border, borderRadius = 4, pointerEvents = "none" }
-    -- 塔现行奖励为一条黑晶；其他奖励也逐条显示名字/数量，不沿用竖版横向溢出的图标行。
+    -- 每页最多八项，独立神器逐件保留，不随长局奖励数量压缩图标。
     local count = #state.rewards
+    local pages = math.max(1, math.ceil(count / 8))
     local columns = count > 4 and 2 or 1
-    local rows = math.max(1, math.ceil(count / columns))
-    local rowHeight = math.min(94, 408 / rows)
+    local rows = math.max(1, math.ceil(math.min(8, count) / columns))
+    local rowHeight = math.min(94, (pages > 1 and 352 or 408) / rows)
     local cellWidth = 432 / columns
-    for i, item in ipairs(state.rewards) do
+    local first = (state.rewardPage - 1) * 8 + 1
+    for index = first, math.min(count, first + 7) do
+        local i = index - first + 1
+        local item = state.rewards[index]
         local def = RESOURCE_DEFS[item.type]
         local name = I18n.lookup(item.name or (def and def.name) or tostring(item.type))
         local iconSize = math.min(68, rowHeight - 12)
@@ -315,6 +320,13 @@ local function buildTowerRoot(language)
                 towerLabel("×" .. NumberUtil.format(item.amount or 0), iconSize + 24, rowHeight * 0.5,
                     cellWidth - iconSize - 32, rowHeight * 0.5 - 3, 23, C.gold),
             } })
+    end
+    if pages > 1 then
+        rewards:AddChild(UI.Button { text = "<", position = "absolute", left = 12, top = 370,
+            width = 112, height = 48, disabled = state.rewardPage == 1, pointerEvents = "none" })
+        rewards:AddChild(towerLabel(state.rewardPage .. " / " .. pages, 132, 370, 192, 48, 24, C.gold, "center"))
+        rewards:AddChild(UI.Button { text = ">", position = "absolute", left = 332, top = 370,
+            width = 112, height = 48, disabled = state.rewardPage == pages, pointerEvents = "none" })
     end
     if count == 0 then
         rewards:AddChild(towerLabel(text.emptyRewards, 16, 180, 424, 50, 25, C.muted, "center"))
@@ -387,6 +399,7 @@ function BRP.show(opts)
     state.floor       = opts.floor
     state.wave        = opts.wave
     state.visualElapsed = 0
+    state.rewardPage = 1
     print("[BattleResultPanel] show: " .. (state.isWin and "WIN" or "LOSE")
         .. " heroes=" .. #state.heroStats
         .. " rewards=" .. #state.rewards)
@@ -430,8 +443,30 @@ end
 ---@param dx number 设计空间 X
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
-function BRP.handleInput(dx, dy)
+---@param width number|nil 宿主逻辑宽度，塔分页命中与绘制使用同一变换。
+---@param height number|nil
+function BRP.handleInput(dx, dy, width, height)
     if not state.open then return false end
+    if state.layout == "tower" and #state.rewards > 8 and width and height then
+        local scale = math.min(width / (TOWER_W + 64), height / (TOWER_H + 64))
+        if scale > 0 then
+            local x = (dx - (width - TOWER_W * scale) * 0.5) / scale
+            local y = (dy - (height - TOWER_H * scale) * 0.5) / scale
+            if x >= 956 and x <= 1412 and y >= 196 and y <= 628 then
+                local pages = math.ceil(#state.rewards / 8)
+                if y >= 566 and y <= 614 then
+                    local page = state.rewardPage
+                    if x >= 968 and x <= 1080 then page = math.max(1, page - 1)
+                    elseif x >= 1288 and x <= 1400 then page = math.min(pages, page + 1) end
+                    if page ~= state.rewardPage then
+                        state.rewardPage = page
+                        destroyTowerRoot()
+                    end
+                end
+                return true -- 翻页或点击奖励区不能误关长局摘要。
+            end
+        end
+    end
     BRP.close()
     return true
 end

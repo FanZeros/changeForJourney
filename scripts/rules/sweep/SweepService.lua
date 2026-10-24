@@ -18,6 +18,8 @@ local prepared = setmetatable({}, { __mode = "k" }) ---@type table<table, table>
 local function getLuck(ids, heroes, equipment, artifacts, talents)
     local ctx = EquipmentPower.buildWornContext(ids[1], {
         heroes = heroes, equipment = equipment, artifacts = artifacts or {}, talents = talents or {},
+        -- 掉落幸运消费真实属性，不使用角色显示战力的无神器口径。
+        includeArtifactEffects = true,
     })
     return ctx and DropSystem.captureTeamLuck(ctx.teamUnits) or 0
 end

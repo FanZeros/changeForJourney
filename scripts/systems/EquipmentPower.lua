@@ -94,7 +94,12 @@ local function buildUnit(ctx, heroId, equipment)
     ESR.applyStaticBonuses(unit.attrs)
     local slot, team = M.findPosition(ctx.heroesData, heroId)
     unit.partySlot, unit.teamIdx = slot, team
-    if slot then unit.artifactEffects = ArtifactBridge.applyToUnit(unit.attrs, slot, ctx.artifactsData, team) end
+    -- 角色/装备评分按神器生效前的属性计价；扫荡等实际属性消费者才显式启用。
+    -- 空effects同时阻止CombatPower通过存档fallback重新带入反击神器。
+    unit.artifactEffects = {}
+    if slot and ctx.includeArtifactEffects then
+        unit.artifactEffects = ArtifactBridge.applyToUnit(unit.attrs, slot, ctx.artifactsData, team)
+    end
     return unit
 end
 
@@ -107,7 +112,7 @@ local function powerFor(ctx, unit, units, equipment)
         teamUnits = units,
         heroesData = ctx.heroesData,
         equipmentData = equipment,
-        artifactsData = ctx.artifactsData,
+        artifactsData = ctx.includeArtifactEffects and ctx.artifactsData or {},
         talentsData = ctx.talentsData,
     })
 end
@@ -150,7 +155,8 @@ local function readSnapshot(options, key)
     return copy(require("core.PlayerStore").Get(key) or {})
 end
 
--- 两种上下文共用同一裸种子/有效装备/本队光环/神器与正式估值管线。
+-- 两种上下文共用同一裸种子/有效装备/本队光环与正式估值管线。
+-- 默认不含神器；includeArtifactEffects仅供需要真实属性的只读调用方。
 local function finishContext(ctx, checkpoint)
     local function tick() if checkpoint then checkpoint() end end
     local id = ctx.heroId
@@ -251,6 +257,7 @@ function M.buildContext(heroId, options)
         equipmentData = equipmentSnapshot(options),
         artifactsData = readSnapshot(options, "artifacts"),
         talentsData = readSnapshot(options, "talents"),
+        includeArtifactEffects = options and options.includeArtifactEffects == true or false,
         seeds = {}, teamUnits = {}, memo = {}, scores = {},
         fixedTeammates = options and options.cacheFixedTeammates and {} or nil,
     }
@@ -266,6 +273,7 @@ end
 
 -- 仅供当前穿戴战力批次：模块快照一次，库存源只读，按本队实际六槽取副本。
 -- 不跨通知缓存，也不传给 evaluate/score；它不承诺包含未穿戴候选。
+-- includeArtifactEffects在创建时冻结，ctx/batch不得改旗标或跨模式混用。
 function M.createWornBatch(options)
     local equipment = options and options.equipment
     if options == nil then equipment = require("core.PlayerStore").Get("equipment") end
@@ -276,6 +284,7 @@ function M.createWornBatch(options)
         equipmentData = { inventory = {}, equipped = copy(equipment and equipment.equipped or {}) },
         sourceInventory = equipment and equipment.inventory or {},
         copiedKeys = {}, copySeen = {},
+        includeArtifactEffects = options and options.includeArtifactEffects == true or false,
         teamContexts = options and options.reuseTeamContext and {} or nil,
     }
 end
@@ -358,6 +367,7 @@ function M.buildWornContext(heroId, options, batch)
             local ctx = {
                 heroId = id, hero = target, heroesData = heroes, equipmentData = batch.equipmentData,
                 artifactsData = batch.artifactsData, talentsData = batch.talentsData,
+                includeArtifactEffects = batch.includeArtifactEffects,
                 seeds = previous.seeds, teamUnits = previous.teamUnits, memo = {}, scores = {},
             }
             ctx.currentPower = powerFor(ctx, target, ctx.teamUnits, ctx.equipmentData)
@@ -373,6 +383,7 @@ function M.buildWornContext(heroId, options, batch)
     local ctx = finishContext({
         heroId = id, heroesData = heroes, equipmentData = batch.equipmentData,
         artifactsData = batch.artifactsData, talentsData = batch.talentsData,
+        includeArtifactEffects = batch.includeArtifactEffects,
         seeds = {}, teamUnits = {}, memo = {}, scores = {},
     })
     if ctx and reuse then reuse[teamKey] = ctx end
@@ -516,6 +527,7 @@ function M.evaluateAdvancement(ctx, branchId)
     local options = {
         heroes = ctx.heroesData, equipment = ctx.equipmentData,
         artifacts = ctx.artifactsData, talents = ctx.talentsData,
+        includeArtifactEffects = ctx.includeArtifactEffects,
         heroData = beforeData,
     }
     local before = M.buildContext(ctx.heroId, options)
@@ -677,6 +689,7 @@ function M.getBadgeContext(heroId, checkpoint)
         heroesData = copy(heroes or {}, nil, checkpoint),
         artifactsData = copy(artifacts or {}, nil, checkpoint),
         talentsData = copy(talents or {}, nil, checkpoint),
+        includeArtifactEffects = false,
         seeds = {}, teamUnits = {}, memo = {}, scores = {},
     }
     ctx = finishContext(ctx, checkpoint)

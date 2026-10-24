@@ -377,11 +377,23 @@ end
 ---@param level number
 ---@param essence integer
 function BlacksmithConfig.recordAutoDecompose(lootboxData, quality, level, essence)
+    BlacksmithConfig.recordAutoDecomposeBatch(lootboxData, quality, level, 1, essence)
+end
+
+--- 批量版本：同一品质/等级一次记入多件，通知累计值与逐件调用完全一致。
+---@param lootboxData table
+---@param quality number
+---@param level number
+---@param count number
+---@param essence number 单件精粹；总精粹按 count 倍累加
+function BlacksmithConfig.recordAutoDecomposeBatch(lootboxData, quality, level, count, essence)
+    local pieces = math.max(0, math.floor(tonumber(count) or 0))
+    if pieces <= 0 then return end
     lootboxData.autoDecomposeNotice = lootboxData.autoDecomposeNotice or { seq = 0, count = 0, essence = 0 }
     local notice = lootboxData.autoDecomposeNotice
-    notice.seq = (notice.seq or 0) + 1
-    notice.count = (notice.count or 0) + 1
-    notice.essence = (notice.essence or 0) + essence
+    notice.seq = (notice.seq or 0) + pieces
+    notice.count = (notice.count or 0) + pieces
+    notice.essence = (notice.essence or 0) + essence * pieces
     notice.quality = quality
     notice.level = level
     notice.time = os.time()  -- 客户端据此忽略登录时读到的过期通知

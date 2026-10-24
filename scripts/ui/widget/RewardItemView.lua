@@ -16,6 +16,10 @@ function M.name(item)
         local def = EquipmentConfig.ITEMS[item.templateId]
         return def and def.name or tostring(item.templateId or "装备")
     end
+    if item.type == "equipbatch" then
+        local quality = EquipmentConfig.QUALITY[item.quality or 1]
+        return string.format("%s装备", quality and quality.name or "")
+    end
     if item.type == "hero" then
         local def = HeroConfig.get(tonumber(item.heroId) or 0)
         return def and def.name or "英雄"
@@ -70,7 +74,7 @@ function M.draw(vg, item, cx, cy, size, getResourceIcon, getHeroIcon)
         if bg >= 0 then DrawUtil.drawImageCentered(vg, bg, 0, 0, 160, 160, 1) end
         local img = -1
         if item.type == "equip" then img = ImageCache.getEquipIcon(item.templateId)
-        elseif item.type ~= "seed" then img = getResourceIcon(item.type) end
+        elseif item.type ~= "seed" and item.type ~= "equipbatch" then img = getResourceIcon(item.type) end
         if img >= 0 then
             if item.type == "equip" then DarkIcon.drawIconDark(vg, img, 0, 0, 136, 136, 1)
             else DrawUtil.drawImageCentered(vg, img, 0, 0, 136, 136, 1) end
@@ -85,6 +89,8 @@ function M.draw(vg, item, cx, cy, size, getResourceIcon, getHeroIcon)
                     NVG_ALIGN_CENTER + NVG_ALIGN_TOP, 230, 198, 125, 3)
             end
             if item.level and item.level > 0 then badge(vg, "Lv." .. tostring(item.level), 72, 72) end
+        elseif item.type == "equipbatch" then
+            badge(vg, M.quantity(item), 72, 72)
         elseif item.amount and item.amount > 0 then badge(vg, M.quantity(item), 72, 72) end
     end
     nvgRestore(vg)

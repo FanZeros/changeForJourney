@@ -56,7 +56,12 @@ local function noTickets(result)
     eq(result.sweepTicket, nil, "不添加其他券字段")
 end
 local function conserved(result)
-    eq(result.equipCount, #result.equips, "实际装备件数守恒")
+    if result.batchQualities then
+        -- 聚合路径不物化装备；件数守恒由抽样序列承担。
+        eq(result.equipCount, #result.batchQualities, "聚合装备件数守恒")
+    else
+        eq(result.equipCount, #result.equips, "实际装备件数守恒")
+    end
     local sum = 0
     for key, value in pairs(result.scrollDrops) do
         local known = false
@@ -77,6 +82,16 @@ local function qualityStub(h)
         return { level = level, quality = quality, fakeBatchQualityRecord = true }
     end
     return records
+end
+
+--- 大批掉落改为只保留品质序列；统计口径与逐件生成完全一致。
+---@param result table
+---@return integer[]|nil
+local function batchQualities(result)
+    if not result.batchQualities then return nil end
+    local counted = {}
+    for _, quality in ipairs(result.batchQualities) do counted[quality] = (counted[quality] or 0) + 1 end
+    return counted, #result.batchQualities
 end
 local function realRecorder(h)
     local original = h.ES.generateRandom
@@ -457,21 +472,29 @@ local function qualityStatistics()
         end
     end
     -- 专门480000次品质真采样，红尾期望48，6sigma+3容差约44.6，缺失红尾会失败。
-    -- 仅质量stub，绝不为稀有事件验证生成48万完整装备。
+    -- 超过聚合阈值时不再逐件生成装备；品质序列仍逐次抽样，统计口径不变。
     local h = fixture()
     local value = entry(h, 101, { monsters = { 1 }, bossId = 0, idleCount = 1000, dropRate = 1, scrollDropRate = 0 })
     local generated = qualityStub(h)
+    local sampled = { 0, 0, 0, 0, 0, 0 }
+    local sampledTotal = 0
     for _, seed in ipairs(SEEDS) do
         h.env.math.randomseed(seed)
         for _ = 1, 60 do
             local result = calculate(h, value)
-            eq(result.equipCount, 1000, "红尾组实际1000质量stub")
+            eq(result.equipCount, 1000, "红尾组实际1000品质抽样")
+            local counts, total = batchQualities(result)
+            check(counts ~= nil, "1000件超过阈值走聚合")
+            eq(total, 1000, "聚合保留全部1000次品质抽样")
+            for q = 1, 6 do sampled[q] = sampled[q] + (counts[q] or 0) end
+            sampledTotal = sampledTotal + total
         end
     end
-    eq(generated.count, 480000, "八种子红尾总样本数")
-    countFit(generated.quality[6], 480000, 0.0001, "真采样红尾万分一")
-    check(generated.quality[6] > 0, "多seed真实出现红尾")
-    for q = 2, 5 do eq(generated.quality[q], 0, "纯普通池不凭空产生中间品质") end
+    eq(generated.count, 0, "聚合路径不逐件物化装备")
+    eq(sampledTotal, 480000, "八种子红尾总样本数")
+    countFit(sampled[6], 480000, 0.0001, "真采样红尾万分一")
+    check(sampled[6] > 0, "多seed真实出现红尾")
+    for q = 2, 5 do eq(sampled[q], 0, "纯普通池不凭空产生中间品质") end
 end
 
 local function resourceStatistics()
@@ -526,29 +549,34 @@ local function largeBatches()
     eq(zero.equipCount, 0, "零掉装无伪装备")
     eq(empty.rngCalls, 0, "退化二项零随机，不逐杀耗骰")
     conserved(zero)
-    -- 以下两组实际完整ES，不是前面的质量stub；只保留生成对象，不存额外深拷贝。
+    -- 以下两组验证大批量聚合：不再逐件物化，但品质序列完整、件数守恒。
     for _, id in ipairs({ 101, 200001 }) do
         local h = fixture(49979687)
         local value = entry(h, id)
-        local records = realRecorder(h)
+        h.ES.generateRandom = function() error("大批量聚合路径不得逐件生成装备") end
         local generatedProgress, actualTotal = 0, -1
         local result = calculate(h, value, 100000, 0, { checkpoint = function(phase, done, total)
             eq(phase, "generate", "100k阶段")
             if total > 0 then
-                if done == 0 then actualTotal = total else eq(done, generatedProgress + 1, "100k实际装备进度连续"); generatedProgress = done end
+                if done == 0 then actualTotal = total
+                else
+                    check(done > generatedProgress and done <= total, "100k聚合进度单调不越界")
+                    generatedProgress = done
+                end
                 eq(total, actualTotal, "装备total不随品质组重排")
             else eq(done, 0, "大批采样只0/0") end
         end })
-        check(#records > 0, "100k自然掉落确有完整装备")
+        local counts, total = batchQualities(result)
+        check(counts ~= nil, "100k自然掉落走聚合")
+        eq(total, result.equipCount, "100k聚合件数=抽样数")
+        eq(generatedProgress, result.equipCount, "完成进度等于实际抽样数")
+        eq(#result.equips, 0, "聚合路径不返回逐件装备")
         eq(result.kills, value.idleCount * 100000, "100k击杀守恒")
-        eq(result.equipCount, #records, "100k实际generateRandom次数=结果数")
-        eq(generatedProgress, #records, "完成进度等于实际生成数")
-        for i, equip in ipairs(records) do
-            eq(result.equips[i], equip, "100k完整原件顺序和引用")
-            check(type(equip.baseStats) == "table" and type(equip.affixes) == "table", "100k完整ES属性及词缀")
-        end
+        local sum = 0
+        for _, count in pairs(counts) do sum = sum + count end
+        eq(sum, total, "各品质计数之和等于总件数")
         conserved(result)
-        print(TAG .. "SCALE realES stage=" .. id .. " kills=" .. result.kills .. " generated=" .. #records .. " rng=" .. h.rngCalls)
+        print(TAG .. "SCALE aggregate stage=" .. id .. " kills=" .. result.kills .. " sampled=" .. total .. " rng=" .. h.rngCalls)
     end
 end
 

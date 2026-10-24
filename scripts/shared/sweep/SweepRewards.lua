@@ -141,8 +141,24 @@ local function rollScrolls(target, amount, checkpoint)
     end
 end
 
+--- 超过此件数的掉落改为按品质聚合；小批量仍逐件生成，保持原行为。
+M.BATCH_EQUIP_THRESHOLD = 500
+
 local function generateEquips(result, amount, level, rollQuality, checkpoint)
     if checkpoint then checkpoint("generate", 0, amount) end
+    if amount > M.BATCH_EQUIP_THRESHOLD then
+        -- 品质仍逐次独立抽取：分布与随机消耗不变，只跳过装备实例构造与逐件保存。
+        -- 品质序列用于结算时按原顺序填满背包，其余按品质聚合成遗匣条目。
+        local qualities = {}
+        for index = 1, amount do
+            qualities[index] = rollQuality()
+            if checkpoint and index % 512 == 0 then checkpoint("generate", index, amount) end
+        end
+        result.batchQualities = qualities
+        result.equipCount = amount
+        if checkpoint then checkpoint("generate", amount, amount) end
+        return
+    end
     for index = 1, amount do
         -- 品质按掉落顺序独立抽取，不按品质分组，以免改变有限仓位优先接收的分布。
         local equip = EquipmentSystem.generateRandom(level, rollQuality())
@@ -234,7 +250,9 @@ function M.calculate(entry, heroCount, count, roll, luck, teamIdx, control)
         end
     end
     result.kills = kills * count
-    if roll then result.equipCount = #result.equips end
+    if result.batchQualities then
+        -- 聚合路径的实际件数已逐次抽样得出；equipCount 在 generateEquips 内写入。
+    elseif roll then result.equipCount = #result.equips end
     if not result.scrollCount then
         result.scrollCount = 0
         for _, amount in pairs(result.scrollDrops) do result.scrollCount = result.scrollCount + amount end

@@ -426,7 +426,7 @@ function Start()
             m.start(); rt.updateBefore(); f.section("主循环.Update", 4, 2); f.advance(60); rt.updateBefore(); m.mark(f.env.player)
             local text = m.getReport()
             eq(m.isEnabled(), false, "getReport stops collection")
-            check(text:find("性能诊断报告 v6 · 2026-10-24", 1, true), "详情性能修复构建明确标识v6日期")
+            check(text:find("性能诊断报告 v7 · 2026-10-24", 1, true), "绘制减负及固定动作分类构建明确标识v7日期")
             check(text:find("inclusive", 1, true) and text:find("CPU", 1, true) and text:find("GPU", 1, true), "report caveats readable")
             check(not text:find("PRIVATE_SENTINEL", 1, true), "report never serializes player/module payload")
             local s = reportData(text)
@@ -833,6 +833,48 @@ function Start()
             f.loaded["not-a-module"] = true
             eq(hooks.getModule("not-a-module"), nil, "non-table cache marker ignored")
             eq(#f.requires, 3, "all explicit installs require no business")
+        end)
+        run("Hooks fixed action/module labels / privacy / nested returns", function()
+            local f = fixture(); local hooks = f.env.require("boot.PerformanceHooks"); local m = f.monitor
+            local calls, received = 0, {}
+            local dispatcher = { set = function(name, data, options)
+                calls = calls + 1; received = { name, data, options }
+                f.advance(3, 1)
+                return data, nil, options, nil
+            end }
+            local bridge = { dispatch = function(action, params)
+                local result = table.pack(dispatcher.set(params.module, params, params.options))
+                f.advance(2, 1)
+                return table.unpack(result, 1, result.n)
+            end }
+            eq(hooks.install({ ["runtime.ClientDispatcher"] = dispatcher,
+                ["runtime.LocalActionBridge"] = bridge }), 2, "two classified exports installed")
+            local wrapped = bridge.dispatch
+            eq(hooks.install(), 0, "classified wrapping idempotent"); eq(bridge.dispatch, wrapped, "same classified wrapper")
+            local params = { module = "equipment", options = {}, secret = "PRIVATE_SENTINEL_PAYLOAD" }
+            local beforeWall, beforeCpu = f.wallReads, f.cpuReads
+            local disabled = table.pack(bridge.dispatch("equip_item", params))
+            eq(disabled.n, 4, "disabled trailing nil preserved")
+            eq(f.wallReads, beforeWall, "disabled classified hook reads no wall clock")
+            eq(f.cpuReads, beforeCpu, "disabled classified hook reads no CPU clock")
+            eq(calls, 1, "disabled invokes business once")
+            m.start(); m.beginFrame("角色/仓库/三队战斗")
+            local result = table.pack(bridge.dispatch("equip_item", params))
+            eq(result.n, 4, "classified trailing nil preserved")
+            eq(result[1], params, "payload identity preserved"); eq(result[3], params.options, "options identity preserved")
+            eq(received[1], "equipment", "module argument preserved"); eq(calls, 2, "enabled business called once")
+            local unknown = { module = "PRIVATE_SENTINEL_MODULE", options = {} }
+            bridge.dispatch("PRIVATE_SENTINEL_ACTION", unknown)
+            f.frame(60)
+            local s = m.snapshot()
+            eq(section(s, "本地动作.dispatch.穿戴").calls, 1, "fixed equip action measured")
+            eq(section(s, "数据同步.set.装备").calls, 1, "fixed equipment module measured")
+            eq(section(s, "本地动作.dispatch.其他").calls, 1, "unknown action uses bounded fallback")
+            eq(section(s, "数据同步.set.其他").calls, 1, "unknown module uses bounded fallback")
+            eq(section(s, "本地动作.dispatch").calls, 2, "coarse parent remains inclusive")
+            for _, row in ipairs(s.sections) do check(not row.name:find("PRIVATE_SENTINEL", 1, true), "no arbitrary label leak") end
+            local report = m.getReport()
+            check(not report:find("PRIVATE_SENTINEL", 1, true), "parameters and arbitrary names absent from report")
         end)
         run("Hooks expanded synchronous coarse exports / empty cache", function()
             local f = fixture(); local hooks = f.env.require("boot.PerformanceHooks")

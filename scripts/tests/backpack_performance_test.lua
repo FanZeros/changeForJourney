@@ -21,6 +21,9 @@ local function equal(a, b)
     return true
 end
 local function source(name)
+    if _G.BACKPACK_SOURCE_OVERRIDES and _G.BACKPACK_SOURCE_OVERRIDES[name] then
+        return _G.BACKPACK_SOURCE_OVERRIDES[name]
+    end
     if name == "ui.backpack.BackpackEquipmentList" and _G.BACKPACK_BASELINE_SOURCE then
         return _G.BACKPACK_BASELINE_SOURCE
     end
@@ -33,10 +36,16 @@ end
 
 local function fixture()
     local data, revisions, modules = {}, {}, {}
-    local counts = { evaluate = 0, apply = 0, power = 0, build = 0, io = 0, hydrate = 0 }
+    local counts = { evaluate = 0, apply = 0, power = 0, build = 0, io = 0, hydrate = 0,
+        captures = 0, classCheckers = 0, sorts = 0, concats = 0, heroReads = 0 }
     local metrics = { drawEvaluate = 0, drawPower = 0, updateMaxMs = 0, updateMaxEvaluate = 0, pumps = 0 }
     local env = setmetatable({}, { __index = _G })
     env._G, env.time = env, { elapsedTime = 100 }
+    env.table = setmetatable({ sort = function(...)
+        counts.sorts = counts.sorts + 1; return table.sort(...)
+    end, concat = function(...)
+        counts.concats = counts.concats + 1; return table.concat(...)
+    end }, { __index = table })
     env.package = { loaded = modules, preload = {}, path = "" }
     env.File = function() counts.io = counts.io + 1; error("player IO forbidden") end
     env.fileSystem = setmetatable({}, { __index = function()
@@ -49,6 +58,7 @@ local function fixture()
     local forbiddenReads = {}
     local store = { Get = function(key)
             assert(not forbiddenReads[key], "unexpected manual dependency " .. key)
+            if key == "heroes" then counts.heroReads = counts.heroReads + 1 end
             return data[key]
         end,
         GetRevision = function(key) return revisions[key] or 0 end,
@@ -139,6 +149,20 @@ local function fixture()
                     counts[counter] = counts[counter] + 1
                     return original(...)
                 end
+            end
+        elseif name == "ui.character.detail.EquipmentWearability" then
+            local original = value.createClassChecker
+            value.createClassChecker = function(...)
+                counts.classCheckers = counts.classCheckers + 1; return original(...)
+            end
+        elseif name == "ui.backpack.BackpackEquipmentList" then
+            local original = value.bind
+            value.bind = function(deps)
+                local capture = deps.capture
+                deps.capture = function(...)
+                    counts.captures = counts.captures + 1; return capture(...)
+                end
+                return original(deps)
             end
         elseif name == "systems.CombatPower" then
             local original = value.calculate
@@ -305,8 +329,112 @@ local function runAvailabilityTests()
     end
 end
 
+local function runRenderHotPathTests()
+    for _, classFilter in ipairs({ "all", "seal" }) do
+        local f = fixture()
+        -- 三队同时运行的25名册；只读CPU绘图spy，不启动战斗/存档或真GPU。
+        for id = 1, 25 do
+            f.data.heroes.roster[id] = { level = 80, awakening = { [1] = true },
+                extraTalent = { stacks = id, nested = { issuedCards = id * 2 } } }
+        end
+        f.data.heroes.teams = { { slots = { 1, 2, 3, 4 } }, { slots = { 5, 6, 7, 8 } },
+            { slots = { 9, 10, 11, 12 } } }
+        f.panel.open("left", "equip")
+        f.panel.setEquipmentSlotFilter(nil, 1)
+        f.filters.state.classFilter = classFilter
+        f.update(); f.draw()
+        check(#f.list() == 500 and #f.drawIds > 0, "500-entry three-team render benchmark is populated")
+        local before = copy(f.counts)
+        local start, frames = os.clock(), 240
+        for _ = 1, frames do f.draw() end
+        local elapsed = (os.clock() - start) * 1000
+        local captures, classCheckers, sorts, concats = f.counts.captures - before.captures,
+            f.counts.classCheckers - before.classCheckers, f.counts.sorts - before.sorts,
+            f.counts.concats - before.concats
+        print(string.format("%s RENDER_CPU class=%s frames=%d meanMs=%.4f captures=%d classCheckers=%d sorts=%d concats=%d hydrate=%d",
+            TAG, classFilter, frames, elapsed / frames, captures, classCheckers, sorts, concats,
+            f.counts.hydrate - before.hydrate))
+        if not _G.BACKPACK_SOURCE_OVERRIDES then
+            check(captures == frames, "Render captures once, not present + getCommittedList twice")
+            check(classCheckers == 0 and sorts == 0, "warm Render never rebuilds class rules or sorts/serializes hero fields")
+            check(concats <= frames * 4, "Render signature concatenations are constant, not per roster table")
+        end
+        check(f.counts.build == before.build and f.counts.hydrate == before.hydrate
+            and f.counts.evaluate == before.evaluate and f.counts.power == before.power,
+            "warm Render has zero preparation/hydration/scoring work")
+        local shown = f.panel.peekEquipAt(160, 840)
+        f.expFlow(true)
+        f.draw()
+        check(f.panel.peekEquipAt(160, 840).seq == shown.seq, "exp-only root replacement retains visible pointer order")
+        -- 必须在同一Update之后、Render之前观察品质/集合的原地变化；不能按帧号缓存。
+        f.update()
+        f.filters.state.qualitySet[6] = true
+        check(f.panel.peekEquipAt(160, 840) == nil, "same-frame quality patch rejects cached presented list")
+        f.draw(); check(#f.drawIds == 0, "same-frame quality patch cannot render previous filter")
+        f.update(); f.draw()
+        check(#f.drawIds > 0, "current filter repopulates completely next Update")
+        f.filters.state.setFilter.none = true
+        check(f.panel.peekEquipAt(160, 840) == nil, "same-frame selected-set insertion rejects cached filter")
+        f.update(); f.draw()
+        f.filters.state.setFilter.none = nil
+        check(f.panel.peekEquipAt(160, 840) == nil, "same-frame selected-set deletion rejects cached filter")
+        f.filters.state.qualitySet = {}
+        f.panel.setEquipmentSlotFilter(nil, 2)
+        f.draw(); check(#f.drawIds == 0, "hero switch never displays previous hero version")
+        f.update(); f.draw()
+        check(#f.list() == 500 and #f.drawIds > 0, "hero switch keeps complete basic inventory available")
+        check(f.counts.io == 0, "render benchmark never accesses player files")
+    end
+end
+
+local function runSameFrameCaptureTests()
+    local f = fixture()
+    local scheduler = f.env.require("ui.backpack.BackpackEquipmentList").bind({
+        capture = function() return { heroId = 1, filterKey = "same-frame" } end,
+        buildBasic = function() return { { seq = 1, powerPending = true } } end,
+        build = function() return { { seq = 1, power = 123, upgrade = true } } end,
+        refresh = function(list, _, pending)
+            if pending then return { { seq = list[1].seq, powerPending = true } } end
+            return list
+        end,
+    })
+    local mutations = {
+        function() f.data.heroes.roster[1].level = 81 end,
+        function() f.data.heroes.roster[1].advBranch = { first = 104 } end,
+        function() f.data.heroes.roster[1].awakening[1] = true end,
+        function() f.data.heroes.roster[1].extraTalent.nested = { value = 1 } end,
+        function() f.data.heroes.roster[1].extraTalent.nested.value = 2 end,
+        function() f.data.heroes.roster[1].extraTalent.nested = nil end,
+        function() f.data.heroes.teams[1].slots[1] = { heroId = 2 } end,
+        function() f.data.heroes.roster[3] = { level = 80 } end,
+        function() f.data.heroes.roster[3] = nil end,
+    }
+    for i, mutate in ipairs(mutations) do
+        scheduler.getEquipList()
+        scheduler.update()
+        check(scheduler.present()[1].power == 123, "same-frame fixture starts scored " .. i)
+        mutate() -- 不通知且不再Update；Render读取必须自己发现，不允许借同帧旧快照。
+        local rendered = scheduler.present()
+        check(rendered[1].power == nil and rendered[1].powerPending,
+            "Render rejects same-frame unnotified combat patch " .. i)
+        check(scheduler.getPresentedList()[1].power == nil,
+            "pointer cannot resurrect invalid score " .. i)
+    end
+    scheduler.getEquipList(); scheduler.update()
+    local scored = scheduler.present()
+    f.expFlow(true)
+    check(scheduler.present() == scored, "exp-only copied roster preserves scored identity")
+    scheduler.freezeForClose()
+    f.data.heroes.roster[1].level = 1
+    check(scheduler.present() == scored and #scheduler.getPresentedList() == 0,
+        "closing retains drawn score snapshot but disables pointer")
+end
+
 local function runTests()
+    runSameFrameCaptureTests()
+    if _G.BACKPACK_RENDER_ONLY then runRenderHotPathTests(); return end
     runAvailabilityTests()
+    runRenderHotPathTests()
     if _G.BACKPACK_AVAILABILITY_ONLY then return end
     local f = fixture()
     local panel, data, metrics = f.panel, f.data, f.metrics

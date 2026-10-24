@@ -31,7 +31,19 @@ local function fixture()
     local actions, icons, latest = {}, {}, {}
     local cards = 0
     local metrics = { drawColdBuild = 0, updateMaxMs = 0, updates = 0 }
+    local work = { phase = false, version = 0, dependencies = 0, signature = 0, sort = 0, concat = 0, bytes = 0 }
     local env = setmetatable({}, { __index = _G })
+    env.table = setmetatable({
+        sort = function(...)
+            if work.phase then work.sort = work.sort + 1 end
+            return table.sort(...)
+        end,
+        concat = function(...)
+            local result = table.concat(...)
+            if work.phase then work.concat, work.bytes = work.concat + 1, work.bytes + #result end
+            return result
+        end,
+    }, { __index = table })
     env._G, env.time, env.H_SEAM_BACK = env, { elapsedTime = 100 }, true
     env.File = function() counts.io = counts.io + 1; error("player IO forbidden") end
     env.fileSystem = setmetatable({}, { __index = function() return env.File end })
@@ -116,6 +128,15 @@ local function fixture()
             local original = value[method]
             value[method] = function(...) counts[counter] = counts[counter] + 1; return original(...) end
         end
+        local probes = name == "ui.character.detail.CharacterDetailPreparation" and { version = "version" }
+            or name == "ui.character.detail.CharacterDetailSnapshot" and { dependencies = "dependencies", signature = "signature" } or {}
+        for method, counter in pairs(probes) do
+            local original = value[method]
+            value[method] = function(...)
+                if work.phase then work[counter] = work[counter] + 1 end
+                return original(...)
+            end
+        end
         return value
     end
     local Detail = env.require("ui.character.detail.CharacterDetail")
@@ -178,6 +199,27 @@ local function fixture()
         end
         error("detail queue starved")
     end
+    function f.measure(label, frames)
+        local samples = {}
+        for _, phase in ipairs({ "render", "update", "pair" }) do
+            for _, key in ipairs({ "version", "dependencies", "signature", "sort", "concat", "bytes" }) do work[key] = 0 end
+            collectgarbage("collect")
+            local heap = collectgarbage("count")
+            local started = os.clock()
+            work.phase = phase
+            for _ = 1, frames do
+                if phase ~= "render" then Detail.update(1 / 60) end
+                if phase ~= "update" then Detail.draw({}) end
+            end
+            work.phase = false
+            local elapsed = (os.clock() - started) * 1000
+            samples[phase] = copy(work)
+            print(string.format("%s HOTPATH %s phase=%s frames=%d meanMs=%.4f heapDeltaKiB=%.1f version=%d dependencies=%d signature=%d sort=%d concat=%d concatBytes=%d", TAG,
+                label, phase, frames, elapsed / frames, collectgarbage("count") - heap, work.version,
+                work.dependencies, work.signature, work.sort, work.concat, work.bytes))
+        end
+        return samples
+    end
     function f.enableRealPopup()
         modules["ui.character.equip.EquipmentDetail"] = nil
         local function drawLeaf(ctx, equip, slot, diff)
@@ -221,6 +263,12 @@ local function runTests()
         "first Update renders nonzero radar, rows and current candidate while scores pending")
     local frames = f.finish(true)
     f.draw()
+    local readyWork = f.measure("ready-500", 120)
+    for _, phase in ipairs({ "render", "update", "pair" }) do
+        local sample = readyWork[phase]
+        check(sample.dependencies == 0 and sample.signature == 0 and sample.sort == 0 and sample.concat == 0,
+            "stable " .. phase .. " performs no full dependency serialization, sorting or concatenation")
+    end
     check(frames > 1 and not d.getPreparedEquipment().pending, "continuous roster/team exp finishes private worker")
     check(equal(before.equipment, data.equipment) and equal(before.artifacts, data.artifacts)
         and equal(before.talents, data.talents), "preparation never mutates live equipment/artifacts/talents")
@@ -241,6 +289,59 @@ local function runTests()
     local oracle = Preview.build(1, 80, 3, nil, options)
     check(equal(result.panel.rows, oracle.rows) and equal(result.panel.currentSets, oracle.currentSets)
         and equal(result.panel.previewSets, oracle.previewSets), "compact preview equals full synchronous oracle")
+    local SnapshotProbe = f.env.require("ui.character.detail.CharacterDetailSnapshot")
+    local PreparationProbe = f.env.require("ui.character.detail.CharacterDetailPreparation")
+    local worn = data.equipment.inventory["1"]
+    local candidateItem = data.equipment.inventory["3"]
+    for index, target in ipairs({ worn, candidateItem, data.heroes.roster[1].extraTalent,
+        data.artifacts, data.talents.litNodes }) do
+        local baselinePanel = f.panel.getPrepared(1, {})
+        local original = target._detailPatchProbe
+        target._detailPatchProbe = { nested = { value = index } }
+        local countsBefore = copy(f.counts)
+        for _ = 1, 3 do
+            check(d.getPreparedEquipment().pending and f.panel.getPrepared(1, {}).pending,
+                "same-frame nested in-place patch rejects both consumers repeatedly " .. index)
+        end
+        f.draw()
+        check(equal(countsBefore, f.counts) and f.latest.preview == nil,
+            "invalid render does not rebuild attribute/scoring snapshot " .. index)
+        target._detailPatchProbe = original
+        check(not d.getPreparedEquipment().pending and f.panel.getPrepared(1, {}) == baselinePanel,
+            "exact-content ABA restores original compatible snapshot " .. index)
+    end
+    -- 显式guard与不传guard的默认version分别校验，复用request也不能留下旧key。
+    local guard = {}
+    local request = PreparationProbe.version(f.panel.capture(1), guard, true)
+    local signatureBefore = PreparationProbe.version(f.panel.capture(1)).panelKey
+    candidateItem._detailPatchProbe = { value = 1 }
+    PreparationProbe.version(request, guard, false)
+    check(request.key == nil and request.panelKey == nil,
+        "guarded read clears old keys on reused request after live mutation")
+    local signatureAfter = PreparationProbe.version(f.panel.capture(1)).panelKey
+    check(signatureAfter ~= signatureBefore, "default version remains stateless full-content compatible")
+    candidateItem._detailPatchProbe = nil
+    local candidateLevel = candidateItem.level
+    candidateItem.level = candidateLevel + 1
+    check(d.getPreparedEquipment().pending and f.panel.getPrepared(1, {}).pending,
+        "existing candidate scalar mutation is detected against independent frozen item")
+    candidateItem.level = candidateLevel
+    local wornItem = data.equipment.inventory["1"]
+    data.equipment.inventory["1"] = nil
+    check(d.getPreparedEquipment().pending and f.panel.getPrepared(1, {}).pending,
+        "removed worn item immediately rejects frozen consumers")
+    data.equipment.inventory["1"] = wornItem
+    local absentFrozen = SnapshotProbe.freezeDependencies(data, 99999, 1)
+    data.equipment.inventory["99999"] = copy(candidateItem)
+    check(not SnapshotProbe.matchesDependencies(absentFrozen, data.heroes, data.equipment, data.artifacts, data.talents, 1),
+        "newly materialized previously absent candidate rejects frozen baseline")
+    data.equipment.inventory["99999"] = nil
+    local frozen = SnapshotProbe.freezeDependencies(data, 3, 1)
+    local inventoryGuard = data.equipment.inventory
+    setmetatable(inventoryGuard, { __pairs = function() error("Render inventory enumeration forbidden") end })
+    check(SnapshotProbe.matchesDependencies(frozen, data.heroes, data.equipment, data.artifacts, data.talents, 1),
+        "read-only validator only point-looks-up inventory")
+    setmetatable(inventoryGuard, nil)
     local builds = f.counts.build
     for _ = 1, 12 do f.exp(); f.update(); f.draw() end
     check(f.counts.build == builds, "exp plus invalidate/markDirty does not rebuild completed semantic version")
@@ -482,6 +583,12 @@ local function runTests()
         "full worn three-team star gate equipment mode first Update equals full inventory oracle")
     check(equal(heavyBefore, data), "atomic panel stress never mutates live sources")
     f.draw()
+    f.finish(false)
+    local heavyWork = f.measure("ready-three-team-72", 120)
+    check(heavyWork.render.dependencies == 0 and heavyWork.render.signature == 0
+        and heavyWork.render.sort == 0 and heavyWork.render.concat == 0
+        and heavyWork.pair.sort == 0 and heavyWork.pair.concat == 0,
+        "72 worn items remove serialization work from whole Update+Render, not just timed draw")
     f.panel.toggleAttributeMode()
     -- 属性准备失败不阻断宿主，不提交失败版本；重试和cancel后可恢复。
     local Preparation = f.env.require("ui.character.detail.CharacterDetailPreparation")

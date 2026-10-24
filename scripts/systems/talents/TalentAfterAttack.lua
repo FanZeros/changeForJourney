@@ -1099,7 +1099,7 @@ function M.bind(deps)
         end
     end
 
-    -- 节点120 趁胜追击: 连续攻击同一目标，从第2击起每次+0.5%攻速，最多5层
+    -- 节点120 趁胜追击: 连续攻击同一目标，从第2击起每次+0.25%攻速，最多5层
     if hasStarNode(attacker, 120) and attacker.attrs and target and (not result or result.category ~= "healing") then
         local as = ensureState(attacker)
         if as then
@@ -1116,7 +1116,7 @@ function M.bind(deps)
             local stacksNow = as.pursuitStacks or 0
             if stacksNow > 0 then
                 attacker.attrs:addModifier("starmap_pursuit", {
-                    { key = AD.ATK_SPEED, flat = stacksNow * 0.5 },
+                    { key = AD.ATK_SPEED, flat = stacksNow * 0.25 },
                 })
             end
             talentLog("[Talent] 趁胜追击: " .. (attacker.name or "?") .. " 层数=" .. tostring(stacksNow))

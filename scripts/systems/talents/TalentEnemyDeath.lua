@@ -90,14 +90,14 @@ function M.bind(deps)
                     talentLog("[Talent] 内鬼 觉醒6: 击杀→暴击伤害" .. s.killCritDmgStacks .. "%/100%")
                 end
 
-                -- ======== 星图节点126 杀戮盛宴 击杀敌人后攻速7.5%，持续5秒）========
+                -- ======== 星图节点126 杀戮盛宴 击杀敌人后攻速3.75%，持续5秒）========
                 if hasStarNode(ally, 126) and s and ally.attrs then
                     s.slaughterTimer = 5.0
                     ally.attrs:removeModifier("starmap_slaughter")
                     ally.attrs:addModifier("starmap_slaughter", {
-                        { key = AD.ATK_SPEED, flat = 7.5 },
+                        { key = AD.ATK_SPEED, flat = 3.75 },
                     })
-                    talentLog("[Talent] 杀戮盛宴 " .. (ally.name or "?") .. " 攻速7.5% (5s)")
+                    talentLog("[Talent] 杀戮盛宴 " .. (ally.name or "?") .. " 攻速3.75% (5s)")
                 end
             end
         end

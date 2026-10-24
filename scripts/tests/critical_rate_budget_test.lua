@@ -495,7 +495,7 @@ local OLD_OUTPUT = {
     [208] = { comboRate = 12, comboDmgUp = 8 },
 }
 
-local OUTPUT_SCALE = { atkSpeed = 0.25, physAtkBonus = 0.4, magAtkBonus = 0.4,
+local OUTPUT_SCALE = { atkSpeed = 0.125, physAtkBonus = 0.4, magAtkBonus = 0.4,
     physDmgBonus = 0.25, magDmgBonus = 0.25, critDmg = 0.2,
     physCritDmg = 0.2, magCritDmg = 0.2, comboRate = 0.25, comboDmgUp = 0.5, dmgBonus = 0.25 }
 -- 只规范化本轮授权的数值位置；其他属性、概率、时长、阈值和全文仍锁定旧源hash。
@@ -505,6 +505,8 @@ local function frozenEffect(id, text)
         text = text:gsub(name .. "([+-])[%d%.]+%%", name .. "%1#%%")
     end
     if id == 127 then text = text:gsub("伤害加成%-[%d%.]+%%", "伤害加成-#%%") end
+    -- 136仅将漏解析的旧显示名改为正式属性名；数值另用真实属性与治疗公式锁定。
+    if id == 136 then text = text:gsub("暴击治疗", "治疗暴击加成") end
     local patterns = { [113] = { "增加[%d%.]+%%", "增加#%%" },
         [115] = { "×[%d%.]+%%", "×#%%" }, [128] = { "的[%d%.]+%%伤害加成", "的#%%伤害加成" },
         [204] = { "追加[%d%.]+%%伤害", "追加#%%伤害" }, [206] = { "追加[%d%.]+%%伤害", "追加#%%伤害" },
@@ -517,9 +519,9 @@ end
 local function testOutputBudget(f)
     local all = {}
     for id = 0, 208 do all[#all + 1] = id end
-    local totals = { atkSpeed = 49.75, physAtkBonus = 34.92, magAtkBonus = 25.12,
-        physDmgBonus = 39.5, magDmgBonus = 42.5, critDmg = 53.8,
-        physCritDmg = 46.4, magCritDmg = 45.6, comboRate = 44.25, comboDmgUp = 13, dmgBonus = -2.5 }
+    local totals = { atkSpeed = 24.875, physAtkBonus = 34.92, magAtkBonus = 25.12,
+        physDmgBonus = 39.5, magDmgBonus = 42.5, critDmg = 58.8,
+        physCritDmg = 46.4, magCritDmg = 45.6, comboRate = 44.25, comboDmgUp = 13, dmgBonus = -1 }
     local untouched = { str = 12, agi = 11, int = 13, vit = 13, luk = 7, spi = 8,
         physPen = 73, magPen = 64, physAtk = 6, magAtk = 6, hitValue = 13 }
     for _, classId in ipairs({ "seal", "spoil", "rift", "echo", "mask", "debt" }) do
@@ -528,9 +530,12 @@ local function testOutputBudget(f)
             local row = OLD_OUTPUT[id] or {}
             for key, scale in pairs(OUTPUT_SCALE) do
                 local expected = (row[key] or 0) * scale
+                -- 127单独修正收益/代价，不改独立旧常数或其他节点统一倍率。
+                if id == 127 and key == "critDmg" then expected = 15 end
+                if id == 127 and key == "dmgBonus" then expected = -1 end
                 if id == 106 and classId == "rift" and key == "magDmgBonus" then expected = expected + 1.25 end
                 if id == 108 and classId == "mask" and key == "critDmg" then expected = expected + 2 end
-                if id == 109 and classId == "echo" and key == "atkSpeed" then expected = expected + 1.25 end
+                if id == 109 and classId == "echo" and key == "atkSpeed" then expected = expected + 0.625 end
                 if id == 111 and classId == "spoil" and key == "physDmgBonus" then expected = expected + 1.25 end
                 eq(sum(entries, key), expected, classId .. "/单节点独立旧值倍率 " .. id .. "/" .. key)
             end
@@ -538,7 +543,7 @@ local function testOutputBudget(f)
         local entries = f.TE.collectEntries(all, classId)
         for key, total in pairs(totals) do
             local extra = (classId == "rift" and key == "magDmgBonus" or classId == "spoil" and key == "physDmgBonus") and 1.25
-                or (classId == "echo" and key == "atkSpeed") and 1.25
+                or (classId == "echo" and key == "atkSpeed") and 0.625
                 or (classId == "mask" and key == "critDmg") and 2 or 0
             eq(sum(entries, key), total + extra, classId .. "/全树来源预算 " .. key)
         end
@@ -554,7 +559,7 @@ local function testOutputBudget(f)
         check(same(attrs.final, snapshot), classId .. "clone不污染原属性")
     end
     local routes = {
-        { { 1,14,5,18,78,27,35,45,120,96,114,126,141,173,154,207,186,174,191,198 }, { atkSpeed = 35.75 } },
+        { { 1,14,5,18,78,27,35,45,120,96,114,126,141,173,154,207,186,174,191,198 }, { atkSpeed = 17.875 } },
         { { 2,11,19,30,38,52,123,135,147,162,167,199 }, { physDmgBonus = 26.25, physAtkBonus = 11, dmgBonus = 0 } },
         { { 4,7,107,26,34,43,57,190,197 }, { magAtkBonus = 11.92, magDmgBonus = 6, int = 5, magAtk = 6, magCritRate = 2 } },
     }
@@ -572,7 +577,7 @@ local function testOutputBudget(f)
         f.TE.applyToUnit(f.UA.create({}), ids, "seal")
         check(same(oldIds, ids), "旧litNodes不迁移/增删点 " .. ri)
     end
-    print(PREFIX .. "预算 atkSpeed=49.75 physDmgBonus=39.5 magDmgBonus=42.5 comboRate=44.25；六围/暴率保持")
+    print(PREFIX .. "预算 atkSpeed=24.875 physDmgBonus=39.5 magDmgBonus=42.5 comboRate=44.25；六围/暴率保持")
 end
 
 local function testStarMap(f)
@@ -630,6 +635,97 @@ local function testStarMap(f)
         local node = f.TSM.getNode(id)
         check(same({ id = node.id, adj = node.adj, effect = node.effect }, snapshot), "collect/apply不改节点 " .. id)
     end
+end
+
+local function testNodeBalance(f)
+    -- 逐原子校验全部静态主段，避免文案能翻译却被属性解析器静默跳过。
+    local runtimeOnly = { [0] = true, [113] = true, [115] = true, [125] = true, [126] = true, [128] = true }
+    for id = 0, 208 do
+        if not runtimeOnly[id] then
+            local effect = f.TSM.getNode(id).effect
+            local split = effect:find("；", 1, true)
+            local head = split and effect:sub(1, split - 1) or effect
+            head = head:gsub("，", " "):gsub(",", " ")
+            for atom in head:gmatch("%S+") do
+                atom = atom:gsub("^全体", ""):gsub("^远征队员", ""):gsub("^但", "")
+                check(#f.TE.parseEffect(atom, "seal") == 1, "静态属性原子真实可解析 " .. id .. "/" .. atom)
+            end
+        end
+    end
+    -- BFS只证明最短到达成本，不把它当成整条路线的最大DPS优化。
+    local distance, queue = { [0] = 0 }, { 0 }
+    local cursor = 1
+    while cursor <= #queue do
+        local id = queue[cursor]
+        for _, nextId in ipairs(f.TSM.getNode(id).adj) do
+            if distance[nextId] == nil then
+                distance[nextId] = distance[id] + 1
+                queue[#queue + 1] = nextId
+            end
+        end
+        cursor = cursor + 1
+    end
+    check(#queue == 209, "209节点全部从免费起点可达")
+    for id, cost in pairs({ [127] = 12, [133] = 9, [136] = 11, [165] = 9,
+        [197] = 9, [198] = 12, [199] = 12, [200] = 13 }) do
+        eq(distance[id], cost, "当前连线最短付费点数 " .. id)
+    end
+    for _, pair in ipairs({ {17,19,"magDmgBonus","physDmgBonus"}, {26,29,"magAtkBonus","physAtkBonus"},
+        {33,38,"magAtkBonus","physAtkBonus"}, {41,52,"magDmgBonus","physDmgBonus"},
+        {44,49,"magCritDmg","physCritDmg"}, {62,71,"magPen","physPen"},
+        {77,79,"magDmgBonus","physDmgBonus"}, {130,135,"magDmgBonus","physDmgBonus"},
+        {165,167,"magDmgBonus","physDmgBonus"}, {197,199,"magDmgBonus","physDmgBonus"} }) do
+        eq(sum(f.TE.collectEntries({ pair[1] }), pair[3]), sum(f.TE.collectEntries({ pair[2] }), pair[4]),
+            "物魔同档来源对称 " .. pair[1] .. "/" .. pair[2])
+    end
+    local formula = f.import("systems.CombatFormula")
+    local oldRandom = f.math.random
+    local ok, why = xpcall(function()
+        for _, classId in ipairs({ "seal", "spoil", "rift", "echo", "mask", "debt" }) do
+            local attrs = f.UA.create({ healAmount = 10000 })
+            f.TE.applyToUnit(attrs, { 136 }, classId)
+            eq(attrs:get("healCritRate"), 2.5, "136治疗暴率不改 " .. classId)
+            eq(attrs:get("healCritDmg"), 207, "136原7百分点真实生效 " .. classId)
+            f.math.random = function() return 0 end
+            eq(formula.calcHeal(attrs), 20700, "136真实暴击治疗公式 " .. classId)
+            f.math.random = function() return 0.025 end
+            eq(formula.calcHeal(attrs), 10000, "136治疗暴率严格边界不改 " .. classId)
+            f.TE.applyToUnit(attrs, { 136 }, classId)
+            eq(attrs:get("healCritDmg"), 207, "136重复应用不叠加 " .. classId)
+            attrs:removeModifier("talent_starmap")
+            eq(attrs:get("healCritDmg"), 200, "136卸除恢复基础暴击治疗 " .. classId)
+        end
+        -- 固定200个概率分位，使用真实rollCrit和UA；不是随机抽样或整场战斗DPS。
+        for _, crit in ipairs({ 0, 5, 10, 25, 50, 100 }) do
+            for _, baseDmg in ipairs({ 0, 50, 100 }) do
+                for _, baseCritDmg in ipairs({ 200, 300, 400 }) do
+                    local attrs = f.UA.create({ critRate = crit, critDmg = baseCritDmg, dmgBonus = baseDmg })
+                    f.TE.applyToUnit(attrs, { 127 }, "seal")
+                    eq(attrs:get("critDmg"), baseCritDmg + 15, "127仅增加15暴伤")
+                    eq(attrs:get("dmgBonus"), baseDmg - 1, "127代价仅1伤加")
+                    local actual = 0
+                    for step = 1, 200 do
+                        local roll = (step - 0.5) / 200
+                        f.math.random = function() return roll end
+                        local _, multiplier = formula.rollCrit(attrs:get("critRate"), attrs:get("critDmg"))
+                        actual = actual + multiplier * (1 + attrs:get("dmgBonus") / 100) / 200
+                    end
+                    local p = crit / 100
+                    local expected = (1 + p * ((baseCritDmg + 15) / 100 - 1)) * (1 + (baseDmg - 1) / 100)
+                    eq(actual, expected, "127独立解析期望与真实分位均值一致")
+                    if baseDmg == 0 and baseCritDmg == 200 then
+                        local before = 1 + p
+                        if crit <= 5 then check(actual < before, "127低暴击仍承担代价")
+                        else check(actual > before, "127十成分之一及以上暴率开始正收益") end
+                        if crit == 100 then eq(actual / before - 1, 0.06425, "127满暴净收益6.425%非15%乘区") end
+                    end
+                end
+            end
+        end
+    end, debug.traceback)
+    f.math.random = oldRandom
+    if not ok then error(why) end
+    print(PREFIX .. "节点平衡：209可达/静态原子全解析/物魔同档；127概率分位与136真实治疗通过")
 end
 
 -- 沿用独立Runtime骨架，真实运行四个触发模块/SEM/UA；伤害落地为显式内存记录边界。
@@ -701,7 +797,7 @@ local function testRuntimeOutput(f)
         for n = 1, 9 do
             attack(u, target)
             eq(states[u].pursuitStacks, math.min(5, n - 1), "120原第2击起最多5层")
-            eq(u.attrs:get("atkSpeed"), math.min(5, n - 1) * 0.5, "120每层0.5且不重复叠modifier")
+            eq(u.attrs:get("atkSpeed"), math.min(5, n - 1) * 0.25, "120每层0.25且不重复叠modifier")
         end
         local other = unit({}); attack(u, other)
         eq(u.attrs:get("atkSpeed"), 0, "120换目标清层")
@@ -711,14 +807,14 @@ local function testRuntimeOutput(f)
         u = unit({ 126 }); local peer, fallen = unit({ 126 }), unit({ 126 }, 0)
         death.onEnemyDeath(target, { u, peer, fallen }, {})
         for _, live in ipairs({ u, peer }) do
-            eq(live.attrs:get("atkSpeed"), 7.5, "126保持存活友军原触发域")
+            eq(live.attrs:get("atkSpeed"), 3.75, "126保持存活友军原触发域")
             eq(states[live].slaughterTimer, 5, "126原5秒")
         end
         eq(fallen.attrs:get("atkSpeed"), 0, "126不施加给阵亡友军")
         update.update(2, { u, peer }, {}, {})
-        eq(u.attrs:get("atkSpeed"), 7.5, "126到期前保留")
+        eq(u.attrs:get("atkSpeed"), 3.75, "126到期前保留")
         death.onEnemyDeath(target, { u, peer }, {})
-        eq(u.attrs:get("atkSpeed"), 7.5, "126重触发刷新而非叠加")
+        eq(u.attrs:get("atkSpeed"), 3.75, "126重触发刷新而非叠加")
         update.update(5, { u, peer }, {}, {})
         eq(u.attrs:get("atkSpeed"), 0, "126刷新后完整5秒到期移除")
 
@@ -753,7 +849,7 @@ local function testRuntimeOutput(f)
         eq(#events, count + 1, "206等于35%不触发")
 
         u = unit({ 207 }); update.onDodge(u)
-        eq(u.attrs:get("atkSpeed"), 3, "207闪避真实加速3%")
+        eq(u.attrs:get("atkSpeed"), 1.5, "207闪避真实加速1.5%")
         eq(states[u].shadowstepTimer, 3, "207原3秒持续")
         eq(states[u].shadowstepCd, 6, "207原6秒冷却")
         update.update(1, { u }, {}, {}); update.onDodge(u)
@@ -762,7 +858,28 @@ local function testRuntimeOutput(f)
         eq(u.attrs:get("atkSpeed"), 0, "207到3秒移除")
         update.onDodge(u); eq(u.attrs:get("atkSpeed"), 0, "207到期但仍冷却不能触发")
         update.update(3, { u }, {}, {}); update.onDodge(u)
-        eq(u.attrs:get("atkSpeed"), 3, "207满6秒再次触发")
+        eq(u.attrs:get("atkSpeed"), 1.5, "207满6秒再次触发")
+
+        -- 常驻、职业、敏捷派生与三个条件来源同时生效，不把派生也折半。
+        u = unit({ 120, 126, 207 }); target = unit({})
+        local allIds = {}; for id = 0, 208 do allIds[#allIds + 1] = id end
+        f.TE.applyToUnit(u.attrs, allIds, "echo")
+        eq(u.attrs:get("agi"), 11, "全树敏捷仍11")
+        eq(u.attrs:get("atkSpeed"), 29.9, "常驻24.875+职业0.625+敏捷派生4.4")
+        for _ = 1, 6 do attack(u, target) end
+        death.onEnemyDeath(target, { u }, {})
+        update.onDodge(u)
+        eq(u.attrs:get("atkSpeed"), 36.4, "三触发同时生效仅额外1.25+3.75+1.5")
+        local formula = f.import("systems.CombatFormula")
+        eq(formula.calcActualInterval(2, u.attrs:get("atkSpeed")), 2 / 1.364, "真实间隔公式不改且消费新攻速")
+        update.update(3, { u }, {}, {})
+        eq(u.attrs:get("atkSpeed"), 34.9, "三秒仅闪避增益到期")
+        update.update(2, { u }, {}, {})
+        eq(u.attrs:get("atkSpeed"), 31.15, "五秒击杀增益到期且叠层保留")
+        attack(u, unit({}))
+        eq(u.attrs:get("atkSpeed"), 29.9, "换目标清层回到常驻与原敏捷派生")
+        f.TE.applyToUnit(u.attrs, allIds, "echo")
+        eq(u.attrs:get("atkSpeed"), 29.9, "同旧节点列表重算不二次折半或叠加")
 
         u = unit({ 208 }); count = #events
         combo.onComboAttack(u, target, true, { target }, damage, { category = "physical", totalDamage = 1000 })
@@ -788,6 +905,7 @@ function Start()
             { "历史副预算与RNG", testBudgetsAndRNG }, { "完整旧缓存无迁移", testFullOldCache },
             { "W18+C15真实属性穿卸clone", testRepresentativeAndLifecycle }, { "真实星图全类别", testStarMap },
             { "209节点输出预算与合法路线", testOutputBudget },
+            { "节点投入与真实收益", testNodeBalance },
             { "真实星图触发幅度", testRuntimeOutput },
         }) do
             local passed, why = xpcall(function() group[2](f) end, debug.traceback)

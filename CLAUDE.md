@@ -12,6 +12,15 @@
 4. **分支纪律**：以当前任务授权为准。本轮暗黑特效任务基于 `workspace1005@9497bfdb409c2d0fc17533e4cfc280702fe83517`，任务分支为 `feat1005/team-power-dark-effects-20261006`。用户最新明确提供即时鉴权并要求提 PR，授权提交／正常 push 本任务分支及创建目标 `workspace1005` 的 PR；不混入其他会话返回键改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布，凭据不持久化。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 2026-10-24 · 高相似运行管线兼容重构
+
+- 固定workspace1005@c850e5d3，独立refactor1005/runtime-pipelines-20261024。用户已授权正常push本任务分支及PR，不推workspace系列、不强推、不合并发布；凭据不持久化。目前未commit/push/PR，成功后另记。
+- 28生产模块实质重组，公开API、数值、RNG、通知及异常部分态保持。固定296/390文件、216配对：90%以上74到46，80%以上102到79，对称行文本44.9054%到43.0540%；文本指标非语义或原创性证明，仍46项高相似，不称全仓完成。
+- 官方b44成功553Lua，28源码/共享根/实际载荷字节一致，根index保持、scripts仅白名单变化。修改文件LSP无Error，构建守卫daemon starting跳过；旧压缩81派生错误保留。36规范单测OK；最终32白名单暂存、2977路径，20旧规范错误与固定基线逐项一致、警告0、新增0，diff --check退出0。
+- 最终组合切关、配装120、护盾、神器314、成长1697实际ALL PASS/exit0。离线1045失败中1044逐项同基线，新增仅旧测试查找私有moduleData异常，适配结果另记；不称通过。塔132断言88旧失败；BattleLab五局逐runs同而全报告两处浮点尾差，20局timeout不通过。
+- 最后仅将既有离线测试的dispatcher私有upvalue注入改为公开reset/publishLive/subscribe/setOnAnyUpdate，原断言保留；scene_display218/0，整套1044旧失败逐项同固定基线、新增0/harness0。随后官方b45成功，28生产+1测试载荷29/29字节一致；不把旧失败说成通过。
+- 三服务130差分、9负对照、38可达检查通过，四配置另有54独立与42父复核。验证材料工程外，不夹.project、玩家档、上传或他人修改，不改tempGame。持续推进，当前直接继续不再提问，尊重停止和权限边界；不冒称设备/性能/WASM验收。
+
 ## 上次做了什么（2026-10-07，两段装备教程真实详情入口）
 
 - **已正常push并核验：** 教程功能6df707f3由固定13b7父独立构造，随后保留外部已合PR112目标5fca1d82成为1eb0999be743e6d1f8a81538abe9d869966389a1；仅正常push feat1005/tutorial-character-detail-entry-20261007，push／ls-remote实际exit0、远端SHA一致，未推workspace1005。正式 **PR #114** https://github.com/FanZeros/changeForJourney/pull/114，base=workspace1005／head=教程分支，open／draft=false／merged=false，mergeable未计算，不称CI通过或已合并发布。相对最新目标22白名单、18Lua载荷一致、56目标特效对象原样保留；独立候选九专项与组合版本均实际通过，2977路径20旧规范问题同目标／新增0，36单测通过。共享HEAD仍adac50e8、shared index空，不checkout／覆盖另一会话。成功后仅补本节三交接正常push，不重复创建PR。

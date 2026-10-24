@@ -19,6 +19,24 @@ local function ensureData(uid)
     return data
 end
 
+-- 发布只负责既有归一化和通知顺序；同步回调可重入，后续依赖仍逐次现读。
+local function publishArtifacts(uid, data, currencyChanged)
+    ArtifactSchema.normalizeModule(data)
+    PDM.MarkDirty(uid, "artifacts")
+    if currencyChanged then
+        PDM.MarkDirty(uid, "currency")
+    end
+    PDM.FlushImmediate(uid)
+end
+
+-- 删除仍逐项访问原 bag，不替换容器；调用方决定生成在删除之前还是之后。
+local function removeBagIndices(data, indices)
+    table.sort(indices, function(a, b) return a > b end)
+    for _, idx in ipairs(indices) do
+        table.remove(data.bag, idx)
+    end
+end
+
 local function findBagIndex(data, artifactId)
     artifactId = tostring(artifactId or "")
     for i, a in ipairs(data.bag or {}) do
@@ -239,10 +257,8 @@ local function recordDrawStats(data, count, rewards)
     end
 end
 
-local function createArtifact(data, quality)
-    local artifactDefId = ArtifactDefs.rollArtifactId(quality)
-    if not artifactDefId then return nil, "没有可抽取的神器定义" end
-
+-- 分配 ID 与掷数值是原位操作，不是无副作用的预案；异常时不撤销 nextId。
+local function rollArtifactInstance(data, artifactDefId, quality)
     local id = tostring(data.nextId or 1)
     data.nextId = (data.nextId or 1) + 1
 
@@ -256,6 +272,13 @@ local function createArtifact(data, quality)
     if threatClearRatio ~= nil then
         artifact.threatClearRatio = threatClearRatio
     end
+    return artifact
+end
+
+local function createArtifact(data, quality)
+    local artifactDefId = ArtifactDefs.rollArtifactId(quality)
+    if not artifactDefId then return nil, "没有可抽取的神器定义" end
+    local artifact = rollArtifactInstance(data, artifactDefId, quality)
     ArtifactDefs.normalizeInstanceValue(artifact)
     data.bag[#data.bag + 1] = artifact
     return artifact
@@ -263,6 +286,81 @@ end
 
 local function getDayId()
     return math.floor((os.time() + 28800) / 86400)
+end
+
+local function resolveDrawPayment(data, currency, count, keyCost, payType)
+    payType = payType or "diamond"
+    local keysToUse = 0
+    local diamondNeeded = 0
+    local isFreeDaily = false
+
+    if payType == "free_daily" then
+        if count ~= 1 then
+            return nil, "免费抽取只支持单抽"
+        end
+        local today = getDayId()
+        if (data.dailyFreeDrawDayId or 0) == today then
+            return nil, "今日免费单抽已使用"
+        end
+        isFreeDaily = true
+    elseif payType == "key" then
+        if (currency.goldenKey or 0) < keyCost then
+            return nil, "黄金钥匙不足（需要 " .. keyCost .. "）"
+        end
+        keysToUse = keyCost
+    else
+        payType = "diamond"
+        local available = currency.goldenKey or 0
+        keysToUse = math.min(available, keyCost)
+        local shortfall = keyCost - keysToUse
+        diamondNeeded = shortfall * ArtifactDefs.KEY_DIAMOND_PRICE
+        if (currency.gems or 0) < diamondNeeded then
+            return nil, "黑晶不足（需要 " .. diamondNeeded .. "）"
+        end
+    end
+
+    return { keysToUse = keysToUse, diamondNeeded = diamondNeeded, isFreeDaily = isFreeDaily }
+end
+
+-- 扣费后逐次生成；失败只退货币，已生成物/保底/ID 的部分态照旧保留。
+local function drawInPlace(uid, data, currency, count, payment)
+    local keysToUse = payment.keysToUse
+    local diamondNeeded = payment.diamondNeeded
+    local isFreeDaily = payment.isFreeDaily
+    local oldKeys = currency.goldenKey or 0
+    local oldGems = currency.gems or 0
+
+    if not isFreeDaily then
+        if keysToUse > 0 then
+            currency.goldenKey = oldKeys - keysToUse
+        end
+        if diamondNeeded > 0 then
+            currency.gems = oldGems - diamondNeeded
+        end
+        PDM.MarkDirty(uid, "currency")
+    end
+
+    local rewards = {}
+    local pityHits = {}
+    for _ = 1, count do
+        local quality, pity = rollQuality(data)
+        local artifact, err = createArtifact(data, quality)
+        if not artifact then
+            currency.goldenKey = oldKeys
+            currency.gems = oldGems
+            PDM.MarkDirty(uid, "currency")
+            return nil, nil, err or "神器生成失败"
+        end
+        data.totalDraws = (data.totalDraws or 0) + 1
+        rewards[#rewards + 1] = artifact
+        if pity then pityHits[#pityHits + 1] = pity end
+    end
+    recordDrawStats(data, count, rewards)
+    if isFreeDaily then
+        data.dailyFreeDrawDayId = getDayId()
+    end
+
+    return rewards, pityHits, nil
 end
 
 function ArtifactService.Draw(uid, count, payType)
@@ -288,72 +386,16 @@ function ArtifactService.Draw(uid, count, payType)
     local currency = PDM.GetModule(uid, "currency")
     if not currency then return false, "货币数据未加载" end
 
-    payType = payType or "diamond"
-    local keysToUse = 0
-    local diamondNeeded = 0
-    local isFreeDaily = false
+    local payment, paymentError = resolveDrawPayment(data, currency, count, keyCost, payType)
+    if not payment then return false, paymentError end
+    local keysToUse = payment.keysToUse
+    local diamondNeeded = payment.diamondNeeded
+    local isFreeDaily = payment.isFreeDaily
 
-    if payType == "free_daily" then
-        if count ~= 1 then
-            return false, "免费抽取只支持单抽"
-        end
-        local today = getDayId()
-        if (data.dailyFreeDrawDayId or 0) == today then
-            return false, "今日免费单抽已使用"
-        end
-        isFreeDaily = true
-    elseif payType == "key" then
-        if (currency.goldenKey or 0) < keyCost then
-            return false, "黄金钥匙不足（需要 " .. keyCost .. "）"
-        end
-        keysToUse = keyCost
-    else
-        payType = "diamond"
-        local available = currency.goldenKey or 0
-        keysToUse = math.min(available, keyCost)
-        local shortfall = keyCost - keysToUse
-        diamondNeeded = shortfall * ArtifactDefs.KEY_DIAMOND_PRICE
-        if (currency.gems or 0) < diamondNeeded then
-            return false, "黑晶不足（需要 " .. diamondNeeded .. "）"
-        end
-    end
+    local rewards, pityHits, drawError = drawInPlace(uid, data, currency, count, payment)
+    if not rewards then return false, drawError end
 
-    local oldKeys = currency.goldenKey or 0
-    local oldGems = currency.gems or 0
-
-    if not isFreeDaily then
-        if keysToUse > 0 then
-            currency.goldenKey = oldKeys - keysToUse
-        end
-        if diamondNeeded > 0 then
-            currency.gems = oldGems - diamondNeeded
-        end
-        PDM.MarkDirty(uid, "currency")
-    end
-
-    local rewards = {}
-    local pityHits = {}
-    for _ = 1, count do
-        local quality, pity = rollQuality(data)
-        local artifact, err = createArtifact(data, quality)
-        if not artifact then
-            currency.goldenKey = oldKeys
-            currency.gems = oldGems
-            PDM.MarkDirty(uid, "currency")
-            return false, err or "神器生成失败"
-        end
-        data.totalDraws = (data.totalDraws or 0) + 1
-        rewards[#rewards + 1] = artifact
-        if pity then pityHits[#pityHits + 1] = pity end
-    end
-    recordDrawStats(data, count, rewards)
-    if isFreeDaily then
-        data.dailyFreeDrawDayId = getDayId()
-    end
-
-    ArtifactSchema.normalizeModule(data)
-    PDM.MarkDirty(uid, "artifacts")
-    PDM.FlushImmediate(uid)
+    publishArtifacts(uid, data)
 
     TaskService.UpdateProgress(uid, "artifact_draw", count)
 
@@ -428,9 +470,7 @@ function ArtifactService.Equip(uid, artifactId, slot, subSlot, teamIdx)
     end
     ArtifactSchema.setEquippedId(data, slot, subSlot, artifact.id, teamIdx)
 
-    ArtifactSchema.normalizeModule(data)
-    PDM.MarkDirty(uid, "artifacts")
-    PDM.FlushImmediate(uid)
+    publishArtifacts(uid, data)
 
     print("[ArtifactService] EQUIP uid=" .. tostring(uid)
         .. " team=" .. tostring(teamIdx)
@@ -458,9 +498,7 @@ function ArtifactService.Unequip(uid, slot, subSlot, teamIdx)
     local artifactId = ArtifactSchema.getEquippedId(data, slot, subSlot, teamIdx)
     ArtifactSchema.setEquippedId(data, slot, subSlot, nil, teamIdx)
 
-    ArtifactSchema.normalizeModule(data)
-    PDM.MarkDirty(uid, "artifacts")
-    PDM.FlushImmediate(uid)
+    publishArtifacts(uid, data)
 
     print("[ArtifactService] UNEQUIP uid=" .. tostring(uid)
         .. " team=" .. tostring(teamIdx)
@@ -497,10 +535,7 @@ function ArtifactService.RefineValue(uid, artifactId)
     end
     ArtifactDefs.normalizeInstanceValue(artifact)
 
-    ArtifactSchema.normalizeModule(data)
-    PDM.MarkDirty(uid, "artifacts")
-    PDM.MarkDirty(uid, "currency")
-    PDM.FlushImmediate(uid)
+    publishArtifacts(uid, data, true)
 
     print("[ArtifactService] REFINE_VALUE uid=" .. tostring(uid)
         .. " artifactId=" .. tostring(artifact.id)
@@ -516,6 +551,30 @@ function ArtifactService.RefineValue(uid, artifactId)
     }
 end
 
+local function selectRerollInputs(data, artifactIds)
+    local used = {}
+    local artifacts = {}
+    local bagIndices = {}
+    for _, id in ipairs(artifactIds) do
+        local idStr = tostring(id or "")
+        if used[idStr] then return nil, nil, nil, "不能重复选择同一个神器" end
+        used[idStr] = true
+        local idx, artifact = findBagIndex(data, idStr)
+        if not artifact then return nil, nil, nil, "神器不在背包中: " .. idStr end
+        -- 任一队伍已装配实例都受保护，不能置换
+        if findEquippedAnyTeam(data, artifact.id) then return nil, nil, nil, "已安装神器不能置换" end
+        artifacts[#artifacts + 1] = artifact
+        bagIndices[#bagIndices + 1] = idx
+    end
+
+    local quality = tonumber(artifacts[1].quality) or 1
+    if tonumber(artifacts[2].quality) ~= quality then
+        return nil, nil, nil, "置换需要2个同品质神器"
+    end
+
+    return artifacts, bagIndices, quality, nil
+end
+
 function ArtifactService.Reroll(uid, artifactIds)
     if not artifactIds or #artifactIds ~= 2 then
         return false, "需要选择2个神器"
@@ -524,25 +583,8 @@ function ArtifactService.Reroll(uid, artifactIds)
     local data = ensureData(uid)
     if not data then return false, "神器数据未加载" end
 
-    local used = {}
-    local artifacts = {}
-    local bagIndices = {}
-    for _, id in ipairs(artifactIds) do
-        local idStr = tostring(id or "")
-        if used[idStr] then return false, "不能重复选择同一个神器" end
-        used[idStr] = true
-        local idx, artifact = findBagIndex(data, idStr)
-        if not artifact then return false, "神器不在背包中: " .. idStr end
-        -- 任一队伍已装配实例都受保护，不能置换
-        if findEquippedAnyTeam(data, artifact.id) then return false, "已安装神器不能置换" end
-        artifacts[#artifacts + 1] = artifact
-        bagIndices[#bagIndices + 1] = idx
-    end
-
-    local quality = tonumber(artifacts[1].quality) or 1
-    if tonumber(artifacts[2].quality) ~= quality then
-        return false, "置换需要2个同品质神器"
-    end
+    local artifacts, bagIndices, quality, selectionError = selectRerollInputs(data, artifactIds)
+    if selectionError then return false, selectionError end
 
     local srcType1 = tonumber(artifacts[1].artifactId) or 0
     local srcType2 = tonumber(artifacts[2].artifactId) or 0
@@ -552,28 +594,12 @@ function ArtifactService.Reroll(uid, artifactIds)
         return false, "没有可置换的新神器类型"
     end
 
-    local id = tostring(data.nextId or 1)
-    data.nextId = (data.nextId or 1) + 1
-    local newArtifact = {
-        id = id,
-        artifactId = newArtifactId,
-        quality = quality,
-        valueRatio = ArtifactDefs.rollValueRatio(),
-    }
-    local threatClearRatio = rollThreatClearValueRatio(newArtifactId, quality)
-    if threatClearRatio ~= nil then
-        newArtifact.threatClearRatio = threatClearRatio
-    end
+    local newArtifact = rollArtifactInstance(data, newArtifactId, quality)
 
-    table.sort(bagIndices, function(a, b) return a > b end)
-    for _, idx in ipairs(bagIndices) do
-        table.remove(data.bag, idx)
-    end
+    removeBagIndices(data, bagIndices)
     data.bag[#data.bag + 1] = newArtifact
 
-    ArtifactSchema.normalizeModule(data)
-    PDM.MarkDirty(uid, "artifacts")
-    PDM.FlushImmediate(uid)
+    publishArtifacts(uid, data)
 
     print("[ArtifactService] REROLL uid=" .. tostring(uid)
         .. " consumed=" .. tostring(artifactIds[1]) .. "," .. tostring(artifactIds[2])
@@ -601,28 +627,12 @@ function ArtifactService.Merge(uid, artifactIds)
     if err then return false, err end
     local baseQuality = newQuality - 1
 
-    local id = tostring(data.nextId or 1)
-    data.nextId = (data.nextId or 1) + 1
-    local newArtifact = {
-        id = id,
-        artifactId = baseArtifactId,
-        quality = newQuality,
-        valueRatio = ArtifactDefs.rollValueRatio(),
-    }
-    local threatClearRatio = rollThreatClearValueRatio(baseArtifactId, newQuality)
-    if threatClearRatio ~= nil then
-        newArtifact.threatClearRatio = threatClearRatio
-    end
+    local newArtifact = rollArtifactInstance(data, baseArtifactId, newQuality)
 
-    table.sort(bagIndices, function(a, b) return a > b end)
-    for _, idx in ipairs(bagIndices) do
-        table.remove(data.bag, idx)
-    end
+    removeBagIndices(data, bagIndices)
     data.bag[#data.bag + 1] = newArtifact
 
-    ArtifactSchema.normalizeModule(data)
-    PDM.MarkDirty(uid, "artifacts")
-    PDM.FlushImmediate(uid)
+    publishArtifacts(uid, data)
 
     print("[ArtifactService] MERGE uid=" .. tostring(uid)
         .. " consumed=" .. tostring(artifactIds[1]) .. "," .. tostring(artifactIds[2]) .. "," .. tostring(artifactIds[3])
@@ -633,20 +643,13 @@ function ArtifactService.Merge(uid, artifactIds)
     return true, nil, { artifact = newArtifact, artifacts = { newArtifact }, mergedCount = 1 }
 end
 
-function ArtifactService.MergeBatch(uid, artifactIdGroups)
-    if not artifactIdGroups or #artifactIdGroups == 0 then
-        return false, "暂无可合成神器"
-    end
-
-    local data = ensureData(uid)
-    if not data then return false, "神器数据未加载" end
-
+local function planMergeBatch(data, artifactIdGroups)
     local usedIds = {}
     local allBagIndices = {}
     local plans = {}
     for _, group in ipairs(artifactIdGroups) do
         local _artifacts, bagIndices, baseArtifactId, newQuality, err = validateMergeGroup(data, group, usedIds)
-        if err then return false, err end
+        if err then return nil, nil, err end
         for _, idx in ipairs(bagIndices) do
             allBagIndices[#allBagIndices + 1] = idx
         end
@@ -657,10 +660,21 @@ function ArtifactService.MergeBatch(uid, artifactIdGroups)
         }
     end
 
-    table.sort(allBagIndices, function(a, b) return a > b end)
-    for _, idx in ipairs(allBagIndices) do
-        table.remove(data.bag, idx)
+    return plans, allBagIndices, nil
+end
+
+function ArtifactService.MergeBatch(uid, artifactIdGroups)
+    if not artifactIdGroups or #artifactIdGroups == 0 then
+        return false, "暂无可合成神器"
     end
+
+    local data = ensureData(uid)
+    if not data then return false, "神器数据未加载" end
+
+    local plans, allBagIndices, planError = planMergeBatch(data, artifactIdGroups)
+    if planError then return false, planError end
+
+    removeBagIndices(data, allBagIndices)
 
     local newArtifacts = {}
     for _, plan in ipairs(plans) do
@@ -680,9 +694,7 @@ function ArtifactService.MergeBatch(uid, artifactIdGroups)
         newArtifacts[#newArtifacts + 1] = newArtifact
     end
 
-    ArtifactSchema.normalizeModule(data)
-    PDM.MarkDirty(uid, "artifacts")
-    PDM.FlushImmediate(uid)
+    publishArtifacts(uid, data)
 
     print("[ArtifactService] MERGE_BATCH uid=" .. tostring(uid)
         .. " groups=" .. tostring(#artifactIdGroups)

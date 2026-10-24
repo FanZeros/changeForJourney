@@ -6,19 +6,45 @@
 
 local AD = require("systems.AttributeDef")
 
+---@class UnitAttributes
+---@field armorType number
+---@field atkType number
+---@field unitLevel number
+---@field base table<string, number>
+---@field derived table<string, number>
+---@field flatMod table<string, number>
+---@field pctMod table<string, number>
+---@field final table<string, number>
+---@field modifiers table
+---@field _uncapped table<string, number>?
+---@field atkCoeff number?
+---@field dmgSpread number?
+---@field critOverflowRatio number?
+---@field _healFrac number?
+---@field energyShield number?
+---@field tempEnergyShield number?
+---@field esRegenCooldown number?
+---@field _forceFullHpOnRecalc boolean?
+---@field artifactIgnoreArmor boolean?
+---@field artifactCritRateMult number?
+---@field artifactCritDmgMult number?
+---@field artifactExtraDamageMult number?
+---@field artifactBlockCap number?
+---@field artifactChaosDamageMult number?
+---@field artifactChaosDefenseDisabled boolean?
+---@field artifactPowerBonus number?
+---@field artifactNoHeal boolean?
+---@field _setFour any
+---@field _setSix any
+---@field _setRows table[]?
 local UnitAttributes = {}
 UnitAttributes.__index = UnitAttributes
 
--- ======================== 构造 ========================
-
---- 创建属性容器
----@param cfg table 初始属性 { str=10, maxHp=500, physAtk=20, atkInterval=2.0, armorType=1, ... }
----@return table UnitAttributes 实例
-function UnitAttributes.create(cfg)
-    cfg = cfg or {}
-
-    local self = setmetatable({}, UnitAttributes)
-
+-- 私有职责边界：不缓存 AD 配置，不替换公开 self 调用，不调整写入/遍历顺序。
+-- 属性刷新依次执行：六围派生、最终乘区、特殊派生、运行时池恢复。
+---@param self UnitAttributes
+---@param cfg table
+local function initializeLayers(self, cfg)
     -- 护甲类型（不是数值属性，单独存放）
     self.armorType = cfg.armorType or AD.ARMOR_LEATHER
 
@@ -54,81 +80,9 @@ function UnitAttributes.create(cfg)
         end
     end
 
-    -- 首次全量计算
-    self:recalc()
-
-    return self
 end
 
--- ======================== 读取 ========================
-
---- 获取最终属性值
----@param key string 属性 key
----@return number
-function UnitAttributes:get(key)
-    local value = tonumber(self.final[key]) or 0
-    if self.artifactBlockCap and (key == AD.PHYS_BLOCK_RATE or key == AD.MAG_BLOCK_RATE) then
-        local uncapped = self._uncapped and self._uncapped[key] or value
-        if uncapped > 100 then
-            value = math.min(uncapped, self.artifactBlockCap)
-        end
-    end
-    if self.artifactChaosDefenseDisabled then
-        if key == AD.ARMOR
-            or key == AD.RESISTANCE
-            or key == AD.PHYS_BLOCK_RATE
-            or key == AD.MAG_BLOCK_RATE
-            or key == AD.PHYS_BLOCK_RATIO
-            or key == AD.MAG_BLOCK_RATIO then
-            value = 0
-        end
-    end
-    return tonumber(value) or 0
-end
-
---- 获取截断上限前的实际属性值（用于属性详情展示）
----@param key string 属性 key
----@return number
-function UnitAttributes:getUncapped(key)
-    if self._uncapped and self._uncapped[key] ~= nil then
-        return self._uncapped[key]
-    end
-    return self:get(key)
-end
-
---- 获取基础值（不含派生和修改器）
----@param key string
----@return number
-function UnitAttributes:getBase(key)
-    return self.base[key] or 0
-end
-
---- 设置基础值并重算
----@param key string
----@param val number
-function UnitAttributes:setBase(key, val)
-    self.base[key] = val
-    self:recalc()
-end
-
---- 批量设置基础值后重算
----@param tbl table { [key] = val, ... }
-function UnitAttributes:setBases(tbl)
-    for k, v in pairs(tbl) do
-        if AD.META[k] then
-            self.base[k] = v
-        end
-    end
-    self:recalc()
-end
-
--- ======================== 修改器 ========================
-
---- 添加具名修改器（装备/Buff/被动技能等）
---- 可包含多条属性修改，同 id 会覆盖
----@param id string     修改器唯一 ID（如 "equip_sword_1"、"buff_rage"）
----@param entries table {{ key=AD.PHYS_ATK, flat=50 }, { key=AD.CRIT_RATE, pct=5 }, ...}
-function UnitAttributes:addModifier(id, entries)
+local function collectModifierEntries(id, entries)
     local safeEntries = {}
     for _, e in ipairs(entries or {}) do
         if e and e.key then
@@ -140,57 +94,12 @@ function UnitAttributes:addModifier(id, entries)
                 .. " pct=" .. tostring(e and e.pct))
         end
     end
-    if #safeEntries == 0 then return end
-    self.modifiers[id] = safeEntries
-    self:_rebuildMods()
-    self:recalc()
+    return safeEntries
 end
 
---- 移除具名修改器
----@param id string
-function UnitAttributes:removeModifier(id)
-    if self.modifiers[id] then
-        self.modifiers[id] = nil
-        self:_rebuildMods()
-        self:recalc()
-    end
-end
-
---- 清除全部修改器
-function UnitAttributes:clearModifiers()
-    self.modifiers = {}
-    self:_rebuildMods()
-    self:recalc()
-end
-
---- 深拷贝当前 UnitAttributes 实例，生成一份独立副本
---- 用于战斗快照隔离：克隆后修改不会影响原始实例
----@return table UnitAttributes 独立副本
-function UnitAttributes:clone()
-    local copy = setmetatable({}, UnitAttributes)
-
-    -- 标量字段
-    copy.armorType = self.armorType
-    copy.atkType   = self.atkType
-    copy.unitLevel = self.unitLevel
-    copy.atkCoeff  = self.atkCoeff
-    copy.dmgSpread = self.dmgSpread
-    copy.critOverflowRatio = self.critOverflowRatio
-    copy._healFrac = self._healFrac
-    copy.energyShield = self.energyShield
-    copy.tempEnergyShield = self.tempEnergyShield
-    copy.esRegenCooldown = self.esRegenCooldown
-    copy.artifactIgnoreArmor = self.artifactIgnoreArmor
-    copy.artifactCritRateMult = self.artifactCritRateMult
-    copy.artifactCritDmgMult = self.artifactCritDmgMult
-    copy.artifactExtraDamageMult = self.artifactExtraDamageMult
-    copy.artifactBlockCap = self.artifactBlockCap
-    copy.artifactChaosDamageMult = self.artifactChaosDamageMult
-    copy.artifactChaosDefenseDisabled = self.artifactChaosDefenseDisabled
-    copy.artifactPowerBonus = self.artifactPowerBonus
-    copy.artifactNoHeal = self.artifactNoHeal
-    copy._setFour = self._setFour
-    copy._setSix = self._setSix
+---@param self UnitAttributes
+---@param copy UnitAttributes
+local function copySetRows(self, copy)
     if self._setRows then
         copy._setRows = {}
         for i, row in ipairs(self._setRows) do
@@ -208,58 +117,10 @@ function UnitAttributes:clone()
         end
     end
 
-    -- 浅拷贝数值层表（key 为字符串常量，value 为数字）
-    copy.base    = {}; for k, v in pairs(self.base)    do copy.base[k]    = v end
-    copy.derived = {}; for k, v in pairs(self.derived) do copy.derived[k] = v end
-    copy.flatMod = {}; for k, v in pairs(self.flatMod) do copy.flatMod[k] = v end
-    copy.pctMod  = {}; for k, v in pairs(self.pctMod)  do copy.pctMod[k]  = v end
-    copy.final   = {}; for k, v in pairs(self.final)   do copy.final[k]   = v end
-    copy._uncapped = {}
-    if self._uncapped then
-        for k, v in pairs(self._uncapped) do copy._uncapped[k] = v end
-    end
-
-    -- 二级深拷贝 modifiers: { [id] = { {key,flat,pct}, ... } }
-    copy.modifiers = {}
-    for id, entries in pairs(self.modifiers) do
-        local ce = {}
-        for i, e in ipairs(entries) do
-            ce[i] = { key = e.key, flat = e.flat, pct = e.pct }
-        end
-        copy.modifiers[id] = ce
-    end
-
-    return copy
 end
 
---- 内部：从所有具名修改器重建 flatMod / pctMod 总和
-function UnitAttributes:_rebuildMods()
-    -- 清零
-    for key in pairs(AD.META) do
-        self.flatMod[key] = 0
-        self.pctMod[key]  = 0
-    end
-    -- 累加
-    for _, entries in pairs(self.modifiers) do
-        for _, e in ipairs(entries) do
-            if e.flat then
-                self.flatMod[e.key] = (self.flatMod[e.key] or 0) + e.flat
-            end
-            if e.pct then
-                self.pctMod[e.key] = (self.pctMod[e.key] or 0) + e.pct
-            end
-        end
-    end
-end
-
--- ======================== 核心计算 ========================
-
---- 全量重算：六围派生 → final
-function UnitAttributes:recalc()
-    -- 0) 保存当前战斗 HP / 护盾上限（recalc 不应覆盖运行时 HP；仅新增护盾上限时填满护盾）
-    local savedHp = self.final[AD.HP]
-    local savedESMax = self.final[AD.ENERGY_SHIELD] or 0
-
+---@param self UnitAttributes
+local function refreshDerived(self)
     -- 1) 清空派生
     for key in pairs(AD.META) do
         self.derived[key] = 0
@@ -302,6 +163,12 @@ function UnitAttributes:recalc()
         end
     end
 
+    return finalBaseStatBonus
+end
+
+---@param self UnitAttributes
+---@param finalBaseStatBonus table
+local function refreshFinal(self, finalBaseStatBonus)
     -- 3) 计算 final = (base + derived + flatMod) * (1 + pctMod/100)
     --    六围本身: final = base + flatMod（已在上面用过，此处也写入 final）
     self._uncapped = {}
@@ -382,6 +249,10 @@ function UnitAttributes:recalc()
         end
     end
 
+end
+
+---@param self UnitAttributes
+local function refreshSecondary(self)
     -- 5) 特殊派生：护甲 → 伤害抗性（护甲不低于 0）
     local armor = math.max(0, self.final[AD.ARMOR] or 0)
     self.final[AD.RESISTANCE] = (0.01 * armor) / (0.01 * armor + 1) * 100
@@ -410,6 +281,10 @@ function UnitAttributes:recalc()
         end
     end
 
+end
+
+---@param self UnitAttributes
+local function restoreRuntimePools(self, savedHp, savedESMax)
     -- 6) 恢复战斗 HP（不让公式覆盖运行时血量）
     --    savedHp 为 nil 仅在首次 create → recalc 时，此时 final[HP] 保持公式值（由 fillHp 初始化）
     if self._forceFullHpOnRecalc then
@@ -428,23 +303,8 @@ function UnitAttributes:recalc()
     self:initEnergyShield(savedESMax)
 end
 
--- ======================== 运行时操作 ========================
-
---- 满血初始化（通常创建单位后调用）
-function UnitAttributes:fillHp()
-    self.final[AD.HP] = self.final[AD.MAX_HP]
-    self._healFrac = 0
-    -- 失败回退会先满血，再由开战天赋 addModifier 触发 recalc。
-    -- recalc 默认保留死亡时的 0 血；这次满血必须覆盖该保留值。
-    self._forceFullHpOnRecalc = true
-end
-
---- 扣血（不低于 0）
----@param amount number 伤害量
----@return number 实际扣除量
-function UnitAttributes:takeDamage(amount, resistance)
-    amount = math.max(0, math.floor(amount))
-    if amount <= 0 then return 0 end
+---@param self UnitAttributes
+local function absorbShieldDamage(self, amount)
     -- 受伤重置护盾回复冷却。体质越高，冷却越短。
     local maxES = self.final[AD.ENERGY_SHIELD] or 0
     if maxES > 0 then
@@ -474,6 +334,228 @@ function UnitAttributes:takeDamage(amount, resistance)
             amount = amount - absorbed
         end
     end
+    return amount
+end
+
+-- ======================== 构造 ========================
+
+--- 创建属性容器
+---@param cfg table 初始属性 { str=10, maxHp=500, physAtk=20, atkInterval=2.0, armorType=1, ... }
+---@return UnitAttributes 实例
+function UnitAttributes.create(cfg)
+    cfg = cfg or {}
+
+    ---@type UnitAttributes
+    local self = setmetatable({}, UnitAttributes)
+
+    initializeLayers(self, cfg)
+
+    -- 首次全量计算
+    self:recalc()
+
+    return self
+end
+
+-- ======================== 读取 ========================
+
+--- 获取最终属性值
+---@param key string 属性 key
+---@return number
+function UnitAttributes:get(key)
+    local value = tonumber(self.final[key]) or 0
+    if self.artifactBlockCap and (key == AD.PHYS_BLOCK_RATE or key == AD.MAG_BLOCK_RATE) then
+        local uncapped = self._uncapped and self._uncapped[key] or value
+        if uncapped > 100 then
+            value = math.min(uncapped, self.artifactBlockCap)
+        end
+    end
+    if self.artifactChaosDefenseDisabled then
+        if key == AD.ARMOR
+            or key == AD.RESISTANCE
+            or key == AD.PHYS_BLOCK_RATE
+            or key == AD.MAG_BLOCK_RATE
+            or key == AD.PHYS_BLOCK_RATIO
+            or key == AD.MAG_BLOCK_RATIO then
+            value = 0
+        end
+    end
+    return tonumber(value) or 0
+end
+
+--- 获取截断上限前的实际属性值（用于属性详情展示）
+---@param key string 属性 key
+---@return number
+function UnitAttributes:getUncapped(key)
+    if self._uncapped and self._uncapped[key] ~= nil then
+        return self._uncapped[key]
+    end
+    return self:get(key)
+end
+
+--- 获取基础值（不含派生和修改器）
+---@param key string
+---@return number
+function UnitAttributes:getBase(key)
+    return self.base[key] or 0
+end
+
+--- 设置基础值并重算
+---@param key string
+---@param val number
+function UnitAttributes:setBase(key, val)
+    self.base[key] = val
+    self:recalc()
+end
+
+--- 批量设置基础值后重算
+---@param tbl table { [key] = val, ... }
+function UnitAttributes:setBases(tbl)
+    for k, v in pairs(tbl) do
+        if AD.META[k] then
+            self.base[k] = v
+        end
+    end
+    self:recalc()
+end
+
+-- ======================== 修改器 ========================
+
+--- 添加具名修改器（装备/Buff/被动技能等）
+--- 可包含多条属性修改，同 id 会覆盖
+---@param id string     修改器唯一 ID（如 "equip_sword_1"、"buff_rage"）
+---@param entries table {{ key=AD.PHYS_ATK, flat=50 }, { key=AD.CRIT_RATE, pct=5 }, ...}
+function UnitAttributes:addModifier(id, entries)
+    local safeEntries = collectModifierEntries(id, entries)
+    if #safeEntries == 0 then return end
+    self.modifiers[id] = safeEntries
+    self:_rebuildMods()
+    self:recalc()
+end
+
+--- 移除具名修改器
+---@param id string
+function UnitAttributes:removeModifier(id)
+    if self.modifiers[id] then
+        self.modifiers[id] = nil
+        self:_rebuildMods()
+        self:recalc()
+    end
+end
+
+--- 清除全部修改器
+function UnitAttributes:clearModifiers()
+    self.modifiers = {}
+    self:_rebuildMods()
+    self:recalc()
+end
+
+--- 深拷贝当前 UnitAttributes 实例，生成一份独立副本
+--- 用于战斗快照隔离：克隆后修改不会影响原始实例
+---@return UnitAttributes 独立副本
+function UnitAttributes:clone()
+    ---@type UnitAttributes
+    local copy = setmetatable({}, UnitAttributes)
+
+    -- 标量字段
+    copy.armorType = self.armorType
+    copy.atkType   = self.atkType
+    copy.unitLevel = self.unitLevel
+    copy.atkCoeff  = self.atkCoeff
+    copy.dmgSpread = self.dmgSpread
+    copy.critOverflowRatio = self.critOverflowRatio
+    copy._healFrac = self._healFrac
+    copy.energyShield = self.energyShield
+    copy.tempEnergyShield = self.tempEnergyShield
+    copy.esRegenCooldown = self.esRegenCooldown
+    copy.artifactIgnoreArmor = self.artifactIgnoreArmor
+    copy.artifactCritRateMult = self.artifactCritRateMult
+    copy.artifactCritDmgMult = self.artifactCritDmgMult
+    copy.artifactExtraDamageMult = self.artifactExtraDamageMult
+    copy.artifactBlockCap = self.artifactBlockCap
+    copy.artifactChaosDamageMult = self.artifactChaosDamageMult
+    copy.artifactChaosDefenseDisabled = self.artifactChaosDefenseDisabled
+    copy.artifactPowerBonus = self.artifactPowerBonus
+    copy.artifactNoHeal = self.artifactNoHeal
+    copy._setFour = self._setFour
+    copy._setSix = self._setSix
+    copySetRows(self, copy)
+
+    -- 浅拷贝数值层表（key 为字符串常量，value 为数字）
+    copy.base    = {}; for k, v in pairs(self.base)    do copy.base[k]    = v end
+    copy.derived = {}; for k, v in pairs(self.derived) do copy.derived[k] = v end
+    copy.flatMod = {}; for k, v in pairs(self.flatMod) do copy.flatMod[k] = v end
+    copy.pctMod  = {}; for k, v in pairs(self.pctMod)  do copy.pctMod[k]  = v end
+    copy.final   = {}; for k, v in pairs(self.final)   do copy.final[k]   = v end
+    copy._uncapped = {}
+    if self._uncapped then
+        for k, v in pairs(self._uncapped) do copy._uncapped[k] = v end
+    end
+
+    -- 二级深拷贝 modifiers: { [id] = { {key,flat,pct}, ... } }
+    copy.modifiers = {}
+    for id, entries in pairs(self.modifiers) do
+        local ce = {}
+        for i, e in ipairs(entries) do
+            ce[i] = { key = e.key, flat = e.flat, pct = e.pct }
+        end
+        copy.modifiers[id] = ce
+    end
+
+    return copy
+end
+
+--- 内部：从所有具名修改器重建 flatMod / pctMod 总和
+function UnitAttributes:_rebuildMods()
+    -- 清零
+    for key in pairs(AD.META) do
+        self.flatMod[key] = 0
+        self.pctMod[key]  = 0
+    end
+    -- 累加
+    for _, entries in pairs(self.modifiers) do
+        for _, e in ipairs(entries) do
+            if e.flat then
+                self.flatMod[e.key] = (self.flatMod[e.key] or 0) + e.flat
+            end
+            if e.pct then
+                self.pctMod[e.key] = (self.pctMod[e.key] or 0) + e.pct
+            end
+        end
+    end
+end
+
+-- ======================== 核心计算 ========================
+
+--- 全量重算：六围派生 → final
+function UnitAttributes:recalc()
+    -- 0) 保存当前战斗 HP / 护盾上限（recalc 不应覆盖运行时 HP；仅新增护盾上限时填满护盾）
+    local savedHp = self.final[AD.HP]
+    local savedESMax = self.final[AD.ENERGY_SHIELD] or 0
+
+    local finalBaseStatBonus = refreshDerived(self)
+    refreshFinal(self, finalBaseStatBonus)
+    refreshSecondary(self)
+    restoreRuntimePools(self, savedHp, savedESMax)
+end
+
+-- ======================== 运行时操作 ========================
+
+--- 满血初始化（通常创建单位后调用）
+function UnitAttributes:fillHp()
+    self.final[AD.HP] = self.final[AD.MAX_HP]
+    self._healFrac = 0
+    -- 失败回退会先满血，再由开战天赋 addModifier 触发 recalc。
+    -- recalc 默认保留死亡时的 0 血；这次满血必须覆盖该保留值。
+    self._forceFullHpOnRecalc = true
+end
+
+--- 扣血（不低于 0）
+---@param amount number 伤害量
+---@return number 实际扣除量
+function UnitAttributes:takeDamage(amount, resistance)
+    amount = math.max(0, math.floor(amount))
+    if amount <= 0 then return 0 end
+    amount = absorbShieldDamage(self, amount)
     -- 护盾按原伤吸收。打穿护盾后剩下的部分才吃护甲抗性。
     local resist = tonumber(resistance) or 0
     if resist > 0 and amount > 0 then
@@ -492,6 +574,7 @@ end
 --- 80 体质及以上：受伤后立即回复，每秒回上限的 160%。
 ---@return number cooldown
 ---@return number ratePerSec  每秒回复的上限比例
+---@return number flatPerSec 每秒固定回复量
 function UnitAttributes:getShieldRegenProfile()
     local vit = self:get(AD.VIT) or 0
     local t = vit / 40

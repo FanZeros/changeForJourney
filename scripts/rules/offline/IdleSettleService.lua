@@ -31,20 +31,7 @@ end
 
 -- ======================== 内部：奖励发放 ========================
 
---- 实际发放挂机奖励到玩家各模块（纯数据操作，可被 pcall 包裹）
---- 与 OfflineService.ClaimRewards 的 grant 逻辑一致，但无 bonus/面板逻辑
----@param uid number
----@param rewards table  OfflineCalc.calcOnlineIdleRewards 的返回值
-local function grantIdleRewards(uid, rewards)
-    local currency   = PDM.GetModule(uid, "currency")
-    local heroesData = PDM.GetModule(uid, "heroes")
-    local playerData = PDM.GetModule(uid, "player")
-    local lootbox    = PDM.GetModule(uid, "lootbox")
-
-    if not currency or not heroesData or not playerData or not lootbox then
-        error("grantIdleRewards: 模块数据未加载 uid=" .. tostring(uid))
-    end
-
+local function grantGold(uid, rewards, currency)
     -- 1) 金币
     local goldAmount = math.floor(rewards.gold or 0)
     if goldAmount > 0 then
@@ -52,6 +39,9 @@ local function grantIdleRewards(uid, rewards)
         PDM.MarkDirty(uid, "currency")
     end
 
+end
+
+local function grantHeroExperience(uid, rewards, heroesData)
     -- 2) 英雄经验（平分给出战英雄）
     local deployed = heroesData.deployed or {}
     local heroCount = #deployed
@@ -72,6 +62,9 @@ local function grantIdleRewards(uid, rewards)
         end
     end
 
+end
+
+local function grantPlayerExperience(uid, rewards, playerData)
     -- 3) 远征经验（玩家升级）
     local playerExp = math.floor(rewards.adventureExp or 0)
     if playerExp > 0 then
@@ -84,6 +77,9 @@ local function grantIdleRewards(uid, rewards)
         end
     end
 
+end
+
+local function grantEquipmentSeeds(uid, rewards, lootbox)
     -- 4) 装备种子 → 战利品缓冲（符合自动分解条件的直接转精粹，与击杀掉落同一语义）
     local equipData = PDM.GetModule(uid, "equipment")
     local autoSettings = (equipData and equipData.settings) or nil
@@ -110,6 +106,9 @@ local function grantIdleRewards(uid, rewards)
         print("[IdleSettle] auto-decompose essence=+" .. autoEssence .. " uid=" .. tostring(uid))
     end
 
+end
+
+local function grantScrollDrops(uid, rewards, currency)
     -- 5) 卷轴掉落 → 货币
     local scrollDrops = rewards.scrollDrops or {}
     local scrollDirty = false
@@ -125,15 +124,32 @@ local function grantIdleRewards(uid, rewards)
     end
 end
 
+--- 实际发放挂机奖励到玩家各模块（纯数据操作，可被 pcall 包裹）
+--- 与 OfflineService.ClaimRewards 的 grant 逻辑一致，但无 bonus/面板逻辑
+---@param uid number
+---@param rewards table  OfflineCalc.calcOnlineIdleRewards 的返回值
+local function grantIdleRewards(uid, rewards)
+    local currency   = PDM.GetModule(uid, "currency")
+    local heroesData = PDM.GetModule(uid, "heroes")
+    local playerData = PDM.GetModule(uid, "player")
+    local lootbox    = PDM.GetModule(uid, "lootbox")
+
+    if not currency or not heroesData or not playerData or not lootbox then
+        error("grantIdleRewards: 模块数据未加载 uid=" .. tostring(uid))
+    end
+
+    grantGold(uid, rewards, currency)
+    grantHeroExperience(uid, rewards, heroesData)
+    grantPlayerExperience(uid, rewards, playerData)
+    grantEquipmentSeeds(uid, rewards, lootbox)
+    grantScrollDrops(uid, rewards, currency)
+
+end
+
 -- ======================== 内部：结算执行 ========================
 
---- 执行一次在线挂机结算（pcall 保护）
----@param uid number
----@param bd table  battle 模块数据引用
-local function settleOnlineIdle(uid, bd)
-    local settleSeconds = bd.idleAccumSec or 0
-    if settleSeconds <= 0 then return end
-
+-- 两种结算共享实时输入读取，完成策略仍由各入口分别处理。
+local function calculateIdleSettlement(uid, bd, seconds)
     -- 获取实时出战英雄数
     local heroesData = PDM.GetModule(uid, "heroes")
     local heroCount = 0
@@ -144,8 +160,20 @@ local function settleOnlineIdle(uid, bd)
 
     local stageConfig = StageProvider.Get()
     local incomeStageId, dropStageId = OfflineCalc.resolveIdleStageAnchors(bd, stageConfig)
-    local calcSeconds, speedCardActive = getSpeedCardEffectiveSeconds(uid, settleSeconds)
+    local calcSeconds, speedCardActive = getSpeedCardEffectiveSeconds(uid, seconds)
     local rewards = OfflineCalc.calcOnlineIdleRewards(calcSeconds, incomeStageId, heroCount, dropStageId, stageConfig)
+
+    return rewards, incomeStageId, dropStageId, speedCardActive
+end
+
+--- 执行一次在线挂机结算（pcall 保护）
+---@param uid number
+---@param bd table  battle 模块数据引用
+local function settleOnlineIdle(uid, bd)
+    local settleSeconds = bd.idleAccumSec or 0
+    if settleSeconds <= 0 then return end
+
+    local rewards, incomeStageId, dropStageId, speedCardActive = calculateIdleSettlement(uid, bd, settleSeconds)
 
     if not rewards then
         -- 计算结果为空（不应发生，如 maxStageId 配置缺失），安全清零
@@ -213,18 +241,7 @@ function IdleSettleService.PreSettleForFirstClear(uid)
     local accum = bd.idleAccumSec or 0
     if accum <= 0 then return end
 
-    -- 获取实时出战英雄数
-    local heroesData = PDM.GetModule(uid, "heroes")
-    local heroCount = 0
-    if heroesData and heroesData.deployed then
-        heroCount = #heroesData.deployed
-    end
-    if heroCount <= 0 then heroCount = 1 end
-
-    local stageConfig = StageProvider.Get()
-    local incomeStageId, dropStageId = OfflineCalc.resolveIdleStageAnchors(bd, stageConfig)
-    local calcSeconds, speedCardActive = getSpeedCardEffectiveSeconds(uid, accum)
-    local rewards = OfflineCalc.calcOnlineIdleRewards(calcSeconds, incomeStageId, heroCount, dropStageId, stageConfig)
+    local rewards, incomeStageId, dropStageId, speedCardActive = calculateIdleSettlement(uid, bd, accum)
 
     if not rewards then
         bd.idleAccumSec = 0

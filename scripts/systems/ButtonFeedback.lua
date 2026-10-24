@@ -22,14 +22,96 @@ local PRESS_DUR   = 0.06   -- 按下缩小动画时长
 local RELEASE_DUR = 0.12   -- 松开恢复动画时长
 local MIN_SCALE   = 0.92   -- 按下时的最小缩放
 
--- ======================== 全局按下状态 ========================
-local pressX, pressY = -9999, -9999   -- 当前按下的设计坐标
-local isPressed = false               -- 鼠标/触摸是否处于按下状态
+-- ======================== 输入与按钮状态 ========================
+local pressX, pressY = -9999, -9999   -- 由宿主转换好的设计坐标，不在此重复应用 DPR
+local isPressed = false
 
--- ======================== 按钮状态 ========================
---- { [key] = { phase, t0, releaseT0 } }
----   phase: "press" | "hold" | "release"
+---@class ButtonFeedbackState
+---@field phase string
+---@field t0 number
+---@field releaseT0 number
+---@type table<string, ButtonFeedbackState>
 local active = {}
+
+-- ======================== 时间段处理管线 ========================
+-- 每个时间段只处理自身阶段，并将当前缩放传给下一段。
+-- 这是有序穿透而非互斥分支：同帧可 press → hold → release。
+---@param info ButtonFeedbackState
+---@param now number
+---@param scale number
+---@return number
+local function pressSegment(info, now, scale)
+    if info.phase ~= "press" then return scale end
+    local elapsed = now - info.t0
+    if elapsed < PRESS_DUR then
+        local t = elapsed / PRESS_DUR
+        return 1.0 - (1.0 - MIN_SCALE) * t
+    end
+    info.phase = "hold"
+    return scale
+end
+
+---@param info ButtonFeedbackState
+---@param now number
+---@param scale number
+---@return number
+local function holdSegment(info, now, scale)
+    if info.phase ~= "hold" then return scale end
+    if not isPressed then
+        info.phase = "release"
+        info.releaseT0 = now
+    end
+    return MIN_SCALE
+end
+
+---@param info ButtonFeedbackState
+---@param now number
+---@param scale number
+---@return number? scale nil 表示恢复时间段已结束
+local function releaseSegment(info, now, scale)
+    if info.phase ~= "release" then return scale end
+    local elapsed = now - info.releaseT0
+    if elapsed >= RELEASE_DUR then return nil end
+    local t = elapsed / RELEASE_DUR
+    t = 1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t)
+    return MIN_SCALE + (1.0 - MIN_SCALE) * t
+end
+
+local segments = { pressSegment, holdSegment, releaseSegment }
+
+---@param info ButtonFeedbackState
+---@param now number
+---@return number?
+local function sampleFeedback(info, now)
+    local scale = 1.0
+    for _, segment in ipairs(segments) do
+        local nextScale = segment(info, now, scale)
+        if nextScale == nil then return nil end
+        scale = nextScale
+    end
+    return scale
+end
+
+-- 仅无记录时命中/建档；已有动画不重新命中、不再次播放按下音效。
+---@param key string
+---@param now number
+---@param cx number
+---@param cy number
+---@param w? number
+---@param h? number
+---@return ButtonFeedbackState?
+local function acquirePress(key, now, cx, cy, w, h)
+    if not isPressed then return nil end
+    local hw, hh = (w or 200) * 0.5, (h or 100) * 0.5
+    if pressX < cx - hw or pressX > cx + hw
+        or pressY < cy - hh or pressY > cy + hh then
+        return nil
+    end
+    local info = { phase = "press", t0 = now, releaseT0 = 0 }
+    active[key] = info
+    require("systems.GameSFX").playUIClick(2)
+    return info
+end
 
 -- ======================== 全局输入回调 ========================
 
@@ -43,6 +125,7 @@ end
 
 --- 在 HandleMouseButtonUp / HandleTouchEnd 中调用
 function M.onRelease()
+    -- 不提前终止 press 时间段；不足 .06 秒的短按仍先完成缩小。
     isPressed = false
 end
 
@@ -53,17 +136,16 @@ end
 function M.trigger(key)
     local info = active[key]
     if info and (info.phase == "press" or info.phase == "hold") then
-        -- 按钮已在按下状态，切换到恢复
         info.phase = "release"
         info.releaseT0 = time.elapsedTime
     else
-        -- 没有按下记录（可能是拖拽后触发、或其他情况），做一次快速弹跳
+        -- release 期间复触发也走此分支：重建时间段并再播放一次点击音。
+        -- 保持两次 elapsedTime 读取，不合并为单次采样。
         active[key] = {
             phase = "release",
             t0 = time.elapsedTime,
             releaseT0 = time.elapsedTime,
         }
-        -- 无按下记录时仍播一次（拖拽触发等），避免完全无声
         require("systems.GameSFX").playUIClick(2)
     end
 end
@@ -79,62 +161,18 @@ end
 function M.begin(vg, key, cx, cy, w, h)
     local info = active[key]
     local now = time.elapsedTime
-    local s = 1.0
-
-    -- 没有活跃记录时，检测是否被按下命中
     if not info then
-        if not isPressed then return false end
-        -- 命中检测
-        local hw, hh = (w or 200) * 0.5, (h or 100) * 0.5
-        if pressX < cx - hw or pressX > cx + hw
-            or pressY < cy - hh or pressY > cy + hh then
-            return false
-        end
-        -- 命中！启动按下动画
-        info = {
-            phase = "press",
-            t0 = now,
-            releaseT0 = 0,
-        }
-        active[key] = info
-        -- 按下即播点击音，避免等松开才响（听感延迟）
-        require("systems.GameSFX").playUIClick(2)
+        info = acquirePress(key, now, cx, cy, w, h)
+        if not info then return false end
     end
 
-    -- Phase 1: 快速缩小
-    if info.phase == "press" then
-        local elapsed = now - info.t0
-        if elapsed < PRESS_DUR then
-            local t = elapsed / PRESS_DUR
-            s = 1.0 - (1.0 - MIN_SCALE) * t
-        else
-            info.phase = "hold"
-        end
+    local s = sampleFeedback(info, now)
+    if s == nil then
+        active[key] = nil
+        return false
     end
 
-    -- Phase 2: 保持缩小，等待 trigger() 或松开
-    if info.phase == "hold" then
-        s = MIN_SCALE
-        if not isPressed then
-            -- 鼠标已松开但 trigger 未调用（拖拽出按钮区域等），直接恢复
-            info.phase = "release"
-            info.releaseT0 = now
-        end
-    end
-
-    -- Phase 3: ease-out 恢复到 1.0
-    if info.phase == "release" then
-        local elapsed = now - info.releaseT0
-        if elapsed >= RELEASE_DUR then
-            active[key] = nil
-            return false
-        end
-        local t = elapsed / RELEASE_DUR
-        -- ease-out cubic
-        t = 1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t)
-        s = MIN_SCALE + (1.0 - MIN_SCALE) * t
-    end
-
+    -- 设计坐标下的原始 NanoVG 变换顺序保持不变。
     nvgSave(vg)
     nvgTranslate(vg, cx, cy)
     nvgScale(vg, s, s)

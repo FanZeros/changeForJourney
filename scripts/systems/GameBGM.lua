@@ -22,38 +22,89 @@ local TRACKS = {
 local FADE_OUT_TIME = 0.4    -- 旧轨道快速淡出（秒）
 local FADE_IN_TIME  = 1.2    -- 新轨道缓慢淡入（秒）
 
--- ── 内部状态 ──
+-- ── 播放器生命周期与资源 ──
 ---@type Scene
-local scene_     = nil
+local scene_ = nil
 ---@type Node
-local bgmNode_   = nil
-local started_   = false
-local masterGain_ = 1.0   -- 主音量乘数 0~1（由 SettingsPanel 控制）
+local bgmNode_ = nil
+local started_ = false
+local masterGain_ = 1.0
+local sounds_ = {}
 
--- 已加载的 Sound 资源（key → Sound）
-local sounds_    = {}
+-- 通道身份稳定，active 只决定下一次切换时谁接收新曲。
+---@class BGMChannel
+---@field source SoundSource?
+---@type { A: BGMChannel, B: BGMChannel, active: string, key: string }
+local channels_ = { A = {}, B = {}, active = "A", key = "battle" }
 
--- 双通道（A/B 交替使用）
----@type SoundSource
-local srcA_      = nil
----@type SoundSource
-local srcB_      = nil
-local activeSlot_  = "A"       -- 当前活跃的通道
-local activeKey_   = "battle"  -- 当前播放的轨道 key
+-- 每次切轨替换整个会话；中途切换直接复用另一通道，不先 Stop 旧会话。
+---@class BGMFadeSession
+---@field outgoing SoundSource
+---@field incoming SoundSource
+---@field elapsed number
+---@field fromGain number 已含切换瞬间的主音量，更新时仍再乘一次（保持旧语义）
+---@field toGain number 轨道原始目标音量
+---@type BGMFadeSession?
+local fade_ = nil
 
--- 淡入淡出状态
-local fading_       = false
-local fadeTimer_    = 0
-local fadeFromGain_ = 0   -- 淡出通道的起始音量
-local fadeToGain_   = 0   -- 淡入通道的目标音量
-
--- ── 工具函数 ──
 local function getActiveSource()
-    return activeSlot_ == "A" and srcA_ or srcB_
+    return channels_.active == "A" and channels_.A.source or channels_.B.source
 end
 
 local function getInactiveSource()
-    return activeSlot_ == "A" and srcB_ or srcA_
+    return channels_.active == "A" and channels_.B.source or channels_.A.source
+end
+
+local function preloadTracks()
+    for key, info in pairs(TRACKS) do
+        local snd = cache:GetResource("Sound", info.path)
+        if snd then
+            snd.looped = true
+            sounds_[key] = snd
+        else
+            print("[GameBGM] 加载失败: " .. info.path)
+        end
+    end
+end
+
+-- 新曲播放/Seek 完成后才采样淡出起点，随后提交会话与活跃通道。
+---@param outgoing SoundSource
+---@param incoming SoundSource
+---@param key string
+local function beginFade(outgoing, incoming, key)
+    local fromGain = outgoing.gain
+    fade_ = {
+        outgoing = outgoing, incoming = incoming,
+        elapsed = 0, fromGain = fromGain, toGain = TRACKS[key].gain,
+    }
+    channels_.key = key
+    channels_.active = channels_.active == "A" and "B" or "A"
+end
+
+---@param session BGMFadeSession
+local function applyFade(session)
+    -- 保持写入顺序：旧轨音量 → 新轨音量 → 完成帧 Stop/旧轨归零/新轨再写。
+    -- 不钳制 elapsed，负 dt 与回退时间仍按原线性公式外推。
+    if session.elapsed < FADE_OUT_TIME then
+        local t = session.elapsed / FADE_OUT_TIME
+        session.outgoing.gain = session.fromGain * (1 - t) * masterGain_
+    else
+        session.outgoing.gain = 0
+    end
+
+    if session.elapsed < FADE_IN_TIME then
+        local t = session.elapsed / FADE_IN_TIME
+        session.incoming.gain = session.toGain * t * masterGain_
+    else
+        session.incoming.gain = session.toGain * masterGain_
+    end
+
+    if session.elapsed >= FADE_IN_TIME then
+        session.outgoing:Stop()
+        session.outgoing.gain = 0
+        session.incoming.gain = session.toGain * masterGain_
+        fade_ = nil
+    end
 end
 
 -- ── 公开 API ──
@@ -65,42 +116,28 @@ end
 
 function GameBGM.start()
     if started_ then return end
+    -- 无 scene 也记 started；后续 init/start 不补启动，需显式 stop 后再试。
     started_ = true
     if not scene_ then return end
 
-    -- 预加载所有轨道
-    for key, info in pairs(TRACKS) do
-        local snd = cache:GetResource("Sound", info.path)
-        if snd then
-            snd.looped = true
-            sounds_[key] = snd
-        else
-            print("[GameBGM] 加载失败: " .. info.path)
-        end
-    end
-
+    preloadTracks()
     bgmNode_ = scene_:CreateChild("GameBGM", LOCAL)
+    channels_.A.source = bgmNode_:CreateComponent("SoundSource")
+    channels_.A.source.soundType = "Music"
+    channels_.B.source = bgmNode_:CreateComponent("SoundSource")
+    channels_.B.source.soundType = "Music"
 
-    -- 创建双通道
-    srcA_ = bgmNode_:CreateComponent("SoundSource")
-    srcA_.soundType = "Music"
-    srcB_ = bgmNode_:CreateComponent("SoundSource")
-    srcB_.soundType = "Music"
-
-    -- 播放初始轨道
-    local info = TRACKS[activeKey_]
-    local snd  = sounds_[activeKey_]
+    local info = TRACKS[channels_.key]
+    local snd = sounds_[channels_.key]
     if snd and info then
-        snd.looped = true  -- 确保循环标记生效
-        srcA_.gain = info.gain * masterGain_
-        srcA_:Play(snd)
+        snd.looped = true
+        channels_.A.source.gain = info.gain * masterGain_
+        channels_.A.source:Play(snd)
     end
-    srcB_.gain = 0
-
-    activeSlot_ = "A"
-    fading_ = false
-
-    print("[GameBGM] 开始播放 track=" .. activeKey_)
+    channels_.B.source.gain = 0
+    channels_.active = "A"
+    fade_ = nil
+    print("[GameBGM] 开始播放 track=" .. channels_.key)
 end
 
 --- 切换到指定场景的轨道
@@ -108,24 +145,21 @@ end
 ---@param opts? { fromStart?: boolean }  fromStart=true 时从头播放，否则按进度同步
 function GameBGM.setScene(sceneName, opts)
     if not TRACKS[sceneName] then return end
-    if sceneName == activeKey_ then return end
+    if sceneName == channels_.key then return end
     if not started_ then
-        activeKey_ = sceneName
+        channels_.key = sceneName
         return
     end
 
     local newSnd = sounds_[sceneName]
     if not newSnd then return end
 
-    local activeSrc  = getActiveSource()
-    local newSrc     = getInactiveSource()
-    local newInfo    = TRACKS[sceneName]
-    local fromStart  = opts and opts.fromStart
-
-    -- 计算当前进度百分比（fromStart 时跳过）
+    local activeSrc = getActiveSource()
+    local newSrc = getInactiveSource()
+    local fromStart = opts and opts.fromStart
     local pct = 0
     if not fromStart then
-        local curSnd = sounds_[activeKey_]
+        local curSnd = sounds_[channels_.key]
         if curSnd and activeSrc:IsPlaying() then
             local len = curSnd:GetLength()
             if len > 0 then
@@ -134,66 +168,28 @@ function GameBGM.setScene(sceneName, opts)
         end
     end
 
-    -- 在新通道上播放
     local newLen = newSnd:GetLength()
-    newSnd.looped = true  -- 确保循环标记生效
+    newSnd.looped = true
     newSrc.gain = 0
     newSrc:Play(newSnd)
     if not fromStart and newLen > 0 and pct > 0 then
         newSrc:Seek(pct * newLen)
     end
-
-    -- 启动交叉淡入淡出
-    fadeFromGain_ = activeSrc.gain
-    ---@diagnostic disable-next-line: assign-type-mismatch
-    fadeToGain_   = newInfo.gain
-    fadeTimer_    = 0
-    fading_       = true
-
-    -- 切换活跃通道
-    activeKey_  = sceneName
-    activeSlot_ = (activeSlot_ == "A") and "B" or "A"
+    beginFade(activeSrc, newSrc, sceneName)
 end
 
 ---@return string
 function GameBGM.getScene()
-    return activeKey_
+    return channels_.key
 end
 
---- 每帧更新（处理淡入淡出）
---- 旧轨道快速淡出，新轨道同步缓慢淡入，切换零延迟
+--- 每帧更新：会话持有参与淡变的两个通道，不再由多组平行标志拼接状态。
 ---@param dt number
 function GameBGM.update(dt)
-    if not fading_ then return end
-
-    fadeTimer_ = fadeTimer_ + dt
-
-    local activeSrc = getActiveSource()
-    local oldSrc    = getInactiveSource()
-
-    -- 旧轨道：快速淡出
-    if fadeTimer_ < FADE_OUT_TIME then
-        local t = fadeTimer_ / FADE_OUT_TIME
-        oldSrc.gain = fadeFromGain_ * (1 - t) * masterGain_
-    else
-        oldSrc.gain = 0
-    end
-
-    -- 新轨道：同步缓慢淡入（立即开始，无延迟）
-    if fadeTimer_ < FADE_IN_TIME then
-        local t = fadeTimer_ / FADE_IN_TIME
-        activeSrc.gain = fadeToGain_ * t * masterGain_
-    else
-        activeSrc.gain = fadeToGain_ * masterGain_
-    end
-
-    -- 两者都完成后结束
-    if fadeTimer_ >= FADE_IN_TIME then
-        oldSrc:Stop()
-        oldSrc.gain = 0
-        activeSrc.gain = fadeToGain_ * masterGain_
-        fading_ = false
-    end
+    local session = fade_
+    if not session then return end
+    session.elapsed = session.elapsed + dt
+    applyFade(session)
 end
 
 --- 设置主音量乘数（0~1），立即生效
@@ -201,9 +197,9 @@ end
 function GameBGM.setMasterGain(gain)
     masterGain_ = math.max(0, math.min(1, gain))
     if not started_ then return end
-    -- 立即更新当前活跃通道的音量
+    -- 即便正在淡变，也仅立即写活跃通道，不重算会话起点/进度。
     local activeSrc = getActiveSource()
-    local info = TRACKS[activeKey_]
+    local info = TRACKS[channels_.key]
     if activeSrc and info then
         activeSrc.gain = info.gain * masterGain_
     end
@@ -216,15 +212,16 @@ function GameBGM.getMasterGain()
 end
 
 function GameBGM.stop()
-    if srcA_ then srcA_:Stop() end
-    if srcB_ then srcB_:Stop() end
+    if channels_.A.source then channels_.A.source:Stop() end
+    if channels_.B.source then channels_.B.source:Stop() end
     if bgmNode_ then bgmNode_:Remove() end
-    srcA_    = nil
-    srcB_    = nil
+    channels_.A.source = nil
+    channels_.B.source = nil
     bgmNode_ = nil
     started_ = false
-    fading_  = false
-    sounds_  = {}
+    fade_ = nil
+    sounds_ = {}
+    -- 保留 scene、主音量、active 身份和 key；重启仍在 A 播放最后选择的曲目。
 end
 
 return GameBGM

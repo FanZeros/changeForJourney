@@ -64,6 +64,100 @@ local function makeRuntimeEffect(artifact, effectType, extra)
     return effect
 end
 
+-- 策略只保存行为和作用域，不捕获 ArtifactDefs/AD 的可变配置值。
+-- 每件神器仍独立收集 entries，再立即提交；不能跨神器批量重算。
+local function flatBonus(attributeName)
+    return function(_attrs, value, entries)
+        add(entries, AD[attributeName], value)
+    end
+end
+
+local function adjacentBonus(attributeName, offset)
+    return function(_attrs, value, entries, ownerSlot, targetSlot)
+        if ownerSlot and targetSlot == ownerSlot + offset then
+            add(entries, AD[attributeName], value)
+        end
+    end
+end
+
+local function powerBonus(calculate)
+    return function(attrs, value)
+        addPowerOnly(attrs, calculate(value))
+    end
+end
+
+local function convertHpToShield(attrs, value, entries)
+    local maxHp = attrs:get(AD.MAX_HP)
+    local convertedHp = maxHp * 0.5
+    local hpBonus = attrs:get(AD.HP_BONUS)
+    local hpBonusMult = 1 + hpBonus / 100
+    if hpBonusMult <= 0 then hpBonusMult = 1 end
+    add(entries, AD.MAX_HP, -convertedHp / hpBonusMult)
+    add(entries, AD.ENERGY_SHIELD, convertedHp * value / 100)
+end
+
+local function ignoreArmorWithPenalty(attrs, value, entries)
+    add(entries, AD.ARMOR_BONUS, -value)
+    attrs.artifactIgnoreArmor = true
+end
+
+local function increaseHpWithoutHealing(attrs, value, entries)
+    add(entries, AD.HP_BONUS, value)
+    attrs.artifactNoHeal = true
+end
+
+local function multiplyExtraDamage(attrs, value)
+    attrs.artifactExtraDamageMult = (attrs.artifactExtraDamageMult or 1.0) * (1 + value / 100)
+end
+
+local function tradeCritRateForDamage(attrs, value)
+    attrs.artifactCritRateMult = (attrs.artifactCritRateMult or 1.0) * 0.5
+    attrs.artifactCritDmgMult = (attrs.artifactCritDmgMult or 1.0) * (value / 100)
+end
+
+local function slowAttackWithDamageBonus(attrs, value, entries)
+    add(entries, AD.ATK_INTERVAL, attrs:get(AD.ATK_INTERVAL) * 0.5)
+    multiplyExtraDamage(attrs, value)
+end
+
+local function enableChaosDamage(attrs, value)
+    addPowerOnly(attrs, 200 + value)
+    attrs.artifactChaosDamageMult = value / 100
+    attrs.artifactChaosDefenseDisabled = true
+end
+
+local function raiseBlockCap(attrs, value)
+    attrs.artifactBlockCap = math.max(attrs.artifactBlockCap or 100, value)
+    if attrs.recalc then attrs:recalc() end
+end
+
+---@class ArtifactEffectStrategy
+---@field apply? fun(attrs: table, value: number, entries: table[], ownerSlot: number, targetSlot: number)
+---@field runtime? boolean
+---@field affectsOtherSlots? boolean
+
+-- 属性/标记策略先执行，runtime 描述随后追加，最后提交本件 modifier。
+-- 纯 runtime 效果无需空处理函数；未知 effectType 仍不产生任何效果。
+---@type table<string, ArtifactEffectStrategy>
+local EFFECT_STRATEGIES = {
+    dodge_decay = { runtime = true },
+    shield_threat_clear = { apply = flatBonus("ES_BONUS"), runtime = true },
+    hp_to_shield = { apply = convertHpToShield },
+    ignore_armor_armor_penalty = { apply = ignoreArmorWithPenalty },
+    left_phys_atk_bonus = { apply = adjacentBonus("PHYS_ATK_BONUS", -1), affectsOtherSlots = true },
+    right_mag_atk_bonus = { apply = adjacentBonus("MAG_ATK_BONUS", 1), affectsOtherSlots = true },
+    hp_bonus_no_heal = { apply = increaseHpWithoutHealing, runtime = true },
+    taunt_mask = { apply = multiplyExtraDamage, runtime = true },
+    crit_dmg_mult_rate_half = { apply = tradeCritRateForDamage },
+    slow_attack_damage_bonus = { apply = slowAttackWithDamageBonus },
+    counter_attack = { apply = powerBonus(function(value) return value * 0.5 end), runtime = true },
+    revive_damage_bonus = { apply = powerBonus(function(value) return 120 + value * 0.4 end), runtime = true },
+    ghost_damage_bonus = { apply = powerBonus(function(value) return value * 0.35 end), runtime = true },
+    judgment_res_down = { apply = powerBonus(function(value) return value * 2.0 end), runtime = true },
+    chaos_damage = { apply = enableChaosDamage },
+    block_cap_up = { apply = raiseBlockCap },
+}
+
 local function applyArtifactToTarget(attrs, artifact, ownerSlot, targetSlot, runtimeEffects)
     if not artifact then return end
     local def = ArtifactDefs.get(artifact.artifactId)
@@ -72,63 +166,15 @@ local function applyArtifactToTarget(attrs, artifact, ownerSlot, targetSlot, run
     local value = tonumber(artifact.value) or 0
     local entries = {}
     local effectType = def.effectType
+    local strategy = EFFECT_STRATEGIES[effectType]
 
-    if effectType == "dodge_decay" then
-        runtimeEffects[#runtimeEffects + 1] = makeRuntimeEffect(artifact, effectType)
-    elseif effectType == "shield_threat_clear" then
-        add(entries, AD.ES_BONUS, value)
-        runtimeEffects[#runtimeEffects + 1] = makeRuntimeEffect(artifact, effectType)
-    elseif effectType == "hp_to_shield" then
-        local maxHp = attrs:get(AD.MAX_HP)
-        local convertedHp = maxHp * 0.5
-        local hpBonus = attrs:get(AD.HP_BONUS)
-        local hpBonusMult = 1 + hpBonus / 100
-        if hpBonusMult <= 0 then hpBonusMult = 1 end
-        add(entries, AD.MAX_HP, -convertedHp / hpBonusMult)
-        add(entries, AD.ENERGY_SHIELD, convertedHp * value / 100)
-    elseif effectType == "ignore_armor_armor_penalty" then
-        add(entries, AD.ARMOR_BONUS, -value)
-        attrs.artifactIgnoreArmor = true
-    elseif effectType == "left_phys_atk_bonus" then
-        if ownerSlot and targetSlot == ownerSlot - 1 then
-            add(entries, AD.PHYS_ATK_BONUS, value)
+    if strategy then
+        if strategy.apply then
+            strategy.apply(attrs, value, entries, ownerSlot, targetSlot)
         end
-    elseif effectType == "right_mag_atk_bonus" then
-        if ownerSlot and targetSlot == ownerSlot + 1 then
-            add(entries, AD.MAG_ATK_BONUS, value)
+        if strategy.runtime then
+            runtimeEffects[#runtimeEffects + 1] = makeRuntimeEffect(artifact, effectType)
         end
-    elseif effectType == "hp_bonus_no_heal" then
-        add(entries, AD.HP_BONUS, value)
-        attrs.artifactNoHeal = true
-        runtimeEffects[#runtimeEffects + 1] = makeRuntimeEffect(artifact, effectType)
-    elseif effectType == "taunt_mask" then
-        attrs.artifactExtraDamageMult = (attrs.artifactExtraDamageMult or 1.0) * (1 + value / 100)
-        runtimeEffects[#runtimeEffects + 1] = makeRuntimeEffect(artifact, effectType)
-    elseif effectType == "crit_dmg_mult_rate_half" then
-        attrs.artifactCritRateMult = (attrs.artifactCritRateMult or 1.0) * 0.5
-        attrs.artifactCritDmgMult = (attrs.artifactCritDmgMult or 1.0) * (value / 100)
-    elseif effectType == "slow_attack_damage_bonus" then
-        add(entries, AD.ATK_INTERVAL, attrs:get(AD.ATK_INTERVAL) * 0.5)
-        attrs.artifactExtraDamageMult = (attrs.artifactExtraDamageMult or 1.0) * (1 + value / 100)
-    elseif effectType == "counter_attack" then
-        addPowerOnly(attrs, value * 0.5)
-        runtimeEffects[#runtimeEffects + 1] = makeRuntimeEffect(artifact, effectType)
-    elseif effectType == "revive_damage_bonus" then
-        addPowerOnly(attrs, 120 + value * 0.4)
-        runtimeEffects[#runtimeEffects + 1] = makeRuntimeEffect(artifact, effectType)
-    elseif effectType == "ghost_damage_bonus" then
-        addPowerOnly(attrs, value * 0.35)
-        runtimeEffects[#runtimeEffects + 1] = makeRuntimeEffect(artifact, effectType)
-    elseif effectType == "judgment_res_down" then
-        addPowerOnly(attrs, value * 2.0)
-        runtimeEffects[#runtimeEffects + 1] = makeRuntimeEffect(artifact, effectType)
-    elseif effectType == "chaos_damage" then
-        addPowerOnly(attrs, 200 + value)
-        attrs.artifactChaosDamageMult = value / 100
-        attrs.artifactChaosDefenseDisabled = true
-    elseif effectType == "block_cap_up" then
-        attrs.artifactBlockCap = math.max(attrs.artifactBlockCap or 100, value)
-        if attrs.recalc then attrs:recalc() end
     end
 
     if #entries > 0 then
@@ -158,7 +204,9 @@ function ArtifactBridge.applyToUnit(attrs, partySlot, artifactData, teamIdx)
                     applyArtifactToTarget(attrs, artifact, slot, partySlot, runtimeEffects)
                 else
                     local def = ArtifactDefs.get(artifact.artifactId)
-                    if def and (def.effectType == "left_phys_atk_bonus" or def.effectType == "right_mag_atk_bonus") then
+                    -- 两次短路读取保持动态 effectType 访问器的原有时序。
+                    if def and (def.effectType == "left_phys_atk_bonus"
+                        or def.effectType == "right_mag_atk_bonus") then
                         applyArtifactToTarget(attrs, artifact, slot, partySlot, runtimeEffects)
                     end
                 end

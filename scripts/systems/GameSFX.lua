@@ -95,157 +95,167 @@ local SFX_DEFS = {
     EF_skill_20  = { paths = { "audio/battle_sfx/EF_skill_20.ogg" }, gain = 0.56 }, -- 星门·梅丽莎
 }
 
--- ── 内部状态 ──
----@type Scene
-local scene_       = nil
----@type Node
-local sfxNode_     = nil
-local started_     = false
-local masterGain_  = 1.0   -- 主音量乘数（由 SettingsPanel 控制；Effect 通道另有 SFX_PACK_GAIN）
+-- 生命周期只持有宿主与启动标志；stop 不清除已绑定的 scene。
+---@class GameSFXLifecycle
+---@field scene Scene|nil
+---@field node Node|nil
+---@field started boolean
+local lifecycle = { started = false }
 
--- 已加载的 Sound 资源：{ key -> Sound[] }
-local sounds_      = {}
+-- 音量/队静音跨 stop 保留，不与资源、播放组件一起重置。
+local mix = { masterGain = 1.0, teamMuted = {} }
 
--- 复用 SoundSource 池（避免每次 play 新建组件）
-local MAX_POOL     = 12
-local pool_        = {}    -- SoundSource[]
+-- 资源目录与播放实例分开持有：资源加载不负责租用组件。
+---@type table<string, Sound[]>
+local loadedSounds = {}
+---@type SoundSource[]
+local sources = {}
+local MAX_POOL = 12
+local PREWARM_COUNT = 6
 
--- ── 内部工具 ──
-
---- 从池中获取一个空闲的 SoundSource，若无则新建
 ---@return SoundSource
-local function acquireSource()
-    for _, src in ipairs(pool_) do
-        if not src:IsPlaying() then
-            return src
-        end
+local function createEffectSource()
+    local src = lifecycle.node:CreateComponent("SoundSource")
+    src.soundType = "Effect"
+    return src
+end
+
+local function prewarmSources()
+    for i = 1, PREWARM_COUNT do
+        local src = createEffectSource()
+        sources[i] = src
     end
-    -- 扩池
-    if sfxNode_ and #pool_ < MAX_POOL then
-        local src = sfxNode_:CreateComponent("SoundSource")
-        src.soundType = "Effect"
-        table.insert(pool_, src)
+end
+
+--- 先租用首个空闲项，再扩池，满池只抢占末项。
+---@return SoundSource
+local function leaseSource()
+    for _, src in ipairs(sources) do
+        if not src:IsPlaying() then return src end
+    end
+    if lifecycle.node and #sources < MAX_POOL then
+        local src = createEffectSource()
+        table.insert(sources, src)
         return src
     end
-    -- 池满时复用最后一个（音效打断可接受）
-    return pool_[#pool_]
+    return sources[#sources]
 end
 
--- ── 公开 API ──
-
----@param scene Scene
-function GameSFX.init(scene)
-    scene_ = scene
-end
-
---- 初始化并预加载全部音效
-function GameSFX.start()
-    if started_ then return end
-    started_ = true
-    if not scene_ then return end
-
-    sfxNode_ = scene_:CreateChild("GameSFX", LOCAL)
-
-    -- 预建若干 SoundSource 到池
-    for i = 1, 6 do
-        local src = sfxNode_:CreateComponent("SoundSource")
-        src.soundType = "Effect"
-        pool_[i] = src
-    end
-
-    -- 预加载全部音效
+local function loadCatalog()
+    -- 保留 pairs 顺序；逐项发布空列表，异常或重入时不做原子替换。
     for key, def in pairs(SFX_DEFS) do
-        sounds_[key] = {}
+        loadedSounds[key] = {}
         for _, path in ipairs(def.paths) do
             local snd = cache:GetResource("Sound", path)
             if snd then
                 snd.looped = false
-                table.insert(sounds_[key], snd)
+                table.insert(loadedSounds[key], snd)
             else
                 print("[GameSFX] 加载失败: " .. path)
             end
         end
     end
-
-    print("[GameSFX] 已启动，加载音效 " .. #(function()
-        local t = {}
-        for k in pairs(SFX_DEFS) do table.insert(t, k) end
-        return t
-    end)() .. " 种")
 end
 
-local teamMuted = {}
+local function announceStarted()
+    local keys = {}
+    for key in pairs(SFX_DEFS) do table.insert(keys, key) end
+    print("[GameSFX] 已启动，加载音效 " .. #keys .. " 种")
+end
 
---- 多队战斗各自静音。未传队伍时沿用全局音效开关。
+local function releasePlayback()
+    for _, src in ipairs(sources) do src:Stop() end
+    if lifecycle.node then lifecycle.node:Remove() end
+    lifecycle.node = nil
+    sources = {}
+    loadedSounds = {}
+    lifecycle.started = false
+end
+
+--- 解析已加载请求；随机选择留在租用前，单资源同样消耗 RNG。
+local function resolveSound(key)
+    local def = SFX_DEFS[key]
+    local list = loadedSounds[key]
+    if not def or not list or #list == 0 then
+        print("[GameSFX] 未知音效或未加载: " .. tostring(key))
+        return
+    end
+    return def, list[math.random(1, #list)]
+end
+
+-- ── 公开 API：保留动态导出分派与无返回值契约 ──
+
+---@param scene Scene
+function GameSFX.init(scene)
+    lifecycle.scene = scene
+end
+
+function GameSFX.start()
+    if lifecycle.started then return end
+    lifecycle.started = true
+    if not lifecycle.scene then return end
+    lifecycle.node = lifecycle.scene:CreateChild("GameSFX", LOCAL)
+    prewarmSources()
+    loadCatalog()
+    announceStarted()
+end
+
 ---@param teamIdx number|nil
 ---@param muted boolean|nil
 function GameSFX.setTeamMuted(teamIdx, muted)
     teamIdx = tonumber(teamIdx)
     if not teamIdx then return end
-    teamMuted[teamIdx] = muted == true
+    mix.teamMuted[teamIdx] = muted == true
 end
 
 ---@param teamIdx number|nil
 ---@return boolean
 function GameSFX.isTeamMuted(teamIdx)
-    return teamMuted[tonumber(teamIdx) or 0] == true
+    return mix.teamMuted[tonumber(teamIdx) or 0] == true
 end
 
---- 播放指定音效。teamIdx 有值时尊重该队自己的音效开关。
----@param key string  音效键（见 SFX_DEFS）
+---@param key string
 ---@param teamIdx number|nil
 function GameSFX.play(key, teamIdx)
-    if not started_ then return end
+    if not lifecycle.started then return end
     if teamIdx and GameSFX.isTeamMuted(teamIdx) then return end
-    local def = SFX_DEFS[key]
-    local list = sounds_[key]
-    if not def or not list or #list == 0 then
-        print("[GameSFX] 未知音效或未加载: " .. tostring(key))
-        return
-    end
-    -- 随机选一个
-    local snd = list[math.random(1, #list)]
-    local src = acquireSource()
-    src.gain = def.gain * masterGain_
+    local def, snd = resolveSound(key)
+    if not def then return end
+    local src = leaseSource()
+    -- 租用期间可重入改音量；此处才读取当前乘数，不预先计算。
+    src.gain = def.gain * mix.masterGain
     src:Play(snd)
 end
 
---- 播放 UI 通用点击音（轻/中/重 由外部传 level 1~4，默认 2）
----@param level? number 1=轻 2=中轻 3=中重 4=重
+---@type table<number, string>
+local UI_CLICK_KEYS = { "ui_click_1", "ui_click_2", "ui_click_3", "ui_click_4" }
+---@type table<number, string>
+local UI_MOVE_KEYS = { "ui_move_1", "ui_move_2", "ui_move_3", "ui_move_4" }
+
+---@param level? number
 function GameSFX.playUIClick(level)
-    local keys = { "ui_click_1", "ui_click_2", "ui_click_3", "ui_click_4" }
-    local key = keys[math.max(1, math.min(4, level or 2))]
+    local key = UI_CLICK_KEYS[math.max(1, math.min(4, level or 2))]
     GameSFX.play(key)
 end
 
---- 播放 UI 移动音（level 1~4，默认 2）
 ---@param level? number
 function GameSFX.playUIMove(level)
-    local keys = { "ui_move_1", "ui_move_2", "ui_move_3", "ui_move_4" }
-    local key = keys[math.max(1, math.min(4, level or 2))]
+    local key = UI_MOVE_KEYS[math.max(1, math.min(4, level or 2))]
     GameSFX.play(key)
 end
 
---- 设置主音量乘数（0~1），立即生效
 ---@param gain number
 function GameSFX.setMasterGain(gain)
-    masterGain_ = math.max(0, math.min(1, gain))
+    mix.masterGain = math.max(0, math.min(1, gain))
 end
 
 ---@return number
 function GameSFX.getMasterGain()
-    return masterGain_
+    return mix.masterGain
 end
 
 function GameSFX.stop()
-    for _, src in ipairs(pool_) do
-        src:Stop()
-    end
-    if sfxNode_ then sfxNode_:Remove() end
-    sfxNode_  = nil
-    pool_     = {}
-    sounds_   = {}
-    started_  = false
+    releasePlayback()
 end
 
 return GameSFX

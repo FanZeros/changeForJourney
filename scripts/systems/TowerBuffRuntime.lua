@@ -152,13 +152,101 @@ function TBR.initMechanics(buffIds)
     print("[TowerBuffRuntime] initMechanics: " .. #M.buffIds .. " mechanic buffs active")
 end
 
---- 应用 mechanic 类初始化效果（战斗开始/新波次时对单位做一次性修改）
----@param allies table[] 己方单位列表
----@param enemies table[] 敌方单位列表（用于统计坦数量等）
-function TBR.applyMechanicInit(allies, enemies)
-    if not M then return end
-    M.allies = allies
+-- 初始化策略只负责各机制的一次性单位修改；间隔合并独立先行。
+-- #24 仇恨仍由调用侧查询处理，#27 动态攻速仍留在查询钩子中。
+local MECHANIC_INIT = {
+    combo_dmg_double = function(allies, params)
+        for _, unit in ipairs(allies) do
+            if unit.hp > 0 and unit.attrs then
+                local current = unit.attrs:get(AD.COMBO_DMG_UP)
+                if current > 0 then
+                    unit.attrs:addModifier("tower_combo_double_" .. (unit.heroId or 0), {
+                        { key = AD.COMBO_DMG_UP, flat = current }
+                    })
+                end
+            end
+        end
+    end,
 
+    warrior_bloodlust = function(allies, params)
+        local hpBonus = params.hpBonus or 1000
+        for _, unit in ipairs(allies) do
+            if unit.hp > 0 and unit.classId == CC.WARRIOR and unit.attrs then
+                local oldHp = unit.hp
+                local oldMaxHp = unit.maxHp or unit.attrs:get(AD.MAX_HP)
+                unit.attrs:addModifier("tower_warrior_bloodlust_" .. (unit.heroId or 0), {
+                    { key = AD.HP_BONUS, flat = hpBonus }
+                })
+                syncHpAfterMaxHpChange(unit, oldHp, oldMaxHp)
+                M.warriorNoHeal[unit.instanceId or unit.heroId or 0] = true
+            end
+        end
+    end,
+
+    mage_accumulate = function(allies, params)
+        for _, unit in ipairs(allies) do
+            if unit.hp > 0 and unit.classId == CC.MAGE then
+                M.mageAccumulate[unit.instanceId or unit.heroId or 0] = 0
+            end
+        end
+    end,
+
+    ranger_support = function(allies, params)
+        local perTank = params.perTank or 25
+        local tankCount = 0
+        for _, unit in ipairs(allies) do
+            if unit.hp > 0 and (unit.classId == CC.KNIGHT or unit.classId == CC.WARRIOR) then
+                tankCount = tankCount + 1
+            end
+        end
+        if tankCount > 0 then
+            local bonus = tankCount * perTank
+            for _, unit in ipairs(allies) do
+                if unit.hp > 0 and unit.classId == CC.RANGER and unit.attrs then
+                    unit.attrs:addModifier("tower_ranger_support_" .. (unit.heroId or 0), {
+                        { key = AD.ATK_SPEED, flat = bonus }
+                    })
+                end
+            end
+        end
+    end,
+
+    assassin_immunity = function(allies, params)
+        local count = params.count or 10
+        for _, unit in ipairs(allies) do
+            if unit.hp > 0 and unit.classId == CC.ASSASSIN then
+                local uid = unit.instanceId or unit.heroId or 0
+                M.assassinImmunity[uid] = (M.assassinImmunity[uid] or 0) + count
+            end
+        end
+    end,
+
+    priest_aura_hp = function(allies, params)
+        local hpBonus = params.hpBonus or 30
+        local priestAlive = false
+        for _, unit in ipairs(allies) do
+            if unit.hp > 0 and unit.classId == CC.PRIEST then
+                priestAlive = true
+                break
+            end
+        end
+        if priestAlive then
+            for _, unit in ipairs(allies) do
+                if unit.hp > 0 and unit.attrs then
+                    local oldHp = unit.hp
+                    local oldMaxHp = unit.maxHp or unit.attrs:get(AD.MAX_HP)
+                    unit.attrs:addModifier("tower_priest_aura_hp_" .. (unit.heroId or 0), {
+                        { key = AD.HP_BONUS, flat = hpBonus }
+                    })
+                    syncHpAfterMaxHpChange(unit, oldHp, oldMaxHp)
+                end
+            end
+        end
+    end,
+}
+
+-- 20/28 按现行列表逐项叠乘，不按 ID/机制去重；弱键基准跨 init/reset/cleanup 保留。
+local function applyInitialIntervals(allies)
     -- 合并20/28现行列表倍率后一次应用，跨波合法同卡仍按次数叠乘。
     local intervalMult, mageIntervalMult = 1, 1
     for _, buffId in ipairs(M.buffIds) do
@@ -175,115 +263,27 @@ function TBR.applyMechanicInit(allies, enemies)
             applyIntervalMultiplier(unit, multiplier)
         end
     end
+end
 
+--- 应用 mechanic 类初始化效果（战斗开始/新波次时对单位做一次性修改）
+---@param allies table[] 己方单位列表
+---@param enemies table[] 敌方单位列表（用于统计坦数量等）
+function TBR.applyMechanicInit(allies, enemies)
+    if not M then return end
+    M.allies = allies
+    applyInitialIntervals(allies)
+
+    -- 按原选取顺序分发，每次都读取当前配置；重复项逐次执行（修改器仍按原 ID 覆盖）。
     for _, buffId in ipairs(M.buffIds) do
         local buff = TowerConfig.BUFFS_BY_ID[buffId]
-        if not buff then goto continue end
-        local mid = buff.mechanicId
-        local params = buff.params or {}
-
-        -- #18 连击风暴：全体连击增伤×2（在当前基础上再加同等数值）
-        if mid == "combo_dmg_double" then
-            for _, unit in ipairs(allies) do
-                if unit.hp > 0 and unit.attrs then
-                    local current = unit.attrs:get(AD.COMBO_DMG_UP)
-                    if current > 0 then
-                        unit.attrs:addModifier("tower_combo_double_" .. (unit.heroId or 0), {
-                            { key = AD.COMBO_DMG_UP, flat = current }
-                        })
-                    end
-                end
-            end
-
-        -- #20 迅雷之势：在上方按基准统一应用，换波不重乘旧输出。
-        elseif mid == "interval_reduce" then
-
-        -- #24 守护誓约：骑士仇恨倍率+200%+初始仇恨2000（通过 ThreatManager 处理）
-        -- 注：仇恨初始值在 TowerBattleScene.startWave 中通过 ThreatManager.onBattleStart 后追加
-
-        -- #26 嗜血狂战：战士生命+1000%但禁疗
-        elseif mid == "warrior_bloodlust" then
-            local hpBonus = params.hpBonus or 1000
-            for _, unit in ipairs(allies) do
-                if unit.hp > 0 and unit.classId == CC.WARRIOR and unit.attrs then
-                    local oldHp = unit.hp
-                    local oldMaxHp = unit.maxHp or unit.attrs:get(AD.MAX_HP)
-                    unit.attrs:addModifier("tower_warrior_bloodlust_" .. (unit.heroId or 0), {
-                        { key = AD.HP_BONUS, flat = hpBonus }
-                    })
-                    syncHpAfterMaxHpChange(unit, oldHp, oldMaxHp)
-                    M.warriorNoHeal[unit.instanceId or unit.heroId or 0] = true
-                end
-            end
-
-        -- #27 狂战之魂：战士每损5%→攻速+10%（动态，在 getAtkIntervalMult 中处理）
-
-        -- #28 蓄能爆裂：在上方统一应用法师间隔总倍率。
-        elseif mid == "mage_charge_burst" then
-
-        -- #29 奥术聚能：法师蓄力初始化
-        elseif mid == "mage_accumulate" then
-            for _, unit in ipairs(allies) do
-                if unit.hp > 0 and unit.classId == CC.MAGE then
-                    M.mageAccumulate[unit.instanceId or unit.heroId or 0] = 0
-                end
-            end
-
-        -- #31 后援射击：射手每有一个战士/骑士→攻速+25%
-        elseif mid == "ranger_support" then
-            local perTank = params.perTank or 25
-            local tankCount = 0
-            for _, unit in ipairs(allies) do
-                if unit.hp > 0 and (unit.classId == CC.KNIGHT or unit.classId == CC.WARRIOR) then
-                    tankCount = tankCount + 1
-                end
-            end
-            if tankCount > 0 then
-                local bonus = tankCount * perTank
-                for _, unit in ipairs(allies) do
-                    if unit.hp > 0 and unit.classId == CC.RANGER and unit.attrs then
-                        unit.attrs:addModifier("tower_ranger_support_" .. (unit.heroId or 0), {
-                            { key = AD.ATK_SPEED, flat = bonus }
-                        })
-                    end
-                end
-            end
-
-        -- #33 虚影闪避：刺客免疫次数初始化
-        elseif mid == "assassin_immunity" then
-            local count = params.count or 10
-            for _, unit in ipairs(allies) do
-                if unit.hp > 0 and unit.classId == CC.ASSASSIN then
-                    local uid = unit.instanceId or unit.heroId or 0
-                    M.assassinImmunity[uid] = (M.assassinImmunity[uid] or 0) + count
-                end
-            end
-
-        -- #35 生命圣约：牧师存活时全体生命+30%
-        elseif mid == "priest_aura_hp" then
-            local hpBonus = params.hpBonus or 30
-            local priestAlive = false
-            for _, unit in ipairs(allies) do
-                if unit.hp > 0 and unit.classId == CC.PRIEST then
-                    priestAlive = true
-                    break
-                end
-            end
-            if priestAlive then
-                for _, unit in ipairs(allies) do
-                    if unit.hp > 0 and unit.attrs then
-                        local oldHp = unit.hp
-                        local oldMaxHp = unit.maxHp or unit.attrs:get(AD.MAX_HP)
-                        unit.attrs:addModifier("tower_priest_aura_hp_" .. (unit.heroId or 0), {
-                            { key = AD.HP_BONUS, flat = hpBonus }
-                        })
-                        syncHpAfterMaxHpChange(unit, oldHp, oldMaxHp)
-                    end
-                end
+        if buff then
+            local mid = buff.mechanicId
+            local params = buff.params or {}
+            local initialize = MECHANIC_INIT[mid]
+            if initialize then
+                initialize(allies, params)
             end
         end
-
-        ::continue::
     end
 end
 
@@ -317,15 +317,11 @@ end
 
 -- ======================== 每帧更新 ========================
 
---- 每帧更新（战斗进行中调用）
----@param dt number
----@param allies table[]
----@param enemies table[]
----@param freezeFn function(unit, duration) 冰冻单位回调
-function TBR.update(dt, allies, enemies, freezeFn)
-    if not M then return end
+local function advanceBattleTime(dt)
     M.battleTime = M.battleTime + dt
+end
 
+local function advanceKillDamageTimer(dt)
     -- 斩杀狂潮倒计时
     if M.killDmgTimer > 0 then
         M.killDmgTimer = M.killDmgTimer - dt
@@ -334,12 +330,16 @@ function TBR.update(dt, allies, enemies, freezeFn)
             M.killDmgTimer = 0
         end
     end
+end
 
+local function advanceDeathImmunityTimer(dt)
     -- 亡者遗志无敌倒计时
     if M.deathImmunityTimer > 0 then
         M.deathImmunityTimer = M.deathImmunityTimer - dt
     end
+end
 
+local function updatePeriodicFreeze(dt, allies, enemies, freezeFn)
     -- #21 霜寒领域：每隔10秒冰冻全体敌人
     local freezeBuff = TBR.hasMechanic("periodic_freeze")
     if freezeBuff and freezeFn then
@@ -358,7 +358,9 @@ function TBR.update(dt, allies, enemies, freezeFn)
             print("[TowerBuffRuntime] 霜寒领域触发! 冰冻 " .. frozenCount .. " 个敌人 " .. freezeDur .. "秒")
         end
     end
+end
 
+local function updateMageAccumulation(dt, allies)
     -- #29 奥术聚能：法师每秒蓄力+20%
     local mageAcc = TBR.hasMechanic("mage_accumulate")
     if mageAcc then
@@ -374,16 +376,31 @@ function TBR.update(dt, allies, enemies, freezeFn)
     end
 end
 
+-- 固定阶段顺序：时间 → 击杀倒计时 → 死亡无敌 → 冰冻 → 法师蓄力。
+-- 不做补帧循环：大 dt 的冰冻仍只触发一次，且无回调时不推进其计时。
+local UPDATE_PHASES = {
+    advanceBattleTime,
+    advanceKillDamageTimer,
+    advanceDeathImmunityTimer,
+    updatePeriodicFreeze,
+    updateMageAccumulation,
+}
+
+--- 每帧更新（战斗进行中调用）
+---@param dt number
+---@param allies table[]
+---@param enemies table[]
+---@param freezeFn function(unit, duration) 冰冻单位回调
+function TBR.update(dt, allies, enemies, freezeFn)
+    if not M then return end
+    for _, updatePhase in ipairs(UPDATE_PHASES) do
+        updatePhase(dt, allies, enemies, freezeFn)
+    end
+end
+
 -- ======================== 伤害钩子 ========================
 
---- 伤害倍率修正（己方攻击时调用，返回乘法倍率）
----@param attacker table 攻击者（己方单位）
----@param target table 目标（敌方单位）
----@return number multiplier (1.0=无修正)
-function TBR.getDamageMultiplier(attacker, target)
-    if not M then return 1.0 end
-    local mult = 1.0
-
+local function applyLowHpDamage(mult, attacker)
     -- #11 绝境爆发：攻击者生命<30%→伤害+25%
     local lowHpDmg = TBR.hasMechanic("low_hp_dmg_bonus")
     if lowHpDmg and attacker.hp and attacker.maxHp and attacker.maxHp > 0 then
@@ -392,7 +409,10 @@ function TBR.getDamageMultiplier(attacker, target)
             mult = mult * (1 + (lowHpDmg.params.bonus or 25) / 100)
         end
     end
+    return mult
+end
 
+local function applyHighHpDamage(mult, attacker)
     -- #12 强者之怒：攻击者生命>80%→伤害+20%
     local highHpDmg = TBR.hasMechanic("high_hp_dmg_bonus")
     if highHpDmg and attacker.hp and attacker.maxHp and attacker.maxHp > 0 then
@@ -401,7 +421,10 @@ function TBR.getDamageMultiplier(attacker, target)
             mult = mult * (1 + (highHpDmg.params.bonus or 20) / 100)
         end
     end
+    return mult
+end
 
+local function applyEarlyDamage(mult, attacker)
     -- #14 先发制人：战斗前30秒伤害+20%
     local earlyDmg = TBR.hasMechanic("early_dmg_bonus")
     if earlyDmg then
@@ -410,19 +433,28 @@ function TBR.getDamageMultiplier(attacker, target)
             mult = mult * (1 + (earlyDmg.params.bonus or 20) / 100)
         end
     end
+    return mult
+end
 
+local function applyKillStackDamage(mult, attacker)
     -- #16 斩杀狂潮叠层
     if M.killDmgStack > 0 and TBR.hasMechanic("kill_dmg_stack") then
         mult = mult * (1 + M.killDmgStack / 100)
     end
+    return mult
+end
 
+local function applyMageBurstDamage(mult, attacker)
     -- #28 蓄能爆裂：法师额外伤害+200%
     local chargeBurst = TBR.hasMechanic("mage_charge_burst")
     if chargeBurst and attacker.classId == CC.MAGE then
         local dmgMult = chargeBurst.params and chargeBurst.params.dmgMult or 200
         mult = mult * (1 + dmgMult / 100)
     end
+    return mult
+end
 
+local function consumeMageChargeDamage(mult, attacker)
     -- #29 奥术聚能：法师蓄力累计额外伤害（攻击时消耗）
     local mageAcc = TBR.hasMechanic("mage_accumulate")
     if mageAcc and attacker.classId == CC.MAGE then
@@ -433,7 +465,29 @@ function TBR.getDamageMultiplier(attacker, target)
             M.mageAccumulate[uid] = 0  -- 攻击后清空
         end
     end
+    return mult
+end
 
+-- 各乘区保持原结合顺序，最后一个阶段才消费蓄力；免疫消费不属于伤害查询。
+local DAMAGE_PHASES = {
+    applyLowHpDamage,
+    applyHighHpDamage,
+    applyEarlyDamage,
+    applyKillStackDamage,
+    applyMageBurstDamage,
+    consumeMageChargeDamage,
+}
+
+--- 伤害倍率修正（己方攻击时调用，返回乘法倍率）
+---@param attacker table 攻击者（己方单位）
+---@param target table 目标（敌方单位）
+---@return number multiplier (1.0=无修正)
+function TBR.getDamageMultiplier(attacker, target)
+    if not M then return 1.0 end
+    local mult = 1.0
+    for _, applyDamagePhase in ipairs(DAMAGE_PHASES) do
+        mult = applyDamagePhase(mult, attacker)
+    end
     return mult
 end
 
@@ -462,13 +516,7 @@ function TBR.consumeDamageImmunity(defender)
     return false
 end
 
---- 受伤倍率修正（己方受到攻击时调用，不消费免疫次数）
----@param defender table 受伤者（己方单位）
----@return number multiplier (1.0=无修正, <1.0=减伤)
-function TBR.getDamageTakenMultiplier(defender)
-    if not M or not defender then return 1.0 end
-    local mult = 1.0
-
+local function applyLowHpReduction(mult, defender)
     -- #13 绝境护盾：生命<30%受伤-50%
     local lowHpReduce = TBR.hasMechanic("low_hp_dmg_reduce")
     if lowHpReduce and defender.hp and defender.maxHp and defender.maxHp > 0 then
@@ -477,7 +525,10 @@ function TBR.getDamageTakenMultiplier(defender)
             mult = mult * (1 - (lowHpReduce.params.reduce or 50) / 100)
         end
     end
+    return mult
+end
 
+local function applyKnightReduction(mult, defender)
     -- #25 不屈之盾：骑士生命<40%→减伤20%, <20%→减伤40%
     local knightFortify = TBR.hasMechanic("knight_fortify")
     if knightFortify and defender.classId == CC.KNIGHT and defender.hp and defender.maxHp and defender.maxHp > 0 then
@@ -491,7 +542,20 @@ function TBR.getDamageTakenMultiplier(defender)
             mult = mult * (1 - reduces[1] / 100)
         end
     end
+    return mult
+end
 
+local DAMAGE_TAKEN_PHASES = { applyLowHpReduction, applyKnightReduction }
+
+--- 受伤倍率修正（己方受到攻击时调用，不消费免疫次数）
+---@param defender table 受伤者（己方单位）
+---@return number multiplier (1.0=无修正, <1.0=减伤)
+function TBR.getDamageTakenMultiplier(defender)
+    if not M or not defender then return 1.0 end
+    local mult = 1.0
+    for _, applyReduction in ipairs(DAMAGE_TAKEN_PHASES) do
+        mult = applyReduction(mult, defender)
+    end
     return mult
 end
 

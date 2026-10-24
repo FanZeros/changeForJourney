@@ -1,3 +1,13 @@
+## 2026-10-24 · 高相似运行管线兼容重构
+
+- Git已实证：提交`55bdbfe1`（32白名单），随后合入目标`8f216f00`为`c33d8a10`；两次正常push均exit0，ls-remote核对远端与本地`c33d8a10`一致。正式 **PR #202** https://github.com/FanZeros/changeForJourney/pull/202，head=`refactor1005/runtime-pipelines-20261024`、base=`workspace1005`，创建返回open/draft=false/merged=false，未称CI通过或已合并。未推workspace系列、不强推、不自动合并发布；凭据仅进程内askpass使用并已删除，未写入remote／Git配置／源码／日志／记忆。
+
+- 固定workspace1005@c850e5d3，独立refactor1005/runtime-pipelines-20261024。用户已授权正常push本任务分支及PR，不推workspace系列、不强推、不合并发布；凭据不持久化。目前未commit/push/PR，成功后另记。
+- 28生产模块实质重组，公开API、数值、RNG、通知及异常部分态保持。固定296/390文件、216配对：90%以上74到46，80%以上102到79，对称行文本44.9054%到43.0540%；文本指标非语义或原创性证明，仍46项高相似，不称全仓完成。
+- 官方b44成功553Lua，28源码/共享根/实际载荷字节一致，根index保持、scripts仅白名单变化。修改文件LSP无Error，构建守卫daemon starting跳过；旧压缩81派生错误保留。36规范单测OK；最终32白名单暂存、2977路径，20旧规范错误与固定基线逐项一致、警告0、新增0，diff --check退出0。
+- 最终组合切关、配装120、护盾、神器314、成长1697实际ALL PASS/exit0。离线1045失败中1044逐项同基线，新增仅旧测试查找私有moduleData异常，适配结果另记；不称通过。塔132断言88旧失败；BattleLab五局逐runs同而全报告两处浮点尾差，20局timeout不通过。
+- 最后仅将既有离线测试的dispatcher私有upvalue注入改为公开reset/publishLive/subscribe/setOnAnyUpdate，原断言保留；scene_display218/0，整套1044旧失败逐项同固定基线、新增0/harness0。随后官方b45成功，28生产+1测试载荷29/29字节一致；不把旧失败说成通过。
+- 三服务130差分、9负对照、38可达检查通过，四配置另有54独立与42父复核。验证材料工程外，不夹.project、玩家档、上传或他人修改，不改tempGame。持续推进，当前直接继续不再提问，尊重停止和权限边界；不冒称设备/性能/WASM验收。
 ## 扫荡优化 PR #180 已创建（2026-10-21）
 
 - **已正常push并创建正式PR #180**：https://github.com/FanZeros/changeForJourney/pull/180，head=`perf1021/sweep-large-batch@69be6a7a`／base=`workspace1005@548fc57a`，创建时open／draft=false／merged=false／mergeable未计算；push及ls-remote实际exit0，远端SHA一致。29白名单+2166/−236，不推基线、不强推、不自动合并发布，不夹原.gitignore／上传／玩家档／本地.project／内部验证；下方尚未push／PR为此前记录。

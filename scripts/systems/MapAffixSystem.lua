@@ -134,61 +134,55 @@ end
 
 -- ======================== 静态词缀：应用到怪物 ========================
 
+-- 分发器只负责单个怪物的属性变化；遍历顺序由 applyStaticAffixes 统一控制。
+-- 不按 ID 预先合并配置：同 ID 多次出现时，仍须依次累加/乘算。
+---@type table<string, fun(enemy: table, params: table)>
+local staticHandlers = {
+    energy_barrier = function(enemy, p)
+        local maxHp = enemy.attrs.final[AD.MAX_HP] or 0
+        local shieldAmount = math.floor(maxHp * p.shieldPct + 0.5)
+        if shieldAmount > 0 then
+            enemy.attrs.final[AD.ENERGY_SHIELD] = (enemy.attrs.final[AD.ENERGY_SHIELD] or 0) + shieldAmount
+            enemy.attrs.energyShield = enemy.attrs.final[AD.ENERGY_SHIELD]
+        end
+    end,
+    iron_wall = function(enemy, p)
+        enemy.attrs.final[AD.ARMOR] = (enemy.attrs.final[AD.ARMOR] or 0) + p.armorAdd
+    end,
+    tenacious_will = function(enemy, p)
+        enemy.attrs.final[AD.ABNORMAL_RES] = (enemy.attrs.final[AD.ABNORMAL_RES] or 0) + p.abnormalResAdd
+    end,
+    haste_realm = function(enemy, p)
+        local phys = enemy.attrs.final[AD.PHYS_ATK] or 0
+        local mag = enemy.attrs.final[AD.MAG_ATK] or 0
+        if phys > 0 then
+            enemy.attrs.final[AD.PHYS_ATK] = phys * (1 - p.atkReduce)
+        end
+        if mag > 0 then
+            enemy.attrs.final[AD.MAG_ATK] = mag * (1 - p.atkReduce)
+        end
+        -- 小数配置转百分比整数；此处沿用静态词缀的原始间隔计算，
+        -- 不改用 debuff 的重算工具（后者有速度下限和 _lastAttrInterval 副作用）。
+        enemy.attrs.final[AD.ATK_SPEED] = (enemy.attrs.final[AD.ATK_SPEED] or 0) + p.atkSpeedBonus * 100
+        local baseInterval = enemy.attrs.final[AD.ATK_INTERVAL] or 1.5
+        enemy.atkInterval = baseInterval / (1 + (enemy.attrs.final[AD.ATK_SPEED] or 0) / 100)
+    end,
+}
+
 --- 在怪物生成后调用，应用静态属性修改
 ---@param enemies table[] 怪物列表
 function MapAffixSystem.applyStaticAffixes(enemies)
     if not activeAffixes_ or #enemies == 0 then return end
 
+    -- 必须词缀在外、怪物在内，不能交换两层循环。
     for _, affix in ipairs(activeAffixes_) do
         local id = affix.id
         local p = affix.params
-
-        if id == "energy_barrier" then
-            -- 给所有怪物添加基于最大HP百分比的能量护盾
+        local apply = staticHandlers[id]
+        if apply then
             for _, enemy in ipairs(enemies) do
                 if enemy.attrs and enemy.attrs.final then
-                    local maxHp = enemy.attrs.final[AD.MAX_HP] or 0
-                    local shieldAmount = math.floor(maxHp * p.shieldPct + 0.5)
-                    if shieldAmount > 0 then
-                        enemy.attrs.final[AD.ENERGY_SHIELD] = (enemy.attrs.final[AD.ENERGY_SHIELD] or 0) + shieldAmount
-                        enemy.attrs.energyShield = enemy.attrs.final[AD.ENERGY_SHIELD]
-                    end
-                end
-            end
-
-        elseif id == "iron_wall" then
-            -- 所有怪物护甲+固定值
-            for _, enemy in ipairs(enemies) do
-                if enemy.attrs and enemy.attrs.final then
-                    enemy.attrs.final[AD.ARMOR] = (enemy.attrs.final[AD.ARMOR] or 0) + p.armorAdd
-                end
-            end
-
-        elseif id == "tenacious_will" then
-            -- 所有怪物异常抗性+固定值
-            for _, enemy in ipairs(enemies) do
-                if enemy.attrs and enemy.attrs.final then
-                    enemy.attrs.final[AD.ABNORMAL_RES] = (enemy.attrs.final[AD.ABNORMAL_RES] or 0) + p.abnormalResAdd
-                end
-            end
-
-        elseif id == "haste_realm" then
-            -- 攻击力降低，攻速增加
-            for _, enemy in ipairs(enemies) do
-                if enemy.attrs and enemy.attrs.final then
-                    local phys = enemy.attrs.final[AD.PHYS_ATK] or 0
-                    local mag = enemy.attrs.final[AD.MAG_ATK] or 0
-                    if phys > 0 then
-                        enemy.attrs.final[AD.PHYS_ATK] = phys * (1 - p.atkReduce)
-                    end
-                    if mag > 0 then
-                        enemy.attrs.final[AD.MAG_ATK] = mag * (1 - p.atkReduce)
-                    end
-                    -- 攻速加成（atkSpeedBonus 为小数形式 0.80 = 80%，ATK_SPEED 单位为百分比整数）
-                    enemy.attrs.final[AD.ATK_SPEED] = (enemy.attrs.final[AD.ATK_SPEED] or 0) + p.atkSpeedBonus * 100
-                    -- 重算实际攻击间隔
-                    local baseInterval = enemy.attrs.final[AD.ATK_INTERVAL] or 1.5
-                    enemy.atkInterval = baseInterval / (1 + (enemy.attrs.final[AD.ATK_SPEED] or 0) / 100)
+                    apply(enemy, p)
                 end
             end
         end
@@ -224,7 +218,189 @@ function MapAffixSystem.hasAffix(id)
     return getAffixParams(id) ~= nil
 end
 
---- 每帧调用：更新动态词缀（衰败之地、远古之雾、时空裂隙）
+--- 异常抗性仅封顶 80%；负值仍会延长持续时间，不加下限截断。
+---@param unit table
+---@return number
+local function getResistMult(unit)
+    if not unit.attrs or not unit.attrs.final then return 1.0 end
+    local res = math.min(unit.attrs.final[AD.ABNORMAL_RES] or 0, 80)
+    return 1.0 - res / 100
+end
+
+-- 周期策略描述差异；生命周期统一负责判定、施加、逐单位到期和全局收尾。
+-- restore 不统一加 attrs/final 门禁：雾的到期路径原本要求属性仍在，
+-- 裂隙的到期路径则允许属性缺失后清标记；全局收尾才统一检查属性。
+---@class MapAffixPeriodicPolicy
+---@field activeKey string
+---@field debuffKey string
+---@field expireKey string
+---@field phaseTimer fun(timer: number, interval: number): number
+---@field prepare (fun(params: table): number)|nil
+---@field apply fun(ally: table, params: table, expire: number, reduceValue: number)
+---@field restore fun(ally: table)
+
+---@type MapAffixPeriodicPolicy
+local fogPolicy = {
+    activeKey = "fogActive",
+    debuffKey = "_fogHitDebuff",
+    expireKey = "_fogExpire",
+    phaseTimer = function(timer, interval)
+        return timer
+    end,
+    apply = function(ally, p, expire, reduceValue)
+        ally.attrs.final[AD.HIT_VALUE] = (ally.attrs.final[AD.HIT_VALUE] or 0) - p.hitReduce
+        ally._fogHitDebuff = p.hitReduce
+        ally._fogExpire = expire
+    end,
+    restore = function(ally)
+        ally.attrs.final[AD.HIT_VALUE] = (ally.attrs.final[AD.HIT_VALUE] or 0) + ally._fogHitDebuff
+        ally._fogHitDebuff = nil
+        ally._fogExpire = nil
+    end,
+}
+
+---@type MapAffixPeriodicPolicy
+local riftPolicy = {
+    activeKey = "riftActive",
+    debuffKey = "_riftAtkDebuff",
+    expireKey = "_riftExpire",
+    phaseTimer = function(timer, interval)
+        return math.max(0, timer - interval * 0.5)
+    end,
+    -- 保持每次裂隙 tick 在更新全局激活态后换算，不延迟到施加分支内。
+    prepare = function(p)
+        return p.atkSpeedReduce * 100
+    end,
+    apply = function(ally, p, expire, reduceValue)
+        if ally.attrs.addModifier then
+            ally.attrs:removeModifier(RIFT_MOD_ID)
+            ally.attrs:addModifier(RIFT_MOD_ID, {
+                { key = AD.ATK_SPEED, flat = -reduceValue },
+            })
+        else
+            ally.attrs.final[AD.ATK_SPEED] = (ally.attrs.final[AD.ATK_SPEED] or 0) - reduceValue
+        end
+        ally._riftAtkDebuff = reduceValue
+        ally._riftExpire = expire
+        recalcUnitAttackInterval(ally)
+    end,
+    restore = function(ally)
+        if ally.attrs and ally.attrs.removeModifier then
+            ally.attrs:removeModifier(RIFT_MOD_ID)
+        elseif ally.attrs and ally.attrs.final then
+            ally.attrs.final[AD.ATK_SPEED] = (ally.attrs.final[AD.ATK_SPEED] or 0) + ally._riftAtkDebuff
+        end
+        ally._riftAtkDebuff = nil
+        ally._riftExpire = nil
+        recalcUnitAttackInterval(ally)
+    end,
+}
+
+---@param policy MapAffixPeriodicPolicy
+---@param p table
+---@param now number
+---@param allies table[]
+local function tickPeriodicDebuff(policy, p, now, allies)
+    local interval = p.interval or 15
+    local duration = p.duration or 8
+    local cycle = interval + duration
+    local phase = policy.phaseTimer(runtimeState_.periodicTimer, interval) % cycle
+    local wasActive = runtimeState_[policy.activeKey]
+    runtimeState_[policy.activeKey] = (phase >= interval)
+    local reduceValue = 0
+    if policy.prepare then reduceValue = policy.prepare(p) end
+
+    -- 只采样当前相位的进入沿，不补发大 dt 跨过的周期。
+    if runtimeState_[policy.activeKey] and not wasActive then
+        for _, ally in ipairs(allies) do
+            if ally.attrs and ally.attrs.final and ally.hp > 0 then
+                local personalDur = duration * getResistMult(ally)
+                policy.apply(ally, p, now + personalDur, reduceValue)
+            end
+        end
+    end
+    -- 整批施加后才整批到期，不可合并为逐单位的施加+到期。
+    for _, ally in ipairs(allies) do
+        if ally[policy.debuffKey] and ally[policy.expireKey] and now >= ally[policy.expireKey] then
+            policy.restore(ally)
+        end
+    end
+    if not runtimeState_[policy.activeKey] and wasActive then
+        for _, ally in ipairs(allies) do
+            if ally[policy.debuffKey] and ally.attrs and ally.attrs.final then
+                policy.restore(ally)
+            end
+        end
+    end
+end
+
+---@param now number
+local function tickDecay(now)
+    local p = getAffixParams("decay_land")
+    if not p then return end
+    local interval = p.tickInterval or 10
+    local newStacks = math.floor(now / interval)
+    local maxStacks = math.floor((p.maxBonus or 0.40) / (p.perTick or 0.04) + 0.5)
+    runtimeState_.decayStacks = math.min(newStacks, maxStacks)
+end
+
+---@param now number
+---@param allies table[]
+local function tickCorrode(now, allies)
+    local p = getAffixParams("corrode_armor")
+    if not p then return end
+    for uid, stacks in pairs(runtimeState_.corrodeStacks) do
+        local i = 1
+        while i <= #stacks do
+            if now >= stacks[i].expire then
+                table.remove(stacks, i)
+            else
+                i = i + 1
+            end
+        end
+        if #stacks == 0 then
+            runtimeState_.corrodeStacks[uid] = nil
+        end
+    end
+    -- 过期层只在此阶段清除；onAllyHit 仍按命中时的原始层数判断上限。
+    for _, ally in ipairs(allies) do
+        local uid = getUnitKey(ally)
+        if uid and ally.attrs then
+            local stacks = runtimeState_.corrodeStacks[uid]
+            if stacks and #stacks > 0 then
+                ally.attrs._corrodeArmorPct = math.min(#stacks * p.perHitPct, p.maxPct)
+            else
+                ally.attrs._corrodeArmorPct = nil
+            end
+        end
+    end
+end
+
+---@param dt number
+---@param allies table[]
+local function tickFrostLotus(dt, allies)
+    local p = getAffixParams("frost_lotus")
+    if not p then return end
+    runtimeState_.frostLotusTimer = runtimeState_.frostLotusTimer + dt
+    local interval = p.interval or 7
+    -- 大 dt 也只触发一次、仅减去一个 interval，保留未消费的积时。
+    if runtimeState_.frostLotusTimer >= interval then
+        runtimeState_.frostLotusTimer = runtimeState_.frostLotusTimer - interval
+        local candidates = {}
+        for _, ally in ipairs(allies) do
+            if ally.hp > 0 and not SEM.isFrozen(ally) then
+                candidates[#candidates + 1] = ally
+            end
+        end
+        if #candidates > 0 then
+            -- 单候选也必须消费 math.random(1)，不能改成直接取首项。
+            local target = candidates[math.random(#candidates)]
+            SEM.apply(target, SEM.FROZEN, p.freezeDuration, nil, nil)
+        end
+    end
+end
+
+--- 每帧调用：按固定顺序更新动态词缀
 ---@param dt number deltaTime
 ---@param allies table[] 己方单位列表
 ---@param enemies table[] 敌方单位列表
@@ -233,175 +409,16 @@ function MapAffixSystem.tick(dt, allies, enemies)
 
     local now = runtimeState_.decayElapsed + dt
     runtimeState_.decayElapsed = now
-
-    -- ---- 衰败之地：每10秒怪物伤害+4%，上限40% ----
-    local decayP = getAffixParams("decay_land")
-    if decayP then
-        local interval = decayP.tickInterval or 10
-        local newStacks = math.floor(now / interval)
-        local maxStacks = math.floor((decayP.maxBonus or 0.40) / (decayP.perTick or 0.04) + 0.5)
-        runtimeState_.decayStacks = math.min(newStacks, maxStacks)
-    end
-
-    -- ---- 工具：计算单位的异常抗性减持续比例 ----
-    local function getResistMult(unit)
-        if not unit.attrs or not unit.attrs.final then return 1.0 end
-        local res = math.min(unit.attrs.final[AD.ABNORMAL_RES] or 0, 80)  -- cap 80%
-        return 1.0 - res / 100
-    end
-
-    -- ---- 远古之雾 / 时空裂隙：周期性 debuff（逐单位追踪到期时间） ----
+    tickDecay(now)
     runtimeState_.periodicTimer = runtimeState_.periodicTimer + dt
 
+    -- 每阶段现场查首项参数：不建立 ID 缓存，也不提前批量查询。
     local fogP = getAffixParams("ancient_fog")
-    if fogP then
-        local interval = fogP.interval or 15
-        local duration = fogP.duration or 8
-        local cycle = interval + duration
-        local phase = runtimeState_.periodicTimer % cycle
-        local wasActive = runtimeState_.fogActive
-        runtimeState_.fogActive = (phase >= interval)
-        -- 施加
-        if runtimeState_.fogActive and not wasActive then
-            for _, ally in ipairs(allies) do
-                if ally.attrs and ally.attrs.final and ally.hp > 0 then
-                    local personalDur = duration * getResistMult(ally)
-                    ally.attrs.final[AD.HIT_VALUE] = (ally.attrs.final[AD.HIT_VALUE] or 0) - fogP.hitReduce
-                    ally._fogHitDebuff = fogP.hitReduce
-                    ally._fogExpire = now + personalDur
-                end
-            end
-        end
-        -- 逐单位检查到期
-        for _, ally in ipairs(allies) do
-            if ally._fogHitDebuff and ally._fogExpire and now >= ally._fogExpire then
-                ally.attrs.final[AD.HIT_VALUE] = (ally.attrs.final[AD.HIT_VALUE] or 0) + ally._fogHitDebuff
-                ally._fogHitDebuff = nil
-                ally._fogExpire = nil
-            end
-        end
-        -- 全局结束时兜底清理（防残留）
-        if not runtimeState_.fogActive and wasActive then
-            for _, ally in ipairs(allies) do
-                if ally._fogHitDebuff and ally.attrs and ally.attrs.final then
-                    ally.attrs.final[AD.HIT_VALUE] = (ally.attrs.final[AD.HIT_VALUE] or 0) + ally._fogHitDebuff
-                    ally._fogHitDebuff = nil
-                    ally._fogExpire = nil
-                end
-            end
-        end
-    end
-
+    if fogP then tickPeriodicDebuff(fogPolicy, fogP, now, allies) end
     local riftP = getAffixParams("time_rift")
-    if riftP then
-        local interval = riftP.interval or 15
-        local duration = riftP.duration or 8
-        local cycle = interval + duration
-        local offsetTimer = math.max(0, runtimeState_.periodicTimer - interval * 0.5)
-        local phase = offsetTimer % cycle
-        local wasActive = runtimeState_.riftActive
-        runtimeState_.riftActive = (phase >= interval)
-        -- atkSpeedReduce 配置是小数形式（0.20 = 20%），ATK_SPEED 存储单位为百分比整数，需要 ×100
-        local reduceValue = riftP.atkSpeedReduce * 100
-        -- 施加
-        if runtimeState_.riftActive and not wasActive then
-            for _, ally in ipairs(allies) do
-                if ally.attrs and ally.attrs.final and ally.hp > 0 then
-                    local personalDur = duration * getResistMult(ally)
-                    if ally.attrs.addModifier then
-                        ally.attrs:removeModifier(RIFT_MOD_ID)
-                        ally.attrs:addModifier(RIFT_MOD_ID, {
-                            { key = AD.ATK_SPEED, flat = -reduceValue },
-                        })
-                    else
-                        ally.attrs.final[AD.ATK_SPEED] = (ally.attrs.final[AD.ATK_SPEED] or 0) - reduceValue
-                    end
-                    ally._riftAtkDebuff = reduceValue
-                    ally._riftExpire = now + personalDur
-                    recalcUnitAttackInterval(ally)
-                end
-            end
-        end
-        -- 逐单位检查到期
-        for _, ally in ipairs(allies) do
-            if ally._riftAtkDebuff and ally._riftExpire and now >= ally._riftExpire then
-                if ally.attrs and ally.attrs.removeModifier then
-                    ally.attrs:removeModifier(RIFT_MOD_ID)
-                elseif ally.attrs and ally.attrs.final then
-                    ally.attrs.final[AD.ATK_SPEED] = (ally.attrs.final[AD.ATK_SPEED] or 0) + ally._riftAtkDebuff
-                end
-                ally._riftAtkDebuff = nil
-                ally._riftExpire = nil
-                recalcUnitAttackInterval(ally)
-            end
-        end
-        -- 全局结束时兜底清理
-        if not runtimeState_.riftActive and wasActive then
-            for _, ally in ipairs(allies) do
-                if ally._riftAtkDebuff and ally.attrs and ally.attrs.final then
-                    if ally.attrs.removeModifier then
-                        ally.attrs:removeModifier(RIFT_MOD_ID)
-                    else
-                        ally.attrs.final[AD.ATK_SPEED] = (ally.attrs.final[AD.ATK_SPEED] or 0) + ally._riftAtkDebuff
-                    end
-                    ally._riftAtkDebuff = nil
-                    ally._riftExpire = nil
-                    recalcUnitAttackInterval(ally)
-                end
-            end
-        end
-    end
-
-    -- ---- 蚀甲之触：清理过期层 + 更新 attrs 缓存 ----
-    local corrP = getAffixParams("corrode_armor")
-    if corrP then
-        for uid, stacks in pairs(runtimeState_.corrodeStacks) do
-            local i = 1
-            while i <= #stacks do
-                if now >= stacks[i].expire then
-                    table.remove(stacks, i)
-                else
-                    i = i + 1
-                end
-            end
-            if #stacks == 0 then
-                runtimeState_.corrodeStacks[uid] = nil
-            end
-        end
-        -- 同步缓存到 allies 的 attrs 对象
-        for _, ally in ipairs(allies) do
-            local uid = getUnitKey(ally)
-            if uid and ally.attrs then
-                local stacks = runtimeState_.corrodeStacks[uid]
-                if stacks and #stacks > 0 then
-                    ally.attrs._corrodeArmorPct = math.min(#stacks * corrP.perHitPct, corrP.maxPct)
-                else
-                    ally.attrs._corrodeArmorPct = nil
-                end
-            end
-        end
-    end
-
-    -- ---- 冰冻之莲：每隔N秒冰冻一个随机己方角色 ----
-    local frostP = getAffixParams("frost_lotus")
-    if frostP then
-        runtimeState_.frostLotusTimer = runtimeState_.frostLotusTimer + dt
-        local interval = frostP.interval or 7
-        if runtimeState_.frostLotusTimer >= interval then
-            runtimeState_.frostLotusTimer = runtimeState_.frostLotusTimer - interval
-            -- 随机选一个存活且未被冰冻的己方单位
-            local candidates = {}
-            for _, ally in ipairs(allies) do
-                if ally.hp > 0 and not SEM.isFrozen(ally) then
-                    candidates[#candidates + 1] = ally
-                end
-            end
-            if #candidates > 0 then
-                local target = candidates[math.random(#candidates)]
-                SEM.apply(target, SEM.FROZEN, frostP.freezeDuration, nil, nil)
-            end
-        end
-    end
+    if riftP then tickPeriodicDebuff(riftPolicy, riftP, now, allies) end
+    tickCorrode(now, allies)
+    tickFrostLotus(dt, allies)
 end
 
 -- ======================== 战斗事件钩子 ========================

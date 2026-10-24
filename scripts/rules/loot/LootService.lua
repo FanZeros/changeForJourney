@@ -54,6 +54,96 @@ local function buildClaimedSummary(claimed)
     return summary
 end
 
+--- 仅修正旧分组；已确定的装备原表、等级与随机结果都不能改写。
+---@param seed table
+---@param cap number
+---@return boolean changed
+local function capLegacySeed(seed, cap)
+    if not seed.equip and seed.level and seed.level > cap then
+        seed.level = cap
+        return true
+    end
+    return false
+end
+
+--- 批领在任一旧分组改级后才合并；单领必须保留原索引，不走合并。
+---@param lootboxData table
+local function prepareAllSeeds(lootboxData)
+    local cap = LootBoxSystem.levelCap
+    if cap > 0 then
+        local seedFixed = false
+        for _, seed in ipairs(lootboxData.seeds) do
+            if capLegacySeed(seed, cap) then
+                seedFixed = true
+            end
+        end
+        if seedFixed then
+            LootBoxSystem.consolidateSeeds(lootboxData)
+        end
+    end
+end
+
+--- 两次推送不能合批或延后：每一次 MarkDirty 都可能同步重入。
+---@param uid number
+local function notifyClaim(uid)
+    PDM.MarkDirty(uid, "lootbox")
+    PDM.MarkDirty(uid, "equipment")
+end
+
+--- MarkDirty 可同步重入：先推两模块，再统计和打印，最后取摘要。
+--- 不提前复制 claimed 或重取 lootboxData，回调对原表的修改仍按原时序可见。
+---@param uid number
+---@param operation string
+---@param lootboxData table
+---@param claimed table[]
+---@param bagFull boolean
+---@return table
+local function publishClaim(uid, operation, lootboxData, claimed, bagFull)
+    local remaining = LootBoxSystem.getTotalCount(lootboxData)
+    print("[LootService] " .. operation .. " uid=" .. tostring(uid)
+        .. " claimed=" .. #claimed .. " bagFull=" .. tostring(bagFull)
+        .. " remaining=" .. remaining)
+
+    return {
+        claimedCount = #claimed,
+        claimed      = buildClaimedSummary(claimed),
+        bagFull      = bagFull,
+        remaining    = remaining,
+    }
+end
+
+--- 分解交付顺序独立于领取：加精粹（含同步推送）→ 遗匣 → 任务进度。
+--- Add 必须在交付时从导出表读取，不能缓存函数；返回值仍不参与业务判定。
+---@param uid number
+---@param totalEssence number
+---@param totalPieces number
+local function deliverDecomposition(uid, totalEssence, totalPieces)
+    if totalPieces > 0 then
+        CurrencyService.Add(uid, "essence", totalEssence)
+        PDM.MarkDirty(uid, "lootbox")
+        TaskService.UpdateProgress(uid, "decompose", totalPieces)
+    end
+end
+
+--- 两入口日志保留各自格式，且发生在所有同步交付完成之后。
+---@param uid number
+---@param operation string
+---@param totalEssence number
+---@param totalPieces number
+---@param index number|nil
+---@return table
+local function publishDecomposition(uid, operation, totalEssence, totalPieces, index)
+    print("[LootService] " .. operation .. " uid=" .. tostring(uid)
+        .. (operation == "DecomposeOne" and (" index=" .. tostring(index)) or "")
+        .. " pieces=" .. totalPieces
+        .. " essence=+" .. totalEssence)
+
+    return {
+        decomposeCount = totalPieces,
+        essenceReward  = totalEssence,
+    }
+end
+
 -- ======================== 领取指定组战利品 ========================
 
 ---@param uid number
@@ -83,9 +173,7 @@ function LootService.ClaimGroup(uid, index)
     local cap = LootBoxSystem.levelCap
     if cap > 0 then
         local seed = lootboxData.seeds[index]
-        if seed and not seed.equip and seed.level and seed.level > cap then
-            seed.level = cap
-        end
+        if seed then capLegacySeed(seed, cap) end
     end
 
     local claimed, bagFull = LootBoxSystem.claimGroup(lootboxData, index, equipData)
@@ -94,20 +182,8 @@ function LootService.ClaimGroup(uid, index)
         return false, "领取失败"
     end
 
-    PDM.MarkDirty(uid, "lootbox")
-    PDM.MarkDirty(uid, "equipment")
-
-    local remaining = LootBoxSystem.getTotalCount(lootboxData)
-    print("[LootService] ClaimGroup uid=" .. tostring(uid)
-        .. " claimed=" .. #claimed .. " bagFull=" .. tostring(bagFull)
-        .. " remaining=" .. remaining)
-
-    return true, nil, {
-        claimedCount = #claimed,
-        claimed      = buildClaimedSummary(claimed),
-        bagFull      = bagFull,
-        remaining    = remaining,
-    }
+    notifyClaim(uid)
+    return true, nil, publishClaim(uid, "ClaimGroup", lootboxData, claimed, bagFull)
 end
 
 -- ======================== 一键领取全部战利品 ========================
@@ -135,38 +211,12 @@ function LootService.ClaimAll(uid)
     end
 
     -- 领取前修正种子等级（确保客户端显示与实际生成一致）
-    local cap = LootBoxSystem.levelCap
-    if cap > 0 then
-        local seedFixed = false
-        for _, seed in ipairs(lootboxData.seeds) do
-            if not seed.equip and seed.level and seed.level > cap then
-                seed.level = cap
-                seedFixed = true
-            end
-        end
-        if seedFixed then
-            LootBoxSystem.consolidateSeeds(lootboxData)
-        end
-    end
+    prepareAllSeeds(lootboxData)
 
     local claimed, bagFull = LootBoxSystem.claimAll(lootboxData, equipData)
 
-    if #claimed > 0 then
-        PDM.MarkDirty(uid, "lootbox")
-        PDM.MarkDirty(uid, "equipment")
-    end
-
-    local remaining = LootBoxSystem.getTotalCount(lootboxData)
-    print("[LootService] ClaimAll uid=" .. tostring(uid)
-        .. " claimed=" .. #claimed .. " bagFull=" .. tostring(bagFull)
-        .. " remaining=" .. remaining)
-
-    return true, nil, {
-        claimedCount = #claimed,
-        claimed      = buildClaimedSummary(claimed),
-        bagFull      = bagFull,
-        remaining    = remaining,
-    }
+    if #claimed > 0 then notifyClaim(uid) end
+    return true, nil, publishClaim(uid, "ClaimAll", lootboxData, claimed, bagFull)
 end
 
 -- ======================== 一键分解全部战利品 ========================
@@ -187,21 +237,8 @@ function LootService.DecomposeAll(uid)
 
     local totalEssence, totalPieces = LootBoxSystem.decomposeAll(lootboxData)
 
-    if totalPieces > 0 then
-        CurrencyService.Add(uid, "essence", totalEssence)
-        PDM.MarkDirty(uid, "lootbox")
-        -- 任务进度：分解装备
-        TaskService.UpdateProgress(uid, "decompose", totalPieces)
-    end
-
-    print("[LootService] DecomposeAll uid=" .. tostring(uid)
-        .. " pieces=" .. totalPieces
-        .. " essence=+" .. totalEssence)
-
-    return true, nil, {
-        decomposeCount = totalPieces,
-        essenceReward  = totalEssence,
-    }
+    deliverDecomposition(uid, totalEssence, totalPieces)
+    return true, nil, publishDecomposition(uid, "DecomposeAll", totalEssence, totalPieces)
 end
 
 -- ======================== 分解指定组战利品 ========================
@@ -227,21 +264,8 @@ function LootService.DecomposeOne(uid, index)
 
     local totalEssence, totalPieces = LootBoxSystem.decomposeOne(lootboxData, index)
 
-    if totalPieces > 0 then
-        CurrencyService.Add(uid, "essence", totalEssence)
-        PDM.MarkDirty(uid, "lootbox")
-        TaskService.UpdateProgress(uid, "decompose", totalPieces)
-    end
-
-    print("[LootService] DecomposeOne uid=" .. tostring(uid)
-        .. " index=" .. tostring(index)
-        .. " pieces=" .. totalPieces
-        .. " essence=+" .. totalEssence)
-
-    return true, nil, {
-        decomposeCount = totalPieces,
-        essenceReward  = totalEssence,
-    }
+    deliverDecomposition(uid, totalEssence, totalPieces)
+    return true, nil, publishDecomposition(uid, "DecomposeOne", totalEssence, totalPieces, index)
 end
 
 return LootService

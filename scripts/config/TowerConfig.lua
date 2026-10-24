@@ -275,6 +275,16 @@ function TowerConfig.rollMonsters(quality, count)
     return result
 end
 
+local function appendWaveQuality(monsters, waveCfg, q)
+    local count = waveCfg["q" .. q] or 0
+    if count > 0 then
+        local rolled = TowerConfig.rollMonsters(q, count)
+        for _, mid in ipairs(rolled) do
+            monsters[#monsters + 1] = mid
+        end
+    end
+end
+
 --- 生成指定楼层唯一一波的完整怪物列表
 ---@param wave number 波次 (1)
 ---@param floor number|nil 实际楼层
@@ -284,22 +294,12 @@ function TowerConfig.generateWaveMonsters(wave, floor)
     if not waveCfg then return {} end
     local monsters = {}
     for q = 1, 5 do
-        local count = waveCfg["q" .. q] or 0
-        if count > 0 then
-            local rolled = TowerConfig.rollMonsters(q, count)
-            for _, mid in ipairs(rolled) do
-                monsters[#monsters + 1] = mid
-            end
-        end
+        appendWaveQuality(monsters, waveCfg, q)
     end
     return monsters
 end
 
---- 加权随机抽取N个不重复的强化词条
----@param count number 抽取数量（通常为3）
----@param excludeIds number[]|nil 排除的buff ID列表（已拥有的）
----@return table[] 抽取到的buff配置列表
-function TowerConfig.rollBuffs(count, excludeIds)
+local function buildBuffCandidates(excludeIds)
     local excludeSet = {}
     if excludeIds then
         for _, id in ipairs(excludeIds) do
@@ -317,22 +317,34 @@ function TowerConfig.rollBuffs(count, excludeIds)
         end
     end
 
-    -- 加权随机抽取（不重复）
-    local result = {}
-    for _ = 1, math.min(count, #candidates) do
-        local roll = math.random() * totalWeight
-        local acc = 0
-        for i, buff in ipairs(candidates) do
-            acc = acc + buff.weight
-            if roll <= acc then
-                result[#result + 1] = buff
-                totalWeight = totalWeight - buff.weight
-                table.remove(candidates, i)
-                break
-            end
+    return candidates, totalWeight
+end
+
+local function drawWeightedBuff(candidates, totalWeight, result)
+    local roll = math.random() * totalWeight
+    local acc = 0
+    for i, buff in ipairs(candidates) do
+        acc = acc + buff.weight
+        if roll <= acc then
+            result[#result + 1] = buff
+            totalWeight = totalWeight - buff.weight
+            table.remove(candidates, i)
+            break
         end
     end
+    return totalWeight
+end
 
+--- 加权随机抽取N个不重复的强化词条
+---@param count number 抽取数量（通常为3）
+---@param excludeIds number[]|nil 排除的buff ID列表（已拥有的）
+---@return table[] 抽取到的buff配置列表
+function TowerConfig.rollBuffs(count, excludeIds)
+    local candidates, totalWeight = buildBuffCandidates(excludeIds)
+    local result = {}
+    for _ = 1, math.min(count, #candidates) do
+        totalWeight = drawWeightedBuff(candidates, totalWeight, result)
+    end
     return result
 end
 

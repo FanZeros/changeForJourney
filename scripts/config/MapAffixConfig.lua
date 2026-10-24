@@ -71,53 +71,72 @@ local function pct(value)
     return math.floor((tonumber(value) or 0) * 100 + 0.5)
 end
 
-function MapAffixConfig.formatAffixText(id, params, def)
-    local p = params or {}
-    if id == "energy_barrier" then
+local affixTextFormatters = {
+    energy_barrier = function(p, def)
         return "怪物获得" .. pct(p.shieldPct) .. "%最大生命的护盾",
             "所有怪物获得最大生命值×" .. pct(p.shieldPct) .. "%的护盾"
-    elseif id == "berserk_low_hp" then
+    end,
+    berserk_low_hp = function(p, def)
         return "怪物低于" .. pct(p.threshold) .. "%血时暴走",
             "怪物生命低于" .. pct(p.threshold) .. "%时，攻击速度+" .. pct(p.atkSpeedBonus) .. "%，伤害+" .. pct(p.dmgBonus) .. "%"
-    elseif id == "iron_wall" then
+    end,
+    iron_wall = function(p, def)
         return "怪物护甲+" .. tostring(math.floor((p.armorAdd or 0) + 0.5)),
             "所有怪物护甲+" .. tostring(math.floor((p.armorAdd or 0) + 0.5))
-    elseif id == "vengeance_oath" then
+    end,
+    vengeance_oath = function(p, def)
         return def.shortDesc, def.desc
-    elseif id == "ancient_fog" then
+    end,
+    ancient_fog = function(p, def)
         return "每" .. tostring(p.interval) .. "秒降低己方" .. tostring(p.hitReduce) .. "命中" .. tostring(p.duration) .. "秒",
             "每隔" .. tostring(p.interval) .. "秒，己方全体命中值-" .. tostring(p.hitReduce) .. "，持续" .. tostring(p.duration) .. "秒"
-    elseif id == "time_rift" then
+    end,
+    time_rift = function(p, def)
         return "每" .. tostring(p.interval) .. "秒降低己方" .. pct(p.atkSpeedReduce) .. "%攻速" .. tostring(p.duration) .. "秒",
             "每隔" .. tostring(p.interval) .. "秒，己方全体攻击速度-" .. pct(p.atkSpeedReduce) .. "% ，持续" .. tostring(p.duration) .. "秒"
-    elseif id == "block_suppress" then
+    end,
+    block_suppress = function(p, def)
         return "己方格挡率-" .. pct(p.blockReduce) .. "%",
             "己方角色物理/魔法格挡率-" .. pct(p.blockReduce) .. "%（超出100%的部分可抵消此效果）"
-    elseif id == "corrode_armor" then
+    end,
+    corrode_armor = function(p, def)
         return "命中护甲-" .. pct(p.perHitPct) .. "%最多" .. pct(p.maxPct) .. "%",
             "怪物攻击命中时使目标护甲降低" .. pct(p.perHitPct) .. "% ，最多" .. pct(p.maxPct) .. "% ，每层持续" .. tostring(p.layerDuration) .. "秒"
-    elseif id == "thick_scales" then
+    end,
+    thick_scales = function(p, def)
         return "怪物" .. pct(p.chance) .. "%概率免疫暴击",
             "怪物有" .. pct(p.chance) .. "%概率使受到的暴击判定为普通伤害"
-    elseif id == "haste_realm" then
+    end,
+    haste_realm = function(p, def)
         return "怪物攻速+" .. pct(p.atkSpeedBonus) .. "%且攻击力-" .. pct(p.atkReduce) .. "%",
             "所有怪物攻击力-" .. pct(p.atkReduce) .. "% ，攻击速度+" .. pct(p.atkSpeedBonus) .. "%"
-    elseif id == "decay_land" then
+    end,
+    decay_land = function(p, def)
         return "每" .. tostring(p.tickInterval) .. "秒怪物伤害+" .. pct(p.perTick) .. "%上限" .. pct(p.maxBonus) .. "%",
             "战斗每持续" .. tostring(p.tickInterval) .. "秒，怪物伤害+" .. pct(p.perTick) .. "%（上限+" .. pct(p.maxBonus) .. "%）"
-    elseif id == "life_hunter" then
+    end,
+    life_hunter = function(p, def)
         return "怪物对生命值增伤" .. pct(p.hpDmgBonus) .. "%",
             "怪物对生命值（非护盾）造成的伤害+" .. pct(p.hpDmgBonus) .. "%"
-    elseif id == "heal_desert" then
+    end,
+    heal_desert = function(p, def)
         return "己方治疗效果-" .. pct(p.healReduce) .. "%",
             "己方治疗单位的治疗加成-" .. pct(p.healReduce) .. "%"
-    elseif id == "tenacious_will" then
+    end,
+    tenacious_will = function(p, def)
         return "怪物异常抗性+" .. tostring(math.floor((p.abnormalResAdd or 0) + 0.5)) .. "%",
             "所有怪物异常抗性+" .. tostring(math.floor((p.abnormalResAdd or 0) + 0.5)) .. "%"
-    elseif id == "frost_lotus" then
+    end,
+    frost_lotus = function(p, def)
         return "每" .. tostring(p.interval) .. "秒冰冻一个己方角色" .. tostring(p.freezeDuration) .. "秒",
             "每隔" .. tostring(p.interval) .. "秒，随机冰冻一个己方角色" .. tostring(p.freezeDuration) .. "秒"
-    end
+    end,
+}
+
+function MapAffixConfig.formatAffixText(id, params, def)
+    local p = params or {}
+    local format = affixTextFormatters[id]
+    if format then return format(p, def) end
     return def.shortDesc or def.name, def.desc
 end
 
@@ -566,10 +585,7 @@ function MapAffixConfig.getAffixesForChallengerS1(chapter)
     return #result > 0 and result or nil
 end
 
---- 根据 chapter 获取当前生效的普通地图词缀列表。
----@param chapter number
----@return table[]|nil
-function MapAffixConfig.getAffixesForChapter(chapter)
+local function selectChapterAffixes(chapter)
     local StageConfig = require("config.StageConfig")
     local scale = 1.0
     local affixIds
@@ -618,35 +634,53 @@ function MapAffixConfig.getAffixesForChapter(chapter)
         return nil  -- 折磨II之前无词缀
     end
 
+    return affixIds, scale, affixOverrides
+end
+
+local function resolveAffixParams(id, def, scale, affixOverrides)
+    -- 复制 params；湮灭III 使用专属增强参数，并由实际参数生成显示文本
+    local scaledParams = {}
+    for k, v in pairs(def.params) do
+        if type(v) == "number" then
+            scaledParams[k] = v * scale
+        else
+            scaledParams[k] = v
+        end
+    end
+    local override = affixOverrides and affixOverrides[id]
+    if override then
+        for k, v in pairs(override) do
+            scaledParams[k] = v
+        end
+    end
+    if id == "heal_desert" then
+        scaledParams.healReduce = MapAffixConfig.clampHealReduce(scaledParams.healReduce)
+    end
+    return scaledParams, override
+end
+
+local function resolveAffixDescriptions(id, def, scaledParams, override)
+    local shortDesc = def.shortDesc or def.name
+    local desc = def.desc
+    if override or id == "heal_desert" then
+        shortDesc, desc = MapAffixConfig.formatAffixText(id, scaledParams, def)
+    end
+    return shortDesc, desc
+end
+
+--- 根据 chapter 获取当前生效的普通地图词缀列表。
+---@param chapter number
+---@return table[]|nil
+function MapAffixConfig.getAffixesForChapter(chapter)
+    local affixIds, scale, affixOverrides = selectChapterAffixes(chapter)
     if not affixIds then return nil end
 
     local result = {}
     for _, id in ipairs(affixIds) do
         local def = MapAffixConfig.AFFIXES[id]
         if def then
-            -- 复制 params；湮灭III 使用专属增强参数，并由实际参数生成显示文本
-            local scaledParams = {}
-            for k, v in pairs(def.params) do
-                if type(v) == "number" then
-                    scaledParams[k] = v * scale
-                else
-                    scaledParams[k] = v
-                end
-            end
-            local override = affixOverrides and affixOverrides[id]
-            if override then
-                for k, v in pairs(override) do
-                    scaledParams[k] = v
-                end
-            end
-            if id == "heal_desert" then
-                scaledParams.healReduce = MapAffixConfig.clampHealReduce(scaledParams.healReduce)
-            end
-            local shortDesc = def.shortDesc or def.name
-            local desc = def.desc
-            if override or id == "heal_desert" then
-                shortDesc, desc = MapAffixConfig.formatAffixText(id, scaledParams, def)
-            end
+            local scaledParams, override = resolveAffixParams(id, def, scale, affixOverrides)
+            local shortDesc, desc = resolveAffixDescriptions(id, def, scaledParams, override)
             result[#result + 1] = {
                 id = id,
                 name = def.name,

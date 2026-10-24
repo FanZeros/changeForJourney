@@ -33,8 +33,6 @@ function Start()
     BattleDraw.setContext({
         combat = BattleCombat, imgHeroCards = {}, imgMonsterCards = {}, imgAllyTags = allyTags,
         imgHpBg = image("image/界面底板/战斗/UI_ZD_HP1.png"),
-        imgHpFill = image("image/界面底板/战斗/UI_ZD_HPT2.png"),
-        imgEsFill = image("image/界面底板/战斗/UI_ZD_HPT3.png"),
     })
     Scene.init(vg)
     local entry = assert(DungeonConfig.getCombatEntry(dungeonId, 1))

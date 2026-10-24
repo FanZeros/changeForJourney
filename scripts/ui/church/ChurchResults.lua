@@ -6,13 +6,11 @@ local M = {}
 
 function M.bind(deps)
     local state = deps.state
-    local ANIM = deps.ANIM
-    local CHAR_SLOT = deps.CHAR_SLOT
     local getProtocol = deps.getProtocol
     local ArtifactPanel = deps.ArtifactPanel
     local ArtifactDrawPanel = deps.ArtifactDrawPanel
     local CharacterPanel = deps.CharacterPanel
-    local SpineCardEffect = deps.SpineCardEffect
+    -- 旧调用方可选刷新钩子；生产详情仍由下方 markPowerDirty 刷新。
     local clearPowerCache = deps.clearPowerCache
 
     local function refreshTownBadge()
@@ -109,7 +107,7 @@ function M.bind(deps)
                 CharacterPanel.setHeroAdvBranch(data.heroId, data.branchId, data.advLevel)
             end
             -- 清除战斗力缓存，下次绘制会重新计算
-            clearPowerCache()
+            if clearPowerCache then clearPowerCache() end
             -- 刷新城镇Tab角标（转职后可能不再有可转职英雄）
             refreshTownBadge()
             local okDetail, CharacterDetail = pcall(require, "ui.character.detail.CharacterDetail")
@@ -130,7 +128,7 @@ function M.bind(deps)
                 .. " removedOffhand=" .. tostring(data.removedOffhandSeq))
             CharacterPanel.resetHeroAdvBranch(data.heroId)
             -- 清除战斗力缓存
-            clearPowerCache()
+            if clearPowerCache then clearPowerCache() end
             -- 刷新城镇Tab角标
             refreshTownBadge()
             local okDetail, CharacterDetail = pcall(require, "ui.character.detail.CharacterDetail")

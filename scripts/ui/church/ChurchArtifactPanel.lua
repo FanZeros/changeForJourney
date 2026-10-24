@@ -18,7 +18,6 @@ local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
-local drawNineSlice     = DrawUtil.drawNineSlice
 local hitTest           = DrawUtil.hitTest
 
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
@@ -141,7 +140,6 @@ local hover = { key = nil, since = 0 }
 -- ======================== 图片句柄 ========================
 
 local img = {
-    lowerBg = -1,  -- UI_TJP_1.png
     mergeBtn = -1, -- UI_AN_LV.png
     rerollBtn = -1, -- UI_AN_HUANG.png
     iconUp   = -1, -- ICON_UP.png 可提升角标
@@ -634,7 +632,6 @@ function M.init(vg)
     ArtifactAssetUtil.preloadIcons()
 
     -- 顶部背景图 UI_JTSQ_BJ 已按用户要求删除（drawBg 改纯色暗底）
-    img.lowerBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png", 0)
     img.mergeBtn  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     img.rerollBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     img.iconUp    = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)

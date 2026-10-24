@@ -9,11 +9,8 @@ function M.bind(deps)
     local ANIM = deps.ANIM
     local easeOutCubic = deps.easeOutCubic
     local easeInCubic = deps.easeInCubic
-    local TalentStarMap = deps.TalentStarMap
     local ArtifactPanel = deps.ArtifactPanel
     local ArtifactDrawPanel = deps.ArtifactDrawPanel
-    local resetRosterScrollState = deps.resetRosterScrollState
-    local syncTalentLitNodes = deps.syncTalentLitNodes
     local ensureInit = deps.ensureInit
     local getOnCloseCallback = deps.getOnCloseCallback
     local setOnCloseCallback = deps.setOnCloseCallback
@@ -38,25 +35,6 @@ function M.bind(deps)
         state.tab = "shenqi"
         state.tabFrom = "shenqi"
         state.tabSwitchTime = 0
-        state.selectedHeroId = nil
-        state.slotExpanded = false
-        state.slotAnimTime = 0
-        state.slotAnimDir = 0
-        state.slotLiftProgress = 0
-        state._deferClearHero = false
-        state.rosterScrollY = 0
-        resetRosterScrollState()
-        -- 天赋面板状态重置
-        state.tfZoomSliderValue = TalentStarMap.getDefaultSliderValue()
-        state.tfSliderDragging = false
-        state.tfMapDragging = false
-        state.tfLastDragTime = 0
-        state.tfDragVelocityX = 0
-        state.tfDragVelocityY = 0
-        state.tfDetailOpen = false
-        state.tfDetailNodeId = nil
-        state.tfDetailClosing = false
-        state.confirmClosing = false
         ArtifactPanel.reset()
         ArtifactDrawPanel.reset()
         print("[ChurchPage] 打开教堂")

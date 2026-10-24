@@ -216,6 +216,8 @@ local function getShopDisplayItems()
     return ordered
 end
 
+---@param itemId number
+---@return table|nil
 local function getShopItemById(itemId)
     for _, item in ipairs(SHOP_ITEMS) do
         if item.id == itemId then return item end
@@ -261,17 +263,13 @@ local CARD_STEP_Y  = L.CARD_H + L.CARD_GAP_Y
 -- ======================== 图片句柄 ========================
 
 local shopImg = {
-    pageBg      = -1,  -- UI_TJP_1.png（页面背景框）
-    buyBtn      = -1,  -- UI_SD_AN.png
     itemIcons   = {},  -- 每个商品图标
     costIcons   = {},  -- 每个商品消耗图标
     -- 二级弹窗
-    dialogBg     = -1, -- UI_TY_EJQRK.png
     buyBtnYellow = -1, -- UI_AN_HUANG.png
     btnMinus     = -1, -- UI_AN_JIAN.png
     btnPlus      = -1, -- UI_AN_JIA.png
     coinIcon     = -1, -- UI_icon_JGB_X.png（弹窗消耗图标）
-    qualityBg    = {}, -- 品质1~5 → UI_icon_ZBBJ_1~5.png
 }
 
 -- ======================== 弹窗动画常量 ========================
@@ -348,8 +346,6 @@ local DLG = {
 -- ======================== Init ========================
 
 function TavernShopPage.init(vg)
-    shopImg.pageBg    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png",    0)
-    shopImg.buyBtn      = nvgCreateImage(vg, "image/界面底板/商店/UI_SD_AN.png",       0)
     shopImg.buyBtnYellow= nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png",    0)
     shopImg.btnMinus    = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png",     0)
     shopImg.btnPlus     = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png",      0)
@@ -386,8 +382,6 @@ end
 -- ======================== 工具函数 ========================
 
 local drawImageCentered = DrawUtil.drawImageCentered
-
-local drawNineSlice = DrawUtil.drawNineSlice
 
 local hitTest = DrawUtil.hitTest
 

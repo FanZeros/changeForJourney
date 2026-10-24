@@ -172,13 +172,6 @@ local imgRetreatBtn   = -1
 local imgEnemyTag     = -1
 local imgAllyTags     = {}
 
-
-
--- 确认弹窗图片
-
-
-
-
 -- ======================== 状态 ========================
 
 local state = {
@@ -453,9 +446,6 @@ function DungeonScene.init(vg)
         imgAllyTags[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
     end
 
-    -- 确认弹窗图片
-    imgBtnRed    = nvgCreateImage(vg, "image/按钮/UI_AN_FANG_hong.png", 0)
-    imgBtnGray   = nvgCreateImage(vg, "image/按钮/UI_AN_FANG.png", 0)
     BattleEffects.init(vg)
     ProjectileSystem.init(vg)
     BattleResultPanel.init(vg)

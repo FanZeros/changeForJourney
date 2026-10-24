@@ -198,7 +198,6 @@ local ITEM_DEFS = require("ui.backpack.BackpackItems")
 
 local imgTopBg    = -1  -- UI_BB_BJ.png
 local imgTitleBg  = -1  -- UI_TJP_MC.png（标题背景，与教堂一致）
-local imgBtnBack  = -1  -- UI_AN_FH.png（返回按钮）
 local imgTabBg    = -1  -- UI_AN_1.png（Tab 背景）
 
 local imgBtnYellow = -1 -- UI_AN_HUANG.png（黄色按钮，碎片转化用）
@@ -727,7 +726,6 @@ function Panel.init(vg)
     HeroFrame.initImages(vg)
     imgTopBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_BB_BJ.png", 0)
     imgTitleBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
-    imgBtnBack = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
     imgTabBg   = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
     imgBtnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)

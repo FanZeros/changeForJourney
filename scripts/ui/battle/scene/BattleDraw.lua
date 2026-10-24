@@ -46,7 +46,7 @@ local imgCtx = {}   -- 图片句柄
 -- ======================== 注入上下文 ========================
 
 --- 注入依赖
----@param context table { combat, imgHeroCards, imgMonsterCards, imgHpBg, imgHpFill, imgAllyTags }
+---@param context table { combat, imgHeroCards, imgMonsterCards, imgHpBg, imgAllyTags }
 function BattleDraw.setContext(context)
     combat = context.combat
     imgCtx = context
@@ -280,8 +280,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                         local esX = fillX
                         nvgSave(vg)
                         nvgScissor(vg, esX, fillY, esClipW, fillH)
-                        -- 原 UI_ZD_HPT3.png 实为 KTX2 纹理误名 .png，NanoVG 无法解码，
-                        -- 改用程序化青色填充（与 +护盾数值同色系），不再依赖该贴图
+                        -- 护盾段使用程序化填充，不依赖额外纹理。
                         nvgBeginPath(vg)
                         nvgRect(vg, esX, fillY, esClipW, fillH)
                         nvgFillColor(vg, nvgRGBA(245, 248, 252, 230))

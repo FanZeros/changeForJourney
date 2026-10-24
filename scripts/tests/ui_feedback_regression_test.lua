@@ -97,6 +97,14 @@ local function fixture()
     env.nvgScale = function(_, x, y)
         f.matrix.sx, f.matrix.sy = f.matrix.sx * x, f.matrix.sy * y
     end
+    env.nvgCurrentTransform = function(_, matrix)
+        matrix[1], matrix[2], matrix[3], matrix[4] = f.matrix.sx, 0, 0, f.matrix.sy
+        matrix[5], matrix[6] = f.matrix.tx, f.matrix.ty
+        return matrix
+    end
+    env.nvgFindFont = function() return 1 end
+    env.graphics = { GetWidth = function() return 1920 end, GetHeight = function() return 1080 end,
+        GetDPR = function() return 1 end }
     env.nvgFontSize = function(_, size) f.matrix.font = size end
     env.nvgTextAlign = function(_, align) f.matrix.align = align end
     env.nvgTextBounds = function(_, _, _, text) return f.width(text, f.matrix.font) end
@@ -298,6 +306,30 @@ local function artifactLayerCase()
     eq(#f.all("detail.draw"), 0, "页签切换动画不绘制神器详情")
     eq(#f.all("artifact.content"), 1, "动画旧神器内容保留")
     eq(#f.all("chest.content"), 1, "动画新宝箱内容保留")
+    -- 移除旧室内背景后，两页背景裁剪必须首尾相接，不能在切换中露底。
+    local oldScissor = f.env.nvgScissor
+    local clip = nil
+    f.env.nvgScissor = function(_, x, y, w, h) clip = { x = x, y = y, w = w, h = h } end
+    f.modules["ui.church.ChurchArtifactPanel"].drawBg = function()
+        f.record("coverage.artifact", { clip = clip })
+    end
+    f.modules["ui.church.ChurchArtifactDrawPanel"].drawBg = function()
+        f.record("coverage.chest", { clip = clip })
+    end
+    for _, t in ipairs({ .001, .1, .25, .5, .75, .9, .999 }) do
+        state.tabSwitchTime = f.clock.elapsedTime - .35 * t
+        f.clear()
+        draw.drawPageImpl({})
+        local old = f.all("coverage.artifact")[1].clip
+        local new = f.all("coverage.chest")[1].clip
+        near(new.x, 0, "新页背景从视口左缘开始")
+        near(old.x + old.w, 1080, "旧页背景覆盖视口右缘")
+        near(new.x + new.w, old.x, "两页背景无空隙无重叠")
+        near(old.h, 2400, "旧页保持完整背景高度")
+        near(new.h, 2400, "新页保持完整背景高度")
+        eq(#f.stack, 0, "切换中背景裁剪/矩阵恢复")
+    end
+    f.env.nvgScissor = oldScissor
     state.tabFrom, state.tabSwitchTime = "baoxiang", 0
     f.clear()
     draw.drawPageImpl({})
@@ -341,9 +373,6 @@ local function equipmentFixture()
     f.modules["config.EquipmentConfig"] = { ITEMS = { TEST = item }, QUALITY = { {}, {}, {}, {}, {}, {} } }
     f.modules["config.EquipmentSetConfig"] = { orderedSetIds = function() return {} end,
         getSetIdForTemplate = function() return nil end }
-    f.modules["ui.character.detail.EquipmentWearability"] = { getFields = function(equip)
-        return equip.slot, equip.type, equip.grip, equip.level
-    end }
     f.modules["systems.EquipmentPower"] = { score = function(equip, heroId, slot)
         f.record("power.score", { item = equip, heroId = heroId, slot = slot })
         return f.power
@@ -352,9 +381,12 @@ local function equipmentFixture()
     f.modules["systems.EquipmentSystem"] = { MAX_INVENTORY = 300,
         getHeroSlots = function() return f.heroSlots or {} end,
         getAscendLevel = function() return 0 end }
+    -- 职业筛选新增工厂后使用完整真实预检模块，避免过期单方法替身。
+    f.modules["ui.character.detail.EquipmentWearability"] = f.load("ui.character.detail.EquipmentWearability")
     f.modules["ui.character.equip.EquipmentDetail"] = { getOwner = function() return false end,
         isOpen = function() return false end, close = noop, drawIf = noop, init = noop }
     f.modules["ui.battle.tri.BattleTriPage"] = { isOpen = function() return false end }
+    f.modules["runtime.LocalActionBridge"] = { isQuickEquipPending = function() return false end }
     f.modules["ui.church.ChurchPage"] = { hasAdvanceForHero = function() return false end }
     f.showEquipmentPower = false
     f.modules["ui.hud.popup.SettingsPanel"] = {
@@ -406,7 +438,8 @@ local function equipmentCase()
     f.clock.elapsedTime = 101
     -- 详情页只隔离不相关的下部属性布局；完整 draw 仍走真实装备槽循环。
     f.modules["ui.character.detail.CharacterDetailAttrs"] = {}
-    f.modules["ui.character.detail.CharacterEquipStats"] = { LEGACY = {}, drawBackground = noop }
+    f.modules["ui.character.detail.CharacterEquipStats"] = { LEGACY = {}, drawBackground = noop,
+        createRadarTransition = function() return { reset = noop } end }
     f.modules["ui.character.detail.CharacterAttributeView"] = {
         ATTRIBUTE_STYLE = { boxW = 440, rowH = 60, boxCX = 310, rowStep = 77 },
         ATTRIBUTE_LAYOUT = { firstY = 1200, y = 1200, h = 500 } }
@@ -527,6 +560,10 @@ local function coinCase()
         init = noop, applyProfile = noop }
     f.modules["config.BlacksmithConfig"] = {}
     f.modules["config.UrGachaConfig"] = {}
+    -- 本例只验证道具页货币路径；装备筛选 UI 是无关外围，禁止启动原生 UI。
+    f.modules["ui.backpack.BackpackFilters"] = { bindWarehouse = function()
+        return { init = noop, close = noop, isOpen = function() return false end }
+    end, attachInput = noop }
     f.modules["ui.town.TownPageChrome"] = { easeOutCubic = function(t) return t end,
         easeInCubic = function(t) return t end, drawNamePlate = noop, drawBack = noop, drawTabBar = noop,
         tabSlide = function() return 2, 2, 1 end }
@@ -547,10 +584,181 @@ local function coinCase()
     eq(#f.stack, 0, "商店绘制恢复矩阵")
 end
 
+local function churchCleanupCase()
+    local f = fixture()
+    local subscriptions, contexts, counts = {}, {}, {}
+    local function count(key) counts[key] = (counts[key] or 0) + 1 end
+    f.modules["runtime.ClientDispatcher"].subscribe = function(key, callback)
+        check(subscriptions[key] == nil, "教堂每类订阅只注册一次 " .. key)
+        subscriptions[key] = callback
+    end
+    f.modules["runtime.GameAction"] = { sendAction = noop }
+    f.modules["config.AdvancementConfig"] = {}
+    f.modules["ui.church.ChurchBadge"] = { bind = function() return {
+        hasAdvanceForHero = function(id) return id == 1 end,
+        hasAnyAdvance = function() return true end,
+        hasAnyUnusedTalent = function() return false end,
+        hasAnyChurchBadge = function() return true end,
+        getChurchBadgeInfo = function() return true, "up" end,
+    } end }
+    f.modules["ui.church.ChurchClassChange"] = { showFloat = function() count("class.float") end }
+    f.modules["ui.hud.BottomNav"] = { refreshTownBadge = function() count("badge") end }
+    f.modules["ui.church.talent.TalentStarMap"] = {
+        resetLit = function() count("talent.reset") end,
+        setNodeLit = function(id) count("talent.node." .. id) end,
+    }
+    f.modules["config.HeroConfig"].setDefaultLitNodes = function() count("talent.defaults") end
+    f.modules["ui.church.talent.ChurchTalentPanel"] = { preloadSpine = noop }
+    local talentOpen, talentFails = true, false
+    f.modules["ui.church.talent.TalentPage"] = {
+        isOpen = function() return talentOpen end,
+        forceClose = function() talentOpen = false; count("talent.close") end,
+        syncTalentFromStore = function() count("talent.sync") end,
+    }
+    local originalLoad = f.env.require
+    f.env.require = function(name)
+        check(name ~= "ui.church.ChurchRosterDraw" and name ~= "ui.church.ChurchSlotAnim",
+            "不再依赖旧名册/槽位模块")
+        if talentFails and name == "ui.church.talent.TalentPage" then error("模拟古树未加载") end
+        return originalLoad(name)
+    end
+    f.modules["ui.character.hero.ArtifactDetailPanel"] = { closeImmediate = function() count("detail.close") end }
+    local artifactConsume, keyVisible = false, false
+    f.modules["ui.church.ChurchArtifactPanel"] = {
+        setContext = function(ctx) contexts.artifact = ctx end,
+        init = function() count("artifact.init") end,
+        reset = function() count("artifact.reset") end,
+        cancelPointer = function() count("artifact.cancel") end,
+        handleTabInput = function() return artifactConsume end,
+        handleDragBegin = function() count("drag.begin"); return true end,
+        handleDragMove = function() count("drag.move"); return true end,
+        handleDragEnd = function() count("drag.end") end,
+        handleScroll = function() count("scroll") end,
+        handleHover = function() count("hover") end,
+        drawBg = noop, drawContent = noop, drawOverlay = noop,
+        canUpgradeAnyArtifact = function() return false end,
+        onArtifactEquipResult = function() count("equip.receipt"); return true end,
+    }
+    f.modules["ui.church.ChurchArtifactDrawPanel"] = {
+        setContext = function(ctx) contexts.chest = ctx end,
+        init = function() count("chest.init") end,
+        reset = function() count("chest.reset") end,
+        isKeyConfirmVisible = function() return keyVisible end,
+        handleTabInput = function() count("chest.input"); return true end,
+        onArtifactDrawResult = function() count("draw.receipt") end,
+        drawBg = noop, drawContent = noop, drawKeyConfirmDialog = noop,
+    }
+    f.modules["ui.fx.SpineCardEffect"] = { draw = noop }
+    f.modules["systems.StoryPlayer"] = { onPlace = function(place, event)
+        eq(place, "church", "离场地点保留")
+        eq(event, "leave", "离场事件保留")
+        count("story.leave")
+    end }
+    f.modules["ui.character.panel.CharacterPanel"].setHeroAdvBranch = function() count("class.advance") end
+    f.modules["ui.character.panel.CharacterPanel"].resetHeroAdvBranch = function() count("class.reset") end
+    f.modules["ui.character.detail.CharacterDetail"] = {
+        getHeroId = function() return 1 end,
+        isOpen = function() return false end,
+        markPowerDirty = function() count("detail.dirty") end,
+    }
+    local page = f.load("ui.church.ChurchPage")
+    page.init({})
+    page.init({})
+    eq(counts["artifact.init"], 1, "教堂重复 init 不重复初始化神器")
+    eq(counts["chest.init"], 1, "教堂重复 init 不重复初始化宝箱")
+    eq(#f.all("image.load"), 3, "教堂壳只加载名称牌/页签/角标三图")
+    for _, call in ipairs(f.all("image.load")) do
+        check(call.path == "image/界面底板/通用面板/UI_TJP_MC.png"
+            or call.path == "image/按钮/UI_AN_1.png" or call.path == "image/通用图标/ICON_UP.png",
+            "没有旧角色卡槽/职业/经验/古树重复加载")
+    end
+    check(subscriptions.talents and subscriptions.player and not subscriptions.heroes
+        and not subscriptions.equipment, "仅保留真实古树同步与玩家角标订阅")
+    check(contexts.artifact == contexts.chest, "两个有效子页共享上下文")
+    local state = contexts.artifact.state
+    check(state.rosterScrollY == nil and state.selectedHeroId == nil and state.slotLiftProgress == nil
+        and state.tfZoomSliderValue == nil and state.confirmPopup == nil, "教堂不再持有迁出页面的状态")
+    local before = counts["badge"] or 0
+    subscriptions.player({})
+    eq(counts["badge"], before + 1, "玩家数据仍刷新角标")
+    subscriptions.talents({})
+    eq(counts["talent.sync"], 1, "天赋数据仍转发实际古树")
+    talentFails = true
+    f.data.talents = { litNodes = { 1, 3 } }
+    subscriptions.talents({})
+    eq(counts["talent.reset"], 1, "古树未加载时保留同步兜底")
+    eq(counts["talent.node.3"], 1, "兜底同步真实天赋 ID")
+    eq(counts["talent.defaults"], 1, "兜底同步 HeroConfig 默认天赋")
+    talentFails = false
+    local opens, closes = 0, 0
+    page.setOnOpenCallback(function() opens = opens + 1 end)
+    page.open()
+    eq(counts["talent.close"], 1, "打开教堂关闭古树，但不清古树状态")
+    check(not contexts.chest.isAutoExchangeInputReady(), "打开动画期间不能自动兑换")
+    f.clock.elapsedTime = 101
+    page.draw({})
+    page.draw({})
+    eq(opens, 1, "打开回调只触发一次")
+    check(contexts.chest.isAutoExchangeInputReady(), "稳定神器页保留自动兑换门控")
+    eq(page.handleDragBegin(252, 465), true, "有效神器拖拽 begin 保留")
+    eq(page.handleDragMove(270, 470), true, "有效神器拖拽 move 保留")
+    page.handleDragEnd(270, 470)
+    page.handleScroll(1, 540, 1500)
+    eq(counts["drag.end"], 1, "有效神器拖拽 end 保留")
+    eq(counts.scroll, 1, "神器滚动保留")
+    -- 公共命中加载真实 TownPageChrome，沿用生产设计坐标。
+    eq(page.handleInput(690, 2288), true, "真实页签命中切到宝箱")
+    eq(state.tab, "baoxiang", "宝箱页签仍可达")
+    eq(state.tabFrom, "shenqi", "保留旧页水平切换动画")
+    eq(counts["artifact.cancel"], 1, "切页取消未完成拖动")
+    check(not contexts.chest.isAutoExchangeInputReady(), "切页动画门控保留")
+    eq(page.handleDragBegin(252, 465), false, "宝箱不误触神器拖拽")
+    f.clock.elapsedTime = 102
+    check(contexts.chest.isAutoExchangeInputReady(), "切页稳定后恢复门控")
+    keyVisible = true
+    local previousTab = state.tab
+    page.handleInput(390, 2288)
+    eq(state.tab, previousTab, "钥匙模态拦截页签，不穿透")
+    keyVisible = false
+    page.setOnCloseCallback(function() closes = closes + 1 end)
+    page.close()
+    check(not contexts.chest.isAutoExchangeInputReady(), "关闭动画禁止自动兑换")
+    f.clock.elapsedTime = 103
+    page.draw({})
+    page.draw({})
+    eq(closes, 1, "关闭回调只触发一次")
+    eq(page.isOpen(), false, "关闭动画完成确实关页")
+    local protocol = f.load("shared.Protocol")
+    page.onActionResult({ success = true, action = protocol.ACTION_TYPES.ADVANCE_CLASS,
+        heroId = 1, branchId = 101, advLevel = 1, branchName = "测试" })
+    eq(counts["class.advance"], 1, "闭页仍完成真实转职回执")
+    eq(counts["detail.dirty"], 1, "生产无旧缓存钩子时仍刷新右侧详情")
+    page.onActionResult({ success = true, action = protocol.ACTION_TYPES.RESET_CLASS, heroId = 1 })
+    eq(counts["class.reset"], 1, "闭页仍完成重置转职回执")
+    eq(counts["detail.dirty"], 2, "重置仍刷新右侧详情")
+    page.onActionResult({ success = false, action = protocol.ACTION_TYPES.ARTIFACT_DRAW })
+    page.onActionResult({ success = true, action = protocol.ACTION_TYPES.ARTIFACT_EQUIP })
+    eq(counts["draw.receipt"], 1, "闭页宝箱等待请求仍收尾")
+    eq(counts["equip.receipt"], 1, "闭页神器装配请求仍收尾")
+    check(page.hasAdvanceForHero(1) and page.hasAnyAdvance() and page.hasAnyChurchBadge(),
+        "右侧转职与城镇角标公共 API 保留")
+    eq(#f.stack, 0, "完整教堂壳绘制恢复矩阵")
+end
+
 function Start()
-    for _, case in ipairs({ { "重置按钮原屏幕逆变换", resetButtonCase },
-        { "神器内容/浮层调用顺序", artifactLayerCase }, { "神器点击/原格拖动例外", artifactInputCase },
-        { "三处装备贡献图标与长数字预算", equipmentCase }, { "酒馆币真实资源及三处绘制路径", coinCase } }) do
+    -- 可独立回归教堂清理；完整套件仍保留全部装备/货币断言，不隐藏失败。
+    local churchOnly = false
+    if GetArguments then
+        for _, arg in ipairs(GetArguments()) do if arg == "-church_only" then churchOnly = true end end
+    end
+    local selected = { { "教堂旧链清理后的真实宿主与回执", churchCleanupCase },
+        { "重置按钮原屏幕逆变换", resetButtonCase },
+        { "神器内容/浮层调用顺序", artifactLayerCase }, { "神器点击/原格拖动例外", artifactInputCase } }
+    if not churchOnly then
+        selected[#selected + 1] = { "三处装备贡献图标与长数字预算", equipmentCase }
+        selected[#selected + 1] = { "酒馆币真实资源及三处绘制路径", coinCase }
+    end
+    for _, case in ipairs(selected) do
         cases = cases + 1
         local ok, err = pcall(case[2])
         if ok then print(TAG .. " PASS " .. case[1])

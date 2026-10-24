@@ -197,11 +197,8 @@ M.DESIGN_W     = DESIGN_W
 -- ======================== 图片资源 ========================
 
 local img = {
-    panelBg    = -1,   -- UI_JSJM_BJ.png
     listBg     = -1,   -- UI_JSJM_0.png
-    deployed   = -1,   -- UI_JSJM_CZZ.png（出战中标识）
     lock       = -1,   -- UI_ICON_SUO.png
-    plus       = -1,   -- UI_ICON_JIA.png
     power      = -1,   -- ICON_ZDL.png
     lvlBadge   = -1,   -- UI_JSJM_DJ.png
     expBarBg   = -1,   -- UI_JSMB_JYT1.png
@@ -260,11 +257,8 @@ end
 function M.initImages(vg)
     resetPowerLayouts()
     img.vg = vg
-    -- panelBg 2MB+，首次绘制再加载
     img.listBg     = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_0.png", 0)
-    img.deployed   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_CZZ.png", 0)
     img.lock       = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
-    img.plus       = nvgCreateImage(vg, "image/通用图标/UI_ICON_JIA.png", 0)
     img.power      = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
     img.lvlBadge   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_DJ.png", 0)
     img.expBarBg   = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT1.png", 0)

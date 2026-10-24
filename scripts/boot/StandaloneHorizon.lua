@@ -1032,17 +1032,6 @@ function HandleNanoVGRenderHorizon()
     RewardPopup.draw(vg())
     Viewport.finish(vg())
 
-    -- 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）
-    if DarkIcon.SHOWCASE then
-        nvgSave(vg())
-        nvgScissor(vg(), 0, 0, logicalW(), logicalH())  -- 重置面板 intersect 裁剪
-        local ss = math.min(logicalW() / 1080, logicalH() / 2400)
-        nvgTranslate(vg(), (logicalW() - 1080 * ss) * 0.5, (logicalH() - 2400 * ss) * 0.5)
-        nvgScale(vg(), ss, ss)
-        DarkIcon.drawShowcase(vg())
-        nvgRestore(vg())
-    end
-
     -- 玩家信息已由中栏弹窗层绘制，不再用竖屏坐标居中重画。
     -- [底栏移除] 副本页全窗横屏模态
     HorizonDrawPageModal(vg())

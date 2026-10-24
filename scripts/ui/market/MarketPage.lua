@@ -261,18 +261,16 @@ local easeInOutCubic = TownPageChrome.easeInOutCubic
 -- ======================== 图片句柄 ========================
 
 local img = {
-    bg = -1, nameBg = -1, lowerBg = -1,
+    bg = -1, nameBg = -1,
     gold = -1, gem = -1,
-    btnBack = -1, tabBg = -1, slider = -1,
+    tabBg = -1,
     -- 商品
-    buyBtn = -1,
     itemIcons = {},
     costIcons = {},
     -- 弹窗
-    dialogBg = -1, buyBtnYellow = -1,
+    buyBtnYellow = -1,
     coinIcon = -1,     -- 弹窗消耗侧金币图标 (UI_icon_JB_X.png)
     diamondIcon = -1,  -- 弹窗消耗侧钻石图标 (UI_icon_SJ.png)
-    qualityBg = {},    -- 品质1~6
     btnMinus = -1,     -- 减按钮(UI_AN_JIAN.png)
     btnPlus = -1,      -- 加按钮(UI_AN_JIA.png)
 }
@@ -301,8 +299,6 @@ local state = {
 -- ======================== 工具函数 ========================
 
 local drawImageCentered = DrawUtil.drawImageCentered
-
-local drawNineSlice = DrawUtil.drawNineSlice
 
 local hitTest = DrawUtil.hitTest
 

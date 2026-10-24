@@ -13,7 +13,6 @@ local DrawUtil       = require("core.DrawUtil")
 local TownPageChrome = require("ui.town.TownPageChrome")
 local drawTextStroke = DrawUtil.drawTextStroke
 local drawImageCentered      = DrawUtil.drawImageCentered
-local drawNineSlice          = DrawUtil.drawNineSlice
 local hitTest                = DrawUtil.hitTest
 local drawRoundedRectCentered = DrawUtil.drawRoundedRectCentered
 local RecruitAnim       = require("ui.tavern.RecruitAnim")
@@ -62,14 +61,6 @@ local BTN_BACK_CX, BTN_BACK_CY = 958, 1150
 local BTN_BACK_W, BTN_BACK_H   = 184, 143
 
 -- 5-6. 双竖招募令入口布局/标题/状态统一由 TavernRecruitOrders 管理。
-
--- 7. 抽卡池剩余时间图标背景
-local TIMER_BG_CX, TIMER_BG_CY = 999, 292
-local TIMER_BG_W, TIMER_BG_H   = 90, 90
-
--- 8. 抽卡池剩余时间图标
-local TIMER_ICON_CX, TIMER_ICON_CY = 999, 292
-local TIMER_ICON_W, TIMER_ICON_H   = 54, 54
 
 -- ======================== 布局常量（下半部分） ========================
 
@@ -211,18 +202,13 @@ local img = {
     -- 上半部分
     bgStandard      = -1,   -- UI_KCBJ_1.png
     nameBg    = -1,   -- UI_TJP_MC.png
-    btnBack   = -1,   -- UI_AN_FH.png
-    timerBg   = -1,   -- UI_YXTBBJ.png
-    timerIcon = -1,   -- UI_icon_NZ.png
     -- 下半部分
     pityBg      = -1, -- UI_JG_SMBJ.png
-    pityIcon    = -1, -- UI_icon_TS.png
     ticketIcon  = -1, -- UI_icon_ZMQ_X.png（常规）
     ticketIconStellar = -1, -- UI_icon_ZMQ_2 星辰招募券
     diamondIcon = -1, -- UI_icon_SJ_X.png
     btnLv       = -1, -- UI_AN_LV.png
     tabBg       = -1, -- UI_AN_1.png
-    slider      = -1, -- UI_AN_2.png
 }
 
 -- ======================== 缓动函数（TownPageChrome） ========================
@@ -336,18 +322,13 @@ function TavernPage.init(vg)
     -- 上半部分
     img.bgStandard      = loadImage(vg, "image/界面底板/酒馆抽卡/UI_KCBJ_1.png")
     img.nameBg    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
-    img.btnBack   = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
     RecruitOrders.init(vg, pools)
-    img.timerBg   = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_YXTBBJ.png", 0)
-    img.timerIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_NZ.png", 0)
     -- 下半部分
     img.pityBg      = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_JG_SMBJ.png", 0)
-    img.pityIcon    = nvgCreateImage(vg, "image/货币道具/UI_icon_TS.png", 0)
     img.ticketIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_X.png", 0)
     img.ticketIconStellar = loadImage(vg, UrGachaConfig.UI.ticketIconPath, "image/货币道具/UI_icon_ZMQ2_X.png")
     img.diamondIcon = loadImage(vg, "image/货币道具/UI_icon_SJ_X.png")
     img.btnLv       = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-    img.slider      = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
     -- 初始化弹窗子模块（setContext 已在模块级别调用，此处只需 init 加载图片）
     TavernPopups.init(vg)

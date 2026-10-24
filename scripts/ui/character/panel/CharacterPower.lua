@@ -119,6 +119,8 @@ function M.bind(deps)
             equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment"),
             artifacts = matches and (ClientDispatcher.get("artifacts") or PlayerStore.Get("artifacts")) or {},
             talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents"),
+            -- 仅refresh的私有批次允许共享完整只读队伍；独立查询/试穿仍逐ctx隔离。
+            reuseTeamContext = wornBatches ~= nil,
         }
         -- 仅单次 refresh 内共享模块/已穿装备快照；不跨通知复用，不借错队神器。
         local batch = wornBatches and wornBatches[matches]

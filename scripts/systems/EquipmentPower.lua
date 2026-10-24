@@ -27,6 +27,15 @@ local function copy(value, seen, checkpoint)
     return out
 end
 
+-- 只比较上下文实际消费的英雄字段；经验通知不应打断大库存准备。
+local function sameValue(a, b)
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return a == b end
+    for key, value in pairs(a) do if not sameValue(value, b[key]) then return false end end
+    for key in pairs(b) do if a[key] == nil then return false end end
+    return true
+end
+
 local function idsForTeam(heroes, team)
     if type(heroes.teams) == "table" then
         local row = heroes.teams[team] or heroes.teams[tostring(team)]
@@ -267,6 +276,7 @@ function M.createWornBatch(options)
         equipmentData = { inventory = {}, equipped = copy(equipment and equipment.equipped or {}) },
         sourceInventory = equipment and equipment.inventory or {},
         copiedKeys = {}, copySeen = {},
+        teamContexts = options and options.reuseTeamContext and {} or nil,
     }
 end
 
@@ -293,8 +303,35 @@ local function copyWornItems(batch, heroId)
     end
 end
 
+-- refreshPowerCache 专用、单调用栈批次：只复用相同种子输入的完整队伍。
+-- Panel会补齐成长的零字段；HC内部也normalize，但CombatPower另直接读issuedCards。
+-- 因此不能只比较normalize结果（小数/负数/字符串卡数仍须保留原计价语义）。
+local function sameWornHeroData(a, b)
+    a, b = a or {}, b or {}
+    if (a.level or 1) ~= (b.level or 1) or not sameValue(a.advBranch, b.advBranch)
+        or not sameValue(a.awakening or {}, b.awakening or {}) then return false end
+    local ax, bx = a.extraTalent or {}, b.extraTalent or {}
+    if sameValue(ax, bx) then return true end
+    if type(ax) ~= "table" or type(bx) ~= "table" then return false end
+    if (tonumber(ax.issuedCards) or 0) ~= (tonumber(bx.issuedCards) or 0) then return false end
+    local ETS = require("systems.ExtraTalentSystem")
+    return sameValue(ETS.normalize(ax), ETS.normalize(bx))
+end
+
+local function sameWornTeamInputs(context, heroes)
+    local previous, current = context.heroesData.roster or {}, heroes.roster or {}
+    for _, unit in ipairs(context.teamUnits) do
+        local id = unit.heroId
+        if not sameWornHeroData(previous[id] or previous[tostring(id)], current[id] or current[tostring(id)]) then
+            return false
+        end
+    end
+    return true
+end
+
 -- 与 buildContext 的 currentPower 同口径，但只水合目标及真实所属队穿戴项。
 -- heroData 的覆盖仅属于本上下文，不污染批次里其他英雄的队友种子。
+-- reuseTeamContext仅供同步正式刷新：所得完整队伍只读，禁止试穿/写attrs或跨通知持有。
 function M.buildWornContext(heroId, options, batch)
     local id = tonumber(heroId)
     if not id or not HC.get(id) then return nil end
@@ -308,18 +345,38 @@ function M.buildWornContext(heroId, options, batch)
         overridden.roster[id] = copy(options.heroData)
         heroes = overridden
     end
-    copyWornItems(batch, id)
     local _, team = M.findPosition(heroes, id)
+    local reuse = options and options.reuseTeamContext and batch.teamContexts
+    local teamKey = team or ("hero:" .. tostring(id))
+    local previous = reuse and reuse[teamKey]
+    if previous and sameWornTeamInputs(previous, heroes) then
+        local target
+        for _, unit in ipairs(previous.teamUnits) do
+            if unit.heroId == id then target = unit break end
+        end
+        if target then
+            local ctx = {
+                heroId = id, hero = target, heroesData = heroes, equipmentData = batch.equipmentData,
+                artifactsData = batch.artifactsData, talentsData = batch.talentsData,
+                seeds = previous.seeds, teamUnits = previous.teamUnits, memo = {}, scores = {},
+            }
+            ctx.currentPower = powerFor(ctx, target, ctx.teamUnits, ctx.equipmentData)
+            return ctx
+        end
+    end
+    copyWornItems(batch, id)
     local ids = team and idsForTeam(heroes, team) or {}
     for slot = 1, 4 do
         local sourceId = numericId(ids[slot] or ids[tostring(slot)])
         if sourceId and sourceId > 0 and HC.get(sourceId) then copyWornItems(batch, sourceId) end
     end
-    return finishContext({
+    local ctx = finishContext({
         heroId = id, heroesData = heroes, equipmentData = batch.equipmentData,
         artifactsData = batch.artifactsData, talentsData = batch.talentsData,
         seeds = {}, teamUnits = {}, memo = {}, scores = {},
     })
+    if ctx and reuse then reuse[teamKey] = ctx end
+    return ctx
 end
 
 local function equipmentCopy(ctx)
@@ -552,15 +609,6 @@ function M.getContext(heroId)
         cached[id] = entry
     end
     return entry
-end
-
--- 只比较上下文实际消费的英雄字段；经验通知不应打断大库存准备。
-local function sameValue(a, b)
-    if type(a) ~= type(b) then return false end
-    if type(a) ~= "table" then return a == b end
-    for key, value in pairs(a) do if not sameValue(value, b[key]) then return false end end
-    for key in pairs(b) do if a[key] == nil then return false end end
-    return true
 end
 
 local function sameHeroCombatData(a, b)

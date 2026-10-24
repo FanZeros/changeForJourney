@@ -34,13 +34,28 @@ local function source(name)
     return table.concat(lines, "\n")
 end
 
-local function fixture()
+local function fixture(overrides)
     local data, revisions, modules = {}, {}, {}
     local counts = { evaluate = 0, apply = 0, power = 0, build = 0, io = 0, hydrate = 0,
         captures = 0, classCheckers = 0, sorts = 0, concats = 0, heroReads = 0 }
     local metrics = { drawEvaluate = 0, drawPower = 0, updateMaxMs = 0, updateMaxEvaluate = 0, pumps = 0 }
     local env = setmetatable({}, { __index = _G })
     env._G, env.time = env, { elapsedTime = 100 }
+    local render = { bounds = 0, text = 0, trig = 0, powerSettings = 0, inventoryVisits = 0,
+        dpr = 1, scale = 1, width = 1080, height = 2400, font = 1, raster = 1, spacing = 0, blur = 0,
+        record = false, commands = {}, matrix = { 1, 0, 0, 1, 0, 0 } }
+    env.graphics = { GetDPR = function() return render.dpr end,
+        GetWidth = function() return render.width end, GetHeight = function() return render.height end }
+    env.pairs = function(value)
+        if value ~= (data.equipment and data.equipment.inventory) then return pairs(value) end
+        return function(t, key)
+            local nextKey, item = next(t, key)
+            if nextKey ~= nil then render.inventoryVisits = render.inventoryVisits + 1 end
+            return nextKey, item
+        end, value, nil
+    end
+    env.math = setmetatable({ sin = function(x) render.trig = render.trig + 1; return math.sin(x) end,
+        cos = function(x) render.trig = render.trig + 1; return math.cos(x) end }, { __index = math })
     env.table = setmetatable({ sort = function(...)
         counts.sorts = counts.sorts + 1; return table.sort(...)
     end, concat = function(...)
@@ -84,7 +99,9 @@ local function fixture()
     modules["ui.widget.EquipmentSetIcon"] = { drawBadge = noop, hasBadge = function() return false end,
         badgeLayout = function(cx, cy, size) return { x = cx - size / 2, size = size / 4 } end,
         levelLayout = function(_, cx, cy) return { x = cx + 70, y = cy + 70, fontSize = 30, align = 0 } end }
-    modules["ui.hud.popup.SettingsPanel"] = { isEquipmentPowerEnabled = function() return true end }
+    modules["ui.hud.popup.SettingsPanel"] = { isEquipmentPowerEnabled = function()
+        render.powerSettings = render.powerSettings + 1; return true
+    end }
     modules["config.HeroAssetUtil"] = { preloadIcons = noop }
     modules["ui.character.panel.CharacterPanel"] = { getShards = function() return 0 end }
     modules["ui.character.detail.CharacterDetail"] = { getHeroId = function() return 1 end,
@@ -119,20 +136,42 @@ local function fixture()
         end }
     -- 菜单控件树不是本专项对象；保留真实Panel筛选状态并记录onChange适配。
     local filters = {}
-    modules["ui.backpack.BackpackFilters"] = { attachInput = noop, bindWarehouse = function(state)
-        filters.state = state
+    modules["ui.backpack.BackpackFilters"] = { attachInput = noop, bindWarehouse = function(state, _, gridState)
+        filters.state, filters.gridState = state, gridState
         return { close = noop, draw = noop, drawOverlay = noop, isOpen = function() return false end,
             handleInput = function() return false end }
     end }
     for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgScissor", "nvgTranslate", "nvgScale", "nvgGlobalAlpha",
         "nvgBeginPath", "nvgRect", "nvgRoundedRect", "nvgFillColor", "nvgFill", "nvgStrokeColor", "nvgStrokeWidth",
-        "nvgStroke", "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgText" }) do env[name] = noop end
-    env.nvgRGBA = function() return {} end
-    env.nvgTextBounds = function(_, _, _, text) return #text * 12 end
+        "nvgStroke", "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgText" }) do
+        env[name] = function(...)
+            if name == "nvgText" then render.text = render.text + 1 end
+            if render.record and name ~= "nvgFontFace" and name ~= "nvgFontSize" and name ~= "nvgTextAlign" then
+                local command = { name }
+                for i = 2, select("#", ...) do command[#command + 1] = select(i, ...) end
+                if name == "nvgText" and render.fontSize then command[#command + 1] = render.fontSize() end
+                render.commands[#render.commands + 1] = command
+            end
+        end
+    end
+    env.nvgRGBA = function(...) return { ... } end
+    env.nvgFindFont = function() return render.font end
+    env.nvgCurrentTransform = function(_, matrix)
+        for i = 1, 6 do matrix[i] = render.matrix[i] end
+    end
+    local fontSize = 40
+    local setFont = env.nvgFontSize
+    env.nvgFontSize = function(vg, size) fontSize = size; setFont(vg, size) end
+    env.nvgTextBounds = function(_, _, _, text)
+        render.bounds = render.bounds + 1
+        return #text * 12 * (fontSize / 40) * render.raster
+            + math.max(0, #text - 1) * render.spacing + render.blur * 0.1
+    end
+    render.fontSize = function() return fontSize end
     env.require = function(name)
         if modules[name] ~= nil then return modules[name] end
         assert(not name:match("^boot%.") and not name:match("^runtime%."), "undeclared dependency " .. name)
-        local value = assert(load(source(name), "@backpack-private/" .. name, "t", env))()
+        local value = assert(load(overrides and overrides[name] or source(name), "@backpack-private/" .. name, "t", env))()
         modules[name] = assert(value, name)
         if name == "systems.EquipmentPower" then
             for method, counter in pairs({ evaluate = "evaluate", buildContext = "build" }) do
@@ -181,7 +220,8 @@ local function fixture()
         latestGrids = grids
         return grids
     end
-    local f = { panel = panel, EP = EP, EC = EC, Eq = Eq, data = data, counts = counts,
+    local f = { panel = panel, EP = EP, EC = EC, Eq = Eq, data = data, counts = counts, render = render,
+        vg = {}, modules = modules,
         metrics = metrics, env = env, filters = filters, actions = actions, detailOpens = detailOpens,
         drawIds = drawIds, forbiddenReads = forbiddenReads }
     function f.notify(key, invalidate)
@@ -216,7 +256,7 @@ local function fixture()
     function f.draw()
         for i = #drawIds, 1, -1 do drawIds[i] = nil end
         local before = copy(counts)
-        panel.draw({})
+        panel.draw(f.vg)
         metrics.drawEvaluate = metrics.drawEvaluate + counts.evaluate - before.evaluate
         metrics.drawPower = metrics.drawPower + counts.power - before.power
         check(counts.evaluate == before.evaluate and counts.apply == before.apply and counts.power == before.power
@@ -344,7 +384,7 @@ local function runRenderHotPathTests()
         f.filters.state.classFilter = classFilter
         f.update(); f.draw()
         check(#f.list() == 500 and #f.drawIds > 0, "500-entry three-team render benchmark is populated")
-        local before = copy(f.counts)
+        local before, renderBefore = copy(f.counts), copy(f.render)
         local start, frames = os.clock(), 240
         for _ = 1, frames do f.draw() end
         local elapsed = (os.clock() - start) * 1000
@@ -354,11 +394,28 @@ local function runRenderHotPathTests()
         print(string.format("%s RENDER_CPU class=%s frames=%d meanMs=%.4f captures=%d classCheckers=%d sorts=%d concats=%d hydrate=%d",
             TAG, classFilter, frames, elapsed / frames, captures, classCheckers, sorts, concats,
             f.counts.hydrate - before.hydrate))
+        print(string.format("%s DRAW_CALLS class=%s bounds/frame=%.1f text/frame=%.1f trig/frame=%.1f settings/frame=%.1f inventoryKeys/frame=%.1f",
+            TAG, classFilter, (f.render.bounds - renderBefore.bounds) / frames,
+            (f.render.text - renderBefore.text) / frames, (f.render.trig - renderBefore.trig) / frames,
+            (f.render.powerSettings - renderBefore.powerSettings) / frames,
+            (f.render.inventoryVisits - renderBefore.inventoryVisits) / frames))
         if not _G.BACKPACK_SOURCE_OVERRIDES then
             check(captures == frames, "Render captures once, not present + getCommittedList twice")
             check(classCheckers == 0 and sorts == 0, "warm Render never rebuilds class rules or sorts/serializes hero fields")
-            check(concats <= frames * 4, "Render signature concatenations are constant, not per roster table")
+            check(concats == 0, "warm Render compares values without allocating serialized request/wear keys")
+            check(f.render.bounds - renderBefore.bounds == frames, "warm Render uses one raster/DPR probe, no per-cell measure")
+            check(f.render.trig == renderBefore.trig and f.render.powerSettings - renderBefore.powerSettings == frames,
+                "warm Render reuses identical16-direction offsets and reads settings once")
         end
+        local growthStart = os.clock()
+        for frame = 1, frames do
+            -- 持续真实消费值变化但不通知；其余24名册不应重新深冻结。
+            f.data.heroes.roster[1].extraTalent.nested.issuedCards = frame
+            f.draw()
+            check(#f.drawIds > 0, "combat growth never skips a rendered inventory frame")
+        end
+        print(string.format("%s GROWTH_DRAW_CPU class=%s frames=%d meanMs=%.4f",
+            TAG, classFilter, frames, (os.clock() - growthStart) * 1000 / frames))
         check(f.counts.build == before.build and f.counts.hydrate == before.hydrate
             and f.counts.evaluate == before.evaluate and f.counts.power == before.power,
             "warm Render has zero preparation/hydration/scoring work")
@@ -401,7 +458,10 @@ local function runSameFrameCaptureTests()
     local mutations = {
         function() f.data.heroes.roster[1].level = 81 end,
         function() f.data.heroes.roster[1].advBranch = { first = 104 } end,
+        function() f.data.heroes.roster[1].advBranch.second = 208 end,
+        function() f.data.heroes.roster[1].advBranch.first = nil end,
         function() f.data.heroes.roster[1].awakening[1] = true end,
+        function() f.data.heroes.roster[1].awakening[1] = nil end,
         function() f.data.heroes.roster[1].extraTalent.nested = { value = 1 } end,
         function() f.data.heroes.roster[1].extraTalent.nested.value = 2 end,
         function() f.data.heroes.roster[1].extraTalent.nested = nil end,
@@ -430,8 +490,78 @@ local function runSameFrameCaptureTests()
         "closing retains drawn score snapshot but disables pointer")
 end
 
+local function runDrawParityTests()
+    -- 可由CPU runner注入030fda51源码，对每条真正绘图命令逐项比对；不需落盘旧文件。
+    local reference = _G.BACKPACK_DRAW_REFERENCE
+    for _, mode in ipairs({ "left", "inline" }) do
+        local f, old = fixture(), reference and fixture(reference) or nil
+        if old then old.data.equipment = copy(f.data.equipment) end
+        local function each(fn) fn(f); if old then fn(old) end end
+        each(function(x)
+            for key, item in pairs(x.data.equipment.inventory) do
+                item.ascendLevel, item.locked = tonumber(key) % 3, tonumber(key) % 7 == 0
+            end
+            x.panel.open(mode == "left" and "left" or false, "equip"); x.update(); x.draw()
+            x.render.record = true
+        end)
+        local function draw(label)
+            each(function(x) x.render.commands = {}; x.draw() end)
+            if old then
+                check(equal(f.drawIds, old.drawIds), label .. " old/new viewport IDs")
+                check(equal(f.render.commands, old.render.commands), label .. " old/new draw command/color/position/font parity")
+            end
+        end
+        for _, scroll in ipairs({ 0, 139.999, 140, 140.001, 239.999, 240, 240.001,
+            429.999, 430, 430.001, 1900, 15000, 100000 }) do
+            each(function(x) x.filters.gridState.scrollY = scroll end)
+            draw(mode .. " scroll=" .. scroll)
+        end
+        -- 度量缓存热态后分别改变每个原生度量依赖，不能复用旧宽度。
+        local changes = {
+            function(x) x.render.dpr = 2; x.render.raster = 2 end,
+            function(x) x.render.matrix[1], x.render.matrix[4] = 0.75, 0.75; x.render.raster = 1.5 end,
+            function(x) x.render.width, x.render.height = 2400, 1080; x.render.raster = 1.25 end,
+            function(x) x.render.font = 2; x.render.raster = 1.75 end,
+            function(x) x.vg = {}; x.render.raster = 1.4 end,
+            function(x) x.render.raster = 2.1 end, -- 同handle字体重载/frame pixelRatio，只能靠字形探针发现。
+            function(x) x.render.spacing = 0.75 end,
+            function(x) x.render.blur = 2 end,
+            function(x) x.render.matrix[2], x.render.matrix[3] = 0.1, -0.1 end,
+        }
+        for i, mutate in ipairs(changes) do
+            each(mutate)
+            local before = f.render.bounds
+            draw(mode .. " metric change=" .. i)
+            check(f.render.bounds > before + 1, "changed metric remeasures real visible strings " .. i)
+            before = f.render.bounds
+            draw(mode .. " metric warm=" .. i)
+            if not _G.BACKPACK_SOURCE_OVERRIDES then
+                check(f.render.bounds == before + 1, "unchanged metric uses single probe " .. i)
+            end
+        end
+        -- 不能把Render移到Update：无通知增删仍当帧更新容量文字。
+        each(function(x)
+            x.data.equipment.inventory["501"] = copy(x.data.equipment.inventory["1"])
+        end)
+        draw(mode .. " same-frame insert capacity")
+        local capacity
+        for _, command in ipairs(f.render.commands) do
+            if command[1] == "nvgText" and tostring(command[4]):find("背包上限", 1, true) then capacity = command[4] end
+        end
+        check(capacity and capacity:find("501/", 1, true), "capacity immediately sees unnotified inventory insert")
+        each(function(x) x.data.equipment.inventory["501"] = nil end)
+        draw(mode .. " same-frame remove capacity")
+        each(function(x) x.env.nvgCurrentTransform = false end)
+        draw(mode .. " missing native measurement contract falls back uncached")
+        each(function(x) x.panel.close(); x.notify("equipment"); x.update() end)
+        draw(mode .. " closing frozen draw")
+        check(f.panel.peekEquipAt(160, 840) == nil, "closing parity never restores input")
+    end
+end
+
 local function runTests()
     runSameFrameCaptureTests()
+    runDrawParityTests()
     if _G.BACKPACK_RENDER_ONLY then runRenderHotPathTests(); return end
     runAvailabilityTests()
     runRenderHotPathTests()

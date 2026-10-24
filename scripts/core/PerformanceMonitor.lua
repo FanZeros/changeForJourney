@@ -2,10 +2,11 @@
 -- 帧间隔取原始系统时钟，不取可能平滑/限幅的游戏 dt；分段 CPU 为进程 CPU，wall 为同步历时。
 -- inclusive 分段可嵌套，不能相加；不采集账号、姓名、钱包、装备或完整存档。
 local M = {}
-local FRAME_LIMIT, SLOW_LIMIT, MARK_LIMIT, SECTION_LIMIT = 3600, 80, 40, 192
+local FRAME_LIMIT, SLOW_LIMIT, MARK_LIMIT, SECTION_LIMIT, WORST_LIMIT = 3600, 80, 40, 192, 10
 local MAX_SECONDS = 600
 local enabled = false
-local frames, sections, slow, marks = {}, {}, {}, {}
+local frames, sections, slow, marks, worst = {}, {}, {}, {}, {}
+local sectionCount = 0
 local cursor, sampleCount, totalFrames, totalMs = 0, 0, 0, 0
 local peakMs = 0
 local over33, over50, over100 = 0, 0, 0
@@ -69,11 +70,10 @@ local function commitFrame(intervalMs)
     for name, entry in pairs(frame.sections) do
         local stat = sections[name]
         if not stat then
-            local count = 0
-            for _ in pairs(sections) do count = count + 1 end
-            if count < SECTION_LIMIT then
+            if sectionCount < SECTION_LIMIT then
                 stat = { name = name, calls = 0, totalCpuMs = 0, maxCpuMs = 0, totalWallMs = 0, maxWallMs = 0 }
                 sections[name] = stat
+                sectionCount = sectionCount + 1
             else droppedSections = droppedSections + 1 end
         end
         if stat then
@@ -92,14 +92,25 @@ local function commitFrame(intervalMs)
     if intervalMs > 50 then over50 = over50 + 1 end
     if intervalMs > 100 then over100 = over100 + 1 end
     if intervalMs > 50 then
-        boundedPush(slow, { frame = totalFrames, intervalMs = intervalMs, context = frame.context,
-            top = topEntries(frame.sections, 6) }, SLOW_LIMIT)
+        local detail = { frame = totalFrames, intervalMs = intervalMs, context = frame.context,
+            top = topEntries(frame.sections, 6) }
+        boundedPush(slow, detail, SLOW_LIMIT)
+        -- 最近慢帧会被后续普通慢帧覆盖；另保留本轮最慢十帧，避免丢失通关/同步尖峰。
+        local rank = #worst + 1
+        for i, old in ipairs(worst) do
+            if intervalMs > old.intervalMs then rank = i; break end
+        end
+        if rank <= WORST_LIMIT then
+            table.insert(worst, rank, detail)
+            if #worst > WORST_LIMIT then worst[#worst] = nil end
+        end
     end
 end
 function M.isEnabled() return enabled end
 function M.start()
     epoch = epoch + 1
-    frames, sections, slow, marks = {}, {}, {}, {}
+    frames, sections, slow, marks, worst = {}, {}, {}, {}, {}
+    sectionCount = 0
     cursor, sampleCount, totalFrames, totalMs = 0, 0, 0, 0
     peakMs = 0
     over33, over50, over100 = 0, 0, 0
@@ -149,7 +160,7 @@ function M.beginFrame(context, exclusion)
         return
     end
     lastWall = now
-    current = { context = context, excluded = exclusion, sections = {} }
+    current = { context = context, excluded = exclusion, sections = {}, sectionCount = 0 }
     if not exclusion then sampleMemory(now) end
 end
 -- 标记面板打开/切后台发生在两次Update之间的边界，不能污染当前帧。
@@ -169,11 +180,10 @@ function M.finish(token)
     if not finite(c) or not finite(w) then return end
     local entry = current.sections[token.name]
     if not entry then
-        local count = 0
-        for _ in pairs(current.sections) do count = count + 1 end
-        if count >= SECTION_LIMIT then droppedSections = droppedSections + 1; return end
+        if current.sectionCount >= SECTION_LIMIT then droppedSections = droppedSections + 1; return end
         entry = { calls = 0, cpuMs = 0, wallMs = 0, maxCpuMs = 0, maxWallMs = 0 }
         current.sections[token.name] = entry
+        current.sectionCount = current.sectionCount + 1
     end
     entry.calls, entry.cpuMs, entry.wallMs = entry.calls + 1, entry.cpuMs + c, entry.wallMs + w
     entry.maxCpuMs, entry.maxWallMs = math.max(entry.maxCpuMs, c), math.max(entry.maxWallMs, w)
@@ -219,16 +229,16 @@ function M.snapshot()
         return a.totalWallMs > b.totalWallMs
     end)
     return {
-        schemaVersion = 1, monitorVersion = "2026-10-24-v7", enabled = enabled, stoppedReason = stoppedReason,
+        schemaVersion = 1, monitorVersion = "2026-10-24-v8", enabled = enabled, stoppedReason = stoppedReason,
         elapsedSeconds = totalMs / 1000, frames = totalFrames, fps = totalMs > 0 and totalFrames * 1000 / totalMs or 0,
         frameMs = { p50 = percentile(0.5), p95 = percentile(0.95), p99 = percentile(0.99), max = peakMs },
         percentileWindowFrames = sampleCount,
         slowFrames = { over33 = over33, over50 = over50, over100 = over100 },
         luaMemoryKB = memory.luaMemoryKB, resourceMemoryBytes = memory.resourceMemoryBytes,
         batches = memory.batches, primitives = memory.primitives,
-        sections = list, recentSlow = copy(slow), marks = copy(marks), excludedGaps = excludedGaps,
+        sections = list, recentSlow = copy(slow), worstSlow = copy(worst), marks = copy(marks), excludedGaps = excludedGaps,
         excludedPanelFrames = excludedPanelFrames, droppedSections = droppedSections,
-        limits = { frames = FRAME_LIMIT, slowFrames = SLOW_LIMIT, marks = MARK_LIMIT, sections = SECTION_LIMIT, seconds = MAX_SECONDS },
+        limits = { frames = FRAME_LIMIT, slowFrames = SLOW_LIMIT, worstFrames = WORST_LIMIT, marks = MARK_LIMIT, sections = SECTION_LIMIT, seconds = MAX_SECONDS },
         timing = { frame = "system_clock_update_to_update_ms", sections = "inclusive_process_cpu_and_sync_wall_ms",
             gpu = "not_sampled", memory = "lua_heap_and_resource_cache_not_process_rss_or_vram" },
     }
@@ -238,7 +248,7 @@ function M.getReport()
     if cachedReport ~= "" then return cachedReport end
     local s = M.snapshot()
     local lines = {
-        "性能诊断报告 v7 · 2026-10-24",
+        "性能诊断报告 v8 · 2026-10-24",
         string.format("有效采样 %.1f秒 / %d帧 / 平均 %.1f FPS", s.elapsedSeconds, s.frames, s.fps),
         string.format("最近%d有效帧 P50 %.1f / P95 %.1f / P99 %.1f ms；本轮最大 %.1f ms", s.percentileWindowFrames,
             s.frameMs.p50, s.frameMs.p95, s.frameMs.p99, s.frameMs.max),
@@ -257,6 +267,12 @@ function M.getReport()
         local v = s.sections[i]
         lines[#lines + 1] = string.format("%s: %d / %.1f / %.1f / %.1f / %.2f", v.name, v.calls,
             v.totalCpuMs, v.totalWallMs, v.maxWallMs, v.calls > 0 and v.totalWallMs / v.calls or 0)
+    end
+    lines[#lines + 1] = "本轮最慢帧（最多10条，后续慢帧不会挤掉早期尖峰）"
+    for _, v in ipairs(worst) do
+        local top = v.top[1]
+        lines[#lines + 1] = string.format("帧%d %.1fms [%s] %s", v.frame, v.intervalMs, v.context,
+            top and (top.name .. string.format(" %.1fms", top.wallMs)) or "无已接入高耗时分段")
     end
     lines[#lines + 1] = "最近慢帧（最多展示10条，完整记录在JSON）"
     for i = math.max(1, #slow - 9), #slow do

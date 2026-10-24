@@ -31,8 +31,12 @@ local function fixture()
     local actions, icons, latest = {}, {}, {}
     local cards = 0
     local metrics = { drawColdBuild = 0, updateMaxMs = 0, updates = 0 }
-    local work = { phase = false, version = 0, dependencies = 0, signature = 0, sort = 0, concat = 0, bytes = 0 }
+    local work = { phase = false, version = 0, matches = 0, read = 0, panelRead = 0, dependencies = 0, signature = 0, sort = 0, concat = 0, bytes = 0 }
     local env = setmetatable({}, { __index = _G })
+    local language = "zh"
+    local dpr = 1
+    env.graphics = { GetDPR = function() return dpr end, GetWidth = function() return 1080 * dpr end,
+        GetHeight = function() return 2400 * dpr end }
     env.table = setmetatable({
         sort = function(...)
             if work.phase then work.sort = work.sort + 1 end
@@ -51,17 +55,21 @@ local function fixture()
         Subscribe = noop, Unsubscribe = noop }
     modules["core.PlayerStore"] = store
     modules["runtime.ClientDispatcher"] = { get = store.Get }
-    modules["core.I18n"] = { get = function() return "zh" end, t = function(s) return s end,
-        lookup = function(s) return s end, format = string.format }
+    modules["core.I18n"] = { get = function() return language end, t = function(s) return s end,
+        lookup = function(s) return s end, format = string.format,
+        displayBounds = function(_, _, _, text) return #tostring(text) * 10 end,
+        displayText = noop }
+    modules["core.I18nEquipmentText"] = { lookup = function(s) return s end }
     modules["core.GameState"] = {}
     modules["core.DrawUtil"] = { drawTextStroke = noop, drawImageCentered = noop, drawCardImage = function() cards = cards + 1 end,
         seamSlideX = function() return 0 end }
-    modules["core.DarkIcon"] = { drawNine = noop, drawQualityBg = noop, drawIconDark = noop, draw = noop }
+    modules["core.DarkIcon"] = { drawNine = noop, drawQualityBg = noop, drawIconDark = noop, draw = noop,
+        QUALITY_TRIM = { { 240, 240, 240 }, { 0, 255, 0 }, { 0, 0, 255 }, { 255, 0, 255 }, { 255, 255, 0 }, { 255, 0, 0 } } }
     modules["core.BattleLayout"] = { CARD_W = 198, CARD_H = 198 * 955 / 538 }
     modules["config.HeroAssetUtil"] = { ensureCard = function() return 1 end }
     modules["systems.ButtonFeedback"] = { begin = function() return false end, finish = noop, trigger = noop }
     modules["systems.TutorialManager"] = { getPreferredCharacterTab = function() return "equip" end,
-        isActive = function() return false end }
+        isActive = function() return false end, isBuildingUnlocked = function() return false end }
     modules["runtime.LocalActionBridge"] = { isQuickEquipPending = function() return false end }
     modules["runtime.GameAction"] = { sendAction = function(action, payload)
         actions[#actions + 1] = { action = action, payload = payload }; return true end }
@@ -81,8 +89,9 @@ local function fixture()
     modules["ui.widget.ImageCache"] = { init = noop, getEquipIcon = function(id)
         icons[#icons + 1] = id; return -1 end, getQualityBg = function() return -1 end }
     modules["ui.widget.KeywordText"] = { new = function() return { clear = noop, drawPopup = noop,
-        isOpen = function() return false end, setPopupTransform = noop } end }
-    modules["ui.widget.EquipmentSetIcon"] = { drawBadge = noop,
+        isOpen = function() return false end, setPopupTransform = noop, beginFrame = noop, draw = noop,
+        drawAttribute = function() return 0 end } end }
+    modules["ui.widget.EquipmentSetIcon"] = { drawBadge = noop, draw = function() return false end,
         levelLayout = function(_, x, y) return { x = x + 70, y = y + 70, fontSize = 30, align = 0 } end,
         badgeLayout = function(x) return { x = x - 90, size = 30 } end }
     modules["ui.hud.popup.SettingsPanel"] = { isEquipmentPowerEnabled = function() return true end }
@@ -110,7 +119,8 @@ local function fixture()
     modules["ui.character.detail.CharacterAttributeView"] = attrView
     for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgScissor", "nvgIntersectScissor", "nvgResetScissor", "nvgTranslate",
         "nvgScale", "nvgGlobalAlpha", "nvgBeginPath", "nvgRect", "nvgRoundedRect", "nvgFillColor", "nvgFill", "nvgStrokeColor",
-        "nvgStrokeWidth", "nvgStroke", "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgText", "nvgFillPaint", "nvgMoveTo", "nvgLineTo" }) do env[name] = noop end
+        "nvgStrokeWidth", "nvgStroke", "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgText", "nvgFillPaint", "nvgMoveTo", "nvgLineTo",
+        "nvgClosePath", "nvgTextBox" }) do env[name] = noop end
     env.nvgRGBA = function() return {} end
     env.nvgImagePattern = function() return {} end
     env.nvgTextBounds = function(_, _, _, text) return #tostring(text) * 10 end
@@ -129,7 +139,9 @@ local function fixture()
             value[method] = function(...) counts[counter] = counts[counter] + 1; return original(...) end
         end
         local probes = name == "ui.character.detail.CharacterDetailPreparation" and { version = "version" }
-            or name == "ui.character.detail.CharacterDetailSnapshot" and { dependencies = "dependencies", signature = "signature" } or {}
+            or name == "ui.character.detail.CharacterDetailSnapshot" and { dependencies = "dependencies", signature = "signature", matchesDependencies = "matches" }
+            or name == "ui.character.detail.CharacterDetail" and { getPreparedEquipment = "read" }
+            or name == "ui.character.detail.CharacterDetailEquip" and { getPrepared = "panelRead" } or {}
         for method, counter in pairs(probes) do
             local original = value[method]
             value[method] = function(...)
@@ -165,6 +177,16 @@ local function fixture()
     local f = { detail = Detail, drawModule = Draw, panel = Detail._EquipPanel, env = env, data = data, counts = counts,
         actions = actions, latest = latest, icons = icons, EP = EP, Eq = Eq, EC = EC, metrics = metrics }
     function f.select(seq) selection = seq and { seq = seq, owner = "backpack", pinned = true } or nil end
+    function f.setLanguage(value) language = value end
+    function f.setDPR(value) dpr = value end
+    function f.probe(fn)
+        work.matches, work.read, work.panelRead, work.version = 0, 0, 0, 0
+        work.phase = "probe"
+        local ok, err = pcall(fn)
+        work.phase = false
+        if not ok then error(err) end
+        return copy(work)
+    end
     function f.notify(key)
         revisions[key] = (revisions[key] or 0) + 1
         EP.invalidate(); Detail.markPowerDirty()
@@ -199,44 +221,64 @@ local function fixture()
         end
         error("detail queue starved")
     end
-    function f.measure(label, frames)
+    function f.measure(label, frames, popup)
         local samples = {}
         for _, phase in ipairs({ "render", "update", "pair" }) do
-            for _, key in ipairs({ "version", "dependencies", "signature", "sort", "concat", "bytes" }) do work[key] = 0 end
+            for _, key in ipairs({ "version", "matches", "read", "panelRead", "dependencies", "signature", "sort", "concat", "bytes" }) do work[key] = 0 end
             collectgarbage("collect")
             local heap = collectgarbage("count")
             local started = os.clock()
             work.phase = phase
             for _ = 1, frames do
                 if phase ~= "render" then Detail.update(1 / 60) end
-                if phase ~= "update" then Detail.draw({}) end
+                if phase ~= "update" then
+                    Detail.draw({})
+                    if popup then popup.draw({}) end
+                end
             end
             work.phase = false
             local elapsed = (os.clock() - started) * 1000
             samples[phase] = copy(work)
-            print(string.format("%s HOTPATH %s phase=%s frames=%d meanMs=%.4f heapDeltaKiB=%.1f version=%d dependencies=%d signature=%d sort=%d concat=%d concatBytes=%d", TAG,
+            print(string.format("%s HOTPATH %s phase=%s frames=%d meanMs=%.4f heapDeltaKiB=%.1f version=%d matches=%d read=%d panelRead=%d dependencies=%d signature=%d sort=%d concat=%d concatBytes=%d", TAG,
                 label, phase, frames, elapsed / frames, collectgarbage("count") - heap, work.version,
-                work.dependencies, work.signature, work.sort, work.concat, work.bytes))
+                work.matches, work.read, work.panelRead, work.dependencies, work.signature, work.sort, work.concat, work.bytes))
         end
         return samples
     end
     function f.enableRealPopup()
         modules["ui.character.equip.EquipmentDetail"] = nil
-        local function drawLeaf(ctx, equip, slot, diff)
-            latest.popupPower = ctx.calcEquipPower(equip, ctx.detState.heroId, slot)
+        local function drawLeaf(ctx, equip, slot, diff, reader)
+            if f.popupHook then f.popupHook() end
+            latest.popupPower = ctx.calcEquipPower(equip, ctx.detState.heroId, slot, reader)
             latest.popupGain = diff
         end
         modules["ui.character.equip.EquipmentDetailDraw"] = { create = function(ctx)
-            return { drawEquipPanel = function(_, equip, _, _, _, _, _, diff)
-                    drawLeaf(ctx, equip, ctx.detState.slot, diff)
+            return { drawEquipPanel = function(_, equip, _, _, _, _, _, diff, _, _, _, _, _, reader)
+                    drawLeaf(ctx, equip, ctx.detState.slot, diff, reader)
                 end,
                 drawCompactPanel = function(_, equip, _, _, scoreContext)
-                    drawLeaf(ctx, equip, scoreContext and scoreContext.slot or ctx.detState.slot)
+                    drawLeaf(ctx, equip, scoreContext and scoreContext.slot or ctx.detState.slot,
+                        nil, scoreContext and scoreContext.reader)
                 end }
         end }
         local popup = env.require("ui.character.equip.EquipmentDetail")
         Detail._EquipDetail = popup
-        popup.setPreparedReader(Detail.getPreparedEquipScore)
+        popup.setPreparedReader(Detail.getPreparedEquipScore, Detail.createPreparedEquipScoreReader)
+        function f.realPopupPixels()
+            -- 再走真实EquipmentDetailDraw；只替换NVG/字体/关键词叶子，不替换战力getter。
+            modules["ui.character.equip.EquipmentDetailDraw"] = nil
+            modules["ui.character.equip.EquipmentDetail"] = nil
+            modules["core.DrawUtil"].drawTextStroke = function(_, _, y, text, _, _, r, g, b)
+                if r == 0xf7 and g == 0xfe and b == 0x77 and (y == 34 or y == 625) then
+                    latest.popupPower = tostring(text)
+                    latest.popupPowerDraws = (latest.popupPowerDraws or 0) + 1
+                end
+            end
+            popup = env.require("ui.character.equip.EquipmentDetail")
+            Detail._EquipDetail = popup
+            popup.setPreparedReader(Detail.getPreparedEquipScore, Detail.createPreparedEquipScoreReader)
+            return popup
+        end
         -- 真open/getSelection，只有像素绘制叶子替身；保留评分getter的真实注入链。
         function f.select(seq, heroId, compact, owner, slot)
             if seq then popup.open(seq, slot, heroId or Detail.getHeroId(), compact ~= false, owner or "backpack", 100, 200)
@@ -266,6 +308,9 @@ local function runTests()
     local readyWork = f.measure("ready-500", 120)
     for _, phase in ipairs({ "render", "update", "pair" }) do
         local sample = readyWork[phase]
+        local expectedMatches = phase == "pair" and 240 or 120
+        check(sample.matches == expectedMatches and sample.panelRead == 0,
+            "stable " .. phase .. " validates once per Update/draw, not again for attributes")
         check(sample.dependencies == 0 and sample.signature == 0 and sample.sort == 0 and sample.concat == 0,
             "stable " .. phase .. " performs no full dependency serialization, sorting or concatenation")
     end
@@ -391,7 +436,9 @@ local function runTests()
         f.update(); f.draw()
         local currentOracle = Preview.build(1, data.heroes.roster[1].level, 3, nil, data)
         local currentPanel = f.panel.getPrepared(1, {})
-        check(d.getPreparedEquipment().pending and #f.icons >= 1, "continuous real growth remains usable pending")
+        check(d.getPreparedEquipment().pending and not d.getPreparedEquipment().scoresPending
+            and type(d.getPreparedEquipment().candidate.score) == "number" and #f.icons >= 1,
+            "continuous real growth publishes current equipment scores while arrows remain pending")
         check(not currentPanel.pending and #f.latest.rows > 0 and equal(currentPanel.rows, currentOracle.rows)
             and equal(f.latest.current, currentOracle.current.stats) and f.latest.preview ~= nil,
             "continuous real growth publishes latest complete rows/radar/comparison in same Update")
@@ -465,7 +512,9 @@ local function runTests()
     f.update()
     local popupCounts = copy(f.counts)
     popup.draw({})
-    check(equal(popupCounts, f.counts) and f.latest.popupPower == "—", "real compact popup pending renders no context/evaluation")
+    check(equal(popupCounts, f.counts) and type(f.latest.popupPower) == "number"
+        and d.getPreparedEquipment().pending and not d.getPreparedEquipment().scoresPending,
+        "first Update real compact popup displays current score without waiting for full inventory")
     f.finish(true)
     popupCounts = copy(f.counts)
     popup.draw({})
@@ -473,6 +522,90 @@ local function runTests()
     f.draw()
     local preparedCandidate = d.getPreparedEquipment().candidate
     check(preparedCandidate and f.latest.popupPower == preparedCandidate.score, "real compact drawer consumes private candidate score")
+    local readWork = f.probe(function()
+        d.getPreparedEquipment(); f.panel.getPrepared(1, {})
+        d.getPreparedEquipScore(3, 1, "accessory", "backpack")
+        d.getPreparedEquipScore(3, 1, "accessory", "backpack")
+    end)
+    check(readWork.matches == 4, "every external bundle/panel/score read independently validates, even in same frame")
+    f.draw()
+    local patch = data.equipment.inventory["3"]
+    patch._drawBoundaryProbe = { nested = 1 }
+    popup.draw({})
+    local _, staleScore = d.getPreparedEquipScore(3, 1, "accessory", "backpack")
+    check(f.latest.popupPower == "—" and staleScore == nil and f.panel.getPrepared(1, {}).pending,
+        "patch between detail draw and popup/external reads rejects previous draw bundle")
+    patch._drawBoundaryProbe = nil
+    popup.draw({})
+    check(f.latest.popupPower == preparedCandidate.score, "same-frame ABA redraw validates again and restores compatible score")
+    for _, compact in ipairs({ true, false }) do
+        f.select(3, 1, compact, "backpack", "accessory"); f.update()
+        local selectedScore = d.getPreparedEquipment().candidate.score
+        local popupWork = f.probe(function() popup.draw({}) end)
+        check(popupWork.matches == 1 and f.latest.popupPower == selectedScore,
+            "popup gain plus visible card(s) share exactly one validation compact=" .. tostring(compact))
+    end
+    f.select(3, 1, true, "backpack", "accessory"); f.update()
+    f.popupHook = function() error("expected popup draw fault") end
+    local drawOK = pcall(popup.draw, {})
+    f.popupHook = nil
+    patch._drawBoundaryProbe = true
+    local afterFault = f.probe(function() popup.draw({}) end)
+    check(not drawOK and afterFault.matches == 1 and f.latest.popupPower == "—",
+        "draw exception leaves no module-local validated reader alive for next draw")
+    patch._drawBoundaryProbe = nil
+    local nestedOnce = false
+    f.popupHook = function()
+        if not nestedOnce then nestedOnce = true; popup.draw({}) end
+    end
+    local nestedWork = f.probe(function() popup.draw({}) end)
+    f.popupHook = nil
+    check(nestedOnce and nestedWork.matches == 2 and type(f.latest.popupPower) == "number",
+        "nested draw owns independent local reader without replacing outer state")
+    local nestedCandidatePower = false
+    nestedOnce = false
+    f.popupHook = function()
+        if not nestedOnce then
+            nestedOnce = true
+            f.select(4, 1, true, "backpack", "accessory")
+            popup.draw({})
+            nestedCandidatePower = f.latest.popupPower
+            f.select(3, 1, true, "backpack", "accessory")
+        end
+    end
+    nestedWork = f.probe(function() popup.draw({}) end)
+    f.popupHook = nil
+    check(nestedWork.matches == 1 and nestedCandidatePower == "—" and type(f.latest.popupPower) == "number",
+        "nested different-candidate draw cannot borrow outer reader or replace original candidate bundle")
+    local wrongHeroReader = d.createPreparedEquipScoreReader(2, "backpack")
+    local handledWrong, wrongHeroScore = wrongHeroReader(3, 2, "accessory", "backpack")
+    local ownReader = d.createPreparedEquipScoreReader(1, "backpack")
+    local _, ownScore = ownReader(3, 1, "accessory", "backpack")
+    local _, crossHeroScore = ownReader(3, 2, "accessory", "backpack")
+    local _, crossOwnerScore = ownReader(3, 1, "accessory", "character")
+    local _, crossSlotScore = ownReader(3, 1, "weapon", "backpack")
+    check(handledWrong and wrongHeroScore == nil and type(ownScore) == "number"
+        and crossHeroScore == nil and crossOwnerScore == nil and crossSlotScore == nil,
+        "local factory reader never lends scores to another hero/owner/comparison slot")
+    f.setLanguage("en")
+    popup.draw({})
+    check(f.latest.popupPower == "—" and f.panel.getPrepared(1, {}).pending,
+        "language edge immediately rejects previous localized bundle")
+    f.update()
+    local languageScore = d.getPreparedEquipment().candidate.score
+    f.setDPR(2)
+    popup.draw({})
+    check(f.latest.popupPower == languageScore, "DPR changes do not retain pixel/text cache or invalidate semantic scores")
+    f.setDPR(1); f.setLanguage("zh"); f.update()
+    popup.setComparisonSlot("weapon")
+    -- action slot仍为accessory，但选择快照的比较槽变化也必须拒绝旧视图。
+    popup.draw({})
+    check(f.latest.popupPower == "—", "comparison-slot edge refuses old view before Update")
+    popup.setComparisonSlot(nil)
+    f.select(3, 1, true, "character", "accessory")
+    popup.draw({})
+    check(f.latest.popupPower == "—", "owner edge refuses old selection before Update")
+    f.select(3, 1, true, "backpack", "accessory"); f.update()
     data.heroes.roster[1].level = data.heroes.roster[1].level + 1
     f.notify("heroes")
     popupCounts = copy(f.counts)
@@ -527,6 +660,97 @@ local function runTests()
     popupCounts = copy(f.counts); popup.draw({})
     check(f.counts.context > popupCounts.context and type(f.latest.popupPower) == "number",
         "nonlinked smith popup preserves prior synchronous score behavior")
+    -- 真实EquipmentDetail -> EquipmentDetailDraw -> 右上战力字：不把getter-only当作显示验收。
+    popup = f.realPopupPixels()
+    d.open(20, "equip")
+    local crystal = f.Eq.generate("W36", 100, 3)
+    crystal.seq = nil -- 精简库存：序号只在map键，不允许Render扫全库找seq。
+    data.equipment.inventory["902"] = crystal
+    data.heroes.roster[20].level = 80
+    f.notify("equipment")
+    f.select(902, 20, true, "backpack")
+    popup.setComparisonSlot("weapon")
+    f.update()
+    local crystalContext = f.EP.buildContext(20, data)
+    local crystalItem = f.Eq.getFromInventory(crystalContext.equipmentData, 902)
+    local crystalEvaluation = f.EP.evaluate(crystalContext, 902, "weapon")
+    local crystalScore = f.EP.scoreInContext(crystalContext, crystalItem, "weapon", 902)
+    check(crystal.name == "水晶魔杖" and not crystalEvaluation.valid and crystalScore > 0,
+        "Lv100 crystal wand fixture is a real level-locked candidate with usable stat value")
+    popupCounts = copy(f.counts); popup.draw({})
+    local crystalPrepared = d.getPreparedEquipment()
+    check(equal(popupCounts, f.counts) and f.latest.popupPower == tostring(crystalScore)
+        and crystalPrepared.pending and not crystalPrepared.scoresPending
+        and crystalPrepared.candidate.gain == nil and next(crystalPrepared.upgrades) == nil,
+        "real compact pixels show Lv100 invalid wand score immediately, never legal gain or upgrade arrow")
+    -- 每一帧本人/同队成长都重新与全库同步oracle核对；不能用旧分让画面看似不空。
+    for frame = 1, 12 do
+        local previousScore = crystalPrepared.candidate.score
+        data.heroes.roster[20].level = 100 + frame
+        data.heroes.roster[1].extraTalent.stacks = 500 + frame * 20
+        data.heroes.roster[2].level = 90 + frame
+        f.notify("heroes")
+        popupCounts = copy(f.counts); popup.draw({})
+        check(equal(popupCounts, f.counts) and f.latest.popupPower == "—",
+            "preUpdate real growth refuses prior pixel score " .. frame)
+        f.update()
+        local currentContext = f.EP.buildContext(20, data)
+        local currentItem = f.Eq.getFromInventory(currentContext.equipmentData, 902)
+        local expected = f.EP.scoreInContext(currentContext, currentItem, "weapon", 902)
+        local expectedEvaluation = f.EP.evaluate(currentContext, 902, "weapon")
+        crystalPrepared = d.getPreparedEquipment()
+        popupCounts = copy(f.counts); popup.draw({})
+        check(equal(popupCounts, f.counts) and crystalPrepared.pending and not crystalPrepared.scoresPending
+            and crystalPrepared.candidate.score == expected and crystalPrepared.power == math.floor(currentContext.currentPower + 0.5)
+            and crystalPrepared.candidate.gain == expectedEvaluation.gain and f.latest.popupPower == tostring(expected),
+            "continuous own/same-team growth shows latest score and gain in real compact drawer " .. frame)
+        check(type(previousScore) == "number", "prior generation existed before invalidation " .. frame)
+    end
+    local compactBuilds = f.counts.build
+    f.exp(); f.update(); popup.draw({})
+    check(f.counts.build == compactBuilds and f.latest.popupPower == tostring(crystalPrepared.candidate.score),
+        "pure-exp notification preserves ready current score without rebuild")
+    -- 同帧洗练、神器、天赋及队位真实变化也拒旧；下一Update只点查小世界。
+    for index, mutate in ipairs({
+        function() crystal.baseStats[1][2] = crystal.baseStats[1][2] + 10 end,
+        function() data.talents.litNodes._pixelProbe = true end,
+        function() data.artifacts._pixelProbe = { level = 1 } end,
+        function() local slots = data.heroes.teams[1].slots; slots[1], slots[3] = slots[3], slots[1] end,
+    }) do
+        mutate()
+        popupCounts = copy(f.counts); popup.draw({})
+        check(equal(popupCounts, f.counts) and f.latest.popupPower == "—",
+            "same-frame semantic pixel invalidation without cold render " .. index)
+        f.update()
+        check(not d.getPreparedEquipment().scoresPending, "next Update restores compact score " .. index)
+    end
+    -- 空白装备的正式贡献就是0：nil占位与数值0不能混淆。已穿项也无seq。
+    local zeroItem = { templateId = crystal.templateId, name = "zero-score-wand", type = crystal.type,
+        slot = "weapon", grip = crystal.grip, quality = 1, level = 1, baseStats = {}, affixes = {} }
+    data.equipment.inventory["903"] = zeroItem
+    data.equipment.equipped[20].weapon = 903
+    f.notify("equipment")
+    popup.openEquipped(903, "weapon", 20, 100, 200)
+    f.update()
+    popupCounts = copy(f.counts); popup.draw({})
+    check(equal(popupCounts, f.counts) and f.latest.popupPower == "0"
+        and d.getPreparedEquipment().scores.weapon == 0,
+        "real current-equipment compact drawer prints score 0, not pending dash")
+    -- 真实比较卡当前装备无seq；读取六槽身份，不借候选或把旧分挂在新装备上。
+    f.select(902, 20, true, "backpack")
+    popup.setComparisonSlot("weapon")
+    f.update()
+    local inventoryNoPairs = data.equipment.inventory
+    setmetatable(inventoryNoPairs, { __pairs = function() error("popup Render inventory enumeration forbidden") end })
+    popupCounts = copy(f.counts); popup.draw({})
+    check(equal(popupCounts, f.counts) and f.latest.popupPower == tostring(d.getPreparedEquipment().candidate.score),
+        "real two-card compact render resolves no-seq worn and candidate without inventory enumeration")
+    setmetatable(inventoryNoPairs, nil)
+    f.select(902, 20, false, "bag", "weapon")
+    f.update()
+    popupCounts = copy(f.counts); popup.draw({})
+    check(equal(popupCounts, f.counts) and f.latest.popupPower == tostring(d.getPreparedEquipment().candidate.score),
+        "real noncompact drawer prints independently committed score while whole-library arrows pending")
     popup.close()
     local numericOnly = copy(data)
     numericOnly.equipment.inventory[900] = copy(numericOnly.equipment.inventory["5"])
@@ -585,11 +809,44 @@ local function runTests()
     f.draw()
     f.finish(false)
     local heavyWork = f.measure("ready-three-team-72", 120)
+    local powerDrawsBefore = f.latest.popupPowerDraws
+    local popupWork = f.measure("ready-three-team-72-two-card", 120, popup)
+    check(f.latest.popupPowerDraws - powerDrawsBefore == 480,
+        "hotpath fixture renders two real compact cards per Render/pair draw")
+    for _, phase in ipairs({ "render", "update", "pair" }) do
+        check(heavyWork[phase].matches == (phase == "pair" and 240 or 120),
+            "72 worn items validate once for full character draw " .. phase)
+        check(popupWork[phase].matches == (phase == "render" and 240 or phase == "update" and 120 or 360),
+            "two-card popup validates independently once, no per-card traversal " .. phase)
+    end
+    check(popupWork.render.dependencies == 0 and popupWork.render.signature == 0,
+        "two-card popup performs no dependency serialization")
     check(heavyWork.render.dependencies == 0 and heavyWork.render.signature == 0
         and heavyWork.render.sort == 0 and heavyWork.render.concat == 0
         and heavyWork.pair.sort == 0 and heavyWork.pair.concat == 0,
         "72 worn items remove serialization work from whole Update+Render, not just timed draw")
     f.panel.toggleAttributeMode()
+    -- 新bundle合并读取不能把评分异常变成属性空白；只故障评分入口，不改属性oracle。
+    local realBuildContext = f.EP.buildContext
+    local attrsBeforeScoreFault = f.counts.preview
+    f.EP.buildContext = function() error("expected visible score fault") end
+    f.update()
+    f.EP.buildContext = realBuildContext
+    local scoreFaultBundle = d.getPreparedEquipment()
+    local scoreFaultPanel = f.panel.getPrepared(20, {})
+    check(scoreFaultBundle.scoresPending and not scoreFaultPanel.pending
+        and scoreFaultBundle.panel == scoreFaultPanel and f.counts.preview == attrsBeforeScoreFault + 1,
+        "score preparation fault retains independently committed validated attribute bundle")
+    f.draw()
+    check(#f.latest.rows > 0 and f.latest.preview ~= nil,
+        "whole detail draw displays current rows/radar/preview despite visible score fault")
+    local faultPatch = data.equipment.inventory["3"]
+    faultPatch._scoreFaultProbe = true
+    check(d.getPreparedEquipment().panel == nil and f.panel.getPrepared(20, {}).pending,
+        "same-frame patch refuses attribute-only fallback bundle after scoring fault")
+    faultPatch._scoreFaultProbe = nil
+    f.update()
+    check(not d.getPreparedEquipment().scoresPending, "next Update retries score without clearing healthy attribute panel")
     -- 属性准备失败不阻断宿主，不提交失败版本；重试和cancel后可恢复。
     local Preparation = f.env.require("ui.character.detail.CharacterDetailPreparation")
     local shouldFail, commits, clears = true, 0, 0

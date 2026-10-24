@@ -239,6 +239,16 @@ function Start()
         if arg:find("-review-phase=", 1, true) == 1 then reviewPhase = arg:sub(15) end
     end
     for _, arg in ipairs(GetArguments()) do if arg == "-review" then startReview(); return end end
+    -- 仅资源 cache:GetFile 可读取被测源码；任何玩家 File/FS 入口一律拒绝。
+    local nativeFile, nativeFileSystem, nativeFS = File, FileSystem, fileSystem
+    local storageCalls = 0
+    local function denyStorage()
+        storageCalls = storageCalls + 1
+        error("damage-number forbids player File/FS access")
+    end
+    rawset(_G, "File", denyStorage)
+    rawset(_G, "FileSystem", denyStorage)
+    rawset(_G, "fileSystem", setmetatable({}, { __index = function() return denyStorage end }))
     local ok, err = xpcall(function()
         local AD = require("systems.AttributeDef")
         local sources = {}
@@ -711,9 +721,14 @@ function Start()
             calcAtkHeal = function() return 10 end,
             selectTarget = function() return 1 end,
         }
+        local damageRecords = {}
         local Stats = {
             mountedTeam = function() return 1 end, reset = noop,
-            recordDamage = function(_, damage) stats.damage = stats.damage + damage; stats.hits = stats.hits + 1 end,
+            recordDamage = function(source, damage, category, isCrit, critEligible)
+                stats.damage = stats.damage + damage; stats.hits = stats.hits + 1
+                damageRecords[#damageRecords + 1] = { source = source, damage = damage, category = category,
+                    isCrit = isCrit, critEligible = critEligible }
+            end,
             recordTaken = function(_, damage) stats.taken = stats.taken + damage end,
             recordDotDamage = function(_, damage) stats.dot = stats.dot + damage end,
             recordHeal = function(_, amount) stats.heal = stats.heal + amount end,
@@ -860,11 +875,13 @@ function Start()
             "fallback20真实原伤害与穿刺数字接入，未改简化公式")
         Combat.reset()
         check(#scene.floatingTexts == 0 and indexEntries(scene) == 0 and poolClean(scene), "正式reset清理结构化索引和pool")
-        -- 缓冲旧6参形态保持：opts原样仍占source，不修wrapper/归因，仅增加显示属性。
+        -- 当前统一伤害七参契约：真实source与statMeta分离；稳定refs/token属于同一场。
         local loader = unit(24, AD.ATK_SHADOW, 100, 1000)
         local bufferTarget = unit(102, AD.ATK_SLASH, 10, 100)
-        local loaderState = { heroId = 24, loadingBar = 100, loadingIdle = 0 }
-        local fixedCalls, wrapperCalls, bufferSource = 0, 0, {} ---@type integer, integer, table
+        local loaderState = { heroId = 24 }
+        local loaderEnemies = { bufferTarget }
+        local loaderRefs = { bEnemies = loaderEnemies }
+        local fixedCalls, wrapperCalls = 0, 0
         local TalentAwakening = compile("config/AwakeningConfig.lua", {})
         local FourNew = compile("systems/talents/TalentFourNew.lua", {
             ["systems.AttributeDef"] = AD,
@@ -875,41 +892,53 @@ function Start()
             hasAwakenStage = function() return false end,
             getState = function(u) return u == loader and loaderState or nil end,
             talentLog = noop,
-            getTAL_BCS = function() return {} end,
+            getTAL_BCS = function() return loaderRefs end,
             calcTalentFixedDamage = function(u, tgt, amount, opts)
                 fixedCalls = fixedCalls + 1
                 check(u == loader and tgt == bufferTarget and amount == 100 and opts.atkType == AD.ATK_CRUSH,
                     "真实FourNew.update缓冲仍用原100和粉碎公式参数")
-                return 40
+                return 40, false
             end,
         })
+        FourNew.onBattleStart(loader, loaderState)
+        FourNew.onDamageTaken(loader, bufferTarget, 400, true)
+        check(loaderState.loadingBar == 100 and type(loaderState.loadingBattleToken) == "table",
+            "真实开战与受伤入口建立满缓冲及本场token")
         Combat.setContext({ getAllies = function() return { loader } end,
-            getEnemies = function() return { bufferTarget } end })
+            getEnemies = function() return loaderEnemies end })
         local takenBefore, damageBefore, hitsBefore = stats.taken, stats.damage, stats.hits
-        FourNew.update(0.01, { loader }, { bufferTarget }, {
-            dealDamage = function(tgt, damage, isTargetAlly, prefix, color, sourceArg)
+        local deathsBefore = stats.deaths
+        local bufferContext = {
+            dealDamage = function(tgt, damage, isTargetAlly, prefix, color, sourceArg, statMeta)
                 wrapperCalls = wrapperCalls + 1
-                bufferSource = sourceArg
-                check(tgt == bufferTarget and damage == 40 and isTargetAlly == true and prefix == "缓冲 "
-                    and color[1] == 180 and sourceArg.instantDamage and sourceArg.statCategory == "physical",
-                    "旧6参wrapper保留目标/40伤害/原true阵营/color/opts-as-source")
-                return Combat.dealDamageToUnit(tgt, damage, isTargetAlly, prefix, color, sourceArg)
+                check(tgt == bufferTarget and damage == 40 and isTargetAlly == false and prefix == "缓冲 "
+                    and color[1] == 180 and sourceArg == loader and statMeta.instantDamage
+                    and statMeta.statCategory == "physical" and statMeta.atkType == AD.ATK_CRUSH
+                    and statMeta.isCrit == false and statMeta.critEligible == false,
+                    "七参缓冲wrapper保留真实来源/敌方目标/40伤害/粉碎meta")
+                return Combat.dealDamageToUnit(tgt, damage, isTargetAlly, prefix, color, sourceArg, statMeta)
             end,
-        })
+        }
+        FourNew.update(0.01, { loader }, loaderEnemies, bufferContext)
         check(fixedCalls == 1 and wrapperCalls == 1 and loaderState.loadingBar == 0 and loaderState.loadingIdle == 0,
             "真实FourNew.update缓冲仅消费一次原队列")
-        check(bufferTarget.hp == 0 and stats.taken == takenBefore + 10 and stats.damage == damageBefore
-            and stats.hits == hitsBefore and bufferTarget._killedBy == bufferSource and bufferSource ~= loader,
-            "缓冲伤害/recordTaken/_killedBy保持旧source语义，不更正历史归因")
+        check(bufferTarget.hp == 0 and stats.taken == takenBefore and stats.damage == damageBefore + 10
+            and stats.hits == hitsBefore + 1 and bufferTarget._killedBy == loader and stats.deaths == deathsBefore + 1,
+            "缓冲按实际10HP计己方输出一次，击杀归因真实加载中且不记己方承伤")
+        local bufferRecord = damageRecords[#damageRecords]
         check(scene.combatNumberIndex[bufferTarget].damage[AD.ATK_CRUSH].amount == 10
-            and bufferSource.atkType == AD.ATK_CRUSH,
-            "缓冲仅新增source.atkType显示CRUSH真实10HP，不修statMeta/wrapper")
+            and bufferRecord.source == loader and bufferRecord.damage == 10 and bufferRecord.category == "physical"
+            and bufferRecord.isCrit == false and bufferRecord.critEligible == false and loader.atkType == AD.ATK_SHADOW,
+            "粉碎meta决定数字及物理统计，不污染来源本身暗影攻击类型")
+        FourNew.update(0.01, { loader }, loaderEnemies, bufferContext)
+        check(fixedCalls == 1 and wrapperCalls == 1 and stats.hits == hitsBefore + 1,
+            "空缓冲后再update不重发、不重复统计或死亡")
         Combat.clearFloatingTexts()
-        local ping = unit(25, AD.ATK_PIERCE, 100, 1000)
+        local ping = unit(25, AD.ATK_SHADOW, 100, 1000)
         local pingTarget = unit(103, AD.ATK_SLASH, 100, 100)
-        local pingState = { heroId = 25, pingQueue = {
-            { target = pingTarget, dmg = 30, t = 0.2, isAlly = true, hpPctAtFire = 1 },
-        } }
+        local pingState = { heroId = 25 }
+        local pingEnemies = { pingTarget }
+        local pingRefs = { bEnemies = pingEnemies }
         local PingNew = compile("systems/talents/TalentFourNew.lua", {
             ["systems.AttributeDef"] = AD,
             ["systems.ThreatManager"] = { addThreat = noop },
@@ -918,25 +947,42 @@ function Start()
         }).bind({
             hasAwakenStage = function() return false end,
             getState = function(u) return u == ping and pingState or nil end,
-            talentLog = noop, getTAL_BCS = function() return {} end,
+            talentLog = noop, getTAL_BCS = function() return pingRefs end,
         })
+        PingNew.onBattleStart(ping, pingState)
+        PingNew.onAfterAttack(ping, pingTarget, { totalDamage = 67, category = "physical" }, true, pingEnemies)
+        check(#pingState.pingQueue == 1 and pingState.pingQueue[1].dmg == 30
+            and pingState.pingQueue[1].t == 1.5 and pingState.pingQueue[1].battleRefs == pingRefs
+            and pingState.pingQueue[1].battleToken == pingState.pingBattleToken,
+            "真实高ping攻击入口生成30伤害/1.5秒队列并绑定战线和开战身份")
         Combat.setContext({ getAllies = function() return { ping } end,
-            getEnemies = function() return { pingTarget } end })
+            getEnemies = function() return pingEnemies end })
         local pingCalls = 0
-        local pingContext = { dealDamage = function(tgt, amount, isTargetAlly, prefix, color, sourceArg)
+        takenBefore, damageBefore, hitsBefore = stats.taken, stats.damage, stats.hits
+        local pingContext = { dealDamage = function(tgt, amount, isTargetAlly, prefix, color, sourceArg, statMeta)
             pingCalls = pingCalls + 1
             check(tgt == pingTarget and amount == 30 and not isTargetAlly and prefix == "高ping "
-                and sourceArg.threatScale == 0.10 and sourceArg.atkType == AD.ATK_PIERCE,
-                "高ping保留旧六参来源与原30伤害，仅附穿刺属性")
-            return Combat.dealDamageToUnit(tgt, amount, isTargetAlly, prefix, color, sourceArg)
+                and sourceArg == ping and statMeta.threatScale == 0.10 and statMeta.atkType == AD.ATK_PIERCE
+                and statMeta.instantDamage and statMeta.statCategory == "physical" and statMeta.critEligible == false,
+                "高ping七参来源与穿刺meta独立，原30伤害和低仇恨保留")
+            return Combat.dealDamageToUnit(tgt, amount, isTargetAlly, prefix, color, sourceArg, statMeta)
         end }
-        PingNew.update(0.1, { ping }, { pingTarget }, pingContext)
-        check(pingCalls == 0 and pingTarget.hp == 100 and #pingState.pingQueue == 1,
-            "高ping延迟到期前不生成数字、不提前扣血")
-        PingNew.update(0.11, { ping }, { pingTarget }, pingContext)
+        PingNew.update(1.39, { ping }, pingEnemies, pingContext)
+        check(pingCalls == 0 and pingTarget.hp == 100 and #pingState.pingQueue == 1
+            and scene.combatNumberIndex[pingTarget] == nil and stats.damage == damageBefore,
+            "高ping延迟到期前不生成数字、不提前扣血或记输出")
+        PingNew.update(0.12, { ping }, pingEnemies, pingContext)
         check(pingCalls == 1 and #pingState.pingQueue == 0 and pingTarget.hp == 70
             and scene.combatNumberIndex[pingTarget].damage[AD.ATK_PIERCE].amount == 30,
-            "高ping到期按真实30HP显示穿刺数字，不回退斩击")
+            "高ping到期按真实30HP显示穿刺数字，不借来源暗影类型")
+        local pingRecord = damageRecords[#damageRecords]
+        check(stats.taken == takenBefore and stats.damage == damageBefore + 30 and stats.hits == hitsBefore + 1
+            and pingRecord.source == ping and pingRecord.category == "physical" and pingRecord.damage == 30
+            and pingRecord.critEligible == false and pingTarget._killedBy == nil,
+            "高ping真实来源只计一次物理输出，非致死不伪记击杀或承伤")
+        PingNew.update(10, { ping }, pingEnemies, pingContext)
+        check(pingCalls == 1 and stats.hits == hitsBefore + 1 and pingTarget.hp == 70,
+            "未觉醒高ping无重复主包或重传统计")
         Combat.clearFloatingTexts()
         for _, path in ipairs({ "ui/battle/combat/BattleCombatFx.lua", "ui/battle/combat/BattleCombat.lua",
             "ui/battle/combat/BattleCombatCombo.lua", "ui/battle/scene/DamageTypeIcon.lua" }) do
@@ -944,8 +990,11 @@ function Start()
         end
     end, debug.traceback)
     if not ok then failures = failures + 1; print(TAG .. " HARNESS_ERROR " .. tostring(err)) end
+    check(storageCalls == 0, "File/FS封闭，无玩家存档访问")
+    rawset(_G, "File", nativeFile); rawset(_G, "FileSystem", nativeFileSystem); rawset(_G, "fileSystem", nativeFS)
     print(string.format("%s RESULT assertions=%d failures=%d %s", TAG, assertions, failures,
         failures == 0 and "ALL PASS" or "FAILED"))
-    if failures > 0 then error(TAG .. " FAILED assertions=" .. assertions .. " failures=" .. failures) end
+    -- FAIL已经体现在RESULT；不在Exit之前抛错而让失败进程悬挂至外层超时。
+    if failures > 0 then log:Write(LOG_ERROR, TAG .. " FAILED assertions=" .. assertions .. " failures=" .. failures) end
     engine:Exit()
 end

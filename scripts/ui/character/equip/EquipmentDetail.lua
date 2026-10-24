@@ -167,6 +167,16 @@ local function readPreparedScore(equip, heroId, slot)
         local inventory = data and data.inventory or {}
         local selected = inventory[detState.equipSeq] or inventory[tonumber(detState.equipSeq)]
         if selected == equip then seq = detState.equipSeq end
+        if seq == nil then
+            -- 精简存档的已穿项也可能没有seq；只点查六槽，不能在Render扫库存找身份。
+            local slots = EquipmentSystem.getHeroSlots(data, heroId) or {}
+            for _, currentSeq in pairs(slots) do
+                if (inventory[tostring(currentSeq)] or inventory[currentSeq]) == equip then
+                    seq = currentSeq
+                    break
+                end
+            end
+        end
     end
     -- seq缺失也交由reader判定active，不能偷偷fallback冷ctx。
     return preparedReader(seq, heroId, slot or detState.comparisonSlot or equip.slot, detState.owner)
@@ -1293,7 +1303,8 @@ end
 function EquipmentDetail.getSelection()
     if not detState.open or detState.closing then return nil end
     return {
-        seq = detState.equipSeq, slot = detState.slot, heroId = detState.heroId,
+        seq = detState.equipSeq, slot = detState.slot, comparisonSlot = detState.comparisonSlot,
+        heroId = detState.heroId,
         owner = detState.owner, pinned = detState.pinned == true,
         equipped = detState.equippedView == true,
     }

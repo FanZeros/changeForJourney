@@ -416,7 +416,7 @@ function EquipmentDetailDraw.create(ctx)
             nvgText(vg, enhX, enhY, enhText, nil)
         end
 
-        EquipmentSetIcon.drawBadge(vg, equip, iconCX, iconCY, REF_ICON_SIZE, 1.0)
+        -- 详情已在套装正文显示完整纹章，不再给装备图重复叠加套装角标。
 
         -- 11-14) 基础属性 + 词缀：超出框内可视区时下滚
         local pinnedCY, scrollMax = layoutButtons(equip)
@@ -649,7 +649,7 @@ function EquipmentDetailDraw.create(ctx)
                 NVG_ALIGN_RIGHT + NVG_ALIGN_TOP, 0, 255, 96, 3)
         end
 
-        EquipmentSetIcon.drawBadge(vg, equip, iconCX, COMPACT_ICON_CY, COMPACT_ICON_SIZE, 1.0)
+        -- 套装名称、件数与效果统一由下方正文呈现，图标不重复叠套装角标。
 
         drawImageCentered(vg, imgPowerIcon, powerX - 12 - powerIconSize * 0.5, COMPACT_NAME_Y,
             powerIconSize, powerIconSize, 1.0)

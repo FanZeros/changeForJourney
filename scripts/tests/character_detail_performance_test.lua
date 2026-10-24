@@ -52,16 +52,20 @@ local function fixture()
     modules["core.PlayerStore"] = store
     modules["runtime.ClientDispatcher"] = { get = store.Get }
     modules["core.I18n"] = { get = function() return "zh" end, t = function(s) return s end,
-        lookup = function(s) return s end, format = string.format }
+        lookup = function(s) return s end, format = string.format,
+        displayBounds = function(_, _, _, text) return #tostring(text) * 10 end,
+        displayText = noop }
+    modules["core.I18nEquipmentText"] = { lookup = function(s) return s end }
     modules["core.GameState"] = {}
     modules["core.DrawUtil"] = { drawTextStroke = noop, drawImageCentered = noop, drawCardImage = function() cards = cards + 1 end,
         seamSlideX = function() return 0 end }
-    modules["core.DarkIcon"] = { drawNine = noop, drawQualityBg = noop, drawIconDark = noop, draw = noop }
+    modules["core.DarkIcon"] = { drawNine = noop, drawQualityBg = noop, drawIconDark = noop, draw = noop,
+        QUALITY_TRIM = { { 240, 240, 240 }, { 0, 255, 0 }, { 0, 0, 255 }, { 255, 0, 255 }, { 255, 255, 0 }, { 255, 0, 0 } } }
     modules["core.BattleLayout"] = { CARD_W = 198, CARD_H = 198 * 955 / 538 }
     modules["config.HeroAssetUtil"] = { ensureCard = function() return 1 end }
     modules["systems.ButtonFeedback"] = { begin = function() return false end, finish = noop, trigger = noop }
     modules["systems.TutorialManager"] = { getPreferredCharacterTab = function() return "equip" end,
-        isActive = function() return false end }
+        isActive = function() return false end, isBuildingUnlocked = function() return false end }
     modules["runtime.LocalActionBridge"] = { isQuickEquipPending = function() return false end }
     modules["runtime.GameAction"] = { sendAction = function(action, payload)
         actions[#actions + 1] = { action = action, payload = payload }; return true end }
@@ -81,8 +85,9 @@ local function fixture()
     modules["ui.widget.ImageCache"] = { init = noop, getEquipIcon = function(id)
         icons[#icons + 1] = id; return -1 end, getQualityBg = function() return -1 end }
     modules["ui.widget.KeywordText"] = { new = function() return { clear = noop, drawPopup = noop,
-        isOpen = function() return false end, setPopupTransform = noop } end }
-    modules["ui.widget.EquipmentSetIcon"] = { drawBadge = noop,
+        isOpen = function() return false end, setPopupTransform = noop, beginFrame = noop, draw = noop,
+        drawAttribute = function() return 0 end } end }
+    modules["ui.widget.EquipmentSetIcon"] = { drawBadge = noop, draw = function() return false end,
         levelLayout = function(_, x, y) return { x = x + 70, y = y + 70, fontSize = 30, align = 0 } end,
         badgeLayout = function(x) return { x = x - 90, size = 30 } end }
     modules["ui.hud.popup.SettingsPanel"] = { isEquipmentPowerEnabled = function() return true end }
@@ -110,7 +115,8 @@ local function fixture()
     modules["ui.character.detail.CharacterAttributeView"] = attrView
     for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgScissor", "nvgIntersectScissor", "nvgResetScissor", "nvgTranslate",
         "nvgScale", "nvgGlobalAlpha", "nvgBeginPath", "nvgRect", "nvgRoundedRect", "nvgFillColor", "nvgFill", "nvgStrokeColor",
-        "nvgStrokeWidth", "nvgStroke", "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgText", "nvgFillPaint", "nvgMoveTo", "nvgLineTo" }) do env[name] = noop end
+        "nvgStrokeWidth", "nvgStroke", "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgText", "nvgFillPaint", "nvgMoveTo", "nvgLineTo",
+        "nvgClosePath", "nvgTextBox" }) do env[name] = noop end
     env.nvgRGBA = function() return {} end
     env.nvgImagePattern = function() return {} end
     env.nvgTextBounds = function(_, _, _, text) return #tostring(text) * 10 end
@@ -237,6 +243,20 @@ local function fixture()
         local popup = env.require("ui.character.equip.EquipmentDetail")
         Detail._EquipDetail = popup
         popup.setPreparedReader(Detail.getPreparedEquipScore)
+        function f.realPopupPixels()
+            -- 再走真实EquipmentDetailDraw；只替换NVG/字体/关键词叶子，不替换战力getter。
+            modules["ui.character.equip.EquipmentDetailDraw"] = nil
+            modules["ui.character.equip.EquipmentDetail"] = nil
+            modules["core.DrawUtil"].drawTextStroke = function(_, _, y, text, _, _, r, g, b)
+                if r == 0xf7 and g == 0xfe and b == 0x77 and (y == 34 or y == 625) then
+                    latest.popupPower = tostring(text)
+                end
+            end
+            popup = env.require("ui.character.equip.EquipmentDetail")
+            Detail._EquipDetail = popup
+            popup.setPreparedReader(Detail.getPreparedEquipScore)
+            return popup
+        end
         -- 真open/getSelection，只有像素绘制叶子替身；保留评分getter的真实注入链。
         function f.select(seq, heroId, compact, owner, slot)
             if seq then popup.open(seq, slot, heroId or Detail.getHeroId(), compact ~= false, owner or "backpack", 100, 200)
@@ -391,7 +411,9 @@ local function runTests()
         f.update(); f.draw()
         local currentOracle = Preview.build(1, data.heroes.roster[1].level, 3, nil, data)
         local currentPanel = f.panel.getPrepared(1, {})
-        check(d.getPreparedEquipment().pending and #f.icons >= 1, "continuous real growth remains usable pending")
+        check(d.getPreparedEquipment().pending and not d.getPreparedEquipment().scoresPending
+            and type(d.getPreparedEquipment().candidate.score) == "number" and #f.icons >= 1,
+            "continuous real growth publishes current equipment scores while arrows remain pending")
         check(not currentPanel.pending and #f.latest.rows > 0 and equal(currentPanel.rows, currentOracle.rows)
             and equal(f.latest.current, currentOracle.current.stats) and f.latest.preview ~= nil,
             "continuous real growth publishes latest complete rows/radar/comparison in same Update")
@@ -465,7 +487,9 @@ local function runTests()
     f.update()
     local popupCounts = copy(f.counts)
     popup.draw({})
-    check(equal(popupCounts, f.counts) and f.latest.popupPower == "—", "real compact popup pending renders no context/evaluation")
+    check(equal(popupCounts, f.counts) and type(f.latest.popupPower) == "number"
+        and d.getPreparedEquipment().pending and not d.getPreparedEquipment().scoresPending,
+        "first Update real compact popup displays current score without waiting for full inventory")
     f.finish(true)
     popupCounts = copy(f.counts)
     popup.draw({})
@@ -527,6 +551,97 @@ local function runTests()
     popupCounts = copy(f.counts); popup.draw({})
     check(f.counts.context > popupCounts.context and type(f.latest.popupPower) == "number",
         "nonlinked smith popup preserves prior synchronous score behavior")
+    -- 真实EquipmentDetail -> EquipmentDetailDraw -> 右上战力字：不把getter-only当作显示验收。
+    popup = f.realPopupPixels()
+    d.open(20, "equip")
+    local crystal = f.Eq.generate("W36", 100, 3)
+    crystal.seq = nil -- 精简库存：序号只在map键，不允许Render扫全库找seq。
+    data.equipment.inventory["902"] = crystal
+    data.heroes.roster[20].level = 80
+    f.notify("equipment")
+    f.select(902, 20, true, "backpack")
+    popup.setComparisonSlot("weapon")
+    f.update()
+    local crystalContext = f.EP.buildContext(20, data)
+    local crystalItem = f.Eq.getFromInventory(crystalContext.equipmentData, 902)
+    local crystalEvaluation = f.EP.evaluate(crystalContext, 902, "weapon")
+    local crystalScore = f.EP.scoreInContext(crystalContext, crystalItem, "weapon", 902)
+    check(crystal.name == "水晶魔杖" and not crystalEvaluation.valid and crystalScore > 0,
+        "Lv100 crystal wand fixture is a real level-locked candidate with usable stat value")
+    popupCounts = copy(f.counts); popup.draw({})
+    local crystalPrepared = d.getPreparedEquipment()
+    check(equal(popupCounts, f.counts) and f.latest.popupPower == tostring(crystalScore)
+        and crystalPrepared.pending and not crystalPrepared.scoresPending
+        and crystalPrepared.candidate.gain == nil and next(crystalPrepared.upgrades) == nil,
+        "real compact pixels show Lv100 invalid wand score immediately, never legal gain or upgrade arrow")
+    -- 每一帧本人/同队成长都重新与全库同步oracle核对；不能用旧分让画面看似不空。
+    for frame = 1, 12 do
+        local previousScore = crystalPrepared.candidate.score
+        data.heroes.roster[20].level = 100 + frame
+        data.heroes.roster[1].extraTalent.stacks = 500 + frame * 20
+        data.heroes.roster[2].level = 90 + frame
+        f.notify("heroes")
+        popupCounts = copy(f.counts); popup.draw({})
+        check(equal(popupCounts, f.counts) and f.latest.popupPower == "—",
+            "preUpdate real growth refuses prior pixel score " .. frame)
+        f.update()
+        local currentContext = f.EP.buildContext(20, data)
+        local currentItem = f.Eq.getFromInventory(currentContext.equipmentData, 902)
+        local expected = f.EP.scoreInContext(currentContext, currentItem, "weapon", 902)
+        local expectedEvaluation = f.EP.evaluate(currentContext, 902, "weapon")
+        crystalPrepared = d.getPreparedEquipment()
+        popupCounts = copy(f.counts); popup.draw({})
+        check(equal(popupCounts, f.counts) and crystalPrepared.pending and not crystalPrepared.scoresPending
+            and crystalPrepared.candidate.score == expected and crystalPrepared.power == math.floor(currentContext.currentPower + 0.5)
+            and crystalPrepared.candidate.gain == expectedEvaluation.gain and f.latest.popupPower == tostring(expected),
+            "continuous own/same-team growth shows latest score and gain in real compact drawer " .. frame)
+        check(type(previousScore) == "number", "prior generation existed before invalidation " .. frame)
+    end
+    local compactBuilds = f.counts.build
+    f.exp(); f.update(); popup.draw({})
+    check(f.counts.build == compactBuilds and f.latest.popupPower == tostring(crystalPrepared.candidate.score),
+        "pure-exp notification preserves ready current score without rebuild")
+    -- 同帧洗练、神器、天赋及队位真实变化也拒旧；下一Update只点查小世界。
+    for index, mutate in ipairs({
+        function() crystal.baseStats[1][2] = crystal.baseStats[1][2] + 10 end,
+        function() data.talents.litNodes._pixelProbe = true end,
+        function() data.artifacts._pixelProbe = { level = 1 } end,
+        function() local slots = data.heroes.teams[1].slots; slots[1], slots[3] = slots[3], slots[1] end,
+    }) do
+        mutate()
+        popupCounts = copy(f.counts); popup.draw({})
+        check(equal(popupCounts, f.counts) and f.latest.popupPower == "—",
+            "same-frame semantic pixel invalidation without cold render " .. index)
+        f.update()
+        check(not d.getPreparedEquipment().scoresPending, "next Update restores compact score " .. index)
+    end
+    -- 空白装备的正式贡献就是0：nil占位与数值0不能混淆。已穿项也无seq。
+    local zeroItem = { templateId = crystal.templateId, name = "zero-score-wand", type = crystal.type,
+        slot = "weapon", grip = crystal.grip, quality = 1, level = 1, baseStats = {}, affixes = {} }
+    data.equipment.inventory["903"] = zeroItem
+    data.equipment.equipped[20].weapon = 903
+    f.notify("equipment")
+    popup.openEquipped(903, "weapon", 20, 100, 200)
+    f.update()
+    popupCounts = copy(f.counts); popup.draw({})
+    check(equal(popupCounts, f.counts) and f.latest.popupPower == "0"
+        and d.getPreparedEquipment().scores.weapon == 0,
+        "real current-equipment compact drawer prints score 0, not pending dash")
+    -- 真实比较卡当前装备无seq；读取六槽身份，不借候选或把旧分挂在新装备上。
+    f.select(902, 20, true, "backpack")
+    popup.setComparisonSlot("weapon")
+    f.update()
+    local inventoryNoPairs = data.equipment.inventory
+    setmetatable(inventoryNoPairs, { __pairs = function() error("popup Render inventory enumeration forbidden") end })
+    popupCounts = copy(f.counts); popup.draw({})
+    check(equal(popupCounts, f.counts) and f.latest.popupPower == tostring(d.getPreparedEquipment().candidate.score),
+        "real two-card compact render resolves no-seq worn and candidate without inventory enumeration")
+    setmetatable(inventoryNoPairs, nil)
+    f.select(902, 20, false, "bag", "weapon")
+    f.update()
+    popupCounts = copy(f.counts); popup.draw({})
+    check(equal(popupCounts, f.counts) and f.latest.popupPower == tostring(d.getPreparedEquipment().candidate.score),
+        "real noncompact drawer prints independently committed score while whole-library arrows pending")
     popup.close()
     local numericOnly = copy(data)
     numericOnly.equipment.inventory[900] = copy(numericOnly.equipment.inventory["5"])

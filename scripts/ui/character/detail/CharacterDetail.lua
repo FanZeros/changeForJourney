@@ -217,7 +217,7 @@ function CharacterDetail.getPreparedEquipScore(seq, heroId, slot, owner)
     if tonumber(heroId) ~= tonumber(detailState.heroId)
         or (owner ~= "character" and owner ~= "backpack" and owner ~= "bag") then return true end
     local result = CharacterDetail.getPreparedEquipment()
-    if result.pending then return true end
+    if result.scoresPending then return true end
     local candidate = result.candidate
     if candidate and candidate.seq == tostring(seq) and (slot == nil or slot == candidate.slot) then
         return true, candidate.score, candidate.gain

@@ -104,7 +104,8 @@ function M.capture(heroId, slot)
         viewCache.mode, viewCache.language = panelState.attributeMode, language
         viewCache.estimateVisible = estimateVisible
     end
-    return { heroId = heroId, slot = slot, seq = selection and selection.seq,
+    return { heroId = heroId, slot = selection and (selection.comparisonSlot or selection.slot) or slot,
+        seq = selection and selection.seq,
         mode = panelState.attributeMode, language = language, estimateVisible = estimateVisible,
         viewKey = viewCache.key }
 end

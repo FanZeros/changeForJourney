@@ -68,14 +68,6 @@ local state = {
     tfDetailAnimT       = 0,
     tfDetailClosing     = false,
 
-    tfOverviewOpen      = false,
-    tfOverviewClosing   = false,
-    tfOverviewAnimT     = 0,
-    tfOverviewScrollY   = 0,
-    tfOverviewDragging  = false,
-    tfOverviewLastDragY = 0,
-    tfOverviewLines     = nil,
-
     _lastDrawTime       = 0,
 }
 
@@ -189,8 +181,6 @@ function TalentPage.open()
     state.tfDetailOpen = false
     state.tfDetailNodeId = nil
     state.tfDetailClosing = false
-    state.tfOverviewOpen = false
-    state.tfOverviewClosing = false
     TalentStarMap.resetCamera()
     syncTalentLitNodes()
     print("[TalentPage] 打开古树天赋 widthScale=" .. tostring(TalentPage.getHorizonWidthScale()))

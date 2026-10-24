@@ -268,7 +268,6 @@ local img = {
     itemIcons = {},
     costIcons = {},
     -- 弹窗
-    buyBtnYellow = -1,
     coinIcon = -1,     -- 弹窗消耗侧金币图标 (UI_icon_JB_X.png)
     diamondIcon = -1,  -- 弹窗消耗侧钻石图标 (UI_icon_SJ.png)
     btnMinus = -1,     -- 减按钮(UI_AN_JIAN.png)

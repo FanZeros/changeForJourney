@@ -31,7 +31,6 @@ function M.bind(deps)
 
         -- 弹窗
         -- 弹窗背景由 DarkIcon.drawNine 矢量绘制
-        img.buyBtnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
         img.btnMinus = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png", 0)
         img.btnPlus = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)
         -- [图标统一 0928] diamondIcon 与 gem 同贴图，复用句柄避免重复加载（无 delete，复用安全）

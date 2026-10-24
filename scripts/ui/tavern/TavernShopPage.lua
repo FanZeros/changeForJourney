@@ -268,7 +268,6 @@ local shopImg = {
     itemIcons   = {},  -- 每个商品图标
     costIcons   = {},  -- 每个商品消耗图标
     -- 二级弹窗
-    buyBtnYellow = -1, -- UI_AN_HUANG.png
     btnMinus     = -1, -- UI_AN_JIAN.png
     btnPlus      = -1, -- UI_AN_JIA.png
     coinIcon     = -1, -- UI_icon_JGB_X.png（弹窗消耗图标）
@@ -348,7 +347,6 @@ local DLG = {
 -- ======================== Init ========================
 
 function TavernShopPage.init(vg)
-    shopImg.buyBtnYellow= nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png",    0)
     shopImg.btnMinus    = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png",     0)
     shopImg.btnPlus     = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png",      0)
     shopImg.coinIcon    = nvgCreateImage(vg, "image/货币道具/UI_icon_JGB_X.png",  0)

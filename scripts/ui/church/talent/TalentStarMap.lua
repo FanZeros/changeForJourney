@@ -9,9 +9,6 @@ local TalentStarMap = {}
 
 local TalentGlyph = require("ui.widget.TalentGlyph")
 
--- 星图节点图标压暗档（与 DarkIcon.ICON_TINT_DARK 同档，独立常量避免反向依赖 ui 模块）
-local ICON_TINT_DARK = { 72, 64, 54 }
-
 -- ======================== 常量 ========================
 
 -- 原格距 360、图标 280/300。世界约 ±19.4×±20.4 格。
@@ -36,16 +33,6 @@ local SIZE_SCALE = {
     small  = 1.0,
     medium = 1.2,
     large  = 1.5,
-}
-
--- 颜色映射 (RGB)
-local COLOR_MAP = {
-    ["绿"] = { 0x4C, 0xAF, 0x50 },
-    ["红"] = { 0xF4, 0x43, 0x36 },
-    ["黄"] = { 0xFF, 0xC1, 0x07 },
-    ["蓝"] = { 0x21, 0x96, 0xF3 },
-    ["紫"] = { 0x9C, 0x27, 0xB0 },
-    ["无"] = { 0xAA, 0xAA, 0xAA },
 }
 
 -- ======================== 节点数据 ========================
@@ -565,13 +552,6 @@ local function worldToScreen(wx, wy)
     local sx = (wx - camX) * zoom + viewW * 0.5 + viewOffX
     local sy = (wy - camY) * zoom + viewH * 0.5 + viewOffY
     return sx, sy
-end
-
---- 屏幕坐标 → 世界坐标
-local function screenToWorld(sx, sy)
-    local wx = (sx - viewOffX - viewW * 0.5) / zoom + camX
-    local wy = (sy - viewOffY - viewH * 0.5) / zoom + camY
-    return wx, wy
 end
 
 --- 尝试加载图标图片 (延迟加载，首次使用时)

@@ -20,7 +20,6 @@ local TF_ACCENT = { ["红"] = "red", ["绿"] = "green", ["黄"] = "gold", ["蓝"
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
-local drawNineSlice     = DrawUtil.drawNineSlice
 local hitTest           = DrawUtil.hitTest
 
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
@@ -30,7 +29,6 @@ local M = {}
 
 -- 详情效果与总览长句共用：金色下划线可点，解释气泡在弹窗缩放外绘制
 M.detailKw = KeywordText.new({ textColor = { 0x72, 0x58, 0x50 } })
-M.overviewKw = KeywordText.new({ textColor = { 0x72, 0x58, 0x50 } })
 
 -- ======================== 天赋面板布局常量 ========================
 
@@ -69,10 +67,6 @@ local TF = {
     slTrkW = 10, slTrkH = 312, slTrkR = 5,
     slThW = 70, slThH = 30,
 }
-
-local function infoCX()
-    return TF.infoBtnCX + extraW()
-end
 
 local function sliderCX()
     return TF.slBgCX + extraW()
@@ -124,19 +118,6 @@ local TFD = {
     btnNsT = 10, btnNsR = 55, btnNsB = 10, btnNsL = 55,
     btnFont = 40,
     btnR = 0x1e, btnG = 0x51, btnB = 0x37,
-}
-
--- ======================== 天赋效果总览弹窗 ========================
-
-local TOV = {
-    bgCX = 540, bgCY = 1080, bgW = 920, bgH = 1500,
-    bgNsT = 180, bgNsR = 40, bgNsB = 50, bgNsL = 40,
-    titleCY = 420, titleFont = 48, titleStroke = 5,
-    listTop = 500, listH = 1180, listPadX = 80, listW = 760,
-    lineH = 46, headerH = 56,
-    textFont = 32, headerFont = 36,
-    textR = 0x72, textG = 0x58, textB = 0x50,
-    headerR = 0x81, headerG = 0x57, headerB = 0x3c,
 }
 
 -- 星图拖拽区域 = 1:1 视口（MAP_TOP / MAP_H 已在上方定义）
@@ -318,71 +299,11 @@ function M.buildOverviewDisplay(litNodes)
     return lines
 end
 
---- 重建效果总览展示行；缓存语言同时失效测量，切语后不会继续显示旧文本或旧滚动高度。
-local function rebuildOverviewLines()
-    local talentsData = getDispatcher().get("talents")
-    local litNodes = (talentsData and talentsData.litNodes) or { 0 }
-    state.tfOverviewLines = M.buildOverviewDisplay(litNodes)
-    state.tfOverviewLang = I18n.get()
-    state.tfOverviewMeasuredH = nil
-end
-
-local function openOverview()
-    M.overviewKw:clear()
-    rebuildOverviewLines()
-    state.tfOverviewOpen = true
-    state.tfOverviewClosing = false
-    state.tfOverviewAnimT = time.elapsedTime
-    state.tfOverviewScrollY = 0
-    state.tfOverviewDragging = false
-    print("[ChurchTalentPanel] 打开天赋效果总览")
-end
-
-local function closeOverview()
-    if not state.tfOverviewOpen then return end
-    if state.tfOverviewClosing then return end
-    M.overviewKw:clear()
-    state.tfOverviewClosing = true
-    state.tfOverviewAnimT = time.elapsedTime
-    print("[ChurchTalentPanel] 关闭天赋效果总览（动画）")
-end
-
-local function getOverviewContentHeight()
-    -- 优先使用渲染时测量的实际高度（包含长文本换行）
-    if state.tfOverviewMeasuredH and state.tfOverviewMeasuredH > 0 then
-        return state.tfOverviewMeasuredH
-    end
-    -- fallback: 粗略估算（首帧还没测量时）
-    local lines = state.tfOverviewLines or {}
-    local h = 0
-    for _, line in ipairs(lines) do
-        if line.kind == "header" then
-            h = h + TOV.headerH + 8
-        elseif line.kind == "stat" then
-            h = h + TOV.lineH + 6
-        else
-            -- 特殊效果文本估算每行约3行换行
-            h = h + TOV.lineH * 3 + 10
-        end
-    end
-    return h
-end
-
-local function clampOverviewScroll()
-    local maxScroll = math.max(0, getOverviewContentHeight() - TOV.listH)
-    state.tfOverviewScrollY = math.max(0, math.min(state.tfOverviewScrollY, maxScroll))
-end
-
 -- ======================== 模块 API ========================
 
 --- 天赋详情面板是否可见
 function M.isDetailOpen()
     return state.tfDetailOpen
-end
-
---- 天赋效果总览是否可见
-function M.isOverviewOpen()
-    return state.tfOverviewOpen
 end
 
 --- 绘制天赋背景（铺满全屏，在上半部分之前绘制）
@@ -638,156 +559,7 @@ function M.drawDetailPanel(vg)
     M.detailKw:drawPopup(vg)
 end
 
---- 绘制天赋效果总览弹窗
-function M.drawOverviewPanel(vg)
-    if not state.tfOverviewOpen then return end
-    if state.tfOverviewLang ~= I18n.get() then rebuildOverviewLines() end
-
-    local elapsed = time.elapsedTime - state.tfOverviewAnimT
-    local rawT = math.min(1.0, elapsed / POPUP_ANIM_DUR)
-    local progress
-    if state.tfOverviewClosing then
-        progress = 1.0 - easeInCubic(rawT)
-        if rawT >= 1.0 then
-            state.tfOverviewOpen = false
-            state.tfOverviewClosing = false
-            state.tfOverviewLines = nil
-            return
-        end
-    else
-        progress = easeOutCubic(rawT)
-    end
-
-    local alpha = math.floor(progress * 255 + 0.5)
-    local scale = POPUP_SCALE_FROM + (1.0 - POPUP_SCALE_FROM) * progress
-
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, M.getPageWidth(), DESIGN_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(128 * progress + 0.5)))
-    nvgFill(vg)
-
-    nvgSave(vg)
-    nvgTranslate(vg, TOV.bgCX, TOV.bgCY)
-    nvgScale(vg, scale, scale)
-    nvgTranslate(vg, -TOV.bgCX, -TOV.bgCY)
-    nvgGlobalAlpha(vg, alpha / 255)
-
-    -- 1. 弹窗底 矢量面板
-    DarkIcon.drawNine(vg, "panel",
-        TOV.bgCX - TOV.bgW * 0.5, TOV.bgCY - TOV.bgH * 0.5,
-        TOV.bgW, TOV.bgH,
-        { titleH = TOV.bgNsT })
-
-    drawTextStroke(vg, TOV.bgCX, TOV.titleCY, "天赋效果总览",
-        TOV.titleFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, TOV.titleStroke,
-        { strokeColor = { 0x59, 0x32, 0x19 } })
-
-    clampOverviewScroll()
-
-    local listLeft = TOV.bgCX - TOV.listW * 0.5
-    local listTop = TOV.listTop
-    local contentW = TOV.listW - TOV.listPadX * 2
-    local contentLeft = listLeft + TOV.listPadX
-    local contentRight = contentLeft + contentW
-    nvgSave(vg)
-    nvgIntersectScissor(vg, listLeft, listTop, TOV.listW, TOV.listH)
-    nvgTranslate(vg, 0, -state.tfOverviewScrollY)
-
-    local okt = M.overviewKw
-    local popScale = scale
-    local scrollY = state.tfOverviewScrollY or 0
-    okt:setTransform(function(sx, sy)
-        local lx = (sx - TOV.bgCX) / popScale + TOV.bgCX
-        local ly = (sy - TOV.bgCY) / popScale + TOV.bgCY
-        return lx, ly + scrollY
-    end)
-    okt:setPopupTransform(function(lx, ly)
-        local sx = (lx - TOV.bgCX) * popScale + TOV.bgCX
-        local sy = (ly - scrollY - TOV.bgCY) * popScale + TOV.bgCY
-        return sx, sy
-    end)
-    local y = listTop
-    local overviewFirstText = true
-    for _, line in ipairs(state.tfOverviewLines or {}) do
-        if line.kind == "header" then
-            -- 分类标题
-            y = y + 8  -- 标题前额外间距
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, TOV.headerFont)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(TOV.headerR, TOV.headerG, TOV.headerB, 255))
-            nvgText(vg, contentLeft, y + TOV.headerH * 0.5, line.text, nil)
-            y = y + TOV.headerH
-        elseif line.kind == "stat" then
-            -- 属性行：半透明背景 + 名称左对齐 + 数值右对齐
-            local rowH = TOV.lineH
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, contentLeft, y, contentW, rowH, 8)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 20))
-            nvgFill(vg)
-
-            local midY = y + rowH * 0.5
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, TOV.textFont)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(TOV.textR, TOV.textG, TOV.textB, 255))
-            nvgText(vg, contentLeft + 16, midY, line.label, nil)
-
-            drawTextStroke(vg, contentRight - 16, midY, line.value,
-                TOV.textFont, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-                255, 255, 255, 4)
-            y = y + rowH + 6
-        else
-            -- 普通文本行（特殊效果等长文本；机制词可点）
-            if line.muted then
-                okt.textColor = { TOV.textR, TOV.textG, TOV.textB, 160 }
-            else
-                okt.textColor = { TOV.textR, TOV.textG, TOV.textB, 255 }
-            end
-            local textH = okt:measureHeight(vg, line.text, contentW, TOV.textFont, TOV.lineH)
-            okt:draw(vg, line.text, contentLeft, y, contentW, TOV.textFont, TOV.lineH, nil, not overviewFirstText)
-            overviewFirstText = false
-            y = y + math.max(TOV.lineH, textH) + 10
-        end
-    end
-
-    if overviewFirstText then okt:clear() end
-    -- 缓存实际内容高度（供滚动 clamp 使用）
-    state.tfOverviewMeasuredH = y - listTop
-
-    nvgRestore(vg)
-    nvgRestore(vg)
-
-    M.overviewKw:drawPopup(vg)
-end
-
 -- ======================== 输入处理 ========================
-
---- 天赋效果总览输入（模态拦截）
----@return boolean consumed
-function M.handleOverviewInput(dx, dy)
-    if not state.tfOverviewOpen then return false end
-    if state.tfOverviewClosing then return true end
-
-    local okt = M.overviewKw
-    if okt:isOpen() then
-        okt:closePopup()
-        return true
-    end
-    if okt:handleInput(dx, dy) then
-        return true
-    end
-
-    if time.elapsedTime - state.tfOverviewAnimT < 0.05 then return true end
-
-    if not hitTest(dx, dy, TOV.bgCX, TOV.bgCY, TOV.bgW, TOV.bgH) then
-        closeOverview()
-        return true
-    end
-
-    return true
-end
 
 --- 天赋详情面板输入处理（模态拦截）
 ---@return boolean consumed
@@ -894,14 +666,6 @@ end
 ---@return boolean consumed
 function M.handleDragBegin(dx, dy)
     if state.tab and state.tab ~= "tianfu" then return false end
-    if state.tfOverviewOpen then
-        if hitTest(dx, dy, TOV.bgCX, TOV.bgCY, TOV.bgW, TOV.bgH) then
-            state.tfOverviewDragging = true
-            state.tfOverviewLastDragY = dy
-            return true
-        end
-        return true
-    end
     -- 详情面板打开时不允许拖拽星图
     if state.tfDetailOpen then return true end
 
@@ -941,14 +705,6 @@ end
 function M.handleDragMove(dx, dy)
     if state.tab and state.tab ~= "tianfu" then return false end
 
-    if state.tfOverviewDragging then
-        local dyDelta = dy - state.tfOverviewLastDragY
-        state.tfOverviewScrollY = state.tfOverviewScrollY - dyDelta
-        state.tfOverviewLastDragY = dy
-        clampOverviewScroll()
-        return true
-    end
-
     -- 滑块拖拽中
     if state.tfSliderDragging then
         local map = mapLayout()
@@ -985,11 +741,6 @@ end
 
 --- 拖拽结束
 function M.handleDragEnd(dx, dy)
-    if state.tfOverviewDragging then
-        state.tfOverviewDragging = false
-        return
-    end
-
     -- 星图拖拽结束 → 启动惯性
     if state.tfMapDragging then
         -- 检查最后一次拖拽是否太久前（手指静止后松开不应有惯性）

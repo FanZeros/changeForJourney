@@ -172,6 +172,7 @@ local function fixture()
         ["core.NumberUtil"] = true,
         ["systems.AttributeDef"] = true, ["systems.UnitAttributes"] = true,
         ["systems.EquipmentSystem"] = true, ["systems.EquipmentSetSystem"] = true,
+        ["systems.EquipmentSecondaryStats"] = true, ["systems.EquipmentQuery"] = true,
         ["systems.EquipmentSetRuntime"] = true, ["systems.EquipmentPower"] = true,
         ["systems.CombatPower"] = true, ["systems.CombatFormula"] = true,
         ["systems.TalentEffect"] = true, ["systems.AwakeningGrowth"] = true,

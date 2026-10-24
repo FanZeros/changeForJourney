@@ -5,11 +5,14 @@
 -- 由官方 build 后运行；原生死锁/崩溃不能被 pcall 捕获，最后一条 ENTER 用于定位。
 -- 回归：GetSystemTime 必须走 Time 静态绑定，实例调用在原生库中会报参数类型错误。
 local TAG = "[performance_native_smoke_test]"
-local SECTION = "native_smoke.Update"
+local SECTION = "角色面板.updateBadges"
+local EXPECTED_CONTEXT = "角色/英雄名册/剧情对话/新手引导"
 local MIN_UPDATES, TARGET_FRAMES, MAX_UPDATES = 121, 120, 240
-local updates, businessCount, sampledFrames = 0, 0, 0
+local updates, businessCount, sampledFrames, contextFrames = 0, 0, 0, 0
 local done, monitorLoaded = false, false
 local stage = "Start"
+---@type function?
+local originalBeginFrame = nil
 ---@type table
 local Monitor = {}
 ---@type function?
@@ -42,11 +45,12 @@ local function finish(success, why)
     local ok, err = protected(function() UnsubscribeFromEvent("Update") end)
     if not ok then success = false; print(TAG .. " FAIL cleanup.Unsubscribe\n" .. tostring(err)) end
     if monitorLoaded then
+        if originalBeginFrame then Monitor.beginFrame = originalBeginFrame end
         ok, err = protected(function() Monitor.stop() end)
         if not ok then success = false; print(TAG .. " FAIL cleanup.Monitor.stop\n" .. tostring(err)) end
     end
-    print(string.format("%s SUMMARY %s updates=%d business=%d sampledFrames=%d",
-        TAG, success and "PASS" or "FAIL", updates, businessCount, sampledFrames))
+    print(string.format("%s SUMMARY %s updates=%d business=%d sampledFrames=%d contextFrames=%d",
+        TAG, success and "PASS" or "FAIL", updates, businessCount, sampledFrames, contextFrames))
     ok, err = protected(function() engine:Exit() end)
     if not ok then print(TAG .. " FAIL engine.Exit\n" .. tostring(err)) end
 end
@@ -88,12 +92,56 @@ function Start()
         Monitor = require("core.PerformanceMonitor")
         monitorLoaded = true
         assert(not Monitor.isEnabled(), "use isolated test entry; monitor must initially be disabled")
-        enter("Monitor.wrap create")
-        wrappedBusiness = Monitor.wrap(SECTION, business)
-        enter("Runtime.installHandlers")
+        enter("real require cache identity / package.loaded visibility")
+        local hooks = require("boot.PerformanceHooks")
         local runtime = require("boot.PerformanceRuntime")
+        local rt = require("boot.StandaloneRT")
+        for _, entry in ipairs({ { "core.PerformanceMonitor", Monitor }, { "boot.PerformanceHooks", hooks },
+            { "boot.PerformanceRuntime", runtime }, { "boot.StandaloneRT", rt } }) do
+            local name, held = entry[1], entry[2]
+            local repeated = require(name)
+            local visible = package.loaded[name]
+            print(TAG .. " REQUIRE " .. name .. " repeatIdentity=" .. tostring(repeated == held)
+                .. " packageLoadedType=" .. type(visible) .. " packageLoadedIdentity=" .. tostring(visible == held))
+            assert(repeated == held, "native require did not reuse held module " .. name)
+        end
+        enter("Hooks.install explicit fixture references")
+        -- 不 require 角色/剧情业务；使用本测试已持有的边界表验证真实 Hooks/Runtime 共用注册表。
+        -- 不伪造或修改 package.loaded；上面原样报告引擎缓存可见性，下面验证它不再是接线前提。
+        local refs = {
+            ["ui.character.panel.CharacterPanel"] = { updateBadges = business,
+                isDetailOpen = function() return true end,
+                isOpen = function() error("CharacterPanel.isOpen is not the detail API", 0) end },
+            ["ui.character.hero.HeroRosterPanel"] = { isVisible = function() return true end },
+            ["ui.story.ScenarioDialogue"] = { isActive = function() return true end },
+            ["systems.TutorialManager"] = { isActive = function() return true end },
+        }
+        local visibleBefore = {}
+        for name in pairs(refs) do visibleBefore[name] = package.loaded[name] end
+        assert(hooks.installStandalone({ CharacterPanel = refs["ui.character.panel.CharacterPanel"],
+            HeroRosterPanel = refs["ui.character.hero.HeroRosterPanel"],
+            ScenarioDialogue = refs["ui.story.ScenarioDialogue"], TutorialManager = refs["systems.TutorialManager"] }) >= 1,
+            "explicit native fixture export was not installed")
+        local character = refs["ui.character.panel.CharacterPanel"]
+        wrappedBusiness = character.updateBadges
+        assert(wrappedBusiness ~= business, "explicit held export not wrapped")
+        for name, held in pairs(refs) do
+            assert(hooks.getModule(name) == held, "explicit native table identity lost " .. name)
+            assert(package.loaded[name] == visibleBefore[name], "registration wrote native loaded cache " .. name)
+        end
+        hooks.install()
+        assert(character.updateBadges == wrappedBusiness, "boot-completion reinstall double wrapped export")
+        enter("Runtime.installHandlers")
         HandleUpdate = HandlePerformanceNativeSmokeUpdate
         runtime.installHandlers()
+        -- 仅观察真实 Runtime 传入 Monitor 的固定context，并始终调用原始beginFrame一次。
+        local beginFrame = Monitor.beginFrame
+        originalBeginFrame = beginFrame
+        Monitor.beginFrame = function(context, exclusion)
+            assert(context == EXPECTED_CONTEXT and exclusion == nil, "native explicit Runtime context unreachable")
+            contextFrames = contextFrames + 1
+            return beginFrame(context, exclusion)
+        end
         enter("Monitor.start")
         Monitor.start()
         assert(Monitor.isEnabled(), "Monitor.start did not enable collection")

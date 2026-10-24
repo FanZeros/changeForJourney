@@ -22,7 +22,74 @@ local function same(a, b)
     return true
 end
 
+local function previewLightning()
+    -- 仅真实绘图，不启动游戏/存档/伤害；固定进度便于重现长短链与三行比例。
+    local vg = assert(nvgCreate(1))
+    nvgCreateFont(vg, "lightning-preview", "Fonts/MiSans-Regular.ttf")
+    local file = assert(cache:GetFile("ui/battle/combat/ProjectileSystem.lua"))
+    local lines = {}
+    while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+    file:Dispose()
+    local env = setmetatable({}, { __index = _G })
+    env.require = function(name)
+        if name == "systems.GameSFX" then return { play = noop } end
+        if name == "systems.BattleStats" then return { mountedTeam = function() return 0 end } end
+        if name == "systems.BattleDiag" then return { logEnabled = false } end
+        error("未声明的预览依赖 " .. name)
+    end
+    local ps = assert(load(table.concat(lines, "\n"), "@lightning-preview/ProjectileSystem.lua", "t", env))()
+    ps.init(vg); ps.prewarmOne("EF_ATK_6")
+    local cases = {
+        { dx = 390, dy = 0, t = 0.15, scale = 1, text = "长链 / 延伸中" },
+        { dx = 390, dy = 0, t = 0.5, scale = 1, text = "长链 / 已到达" },
+        { dx = 40, dy = 0, t = 0.5, scale = 1, text = "近距离 / 音符不压扁" },
+        { dx = -390, dy = 0, t = 0.5, scale = 1, text = "反向 / 怪物复用" },
+        { dx = 360, dy = -60, t = 0.5, scale = 0.4, text = "三行倍率 / 斜向" },
+        { dx = 390, dy = 0, t = 0.8, scale = 0.4, text = "三行倍率 / 淡出" },
+    }
+    SubscribeToEvent(vg, "NanoVGRender", function()
+        local dpr = graphics:GetDPR()
+        local width, height = graphics:GetWidth() / dpr, graphics:GetHeight() / dpr
+        nvgBeginFrame(vg, width, height, dpr)
+        local scale = math.min(width / 1280, height / 800)
+        nvgScale(vg, scale, scale)
+        nvgBeginPath(vg); nvgRect(vg, 0, 0, 1280, 800)
+        nvgFillColor(vg, nvgRGBA(19, 24, 31, 255)); nvgFill(vg)
+        nvgFontFace(vg, "lightning-preview"); nvgFontSize(vg, 24)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+        nvgFillColor(vg, nvgRGBA(232, 223, 192, 255))
+        nvgText(vg, 35, 18, "音符保持原比例 · 连接线独立延伸", nil)
+        for i, c in ipairs(cases) do
+            local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
+            local x, y = 35 + col * 630, 100 + row * 225
+            nvgFillColor(vg, nvgRGBA(232, 223, 192, 255))
+            nvgText(vg, x, y, c.text, nil)
+            local sx, sy = x + (c.dx < 0 and 450 or 55), y + 105
+            local ex, ey = sx + c.dx, sy + c.dy
+            for _, point in ipairs({ { sx, sy }, { ex, ey } }) do
+                nvgBeginPath(vg); nvgCircle(vg, point[1], point[2], 4)
+                nvgFillColor(vg, nvgRGBA(120, 153, 176, 255)); nvgFill(vg)
+            end
+            ps.reset(); ps.setRenderScale(c.scale)
+            if c.dx < 0 then
+                ps.spawnByKey("EF_ATK_6", sx, sy, ex, ey, noop, false, { chainProjectile = true })
+            else
+                ps.spawn(6, sx, sy, ex, ey, noop, { chainProjectile = true })
+            end
+            local p = ps.mountedState().projectiles[1]
+            p.timer = p.cfg.duration * p.durationScale * c.t
+            ps.draw(vg)
+        end
+        nvgEndFrame(vg)
+    end)
+    SubscribeToEvent("ExitRequested", function() nvgDelete(vg) end)
+    print(TAG .. " LIGHTNING_PREVIEW_READY：六个固定进度场景，不运行main或读写玩家档")
+end
+
 function Start()
+    for _, arg in ipairs(GetArguments()) do
+        if arg == "-assets-lightning-preview" then previewLightning(); return end
+    end
     -- 旧projectile_arc入口只含顶层代码，无Start/Exit；仅进程内执行原文后退出。
     -- 不改旧断言、不写临时入口；与素材专项各自独立Runtime进程。
     for _, arg in ipairs(GetArguments()) do
@@ -398,7 +465,6 @@ function Start()
             ["core.PerformanceMonitor"] = { stop = noop },
             ["ui.dev.PerformancePanel"] = { close = noop },
             ["boot.PerformanceHooks"] = { install = noop },
-            ["ui.battle.combat.BattleClock"] = { setPaused = noop },
             ["ui.fx.SpineCardEffect"] = { destroy = noop }, ["ui.fx.SpineResultEffect"] = { destroy = noop },
             ["ui.fx.DarkEffectSprites"] = { destroy = noop },
             -- Stop新接入的外围呈现/故事清理，只记录可调用性，不启动实际故事或塔场景。
@@ -409,6 +475,7 @@ function Start()
             ["rules.equipment.InventoryCurationService"] = { Cleanup = noop },
             ["ui.widget.DesignWidgetSurface"] = { shutdown = noop },
             ["systems.ExtraTalentSystem"] = { flush = noop },
+            ["ui.battle.combat.BattleClock"] = { setPaused = noop },
             ["ui.battle.scene.BattleMountScope"] = { runDefault = function(fn) fn() end },
             ["ui.battle.combat.BattleCasualty"] = { flushRewards = noop },
             ["ui.dungeon.DungeonBattleScope"] = { run = function(_, fn) fn() end },
@@ -667,7 +734,8 @@ function Start()
                 env.nvgFontSize = function(_, s) rec.state.font = s; emit("字号", s) end
                 env.nvgFontFace = function(_, s) rec.state.face = s end
                 env.nvgTextAlign = function(_, a) rec.state.align = a end
-                env.nvgStrokeColor = function(_, c) emit("描边颜色", c) end
+                env.nvgStrokeColor = function(_, c) rec.state.strokeColor = c; emit("描边颜色", c) end
+                env.nvgStroke = function() emit("提交描边") end
                 env.nvgFillColor = function(_, c) rec.state.color = c; emit("填充颜色", c) end
                 env.nvgStrokeWidth = function(_, w)
                     rec.state.stroke = w; local c = emit("描边", w); c.width = scaleLength(w)
@@ -820,7 +888,9 @@ function Start()
                 dist, lift = dist or 400, lift or c.lift
                 local pierce = c.kind == "pierce"
                 local laneY = pierce and 0 or -2 * math.min(34, dist * 0.045)
-                local endY = 120 + laneY * 0.15
+                -- 英雄3/6/13既有弹射配置固定目标落点，分道仍只作用于中途弧线；怪物复用图不继承该配置。
+                local chainHero = c.entry == "英雄" and (c.key == 3 or c.key == 6 or c.key == 13)
+                local endY = 120 + (chainHero and 0 or laneY * 0.15)
                 local durationScale = pierce and 1 or (c.kind == "bezier" or c.key == 8 or c.key == 12 or c.key == 14)
                     and 0.94 or 0.86
                 local duration = c.duration * durationScale
@@ -845,7 +915,7 @@ function Start()
                     local d = length(dist, endY - 120)
                     local flown = (d + 250) * durationScale / 2
                     cx, cy = 10 + dist / d * flown, 120 + (endY - 120) / d * flown
-                elseif c.kind == "lightning" then cx, cy = 10 + dist / 2, (120 + endY) / 2
+                elseif c.kind == "lightning" then cx, cy = 10 + dist, endY
                 elseif c.kind == "shake" then
                     local d = length(dist, endY - 120)
                     local offset = math.sin(15) * 6
@@ -858,8 +928,7 @@ function Start()
                     trailCheck(cx, cy, px, py, (c.kind == "bezier" or c.kind == "shake") and 80 or 100, 0.5, label)
                 end
                 local image = assert(pr.find("图案")[1])
-                local w = c.kind == "lightning" and math.max(100, length(dist, endY - 120)) or 100 * rs
-                local h = c.kind == "lightning" and 100 or c.h / 2 * rs
+                local w, h = 100 * rs, c.h / 2 * rs
                 check(#pr.find("图案") == 1 and near(image.w, w) and near(image.h, h)
                     and near(image.cx, cx) and near(image.cy, cy), label .. "图案/矩形尺寸50%且真实飞行中心不变")
                 local rect = assert(pr.find("矩形")[1])
@@ -870,8 +939,11 @@ function Start()
                 check(image.path == "image/特效投射物/" .. key .. ".png", label .. "真实图片路径不变")
                 local rotation = pr.find("旋转")
                 if c.key == 8 or c.key == 14 or c.key == "EF_MS_16" then angle = angle + math.pi * 4 end
-                check(#rotation == 0 and near(angle, 0) or #rotation == 1 and near(rotation[1].args[1], angle),
-                    label .. "切线/自转角度不变")
+                local expectedRotations = c.kind == "lightning" and (near(angle, 0) and 1 or 2)
+                    or (near(angle, 0) and 0 or 1)
+                local rotationsMatch = #rotation == expectedRotations
+                for _, call in ipairs(rotation) do rotationsMatch = rotationsMatch and near(call.args[1], angle) end
+                check(rotationsMatch, label .. "连接线/弹头各自局部旋转且切线/自转角度不变")
                 check(hits == (hitRatio <= 0.5 and 1 or 0), label .. "中段命中次数符合独立时序")
                 -- 第二次独立生成专测精确命中边界和0.15秒余量，不靠绘制反推时序。
                 VisualPS.reset(); hits = 0; spawnCase(c, function() hits = hits + 1 end, dist)
@@ -921,29 +993,61 @@ function Start()
             check(VisualPS.getActiveCount() == 0 and arrivals == 1 and #hitOrder == 2,
                 "多目标穿透原寿命移除不重复命中")
 
-            -- 长短闪电按原连接长度延展，不把长链宽度再乘布局倍率或0.5。
+            -- 音符弹头不随距离拉伸；长短/反向/斜向连接独立延伸，且服从布局倍率。
             for _, entry in ipairs({ "英雄", "怪物" }) do
-                for _, dist in ipairs({ 40, 600 }) do
-                    for _, t in ipairs({ 0.15, 0.3, 0.8 }) do
-                        VisualPS.reset(); VisualPS.setRenderScale(0.4)
-                        local c = { entry = entry, key = entry == "英雄" and 6 or "EF_ATK_6", opts = {} }
-                        spawnCase(c, noop, dist); VisualPS.update(0.35 * 0.86 * t)
-                        pr.clear(); VisualPS.draw(context)
-                        local image = assert(pr.find("图案")[1])
-                        local dy = -2 * math.min(34, dist * 0.045) * 0.15
-                        local extend = t < 0.3 and 1 - (1 - t / 0.3) ^ 2 or 1
-                        local fullDist = length(dist, dy)
-                        local width = math.max(100, fullDist * extend)
-                        check(near(image.w, width) and near(image.h, 100)
-                            and near(image.cx, 10 + dist * extend / 2) and near(image.cy, 120 + dy * extend / 2)
-                            and near(image.args[7], t > 0.7 and 1 - (t - 0.7) / 0.3 or 1),
-                            entry .. "闪电 距离" .. dist .. " 进度" .. t .. " 最低宽100/厚100且长连接与淡出保持")
-                        if dist == 600 and t >= 0.3 then
-                            local angle = math.atan(dy, dist)
-                            check(near(image.cx - math.cos(angle) * width / 2, 10)
-                                and near(image.cy - math.sin(angle) * width / 2, 120)
-                                and near(image.cx + math.cos(angle) * width / 2, 610)
-                                and near(image.cy + math.sin(angle) * width / 2, 120 + dy), "长闪电两端仍连接完整起终点")
+                for _, rs in ipairs({ 1, 0.4 }) do
+                    for _, delta in ipairs({ { 0, 0 }, { 40, 0 }, { 600, 0 }, { 5000, 0 },
+                        { -600, 0 }, { 320, -240 } }) do
+                        for _, t in ipairs({ 0, 0.15, 0.3, 0.8, 1 }) do
+                            VisualPS.reset(); VisualPS.setRenderScale(rs)
+                            local hits = 0
+                            local hit = function() hits = hits + 1 end
+                            if entry == "英雄" then
+                                VisualPS.spawn(6, 10, 120, 10 + delta[1], 120 + delta[2], hit,
+                                    { chainProjectile = true })
+                            else
+                                VisualPS.spawnByKey("EF_ATK_6", 10, 120, 10 + delta[1], 120 + delta[2], hit,
+                                    false, { chainProjectile = true })
+                            end
+                            VisualPS.update(0.35 * 0.86 * t)
+                            local p = VisualPS.mountedState().projectiles[1]
+                            local snapshot, state, hitBefore = copy(p), copy(pr.state), hits
+                            local loadBefore = #loads
+                            pr.clear(); VisualPS.draw(context)
+                            local image = assert(pr.find("图案")[1])
+                            local rect = assert(pr.find("矩形")[1])
+                            local extend = t < 0.3 and 1 - (1 - t / 0.3) ^ 2 or 1
+                            local alpha = t > 0.7 and 1 - (t - 0.7) / 0.3 or 1
+                            local x, y = 10 + delta[1] * extend, 120 + delta[2] * extend
+                            local label = entry .. "闪电 " .. delta[1] .. "," .. delta[2]
+                                .. " 布局" .. rs .. " 进度" .. t
+                            check(#pr.find("图案") == 1 and near(image.w, 100 * rs) and near(image.h, 100 * rs)
+                                and near(image.cx, x) and near(image.cy, y) and near(image.args[7], alpha)
+                                and near(rect.w, image.w) and near(rect.h, image.h)
+                                and near(rect.cx, x) and near(rect.cy, y)
+                                and image.path == "image/特效投射物/EF_ATK_6.png",
+                                label .. "原音符等比固定尺寸，延伸端点及淡出正确")
+                            local starts, lines, widths = pr.find("起点"), pr.find("线段"), pr.find("描边")
+                            local strokes = pr.find("提交描边")
+                            if length(delta[1], delta[2]) * extend > 0 and alpha > 0 then
+                                local last = assert(lines[#lines])
+                                check(#starts == 1 and near(starts[1].x, 10) and near(starts[1].y, 120)
+                                    and #lines >= 2 and #lines <= 24 and near(last.x, x) and near(last.y, y)
+                                    and #widths == 2 and near(widths[1].width, 3.5 * rs)
+                                    and near(widths[2].width, 1.25 * rs) and #strokes == 2
+                                    and near(strokes[1].state.stroke, 3.5 * rs)
+                                    and near(strokes[2].state.stroke, 1.25 * rs)
+                                    and same(strokes[1].state.strokeColor, { 64, 43, 20, math.floor(140 * alpha) })
+                                    and same(strokes[2].state.strokeColor, { 255, 225, 95, math.floor(220 * alpha) }),
+                                    label .. "独立细线提交两次描边，两端/线宽/色彩/淡出正确且段数有界")
+                            else
+                                check(#starts == 0 and #lines == 0 and #widths == 0 and #strokes == 0,
+                                    label .. "同点/未延伸/淡出完成不画退化连接线")
+                            end
+                            VisualPS.draw(context)
+                            check(same(p, snapshot) and same(pr.state, state) and #pr.stack == 0
+                                and hits == hitBefore and #loads <= loadBefore + 1,
+                                label .. "重复绘制无业务/RNG/状态副作用且不重复载图")
                         end
                     end
                 end

@@ -192,7 +192,7 @@ end
 local drainDepth_ = 0
 local DRAIN_MAX_DEPTH = 8
 drainPending = function()
-    if playbackBlocked() or #pending_ == 0 then return end
+    if #pending_ == 0 or playbackBlocked() then return end
     if drainDepth_ >= DRAIN_MAX_DEPTH then
         print("[HeroScenario] drain depth cap reached, drop " .. tostring(pending_[1]))
         table.remove(pending_, 1)

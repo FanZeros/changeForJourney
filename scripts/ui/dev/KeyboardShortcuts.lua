@@ -15,6 +15,7 @@ local LINES = {
     "Esc  关闭当前弹窗或页面",
     "空格 / 回车  继续对话、领取或关掉奖励",
     "M  开关音效",
+    "F8  打开或关闭性能诊断",
     "I  玩家信息",
     "B  背包",
     "6  遗匣",
@@ -182,7 +183,22 @@ local function handleConfirm()
     end
 end
 
+-- 独立诊断键由宿主在业务早退前轮询；不提前执行任何玩法快捷键。
+function KeyboardShortcuts.pollPerformanceHotkey()
+    if not pressed(KEY_F8) then return end
+    local performance = require("ui.dev.PerformancePanel")
+    if performance.isOpen() then
+        performance.close()
+    elseif not ctrlDown() and not blockedByTitle() and not textBusy() then
+        helpOpen = false
+        performance.open()
+        print("[KeyboardShortcuts] F8 打开性能诊断")
+    end
+end
+
 function KeyboardShortcuts.update()
+    -- F8 已由 PerformanceRuntime 处理，不能在同一帧再次 toggle 或触发底层快捷键。
+    if pressed(KEY_F8) then return end
     local performance = require("ui.dev.PerformancePanel")
     if performance.isOpen() then
         if pressed(KEY_ESCAPE) then performance.close() end

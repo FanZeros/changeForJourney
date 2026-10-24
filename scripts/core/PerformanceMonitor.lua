@@ -219,7 +219,7 @@ function M.snapshot()
         return a.totalWallMs > b.totalWallMs
     end)
     return {
-        schemaVersion = 1, monitorVersion = "2026-10-23-v2", enabled = enabled, stoppedReason = stoppedReason,
+        schemaVersion = 1, monitorVersion = "2026-10-24-v6", enabled = enabled, stoppedReason = stoppedReason,
         elapsedSeconds = totalMs / 1000, frames = totalFrames, fps = totalMs > 0 and totalFrames * 1000 / totalMs or 0,
         frameMs = { p50 = percentile(0.5), p95 = percentile(0.95), p99 = percentile(0.99), max = peakMs },
         percentileWindowFrames = sampleCount,
@@ -238,7 +238,7 @@ function M.getReport()
     if cachedReport ~= "" then return cachedReport end
     local s = M.snapshot()
     local lines = {
-        "性能诊断报告 v2 · 2026-10-23",
+        "性能诊断报告 v6 · 2026-10-24",
         string.format("有效采样 %.1f秒 / %d帧 / 平均 %.1f FPS", s.elapsedSeconds, s.frames, s.fps),
         string.format("最近%d有效帧 P50 %.1f / P95 %.1f / P99 %.1f ms；本轮最大 %.1f ms", s.percentileWindowFrames,
             s.frameMs.p50, s.frameMs.p95, s.frameMs.p99, s.frameMs.max),
@@ -248,13 +248,15 @@ function M.getReport()
         "计时为inclusive，嵌套项不可相加；CPU是进程CPU，同步wall不是GPU时间。",
         "帧间隔包含引擎/限帧/系统调度；无高耗时分段不等于没有卡顿。",
         "分位数仅最近3600有效帧；最大值/计数为本轮累计；内存不是完整进程或显存。",
+        "批次/图元为最近一次快照，不是平均值或峰值；均次wall为总wall除调用数。",
         "可让出协程只计宿主每次resume外层（如本地动作.updateQuickEquip），不单计协程内层。",
         string.format("排除后台/时钟异常%d帧、诊断面板%d帧；标记%d条；%s", excludedGaps, excludedPanelFrames, #marks, stoppedReason),
-        "模块：调用数 / CPU总ms / wall总ms / 最大单次wall ms",
+        "模块：调用数 / CPU总ms / wall总ms / 最大单次wall ms / 均次wall ms",
     }
     for i = 1, math.min(20, #s.sections) do
         local v = s.sections[i]
-        lines[#lines + 1] = string.format("%s: %d / %.1f / %.1f / %.1f", v.name, v.calls, v.totalCpuMs, v.totalWallMs, v.maxWallMs)
+        lines[#lines + 1] = string.format("%s: %d / %.1f / %.1f / %.1f / %.2f", v.name, v.calls,
+            v.totalCpuMs, v.totalWallMs, v.maxWallMs, v.calls > 0 and v.totalWallMs / v.calls or 0)
     end
     lines[#lines + 1] = "最近慢帧（最多展示10条，完整记录在JSON）"
     for i = math.max(1, #slow - 9), #slow do

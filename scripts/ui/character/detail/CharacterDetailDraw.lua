@@ -20,7 +20,6 @@ local HeroAssetUtil     = require("config.HeroAssetUtil")
 local AwakeningPanel    = require("ui.character.hero.AwakeningPanel")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
 local EquipmentSystem   = require("systems.EquipmentSystem")
-local EquipmentPower    = require("systems.EquipmentPower")
 local BF                 = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local NumberUtil = require("core.NumberUtil")
@@ -367,21 +366,22 @@ function M.setEstimateVisible(visible)
     SHOW_ESTIMATE = visible and true or false
 end
 
+function M.isEstimateVisible() return SHOW_ESTIMATE end
+
+-- 仅Update准备可调用，保留原实验估值函数口径，不替换公式。
+function M.prepareEstimate(heroId)
+    return calcHeroEstimateFn and calcHeroEstimateFn(heroId) or 0
+end
+
 -- ======================== 性能缓存（避免每帧重计算） ========================
 -- calcHeroPower 缓存：按英雄分别记录，滚动卡面每张都要显示自己的战力
 local _powerCache = { dirty = true, values = {} }
 -- 实战预估缓存：与战力共用脏标记（markPowerDirty 一并置脏）
 local _estimateCache = { dirty = true, values = {} }
--- 上下文身份随英雄/装备/圣物/天赋变化失效，不能只盯 equipment 脏标记。
-local _upgradeCache = { heroId = nil, results = {}, dirty = true }
----@type table|nil
-local _upgradeContext = nil
-
 --- 标记战斗力缓存为脏（外部数据变化时调用）
 function M.markPowerDirty()
     _powerCache.dirty = true
     _estimateCache.dirty = true
-    _upgradeCache.dirty = true
 end
 
 --- 获取缓存的战斗力（数据变脏时整表重算，否则按英雄取缓存）
@@ -413,23 +413,6 @@ local function getCachedEstimate(heroId)
     local estimate = calcHeroEstimateFn and calcHeroEstimateFn(heroId) or 0
     _estimateCache.values[heroId] = estimate
     return estimate
-end
-
---- 获取缓存的可提升判断（全部六槽复用一次上下文）。
-local function getCachedUpgrade(heroId, slotName, equipData)
-    local ctx = EquipmentPower.getContext(heroId)
-    if _upgradeCache.heroId == heroId and not _upgradeCache.dirty and _upgradeContext == ctx then
-        return _upgradeCache.results[slotName]
-    end
-    _upgradeCache.heroId = heroId
-    _upgradeCache.results = {}
-    _upgradeContext = ctx
-    for _, slot in ipairs(DT_SLOTS) do
-        _upgradeCache.results[slot.slot] = ctx ~= nil
-            and CharacterDetailRef._hasUpgradeForSlot(heroId, slot.slot, equipData, ctx) or false
-    end
-    _upgradeCache.dirty = false
-    return _upgradeCache.results[slotName]
 end
 
 --- 注入依赖
@@ -525,6 +508,8 @@ function M.draw(vg)
     if not detailState.open then return end
 
     local heroId = detailState.heroId
+    local prepared = detailState.tab == "equip" and CharacterDetailRef.getPreparedEquipment
+        and CharacterDetailRef.getPreparedEquipment() or { pending = true, scores = {}, upgrades = {} }
     local heroCfg = HC.get(heroId)
     if not heroCfg then return end
 
@@ -674,7 +659,7 @@ function M.draw(vg)
         drawTextStroke(vg, badgeCX, bottomY, tostring(level),
             28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
         -- 战力（底部居中）
-        local power = getCachedPower(id)
+        local power = detailState.tab == "equip" and (prepared.power or "—") or getCachedPower(id)
         local powerStr = tostring(power)
         local POWER_GAP = 4
         nvgFontFace(vg, "sans")
@@ -691,8 +676,10 @@ function M.draw(vg)
         -- 实战预估副行（默认关闭，M.setEstimateVisible(true) 验收后开启）：
         -- 分项计价原型口径，按英雄伤害类别区别计价物攻/魔攻/治疗属性
         if SHOW_ESTIMATE then
-            local estimate = getCachedEstimate(id)
-            drawTextStroke(vg, 0, powerY + 26, "预估 " .. NumberUtil.format(estimate),
+            local estimate = detailState.tab == "equip"
+                and (prepared.estimate ~= nil and NumberUtil.format(prepared.estimate) or "—")
+                or NumberUtil.format(getCachedEstimate(id))
+            drawTextStroke(vg, 0, powerY + 26, "预估 " .. estimate,
                 18, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 178, 216, 255, 3)
         end
         -- 职业标（右下）
@@ -828,12 +815,12 @@ function M.draw(vg)
         if heroEquipped and heroInventory then
             local seq = heroEquipped[slot.slot]
             if seq then
-                equippedEquip = heroInventory[tostring(seq)]
+                equippedEquip = heroInventory[tostring(seq)] or heroInventory[seq]
             end
             if not equippedEquip and slot.slot == "offhand" then
                 local weaponSeq = heroEquipped["weapon"]
                 if weaponSeq then
-                    local weaponEquip = heroInventory[tostring(weaponSeq)]
+                    local weaponEquip = heroInventory[tostring(weaponSeq)] or heroInventory[weaponSeq]
                     if weaponEquip and weaponEquip.grip == "twohand" then
                         equippedEquip = weaponEquip
                         isTwohandOccupied = true
@@ -888,7 +875,7 @@ function M.draw(vg)
 
             if require("ui.hud.popup.SettingsPanel").isEquipmentPowerEnabled() then
                 local powerSlot = isTwohandOccupied and "weapon" or slot.slot
-                local powerText = tostring(EquipmentPower.score(equippedEquip, heroId, powerSlot))
+                local powerText = tostring(prepared.scores[powerSlot] or "—")
                 local powerFont, powerIconSize, powerGap = 26, 22, 4
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, powerFont)
@@ -949,7 +936,7 @@ function M.draw(vg)
 
         -- ICON_UP 可提升角标（使用缓存，避免每帧遍历全背包）
         local imgIconUp = CharacterDetailRef._imgIconUp
-        if imgIconUp >= 0 and getCachedUpgrade(heroId, slot.slot, equipData) then
+        if imgIconUp >= 0 and prepared.upgrades[slot.slot] then
             local upSize = 40
             local upX = slot.cx - DT_SLOT_SIZE * 0.5 + upSize * 0.5 + 2
             local upY = slot.cy - DT_SLOT_SIZE * 0.5 + upSize * 0.5 + 2

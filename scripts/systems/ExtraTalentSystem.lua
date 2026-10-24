@@ -57,6 +57,7 @@ local function newState()
         iceStatues = {}, ---@type table[]
         orbitAngle = 0,
         persistAcc = 0,
+        persistToken = {}, -- 只在discard换代；正常换波不作废已提交机制的保存。
         dirty = {}, ---@type table<number, ExtraTalentData>
         pendingGrowth = {}, ---@type table<number, table<string, number>>
         growthUnits = {}, ---@type table<number, table>
@@ -612,15 +613,20 @@ function ETS.extraStarGates(unit)
     return math.min(2, math.floor(extra.gateStacks / 40))
 end
 
-local function persistNow(heroId, extra, alreadyPatched)
+local function persistNow(heroId, extra, alreadyPatched, state)
     heroId = toHeroId(heroId)
+    state = state or battle
+    local token = state.persistToken
     local ok, CP = pcall(require, "ui.character.panel.CharacterPanel")
-    -- dirty只是待保存标记，别让暂停战线的旧整表覆盖另一战线已提交的成长/消耗。
+    -- 三条机制dirty路径都已即时patch；有最新owned时这里只保存，不再重复全队评分。
+    -- 不缓存布尔标记或旧表身份：其他战线可能已更新owned，缺失owned仍保留原patch回退。
     local owned = ok and CP and CP.getOwnedHero and CP.getOwnedHero(heroId)
+    local hasCommittedExtra = owned and type(owned.extraTalent) == "table"
     extra = ETS.normalize(owned and owned.extraTalent or extra)
-    if not alreadyPatched and ok and CP and CP.patchExtraTalent then
+    if not alreadyPatched and not hasCommittedExtra and ok and CP and CP.patchExtraTalent then
         CP.patchExtraTalent(heroId, extra)
     end
+    if state.persistToken ~= token then return end
     local sentOk, GameAction = pcall(require, "runtime.GameAction")
     if sentOk and GameAction and GameAction.sendAction then
         pcall(function()
@@ -630,6 +636,10 @@ local function persistNow(heroId, extra, alreadyPatched)
             })
         end)
     end
+    -- 同步发送可能清档或提交下一笔库存；不要把旧发送快照覆回新镜像。
+    if state.persistToken ~= token then return end
+    local latestOwned = ok and CP and CP.getOwnedHero and CP.getOwnedHero(heroId)
+    extra = ETS.normalize(latestOwned and latestOwned.extraTalent or extra)
     local dispOk, ClientDispatcher = pcall(require, "runtime.ClientDispatcher")
     if dispOk and ClientDispatcher and ClientDispatcher.get then
         local heroes = ClientDispatcher.get("heroes")
@@ -1157,19 +1167,24 @@ end
 
 ---@param dt number
 function ETS.update(dt)
-    battle.orbitAngle = (battle.orbitAngle or 0) + dt * 2.2
-    battle.persistAcc = (battle.persistAcc or 0) + dt
-    if battle.persistAcc >= 1.5 then
-        battle.persistAcc = 0
-        for hid, extra in pairs(battle.dirty) do
-            persistNow(hid, extra)
+    local state = battle
+    state.orbitAngle = (state.orbitAngle or 0) + dt * 2.2
+    state.persistAcc = (state.persistAcc or 0) + dt
+    if state.persistAcc >= 1.5 then
+        state.persistAcc = 0
+        local dirty, token = state.dirty, state.persistToken
+        -- 先消费本批；sendAction可同步flush、产生新dirty或切换战线，不能清掉回调的新表。
+        state.dirty = {}
+        for hid, extra in pairs(dirty) do
+            if state.persistToken ~= token then break end
+            persistNow(hid, extra, false, state)
         end
-        battle.dirty = {}
     end
 end
 
 function ETS.flush()
     local state = battle
+    local token = state.persistToken
     local pending, units, dirty = state.pendingGrowth, state.growthUnits, state.dirty
     -- 回执可能同步重入关卡，先消费本批标记，重复 flush 不重复入账。
     state.pendingGrowth, state.growthUnits, state.dirty = {}, {}, {}
@@ -1177,6 +1192,7 @@ function ETS.flush()
     local batched = ok and CP and CP.finishExtraTalentBatch ~= nil
     local changed = false
     for hid, changes in pairs(pending) do
+        if state.persistToken ~= token then break end
         local owned = ok and CP and CP.getOwnedHero and CP.getOwnedHero(hid)
         -- 英雄删除/清档后不把旧战斗收益写回新的拥有列表。
         if owned then
@@ -1187,6 +1203,7 @@ function ETS.flush()
             local pendingSnapshot, ledger = unit and unit._pendingSnapshot, unit and unit._epicCommittedGrowthDelta
             local supportToken = state.supportBattleToken
             if CP.patchExtraTalent then CP.patchExtraTalent(hid, extra, batched) end
+            if state.persistToken ~= token then return end
             if battle == state and state.supportBattleToken == supportToken then
                 syncEpicCommittedDelta(unit, changes, snapshot, unitToken, pendingSnapshot, ledger)
             end
@@ -1195,13 +1212,18 @@ function ETS.flush()
             print(string.format("[ExtraTalent] 战后结算 hero=%d stacks=%d", hid, extra.stacks))
         end
     end
+    if state.persistToken ~= token then return end
     if changed and batched then CP.finishExtraTalentBatch() end
-    for hid, extra in pairs(dirty) do persistNow(hid, extra, true) end
+    for hid, extra in pairs(dirty) do
+        if state.persistToken ~= token then break end
+        persistNow(hid, extra, true, state)
+    end
 end
 
 -- 清档/更换存档丢弃旧战斗账本，不将待结算成长写入新档。
 function ETS.discard()
     ETS.invalidateSupportBattle()
+    battle.persistToken = {}
     battle.pendingGrowth, battle.growthUnits, battle.dirty = {}, {}, {}
 end
 

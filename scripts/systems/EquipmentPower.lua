@@ -142,7 +142,8 @@ local function readSnapshot(options, key)
 end
 
 -- 两种上下文共用同一裸种子/有效装备/本队光环/神器与正式估值管线。
-local function finishContext(ctx)
+local function finishContext(ctx, checkpoint)
+    local function tick() if checkpoint then checkpoint() end end
     local id = ctx.heroId
     local roster = ctx.heroesData.roster or {}
     local function seedFor(sourceId)
@@ -158,6 +159,7 @@ local function finishContext(ctx)
         end
     end
     seedFor(id)
+    tick()
     if not ctx.seeds[id] then return nil end
     local _, team = M.findPosition(ctx.heroesData, id)
     local ids = team and idsForTeam(ctx.heroesData, team) or { id }
@@ -166,13 +168,18 @@ local function finishContext(ctx)
         local sourceId = numericId(ids[slot] or ids[tostring(slot)])
         if sourceId and sourceId > 0 and not seen[sourceId] then
             seedFor(sourceId)
+            tick()
             if ctx.seeds[sourceId] then
                 ctx.teamUnits[#ctx.teamUnits + 1] = buildUnit(ctx, sourceId, ctx.equipmentData)
                 seen[sourceId] = true
+                tick()
             end
         end
     end
-    if not seen[id] then ctx.teamUnits[#ctx.teamUnits + 1] = buildUnit(ctx, id, ctx.equipmentData) end
+    if not seen[id] then
+        ctx.teamUnits[#ctx.teamUnits + 1] = buildUnit(ctx, id, ctx.equipmentData)
+        tick()
+    end
     for _, unit in ipairs(ctx.teamUnits) do
         if unit.heroId == id then ctx.hero = unit break end
     end
@@ -186,7 +193,9 @@ local function finishContext(ctx)
         end
     end
     applyTeamAura(ctx.teamUnits)
+    tick()
     ctx.currentPower = powerFor(ctx, ctx.hero, ctx.teamUnits, ctx.equipmentData)
+    tick()
     return ctx
 end
 
@@ -197,6 +206,19 @@ local sharedEquipmentSnapshot
 ---@type table|nil
 local sharedEquipmentSource
 local sharedEquipmentRevision = -1
+local function hydrateSnapshot(snapshot, checkpoint)
+    snapshot.inventory = snapshot.inventory or {}
+    snapshot.equipped = snapshot.equipped or {}
+    for key, item in pairs(snapshot.inventory) do
+        if type(item) == "table" then
+            Eq.hydrate(item)
+            item.seq = tonumber(item.seq or key) or item.seq
+        end
+        if checkpoint then checkpoint() end
+    end
+    return snapshot
+end
+
 local function equipmentSnapshot(options)
     if options ~= nil then return readSnapshot(options, "equipment") end
     local store = require("core.PlayerStore")
@@ -206,15 +228,7 @@ local function equipmentSnapshot(options)
     if store.GetRevision and sharedEquipmentSnapshot and sharedEquipmentSource == source
         and sharedEquipmentRevision == revision then return sharedEquipmentSnapshot end
     sharedEquipmentSource, sharedEquipmentRevision = source, revision
-    sharedEquipmentSnapshot = copy(source or {})
-    sharedEquipmentSnapshot.inventory = sharedEquipmentSnapshot.inventory or {}
-    sharedEquipmentSnapshot.equipped = sharedEquipmentSnapshot.equipped or {}
-    for key, item in pairs(sharedEquipmentSnapshot.inventory) do
-        if type(item) == "table" then
-            Eq.hydrate(item)
-            item.seq = tonumber(item.seq or key) or item.seq
-        end
-    end
+    sharedEquipmentSnapshot = hydrateSnapshot(copy(source or {}))
     return sharedEquipmentSnapshot
 end
 
@@ -237,16 +251,8 @@ function M.buildContext(heroId, options)
     end
     ctx.equipmentData.inventory = ctx.equipmentData.inventory or {}
     ctx.equipmentData.equipped = ctx.equipmentData.equipped or {}
-    if options ~= nil then
-        for key, item in pairs(ctx.equipmentData.inventory) do
-            if type(item) == "table" then
-                Eq.hydrate(item)
-                item.seq = tonumber(item.seq or key) or item.seq
-            end
-            if options.checkpoint then options.checkpoint() end
-        end
-    end
-    return finishContext(ctx)
+    if options ~= nil then hydrateSnapshot(ctx.equipmentData, options.checkpoint) end
+    return finishContext(ctx, options and options.checkpoint)
 end
 
 -- 仅供当前穿戴战力批次：模块快照一次，库存源只读，按本队实际六槽取副本。
@@ -498,10 +504,27 @@ end
 
 local cached = {}
 local subscribed = false
+local cacheGeneration = 0
 function M.invalidate()
+    cacheGeneration = cacheGeneration + 1
     cached = {}
     sharedEquipmentSnapshot, sharedEquipmentSource = nil, nil
     sharedEquipmentRevision = -1
+end
+
+local function contextRevision(store)
+    local parts = {}
+    for _, key in ipairs({ "heroes", "equipment", "artifacts", "talents" }) do
+        parts[#parts + 1] = tostring(store.GetRevision and store.GetRevision(key) or 0)
+    end
+    return table.concat(parts, ":")
+end
+
+local function cachedContext(id, heroes, equipment, revision)
+    local entry = cached[id]
+    if entry and entry.sourceHeroes == heroes and entry.sourceEquipment == equipment
+        and entry.revision == revision then return entry end
+    return nil
 end
 
 function M.getContext(heroId)
@@ -518,14 +541,9 @@ function M.getContext(heroId)
     if not id then return nil end
     -- ClearCache/切区也不能继续借上个玩家的快照。
     local heroes, equipment = store.Get("heroes"), store.Get("equipment")
-    local revisionParts = {}
-    for _, key in ipairs({ "heroes", "equipment", "artifacts", "talents" }) do
-        revisionParts[#revisionParts + 1] = tostring(store.GetRevision and store.GetRevision(key) or 0)
-    end
-    local revision = table.concat(revisionParts, ":")
-    local entry = cached[id]
-    if not entry or entry.sourceHeroes ~= heroes or entry.sourceEquipment ~= equipment
-        or entry.revision ~= revision then
+    local revision = contextRevision(store)
+    local entry = cachedContext(id, heroes, equipment, revision)
+    if not entry then
         entry = M.buildContext(id)
         if entry then
             entry.sourceHeroes, entry.sourceEquipment = heroes, equipment
@@ -536,12 +554,105 @@ function M.getContext(heroId)
     return entry
 end
 
-function M.score(equip, heroId, targetSlot)
-    if not heroId then return M.genericScore(equip) end
-    if not equip then return 0 end
-    local ctx = M.getContext(heroId)
-    if not ctx then return 0 end
-    local seq = equip.seq
+-- 只比较上下文实际消费的英雄字段；经验通知不应打断大库存准备。
+local function sameValue(a, b)
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return a == b end
+    for key, value in pairs(a) do if not sameValue(value, b[key]) then return false end end
+    for key in pairs(b) do if a[key] == nil then return false end end
+    return true
+end
+
+local function sameHeroCombatData(a, b)
+    a, b = a or {}, b or {}
+    for team = 1, 3 do
+        local ai, bi = idsForTeam(a, team) or {}, idsForTeam(b, team) or {}
+        for slot = 1, 4 do
+            if numericId(ai[slot] or ai[tostring(slot)]) ~= numericId(bi[slot] or bi[tostring(slot)]) then
+                return false
+            end
+        end
+    end
+    local ar, br = a.roster or {}, b.roster or {}
+    for id, hero in pairs(ar) do
+        local other = br[id]
+        if not other then return false end
+        for _, field in ipairs({ "level", "advBranch", "awakening", "extraTalent" }) do
+            if not sameValue(hero[field], other[field]) then return false end
+        end
+    end
+    for id in pairs(br) do if ar[id] == nil then return false end end
+    return true
+end
+
+-- 仅供受 badgeVersion 保护的角标协程。所有可让出阶段都持有私有半成品；
+-- 同步 getContext/buildContext/evaluateGain 从不收到 checkpoint，也不等待此任务。
+-- 完整装备快照、完整ctx分别原子发布；让出期间同步读先完成则保留其缓存身份。
+---@param heroId number|string
+---@param checkpoint fun()
+---@return table|nil
+---@return boolean|nil stale 已失效的私有准备，调用方可重试或由调度器取消
+function M.getBadgeContext(heroId, checkpoint)
+    local store = require("core.PlayerStore")
+    if not checkpoint or not store.GetRevision then return M.getContext(heroId) end
+    local id = tonumber(heroId)
+    if not id or not HC.get(id) then return nil end
+    local heroes, equipment = store.Get("heroes"), store.Get("equipment")
+    local artifacts, talents = store.Get("artifacts"), store.Get("talents")
+    local revision = contextRevision(store)
+    local entry = cachedContext(id, heroes, equipment, revision)
+    if entry and sameHeroCombatData(entry.heroesData, heroes) then return entry end
+    local generation = cacheGeneration
+    local equipmentRevision = store.GetRevision("equipment")
+    local artifactRevision, talentRevision = store.GetRevision("artifacts"), store.GetRevision("talents")
+    local function equipmentCurrent()
+        return generation == cacheGeneration and store.Get("equipment") == equipment
+            and store.GetRevision("equipment") == equipmentRevision
+    end
+    local snapshot = sharedEquipmentSource == equipment and sharedEquipmentRevision == equipmentRevision
+        and sharedEquipmentSnapshot or nil
+    if not snapshot then
+        local prepared = hydrateSnapshot(copy(equipment or {}, nil, checkpoint), checkpoint)
+        if not equipmentCurrent() then return nil, true end
+        -- 上次 yield 期间同步评分可能已建好同版本快照，不替换它。
+        if sharedEquipmentSnapshot and sharedEquipmentSource == equipment
+            and sharedEquipmentRevision == equipmentRevision then
+            snapshot = sharedEquipmentSnapshot
+        else
+            snapshot = prepared
+            sharedEquipmentSnapshot, sharedEquipmentSource = snapshot, equipment
+            sharedEquipmentRevision = equipmentRevision
+        end
+    end
+    local ctx = {
+        heroId = id, equipmentData = snapshot,
+        heroesData = copy(heroes or {}, nil, checkpoint),
+        artifactsData = copy(artifacts or {}, nil, checkpoint),
+        talentsData = copy(talents or {}, nil, checkpoint),
+        seeds = {}, teamUnits = {}, memo = {}, scores = {},
+    }
+    ctx = finishContext(ctx, checkpoint)
+    if not ctx then return nil end
+    if not equipmentCurrent() or store.Get("artifacts") ~= artifacts
+        or store.Get("talents") ~= talents or store.GetRevision("artifacts") ~= artifactRevision
+        or store.GetRevision("talents") ~= talentRevision then return nil, true end
+    local currentHeroes = store.Get("heroes")
+    if not sameHeroCombatData(ctx.heroesData, currentHeroes) then return nil, true end
+    -- 纯经验/等价重发可继续角标，但不把旧exp快照伪装成同步缓存的新revision。
+    if currentHeroes ~= heroes or contextRevision(store) ~= revision then return ctx end
+    entry = cachedContext(id, heroes, equipment, revision)
+    if entry and sameHeroCombatData(entry.heroesData, heroes) then return entry end
+    -- 本函数自己已在上方发布完整snapshot；无yield地登记完整ctx。
+    ctx.sourceHeroes, ctx.sourceEquipment, ctx.revision = heroes, equipment, revision
+    cached[id] = ctx
+    return ctx
+end
+
+-- 私有跨帧列表必须在冻结的上下文中评分，不能在每件上重新取得 live getContext。
+-- seqOverride 用于尚未带 seq 的精简库存；同步 score 的查找/回退口径保持不变。
+function M.scoreInContext(ctx, equip, targetSlot, seqOverride)
+    if not equip or not ctx then return 0 end
+    local seq = equip.seq or seqOverride
     if not seq then
         local source = ctx.sourceEquipment
         for key, item in pairs(source and source.inventory or {}) do
@@ -566,6 +677,12 @@ function M.score(equip, heroId, targetSlot)
     local value = math.floor(powerFor(ctx, unit, units, ctx.equipmentData) - ctx.currentPower + 0.5)
     ctx.scores[key] = value
     return value
+end
+
+function M.score(equip, heroId, targetSlot)
+    if not heroId then return M.genericScore(equip) end
+    if not equip then return 0 end
+    return M.scoreInContext(M.getContext(heroId), equip, targetSlot)
 end
 
 return M

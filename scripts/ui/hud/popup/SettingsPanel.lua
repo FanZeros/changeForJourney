@@ -106,11 +106,10 @@ local TOGGLE = {
     TEXT_FONT = 28,
 }
 
--- 9. 兑换码 / 性能诊断共用原来一行，不增加面板高度。
+-- 9. 兑换码独占原来一行；性能诊断改为全局 F8 快捷键。
 local CODE_BTN = {
-    CX = 340, CY = 1660, W = 350, H = 100,
+    CX = 540, CY = 1660, W = 750, H = 100,
 }
-local PERFORMANCE_BTN = { CX = 740, W = 350, H = 100 }
 
 -- 10. 入口文本
 local CODE_TXT = { FONT = 40 }
@@ -547,13 +546,6 @@ function SettingsPanel.handleInput(dx, dy)
         return true
     end
 
-    if hitTest(dx, dy, PERFORMANCE_BTN.CX, REDEEM_CODE_CY, PERFORMANCE_BTN.W, PERFORMANCE_BTN.H) then
-        state.draggingSlider = nil
-        BF.trigger("set_performance")
-        PerformancePanel.open()
-        return true
-    end
-
     -- 弹窗内部消费事件
     return true
 end
@@ -742,7 +734,6 @@ local function drawEntryButton(vg, key, rect, caption, oy)
 end
 local function drawEntryButtons(vg, oy)
     drawEntryButton(vg, "set_code", CODE_BTN, I18n.t("redeem_code"), oy)
-    drawEntryButton(vg, "set_performance", PERFORMANCE_BTN, "性能诊断", oy)
 end
 
 -- ============================================================================
@@ -893,12 +884,6 @@ function SettingsPanel.handleEmbeddedInput(dx, dy, yOffset)
     if hitTest(dx, ly, CODE_BTN.CX, REDEEM_CODE_CY, CODE_BTN.W, CODE_BTN.H) then
         BF.trigger("set_code")
         RedeemCodePanel.open()
-        return true
-    end
-    if hitTest(dx, ly, PERFORMANCE_BTN.CX, REDEEM_CODE_CY, PERFORMANCE_BTN.W, PERFORMANCE_BTN.H) then
-        state.draggingSlider = nil
-        BF.trigger("set_performance")
-        PerformancePanel.open()
         return true
     end
     return false

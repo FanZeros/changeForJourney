@@ -2,7 +2,8 @@
 function Start()
     local originalRequire = require
     local originalTime = time
-    local calls = { acquire = 0, release = 0, slot = 0, move = 0, finish = 0, wheel = 0, reset = 0 }
+    local calls = { acquire = 0, release = 0, slot = 0, move = 0, finish = 0, wheel = 0, reset = 0,
+        bind = 0, prepareUpdate = 0, prepareRead = 0, prepareCancel = 0 }
     local slot, linkedHero = nil, nil
     local equipDetailOpen = false
     local owned = { [1] = true, [2] = true }
@@ -30,6 +31,11 @@ function Start()
         ATTR_CLIP_TOP = 1264, ATTR_CLIP_HEIGHT = 552,
     })
     local panel = module({
+        capture = function(heroId, s)
+            return { heroId = heroId, slot = s, viewKey = tostring(heroId) .. "|" .. tostring(s) }
+        end,
+        prepare = noop, commit = noop, clearPrepared = noop,
+        update = function() error("生产Detail.update不得再双pump独立Equip worker") end,
         reset = function() calls.reset = calls.reset + 1 end,
         handleDragBegin = function(x, y) return x > 40 and y > 1050 and y < 2200 end,
         handleDragMove = function() calls.move = calls.move + 1; return true end,
@@ -40,6 +46,30 @@ function Start()
         end,
         handleInput = function() return true end,
     })
+    local preparation = { bind = function(deps)
+        calls.bind = calls.bind + 1
+        assert(deps.prepare == panel.prepare and deps.commit == panel.commit
+            and deps.clear == panel.clearPrepared and deps.slots == draw.DT_SLOTS,
+            "生产详情把配装预览与六槽评分绑定到同一个worker")
+        local prepared = { pending = true, scores = {}, upgrades = {} }
+        return {
+            update = function()
+                calls.prepareUpdate = calls.prepareUpdate + 1
+                local request = deps.capture()
+                prepared = { pending = false, viewKey = request.viewKey, scores = {}, upgrades = {} }
+            end,
+            read = function(viewKey)
+                calls.prepareRead = calls.prepareRead + 1
+                if prepared.viewKey == viewKey then return prepared end
+                return { pending = true, scores = {}, upgrades = {} }
+            end,
+            cancel = function()
+                calls.prepareCancel = calls.prepareCancel + 1
+                prepared = { pending = true, scores = {}, upgrades = {} }
+                deps.clear()
+            end,
+        }
+    end }
     local warehouse = module({
         acquireForEquipment = function(heroId, s) calls.acquire = calls.acquire + 1; linkedHero, slot = heroId, s end,
         releaseForEquipment = function() calls.release = calls.release + 1; linkedHero, slot = nil, nil end,
@@ -51,6 +81,7 @@ function Start()
         ["ui.character.detail.CharacterDetailDraw"] = draw,
         ["ui.character.detail.CharacterDetailAttrs"] = module({ STAT_LAYOUT = {} }),
         ["ui.character.detail.CharacterDetailEquip"] = panel,
+        ["ui.character.detail.CharacterDetailPreparation"] = preparation,
         ["ui.character.equip.EquipmentDetail"] = module({
             isOpen = function() return equipDetailOpen end,
             isCompactCorner = function() return true end,
@@ -72,19 +103,33 @@ function Start()
         return mods[name]
     end
     time = { elapsedTime = 100 }
-    local detail = originalRequire("ui.character.detail.CharacterDetail")
     local ok, err = pcall(function()
+        -- require/bind失败也进入恢复分支，不污染后续测试或真实存档。
+        local detail = originalRequire("ui.character.detail.CharacterDetail")
+        assert(calls.bind == 1, "详情仅绑定一个共享准备worker")
         detail.setContext({ getHeroRoster = function()
             return { { heroId = 1, owned = true }, { heroId = 2, owned = true }, { heroId = 3, owned = false } }
         end })
         detail.open(1, "attr")
         assert(calls.acquire == 0 and not detail.isEquipTab(), "属性入口不得自动开仓")
+        detail.update(0.016)
+        assert(calls.prepareUpdate == 0 and detail.getPreparedEquipment().pending == true,
+            "属性页不推进配装worker或暴露上次结果")
         detail.handleInput(445, 2308)
         assert(calls.acquire == 1 and linkedHero == 1 and slot == nil, "切配装即申请全部装备仓库")
+        assert(detail.getPreparedEquipment().pending == true, "切配装尚未Update保持pending")
+        detail.update(0.016)
+        assert(calls.prepareUpdate == 1 and detail.getPreparedEquipment().pending == false,
+            "生产Update只pump共享worker一次，read消费同一bundle")
         detail.handleInput(445, 2308)
         assert(calls.acquire == 1, "重复点配装不能重开仓库")
         detail.handleEquipmentSlotTap(540, 185)
         assert(slot == "helmet", "头盔槽同步部位")
+        assert(detail.getPreparedEquipment().pending == true, "换部位即拒绝旧bundle而不在read推进任务")
+        local slotUpdates = calls.prepareUpdate
+        detail.update(0.016)
+        assert(calls.prepareUpdate == slotUpdates + 1 and detail.getPreparedEquipment().pending == false,
+            "换部位的新bundle由下一次共享Update准备")
         detail.handleEquipmentSlotTap(70, 1200)
         assert(slot == nil, "非槽点击取消部位")
         detail.handleEquipmentSlotTap(325, 578)
@@ -97,13 +142,25 @@ function Start()
         detail.handleDragEnd(80, 1200)
         detail.handleScroll(-1, 80, 1400)
         assert(calls.move == 1 and calls.finish == 1 and calls.wheel == 1, "浮选打开时属性/套装仍能拖拽滚动")
+        local tabCancel = calls.prepareCancel
+        local tabUpdates = calls.prepareUpdate
         detail.handleInput(255, 2308)
         assert(calls.release == 1 and not detail.isEquipTab(), "离开配装立即释放仓库，不被浮选阻挡")
+        assert(calls.prepareCancel > tabCancel and detail.getPreparedEquipment().pending == true,
+            "离开配装边沿取消准备并立即隐藏旧bundle")
+        detail.update(0.016)
+        assert(calls.prepareUpdate == tabUpdates, "离开配装后Update不继续pump旧任务")
         equipDetailOpen = false
         detail.open(1, "equip")
         assert(calls.acquire == 2 and linkedHero == 1, "直接打开配装申请仓库")
+        detail.update(0.016)
+        local heroCancel = calls.prepareCancel
         detail._switchHero(1)
         assert(linkedHero == 2 and calls.acquire == 2, "配装切换角色只更新上下文，不重新开仓")
+        assert(calls.prepareCancel > heroCancel and detail.getPreparedEquipment().pending == true,
+            "活动配装换英雄取消旧准备，不显示上一英雄结果")
+        detail.update(0.016)
+        assert(detail.getPreparedEquipment().viewKey == "2|nil", "换英雄后Update发布新英雄bundle")
         detail._switchHero(1)
         assert(calls.release == 2 and not detail.isEquipTab(), "未获得角色退属性并释放仓库")
         detail.open(1, "equip")
@@ -128,8 +185,14 @@ function Start()
             "显式属性入口仍允许切属性并释放仓库")
         local releaseBeforeClose = calls.release
         detail.open(1, "equip")
+        detail.update(0.016)
+        local closeCancel, closeUpdates = calls.prepareCancel, calls.prepareUpdate
         detail.close()
         assert(calls.release == releaseBeforeClose + 1 and not detail.isEquipTab(), "关闭动画起始即释放仓库")
+        assert(calls.prepareCancel > closeCancel and detail.getPreparedEquipment().pending == true,
+            "关闭动画起始即取消准备，不保留可读旧结果")
+        detail.update(0.016)
+        assert(calls.prepareUpdate == closeUpdates, "关闭动画期间不推进配装任务")
         detail.forceClose()
         assert(calls.release == releaseBeforeClose + 1, "关闭后 forceClose 不重复释放")
         detail.open(1, "equip")

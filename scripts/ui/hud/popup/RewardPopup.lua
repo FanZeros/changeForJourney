@@ -743,6 +743,13 @@ function RewardPopup.isOpen()
     return false
 end
 
+--- 页面输入只被主动领奖阻挡；行内战斗提示不取消侧栏悬停、选择或按压。
+--- 关闭保护期保留原始 rowTag，不用 currentRowTag() 将已关闭行误判为全窗模态。
+---@return boolean
+function RewardPopup.blocksPageInput()
+    return RewardPopup.isOpen() and state.rowTag == nil
+end
+
 --- 移除指定索引的物品并刷新布局（领取单个后调用）
 ---@param index number 1-based 物品索引
 function RewardPopup.removeItem(index)

@@ -5,6 +5,7 @@ local LootBoxPage = require("ui.loot.LootBoxPage")
 local LootBoxSystem = require("systems.LootBoxSystem")
 local DrawUtil = require("core.DrawUtil")
 local RewardPopup = require("ui.hud.popup.RewardPopup")
+local UiToast = require("core.UiToast")
 local LootBox = {}
 
 -- 权威通知保留累计值；展示层只累计基线之后的增量，不改存档或资源到账。
@@ -53,8 +54,8 @@ local function showPendingNotice()
     -- 先消费展示缓冲，防止 show 回调重入时重复提示；这里不发放任何资源。
     pendingNotice.count, pendingNotice.essence = 0, 0
     showingNotice = true
-    RewardPopup.show("自动分解 " .. count .. " 件",
-        { { type = "essence", amount = essence } })
+    -- 后台到账通知仅作穿透短提示，不借当前焦点打开领奖模态或清掉页面悬停。
+    UiToast.show("自动分解 " .. count .. " 件 · 获得精粹 " .. essence, 3.0)
     showingNotice = false
     print("[LootBox] 自动分解合并提示: 新增件数=" .. count .. " 精粹=+" .. essence)
 end

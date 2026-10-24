@@ -83,7 +83,7 @@ function Start()
             record("frame.end")
         end
         for _, name in ipairs({ "nvgBeginPath", "nvgRect", "nvgFillColor", "nvgFill" }) do _G[name] = noop end
-        input = { GetMousePosition = function() return cursor end }
+        input = { GetMousePosition = function() return cursor end, GetKeyDown = noop }
         time = { elapsedTime = state.clock }
 
         local function page(name)
@@ -96,6 +96,8 @@ function Start()
                 handleDragMove = function(x, y) record(name .. ".move", x, y); return true end,
                 handleDragEnd = function(x, y) record(name .. ".up", x, y); return true end,
                 handleHover = function(x, y) record(name .. ".hover", x, y) end,
+                handleScroll = function(wheel, x, y) record(name .. ".scroll", x, y); return true end,
+                handleRightClick = function(x, y) record(name .. ".right", x, y); return true end,
                 getSeamAnim = function() return 1, 0, 0.45, 0.38 end,
             })
         end
@@ -139,6 +141,8 @@ function Start()
         local tri = page("tri")
         tri.isOpen = function() return state.tri end
         tri.drawHud = function() record("tri.hud") end
+        -- 三行页只spy绘制/点击；滚轮不模拟战斗区装备袋命中，允许真实Wheel继续路由侧栏。
+        tri.handleScroll = noop
         local character = page("character")
         character.getTotalPower = function() return 0 end
         local gates = {
@@ -165,9 +169,17 @@ function Start()
                 closeImmediate = function() record("detail.close") end,
             }),
             ["ui.battle.tri.BattleTriPage"] = tri, ["ui.character.panel.CharacterPanel"] = character,
+            ["ui.character.detail.CharacterDetail"] = mock({
+                handleEquipmentSlotTap = function(x, y) record("character.slot", x, y) end,
+            }),
+            ["ui.character.hero.AwakeningArtwork"] = mock({ bindInput = function() return noop end }),
+            -- 非large奖励走真实宿主旧路由；适配器必须返回接口，不能落入通用noop的false。
+            ["boot.RewardGesture"] = { bindHost = function() return { pointer = noop, observe = noop } end },
+            ["boot.TerminalInput"] = { bind = function() return { down = noop, move = noop, up = noop } end },
             ["ui.battle.scene.BattleScene"] = page("battle"), ["ui.town.TownScene"] = page("town"),
             ["ui.hud.BottomNav"] = { getSelectedIndex = function() return 3 end },
             ["core.DarkIcon"] = mock({ SHOWCASE = false }),
+            ["core.UiToast"] = mock({ draw = function() record("toast.draw") end }),
             ["core.DrawUtil"] = mock({ SEAMBAR_ASPECT = 0.04, SEAMBAR_ARROW_Y = 0.469,
                 seamSlideX = function() return 0 end }),
             ["ui.character.EquipCrossDrag"] = mock({ draw = function() record("equipment.overlay") end }),
@@ -175,8 +187,23 @@ function Start()
             ["ui.dev.CEPanel"] = mock({ draw = function() record("ce.draw") end }),
         }
         for path, name in pairs(gates) do mods[path] = page(name) end
-        mods["ui.hud.popup.RewardPopup"].currentPanel = function() return nil end
-        mods["ui.hud.popup.RewardPopup"].currentRowTag = function() return nil end
+        -- row归属、可见态与isOpen保护期分开：真实currentRowTag在关闭guard中已返回nil，
+        -- 不能用它代替底层row归属来判断是否阻断页面。非row旧用例仍由gates.reward控制。
+        local stubReward = mods["ui.hud.popup.RewardPopup"]
+        stubReward.isOpen = function() return state.gates.reward == true or state.rewardGuard == true end
+        stubReward.currentPanel = function() return state.gates.reward and state.rewardPanel or nil end
+        stubReward.currentRowTag = function() return state.gates.reward and state.rewardRowTag or nil end
+        stubReward.blocksPageInput = function()
+            return stubReward.isOpen() and state.rewardRowTag == nil
+        end
+        stubReward.close = function() record("reward.close") end
+        local backpack = mods["ui.backpack.BackpackPanel"]
+        backpack.isLeftMode = function() return true end
+        backpack.close = function() record("backpack.close"); state.gates.backpack = false end
+        backpack.peekEquipAt = function()
+            if state.backpackEquip then return { seq = 17 } end
+            return nil
+        end
         local realPaths = {
             ["boot.ArtifactGesture"] = true, ["boot.StandaloneHorizon"] = true,
             ["boot.StandaloneHorizonInput"] = true, ["boot.OfflineRewardOverlay"] = true,
@@ -202,6 +229,7 @@ function Start()
             "Horizon入口实际加载真实ArtifactGesture与HorizonInput")
 
         local button = { Button = { GetInt = function() return MOUSEB_LEFT end } }
+        local rightButton = { Button = { GetInt = function() return MOUSEB_RIGHT end } }
         local function tick()
             state.clock = state.clock + 1
             time.elapsedTime = state.clock
@@ -250,10 +278,14 @@ function Start()
         local function fixture(triMode, dprValue, framed)
             state.tri, state.church, state.arm, state.dragging, state.pointer = triMode, true, false, false, false
             state.gates = {}
+            state.rewardGuard, state.rewardRowTag, state.rewardPanel, state.backpackEquip = false, nil, nil, false
             RT.logicalW, RT.logicalH, RT.windowW, RT.windowH = 1920, 1080, 1920, 1080
             RT.dpr, RT.frameScale = dprValue, framed and 0.82 or 1
             RT.frameOx, RT.frameOy = framed and 97 or 0, framed and 41 or 0
+            clear()
             HandleNanoVGRenderHorizon()
+            check(count("toast.draw") == 1, "tri=" .. tostring(triMode)
+                .. "真实Horizon普通/三行每帧toast.draw恰一次（含提前finishFrame路径）")
             clear()
         end
 
@@ -488,7 +520,167 @@ function Start()
                 check(count("church.tap") == 0, label .. "设计位移阈值阻止空白滚动变tap")
             end
         end
-        print("[artifact_horizon_gesture_test] real modules exercised; layout/DPR/frame/touch/hover/draw/seam/low-scale cases complete")
+        -- 已有塔/副本gate与draw spy足以走提前返回，无需构造战斗数据或扩加载白名单。
+        for _, gate in ipairs({ "tower", "dungeon" }) do
+            fixture(false, 2, true)
+            state.gates[gate] = true
+            clear(); HandleNanoVGRenderHorizon()
+            check(count(gate .. ".draw") == 1 and count("toast.draw") == 1,
+                gate .. "真实Horizon提前finishFrame仍只画一次toast")
+            check(index("toast.draw") > index(gate .. ".draw")
+                and index("toast.draw") < index("frame.end"), gate .. "toast在业务绘制后、帧结束前")
+        end
+
+        -- H：行内奖励不是页面模态。guard故意让isOpen=true、currentRowTag=nil，
+        -- 独立断言页面仍可交互，防止用isOpen或isOpen+currentRowTag伪装修复。
+        local function reward(rowTag, guarded, panelId)
+            state.rewardRowTag, state.rewardGuard, state.rewardPanel = rowTag, guarded, panelId
+            state.gates.reward = not guarded
+        end
+        local function noRewardInput(label)
+            for _, suffix in ipairs({ "down", "move", "up", "tap", "scroll", "close" }) do
+                check(count("reward." .. suffix) == 0, label .. "不误派奖励" .. suffix)
+            end
+        end
+        local function wheel(panelId, x, y)
+            position(panelId, x, y)
+            HandleMouseWheelHorizon("MouseWheel", { Wheel = { GetInt = function() return 1 end } })
+        end
+        for _, triMode in ipairs({ false, true }) do
+            for rowTag = 1, 3 do
+                for _, guarded in ipairs({ false, true }) do
+                    fixture(triMode, 2, true)
+                    reward(rowTag, guarded)
+                    local label = "row=" .. rowTag .. " guard=" .. tostring(guarded)
+                        .. " tri=" .. tostring(triMode)
+                    check(stubReward.isOpen() == true, label .. "奖励可见/关闭保护仍报告isOpen")
+                    if guarded then
+                        check(stubReward.currentRowTag() == nil, label .. "关闭guard对外已无row")
+                    else
+                        check(stubReward.currentRowTag() == rowTag, label .. "可见期对外保留row")
+                    end
+                    check(stubReward.blocksPageInput() == false, label .. "独立期望：行内含guard不阻页面")
+                    check(realModules["boot.ArtifactGesture"].isActive() == true,
+                        label .. "真实神器gate仍激活")
+                    position("left", 210, 1380)
+                    HandleEquipmentHoverTickHorizon(); tick(); HandleEquipmentHoverTickHorizon()
+                    check(count("church.hover") == 2 and count("detail.close") == 0,
+                        label .. "持续悬停不closeImmediate详情")
+                    near(last("church.hover").x, 210, label .. "hover仍用left设计x")
+                    near(last("church.hover").y, 1380, label .. "hover仍用left设计y")
+                    clear(); down("left", 140, 1300); up("left", 145, 1302)
+                    check(count("artifact.down") == 1 and count("artifact.up") == 1
+                        and count("church.tap") == 1, label .. "奖励期间新点击仍只派原页一次")
+                    check(count("detail.close") == 0 and count("artifact.cancel") == 0,
+                        label .. "新点击未被奖励错误取消")
+                    noForeignTap(label); noRewardInput(label)
+
+                    -- 奖励在已起拖后出现；Move与finishFrame都必须保持原press。
+                    fixture(triMode, 2, true); state.arm = true
+                    down("left", 140, 1300); move("left", 300, 1450)
+                    check(state.pointer and state.dragging, label .. "奖励出现前确实已起拖")
+                    clear(); reward(rowTag, guarded)
+                    move("left", 350, 1470); HandleNanoVGRenderHorizon()
+                    check(count("artifact.move") == 1 and count("artifact.overlay") == 1
+                        and state.pointer and state.dragging, label .. "奖励出现不截断拖拽/末层绘制")
+                    check(count("artifact.cancel") == 0 and count("detail.close") == 0,
+                        label .. "move/draw不错误取消或关闭详情")
+                    up("left", 350, 1470)
+                    check(count("artifact.up") == 1 and count("church.tap") == 0
+                        and not state.pointer and not state.dragging, label .. "原拖拽正常释放且不变点击")
+                    noForeignTap(label); noRewardInput(label)
+
+                    -- 右角色配装gate、左仓库装备格/右键与真实Wheel同样不应受行内提示影响。
+                    fixture(triMode, 2, true); reward(rowTag, guarded)
+                    down("right", 140, 1300); up("right", 140, 1300)
+                    check(count("character.slot") == 1 and count("character.tap") == 1,
+                        label .. "右栏配装槽回调与角色点击各一次")
+                    near(last("character.slot").x, 140, label .. "配装槽设计x")
+                    check(count("church.tap") == 0, label .. "右栏点击不落教堂")
+                    clear(); wheel("right", 140, 1300)
+                    check(count("character.scroll") == 1 and count("church.scroll") == 0,
+                        label .. "右栏滚轮只滚角色")
+                    noRewardInput(label)
+                    state.church, state.gates.backpack, state.backpackEquip = false, true, true
+                    clear(); HandleNanoVGRenderHorizon(); clear()
+                    down("left", 140, 1300); up("left", 140, 1300)
+                    check(count("backpack.down") == 1 and count("backpack.tap") == 1,
+                        label .. "仓库装备格原页只点击一次")
+                    check(count("character.slot") == 0 and count("character.tap") == 0
+                        and count("church.tap") == 0, label .. "仓库不误派角色/神器")
+                    clear(); position("left", 140, 1300)
+                    HandleMouseButtonDownHorizon("MouseButtonDown", rightButton)
+                    HandleMouseButtonUpHorizon("MouseButtonUp", rightButton)
+                    check(count("backpack.right") == 1 and count("backpack.tap") == 0,
+                        label .. "仓库右键不被isOpen吞掉且不伪造左击")
+                    clear(); wheel("left", 140, 1300)
+                    check(count("backpack.scroll") == 1 and count("character.scroll") == 0,
+                        label .. "左栏滚轮只滚仓库")
+                    noRewardInput(label)
+                    clear()
+                    down("left", 1079, 2400 * mods["core.DrawUtil"].SEAMBAR_ARROW_Y)
+                    up("left", 1079, 2400 * mods["core.DrawUtil"].SEAMBAR_ARROW_Y)
+                    check(count("backpack.close") == 1 and not state.gates.backpack
+                        and count("backpack.tap") == 0, label .. "row含guard不阻真实seam返回")
+                    noRewardInput(label .. "seam")
+                end
+                -- 同一按压跨过可见row -> row关闭guard，不能因currentRowTag变nil取消。
+                fixture(triMode, 2, true); reward(rowTag, false)
+                down("left", 140, 1300); reward(rowTag, true)
+                move("left", 142, 1301); up("left", 142, 1301)
+                check(count("artifact.down") == 1 and count("artifact.move") == 1
+                    and count("artifact.up") == 1 and count("church.tap") == 1
+                    and count("artifact.cancel") == 0 and count("detail.close") == 0,
+                    "row=" .. rowTag .. " tri=" .. tostring(triMode) .. "关闭guard不打断既有轻点")
+                noForeignTap("row转guard"); noRewardInput("row转guard")
+            end
+        end
+
+        -- I：真实宿主+真实ArtifactGesture的nonrow对照；Reward与其它业务页仍用内存stub，
+        -- 不加载真正领奖/发货/玩家档。全局/左右归属奖励及其关闭guard仍保持旧模态。
+        for _, triMode in ipairs({ false, true }) do
+            for _, owner in ipairs({ "global", "left", "right" }) do
+                for _, guarded in ipairs({ false, true }) do
+                    fixture(triMode, 2, true); state.arm = true
+                    down("left", 140, 1300); move("left", 300, 1450)
+                    local label = "nonrow=" .. owner .. " guard=" .. tostring(guarded)
+                        .. " tri=" .. tostring(triMode)
+                    clear(); reward(nil, guarded, owner ~= "global" and owner or nil)
+                    check(stubReward.isOpen() == true and stubReward.currentRowTag() == nil
+                        and stubReward.blocksPageInput() == true, label .. "独立期望：主动奖励含guard仍模态")
+                    check(realModules["boot.ArtifactGesture"].isActive() == false,
+                        label .. "真实神器gate仍阻断")
+                    HandleNanoVGRenderHorizon()
+                    check(count("artifact.cancel") == 1 and count("detail.close") == 1
+                        and count("artifact.overlay") == 0 and not state.pointer and not state.dragging,
+                        label .. "中途主动奖励安全取消原拖拽并关闭详情")
+                    up("left", 300, 1450)
+                    check(count("artifact.up") == 0 and count("church.tap") == 0,
+                        label .. "旧Up不结算原神器/不穿透点击")
+                    noForeignTap(label)
+                    clear(); position("left", 210, 1380); HandleEquipmentHoverTickHorizon()
+                    check(count("church.hover") == 0, label .. "模态不悬停底层神器")
+                    clear(); down("right", 140, 1300); up("right", 140, 1300)
+                    check(count("character.slot") == 0 and count("character.tap") == 0,
+                        label .. "模态不点击右配装/角色")
+                    check(count("artifact.down") == 0, label .. "模态不新捕获神器")
+                    if owner == "left" and not guarded then
+                        check(count("reward.close") == 1, label .. "归属左奖励外点击只关闭奖励")
+                    else
+                        check(count("reward.tap") == 1, label .. "模态点击只交奖励一次")
+                    end
+                    -- stub不自行关窗，显式退出模态后只派发下一次新点击，不能复活旧拖拽。
+                    state.gates.reward, state.rewardGuard, state.rewardPanel = false, false, nil
+                    up("left", 300, 1450)
+                    clear(); state.arm = false
+                    down("left", 140, 1300); up("left", 140, 1300)
+                    check(count("artifact.down") == 1 and count("artifact.up") == 1
+                        and count("church.tap") == 1, label .. "关闭后新手势恢复一次")
+                    noForeignTap(label .. "恢复"); noRewardInput(label .. "恢复")
+                end
+            end
+        end
+        print("[artifact_horizon_gesture_test] real host cases complete: layout/DPR/frame/touch/hover/draw/seam/low-scale/row1-3+guard/nonrow-modal/character/backpack/wheel")
     end)
     require = originalRequire
     VP._notes = oldNotes

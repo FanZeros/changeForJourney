@@ -35,6 +35,7 @@ shared.slotenhance.SlotEnhanceSchema shared.talents.TalentsSchema shared.task.Ta
 shared.task.TaskCompat shared.tavern.TavernSchema
 systems.ArtifactBridge systems.ArtifactRuntime systems.AttributeDef systems.AwakeningGrowth
 systems.BattleDiag systems.BattleStats systems.ClassGateRuntime systems.CombatFormula
+systems.BattleOffenseGuard systems.BattleOffenseCapabilities
 systems.CombatPower systems.CombatPowerEstimate systems.DropSystem systems.EquipmentPower
 systems.EquipmentQuery systems.EquipmentSecondaryStats systems.EquipmentSetRuntime
 systems.EquipmentSetSystem systems.EquipmentSystem systems.EquipmentStatGrowth systems.ExtraTalentSystem

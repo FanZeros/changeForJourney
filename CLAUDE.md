@@ -12,6 +12,15 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-24，战斗音乐三首曲池，PR推进）
+
+- 用户要求“可以试试扩充战斗曲池”，随后明确“可以pr”，授权仅本项白名单提交、正常push独立 `feat1024/battle-bgm-playlist` 并创建base=`workspace1005`的PR，不自动合并发布。已fetch并无冲突快进最新目标 `629c2fc8`，保留外部已合PR192／193／194与装备优化，不重复带旧塔战斗成果。未运行main、读玩家档、清档或改战斗规则；实际提交／push／PR成功后补记，不提前声称创建。
+- 两次文本生成各一首，幽关行军202.261秒、残月破阵157.141秒，服务未严格遵循90–120秒提示；正式48kHz双声道OGG按原战斗曲-21.23 LUFS匹配，成品实测-21.27／-21.26 LUFS，原90.024秒曲保持不动。原稿保存在候选音频目录，仅正式两OGG及官方meta为新增交付资源。未人工试听，不冒称无意外人声／审美／设备听感或无缝节拍验收通过。
+- GameBGM保留场景API与双通道，战斗三首顺序循环，曲尾0.4秒窗口交叉淡变、新曲从头播，按实际音源位置和wrap判断、不消费玩法RNG、同scene／换关不重播；缺曲跳过、仅原曲可用则保循环，保留曲重启缺失和scene返回均可回退。淡入中的wrap锁存，Seek后立即建立位置基线，避免首update前wrap漏换。主音量只乘一次并作用双通道包络，Play显式0恢复采样率。Standalone旧tab路由和开场早退本轮不改，终焉／来信／其他曲不入战斗池。
+- 融合最新目标后最终官方b122成功，1646项／738根Lua与三首战斗OGG实际UUID-hash载荷逐字节及声明size一致，源码集合缺失／额外0，历史候选／本轮音乐原稿／内部验证0入包。两修改Lua逐文件severity1 Error0（仍有Warning），不称全仓静态清零。b118曾混入历史背景候选，补本地前缀ignore后净化；本地配置按PR构建前备份恢复，不提交构建身份或临时ignore。
+- b122后五独立Runtime均业务ALL PASS／actualexit0／无timeout：音频22组876、切关、塔一致性11组363、一键装备live 5组730及真实锻炉宿主136。曾误将供宿主调用的forge_close_lifecycle模块直接运行而65秒超时，原记录保留；改用正式forge_backpack_layer_test入口复跑通过，未改生产或断言。音频含三首真实Sound加载／时长／48k／stereo，其余播放与推进为隔离音源替身，不等真实混音输出／设备续播或长时间实听。独立只读指出两缺陷及首采样wrap遗漏后已修并追加回归，最后单行位置基线修复由本线程Runtime验证，不冒称独立复核再次跑过。headless无音频输出／shader环境错误保留。
+- 内证仅 `.git/validation/bgm-playlist1024`，原未跟踪上传／技能／图片候选保持。持续推进已授权范围且尊重停止、权限拒绝和安全边界，按当前直接继续不机械询问；仅正常push本任务分支，不推workspace系列／强推／自动合并发布，凭据不持久化到仓库。
+
 ## 上次做了什么（2026-10-24，通天塔与普通战斗一致性，PR #192 已创建）
 
 - **已创建正式 PR #192**：https://github.com/FanZeros/changeForJourney/pull/192，head=`fix1024/tower-battle-consistency@5b4d22fb`，base=`workspace1005@8900697b`，open／draft=false／merged=false／mergeable=clean，5提交、34文件 +3045/−169。创建前同源查重 open=0；推送后目标未再前进。鉴权经用户即时提供的令牌，仅本次命令进程内使用；令牌值未写入源码／提交对象／.git/config／FETCH_HEAD／packed-refs，已核零残留。**该令牌已在聊天中明文暴露，应撤销轮换**。不推 workspace 系列、不强推、不自动合并或发布。

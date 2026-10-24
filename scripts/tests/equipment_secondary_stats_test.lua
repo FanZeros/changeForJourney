@@ -78,6 +78,9 @@ local function oldStats(tpl, level, quality, corrupt)
         if AD.META[row[1]].dataType == AD.TYPE_INT then value = math.floor(value + 0.5) end
         stats[index] = { row[1], value }
     end
+    for _, row in ipairs(tpl.intrinsicStats or {}) do
+        stats[#stats + 1] = { row[1], row[2] }
+    end
     return stats
 end
 local function noRNG(fn, label)
@@ -104,7 +107,8 @@ local function testTemplates()
                     check(item and item.secondaryRoll and item.secondaryRoll.version == 1, label .. "有新字段")
                     if item and item.secondaryRoll then
                         local roll = item.secondaryRoll
-                        check(#roll.stats == count and #item.baseStats == #tpl.stats, label .. "条数不增减")
+                        check(#roll.stats == count
+                            and #item.baseStats == #tpl.stats + #(tpl.intrinsicStats or {}), label .. "原副槽不变且附加固有属性")
                         check(same(item.baseStats[1], oldStats(tpl, level, quality)[1]), label .. "主属性完全不变")
                         local seen = { [tpl.stats[1][1]] = true }
                         local pool = expectedPool(tpl)

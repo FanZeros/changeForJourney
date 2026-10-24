@@ -865,10 +865,9 @@ function TAL.onBattleStart(allies, enemies)
                 local hpBonus = 20
                 if hasAwaken(unit, 6) then hpBonus = 35
                 elseif hasAwaken(unit, 1) then hpBonus = 25 end
-                -- 仇恨倍率: 基础+0.5(1.5倍), 觉醒3→+1(2倍)
-                -- AD.THREAT 同时作为 selectTarget 静态权重(×10) 和 onDamageDone/onHealingDone 的仇恨生成倍率
-                local threatBonus = 0.5
-                if hasAwaken(unit, 3) then threatBonus = 1 end
+                -- 怨引以100为基准：+50为1.5倍，觉醒3的+100为2倍。
+                local threatBonus = AD.THREAT_BASE * 0.5
+                if hasAwaken(unit, 3) then threatBonus = AD.THREAT_BASE end
                 -- 觉醒3: 护甲+8
                 local armorBonus = hasAwaken(unit, 3) and 8 or 0
 

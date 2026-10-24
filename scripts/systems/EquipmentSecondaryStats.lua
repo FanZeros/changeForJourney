@@ -248,6 +248,28 @@ function M.resolve(tpl, data)
     return result.version == 1 and result.stats or nil
 end
 
+--- 固有属性由模板确定；旧缓存只补这一层，不重抽或覆盖已有主副属性。
+---@param tpl table|nil
+---@param stats table[]
+---@return table[]
+function M.syncIntrinsicStats(tpl, stats)
+    for _, intrinsic in ipairs(tpl and tpl.intrinsicStats or {}) do
+        local found = false
+        for index = #stats, 1, -1 do
+            if stats[index][1] == intrinsic[1] then
+                if found then
+                    table.remove(stats, index)
+                else
+                    stats[index][2] = intrinsic[2]
+                    found = true
+                end
+            end
+        end
+        if not found then stats[#stats + 1] = { intrinsic[1], intrinsic[2] } end
+    end
+    return stats
+end
+
 --- 主属性只读原模板，副属性只读保存基值；倍率只在此应用一次。
 ---@param tpl table|nil
 ---@param level number
@@ -271,7 +293,7 @@ function M.buildBaseStats(tpl, level, baseStrength, data)
         if meta and meta.dataType == AD.TYPE_INT then value = math.floor(value + 0.5) end
         stats[index] = { row[1], value }
     end
-    return stats
+    return M.syncIntrinsicStats(tpl, stats)
 end
 
 --- 水合仅校验/拷贝已有字段；绝不为无字段旧装备补抽。
@@ -285,6 +307,8 @@ function M.restore(tpl, equip)
         local quality = EC.QUALITY[equip.quality]
         local strength = (quality and quality.baseStrength or 1.0) * (equip.corruptBaseMult or 1)
         equip.baseStats = M.buildBaseStats(tpl, equip.level, strength, equip.secondaryRoll)
+    else
+        M.syncIntrinsicStats(tpl, equip.baseStats)
     end
 end
 

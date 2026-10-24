@@ -189,8 +189,7 @@ function CF.selectTarget(units)
 
     for i, u in ipairs(units) do
         if u.attrs and u.attrs:isAlive() and not u.artifactUntargetable then
-            local t = u.attrs:get(AD.THREAT)
-            if t < 1 then t = 1 end
+            local t = math.max(1, u.attrs:get(AD.THREAT)) / AD.THREAT_BASE
             -- [前后排] 乘以位置受击权重: 前排(靠中心)被攻击概率显著更高
             t = t * BattleLayout.hitWeight(i)
             totalThreat = totalThreat + t

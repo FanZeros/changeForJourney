@@ -120,6 +120,8 @@ handlers[Protocol.ACTION_TYPES.SYNTHESIZE_HERO] = function(uid, params)
         success         = true,
         heroId          = result.heroId,
         remainingShards = result.remainingShards,
+        tavernCoin      = result.tavernCoin,
+        overflowShards  = result.overflowShards,
     }
 end
 

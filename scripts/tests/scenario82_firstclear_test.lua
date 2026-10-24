@@ -109,6 +109,7 @@ local function productionCases()
         ["systems.StoryPlayer"] = true, ["ui.story.ScenarioDialogue"] = true,
         ["runtime.ClientDispatcher"] = true, ["core.GameState"] = true,
         ["core.EventBus"] = true, ["ui.story.StoryDisplay"] = true,
+        ["ui.story.StoryCinematicMotion"] = true,
     }
     local sources = {}
     for name in pairs(allowedSources) do
@@ -195,7 +196,11 @@ local function productionCases()
         local deps = {} ---@type table<string, any>
         local env = setmetatable({}, { __index = _G }) ---@type any
         env.File, env.fileSystem, env.cjson = memoryFile, memoryFS, cjson
-        env.nvgCreateImage = function() ioCounts.images = ioCounts.images + 1; return -1 end
+        env.nvgCreateImage = function(ctx)
+            assert(ctx == nil, "专项对话不得持有真实GPU上下文")
+            ioCounts.images = ioCounts.images + 1
+            return -1 -- 立绘按需加载只经过叶子替身，不转发原生图片创建。
+        end
         env.cache = { GetResource = function() error("专项不允许加载GPU/音频资源") end }
         env.require = function(name)
             if deps[name] ~= nil then return deps[name] end
@@ -218,9 +223,12 @@ local function productionCases()
         -- GameState 的单机同步出口仅写新 Dispatcher；不启动整个 LocalActionBridge/页面。
         ctx.state.setLocalPlayerSync(function(player) ctx.dispatcher.set("player", player) end)
         deps["core.DrawUtil"], deps["ui.widget.HeroFrame"] = {}, {}
+        -- 性能计时为纯叶子，不影响真实快照/原子保存逻辑。
+        deps["core.PerformanceMonitor"] = { wrap = function(_, fn) return fn end }
         deps["core.I18n"] = nativeRequire("core.I18n")
         deps["core.I18nStory"] = nativeRequire("core.I18nStory")
         deps["ui.story.StoryDisplay"] = compile("ui.story.StoryDisplay")
+        deps["ui.story.StoryCinematicMotion"] = compile("ui.story.StoryCinematicMotion")
         deps["ui.story.ScenarioDialogue"] = compile("ui.story.ScenarioDialogue")
         ctx.dialogue = deps["ui.story.ScenarioDialogue"]
         ctx.dialogue.init(nil, nil) -- update/advance真实，场景为空禁止blip；从不draw。
@@ -577,7 +585,7 @@ local function productionCases()
         ctx.dialogue.skip()
         check(ctx.actions[1].result.success, "用例10 非82 preClaimed正式服务仍可领奖")
     end
-    eq(ioCounts.images, 0, "全部小情景未创建GPU图片")
+    check(ioCounts.images > 0, "立绘按需加载只调用无GPU上下文的图片叶子替身")
     check(ioCounts.writes > 0 and ioCounts.reads > 0 and ioCounts.writes == ioCounts.renames,
         "真实Save多次Flush/Restore走内存临时File与原子替换，不触碰玩家文件")
     print(PREFIX .. "production restart instances=" .. instances .. " JSON writes=" .. ioCounts.writes
@@ -642,7 +650,60 @@ local function legacyCases()
     check(ok5b, "用例5b: 补通关后重试成功: " .. tostring(err5b))
     eq(shardsOf(1), 10, "用例5b: 重试发放 10 碎片")
     check(grantedOf(82), "用例5b: 成功后记账")
+    -- 碎片封顶后，剧情仍只领一次，回执必须对应实际片数和补偿币。
+    for _, sample in ipairs({
+        { shards = 89, gain = 1, coin = 45 },
+        { shards = 90, gain = 0, coin = 50 },
+    }) do
+        resetModules({ shards = sample.shards })
+        local ok, err, result = BS.ClaimScenarioReward(UID, 82, true)
+        check(ok, "剧情超额归并成功: " .. tostring(err))
+        eq(shardsOf(1), 90, "剧情不能超过剩余觉醒总需求")
+        eq(modules.currency.tavernCoin, sample.coin, "剧情超额按每片5币补偿")
+        eq(result.reward.amount, sample.gain, "剧情回包仅报告实际保留片数")
+        eq(result.reward.tavernCoin, sample.coin, "剧情回包报告实际补偿币")
+        check(grantedOf(82), "剧情片币共同发放后记账")
+        eq(BS.ClaimScenarioReward(UID, 82, true), false, "超额剧情仍防重复领取")
+        eq(modules.currency.tavernCoin, sample.coin, "重复领取不能重复补偿")
+    end
+    resetModules({ shards = 89 })
+    modules.currency = nil
+    eq(BS.ClaimScenarioReward(UID, 82, true), false, "缺失币模块时拒绝，不能只截碎片")
+    eq(shardsOf(1), 89, "发奖失败保留原片")
+    check(not grantedOf(82), "发奖失败不消费剧情领取账本")
+    modules.currency = {}
+    check(BS.ClaimScenarioReward(UID, 82, true), "恢复币模块后同剧情可重试")
+    eq(shardsOf(1), 90, "重试只保留所需一片")
+    eq(modules.currency.tavernCoin, 45, "重试补齐九片币")
 
+    -- 103整卡奖励不能把碎片存根误判为已拥有；重复整卡也按实际缺口发片和币。
+    resetModules()
+    modules.battle.clearedStages["103"] = true
+    modules.heroes.roster[2] = { shards = 100, _shardMigrated = true }
+    modules.heroes.roster[3] = { level = 1, shards = 0, _shardMigrated = true }
+    local heroOk, heroErr, heroResult = BS.ClaimScenarioReward(UID, 11, true)
+    check(heroOk, "剧情整卡解锁碎片存根: " .. tostring(heroErr))
+    eq(heroResult.reward.heroId, 2, "优先选择未拥有而不是已有英雄")
+    eq(heroResult.reward.isNew, true, "存根首次整卡仍标为新英雄")
+    eq(modules.heroes.roster[2].level, 1, "碎片存根获得真实等级")
+    eq(shardsOf(2), 90, "首次整卡不保留已免除的合成费用")
+    eq(heroResult.reward.tavernCoin, 50, "首次整卡附带十片旧库存补偿币")
+    eq(modules.currency.tavernCoin, 50, "整卡补偿实际到账")
+    eq(BS.ClaimScenarioReward(UID, 11, true), false, "整卡剧情也拒绝重复领币")
+
+    resetModules()
+    modules.battle.clearedStages["103"] = true
+    for _, heroId in ipairs({ 2, 3 }) do
+        modules.heroes.roster[heroId] = { level = 1, shards = 89,
+            _shardMigrated = true, _awk3Migrated = true }
+    end
+    local dupeOk, dupeErr, dupeResult = BS.ClaimScenarioReward(UID, 11, true)
+    check(dupeOk, "剧情重复整卡按需求拆分: " .. tostring(dupeErr))
+    eq(dupeResult.reward.isNew, false, "重复整卡不伪装新英雄")
+    eq(dupeResult.reward.shardGain, 1, "剧情重复整卡只保留所需一片")
+    eq(dupeResult.reward.tavernCoin, 45, "剧情重复整卡其余九片转币")
+    eq(shardsOf(dupeResult.reward.heroId), 90, "剧情重复整卡库存封顶")
+    eq(modules.currency.tavernCoin, 45, "剧情重复整卡币实际到账")
 end
 
 function Start()

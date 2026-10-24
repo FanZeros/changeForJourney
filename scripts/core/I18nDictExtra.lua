@@ -9,6 +9,13 @@ local function add(zh, tw, en, ja, ko)
     D.ko[zh] = ko
 end
 
+-- ===== 碎片需求与溢出处理 =====
+add("已集齐", "已集齊", "Collected", "収集済み", "수집 완료")
+add("无需转化", "無需轉化", "No conversion needed", "変換不要", "변환 불필요")
+add("没有需要补充的UR碎片", "沒有需要補充的UR碎片", "No UR shards need replenishing", "補充が必要なURの欠片はありません", "보충이 필요한 UR 조각이 없습니다")
+add("最多转化%d个，今日剩余%d/%d", "最多轉化%d個，今日剩餘%d/%d", "Convert up to %d; %d/%d left today", "最大%d個変換・本日残り%d/%d", "최대 %d개 변환, 오늘 %d/%d 남음")
+add("超出所需的角色和碎片会自动转化为酒馆币", "超出所需的角色和碎片會自動轉化為酒館幣", "Unneeded duplicate heroes and excess shards automatically become Tavern Coins", "必要数を超えた重複英雄と欠片は酒場コインに自動変換", "필요량을 넘는 중복 영웅과 조각은 주점 코인으로 자동 변환됩니다")
+
 -- ===== 暂停战场状态 =====
 add("战斗已暂停", "戰鬥已暫停", "Battle paused", "戦闘一時停止", "전투 일시 정지")
 

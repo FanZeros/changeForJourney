@@ -483,13 +483,29 @@ function M.draw(vg, heroId)
     local costText = selectedCost > 0 and ("/" .. selectedCost) or ""
     local fullText = shardNumText .. costText
     DrawUtil.drawShardIcon(vg, heroId, SHARD_ICON_CX, SHARD_ROW_CY, SHARD_ICON_SIZE, 1.0)
-    -- 碎片数量：够=亮青，不够=灰蓝色
+    -- 碎片数量：够=亮青，不够=灰蓝色；字号只影响该行，不改变图标/按钮/热区。
     local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0x8b, 0x95, 0xa5 }
+    local shardTextX = SHARD_ICON_CX + SHARD_ICON_SIZE * 0.5 + 18
+    local shardMaxWidth = BTN_CX - BTN_W * 0.5 - 12 - shardTextX
+    local shardFont = (currentShards >= 100 or selectedCost >= 100) and 48 or 66
+    nvgSave(vg)
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 66)
+    nvgFontSize(vg, shardFont)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    -- 测量完整“拥有/需求”，而非只按位数估宽；长旧库存也不截字或侵入按钮。
+    local shardBounds = {}
+    local shardWidth = nvgTextBounds(vg, 0, 0, fullText, shardBounds)
+    shardWidth = math.max(shardWidth, shardBounds[3] or 0)
+    while shardWidth > shardMaxWidth do
+        -- 原生字体的hinting/字墨可能不严格线性，缩号后再次测量，不能只做位数估算。
+        shardFont = shardFont * math.min(shardMaxWidth / shardWidth, 0.95)
+        nvgFontSize(vg, shardFont)
+        shardWidth = nvgTextBounds(vg, 0, 0, fullText, shardBounds)
+        shardWidth = math.max(shardWidth, shardBounds[3] or 0)
+    end
     nvgFillColor(vg, nvgRGBA(shardColor[1], shardColor[2], shardColor[3], 255))
-    nvgText(vg, SHARD_ICON_CX + SHARD_ICON_SIZE * 0.5 + 18, SHARD_ROW_CY, fullText, nil)
+    nvgText(vg, shardTextX, SHARD_ROW_CY, fullText, nil)
+    nvgRestore(vg)
 
     local currentNodeActive = activated[selectedNode]
     local btnText, btnAlpha, btnDisabled

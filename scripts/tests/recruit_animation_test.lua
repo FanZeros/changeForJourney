@@ -253,7 +253,13 @@ local function newContext(options)
         else record("fill", copy(shape)) end
     end
     env.nvgFontFace = function(_, font) record("font", { name = font }) end
-    env.nvgFontSize = function(_, size) assert(finite(size) and size > 0, "invalid font size") end
+    env.nvgFontSize = function(_, size)
+        assert(finite(size) and size > 0, "invalid font size")
+        ctx.fontSize = size
+    end
+    env.nvgTextBounds = function(_, _, _, text)
+        return (utf8.len(text) or #text) * (ctx.fontSize or 24) * 0.56
+    end
     env.nvgTextAlign = noop
     env.nvgCreateImage = function(_, path)
         assert(type(path) == "string" and path:sub(1, 6) == "image/", "unexpected image resource")
@@ -277,6 +283,7 @@ local function newContext(options)
         RANGER = "ranger", ASSASSIN = "assassin", PRIEST = "priest" })
     stub("config.HeroConfig", { get = function(id) return { name = "测试英雄" .. id, classId = "knight" } end })
     stub("core.BattleLayout", { cardHeightForWidth = function(width) return width * 5 / 3 end })
+    stub("core.I18n", { lookup = function(text) return text end })
     stub("config.ResourceDefs", { DEFS = {
         gold = { iconPath = "image/test/gold.png", quality = 1, name = "测试金币" },
         ticket = { iconPath = "image/test/ticket.png", quality = 3, name = "测试券" },

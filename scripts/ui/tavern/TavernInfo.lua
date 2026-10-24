@@ -159,6 +159,7 @@ local function buildLayout(vg, poolId, width)
         end
     end
     for _, parts in ipairs(ruleParagraphs(poolId)) do addParagraph(parts, false) end
+    addParagraph(paragraph({ "超出所需的角色和碎片会自动转化为酒馆币" }), false)
     result.height = result.height + 24
     addParagraph({ segment("可获得的奖励：", TEXT) }, false)
     result.height = result.height + 8

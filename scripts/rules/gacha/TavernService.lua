@@ -5,10 +5,12 @@
 
 local PDM          = require("rules.character.PlayerDataManager")
 local TavernConfig = require("config.TavernConfig")
+local HeroShardPolicy = require("shared.heroes.HeroShardPolicy")
+local HeroShardService = require("rules.hero.HeroShardService")
 
 local TavernService = {}
 
--- 购买计划只做原有校验；周期刷新在入口完成，交付阶段仍重新读取英雄模块。
+-- 购买计划只读校验；周期刷新在入口完成，交付前不扣费或发布通知。
 local function planPurchase(uid, item, itemId, quantity, tavern, currency)
     -- 检查购买次数限制（limitCount < 0 = 不限购；购买记录始终累计）
     local purchased   = tavern.shopPurchased or {}
@@ -23,51 +25,60 @@ local function planPurchase(uid, item, itemId, quantity, tavern, currency)
         end
     end
 
-    -- 检查酒馆币余额
+    -- 碎片商品先按真实需求钳到可买整份，再算价格；不花币购买溢出片。
+    local shardPlan = nil ---@type table|nil
+    local heroes = PDM.GetModule(uid, "heroes")
+    if item.rewardType == "shard" then
+        if not heroes or type(heroes.roster) ~= "table" then
+            return nil, "数据未加载"
+        end
+        local entry = heroes.roster[item.rewardHeroId] or heroes.roster[tostring(item.rewardHeroId)]
+        if not HeroShardPolicy.isOwned(entry) then
+            return nil, "拥有该角色后可购买碎片"
+        end
+        local need, needErr = HeroShardPolicy.remaining(item.rewardHeroId, entry)
+        if need == nil then return nil, needErr end
+        local perItem = item.rewardCount or 1
+        if not HeroShardPolicy.isSafeInteger(perItem) then
+            return nil, "商品数量配置异常"
+        end
+        quantity = math.min(quantity, math.floor(need / perItem))
+        if quantity < 1 then return nil, "该角色碎片已足够，无需购买" end
+        local plan, planErr = HeroShardService.PlanFor(heroes, currency, item.rewardHeroId, perItem * quantity)
+        if not plan then return nil, planErr end
+        shardPlan = plan
+    end
+
     local totalPrice = item.price * quantity
+    if not HeroShardPolicy.isSafeInteger(totalPrice)
+        or not HeroShardPolicy.isSafeInteger(currency.tavernCoin or 0, true) then
+        return nil, "酒馆币数量异常"
+    end
     if (currency.tavernCoin or 0) < totalPrice then
         return nil, "酒馆币不足"
     end
-
-    -- 碎片商品必须已拥有对应角色后才能购买
-    if item.rewardType == "shard" then
-        local heroes = PDM.GetModule(uid, "heroes")
-        if not heroes or not heroes.roster then
-            return nil, "数据未加载"
-        end
-        local heroId = item.rewardHeroId
-        local heroData = heroes.roster[heroId] or heroes.roster[tostring(heroId)]
-        if not heroData or not heroData.level then
-            return nil, "拥有该角色后可购买碎片"
-        end
+    local totalCount = (item.rewardCount or 1) * quantity
+    if not HeroShardPolicy.isSafeInteger(totalCount) then
+        return nil, "奖励数量异常"
     end
-
-    return { quantity = quantity, totalPrice = totalPrice, alreadyBought = alreadyBought }
+    return { quantity = quantity, totalPrice = totalPrice, alreadyBought = alreadyBought,
+        totalCount = totalCount, heroes = heroes, shardPlan = shardPlan }
 end
 
-local function deliverPurchase(uid, item, quantity, currency)
-    -- 发放奖励
-    if item.rewardType == "shard" then
-        -- 碎片：加到 heroes.roster[heroId].shards
-        local heroes = PDM.GetModule(uid, "heroes")
-        if heroes then
-            local heroId = item.rewardHeroId
-            if not heroes.roster then heroes.roster = {} end
-            if not heroes.roster[heroId] then
-                heroes.roster[heroId] = { shards = 0, _shardMigrated = true }
-            end
-            local totalCount = (item.rewardCount or 1) * quantity
-            heroes.roster[heroId].shards = (heroes.roster[heroId].shards or 0) + totalCount
-            PDM.MarkDirty(uid, "heroes")
-            print("[TavernShop] shard → heroId=" .. heroId .. " x" .. totalCount)
-        end
+-- 沿用规划时的模块原表；ApplyTo 失败不得先扣币，所有通知由入口在台账更新后发布。
+local function deliverPurchase(item, plan, currency)
+    if plan.shardPlan then
+        local applied, applyErr = HeroShardService.ApplyTo(plan.heroes, currency, plan.shardPlan)
+        if not applied then return false, applyErr end
     else
-        -- 其他奖励（recruiTicket 等）：直接加到 currency 字段
-        local field      = item.rewardType
-        local totalCount = (item.rewardCount or 1) * quantity
-        currency[field]  = (currency[field] or 0) + totalCount
-        print("[TavernShop] " .. field .. " x" .. totalCount)
+        local balance = currency[item.rewardType] or 0
+        if not HeroShardPolicy.isSafeInteger(balance, true)
+            or plan.totalCount > HeroShardPolicy.MAX_SAFE_INTEGER - balance then
+            return false, "奖励库存超出安全范围"
+        end
+        currency[item.rewardType] = balance + plan.totalCount
     end
+    return true
 end
 
 -- ======================== 公开接口 ========================
@@ -89,7 +100,10 @@ end
 ---@param quantity number
 ---@return table result { success, itemId, quantity, purchased, tavernCoin, reason? }
 function TavernService.ShopBuy(uid, itemId, quantity)
-    quantity = math.max(1, quantity or 1)
+    quantity = quantity == nil and 1 or tonumber(quantity)
+    if not HeroShardPolicy.isSafeInteger(quantity) then
+        return { success = false, reason = "购买数量必须为有限正整数" }
+    end
 
     local item = TavernConfig.getShopItem(itemId)
     if not item then
@@ -115,16 +129,17 @@ function TavernService.ShopBuy(uid, itemId, quantity)
     if not plan then return { success = false, reason = reason } end
     quantity = plan.quantity
     local totalPrice, alreadyBought = plan.totalPrice, plan.alreadyBought
+    local totalCount, shardPlan = plan.totalCount, plan.shardPlan
 
-    -- 扣除酒馆币
-    currency.tavernCoin = (currency.tavernCoin or 0) - totalPrice
-
-    deliverPurchase(uid, item, quantity, currency)
-    PDM.MarkDirty(uid, "currency")
+    local delivered, deliverErr = deliverPurchase(item, plan, currency)
+    if not delivered then return { success = false, reason = deliverErr } end
+    currency.tavernCoin = currency.tavernCoin - totalPrice
 
     -- 更新购买记录
     if not tavern.shopPurchased then tavern.shopPurchased = {} end
     tavern.shopPurchased[itemId] = alreadyBought + quantity
+    if shardPlan then PDM.MarkDirty(uid, "heroes") end
+    PDM.MarkDirty(uid, "currency")
     PDM.MarkDirty(uid, "tavern")
 
     print("[TavernShop] buy uid=" .. tostring(uid)
@@ -140,6 +155,10 @@ function TavernService.ShopBuy(uid, itemId, quantity)
         purchased    = tavern.shopPurchased[itemId],
         tavernCoin   = currency.tavernCoin,
         shopPurchased = tavern.shopPurchased,
+        shardGain = shardPlan and shardPlan.shardGain or nil,
+        amount = totalCount,
+        overflowShards = 0,
+        rewards = { { type = item.rewardType, heroId = item.rewardHeroId, amount = totalCount } },
     }
 end
 

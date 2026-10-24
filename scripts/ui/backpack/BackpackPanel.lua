@@ -1,8 +1,6 @@
--- ============================================================================
 -- BackpackPanel - 背包面板（道具/装备 切换）
 -- 全屏面板：顶部背景 + 标题框 + 九宫格下方面板 + 可滚动网格 + 底部返回&Tab
 -- 坐标系: 设计分辨率 1080x2400，所有位置为中心点坐标
--- ============================================================================
 
 local GameConfig       = require("config.GameConfig")
 local EquipmentConfig  = require("config.EquipmentConfig")
@@ -23,6 +21,7 @@ local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
 local HeroConfig       = require("config.HeroConfig")
 local HeroAssetUtil    = require("config.HeroAssetUtil")
 local UrGachaConfig    = require("config.UrGachaConfig")
+local HeroShardPolicy  = require("shared.heroes.HeroShardPolicy")
 local CharacterPanel   = require("ui.character.panel.CharacterPanel")
 local Protocol         = require("shared.Protocol")
 local BF               = require("systems.ButtonFeedback")
@@ -51,7 +50,6 @@ local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 
 -- ======================== 布局常量 ========================
 
--- 1. 顶部背景图 UI_BB_BJ.png — 顶端对齐
 local TOP_BG = {
     CX = 540, W = 1080, H = 728,
     CY = 728 * 0.5,  -- 364  (顶端对齐)
@@ -95,7 +93,6 @@ local GRID = {
     GAP = 30,
     COLS = 5,
     -- 5列列中心 X 坐标: 均匀分布在面板宽度内
-    -- 总宽 = 5*160 + 4*30 = 920, 左边距 = (1080-920)/2 = 80
     MARGIN_LEFT = 80,
     -- 第一行顶部 Y
     FIRST_ROW_TOP = 1030, -- 品质/套装条与三行详细筛选保持独立空间
@@ -121,15 +118,12 @@ local CAP_TEXT = {
 }
 local BAG_MAX = EquipmentSystem.MAX_INVENTORY
 
--- ======================== [横屏左栏] 紧凑布局 ========================
--- 窗口模态（横屏左栏）下：隐藏顶部大图、面板/网格上移，一屏显示更多装备格。
--- 采用 open 时改写常量表的方式，绘制与输入共用同一套常量，避免双份布局代码。
--- ⚠️ 必须放在全部布局常量（含 CAP_TEXT/BTN_*）定义之后：Lua 词法作用域。
+-- 紧凑模式复用同一布局常量，绘制与输入保持一致。
 local LAYOUT_ORIG = nil
 local function isCompact()
     return hostMode_ == "window" or hostMode_ == "left"
 end
-local function applyLayout(compact)
+local function applyLayout(compact, tab)
     if not LAYOUT_ORIG then
         LAYOUT_ORIG = {
             lowerCY = LOWER_PANEL.CY, lowerH = LOWER_PANEL.H,
@@ -151,6 +145,8 @@ local function applyLayout(compact)
         SET_BTN.CY = LAYOUT_ORIG.setBtnCy
         CAP_TEXT.Y = LAYOUT_ORIG.capY
     end
+    -- 道具没有装备筛选条：从标题金线下方留30像素起排，绘制/裁剪/命中共用GRID。
+    if tab == "item" then GRID.FIRST_ROW_TOP = LOWER_PANEL.CY - LOWER_PANEL.H * 0.5 + LOWER_PANEL.IT + 30 end
     CLIP_TOP = GRID.FIRST_ROW_TOP
     CLIP_H   = GRID.CLIP_BOTTOM - CLIP_TOP
 end
@@ -181,8 +177,6 @@ local TAB_ITEMS = {
 -- 品质边框颜色：[B-方案] 统一引用 DarkIcon.QUALITY_TRIM 古卷色表（粗铁/青铜/秘银/符文/黄金/血钻）
 local QUALITY_BORDER = DarkIcon.QUALITY_TRIM
 
--- [B-方案] 原空格平涂常量已废弃（空格子改用 DarkIcon.drawNine "slot" 暗铁凹槽）
-
 -- 滚动参数
 local SCROLL_FRICTION  = 0.90
 local SCROLL_MIN_VEL   = 0.5
@@ -206,9 +200,7 @@ local imgBtnGreen  = -1 -- UI_AN_LV.png（批量分解/确认分解按钮绿色�
 -- 品质筛选小图由 QualityMark 统一加载，背包不再单独持有句柄。
 local imgCheckmark = -1  -- UI_icon_GOU.png（选中勾选）
 
---- 装备 tab 品质筛选状态
---- [分解入仓 0929] 旧"批量分解模式"（active/selectedItems/pending）已移除，
---- 分解功能整体迁移到独立的"分解"tab（复用 BlacksmithDecompose 模块）
+-- 装备 tab 的常驻品质/套装筛选。
 local decomposeState = {
     qualitySet = {},       -- [quality]=true 勾选的稀有度档；空集合=不按稀有度限制
     setFilter = {},        -- [setId]=true / ["none"]=true 勾选的套装；空集合=不按套装限制
@@ -248,11 +240,7 @@ local itemIconCache = {}  -- [key] = nvgImage handle
 local imgHeroIcons = {}   -- [heroId] = nvgImage handle
 local imgLock = -1        -- 锁定角标 UI_ICON_SUO
 
--- imgShardIcon 已移至 DrawUtil.drawShardIcon 统一管理
-
--- 道具详情九宫格背景（品质 1-5）
-
--- NanoVG 上下文
+-- 碎片角标和详情品质背景统一由共享绘制管理。
 local vg_ = nil
 
 -- ======================== 道具详情状态 ========================
@@ -269,13 +257,9 @@ local itemDetState = {
     urConvertPending = false,
 }
 
--- 道具详情动画常量
 local ITEM_DET_ANIM_DUR = 0.2
 
--- ======================== 碎片转酒馆币 ========================
-
--- 按钮布局（详情弹窗背景底边下方 18px，与装备详情「前往强化」按钮一致）
--- 背景: CY=1158, H=650 → 底边=1483, 按钮CY=1483+18+50=1551
+-- 满觉醒碎片转币按钮，与详情「前往强化」位置一致。
 local CONVERT_BTN = {
     CX = 540, CY = 1551, W = 410, H = 100,
     FONT_SIZE = 40,
@@ -450,26 +434,26 @@ local function closeUrConvertDialog()
     itemDetState.urConvertOpenTime = 0
 end
 
-local function getUrConvertAmount(def)
+local function getUrTargetRemaining(heroId)
+    local heroes = PlayerStore.Get("heroes")
+    local roster = heroes and heroes.roster or {}
+    return HeroShardPolicy.remaining(heroId, roster[heroId] or roster[tostring(heroId)]) or 0
+end
+
+local function getUrConvertAmount(def, toHeroId)
     if not def or not def.getter then return 0 end
     local shardAmount = math.max(0, math.floor(tonumber(def.getter() or 0) or 0))
     local remain = getUrConvertDailyRemain()
-    return math.min(shardAmount, remain)
+    return math.min(shardAmount, remain, toHeroId and getUrTargetRemaining(toHeroId) or math.huge)
 end
 
 local function buildUrConvertTargets(fromHeroId)
     local list = {}
     for _, heroId in ipairs(HeroConfig.getAllIds()) do
-        if heroId ~= fromHeroId then
-            local cfg = HeroConfig.get(heroId)
-            if cfg and tonumber(cfg.quality) == HeroConfig.QUALITY_UR then
-                list[#list + 1] = {
-                    heroId = heroId,
-                    name = cfg.name or ("英雄" .. heroId),
-                    quality = cfg.quality or 1,
-                    shards = CharacterPanel.getShards(heroId),
-                }
-            end
+        local cfg = HeroConfig.get(heroId)
+        if heroId ~= fromHeroId and cfg and tonumber(cfg.quality) == HeroConfig.QUALITY_UR
+            and getUrTargetRemaining(heroId) > 0 then
+            list[#list + 1] = { heroId = heroId }
         end
     end
     return list
@@ -497,7 +481,7 @@ local function drawUrConvertDialog(vg)
 
     local amount = getUrConvertAmount(def)
     local remain = getUrConvertDailyRemain()
-    local info = "本次转化" .. tostring(amount) .. "个，今日剩余" .. tostring(remain) .. "/" .. tostring(UR_CONVERT_DAILY_LIMIT)
+    local info = I18n.format("最多转化%d个，今日剩余%d/%d", amount, remain, UR_CONVERT_DAILY_LIMIT)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, C.INFO_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -566,10 +550,10 @@ local function drawItemDetail(vg)
     nvgTranslate(vg, -540, -1158)
     nvgGlobalAlpha(vg, progress)
 
+    -- 道具描述按全文扩展背景；名称、数量和输入位置保持不变。
     local descText = def.descGetter and def.descGetter() or (def.desc or "")
     local descHeight = drawWrappedText(vg, 0, 0, 420, descText, 34, 0x72, 0x58, 0x50, true)
     local detailHeight = 650 + math.max(0, descHeight + 40 - 176)
-    -- 用途全文占用真实高度，保持名称、数量及关闭输入的既有位置。
     local q = math.min(def.quality or 1, 6)
     DarkIcon.drawNine(vg, "panel",
         540 - 530 * 0.5, 1158 - 650 * 0.5, 530, detailHeight,
@@ -662,6 +646,7 @@ local function drawItemDetail(vg)
     if isUrShardDef(def) then
         local amount = getUrConvertAmount(def)
         local remain = getUrConvertDailyRemain()
+        local hasTarget = #buildUrConvertTargets(def.heroId) > 0
         if imgBtnYellow >= 0 then
             DrawUtil.drawImageCentered(vg, imgBtnYellow,
                 UR_CONVERT_BTN.CX, UR_CONVERT_BTN.CY,
@@ -680,6 +665,8 @@ local function drawItemDetail(vg)
         local btnText
         if itemDetState.urConvertPending then
             btnText = "处理中..."
+        elseif not hasTarget then
+            btnText = I18n.lookup("无需转化")
         elseif amount > 0 then
             btnText = "转化为其他碎片"
         else
@@ -689,9 +676,9 @@ local function drawItemDetail(vg)
 
         nvgFontSize(vg, 28)
         nvgFillColor(vg, nvgRGBA(0x99, 0x92, 0x8a, 255))
-        local hintText = amount > 0
+        local hintText = not hasTarget and I18n.lookup("无需转化") or (amount > 0
             and ("今日剩余" .. tostring(remain) .. "/" .. tostring(UR_CONVERT_DAILY_LIMIT))
-            or ("消耗" .. tostring(UR_CONVERT_RESTORE_COST) .. "点特权点恢复" .. tostring(UR_CONVERT_DAILY_LIMIT) .. "次")
+            or ("消耗" .. tostring(UR_CONVERT_RESTORE_COST) .. "点特权点恢复" .. tostring(UR_CONVERT_DAILY_LIMIT) .. "次"))
         nvgText(vg, UR_CONVERT_BTN.CX, UR_CONVERT_BTN.CY + 70, hintText, nil)
     end
 
@@ -734,8 +721,6 @@ function Panel.init(vg)
     imgLock      = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
     imgCheckmark = nvgCreateImage(vg, "image/货币道具/UI_icon_GOU.png", 0)
     QualityMark.init(vg)
-
-    -- imgShardIcon 已移至 DrawUtil.drawShardIcon 统一管理
 
     -- 加载角色头像角标（与 EquipmentBag 一致）
     HeroAssetUtil.preloadIcons(vg, imgHeroIcons)
@@ -787,7 +772,7 @@ local function openPage(mode, initialTab)
     else
         hostMode_ = "inline"
     end
-    applyLayout(isCompact())
+    applyLayout(isCompact(), initialTab or "equip")
     ensureDecomposeReady()
     state.open = true
     state.closing = false
@@ -835,7 +820,7 @@ local equipLink = BackpackEquipLink.bind({
     state = state, GRID = GRID, CELL_COL_CX = CELL_COL_CX,
     itemDetState = itemDetState, getEquipList = getEquipList, buildItemList = buildItemList,
     getHostMode = function() return hostMode_ end,
-    setLeftMode = function() hostMode_ = "left"; applyLayout(true) end,
+    setLeftMode = function() hostMode_ = "left"; applyLayout(true, state.tab) end,
     openPage = openPage, closePage = closePage,
     clearTypeFilter = function() decomposeState.typeFilter = nil end,
     clearTutorialFilters = function()
@@ -853,7 +838,7 @@ local equipLink = BackpackEquipLink.bind({
     selectEquipTab = function()
         BlacksmithDecompose.cancelMarquee()
         if state.tab == "equip" then return end
-        state.tab, state.tabFrom, state.tabSwitchTime = "equip", "equip", 0
+        state.tab, state.tabFrom, state.tabSwitchTime = "equip", "equip", 0; applyLayout(isCompact(), "equip")
         state.scrollY, state.scrollMax, state.scrollVel = 0, 0, 0
         itemDetState.open, itemDetState.def = false, nil
         SetFilterDialog.close()
@@ -861,9 +846,11 @@ local equipLink = BackpackEquipLink.bind({
     restoreView = function(view)
         BlacksmithDecompose.cancelMarquee()
         hostMode_ = view.mode
-        applyLayout(isCompact())
+        applyLayout(isCompact(), view.tab)
         state.tab, state.tabFrom, state.tabSwitchTime = view.tab, view.tab, 0
         state.scrollY, state.scrollMax, state.scrollVel = view.scrollY, view.scrollMax, 0
+        -- 道具恢复只重算当前布局的边界，不触发装备同步评分或改动预算任务生命周期。
+        if view.tab == "item" then state.scrollMax = gridHost.calcScrollMax(#buildItemList()); clampScroll() end
     end,
     ensureDecomposeReady = ensureDecomposeReady,
     BlacksmithDecompose = BlacksmithDecompose,
@@ -1072,8 +1059,7 @@ local function drawBody(vg)
     if state.tab == "equip" and filterBar then filterBar.draw(vg) end
 
     -- 6. 网格内容（根据 tab）
-    -- [分解入仓 0929] 分解 tab：整体委托给 BlacksmithDecompose（warehouse profile），
-    -- 自带标题、品质筛选、格子网格、奖励预览、自动分解/分解按钮
+    -- 分解 tab 委托 warehouse profile。
     if state.tab == "decompose" then
         ensureDecomposeReady()
         BlacksmithDecompose.drawUpperSlot(vg)  -- 奖励预览图标行（warehouse 模式）
@@ -1211,6 +1197,11 @@ function Panel.handleInput(dx, dy)
             end
 
             local targets = buildUrConvertTargets(def and def.heroId)
+            if #targets == 0 then
+                require("ui.loot.LootBoxPage").showToast(I18n.lookup("没有需要补充的UR碎片"))
+                closeUrConvertDialog()
+                return true
+            end
             local totalW = U.COLS * U.CELL_SIZE + (U.COLS - 1) * U.GAP_X
             local startX = (DESIGN_W - totalW) * 0.5 + U.CELL_SIZE * 0.5
             for idx, item in ipairs(targets) do
@@ -1220,17 +1211,19 @@ function Panel.handleInput(dx, dy)
                 local cy = U.GRID_TOP + row * (U.CELL_SIZE + U.GAP_Y) + U.CELL_SIZE * 0.5
                 if cy > U.CANCEL_CY - 110 then break end
                 if DrawUtil.hitTest(dx, dy, cx, cy, U.CELL_SIZE, U.CELL_SIZE) then
+                    local actualAmount = getUrConvertAmount(def, item.heroId)
+                    if actualAmount <= 0 then return true end
                     BF.trigger("bp_ur_convert_" .. tostring(item.heroId))
                     itemDetState.urConvertPending = true
                     local Client = require("runtime.GameAction")
                     Client.sendAction(Protocol.ACTION_TYPES.CONVERT_UR_SHARD, {
                         fromHeroId = def.heroId,
                         toHeroId = item.heroId,
-                        amount = amount,
+                        amount = actualAmount,
                     })
                     print("[BackpackPanel] 发送UR碎片转化请求 from=" .. tostring(def.heroId)
                         .. " to=" .. tostring(item.heroId)
-                        .. " amount=" .. tostring(amount))
+                        .. " amount=" .. tostring(actualAmount))
                     itemDetState.open = false
                     itemDetState.def = nil
                     closeTransferConfirm()
@@ -1282,6 +1275,10 @@ function Panel.handleInput(dx, dy)
         -- UR碎片转化按钮
         if isUrShardDef(def) and not itemDetState.urConvertPending then
             if DrawUtil.hitTest(dx, dy, UR_CONVERT_BTN.CX, UR_CONVERT_BTN.CY, UR_CONVERT_BTN.W, UR_CONVERT_BTN.H) then
+                if #buildUrConvertTargets(def.heroId) == 0 then
+                    require("ui.loot.LootBoxPage").showToast(I18n.lookup("没有需要补充的UR碎片"))
+                    return true
+                end
                 local amount = getUrConvertAmount(def)
                 if amount > 0 then
                     BF.trigger("bp_ur_convert")
@@ -1340,6 +1337,8 @@ function Panel.handleInput(dx, dy)
         if state.tab ~= item.key then
             state.tabFrom, state.tabSwitchTime = state.tab, time.elapsedTime
             state.tab, state.scrollY, state.scrollVel = item.key, 0, 0
+            applyLayout(isCompact(), item.key)
+            state.scrollMax = 0
             equipLink.onManualTabChange()
             if item.key == "decompose" then
                 ensureDecomposeReady()

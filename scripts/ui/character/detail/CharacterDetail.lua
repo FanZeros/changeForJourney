@@ -118,16 +118,19 @@ end
 -- 同一隔离装备快照只建一次未穿戴候选索引；六槽/多英雄不再重复扫全库存与占用表。
 -- 类型/槽位来自已水合副本，不读取或水合 PlayerStore 的真实库存项。
 local upgradeCandidates = { equipment = false, bySlot = {} }
-local function candidatesForUpgrade(equipment)
+local function candidatesForUpgrade(equipment, checkpoint)
     if upgradeCandidates.equipment == equipment then return upgradeCandidates.bySlot end
+    -- 不把 occupied/bySlot 放进共享缓存后再yield：同步详情可在任意帧穿插读取。
     local occupied, bySlot = {}, {}
     for _, heroSlots in pairs(equipment.equipped or {}) do
         if type(heroSlots) == "table" then
             for _, seq in pairs(heroSlots) do
                 local id = tonumber(seq)
                 if id then occupied[id] = true end
+                if checkpoint then checkpoint() end
             end
         end
+        if checkpoint then checkpoint() end
     end
     for seq in pairs(equipment.inventory or {}) do
         local id = tonumber(seq)
@@ -144,7 +147,9 @@ local function candidatesForUpgrade(equipment)
                 end
             end
         end
+        if checkpoint then checkpoint() end
     end
+    if upgradeCandidates.equipment == equipment then return upgradeCandidates.bySlot end
     upgradeCandidates = { equipment = equipment, bySlot = bySlot }
     return bySlot
 end
@@ -162,7 +167,7 @@ function CharacterDetail._hasUpgradeForSlot(heroId, slotName, equipData, ctx, ch
     if not ctx then return false end
     ctx.upgradeSlotResults = ctx.upgradeSlotResults or {}
     if ctx.upgradeSlotResults[slotName] ~= nil then return ctx.upgradeSlotResults[slotName] end
-    local candidates = candidatesForUpgrade(ctx.equipmentData)[slotName] or {}
+    local candidates = candidatesForUpgrade(ctx.equipmentData, checkpoint)[slotName] or {}
     local level = EquipmentSystem.getHeroLevel(ctx.heroesData, heroId)
     local wearable = EquipmentSystem.getWearableTypeSet(heroId, slotName)
     local weaponTypes = EquipmentSystem.getWearableTypeSet(heroId, "weapon")
@@ -184,6 +189,57 @@ function CharacterDetail._hasUpgradeForSlot(heroId, slotName, equipData, ctx, ch
     return false
 end
 
+-- 配装评分与比较由同一个Update私有任务准备；Render不能补算冷上下文。
+CharacterDetail._preparation = require("ui.character.detail.CharacterDetailPreparation").bind({
+    capture = function()
+        return CharacterDetail._EquipPanel.capture(detailState.heroId, detailState.equipSlot)
+    end,
+    estimate = function(request) return Draw.prepareEstimate(request.heroId) end,
+    slots = DT_SLOTS,
+    prepare = CharacterDetail._EquipPanel.prepare,
+    commit = CharacterDetail._EquipPanel.commit,
+    clear = CharacterDetail._EquipPanel.clearPrepared,
+    hasUpgrade = CharacterDetail._hasUpgradeForSlot,
+})
+
+function CharacterDetail.getPreparedEquipment()
+    if not detailState.open or detailState.closing or detailState.tab ~= "equip" then
+        return { pending = true, scores = {}, upgrades = {} }
+    end
+    local request = CharacterDetail._EquipPanel.capture(detailState.heroId, detailState.equipSlot)
+    return CharacterDetail._preparation.read(request.viewKey)
+end
+
+--- 浮窗只读评分桥；角色/候选/比较槽不同绝不借用其它窗口的结果。
+function CharacterDetail.getPreparedEquipScore(seq, heroId, slot, owner)
+    if not detailState.open or detailState.tab ~= "equip" then return false end
+    if detailState.closing then return true end
+    if tonumber(heroId) ~= tonumber(detailState.heroId)
+        or (owner ~= "character" and owner ~= "backpack" and owner ~= "bag") then return true end
+    local result = CharacterDetail.getPreparedEquipment()
+    if result.pending then return true end
+    local candidate = result.candidate
+    if candidate and candidate.seq == tostring(seq) and (slot == nil or slot == candidate.slot) then
+        return true, candidate.score, candidate.gain
+    end
+    local scores = result.scoresBySeq or {}
+    if slot and scores[tostring(seq) .. ":" .. slot] ~= nil then
+        return true, scores[tostring(seq) .. ":" .. slot], 0
+    end
+    return true
+end
+
+--- 每帧调用，即使角色列表当前不是活动页。协作式软预算，不抢占单次业务函数。
+function CharacterDetail.update(dt)
+    if detailState.open and not detailState.closing and detailState.tab == "equip" then
+        CharacterDetail._preparationActive = true
+        CharacterDetail._preparation.update()
+    elseif CharacterDetail._preparationActive then
+        CharacterDetail._preparationActive = false
+        CharacterDetail._preparation.cancel()
+    end
+end
+
 --- 检查指定英雄是否有任意槽位可提升（用于入口链路角标）。
 ---@param heroId number
 ---@param checkpoint? fun() 仅异步角标调度传入；旧同步调用保持原返回契约
@@ -191,7 +247,18 @@ end
 function CharacterDetail.hasAnyUpgradeForHero(heroId, checkpoint)
     local equipData = PlayerStore.Get("equipment")
     if not equipData then return false end
-    local ctx = EquipmentPower.getContext(heroId)
+    ---@type table|nil
+    local ctx
+    if checkpoint then
+        ---@type boolean|nil
+        local stale
+        repeat
+            ctx, stale = EquipmentPower.getBadgeContext(heroId, checkpoint)
+            if stale then checkpoint() end
+        until not stale
+    else
+        ctx = EquipmentPower.getContext(heroId)
+    end
     if not ctx then return false end
     for _, slot in ipairs(DT_SLOTS) do
         if CharacterDetail._hasUpgradeForSlot(heroId, slot.slot, equipData, ctx, checkpoint) then return true end
@@ -273,6 +340,9 @@ function CharacterDetail.setContext(ctx)
     })
     -- 配装面板绘制函数注入 Draw 模块
     Draw._drawEquipPanel = CharacterDetail._EquipPanel.draw --[[@as fun(vg: any, heroId: number, detailState: table)|nil]]
+    if CharacterDetail._EquipDetail.setPreparedReader then
+        CharacterDetail._EquipDetail.setPreparedReader(CharacterDetail.getPreparedEquipScore)
+    end
     -- 觉醒面板注入职业图标和数据获取
     AwakeningPanel.setClassIcons(ctx.imgClassIcons)
     AwakeningPanel.setOwnedDataGetter(ctx.getOwnedData)
@@ -282,6 +352,11 @@ end
 --- 懒加载仓库，绕开 BackpackPanel -> CharacterPanel -> CharacterDetail 的依赖环。
 local function syncEquipmentWarehouse()
     local active = detailState.open and not detailState.closing and detailState.tab == "equip"
+    if not active or CharacterDetail._preparationHero ~= detailState.heroId then
+        CharacterDetail._preparation.cancel()
+        CharacterDetail._preparationActive = false
+    end
+    CharacterDetail._preparationHero = active and detailState.heroId or nil
     local warehouse = require("ui.backpack.BackpackPanel")
     if active and not detailState.equipmentLinkActive then
         detailState.equipmentLinkActive = true
@@ -528,6 +603,7 @@ end
 ---@param visible boolean
 function CharacterDetail.setEstimateVisible(visible)
     Draw.setEstimateVisible(visible)
+    CharacterDetail._EquipPanel.setEstimateVisible(visible)
 end
 
 --- 判断点击是否在矩形区域内（中心坐标+尺寸）

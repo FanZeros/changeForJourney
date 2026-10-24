@@ -56,6 +56,7 @@ function Start()
             ["ui.character.panel.CharacterPanel"] = { getOwnedHero = function() return nil end },
             ["ui.battle.scene.BattleScene"] = { restoreContext = noop },
             ["ui.battle.popup.BattleResultPanel"] = mockPanel,
+            ["ui.battle.scene.BattlePauseOverlay"] = { init = noop, draw = noop, destroy = noop },
             ["ui.hud.popup.SettingsPanel"] = { isEffectsEnabled = function() return false end },
             ["ui.fx.SpineCardEffect"] = { playRevive = noop },
             ["systems.ButtonFeedback"] = { trigger = noop },

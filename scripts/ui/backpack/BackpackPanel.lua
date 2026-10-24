@@ -27,7 +27,7 @@ local CharacterPanel   = require("ui.character.panel.CharacterPanel")
 local Protocol         = require("shared.Protocol")
 local BF               = require("systems.ButtonFeedback")
 local BackpackDialogs  = require("ui.backpack.BackpackDialogs")
-local BackpackGrids    = require("ui.backpack.BackpackGrids")
+local BackpackGridHost = require("ui.backpack.BackpackGridHost")
 local BackpackEquipLink = require("ui.backpack.BackpackEquipLink")
 local BackpackFilters = require("ui.backpack.BackpackFilters")
 local HeroFrame        = require("ui.widget.HeroFrame")
@@ -387,61 +387,22 @@ local function getInventoryCount()
     return count
 end
 
---- 计算网格行数和滚动最大值
-local function calcScrollMax(totalItems)
-    local rows = math.ceil(totalItems / GRID.COLS)
-    local contentH = rows * GRID.CELL_SIZE + math.max(0, rows - 1) * GRID.GAP
-    local maxScroll = math.max(0, contentH - CLIP_H)
-    return maxScroll
-end
-
-local function clampScroll()
-    state.scrollY = math.max(0, math.min(state.scrollMax, state.scrollY))
-end
-
----@type table|nil
-local _grids = nil
-local function bindBackpackGrids()
-    _grids = BackpackGrids.bind({
-        GRID = GRID,
-        CELL_COL_CX = CELL_COL_CX,
-        CLIP_TOP = CLIP_TOP,
-        CLIP_H = CLIP_H,
-        DESIGN_W = DESIGN_W,
-        DarkIcon = DarkIcon,
-        DrawUtil = DrawUtil,
-        state = state,
-        decomposeState = decomposeState,
-        ITEM_DEFS = ITEM_DEFS,
-        getItemIcon = getItemIcon,
-        getImgCheckmark = function() return imgCheckmark end,
-        getImgLock = function() return imgLock end,
-        qualityChecked = qualityChecked,
-        setChecked = setChecked,
-        getEquipmentSlotFilter = function() return Panel.getEquipmentSlotFilter() end,
-        getImgHeroIcons = function() return imgHeroIcons end,
-        calcScrollMax = calcScrollMax,
-        clampScroll = clampScroll,
-    })
-end
----@return table
-local function ensureGrids()
-    if not _grids then bindBackpackGrids() end
-    ---@type table
-    local g = _grids
-    return g
-end
-
---- 获取背包装备列表（排序: 品质降→等级降）
----@return table
-local function getEquipList()
-    return ensureGrids().getEquipList()
-end
-
--- 网格绘制来自 BackpackGrids，命中/hover/拖拽来自 BackpackEquipLink。
-local function drawEquipGrid(vg) ensureGrids().drawEquipGrid(vg) end
-local function buildItemList() return ensureGrids().buildItemList() end
-local function drawItemGrid(vg) ensureGrids().drawItemGrid(vg) end
+-- 网格绑定与预算生命周期独立于绘制；命中/hover/拖拽与 Render 只读同一提交。
+local gridHost = BackpackGridHost.bind({
+    GRID = GRID, CELL_COL_CX = CELL_COL_CX, DESIGN_W = DESIGN_W,
+    DarkIcon = DarkIcon, DrawUtil = DrawUtil, state = state, decomposeState = decomposeState,
+    ITEM_DEFS = ITEM_DEFS, getItemIcon = getItemIcon,
+    getImgCheckmark = function() return imgCheckmark end,
+    getImgLock = function() return imgLock end,
+    qualityChecked = qualityChecked, setChecked = setChecked,
+    getEquipmentSlotFilter = function() return Panel.getEquipmentSlotFilter() end,
+    getImgHeroIcons = function() return imgHeroIcons end,
+})
+local clampScroll = gridHost.clampScroll
+local getEquipList = gridHost.getEquipList
+local buildItemList = gridHost.buildItemList
+local drawEquipGrid = gridHost.drawEquipGrid
+local drawItemGrid = gridHost.drawItemGrid
 
 -- ======================== 道具详情弹窗 ========================
 
@@ -810,6 +771,7 @@ end
 ---@param mode? boolean|"left" true=全窗居中模态；"left"=横屏左栏页；nil/false=内嵌
 ---@param initialTab? string "equip"|"item"|"decompose"，默认 "equip"
 local function openPage(mode, initialTab)
+    gridHost.cancel()
     Curation.cancelSource("backpack")
     BlacksmithDecompose.cancelMarquee()
     if mode == "left" then
@@ -851,6 +813,7 @@ end
 
 -- 动画操作与持有操作分离：自动 release 不冒充玩家手动关闭。
 local function closePage()
+    gridHost.cancel()
     Curation.cancelSource("backpack")
     BlacksmithDecompose.cancelMarquee()
     if not state.open or state.closing then return end
@@ -969,6 +932,7 @@ end
 --- 更新（惯性滚动 + 关闭动画）
 function Panel.update(dt)
     equipLink.update()
+    gridHost.update()
     if not state.open then return end
     -- 关闭动画结束后真正关闭
     if state.closing then
@@ -1416,7 +1380,7 @@ function Panel.handleInput(dx, dy)
         if DrawUtil.hitTest(dx, dy, SET_BTN.CX, SET_BTN.CY, SET_BTN.W, SET_BTN.H) then
             BF.trigger("bp_set_filter")
             SetFilterDialog.open(decomposeState.setFilter, {
-                getCounts = ensureGrids().getSetCounts,
+                getCounts = gridHost.getSetCounts,
                 onChange = function() state.scrollY = 0 end,
             })
             print("[BackpackPanel] 打开套装筛选弹窗")

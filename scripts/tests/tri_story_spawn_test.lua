@@ -2,6 +2,7 @@
 -- 基于 team_drop_luck/resource_dungeon_battle 的私有 require 实例模式，不拷贝 start 片段。
 -- 运行 tests/tri_story_spawn_test.lua -tapcode_dir=/workspace/game2 -tool_mode -graphicsheadless -nosound。
 -- 必须读 RESULT ALL PASS checks=N；Runtime exit 0 不是通过凭据。
+-- 同时复用私有实例验证Driver同步分段：真实Monitor开关、回调后绑定、错误/返回/RNG/协程边界。
 local TAG = "[tri_story_spawn] "
 local checks = 0
 local function check(value, label)
@@ -20,7 +21,8 @@ local function copy(value)
 end
 local function noop() end
 
-local function fixture()
+local function fixture(options)
+    options = options or {}
     local nativeCache = cache
     local env = setmetatable({}, { __index = _G }) ---@type any
     local loaded = {} ---@type table<string, any>
@@ -31,6 +33,30 @@ local function fixture()
     local data = { live = {}, battle = { clearedStages = {} },
         session = { introCompleted = true, initialHeroId = 1, claimedScenarios = {}, scenarioRewardsGranted = {} } } ---@type any
     env._G, env.math, env.time = env, copy(math), { elapsedTime = 100 }
+    if options.performance then
+        records.clock = { wall = 0, cpu = 0, wallReads = 0, cpuReads = 0, rngCalls = 0 }
+        local clock = records.clock
+        env.os = copy(os)
+        env.os.clock = function() return clock.cpu end -- 业务自身时钟与监测读取分开计数。
+        env.Time = { GetSystemTime = function(receiver)
+            assert(receiver == env.Time, "计时必须使用Time静态接收者")
+            clock.wallReads = clock.wallReads + 1
+            return clock.wall
+        end }
+        env.collectgarbage = function(kind) assert(kind == "count"); return 1024 end
+        env.graphics = { GetNumBatches = function() return 0 end, GetNumPrimitives = function() return 0 end }
+        -- 私有可重放RNG，不改全局种子；开启/关闭使用完全相同的输入流。
+        local seed = 1729
+        env.math.random = function(low, high)
+            seed = (seed * 48271) % 2147483647
+            clock.rngCalls, clock.rngState = clock.rngCalls + 1, seed
+            local value = seed / 2147483647
+            if low == nil then return value end
+            if high == nil then high, low = low, 1 end
+            return low + math.floor(value * (high - low + 1))
+        end
+        env.math.randomseed = function() error("专项不能重设RNG") end
+    end
     env.package = { loaded = loaded, preload = {}, path = "" }
     env.print = noop -- 只关业务高频初始化日志；断言/异常由外层输出。
     local function forbiddenFile()
@@ -79,7 +105,8 @@ local function fixture()
         records.actions = records.actions + 1
         error("专项不允许玩家动作")
     end }
-    loaded["boot.StandaloneSave"] = { Flush = forbiddenFile }
+    loaded["boot.StandaloneSave"] = { Flush = forbiddenFile,
+        RequestSave = options.performance and function() records.saveRequests = (records.saveRequests or 0) + 1 end or forbiddenFile }
     env.require = function(name)
         if loaded[name] ~= nil then return loaded[name] end
         assert(not loading[name], "未隔离的循环依赖 " .. name)
@@ -91,7 +118,14 @@ local function fixture()
         local lines = {}
         while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
         file:Dispose()
-        local chunk = assert(load(table.concat(lines, "\n"), "@tri-story/" .. path, "t", env))
+        local moduleEnv = env
+        if options.performance and name == "core.PerformanceMonitor" then
+            moduleEnv = setmetatable({ os = { clock = function()
+                records.clock.cpuReads = records.clock.cpuReads + 1
+                return records.clock.cpu
+            end } }, { __index = env })
+        end
+        local chunk = assert(load(table.concat(lines, "\n"), "@tri-story/" .. path, "t", moduleEnv))
         local value = chunk()
         assert(value ~= nil, "真实模块未返回实例 " .. name)
         loaded[name], realLoads[name], loading[name] = value, true, nil
@@ -361,12 +395,226 @@ local function labCases(f)
     eq(f.records.actions, 0, "全程无玩家动作")
 end
 
+local function performanceCases()
+    local function equal(a, b)
+        if type(a) ~= type(b) then return false end
+        if type(a) ~= "table" then return a == b end
+        for key, value in pairs(a) do if not equal(value, b[key]) then return false end end
+        for key in pairs(b) do if a[key] == nil then return false end end
+        return true
+    end
+    local function exercise(enabled)
+        local f = fixture({ performance = true })
+        f.reset()
+        local monitor = f.require("core.PerformanceMonitor")
+        local clock = f.records.clock
+        local events, totals, returned, drops, errors = {}, {}, {}, {}, {}
+        local wraps, originalWrap = 0, monitor.wrap
+        monitor.wrap = function(name, fn) wraps = wraps + 1; return originalWrap(name, fn) end
+        -- 创建时回调仍是nil、监测关闭；之后再开启也必须计到这份实例。
+        local drv = f.Driver.new(2)
+        eq(wraps, 10, "每实例只在构造时包装十个同步入口")
+        local methods = {}
+        for _, name in ipairs({ "update", "tick", "start", "flushExtraTalents", "queuePendingKills",
+            "invokeOnKill", "notifyStageCleared", "tickRewards", "advanceStage", "retreatStage" }) do
+            methods[name] = drv[name]
+        end
+        local function event(name)
+            events[#events + 1] = name
+            totals[name] = (totals[name] or 0) + 1
+            clock.wall, clock.cpu = clock.wall + 1, clock.cpu + .0005
+        end
+        local function values(label, ...)
+            local pack = table.pack(...)
+            returned[#returned + 1] = { label = label, count = pack.n }
+            return pack
+        end
+        local function noResult(label, ...)
+            eq(values(label, ...).n, 0, label .. "仍返回零个值而非一个nil")
+        end
+        local token = {}
+        local ets = f.require("systems.ExtraTalentSystem")
+        ets.flush = function() event("flush"); return nil, false, token, nil end
+        local talent = f.require("systems.TalentManager")
+        local reset = talent.reset
+        talent.reset = function(...) event("reset"); return reset(...) end
+        local spawn = f.Spawn.generateEnemyList
+        f.Spawn.generateEnemyList = function(...) event("spawn"); return spawn(...) end
+        local firstKill, secondKill, clears = 0, 0, 0
+        drv.onKill = function(data)
+            event("kill1"); firstKill = firstKill + 1
+            eq(#drv.pendingKills, 0, "onKill前已消费pending，重入不会重复发奖")
+            check(#drv.rewardQueue > 0, "onKill前逐杀掉落已经排队")
+            eq(data.teamIdx, 2, "后绑定onKill保持点调用payload而非self")
+            eq(data.expReward, 8, "聚合经验不变")
+            eq(data.goldReward, 10, "聚合金币不变")
+            eq(data.allyCount, 2, "活人归属数量不变")
+            eq(table.concat(data.heroIds, ","), "1,3", "活人归属顺序不变")
+            -- 同步重入仍不能重复消费；计时是inclusive而非改变奖励事务。
+            noResult("重入空queue", drv:queuePendingKills())
+            return nil, false, token, nil
+        end
+        drv.onStageCleared = function(team, stage)
+            event("clear1"); clears = clears + 1
+            eq(team, 2, "后绑定通关回调队号不变")
+            eq(stage, drv.stageId, "后绑定通关回调当前关不变")
+            check(firstKill > 0, "通关回调仍晚于onKill")
+            return nil, false, token, nil
+        end
+        drv.onDrop = function(data)
+            event("drop"); drops[#drops + 1] = copy(data)
+            return nil, false, token, nil
+        end
+        if enabled then monitor.start(); monitor.beginFrame("战斗同步专项") end
+        local tuple = values("flush转发", drv:flushExtraTalents())
+        eq(tuple.n, 4, "flush转发保留尾nil返回数")
+        check(tuple[1] == nil and tuple[2] == false and tuple[3] == token and tuple[4] == nil,
+            "flush转发不吞nil/false/对象引用")
+        noResult("start", drv:start(101))
+        drv.allies = { { hp = 10, heroId = 1 }, { hp = 0, heroId = 2, _triDeathHandled = true },
+            { hp = 20, heroId = 3 } }
+        drv.enemies, drv.enemyQueue, drv.introTimer = {}, {}, 0
+        drv:reportKill({ expReward = 3, goldReward = 4 })
+        drv:reportKill({ expReward = 5, goldReward = 6 })
+        noResult("清波tick", drv:tick(.01))
+        noResult("行军tick", drv:tick(.1)) -- 先消费两条drop，clear不能重复。
+        eq(firstKill, 1, "首次onKill恰一次")
+        eq(clears, 1, "行军多帧通关回调恰一次")
+        eq(#drops, 2, "tickRewards逐条顺序消费两杀掉落")
+        eq(drops[1].stageId, 101, "延迟掉落保留旧关卡")
+        eq(table.concat(drops[2].heroIds, ","), "1,3", "延迟掉落保留活人归属")
+        noResult("行军结束tick", drv:tick(2)) -- 真advanceStage→start，不替换构建。
+        eq(drv.stageId, 102, "真advanceStage仍前进102")
+        drv.onKill = function(data)
+            event("kill2"); secondKill = secondKill + 1
+            eq(data.stageId, 102, "替换后onKill收到当前关")
+            return nil, false, token, nil
+        end
+        drv.onStageCleared = function(team, stage)
+            event("clear2"); eq(team, 2, "替换后通关队号")
+            eq(stage, 102, "替换后通关关卡")
+            return nil, false, token, nil
+        end
+        tuple = values("当前onKill转发", drv:invokeOnKill({ stageId = 102 }))
+        eq(tuple.n, 4, "当前onKill转发保留多返回尾nil")
+        check(tuple[2] == false and tuple[3] == token, "当前onKill转发保持对象引用")
+        tuple = values("当前通关转发", drv:notifyStageCleared())
+        eq(tuple.n, 4, "当前通关转发保留多返回尾nil")
+        check(tuple[2] == false and tuple[3] == token, "当前通关转发保持对象引用")
+        drv:reportKill({ expReward = 1, goldReward = 2 })
+        noResult("retreatStage", drv:retreatStage())
+        eq(drv.stageId, 101, "真retreatStage仍退101")
+        eq(secondKill, 2, "退关start消费pending时调用新onKill而非初始化捕获")
+        eq(f.records.saveRequests, 1, "退关只请求一次保存，文件仍封闭")
+        -- nil回调保持原guard；不会调用转发器、不会改变奖励队列消费。
+        drv.onKill, drv.onStageCleared = nil, nil
+        drv:reportKill({ expReward = 1, goldReward = 2 })
+        noResult("无回调queue", drv:queuePendingKills())
+        drv.enemies, drv.enemyQueue, drv.introTimer = {}, {}, 0
+        noResult("无回调清波", drv:tick(.01))
+
+        -- 每个新分段的错误必须原对象抛出，不能吞错、改为返回值或继续后续事件。
+        local function expectError(label, fn)
+            local failure = table.pack(pcall(fn))
+            eq(failure.n, 2, label .. "错误返回数")
+            eq(failure[1], false, label .. "仍抛出")
+            eq(failure[2], token, label .. "保持原错误对象")
+            errors[#errors + 1] = label
+        end
+        ets.flush = function() event("flush-error"); error(token, 0) end
+        expectError("flush", function() drv:flushExtraTalents() end)
+        expectError("start", function() drv:start(102) end)
+        expectError("advance", function() drv:advanceStage() end)
+        expectError("retreat", function() drv:retreatStage() end)
+        drv.pendingKills = { { stageId = 101, expReward = 1, goldReward = 2 } }
+        drv.onKill = function() event("kill-error"); error(token, 0) end
+        expectError("queue/onKill", function() drv:queuePendingKills() end)
+        eq(#drv.pendingKills, 0, "onKill抛错仍先消费pending，不重复发奖")
+        drv.onDrop = function() event("drop-error"); error(token, 0) end
+        local beforeDrops = #drv.rewardQueue
+        expectError("tickRewards", function() drv:tickRewards(1) end)
+        eq(#drv.rewardQueue, beforeDrops - 1, "onDrop抛错仍先出队一条，不改消费顺序")
+        ets.flush = function() event("flush") end
+        drv.onStageCleared = function() event("clear-error"); error(token, 0) end
+        drv.rewardQueue, drv.enemies, drv.enemyQueue, drv.introTimer = {}, {}, {}, 0
+        drv._clearReported, drv.marchTimer = false, 0
+        expectError("tick/onStageCleared", function() drv:tick(.01) end)
+        eq(drv._clearReported, true, "通关抛错仍先记_clearReported")
+        eq(drv.marchTimer, 0, "通关抛错不提前执行beginMarch")
+        -- 不只比较开/关一致：同时固定旧语义的调用数与顺序，防止两边一起漏调。
+        eq(totals.flush, 11, "八次Driver直接flush加三次真实TAL.reset内部flush")
+        eq(totals["flush-error"], 4, "四个flush错误出口没有重试或吞错")
+        eq(totals.reset, 3, "只有三次成功start重置天赋")
+        eq(totals.spawn, 3, "只有三次成功start构建敌人")
+        eq(totals.drop, 2, "只有达到真实奖励间隔的两条drop被消费")
+        local eventOrder = table.concat(events, ",")
+        check(eventOrder:find("flush,kill1,clear1,drop,drop", 1, true) ~= nil,
+            "真实tick同步flush→聚合onKill→通关→后帧drop顺序")
+        eq(wraps, 10, "多次tick/start/推进/退关不再次创建包装闭包")
+        for name, method in pairs(methods) do eq(drv[name], method, "实例方法身份稳定 " .. name) end
+        if enabled then clock.wall = clock.wall + 16; monitor.beginFrame("战斗同步专项") end
+        local snapshot = monitor.snapshot()
+        if enabled then
+            -- TAL.reset自身还会flush三次，但不是Driver直接helper的调用，不能混计。
+            local expected = { ["队伍2.ETS.flush"] = 12,
+                ["队伍2.onKill"] = firstKill + secondKill + totals["kill-error"],
+                ["队伍2.onStageCleared"] = totals.clear1 + totals.clear2 + totals["clear-error"],
+                ["队伍2.start"] = 5, ["队伍2.advanceStage"] = 2, ["队伍2.retreatStage"] = 2,
+                ["队伍2.tickRewards"] = 6, ["队伍2.queuePendingKills"] = 7, ["队伍2.tick"] = 5 }
+            for name, count in pairs(expected) do
+                local actual = 0
+                for _, row in ipairs(snapshot.sections) do if row.name == name then actual = row.calls end end
+                eq(actual, count, "真实Monitor开启分段调用数 " .. name)
+            end
+        else
+            eq(clock.wallReads, 0, "关闭所有Driver分段零墙钟读取")
+            eq(clock.cpuReads, 0, "关闭所有Driver分段零CPU时钟读取")
+            eq(#snapshot.sections, 0, "关闭不记录分段")
+        end
+        eq(f.records.gpuCalls + f.records.fileCalls + f.records.actions, 0, "诊断对照无GPU/玩家文件/动作")
+        return { events = eventOrder, totals = totals, returns = returned, drops = drops,
+            errors = errors, rngCalls = clock.rngCalls, rngState = clock.rngState,
+            f = f, drv = drv, monitor = monitor }
+    end
+    local off, on = exercise(false), exercise(true)
+    eq(off.events, on.events, "开启/关闭全部事件顺序完全一致")
+    check(equal(off.returns, on.returns), "开启/关闭全部返回值个数一致")
+    check(equal(off.drops, on.drops), "开启/关闭延迟奖励完整payload与顺序一致")
+    eq(table.concat(off.errors, ","), table.concat(on.errors, ","), "开启/关闭错误路径顺序一致")
+    eq(off.rngCalls, on.rngCalls, "开启/关闭真实start出怪RNG消费计数一致")
+    eq(off.rngState, on.rngState, "开启/关闭真实start出怪RNG终态一致")
+    for name, count in pairs(off.totals) do eq(on.totals[name], count, "开启/关闭事件计数一致 " .. name) end
+
+    -- 真实协程跨yield不计内层，同步宿主另有resume分段；不伪造isyieldable。
+    local clock, monitor, drv = on.f.records.clock, on.monitor, on.drv
+    local reads = clock.wallReads + clock.cpuReads
+    local calls = 0
+    drv.onStageCleared = function(team, stage)
+        calls = calls + 1
+        coroutine.yield("paused", nil, team)
+        return nil, false, stage, nil
+    end
+    local co = coroutine.create(function() return drv:notifyStageCleared() end)
+    local first = table.pack(coroutine.resume(co))
+    eq(first.n, 4, "协程yield返回数不变")
+    check(first[1] and first[2] == "paused" and first[3] == nil and first[4] == 2, "协程yield内容不变")
+    clock.wall, clock.cpu = clock.wall + 5000, clock.cpu + 2
+    local last = table.pack(coroutine.resume(co))
+    eq(last.n, 5, "协程完成多返回尾nil不变")
+    check(last[1] and last[2] == nil and last[3] == false and last[4] == drv.stageId and last[5] == nil,
+        "协程完成值与nil位置不变")
+    eq(calls, 1, "跨yield回调只执行一次")
+    eq(clock.wallReads + clock.cpuReads, reads, "跨yield转发不读时钟、不把等待归入同步重活")
+    monitor.stop()
+end
+
 function Start()
     local ok, err = xpcall(function()
         local f = fixture()
         local drivers = productionCases(f)
         resourceAndTerminalCases(f, drivers)
         labCases(f)
+        performanceCases()
     end, debug.traceback)
     if ok then print(TAG .. "RESULT ALL PASS checks=" .. checks)
     else

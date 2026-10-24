@@ -6,14 +6,15 @@
 
 local PlayerStore = require("core.PlayerStore")
 local ClientDispatcher = require("runtime.ClientDispatcher")
-local HeroConfig = require("config.HeroConfig")
 local EquipmentSystem = require("systems.EquipmentSystem")
 local DetailAttrs = require("ui.character.detail.CharacterDetailAttrs")
 local Stats = require("ui.character.detail.CharacterEquipStats")
 local I18n = require("core.I18n")
 
 local M = {}
-local CACHE_SECONDS = 0.2
+local Snapshot = require("ui.character.detail.CharacterDetailSnapshot")
+local Preview = require("ui.character.detail.EquipmentPreview")
+local Preparation = require("ui.character.detail.CharacterDetailPreparation")
 local SCROLL_FRICTION = 0.90
 local SCROLL_MIN_VEL = 0.5
 local slotHover = { key = nil, since = 0 }
@@ -86,145 +87,33 @@ local function getSelection()
     return selected
 end
 
-local function currentFallback(heroId, level)
-    -- 预览模块尚未接入时，只走原属性收集展示 current，不自行算试穿。
-    local cfg = HeroConfig.get(heroId)
-    local current = cfg and DetailAttrs.collectAttributes(heroId, cfg, level)
-        or { left = {}, right = {}, stats = {} }
-    local rows = {}
-    for _, row in ipairs(current.left or {}) do rows[#rows + 1] = row end
-    for _, row in ipairs(current.right or {}) do rows[#rows + 1] = row end
-    local order = DetailAttrs.displayOrderIndex()
-    local indices = {}
-    for i, row in ipairs(rows) do indices[row] = i end
-    table.sort(rows, function(a, b)
-        local ai, bi = order[a.key] or 9999, order[b.key] or 9999
-        if ai ~= bi then return ai < bi end
-        return indices[a] < indices[b]
-    end)
-    -- 降级也复用隔离属性链的摘要，不能为显示调用 getFromInventory 水合 live 背包。
-    return {
-        current = current, preview = nil, rows = rows,
-        currentSets = current.attrs and current.attrs._setRows or {}, previewSets = {}, candidate = nil,
-    }
-end
-
-local function heroLevel(heroId)
-    local heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
-    local roster = heroes and heroes.roster
-    local own = roster and (roster[heroId] or roster[tostring(heroId)])
-    return own and own.level or 1
-end
-
--- 0.2 秒只检查小型装备/养成签名：不深拷贝整背包、不定时重建英雄。
--- 已穿装备与候选原地升阶/洗练也能失效；无关背包条目变化不重算。
-local function dataSignature(selection)
-    local parts = {}
-    local seen = {}
-    local function append(value)
-        if type(value) ~= "table" then
-            parts[#parts + 1] = type(value) .. ":" .. tostring(value)
-            return
-        end
-        if seen[value] then parts[#parts + 1] = "cycle"; return end
-        seen[value] = true
-        local keys = {}
-        for key in pairs(value) do keys[#keys + 1] = key end
-        table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
-        parts[#parts + 1] = "{"
-        for _, key in ipairs(keys) do append(key); append(value[key]) end
-        parts[#parts + 1] = "}"
-        seen[value] = nil
-    end
-    local heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes") or {}
-    append(heroes.deployed)
-    append(heroes.teams)
-    for _, id in ipairs({ "1", "2", "3" }) do append(heroes["team" .. id]) end
-    local roster = heroes.roster or {}
-    local rosterKeys = {}
-    for id in pairs(roster) do rosterKeys[#rosterKeys + 1] = id end
-    table.sort(rosterKeys, function(a, b) return tostring(a) < tostring(b) end)
-    for _, id in ipairs(rosterKeys) do
-        local own = roster[id]
-        append(id)
-        if type(own) == "table" then
-            append(own.level); append(own.advBranch); append(own.awakening); append(own.extraTalent)
-        end
-    end
-    local equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment") or {}
-    append(equipment.equipped)
-    local inventory = equipment.inventory or {}
-    local seqs = {}
-    for _, slots in pairs(equipment.equipped or {}) do
-        if type(slots) == "table" then
-            for _, seq in pairs(slots) do seqs[tostring(seq)] = true end
-        end
-    end
-    if selection then seqs[tostring(selection.seq)] = true end
-    local seqKeys = {}
-    for seq in pairs(seqs) do seqKeys[#seqKeys + 1] = seq end
-    table.sort(seqKeys)
-    for _, seq in ipairs(seqKeys) do append(seq); append(inventory[seq] or inventory[tonumber(seq)]) end
-    append(ClientDispatcher.get("artifacts") or PlayerStore.Get("artifacts"))
-    append((ClientDispatcher.get("talents") or PlayerStore.Get("talents") or {}).litNodes)
-    return table.concat(parts, "\31")
-end
-
-local function refreshData(heroId, slot)
+-- 视图身份便宜且不触发计算，Render只用它拒绝上一候选/英雄的结果。
+function M.capture(heroId, slot)
     local selection = getSelection()
-    local level = heroLevel(heroId)
-    -- nil 表示未筛选，直接交给预览 API 选择装备自然槽；不回退主武器。
-    -- 显式 offhand 必须保留，允许武器作为副手候选由预览 API 校验。
-    local key = table.concat({ tostring(heroId), tostring(level), tostring(slot),
-        tostring(selection and selection.seq), tostring(selection and selection.slot),
-        tostring(selection and selection.owner), tostring(selection and selection.heroId),
-        tostring(selection and selection.pinned), panelState.attributeMode }, "|")
-    local elapsed = now()
-    local signature = nil
     local language = I18n.get()
-    if panelState.language ~= language then
-        panelState.language = language
-        panelState.dirty = true
-        panelState.attrHits = {}
-        clearTip()
-    end
-    if not panelState.dirty and panelState.cacheKey == key then
-        if elapsed >= panelState.cacheTime and elapsed - panelState.cacheTime < CACHE_SECONDS then
-            return panelState.data
-        end
-        signature = dataSignature(selection)
-        panelState.cacheTime = elapsed
-        if signature == panelState.cacheSignature then return panelState.data end
-    end
-    local ok, preview = pcall(require, "ui.character.detail.EquipmentPreview")
-    local result = nil
-    local failure = nil
-    if ok and type(preview.build) == "function" then
-        -- 仅调用公共 API；不写 eqData、不发送穿戴动作、不复制预览公式。
-        -- options 是完整只读来源，不是单独开关；预览内部复制后才水合/试穿。
-        -- 四模块都显式提供，缺失模块为空，保持显式空快照不回读的契约。
-        local snapshots = {
-            heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes") or {},
-            equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment") or {},
-            artifacts = ClientDispatcher.get("artifacts") or PlayerStore.Get("artifacts") or {},
-            talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents") or {},
-            includeEquipmentBonuses = panelState.attributeMode == "equipment",
-        }
-        local built, value = pcall(preview.build, heroId, level, selection and selection.seq or nil, slot, snapshots)
-        if built then
-            result = value
-        else
-            failure = tostring(value)
-            print("[EquipPanel] 属性预览构建失败 hero=" .. tostring(heroId) .. " error=" .. failure)
-        end
-    elseif not ok then
-        failure = tostring(preview)
-        print("[EquipPanel] 属性预览模块不可用 error=" .. failure)
-    end
-    if not result or not result.current then
-        result = currentFallback(heroId, level)
-        if selection or failure then result.error = "属性预览暂不可用，当前装备未改变" end
-    end
+    local request = { heroId = heroId, slot = slot, seq = selection and selection.seq,
+        mode = panelState.attributeMode, language = language, estimateVisible = panelState.estimateVisible == true }
+    request.viewKey = Snapshot.signature({ heroId, slot or false, selection or false,
+        panelState.attributeMode, language, request.estimateVisible })
+    return request
+end
+
+function M.setEstimateVisible(visible) panelState.estimateVisible = visible == true end
+
+function M.prepare(request, checkpoint)
+    local sources = request.sources
+    local heroes = sources.heroes or {}
+    local roster = heroes.roster or {}
+    local own = roster[request.heroId] or roster[tostring(request.heroId)] or {}
+    return Preview.build(request.heroId, own.level or 1, request.seq, request.slot, {
+        heroes = heroes, equipment = sources.equipment, artifacts = sources.artifacts,
+        talents = sources.talents, includeEquipmentBonuses = request.mode == "equipment",
+        checkpoint = checkpoint, compactEquipment = true,
+    })
+end
+
+function M.commit(result, request)
+    panelState.heroId, panelState.slot = request.heroId, request.slot
     result.displayRows = Stats.sortComparisonRows(DetailAttrs.filterDisplayRows(result.rows))
     if result.equipmentBonuses then
         result.equipmentBonuses.displayRows = Stats.sortComparisonRows(result.equipmentBonuses.rows)
@@ -232,10 +121,7 @@ local function refreshData(heroId, slot)
     local equipmentMode = panelState.attributeMode == "equipment"
     local displayRows = equipmentMode and result.equipmentBonuses and result.equipmentBonuses.displayRows
         or (not equipmentMode and result.displayRows) or {}
-    local orderKey = table.concat({ tostring(heroId), tostring(slot),
-        tostring(selection and selection.seq), tostring(selection and selection.slot),
-        tostring(selection and selection.owner), tostring(selection and selection.heroId),
-        tostring(selection and selection.pinned), panelState.attributeMode }, "|")
+    local orderKey = request.viewKey
     local orderChanged = panelState.orderKey ~= orderKey or #panelState.orderedRows ~= #displayRows
     local orderedKeys = {}
     for i, row in ipairs(displayRows) do
@@ -250,11 +136,29 @@ local function refreshData(heroId, slot)
     panelState.attrHits = {}
     clearTip()
     panelState.data = result
-    panelState.cacheKey = key
-    panelState.cacheTime = elapsed
-    panelState.cacheSignature = signature or dataSignature(selection)
+    panelState.cacheKey = request.viewKey
+    panelState.cacheDependency = request.key
+    panelState.language = request.language
     panelState.dirty = false
-    return result
+end
+
+local EMPTY = { pending = true, current = { stats = {} }, rows = {}, currentSets = {}, previewSets = {} }
+function M.clearPrepared()
+    panelState.data = nil
+    panelState.cacheKey = nil
+    panelState.attrHits = {}
+    clearTip()
+end
+
+-- 可独立托管的面板入口；生产由CharacterDetail共用worker，不能两个worker各占预算。
+local standalone = Preparation.bind({ capture = function()
+        return M.capture(panelState.heroId, panelState.slot)
+    end, slots = {}, prepare = M.prepare, commit = M.commit, clear = M.clearPrepared,
+    hasUpgrade = function() return false end })
+function M.update(heroId, detailState)
+    if panelState.heroId ~= heroId then M.reset(heroId, detailState and detailState.equipSlot) end
+    panelState.slot = detailState and detailState.equipSlot or nil
+    standalone.update()
 end
 
 local function rowAt(dx, dy)
@@ -276,11 +180,19 @@ local function makeTip(row, dx, dy)
 end
 
 --- 绘制配装下部。六槽与一键按钮继续由上层绘制。
+function M.getPrepared(heroId, detailState)
+    local request = Preparation.version(M.capture(heroId, detailState and detailState.equipSlot))
+    return panelState.cacheKey == request.viewKey and panelState.cacheDependency == request.key
+        and panelState.data or EMPTY
+end
+
 function M.draw(vg, heroId, detailState)
     local slot = detailState and detailState.equipSlot or nil
     if panelState.heroId ~= heroId then M.reset(heroId, slot) end
     if panelState.slot ~= slot then M.onSlotChanged(slot, heroId) end
-    local data = refreshData(heroId, slot)
+    local request = Preparation.version(M.capture(heroId, slot))
+    local data = panelState.cacheKey == request.viewKey and panelState.cacheDependency == request.key
+        and panelState.data or EMPTY
     for _, key in ipairs({ "attrs", "sets" }) do
         local state = panelState.scroll[key]
         if not panelState.dragging and math.abs(state.velocity) > SCROLL_MIN_VEL then
@@ -299,7 +211,13 @@ function M.draw(vg, heroId, detailState)
     Stats.drawHeader(vg, panelState.attributeMode)
     local displayRows = display.displayRows or display.rows or {}
     local maxAttrs, hits = Stats.drawRows(vg, displayRows, panelState.scroll.attrs.y)
-    if equipmentMode and #displayRows == 0 then
+    if data.pending then
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 28)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(196, 160, 90, 240))
+        nvgText(vg, 540, 1010, "属性准备中…", nil)
+    elseif equipmentMode and #displayRows == 0 then
         Stats.drawEmptyBonuses(vg, data.equipmentBonuses ~= nil)
     end
     panelState.scroll.attrs.max = maxAttrs
@@ -324,12 +242,12 @@ end
 
 function M.markDirty()
     panelState.dirty = true
-    panelState.cacheKey = nil
     clearTip()
 end
 
 --- 清缓存/热区与滚动；活动页切英雄可保留独立雷达视觉闭包。
 local function clearPanelData()
+    standalone.cancel()
     clearSlotHover()
     panelState.data = nil
     panelState.cacheKey = nil
@@ -535,11 +453,19 @@ function M.peekSlotEquipAt(dx, dy, heroId)
             local equipment = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
             local slots = EquipmentSystem.getHeroSlots(equipment, heroId)
             if not slots then return nil end
+            local inventory = equipment and equipment.inventory or {}
+            local function readItem(id)
+                local source = id and (inventory[tostring(id)] or inventory[id])
+                if not source then return nil end
+                local item = Snapshot.copy(source)
+                if not item.slot or not item.type then EquipmentSystem.hydrate(item) end
+                return item
+            end
             local seq = slots[slot.slot]
-            local equip = seq and EquipmentSystem.getFromInventory(equipment, seq) or nil
+            local equip = readItem(seq)
             if not equip and slot.slot == "offhand" then
                 local weaponSeq = slots.weapon
-                local weapon = weaponSeq and EquipmentSystem.getFromInventory(equipment, weaponSeq) or nil
+                local weapon = readItem(weaponSeq)
                 if weapon and weapon.grip == "twohand" then
                     equip, seq = weapon, weaponSeq
                 end

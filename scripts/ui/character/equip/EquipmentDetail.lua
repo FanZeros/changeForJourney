@@ -29,6 +29,12 @@ local BlacksmithConfig = require("config.BlacksmithConfig")
 local KeywordText      = require("ui.widget.KeywordText")
 
 local EquipmentDetail = {}
+local Snapshot = require("ui.character.detail.CharacterDetailSnapshot")
+---@type function|nil
+local preparedReader = nil
+
+--- 评分数据由详情Update准备；注入getter避免EquipmentDetail/CharacterDetail循环require。
+function EquipmentDetail.setPreparedReader(reader) preparedReader = reader end
 
 -- 套装词条关键词富文本（2件/4件/6件 三行各一实例；仅主面板交互，
 -- 绘制与输入同在 compact 0.92 变换坐标系，热区天然对齐，无需 setTransform）
@@ -153,8 +159,30 @@ local function calcEquipPower(equip, heroId, slot)
     return EquipmentPower.score(equip, heroId, slot)
 end
 
+local function readPreparedScore(equip, heroId, slot)
+    if not equip or not heroId or not preparedReader then return false end
+    local seq = equip.seq
+    if seq == nil then
+        local data = PlayerStore.Get("equipment")
+        local inventory = data and data.inventory or {}
+        local selected = inventory[detState.equipSeq] or inventory[tonumber(detState.equipSeq)]
+        if selected == equip then seq = detState.equipSeq end
+    end
+    -- seq缺失也交由reader判定active，不能偷偷fallback冷ctx。
+    return preparedReader(seq, heroId, slot or detState.comparisonSlot or equip.slot, detState.owner)
+end
+
+local function renderEquipPower(equip, heroId, slot)
+    local handled, score = readPreparedScore(equip, heroId, slot)
+    if handled then return score ~= nil and score or "—" end
+    return calcEquipPower(equip, heroId, slot)
+end
+
 local function replacementGain(equip)
     if not equip or not detState.heroId then return 0 end
+    local handled, _, gain = readPreparedScore(equip, detState.heroId, detState.slot)
+    if handled then return gain end
+    -- 非联动宿主保留旧同步API与估值，不能把铁匠/独立背包永久降级为pending。
     local context = EquipmentPower.getContext(detState.heroId)
     local result = EquipmentPower.evaluate(context, detState.equipSeq, detState.slot or equip.slot)
     return result and result.valid and result.gain or 0
@@ -360,7 +388,14 @@ local function compactSetLines(equip)
     if eqData and detState.heroId then
         local counts = EquipmentSetSystem.countSets(
             eqData, detState.heroId,
-            EquipmentSystem.getFromInventory,
+            function(data, seq)
+                local inventory = data and data.inventory or {}
+                local item = inventory[tostring(seq)] or inventory[seq]
+                if not item then return nil end
+                local isolated = Snapshot.copy(item)
+                if not isolated.type or not isolated.slot then EquipmentSystem.hydrate(isolated) end
+                return isolated
+            end,
             function(data, hid) return EquipmentSystem.getHeroSlots(data, hid) end)
         count = counts[setId] or 0
         local rows = EquipmentSetSystem.summarize(counts)
@@ -493,7 +528,7 @@ local panelDraw = EquipmentDetailDraw.create({
     end,
     drawImageCentered = drawImageCentered,
     drawTextStroke = drawTextStroke,
-    calcEquipPower = calcEquipPower,
+    calcEquipPower = renderEquipPower,
     getEquipIcon = getEquipIcon,
     getStatName = getStatName,
     formatStatValue = formatStatValue,

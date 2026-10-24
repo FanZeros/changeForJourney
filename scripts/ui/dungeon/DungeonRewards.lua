@@ -17,12 +17,22 @@ function M.build(data)
     end
     for _, item in ipairs(data.equips or {}) do
         -- 回执含完整装备及 destination，RewardPopup 可按原实例展示遗匣去向。
-        local reward = {}
-        for key, value in pairs(item) do reward[key] = value end
-        reward.type = "equip"
-        reward.amount = 1
-        reward.iconPath = item.iconPath or (item.templateId and EquipmentConfig.getIconPath(item.templateId)) or CHEST_ICON
-        rewards[#rewards + 1] = reward
+        if item.type == "equipbatch" then
+            -- 大批掉落按品质聚合：只展示数量，不在界面层再生成装备。
+            local reward = {}
+            for key, value in pairs(item) do reward[key] = value end
+            reward.type = "equipbatch"
+            reward.amount = item.amount or item.count or 0
+            reward.iconPath = item.iconPath or CHEST_ICON
+            rewards[#rewards + 1] = reward
+        else
+            local reward = {}
+            for key, value in pairs(item) do reward[key] = value end
+            reward.type = "equip"
+            reward.amount = 1
+            reward.iconPath = item.iconPath or (item.templateId and EquipmentConfig.getIconPath(item.templateId)) or CHEST_ICON
+            rewards[#rewards + 1] = reward
+        end
     end
     -- 装备副本补发的卷轴/扫荡券：并入同一回执展示。
     local SCROLL_TO_REWARD = {

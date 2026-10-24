@@ -182,6 +182,34 @@ function SweepService.PrepareSweep(uid, args, control)
             end
             if checkpoint then checkpoint("classify", index, #equips) end
         end
+        if data.rewards.batchQualities then
+            -- 大批掉落：结算时才逐件生成；准备阶段只保留品质序列。
+            -- 装备等级全场一致，生成结果只由品质决定，因此序列足以精确重建奖励。
+            local settings = snapshot.equipment.settings
+            local level = entry.monsterLevel
+            local sequences, autoCounts, autoCount, autoEssence = {}, {}, 0, 0
+            for index, quality in ipairs(data.rewards.batchQualities) do
+                if BlacksmithConfig.shouldAutoDecompose(settings, quality, level) then
+                    autoCounts[quality] = (autoCounts[quality] or 0) + 1
+                    autoCount = autoCount + 1
+                    autoEssence = autoEssence + BlacksmithConfig.calcAutoDecomposeEssence(quality, level)
+                else
+                    sequences[#sequences + 1] = quality
+                end
+                if checkpoint and index % 1024 == 0 then
+                    checkpoint("classify", index, #data.rewards.batchQualities)
+                end
+            end
+            data.batchQualities, data.batchLevel = sequences, level
+            data.batchAutoCounts = autoCounts
+            data.batchAutoCount, data.batchAutoEssence = autoCount, autoEssence
+            data.autoEssence = data.autoEssence + autoEssence
+            -- 只有装不下的部分才需要遗匣；与原逐件路径的容量门禁同义。
+            local free = math.max(0, EquipmentSystem.MAX_INVENTORY
+                - EquipmentSystem.getInventoryCount(snapshot.equipment))
+            if #sequences > free and not sources.lootbox then return nil, "遗匣数据未加载" end
+            equips = {}
+        end
         if #data.keptEquips > 0
             and EquipmentSystem.getInventoryCount(snapshot.equipment) + #data.keptEquips > EquipmentSystem.MAX_INVENTORY
             and not sources.lootbox then return nil, "遗匣数据未加载" end
@@ -232,7 +260,53 @@ function SweepService.CommitSweep(uid, token, control)
                 equip = equip, destination = destination }
             byQuality[equip.quality] = (byQuality[equip.quality] or 0) + 1
         end
+        if data.batchQualities then
+            -- 大批掉落：只为本就能装进背包的前 N 件生成实体装备，其余按品质聚合入遗匣。
+            -- 品质序列已在准备阶段按原掉落顺序冻结，因此分配结果和逐件处理一致。
+            local level = data.batchLevel
+            local free = math.max(0, EquipmentSystem.MAX_INVENTORY - EquipmentSystem.getInventoryCount(equipment))
+            local qualities = data.batchQualities
+            local fitted = math.min(free, #qualities)
+            for index = 1, fitted do
+                local quality = qualities[index]
+                local equip = EquipmentSystem.generateRandom(level, quality)
+                if not equip then error("扫荡装备生成失败") end
+                EquipmentSystem.addToInventory(equipment, equip)
+                inventoryCount = inventoryCount + 1
+                granted[#granted + 1] = { type = "equip", templateId = equip.templateId,
+                    quality = equip.quality, level = equip.level, slot = equip.slot,
+                    equip = equip, destination = "inventory" }
+                byQuality[quality] = (byQuality[quality] or 0) + 1
+            end
+            if fitted < #qualities then
+                -- 同一品质/等级合并为一条；遗匣不再为每件实体装备落盘。
+                local counts, order = {}, {}
+                for index = fitted + 1, #qualities do
+                    local quality = qualities[index]
+                    if not counts[quality] then
+                        counts[quality] = 0
+                        order[#order + 1] = quality
+                    end
+                    counts[quality] = counts[quality] + 1
+                    byQuality[quality] = (byQuality[quality] or 0) + 1
+                end
+                for _, quality in ipairs(order) do
+                    LootBoxSystem.addBatch(lootbox, quality, level, counts[quality], "overflow")
+                    lootboxCount = lootboxCount + counts[quality]
+                    granted[#granted + 1] = { type = "equipbatch", quality = quality,
+                        level = level, amount = counts[quality], destination = "lootbox" }
+                end
+            end
+        end
         if inventoryCount > 0 then Transaction.MarkRewardDirty(uid, "equipment") end
+        if data.batchAutoCount and data.batchAutoCount > 0 and lootbox then
+            -- 自动分解在准备阶段已按品质汇总，只写一次累计通知；
+            -- 件数与精粹与逐件调用完全相同。
+            for quality, count in pairs(data.batchAutoCounts or {}) do
+                BlacksmithConfig.recordAutoDecomposeBatch(lootbox, quality, data.batchLevel, count,
+                    BlacksmithConfig.calcAutoDecomposeEssence(quality, data.batchLevel))
+            end
+        end
         if autoEssence > 0 and lootbox then
             for _, equip in ipairs(decomposedEquips) do
                 local essence = BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
@@ -241,7 +315,8 @@ function SweepService.CommitSweep(uid, token, control)
         end
         if lootboxCount > 0 or (autoEssence > 0 and lootbox) then Transaction.MarkRewardDirty(uid, "lootbox") end
         if autoEssence > 0 then
-            rewards.autoDecomposeCount, rewards.autoDecomposeEssence = #decomposedEquips, autoEssence
+            rewards.autoDecomposeCount = #decomposedEquips + (data.batchAutoCount or 0)
+            rewards.autoDecomposeEssence = autoEssence
         end
         rewards.playerProgress, rewards.heroProgress = Progress.Apply(sources.heroes, data.ids, sources.player, rewards)
         if rewards.heroExp > 0 then Transaction.MarkRewardDirty(uid, "heroes") end

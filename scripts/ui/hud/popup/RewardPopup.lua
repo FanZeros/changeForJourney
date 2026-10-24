@@ -312,7 +312,7 @@ end
 local function itemAccent(item)
     local q = 2
     if item.type == "equip" or item.type == "hero"
-        or item.type == "artifact" or item.type == "seed" then
+        or item.type == "artifact" or item.type == "seed" or item.type == "equipbatch" then
         q = item.quality or 1
     elseif item.type == "shard" and item.heroId then
         local heroDef = HeroConfig.get(tonumber(item.heroId))

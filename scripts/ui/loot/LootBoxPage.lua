@@ -227,9 +227,10 @@ local function rebuildSummary()
     local attributeSort = sortKey ~= nil and sortKey ~= "default" and field == nil
     for sourceIndex, entry in ipairs(state.sourceSummary) do
         local equip = entry.equip
-        -- 待整理只在所有过滤维度不限时展示，排序方向不构成过滤条件。
+        local batch = entry.batch == true
+        -- 待整理 / 聚合批次只在所有过滤维度不限时展示，排序方向不构成过滤条件。
         local matches = equip and EquipmentQuery.matches(equip, state.qualitySet, state.setFilter, state)
-            or not equip and not hasFilter()
+            or (not equip and not hasFilter() and (not batch or (entry.count or 0) > 0))
         if matches then
             local display = {}
             for key, value in pairs(entry) do display[key] = value end
@@ -248,6 +249,15 @@ local function rebuildSummary()
                 display.recycleProtected = not LootBoxSystem.canDecompose(entry)
                 if display.recycleProtected then state.protectedCount = state.protectedCount + 1
                 else state.recyclableCount = state.recyclableCount + 1 end
+            elseif batch then
+                -- 聚合批次不在此生成装备；只展示品质/等级/数量，领取时才物化。
+                local amount = entry.count or 0
+                display.power = 0
+                display.batchCount = amount
+                state.count = state.count + amount
+                display.recycleProtected = not LootBoxSystem.canDecompose(entry)
+                if display.recycleProtected then state.protectedCount = state.protectedCount + amount
+                else state.recyclableCount = state.recyclableCount + amount end
             else
                 display.power = 0
                 state.pendingCount = state.pendingCount + (entry.count or 1)
@@ -262,6 +272,12 @@ local function rebuildSummary()
     end
     table.sort(state.summary, function(a, b)
         if (a.equip ~= nil) ~= (b.equip ~= nil) then return a.equip ~= nil end
+        if not a.equip and (a.batchCount ~= nil) ~= (b.batchCount ~= nil) then
+            return a.batchCount ~= nil
+        end
+        if not a.equip and a.batchCount ~= nil and a.batchCount ~= b.batchCount then
+            return a.batchCount > b.batchCount
+        end
         if not a.equip then return a.displayOrder < b.displayOrder end
         if attributeSort then
             if a.hasSortAttribute ~= b.hasSortAttribute then return a.hasSortAttribute end
@@ -474,11 +490,11 @@ local function drawFilters(vg)
     end
 end
 
--- 局部绘制函数，只展示已生成装备；没有装备的残留数据保留待整理占位。
+-- 局部绘制函数，只展示已生成装备；聚合批次显示品质/等级/数量；无装备的残留数据保留待整理占位。
 ---@param entry table
 local function drawEntry(vg, entry, index, cy)
     local equip = entry.equip
-    local quality = equip and equip.quality
+    local quality = equip and equip.quality or entry.quality
     local q = quality and EquipmentConfig.QUALITY[quality]
     local color = (q and q.color) or "b5a68f"
     local r = tonumber(color:sub(1, 2), 16) or 255
@@ -486,6 +502,7 @@ local function drawEntry(vg, entry, index, cy)
     local b = tonumber(color:sub(5, 6), 16) or 255
     DarkIcon.drawNine(vg, "plain", 72, cy - LIST.rowH * 0.5, 930, LIST.rowH)
     local name = "待整理"
+    local batchCount = entry.batchCount
     if equip then
         if q then DarkIcon.drawQualityBg(vg, quality, 181, cy, 174, 174, 1.0) end
         local template = EquipmentConfig.ITEMS[equip.templateId]
@@ -507,6 +524,12 @@ local function drawEntry(vg, entry, index, cy)
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
         end
         EquipmentSetIcon.drawBadge(vg, equip, 181, cy, 174, 1.0)
+    elseif batchCount then
+        -- 聚合批次：不在此物化装备，只按品质与数量展示；图标用品质框占位。
+        if q then DarkIcon.drawQualityBg(vg, quality, 181, cy, 174, 174, 1.0) end
+        name = string.format("%s装备 ×%d", q and q.name or "未知", batchCount)
+        text(vg, 181, cy + 69, "Lv." .. tostring(entry.level or 1), 32,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
     else
         text(vg, 181, cy, "待整理", 32, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 181, 166, 143, 3)
     end
@@ -518,13 +541,13 @@ local function drawEntry(vg, entry, index, cy)
     local nameWidth = nvgTextBounds(vg, 0, 0, name)
     local font = math.min(42, 42 * 448 / math.max(1, nameWidth))
     text(vg, 294, cy - 56, name, font, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, r, g, b, 3)
-    if equip and quality and QualityMark.draw(vg, quality, 322, cy + 1, 48, 1) then
+    if (equip or batchCount) and quality and QualityMark.draw(vg, quality, 322, cy + 1, 48, 1) then
         -- 品质行改用背包/铁匠共用的小图，不再重复写品质名。
     else
-        text(vg, 294, cy + 1, equip and ((q and q.name) or "品质待整理") or "装备内容待整理", 34,
+        text(vg, 294, cy + 1, (equip or batchCount) and ((q and q.name) or "品质待整理") or "装备内容待整理", 34,
             NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 224, 217, 201, 2)
     end
-    -- 第三行：确定装备显示战力（与装备详情同口径）；待整理条目保留不可操作提示。
+    -- 第三行：确定装备显示战力（与装备详情同口径）；聚合批次显示数量；待整理条目保留不可操作提示。
     if equip then
         local powerStr = NumberUtil.format(entry.power)
         nvgFontFace(vg, "sans")
@@ -532,11 +555,14 @@ local function drawEntry(vg, entry, index, cy)
         DrawUtil.drawImageCentered(vg, imgPower, 294 + 15, cy + 59, 30, 30, 1)
         text(vg, 294 + 30 + 8, cy + 59, powerStr, 30,
             NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 214, 102, 2)
+    elseif batchCount then
+        text(vg, 294, cy + 59, string.format("%d 件 · Lv.%s", batchCount, tostring(entry.level or 1)), 30,
+            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 214, 102, 2)
     else
         text(vg, 294, cy + 59, "暂不可领取或回收", 28,
             NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 181, 166, 143, 2)
     end
-    if equip and entry.recycleProtected then
+    if (equip or batchCount) and entry.recycleProtected then
         local protectedText = CurationText.text(entry.source == "curation" and "整理转存 · 受保护"
             or "受保护装备不参与回收")
         nvgFontSize(vg, 18)
@@ -546,9 +572,10 @@ local function drawEntry(vg, entry, index, cy)
             NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
     end
     nvgRestore(vg)
+    local actionable = equip ~= nil or batchCount ~= nil
     drawButton(vg, "lbp_claim_" .. index,
-        ACTION_CX, cy, ACTION_W, ACTION_H, equip and "领取" or "待整理",
-        "green", equip ~= nil)
+        ACTION_CX, cy, ACTION_W, ACTION_H, actionable and "领取" or "待整理",
+        "green", actionable)
 end
 
 local function drawConfirmation(vg)
@@ -695,7 +722,7 @@ function LootBoxPage.handleHover(dx, dy)
         end
     end
     local entry = entryAt(dx, dy)
-    if not entry or not entry.equip or dx >= ACTION_CX - ACTION_W * 0.5 then
+    if not entry or (not entry.equip and not entry.batchCount) or dx >= ACTION_CX - ACTION_W * 0.5 then
         state.hoverIndex, state.hoverSince = nil, 0
         if not state.detailPinned then state.detailIndex = nil end
         return
@@ -718,7 +745,7 @@ function LootBoxPage.handleRightClick(dx, dy)
     end
     if state.dragging or state.dragMoved then return true end
     local entry = entryAt(dx, dy)
-    if not entry or not entry.equip then return true end
+    if not entry or (not entry.equip and not entry.batchCount) then return true end
     clearDetail()
     if entry.recycleProtected then
         LootBoxPage.showToast(CurationText.text("受保护装备不参与回收"))
@@ -804,14 +831,14 @@ function LootBoxPage.handleInput(dx, dy)
         return true
     end
     local entry = entryAt(dx, dy)
-    if entry and entry.equip then
+    if entry and (entry.equip or entry.batchCount) then
         if DrawUtil.hitTest(dx, dy, ACTION_CX, rowY(entry.index), ACTION_W, ACTION_H) then
             BF.trigger("lbp_claim_" .. entry.index)
             clearDetail()
             action("claim", onClaimOne, entry.sourceIndex)
-        elseif state.detailIndex == entry.index and state.detailPinned then
+        elseif entry.equip and state.detailIndex == entry.index and state.detailPinned then
             clearDetail()
-        else
+        elseif entry.equip then
             state.detailIndex, state.detailPinned = entry.index, true
             state.hoverIndex, state.hoverSince = entry.index, time.elapsedTime
             print("[LootBoxPage] detail index=" .. tostring(entry.sourceIndex))

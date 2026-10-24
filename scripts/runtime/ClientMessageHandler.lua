@@ -343,11 +343,12 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      if (data.diamond or 0) > 0 then rewards[#rewards + 1] = { type = "diamond", amount = data.diamond } end
      for i, equip in ipairs(equips) do
          -- SweepService已提供完整只读展示行，可复用而不为巨量装备再复制一层。
+         -- 只有旧回执缺 type 时才补成 equip；聚合装备行必须保留自己的类型。
          local reward = equip
-         if equip.type ~= "equip" then
+         if equip.type == nil then
              reward = {}
              for key, value in pairs(equip) do reward[key] = value end
-             reward.type = "equip" -- 旧回执无type时只在副本补齐。
+             reward.type = "equip"
          end
          rewards[#rewards + 1] = reward
          if checkpoint then checkpoint("presentation", i, #equips) end

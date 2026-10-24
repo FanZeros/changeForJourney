@@ -375,6 +375,34 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          preparedRewards = checkpoint and popup.prepareRewards(rewards, checkpoint) or nil }
  end
 
+ -- 情景英雄/碎片只展示实际到账；旧回执仍兼容，但不以原配置数量补造奖励。
+ local function scenarioHeroRewards(data, heroReward)
+     local reward = data.reward or {}
+     local rewards, hasCoin = {}, false
+     if type(data.rewards) == "table" then
+         for _, item in ipairs(data.rewards) do
+             local amount = tonumber(item.shardGain) or tonumber(item.amount) or 0
+             if item.type ~= "shard" or amount > 0 then
+                 local shown = {}
+                 for key, value in pairs(item) do shown[key] = value end
+                 if item.type == "shard" then shown.amount = amount end
+                 rewards[#rewards + 1] = shown
+                 if item.type == "tavernCoin" or item.type == "tavern_coin" then hasCoin = true end
+             end
+         end
+     else
+         if heroReward and reward.isNew ~= false then
+             rewards[#rewards + 1] = { type = "hero", heroId = reward.heroId,
+                 name = reward.name or "英雄", quality = (reward.quality or 1) + 2 }
+         end
+         local amount = math.max(0, tonumber(reward.shardGain) or tonumber(reward.amount) or 0)
+         if amount > 0 then rewards[#rewards + 1] = { type = "shard", heroId = reward.heroId, amount = amount } end
+     end
+     local coins = math.max(0, tonumber(reward.tavernCoin) or 0)
+     if coins > 0 and not hasCoin then rewards[#rewards + 1] = { type = "tavernCoin", amount = coins } end
+     return rewards
+ end
+
  function M.handleActionResult(eventType, eventData)
      ---@type table
      local data
@@ -692,41 +720,33 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
              local key = data.reward.currencyKey; local amount = data.reward.amount or 0
              local popupType = CURRENCY_KEY_TO_POPUP_TYPE[key] or key
              RewardPopup.show("远征奖励", { { type = popupType, amount = amount } }, { onClose = fireTutorial })
-         elseif data.success and data.reward then
-             if data.rewardType == "hero" then
-                 local heroId = data.reward.heroId; local heroName = data.reward.name or "英雄"
-                 local heroQuality = data.reward.quality or 1; local displayQuality = heroQuality + 2
-                 local HERO_TO_FOLLOWUP = { [1]=14, [2]=15, [3]=16 }
-                 local followUpId = HERO_TO_FOLLOWUP[heroId]
-                 local heroConfig = followUpId and ScenarioDialogueConfig["SCENARIO_" .. followUpId]
-                 RewardPopup.show("远征奖励", { { type = "hero", heroId = heroId, name = heroName, quality = displayQuality } }, {
-                     onClose = function()
-                         fireTutorial()
-                         if heroConfig then M.pendingFollowUpDialogue_ = { config = heroConfig } end
-                     end
-                 })
-             elseif data.rewardType == "shard" then
-                 -- 潜能引导碎片：领完自动打开该角色的觉醒（潜能）页，引导玩家去嵌合
-                 -- （relic 遗物奖励分支已随 927 遗物后端移除一并删除）
-                 local shardHeroId = data.reward.heroId
-                 RewardPopup.show("远征奖励", { { type = "shard", heroId = shardHeroId, amount = data.reward.amount or 0 } }, {
-                     onClose = function()
-                         fireTutorial()
-                         local okCd, CharacterDetail = pcall(require, "ui.character.detail.CharacterDetail")
-                         if okCd and CharacterDetail then
-                             CharacterDetail.open(shardHeroId, "awaken")
-                             print("[ClientMessageHandler] shard reward: opened awakening page for hero " .. tostring(shardHeroId))
-                         end
-                     end,
-                 })
-             else
-                 RewardPopup.show("远征奖励", { {
-                     type = "equip", templateId = data.reward.templateId,
-                     quality = data.reward.quality or 1, level = data.reward.level or 1,
-                     slot = data.reward.slot, equip = data.reward.equip,
-                     destination = data.reward.destination,
-                 } }, { onClose = fireTutorial })
+         elseif data.success and (data.rewardType == "hero" or data.rewardType == "shard") then
+             local reward = data.reward or {}
+             local heroId = reward.heroId
+             if not heroId then
+                 for _, item in ipairs(data.rewards or {}) do if item.heroId then heroId = item.heroId; break end end
              end
+             local HERO_TO_FOLLOWUP = { [1]=14, [2]=15, [3]=16 }
+             local followUpId = data.rewardType == "hero" and HERO_TO_FOLLOWUP[heroId]
+             local heroConfig = followUpId and ScenarioDialogueConfig["SCENARIO_" .. followUpId]
+             local rewards = scenarioHeroRewards(data, data.rewardType == "hero")
+             local function onClose()
+                 fireTutorial()
+                 if data.rewardType == "hero" then
+                     if heroConfig then M.pendingFollowUpDialogue_ = { config = heroConfig } end
+                 elseif heroId then
+                     local okCd, CharacterDetail = pcall(require, "ui.character.detail.CharacterDetail")
+                     if okCd and CharacterDetail then CharacterDetail.open(heroId, "awaken") end
+                 end
+             end
+             if #rewards > 0 then RewardPopup.show("远征奖励", rewards, { onClose = onClose }) else onClose() end
+         elseif data.success and data.reward then
+             RewardPopup.show("远征奖励", { {
+                 type = "equip", templateId = data.reward.templateId,
+                 quality = data.reward.quality or 1, level = data.reward.level or 1,
+                 slot = data.reward.slot, equip = data.reward.equip,
+                 destination = data.reward.destination,
+             } }, { onClose = fireTutorial })
          else
              fireTutorial()
          end
@@ -738,12 +758,22 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
              local heroCfg = HeroConfig.get(data.heroId); local hn = heroCfg and heroCfg.name or "英雄"
              local hq = heroCfg and heroCfg.quality or 1
              local joinedHeroId = data.heroId
-             RewardPopup.show("合成成功", { { type = "hero", heroId = joinedHeroId, name = hn, quality = hq + 2 } }, {
+             local rewards = { { type = "hero", heroId = joinedHeroId, name = hn, quality = hq + 2 } }
+             if (tonumber(data.tavernCoin) or 0) > 0 then
+                 rewards[#rewards + 1] = { type = "tavernCoin", amount = data.tavernCoin }
+             end
+             RewardPopup.show("合成成功", rewards, {
                  onClose = function()
                      require("ui.character.hero.HeroScenario").onOpenHero(joinedHeroId)
                  end,
              })
          end
+     end
+
+     -- 觉醒的页面回调已在上方正常分发；这里只告知旧库存归并的实际到账币。
+     if data.action == Protocol.ACTION_TYPES.ACTIVATE_AWAKENING and data.success
+         and (tonumber(data.tavernCoin) or 0) > 0 then
+         RewardPopup.show("转化成功", { { type = "tavernCoin", amount = data.tavernCoin } })
      end
 
      -- 碎片转酒馆币

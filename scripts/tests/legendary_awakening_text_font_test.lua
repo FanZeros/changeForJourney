@@ -3,7 +3,10 @@
 -- -awakening-font-baseline仅测原36号，打印溢出证据；默认验证真实Panel.draw最终字号/全文/关键词。
 -- File/FileSystem封闭；唯一业务替身为显式owned fixture，点击声音边界静音。没有GPU截图/设备验收声明。
 local TAG = "[legendary_awakening_text_font] "
-local totals = { assertions = 0, failed = 0, samples = 0, glyphs = 0, hotspots = 0, overflow = 0, renders = 0 }
+local totals = { assertions = 0, failed = 0, samples = 0, glyphs = 0, hotspots = 0, overflow = 0,
+    renders = 0, shardSamples = 0 }
+local shardCapture = { enabled = false, texts = {}, buttonFonts = {} }
+local lastFontSize = 0
 ---@type NVGContextWrapper?
 local vg = nil
 local finished, cleaned, baseline = false, false, false
@@ -61,6 +64,23 @@ local function prepare()
     modules.Panel.initImages(vg)
     local sounds = require("systems.GameSFX")
     patch(sounds, "play", function() end) -- 关键词点击声音，不替换文字/热区/输入实现。
+    -- 仅观察原生调用并继续真绘制；不替换真实字体、测量或Panel的缩号实现。
+    local nativeFontSize, nativeText = nvgFontSize, nvgText
+    patch(_G, "nvgFontSize", function(ctx, size)
+        lastFontSize = size
+        return nativeFontSize(ctx, size)
+    end)
+    patch(_G, "nvgText", function(ctx, x, y, text, endp)
+        if shardCapture.enabled and x == 271 and y == 2160 then
+            local bounds = {}
+            local width = nvgTextBounds(ctx, x, y, text, bounds)
+            shardCapture.texts[#shardCapture.texts + 1] = {
+                text = text, size = lastFontSize, width = width, bounds = bounds }
+        elseif shardCapture.enabled and x == 720 and y == 2160 then
+            shardCapture.buttonFonts[#shardCapture.buttonFonts + 1] = lastFontSize
+        end
+        return nativeText(ctx, x, y, text, endp)
+    end)
     local displayText = modules.I18n.displayText
     patch(modules.I18n, "displayText", function(ctx, x, y, text, endp)
         if current.capturing then
@@ -167,6 +187,47 @@ local function finalSample(heroId, stage, lang, label, short)
         .. " lines=" .. lines .. " h=" .. height .. " inkBottom=" .. bottom .. " keywords=" .. keywords)
 end
 
+local function shardNumberMatrix(label)
+    local Panel = modules.Panel
+    check(modules.I18n.set("zh_CN"), "数字矩阵使用真实中文宿主字体")
+    local savedShards = fixture.shards
+    for stage = 1, 3 do
+        Panel.reset(1)
+        check(Panel.handleInput(204 + (stage - 1) * 336, 1056, 1), label .. "数字矩阵选择原切片")
+        local sizes = {}
+        local cost = modules.Config.getShardCost(stage)
+        for _, count in ipairs({ 0, 9, 99, 100, 999, 1000, 999999999999999, 99, 9 }) do
+            fixture.shards = count
+            shardCapture.texts, shardCapture.buttonFonts = {}, {}
+            shardCapture.enabled = true
+            Panel.draw(vg, 1)
+            shardCapture.enabled = false
+            check(#shardCapture.texts == 1, label .. "真实Panel只绘制一行完整拥有/需求")
+            local text = assert(shardCapture.texts[1], "missing shard number draw")
+            check(text.text == tostring(count) .. "/" .. cost,
+                label .. "真实数字保留全部拥有/需求，不截断省略")
+            check(text.size > 0 and text.size <= (count >= 100 and 48 or 66),
+                label .. "三位数主动缩小，长库存继续适配")
+            check(text.width > 0 and text.width <= 177.00001 and #text.bounds == 4
+                and text.bounds[3] <= 448.00001,
+                label .. "真实sans完整字符串advance/字墨右界不越177安全宽")
+            check(#shardCapture.buttonFonts == 1 and shardCapture.buttonFonts[1] == 46,
+                label .. "缩号后按钮原生绘制仍为46号")
+            if count == 9 or count == 0 then check(text.size == 66,
+                label .. "短数字恢复旧66号，不沿用大库存的小字号") end
+            if sizes[count] then check(math.abs(sizes[count] - text.size) < 0.00001,
+                label .. "大库存返回99/9后字号与首次完全相同") end
+            sizes[count] = text.size
+            totals.shardSamples = totals.shardSamples + 1
+            print(TAG .. "SHARDS " .. label .. " " .. text.text .. " font=" .. text.size
+                .. " width=" .. text.width .. " inkRight=" .. text.bounds[3])
+        end
+        check(sizes[100] < sizes[99] and sizes[999999999999999] < sizes[1000],
+            label .. "真实字体三位数比两位小，长库存比四位更小")
+    end
+    fixture.shards = savedShards
+end
+
 function Start()
     for _, arg in ipairs(GetArguments()) do if arg == "-awakening-font-baseline" then baseline = true end end
     local ok, err = xpcall(function()
@@ -213,6 +274,7 @@ function HandleLegendaryAwakeningFontRender()
                 end
             end
         end
+        if not baseline then shardNumberMatrix(size[1] .. "x" .. size[2]) end
     end, debug.traceback)
     nvgRestore(vg)
     nvgEndFrame(vg)
@@ -220,11 +282,13 @@ function HandleLegendaryAwakeningFontRender()
     if baseline or index == #SIZES or not ok then
         check(ioCalls == 0, "独立Runtime全部File/FS请求0，无玩家档IO")
         check(totals.samples == (baseline and 30 or 90), "五语六新增正文及原短文完整测绘覆盖")
+        check(totals.shardSamples == (baseline and 0 or 54), "双分辨率三阶段数字边界及大库存恢复矩阵完整覆盖")
         finished = true
         cleanup()
         print(TAG .. "FINAL " .. (totals.failed == 0 and "ALL PASS" or "FAILED")
             .. " baseline=" .. tostring(baseline) .. " assertions=" .. totals.assertions .. " failed=" .. totals.failed
-            .. " samples=" .. totals.samples .. " glyphs=" .. totals.glyphs .. " hotspots=" .. totals.hotspots
+            .. " samples=" .. totals.samples .. " shardSamples=" .. totals.shardSamples
+            .. " glyphs=" .. totals.glyphs .. " hotspots=" .. totals.hotspots
             .. " overflow=" .. totals.overflow .. " renders=" .. totals.renders .. " FileFS=" .. ioCalls)
         engine:Exit()
     end

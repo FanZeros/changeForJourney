@@ -22,6 +22,8 @@ handlers[Protocol.ACTION_TYPES.ACTIVATE_AWAKENING] = function(uid, params)
         success   = true,
         heroId    = result.heroId,
         nodeIndex = result.nodeIndex,
+        tavernCoin = result.tavernCoin,
+        overflowShards = result.overflowShards,
     }
 end
 

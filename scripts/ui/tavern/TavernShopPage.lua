@@ -14,6 +14,8 @@ local BF             = require("systems.ButtonFeedback")
 local PlayerStore    = require("core.PlayerStore")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local TavernConfig     = require("config.TavernConfig")
+local HeroShardPolicy  = require("shared.heroes.HeroShardPolicy")
+local I18n             = require("core.I18n")
 local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 
 local TavernShopPage = {}
@@ -439,13 +441,40 @@ local function getShardHeroId(item)
     return item.rewardHeroId or SHARD_ITEM_HERO_ID[item.id]
 end
 
-local function isOwnedHero(heroId)
-    if not heroId then return false end
+local function getHeroEntry(heroId)
     local heroesData = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
     local roster = heroesData and heroesData.roster
-    if not roster then return false end
-    local heroData = roster[heroId] or roster[tostring(heroId)]
-    return heroData ~= nil and heroData.level ~= nil
+    return roster and (roster[heroId] or roster[tostring(heroId)])
+end
+
+local function isOwnedHero(heroId)
+    if not heroId then return false end
+    local heroData = getHeroEntry(heroId)
+    return heroData ~= nil and (tonumber(heroData.level) or 0) > 0
+end
+
+local function getShardRemaining(item)
+    local heroId = getShardHeroId(item)
+    if not heroId then return math.huge end -- 招募券不受碎片需求限制。
+    return HeroShardPolicy.remaining(heroId, getHeroEntry(heroId)) or 0
+end
+
+local function getBuyMaxQuantity(item)
+    local cfg = TavernConfig.getShopItem(item.id) or item
+    local affordable = math.max(0, math.floor((tonumber(GameState.getTavernCoin()) or 0) / math.max(1, cfg.price or 1)))
+    local cap = affordable
+    if cfg.limitCount and cfg.limitCount >= 0 then
+        cap = math.min(cap, math.max(0, cfg.limitCount - getPurchased(item.id)))
+    end
+    local rewardCount = math.max(1, cfg.rewardCount or 1)
+    return math.min(cap, math.floor(getShardRemaining(item) / rewardCount))
+end
+
+local function refreshBuyLimit()
+    local item = shopState.dialogItemId and getShopItemById(shopState.dialogItemId)
+    if not item or shopState.pendingBuy then return end
+    shopState.buyMaxQuantity = getBuyMaxQuantity(item)
+    shopState.buyQuantity = math.min(shopState.buyMaxQuantity, math.max(1, shopState.buyQuantity))
 end
 
 local function isLockedByOwnership(item)
@@ -511,6 +540,7 @@ local function drawShopCard(vg, idx, item, cx, cy)
     local bought   = getPurchased(item.id)
     local soldOut  = item.limitCount >= 0 and bought >= item.limitCount
     local locked   = isLockedByOwnership(item)
+    local collected = getShardRemaining(item) <= 0
 
     -- 商品名
     drawTextStroke(vg, cx, cy + L.NAME_OY, item.name,
@@ -520,7 +550,7 @@ local function drawShopCard(vg, idx, item, cx, cy)
     -- 商品图标
     local iconImg = shopImg.itemIcons[item.id]
     if iconImg and iconImg >= 0 then
-        drawImageCentered(vg, iconImg, cx, cy + L.ICON_OY, L.ICON_W, L.ICON_H, (soldOut or locked) and 0.4 or 1.0)
+        drawImageCentered(vg, iconImg, cx, cy + L.ICON_OY, L.ICON_W, L.ICON_H, (soldOut or locked or collected) and 0.4 or 1.0)
     end
 
     -- 数量角标（每次购买1个，不显示"×1"）
@@ -545,7 +575,7 @@ local function drawShopCard(vg, idx, item, cx, cy)
     -- 购买按钮
     ---@diagnostic disable-next-line: assign-type-mismatch
     local btnCY = cy + L.BTN_OY
-    if soldOut then
+    if soldOut or collected then
         nvgBeginPath(vg)
         nvgRoundedRect(vg, cx - L.BTN_W * 0.5, btnCY - L.BTN_H * 0.5, L.BTN_W, L.BTN_H, 12)
         nvgFillColor(vg, nvgRGBA(80, 80, 80, 200))
@@ -553,7 +583,7 @@ local function drawShopCard(vg, idx, item, cx, cy)
         nvgFontFace(vg, "sans"); nvgFontSize(vg, L.BTN_FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))  -- 售罄=灰蓝色
-        nvgText(vg, cx, btnCY, "已售罄", nil)
+        nvgText(vg, cx, btnCY, collected and I18n.lookup("已集齐") or "已售罄", nil)
     elseif locked then
         nvgBeginPath(vg)
         nvgRoundedRect(vg, cx - L.BTN_W * 0.5, btnCY - L.BTN_H * 0.5, L.BTN_W, L.BTN_H, 12)
@@ -586,7 +616,7 @@ end
 
 -- ======================== 酒馆币来源气泡 ========================
 
-local COIN_TIP_TEXT = "抽到已满觉醒的角色时将会自动转化为酒馆币"
+local COIN_TIP_TEXT = "超出所需的角色和碎片会自动转化为酒馆币"
 local COIN_TIP_DUR  = 3.0  -- 自动消失时长（秒）
 
 ---@param vg any
@@ -736,6 +766,7 @@ drawPurchaseDialog = function(vg)
     if not shopState.dialogOpen or not shopState.dialogItemId then return end
     local item = getShopItemById(shopState.dialogItemId)
     if not item then return end
+    refreshBuyLimit()
 
     local pScale, pAlpha, _ = getPopupAnim()
 
@@ -874,6 +905,7 @@ function TavernShopPage.handleInput(dx, dy)
     if shopState.dialogOpen then
         if shopState.popupClosing then return true end
         if shopState.pendingBuy then return true end
+        refreshBuyLimit()
 
         -- 减
         if hitTest(dx, dy, DLG.MINUS_CX, DLG.MINUS_CY, DLG.MINUS_W, DLG.MINUS_H) then
@@ -895,7 +927,7 @@ function TavernShopPage.handleInput(dx, dy)
             local sliderL = DLG.SLIDER_CX - DLG.SLIDER_W * 0.5
             local frac = math.max(0, math.min(1, (dx - sliderL) / DLG.SLIDER_W))
             local qty  = math.floor(frac * (shopState.buyMaxQuantity - 1) + 0.5) + 1
-            shopState.buyQuantity = math.max(1, math.min(shopState.buyMaxQuantity, qty))
+            shopState.buyQuantity = math.max(0, math.min(shopState.buyMaxQuantity, qty))
             shopState.sliderDragging = true
             return true
         end
@@ -907,7 +939,11 @@ function TavernShopPage.handleInput(dx, dy)
             if item then
                 local totalCost = item.price * shopState.buyQuantity
                 local coins     = GameState.getTavernCoin()
-                if coins < totalCost then
+                if getShardRemaining(item) <= 0 then
+                    showFloatText(I18n.lookup("已集齐"), DLG.BUY_CX, DLG.BUY_CY)
+                elseif isSoldOut(item) then
+                    showFloatText("已售罄", DLG.BUY_CX, DLG.BUY_CY)
+                elseif shopState.buyQuantity <= 0 or coins < totalCost then
                     showFloatText("酒馆币不足", DLG.BUY_CX, DLG.BUY_CY)
                 elseif isLockedByOwnership(item) then
                     showFloatText("拥有该角色后可购买碎片", DLG.BUY_CX, DLG.BUY_CY)
@@ -953,12 +989,21 @@ function TavernShopPage.handleInput(dx, dy)
         local cy    = L.GRID_TOP_CY + row * CARD_STEP_Y - shopState.scrollY
         local btnCY = cy + L.BTN_OY
         if hitTest(dx, dy, cx, btnCY, L.BTN_W, L.BTN_H) then
+            if getShardRemaining(item) <= 0 then
+                showFloatText(I18n.lookup("已集齐"), cx, btnCY)
+                return true
+            end
             if isSoldOut(item) then
                 showFloatText("已售罄", cx, btnCY)
                 return true
             end
             if isLockedByOwnership(item) then
                 showFloatText("拥有该角色后可购买碎片", cx, btnCY)
+                return true
+            end
+            local cap = getBuyMaxQuantity(item)
+            if cap <= 0 then
+                showFloatText("酒馆币不足", cx, btnCY)
                 return true
             end
             BF.trigger("tsp_item_" .. idx)
@@ -968,13 +1013,7 @@ function TavernShopPage.handleInput(dx, dy)
             shopState.popupClosing  = false
             shopState.sliderDragging = false
             shopState.buyQuantity   = 1
-            local price = math.max(1, item.price or 1)
-            local affordable = math.floor((tonumber(GameState.getTavernCoin()) or 0) / price)
-            local cap = math.max(1, affordable)
-            if item.limitCount and item.limitCount >= 0 then
-                cap = math.min(cap, math.max(0, item.limitCount - getPurchased(item.id)))
-            end
-            shopState.buyMaxQuantity = math.max(1, cap)
+            shopState.buyMaxQuantity = cap
             return true
         end
     end
@@ -993,7 +1032,7 @@ function TavernShopPage.handleDragBegin(dx, dy)
             local sliderL = DLG.SLIDER_CX - DLG.SLIDER_W * 0.5
             local frac = math.max(0, math.min(1, (dx - sliderL) / DLG.SLIDER_W))
             local qty  = math.floor(frac * (shopState.buyMaxQuantity - 1) + 0.5) + 1
-            shopState.buyQuantity = math.max(1, math.min(shopState.buyMaxQuantity, qty))
+            shopState.buyQuantity = math.max(0, math.min(shopState.buyMaxQuantity, qty))
         end
         return
     end
@@ -1011,7 +1050,7 @@ function TavernShopPage.handleDragMove(dx, dy)
             local sliderL = DLG.SLIDER_CX - DLG.SLIDER_W * 0.5
             local frac = math.max(0, math.min(1, (dx - sliderL) / DLG.SLIDER_W))
             local qty  = math.floor(frac * (shopState.buyMaxQuantity - 1) + 0.5) + 1
-            shopState.buyQuantity = math.max(1, math.min(shopState.buyMaxQuantity, qty))
+            shopState.buyQuantity = math.max(0, math.min(shopState.buyMaxQuantity, qty))
         end
         return
     end
@@ -1092,7 +1131,7 @@ function TavernShopPage.onBuyResult(data)
         local itemId = tonumber(data.itemId)
         if itemId then
             shopState.purchased[itemId] = tonumber(data.purchased)
-                or (getPurchased(itemId) + (shopState.buyQuantity or 1))
+                or (getPurchased(itemId) + math.max(0, tonumber(data.quantity) or 0))
         end
     end
     shopState.shopDayId  = TavernConfig.calcDayId()
@@ -1104,19 +1143,35 @@ function TavernShopPage.onBuyResult(data)
             .. " 已购=" .. tostring(getPurchased(itemId)))
         local item = getShopItemById(itemId)
         if item then
-            local qty = tonumber(data.quantity) or shopState.buyQuantity or 1
-            local RewardPopup = require("ui.hud.popup.RewardPopup")
-            if isRecruitTicketShopItem(item) then
-                local rewardType = (itemId == 102) and "stellar_ticket" or "adventure_ticket"
-                RewardPopup.show("购买成功", {
-                    { type = rewardType, amount = qty },
-                })
-            elseif item.rewardType == "shard" and item.rewardHeroId then
-                local shardQty = (item.rewardCount or 1) * qty
-                RewardPopup.show("购买成功", {
-                    { type = "shard", heroId = item.rewardHeroId, amount = shardQty },
-                })
+            local cfg = TavernConfig.getShopItem(itemId) or item
+            -- 只认已结算回执；tavernCoin 是余额，不是本次奖励。
+            local rewards = data.rewards or data.actual
+            if type(rewards) == "table" then
+                local mapped = {}
+                for _, reward in ipairs(rewards) do
+                    local shown = {}
+                    for key, value in pairs(reward) do shown[key] = value end
+                    if shown.type == "recruitTicket" then shown.type = "adventure_ticket" end
+                    if shown.type == "stellarRecruitTicket" then shown.type = "stellar_ticket" end
+                    if (tonumber(shown.amount) or 0) > 0 then mapped[#mapped + 1] = shown end
+                end
+                rewards = mapped
+            else
+                rewards = {}
+                local qty = math.max(0, tonumber(data.quantity) or 0)
+                if isRecruitTicketShopItem(item) then
+                    local amount = math.max(0, tonumber(data.amount) or (cfg.rewardCount or 1) * qty)
+                    if amount > 0 then
+                        rewards[#rewards + 1] = { type = itemId == 102 and "stellar_ticket" or "adventure_ticket", amount = amount }
+                    end
+                else
+                    local amount = math.max(0, tonumber(data.shardGain) or tonumber(data.amount) or (cfg.rewardCount or 1) * qty)
+                    if amount > 0 then
+                        rewards[#rewards + 1] = { type = "shard", heroId = getShardHeroId(item), amount = amount }
+                    end
+                end
             end
+            if #rewards > 0 then require("ui.hud.popup.RewardPopup").show("购买成功", rewards) end
         end
     end
 end

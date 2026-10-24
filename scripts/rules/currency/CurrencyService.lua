@@ -6,6 +6,7 @@
 
 local PDM = require("rules.character.PlayerDataManager")
 local ResourceDefs = require("config.ResourceDefs")
+local HeroShardService = require("rules.hero.HeroShardService")
 
 local CurrencyService = {}
 
@@ -47,6 +48,7 @@ CurrencyService.ACTIVATION_KEYS = {
 ---@param uid number
 ---@param reward table { type=string, amount=number, heroId=number|nil }
 ---@return boolean success
+---@return table|nil receipt 实际碎片/酒馆币回执
 function CurrencyService.GrantReward(uid, reward)
     -- 兼容旧 GM 邮件：type="101" 等碎片编号
     if reward.type ~= "shard" then
@@ -57,24 +59,12 @@ function CurrencyService.GrantReward(uid, reward)
     end
 
     if reward.type == "shard" then
-        local heroId = tonumber(reward.heroId)
-        local amount = tonumber(reward.amount)
-        if not heroId or not amount or amount <= 0 then
-            print("[CurrencyService] invalid shard reward: heroId=" .. tostring(reward.heroId)
-                .. " amount=" .. tostring(reward.amount))
-            return false
+        local ok, err, receipt = HeroShardService.Grant(uid, reward.heroId, reward.amount)
+        if not ok then
+            print("[CurrencyService] invalid shard reward: " .. tostring(err))
+            return false, nil, err
         end
-        local heroes = PDM.GetModule(uid, "heroes")
-        if not heroes then return false end
-        if not heroes.roster then heroes.roster = {} end
-        if not heroes.roster[heroId] then
-            heroes.roster[heroId] = { shards = 0, _shardMigrated = true }
-        end
-        heroes.roster[heroId].shards = (heroes.roster[heroId].shards or 0) + amount
-        PDM.MarkDirty(uid, "heroes")
-        print("[CurrencyService] GrantReward shard uid=" .. tostring(uid)
-            .. " heroId=" .. heroId .. " +" .. amount)
-        return true
+        return true, receipt
     end
 
     local currencyKey = CurrencyService.REWARD_TO_CURRENCY[reward.type]

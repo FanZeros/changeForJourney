@@ -14,6 +14,11 @@ for _, name in ipairs({
     "ui.tavern.TavernPopups", "ui.tavern.TavernPage", "ui.tavern.TavernRecruitOrders",
     "ui.church.ChurchArtifactDrawPanel", "core.DrawUtil", "core.DarkIcon", "ui.town.TownPageChrome", "systems.GachaSystem",
     "rules.gacha.GachaService", "rules.gacha.UrGachaService", "rules.artifact.ArtifactService",
+    "shared.heroes.HeroShardPolicy", "rules.hero.HeroShardService", "ui.tavern.RecruitAnim",
+    "ui.tavern.RecruitTimeline", "core.NumberUtil", "config.ResourceDefs",
+    "rules.hero.HeroHandler", "rules.hero.HeroService", "rules.awakening.AwakeningHandler",
+    "rules.awakening.AwakeningService", "shared.heroes.HeroResonance", "shared.heroes.TeamSlots",
+    "runtime.ClientMessageHandler",
     "shared.artifact.ArtifactDefs", "shared.artifact.ArtifactSchema", "shared.Protocol",
     "config.GachaConfig", "config.UrGachaConfig", "config.HeroConfig", "config.ExpTable",
     "config.ClassConfig", "config.AdvancementConfig", "config.AwakeningConfig", "systems.AttributeDef",
@@ -156,7 +161,9 @@ local function fixture()
     env.nvgFontSize = function(_, size) f.font = size end
     env.nvgTextBounds = function(_, _, _, text) return (utf8.len(text) or #text) * f.font * 0.6 end
     env.nvgText = function(_, x, y, text)
-        f.texts = f.texts or {}; f.texts[#f.texts + 1] = { text = text, x = x, y = y, font = f.font }
+        f.texts = f.texts or {}; f.texts[#f.texts + 1] = { text = text, x = x, y = y, font = f.font,
+            worldX = f.tx + x * f.sx, worldY = f.ty + y * f.sy,
+            width = (utf8.len(text) or #text) * f.font * 0.6 * f.sx }
     end
     env.nvgRGBA, env.nvgRGBAf = function(...) return { ... } end, function(...) return { ... } end
     env.nvgImagePattern = function(_, x, y, w, h, _, handle)
@@ -207,6 +214,7 @@ local function fixture()
         t = function(text) return text end, lookup = function(text) return text end, format = string.format,
         displayText = env.nvgText, displayBounds = env.nvgTextBounds })
     mock("ui.hud.popup.RedeemCodePanel", { init = noop })
+    mock("ui.dev.PerformancePanel", { init = noop, isOpen = function() return false end, open = noop })
     mock("systems.GameBGM", { setMasterGain = noop })
     mock("core.DarkIcon", { Palette = { BONE = { 240, 230, 210 }, BONE_DIM = { 170, 160, 150 } },
         drawNine = noop, drawQualityBg = noop })
@@ -222,7 +230,7 @@ local function fixture()
         FlushImmediate = function() f.flushes = f.flushes + 1 end })
     mock("rules.task.TaskService", { UpdateProgress = function(_, event, count) f.taskCalls[#f.taskCalls + 1] = { event, count } end,
         RefreshAchievements = noop })
-    mock("rules.hero.HeroService", {}) -- 测试 roster 全员已拥有，禁止进入新英雄业务工厂。
+    mock("rules.hero.HeroService", { GetNewHeroStartLevel = function() return 1 end }) -- 仅提供起始等级报价；发奖仍走真实Service。
     mock("rules.currency.CurrencyService", {}) -- 神器 Draw 直接使用真实服务内的混合扣费，不调用其他货币业务。
     mock("core.EventBus", {})
     mock("config.GameEvents", {})
@@ -931,6 +939,122 @@ local function authoritativePayments()
     end
 end
 
+local function actualShardPresentation()
+    local f = fixture()
+    f.deps["ui.tavern.RecruitAnim"] = nil
+    f.deps["core.BattleLayout"] = { cardHeightForWidth = function(w) return w * 955 / 538 end }
+    f.deps["config.HeroAssetUtil"] = { ensureCard = function() return -1 end }
+    f.deps["ui.widget.RepeatDrawButton"] = { draw = noop }
+    f.deps["ui.tavern.RecruitMotion"] = { drawBackEdge = noop }
+    local drawn = 0
+    f.deps["ui.tavern.RecruitPresentation"] = { init = noop, destroy = noop, drawIntro = noop,
+        drawCardGlow = function() drawn = drawn + 1 end, drawBack = noop, drawLabels = noop }
+    local anim = f.real("ui.tavern.RecruitAnim")
+    anim.init(f.vg)
+    local closed = 0
+    local results = {
+        { type = "dupe_to_shard", heroId = 16, quality = 4, shardGain = 2, amount = 2, tavernCoin = 3600, overflowShards = 8 },
+        { type = "decompose", heroId = 16, quality = 4, shardGain = 0, amount = 0, tavernCoin = 4500, overflowShards = 10 },
+        { type = "hero", heroId = 16, quality = 4, isNew = true, shardGain = 0, amount = 0, tavernCoin = 4500, overflowShards = 10 },
+        { type = "shard", heroId = 16, quality = 4, shardGain = 1, amount = 1, tavernCoin = 900, overflowShards = 2 },
+    }
+    f.deps["core.DrawUtil"].drawShardIcon = noop -- 头像资源是叶子替身，数量/分卡/布局仍走真实RecruitAnim。
+    for index, result in ipairs(results) do
+        local before = copy(result)
+        drawn, f.texts = 0, {}
+        anim.start({ result }, function() closed = closed + 1 end, 1, "stellar")
+        f.clock.elapsedTime = f.clock.elapsedTime + 4; anim.update(4); anim.draw(f.vg)
+        eq(drawn, 1, "单抽混合/纯币/新卡始终一张结果")
+        local textSet = {}
+        for _, text in ipairs(f.texts) do
+            textSet[text.text] = true
+            if text.text:find("→", 1, true) then
+                check(text.width <= (index == 4 and 178 or 168), "实际奖励文本经缩宽不超过卡内可用宽度")
+                check(text.worldX >= 441 and text.worldX <= 639, "奖励文字锚点保持原单抽卡内")
+            end
+        end
+        check(textSet["→酒馆币×" .. tostring(result.tavernCoin)], "本次实际酒馆币没有丢失")
+        if result.shardGain > 0 then
+            check(textSet[index == 4 and "X1" or "→碎片×2"], "实际保留片数可见")
+        else
+            check(not textSet["→碎片×10"] and not textSet["→碎片×0"], "纯币/新卡不伪造默认10或0碎片")
+        end
+        check(same(result, before), "表现不修改业务回执")
+        eq(#f.stack, 0, "实际奖励绘制save/restore平衡")
+        anim.close(); eq(closed, index, "关闭回调恰好一次")
+    end
+    local popups = f.real("ui.tavern.TavernPopups")
+    popups.recordHistory(results, "stellar")
+    local history = cjson.decode(f.files["gacha_history.json"]).stellar
+    eq(#history, 4, "混合奖励历史仍一抽一行")
+    check(history[4].name:find("→碎片×2→酒馆币×3600", 1, true), "混合历史包含实际两种奖励")
+    check(history[3].name:find("→酒馆币×4500", 1, true) and not history[3].name:find("碎片", 1, true), "完全转币历史不假报碎片")
+    check(history[2].name:find("→酒馆币×4500", 1, true), "首次新卡的旧片归并币进入历史")
+    noActions(f, 0, "真实动画/历史只有内存白名单File，无业务重发")
+end
+
+local function overflowHandlerPresentation()
+    local f = fixture()
+    -- 两项业务/Handler/CMH均真实；额外天赋规范化及页面渲染是明确叶子边界。
+    f.deps["rules.hero.HeroService"] = nil
+    f.deps["systems.ExtraTalentSystem"] = { normalize = function(value) return value or {} end }
+    f.deps["config.ScenarioDialogueConfig"] = {}
+    local popups, pageResults, opened = {}, {}, {}
+    f.deps["ui.hud.popup.RewardPopup"] = { show = function(title, rewards, options)
+        popups[#popups + 1] = { title = title, rewards = copy(rewards), options = options or {} }
+    end }
+    f.deps["ui.character.hero.HeroScenario"] = { onOpenHero = function(heroId) opened[#opened + 1] = heroId end }
+    for _, name in ipairs({ "ui.loot.LootBox", "ui.loot.LootBoxPage", "ui.blacksmith.BlacksmithPage",
+        "ui.backpack.BackpackPanel", "ui.church.ChurchPage", "ui.church.talent.TalentPage", "ui.tavern.TavernPage",
+        "ui.market.MarketPage", "ui.dungeon.DungeonPage", "ui.dungeon.DungeonBattleScene", "ui.dev.GMConsolePanel",
+        "ui.hud.TopBar", "ui.battle.scene.BattleScene", "ui.character.equip.EquipmentDetail", "systems.LootBoxSystem" }) do
+        local pageName = name
+        f.deps[name] = { onActionResult = function(data) pageResults[#pageResults + 1] = { pageName, data.action } end }
+    end
+    local cmh = f.real("runtime.ClientMessageHandler")
+    cmh.setup({ sendAction = function() error("回执展示不能发送动作") end, ui = {} })
+    local heroHandler = f.real("rules.hero.HeroHandler").actionHandlers
+    local awakeningHandler = f.real("rules.awakening.AwakeningHandler")
+    for _, kind in ipairs({ "synthesize", "awaken" }) do
+        for _, shards in ipairs({ kind == "synthesize" and 120 or 110, kind == "synthesize" and 100 or 90 }) do
+            f.resetMemory(0, 0)
+            local heroId = 16
+            f.memory.heroes.roster[heroId] = { shards = shards, level = kind == "awaken" and 1 or nil,
+                awakening = { _awk3Migrated = true }, _awk3Migrated = true }
+            local action = kind == "synthesize" and f.protocol.ACTION_TYPES.SYNTHESIZE_HERO or f.protocol.ACTION_TYPES.ACTIVATE_AWAKENING
+            local result = kind == "synthesize" and heroHandler[action](987654, { heroId = heroId })
+                or awakeningHandler[action](987654, { heroId = heroId, nodeIndex = 1 })
+            eq(result.success, true, "真实Handler和Service处理旧库存成功")
+            local overflow = shards == 120 or shards == 110
+            eq(result.overflowShards, overflow and 20 or 0, "Handler不截断本次超额片回执")
+            eq(result.tavernCoin, overflow and 9000 or 0, "Handler透传实际UR币而不是库存余额")
+            eq(f.memory.heroes.roster[heroId].shards, kind == "synthesize" and 90 or 80, "真实扣片后只留后续需求容量")
+            eq(f.memory.currency.tavernCoin, result.tavernCoin, "真实规则与回执币一致")
+            local before = copy(f.memory)
+            local popupBefore, pageBefore = #popups, #pageResults
+            result.action = action
+            cmh.handleActionResult(result)
+            eq(#popups - popupBefore, kind == "synthesize" and 1 or (overflow and 1 or 0), "成功只展示一次实际奖励，无币觉醒不造弹窗")
+            check(#pageResults > pageBefore, "原页面成功回调没有被币展示截断")
+            check(same(f.memory, before), "消息展示不二次扣片或发币")
+            if kind == "synthesize" then
+                local popup = popups[#popups]
+                eq(popup.rewards[1].type, "hero", "合成仍展示真实英雄")
+                eq(#popup.rewards, overflow and 2 or 1, "合成英雄与实际币同一弹窗")
+                if overflow then eq(popup.rewards[2].amount, 9000, "合成旧片归并币实际可见") end
+                local openedBefore = #opened
+                popup.options.onClose()
+                eq(#opened, openedBefore + 1, "合成原英雄后续回调仍触发")
+                eq(opened[#opened], heroId, "合成回调绑定正确英雄")
+            elseif overflow then
+                eq(popups[#popups].rewards[1].type, "tavernCoin", "觉醒溢出不伪造新碎片")
+                eq(popups[#popups].rewards[1].amount, 9000, "觉醒实际归并币可见")
+            end
+        end
+    end
+    noActions(f, 0, "合成/觉醒Handler到UI回执仅内存，无业务重发")
+end
+
 local function safety()
     for _, f in ipairs(fixtures) do f.safe() end
     eq(File, nativeFile, "全局File未替换")
@@ -1140,6 +1264,8 @@ function Start()
         { "宝箱confirm开关/单抽十连自动缺口支付", artifactConfirmAndAuto },
         { "宝箱原继续入口/pending/免费/已有钥匙/解锁", artifactEntrypointsAndGates },
         { "真实三规则服务混合扣费与权威余额变化拒绝", authoritativePayments },
+        { "实际碎片/混合币/新整卡动画与历史不造额外结果", actualShardPresentation },
+        { "真实合成觉醒Service和Handler透传旧库存币与消息展示闭环", overflowHandlerPresentation },
         { "所有夹具无真实存档/账号/网络/全局污染", safety },
     }) do
         groups = groups + 1

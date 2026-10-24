@@ -8,10 +8,9 @@ local PDM             = require("rules.character.PlayerDataManager")
 local GachaConfig     = require("config.GachaConfig")
 local UrGachaConfig   = require("config.UrGachaConfig")
 local UrGachaService  = require("rules.gacha.UrGachaService")
-local HeroConfig      = require("config.HeroConfig")
-local ExpTable        = require("config.ExpTable")
 local TaskService     = require("rules.task.TaskService")
 local HeroService     = require("rules.hero.HeroService")
+local HeroShardService = require("rules.hero.HeroShardService")
 
 local GachaService = {}
 
@@ -74,9 +73,13 @@ function GachaService.GachaPull(uid, count, payType, poolId)
         return false, "数据未加载"
     end
 
-    count = tonumber(count) or 1
-    if count < 1 then count = 1 end
-    if count > 10 then count = 10 end
+    count = count == nil and 1 or tonumber(count)
+    if count ~= 1 and count ~= 10 then return false, "招募次数只能为1或10" end
+
+    -- 在暂存表中完成整次抽卡，全部奖励规划成功后再扣费和提交。
+    local liveHeroes, liveCurrency = heroes, currency
+    heroes = HeroShardService.CopyHeroes(liveHeroes)
+    currency = HeroShardService.CopyTable(liveCurrency)
 
     -- 判断支付方式（diamond 模式下优先消耗已有招募券，不足部分用钻石补）
     payType = payType or "diamond"
@@ -100,13 +103,6 @@ function GachaService.GachaPull(uid, count, payType, poolId)
             return false, "黑晶不足（需要 " .. diamondNeeded .. "）"
         end
     end
-
-    -- === 快照（回滚用） ===
-    local oldTickets      = currency.recruitTicket or 0
-    local oldGems         = currency.gems
-    local oldPitySR       = currency.gachaPitySR or 0
-    local oldPitySSR      = currency.gachaPitySSR or 0
-    local addedHeroIds    = {}
 
     -- === 扣费（混合支付：先扣券再扣钻石） ===
     if ticketsToUse > 0 then
@@ -245,97 +241,39 @@ function GachaService.GachaPull(uid, count, payType, poolId)
             end
         end
 
-        if not poolItem then
-            -- 兜底：不应该发生，给 1 碎片（heroId=1）
-            results[#results + 1] = {
-                type = "shard", heroId = 1, amount = 1,
-                quality = quality, index = i,
-            }
-        elseif poolItem.type == "hero" then
-            local heroId = poolItem.heroId
-            -- 用 level 字段区分"真正拥有"和"只有碎片存根"
-            -- 碎片存根格式：{ shards=N, _shardMigrated=true }，无 level 字段
-            local heroEntry = heroes.roster[heroId]
-            local isNew = not heroEntry or not heroEntry.level
-            if isNew then
-                -- 新英雄：解锁（保留已有碎片数量，若存根已存在）
-                -- 起始等级 = 远征等级（确保新招募的英雄不低于远征等级）
-                local existingShards = heroEntry and heroEntry.shards or 0
-                local cfg = HeroConfig.get(heroId)
-                local startLv = HeroService.GetNewHeroStartLevel(uid)
-                heroes.roster[heroId] = {
-                    level = startLv, exp = 0,
-                    maxExp = ExpTable.getHeroExpForLevel(startLv) or 0,
-                    classId = cfg and cfg.classId or 1,
-                    dupeCount = 0,
-                    shards = existingShards,
-                    awakening = { _awk3Migrated = true },
-                    extraTalent = require("systems.ExtraTalentSystem").normalize(nil),
-                    _shardMigrated = true,
-                    _awk3Migrated = true,
-                }
-                addedHeroIds[#addedHeroIds + 1] = heroId
-                results[#results + 1] = {
-                    type = "hero", heroId = heroId, quality = poolItem.quality,
-                    isNew = true, index = i,
-                }
-            else
-                -- 重复英雄 → 检查是否满觉醒
-                local hero = heroes.roster[heroId]
-                if require("config.AwakeningConfig").isFullyAwakened(hero.awakening) then
-                    local heroCfg = HeroConfig.get(heroId)
-                    if heroCfg and tonumber(heroCfg.quality) == HeroConfig.QUALITY_UR then
-                        -- UR满觉醒后仍保留为碎片，不自动分解为酒馆币
-                        local shardGain = HeroConfig.SHARD_DUPE_CONVERT
-                        hero.shards = (hero.shards or 0) + shardGain
-                        results[#results + 1] = {
-                            type = "dupe_to_shard", heroId = heroId, quality = poolItem.quality,
-                            shardGain = shardGain, index = i,
-                        }
-                    else
-                        -- 满觉醒：分解为酒馆币（stardustValue）
-                        local tavernCoins = poolItem.stardustValue or 0
-                        currency.tavernCoin = (currency.tavernCoin or 0) + tavernCoins
-                        results[#results + 1] = {
-                            type = "decompose", heroId = heroId, quality = poolItem.quality,
-                            tavernCoin = tavernCoins, index = i,
-                        }
-                    end
-                else
-                    -- 未满觉醒：转化为 10 碎片
-                    local shardGain = HeroConfig.SHARD_DUPE_CONVERT
-                    hero.shards = (hero.shards or 0) + shardGain
-                    results[#results + 1] = {
-                        type = "dupe_to_shard", heroId = heroId, quality = poolItem.quality,
-                        shardGain = shardGain, index = i,
-                    }
-                end
-            end
+        -- 兜底也必须真实发放，不能只显示一个不存在的碎片结果。
+        poolItem = poolItem or { type = "shard", heroId = 1, amount = 1, quality = quality }
+        local plan, planErr
+        if poolItem.type == "hero" then
+            plan, planErr = HeroShardService.PlanHeroFor(heroes, currency, poolItem.heroId,
+                { startLevel = HeroService.GetNewHeroStartLevel(uid) })
         elseif poolItem.type == "shard" then
-            -- 碎片产出：确保 roster 条目存在
-            local heroId = poolItem.heroId
-            local amount = poolItem.amount or 1
-            if not heroes.roster[heroId] then
-                -- 未拥有的英雄也可以积攒碎片（仅 shards 字段）
-                heroes.roster[heroId] = {
-                    shards = 0,
-                    _shardMigrated = true,
-                }
-            end
-            heroes.roster[heroId].shards = (heroes.roster[heroId].shards or 0) + amount
-            results[#results + 1] = {
-                type = "shard", heroId = heroId, amount = amount,
-                quality = poolItem.quality, index = i,
-            }
+            plan, planErr = HeroShardService.PlanFor(heroes, currency, poolItem.heroId, poolItem.amount or 1)
+        else
+            return false, "招募奖励配置异常"
         end
+        if not plan then return false, planErr end
+        local applied, applyErr = HeroShardService.ApplyTo(heroes, currency, plan)
+        if not applied then return false, applyErr end
+        results[#results + 1] = {
+            type = plan.type or (plan.shardGain == 0 and "decompose" or "shard"),
+            heroId = plan.heroId, quality = poolItem.quality, index = i,
+            isNew = plan.isNew, shardGain = plan.shardGain, amount = plan.amount,
+            tavernCoin = plan.tavernCoin, overflowShards = plan.overflowShards,
+        }
     end
 
+    -- 无 yield：整次规划成功后统一提交；外部始终保留原模块/roster表引用。
+    HeroShardService.CommitRoster(liveHeroes, heroes)
+    for key, value in pairs(currency) do liveCurrency[key] = value end
+    heroes, currency = liveHeroes, liveCurrency
+
+    -- 新手首次十连标记也先写完，再推送任何跨模块变更。
+    if isFirstTenPull and session then session.firstGachaTenDone = true end
     -- === 持久化 ===
     PDM.MarkDirty(uid, "currency")
     PDM.MarkDirty(uid, "heroes")
-    -- 新手首次十连保底：标记已使用
     if isFirstTenPull and session then
-        session.firstGachaTenDone = true
         PDM.MarkDirty(uid, "session")
         print("[GachaService] 新手首次十连保底已消耗: uid=" .. tostring(uid))
     end

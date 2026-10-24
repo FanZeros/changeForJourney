@@ -1,74 +1,64 @@
 -- ============================================================================
--- GameBGM - 场景音乐与战斗曲池，双 SoundSource 交叉淡入淡出
--- 战斗曲按顺序轮播，不使用玩法 RNG；其他场景仍保留原进度同步切换。
+-- GameBGM - 常规游玩单曲循环；仅开场与终焉叙事切换，双通道淡入淡出。
+-- 菜单别名共用主曲，不轮播、不按其他曲目的播放百分比跳播、不消费玩法 RNG。
 -- ============================================================================
 
 local GameBGM = {}
 
--- ── 轨道定义 ──
--- 山海经暗黑古卷世界观·东方古风配乐。
+-- 常规三栏同时存在，查看城镇、角色、装备或奖励不应改变整局音乐。
 local TRACKS = {
-    battle        = { path = "audio/bgm_battle.ogg",   gain = 0.50 },
-    other         = { path = "audio/bgm_roster.ogg",   gain = 0.45 },
-    popup         = { path = "audio/bgm_diary.ogg",    gain = 0.40 },
-    town          = { path = "audio/bgm_town.ogg",     gain = 0.40 },
-    town_building = { path = "audio/bgm_building.ogg", gain = 0.38 },
-    samsara       = { path = "audio/bgm_samsara.ogg",  gain = 0.50 },
-    letter        = { path = "audio/bgm_letter.ogg",   gain = 0.35 },
+    battle        = { path = "audio/bgm_dark_embers.ogg", gain = 0.40 },
+    other         = { path = "audio/bgm_dark_embers.ogg", gain = 0.40 },
+    popup         = { path = "audio/bgm_dark_embers.ogg", gain = 0.40 },
+    town          = { path = "audio/bgm_dark_embers.ogg", gain = 0.40 },
+    town_building = { path = "audio/bgm_dark_embers.ogg", gain = 0.40 },
+    samsara       = { path = "audio/bgm_samsara.ogg", gain = 0.40 },
+    letter        = { path = "audio/bgm_letter.ogg", gain = 0.30 },
 }
+-- 对称淡变避免旧曲已静音、新曲还只有三分之一音量的明显凹陷。
+local FADE_OUT_TIME = 1.6
+local FADE_IN_TIME = 1.6
 
--- 首首沿用原战斗曲；新增曲在实际轮到时才加载。
----@type { path: string, gain: number }[]
-local BATTLE_TRACKS = {
-    { path = "audio/bgm_battle_march.ogg", gain = 0.50 },  -- 幽关行军
-    { path = "audio/bgm_battle_moon.ogg",  gain = 0.50 },  -- 残月破阵
-}
-local FADE_OUT_TIME = 0.4
-local FADE_IN_TIME = 1.2
-
----@type Scene
+---@type Scene?
 local scene_ = nil
----@type Node
+---@type Node?
 local bgmNode_ = nil
----@type SoundSource
+---@type SoundSource?
 local srcA_ = nil
----@type SoundSource
+---@type SoundSource?
 local srcB_ = nil
 local started_ = false
 local masterGain_ = 1.0
-
 ---@type table<string, Sound>
 local sounds_ = {}
 local failedSounds_ = {}
+---@type table<string, number>
+local positions_ = {}
 local activeSlot_ = "A"
 local activeKey_ = "battle"
-local battleIndex_ = 1
+---@type table<string, number>
 local sourceGains_ = { A = 0, B = 0 }
----@type number|nil
-local lastBattlePosition_ = nil
-local battleEndHandled_ = false
-local battleWrapped_ = false
 local fading_ = false
 local fadeTimer_ = 0
+---@type number
 local fadeFromGain_ = 0
+---@type number
 local fadeToGain_ = 0
 
-local function trackInfo(key, battleIndex)
-    if key == "battle" and battleIndex > 1 then return BATTLE_TRACKS[battleIndex - 1] end
-    return TRACKS[key]
+local function canonicalScene(key)
+    if not TRACKS[key] then return nil end
+    if key == "letter" or key == "samsara" then return key end
+    return "battle"
 end
 
 ---@param key string
----@param battleIndex number
----@return Sound|nil
-local function ensureSound(key, battleIndex)
-    local info = trackInfo(key, battleIndex)
-    if not info then return nil end
+---@return Sound?
+local function ensureSound(key)
+    local info = TRACKS[key]
     if sounds_[info.path] then return sounds_[info.path] end
     if failedSounds_[info.path] then return nil end
     local snd = cache:GetResource("Sound", info.path)
     if snd then
-        -- 保留循环兜底：下一首缺失时继续旧曲，不让曲池故障造成静音。
         snd.looped = true
         sounds_[info.path] = snd
     else
@@ -78,34 +68,22 @@ local function ensureSound(key, battleIndex)
     return snd
 end
 
-local function availableBattleTrack(preferred)
-    for offset = 0, #BATTLE_TRACKS do
-        local index = (preferred - 1 + offset) % (#BATTLE_TRACKS + 1) + 1
-        local snd = ensureSound("battle", index)
-        if snd then return snd, index end
-    end
-    return nil, preferred
-end
-
 local function getActiveSource()
     return activeSlot_ == "A" and srcA_ or srcB_
 end
-
 local function getInactiveSource()
     return activeSlot_ == "A" and srcB_ or srcA_
 end
-
 local function inactiveSlot()
     return activeSlot_ == "A" and "B" or "A"
 end
 
--- 通道包络不含主音量，避免淡出二次乘音量，以及拖动音量滑条时跳过淡入。
+-- 包络不含主音量，静音/调音量时既不重播，也不破坏当前淡变。
 local function setSourceGain(slot, gain)
     sourceGains_[slot] = gain
     local src = slot == "A" and srcA_ or srcB_
     if src then src.gain = gain * masterGain_ end
 end
-
 local function applyFade()
     local out = math.max(0, 1 - fadeTimer_ / FADE_OUT_TIME)
     local incoming = math.min(1, fadeTimer_ / FADE_IN_TIME)
@@ -113,69 +91,32 @@ local function applyFade()
     setSourceGain(activeSlot_, fadeToGain_ * incoming)
 end
 
-local function switchTrack(key, index, fromStart)
-    local snd = ensureSound(key, index)
-    if not snd and key == "battle" then snd, index = availableBattleTrack(index) end
+local function switchTrack(key, fromStart)
+    -- 先确认新曲可用，加载失败不打断仍可听的旧曲。
+    local snd = ensureSound(key)
     if not snd then return false end
     local activeSrc = getActiveSource()
     local newSrc = getInactiveSource()
-    local info = trackInfo(key, index)
-    local pct = 0
-    if not fromStart then
-        local currentInfo = trackInfo(activeKey_, battleIndex_)
-        local current = sounds_[currentInfo.path]
-        if current and activeSrc:IsPlaying() and current:GetLength() > 0 then
-            pct = activeSrc:GetTimePosition() / current:GetLength()
-        end
+    if not activeSrc or not newSrc then return false end
+    if activeSrc:IsPlaying() then
+        positions_[activeKey_] = math.max(0, activeSrc:GetTimePosition())
     end
+    local info = TRACKS[key]
+    local position = not fromStart and positions_[key] or 0
+    local length = snd:GetLength()
+    if not position or position < 0 or length <= 0 or position >= length then position = 0 end
     local nextSlot = inactiveSlot()
     setSourceGain(nextSlot, 0)
-    -- 每次恢复素材原采样率，复用通道不继承上一首的播放频率。
+    -- 复用音源时显式恢复当前素材采样率，不继承其他曲目的播放频率。
     newSrc:Play(snd, 0)
-    if not fromStart and snd:GetLength() > 0 and pct > 0 then newSrc:Seek(pct * snd:GetLength()) end
+    if position > 0 then newSrc:Seek(position) end
     fadeFromGain_ = sourceGains_[activeSlot_]
     fadeToGain_ = info.gain
     fadeTimer_ = 0
     fading_ = true
-    activeKey_ = key
-    if key == "battle" then battleIndex_ = index end
-    activeSlot_ = nextSlot
-    lastBattlePosition_ = newSrc:GetTimePosition()
-    battleEndHandled_ = false
-    battleWrapped_ = false
-    print("[GameBGM] 切换 scene=" .. key .. " track=" .. info.path)
+    activeKey_, activeSlot_ = key, nextSlot
+    print("[GameBGM] 叙事切换 scene=" .. key .. " position=" .. position .. " track=" .. info.path)
     return true
-end
-
-local function updateBattlePlaylist()
-    if activeKey_ ~= "battle" then return end
-    local src = getActiveSource()
-    local info = trackInfo("battle", battleIndex_)
-    local snd = sounds_[info.path]
-    if not snd then return end
-    local length = snd:GetLength()
-    if length <= FADE_IN_TIME then return end
-    local position = src:GetTimePosition()
-    local wrapped = lastBattlePosition_ ~= nil and position < lastBattlePosition_
-    lastBattlePosition_ = position
-    if wrapped then
-        battleEndHandled_ = false
-        battleWrapped_ = true
-    end
-    if fading_ or battleEndHandled_ then return end
-    -- 用实际播放位置而非战斗 dt 计时；静音照常轮播，玩法暂停不伪推进音频。
-    if position < length - FADE_OUT_TIME and not battleWrapped_ and src:IsPlaying() then return end
-    battleWrapped_ = false
-    battleEndHandled_ = true
-    for offset = 1, #BATTLE_TRACKS do
-        local index = (battleIndex_ - 1 + offset) % (#BATTLE_TRACKS + 1) + 1
-        local nextSound = ensureSound("battle", index)
-        if nextSound and nextSound:GetLength() > FADE_IN_TIME then
-            -- 自然换曲从头开始，不把旧曲的尾部百分比传给下一首。
-            switchTrack("battle", index, true)
-            return
-        end
-    end
 end
 
 ---@param scene Scene
@@ -194,9 +135,8 @@ function GameBGM.start()
     activeSlot_ = "A"
     sourceGains_ = { A = 0, B = 0 }
     setSourceGain("B", 0)
-    local snd = ensureSound(activeKey_, battleIndex_)
-    if not snd and activeKey_ == "battle" then snd, battleIndex_ = availableBattleTrack(battleIndex_) end
-    local info = trackInfo(activeKey_, battleIndex_)
+    local snd = ensureSound(activeKey_)
+    local info = TRACKS[activeKey_]
     if snd then
         setSourceGain("A", info.gain)
         srcA_:Play(snd, 0)
@@ -204,21 +144,19 @@ function GameBGM.start()
         setSourceGain("A", 0)
     end
     fading_ = false
-    lastBattlePosition_ = nil
-    battleEndHandled_ = false
-    battleWrapped_ = false
-    print("[GameBGM] 开始播放 scene=" .. activeKey_ .. " track=" .. info.path)
+    print("[GameBGM] 单曲循环 scene=" .. activeKey_ .. " track=" .. info.path)
 end
 
 ---@param sceneName string
 ---@param opts? { fromStart?: boolean }
 function GameBGM.setScene(sceneName, opts)
-    if not TRACKS[sceneName] or sceneName == activeKey_ then return end
+    local key = canonicalScene(sceneName)
+    if not key or key == activeKey_ then return end
     if not started_ then
-        activeKey_ = sceneName
+        activeKey_ = key
         return
     end
-    switchTrack(sceneName, battleIndex_, opts and opts.fromStart)
+    switchTrack(key, opts and opts.fromStart)
 end
 
 ---@return string
@@ -228,16 +166,14 @@ end
 
 ---@param dt number
 function GameBGM.update(dt)
-    if not started_ then return end
-    if fading_ then
-        fadeTimer_ = fadeTimer_ + math.max(0, dt)
-        applyFade()
-        if fadeTimer_ >= FADE_IN_TIME then
-            getInactiveSource():Stop()
-            fading_ = false
-        end
+    if not started_ or not fading_ then return end
+    fadeTimer_ = fadeTimer_ + math.max(0, dt)
+    applyFade()
+    if fadeTimer_ >= FADE_IN_TIME then
+        local src = getInactiveSource()
+        if src then src:Stop() end
+        fading_ = false
     end
-    updateBattlePlaylist()
 end
 
 ---@param gain number
@@ -261,11 +197,7 @@ function GameBGM.stop()
     started_ = false
     fading_ = false
     sourceGains_ = { A = 0, B = 0 }
-    lastBattlePosition_ = nil
-    battleEndHandled_ = false
-    battleWrapped_ = false
-    sounds_ = {}
-    failedSounds_ = {}
+    sounds_, failedSounds_, positions_ = {}, {}, {}
 end
 
 return GameBGM

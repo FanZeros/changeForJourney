@@ -212,7 +212,7 @@ function Wheel.bind(deps)
             local sy = mousePos.y / dpr()
             local csx, csy = toDesign(sx, sy)
             if CEPanel.handleWheel(csx, csy, wheel, logicalH()) then return end
-            if OfflineRewardOverlay.handleWheel(wheel) then return end
+            if OfflineRewardOverlay.handleWheel(wheel, csx, csy) then return end
             if LevelUpPopup.isOpen() or getLevelPress() then
                 cancelUnderlyingPress()
                 return

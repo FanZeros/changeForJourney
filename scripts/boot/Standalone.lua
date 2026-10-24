@@ -635,6 +635,8 @@ function Standalone.Stop()
     local ETS = require("systems.ExtraTalentSystem")
     ETS.flush() -- 兼容内置默认/非场景调用留下的当前域；后续仍逐独立域消费。
     BattleTriPage.flushPendingGrowth()
+    BattleScene.resetOffenseGuard()
+    DungeonBattleScene.resetOffenseGuard()
     require("ui.battle.scene.BattleMountScope").runDefault(function()
         ETS.flush()
         require("ui.battle.combat.BattleCasualty").flushRewards()

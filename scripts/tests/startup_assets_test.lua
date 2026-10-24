@@ -138,7 +138,8 @@ function Start()
         local real = { ["config.ExpTable"] = true, ["config.StageConfig"] = true,
             ["config.HeroAssetUtil"] = true, ["config.MonsterConfig"] = true,
             ["core.BattleLayout"] = true, ["config.AwakeningConfig"] = true,
-            ["ui.battle.combat.BattleCombatAnim"] = true, ["systems.AttributeDef"] = true }
+            ["ui.battle.combat.BattleCombatAnim"] = true, ["systems.AttributeDef"] = true,
+            ["systems.BattleOffenseGuard"] = true }
         local function environment(mocks, fields)
             local env = setmetatable(fields or {}, { __index = _G })
             env._G, env.time, env.File = env, clock, forbidden
@@ -462,8 +463,8 @@ function Start()
         title.open(); title.setReady(false)
         local boundary = environment({ ["ui.battle.stage.StageSelectDialog"] = { close = noop },
             ["core.PerformanceMonitor"] = { stop = noop },
-            ["boot.PerformanceHooks"] = { install = noop },
             ["ui.dev.PerformancePanel"] = { close = noop },
+            ["boot.PerformanceHooks"] = { install = noop },
             ["ui.fx.SpineCardEffect"] = { destroy = noop }, ["ui.fx.SpineResultEffect"] = { destroy = noop },
             ["ui.fx.DarkEffectSprites"] = { destroy = noop },
             -- Stop新接入的外围呈现/故事清理，只记录可调用性，不启动实际故事或塔场景。
@@ -488,6 +489,7 @@ function Start()
             TowerBuffPick = { destroy = noop },
             StartupQueue = Queue, StandaloneRT = {}, DarkTitleScreen = title, vg = context,
             BattleTriPage = { setBattleReady = function(ready) triMocks.ready = ready end, flushPendingGrowth = noop },
+            BattleScene = { resetOffenseGuard = noop }, DungeonBattleScene = { resetOffenseGuard = noop },
             Standalone = {}, RewardPopup = { clearBattleRewards = noop }, StandaloneSave = { Flush = noop },
             SpinePowerUpEffect = { destroy = noop }, LevelUpPopup = { destroy = noop },
         })

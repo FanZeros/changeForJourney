@@ -963,15 +963,8 @@ local function performAttack(attacker, targetList, isAlly)
             local candidates = {}
             for i, u in ipairs(pool) do
                 if u.hp > 0 and i ~= chosenIndex and not u.artifactUntargetable then
-                    local dynamicThreat = TM.getThreat(u)
-                    local staticThreat = 1
-                    if u.attrs then
-                        staticThreat = u.attrs:get(AD.THREAT)
-                        if staticThreat < 1 then staticThreat = 1 end
-                    end
-                    -- [前后排] 乘以位置受击权重: 额外目标同样偏向后排
-                    local weight = (dynamicThreat + staticThreat * TM.STATIC_THREAT_WEIGHT)
-                        * BattleLayout.hitWeight(i)
+                    -- 与主目标共用怨引归一化及站位乘算，避免多目标漏换单位。
+                    local weight = TM.getTargetWeight(u, i)
                     candidates[#candidates + 1] = { index = i, weight = weight }
                 end
             end

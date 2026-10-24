@@ -1162,6 +1162,7 @@ function Start()
                 "ui.character.hero.HeroRosterPanel", "ui.town.TownScene", "ui.blacksmith.BlacksmithPage",
                 "ui.church.ChurchPage", "ui.church.talent.TalentPage", "ui.tavern.TavernPage",
                 "ui.tavern.TavernPopups", "ui.tavern.TargetRecruitPanel", "ui.tavern.RecruitAnim", "ui.market.MarketPage",
+                "ui.church.ArtifactDrawAnim",
                 "ui.dungeon.DungeonBattleScene", "ui.tower.TowerBattleScene", "ui.dungeon.DungeonPage",
                 "ui.backpack.BackpackPanel", "ui.loot.LootBox", "ui.loot.LootBoxPage", "ui.story.task.TaskPage",
                 "ui.hud.popup.LevelUpPopup", "ui.hud.popup.OfflineRewardPanel", "ui.hud.popup.UpdateNoticePopup",

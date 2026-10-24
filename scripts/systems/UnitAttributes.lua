@@ -479,6 +479,9 @@ end
 function UnitAttributes:takeDamage(amount, resistance)
     amount = math.max(0, math.floor(amount))
     if amount <= 0 then return 0 end
+    -- 已进入战斗就消耗出战满血标记：否则首次天赋加属性触发 recalc 会把残血悄悄拉满，
+    -- 治疗者据此判定为满血，整场不再为其治疗。
+    self._forceFullHpOnRecalc = nil
     -- 受伤重置护盾回复冷却。体质越高，冷却越短。
     local maxES = self.final[AD.ENERGY_SHIELD] or 0
     if maxES > 0 then

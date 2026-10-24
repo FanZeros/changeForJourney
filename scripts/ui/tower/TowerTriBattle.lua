@@ -1,7 +1,7 @@
 -- ============================================================================
 -- TowerTriBattle - 通天塔三行攻坚
 -- 三队同一波、共同胜负：任一队全灭整层失败；三行全清才过波
--- 不复活、不独立推关（与 BattleTriDriver 挂机语义隔离）
+-- 无倒计时复活、不独立推关；攻击间隔和敌人补位共用普通战斗入口。
 -- ============================================================================
 
 local BattlePauseOverlay = require("ui.battle.scene.BattlePauseOverlay")
@@ -34,14 +34,16 @@ local TowerText        = require("ui.tower.TowerPresentation")
 local BattleClock      = require("ui.battle.combat.BattleClock")
 local OffenseGuard     = require("systems.BattleOffenseGuard")
 local BattleAllyLifecycle = require("ui.battle.scene.BattleAllyLifecycle")
+local SpineCardEffect = require("ui.fx.SpineCardEffect")
+local SettingsPanel = require("ui.hud.popup.SettingsPanel")
 
 local TowerTriBattle = {}
 
 local TEAM_COUNT = 3
-local DEFAULT_ALLY_INTERVAL  = 1.0
-local DEFAULT_ENEMY_INTERVAL = 1.5
-local TOMBSTONE_REVIVE_TIME = 2.0
-local DEATH_ANIM_DURATION = BattleCombat.DEATH_ANIM_DURATION or 0.40
+local DEFAULT_ALLY_INTERVAL  = 1.2
+local DEFAULT_ENEMY_INTERVAL = 2.0
+local ENTER_ANIM_DURATION = 0.30
+local ENTER_STAGGER = 0.06
 local RESULT_DELAY = 1.2
 
 local BATTLE_ACTIVE = "active"
@@ -62,7 +64,8 @@ local BATTLE_LOSE   = "lose"
 ---@field etsState table
 ---@field beState table
 ---@field semState table
----@field regenAccum number
+---@field introTimer number
+---@field reinforceCd number
 ---@field _offenseEligible boolean|nil
 ---@field offenseLane table|nil
 ---@field failureReason string|nil
@@ -145,6 +148,10 @@ end
 
 local function resetOffenseGuards()
     for _, lane in pairs(state.lanes) do OffenseGuard.reset(lane) end
+end
+
+local function resetCardEffects()
+    for row = 1, TEAM_COUNT do SpineCardEffect.stopAll("tower" .. row) end
 end
 
 function TowerTriBattle.flushPendingGrowth()
@@ -237,6 +244,7 @@ local function initLaneUnits(lane)
     BattleCombat.playEnterAnims(lane.allies, 1)
     TM.onBattleStart(lane.allies, lane.enemies)
     TAL.onBattleStart(lane.allies, lane.enemies)
+    lane.introTimer = ENTER_ANIM_DURATION + math.max(0, math.max(#lane.allies, #lane.enemies) - 1) * ENTER_STAGGER
     bindLaneContext(lane)
 end
 
@@ -246,7 +254,12 @@ local function reportDefeatedEnemies(lane)
     for _, unit in ipairs(lane.enemies) do
         if unit.hp <= 0 then
             TAL.onEnemyDeath(unit, lane.allies, lane.enemies)
+            -- 敌人会在公共补位入口被移出列表，塔击杀机制必须先且只上报一次。
+            if not unit._towerKillReported then
+                DungeonBattle.onEnemyKill(unit._killedBy, unit)
+            end
         else
+            unit._towerKillReported = nil
             TAL.resetEnemyDeath(unit)
             if unit.reviveTimer then
                 unit.reviveTimer = nil
@@ -256,53 +269,10 @@ local function reportDefeatedEnemies(lane)
     end
 end
 
-local function tickTombstones(lane, dt)
-    reportDefeatedEnemies(lane)
-    for i, unit in ipairs(lane.enemies) do
-        if unit.hp <= 0 then
-            if not unit.reviveTimer then
-                unit.reviveTimer = -DEATH_ANIM_DURATION
-                unit.atkProgress = 0
-                TM.removeUnit(unit)
-                SEM.removeUnit(unit)
-                BattleCombat.setCardAnim(unit, {
-                    state = "dying", timer = 0,
-                    lungeDir = -1,
-                    knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0,
-                    noTombstone = true,
-                })
-            end
-            unit.reviveTimer = unit.reviveTimer + dt
-            if unit.reviveTimer < 0 then
-                unit.atkProgress = 0
-            else
-                unit.atkProgress = math.min(1.0, unit.reviveTimer / TOMBSTONE_REVIVE_TIME)
-                if unit.reviveTimer >= TOMBSTONE_REVIVE_TIME and #lane.queue > 0 then
-                    local newUnit = table.remove(lane.queue, 1)
-                    TAL.initUnit(newUnit)
-                    newUnit.atkProgress = 0
-                    newUnit.reviveTimer = nil
-                    lane.enemies[i] = newUnit
-                    BattleCombat.clearCardAnim(unit)
-                    BattleCombat.clearHitFlash(unit)
-                    BattleCombat.setCardAnim(newUnit, {
-                        state = "reviving", timer = 0, lungeDir = -1,
-                    })
-                    TM.onBattleStart(lane.allies, lane.enemies)
-                end
-            end
-        end
-    end
-end
-
 local function laneEnemiesCleared(lane)
     if #lane.queue > 0 then return false end
-    if #lane.enemies == 0 then return true end
-    for _, u in ipairs(lane.enemies) do
-        if u.hp > 0 then return false end
-        if u.reviveTimer and u.reviveTimer < TOMBSTONE_REVIVE_TIME and #lane.queue > 0 then
-            return false
-        end
+    for _, unit in ipairs(lane.enemies) do
+        if unit.hp > 0 then return false end
     end
     return true
 end
@@ -327,6 +297,15 @@ local function tickLane(lane, dt)
         return
     end
 
+    if (lane.introTimer or 0) > 0 then
+        OffenseGuard.reset(lane)
+        lane.introTimer = math.max(0, lane.introTimer - dt)
+        BattleCombat.updateCardAnims(dt)
+        BattleCombat.updateFloatingTexts(dt)
+        BattleCombat.updateHitFlashes(dt)
+        return
+    end
+
     local offenseEligible = true
     local aliveAtFrameStart = {}
     for _, list in ipairs({ lane.allies, lane.enemies }) do
@@ -336,7 +315,8 @@ local function tickLane(lane, dt)
             if anim and anim.state == "entering" then offenseEligible = false end
         end
     end
-    tickTombstones(lane, dt)
+    reportDefeatedEnemies(lane)
+    lane.reinforceCd = BattleCombat.reinforceEnemies(lane.enemies, lane.queue, dt, lane.reinforceCd)
 
     for _, unit in ipairs(lane.allies) do
         if unit.hp <= 0 and not unit._artifactDeathHandled then
@@ -349,7 +329,19 @@ local function tickLane(lane, dt)
             if not revived then
                 revived = TAL.onAllyDeath(unit, lane.allies, BattleCombat.syncUnitHp)
             end
-            if not revived then
+            if revived then
+                local index = 1
+                for i, ally in ipairs(lane.allies) do
+                    if ally == unit then index = i break end
+                end
+                local cx, cy = BattleCombat.getCardPos(lane.allies, index)
+                BattleCombat.addFloatingText("复活", cx, cy, { 120, 255, 160 }, false)
+                if unit.hp > 0 then
+                    SpineCardEffect.playRevive(cx, cy, nil, "tower" .. lane.teamIdx,
+                        BattleLayout.CARD_W * BattleLayout.CARD_SCALE,
+                        BattleLayout.CARD_H * BattleLayout.CARD_SCALE)
+                end
+            else
                 -- [阵亡紧凑] 救不回：退场动画 → 移队尾 → 存活者前移补位（与主线同规则）
                 unit.atkProgress = 0
                 TM.removeUnit(unit)
@@ -387,8 +379,8 @@ local function tickLane(lane, dt)
 
     for _, unit in ipairs(lane.allies) do
         if unit.hp > 0 and not SEM.isFrozen(unit) then
-            local interval = unit.atkInterval or DEFAULT_ALLY_INTERVAL
-            interval = interval * DungeonBattle.getAtkIntervalMultiplier(unit)
+            local interval = BattleCombat.getLiveAttackInterval(unit, DEFAULT_ALLY_INTERVAL)
+                * DungeonBattle.getAtkIntervalMultiplier(unit, true)
             BattleCombat.advanceAttackProgress(unit, dt, interval, hasAliveEnemy, function()
                 BattleCombat.performAttack(unit, lane.enemies, true)
             end)
@@ -396,7 +388,8 @@ local function tickLane(lane, dt)
     end
     for _, unit in ipairs(lane.enemies) do
         if unit.hp > 0 and not SEM.isFrozen(unit) then
-            local interval = unit.atkInterval or DEFAULT_ENEMY_INTERVAL
+            local interval = BattleCombat.getLiveAttackInterval(unit, DEFAULT_ENEMY_INTERVAL)
+                * DungeonBattle.getAtkIntervalMultiplier(unit, true)
             BattleCombat.advanceAttackProgress(unit, dt, interval, hasAliveAlly, function()
                 BattleCombat.performAttack(unit, lane.allies, false)
             end)
@@ -468,39 +461,31 @@ local function tickLane(lane, dt)
     pcall(RCH.update, lane.allies, 0)
     pcall(RCH.update, lane.enemies, 0)
 
-    lane.regenAccum = (lane.regenAccum or 0) + dt
-    while lane.regenAccum >= 1.0 do
-        lane.regenAccum = lane.regenAccum - 1.0
-        for _, unit in ipairs(lane.allies) do
+    -- 与普通驱动一致按dt连续恢复；不再在整数秒集中跳血。
+    for _, units in ipairs({ lane.allies, lane.enemies }) do
+        for _, unit in ipairs(units) do
             if unit.hp > 0 and unit.attrs then
                 local regen = CF.calcHpRegen(unit.attrs)
                 if regen > 0 then
-                    unit.attrs:heal(regen)
+                    unit.attrs:heal(regen * dt)
                     BattleCombat.syncUnitHp(unit)
                 end
             end
-        end
-        for _, unit in ipairs(lane.enemies) do
-            if unit.hp > 0 and unit.attrs then
-                local regen = CF.calcHpRegen(unit.attrs)
-                if regen > 0 then
-                    unit.attrs:heal(regen)
-                    BattleCombat.syncUnitHp(unit)
-                end
-            end
-        end
-    end
-
-    for _, u in ipairs(lane.enemies) do
-        if u.hp <= 0 and not u._towerKillReported then
-            u._towerKillReported = true
-            DungeonBattle.onEnemyKill(nil)
         end
     end
 
     ProjectileSystem.update(dt)
     BattleCombat.updateComboQueue(dt)
     reportDefeatedEnemies(lane)
+    -- 最后一击可在投射物/连击更新中落地：清波不等待尸体补位冷却，避免已杀光却跨限时判负。
+    -- 同帧有尚未处理的己方死亡时留待原复活/全灭入口，不提前跳过死亡处理。
+    local pendingAllyDeath = false
+    for _, unit in ipairs(lane.allies) do
+        if unit.hp <= 0 and not unit._artifactDeathHandled then pendingAllyDeath = true end
+    end
+    if not pendingAllyDeath and #BattleCombat.getAliveUnits(lane.allies) > 0 and laneEnemiesCleared(lane) then
+        lane.cleared = true
+    end
     BattleEffects.update(dt)
     BattleCombat.updateCardAnims(dt)
     BattleCombat.updateFloatingTexts(dt)
@@ -546,6 +531,7 @@ end
 
 ---@param opts table { teamAllies = { [1]=table[], [2]=table[], [3]=table[] }, data = table, onClose = function }
 function TowerTriBattle.open(opts)
+    resetCardEffects()
     resetOffenseGuards()
     state.failureReason = nil
     settleGrowth(false) -- 重开/换波兜底，旧lane丢弃前先结清。
@@ -586,7 +572,8 @@ function TowerTriBattle.open(opts)
             etsState = ETS.newState(),
             beState = BattleEffects.newFxState(),
             semState = SEM.newSemState(),
-            regenAccum = 0,
+            introTimer = 0,
+            reinforceCd = 0,
         }
         state.lanes[t] = lane
         for _, u in ipairs(allies) do
@@ -635,6 +622,7 @@ function TowerTriBattle.open(opts)
 end
 
 function TowerTriBattle.close(discardGrowth)
+    resetCardEffects()
     resetOffenseGuards()
     settleGrowth(discardGrowth)
     if not state.open then return end
@@ -659,6 +647,7 @@ function TowerTriBattle.close(discardGrowth)
 end
 
 function TowerTriBattle.forceClose(discardGrowth)
+    resetCardEffects()
     if not state.open then
         if discardGrowth then settleGrowth(true) end
         return
@@ -805,6 +794,9 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
     state.logicalW, state.logicalH = logicalW, logicalH
     TowerTriBattle.init(vg)
     BattleLayout.setMode("strip")
+    -- 绘制入口自行绑定比例，独立绘制和宿主覆盖后都不继承其他场景的全局值。
+    ProjectileSystem.setRenderScale(BattleLayout.CARD_SCALE)
+    BattleEffects.setRenderScale(BattleLayout.CARD_SCALE)
 
     local layout = TowerLayout.compute(logicalW, logicalH)
     local transform = TowerLayout.battleTransform(layout)
@@ -843,6 +835,7 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
             nvgScale(vg, contentScale, contentScale)
             mountLane(lane)
             BattleView.draw(vg, { allies = lane.allies, enemies = lane.enemies }, nil, true)
+            if SettingsPanel.isEffectsEnabled() then SpineCardEffect.draw(vg, "tower" .. row) end
             nvgRestore(vg)
             BattlePauseOverlay.draw(vg, ix, iy, iw, ih,
                 state.phase == BATTLE_ACTIVE and not lane.cleared and not lane.wiped)

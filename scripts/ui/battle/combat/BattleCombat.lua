@@ -463,7 +463,7 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
             target._killedByNightSlash = true
         end
         if source and isTargetAlly == false then
-            DungeonBattle.onEnemyKill(source)
+            DungeonBattle.onEnemyKill(source, target)
         end
         if isTargetAlly == false then
             -- 死亡状态尚未被宿主清理时分发，冻结/标记击杀成长可读原状态。
@@ -708,6 +708,8 @@ function BattleCombat.onTalentDealDamage(attacker, target, tgtCX, tgtCY, prefix,
         if not target or (target.hp or 0) <= 0 or not target.attrs or target.artifactUntargetable then return false end
         local alliesNow = BCS.ctx.getAllies and BCS.ctx.getAllies() or allyList
         local enemiesNow = BCS.ctx.getEnemies and BCS.ctx.getEnemies() or enemyList
+        ---@cast alliesNow table[]
+        ---@cast enemiesNow table[]
         for _, unit in ipairs(alliesNow) do if unit == target then return true end end
         for _, unit in ipairs(enemiesNow) do if unit == target then return true end end
         return false
@@ -791,6 +793,54 @@ function BattleCombat.onTalentDealDamage(attacker, target, tgtCX, tgtCY, prefix,
     else
         onProjectileHit()
     end
+end
+
+--- 从实时属性读取攻速；普通三行与塔使用同一入口，宿主专属倍率在外层叠加。
+function BattleCombat.getLiveAttackInterval(unit, fallback)
+    if unit and unit.attrs and unit.attrs.getActualInterval then
+        local interval = unit.attrs:getActualInterval()
+        if interval and interval >= 0.05 then return interval end
+    end
+    return fallback
+end
+
+--- 敌人退场后后排前移、后备从队尾入场；各战线独立保存补位冷却。
+function BattleCombat.reinforceEnemies(enemies, queue, dt, cooldown)
+    local remaining = math.max(0, (cooldown or 0) - dt)
+    for i = #enemies, 1, -1 do
+        local unit = enemies[i]
+        if unit.hp <= 0 then
+            if not unit.reviveTimer then
+                unit.reviveTimer = 0
+                unit.atkProgress = 0
+                TM.removeUnit(unit)
+                SEM.removeUnit(unit)
+                BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1, noTombstone = true })
+            end
+            unit.reviveTimer = unit.reviveTimer + dt
+            if unit.reviveTimer >= 1.0 and remaining <= 0 then
+                remaining = 0.4
+                for j = i, #enemies - 1 do
+                    local moved = enemies[j + 1]
+                    enemies[j] = moved
+                    BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = -1,
+                        advanceDist = BattleLayout.STRIP_PITCH })
+                end
+                if #queue > 0 then
+                    local newUnit = table.remove(queue, 1)
+                    newUnit.atkProgress = 0
+                    TAL.initUnit(newUnit)
+                    enemies[#enemies] = newUnit
+                    BattleCombat.setCardAnim(newUnit, { state = "reviving", timer = 0, lungeDir = -1 })
+                else
+                    table.remove(enemies)
+                end
+                BattleCombat.clearCardAnim(unit)
+                BattleCombat.clearHitFlash(unit)
+            end
+        end
+    end
+    return remaining
 end
 
 -- 单帧最多补发攻击次数。
@@ -1498,7 +1548,7 @@ local function performAttack(attacker, targetList, isAlly)
 
                         -- 通天塔击杀回调（斩杀狂潮/战意凝聚层数）
                         if curTgt.hp <= 0 and hpBefore > 0 then
-                            DungeonBattle.onEnemyKill(attacker)
+                            DungeonBattle.onEnemyKill(attacker, isAlly and curTgt or nil)
                             -- 地图词缀：复仇之誓 — 己方击杀怪物时，剩余怪物额外攻击一次
                             if isAlly and MAS.onEnemyKilled() then
                                 local allyList = isAlly and allies or enemies

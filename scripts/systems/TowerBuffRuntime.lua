@@ -495,6 +495,21 @@ function TBR.getDamageTakenMultiplier(defender)
     return mult
 end
 
+--- 实时属性间隔之外的塔专属倍率；不读取已乘过倍率的unit缓存，不跨波重复叠加。
+function TBR.getStaticIntervalMultiplier(unit)
+    if not M then return 1.0 end
+    local multiplier = 1.0
+    for _, buffId in ipairs(M.buffIds) do
+        local buff = TowerConfig.BUFFS_BY_ID[buffId]
+        if buff and buff.mechanicId == "interval_reduce" then
+            multiplier = multiplier * (1 - ((buff.params or {}).reduce or 25) / 100)
+        elseif buff and buff.mechanicId == "mage_charge_burst" and unit.classId == CC.MAGE then
+            multiplier = multiplier * (1 + ((buff.params or {}).intervalMult or 100) / 100)
+        end
+    end
+    return multiplier
+end
+
 --- 获取单位的攻击间隔动态倍率（每帧调用）
 --- 用于 #27 狂战之魂（战士损失HP→攻速提升）
 ---@param unit table

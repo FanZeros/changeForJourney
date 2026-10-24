@@ -289,7 +289,7 @@ local function HorizonUpdateTransform()
     H_ox, H_oy, H_s = Viewport.layout(logicalW(), logicalH())
     BattleLayout.setMode("strip")
     H_TRI_L0 = BattleTriPage.isOpen()  -- [暗黑替换] 面板透明底开关（L0 已铺营地/英灵墙）
-    local triRenderScale = (BattleTriPage.isOpen() or DungeonBattleScene.isOpen())
+    local triRenderScale = (BattleTriPage.isOpen() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive())
         and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)
     BattleEffects.setRenderScale(triRenderScale)  -- [三行并行]

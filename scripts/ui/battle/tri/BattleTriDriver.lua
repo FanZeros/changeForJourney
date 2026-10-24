@@ -36,24 +36,15 @@ local BattleTriDriver = {}
 
 local DEFAULT_ALLY_INTERVAL  = 1.2
 local DEFAULT_ENEMY_INTERVAL = 2.0
-local RESPAWN_DELAY = 1.0
 local ENTER_ANIM_DURATION = 0.30
 local ENTER_STAGGER = 0.06
 local REWARD_INTERVAL = 0.05
-local REINFORCE_INTERVAL = 0.4
 local MARCH_DURATION = 2.0
 local MARCH_ZOOM = 1.06
 local MARCH_ZOOM_END = 0.65
 local MARCH_STEP = 7
 
---- 单位攻击间隔（魔改 buff 感知的最小实现：直接取 attrs 的实际间隔）
-local function getLiveAttackInterval(unit, fallback)
-    if unit and unit.attrs and unit.attrs.getActualInterval then
-        local v = unit.attrs:getActualInterval()
-        if v and v >= 0.05 then return v end
-    end
-    return fallback
-end
+local getLiveAttackInterval = BattleCombat.getLiveAttackInterval
 
 --- 按关卡配置生成一波敌人（上限 4 = 列阵每侧上限）
 ---@param stageId number
@@ -511,41 +502,8 @@ function BattleTriDriver.new(teamIdx, options)
     --- 死亡后按原战斗补位：后方敌人前移，队列里的下一只从队尾进入。
     function drv:reinforceDeadEnemies()
         if self.terminalRaid then return end
-        local enemies = self.enemies
-        local queue = self.enemyQueue
-        for i = #enemies, 1, -1 do
-            local unit = enemies[i]
-            if unit.hp <= 0 then
-                if not unit.reviveTimer then
-                    unit.reviveTimer = 0
-                    unit.atkProgress = 0
-                    TM.removeUnit(unit)
-                    SEM.removeUnit(unit)
-                    BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1, noTombstone = true })
-                end
-                unit.reviveTimer = unit.reviveTimer + (self._tickDt or 0)
-                if unit.reviveTimer >= RESPAWN_DELAY and self.reinforceCd <= 0 then
-                    self.reinforceCd = REINFORCE_INTERVAL
-                    for j = i, #enemies - 1 do
-                        local moved = enemies[j + 1]
-                        enemies[j] = moved
-                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = -1,
-                            advanceDist = BattleLayout.STRIP_PITCH })
-                    end
-                    if #queue > 0 then
-                        local newUnit = table.remove(queue, 1)
-                        newUnit.atkProgress = 0
-                        TAL.initUnit(newUnit)
-                        enemies[#enemies] = newUnit
-                        BattleCombat.clearCardAnim(unit)
-                        BattleCombat.setCardAnim(newUnit, { state = "reviving", timer = 0, lungeDir = -1 })
-                    else
-                        table.remove(enemies)
-                        BattleCombat.clearCardAnim(unit)
-                    end
-                end
-            end
-        end
+        self.reinforceCd = BattleCombat.reinforceEnemies(self.enemies, self.enemyQueue,
+            self._tickDt or 0, self.reinforceCd)
     end
 
     --- 通关后前进；提示由行内底部持续展示，不进入浮字或弹窗。
@@ -793,7 +751,6 @@ function BattleTriDriver.new(teamIdx, options)
         end
 
         self:reportDefeatedEnemies()
-        self.reinforceCd = math.max(0, (self.reinforceCd or 0) - dt)
         self:reinforceDeadEnemies()
         hasAliveEnemy = false
         for _, u in ipairs(enemies) do

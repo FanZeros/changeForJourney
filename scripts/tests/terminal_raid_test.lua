@@ -853,14 +853,17 @@ local function testOtherTimeLimitsUnchanged()
     end
     Tower.cycleBattleSpeed = originalCycle
     for row = 1, 3 do
+        -- 本组测活动帧原dt，不将新入场门禁当倍速；攻速源使用正式实时属性。
+        towerState.lanes[row].introTimer = 0
         teams[row][1].atkProgress = 0
-        teams[row][1].atkInterval = 1
+        teams[row][1].attrs.final[AD.ATK_INTERVAL] = 1
+        teams[row][1].attrs.final[AD.ATK_SPEED] = 0
     end
     Tower.update(.25)
     check(Dungeon.getElapsed() == .25, "真实塔整层计时只推进四分之一秒")
     for row = 1, 3 do
         check(math.abs(teams[row][1].atkProgress - .25) < 1e-9, "真实塔队" .. row .. "攻击进度使用原dt")
-        teams[row][1].atkInterval = 1000000000
+        teams[row][1].attrs.final[AD.ATK_INTERVAL] = 1000000000
     end
     Tower.update(limit - 1 - .25)
     local resultPending = Dungeon.getResultState()

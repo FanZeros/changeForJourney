@@ -186,6 +186,16 @@ function Start()
         mods["core.BattleLayout"] = { CARD_W = 198, CARD_H = 351, CARD_SCALE = .48,
             STRIP_W = 948, STRIP_H = 360, STRIP_CY = 180, FIELD_CY = 180,
             MAX_PER_SIDE = 4, MODE = "strip", setMode = function(value) mods["core.BattleLayout"].MODE = value end }
+        -- 公共攻速/补位入口沿真实生产函数；外围模块仍为本专项显式spy。
+        local combatSource = read("ui/battle/combat/BattleCombat.lua")
+        local combatEnv = setmetatable({ BattleCombat = bc, TM = tm, SEM = sem, TAL = tal,
+            BattleLayout = mods["core.BattleLayout"] }, { __index = env })
+        for _, name in ipairs({ "getLiveAttackInterval", "reinforceEnemies" }) do
+            local signature = "function BattleCombat." .. name .. "("
+            local first = assert(combatSource:find(signature, 1, true))
+            local last = assert(combatSource:find("\nend", first, true))
+            assert(load(combatSource:sub(first, last + 3), "@real-BC/" .. name, "t", combatEnv))()
+        end
         local statsTeam = 0
         mods["systems.BattleStats"] = { reset = noop, update = noop,
             mount = function(value) statsTeam = value end, mountedTeam = function() return statsTeam end,
@@ -193,7 +203,7 @@ function Start()
         mods["ui.battle.combat.BattleClock"] = { now = function() return f.clock.elapsedTime end }
         mods["systems.BattleTimeout"] = { calcMult = function() return 1 end }
         mods["ui.battle.scene.BattleAllyReset"] = { compactFallen = noop, restoreOrder = noop, resetAllyUnit = noop }
-        mods["ui.fx.SpineCardEffect"] = { playRevive = noop }
+        mods["ui.fx.SpineCardEffect"] = { playRevive = noop, stopAll = noop, draw = noop }
         mods["ui.battle.scene.BattlePauseOverlay"] = { init = noop, draw = noop }
         mods["ui.battle.scene.BattleView"] = { init = noop, draw = noop }
         mods["ui.battle.scene.BattleDraw"] = { drawTextStroke = noop, drawImageCentered = noop,
@@ -236,7 +246,7 @@ function Start()
             isTrainingDummy = function() return f.controls.dummy end,
             isTimeLimitExceeded = function() return f.controls.timeLimit end,
             getAtkIntervalMultiplier = function() return 1 end,
-            onEnemyKill = noop, onAllyDeath = noop,
+            onEnemyKill = function(_, unit) if unit then unit._towerKillReported = true end end, onAllyDeath = noop,
             onVictory = function() f.wins = f.wins + 1; f.record("win") end,
             onDefeat = function(reason) f.defeats = f.defeats + 1; f.defeatReason = reason; f.record("defeat") end,
             isResultReady = function() return true end,

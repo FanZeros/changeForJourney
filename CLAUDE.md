@@ -12,14 +12,15 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
-## 上次做了什么（2026-10-24，通天塔与普通战斗一致性，本地完成）
+## 上次做了什么（2026-10-24，通天塔与普通战斗一致性，PR #192 已创建）
 
-- 用户询问塔与普通战斗表现差异并明确“修”。独立本地 `fix1024/tower-battle-consistency`，基于 `cb7d64f4` 保留此前无进攻判败成果；本轮未提交／push／PR／合并发布，不自动更新PR190，不读玩家档、不运行main、不清档。
+- **已创建正式 PR #192**：https://github.com/FanZeros/changeForJourney/pull/192，head=`fix1024/tower-battle-consistency@5b4d22fb`，base=`workspace1005@8900697b`，open／draft=false／merged=false／mergeable=clean，5提交、34文件 +3045/−169。创建前同源查重 open=0；推送后目标未再前进。鉴权经用户即时提供的令牌，仅本次命令进程内使用；令牌值未写入源码／提交对象／.git/config／FETCH_HEAD／packed-refs，已核零残留。**该令牌已在聊天中明文暴露，应撤销轮换**。不推 workspace 系列、不强推、不自动合并或发布。
+- 用户询问塔与普通战斗表现差异并明确“修”。基于 `cb7d64f4` 独立本地 `fix1024/tower-battle-consistency`，保留此前无进攻判败与 PR190 成果。合并两次目标前进：性能优化与诊断（`c0ba2b43`）、威胁值百点基准修复（`8900697b`）；冲突三处——CLAUDE.md 交接双保留、`startup_assets_test` 双留 BattleClock 与 PerformanceHooks/Panel spy（并修掉合并产生的 BattleClock 重复键）、`BattleTriDriver` 采用目标 `flushExtraTalents` 入口并保留 `no_offense` 旧场身份校验。
 - Horizon补塔接管比例、Tower.draw自行绑定特效缩放；普通Driver与塔共用实时属性攻速和1秒死亡等待／0.4秒补位冷却／后排前移队尾入场入口。实时属性之上独立叠暗契20／28、动态27及当前狂暴，旧单参倍率契约保留；塔初始错峰入场不积累攻击，持续恢复沿原整数HP／小数余量管线，复活文字及tower1..3特效与清理隔离。塔专属布局、暗契数值、三队胜败、限时与层奖励保留。
 - 独立复核指出计杀重复和尸体等待拖超时两处新增边界，已修后复核未确认剩余新增缺陷：统一伤害透传死者，DB按死亡身份去重，观察复活清标记；无后备全死即时清波，PS／combo末尾无待处理己方死亡且有存活者即确认，原全灭优先保留。无死者参数的旧兼容入口不宣称全历史幂等。
-- 最终官方b114成功，1633项／726根Lua实际UUID-hash载荷逐字节与声明size全部一致，源集合无缺失／额外、候选／内部验证0入包。六生产及三测试逐文件severity1 Error0（仍有Warning），不称全仓静态清零。构建身份及候选临时ignore仅本地，恢复至本轮两before备份并逐字节核验，不纳入提交。
-- b114后九独立Runtime全部业务ALL PASS／actualexit0／无timeout：新一致性11组363、无进攻宿主20组3701、能力6组137、终焉7136、切关、塔布局19组4404、治疗184、弹射188、资源46439。新增真实Tower／属性／动画／DB／TBR及抽取BC统一伤害与Horizon，外围攻击／绘制／业务保存为明确spy；不等于GPU像素、设备触控、完整实战、真实档或性能验收。headless音频／shader环境错误保留。首轮两新夹具失败、旧宿主缺helper四失败及终焉旧缓存／入场预期三失败原记录保留，仅修真实职业常量、整数治疗余量与明确依赖／活动帧准备，不降业务断言。
-- 内证仅 `.git/validation/tower-consistency1024`，原上传／候选／技能／无关meta保持。持续推进授权并尊重停止／权限／安全边界，按当前直接继续不机械询问，不推workspace系列／强推／自动合并发布，凭据不持久化。
+- 最终官方b117成功，1634项／736根Lua实际UUID-hash载荷逐字节与声明size全部一致，源集合无缺失／额外、候选／内部验证0入包。合并后 `startup_assets_test` 重复键已修，全部修改文件逐文件severity1 Error0（仍有Warning），不称全仓静态清零。构建身份及候选临时ignore仅本地，已恢复且工作区干净，不纳入提交。
+- b117后十独立Runtime全部业务ALL PASS／actualexit0／无timeout：新一致性11组363、无进攻宿主20组3701、能力6组137、终焉7136、切关、塔布局19组4404、威胁值专项、资源46439、治疗184、弹射188。新增真实Tower／属性／动画／DB／TBR及抽取BC统一伤害与Horizon，外围攻击／绘制／业务保存为明确spy；不等于GPU像素、设备触控、完整实战、真实档或性能验收。headless音频／shader环境错误保留。首轮两新夹具失败、旧宿主缺helper四失败及终焉旧缓存／入场预期三失败原记录保留，仅修真实职业常量、整数治疗余量与明确依赖／活动帧准备，不降业务断言。
+- 内证仅 `.git/validation/tower-consistency1024`，原上传／候选／技能／无关meta保持。持续推进授权并尊重停止／权限／安全边界，按当前直接继续不机械询问，不推workspace系列／强推／自动合并发布，凭据不持久化到仓库。
 
 ## 上次做了什么（2026-10-24，无进攻能力持续5秒判败，PR #190 已创建）
 

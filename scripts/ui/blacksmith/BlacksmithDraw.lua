@@ -39,7 +39,6 @@ function M.bind(deps)
     local imgNameBg = deps.imgNameBg
     local imgTabBg = deps.imgTabBg
     local WORKBENCH_CX, WORKBENCH_CY = deps.WORKBENCH_CX, deps.WORKBENCH_CY
-    local closeAutoWarehouse = deps.closeAutoWarehouse
     local state = deps.state
 
     local tabKeys = { "qianghua", "xilian" }
@@ -54,7 +53,7 @@ function M.bind(deps)
             if rawT >= 1.0 then
                 state.open = false
                 state.closing = false
-                if closeAutoWarehouse then closeAutoWarehouse() end
+                -- 仓库在close入口已同步退场，此处不能延迟释放后来新开的持有者。
                 local cb = deps.getOnCloseCallback and deps.getOnCloseCallback()
                 if deps.setOnCloseCallback then deps.setOnCloseCallback(nil) end
                 if cb then cb() end

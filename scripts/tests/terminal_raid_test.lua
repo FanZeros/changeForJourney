@@ -670,16 +670,19 @@ local function singleSceneFixture()
     deps["ui.battle.stage.BattleStageFlow"] = { ensureBattleCards = function() return {} end,
         pumpBattleCards = function(queue) return queue end, startBattleTalents = flow.startBattleTalents }
     local lifecycle = compileModule("ui.battle.scene.BattleAllyLifecycle", env)
-    deps["ui.battle.scene.BattleAllyLifecycle"] = { getLiveAttackInterval = lifecycle.getLiveAttackInterval,
-        bind = function(bindDeps)
-            observed.get = bindDeps.get
-            local original = bindDeps.set
-            bindDeps.set = function(key, value)
-                if key == "firstClearTimeLeft" then observed.resets[#observed.resets + 1] = { value = value } end
-                original(key, value)
-            end
-            return lifecycle.bind(bindDeps)
-        end }
+    -- 保留真实Lifecycle全部出口，只有bind附加旧计时观测，不截断新增宿主API。
+    local lifecycleProxy = {} ---@type table
+    for key, value in pairs(lifecycle) do lifecycleProxy[key] = value end
+    deps["ui.battle.scene.BattleAllyLifecycle"] = lifecycleProxy
+    lifecycleProxy.bind = function(bindDeps)
+        observed.get = bindDeps.get
+        local original = bindDeps.set
+        bindDeps.set = function(key, value)
+            if key == "firstClearTimeLeft" then observed.resets[#observed.resets + 1] = { value = value } end
+            original(key, value)
+        end
+        return lifecycle.bind(bindDeps)
+    end
     local stageLoad = compileModule("ui.battle.stage.BattleStageLoad", env)
     deps["ui.battle.stage.BattleStageLoad"] = { load = function(ctx, id, skip)
         stageLoad.load(ctx, id, skip)
@@ -850,14 +853,17 @@ local function testOtherTimeLimitsUnchanged()
     end
     Tower.cycleBattleSpeed = originalCycle
     for row = 1, 3 do
+        -- 本组测活动帧原dt，不将新入场门禁当倍速；攻速源使用正式实时属性。
+        towerState.lanes[row].introTimer = 0
         teams[row][1].atkProgress = 0
-        teams[row][1].atkInterval = 1
+        teams[row][1].attrs.final[AD.ATK_INTERVAL] = 1
+        teams[row][1].attrs.final[AD.ATK_SPEED] = 0
     end
     Tower.update(.25)
     check(Dungeon.getElapsed() == .25, "真实塔整层计时只推进四分之一秒")
     for row = 1, 3 do
         check(math.abs(teams[row][1].atkProgress - .25) < 1e-9, "真实塔队" .. row .. "攻击进度使用原dt")
-        teams[row][1].atkInterval = 1000000000
+        teams[row][1].attrs.final[AD.ATK_INTERVAL] = 1000000000
     end
     Tower.update(limit - 1 - .25)
     local resultPending = Dungeon.getResultState()

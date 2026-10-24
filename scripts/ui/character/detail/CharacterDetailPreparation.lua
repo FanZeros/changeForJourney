@@ -7,20 +7,47 @@ local Snapshot = require("ui.character.detail.CharacterDetailSnapshot")
 local M = {}
 local EMPTY_SOURCE = {}
 
--- 仅小依赖校验，Render可调用，不复制/扫描完整库存或运行属性管线。
-function M.version(request)
-    local sources = {}
-    for _, key in ipairs({ "heroes", "equipment", "artifacts", "talents" }) do
-        sources[key] = Dispatcher.get(key) or Store.Get(key) or EMPTY_SOURCE
+-- 显式owner私有guard；不传guard仍执行原完整签名，无模块级/跨会话隐式缓存。
+-- refresh只允许Update调用；Render依赖不匹配时直接无key，不补建基线。
+function M.version(request, guard, refresh)
+    local heroes = Dispatcher.get("heroes") or Store.Get("heroes") or EMPTY_SOURCE
+    local equipment = Dispatcher.get("equipment") or Store.Get("equipment") or EMPTY_SOURCE
+    local artifacts = Dispatcher.get("artifacts") or Store.Get("artifacts") or EMPTY_SOURCE
+    local talents = Dispatcher.get("talents") or Store.Get("talents") or EMPTY_SOURCE
+    local eqRev = Store.GetRevision and Store.GetRevision("equipment") or 0
+    local artRev = Store.GetRevision and Store.GetRevision("artifacts") or 0
+    local talentRev = Store.GetRevision and Store.GetRevision("talents") or 0
+    local panelMatches = guard and guard.viewKey == request.viewKey
+        and Snapshot.matchesDependencies(guard.frozen, heroes, equipment, artifacts, talents, request.heroId)
+    if guard and not refresh then
+        request.panelKey, request.key = nil, nil
+        if panelMatches then
+            request.panelKey = guard.panelKey
+            if equipment == guard.equipment and artifacts == guard.artifacts and talents == guard.talents
+                and eqRev == guard.eqRev and artRev == guard.artRev and talentRev == guard.talentRev then
+                request.key = guard.key
+            end
+        end
+        return request
     end
+    local sources = { heroes = heroes, equipment = equipment, artifacts = artifacts, talents = talents }
     request.sources = sources
-    -- heroes引用/revision、缓存invalidate不参与版本；exp持续通知不能饿死任务。
-    local parts = { request.viewKey, Snapshot.dependencies(sources, request.seq) }
-    for _, key in ipairs({ "equipment", "artifacts", "talents" }) do
-        parts[#parts + 1] = tostring(sources[key])
-        parts[#parts + 1] = tostring(Store.GetRevision and Store.GetRevision(key) or 0)
+    request.panelKey = panelMatches and guard.panelKey
+        or request.viewKey .. "\31" .. Snapshot.dependencies(sources, request.seq, request.heroId)
+    if panelMatches and equipment == guard.equipment and artifacts == guard.artifacts and talents == guard.talents
+        and eqRev == guard.eqRev and artRev == guard.artRev and talentRev == guard.talentRev then
+        request.key = guard.key
+    else
+        request.key = table.concat({ request.panelKey, tostring(equipment), tostring(eqRev),
+            tostring(artifacts), tostring(artRev), tostring(talents), tostring(talentRev) }, "\31")
     end
-    request.key = table.concat(parts, "\31")
+    if guard then
+        if not panelMatches then guard.frozen = Snapshot.freezeDependencies(sources, request.seq, request.heroId) end
+        guard.viewKey, guard.panelKey, guard.key = request.viewKey, request.panelKey, request.key
+        guard.equipment, guard.artifacts, guard.talents = equipment, artifacts, talents
+        guard.eqRev, guard.artRev, guard.talentRev = eqRev, artRev, talentRev
+        request.guard = guard
+    end
     return request
 end
 
@@ -28,12 +55,14 @@ function M.bind(deps)
     ---@type thread|nil
     local job = nil
     local jobKey, completedKey = nil, nil
+    local panelKey, preparedPanel = nil, nil
     local generation, steps, deadline = 0, 0, 0
     local committed = { pending = true, scores = {}, upgrades = {} }
     local api = {}
-    local function capture()
+    local guard = {}
+    local function capture(refresh)
         local request = deps.capture()
-        return M.version(request)
+        return M.version(request, guard, refresh)
     end
     local function checkpoint()
         steps = steps + 1
@@ -42,30 +71,44 @@ function M.bind(deps)
     function api.cancel()
         generation = generation + 1
         job, jobKey, completedKey = nil, nil, nil
+        panelKey, preparedPanel = nil, nil
+        guard = {}
         committed = { pending = true, scores = {}, upgrades = {} }
         deps.clear()
     end
     function api.read(viewKey)
-        -- 只读小依赖签名；Update之后同帧业务patch也不能显示旧比较/箭头。
-        if committed.viewKey ~= viewKey or completedKey ~= capture().key then
+        -- 每次外部读取均复核内容，Update后同帧原地patch立即拒旧。
+        local current = capture(false)
+        if committed.viewKey ~= viewKey or not current.key or completedKey ~= current.key then
             return { pending = true, scores = {}, upgrades = {} }
         end
         return committed
     end
     function api.update()
-        local start = os.clock()
-        local request = capture()
+        local request = capture(true)
         if not request.heroId then api.cancel(); return end
+        if panelKey ~= request.panelKey then
+            -- 只有最多已穿项+当前候选的小世界，不遍历库存；不可yield让持续养成饿死底板。
+            -- 完整比较在同一次Update内构建/终检/提交，Render仍禁止补算或借旧差值。
+            local panelGeneration = generation
+            local ok, panel = pcall(deps.prepare, request, function() end)
+            if not ok then
+                print("[CharacterDetail] panel prepare failed: " .. tostring(panel))
+                return
+            end
+            if panelGeneration ~= generation or request.panelKey ~= capture().panelKey then return end
+            deps.commit(panel, request)
+            preparedPanel, panelKey = panel, request.panelKey
+        end
         if completedKey == request.key then return end
         if not job or jobKey ~= request.key then
             generation = generation + 1
             local token = generation
             jobKey, completedKey = request.key, nil
             committed = { viewKey = request.viewKey, pending = true, scores = {}, upgrades = {} }
-            deps.clear()
+            local panel = preparedPanel
             job = coroutine.create(function()
-                -- 先构建小世界比较；即使全库箭头准备耗时，也不在Render做任何重建。
-                local panel = deps.prepare(request, checkpoint)
+                -- 完整库存只服务评分/箭头；慢任务重启或失败不再清空已提交的属性。
                 checkpoint()
                 local sources = request.sources
                 local context = #deps.slots > 0 and Power.buildContext(request.heroId, {
@@ -115,7 +158,8 @@ function M.bind(deps)
             end)
         end
         local running, key, token = job, jobKey, generation
-        steps, deadline = 0, start + (deps.budgetSeconds or 0.001)
+        -- 签名校验和原子属性刷新不消耗worker推进额度，避免大名册每轮都过早让出。
+        steps, deadline = 0, os.clock() + (deps.budgetSeconds or 0.001)
         local ok, result = coroutine.resume(running)
         if not ok then
             job, jobKey = nil, nil
@@ -125,7 +169,6 @@ function M.bind(deps)
             -- resume期间没有其他游戏更新；capture仍复核全部输入，原子发布同版本bundle。
             if token == generation and key == capture().key then
                 committed, completedKey = result, key
-                deps.commit(result.panel, request)
             end
         end
     end

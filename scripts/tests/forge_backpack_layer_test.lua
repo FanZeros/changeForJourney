@@ -93,6 +93,9 @@ function Start()
             ["ui.blacksmith.BlacksmithPage"] = smith, ["ui.backpack.BackpackPanel"] = backpack,
             ["ui.hud.BottomNav"] = { getSelectedIndex = function() return 3 end },
             ["ui.character.panel.CharacterPanel"] = mock({ getTotalPower = function() return 0 end }),
+            -- 新全图指针适配器的bind返回handler，不可沿用通用false spy。
+            ["ui.character.hero.AwakeningArtwork"] = mock({ bindInput = function() return noop end }),
+            ["boot.RewardGesture"] = { bindHost = function() return { pointer = noop, observe = noop } end },
             ["ui.battle.scene.BattleScene"] = page("battle"),
             ["ui.battle.tri.BattleTriPage"] = mock({
                 isOpen = function() return state.tri end,
@@ -197,7 +200,10 @@ function Start()
         end
         smithState.closing, smithState.closeTime = true, clock.elapsedTime - 1
         impl.drawPageImpl({})
-        check(not smithState.open and not smithState.closing and closed == 1, "关闭动画仍释放仓库持有一次")
+        check(not smithState.open and not smithState.closing and closed == 0,
+            "关闭完成只收尾锻炉；仓库release已前移到BlacksmithPage.close入口")
+        -- 不能只删除旧release断言：另用真实Page -> Panel -> EquipLink验证关闭边沿与重入。
+        originalRequire("tests.forge_close_lifecycle_test").run(check)
     end)
     require = originalRequire
     VP._notes = oldNotes

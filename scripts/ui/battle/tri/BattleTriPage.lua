@@ -25,6 +25,7 @@ local BattleStats       = require("systems.BattleStats")
 local I18n              = require("core.I18n")
 local RCH               = require("systems.RelicConditionHandler")
 local BattleMountScope  = require("ui.battle.scene.BattleMountScope")
+local OffenseGuard      = require("systems.BattleOffenseGuard")
 
 -- 只在显示边界翻译；驱动进度、源关卡名和地图缓存仍使用原始配置。
 local function stageDisplayName(stageId)
@@ -243,8 +244,8 @@ local function ensureDrivers()
                     end
                 end
             end
-            drv.onAllDead = function(teamIdx, stageId)
-                if triOnAllDead then triOnAllDead(teamIdx, stageId) end
+            drv.onAllDead = function(teamIdx, stageId, reason)
+                if triOnAllDead then triOnAllDead(teamIdx, stageId, reason) end
             end
             local battle = ClientDispatcher.get("battle")
             local savedTeams = restoredStageIds or (type(battle) == "table" and battle.teamStageIds) or {}
@@ -596,6 +597,8 @@ function BattleTriPage.update(dt)
         end
         if terminalRaid.hp <= 0 then
             terminalRaid:finish(true)
+        else
+            terminalRaid:updateOffense(dt, terminalRaid == raidAtFrameStart and raidClockActive)
         end
     end
     if terminalRaid and terminalRaid.finished then
@@ -1419,7 +1422,9 @@ end
 --- 退出会话兜底：隐藏页面不结束战斗，只有宿主Stop显式调用这里。
 function BattleTriPage.flushPendingGrowth()
     local ETS = require("systems.ExtraTalentSystem")
+    if terminalRaid then OffenseGuard.reset(terminalRaid) end
     for _, drv in pairs(drivers) do
+        OffenseGuard.reset(drv)
         drv:activate()
         ETS.flush()
         if not drv.terminalRaid then drv:queuePendingKills() end
@@ -1432,7 +1437,10 @@ local function discardTerminalRaid()
     terminalRaid, terminalOrigins = nil, nil
 end
 
-local discardDriver = Reincarnation.discardDriver
+local function discardDriver(drv)
+    OffenseGuard.reset(drv)
+    return Reincarnation.discardDriver(drv)
+end
 
 --- 只在真实恢复时回灌，周期同步必须仅采集；接受数组或规范字符串键表。
 ---@param stageIds table<number|string, number>

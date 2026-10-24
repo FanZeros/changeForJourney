@@ -129,7 +129,7 @@ function Start()
         ["ui.character.detail.EquipmentPreview"] = {
             build = function(heroId, level, seq, slot, options)
                 buildCount = buildCount + 1
-                -- 强制跨多轮Update：ready不能用buildCount已增加或“一帧应该够”代替。
+                -- checkpoint仍可调用，但紧凑属性必须在本次Update原子完成，不再等待整库评分。
                 for _ = 1, 130 do options.checkpoint() end
                 requestedSeq, requestedSlot, requestedLanguage = seq, slot, language
                 requestedBonuses = options and options.includeEquipmentBonuses == true
@@ -874,11 +874,11 @@ function Start()
         check(buildCount == beforeBuild and rendered("属性准备中…") and not rendered("属性1"),
             "冷Render只显示准备中，不在首次绘图同步构建")
         Panel.update(1, {})
-        check(buildCount == beforeBuild + 1 and Panel.getPrepared(1, {}).pending == true
-            and sortCount == beforeSort, "首轮Update只启动分帧任务，不把半成品当ready或提前排序")
+        check(buildCount == beforeBuild + 1 and Panel.getPrepared(1, {}).pending ~= true
+            and sortCount == beforeSort + 1, "首轮Update提交完整紧凑属性，不被整库评分延迟")
         for _ = 1, 3 do renderOnly(1, {}) end
-        check(Panel.getPrepared(1, {}).pending == true and buildCount == beforeBuild + 1,
-            "反复Render不会推进暂停中的协程")
+        check(Panel.getPrepared(1, {}).pending ~= true and buildCount == beforeBuild + 1,
+            "反复Render只读取已提交属性，不补算")
         for _ = 1, 16 do
             heroes.roster[1].exp = (heroes.roster[1].exp or 0) + 1
             revisions.heroes = revisions.heroes + 1
@@ -1040,6 +1040,7 @@ function Start()
     equipment.inventory["8"] = { enhanceLevel = 1 }
     equipment.equipped[1] = { weapon = 7 }
     heroes.roster[2] = { level = 1 }
+    heroes.teams = { { slots = { 1, 2 } }, { slots = {} }, { slots = {} } }
     for _, mode in ipairs({ "character", "equipment" }) do
         if Panel.getAttributeMode() ~= mode then Panel.toggleAttributeMode() end
         selection = { seq = 7, slot = "weapon", heroId = 1, owner = "bag", pinned = true }

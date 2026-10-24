@@ -737,7 +737,7 @@ local function drawTowerPreview(vg, entry, y, locked, dungeonData)
         I18n.format("怪物 Lv.%d", entry.monsterLevel or 0), vw - 16, 28, 1,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 235, color, 194, 2)
     drawFittedTitle(vg, vx + vw * 0.5, y + 62,
-        TowerText.text("第%d-%d层 · 每层1波", reward.runStartFloor, reward.runEndFloor), vw - 16, 24, 1,
+        TowerText.text("本段%d-%d层 · 可连续登塔", reward.runStartFloor, reward.runEndFloor), vw - 16, 24, 1,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color, color, color, 2)
     nvgRestore(vg)
     RewardPreview.draw(vg, reward, D.MID_X + 8, y + 104, D.MID_W - 16, 44, locked)

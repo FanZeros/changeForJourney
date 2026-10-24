@@ -22,6 +22,72 @@ local BattleLayout = require("core.BattleLayout")
 
 local M = {}
 
+--- 在任何动画/投射物更新前采样，避免大dt完成入场或造成死亡后倒算本帧。
+function M.captureOffenseFrame(allies, enemies)
+    local frame = { eligible = true, alive = {}, combat = BattleCombat.mountedState(), allies = allies, enemies = enemies }
+    for _, list in ipairs({ allies, enemies }) do
+        for _, unit in ipairs(list) do
+            frame.alive[unit] = unit.hp > 0
+            local anim = frame.combat.cardAnims[unit]
+            if anim and anim.state == "entering" then frame.eligible = false end
+        end
+    end
+    return frame
+end
+
+--- 默认Scene已在正确Scope中；查询显式传引用，不让Guard借用其他宿主挂载。
+function M.updateOffense(owner, dt, frame, allies, enemies)
+    for _, list in ipairs({ allies, enemies }) do
+        for _, unit in ipairs(list) do
+            if frame.alive[unit] == nil or (frame.alive[unit] and unit.hp <= 0) then frame.eligible = false end
+            local anim = frame.combat.cardAnims[unit]
+            if anim and anim.state == "entering" then frame.eligible = false end
+        end
+    end
+    for _, unit in ipairs(allies) do
+        if unit.hp <= 0 and unit.reviveTimer == nil then frame.eligible = false end
+    end
+    return require("systems.BattleOffenseGuard").update(owner, dt, { {
+        allies = allies, enemies = enemies, combatState = frame.combat,
+        projectileState = ProjectileSystem.mountedState(), semState = SEM.mountedState(),
+        talentStates = TAL.mountedUnitStates(), talentRefs = TAL.mountedState(),
+        etsState = require("systems.ExtraTalentSystem").mountedState(),
+    } }, frame.eligible)
+end
+
+--- 塔现有强化只有属性/倍率/控制/命中附加；任何未审计registry保守禁止提前败。
+--- 只读配置，不消费蓄力、免疫次数或斩杀随机数。
+function M.isTowerOffenseRegistryKnown()
+    local config = require("config.TowerConfig")
+    local stats = {
+        physAtkBonus = true, magAtkBonus = true, hpBonus = true, critRate = true, critDmg = true,
+        dodge = true, comboRate = true, comboBonus = true, atkHeal = true, atkSpeed = true,
+        physPen = true, magPen = true, blockRatio = true, healBonus = true,
+    }
+    local mechanics = {
+        low_hp_dmg_bonus = true, high_hp_dmg_bonus = true, low_hp_dmg_reduce = true,
+        early_dmg_bonus = true, kill_dmg_stack = true, kill_hp_stack = true,
+        combo_dmg_double = true, execute = true, interval_reduce = true, periodic_freeze = true,
+        early_rage = true, death_immunity = true, knight_threat = true, knight_fortify = true,
+        warrior_bloodlust = true, warrior_fury = true, mage_charge_burst = true,
+        mage_accumulate = true, ranger_super_crit = true, ranger_support = true,
+        assassin_immunity = true, priest_aura_hp = true,
+    }
+    if type(config.BUFFS) ~= "table" or type(config.BUFFS_BY_ID) ~= "table" then return false end
+    for _, registry in ipairs({ config.BUFFS, config.BUFFS_BY_ID }) do
+        if type(registry) ~= "table" then return false end
+        for _, buff in pairs(registry) do
+            if type(buff) ~= "table" then return false end
+            if buff.effectType == "stat" and type(buff.stats) == "table" then
+                for key in pairs(buff.stats) do if not stats[key] then return false end end
+            elseif buff.effectType ~= "mechanic" or not mechanics[buff.mechanicId] then
+                return false
+            end
+        end
+    end
+    return true
+end
+
 ---@param value any
 ---@return any
 local function copyEpicGrowth(value)
@@ -124,7 +190,18 @@ function M.bind(deps)
                         BattleEffects.spawn(armorType, tgtCX, tgtCY)
                     end
                 end
-                local projOpts = result.category == "healing" and { target = target, forceBezier = true } or nil
+                local projOpts = result.category == "healing" and { target = target, forceBezier = true } or {}
+                projOpts.offenseKind = result.category == "healing" and "heal" or "damage"
+                projOpts.offenseSource = attacker
+                projOpts.offenseOrigin = "normal_attack"
+                for _, unit in ipairs(getAllies()) do
+                    if unit == attacker then projOpts.offenseSide = "ally" break end
+                end
+                if not projOpts.offenseSide then
+                    for _, unit in ipairs(getEnemies()) do
+                        if unit == attacker then projOpts.offenseSide = "enemy" break end
+                    end
+                end
                 if hasHeroEffect then
                     ProjectileSystem.spawn(attacker.heroId, atkCX, atkCY, tgtCX, tgtCY, hitCallback, projOpts)
                 elseif hasMonsterEffect then

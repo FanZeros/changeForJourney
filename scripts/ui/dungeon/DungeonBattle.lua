@@ -441,11 +441,16 @@ function DungeonBattle.shouldSuperCrit(attacker, isCrit)
     return false
 end
 
---- 通天塔：击杀敌人回调
----@param killer table
-function DungeonBattle.onEnemyKill(killer)
+--- 通天塔：同一敌人每次死亡只计一次，兼容无目标身份的旧调用。
+---@param killer table|nil
+---@param deadUnit? table
+function DungeonBattle.onEnemyKill(killer, deadUnit)
     if not active then return end
     if cfg.dungeonId ~= "babel_tower" then return end
+    if deadUnit then
+        if deadUnit._towerKillReported then return end
+        deadUnit._towerKillReported = true
+    end
     local ok, TBR = pcall(require, "systems.TowerBuffRuntime")
     if ok and TBR and TBR.onEnemyKill then
         TBR.onEnemyKill(killer)
@@ -463,17 +468,27 @@ function DungeonBattle.onAllyDeath(deadUnit)
     end
 end
 
---- 通天塔：攻击间隔倍率
+--- 通天塔：攻击间隔倍率；实时属性入口需显式叠加静态暗契及本场狂暴。
 ---@param unit table
+---@param fromAttributes? boolean 旧缓存间隔调用保留仅动态倍率的契约。
 ---@return number multiplier
-function DungeonBattle.getAtkIntervalMultiplier(unit)
+function DungeonBattle.getAtkIntervalMultiplier(unit, fromAttributes)
     if not active then return 1.0 end
     if cfg.dungeonId ~= "babel_tower" then return 1.0 end
-    local ok, TBR = pcall(require, "systems.TowerBuffRuntime")
-    if ok and TBR and TBR.getAtkIntervalMultiplier then
-        return TBR.getAtkIntervalMultiplier(unit)
+    local multiplier = 1.0
+    if fromAttributes then
+        if ragePhase >= 2 then
+            multiplier = multiplier / (1.0 + cfg.superRageAtkBonus)
+        elseif ragePhase >= 1 then
+            multiplier = multiplier / (1.0 + cfg.rageAtkBonus)
+        end
     end
-    return 1.0
+    local ok, TBR = pcall(require, "systems.TowerBuffRuntime")
+    if ok and TBR and (not fromAttributes or isAllyUnit(unit)) then
+        if fromAttributes then multiplier = multiplier * TBR.getStaticIntervalMultiplier(unit) end
+        if TBR.getAtkIntervalMultiplier then multiplier = multiplier * TBR.getAtkIntervalMultiplier(unit) end
+    end
+    return multiplier
 end
 
 -- ======================== 胜负处理 ========================

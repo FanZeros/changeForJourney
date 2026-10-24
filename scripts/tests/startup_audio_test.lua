@@ -1,6 +1,7 @@
 -- 启动音频懒加载回归：直接读取两份生产源码，在独立 env 中运行。
--- Sound/Scene/SoundSource/cache/math.random 仅本测试替身，不改全局或 package.loaded；
--- 不加载主游戏、玩家档或真实音频。用 Runtime headless 运行，Start 最终 engine:Exit()。
+-- 音频管理器在独立 env 中使用 Sound/Scene/SoundSource/cache/math.random 替身；
+-- 末尾另用真实 cache 校验三首战斗 OGG 的解码信息，不创建音源或播放音频。
+-- 不加载主游戏或玩家档。用 Runtime headless 运行，Start 最终 engine:Exit()。
 local totals = { assertions = 0, failures = 0, cases = 0 }
 local TAG = "[startup_audio_test]"
 
@@ -102,8 +103,9 @@ local function newHarness(source, label, failures, lengths, startupQueue)
                 local src = { playing = false, gain = 1, position = 0, stops = 0, seeks = {}, soundType = "" }
                 function src:IsPlaying() return self.playing end
                 function src:GetTimePosition() return self.position end
-                function src:Play(sound)
+                function src:Play(sound, frequency)
                     assert(sound, "nil sound must not be played")
+                    self.frequency = frequency
                     self.playing = true
                     self.position = 0
                     self.sound = sound
@@ -251,9 +253,13 @@ local function testBGM(source)
         eq(h.counts[defs.town.path], 2, "stop clears failure latch")
         eq(h.plays[#h.plays].sound.path, defs.town.path, "restart can recover missing track")
         m.stop()
-        local f, fh = newHarness(source, "GameBGM.lua", { [defs.battle.path] = true })
+        local f, fh = newHarness(source, "GameBGM.lua", {
+            [defs.battle.path] = true,
+            ["audio/bgm_battle_march.ogg"] = true,
+            ["audio/bgm_battle_moon.ogg"] = true,
+        })
         f.start(); f.start(); f.setScene("battle")
-        eq(#fh.loads, 1, "initial failure also once")
+        eq(#fh.loads, 3, "all initial battle candidates attempted only once")
         eq(#fh.plays, 0, "initial missing track not played")
         eq(countLogs(fh, "加载失败: " .. defs.battle.path), 1, "initial fail log once")
         f.setScene("town"); f.update(1.2)
@@ -261,7 +267,7 @@ local function testBGM(source)
         eq(fh.sources[2].position, 0, "no progress seek from missing initial sound")
         f.stop()
     end)
-    runCase("BGM progress guards + original master fade behavior", function()
+    runCase("BGM progress guards + master envelope", function()
         local m, h = newHarness(source, "GameBGM.lua", nil, { [defs.battle.path] = 0 })
         m.start(); h.sources[1].position = 10; m.setScene("town")
         eq(#h.sources[2].seeks, 0, "zero current length avoids division/seek")
@@ -270,11 +276,156 @@ local function testBGM(source)
         m.stop()
         local v, vh = newHarness(source, "GameBGM.lua")
         v.setMasterGain(0.5); v.start(); v.setScene("town"); v.update(0.2)
-        -- 原实现 fadeFromGain 已含 master，淡出时再乘 master；本优化不顺手改音量契约。
-        near(vh.sources[1].gain, 0.5 * 0.5 * 0.5 * 0.5, "original fade-out volume retained")
+        near(vh.sources[1].gain, 0.5 * 0.5 * 0.5, "fade-out applies master exactly once")
         near(vh.sources[2].gain, 0.4 / 6 * 0.5, "fade-in honors master")
         v.update(1.0); near(vh.sources[2].gain, 0.4 * 0.5, "final fade target honors master")
         v.stop()
+    end)
+end
+
+local function testBattlePlaylist(source)
+    local original = readDefinitions(source, "TRACKS").battle.path
+    local additions = readDefinitions(source, "BATTLE_TRACKS")
+    local march, moon = additions[1].path, additions[2].path
+    runCase("battle playlist cycles three tracks without scene change or RNG", function()
+        local m, h = newHarness(source, "GameBGM.lua")
+        m.start()
+        m.update(10000)
+        eq(#h.plays, 1, "large gameplay dt alone does not finish a sound")
+        h.sources[1].position = 99.59; m.update(0.01)
+        eq(#h.loads, 1, "next track not loaded before ending")
+        h.sources[1].position = 99.6; m.update(0.01)
+        eq(#h.plays, 2, "ending starts next track")
+        eq(h.plays[2].sound.path, march, "first addition follows original")
+        eq(h.sources[2].position, 0, "natural transition begins at start")
+        eq(h.sources[1].frequency, 0, "initial play restores sound sample rate")
+        eq(h.sources[2].frequency, 0, "reused channel restores sound sample rate")
+        eq(#h.sources[2].seeks, 0, "natural transition never percentage seeks")
+        eq(m.getScene(), "battle", "public scene remains battle")
+        for _ = 1, 100 do m.setScene("battle"); m.update(0.001) end
+        eq(#h.plays, 2, "per-frame same scene does not reset track or fade")
+        m.update(1.2)
+        for i = 1, 12 do
+            local active = h.plays[#h.plays].source
+            active.position = 99.8
+            m.update(0.01)
+            local expected = ({ moon, original, march })[(i - 1) % 3 + 1]
+            eq(h.plays[#h.plays].sound.path, expected, "stable full rotation " .. i)
+            m.update(1.2)
+            eq(h.plays[#h.plays - 1].source.playing, false, "outgoing channel stopped " .. i)
+        end
+        eq(#h.sources, 2, "playlist reuses only two sources")
+        eq(#h.loads, 3, "each battle file loaded once")
+        eq(#h.randoms, 0, "playlist never touches gameplay random")
+        m.stop()
+    end)
+    runCase("battle playlist handles mixer wrap and stopped source", function()
+        local m, h = newHarness(source, "GameBGM.lua")
+        m.start(); h.sources[1].position = 90; m.update(0.1)
+        h.sources[1].position = 0.1; m.update(0.1)
+        eq(h.plays[2].sound.path, march, "missed ending frame detected by real wrap")
+        m.update(1.2)
+        h.sources[2].playing = false; m.update(0.1)
+        eq(h.plays[3].sound.path, moon, "stopped active source advances once")
+        m.update(0.1)
+        eq(#h.plays, 3, "new source not skipped during fade")
+        m.stop()
+    end)
+    runCase("battle playlist skips unavailable tracks and retains audible fallback", function()
+        local m, h = newHarness(source, "GameBGM.lua", { [march] = true })
+        m.start(); h.sources[1].position = 99.8; m.update(0.1)
+        eq(h.plays[2].sound.path, moon, "missing second track skipped")
+        eq(h.sources[1].playing, true, "old keeps playing during successful fade")
+        eq(countLogs(h, "加载失败: " .. march), 1, "missing track logged once")
+        m.update(1.2); h.sources[2].position = 99.8; m.update(0.1); m.update(1.2)
+        h.sources[1].position = 99.8; m.update(0.1)
+        eq(h.counts[march], 1, "missing candidate not retried on later rotations")
+        eq(h.plays[#h.plays].sound.path, moon, "two available files alternate")
+        m.stop()
+        local f, fh = newHarness(source, "GameBGM.lua", { [march] = true, [moon] = true })
+        f.start(); fh.sources[1].position = 99.8
+        for _ = 1, 20 do f.update(0.1) end
+        eq(#fh.plays, 1, "all additions missing never interrupts original")
+        eq(fh.sources[1].playing, true, "original loops as fallback")
+        eq(fh.counts[march], 1, "failed first addition bounded")
+        eq(fh.counts[moon], 1, "failed second addition bounded")
+        fh.sources[1].position = 0.1; f.update(0.1)
+        eq(#fh.plays, 1, "fallback wrap does not duplicate replay")
+        fh.failures[march] = nil
+        f.stop(); f.start(); fh.sources[3].position = 99.8; f.update(0.1)
+        eq(fh.plays[#fh.plays].sound.path, march, "restart clears failure latch")
+        f.stop()
+    end)
+    runCase("battle playlist keeps scene boundaries and volume envelopes", function()
+        local m, h = newHarness(source, "GameBGM.lua")
+        m.start(); h.sources[1].position = 99.8; m.update(0.01)
+        m.update(0.2)
+        m.setMasterGain(0)
+        near(h.sources[1].gain, 0, "mute outgoing too")
+        near(h.sources[2].gain, 0, "mute incoming too")
+        m.setMasterGain(0.5)
+        near(h.sources[1].gain, 0.5 * 0.5 * 0.5, "unmute restores outgoing envelope")
+        near(h.sources[2].gain, 0.5 / 6 * 0.5, "unmute does not skip fade")
+        m.setScene("samsara", { fromStart = true }); m.update(1.2)
+        local plays = #h.plays
+        h.plays[plays].source.position = 99.8; m.update(200)
+        eq(#h.plays, plays, "terminal scene does not enter battle pool")
+        eq(m.getScene(), "samsara", "terminal scene retained")
+        m.setScene("battle", { fromStart = true }); m.update(1.2)
+        eq(h.plays[#h.plays].sound.path, march, "return retains current battle track")
+        m.setMasterGain(0)
+        h.plays[#h.plays].source.position = 99.8; m.update(0.1)
+        eq(h.plays[#h.plays].sound.path, moon, "mute still rotates playlist")
+        near(h.plays[#h.plays].source.gain, 0, "new muted track stays silent")
+        m.stop(); local stoppedPlays = #h.plays; m.update(1000)
+        eq(#h.plays, stoppedPlays, "stop cancels all playlist work")
+        m.start()
+        eq(h.plays[#h.plays].sound.path, moon, "restart retains current selection")
+        m.stop()
+    end)
+    runCase("battle wrap during scene fade is retained until fade completes", function()
+        local m, h = newHarness(source, "GameBGM.lua")
+        m.setScene("town"); m.start(); h.sources[1].position = 99
+        m.setScene("battle")
+        near(h.sources[2].position, 99, "legacy scene synchronization retained")
+        h.sources[2].position = 99.1; m.update(0.1)
+        h.sources[2].position = 0.05; m.update(0.1)
+        eq(#h.plays, 2, "wrap does not interrupt unfinished fade")
+        h.sources[2].position = 0.2; m.update(1.0)
+        eq(#h.plays, 3, "latched wrap advances after fade")
+        eq(h.plays[3].sound.path, march, "wrapped first battle advances to march")
+        eq(h.plays[3].source.position, 0, "latched transition also starts at zero")
+        m.stop()
+        local early, eh = newHarness(source, "GameBGM.lua")
+        early.setScene("town"); early.start(); eh.sources[1].position = 99.99
+        early.setScene("battle")
+        eh.sources[2].position = 0.01; early.update(0.1)
+        eq(#eh.plays, 2, "first-sample wrap waits for scene fade")
+        early.update(1.1)
+        eq(eh.plays[#eh.plays].sound.path, march, "seek provides baseline before first update")
+        early.stop()
+    end)
+    runCase("retained battle track missing on restart or scene return falls back", function()
+        local m, h = newHarness(source, "GameBGM.lua")
+        m.start(); h.sources[1].position = 99.8; m.update(0.1); m.update(1.2)
+        eq(h.plays[2].sound.path, march, "prepare retained march")
+        m.stop(); h.failures[march] = true; m.start()
+        eq(h.plays[3].sound.path, moon, "restart skips missing retained track")
+        eq(h.plays[3].source.playing, true, "fallback is playing not silent")
+        m.setScene("town"); m.update(1.2); m.stop()
+        h.failures[moon] = true; m.start(); m.setScene("battle", { fromStart = true })
+        eq(h.plays[#h.plays].sound.path, original, "scene return skips both missing additions")
+        eq(m.getScene(), "battle", "fallback retains public battle scene")
+        m.stop()
+    end)
+    runCase("short and unknown-length additions never storm transitions", function()
+        local m, h = newHarness(source, "GameBGM.lua", nil, { [march] = 0, [moon] = 0.5 })
+        m.start(); h.sources[1].position = 99.8
+        for _ = 1, 60 do m.update(1) end
+        eq(#h.plays, 1, "invalid durations preserve original")
+        eq(#h.loads, 3, "invalid candidates cached rather than polled")
+        eq(#h.randoms, 0, "duration failure does not use RNG")
+        m.stop()
     end)
 end
 
@@ -510,7 +661,22 @@ function Start()
     local loadedSFX = package.loaded["systems.GameSFX"]
     local ok, why = pcall(function()
         testBGM(readSource("systems/GameBGM.lua"))
+        testBattlePlaylist(readSource("systems/GameBGM.lua"))
         testSFX(readSource("systems/GameSFX.lua"))
+        runCase("battle OGG assets load with real engine metadata", function()
+            local paths = { "audio/bgm_battle.ogg", "audio/bgm_battle_march.ogg", "audio/bgm_battle_moon.ogg" }
+            local expectedLengths = { 90.024, 202.260979, 157.140979 }
+            for i, path in ipairs(paths) do
+                local sound = cache:GetResource("Sound", path)
+                check(sound ~= nil, "real Sound exists " .. path)
+                if sound then
+                    check(math.abs(sound:GetLength() - expectedLengths[i]) < 0.1, "real duration " .. path)
+                    eq(sound:GetIntFrequency(), 48000, "real sample rate " .. path)
+                    check(sound:IsStereo(), "real stereo " .. path)
+                    print(TAG .. " REAL_SOUND " .. path .. " seconds=" .. tostring(sound:GetLength()))
+                end
+            end
+        end)
         eq(math.random, globalRandom, "global random untouched")
         eq(cache, globalCache, "global cache untouched")
         eq(package.loaded["systems.GameBGM"], loadedBGM, "real BGM require cache untouched")

@@ -119,7 +119,7 @@ function Start()
         local StageExp = env.require("config.StageExpHelper")
         for _, start in ipairs({1, 6, 111}) do
             local diamond, firstExp, repeatExp = 0, 0, 0
-            for floor = start, TC.getRunEndFloor(start) do
+            for floor = start, TC.getCheckpointEndFloor(start) do
                 local cfg = TC.getFloor(floor)
                 diamond = diamond + cfg.firstDiamond
                 firstExp = firstExp + math.floor(StageExp.getExpPerMin(cfg.monsterLevel) * 2)
@@ -132,7 +132,7 @@ function Start()
             eq(preview.repeatPlayerExp, repeatExp, "塔重打1分逐层取整汇总")
             eq(preview.artifactDropRate, .05, "预览每层神器概率")
             eq(table.concat(preview.artifactQualityWeights, ","), "80,18,2", "预览神器品质权重")
-            eq(preview.runEndFloor, TC.getRunEndFloor(start), "末组112截断")
+            eq(preview.runEndFloor, TC.getCheckpointEndFloor(start), "末组112截断")
         end
         eq(Resources.getRewardPreview(400001, nil, {babel_tower={floor=6,cleared={}}}).firstAmount, 0,
             "旧floor6首组首奖已领")
@@ -166,7 +166,7 @@ function Start()
                 check(not text:find("预估", 1, true) and not text:find("≈", 1, true), "奖励无预估文案")
                 if text:find("远征经验", 1, true) then hasExp = true end
             end
-            check(hasExp, "每类副本展示远征经验")
+            eq(hasExp, sid ~= 400001, "资源展示经验，塔只展示首通摘要")
         end
         for floor = 27, DC.MAX_FLOOR.black_diamond do
             local current = IC.getIdlePerMin("black_diamond", floor)
@@ -247,6 +247,7 @@ function Start()
         mocks["ui.battle.scene.BattleScene"] = {}
         mocks["shared.battle.BattleSchema"] = {}
         mocks["rules.offline.OfflineService"] = {}
+        mocks["core.PerformanceMonitor"] = { wrap = function(_, fn) return fn end }
         env.File = function(path, mode)
             assert(path == "standalone_save.pending.json" and mode == FILE_WRITE, "只允许虚拟临时文件")
             return { IsOpen = function() return true end, Close = function() end,
@@ -285,7 +286,7 @@ function Start()
         -- 读取实际本地桥的副本提交钩子；验证失败零通知、成功先heroes后player。
         local bridge = source("runtime.LocalActionBridge")
         first = assert(bridge:find('    require("rules.dungeon.DungeonService").SetPersistCallback', 1, true))
-        last = assert(bridge:find('    print("[LocalActionBridge] init', first, true))
+        last = assert(bridge:find('    require("rules.equipment.InventoryCurationService").SetPersistCallback', first, true))
         local order, persist, hooks = {}, nil, nil
         local bridgeEnv = setmetatable({ PDM = { GetModule = function() return modules.player end },
             ClientDispatcher = { set = function(name) order[#order + 1] = name end },
@@ -315,7 +316,7 @@ function Start()
         eq(GS.getExp(), saved.modules.player.exp, "冷恢复经验与模块一致")
         -- 注入异常订阅者和同步重入，不能跳过玩家提交或把候选引用覆盖。
         local guardStart = assert(bridge:find("function M.dispatch(action, params)", 1, true))
-        local guardEnd = assert(bridge:find("    if not inited_ then", guardStart, true))
+        local guardEnd = assert(bridge:find("    params = params or {}", guardStart, true))
         bridgeEnv.M = {}
         assert(load(bridge:sub(guardStart, guardEnd - 1) .. " return true end",
             "@Bridge重入门禁", "t", bridgeEnv))()

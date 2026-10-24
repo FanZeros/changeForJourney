@@ -88,14 +88,25 @@ local function getSelection()
 end
 
 -- 视图身份便宜且不触发计算，Render只用它拒绝上一候选/英雄的结果。
+local viewCache = { seen = {} }
 function M.capture(heroId, slot)
     local selection = getSelection()
     local language = I18n.get()
-    local request = { heroId = heroId, slot = slot, seq = selection and selection.seq,
-        mode = panelState.attributeMode, language = language, estimateVisible = panelState.estimateVisible == true }
-    request.viewKey = Snapshot.signature({ heroId, slot or false, selection or false,
-        panelState.attributeMode, language, request.estimateVisible })
-    return request
+    local estimateVisible = panelState.estimateVisible == true
+    if not viewCache.key or viewCache.heroId ~= heroId or viewCache.slot ~= slot
+        or viewCache.mode ~= panelState.attributeMode or viewCache.language ~= language
+        or viewCache.estimateVisible ~= estimateVisible
+        or not Snapshot.sameValue(viewCache.selection, selection, viewCache.seen) then
+        viewCache.key = Snapshot.signature({ heroId, slot or false, selection or false,
+            panelState.attributeMode, language, estimateVisible })
+        viewCache.selection = Snapshot.copy(selection)
+        viewCache.heroId, viewCache.slot = heroId, slot
+        viewCache.mode, viewCache.language = panelState.attributeMode, language
+        viewCache.estimateVisible = estimateVisible
+    end
+    return { heroId = heroId, slot = slot, seq = selection and selection.seq,
+        mode = panelState.attributeMode, language = language, estimateVisible = estimateVisible,
+        viewKey = viewCache.key }
 end
 
 function M.setEstimateVisible(visible) panelState.estimateVisible = visible == true end
@@ -137,14 +148,18 @@ function M.commit(result, request)
     clearTip()
     panelState.data = result
     panelState.cacheKey = request.viewKey
-    panelState.cacheDependency = request.key
+    panelState.cacheDependency = request.panelKey
+    panelState.guard = request.guard
     panelState.language = request.language
     panelState.dirty = false
 end
 
 local EMPTY = { pending = true, current = { stats = {} }, rows = {}, currentSets = {}, previewSets = {} }
+local EMPTY_GUARD = {}
 function M.clearPrepared()
     panelState.data = nil
+    panelState.guard = nil
+    viewCache = { seen = {} }
     panelState.cacheKey = nil
     panelState.attrHits = {}
     clearTip()
@@ -181,8 +196,8 @@ end
 
 --- 绘制配装下部。六槽与一键按钮继续由上层绘制。
 function M.getPrepared(heroId, detailState)
-    local request = Preparation.version(M.capture(heroId, detailState and detailState.equipSlot))
-    return panelState.cacheKey == request.viewKey and panelState.cacheDependency == request.key
+    local request = Preparation.version(M.capture(heroId, detailState and detailState.equipSlot), panelState.guard or EMPTY_GUARD, false)
+    return panelState.cacheKey == request.viewKey and panelState.cacheDependency == request.panelKey
         and panelState.data or EMPTY
 end
 
@@ -190,9 +205,7 @@ function M.draw(vg, heroId, detailState)
     local slot = detailState and detailState.equipSlot or nil
     if panelState.heroId ~= heroId then M.reset(heroId, slot) end
     if panelState.slot ~= slot then M.onSlotChanged(slot, heroId) end
-    local request = Preparation.version(M.capture(heroId, slot))
-    local data = panelState.cacheKey == request.viewKey and panelState.cacheDependency == request.key
-        and panelState.data or EMPTY
+    local data = M.getPrepared(heroId, detailState)
     for _, key in ipairs({ "attrs", "sets" }) do
         local state = panelState.scroll[key]
         if not panelState.dragging and math.abs(state.velocity) > SCROLL_MIN_VEL then

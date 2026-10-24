@@ -135,7 +135,7 @@ function M.bind(deps)
         return filters
     end
 
-    local function buildEquipList(request, checkpoint)
+    local function buildEquipList(request, checkpoint, basicOnly)
         local equipData = request.equipment
         if not equipData or not equipData.inventory then return {} end
         local slotFilter, filterHeroId, dualMode = request.slotFilter, request.heroId, request.dualMode
@@ -153,14 +153,14 @@ function M.bind(deps)
 
         local list = {}
         local powerContext = request.context
-        if not checkpoint and filterHeroId ~= nil then powerContext = EquipmentPower.getContext(filterHeroId) end
+        if not checkpoint and not basicOnly and filterHeroId ~= nil then powerContext = EquipmentPower.getContext(filterHeroId) end
         for seqStr, equip in pairs(equipData.inventory) do
             local matches, tpl, naturalSlot, equipType, grip, level, quality =
                 matchesBaseFilter(equip, slotFilter, dualMode, request)
             local setId = EquipmentSetConfig.getSetIdForTemplate(tpl) or "none"
             local setOk = not next(request.sets) or request.sets[setId] == true
             -- 显式同步旧宿主仍可注入 setChecked；生产预算任务只消费冻结集合。
-            if not checkpoint then setOk = setChecked(equip.templateId) end
+            if not checkpoint and not basicOnly then setOk = setChecked(equip.templateId) end
             if matches and setOk then
                 local preview = powerContext and EquipmentPower.evaluate(powerContext, seqStr, slotFilter)
                 -- 保留完整装备（词条/腐化/套装等），仅在列表副本附加显示字段，绝不改 inventory。
@@ -174,7 +174,11 @@ function M.bind(deps)
                 entry.equippedByHeroId = equippedByHero[tostring(seqStr)] or nil
                 entry.canWear = filterHeroId == nil or (preview ~= nil and preview.valid == true)
                 entry.cannotEquipReason = not entry.canWear and (preview and preview.error or "角色数据未就绪") or nil
-                if checkpoint then
+                if basicOnly then
+                    -- 通用值只作临时排序，不能冒充角色贡献或提升。
+                    entry.power = EquipmentPower.genericScore(equip)
+                    entry.powerPending = filterHeroId ~= nil
+                elseif checkpoint then
                     entry.power = filterHeroId == nil and EquipmentPower.genericScore(equip)
                         or EquipmentPower.scoreInContext(powerContext, equip, slotFilter, seqStr)
                 else
@@ -241,11 +245,40 @@ function M.bind(deps)
         end)
 
         tick() -- table.sort 不可让出；完整排序后再检查版本并原子提交。
+        if basicOnly and filterHeroId ~= nil then
+            for _, entry in ipairs(list) do entry.power = nil end
+        end
         return list
     end
 
+    -- 只读灰显与评分版本解耦。只有目标等级/双持分支改变才扫描列表，
+    -- 高频extraTalent/神器通知不重算generic、不排序；也绝不修改已呈现的列表引用。
+    local views = setmetatable({}, { __mode = "k" })
+    local function refreshList(list, request, pending)
+        if request.heroId == nil then return list end
+        local roster = request.heroes and request.heroes.roster
+        local hero = roster and (roster[request.heroId] or roster[tostring(request.heroId)])
+        local branch = hero and hero.advBranch
+        local wearKey = table.concat({ tostring(request.key), tostring(hero and hero.level),
+            tostring(branch and branch.first), tostring(branch and branch.second), tostring(pending) }, "|")
+        local cached = views[list]
+        if cached and cached.key == wearKey then return cached.list end
+        local checker = EquipmentWearability.createChecker(request.equipment, request.heroId, request.heroes)
+        local refreshed = {}
+        for i, entry in ipairs(list) do
+            local item = {}
+            for key, value in pairs(entry) do item[key] = value end
+            item.canWear, item.cannotEquipReason = checker(item.seq, request.slotFilter)
+            if pending then item.power, item.upgrade, item.powerPending = nil, false, true end
+            refreshed[i] = item
+        end
+        views[list] = { key = wearKey, list = refreshed }
+        views[refreshed] = { key = wearKey, list = refreshed }
+        return refreshed
+    end
     local lists = EquipmentList.bind({ capture = captureListRequest, build = buildEquipList,
-        budgetSeconds = deps.listBudgetSeconds, maxSteps = deps.listMaxSteps })
+        buildBasic = function(request) return buildEquipList(request, nil, true) end,
+        refresh = refreshList, budgetSeconds = deps.listBudgetSeconds, maxSteps = deps.listMaxSteps })
     local function drawEquipGrid(vg)
         local equipList = lists.present()
         local totalSlots = math.max(#equipList, 35)
@@ -336,8 +369,8 @@ function M.bind(deps)
                 end
 
                 -- 单件贡献位于等级上方，保留右下等级及左下套装徽记占位。
-                if SettingsPanel.isEquipmentPowerEnabled() then
-                    local powerText = tostring(equip.power or 0)
+                if SettingsPanel.isEquipmentPowerEnabled() and equip.power ~= nil and not equip.powerPending then
+                    local powerText = tostring(equip.power)
                     local powerFont, iconSize, gap = 26, 22, 4
                     nvgFontFace(vg, "sans")
                     nvgFontSize(vg, powerFont)

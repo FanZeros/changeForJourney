@@ -21,6 +21,9 @@ local function equal(a, b)
     return true
 end
 local function source(name)
+    if name == "ui.backpack.BackpackEquipmentList" and _G.BACKPACK_BASELINE_SOURCE then
+        return _G.BACKPACK_BASELINE_SOURCE
+    end
     local file = assert(cache:GetFile(name:gsub("%.", "/") .. ".lua"), name)
     local lines = {}
     while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
@@ -43,7 +46,11 @@ local function fixture()
     local selected, owner, pinned = nil, nil, false
     local noop = function() end
     local function hit(x, y, cx, cy, w, h) return math.abs(x - cx) <= w / 2 and math.abs(y - cy) <= h / 2 end
-    local store = { Get = function(key) return data[key] end,
+    local forbiddenReads = {}
+    local store = { Get = function(key)
+            assert(not forbiddenReads[key], "unexpected manual dependency " .. key)
+            return data[key]
+        end,
         GetRevision = function(key) return revisions[key] or 0 end,
         Subscribe = noop, Unsubscribe = noop }
     modules["core.PlayerStore"] = store
@@ -151,7 +158,8 @@ local function fixture()
         return grids
     end
     local f = { panel = panel, EP = EP, EC = EC, Eq = Eq, data = data, counts = counts,
-        metrics = metrics, env = env, filters = filters, actions = actions, detailOpens = detailOpens, drawIds = drawIds }
+        metrics = metrics, env = env, filters = filters, actions = actions, detailOpens = detailOpens,
+        drawIds = drawIds, forbiddenReads = forbiddenReads }
     function f.notify(key, invalidate)
         revisions[key] = (revisions[key] or 0) + 1
         if invalidate ~= false then EP.invalidate() end
@@ -205,7 +213,7 @@ local function fixture()
             local list = f.list()
             check(#list == 0 or #list == expected, "private list never partially publishes")
             f.draw()
-            if #list == expected then return list, frame end
+            if #list == expected and (expected == 0 or not list[1].powerPending) then return list, frame end
         end
         error("budget queue starvation")
     end
@@ -213,7 +221,93 @@ local function fixture()
     return f
 end
 
+local function runAvailabilityTests()
+    for _, heroMode in ipairs({ false, true }) do
+        local f = fixture()
+        f.panel.open("left", "equip")
+        if heroMode then f.panel.setEquipmentSlotFilter(nil, 1) end
+        local firstVisible, visibleFrames = nil, 0
+        local builds = f.counts.build
+        for frame = 1, 300 do
+            -- 真实消费字段持续改变：不是仅 exp 通知；无通知 patch 也必须发现。
+            for id, hero in pairs(f.data.heroes.roster) do
+                hero.level = 80 + frame % 2
+                hero.extraTalent.stacks = frame + id
+                hero.extraTalent.issuedCards = frame * 2 + id
+            end
+            if frame % 3 == 0 then f.notify("heroes") end
+            if frame % 5 == 0 then f.notify("artifacts") end
+            if frame % 7 == 0 then f.notify("talents") end
+            f.update()
+            local list = f.list()
+            f.draw()
+            if #list == 500 and #f.drawIds > 0 then
+                firstVisible = firstVisible or frame
+                visibleFrames = visibleFrames + 1
+                local first = list[1]
+                local peek = f.panel.peekEquipAt(160, 840)
+                check(peek and peek.seq == first.seq and f.drawIds[1] == first.templateId,
+                    "continuous combat changes preserve rendered/clicked basic order")
+                if heroMode then
+                    check(first.power == nil and first.powerPending == true and not first.upgrade,
+                        "pending hero score is not false zero or stale upgrade")
+                end
+            end
+        end
+        check(firstVisible == 1 and visibleFrames == 300,
+            (heroMode and "hero" or "manual") .. " 500 basic entries remain visible throughout real growth/artifact/talent updates")
+        if not heroMode then
+            check(f.counts.build == builds and f.counts.evaluate == 0,
+                "manual warehouse never builds hero context or evaluates candidates")
+            -- profiler/依赖入口也不能偷偷读战斗模块；独立于上面的旧源可复现循环。
+            if not _G.BACKPACK_BASELINE_SOURCE then
+                for _, key in ipairs({ "heroes", "artifacts", "talents" }) do f.forbiddenReads[key] = true end
+                f.update(); f.draw()
+                check(f.panel.peekEquipAt(160, 840) ~= nil, "manual list presentation/input have no combat Store reads")
+                for key in pairs(f.forbiddenReads) do f.forbiddenReads[key] = nil end
+            end
+        end
+        if not _G.BACKPACK_BASELINE_SOURCE then
+            -- 装备通知（含满仓同值通知）仍可频繁到来，完整basic每次Update恢复。
+            for frame = 1, 30 do
+                if frame % 2 == 0 then
+                    local item = f.data.equipment.inventory["1"]
+                    item.locked = not item.locked
+                end
+                f.notify("equipment")
+                check(f.panel.peekEquipAt(160, 840) == nil, "equipment version blocks stale presented instance")
+                f.update(); f.draw()
+                check(#f.list() == 500 and f.panel.peekEquipAt(160, 840) ~= nil,
+                    "frequent equipment notifications rebuild cheap full list next Update")
+            end
+            local shown = f.panel.peekEquipAt(160, 840)
+            f.data.equipment.inventory[tostring(shown.seq)] = nil
+            f.notify("equipment")
+            check(f.panel.peekEquipAt(160, 840) == nil, "deleted displayed instance never remains clickable")
+            f.update(); f.draw()
+            check(#f.list() == 499 and f.panel.peekEquipAt(160, 840).seq ~= shown.seq,
+                "deletion replaces basic list with current inventory")
+            -- 候选是否可穿始终由当前权威checker决定，不相信pending列表的旧灰显。
+            if heroMode then
+                f.data.heroes.roster[1].level = 1
+                local pending = f.list()
+                check(pending[1].canWear == false, "no-notify level change refreshes pending wearability")
+                local before = #f.actions
+                f.panel.handleRightClick(160, 840)
+                check(#f.actions == before, "right click rejects current authoritative level gate while score pending")
+                f.data.heroes.roster[1].level = 80
+                f.panel.handleRightClick(160, 840)
+                check(#f.actions == before + 1, "pending basic list still permits authority-checked equip action")
+            end
+        end
+        print(string.format("%s AVAILABILITY mode=%s firstVisible=%s visibleFrames=%d builds=%d",
+            TAG, heroMode and "hero" or "manual", tostring(firstVisible), visibleFrames, f.counts.build - builds))
+    end
+end
+
 local function runTests()
+    runAvailabilityTests()
+    if _G.BACKPACK_AVAILABILITY_ONLY then return end
     local f = fixture()
     local panel, data, metrics = f.panel, f.data, f.metrics
     local inventoryBefore = copy(data.equipment)
@@ -223,8 +317,22 @@ local function runTests()
     check(#f.drawIds == 0 and f.counts.evaluate == 0 and f.counts.build == 0, "500 cold candidates not scored in first draw")
     check(panel.peekEquipAt(160, 840) == nil, "cold list has no hit target")
     f.update()
-    check(#f.list() == 0 and panel.peekEquipAt(160, 840) == nil, "partial context never exposed")
-    local list, frames = f.finish(500, true)
+    check(#f.list() == 500 and f.list()[1].powerPending and panel.peekEquipAt(160, 840) == nil,
+        "cheap complete list ready in first Update, not clickable until Render")
+    f.draw()
+    check(panel.peekEquipAt(160, 840) ~= nil, "pending score never blocks rendered basic inventory")
+    local basicPeek = panel.peekEquipAt(160, 840)
+    local list, frames = nil, 0
+    for frame = 1, 20000 do
+        f.expFlow(frame % 5 == 0)
+        f.update()
+        list = f.list()
+        if #list == 500 and not list[1].powerPending then frames = frame; break end
+    end
+    local beforeNewRender = panel.peekEquipAt(160, 840)
+    check(beforeNewRender and beforeNewRender.seq == basicPeek.seq,
+        "basic-to-scored Update keeps last rendered order clickable until next Render")
+    f.draw()
     check(frames > 1 and #list == 500, "500 entries complete under continuous roster/team exp and currency notifications")
     check(f.counts.build == 1, "exp replacement/invalidation never restarts private context")
     check(#f.drawIds > 0 and #f.drawIds < 100, "real grid only draws viewport after full scoring finishes")
@@ -247,7 +355,7 @@ local function runTests()
     f.filters.state.sortKey, f.filters.state.sortAscending = "level", true
     check(panel.peekEquipAt(160, 840) == nil, "new sort blocks old cell immediately")
     f.draw(); check(#f.drawIds == 0, "new sort draws no stale old list")
-    for i = 1, 20000 do f.update(); if #f.list() == 500 then break end end
+    for i = 1, 20000 do f.update(); if #f.list() == 500 and not f.list()[1].powerPending then break end end
     check(#f.list() == 500 and panel.peekEquipAt(160, 840) == nil, "new commit cannot be hit before it is rendered")
     f.draw()
     list = f.list()
@@ -264,7 +372,8 @@ local function runTests()
     f.update()
     data.heroes.roster[2].extraTalent = { issuedCards = 4 }
     f.notify("heroes")
-    check(panel.peekEquipAt(160, 840) == nil and #f.list() == 0, "real equipment/team growth cancels stale candidates")
+    check(panel.peekEquipAt(160, 840) == nil and f.list()[1] and f.list()[1].powerPending,
+        "new structural version awaits Render; growth only invalidates scores")
     local count = 0
     for _, item in pairs(data.equipment.inventory) do if item.quality == 6 then count = count + 1 end end
     list = f.finish(count, true)
@@ -321,10 +430,12 @@ local function runTests()
     -- 无通知的本地成长patch同样必须被commit终检和读取端发现。
     local growth = data.heroes.roster[1].extraTalent
     growth.issuedCards = 5
-    check(#f.list() == 0 and panel.peekEquipAt(160, 840) == nil, "no-notify same-table growth invalidates committed list")
+    check(#f.list() == 500 and f.list()[1].powerPending and panel.peekEquipAt(160, 840) ~= nil,
+        "no-notify same-table growth invalidates score, not visible inventory")
     f.update()
     growth.issuedCards = 6
-    check(#f.list() == 0, "no-notify growth during private snapshot never exposes mixed result")
+    check(#f.list() == 500 and f.list()[1].powerPending,
+        "no-notify growth during private snapshot never exposes mixed score")
     list = f.finish(500, true)
     check(#list == 500, "no-notify growth restarts and finishes full latest version")
 
@@ -341,7 +452,12 @@ local function runTests()
     for _, case in ipairs(changes) do
         local before = f.list()
         case[3](); f.notify(case[2])
-        check(#f.list() == 0 and panel.peekEquipAt(160, 840) == nil, case[1] .. " invalidates before update")
+        if case[2] == "equipment" then
+            check(#f.list() == 0 and panel.peekEquipAt(160, 840) == nil, case[1] .. " invalidates structure before update")
+        else
+            check(#f.list() == 500 and f.list()[1].powerPending and panel.peekEquipAt(160, 840) ~= nil,
+                case[1] .. " invalidates score without hiding inventory")
+        end
         list = f.finish(500, true)
         check(list ~= before, case[1] .. " publishes fresh complete version")
     end

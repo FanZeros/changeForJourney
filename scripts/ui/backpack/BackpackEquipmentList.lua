@@ -1,4 +1,4 @@
--- 私有仓库列表调度器。Render/指针只读已提交版本，整库工作仅由 Update 驱动。
+-- 私有仓库列表调度器。结构列表先就绪，角色评分后台完成；Render不驱动评分。
 local PlayerStore = require("core.PlayerStore")
 local EquipmentPower = require("systems.EquipmentPower")
 local M = {}
@@ -21,8 +21,7 @@ local function append(parts, value)
     parts[#parts + 1] = "}"
 end
 
--- 不删除 heroes revision：显式同步查询仍按通知失效。预算列表只剔除评分从不消费的经验/货币。
--- 签名冻结值而非名册引用，原地patch（含无通知）也能发现等级/转职/觉醒/成长/编队改变。
+-- 签名冻结值而非名册引用，原地patch（含无通知）也能发现真实成长。
 local function heroSignature(heroes)
     local parts = {}
     heroes = heroes or {}
@@ -52,32 +51,47 @@ local function heroSignature(heroes)
 end
 
 function M.bind(deps)
-    local empty, committed, syncList, presented = {}, {}, {}, {}
-    local committedKey, syncKey, presentedKey = nil, nil, nil
+    local empty, basic, committed, syncList, presented = {}, {}, {}, {}, {}
+    local basicKey, committedKey, syncKey, presentedKey = nil, nil, nil, nil
+    local presentedScoreKey = nil
     local job, jobKey = nil, nil
     local deadline, steps = 0, 0
     -- 一次不可抢占的装备评分/种子构建/排序可能超过预算；这是协作式软预算。
     local budget, maxSteps = deps.budgetSeconds or 0.001, deps.maxSteps or 64
     local api = {}
-    local function capture()
+    local function capture(synchronous)
         local request = deps.capture()
-        local heroes = PlayerStore.Get("heroes")
-        local heroRevision = PlayerStore.GetRevision and PlayerStore.GetRevision("heroes")
-        -- ExtraTalent 本地镜像可原地patch且不发Store通知；小名册语义每次采样，
-        -- revision/identity保留给显式同步契约，不能拿它们代替真实输入值。
-        local observedSignature = heroSignature(heroes)
-        request.heroes = heroes
         request.equipment = PlayerStore.Get("equipment")
-        request.artifacts = PlayerStore.Get("artifacts")
-        request.talents = PlayerStore.Get("talents")
-        local parts = { request.filterKey, observedSignature }
-        for _, key in ipairs({ "equipment", "artifacts", "talents" }) do
-            parts[#parts + 1] = tostring(request[key])
-            parts[#parts + 1] = tostring(PlayerStore.GetRevision and PlayerStore.GetRevision(key) or 0)
-        end
-        -- ClearCache/换玩家会替换三根模块引用；即使同名同等级也不复用前玩家列表。
+        local parts = { request.filterKey, tostring(request.equipment),
+            tostring(PlayerStore.GetRevision and PlayerStore.GetRevision("equipment") or 0) }
+        -- 结构只依赖筛选/装备；战斗成长不能让真实库存从界面消失。
         request.key = table.concat(parts, "|")
-        request.syncKey = request.key .. "|" .. tostring(heroes) .. "|" .. tostring(heroRevision)
+        request.scoreKey, request.syncKey = request.key, request.key
+        if request.heroId ~= nil then
+            local heroes = PlayerStore.Get("heroes")
+            request.heroes = heroes
+            request.artifacts = PlayerStore.Get("artifacts")
+            request.talents = PlayerStore.Get("talents")
+            parts[#parts + 1] = heroSignature(heroes)
+            for _, key in ipairs({ "artifacts", "talents" }) do
+                parts[#parts + 1] = tostring(request[key])
+                parts[#parts + 1] = tostring(PlayerStore.GetRevision and PlayerStore.GetRevision(key) or 0)
+            end
+            request.scoreKey = table.concat(parts, "|")
+            request.syncKey = request.scoreKey .. "|" .. tostring(heroes) .. "|"
+                .. tostring(PlayerStore.GetRevision and PlayerStore.GetRevision("heroes") or 0)
+        end
+        if synchronous then
+            -- 仅显式同步契约追踪全部源；manual的Update/Render/指针不读这些模块。
+            local syncParts = { request.syncKey }
+            for _, key in ipairs({ "heroes", "artifacts", "talents" }) do
+                local source = PlayerStore.Get(key)
+                syncParts[#syncParts + 1] = tostring(source)
+                syncParts[#syncParts + 1] = tostring(PlayerStore.GetRevision and PlayerStore.GetRevision(key) or 0)
+            end
+            syncParts[#syncParts + 1] = heroSignature(PlayerStore.Get("heroes"))
+            request.syncKey = table.concat(syncParts, "|")
+        end
         return request
     end
     local function checkpoint()
@@ -85,52 +99,71 @@ function M.bind(deps)
         if steps >= maxSteps or os.clock() >= deadline then coroutine.yield() end
     end
     local function publish(request, list)
-        committed, committedKey = list, request.key
+        committed, committedKey = list, request.scoreKey
+    end
+    local function view(list, request, pending)
+        return deps.refresh and deps.refresh(list, request, pending) or list
     end
 
-    -- 显式同步查询保留原契约；绝不被 draw/hover/click 调用，不向它传 checkpoint。
+    -- 显式同步查询保留原契约；绝不被 draw/hover/click 调用。
     function api.getEquipList()
-        local request = capture()
+        local request = capture(true)
         if PlayerStore.GetRevision and syncKey == request.syncKey then return syncList end
         local list = deps.build(request)
         syncList, syncKey = list, request.syncKey
-        -- 同步查询的完整结果也可直接使用，但绝不替换/驱动在途私有协程。
         publish(request, list)
         return list
     end
     function api.getCommittedList()
         local request = capture()
-        if committedKey == request.key then return committed end
+        if committedKey == request.scoreKey then return committed end
+        if basicKey == request.key then basic = view(basic, request, request.heroId ~= nil); return basic end
         return empty -- 新筛选/装备版本不可点击上个版本的残影。
     end
     function api.present()
+        local request = capture()
         presented = api.getCommittedList()
-        presentedKey = committedKey
+        presentedKey = request.key
+        presentedScoreKey = committedKey == request.scoreKey and request.scoreKey or nil
         return presented
     end
     function api.getPresentedList()
-        if presentedKey == capture().key then return presented end
-        return empty
+        local request = capture()
+        if presentedKey ~= request.key then return empty end
+        -- basic→scored 的新排序必须等 Render 呈现；指针仍读上次实际画出的顺序。
+        if request.heroId ~= nil and presentedScoreKey ~= request.scoreKey then
+            presented = view(presented, request, true)
+        end
+        return presented
     end
     function api.cancel()
         job, jobKey = nil, nil
-        committed, committedKey, syncList, syncKey = {}, nil, {}, nil
-        presented, presentedKey = {}, nil
+        basic, basicKey, committed, committedKey, syncList, syncKey = {}, nil, {}, nil, {}, nil
+        presented, presentedKey, presentedScoreKey = {}, nil, nil
     end
     function api.update()
         local started = os.clock()
         local request = capture()
-        if committedKey == request.key then job, jobKey = nil, nil; return end
-        if not job or jobKey ~= request.key then
-            jobKey = request.key
+        if basicKey ~= request.key then
+            -- 完整廉价列表一次提交，不等待复制全库/角色预览；没有半成品或假角色评分。
+            basic, basicKey = deps.buildBasic(request), request.key
+        end
+        basic = view(basic, request, request.heroId ~= nil)
+        if request.heroId == nil then
+            publish(request, basic)
+            job, jobKey = nil, nil
+            return
+        end
+        if committedKey == request.scoreKey then job, jobKey = nil, nil; return end
+        if not job or jobKey ~= request.scoreKey then
+            jobKey = request.scoreKey
             job = coroutine.create(function()
-                -- 不使用全局 badge/getContext cache：经验通知的 invalidate generation
-                -- 与同步评分不能取消/替换本列表的完整私有上下文。
-                request.context = request.heroId ~= nil and EquipmentPower.buildContext(request.heroId, {
+                -- 私有快照只在对应战斗版本有效；取消评分不取消基础列表。
+                request.context = EquipmentPower.buildContext(request.heroId, {
                     heroes = request.heroes, equipment = request.equipment,
                     artifacts = request.artifacts, talents = request.talents, checkpoint = checkpoint,
                     cacheFixedTeammates = true,
-                }) or nil
+                })
                 return deps.build(request, checkpoint)
             end)
         end
@@ -142,7 +175,7 @@ function M.bind(deps)
             print("[BackpackEquipmentList] prepare failed: " .. tostring(list))
         elseif coroutine.status(currentJob) == "dead" then
             job, jobKey = nil, nil
-            if currentKey == capture().key then publish(request, list) end
+            if currentKey == capture().scoreKey then publish(request, list) end
         end
     end
     return api

@@ -14,6 +14,8 @@
 
 ## 上次做了什么（2026-10-24，技能树预算与测试修复提交PR推进）
 
+- **已正常push并创建正式PR #205**：https://github.com/FanZeros/changeForJourney/pull/205，head=`balance1024/talent-output-budget@fada414b`／base=`workspace1005@35afec6d`，创建时open／draft=false／merged=false／mergeable尚未计算，19文件 +1187/−424。push及ls-remote实际exit0、源SHA与本地一致；同源open查重0后创建，目标未被本会话推送。不自动合并发布；下方“实际成功后另补”等为过程记录。成功后仅补本条交接并正常push同一源分支，不重复创建PR。
+
 - 用户最新明确“提交PR”，授权本项白名单提交、正常push独立 `balance1024/talent-output-budget` 并创建base=`workspace1005`的PR；不推workspace系列、不强推、不自动合并发布。测试修复提交 `f87f7928`、数值与五语提交 `f03edd81` 已完成；先融合目标 `b94cf09d` 为 `393adf12`（仅交接冲突双保留），随后目标外部合入PR204到 `35afec6d`，无冲突融合为 `9e739932`。净19路径，110个非交集上游净路径逐字节保持，不夹.project／上传／候选／技能／玩家档或内部验证。下方“未提交”等是此前本地阶段记录，实际push／PR成功后另补结果。
 - 最终官方b135成功，1680项／761根Lua及包内源资源实际UUID-hash载荷逐字节／声明size一致，源集合无缺失或额外，候选／内证0入包；两.project与本轮PR-before逐字节恢复2/2。融合重叠I18nDictExtra逐文件Error0，TalentEffect与预算专项仅Warning，不称全仓静态清零。3439路径候选与最新目标同23项旧Issue、新增0，规范36单测实际OK／actualexit0。
 - b135后17独立Runtime均业务通过／actualexit0／无timeout：原13项预算21427、五语8679、状态7组447、切关、飘字555、选队2464、敌死17组199、关键词2415、剧情20组10349、传说2440、史诗攻击6674／支援及治疗184；追加上游神器抽取104955、碎片溢出2080、神器队伍战力1760与角色战力34133。状态时序仍因旧runner不识别RESULT=PASS而flag=false，原始447零失败和正常退出独立核定，原记录保留；最终761源未变。源meta18图及四负对照复跑通过；不把CPU记录器／内存spy当GPU／触控／磁盘／性能或完整实战平衡验收，未跑main、不读玩家档、不清档。

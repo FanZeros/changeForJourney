@@ -76,7 +76,7 @@ local function run()
         if Talents.en[name] then addedNames = addedNames + 1 end
     end
     for _ in pairs(uniqueEffects) do effectCount = effectCount + 1 end
-    check(nameCount == 161 and effectCount == 179 and addedNames == 130, "161名179效果补130缺名")
+    check(nameCount == 161 and effectCount == 174 and addedNames == 130, "161名174效果补130缺名（调值合并5组同文效果）")
 
     local aggregateBefore = fingerprint(Effect.buildOverview(allIds))
     local entriesBefore = fingerprint(Effect.collectEntries(allIds, "seal"))

@@ -606,9 +606,9 @@ function M.bind(deps)
         s.shadowstepTimer = 3
         unit.attrs:removeModifier("starmap_shadowstep")
         unit.attrs:addModifier("starmap_shadowstep", {
-            { key = AD.ATK_SPEED, flat = 12 },
+            { key = AD.ATK_SPEED, flat = 1.5 },
         })
-        talentLog("[Talent] 终焉影步: " .. (unit.name or "?") .. " 闪避后攻速+12%")
+        talentLog("[Talent] 终焉影步: " .. (unit.name or "?") .. " 闪避后攻速+1.5%")
     end
 
     return { update = update, onShieldBreak = onShieldBreak, onDodge = onDodge }

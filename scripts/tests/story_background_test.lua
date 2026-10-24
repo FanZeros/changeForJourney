@@ -1,7 +1,11 @@
 -- 专项回归：仅只读生产源码/图片，通过 cache.GetFile + load(env) 创建独立真实模块。
 -- /workspace/.cli/UrhoXRuntime tests/story_background_test.lua
---   -tapcode_dir=/workspace/game2 -tool_mode -graphicsheadless
--- 不启动完整Boot、不读取玩家档、不dispatch cloud；绘制出口是语义spy，不冒充截图。
+--   -tapcode_dir=/workspace -tool_mode -graphicsheadless；绘制spy非截图。
+-- 源树元数据由本文件返回的 validateSourceMetadata(readMetadata, decode) 验证。
+-- readMetadata 只需允许下面固定18个 assets/*.png.meta，失败报告必须令宿主非零退出。
+-- Runtime包不含源.meta，不把图片加载PASS冒称源UUID验证PASS；不启动完整Boot/玩家档/cloud。
+local Checks = require("tests.StoryBackgroundChecks")
+local validateSourceMetadata = Checks.validateSourceMetadata
 local PREFIX = "[story_background] "
 local checks, groups = 0, 0
 local failures = {} ---@type string[]
@@ -73,7 +77,8 @@ local HIGH_PRIORITY_CASES = {
 local function newContext()
     local ctx = { deps = {}, calls = {}, loads = {}, responses = {}, handles = {}, nextHandle = 0,
         modules = {}, events = {}, shown = {}, actions = {}, notices = {}, flushes = 0,
-        fileAttempts = 0, cloudAttempts = 0, stateUpdates = 0, unexpectedDependencies = {},
+        fileAttempts = 0, cloudAttempts = 0, expectedFileBlocks = 0, expectedCloudBlocks = 0,
+        boundaryProbe = false, stateUpdates = 0, unexpectedDependencies = {},
         vg = {}, font = 20, stack = {}, tx = 0, ty = 0 } ---@type any
     local env = setmetatable({}, { __index = _G }) ---@type any
     ctx.env = env
@@ -83,20 +88,7 @@ local function newContext()
         ctx.calls[#ctx.calls + 1] = data
         return data
     end
-    local function blockedFile()
-        ctx.fileAttempts = ctx.fileAttempts + 1
-        error("isolated test forbids player File/fileSystem IO")
-    end
-    local function blockedCloud()
-        ctx.cloudAttempts = ctx.cloudAttempts + 1
-        error("isolated test forbids cloud/network dispatch")
-    end
-    env.File = blockedFile
-    env.fileSystem = setmetatable({}, { __index = function() return blockedFile end })
-    env.clientCloud = setmetatable({}, { __index = function() return blockedCloud end })
-    env.serverCloud, env.network = env.clientCloud, env.clientCloud
-    env.cache = { GetResource = function() error("no audio/GPU resources in semantic test") end,
-        GetFile = blockedFile }
+    Checks.installIoBoundary(ctx, env, eq)
     env.nvgCreateImage = function(vg, path)
         local entry = { vg = vg, path = path }
         ctx.loads[#ctx.loads + 1] = entry
@@ -391,17 +383,13 @@ local function configCases()
     ctx.assertSafe()
 end
 local function assetCases()
-    local uuids = {}
     for index = 1, 18 do
         local path = index <= 17 and bg(index) or TITLE
         local image = assert(nativeCache:GetResource("Image", path), "resource image missing " .. path)
         eq(image.width, 1920, "PNG width " .. path)
         eq(image.height, 1080, "PNG height " .. path)
-        local meta = cjson.decode(fileText(path .. ".meta"))
-        check(type(meta.uuid) == "string" and meta.uuid ~= "" and not uuids[meta.uuid], "unique meta " .. path)
-        uuids[meta.uuid] = true
-        if index == 18 then eq(meta.uuid, "BQ8tKQY6Tzcboc1rDEFdRu5F", "title same path preserves original meta UUID") end
     end
+    print(PREFIX .. "SOURCE_METADATA_CHECK_REQUIRED total=18; validateSourceMetadata is a separate source-tree gate, not Runtime PASS")
 end
 local function frameCases()
     local ctx = newContext()
@@ -1367,7 +1355,13 @@ local function bootOpening(ctx)
     ctx.env.LetterIntro = letter
     ctx.env.Standalone, ctx.env.StandaloneRT = {}, {}
     ctx.env.postStartFlowDone_, ctx.env.entryPrepared_ = false, false
-    ctx.completed, ctx.scenes = 0, {}
+    ctx.completed, ctx.scenes, ctx.entryPrepares = 0, {}, 0
+    -- 本组只抽取开场链，真实预热队列在启动专项覆盖；明确隔离外部依赖，
+    -- 预热尚未ready不能伪造入场已呈现或提前离线结算。
+    ctx.env.prepareEntry_ = function()
+        ctx.entryPrepares = ctx.entryPrepares + 1
+        return false
+    end
     ctx.env.GameBGM = { setScene = function(name) ctx.scenes[#ctx.scenes + 1] = name end }
     ctx.env.showOfflineRewardPanel_ = function() ctx.completed = ctx.completed + 1; return true end
     ctx.env.localSendAction = function(action, params)
@@ -1382,6 +1376,9 @@ local function bootChainCases()
     ctx.modules.session.keep = "unchanged-session-field"
     local chain, letter = bootOpening(ctx)
     chain.start()
+    eq(ctx.entryPrepares, 1, "新档开场显式调用一次外部入场预热")
+    eq(ctx.env.entryPrepared_, false, "预热未就绪不伪造完成")
+    eq(ctx.env.StandaloneRT.entryRendered, false, "信件前不伪造已呈现战斗帧")
     eq(ctx.modules.session.introCompleted, true, "新档仍预标记原开场完成字段")
     eq(ctx.modules.session.deferredOpening, true, "开场链保存可恢复进度")
     eq(ctx.modules.session.deferredOpeningIndex, 1, "新档开场从第一段")
@@ -1498,3 +1495,5 @@ function Start()
     else print(PREFIX .. "RESULT FAIL groups=" .. groups .. " checks=" .. checks .. " failures=" .. #failures) end
     engine:Exit()
 end
+-- 源树宿主只load后调用返回函数，须提供固定helper require；不调用Start/引擎全局。
+return { validateSourceMetadata = validateSourceMetadata }

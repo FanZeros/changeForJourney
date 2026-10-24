@@ -35,7 +35,8 @@ function M.bind(deps)
             tickSeraMachineGunCount(attacker, s)
         end
         if hasStarNode and hasStarNode(attacker, 208) and comboMeta and comboMeta.category ~= "healing" and target and target.hp > 0 then
-            local extra = math.floor((comboMeta.totalDamage or 0) * 0.12 + 0.5)
+            -- 终焉连斩：追加本次非治疗连击伤害的3%，触发条件与次数不变。
+            local extra = math.floor((comboMeta.totalDamage or 0) * 0.03 + 0.5)
             if extra > 0 then
                 dealDmgFn(target, extra, not isAlly, "连斩 ", { 180, 255, 140 })
                 talentLog("[Talent] 终焉连斩: " .. (attacker.name or "?") .. " 追加" .. tostring(extra))

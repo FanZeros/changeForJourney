@@ -1,5 +1,8 @@
--- 普通副本选队回归：真实页面、编队、英雄属性、神器桥和 GameAction 门面。
--- 仅以 require 替身隔离存档、动作传输和场景出口；不初始化存档，不运行随机战斗。
+-- 资源副本选队回归，分两层分别计数。
+-- 现行公开入口：真实 StageSelectDialog → 完整 BattleTriPage.gotoTeamStage 闭包，
+-- driver:start/Scene出口仅为内存spy；不再误称它发送旧Challenge协议。
+-- 兼容协议：人工建立仍存在的旧detail状态，保留队伍/神器/身份/延迟/超时回归；
+-- 这不是恢复旧生产入口。所有模块使用隔离env，禁止File/FS/网络及玩家存档。
 local assertions = 0
 local TAG = "[dungeon_team_selection_test]"
 
@@ -42,13 +45,54 @@ function Start()
         local function noop() end
         -- 与现有专项测试一致，读取正式 Lua 源码并在隔离环境编译。
         -- 读取的只有脚本资源；禁止加载 StandaloneSave/PDM 等存档模块。
-        local env = setmetatable({}, { __index = _G })
-        local function compile(name)
+        local env = setmetatable({}, { __index = _G }) ---@type any
+        local denied, expectedBlocks = 0, 0
+        local boundaryProbe = false
+        local function blocked()
+            if boundaryProbe then expectedBlocks = expectedBlocks + 1 else denied = denied + 1 end
+            error("isolated dungeon test forbids File/FS/network/player storage", 0)
+        end
+        env._G, env.time = env, { elapsedTime = 100 }
+        env.File, env.FileSystem, env.GetFileSystem = blocked, blocked, blocked
+        env.io, env.loadfile, env.dofile = {}, blocked, blocked
+        env.fileSystem = setmetatable({}, { __index = function() return blocked end })
+        env.network = setmetatable({}, { __index = function() return blocked end })
+        env.clientCloud, env.serverCloud = env.network, env.network
+        env.cache = { GetFile = blocked, GetResource = blocked }
+        boundaryProbe = true
+        local probes = {
+            function() env.File("forbidden-probe") end, function() env._G.File("forbidden-probe") end,
+            function() env.FileSystem() end, function() env._G.FileSystem() end,
+            function() env.GetFileSystem() end, function() env._G.GetFileSystem() end,
+            function() env.fileSystem:FileExists("forbidden-probe") end,
+            function() env._G.fileSystem:FileExists("forbidden-probe") end,
+            function() env.loadfile("forbidden-probe") end, function() env._G.loadfile("forbidden-probe") end,
+            function() env.dofile("forbidden-probe") end, function() env._G.dofile("forbidden-probe") end,
+            function() env.cache:GetFile("forbidden-probe") end,
+            function() env.clientCloud:SendEvent("forbidden-probe") end,
+            function() env.serverCloud:SendEvent("forbidden-probe") end,
+            function() env.network:SendEvent("forbidden-probe") end,
+            function() env._G.clientCloud:SendEvent("forbidden-probe") end,
+            function() env._G.serverCloud:SendEvent("forbidden-probe") end,
+            function() env._G.network:SendEvent("forbidden-probe") end,
+        }
+        for index, probe in ipairs(probes) do
+            local before = expectedBlocks
+            eq(pcall(probe), false, "FileFS/网络隔离反例拒绝 " .. index)
+            eq(expectedBlocks, before + 1, "FileFS/网络隔离反例恰好计数 " .. index)
+        end
+        boundaryProbe = false
+        eq(env._G, env, "独立_G不能回退宿主")
+        eq(denied, 0, "预期反例不混入意外访问计数")
+        local function scriptText(name)
             local file = assert(cache:GetFile(name:gsub("%.", "/") .. ".lua"), "缺少脚本 " .. name)
             local lines = {}
             while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
             file:Dispose()
-            return assert(load(table.concat(lines, "\n"), "@" .. name, "t", env))()
+            return table.concat(lines, "\n")
+        end
+        local function compile(name)
+            return assert(load(scriptText(name), "@" .. name, "t", env))()
         end
         local modules = {
             player = { level = 100 },
@@ -61,10 +105,13 @@ function Start()
             },
             artifacts = { bag = {}, equipped = {}, equippedByTeam = {} },
         }
-        local toasts, sends, opens = {}, {}, {}
+        local toasts = {} ---@type string[]
+        local sends = {} ---@type any[]
+        local opens = {} ---@type any[]
         local transport = { mode = "deferred" }
         local sceneExit = {
             init = noop,
+            isOpen = function() return false end,
             open = function(options) opens[#opens + 1] = options end,
         }
         local mocks = {
@@ -78,14 +125,30 @@ function Start()
                 hasAnyUpgradeForHero = function() return false end,
                 hasAwakeningUpgrade = function() return false end,
             },
-            ["ui.hud.BottomNav"] = { setBadge = noop, refreshTownBadge = noop },
+            ["ui.hud.BottomNav"] = { setBadge = noop, refreshTownBadge = noop, setSelectedIndex = noop,
+                isAllLocked = function() return false end, isTabLocked = function() return false end },
+            ["core.EventBus"] = { emit = noop },
+            ["core.I18n"] = { lookup = function(text) return text end, get = function() return "zh_CN" end },
+            ["ui.battle.stage.ExpeditionOverview"] = {}, -- 本专项不打开收益概览，不加载OfflineService
+            ["ui.character.panel.CharacterRosterPresentation"] = { reset = noop,
+                clearSortInteraction = noop, clearTeamInteraction = noop }, -- 不绘制右栏工具条
             ["ui.church.ChurchPage"] = { hasAdvanceForHero = function() return false end },
-            ["systems.TutorialManager"] = {},
+            ["systems.TutorialManager"] = { notifyEvent = noop }, -- 正式金币关入场通知的外围出口
             ["ui.widget.HeroFrame"] = {},
             ["ui.battle.tri.BattleTriPage"] = { invalidateTeams = noop },
             ["ui.hud.popup.OfflineRewardPanel"] = { isOpen = function() return false end },
             ["ui.loot.LootBoxPage"] = { showToast = function(message) toasts[#toasts + 1] = message end },
             ["ui.dungeon.DungeonBattleScene"] = sceneExit,
+            ["ui.tower.TowerBattleScene"] = { isActive = function() return false end },
+            ["ui.battle.scene.BattleScene"] = {
+                getStageId = function() return 101 end,
+                getMaxStageId = function() return modules.battle.maxStageId end,
+                getClearedStages = function() return modules.battle.clearedStages end,
+                gotoStage = function(_, options)
+                    check(options.deferEnter == true, "公开队1切任务保留deferEnter")
+                    return true
+                end,
+            },
             ["rules.dungeon.DungeonService"] = { Challenge = function() return false, "测试拒绝", nil end },
             ["rules.dungeon.DungeonIdleService"] = {},
         }
@@ -97,6 +160,14 @@ function Start()
             ["systems.AttributeDef"] = true, ["systems.UnitAttributes"] = true,
             ["systems.TalentEffect"] = true, ["systems.ArtifactBridge"] = true,
             ["systems.EquipmentSystem"] = true, ["systems.EquipmentSetSystem"] = true,
+            ["systems.EquipmentSecondaryStats"] = true, ["systems.EquipmentStatGrowth"] = true,
+            ["systems.EquipmentPower"] = true, ["systems.EquipmentSetRuntime"] = true,
+            ["systems.CombatPower"] = true, ["shared.SuccessNotificationContext"] = true,
+            ["ui.character.panel.CharacterRosterSort"] = true,
+            ["ui.character.panel.CharacterRosterPresentation"] = true,
+            ["ui.battle.stage.StageSelectDialog"] = true, ["ui.battle.stage.StageSelectResources"] = true,
+            ["ui.battle.stage.StageSelectRewardPreview"] = true, ["ui.battle.stage.BattleEnemySpawn"] = true,
+            ["ui.tower.TowerPresentation"] = true, ["core.I18nTower"] = true,
             ["systems.CombatPowerEstimate"] = true, ["systems.ExtraTalentSystem"] = true,
             ["systems.AwakeningGrowth"] = true, ["systems.StatusEffectManager"] = true,
             ["systems.CombatFormula"] = true, ["systems.BattleDiag"] = true,
@@ -112,7 +183,7 @@ function Start()
             ["rules.dungeon.DungeonHandler"] = true,
         }
         local real, loading = {}, {}
-        replace(_G, "require", function(name)
+        env.require = function(name)
             if mocks[name] then return mocks[name] end
             if real[name] then return real[name] end
             assert(realNames[name] or name:match("^config%."), "禁止未声明依赖或存档入口: " .. name)
@@ -122,7 +193,8 @@ function Start()
             loading[name] = nil
             real[name] = value
             return value
-        end)
+        end
+        local require = env.require
 
         local CP = require("ui.character.panel.CharacterPanel")
         local Page = require("ui.dungeon.DungeonPage")
@@ -207,6 +279,66 @@ function Start()
             eq(CP.setActiveTeam(team), true, "真实选队" .. team)
             eq(CP.getActiveTeamIdx(), team, "选队读回" .. team)
         end
+        -- 第一层：正式导航/选关，不加载完整BattleTriPage或运行随机战斗。
+        -- 抽取生产getTeamStageId/gotoTeamStage完整函数；只有驱动启动/Scene是明确叶子spy。
+        local publicBefore = assertions
+        local DC = require("config.DungeonConfig")
+        local Dialog = require("ui.battle.stage.StageSelectDialog")
+        local starts, drivers = {}, {}
+        for team = 1, 3 do
+            local driver = { stageId = 101 }
+            driver.start = function(self, id)
+                eq(self, driver, "正式选关driver receiver")
+                self.stageId = id
+                local allies = CP.getDeployedTeam(team)
+                starts[#starts + 1] = { team = team, id = id }
+                verifyTeam(allies, team, "正式选关队" .. team)
+            end
+            drivers[team] = driver
+        end
+        local triSource = scriptText("ui.battle.tri.BattleTriPage")
+        local first = assert(triSource:find("function BattleTriPage.getTeamStageId(", 1, true))
+        local last = assert(triSource:find("\n--- 每行 HUD", first, true))
+        env.TEST_DRIVERS = drivers
+        local prefix = [[
+local BattleTriPage = {}
+local drivers = TEST_DRIVERS
+local StageConfig = require("config.StageConfig")
+local ExpTable = require("config.ExpTable")
+local ClientDispatcher = require("runtime.ClientDispatcher")
+local terminalRaid = nil
+local function startTerminalRaid() error("resource test forbids terminal combat") end
+]]
+        local tri = assert(load(prefix .. triSource:sub(first, last - 1) .. "\nreturn BattleTriPage",
+            "@BattleTriPage#complete-resource-goto", "t", env))()
+        tri.invalidateTeams, tri.open = noop, noop
+        tri.isTerminalRaidActive = function() return false end
+        mocks["ui.battle.tri.BattleTriPage"] = tri
+        local dialogState = upvalue(Dialog.openDungeon, "state")
+        for _, id in ipairs({ "gold_mine", "equipment_vault", "black_diamond" }) do
+            for team = 1, 3 do
+                Dialog.close()
+                selected(team % 3 + 1)
+                local active, sent, started = CP.getActiveTeamIdx(), #sends, #starts
+                eq(Page.openResource(id, team), true, "公开入口打开统一选关 " .. id)
+                eq(Dialog.isOpen(), true, "真实Dialog已打开")
+                eq(dialogState.targetTeam, team, "统一选关显式行队号")
+                eq(dialogState.selKey, "R:" .. id, "统一选关资源分组")
+                eq(Page.isDetailOpen(), false, "公开入口不恢复旧详情")
+                eq(CP.getActiveTeamIdx(), active, "公开入口不改编辑队")
+                eq(#sends, sent, "公开导航不发Challenge")
+                Dialog.handleScroll(10000, 350, 820) -- 真实滚动API回首行，不复制命中算法
+                eq(Dialog.handleInput(350, 820), true, "真实关卡行点击")
+                eq(#starts, started + 1, "只启动目标队驱动一次")
+                eq(starts[#starts].team, team, "正式goto目标队")
+                eq(starts[#starts].id, DC.getChapterStageIds(id)[1], "真实资源首行任务ID")
+                eq(Dialog.isOpen(), false, "切任务成功关闭统一选关")
+                eq(#sends, sent, "资源任务切换不走旧Challenge传输")
+            end
+        end
+        print(TAG .. " LAYER public-navigation PASS assertions=" .. (assertions - publicBefore))
+        local compatibilityBefore = assertions
+
         local function response(request, success)
             if not success then
                 local handler = require("rules.dungeon.DungeonHandler")
@@ -251,12 +383,25 @@ function Start()
             { id = "equipment_vault", y = 875, floor = 11, title = "装备" },
             { id = "black_diamond", y = 1266, floor = 5, title = "黑钻" },
         }
-        local function detail(case)
-            Page.handleInput(0, 0)
+        -- 第二层仅是保留下来的兼容处理器fixture，不通过已废入口假装用户能开详情。
+        local function legacyDetail(case, team)
+            Page.close()
             Page.refreshFromStore()
-            eq(Page.handleInput(540, case.y), true, case.title .. "真实卡片点击")
-            eq(upvalue(Page.handleInput, "detailDungeon").id, case.id, case.title .. "打开详情")
+            local function setState(name, value)
+                local _, index = upvalue(Page.handleInput, name)
+                debug.setupvalue(Page.handleInput, index, value)
+            end
+            local list = upvalue(Page.handleInput, "dungeonList")
+            local entry
+            for _, candidate in ipairs(list) do if candidate.id == case.id then entry = candidate break end end
+            check(entry ~= nil, "兼容正式副本配置存在 " .. case.id)
+            setState("detailOpen", true)
+            setState("detailDungeon", entry)
+            setState("detailTeamIdx", team)
+            setState("currentFloor", case.floor)
+            eq(Page.isDetailOpen(), true, "人工兼容详情fixture建立")
         end
+        local function detail(case) legacyDetail(case, nil) end
         local function challenge(case)
             local before = #sends
             eq(Page.handleInput(750, 1633), true, case.title .. "真实挑战点击")
@@ -423,15 +568,14 @@ function Start()
             end
         end
 
-        -- 选关公开API固定行队号，与activeTeam解耦，不发挑战。
+        -- 兼容显式行队号：公开导航已在第一层验证；此层只人工建旧详情状态验证回执安全。
         transport.mode = "deferred"
         for _, case in ipairs(dungeonCases) do
-            Page.close()
             selected(1)
             local sent = #sends
-            eq(Page.openResource(case.id, 3), true, "选关打开资源详情")
-            eq(#sends, sent, "openResource不直接发动作")
-            eq(CP.getActiveTeamIdx(), 1, "公开API不修改activeTeam")
+            legacyDetail(case, 3)
+            eq(#sends, sent, "建立兼容fixture不直接发动作")
+            eq(CP.getActiveTeamIdx(), 1, "兼容fixture不修改activeTeam")
             selected(2) -- 编辑队2，仍必须发选关行队3
             local before = #opens
             local req = challenge(case)
@@ -452,7 +596,7 @@ function Start()
             eq(#opens, before, "错层回包不打开场景")
             opened(case, 3, before, resolve(req, true), "选关显式队3")
             Page.close()
-            eq(Page.openResource(case.id, 2), true, "再打开显式队2")
+            legacyDetail(case, 2)
             selected(2)
             req = challenge(case)
             before = #opens
@@ -466,8 +610,11 @@ function Start()
         eq(Page.openResource("gold_mine", 4), false, "显式队号4拒绝")
         eq(Page.openResource("gold_mine", 1.5), false, "非整数队号拒绝")
         Page.close()
-        eq(Page.openTower(), true, "独立塔公开详情")
-        eq(upvalue(Page.handleInput, "detailDungeon").id, "babel_tower", "独立塔不是黑钻副本")
+        eq(Page.openTower(), true, "独立塔公开统一选关")
+        eq(Dialog.isOpen(), true, "独立塔打开真实选关")
+        eq(dialogState.selKey, "R:babel_tower", "独立塔不是黑钻副本")
+        eq(Page.isDetailOpen(), false, "独立塔不恢复旧详情")
+        Dialog.close()
         Page.close()
         local towerLate = { action = Protocol.ACTION_TYPES.TOWER_CHALLENGE, success = true, floor = 1, wave = 1 }
         Page.onActionResult(towerLate) -- 若重新打开塔会触发禁止未声明require并令测试失败。
@@ -515,6 +662,8 @@ function Start()
         for name, value in pairs(packageSnapshot) do
             eq(package.loaded[name], value, "原模块缓存保留 " .. name)
         end
+        eq(denied, 0, "File/FS/网络存档边界尝试0")
+        print(TAG .. " LAYER legacy-protocol PASS assertions=" .. (assertions - compatibilityBefore))
         print(TAG .. " PASS 输入数据与模块缓存隔离")
     end)
     -- 无论断言是否失败均逆序还原替身，不留全局 require 或状态门禁修改。

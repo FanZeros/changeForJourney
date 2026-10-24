@@ -163,8 +163,9 @@ end
 
 local function equipmentBonuses(heroId, heroCfg, level, heroes, equipment, previewEq, talents, checkpoint)
     local function bareSource(eqData)
-        local bareEq = deepCopy(eqData)
-        bareEq.equipped = bareEq.equipped or {}
+        -- collector 会独立复制已穿小世界；裸装只改槽映射，无需先复制随后不用的库存。
+        -- inventory 保持只读引用，不能在这里水合/修改装备或把它作为结果发布。
+        local bareEq = { inventory = eqData.inventory, equipped = deepCopy(eqData.equipped or {}) }
         bareEq.equipped[heroId] = nil
         bareEq.equipped[tostring(heroId)] = nil
         return collectBonusSource(heroId, heroCfg, level, heroes, bareEq, talents, checkpoint)
@@ -237,8 +238,9 @@ function M.build(heroId, level, seqOrNil, targetSlotOrNil, optionsOrNil)
     local options = { heroes = heroes, equipment = equipment, artifacts = artifacts, talents = talents }
     result.current = collect(heroN, heroCfg, heroLevel, options, checkpoint)
     result.currentSets = setSummary(equipment, heroN)
-    result.rows = mergeRows(result.current, nil)
     local function finish(previewEq)
+        -- 有效候选只合并/排序最终比较一次；无候选或拒绝时在此补当前行。
+        result.rows = mergeRows(result.current, result.preview)
         if optionsOrNil and optionsOrNil.includeEquipmentBonuses then
             result.equipmentBonuses = equipmentBonuses(heroN, heroCfg, heroLevel, heroes, equipment, previewEq, talents, checkpoint)
         end
@@ -261,7 +263,6 @@ function M.build(heroId, level, seqOrNil, targetSlotOrNil, optionsOrNil)
     result.preview = collect(heroN, heroCfg, heroLevel,
         { heroes = heroes, equipment = previewEq, artifacts = artifacts, talents = talents }, checkpoint)
     result.previewSets = setSummary(previewEq, heroN)
-    result.rows = mergeRows(result.current, result.preview)
     return finish(previewEq)
 end
 

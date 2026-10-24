@@ -555,7 +555,37 @@ function Start()
             f.data.heroes.roster["2"].level = 90
         end, ownedCount)
         equipCase("heroes source fallback", function(_, f) f.data.heroes = copy(f.data.heroes) end, ownedCount)
-        equipCase("heroes revision fallback", function(_, f) f.revisions.heroes = f.revisions.heroes + 1 end, ownedCount)
+        equipCase("heroes same-value revision fast path", function(_, f)
+            f.revisions.heroes = f.revisions.heroes + 1
+        end, 0, {})
+        equipCase("heroes revision with real growth fallback", function(_, f)
+            f.revisions.heroes = f.revisions.heroes + 1
+            f.data.heroes.roster["12"].extraTalent.stacks = f.data.heroes.roster["12"].extraTalent.stacks + 1
+        end, ownedCount)
+        equipCase("heroes revision regression fallback", function(_, f)
+            f.revisions.heroes = f.revisions.heroes - 1
+        end, ownedCount)
+        runCase("equipment heroes Store mirror mismatch fallback", function(_, f)
+            local get = f.store.Get
+            local other = copy(f.data.heroes)
+            f.store.Get = function(key) return key == "heroes" and other or get(key) end
+            equipmentNotify(f, "Store mirror mismatch")
+            f.store.Get = get
+        end, ownedCount)
+        equipCase("heroes Store mirror restored fallback", nil, ownedCount)
+        runCase("equipment heroes unknown revision fallback", function(_, f)
+            local revision = f.revisions.heroes
+            f.revisions.heroes = 0 / 0
+            equipmentNotify(f, "unknown heroes revision")
+            f.revisions.heroes = revision
+        end, ownedCount)
+        equipCase("heroes unknown revision recovery fallback", nil, ownedCount)
+        equipCase("heroes recovered same-value revision fast path", function(_, f)
+            f.revisions.heroes = f.revisions.heroes + 3
+        end, 0, {})
+        equipCase("heroes same revision nested awakening fallback", function(_, f)
+            f.data.heroes.roster["12"].awakening[2] = false
+        end, ownedCount)
         equipCase("artifact revision fallback", function(_, f)
             f.revisions.artifacts = f.revisions.artifacts + 1
             f.data.artifacts.bag[1].value = 25

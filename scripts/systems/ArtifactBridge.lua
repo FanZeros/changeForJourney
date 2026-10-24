@@ -169,4 +169,50 @@ function ArtifactBridge.applyToUnit(attrs, partySlot, artifactData, teamIdx)
     return runtimeEffects
 end
 
+--- 队伍展示分项：只读已装 schema，不水合/迁移存档，也不应用战斗属性。
+--- 常规效果要求来源槽有真实拥有英雄；左右增益按实际邻位目标判定。
+--- 同实例在本队只计一次，未知定义/悬空引用忽略，不另加子槽等级门禁。
+---@param artifactData table|nil
+---@param teamSlots table|nil 面板槽位（state/heroId）
+---@param ownedSet table|nil 面板真实拥有集合
+---@param teamIdx? number
+---@return number
+function ArtifactBridge.getTeamPower(artifactData, teamSlots, ownedSet, teamIdx)
+    if type(artifactData) ~= "table" or type(teamSlots) ~= "table"
+        or type(ownedSet) ~= "table" then return 0 end
+    local byId = {}
+    for _, artifact in ipairs(artifactData.bag or {}) do
+        if type(artifact) == "table" and artifact.id ~= nil then
+            local id = tostring(artifact.id)
+            if id ~= "" and not byId[id] then byId[id] = artifact end
+        end
+    end
+    local function hasHero(slot)
+        local target = teamSlots[slot] or teamSlots[tostring(slot)]
+        if type(target) ~= "table" or target.state ~= "occupied" then return false end
+        local heroId = tonumber(target.heroId)
+        local owned = heroId and (ownedSet[heroId] or ownedSet[tostring(heroId)])
+        return heroId ~= nil and heroId > 0 and type(owned) == "table"
+    end
+    local total, counted = 0, {}
+    for slot = 1, ArtifactSchema.SLOT_COUNT do
+        for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
+            local equippedId = ArtifactSchema.getEquippedId(artifactData, slot, subSlot, teamIdx)
+            local id = equippedId ~= nil and tostring(equippedId) or ""
+            local artifact = byId[id]
+            local def = artifact and ArtifactDefs.get(artifact.artifactId)
+            if def and not counted[id] then
+                local target = slot
+                if def.effectType == "left_phys_atk_bonus" then target = slot - 1
+                elseif def.effectType == "right_mag_atk_bonus" then target = slot + 1 end
+                if target >= 1 and target <= ArtifactSchema.SLOT_COUNT and hasHero(target) then
+                    counted[id] = true
+                    total = total + ArtifactDefs.getPower(artifact)
+                end
+            end
+        end
+    end
+    return total
+end
+
 return ArtifactBridge

@@ -37,6 +37,8 @@ function Start()
     local ESC = nativeRequire("config.EquipmentSetConfig")
     local AD = nativeRequire("systems.AttributeDef")
     local Events = nativeRequire("config.GameEvents")
+    local ArtifactDefs = nativeRequire("shared.artifact.ArtifactDefs")
+    local ArtifactSchema = nativeRequire("shared.artifact.ArtifactSchema")
     local Draw = nativeRequire("ui.character.panel.CharacterPanelDraw2")
     local savedBuild, fullBuild, savedLit = EP.buildWornContext, EP.buildContext, HC._getSavedLitNodes()
     local savedInvalidate = EP.invalidate
@@ -76,6 +78,33 @@ function Start()
             return savedBuild(id, isolated, batch)
         end
         return savedBuild(...)
+    end
+    -- 队伍新口径独立 oracle：不调用被测 Bridge helper，也不复用分项缓存。
+    local function artifactTeamPower(f, teamIdx, slots)
+        local total, counted = 0, {}
+        local data = f.data.artifacts or {}
+        for slot = 1, ArtifactSchema.SLOT_COUNT do
+            for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
+                local id = ArtifactSchema.getEquippedId(data, slot, subSlot, teamIdx)
+                local artifact
+                for _, item in ipairs(data.bag or {}) do
+                    if tostring(item.id) == tostring(id) then artifact = item; break end
+                end
+                local def = artifact and ArtifactDefs.get(artifact.artifactId)
+                if def and not counted[tostring(id)] then
+                    local target = slot
+                    if def.effectType == "left_phys_atk_bonus" then target = slot - 1 end
+                    if def.effectType == "right_mag_atk_bonus" then target = slot + 1 end
+                    local owner = slots[target]
+                    if target >= 1 and target <= ArtifactSchema.SLOT_COUNT
+                        and owner and owner.state == "occupied" and f.panel.getOwnedHero(owner.heroId) then
+                        counted[tostring(id)] = true
+                        total = total + ArtifactDefs.getPower(artifact)
+                    end
+                end
+            end
+        end
+        return total
     end
     local function fixture(forceFull)
         local f = { data = {}, revisions = { heroes = 1, equipment = 1, artifacts = 1, talents = 1 },
@@ -240,7 +269,7 @@ function Start()
                 end
                 for t = 1, 3 do
                     local slots, powers = panel.getTeamSlotsData(t)
-                    local total = 0
+                    local total = artifactTeamPower(f, t, slots)
                     for i = 1, 4 do
                         local id = slots[i].state == "occupied" and slots[i].heroId
                         local value = expected[id] or 0
@@ -288,8 +317,13 @@ function Start()
             "移走司仪真实光环消失，不是空fixture")
         local noArtifactOptions = copy(options)
         noArtifactOptions.artifacts = { bag = {}, equippedByTeam = {} }
-        check(fullBuild(15, options).currentPower > fullBuild(15, noArtifactOptions).currentPower,
-            "队3神器fixture真实非零，不借当前活动队1")
+        check(fullBuild(15, options).currentPower == fullBuild(15, noArtifactOptions).currentPower,
+            "队3神器完全排除角色评分，不借当前活动队1")
+        local combatOptions = copy(options)
+        combatOptions.includeArtifactEffects = true
+        check(fullBuild(15, combatOptions).hero.attrs.artifactPowerBonus > 0
+            and artifactTeamPower(optimized, 3, optimized.panel.getTeamSlotsData(3)) > 0,
+            "队3神器fixture真实战斗效果及独立详情分项仍非零")
         runCase("bench", patch(2, { stacks = 500 }), 1, { 2 })
         runCase("team2", patch(12, { stacks = 1000 }), 3, { 9, 20, 12 })
         local resonanceOptions = copy(options)

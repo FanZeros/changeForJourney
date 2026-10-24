@@ -608,14 +608,31 @@ function EquipmentSystem.getAscendBoost(equip)
     return BlacksmithConfig.getEnhanceBoost(EquipmentSystem.getAscendLevel(equip))
 end
 
---- 固定副词条按模板顺序轮转，每阶仅提升一条；数值由升阶等级派生，不写回模板。
+local function isIntrinsicStat(equip, index)
+    local tpl = equip and EquipmentConfig.ITEMS[equip.templateId]
+    local stat = equip and equip.baseStats and equip.baseStats[index]
+    if not stat then return false end
+    for _, row in ipairs(tpl and tpl.intrinsicStats or {}) do
+        if row[1] == stat[1] then return true end
+    end
+    return false
+end
+
+--- 固定副词条按模板顺序轮转，每阶仅提升一条；固有属性不占轮转名额。
 ---@param equip table|nil
 ---@param index number baseStats索引；1为主词条
 ---@param level number|nil 预览时可覆盖升阶等级
 ---@return number
 function EquipmentSystem.getSecondaryAscendCount(equip, index, level)
-    local count = math.max(0, #(equip and equip.baseStats or {}) - 1)
-    local position = index - 1
+    if index <= 1 or not (equip and equip.baseStats and equip.baseStats[index]) then return 0 end
+    if isIntrinsicStat(equip, index) then return 0 end
+    local count, position = 0, 0
+    for i = 2, #(equip and equip.baseStats or {}) do
+        if not isIntrinsicStat(equip, i) then
+            count = count + 1
+            if i <= index then position = position + 1 end
+        end
+    end
     local ascend = level or EquipmentSystem.getAscendLevel(equip)
     if count == 0 or position < 1 or position > count or ascend < position then return 0 end
     return math.floor((ascend - position) / count) + 1
@@ -631,6 +648,7 @@ function EquipmentSystem.effectiveBaseStatValue(equip, index, mainBoost, level)
     local stat = (equip.baseStats or {})[index]
     if not stat then return 0 end
     local raw = tonumber(stat[2]) or 0
+    if isIntrinsicStat(equip, index) then return raw end
     if index == 1 then
         local boost = mainBoost
         if boost == nil then
@@ -802,7 +820,9 @@ function EquipmentSystem.addToInventory(equipData, equip)
     equipData.nextSeq = seq + 1
 
     equip.seq = seq
-    if not equip.type or not equip.slot then
+    local tpl = EquipmentConfig.ITEMS[equip.templateId]
+    if not equip.type or not equip.slot or (tpl and tpl.intrinsicStats) then
+        -- 已确定的旧遗匣盾牌也补齐固有属性；不重新生成随机副属性。
         EquipmentSystem.hydrate(equip)
     end
     equipData.inventory[tostring(seq)] = equip

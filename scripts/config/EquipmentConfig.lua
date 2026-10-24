@@ -93,6 +93,9 @@ local function addGroup(slot, typeName, grip, statKeys, tiers, setId, iconTempla
             grip = grip,
             levelRange = t.lv,
             stats = stats,
+            -- 盾牌固有怨引独立于随机副属性，不受等级、品质或升阶放大。
+            intrinsicStats = (slot == "offhand" and (typeName == "轻盾" or typeName == "重盾"))
+                and { { "threat", 50 } } or nil,
             setId = t.setId or setId,
             iconTemplateId = iconTemplateId,
         }

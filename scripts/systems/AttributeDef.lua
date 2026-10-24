@@ -32,7 +32,8 @@ AD.MAG_ARMOR        = "energyShield"    -- [兼容] 魔法护甲 → 能量护�
 AD.PHYS_RES         = "resistance"      -- [兼容] 物理抗性 → 伤害抗性
 AD.MAG_RES          = "resistance"      -- [兼容] 魔法抗性 → 伤害抗性
 AD.DODGE            = "dodge"           -- 闪避值
-AD.THREAT           = "threat"          -- 仇恨值
+AD.THREAT           = "threat"          -- 怨引值（100 点 = 1 倍）
+AD.THREAT_BASE      = 100
 AD.HP_REGEN         = "hpRegen"         -- 每秒回血
 AD.ATK_HEAL         = "atkHeal"         -- 攻击回血
 AD.PHYS_BLOCK_RATE  = "physBlockRate"   -- 物理格挡概率
@@ -155,7 +156,7 @@ AD.META = {
     [AD.RESISTANCE]       = { name = "伤害抗性",     valueModel = 0,    dataType = AD.TYPE_PCT,   default = 0 },
     [AD.ENERGY_SHIELD]    = { name = "护盾",     valueModel = 0.1,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.DODGE]            = { name = "闪避值",       valueModel = 1,    dataType = AD.TYPE_FLOAT, default = 0 },
-    [AD.THREAT]           = { name = "怨引值",       valueModel = 0.08, dataType = AD.TYPE_INT,   default = 1 },
+    [AD.THREAT]           = { name = "怨引值",       valueModel = 0.0008, dataType = AD.TYPE_INT, default = AD.THREAT_BASE },
     [AD.HP_REGEN]         = { name = "每秒回血",     valueModel = 0.3,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.ATK_HEAL]         = { name = "攻击回血",     valueModel = 0.45, dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.PHYS_BLOCK_RATE]  = { name = "物理格挡概率", valueModel = 50,   dataType = AD.TYPE_PCT,   default = 0,  cap = 100 },

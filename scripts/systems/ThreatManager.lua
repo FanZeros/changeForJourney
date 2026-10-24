@@ -46,8 +46,25 @@ TM.DEFAULT_HEAL_THREAT_COEFF  = 1.0   -- 默认每点治疗仇恨系数
 TM.DECAY_RATE         = 0.02    -- 每秒衰减当前仇恨值的 2%
 TM.DECAY_MIN          = 0.5     -- 每秒最低衰减量
 
--- 目标选择中 静态仇恨属性(AD.THREAT) 的影响权重
-TM.STATIC_THREAT_WEIGHT = 10    -- AD.THREAT 每 1 点 = 10 点动态仇恨等价
+-- 基准怨引（100点）对应10点静态仇恨，不随面板单位放大。
+TM.STATIC_THREAT_WEIGHT = 10
+
+--- 怨引统一换算为倍率；缺属性按基准值处理，最低保留1点权重。
+---@param unit table
+---@return number
+function TM.getThreatMultiplier(unit)
+    local value = unit.attrs and unit.attrs:get(AD.THREAT) or AD.THREAT_BASE
+    return math.max(1, value) / AD.THREAT_BASE
+end
+
+--- 主目标与多目标共用同一权重，站位只乘算一次。
+---@param unit table
+---@param index number
+---@return number
+function TM.getTargetWeight(unit, index)
+    return (TM.getThreat(unit) + TM.getThreatMultiplier(unit) * TM.STATIC_THREAT_WEIGHT)
+        * BattleLayout.hitWeight(index)
+end
 
 -- 骑士天赋"阵前叫嚣"：每场战斗第一次攻击获得20倍仇恨
 TM.KNIGHT_FIRST_ATTACK_THREAT_MULT = 20
@@ -202,11 +219,7 @@ function TM.onDamageDealt(damageSource, damage, includeBaseThreat, threatScale)
     end
 
     -- AD.THREAT 属性倍率
-    local threatMult = 1.0
-    if damageSource.attrs then
-        threatMult = damageSource.attrs:get(AD.THREAT)
-        if threatMult < 1 then threatMult = 1 end
-    end
+    local threatMult = TM.getThreatMultiplier(damageSource)
 
     local amount = ((includeBaseThreat and baseThreat or 0) + damage * dmgCoeff) * threatMult * threatScale
     if damageSource._laoliuStealthLeft and damageSource._laoliuStealthLeft > 0 then
@@ -234,11 +247,7 @@ function TM.onHealingDone(healer, healAmount)
     end
 
     -- AD.THREAT 属性倍率
-    local threatMult = 1.0
-    if healer.attrs then
-        threatMult = healer.attrs:get(AD.THREAT)
-        if threatMult < 1 then threatMult = 1 end
-    end
+    local threatMult = TM.getThreatMultiplier(healer)
 
     local amount = (healBase + healAmount * healCoeff) * threatMult
 
@@ -284,17 +293,7 @@ function TM.selectTarget(targetList)
 
     for i, u in ipairs(targetList) do
         if u.hp > 0 and not u.artifactUntargetable then
-            local dynamicThreat = TM.getThreat(u)
-
-            local staticThreat = 1
-            if u.attrs then
-                staticThreat = u.attrs:get(AD.THREAT)
-                if staticThreat < 1 then staticThreat = 1 end
-            end
-            local staticBonus = staticThreat * TM.STATIC_THREAT_WEIGHT
-
-            -- [前后排] 乘以位置受击权重: 前排(靠中心)被攻击概率显著更高
-            local weight = (dynamicThreat + staticBonus) * BattleLayout.hitWeight(i)
+            local weight = TM.getTargetWeight(u, i)
             totalWeight = totalWeight + weight
             alive[#alive + 1] = { index = i, weight = weight }
         end

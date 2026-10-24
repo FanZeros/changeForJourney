@@ -39,13 +39,19 @@ end
 
 -- 培养底材只计基础主/副属性：沿用属性价值权重，但不带随机词条或任何养成倍率。
 -- baseStats 已由只读水合确定性还原，包含模板/等级/品质/固定副抽取，不重骰。
-local function baseScore(view)
+local function baseScore(view, readyScore)
     local stats = view.baseStats
     -- 遗匣里的腐化保护件仍可能参与成品候选；不能借腐化倍率占用底材专额。
     if view.corruptBaseMult ~= nil and view.corruptBaseMult ~= 1 then
         local quality = EC.QUALITY[view.quality]
         stats = Eq.recalcBaseStats(view.templateId, view.level, quality and quality.baseStrength or 1,
             view.secondaryRoll)
+    elseif type(view.affixes) == "table" and next(view.affixes) == nil
+        and view.ascendLevel == 0 and view.enhanceLevel == 0 and view.level <= 50 then
+        -- 无词条/升阶且未进入等级补偿时，两次评分的实际输入等价。
+        -- 投影通过template回退slot/grip；历史自带的非模板字段不走复用。
+        local tpl = EC.ITEMS[view.templateId]
+        if tpl and view.slot == tpl.slot and view.grip == tpl.grip then return readyScore end
     end
     return Power.genericScore({ templateId = view.templateId, baseStats = stats, affixes = {} })
 end
@@ -246,7 +252,8 @@ function M.plan(equipment, lootbox, options)
         if not tpl then protect(row, "invalid"); return row end
         local ok, view, score, setId, foundation = pcall(function()
             local hydrated = Query.hydrateCopy(equip)
-            return hydrated, Power.genericScore(hydrated), Query.getSetId(hydrated), baseScore(hydrated)
+            local readyScore = Power.genericScore(hydrated)
+            return hydrated, readyScore, Query.getSetId(hydrated), baseScore(hydrated, readyScore)
         end)
         if not ok or type(view) ~= "table" or not SLOTS[view.slot]
             or type(view.type) ~= "string" or (view.grip ~= nil and type(view.grip) ~= "string")

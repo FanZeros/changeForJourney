@@ -227,8 +227,16 @@ function M.bind(deps)
                     or (b.dispatcherSource and b.dispatcherSource ~= b.source)
                     or type(a.revision) ~= "number" or type(b.revision) ~= "number"
                     or a.revision <= 0 or b.revision <= a.revision then return false end
-            elseif (key ~= "heroes" or equipmentNotification)
-                and (a.source ~= b.source or a.revision ~= b.revision) then return false end
+            elseif key == "heroes" and equipmentNotification then
+                -- Panel 的 heroes 订阅先于 Store：成长已评分后，同值回执才递增 revision。
+                -- 不以 revision 单独变化否决穿戴差分；源身份/镜像仍必须一致，且下方
+                -- 完整核对 owned/sources 战斗字段、编队、名册及已发布缓存的冻结深值。
+                if a.source ~= b.source or a.storeSource ~= a.source or b.storeSource ~= b.source
+                    or (a.dispatcherSource and a.dispatcherSource ~= a.source)
+                    or (b.dispatcherSource and b.dispatcherSource ~= b.source)
+                    or type(a.revision) ~= "number" or type(b.revision) ~= "number"
+                    or not (b.revision >= a.revision) or b.revision == math.huge then return false end
+            elseif key ~= "heroes" and (a.source ~= b.source or a.revision ~= b.revision) then return false end
             if equipmentNotification and (type(a.source) ~= "table"
                 or type(a.revision) ~= "number" or a.revision <= 0) then return false end
         end

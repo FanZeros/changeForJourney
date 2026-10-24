@@ -28,6 +28,9 @@ function Wheel.bind(deps)
     local TerminalConfirmDialog = deps.TerminalConfirmDialog
     local IntroCutscene, LetterIntro, ScenarioDialogue = deps.IntroCutscene, deps.LetterIntro, deps.ScenarioDialogue
     local AwakeningArtwork = require("ui.character.hero.AwakeningArtwork")
+    local Curation = require("ui.loot.InventoryCurationDialog")
+    local EquipmentBag = require("ui.character.equip.EquipmentBag")
+    local TutorialManager = require("systems.TutorialManager")
 
     -- 横屏副本(5)页独占画布（全屏弹窗打开时让位）
     local function HorizonPageModalActive()
@@ -74,9 +77,12 @@ function Wheel.bind(deps)
     end
 
     -- 事件坐标 -> 面板命中；全局模态返回 ('modal', dx, dy)
-    local function HorizonResolveMouse()
-        local mousePos = pointerPosition()
-        local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+    -- Move 已取得本次事件的设计坐标时直接复用；Down/Up/Wheel 仍在原位置实时读取。
+    local function HorizonResolveMouse(sx, sy)
+        if sx == nil or sy == nil then
+            local mousePos = pointerPosition()
+            sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+        end
         -- 离线收益始终全窗居中，优先于下层面板和装备详情路由。
         if OfflineRewardPanel.isOpen() then
             local dx, dy = OfflineRewardOverlay.toDesign(sx, sy)
@@ -348,7 +354,108 @@ function Wheel.bind(deps)
         end
     end
 
+    -- 悬停与滚轮共用同一坐标/页面依赖；不跨事件缓存命中，不合并 Move/leave。
+    local function offlineInputActive()
+        return OfflineRewardPanel.isOpen() and not UpdateNoticePopup.isOpen()
+            and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
+            and not IntroCutscene.isActive() and not ScenarioDialogue.isActive()
+    end
+    local function levelUpInputActive()
+        return LevelUpPopup.isOpen() and not LevelUpPopup.isPresentationBlocked()
+            and not OfflineRewardPanel.isOpen()
+            and not UpdateNoticePopup.isOpen() and not DarkTitleScreen.isOpen()
+            and not LetterIntro.isOpen() and not IntroCutscene.isActive()
+            and not ScenarioDialogue.isActive()
+    end
+    -- RewardPopup.blocksPageInput 会同步行内奖励可见性；整条链每次原序执行，不能因全图关闭跳过。
+    local function artworkBlocked()
+        return StartScreen.isOpen() or DarkTitleScreen.isOpen() or LetterIntro.isOpen()
+            or IntroCutscene.isActive() or ScenarioDialogue.isActive() or RewardPopup.blocksPageInput()
+            or PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen() or OfflineRewardPanel.isOpen()
+            or UpdateNoticePopup.isOpen() or CEPanel.isOpen() or TutorialManager.isActive()
+            or StageSelectDialog.isOpen() or SweepDialog.isOpen() or DamageStatsPanel.isOpen()
+            or TerminalConfirmDialog.isOpen() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive()
+    end
+    local function bindHover(hoverDeps)
+        local api = {}
+        local function characterTarget(pid)
+            return pid == 'right'
+                or (pid == 'center' and BottomNav.getSelectedIndex() == 1 and not BlacksmithPage.isOpen())
+        end
+        -- 与原 Move 出口逐项一致；负坐标也可能清理候选/触发准备，不能合并成一次 leave。
+        function api.move(pid, dx, dy, sx, sy)
+            if hoverDeps.equipOverlayDesign(sx, sy) then return end
+            if SweepDialog.isOpen() and pid == 'tri' then
+                BattleTriPage.handleDragMove(dx, dy)
+                return
+            end
+            if LootBoxPage.isOpen() then
+                if pid == 'left' then LootBoxPage.handleHover(dx, dy)
+                else LootBoxPage.handleHover(-1, -1) end
+            end
+            if characterTarget(pid) then
+                if CharacterPanel.handleHover then CharacterPanel.handleHover(dx, dy) end
+            else
+                if CharacterPanel.handleHover then CharacterPanel.handleHover(-1, -1) end
+            end
+            if pid == 'left' then
+                if MarketPage.isOpen and MarketPage.isOpen() and MarketPage.handleHover then
+                    MarketPage.handleHover(dx, dy)
+                elseif MarketPage.handleHover then MarketPage.handleHover(-1, -1) end
+                if BackpackPanel.isOpen and BackpackPanel.isOpen() and BackpackPanel.handleHover then
+                    BackpackPanel.handleHover(dx, dy)
+                elseif BackpackPanel.handleHover then BackpackPanel.handleHover(-1, -1) end
+                if EquipmentBag.isOpen and EquipmentBag.isOpen() and EquipmentBag.handleHover then
+                    EquipmentBag.handleHover(dx, dy)
+                elseif EquipmentBag.handleHover then EquipmentBag.handleHover(-1, -1) end
+            else
+                if MarketPage.handleHover then MarketPage.handleHover(-1, -1) end
+                if BackpackPanel.handleHover then BackpackPanel.handleHover(-1, -1) end
+                if EquipmentBag.handleHover then EquipmentBag.handleHover(-1, -1) end
+            end
+        end
+        -- Tick 独立推进静止指针计时，不把 Move 延迟到 Tick。
+        function api.tick()
+            Curation.observe()
+            if Curation.isOpen() or Curation.hasPress() then return end
+            AwakeningArtwork.observe(hoverDeps.RT, artworkBlocked())
+            if AwakeningArtwork.isOpen() or AwakeningArtwork.hasPress() then return end
+            hoverDeps.observe()
+            if hoverDeps.blocked() then return end
+            local mp = pointerPosition()
+            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            if hoverDeps.equipOverlayDesign(sx, sy) then return end
+            local pid, dx, dy = HorizonResolveMouse(sx, sy)
+            hoverDeps.artifactGesture.hover(pid, sx, sy)
+            if characterTarget(pid) then
+                if CharacterPanel.handleHover then CharacterPanel.handleHover(dx, dy) end
+            elseif CharacterPanel.handleHover then
+                CharacterPanel.handleHover(-1, -1)
+            end
+            if pid == 'left' then
+                if MarketPage.isOpen and MarketPage.isOpen() and MarketPage.handleHover then
+                    MarketPage.handleHover(dx, dy)
+                end
+                if BackpackPanel.isOpen and BackpackPanel.isOpen() and BackpackPanel.handleHover then
+                    BackpackPanel.handleHover(dx, dy)
+                end
+                if EquipmentBag.isOpen and EquipmentBag.isOpen() and EquipmentBag.handleHover then
+                    EquipmentBag.handleHover(dx, dy)
+                end
+            else
+                if MarketPage.handleHover then MarketPage.handleHover(-1, -1) end
+                if BackpackPanel.handleHover then BackpackPanel.handleHover(-1, -1) end
+                if EquipmentBag.handleHover then EquipmentBag.handleHover(-1, -1) end
+            end
+        end
+        return api
+    end
+
     return {
+        offlineInputActive = offlineInputActive,
+        levelUpInputActive = levelUpInputActive,
+        artworkBlocked = artworkBlocked,
+        bindHover = bindHover,
         HorizonPageModalActive = HorizonPageModalActive,
         playerInfoDesignCoords = playerInfoDesignCoords,
         rewardPopupDesignCoords = rewardPopupDesignCoords,

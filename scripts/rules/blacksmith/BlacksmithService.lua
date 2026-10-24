@@ -14,6 +14,14 @@ local ExpTable         = require("config.ExpTable")
 local TaskService      = require("rules.task.TaskService")
 local StageConfig      = require("config.StageConfig")
 local AD               = require("systems.AttributeDef")
+local SuccessContext   = require("shared.SuccessNotificationContext")
+
+-- 仅最终装备数值已提交的通知；预览/取消/分解仍走普通 MarkDirty。
+local function publishEquipmentSuccess(uid, equipData, cause)
+    SuccessContext.withNotification(equipData, "equipment", cause, function()
+        PDM.MarkDirty(uid, "equipment")
+    end)
+end
 
 local QUALITY_COST  = BlacksmithConfig.QUALITY_COST
 
@@ -21,6 +29,18 @@ local BlacksmithService = {}
 
 -- 服务端洗练待定状态 pendingRefines[uid][seqStr] = { affixes = {...} }
 local pendingRefines = {}
+
+--- 整理只读保护查询；不向调用方暴露或消费待洗练内容。
+---@param uid number
+---@param seq number|string
+---@return boolean
+function BlacksmithService.hasPendingRefine(uid, seq)
+    local pending = pendingRefines[uid]
+    if not pending then return false end
+    local numberSeq = tonumber(seq)
+    return pending[tostring(seq)] ~= nil
+        or (numberSeq ~= nil and (pending[numberSeq] ~= nil or pending[tostring(numberSeq)] ~= nil))
+end
 
 local SLOT_SCROLL_MAP = BlacksmithConfig.SLOT_SCROLL_MAP
 local MAX_ENHANCE_LV  = BlacksmithConfig.MAX_ENHANCE_LEVEL
@@ -133,7 +153,7 @@ function BlacksmithService.AscendEquip(uid, seq)
     local gainedAffixes, multUps = rollAscendAffixes(equip, currentLv, nextLv)
     if pendingRefines[uid] then pendingRefines[uid][tostring(seq)] = nil end
     PDM.MarkDirty(uid, "currency")
-    PDM.MarkDirty(uid, "equipment")
+    publishEquipmentSuccess(uid, equipData, "equipment_ascend")
     TaskService.UpdateProgress(uid, "enhance", 1)
     print("[BlacksmithService] ASCEND uid=" .. tostring(uid)
         .. " seq=" .. tostring(seq) .. " lv=" .. nextLv
@@ -183,7 +203,7 @@ function BlacksmithService.AscendEquipToLevel(uid, seq, targetLevel)
     local gainedAffixes, multUps = rollAscendAffixes(equip, currentLv, targetLevel)
     if pendingRefines[uid] then pendingRefines[uid][tostring(seq)] = nil end
     PDM.MarkDirty(uid, "currency")
-    PDM.MarkDirty(uid, "equipment")
+    publishEquipmentSuccess(uid, equipData, "equipment_ascend")
     TaskService.UpdateProgress(uid, "enhance", targetLevel - currentLv)
     print("[BlacksmithService] ASCEND_MAX uid=" .. tostring(uid)
         .. " seq=" .. tostring(seq) .. " lv " .. currentLv .. "→" .. targetLevel
@@ -435,7 +455,8 @@ recalcBaseStatsForEquip = function(equip)
     if equip.corruptBaseMult and equip.corruptBaseMult ~= 1 then
         baseStrength = baseStrength * equip.corruptBaseMult
     end
-    local baseStats = EquipmentSystem.recalcBaseStats(equip.templateId, equip.level or 1, baseStrength)
+    local baseStats = EquipmentSystem.recalcBaseStats(equip.templateId, equip.level or 1,
+        baseStrength, equip.secondaryRoll)
     if #baseStats > 0 then
         equip.baseStats = baseStats
     end
@@ -657,7 +678,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         end
 
         PDM.MarkDirty(uid, "currency")
-        PDM.MarkDirty(uid, "equipment")
+        publishEquipmentSuccess(uid, equipData, "equipment_refine")
         PDM.FlushImmediate(uid)
 
         print("[BlacksmithService] REFINE+CLEANSE uid=" .. tostring(uid)
@@ -687,7 +708,11 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
     local refineCount = equip.refineCount or 0
     local affixCount = equip.affixes and #equip.affixes or 0
 
-    local lockedSet, lockedCount = normalizeLockedIndices(lockedIndices, affixCount)
+    -- 洗练石不接受锁定：忽略旧客户端残留索引，全部普通词条都重随机。
+    local lockedSet, lockedCount = {}, 0
+    if extraResource ~= "enhanceStone" then
+        lockedSet, lockedCount = normalizeLockedIndices(lockedIndices, affixCount)
+    end
     if extraResource ~= "destroyStone" and extraResource ~= "corruptStone" and affixCount > 0 and lockedCount >= affixCount then
         return false, "至少保留1条词缀未锁定"
     end
@@ -725,10 +750,12 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
     if chargesEssence then
         currency.essence = currency.essence - essenceCost
     end
-    equip.refineCount = BlacksmithConfig.nextRefineCount(refineCount)
+    if extraResource ~= "enhanceStone" then
+        equip.refineCount = BlacksmithConfig.nextRefineCount(refineCount)
+    end
 
-    -- 扣额外资源（点金石消耗=当前品质，洗练石=固定1）
-    if extraDef then
+    -- 洗练石先完成私有候选，再一次提交扣石/次数/词条；其他资源保留原流程。
+    if extraDef and extraResource ~= "enhanceStone" then
         local actualCost = extraDef.cost or q  -- 点金石 cost=nil 时使用当前品质
         currency[extraDef.field] = (currency[extraDef.field] or 0) - actualCost
     end
@@ -752,7 +779,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
             return EquipmentSystem.rerollAffixValuesWithLocks(
                 list, maxAffixQ, equipLv, randomStrength, equip.grip, locks)
         end)
-        -- 保底只升不降：逐条取新旧较高者（魔化词条固定不变，锁定槽同值无影响）
+        -- 保底只升不降：逐条取新旧较高者（魔化词条固定不变）
         local kept = 0
         for i, newAff in ipairs(newAffixes) do
             local oldAff = oldAffixes and oldAffixes[i]
@@ -876,7 +903,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         end
 
         PDM.MarkDirty(uid, "currency")
-        PDM.MarkDirty(uid, "equipment")
+        publishEquipmentSuccess(uid, equipData, "equipment_refine")
         PDM.FlushImmediate(uid)
 
         print("[BlacksmithService] REFINE+AUTO_REPLACE uid=" .. tostring(uid)
@@ -905,7 +932,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         end
 
         PDM.MarkDirty(uid, "currency")
-        PDM.MarkDirty(uid, "equipment")
+        publishEquipmentSuccess(uid, equipData, "equipment_refine")
         PDM.FlushImmediate(uid)
 
         print("[BlacksmithService] REFINE+CORRUPT uid=" .. tostring(uid)
@@ -941,7 +968,34 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         }
     end
 
-    -- 普通洗练/洗练石：存到服务端待定状态，等待玩家确认替换
+    -- 洗练石：候选生成成功后无 yield 一次应用，不留下旧预览供再次覆盖。
+    if extraResource == "enhanceStone" then
+        currency.enhanceStone = currency.enhanceStone - 1
+        equip.refineCount = BlacksmithConfig.nextRefineCount(refineCount)
+        equip.affixes = newAffixes
+        if pendingRefines[uid] then
+            pendingRefines[uid][seqStr] = nil
+        end
+
+        PDM.MarkDirty(uid, "currency")
+        publishEquipmentSuccess(uid, equipData, "equipment_refine")
+        PDM.FlushImmediate(uid)
+        TaskService.UpdateProgress(uid, "refine", 1)
+
+        print("[BlacksmithService] REFINE+AUTO_REPLACE uid=" .. tostring(uid)
+            .. " seq=" .. seqStr .. " cost=0 refineCount=" .. equip.refineCount
+            .. " newAffixes=" .. #newAffixes .. extraLog)
+
+        return true, nil, {
+            refinePreview = newAffixes,
+            refineSeq = seq,
+            refineCount = equip.refineCount,
+            autoReplaced = true,
+            newQuality = q,
+        }
+    end
+
+    -- 普通精粹洗练：存到服务端待定状态，等待玩家确认替换
     if not pendingRefines[uid] then
         pendingRefines[uid] = {}
     end
@@ -1000,13 +1054,7 @@ function BlacksmithService.RefineReplace(uid, seq)
         local oldQ = equip.quality
         equip.quality = pending.upgradedQuality
 
-        -- 用新品质的 baseStrength 重算基础属性
-        local newQDef = EquipmentConfig.QUALITY[pending.upgradedQuality]
-        local newBaseStrength = newQDef and newQDef.baseStrength or 1.0
-        local newBaseStats = EquipmentSystem.recalcBaseStats(equip.templateId, equip.level or 1, newBaseStrength)
-        if #newBaseStats > 0 then
-            equip.baseStats = newBaseStats
-        end
+        recalcBaseStatsForEquip(equip)
 
         print("[BlacksmithService] REFINE_REPLACE UPGRADE quality "
             .. tostring(oldQ) .. " → " .. tostring(equip.quality))
@@ -1014,7 +1062,7 @@ function BlacksmithService.RefineReplace(uid, seq)
 
     pendingRefines[uid][seqStr] = nil
 
-    PDM.MarkDirty(uid, "equipment")
+    publishEquipmentSuccess(uid, equipData, "equipment_refine")
 
     print("[BlacksmithService] REFINE_REPLACE uid=" .. tostring(uid)
         .. " seq=" .. seqStr

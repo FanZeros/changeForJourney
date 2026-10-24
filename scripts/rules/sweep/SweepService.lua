@@ -1,308 +1,273 @@
--- ============================================================================
--- SweepService - 扫荡业务逻辑
--- 职责: 扣除扫荡券，即时发放固定关卡收益（首通奖励×10）
--- 层级: rules/sweep  |  单机本地结算，通过 PDM 读写，禁止网络 IO
--- ============================================================================
-
-local PDM             = require("rules.character.PlayerDataManager")
-local OfflineCalc     = require("systems.OfflineCalc")
-local SC              = require("config.StageConfig")
-local StageProvider   = require("shared.StageProvider")
-local ExpTable        = require("config.ExpTable")
+-- SweepService：私有生成可分帧；奖励与扣券仍由原事务一次同步落盘。
+local PDM = require("rules.character.PlayerDataManager")
+local Rewards = require("shared.sweep.SweepRewards")
+local Progress = require("shared.sweep.SweepProgress")
 local EquipmentSystem = require("systems.EquipmentSystem")
-local LootBoxSystem   = require("systems.LootBoxSystem")
-local HeroService     = require("rules.hero.HeroService")
-local IdleIncomeConfig = require("config.IdleIncomeConfig")
+local EquipmentPower = require("systems.EquipmentPower")
+local LootBoxSystem = require("systems.LootBoxSystem")
+local DropSystem = require("systems.DropSystem")
+local BlacksmithConfig = require("config.BlacksmithConfig")
+local Transaction = require("rules.dungeon.DungeonService")
 
-local SweepService = {}
+local SweepService = { SWEEP_COST = Rewards.COST }
+local GUARDED_MODULES = { "currency", "battle", "heroes", "player", "equipment", "dungeon", "lootbox", "artifacts", "talents" }
+local RESOURCE_SOURCES = { currency = true, battle = true, heroes = true, player = true, dungeon = true }
+-- token不暴露候选装备/快照；任何提交尝试都消费，失败不能重放带已分配seq的候选。
+local prepared = setmetatable({}, { __mode = "k" }) ---@type table<table, table>
 
--- 每次扫荡消耗的扫荡券数
-SweepService.SWEEP_COST = 1
--- 单次请求最多扫荡次数
-SweepService.MAX_COUNT = 10
--- 扫荡收益 = 即时领取 N 分钟挂机收益（与挂机/离线统一走 IdleIncomeConfig）
-SweepService.REWARD_MINUTES = 10
--- 扫荡固定掉落装备数
-SweepService.EQUIP_DROP_COUNT = 10
--- 扫荡固定掉落卷轴数
-SweepService.SCROLL_DROP_COUNT = 10
--- 扫荡只结算最高已通关一关，不再回退前 5 个小关
-SweepService.SWEEP_STAGE_COUNT = 1
+local function getLuck(ids, heroes, equipment, artifacts, talents)
+    local ctx = EquipmentPower.buildWornContext(ids[1], {
+        heroes = heroes, equipment = equipment, artifacts = artifacts or {}, talents = talents or {},
+    })
+    return ctx and DropSystem.captureTeamLuck(ctx.teamUnits) or 0
+end
 
--- ======================== 执行扫荡 ========================
+--- 预估不读取 PDM、不消费 RNG、不规范化/修改玩家表。
+function SweepService.Preview(heroes, battle, dungeon, equipment, artifacts, talents, teamIdx, stageId, count, player)
+    local ids, err, team = Rewards.getTeam(heroes, battle, teamIdx)
+    if not ids then return nil, err end
+    local entry, stageErr = Rewards.resolveStage(battle, dungeon, team, stageId)
+    if not entry then return nil, stageErr end
+    local times = math.tointeger(tonumber(count == nil and 1 or count) or 0)
+    if not times or times < 1 then return nil, "无效的扫荡次数" end
+    local luck = getLuck(ids, heroes, equipment, artifacts, talents)
+    local result = Rewards.calculate(entry, #ids, times, false, luck, team)
+    result.playerProgress, result.heroProgress = Progress.Preview(heroes, ids, player, result)
+    result.heroExpBatch = nil
+    result.stageId, result.teamIdx, result.count, result.dropLuck = entry.id, team, times, luck
+    result.cost = times * Rewards.COST
+    return result
+end
 
---- 消耗 count 张扫荡券，只扫最高已通关，奖励按次数相乘
---- 经验按指定队伍发放（默认队1）：扫哪队，哪队出战角色吃经验
+-- check/isCancelled必须同步；checkpoint才允许yield，且只在进入live事务之前调用。
+local function checkControl(control)
+    if control and control.isCancelled then
+        local called, cancelled = pcall(control.isCancelled)
+        if not called then return false, tostring(cancelled) end
+        if cancelled then return false, "sweep_cancelled" end
+    end
+    if control and control.check then
+        local called, current, reason = pcall(control.check)
+        if not called then return false, tostring(current) end
+        if current ~= true then return false, reason or "sweep_stale" end
+    end
+    return true
+end
+
+local function makeCheckpoint(control)
+    if not control then return nil end
+    return function(phase, completed, total)
+        local current, reason = checkControl(control)
+        if not current then error(reason, 0) end
+        if control.checkpoint then control.checkpoint(phase, completed, total) end
+        current, reason = checkControl(control)
+        if not current then error(reason, 0) end
+    end
+end
+
+-- 保存每条原table边/值，包括共享引用和额外旧档字段；不遍历或输出玩家文件。
+-- 逐字段检查点仅增长私有records。最终比较不yield，替换等值子表也视为过期。
+local function capture(value, records, byTable, checkpoint, counter)
+    if type(value) ~= "table" or byTable[value] then return end
+    local record = { target = value, fields = {} }
+    byTable[value] = record
+    records[#records + 1] = record
+    for key, child in pairs(value) do
+        record.fields[key] = child
+        capture(child, records, byTable, checkpoint, counter)
+        counter.value = counter.value + 1
+        if checkpoint then checkpoint("prepare", counter.value, 0) end
+    end
+end
+
+local function copyCaptured(value, byTable, copies, checkpoint, counter)
+    if type(value) ~= "table" then return value end
+    if copies[value] then return copies[value] end
+    local result = {}
+    copies[value] = result
+    for key, child in pairs(byTable[value].fields) do
+        result[key] = copyCaptured(child, byTable, copies, checkpoint, counter)
+        counter.value = counter.value + 1
+        if checkpoint then checkpoint("prepare", counter.value, 0) end
+    end
+    return result
+end
+
+local function sameSources(uid, data)
+    for _, name in ipairs(GUARDED_MODULES) do
+        if PDM.GetModule(uid, name) ~= data.sources[name] then return false end
+    end
+    for _, record in ipairs(data.records) do
+        for key, child in pairs(record.fields) do
+            if record.target[key] ~= child then return false end
+        end
+        for key in pairs(record.target) do
+            if record.fields[key] == nil then return false end
+        end
+    end
+    return true
+end
+
+--- args={count,teamIdx,stageId}; control={checkpoint(phase,done,total),check,isCancelled,onCommitted,summaryLogs}。
+--- 返回私有候选token，准备期间绝不扣券/写live/发通知。Bridge负责独占全局RNG、防ABA与生命周期。
 ---@param uid number
----@param count number|nil
----@param teamIdx number|nil 队伍 1~3，默认 1
----@return boolean ok
----@return string|nil err
----@return table|nil result  { gold, heroExp, playerExp, equipCount, scrolls, stages }
-function SweepService.Sweep(uid, count, teamIdx)
-    count = math.floor(tonumber(count) or 1)
-    if count < 1 then count = 1 end
-    if count > SweepService.MAX_COUNT then count = SweepService.MAX_COUNT end
-    local currency   = PDM.GetModule(uid, "currency")
-    local battleData = PDM.GetModule(uid, "battle")
-    local heroesData = PDM.GetModule(uid, "heroes")
-    local playerData = PDM.GetModule(uid, "player")
-    local equipData  = PDM.GetModule(uid, "equipment")
-
-    if not currency or not battleData or not heroesData or not playerData or not equipData then
-        return false, "数据未加载"
-    end
-    -- 请求门禁必须先于队伍归一化、扣券与发奖；不得把无效/锁定队伍偷偷改扫队1。
-    teamIdx = teamIdx == nil and 1 or math.tointeger(tonumber(teamIdx) or 0)
-    if not teamIdx or teamIdx < 1 or teamIdx > ExpTable.TEAM_COUNT then
-        return false, "无效的队伍编号"
-    end
-    if teamIdx > ExpTable.getUnlockedTeamCount(battleData) then
-        return false, string.format("队伍%d尚未解锁（%s）", teamIdx, ExpTable.getTeamUnlockText(teamIdx))
-    end
-    if not equipData.inventory then
-        equipData.inventory = {}
-    end
-
-    -- 检查扫荡券是否足够
-    local owned = currency.sweepTicket or 0
-    local cost = SweepService.SWEEP_COST * count
-    if owned < cost then
-        return false, "扫荡券不足"
-    end
-    local lootboxData = PDM.GetModule(uid, "lootbox")
-    local totalEquipDrops = SweepService.EQUIP_DROP_COUNT * count
-    -- 满包且遗匣未加载时，在扣券/发奖前拒绝，避免产生无法保存的装备。
-    if not lootboxData and EquipmentSystem.getInventoryCount(equipData) + totalEquipDrops
-        > EquipmentSystem.MAX_INVENTORY then
-        return false, "遗匣数据未加载"
-    end
-
-    -- 以玩家最高进度关卡为基准，无论挂机在哪一关
-    local stageConfig = StageProvider.Get()
-    local maxStageId = battleData.maxStageId or battleData.currentStageId
-    if not maxStageId then
-        return false, "尚未开始远征"
-    end
-
-    -- 只扫最高已通关。maxStageId 未通关时回退一关；终焉神殿不产掉落，再回退到上一关。
-    local sweepStageId = maxStageId
-    local cleared = battleData.clearedStages or {}
-    local function isCleared(id)
-        return cleared[id] or cleared[tostring(id)]
-    end
-    if not isCleared(sweepStageId) then
-        sweepStageId = stageConfig.getPrevStageId(sweepStageId)
-            or stageConfig.getLastStageOfPrevDifficulty(sweepStageId)
-    end
-    if sweepStageId and stageConfig.isTerminalTemple and stageConfig.isTerminalTemple(sweepStageId) then
-        sweepStageId = stageConfig.getPrevStageId(sweepStageId)
-            or stageConfig.getTerminalPrevStageId(sweepStageId)
-            or stageConfig.getLastStageOfPrevDifficulty(sweepStageId)
-    end
-    local sweepEntry = sweepStageId and stageConfig.getStage(sweepStageId) or nil
-    if not sweepEntry or (sweepEntry.monsterLevel or 0) <= 0 then
-        return false, "当前关卡无法扫荡"
-    end
-    local sweepStages = { sweepEntry }
-
-    -- 出战英雄：按指定队伍取槽位（排除空槽 0）；队1 无 teams 结构时回退 deployed 镜像
-    local TeamSlots = require("shared.heroes.TeamSlots")
-    TeamSlots.normalize(heroesData)
-    local teamSlots = heroesData.teams and heroesData.teams[teamIdx]
-        and heroesData.teams[teamIdx].slots or nil
-    ---@type integer[]
-    local deployed = {}
-    if teamSlots then
-        for _, slot in ipairs(teamSlots) do
-            local num = tonumber(slot) or 0
-            if num > 0 then deployed[#deployed + 1] = num end
-        end
-    else
-        for _, slot in ipairs(heroesData.deployed or {}) do
-            local num = tonumber(slot) or 0
-            if num > 0 then deployed[#deployed + 1] = num end
-        end
-    end
-    local heroCount = #deployed
-    if heroCount == 0 then
-        return false, "该队伍未出战英雄"
-    end
-
-    -- ── 计算奖励（与挂机/离线统一走 IdleIncomeConfig） ──
-    -- 1 张扫荡券 = 即时领取 REWARD_MINUTES 分钟的挂机收益（基于玩家最高进度关卡）
-    local stageCount = #sweepStages
-    local cfgGoldPerMin, cfgExpPerMin = IdleIncomeConfig.get(maxStageId)
-    local goldAmount = math.floor(cfgGoldPerMin * SweepService.REWARD_MINUTES) * count
-    local baseExp    = math.floor(cfgExpPerMin * SweepService.REWARD_MINUTES) * count
-
-    -- 英雄经验 = baseExp × 出战人数倍率（与挂机一致）
-    local heroCountMult = ExpTable.heroCountExpMult[heroCount] or 1.0
-    local heroExpTotal  = math.floor(baseExp * heroCountMult)
-
-    -- [对比日志] 旧方案（首通奖励×4/关）值，仅用于新旧对比
-    local oldTotalGold, oldTotalExp = 0, 0
-    for _, entry in ipairs(sweepStages) do
-        oldTotalGold = oldTotalGold + (entry.fcGold or 0)
-        oldTotalExp  = oldTotalExp  + (entry.fcExp or 0)
-    end
-    local oldGold = math.floor(oldTotalGold * 4)
-    local oldExp  = math.floor(oldTotalExp * 4)
-    print(string.format("[SWEEP_COMPARE] maxStage=%s  gold: %d→%d(%+d)  playerExp: %d→%d(%+d)  (cfg %d/%d per-min × %d min)",
-        tostring(maxStageId), oldGold, goldAmount, goldAmount - oldGold,
-        oldExp, baseExp, baseExp - oldExp,
-        cfgGoldPerMin, cfgExpPerMin, SweepService.REWARD_MINUTES))
-
-    -- ── 扣券 ──
-    currency.sweepTicket = owned - cost
-    PDM.MarkDirty(uid, "currency")
-
-    -- ── 发放奖励 ──
-
-    -- 1) 金币
-    if goldAmount > 0 then
-        currency.gold = (currency.gold or 0) + goldAmount
-        PDM.MarkDirty(uid, "currency")
-    end
-
-    -- 2) 英雄经验
-    local perHeroExp = 0
-    if heroCount > 0 and heroExpTotal > 0 then
-        perHeroExp = math.floor(heroExpTotal / heroCount + 0.5)
-        for _, heroId in ipairs(deployed) do
-            local numId = tonumber(heroId) or heroId
-            local heroData = heroesData.roster[numId]
-            if heroData then
-                heroData.exp = (heroData.exp or 0) + perHeroExp
-                ExpTable.autoLevelUpHero(heroData)
+---@param args table
+---@param control table|nil
+---@return table|nil, string|nil
+function SweepService.PrepareSweep(uid, args, control)
+    args = args or {}
+    local times = math.tointeger(tonumber(args.count == nil and 1 or args.count) or 0)
+    if not times or times < 1 then return nil, "无效的扫荡次数" end
+    local current, reason = checkControl(control)
+    if not current then return nil, reason end
+    local sources = {}
+    for _, name in ipairs(GUARDED_MODULES) do sources[name] = PDM.GetModule(uid, name) end
+    local currency, battle, heroes, player, equipment = sources.currency, sources.battle, sources.heroes, sources.player, sources.equipment
+    if not currency or not battle or not heroes or not player or not equipment then return nil, "数据未加载" end
+    local ids, teamErr, team = Rewards.getTeam(heroes, battle, args.teamIdx)
+    if not ids then return nil, teamErr end
+    local entry, stageErr = Rewards.resolveStage(battle, sources.dungeon, team, args.stageId)
+    if not entry then return nil, stageErr end
+    local resourceOnly = entry.resourceDungeonId == "gold_mine" or entry.resourceDungeonId == "black_diamond"
+    local cost, owned = times * Rewards.COST, tonumber(currency.sweepTicket) or 0
+    if owned ~= owned or owned == math.huge or owned < cost then return nil, "扫荡券不足" end
+    local ready, readyErr = Transaction.CanCommitRewardTransaction(uid)
+    if not ready then return nil, readyErr end
+    local checkpoint = makeCheckpoint(control)
+    local called, candidate, err = pcall(function()
+        local records, byTable, counter = {}, {}, { value = 0 }
+        if checkpoint then checkpoint("prepare", 0, 0) end
+        -- 纯货币副本不读取装备/遗匣内容，也不受幸运或自动分解影响。
+        -- 全部根引用仍校验；深层值只冻结本次结算实际读取/修改的模块。
+        for _, name in ipairs(GUARDED_MODULES) do
+            if not resourceOnly or RESOURCE_SOURCES[name] then
+                capture(sources[name], records, byTable, checkpoint, counter)
             end
         end
-        PDM.MarkDirty(uid, "heroes")
-        HeroService.ApplyResonanceSync(uid)
-    end
-
-    -- 3) 扫荡不再增加远征经验
-
-    -- 4) 装备掉落：生成完整实例，满包时转入遗匣。
-    local MC = require("config.MonsterConfig")
-    local equipsPerStage = math.floor(totalEquipDrops / stageCount)
-    local remainder = totalEquipDrops - equipsPerStage * stageCount
-    local grantedEquips = {}
-    local equipByQuality = {}  -- [quality] = count
-    local inventoryCount, lootboxCount = 0, 0
-
-    for stageIdx, stageEntry in ipairs(sweepStages) do
-        -- 按实际出怪队列构建品质池（与 BattleScene.generateEnemyList 一致）
-        -- 挂机模式：idleCount 只怪，Boss 占 1 个名额，普通怪 round-robin 填充其余
-        local spawnList = {}
-        local monsters = stageEntry.monsters or {}
-        local totalCount = stageEntry.idleCount or 10
-        local hasBoss = stageEntry.bossId and stageEntry.bossId > 0
-        local normalCount = hasBoss and (totalCount - 1) or totalCount
-
-        if #monsters > 0 then
-            for i = 1, normalCount do
-                local typeIdx = ((i - 1) % #monsters) + 1
-                spawnList[#spawnList + 1] = monsters[typeIdx]
-            end
+        -- 主线/装备副本仍复制幸运与分解上下文；纯货币只需私有编队副本。
+        local copies, snapshot = {}, {}
+        local copiedModules = resourceOnly and { "heroes" } or { "heroes", "equipment", "artifacts", "talents" }
+        for _, name in ipairs(copiedModules) do
+            snapshot[name] = copyCaptured(sources[name], byTable, copies, checkpoint, counter)
         end
-        if hasBoss then
-            -- Boss 插入队列中间（与战斗逻辑一致）
-            local insertPos = math.ceil(#spawnList / 2) + 1
-            table.insert(spawnList, insertPos, stageEntry.bossId)
+        local data = { uid = uid, control = control, sources = sources, records = records,
+            ids = ids, team = team, entry = entry, times = times, owned = owned, cost = cost,
+            keptEquips = {}, decomposedEquips = {}, autoEssence = 0 }
+        if not sameSources(uid, data) then return nil, "sweep_stale" end
+        -- 首个检查点之前已做快速拒绝；捕获尚未访问的字段可能被自定义宿主改动。
+        -- 再验证所有前置推导量，绝不把旧队员/余额与后来捕获的快照拼接提交。
+        -- 任意瞬时ABA仍由Bridge epoch/revision保证，不声称单靠最终值能检测历史。
+        local capturedIds, _, capturedTeam = Rewards.getTeam(snapshot.heroes, sources.battle, args.teamIdx)
+        local capturedEntry = capturedIds and Rewards.resolveStage(sources.battle, sources.dungeon, capturedTeam, args.stageId)
+        if not capturedIds or capturedTeam ~= team or not capturedEntry or capturedEntry.id ~= entry.id
+            or (tonumber(sources.currency.sweepTicket) or 0) ~= owned or #capturedIds ~= #ids then
+            return nil, "sweep_stale"
         end
-
-        local poolSize = #spawnList
-        local maxDropQ = stageConfig.getMaxDropQuality and stageConfig.getMaxDropQuality(stageEntry) or SC.getMaxDropQuality(stageEntry)
-
-        -- 该关卡分配的装备数（前 remainder 个关卡多分 1 件）
-        local dropCount = equipsPerStage + (stageIdx <= remainder and 1 or 0)
-
-        for i = 1, dropCount do
-            local quality
-            if poolSize > 0 then
-                local typeIdx = math.random(1, poolSize)
-                local monsterId = spawnList[typeIdx]
-                local template = MC.MONSTERS[monsterId]
-                local monsterQ = template and template.quality or 1
-                quality = OfflineCalc._rollQualityByMonster(monsterQ)
+        for index, id in ipairs(ids) do
+            if capturedIds[index] ~= id then return nil, "sweep_stale" end
+        end
+        local luck = resourceOnly and 0 or getLuck(ids, snapshot.heroes, snapshot.equipment, snapshot.artifacts, snapshot.talents)
+        data.rewards = Rewards.calculate(entry, #ids, times, true, luck, team,
+            control and { checkpoint = checkpoint, summaryLogs = control.summaryLogs } or nil)
+        local equips = data.rewards.equips
+        if checkpoint then checkpoint("classify", 0, #equips) end
+        for index, equip in ipairs(equips) do
+            if not equip.locked and BlacksmithConfig.shouldAutoDecompose(snapshot.equipment.settings, equip.quality, equip.level) then
+                data.decomposedEquips[#data.decomposedEquips + 1] = equip
+                data.autoEssence = data.autoEssence + BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
             else
-                quality = 1
+                data.keptEquips[#data.keptEquips + 1] = equip
             end
-            if quality > maxDropQ then quality = maxDropQ end
-            local equip = EquipmentSystem.generateRandom(stageEntry.monsterLevel, quality)
-            if not equip then
-                print("[SweepService][WARN] generateRandom failed level="
-                    .. tostring(stageEntry.monsterLevel) .. " quality=" .. tostring(quality))
-            else
-                local destination = LootBoxSystem.deliverEquipment(lootboxData, equipData, equip)
-                if destination == "lootbox" then
-                    lootboxCount = lootboxCount + 1
-                else
-                    inventoryCount = inventoryCount + 1
-                end
-                grantedEquips[#grantedEquips + 1] = {
-                    type = "equip",
-                    templateId = equip.templateId,
-                    quality = equip.quality,
-                    level = equip.level,
-                    slot = equip.slot,
-                    equip = equip,
-                    destination = destination,
-                }
-                equipByQuality[equip.quality] = (equipByQuality[equip.quality] or 0) + 1
+            if checkpoint then checkpoint("classify", index, #equips) end
+        end
+        if #data.keptEquips > 0
+            and EquipmentSystem.getInventoryCount(snapshot.equipment) + #data.keptEquips > EquipmentSystem.MAX_INVENTORY
+            and not sources.lootbox then return nil, "遗匣数据未加载" end
+        local valid, checkErr = checkControl(control)
+        if not valid then return nil, checkErr end
+        if not sameSources(uid, data) then return nil, "sweep_stale" end
+        local token = {}
+        prepared[token] = data
+        return token
+    end)
+    if not called then return nil, tostring(candidate) end
+    if type(candidate) ~= "table" then return nil, err end
+    return candidate, nil
+end
+
+--- 最终校验→原事务之间没有yield；同步保存、规范化和通知仍可能出现大尾段。
+---@param uid number
+---@param token table
+---@param control table|nil
+---@return boolean, string|nil, table|nil
+function SweepService.CommitSweep(uid, token, control)
+    local data = type(token) == "table" and prepared[token] or nil
+    if data then prepared[token] = nil end
+    if not data or data.uid ~= uid or data.control ~= control then return false, "sweep_candidate_invalid" end
+    local current, reason = checkControl(control)
+    if not current then return false, reason end
+    if not sameSources(uid, data) then return false, "sweep_stale" end
+    local sources, rewards = data.sources, data.rewards
+    local currency, equipment, lootbox = sources.currency, sources.equipment, sources.lootbox
+    local keptEquips, decomposedEquips, autoEssence = data.keptEquips, data.decomposedEquips, data.autoEssence
+    local ok, err, result = Transaction.CommitRewardTransaction(uid, function()
+        currency.sweepTicket = data.owned - data.cost
+        currency.gold = (currency.gold or 0) + rewards.gold
+        currency.gems = (currency.gems or 0) + rewards.diamond
+        if autoEssence > 0 then currency.essence = (currency.essence or 0) + autoEssence end
+        for field, amount in pairs(rewards.scrollDrops) do currency[field] = (currency[field] or 0) + amount end
+        Transaction.MarkRewardDirty(uid, "currency")
+        local granted, byQuality = {}, {}
+        local inventoryCount, lootboxCount = 0, 0
+        local delivery = #keptEquips > 0
+            and LootBoxSystem.createDeliveryContext(equipment, { summaryLogs = control and control.summaryLogs }) or nil
+        for _, equip in ipairs(keptEquips) do
+            local destination = LootBoxSystem.deliverEquipment(lootbox, equipment, equip, delivery)
+            if destination == "lootbox" then lootboxCount = lootboxCount + 1
+            else inventoryCount = inventoryCount + 1 end
+            granted[#granted + 1] = { type = "equip", templateId = equip.templateId,
+                quality = equip.quality, level = equip.level, slot = equip.slot,
+                equip = equip, destination = destination }
+            byQuality[equip.quality] = (byQuality[equip.quality] or 0) + 1
+        end
+        if inventoryCount > 0 then Transaction.MarkRewardDirty(uid, "equipment") end
+        if autoEssence > 0 and lootbox then
+            for _, equip in ipairs(decomposedEquips) do
+                local essence = BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
+                BlacksmithConfig.recordAutoDecompose(lootbox, equip.quality, equip.level, essence)
             end
         end
-    end
-    if inventoryCount > 0 then
-        PDM.MarkDirty(uid, "equipment")
-    end
-    if lootboxCount > 0 then
-        PDM.MarkDirty(uid, "lootbox")
-        print("[SweepService] 满包装备已入遗匣=" .. lootboxCount
-            .. " uid=" .. tostring(uid))
-    end
-
-    -- 5) 卷轴掉落：固定数量，随机分配到 6 种类型
-    local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
-    local scrollDrops = {}
-    for _ = 1, SweepService.SCROLL_DROP_COUNT * count do
-        local st = scrollTypes[math.random(1, #scrollTypes)]
-        scrollDrops[st] = (scrollDrops[st] or 0) + 1
-    end
-    local totalScrolls = SweepService.SCROLL_DROP_COUNT * count
-    for scrollField, amount in pairs(scrollDrops) do
-        if amount > 0 then
-            currency[scrollField] = (currency[scrollField] or 0) + amount
+        if lootboxCount > 0 or (autoEssence > 0 and lootbox) then Transaction.MarkRewardDirty(uid, "lootbox") end
+        if autoEssence > 0 then
+            rewards.autoDecomposeCount, rewards.autoDecomposeEssence = #decomposedEquips, autoEssence
         end
-    end
-    PDM.MarkDirty(uid, "currency")
+        rewards.playerProgress, rewards.heroProgress = Progress.Apply(sources.heroes, data.ids, sources.player, rewards)
+        if rewards.heroExp > 0 then Transaction.MarkRewardDirty(uid, "heroes") end
+        if rewards.playerExp > 0 then Transaction.MarkRewardDirty(uid, "player") end
+        rewards.heroExpBatch = nil
+        rewards.equips, rewards.equipByQuality = granted, byQuality
+        rewards.count, rewards.teamIdx, rewards.stageId = data.times, data.team, data.entry.id
+        rewards.sweepStages, rewards.ticketLeft = { data.entry.id }, currency.sweepTicket
+        rewards.inventoryCount, rewards.lootboxCount = inventoryCount, lootboxCount
+        return true, nil, rewards
+    end, function()
+        -- 原事务此回调在persist成功、所有订阅者之前；回调失败不能把真实到账说成未完成。
+        if control and control.onCommitted then pcall(control.onCommitted, rewards) end
+    end)
+    if not ok then return false, err end
+    pcall(function()
+        print(string.format("[SweepService] 队%d 关卡%d %d场 金币=%d 黑晶=%d 经验=%d 装备=%d 卷轴=%d 剩余券=%s",
+            data.team, data.entry.id, data.times, result.gold, result.diamond, result.playerExp,
+            result.equipCount, result.scrollCount, tostring(result.ticketLeft)))
+    end)
+    return true, nil, result
+end
 
-    -- 收集扫荡关卡 ID 列表（供客户端显示）
-    local sweepStageIds = {}
-    for _, entry in ipairs(sweepStages) do
-        sweepStageIds[#sweepStageIds + 1] = entry.id
-    end
-
-    print(string.format("[SweepService] uid=%s swept %d stages (%s): gold=%d heroExp=%d playerExp=%d equips=%d scrolls=%d ticketLeft=%d",
-        tostring(uid), stageCount, table.concat(sweepStageIds, ","),
-        goldAmount, heroExpTotal, baseExp,
-        totalEquipDrops, totalScrolls, currency.sweepTicket))
-
-    return true, nil, {
-        gold            = goldAmount,
-        heroExp         = perHeroExp,
-        heroExpTotal    = heroExpTotal,
-        playerExp       = baseExp,
-        equipCount      = #grantedEquips,
-        equips          = grantedEquips,
-        count           = count,
-        equipByQuality  = equipByQuality,
-        scrollDrops     = scrollDrops,
-        ticketLeft      = currency.sweepTicket,
-        sweepStages     = sweepStageIds,  -- 实际扫荡的关卡列表
-        teamIdx         = teamIdx,        -- 经验发放队伍
-    }
+--- 老API不传control仍同步完成；可选control供直接协程调用方使用同一私有准备链。
+function SweepService.Sweep(uid, count, teamIdx, stageId, control)
+    local candidate, err = SweepService.PrepareSweep(uid, { count = count, teamIdx = teamIdx, stageId = stageId }, control)
+    if not candidate then return false, err end
+    return SweepService.CommitSweep(uid, candidate, control)
 end
 
 return SweepService

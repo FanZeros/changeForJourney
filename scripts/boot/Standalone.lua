@@ -58,13 +58,15 @@ local LetterIntro        = require("ui.story.gate.LetterIntro")          -- [Let
 local CharacterDetail    = require("ui.character.detail.CharacterDetail")  -- [三队并行] 中缝返回键目标
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")     -- [LetterIntro] 情景对话
 local DrawUtil           = require("core.DrawUtil")
-local DarkIcon           = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库 + 画廊验收页
+local DarkIcon           = require("core.DarkIcon")  -- 矢量图标库 + 画廊验收页
 local StandaloneSave     = require("boot.StandaloneSave") -- [单机存档] 本地快照/恢复（无联网）
 local ClientMsgHandler   = require("runtime.ClientMessageHandler")
-local TutorialManager    = require("systems.TutorialManager")  -- [横屏接线 0928] 新手引导(去多人化重构时接线丢失,此处恢复)
+local TutorialManager    = require("systems.TutorialManager")  -- 新手引导(去多人化重构时接线丢失,此处恢复)
 local LocalActionBridge  = require("runtime.LocalActionBridge")
 local StandaloneBoot     = require("boot.StandaloneBoot")
 local StandaloneRT       = require("boot.StandaloneRT")
+local StartupQueue       = require("boot.StartupQueue")
+local SidePanelBattlePause = require("ui.battle.scene.SidePanelBattlePause")
 
 local Standalone = {}
 
@@ -100,60 +102,42 @@ local invalidateImageCache_ = nil
 local sceneRef_ = nil  -- 保存 scene 引用，供 requestResetToStartScreen 使用
 local startScreenWasOpen_ = false
 local postStartFlowDone_ = false  -- [LetterIntro] 开场/离线收益只触发一次（等标题关闭）
-local storyBackfilled_ = false    -- [旧档补播] 已首通关卡的未领情景只补排队一次
+local storyBackfilled_ = false    -- 已首通关卡的未领情景只补排队一次
 local startFlowBegun_ = false     -- 标题已关，BGM 已起；离线结算可能还在等角色刷新
 local fontNormal = -1
+---@type table|nil
 local bootQueue_ = nil
-local bootIdx_ = 0
 local bootReady_ = false
--- [启动优化] 标题提前解锁：核心 UI（到 TownScene 为止）完成后即可点击进入，
--- 弹窗类 init / 接线 / firstStage 在标题后的后台帧继续分步消化。
--- 用户反馈的 64~66% 卡死均为旧包行为；提前解锁可把剩余重活彻底移出"进游戏前"。
-local TITLE_UNLOCK_STEP = 9
+---@type table|nil
+local entryQueue_ = nil
+local entryPrepared_ = false
+---@type function|nil
+local firstStageStep_ = nil
+
+--- CE 发奖仅在真实开场/离线初算完成后开放，不以面板可见作为就绪依据。
+function Standalone.isRewardReady()
+    return bootReady_ and postStartFlowDone_ and StandaloneRT.entryRendered == true
+        and not StandaloneRT.entryPreparing and not StandaloneRT.entryError
+end
 
 local function pumpBootQueue_()
-    if not bootQueue_ then return end
-    -- 每帧最多消化 8ms，避免单步解码把预览判定成引擎异常
-    local tFrame = time.elapsedTime
-    while bootQueue_ and (time.elapsedTime - tFrame) < 0.008 do
-        bootIdx_ = bootIdx_ + 1
-        local step = bootQueue_[bootIdx_]
-        if not step then
-            bootQueue_ = nil
-            bootReady_ = true
-            StandaloneRT.bootReady_ = true
-            StandaloneRT.vg = vg
-            DarkTitleScreen.setReady(true)
-            print("[Standalone] boot queue complete, title unlocked")
+    if not bootQueue_ or StandaloneRT.bootError or not StandaloneRT.bootRendered then return end
+    -- 整个init可在真实图片缓存未命中时让出；缓存命中不占解码额度。
+    -- 每帧只恢复一次，不把多个轻步骤与下一个重步骤挤到同一帧。
+    if bootQueue_:pump() then
+        if bootQueue_.failed then
+            StandaloneRT.bootError = tostring(bootQueue_.error)
+            DarkTitleScreen.setReady(false)
+            print("[Standalone] boot stopped after critical failure")
             return
         end
-        local name, fn = step[1], step[2]
-        local t0 = time.elapsedTime
-        local ok, err = pcall(fn)
-        local dt = time.elapsedTime - t0
-        local total = bootQueue_ and #bootQueue_ or bootIdx_
-        if not ok then
-            print("[Standalone] boot step FAIL " .. tostring(name) .. ": " .. tostring(err))
-        else
-            print(string.format("[Standalone] boot step %d/%d %s (%.0fms)",
-                bootIdx_, total, name, dt * 1000))
-        end
-        DarkTitleScreen.loadDone = bootIdx_
-        DarkTitleScreen.loadTotal = total
-        DarkTitleScreen.loadPercent = math.floor(bootIdx_ * 100 / math.max(1, total))
-        -- [启动诊断] 加载条上直接显示步骤名与耗时，便于真机定位哪一步超帧预算
-        DarkTitleScreen.loadStep = name
-        DarkTitleScreen.loadStepMs = math.floor(dt * 1000)
-        if bootIdx_ >= TITLE_UNLOCK_STEP then
-            -- 核心步骤完成：解锁标题（后台继续泵完剩余步骤）
-            bootReady_ = true
-            StandaloneRT.bootReady_ = true
-            StandaloneRT.vg = vg
-            DarkTitleScreen.setReady(true)
-        else
-            DarkTitleScreen.setReady(false)
-        end
-        if dt >= 0.008 then break end
+        bootQueue_ = nil
+        bootReady_ = true
+        StandaloneRT.bootReady_ = true
+        StandaloneRT.vg = vg
+        require("boot.PerformanceHooks").install()
+        DarkTitleScreen.setReady(true)
+        print("[Standalone] boot queue complete, title unlocked")
     end
 end
 
@@ -169,7 +153,7 @@ local PRELOAD_TIME_LIMIT = 180               -- DWP 预下载等待上限（秒�
 local BG_FRAME_BUDGET = 0.003                -- 后台补载每帧时间预算（秒）
 local BG_SKIP_SIZE = 1024 * 1024             -- 后台跳过的大图阈值（1MB，保持惰性）
 
---- [一次性加载] 预载进度遮罩（全屏，W/H 为当前绘制空间尺寸；须在退出变换内调用）
+-- 预载进度遮罩（全屏，W/H 为当前绘制空间尺寸；须在退出变换内调用）
 local function DrawPreloadOverlay(vg, W, H)
     -- 进度源: DWP 下载进度（等待期主显示）；fallback 兼容旧 idx/total
     local total = (preload_.dwpTotal > 0) and preload_.dwpTotal or #preload_.list
@@ -195,7 +179,6 @@ local function DrawPreloadOverlay(vg, W, H)
         216, 201, 163, 2)
 end
 
-
 -- Design resolution (Mode A — 1080x2400 竖屏)
 local DESIGN_W = GameConfig.Design.WIDTH
 local DESIGN_H = GameConfig.Design.HEIGHT
@@ -205,69 +188,134 @@ local DESIGN_H = GameConfig.Design.HEIGHT
 -- [Standalone] battle 状态本地同步：无 Server 推送时，把 BattleScene 本地进度
 -- （maxStageId_/clearedStages）每秒比对一次，变化才发布实时镜像，
 -- 供 TutorialManager / BottomNav / DungeonBattleScene 的建筑与页签解锁判定使用
-local battleSync = { lastMax = -1, lastCleared = "", lastStages = "", acc = 0 }
+---@type table
+local battleSync = { lastMax = -1, lastCleared = {}, lastStages = {}, acc = 0 }
+local BattleProgressSchema = require("shared.battle.BattleSchema")
 local function progressRank(id)
     local previous = StageConfig.getTerminalPrevStageId(id)
     return previous and previous + 0.5 or id
 end
+
+-- 只承认严格 true 的正整数事实；数字/字符串键归一，不排序、不拼接全账本。
 local function clearedSnapshot(entries)
-    local normalized, ids = {}, {}
+    local normalized, count = {}, 0
     if type(entries) == "table" then
         for key, value in pairs(entries) do
-            local id = math.tointeger(tonumber(key) or 0)
+            local id = (type(key) == "number" or type(key) == "string")
+                and math.tointeger(tonumber(key) or 0)
             if value == true and id and id > 0 then
                 local savedKey = tostring(id)
                 if not normalized[savedKey] then
                     normalized[savedKey] = true
-                    ids[#ids + 1] = id
+                    count = count + 1
                 end
             end
         end
     end
-    table.sort(ids)
-    local keys = {}
-    for i, id in ipairs(ids) do keys[i] = tostring(id) end
-    return normalized, table.concat(keys, ","), #ids
+    return normalized, count
+end
+
+local function sameProgressMap(a, b)
+    if type(a) ~= "table" or type(b) ~= "table" then return false end
+    for key, value in pairs(a) do if b[key] ~= value then return false end end
+    for key, value in pairs(b) do if a[key] ~= value then return false end end
+    return true
 end
 
 local function SyncBattleState(dt)
-    if not bootReady_ then return end
+    if not bootReady_ or StandaloneRT.entryPreparing then return end
     battleSync.acc = battleSync.acc + (dt or 0)
     if battleSync.acc < 1.0 then return end
     battleSync.acc = 0
     local maxId = tonumber(BattleScene.getMaxStageId()) or 0
-    local clearedStr, liveSignature = clearedSnapshot(BattleScene.getClearedStages())
-    -- 模块更新是整表替换。合并双源永久账本，不能把场景缺项回写成删档。
-    -- 显式清档入口会同时重置两源；这里不缓存旧账本，也不阻止合法清档。
+    local liveLedger = BattleScene.getClearedStages()
+    local mergedCleared, clearedN = clearedSnapshot(liveLedger)
     local battle = ClientDispatcher.get("battle")
     if type(battle) ~= "table" then battle = {} end
-    local savedCleared, savedSignature = clearedSnapshot(battle.clearedStages)
-    for key in pairs(savedCleared) do clearedStr[key] = true end
-    local mergedCleared, signature, clearedN = clearedSnapshot(clearedStr)
-    -- 合并永久事实只更新原账本，不回灌场景、重开驱动或清战斗状态。
-    local liveLedger = BattleScene.getClearedStages()
+    local savedCleared = clearedSnapshot(battle.clearedStages)
+    local ledgersDiffer = not sameProgressMap(mergedCleared, savedCleared)
+    for key in pairs(savedCleared) do
+        if not mergedCleared[key] then
+            mergedCleared[key] = true
+            clearedN = clearedN + 1
+        end
+    end
+    -- 只从本轮两源取并集，不以旧缓存补事实；两源明确清空时允许合法清档。
+    -- 补原场景账本但不回灌场景/驱动，不重开当前波或改变 pending 属性。
     if type(liveLedger) == "table" then
-        for key in pairs(mergedCleared) do liveLedger[tonumber(key)] = true end
+        for key in pairs(mergedCleared) do
+            local id = tonumber(key)
+            if liveLedger[id] ~= true then liveLedger[id] = true end
+        end
     end
     local savedMax = tonumber(battle.maxStageId) or 0
     local mergedMax = progressRank(maxId) >= progressRank(savedMax) and maxId or savedMax
+    local savedMaxChanged = battle.maxStageId ~= mergedMax
     battle.maxStageId = mergedMax
-    battle.clearedStages = mergedCleared
-    local captured = StandaloneSave.CaptureBattleProgress(battle)
-    local teams = captured.teamStageIds
-    local stageSignature = table.concat({ tostring(teams["1"]), tostring(teams["2"]), tostring(teams["3"]) }, ",")
-    if mergedMax == battleSync.lastMax and signature == battleSync.lastCleared
-        and stageSignature == battleSync.lastStages
-        and liveSignature == signature and savedSignature == signature then return end
+    if not sameProgressMap(battle.clearedStages, mergedCleared) then
+        battle.clearedStages = mergedCleared
+    end
+
+    -- 仅三队小表规范化以判断进度；不在稳态调用完整 Capture 再扫描两份账本。
+    -- 浅拷贝来自当前模块，非进度字段（效率/挂机/扩展数据）保持当前引用和值。
+    local candidate = {}
+    for key, value in pairs(battle) do candidate[key] = value end
+    candidate.clearedStages = mergedCleared
+    local liveTeams = BattleTriPage.getTeamStageIds()
+    if type(liveTeams) == "table" then
+        ---@cast liveTeams table
+        local savedTeams = type(battle.teamStageIds) == "table" and battle.teamStageIds or {}
+        local ids = {}
+        for team = 1, 3 do
+            ids[tostring(team)] = liveTeams[team] or liveTeams[tostring(team)]
+                or savedTeams[tostring(team)] or savedTeams[team]
+        end
+        candidate.teamStageIds = ids
+        candidate.currentStageId = ids["1"] or battle.currentStageId
+    end
+    BattleProgressSchema.normalizeTeamStageIds(candidate, false)
+    local teams = candidate.teamStageIds
+    if candidate.maxStageId == battleSync.lastMax
+        and battle.maxStageId == candidate.maxStageId
+        and sameProgressMap(mergedCleared, battleSync.lastCleared)
+        and sameProgressMap(teams, battleSync.lastStages)
+        and battle.currentStageId == candidate.currentStageId
+        and sameProgressMap(battle.teamStageIds, teams)
+        and battle.teamCurrentStageIds == nil and not ledgersDiffer and not savedMaxChanged then return end
+
+    local captured = StandaloneSave.CaptureBattleProgress(candidate)
     if battleSync.lastMax == -1 then
-        print("[Standalone] battle 状态首次同步: maxStageId=" .. tostring(mergedMax) .. ", cleared=" .. clearedN)
-    elseif liveSignature ~= savedSignature then
+        print("[Standalone] battle 状态首次同步: maxStageId=" .. tostring(captured.maxStageId) .. ", cleared=" .. clearedN)
+    elseif ledgersDiffer then
         print("[Standalone] battle 通关账本合并: cleared=" .. clearedN)
     end
-    battleSync.lastMax = mergedMax
-    battleSync.lastCleared = signature
-    battleSync.lastStages = stageSignature
+    battleSync.lastMax = captured.maxStageId
+    -- 冻结比较值，不能与可原地修改的已发布模块共用账本/队伍表。
+    battleSync.lastCleared = clearedSnapshot(captured.clearedStages)
+    battleSync.lastStages = { ["1"] = captured.teamStageIds["1"],
+        ["2"] = captured.teamStageIds["2"], ["3"] = captured.teamStageIds["3"] }
     ClientDispatcher.publishLive("battle", captured)
+end
+
+-- 仅缓存红点显示。真实装备投递仍直接调用 EquipmentSystem.isInventoryFull。
+---@type table
+local inventoryBadge = { ready = false, full = false, acc = 0 }
+local function updateInventoryBadges(dt)
+    local equipment = ClientDispatcher.get("equipment")
+    local inventory = type(equipment) == "table" and equipment.inventory or nil
+    local revision = PlayerStore.GetRevision and PlayerStore.GetRevision("equipment") or 0
+    inventoryBadge.acc = inventoryBadge.acc + math.max(0, dt or 0)
+    if not inventoryBadge.ready or inventoryBadge.equipment ~= equipment
+        or inventoryBadge.inventory ~= inventory or inventoryBadge.revision ~= revision
+        or inventoryBadge.acc >= 0.5 then
+        inventoryBadge.full = type(inventory) == "table"
+            and EquipmentSystem.isInventoryFull(equipment) or false
+        inventoryBadge.equipment, inventoryBadge.inventory = equipment, inventory
+        inventoryBadge.revision, inventoryBadge.acc, inventoryBadge.ready = revision, 0, true
+    end
+    -- 仍每帧设置两个显示标志，页面重开/显示重置不借旧控件状态。
+    TownScene.setSmithRedDot(inventoryBadge.full)
+    BlacksmithPage.setDecomposeRedDot(inventoryBadge.full)
 end
 
 local physW, physH, dpr, logicalW, logicalH
@@ -322,6 +370,12 @@ function Standalone._bootWiring()
 end
 
 function Standalone.Start()
+    battleSync = { lastMax = -1, lastCleared = {}, lastStages = {}, acc = 0 }
+    inventoryBadge = { ready = false, full = false, acc = 0 }
+    entryQueue_, entryPrepared_ = nil, false
+    StandaloneRT.entryPrepared, StandaloneRT.entryPreparing, StandaloneRT.entryRendered = false, false, false
+    StandaloneRT.bootError, StandaloneRT.entryError = nil, nil
+    StandaloneRT.bootRendered = false
     BattleTriPage.setBattleReady(false)
     StandaloneSave.SetBattlePage(BattleTriPage)
     -- 0. PlayerStore 初始化：单机模式下此前从未调用（仅多人 Client.lua 调），
@@ -364,6 +418,7 @@ function Standalone.Start()
         local key = tostring(flags or 0) .. ":" .. path
         local cached = byContext[key]
         if cached then return cached end
+        StartupQueue.checkpoint()
         local handle = createImage(ctx, path, flags)
         if handle and handle > 0 then byContext[key] = handle end
         return handle
@@ -406,8 +461,8 @@ function Standalone.Start()
     DarkTitleScreen.init(vg)
     DarkTitleScreen.setReady(false)
     DarkTitleScreen.open()
-    bootQueue_ = {
-        { "LetterIntro", function() LetterIntro.init(vg) end },
+    local bootSteps = {
+        { "LetterIntro", function() LetterIntro.init(vg); LetterIntro.preload() end },
         { "TopBar", function() TopBar.init(vg) end },
         { "BottomNav", function() BottomNav.init(vg) end },
         { "BattleScene", function() BattleScene.init(vg) end },
@@ -415,7 +470,7 @@ function Standalone.Start()
         { "ScenarioDialogue", function() ScenarioDialogue.init(vg, scene) end },
         { "CharacterPanel", function() CharacterPanel.init(vg) end },
         { "BackpackPanel", function() BackpackPanel.init(vg) end },
-        { "TownScene", function() TownScene.init(vg) end },
+        { "TownScene", function() TownScene.init(vg); TownScene.preload(vg) end },
         { "RewardPopup", function() RewardPopup.init(vg) end },
         { "OfflineRewardPanel", function() OfflineRewardPanel.init(vg) end },
         { "LevelUpPopup", function() LevelUpPopup.init(vg) end },
@@ -438,6 +493,11 @@ function Standalone.Start()
             -- [单机存档] 回灌战斗进度（须在阵容同步前：setBattleData 先切到存档关卡，
             -- 随后 setAllies + reloadStage 用恢复出的阵容重载同一关卡）
             StandaloneSave.ApplyBattleProgress()
+            -- 旧档在UI订阅建立前已恢复；首场不能拿面板的临时默认阵容预热。
+            local restoredHeroes = ClientDispatcher.get("heroes")
+            if restoredHeroes and not CharacterPanel.isHeroesDataApplied() then
+                CharacterPanel.setHeroesData(restoredHeroes)
+            end
             TopBar.markAvatarViewed()
             TopBar.setTotalPower(CharacterPanel.getTotalPower())
             local initialTeam = CharacterPanel.getDeployedTeam()
@@ -447,11 +507,46 @@ function Standalone.Start()
                 BattleScene.reloadStage({ startSearching = true })
                 print("[Standalone] 初始阵容同步: " .. #initialTeam .. " 个英雄（寻怪模式）")
             end
-            BattleTriPage.setBattleReady(true)
+        end },
+        { "BattleAssets", function()
+            BattleTriPage.preload(vg)
+            local BattleDraw = require("ui.battle.scene.BattleDraw")
+            BattleDraw.preloadCards(vg, BattleScene.getAllies())
+            BattleDraw.preloadCards(vg, BattleScene.getEnemies())
+            ProjectileSystem.preloadBattleEffects()
+            GameSFX.preload("hit")
+        end },
+        { "BattleEntry", function()
+            entryPrepared_ = assert(BattleTriPage.prepareEntry(vg), "首场入场准备未完成")
+            StandaloneRT.entryPrepared = entryPrepared_
         end },
     }
-    bootIdx_ = 0
-    print("[Standalone] boot queue " .. #bootQueue_ .. " steps (title first)")
+    for _, step in ipairs(bootSteps) do
+        if step[1] == "firstStage" then firstStageStep_ = step[2] break end
+    end
+    bootQueue_ = StartupQueue.new(bootSteps, {
+        stopOnError = true,
+        onComplete = function(index, name, elapsed, ok, err)
+            -- 只有首场准备完整成功才解除战斗门禁；缺图仍沿素材模块自身的返回值容错。
+            -- 未捕获的初始化异常停止队列，不能把后续结束伪装成全局就绪。
+            if name == "firstStage" and ok then BattleTriPage.setBattleReady(true) end
+            if not ok then
+                print("[Standalone] boot step FAIL " .. name .. ": " .. tostring(err))
+            else
+                print(string.format("[Standalone] boot step %d/%d %s (%.0fms span)",
+                    index, #bootSteps, name, elapsed * 1000))
+            end
+            DarkTitleScreen.loadDone = index
+            DarkTitleScreen.loadTotal = #bootSteps
+            DarkTitleScreen.loadPercent = math.floor(index * 100 / #bootSteps)
+            DarkTitleScreen.loadStep = name
+            DarkTitleScreen.loadStepMs = math.floor(elapsed * 1000)
+        end,
+    })
+    -- 就绪后才放行输入/游戏：防止部分初始化让出期间触发开场与回执。
+    bootReady_ = false
+    StandaloneRT.bootReady_ = false
+    print("[Standalone] boot queue " .. #bootSteps .. " steps (title first, cooperative images)")
 
     -- 轻量接线（不解码贴图，可在首帧完成）
     ClientMsgHandler.setup({ sendAction = localSendAction })
@@ -479,7 +574,19 @@ function Standalone.Start()
 
     -- 5.1~5.3 接线延后到 bootWiring
 
-    -- 6. Events
+    -- 6. Events；显式注册已持有表，不依赖package.loaded或为诊断额外加载业务。
+    require("boot.PerformanceHooks").installStandalone({
+        BattleTriPage = BattleTriPage, BattleScene = BattleScene, BattleEffects = BattleEffects, ProjectileSystem = ProjectileSystem,
+        CharacterPanel = CharacterPanel, CharacterDetail = CharacterDetail, HeroRosterPanel = HeroRosterPanel, BackpackPanel = BackpackPanel, LootBoxPage = LootBoxPage,
+        ChurchPage = ChurchPage, TalentPage = TalentPage, TavernPage = TavernPage, MarketPage = MarketPage,
+        DungeonBattleScene = DungeonBattleScene, TowerBattleScene = TowerBattleScene, DungeonPage = DungeonPage, BlacksmithPage = BlacksmithPage,
+        SweepDialog = SweepDialog, StageSelectDialog = StageSelectDialog, DamageStatsPanel = DamageStatsPanel, TownScene = TownScene,
+        TopBar = TopBar, PlayerInfoPanel = PlayerInfoPanel, OfflineRewardPanel = OfflineRewardPanel, ScenarioDialogue = ScenarioDialogue,
+        IntroCutscene = IntroCutscene, LetterIntro = LetterIntro, DarkTitleScreen = DarkTitleScreen, TutorialManager = TutorialManager,
+        EquipmentSystem = EquipmentSystem, LocalActionBridge = LocalActionBridge, ClientDispatcher = ClientDispatcher, StandaloneSave = StandaloneSave,
+    })
+    require("boot.PerformanceRuntime").installHandlers()
+    SubscribeToEvent("InputFocus", "HandlePerformanceFocus")
     SubscribeToEvent(vg, "NanoVGRender", "HandleNanoVGRender")
     SubscribeToEvent("Update", "HandleUpdate")
 
@@ -501,14 +608,55 @@ function Standalone.Start()
 end
 
 function Standalone.Stop()
+    require("core.PerformanceMonitor").stop()
+    require("ui.dev.PerformancePanel").close()
+    LocalActionBridge.cancelSweep("stop")
+    SweepDialog.close()
+    require("ui.battle.combat.BattleClock").setPaused(false)
+    LocalActionBridge.cancelQuickEquip()
+    require("ui.loot.InventoryCurationDialog").reset()
+    require("rules.equipment.InventoryCurationService").Cleanup(1)
+    if Standalone.cancelOpening then Standalone.cancelOpening() end
+    LetterIntro.reset()
+    ScenarioDialogue.reset()
+    require("systems.StoryPlayer").resetAll()
+    -- 启动尚未完成时丢弃挂起任务，不能在已释放的VG上下文继续恢复。
+    bootQueue_ = nil
+    entryQueue_, entryPrepared_ = nil, false
+    StandaloneRT.entryPrepared, StandaloneRT.entryPreparing, StandaloneRT.entryRendered = false, false, false
+    StandaloneRT.bootError, StandaloneRT.entryError = nil, nil
+    StandaloneRT.bootRendered = false
+    bootReady_ = false
+    StandaloneRT.bootReady_ = false
+    inventoryBadge = { ready = false, full = false, acc = 0 }
     RewardPopup.clearBattleRewards()
     require("ui.battle.stage.StageSelectDialog").close()
+    -- 逐域消费后再保存；不能只flush最后draw/update挂载的那一条战线。
+    local ETS = require("systems.ExtraTalentSystem")
+    ETS.flush() -- 兼容内置默认/非场景调用留下的当前域；后续仍逐独立域消费。
+    BattleTriPage.flushPendingGrowth()
+    BattleScene.resetOffenseGuard()
+    DungeonBattleScene.resetOffenseGuard()
+    require("ui.battle.scene.BattleMountScope").runDefault(function()
+        ETS.flush()
+        require("ui.battle.combat.BattleCasualty").flushRewards()
+    end)
+    require("ui.dungeon.DungeonBattleScope").run(1, ETS.flush)
+    require("ui.tower.TowerTriBattle").flushPendingGrowth()
     StandaloneSave.Flush()  -- [单机存档] 退出前立即落盘
     SpinePowerUpEffect.destroy()
     require("ui.fx.SpineCardEffect").destroy()
     require("ui.fx.SpineResultEffect").destroy()
     require("ui.fx.DarkEffectSprites").destroy()
+    require("ui.tavern.RecruitAnim").destroy()
     LevelUpPopup.destroy()
+    CharacterPanel.destroyPresentation()
+    require("ui.character.hero.AwakeningArtwork").destroy()
+    TowerBattleScene.resetToDefault()
+    require("rules.tower.TowerService").ResetToDefault(1)
+    TowerBuffPick.destroy()
+    require("ui.tower.TowerBuffSidebar").destroy()
+    require("ui.battle.scene.BattlePauseOverlay").destroy()
     require("ui.widget.DesignWidgetSurface").shutdown()
     -- 不覆盖其他所有者后装的hook；让仍被引用的旧wrapper直通，再只撤下本会话包装。
     if invalidateImageCache_ then invalidateImageCache_() end
@@ -524,22 +672,69 @@ function Standalone.Stop()
         nvgDelete(vg)
         vg = nil
     end
+    StandaloneRT.vg = nil
+end
+
+--- 入场重建只发生在开局/清档，不在攻击期同步加载，也不推进离线待领期间的战斗。
+local function prepareEntry_()
+    if entryPrepared_ and not BattleTriPage.isEntryPrepared() then
+        entryPrepared_ = false
+        StandaloneRT.entryPrepared, StandaloneRT.entryRendered = false, false
+    end
+    if entryPrepared_ then return true end
+    if StandaloneRT.entryError then return false end
+    if not entryQueue_ then
+        StandaloneRT.entryPreparing = true
+        StandaloneRT.entryPercent, StandaloneRT.entryStep = 0, "firstStageRetry"
+        StandaloneRT.entryRendered = false
+        entryQueue_ = StartupQueue.new({
+            { "firstStageRetry", function()
+                if not BattleTriPage.isBattleReady() then
+                    assert(firstStageStep_, "首场准备未初始化")()
+                    BattleTriPage.setBattleReady(true)
+                end
+            end },
+            { "BattleEntry", function()
+                entryPrepared_ = assert(BattleTriPage.prepareEntry(vg), "入场准备凭据失效")
+            end },
+        }, { stopOnError = true, onComplete = function(index, name, _, ok, err)
+            StandaloneRT.entryStep, StandaloneRT.entryPercent = name, index * 50
+            if not ok then
+                StandaloneRT.entryError = tostring(err)
+                print("[Standalone] 入场战斗准备失败: " .. tostring(err))
+            end
+        end })
+    end
+    return false
+end
+
+StandaloneRT.retryStartup = function()
+    if StandaloneRT.entryError then
+        -- 失败步骤可能已写驱动签名但未完成敌波；明确重试必须废除半成品凭据。
+        BattleTriPage.invalidateTeams()
+        StandaloneRT.entryError = nil
+        return true
+    end
+    return false
 end
 
 --- 标题关闭后按真实离线时长结算并弹窗。不足 1 分钟不弹。
---- 必须等存档角色刷新到面板后再算，避免按默认开局阵容结算。
+--- 必须先完成真实战斗准备及一帧绘制，角色数据齐备后才计算离线收益。
 local function showOfflineRewardPanel_()
     local CharacterPanel = require("ui.character.panel.CharacterPanel")
     if not CharacterPanel.isHeroesDataApplied() then
         local heroesData = ClientDispatcher.get("heroes")
         if heroesData then
             CharacterPanel.setHeroesData(heroesData)
+            entryPrepared_ = false
+            StandaloneRT.entryPrepared, StandaloneRT.entryRendered = false, false
         end
     end
     if not CharacterPanel.isHeroesDataApplied() then
         print("[Standalone] 角色数据未刷新，推迟离线结算")
         return false
     end
+    if not prepareEntry_() or not StandaloneRT.entryRendered then return false end
     local LocalActionBridge = require("runtime.LocalActionBridge")
     LocalActionBridge.init()
     StandaloneSave.ReconcileOfflineBoundary()
@@ -558,6 +753,7 @@ local function showOfflineRewardPanel_()
         adventureExp   = panelData.adventureExp,
         adventurerExp  = panelData.adventurerExp,
         heroExpPreview = panelData.heroExpPreview,
+        teamSources    = panelData.teamSources,
         rewards        = panelData.rewards,
         -- [7日硬顶] 封顶提示
         hardCapSeconds  = panelData.hardCapSeconds,
@@ -597,7 +793,7 @@ local function markIntroCompleted_(deferOpening)
     updated.firstLoginTime = sessionData.firstLoginTime or 0
     updated.introCompleted = true
     if deferOpening and sessionData.introCompleted ~= true then
-        -- 只给真正新档保留延后介绍；旧档不新增待播、不重发初始角色。
+        -- 仅真正新档预留前置四段介绍；沿用旧字段以兼容未播完的存档。
         updated.deferredOpening = true
         updated.deferredOpeningIndex = 1
     end
@@ -611,12 +807,45 @@ local function markIntroCompleted_(deferOpening)
         .. tostring(updated.initialHeroId) .. ")")
 end
 
---- 短引子结束即进入游戏，伙伴长介绍由 StoryPlayer 在基础教学后分段播放。
+--- 开场链独占到最后一段，清档/退出使旧信件与对白回调失效。
+local openingFlowToken_ = 0
+local openingFlowActive_ = false
+local function cancelOpening_()
+    openingFlowToken_ = openingFlowToken_ + 1
+    openingFlowActive_ = false
+end
+
 local function finishIntro_()
+    openingFlowActive_ = false
     print("[Standalone] intro chain finished, unlock game")
     GameBGM.setScene("battle", { fromStart = true })
     markIntroCompleted_()
     postStartFlowDone_ = showOfflineRewardPanel_()
+end
+
+--- 旧延播档从未完成的段落接续，新档信件结束后顺序播放门厅与三人入队。
+local function playOpening_(token)
+    if token ~= openingFlowToken_ then return end
+    local story = require("systems.StoryPlayer")
+    local pending = story.takeDeferredOpening()
+    if not pending then finishIntro_(); return end
+    local cfg = pending.config
+    GameBGM.setScene("letter", { fromStart = true })
+    ScenarioDialogue.show({
+        mode = cfg.mode or "large", background = cfg.background,
+        backgroundIsCg = cfg.backgroundIsCg, title = cfg.title, steps = cfg.steps,
+        onFinish = function()
+            if token ~= openingFlowToken_ then return end
+            if story.finishDeferredOpening(pending.deferredToken) then playOpening_(token) end
+        end,
+    })
+end
+
+local function resumeOpening_()
+    openingFlowToken_ = openingFlowToken_ + 1
+    openingFlowActive_ = true
+    postStartFlowDone_ = false
+    playOpening_(openingFlowToken_)
 end
 
 --- 首通/入场排队的情景，等奖励弹窗关掉后再用横屏对话条播放
@@ -625,29 +854,26 @@ local function tryPlayPendingStory_()
     if ScenarioDialogue.isActive() or LetterIntro.isOpen() or IntroCutscene.isActive() then
         return
     end
+    local recovery = require("ui.tutorial.TutorialPageRecovery")
+    local place = recovery.getStoryPlace()
     if RewardPopup.isOpen() or OfflineRewardPanel.isOpen()
-        or require("ui.tutorial.TutorialPageRecovery").isBlocked() then
-        return
-    end
+        or recovery.isPendingStoryBlocked(place) then return end
     local rewardBlocked = require("boot.BattleRewardOverlay").isBlocked()
     if RewardPopup.hasPendingBattleRewards() and not rewardBlocked then return end
-    local pending = ClientMsgHandler.consumePendingScenarioDialogue()
-    if not pending then
-        pending = ClientMsgHandler.consumePendingFollowUpDialogue()
+    local pending
+    -- 旧回执和关卡队列只归主线，不能抢菜单自己的首次介绍。
+    if place == "battle" or place == "battle_town" then
+        pending = ClientMsgHandler.consumePendingScenarioDialogue()
+        if not pending then pending = ClientMsgHandler.consumePendingFollowUpDialogue() end
     end
     if not pending or not pending.config or not pending.config.steps or #pending.config.steps == 0 then
-        pending = require("systems.StoryPlayer").take()
-    end
-    if not pending or not pending.config or not pending.config.steps or #pending.config.steps == 0 then
-        if rewardBlocked then return end
-        pending = require("systems.StoryPlayer").takeDeferredOpening()
+        pending = require("systems.StoryPlayer").take(place)
     end
     if not pending or not pending.config or not pending.config.steps or #pending.config.steps == 0 then
         return
     end
     local cfg = pending.config
     local scenarioId = pending.scenarioId
-    local deferredToken = pending.deferredToken
     if scenarioId then
         local sessionData = ClientDispatcher.get("session") or {}
         local updated = {}
@@ -673,13 +899,9 @@ local function tryPlayPendingStory_()
         eyeOpen = cfg.eyeOpen,
         steps = cfg.steps,
         onFinish = function()
-            if deferredToken then
-                require("systems.StoryPlayer").finishDeferredOpening(deferredToken)
-                return
-            end
             if scenarioId then
                 print("[Standalone] claim scenario reward id=" .. tostring(scenarioId))
-                -- [横屏接线 0928] 恢复引导触发链: claim 结果处理时 fireTutorial → onScenarioClaimed
+                -- 恢复引导触发链: claim 结果处理时 fireTutorial → onScenarioClaimed
                 ClientMsgHandler.setPendingTutorialNotify(scenarioId)
                 -- 其他情景仍沿用起播预标记；82也兼容旧中断档的预标记。
                 -- 真正发奖仍由scenarioRewardsGranted台账防重，不以起播标记代替领取。
@@ -694,22 +916,37 @@ local function tryPlayPendingStory_()
     })
 end
 
---- [LetterIntro] 新档开场链：短先祖来信 → 进游戏
+--- [LetterIntro] 新档开场链：完整先祖来信 → 门厅 → 三人入队 → 进游戏
 local function startIntroChain_()
-    -- 一开始就落盘，避免标题关闭后重进或存档回写把同一段开场再播一遍。
-    -- 三人也在这时入队。若只等对话结束，中途存档会把默认的一个人写死。
+    entryPrepared_ = false
+    StandaloneRT.entryPrepared, StandaloneRT.entryRendered = false, false
     markIntroCompleted_(true)
     local handled = localSendAction("grant_starter_trio", {})
     print("[Standalone] grant starter trio at intro start handled=" .. tostring(handled))
+    openingFlowToken_ = openingFlowToken_ + 1
+    openingFlowActive_ = true
+    postStartFlowDone_ = false
+    local token = openingFlowToken_
     GameBGM.setScene("letter", { fromStart = true })
-    LetterIntro.start(finishIntro_, { compact = true })
+    LetterIntro.start(function() playOpening_(token) end)
+    -- 三人已经水合；把入场预热藏在信件/对白期间，不等最后一段关掉再退回暗屏。
+    prepareEntry_()
 end
+Standalone.cancelOpening = cancelOpening_
 
 --- 清除存档后重置客户端状态并回到开始界面
 --- 由 DebugPanel 的 reset_save 处理器调用
 function Standalone.requestResetToStartScreen()
+    require("ui.dev.PerformancePanel").close()
+    LocalActionBridge.cancelSweep("reset")
+    SweepDialog.close()
+    require("ui.battle.combat.BattleClock").setPaused(false)
+    LocalActionBridge.cancelQuickEquip()
+    require("ui.loot.InventoryCurationDialog").reset()
+    require("rules.equipment.InventoryCurationService").Cleanup(1)
     local TAG = "[Standalone][DIAG-RESET]"
     local t0 = os.clock()
+    cancelOpening_()
     print(string.format("%s requestResetToStartScreen START clock=%.4f", TAG, t0))
 
     -- 1. 停止 BGM & SFX
@@ -722,7 +959,7 @@ function Standalone.requestResetToStartScreen()
     require("ui.battle.stage.StageSelectDialog").close()
     if MarketPage.isOpen()          then MarketPage.close()          end
     if TavernPage.isOpen()          then TavernPage.close()          end
-    -- [锻炉双页 0929] 锻炉强制关闭（联动仓库由其 closeAutoWarehouse 处理，这里再兜底关仓库）
+    -- 锻炉强制关闭（联动仓库由其 closeAutoWarehouse 处理，这里再兜底关仓库）
     if BlacksmithPage.isOpen()      then BlacksmithPage.forceClose() end
     if BackpackPanel.isOpen()       then BackpackPanel.close()       end
     if ChurchPage.isOpen()          then ChurchPage.close()          end
@@ -738,6 +975,8 @@ function Standalone.requestResetToStartScreen()
 
     -- 清档先硬关闭资源战斗，不触发旧结算/onClose；详情和规则pending也归旧会话。
     TowerBattleScene.resetToDefault()
+    DungeonBattleScene.forceClose(true) -- 清档直接丢弃副本pending/dirty，不提交旧战斗成长。
+    require("rules.tower.TowerService").ResetToDefault(1)
     DungeonBattleScene.forceClose()
     DungeonPage.close()
     require("rules.dungeon.DungeonService").Cleanup(1)
@@ -752,7 +991,8 @@ function Standalone.requestResetToStartScreen()
     require("ui.character.hero.HeroScenario").resetAll()
     ClientMsgHandler.resetSessionBridgeState()
     ScenarioDialogue.reset()
-    battleSync = { lastMax = -1, lastCleared = "", lastStages = "", acc = 0 }
+    battleSync = { lastMax = -1, lastCleared = {}, lastStages = {}, acc = 0 }
+    inventoryBadge = { ready = false, full = false, acc = 0 }
 
     -- 清档先取消旧会话特效，不在新英雄／战力同步期间补播旧动画。
     SpinePowerUpEffect.resetSession()
@@ -811,6 +1051,10 @@ function Standalone.requestResetToStartScreen()
     postStartFlowDone_ = false
     storyBackfilled_ = false
     startFlowBegun_ = false
+    entryQueue_, entryPrepared_ = nil, false
+    StandaloneRT.entryPrepared, StandaloneRT.entryPreparing, StandaloneRT.entryRendered = false, false, false
+    StandaloneRT.bootError, StandaloneRT.entryError = nil, nil
+    StandaloneRT.bootRendered = false
     print(string.format("%s step11: startScreenWasOpen_=true clock=%.4f", TAG, os.clock()))
 
     -- 12. 回到标题。不能重跑 Start，否则事件重复注册并把页面叠坏。
@@ -828,6 +1072,12 @@ end
 -- Global event handlers (SubscribeToEvent requires global function names)
 -- ============================================================================
 
+---@param eventType string
+---@param eventData InputFocusEventData
+function HandlePerformanceFocus(eventType, eventData)
+    require("boot.PerformanceRuntime").focus(eventData)
+end
+
 function HandleNanoVGRender(eventType, eventData)
     ---@diagnostic disable-next-line: undefined-global
     return HandleNanoVGRenderHorizon(eventType, eventData)
@@ -837,18 +1087,53 @@ end
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
     local dt = eventData["TimeStep"]:GetFloat()
+    -- 扫荡私有生成独占共享 RNG：必须先 pump 再 return，而非在入口饿死 worker。
+    -- 连同完成当帧也不运行存档/战斗/剧情/抽卡/音频与特效 Update；Render 仍独立呈现进度。
+    if LocalActionBridge.isSweepPending() then
+        require("ui.battle.combat.BattleClock").setPaused(true)
+        LocalActionBridge.updateSweep()
+        return
+    end
+    -- UI/回执仍用真实时间；先冻结战斗绝对时钟，标题/开场提前返回也不补暂停时长。
+    SidePanelBattlePause.refresh()
+    -- 遮挡只冻结战力表现；在异步提交/Store回执前同步，不错过首次通知。
+    SyncPowerPresentationHorizon()
     -- 等待回执使用真实帧时间；标题/暂停不阻断超时，也不另订阅 Update 覆盖主循环。
     PlayerStore.Update(dt)
-    -- 特效用真实时钟收尾，不随战斗倍速，不被标题／剧情提前返回冻结。
+    LocalActionBridge.updateQuickEquip()
+    -- 战力仅表现时钟受真实遮挡冻结，其他特效仍用原时钟，不随战斗倍速。
     SpinePowerUpEffect.update(dt)
     require("ui.fx.SpineCardEffect").update(dt)
     require("ui.fx.SpineResultEffect").update(dt)
-    require("ui.dev.CEPanel").pollHotkey()
+    if not require("ui.dev.PerformancePanel").isOpen() then
+        require("ui.dev.CEPanel").pollHotkey()
+    end
     -- 分帧启动：每帧 1 个模块 init，标题可先画出来
     pumpBootQueue_()
     if not bootReady_ then
         if StartScreen.isOpen() then StartScreen.update(dt) end
         if DarkTitleScreen.isOpen() then DarkTitleScreen.update(dt) end
+        return
+    end
+    if entryQueue_ then
+        if entryQueue_:pump() then
+            entryQueue_ = nil
+            StandaloneRT.entryPrepared = entryPrepared_
+            StandaloneRT.entryPreparing = false
+        end
+        -- 入场预热不推进战斗/离线，但不能冻结正在播放的信件和对白。
+        if openingFlowActive_ then
+            if LetterIntro.isOpen() then LetterIntro.update(dt)
+            elseif ScenarioDialogue.isActive() then ScenarioDialogue.update(dt) end
+        end
+        -- 完成当帧也先交给渲染；下一帧才允许离线计算与领取窗出现。
+        return
+    end
+    if StandaloneRT.entryError then
+        if openingFlowActive_ then
+            if LetterIntro.isOpen() then LetterIntro.update(dt)
+            elseif ScenarioDialogue.isActive() then ScenarioDialogue.update(dt) end
+        end
         return
     end
 
@@ -913,33 +1198,34 @@ function HandleUpdate(eventType, eventData)
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.update(dt)
         startScreenWasOpen_ = true
-        if not DarkTitleScreen.isFading() then
+        if DarkTitleScreen.isOpen() and not DarkTitleScreen.isFading() then
             return
         end
-        local sessionData = ClientDispatcher.get("session") or {}
-        local heroesData = ClientDispatcher.get("heroes") or {}
-        local ownedCount = 0
-        if type(heroesData.roster) == "table" then
-            for _, hero in pairs(heroesData.roster) do
-                if type(hero) == "table" and hero.level then
-                    ownedCount = ownedCount + 1
+        if DarkTitleScreen.isOpen() then
+            local sessionData = ClientDispatcher.get("session") or {}
+            local heroesData = ClientDispatcher.get("heroes") or {}
+            local ownedCount = 0
+            if type(heroesData.roster) == "table" then
+                for _, hero in pairs(heroesData.roster) do
+                    if type(hero) == "table" and hero.level then
+                        ownedCount = ownedCount + 1
+                    end
                 end
             end
-        end
-        local introDone = sessionData.introCompleted == true or ownedCount > 1
-        if not introDone and not LetterIntro.isOpen() then
-            print("[Standalone] cover game before intro")
-            startIntroChain_()
-        end
-        if introDone and BottomNav.getSelectedIndex() == 3
-            and not BattleTriPage.isOpen()
-            and not DungeonBattleScene.isOpen()
-            and not TowerBattleScene.isActive() then
-            BattleTriPage.open()
+            local introDone = sessionData.introCompleted == true or ownedCount > 1
+            -- 新档等标题开门过渡结束再启序章，避免信件立即盖住动画。
+            -- 下方既有 postStartFlowDone_ 分流负责启动，期间不推进后台战斗。
+            if not introDone then return end
+            if BottomNav.getSelectedIndex() == 3
+                and not BattleTriPage.isOpen()
+                and not DungeonBattleScene.isOpen()
+                and not TowerBattleScene.isActive() then
+                BattleTriPage.open()
+            end
         end
     end
 
-    -- 开始页/标题刚关闭 → 老档弹离线收益；新档只播短来信
+    -- 开始页/标题刚关闭 → 完整开场或旧未完成段接续，结束后才弹离线收益。
     -- 必须等 DarkTitleScreen 关闭后再播，否则信件会被标题盖住且点击被吞
     if not postStartFlowDone_ and not DarkTitleScreen.isOpen() then
         if not startFlowBegun_ then
@@ -965,24 +1251,47 @@ function HandleUpdate(eventType, eventData)
             print("[Standalone] legacy save detected, mark intro completed")
             markIntroCompleted_()
         end
-        if introDone and not LetterIntro.isOpen() then
+        if not openingFlowActive_ and introDone and sessionData.deferredOpening == true then
+            resumeOpening_()
+        elseif not openingFlowActive_ and introDone and not LetterIntro.isOpen() then
             -- 角色还没刷新时保持未完成，下一帧再结算。
-            if showOfflineRewardPanel_() then
-                postStartFlowDone_ = true
-            end
-        elseif not introDone then
-            postStartFlowDone_ = true
-            print("[Standalone] new save detected, starting brief letter intro")
+            if showOfflineRewardPanel_() then postStartFlowDone_ = true end
+        elseif not openingFlowActive_ and not introDone then
+            print("[Standalone] new save detected, starting complete intro chain")
             startIntroChain_()
         end
     end
 
+    -- 开场介绍不让教程、后台战斗或旧剧情插入；最后一段结束后再结算离线收益。
+    if openingFlowActive_ then
+        if LetterIntro.isOpen() then LetterIntro.update(dt)
+        elseif ScenarioDialogue.isActive() then ScenarioDialogue.update(dt) end
+        return
+    end
+
     BottomNav.update(dt)
+
+    -- 按实际打开的菜单自动触发，覆盖城镇点击、教程恢复和其他直达入口。
+    if postStartFlowDone_ then
+        local place = require("ui.tutorial.TutorialPageRecovery").getStoryPlace()
+        local story = require("systems.StoryPlayer")
+        if place == "battle_town" then
+            local battle = ClientDispatcher.get("battle") or {}
+            local cleared = battle.clearedStages or {}
+            -- 三行布局一开始就画城镇，但故事抵达城门仍应在第一章通关之后。
+            if cleared[105] == true or cleared["105"] == true
+                or (tonumber(battle.maxStageId) or 0) >= 201 then
+                story.onPlace("town", "enter")
+            end
+        else
+            story.onPlace(place, "enter")
+        end
+    end
 
     -- [横屏接线 0928] 新手引导每帧驱动（原 ClientUpdate 接线，重构时丢失）
     -- 热点在绘制帧开始时清空，输入始终可读取最近一次实际渲染的坐标。
     TutorialManager.update(dt)
-    -- 通知引导当前所在面板（enter_panel_* 类步骤推进；tab2 日志页已移除不再通知）
+    -- 通知引导当前所在面板（enter_panel_* 类步骤推进）
     do
         local TAB_PANEL_EVENTS = { [3] = "enter_panel_battle", [5] = "enter_panel_dungeon" }
         local tutTab = BottomNav.getSelectedIndex()
@@ -1032,7 +1341,7 @@ function HandleUpdate(eventType, eventData)
     if ScenarioDialogue.isActive() then
         ScenarioDialogue.update(dt)
     else
-        -- [旧档补播] 进游戏后一次性把已首通但未领取的情景补入队（如情景82）；
+        -- 进游戏后一次性把已首通但未领取的情景补入队（如情景82）；
         -- 等数据齐（battle/session 恢复）再扫，随后由 tryPlayPendingStory_ 自然播出
         if postStartFlowDone_ and not storyBackfilled_ and ClientDispatcher.hasData() then
             storyBackfilled_ = true
@@ -1047,7 +1356,7 @@ function HandleUpdate(eventType, eventData)
         require("ui.character.hero.HeroScenario").update()
     end
 
-    -- [三行并行] 横屏专用: 战斗布局恒为 strip（竖屏 classic 已移除）
+    -- 横屏专用: 战斗布局恒为 strip
     BattleLayout.setMode("strip")
     local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)
@@ -1058,21 +1367,22 @@ function HandleUpdate(eventType, eventData)
 
     require("ui.dev.CERuntime").installSpeedHook()
     require("ui.dev.CERuntime").tick()
-    -- 待领取离线奖励不落盘；此时暂停战斗，避免线上击杀收益因存档冻结而丢失。
+    -- 待领取离线奖励时暂停战斗；Flush仍沿原事务语义保存，但不推进在线时间边界。
     local awaitingOfflineClaim = require("rules.offline.OfflineService").HasPendingRewards(1)
+    local sidePanelsPaused = SidePanelBattlePause.refresh()
     if postStartFlowDone_ and not awaitingOfflineClaim then
-        -- 副本/通天塔对战更新（打开时独占）
+        -- 守卫只围住战斗派发，不能全局return或传dt=0（仍会判胜/连击/发奖）。
+        -- 塔/副本内部保留确认、结算与回执超时的真实dt；只跳过ACTIVE战斗。
         if TowerBattleScene.isActive() then
-            TowerBattleScene.update(dt)
+            TowerBattleScene.update(dt, sidePanelsPaused)
         elseif DungeonBattleScene.isOpen() then
-            DungeonBattleScene.update(dt)
+            DungeonBattleScene.update(dt, sidePanelsPaused)
         elseif BattleTriPage.isOpen() then
-            -- [三栏并行] 三栏页内部会以 default 状态驱动 BattleScene.update（栏1 引擎）
-            BattleTriPage.update(dt)
+            if not sidePanelsPaused then BattleTriPage.update(dt) end
         elseif BottomNav.getSelectedIndex() ~= 5 and BottomNav.getSelectedIndex() ~= 3 then
             -- 副本详情/结算退出仍暂停原三队；不能启动默认战场清掉其天赋状态。
             -- 返回tab3的首帧由下方守卫重开三队，不抢先驱动默认场景。
-            BattleScene.update(dt)
+            if not sidePanelsPaused then BattleScene.update(dt) end
         end
     end
     require("ui.dev.CERuntime").tick()
@@ -1112,6 +1422,9 @@ function HandleUpdate(eventType, eventData)
             print("[ValidateHook] opened panel: " .. tostring(H_AUTO_OPEN_PANEL))
         end
     end
+    CharacterPanel.updateBadges()
+    -- 右栏详情在三队页也可打开，准备任务不能受 tab1 的惯性更新门禁限制。
+    if CharacterDetail.update then CharacterDetail.update(dt) end
     if tabIndex == 1 then
         CharacterPanel.update(dt)
     elseif tabIndex == 5 or (tabIndex == 3 and DungeonPage.isTowerChallengePending()) then
@@ -1126,11 +1439,8 @@ function HandleUpdate(eventType, eventData)
         BackpackPanel.update(dt)
     end
 
-    -- 铁匠铺分解红点（背包满时提示）
-    local equipData_ = ClientDispatcher.get("equipment")
-    local bagFull_ = equipData_ and EquipmentSystem.isInventoryFull(equipData_) or false
-    TownScene.setSmithRedDot(bagFull_)
-    BlacksmithPage.setDecomposeRedDot(bagFull_)
+    -- 铁匠铺分解红点：通知/引用变化即刷新，未通知原地增删至多约半秒兜底。
+    updateInventoryBadges(dt)
 
     LootBox.update(dt)
     RewardPopup.update(dt)
@@ -1150,6 +1460,7 @@ function HandleMouseButtonDown(eventType, eventData)
 end
 
 function HandleMouseMove(eventType, eventData)
+    if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleMouseMoveHorizon(eventType, eventData)
 end
@@ -1161,16 +1472,19 @@ function HandleMouseButtonUp(eventType, eventData)
 end
 
 function HandleTouchBegin(eventType, eventData)
+    if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleTouchBeginHorizon(eventType, eventData)
 end
 
 function HandleTouchMove(eventType, eventData)
+    if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleTouchMoveHorizon(eventType, eventData)
 end
 
 function HandleTouchEnd(eventType, eventData)
+    if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleTouchEndHorizon(eventType, eventData)
 end
@@ -1181,13 +1495,10 @@ function HandleScreenMode(eventType, eventData)
 end
 
 function HandleMouseWheel(eventType, eventData)
+    if not bootReady_ or StandaloneRT.entryPreparing or StandaloneRT.entryError then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleMouseWheelHorizon(eventType, eventData)
 end
 
-
-
-
 require("boot.StandaloneHorizon")
-
 return Standalone

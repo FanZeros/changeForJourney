@@ -95,9 +95,15 @@ local function playbackBlocked()
     if ScenarioDialogue.isActive() or not require("systems.TutorialManager").canPlayPendingStory() then
         return true
     end
+    local recovery = require("ui.tutorial.TutorialPageRecovery")
+    local place = recovery.getStoryPlace()
+    -- 招募结束可在酒馆内介绍新人，但不能在锻炉、其他菜单或关闭动画中错场补播。
+    if place ~= "battle" and place ~= "battle_town" and place ~= "tavern" then return true end
     local reward = require("ui.hud.popup.RewardPopup")
-    if require("systems.StoryPlayer").hasPending() then return true end
-    if reward.isOpen() or require("ui.tutorial.TutorialPageRecovery").isBlocked() then return true end
+    local tavern = require("ui.tavern.TavernPage")
+    if tavern.isRecruitBusy and tavern.isRecruitBusy() then return true end
+    if require("systems.StoryPlayer").hasPending(place) then return true end
+    if reward.isOpen() or recovery.isPendingStoryBlocked(place) then return true end
     return reward.hasPendingBattleRewards() and not require("boot.BattleRewardOverlay").isBlocked()
 end
 
@@ -159,11 +165,8 @@ local function playJoinThenIdle(heroId, onFinish)
         if onFinish then onFinish() end
         return
     end
-    local heroes = ClientDispatcher.get("heroes") or {}
-    local roster = heroes.roster or {}
-    local owned = roster[heroId] or roster[tostring(heroId)]
-    if isClaimed(joinId) or (type(owned) == "table" and owned.level) then
-        if not isClaimed(joinId) then markClaimed(joinId) end
+    -- 拥有角色只证明招募成功，不等于看过入队对白；正常回执先写roster再触发此处。
+    if isClaimed(joinId) then
         playIdle(heroId, onFinish)
         return
     end
@@ -189,7 +192,7 @@ end
 local drainDepth_ = 0
 local DRAIN_MAX_DEPTH = 8
 drainPending = function()
-    if playbackBlocked() or #pending_ == 0 then return end
+    if #pending_ == 0 or playbackBlocked() then return end
     if drainDepth_ >= DRAIN_MAX_DEPTH then
         print("[HeroScenario] drain depth cap reached, drop " .. tostring(pending_[1]))
         table.remove(pending_, 1)

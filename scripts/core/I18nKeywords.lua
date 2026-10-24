@@ -190,10 +190,10 @@ add("神圣石", { "神聖石", "Holy Stone", "神聖石", "성석" },
 })
 add("洗练石", { "洗練石", "Reforge Stone", "洗練石", "재련석" },
     { "洗練石", "Reforge Stone", "洗練石", "재련석" }, {
-    "洗練的附加材料：保留詞綴屬性種類不變，重新隨機品質等級和數值（可跨等級變化）。\n保底只升不降：每條詞綴取新舊數值中的較高者。",
-    "An extra Reforge material: keeps affix stat types unchanged while rerolling quality grades and values, including changes across grades.\nGuaranteed no downgrade: each affix keeps the higher of its old and new values.",
-    "洗練の追加素材。効果の能力種類を保ったまま品質等級と数値を再抽選する（等級をまたぐ変化も可能）。\n低下しない保証：各効果は新旧の数値のうち高い方を採用する。",
-    "재련 추가 재료. 옵션의 능력치 유형을 유지한 채 품질 등급과 수치를 다시 무작위로 정하며, 등급이 달라질 수도 있습니다.\n하락 방지 보장: 각 옵션은 이전과 새 수치 중 높은 값을 유지합니다.",
+    "洗練的附加材料：保留詞綴屬性種類，忽略鎖定，重新隨機全部普通詞綴的品級與數值，魔化詞條不變。\n保底只升不降：每條詞綴取新舊數值中的較高者。結果自動替換，無需確認。",
+    "An extra Reforge material: keeps affix stat types, ignores locks, and rerolls the grades and values of all normal affixes. Demonic affixes remain unchanged.\nGuaranteed no downgrade: each affix keeps the higher of its old and new values. Results are applied automatically without confirmation.",
+    "洗練の追加素材。能力の種類を保ち、ロックを無視してすべての通常効果の等級と数値を再抽選する。魔化効果は変わらない。\n低下しない保証：各効果は新旧の数値のうち高い方を採用する。結果は確認不要で自動適用される。",
+    "재련 추가 재료. 능력치 유형을 유지하고 잠금을 무시하여 모든 일반 옵션의 등급과 수치를 다시 무작위로 정합니다. 마화 옵션은 유지됩니다.\n하락 방지 보장: 각 옵션은 이전과 새 수치 중 높은 값을 유지합니다. 확인 없이 결과가 자동 적용됩니다.",
 })
 add("点金石", { "點金石", "Gold Stone", "点金石", "점금석" },
     { "點金石", "Gold Stone", "点金石", "점금석" }, {
@@ -203,10 +203,10 @@ add("点金石", { "點金石", "Gold Stone", "点金石", "점금석" },
     "재련 추가 재료. 재련 시 현재 진행도에서 허용되는 상한까지 장비 등급을 높입니다.\n등급이 상한이면 무작위 일반 옵션 하나의 등급을 대신 높이며, 최대 S등급입니다.",
 })
 add("洗练", { "洗練", "Reforge", "洗練", "재련" }, { "洗練", "Reforge", "洗練", "재련" }, {
-    "重新隨機裝備詞綴數值：不選附加或選精粹時消耗固定精粹（費用不隨次數增加）；選擇洗練石／點金石／腐化石／神聖石時不再消耗精粹，只消耗對應石頭。\n可鎖定詞條（鎖定後單次精粹費用提高）。",
-    "Rerolls gear affix values. With no extra material or with essence selected, the essence cost is fixed and does not rise with reforge count. Choosing Reforge Stone, Gold Stone, Corrupt Stone, or Holy Stone costs only that stone, not essence.\nAffixes can be locked; locking increases the essence cost per reforge.",
-    "装備効果の数値を再抽選する。追加素材なし、または精粋を選ぶ場合は固定量の精粋を消費し、回数で費用は増えない。洗練石・点金石・腐化石・神聖石を選ぶ場合は精粋を消費せず、該当の石だけを消費する。\n効果はロック可能（ロックすると1回あたりの精粋費用が増える）。",
-    "장비 옵션 수치를 다시 무작위로 정합니다. 추가 재료를 선택하지 않거나 정수를 선택하면 고정된 정수 비용을 소모하며, 재련 횟수에 따라 늘지 않습니다. 재련석, 점금석, 부화석, 성석을 선택하면 정수 없이 해당 돌만 소모합니다.\n옵션을 잠글 수 있으며, 잠그면 재련 1회당 정수 비용이 증가합니다.",
+    "重新隨機裝備詞綴數值：不選附加或選精粹時消耗固定精粹（費用不隨次數增加）；選擇洗練石／點金石／腐化石／神聖石時不再消耗精粹，只消耗對應石頭。\n僅普通精粹洗練可鎖定詞條（鎖定後單次精粹費用提高），結果需手動替換；洗練石忽略鎖定並自動替換。",
+    "Rerolls gear affix values. With no extra material or with essence selected, the essence cost is fixed and does not rise with reforge count. Choosing Reforge Stone, Gold Stone, Corrupt Stone, or Holy Stone costs only that stone, not essence.\nOnly normal essence reforging allows affix locks, which increase essence cost, and requires manual replacement. Reforge Stone ignores locks and applies results automatically.",
+    "装備効果の数値を再抽選する。追加素材なし、または精粋を選ぶ場合は固定量の精粋を消費し、回数で費用は増えない。洗練石・点金石・腐化石・神聖石を選ぶ場合は精粋を消費せず、該当の石だけを消費する。\n通常の精粋洗練のみ効果をロックでき、ロック数に応じて費用が増え、結果は手動で適用する。洗練石はロックを無視し、結果を自動適用する。",
+    "장비 옵션 수치를 다시 무작위로 정합니다. 추가 재료를 선택하지 않거나 정수를 선택하면 고정된 정수 비용을 소모하며, 재련 횟수에 따라 늘지 않습니다. 재련석, 점금석, 부화석, 성석을 선택하면 정수 없이 해당 돌만 소모합니다.\n일반 정수 재련에서만 옵션 잠금이 가능하며 잠금 수에 따라 정수 비용이 증가하고 결과를 수동 적용해야 합니다. 재련석은 잠금을 무시하고 결과를 자동 적용합니다.",
 })
 
 -- 星图40项：既有完整属性名优先复用装备词典，未登记名称使用天赋标签。
@@ -382,7 +382,7 @@ addStat("生命值", {
 })
 -- Threat 已属于「仇恨」；用独立显示匹配名区分怨引值，完整原文标题沿用已有词典。
 addStat("怨引值", {
-    "影響被敵方隨機攻擊的權重，仇恨值越高越容易被集火。",
+    "影響被敵方隨機攻擊的權重，怨引值越高越容易被集火。",
     "Affects the weight used when enemies choose a random attack target. Higher threat values make concentrated attacks more likely.",
     "敵のランダム攻撃対象に選ばれる重みに影響する。ヘイト値が高いほど集中攻撃を受けやすい。",
     "적의 무작위 공격 대상이 되는 가중치에 영향을 줍니다. 위협 수치가 높을수록 집중 공격을 받기 쉽습니다.",
@@ -442,6 +442,99 @@ addStat("魂火", {
     "1ポイントにつきシールド2.5、シールド補正0.5%、状態異常耐性0.1%、回復量1、回復強化0.4%、HP10を追加する。",
     "1포인트마다 보호막2.5, 보호막 보너스0.5%, 상태 이상 저항0.1%, 치유량1, 회복 보너스0.4%, 체력10이 증가합니다.",
 })
+
+-- 装备词条按稳定 AttributeDef key 查询，不扩大全局机制词表（最终力量不能拆成力量）。
+-- 已有属性解释复用上面的四语定义，缺口仅在此显示层补齐，不修改战斗/存档字符串。
+local AD = require("systems.AttributeDef")
+---@type table<string, string[]>
+local attributeDescriptions = {
+    atkHeal = {
+        "每次攻擊時回復的生命值，可被治療屬性增幅。",
+        "HP restored on each attack. Can be increased by healing stats.",
+        "攻撃するたびに回復するHP。回復能力によって増幅できる。",
+        "공격할 때마다 회복하는 체력으로, 치유 능력치로 증가시킬 수 있습니다.",
+    },
+    abnormalRes = {
+        "減少受到的異常狀態持續時間，實際減免最多80%，即持續時間最短為原來的20%。面板顯示封頂前總值；括號內(+數值)為超出上限的未生效溢出量，不是額外加成。戰術標記不受影響。",
+        "Reduces received status-effect duration by up to 80%, leaving at least 20% of the base duration. The panel shows the total before the cap; (+value) in parentheses is overflow above the cap, not an extra bonus, and has no effect. Tactical marks are unaffected.",
+        "受ける状態異常の持続時間を最大80%短縮し、元の持続時間の20%以上が残る。表示値は上限適用前の合計で、括弧内の(+数値)は上限超過分。追加補正ではなく効果もない。戦術マークには適用されない。",
+        "받는 상태 이상의 지속시간을 최대 80% 줄이며, 기본 지속시간의 최소 20%가 남습니다. 표시값은 상한 적용 전 합계이며, 괄호 안의(+수치)는 상한 초과분으로 추가 보너스가 아니며 효과가 없습니다. 전술 표식에는 적용되지 않습니다.",
+    },
+    dmgBonus = {
+        "通用傷害加成，同時作用於物理傷害與魔法傷害。",
+        "General damage bonus, applying to both physical and magic damage.",
+        "物理ダメージと魔法ダメージの両方に適用される共通ダメージ補正。",
+        "물리 피해와 마법 피해 모두에 적용되는 공통 피해 보너스입니다.",
+    },
+    healAmount = {
+        "單位基礎治療量。", "The unit's base healing amount.",
+        "ユニットの基本回復量。", "유닛의 기본 치유량입니다.",
+    },
+    healCritDmg = {
+        "基礎200%，治療暴擊時額外乘以該值。",
+        "Base 200%. Critical healing is multiplied by this value.",
+        "基本200%。回復会心時にこの値を追加で掛ける。",
+        "기본 200%. 치유 치명타 시 이 값을 추가로 곱합니다.",
+    },
+    energyShield = {
+        "受傷時先扣除護盾，護盾扣完後才扣生命。回復速度跟體質：體質越高，受傷後等待越短，每秒回復越多。護盾上限隨等級成長：額外獲得最大生命8%的護盾，六圍派生護盾每級再放大5%。",
+        "Damage depletes Shield before HP. Higher VIT shortens the wait after damage and increases recovery per second. Shield scales with level: adds Shield equal to 8% of max HP, and Shield derived from the six base stats grows by another 5% per level.",
+        "被ダメージはシールドを先に消費し、なくなるとHPを消費する。体力が高いほど被弾後の待ち時間が短くなり、毎秒の回復が増える。最大HPの8%を追加シールドとして獲得し、六つの基本能力から派生するシールドはレベルごとにさらに5%増加する。",
+        "피격 시 보호막을 먼저 소모한 뒤 체력을 차감합니다. 체질이 높을수록 피격 후 대기시간이 짧고 초당 회복량이 많습니다. 최대 체력의 8%를 추가 보호막으로 얻으며, 기본 6능력치에서 파생되는 보호막은 레벨마다 추가로 5% 증가합니다.",
+    },
+}
+
+-- 完整魔化名称/旧别名都通过同一 key 对应最终乘区，不混淆普通百分比加成。
+local finalTargets = {
+    finalPhysAtkBonus = "physAtk", finalMagAtkBonus = "magAtk", finalHpBonus = "maxHp",
+    finalStrBonus = "str", finalAgiBonus = "agi", finalIntBonus = "int",
+    finalVitBonus = "vit", finalLukBonus = "luk", finalSpiBonus = "spi",
+    finalArmorBonus = "armor", finalEnergyShieldBonus = "energyShield", finalDodgeBonus = "dodge",
+}
+local finalTemplates = {
+    "最終乘區百分比增加%s", "Increases %s by a percentage in the final multiplicative layer.",
+    "最終乗算枠で%sを割合増加させる。", "최종 곱연산 영역에서 %s을(를) 백분율로 증가시킵니다.",
+}
+local derivedNotes = {
+    "，並重新計算六圍派生。", " Recalculates stats derived from the six base stats.",
+    "六つの基本能力から派生する能力値を再計算する。", " 기본 6능력치에서 파생되는 능력치를 다시 계산합니다.",
+}
+for key, target in pairs(finalTargets) do
+    local descriptions = {}
+    for i, lang in ipairs(languages) do
+        local name = assert(Equipment[lang][AD.META[target].name])
+        descriptions[i] = string.format(finalTemplates[i], name)
+        if AD.FINAL_BASE_STAT_BONUS[target] then descriptions[i] = descriptions[i] .. derivedNotes[i] end
+    end
+    attributeDescriptions[key] = descriptions
+end
+attributeDescriptions.finalDamageBonus = {
+    "作為獨立乘區百分比提高造成的最終傷害。",
+    "Increases final damage dealt by a percentage in an independent multiplicative layer.",
+    "独立した乗算枠で与える最終ダメージを割合増加させる。",
+    "독립 곱연산 영역에서 주는 최종 피해를 백분율로 증가시킵니다.",
+}
+
+--- 装备属性解释：58种词条完整四语对应；标题由稳定 key 取规范名，不使用旧存档名称。
+---@param key string
+---@param lang string
+---@param sourceName string|nil 兼容旧调用参数；已知属性的标题始终使用 AD 规范名
+---@return {key:string, title:string, desc:string}|nil
+function D.getAttribute(key, lang, sourceName)
+    local meta = AD.META[key]
+    if not meta or AD.getDesc(key) == "" then return nil end
+    local title = meta.name or sourceName
+    if lang == "zh_CN" then return { key = key, title = title, desc = AD.getDesc(key) } end
+    local langIndex
+    for i, language in ipairs(languages) do if language == lang then langIndex = i; break end end
+    if not langIndex then return nil end
+    local existing = definitions[lang][meta.name]
+    local descriptions = attributeDescriptions[key]
+    local desc = descriptions and descriptions[langIndex]
+        or (existing and existing.desc) or Equipment[lang][AD.getDesc(key)]
+    if not desc then return nil end
+    return { key = key, title = Equipment[lang][title] or (existing and existing.title) or title, desc = desc }
+end
 
 --- 精确完整原文查询；未知文本和无效语言返回 nil，供 I18n.lookup 原文回退。
 ---@param text any

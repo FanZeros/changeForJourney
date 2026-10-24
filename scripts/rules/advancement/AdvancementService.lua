@@ -41,16 +41,16 @@ local function publishClassAdvance(uid)
 
 end
 
--- 返还按已存在的分支分别向下取整，不按分支有效性重新校验，
--- 不合并两笔消耗后取整；两次 COST 读取仍发生在副手处理之前。
+-- 逐级按已选分支全额返还配置金币；不按分支有效性重新校验，
+-- 两次 COST 读取仍发生在副手处理之前，重复重置不会再次返还。
 local function calculateResetRefund(advBranch)
     local refundGold = 0
     if advBranch then
         if advBranch.first then
-            refundGold = refundGold + math.floor(AVC.COST[1].gold * 0.5)
+            refundGold = refundGold + AVC.COST[1].gold
         end
         if advBranch.second then
-            refundGold = refundGold + math.floor(AVC.COST[2].gold * 0.5)
+            refundGold = refundGold + AVC.COST[2].gold
         end
     end
 
@@ -158,7 +158,7 @@ function AdvancementService.AdvanceClass(uid, heroId, branchId, advLevel)
     }
 end
 
---- 重置英雄转职（清除 advBranch，返还50%金币消耗）
+--- 重置英雄转职（清除 advBranch，全额返还已付转职配置金币）
 ---@param uid number
 ---@param heroId number
 ---@return boolean ok

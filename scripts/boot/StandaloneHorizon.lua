@@ -48,14 +48,16 @@ local SpinePowerUpEffect = require("ui.fx.SpinePowerUpEffect")
 local IntroCutscene      = require("ui.story.gate.IntroCutscene")
 local LetterIntro        = require("ui.story.gate.LetterIntro")
 local CharacterDetail    = require("ui.character.detail.CharacterDetail")
+local AwakeningArtwork  = require("ui.character.hero.AwakeningArtwork")
 local EquipmentBag       = require("ui.character.equip.EquipmentBag")
 local EquipCrossDrag     = require("ui.character.EquipCrossDrag")
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
-local TutorialManager    = require("systems.TutorialManager")  -- [横屏接线 0928] 新手引导
+local TutorialManager    = require("systems.TutorialManager")  -- 新手引导
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")
 local UiToast            = require("core.UiToast")
 local KeyboardShortcuts  = require("ui.dev.KeyboardShortcuts")
+local Curation = require("ui.loot.InventoryCurationDialog")
 
 local function vg() return RT.vg end
 local function logicalW() return RT.logicalW or 0 end
@@ -138,7 +140,42 @@ local function drawUpdateNotice()
     nvgRestore(vg())
 end
 
-local function finishFrame()
+-- 唯一战力表现遮挡名单，Update和所有finishFrame复用。暂停/普通侧页不算遮挡。
+-- Settings嵌在PlayerInfo内；其黑层由PlayerInfo.isOpen覆盖，无需另借输入门禁。
+function SyncPowerPresentationHorizon()
+    local opening = not RT.bootReady_ or RT.entryPreparing == true or RT.entryError ~= nil
+        or StartScreen.isOpen() or DarkTitleScreen.isOpen() or LetterIntro.isOpen()
+        or IntroCutscene.isActive()
+    local blocked = opening or ScenarioDialogue.isActive() or RewardPopup.isOpen()
+        or PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen() or OfflineRewardPanel.isOpen()
+        or UpdateNoticePopup.isOpen() or CEPanel.isOpen() or TutorialManager.isActive()
+        or StageSelectDialog.isOpen() or SweepDialog.isOpen() or DamageStatsPanel.isOpen()
+        or TerminalConfirmDialog.isOpen() or Curation.isOpen()
+    SpinePowerUpEffect.setPresentationBlocked(blocked, opening)
+    return blocked
+end
+
+-- 只由本帧实际绘制的主线宿主申请；大小奖励之后绘一次，避免双遮罩。
+local function drawTerminalConfirm(mode)
+    if not mode or not TerminalConfirmDialog.isOpen() then return end
+    if StartScreen.isOpen() or DarkTitleScreen.isOpen() or LetterIntro.isOpen()
+        or IntroCutscene.isActive() or ScenarioDialogue.isActive() or PlayerInfoPanel.isOpen()
+        or TutorialManager.isActive() or BottomNav.getSelectedIndex() == 5 then return end
+    nvgSave(vg())
+    if mode == "tri" then
+        local ox, oy, fit = BattleTriPage.getDialogTransform(logicalW(), logicalH())
+        nvgTranslate(vg(), ox, oy)
+        nvgScale(vg(), fit, fit)
+        BattleScene.drawTerminalConfirm(vg())
+    elseif Viewport.beginFromNote(vg(), "center") then
+        BattleScene.drawTerminalConfirm(vg())
+        Viewport.finish(vg())
+    end
+    nvgRestore(vg())
+end
+
+local function finishFrame(terminalMode)
+    local powerBlocked = SyncPowerPresentationHorizon()
     nvgSave(vg())
     nvgResetTransform(vg())
     applyFrame()
@@ -146,17 +183,26 @@ local function finishFrame()
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
     drawOrphanRowReward()
     artifactOverlay.draw(vg())
+    if not PlayerInfoPanel.isOpen() and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
+        and not IntroCutscene.isActive() and not ScenarioDialogue.isActive() then
+        RewardPopup.drawLarge(vg(), logicalW(), logicalH())
+    end
+    drawTerminalConfirm(terminalMode)
     -- 战力提示全窗居中、按队列出；非模态且不盖住剧情和奖励等高优先级内容。
-    if not StartScreen.isOpen() and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
-        and not IntroCutscene.isActive() and not ScenarioDialogue.isActive()
-        and not RewardPopup.isOpen() and not PlayerInfoPanel.isOpen()
-        and not LevelUpPopup.isOpen() and not OfflineRewardPanel.isOpen()
-        and not UpdateNoticePopup.isOpen() and not CEPanel.isOpen()
-        and not TutorialManager.isActive() and not StageSelectDialog.isOpen()
-        and not SweepDialog.isOpen() and not DamageStatsPanel.isOpen()
-        and not TerminalConfirmDialog.isOpen() then
+    if not powerBlocked then
         SpinePowerUpEffect.draw(vg(), logicalW(), logicalH())
     end
+    -- 满觉醒影画脱离右栏 viewport，在整个游戏窗口中央以完整比例显示。
+    local artworkBlocked = StartScreen.isOpen() or DarkTitleScreen.isOpen() or LetterIntro.isOpen()
+        or IntroCutscene.isActive() or ScenarioDialogue.isActive() or RewardPopup.isOpen()
+        or PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen() or OfflineRewardPanel.isOpen()
+        or UpdateNoticePopup.isOpen() or CEPanel.isOpen() or TutorialManager.isActive()
+        or StageSelectDialog.isOpen() or SweepDialog.isOpen() or DamageStatsPanel.isOpen()
+        or TerminalConfirmDialog.isOpen() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive()
+    AwakeningArtwork.observe(RT, artworkBlocked)
+    if not artworkBlocked then AwakeningArtwork.draw(vg(), logicalW(), logicalH()) end
+    -- 优选自持全窗组件与 token；每条 early-return 绘制路径同样观测遮挡失效。
+    Curation.draw(vg(), logicalW(), logicalH())
     -- 升级弹窗由宿主逻辑空间布局：不再借中栏 Viewport 或 1080×2400 letterbox。
     -- 所有业务/PlayerInfo/三行/通天塔绘制都已完成，Offline/Update/CE 保持原上层优先级。
     if LevelUpPopup.isOpen() then
@@ -168,6 +214,7 @@ local function finishFrame()
     end
     drawUpdateNotice()
     CEPanel.draw(vg(), logicalW(), logicalH())
+    require("ui.dev.PerformancePanel").draw(vg(), logicalW(), logicalH())
     nvgRestore(vg())
     nvgEndFrame(vg())
 end
@@ -242,7 +289,7 @@ local function HorizonUpdateTransform()
     H_ox, H_oy, H_s = Viewport.layout(logicalW(), logicalH())
     BattleLayout.setMode("strip")
     H_TRI_L0 = BattleTriPage.isOpen()  -- [暗黑替换] 面板透明底开关（L0 已铺营地/英灵墙）
-    local triRenderScale = (BattleTriPage.isOpen() or DungeonBattleScene.isOpen())
+    local triRenderScale = (BattleTriPage.isOpen() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive())
         and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)
     BattleEffects.setRenderScale(triRenderScale)  -- [三行并行]
@@ -285,7 +332,7 @@ local function HorizonDrawPageModal(_unused_vg)
     nvgRestore(vg())
 end
 
---- [LetterIntro] 开场链全窗口覆盖：信件与情景都用逻辑分辨率横屏绘制；旧过场用 cover 裁切避免竖条
+--- 开场链全窗口覆盖：信件、情景与终焉过场都使用逻辑窗口尺寸。
 local function HorizonDrawIntroOverlay()
     if not (LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()) then
         return
@@ -300,11 +347,7 @@ local function HorizonDrawIntroOverlay()
     elseif ScenarioDialogue.isActive() then
         ScenarioDialogue.draw(logicalW(), logicalH())
     elseif IntroCutscene.isActive() then
-        local lw, lh = logicalW(), logicalH()
-        local ss = math.max(lw / 1080, lh / 2400)
-        nvgTranslate(vg(), (lw - 1080 * ss) * 0.5, (lh - 2400 * ss) * 0.5)
-        nvgScale(vg(), ss, ss)
-        IntroCutscene.draw(vg())
+        IntroCutscene.draw(vg(), logicalW(), logicalH())
     end
     nvgRestore(vg())
 end
@@ -364,7 +407,8 @@ local function HorizonDimSidePanels()
         HeroRosterPanel.isVisible() or PlayerInfoPanel.isOpen() or
         RewardPopup.isOpen() or
         OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() or
-        SpinePowerUpEffect.isPlaying() or IntroCutscene.isActive()
+        IntroCutscene.isActive()
+    -- 战力浮层只是穿透提示，不压暗可继续点击、拖拽和滚动的侧栏。
     if not modalOpen then return end
 
     local w = Viewport.PW * H_s
@@ -378,7 +422,7 @@ end
 
 --- [三队并行] 中缝返回键列表：左页‹（左框柱）/ 详情›（右框柱），两级二级页可同时存在
 --- 各占一个框柱位，互不竞争（此前 if/else 单按钮，左右同开时只能活一个）
---- [锻炉双页 0929] 锻炉页移中栏：其返回条挂在锻炉右缘（中栏右分界线），三行/非三行都绘制
+-- 锻炉页移中栏：其返回条挂在锻炉右缘（中栏右分界线），三行/非三行都绘制
 -- 获得/提示框只阻断下层返回操作，不隐藏返回条；完整场景覆盖仍同时隐藏并阻断。
 ---@param forDraw boolean?
 local function seamInputBlocked(forDraw)
@@ -439,7 +483,7 @@ local function seamBackList(forDraw)
     end
 
     -- 左框柱 ‹：左栏二级页（仓库/教堂/酒馆/市场）——条贴页面右缘(前缘),同步推进
-    -- [锻炉双页 0929] 锻炉打开时仓库左栏条不画（双页整体由锻炉右侧竖栏一键关闭）
+    -- 锻炉打开时仓库左栏条不画（双页整体由锻炉右侧竖栏一键关闭）
     if tri or (BackpackPanel.isOpen() and BackpackPanel.isLeftMode() and not BlacksmithPage.isOpen()) then
         local leftClose, leftAnim, leftScale, leftId
         if tri and LootBoxPage.isOpen() then
@@ -600,9 +644,31 @@ end
 
 function HandleNanoVGRenderHorizon()
     if not vg() then return end
+    -- 私有扫荡期间不调用任何后台 draw/finishFrame：部分绘制会惰性创建随机动效或奖励。
+    -- 唯一等待树只用真实时间与已发布进度，既不消耗 RNG，也不阻塞下帧 Update pump。
+    if require("runtime.LocalActionBridge").isSweepPending() then
+        HorizonUpdateTransform()
+        if horizonInputContext.cancelSweepPress then horizonInputContext.cancelSweepPress() end
+        nvgBeginFrame(vg(), windowW(), windowH(), dpr())
+        nvgBeginPath(vg())
+        nvgRect(vg(), 0, 0, windowW(), windowH())
+        nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
+        nvgFill(vg())
+        applyFrame()
+        local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+        nvgSave(vg())
+        nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+        nvgScale(vg(), fit, fit)
+        SweepDialog.drawPending(vg())
+        nvgRestore(vg())
+        require("ui.dev.PerformancePanel").draw(vg(), logicalW(), logicalH())
+        nvgEndFrame(vg())
+        return
+    end
     seamGesture.cancelIfBlocked()
     TutorialManager.clearHotspots()
     HorizonUpdateTransform()
+    if horizonInputContext.observeTowerPress then horizonInputContext.observeTowerPress() end
     nvgBeginFrame(vg(), windowW(), windowH(), dpr())
     nvgBeginPath(vg())
     nvgRect(vg(), 0, 0, windowW(), windowH())
@@ -610,14 +676,20 @@ function HandleNanoVGRenderHorizon()
     nvgFill(vg())
     applyFrame()
 
-    -- 分帧启动中：只画标题，避免未 init 的城镇/战斗模块被绘制
-    if not bootReady_() then
+    -- 分帧启动/失败只画稳定覆盖层，不能访问半成品的城镇/战斗。
+    if not bootReady_() or RT.entryPreparing or RT.entryError then
         nvgBeginPath(vg())
         nvgRect(vg(), 0, 0, logicalW(), logicalH())
         nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
         nvgFill(vg())
-        if DarkTitleScreen.isOpen() then
+        if RT.bootError then
+            DarkTitleScreen.drawLoading(vg(), logicalW(), logicalH(), 0, true, "启动未完成，请重新进入游戏")
+        elseif DarkTitleScreen.isOpen() then
             DarkTitleScreen.draw(vg(), logicalW(), logicalH())
+        elseif LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then
+            HorizonDrawIntroOverlay()
+        elseif RT.entryPreparing or RT.entryError then
+            DarkTitleScreen.drawLoading(vg(), logicalW(), logicalH(), RT.entryPercent or 0, RT.entryError ~= nil)
         elseif StartScreen.isOpen() then
             local ss = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
@@ -627,12 +699,26 @@ function HandleNanoVGRenderHorizon()
             nvgRestore(vg())
         end
         finishFrame()
+        if not bootReady_() then RT.bootRendered = true end
         return
     end
 
-    -- 标题未淡出：只画标题。bootReady_() 提前解锁后默认 tab 仍是战斗，
-    -- 但 BattleTriPage 要等标题关闭才 open；若此时画中栏会闪一帧竖屏 BattleScene。
-    if DarkTitleScreen.isOpen() and not DarkTitleScreen.isFading() then
+    -- 标题未淡出时只画标题；新档淡出期间也保持独占，避免露出旧竖屏战场。
+    -- 旧档仍提前绘制已准备的三行战斗，保持原来的入场/首帧门禁。
+    local titleOwnsFrame = DarkTitleScreen.isOpen() and not DarkTitleScreen.isFading()
+    if DarkTitleScreen.isFading() then
+        local dispatcher = require("runtime.ClientDispatcher")
+        local session = dispatcher.get("session") or {}
+        local heroes = dispatcher.get("heroes") or {}
+        local ownedCount = 0
+        if type(heroes.roster) == "table" then
+            for _, hero in pairs(heroes.roster) do
+                if type(hero) == "table" and hero.level then ownedCount = ownedCount + 1 end
+            end
+        end
+        titleOwnsFrame = session.introCompleted ~= true and ownedCount <= 1
+    end
+    if titleOwnsFrame then
         nvgBeginPath(vg())
         nvgRect(vg(), 0, 0, logicalW(), logicalH())
         nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
@@ -665,7 +751,7 @@ function HandleNanoVGRenderHorizon()
         nvgScale(vg(), ss, ss)
         StartScreen.draw(vg())
         nvgRestore(vg())
-        -- [一次性加载] 预载遮罩（开始画面上层）
+        -- 预载遮罩（开始画面上层）
         if RT.preload_.active then
             RT.DrawPreloadOverlay(vg(), logicalW(), logicalH())
         end
@@ -684,9 +770,10 @@ function HandleNanoVGRenderHorizon()
     -- 锻炉与左栏仓库同时打开时，仓库延后到锻炉之上绘制。
     -- 记录本帧状态，关闭动画在 draw 内结束后仍只绘制仓库一次。
     local backpackAboveForge = BlacksmithPage.isOpen()
+    local terminalMode = nil ---@type string|nil
     if not BattleTriPage.isOpen() then
         -- 左面板：功能页组（城镇 + 二级页）
-        -- [锻炉双页 0929] BlacksmithPage 已移至中面板绘制（左栏让给仓库）
+        -- BlacksmithPage 已移至中面板绘制（左栏让给仓库）
         Viewport.begin(vg(), Viewport.PANELS.left, H_ox, H_oy, H_s)
         TownScene.draw(vg())
         ChurchPage.draw(vg())
@@ -724,7 +811,8 @@ function HandleNanoVGRenderHorizon()
             CharacterPanel.draw(vg())
         elseif tabIndex == 3 then
             if not BattleTriPage.isOpen() then
-                BattleScene.draw(vg())
+                BattleScene.draw(vg(), true)
+                terminalMode = "ordinary"
             end
             -- [三栏并行] 三栏页打开时中面板留空，全窗绘制见 Viewport.finish 之后
         elseif tabIndex == 5 then
@@ -742,7 +830,7 @@ function HandleNanoVGRenderHorizon()
     end
     Viewport.finish(vg())
 
-    -- [锻炉双页 0929] 非三行模式的中缝返回条（锻炉右缘 ›；三行模式见 BattleTriPage 分支）
+    -- 非三行模式的中缝返回条（锻炉右缘 ›；三行模式见 BattleTriPage 分支）
     if not BattleTriPage.isOpen() then
         if backpackAboveForge then
             Viewport.begin(vg(), Viewport.PANELS.left, H_ox, H_oy, H_s)
@@ -793,7 +881,9 @@ function HandleNanoVGRenderHorizon()
         TowerBattleScene.draw(vg(), logicalW(), logicalH())
         -- 查看等级奖励只叠功绩左栏，不退出塔；关闭后继续原塔场景。
         if TaskPage.isOpen() then
-            Viewport.begin(vg(), Viewport.PANELS.left, 0, 0, logicalH() / 1080)
+            local towerLayout = TowerBattleScene.getLayout(logicalW(), logicalH())
+            Viewport.begin(vg(), Viewport.PANELS.left, towerLayout.left.x, towerLayout.left.y,
+                towerLayout.sideScale)
             TaskPage.draw(vg())
             Viewport.finish(vg())
         end
@@ -860,11 +950,12 @@ function HandleNanoVGRenderHorizon()
         CharacterPanel.draw(vg())
         Viewport.finish(vg())
         -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
-        BattleTriPage.draw(vg(), logicalW(), logicalH())
+        BattleTriPage.draw(vg(), logicalW(), logicalH(), true)
+        if RT.entryPrepared then RT.entryRendered = true end
         -- [行1 HUD] 宿主最终层级绘制：速度/扫荡/统计/选关按钮——
         -- 确保位于一切战斗行背景与框柱之上（用户实测按钮被行1背景穿帮）
         BattleTriPage.drawHud(vg(), logicalW(), logicalH())
-        -- [锻炉双页 0929] 锻炉页绘制在 tri 中栏区域（盖在战斗行之上，紧邻左栏仓库；
+        -- 锻炉页绘制在 tri 中栏区域（盖在战斗行之上，紧邻左栏仓库；
         -- 关闭竖栏挂在锻炉右缘，见 seamBackList）
         if BlacksmithPage.isOpen() then
             Viewport.begin(vg(), Viewport.PANELS.center, oxL, 0, ps)
@@ -924,11 +1015,11 @@ function HandleNanoVGRenderHorizon()
         -- [LetterIntro] 开场覆盖必须在标题之后，否则信件被大门挡住且点击被吞
         HorizonDrawIntroOverlay()
         drawEquipDetailOverlay()
-        -- [横屏接线 0928] 新手引导蒙层（装备详情浮层之上，装备引导步骤高亮可见）
+        -- 新手引导蒙层（装备详情浮层之上，装备引导步骤高亮可见）
         HorizonDrawTutorialOverlay()
         EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
-        finishFrame()
+        finishFrame("tri")
         return
     end
 
@@ -939,7 +1030,7 @@ function HandleNanoVGRenderHorizon()
     RewardPopup.draw(vg())
     Viewport.finish(vg())
 
-    -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）
+    -- 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）
     if DarkIcon.SHOWCASE then
         nvgSave(vg())
         nvgScissor(vg(), 0, 0, logicalW(), logicalH())  -- 重置面板 intersect 裁剪
@@ -963,12 +1054,12 @@ function HandleNanoVGRenderHorizon()
     HorizonDrawIntroOverlay()
     UiToast.draw(vg(), logicalW(), logicalH())
     drawEquipDetailOverlay()
-    -- [横屏接线 0928] 新手引导蒙层（装备详情浮层之上）
+    -- 新手引导蒙层（装备详情浮层之上）
     HorizonDrawTutorialOverlay()
     EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
 
-    finishFrame()
+    finishFrame(terminalMode)
 end
 
 horizonInputContext = {

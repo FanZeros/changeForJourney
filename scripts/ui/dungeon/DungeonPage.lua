@@ -9,11 +9,12 @@ local PlayerStore   = require("core.PlayerStore")
 local BF            = require("systems.ButtonFeedback")
 local Protocol      = require("shared.Protocol")
 local DungeonIdleConfig = require("config.DungeonIdleConfig")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local ExpTable      = require("config.ExpTable")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local DungeonConfig = require("config.DungeonConfig")
 local DungeonRewards = require("ui.dungeon.DungeonRewards")
+local resourceSweep = DungeonRewards.newSweepIdentity()
 
 local DungeonPage = {}
 
@@ -119,7 +120,7 @@ local TEXT_SIZE_MD   = 40
 -- ======================== 副本数据 ========================
 
 -- 副本配置
--- [local 余量优化] 副本详情面板设计常量归组（原为顶层散落 local）
+-- 副本详情面板设计常量归组
 local DT = {
     TITLE_FONT = 60,
     TITLE_SW = 6,
@@ -271,45 +272,21 @@ local function getFloorRewards(dungeonId, floor)
     if not data then return 0, 0 end
     local sub = (PlayerStore.Get("dungeon") or {})[dungeonId]
     local highest = DungeonConfig.getHighestClearedFloor(sub, dungeonId)
-    local swept = DungeonConfig.getFloor(dungeonId, highest) or data
-    if dungeonId == "gold_mine" then return swept.sweepGold or 0, data.firstGold or 0 end
-    if dungeonId == "equipment_vault" then return swept.sweepEquip or 0, data.firstEquip or 0 end
-    if dungeonId == "black_diamond" then return swept.sweepDiamond or 0, data.firstDiamond or 0 end
+    local stageId = DungeonConfig.getStageId(dungeonId, highest)
+    local entry = stageId and DungeonConfig.getStage(stageId)
+    local sweepAmount = entry and DungeonConfig.getStageRewardAmount(stageId, entry.idleCount or 0) or 0
+    -- 资源扫荡预估是一场重复战斗的期望，不再显示旧12小时基准奖励。
+    if dungeonId == "gold_mine" then return sweepAmount, data.firstGold or 0 end
+    if dungeonId == "equipment_vault" then return sweepAmount, data.firstEquip or 0 end
+    if dungeonId == "black_diamond" then return sweepAmount, data.firstDiamond or 0 end
     return 0, 0
 end
 
---- 预览当前副本可领取挂机奖励
----@param dungeonId string
----@return number amount
----@return number accumSec
 local function getIdleClaimPreview(dungeonId)
-    local dungeon = PlayerStore.Get("dungeon")
-    if not dungeon then return 0, 0 end
-    local sub = dungeon[dungeonId]
-    if not sub then return 0, 0 end
-    local idleFloor = DungeonIdleConfig.getIdleFloorFromSub(sub, dungeonId)
-    local accumSec = sub.idleAccumSec or 0
-    local amount = DungeonIdleConfig.calcReward(dungeonId, idleFloor, accumSec, sub.idleConsumedSec)
-    return amount, accumSec
+    return DungeonRewards.idleClaimPreview(dungeonId, PlayerStore.Get("dungeon"))
 end
-
-local function getIdleMaxHourText()
-    local hours = math.floor((DungeonIdleConfig.FULL_RATE_SEC or 0) / 3600 + 0.5)
-    return tostring(hours) .. "h"
-end
-
---- 格式化挂机累积时长（显示用，不截断）
----@param sec number
----@return string
-local function formatIdleDuration(sec)
-    sec = math.floor(tonumber(sec) or 0)
-    local h = math.floor(sec / 3600)
-    local m = math.floor((sec % 3600) / 60)
-    if h > 0 then
-        return string.format("%d:%02d", h, m)
-    end
-    return tostring(m) .. "分"
-end
+local getIdleMaxHourText = DungeonRewards.idleMaxHourText
+local formatIdleDuration = DungeonRewards.formatIdleDuration
 
 --- 判断副本是否已解锁
 ---@param dungeonId string
@@ -565,10 +542,10 @@ function DungeonPage.requestTowerChallenge(requestedFloor)
     if not unlocked then toast(lockText or "通天塔未解锁") return false end
     local TowerConfig = require("config.TowerConfig")
     local bt = (PlayerStore.Get("dungeon") or {}).babel_tower or {}
-    local maxFloor = math.min(tonumber(bt.floor) or 1, TowerConfig.MAX_FLOOR)
-    local floor = requestedFloor == nil and math.tointeger(maxFloor)
+    local maxFloor = TowerConfig.getMaxUnlockedCheckpoint(bt)
+    local floor = requestedFloor == nil and maxFloor
         or math.tointeger(tonumber(requestedFloor) or 0)
-    if not floor or floor < 1 or floor > TowerConfig.MAX_FLOOR then
+    if not floor or not TowerConfig.isCheckpointFloor(floor) then
         toast("无效的层数")
         return false
     end
@@ -607,6 +584,7 @@ end
 function DungeonPage.close()
     clearPendingChallenge()
     pendingSweep, pendingSweepTime = false, 0
+    resourceSweep.clear()
     pendingIdleClaim, pendingIdleClaimTime = false, 0
     detailOpen, detailDungeon, detailTeamIdx = false, nil, nil
 end
@@ -632,8 +610,6 @@ function DungeonPage.init(vg)
     imgFloorBg1  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_1.png", 0)
     imgFloorBg2  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_2.png", 0)
     imgFloorBg3  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_3.png", 0)
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     imgRedDot    = nvgCreateImage(vg, "image/通用图标/ICON_HD.png", 0)
     imgChest     = nvgCreateImage(vg, "image/货币道具/UI_icon_FBBX.png", 0)
@@ -759,7 +735,7 @@ function DungeonPage.draw(vg)
                 local cy = ry + REWARD_ICON_SIZE * 0.5
 
                 -- 1) 品质背景
-                DarkIcon.drawQualityBg(vg, reward.quality or 1, cx, cy, REWARD_ICON_SIZE, REWARD_ICON_SIZE, 1.0)  -- [暗黑化 P2-A]
+                DarkIcon.drawQualityBg(vg, reward.quality or 1, cx, cy, REWARD_ICON_SIZE, REWARD_ICON_SIZE, 1.0)  --
 
                 -- 2) 资源图标（内缩绘制）
                 if not rewardIconCache[reward.icon] then
@@ -792,11 +768,15 @@ function DungeonPage.draw(vg)
                 end
             end
 
-            -- 今日次数（右对齐 X=993，显示剩余次数，耗尽变红）
-            local cardRemain = cardDailyMax - cardDailyUsed
-            if cardRemain < 0 then cardRemain = 0 end
+            -- 三资源显示券余额，不再暗示存在每日次数限制；塔仍保留旧玩法标识。
+            local resourceDungeon = DungeonConfig.isResourceDungeon(dungeon.id)
+            local cardRemain = math.max(0, cardDailyMax - cardDailyUsed)
+            if resourceDungeon then
+                cardRemain = math.max(0, math.floor(tonumber((PlayerStore.Get("currency") or {}).sweepTicket) or 0))
+            end
             local dailyTxt = dungeon.id == "babel_tower" and ("独立玩法 · 三军攻坚")
-                or ("今日扫荡：" .. cardRemain .. "/" .. cardDailyMax)
+                or (resourceDungeon and ("扫荡券：" .. cardRemain .. "（1券/场）")
+                    or ("今日扫荡：" .. cardRemain .. "/" .. cardDailyMax))
             local cardDR, cardDG, cardDB = DAILY_R, DAILY_G, DAILY_B
             if cardRemain <= 0 then
                 cardDR, cardDG, cardDB = 0xFF, 0x44, 0x44
@@ -961,7 +941,7 @@ function DungeonPage.drawDetailPanel(vg)
             local cx = startX + (i - 1) * (REWARD_SZ + REWARD_GAP)
             local cy = DT.REW_BG_CY
 
-            -- 品质背景 [暗黑化 P2-A]
+            -- 品质背景
             DarkIcon.drawQualityBg(vg, reward.quality or 1, cx, cy, REWARD_SZ, REWARD_SZ, 1.0)
 
             -- 资源图标（内缩绘制）
@@ -996,12 +976,15 @@ function DungeonPage.drawDetailPanel(vg)
         end
     end
 
-    -- 17. 剩余次数文本（有剩余=#8dff88，耗尽=红色 + 黑色描边5）
-    local dailyRemain = dailyMax - dailyUsed
-    if dailyRemain < 0 then dailyRemain = 0 end
-    local dailyText = "今日次数:" .. dailyRemain .. "/" .. dailyMax
+    -- 资源副本一券一场；塔/遗迹保留日次。
+    local resourceDungeon = DungeonConfig.isResourceDungeon(detailDungeon.id)
+    local ticketCount = math.max(0, math.floor(tonumber((PlayerStore.Get("currency") or {}).sweepTicket) or 0))
+    local dailyRemain = math.max(0, dailyMax - dailyUsed)
+    local sweepRemain = resourceDungeon and ticketCount or dailyRemain
+    local dailyText = resourceDungeon and ("扫荡券：" .. ticketCount .. "（1券/场）")
+        or ("今日次数:" .. dailyRemain .. "/" .. dailyMax)
     local dtR, dtG, dtB = DT.DAILY_R, DT.DAILY_G, DT.DAILY_B
-    if dailyRemain <= 0 then
+    if sweepRemain <= 0 then
         dtR, dtG, dtB = 0x8b, 0x95, 0xa5  -- 耗尽=灰蓝色
     end
     DrawUtil.drawTextStroke(vg, DT.DAILY_X, DT.DAILY_Y, dailyText,
@@ -1010,9 +993,9 @@ function DungeonPage.drawDetailPanel(vg)
 
     -- 18. 扫荡按钮背景 UI_AN_HUANG（九宫格）
     local sub = (PlayerStore.Get("dungeon") or {})[detailDungeon.id]
-    local sweepFloor = DungeonConfig.isResourceDungeon(detailDungeon.id)
+    local sweepFloor = resourceDungeon
         and DungeonConfig.getHighestClearedFloor(sub, detailDungeon.id) or math.max(0, currentFloor - 1)
-    local sweepDisabled = sweepFloor < 1 or dailyRemain <= 0 or pendingSweep
+    local sweepDisabled = sweepFloor < 1 or sweepRemain <= 0 or pendingSweep
     local _bfSweep = BF.begin(vg, "dt_sweep_btn", DT.SWEEP_CX, DT.SWEEP_CY, DT.SWEEP_W, DT.SWEEP_H)
     nvgGlobalAlpha(vg, sweepDisabled and 0.45 or 1.0)
     DarkIcon.drawNine(vg, "btn", DT.SWEEP_CX - DT.SWEEP_W * 0.5, DT.SWEEP_CY - DT.SWEEP_H * 0.5, DT.SWEEP_W, DT.SWEEP_H, { accent = "gold" })
@@ -1096,7 +1079,7 @@ function DungeonPage.update(dt)
             clearPendingChallenge()
         end
     end
-    if pendingSweep then
+    if pendingSweep and not resourceSweep.isPending() then
         pendingSweepTime = pendingSweepTime + dt
         if pendingSweepTime >= PENDING_TIMEOUT then pendingSweep, pendingSweepTime = false, 0 end
     end
@@ -1157,14 +1140,17 @@ function DungeonPage.handleInput(dx, dy)
         if DrawUtil.hitTest(dx, dy, DT.SWEEP_CX, DT.SWEEP_CY, DT.SWEEP_W, DT.SWEEP_H) then
             BF.trigger("dt_sweep_btn")
             local dId = detailDungeon.id
+            local resourceDungeon = DungeonConfig.isResourceDungeon(dId)
             local sub = (PlayerStore.Get("dungeon") or {})[dId]
-            local highest = DungeonConfig.isResourceDungeon(dId)
+            local highest = resourceDungeon
                 and DungeonConfig.getHighestClearedFloor(sub, dId) or math.max(0, currentFloor - 1)
             if pendingSweep then
                 print("[DungeonPage] sweep request pending, skip")
             elseif highest < 1 then
                 toast("暂无可扫荡层")
-            elseif dailyUsed >= dailyMax then
+            elseif resourceDungeon and (tonumber((PlayerStore.Get("currency") or {}).sweepTicket) or 0) < 1 then
+                toast("扫荡券不足")
+            elseif not resourceDungeon and dailyUsed >= dailyMax then
                 print("[DungeonPage] daily sweep limit reached")
             else
                 pendingSweep = true
@@ -1175,11 +1161,17 @@ function DungeonPage.handleInput(dx, dy)
                         Protocol.ACTION_TYPES.TOWER_SWEEP, {}
                     )
                 else
-                    print("[DungeonPage] sending DUNGEON_SWEEP dungeon=" .. dId .. " floor=" .. (currentFloor - 1))
-                    require("runtime.GameAction").sendAction(
-                        Protocol.ACTION_TYPES.DUNGEON_SWEEP,
-                        { dungeonId = dId }
-                    )
+                    print("[DungeonPage] sending DUNGEON_SWEEP dungeon=" .. dId .. " floor=" .. highest)
+                    local teamIdx = detailTeamIdx or require("ui.character.panel.CharacterPanel").getActiveTeamIdx()
+                    -- 资源兼容入口同样一券一场；显式冻结最高已通层，不靠处理时再猜。
+                    local params = { dungeonId = dId, teamIdx = teamIdx }
+                    if resourceDungeon then
+                        params.count, params.floor = 1, highest
+                        resourceSweep.send(params, function(request)
+                            return require("runtime.GameAction").sendAction(Protocol.ACTION_TYPES.DUNGEON_SWEEP, request)
+                        end)
+                        pendingSweep = resourceSweep.isPending()
+                    else require("runtime.GameAction").sendAction(Protocol.ACTION_TYPES.DUNGEON_SWEEP, params) end
                 end
             end
             return true
@@ -1262,10 +1254,20 @@ end
 function DungeonPage.onActionResult(data)
     local action = data.action
 
+    -- 资源兼容入口由请求身份单独清理；旧遗迹/塔仍走原回执路径。
+    if action == Protocol.ACTION_TYPES.DUNGEON_SWEEP and DungeonConfig.isResourceDungeon(data.dungeonId) then
+        if not resourceSweep.consume(data) then return end
+        pendingSweep, pendingSweepTime = false, 0
+        if data.success and detailOpen and detailDungeon and detailDungeon.id == data.dungeonId then
+            leaveDungeonPageForReward()
+        end
+        return
+    end
     -- 扫荡结果
     if action == Protocol.ACTION_TYPES.DUNGEON_SWEEP then
         pendingSweep, pendingSweepTime = false, 0
         if data.success then
+            local dId = data.dungeonId or "gold_mine"
             print("[DungeonPage] SWEEP OK: floor=" .. tostring(data.sweepFloor)
                 .. " gold=" .. tostring(data.gold)
                 .. " dust=" .. tostring(data.dust)
@@ -1274,7 +1276,6 @@ function DungeonPage.onActionResult(data)
             dailyUsed = data.dailyUsed or dailyUsed
             dailyMax  = data.dailyMax or dailyMax
             -- 同步 dungeonState
-            local dId = data.dungeonId or "gold_mine"
             if dungeonState[dId] then
                 dungeonState[dId].dailyUsed = dailyUsed
                 dungeonState[dId].dailyMax  = dailyMax
@@ -1394,6 +1395,7 @@ function DungeonPage.onActionResult(data)
             end
             local teamAllies, err = collectTowerTeams()
             if not teamAllies then
+                require("rules.tower.TowerService").Cleanup(1, data.runId)
                 toast(err or "三军攻坚条件未满足")
                 return
             end
@@ -1404,6 +1406,9 @@ function DungeonPage.onActionResult(data)
                 sendAction = function(act, params)
                     return require("runtime.GameAction").sendAction(act, params)
                 end,
+                onCleanup = function(runId)
+                    require("rules.tower.TowerService").Cleanup(1, runId)
+                end,
                 onClose    = function()
                     print("[DungeonPage] TowerBattleScene closed")
                 end,
@@ -1413,6 +1418,7 @@ function DungeonPage.onActionResult(data)
                 require("ui.battle.tri.BattleTriPage").close()
                 request.accepted = true
             else
+                require("rules.tower.TowerService").Cleanup(1, data.runId)
                 toast("通天塔战斗未能打开，请重试")
             end
         else
@@ -1430,8 +1436,8 @@ function DungeonPage.onActionResult(data)
                 .. " diamond=" .. tostring(data.diamondReward))
             dungeonState.babel_tower.dailyUsed = data.dailyUsed or 0
             dailyUsed = dungeonState.babel_tower.dailyUsed
-            local rewards = {}
-            if (data.diamondReward or 0) > 0 then
+            local rewards = data.rewards or {}
+            if #rewards == 0 and (data.diamondReward or 0) > 0 then
                 rewards[#rewards + 1] = { type = "diamond", amount = data.diamondReward }
             end
             leaveDungeonPageForReward()
@@ -1462,13 +1468,11 @@ function DungeonPage.onActionResult(data)
 
     -- 通天塔整层通关 → 转发给 TowerBattleScene + 更新本地层数
     if action == Protocol.ACTION_TYPES.TOWER_FLOOR_WIN then
-        if data.success then
-            dungeonState.babel_tower.floor = data.nextFloor or (dungeonState.babel_tower.floor + 1)
-            currentFloor = dungeonState.babel_tower.floor
-        end
         local TowerBattleScene = require("ui.tower.TowerBattleScene")
-        if TowerBattleScene.isActive() then
-            TowerBattleScene.onFloorWinResult(data)
+        if TowerBattleScene.isActive() and TowerBattleScene.onFloorWinResult(data) and data.success then
+            dungeonState.babel_tower.floor = math.max(dungeonState.babel_tower.floor,
+                data.progressFloor or data.nextFloor or dungeonState.babel_tower.floor)
+            currentFloor = dungeonState.babel_tower.floor
         end
         return
     end

@@ -93,6 +93,9 @@ function Start()
             ["ui.blacksmith.BlacksmithPage"] = smith, ["ui.backpack.BackpackPanel"] = backpack,
             ["ui.hud.BottomNav"] = { getSelectedIndex = function() return 3 end },
             ["ui.character.panel.CharacterPanel"] = mock({ getTotalPower = function() return 0 end }),
+            -- 新全图指针适配器的bind返回handler，不可沿用通用false spy。
+            ["ui.character.hero.AwakeningArtwork"] = mock({ bindInput = function() return noop end }),
+            ["boot.RewardGesture"] = { bindHost = function() return { pointer = noop, observe = noop } end },
             ["ui.battle.scene.BattleScene"] = page("battle"),
             ["ui.battle.tri.BattleTriPage"] = mock({
                 isOpen = function() return state.tri end,
@@ -109,7 +112,8 @@ function Start()
         RT.vg, RT.logicalW, RT.logicalH, RT.windowW, RT.windowH = {}, 1920, 1080, 1920, 1080
         RT.dpr, RT.bootReady_, RT.preload_ = 1, true, { active = false }
         require = function(name)
-            if name == "boot.StandaloneHorizonInput" or name == "boot.OfflineRewardOverlay" or name == "boot.SeamBackGesture" then
+            if name == "boot.StandaloneHorizonInput" or name == "boot.OfflineRewardOverlay" or name == "boot.SeamBackGesture"
+                or name == "boot.DecomposeMarqueeGesture" or name == "boot.StandaloneHorizonWheel" then
                 return originalRequire(name)
             end
             if not mods[name] then mods[name] = mock() end
@@ -196,7 +200,10 @@ function Start()
         end
         smithState.closing, smithState.closeTime = true, clock.elapsedTime - 1
         impl.drawPageImpl({})
-        check(not smithState.open and not smithState.closing and closed == 1, "关闭动画仍释放仓库持有一次")
+        check(not smithState.open and not smithState.closing and closed == 0,
+            "关闭完成只收尾锻炉；仓库release已前移到BlacksmithPage.close入口")
+        -- 不能只删除旧release断言：另用真实Page -> Panel -> EquipLink验证关闭边沿与重入。
+        originalRequire("tests.forge_close_lifecycle_test").run(check)
     end)
     require = originalRequire
     VP._notes = oldNotes

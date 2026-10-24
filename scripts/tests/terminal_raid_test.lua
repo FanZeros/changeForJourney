@@ -61,7 +61,7 @@ end
 
 -- 手工装配测试战线，但敌人、状态和 tick 均为生产实现；真实 start 另有覆盖。
 local function mkRaidDriver(teamIdx, allies)
-    local drv = Driver.new(teamIdx)
+    local drv = Driver.new(teamIdx) ---@type table
     local entry = assert(SC.getStage(TERMINAL))
     drv.stageId = TERMINAL
     drv.allies = allies
@@ -78,7 +78,7 @@ local function mkRaidDriver(teamIdx, allies)
 end
 
 local function mkRaidDrivers(emptyRow)
-    local drivers = {}
+    local drivers = {} ---@type table<number, table>
     for row = 1, 3 do
         drivers[row] = mkRaidDriver(row,
             row == emptyRow and {} or { mkAlly("team" .. row, 100) })
@@ -451,27 +451,28 @@ local function compileModule(name, env)
     return assert(load(text, "@" .. name, "t", env or _G))()
 end
 
-local function openTestPage(env)
+local function openTestPage(env, stageId)
+    local terminalStage = stageId or TERMINAL
     local CP = require("ui.character.panel.CharacterPanel")
     local BS = require("ui.battle.scene.BattleScene")
     local drivers, teams = {}, {}
     for row = 1, 3 do teams[row] = { assert(HC.createHero(row, 1)) } end
-    local stage = TERMINAL
+    local stage = terminalStage
     local observations = { victories = 0, retreats = 0, rewards = {} }
     patch(CP, "getDeployedTeam", function(row) return teams[row] end)
     patch(CP, "getTeamSignature", function(row) return "terminal-test-" .. row end)
     patch(require("config.ExpTable"), "getUnlockedTeamCount", function() return 3 end)
     patch(BS, "getStageId", function() return stage end)
     -- 合并后的选关有共享最高关门禁，夹具终焉资格须包含已通末关。
-    patch(BS, "getMaxStageId", function() return SC.getTerminalPrevStageId(TERMINAL) end)
+    patch(BS, "getMaxStageId", function() return SC.getTerminalPrevStageId(terminalStage) end)
     patch(BS, "pumpBattleCards", function() end)
     patch(BS, "adoptStageProgress", function(id) stage = id; observations.retreats = observations.retreats + 1 end)
     patch(BS, "gotoStage", function(id) stage = id; return true end)
     patch(BS, "completeTriTerminal", function()
         observations.victories = observations.victories + 1
-        stage = SC.getReincarnationTarget(SC.getDifficulty(TERMINAL))
-        return true
+        return true -- 胜利只结账，生产Scene保持终焉直到动画完成。
     end)
+    patch(BS, "updateTriReincarnation", function() return true end)
     patch(require("ui.story.gate.LetterIntro"), "isOpen", function() return false end)
     patch(require("ui.story.gate.IntroCutscene"), "isActive", function() return false end)
     patch(require("ui.story.ScenarioDialogue"), "isActive", function() return false end)
@@ -522,79 +523,369 @@ local function testPageFailureHold()
     end
 end
 
-local function testPageTimeoutAndLargeDt()
-    for _, isTimeout in ipairs({ true, false }) do
-        case(isTimeout and "真实 Page 配置时限超时" or "真实 Page 大dt首次全灭", function()
-            local Page, drivers, raid, observed = openTestPage()
-            local timeLimit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
-            local hold = TerminalRaid.FAILURE_HOLD_SEC
-            local firstDt = isTimeout and timeLimit or hold + 1
-            check(timeLimit > 0 and hold >= 1 and firstDt > hold,
-                "使用实际配置时限，首次失败帧dt大于失败展示门槛")
-            for row = 1, 3 do
-                for _, ally in ipairs(drivers[row].allies) do
-                    if isTimeout then
-                        -- 只压低夹具攻击频率，保留真实 Page/Driver 更新与超时判定。
-                        ally.attrs.final[AD.ATK_INTERVAL], ally.attrs.final[AD.ATK_SPEED] = firstDt * 100, 0
-                    else
-                        ally.hp, ally.attrs.final[AD.HP] = 0, 0
+local function testPageNoTimeLimit()
+    local timeLimit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
+    local timeout = require("systems.BattleTimeout")
+    local terminals = {}
+    for _, entry in ipairs(SC.STAGES) do
+        if SC.isTerminalTemple(entry.id) then terminals[#terminals + 1] = entry.id end
+    end
+    check(#terminals == 14 and timeLimit == 300, "全部14座终焉均覆盖，普通旧上限仍为300秒")
+    for _, stageId in ipairs(terminals) do
+        for _, won in ipairs({ true, false }) do
+            case("终焉不限时后" .. (won and "胜利" or "全灭") .. stageId, function()
+                local Page, drivers, raid, observed = openTestPage(nil, stageId)
+                patch(require("ui.battle.scene.BattleScene"), "battleSpeed", 3)
+                check(Page.getBattleLogicDt(.25) == .25 and not Page.isSpeedButtonVisible(),
+                    "终焉真实Page兼容接口不读取旧三倍速字段")
+                patch(Page, "getBattleLogicDt", function() error("共享用时不得依赖旧倍率解析") end)
+                -- 仅拉长夹具攻击间隔，真实驱动仍推进状态、攻击进度与增伤时钟。
+                for row = 1, 3 do
+                    for _, unit in ipairs({ drivers[row].allies[1], table.unpack(drivers[row].enemies) }) do
+                        unit.attrs.final[AD.ATK_INTERVAL], unit.attrs.final[AD.ATK_SPEED] = 1000000000, 0
+                        unit.atkProgress = 0.5
                     end
                 end
-                for _, boss in ipairs(drivers[row].enemies) do
-                    boss.attrs.final[AD.ATK_INTERVAL], boss.attrs.final[AD.ATK_SPEED] = firstDt * 100, 0
-                    boss.atkProgress = 0.5
+                for _, dt in ipairs({ timeLimit - 1, 1, 1, timeLimit }) do
+                    local before = raid.elapsed
+                    local progress = drivers[1].enemies[1].atkProgress
+                    Page.update(dt)
+                    check(raid.elapsed == before + dt and not raid.finished and raid.hp > 0,
+                        "达到/超过旧上限仍战斗且共享用时继续累计 " .. stageId .. "/" .. raid.elapsed)
+                    check(observed.retreats == 0 and observed.victories == 0 and #observed.rewards == 0,
+                        "长战斗不误退关、不提前结算奖励")
+                    for row = 1, 3 do
+                        check(drivers[row].terminalRaid == raid and drivers[row].stageId == stageId
+                            and not raid.defeated[row] and drivers[row].allies[1].hp > 0
+                            and not drivers[row]._terminalStopped
+                            and drivers[row]._timeoutElapsed == raid.elapsed
+                            and drivers[row].combatState.ctx.globalDmgMult == timeout.calcMult(raid.elapsed),
+                            "超旧上限不冻结活队/共享绑定/增伤时钟，队" .. row)
+                    end
+                    check(drivers[1].enemies[1].atkProgress > progress, "超旧上限敌人攻击进度仍推进")
                 end
-            end
-            check(not raid.finished and observed.retreats == 0, "大dt更新前协同尚未失败或退关")
-            Page.update(firstDt)
-            check(raid.finished == true and raid.won == false and raid.finishObserved == true
-                and raid.finishElapsed == 0 and observed.retreats == 0,
-                "首次观察失败不累计当前大dt，不能同帧直接退关")
-            if isTimeout then
-                local living = true
-                for row = 1, 3 do
-                    if raid.defeated[row] or drivers[row].allies[1].hp <= 0 then living = false end
+                if won then
+                    for index = 1, 3 do
+                        killPool(raid, 3, index)
+                        Page.update(0)
+                        check((index < 3 and not raid.finished and observed.victories == 0)
+                            or (index == 3 and raid.won and observed.victories == 1),
+                            "超旧上限后仍须全部编号池清空才胜利，池" .. index)
+                    end
+                    check(#observed.rewards == 3 and observed.retreats == 0, "长战斗胜利只结算三个Boss奖励")
+                    Page.update(timeLimit)
+                    check(observed.victories == 1 and #observed.rewards == 3, "长战斗胜利重复更新奖励仍幂等")
+                else
+                    for row = 1, 3 do
+                        local ally = drivers[row].allies[1]
+                        ally.hp, ally.attrs.final[AD.HP] = 0, 0
+                        Page.update(0)
+                        check(raid.defeated[row] and (row < 3 and not raid.finished
+                            or row == 3 and raid.finished and raid.won == false),
+                            "超旧上限后只在全部参战队显式失守时失败，队" .. row)
+                    end
+                    check(observed.retreats == 0 and raid.finishElapsed == 0 and #observed.rewards == 0,
+                        "长战斗全灭当帧仍保留延迟退场且不发奖")
+                    Page.update(TerminalRaid.FAILURE_HOLD_SEC - 0.01)
+                    check(observed.retreats == 0, "长战斗全灭不足展示门槛仍不退关")
+                    Page.update(0.02)
+                    check(observed.retreats == 1 and observed.victories == 0 and #observed.rewards == 0,
+                        "长战斗全灭展示结束仅退关一次且无奖励")
+                    for row = 1, 3 do
+                        check(drivers[row].terminalRaid == nil
+                            and drivers[row].stageId == SC.getTerminalPrevStageId(stageId),
+                            "长战斗全灭仍统一回到本难度末关，队" .. row)
+                    end
                 end
-                check(raid.elapsed == timeLimit and raid.hp > 0 and living,
-                    "真实 Page 到实际 TIME_LIMIT_SEC 判超时，三队仍存活且池未空")
-            else
-                check(raid.defeated[1] and raid.defeated[2] and raid.defeated[3] and raid.hp > 0,
-                    "真实 Page 大dt全灭路径显式确认三队失守，非空池也只判失败")
-            end
-            -- 超时是在本帧各线更新后才判负，下一次真实 Driver tick 执行停摆清理。
-            Page.update(0)
-            for row = 1, 3 do
-                local stopped = true
-                for _, boss in ipairs(drivers[row].enemies) do
-                    if boss.atkProgress ~= 0 then stopped = false end
-                end
-                check(drivers[row].terminalRaid == raid and drivers[row].stageId == TERMINAL
-                    and drivers[row]._terminalStopped == true and stopped,
-                    "失败留存仍绑定终焉，真实停摆使全部敌人atkProgress=0，队" .. row)
-            end
-            check(observed.retreats == 0 and observed.victories == 0 and #observed.rewards == 0
-                and raid.finishElapsed == 0, "零dt停摆观察不退关、不发奖、不偷算展示时长")
-            Page.update(hold - 0.01)
-            check(observed.retreats == 0 and raid.finishElapsed < hold,
-                "首次大dt之后仍需另等完整失败展示门槛，不足一秒不退关")
-            for row = 1, 3 do
-                local stopped = true
-                for _, boss in ipairs(drivers[row].enemies) do
-                    if boss.atkProgress ~= 0 then stopped = false end
-                end
-                check(drivers[row].terminalRaid == raid and drivers[row].stageId == TERMINAL and stopped,
-                    "失败等待期间不重开且全部敌人攻击进度保持零，队" .. row)
-            end
-            Page.update(0.02)
-            check(observed.retreats == 1 and observed.victories == 0 and #observed.rewards == 0
-                and raid.finishElapsed >= hold, "另等至少一秒后才退关一次，无胜利或奖励")
-            local previous = SC.getTerminalPrevStageId(TERMINAL)
-            for row = 1, 3 do
-                check(drivers[row].terminalRaid == nil and drivers[row].stageId == previous,
-                    "失败展示结束统一解绑并退回前关，队" .. row)
-            end
-        end)
+            end)
+        end
     end
+end
+
+local function testPageLargeDtFailure()
+    local Page, drivers, raid, observed = openTestPage()
+    local hold = TerminalRaid.FAILURE_HOLD_SEC
+    local firstDt = hold + 1
+    check(hold >= 1 and firstDt > hold, "首次全灭帧dt大于失败展示门槛")
+    for row = 1, 3 do
+        for _, ally in ipairs(drivers[row].allies) do ally.hp, ally.attrs.final[AD.HP] = 0, 0 end
+        for _, boss in ipairs(drivers[row].enemies) do
+            boss.attrs.final[AD.ATK_INTERVAL], boss.attrs.final[AD.ATK_SPEED] = firstDt * 100, 0
+            boss.atkProgress = 0.5
+        end
+    end
+    check(not raid.finished and observed.retreats == 0, "大dt更新前协同尚未失败或退关")
+    Page.update(firstDt)
+    check(raid.finished == true and raid.won == false and raid.finishObserved == true
+        and raid.finishElapsed == 0 and observed.retreats == 0,
+        "首次观察失败不累计当前大dt，不能同帧直接退关")
+    check(raid.defeated[1] and raid.defeated[2] and raid.defeated[3] and raid.hp > 0,
+        "真实 Page 大dt全灭路径显式确认三队失守，非空池也只判失败")
+    Page.update(0)
+    for row = 1, 3 do
+        local stopped = true
+        for _, boss in ipairs(drivers[row].enemies) do if boss.atkProgress ~= 0 then stopped = false end end
+        check(drivers[row].terminalRaid == raid and drivers[row].stageId == TERMINAL
+            and drivers[row]._terminalStopped == true and stopped,
+            "失败留存仍绑定终焉，真实停摆使全部敌人atkProgress=0，队" .. row)
+    end
+    check(observed.retreats == 0 and observed.victories == 0 and #observed.rewards == 0
+        and raid.finishElapsed == 0, "零dt停摆观察不退关、不发奖、不偷算展示时长")
+    Page.update(hold - 0.01)
+    check(observed.retreats == 0 and raid.finishElapsed < hold,
+        "首次大dt之后仍需另等完整失败展示门槛，不足一秒不退关")
+    for row = 1, 3 do
+        local stopped = true
+        for _, boss in ipairs(drivers[row].enemies) do if boss.atkProgress ~= 0 then stopped = false end end
+        check(drivers[row].terminalRaid == raid and drivers[row].stageId == TERMINAL and stopped,
+            "失败等待期间不重开且全部敌人攻击进度保持零，队" .. row)
+    end
+    Page.update(0.02)
+    check(observed.retreats == 1 and observed.victories == 0 and #observed.rewards == 0
+        and raid.finishElapsed >= hold, "另等至少一秒后才退关一次，无胜利或奖励")
+    local previous = SC.getTerminalPrevStageId(TERMINAL)
+    for row = 1, 3 do
+        check(drivers[row].terminalRaid == nil and drivers[row].stageId == previous,
+            "失败展示结束统一解绑并退回前关，队" .. row)
+    end
+end
+
+local function singleSceneFixture()
+    local deps, observed = {}, { resets = {}, loads = {}, firstClears = 0, allDead = 0 }
+    local env = setmetatable({}, { __index = _G })
+    env.require = function(name) return deps[name] or require(name) end
+    local function noop() end
+    deps["shared.StageProvider"] = { Get = function() return SC end }
+    deps["ui.battle.tri.BattleTriPage"] = { isOpen = function() return false end }
+    deps["ui.battle.stage.StageEntryEvents"] = { notify = noop, retry = noop }
+    deps["systems.OfflineCalc"] = {
+        resolveIdleStageAnchors = function() return 101, 101 end,
+        calcOnlineIdleRewards = function() return { gold = 0, adventureExp = 0, adventurerExp = 0 } end,
+    }
+    deps["ui.hud.BottomNav"] = { setAllLocked = noop }
+    deps["systems.GameBGM"] = { setScene = noop }
+    deps["ui.battle.popup.MonsterInfoPopup"] = { update = noop }
+    deps["ui.battle.popup.TerminalConfirmDialog"] = { update = noop }
+    local flow = require("ui.battle.stage.BattleStageFlow")
+    deps["ui.battle.stage.BattleStageFlow"] = { ensureBattleCards = function() return {} end,
+        pumpBattleCards = function(queue) return queue end, startBattleTalents = flow.startBattleTalents }
+    local lifecycle = compileModule("ui.battle.scene.BattleAllyLifecycle", env)
+    -- 保留真实Lifecycle全部出口，只有bind附加旧计时观测，不截断新增宿主API。
+    local lifecycleProxy = {} ---@type table
+    for key, value in pairs(lifecycle) do lifecycleProxy[key] = value end
+    deps["ui.battle.scene.BattleAllyLifecycle"] = lifecycleProxy
+    lifecycleProxy.bind = function(bindDeps)
+        observed.get = bindDeps.get
+        local original = bindDeps.set
+        bindDeps.set = function(key, value)
+            if key == "firstClearTimeLeft" then observed.resets[#observed.resets + 1] = { value = value } end
+            original(key, value)
+        end
+        return lifecycle.bind(bindDeps)
+    end
+    local stageLoad = compileModule("ui.battle.stage.BattleStageLoad", env)
+    deps["ui.battle.stage.BattleStageLoad"] = { load = function(ctx, id, skip)
+        stageLoad.load(ctx, id, skip)
+        observed.loads[#observed.loads + 1] = { stageId = id, timer = ctx.firstClearTimeLeft }
+        -- 真实load确认无计时器后，在回写Scene边界模拟旧版本/恢复数据残留。
+        if observed.staleTimer then ctx.firstClearTimeLeft = observed.staleTimer end
+    end }
+    deps["ui.battle.stage.BattleStageNavLogic"] = compileModule("ui.battle.stage.BattleStageNavLogic", env)
+    deps["ui.battle.scene.BattleScenePhases"] = compileModule("ui.battle.scene.BattleScenePhases", env)
+    local Scene = compileModule("ui.battle.scene.BattleScene", env)
+    Scene.updateTriReincarnation = function() return false end
+    -- 不替换真实时钟入口，避免掩盖Scene倍速回归。
+    Scene.setOnFirstClear(function() observed.firstClears = observed.firstClears + 1 end)
+    Scene.setOnAllDead(function() observed.allDead = observed.allDead + 1 end)
+    local function enter(stageId)
+        Scene.debugJumpToStage(stageId)
+        if not SC.isTerminalTemple(stageId) then
+            -- Debug跳关把当前普通关也记为已通；夹具明确恢复未首通账本再走真实load。
+            Scene.getClearedStages()[stageId] = nil
+            Scene.getClearedStages()[tostring(stageId)] = nil
+            Scene.reloadStage()
+        end
+        Scene.setAllies({ assert(HC.createHero(1, 1)) })
+        Scene.restoreContext()
+        for _, list in ipairs({ Scene.getAllies(), Scene.getEnemies() }) do
+            for _, unit in ipairs(list) do
+                unit.attrs.final[AD.ATK_INTERVAL], unit.attrs.final[AD.ATK_SPEED] = 1000000000, 0
+            end
+        end
+    end
+    return Scene, observed, enter
+end
+
+local function testSingleSceneNoTimeLimit()
+    -- 狂暴会从入场缓存重算攻速；只隔离夹具攻击实伤，保留真实Scene计时/狂暴/死亡判定。
+    patch(BC, "performAttack", function() end)
+    local limit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
+    for _, entry in ipairs(SC.STAGES) do
+        if SC.isTerminalTemple(entry.id) then
+            case("单场终焉load/reset/残留计时器 " .. entry.id, function()
+                local Scene, observed, enter = singleSceneFixture()
+                enter(entry.id)
+                check(observed.loads[#observed.loads].timer == nil,
+                    "真实终焉load不设置首通计时器 " .. entry.id)
+                check(observed.resets[#observed.resets].value == nil,
+                    "真实终焉setAllies重置不设置首通计时器")
+                Scene.setEnemies(Scene.getEnemies())
+                check(observed.resets[#observed.resets].value == nil,
+                    "真实终焉setEnemies重置不设置首通计时器")
+                observed.staleTimer = 0.5
+                Scene.reloadStage()
+                check(observed.loads[#observed.loads].timer == nil, "终焉重载仍不创建限时，边界再注入残留timer")
+                for _, list in ipairs({ Scene.getAllies(), Scene.getEnemies() }) do
+                    for _, unit in ipairs(list) do
+                        unit.attrs.final[AD.ATK_INTERVAL], unit.attrs.final[AD.ATK_SPEED] = 1000000000, 0
+                    end
+                end
+                for _, dt in ipairs({ limit - 1, 1, 1 }) do
+                    Scene.update(dt)
+                    check(observed.get("battleActive") and observed.get("defeatTimer") == nil
+                        and Scene.getStageId() == entry.id and observed.allDead == 0,
+                        "残留timer不能使单场终焉在旧上限前后失败 " .. entry.id)
+                end
+                check(observed.firstClears == 0, "单场终焉长战斗不提前首通")
+                Scene.debugInstantClear()
+                Scene.update(0)
+                check(observed.get("reincarnationTimer") == 0 and not observed.get("battleActive")
+                    and observed.firstClears == 1, "单场终焉超旧上限后全池清空仍能胜利")
+                Scene.update(0)
+                check(observed.firstClears == 1, "单场终焉胜利首通回调仍幂等")
+                observed.staleTimer = nil
+                enter(entry.id)
+                for _, ally in ipairs(Scene.getAllies()) do ally.hp, ally.attrs.final[AD.HP] = 0, 0 end
+                Scene.update(limit + 1)
+                check(observed.get("defeatTimer") == 0 and not observed.get("battleActive")
+                    and observed.allDead == 0, "单场终焉超旧上限后全灭仍进入原延迟退场")
+            end)
+        end
+    end
+    case("普通首通300秒保护", function()
+        local Scene, observed, enter = singleSceneFixture()
+        enter(101)
+        check(observed.loads[#observed.loads].timer == limit
+            and observed.resets[#observed.resets].value == limit, "普通首通load/reset仍设置300秒")
+        Scene.update(limit - 1)
+        check(observed.get("battleActive") and observed.allDead == 0, "普通首通299秒仍战斗")
+        Scene.update(1)
+        check(not observed.get("battleActive") and observed.get("defeatTimer") == 0
+            and observed.allDead == 1, "普通首通300秒照常超时判负")
+    end)
+end
+
+local function testOtherTimeLimitsUnchanged()
+    local limit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
+    local Dungeon = compileModule("ui.dungeon.DungeonBattle")
+    defer(Dungeon.exit)
+    for _, id in ipairs({ "gold_mine", "babel_tower" }) do
+        local DC = require("config.DungeonConfig")
+        local data = { dungeonId = id, monsters = { 1 }, floor = 1 }
+        if DC.isResourceDungeon(id) then data.stageEntry = DC.getStage(DC.getStageId(id, 1)) end
+        Dungeon.enter(data, {})
+        Dungeon.update(limit - 1, {}, {})
+        check(Dungeon.getTimeRemaining() == 1 and not Dungeon.isTimeLimitExceeded(), id .. "299秒尚未超时")
+        Dungeon.update(1, {}, {})
+        check(Dungeon.getTimeRemaining() == 0 and Dungeon.isTimeLimitExceeded(), id .. "300秒仍达到时限")
+        Dungeon.exit()
+    end
+    local towerEnv = setmetatable({ require = function(name)
+        if name == "ui.dungeon.DungeonBattle" then return Dungeon end
+        if name == "core.PlayerStore" then return { Get = function() return { maxStageId = 34505,
+            clearedStages = { [tostring(SC.TERMINAL_HARD)] = true } } end } end
+        return require(name)
+    end }, { __index = _G })
+    -- 图形叶子用spy，Tower.draw/handleClick仍为完整生产实现。
+    local towerTexts = {}
+    local realPage = require("ui.battle.tri.BattleTriPage")
+    local view = { init = function() end, draw = function() end }
+    local pageView = { init = function() end, drawL0 = function() end, drawL1Underlay = function() end,
+        getInteriorRectFor = realPage.getInteriorRectFor }
+    for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgIntersectScissor", "nvgScissor",
+        "nvgTranslate", "nvgScale", "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgFillColor", "nvgText" }) do
+        towerEnv[name] = function() end
+    end
+    towerEnv.nvgRGBA = function(...) return { ... } end
+    local baseRequire = towerEnv.require
+    towerEnv.require = function(name)
+        if name == "ui.battle.tri.BattleTriPage" then return pageView end
+        if name == "ui.battle.scene.BattleView" then return view end
+        if name == "core.DrawUtil" then return { drawTextStroke = function(_, _, _, text)
+            towerTexts[#towerTexts + 1] = text
+        end } end
+        return baseRequire(name)
+    end
+    patch(BattleEffects, "init", function() end)
+    patch(PS, "init", function() end)
+    patch(require("ui.battle.popup.BattleResultPanel"), "init", function() end)
+    local Tower = compileModule("ui.tower.TowerTriBattle", towerEnv)
+    defer(Tower.forceClose)
+    local teams, lanes = {}, {}
+    for row = 1, 3 do
+        local ally, enemy = assert(HC.createHero(row, 1)), assert(MC.createMonster(1, 1))
+        ally.attrs.final[AD.ATK_INTERVAL], ally.attrs.final[AD.ATK_SPEED] = 1000000000, 0
+        enemy.attrs.final[AD.ATK_INTERVAL], enemy.attrs.final[AD.ATK_SPEED] = 1000000000, 0
+        teams[row], lanes[row] = { ally }, { field = { enemy }, queue = {} }
+    end
+    patch(require("ui.tower.TowerWaveSplit"), "splitToLanes", function() return lanes end)
+    Tower.open({ teamAllies = teams, data = { dungeonId = "babel_tower", monsters = { 1 }, floor = 1 } })
+    check(not Tower.cycleBattleSpeed(), "最高难度账户也不能切换塔倍速")
+    local towerState
+    for i = 1, 100 do
+        local name, value = debug.getupvalue(Tower.isOpen, i)
+        if name == "state" then towerState = value break end
+        if not name then break end
+    end
+    assert(towerState, "塔私有状态缺失")
+    towerState.battleSpeed = 3 -- 模拟旧运行态残留，生产update不得读取。
+    local originalCycle = Tower.cycleBattleSpeed
+    Tower.cycleBattleSpeed = function() error("旧塔按钮不得命中切速入口") end
+    for _, size in ipairs({ {1920,1080}, {1280,800} }) do
+        Tower.draw({}, size[1], size[2])
+        local layout = require("ui.tower.TowerLayout").compute(size[1], size[2])
+        check(Tower.handleClick(layout.center.x + layout.center.w - 70, 40, size[1], size[2])
+            and towerState.phase == "active" and not towerState.confirmOpen,
+            "旧塔倍速区域仅沿原整区防穿透，不切速或撤退")
+    end
+    for _, text in ipairs(towerTexts) do
+        check(not text:match("^X%d"), "真实塔HUD不绘制旧倍率标签")
+    end
+    Tower.cycleBattleSpeed = originalCycle
+    for row = 1, 3 do
+        -- 本组测活动帧原dt，不将新入场门禁当倍速；攻速源使用正式实时属性。
+        towerState.lanes[row].introTimer = 0
+        teams[row][1].atkProgress = 0
+        teams[row][1].attrs.final[AD.ATK_INTERVAL] = 1
+        teams[row][1].attrs.final[AD.ATK_SPEED] = 0
+    end
+    Tower.update(.25)
+    check(Dungeon.getElapsed() == .25, "真实塔整层计时只推进四分之一秒")
+    for row = 1, 3 do
+        check(math.abs(teams[row][1].atkProgress - .25) < 1e-9, "真实塔队" .. row .. "攻击进度使用原dt")
+        teams[row][1].attrs.final[AD.ATK_INTERVAL] = 1000000000
+    end
+    Tower.update(limit - 1 - .25)
+    local resultPending = Dungeon.getResultState()
+    check(not resultPending and not Dungeon.isTimeLimitExceeded(), "真实通天塔299秒不判负")
+    Tower.update(1)
+    local pending, won, elapsed = Dungeon.getResultState()
+    check(pending and won == false and elapsed == limit, "真实通天塔300秒按原规则超时判负")
+    Tower.forceClose()
+    local lab = Driver.new(1, { battleLab = true, allyFactory = function()
+        local unit = assert(HC.createHero(1, 1))
+        unit.attrs.final[AD.ATK_INTERVAL], unit.attrs.final[AD.ATK_SPEED] = 1000000000, 0
+        return { unit }
+    end })
+    lab:start(101)
+    lab.introTimer = 0
+    for _, enemy in ipairs(lab.enemies) do
+        enemy.attrs.final[AD.ATK_INTERVAL], enemy.attrs.final[AD.ATK_SPEED] = 1000000000, 0
+    end
+    lab:update(limit - 1)
+    check(lab.active and not lab._labTimedOut and lab._labTimeLimit == limit, "实验室默认300秒，299秒仍战斗")
+    lab:update(1)
+    check(not lab.active and lab._labTimedOut and lab._labElapsed == limit, "实验室300秒照常超时停止")
 end
 
 local function testPageImmediateVictoryAndRewards()
@@ -618,10 +909,17 @@ local function testPageImmediateVictoryAndRewards()
             "仅 lines[row][row] 的实际奖励入账，队" .. row)
         check(reward and #reward.heroIds == 1 and reward.heroIds[1] == drivers[row].allies[1].heroId,
             "奖励经验名单只取对应队存活英雄，队" .. row)
-        check(drivers[row].terminalRaid == nil, "胜利当帧解除共享绑定，队" .. row)
+        check(drivers[row].terminalRaid == raid and drivers[row].stageId == TERMINAL
+            and drivers[row].pendingStageId == nil, "胜利保持终焉且无目标预约，队" .. row)
     end
     Page.update(0)
     check(observed.victories == 1 and #observed.rewards == 3, "胜利后再次 Page.update 不重复完成或奖励")
+    local target = SC.getReincarnationTarget(SC.getDifficulty(TERMINAL))
+    check(Page.completeTerminalReincarnation(target), "动画完成出口统一三队进场")
+    for row = 1, 3 do
+        check(drivers[row].terminalRaid == nil and drivers[row].stageId == target,
+            "动画结束才解绑并进入目标，队" .. row)
+    end
 end
 
 -- 图形/SFX/时钟只是叶子 spy；Page、RewardPopup、Cascade、BattleView、
@@ -764,31 +1062,36 @@ local function testPageTerminalDraw()
     local Page, drivers, raid, observed, _, _, _, texts, rectangles, fills = openTerminalUIFixture()
     local limit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
     local I18n = require("core.I18n")
-    -- 真实卡牌绘制执行（不是替换 BattleView.draw）；每一活卡仍有绿色生命填充。
-    for _, elapsed in ipairs({ 0, limit - 29, limit + 1 }) do
-        raid.elapsed = elapsed
-        local textStart, rectStart, fillStart = #texts, #rectangles, #fills
-        Page.draw({}, 1920, 1080)
-        local left = math.max(0, math.ceil(limit - elapsed))
-        local expected = I18n.format("限时 %d:%02d", left // 60, left % 60)
-        local timeCount, sharedText, cardHp = 0, 0, 0
-        local x, y = Page.getInteriorRect(1)
-        for i = textStart + 1, #texts do
-            local record = texts[i]
-            if record.text == expected and record.x == x + 28 and record.y == y + 55 then
-                timeCount = timeCount + 1
+    -- 真实卡牌绘制执行（不是替换 BattleView.draw）；五语与旧上限前后都保持不限时。
+    local initialLanguage = I18n.get()
+    defer(function() I18n.set(initialLanguage) end)
+    for _, language in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+        I18n.set(language)
+        for _, elapsed in ipairs({ 0, limit - 29, limit, limit + 1 }) do
+            raid.elapsed = elapsed
+            local textStart, rectStart, fillStart = #texts, #rectangles, #fills
+            Page.draw({}, 1920, 1080)
+            local expected = I18n.lookup("不限时")
+            local timeCount, sharedText, cardHp = 0, 0, 0
+            local x, y = Page.getInteriorRect(1)
+            for i = textStart + 1, #texts do
+                local record = texts[i]
+                if record.text == expected and record.x == x + 28 and record.y == y + 55 then
+                    timeCount = timeCount + 1
+                end
+                if record.text:find(I18n.lookup("共享生命"), 1, true) then sharedText = sharedText + 1 end
             end
-            if record.text:find(I18n.lookup("共享生命"), 1, true) then sharedText = sharedText + 1 end
+            check(timeCount == 1, language .. "终焉row1不限时文案/位置不受用时影响 " .. elapsed)
+            check(sharedText == 0, "终焉不绘制额外共享生命文字 elapsed=" .. elapsed)
+            check(#rectangles == rectStart, "终焉三行不绘制额外共享总血条圆角矩形 elapsed=" .. elapsed)
+            for i = fillStart + 1, #fills do
+                local fill = fills[i]
+                if fill.shape.w == 160 and fill.shape.h == 20 and fill.color.r == 0x3d
+                    and fill.color.g == 0xc4 and fill.color.b == 0x4a then cardHp = cardHp + 1 end
+            end
+            check(cardHp == 12, "真实 BattleView/BattleDraw 仍绘制九 Boss 与三英雄各自血条 elapsed=" .. elapsed)
         end
-        check(timeCount == 1, "终焉 row1 倒计时保留正确文本/位置并钳制至零 elapsed=" .. elapsed)
-        check(sharedText == 0, "终焉不绘制额外共享生命文字 elapsed=" .. elapsed)
-        check(#rectangles == rectStart, "终焉三行不绘制额外共享总血条圆角矩形 elapsed=" .. elapsed)
-        for i = fillStart + 1, #fills do
-            local fill = fills[i]
-            if fill.shape.w == 160 and fill.shape.h == 20 and fill.color.r == 0x3d
-                and fill.color.g == 0xc4 and fill.color.b == 0x4a then cardHp = cardHp + 1 end
-        end
-        check(cardHp == 12, "真实 BattleView/BattleDraw 仍绘制九 Boss 与三英雄各自血条 elapsed=" .. elapsed)
+        check(language == "zh_CN" or I18n.lookup("不限时") ~= "不限时", language .. "不限时HUD有正式翻译")
     end
     check(not raid.finished and observed.retreats == 0 and observed.victories == 0,
         "draw 不改变终焉结算/退关状态")
@@ -800,39 +1103,228 @@ local function testPageTerminalDraw()
     end
 end
 
--- 保留原有 completeTriTerminal 基线：真实轮回推进、存档镜像、首通去重。
--- 隔离 BattleScene 私有进度和持久化边界，不写玩家真实存档。
-local function testCompleteTriTerminal()
-    local BattleScene = compileModule("ui.battle.scene.BattleScene")
-    local Dispatcher = require("runtime.ClientDispatcher")
-    local battle = { clearedStages = {} }
-    local oldGet = Dispatcher.get
-    patch(Dispatcher, "get", function(key) if key == "battle" then return battle end; return oldGet(key) end)
-    patch(require("boot.StandaloneSave"), "Flush", function() end)
-    patch(require("ui.hud.BottomNav"), "setAllLocked", function() end)
-    patch(require("systems.GameBGM"), "setScene", function() end)
-    local targetId = SC.getReincarnationTarget(SC.getDifficulty(TERMINAL))
-    check(targetId ~= nil, "轮回目标关存在")
-    local fcCalls = {}
-    BattleScene.setOnFirstClear(function(id) fcCalls[#fcCalls + 1] = id end)
-    defer(function() BattleScene.setOnFirstClear(nil) end)
-    local lastStage = SC.getTerminalPrevStageId(TERMINAL)
-    BattleScene.adoptStageProgress(lastStage)
-    BattleScene.getClearedStages()[lastStage] = true
-    BattleScene.adoptStageProgress(TERMINAL)
-    check(BattleScene.getStageId() == TERMINAL, "主线已停在终焉关")
-    check(BattleScene.completeTriTerminal(TERMINAL) == true, "completeTriTerminal 成功")
-    check(BattleScene.getStageId() == targetId and BattleScene.getMaxStageId() >= targetId, "胜利推进轮回目标并覆盖 maxStage")
-    check(BattleScene.getClearedStages()[TERMINAL] == true and battle.clearedStages[tostring(TERMINAL)] == true,
-        "终焉已通关同时写内存进度和隔离存档镜像")
-    check(#fcCalls == 1 and fcCalls[1] == TERMINAL, "首通回调恰好一次")
-    BattleScene.adoptStageProgress(TERMINAL)
-    check(BattleScene.completeTriTerminal(TERMINAL) == true and BattleScene.getStageId() == targetId, "重复通关仍可轮回")
-    check(#fcCalls == 1, "重复通关不重复首通奖励")
+local terminalFlowFixture = require("tests.TerminalFlowFixture").bind({
+    compileModule = compileModule, patch = patch, defer = defer, check = check, clearShield = clearShield,
+})
+
+local function testAccountSpeedRemoved()
+    local Speed = require("ui.battle.stage.BattleSpeed")
+    check(Speed.getAccountMaxUnlocked(nil) == 1, "新档兼容倍率恒为1")
+    local difficulty = SC.DIFFICULTY_NORMAL
+    repeat
+        check(Speed.getMaxUnlocked(difficulty) == 1, "所有难度都不解锁倍速 " .. difficulty)
+        local terminal = SC.getTerminalTempleId(difficulty)
+        if terminal then
+            for _, key in ipairs({ terminal, tostring(terminal) }) do
+                local battle = { currentStageId = SC.NORMAL_FIRST_STAGE,
+                    maxStageId = SC.getTerminalPrevStageId(terminal), clearedStages = { [key] = true } }
+                local original = cjson.encode(battle)
+                check(Speed.getAccountMaxUnlocked(battle, 34505, battle.clearedStages) == 1,
+                    "终焉双键通关和最高内存关也不能加速 " .. terminal)
+                check(cjson.encode(battle) == original, "兼容查询不修改旧档 " .. terminal)
+                check(Speed.getAccountMaxUnlocked(cjson.decode(original)) == 1, "重启旧档仍为真实速度")
+            end
+        end
+        difficulty = SC.getNextDifficulty(difficulty)
+    until not difficulty
+    for _, speed in ipairs({ 1, 1.5, 2, 3, 10 }) do
+        check(Speed.cycle(speed, 10) == 1 and Speed.getSpeedText(speed) == "X1", "旧循环/标签不保留倍率")
+        for _, visible in ipairs({ false, true }) do
+            for _, dt in ipairs({ 0, 1 / 60, 0.25, 2 }) do
+                local logicDt, normalized = Speed.getLogicDt(dt, speed, 10, visible)
+                check(logicDt == dt and normalized == 1, "旧dt入口恒为原dt，不依赖visible或旧倍率")
+            end
+        end
+    end
+    check(not Speed.hitTest(987, 311) and not Speed.hitTest(922, 239.5)
+        and not Speed.hitTest(1052, 382.5), "旧按钮中心和边界都不命中")
+    check(Speed.draw(nil, -1, 3, true) == false, "旧绘制接口不访问NanoVG或图标")
+
+    -- 使用真实Scene.update及公共战斗tick，不把时钟替为假实现。
+    patch(BC, "performAttack", function() end)
+    local Scene, observed, enter = singleSceneFixture()
+    for _, stageId in ipairs({ 101, SC.HARD_FIRST_STAGE, SC.NIGHTMARE_FIRST_STAGE, 34505 }) do
+        enter(stageId)
+        Scene.battleSpeed = 3
+        check(Scene.getMaxUnlockedBattleSpeed() == 1 and not Scene.isSpeedButtonVisible()
+            and Scene.getBattleLogicDt(.25) == .25 and not Scene.cycleBattleSpeed(), "真实Scene兼容接口恒为正常速度")
+        local unit = Scene.getAllies()[1]
+        unit.attrs.final[AD.ATK_INTERVAL], unit.attrs.final[AD.ATK_SPEED] = 1, 0
+        unit.atkInterval, unit._lastAttrInterval, unit.atkProgress = 1, 1, 0
+        local elapsed = 0
+        local originalTick = require("ui.battle.scene.BattleSceneTick").tick
+        local index = #restores
+        patch(require("ui.battle.scene.BattleSceneTick"), "tick", function(ctx, dt)
+            elapsed = elapsed + dt
+            return originalTick(ctx, dt)
+        end)
+        -- 旧作弊包装器即使留在兼容API上，真实update也不再经过它。
+        patch(Scene, "getBattleLogicDt", function() error("旧倍率入口不应被update调用") end)
+        Scene.update(.25)
+        check(elapsed == .25 and math.abs(unit.atkProgress - .25) < 1e-9
+            and observed.get("battleActive"), "真实Scene攻击进度及tick只推进真实四分之一秒 " .. stageId)
+        restoreTo(index)
+    end
+    check(not Scene.handleSpeedButtonInput(987, 311) and not Scene.drawSpeedButton(nil), "Scene旧绘制/命中接口为空操作")
+    -- 输入叶子设为不命中；只读真实handleInput，旧倍速分支不能吞掉空白点击。
+    for _, name in ipairs({ "ui.battle.popup.BattleResultPanel", "ui.battle.popup.TerminalConfirmDialog",
+        "ui.battle.stage.SweepDialog", "ui.battle.popup.DamageStatsPanel" }) do
+        patch(require(name), "isOpen", function() return false end)
+        patch(require(name), "handleInput", function() return false end)
+        patch(require(name), "handleButtonInput", function() return false end)
+    end
+    -- 真实输入单独编译同一源码并沿测试叶子路由。
+    local inputEnv = setmetatable({ require = function(name)
+        if name == "ui.battle.popup.TerminalConfirmDialog" then return { handleInput = function() return false end } end
+        return require(name)
+    end }, { __index = _G })
+    local inputScene = compileModule("ui.battle.scene.BattleScene", inputEnv)
+    check(not inputScene.handleInput(987, 311), "真实Scene旧倍速中心点击返回false")
+
+    local ceEnv = setmetatable({ require = function(name)
+        if name == "ui.battle.scene.BattleScene" then return inputScene end
+        return require(name)
+    end }, { __index = _G })
+    local CE = compileModule("ui.dev.CERuntime", ceEnv)
+    local originalClock, originalSpeed = inputScene.getBattleLogicDt, inputScene.battleSpeed
+    for _ = 1, 3 do
+        check(CE.setSpeedOn(true) == false and CE.toggleSpeed() == false
+            and CE.installSpeedHook() == false and not CE.isSpeedOn(), "CE旧入口不能启用加速或安装包装器")
+        check(inputScene.getBattleLogicDt == originalClock and inputScene.battleSpeed == originalSpeed
+            and inputScene.getBattleLogicDt(.25) == .25, "CE不改写真实Scene时钟函数/倍率字段")
+    end
 end
+
+local function testCompleteTriTerminal()
+    for _, terminal in ipairs({ SC.TERMINAL_NORMAL, SC.TERMINAL_HARD }) do
+        case("完整轮回链 " .. terminal, function()
+            local f = terminalFlowFixture(terminal)
+            local target = SC.getReincarnationTarget(SC.getDifficulty(terminal))
+            local previous = SC.getTerminalPrevStageId(terminal)
+            f.finishRaid()
+            f.syncBattle()
+            check(#f.state.kills == 3 and f.state.starts == 0, "胜利结算三Boss一次但不开始动画 " .. terminal)
+            check(f.scene.getStageId() == terminal and f.page.isTerminalRaidActive(), "胜利保持Scene及三隊终焉")
+            check(f.battle.currentStageId == previous and f.battle.maxStageId >= target
+                and f.battle.clearedStages[tostring(terminal)] == true, "首通写末关回退点及永久目标解锁而非目标当前关")
+            check(f.page.getMaxUnlockedBattleSpeed() == 1
+                and f.scene.getMaxUnlockedBattleSpeed() == 1,
+                "终焉胜利与永久目标解锁不再开启战斗倍速")
+            check(not f.page.isSpeedButtonVisible(), "终焉收尾期间不显示可操作倍速按钮")
+            local fcExp = f.state.values.Exp
+            check(fcExp == SC.getStage(terminal).fcExp, "真实首通闭包恰好发放终焉经验")
+            check(not f.scene.completeTriTerminal(tostring(terminal)), "重复胜利被运行态pending拦截")
+            f.page.update(20)
+            check(#f.state.kills == 3 and f.state.values.Exp == fcExp and f.state.starts == 0,
+                "奖励或战场故事未完不重发三Boss/首通，不偷播动画")
+            for row = 1, 3 do
+                check(f.drivers[row].stageId == terminal and f.drivers[row].pendingStageId == nil,
+                    "等待期间不预约/进场目标，队" .. row)
+            end
+            for _, snap in ipairs(f.state.snapshots) do
+                check(snap.currentStageId == previous and snap.teamStageIds["1"] == previous
+                    and snap.teamStageIds["2"] == previous and snap.teamStageIds["3"] == previous,
+                    "中断保存三队均为末关安全点")
+            end
+            local pending = {}
+            while f.story.hasPending("battle") do pending[#pending + 1] = assert(f.story.take("battle")).scenarioId end
+            local expectedEnter, expectedClear = terminal == SC.TERMINAL_NORMAL and 61 or 68,
+                terminal == SC.TERMINAL_NORMAL and 62 or 69
+            local seen = {}
+            for _, id in ipairs(pending) do seen[id] = true; f.session.claimedScenarios[id] = true end
+            check(seen[expectedEnter] and seen[expectedClear], "生产入场61/68及首通62/69均保留，不断言FIFO反序")
+            f.state.reward = false
+            for _, blocker in ipairs({ "pendingReward", "dialogue", "tutorial", "recovery" }) do
+                f.state[blocker] = true; f.page.update(10); f.state[blocker] = false
+                check(f.state.starts == 0, blocker .. "真实收尾前不启动轮回")
+            end
+            f.story.enqueue(32) -- 酒馆已关闭后的可见城镇告别不能被轮回抢走。
+            f.page.update(10)
+            check(f.state.starts == 0, "横屏可见城镇告别等待，不提前轮回")
+            local townFarewell = f.story.take("battle_town")
+            check(townFarewell and townFarewell.scenarioId == 32, "只消费可见城镇告别，不取未进入锻炉")
+            f.session.claimedScenarios["32"] = true
+            f.story.enqueue(47) -- 未进入的锻炉剧情不应阻止本次轮回。
+            f.page.update(1.9)
+            check(f.state.starts == 0, "无阻挡后真实时钟倒计时不足两秒不启动")
+            f.page.update(0.2)
+            check(f.state.starts == 1 and f.intro.isActive() and f.scene.getStageId() == terminal,
+                "走生产StandaloneBoot闭包启动终焉远征过场，仍不进目标")
+            f.page.update(10)
+            check(f.state.starts == 1 and #f.state.arrivals == 0, "动画active不重复start/目标入场")
+            if terminal == SC.TERMINAL_NORMAL then f.intro.skip()
+            else for _ = 1, 5 do f.intro.update(20) end end
+            check(f.scene.getStageId() == target and not f.page.isTerminalRaidActive(), "完成或skip统一完成Scene轮回")
+            for row = 1, 3 do check(f.drivers[row].stageId == target, "动画结束三队实际进入目标，队" .. row) end
+            check(#f.state.arrivals == 3, "目标只由三个真实Driver各通知进场，不由兼容Scene提前重复通知")
+            local lastSave = f.state.snapshots[#f.state.snapshots] ---@type table
+            check(lastSave.currentStageId == target and lastSave.teamStageIds["2"] == target
+                and lastSave.teamStageIds["3"] == target, "三队进场后才最后保存统一目标")
+            f.intro.skip()
+            check(f.state.starts == 1 and #f.state.kills == 3 and f.state.values.Exp == fcExp,
+                "重复skip不发第二次首通/三Boss奖励")
+            f.page.resetToDefault()
+            f.scene.adoptStageProgress(SC.NORMAL_FIRST_STAGE)
+            check(f.scene.getMaxUnlockedBattleSpeed() == 1
+                and f.page.getMaxUnlockedBattleSpeed() == 1,
+                "三队关闭后单队回旧关仍为正常速度")
+        end)
+    end
+    case("已通终焉及claimed双键", function()
+        for _, stringKey in ipairs({ false, true }) do
+            case("已通账本键" .. tostring(stringKey), function()
+                local f = terminalFlowFixture(TERMINAL)
+                local key = stringKey and tostring(TERMINAL) or TERMINAL
+                f.battle.clearedStages[key] = true
+                check(f.page.getMaxUnlockedBattleSpeed() == 1 and f.scene.getMaxUnlockedBattleSpeed() == 1,
+                    "真实Scene/三队读取终焉双键旧账本也不再解锁倍率")
+                f.session.claimedScenarios[stringKey and "61" or 61] = true
+                f.session.claimedScenarios[stringKey and "62" or 62] = true
+                f.finishRaid()
+                check(f.state.values.Exp == nil and not f.story.hasPending("battle"), "双键旧账本不重发首通或对白")
+                f.page.update(2.1)
+                f.intro.skip()
+                local target = SC.getReincarnationTarget(SC.getDifficulty(TERMINAL))
+                check(f.scene.getStageId() == target and #f.state.kills == 3, "已通终焉仍正常收尾，本次三Boss只结算一次")
+            end)
+        end
+    end)
+    case("待轮回读档/旧动画token", function()
+        local f = terminalFlowFixture(TERMINAL)
+        f.finishRaid()
+        f.state.reward = false
+        while f.story.hasPending("battle") do f.story.take("battle") end
+        f.page.update(2.1)
+        local previous = SC.getTerminalPrevStageId(TERMINAL)
+        f.page.setTeamStageIds({ previous, previous, previous })
+        f.scene.adoptStageProgress(previous)
+        f.intro.skip() -- 旧生产回调携带token，不可将新读档推进目标。
+        check(f.scene.getStageId() == previous and not f.page.isTerminalRaidActive(), "读档取消pending，旧动画回调无效")
+        check(f.battle.clearedStages[tostring(TERMINAL)] == true
+            and f.battle.maxStageId >= SC.getReincarnationTarget(SC.getDifficulty(TERMINAL)), "回末关保留通关及目标解锁")
+        check(#f.state.kills == 3, "恢复不重发已结算三Boss")
+    end)
+end
+
 
 function Start()
     local ok, err = pcall(function()
+        -- 所有真实保存链只落内存；用例遗漏Flush替身也不得写入cwd或玩家档。
+        local disk = {}
+        local function noop() end
+        patch(_G, "File", function(path, mode)
+            return { IsOpen = function() return true end,
+                WriteString = function(_, data) disk[path] = data; return true end,
+                ReadString = function() return disk[path] end, Close = noop, Dispose = noop }
+        end)
+        patch(_G, "fileSystem", {
+            FileExists = function(_, path) return disk[path] ~= nil end,
+            Delete = function(_, path) disk[path] = nil; return true end,
+            Rename = function(_, from, to)
+                if disk[from] == nil then return false end
+                disk[to], disk[from] = disk[from], nil; return true
+            end,
+        })
         case("三池构建/扣血/治疗/死亡/release", testRaidPoolBasics)
         case("护盾/状态/攻击战线隔离", testLaneIsolation)
         case("所有池空才胜利", testDriverRaidVictory)
@@ -841,11 +1333,18 @@ function Start()
         case("真实终焉 start/空队/signature", testTerminalStartAndSignature)
         case("三队均空立即判负但完整绑定", testAllEmptyTeamsRaid)
         case("真实 Page 失败延迟", testPageFailureHold)
-        case("真实 Page 超时/大dt首次失败边界", testPageTimeoutAndLargeDt)
+        case("真实 Page 全14座终焉不限时及后续胜败", testPageNoTimeLimit)
+        case("真实 Page 大dt首次失败边界", testPageLargeDtFailure)
+        case("真实单场全14座终焉load/reset/残留timer与普通限时", testSingleSceneNoTimeLimit)
+        case("副本/通天塔/实验室300秒规则保护", testOtherTimeLimitsUnchanged)
         case("真实 Page 即时胜利和奖励口径", testPageImmediateVictoryAndRewards)
         case("真实终焉 row1 奖励输入/覆盖层/战斗锁", testPageRowRewardInput)
-        case("真实终焉 draw 无额外共享血条且保留卡牌生命/倒计时", testPageTerminalDraw)
+        case("真实终焉draw五语不限时且保留卡牌生命", testPageTerminalDraw)
+        case("旧倍速兼容与真实Scene时钟及点击", testAccountSpeedRemoved)
         case("真实主线轮回/首通去重", testCompleteTriTerminal)
+        case("终焉来源分流真实链矩阵", function()
+            require("tests.TerminalReturnCases").run({ check = check, case = case, fixture = terminalFlowFixture })
+        end)
     end)
     if not ok then check(false, "测试初始化/收尾异常: " .. tostring(err)) end
     restoreTo(0)

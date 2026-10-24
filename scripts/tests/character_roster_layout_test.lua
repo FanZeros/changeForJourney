@@ -30,6 +30,14 @@ function Start()
         ["core.DrawUtil"] = drawUtil,
         ["config.HeroAssetUtil"] = { ensureIcon = function() return 1 end },
         ["core.HorizonBg"] = { draw = noop },
+        -- 旧专项只保留原60项头像/名册几何与教程业务断言。
+        -- 新UI/Yoga/字体及反馈独立在 character_roster_presentation_test 真Runtime验证。
+        ["ui.character.panel.CharacterRosterPresentation"] = {
+            reset = noop, observe = noop, finishObservation = noop, drawSort = noop, drawHeader = noop,
+            getFeedback = function() return false, false, 0, 0 end,
+            clearSortInteraction = noop, clearTeamInteraction = noop,
+            hitTestSort = function() return nil end, setSortInteraction = noop, setTeamInteraction = noop,
+        },
         ["systems.TutorialManager"] = { isActive = function() return true end, getNewHeroId = function() return 3 end,
             getCurrentHighlight = function() return "character_slot_1" end,
             registerCharacterDetailHotspot = function(key, heroId, cx, cy, w, h, panel)
@@ -183,6 +191,27 @@ function Start()
         end
         check(hit(540, Draw.SCROLL_TOP + Draw.CONTENT_SHIFT_Y - 1) == nil,
             "裁剪上方空隙不会误选名册")
+        local prepareSource = assert(source:match("(function CharacterPanel.prepareTutorial.-)\n%-%-%- 查询详情界面"))
+        local canceled = 0
+        env.CharacterPanel = { setActiveTeam = function(team) env.activeTeamIdx = team; return true end }
+        env.activeTeamIdx, env.scrollMaxY, env.scrollVelocity, env.isDragging = 1, 2000, 0, false
+        env.dragState, env.selectSlotState = { active = false }, { active = false }
+        env._input = { cancelRosterInteraction = function() canceled = canceled + 1; env.dragState.active = false end }
+        assert(load(prepareSource, "@正式名册教程定位", "t", env))()
+        check(env.CharacterPanel.prepareTutorial(25), "正式定位函数恢复真实新增英雄所在行")
+        local targetScroll = env.scrollY
+        check(not env.CharacterPanel.prepareTutorial(25) and env.scrollY == targetScroll,
+            "名册同队同位置重复恢复幂等")
+        env.scrollY = 1500
+        check(env.CharacterPanel.prepareTutorial(25) and env.scrollY == targetScroll,
+            "滚出目标后可再次定位，不依赖首次准备标记")
+        env.dragState.active = true
+        check(env.CharacterPanel.prepareTutorial(25) and not env.dragState.active and canceled > 0,
+            "强定位取消旧拖拽，释放不误落队")
+        check(not env.CharacterPanel.prepareTutorial(999) and env.scrollY == targetScroll,
+            "英雄数据未到不假定位成功或重置视图")
+        roster[#roster + 1] = { heroId = 999, owned = true }
+        check(env.CharacterPanel.prepareTutorial(999), "真实名册晚到后可重新定位")
         print("[character_roster_layout_test] ALL PASS: " .. checkCount .. " assertions")
     end)
     require = nativeRequire

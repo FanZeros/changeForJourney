@@ -1,0 +1,1487 @@
+-- 入场准备回归：真实Standalone闭包/完整HandleUpdate、Tri/Driver/EnemySpawn/Draw；
+-- 显式外围spy隔离GPU、持久化和攻击。只读声明源码，不读写玩家档、不运行main。
+-- Horizon只抽取原文完整三行分支（含实际Tri.draw之后的ready标记），不复制门控逻辑。
+local TAG = "[startup_battle_entry_test]"
+local assertions, failures, cases = 0, 0, 0
+local function check(value, label)
+    assertions = assertions + 1
+    if not value then failures = failures + 1 end
+    print(TAG .. (value and " PASS " or " FAIL ") .. label)
+end
+local function noop() end
+local function copy(value, seen)
+    if type(value) ~= "table" then return value end
+    seen = seen or {}
+    if seen[value] then return seen[value] end
+    local result = {}; seen[value] = result
+    for key, item in pairs(value) do result[key] = copy(item, seen) end
+    return result
+end
+local function same(a, b, seen)
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return a == b end
+    seen = seen or {}
+    if seen[a] == b then return true end
+    seen[a] = b
+    for key, value in pairs(a) do if not same(value, b[key], seen) then return false end end
+    for key in pairs(b) do if a[key] == nil then return false end end
+    return true
+end
+local function source(path)
+    local file = assert(cache:GetFile(path), "missing declared source " .. path)
+    local lines = {}
+    while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+    file:Dispose()
+    return table.concat(lines, "\n")
+end
+local function section(text, first, last)
+    local a = assert(text:find(first, 1, true), "missing source anchor " .. first)
+    assert(not text:find(first, a + #first, true), "ambiguous source anchor " .. first)
+    local b = assert(text:find(last, a + #first, true), "missing end anchor " .. last)
+    return text:sub(a, b - 1)
+end
+-- 仅隔离副本内配置夹具；被测函数仍为实际生产闭包，没有改写函数体。
+local function upvalue(fn, name)
+    for index = 1, 200 do
+        local key, value = debug.getupvalue(fn, index)
+        if not key then break end
+        if key == name then return value, index end
+    end
+    error("missing real closure upvalue " .. name)
+end
+local function setvalue(fn, name, value)
+    local _, index = upvalue(fn, name)
+    debug.setupvalue(fn, index, value)
+end
+local function passive()
+    return { init = noop, initImages = noop, draw = noop, drawPage = noop, drawButton = noop,
+        drawUnderlay = noop, update = noop,
+        destroy = noop, shutdown = noop, close = noop, forceClose = noop, hide = noop, reset = noop,
+        resetToDefault = noop, isOpen = function() return false end,
+        isActive = function() return false end, isVisible = function() return false end }
+end
+
+local function fixture(options)
+    options = options or {}
+    local modules = { battle = { currentStageId = options.stage or 201, maxStageId = options.maxStage or 2001,
+        teamStageIds = { ["1"] = options.stage or 201, ["2"] = 305, ["3"] = 401 },
+        clearedStages = { ["905"] = true, ["1905"] = true }, battleMode = "idle" },
+        session = { lastOnlineTime = options.newSave and 0 or 1699999940,
+            firstLoginTime = 1699999800, introCompleted = not options.newSave },
+        player = { level = 100 }, equipment = { inventory = {}, equipped = {} } }
+    if options.maxStage == 101 then modules.battle.clearedStages = {} end
+    local counts = { starts = 0, updates = 0, images = 0, pumps = 0, calc = 0,
+        shown = 0, flush = 0, reconcile = 0, checked = 0, starter = 0, random = 0,
+        mutations = 0, claims = 0, readonly = 0, tick = 0, firstStage = 0, inventoryScans = 0,
+        saveRequests = 0, letterStarts = 0, titleDraws = 0, loadingDraws = 0,
+        overlayCalls = 0, letterDraws = 0, dialogueDraws = 0, cutsceneDraws = 0,
+        letterUpdates = 0, dialogueUpdates = 0, cancelQuickEquip = 0,
+        curationReset = 0, curationCleanup = 0, growthFlush = 0,
+        dungeonFlush = 0, towerFlush = 0, casualtyFlush = 0, pointerCalls = 0, wheelCalls = 0 }
+    local trace, drivers, loaded, loading, sources, images, cardHandles = {}, {}, {}, {}, {}, {}, {}
+    local clock = { elapsedTime = 100 }
+    local controls = { imageFailure = nil, failPrepare = false, failClaim = false, failFirstStage = false,
+        pending = false, letterOpen = false, titleOpen = true, titleFading = false,
+        failAfterSignature = false,
+        viewportOpen = false, titleReady = false, shown = nil, yieldEvery = true,
+        dialogueOpen = false, dialogue = nil }
+    local mounts = {}
+    local mocks = {}
+    local env = setmetatable({}, { __index = _G })
+    env._G, env.time = env, clock
+    local function record(name) trace[#trace + 1] = name end
+    local function forbidden(label)
+        return function() counts.mutations = counts.mutations + 1; error("FORBIDDEN_" .. label) end
+    end
+    env.File, env.io = forbidden("PLAYER_FILE"), nil
+    env.math = setmetatable({ random = function() counts.random = counts.random + 1; error("FORBIDDEN_RANDOM") end,
+        randomseed = forbidden("RANDOMSEED") }, { __index = math })
+    env.os = setmetatable({ time = function() return 1700000000 end }, { __index = os })
+    local nvgNoops = { "nvgBeginPath", "nvgRect", "nvgRoundedRect", "nvgFillPaint", "nvgFill",
+        "nvgFillColor", "nvgSave", "nvgRestore", "nvgTranslate", "nvgRotate", "nvgScale",
+        "nvgCircle", "nvgStroke", "nvgStrokeColor", "nvgStrokeWidth", "nvgMoveTo", "nvgLineTo",
+        "nvgScissor", "nvgIntersectScissor", "nvgResetScissor", "nvgFontFace", "nvgFontSize",
+        "nvgTextAlign", "nvgText", "nvgTextBox", "nvgShapeAntiAlias", "nvgGlobalAlpha",
+        "nvgResetTransform", "nvgDelete", "nvgDeleteImage" }
+    for _, name in ipairs(nvgNoops) do env[name] = noop end
+    env.nvgRGBA = function(...) return { ... } end
+    env.nvgRadialGradient, env.nvgLinearGradient = function() return {} end, function() return {} end
+    env.nvgTextBounds = function(_, _, _, text) return #text * 8 end
+    env.nvgImageSize = function() return 768, 1365 end
+    env.nvgImagePattern, env.nvgImagePatternTinted = function() return {} end, function() return {} end
+    env.nvgCreateImage = function(vg, path, flags)
+        counts.images = counts.images + 1
+        record("image:" .. path)
+        images[#images + 1] = { context = vg, path = path, flags = flags }
+        if controls.imageFailure == path then return -1 end
+        return counts.images
+    end
+    env.nvgCreate, env.nvgCreateFont = function() return {} end, function() return 1 end
+    env.SubscribeToEvent = noop
+    env.HandleEquipmentHoverTickHorizon = noop
+    -- 完整HandleUpdate的新表现同步出口；Horizon由原文分支单独隔离加载，不接真实UI/偏好档。
+    env.SyncPowerPresentationHorizon = noop
+    env.H_AUTO_OPEN_TRI, env.H_AUTO_TAB, env.H_AUTO_OPEN_PANEL = false, nil, nil
+    env.graphics = { GetWidth = function() return 1920 end, GetHeight = function() return 1080 end,
+        GetDPR = function() return 1 end }
+    local scene = { CreateComponent = function() return {} end }
+    scene.CreateChild = function() return { CreateComponent = function() return {} end } end
+    env.Scene = function() return scene end
+    env.renderer = { SetViewport = noop }
+    env.Viewport = { new = function() return {} end }
+
+    local function stateModule(name)
+        local default = { name = name, id = "default", ctx = {}, cardAnims = {}, comboQueue = {} }
+        local current = default
+        local function new(id)
+            return { name = name, id = id, ctx = {}, cardAnims = {}, comboQueue = {} }
+        end
+        local api = { newState = new, newFxState = new, newSemState = new,
+            newBattleRefs = new, mount = function(value) current = value or default end,
+            mountedState = function() return current end, reset = noop,
+            initUnit = noop, initBattle = noop, onBattleStart = noop,
+            draw = noop, drawStarGates = noop, setRenderScale = noop,
+            setContext = function(value) current.ctx = value end,
+            update = forbidden(name .. "_BUSINESS_UPDATE"), performAttack = forbidden("ATTACK"),
+            dealDamageToUnit = forbidden("DAMAGE"), updateComboQueue = forbidden("COMBO") }
+        mounts[#mounts + 1] = api
+        return api
+    end
+    local Combat = stateModule("combat")
+    Combat.playEnterAnims = noop
+    Combat.updateCardAnims, Combat.updateFloatingTexts, Combat.updateHitFlashes = noop, noop, noop
+    Combat.getCardAnimOffsetY, Combat.getChargeOffsetY, Combat.getCardAnimArcY = function() return 0 end,
+        function() return 0 end, function() return 0 end
+    Combat.getCardScale, Combat.getTransitionAlpha = function() return 1 end, function() return 1 end
+    Combat.getAnimState = function() return "idle" end
+    Combat.getHitFlashAlpha, Combat.getHpBuffer = function() return 0 end, function() return 1 end
+    Combat.getFloatingTexts = function() return {} end
+    Combat.getCardCX, Combat.getCardCY = function() return 300 end, function() return 180 end
+    local PS, Effects = stateModule("projectiles"), stateModule("effects")
+    PS.preloadBattleEffects = noop
+    local TAL, ETS = stateModule("talents"), stateModule("extraTalents")
+    local unitsState = {}
+    TAL.newUnitStates = function() return {} end
+    TAL.mountUnitStates = function(value) unitsState = value end
+    TAL.mountedUnitStates = function() return unitsState end
+    TAL.reset = function() unitsState = {} end
+    TAL.getConquerStacks = function() return 0 end
+    TAL.resetEnemyDeath = noop
+    ETS.normalize = function(value) return value or {} end
+    ETS.applyToAttrs, ETS.drawOrbit, ETS.drawIceStatues, ETS.discard = noop, noop, noop, noop
+    ETS.flush = function() counts.growthFlush = counts.growthFlush + 1; record("growth-flush") end
+    local Status = stateModule("status")
+    Status.getVisuals = function() return {} end
+    local Threat, Conditions = stateModule("threat"), stateModule("conditions")
+    local statsTeam = 9
+    local Stats = { mount = function(team) statsTeam = team end, mountedTeam = function() return statsTeam end }
+    mocks["ui.battle.combat.BattleCombat"], mocks["ui.battle.combat.ProjectileSystem"] = Combat, PS
+    mocks["ui.battle.combat.BattleEffects"], mocks["systems.TalentManager"] = Effects, TAL
+    mocks["systems.ExtraTalentSystem"], mocks["systems.StatusEffectManager"] = ETS, Status
+    mocks["systems.ThreatManager"], mocks["systems.RelicConditionHandler"] = Threat, Conditions
+    mocks["systems.BattleStats"] = Stats
+    mocks["systems.ArtifactRuntime"] = { reset = noop, initBattle = noop, onAllyDeath = forbidden("REVIVE") }
+    mocks["systems.CombatFormula"] = {}
+    mocks["ui.battle.scene.BattleAllyLifecycle"] = { bind = forbidden("ALLY_PENDING") }
+    mocks["systems.DropSystem"] = { captureTeamLuck = function()
+        -- 真实Driver.start在写teamSignature/建己方后调用；仅注入确定性故障，不替代重建正文。
+        if controls.failAfterSignature then error("EXPECTED_AFTER_SIGNATURE_FAILURE") end
+        return 0
+    end }
+    mocks["ui.battle.stage.StageEntryEvents"] = { notify = function(id, team) record("stage:" .. team .. ":" .. id) end,
+        retry = noop }
+    mocks["ui.church.talent.TalentStarMap"] = { getLitNodeEffects = function() return {} end }
+    mocks["systems.TutorialManager"] = { init = noop, update = noop, notifyEvent = noop,
+        getCurrentHighlight = function() return nil end, isActive = function() return false end,
+        canPlayPendingStory = function() return false end }
+    mocks["core.DrawUtil"] = { initShardAssets = noop, drawTextStroke = noop, drawBackSeamBar = noop,
+        drawCardImage = function(_, handle) cardHandles[#cardHandles + 1] = handle end }
+    mocks["core.I18n"] = { lookup = function(value) return value end, installDrawHook = noop,
+        format = string.format }
+    mocks["core.GameState"] = { getLevel = function() return 100 end, reset = noop }
+    mocks["runtime.ClientDispatcher"] = { get = function(key) return modules[key] end,
+        subscribe = noop, notifySubscribers = noop, hasData = function() return false end,
+        publishLive = function(key, value) modules[key] = value end,
+        handleStateUpdate = function(json)
+            local input = cjson.decode(json)
+            for key, value in pairs(input.modules) do modules[key] = value end
+            if input.modules.heroes and loaded["ui.character.panel.CharacterPanel"] then
+                loaded["ui.character.panel.CharacterPanel"].setHeroesData(input.modules.heroes)
+            end
+        end }
+    mocks["core.PlayerStore"] = { Get = function(key) return modules[key] end, Init = noop,
+        Subscribe = noop, Update = noop }
+    local panelDraw = { MAX_SLOTS = 4, MAX_PER_ROW = 5, CARD_W = 198, CARD_H = 351,
+        CARD_SPACING = 205, CARD_CY = 300, ROW1_CY = 600, ROW_SPACING = 200,
+        NAME_BG_DY = 100, NAME_BG_H = 40, SCROLL_TOP = 450, SCROLL_BOTTOM = 2200,
+        SCROLL_LEFT = 0, SCROLL_RIGHT = 1080, DESIGN_W = 1080, ROSTER_BOTTOM_DY = 130,
+        getSlotCX = function(index) return index * 205 end, setContext = noop, initImages = noop,
+        getSharedImages = function() return {} end, draw = noop, resetPresentation = noop }
+    mocks["ui.character.panel.CharacterPanelDraw2"] = panelDraw
+    mocks["ui.character.panel.CharacterPower"] = { bind = function(deps)
+        return { calcHeroPower = function(id) return tonumber(id) or 0 end,
+            applyEquippedItems = function() return nil end,
+            getHeroLevel = function(id)
+                local own = deps.get("ownedSet")[id]
+                return own and own.level or 1
+            end,
+            refreshPowerCache = noop, refreshNavBadge = noop, updateBadges = noop,
+            cancelBadgeRefresh = noop }
+    end }
+    for _, name in ipairs({ "CharacterDeploy", "CharacterInput", "CharacterProgress" }) do
+        mocks["ui.character.panel." .. name] = { bind = function() return {} end }
+    end
+    mocks["systems.EquipmentSystem"] = { isInventoryFull = function()
+        counts.inventoryScans = counts.inventoryScans + 1
+        return false
+    end }
+    mocks["systems.ArtifactBridge"] = { applyToUnit = function() return {} end }
+    mocks["systems.LootBoxSystem"] = {}
+    local Scene = passive()
+    Scene.battleSpeed = 1
+    local sceneStage = modules.battle.currentStageId
+    Scene.getStageId = function() return sceneStage end
+    Scene.getMaxStageId = function() return modules.battle.maxStageId end
+    Scene.getClearedStages = function() return modules.battle.clearedStages end
+    Scene.cancelTriReincarnation = noop
+    Scene.adoptStageProgress = function(id) sceneStage = id end
+    Scene.resetToDefault = function() sceneStage = 101 end
+    Scene.setAllies, Scene.refreshAllyStats = noop, noop
+    Scene.reloadStage = function()
+        counts.firstStage = counts.firstStage + 1
+        if controls.failFirstStage then error("EXPECTED_FIRST_STAGE_FAILURE") end
+    end
+    Scene.getAllies, Scene.getEnemies = function() return {} end, function() return {} end
+    Scene.pumpBattleCards = function() counts.pumps = counts.pumps + 1; error("FORBIDDEN_BIG_CARD_PUMP") end
+    Scene.update = function() counts.tick = counts.tick + 1; error("FORBIDDEN_SINGLE_SCENE_TICK") end
+    Scene.isInTerminalTemple, Scene.isSpeedButtonVisible = function() return false end, function() return false end
+    mocks["ui.battle.scene.BattleScene"] = Scene
+    local offline = passive()
+    offline.show = function(data) controls.shown = data; controls.viewportOpen = true
+        counts.shown = counts.shown + 1; record("show") end
+    offline.isOpen = function() return controls.viewportOpen end
+    offline.close = function() controls.viewportOpen = false end
+    mocks["ui.hud.popup.OfflineRewardPanel"] = offline
+    local Service = { HasPendingRewards = function(uid) assert(uid == 1); return controls.pending end,
+        Cleanup = function(uid) assert(uid == 1); controls.pending = false end,
+        CalcOnEnter = function(uid)
+            assert(uid == 1); counts.calc = counts.calc + 1; record("calc")
+            if options.newSave or options.noReward then return nil end
+            controls.pending = true
+            return { offlineSeconds = 60, maxSeconds = 86400, multiplier = 1.25,
+                adventureExp = 11, adventurerExp = 99, heroExpPreview = { { heroId = 1, expGain = 33 } },
+                rewards = { { type = "gold", amount = 777 } }, hardCapSeconds = 604800,
+                cappedByHardCap = false, tailRatio = 0.1 }
+        end }
+    mocks["rules.offline.OfflineService"] = Service
+    local Save = { SetBattlePage = noop, RestoreData = noop, ApplyBattleProgress = noop, Update = noop,
+        CaptureBattleProgress = function(battle)
+            -- 此入口夹具只隔离持久化；新增同步专项在下方加载真实 Capture。
+            local candidate = {}
+            for key, value in pairs(battle) do candidate[key] = value end
+            return candidate
+        end,
+        Flush = function() counts.flush = counts.flush + 1; record("flush") end,
+        -- 普通进度请求不等于提交；保留独立计数和 nil 返回，不冒充同步Flush。
+        RequestSave = function() counts.saveRequests = counts.saveRequests + 1; record("save-request") end,
+        ReconcileOfflineBoundary = function() counts.reconcile = counts.reconcile + 1; record("reconcile") end,
+        OfflineChecked = function() counts.checked = counts.checked + 1; record("checked") end }
+    mocks["boot.StandaloneSave"] = Save
+    local title = passive()
+    title.isOpen = function() return controls.titleOpen end
+    title.isFading = function() return controls.titleFading end
+    title.setReady = function(value) controls.titleReady = value end
+    title.update = function(dt) if controls.titleUpdate then controls.titleUpdate(dt) end end
+    title.draw = function() counts.titleDraws = counts.titleDraws + 1 end
+    title.drawLoading = function(vg, w, h, percent, failed, message)
+        assert(vg and w == 1920 and h == 1080)
+        counts.loadingDraws = counts.loadingDraws + 1
+        controls.loading = { percent = percent, failed = failed, message = message }
+        record(failed and "loading-error" or "loading")
+    end
+    title.open, title.reopen = function() controls.titleOpen = true end, function() controls.titleOpen = true end
+    mocks["ui.story.gate.DarkTitleScreenGate"] = title
+    local letter = passive()
+    letter.isOpen = function() return controls.letterOpen end
+    letter.start = function(callback)
+        counts.letterStarts = counts.letterStarts + 1
+        controls.letterOpen = true; controls.letterFinish = callback; record("letter")
+    end
+    letter.reset = function() controls.letterOpen = false; controls.letterFinish = nil end
+    letter.update = function(dt)
+        assert(dt > 0 and controls.letterOpen)
+        counts.letterUpdates = counts.letterUpdates + 1
+    end
+    letter.draw = function() assert(controls.letterOpen); counts.letterDraws = counts.letterDraws + 1 end
+    mocks["ui.story.gate.LetterIntro"] = letter
+    mocks["runtime.GameAction"] = { sendAction = function(action)
+        if action == "grant_starter_trio" then
+            counts.starter = counts.starter + 1; record("starter")
+            local roster = {}
+            for _, id in ipairs({ 1, 2, 3 }) do roster[tostring(id)] = { level = 1, exp = 0, shards = 0 } end
+            modules.heroes = { roster = roster, deployed = { 1, 2, 3, 0 }, teams = {} }
+            loaded["ui.character.panel.CharacterPanel"].setHeroesData(modules.heroes)
+            return true
+        elseif action == "claim_offline_rewards" then
+            counts.claims = counts.claims + 1
+            if controls.failClaim then return false end
+            controls.pending = false
+            return true
+        end
+        error("undeclared action " .. action)
+    end }
+    -- 夹具不发一键穿戴请求，不创建协程任务；每帧轮询不能接到真实Service/PDM。
+    mocks["runtime.LocalActionBridge"] = { init = noop, updateQuickEquip = noop,
+        cancelQuickEquip = function() counts.cancelQuickEquip = counts.cancelQuickEquip + 1 end }
+    mocks["runtime.ClientMessageHandler"] = { resetSessionBridgeState = noop }
+    mocks["boot.StandaloneBoot"] = { resetPendingBattleRewards = noop, run = noop }
+    mocks["boot.StandaloneHorizon"] = {}
+    local rt = {}; mocks["boot.StandaloneRT"] = rt
+    for _, name in ipairs({ "ui.hud.TopBar", "ui.hud.BottomNav", "ui.dev.DebugPanel", "ui.dev.CEPanel",
+        "ui.character.hero.HeroRosterPanel", "ui.hud.popup.RewardPopup", "ui.town.TownScene",
+        "ui.blacksmith.BlacksmithPage", "ui.church.ChurchPage", "ui.church.talent.TalentPage",
+        "ui.tavern.TavernPage", "ui.tavern.RecruitAnim", "ui.market.MarketPage", "ui.dungeon.DungeonBattleScene",
+        "ui.tower.TowerBattleScene", "ui.tower.TowerBuffPick", "ui.dungeon.DungeonPage",
+        "ui.backpack.BackpackPanel", "ui.loot.LootBox", "ui.loot.LootBoxPage", "ui.hud.popup.LevelUpPopup",
+        "ui.hud.popup.UpdateNoticePopup", "ui.hud.popup.PlayerInfoPanel", "ui.hud.popup.RedeemCodePanel",
+        "ui.story.gate.StartScreen", "ui.battle.stage.SweepDialog", "ui.battle.popup.DamageStatsPanel",
+        "ui.battle.stage.StageSelectDialog", "ui.battle.popup.TerminalConfirmDialog", "systems.GameBGM",
+        "systems.GameSFX", "ui.fx.SpinePowerUpEffect", "ui.story.gate.IntroCutscene",
+        "ui.character.detail.CharacterDetail", "ui.character.equip.EquipmentBag", "ui.story.ScenarioDialogue",
+        "core.DarkIcon", "ui.fx.SpineCardEffect", "ui.fx.SpineResultEffect", "ui.fx.DarkEffectSprites",
+        "ui.widget.DesignWidgetSurface", "ui.dev.KeyboardShortcuts", "ui.character.hero.HeroScenario",
+        "rules.dungeon.DungeonService", "rules.dungeon.DungeonIdleService",
+        "ui.widget.SoundToggle", "ui.battle.tri.TerminalRaid", "ui.character.EquipCrossDrag",
+        "ui.tower.TowerBuffSidebar" }) do
+        if not mocks[name] then mocks[name] = passive() end
+    end
+    mocks["ui.battle.scene.BattlePauseOverlay"] = { init = noop, draw = noop, destroy = noop }
+    mocks["ui.loot.InventoryCurationDialog"] = { reset = function()
+        counts.curationReset = counts.curationReset + 1
+    end }
+    mocks["rules.equipment.InventoryCurationService"] = { Cleanup = function(uid)
+        assert(uid == 1); counts.curationCleanup = counts.curationCleanup + 1
+    end }
+    mocks["rules.tower.TowerService"] = { ResetToDefault = noop }
+    mocks["ui.character.hero.AwakeningArtwork"] = { destroy = noop }
+    mocks["ui.dungeon.DungeonBattleScope"] = { run = function(uid, fn)
+        assert(uid == 1); counts.dungeonFlush = counts.dungeonFlush + 1; fn()
+    end }
+    mocks["ui.tower.TowerTriBattle"] = { flushPendingGrowth = function()
+        counts.towerFlush = counts.towerFlush + 1
+    end }
+    mocks["ui.battle.combat.BattleCasualty"] = { flushRewards = function()
+        counts.casualtyFlush = counts.casualtyFlush + 1
+    end }
+    -- 侧页暂停不属于入场夹具；所有操作页均关闭，保持默认不暂停。
+    mocks["ui.battle.scene.SidePanelBattlePause"] = { refresh = function() return false end }
+    mocks["ui.hud.TopBar"].markAvatarViewed, mocks["ui.hud.TopBar"].setTotalPower = noop, noop
+    mocks["ui.hud.BottomNav"].setBadge, mocks["ui.hud.BottomNav"].refreshTownBadge = noop, noop
+    mocks["ui.hud.BottomNav"].refreshUnlockState = noop
+    mocks["ui.hud.BottomNav"].getSelectedIndex = function() return 3 end
+    mocks["ui.hud.BottomNav"].setSelectedIndex = noop
+    mocks["ui.dev.CEPanel"].pollHotkey = noop
+    mocks["ui.hud.popup.RewardPopup"].clearBattleRewards = noop
+    mocks["ui.hud.popup.RewardPopup"].hasPendingBattleRewards = function() return false end
+    mocks["ui.hud.popup.RewardPopup"].currentRowTag, mocks["ui.hud.popup.RewardPopup"].currentPanel = function() return nil end,
+        function() return nil end
+    mocks["ui.hud.popup.RewardPopup"].drawRegion = noop
+    mocks["ui.town.TownScene"].preload, mocks["ui.town.TownScene"].setSmithRedDot = noop, noop
+    mocks["ui.blacksmith.BlacksmithPage"].setDecomposeRedDot = noop
+    mocks["ui.backpack.BackpackPanel"].isLeftMode = function() return true end
+    mocks["ui.dungeon.DungeonPage"].isTowerChallengePending = function() return false end
+    mocks["ui.character.detail.CharacterDetail"].setContext, mocks["ui.character.detail.CharacterDetail"].markPowerDirty = noop, noop
+    mocks["ui.character.detail.CharacterDetail"].hasAnyUpgradeForHero = function() return false end
+    mocks["ui.character.detail.CharacterDetail"].hasAwakeningUpgrade = function() return false end
+    mocks["systems.GameBGM"].setScene, mocks["systems.GameBGM"].start, mocks["systems.GameBGM"].stop = noop, noop, noop
+    mocks["systems.GameSFX"].start, mocks["systems.GameSFX"].stop, mocks["systems.GameSFX"].preload = noop, noop, noop
+    mocks["ui.fx.SpinePowerUpEffect"].preload, mocks["ui.fx.SpinePowerUpEffect"].resetSession = noop, noop
+    mocks["ui.fx.SpineCardEffect"].stopAll, mocks["ui.fx.SpineResultEffect"].stop = noop, noop
+    mocks["ui.character.hero.HeroScenario"].resetAll = noop
+    mocks["ui.story.ScenarioDialogue"].isActive = function() return controls.dialogueOpen end
+    mocks["ui.story.ScenarioDialogue"].update = function(dt)
+        assert(dt > 0 and controls.dialogueOpen)
+        counts.dialogueUpdates = counts.dialogueUpdates + 1
+    end
+    mocks["ui.story.ScenarioDialogue"].draw = function()
+        assert(controls.dialogueOpen); counts.dialogueDraws = counts.dialogueDraws + 1
+    end
+    mocks["ui.story.gate.IntroCutscene"].draw = function()
+        counts.cutsceneDraws = counts.cutsceneDraws + 1
+    end
+    mocks["ui.story.ScenarioDialogue"].show = function(opts)
+        controls.dialogueOpen, controls.dialogue = true, opts
+        record("opening:" .. tostring(opts.title))
+    end
+    mocks["ui.story.ScenarioDialogue"].reset = function()
+        controls.dialogueOpen, controls.dialogue = false, nil
+    end
+    mocks["ui.tutorial.TutorialPageRecovery"] = {
+        -- 夹具所有二级菜单关闭；正式nav3三行页已开时左右城镇/主线同时可见。
+        getStoryPlace = function()
+            local tri = loaded["ui.battle.tri.BattleTriPage"]
+            return tri and tri.isOpen() and "battle_town" or "battle"
+        end,
+        isPendingStoryBlocked = function(place)
+            assert(place == "battle" or place == "battle_town"); return false
+        end,
+    }
+    mocks["rules.dungeon.DungeonService"].Cleanup, mocks["rules.dungeon.DungeonIdleService"].Cleanup = noop, noop
+    mocks["ui.character.equip.EquipmentBag"].shouldBattleOverlay = function() return false end
+    mocks["ui.character.equip.EquipmentBag"].setOverlayRegion = noop
+    mocks["ui.dev.CERuntime"] = { installSpeedHook = noop, tick = noop }
+    mocks["ui.hud.popup.SettingsPanel"] = { isEffectsEnabled = function() return false end,
+        -- 数字偏好已与特效独立；保持默认开启，真实Draw的空浮字列表仍照常遍历。
+        isDamageNumbersEnabled = function() return true end }
+    local real = { ["boot.Standalone"] = true, ["boot.StartupQueue"] = true,
+        ["systems.StoryPlayer"] = true, ["ui.battle.tri.TerminalReincarnation"] = true,
+        ["ui.battle.tri.BattleTriPage"] = true, ["ui.battle.tri.BattleTriDriver"] = true,
+        ["ui.battle.tri.BattleEntryPreparation"] = true,
+        ["ui.battle.scene.BattleMountScope"] = true, ["ui.battle.scene.BattleDraw"] = true,
+        ["ui.battle.scene.DamageTypeIcon"] = true,
+        ["ui.battle.scene.BattleView"] = true, ["ui.battle.stage.BattleEnemySpawn"] = true,
+        ["ui.battle.combat.BattleCombatAnim"] = true, ["ui.battle.stage.BattleSpeed"] = true,
+        ["ui.battle.combat.BattleClock"] = true, ["ui.battle.combat.BattleMotionPolish"] = true,
+        ["ui.character.panel.CharacterPanel"] = true, ["ui.character.panel.CharacterHeroSync"] = true,
+        ["ui.character.panel.CharacterRosterSort"] = true,
+        ["systems.AttributeDef"] = true, ["systems.UnitAttributes"] = true, ["systems.BattleTimeout"] = true,
+        ["systems.TalentEffect"] = true, ["core.BattleLayout"] = true,
+        ["shared.battle.BattleSchema"] = true,
+        -- 明确的纯上下文/常量/Schema/关卡计算依赖；不放开shared.*或真实持久化入口。
+        ["shared.SuccessNotificationContext"] = true, ["shared.Protocol"] = true,
+        ["shared.StageUtils"] = true, ["shared.artifact.ArtifactSchema"] = true,
+        ["shared.artifact.ArtifactDefs"] = true,
+        ["boot.BattleRewardOverlay"] = true, ["ui.ModuleMap"] = true,
+        ["core.NumberUtil"] = true, ["core.EventBus"] = true, ["shared.heroes.HeroResonance"] = true }
+    env.require = function(name)
+        if mocks[name] then return mocks[name] end
+        if loaded[name] then return loaded[name] end
+        assert(real[name] or name:match("^config%."), "undeclared real dependency " .. name)
+        assert(not loading[name], "unexpected dependency cycle " .. name)
+        loading[name] = true
+        local path = name:gsub("%.", "/") .. ".lua"
+        local text = source(path); sources[path] = text
+        local result = assert(load(text, "@entry-real/" .. path, "t", env))()
+        loading[name], loaded[name] = nil, result
+        if name == "ui.battle.tri.BattleTriDriver" then
+            local new = result.new
+            result.new = function(...)
+                local drv = new(...); drivers[#drivers + 1] = drv
+                local start, update = drv.start, drv.update
+                drv.start = function(self, ...)
+                    counts.starts = counts.starts + 1; record("start:" .. self.teamIdx)
+                    return start(self, ...)
+                end
+                drv.update = function(self, ...)
+                    counts.updates = counts.updates + 1
+                    return update(self, ...)
+                end
+                return drv
+            end
+        elseif name == "ui.battle.tri.BattleTriPage" then
+            local prepare = result.prepareEntry
+            result.prepareEntry = function(...)
+                record("prepare")
+                if controls.failPrepare then error("EXPECTED_ENTRY_FAILURE") end
+                return prepare(...)
+            end
+        end
+        return result
+    end
+    env.cache = { GetFile = forbidden("UNDECLARED_RESOURCE") }
+    local Panel = env.require("ui.character.panel.CharacterPanel")
+    Panel.init(nil)
+    local presentationDestroys, presentationOrder = 0, {}
+    local destroyPresentation = Panel.destroyPresentation
+    Panel.destroyPresentation = function(...)
+        presentationDestroys = presentationDestroys + 1
+        presentationOrder[#presentationOrder + 1] = "Character"
+        return destroyPresentation(...)
+    end
+    mocks["ui.hud.popup.LevelUpPopup"].destroy = function()
+        presentationOrder[#presentationOrder + 1] = "LevelUp"
+    end
+    mocks["ui.widget.DesignWidgetSurface"].shutdown = function()
+        presentationOrder[#presentationOrder + 1] = "Surface"
+    end
+    local function heroes(ids)
+        local roster = {}
+        for _, id in ipairs(ids) do roster[tostring(id)] = { level = 5 + id, exp = id, shards = 0 } end
+        return { roster = roster, deployed = copy(ids), teams = { { slots = copy(ids) },
+            { slots = { 4, 0, 0, 0 } }, { slots = { 5, 0, 0, 0 } } } }
+    end
+    local data = heroes(options.single and { 1 } or { 1, 2, 3 })
+    if not options.newSave and not options.single then
+        data.roster["4"], data.roster["5"] = { level = 9, exp = 0 }, { level = 10, exp = 0 }
+    end
+    if options.newSave or options.single then data.teams = {} end
+    if not options.late then modules.heroes = data; Panel.setHeroesData(data) end
+    local Tri, Queue = env.require("ui.battle.tri.BattleTriPage"), env.require("boot.StartupQueue")
+    local Draw = env.require("ui.battle.scene.BattleDraw")
+    Draw.setContext({ combat = Combat, imgHeroCards = {}, imgMonsterCards = {}, imgHpBg = -1,
+        imgAllyTags = { -1, -1, -1, -1, -1, -1 } })
+    local Boot = env.require("boot.Standalone")
+    -- 仅本地闭包输入：不调用真实场景/字体/存档初始化，准备门控和Update主体均为原函数。
+    setvalue(env.HandleUpdate, "bootReady_", true)
+    local show = upvalue(env.HandleUpdate, "showOfflineRewardPanel_")
+    local prepare = upvalue(show, "prepareEntry_")
+    local context = {}
+    setvalue(prepare, "vg", context)
+    -- 原firstStage步骤完整函数体；只把外围场景/存档依赖绑定到上述明确spy。
+    local firstStageText = section(sources["boot/Standalone.lua"], '        { "firstStage", function()',
+        '        { "BattleAssets", function()')
+    local firstStageEnv = setmetatable({ StandaloneSave = Save,
+        TopBar = mocks["ui.hud.TopBar"], CharacterPanel = Panel, BattleScene = Scene }, { __index = env })
+    local firstStage = assert(load("return {\n" .. firstStageText .. "\n}",
+        "@entry-real/Standalone.firstStage-step", "t", firstStageEnv))()[1][2]
+    setvalue(prepare, "firstStageStep_", firstStage)
+    rt.vg, rt.logicalW, rt.logicalH, rt.bootReady_ = context, 1920, 1080, true
+    rt.preload_ = { active = false }
+    local evt = VariantMap()
+    evt["TimeStep"] = Variant(0.016)
+    ---@cast evt UpdateEventData
+    local pointerNames = { "HandleMouseButtonDown", "HandleMouseMove", "HandleMouseButtonUp",
+        "HandleTouchBegin", "HandleTouchMove", "HandleTouchEnd" }
+    for _, name in ipairs(pointerNames) do
+        env[name .. "Horizon"] = function(eventType, eventData)
+            assert(eventType == "entry-pointer" and eventData == evt)
+            counts.pointerCalls = counts.pointerCalls + 1
+            return "horizon-pointer"
+        end
+    end
+    env.HandleMouseWheelHorizon = function() counts.wheelCalls = counts.wheelCalls + 1 end
+    local function pointers()
+        for _, name in ipairs(pointerNames) do env[name]("entry-pointer", evt) end
+        env.HandleMouseWheel("entry-pointer", evt)
+    end
+    local function step() return env.HandleUpdate("Update", evt) end
+    local function state()
+        return { queue = upvalue(prepare, "entryQueue_"), prepared = upvalue(prepare, "entryPrepared_"),
+            post = upvalue(env.HandleUpdate, "postStartFlowDone_") }
+    end
+    local function fingerprint()
+        local result = { modules = copy(modules), drivers = {} }
+        for i, drv in ipairs(drivers) do
+            result.drivers[i] = { stage = drv.stageId, kills = drv.kills, total = drv.stageTotal,
+                active = drv.active, intro = drv.introTimer, march = drv.marchTimer,
+                timeout = drv._timeoutElapsed, allies = copy(drv.allies), enemies = copy(drv.enemies),
+                queue = copy(drv.enemyQueue), rewards = copy(drv.rewardQueue), pending = copy(drv.pendingKills) }
+        end
+        return result
+    end
+    local function mountSnapshot()
+        local result = { units = TAL.mountedUnitStates(), extra = ETS.mountedState(), team = Stats.mountedTeam() }
+        for i, api in ipairs(mounts) do result[i] = api.mountedState() end
+        return result
+    end
+    local function mountsEqual(before)
+        if before.units ~= TAL.mountedUnitStates() or before.extra ~= ETS.mountedState()
+            or before.team ~= Stats.mountedTeam() then return false end
+        for i, api in ipairs(mounts) do if api.mountedState() ~= before[i] then return false end end
+        return true
+    end
+    local horizonText = source("boot/StandaloneHorizon.lua"); sources["boot/StandaloneHorizon.lua"] = horizonText
+    local branch = section(horizonText, "    -- [三行并行] 战斗模式布局: 经营(左) | 三行战斗(中段) | 角色(右) 铺满窗口",
+        "    -- 全局弹窗层（模态，绘制于中面板空间，坐标与原竖屏逻辑一致）")
+    local hen = setmetatable({ RT = rt, BattleTriPage = Tri, vg = function() return rt.vg end,
+        logicalW = function() return 1920 end, logicalH = function() return 1080 end,
+        Viewport = { begin = noop, finish = noop, PANELS = { left = {}, center = {}, right = {} } },
+        TownScene = mocks["ui.town.TownScene"], ChurchPage = mocks["ui.church.ChurchPage"],
+        TalentPage = mocks["ui.church.talent.TalentPage"], TavernPage = mocks["ui.tavern.TavernPage"],
+        MarketPage = mocks["ui.market.MarketPage"], BlacksmithPage = mocks["ui.blacksmith.BlacksmithPage"],
+        BackpackPanel = mocks["ui.backpack.BackpackPanel"], LootBox = mocks["ui.loot.LootBox"],
+        LootBoxPage = mocks["ui.loot.LootBoxPage"], TaskPage = passive(),
+        TopBar = mocks["ui.hud.TopBar"], CharacterPanel = { draw = noop },
+        PlayerInfoPanel = mocks["ui.hud.popup.PlayerInfoPanel"], RewardPopup = mocks["ui.hud.popup.RewardPopup"],
+        DarkTitleScreen = title, LetterIntro = letter,
+        IntroCutscene = mocks["ui.story.gate.IntroCutscene"], ScenarioDialogue = mocks["ui.story.ScenarioDialogue"],
+        EquipCrossDrag = mocks["ui.character.EquipCrossDrag"],
+        KeyboardShortcuts = mocks["ui.dev.KeyboardShortcuts"], DrawUtil = mocks["core.DrawUtil"],
+        talentPageUsesWideLayout = function() return false end, drawWideTalentPage = noop,
+        seamBackList = function() return {} end, drawRewardInPanel = noop,
+        HorizonDrawPageModal = noop, HorizonDrawIntroOverlay = function()
+            counts.overlayCalls = counts.overlayCalls + 1
+            if letter.isOpen() then letter.draw()
+            elseif mocks["ui.story.gate.IntroCutscene"].isActive() then mocks["ui.story.gate.IntroCutscene"].draw()
+            elseif mocks["ui.story.ScenarioDialogue"].isActive() then mocks["ui.story.ScenarioDialogue"].draw() end
+        end, drawEquipDetailOverlay = noop,
+        HorizonDrawTutorialOverlay = noop, finishFrame = function()
+            controls.bootAtFinish = rt.bootRendered
+            record("render-finish")
+        end,
+        seamGesture = { cancelIfBlocked = noop }, TutorialManager = { clearHotspots = noop },
+        HorizonUpdateTransform = noop, applyFrame = noop, bootReady_ = function() return rt.bootReady_ end,
+        windowW = function() return 1920 end, windowH = function() return 1080 end,
+        dpr = function() return 1 end, StartScreen = mocks["ui.story.gate.StartScreen"],
+        nvgBeginFrame = noop, horizonInputContext = {} }, { __index = env })
+    hen._G = hen
+    local renderGate = section(horizonText, "function HandleNanoVGRenderHorizon()",
+        "    -- 横屏底色。石框、关卡图和各页底板负责可见画面，不再铺 UI_WORLD_BG。")
+    local renderBranch = assert(load(renderGate .. branch .. "\nend\nreturn HandleNanoVGRenderHorizon",
+        "@entry-real/Horizon.entry-gate-and-tri-branch", "t", hen))()
+    local function render() record("render"); return renderBranch() end
+    local function installBudget()
+        local wrapper = section(source("boot/Standalone.lua"), "    -- 2.5 图片去重按context+flags+path隔离", "    -- 3. Font")
+        local wrapEnv = setmetatable({ StartupQueue = Queue, vg = context }, { __index = env })
+        wrapEnv._G = wrapEnv
+        assert(load(wrapper, "@entry-real/Standalone.image-budget", "t", wrapEnv))()
+        env.nvgCreateImage = wrapEnv.nvgCreateImage
+    end
+    local function resetCounters()
+        for key in pairs(counts) do counts[key] = 0 end
+        trace = {}
+    end
+    return { env = env, boot = Boot, tri = Tri, panel = Panel, queue = Queue, modules = modules,
+        counts = counts, controls = controls, drivers = drivers, sources = sources, context = context,
+        show = show, prepare = prepare, step = step, render = render, state = state, budget = installBudget,
+        pointers = pointers,
+        snapshot = fingerprint, mountSnapshot = mountSnapshot, mountsEqual = mountsEqual,
+        data = data, images = images, resetCounts = resetCounters,
+        trace = function() return trace end, rt = rt, combat = Combat, ps = PS, effects = Effects,
+        clock = clock, cardHandles = cardHandles,
+        presentationState = function() return presentationDestroys, table.concat(presentationOrder, ",") end }
+end
+
+local function scenario(name, callback)
+    cases = cases + 1
+    local ok, err = xpcall(callback, debug.traceback)
+    if not ok then check(false, name .. " HARNESS_ERROR " .. tostring(err)) end
+end
+local function drain(f, limit)
+    local pumps = 0
+    while f.state().queue and pumps < (limit or 80) do
+        local before = f.counts.images
+        local mounted = f.mountSnapshot()
+        f.step(); pumps = pumps + 1
+        if f.state().queue then
+            local images, cards = f.counts.images, #f.cardHandles
+            local overlays = f.counts.titleDraws + f.counts.loadingDraws
+                + f.counts.letterDraws + f.counts.dialogueDraws + f.counts.cutsceneDraws
+            f.render()
+            check(f.counts.images == images and #f.cardHandles == cards and not f.rt.entryRendered,
+                "entryPreparing原Horizon不画半成品/不加载大卡 #" .. pumps)
+            check(f.counts.titleDraws + f.counts.loadingDraws + f.counts.letterDraws
+                + f.counts.dialogueDraws + f.counts.cutsceneDraws == overlays + 1,
+                "entryPreparing每帧明确标题/加载/开场覆盖，非裸暗底 #" .. pumps)
+        end
+        check(f.counts.images - before <= 2, "entry每泵至多两新图 #" .. pumps)
+        check(f.mountsEqual(mounted), "entry正常/挂起泵恢复全部mount #" .. pumps)
+        check(f.counts.calc == 0 and f.counts.shown == 0 and f.counts.updates == 0,
+            "entry半成品或完成当帧不算离线/不tick #" .. pumps)
+    end
+    check(pumps > 0 and not f.state().queue and f.rt.entryPrepared and not f.rt.entryPreparing,
+        "entry队列实际完成")
+    return pumps
+end
+
+-- 同步/红点专项不依赖开场教程夹具：抽取完整生产闭包与真实 Capture/Schema，
+-- 只把模块数据、三队读口和红点显示接到内存；禁止 File/RNG/驱动回灌。
+local function progressFixture()
+    ---@type table
+    local state = { modules = { battle = { currentStageId = 201, maxStageId = 2001,
+        teamStageIds = { ["1"] = 201, ["2"] = 305, ["3"] = 401 },
+        clearedStages = { ["905"] = true, ["1905"] = true }, battleMode = "idle",
+        idleAccumSec = 17, effWindow = { gold = 3 }, custom = { keep = true } },
+        equipment = { inventory = {}, equipped = {}, nextSeq = 1 } },
+        liveMax = 2001, liveLedger = { [905] = true, [1905] = true },
+        teams = { 201, 305, 401 }, revision = 1,
+        counts = { capture = 0, publish = 0, sort = 0, scans = 0, visits = 0,
+            smith = 0, decompose = 0, forbidden = 0 } }
+    ---@type table
+    local env = setmetatable({}, { __index = _G })
+    env._G = env
+    local function forbidden()
+        state.counts.forbidden = state.counts.forbidden + 1
+        error("进度/红点专项禁止玩家IO、RNG、奖励或驱动回灌")
+    end
+    env.File, env.io, env.fileSystem = forbidden, nil,
+        { FileExists = forbidden, Rename = forbidden, Delete = forbidden }
+    env.math = setmetatable({ random = forbidden, randomseed = forbidden }, { __index = math })
+    env.table = setmetatable({ sort = function(...)
+        state.counts.sort = state.counts.sort + 1
+        return table.sort(...)
+    end }, { __index = table })
+    env.bootReady_, env.StandaloneRT = true, {}
+    env.BattleScene = { getMaxStageId = function() return state.liveMax end,
+        getClearedStages = function() return state.liveLedger end,
+        setBattleData = forbidden, reloadStage = forbidden, setAllies = forbidden }
+    env.BattleTriPage = { getTeamStageIds = function() return state.teams end,
+        setTeamStageIds = forbidden, open = forbidden, update = forbidden }
+    env.ClientDispatcher = { get = function(key) return state.modules[key] end,
+        publishLive = function(key, data)
+            assert(key == "battle")
+            state.counts.publish = state.counts.publish + 1
+            state.modules[key] = data
+        end }
+    env.PlayerStore = { GetRevision = function(key)
+        assert(key == "equipment"); return state.revision
+    end }
+    env.TownScene = { setSmithRedDot = function(value)
+        state.smith = value; state.counts.smith = state.counts.smith + 1
+    end }
+    env.BlacksmithPage = { setDecomposeRedDot = function(value)
+        state.decompose = value; state.counts.decompose = state.counts.decompose + 1
+    end }
+    ---@type table
+    local schema = {}
+    env.require = function(name)
+        if name == "shared.battle.BattleSchema" then return schema end
+        assert(name:match("^config%."), "未声明进度专项依赖 " .. name)
+        return require(name)
+    end
+    env.StageConfig = require("config.StageConfig")
+    schema = assert(load(source("shared/battle/BattleSchema.lua"), "@badge-real/BattleSchema", "t", env))()
+    env.BattleSchema = schema
+    local captureText = section(source("boot/StandaloneSave.lua"),
+        "function StandaloneSave.CaptureBattleProgress(battle)", "local SAVE_FILE")
+    env.StandaloneSave, env.battlePage = {}, env.BattleTriPage
+    assert(load(captureText, "@badge-real/StandaloneSave.CaptureBattleProgress", "t", env))()
+    local realCapture = env.StandaloneSave.CaptureBattleProgress
+    state.oracle = realCapture
+    env.StandaloneSave.CaptureBattleProgress = function(battle)
+        state.counts.capture = state.counts.capture + 1
+        return realCapture(battle)
+    end
+    -- 容量算法也使用生产原文；只spy计数，不改真实数量语义。
+    env.EquipmentSystem = { MAX_INVENTORY = 200 }
+    local countText = section(source("systems/EquipmentSystem.lua"),
+        "function EquipmentSystem.getInventoryCount(equipData)", "--- 向玩家背包添加装备")
+    assert(load(countText, "@badge-real/EquipmentSystem.inventory-count", "t", env))()
+    local realCount = env.EquipmentSystem.getInventoryCount
+    env.EquipmentSystem.getInventoryCount = function(equipment)
+        state.counts.scans = state.counts.scans + 1
+        local count = realCount(equipment)
+        state.counts.visits = state.counts.visits + count
+        return count
+    end
+    local host = source("boot/Standalone.lua")
+    local block = section(host, "local battleSync =", "local physW")
+    state.sync, state.badges = assert(load(block
+        .. "\nreturn SyncBattleState, updateInventoryBadges", "@badge-real/Standalone.progress", "t", env))()
+    state.env, state.host, state.eq = env, host, env.EquipmentSystem
+    return state
+end
+
+function Start()
+    local originalRequire, originalImage, originalFile = require, nvgCreateImage, File
+    scenario("稳态进度线性比较无排序或Capture", function()
+        local f = progressFixture()
+        f.liveLedger, f.modules.battle.clearedStages = {}, {}
+        for id = 1, 1000 do
+            f.liveLedger[id], f.modules.battle.clearedStages[tostring(id)] = true, true
+        end
+        f.sync(0.99)
+        check(f.counts.capture == 0 and f.counts.publish == 0, "不足一秒不采集/发布")
+        f.sync(0.02)
+        check(f.counts.capture == 1 and f.counts.publish == 1, "首轮仅一次真实Capture及发布")
+        local battle, ledger, teams = f.modules.battle, f.modules.battle.clearedStages, f.modules.battle.teamStageIds
+        local window, custom = battle.effWindow, battle.custom
+        battle.idleAccumSec, window.gold, custom.keep = 99, 7, "new"
+        for _ = 1, 180 do f.sync(1.01) end
+        check(f.counts.capture == 1 and f.counts.publish == 1 and f.counts.sort == 0,
+            "1000条账本180次稳态同步：排序0，额外Capture/发布0")
+        check(f.modules.battle == battle and battle.clearedStages == ledger and battle.teamStageIds == teams
+            and battle.effWindow == window and battle.custom == custom and battle.idleAccumSec == 99
+            and window.gold == 7 and custom.keep == "new", "稳态保引用及非进度原地更新")
+        -- 等数量替换击穿只计数/只看表引用的错误去重。
+        f.liveLedger[1000], ledger["1000"] = nil, nil
+        f.liveLedger[5001], ledger["5001"] = true, true
+        f.sync(1.01)
+        check(f.counts.capture == 2 and f.counts.publish == 2 and f.modules.battle.clearedStages["5001"] == true
+            and f.modules.battle.clearedStages["1000"] == nil, "同引用同数量不同键仍精确检测")
+        check(f.modules.battle.effWindow == window and f.modules.battle.custom == custom
+            and f.modules.battle.idleAccumSec == 99, "进度发布保留最新非进度数据及嵌套引用")
+        check(f.counts.forbidden == 0, "同步没有RNG/IO/驱动回灌")
+        local beforeRepair = f.counts.publish
+        f.modules.battle.maxStageId = 101
+        f.sync(1.01)
+        check(f.modules.battle.maxStageId == f.liveMax and f.counts.publish == beforeRepair + 1,
+            "仅保存最高关回退也发布修复，通知驱动的解锁缓存不留在旧值")
+        f.sync(1.01)
+        check(f.counts.publish == beforeRepair + 1, "最高关修复后重新进入无额外发布稳态")
+    end)
+    scenario("永久账本双源互补及严格键值", function()
+        local f = progressFixture()
+        f.liveLedger = { [905] = true, ["905"] = false, ["1905"] = true,
+            [0] = true, [-2] = true, [1.5] = true, ["bad"] = true,
+            ["inf"] = true, [true] = true, ["99"] = 1, ["100"] = "true" }
+        f.modules.battle.clearedStages = { ["905"] = true, ["2305"] = true, ["1905"] = false }
+        f.sync(1)
+        check(same(f.modules.battle.clearedStages, { ["905"] = true, ["1905"] = true, ["2305"] = true }),
+            "双键false不能擦掉true，仅正整数严格true保留")
+        check(f.liveLedger[2305] == true and f.liveLedger[905] == true, "saved独有事实补回原场景账本")
+        f.liveLedger[2305] = nil
+        local count = f.counts.publish
+        f.sync(1)
+        check(f.liveLedger[2305] == true and f.counts.publish == count + 1,
+            "单源删除仍从另一源修复并发布，不丢永久事实")
+        local battle = f.modules.battle
+        f.liveLedger[2305], battle.clearedStages["2305"] = nil, nil
+        f.sync(1)
+        check(f.modules.battle.clearedStages["2305"] == nil, "两源明确删除不从比较缓存复活")
+        f.liveLedger, f.liveMax, f.teams = {}, 101, { 101, 101, 101 }
+        f.modules.battle = { currentStageId = 101, maxStageId = 101, clearedStages = {},
+            teamStageIds = { ["1"] = 101, ["2"] = 101, ["3"] = 101 }, custom = { reset = true } }
+        f.sync(1)
+        check(next(f.modules.battle.clearedStages) == nil and f.modules.battle.maxStageId == 101
+            and f.modules.battle.custom.reset == true, "两源及max明确重置允许清档，不回借旧账本")
+        check(f.counts.sort == 0 and f.counts.forbidden == 0, "脏键/互补/清档没有排序、随机或驱动变更")
+    end)
+    scenario("三队进度及终焉沿真实Schema/Capture", function()
+        local f = progressFixture()
+        local SC = f.env.StageConfig
+        f.liveMax, f.teams = SC.TERMINAL_NORMAL, { SC.TERMINAL_NORMAL, 305, 401 }
+        f.modules.battle.maxStageId = SC.getTerminalPrevStageId(SC.TERMINAL_NORMAL)
+        local expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected) and f.modules.battle.teamStageIds["1"] == SC.TERMINAL_NORMAL,
+            "终焉rank超过普通末关；实时规范不作读档退关")
+        local count = f.counts.capture
+        f.sync(1)
+        check(f.counts.capture == count, "终焉稳态不重复Capture")
+        f.modules.battle.maxStageId = SC.HARD_FIRST_STAGE
+        expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected) and f.modules.battle.maxStageId == SC.HARD_FIRST_STAGE,
+            "saved已跨难度时不被旧终焉max覆盖")
+        f.teams[2] = 306
+        expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected), "非法关卡三队位置严格沿真实Schema规范")
+        count = f.counts.capture
+        f.sync(1)
+        check(f.counts.capture == count, "无效live队位置规范结果相同时不反复采集")
+        f.teams[2] = 305
+        f.modules.battle.currentStageId = 101
+        expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected) and f.modules.battle.currentStageId == SC.TERMINAL_NORMAL,
+            "进度签名不变也修复模块current与真实一队位置不一致")
+        f.teams[3] = 305
+        expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected) and f.modules.battle.teamStageIds["3"] == 305,
+            "真实三队同表位置变化立即发布，不借缓存队表")
+        f.teams = nil
+        f.modules.battle.teamStageIds["2"] = 401
+        expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected), "无live三队表时仍沿原存档侧线口径")
+        f.modules.battle.teamCurrentStageIds = { ["1"] = 305 }
+        expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected) and f.modules.battle.teamCurrentStageIds == nil,
+            "旧侧线字段迁移保留真实Schema语义")
+        f.teams = { 101, 305, 401 }
+        f.liveMax, f.liveLedger = 101, {}
+        f.modules.battle = { currentStageId = 101, maxStageId = 101, clearedStages = {},
+            teamStageIds = { ["1"] = 101, ["2"] = 305, ["3"] = 401 }, autoBattle = false }
+        expected = f.oracle(f.modules.battle)
+        f.sync(1)
+        check(same(f.modules.battle, expected) and f.modules.battle.teamStageIds["2"] == 101
+            and f.modules.battle.teamStageIds["3"] == 101 and f.modules.battle.autoBattle == false,
+            "未解锁侧线沿真实Schema回初关且保非进度false字段")
+        count = f.counts.capture
+        f.sync(1)
+        check(f.counts.capture == count, "未解锁live队保持旧位置也不反复Capture")
+        f.env.StandaloneRT.entryPreparing = true
+        count = f.counts.capture
+        f.sync(5)
+        f.env.StandaloneRT.entryPreparing = false
+        f.env.bootReady_ = false
+        f.sync(5)
+        check(f.counts.capture == count and f.counts.forbidden == 0, "准备/Stop门控不采集，不操作活驱动")
+    end)
+    scenario("红点revision/引用即时失效与半秒兜底", function()
+        local f = progressFixture()
+        local inventory = f.modules.equipment.inventory
+        for id = 1, 199 do inventory[tostring(id)] = { seq = id } end
+        f.badges(0)
+        check(not f.smith and not f.decompose and f.counts.scans == 1, "199件首轮真实计数，两红点关闭")
+        for _ = 1, 120 do f.badges(1 / 60) end
+        check(f.counts.scans <= 5 and f.counts.visits <= 5 * 199
+            and f.counts.smith == 121 and f.counts.decompose == 121,
+            "120稳态帧至多5次计数，仍每帧同步两显示标志")
+        inventory["200"] = { seq = 200 }; f.revision = f.revision + 1
+        f.badges(0)
+        check(f.smith and f.decompose, "同引用新增第200件通知立即显示满包")
+        inventory["200"] = nil; f.revision = f.revision + 1
+        f.badges(0)
+        check(not f.smith and not f.decompose, "同引用删除通知立即取消红点")
+        inventory["200"] = { seq = 200 }
+        f.badges(0.49)
+        check(not f.smith and f.eq.isInventoryFull(f.modules.equipment),
+            "未通知patch允许UI短缓存，但真实投递容量马上看见200件")
+        f.badges(0.02)
+        check(f.smith and f.decompose, "未通知原地新增至多约半秒恢复红点")
+        inventory["200"] = nil
+        f.badges(0.51)
+        check(not f.smith and not f.decompose, "未通知原地删除半秒内恢复")
+        local scans = f.counts.scans
+        f.modules.equipment = { inventory = inventory }
+        f.badges(0)
+        check(f.counts.scans == scans + 1, "相同inventory和revision的模块替换也立即刷新")
+        local full = {}
+        for id = 1, 200 do full[tostring(id)] = {} end
+        f.modules.equipment.inventory = full
+        f.badges(0)
+        check(f.smith and f.decompose, "同模块替换inventory引用即时失效")
+        f.modules.equipment = nil
+        f.badges(0)
+        check(not f.smith and not f.decompose, "模块缺失即清红点不访问nil库存")
+        f.modules.equipment = { inventory = {} }
+        f.badges(0)
+        check(not f.smith and not f.decompose and f.counts.forbidden == 0,
+            "清档空库存不借旧红点，不碰随机/奖励/文件")
+        f.env.PlayerStore.GetRevision = nil
+        f.modules.equipment.inventory = full
+        f.badges(0)
+        check(f.smith and f.decompose, "无revision旧宿主仍按引用及半秒兜底")
+        check(f.host:find("    updateInventoryBadges(dt)", 1, true) ~= nil,
+            "完整HandleUpdate实际调用共享红点缓存，不只验证孤立helper")
+    end)
+    scenario("旧档三队准备", function()
+        local f = fixture()
+        f.tri.setBattleReady(false)
+        check(not f.tri.prepareEntry(f.context) and #f.drivers == 0 and not f.tri.isOpen(),
+            "首场失败门禁不能建driver/返回伪成功")
+        f.tri.setBattleReady(true)
+        f.controls.titleOpen = false
+        f.budget(); f.resetCounts()
+        check(f.show() == false and f.rt.entryPreparing and not f.rt.entryRendered,
+            "旧档先排准备队列，未render不能离线")
+        local pumps = drain(f)
+        check(pumps > 1 and #f.drivers == 3 and f.counts.starts == 3, "不同队真实driver各建一次")
+        check(f.drivers[1].stageId == 201 and f.drivers[2].stageId == 305 and f.drivers[3].stageId == 401,
+            "三队从自己stage恢复，不借主线201")
+        check(#f.drivers[1].allies == 3 and #f.drivers[2].allies == 1 and #f.drivers[3].allies == 1,
+            "真实HeroConfig工厂按真实队槽创建3/1/1人")
+        check(#f.drivers[2].enemyQueue > 0 and #f.drivers[2].enemies == 4,
+            "真实305首波有候补，不是空列表spy")
+        local HC, MC = f.env.require("config.HeroAssetUtil"), f.env.require("config.MonsterConfig")
+        local loadedPaths = {}
+        for _, image in ipairs(f.images) do loadedPaths[image.path] = true end
+        for row, drv in ipairs(f.drivers) do
+            for _, list in ipairs({ drv.allies, drv.enemies, drv.enemyQueue }) do
+                for _, unit in ipairs(list) do
+                    local path = unit.heroId and HC.getCardPath(unit.heroId)
+                        or string.format("image/怪物卡牌/KP_GW_%d.png", MC.getCardArtId(unit.monsterId))
+                    check(loadedPaths[path], "真实在场及候补卡warm T" .. row .. " " .. path)
+                end
+            end
+        end
+        local before = f.snapshot()
+        check(not f.show() and f.counts.calc == 0, "准备完成仍须实际Tri.draw帧")
+        local imageCount = f.counts.images
+        f.render()
+        check(f.rt.entryRendered and #f.cardHandles > 0 and f.counts.images == imageCount,
+            "Horizon实际Tri.draw后标记，warm首draw新增大卡0")
+        check(same(f.snapshot(), before), "实际draw不改战斗/奖励/存档字段")
+        check(f.show() and f.counts.calc == 1 and f.counts.shown == 1, "render之后才允许离线结算")
+        local data = f.controls.shown
+        check(data.offlineSeconds == 60 and data.maxSeconds == 86400 and data.multiplier == 1.25
+            and data.adventureExp == 11 and data.adventurerExp == 99
+            and same(data.rewards, { { type = "gold", amount = 777 } })
+            and data.hardCapSeconds == 604800 and data.tailRatio == 0.1,
+            "旧离线参数/奖励逐字段原样透传")
+        setvalue(f.env.HandleUpdate, "postStartFlowDone_", true)
+        local frozen, starts = f.snapshot(), f.counts.starts
+        for frame = 1, 40 do
+            f.step()
+            if frame == 1 then
+                check(f.counts.inventoryScans == 1, "首个完整HandleUpdate实际走红点缓存，首轮只计数一次")
+            end
+        end
+        check(f.counts.inventoryScans == 2,
+            "离线待领仍更新UI：40个16ms帧精确首扫一次加半秒兜底一次")
+        check(f.counts.updates == 0 and f.counts.tick == 0 and f.counts.pumps == 0
+            and same(f.snapshot(), frozen), "离线pending40帧不tick真实driver/单Scene/全图鉴")
+        check(f.counts.starts == starts and f.counts.calc == 1 and f.counts.shown == 1,
+            "重复Update不重准备/不重算/不重弹")
+        local flush = f.counts.flush
+        f.controls.failClaim = true
+        check(not data.onClaim() and f.controls.pending and f.counts.flush == flush,
+            "领取失败保留pending不额外Flush")
+        f.controls.failClaim = false
+        check(data.onClaim() and not f.controls.pending and f.counts.flush == flush + 1,
+            "成功原onClaim回执才Flush")
+        f.step()
+        check(f.counts.updates == 3 and f.counts.pumps == 0, "领取后才恢复三队update，无后台大图pump")
+        check(f.counts.inventoryScans == 2,
+            "领取后同库存16ms帧未到兜底期限，不额外全量计数")
+        local entries = f.trace(); local calcIndex, renderIndex = 0, 0
+        for index, name in ipairs(entries) do
+            if name == "render-finish" then renderIndex = index elseif name == "calc" then calcIndex = index end
+        end
+        check(renderIndex > 0 and calcIndex > renderIndex, "真实trace顺序prepare→render-finish→Calc")
+        check(f.counts.random == 0 and f.counts.mutations == 0, "准备/待领/首intro帧无攻击发奖random或玩家File")
+    end)
+    scenario("Horizon标题淡出按新旧档精确归属", function()
+        local text = section(source("boot/StandaloneHorizon.lua"), "    local titleOwnsFrame =",
+            "    if titleOwnsFrame then")
+        local controls = { open = true, fading = true, session = {}, heroes = {}, imports = 0 }
+        local env = { type = type, pairs = pairs, DarkTitleScreen = {
+            isOpen = function() return controls.open end, isFading = function() return controls.fading end },
+            require = function(name)
+                assert(name == "runtime.ClientDispatcher", "unexpected title gate import " .. name)
+                controls.imports = controls.imports + 1
+                return { get = function(key) return controls[key] end }
+            end }
+        local owns = assert(load("return function()\n" .. text .. "\nreturn titleOwnsFrame\nend",
+            "@entry-real/Horizon.titleOwnsFrame", "t", env))()
+        check(owns(), "新档空角色fading标题独占")
+        controls.heroes = { roster = { [1] = { level = 1 } } }
+        check(owns(), "新档single fading标题独占")
+        controls.session = { introCompleted = true }
+        check(not owns(), "introCompleted旧档fading放行三行")
+        controls.session, controls.heroes = {}, { roster = { [1] = { level = 1 }, [2] = { level = 2 } } }
+        check(not owns(), "多角色旧档fading放行三行，不依赖intro标记")
+        for _, roster in ipairs({ false, "malformed", { [1] = false, [2] = 7, [3] = {}, [4] = { level = 1 } } }) do
+            controls.heroes = { roster = roster }
+            local ok, value = pcall(owns)
+            check(ok and value, "malformed roster不crash且不能虚算第二角色")
+        end
+        controls.fading = false; local imports = controls.imports
+        check(owns() and controls.imports == imports, "未fade标题独占无需新dispatcher import")
+        controls.open = false
+        check(not owns() and controls.imports == imports, "已关闭放行且不加载dispatcher")
+        local f = fixture({ single = true, stage = 101, maxStage = 101 })
+        local completed = 0
+        local q = f.queue.new({ { "boot-one", function() completed = completed + 1 end },
+            { "boot-two", function() completed = completed + 1 end } })
+        local pump = upvalue(f.env.HandleUpdate, "pumpBootQueue_")
+        setvalue(pump, "bootQueue_", q)
+        setvalue(f.env.HandleUpdate, "bootReady_", false)
+        f.rt.bootReady_, f.rt.bootRendered = false, false
+        f.pointers(); f.step(); f.step()
+        check(q.index == 0 and completed == 0 and f.counts.pointerCalls == 0
+            and f.counts.wheelCalls == 0 and f.counts.images == 0,
+            "未首render真实pumpBootQueue不执行init；外层六指针/滚轮未boot不传")
+        f.render()
+        check(f.controls.bootAtFinish == false and f.rt.bootRendered and f.counts.titleDraws == 1
+            and q.index == 0, "Horizon只在finishFrame后取得boot首帧凭据，不在绘制前泵init")
+        f.step()
+        check(q.index == 1 and completed == 1 and not f.rt.bootReady_,
+            "真实首render后每update只泵一个boot步骤，未提前就绪")
+        f.step()
+        check(completed == 2 and f.rt.bootReady_ and f.controls.titleReady,
+            "两步实际完成才解锁boot/title")
+        f.rt.bootError = "EXPECTED_BOOT_FAILURE"
+        check(not f.rt.retryStartup() and f.rt.bootError == "EXPECTED_BOOT_FAILURE",
+            "boot失败不在半初始化同上下文重跑；entry显式重试与boot分开")
+        f.rt.bootReady_, f.rt.bootRendered = false, false
+        f.render()
+        check(f.controls.loading.failed and f.controls.loading.message == "启动未完成，请重新进入游戏"
+            and f.rt.bootRendered, "bootError明确重新进入覆盖层且实际finish后标记首帧")
+    end)
+    scenario("新档单人升级三人", function()
+        local f = fixture({ newSave = true, single = true, stage = 101, maxStage = 101 })
+        f.budget(); f.tri.prepareEntry(f.context)
+        check(#f.drivers == 1 and #f.drivers[1].allies == 1, "开场前旧single驱动真实一人")
+        f.rt.entryPrepared, f.rt.entryRendered = true, true
+        setvalue(f.prepare, "entryPrepared_", true)
+        local old, frozen = f.drivers[1].allies, f.snapshot()
+        f.controls.titleOpen, f.controls.titleFading = true, true
+        for _ = 1, 4 do f.step(); f.render() end
+        check(f.counts.letterStarts == 0 and f.counts.starter == 0 and not f.controls.letterOpen
+            and f.counts.updates == 0 and f.counts.pumps == 0 and same(f.snapshot(), frozen),
+            "新档fading只画标题，不启动信件/授人/推进战斗")
+        check(f.counts.titleDraws == 4, "新档fading原Horizon分支每帧由标题独占")
+        f.budget()
+        -- 使用完整真实title模块的update关闭；回写控制桩供生产HandleUpdate同帧后续查询。
+        local realTitle = assert(load(source("ui/story/gate/DarkTitleScreenGate.lua"),
+            "@entry-real/DarkTitleScreenGate.same-frame", "t", f.env))()
+        realTitle.open(); realTitle.setReady(true); realTitle.update(1.35); realTitle.handleTap(); realTitle.update(0.549)
+        f.controls.titleUpdate = function(dt)
+            realTitle.update(dt)
+            f.controls.titleOpen, f.controls.titleFading = realTitle.isOpen(), realTitle.isFading()
+        end
+        f.step()
+        check(not realTitle.isOpen() and f.counts.letterStarts == 1 and f.counts.starter == 1
+            and f.controls.letterOpen and not f.rt.entryPrepared and not f.rt.entryRendered,
+            "真实title.update关闭当帧沿既有分流启动信件一次并失效旧ready")
+        check(f.state().queue and f.rt.entryPreparing and f.counts.calc == 0,
+            "startIntroChain当帧直接排prepare，未渲染不结算")
+        f.state().queue.maxImages = 1
+        local starts, letterUpdates = f.counts.starts, f.counts.letterUpdates
+        f.step(); f.render(); f.step(); f.render()
+        check(f.state().queue and f.counts.starts == starts + 1 and #f.drivers == 1
+            and #f.drivers[1].allies == 3 and f.drivers[1].allies ~= old and #old == 1
+            and f.counts.letterStarts == 1 and f.counts.starter == 1 and f.counts.updates == 0,
+            "信件期间预算yield真实重建三人一次，不重授/不tick旧single")
+        check(f.counts.letterUpdates == letterUpdates + 2 and f.counts.letterDraws == 2
+            and f.counts.loadingDraws == 0 and not f.rt.entryRendered,
+            "信件在准备队列期间逐帧update/draw，不冻结/不裸暗底/不伪render")
+        local pointerCalls = f.counts.pointerCalls
+        f.pointers()
+        check(f.counts.pointerCalls == pointerCalls + 6 and f.counts.wheelCalls == 0,
+            "真实Standalone六指针包装准备期传递Horizon供story处理，滚轮仍阻断")
+        f.controls.letterOpen = false
+        assert(f.controls.letterFinish)()
+        local opening = f.env.require("config.ScenarioDialogueConfig")
+        local openingConfigs = { opening.OPENING, table.unpack(opening.OPENING_JOINS) }
+        check(#openingConfigs == 4 and f.state().queue and f.controls.dialogueOpen,
+            "信件结束进入完整门厅+三人介绍四段，后台prepare继续不重排")
+        local warmStarts = f.counts.starts
+        for index, cfg in ipairs(openingConfigs) do
+            local dialogue = f.controls.dialogue
+            assert(type(dialogue) == "table", "missing opening dialogue " .. index)
+            ---@cast dialogue table
+            check(dialogue.steps == cfg.steps and dialogue.title == cfg.title
+                and dialogue.background == cfg.background and dialogue.mode == cfg.mode,
+                "真实开场段顺序/正文/场景保持 #" .. index)
+            if index == 1 then
+                local updated, drawn = f.counts.dialogueUpdates, f.counts.dialogueDraws
+                drain(f)
+                check(f.counts.dialogueUpdates > updated and f.counts.dialogueDraws > drawn
+                    and f.counts.loadingDraws == 0,
+                    "对白期间队列预算yield仍update/draw对白，不退回加载或裸暗底")
+            end
+            local frozen = f.snapshot()
+            local updated, drawn = f.counts.dialogueUpdates, f.counts.dialogueDraws
+            for _ = 1, 3 do f.step(); f.render() end
+            check(not f.state().queue and not f.state().post and f.counts.calc == 0
+                and f.counts.updates == 0 and f.counts.pumps == 0 and same(f.snapshot(), frozen)
+                and f.counts.starts == warmStarts and f.counts.starter == 1,
+                "开场正文完成前已prepare但不离线/战斗/重复重建/奖励改动 #" .. index)
+            check(f.counts.dialogueUpdates == updated + 3 and f.counts.dialogueDraws == drawn + 3,
+                "prepare完成后对白继续逐帧update/draw #" .. index)
+            f.controls.dialogueOpen = false
+            dialogue.onFinish()
+            local afterFinish, calc = f.snapshot(), f.counts.calc
+            dialogue.onFinish()
+            check(same(f.snapshot(), afterFinish) and f.counts.calc == calc
+                and f.counts.starts == warmStarts, "开场旧token重复完成不改下一段存档/结算/重建 #" .. index)
+            if index < 4 then
+                check(f.controls.dialogueOpen and not f.state().queue and not f.state().post
+                    and f.modules.session.deferredOpening == true
+                    and f.modules.session.deferredOpeningIndex == index + 1,
+                    "完成后立即接续下一段，仍独占开场 #" .. index)
+            end
+        end
+        check(f.modules.session.deferredOpening == false
+            and f.modules.session.deferredOpeningCompletedVersion == 1,
+            "全部四段真实完成后才持久标记开场完成")
+        check(not f.state().queue and f.state().prepared and f.counts.starts == warmStarts
+            and f.rt.entryRendered and f.state().post and f.counts.calc == 1 and f.counts.shown == 0,
+            "finishIntro复用信件内prepare及真实draw直接完成新档Calc，不重排/不伪弹收益")
+        f.tri.prepareEntry(f.context); f.tri.prepareEntry(f.context)
+        check(f.counts.starts == warmStarts, "重复prepare同签名不再重建")
+        f.controls.letterOpen = true
+        f.step()
+        f.controls.letterOpen = false
+        check(f.state().post and f.counts.calc == 1 and f.counts.shown == 0,
+            "已完成入口后续HandleUpdate不重算/不伪弹新档收益")
+        check(f.counts.starter == 1 and f.counts.starts == warmStarts,
+            "后续旧introCompleted判定不重授三人/重建")
+    end)
+    scenario("迟到角色", function()
+        local f = fixture({ late = true, stage = 201 })
+        f.controls.titleOpen = false
+        setvalue(f.prepare, "entryPrepared_", true)
+        f.rt.entryPrepared, f.rt.entryRendered = true, true
+        check(not f.show() and not f.state().queue and f.counts.calc == 0,
+            "角色未到达旧ready标记也不能建离线包")
+        f.modules.heroes = f.data
+        f.budget()
+        check(not f.show() and f.state().queue and not f.rt.entryPrepared and not f.rt.entryRendered,
+            "真实setHeroesData晚水合失效ready/render，排重新prepare")
+        drain(f)
+        check(#f.drivers[1].allies == 3 and f.drivers[1].allies[2].heroId == 2
+            and f.drivers[1].allies[2].level == 7, "晚水合prepare用真实HeroConfig新等级，不用默认lv1")
+        check(not f.show() and f.counts.calc == 0, "晚水合队列结束当帧仍不结算")
+        f.render(); check(f.show() and f.counts.calc == 1, "晚水合新draw后才Calc")
+    end)
+    scenario("准备失败与显式重试", function()
+        local f = fixture({ stage = 101, maxStage = 101 })
+        f.controls.titleOpen, f.controls.failPrepare = false, true
+        f.show(); f.step(); f.step()
+        check(not f.state().prepared and not f.rt.entryPrepared and not f.rt.entryPreparing
+            and f.counts.calc == 0 and #f.drivers == 0 and f.rt.entryError
+            and tostring(f.rt.entryError):find("EXPECTED_ENTRY_FAILURE", 1, true),
+            "准备异常保留稳定entryError，不伪就绪/不发离线，不泄漏Preparing")
+        local images, cards, loading = f.counts.images, #f.cardHandles, f.counts.loadingDraws
+        f.render()
+        check(not f.rt.entryRendered and f.counts.calc == 0 and f.counts.loadingDraws == loading + 1
+            and f.controls.loading.failed == true and f.controls.loading.percent == f.rt.entryPercent
+            and f.counts.images == images and #f.cardHandles == cards,
+            "失败Horizon明确画加载错误层，非裸暗底/不画半成品/不加载大卡")
+        f.controls.failPrepare = false
+        local err = f.rt.entryError
+        for _ = 1, 4 do f.show(); f.step(); f.render() end
+        check(f.rt.entryError == err and not f.state().queue and f.counts.starts == 0
+            and f.counts.calc == 0 and f.counts.shown == 0,
+            "清除故障不代表授权重试，重复show/update保持稳定错误")
+        check(f.rt.retryStartup() and not f.rt.entryError and not f.rt.entryPrepared,
+            "真实rt.retryStartup显式清entryError，不冒称已准备")
+        f.show(); f.step(); f.step()
+        check(f.rt.entryPrepared and f.counts.starts == 1 and f.counts.calc == 0,
+            "显式重试后新队列成功仍先交渲染")
+        f.render(); check(f.show(), "失败后真实prepare+render可恢复")
+        local intro = fixture({ newSave = true, single = true, stage = 101, maxStage = 101 })
+        intro.controls.titleOpen, intro.controls.failPrepare = false, true
+        intro.step(); intro.step(); intro.step()
+        local updated, drawn = intro.counts.letterUpdates, intro.counts.letterDraws
+        for _ = 1, 3 do intro.step(); intro.render() end
+        check(intro.rt.entryError and intro.counts.letterUpdates == updated + 3
+            and intro.counts.letterDraws == drawn + 3 and intro.counts.loadingDraws == 0
+            and intro.counts.starter == 1 and intro.counts.calc == 0 and intro.counts.updates == 0,
+            "开场prepare失败后信件仍update/draw，不重复授人/Calc/tick/裸暗底")
+        intro.controls.letterOpen = false; intro.controls.letterFinish()
+        updated, drawn = intro.counts.dialogueUpdates, intro.counts.dialogueDraws
+        for _ = 1, 3 do intro.step(); intro.render() end
+        check(intro.counts.dialogueUpdates == updated + 3 and intro.counts.dialogueDraws == drawn + 3
+            and intro.rt.entryError and not intro.state().queue and intro.counts.calc == 0,
+            "失败门控仍允许完整对白继续update/draw，不自动排队")
+        local partial = fixture({ single = true, stage = 101, maxStage = 101 })
+        partial.controls.titleOpen, partial.controls.failAfterSignature = false, true
+        partial.budget()
+        local mounted = partial.mountSnapshot()
+        partial.show(); partial.step(); partial.step()
+        local drv = assert(partial.drivers[1])
+        check(partial.rt.entryError and tostring(partial.rt.entryError):find("EXPECTED_AFTER_SIGNATURE_FAILURE", 1, true)
+            and drv.teamSignature == partial.panel.getTeamSignature(1) and #drv.allies == 1
+            and #drv.enemies == 0 and partial.counts.starts == 1 and partial.mountsEqual(mounted),
+            "真实start写signature/己方后抛错：保留半成品错误、零敌波且全部mount恢复")
+        partial.controls.failAfterSignature = false
+        local frozen = partial.snapshot()
+        for _ = 1, 3 do partial.show(); partial.step() end
+        check(partial.counts.starts == 1 and same(partial.snapshot(), frozen)
+            and not partial.rt.entryPrepared and not partial.rt.entryRendered,
+            "signature匹配半成品在error状态不自动复用/重建/伪ready")
+        check(partial.rt.retryStartup() and not partial.show() and partial.state().queue,
+            "半初始化driver必须实际retryStartup废除签名再排队")
+        drain(partial)
+        check(partial.drivers[1] == drv and partial.counts.starts == 2 and #drv.enemies > 0
+            and drv.stageTotal == #drv.enemies + #drv.enemyQueue and not partial.show()
+            and partial.counts.calc == 0 and partial.mountsEqual(mounted),
+            "显式重试同driver重新start一次补齐真实敌波，仍等draw且恢复mount")
+        partial.render()
+        check(partial.show() and partial.counts.calc == 1 and partial.counts.starts == 2,
+            "半初始化故障恢复必须完整prepare+draw后才能Calc")
+    end)
+    scenario("Stop取消挂起", function()
+        local f = fixture({ stage = 101, maxStage = 101 })
+        f.controls.titleOpen = false; f.budget(); f.show(); f.step(); f.step()
+        check(f.state().queue and not f.state().prepared and f.counts.images == 2,
+            "Stop夹具真图片预算yield而非空worker")
+        local count, starts, mounted = f.counts.images, f.counts.starts, f.mountSnapshot()
+        local flush, growth = f.counts.flush, f.counts.growthFlush
+        f.rt.bootRendered = true
+        f.boot.Stop(); f.step(); f.pointers()
+        local presentationDestroys, presentationOrder = f.presentationState()
+        check(presentationDestroys == 1 and presentationOrder == "LevelUp,Character,Surface",
+            "真实Stop仅一次释放角色展示，保持LevelUp→Character→Surface顺序")
+        check(not f.state().queue and not f.rt.entryPrepared and not f.rt.entryRendered
+            and not f.rt.entryPreparing and f.counts.images == count and f.counts.starts == starts,
+            "真实Stop丢弃worker，后续Update不能恢复旧VG/ready")
+        check(f.counts.cancelQuickEquip == 1 and f.counts.curationReset == 1 and f.counts.curationCleanup == 1
+            and f.counts.growthFlush == growth + #f.drivers + 3 and f.counts.dungeonFlush == 1
+            and f.counts.towerFlush == 1 and f.counts.casualtyFlush == 1
+            and f.counts.flush == flush + 1 and f.mountsEqual(mounted),
+            "真实Stop经过各域成长消费及保存spy，清理一次且mount全恢复")
+        check(not f.rt.bootRendered and f.rt.vg == nil and f.counts.pointerCalls == 0
+            and f.counts.wheelCalls == 0, "Stop清boot首帧/VG凭据，六指针及滚轮未ready不传Horizon")
+        local traceCount = #f.trace()
+        f.render()
+        check(#f.trace() == traceCount + 1 and not f.rt.bootRendered,
+            "Stop后真实Horizon无vg直接返回，不finishFrame/不恢复首帧凭据")
+    end)
+    scenario("清档取消并重新开场", function()
+        local f = fixture({ stage = 201, maxStage = 2001 })
+        f.controls.titleOpen = false; f.budget(); f.show(); f.step(); f.step()
+        check(f.state().queue, "清档前真实挂起entry存在")
+        local oldDriver = f.drivers[1]
+        f.controls.pending = true
+        f.rt.bootRendered = true
+        f.boot.requestResetToStartScreen()
+        check(f.counts.cancelQuickEquip == 1 and f.counts.curationReset == 1
+            and f.counts.curationCleanup == 1 and not f.rt.bootRendered,
+            "真实reset清quickEquip/curation及旧boot首帧凭据")
+        check(not f.state().queue and not f.rt.entryPrepared and not f.rt.entryRendered
+            and not f.rt.entryPreparing and not f.controls.pending and not f.state().post,
+            "清档真实reset丢弃旧queue/ready/pending/post")
+        check(not oldDriver.active and #oldDriver.pendingKills == 0 and #oldDriver.rewardQueue == 0
+            and oldDriver.onKill == nil and oldDriver.onStageChanged == nil,
+            "清档真实Tri discard旧driver/奖励出口，不结算残留队列")
+        check(f.modules.session.introCompleted == false and f.modules.battle.currentStageId == 101,
+            "清档原session/battle字段回到真实默认")
+        local imageCount = f.counts.images
+        f.step()
+        check(f.counts.images == imageCount and f.counts.calc == 0,
+            "新标题Update不恢复旧挂起images/Calc")
+        f.controls.titleOpen, f.controls.titleFading = true, true
+        local frozen = f.snapshot()
+        for _ = 1, 4 do f.step() end
+        check(f.counts.letterStarts == 0 and f.counts.starter == 0 and not f.controls.letterOpen
+            and f.counts.updates == 0 and same(f.snapshot(), frozen), "清档新标题fading等待，不启动信件或推进战斗")
+        f.controls.titleOpen, f.controls.titleFading = false, false
+        f.step(); f.step()
+        check(f.counts.letterStarts == 1 and f.counts.starter == 1 and f.controls.letterOpen,
+            "清档title关闭后既有分流只启动一次三人开场")
+    end)
+    scenario("外部回执已水合但旧prepared", function()
+        local f = fixture({ single = true, stage = 101, maxStage = 101 })
+        f.controls.titleOpen = false
+        f.tri.prepareEntry(f.context)
+        setvalue(f.prepare, "entryPrepared_", true)
+        f.rt.entryPrepared, f.rt.entryRendered = true, true
+        local old = f.drivers[1].allies
+        f.modules.heroes = { roster = { ["1"] = { level = 6 }, ["2"] = { level = 7 }, ["3"] = { level = 8 } },
+            deployed = { 1, 2, 3, 0 }, teams = {} }
+        f.panel.setHeroesData(f.modules.heroes)
+        check(f.panel.isHeroesDataApplied() and #old == 1 and f.drivers[1].allies == old,
+            "外部真实回执isApplied=true且签名失效，driver仍旧一人")
+        local beforeCalc = f.counts.calc
+        local accepted = f.show()
+        check(not accepted and f.counts.calc == beforeCalc and f.state().queue and not f.rt.entryRendered,
+            "外部先水合也必须废旧prepared/rendered，不能直接Calc旧single")
+        if f.state().queue then
+            f.budget(); f.resetCounts(); drain(f)
+            check(#f.drivers[1].allies == 3 and not f.show(), "外部回执重新prepare真实三人后仍等新render")
+            f.render(); check(f.show(), "外部回执重prepare+重render恢复离线入口")
+        end
+    end)
+    scenario("false首场门禁保留且原步骤重试", function()
+        local f = fixture({ stage = 101, maxStage = 101 })
+        f.controls.titleOpen, f.controls.failFirstStage = false, true
+        f.tri.setBattleReady(false)
+        for attempt = 1, 3 do
+            if attempt > 1 then check(f.rt.retryStartup(), "首场失败显式授权重试 #" .. attempt) end
+            f.show(); f.step(); f.step()
+            check(f.counts.firstStage == attempt and not f.tri.isBattleReady()
+                and f.counts.calc == 0 and not f.rt.entryPrepared and #f.drivers == 0
+                and f.rt.entryError and f.rt.entryStep == "firstStageRetry"
+                and not f.state().queue,
+                "firstStage原reloadStage失败第1步停止，不解除门禁/不跑step2/不Calc #" .. attempt)
+            local errorState = f.rt.entryError
+            for _ = 1, 3 do f.show(); f.step() end
+            check(f.rt.entryError == errorState and f.counts.firstStage == attempt
+                and #f.drivers == 0 and not f.tri.isBattleReady() and f.counts.calc == 0,
+                "首场错误稳定，show/update不自动重跑原步骤 #" .. attempt)
+        end
+        f.controls.failFirstStage = false
+        check(f.rt.retryStartup(), "首场第4次明确授权重试")
+        f.show(); f.step()
+        check(f.tri.isBattleReady() and f.counts.firstStage == 4 and not f.rt.entryPrepared
+            and f.counts.calc == 0 and #f.drivers == 0,
+            "仅原firstStage闭包成功解除battleReady，下帧才prepare")
+        f.step()
+        check(f.rt.entryPrepared and not f.show(), "首场成功重试完整prepare仍等待render")
+        f.render()
+        check(f.show() and f.counts.calc == 1, "首场失败可由原步骤重试恢复，无显式放宽门禁")
+    end)
+    scenario("跨yield挂载与重建异常", function()
+        local f = fixture({ single = true, stage = 101, maxStage = 101 })
+        f.controls.titleOpen = false
+        f.tri.prepareEntry(f.context)
+        f.modules.heroes = { roster = { ["1"] = { level = 6 }, ["2"] = { level = 7 }, ["3"] = { level = 8 } },
+            deployed = { 1, 2, 3, 0 }, teams = {} }
+        f.panel.setHeroesData(f.modules.heroes)
+        local oldImage = f.env.nvgCreateImage
+        f.env.nvgCreateImage = function(vg, path, flags)
+            f.queue.checkpoint(); return oldImage(vg, path, flags)
+        end
+        local q = f.queue.new({ { "prepare", function() return f.tri.prepareEntry({}) end } },
+            { clock = function() return 0 end })
+        local mounted, done, pumps = f.mountSnapshot(), false, 0
+        while not done and pumps < 60 do
+            done = q:pump(); pumps = pumps + 1
+            check(f.mountsEqual(mounted), "外层Scope.wrap跨yield也不留最后重建队 #" .. pumps)
+        end
+        check(done and pumps > 1 and #f.drivers[1].allies == 3 and f.counts.updates == 0,
+            "跨yield真重建完成且零战斗update")
+        f.panel.setHeroesData({ roster = { ["1"] = { level = 6 }, ["2"] = { level = 7 } },
+            deployed = { 1, 2, 0, 0 }, teams = {} })
+        local originalStart = f.drivers[1].start
+        f.drivers[1].start = function(self)
+            self.mount(); error("EXPECTED_DRIVER_REBUILD_FAILURE")
+        end
+        mounted = f.mountSnapshot()
+        local ok, err = pcall(f.tri.prepareEntry, f.context)
+        check(not ok and tostring(err):find("EXPECTED_DRIVER_REBUILD_FAILURE", 1, true)
+            and f.mountsEqual(mounted), "重建异常原错误透传且所有mount恢复")
+        f.drivers[1].start = originalStart
+    end)
+    scenario("图片yield期间外部水合", function()
+        local f = fixture({ single = true, stage = 101, maxStage = 101 })
+        f.controls.titleOpen = false
+        f.tri.prepareEntry(f.context)
+        f.panel.setHeroesData({ roster = { ["1"] = { level = 6 }, ["2"] = { level = 7 }, ["3"] = { level = 8 } },
+            deployed = { 1, 2, 3, 0 }, teams = {} })
+        f.budget(); f.show()
+        f.state().queue.maxImages = 1
+        f.step(); f.step()
+        check(f.state().queue and #f.drivers[1].allies == 3 and not f.tri.isEntryPrepared(),
+            "真实prepare已冻结三人但卡预热yield仍无有效凭据")
+        f.modules.heroes = { roster = { ["1"] = { level = 6 }, ["2"] = { level = 7 }, ["4"] = { level = 9 } },
+            deployed = { 1, 2, 4, 0 }, teams = {} }
+        f.panel.setHeroesData(f.modules.heroes)
+        local pumps = 0
+        while f.state().queue and pumps < 60 do
+            local mounted = f.mountSnapshot()
+            f.step(); pumps = pumps + 1
+            check(f.mountsEqual(mounted) and f.counts.calc == 0 and f.counts.updates == 0,
+                "旧candidate水合后继续图片yield仍不Calc/tick且恢复mount #" .. pumps)
+        end
+        check(not f.state().queue and not f.rt.entryPrepared and not f.rt.entryRendered
+            and not f.tri.isEntryPrepared() and f.rt.entryError,
+            "旧candidate完成也不能把中途新阵容标为预热完成，保留稳定错误")
+        local starts, frozen, err = f.counts.starts, f.snapshot(), f.rt.entryError
+        for _ = 1, 3 do f.show(); f.step(); f.render() end
+        check(not f.state().queue and f.rt.entryError == err and f.counts.starts == starts
+            and same(f.snapshot(), frozen) and f.counts.calc == 0,
+            "candidate失效后show/update不自动重排或修改驱动")
+        check(f.rt.retryStartup() and not f.rt.entryError and not f.show() and f.state().queue,
+            "candidate失效必须显式retryStartup后排真实新prepare")
+        drain(f)
+        check(f.counts.starts == starts + 1 and f.drivers[1].allies[3].heroId == 4
+            and f.tri.isEntryPrepared() and not f.show(), "新prepare只重建一次真实hero4并等新render")
+        f.render()
+        check(f.show() and f.counts.calc == 1, "图片yield换阵容后新prepare/render才允许离线")
+    end)
+    scenario("缺卡图片沿原容错不冒称加载成功", function()
+        local f = fixture({ stage = 101, maxStage = 101 })
+        local missing = f.env.require("config.HeroAssetUtil").getCardPath(2)
+        f.controls.titleOpen, f.controls.imageFailure = false, missing
+        f.modules.battle.teamStageIds["2"], f.modules.battle.teamStageIds["3"] = 1001, 2001
+        f.budget(); f.show(); drain(f)
+        local bgPaths = {}
+        for _, image in ipairs(f.images) do bgPaths[image.path] = (bgPaths[image.path] or 0) + 1 end
+        check(bgPaths["image/暗黑/L1_row1_forest.png"] == 1
+            and not bgPaths[f.tri.resolveBackgroundPath(1001)] and not bgPaths[f.tri.resolveBackgroundPath(2001)]
+            and #f.drivers == 1,
+            "锁队预热共用已加载林景一次，不解码存档10/20章背景/不创建锁队driver")
+        check(f.tri.isEntryPrepared() and #f.drivers[1].allies == 3 and f.counts.calc == 0,
+            "单卡返回-1保留原容错且仍按真实阵容/渲染门禁，不伪算离线")
+        local loads = f.counts.images
+        f.render()
+        local sawFailure = false
+        for _, handle in ipairs(f.cardHandles) do if handle == -1 then sawFailure = true end end
+        check(sawFailure and f.counts.images == loads and f.rt.entryRendered,
+            "真实Draw缓存-1交原绘制容错，首帧不反复解码，不称全部卡加载成功")
+        check(f.show() and f.counts.calc == 1 and f.counts.updates == 0 and f.counts.random == 0,
+            "缺卡不改离线/随机/战斗计时旧规则")
+    end)
+    scenario("反复open/update没有图鉴pump", function()
+        local f = fixture({ stage = 101, maxStage = 101 })
+        f.tri.setBattleReady(true)
+        f.tri.open(); local starts = f.counts.starts
+        for _ = 1, 5 do f.tri.open() end
+        local before = f.snapshot()
+        f.controls.letterOpen = true
+        for _ = 1, 20 do f.tri.update(0.25) end
+        check(f.counts.starts == starts and f.counts.updates == 0 and f.counts.pumps == 0
+            and same(f.snapshot(), before), "信件期间重复open/update不建队/不tick/不pump大卡")
+        f.controls.letterOpen = false
+        f.tri.update(0.016)
+        check(f.counts.updates == 1 and f.counts.pumps == 0 and f.counts.starts == starts,
+            "正式tri update仅真实driver，不消费全图鉴loader")
+    end)
+    check(require == originalRequire and nvgCreateImage == originalImage and File == originalFile,
+        "全局require/nvg/File保持，隔离环境零真实档IO")
+    print(string.format("%s RESULT cases=%d assertions=%d failures=%d %s", TAG, cases, assertions, failures,
+        failures == 0 and "ALL PASS" or "FAILED"))
+    if failures > 0 then log:Write(LOG_ERROR, TAG .. " failures=" .. failures) end
+    engine:Exit()
+end

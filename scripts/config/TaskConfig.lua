@@ -106,6 +106,14 @@ addBosses(StageConfig.HARD_CHAPTERS, "hard", 400)
 addBosses(StageConfig.NIGHTMARE_CHAPTERS, "nightmare", 800)
 
 local function addRecord(id, name, desc, condKey, target, group, reward)
+    if group == "level" then
+        -- 按节点目标等级线性增强5%/级；复制后仅换算一次，不改基值或其他功绩。
+        -- 永久ID与已领台账沿用旧规则：未领奖励使用新金额，已领不补差额。
+        local scaledReward = {}
+        for key, value in pairs(reward) do scaledReward[key] = value end
+        scaledReward.amount = math.floor(reward.amount * (20 + target) / 20)
+        reward = scaledReward
+    end
     TaskConfig.ACHIEVEMENT[#TaskConfig.ACHIEVEMENT + 1] = {
         id = id,
         name = name,
@@ -117,8 +125,8 @@ local function addRecord(id, name, desc, condKey, target, group, reward)
     }
 end
 
--- 固定为本分支既有九项奖励；不随前置通关条目增删发生轮换。
--- 仍占用原来的轮换序号，保证后续队员功绩奖励完全不变。
+-- 固定为本分支既有九项基值；等级增强统一在addRecord中按target换算。
+-- 不随前置通关条目增删发生轮换，仍占用原序号以保留后续队员功绩奖励。
 local LEVEL_REWARDS = {
     [5] = { type = "essence", amount = 150, icon = "image/货币道具/UI_icon_JC.png", quality = 2 },
     [10] = { type = "adventure_ticket", amount = 2, icon = "image/货币道具/UI_icon_ZMQ_1.png", quality = 5 },
@@ -149,8 +157,9 @@ for _, n in ipairs({ 1, 2, 3 }) do
     addRecord("a_awk_" .. n, "觉醒印", "任意队员觉醒至" .. n .. "阶", "awk_max", n, "hero", nextReward(n * 4))
 end
 
--- 每级额外100黑晶使用独立永久ID；旧里程碑台账不清空、不重复发奖。
--- 新档Lv.1也有一份等级奖励；不推进轮换序号，队员功绩保持原奖励。
+-- 每级额外奖励基值100黑晶，按节点等级增强；使用独立永久ID。
+-- 旧里程碑台账不清空、不重复发奖，新档Lv.1也有一份等级奖励；
+-- 不推进轮换序号，队员功绩保持原奖励。
 TaskConfig.LEVEL_TASKS = {}
 for lv = 1, ExpTable.PLAYER_MAX_LEVEL do
     local reward = { type = "diamond", amount = 100, icon = "image/货币道具/UI_icon_SJ_X.png", quality = 5 }

@@ -237,7 +237,9 @@ local function testTriDriverWipeFallback()
 
     local nativeRequire = require
     rawset(_G, "require", function(name)
-        if name == "boot.StandaloneSave" then return { Flush = function() return true end } end
+        if name == "boot.StandaloneSave" then
+            return { Flush = function() return true end, RequestSave = function() return true end }
+        end
         return nativeRequire(name)
     end)
     local ok, err = pcall(function() drv:tick(1 / 60) end)
@@ -329,8 +331,8 @@ local function testArtifactTeamSchema()
     check(ArtifactSchema.getEquippedId(legacy, 1, 1, 2) == nil, "旧档装配不会泄漏到队2")
     check(ArtifactSchema.getEquippedId(legacy, 1, 1, 3) == nil, "旧档装配不会泄漏到队3")
 
-    -- 同类型的独立实例分队合法；同一实例跨队必须由正式服务拒绝。
-    -- Schema setter只维护引用唯一性，不是装配权限入口，不能用它伪造跨队成功。
+    -- 同类型的独立实例分队合法；同实例跨队通过正式服务原子互换，不能复制占用。
+    -- Schema setter只维护引用唯一性，不是装配权限入口。
     local data = {
         bag = {
             { id = "7", artifactId = 5, quality = 2, value = 50 },
@@ -364,14 +366,20 @@ local function testArtifactTeamSchema()
         check(Service.Equip(uid, "8", 2, 1, 2) == true, "队2 同类型独立实例8 可装配")
         check(Service.Equip(uid, "9", 3, 2, 3) == true, "队3 同类型独立实例9 可装配")
         for team = 2, 3 do
-            local before = cjson.encode(data)
             local bagRef, equippedRef = data.bag, data.equippedByTeam
+            local sourceTeam, sourceSlot, sourceSub = ArtifactSchema.findEquippedSlotAnyTeam(data, "7")
             local targetSlot, targetSubSlot = team == 2 and 2 or 3, team == 2 and 1 or 2
+            local oldTarget = ArtifactSchema.getEquippedId(data, targetSlot, targetSubSlot, team)
             local accepted, reason = Service.Equip(uid, "7", targetSlot, targetSubSlot, team)
-            check(accepted == false and tostring(reason or ""):find("先卸下", 1, true) ~= nil,
-                "同一实例7 跨队" .. team .. " 被正式服务拒绝，要求先卸下")
-            check(cjson.encode(data) == before and data.bag == bagRef and data.equippedByTeam == equippedRef,
-                "跨队" .. team .. " 拒绝不卸原队、不覆盖目标、不修改数据")
+            check(accepted == true and reason == nil,
+                "同一实例7 跨队" .. team .. " 正式服务直接交换，无需先卸下")
+            check(ArtifactSchema.getEquippedId(data, targetSlot, targetSubSlot, team) == "7"
+                and ArtifactSchema.getEquippedId(data, sourceSlot, sourceSub, sourceTeam) == oldTarget
+                and data.bag == bagRef and data.equippedByTeam == equippedRef,
+                "跨队" .. team .. " 原位原子交换保bag/装配表身份且旧目标回来源")
+            -- 反向交换恢复本节三队原实例，以便旧查找/卸下/往返断言继续完整覆盖。
+            check(Service.Equip(uid, "7", sourceSlot, sourceSub, sourceTeam) == true,
+                "跨队" .. team .. " 可反向直接交换恢复原位")
         end
         check(ArtifactSchema.getEquippedId(data, 2, 1, 1) == "7"
             and ArtifactSchema.getEquippedId(data, 2, 1, 2) == "8"
@@ -553,6 +561,7 @@ local function testVictoryMarchLifecycle()
         local marches, combatTicks, firstClears = 0, 0, 0
         ---@type table|nil
         local background
+        local combatState = { ctx = {}, cardAnims = {}, comboQueue = {} }
         local combat = setmetatable({
             getAliveUnits = function(list)
                 local alive = {}
@@ -561,7 +570,7 @@ local function testVictoryMarchLifecycle()
                 end
                 return alive
             end,
-            mountedState = function() return { ctx = {} } end,
+            mountedState = function() return combatState end,
         }, { __index = function() return noop end })
         local function stub(fields)
             return setmetatable(fields or {}, { __index = function() return noop end })
@@ -569,6 +578,10 @@ local function testVictoryMarchLifecycle()
         mocks["config.StageConfig"] = SC
         mocks["core.BattleLayout"] = require("core.BattleLayout")
         mocks["systems.AttributeDef"] = require("systems.AttributeDef")
+        local extraState = {}
+        mocks["systems.ExtraTalentSystem"] = {
+            mountedState = function() return extraState end, flush = noop, discard = noop,
+        }
         mocks["shared.StageProvider"] = { Get = function() return SC end }
         mocks["ui.battle.combat.BattleCombat"] = combat
         mocks["ui.battle.scene.BattleMountScope"] = { mountDefault = noop, wrap = noop }
@@ -606,9 +619,14 @@ local function testVictoryMarchLifecycle()
         end }
         local realNames = {
             ["ui.battle.scene.BattleScene"] = true,
+            ["ui.battle.tri.TerminalSceneFlow"] = true,
+            ["ui.battle.tri.TerminalReincarnation"] = true,
             ["ui.battle.stage.BattleStageNavLogic"] = true,
             ["ui.battle.scene.BattleScenePhases"] = true,
             ["ui.battle.combat.BattleCasualty"] = true,
+            ["ui.battle.scene.BattleAllyLifecycle"] = true,
+            ["systems.BattleOffenseGuard"] = true,
+            ["systems.BattleOffenseCapabilities"] = true,
         }
         env.require = function(name)
             if mocks[name] then return mocks[name] end
@@ -622,6 +640,14 @@ local function testVictoryMarchLifecycle()
             loaded[name] = value
             return value
         end
+        -- 旧bind仅模拟装载入口；帧采样和无进攻判定必须委托同env中的真实Lifecycle。
+        local lifecycleProxy = mocks["ui.battle.scene.BattleAllyLifecycle"] ---@type table
+        mocks["ui.battle.scene.BattleAllyLifecycle"] = nil
+        local lifecycle = env.require("ui.battle.scene.BattleAllyLifecycle") ---@type table
+        for key, value in pairs(lifecycle) do
+            if key ~= "bind" then lifecycleProxy[key] = value end
+        end
+        mocks["ui.battle.scene.BattleAllyLifecycle"] = lifecycleProxy
         local realNav = env.require("ui.battle.stage.BattleStageNavLogic")
         mocks["ui.battle.stage.BattleStageNavLogic"] = { bind = function(deps)
             shared = deps
@@ -707,6 +733,13 @@ end
 
 function Start()
     print("[battle_stage_switch_test] start")
+    local nativeFile, nativeFileSystem = File, fileSystem
+    -- 独立回归不读玩家档；间接加载酒馆历史时仅返回文件不存在。
+    rawset(_G, "File", function() error("切关专项禁止玩家文件读写", 0) end)
+    rawset(_G, "fileSystem", { FileExists = function(_, path)
+        if path == "gacha_history.json" then return false end
+        error("切关专项禁止未知文件查询: " .. tostring(path), 0)
+    end })
     local ok, err = pcall(function()
         testRestoreOrder()
         testSetSnapshot()
@@ -718,6 +751,8 @@ function Start()
         testArtifactBridgeTeam()
         testVictoryMarchLifecycle()
     end)
+    rawset(_G, "File", nativeFile)
+    rawset(_G, "fileSystem", nativeFileSystem)
     if not ok then
         print("[FAIL] 测试抛异常: " .. tostring(err))
         failures[#failures + 1] = "exception"

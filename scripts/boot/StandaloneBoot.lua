@@ -11,6 +11,7 @@ local EquipmentSystem   = require("systems.EquipmentSystem")
 local LootBoxSystem     = require("systems.LootBoxSystem")
 local BlacksmithConfig  = require("config.BlacksmithConfig")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
+local StandaloneSave    = require("boot.StandaloneSave")
 local TopBar            = require("ui.hud.TopBar")
 local BattleStats       = require("systems.BattleStats")
 local BottomNav         = require("ui.hud.BottomNav")
@@ -52,11 +53,30 @@ local SCROLL_DROP_TO_REWARD = {
     accessoryScroll = "accessory_scroll",
     helmetScroll    = "helmet_scroll",
     shoesScroll     = "shoes_scroll",
+    sweepTicket     = "sweep_ticket",
 }
 
+-- 仅新生成的首通/暂存击杀装备使用；已有库存与遗匣领取不追溯分解。
+-- 生成发生在判定前，保持原有模板/词条 RNG 消费顺序。
+local function deliverBattleEquipment(lootboxData, equipData, equip)
+    if not equip.locked and BlacksmithConfig.shouldAutoDecompose(equipData and equipData.settings, equip.quality, equip.level) then
+        local essence = BlacksmithConfig.calcAutoDecomposeEssence(equip.quality, equip.level)
+        GameState.setEssence(GameState.getEssence() + essence)
+        if lootboxData then
+            BlacksmithConfig.recordAutoDecompose(lootboxData, equip.quality, equip.level, essence)
+        end
+        print("[Standalone] 首通掉落自动分解 q=" .. equip.quality .. " lv=" .. equip.level .. " essence=+" .. essence)
+        return { type = "essence", amount = essence }
+    end
+    local destination = LootBoxSystem.deliverEquipment(lootboxData, equipData, equip)
+    return { type = "equip", templateId = equip.templateId, quality = equip.quality,
+        level = equip.level, destination = destination }
+end
+
 --- 取出暂存掉落；背包满时完整存入遗匣。
----@return table[]
-local function takePendingFcRewards()
+---@param deferNotify boolean|nil 首通统一投递后再通知，独立掉落结算仍即时通知
+---@return table[], boolean
+local function takePendingFcRewards(deferNotify)
     local dropSeeds = pendingFcSeeds
     local dropScrolls = pendingFcScrolls
     pendingFcSeeds = {}
@@ -67,14 +87,7 @@ local function takePendingFcRewards()
     for _, seed in ipairs(dropSeeds) do
         local equip = EquipmentSystem.generateRandom(seed.level, seed.quality)
         if equip then
-            local destination = LootBoxSystem.deliverEquipment(lootboxData, equipData, equip)
-            rewards[#rewards + 1] = {
-                type       = "equip",
-                templateId = equip.templateId,
-                quality    = equip.quality,
-                level      = equip.level,
-                destination = destination,
-            }
+            rewards[#rewards + 1] = deliverBattleEquipment(lootboxData, equipData, equip)
         else
             LootBoxSystem.addSeed(lootboxData, 0, seed.quality, seed.level)
         end
@@ -90,14 +103,14 @@ local function takePendingFcRewards()
             end
         end
     end
-    if #dropSeeds > 0 then
+    if #dropSeeds > 0 and not deferNotify then
         ClientDispatcher.notifySubscribers("equipment")
         ClientDispatcher.notifySubscribers("lootbox")
     end
     if #rewards > 0 then
         print("[Standalone] 结算暂存掉落 n=" .. tostring(#rewards))
     end
-    return rewards
+    return rewards, #dropSeeds > 0
 end
 
 local function showKeptDrops(title)
@@ -131,7 +144,10 @@ function M.run(rt)
 
     -- 5.1 阵容变更回调：角色面板出战变动 → 同步战斗画面 → 重载关卡 → 更新 TopBar 战力
     -- [三队并行] 回调携带 teamIdx：队1 同步战斗画面；队2/3 编队先本地生效（并行战斗 Phase 3 接入）
-    CharacterPanel.setOnTeamChanged(function(teamIdx, otherTeamIdx)
+    ---@param teamIdx number
+    ---@param otherTeamIdx number?
+    ---@return boolean
+    local function onTeamChanged(teamIdx, otherTeamIdx)
         teamIdx = tonumber(teamIdx) or 1
         -- [累计统计] 队伍编成变更 → 自动重置该队累计统计（含跨队拖拽的另一队）
         BattleStats.resetAccumForTeam(teamIdx)
@@ -150,12 +166,15 @@ function M.run(rt)
                 print("[Standalone] 编队同步失败: " .. tostring(reason))
                 local heroesData = ClientDispatcher.get("heroes")
                 if heroesData then CharacterPanel.setHeroesData(heroesData) end
-                return
+                return true
             end
+        else
+            -- 启动桥尚未就绪时，本地先完成唯一一轮派生计算，下面再读取最终缓存。
+            CharacterPanel.refreshTeamChange()
         end
         if teamIdx ~= 1 and otherTeamIdx ~= 1 then
             print("[Standalone] 队伍" .. teamIdx .. " 编队变更")
-            return
+            return true
         end
         local team = CharacterPanel.getDeployedTeam(1)
         TopBar.setTotalPower(CharacterPanel.getTotalPower())
@@ -166,7 +185,9 @@ function M.run(rt)
         else
             print("[Standalone] 阵容变更，当前无出战英雄")
         end
-    end)
+        return true
+    end
+    CharacterPanel.setOnTeamChanged(onTeamChanged, true)
 
     -- 养成刷新由 CharacterPanel 冻结差异检测唯一负责；此回调只保留归属诊断。
     -- 不再次失效编队/刷新默认 Scene，避免同一次成长重复重开战斗。
@@ -203,10 +224,8 @@ function M.run(rt)
             local totalExp = baseExp * expMult
             local perHeroExp = math.floor(totalExp / #heroIds + 0.5)
             if perHeroExp > 0 then
-                -- addHeroExp 内按有效等级/共鸣差异刷新；旁队及开页不碰默认 Scene。
-                for _, hid in ipairs(heroIds) do
-                    CharacterPanel.addHeroExp(hid, perHeroExp)
-                end
+                -- 逐英雄保留升级/共鸣/持久化顺序，名册与战力只在批次收尾刷新一次。
+                CharacterPanel.addHeroesExp(heroIds, perHeroExp)
             end
         end
     end
@@ -341,7 +360,7 @@ function M.run(rt)
     -- 订阅 lootbox 数据变化 → 刷新 LootBox UI
     ClientDispatcher.subscribe("lootbox", function(data, moduleName)
         LootBoxSystem.consolidateSeeds(data) -- 合并旧存档中按 stageId 分开的同类种子
-        -- 版本兼容：clamp 旧版高等级种子到当前关卡怪物等级
+        -- 兼容：clamp 高等级种子到当前关卡怪物等级
         local capStageId = BattleScene.getMaxStageId() or BattleScene.getCurrentStageId()
         local capEntry = capStageId and StageConfig.getStage(capStageId)
         if capEntry and capEntry.monsterLevel and capEntry.monsterLevel > 0 then
@@ -362,8 +381,8 @@ function M.run(rt)
         LootBox.updateSeedData(data)
         print("[Standalone] lootbox data updated, seedCount=" .. LootBoxSystem.getTotalCount(data))
     end)
-    -- 存档恢复早于订阅注册，首次打开也必须能看到已保存的遗匣。
-    LootBox.updateSeedData(ClientDispatcher.get("lootbox"))
+    -- 存档恢复早于订阅注册；恢复遗匣并静默建立通知基线，不重弹历史收益。
+    LootBox.updateSeedData(ClientDispatcher.get("lootbox"), { resetNotice = true })
 
     -- 主线挂机与资源关的装备共用遗匣/自动分解路径，入匣时确定装备内容。
     local function addKillEquipment(stageId, quality, level)
@@ -391,7 +410,18 @@ function M.run(rt)
     -- 三队与默认 Scene 共用；driver 的每条 dropOnly 代表一次击杀，不是整波奖励。
     local function applyKillDrop(data)
         if StageConfig.isResourceStage(data.stageId) then
-            local rewards = DungeonConfig.getStageRewards(data.stageId, 1)
+            -- 三行奖励队列携带本场存活英雄快照，切队/换阵不能把经验发给另一队。
+            local heroIds = data.heroIds
+            if not heroIds then
+                local teams = CharacterPanel.getTeamSlotIds()
+                heroIds = (teams[data.teamIdx or 1] or {}).slots or {}
+            end
+            local rewards = DungeonConfig.getStageRewards(data.stageId, 1, #heroIds)
+            if (rewards.adventureExp or 0) > 0 then GameState.addExp(rewards.adventureExp) end
+            if #heroIds > 0 then
+                local perHero = math.floor((rewards.adventurerExp or 0) / #heroIds + 0.5)
+                if perHero > 0 then CharacterPanel.addHeroesExp(heroIds, perHero) end
+            end
             if rewards.gold > 0 then
                 GameState.setGold(GameState.getGold() + rewards.gold)
             end
@@ -403,13 +433,25 @@ function M.run(rt)
                     addKillEquipment(seed.stageId or data.stageId, seed.quality, seed.level)
                 end
             end
-            -- 不掷主线装备/卷轴，不发源怪经验、扫荡券或主线首通奖励。
+            -- 只领取副本返回的已命中卷轴/券，不再对借用主线关卡额外骰一次。
+            for field, amount in pairs(rewards.scrollDrops) do
+                local rewardKey = SCROLL_DROP_TO_REWARD[field]
+                if rewardKey and amount > 0 then
+                    local method = field:sub(1, 1):upper() .. field:sub(2)
+                    local current = GameState["get" .. method]()
+                    local base = type(current) == "number" and current or 0
+                    GameState["set" .. method](base + amount)
+                    print("[Standalone] 资源掉落到账: type=" .. rewardKey .. " amount=" .. tostring(amount))
+                end
+            end
+            -- 不发借用怪物奖励或主线首通奖励；副本经验已按同进度独立结算。
             return
         end
         local stageEntry = StageConfig.getStage(data.stageId)
         if not stageEntry then return end
         local quality = DropSystem.rollKillDrop(stageEntry, data)
         local scrollType = DropSystem.rollScrollDrop(stageEntry)
+        local sweepTicket = DropSystem.rollSweepTicket(stageEntry)
         if data.isFirstClear then
             if quality then
                 local level = stageEntry.monsterLevel or 1
@@ -421,6 +463,10 @@ function M.run(rt)
                 pendingFcScrolls[scrollType] = (pendingFcScrolls[scrollType] or 0) + 1
                 print("[Standalone] 首通卷轴暂存: type=" .. scrollType
                     .. " n=" .. tostring(pendingFcScrolls[scrollType]))
+            end
+            if sweepTicket then
+                pendingFcScrolls.sweepTicket = (pendingFcScrolls.sweepTicket or 0) + 1
+                print("[Standalone] 首通扫荡券暂存: n=" .. tostring(pendingFcScrolls.sweepTicket))
             end
             return
         end
@@ -441,6 +487,13 @@ function M.run(rt)
                 setter(nextValue)
                 print("[Standalone] scroll drop: type=" .. scrollType)
             end
+        end
+        -- 挂机扫荡券直接到账，不进遗匣；首通仍由暂存结算出口统一领取。
+        if sweepTicket then
+            local current = GameState.getSweepTicket()
+            local base = type(current) == "number" and current or 0
+            GameState.setSweepTicket(base + 1)
+            print("[Standalone] 扫荡券掉落到账: amount=1")
         end
     end
     BattleScene.setOnEnemyDrop(applyKillDrop)
@@ -489,8 +542,8 @@ function M.run(rt)
     end)
 
     -- 遗匣领取统一刷新：装备先入包，再显示实际到账的内容。
-    -- seedIndex=单件领取；quality+setFilter=批量领取的筛选范围（空集合=不限制）。
-    local function claimLoot(seedIndex, quality, setFilter)
+    -- seedIndex=单件领取；批量品质/套装两参兼容，追加独立部位/类型快照。
+    local function claimLoot(seedIndex, quality, setFilter, detailFilter)
         local lootboxData = ClientDispatcher.get("lootbox")
         local equipData = ClientDispatcher.get("equipment")
         if not lootboxData or not equipData then return end
@@ -500,7 +553,7 @@ function M.run(rt)
         if seedIndex then
             claimed, bagFull = LootBoxSystem.claimGroup(lootboxData, seedIndex, equipData)
         else
-            claimed, bagFull = LootBoxSystem.claimAll(lootboxData, equipData, quality, setFilter)
+            claimed, bagFull = LootBoxSystem.claimAll(lootboxData, equipData, quality, setFilter, detailFilter)
         end
         ClientDispatcher.notifySubscribers("lootbox")
         if #claimed > 0 then
@@ -517,17 +570,19 @@ function M.run(rt)
         print("[Standalone] 遗匣领取: claimed=" .. #claimed
             .. " remaining=" .. LootBoxSystem.getTotalCount(lootboxData))
     end
-    LootBox.setOnClaimAll(function(quality, setFilter) claimLoot(nil, quality, setFilter) end)
+    LootBox.setOnClaimAll(function(quality, setFilter, detailFilter)
+        claimLoot(nil, quality, setFilter, detailFilter)
+    end)
     LootBox.setOnClaimOne(claimLoot)
 
-    local function decomposeLoot(seedIndex, quality, setFilter)
+    local function decomposeLoot(seedIndex, quality, setFilter, detailFilter)
         local lootboxData = ClientDispatcher.get("lootbox")
         if not lootboxData then return end
         local essence, pieces
         if seedIndex then
             essence, pieces = LootBoxSystem.decomposeOne(lootboxData, seedIndex)
         else
-            essence, pieces = LootBoxSystem.decomposeAll(lootboxData, quality, setFilter)
+            essence, pieces = LootBoxSystem.decomposeAll(lootboxData, quality, setFilter, detailFilter)
         end
         if pieces <= 0 then return end
         GameState.setEssence(GameState.getEssence() + essence)
@@ -536,7 +591,9 @@ function M.run(rt)
             LootBoxPage.showToast(string.format(I18n.lookup("回收 %d 件装备 · 精华 +%d"), pieces, essence))
         end
     end
-    LootBox.setOnDecomposeAll(function(quality, setFilter) decomposeLoot(nil, quality, setFilter) end)
+    LootBox.setOnDecomposeAll(function(quality, setFilter, detailFilter)
+        decomposeLoot(nil, quality, setFilter, detailFilter)
+    end)
     LootBox.setOnDecomposeOne(decomposeLoot)
 
     -- 5.249 自动分解设置回调：[分解入仓 0929] 打开仓库分解 tab 并弹出自动分解设置
@@ -548,20 +605,22 @@ function M.run(rt)
         BlacksmithDecompose.openAutoPopup()
     end)
 
-    -- 5.24 轮回回调：倒计时结束 → 播放开场动画 → 完成关卡加载
+    -- 5.24 终焉过渡：奖励/战场对白收尾后，播放胜利远征过场，再统一进入下一难度。
     BattleScene.setOnReincarnate(function(data)
-        print("[Standalone] reincarnation triggered, starting intro cutscene (difficulty "
-            .. tostring(data.fromDifficulty) .. " → " .. tostring(data.toDifficulty) .. ")")
+        print("[Standalone] 终焉通关，开始远征过场（" .. tostring(data.fromDifficulty)
+            .. " → " .. tostring(data.toDifficulty) .. "）")
         IntroCutscene.reset()
         IntroCutscene.start(function()
-            print("[Standalone] reincarnation intro finished, completing stage load")
-            BattleScene.completeReincarnation()
+            print("[Standalone] 终焉远征过场完成，统一加载目标关卡")
+            BattleScene.completeReincarnation(data.reincarnationToken)
         end)
     end)
 
     -- 5.25 首通奖励回调：本地计算首通金币+装备，弹出 RewardPopup
     BattleScene.setOnFirstClear(function(clearedStageId, teamIdx)
         if StageConfig.isResourceStage(clearedStageId) then return end
+        -- 默认单队 Scene 没有外层结账；三队显式传队号，由 StageProgress/终焉统一提交。
+        local saveAtCompletion = teamIdx == nil
         teamIdx = teamIdx or 1
         -- 首通账本三队共用；只有一队通关改变一队当前关，二三队不能拉走一队。
         local battle = ClientDispatcher.get("battle")
@@ -571,21 +630,27 @@ function M.run(rt)
                 if not battle.clearedStages then battle.clearedStages = {} end
                 battle.clearedStages[tostring(clearedNum)] = true
                 local nextId = StageConfig.getNextStageId(clearedNum)
-                if teamIdx ~= 1 then
+                if StageConfig.isTerminalTemple(clearedNum) then
+                    -- 三队Scene已冻结逐队安全点；此处只更新共享解锁，不覆盖资源来源。
+                    local previous = StageConfig.getTerminalPrevStageId(clearedNum)
+                    local target = StageConfig.getReincarnationTarget(StageConfig.getDifficulty(clearedNum))
+                    if saveAtCompletion or type(battle.teamStageIds) ~= "table" then
+                        battle.currentStageId = previous
+                        battle.teamStageIds = { ["1"] = previous, ["2"] = previous, ["3"] = previous }
+                    end
+                    battle.maxStageId = math.max(tonumber(battle.maxStageId) or 0, target or previous)
+                    battle.battleMode = "idle"
+                elseif teamIdx ~= 1 then
                     local progressId = nextId and not StageConfig.isTerminalTemple(nextId)
                         and nextId or clearedNum
                     battle.maxStageId = math.max(tonumber(battle.maxStageId) or 0, progressId)
-                elseif StageConfig.isTerminalTemple(clearedNum) then
-                    local reincarnationStage = StageConfig.getReincarnationTarget(StageConfig.getDifficulty(clearedNum))
-                    battle.currentStageId = reincarnationStage
-                    battle.maxStageId = math.max(tonumber(battle.maxStageId) or 0, reincarnationStage)
-                    battle.battleMode = "firstClear"
                 elseif nextId and not StageConfig.isTerminalTemple(nextId) then
                     battle.currentStageId = nextId
                     if nextId > (tonumber(battle.maxStageId) or 0) then
                         battle.maxStageId = nextId
                     end
-                    local nextCleared = battle.clearedStages[tostring(nextId)] == true
+                    local nextCleared = battle.clearedStages[nextId] == true
+                        or battle.clearedStages[tostring(nextId)] == true
                     battle.battleMode = nextCleared and "idle" or "firstClear"
                 else
                     battle.currentStageId = clearedNum
@@ -593,7 +658,7 @@ function M.run(rt)
                 end
                 print(string.format("[Standalone] 首通进度已写入 current=%s max=%s",
                     tostring(battle.currentStageId), tostring(battle.maxStageId)))
-                require("boot.StandaloneSave").Flush()
+                -- 奖励、首通账本与当前进度由通关结尾一起提交，不能先落盘空奖励标记。
             end
         end
         -- [首通情景接线修复 2026-09-30] 0922 删除 Client/Server 联网壳（4e184304）时，
@@ -603,7 +668,10 @@ function M.run(rt)
         -- 情景先入队，等首通奖励弹窗关闭后由 tryPlayPendingStory_ 逐段播出并领奖。
         require("systems.StoryPlayer").onStage(clearedStageId, "clear")
         local stageEntry = StageConfig.getStage(clearedStageId)
-        if not stageEntry then return end
+        if not stageEntry then
+            if saveAtCompletion then StandaloneSave.Flush() end
+            return
+        end
 
         local rewards = {}
         -- 首通金币
@@ -640,19 +708,9 @@ function M.run(rt)
         local equipData = ClientDispatcher.get("equipment")
         local lootboxData = ClientDispatcher.get("lootbox")
         for _, equip in ipairs(fcEquips) do
-            local destination = LootBoxSystem.deliverEquipment(lootboxData, equipData, equip)
-            rewards[#rewards + 1] = {
-                type       = "equip",
-                templateId = equip.templateId,
-                quality    = equip.quality,
-                level      = equip.level,
-                destination = destination,
-            }
+            rewards[#rewards + 1] = deliverBattleEquipment(lootboxData, equipData, equip)
         end
-        if #fcEquips > 0 then
-            ClientDispatcher.notifySubscribers("equipment")
-            ClientDispatcher.notifySubscribers("lootbox")
-        end
+        -- 固定首通装备与暂存击杀装备全部投递后，统一刷新一次装备派生数据。
         -- 首通卷轴（每个独立随机，按类型聚合）
         local scrollReward = DropSystem.generateFirstClearScrolls(stageEntry)
         if scrollReward and scrollReward.scrolls then
@@ -709,10 +767,15 @@ function M.run(rt)
             rewards[#rewards + 1] = { type = "sacred_stone", amount = fcSacredStone }
         end
         -- 本关击杀掉落并入首通奖励；超出背包容量的装备标记为已入遗匣。
-        local dropRewards = takePendingFcRewards()
+        local dropRewards, hasPendingEquipment = takePendingFcRewards(true)
         for _, item in ipairs(dropRewards) do
             rewards[#rewards + 1] = item
         end
+        if #fcEquips > 0 or hasPendingEquipment then
+            ClientDispatcher.notifySubscribers("equipment")
+            ClientDispatcher.notifySubscribers("lootbox")
+        end
+        if saveAtCompletion then StandaloneSave.Flush() end
         if #rewards > 0 then
             print("[Standalone] 首通奖励: gold=" .. tostring(fcGold)
                 .. " diamond=" .. tostring(fcDiamond)

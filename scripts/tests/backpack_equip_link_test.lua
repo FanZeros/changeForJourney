@@ -164,8 +164,11 @@ local function runTutorialEnsure()
     local s = { open = false, closing = false, tab = "item", scrollY = 0, scrollVel = 0,
         qualitySet = { [6] = true }, setFilter = { none = true } }
     local c = { opens = 0, closes = 0, mode = "window" }
+    local list = {}
+    for index = 1, 60 do list[index] = { slot = "weapon", canWear = index == 60 } end
     local item = { open = true }
     local api = Link.bind({ state = s, GRID = GRID, CELL_COL_CX = cells,
+        getEquipList = function() return list end,
         EquipmentDetail = Detail, DrawUtil = Draw, SetFilterDialog = filterDialog, itemDetState = item,
         getLeftPage = function(path) return leftPages[path] end,
         getHostMode = function() return c.mode end,
@@ -198,6 +201,22 @@ local function runTutorialEnsure()
     check(api.ensureTutorialEquipment(1, "weapon") == false and s.scrollY == 600
         and Detail.isPinned() and c.opens == 1 and filterDialogState.closes == closed,
         "stable tutorial ensure preserves scroll and candidate without repeated cleanup")
+    check(api.ensureTutorialEquipment(1, "weapon", true) and c.opens == 1,
+        "强制恢复定位后页合法武器，不重开仓库")
+    local row = math.floor((60 - 1) / GRID.COLS)
+    local top = GRID.FIRST_ROW_TOP + row * (GRID.CELL_SIZE + GRID.GAP) - s.scrollY
+    check(top >= GRID.FIRST_ROW_TOP and top + GRID.CELL_SIZE <= GRID.CLIP_BOTTOM,
+        "末页合法武器完整位于真实裁剪区")
+    local focusedScroll = s.scrollY
+    Detail.open(1, nil, nil, true, "backpack"); Detail.pin()
+    check(not api.ensureTutorialEquipment(1, "weapon", true) and s.scrollY == focusedScroll and Detail.isPinned(),
+        "已有完整可见目标时强制检查仍幂等，不清候选")
+    list[60].canWear = false; s.scrollY = 0
+    check(not api.ensureTutorialEquipment(1, "weapon", true) and s.scrollY == 0,
+        "无合法武器不造候选、不伪造恢复成功")
+    list[60].canWear = true
+    check(api.ensureTutorialEquipment(1, "weapon", true) and c.opens == 1,
+        "合法武器数据晚到后可以重新定位")
     check(api.ensureTutorialEquipment(2, "helmet") == true and s.scrollY == 0
         and not Detail.isOpen() and c.opens == 1,
         "tutorial changed hero/slot refreshes filter and clears candidate, never reopens")
@@ -224,13 +243,21 @@ end
 
 -- 真实模板+双持分支规则，持有测试 mock 不修改任何装备穿戴数据。
 package.loaded["ui.widget.ImageCache"] = { init = function() end, getEquipIcon = function() return 1 end }
-package.loaded["ui.widget.HeroFrame"] = { draw = function() end }
+package.loaded["ui.widget.HeroFrame"] = { draw = function() end,
+    GOLD_HI = { 255, 214, 102 },
+    CLASS_ICON_MAP = { seal = 1, spoil = 2, rift = 3, echo = 4, mask = 5, debt = 6,
+        knight = 1, warrior = 2, mage = 3, ranger = 4, assassin = 5, priest = 6 },
+    getImages = function() return { vg = nil, classIcons = {} } end,
+}
 package.loaded["ui.character.panel.CharacterPanel"] = { getShards = function() return 0 end }
 for _, key in ipairs({ "ui.widget.ImageCache", "ui.widget.HeroFrame", "ui.character.panel.CharacterPanel" }) do
     local stub = package.loaded[key]
     package.preload[key] = function() return stub end
 end
 local Store = require("core.PlayerStore")
+-- 本旧矩阵直接修改fixture而不走发布通知；用明确无revision旧宿主模式。
+-- 下方detailed/class缓存专项仍自行安装真实递增revision再恢复此模式。
+Store.GetRevision = nil
 local EC = require("config.EquipmentConfig")
 local ES = require("systems.EquipmentSystem")
 local HC = require("config.HeroConfig")
@@ -252,6 +279,14 @@ local grids = Grids.bind({ GRID = GRID, CELL_COL_CX = cells, DESIGN_W = 1080, Dr
     getImgHeroIcons = function() return drawingHeroIcons end, getImgLock = function() return drawingLock end,
     calcScrollMax = function() return 0 end, clampScroll = function() end,
 })
+-- 旧矩阵的每次显式查询代表一个新的已发布fixture状态；没有Dispatcher替它通知。
+-- 仅清评分cache，不给生产Render增加同步查询或绕过真实权威校验。
+local legacyGetEquipList = grids.getEquipList
+local LegacyPower = require("systems.EquipmentPower")
+grids.getEquipList = function()
+    LegacyPower.invalidate()
+    return legacyGetEquipList()
+end
 
 local function deepCopy(value)
     if type(value) ~= "table" then return value end
@@ -304,6 +339,804 @@ local function context(heroId, slot, branch, main, off, level)
     heroes.roster = { [tostring(heroId)] = { level = level or 100, advBranch = branch } }
     fake.equipped = { [tostring(heroId)] = { weapon = main, offhand = off },
         [99] = { armor = seqByTemplate.A31 } }
+end
+
+-- 新筛选专项独立运行：不借用下方全模板 applyEquip oracle，不改变旧断言。
+-- 评分只用确定性 mock；筛选/排序/缓存与词条水合执行真实生产模块。
+local function runDetailedFilters()
+    local Filters = require("ui.backpack.BackpackFilters")
+    local Affixes = require("config.AffixConfig")
+    local AD = require("systems.AttributeDef")
+    local Sets = require("config.EquipmentSetConfig")
+    local Power = require("systems.EquipmentPower")
+    local savedGet, savedRevision = Store.Get, Store.GetRevision
+    local savedScore, savedContext, savedEvaluate = Power.score, Power.getContext, Power.evaluate
+    local source = { equipment = { inventory = {}, equipped = {} },
+        heroes = { roster = { [1] = { level = 100 } } }, artifacts = {}, talents = {} }
+    local revisions = { equipment = 1, heroes = 1, artifacts = 1, talents = 1 }
+    local settings = { sortAscending = false, setFilter = {} }
+    local view = { open = true, tab = "equip", scrollY = 0 }
+    ---@type string|nil
+    local slot = nil
+    ---@type number|nil
+    local hero = nil
+    local dual = false
+    local selectedQualities, changes, scoreCalls = {}, 0, 0
+    Store.Get = function(key) return source[key] end
+    Store.GetRevision = function(key) return revisions[key] or 0 end
+    Power.score = function(equip) scoreCalls = scoreCalls + 1; return equip.testPower or 0 end
+    Power.getContext = function(id) return { heroId = id } end
+    Power.evaluate = function() return { valid = true, gain = 0, power = 0 } end
+    local function qualityMatches(q) return not next(selectedQualities) or selectedQualities[q] == true end
+    local smallGrids = Grids.bind({ GRID = GRID, CELL_COL_CX = cells, DESIGN_W = 1080,
+        state = view, decomposeState = settings, ITEM_DEFS = {}, DrawUtil = Draw,
+        getEquipmentSlotFilter = function() return slot, hero end,
+        qualityChecked = qualityMatches,
+        setChecked = function(tid)
+            return not next(settings.setFilter)
+                or settings.setFilter[Sets.getSetIdForTemplate(EC.ITEMS[tid]) or "none"] == true
+        end,
+        calcScrollMax = function() return 0 end, clampScroll = function() end,
+    })
+    local toolbar = Filters.bind({ filters = settings, GRID = GRID,
+        getSlot = function() return slot end, setSlot = function(value) slot = value end,
+        isDualWield = function() return dual end,
+        onChange = function() changes = changes + 1 end,
+        clearQualitySets = function() selectedQualities, settings.setFilter = {}, {} end,
+    })
+    local function install(inventory)
+        source.equipment = { inventory = inventory, equipped = {} }
+        revisions.equipment = revisions.equipment + 1
+    end
+    local function ids(list)
+        local out = {}
+        for _, entry in ipairs(list) do out[#out + 1] = tostring(entry.seq) end
+        return table.concat(out, ",")
+    end
+    local function order(expected, label) check(ids(smallGrids.getEquipList()) == expected, label) end
+    local function optionValues(options)
+        local values, unique = {}, true
+        for _, option in ipairs(options) do
+            if values[option.value] then unique = false end
+            values[option.value] = true
+        end
+        return values, unique
+    end
+    -- 按实际工具条坐标选菜单项；覆盖滚轮后的第八行而不访问私有 menu。
+    local function choose(key, value)
+        local x = key == "type" and 765 or 295
+        local y = GRID.FIRST_ROW_TOP - (key == "sort" and 136 or 226)
+        local options, index = toolbar.getOptions(key), nil
+        for i, option in ipairs(options) do if option.value == value then index = i; break end end
+        if not index then error("missing toolbar option " .. key .. ":" .. tostring(value)) end
+        if not toolbar.handleInput(x, y) or not toolbar.isOpen() then error("menu did not open: " .. key) end
+        toolbar.handleScroll(#options) -- 已选项可能让菜单自动滚动，先归零再定位。
+        local scroll = math.max(0, index - 8)
+        toolbar.handleScroll(-scroll)
+        local h = math.min(8, #options) * 62 + 12
+        local top = math.min(y + 43, GRID.CLIP_BOTTOM - h)
+        toolbar.handleInput(x, top + 6 + (index - scroll - 0.5) * 62)
+    end
+    local ok, err = pcall(function()
+        local slotValues, uniqueSlots = optionValues(toolbar.getOptions("slot"))
+        local expectedSlots = { all = true }
+        for _, value in ipairs(EC.SLOTS) do expectedSlots[value] = true end
+        check(uniqueSlots and deepEqual(slotValues, expectedSlots), "detailed slot options cover all six slots exactly once")
+        local attrs = {}
+        for _, tpl in pairs(EC.ITEMS) do for _, stat in ipairs(tpl.stats or {}) do attrs[stat[1]] = true end end
+        for _, key in ipairs(require("systems.EquipmentSecondaryStats").getAttributeKeys()) do attrs[key] = true end
+        for _, affix in ipairs(Affixes.AFFIXES) do attrs[affix.key] = true end
+        for _, affix in ipairs(Affixes.CORRUPT_AFFIXES) do attrs[affix.key] = nil end
+        local expectedSorts = { default = true, power = true, quality = true, level = true, ascend = true }
+        for key in pairs(attrs) do expectedSorts[key] = true end
+        local sortValues, uniqueSorts = optionValues(toolbar.getOptions("sort"))
+        check(uniqueSorts and deepEqual(sortValues, expectedSorts),
+            "detailed sorts include five modes plus fixed, secondary and normal attributes, excluding corrupt")
+        for _, target in ipairs({ "all", "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }) do
+            for _, allowDual in ipairs({ false, true }) do
+                slot, dual = target ~= "all" and target or nil, allowDual
+                local expectedTypes = { all = true }
+                for _, tpl in pairs(EC.ITEMS) do
+                    if not slot or tpl.slot == slot or (allowDual and slot == "offhand"
+                        and tpl.slot == "weapon" and tpl.grip == "onehand") then expectedTypes[tpl.type] = true end
+                end
+                local typeValues, uniqueTypes = optionValues(toolbar.getOptions("type"))
+                check(uniqueTypes and deepEqual(typeValues, expectedTypes),
+                    "detailed types match structural slot " .. target .. ", dual=" .. tostring(allowDual))
+            end
+        end
+        slot, dual = nil, false
+        choose("type", EC.ITEMS.W1.type)
+        check(settings.typeFilter == EC.ITEMS.W1.type and not toolbar.isOpen(), "type menu writes selected subtype and closes")
+        choose("slot", "armor")
+        check(slot == "armor" and settings.typeFilter == nil, "slot change clears stale subtype")
+        choose("slot", "all"); choose("type", "all")
+        check(slot == nil and settings.typeFilter == nil, "all slot and type remove structural restrictions")
+        for key in pairs(expectedSorts) do
+            choose("sort", key)
+            check(settings.sortKey == (key ~= "default" and key or nil), "sort menu writes stable key " .. key)
+        end
+        local beforeChanges = changes
+        toolbar.handleInput(605, GRID.FIRST_ROW_TOP - 136)
+        check(settings.sortAscending == true and changes == beforeChanges + 1, "order control selects ascending and invalidates display")
+        toolbar.handleInput(605, GRID.FIRST_ROW_TOP - 136)
+        check(settings.sortAscending == false, "order control selects descending")
+        toolbar.handleInput(295, GRID.FIRST_ROW_TOP - 136)
+        toolbar.handleInput(10, GRID.CLIP_BOTTOM + 20)
+        check(not toolbar.isOpen() and changes == beforeChanges + 2 and not toolbar.handleScroll(1),
+            "outside menu dismissal and closed scroll never change filters")
+        slot, settings.typeFilter, settings.sortKey, settings.sortAscending = "armor", "stale", "str", true
+        selectedQualities[6], settings.setFilter.none = true, true
+        toolbar.reset()
+        check(slot == nil and settings.typeFilter == nil and settings.sortKey == nil
+            and settings.sortAscending == false and not next(selectedQualities) and not next(settings.setFilter),
+            "reset clears slot, subtype, order, quality and set selections")
+
+        -- 冷存档只含 templateId；逐部位 + 逐类型独立验证 AND 筛选与套装基础计数。
+        local inventory = {}
+        for i, tid in ipairs({ "W1", "W13", "W7", "O7", "A31", "H1", "S1", "C1" }) do
+            inventory[tostring(i)] = { templateId = tid, level = 1, quality = i % 2 + 1 }
+        end
+        install(inventory)
+        local structuralBefore = deepCopy(source)
+        for _, target in ipairs(EC.SLOTS) do
+            slot = target
+            for _, option in ipairs(toolbar.getOptions("type")) do
+                settings.typeFilter = option.value ~= "all" and option.value or nil
+                local expectedIds = {}
+                for key, equip in pairs(inventory) do
+                    local tpl = EC.ITEMS[equip.templateId]
+                    if tpl.slot == target and (not settings.typeFilter or tpl.type == settings.typeFilter) then expectedIds[key] = true end
+                end
+                local actualIds, count = {}, 0
+                for _, entry in ipairs(smallGrids.getEquipList()) do actualIds[tostring(entry.seq)] = true end
+                for _, amount in pairs(smallGrids.getSetCounts()) do count = count + amount end
+                local n = 0; for _ in pairs(expectedIds) do n = n + 1 end
+                check(deepEqual(actualIds, expectedIds) and count == n,
+                    "slot AND subtype filters list and base counts: " .. target .. "/" .. option.value)
+            end
+        end
+        check(deepEqual(source, structuralBefore), "structural filters leave cold source and hero inventory unchanged")
+        slot, hero = "offhand", 1
+        source.heroes.roster[1].advBranch = { first = 104, second = 207 }
+        revisions.heroes = revisions.heroes + 1
+        settings.typeFilter = EC.ITEMS.W1.type
+        check(ids(smallGrids.getEquipList()) == "1", "dual offhand AND subtype adds matching onehand but excludes ordinary offhand and twohand")
+        selectedQualities[1] = true
+        check(#smallGrids.getEquipList() == 0, "dual offhand AND subtype AND quality never unions excluded candidates")
+        selectedQualities = { [2] = true }
+        check(ids(smallGrids.getEquipList()) == "1", "dual offhand matching quality restores selected onehand")
+        slot, hero, settings.typeFilter, selectedQualities = nil, nil, nil, {}
+        source.heroes.roster[1].advBranch = nil
+        revisions.heroes = revisions.heroes + 1
+        -- pairs 遍历模板无序，任取套装可能撞上基础库存已有套装，破坏精确1/0期望。
+        -- 按模板ID稳定选择基础库存完全没有的真实套装，不放宽下方交集断言。
+        local occupiedSets, templateIds = {}, {}
+        for _, equip in pairs(inventory) do
+            local id = Sets.getSetIdForTemplate(EC.ITEMS[equip.templateId])
+            if id then occupiedSets[id] = true end
+        end
+        for tid in pairs(EC.ITEMS) do templateIds[#templateIds + 1] = tid end
+        table.sort(templateIds)
+        ---@type string|nil
+        local setTid = nil
+        ---@type string|nil
+        local setId = nil
+        for _, tid in ipairs(templateIds) do
+            local id = Sets.getSetIdForTemplate(EC.ITEMS[tid])
+            if id and not occupiedSets[id] then setTid, setId = tid, id; break end
+        end
+        check(setTid ~= nil, "detailed set fixture includes a real affiliated template")
+        inventory["9"] = { templateId = setTid, level = 1, quality = 2 }
+        revisions.equipment = revisions.equipment + 1
+        settings.setFilter[setId] = true
+        check(ids(smallGrids.getEquipList()) == "9" and smallGrids.getSetCounts()[setId] == 1,
+            "set selection retains matching template while base count includes its instance")
+        selectedQualities[1] = true
+        check(#smallGrids.getEquipList() == 0 and smallGrids.getSetCounts()[setId] == 0,
+            "set AND quality intersection hides selected set rather than unioning qualities")
+        selectedQualities, settings.setFilter = {}, {}
+        inventory["9"] = nil
+        revisions.equipment = revisions.equipment + 1
+
+        install({
+            ["1"] = { templateId = "W1", quality = 1, level = 50, ascendLevel = 9, testPower = 10 },
+            [2] = { templateId = "W1", quality = 3, level = 20, ascendLevel = 2, testPower = 30 },
+            ["3"] = { templateId = "W1", quality = 3, level = 40, ascendLevel = 7, testPower = 20 },
+            [4] = { templateId = "W1", quality = 3, level = 20, ascendLevel = 2, testPower = 30 },
+            ["5"] = { templateId = "W1", quality = 2, level = 10, ascendLevel = 4, testPower = 40 },
+        })
+        local orders = {
+            { key = "default", descending = "2,4,3,5,1", ascending = "1,5,3,4,2" },
+            { key = "power", descending = "5,2,4,3,1", ascending = "1,3,2,4,5" },
+            { key = "quality", descending = "2,4,3,5,1", ascending = "1,5,2,4,3" },
+            { key = "level", descending = "1,3,2,4,5", ascending = "5,2,4,3,1" },
+            { key = "ascend", descending = "1,3,5,2,4", ascending = "2,4,5,3,1" },
+        }
+        local sortBefore = deepCopy(source)
+        for _, mode in ipairs(orders) do
+            choose("sort", mode.key)
+            settings.sortAscending = false; order(mode.descending, mode.key .. " descending has deterministic tie order")
+            settings.sortAscending = true; order(mode.ascending, mode.key .. " ascending has deterministic tie order")
+        end
+        check(deepEqual(source, sortBefore), "numeric modes never hydrate ascendLevel-only source")
+
+        -- 每个属性都测试固定+重复随机词条合计、显式零与缺属性；5件而非巨大试穿矩阵。
+        for key in pairs(attrs) do
+            check(AD.META[key] ~= nil, "sortable attribute has metadata: " .. key)
+            local affixTpl = Affixes.BY_KEY[key]
+            local function affix(value)
+                return { affixId = affixTpl and tostring(affixTpl.id) or nil,
+                    key = not affixTpl and key or nil, quality = 0, value = tostring(value) }
+            end
+            install({
+                [1] = { templateId = "W1", level = 1, quality = 1, baseStats = { { key, 10 } }, affixes = { affix(2), affix(3) } },
+                [2] = { templateId = "W1", level = 1, quality = 1, baseStats = { { key, 8 } }, affixes = { affix(1) } },
+                [3] = { templateId = "W1", level = 1, quality = 6, baseStats = {}, affixes = {} },
+                [4] = { templateId = "W1", level = 1, quality = 1, baseStats = { { key, 0 } }, affixes = {} },
+                [5] = { templateId = "W1", level = 1, quality = 1, baseStats = { { key, -2 } }, affixes = {} },
+            })
+            local before = deepCopy(source)
+            settings.sortKey, settings.sortAscending = key, false
+            order("1,2,4,5,3", key .. " descending sums fixed and repeated random attributes, missing stays last")
+            local values, presence = {}, {}
+            for _, entry in ipairs(smallGrids.getEquipList()) do values[entry.seq], presence[entry.seq] = entry.sortValue, entry.hasSortAttribute end
+            check(values[1] == 15 and values[2] == 9 and values[4] == 0 and values[5] == -2
+                and presence[4] == true and presence[3] == false, key .. " projection distinguishes zero/negative from missing")
+            settings.sortAscending = true
+            order("5,4,2,1,3", key .. " ascending still puts missing after zero/negative")
+            check(deepEqual(source, before), key .. " attribute hydration never rewrites nested source")
+        end
+
+        -- 真正精简、冷词条 key 缺失，含会被 hydrate 规范化的嵌套腐化回退快照。
+        install({ ["1"] = { templateId = "W1", level = 1, quality = 1, ascendLevel = 2,
+            affixMult = "1.5", affixes = { { affixId = "1", value = "7", ascBonus = "2" } },
+            corruptRevert = { baseMult = "1", affixCount = "1", patches = {
+                { ["1"] = "s", ["2"] = "1", ["3"] = "3", layer = "1" } } } } })
+        settings.sortKey, settings.sortAscending = "str", false
+        local coldBefore = deepCopy(source)
+        local cold = smallGrids.getEquipList()[1]
+        local fixed = 0
+        for index, stat in ipairs(EC.ITEMS.W1.stats) do
+            if stat[1] == "str" then
+                local steps = index == 1 and 2 or math.floor((2 - (index - 1)) / (#EC.ITEMS.W1.stats - 1)) + 1
+                fixed = fixed + stat[2] * (1 + math.max(0, steps) * 0.05)
+            end
+        end
+        check(cold and cold.hasSortAttribute == true and math.abs(cold.sortValue - (fixed + 7 * 1.5 + 2)) < 1e-9,
+            "cold affixId hydration includes fixed ascend, affix multiplier and ascBonus")
+        check(deepEqual(source, coldBefore) and source.equipment.inventory["1"].affixes[1].key == nil
+            and source.equipment.inventory["1"].baseStats == nil,
+            "cold nested corruptRevert and slim affixes stay byte-value unchanged after display hydration")
+        install({ [1] = { templateId = "W1", level = 1, quality = 1, baseStats = {},
+            affixMult = 9, affixes = { { affixId = "1001", quality = 0, value = "6", ascBonus = "99" } } } })
+        settings.sortKey = "finalPhysAtkBonus"
+        local corruptBefore = deepCopy(source)
+        local corrupt = smallGrids.getEquipList()[1]
+        check(corrupt and corrupt.sortValue == 6 and corrupt.hasSortAttribute == true,
+            "cold corrupt attribute does not receive ordinary affix multiplier or ascBonus")
+        check(deepEqual(source, corruptBefore), "cold corrupt hydration leaves source quality/key/ascBonus unchanged")
+
+        -- 独立缓存夹具：只在模拟正式 Store 版本通知时修改库存，滚动不评分。
+        install(inventory)
+        settings.sortKey, settings.sortAscending, settings.typeFilter = nil, false, nil
+        selectedQualities, settings.setFilter, slot, hero = {}, {}, nil, nil
+        local current = smallGrids.getEquipList()
+        local calls = scoreCalls
+        view.scrollY = 500
+        check(smallGrids.getEquipList() == current and scoreCalls == calls, "cache reuses list across repeated calls and scroll")
+        local function refresh(label)
+            local nextList = smallGrids.getEquipList()
+            check(nextList ~= current, "cache key refreshes " .. label)
+            current = nextList
+            local scored = scoreCalls
+            check(smallGrids.getEquipList() == current and scoreCalls == scored, "cache settles after " .. label)
+        end
+        settings.sortKey = "level"; refresh("sort key")
+        settings.sortAscending = true; refresh("sort direction")
+        settings.typeFilter = EC.ITEMS.W1.type; refresh("subtype")
+        settings.typeFilter = nil; refresh("subtype clear")
+        slot = "weapon"; refresh("slot")
+        hero = 1; refresh("hero context")
+        slot = "offhand"; refresh("offhand slot")
+        source.heroes.roster[1].advBranch = { first = 104, second = 207 }; refresh("dual wield context")
+        selectedQualities[1] = true; refresh("in-place quality selection")
+        selectedQualities[2] = true; refresh("in-place second quality selection")
+        settings.setFilter.none = true; refresh("in-place set selection")
+        settings.setFilter.none = nil; refresh("in-place set deselection")
+        for _, key in ipairs({ "equipment", "heroes", "artifacts", "talents" }) do
+            revisions[key] = revisions[key] + 1; refresh(key .. " revision")
+            source[key] = deepCopy(source[key]); refresh(key .. " source replacement")
+        end
+        slot, hero, selectedQualities = nil, nil, {}
+        settings.typeFilter, settings.setFilter = nil, {}
+        current = smallGrids.getEquipList()
+        source.equipment.inventory["99"] = { templateId = "W1", quality = 1, level = 1 }
+        revisions.equipment = revisions.equipment + 1; refresh("published inventory insertion")
+        check(#current == 9, "cache inventory revision exposes inserted candidate")
+        source.equipment.inventory["99"] = nil
+        revisions.equipment = revisions.equipment + 1; refresh("published inventory removal")
+        check(#current == 8, "cache inventory revision removes deleted candidate")
+        source.equipment = nil
+        current = smallGrids.getEquipList()
+        check(#current == 0, "cache source clear discards all previous candidates")
+        install(inventory); refresh("equipment source restore")
+        check(#current == 8, "cache source restore rebuilds after clear")
+        Store.GetRevision = nil
+        current = smallGrids.getEquipList()
+        local fresh = smallGrids.getEquipList()
+        check(fresh ~= current and #fresh == 8, "revision-less fixture rebuilds instead of retaining stale list")
+    end)
+    Store.Get, Store.GetRevision = savedGet, savedRevision
+    Power.score, Power.getContext, Power.evaluate = savedScore, savedContext, savedEvaluate
+    check(Store.Get == savedGet and Store.GetRevision == savedRevision and Power.score == savedScore
+        and Power.getContext == savedContext and Power.evaluate == savedEvaluate,
+        "detailed fixture restores Store and power APIs before legacy tests")
+    if not ok then error(err) end
+end
+
+-- -warehouse-class-only 只运行此专项，避免既有 applyEquip/评分失败掩盖职业回归。
+local function runClassFilters()
+    local CC = require("config.ClassConfig")
+    local Sets = require("config.EquipmentSetConfig")
+    local Filters = require("ui.backpack.BackpackFilters")
+    local Power = require("systems.EquipmentPower")
+    local Surface = require("ui.widget.DesignWidgetSurface")
+    local UI = require("urhox-libs/UI")
+    local HF = require("ui.widget.HeroFrame")
+    local CD = require("ui.character.detail.CharacterDetail") --[[@as table]]
+    local Settings = require("ui.hud.popup.SettingsPanel")
+    local actualDraw = require("core.DrawUtil")
+    local savedGet, savedRevision = Store.Get, Store.GetRevision
+    local savedScore, savedContext, savedEvaluate = Power.score, Power.getContext, Power.evaluate
+    local savedInit, savedDraw, savedColor = Surface.init, Surface.draw, UI.Label.SetFontColor
+    local savedText, savedNine, savedImage = actualDraw.drawTextStroke, require("core.DarkIcon").drawNine, actualDraw.drawImageCentered
+    local savedHero, savedSlot, savedImages = CD.getHeroId, CD.setEquipmentSlot, HF.getImages
+    local savedIconsGet, savedIconsSet = Settings.isSetIconsEnabled, Settings.setSetIconsEnabled
+    local globals = {}
+    local nvgNames = { "nvgSave", "nvgRestore", "nvgTranslate", "nvgIntersectScissor", "nvgBeginPath",
+        "nvgRoundedRect", "nvgFill", "nvgFillColor", "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgText", "nvgTextBounds",
+        "nvgMoveTo", "nvgLineTo", "nvgClosePath", "nvgStrokeWidth", "nvgStrokeColor", "nvgStroke" }
+    for _, name in ipairs(nvgNames) do globals[name] = _G[name] end
+    local hadUI = UI.GetNVGContext() ~= nil
+    local classes = { "seal", "spoil", "rift", "echo", "mask", "debt" }
+    local legacy = { "knight", "warrior", "mage", "ranger", "assassin", "priest" }
+    ---@type table<string, table<string, {types: table<string, boolean>, unrestricted: boolean}>>
+    local union = {}
+    local members, tids = {}, {}
+    for _, classId in ipairs(classes) do union[classId], members[classId] = {}, {} end
+    -- Oracle 独立枚举所有配置英雄，而非拥有名册、当前角色或新 helper。
+    for _, hid in ipairs(HC.getAllIds()) do
+        local cid = CC.normalize(HC.get(hid).classId)
+        members[cid][#members[cid] + 1] = hid
+        for _, target in ipairs(EC.SLOTS) do
+            local types = ES.getWearableTypeSet(hid, target)
+            local bucket = union[cid][target] or { types = {}, unrestricted = false }
+            union[cid][target] = bucket
+            if types == nil then bucket.unrestricted = true
+            else for value, yes in pairs(types) do if yes then bucket.types[value] = true end end end
+        end
+    end
+    local function classOracle(cid, tpl)
+        if cid == nil or cid == "all" then return true end
+        ---@type {types: table<string, boolean>, unrestricted: boolean}?
+        local bucket = union[CC.normalize(cid)] and union[CC.normalize(cid)][tpl.slot]
+        return bucket ~= nil and (bucket.unrestricted or bucket.types[tpl.type] == true)
+    end
+    for tid in pairs(EC.ITEMS) do tids[#tids + 1] = tid end
+    table.sort(tids)
+    local source = { equipment = { inventory = {}, equipped = {} }, heroes = { roster = {} }, artifacts = {}, talents = {} }
+    local revisions, scoreCalls = { equipment = 1, heroes = 1, artifacts = 1, talents = 1 }, 0
+    ---@type {qualitySet: table, setFilter: table, sortAscending: boolean, classFilter: string?, typeFilter: string?, sortKey: string?}
+    local settings = { qualitySet = {}, setFilter = {}, sortAscending = false }
+    local state = { open = true, tab = "equip", scrollY = 0 }
+    local selection = { slot = nil, hero = nil, current = 1 }
+    for index, tid in ipairs(tids) do
+        source.equipment.inventory[tostring(index)] = { templateId = tid, quality = index % 2 + 1,
+            level = 9999, locked = true, affixes = { { affixId = "1", value = "7" } } }
+    end
+    source.equipment.equipped[99] = { weapon = "1" }
+    local original, templatesBefore = deepCopy(source), deepCopy(EC.ITEMS)
+    Store.Get = function(key) return source[key] end
+    Store.GetRevision = function(key) return revisions[key] or 0 end
+    Power.score = function() scoreCalls = scoreCalls + 1; return 0 end
+    Power.getContext = function(id) return { heroId = id } end
+    Power.evaluate = function() return { valid = false, error = "fixture level gate", gain = 0, power = 0 } end
+    local ok, err = pcall(function()
+        check(type(Wearability.createClassChecker) == "function" and type(Wearability.createTypeChecker) == "function",
+            "class/type read-only checker APIs exist")
+        for index, cid in ipairs(classes) do
+            local checker, oldChecker = Wearability.createClassChecker(cid), Wearability.createClassChecker(legacy[index])
+            local errors, accessoryCount = 0, 0
+            for _, tid in ipairs(tids) do
+                local tpl, cold = EC.ITEMS[tid], { templateId = tid, level = 9999 }
+                local hydrated = { templateId = tid, slot = tpl.slot, type = tpl.type, grip = tpl.grip, level = 1 }
+                local expected = classOracle(cid, tpl)
+                if checker(cold) ~= expected or checker(hydrated) ~= expected or oldChecker(cold) ~= expected then
+                    errors = errors + 1
+                    if errors <= 3 then print("[class oracle mismatch] " .. cid .. "/" .. tid) end
+                end
+                if tpl.slot == "accessory" then accessoryCount = accessoryCount + 1; if not checker(cold) then errors = errors + 1 end end
+            end
+            check(#members[cid] > 0 and errors == 0 and accessoryCount > 0,
+                "class " .. cid .. " x every template: union, legacy ID, cold fields, level independence and universal accessory")
+            local firstWeapon, extra = ES.getWearableTypeSet(members[cid][1], "weapon"), 0
+            for _, tid in ipairs(tids) do
+                local tpl = EC.ITEMS[tid]
+                if tpl.slot == "weapon" and classOracle(cid, tpl) and firstWeapon and not firstWeapon[tpl.type] then
+                    extra = extra + 1; check(checker({ templateId = tid }), cid .. " includes another same-class hero weapon: " .. tid)
+                end
+            end
+            if cid == "echo" or cid == "mask" then check(extra > 0, cid .. " union differs from representative hero") end
+        end
+        local malformed = { templateId = "unknown_template", slot = "unknown_slot", type = "unknown_type" }
+        check(Wearability.createClassChecker(nil)(malformed),
+            "nil class matches everything without reading current hero or ownership")
+        check(not Wearability.createTypeChecker(nil, nil, nil)(EC.ITEMS.C1), "no current hero type checker never highlights even universal accessories")
+        check(not Wearability.createClassChecker("unknown_class")({ templateId = "C1" })
+            and not Wearability.createClassChecker("echo")({ templateId = "unknown_template" })
+            and not Wearability.createClassChecker("echo")(malformed), "unknown class/template/natural slot safely rejects")
+        local contradictory = { templateId = "W1", slot = "weapon", type = EC.ITEMS.W25.type, level = 9999 }
+        check(Wearability.createClassChecker("rift")(contradictory) and not Wearability.createClassChecker("spoil")(contradictory),
+            "class checker uses hydrated natural slot/type rather than template ID alone")
+
+        -- 类型 oracle 按配置+双持推演，候选等级固定1；现有主副手保持冷、9999级、混合key。
+        local contexts = { { hid = 1 }, { hid = 7 }, { hid = 18 }, { hid = 999 },
+            { hid = 18, mode = "same" }, { hid = 18, mode = "same", main = "W61", off = "W55" },
+            { hid = 18, mode = "same", main = "W61", off = "W61" },
+            { hid = 1, mode = "different", main = "W1", off = "W13" },
+            { hid = 1, mode = "different", main = "W1", off = "W1" }, { hid = 1, main = "W7" } }
+        local function typeOracle(tpl, target, c)
+            if not HC.get(c.hid) then return false end
+            target = target or tpl.slot
+            local wearable = ES.getWearableTypeSet(c.hid, target)
+            local main, off = EC.ITEMS[c.main], EC.ITEMS[c.off]
+            if target == "offhand" and tpl.slot == "weapon" and tpl.grip == "onehand" then
+                if not c.mode then return false end
+                wearable = ES.getWearableTypeSet(c.hid, "weapon")
+                if c.mode == "same" and (not main or main.type ~= tpl.type) then return false end
+                if c.mode == "different" and main and main.type == tpl.type then return false end
+            elseif target ~= tpl.slot or (target == "offhand" and c.mode) then return false end
+            if wearable and not wearable[tpl.type] then return false end
+            if target == "weapon" and tpl.grip == "onehand" and c.mode and off and off.slot == "weapon" then
+                if c.mode == "same" and off.type ~= tpl.type then return false end
+                if c.mode == "different" and off.type == tpl.type then return false end
+            end
+            return true
+        end
+        for _, c in ipairs(contexts) do
+            local equipData = { inventory = { ["1"] = { templateId = c.main, level = 9999 },
+                [2] = { templateId = c.off, level = 9999 } }, equipped = { [tostring(c.hid)] = { weapon = "1", offhand = 2 } } }
+            if not c.main then equipData.inventory["1"], equipData.equipped[tostring(c.hid)].weapon = nil, nil end
+            if not c.off then equipData.inventory[2], equipData.equipped[tostring(c.hid)].offhand = nil, nil end
+            local branch = c.mode == "same" and { first = 110, second = 220 }
+                or c.mode == "different" and { first = 104, second = 207 } or nil
+            local roster = { roster = { [c.hid] = { level = 1, advBranch = branch } } }
+            local beforeEquip, beforeRoster, errors, comparisons = deepCopy(equipData), deepCopy(roster), 0, 0
+            local checker = Wearability.createTypeChecker(equipData, tostring(c.hid), roster)
+            for _, tid in ipairs(tids) do
+                for index = 1, #EC.SLOTS + 1 do
+                    local target, tpl = EC.SLOTS[index], EC.ITEMS[tid]
+                    comparisons = comparisons + 1
+                    if checker(tpl, target) ~= typeOracle(tpl, target, c) then errors = errors + 1 end
+                end
+            end
+            check(errors == 0 and comparisons == #tids * 7, "type oracle all templates x natural/six slots, hero="
+                .. c.hid .. " dual=" .. tostring(c.mode) .. " main=" .. tostring(c.main) .. " off=" .. tostring(c.off))
+            check(deepEqual(equipData, beforeEquip) and deepEqual(roster, beforeRoster), "type synthesis does not mutate cold inventory/equipped/roster")
+        end
+
+        local small = Grids.bind({ GRID = GRID, CELL_COL_CX = cells, DESIGN_W = 1080, DrawUtil = Draw,
+            state = state, decomposeState = settings, ITEM_DEFS = {}, calcScrollMax = function() return 0 end, clampScroll = function() end,
+            getEquipmentSlotFilter = function() return selection.slot, selection.hero end,
+            qualityChecked = function(q) return not next(settings.qualitySet) or settings.qualitySet[q] == true end,
+            setChecked = function(tid) return not next(settings.setFilter)
+                or settings.setFilter[Sets.getSetIdForTemplate(EC.ITEMS[tid]) or "none"] == true end })
+        local function agrees(label)
+            local expected, counts, actual = {}, { none = 0 }, {}
+            for _, id in ipairs(Sets.orderedSetIds()) do counts[id] = 0 end
+            for key, equip in pairs(source.equipment.inventory) do
+                local tpl = EC.ITEMS[equip.templateId]
+                if tpl and classOracle(settings.classFilter, tpl) and (not selection.slot or tpl.slot == selection.slot)
+                    and (not settings.typeFilter or tpl.type == settings.typeFilter)
+                    and (not next(settings.qualitySet) or settings.qualitySet[equip.quality] == true) then
+                    local sid = Sets.getSetIdForTemplate(tpl) or "none"
+                    counts[sid] = counts[sid] + 1
+                    if not next(settings.setFilter) or settings.setFilter[sid] then expected[tostring(key)] = true end
+                end
+            end
+            for _, entry in ipairs(small.getEquipList()) do actual[tostring(entry.seq)] = true end
+            check(deepEqual(actual, expected) and deepEqual(small.getSetCounts(), counts), label)
+            return small.getEquipList()
+        end
+        for _, cid in ipairs(classes) do settings.classFilter = cid; agrees("grid/count independent class union: " .. cid) end
+        selection.hero, settings.classFilter = 1, "echo"
+        local unowned = agrees("class membership ignores current spoil hero, all-unowned roster, locked/equipped and level gate")
+        check(#unowned > 0 and unowned[1].canWear == false, "class-matching level-gated candidate remains visible grey")
+        local rows = { { cid = "echo" }, { cid = "echo", slot = "weapon" },
+            { cid = "echo", slot = "weapon", typeId = EC.ITEMS.W31.type },
+            { cid = "echo", slot = "weapon", typeId = EC.ITEMS.W31.type, q = 2 },
+            { cid = "spoil", slot = "weapon", typeId = EC.ITEMS.W1.type, q = 1 },
+            { cid = "rift", slot = "armor", typeId = EC.ITEMS.A55.type, q = 2 },
+            { cid = "seal", slot = "helmet", q = 1 }, { cid = "debt", slot = "accessory", q = 2 },
+            { cid = "unknown_class" }, { cid = "all" } }
+        for _, row in ipairs(rows) do
+            settings.classFilter, selection.slot, settings.typeFilter = row.cid, row.slot, row.typeId
+            settings.qualitySet = row.q and { [row.q] = true } or {}
+            settings.setFilter = {}; agrees("class AND slot AND type AND quality: " .. row.cid .. "/" .. tostring(row.slot))
+            local sid = Sets.getSetIdForTemplate(EC.ITEMS.W1) or "none"
+            settings.setFilter[sid] = true; agrees("set AND class keeps base counts independent: " .. row.cid)
+            settings.setFilter = { nonexistent_set = true }
+            agrees("disjoint set never unions class/type/quality: " .. row.cid)
+        end
+        selection.slot, settings.typeFilter, settings.qualitySet, settings.setFilter = nil, nil, {}, {}
+        settings.classFilter = "echo"
+        local cached, calls = agrees("cache initial echo"), scoreCalls
+        state.scrollY = 450
+        check(small.getEquipList() == cached and scoreCalls == calls, "class cache stable across scroll and repeated reads")
+        settings.classFilter = "mask"
+        local switched = agrees("cache class-only change rebuilds list/counts without revisions")
+        check(switched ~= cached and small.getEquipList() == switched, "class cache switches and then settles")
+        settings.classFilter = nil; agrees("nil class restores complete list and counts")
+        check(deepEqual(source, original) and deepEqual(EC.ITEMS, templatesBefore), "class/type/grid/count projection leaves source/config unchanged")
+
+        -- 真 UI 初始化后替绘制，精确捕获实际 Surface 子树 Label 文本/SetFontColor。
+        savedInit()
+        local vg = UI.GetNVGContext()
+        local initCalls, surfaces, captions, labels, colorCalls, controls = 0, {}, {}, {}, {}, {}
+        local captionCalls = 0
+        Surface.init = function() initCalls = initCalls + 1; savedInit() end
+        UI.Label.SetFontColor = function(self, color)
+            colorCalls[#colorCalls + 1] = { text = self:GetText(), color = deepCopy(color) }
+            return savedColor(self, color)
+        end
+        local function capture(node)
+            if node.GetText then labels[node:GetText()] = deepCopy(node.props.fontColor) end
+            for _, child in ipairs(node:GetChildren()) do capture(child) end
+        end
+        Surface.draw = function(root, _vg, w, h) surfaces[#surfaces + 1] = { root = root, w = w, h = h }; capture(root) end
+        for _, name in ipairs(nvgNames) do _G[name] = function() end end
+        nvgTextBounds = function(_, _, _, text) return #tostring(text) * 10 end
+        -- 托管 require 可能忽略预注入表；必须替换筛选模块实际调用的对象。
+        actualDraw.drawTextStroke = function(_, x, y, text, _, _, r, g, b)
+            captionCalls = captionCalls + 1
+            captions[text], controls[text] = { r, g, b }, { x, y }
+        end
+        actualDraw.drawImageCentered = function() end
+        require("core.DarkIcon").drawNine = function() end
+        HF.getImages = function() return { vg = vg, classIcons = { -1, -1, -1, -1, -1, -1 } } end
+        local icons = true
+        Settings.isSetIconsEnabled = function() return icons end
+        Settings.setSetIconsEnabled = function(value) icons = value end
+        CD.getHeroId = function() return selection.current end
+        CD.setEquipmentSlot = function(value) selection.slot = value; return true end
+        local changes = 0
+        local link = { getEquipmentSlotFilter = function() return selection.slot, 2 end,
+            setEquipmentSlotFilter = function(value) selection.slot = value end,
+            haltScroll = function() changes = changes + 1 end, clearCandidate = function() end }
+        local toolbar = Filters.bindWarehouse(settings, GRID, state, link, Store)
+        toolbar.init(vg)
+        check(initCalls > 0, "warehouse init initializes real DesignWidgetSurface")
+        local options, values = toolbar.getOptions("class"), {}
+        for _, option in ipairs(options) do values[#values + 1] = option.value end
+        check(table.concat(values, ",") == "all,seal,spoil,rift,echo,mask,debt", "warehouse class options exact normalized order without legacy aliases")
+        local function open(key)
+            toolbar.close()
+            local x = key == "type" and 765 or key == "class" and 540 or 295
+            local y = GRID.FIRST_ROW_TOP - (key == "sort" and 136 or key == "class" and 226 or 316)
+            check(toolbar.handleInput(x, y) and toolbar.isOpen(), "warehouse new row opens " .. key)
+            return x, y
+        end
+        local function choose(key, value)
+            local x, y = open(key)
+            local opts, index = toolbar.getOptions(key), 0
+            for i, option in ipairs(opts) do if option.value == value then index = i end end
+            assert(index > 0, "missing option " .. key .. "/" .. value)
+            toolbar.handleScroll(#opts)
+            local scroll = math.max(0, index - 8); toolbar.handleScroll(-scroll)
+            local top = math.min(y + 43, GRID.CLIP_BOTTOM - (math.min(8, #opts) * 62 + 12))
+            toolbar.handleInput(x, top + 6 + (index - scroll - 0.5) * 62)
+        end
+        settings.classFilter = "rift"; selection.current = 1
+        open("class"); labels, colorCalls = {}, {}; toolbar.drawOverlay(vg)
+        local function rgb(color, expected) return color and color[1] == expected[1] and color[2] == expected[2] and color[3] == expected[3] end
+        for _, cid in ipairs(classes) do
+            local expected = cid == "spoil" and HF.GOLD_HI or { 244, 237, 224 }
+            check(rgb(labels[CC.get(cid).name], expected), "real class overlay color follows CharacterDetail hero, not selected/filterHero: " .. cid)
+        end
+        check(#surfaces > 0 and #colorCalls >= 7, "overlay draws real UI subtree and explicitly sets Label font colors")
+        selection.current = 7; labels = {}; toolbar.drawOverlay(vg)
+        check(rgb(labels[CC.get("echo").name], HF.GOLD_HI) and rgb(labels[CC.get("spoil").name], { 244, 237, 224 }),
+            "open class overlay refreshes live hero switch without rebinding")
+        selection.current = nil; labels = {}; toolbar.drawOverlay(vg)
+        check(rgb(labels[CC.get("echo").name], { 244, 237, 224 }), "no current hero removes class yellow highlight")
+        choose("class", "mask")
+        check(settings.classFilter == "mask" and not toolbar.isOpen() and state.scrollY == 0 and changes > 0,
+            "class selection writes filter, closes overlay and resets warehouse scroll")
+        choose("class", "all"); check(settings.classFilter == nil or settings.classFilter == "all", "all class clears restriction")
+        selection.current, selection.slot, settings.typeFilter = 1, "weapon", EC.ITEMS.W31.type
+        source.heroes.roster = { [1] = { level = 1 } }
+        local function typeColors()
+            open("type"); captions = {}; toolbar.handleScroll(1000)
+            for _ = 1, #toolbar.getOptions("type") do toolbar.drawOverlay(vg); toolbar.handleScroll(-1) end
+            return captions
+        end
+        local colors = typeColors()
+        check(captionCalls > 0, "type overlay calls the actual DrawUtil text spy")
+        check(rgb(colors[EC.ITEMS.W1.type], HF.GOLD_HI) and rgb(colors[EC.ITEMS.W31.type], { 244, 237, 224 }),
+            "unselected wearable type yellow; selected wrong type white despite selected highlight and hero level1")
+        selection.current = nil -- 详情关闭；link仍返回临时filterHero=2（可穿魔杖），不得借它染黄。
+        colors = typeColors()
+        local closedAllWhite = true
+        for _, color in pairs(colors) do if not rgb(color, { 244, 237, 224 }) then closedAllWhite = false end end
+        check(closedAllWhite and colors[EC.ITEMS.W31.type] ~= nil,
+            "closed CharacterDetail leaves every type white even while temporary filterHero persists")
+        selection.current = 1
+        selection.slot = "offhand"; source.heroes.roster[1].advBranch = { first = 104, second = 207 }
+        source.equipment.inventory["900001"] = { templateId = "W1", level = 9999 }
+        source.equipment.equipped[1] = { weapon = "900001" }
+        colors = typeColors()
+        check(rgb(colors[EC.ITEMS.W13.type], HF.GOLD_HI) and rgb(colors[EC.ITEMS.W1.type], { 244, 237, 224 })
+            and rgb(colors[EC.ITEMS.O7.type], { 244, 237, 224 }), "type colors honor live different-dual mainhand and reject ordinary offhand")
+        toolbar.close(); captions, controls = {}, {}; toolbar.draw(vg)
+        check(controls["部位 · 副手"] and controls["部位 · 副手"][2] == GRID.FIRST_ROW_TOP - 316
+            and controls["类型 · " .. settings.typeFilter][2] == GRID.FIRST_ROW_TOP - 316, "warehouse slot/type rendered on first of three rows")
+        settings.classFilter, settings.sortKey, settings.sortAscending, settings.qualitySet, settings.setFilter = "echo", "level", true, { [2] = true }, { none = true }
+        toolbar.handleInput(940, GRID.FIRST_ROW_TOP - 136)
+        check(selection.slot == nil and settings.typeFilter == nil and settings.classFilter == nil and settings.sortKey == nil
+            and not settings.sortAscending and not next(settings.qualitySet) and not next(settings.setFilter), "bottom-row reset clears class plus all existing filters")
+        toolbar.handleInput(605, GRID.FIRST_ROW_TOP - 136)
+        toolbar.handleInput(780, GRID.FIRST_ROW_TOP - 136)
+        check(settings.sortAscending and not icons, "warehouse order/icons remain at original bottom-row positions")
+        open("sort"); toolbar.close()
+        local oldSlot = { value = nil }
+        local generic = Filters.bind({ filters = {}, GRID = GRID, getSlot = function() return oldSlot.value end,
+            setSlot = function(value) oldSlot.value = value end, onChange = function() end })
+        local beforeInit = initCalls; generic.init(vg)
+        check(initCalls == beforeInit and not generic.handleInput(295, GRID.FIRST_ROW_TOP - 316), "generic/lootbox default never initializes class surface or adds third row")
+        check(generic.handleInput(295, GRID.FIRST_ROW_TOP - 226) and generic.isOpen(), "generic/lootbox retains old first-row slot coordinates")
+        generic.close(); check(generic.handleInput(765, GRID.FIRST_ROW_TOP - 226) and generic.isOpen(), "generic/lootbox retains old first-row type coordinates")
+        generic.close(); check(generic.handleInput(295, GRID.FIRST_ROW_TOP - 136) and generic.isOpen(), "generic/lootbox retains original second-row sort coordinates")
+        generic.close(); toolbar.close()
+    end)
+    Store.Get, Store.GetRevision = savedGet, savedRevision
+    Power.score, Power.getContext, Power.evaluate = savedScore, savedContext, savedEvaluate
+    Surface.init, Surface.draw, UI.Label.SetFontColor = savedInit, savedDraw, savedColor
+    actualDraw.drawTextStroke, actualDraw.drawImageCentered = savedText, savedImage
+    require("core.DarkIcon").drawNine = savedNine
+    CD.getHeroId, CD.setEquipmentSlot, HF.getImages = savedHero, savedSlot, savedImages
+    Settings.isSetIconsEnabled, Settings.setSetIconsEnabled = savedIconsGet, savedIconsSet
+    for _, name in ipairs(nvgNames) do _G[name] = globals[name] end
+    if not hadUI then Surface.shutdown() end
+    check(Store.Get == savedGet and Power.score == savedScore and Surface.draw == savedDraw
+        and UI.Label.SetFontColor == savedColor and CD.getHeroId == savedHero, "class fixture restores all spies before legacy assertions")
+    if not ok then error(err) end
+end
+
+local function runSharedReentry()
+    for _, closing in ipairs({ false, true }) do
+        local api, s, c = fixture()
+        check(type(api.enterEquipmentWarehouse) == "function", "genuine equipment entry API exists")
+        if not api.enterEquipmentWarehouse then return end
+        api.acquireWarehouse("blacksmith")
+        api.onManualClose(); s.open, s.closing = closing, closing
+        local opens = c.opens
+        check(api.acquireWarehouse("blacksmith") == false and c.opens == opens,
+            "smith repeat acquire respects shared manual-close suppression")
+        check(api.enterEquipmentWarehouse("1", "armor") == true and s.open and not s.closing
+            and s.tab == "equip" and c.opens == opens + 1,
+            "genuine equipment enter restores shared suppressed warehouse, closing=" .. tostring(closing))
+        local selectedSlot, selectedHero = api.getEquipmentSlotFilter()
+        check(selectedSlot == "armor" and selectedHero == 1, "genuine entry applies normalized hero and selected slot")
+        s.scrollY = 620
+        api.acquireWarehouse("equipment", 1, "armor")
+        check(c.opens == opens + 1 and s.scrollY == 620, "ordinary repeated equipment acquire never reopens restored warehouse")
+        api.releaseWarehouse("equipment")
+        check(s.open and not s.closing and c.closes == 0 and api.getEquipmentSlotFilter() == nil,
+            "equipment release preserves original smith holder and restores smith filter")
+        api.acquireWarehouse("blacksmith")
+        check(c.opens == opens + 1 and s.scrollY == 0, "smith still owns restored warehouse without duplicate reopen")
+        api.releaseWarehouse("blacksmith")
+        check(c.closes == 1 and s.closing, "last smith release closes restored auto session")
+    end
+end
+
+local function runBlacksmithReentry()
+    check(type(Link.bind) == "function", "blacksmith reentry uses production warehouse link")
+    for _, yielded in ipairs({ false, true }) do
+        for _, closing in ipairs({ false, true }) do
+            for _, releaseSmithFirst in ipairs({ false, true }) do
+                local api, s, c = fixture()
+                check(type(api.enterBlacksmithWarehouse) == "function", "genuine blacksmith entry API exists")
+                -- 旧模块负对照继续走原 acquire，以实际恢复状态失败而非缺方法异常证明故障。
+                local enterBlacksmith = api.enterBlacksmithWarehouse or function() return api.acquireWarehouse("blacksmith") end
+                api.enterEquipmentWarehouse("1", "armor")
+                local page = leftPages["ui.market.MarketPage"]
+                page.open = yielded
+                if yielded then
+                    api.update()
+                    check(s.closing and page.open, "other left page makes equipment warehouse yield")
+                else
+                    api.onManualClose()
+                    s.closing = true
+                end
+                s.open, s.closing = closing, closing
+                local opens, closes = c.opens, c.closes
+                api.acquireWarehouse("equipment", 1, "armor")
+                api.update()
+                check(c.opens == opens and s.open == closing and s.closing == closing,
+                    "ordinary equipment acquire/update never undo warehouse close")
+                check(enterBlacksmith() == true and s.open and not s.closing
+                    and c.mode == "left" and s.tab == "equip" and c.opens == opens + 1 and not page.open,
+                    "new blacksmith entry restores warehouse: yielded=" .. tostring(yielded)
+                        .. " closing=" .. tostring(closing))
+                local slot, hero = api.getEquipmentSlotFilter()
+                check(slot == nil and hero == nil, "blacksmith entry clears temporary equipment filter")
+                s.scrollY = 620
+                api.acquireWarehouse("blacksmith")
+                enterBlacksmith()
+                api.update()
+                check(c.opens == opens + 1 and s.scrollY == 620 and not s.closing,
+                    "repeated blacksmith acquire/entry/update preserves open warehouse and scroll")
+                if releaseSmithFirst then
+                    api.releaseWarehouse("blacksmith")
+                    slot, hero = api.getEquipmentSlotFilter()
+                    check(s.open and not s.closing and c.closes == closes and slot == "armor" and hero == 1,
+                        "smith release restores equipment holder without closing warehouse")
+                    api.releaseWarehouse("equipment")
+                else
+                    api.releaseWarehouse("equipment")
+                    slot, hero = api.getEquipmentSlotFilter()
+                    check(s.open and not s.closing and c.closes == closes and slot == nil and hero == nil,
+                        "equipment release preserves blacksmith holder and unfiltered warehouse")
+                    api.releaseWarehouse("blacksmith")
+                end
+                check(s.closing and c.closes == closes + 1, "last owner release closes restored auto warehouse once")
+                api.releaseWarehouse("blacksmith")
+                api.releaseWarehouse("equipment")
+                check(c.closes == closes + 1, "duplicate releases do not close warehouse twice")
+            end
+        end
+    end
+
+    for _, closing in ipairs({ false, true }) do
+        local api, s, c = fixture()
+        local enterBlacksmith = api.enterBlacksmithWarehouse or function() return api.acquireWarehouse("blacksmith") end
+        enterBlacksmith()
+        api.onManualClose()
+        s.open, s.closing = closing, closing
+        local opens = c.opens
+        check(api.acquireWarehouse("blacksmith") == false and enterBlacksmith() == false,
+            "already-held blacksmith entry respects manual-close suppression")
+        api.update()
+        check(c.opens == opens and s.open == closing and s.closing == closing,
+            "closed current smith session never reopens on repeated entry or update")
+        api.releaseWarehouse("blacksmith")
+        s.open, s.closing = false, false
+        check(enterBlacksmith() == true and c.opens == opens + 1 and s.open,
+            "next genuine blacksmith session opens after prior owner release")
+    end
+
+    local api, s, c = fixture()
+    s.open, s.tab, s.scrollY = true, "item", 380
+    api.onManualOpen()
+    local enterBlacksmith = api.enterBlacksmithWarehouse or function() return api.acquireWarehouse("blacksmith") end
+    enterBlacksmith()
+    api.enterEquipmentWarehouse(1, "helmet")
+    api.releaseWarehouse("blacksmith")
+    check(s.open and not s.closing and api.getEquipmentSlotFilter() == "helmet" and c.opens == 0,
+        "explicit smith/equipment share preexisting manual warehouse without reopening")
+    api.releaseWarehouse("equipment")
+    check(s.open and not s.closing and s.tab == "item" and s.scrollY == 380 and c.closes == 0,
+        "final release restores manual warehouse view and never closes it")
+end
+
+local function runIndependent(label, run)
+    local beforePasses, beforeFailures = passes, failures
+    local ok, err = pcall(run)
+    if not ok then check(false, label .. " exception: " .. tostring(err)) end
+    print("[backpack_equip_link_test " .. label .. "] passes=" .. (passes - beforePasses)
+        .. " failures=" .. (failures - beforeFailures))
 end
 
 local function runFilter()
@@ -443,6 +1276,12 @@ local function runFilter()
                 listComparisons = listComparisons + 1
                 if not structurallyExpected[equip.seq] or seen[equip.seq] or not result
                     or equip.canWear ~= result.ok or equip.cannotEquipReason ~= result.err then
+                    if allListsAgree then
+                        print("[backpack parity detail] hero=" .. tostring(c.hero) .. " template=" .. tostring(equip.templateId)
+                            .. " seq=" .. tostring(equip.seq) .. " target=" .. tostring(filterSlot)
+                            .. " actual=" .. tostring(equip.canWear) .. "/" .. tostring(equip.cannotEquipReason)
+                            .. " expected=" .. tostring(result and result.ok) .. "/" .. tostring(result and result.err))
+                    end
                     allListsAgree = false
                 end
                 seen[equip.seq] = true
@@ -624,123 +1463,29 @@ local function runSetCounts()
 end
 
 local function runSourceParity()
-    context(1, "armor", nil)
-    setTemplate = "A31"
-    local list, before = grids.getEquipList(), deepCopy(fake)
-    local pointer = Link.bind({ state = gridState, GRID = GRID, CELL_COL_CX = cells,
-        EquipmentDetail = Detail, DrawUtil = Draw, getEquipList = grids.getEquipList })
-    local x, y = cells[1], GRID.FIRST_ROW_TOP + GRID.CELL_SIZE * 0.5
-    local cell = pointer.cellAt(x, y)
-    local peek = pointer.peekEquipAt(x, y)
-    check(#list == 1 and cell and peek and cell.seq == list[1].seq and peek.seq == list[1].seq,
-        "cellAt/peek share filtered grid list")
-    pointer.openCandidate(cell, x, y, true)
-    check(detailState.seq == list[1].seq and Detail.isPinned(), "click/open candidate resolves same filtered item")
-    Detail.close()
-    pointer.handleHover(x, y); clock.elapsedTime = clock.elapsedTime + 1; pointer.handleHover(x, y)
-    check(detailState.seq == list[1].seq and Detail.isOpen(), "hover resolves same filtered item")
-    Detail.close()
-    check(pointer.cellAt(cells[2], y) == nil and pointer.peekEquipAt(cells[2], y) == nil,
-        "structurally filtered-out cell has no click/peek target")
-
-    -- native nvgRGBA 保留：只在 fillColor stub 读取 NVGcolor，避免污染全工作区颜色类型。
-    local painted, events, masks = {}, {}, {}
-    local pathRect = {}
-    local greyFill = false
-    local function record(kind) events[#events + 1] = kind end
-    local iconCache = require("ui.widget.ImageCache")
-    iconCache.getEquipIcon = function(tid) painted[#painted + 1] = tid; record("icon"); return 1 end
-    local dark = require("core.DarkIcon")
-    dark.drawQualityBg = function() record("quality") end
-    dark.drawIconDark = function() record("iconDraw") end
-    Draw.drawImageCentered = function() record("lock") end
-    local heroFrame = require("ui.widget.HeroFrame")
-    heroFrame.draw = function() record("ownerBadge") end
-    package.preload["systems.TutorialManager"] = function() return { isActive = function() return false end } end
-    nvgSave, nvgRestore, nvgScissor, nvgTranslate = function() end, function() end, function() end, function() end
-    nvgBeginPath = function() pathRect = {} end
-    nvgRoundedRect = function(_, rx, ry, w, h, radius)
-        pathRect = { x = rx, y = ry, w = w, h = h, radius = radius }
-    end
-    ---@param color NVGcolor
-    nvgFillColor = function(_, color)
-        greyFill = math.abs(color.r * 255 - 38) < 0.01 and math.abs(color.g * 255 - 38) < 0.01
-            and math.abs(color.b * 255 - 38) < 0.01 and math.abs(color.a * 255 - 175) < 0.01
-    end
-    nvgFill = function()
-        if greyFill then record("greyMask"); masks[#masks + 1] = { rect = pathRect, eventIndex = #events } end
-    end
-    nvgStroke, nvgStrokeColor, nvgStrokeWidth = function() end, function() end, function() end
-    nvgFontFace, nvgFontSize, nvgTextAlign = function() end, function() end, function() end
-    nvgText = function() record("text") end
-    local function drawOnce()
-        painted, events, masks = {}, {}, {}
-        pathRect, greyFill = {}, false
-        grids.drawEquipGrid({})
-    end
-    drawOnce()
-    check(#painted == 1 and painted[1] == list[1].templateId and #masks == 0,
-        "wearable A31 draw matches click/hover/peek and has no grey overlay")
-    check(deepEqual(fake, before), "draw/click/hover/peek do not hydrate or change source")
-
-    setTemplate = "A55"
-    list = grids.getEquipList()
-    cell, peek = pointer.cellAt(x, y), pointer.peekEquipAt(x, y)
-    check(#list == 1 and cell and cell.canWear == false and peek and peek.seq == list[1].seq,
-        "unwearable A55 remains cellAt/peek target with grey flag")
-    pointer.openCandidate(cell, x, y, true)
-    check(detailState.seq == list[1].seq and Detail.isPinned(), "unwearable grey item can open and pin detail")
-    Detail.close()
-    pointer.handleHover(x, y); clock.elapsedTime = clock.elapsedTime + 1; pointer.handleHover(x, y)
-    check(detailState.seq == list[1].seq and Detail.isOpen(), "unwearable grey item can hover-open detail")
-    Detail.close()
-    local actualOk, actualErr = ES.applyEquip(equipProbe(fake, list[1].seq, 1), list[1].seq, 1, "armor", heroes)
-    check(actualOk == false and actualErr == list[1].cannotEquipReason,
-        "grey display never relaxes real applyEquip rejection")
-    check(deepEqual(fake, before), "unwearable click/hover/peek and applyEquip probe leave source unchanged")
-
-    -- 人为准备锁、提升角标、归属角标；只读路径仍不得回写此快照。
-    local greySeq = list[1].seq
-    fake.inventory[tostring(greySeq)].locked = true
-    fake.inventory[tostring(greySeq)].enhanceLevel = 5
-    fake.equipped[99].armor = greySeq
-    drawingHeroIcons, drawingLock = { [99] = 1 }, 1
-    before = deepCopy(fake)
-    drawOnce()
-    check(#painted == 1 and painted[1] == "A55" and #masks == 1,
-        "unwearable A55 draws exactly one RGBA(38,38,38,175) grey mask")
-    local mask = masks[1]
-    local rect = mask and mask.rect
-    check(rect and rect.x == x - GRID.CELL_SIZE * 0.5 and rect.y == GRID.FIRST_ROW_TOP
-        and rect.w == GRID.CELL_SIZE and rect.h == GRID.CELL_SIZE and rect.radius == GRID.CELL_RADIUS + 6,
-        "grey mask covers full cell with same rounded corners")
-    local positions = {}
-    for index, event in ipairs(events) do positions[event] = index end
-    if not positions.ownerBadge or not positions.lock then
-        print("[greyMask order] " .. table.concat(events, ","))
-    end
-    check(mask and positions.quality and positions.iconDraw and positions.text and positions.ownerBadge and positions.lock
-        and mask.eventIndex > positions.quality and mask.eventIndex > positions.iconDraw
-        and mask.eventIndex > positions.text and mask.eventIndex > positions.ownerBadge and mask.eventIndex > positions.lock,
-        "full-card grey mask is drawn after icon, level/enhance text, owner badge and lock")
-    check(deepEqual(fake, before), "grey draw never modifies nested equipment source")
-    filterHero = nil
-    drawOnce()
-    check(#painted == 1 and painted[1] == "A55" and hasWearability(greySeq, true) and #masks == 0,
-        "manual no-hero A55 draw has no grey mask, even with lock and owner badge")
-    filterHero, setTemplate = 1, "A31"
-    heroes.roster["1"].level = 84
-    drawOnce()
-    check(hasWearability(seqByTemplate.A31, false) and #masks == 1, "level-gated A31 draws grey before upgrade")
-    heroes.roster["1"].level = 85
-    drawOnce()
-    check(hasWearability(seqByTemplate.A31, true) and #masks == 0, "upgrade refresh removes A31 grey mask without reopening")
-    check(deepEqual(fake, before), "manual and upgrade redraws leave inventory unchanged")
+    require("tests.backpack_source_parity").run({ context = context, grids = grids, deepCopy = deepCopy,
+        fake = fake, Link = Link, gridState = gridState, GRID = GRID, cells = cells, Draw = Draw,
+        Detail = Detail, detailState = function() return detailState end, clock = clock, check = check,
+        deepEqual = deepEqual, ES = ES, heroes = heroes, seqByTemplate = seqByTemplate, equipProbe = equipProbe,
+        hasWearability = hasWearability, setFilter = function(value) setTemplate = value end,
+        setHero = function(value) filterHero = value end,
+        setDrawing = function(icons, lock) drawingHeroIcons, drawingLock = icons, lock end,
+    })
 end
 
 function Start()
-    local ok, err = pcall(function() runLifecycle(); runTutorialEnsure(); runFilter(); runSetCounts(); runSourceParity() end)
-    if not ok then failures = failures + 1; print("[FAIL] exception: " .. tostring(err)) end
+    local classOnly = false
+    for _, argument in ipairs(type(GetArguments) == "function" and GetArguments() or {}) do
+        if argument == "-warehouse-class-only" then classOnly = true end
+    end
+    runIndependent("class_filters", runClassFilters)
+    if not classOnly then
+        runIndependent("detailed_filters", runDetailedFilters)
+        runIndependent("shared_reentry", runSharedReentry)
+        runIndependent("blacksmith_reentry", runBlacksmithReentry)
+        local ok, err = pcall(function() runLifecycle(); runTutorialEnsure(); runFilter(); runSetCounts(); runSourceParity() end)
+        if not ok then failures = failures + 1; print("[FAIL] exception: " .. tostring(err)) end
+    end
     print("[backpack_equip_link_test] " .. (failures == 0 and "ALL PASS" or "FAILURES=" .. failures) .. " (" .. passes .. " assertions)")
     engine:Exit()
 end

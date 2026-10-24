@@ -293,9 +293,9 @@ function Start()
         eq(normalAffixCount(e10), 4, "洗练后词条数不变")
 
         -- 洗练石（保种类重随数值）同样不丢倍率
-        local okS = BS.RefineEquip(UID, e10.seq, "enhanceStone")
-        check(okS, "洗练石可用")
-        BS.RefineReplace(UID, e10.seq)
+        local okS, _, stoneResult = BS.RefineEquip(UID, e10.seq, "enhanceStone")
+        check(okS and stoneResult and stoneResult.autoReplaced, "洗练石可用且自动替换")
+        check(not BS.RefineReplace(UID, e10.seq), "洗练石不产生待确认替换")
         eq(EquipmentSystem.getAffixMult(e10), 1.2, "洗练石路径倍率不丢")
 
         -- 存档往返保留倍率
@@ -339,7 +339,7 @@ function Start()
         -- ========== 11) 固定副词条轮转；随机词条不再新增每阶投入 ==========
         eq(BlacksmithConfig.ASCEND_SUB_STAT_RATIO, 0.05, "固定副词条步长=5%")
         newModules()
-        local fixed = putEquip(EquipmentSystem.generate("O13", 12, 4))
+        local fixed = putEquip(EquipmentSystem.generate("O13", 12, 4, { legacySecondary = true }))
         local raw = fixed.baseStats
         local oldRandom = {}
         for i, affix in ipairs(fixed.affixes) do oldRandom[i] = affix.value end
@@ -367,13 +367,14 @@ function Start()
         local restored = EquipmentSystem.hydrate(cjson.decode(cjson.encode(lean)))
         check(math.abs(EquipmentSystem.effectiveBaseStatValue(restored, 2) - entries[2].flat) < 1e-9,
             "固定副增长JSON往返不丢失也不叠加")
-        check(BS.RefineEquip(UID, fixed.seq, "enhanceStone"), "洗练石成功")
-        check(BS.RefineReplace(UID, fixed.seq), "洗练替换成功")
+        local stoneOk, _, stoneResult = BS.RefineEquip(UID, fixed.seq, "enhanceStone")
+        check(stoneOk and stoneResult and stoneResult.autoReplaced, "洗练石成功且立即生效")
+        check(not BS.RefineReplace(UID, fixed.seq), "洗练石无需额外替换确认")
         check(math.abs(EquipmentSystem.effectiveBaseStatValue(fixed, 2) - entries[2].flat) < 1e-9,
             "随机洗练不会改变固定副升阶")
         newModules()
         local single = putEquip(EquipmentSystem.generate("O13", 12, 1))
-        local batch = putEquip(EquipmentSystem.generate("O13", 12, 1))
+        local batch = putEquip(EquipmentSystem.hydrate(cjson.decode(cjson.encode(EquipmentSystem.dehydrate(single)))))
         math.randomseed(931)
         for _ = 1, 6 do BS.AscendEquip(UID, single.seq) end
         math.randomseed(931)

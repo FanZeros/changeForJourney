@@ -139,11 +139,12 @@ HC.HEROES = {
     },
     [6] = {
         quality = 2, classId = CC.MAGE,
-        title = "电音天后", name = "阿姨压",
+        title = "电音天后", name = "压一压",
         talentName = "安可", talentDesc = "攻击附加感电，持续2秒，期间目标受到的伤害+20%。",
         talentId = "luna_lightning",
         gender = "female",
         atkType = AD.ATK_LIGHTNING, atkInterval = 3.2, atkTargets = 3,
+        attackChain = true, -- 闪电命中后，从上一敌人继续传导到下一目标。
         dmgSpread = 0.30, atkCoeff = 2.46,
         baseStats  = { str = 1.95,  agi = 5.85,  int = 9.75, vit = 3.90,  luk = 5.85,  spi = 3.90 },
         growthStats = { str = 0.00,  agi = 0.50,  int = 1.00,  vit = 0.00,  luk = 0.50,  spi = 0.00 },
@@ -305,7 +306,7 @@ HC.HEROES = {
     [23] = {
         quality = 3, classId = CC.PRIEST,
         title = "即兴说唱王", name = "真布诗人",
-        talentName = "护盾说唱", talentDesc = "过量治疗先补足目标护盾，超过护盾上限的部分再转为临时护盾（最多为目标护盾上限的50%）。觉醒共鸣后，有盾队友的下次攻击可附带本次治疗量20%的额外伤害。",
+        talentName = "护盾说唱", talentDesc = "过量治疗先补足目标护盾，超过护盾上限的部分再转为临时护盾（最多为目标护盾上限的50%）。",
         talentId = "elwyn_energy_blessing",
         gender = "male",
         atkType = AD.ATK_HOLY, atkInterval = 1.5, atkTargets = 3,
@@ -369,7 +370,7 @@ local DMG_TYPE_DATA = {
     [3]  = { HC.DMG_PHYSICAL, "穿刺" },   -- 叮咚鸡
     [4]  = { HC.DMG_PHYSICAL, "粉碎" },   -- 接化发掌门
     [5]  = { HC.DMG_PHYSICAL, "穿刺" },   -- 叠甲怪
-    [6]  = { HC.DMG_MAGICAL,  "闪电" },   -- 阿姨压
+    [6]  = { HC.DMG_MAGICAL,  "闪电" },   -- 压一压
     [7]  = { HC.DMG_MAGICAL,  "闪电" },   -- 信光机兵
     [8]  = { HC.DMG_PHYSICAL, "斩击" },   -- 愤怒的小雀
     [9]  = { HC.DMG_HEALING,  "治疗" },   -- 卡皮巴拉
@@ -408,7 +409,7 @@ local WEARABLE_DATA = {
     [3]  = { w = {"弓箭","单手弩"},                           o = {"轻盾","重盾"} },       -- 叮咚鸡(游侠)
     [4]  = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"重盾","圣物"} },       -- 接化发掌门(骑士)
     [5]  = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 叠甲怪(战士)
-    [6]  = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 阿姨压(法师)
+    [6]  = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 压一压(法师)
     [7]  = { w = {"手铳","魔杖"},                             o = {"魔典","法珠"} },       -- 信光机兵(游侠)
     [8]  = { w = {"细剑","单手剑"},                           o = {"轻盾","重盾"} },       -- 愤怒的小雀(刺客)
     [9]  = { w = {"权杖"},                                    o = {"轻盾","圣物"} },       -- 卡皮巴拉(牧师)
@@ -449,6 +450,7 @@ end
 ---@param options table|nil 只读重建可显式指定 litNodes，并关闭重复诊断日志
 ---@return table|nil 战斗单位 { name, level, hp, maxHp, atkProgress, attrs, heroId, classId, ... }
 function HC.createHero(heroId, level, advBranch, awakening, extraTalent, options)
+    ---@type table|nil 数据表循环补齐 dmgMainType/dmgSubType，不能仅推断字面量字段。
     local hero = HC.HEROES[heroId]
     if not hero then
         print("[HeroConfig] 未知英雄 ID: " .. tostring(heroId))
@@ -554,6 +556,7 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent, options
     unit.talentName  = hero.talentName
     unit.talentDesc  = hero.talentDesc
     unit.atkTargets  = hero.atkTargets
+    unit.attackChain = hero.attackChain == true
     unit.dmgSpread   = hero.dmgSpread
     unit.atkCoeff    = hero.atkCoeff
     unit.dmgMainType = hero.dmgMainType
@@ -561,16 +564,7 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent, options
 
     -- 转职信息（供 TalentManager / UI 使用）
     unit.advBranch   = advBranch
-    unit.advTalentIds = {}
-    if advBranch then
-        local branches = AVC.getAllBranches(advBranch)
-        for _, bId in ipairs(branches) do
-            local bCfg = AVC.get(bId)
-            if bCfg and bCfg.talentId then
-                unit.advTalentIds[#unit.advTalentIds + 1] = bCfg.talentId
-            end
-        end
-    end
+    unit.advTalentIds = AVC.getTalentIds(advBranch)
     -- [DIAG-ADV] 牧师转职排查：打印创建时的 advTalentIds
     if (heroId == 9 or heroId == 15) and not (options and options.silent) then
         local tidStr = #unit.advTalentIds > 0 and table.concat(unit.advTalentIds, ",") or "EMPTY"
@@ -585,6 +579,9 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent, options
     -- 对手单位禁止读写本地 extraTalent
     if extraTalent == false then
         unit._etsDisabled = true
+    elseif extraTalent ~= nil and hero.quality == 3 then
+        -- 史诗Ⅱ显式战斗快照不借账号成长；省略参数仍沿旧动态 owned 来源。
+        unit._epicAwakeningGrowth = require("systems.ExtraTalentSystem").normalize(type(extraTalent) == "table" and extraTalent or nil)
     end
 
     -- 天赋星图运行时节点集合（供 TalentManager 检查 RUNTIME_ONLY 节点）

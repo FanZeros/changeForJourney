@@ -19,6 +19,7 @@ local TAG = "[town_expedition_gate_test] "
 local GATE = "image/城镇建筑/UI_CZ_EXPEDITION_GATE.png"
 local SOURCE_FILES = {
     ["ui.town.TownScene"] = "ui/town/TownScene.lua",
+    ["ui.town.TownExpeditionIcon"] = "ui/town/TownExpeditionIcon.lua",
     ["core.DrawUtil"] = "core/DrawUtil.lua",
     ["core.DarkIcon"] = "core/DarkIcon.lua",
     ["boot.StandaloneBoot"] = "boot/StandaloneBoot.lua",
@@ -183,7 +184,8 @@ local function newContext(review, vg)
     end
     e.require = function(name)
         if c.deps[name] then return c.deps[name] end
-        if name == "ui.town.TownScene" or name == "core.DrawUtil" or name == "core.DarkIcon"
+        if name == "ui.town.TownScene" or name == "ui.town.TownExpeditionIcon"
+            or name == "core.DrawUtil" or name == "core.DarkIcon"
             or name == "boot.BattleRewardOverlay" then
             local m = compile(source(name), ROOT .. "/scripts/" .. SOURCE_FILES[name], e)
             c.deps[name] = m; return m
@@ -192,6 +194,12 @@ local function newContext(review, vg)
     end
     c.page = e.require("ui.town.TownScene"); c.page.init(c.vg)
     if not c.review then
+        local compass = c.deps["ui.town.TownExpeditionIcon"]
+        local drawCompass = compass.draw
+        compass.draw = function(ctx,cx,cy,size)
+            record("compass", {rect=rect(cx,cy,size,size)})
+            drawCompass(ctx,cx,cy,size)
+        end
         local dark = c.deps["core.DarkIcon"]; local drawNine = dark.drawNine
         dark.drawNine = function(ctx, style, x, y, w, h, opts)
             record("plate", { style = style, rect = { x = x, y = y, w = w, h = h } })
@@ -216,15 +224,19 @@ end
 local function layoutCases()
     local c = newContext(); c.draw()
     check(type(c.page.setOnExpeditionClick) == "function", "真实TownScene导出门回调API")
-    local image, title, plate = {}, {}, {} ---@type any
+    local image, title, plate, icon = {}, {}, {}, {} ---@type any
     for _, call in ipairs(c.calls) do
         if call.kind == "image" and call.path == GATE then image = call end
+        if call.kind == "compass" then icon = call end
         if call.kind == "plate" and same(call.rect, PLATE) then plate = call end
-        if call.kind == "text" and call.text == "远征" and call.x == 520 and call.y == 1610 then title = call end
+        if call.kind == "text" and call.text == "远征" and call.x == 550 and call.y == 1610 then title = call end
     end
     check(plate.kind == "plate" and plate.style == "plain", "真实名牌center5201610绘制220x80")
     check(image and same(image.rect, IMAGE), "真实门图center5201440绘制192x240")
-    check(title and title.align == NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, "远征名牌标题5201610居中")
+    check(title and title.align == NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, "远征标题5501610给左侧白图标留位")
+    check(icon.kind == "compass" and same(icon.rect, rect(460, 1610, 48, 48)), "白色矢量罗盘4601610绘制48x48")
+    check(within(icon.rect, PLATE), "完整白图标在原220x80牌内")
+    check(icon.rect.x + icon.rect.w + 8 <= title.rect.x - 4, "图标与文字描边不重叠且有间隔")
     check(same(c.feedback.town_expedition, HIT), "BF热区center5201480尺寸220x340")
     check(within(IMAGE, HIT) and within(PLATE, HIT), "完整门图与名牌均在统一热区")
     check(title and within(title.rect, PLATE, 4), "保守全宽字形加描边不越220x80名牌")
@@ -302,6 +314,79 @@ local function oldBuildingCases()
     c.tutorial = true; c.page.handleInput(211,1400); c.draw(c.clock.elapsedTime + 1); eq(n,1,"教堂教程豁免保留")
     idle(c)
 end
+local function compassWhiteCases()
+    local c = newContext()
+    local fills, strokes = {}, {}
+    c.env.nvgFillColor = function(_, color) fills[#fills+1]=color end
+    c.env.nvgStrokeColor = function(_, color) strokes[#strokes+1]=color end
+    c.deps["ui.town.TownExpeditionIcon"].draw(c.vg,460,1610,48)
+    eq(#fills,1,"罗盘只填充一个白色针形")
+    eq(fills[1].r,255,"罗盘填充R纯白"); eq(fills[1].g,255,"罗盘填充G纯白"); eq(fills[1].b,255,"罗盘填充B纯白")
+    local white, black=0,0
+    for _, color in ipairs(strokes) do
+        check(color.r==color.g and color.g==color.b,"罗盘轮廓不能出现金色/彩色")
+        if color.r==255 then white=white+1 elseif color.r==0 then black=black+1 end
+    end
+    check(white>0 and black>0,"罗盘有纯白语义轮廓与黑色外描边")
+    idle(c)
+end
+
+local function churchPolishCases()
+    local c = newContext(); c.draw()
+    local art = rect(211, 1451.6, 292.4, 584.8)
+    local churchPath = "image/界面底板/城镇世界/UI_CZ_JT.png"
+    local artCount = 0
+    for _, call in ipairs(c.calls) do
+        if call.kind == "image" and call.path == churchPath then
+            check(same(call.rect, art), "礼拜堂立绘等比缩15%并保留底1744")
+            artCount = artCount + 1
+        end
+    end
+    eq(artCount, 1, "未锁礼拜堂只画一个普通层")
+    check(same(c.feedback.town_church, rect(211, 1400, 344, 688)), "礼拜堂原BF/输入范围不缩错")
+    check(not overlaps(art, HIT), "缩小教堂不与远征门热区重叠")
+    local opened = 0; c.page.setOnChurchClick(function() opened = opened + 1 end)
+    c.calls = {}; c.page.handleInput(211,1451.6); c.draw(100.075)
+    local flashCount = 0
+    for _, call in ipairs(c.calls) do
+        if call.kind == "image" and call.path == churchPath then
+            check(same(call.rect,art), "教堂普通与闪白同缩图矩形")
+            flashCount = flashCount + 1
+        end
+    end
+    eq(flashCount,2,"教堂闪白仅加相同立绘层")
+    c.page.cancelPendingPageOpen()
+    c.unlocked.church = false; c.calls = {}
+    local silhouetteRects = 0
+    c.env.nvgRect = function(_, x, y, w, h)
+        if same({x=x,y=y,w=w,h=h},art) then silhouetteRects = silhouetteRects + 1 end
+    end
+    c.draw(101)
+    local silhouette = 0
+    for _, call in ipairs(c.calls) do
+        if call.kind == "image" and call.path == churchPath then
+            check(same(call.rect,art), "教堂锁定剪影同底锚缩图")
+            silhouette = silhouette + 1
+        end
+    end
+    eq(silhouette,1,"教堂锁定只复用一份剪影paint")
+    eq(silhouetteRects,6,"教堂锁定六层剪影绘制保留")
+    c.env.nvgRect = noop
+    c.unlocked.church=true; c.level=30
+    local label = rect(238,1720,361,113)
+    for _, point in ipairs({{label.x,label.y},{label.x+label.w,label.y+label.h},
+        {label.x+label.w,1720},{238,label.y+label.h}}) do
+        c.page.cancelPendingPageOpen(); c.clock.elapsedTime=c.clock.elapsedTime+1
+        local before=opened
+        eq(c.page.handleInput(point[1],point[2]),true,"完整标签角/底沿消费点击")
+        c.draw(c.clock.elapsedTime+.151); eq(opened,before+1,"标签仍回调原礼拜堂入口")
+    end
+    c.level=29
+    c.page.handleInput(418.5,1776.5); c.draw(c.clock.elapsedTime+1)
+    eq(opened,4,"新补齐标签边沿仍尊重Lv30门控")
+    idle(c)
+end
+
 local function deferredCases()
     local c = newContext(); local n, replaced = 0, 0
     c.page.setOnExpeditionClick(function() n = n + 1 end)
@@ -338,7 +423,8 @@ local function bootFixture(c)
         isAllLocked = function() return c.navLocked end,
         isTabLocked = function(i) eq(i,3,"仅查询原战斗页签锁"); return c.tabLocked == true end })
     local select = c.mock("ui.battle.stage.StageSelectDialog", { isOpen = function() return c.modal.stage == true end,
-        open = function(team) eq(team,1,"实际Boot只打开队1选关"); c.selections = c.selections + 1; c.modal.stage = true end })
+        openOverview = function() c.selections = c.selections + 1; c.modal.stage = true end })
+    local topBar = c.mock("ui.hud.TopBar", { setOnExpeditionClick = function(callback) c.topBarExpedition = callback end })
     local map = {
         ["ui.tavern.TavernPage"]={"tavern","isOpen"}, ["ui.market.MarketPage"]={"market","isOpen"},
         ["ui.backpack.BackpackPanel"]={"backpack","isOpen"}, ["ui.loot.LootBoxPage"]={"loot","isOpen"},
@@ -358,6 +444,7 @@ local function bootFixture(c)
     c.deps["ui.backpack.BackpackPanel"].isLeftMode = function() return true end
     local e = c.env
     e.TownScene, e.BattleTriPage, e.BottomNav, e.StageSelectDialog, e.vg = c.page, tri, nav, select, c.vg
+    e.TopBar = topBar
     for _, name in ipairs({ "BlacksmithPage","ChurchPage","TavernPage","MarketPage","BackpackPanel",
         "LootBoxPage","TaskPage","PlayerInfoPanel","RewardPopup" }) do
         for path, dep in pairs(c.deps) do if path:match("%." .. name .. "$") then e[name] = dep end end
@@ -397,7 +484,8 @@ local function bootCases()
     eq(c.nav,4,"导航拒绝保持原页签"); c.refuseNav=false; c.triOpen=false; c.nav=4
     for i=1,20 do c.page.handleInput(520,i%2==0 and 1610 or 1440) end
     c.draw(c.clock.elapsedTime+0.149); eq(c.selections,0,"Boot链也遵守0.15defer")
-    c.draw(c.clock.elapsedTime+0.002); eq(c.selections,1,"真实Boot最终StageSelectDialog.open(1)一次")
+    c.draw(c.clock.elapsedTime+0.002); eq(c.selections,1,"真实Boot最终StageSelectDialog.openOverview()一次")
+    check(type(c.topBarExpedition)=="function", "TopBar与城镇绑定同一收益总览回调")
     eq(c.nav,3,"非战斗页签切回3"); check(c.triOpen,"开启tri成功后才打开选关")
     c.page.handleInput(520,1610); c.draw(c.clock.elapsedTime+0.151); eq(c.selections,1,"已开选关重复点不重开")
     idle(c)
@@ -421,7 +509,7 @@ local function safetyCases()
     for _, name in ipairs({"LootBoxPage","TaskPage","BackpackPanel","TalentPage","ChurchPage","TavernPage","MarketPage"}) do
         local start=assert(inputSource:find("if "..name..".isOpen()",1,true)); check(start<town,"二级页优先Town静态证据 "..name)
     end
-    eq(#reads,7,"原生File只读取7份白名单源码")
+    eq(#reads,8,"原生File只读取8份白名单源码（含白色罗盘小模块）")
     print(TAG.."LIMIT: 宿主教程/标题分流仅静态源证据；未load完整Horizon/Boot.run/main。")
 end
 ---@type any
@@ -445,8 +533,9 @@ function Start()
         return
     end
     for _, test in ipairs({ {"real-source-layout-title",layoutCases}, {"handle-zero-and-missing-image-fallback",resourceCases},
-        {"full-image-label-edges-outside-gap",boundaryCases},
-        {"old-buildings-level-tutorial-preserved",oldBuildingCases}, {"defer-dedupe-cancel-replace",deferredCases},
+        {"full-image-label-edges-outside-gap",boundaryCases}, {"compass-pure-white-not-gold",compassWhiteCases},
+        {"old-buildings-level-tutorial-preserved",oldBuildingCases}, {"church-bottom-anchor-label-hit",churchPolishCases},
+        {"defer-dedupe-cancel-replace",deferredCases},
         {"actual-Boot-callback-terminal-and-modal-guards",bootCases}, {"read-only-allowlist-final-safety",safetyCases} }) do
         groups=groups+1; local ok,why=pcall(test[2])
         if ok then print(TAG.."PASS "..test[1]) else failures=failures+1; log:Write(LOG_ERROR,TAG.."FAIL "..test[1].." "..tostring(why)) end

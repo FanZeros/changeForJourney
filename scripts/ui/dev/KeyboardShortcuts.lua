@@ -1,6 +1,6 @@
 -- ============================================================================
 -- KeyboardShortcuts - PC 键盘快捷键
--- Esc 关闭，空格/回车继续，F 倍速，数字键打开城镇页面。H 查看说明。
+-- Esc 关闭，空格/回车继续，数字键打开城镇页面。H 查看说明。
 -- 兑换码和 GM 输入时不抢字母键。
 -- ============================================================================
 
@@ -14,8 +14,8 @@ local LINES = {
     "H  打开或关闭本说明",
     "Esc  关闭当前弹窗或页面",
     "空格 / 回车  继续对话、领取或关掉奖励",
-    "F  切换战斗倍速",
     "M  开关音效",
+    "F8  打开或关闭性能诊断",
     "I  玩家信息",
     "B  背包",
     "6  遗匣",
@@ -90,34 +90,6 @@ local function togglePage(isOpen, closeFn, openFn)
     openFn()
 end
 
-local function cycleSpeed()
-    local DungeonBattleScene = require("ui.dungeon.DungeonBattleScene")
-    if DungeonBattleScene.isOpen and DungeonBattleScene.isOpen() then
-        if DungeonBattleScene.cycleBattleSpeed and DungeonBattleScene.cycleBattleSpeed() then
-            toast("副本倍速已切换")
-            return
-        end
-        toast("当前不能切换倍速")
-        return
-    end
-    local TowerBattleScene = require("ui.tower.TowerBattleScene")
-    if TowerBattleScene.isActive and TowerBattleScene.isActive() then
-        local TowerTriBattle = require("ui.tower.TowerTriBattle")
-        if TowerTriBattle.cycleBattleSpeed and TowerTriBattle.cycleBattleSpeed() then
-            toast("塔倍速已切换")
-            return
-        end
-        toast("当前不能切换倍速")
-        return
-    end
-    local BattleScene = require("ui.battle.scene.BattleScene")
-    if BattleScene.cycleBattleSpeed and BattleScene.cycleBattleSpeed() then
-        toast("倍速 " .. BattleScene.getSpeedText())
-        return
-    end
-    toast("当前不能切换倍速")
-end
-
 local function handleEscape()
     if helpOpen then
         helpOpen = false
@@ -157,6 +129,11 @@ local function handleEscape()
     local PlayerInfoPanel = require("ui.hud.popup.PlayerInfoPanel")
     if PlayerInfoPanel.isOpen() then
         PlayerInfoPanel.close()
+        return
+    end
+    local AwakeningArtwork = require("ui.character.hero.AwakeningArtwork")
+    if AwakeningArtwork.isOpen() then
+        AwakeningArtwork.close()
         return
     end
     local CharacterDetail = require("ui.character.detail.CharacterDetail")
@@ -206,7 +183,27 @@ local function handleConfirm()
     end
 end
 
+-- 独立诊断键由宿主在业务早退前轮询；不提前执行任何玩法快捷键。
+function KeyboardShortcuts.pollPerformanceHotkey()
+    if not pressed(KEY_F8) then return end
+    local performance = require("ui.dev.PerformancePanel")
+    if performance.isOpen() then
+        performance.close()
+    elseif not ctrlDown() and not blockedByTitle() and not textBusy() then
+        helpOpen = false
+        performance.open()
+        print("[KeyboardShortcuts] F8 打开性能诊断")
+    end
+end
+
 function KeyboardShortcuts.update()
+    -- F8 已由 PerformanceRuntime 处理，不能在同一帧再次 toggle 或触发底层快捷键。
+    if pressed(KEY_F8) then return end
+    local performance = require("ui.dev.PerformancePanel")
+    if performance.isOpen() then
+        if pressed(KEY_ESCAPE) then performance.close() end
+        return
+    end
     if blockedByTitle() then return end
     if ctrlDown() then return end
 
@@ -215,6 +212,11 @@ function KeyboardShortcuts.update()
         return
     end
 
+    if require("ui.character.hero.AwakeningArtwork").isOpen() then
+        -- 影画被上层奖励/升级遮住时，确认键仍交给原模态；其它快捷键不得操作底层。
+        if pressed(KEY_SPACE) or pressed(KEY_RETURN) or pressed(KEY_RETURN2) then handleConfirm() end
+        return
+    end
     if textBusy() then return end
 
     if pressed(KEY_H) then
@@ -228,10 +230,6 @@ function KeyboardShortcuts.update()
     end
     if pressed(KEY_SPACE) or pressed(KEY_RETURN) or pressed(KEY_RETURN2) then
         handleConfirm()
-        return
-    end
-    if pressed(KEY_F) then
-        cycleSpeed()
         return
     end
     if pressed(KEY_M) then

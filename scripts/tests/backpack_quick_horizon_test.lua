@@ -1,5 +1,5 @@
 -- 仓库横屏快速手势回归：真实 Horizon + Viewport，页面/Link API 为 spy。
--- 只验证路由边界，不模拟穿戴事务；Link 的 handleEquipClick/Right 实现另测。
+-- 验证普通右键与 Shift 右键隔离路由，不模拟穿戴/锁定事务；Link 实现另测。
 -- Runtime: tests/backpack_quick_horizon_test.lua -tapcode_dir=. -tool_mode -graphicsheadless
 function Start()
     ---@type fun(name: string): any
@@ -42,9 +42,22 @@ function Start()
             task = false, loot = false, modal = false, tutorial = false,
             detail = false, pinned = false, overlayPoint = false,
             armed = false, dragging = false, draggingCard = false,
+            decompose = false, marquee = false, beginAccepted = true, autoPopup = false,
+            setFilter = false, itemDetail = false, closing = false, nav = 3,
+            offline = false, levelup = false, playerinfo = false, updateNotice = false,
+            title = false, letter = false, intro = false, dialogue = false, ce = false,
+            sweep = false, damage = false, stage = false, terminal = false,
+            dungeon = false, leftShift = false, rightShift = false, lockAccepted = true,
         }
         local cursor = { x = 0, y = 0 }
-        _G.input = { GetMousePosition = function() return cursor end }
+        _G.input = {
+            GetMousePosition = function() return cursor end,
+            GetKeyDown = function(_, key)
+                if key == KEY_LSHIFT then return state.leftShift end
+                if key == KEY_RSHIFT then return state.rightShift end
+                return false
+            end,
+        }
         _G.time = { elapsedTime = 100 }
         local clock = 100
         local candidate = { seq = 7, slot = "helmet", templateId = "H1" }
@@ -56,7 +69,39 @@ function Start()
             handleEquipClick = function() count("apiClick"); return true end,
             handleEquipRight = function() count("apiRight"); return true end,
         }
+        local marqueeCoords = { begin = {}, move = {}, finish = {} }
+        local lockCoords = {}
+        local function canMarquee()
+            return state.warehouse and state.leftMode and state.decompose and not state.closing
+                and not state.autoPopup and not state.setFilter and not state.itemDetail
+        end
         local warehouse = mock({
+            canMarquee = canMarquee,
+            isPopupOpen = function() return state.autoPopup or state.setFilter or state.itemDetail end,
+            isMarqueeActive = function() return state.marquee end,
+            handleMarqueeBegin = function(x, y)
+                count("marqueeBegin")
+                marqueeCoords.begin[#marqueeCoords.begin + 1] = { x = x, y = y }
+                if not canMarquee() or not state.beginAccepted then return false end
+                state.marquee = true
+                return true
+            end,
+            handleMarqueeMove = function(x, y)
+                count("marqueeMove")
+                marqueeCoords.move[#marqueeCoords.move + 1] = { x = x, y = y }
+                return state.marquee
+            end,
+            handleMarqueeEnd = function(x, y)
+                count("marqueeEnd")
+                marqueeCoords.finish[#marqueeCoords.finish + 1] = { x = x, y = y }
+                local active = state.marquee
+                state.marquee = false
+                return active
+            end,
+            cancelMarquee = function() count("marqueeCancel"); state.marquee = false end,
+            handleHover = function() count("backpackHover") end,
+            handleDragMove = function() count("backpackMove") end,
+            handleScroll = function() count("backpackScroll") end,
             isOpen = function() return state.warehouse end,
             isLeftMode = function() return state.leftMode end,
             getSeamAnim = function() return 1, 0, 0.45, 0.38 end,
@@ -77,6 +122,15 @@ function Start()
                 count("backpackRight")
                 if hitGrid(x, y) then return api.handleEquipRight(candidate) end
                 return false
+            end,
+            handleLockRightClick = function(x, y)
+                count("backpackLock")
+                lockCoords[#lockCoords + 1] = { x = x, y = y }
+                -- 页面只模拟真实格/过滤/在途拒绝；不以spy冒充锁定业务已经执行。
+                if state.setFilter or state.autoPopup or state.itemDetail or state.closing
+                    or state.decompose or not hitGrid(x, y) or not state.lockAccepted then return false end
+                count("apiLock")
+                return true
             end,
         })
         local equipmentDetail = mock({
@@ -106,15 +160,26 @@ function Start()
             ["core.Viewport"] = viewport,
             ["ui.backpack.BackpackPanel"] = warehouse,
             ["ui.character.equip.EquipmentDetail"] = equipmentDetail,
+            ["ui.character.hero.AwakeningArtwork"] = mock({
+                -- 真实宿主保存 bindInput 返回的函数；不能沿用缺字段统一返回false的替身。
+                bindInput = function() return function() return false end end,
+            }),
+            ["ui.dungeon.DungeonBattleScene"] = mock({ isOpen = function() return state.dungeon end }),
             ["ui.character.EquipCrossDrag"] = crossDrag,
             ["ui.character.panel.CharacterPanel"] = mock({
                 isDraggingCard = function() return state.draggingCard end,
                 handleInput = function() count("characterInput"); return true end,
                 handleRightClick = function() count("characterRight"); return true end,
+                handleHover = function() count("characterHover") end,
+                handleDragMove = function() count("characterMove") end,
+                handleDragEnd = function() count("characterEnd") end,
             }),
             ["ui.character.detail.CharacterDetail"] = mock({ isEquipTab = function() return true end }),
-            ["ui.battle.tri.BattleTriPage"] = mock({ isOpen = function() return state.tri end }),
-            ["ui.hud.BottomNav"] = { getSelectedIndex = function() return 3 end },
+            ["ui.battle.tri.BattleTriPage"] = mock({
+                isOpen = function() return state.tri end,
+                handleRightClick = function() count("triRight"); return true end,
+            }),
+            ["ui.hud.BottomNav"] = { getSelectedIndex = function() return state.nav end },
             ["ui.hud.popup.RewardPopup"] = mock({
                 isOpen = function() return state.modal end,
                 currentPanel = function() return nil end,
@@ -122,7 +187,19 @@ function Start()
                 handleInput = function() count("modalInput"); return true end,
             }),
             ["systems.TutorialManager"] = mock({ isActive = function() return state.tutorial end }),
-            ["ui.battle.popup.TerminalConfirmDialog"] = mock({ isOpen = noop }),
+            ["ui.battle.popup.TerminalConfirmDialog"] = mock({ isOpen = function() return state.terminal end }),
+            ["ui.hud.popup.OfflineRewardPanel"] = mock({ isOpen = function() return state.offline end }),
+            ["ui.hud.popup.LevelUpPopup"] = mock({ isOpen = function() return state.levelup end }),
+            ["ui.hud.popup.PlayerInfoPanel"] = mock({ isOpen = function() return state.playerinfo end }),
+            ["ui.hud.popup.UpdateNoticePopup"] = mock({ isOpen = function() return state.updateNotice end }),
+            ["ui.story.gate.DarkTitleScreenGate"] = mock({ isOpen = function() return state.title end }),
+            ["ui.story.gate.LetterIntro"] = mock({ isOpen = function() return state.letter end }),
+            ["ui.story.gate.IntroCutscene"] = mock({ isActive = function() return state.intro end }),
+            ["ui.story.ScenarioDialogue"] = mock({ isActive = function() return state.dialogue end }),
+            ["ui.dev.CEPanel"] = mock({ isOpen = function() return state.ce end }),
+            ["ui.battle.stage.SweepDialog"] = mock({ isOpen = function() return state.sweep end }),
+            ["ui.battle.popup.DamageStatsPanel"] = mock({ isOpen = function() return state.damage end }),
+            ["ui.battle.stage.StageSelectDialog"] = mock({ isOpen = function() return state.stage end }),
             ["ui.tavern.TavernPopups"] = mock({ isBlocking = noop }),
             ["ui.tavern.TargetRecruitPanel"] = mock({ isOpen = noop }),
             ["ui.story.task.TaskPage"] = mock({
@@ -145,7 +222,9 @@ function Start()
         -- Runtime require 可忽略 package.loaded；全程包装 _G.require 拦截动态依赖。
         _G.require = function(name)
             if name == "boot.StandaloneHorizonInput" or name == "boot.OfflineRewardOverlay"
-                or name == "boot.SeamBackGesture" then
+                or name == "boot.SeamBackGesture" or name == "boot.DecomposeMarqueeGesture"
+                or name == "boot.RewardGesture" or name == "boot.TerminalInput"
+                or name == "boot.StandaloneHorizonWheel" then
                 return originalRequire(name)
             end
             if not mods[name] then mods[name] = mock() end
@@ -156,8 +235,9 @@ function Start()
         local right = { Button = { GetInt = function() return MOUSEB_RIGHT end } }
         local function position(panel, x, y)
             local note, p = viewport.getNote(panel), viewport.PANELS[panel]
-            cursor.x = note.ox + p.bx * note.s + x * note.s * viewport.DS
-            cursor.y = note.oy + p.by * note.s + y * note.s * viewport.DS
+            cursor.x = (RT.frameOx or 0) + (note.ox + p.bx * note.s + x * note.s * viewport.DS) * (RT.frameScale or 1)
+            cursor.y = (RT.frameOy or 0) + (note.oy + p.by * note.s + y * note.s * viewport.DS) * (RT.frameScale or 1)
+            cursor.x, cursor.y = cursor.x * RT.dpr, cursor.y * RT.dpr
         end
         local function realDownUp(panel, x, y, at, button)
             position(panel, x, y)
@@ -171,6 +251,12 @@ function Start()
             state.task, state.loot, state.modal, state.tutorial = false, false, false, false
             state.detail, state.pinned, state.overlayPoint = false, false, false
             state.armed, state.dragging, state.draggingCard = false, false, false
+            for _, key in ipairs({ "decompose", "marquee", "autoPopup", "setFilter", "itemDetail", "closing",
+                "offline", "levelup", "playerinfo", "updateNotice", "title", "letter", "intro", "dialogue",
+                "ce", "sweep", "damage", "stage", "terminal", "dungeon", "leftShift", "rightShift" }) do state[key] = false end
+            state.beginAccepted, state.lockAccepted, state.nav = true, true, 3
+            marqueeCoords = { begin = {}, move = {}, finish = {} }
+            lockCoords = {}
             resetRT({ logicalW = 1920, logicalH = 1080, dpr = 1, bootReady_ = true })
             viewport._notes = {}
             H_ox, H_oy, H_s = viewport.layout(1920, 1080)
@@ -210,6 +296,84 @@ function Start()
             check(n("backpackRight") == 1 and n("apiRight") == 1, prefix .. "右键 down/up 只派发一次")
             check(n("backpackInput") == 0 and n("arm") == 0 and n("finish") == 0,
                 prefix .. "右键不混入左键/装备拖拽")
+            check(n("backpackLock") == 0 and n("apiLock") == 0, prefix .. "普通右键不进入锁定分支")
+
+            local function shiftExclusive(label)
+                noEquipmentSend(prefix .. label)
+                check(n("backpackRight") == 0 and n("characterRight") == 0 and n("triRight") == 0
+                    and n("lootRight") == 0 and n("marqueeBegin") == 0 and n("marqueeEnd") == 0,
+                    prefix .. label .. " 不回落穿戴/角色卸队/战斗背包/遗匣回收/分解框选")
+                check(n("backpackInput") == 0 and n("arm") == 0 and n("finish") == 0,
+                    prefix .. label .. " 不混入左键或跨栏拖放")
+            end
+            for _, shift in ipairs({ "leftShift", "rightShift" }) do
+                fixture(tri); state[shift] = true
+                position("left", 140, 1060)
+                HandleMouseButtonDownHorizon("MouseButtonDown", right)
+                check(n("backpackLock") == 1 and n("apiLock") == 1,
+                    prefix .. shift .. "真实Down只派发一次库存锁定入口")
+                local point = lockCoords[1] or {}
+                check(math.abs((point.x or -1) - 140) < 0.00001 and math.abs((point.y or -1) - 1060) < 0.00001,
+                    prefix .. shift .. "传入当前左栏设计坐标")
+                -- 抬起之前释放Shift、移到别栏，旧Up也不能再锁一次或执行普通右键。
+                state[shift] = false
+                position("right", 140, 1060)
+                HandleMouseButtonUpHorizon("MouseButtonUp", right)
+                check(n("backpackLock") == 1 and n("apiLock") == 1, prefix .. shift .. "Up不二次派发")
+                shiftExclusive(shift .. "成功")
+            end
+
+            fixture(tri); state.leftShift, state.rightShift = true, true
+            realDownUp("left", 140, 1060, clock, right)
+            check(n("backpackLock") == 1 and n("apiLock") == 1, prefix .. "同时按双Shift仍只派发一次")
+            shiftExclusive("双Shift")
+
+            for _, rejected in ipairs({ "setFilter", "autoPopup", "itemDetail", "closing", "decompose", "grid", "lockAccepted" }) do
+                fixture(tri); state.leftShift = true
+                state[rejected] = rejected ~= "grid" and rejected ~= "lockAccepted"
+                realDownUp("left", 140, 1060, clock, right)
+                check(n("backpackLock") == 1 and n("apiLock") == 0,
+                    prefix .. rejected .. "库存入口拒绝/空格也不伪造锁动作")
+                shiftExclusive(rejected .. "拒绝")
+            end
+
+            for _, blocked in ipairs({ "task", "loot", "warehouse", "leftMode", "modal", "offline",
+                "levelup", "playerinfo", "updateNotice", "dungeon", "dungeonPage" }) do
+                fixture(tri); state.rightShift = true
+                if blocked == "dungeonPage" then state.nav = 5
+                else state[blocked] = blocked ~= "warehouse" and blocked ~= "leftMode" end
+                realDownUp("left", 140, 1060, clock, right)
+                check(n("backpackLock") == 0 and n("apiLock") == 0,
+                    prefix .. blocked .. "遮挡/非库存来源不调用锁入口")
+                shiftExclusive(blocked .. "阻断")
+            end
+            for _, panel in ipairs({ "center", "right" }) do
+                fixture(tri); state.leftShift = true
+                realDownUp(panel, 140, 1060, clock, right)
+                check(n("backpackLock") == 0 and n("apiLock") == 0, prefix .. panel .. "不借库存锁动作")
+                shiftExclusive("非左栏 " .. panel)
+            end
+
+            fixture(tri); state.detail, state.pinned, state.overlayPoint, state.leftShift = true, true, true, true
+            realDownUp("left", 140, 1060, clock, right)
+            check(n("backpackLock") == 0 and n("apiLock") == 0 and n("closePin") == 0,
+                prefix .. "详情浮层覆盖实际格时既不锁背后装备也不关闭详情")
+            shiftExclusive("详情浮层覆盖")
+            fixture(tri); state.detail, state.pinned, state.leftShift = true, true, true
+            realDownUp("left", 140, 1060, clock, right)
+            check(n("backpackLock") == 1 and n("apiLock") == 1 and n("closePin") == 0,
+                prefix .. "详情未覆盖鼠标实际格时仍可锁库存且不关闭详情")
+            shiftExclusive("详情未覆盖")
+
+            fixture(tri); state.rightShift = true
+            RT.dpr, RT.frameScale, RT.frameOx, RT.frameOy = 2, 0.8, 37, 23
+            realDownUp("left", 140, 1060, clock, right)
+            local lockPoint = lockCoords[1] or {}
+            check(n("backpackLock") == 1 and n("apiLock") == 1
+                and math.abs((lockPoint.x or -1) - 140) < 0.00001
+                and math.abs((lockPoint.y or -1) - 1060) < 0.00001,
+                prefix .. "Shift锁定DPR2+frame缩放偏移坐标无重复换算")
+            shiftExclusive("DPR2锁定")
 
             fixture(tri)
             realDownUp("left", 140, 1060, clock)
@@ -265,6 +429,160 @@ function Start()
             check(n("backpackBegin") == 1 and n("backpackInput") == 0,
                 prefix .. "关闭pin允许dragBegin但不派发tap")
             noEquipmentSend(prefix .. "关闭pin")
+
+            local function downMarquee()
+                state.decompose = true
+                position("left", 140, 1060)
+                HandleMouseButtonDownHorizon("MouseButtonDown", right)
+                check(state.marquee and n("marqueeBegin") == 1, prefix .. "右键Down成功独占框选")
+                local point = marqueeCoords.begin[1] or {}
+                check(math.abs((point.x or -1) - 140) < 0.00001 and math.abs((point.y or -1) - 1060) < 0.00001,
+                    prefix .. "Begin使用原左栏设计坐标")
+            end
+            local function exclusive(label)
+                noEquipmentSend(prefix .. label)
+                check(n("backpackInput") == 0 and n("backpackRight") == 0 and n("backpackMove") == 0
+                    and n("characterInput") == 0 and n("characterRight") == 0 and n("characterMove") == 0
+                    and n("arm") == 0 and n("finish") == 0,
+                    prefix .. label .. " 不穿透格点击/装备/角色/滚动拖拽")
+            end
+            -- 移动/释放直接落在别栏：不能重新 resolve 到右栏局部坐标。
+            for _, target in ipairs({ "center", "right" }) do
+                fixture(tri); downMarquee()
+                position(target, 180, 1110)
+                local origin = viewport.getNote("left")
+                local winX = (cursor.x / RT.dpr - (RT.frameOx or 0)) / (RT.frameScale or 1)
+                local winY = (cursor.y / RT.dpr - (RT.frameOy or 0)) / (RT.frameScale or 1)
+                local expectedX = (winX - origin.ox) / (origin.s * viewport.DS)
+                local expectedY = (winY - origin.oy) / (origin.s * viewport.DS)
+                HandleMouseMoveHorizon("MouseMove", {})
+                HandleEquipmentHoverTickHorizon()
+                HandleMouseWheelHorizon("MouseWheel", { Wheel = { GetInt = function() return -1 end } })
+                check(n("marqueeMove") == 1 and n("backpackHover") == 0 and n("characterHover") == 0
+                    and n("backpackScroll") == 0, prefix .. "框选独占Move/hoverTick/滚轮 " .. target)
+                HandleMouseButtonUpHorizon("MouseButtonUp", right)
+                local moved, ended = marqueeCoords.move[1] or {}, marqueeCoords.finish[1] or {}
+                for _, point in ipairs({ moved, ended }) do
+                    check(math.abs((point.x or -1) - expectedX) < 0.00001
+                        and math.abs((point.y or -1) - expectedY) < 0.00001,
+                        prefix .. "跨" .. target .. "Move/End捕获原左栏坐标（非目标栏180）")
+                end
+                check(n("marqueeEnd") == 1 and not state.marquee, prefix .. "跨栏右键Up仅结束一次")
+                exclusive("跨栏释放")
+                position("left", 140, 1060)
+                HandleEquipmentHoverTickHorizon()
+                check(n("backpackHover") == 1, prefix .. "释放后恢复hover")
+            end
+
+            fixture(tri)
+            RT.dpr, RT.frameScale, RT.frameOx, RT.frameOy = 2, 0.8, 37, 23
+            downMarquee()
+            position("left", 190, 1110); HandleMouseMoveHorizon("MouseMove", {})
+            HandleMouseButtonUpHorizon("MouseButtonUp", right)
+            local highDpi = marqueeCoords.finish[1] or {}
+            check(n("marqueeEnd") == 1 and math.abs((highDpi.x or -1) - 190) < 0.00001
+                and math.abs((highDpi.y or -1) - 1110) < 0.00001,
+                prefix .. "DPR2+宿主frame缩放偏移稳定时设计坐标正确")
+            exclusive("稳定DPR2框选")
+
+            -- 八类全局模态分别从真实读取点观察；恢复后旧Up仍不能提交。
+            for _, blocked in ipairs({ "modal", "offline", "levelup", "playerinfo", "updateNotice",
+                "title", "letter", "intro", "dialogue", "ce", "sweep", "damage", "stage", "terminal",
+                "tutorial", "task", "loot", "autoPopup", "setFilter", "itemDetail", "closing" }) do
+                fixture(tri); downMarquee()
+                state[blocked] = true
+                HandleEquipmentHoverTickHorizon() -- 无Move的瞬时modal同样永久取消。
+                check(not state.marquee and n("marqueeCancel") > 0, prefix .. blocked .. " 出现即取消")
+                state[blocked] = false
+                position("right", 140, 1060)
+                HandleMouseMoveHorizon("MouseMove", {})
+                HandleEquipmentHoverTickHorizon()
+                check(n("marqueeMove") == 0 and n("backpackHover") == 0 and n("characterHover") == 0,
+                    prefix .. blocked .. " 关闭后仍独占且不复活Move/hover")
+                HandleMouseButtonUpHorizon("MouseButtonUp", right)
+                check(n("marqueeEnd") == 0, prefix .. blocked .. " 旧Up消费且不提交")
+                exclusive(blocked .. "取消")
+                -- Up后下一次明确右键Down才可以重新开始，不保留取消锁。
+                position("left", 140, 1060)
+                HandleMouseButtonDownHorizon("MouseButtonDown", right)
+                check(state.marquee and n("marqueeBegin") == 2, prefix .. blocked .. " 新Down可重新开始")
+                HandleMouseButtonUpHorizon("MouseButtonUp", right)
+                check(n("marqueeEnd") == 1, prefix .. blocked .. " 新Up提交一次")
+            end
+            -- 宿主/页面身份变化即使恢复原值，也不能让旧按压复活。
+            for _, change in ipairs({ "warehouse", "leftMode", "decompose", "tri", "width", "height", "dpr",
+                "frameScale", "frameOx", "frameOy", "hostScale", "hostOx", "hostOy", "moduleCancel" }) do
+                fixture(tri); downMarquee()
+                local restore = function() end
+                if change == "warehouse" or change == "leftMode" or change == "decompose" then
+                    state[change] = false; restore = function() state[change] = true end
+                elseif change == "tri" then
+                    state.tri = not tri; restore = function() state.tri = tri end
+                elseif change == "moduleCancel" then
+                    warehouse.cancelMarquee()
+                elseif change == "hostScale" then
+                    local old = H_s; H_s = H_s + 0.1; restore = function() H_s = old end
+                elseif change == "hostOx" then
+                    local old = H_ox; H_ox = H_ox + 10; restore = function() H_ox = old end
+                elseif change == "hostOy" then
+                    local old = H_oy; H_oy = H_oy + 10; restore = function() H_oy = old end
+                else
+                    local key = change == "width" and "logicalW" or change == "height" and "logicalH" or change
+                    local old = RT[key]
+                    RT[key] = change == "dpr" and 2 or change == "frameScale" and 0.8 or (old or 0) + 10
+                    restore = function() RT[key] = old end
+                end
+                HandleEquipmentHoverTickHorizon()
+                restore()
+                check(not state.marquee, prefix .. change .. " 观察变化后取消")
+                position("right", 180, 1110); HandleMouseMoveHorizon("MouseMove", {})
+                HandleMouseButtonUpHorizon("MouseButtonUp", right)
+                check(n("marqueeMove") == 0 and n("marqueeEnd") == 0,
+                    prefix .. change .. " 恢复旧尺寸/页面仍不复活")
+                exclusive(change)
+            end
+
+            fixture(tri); downMarquee()
+            HandleMouseButtonDownHorizon("MouseButtonDown", left)
+            check(not state.marquee, prefix .. "其他按钮取消框选不启动别的手势")
+            HandleMouseButtonUpHorizon("MouseButtonUp", left)
+            position("right", 180, 1110); HandleMouseMoveHorizon("MouseMove", {})
+            HandleMouseButtonUpHorizon("MouseButtonUp", right)
+            check(n("marqueeEnd") == 0 and n("marqueeMove") == 0, prefix .. "非右键Up不释放旧右键消费权")
+            exclusive("其他按钮取消")
+
+            fixture(tri); state.decompose, state.beginAccepted = true, false
+            realDownUp("left", 140, 1060, clock, right)
+            check(n("marqueeBegin") == 1 and n("marqueeMove") == 0 and n("marqueeEnd") == 0,
+                prefix .. "Begin返回false不启动捕获")
+            check(n("backpackRight") == 1 and n("apiRight") == 1,
+                prefix .. "Begin失败保留原右键fallback且只调用一次")
+
+            -- 真实触摸处理器将原语义派成左键；不能用鼠标right冒充触摸。
+            local function touchData(id)
+                return { X = { GetInt = function() return cursor.x end },
+                    Y = { GetInt = function() return cursor.y end },
+                    TouchID = { GetInt = function() return id end } }
+            end
+            fixture(tri); state.decompose = true
+            position("left", 140, 1060)
+            HandleTouchBeginHorizon("TouchBegin", touchData(71))
+            HandleTouchEndHorizon("TouchEnd", touchData(71))
+            check(n("backpackInput") == 1 and n("apiClick") == 1 and n("marqueeBegin") == 0,
+                prefix .. "原触摸短按仍走左键tap而非框选")
+            fixture(tri); state.decompose, state.dragging = true, true
+            position("left", 140, 1060); HandleTouchBeginHorizon("TouchBegin", touchData(72))
+            position("left", 190, 1110); HandleTouchMoveHorizon("TouchMove", touchData(72))
+            HandleTouchEndHorizon("TouchEnd", touchData(72))
+            check(n("arm") == 1 and n("finish") == 1 and n("dragMove") == 1 and n("marqueeBegin") == 0,
+                prefix .. "原触摸拖拽仍按原arm/move/finish")
+            check(n("backpackInput") == 0, prefix .. "原触摸拖拽不伪tap")
+            fixture(tri); downMarquee()
+            position("left", 140, 1060); HandleTouchBeginHorizon("TouchBegin", touchData(73))
+            HandleTouchEndHorizon("TouchEnd", touchData(73))
+            position("right", 180, 1110); HandleMouseButtonUpHorizon("MouseButtonUp", right)
+            check(n("marqueeEnd") == 0 and n("backpackInput") == 0 and n("arm") == 0,
+                prefix .. "框选遇触摸取消但旧右键Up仍消费")
         end
     end)
 

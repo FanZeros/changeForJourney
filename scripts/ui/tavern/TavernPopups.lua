@@ -13,7 +13,10 @@ local hitTest        = DrawUtil.hitTest
 local drawImageCentered      = DrawUtil.drawImageCentered
 local drawRoundedRectCentered = DrawUtil.drawRoundedRectCentered
 local BF = require("systems.ButtonFeedback")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
+local TavernInfo = require("ui.tavern.TavernInfo")
+local SettingsPanel = require("ui.hud.popup.SettingsPanel")
+local AutoExchangeOption = require("ui.widget.AutoDiamondExchangeOption")
 
 local M = {}
 
@@ -102,18 +105,19 @@ local HIST = {
 
 local CF = {
     MASK_A    = 128,
-    CX = 540,  CY = 1110,
-    W  = 950,  H  = 647,
-    TITLE_CX = 540, TITLE_CY = 856, TITLE_SIZE = 50, TITLE_STROKE_W = 6,
-    SUB_CX = 540, SUB_CY = 967, SUB_SIZE = 40,
+    CX = 540,  CY = 1160,
+    W  = 950,  H  = 847,
+    TITLE_CX = 540, TITLE_CY = 814, TITLE_SIZE = 50, TITLE_STROKE_W = 6,
+    SUB_CX = 540, SUB_CY = 980, SUB_SIZE = 36,
     SUB_R = 0xB6, SUB_G = 0xB0, SUB_B = 0x9D,
-    CONTENT_CX = 540, CONTENT_CY = 1121, CONTENT_W = 800, CONTENT_H = 218, CONTENT_A = 13,
-    ARROW_CX = 540, ARROW_CY = 1123, ARROW_W = 48, ARROW_H = 48,
-    DIAMOND_CX = 415, DIAMOND_CY = 1122, DIAMOND_W = 160, DIAMOND_H = 160,
-    TICKET_CX = 664, TICKET_CY = 1122, TICKET_W = 160, TICKET_H = 160,
+    CONTENT_CX = 540, CONTENT_CY = 1125, CONTENT_W = 800, CONTENT_H = 218, CONTENT_A = 13,
+    ARROW_CX = 540, ARROW_CY = 1125, ARROW_W = 48, ARROW_H = 48,
+    DIAMOND_CX = 415, DIAMOND_CY = 1125, DIAMOND_W = 160, DIAMOND_H = 160,
+    TICKET_CX = 664, TICKET_CY = 1125, TICKET_W = 160, TICKET_H = 160,
     BADGE_SIZE = 40, BADGE_STROKE_W = 5, BADGE_OX = 60, BADGE_OY = 55,
-    BUY_CX = 540, BUY_CY = 1301, BUY_W = 410, BUY_H = 100,
-    BUY_TEXT_SIZE = 40, BUY_TEXT_R = 0x64, BUY_TEXT_G = 0x51, BUY_TEXT_B = 0x29,
+    BUY_CX = 540, BUY_CY = 1320, BUY_W = 410, BUY_H = 100,
+    AUTO_CX = 540, AUTO_CY = 1445, AUTO_W = 760,
+    BUY_TEXT_SIZE = 40, BUY_TEXT_R = 0xFF, BUY_TEXT_G = 0xD6, BUY_TEXT_B = 0x66,
     BTN_INSET_TOP = 10, BTN_INSET_BOTTOM = 10, BTN_INSET_LEFT = 40, BTN_INSET_RIGHT = 40,
 }
 
@@ -301,7 +305,7 @@ local function loadHistoryData()
         historyData.stellar  = data.stellar or {}
         return
     end
-    -- 旧版扁平数组 → 归入常规招募
+    -- 扁平数组格式归入常规招募
     if data[1] then
         historyData.standard = data
         historyData.stellar  = {}
@@ -312,7 +316,7 @@ end
 loadHistoryData()
 
 local function formatNowTime()
-    local t = os.date("*t")
+    local t = os.date("*t") --[[@as {year: integer, month: integer, day: integer, hour: integer, min: integer, sec: integer}]]
     return string.format("%d/%d/%d/%02d:%02d:%02d", t.year, t.month, t.day, t.hour, t.min, t.sec)
 end
 
@@ -376,85 +380,7 @@ local STELLAR_QUALITY_COLOR = {
     [4] = { INFO.POOL_SSR_R, INFO.POOL_SSR_G, INFO.POOL_SSR_B },
 }
 
-local _infoPoolLines = {}
-
-local function buildInfoPoolLines(poolId)
-    if _infoPoolLines[poolId] then return _infoPoolLines[poolId] end
-
-    local lines = {}
-    if isStellarPoolId(poolId) then
-        local qualityOrder = {
-            UrGachaConfig.QUALITY_UR,
-            UrGachaConfig.QUALITY_SSR,
-            UrGachaConfig.QUALITY_SR,
-            UrGachaConfig.QUALITY_R,
-        }
-        for _, q in ipairs(qualityOrder) do
-            local poolGroup = UrGachaConfig.getPoolGroup(q)
-            if poolGroup then
-                local names = {}
-                for _, item in ipairs(poolGroup.items) do
-                    if item.type == "hero" then
-                        local hero = HC.HEROES[item.heroId]
-                        names[#names + 1] = hero and hero.name or ("英雄" .. item.heroId)
-                    end
-                end
-                local tag = STELLAR_QUALITY_TAG[q] or "R"
-                local clr = STELLAR_QUALITY_COLOR[q] or STELLAR_QUALITY_COLOR[1]
-                for i = 1, #names, 3 do
-                    local segments = {}
-                    for j = i, math.min(i + 2, #names) do
-                        if j > i then
-                            segments[#segments + 1] = { text = " ", r = clr[1], g = clr[2], b = clr[3] }
-                        end
-                        segments[#segments + 1] = { text = "[" .. tag .. "]" .. names[j], r = clr[1], g = clr[2], b = clr[3] }
-                    end
-                    lines[#lines + 1] = { segments = segments }
-                end
-            end
-        end
-    else
-        local groups = {}
-        local qualityOrder = { 3, 2, 1, 0 }
-        for _, q in ipairs(qualityOrder) do
-            local poolGroup = GachaConfig.getPoolGroup(q)
-            if poolGroup then
-                local names = {}
-                for _, item in ipairs(poolGroup.items) do
-                    if item.type == "hero" then
-                        local hero = HC.HEROES[item.heroId]
-                        names[#names + 1] = hero and hero.name or ("英雄" .. item.heroId)
-                    elseif item.type == "shard" then
-                        local hero = HC.HEROES[item.heroId]
-                        local heroName = hero and hero.name or ("英雄" .. item.heroId)
-                        names[#names + 1] = heroName .. "碎片"
-                    else
-                        local resName = RES_NAME_MAP[item.resType] or item.resType
-                        names[#names + 1] = resName
-                    end
-                end
-                groups[#groups + 1] = { quality = q, names = names }
-            end
-        end
-        for _, grp in ipairs(groups) do
-            local tag = QUALITY_TAG[grp.quality]
-            local clr = QUALITY_COLOR[grp.quality]
-            for i = 1, #grp.names, 3 do
-                local segments = {}
-                for j = i, math.min(i + 2, #grp.names) do
-                    if j > i then
-                        segments[#segments + 1] = { text = " ", r = clr[1], g = clr[2], b = clr[3] }
-                    end
-                    segments[#segments + 1] = { text = "[" .. tag .. "]" .. grp.names[j], r = clr[1], g = clr[2], b = clr[3] }
-                end
-                lines[#lines + 1] = { segments = segments }
-            end
-        end
-    end
-
-    _infoPoolLines[poolId] = lines
-    return lines
-end
+-- 招募规则与奖励内容构建/折行委托 TavernInfo；历史记录颜色仍由本模块持有。
 
 -- ======================== 多段彩色文本绘制 ========================
 
@@ -512,126 +438,28 @@ end
 
 -- ======================== 招募说明弹窗 - 绘制辅助 ========================
 
-local function drawInfoRuleText(vg, poolId)
-    local x = INFO.RULE_BG_CX - INFO.RULE_BG_W * 0.5 + INFO.RULE_PAD
-    local y = INFO.RULE_BG_CY - INFO.RULE_BG_H * 0.5 + INFO.RULE_PAD
-    local lineH = 46
-    local tr, tg, tb = INFO.RULE_TEXT_R, INFO.RULE_TEXT_G, INFO.RULE_TEXT_B
-    local hr, hg, hb = INFO.RULE_HL_R, INFO.RULE_HL_G, INFO.RULE_HL_B
-    local teamSuffix = isStellarPoolId(poolId) and "级星辰远征队员" or "级远征队员"
-
-    local ruleLines
-    if isStellarPoolId(poolId) then
-        local pity = UrGachaConfig.Pity
-        ruleLines = {
-            { { text = "每", r = tr, g = tg, b = tb },
-              { text = tostring(pity.SR_THRESHOLD), r = hr, g = hg, b = hb },
-              { text = "次招募必定获得", r = tr, g = tg, b = tb },
-              { text = "稀有", r = hr, g = hg, b = hb },
-              { text = teamSuffix, r = tr, g = tg, b = tb } },
-            { { text = "每", r = tr, g = tg, b = tb },
-              { text = tostring(pity.SSR_THRESHOLD), r = hr, g = hg, b = hb },
-              { text = "次招募必定获得", r = tr, g = tg, b = tb },
-              { text = "史诗", r = hr, g = hg, b = hb },
-              { text = teamSuffix, r = tr, g = tg, b = tb } },
-            { { text = "每", r = tr, g = tg, b = tb },
-              { text = tostring(pity.UR_THRESHOLD), r = hr, g = hg, b = hb },
-              { text = "次招募必定获得", r = tr, g = tg, b = tb },
-              { text = "传说", r = hr, g = hg, b = hb },
-              { text = teamSuffix, r = tr, g = tg, b = tb } },
-            {},
-            { { text = "各品质基础概率：", r = tr, g = tg, b = tb } },
-            { { text = "普通: ", r = tr, g = tg, b = tb },
-              { text = string.format("%.0f%%", UrGachaConfig.Probability[UrGachaConfig.QUALITY_R] or 0),
-                r = hr, g = hg, b = hb } },
-            { { text = "稀有: ", r = tr, g = tg, b = tb },
-              { text = string.format("%.0f%%", UrGachaConfig.Probability[UrGachaConfig.QUALITY_SR] or 0),
-                r = hr, g = hg, b = hb } },
-            { { text = "史诗: ", r = tr, g = tg, b = tb },
-              { text = string.format("%.0f%%", UrGachaConfig.Probability[UrGachaConfig.QUALITY_SSR] or 0),
-                r = hr, g = hg, b = hb } },
-            { { text = "传说: ", r = tr, g = tg, b = tb },
-              { text = string.format("%.0f%%", UrGachaConfig.Probability[UrGachaConfig.QUALITY_UR] or 0),
-                r = hr, g = hg, b = hb } },
-        }
-    else
-        ruleLines = {
-            { { text = "每", r = tr, g = tg, b = tb },
-              { text = "80", r = hr, g = hg, b = hb },
-              { text = "次招募必定获得", r = tr, g = tg, b = tb },
-              { text = "史诗", r = hr, g = hg, b = hb },
-              { text = teamSuffix, r = tr, g = tg, b = tb } },
-            { { text = "第", r = tr, g = tg, b = tb },
-              { text = "61", r = hr, g = hg, b = hb },
-              { text = "抽起史诗概率逐抽提升", r = tr, g = tg, b = tb } },
-            {},
-            { { text = "各品质基础概率：", r = tr, g = tg, b = tb } },
-            { { text = "杂项: ", r = tr, g = tg, b = tb },
-              { text = "55%", r = hr, g = hg, b = hb } },
-            { { text = "普通: ", r = tr, g = tg, b = tb },
-              { text = "25%", r = hr, g = hg, b = hb } },
-            { { text = "稀有: ", r = tr, g = tg, b = tb },
-              { text = "15%", r = hr, g = hg, b = hb } },
-            { { text = "史诗: ", r = tr, g = tg, b = tb },
-              { text = "5%", r = hr, g = hg, b = hb } },
-        }
-    end
-
-    for i, segs in ipairs(ruleLines) do
-        if #segs > 0 then
-            drawColorSegments(vg, x, y + (i - 1) * lineH, segs, INFO.RULE_FONT_SIZE)
-        end
-    end
-end
-
-local function drawInfoPoolContent(vg, poolId)
-    local bgX = INFO.POOL_BG_CX - INFO.POOL_BG_W * 0.5
-    local bgY = INFO.POOL_BG_CY - INFO.POOL_BG_H * 0.5
-    local contentX = bgX + INFO.POOL_PAD
-    local contentY = bgY + INFO.POOL_PAD
-    local contentW = INFO.POOL_BG_W - INFO.POOL_PAD * 2
-    local contentH = INFO.POOL_BG_H - INFO.POOL_PAD * 2
-    local lineH = 46
-    local titleH = 50
-
-    local lines = buildInfoPoolLines(poolId)
-    local totalH = titleH + #lines * lineH
-
-    local maxScroll = math.max(0, totalH - contentH)
-    popupState.infoScrollY = math.max(0, math.min(maxScroll, popupState.infoScrollY))
-
-    nvgSave(vg)
-    nvgScissor(vg, contentX, contentY, contentW, contentH)
-
-    local titleY = contentY - popupState.infoScrollY
-    if titleY + titleH > contentY and titleY < contentY + contentH then
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, INFO.POOL_TITLE_SIZE)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-        nvgFillColor(vg, nvgRGBA(INFO.RULE_TEXT_R, INFO.RULE_TEXT_G, INFO.RULE_TEXT_B, 255))
-        nvgText(vg, contentX, titleY, "可获得的奖励：", nil)
-    end
-
-    local itemsStartY = contentY + titleH - popupState.infoScrollY
-    for i, line in ipairs(lines) do
-        local ly = itemsStartY + (i - 1) * lineH
-        if ly + lineH > contentY and ly < contentY + contentH then
-            drawColorSegments(vg, contentX, ly, line.segments, INFO.POOL_FONT_SIZE,
-                INFO.POOL_STROKE_R, INFO.POOL_STROKE_G, INFO.POOL_STROKE_B, INFO.POOL_STROKE_W)
-        end
-    end
-
-    nvgResetScissor(vg)
-    nvgRestore(vg)
+local function drawInfoContent(vg, poolId)
+    -- 原规则框顶878与奖励框底1622合为一片可滚区；标题/弹窗/输入坐标不变。
+    local bgX = INFO.RULE_BG_CX - INFO.RULE_BG_W * 0.5
+    local bgY = INFO.RULE_BG_CY - INFO.RULE_BG_H * 0.5
+    local bgBottom = INFO.POOL_BG_CY + INFO.POOL_BG_H * 0.5
+    local bgH = bgBottom - bgY
+    drawRoundedRectCentered(vg, INFO.RULE_BG_CX, bgY + bgH * 0.5,
+        INFO.RULE_BG_W, bgH, INFO.RULE_BG_R, 0, 0, 0, 64)
+    popupState.infoScrollY = TavernInfo.draw(vg, poolId, {
+        x = bgX + INFO.RULE_PAD, y = bgY + INFO.RULE_PAD,
+        w = INFO.RULE_BG_W - INFO.RULE_PAD * 2,
+        h = bgH - INFO.RULE_PAD * 2,
+    }, popupState.infoScrollY)
 end
 
 -- ======================== 公开接口 ========================
 
 --- 初始化弹窗资源
 function M.init(vg)
-    -- 整图拉伸绘制（950x647），使用 POP 副本，调整原图不影响九宫格用法
+    AutoExchangeOption.init()
+    -- 确认框按实际内容留出标题栏、说明区及自动兑换区。
     img.confirmBg     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK_POP.png", 0)
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     img.confirmBtnBuy = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     img.diamondBig    = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
     img.ticketBig     = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_1.png", 0)
@@ -653,9 +481,14 @@ function M.openInfo()
     print("[TavernPopups] 打开招募说明弹窗")
 end
 
---- 检查招募券是否足够，不足时弹出确认框
+local function exchangeScope(isStellar)
+    return isStellar and "gacha_stellar" or "gacha_standard"
+end
+
+--- 检查招募券；已授权自动兑换时只返回明确支付方式，消费仍由原招募入口执行。
 ---@param count number 1 或 10
 ---@return boolean canProceed 是否可以直接执行招募
+---@return string? payType 自动补缺口使用 diamond，不走旧全额报价 fallback。
 function M.checkAndShowConfirm(count)
     local poolId = getSelectedPoolId and getSelectedPoolId() or "standard"
     local isStellar = poolId == UrGachaConfig.POOL_ID or poolId == "stellar"
@@ -671,6 +504,16 @@ function M.checkAndShowConfirm(count)
 
     local diamondPerTicket = costCfg.SINGLE_DIAMOND
     local diamondCost = shortfall * diamondPerTicket
+
+    if SettingsPanel.isAutoDiamondExchangeEnabled(exchangeScope(isStellar)) then
+        if GameState.getGems() < diamondCost then
+            M.showFloatText("黑晶不足", DESIGN_W * 0.5, DESIGN_H * 0.42)
+            print("[TavernPopups] 自动兑换余额不足 pool=" .. poolId .. " need=" .. diamondCost)
+            return false
+        end
+        print("[TavernPopups] 自动兑换 pool=" .. poolId .. " tickets=" .. shortfall .. " gems=" .. diamondCost)
+        return true, "diamond"
+    end
 
     openPopup("confirm")
     popupState.confirmCount       = count
@@ -705,7 +548,7 @@ end
 
 --- 清除卡池说明缓存（卡池配置变更后调用以重建显示）
 function M.clearPoolCache()
-    _infoPoolLines = {}
+    TavernInfo.clearCache()
 end
 
 --- 重置所有弹窗状态（酒馆关闭时调用）
@@ -765,9 +608,9 @@ function M.drawAll(vg)
             12,
             0, 0, 0, CF.CONTENT_A)
 
-        DarkIcon.drawQualityBg(vg, 5, CF.DIAMOND_CX, CF.DIAMOND_CY, CF.DIAMOND_W, CF.DIAMOND_H, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_5
+        DarkIcon.drawQualityBg(vg, 5, CF.DIAMOND_CX, CF.DIAMOND_CY, CF.DIAMOND_W, CF.DIAMOND_H, 1.0)  -- 原 UI_icon_ZBBJ_5
         drawImageCentered(vg, img.diamondBig, CF.DIAMOND_CX, CF.DIAMOND_CY, CF.DIAMOND_W, CF.DIAMOND_H, 1.0)
-        DarkIcon.drawQualityBg(vg, 5, CF.TICKET_CX, CF.TICKET_CY, CF.TICKET_W, CF.TICKET_H, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_5
+        DarkIcon.drawQualityBg(vg, 5, CF.TICKET_CX, CF.TICKET_CY, CF.TICKET_W, CF.TICKET_H, 1.0)  -- 原 UI_icon_ZBBJ_5
         local confirmTicketIcon = img.ticketBig
         if popupState.confirmIsStellar and img.ticketBigStellar >= 0 then
             confirmTicketIcon = img.ticketBigStellar
@@ -823,6 +666,9 @@ function M.drawAll(vg)
         nvgFillColor(vg, nvgRGBA(CF.BUY_TEXT_R, CF.BUY_TEXT_G, CF.BUY_TEXT_B, 255))
         nvgText(vg, CF.BUY_CX, CF.BUY_CY, "购买", nil)
         BF.finish(vg, _bfBuy)
+        AutoExchangeOption.draw(vg, exchangeScope(popupState.confirmIsStellar),
+            CF.AUTO_CX, CF.AUTO_CY, CF.AUTO_W,
+            (popupState.confirmIsStellar and UrGachaConfig.Cost or GachaConfig.Cost).SINGLE_DIAMOND)
 
         nvgRestore(vg)
     end
@@ -862,21 +708,7 @@ function M.drawAll(vg)
         local subTitle = isStellarPoolId(infoPoolId) and "星辰招募卡池" or "常规招募卡池"
         nvgText(vg, INFO.SUB_CX, INFO.SUB_CY, subTitle, nil)
 
-        drawRoundedRectCentered(vg,
-            INFO.RULE_BG_CX, INFO.RULE_BG_CY,
-            INFO.RULE_BG_W, INFO.RULE_BG_H,
-            INFO.RULE_BG_R,
-            0, 0, 0, INFO.RULE_BG_A)
-
-        drawInfoRuleText(vg, infoPoolId)
-
-        drawRoundedRectCentered(vg,
-            INFO.POOL_BG_CX, INFO.POOL_BG_CY,
-            INFO.POOL_BG_W, INFO.POOL_BG_H,
-            INFO.POOL_BG_R,
-            0, 0, 0, INFO.POOL_BG_A)
-
-        drawInfoPoolContent(vg, infoPoolId)
+        drawInfoContent(vg, infoPoolId)
 
         nvgRestore(vg)
     end
@@ -1015,8 +847,13 @@ function M.handleInput(dx, dy)
 
     -- 确认框
     if popupState.confirmVisible then
+        local scale = getPopupAnim()
+        local optionX = DESIGN_W * 0.5 + (dx - DESIGN_W * 0.5) / scale
+        local optionY = DESIGN_H * 0.5 + (dy - DESIGN_H * 0.5) / scale
+        if AutoExchangeOption.handleInput(optionX, optionY, exchangeScope(popupState.confirmIsStellar),
+            CF.AUTO_CX, CF.AUTO_CY, CF.AUTO_W) then return true end
         -- 购买按钮
-        if hitTest(dx, dy, CF.BUY_CX, CF.BUY_CY, CF.BUY_W, CF.BUY_H) then
+        if hitTest(optionX, optionY, CF.BUY_CX, CF.BUY_CY, CF.BUY_W, CF.BUY_H) then
             BF.trigger("tp_confirm")
             if GameState.getGems() < popupState.confirmDiamondCost then
                 M.showFloatText("资源不足", CF.BUY_CX, CF.BUY_CY)
@@ -1031,7 +868,7 @@ function M.handleInput(dx, dy)
             return true
         end
         -- 点击外部关闭
-        if not hitTest(dx, dy, CF.CX, CF.CY, CF.W, CF.H) then
+        if not hitTest(optionX, optionY, CF.CX, CF.CY, CF.W, CF.H) then
             closePopup("confirm")
             print("[TavernPopups] 关闭确认框")
         end

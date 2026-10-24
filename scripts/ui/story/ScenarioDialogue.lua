@@ -13,6 +13,8 @@ local Story = require("core.I18nStory")
 local Display = require("ui.story.StoryDisplay")
 local ScenarioConfig = require("config.ScenarioDialogueConfig")
 local HeroAssetUtil = require("config.HeroAssetUtil")
+local Motion = require("ui.story.StoryCinematicMotion")
+local presentation_ = Motion.new()
 
 local ScenarioDialogue = {}
 
@@ -22,7 +24,7 @@ local DH = GameConfig.Design.HEIGHT  -- 2400
 
 -- ======================== 模板布局参数 ========================
 
---- 旧竖屏底板已删除。对话只走横屏矢量条。
+--- 对话只走横屏矢量条。
 
 -- ======================== 打字机参数 ========================
 local TYPEWRITER_CPS     = 10    -- 字/秒
@@ -40,7 +42,9 @@ local EYE_DIALOGUE_DELAY = 2.0
 local BLIP_SFX_PATH = "audio/sfx/dialogue_blip.ogg"
 
 -- ======================== 内部状态 ========================
+---@type NVGContextWrapper?
 local vg_         = nil
+---@type Scene?
 local scene_      = nil   -- 场景引用，用于创建 SoundSource
 local active_     = false
 
@@ -55,7 +59,9 @@ end
 
 local steps_      = {}          -- { {characterId, name, text}, ... }
 local stepIndex_  = 0
+---@type function?
 local onFinishCb_ = nil
+---@type string?
 local title_      = nil         -- 横屏章节标题（可选）
 
 -- 当前步骤的打字机状态
@@ -89,6 +95,9 @@ local imgBG_      = -1   -- 剧情独立环境；small保留原对白和关闭�
 local backgroundIsCg_ = false
 local backgroundCache_ = {}
 local backgroundFailures_ = {}
+---@type string?
+local backgroundPath_ = nil
+local currentCg_ = -1
 
 --- 立绘缓存: [characterId] = nvgImage handle
 local portraitCache_ = {}
@@ -225,6 +234,19 @@ local function getPortraitImage(step)
     return handle
 end
 
+-- 只在生命周期边界预热当前步骤，不在 draw 循环加载。
+-- 显示身份由实际环境/CG决定，与台词或语言无关。
+local function syncPresentation()
+    local step = steps_[stepIndex_]
+    currentCg_ = getCgImage(step)
+    local path = currentCg_ >= 0 and (step.cg or step.cgPath or step.background) or backgroundPath_
+    Motion.present(presentation_, path, currentCg_ >= 0 and currentCg_ or imgBG_)
+    if step then
+        getAvatarImage(step)
+        if not backgroundIsCg_ and currentCg_ < 0 then getPortraitImage(step) end
+    end
+end
+
 -- ======================== 公开接口 ========================
 
 --- 初始化：加载共享 UI 图片（只需调用一次）
@@ -233,6 +255,7 @@ end
 function ScenarioDialogue.init(vg, sceneRef)
     if vg_ ~= vg then
         backgroundCache_, backgroundFailures_ = {}, {}
+        Motion.reset(presentation_)
     end
     vg_ = vg
     scene_ = sceneRef
@@ -266,10 +289,16 @@ function ScenarioDialogue.show(config)
     imgBG_ = getBackgroundImage(bgPath)
     if mode_ == "large" and imgBG_ < 0 and bgPath ~= defaultPath then
         imgBG_ = getBackgroundImage(defaultPath)
+        bgPath = defaultPath
         backgroundIsCg_ = false
     else
         backgroundIsCg_ = config.backgroundIsCg == true and imgBG_ >= 0
     end
+
+    backgroundPath_ = bgPath
+    Motion.reset(presentation_)
+    dismissing_, dismissT_ = false, 0
+    eyeHoldActive_, eyeHoldT_ = false, 0
 
     -- 初始化第一步
     stepIndex_      = 1
@@ -302,6 +331,7 @@ function ScenarioDialogue.show(config)
     end
 
     exitStep_ = nil
+    syncPresentation()
     print("[ScenarioDialogue] show: mode=" .. mode_ .. " steps=" .. #steps_
         .. " title=" .. tostring(title_))
 end
@@ -311,6 +341,7 @@ end
 function ScenarioDialogue.update(dt)
     if not active_ then return end
     syncDisplay()
+    Motion.update(presentation_, dt)
 
     -- 消失动画推进
     if dismissing_ then
@@ -318,6 +349,7 @@ function ScenarioDialogue.update(dt)
         if dismissT_ >= DISMISS_DUR then
             dismissing_ = false
             active_     = false
+            Motion.reset(presentation_) -- 回调可能同步链播，先清旧视觉
             print("[ScenarioDialogue] dismiss animation finished")
             if onFinishCb_ then
                 local callback = onFinishCb_
@@ -420,7 +452,6 @@ end
 ---@param h number
 local function drawLandscape(w, h)
     if not active_ or stepIndex_ < 1 or stepIndex_ > #steps_ then return end
-    syncDisplay()
     local step = steps_[stepIndex_]
 
     local dismissAlpha = 1.0
@@ -432,18 +463,21 @@ local function drawLandscape(w, h)
     end
 
     nvgSave(vg_)
-    nvgScissor(vg_, 0, 0, w, h)
+    nvgIntersectScissor(vg_, 0, 0, w, h)
     if dismissSlideY > 0 then
         nvgTranslate(vg_, 0, dismissSlideY)
     end
 
-    if mode_ == "large" or imgBG_ >= 0 then
+    local hasEnvironment = mode_ == "large" or imgBG_ >= 0 or currentCg_ >= 0
+    if hasEnvironment then
         nvgBeginPath(vg_)
         nvgRect(vg_, 0, 0, w, h)
         nvgFillColor(vg_, nvgRGBA(0, 0, 0, math.floor(255 * dismissAlpha)))
         nvgFill(vg_)
-        if imgBG_ >= 0 then
-            DrawUtil.drawImageCover(vg_, imgBG_, w * 0.5, h * 0.5, w, h, dismissAlpha)
+        Motion.draw(presentation_, vg_, w, h, dismissAlpha)
+        if presentation_.current and presentation_.current.image >= 0 then
+            Motion.atmosphere(vg_, presentation_.current.elapsed, w, h, dismissAlpha,
+                presentation_.current.theme)
         end
     else
         nvgBeginPath(vg_)
@@ -457,11 +491,8 @@ local function drawLandscape(w, h)
     local barX = w * 0.035
     local barW = w - barX * 2
     local barY = h - barH - h * 0.04
-    local cgImage = getCgImage(step)
-    local cgOnly = backgroundIsCg_ or cgImage >= 0
-    if cgImage >= 0 then
-        DrawUtil.drawImageCover(vg_, cgImage, w * 0.5, h * 0.5, w, h, dismissAlpha)
-    elseif not cgOnly then
+    local cgOnly = backgroundIsCg_ or currentCg_ >= 0
+    if not cgOnly then
         local portraitH = mode_ == "small" and h * 0.72 or h * 0.92
         local portraitW = portraitH * 0.72
         local portraitCx = w * 0.30
@@ -592,7 +623,6 @@ local function drawLandscape(w, h)
         end
     end
 
-    nvgResetScissor(vg_)
     nvgRestore(vg_)
 end
 
@@ -654,6 +684,7 @@ function ScenarioDialogue.advance()
         else
             -- 大情景：直接结束
             active_ = false
+            Motion.reset(presentation_)
             print("[ScenarioDialogue] finished all steps")
             if onFinishCb_ then
                 local callback = onFinishCb_
@@ -667,6 +698,7 @@ function ScenarioDialogue.advance()
         textElapsed_    = 0
         typingDone_     = false
         syncDisplay()
+        syncPresentation()
         prevCharsShown_ = 0
 
         -- 立绘动画按实际美术来源切换，不把镜像和本体误判为其他英雄。
@@ -700,6 +732,7 @@ function ScenarioDialogue.skip()
     dismissT_   = 0
     active_    = false
     stepIndex_ = 0
+    Motion.reset(presentation_)
     print("[ScenarioDialogue] skipped")
     if onFinishCb_ then
         local callback = onFinishCb_
@@ -718,6 +751,8 @@ end
 
 --- 重置状态（不释放图片缓存）
 function ScenarioDialogue.reset()
+    Motion.reset(presentation_)
+    backgroundPath_, currentCg_ = nil, -1
     active_         = false
     stepIndex_      = 0
     steps_          = {}
@@ -733,6 +768,7 @@ function ScenarioDialogue.reset()
     eyeOpenActive_     = false
     eyeOpenT_          = 0
     eyeOpenness_       = 0
+    eyeHoldActive_, eyeHoldT_ = false, 0
     dismissing_        = false
     dismissT_          = 0
     title_             = nil

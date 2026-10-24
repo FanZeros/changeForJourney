@@ -14,6 +14,27 @@ ArtifactSchema.TEAM_COUNT = 3
 ArtifactSchema.FIRST_SLOT_UNLOCK_LEVEL = 30
 ArtifactSchema.SECOND_SLOT_UNLOCK_LEVEL = 60
 
+-- 成功 Equip 的同步发布上下文：不写入模块/存档，不由请求参数或回执推断来源。
+-- CharacterPanel 先一次消费再评分；嵌套通知不会把旧 cause 借给普通刷新。
+---@type table<table, table>
+local equipNotifications = setmetatable({}, { __mode = "k" })
+
+function ArtifactSchema.withEquipNotification(data, publish)
+    local previous = equipNotifications[data]
+    equipNotifications[data] = { cause = "artifact_equip" }
+    local result = table.pack(pcall(publish))
+    equipNotifications[data] = previous
+    if not result[1] then error(result[2], 0) end
+    return table.unpack(result, 2, result.n)
+end
+
+function ArtifactSchema.takeEquipNotificationCause(data)
+    local notification = equipNotifications[data]
+    if not notification then return nil end
+    equipNotifications[data] = nil
+    return notification.cause
+end
+
 function ArtifactSchema.getUnlockedSubSlotCount(playerLevel)
     playerLevel = tonumber(playerLevel) or 1
     if playerLevel >= ArtifactSchema.SECOND_SLOT_UNLOCK_LEVEL then
@@ -118,7 +139,7 @@ function ArtifactSchema.getEquippedId(data, slot, subSlot, teamIdx)
     return readEquippedCell(numeric, textual, slot, subSlot)
 end
 
---- 写入装配引用，新位置优先去重；服务层必须先拒绝跨队占用。
+--- 写入装配引用，新位置优先去重；业务互换由服务层先校验最终两格再一起提交。
 function ArtifactSchema.setEquippedId(data, slot, subSlot, artifactId, teamIdx)
     if type(data) ~= "table" then return end
     slot = tonumber(slot)
@@ -214,6 +235,7 @@ local function normalizeDrawStats(stats)
     stats.ten = math.max(0, math.floor(tonumber(stats.ten) or 0))
     stats.byQuality = normalizeCountMap(stats.byQuality)
     stats.byArtifactId = normalizeCountMap(stats.byArtifactId)
+    stats.byChest = normalizeCountMap(stats.byChest)
     return stats
 end
 
@@ -298,6 +320,7 @@ function ArtifactSchema.normalizeModule(data)
     data.drawStats = normalizeDrawStats(data.drawStats)
 
     data.nextId = math.max(1, math.floor(tonumber(data.nextId) or 1))
+    -- 保留兼容字段用于读取旧存档；抽取不读取或推进这些计数。
     data.pityRare = math.max(0, math.floor(tonumber(data.pityRare) or 0))
     data.pityEpic = math.max(0, math.floor(tonumber(data.pityEpic) or 0))
     data.totalDraws = math.max(0, math.floor(tonumber(data.totalDraws) or 0))
@@ -310,6 +333,10 @@ function ArtifactSchema.normalizeModule(data)
         local id = tostring(artifact.id or "")
         if id ~= "" and not bagById[id] then
             bagById[id] = artifact
+        end
+        local numericId = tonumber(id)
+        if numericId and numericId >= data.nextId then
+            data.nextId = math.floor(numericId) + 1
         end
     end
 
@@ -456,7 +483,7 @@ ArtifactSchema.Fields = {
         onSave = function(data)
             return ArtifactSchema.dehydrateModule(data)
         end,
-        desc = "神器背包/装配/抽取保底",
+        desc = "神器背包/装配/独立随机抽取",
     },
 }
 

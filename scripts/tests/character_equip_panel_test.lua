@@ -78,6 +78,7 @@ function Start()
     local bonusRows = { { key = "equipBonus", name = "装备净增益", value = "+5.5", currentValue = 5.5,
         desc = "装备来源说明", delta = 2, deltaText = "+2.0" } }
     local bonuses = { rows = bonusRows, current = { stats = { str = 5.5 } }, preview = { stats = { str = 7.5 } } }
+    local language, requestedLanguage = "zh_CN", nil
     local buildCount, requestedSeq, requestedSlot, requestedBonuses = 0, nil, nil, false
     local latestResult = {}
     local summaries = {
@@ -91,6 +92,9 @@ function Start()
     local description = string.rep("完整套装效果不会截断，", 28)
     local heroes = { roster = { [1] = { level = 10 } } }
     local equipment = { inventory = { ["7"] = { enhanceLevel = 1 } }, equipped = {} }
+    -- 真实Preparation读取四个域；固定缺省域与revision，绝不回退到真实玩家存档。
+    local artifacts, talents = {}, { litNodes = {} }
+    local revisions = { heroes = 0, equipment = 0, artifacts = 0, talents = 0 }
     local actualAD = originalRequire("systems.AttributeDef")
     local AD = { META = {}, getDesc = actualAD.getDesc,
         formatAttrDisplayValue = function(key, value) return tostring(value) end }
@@ -107,12 +111,16 @@ function Start()
             nvgFillColor(vg, nvgRGBA(r or 255, g or 255, b or 255, 255))
             nvgText(vg, x, y, value)
         end },
-        ["ui.character.detail.CharacterDetailAttrs"] = { STAT_LAYOUT = {}, displayOrderIndex = function() return {} end },
+        ["ui.character.detail.CharacterDetailAttrs"] = { STAT_LAYOUT = {},
+            displayOrderIndex = function() return {} end,
+            filterDisplayRows = function(displayRows) return displayRows end },
         ["core.PlayerStore"] = { Get = function(key)
             if key == "heroes" then return heroes end
             if key == "equipment" then return equipment end
+            if key == "artifacts" then return artifacts end
+            if key == "talents" then return talents end
             return nil
-        end },
+        end, GetRevision = function(key) return revisions[key] or 0 end },
         ["runtime.ClientDispatcher"] = { get = function() return nil end },
         ["config.HeroConfig"] = {},
         ["systems.EquipmentSystem"] = {},
@@ -121,7 +129,9 @@ function Start()
         ["ui.character.detail.EquipmentPreview"] = {
             build = function(heroId, level, seq, slot, options)
                 buildCount = buildCount + 1
-                requestedSeq, requestedSlot = seq, slot
+                -- checkpoint仍可调用，但紧凑属性必须在本次Update原子完成，不再等待整库评分。
+                for _ = 1, 130 do options.checkpoint() end
+                requestedSeq, requestedSlot, requestedLanguage = seq, slot, language
                 requestedBonuses = options and options.includeEquipmentBonuses == true
                 latestResult = { current = current, preview = seq and preview or nil, rows = rows,
                     equipmentBonuses = requestedBonuses and bonuses or nil,
@@ -151,8 +161,13 @@ function Start()
     for _, name in ipairs({ "config.HeroAssetUtil", "config.ClassConfig", "config.ExpTable",
         "ui.character.equip.EquipmentBag", "config.EquipmentConfig", "ui.widget.HeroFrame",
         "ui.character.hero.AwakeningPanel", "systems.ButtonFeedback", "core.DarkIcon",
-        "systems.ExtraTalentSystem", "core.I18n" }) do mods[name] = {} end
-    mods["core.I18n"] = { get = function() return "zh_CN" end, lookup = function(s) return s end, format = string.format }
+        "systems.ExtraTalentSystem", "systems.EquipmentPower", "core.I18n" }) do mods[name] = {} end
+    mods["core.I18n"] = { get = function() return language end, lookup = function(s) return s end, format = string.format }
+    mods["systems.CombatPowerEstimate"] = { estimate = function() error("独立配装预览不应计算整库战力") end }
+    mods["config.AwakeningConfig"] = {}
+    mods["systems.EquipmentPower"] = {
+        buildContext = function() error("独立配装预览slots为空，不应启动第二个评分worker") end,
+    }
     mods["config.GameConfig"] = { Design = { WIDTH = 1080, HEIGHT = 2400 } }
     mods["ui.widget.KeywordText"] = { new = function() return {} end }
     local Draw = originalRequire("ui.character.detail.CharacterDetailDraw")
@@ -177,7 +192,27 @@ function Start()
         return call or error("绘图文本缺失：" .. value)
     end
     local function clearDraw() textCalls, paths, rects, scissorCalls, imageCalls = {}, {}, {}, {}, {} end
-    local function draw() clearDraw(); Panel.draw({}, 1, { equipSlot = requestedSlot }) end
+    -- Update与Render分开：只在prepare推进协程；pending和ready绘图都禁止偷偷补算。
+    local function prepare(heroId, detailState)
+        for frame = 1, 64 do
+            Panel.update(heroId, detailState)
+            if Panel.getPrepared(heroId, detailState).pending ~= true then return frame end
+        end
+        error("配装预览64轮Update后仍未ready：hero=" .. tostring(heroId))
+    end
+    local function renderOnly(heroId, detailState)
+        clearDraw()
+        local beforeBuild, beforeSort = buildCount, sortCount
+        Panel.draw({}, heroId, detailState)
+        check(buildCount == beforeBuild and sortCount == beforeSort,
+            "Render仅消费prepared数据，不构建预览或排序")
+    end
+    local function draw(heroId, detailState)
+        heroId = heroId or 1
+        detailState = detailState or { equipSlot = requestedSlot }
+        prepare(heroId, detailState)
+        renderOnly(heroId, detailState)
+    end
     local function near(a, b) return math.abs(a - b) < 0.000001 end
     local function sameColor(actual, r, g, b, a)
         return actual and actual[1] == r and actual[2] == g and actual[3] == b
@@ -632,22 +667,148 @@ function Start()
     for _, call in ipairs(textCalls) do
         if call.y > 1507 and call.x > 800 and tonumber(call.value) then
             legacyRightValues = legacyRightValues + 1
-            if call.fontSize >= 38 or call.x + call.width * 0.5 + 3 > 1080
+            if call.fontSize > 38 or call.x + call.width * 0.5 + 3 > 1080
                 or call.x - call.width * 0.5 < 550 then legacyInside = false end
         end
     end
-    check(legacyRightValues == 1 and legacyInside, "属性页右下长小数按38号缩放后含描边仍在1080画布内")
-    local legacyLongTop = requiredText(tostring(12345678901234567890))
+    check(legacyRightValues == 1 and legacyInside, "属性页右下数值最多一位小数且含描边仍在1080画布内")
+    local legacyLongTop = requiredText(Shared.formatNumber(12345678901234567890))
     check(legacyLongTop.fontSize < 38 and legacyLongTop.x + legacyLongTop.width * 0.5 + 3 <= 1080,
         "属性页右上超长数值保持完整文本并按实际标签可用宽缩放")
     clearDraw(); Stats.drawRadar({}, { str = 38.745624, agi = 8 }, nil)
-    check(rendered("38") and not rendered("38.745624"), "雷达只显示整数避免raw六围长小数越出画布")
+    check(rendered("38.7") and not rendered("38.745624"), "配装雷达最多保留一位小数")
+    clearDraw(); Stats.drawLegacy({}, { str = 38.745624, agi = 8 })
+    check(rendered("38.7") and not rendered("38.745624"), "属性页和配装页六围显示使用同一精度")
     -- legacy基图允许0.08视觉下限；纯差集比较允许0，低值UI不锁死两者半径相等。
     clearDraw(); Stats.drawRadar({}, { str = 0.04, agi = 1 }, { str = 0.05, agi = 1 })
-    local tinyDelta = rendered("+0.01")
-    check(tinyDelta and not rendered("+0.0") and rendered("0").fontSize == 34
+    local tinyDelta = rendered("+0")
+    check(tinyDelta and not rendered("+0.01") and rendered("0").fontSize == 34
         and tinyDelta.fontSize == 32 and tinyDelta.y == layout.cy - layout.labelR - 58,
-        "低值使用raw差值+0.01且保留原整数当前值字号/坐标，不预言visualfloor几何")
+        "低值六围与差值按一位精度显示，雷达几何仍使用原始数值")
+
+    -- 纯视觉六围过渡：原数字/差集oracle不变，动画只插值归一化轮廓。
+    do
+        local axes = { "str", "agi", "vit", "spi", "luk", "int" }
+        local function sameVisual(a, b)
+            if not near(a.maxValue, b.maxValue) or not near(a.floor, b.floor)
+                or (a.preview == nil) ~= (b.preview == nil) then return false end
+            for _, key in ipairs(axes) do
+                if not near(a.current[key], b.current[key]) then return false end
+                if a.preview and not near(a.preview[key], b.preview[key]) then return false end
+            end
+            return true
+        end
+        local transition = Stats.createRadarTransition()
+        local baseline = transition:sample(current.stats, preview.stats, false, "hero1", 100)
+        local scale = 20 / 0.82
+        check(rawget(baseline, "stats") == nil and rawget(baseline, "attrs") == nil
+            and baseline.current ~= current.stats
+            and baseline.preview ~= preview.stats and near(baseline.maxValue, scale) and baseline.floor == 0.08,
+            "transition首绘静默且只返回纯视觉六轴/尺度，不冒充attrs/stats快照")
+        for _, key in ipairs(axes) do
+            check(near(baseline.current[key], math.max(0.08, current.stats[key] / scale))
+                and near(baseline.preview[key], math.max(0.08, preview.stats[key] / scale)),
+                "首绘六轴立即为真实终点归一化半径：" .. key)
+        end
+        local empty = {}
+        local start = transition:sample(empty, nil, true, "hero1", 100)
+        check(sameVisual(start, baseline), "角色切空装备起点完全沿用当前视觉形状而不是跳中心")
+        local halfway = transition:sample(empty, nil, true, "hero1", 100.16)
+        check(near(halfway.maxValue, scale + (8 - scale) * 0.875)
+            and near(halfway.floor, 0.08 * 0.125), "0.32秒中点easeOutCubic=.875且尺度/下限同步插值")
+        for _, key in ipairs(axes) do
+            check(near(halfway.current[key], baseline.current[key] * 0.125)
+                and near(halfway.preview[key], baseline.preview[key] * 0.125),
+                "中点六轴current/preview连续收束：" .. key)
+        end
+        for i = 1, 30 do
+            check(sameVisual(halfway, transition:sample(empty, nil, true, "hero1", 100.16)),
+                "同墙钟重复sample不加速/重开过渡：" .. i)
+        end
+        local finish = transition:sample(empty, nil, true, "hero1", 100.32)
+        check(finish.preview == nil and finish.floor == 0 and finish.maxValue == 8,
+            "0.32秒终点精确且不残留已关闭的预览轮廓")
+        for _, key in ipairs(axes) do check(finish.current[key] == 0, "空装终点六轴中心：" .. key) end
+        clearDraw(); Stats.drawRadar({}, empty, nil, true, finish)
+        local centered = radarPaths()
+        for _, point in ipairs(centered[1]) do
+            check(near(point[1], layout.cx) and near(point[2], layout.cy), "纯视觉空装drawRadar顶点中心")
+        end
+        clearDraw(); Stats.drawLegacy({}, current.stats, finish)
+        local collapsedLegacy = radarPaths()
+        check(requiredText("10") and not rendered("0.5"), "legacy视觉收束时数字仍为真实10，不显示临时值")
+        for _, point in ipairs(collapsedLegacy[1]) do
+            check(near(point[1], Stats.LEGACY.HEX_CX) and near(point[2], Stats.LEGACY.HEX_CY),
+                "legacy可选纯视觉可落中心，不被旧8%下限再次钳制")
+        end
+
+        transition:reset()
+        local initial = transition:sample(current.stats, preview.stats, false, "hero1", 110)
+        transition:sample(empty, nil, true, "hero1", 110)
+        local interrupted = transition:sample(empty, nil, true, "hero1", 110.08)
+        local redirected = transition:sample(current.stats, preview.stats, false, "hero2", 110.08)
+        check(sameVisual(interrupted, redirected), "快速切hero/模式从中途视觉接续，不跳旧源或新终点")
+        local quickMid = transition:sample(current.stats, preview.stats, false, "hero2", 110.24)
+        for _, key in ipairs(axes) do
+            check(near(quickMid.current[key], interrupted.current[key]
+                + (initial.current[key] - interrupted.current[key]) * 0.875)
+                and near(quickMid.preview[key], interrupted.preview[key]
+                + (initial.preview[key] - interrupted.preview[key]) * 0.875),
+                "快切新中点从中途轮廓easeOutCubic：" .. key)
+        end
+        local quickEnd = transition:sample(current.stats, preview.stats, false, "hero2", 110.40)
+        check(sameVisual(quickEnd, initial), "快切完成精确回到新hero真实六轴")
+        local otherHost = Stats.createRadarTransition()
+        local otherShape = otherHost:sample(empty, nil, true, "hero2", 110.40)
+        check(otherShape.current.str == 0 and sameVisual(transition:sample(current.stats, preview.stats,
+            false, "hero2", 110.40), initial), "两个宿主私有闭包互不串形状/动画时钟")
+        quickEnd.current.str = -999
+        quickEnd.preview.agi = -999
+        check(sameVisual(transition:sample(current.stats, preview.stats, false, "hero2", 110.40), initial),
+            "返回视觉表可被调用方修改而不污染闭包")
+        transition:reset()
+        local reopened = transition:sample(empty, nil, true, "hero3", 1)
+        check(sameVisual(reopened, otherShape), "reset清旧身份/时钟/形状，低墙钟重新首绘静默")
+
+        local sourceStats, sourcePreview = { str = 10, agi = 8, vit = 6, spi = 4, luk = 3, int = 2 },
+            { str = 20, agi = 5, vit = 6, spi = 4, luk = 3, int = 2 }
+        local sourceCopy, previewCopy = {}, {}
+        for key, value in pairs(sourceStats) do sourceCopy[key] = value end
+        for key, value in pairs(sourcePreview) do previewCopy[key] = value end
+        transition:sample(sourceStats, sourcePreview, false, "hero4", 2)
+        transition:sample(bonuses.current.stats, bonuses.preview.stats, true, "hero4", 2.1)
+        local displayVisual = transition:sample(bonuses.current.stats, bonuses.preview.stats, true, "hero4", 2.26)
+        clearDraw(); Stats.drawRadar({}, bonuses.current.stats, bonuses.preview.stats, true, displayVisual)
+        local animatedPolygons, animatedRegions, animatedEdges = radarPaths()
+        local visualOracle = RadarDiff.compare(displayVisual.current, displayVisual.preview,
+            layout.cx, layout.cy, layout.r, 1)
+        check(sameVertices(animatedPolygons[1], visualOracle.oldVertices)
+            and matchesComparison(animatedRegions, animatedEdges, visualOracle),
+            "动画差集仍由真实RadarDiff共用oracle比较纯视觉六轴，不复制公式")
+        check(requiredText("+5.5") and requiredText("+2") and not rendered("+10") and not rendered("-3"),
+            "动画中装备主数字和差值立即为最终+5.5/+2，不借旧英雄临时数值")
+        clearDraw(); Stats.drawLegacy({}, sourceStats, displayVisual)
+        check(requiredText("10") and requiredText("8") and not rendered("+5.5"),
+            "同一视觉形状传legacy也只显示自己的真实六围数字")
+        local unchanged = true
+        for key, value in pairs(sourceStats) do if sourceCopy[key] ~= value then unchanged = false end end
+        for key, value in pairs(sourceCopy) do if sourceStats[key] ~= value then unchanged = false end end
+        for key, value in pairs(sourcePreview) do if previewCopy[key] ~= value then unchanged = false end end
+        for key, value in pairs(previewCopy) do if sourcePreview[key] ~= value then unchanged = false end end
+        check(unchanged and bonuses.current.stats.str == 5.5 and bonuses.preview.stats.str == 7.5,
+            "sample与两种draw均不改源stats/预览六围或添加动画字段")
+        transition:sample(bonuses.current.stats, bonuses.preview.stats, true, "hero4", 2.42)
+        local updated = { str = 6.5, agi = 2 }
+        local stable = transition:sample(updated, nil, true, "hero4", 2.5)
+        check(near(stable.current.str, updated.str / Stats.radarScale(updated)) and stable.preview == nil,
+            "稳定style下新stats表/数值立即刷新，不每帧重新开动画")
+        clearDraw(); Stats.drawRadar({}, updated, nil, true, stable)
+        local refreshedPolygons = radarPaths()
+        local refreshedOracle = RadarDiff.compare(updated, nil, layout.cx, layout.cy, layout.r,
+            Stats.radarScale(updated))
+        check(sameVertices(refreshedPolygons[1], refreshedOracle.oldVertices),
+            "同style更新终点沿用真实同尺度oracle")
+    end
 
     local union = Stats.unionSets(summaries, previewSummaries)
     check(#union == 3, "不同套装取并集而非固定数量截断")
@@ -706,6 +867,31 @@ function Start()
     }, 0)
     check(rendered("7.6%") and rendered("0.83s"), "百分比和攻击秒数保留API原显示格式")
 
+    do
+        Panel.reset(1, nil)
+        local beforeBuild, beforeSort = buildCount, sortCount
+        renderOnly(1, {})
+        check(buildCount == beforeBuild and rendered("属性准备中…") and not rendered("属性1"),
+            "冷Render只显示准备中，不在首次绘图同步构建")
+        Panel.update(1, {})
+        check(buildCount == beforeBuild + 1 and Panel.getPrepared(1, {}).pending ~= true
+            and sortCount == beforeSort + 1, "首轮Update提交完整紧凑属性，不被整库评分延迟")
+        for _ = 1, 3 do renderOnly(1, {}) end
+        check(Panel.getPrepared(1, {}).pending ~= true and buildCount == beforeBuild + 1,
+            "反复Render只读取已提交属性，不补算")
+        for _ = 1, 16 do
+            heroes.roster[1].exp = (heroes.roster[1].exp or 0) + 1
+            revisions.heroes = revisions.heroes + 1
+            Panel.markDirty()
+            Panel.update(1, {})
+            if Panel.getPrepared(1, {}).pending ~= true then break end
+        end
+        check(Panel.getPrepared(1, {}).pending ~= true and buildCount == beforeBuild + 1
+            and sortCount == beforeSort + 1,
+            "连续exp通知与markDirty不重启分帧任务，合理Update轮数内只提交一次")
+        renderOnly(1, {})
+        check(rendered("属性1") and not rendered("属性准备中…"), "ready后Render消费完整排序结果")
+    end
     Panel.reset(1, nil); draw()
     check(requestedSeq == nil and requestedSlot == nil, "无候选只请求current且nil槽不回退主手")
     check(rendered("当前已穿戴属性 · 选中或悬停装备以试穿") == nil,
@@ -728,8 +914,8 @@ function Start()
     check(#textCalls == 0, "离开属性区不遗留hover说明")
     time.elapsedTime = 20
     local previousBuilds = buildCount
-    draw(); check(buildCount == previousBuilds, "候选key相同0.2秒内命中缓存")
-    Panel.markDirty(); draw(); check(buildCount == previousBuilds + 1, "markDirty立即使缓存失效")
+    draw(); check(buildCount == previousBuilds, "候选和战斗语义相同命中prepared缓存")
+    Panel.markDirty(); draw(); check(buildCount == previousBuilds, "markDirty只是采样hint，无真实数据变化不重建")
     selection = { seq = 7, slot = "weapon", heroId = 1, owner = "backpack", pinned = true }
     requestedSlot = "offhand"; draw()
     check(requestedSeq == 7 and requestedSlot == "offhand", "显式副手保留weapon候选")
@@ -737,6 +923,20 @@ function Start()
     selection.owner = "smith"; draw(); check(requestedSeq == nil, "排除smith选中来源")
     selection.owner = "bag"; requestedSlot = nil; draw(); check(requestedSeq == 7 and requestedSlot == nil, "bag来源与自然槽nil支持")
     selection.owner = "character"; draw(); check(requestedSeq == 7, "character来源候选支持")
+    do
+        local beforeBuild = buildCount
+        language = "en_US"
+        check(Panel.getPrepared(1, {}).pending == true, "语言变化立即拒绝旧语言prepared结果")
+        renderOnly(1, {})
+        check(rendered("属性准备中…") and not rendered("属性1") and buildCount == beforeBuild,
+            "语言切换Render不沿用旧列表或同步重建")
+        draw()
+        check(requestedLanguage == "en_US" and buildCount == beforeBuild + 1 and rendered("属性1"),
+            "下一批Update完成新语言预览，无须等待旧缓存时间")
+        language = "zh_CN"; draw()
+        check(requestedLanguage == "zh_CN" and buildCount == beforeBuild + 2,
+            "切回语言及时重建一次")
+    end
     local stableBuilds = buildCount
     time.elapsedTime = 21; draw()
     check(buildCount == stableBuilds, "超0.2秒数据签名不变不重复深拷贝/预览")
@@ -810,12 +1010,14 @@ function Start()
         if not near(point[1], radar.cx) or not near(point[2], radar.cy) then allCentered = false end
     end
     check(allCentered, "空装六围落中心而不是8%视觉下限虚构增益")
-    clearDraw(); Stats.drawRadar({}, { str = 2.8597845, agi = 0.012345 }, nil, true)
-    check(rendered("+2.9") and not rendered("+2.859785"), "装备六围正常值保留一位小数，不以长raw小数撑出栏外")
-    local narrow = requiredText("+0.012345")
+    -- 显示精度不影响雷达的原始数值与差集几何。
+    clearDraw(); Stats.drawRadar({}, { str = 2.8597846, agi = 0.012345 }, nil, true)
+    check(rendered("+2.9") and not rendered("+2.859785") and Shared.formatNumber(2.8597846) == "2.9",
+        "装备六围最多一位小数")
+    local narrow = requiredText("+0")
     check(narrow.fontSize > 0 and narrow.fontSize <= 34
         and narrow.x + narrow.width * 0.5 + 3 <= 1080,
-        "微小六围增益不显示成+0或+0.0，仅在宽度需要时缩字号保留完整文本")
+        "微小六围增益使用同一精度，不因数值小而恢复多位小数")
     clearDraw(); Stats.drawRadar({}, { agi = 1234567890123 }, nil, true)
     local longEquipRadar = requiredText("+1234567890123")
     check(longEquipRadar.fontSize < 34, "超长装备六围数值按栏内可用宽度缩放")
@@ -836,7 +1038,9 @@ function Start()
     end
     bonuses.rows = equipmentRows
     equipment.inventory["8"] = { enhanceLevel = 1 }
+    equipment.equipped[1] = { weapon = 7 }
     heroes.roster[2] = { level = 1 }
+    heroes.teams = { { slots = { 1, 2 } }, { slots = {} }, { slots = {} } }
     for _, mode in ipairs({ "character", "equipment" }) do
         if Panel.getAttributeMode() ~= mode then Panel.toggleAttributeMode() end
         selection = { seq = 7, slot = "weapon", heroId = 1, owner = "bag", pinned = true }
@@ -889,11 +1093,13 @@ function Start()
         check(#textCalls == 0, mode .. "换候选清旧排序行tooltip")
         Panel.handleSideScroll(-1000, ax, ay); draw()
         local bottomY = requiredText(cachedRows[12].name).y
-        for _, reason in ipairs({ "markDirty", "selfLevel", "otherLevel", "enhance" }) do
+        for _, reason in ipairs({ "equippedEnhance", "selfLevel", "otherLevel", "candidateEnhance" }) do
             Panel.handleInput(ax, attrs.y + 1, 1, {})
             beforeBuild, beforeSort = buildCount, sortCount
-            if reason == "markDirty" then
+            if reason == "equippedEnhance" then
                 first.value = "同序数值更新" .. mode
+                -- 输出mock变化也必须伴随真实计算输入变化，不能靠markDirty强制重建。
+                equipment.inventory["7"].enhanceLevel = equipment.inventory["7"].enhanceLevel + 1
                 Panel.markDirty()
             elseif reason == "selfLevel" then
                 heroes.roster[1].level = heroes.roster[1].level + 1
@@ -916,8 +1122,11 @@ function Start()
         Panel.handleDragBegin(ax, ay); Panel.handleDragMove(ax, ay - 5); Panel.handleDragEnd(ax, ay - 5)
         draw()
         check(near(requiredText(first.name).y, firstRowY - 10), mode .. "拖动结束首帧应用5px惯性")
+        local inertiaBuilds, inertiaSorts = buildCount, sortCount
         Panel.markDirty(); draw()
-        check(near(requiredText(first.name).y, firstRowY - 14.5), mode .. "markDirty同序刷新保留滚动及0.9衰减惯性")
+        check(near(requiredText(first.name).y, firstRowY - 14.5)
+            and buildCount == inertiaBuilds and sortCount == inertiaSorts,
+            mode .. "无数据变化markDirty不重建，仍保留滚动及0.9衰减惯性")
         heroes.roster[2].level = heroes.roster[2].level + 1
         time.elapsedTime = time.elapsedTime + 0.31; draw()
         check(near(requiredText(first.name).y, firstRowY - 18.55), mode .. "另一英雄level签名刷新仍保留惯性而非归顶")
@@ -942,6 +1151,85 @@ function Start()
     end
     rows, bonuses.rows = savedRows, savedBonusRows
     Panel.clear()
+
+    -- 真实配装宿主私有transition接线：切样式/英雄动画，缓存刷新不重开时钟。
+    do
+        local savedCurrent, savedPreview, savedSelection = current, preview, selection
+        if Panel.getAttributeMode() ~= "character" then Panel.toggleAttributeMode() end
+        selection = { seq = 7, slot = "weapon", heroId = 1, owner = "bag", pinned = true }
+        requestedSlot = nil
+        time.elapsedTime = 40
+        Panel.reset(1, nil)
+        draw()
+        local expectedTransition = Stats.createRadarTransition()
+        local expected = expectedTransition:sample(current.stats, preview.stats, false, "1|character", 40)
+        local function matchesVisual(visual)
+            local polygons, regions, edges = radarPaths()
+            local oracle = RadarDiff.compare(visual.current, visual.preview,
+                radar.cx, radar.cy, radar.r, 1)
+            return sameVertices(polygons[1], oracle.oldVertices) and matchesComparison(regions, edges, oracle)
+        end
+        check(matchesVisual(expected), "Panel首绘立即为当前英雄真实归一化六轴")
+        Panel.toggleAttributeMode(); draw()
+        expected = expectedTransition:sample(bonuses.current.stats, bonuses.preview.stats,
+            true, "1|equipment", 40)
+        check(matchesVisual(expected) and rendered("+5.5") and rendered("+2"),
+            "Panel切装备起点不跳轮廓，数字/delta已是最终装备贡献")
+        time.elapsedTime = 40.16; draw()
+        expected = expectedTransition:sample(bonuses.current.stats, bonuses.preview.stats,
+            true, "1|equipment", 40.16)
+        check(matchesVisual(expected), "Panel0.16秒中点匹配私有闭包easeOutCubic")
+        local oldBonusStats = bonuses.current.stats
+        bonuses.current.stats = { str = 5.5 }
+        for i = 1, 10 do
+            equipment.inventory["7"].enhanceLevel = equipment.inventory["7"].enhanceLevel + 1
+            local beforeBuild = buildCount
+            Panel.markDirty(); draw()
+            check(buildCount == beforeBuild + 1 and matchesVisual(expected),
+                "Panel相同墙钟真实装备更新/新结果表不重开动画：" .. i)
+        end
+        bonuses.current.stats = oldBonusStats
+        Panel.toggleAttributeMode(); draw()
+        expected = expectedTransition:sample(current.stats, preview.stats, false, "1|character", 40.16)
+        check(matchesVisual(expected), "Panel快切回角色属性从中点形状连续接上")
+        time.elapsedTime = 40.48; draw()
+        expected = expectedTransition:sample(current.stats, preview.stats, false, "1|character", 40.48)
+        check(matchesVisual(expected) and requiredText("10") and requiredText("+10") and requiredText("-3"),
+            "Panel快切终点/真实数字/原差集oracle保持")
+
+        current = { left = {}, right = {}, stats = { str = 2, agi = 28, vit = 9, spi = 13, luk = 4, int = 1 } }
+        preview = { left = {}, right = {}, stats = { str = 5, agi = 26, vit = 9, spi = 13, luk = 4, int = 1 } }
+        Panel.reset(2, nil) -- 与真实上层syncEquipmentWarehouse活动切英雄调用一致。
+        draw(2, { equipSlot = nil })
+        expected = expectedTransition:sample(current.stats, preview.stats, false, "2|character", 40.48)
+        check(matchesVisual(expected) and requiredText("28") and requiredText("-2"),
+            "活动Panel.reset换英雄保留当前视觉起点，新英雄真实数字已更新")
+        time.elapsedTime = 40.64
+        draw(2, { equipSlot = nil })
+        expected = expectedTransition:sample(current.stats, preview.stats, false, "2|character", 40.64)
+        check(matchesVisual(expected), "Panel英雄变更中点六轴完整过渡")
+        time.elapsedTime = 40.80
+        draw(2, { equipSlot = nil })
+        expected = expectedTransition:sample(current.stats, preview.stats, false, "2|character", 40.80)
+        check(matchesVisual(expected), "Panel英雄变更0.32秒终点精准归一化")
+        Panel.reset(nil, nil)
+        expectedTransition:reset()
+        current, preview = savedCurrent, savedPreview
+        time.elapsedTime = 1
+        Panel.reset(1, nil); draw()
+        expected = expectedTransition:sample(current.stats, preview.stats, false, "1|character", 1)
+        check(matchesVisual(expected), "Panel关闭reset(nil)后低墙钟重开静默，无旧英雄形状/时钟残留")
+        Panel.toggleAttributeMode(); draw()
+        Panel.clear()
+        expectedTransition:reset()
+        draw()
+        expected = expectedTransition:sample(bonuses.current.stats, bonuses.preview.stats, true, "1|equipment", 1)
+        check(matchesVisual(expected), "Panel显式clear中断动画并使下一首绘静默")
+        Panel.toggleAttributeMode()
+        selection = savedSelection
+        Panel.clear()
+        time.elapsedTime = 41
+    end
 
     -- 真实属性说明通过公开点击/悬停链取出；原布局探针仍绘制完整浮层。
     if Panel.getAttributeMode() ~= "character" then Panel.toggleAttributeMode() end
@@ -977,6 +1265,15 @@ function Start()
         "生命值截图正文使用生命上限与死亡规则")
     check(actualAD.getDesc(actualAD.ARMOR_BONUS) == "百分比增加护甲。",
         "护甲加成补齐已有关键词说明")
+    check(actualAD.getDesc(actualAD.ABNORMAL_RES) ==
+        "减少受到的异常状态持续时间，实际减免最多80%，即持续时间最短为原来的20%。面板显示封顶前总值；括号内(+数值)为超出上限的未生效溢出量，不是额外加成。战术标记不受影响。",
+        "异常抗性说明区分原始值、未生效溢出和实际上限")
+    check(actualAD.getCap(actualAD.ABNORMAL_RES) == 80
+        and actualAD.formatAttrDisplayValue(actualAD.ABNORMAL_RES, 120.6) == "120.6% (+40.6%)",
+        "补充说明不改异常抗性上限或面板数值格式")
+    local formula = originalRequire("systems.CombatFormula")
+    check(math.abs(formula.calcAbnormalDuration(5, 120.6) - 1) < 0.000001,
+        "120.6%原始抗性仍仅减免80%，5秒异常变1秒")
     for _, supplied in ipairs({ "装备来源说明", "动态暴击与神器说明", "" }) do
         local row = { key = actualAD.MAX_HP, name = "生命值", value = "100", desc = supplied }
         local expected = supplied ~= "" and supplied or actualAD.getDesc(actualAD.MAX_HP)

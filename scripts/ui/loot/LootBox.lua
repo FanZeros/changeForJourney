@@ -7,9 +7,91 @@ local DrawUtil = require("core.DrawUtil")
 local RewardPopup = require("ui.hud.popup.RewardPopup")
 local LootBox = {}
 
--- 自动分解瞬态通知去重：seq 变化且为新鲜通知（10s 内）才弹获得提示
-local lastNoticeSeq = -1
-local NOTICE_FRESH_SEC = 10
+-- 权威通知保留累计值；展示层只累计基线之后的增量，不改存档或资源到账。
+local NOTICE_BATCH_COUNT = 100
+local MAX_SAFE_COUNT = 9007199254740991
+local noticeInitialized = false
+local noticeBaseline = { seq = 0, count = 0, essence = 0 }
+local pendingNotice = { count = 0, essence = 0 }
+local showingNotice = false
+
+---@class AutoDecomposeNoticeSnapshot
+---@field seq number
+---@field count number
+---@field essence number
+
+---@param value any
+---@return number?
+local function noticeInteger(value)
+    local n = tonumber(value)
+    if not n or n ~= n or n < 0 or n > MAX_SAFE_COUNT or n ~= math.floor(n) then return nil end
+    return math.floor(n)
+end
+
+---@param notice any
+---@return AutoDecomposeNoticeSnapshot?
+local function snapshotNotice(notice)
+    if type(notice) ~= "table" then return nil end
+    local seq = noticeInteger(notice.seq)
+    local count = noticeInteger(notice.count)
+    local essence = noticeInteger(notice.essence)
+    if not seq or not count or not essence then return nil end
+    return { seq = seq, count = count, essence = essence }
+end
+
+---@param snapshot AutoDecomposeNoticeSnapshot?
+local function resetNotice(snapshot)
+    noticeInitialized = snapshot ~= nil
+    noticeBaseline = snapshot or { seq = 0, count = 0, essence = 0 }
+    pendingNotice.count, pendingNotice.essence = 0, 0
+end
+
+local function showPendingNotice()
+    if showingNotice or pendingNotice.count < NOTICE_BATCH_COUNT or pendingNotice.essence <= 0
+        or RewardPopup.isOpen() then return end
+    local count, essence = pendingNotice.count, pendingNotice.essence
+    -- 先消费展示缓冲，防止 show 回调重入时重复提示；这里不发放任何资源。
+    pendingNotice.count, pendingNotice.essence = 0, 0
+    showingNotice = true
+    RewardPopup.show("自动分解 " .. count .. " 件",
+        { { type = "essence", amount = essence } })
+    showingNotice = false
+    print("[LootBox] 自动分解合并提示: 新增件数=" .. count .. " 精粹=+" .. essence)
+end
+
+---@param notice any
+---@param reset boolean?
+local function collectNotice(notice, reset)
+    if notice == nil then
+        resetNotice({ seq = 0, count = 0, essence = 0 })
+        return
+    end
+    local current = snapshotNotice(notice)
+    if not current then
+        resetNotice(nil)
+        return
+    end
+    if reset or not noticeInitialized then
+        resetNotice(current)
+        print("[LootBox] 自动分解展示基线: seq=" .. current.seq .. " count=" .. current.count)
+        return
+    end
+    if current.seq == noticeBaseline.seq and current.count == noticeBaseline.count
+        and current.essence == noticeBaseline.essence then return end
+    if current.seq <= noticeBaseline.seq or current.count < noticeBaseline.count
+        or current.essence < noticeBaseline.essence then
+        -- 清档/回档/计数重建：重新建基线，不把另一生命周期的数据混进旧缓冲。
+        resetNotice(current)
+        print("[LootBox] 自动分解计数重建，重置展示基线")
+        return
+    end
+    local count = current.count - noticeBaseline.count
+    local essence = current.essence - noticeBaseline.essence
+    noticeBaseline = current
+    if count <= 0 or essence <= 0 then return end
+    pendingNotice.count = pendingNotice.count + count
+    pendingNotice.essence = pendingNotice.essence + essence
+end
 
 local seedCount = 0
 local seedSummary = {}
@@ -19,10 +101,9 @@ local rateGoldText = nil
 ---@type string|nil
 local rateExpText = nil
 
+--- 挂机速率数值统一走公共 NumberUtil（k/M/B/T），不再单独用千分位。
 local function formatNumber(n)
-    local s = tostring(math.floor(n + 0.5))
-    local out = s:reverse():gsub("(%d%d%d)", "%1,")
-    return tostring(out):reverse():gsub("^,", "")
+    return require("core.NumberUtil").format(n)
 end
 
 function LootBox.setRates(goldPerMin, expPerMin)
@@ -57,20 +138,14 @@ local function syncSummary()
     if LootBoxPage.isOpen() then LootBoxPage.refresh(seedSummary) end
 end
 
-function LootBox.updateSeedData(lootboxData)
+--- 恢复/初始化只建立累计基线；实时更新仅收集新增分解数量与精粹。
+---@param lootboxData table?
+---@param options? { resetNotice: boolean? }
+function LootBox.updateSeedData(lootboxData, options)
     lootboxData_ = (lootboxData and lootboxData.seeds) and lootboxData or { seeds = {} }
-    local notice = lootboxData_.autoDecomposeNotice
-    if notice and notice.seq and notice.seq ~= lastNoticeSeq then
-        local fresh = not notice.time or (os.time() - notice.time) < NOTICE_FRESH_SEC
-        lastNoticeSeq = notice.seq
-        if fresh and (notice.count or 0) > 0 and (notice.essence or 0) > 0 then
-            RewardPopup.show("自动分解 " .. notice.count .. " 件",
-                { { type = "essence", amount = notice.essence } })
-            print("[LootBox] 自动分解获得提示: 件数=" .. notice.count
-                .. " 精粹=+" .. notice.essence)
-        end
-    end
+    collectNotice(lootboxData_.autoDecomposeNotice, options and options.resetNotice)
     syncSummary()
+    -- 由 update 在结算回调结束后统一提示，避免同帧的首通/离线奖励覆盖本批通知。
 end
 
 -- 兼容战斗掉落提示调用；件数与页面始终以 updateSeedData 的权威数据为准。
@@ -90,7 +165,10 @@ end
 function LootBox.refreshPage() syncSummary() end
 function LootBox.isPageOpen() return LootBoxPage.isOpen() end
 function LootBox.drawPage(vg) LootBoxPage.draw(vg) end
-function LootBox.update(dt) LootBoxPage.update(dt) end
+function LootBox.update(dt)
+    LootBoxPage.update(dt)
+    showPendingNotice()
+end
 function LootBox.handleInput(dx, dy) return LootBoxPage.handleInput(dx, dy) end
 function LootBox.handleRightClick(dx, dy) return LootBoxPage.handleRightClick(dx, dy) end
 function LootBox.handleDragBegin(dx, dy) return LootBoxPage.handleDragBegin(dx, dy) end

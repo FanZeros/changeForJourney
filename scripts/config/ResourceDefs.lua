@@ -29,7 +29,7 @@ ResourceDefs.DEFS = {
     adventure_ticket  = { iconPath = "image/货币道具/UI_icon_ZMQ_1.png",  quality = 5, name = "远征招募券" },
     stellar_ticket    = { iconPath = "image/货币道具/UI_icon_ZMQ_2.png",  quality = 6, name = "星辰招募券" },
     sweep_ticket      = { iconPath = "image/货币道具/UI_icon_SDQ.png",    quality = 4, name = "扫荡券" },
-    tavern_coin       = { iconPath = "image/UI_icon_JGB.png",    quality = 3, name = "酒馆币" },
+    tavern_coin       = { iconPath = "image/货币道具/UI_icon_JGB_X.png", quality = 3, name = "酒馆币" },
     arcane_dust       = { iconPath = "image/货币道具/UI_icon_ASFC.png",   quality = 3, name = "奥术粉尘" },  -- 序号17
     speed_card        = { iconPath = "image/货币道具/UI_icon_JSK.png",    quality = 5, name = "加速卡" },    -- 序号18
     golden_key        = { iconPath = "image/货币道具/UI_icon_HJYS.png", quality = 6, name = "黄金钥匙" },
@@ -37,9 +37,25 @@ ResourceDefs.DEFS = {
     sacred_stone      = { iconPath = "image/货币道具/UI_icon_SSS.png",    quality = 6, name = "神圣石" },
 }
 
+--- 物品用途由奖励、离线与背包详情共同读取。
+ResourceDefs.DEFS.gold.desc = "用于角色转职、装备升阶和市场购买。"
+ResourceDefs.DEFS.diamond.desc = "用于酒馆招募、神器宝箱和市场购买。"
+ResourceDefs.DEFS.golden_key.desc = "用于开启神器宝箱：普通宝箱每次1把，高级宝箱每次5把。每把钥匙的购买价格为150黑晶。"
+ResourceDefs.DEFS.sweep_ticket.desc = "用于扫荡已通关关卡：每券结算一场重复战斗奖励，不含首通奖励；主线与资源副本均按所选关卡计算。"
+ResourceDefs.DEFS.adventure_ticket.desc = "用于酒馆普通远征招募，每次招募消耗1张。"
+ResourceDefs.DEFS.stellar_ticket.desc = "用于酒馆星辰招募，每次招募消耗1张。"
+ResourceDefs.DEFS.tavern_coin.desc = "用于酒馆商店兑换英雄碎片等物品。"
+ResourceDefs.DEFS.arcane_dust.desc = "奥术材料，可在背包查看持有数量，当前没有消耗入口。"
+ResourceDefs.DEFS.speed_card.desc = "获得时立即生效，持续24小时，使在线挂机收益提高20%；不提高离线收益。"
+ResourceDefs.DEFS.degrade_protect.desc = "兼容存档中的退级保护材料，当前没有使用入口。"
+for _, key in ipairs({ "weapon_scroll", "offhand_scroll", "armor_scroll", "accessory_scroll", "helmet_scroll", "shoes_scroll" }) do
+    ResourceDefs.DEFS[key].desc = "用于对应部位装备升阶，提升装备主属性、固定副属性及普通随机词条。"
+end
+ResourceDefs.DEFS.random_scroll.desc = "可获得随机部位的装备升阶卷轴。"
+
 --- 洗练材料使用说明；按当前锻炉规则展示，不根据遗留资源 key 推断用途。
 ResourceDefs.DEFS.essence.desc = "用于普通洗练，重新随机未锁定的普通词缀；锁定词缀和魔化词条保持不变。\n消耗随装备品质、等级和锁定数量变化，双手装备费用翻倍；腐化装备的精粹费用再翻倍。\n洗练后需点击「替换」应用结果。"
-ResourceDefs.DEFS.enhance_star.desc = "保留词缀种类，重新随机未锁定词缀的品级与数值；若新数值更低，保留原词缀。锁定词缀和魔化词条不变。\n每次消耗1颗，不消耗精粹。\n洗练后需点击「替换」应用结果。"
+ResourceDefs.DEFS.enhance_star.desc = "保留词缀种类，忽略锁定，重新随机全部普通词缀的品级与数值；若新数值更低，保留原词缀。魔化词条不变。\n每次消耗1颗，不消耗精粹。\n结果自动替换，无需点击「替换」。"
 ResourceDefs.DEFS.break_protect.desc = "提升装备品质1级，保留原词缀；增加词缀槽位时补充新词缀。\n达到当前进度的品质上限后，改为随机提升一条普通词缀的品级1级，最高S品。\n消耗颗数等于装备当前品质编号，不消耗精粹，结果直接生效。"
 ResourceDefs.DEFS.corrupt_stone.desc = "随机将一条可转换的普通词缀变为对应魔化词条并强化数值，同时增加1层腐化，最多3层。\n每层腐化使装备基础属性乘以90%；腐化后普通洗练的精粹费用翻倍。\n每次消耗1颗，不消耗精粹，结果直接生效。"
 ResourceDefs.DEFS.sacred_stone.desc = "用于已腐化装备，洗除最上层腐化，恢复该层损失的基础属性，并还原该层转换的词缀。旧版腐化记录可能一次清除全部层数。\n每次消耗1颗，不消耗精粹，不增加洗练次数，结果直接生效。"
@@ -53,7 +69,7 @@ ResourceDefs.ID_TO_TYPE = {
     ["2"]  = "diamond",
     ["3"]  = "essence",
     ["4"]  = "enhance_star",
-    -- 5 已隐藏
+    -- 5：隐藏
     ["6"]  = "break_protect",
     ["7"]  = "adventure_ticket",
     ["8"]  = "sweep_ticket",
@@ -87,7 +103,7 @@ ResourceDefs.REWARD_NAMES["102"] = "黄桃龙碎片"
 ResourceDefs.REWARD_NAMES["103"] = "叮咚鸡碎片"
 ResourceDefs.REWARD_NAMES["104"] = "接化发掌门碎片"
 ResourceDefs.REWARD_NAMES["105"] = "叠甲怪碎片"
-ResourceDefs.REWARD_NAMES["106"] = "阿姨压碎片"
+ResourceDefs.REWARD_NAMES["106"] = "压一压碎片"
 ResourceDefs.REWARD_NAMES["107"] = "信光机兵碎片"
 ResourceDefs.REWARD_NAMES["108"] = "愤怒的小雀碎片"
 ResourceDefs.REWARD_NAMES["109"] = "卡皮巴拉碎片"
@@ -318,6 +334,18 @@ function ResourceDefs.getRewardDisplayName(reward)
     local def = ResourceDefs.DEFS[reward.type]
     if def and def.name then return def.name end
     return tostring(reward.type)
+end
+
+--- 奖励详情用途；仅描述物品规则，不参与领取或奖励计算。
+---@param reward table|nil
+---@return string
+function ResourceDefs.getRewardDescription(reward)
+    if not reward then return "" end
+    if reward.type == "equip" then return "用于角色穿戴；可在铁匠铺升阶、洗练或分解。" end
+    if reward.type == "shard" then return "用于招募对应英雄和英雄觉醒。" end
+    local typeKey = ResourceDefs.ID_TO_TYPE[tostring(reward.type)] or reward.type
+    local def = ResourceDefs.DEFS[typeKey]
+    return def and def.desc or ""
 end
 
 return ResourceDefs

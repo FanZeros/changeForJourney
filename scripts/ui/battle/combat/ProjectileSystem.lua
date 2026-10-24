@@ -46,6 +46,7 @@ local CONFIGS = {
     [3] = {
         type = "fly", imgKey = "EF_ATK_3",
         imgW = 200, imgH = 200, duration = 0.50,
+        chainProjectile = true,
         trail = { 255, 255, 255 },
         arc = "shallow",
     },
@@ -57,11 +58,12 @@ local CONFIGS = {
         type = "melee", imgKey = "EF_ATK_5",
         imgW = 200, imgH = 200, duration = 0.45,
     },
-    -- 6: 闪电链 — 从角色拉伸到怪物（hitRatio=0.3 表示视觉到达时即触发伤害）
+    -- 6: 闪电链 — 细闪电连接目标，音符弹头保持原比例（hitRatio=0.3 时到达）
     [6] = {
         type = "lightning", imgKey = "EF_ATK_6",
         imgW = 200, imgH = 200, duration = 0.35,
         hitRatio = 0.3,
+        chainProjectile = true,
     },
     -- 7: 能量子弹 — 无额外处理（此处 melee 英雄的 ID 序列在下方补完）
     [7] = {
@@ -103,6 +105,7 @@ local CONFIGS = {
     [13] = {
         type = "fly", imgKey = "EF_ATK_13",
         imgW = 200, imgH = 200, duration = 0.50,
+        chainProjectile = true,
         trail = { 180, 80, 255 },
         arc = "shallow",
     },
@@ -286,6 +289,8 @@ end
 -- [三行并行] 条带渲染缩放：投射物/星门等视觉尺寸 × renderScale
 -- （卡牌在条带内缩至 CARD_SCALE，投射物同步缩放避免比例失调；飞行时长为 duration 制不受影响）
 local renderScale = 1.0
+-- 只缩小视觉尺寸，保留布局倍率、轨迹、展开位置与命中时序。
+local PROJECTILE_VISUAL_SCALE = 0.5
 function ProjectileSystem.setRenderScale(s) renderScale = s or 1.0 end
 
 --- [分帧预热] 收集全部投射物图 key（去重，供战斗卡牌分帧泵预热）
@@ -308,18 +313,34 @@ function ProjectileSystem.prewarmOne(key)
     getImage(key)
 end
 
+local function preloadConfigs(configs)
+    for _, cfg in pairs(configs) do
+        getImage(cfg.imgKey)
+        GameSFX.preload(cfg.sfxKey or cfg.imgKey)
+    end
+end
+
+--- 开局先备好短音效和投射物小图；卡面仍只准备真实首波，不加载全图鉴。
+function ProjectileSystem.preloadBattleEffects()
+    preloadConfigs(CONFIGS)
+    preloadConfigs(MONSTER_CONFIGS)
+    preloadConfigs(SKILL_CONFIGS)
+    preloadConfigs(TALENT_PROJ_CONFIGS)
+end
+
 --- 绘制投射物图片（居中，支持旋转/缩放/透明度）
 --- 素材默认朝右(+X方向)，angle=0时朝右，angle=-π/2时朝上
-local function drawProjectileImage(vg, imgHandle, cx, cy, w, h, angle, alpha)
+local function drawProjectileImage(vg, imgHandle, cx, cy, w, h, angle, alpha, visualScale)
     if not imgHandle or imgHandle <= 0 then return end
-    w = w * renderScale
-    h = h * renderScale
+    local sizeScale = visualScale or PROJECTILE_VISUAL_SCALE
+    w = w * renderScale * sizeScale
+    h = h * renderScale * sizeScale
     nvgSave(vg)
     nvgTranslate(vg, cx, cy)
     if angle ~= 0 then
         nvgRotate(vg, angle)
     end
-    local paint = nvgImagePattern(vg, -w * 0.5, -h * 0.5, w, h, 0, imgHandle, alpha)
+    local paint = nvgImagePattern(vg, -w * 0.5, -h * 0.5, w, h, 0, imgHandle, alpha) --[[@as NVGpaint]]
     nvgBeginPath(vg)
     nvgRect(vg, -w * 0.5, -h * 0.5, w, h)
     nvgFillPaint(vg, paint)
@@ -367,12 +388,12 @@ local function drawTrail(vg, cx, cy, prevCX, prevCY, color, t, size)
     local nx = dx / dist
     local ny = dy / dist
 
-    local tailLen = math.min(dist, size * 1.5)
+    local tailLen = math.min(dist, size * 1.5) * PROJECTILE_VISUAL_SCALE
     local tailEndX = cx + nx * tailLen
     local tailEndY = cy + ny * tailLen
 
-    local headW = size * 0.35
-    local tailW = size * 0.05
+    local headW = size * 0.35 * PROJECTILE_VISUAL_SCALE
+    local tailW = size * 0.05 * PROJECTILE_VISUAL_SCALE
     local perpX = -ny
     local perpY = nx
 
@@ -393,7 +414,7 @@ local function drawTrail(vg, cx, cy, prevCX, prevCY, color, t, size)
     nvgFill(vg)
 
     -- 头部发光
-    local glowR = size * 0.4
+    local glowR = size * 0.4 * PROJECTILE_VISUAL_SCALE
     local glowPaint = nvgRadialGradient(vg,
         cx, cy, glowR * 0.1, glowR,
         nvgRGBA(color[1], color[2], color[3], math.floor(alpha * 0.6)),
@@ -580,8 +601,11 @@ local function assignFlightLane(proj)
     local side = lane * math.min(34, dist * 0.045)
     local nx = -dy / dist * side
     local ny = dx / dist * side
-    proj.endX = proj.endX + nx * 0.15
-    proj.endY = proj.endY + ny * 0.15
+    -- 弹射连接必须首尾相接，分道只改变中途弧线，不能挪走敌人上的落点。
+    if not proj.chainProjectile then
+        proj.endX = proj.endX + nx * 0.15
+        proj.endY = proj.endY + ny * 0.15
+    end
     proj.laneX = nx
     proj.laneY = ny
     local base = proj.cfg.duration or 0.5
@@ -663,7 +687,7 @@ local function updateAndDrawBezier(proj, vg, t)
     drawProjectileImage(vg, imgHandle, cx, cy, cfg.imgW, cfg.imgH, flyAngle, alpha)
 end
 
---- 闪电链（拉伸到目标）
+--- 闪电链：连接线独立延伸，弹头不随攻击距离拉伸。
 local function updateAndDrawLightning(proj, vg, t)
     local cfg = proj.cfg
 
@@ -672,7 +696,7 @@ local function updateAndDrawLightning(proj, vg, t)
     local dist = math.sqrt(dx * dx + dy * dy)
     local angle = math.atan(dy, dx)
 
-    -- 延伸进度：快速伸出
+    -- 延伸进度：快速伸出，保留原0.3到达和0.7后淡出时序。
     local extendT
     if t < 0.3 then
         extendT = t / 0.3
@@ -686,28 +710,36 @@ local function updateAndDrawLightning(proj, vg, t)
         alpha = 1.0 - (t - 0.7) / 0.3
     end
 
-    -- 当前延伸长度
     local curDist = dist * extendT
-    -- 闪电链中点
-    local midX = proj.startX + math.cos(angle) * curDist * 0.5
-    local midY = proj.startY + math.sin(angle) * curDist * 0.5
+    local headX = proj.startX + dx * extendT
+    local headY = proj.startY + dy * extendT
+    local scale = renderScale * PROJECTILE_VISUAL_SCALE
+    if curDist > 0 and alpha > 0 then
+        nvgSave(vg)
+        nvgTranslate(vg, proj.startX, proj.startY)
+        nvgRotate(vg, angle)
+        -- 最多24段，确定性折线不消费战斗RNG；两端始终落在真实连接点。
+        local segments = math.max(2, math.min(24, math.ceil(curDist / math.max(24 * scale, 1))))
+        local amplitude = math.min(14 * scale, curDist * 0.08)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, 0, 0)
+        for i = 1, segments - 1 do
+            local offset = (i % 2 == 0 and -1 or 1) * amplitude
+                * (0.7 + 0.3 * math.sin(t * 24 + i * 1.7))
+            nvgLineTo(vg, curDist * i / segments, offset)
+        end
+        nvgLineTo(vg, curDist, 0)
+        nvgStrokeWidth(vg, 7 * scale)
+        nvgStrokeColor(vg, nvgRGBA(64, 43, 20, math.floor(140 * alpha)))
+        nvgStroke(vg)
+        nvgStrokeWidth(vg, 2.5 * scale)
+        nvgStrokeColor(vg, nvgRGBA(255, 225, 95, math.floor(220 * alpha)))
+        nvgStroke(vg)
+        nvgRestore(vg)
+    end
 
-    -- 绘制拉伸的闪电图片
-    local stretchW = math.max(cfg.imgW, curDist)
     local imgHandle = getImage(cfg.imgKey)
-    if not imgHandle or imgHandle <= 0 then return end
-
-    nvgSave(vg)
-    nvgTranslate(vg, midX, midY)
-    nvgRotate(vg, angle)
-    -- 用 nvgImagePattern 重复/拉伸图片
-    local paint = nvgImagePattern(vg, -stretchW * 0.5, -cfg.imgH * 0.5,
-        stretchW, cfg.imgH, 0, imgHandle, alpha)
-    nvgBeginPath(vg)
-    nvgRect(vg, -stretchW * 0.5, -cfg.imgH * 0.5, stretchW, cfg.imgH)
-    nvgFillPaint(vg, paint)
-    nvgFill(vg)
-    nvgRestore(vg)
+    drawProjectileImage(vg, imgHandle, headX, headY, cfg.imgW, cfg.imgH, angle, alpha)
 end
 
 --- 斩击特效（原地播放，夜华斩）
@@ -736,7 +768,7 @@ local function updateAndDrawSlash(proj, vg, t)
 
     -- 红色光晕
     if cfg.slashTint and alpha > 0.01 then
-        local glowR = cfg.imgH * 0.5 * scale
+        local glowR = cfg.imgH * 0.5 * scale * PROJECTILE_VISUAL_SCALE
         local ga = math.floor(100 * alpha)
         local glowPaint = nvgRadialGradient(vg,
             cx, cy, glowR * 0.2, glowR,
@@ -1081,6 +1113,12 @@ function ProjectileSystem.spawnByKey(effectKey, startX, startY, endX, endY, onAr
         onArrive = onArrive,
         arrived  = false,
         target   = opts and opts.target or nil,
+        -- 提前判败只读取明确语义，不能凭贴图或轨迹把在途治疗猜成伤害（反之亦然）。
+        offenseKind = opts and opts.offenseKind or nil,
+        offenseSource = opts and opts.offenseSource or nil,
+        offenseSide = opts and opts.offenseSide or nil,
+        offenseOrigin = opts and opts.offenseOrigin or nil,
+        chainProjectile = (opts and opts.chainProjectile) or cfg.chainProjectile or false,
     }
 
     -- 贝塞尔曲线：随机弯曲方向
@@ -1139,6 +1177,12 @@ function ProjectileSystem.spawn(heroId, startX, startY, endX, endY, onArrive, op
         onArrive = onArrive,
         arrived  = false,
         target   = opts and opts.target or nil,
+        -- 提前判败只读取明确语义，不能凭贴图或轨迹把在途治疗猜成伤害（反之亦然）。
+        offenseKind = opts and opts.offenseKind or nil,
+        offenseSource = opts and opts.offenseSource or nil,
+        offenseSide = opts and opts.offenseSide or nil,
+        offenseOrigin = opts and opts.offenseOrigin or nil,
+        chainProjectile = (opts and opts.chainProjectile) or cfg.chainProjectile or false,
     }
 
     -- 贝塞尔曲线：随机弯曲方向
@@ -1204,6 +1248,12 @@ function ProjectileSystem.spawnSkill(heroId, startX, startY, endX, endY, onArriv
         onArrive = onArrive,
         arrived  = false,
         target   = opts and opts.target or nil,
+        -- 提前判败只读取明确语义，不能凭贴图或轨迹把在途治疗猜成伤害（反之亦然）。
+        offenseKind = opts and opts.offenseKind or nil,
+        offenseSource = opts and opts.offenseSource or nil,
+        offenseSide = opts and opts.offenseSide or nil,
+        offenseOrigin = opts and opts.offenseOrigin or nil,
+        chainProjectile = (opts and opts.chainProjectile) or cfg.chainProjectile or false,
     }
 
     -- 贝塞尔曲线：设置弯曲方向
@@ -1256,6 +1306,13 @@ function ProjectileSystem.spawnTalent(talentProjKey, startX, startY, endX, endY,
         endY     = endY,
         onArrive = onArrive,
         arrived  = false,
+        target   = opts and opts.target or nil,
+        -- 提前判败只读取明确语义，不能凭贴图或轨迹把在途治疗猜成伤害（反之亦然）。
+        offenseKind = opts and opts.offenseKind or nil,
+        offenseSource = opts and opts.offenseSource or nil,
+        offenseSide = opts and opts.offenseSide or nil,
+        offenseOrigin = opts and opts.offenseOrigin or nil,
+        chainProjectile = (opts and opts.chainProjectile) or cfg.chainProjectile or false,
     }
 
     if cfg.type == "bezier" then
@@ -1279,9 +1336,14 @@ end
 --- 每帧更新
 function ProjectileSystem.update(dt)
     starGateDrawTime = starGateDrawTime + dt
+    local updateState = PS_BCS
+    local projectiles = updateState.projectiles
+    -- 本帧命中新生的下一跳留到下一帧，不能重复消费当前整帧 dt。
+    local remaining = #projectiles
     local i = 1
-    while i <= #PS_BCS.projectiles do
-        local proj = PS_BCS.projectiles[i]
+    while remaining > 0 and i <= #projectiles do
+        remaining = remaining - 1
+        local proj = projectiles[i]
         proj.timer = proj.timer + dt
 
         -- [单发穿透] 按飞行进度依次触发沿线命中事件
@@ -1296,13 +1358,14 @@ function ProjectileSystem.update(dt)
                 playAtkSfxOnHit(proj)
                 if ev.onHit then
                     safeInvokeProjectileCallback("pierce-hit", ev.onHit)
+                    if PS_BCS ~= updateState or updateState.projectiles ~= projectiles then return end
                 end
             end
         end
 
         -- 目标死亡检测：如果投射物跟踪的目标已死亡，立即触发到达并快速消失
         -- 防止治疗投射物飞向已死亡目标的视觉问题
-        if not proj.arrived and not proj.hitResolved and proj.target and proj.target.hp and proj.target.hp <= 0 then
+        if not proj.chainProjectile and not proj.arrived and not proj.hitResolved and proj.target and proj.target.hp and proj.target.hp <= 0 then
             proj.hitResolved = true
             proj.arrived = true
             playAtkSfxOnHit(proj)
@@ -1347,8 +1410,9 @@ function ProjectileSystem.update(dt)
             end
         end
         -- 加一点淡出余量（duration 后多保留 0.15s 用于淡出动画）
+        if PS_BCS ~= updateState or updateState.projectiles ~= projectiles then return end
         if proj.timer >= duration + 0.15 then
-            table.remove(PS_BCS.projectiles, i)
+            table.remove(projectiles, i)
         else
             i = i + 1
         end
@@ -1365,12 +1429,13 @@ end
 ---@param getCardCY function|nil
 function ProjectileSystem.drawStarGates(vg, units, cardCY, getCardCX, isAlly, getCardCY)
     if not vg or not units or not getCardCX then return end
-    local imgHandle = getImage("EF_skill_20")
+    local imgHandle = -1
     for i, unit in ipairs(units) do
         local shouldDraw = unit
             and unit.heroId == 20
             and ((unit.hp and unit.hp > 0) or (unit._starGatePersistsAfterDeath and unit._starGateSummoned))
         if shouldDraw then
+            if imgHandle < 0 then imgHandle = getImage("EF_skill_20") end
             local count = unit._starGateCount or 1
             if count <= 0 then
                 count = require("config.AwakeningConfig").hasNode(unit.awakeningNodes, 6) and 2 or 1
@@ -1383,7 +1448,8 @@ function ProjectileSystem.drawStarGates(vg, units, cardCY, getCardCX, isAlly, ge
                 local size = 118 * pulse * renderScale
                 local alpha = 0.88 + 0.12 * math.sin(starGateDrawTime * 2.6 + gateIndex * 0.7)
                 drawStarGateAura(vg, cx, cy, size, alpha)
-                drawProjectileImage(vg, imgHandle, cx, cy, size, size, starGateDrawTime * 1.8 * (isAlly and 1 or -1), alpha)
+                -- 常驻召唤门不是投掷物，保持原有尺寸和光晕。
+                drawProjectileImage(vg, imgHandle, cx, cy, size, size, starGateDrawTime * 1.8 * (isAlly and 1 or -1), alpha, 1)
             end
         end
     end

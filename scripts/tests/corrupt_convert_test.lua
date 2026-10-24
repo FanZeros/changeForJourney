@@ -201,11 +201,14 @@ function Start()
         { affixId = 5, quality = 3, value = 100, key = "str", name = "力量" },
         { affixId = 6, quality = 3, value = 100, key = "agi", name = "敏捷" },
     }
+    local oldValues = { e4.affixes[1].value, e4.affixes[2].value }
     local okE, errE, resE = BS.RefineEquip(UID, e4.seq, "enhanceStone")
     check(okE, "洗练石可用: " .. tostring(errE))
+    check(resE and resE.autoReplaced and e4.affixes == resE.refinePreview, "洗练石结果已经写入真实装备")
+    check(not BS.hasPendingRefine(UID, e4.seq) and not BS.RefineReplace(UID, e4.seq), "洗练石不产生待确认替换")
     local noDown = true
     for i, aff in ipairs(resE.refinePreview or {}) do
-        local oldV = e4.affixes[i] and e4.affixes[i].value or 0
+        local oldV = oldValues[i] or 0
         if (tonumber(aff.value) or 0) < oldV - 0.001 then noDown = false end
     end
     check(noDown, "洗练石结果逐条不低于原值（保底只升不降）")

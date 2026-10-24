@@ -48,6 +48,33 @@ local function runTests()
     end
     check(allOk, "所有词条 title/desc 非空")
 
+    -- 静态属性怨引值与动态战斗仇恨必须分开；只改已登记源说明，不全文改写。
+    local Locale = require("core.I18nKeywords")
+    local I18n = require("core.I18n")
+    local AD = require("systems.AttributeDef")
+    check(KW.get("怨引值").desc == "影响被敌方随机攻击的权重，怨引值越高越容易被集火。",
+        "原静态词条说明使用怨引值")
+    check(Locale.get("怨引值", "zh_TW").desc == "影響被敵方隨機攻擊的權重，怨引值越高越容易被集火。",
+        "繁体静态词条说明使用怨引值")
+    check(AD.getDesc("threat") == "影响被敌方随机攻击的权重，怨引值越高越容易被集火",
+        "AD静态说明使用怨引值")
+    check(KW.get("仇恨").desc == "敌人依据仇恨值选择攻击目标，造成伤害和治疗都会产生仇恨。\n各职业仇恨系数不同：封门人最高，换面人/裂隙使几乎不产生攻击仇恨。",
+        "动态仇恨原词条说明保留")
+    check(Locale.get("仇恨", "zh_TW").desc == "敵人依據仇恨值選擇攻擊目標，造成傷害和治療都會產生仇恨。\n各職業仇恨係數不同：封門人最高，換面人／裂隙使幾乎不產生攻擊仇恨。",
+        "繁体动态仇恨术语保留")
+    local oldLanguage = I18n.get()
+    for _, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+        I18n.set(lang)
+        local original = KeywordText.new()
+        local source = KW.get("怨引值").desc
+        check(original:_layout(nil, source, 10000, 20).displayText == Locale.get("怨引值", lang).desc,
+            "原静态词条全文说明准确本地化 " .. lang)
+        local untouched = "未登记旧说明：精神、魔法护甲、仇恨值。"
+        check(original:_layout(nil, untouched, 10000, 20).displayText == untouched,
+            "任意原句不全文gsub " .. lang)
+    end
+    I18n.set(oldLanguage)
+
     -- ── 2/3) 布局与热区（无引擎环境走等宽估算兜底）──
     local kt = KeywordText.new()
     local text = "普通攻击留下回响，1.2秒后造成伤害；回响客职业回响次数更多。"

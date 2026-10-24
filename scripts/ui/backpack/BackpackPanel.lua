@@ -10,7 +10,7 @@ local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local DrawUtil         = require("core.DrawUtil")
 local I18n             = require("core.I18n")
 local TownPageChrome   = require("ui.town.TownPageChrome")
-local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1] 矢量九宫格
+local DarkIcon         = require("core.DarkIcon")  -- 矢量九宫格
 local GameState        = require("core.GameState")
 local PlayerStore      = require("core.PlayerStore")
 local ImageCache       = require("ui.widget.ImageCache")
@@ -27,9 +27,11 @@ local CharacterPanel   = require("ui.character.panel.CharacterPanel")
 local Protocol         = require("shared.Protocol")
 local BF               = require("systems.ButtonFeedback")
 local BackpackDialogs  = require("ui.backpack.BackpackDialogs")
-local BackpackGrids    = require("ui.backpack.BackpackGrids")
+local BackpackGridHost = require("ui.backpack.BackpackGridHost")
 local BackpackEquipLink = require("ui.backpack.BackpackEquipLink")
+local BackpackFilters = require("ui.backpack.BackpackFilters")
 local HeroFrame        = require("ui.widget.HeroFrame")
+local Curation = require("ui.loot.InventoryCurationDialog")
 
 local Panel = {}
 
@@ -67,7 +69,7 @@ local LOWER_PANEL = {
 local GRID_TITLE = {
     X = 157, Y = 614,  -- 左对齐（与铁匠铺分解标题对齐）
     FONT_SIZE = 40,
-    R = 0x45, G = 0x45, B = 0x45,
+    R = 244, G = 237, B = 224,
 }
 
 -- 5b. 品质筛选按钮（装备 tab 分解模式：右上角一排 6 档可多选勾选，与遗匣页同一交互/样式）
@@ -90,7 +92,7 @@ local GRID = {
     -- 总宽 = 5*160 + 4*30 = 920, 左边距 = (1080-920)/2 = 80
     MARGIN_LEFT = 80,
     -- 第一行顶部 Y
-    FIRST_ROW_TOP = 740, -- 品质/套装条下留出独立部位提示行
+    FIRST_ROW_TOP = 1030, -- 品质/套装条与三行详细筛选保持独立空间
     -- 裁剪底部（上移为按钮留出空间）
     CLIP_BOTTOM = 2020,
 }
@@ -109,7 +111,7 @@ local CLIP_H   = GRID.CLIP_BOTTOM - CLIP_TOP
 local CAP_TEXT = {
     X = 540, Y = 2186,
     FONT_SIZE = 40,
-    R = 0x45, G = 0x45, B = 0x45,
+    R = 244, G = 237, B = 224,
 }
 local BAG_MAX = EquipmentSystem.MAX_INVENTORY
 
@@ -132,7 +134,7 @@ local function applyLayout(compact)
     end
     if compact then
         LOWER_PANEL.CY, LOWER_PANEL.H = 1300, 2100
-        GRID.FIRST_ROW_TOP, GRID.CLIP_BOTTOM = 470, 1980
+        GRID.FIRST_ROW_TOP, GRID.CLIP_BOTTOM = 760, 1980
         GRID_TITLE.Y, PZSX.CY = 330, 325
         SET_BTN.CY = 325
         CAP_TEXT.Y = 2230
@@ -184,31 +186,7 @@ local SCROLL_WHEEL_STEP = 60
 local easeInOutCubic = TownPageChrome.easeInOutCubic
 
 -- ======================== 资源道具定义 ========================
-
--- key → { iconPath, quality, name, source, desc, getter }
-local ITEM_DEFS = {
-    { key = "gold",          iconPath = "image/货币道具/UI_icon_JB_X.png",   quality = 2, name = "金币",       source = "击杀/通关/任务",         desc = "强化武器，购买资源",                                       getter = function() return GameState.getGold() end },
-    { key = "gems",          iconPath = "image/货币道具/UI_icon_SJ_X.png",     quality = 5, name = "黑晶",       source = "成就/首通/活动",         desc = "酒馆招募抽卡",                                             getter = function() return GameState.getGems() end },
-    { key = "essence",       iconPath = "image/货币道具/UI_icon_JC.png",     quality = 2, name = "精粹",       source = "分解装备获得",           desc = "用于洗练装备",                                             getter = function() return GameState.getEssence() end },
-    { key = "enhanceStone",  iconPath = "image/货币道具/UI_icon_QH_1.png",   quality = 3, name = "洗练石",     source = "市场购买/任务",          desc = "洗练时使用可以只洗练数值高低，不洗练属性",                  getter = function() return GameState.getEnhanceStone() end },
-    -- seq5 degradeStone 已隐藏，不在背包显示
-    { key = "destroyStone",  iconPath = "image/货币道具/UI_icon_QH_3.png",   quality = 5, name = "点金石",     source = "市场购买/任务",          desc = "洗练时使用可将装备提品，最高提到史诗品质",                  getter = function() return GameState.getDestroyStone() end },
-    { key = "weaponScroll",    iconPath = "image/货币道具/UI_icon_JZ_WQ.png",  quality = 3, name = "武器卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getWeaponScroll() end },
-    { key = "offhandScroll",   iconPath = "image/货币道具/UI_icon_JZ_FS.png",  quality = 3, name = "副手卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getOffhandScroll() end },
-    { key = "armorScroll",     iconPath = "image/货币道具/UI_icon_JZ_HJ.png",  quality = 3, name = "护甲卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getArmorScroll() end },
-    { key = "accessoryScroll", iconPath = "image/货币道具/UI_icon_JZ_SP.png",  quality = 3, name = "饰品卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getAccessoryScroll() end },
-    { key = "helmetScroll",    iconPath = "image/货币道具/UI_icon_JZ_TK.png",  quality = 3, name = "头盔卷轴",   source = "击杀/通关/任务",       desc = "强化头盔时进行使用",                                       getter = function() return GameState.getHelmetScroll() end },
-    { key = "shoesScroll",     iconPath = "image/货币道具/UI_icon_JZ_XZ.png",  quality = 3, name = "鞋子卷轴",   source = "击杀/通关/任务",       desc = "强化鞋子时进行使用",                                       getter = function() return GameState.getShoesScroll() end },
-    { key = "recruitTicket", iconPath = "image/货币道具/UI_icon_ZMQ_1.png",  quality = 5, name = "远征招募券", source = "市场/活动/福利",         desc = "酒馆常规招募抽卡",                                       getter = function() return GameState.getRecruitTicket() end },
-    { key = "stellarRecruitTicket", iconPath = "image/货币道具/UI_icon_ZMQ_2.png", quality = 6, name = "星辰招募券", source = "活动/福利", desc = "酒馆星辰招募抽卡", getter = function() return GameState.getStellarRecruitTicket() end },
-    { key = "goldenKey", iconPath = "image/货币道具/UI_icon_HJYS.png", quality = 6, name = "黄金钥匙", source = "首通奖励/市场购买", desc = "开启神器宝箱", getter = function() return GameState.getGoldenKey() end },
-    { key = "sweepTicket",   iconPath = "image/货币道具/UI_icon_SDQ.png",    quality = 4, name = "扫荡券",     source = "活动获得/看广告获得",    desc = "可以立即扫荡获得半小时的离线收益",                          getter = function() return GameState.getSweepTicket() end },
-    { key = "tavernCoin",    iconPath = "image/UI_icon_JGB.png",    quality = 3, name = "酒馆币",     source = "非UR满觉醒碎片分解",  desc = "在酒馆商店兑换自选",                                       getter = function() return GameState.getTavernCoin() end },
-    { key = "arcaneDust",    iconPath = "image/货币道具/UI_icon_ASFC.png", quality = 3, name = "奥术粉尘",   source = "上古遗迹首通/扫荡",     desc = "上古遗迹产出的神秘粉尘",                                   getter = function() return GameState.getArcaneDust() end },
-    { key = "corruptStone",  iconPath = "image/货币道具/UI_icon_FHS.png", quality = 3, name = "腐化石",     source = "关卡首通/活动/市场",      desc = "将一条普通词缀转为同类型魔化词条(数值×1.8)，并叠加一层诅咒(基础-10%/层，最多3层)",                 getter = function() return GameState.getCorruptStone() end },
-    { key = "sacredStone",   iconPath = "image/货币道具/UI_icon_SSS.png", quality = 6, name = "神圣石",     source = "关卡首通/活动/市场",      desc = "洗除装备一层腐化诅咒(基础属性恢复)，魔化词条保留；3层诅咒需3颗完全洗除", getter = function() return GameState.getSacredStone() end },
-    { key = "speedCard",     iconPath = "image/货币道具/UI_icon_JSK.png",  quality = 5, name = "加速卡",     source = "市场购买获得",          desc = "提升20%在线挂机收益，包括金币/经验/装备等；获得时即刻开始生效，持续24小时。", getter = function() return GameState.getSpeedCardDisplayCount() end, amountTextGetter = function() return GameState.formatSpeedCardRemain() end, detailAmountTextGetter = function() return "剩余:" .. GameState.formatSpeedCardRemain() end, descGetter = function() return "提升20%在线挂机收益，包括金币/经验/装备等；当前剩余时间：" .. GameState.formatSpeedCardRemain() end },
-}
+local ITEM_DEFS = require("ui.backpack.BackpackItems")
 
 -- ======================== 图片句柄 ========================
 
@@ -228,7 +206,13 @@ local imgCheckmark = -1  -- UI_icon_GOU.png（选中勾选）
 local decomposeState = {
     qualitySet = {},       -- [quality]=true 勾选的稀有度档；空集合=不按稀有度限制
     setFilter = {},        -- [setId]=true / ["none"]=true 勾选的套装；空集合=不按套装限制
+    typeFilter = nil,      -- 装备子类型；nil=全部
+    classFilter = nil,     -- 适用职业；nil=全部，不自动跟随当前角色改变筛选
+    sortKey = nil,         -- nil=默认；属性 key 按固定+随机生效值合计排序
+    sortAscending = false,
 }
+---@type table|nil
+local filterBar = nil
 
 --- 分解模式下某稀有度是否处于勾选范围（空集合=不限制，全部可选中）
 local function qualityChecked(quality)
@@ -403,61 +387,22 @@ local function getInventoryCount()
     return count
 end
 
---- 计算网格行数和滚动最大值
-local function calcScrollMax(totalItems)
-    local rows = math.ceil(totalItems / GRID.COLS)
-    local contentH = rows * GRID.CELL_SIZE + math.max(0, rows - 1) * GRID.GAP
-    local maxScroll = math.max(0, contentH - CLIP_H)
-    return maxScroll
-end
-
-local function clampScroll()
-    state.scrollY = math.max(0, math.min(state.scrollMax, state.scrollY))
-end
-
----@type table|nil
-local _grids = nil
-local function bindBackpackGrids()
-    _grids = BackpackGrids.bind({
-        GRID = GRID,
-        CELL_COL_CX = CELL_COL_CX,
-        CLIP_TOP = CLIP_TOP,
-        CLIP_H = CLIP_H,
-        DESIGN_W = DESIGN_W,
-        DarkIcon = DarkIcon,
-        DrawUtil = DrawUtil,
-        state = state,
-        decomposeState = decomposeState,
-        ITEM_DEFS = ITEM_DEFS,
-        getItemIcon = getItemIcon,
-        getImgCheckmark = function() return imgCheckmark end,
-        getImgLock = function() return imgLock end,
-        qualityChecked = qualityChecked,
-        setChecked = setChecked,
-        getEquipmentSlotFilter = function() return Panel.getEquipmentSlotFilter() end,
-        getImgHeroIcons = function() return imgHeroIcons end,
-        calcScrollMax = calcScrollMax,
-        clampScroll = clampScroll,
-    })
-end
----@return table
-local function ensureGrids()
-    if not _grids then bindBackpackGrids() end
-    ---@type table
-    local g = _grids
-    return g
-end
-
---- 获取背包装备列表（排序: 品质降→等级降）
----@return table
-local function getEquipList()
-    return ensureGrids().getEquipList()
-end
-
--- 网格绘制来自 BackpackGrids，命中/hover/拖拽来自 BackpackEquipLink。
-local function drawEquipGrid(vg) ensureGrids().drawEquipGrid(vg) end
-local function buildItemList() return ensureGrids().buildItemList() end
-local function drawItemGrid(vg) ensureGrids().drawItemGrid(vg) end
+-- 网格绑定与预算生命周期独立于绘制；命中/hover/拖拽与 Render 只读同一提交。
+local gridHost = BackpackGridHost.bind({
+    GRID = GRID, CELL_COL_CX = CELL_COL_CX, DESIGN_W = DESIGN_W,
+    DarkIcon = DarkIcon, DrawUtil = DrawUtil, state = state, decomposeState = decomposeState,
+    ITEM_DEFS = ITEM_DEFS, getItemIcon = getItemIcon,
+    getImgCheckmark = function() return imgCheckmark end,
+    getImgLock = function() return imgLock end,
+    qualityChecked = qualityChecked, setChecked = setChecked,
+    getEquipmentSlotFilter = function() return Panel.getEquipmentSlotFilter() end,
+    getImgHeroIcons = function() return imgHeroIcons end,
+})
+local clampScroll = gridHost.clampScroll
+local getEquipList = gridHost.getEquipList
+local buildItemList = gridHost.buildItemList
+local drawEquipGrid = gridHost.drawEquipGrid
+local drawItemGrid = gridHost.drawItemGrid
 
 -- ======================== 道具详情弹窗 ========================
 
@@ -478,8 +423,8 @@ local function ensureBpDialogs()
     return _bpDialogs
 end
 
-local function drawWrappedText(vg, x, y, maxW, text, fontSize, r, g, b)
-    return ensureBpDialogs().drawWrappedText(vg, x, y, maxW, text, fontSize, r, g, b)
+local function drawWrappedText(vg, x, y, maxW, text, fontSize, r, g, b, measureOnly)
+    return ensureBpDialogs().drawWrappedText(vg, x, y, maxW, text, fontSize, r, g, b, measureOnly)
 end
 
 local function shouldShowTransferBtn(def)
@@ -615,10 +560,13 @@ local function drawItemDetail(vg)
     nvgTranslate(vg, -540, -1158)
     nvgGlobalAlpha(vg, progress)
 
-    -- 1. 品质背景九宫格 X=540 Y=1158 530×650
+    local descText = def.descGetter and def.descGetter() or (def.desc or "")
+    local descHeight = drawWrappedText(vg, 0, 0, 420, descText, 34, 0x72, 0x58, 0x50, true)
+    local detailHeight = 650 + math.max(0, descHeight + 40 - 176)
+    -- 用途全文占用真实高度，保持名称、数量及关闭输入的既有位置。
     local q = math.min(def.quality or 1, 6)
     DarkIcon.drawNine(vg, "panel",
-        540 - 530 * 0.5, 1158 - 650 * 0.5, 530, 650,
+        540 - 530 * 0.5, 1158 - 650 * 0.5, 530, detailHeight,
         { titleH = 400, accent = DarkIcon.QUALITY_TRIM[q] })
 
     -- 2. 道具名称 X左对齐317 Y893 字号40 白色 黑色描边4
@@ -664,16 +612,15 @@ local function drawItemDetail(vg)
         0xf7, 0xfe, 0x77, 4, nil)
 
     -- 7. 描述背景 X540 Y1333 460×176 圆角14 纯黑10%
-    local descBgW, descBgH = 460, 176
-    local descBgX = 540 - descBgW * 0.5  -- 310
-    local descBgY = 1333 - descBgH * 0.5 -- 1245
+    local descBgW, descBgH = 460, math.max(176, descHeight + 40)
+    local descBgX = 540 - descBgW * 0.5
+    local descBgY = 1245
     nvgBeginPath(vg)
     nvgRoundedRect(vg, descBgX, descBgY, descBgW, descBgH, 14)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 25))
     nvgFill(vg)
 
     -- 8. 描述文本 内间距20 字号34 颜色#725850
-    local descText = def.descGetter and def.descGetter() or (def.desc or "")
     if #descText > 0 then
         local textX = descBgX + 20
         local textY = descBgY + 20
@@ -770,11 +717,12 @@ end
 ---@param vg any NanoVG 上下文
 function Panel.init(vg)
     vg_ = vg
+    if filterBar then filterBar.init(vg) end
+    HeroFrame.initImages(vg)
     imgTopBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_BB_BJ.png", 0)
     imgTitleBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
     imgBtnBack = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
     imgTabBg   = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     imgBtnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     imgLock      = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
@@ -823,6 +771,9 @@ end
 ---@param mode? boolean|"left" true=全窗居中模态；"left"=横屏左栏页；nil/false=内嵌
 ---@param initialTab? string "equip"|"item"|"decompose"，默认 "equip"
 local function openPage(mode, initialTab)
+    gridHost.cancel()
+    Curation.cancelSource("backpack")
+    BlacksmithDecompose.cancelMarquee()
     if mode == "left" then
         hostMode_ = "left"
     elseif mode then
@@ -846,6 +797,7 @@ local function openPage(mode, initialTab)
     state.scrollVel = 0
     -- 筛选勾选跨次打开保留（与品质勾选一致），但弹窗本身必须复位
     SetFilterDialog.close()
+    if filterBar then filterBar.close() end
     if tab == "decompose" then
         BlacksmithDecompose.onOpen()
     end
@@ -861,11 +813,15 @@ end
 
 -- 动画操作与持有操作分离：自动 release 不冒充玩家手动关闭。
 local function closePage()
+    gridHost.freezeForClose()
+    Curation.cancelSource("backpack")
+    BlacksmithDecompose.cancelMarquee()
     if not state.open or state.closing then return end
     state.closing = true
     state.closeTime = time.elapsedTime
     state.dragging = false
     SetFilterDialog.close()
+    if filterBar then filterBar.close() end
     print("[BackpackPanel] close")
 end
 
@@ -875,12 +831,21 @@ local equipLink = BackpackEquipLink.bind({
     getHostMode = function() return hostMode_ end,
     setLeftMode = function() hostMode_ = "left"; applyLayout(true) end,
     openPage = openPage, closePage = closePage,
+    clearTypeFilter = function() decomposeState.typeFilter = nil end,
     clearTutorialFilters = function()
         local changed = next(decomposeState.qualitySet) ~= nil or next(decomposeState.setFilter) ~= nil
-        if changed then decomposeState.qualitySet, decomposeState.setFilter = {}, {} end
+            or decomposeState.typeFilter ~= nil or decomposeState.classFilter ~= nil or decomposeState.sortKey ~= nil
+            or decomposeState.sortAscending
+        if changed then
+            decomposeState.qualitySet, decomposeState.setFilter = {}, {}
+            decomposeState.typeFilter, decomposeState.classFilter = nil, nil
+            decomposeState.sortKey, decomposeState.sortAscending = nil, false
+        end
+        if filterBar then filterBar.close() end
         return changed
     end,
     selectEquipTab = function()
+        BlacksmithDecompose.cancelMarquee()
         if state.tab == "equip" then return end
         state.tab, state.tabFrom, state.tabSwitchTime = "equip", "equip", 0
         state.scrollY, state.scrollMax, state.scrollVel = 0, 0, 0
@@ -888,6 +853,7 @@ local equipLink = BackpackEquipLink.bind({
         SetFilterDialog.close()
     end,
     restoreView = function(view)
+        BlacksmithDecompose.cancelMarquee()
         hostMode_ = view.mode
         applyLayout(isCompact())
         state.tab, state.tabFrom, state.tabSwitchTime = view.tab, view.tab, 0
@@ -897,6 +863,8 @@ local equipLink = BackpackEquipLink.bind({
     BlacksmithDecompose = BlacksmithDecompose,
     clampScroll = clampScroll, SCROLL_WHEEL_STEP = SCROLL_WHEEL_STEP,
 })
+
+filterBar = BackpackFilters.bindWarehouse(decomposeState, GRID, state, equipLink, PlayerStore)
 
 --- 显式打开默认是用户持有，也可将自动仓库转为手动仓库。
 function Panel.open(mode, initialTab)
@@ -912,14 +880,19 @@ function Panel.acquireWarehouse(owner, heroId, slotOrNil)
 end
 function Panel.releaseWarehouse(owner) equipLink.releaseWarehouse(owner) end
 function Panel.acquireForEquipment(heroId, slotOrNil)
-    return Panel.acquireWarehouse("equipment", heroId, slotOrNil)
+    return equipLink.enterEquipmentWarehouse(heroId, slotOrNil)
+end
+--- 仅显式新入锻炉恢复仓库；重复持有仍尊重本次手动关闭。
+function Panel.acquireForBlacksmith()
+    return equipLink.enterBlacksmithWarehouse()
 end
 --- 仅教程显式恢复左栏配装仓库；普通 acquire 保持不自动重开契约。
 ---@param heroId number|string|nil
 ---@param slot string|nil
+---@param force? boolean 缺失目标时定位真实候选。
 ---@return boolean changed
-function Panel.ensureTutorialEquipment(heroId, slot)
-    return equipLink.ensureTutorialEquipment(heroId, slot)
+function Panel.ensureTutorialEquipment(heroId, slot, force)
+    return equipLink.ensureTutorialEquipment(heroId, slot, force)
 end
 function Panel.releaseForEquipment() Panel.releaseWarehouse("equipment") end
 function Panel.setEquipmentSlotFilter(slotOrNil, heroId)
@@ -930,6 +903,13 @@ function Panel.getEquipmentSlotFilter() return equipLink.getEquipmentSlotFilter(
 
 --- 是否打开
 ---@return boolean
+function Panel.onCurationCommitted()
+    equipLink.clearCandidate(true)
+end
+function Panel.isCurationSourceReady()
+    return state.open and not state.closing and state.tab == "equip"
+        and time.elapsedTime - state.openTime >= ANIM_OPEN_DUR
+end
 function Panel.isOpen()
     return state.open
 end
@@ -952,6 +932,7 @@ end
 --- 更新（惯性滚动 + 关闭动画）
 function Panel.update(dt)
     equipLink.update()
+    gridHost.update()
     if not state.open then return end
     -- 关闭动画结束后真正关闭
     if state.closing then
@@ -959,6 +940,7 @@ function Panel.update(dt)
         if elapsed >= ANIM_CLOSE_DUR then
             state.open = false
             state.closing = false
+            gridHost.cancel()
             applyLayout(false)  -- 恢复竖版原布局
             print("[BackpackPanel] closed (anim done)")
         end
@@ -1034,7 +1016,7 @@ local function drawBody(vg)
     nvgSave(vg)
     nvgTranslate(vg, 0, lowerOY)
 
-    -- 2. 下方背景框（九宫格）[暗黑化 P1: 矢量九宫格]
+    -- 2. 下方背景框（九宫格）
     DarkIcon.drawNine(vg, "panel",
         LOWER_PANEL.CX - LOWER_PANEL.W * 0.5, LOWER_PANEL.CY - LOWER_PANEL.H * 0.5,
         LOWER_PANEL.W, LOWER_PANEL.H,
@@ -1081,7 +1063,7 @@ local function drawBody(vg)
         end
     end
 
-    equipLink.drawFilterHint(vg)
+    if state.tab == "equip" and filterBar then filterBar.draw(vg) end
 
     -- 6. 网格内容（根据 tab）
     -- [分解入仓 0929] 分解 tab：整体委托给 BlacksmithDecompose（warehouse profile），
@@ -1105,6 +1087,7 @@ local function drawBody(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(CAP_TEXT.R, CAP_TEXT.G, CAP_TEXT.B, 255))
         nvgText(vg, CAP_TEXT.X, 2050, capStr, nil)
+        if state.tab == "equip" then Curation.drawEntry(vg, 540, 2150, 410, 90) end
     end
 
     -- 8. 返回按钮（[横屏左栏] 窗口模式由宿主中缝侧边返回条接管，页内不画）
@@ -1138,7 +1121,8 @@ local function drawBody(vg)
     -- 道具详情弹窗（覆盖在最上层）
     drawItemDetail(vg)
 
-    -- 套装筛选弹窗（最顶层模态）
+    -- 下拉选项位于网格上方；套装弹窗仍为最顶层模态。
+    if state.tab == "equip" and filterBar then filterBar.drawOverlay(vg) end
     SetFilterDialog.draw(vg)
 end
 
@@ -1172,53 +1156,17 @@ function Panel.getSeamAnim()
     return state.openTime, state.closeTime, ANIM_OPEN_DUR, ANIM_CLOSE_DUR
 end
 
---- [横屏] 模态绘制：限定矩形内压暗 + 竖版画布等比缩放居中（子弹窗 EquipmentDetail/itemDetail 自动跟随）
---- 三联布局下宿主传中栏矩形，左右栏保持亮且可点；不传 rect = 全窗（竖屏）
----@param vg any
----@param logicalW number 窗口逻辑宽
----@param logicalH number 窗口逻辑高
----@param rect table|nil { x, y, w, h } 限定矩形（窗口坐标）
-function Panel.drawWindow(vg, logicalW, logicalH, rect)
-    if not state.open then return end
-    if hostMode_ ~= "window" then return end
-    local rx = rect and rect.x or 0
-    local ry = rect and rect.y or 0
-    local rw = rect and rect.w or logicalW
-    local rh = rect and rect.h or logicalH
-    nvgBeginPath(vg)
-    nvgRect(vg, rx, ry, rw, rh)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 160))
-    nvgFill(vg)
-    local fit = math.min(rw / DESIGN_W, rh / DESIGN_H)
-    local dw, dh = DESIGN_W * fit, DESIGN_H * fit
-    nvgSave(vg)
-    nvgTranslate(vg, rx + (rw - dw) * 0.5, ry + (rh - dh) * 0.5)
-    nvgScale(vg, fit, fit)
-    drawBody(vg)
-    nvgRestore(vg)
-end
-
---- [横屏] 窗口坐标 → 竖版设计坐标（rect 与 drawWindow 一致）
----@param wx number
----@param wy number
----@param logicalW number
----@param logicalH number
----@param rect table|nil { x, y, w, h }
----@return number dx number dy
-function Panel.toDesignCoords(wx, wy, logicalW, logicalH, rect)
-    local rx = rect and rect.x or 0
-    local ry = rect and rect.y or 0
-    local rw = rect and rect.w or logicalW
-    local rh = rect and rect.h or logicalH
-    local fit = math.min(rw / DESIGN_W, rh / DESIGN_H)
-    local dw, dh = DESIGN_W * fit, DESIGN_H * fit
-    return (wx - (rx + (rw - dw) * 0.5)) / fit, (wy - (ry + (rh - dh) * 0.5)) / fit
-end
+--- 旧全窗模态的绘制/命中坐标抽到适配模块，三联布局仍只压暗指定栏位。
+Panel.drawWindow, Panel.toDesignCoords = require("ui.backpack.BackpackWindow").bind({
+    width = DESIGN_W, height = DESIGN_H,
+    isOpen = Panel.isOpen, isWindowMode = Panel.isWindowMode, drawBody = drawBody,
+})
 
 -- ======================== 输入处理 ========================
 
 ---@return boolean 是否消费了事件
 function Panel.handleInput(dx, dy)
+    BlacksmithDecompose.cancelMarquee()
     if not state.open then return false end
 
     -- 套装筛选弹窗最优先（模态：打开时消费全部点击）
@@ -1228,6 +1176,11 @@ function Panel.handleInput(dx, dy)
             state.scrollY = 0
             return true
         end
+    end
+
+    -- 已展开的下拉先消费点击，不能穿透到其下装备格。
+    if state.tab == "equip" and filterBar and filterBar.isOpen() then
+        return filterBar.handleInput(dx, dy)
     end
 
     -- 道具详情弹窗优先处理
@@ -1376,6 +1329,7 @@ function Panel.handleInput(dx, dy)
     local tabHit = TownPageChrome.hitTab(dx, dy, TAB_ITEMS, TAB.SLIDER_W, TAB.SLIDER_H)
     if tabHit then
         local item = TAB_ITEMS[tabHit]
+        if filterBar then filterBar.close() end
         equipLink.clearCandidate(true)
         if state.tab ~= item.key then
             state.tabFrom, state.tabSwitchTime = state.tab, time.elapsedTime
@@ -1388,7 +1342,10 @@ function Panel.handleInput(dx, dy)
         end
         return true
     end
-    if equipLink.handleFilterInput(dx, dy) then return true end
+    if state.tab == "equip" and filterBar and filterBar.handleInput(dx, dy) then
+        equipLink.clearCandidate(true)
+        return true
+    end
     -- 装备格优先识别双击；已钉住的详情不能拦截同格快捷装备。
     if equipLink.handleEquipClick(dx, dy) then return true end
 
@@ -1411,13 +1368,20 @@ function Panel.handleInput(dx, dy)
         return true
     end
 
+    if state.tab == "equip" and Panel.isCurationSourceReady()
+        and DrawUtil.hitTest(dx, dy, 540, 2150, 410, 90) then
+        equipLink.clearCandidate(true)
+        if filterBar then filterBar.close() end
+        Curation.open("backpack")
+        return true
+    end
     -- 装备 tab：稀有度勾选（1-6 档可多选，常驻显示筛选）
     if state.tab == "equip" then
         -- 套装筛选入口按钮（弹窗内勾选实时生效，网格随 setChecked 过滤）
         if DrawUtil.hitTest(dx, dy, SET_BTN.CX, SET_BTN.CY, SET_BTN.W, SET_BTN.H) then
             BF.trigger("bp_set_filter")
             SetFilterDialog.open(decomposeState.setFilter, {
-                getCounts = ensureGrids().getSetCounts,
+                getCounts = gridHost.getSetCounts,
                 onChange = function() state.scrollY = 0 end,
             })
             print("[BackpackPanel] 打开套装筛选弹窗")
@@ -1451,50 +1415,55 @@ end
 ---@param dx number
 ---@param dy number
 ---@return table|nil
-function Panel.peekEquipAt(dx, dy) return equipLink.peekEquipAt(dx, dy) end
-function Panel.haltScroll() equipLink.haltScroll() end
-function Panel.handleHover(dx, dy) equipLink.handleHover(dx, dy) end
-function Panel.handleRightClick(dx, dy) return equipLink.handleRightClick(dx, dy) end
-
-function Panel.handleDragBegin(dx, dy) return equipLink.handleDragBegin(dx, dy) end
-function Panel.handleDragMove(dx, dy) return equipLink.handleDragMove(dx, dy) end
-function Panel.handleDragEnd(dx, dy) return equipLink.handleDragEnd(dx, dy) end
-function Panel.handleScroll(wheel, dx, dy) return equipLink.handleScroll(wheel, dx, dy) end
-
---- 服务端操作结果回调
----@param data table
-function Panel.onActionResult(data)
-    equipLink.onActionResult(data)
-    if data.action == Protocol.ACTION_TYPES.DECOMPOSE_EQUIP then
-        -- [分解入仓 0929] 分解请求由 BlacksmithDecompose（仓库分解 tab）发出，
-        -- 回执转发给它（内部 pendingDecompose 门控保证只处理自己发起的请求，
-        -- 与 ClientMessageHandler 同时广播给 BlacksmithPage 的路径互不重复弹奖）
-        if decomposeReady_ then
-            BlacksmithDecompose.onActionResult(data)
-        end
-        return
-    end
-
-    if data.action == Protocol.ACTION_TYPES.CONVERT_UR_SHARD then
-        itemDetState.urConvertPending = false
-        if not data.success then
-            local LootBoxPage = require("ui.loot.LootBoxPage")
-            if LootBoxPage.showToast then
-                LootBoxPage.showToast(data.reason or "转化失败")
-            end
-        end
-        return
-    end
-
-    if data.action == Protocol.ACTION_TYPES.RESTORE_UR_SHARD_CONVERT then
-        itemDetState.urConvertPending = false
-        local LootBoxPage = require("ui.loot.LootBoxPage")
-        if data.success then
-            if LootBoxPage.showToast then LootBoxPage.showToast("转化次数已恢复") end
-        elseif LootBoxPage.showToast then
-            LootBoxPage.showToast(data.reason or "恢复失败")
-        end
-    end
+function Panel.peekEquipAt(dx, dy)
+    if filterBar and filterBar.isOpen() then return nil end
+    return equipLink.peekEquipAt(dx, dy)
 end
+function Panel.haltScroll() equipLink.haltScroll() end
+function Panel.handleHover(dx, dy)
+    if filterBar and filterBar.isOpen() then equipLink.clearCandidate(false); return end
+    equipLink.handleHover(dx, dy)
+end
+function Panel.handleLockRightClick(dx, dy)
+    if hostMode_ ~= "left" or time.elapsedTime - state.openTime < ANIM_OPEN_DUR
+        or (filterBar and filterBar.isOpen()) then return true end
+    return equipLink.handleLockRightClick(dx, dy)
+end
+function Panel.handleRightClick(dx, dy)
+    if filterBar and filterBar.isOpen() then return true end
+    return equipLink.handleRightClick(dx, dy)
+end
+
+--- 框选只属于稳定打开的仓库分解页，不穿透本页弹窗。
+function Panel.canMarquee()
+    return state.open and not state.closing and hostMode_ == "left" and state.tab == "decompose"
+        and time.elapsedTime - state.openTime >= ANIM_OPEN_DUR
+        and not SetFilterDialog.isOpen() and not itemDetState.open
+        and not BlacksmithDecompose.isPopupOpen()
+end
+function Panel.cancelMarquee() BlacksmithDecompose.cancelMarquee() end
+function Panel.isMarqueeActive() return BlacksmithDecompose.isMarqueeActive() end
+function Panel.handleMarqueeBegin(dx, dy)
+    if not Panel.canMarquee() then return false end
+    local started = BlacksmithDecompose.handleMarqueeBegin(dx, dy)
+    if started then equipLink.haltScroll() end
+    return started
+end
+function Panel.handleMarqueeMove(dx, dy)
+    if not Panel.canMarquee() then Panel.cancelMarquee(); return false end
+    return BlacksmithDecompose.handleMarqueeMove(dx, dy)
+end
+function Panel.handleMarqueeEnd(dx, dy)
+    if not Panel.canMarquee() then Panel.cancelMarquee(); return false end
+    return BlacksmithDecompose.handleMarqueeEnd(dx, dy)
+end
+
+BackpackFilters.attachInput(Panel, state, filterBar, equipLink)
+
+--- 服务端操作结果回调（依赖原状态；就绪标记不取绑定时快照）
+Panel.onActionResult = require("ui.backpack.BackpackActionResult").bind({
+    equipLink = equipLink, Protocol = Protocol, BlacksmithDecompose = BlacksmithDecompose,
+    itemDetState = itemDetState, getDecomposeReady = function() return decomposeReady_ end,
+})
 
 return Panel

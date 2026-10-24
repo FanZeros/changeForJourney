@@ -7,6 +7,7 @@ local AD  = require("systems.AttributeDef")
 local SEM = require("systems.StatusEffectManager")
 local RCH = require("systems.RelicConditionHandler")
 local ETS = require("systems.ExtraTalentSystem")
+local AC = require("config.AwakeningConfig")
 
 local M = {}
 
@@ -42,6 +43,21 @@ function M.bind(deps)
     local s = getState(attacker)
     if not s then return end
     local heroId = s.heroId
+    local battleToken = attacker._talentBattleToken
+    -- 新附伤只消费主攻击结果；同步伤害回调不能把附伤再当成一次攻击。
+    if s.epicEchoDispatch and s.epicEchoDispatch.token == battleToken then return end
+    local function stillCurrentAttack()
+        return getState(attacker) == s and getTAL_BCS() == TAL_BCS
+            and attacker._talentBattleToken == battleToken and (attacker.hp or 0) > 0
+    end
+    local function emitEpicEcho(tgt, damage, prefix, color, meta)
+        local dispatch = { token = battleToken }
+        s.epicEchoDispatch = dispatch
+        -- onAfterAttack 的正式出口为六参绑定来源闭包，与 update(ctx) 七参出口不同。
+        local ok, err = pcall(dealDmgFn, tgt, damage, not isAlly, prefix, color, meta)
+        if s.epicEchoDispatch == dispatch then s.epicEchoDispatch = nil end
+        if not ok then error(err, 0) end
+    end
 
     dealDmgFn = wrapDealDmgForLuoxing(attacker, dealDmgFn)
 
@@ -58,12 +74,24 @@ function M.bind(deps)
     -- #23 真布诗人 护盾说唱：有盾的人下次攻击附带神圣伤
     if attacker._rhymeShot and attacker._rhymeShot > 0 and dealDmgFn and target and (target.hp or 0) > 0
         and result and result.category ~= "healing" then
+        local rhymeContext = attacker._rhymeShotContext
         local rhymeDmg = attacker._rhymeShot
         attacker._rhymeShot = nil
-        dealDmgFn(target, rhymeDmg, not isAlly, "押韵 ", { 255, 220, 120 }, {
-            instantDamage = true,
-            statCategory = "magical",
-        })
+        attacker._rhymeShotContext = nil
+        local valid = not rhymeContext or (rhymeContext.refs == TAL_BCS
+            and rhymeContext.state == s and rhymeContext.token == battleToken
+            and not rhymeContext.healer._etsDisabled
+            and getState(rhymeContext.healer) == rhymeContext.healerState
+            and rhymeContext.healerToken == rhymeContext.healer._talentBattleToken)
+        if valid then
+            emitEpicEcho(target, rhymeDmg, "押韵 ", { 255, 220, 120 }, {
+                instantDamage = true,
+                statCategory = "magical",
+                atkType = AD.ATK_HOLY,
+                critEligible = false,
+            })
+            if not stillCurrentAttack() then return end
+        end
     end
 
     -- #1 大狗嚼 衔骨狂
@@ -118,18 +146,47 @@ function M.bind(deps)
                         otherAlive[#otherAlive + 1] = u
                     end
                 end
-                -- 散射到最多2个其他目标（加上原目标共3个）
+                -- 最多2个额外目标：上一跳真实落地后才从命中敌人继续发射。
+                -- 本链记住已尝试目标，失效目标不耗命中段数，也不会反复重试。
                 local scatterCount = math.min(2, #otherAlive)
-                for si = 1, scatterCount do
-                    local ri = math.random(#otherAlive)
-                    local st = otherAlive[ri]
-                    if st.hp > 0 then
-                        dealDmgFn(st, scatterDmg, not isAlly, "散射 ", { 200, 255, 200 })
+                local attempted = { [target] = true }
+                local initialTargets = TAL_BCS and (isAlly and TAL_BCS.bEnemies or TAL_BCS.bAllies)
+                local function fireScatter(si, chainFrom, fromX, fromY)
+                    if not stillCurrentAttack() or si > scatterCount then return end
+                    local candidates = {}
+                    local currentTargets = TAL_BCS and (isAlly and TAL_BCS.bEnemies or TAL_BCS.bAllies)
+                    local liveTargets = currentTargets ~= initialTargets and currentTargets or targetList
+                    for _, u in ipairs(liveTargets or {}) do
+                        if u.hp > 0 and not attempted[u] then candidates[#candidates + 1] = u end
                     end
-                    table.remove(otherAlive, ri)
+                    if #candidates == 0 then return end
+                    local st = candidates[math.random(#candidates)]
+                    attempted[st] = true
+                    local landed = false
+                    dealDmgFn(st, scatterDmg, not isAlly, "散射 ", { 200, 255, 200 }, {
+                        sourceAttacker = attacker,
+                        bounceFromUnit = chainFrom,
+                        bounceFromX = fromX,
+                        bounceFromY = fromY,
+                        target = st,
+                        chainProjectile = true,
+                        isCurrentChain = stillCurrentAttack,
+                        onProjectileLand = function(hx, hy, landedTarget, didHit)
+                            if landed then return end
+                            landed = true
+                            if not stillCurrentAttack() then return end
+                            if didHit == false then
+                                fireScatter(si, chainFrom, fromX, fromY)
+                                return
+                            end
+                            -- 无参旧测试桩默认命中st；明确false绝不视作命中。
+                            fireScatter(si + 1, landedTarget or st, hx, hy)
+                        end,
+                    })
                 end
+                fireScatter(1, target, result.projectileHitX, result.projectileHitY)
                 if scatterCount > 0 then
-                    talentLog("[Talent] 叮咚鸡 觉醒7：散射命中 " .. scatterCount .. " 个额外目标")
+                    talentLog("[Talent] 叮咚鸡 觉醒7：散射连锁最多命中 " .. scatterCount .. " 个额外目标")
                 end
             end
         end
@@ -255,6 +312,7 @@ function M.bind(deps)
             -- 觉醒7: 超暴击（暴击率溢出→超暴击率，触发后再乘一次暴击伤害）
             if hasAwaken(attacker, 7) and result and result.isCrit then
                 tryYouyeSuperCrit(attacker, target, result, isAlly, dealDmgFn)
+                if not stillCurrentAttack() then return end
             end
             -- 抄作业：暴击偷攻速（每次 +8%，最多 +40%）
             if result and result.isCrit and attacker.attrs then
@@ -267,6 +325,28 @@ function M.bind(deps)
                 })
                 attacker.atkInterval = attacker.attrs:getActualInterval()
                 talentLog(string.format("[Talent] 内鬼 抄作业 攻速+%.0f%%", copySpd))
+                if not attacker._etsDisabled and AC.hasStage(attacker.awakeningNodes, 2) then
+                    -- 新Ⅱ按开战token另记本场偷速进度，不重置旧偷速modifier或旧累计。
+                    local echoSpeed = s.copyEchoSpeed
+                    if not echoSpeed or echoSpeed.token ~= battleToken then
+                        echoSpeed = { token = battleToken, speed = 0 }
+                        s.copyEchoSpeed = echoSpeed
+                    end
+                    echoSpeed.speed = math.min(40, echoSpeed.speed + 8)
+                    -- 第五次暴击本帧达到40%即可复制；只读已提交Ⅰ成长。
+                    if echoSpeed.speed >= 40 and dealDmgFn and target and (target.hp or 0) > 0 then
+                        local kills = AC.hasStage(attacker.awakeningNodes, 1) and ETS.getEpicGrowth(attacker).stacks / 2 or 0
+                        local rate = 0.15 + math.min(0.15, math.floor(kills / 50) * 0.05)
+                        local copied = math.floor((result.totalDamage or 0) * rate + 0.5)
+                        if copied > 0 then
+                            emitEpicEcho(target, copied, "满分抄袭 ", { 180, 80, 255 }, {
+                                instantDamage = true, statCategory = "magical", atkType = AD.ATK_SHADOW,
+                                isCrit = result.isCrit, critEligible = false,
+                            })
+                            if not stillCurrentAttack() then return end
+                        end
+                    end
+                end
                 -- 暴击击杀残血：<15% 直接收工
                 if target.hp > 0 then
                     local hpPct = target.hp / math.max(1, target.maxHp or 1)
@@ -575,6 +655,7 @@ function M.bind(deps)
                         dealDmgFn(missileTarget, missileDmg, not isAlly, missilePrefix, missileColor, {
                             talentProjKey = "EF_ZY_106",
                             statCategory = "magical",
+                            atkType = AD.ATK_SHADOW,
                             isCrit = missileCrit,
                             critEligible = true,
                         })
@@ -595,6 +676,7 @@ function M.bind(deps)
                                         dealDmgFn(u, missileDmg, not isAlly, explosionPrefix, explosionColor, {
                                             talentProjKey = "EF_ZY_224",
                                             statCategory = "magical",
+                                            atkType = AD.ATK_SHADOW,
                                             isCrit = missileCrit,
                                             critEligible = false,
                                         })
@@ -820,7 +902,25 @@ function M.bind(deps)
             local nGain, tGain = applyElwynEnergyBlessing(attacker, target, result)
             if ((nGain or 0) + (tGain or 0) > 0) or ((target.attrs and ((target.attrs.energyShield or 0) + (target.attrs.tempEnergyShield or 0)) > 0)) then
                 if ETS.hasNode(attacker, 4) then
-                    target._rhymeShot = math.max(target._rhymeShot or 0, math.floor((result.healAmount or 0) * 0.20 + 0.5))
+                    local ratio = 0.20
+                    if not attacker._etsDisabled and AC.hasStage(attacker.awakeningNodes, 2) then
+                        local stacks = AC.hasStage(attacker.awakeningNodes, 1) and ETS.getEpicGrowth(attacker).shieldStacks or 0
+                        ratio = 0.30 + math.min(0.10, math.floor(stacks / 40) * 0.025)
+                    end
+                    local pending = math.floor((result.healAmount or 0) * ratio + 0.5)
+                    local ts = ensureState(target)
+                    local old = target._rhymeShotContext
+                    local validOld = not old or (old.refs == TAL_BCS and old.state == ts
+                        and old.token == target._talentBattleToken
+                        and getState(old.healer) == old.healerState and not old.healer._etsDisabled
+                        and old.healerToken == old.healer._talentBattleToken)
+                    if pending > 0 and (not validOld or pending >= (target._rhymeShot or 0)) then
+                        target._rhymeShot = pending
+                        target._rhymeShotContext = {
+                            refs = TAL_BCS, state = ts, token = target._talentBattleToken,
+                            healer = attacker, healerState = s, healerToken = battleToken,
+                        }
+                    end
                 end
                 local overflow = result.overhealAmount
                 if overflow == nil then
@@ -933,6 +1033,7 @@ function M.bind(deps)
                             dealDmgFn(randTarget, punishDmg, not isAlly, prefix, { 255, 215, 0 }, {
                                 talentProjKey = "EF_ZY_224",
                                 statCategory = "magical",
+                                atkType = AD.ATK_SHADOW,
                                 isCrit = punishCrit,
                                 critEligible = true,
                             })

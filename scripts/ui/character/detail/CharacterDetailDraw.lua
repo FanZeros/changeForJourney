@@ -20,17 +20,22 @@ local HeroAssetUtil     = require("config.HeroAssetUtil")
 local AwakeningPanel    = require("ui.character.hero.AwakeningPanel")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
 local EquipmentSystem   = require("systems.EquipmentSystem")
-local EquipmentPower    = require("systems.EquipmentPower")
 local BF                 = require("systems.ButtonFeedback")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
-local ETS = require("systems.ExtraTalentSystem")
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
+local NumberUtil = require("core.NumberUtil")
 local I18n = require("core.I18n")
 local KeywordText = require("ui.widget.KeywordText")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
+local QuickEquipActivity = require("ui.character.detail.QuickEquipActivity")
 
 local drawTextStroke = DrawUtil.drawTextStroke
 
 local M = {}
+local radarTransition = EquipStats.createRadarTransition()
+
+function M.resetRadarTransition()
+    radarTransition:reset()
+end
 
 ---@type number|nil
 local jobEffectHero = nil
@@ -344,7 +349,10 @@ local getOwnedData      = nil   -- function(heroId) → ownData or nil
 local calcHeroPowerFn   = nil   -- function(heroId) → number
 local calcHeroEstimateFn = nil  -- function(heroId) → number 实战预估（分项计价原型）
 local CharacterDetailRef = nil  -- CharacterDetail 模块引用（访问 _hasUpgradeForSlot 等）
-local collectAttributes = nil   -- DetailAttrs.collectAttributes
+---@type function|nil
+local collectAttributes = nil -- 保留注入/恢复边界，预览与测试可使用独立collector
+---@type function|nil
+local collectPresentation = nil -- setContext创建宿主私有缓存；模块加载不运行属性管线
 local clampAttrScroll   = nil   -- 限制属性滚动
 
 -- 实战预估副行开关：默认关闭。原型口径（systems/CombatPowerEstimate.lua），
@@ -358,21 +366,22 @@ function M.setEstimateVisible(visible)
     SHOW_ESTIMATE = visible and true or false
 end
 
+function M.isEstimateVisible() return SHOW_ESTIMATE end
+
+-- 仅Update准备可调用，保留原实验估值函数口径，不替换公式。
+function M.prepareEstimate(heroId)
+    return calcHeroEstimateFn and calcHeroEstimateFn(heroId) or 0
+end
+
 -- ======================== 性能缓存（避免每帧重计算） ========================
 -- calcHeroPower 缓存：按英雄分别记录，滚动卡面每张都要显示自己的战力
 local _powerCache = { dirty = true, values = {} }
 -- 实战预估缓存：与战力共用脏标记（markPowerDirty 一并置脏）
 local _estimateCache = { dirty = true, values = {} }
--- 上下文身份随英雄/装备/圣物/天赋变化失效，不能只盯 equipment 脏标记。
-local _upgradeCache = { heroId = nil, results = {}, dirty = true }
----@type table|nil
-local _upgradeContext = nil
-
 --- 标记战斗力缓存为脏（外部数据变化时调用）
 function M.markPowerDirty()
     _powerCache.dirty = true
     _estimateCache.dirty = true
-    _upgradeCache.dirty = true
 end
 
 --- 获取缓存的战斗力（数据变脏时整表重算，否则按英雄取缓存）
@@ -406,32 +415,17 @@ local function getCachedEstimate(heroId)
     return estimate
 end
 
---- 获取缓存的可提升判断（全部六槽复用一次上下文）。
-local function getCachedUpgrade(heroId, slotName, equipData)
-    local ctx = EquipmentPower.getContext(heroId)
-    if _upgradeCache.heroId == heroId and not _upgradeCache.dirty and _upgradeContext == ctx then
-        return _upgradeCache.results[slotName]
-    end
-    _upgradeCache.heroId = heroId
-    _upgradeCache.results = {}
-    _upgradeContext = ctx
-    for _, slot in ipairs(DT_SLOTS) do
-        _upgradeCache.results[slot.slot] = ctx ~= nil
-            and CharacterDetailRef._hasUpgradeForSlot(heroId, slot.slot, equipData, ctx) or false
-    end
-    _upgradeCache.dirty = false
-    return _upgradeCache.results[slotName]
-end
-
 --- 注入依赖
 ---@param ctx table
 function M.setContext(ctx)
+    radarTransition:reset()
     detailState       = ctx.detailState
     getOwnedData      = ctx.getOwnedData
     calcHeroPowerFn     = ctx.calcHeroPower
     calcHeroEstimateFn  = ctx.calcHeroEstimate
     CharacterDetailRef = ctx.CharacterDetail
     collectAttributes = ctx.collectAttributes
+    collectPresentation = nil -- 只有属性分支才需要展示缓存（配装宿主不初始化属性依赖）
     clampAttrScroll   = ctx.clampAttrScroll
     -- 共享图片
     imgHeroCards   = ctx.imgHeroCards   or {}
@@ -466,10 +460,8 @@ function M.initImages(vg)
     img.midDiv2  = img.midDiv1
     AttributeView.setSharedImages({ background = img.midBg, divider = img.midDiv1, deco = img.attrDeco })
 
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnLv     = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     img.btnBack   = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     img.tabSlider = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
     img.arrowIcon = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYG2.png", 0)
@@ -502,6 +494,9 @@ end
 
 --- 绘制角色详情二级界面
 function M.draw(vg)
+    if not detailState.open or detailState.closing or detailState.tab ~= "attr" then
+        radarTransition:reset()
+    end
     -- 播放中换人/关页/拖动即取消这张卡的视觉，不能把上一英雄的效果画到新卡。
     if jobEffectHero and (not detailState.open or detailState.closing
         or detailState.tab ~= "class" or detailState.heroId ~= jobEffectHero
@@ -513,6 +508,8 @@ function M.draw(vg)
     if not detailState.open then return end
 
     local heroId = detailState.heroId
+    local prepared = detailState.tab == "equip" and CharacterDetailRef.getPreparedEquipment
+        and CharacterDetailRef.getPreparedEquipment() or { pending = true, scores = {}, upgrades = {} }
     local heroCfg = HC.get(heroId)
     if not heroCfg then return end
 
@@ -662,7 +659,7 @@ function M.draw(vg)
         drawTextStroke(vg, badgeCX, bottomY, tostring(level),
             28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
         -- 战力（底部居中）
-        local power = getCachedPower(id)
+        local power = detailState.tab == "equip" and (prepared.power or "—") or getCachedPower(id)
         local powerStr = tostring(power)
         local POWER_GAP = 4
         nvgFontFace(vg, "sans")
@@ -679,8 +676,10 @@ function M.draw(vg)
         -- 实战预估副行（默认关闭，M.setEstimateVisible(true) 验收后开启）：
         -- 分项计价原型口径，按英雄伤害类别区别计价物攻/魔攻/治疗属性
         if SHOW_ESTIMATE then
-            local estimate = getCachedEstimate(id)
-            drawTextStroke(vg, 0, powerY + 26, "预估 " .. tostring(estimate),
+            local estimate = detailState.tab == "equip"
+                and (prepared.estimate ~= nil and NumberUtil.format(prepared.estimate) or "—")
+                or NumberUtil.format(getCachedEstimate(id))
+            drawTextStroke(vg, 0, powerY + 26, "预估 " .. estimate,
                 18, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 178, 216, 255, 3)
         end
         -- 职业标（右下）
@@ -784,7 +783,7 @@ function M.draw(vg)
     local heroEquipped = nil
     local heroInventory = nil
     if equipData then
-        heroEquipped = EquipmentSystem.getHeroSlots(equipData, heroId)
+        heroEquipped = EquipmentSystem.getHeroSlots(equipData, heroId --[[@as number]])
         heroInventory = equipData.inventory
     end
 
@@ -816,12 +815,12 @@ function M.draw(vg)
         if heroEquipped and heroInventory then
             local seq = heroEquipped[slot.slot]
             if seq then
-                equippedEquip = heroInventory[tostring(seq)]
+                equippedEquip = heroInventory[tostring(seq)] or heroInventory[seq]
             end
             if not equippedEquip and slot.slot == "offhand" then
                 local weaponSeq = heroEquipped["weapon"]
                 if weaponSeq then
-                    local weaponEquip = heroInventory[tostring(weaponSeq)]
+                    local weaponEquip = heroInventory[tostring(weaponSeq)] or heroInventory[weaponSeq]
                     if weaponEquip and weaponEquip.grip == "twohand" then
                         equippedEquip = weaponEquip
                         isTwohandOccupied = true
@@ -834,13 +833,13 @@ function M.draw(vg)
             local scx, scy = slot.cx, slot.cy
             local eq = equippedEquip.quality or 1
 
-            DarkIcon.drawQualityBg(vg, eq, scx, scy, DT_SLOT_SIZE, DT_SLOT_SIZE, 1.0)  -- [暗黑化 P2-A]
+            DarkIcon.drawQualityBg(vg, eq, scx, scy, DT_SLOT_SIZE, DT_SLOT_SIZE, 1.0)  --
 
             local equipIconImg = CharacterDetailRef._getEquipIcon(equippedEquip.templateId)
             local iconPad = 12
             local iconSize = DT_SLOT_SIZE - iconPad * 2
             if equipIconImg >= 0 then
-                DarkIcon.drawIconDark(vg, equipIconImg, scx, scy, iconSize, iconSize, 1.0)  -- [暗黑化 P2-B]
+                DarkIcon.drawIconDark(vg, equipIconImg, scx, scy, iconSize, iconSize, 1.0)  --
             else
                 local qualityDef = EquipmentConfig.QUALITY[eq]
                 local qc = qualityDef and qualityDef.color or { 180, 180, 180 }
@@ -874,16 +873,23 @@ function M.draw(vg)
                 nvgText(vg, lvlX, lvlY, lvlText, nil)
             end
 
-            local powerSlot = isTwohandOccupied and "weapon" or slot.slot
-            local powerText = "战力 " .. tostring(EquipmentPower.score(equippedEquip, heroId, powerSlot))
-            local powerFont = 26
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, powerFont)
-            local powerWidth = nvgTextBounds(vg, 0, 0, powerText) or 0
-            local powerMaxWidth = DT_SLOT_SIZE * 0.62
-            if powerWidth > powerMaxWidth then powerFont = powerFont * powerMaxWidth / powerWidth end
-            drawTextStroke(vg, scx + DT_SLOT_SIZE * 0.45, scy + DT_SLOT_SIZE * 0.15,
-                powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, 244, 237, 224, 3)
+            if require("ui.hud.popup.SettingsPanel").isEquipmentPowerEnabled() then
+                local powerSlot = isTwohandOccupied and "weapon" or slot.slot
+                local powerText = tostring(prepared.scores[powerSlot] or "—")
+                local powerFont, powerIconSize, powerGap = 26, 22, 4
+                nvgFontFace(vg, "sans")
+                nvgFontSize(vg, powerFont)
+                local powerWidth = nvgTextBounds(vg, 0, 0, powerText) or 0
+                local powerMaxWidth = DT_SLOT_SIZE * 0.62 - powerIconSize - powerGap
+                if powerWidth > powerMaxWidth then powerFont = powerFont * powerMaxWidth / powerWidth end
+                nvgFontSize(vg, powerFont)
+                local fittedWidth = nvgTextBounds(vg, 0, 0, powerText) or 0
+                local powerRight, powerBottom = scx + DT_SLOT_SIZE * 0.45, scy + DT_SLOT_SIZE * 0.15
+                DarkIcon.draw(vg, "power", powerRight - fittedWidth - powerGap - powerIconSize * .5,
+                    powerBottom - powerIconSize * .5, powerIconSize, 1)
+                drawTextStroke(vg, powerRight, powerBottom,
+                    powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, 244, 237, 224, 3)
+            end
 
             local slotEnhLv = equippedEquip and EquipmentSystem.getAscendLevel(equippedEquip) or 0
             if slotEnhLv > 0 then
@@ -930,7 +936,7 @@ function M.draw(vg)
 
         -- ICON_UP 可提升角标（使用缓存，避免每帧遍历全背包）
         local imgIconUp = CharacterDetailRef._imgIconUp
-        if imgIconUp >= 0 and getCachedUpgrade(heroId, slot.slot, equipData) then
+        if imgIconUp >= 0 and prepared.upgrades[slot.slot] then
             local upSize = 40
             local upX = slot.cx - DT_SLOT_SIZE * 0.5 + upSize * 0.5 + 2
             local upY = slot.cy - DT_SLOT_SIZE * 0.5 + upSize * 0.5 + 2
@@ -957,14 +963,16 @@ function M.draw(vg)
         BF.finish(vg, _ds1)
     end
     do
+        local pending = require("runtime.LocalActionBridge").isQuickEquipPending()
         local bx, by = BTN_EQUIP_CX - BTN_BATCH_W * 0.5, BTN_EQUIP_CY - BTN_BATCH_H * 0.5
-        DarkIcon.drawNine(vg, "btn", bx, by, BTN_BATCH_W, BTN_BATCH_H, { accent = "green" })
+        DarkIcon.drawNine(vg, "btn", bx, by, BTN_BATCH_W, BTN_BATCH_H, { accent = pending and { 141, 95, 65 } or "green" })
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 38)
+        nvgFontSize(vg, pending and 30 or 38)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
+        nvgFillColor(vg, pending and nvgRGBA(231, 192, 135, 255) or nvgRGBA(244, 237, 224, 255))
         local _ds = BF.begin(vg, "equip_all", BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H)
-        nvgText(vg, BTN_EQUIP_CX, BTN_EQUIP_CY, I18n.t("equip_all"), nil)
+        if pending then QuickEquipActivity.draw(vg, BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H, time.elapsedTime) end
+        nvgText(vg, BTN_EQUIP_CX, BTN_EQUIP_CY, I18n.t(pending and "equip_calculating" or "equip_all"), nil)
         BF.finish(vg, _ds)
         local _TM = require("systems.TutorialManager")
         if _TM.isActive() then _TM.registerHotspot("equip_btn_auto", BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H, "right") end
@@ -1108,27 +1116,8 @@ function M.draw(vg)
     -- ===                  属性区域（左列列表 / 右侧雷达）          ===
     -- ================================================================
 
-    local attrData = collectAttributes(heroId, heroCfg, heroLevel)
-    local leftAttrs  = attrData.left
-    local rightAttrs = attrData.right
-    -- 防御属性在前，攻击和额外属性接在后面，同一列滚动。
-    local attrRows = {}
-    for i = 1, #leftAttrs do
-        attrRows[#attrRows + 1] = leftAttrs[i]
-    end
-    for i = 1, #rightAttrs do
-        attrRows[#attrRows + 1] = rightAttrs[i]
-    end
-    -- 按重要程度稳定排序（未列出的属性保持原相对顺序，排在最后）
-    local orderIdx = DetailAttrs.displayOrderIndex()
-    for i, row in ipairs(attrRows) do row._origIdx = i end
-    table.sort(attrRows, function(a, b)
-        local oa = orderIdx[a.key] or 9999
-        local ob = orderIdx[b.key] or 9999
-        if oa ~= ob then return oa < ob end
-        return (a._origIdx or 0) < (b._origIdx or 0)
-    end)
-    for _, row in ipairs(attrRows) do row._origIdx = nil end
+    if not collectPresentation then collectPresentation = DetailAttrs.createPresentationCache(collectAttributes) end
+    local attrData, attrRows = collectPresentation(heroId, heroCfg, heroLevel)
     detailState.cachedLeft = attrRows
     detailState.cachedRight = {}
     local maxScroll, hits = M.drawAttributeRows(vg, attrRows,
@@ -1140,7 +1129,8 @@ function M.draw(vg)
     AttributeView.drawDivider(vg, MID_DIV2_CY)
 
     -- 属性页六围：共享绘图但保留原视觉、布局与点击 API。
-    EquipStats.drawLegacy(vg, attrData.stats)
+    local radarVisual = radarTransition:sample(attrData.stats, nil, false, tostring(heroId), time.elapsedTime)
+    EquipStats.drawLegacy(vg, attrData.stats, radarVisual)
 
     -- ================================================================
     -- ===                    天赋技能区域                            ===
@@ -1159,12 +1149,8 @@ function M.draw(vg)
         0x66, 0xf8, 0x62, 5)
 
     local talentDesc = heroCfg.talentDesc or ""
-    local extraLine = ETS.getDesc(heroId, ownData and ownData.extraTalent)
-    if extraLine ~= "" then
-        talentDesc = talentDesc .. "\n" .. extraLine
-    end
-    -- 短描述紧凑显示，长描述/成长说明按可用高度适配，不侵入底部页签。
-    local talentFont = extraLine ~= "" and 28 or 34
+    -- 属性详情只展示基础天赋；觉醒说明与累计成长统一放在觉醒页。
+    local talentFont = 34
     local availableH = TALENT_BG_CY + TALENT_BG_H * 0.5 - 8 - TALENT_TEXT_TOP
     while talentFont > 18
         and M.talentKwText:measureHeight(vg, talentDesc, TALENT_TEXT_WIDTH, talentFont) > availableH do
@@ -1239,7 +1225,7 @@ function M.draw(vg)
     nvgFontSize(vg, 40)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
 
-    -- [fix] 选中态文字画在 DarkIcon btn 深色滑块上，深棕不可读 → 改骨白（DarkIcon 铭刻色）
+    -- 选中态文字画在 DarkIcon btn 深色滑块上，深棕不可读 → 改骨白（DarkIcon 铭刻色）
     local activeColor   = nvgRGBA(0xD8, 0xC9, 0xA3, 255)
     local inactiveColor = nvgRGBA(255, 255, 255, 255)
     local curTab = detailState.tab
@@ -1252,7 +1238,7 @@ function M.draw(vg)
     nvgFillColor(vg, not ownedHero and lockedColor or (curTab == "equip" and activeColor or inactiveColor))
     nvgText(vg, TEXT_EQUIP_CX, TEXT_EQUIP_CY, I18n.t("tab_equip"), nil)
 
-    nvgFillColor(vg, not ownedHero and lockedColor or (curTab == "class" and activeColor or inactiveColor))
+    nvgFillColor(vg, curTab == "class" and activeColor or inactiveColor)
     nvgText(vg, TEXT_CLASS_CX, TEXT_CLASS_CY, I18n.t("tab_class"), nil)
 
     -- 转职Tab角标：当前英雄可转职时显示红点
@@ -1446,11 +1432,10 @@ function M.draw(vg)
         drawCarouselCard(heroId, 0, 1)
     end
 
-    -- === 转职确认/重置弹窗、飘字与程序化转职特效（同一详情设计空间）===
+    -- === 转职确认弹窗、飘字与程序化转职特效（同一详情设计空间）===
     if detailState.tab == "class" then
         local ClassChange = require("ui.church.ChurchClassChange")
         ClassChange.drawConfirmPopup(vg)
-        ClassChange.drawResetConfirmPopup(vg)
         ClassChange.drawFloatText(vg)
         if require("ui.hud.popup.SettingsPanel").isEffectsEnabled() then
             require("ui.fx.SpineCardEffect").draw(vg, "detail-class")

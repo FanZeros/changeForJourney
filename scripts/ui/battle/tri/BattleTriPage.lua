@@ -1,12 +1,6 @@
--- ============================================================================
--- BattleTriPage - 三行并行战斗（Phase 3 修正版）
--- 布局: 战斗区 = 中段区域（Standalone 传入 486,0,948,1080，左右经营/角色面板
---       保持原样），纵向堆叠三行战斗（行高 = rh/3 ≈ 360）:
---   行1/2/3 = 同一套 BattleTriDriver（各自独立状态）
---   行1 的关卡进度仍跟随 BattleScene（首通/存档/掉落不另起一套）
---   未解锁行: 暗罩 + 通关解锁条件 + 该队编队预览；返回按钮退出战斗区
--- 每行内 8 卡单线: 我方 4 张在左半段、敌方 4 张在右半段（BattleLayout strip 模式）
--- ============================================================================
+-- 三行独立驱动，中段战斗区486,0,948,1080；左右保留经营/角色面板。
+-- 每行己方/敌方各四槽；队一沿用主线进度，未解锁行显示条件与编队预览。
+local BattlePauseOverlay = require("ui.battle.scene.BattlePauseOverlay")
 local BattleLayout = require("core.BattleLayout")
 local BattleView   = require("ui.battle.scene.BattleView")
 local BattleCombat = require("ui.battle.combat.BattleCombat")
@@ -31,7 +25,7 @@ local BattleStats       = require("systems.BattleStats")
 local I18n              = require("core.I18n")
 local RCH               = require("systems.RelicConditionHandler")
 local BattleMountScope  = require("ui.battle.scene.BattleMountScope")
-local BattleSpeed       = require("ui.battle.stage.BattleSpeed")
+local OffenseGuard      = require("systems.BattleOffenseGuard")
 
 -- 只在显示边界翻译；驱动进度、源关卡名和地图缓存仍使用原始配置。
 local function stageDisplayName(stageId)
@@ -45,11 +39,19 @@ local COL_COUNT = ExpTable.TEAM_COUNT or 3
 -- ---- 状态 ----
 local isOpen_ = false
 local inited = false
+---@type any
+local imageVg = nil
 local battleReady = true  -- 分帧启动/读档期间由宿主关闭
+---@type table<number, table>
 local drivers = {}        -- [1]/[2]/[3] = BattleTriDriver
+local entryPreparation = require("ui.battle.tri.BattleEntryPreparation").new()
 ---@type table<number|string, number>|nil
 local restoredStageIds = nil
 local terminalRaid = nil
+local Reincarnation = require("ui.battle.tri.TerminalReincarnation")
+---@type TerminalReturnOrigins|nil
+local terminalOrigins = nil
+local applyingTerminalDestination = false
 local l1Images = {}       -- 同一路径共用句柄，切场景不删除其他行仍在使用的贴图
 local l1Failures = {}     -- 加载失败只提示一次，后续帧仍允许重试
 local l1RowImages = {}    -- 跨章图尚未就绪时保留本行最近成功加载的背景
@@ -86,48 +88,50 @@ function BattleTriPage.isOpen() return isOpen_ end
 ---@return boolean
 function BattleTriPage.isTerminalRaidActive() return terminalRaid ~= nil end
 
-function BattleTriPage.setBattleReady(ready) battleReady = ready == true end
+-- 实际进入前调用，不在打开确认框时冻结；不创建驱动，也不暴露可写来源表。
+function BattleTriPage.captureTerminalOrigins(stageId)
+    if terminalRaid or not StageConfig.isTerminalTemple(stageId) then return false end
+    terminalOrigins = Reincarnation.captureOrigins(stageId, drivers, restoredStageIds,
+        ClientDispatcher.get("battle"), require("ui.battle.scene.BattleScene").getStageId(), isOpen_)
+    return true
+end
 
---- 全局倍率以账户最高难度解锁，不随某队选旧关/模态按钮隐藏而降速。
+function BattleTriPage.getTerminalReturnStageIds(stageId, mainDestination, token)
+    local origins = terminalRaid and terminalRaid.returnOrigins or terminalOrigins
+    return Reincarnation.returnStages(origins, stageId, mainDestination, token)
+end
+
+function BattleTriPage.setBattleReady(ready)
+    battleReady = ready == true
+    if not battleReady then entryPreparation.invalidate() end
+end
+function BattleTriPage.isBattleReady() return battleReady end
+
+--- 入场门禁只在离线结算前查询，真实回执/编队变化不能沿用旧预热凭据。
+function BattleTriPage.isEntryPrepared()
+    local CharacterPanel = require("ui.character.panel.CharacterPanel")
+    local unlocked = math.min(COL_COUNT, ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle")))
+    return entryPreparation.isPrepared(battleReady and isOpen_, drivers, unlocked,
+        CharacterPanel.getTeamSignature)
+end
+
+-- 旧倍率查询仅为兼容；难度、账户账本与模态状态都不能开启战斗加速。
 function BattleTriPage.getMaxUnlockedBattleSpeed()
-    local Scene = require("ui.battle.scene.BattleScene")
-    local battle = ClientDispatcher.get("battle")
-    local savedMax = type(battle) == "table" and (tonumber(battle.maxStageId) or 0) or 0
-    -- 终焉编号并非难度顺序，先解析两份凭据再合并倍率。
-    return math.max(BattleSpeed.getMaxUnlocked(StageConfig.getDifficulty(Scene.getMaxStageId() or 0)),
-        BattleSpeed.getMaxUnlocked(StageConfig.getDifficulty(savedMax)))
+    return 1
 end
 
 function BattleTriPage.isSpeedButtonVisible()
-    if not battleReady or not isOpen_ or terminalRaid
-        or BattleTriPage.getMaxUnlockedBattleSpeed() <= 1
-        or SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
-        or TerminalConfirmDialog.isOpen() or RewardPopup.currentRowTag()
-        or EquipmentBag.shouldBattleOverlay()
-        or require("ui.story.gate.LetterIntro").isOpen()
-        or require("ui.story.gate.IntroCutscene").isActive()
-        or require("ui.story.ScenarioDialogue").isActive() then return false end
-    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
-    for row = 1, math.min(COL_COUNT, unlocked) do
-        local drv = drivers[row]
-        if drv and drv.active and #drv.allies > 0
-            and (drv.introTimer or 0) <= 0 and (drv.marchTimer or 0) <= 0 then return true end
-    end
     return false
 end
 
---- 原始真实 dt 入口；Page.update 每帧只解析一次，再把同一值传给三队与共享计时。
 function BattleTriPage.getBattleLogicDt(dt)
-    local Scene = require("ui.battle.scene.BattleScene")
-    local logicDt, speed = BattleSpeed.getLogicDt(dt, Scene.battleSpeed,
-        BattleTriPage.getMaxUnlockedBattleSpeed(), true)
-    Scene.battleSpeed = speed
-    return logicDt
+    return dt
 end
 
 --- 存档阵容晚于战斗页到达时，清掉已记住的编队，下一帧按真实槽位重建。
 ---@param onlyTeams table<number, boolean>|nil 仅失效指定队伍；nil=全部（旧行为）
 function BattleTriPage.invalidateTeams(onlyTeams)
+    entryPreparation.invalidate()
     for idx, drv in pairs(drivers) do
         if not onlyTeams or onlyTeams[idx] then
             drv.teamSignature = nil
@@ -149,6 +153,7 @@ function BattleTriPage.refreshHeroProgressTeams(teamIndices, classTeams)
         end
     end
     if not next(changed) then return false end
+    entryPreparation.invalidate()
     return BattleMountScope.run(function()
         if next(rebuild) then BattleTriPage.invalidateTeams(rebuild) end
         for teamIdx = 1, COL_COUNT do
@@ -180,7 +185,6 @@ function BattleTriPage.refreshHeroProgressTeams(teamIndices, classTeams)
     end)
 end
 
-
 -- [终焉协同] 前向声明：ensureDrivers 的终焉接管分支引用（定义在下方）
 local startTerminalRaid
 
@@ -189,6 +193,11 @@ local startTerminalRaid
 local function ensureDrivers()
     local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     local BattleScene = require("ui.battle.scene.BattleScene")
+    local sceneStage = BattleScene.getStageId()
+    if StageConfig.isTerminalTemple(sceneStage) and not terminalRaid
+        and (not terminalOrigins or terminalOrigins.terminalStageId ~= sceneStage) then
+        BattleTriPage.captureTerminalOrigins(sceneStage)
+    end
     for t = 1, COL_COUNT do
         if unlocked >= t and not drivers[t] then
             local Driver = require("ui.battle.tri.BattleTriDriver")
@@ -207,12 +216,13 @@ local function ensureDrivers()
                 end
             end
             drv.onStageChanged = function(teamIdx, stageId)
+                -- 轮回三队事务最后统一写目标；队1进场不能先保存队2/3的旧末关。
+                if applyingTerminalDestination then return end
                 -- 关卡到达才记录当前关；重开同关/改编队不重复通知。
                 local battle = ClientDispatcher.get("battle")
                 if type(battle) == "table" then
                     if type(battle.teamStageIds) ~= "table" then battle.teamStageIds = {} end
-                    local savedId = StageConfig.isTerminalTemple(stageId)
-                        and StageConfig.getTerminalPrevStageId(stageId) or stageId
+                    local savedId = Reincarnation.safeStage(stageId, teamIdx, terminalOrigins)
                     local key = tostring(teamIdx)
                     local changed = battle.teamStageIds[key] ~= savedId
                         or (teamIdx == 1 and battle.currentStageId ~= savedId)
@@ -230,12 +240,12 @@ local function ensureDrivers()
                     if changed then
                         print(string.format("[BattleTriPage] 队%d 关卡入档 stage=%s", teamIdx, tostring(savedId)))
                         ClientDispatcher.notifySubscribers("battle")
-                        require("boot.StandaloneSave").Flush()
+                        require("boot.StandaloneSave").RequestSave()
                     end
                 end
             end
-            drv.onAllDead = function(teamIdx, stageId)
-                if triOnAllDead then triOnAllDead(teamIdx, stageId) end
+            drv.onAllDead = function(teamIdx, stageId, reason)
+                if triOnAllDead then triOnAllDead(teamIdx, stageId, reason) end
             end
             local battle = ClientDispatcher.get("battle")
             local savedTeams = restoredStageIds or (type(battle) == "table" and battle.teamStageIds) or {}
@@ -298,6 +308,9 @@ local function clearTerminalRaid()
 end
 
 startTerminalRaid = function(stageId)
+    if not terminalOrigins or terminalOrigins.terminalStageId ~= stageId then
+        BattleTriPage.captureTerminalOrigins(stageId)
+    end
     clearTerminalRaid()
     local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     for row = 1, math.min(COL_COUNT, unlocked) do
@@ -305,14 +318,16 @@ startTerminalRaid = function(stageId)
         drivers[row]._syncedMainStage = stageId
     end
     terminalRaid = TerminalRaid.new(stageId, drivers)
+    terminalRaid.returnOrigins = terminalOrigins
     for row = 1, math.min(COL_COUNT, unlocked) do
         drivers[row].terminalRaid = terminalRaid
     end
     if terminalRaid.maxHp <= 0 then
         terminalRaid:finish(false)
     end
+    -- 三队回退点全部更新后只保存一次，终焉挑战不沿用普通换关的延迟周期。
+    require("boot.StandaloneSave").Flush()
 end
-
 --- 胜利时三个编号各结算一次 Boss 击杀奖励（经验/金币），不按战线副本重复发奖。
 --- 沿用原编号归属队伍的存活英雄名单，全灭队只计金币/玩家经验。
 local function settleRaidKillRewards(raid)
@@ -340,39 +355,37 @@ end
 
 local function finishTerminalRaid(won)
     local raid = terminalRaid
-    if not raid then return end
+    if not raid or raid.settlementStarted then return end
     local stageId = raid.stageId
-    clearTerminalRaid()
+    raid.settlementStarted = true
     local BattleScene = require("ui.battle.scene.BattleScene")
-    local destination = won and StageConfig.getReincarnationTarget(StageConfig.getDifficulty(stageId))
-        or StageConfig.getTerminalPrevStageId(stageId)
-    -- 首通/轮回回调可能立即保存，先为三队预约同一退出关卡。
-    for _, drv in pairs(drivers) do drv.pendingStageId = destination or stageId end
     if won then
-        settleRaidKillRewards(raid)
-        BattleScene.completeTriTerminal(stageId)
-    else
-        local previous = StageConfig.getTerminalPrevStageId(stageId)
-        BattleScene.adoptStageProgress(previous)
-        BattleTriPage.gotoTeamStage(1, previous)
-        -- 进终焉时导航被锁定（NavLogic gotoStage），失败退回必须解锁
-        require("ui.hud.BottomNav").setAllLocked(false)
-        require("systems.GameBGM").setScene("battle")
+        require("ui.battle.tri.TerminalReincarnation").settleVictory(raid, drivers, settleRaidKillRewards, BattleScene)
+        return
     end
-    for row = 2, COL_COUNT do
-        if drivers[row] then
-            drivers[row]:start(won and (StageConfig.getReincarnationTarget(StageConfig.getDifficulty(stageId)) or stageId)
-                or (StageConfig.getTerminalPrevStageId(stageId) or stageId))
-        end
-    end
-    print(string.format("[BattleTriPage] 终焉%s，三队协同结束 stage=%d", won and "胜利" or "失败", stageId))
+    clearTerminalRaid()
+    Reincarnation.retreat(raid, drivers,
+        StageConfig.getTerminalPrevStageId(stageId), BattleScene, BattleTriPage.gotoTeamStage)
+    terminalOrigins = nil
+end
+
+--- 只由完成/skip动画出口调用，三队实际进场后由Scene统一持久化。
+function BattleTriPage.completeTerminalReincarnation(stageId, token)
+    if not terminalRaid or not terminalRaid.won or not terminalRaid.settlementStarted then return false end
+    local destinations = BattleTriPage.getTerminalReturnStageIds(terminalRaid.stageId, stageId, token)
+    if not destinations then return false end
+    clearTerminalRaid()
+    entryPreparation.invalidate()
+    Reincarnation.enterTeams(drivers, stageId,
+        function(value) applyingTerminalDestination = value end, destinations)
+    terminalOrigins = nil
+    return true
 end
 
 --- 打开三行战斗（懒建驱动器；已解锁队伍自动开战）
 function BattleTriPage.open()
     if not battleReady or isOpen_ then return end
     isOpen_ = true
-    require("ui.battle.scene.BattleScene").pumpBattleCards()
     local unlocked = ensureDrivers()
     print("[BattleTriPage] open, unlockedTeams=" .. unlocked)
 end
@@ -468,14 +481,15 @@ local function getBackgroundImage(vg, path)
     return img
 end
 
-local function ensureRowBg(vg, row, unlocked)
-    -- 锁定队展示待解锁章节；解锁后按各队实际战斗进度切回背景。
+local function ensureRowBg(vg, row, unlocked, stageId)
+    -- 锁队共用已热的林景，不为不可参战的队伍解码第10/20章两张大图。
+    -- 预热与绘制同走此函数，解锁后才切各队真实背景，不能把开销搬到首draw。
     ---@type string
     local path
     if row > unlocked then
-        path = CHAPTER_BG[row == 2 and 10 or 20]
+        path = CHAPTER_BG[1]
     else
-        path = BattleTriPage.resolveBackgroundPath(BattleTriPage.getTeamStageId(row))
+        path = BattleTriPage.resolveBackgroundPath(stageId or BattleTriPage.getTeamStageId(row))
     end
     local image = getBackgroundImage(vg, path)
     if image >= 0 then
@@ -486,12 +500,54 @@ local function ensureRowBg(vg, row, unlocked)
 end
 
 function BattleTriPage.init(vg)
+    if imageVg ~= vg then
+        imageVg = vg
+        inited = false
+        l1Images, l1Failures, l1RowImages = {}, {}, {}
+    end
     if inited then return end
     inited = true
+    BattlePauseOverlay.init()
     BattleView.init(vg)
     imgL0 = nvgCreateImage(vg, "image/暗黑/L0_stone_frame.png", 0)
     StageSelectDialog.init(vg)
     SoundToggle.initImages(vg)
+end
+
+--- 仅预热首屏素材，不创建/推进战斗驱动，不改变各队进度。
+function BattleTriPage.preload(vg)
+    BattleTriPage.init(vg)
+    local battle = ClientDispatcher.get("battle")
+    local unlocked = ExpTable.getUnlockedTeamCount(battle)
+    local savedTeams = restoredStageIds or (type(battle) == "table" and battle.teamStageIds) or {}
+    savedTeams = type(savedTeams) == "table" and savedTeams or {}
+    local BattleScene = require("ui.battle.scene.BattleScene")
+    for row = 1, COL_COUNT do
+        -- 与首次建驱动的关卡选择一致，但不为加载图片启动战斗或发进度通知。
+        local stageId = BattleTriPage.getTeamStageId(row)
+            or (row == 1 and BattleScene.getStageId())
+            or tonumber(savedTeams[tostring(row)] or savedTeams[row]) or StageConfig.NORMAL_FIRST_STAGE
+        if row ~= 1 and StageConfig.isTerminalTemple(stageId) then
+            stageId = StageConfig.getTerminalPrevStageId(stageId) or StageConfig.NORMAL_FIRST_STAGE
+        end
+        if StageConfig.isResourceStage(stageId)
+            and not require("config.DungeonConfig").isStageUnlocked(stageId, battle, ClientDispatcher.get("dungeon")) then
+            stageId = StageConfig.NORMAL_FIRST_STAGE
+        end
+        ensureRowBg(vg, row, unlocked, stageId)
+    end
+end
+
+--- 入场前创建真实驱动并预热完整首波（含候补），不调用update或推进攻击/领奖。
+--- 由宿主合作式队列调用；绘制期不消费全图鉴后台加载队列。
+function BattleTriPage.prepareEntry(vg)
+    if not battleReady then return false end
+    entryPreparation.invalidate()
+    BattleTriPage.open()
+    BattleTriPage.preload(vg)
+    local CharacterPanel = require("ui.character.panel.CharacterPanel")
+    local unlocked = math.min(COL_COUNT, ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle")))
+    return entryPreparation.prepare(vg, drivers, unlocked, CharacterPanel.getTeamSignature, not terminalRaid)
 end
 
 --- [三行并行] L0 整套大背景铺满窗口（左右面板 + 中段框体同源）
@@ -506,11 +562,13 @@ function BattleTriPage.update(dt)
         return
     end
     BattleLayout.setMode("strip")
-    require("ui.battle.scene.BattleScene").pumpBattleCards()
+    -- 三行卡面走在场/待补位缓存，不能在攻击期间继续解码全图鉴大图。
     local unlocked = ensureDrivers()
-    local logicDt = BattleTriPage.getBattleLogicDt(dt)
-    -- 帧开始仍在任一有效战线入场时，全协同只推进视觉，不推进攻击或共享限时。
+    -- 同一真实 dt 传给三队与共享计时，不读取旧倍率字段或兼容接口。
+    local logicDt = dt
+    -- 帧开始仍在任一有效战线入场时，全协同只推进视觉，不推进攻击或共享用时。
     local raidAtFrameStart = terminalRaid
+    local waitingReincarnation = raidAtFrameStart and raidAtFrameStart.settlementStarted and raidAtFrameStart.won
     local raidClockActive = false
     if raidAtFrameStart and not raidAtFrameStart.finished then
         local introPending = false
@@ -529,21 +587,25 @@ function BattleTriPage.update(dt)
         local drv = drivers[t]
         if drv then drv:update(dt, logicDt) end
     end
+    if waitingReincarnation then
+        require("ui.battle.scene.BattleScene").updateTriReincarnation(dt)
+        return
+    end
     if terminalRaid and not terminalRaid.finished then
         if terminalRaid == raidAtFrameStart and raidClockActive then
             terminalRaid.elapsed = terminalRaid.elapsed + logicDt
         end
         if terminalRaid.hp <= 0 then
             terminalRaid:finish(true)
-        elseif terminalRaid.elapsed >= require("config.GameConfig").Battle.TIME_LIMIT_SEC then
-            terminalRaid:finish(false)
+        else
+            terminalRaid:updateOffense(dt, terminalRaid == raidAtFrameStart and raidClockActive)
         end
     end
     if terminalRaid and terminalRaid.finished then
         if terminalRaid.won then
             finishTerminalRaid(true)
         else
-            -- 全灭/超时先停止战斗，至少留一秒让角色退场，不同帧立即重开。
+            -- 全灭先停止战斗，至少留一秒让角色退场，不同帧立即重开。
             -- 首次观察到失败不累计当前战斗帧；即使大 dt 也不能同帧直接退关。
             if terminalRaid.finishObserved then
                 terminalRaid.finishElapsed = terminalRaid.finishElapsed + dt
@@ -569,6 +631,7 @@ end
 local PLATE_AR = 1672 / 941
 -- 透明内矩形（归一化, 由图像 alpha 分析测得）
 -- [等距化] 左右缝柱=行缝=37: x0=(486*941/1080+37)/1672, x1=1-同款
+---@type table<number, { x0: number, y0: number, x1: number, y1: number }>
 local INTERIORS = {
     { x0 = 0.2835, y0 = 0.0117, x1 = 0.7201, y1 = 0.3103 },
     { x0 = 0.2835, y0 = 0.3475, x1 = 0.7207, y1 = 0.6482 },
@@ -700,7 +763,7 @@ function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH, fixedBgPath)
 end
 
 --- 三行战斗区主绘制（L0 已由宿主铺底; 本函数画战斗内容层 + UI 层）
-function BattleTriPage.draw(vg, logicalW, logicalH)
+function BattleTriPage.draw(vg, logicalW, logicalH, deferTerminalConfirm)
     if not isOpen_ then return end
     BattleTriPage.init(vg)
     BattleLayout.setMode("strip")
@@ -710,7 +773,11 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
     local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     local tutorial = require("systems.TutorialManager")
     if tutorial.getCurrentHighlight() == "battle_hero_detail" and not terminalRaid then
+        local session = ClientDispatcher.get("session")
+        local initialHeroId = session and tonumber(session.initialHeroId)
         visitAllyCards(logicalW, logicalH, math.min(1, unlocked), function(unit, row, _, cx, cy, w, h)
+            -- 首轮赠送武器对应初始角色，不能因其退场改选无法穿戴该武器的队友。
+            if initialHeroId and initialHeroId > 0 and tonumber(unit.heroId) ~= initialHeroId then return false end
             local ix, iy, iw, ih = interiorRect(row, logicalW, logicalH)
             local state = drivers[row].combatState
             local anim = BattleCombatAnim.getState(state, unit)
@@ -767,6 +834,15 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         end
     end
 
+    -- 灰层只覆盖已解锁战场，操作HUD/选关弹窗仍画在它之上。
+    for row = 1, math.min(COL_COUNT, unlocked) do
+        local ix, iy, iw, ih = interiorRect(row, logicalW, logicalH)
+        local drv = drivers[row]
+        local active = battleReady and drv ~= nil and drv.active == true and #drv.allies > 0
+            and (not terminalRaid or (not terminalRaid.finished and not terminalRaid.defeated[row]))
+        BattlePauseOverlay.draw(vg, ix, iy, iw, ih, active)
+    end
+
     -- ===== UI 层（窗口坐标）=====
     -- 行标签
     for row = 1, COL_COUNT do
@@ -789,7 +865,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         else
             stageText = I18n.format("【小队%d】%s", row, I18n.lookup("待解锁"))
         end
-        -- [暗黑化] 不再画行标签底条，文字直接浮在战斗场景上
+        -- 不再画行标签底条，文字直接浮在战斗场景上
         nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))
         if terminalRaid and terminalRaid.defeated[row] then
             nvgFillColor(vg, nvgRGBA(165, 170, 190, 255))
@@ -797,7 +873,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         -- 普通战斗给右上 HUD 留空；按最终译文测宽，不改行高/按钮热区。
         local labelW = iw - 56
         if not terminalRaid and row <= unlocked then
-            local hudCount = BattleScene.isSpeedButtonVisible() and 5 or 4
+            local hudCount = 4
             labelW = math.max(1, iw - 116 - (hudCount - 1) * 58)
         end
         local labelTextW = nvgTextBounds(vg, 0, 0, stageText, nil)
@@ -825,16 +901,12 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgRestore(vg)
         end
 
-        -- [终焉协同] 生命由各 Boss 卡牌血条展示，行1 只保留协同倒计时。
+        -- [终焉协同] 生命由各 Boss 卡牌血条展示，行1 标明不限时。
         if terminalRaid and row == 1 and row <= unlocked then
-            local timeLimit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
-            local left = math.max(0, math.ceil(timeLimit - terminalRaid.elapsed))
             nvgFontSize(vg, 22)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, left <= 30 and nvgRGBA(255, 120, 110, 255)
-                or nvgRGBA(236, 226, 198, 255))
-            nvgText(vg, ix + 28, iy + 55,
-                I18n.format("限时 %d:%02d", left // 60, left % 60), nil)
+            nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
+            nvgText(vg, ix + 28, iy + 55, I18n.lookup("不限时"), nil)
         end
 
         local killed, total
@@ -887,7 +959,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
 
     -- [对话框覆盖] 选关/扫荡/统计/终焉确认：按当前横屏可用区域放大到 2 倍。
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
-        or TerminalConfirmDialog.isOpen() then
+        or (TerminalConfirmDialog.isOpen() and not deferTerminalConfirm) then
         local ox, oy, fit = BattleTriPage.getDialogTransform(logicalW, logicalH)
         nvgSave(vg)
         nvgScissor(vg, 0, 0, logicalW, logicalH)
@@ -896,7 +968,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         if SweepDialog.isOpen() then SweepDialog.draw(vg) end
         if DamageStatsPanel.isOpen() then DamageStatsPanel.draw(vg) end
         if StageSelectDialog.isOpen() then StageSelectDialog.draw(vg) end
-        if TerminalConfirmDialog.isOpen() then
+        if TerminalConfirmDialog.isOpen() and not deferTerminalConfirm then
             TerminalConfirmDialog.draw(vg, BattleScene.getStageId(), function() return StageConfig end)
         end
         nvgRestore(vg)
@@ -970,7 +1042,7 @@ function BattleTriPage.gotoTeamStage(teamIdx, stageId)
     return true
 end
 
---- 每行 HUD 从右上角往左排：速度(可选) / 扫荡 / 统计 / 选关 / 音效。
+--- 每行 HUD 从右上角往左排：扫荡 / 统计 / 选关 / 音效。
 --- 由宿主在 BattleTriPage.draw 之后调用——保证按钮位于一切战斗背景/框柱之上（避免穿帮）。
 --- 任一模态对话框打开时不绘制（弹窗压暗与本体在 draw 内已覆盖按钮位）。
 --- 已解锁的其他队伍与第一行保持同一套按钮。
@@ -980,7 +1052,6 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         or TerminalConfirmDialog.isOpen() or terminalRaid then
         return
     end
-    local BattleScene = require("ui.battle.scene.BattleScene")
     local ix1, iy1, iw1, ih1 = interiorRect(1, logicalW, logicalH)
     local hudScale = 0.44  -- 原 0.55 的约 80%
     local hudPad = 4
@@ -988,13 +1059,8 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
     local hudY = iy1 + hudHalf + 2
     local hudGap = 58
     local hudShift = 17  -- 约 0.3 个按钮宽，避免贴出右框
-    local showSpeed = BattleScene.isSpeedButtonVisible()
     local cursorX = ix1 + iw1 - hudPad - hudHalf - hudShift
-    local hudSpeedX, hudSweepX, hudStatsX, hudStageX, hudSoundX
-    if showSpeed then
-        hudSpeedX = cursorX
-        cursorX = cursorX - hudGap
-    end
+    local hudSweepX, hudStatsX, hudStageX, hudSoundX
     hudSweepX = cursorX
     cursorX = cursorX - hudGap
     hudStatsX = cursorX
@@ -1002,15 +1068,7 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
     hudStageX = cursorX
     cursorX = cursorX - hudGap
     hudSoundX = cursorX
-    if showSpeed then
-        nvgSave(vg)
-        nvgTranslate(vg, hudSpeedX, hudY)
-        nvgScale(vg, hudScale, hudScale)
-        nvgTranslate(vg, -987, -311)
-        BattleScene.drawSpeedButton(vg)
-        nvgRestore(vg)
-    end
-    if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(1)) then
+    do
         nvgSave(vg)
         nvgTranslate(vg, hudSweepX, hudY)
         nvgScale(vg, hudScale, hudScale)
@@ -1049,11 +1107,7 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         local ix, iy, iw = interiorRect(row, logicalW, logicalH)
         local rowY = iy + hudHalf + 2
         local rowCursor = ix + iw - hudPad - hudHalf - hudShift
-        local rowSpeedX, rowSweepX, rowStatsX, rowStageX, rowSoundX
-        if showSpeed then
-            rowSpeedX = rowCursor
-            rowCursor = rowCursor - hudGap
-        end
+        local rowSweepX, rowStatsX, rowStageX, rowSoundX
         rowSweepX = rowCursor
         rowCursor = rowCursor - hudGap
         rowStatsX = rowCursor
@@ -1061,15 +1115,7 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         rowStageX = rowCursor
         rowCursor = rowCursor - hudGap
         rowSoundX = rowCursor
-        if showSpeed then
-            nvgSave(vg)
-            nvgTranslate(vg, rowSpeedX, rowY)
-            nvgScale(vg, hudScale, hudScale)
-            nvgTranslate(vg, -987, -311)
-            BattleScene.drawSpeedButton(vg)
-            nvgRestore(vg)
-        end
-        if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(row)) then
+        do
             nvgSave(vg)
             nvgTranslate(vg, rowSweepX, rowY)
             nvgScale(vg, hudScale, hudScale)
@@ -1146,8 +1192,6 @@ function BattleTriPage.handleInput(wx, wy)
         RewardPopup.handleInputRegion(wx, wy, ix1, iy1, iw1, ih1)
         return true
     end
-    local bs = require("ui.battle.scene.BattleScene")
-
     -- 对话框打开: 逆映射到设计空间（与 2 倍渲染缩放一致）
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
         local dx, dy = dialogToDesign(wx, wy)
@@ -1166,13 +1210,8 @@ function BattleTriPage.handleInput(wx, wy)
     local hudY = iy1 + hudHalf + 2
     local hudGap = 58
     local hudShift = 17  -- 与 drawHud 一致
-    local showSpeed = bs.isSpeedButtonVisible()
     local cursorX = ix1 + iw1 - hudPad - hudHalf - hudShift
-    local hudSpeedX, hudSweepX, hudStatsX, hudStageX, hudSoundX
-    if showSpeed then
-        hudSpeedX = cursorX
-        cursorX = cursorX - hudGap
-    end
+    local hudSweepX, hudStatsX, hudStageX, hudSoundX
     hudSweepX = cursorX
     cursorX = cursorX - hudGap
     hudStatsX = cursorX
@@ -1181,13 +1220,10 @@ function BattleTriPage.handleInput(wx, wy)
     cursorX = cursorX - hudGap
     hudSoundX = cursorX
     local hitW, hitH = 65 * hudScale, 72 * hudScale
-    if showSpeed and math.abs(wx - hudSpeedX) <= hitW and math.abs(wy - hudY) <= hitH then
-        bs.handleSpeedButtonInput(987 + (wx - hudSpeedX) / hudScale, 311 + (wy - hudY) / hudScale)
-        return true
-    end
-    if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(1))
-        and math.abs(wx - hudSweepX) <= hitW and math.abs(wy - hudY) <= hitH then
-        SweepDialog.handleButtonInput(971 + (wx - hudSweepX) / hudScale, 2115 + (wy - hudY) / hudScale, 1)
+    if math.abs(wx - hudSweepX) <= hitW and math.abs(wy - hudY) <= hitH then
+        -- 驱动 stageId 是已到达关卡；pendingStageId 仅是行军预约，不能冒充当前。
+        SweepDialog.handleButtonInput(971 + (wx - hudSweepX) / hudScale, 2115 + (wy - hudY) / hudScale,
+            1, BattleTriPage.getTeamStageId(1))
         return true
     end
     if math.abs(wx - hudStatsX) <= hitW and math.abs(wy - hudY) <= hitH then
@@ -1209,11 +1245,7 @@ function BattleTriPage.handleInput(wx, wy)
         local ix, iy, iw = interiorRect(row, logicalW, logicalH)
         local rowY = iy + hudHalf + 2
         local rowCursor = ix + iw - hudPad - hudHalf - hudShift
-        local rowSpeedX, rowSweepX, rowStatsX, rowStageX, rowSoundX
-        if showSpeed then
-            rowSpeedX = rowCursor
-            rowCursor = rowCursor - hudGap
-        end
+        local rowSweepX, rowStatsX, rowStageX, rowSoundX
         rowSweepX = rowCursor
         rowCursor = rowCursor - hudGap
         rowStatsX = rowCursor
@@ -1221,13 +1253,9 @@ function BattleTriPage.handleInput(wx, wy)
         rowStageX = rowCursor
         rowCursor = rowCursor - hudGap
         rowSoundX = rowCursor
-        if showSpeed and math.abs(wx - rowSpeedX) <= hitW and math.abs(wy - rowY) <= hitH then
-            bs.handleSpeedButtonInput(987 + (wx - rowSpeedX) / hudScale, 311 + (wy - rowY) / hudScale)
-            return true
-        end
-        if not StageConfig.isResourceStage(BattleTriPage.getTeamStageId(row))
-            and math.abs(wx - rowSweepX) <= hitW and math.abs(wy - rowY) <= hitH then
-            SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale, row)
+        if math.abs(wx - rowSweepX) <= hitW and math.abs(wy - rowY) <= hitH then
+            SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale,
+                row, BattleTriPage.getTeamStageId(row))
             return true
         end
         if math.abs(wx - rowStatsX) <= hitW and math.abs(wy - rowY) <= hitH then
@@ -1371,7 +1399,7 @@ end
 --- 三队实时快照。预约只用于存档连续性，不改变正在行军的战线实际关卡。
 ---@return number[]|nil
 function BattleTriPage.getTeamStageIds()
-    if not next(drivers) and not restoredStageIds then return nil end
+    if not next(drivers) and not restoredStageIds and not terminalOrigins then return nil end
     local battle = ClientDispatcher.get("battle")
     local saved = type(battle) == "table" and battle.teamStageIds or {}
     saved = type(saved) == "table" and saved or {}
@@ -1385,30 +1413,33 @@ function BattleTriPage.getTeamStageIds()
             or tonumber(saved[tostring(team)] or saved[team])
             or (team == 1 and type(battle) == "table" and tonumber(battle.currentStageId))
             or StageConfig.NORMAL_FIRST_STAGE
-        -- 协同是临时运行态，读档回到末关，不允许单队恢复终焉。
-        result[team] = StageConfig.isTerminalTemple(stageId)
-            and (StageConfig.getTerminalPrevStageId(stageId) or StageConfig.NORMAL_FIRST_STAGE) or stageId
+        -- 协同只落逐队安全点：资源原预约，主线末关；真实恢复不会重启终焉。
+        result[team] = Reincarnation.safeStage(stageId, team, terminalOrigins)
     end
     return result
 end
 
+--- 退出会话兜底：隐藏页面不结束战斗，只有宿主Stop显式调用这里。
+function BattleTriPage.flushPendingGrowth()
+    local ETS = require("systems.ExtraTalentSystem")
+    if terminalRaid then OffenseGuard.reset(terminalRaid) end
+    for _, drv in pairs(drivers) do
+        OffenseGuard.reset(drv)
+        drv:activate()
+        ETS.flush()
+        if not drv.terminalRaid then drv:queuePendingKills() end
+    end
+end
+
 --- 放弃旧协同，不分发死亡事件，不通过正常收尾/奖励结算路径。
 local function discardTerminalRaid()
-    if not terminalRaid then return end
-    terminalRaid:release()
-    for _, drv in pairs(drivers) do drv.terminalRaid = nil end
-    terminalRaid = nil
+    require("ui.battle.tri.TerminalReincarnation").discardRaid(terminalRaid, drivers)
+    terminalRaid, terminalOrigins = nil, nil
 end
 
 local function discardDriver(drv)
-    drv.active = false
-    drv.pendingKills, drv.rewardQueue = {}, {}
-    drv.rewardTimer, drv.pendingStageId = 0, nil
-    drv.psState.projectiles, drv.combatState.comboQueue = {}, {}
-    drv.onKill, drv.onDrop, drv.onStageCleared, drv.onStageChanged, drv.onAllDead = nil, nil, nil, nil, nil
-    drv:activate()
-    RCH.reset()
-    require("systems.ArtifactRuntime").reset(drv.allies)
+    OffenseGuard.reset(drv)
+    return Reincarnation.discardDriver(drv)
 end
 
 --- 只在真实恢复时回灌，周期同步必须仅采集；接受数组或规范字符串键表。
@@ -1423,6 +1454,8 @@ function BattleTriPage.setTeamStageIds(stageIds)
             and (StageConfig.getTerminalPrevStageId(id) or StageConfig.NORMAL_FIRST_STAGE) or id
     end
     -- 旧单位、掉落与共享绑定均属于旧读档上下文；新阵容齐备后才由ensureDrivers重建。
+    require("ui.battle.scene.BattleScene").cancelTriReincarnation()
+    entryPreparation.invalidate()
     discardTerminalRaid()
     for _, drv in pairs(drivers) do discardDriver(drv) end
     drivers = {}
@@ -1433,6 +1466,8 @@ end
 --- 清档公开出口：不得让旧raid在清理时结算奖，也不能保留驱动或恢复进度。
 function BattleTriPage.resetToDefault()
     battleReady, isOpen_ = false, false
+    require("ui.battle.scene.BattleScene").cancelTriReincarnation()
+    entryPreparation.invalidate()
     discardTerminalRaid()
     for _, drv in pairs(drivers) do discardDriver(drv) end
     drivers, restoredStageIds, l1RowImages = {}, nil, {}
@@ -1442,7 +1477,8 @@ end
 
 -- 更新/绘制/选关/恢复临时借用各战线，正常及异常出口均恢复调用方挂载。
 BattleMountScope.wrap(BattleTriPage, {
-    "open", "update", "draw", "gotoTeamStage", "setTeamStageIds", "resetToDefault", "handleInput",
+    "open", "prepareEntry", "update", "draw", "gotoTeamStage", "setTeamStageIds", "resetToDefault", "handleInput",
+    "completeTerminalReincarnation", "flushPendingGrowth",
 }, false)
 
 return BattleTriPage

@@ -13,6 +13,7 @@ local DungeonConfig = require("config.DungeonConfig")
 local EnemySpawn = require("ui.battle.stage.BattleEnemySpawn")
 local BattleLayout = require("core.BattleLayout")
 local CombatRuntime = require("ui.dungeon.DungeonCombatRuntime")
+local ETS = require("systems.ExtraTalentSystem")
 
 local DungeonBattle = {}
 
@@ -148,6 +149,7 @@ function DungeonBattle.enter(data, allies)
     cfg.dungeonId         = data.dungeonId or "gold_mine"
     cfg.teamIdx           = data.teamIdx or 1
     cfg.challengeId       = data.challengeId
+    cfg.runId             = data.runId
     cfg.resourceCombat    = DungeonConfig.isResourceDungeon(cfg.dungeonId)
     cfg.stageEntry        = data.stageEntry
     if cfg.resourceCombat and not cfg.stageEntry then
@@ -439,11 +441,16 @@ function DungeonBattle.shouldSuperCrit(attacker, isCrit)
     return false
 end
 
---- 通天塔：击杀敌人回调
----@param killer table
-function DungeonBattle.onEnemyKill(killer)
+--- 通天塔：同一敌人每次死亡只计一次，兼容无目标身份的旧调用。
+---@param killer table|nil
+---@param deadUnit? table
+function DungeonBattle.onEnemyKill(killer, deadUnit)
     if not active then return end
     if cfg.dungeonId ~= "babel_tower" then return end
+    if deadUnit then
+        if deadUnit._towerKillReported then return end
+        deadUnit._towerKillReported = true
+    end
     local ok, TBR = pcall(require, "systems.TowerBuffRuntime")
     if ok and TBR and TBR.onEnemyKill then
         TBR.onEnemyKill(killer)
@@ -461,17 +468,27 @@ function DungeonBattle.onAllyDeath(deadUnit)
     end
 end
 
---- 通天塔：攻击间隔倍率
+--- 通天塔：攻击间隔倍率；实时属性入口需显式叠加静态暗契及本场狂暴。
 ---@param unit table
+---@param fromAttributes? boolean 旧缓存间隔调用保留仅动态倍率的契约。
 ---@return number multiplier
-function DungeonBattle.getAtkIntervalMultiplier(unit)
+function DungeonBattle.getAtkIntervalMultiplier(unit, fromAttributes)
     if not active then return 1.0 end
     if cfg.dungeonId ~= "babel_tower" then return 1.0 end
-    local ok, TBR = pcall(require, "systems.TowerBuffRuntime")
-    if ok and TBR and TBR.getAtkIntervalMultiplier then
-        return TBR.getAtkIntervalMultiplier(unit)
+    local multiplier = 1.0
+    if fromAttributes then
+        if ragePhase >= 2 then
+            multiplier = multiplier / (1.0 + cfg.superRageAtkBonus)
+        elseif ragePhase >= 1 then
+            multiplier = multiplier / (1.0 + cfg.rageAtkBonus)
+        end
     end
-    return 1.0
+    local ok, TBR = pcall(require, "systems.TowerBuffRuntime")
+    if ok and TBR and (not fromAttributes or isAllyUnit(unit)) then
+        if fromAttributes then multiplier = multiplier * TBR.getStaticIntervalMultiplier(unit) end
+        if TBR.getAtkIntervalMultiplier then multiplier = multiplier * TBR.getAtkIntervalMultiplier(unit) end
+    end
+    return multiplier
 end
 
 -- ======================== 胜负处理 ========================
@@ -481,6 +498,7 @@ end
 function DungeonBattle.onVictory()
     if not active or resultPending then return end
     if cfg.trainingDummy then return end
+    ETS.flush() -- 普通副本已由DungeonScope挂载；塔宿主先逐lane结清。
 
     print(string.format("[DungeonBattle] VICTORY floor=%d elapsed=%.1fs ragePhase=%d",
         cfg.floor, elapsed, ragePhase))
@@ -498,6 +516,7 @@ function DungeonBattle.onVictory()
         Client.sendAction(Protocol.ACTION_TYPES.TOWER_WAVE_WIN, {
             floor = cfg.floor,
             wave  = cfg.wave or 1,
+            runId = cfg.runId,
         })
     else
         Client.sendAction(Protocol.ACTION_TYPES.DUNGEON_WIN, {
@@ -516,7 +535,8 @@ end
 function DungeonBattle.debugInstantWin()
     if not active then return false end
     if resultPending then return true end
-    DungeonBattle.onVictory()
+    -- DebugPanel在宿主输入域直接调用，不能flush最近一条主线的ETS状态。
+    require("ui.dungeon.DungeonBattleScope").run(cfg.teamIdx or 1, DungeonBattle.onVictory)
     print("[DungeonBattle][Debug] 立即胜利: dungeon=" .. tostring(cfg.dungeonId)
         .. " floor=" .. tostring(cfg.floor)
         .. " wave=" .. tostring(cfg.wave or 1))
@@ -527,6 +547,7 @@ end
 --- 不再立即 exit，进入结算等待状态
 function DungeonBattle.onDefeat()
     if not active or resultPending then return end
+    ETS.flush() -- 失败/超时/撤退也保留已触发成长，先于取消挑战与结算回执。
     if cfg.resourceCombat then CombatRuntime.cancelChallenge() end
 
     print(string.format("[DungeonBattle] DEFEAT floor=%d elapsed=%.1fs", cfg.floor, elapsed))

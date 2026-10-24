@@ -1,5 +1,5 @@
 -- ============================================================================
--- BlacksmithDraw - BlacksmithPage.drawPageImpl（[锻炉双页 0929] 重写）
+-- BlacksmithDraw - BlacksmithPage.drawPageImpl（重写）
 -- 中栏锻炉页：背景 + 名牌 + 装备工作台槽 + 强化/洗练双页签
 -- 整页滑入由 BlacksmithPage.draw 外层 seamSlideX(+1) 处理，本层不再分段滑动
 -- ============================================================================
@@ -39,7 +39,6 @@ function M.bind(deps)
     local imgNameBg = deps.imgNameBg
     local imgTabBg = deps.imgTabBg
     local WORKBENCH_CX, WORKBENCH_CY = deps.WORKBENCH_CX, deps.WORKBENCH_CY
-    local closeAutoWarehouse = deps.closeAutoWarehouse
     local state = deps.state
 
     local tabKeys = { "qianghua", "xilian" }
@@ -54,7 +53,7 @@ function M.bind(deps)
             if rawT >= 1.0 then
                 state.open = false
                 state.closing = false
-                if closeAutoWarehouse then closeAutoWarehouse() end
+                -- 仓库在close入口已同步退场，此处不能延迟释放后来新开的持有者。
                 local cb = deps.getOnCloseCallback and deps.getOnCloseCallback()
                 if deps.setOnCloseCallback then deps.setOnCloseCallback(nil) end
                 if cb then cb() end
@@ -122,7 +121,7 @@ function M.bind(deps)
             inactive = { r = TAB_INACTIVE_R, g = TAB_INACTIVE_G, b = TAB_INACTIVE_B },
             activePred = function(i, _) return state.tab == tabKeys[i] end,
             drawBadge = function(vg2, i, item, textX, textY)
-                if i == 1 and imgIconUp and imgIconUp >= 0 and BlacksmithPage.canEnhanceAny() then
+                if i == 1 and imgIconUp and imgIconUp >= 0 and BlacksmithPage.canEnhanceSelected() then
                     nvgFontFace(vg2, "sans"); nvgFontSize(vg2, TAB_FONT_SIZE)
                     local upSize = 30
                     local textHalfW = nvgTextBounds(vg2, 0, 0, item.name) * 0.5

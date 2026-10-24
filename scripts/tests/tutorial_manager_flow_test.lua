@@ -122,7 +122,7 @@ function Start()
         check(TM.isGroupCompleted(9) and not TM.isActive(), "全重复招募无新角色不死等拖拽")
 
         TM.startGroup(10)
-        TM.update(2)
+        TM.update(1.5)
         TM.clearHotspots()
         TM.setOverlayRect(960, 540, nil)
         local layout = nativeRequire("ui.tutorial.TutorialOverlay").layout(960, 540, nil)
@@ -164,6 +164,133 @@ function Start()
         init()
         check(#TM.getProgress().queue == 1 and data.session.claimedScenarios["5"] == beforeClaims,
             "队列恢复不改剧情领取账本")
+
+        -- 没有恢复路由的旧目标仍可超时退出；已知页面另测强制恢复。
+        local recoveryChanged, recoveryBlocked = false, false
+        mocks["ui.tutorial.TutorialPageRecovery"].canRestoreTarget = function() return false end
+        mocks["ui.tutorial.TutorialPageRecovery"].isBlocked = function() return recoveryBlocked end
+        mocks["ui.tutorial.TutorialPageRecovery"].prepare = function(_, _, target)
+            calls.target = target
+            return recoveryChanged
+        end
+        local function resetMissing(group)
+            story, reward, recoveryChanged, recoveryBlocked = false, false, false, false
+            data.session.tutorialProgress = { version = 1, completed = {}, group = group, newHeroId = 1 }
+            init()
+            TM.setOverlayRect(960, 540, nil)
+        end
+        resetMissing(10)
+        TM.startGroup(11)
+        TM.update(1.9)
+        check(TM.isActive() and not TM.isGroupCompleted(10), "缺目标两秒前保留准备时间")
+        TM.update(0.11)
+        check(TM.isGroupCompleted(10) and not TM.isInputActive() and TM.canPointerStart(0, 0),
+            "缺目标超时自动跳过并立即释放输入")
+        TM.update(0.2)
+        check(not TM.isActive() and #TM.getProgress().queue == 1, "超时仅结束当前组，保留后续队列")
+        TM.update(0.25)
+        check(TM.getCurrentGroup() == 11, "自动跳过后后续引导正常启动")
+        TM.skipCurrentGroup(); TM.update(0.3); init()
+        check(TM.isGroupCompleted(10) and TM.isGroupCompleted(11) and not TM.isActive(),
+            "自动跳过结果持久化，重进不恢复失效引导")
+        check(data.session.claimedScenarios["5"] == beforeClaims, "自动跳过不修改已领取剧情奖励")
+
+        resetMissing(10)
+        TM.update(1.5); hs("building_smith"); TM.update(0.01)
+        check(not TM.isGroupCompleted(10), "准备期内出现目标不会误跳过")
+        TM.setOverlayRect(960, 540, nil)
+        TM.update(1.5)
+        check(not TM.isGroupCompleted(10), "目标短暂消失重新计时，不累计旧缺失时长")
+        hs("building_smith"); TM.update(10)
+        check(TM.isInputActive() and not TM.isGroupCompleted(10), "可见目标不因停留时间长被跳过")
+
+        resetMissing(10)
+        TM.setOverlayRect(960, 540, { cx = -200, cy = -200, w = 40, h = 40 })
+        check(not TM.canPointerStart(-200, -200), "屏幕外热点不能放行点击")
+        TM.update(2)
+        check(TM.isGroupCompleted(10) and not TM.isInputActive(), "完全屏幕外热点视为缺失并自动跳过")
+        resetMissing(10)
+        TM.setOverlayRect(960, 540, { cx = 0, cy = 200, w = 100, h = 60 })
+        TM.update(3)
+        check(TM.isInputActive() and not TM.isGroupCompleted(10), "部分可见热点保留正常引导")
+        check(TM.canPointerStart(20, 200) and not TM.canPointerStart(-20, 200),
+            "部分可见热点只放行屏幕内按钮边界")
+
+        resetMissing(10)
+        recoveryChanged = true
+        for _ = 1, 4 do TM.update(0.5) end
+        check(TM.isGroupCompleted(10) and not TM.isInputActive(),
+            "页面持续恢复失败也能超时，不被恢复器无限重置")
+        recoveryChanged = false
+
+        for _, blocker in ipairs({ "story", "reward", "page" }) do
+            resetMissing(10)
+            TM.update(1)
+            story, reward, recoveryBlocked = blocker == "story", blocker == "reward", blocker == "page"
+            TM.update(10)
+            check(not TM.isGroupCompleted(10) and not TM.isInputActive(), "高优先级窗口暂停缺失计时: " .. blocker)
+            story, reward, recoveryBlocked = false, false, false
+            TM.update(0.9)
+            check(not TM.isGroupCompleted(10), "高优先级窗口关闭后保留剩余准备时间: " .. blocker)
+            TM.update(0.11)
+            check(TM.isGroupCompleted(10), "恢复计时后可自动跳过: " .. blocker)
+        end
+
+        resetMissing(1)
+        TM.startGroup(2)
+        hs("character_slot_1")
+        TM.registerCharacterDetailHotspot("character_slot_1", 2, 250, 200, 100, 60, "right")
+        TM.update(1.5)
+        check(not TM.isGroupCompleted(1), "新步骤拥有独立准备时间")
+        TM.handleScreenClick(250, 200)
+        TM.update(5)
+        check(not TM.isGroupCompleted(1), "可见入口目标等待真实回执，不因操作耗时跳过")
+        TM.setOverlayRect(960, 540, nil); TM.update(2)
+        check(TM.isGroupCompleted(1), "业务回执步骤缺目标同样自动跳过，不伪造入口成功")
+
+        resetMissing(8)
+        TM.notifyEvent("gacha10_started"); TM.update(3)
+        check(TM.getCurrentHighlight() == nil and not TM.isGroupCompleted(8),
+            "招募隐形等待没有热点也不被两秒超时误跳过")
+        TM.update(10)
+        check(TM.getCurrentHighlight() == "tavern_btn_gacha10" and not TM.isGroupCompleted(8),
+            "招募失联仍沿用原有十二秒重试机制")
+        TM.setOverlayRect(960, 540, nil); TM.update(2)
+        check(TM.isGroupCompleted(8), "招募入口恢复失败时自动跳过引导")
+
+        local forced, recovered = 0, false
+        mocks["ui.tutorial.TutorialPageRecovery"].canRestoreTarget = function() return true end
+        mocks["ui.tutorial.TutorialPageRecovery"].prepare = function(_, _, target, _, _, _, force)
+            calls.target = target
+            if force then forced = forced + 1; return recovered end
+            return false
+        end
+        resetMissing(10); TM.startGroup(11)
+        TM.update(1.9)
+        check(forced == 0 and not TM.isGroupCompleted(10), "已知目标缺失先正常准备，不提前强制定位")
+        TM.update(0.11)
+        check(forced == 1 and TM.getCurrentGroup() == 10 and TM.getProgress().step == 1
+            and not TM.isGroupCompleted(10) and #TM.getProgress().queue == 1,
+            "两秒后强制恢复页面，保留当前步骤和后续队列而非完成组")
+        TM.update(2)
+        check(forced == 2 and not TM.isGroupCompleted(10), "数据未到允许再次恢复，不永久跳过教学")
+        recovered = true; TM.update(2)
+        check(TM.isInputActive() and not TM.isGroupCompleted(10), "强制打开成功的同帧不能因旧缺失计时完成")
+        TM.update(0.5); hs("building_smith"); TM.update(0.01)
+        local beforeForce = forced
+        TM.update(10)
+        check(forced == beforeForce and not TM.isGroupCompleted(10), "真实热点恢复后不反复强制定位")
+        TM.setOverlayRect(960, 540, nil); recovered = false
+        TM.update(1); story = true; TM.update(10); story = false; TM.update(0.9)
+        check(forced == beforeForce, "剧情期间强制恢复计时暂停")
+        TM.update(0.11)
+        check(forced == beforeForce + 1 and not TM.isGroupCompleted(10), "让位结束后再恢复，不抢剧情页面")
+        TM.skipCurrentGroup(); TM.update(0.3)
+        check(TM.isGroupCompleted(10) and #TM.getProgress().queue == 1, "手动跳过仍可释放无法恢复的当前引导")
+        check(data.session.claimedScenarios["5"] == beforeClaims, "强制恢复不修改奖励账本")
+        resetMissing(8); TM.notifyEvent("gacha10_started"); beforeForce = forced; TM.update(3)
+        check(forced == beforeForce and not TM.isGroupCompleted(8), "隐形招募等待不强制打开页面")
+
         print("[tutorial_manager_flow_test] ALL PASS: " .. count .. " assertions")
     end)
     require = nativeRequire

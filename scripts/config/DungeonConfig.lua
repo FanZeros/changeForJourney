@@ -8,6 +8,7 @@ local DungeonConfig = {}
 -- ======================== 职业增益循环 ========================
 
 --- 职业增益类型（每5层循环: 战士→法师→射手→刺客→牧师）
+---@type string[]
 DungeonConfig.CLASS_BONUS_CYCLE = {
     "spoil",     -- 拾骸者（原战士）
     "rift",      -- 裂隙使（原法师）
@@ -24,7 +25,9 @@ DungeonConfig.CLASS_BONUS_VALUE = 0.20  -- +20% 伤害/治疗
 ---@return string 职业标识
 function DungeonConfig.getClassBonus(floor)
     local idx = ((floor - 1) % 5) + 1
-    return DungeonConfig.CLASS_BONUS_CYCLE[idx]
+    local bonus = DungeonConfig.CLASS_BONUS_CYCLE[idx]
+    ---@cast bonus string
+    return bonus
 end
 
 -- ======================== 狂暴机制 ========================
@@ -338,6 +341,8 @@ local StageConfig = require("config.StageConfig")
 
 DungeonConfig.RESOURCE_IDS = { "gold_mine", "equipment_vault", "black_diamond" }
 DungeonConfig.EXTRA_ENEMIES = 2
+-- 固定上界用于读档与终点锚点，不随新内容扩展改写。
+DungeonConfig.LEGACY_MAX_FLOOR = { gold_mine = 115, equipment_vault = 109, black_diamond = 115 }
 DungeonConfig.DEFINITIONS = {
     gold_mine = {
         name = "金币副本", unlockStage = 305, maxFloor = 115,
@@ -355,8 +360,16 @@ DungeonConfig.DEFINITIONS = {
         rewardType = "diamond", rewardIcon = "image/货币道具/UI_icon_SJ_X.png", quality = 5,
     },
 }
+-- 从解锁源关延伸至全部主线难度末关；终焉不作为资源关。
 for _, id in ipairs(DungeonConfig.RESOURCE_IDS) do
     local def = DungeonConfig.DEFINITIONS[id]
+    local count = 0
+    for _, stage in ipairs(StageConfig.STAGES) do
+        if not StageConfig.isTerminalTemple(stage.id) and stage.id >= def.unlockStage then
+            count = count + 1
+        end
+    end
+    def.maxFloor = count
     DungeonConfig.UNLOCK_CONDITIONS[id] = def.unlockStage
     DungeonConfig.MAX_FLOOR[id] = def.maxFloor
     DungeonConfig.DAILY_SWEEP_LIMIT[id] = 2
@@ -428,6 +441,9 @@ function DungeonConfig.getCombatEntry(id, floor)
     -- 资源连续关不应在借用主线下一章首关时从28/32名敌人骤降至12名。
     entry.firstCount = sourceEnemyCounts[id][floor] + DungeonConfig.EXTRA_ENEMIES
     entry.idleCount = entry.firstCount
+    -- firstCount 取自历史最大敌数；推荐战力必须用同一基准做分母，否则遇到
+    -- 难度切换处敌数骤降的源关会把比值放大到 1.78×，相邻层出现锯齿。
+    entry.enemyCountBaseline = sourceEnemyCounts[id][floor]
     entry.firstClearBonusMonster, entry.firstClearBonusMonsters = nil, nil
     entry.maxFieldEnemies = 4
     entry.mode = "resource_dungeon"
@@ -437,26 +453,79 @@ function DungeonConfig.getCombatEntry(id, floor)
     return entry
 end
 
---- 装备副本每层产出随层成长；首通按两次扫荡当量。
-DungeonConfig.EQUIP_SWEEP_BASE = 80
-DungeonConfig.EQUIP_SWEEP_STEP = 25
+-- 装备副本控量提质：12h效率基准只缓增；首通/完整24h为两倍。
+-- 数值是挂机效率当量，不是每券固定件数；一券仍按实际逐杀概率取整。
+-- 以源主线章节末为锚点，换难度不随普通怪池回落，也不改变敌人/等级/卷轴。
+local equipRewardNodes = {
+    { chapter = 13, count = 20 }, -- 开局品质保留原Q1..4比例，只加入万分之一至臻。
+    { chapter = 23, count = 40, probabilities = { 0.20, 0.25, 0.2699, 0.25, 0.03, 0.0001 } },
+    { chapter = 46, count = 60, probabilities = { 0.10, 0.20, 0.269, 0.35, 0.08, 0.001 } },
+    { chapter = 69, count = 80, probabilities = { 0.05, 0.15, 0.255, 0.42, 0.12, 0.005 } },
+    { chapter = 92, count = 100, probabilities = { 0.01, 0.10, 0.2475, 0.45, 0.18, 0.0125 } },
+    { chapter = 345, count = 140, probabilities = { 0, 0.02, 0.15, 0.45, 0.35, 0.03 } },
+}
 
---- 装备副本指定层的一次扫荡当量（挂机 24h = 两次）。
+local function getEquipRewardSegment(floor)
+    local maxFloor = DungeonConfig.MAX_FLOOR.equipment_vault
+    local level = math.min(maxFloor, math.max(1, math.floor(tonumber(floor) or 1)))
+    local source = getSourceStage("equipment_vault", level)
+    -- 13-5为起点；每个小关增加0.2章，章节末恰好落在配置锚点上。
+    local progress = source and (source.chapter + ((source.stage or 5) - 5) / 5) or 13
+    for index = 2, #equipRewardNodes do
+        local left, right = equipRewardNodes[index - 1], equipRewardNodes[index]
+        if progress <= right.chapter then
+            local ratio = math.max(0, (progress - left.chapter) / (right.chapter - left.chapter))
+            return left, right, ratio
+        end
+    end
+    local last = equipRewardNodes[#equipRewardNodes]
+    return last, last, 0
+end
+
+--- 装备副本指定层的12h效率基准（完整24h = 两倍），超末层钳制。
 ---@param floor number
 ---@return number
 function DungeonConfig.getEquipSweepCount(floor)
-    floor = math.max(1, math.floor(tonumber(floor) or 1))
-    return DungeonConfig.EQUIP_SWEEP_BASE + (floor - 1) * DungeonConfig.EQUIP_SWEEP_STEP
+    local left, right, ratio = getEquipRewardSegment(floor)
+    return math.floor(left.count + (right.count - left.count) * ratio + 0.5)
 end
 
---- 装备副本沿用源关卷轴掉率；扫荡券与主线同口径（卷轴的 4 倍，夹在 0.12~0.35）。
+--- 装备副本沿用源关卷轴掉率；扫荡券委托主线统一掉率，不另设倍率。
 ---@param floor number
 ---@return number scrollRate, number ticketRate
 function DungeonConfig.getEquipDropRates(floor)
     local source = getSourceStage("equipment_vault", floor)
     local scrollRate = source and (source.scrollDropRate or 0.05) or 0.05
-    local ticketRate = math.min(0.35, math.max(0.12, scrollRate * 4))
+    -- 函数内加载，避免配置初始化与掉落系统互相引用。
+    local ticketRate = require("systems.DropSystem").getSweepTicketRate(scrollRate)
     return scrollRate, ticketRate
+end
+
+--- 装备副本独立稀有度曲线；只在开局借原Q1..4比例，不随怪池/难度重置。
+--- 每件至臻最少万分之一，后续Q4+、Q5+、Q6累计概率单调提升；不影响点金门槛。
+---@param floor number
+---@return number[]
+function DungeonConfig.getEquipQualityProbabilities(floor)
+    if not equipRewardNodes[1].probabilities then
+        local first = getSourceStage("equipment_vault", 1)
+        if not first then return { 1, 0, 0, 0, 0, 0 } end
+        equipRewardNodes[1].probabilities = require("systems.DropSystem").getStageQualityProbabilities(first)
+    end
+    local left, right, ratio = getEquipRewardSegment(floor)
+    local probabilities = {}
+    for quality = 1, 6 do
+        probabilities[quality] = left.probabilities[quality]
+            + (right.probabilities[quality] - left.probabilities[quality]) * ratio
+    end
+    return probabilities -- 独立数组，查询方不能污染后续品质抽样。
+end
+
+--- 只骰一件品质；所有装备副本发奖入口复用此分布。
+---@param floor number
+---@return number
+function DungeonConfig.rollEquipQuality(floor)
+    return require("systems.DropSystem").rollQualityByProbabilities(
+        DungeonConfig.getEquipQualityProbabilities(floor))
 end
 
 --- 获取层配置，旧遗迹仍能按原规则结清旧数据，不挪用为新装备副本。
@@ -469,18 +538,36 @@ function DungeonConfig.getFloor(id, floor)
     if not combat then return nil end
     local result = { floor = floor, monsterLevel = combat.monsterLevel, monsters = combat.monsters }
     if id == "gold_mine" then
-        local old = DungeonConfig.getGoldMineFloor(floor)
+        local old = DungeonConfig.getGoldMineFloor(math.min(floor, DungeonConfig.LEGACY_MAX_FLOOR.gold_mine))
         if not old then return nil end
-        result.firstGold, result.sweepGold = old.firstGold, old.sweepGold
+        local extraChapters = math.max(0, math.ceil((floor - DungeonConfig.LEGACY_MAX_FLOOR.gold_mine) / 5))
+        result.firstGold = old.firstGold + extraChapters * 410000
+        result.sweepGold = math.floor(result.firstGold / 2)
     elseif id == "equipment_vault" then
         local cap = StageConfig.getMaxDropQuality(combat)
         local sweep = DungeonConfig.getEquipSweepCount(floor)
         result.sweepEquip = sweep
         result.firstEquip = sweep * 2
         result.equipLevel = combat.monsterLevel
-        result.equipMinQuality, result.equipMaxQuality = math.min(3, cap), cap
+        result.equipQualityProbabilities = DungeonConfig.getEquipQualityProbabilities(floor)
+        -- 点金/常规掉落上限仍用原cap；展示范围包含仅随机掉落的极小至臻例外。
+        result.equipMinQuality, result.equipMaxQuality = 1, cap
+        for q = 1, 6 do
+            if result.equipQualityProbabilities[q] > 0 then
+                result.equipMinQuality = q
+                break
+            end
+        end
+        for q = 6, 1, -1 do
+            if result.equipQualityProbabilities[q] > 0 then
+                result.equipMaxQuality = q
+                break
+            end
+        end
     elseif id == "black_diamond" then
-        result.firstDiamond = 150 + (floor - 1) * 50
+        local legacy = DungeonConfig.LEGACY_MAX_FLOOR.black_diamond
+        local rewardFloor = floor <= legacy and floor or legacy + math.ceil((floor - legacy) / 5)
+        result.firstDiamond = 150 + (rewardFloor - 1) * 50
         result.sweepDiamond = math.floor(result.firstDiamond / 2)
     end
     return result
@@ -531,7 +618,8 @@ local function getChapterFloorsInternal(id)
     local floors = {}
     for floor = 1, def.maxFloor do
         local source = getSourceStage(id, floor)
-        if floor == 1 or floor == def.maxFloor or (source and source.stage == 5) then
+        if floor == 1 or floor == def.maxFloor or floor == DungeonConfig.LEGACY_MAX_FLOOR[id]
+            or (source and source.stage == 5) then
             floors[#floors + 1] = floor
         end
     end
@@ -581,7 +669,7 @@ end
 ---@return number|nil 当前章末锚点；已是锚点时原样返回，不改写队伍位置
 function DungeonConfig.getChapterStageId(stageId)
     local id, floor = DungeonConfig.decodeStageId(stageId)
-    if not id then return nil end
+    if not id or not floor then return nil end
     local index = DungeonConfig.getChapterIndex(id, floor)
     if not index then return nil end
     local floors = getChapterFloorsInternal(id)
@@ -614,7 +702,7 @@ end
 
 function DungeonConfig.getStage(stageId)
     local id, floor = DungeonConfig.decodeStageId(stageId)
-    if not id then return nil end
+    if not id or not floor then return nil end
     if resourceStages[stageId] then return resourceStages[stageId] end
     local entry = DungeonConfig.getCombatEntry(id, floor)
     if not entry then return nil end
@@ -661,25 +749,113 @@ function DungeonConfig.getStageRewardAmount(stageId, kills)
     return math.max(0, kills) * perMinute / 20 -- 每3秒1只，即每分钟20只。
 end
 
+--- 资源经验沿用源主线每分钟收入；在线每杀与离线每3秒一杀使用同一口径。
+---@param stageId number
+---@param kills number
+---@return integer
+function DungeonConfig.getStageExpAmount(stageId, kills)
+    local entry = DungeonConfig.getStage(stageId)
+    local count = tonumber(kills) or 0
+    if not entry or count <= 0 or count ~= count or count == math.huge then return 0 end
+    local expPerMin = require("config.StageExpHelper").getExpPerMinByStageId(entry.sourceStageId)
+    return math.floor(expPerMin * count / 20 + 0.5)
+end
+
+--- 装备副本卷轴/扫荡券的只读期望；不骰奖励、不生成装备、不改变玩家数据。
+---@param stageId number|string
+---@param kills number
+---@return table<string, number> 六种卷轴与扫荡券期望；其他副本或非法击杀数为空
+function DungeonConfig.getStageScrollEstimate(stageId, kills)
+    local id, floor = DungeonConfig.decodeStageId(stageId)
+    local count = tonumber(kills) or 0
+    if id ~= "equipment_vault" or count <= 0 or count ~= count or count == math.huge then return {} end
+    local scrollRate, ticketRate = DungeonConfig.getEquipDropRates(floor)
+    local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
+    local estimate = {}
+    for _, key in ipairs(scrollTypes) do estimate[key] = count * scrollRate / #scrollTypes end
+    estimate.sweepTicket = count * ticketRate
+    return estimate
+end
+
+-- 请求级逐杀上下文：只缓存确定配置，不缓存/预取随机结果。
+-- 原 getStageRewards 保持独立实现；同关反复击杀可复用此闭包，骰序完全相同。
+---@param stageId number
+---@param kills number
+---@param heroCount number|nil
+---@return function
+function DungeonConfig.createStageRewardsContext(stageId, kills, heroCount)
+    local id, floor = DungeonConfig.decodeStageId(stageId)
+    local valid = id ~= nil and (tonumber(kills) or 0) > 0
+    local exp = valid and DungeonConfig.getStageExpAmount(stageId, kills) or 0
+    local multiplier = require("config.ExpTable").getHeroCountExpMult(heroCount or 1)
+    local heroExp = math.floor(exp * multiplier + 0.5)
+    local raw = valid and DungeonConfig.getStageRewardAmount(stageId, kills) or 0
+    local data = id == "equipment_vault" and DungeonConfig.getFloor(id, floor) or nil
+    local scrollRate, ticketRate = 0, 0
+    if id == "equipment_vault" then scrollRate, ticketRate = DungeonConfig.getEquipDropRates(floor) end
+    local killsN = math.max(0, tonumber(kills) or 0)
+    local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
+    local function rollCount(rate)
+        local rawCount = killsN * rate
+        local amount = math.floor(rawCount)
+        if math.random() < rawCount - amount then amount = amount + 1 end
+        return amount
+    end
+    return function()
+        local rewards = { gold = 0, diamond = 0, adventureExp = 0, adventurerExp = 0, equipSeeds = {}, scrollDrops = {} }
+        if not valid then return rewards end
+        rewards.adventureExp, rewards.adventurerExp = exp, heroExp
+        local amount = math.floor(raw)
+        -- 即使小数部分为零，仍保留原来的一次判定骰。
+        if math.random() < raw - amount then amount = amount + 1 end
+        if id == "gold_mine" then rewards.gold = amount
+        elseif id == "black_diamond" then rewards.diamond = amount
+        elseif id == "equipment_vault" then
+            for _ = 1, amount do
+                rewards.equipSeeds[#rewards.equipSeeds + 1] = {
+                    stageId = stageId, count = 1, level = data.equipLevel,
+                    quality = require("systems.DropSystem").rollQualityByProbabilities(data.equipQualityProbabilities),
+                }
+            end
+            -- 必须先完成所有品质骰，再卷轴数量/类型，最后券数量；装备生成在调用方其后。
+            for _ = 1, rollCount(scrollRate) do
+                local key = scrollTypes[math.random(1, #scrollTypes)]
+                rewards.scrollDrops[key] = (rewards.scrollDrops[key] or 0) + 1
+            end
+            local tickets = rollCount(ticketRate)
+            if tickets > 0 then rewards.scrollDrops.sweepTicket = tickets end
+        end
+        return rewards
+    end
+end
+
 -- 在线每次击杀与离线固定杀怪效率复用原每分钟收益，不把一次扫荡变为无限波大奖。
-function DungeonConfig.getStageRewards(stageId, kills)
+---@param heroCount number|nil 实际领取队伍人数，旧调用默认一人
+function DungeonConfig.getStageRewards(stageId, kills, heroCount, context)
+    if context then return context() end
     local id, floor = DungeonConfig.decodeStageId(stageId)
     local rewards = { gold = 0, diamond = 0, adventureExp = 0, adventurerExp = 0, equipSeeds = {}, scrollDrops = {} }
     if not id or (tonumber(kills) or 0) <= 0 then return rewards end
+    rewards.adventureExp = DungeonConfig.getStageExpAmount(stageId, kills)
+    local expMult = require("config.ExpTable").getHeroCountExpMult(heroCount or 1)
+    rewards.adventurerExp = math.floor(rewards.adventureExp * expMult + 0.5)
     local raw = DungeonConfig.getStageRewardAmount(stageId, kills)
     local amount = math.floor(raw)
     if math.random() < raw - amount then amount = amount + 1 end
     if id == "gold_mine" then rewards.gold = amount
     elseif id == "black_diamond" then rewards.diamond = amount
-    elseif amount > 0 then
-        local data = DungeonConfig.getFloor(id, floor)
-        for _ = 1, amount do
-            rewards.equipSeeds[#rewards.equipSeeds + 1] = {
-                stageId = stageId, count = 1, level = data.equipLevel,
-                quality = math.random(data.equipMinQuality, data.equipMaxQuality),
-            }
+    elseif id == "equipment_vault" then
+        if amount > 0 then
+            local data = DungeonConfig.getFloor(id, floor)
+            for _ = 1, amount do
+                rewards.equipSeeds[#rewards.equipSeeds + 1] = {
+                    stageId = stageId, count = 1, level = data.equipLevel,
+                    quality = require("systems.DropSystem").rollQualityByProbabilities(data.equipQualityProbabilities),
+                }
+            end
         end
-        -- 装备副本按源关掉率补卷轴与扫荡券，资源结构向主线靠拢。
+        -- 卷轴与扫荡券独立于装备数量；未掉装备的一杀也能命中。
+        -- 仅装备副本允许此补充掉落，金币/黑钻不借用主线掉落。
         local scrollRate, ticketRate = DungeonConfig.getEquipDropRates(floor)
         local killsN = math.max(0, tonumber(kills) or 0)
         local function rollCount(r)

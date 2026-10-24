@@ -4,6 +4,7 @@
 -- PNG 按 vg + 资源路径共享，预热/失败均锁存；release 只释放该 token 的原生对象。
 -- destroy 由宿主 Stop 在销毁 vg 前统一调用，不能被某一个控制器抢先清掉共享贴图。
 local Primitives = require("ui.fx.DarkEffectPrimitives")
+local Motion = require("ui.fx.DarkRitualMotion")
 local M = {}
 local ROOT = "image/暗黑特效/"
 
@@ -21,6 +22,7 @@ local ROOT = "image/暗黑特效/"
 ---@field pngFailed boolean
 ---@field overlayFailed boolean
 ---@field instance SpineInstance|nil
+---@field sweepSlot SpineSlot|nil
 ---@field lastElapsed number
 ---@field lastCx number?
 ---@field lastCy number?
@@ -47,7 +49,7 @@ local REQUIRED = {
     revive = { "ash_flake", "soul_flame", "smoke_flame", "rune_ring", "seal_plate", "rune_strip", "impact_glow" },
     success = { "seal_plate", "seal_shard", "rune_ring", "copper_wing", "rune_strip", "impact_glow", "ember", "light_sweep" },
     failure = { "seal_plate", "seal_shard", "rune_ring", "smoke_flame", "impact_glow", "ash_flake", "light_sweep" },
-    power = { "nameplate", "copper_wing", "rune_ring", "rift_light", "smoke_flame", "rune_strip", "ember", "light_sweep" },
+    power = { "nameplate", "copper_wing", "rune_ring", "rift_light", "smoke_flame", "rune_strip", "ember" },
 }
 local WHITE = { 255, 255, 255 }
 local ASH = { 164, 157, 143 }
@@ -99,7 +101,7 @@ local function disposeNative(entry)
     -- 先摘掉引用；只执行一种原生释放，实测 Unload 后再 Dispose 会原生崩溃。
     -- 优先卸载骨架/贴图并交 GC 收对象；缺 Unload 的旧扩展才调用 Dispose。
     local instance = entry.instance
-    entry.instance = nil
+    entry.instance, entry.sweepSlot = nil, nil
     if not instance then return end
     if hasMethod(instance, "Unload") then
         local ok, err = pcall(function() instance:Unload() end)
@@ -243,6 +245,12 @@ local function attemptNative(entry)
         end
         if instance:Load(ROOT .. entry.family .. "_fx.json") ~= true then error("Spine Load 失败", 0) end
         if entry.released then return end
+        if entry.family == "power" then
+            if not hasMethod(instance, "FindSlot") then error("Spine API 缺失: FindSlot", 0) end
+            local sweepSlot = instance:FindSlot("sweep")
+            if not sweepSlot or not sweepSlot:IsValid() then error("Spine 战力扫光槽缺失", 0) end
+            entry.sweepSlot = sweepSlot
+        end
         -- 无 listener，完成由原控制器墙钟派发，原生动画不参与业务回调。
         if instance:SetAnimation(0, entry.animation, false) ~= true then error("Spine SetAnimation 失败", 0) end
         local seconds = instance:GetAnimationDuration(0)
@@ -289,7 +297,11 @@ local function drawNative(vg, entry, cx, cy, sx, sy, elapsed, duration, alpha)
             else instance:Update(0) end
         end
         entry.lastCx, entry.lastCy, entry.lastSx, entry.lastSy = cx, cy, sx, sy
-        if not entry.released then nvgSpineRender(vg, instance) end
+        if not entry.released then
+            -- 动画 Update 会重写槽透明度，必须在渲染前屏蔽横穿文字区的 Spine 扫光。
+            if entry.sweepSlot then entry.sweepSlot:SetColor(1, 1, 1, 0) end
+            nvgSpineRender(vg, instance)
+        end
     end)
     if ok then return true end
     entry.nativeFailed = true
@@ -482,8 +494,7 @@ local function power(vg, context, p, a)
         sprite(vg, context, "rift_light", side * 310, 0, 19, 132, 0, a * impact * .58, side > 0)
         sprite(vg, context, "rune_strip", side * 294, 0, 19, 103, 0, a * split * .65, side > 0)
     end
-    sprite(vg, context, "light_sweep", -223 + stage(p, .20, .57) * 446, 0,
-        185, 113, .27, a * impact * .21)
+    -- 不在数字阅读区绘制横向扫光，只保留铭牌两侧动效。
     for i = 1, 8 do
         local q = clamp((p - .18 - i * .026) / .45)
         local life = smooth(q * 8) * (1 - stage(q, .70, 1))
@@ -493,76 +504,12 @@ local function power(vg, context, p, a)
     end
 end
 
--- Spine 主体之外的程序补层：少量旧铜光片/骨白灰屑/血红火星，不重复整套 PNG。
--- 每片都按归一化时间轨迹运动，隐藏后的第一帧直接采样，不累加粒子或随机数。
-local function accents(vg, family, animation, p, alpha)
-    local impact = stage(p, .18, .32) * (1 - stage(p, .43, .60))
-    local shade = animation == "revive" and ASH or (animation == "failure" and BLOOD or { 223, 160, 91 })
-    for i = 1, 6 do
-        local q = clamp((p - .18 - i * .027) / .56)
-        local life = smooth(q * 8) * (1 - stage(q, .70, 1))
-        local side = i % 2 == 0 and 1 or -1
-        local x, y = side * (16 + i * 5 + q * 19), 67 - q * (100 + i * 9)
-        if family == "power" then x, y = side * (316 + i * 2 + q * 12), 27 - q * (39 + i * 5)
-        elseif family == "result" then x, y = side * (35 + q * (18 + i * 3)), -32 + i * 10 - q * 23 end
-        if animation == "failure" then y = y + q * q * 58
-        elseif animation == "revive" then x, y = x * (1 - q), y * (1 - q) + q * 18 end
-        local opacity = alpha * life * .52
-        if opacity > 0 then
-            local color = nvgRGBA(shade[1], shade[2], shade[3], math.floor(clamp(opacity) * 255 + .5))
-            ---@cast color NVGcolor
-            nvgBeginPath(vg)
-            nvgMoveTo(vg, x - 1.4, y)
-            nvgLineTo(vg, x + side * 1.2, y - 4 - q * 3)
-            nvgLineTo(vg, x + 1.4, y + 1.2)
-            nvgLineTo(vg, x, y + 3)
-            nvgClosePath(vg)
-            nvgFillColor(vg, color)
-            nvgFill(vg)
-        end
-    end
-    if impact > 0 then
-        local wide = family == "power" and 280 or (family == "card" and 74 or 63)
-        local y = family == "card" and (21 - p * 52) or -7
-        local color = nvgRGBA(227, 202, 162, math.floor(clamp(alpha * impact * .34) * 255 + .5))
-        ---@cast color NVGcolor
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, -wide, y + 6)
-        nvgLineTo(vg, wide * .76, y - 12)
-        nvgLineTo(vg, wide, y - 10)
-        nvgLineTo(vg, -wide * .64, y + 8)
-        nvgClosePath(vg)
-        nvgFillColor(vg, color)
-        nvgFill(vg)
-    end
-end
-
----@param vg NVGContextWrapper
----@param entry DarkSpritePlayback
----@param cx number
----@param cy number
----@param sx number
----@param sy number
----@param p number
----@param alpha number
-local function drawAccents(vg, entry, cx, cy, sx, sy, p, alpha)
-    if entry.overlayFailed or entry.released then return end
-    if type(nvgRGBA) ~= "function" or type(nvgFillColor) ~= "function"
-        or type(nvgBeginPath) ~= "function" or type(nvgMoveTo) ~= "function"
-        or type(nvgLineTo) ~= "function" or type(nvgClosePath) ~= "function"
-        or type(nvgFill) ~= "function" or type(nvgTranslate) ~= "function" or type(nvgScale) ~= "function" then
-        entry.overlayFailed = true
-        return
-    end
-    local ok, err, restored = isolated(vg, function()
-        nvgTranslate(vg, cx, cy)
-        nvgScale(vg, sx, sy)
-        accents(vg, entry.family, entry.animation, p, alpha)
-    end)
-    if ok then return end
-    entry.overlayFailed = true
-    if not restored then error(err, 0) end
-    print("[DarkEffectSprites] 程序补层单次停用: " .. tostring(err))
+-- 原 accents 已迁入 DarkRitualMotion：所有后端只绘制一套独立仪式补层。
+-- alpha 仍传入原始宿主值，让 Motion 自行采样共同包络，避免重复衰减。
+local function drawAccents(vg, entry, animation, cx, cy, width, height, elapsed, duration, alpha)
+    if entry and (entry.overlayFailed or entry.released) then return end
+    local drawn = Motion.draw(vg, animation, cx, cy, width, height, elapsed, duration, alpha)
+    if entry and not drawn then entry.overlayFailed = true end
 end
 
 ---@param vg NVGContextWrapper
@@ -614,7 +561,7 @@ local function drawRich(vg, family, animation, cx, cy, width, height, elapsed, d
     local sx, sy = width / baseW, height / baseH
     local entry = playbackFor(vg, family, animation, token)
     if entry and drawNative(vg, entry, cx, cy, sx, sy, elapsed, duration, a) then
-        drawAccents(vg, entry, cx, cy, sx, sy, p, a)
+        drawAccents(vg, entry, animation, cx, cy, width, height, elapsed, duration, alpha)
         return true
     end
     if entry and entry.released then return true end
@@ -622,7 +569,10 @@ local function drawRich(vg, family, animation, cx, cy, width, height, elapsed, d
     local context = contextFor(vg)
     if (not entry or not entry.pngFailed) and imagesReady(context, animation) then
         local ok, err, restored = drawImages(vg, context, family, animation, cx, cy, sx, sy, p, a)
-        if ok then return true end
+        if ok then
+            drawAccents(vg, entry, animation, cx, cy, width, height, elapsed, duration, alpha)
+            return true
+        end
         if entry then entry.pngFailed = true else context.broken = true end
         if not restored then error(err, 0) end
         print("[DarkEffectSprites] 图片绘图单次降级 " .. animation .. ": " .. tostring(err))
@@ -646,6 +596,7 @@ function M.drawCard(vg, kind, cx, cy, width, height, elapsed, duration, alpha, t
         or (kind ~= "level" and kind ~= "job" and kind ~= "revive") then return end
     if not drawRich(vg, "card", kind, cx, cy, width, height, elapsed, duration, alpha, token) then
         Primitives.drawCard(vg, kind, cx, cy, width, height, elapsed, duration, alpha)
+        drawAccents(vg, playbackFor(vg, "card", kind, token), kind, cx, cy, width, height, elapsed, duration, alpha)
     end
 end
 
@@ -663,6 +614,7 @@ function M.drawResult(vg, isSuccess, cx, cy, size, elapsed, duration, alpha, tok
     local animation = isSuccess and "success" or "failure"
     if not drawRich(vg, "result", animation, cx, cy, size, size, elapsed, duration, alpha, token) then
         Primitives.drawResult(vg, isSuccess, cx, cy, size, elapsed, duration, alpha)
+        drawAccents(vg, playbackFor(vg, "result", animation, token), animation, cx, cy, size, size, elapsed, duration, alpha)
     end
 end
 
@@ -679,6 +631,7 @@ function M.drawPower(vg, cx, cy, width, height, elapsed, duration, alpha, token)
     if not vg or not validBox(cx, cy, width, height) then return end
     if not drawRich(vg, "power", "power", cx, cy, width, height, elapsed, duration, alpha, token) then
         Primitives.drawPower(vg, cx, cy, width, height, elapsed, duration, alpha)
+        drawAccents(vg, playbackFor(vg, "power", "power", token), "power", cx, cy, width, height, elapsed, duration, alpha)
     end
 end
 

@@ -265,7 +265,7 @@ local function run()
     end
     -- 固定副词条数值和下一阶预览实际绘制，不把随机词条当成升阶目标。
     I18n.set("zh_CN")
-    local codex = ES.generate("O13", 12, 4)
+    local codex = ES.generate("O13", 12, 4, { legacySecondary = true })
     codex.ascendLevel = 11
     state.selectedEquip, state.selectedEquipSlot = codex, "offhand"
     Enhance.updateEnhanceData(codex)
@@ -326,7 +326,8 @@ local function run()
         end
     end
     local headerDraw = DetailDraw.create({
-        detState = headerState, setKw = {}, qualityColor = { { 255, 255, 255 } }, affixBadgeKey = {},
+        detState = headerState, setKw = {}, affixKw = require("ui.widget.KeywordText").new(),
+        qualityColor = { { 255, 255, 255 } }, affixBadgeKey = {},
         getImages = function()
             return { powerIcon = 101, arrowUp = 102, arrowDown = 103, lock = 104,
                 btnGreen = -1, btnYellow = -1, btnRed = -1, affixBadge = {} }
@@ -343,11 +344,13 @@ local function run()
         getStatName = tostring, formatStatValue = tostring,
         layoutButtons = function() return 1461, 0 end, clampDescScroll = function() end,
         compactViewHeight = function() return 430 end,
+        compactAffixLayout = function() return 209, 264, 318 end,
         compactSetLines = function() return nil, {} end,
         compactSetRowHeight = function() return 36 end,
         compactContentBottom = function() return 204 end,
         compactButtonRow = function() return 380, 380, 805, 300, 64 end,
-        layout = { COMPACT_BG_W = 600, COMPACT_ICON_CY = 168, COMPACT_ICON_SIZE = 132,
+        layout = { COMPACT_BG_W = 600, COMPACT_AFFIX_TITLE_FONT = 26, COMPACT_AFFIX_GAP = 8,
+            COMPACT_ICON_CY = 168, COMPACT_ICON_SIZE = 132,
             COMPACT_NAME_Y = 34, COMPACT_PAD_TOP = 28, COMPACT_QUALITY_Y = 122, COMPACT_STAT_Y0 = 248,
             COMPACT_TYPE_Y = 78, DESC_TOP = 980, REF_BG_CX = 805, REF_NAME_X = 470, REF_NAME_Y = 625,
             REF_NAME_FONT = 40, REF_TYPE_X = 470, REF_TYPE_Y = 706, REF_TYPE_FONT = 30,

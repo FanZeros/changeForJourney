@@ -2,10 +2,47 @@
 -- 页面均为 spy（酒馆关闭及阻塞出口单独观察）；不加载业务存档、不发送 action、不创建图形资源。
 -- Runtime: tests/offline_overlay_horizon_test.lua -tapcode_dir=/workspace -tool_mode -graphicsheadless -nosound
 -- 弹窗关闭后的 0.08s 仓库快装由 backpack_quick_horizon_test.lua 覆盖，不在这里重复。
+---@class HorizonOverlayTestRect
+---@field x number
+---@field y number
+---@field w number
+---@field h number
+---@class HorizonOverlayTestDraw
+---@field name string
+---@field width number|nil
+---@field height number|nil
+---@field sx number
+---@field sy number
+---@field tx number
+---@field ty number
+---@field clip HorizonOverlayTestRect|nil
+---@field viewportDepth number
+---@field widePanel HorizonOverlayTestRect
 function Start()
     ---@type fun(name: string): any
     local originalRequire = _G.require
     local originalInput, originalTime = rawget(_G, "input"), rawget(_G, "time")
+    local nativeCache = cache
+    ---@type any
+    local originalIO = {}
+    local ioAttempts = 0
+    for _, key in ipairs({ "File", "FileSystem", "fileSystem", "io", "cache" }) do
+        originalIO[key] = { value = rawget(_G, key) }
+    end
+    local function denyIO()
+        ioAttempts = ioAttempts + 1
+        error("offline_overlay_horizon_test 禁止玩家 File/FS 与未知资源接口")
+    end
+    local closedIO = setmetatable({}, { __index = function() return denyIO end })
+    rawset(_G, "File", denyIO)
+    rawset(_G, "FileSystem", denyIO)
+    rawset(_G, "fileSystem", closedIO)
+    rawset(_G, "io", closedIO)
+    local sourcePaths = {}
+    rawset(_G, "cache", setmetatable({ GetFile = function(_, path)
+        if not sourcePaths[path] then return denyIO() end
+        return nativeCache:GetFile(path)
+    end }, { __index = function() return denyIO end }))
     local originalGlobals, originalNvg, originalRT, originalViewport = {}, {}, {}, {}
     local originalLoadedHorizon = package.loaded["boot.StandaloneHorizon"]
     ---@type any
@@ -54,7 +91,15 @@ function Start()
         local sources, compiled, realLoads = {}, {}, {}
         local realModules = { ["boot.StandaloneHorizonInput"] = true,
             ["boot.OfflineRewardOverlay"] = true, ["boot.SeamBackGesture"] = true,
-            ["boot.TerminalInput"] = true }
+            ["boot.TerminalInput"] = true, ["boot.DecomposeMarqueeGesture"] = true,
+            ["boot.RewardGesture"] = true,
+            ["boot.StandaloneHorizonWheel"] = true, ["ui.tower.TowerLayout"] = true,
+            ["ui.character.hero.AwakeningArtwork"] = true }
+        sourcePaths["boot/StandaloneHorizon.lua"] = true
+        -- 只读两个真实展示入口/几何函数及 defer 片段，不 require 战斗业务或 main。
+        sourcePaths["ui/battle/tri/BattleTriPage.lua"] = true
+        sourcePaths["ui/battle/scene/BattleScene.lua"] = true
+        for name in pairs(realModules) do sourcePaths[name:gsub("%.", "/") .. ".lua"] = true end
         local function source(name)
             if sources[name] then return sources[name] end
             local path = name:gsub("%.", "/") .. ".lua"
@@ -82,7 +127,9 @@ function Start()
         local function mock(fields)
             return setmetatable(fields or {}, { __index = function() return noop end })
         end
-        local calls, events, drawings, frames = {}, {}, {}, {}
+        local calls, events, frames = {}, {}, {}
+        ---@type HorizonOverlayTestDraw[]
+        local drawings = {}
         local function count(name) calls[name] = (calls[name] or 0) + 1 end
         local function n(name) return calls[name] or 0 end
         local function record(name, x, y, wheel)
@@ -96,15 +143,23 @@ function Start()
             draggingCard = false, closeOnClaim = false, notice = false, story = false,
             title = false, letter = false, ce = false, pip = false, talent = false,
             task = false, towerTri = false, reward = false, dungeon = false, towerFloor = 7,
-            tutorial = false, levelVersion = 1,
+            tutorial = false, levelVersion = 1, power = false,
             tavern = false, market = false, church = false, smith = false, loot = false,
             sweep = false, stats = false, stage = false, intro = false, terminal = false,
             recruitBusy = false, targetRecruit = false, tavernBlocking = false,
             rewardPanel = nil, rewardRow = nil, seamOpened = {},
+            rewardLarge = false, rewardVersion = 1, tab = 3,
         }
         local cursor = { x = 0, y = 0 }
         local clock = { elapsedTime = 100 }
-        rawset(_G, "input", { GetMousePosition = function() return cursor end })
+        rawset(_G, "input", {
+            GetMousePosition = function() return cursor end,
+            -- 普通右键真实链会查询Shift锁定修饰键；本夹具不按住任何键。
+            GetKeyDown = function(_, key)
+                assert(key == KEY_LSHIFT or key == KEY_RSHIFT, "未声明的键盘夹具查询: " .. tostring(key))
+                return false
+            end,
+        })
         rawset(_G, "time", clock)
         local viewportDepth = 0
         -- 保留真实 Viewport 的变换、裁剪和 note；只记录调用期间是否仍在面板视口内。
@@ -126,10 +181,13 @@ function Start()
         -- scissor 在设置时转换为窗口逻辑坐标，后续 translate 不再移动该裁剪矩形。
         ---@type any
         local vgState = { sx = 1, sy = 1, tx = 0, ty = 0, clip = nil, stack = {} }
+        ---@param rect HorizonOverlayTestRect|nil
+        ---@return HorizonOverlayTestRect|nil
         local function copyRect(rect)
             if not rect then return nil end
             return { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
         end
+        ---@return HorizonOverlayTestRect
         local function transformRect(x, y, w, h)
             return { x = vgState.tx + x * vgState.sx, y = vgState.ty + y * vgState.sy,
                 w = w * vgState.sx, h = h * vgState.sy }
@@ -268,6 +326,35 @@ function Start()
             cancel = function() state.armed = false; count("cross.cancel"); return false end,
             finish = function() state.armed = false; count("cross.finish"); return false end,
         })
+        -- 叶子绘制 spy；真实几何/Scene 转发入口从源码编译，接口缺失直接失败，不能由 mock.noop 代替。
+        local terminalLeaf = {
+            isOpen = function() return state.terminal end,
+            draw = function(_, stageId, getConfig)
+                check(stageId == 2305 and getConfig() == state.terminalConfig,
+                    "真实Scene确认入口透传当前关卡与配置函数，不伪造宿主业务参数")
+                count("terminal.draw")
+                snapshot("terminal")
+            end,
+        }
+        local triGeometry = {}
+        local triSource = source("ui.battle.tri.BattleTriPage")
+        local geometryCode = assert(triSource:match("function BattleTriPage%.getDialogTransform%([^\n]*\n.-\nend"),
+            "缺少真实 BattleTriPage.getDialogTransform")
+        local function strictEnv(fields)
+            return setmetatable(fields, { __index = function(_, key)
+                error("终焉窄源码块缺少显式依赖: " .. tostring(key))
+            end })
+        end
+        assert(load(geometryCode, "@BattleTriPage.getDialogTransform", "t",
+            strictEnv({ BattleTriPage = triGeometry, math = math, region = { w = 1920, h = 1080 } })))()
+        local sceneEntry = {}
+        local sceneSource = source("ui.battle.scene.BattleScene")
+        local sceneCode = assert(sceneSource:match("function BattleScene%.drawTerminalConfirm%([^\n]*\n.-\nend"),
+            "缺少真实 BattleScene.drawTerminalConfirm")
+        assert(load(sceneCode, "@BattleScene.drawTerminalConfirm", "t", strictEnv({
+            BattleScene = sceneEntry, TerminalConfirmDialog = terminalLeaf,
+            currentStageId = 2305, getStageConfig = function() return state.terminalConfig end,
+        })))()
         local mods = {
             ["boot.StandaloneRT"] = RT,
             ["core.Viewport"] = viewport,
@@ -322,7 +409,7 @@ function Start()
             ["ui.battle.stage.StageSelectDialog"] = mock({ isOpen = function() return state.stage end }),
             ["ui.tavern.TargetRecruitPanel"] = mock({ isOpen = function() return state.targetRecruit end }),
             ["ui.tavern.TavernPopups"] = mock({ isBlocking = function() return state.tavernBlocking end }),
-            ["ui.battle.popup.TerminalConfirmDialog"] = mock({ isOpen = function() return state.terminal end }),
+            ["ui.battle.popup.TerminalConfirmDialog"] = terminalLeaf,
             ["ui.dev.CEPanel"] = mock({
                 isOpen = function() return state.ce end,
                 handleDown = function() return state.ce end,
@@ -358,7 +445,32 @@ function Start()
                 currentPanel = function() return state.rewardPanel end,
                 currentRowTag = function() return state.rewardRow end,
                 close = function() count("reward.close"); state.reward = false end,
-                draw = function() if state.reward then snapshot("reward") end end,
+                draw = function()
+                    if state.reward and not state.rewardLarge and not state.rewardRow
+                        and (not state.rewardPanel or state.rewardPanel == "center") then snapshot("reward") end
+                end,
+                drawContent = function()
+                    if state.reward and not state.rewardLarge then snapshot("reward") end
+                end,
+                drawLarge = function(_, width, height)
+                    if state.reward and state.rewardLarge then snapshot("rewardLarge", width, height) end
+                end,
+                isLarge = function() return state.reward and state.rewardLarge end,
+                getPresentationVersion = function() return state.rewardVersion end,
+                cancelDrag = function() count("reward.cancelDrag") end,
+                handleLargePointer = function(phase, x, y, width, height, tap)
+                    check(state.reward and state.rewardLarge, "large指针leaf只在large奖励激活时收到派发")
+                    check(width == RT.logicalW and height == RT.logicalH, "large指针透传真实宿主宽高")
+                    record("reward.large." .. phase, x, y)
+                    if phase == "end" and tap then count("reward.large.tap") end
+                    return true
+                end,
+                handleLargeScroll = function(amount, x, y, width, height)
+                    if not state.reward or not state.rewardLarge then return false end
+                    check(width == RT.logicalW and height == RT.logicalH, "large滚轮透传宿主宽高")
+                    record("reward.large.wheel", x, y, amount)
+                    return true
+                end,
                 hitPanel = function() return state.reward end,
             }),
             ["ui.story.task.TaskPage"] = page("task", {
@@ -402,13 +514,31 @@ function Start()
             }),
             ["ui.battle.tri.BattleTriPage"] = page("tri", {
                 isOpen = function() return state.mode == "tri" or state.towerTri end,
+                getDialogTransform = triGeometry.getDialogTransform,
+                draw = function(_, width, height, deferTerminalConfirm)
+                    check(deferTerminalConfirm == true, "真实Horizon调用Tri.draw显式延后终焉确认")
+                    check(width == RT.logicalW and height == RT.logicalH, "Tri draw仍接真实宿主逻辑宽高")
+                    count("tri.draw")
+                end,
+            }),
+            ["ui.battle.scene.BattleScene"] = page("battle", {
+                draw = function(_, deferTerminalConfirm)
+                    check(deferTerminalConfirm == true, "真实Horizon调用BattleScene.draw显式延后终焉确认")
+                    count("battle.draw")
+                end,
+                drawTerminalConfirm = sceneEntry.drawTerminalConfirm,
             }),
             ["ui.tower.TowerBattleScene"] = page("tower", {
                 isActive = function() return state.mode == "tower" end,
+                -- 正式TowerScene.getLayout也仅委托此纯几何；不能以mock=false替代现存接口。
+                getLayout = function(width, height)
+                    return compiled["ui.tower.TowerLayout"].compute(width, height)
+                end,
+                getPresentationKey = function() return "fixture:" .. tostring(state.towerFloor) end,
                 draw = function() if state.task then snapshot("tower") end end,
                 close = function() count("tower.close"); state.mode = "ordinary"; state.towerFloor = 0 end,
             }),
-            ["ui.hud.BottomNav"] = mock({ getSelectedIndex = function() return 3 end }),
+            ["ui.hud.BottomNav"] = mock({ getSelectedIndex = function() return state.tab end }),
             ["systems.TutorialManager"] = mock({
                 isActive = function() return state.tutorial end,
                 isInputActive = function() return state.tutorial end,
@@ -426,6 +556,7 @@ function Start()
             ["runtime.GameAction"] = mock({ sendAction = function() count("action"); return false end }),
         }
         mods["ui.fx.SpinePowerUpEffect"] = mock({
+            isPlaying = function() return state.power end,
             draw = function(_, width, height) record("power.draw", width, height) end,
         })
         -- Runtime 的 require 可绕过 package.preload/loaded，所以拦截 _G.require 的动态依赖。
@@ -440,6 +571,7 @@ function Start()
             if not mods[name] then mods[name] = page(name) end
             return mods[name]
         end)
+        compiled["ui.tower.TowerLayout"] = compile("ui.tower.TowerLayout")
 
         local function invoke(handler, event)
             local fn = rawget(_G, handler)
@@ -484,8 +616,14 @@ function Start()
         end
         local function checkNoLowerInput(label, allowed)
             local leaked = {}
+            for _, event in ipairs(events) do
+                if event.name == "character.handleDragEnd" then
+                    -- CE/Update/跨栏取消的原生产出口固定(-1,-1)，释放来源不等于底层业务点击。
+                    check(event.x == -1 and event.y == -1, label .. " 角色取消只准(-1,-1)，不得携真实落队坐标")
+                end
+            end
             for name, amount in pairs(calls) do
-                if amount > 0 and not (allowed and allowed[name])
+                if amount > 0 and name ~= "character.handleDragEnd" and not (allowed and allowed[name])
                     and not name:match("^offline%.") and not name:match("^cross%.")
                     and (name:match("%.handle") or name == "action" or name == "seam.close" or name == "detail.close") then
                     leaked[#leaked + 1] = name .. "=" .. amount
@@ -512,11 +650,13 @@ function Start()
             state.notice, state.story, state.title, state.letter, state.ce = false, false, false, false, false
             state.pip, state.talent = false, false
             state.task, state.towerTri, state.reward, state.dungeon, state.towerFloor = false, false, false, false, 7
-            state.tutorial, state.levelVersion = false, 1
+            state.tutorial, state.levelVersion, state.power = false, 1, false
             state.tavern, state.market, state.church, state.smith, state.loot = false, false, false, false, false
             state.sweep, state.stats, state.stage, state.intro, state.terminal = false, false, false, false, false
             state.recruitBusy, state.targetRecruit, state.tavernBlocking = false, false, false
             state.rewardPanel, state.rewardRow, state.seamOpened = nil, nil, {}
+            state.rewardLarge, state.rewardVersion, state.tab = false, 1, 3
+            state.terminalConfig = { fixtureOnly = true }
             restoreTable(RT, {
                 logicalW = 1920, logicalH = 1080, windowW = 1920, windowH = 1080,
                 DESIGN_W = 1080, DESIGN_H = 2400, dpr = dpr or 1,
@@ -535,6 +675,7 @@ function Start()
             invoke("HandleNanoVGRenderHorizon")
         end
         local function checkDraw(name, label)
+            ---@type HorizonOverlayTestDraw[]
             local found = {}
             for _, draw in ipairs(drawings) do if draw.name == name then found[#found + 1] = draw end end
             check(#found == 1, label .. " 绘制恰好一次，actual=" .. #found)
@@ -1089,9 +1230,14 @@ function Start()
                     checkXY("task.handleDragMove", 540, 1000, "塔Task drag")
                     check(n("task.handleInput") == 0 and n("task.handleDragEnd") == 1, "拖动不领取但结束Task拖拽")
                     clearCalls()
+                    positionWindow(485, 505)
+                    click()
+                    checkXY("task.handleInput", 485 / 0.45, 505 / 0.45, "真实左栏半开边界内沿包含")
+                    clearCalls()
                     positionWindow(486, 505)
                     click()
-                    checkXY("task.handleInput", 1080, 505 / 0.45, "左栏边界包含")
+                    check(n("task.handleInput") == 0 and n("tower.handleClick") == 0,
+                        "真实TowerLayout左栏[0,486)，精确486边界消费但不点穿Task或塔")
                     clearCalls()
                     positionWindow(250, 505)
                     invoke("HandleMouseWheelHorizon", wheel)
@@ -1273,6 +1419,313 @@ function Start()
                 and n("tri.handleDragEnd") == 0 and n("tri.handleInput") == 0,
                 label .. " seam capture不伪装成tri手势")
         end
+        -- 终焉覆盖专项：Horizon/Input/Wheel/TerminalInput/RewardGesture 均为真实源码，
+        -- BattleScene/Tri 的宿主 draw 与弹窗叶子为记录器，不声称真实文字/按钮像素验收。
+        local terminalStart = { cases = caseCount, assertions = assertions, failures = failures }
+        local function renderObserved()
+            clearCalls()
+            for key in pairs(drawings) do drawings[key] = nil end
+            invoke("HandleNanoVGRenderHorizon")
+        end
+        ---@return {index: integer, value: HorizonOverlayTestDraw}[]
+        local function drawsNamed(name)
+            local found = {}
+            for index, draw in ipairs(drawings) do
+                if draw.name == name then found[#found + 1] = { index = index, value = draw } end
+            end
+            return found
+        end
+        local function checkTerminalDraw(mode, rewardName)
+            local found = drawsNamed("terminal")
+            check(#found == 1 and n("terminal.draw") == 1, "终焉确认真实宿主收尾恰好画一次")
+            local rewards = drawsNamed(rewardName)
+            check(#rewards == 1, "所属栏/全局/large奖励确实画一次，不以漏画奖励伪造层级修复")
+            if #found ~= 1 then return nil end
+            local draw = found[1].value
+            check(#rewards == 1 and rewards[1].index < found[1].index, "奖励先画，终焉确认后画")
+            local ox, oy, scale, clipX, clipY, clipW, clipH
+            if mode == "tri" then
+                ox, oy, scale = triGeometry.getDialogTransform(RT.logicalW, RT.logicalH)
+                clipX, clipY, clipW, clipH = 0, 0, RT.logicalW, RT.logicalH
+            else
+                local note, panel = viewport.getNote("center"), viewport.PANELS.center
+                ox, oy, scale = note.ox + panel.bx * note.s, note.oy + panel.by * note.s, note.s * viewport.DS
+                clipX, clipY, clipW, clipH = ox, oy, 1080 * scale, 2400 * scale
+            end
+            check(closeEnough(draw.sx, RT.frameScale * scale) and closeEnough(draw.sy, RT.frameScale * scale)
+                and closeEnough(draw.tx, RT.frameOx + ox * RT.frameScale)
+                and closeEnough(draw.ty, RT.frameOy + oy * RT.frameScale),
+                "终焉确认累计frame矩阵等于真实tri几何/普通中栏Viewport")
+            local clip = draw.clip
+            check(clip and closeEnough(clip.x, RT.frameOx + clipX * RT.frameScale)
+                and closeEnough(clip.y, RT.frameOy + clipY * RT.frameScale)
+                and closeEnough(clip.w, clipW * RT.frameScale) and closeEnough(clip.h, clipH * RT.frameScale),
+                "终焉确认裁剪是tri全窗/普通中栏，不继承奖励所属栏clip")
+            check(draw.viewportDepth == (mode == "tri" and 0 or 1), "普通确认真实重进中栏、tri不借普通Viewport")
+            local ceDraw = drawsNamed("ce")[1].value
+            check(closeEnough(ceDraw.sx, RT.frameScale) and closeEnough(ceDraw.sy, RT.frameScale)
+                and closeEnough(ceDraw.tx, RT.frameOx) and closeEnough(ceDraw.ty, RT.frameOy)
+                and ceDraw.viewportDepth == 0 and ceDraw.clip
+                and closeEnough(ceDraw.clip.x, RT.frameOx) and closeEnough(ceDraw.clip.y, RT.frameOy)
+                and closeEnough(ceDraw.clip.w, RT.logicalW * RT.frameScale)
+                and closeEnough(ceDraw.clip.h, RT.logicalH * RT.frameScale),
+                "确认绘制后恢复frame矩阵/全窗scissor，CE不受污染")
+            return draw
+        end
+        for _, mode in ipairs({ "ordinary", "tri" }) do
+            for _, dpr in ipairs({ 1, 2, 3 }) do
+                for _, owner in ipairs({ "left", "center", "right", "global", "large" }) do
+                    runCase("Terminal覆盖 " .. mode .. " DPR=" .. dpr .. " reward=" .. owner, function()
+                        fixture(mode, dpr, true, false)
+                        state.terminal, state.reward = true, true
+                        state.rewardPanel = owner ~= "global" and owner ~= "large" and owner or nil
+                        state.rewardLarge = owner == "large"
+                        renderObserved()
+                        local draw = checkTerminalDraw(mode, state.rewardLarge and "rewardLarge" or "reward")
+                        check(state.rewardRow == nil, "本专项确实使用无row自动分解消息，不借行内归属")
+                        check(n(mode == "tri" and "tri.draw" or "battle.draw") == 1, "对应主线本帧实际绘制一次")
+                        if not draw then return end
+                        -- 从实际记录矩阵投影确认按钮附近点；touch按整数物理像素量化后严格反算。
+                        local x = ((draw.tx + 340 * draw.sx) - RT.frameOx) / RT.frameScale
+                        local y = ((draw.ty + 1310 * draw.sy) - RT.frameOy) / RT.frameScale
+                        for _, kind in ipairs({ "mouse", "touch" }) do
+                            clearCalls()
+                            positionWindow(1800, 50)
+                            pointer(kind, "down", x, y, 211)
+                            clock.elapsedTime = clock.elapsedTime + 0.2
+                            pointer(kind, "up", x, y, 211)
+                            local px, py = framePosition(x, y)
+                            if kind == "touch" then px, py = math.floor(px + 0.5), math.floor(py + 0.5) end
+                            local sx, sy = (px / dpr - RT.frameOx) / RT.frameScale,
+                                (py / dpr - RT.frameOy) / RT.frameScale
+                            local target = mode == "tri" and "tri.handleInput" or "battle.handleInput"
+                            local expectedX, expectedY = sx, sy
+                            if mode ~= "tri" then
+                                expectedX, expectedY = (px / dpr - draw.tx) / draw.sx, (py / dpr - draw.ty) / draw.sy
+                            end
+                            checkXY(target, expectedX, expectedY, "终焉 " .. kind .. " 与绘制frame/DPR相符")
+                            check(n(target) == 1, "完整按压仅向终焉所属战斗入口投一次tap")
+                            check(n("reward.handleInput") == 0 and n("reward.close") == 0
+                                and n("reward.handleDragBegin") == 0 and n("reward.large.begin") == 0
+                                and n("reward.large.end") == 0 and n("reward.large.tap") == 0,
+                                "确认期间普通/large奖励不捕获按压、不关闭、不操作")
+                            checkNoLowerInput("Terminal input", { [target] = true })
+                        end
+                        clearCalls()
+                        for _, zoneX in ipairs({ 250, 960, 1680 }) do
+                            positionWindow(zoneX, 600)
+                            invoke("HandleMouseWheelHorizon", wheel)
+                        end
+                        check(n("reward.handleScroll") == 0 and n("reward.large.wheel") == 0
+                            and n("tri.handleScroll") == 0 and n("battle.handleScroll") == 0,
+                            "左中右滚轮均在终焉门禁停止，不投任何奖励/底层战斗")
+                        state.terminal = false
+                        clearCalls()
+                        -- 关闭确认但不替换原奖励，实际新手势与滚轮恢复原消息出口。
+                        local rx = owner == "left" and 250 or owner == "right" and 1680 or 960
+                        seamTap("mouse", rx, 600)
+                        invoke("HandleMouseWheelHorizon", wheel)
+                        if state.rewardLarge then
+                            check(n("reward.large.begin") == 1 and n("reward.large.end") == 1
+                                and n("reward.large.tap") == 1 and n("reward.large.wheel") == 1,
+                                "关闭终焉后原large奖励恢复完整点按与滚轮")
+                        else
+                            check(n("reward.handleInput") == 1 and n("reward.handleScroll") == 1
+                                and n("reward.close") == 0, "关闭终焉后原所属栏/全局奖励恢复点按与滚轮")
+                        end
+                    end)
+                end
+            end
+            runCase("Terminal普通frame " .. mode .. " 保留原上层顺序", function()
+                fixture(mode, 1, false, false)
+                state.terminal, state.reward, state.level, state.offline, state.notice = true, true, true, true, true
+                renderObserved()
+                checkTerminalDraw(mode, "reward")
+                local order = {}
+                for index, draw in ipairs(drawings) do order[draw.name] = index end
+                check(order.reward < order.terminal and order.terminal < order.level and order.level < order.offline
+                    and order.offline < order.notice and order.notice < order.ce,
+                    "Reward<Terminal<LevelUp<Offline<Update<CE顺序保留")
+            end)
+            for _, kind in ipairs({ "mouse", "touch" }) do
+                runCase("Terminal打断旧large " .. mode .. " " .. kind, function()
+                    fixture(mode, 3, true, false)
+                    state.reward, state.rewardLarge = true, true
+                    clearCalls()
+                    pointer(kind, "down", 960, 600, 212)
+                    check(n("reward.large.begin") == 1, "旧Down确实由真实RewardGesture捕获")
+                    state.terminal = true
+                    -- observe从真实hover入口触发；不能只靠终焉Up早退而留下可复活奖励press。
+                    invoke("HandleEquipmentHoverTickHorizon")
+                    pointer(kind, "up", 960, 600, 212)
+                    check(n("reward.cancelDrag") > 0 and n("reward.large.end") == 0 and n("reward.large.tap") == 0,
+                        "终焉出现取消旧large capture，不投奖励end/tap")
+                    check(n("tri.handleInput") == 0 and n("battle.handleInput") == 0,
+                        "旧large Up亦不可成为后来终焉的一次新点击")
+                    state.terminal = false
+                    pointer(kind, "up", 960, 600, 212)
+                    check(n("reward.large.tap") == 0, "确认关闭后裸Up不能复活旧large按压")
+                    clearCalls()
+                    seamTap(kind, 960, 600)
+                    check(n("reward.large.begin") == 1 and n("reward.large.end") == 1 and n("reward.large.tap") == 1,
+                        "原large奖励保持打开，完整新手势恢复操作")
+                end)
+            end
+        end
+        for _, blocker in ipairs({ "title", "letter", "intro", "story", "pip", "tutorial", "page",
+            "tower", "dungeon", "boot", "otherTab" }) do
+            runCase("Terminal只随实际主线且让位 " .. blocker, function()
+                fixture("tri", 2, true, false)
+                state.terminal, state.reward = true, true
+                if blocker == "page" then state.tab = 5
+                elseif blocker == "tower" then state.mode = "tower"
+                elseif blocker == "dungeon" then state.dungeon = true
+                elseif blocker == "boot" then RT.bootReady_ = false
+                elseif blocker == "otherTab" then state.mode, state.tab = "ordinary", 1
+                else state[blocker] = true end
+                renderObserved()
+                check(n("terminal.draw") == 0, "不得在未绘制主线/高层阻塞路径补画终焉")
+                if blocker == "pip" then
+                    clearCalls()
+                    positionWindow(960, 600)
+                    invoke("HandleMouseWheelHorizon", wheel)
+                    check(n("pip.handleScroll") == 1 and n("reward.handleScroll") == 0,
+                        "PIP滚轮仍高于终焉及奖励")
+                end
+            end)
+        end
+        runCase("Terminal defer窄真实源码 nil/false/true", function()
+            fixture("ordinary", 1, false, false)
+            state.terminal = true
+            local deferLine = assert(sceneSource:match("    if not deferTerminalConfirm then BattleScene%.drawTerminalConfirm%(vg%) end"),
+                "普通Scene保留默认终焉绘制门禁")
+            local ordinaryBlock = assert(load("return function(vg, deferTerminalConfirm)\n" .. deferLine .. "\nend",
+                "@BattleScene.defer-block", "t", strictEnv({ BattleScene = sceneEntry })))()
+            local triBlock = assert(triSource:match("    %-%- %[对话框覆盖%].-\n    %-%- %[三行并行%] 获得弹窗"),
+                "Tri保留真实对话框覆盖块")
+            triBlock = triBlock:match("^(.-)\n    %-%- %[三行并行%]")
+            local closedDialog = { isOpen = function() return false end }
+            local deps = { SweepDialog = closedDialog, DamageStatsPanel = closedDialog, StageSelectDialog = closedDialog,
+                TerminalConfirmDialog = terminalLeaf, BattleTriPage = triGeometry,
+                BattleScene = { getStageId = function() return 2305 end }, StageConfig = state.terminalConfig }
+            for _, name in ipairs({ "nvgSave", "nvgScissor", "nvgTranslate", "nvgScale", "nvgRestore" }) do deps[name] = _G[name] end
+            local triBlockFn = assert(load("return function(vg, logicalW, logicalH, deferTerminalConfirm)\n" .. triBlock .. "\nend",
+                "@BattleTriPage.defer-block", "t", strictEnv(deps)))()
+            for _, option in ipairs({ {}, { value = false }, { value = true } }) do
+                clearCalls()
+                ordinaryBlock(RT.vg, option.value)
+                check(n("terminal.draw") == (option.value == true and 0 or 1), "普通默认nil/false仍画、true延后")
+                clearCalls()
+                triBlockFn(RT.vg, RT.logicalW, RT.logicalH, option.value)
+                check(n("terminal.draw") == (option.value == true and 0 or 1), "Tri默认nil/false仍画、true延后")
+            end
+        end)
+        print("[offline_overlay_horizon_test] Terminal coverage: " .. (caseCount - terminalStart.cases)
+            .. " cases, " .. (assertions - terminalStart.assertions) .. " assertions, "
+            .. (failures - terminalStart.failures) .. " failures; draw=leaf-spy, no pixels")
+
+        -- 非交互战力提示只替身视觉控制器；实际 Down/Move/Up/Touch/Wheel 和页面出口仍走原宿主。
+        -- 真 UI 树 HitTest 由独立组件专项覆盖，本夹具不以 isPlaying 查询代替输入调用。
+        local powerStart = { cases = caseCount, assertions = assertions, failures = failures }
+        local function drawPower()
+            state.power = true
+            local before = n("power.draw")
+            invoke("HandleNanoVGRenderHorizon")
+            check(n("power.draw") == before + 1, "输入期间战力提示确实经过真实finishFrame绘制")
+        end
+        for _, mode in ipairs({ "ordinary", "tri" }) do
+            for _, kind in ipairs({ "mouse", "touch" }) do
+                for _, moment in ipairs({ "beforeDown", "afterDown" }) do
+                    for _, zone in ipairs({ "left", "center", "right" }) do
+                        for _, drag in ipairs({ false, true }) do
+                            runCase("Power非阻断 " .. mode .. " " .. kind .. " " .. moment
+                                .. " " .. zone .. (drag and " drag" or " tap/wheel"), function()
+                                fixture(mode, 2, true, false)
+                                state.smith = mode == "ordinary"
+                                invoke("HandleNanoVGRenderHorizon")
+                                local target = zone == "left" and "backpack"
+                                    or zone == "right" and "character" or (mode == "tri" and "tri" or "smith")
+                                local note, panel = viewport.getNote(zone), viewport.PANELS[zone]
+                                local windowX = zone == "center" and 760
+                                    or note.ox + panel.bx * note.s + 500 * note.s * viewport.DS
+                                -- touch()只传物理整数；按现有pointer的四舍五入反算精确逻辑坐标，不放宽断言容差。
+                                local px, py = framePosition(windowX, 600)
+                                local x = kind == "touch" and (math.floor(px + 0.5) / RT.dpr - RT.frameOx) / RT.frameScale or windowX
+                                local y = kind == "touch" and (math.floor(py + 0.5) / RT.dpr - RT.frameOy) / RT.frameScale or 600
+                                local expectedX = target == "tri" and x
+                                    or (x - note.ox - panel.bx * note.s) / (note.s * viewport.DS)
+                                local expectedY = target == "tri" and y or (y - note.oy) / (note.s * viewport.DS)
+                                clearCalls()
+                                if moment == "beforeDown" then drawPower() end
+                                positionWindow(1800, 50) -- touch专用事件坐标，不能借用鼠标落点。
+                                pointer(kind, "down", x, y)
+                                checkXY(target .. ".handleDragBegin", expectedX, expectedY, "战力提示不吞Down")
+                                if moment == "afterDown" then drawPower() end
+                                if drag then
+                                    pointer(kind, "move", x, y + 40)
+                                    checkXY(target .. ".handleDragMove", expectedX,
+                                        target == "tri" and y + 40 or (y + 40 - note.oy) / (note.s * viewport.DS),
+                                        "战力提示不取消来源拖动")
+                                end
+                                clock.elapsedTime = clock.elapsedTime + 0.2
+                                pointer(kind, "up", x, drag and y + 40 or y)
+                                check(n(target .. ".handleDragEnd") > 0, "来源实际收到Up结束而非只查询提示状态")
+                                check(n(target .. ".handleInput") == (drag and 0 or 1),
+                                    "旧按压不被战力提示取消，真拖动仍不伪点击")
+                                if not drag then
+                                    checkXY(target .. ".handleInput", expectedX, expectedY, "提示覆盖时点击仍投原页面")
+                                    clearCalls()
+                                    positionWindow(x, y)
+                                    invoke("HandleMouseWheelHorizon", wheel)
+                                    check(n(target .. ".handleScroll") >= 1, "播放中滚轮仍到原页面实际出口")
+                                    if zone ~= "center" then
+                                        check(n((zone == "left" and "character" or "backpack") .. ".handleScroll") == 0,
+                                            "滚轮不因提示改投另一侧栏")
+                                    end
+                                end
+                                check(n("cross.cancel") == 0 and n("seam.close") == 0 and n("action") == 0
+                                    and n("level.handleInput") == 0 and n("offline.input") == 0,
+                                    "纯提示不触发modal取消/关闭/领奖/业务action")
+                            end)
+                        end
+                    end
+                    runCase("Power装备旧拖放 " .. kind .. " " .. moment, function()
+                        fixture("tri", 3, true, false)
+                        state.grid = true
+                        positionPanel("left", 140, 1060)
+                        local x = (cursor.x / RT.dpr - RT.frameOx) / RT.frameScale
+                        local y = (cursor.y / RT.dpr - RT.frameOy) / RT.frameScale
+                        clearCalls()
+                        if moment == "beforeDown" then drawPower() end
+                        pointer(kind, "down", x, y)
+                        check(n("cross.arm") == 1 and state.armed, "真实Horizon下按仍arm原仓库装备")
+                        if moment == "afterDown" then drawPower() end
+                        pointer(kind, "move", x + 50, y)
+                        clock.elapsedTime = clock.elapsedTime + 0.2
+                        pointer(kind, "up", x + 50, y)
+                        check(n("cross.move") == 1 and n("cross.finish") == 1 and n("cross.cancel") == 0
+                            and not state.armed, "提示出现不取消装备手势，仍走既有finish出口")
+                        check(n("backpack.handleInput") == 0 and n("action") == 0, "拖动不变成装备点击或真实发奖")
+                    end)
+                    runCase("Power返回旧按压 " .. kind .. " " .. moment, function()
+                        local x, y = seamFixture("tavern", 2, true)
+                        if moment == "beforeDown" then drawPower() end
+                        pointer(kind, "down", x, y)
+                        if moment == "afterDown" then drawPower() end
+                        pointer(kind, "move", x, y)
+                        clock.elapsedTime = clock.elapsedTime + 0.2
+                        pointer(kind, "up", x, y)
+                        check(n("tavern.close") == 1 and n("seam.close") == 1 and not state.tavern,
+                            "战力提示播放/中途出现后真实seam旧按压仍关闭一次")
+                        noTri("Power不把seam改投战斗")
+                        check(n("cross.cancel") == 0 and n("action") == 0, "提示不额外取消手势或发送action")
+                    end)
+                end
+            end
+        end
+        print("[offline_overlay_horizon_test] Power nonblocking coverage: " .. (caseCount - powerStart.cases)
+            .. " cases, " .. (assertions - powerStart.assertions) .. " assertions, "
+            .. (failures - powerStart.failures) .. " failures")
         for _, kind in ipairs({ "mouse", "touch" }) do
             for _, dpr in ipairs({ 1, 2, 3 }) do
                 for _, transformed in ipairs({ false, true }) do
@@ -1519,8 +1972,11 @@ function Start()
         end)
     end)
     if not ok then check(false, "Start exception: " .. tostring(err)) end
+    print("[offline_overlay_horizon_test] IO guard: attempts=" .. ioAttempts .. ", source-only cache")
+    check(ioAttempts == 0, "全程玩家 File/FS 与非白名单 cache 访问为零")
 
     -- 无论断言/模块异常，都恢复 require、引擎全局、真实 RT/Viewport 与全部 NanoVG stub。
+    for key, saved in pairs(originalIO) do rawset(_G, key, saved.value) end
     rawset(_G, "require", originalRequire)
     rawset(_G, "input", originalInput)
     rawset(_G, "time", originalTime)

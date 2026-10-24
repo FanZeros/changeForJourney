@@ -39,6 +39,18 @@ function M.bind(deps)
     end
 
     for _, ally in ipairs(allies) do
+        -- 门板余护独立计时：死亡/重开失效，不清其他复活盾或神器护盾。
+        local ward = ally._etsBulwarkWard
+        if ward then
+            local state = ETS.mountedState()
+            if ally._etsDisabled or (ally.hp or 0) <= 0 or ward.state ~= state
+                or ward.token ~= state.supportBattleToken or ward.unitToken ~= ally._talentBattleToken then
+                ally._etsBulwarkWard = nil
+            else
+                ward.timer = ward.timer - dt
+                if ward.timer <= 0 then ally._etsBulwarkWard = nil end
+            end
+        end
         if ally.hp > 0 then
             -- ======== HOT 过期清理：卡皮巴拉觉醒2/5 →modifier ========
             if ally.attrs and not SEM.has(ally, SEM.HOT) then
@@ -426,6 +438,7 @@ function M.bind(deps)
                 while s.flyingSwordTimer >= interval and maxFlyingSwordTicks > 0 do
                     maxFlyingSwordTicks = maxFlyingSwordTicks - 1
                     if ctx.dealTalentDamage or ctx.dealDamage then
+                        local swordBattleToken = s.flyingSwordBattleToken
                         local okFire, fired, consumeWindow = pcall(function()
                             return fireLuoxingFlyingSwords(ally, s, enemies, true, function(tgt, dmg, isTgtAlly, pfx, clr, projOpts)
                                 if ctx.dealTalentDamage then
@@ -435,6 +448,8 @@ function M.bind(deps)
                                 end
                             end)
                         end)
+                        if getState(ally) ~= s or getTAL_BCS() ~= TAL_BCS
+                            or s.flyingSwordBattleToken ~= swordBattleToken then return end
                         if not okFire then
                             talentLog("[Talent] 万剑归宗 灵月飞剑 tick failed: " .. tostring(fired))
                             resetLuoxingFlyingSwordWindow(s, interval)
@@ -460,7 +475,10 @@ function M.bind(deps)
                 if s.machineGunShotTimer <= 0 then
                     -- 标记为连射弹：不计入20次普攻，但走完整 performAttack → onAfterAttack（奥术飞弹等）
                     s.machineGunBurstShot = true
+                    local attackBattleToken = s.epicAttackBattleToken
                     ctx.performAttack(ally, enemies, true)
+                    if getState(ally) ~= s or getTAL_BCS() ~= TAL_BCS
+                        or s.epicAttackBattleToken ~= attackBattleToken then return end
                     s.machineGunShotsLeft = s.machineGunShotsLeft - 1
                     local shotInterval = 0.12
                     if hasAwaken(ally, 6) then shotInterval = shotInterval / 1.5 end

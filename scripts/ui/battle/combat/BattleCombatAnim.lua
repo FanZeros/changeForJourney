@@ -6,6 +6,7 @@
 local PS = require("ui.battle.combat.ProjectileSystem")
 local BattleLayout = require("core.BattleLayout")
 local SettingsPanel = require("ui.hud.popup.SettingsPanel")
+local Motion = require("ui.battle.combat.BattleMotionPolish")
 
 local M = {}
 
@@ -181,22 +182,18 @@ function M.getOffsetY(BCS, unit)
 
     if anim.state == "lunge" then
         if anim.isRanged then return 0 end
-        local t = math.min(1, anim.timer / LUNGE_DURATION)
-        t = 1 - (1 - t) * (1 - t)  -- ease-out
+        local t = Motion.launch(anim.timer / LUNGE_DURATION)
         return anim.lungeDir * LUNGE_DISTANCE * t
     elseif anim.state == "return" then
         if anim.isRanged then return 0 end
-        local t = math.min(1, anim.timer / RETURN_DURATION)
-        t = t * t  -- ease-in
-        return anim.lungeDir * LUNGE_DISTANCE * (1 - t)
+        local t = Motion.recover(anim.timer / RETURN_DURATION)
+        return anim.lungeDir * LUNGE_DISTANCE * t
     elseif anim.state == "recoil" then
-        local t = math.min(1, anim.timer / RECOIL_DURATION)
-        t = 1 - (1 - t) * (1 - t)
+        local t = Motion.outCubic(anim.timer / RECOIL_DURATION)
         return anim.lungeDir * RECOIL_DISTANCE * t
     elseif anim.state == "recoil_return" then
-        local t = math.min(1, anim.timer / RECOIL_RETURN)
-        t = 1 - (1 - t) * (1 - t)
-        return anim.lungeDir * RECOIL_DISTANCE * (1 - t)
+        local t = Motion.recover(anim.timer / RECOIL_RETURN)
+        return anim.lungeDir * RECOIL_DISTANCE * t
     elseif anim.state == "dying" then
         local elapsed = anim.timer
         local mult = anim.knockbackMult or 1.0
@@ -209,7 +206,7 @@ function M.getOffsetY(BCS, unit)
             return anim.lungeDir * dist * DEATH_OVERSHOOT * t
         else
             local t = math.min(1, (elapsed - DEATH_HITSTOP - DEATH_BURST_DUR) / DEATH_SETTLE_DUR)
-            t = 1 - (1 - t) * (1 - t)
+            t = Motion.smooth(t)
             local ratio = DEATH_OVERSHOOT + (1.0 - DEATH_OVERSHOOT) * t
             return anim.lungeDir * dist * ratio
         end
@@ -221,8 +218,7 @@ function M.getOffsetY(BCS, unit)
         if anim.delay and anim.delay > 0 then
             return anim.lungeDir * ENTER_ANIM_DISTANCE
         end
-        local t = math.min(1, anim.timer / ENTER_ANIM_DURATION)
-        t = 1 - (1 - t) * (1 - t)
+        local t = Motion.outCubic(anim.timer / ENTER_ANIM_DURATION)
         return anim.lungeDir * ENTER_ANIM_DISTANCE * (1 - t)
     elseif anim.state == "march" then
         return anim.marchStep or 0
@@ -246,17 +242,21 @@ function M.getArcOffsetY(BCS, unit, isAllyGroup)
     end
     if anim then
         if anim.state == "lunge" and not anim.isRanged then
-            local t = math.min(1, anim.timer / LUNGE_DURATION)
+            local t = Motion.clamp(Motion.launch(anim.timer / LUNGE_DURATION))
             return -LUNGE_ARC_HEIGHT * math.sin(t * math.pi)
         elseif anim.state == "return" and not anim.isRanged then
-            local t = math.min(1, anim.timer / RETURN_DURATION)
-            return -LUNGE_ARC_HEIGHT * math.sin(t * math.pi)
+            local t = Motion.outCubic(anim.timer / RETURN_DURATION)
+            return -LUNGE_ARC_HEIGHT * 0.35 * math.sin(t * math.pi)
         elseif anim.state == "recoil" then
-            local t = math.min(1, anim.timer / RECOIL_DURATION)
+            local t = Motion.outCubic(anim.timer / RECOIL_DURATION)
             return -RECOIL_ARC_HEIGHT * math.sin(t * math.pi)
         elseif anim.state == "recoil_return" then
-            local t = math.min(1, anim.timer / RECOIL_RETURN)
-            return -RECOIL_ARC_HEIGHT * math.sin(t * math.pi)
+            local t = Motion.outCubic(anim.timer / RECOIL_RETURN)
+            return -RECOIL_ARC_HEIGHT * 0.4 * math.sin(t * math.pi)
+        elseif anim.state == "dying" and isCombatCardAnimEnabled() then
+            -- 原死亡三段不变，仅淡出期间向下轻沉；两端归零、不改退场判定。
+            local t = Motion.clamp((anim.timer - DEATH_HITSTOP) / (DEATH_BURST_DUR + DEATH_SETTLE_DUR))
+            return 9 * math.sin(math.pi * t) * Motion.smooth(t)
         end
         return 0
     end
@@ -276,7 +276,7 @@ function M.getTransitionAlpha(BCS, unit)
             return 1.0
         end
         local fadeT = math.min(1, (anim.timer - DEATH_HITSTOP) / (DEATH_ANIM_DURATION - DEATH_HITSTOP))
-        return 1.0 - fadeT
+        return 1.0 - Motion.smooth(fadeT)
     elseif anim.state == "gone" or anim.state == "tombstone_in" or anim.state == "dead_done" then
         return 0
     elseif anim.state == "reviving" then
@@ -285,7 +285,7 @@ function M.getTransitionAlpha(BCS, unit)
         if anim.delay and anim.delay > 0 then
             return 0
         end
-        return math.min(1, anim.timer / ENTER_ANIM_DURATION)
+        return Motion.smooth(anim.timer / ENTER_ANIM_DURATION)
     end
     return 1.0
 end
@@ -299,7 +299,7 @@ function M.getChargeOffsetY(BCS, unit, isAllyGroup)
     if p < CHARGE_START then return 0 end
     local t = (p - CHARGE_START) / (1.0 - CHARGE_START)
     local dir = isAllyGroup and 1 or -1
-    return dir * CHARGE_DISTANCE * t
+    return dir * CHARGE_DISTANCE * Motion.smooth(t)
 end
 
 function M.getCardScale(BCS, unit, _isAllyGroup)
@@ -310,12 +310,10 @@ function M.getCardScale(BCS, unit, _isAllyGroup)
     local anim = BCS.cardAnims[unit]
     if anim then
         if anim.state == "lunge" and anim.isRanged then
-            local t = math.min(1, anim.timer / LUNGE_DURATION)
-            t = 1 - (1 - t) * (1 - t)
+            local t = Motion.clamp(Motion.launch(anim.timer / LUNGE_DURATION))
             return RANGED_CHARGE_SCALE + (RANGED_LUNGE_SCALE - RANGED_CHARGE_SCALE) * t
         elseif anim.state == "return" and anim.isRanged then
-            local t = math.min(1, anim.timer / RETURN_DURATION)
-            t = t * t
+            local t = 1 - Motion.recover(anim.timer / RETURN_DURATION)
             return RANGED_LUNGE_SCALE + (1.0 - RANGED_LUNGE_SCALE) * t
         end
         return 1.0
@@ -324,7 +322,7 @@ function M.getCardScale(BCS, unit, _isAllyGroup)
     local p = unit.atkProgress or 0
     if p < CHARGE_START then return 1.0 end
     local t = (p - CHARGE_START) / (1.0 - CHARGE_START)
-    return 1.0 + (RANGED_CHARGE_SCALE - 1.0) * t
+    return 1.0 + (RANGED_CHARGE_SCALE - 1.0) * Motion.smooth(t)
 end
 
 function M.getState(BCS, unit)

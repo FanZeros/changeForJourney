@@ -8,6 +8,7 @@
 local PDM            = require("rules.character.PlayerDataManager")
 local TalentNodeDefs = require("shared.talent.TalentNodeDefs")
 local TalentsSchema  = require("shared.talents.TalentsSchema")
+local SuccessContext = require("shared.SuccessNotificationContext")
 
 local TalentService = {}
 
@@ -178,6 +179,16 @@ local function publishTalents(uid)
     PDM.FlushImmediate(uid)
 end
 
+--- 激活成功的通知上下文只包围首次权威 MarkDirty；失败仍原样抛出。
+---@param talents table
+---@param uid number
+local function publishActivation(talents, uid)
+    SuccessContext.withNotification(talents, "talents", "talent_activate", function()
+        PDM.MarkDirty(uid, "talents")
+    end)
+    PDM.FlushImmediate(uid)
+end
+
 --- 激活天赋节点（消耗 1 天赋点）
 ---@param uid number
 ---@param nodeId number
@@ -196,7 +207,7 @@ function TalentService.Activate(uid, nodeId)
 
     -- 只在全部校验通过后修改，沿用当时 talents.litNodes 的引用。
     table.insert(talents.litNodes, plan.nodeId)
-    publishTalents(uid)
+    publishActivation(talents, uid)
 
     print("[TalentService] Activate uid=" .. tostring(uid)
         .. " nodeId=" .. tostring(plan.nodeId)

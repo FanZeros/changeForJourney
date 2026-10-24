@@ -189,8 +189,7 @@ function CF.selectTarget(units)
 
     for i, u in ipairs(units) do
         if u.attrs and u.attrs:isAlive() and not u.artifactUntargetable then
-            local t = u.attrs:get(AD.THREAT)
-            if t < 1 then t = 1 end
+            local t = math.max(1, u.attrs:get(AD.THREAT)) / AD.THREAT_BASE
             -- [前后排] 乘以位置受击权重: 前排(靠中心)被攻击概率显著更高
             t = t * BattleLayout.hitWeight(i)
             totalThreat = totalThreat + t
@@ -371,8 +370,11 @@ local function calculateHit(attacker, baseAtk, dmgBonusPct, critRate, critDmg,
     dmg = CF.applyFinalDamageBonus(attacker, dmg)
 
     -- 格挡
+    -- 保留格挡真正挡掉的原伤，不把护盾吸收或护甲减伤当成反伤基数。
+    hit.preBlockDamage = dmg
     local isBlocked, blockMult = CF.rollBlock(blockRate, blockRatio)
     hit.isBlocked = isBlocked
+    hit.blockedDamage = isBlocked and math.max(0, dmg * (1 - blockMult)) or 0
     if isBlocked then
         dmg = dmg * blockMult
     end

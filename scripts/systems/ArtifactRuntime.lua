@@ -305,4 +305,46 @@ function ArtifactRuntime.update(dt, allies)
     end
 end
 
+-- 纯能力查询：同时读取单位快照与私有运行时副本。
+-- 不创建状态，不消费反击队列，也不切换当前挂载战线。
+local NON_OFFENSIVE_EFFECTS = {
+    dodge_decay = true, shield_threat_clear = true, hp_to_shield = true,
+    ignore_armor_armor_penalty = true, left_phys_atk_bonus = true, right_mag_atk_bonus = true,
+    hp_bonus_no_heal = true, taunt_mask = true, crit_dmg_mult_rate_half = true,
+    slow_attack_damage_bonus = true, revive_damage_bonus = true, ghost_damage_bonus = true,
+    judgment_res_down = true, chaos_damage = true, block_cap_up = true,
+}
+
+---@param unit table
+---@param pendingOnly boolean|nil 死亡来源不能再发起新的受击反击。
+---@return boolean provenNone
+---@return string reason
+function ArtifactRuntime.inspectOffense(unit, pendingOnly)
+    if type(unit) ~= "table" then return false, "artifact_missing_unit" end
+    local runtime = unitStates[unit]
+    if unit.artifactEffects ~= nil and type(unit.artifactEffects) ~= "table" then
+        return false, "artifact_unknown_effects"
+    end
+    if runtime ~= nil and (type(runtime) ~= "table" or type(runtime.effects) ~= "table") then
+        return false, "artifact_unknown_runtime"
+    end
+    local lists = { unit.artifactEffects or {}, runtime and runtime.effects or {} }
+    for _, effects in ipairs(lists) do
+        if type(effects) ~= "table" then return false, "artifact_unknown_effects" end
+        for _, effect in pairs(effects) do
+            if type(effect) ~= "table" then return false, "artifact_unknown_effect" end
+            if effect.pendingCounter ~= nil then
+                if type(effect.pendingCounter) ~= "table" or next(effect.pendingCounter) ~= nil then
+                    return false, "artifact_pending_counter"
+                end
+            end
+            if not pendingOnly then
+                if effect.effectType == "counter_attack" then return false, "artifact_counter_potential" end
+                if not NON_OFFENSIVE_EFFECTS[effect.effectType] then return false, "artifact_unknown_effect" end
+            end
+        end
+    end
+    return true, "artifact_none"
+end
+
 return ArtifactRuntime

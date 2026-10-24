@@ -1,6 +1,6 @@
 ## 2026-10-24 · 高相似运行管线兼容重构
 
-- Git实际结果：32白名单已提交55bdbfe1599391ad29ca8a90a4e5952e469948b5；正常push尝试exit128，当前无可用进程凭据或helper，旧消息记录不可读取。未创建PR、未推基线，不称远端上传成功；恢复安全鉴权后继续同一分支。下文未提交状态为执行前快照。
+- Git实际结果：32白名单提交55bdbfe1；任务分支正常push exit0，远端SHA与本地一致。推送后目标workspace1005由c850e5d3前进到8f216f00（220提交），与本任务重叠19文件，已在任务分支合入目标并按目标新规则解决冲突；不推基线、不自动合并。凭据仅进程内使用、临时askpass已删，未写入remote/配置/源码/日志/记忆。
 
 - 固定workspace1005@c850e5d3，独立refactor1005/runtime-pipelines-20261024。用户已授权正常push本任务分支及PR，不推workspace系列、不强推、不合并发布；凭据不持久化。目前未commit/push/PR，成功后另记。
 - 28生产模块实质重组，公开API、数值、RNG、通知及异常部分态保持。固定296/390文件、216配对：90%以上74到46，80%以上102到79，对称行文本44.9054%到43.0540%；文本指标非语义或原创性证明，仍46项高相似，不称全仓完成。
@@ -8,6 +8,120 @@
 - 最终组合切关、配装120、护盾、神器314、成长1697实际ALL PASS/exit0。离线1045失败中1044逐项同基线，新增仅旧测试查找私有moduleData异常，适配结果另记；不称通过。塔132断言88旧失败；BattleLab五局逐runs同而全报告两处浮点尾差，20局timeout不通过。
 - 最后仅将既有离线测试的dispatcher私有upvalue注入改为公开reset/publishLive/subscribe/setOnAnyUpdate，原断言保留；scene_display218/0，整套1044旧失败逐项同固定基线、新增0/harness0。随后官方b45成功，28生产+1测试载荷29/29字节一致；不把旧失败说成通过。
 - 三服务130差分、9负对照、38可达检查通过，四配置另有54独立与42父复核。验证材料工程外，不夹.project、玩家档、上传或他人修改，不改tempGame。持续推进，当前直接继续不再提问，尊重停止和权限边界；不冒称设备/性能/WASM验收。
+## 扫荡优化 PR #180 已创建（2026-10-21）
+
+- **已正常push并创建正式PR #180**：https://github.com/FanZeros/changeForJourney/pull/180，head=`perf1021/sweep-large-batch@69be6a7a`／base=`workspace1005@548fc57a`，创建时open／draft=false／merged=false／mergeable未计算；push及ls-remote实际exit0，远端SHA一致。29白名单+2166/−236，不推基线、不强推、不自动合并发布，不夹原.gitignore／上传／玩家档／本地.project／内部验证；下方尚未push／PR为此前记录。
+
+- 最新用户“做pr”授权提交／正常push独立 `perf1021/sweep-large-batch`／创建workspace1005 PR，不推基线、不强推、不自动合并发布。功能提交 `8d1484a3`（29白名单）与融合 `31553588` 已完成，目标 `548fc57a` 的CE／推荐战力／酒馆更新保留；仅交接冲突双方保留，不夹原.gitignore／玩家档／上传／本地.project／内部验证。下方无提交授权是此前记录，不覆盖最新授权。
+- 融合官方b33成功，705根Lua实际载荷bytes／size705/705、三新meta一致、源冻结不变、内部验证及审核候选0入包，两.project逐字节恢复；两个重叠Lua逐文件无severity1 Error，不称全仓清零。b33后七独立Runtime实际ALL PASS／actualexit0／无timeout：真实小连链v5三组721（87/129/91pump、save/token/receipt各1）、Bridge87、UI16组5732、十万项展示522092、资源compat46439、切关与真实等待树209／12Render。小链保存内存／页面释放spy、UI16控件树spy与真UI/Yoga/Surface等待分别留证，不代完整Boot／GPU／触控／磁盘验收。相对最新目标3314路径20旧规范问题、新增0，36规范单测过。旧215组及四100k oracle只按b32原同源结果报告，不伪称融合后全量重跑。尚未push或创建PR，实际成功后补记。
+- 标准credential接口仅进程内即时鉴权，不写源码／remote／Git配置／项目记忆、不挖历史转录或凭据文件；公开PAT应撤销轮换。持续推进授权范围并尊重停止、拒绝、安全边界；当前直接继续不机械提问。
+
+## 十万次扫荡分帧与统一到账（2026-10-21，本地完成）
+
+- 用户明确选择“分帧，最后统一到账”；独立 `perf1021/sweep-large-batch` 固定最新 `workspace1005@a590320d`，本轮仅本地实现／测试／官方构建，无commit/push/PR/合并发布授权，HEAD/index保持。持续推进授权范围并尊重停止、权限拒绝和安全边界；当前要求直接继续不机械提问，不推workspace系列／强推／自动合并发布。不读玩家档／凭据、不pop旧stash，不混原.gitignore／上传／无关meta／本地.project／内证，凭据不持久化。
+- 私有快照分帧生成／分类，原逐杀RNG顺序／完整装备／自动分解／整次事务保持；请求级缓存确定配置、单次库存计数和汇总日志。Bridge单任务＋请求身份／epoch／refs／revision与最终完整值校验，等待暂停背景战斗和冲突输入，真实UI显示生成进度；最后无yield一次扣券／发奖／保存，失败原位恢复。到账后CMH包装和稳定排序分帧，opaque token一次消费；展示异常先释放所属请求身份、明示已到账，不伪报重试。取消不回滚已消费RNG，不跨进程恢复。
+- 官方b32成功，704根Lua实际UUID-hash载荷704/704逐字节与声明size一致，三新meta一致、源冻结不变、内部验证0入包，两.project与本轮before逐字节恢复。21任务Lua中19逐文件Error0，两宿主8条旧诊断源行同HEAD；官方daemon unavailable/code1跳过全仓gate、headless环境错误保留。候选3312路径20旧规范问题同基线、新增0，36规范单测过；不称全仓／设备／GPU／性能全绿。
+- 固定旧源oracle215组32485746断言、四关各100k自然RNG5组67179266断言、十万项展示522092、真实Bridge小连链1093、构建后UI16组5732／宿主87与真UI/Yoga/Surface等待209／12渲染帧均ALL PASS／actualexit0／无timeout。小链完整Popup.show/showNow实际消费token，v4 Registry替身／1093断言、v5真实Registry及Schema／689断言均实际ALL PASS／exit0，断言数随yield帧数变化；PDM／Store／Dispatcher／Save仍为明确内存边界、页面释放为spy，等待树Bridge为状态stub，三种覆盖分别留证。ticket7组70、resource compat46439、切关亦通过。原完整扫荡test与固定a590各102组97过5失败／51377断言，失败完整文本及重数一致、新增0，未改旧200容量断言；资源rules旧28/12亦基线同现，overflow受封闭业务File仅11/19未完成、不计通过。原quick-v2／large-v1超时与夹具失败保留，不降低断言、不开放玩家档。
+- 真实尾段Registry／Schema各4次onLoad＋内存cjson 21139649字节，主线100k自然49765装备prepare CPU8.206秒、commit0.826秒（内含编码0.641秒）；非完整StandaloneSave／真实磁盘／WASM测量。4ms仅软预算，最终核对／交付／规范化／编码／保存／通知仍同步，不称十万全面不卡。全部704源与b32最终冻结一致，内证仅 `.git/validation/sweep1021`，未提交推送。
+
+## 离线经验布局与慢动画（2026-10-17，已push并创建 PR #164）
+
+- 用户提供PAT授权“pr下”；功能提交 `b692aef4`＋合并提交 `d616c601`（无冲突合入 `workspace1005@5514b104`含PR163）已push `fix1017/offline-exp-layout`，远端SHA与本地一致。正式 **PR #164** https://github.com/FanZeros/changeForJourney/pull/164，head任务分支／base=workspace1005，open/draft=false/merged=false/mergeable=true(clean)，7文件+904/−117，未自动合并发布；创建前同源open PR=0。凭据经 `-c credential.helper= -c http.extraheader` 一次性进程内鉴权，不写remote/Git配置/源码/日志/记忆；本地config既有 `credential.helper=store` 未用未改，建议撤销轮换。不混 `.gitignore`（任务前既有）／`.agent`／`_uploads`／repair meta／`standalone_save.json`（未读）。
+- 关卡来源移各队经验行末，条宽等于真实头像118；塔无经验仍48高来源行，共用布局/领取热区。远征行只读玩家副本调用正式ExpTable并冻结前后级，缺player不伪造，不写Dispatcher/玩家档。修每帧重复累计消费为target-issued，当前cap清remain、最终item.capped不提前填满；默认每英雄约5秒、原延迟/错开与奖励时间轴保留。累计UI时间取最近微秒，只改预览不改收益/经验表/领奖/存档/RNG；五语全文实测字墨必要缩号，不截串。
+- 官方b30成功、682根Lua实际载荷字节/size全一致、冻结源不变、validation0入包、两.project与本轮备份逐字节恢复。构建后四独立Runtime actualexit0/无timeout/ALL PASS：展示4972断言8组116draw4743Bounds（原1194主体逐字节保留、FileFS/RNG0）、收益607、只读详情51组1383及切关。严格边界与字体36失败修生产后归零，原失败和旧Panel90/618负对照保留，不加epsilon、不降断言。三任务Lua Error0；官方daemon unavailable/code1跳过gate、headless音频/shader错误保留，不称设备GPU/触控/性能/全仓清零。旧Input GetKeyDown及hero_sync缺依赖固定HEAD独立同现不混修。内证仅.git/validation/offline-exp1017。
+
+## 离线经验布局与慢动画（2026-10-17，本地完成）
+
+- 当前 `fix1017/offline-exp-layout@1e1692cd` 仅本地开发/测试/官方build，无新commit/push/PR/合并发布授权，不继承PR158许可；PR158已外部合入目标。关卡来源移各队经验行末，条宽等于真实头像118；塔无经验仍48高来源行，共用布局/领取热区。远征行只读玩家副本调用正式ExpTable并冻结前后级，缺player不伪造，不写Dispatcher/玩家档。
+- 修每帧重复累计消费为target-issued，当前cap清remain、最终item.capped不提前填满；默认每英雄约5秒、原延迟/错开与奖励时间轴保留。累计UI时间取最近微秒（不是逐帧舍入dt），只改预览不改收益/经验表/领奖/存档/RNG；五语全文实测字墨必要缩号，不截串。严格边界与字体36失败修生产后4972/0，原失败和旧Panel90/618负对照保留，不降实际经验断言。
+- 官方b30成功、682根Lua实际载荷字节/size全一致、冻结源不变、validation0入包、两.project与本轮备份逐字节恢复。构建后四独立Runtime actualexit0/无timeout/ALL PASS：展示4972断言8组116draw4743Bounds（原1194主体逐字节保留、FileFS/RNG0）、收益607、只读详情51组1383及切关。三任务Lua Error0；官方daemon unavailable/code1跳过gate、headless音频/shader错误保留，不称设备GPU/触控/性能/全仓清零。旧Input GetKeyDown及hero_sync缺依赖固定HEAD独立同现不混修。
+- Service/ExpTable/Standalone/RewardLargeView/EquipmentQuery等保护路径逐字节保持，原.gitignore/repair meta指纹不变，不读玩家档/凭据、不pop旧stash、不夹上传/本地配置/内证。持续推进授权范围、尊重停止/拒绝/安全边界；最新直接继续不机械AskUserQuestion，不推workspace系列/强推/自动合并发布，凭据不进源码/配置/日志/记忆。内证仅.git/validation/offline-exp1017。
+
+## 一键装备分帧＋等待动画（2026-10-16，已push并创建 PR #158）
+
+- 用户最新明确“pr”，授权提交、正常push独立任务分支、创建workspace1005 PR。功能提交 `26477fa746fc328c12d95e9d3491e84aa1c59b01`（19白名单=10生产Lua＋2测试Lua＋3新meta＋4交接，+1601/−19）已正常push `perf1016/quick-equip-latency`，远端SHA一致。**PR #158** https://github.com/FanZeros/changeForJourney/pull/158，head=perf1016/quick-equip-latency(26477fa7)／base=workspace1005(2869bfe6，含PR155/156)，open/draft=false/merged=false/mergeable=true，未自动合并发布；创建前同源PR=0。凭据经本机既有 credential store 进程内使用，未写入remote/Git配置/源码/日志/记忆，已核零残留；建议撤销轮换。不混无关untracked（.agent技能目录/_uploads/repair meta）与本地.project/验证材料，不推workspace系列/强推/自动合并发布。
+- 分帧保持原选装结果：完整候选/seq升序/原贪心顺序/严格gain与同分先到者、最终一次写目标六槽；4ms软预算/4096检查点、Bridge单任务、epoch/refs/revision与最终完整值校验、Stop/reset/GM清档取消；纯名册exp/maxExp原地更新保留。计算中仅防重复一键、其他页正常，五语提示、真实完成才install、专用回执不串洗练。新增60行QuickEquipActivity纯绘制等待动画（旧铜双弧反转/六菱微光/内框呼吸/亮铜文字），不假进度、不新增输入层、不载资源/随机、不改坐标/五语/搜索/预算/存档。
+
+## 计算中按钮等待动画（2026-10-16，本地完成）
+
+- 用户要求等待动画，沿perf1016/quick-equip-latency保留分帧dirty，仅新增QuickEquipActivity/meta并接DetailDraw pending，暗铁旧铜双弧反转/六菱循环/内框呼吸/亮铜文字。纯绘制不建纹理字体/音效/RNG/输入层，不假进度、不改原坐标/完整五语/调度/选装/存档；结束/切离不绘制。原UI专项扩到1244断言/28真实NanoVGRender帧、构建后ALL PASS/actualexit0/无timeout，字墨避让、A→B→A精确复现和非默认NVG状态恢复、原输入语义保留，FileFS/RNG0；旧源异步46/18405、试穿147、生命周期、切关、优选UI322亦实际通过。无GPU截图/设备/性能验收承诺。
+- 官方b28成功669根Lua实际载荷字节/size全一致、三新meta UUID一致、源冻结不变、内部验证0入包，两.project与本轮备份逐字节恢复。动画/test LSP Error0，Draw旧诊断/官方daemon unavailable跳过gate/headless环境错误保留；候选19任务路径20旧规范问题同基线/新增0，不称全仓全绿。内证只.git/validation/quick-equip1016/animation，未提交/push/PR/合并发布、不混前轮授权。持续推进且尊重停止/拒绝/安全边界，最新直接继续不机械AskUserQuestion；不推workspace系列/强推/自动合并发布，不持久化凭据。
+
+## 角色一键装备分帧优化（2026-10-16，本地完成）
+
+- 用户明确选择“保持原选装结果，分帧计算、完成后一次穿戴”；独立perf1016/quick-equip-latency固定9a2e5575，仅本地实现/验证/build，无本轮commit/push/PR/合并发布授权，不混PR156文档分支、不pop旧stash、不读玩家档。完整候选/seq/原贪心顺序/严格gain与同分规则保持，4ms软预算/4096检查点，原始快照和水合工作副本分离；refs/revision/epoch及最终完整值校验、Stop/reset/GM清档取消。纯名册exp/maxExp原地更新保留，其余评分/成长/队伍变更拒旧答案。完成无yield一次写目标六槽、沿原保存调度；通知异常保留已提交成功、重入不擦新任务。计算中只防重复一键，五语提示/完成回执install/不串洗练；ctx内pre-aura队友缓存逐槽guard且目标始终重建，公式/奖励/存档格式不改。
+- 官方b27成功，668根Lua全实际载荷逐字节/size一致，两test/meta UUID一致，内部oracle/validation/launcher0入包；两.project与原备份逐字节恢复，668冻结源无变化。构建后八Runtime ALL PASS/actualexit0/无timeout：完整旧源oracle46组18032、真实UI/Noto五语805/26帧、试穿147、操作148、生命周期、切关、优选UI322、教程69；新增FileFS/RNG0。构建前完整oracle46/18198、标准无旧树46/16972亦通过（外部oracle明确NOT RUN）；两首次夹具失败完整保留，仅修真实搜索等待/渐变Fill记录，不降断言。
+- 最终软件CPU200/500普通/500异型双持旧同步628.064/3445.720/4912.329ms，新分帧总CPU395.641/2082.435/2848.104ms、93/493/639帧，理论60Hz1.55/8.22/10.65秒；三样本max11.060/8.309/13.470ms，其他边界仍有124.280ms软件尖峰，不称硬4ms/FPS/全面不卡，500全同型仅进入搜索后取消、不测最坏完成。五核心及两test LSP Error0，四修改文件旧KeywordText/teams/args诊断源行同基线；官方daemon unavailable/code1跳过gate、headless音频/shader错误保留，不称全仓/设备/GPU/触控/整游戏实战验收全过。旧快捷candidate只读1失败固定基线同现不混修；候选17路径20旧规范问题同基线新增0、36规范单测过。内证只.git/validation/quick-equip1016，HEAD/index保持，未提交推送。持续推进授权范围，尊重停止/权限/安全边界；最新直接继续不再提问，不机械AskUserQuestion，不推workspace系列/强推/自动合并发布，凭据不持久化。
+
+## Shift＋右键锁定与仓库整合（2026-10-16，已push并创建 PR #154）
+
+- 用户确认Shift＋右键并授权500容量/优选、左仓库修复及快捷锁定一并提交、正常push任务分支、创建workspace1005 PR；本次凭据只进程内即时鉴权，不写源码/remote/Git配置/日志/记忆。保留dirty后无冲突ff至最新ebbf8c0d，分支feat1016/equipment-inventory-curation，不pop旧性能stash、不读玩家档、不推workspace系列/强推/自动合并发布。
+- Shift＋右键仅仓库equip真实库存，普通右键不改；不支持来源/遮挡/空白/筛选/动画不回落穿戴/回收/框选。单在途、lockRequestId＋seq、超时/旧回执隔离；正常拒绝和Bridge异常均带身份。真实同步桥只权威翻转一次，删除两详情锁按钮的第二次本地翻转，不扩做遗匣锁定。
+- 最终官方b24后七Runtime ALL PASS/exit0/无timeout：锁实链10组227、左右Shift真实Horizon924、真锻炉smoke、生命周期、教程69、优选UI322、切关；File/FS原生委托0。优选核心2826/领取120/冷恢复34/overflow19亦本轮通过。b24的666根Lua实际载荷字节/size全部一致、源冻结无变化、validation0入包，两.project与本轮备份逐字节恢复。45白名单候选20旧规范问题同ebbf/新增0，36单测通过。HorizonInput/EquipmentDetail旧类型诊断及官方daemon失败跳过gate、headless音频/shader错误保留，不称全仓/设备/GPU/性能全绿。持续推进授权，尊重停止/拒绝/安全边界，按最新直接继续不机械提问；本地功能提交cdbf570675a2988668104c202b8fbf4f3837590e已成功，45对象/冻结源码一致、index空，尚未push/PR。执行沙箱无本次凭据环境变量且不能读宿主原会话记录，未将令牌搬入工具参数/文件绕过边界、未做认证；只读远端无同名分支；目标随后外部合PR153至0d1c7d11，已融合为dc646735476d56610111d6e34906bccd20945f2d，唯一link入口冲突双保留class-only/blacksmith测试，五目标文件逐字节保持。融合版官方b25成功、666Lua实际载荷/size一致、两.project原备份恢复；职业筛选148/0实际exit0/FileFS原生委托0，b25后七回归227/924/smoke/生命周期/69/322/切关均ALL PASS/actualexit0/无timeout且源冻结一致；目标link三处类型诊断不混修。用户本轮即时提供PAT，经进程内http.extraheader一次性认证正常push任务分支（远端SHA=d0755636与本地一致）并创建 **PR #154** https://github.com/FanZeros/changeForJourney/pull/154，head=feat1016/equipment-inventory-curation/base=workspace1005(0d1c7d11)，open/draft=false/merged=false，45文件+3589/−74，未自动合并发布；创建前同源open PR=0。令牌不落remote/Git配置/源码/日志/记忆，remote仍干净URL；/home/Maker/.git-credentials 已含该PAT非本会话写入、未擅自删除，建议撤销轮换。内证仅.git/validation/equipment-lock1016。
+
+## 角色详情与锻炉左仓库联动修复（2026-10-16，本地完成）
+
+- 用户反馈详情打开再入锻炉左栏消失。保留当前500容量/优选dirty，沿feat1016/equipment-inventory-curation@1827629a仅本地修复/测试/官方build，不pop旧stash、不读玩家档、不commit/push/PR/合并发布。右键已有仓库快捷穿戴/遗匣回收，Shift＋右键锁定仅建议、未获确认/未改绑。
+- 显式新锻炉owner通过enterBlacksmithWarehouse/acquireForBlacksmith清旧配装关仓/左页让位suppressed，普通重复acquire/update不重开；正常open和教程opening接入。右详情保留，双owner释放及手动view恢复不改。新增link77/0，旧模块负对照新增56失败含8条状态失败；全集30旧筛选失败逐多重集合相同、新增0。真实smoke旧生产复现旧closing清仓，新生产正常/教程×动画中/结束后及属性路径ALL PASS；生命周期、教程69、优选UI322、切关亦实际通过。测试原生File/FS委托0，不代GPU/设备/性能验收。
+- 官方b23成功、663根Lua全实际载荷字节/声明size一致、validation0入包，六Lua逐文件Error0有Warning；全仓build gate仍daemon unavailable/code1跳过，headless音频/shader错误保留。旧层级artworkPointer替身与教程resetRadarTransition依赖失败修前修后同现，不混修；仅同步教程新锻炉stub接口。两.project与本轮备份逐字节恢复、源码冻结一致、index空。持续推进授权范围，尊重停止/权限/安全边界，最新直接继续不机械AskUserQuestion；不推workspace系列/强推/自动合并发布，不保存凭据，内证只.git/validation/forge-warehouse-entry1016。
+
+## 500件仓库与手动一键优选（2026-10-16，本地完成）
+
+- 用户选项确认500件＋手动优选，独立 `feat1016/equipment-inventory-curation@1827629a`；仅本地实现/测试/构建，不继承旧push/PR授权，不推workspace系列/强推/合并发布。原性能dirty完整保留于3687ce33命名stash，14份备份SHA全部一致；旧StageExpHelper.meta另dc1a4624 stash，不pop混入，不读玩家档。
+- 全库预览/确认、同slot/type/grip严格通用评分升级、空位低占用组优先；库存穿戴/锁定/套装/投入/腐化/pending保护。原件不水合重骰，转存source=curation防遗匣单批回收；入仓新安全seq隔离旧pending，Flush失败恢复原表别名/字段，成功才双模块通知。不是后台自动交换或自动分解，不称角色最优配装。
+- 最终官方b22成功、663根Lua实际载荷663/663字节/声明size一致、内部validation0入包；21本轮Lua逐文件Error0、不代全仓。构建后十一Runtime均ALL PASS/exit0/无timeout：核心31场景2826/0、领取回收120/0、虚拟保存1551＋独立冷恢复34/0、原overflow19/19、真实UI/字体/Input/Bridge到CMH 322/0、原遗匣页1125/0、筛选649/0、滚动10、生命周期及切关；五核心/九UI冻结SHA一致。新增nvgTextBounds尾参展开真实错误已四处local width修正，首轮失败保留不称旧stub问题。旧horizon替身异常及quick只读1失败固定1827629a同现、不混修；旧跨清档Blacksmith pending生命周期边界不扩修。软件CPU完整500/500=116.237ms、500/10000=1232.718ms（虚拟Save），不承诺设备I/O/FPS/不卡。36规范单测过、候选20旧问题同基线新增0；官方LSP daemon失败跳过全仓gate、headless音频/shader错误保留，不称GPU/触控/用户审美已验收。两.project原备份逐字节恢复；没有commit/push/PR。所有新测试封闭File/FS，内证只.git/validation/inventory-curation1016，不读玩家档。持续推进当前授权，尊重停止/权限/安全边界，当前最新直接继续不机械提问，凭据不持久化。
+
+## 塔结算横屏与择契不停战（2026-10-07）
+
+- 已正常push14白名单功能b59bba3a728f25bb48564402ecbda145a48aaeda且ls-remote同SHA；PR120 https://github.com/FanZeros/changeForJourney/pull/120，head任务分支/baseworkspace1005，open/draft=false/merged=false，不称CI/合并发布。sharedHEAD/index保持，未推基线；21旧规范问题同ec1d8a61新增0，36单测通过。成功后仅三本人交接追加，不重复建PR或混peer。下方未push措辞属此前过程。
+
+- 用户要求塔胜败结算横屏、三选一可留着不选且战斗继续、右栏排序文字修复；完成后新分支正常push与workspace1005 PR，测试勿复杂化。独立fix1007/tower-flow-roster-labels固定ec1d8a61父，不切共享HEAD/index，不夹并行教程/数据去重/.project/上传/验证/无关meta。
+- 1440×760塔结算最多12英雄，普通副本不改；FIFO未选组本层内保留，清波直接下一波，选择只追加一次并下一波生效，不重置当前敌人/计时/投射物。右待选入口恢复原组，失败/退出/本层结算清理；sans/normal修复排序字体。
+- 现有回执450/0、布局967/0、名册6661/0、真实侧栏16291/0均exit0；11Lua单文件LSP无Error，官方b2/593Lua与11载荷字节/size一致。不称全仓/设备/性能/完整实战视觉通过；只三个旧测试小增量，不新增大测试框架。
+- 持续推进当前授权，最新要求直接继续不机械提问；只正常push独立任务分支，不推workspace系列/强推/自动合并发布，尊重停止与权限边界，凭据不进源码/配置/日志/记忆。Git实际结果成功后另补，不提前称已推或已建PR。
+## 上场与结算数据刷新去重（2026-10-07）
+
+- 本轮用户要求查上场/结算重复排序、战力和装备模拟，完成后正常push/PR，测试勿复杂化。固定ec1d8a61父，九文件功能08c6c4569555f5da45e0bc45de7acecac6650cc0已正常push并核远端SHA，独立 `perf1007/data-refresh-dedup`；正式PR #121：https://github.com/FanZeros/changeForJourney/pull/121，base=workspace1005/open/draft=false/merged=false，未推基线/自动合并发布。
+- 玩家解锁空槽不评分，heroes冻结最后评分值门禁；纯exp保引用、失败回滚不预先清cache、成功上场最终同步full1，legacy回调先刷新后读取。批次只合并末尾派生刷新，逐英雄共鸣/持久化及公式/倍率/奖励/存档保持；编辑队不评分、power排序不排旧缓存。
+- 官方b3成功593Lua/9载荷一致；现有Sync855/Exp780/Sort557均0失败、原atomic/drag/切关/预估120通过，纯Git候选三核心亦实际exit0。只两个旧test补计数/两batch例，不建框架。逐文件LSP无Error、规范21旧问题同父新增0、36单测过；host160/1与entry46/9旧夹具依赖失败保留，不混修，不称设备FPS/全面不卡/全仓全绿。
+- 持续推进当前授权，最新明确直接继续不机械提问；尊重停止/权限/安全边界。独立index/ref、sharedHEAD/index保持，九路径+三本人块不夹塔/教程/.project/上传/内证/玩家档，不推workspace系列/强推/合并发布，凭据不进源码/配置/日志/记忆。
+
+## 右栏排序与总战力主值交接（2026-10-07）
+
+- **已正常push并核验：** 最终26白名单提交a313445e9c31810e9cd9887354674e138a696259正常push独立feat1007/roster-sort-total-power-20261007，push／ls-remote实际exit0、远端SHA一致，workspace1005仍81266ee8未推。正式PR #119：https://github.com/FanZeros/changeForJourney/pull/119，base=workspace1005／head=本任务，open／draft=false／merged=false／mergeable未计算，不称CI通过、已合并或发布。提交包含23源码/meta＋3本人交接，目标PR117优化保持，塔WIP／.project／内证／玩家档／凭据不混入；下面“未push／PR”均属此前过程记录。成功后仅三交接补记正常push，不重复创建PR。
+
+- **最终本地验证与融合（下列为此前过程记录）：** 源码融合提交6c965dd6eb33e371c9345f73a4119b462ee65caa／tree6c66f056保留外部PR117目标81266ee8；相对目标23源码/meta路径＝19Lua＋4meta，不含塔。最终七核心排序557／启动669／host167／入口474／经验762双维／入场229／Save747全部0断言失败且exit0；所有读取源图与最终Git对象一致、共享回退0。纯exp五模式保持Down／引用／缓存，共鸣旁队与候补升级全刷新；两新目标夹具仅补真实依赖与rebuild计数，原业务断言逆构逐字节保留。最新招募5161／Horizon1334／副本6185断言过且exit0，focused5314断言过但rawFAIL／exit1仅106.19ms软件尖峰。main240帧20/20、198帧解锁／239Update／240Render／Stop完成，玩家档读取0／仅新隔离档写1，Lua／资源0，rawFAIL只17软件尖峰；原150帧18/20未ready与副本45秒超时保留。Save原65秒超时及1失败保留，同源812与候选180秒预算各747/0，不定性必现基线失败。最终本人官方b10成功／593根Lua，17非bootUUID-hash载荷bytes/size一致，两共享boot含塔hunk另Git-only验证，不称19全载荷或纯候选build；36安装源＋两个新test逐文件Error0，不称全仓。21旧规范问题同812新增0／36单测完整OK。6303UI、七多语样片与Power612＋672／Rich2784来自同展示源固定676验证，不冒充新目标GPU／设备验收。仅本块三交接追加，尚未push／PR，成功后再补真实结果；sharedHEAD676/index空、不推workspace系列／强推／合并发布，凭据不持久化。
+
+- 当前用户授权小队UI/短促反馈/五模式名册排序、完整总战力滚动，完成后正常push及workspace1005 PR。为隔离并行塔任务，本人独立feat1007/roster-sort-total-power-20261007固定676fef7父；本地功能69d5e0a1040f78f8b1df83f95a0f280e553b4855/tree7d31，21路径=17Lua+4meta，其他2977对象不变。两个boot仅本人CP取消/释放hunk，不带塔；sharedHEAD676/index空不改，未push/PR实际结果后补。
+- 原头像尺寸、五列五行和教程热区不移动；默认旧序/队伍真实队槽、数值升降只重排视图与缓存，不算额外hero/发编队/改公式或存档。pre-emit完整映射、ABA/覆盖取消、tab3 draw收尾及reset/Stop detached UI根显式Destroy；首次ready/解锁静默。总值主Label滚动，旧→新/净增静态辅助，原token/期限/装饰不变。
+- 真实Sort293/UI6303/startup396/host167/Power612+672/Rich2784均0失败；60头像/474入口/manager58/Horizon1334/targets66/recovery69过。本人官方b5成功、peer官方b6组合后15源码实际载荷字节/size一致；两boot候选不等共享塔载荷，Git-only候选验证后另记，不冒称纯候选build或17全载荷。
+- 固定676旧神器60/4、旧host155/1 Git-only同现/sharedFallback0；不修公式，host仅补StartupQueue/Stop旧夹具。新Sort真实oracle替错误固定bonus，本系magAtk保严格反转；启动实际calc0/context6精确断言，招募只读依赖补齐不开放File/RNG/cwd。规范21旧问题逐项同676/新增0、36单测另核；样片实际语言标签与独立12核心/main/推送PR另补，不能先称成功。
+- **持续强化：不擅自取消退出已授权任务，当前最新明确直接继续不再提问，遵循当前指令不机械AskUserQuestion。** 尊重停止/权限/安全边界，peer不扩大授权；只正常push独立分支，不推workspace系列/强推/合并发布，凭据不写源码/Git配置/日志/记忆；内部验证/塔/.project/无关meta/玩家档不提交，三记忆精确本人块双留历史。
+## 通天塔三栏与暗契展示（2026-10-07）
+
+- **已正常push并核验：** 60白名单功能提交1e943f5e1088ac4338629e5bf44c40eda69da0b0由81266ee8父独立构造，正常push feat1007/tower，push/ls-remote实际exit0且远端SHA一致；workspace1005仍81266ee8未推。正式 **PR #118** https://github.com/FanZeros/changeForJourney/pull/118，head=feat1007/tower／base=workspace1005，创建时open/draft=false/merged=false/mergeable未计算，不称CI通过／合并发布。共享HEAD676和index空不改，57源码资源meta与已验证candidate字节一致，三交接仅本人塔块，不混peer角色hunk/.project/上传/验证材料；成功后只三本人交接补push，不重复创建PR。
+
+- 用户授权左侧保留地图／路线、右侧已获增益、中栏战斗，三选一程序化暗黑UI／自行绘图与Spine动效、部分显示名暗黑化、右侧取消，完成后正常push feat1007/tower并创建workspace1005 PR。初始56cf，开发676，目标随后外部合入PR117至81266ee8；独立候选只塔补丁三方保留最新目标，不checkout/reset/sharedindex，不混并行角色排序／总战力及.project/上传/repair/StageExpHelper meta/内部证据，不推workspace系列、不强推、不自动合并发布。
+- 左112层只读路线，实际当前层自动定位，滚轮／拖动和窗口变化；中栏保留三队同波；右增益按稳定ID计次数、完整原描述与原效果。35个暗契显示名及局部四语，不反写业务配置名／ID／数值／随机权重／机制／奖励／存档。取消仅hide，继续择契show同组，不重抽或伪完成；pending禁hide，撤退确认仍左撤退／右取消，确认期间原计时不改。
+- 三选一新UI文字／按钮与程序暗铁旧铜骨白血红装饰，10透明PNG+1024图集+Spine4.2.43 JSON/atlas共13资源／meta；七实体纹章，awaken0.8→idle3真实时间，token独占native、故障单次PNG再几何、同时间变换刷新不叠正dt、单Unload清引用。28生成器／资源／meta冻结逐字节相同，342016图集区域像素、2px挤边、透明RGB0、确定性重绘通过。
+- 两侧detached ScrollView真实content0导致滚动/定位无效，已仅塔Sidebar布局后UpdateContentSize+clamp，最后按floor或实际viewport高度变化定位，稳定手动scroll不重置。name内容右2px处理真实英文War-Fueled Frenzy边缘1.027px超出，不截串或放宽容差。确认TextBoxBounds行metrics不等字墨，临时放大三值已撤回；20旧误判记录保留，最终metrics只DIAG，不称已修未经确认的字墨裁切。
+- 真实原回执289/0，只有旧初始化改实际选关入口且123原断言语句保留；native90/0／mock358/0，UI Spine与PNG各362cases58447/0（1050完整描述）、CPU三栏专项774/0及新真实UI侧栏10cases16281/0均实际通过。严格教程共享focused12/5312业务ALL PASS，raw1环境spike；dungeon13/6183与切关ALL PASS。旧dungeon_team_selection仍旧detailDungeon断言失败，固定676完整隔离同现，不伪造旧入口或混修生产。规范36单测实际通过；候选21旧规范问题同父／新增0，不称全仓清零。
+- 最终八三栏图已真实跑齐逐张Read：战斗／三选一／隐藏继续／撤退确认×1920/1280，两尺寸共1200draw、324检查0、每图Stop0和40源覆盖前后SHA一致；各actualexit1/rawFAIL仅947软件spikes，不称性能／触控／用户审美／真实通关通过。样片固定676+塔overlay不冒称最终812包；1280原顶部计时与倍速邻近／淡字边界保留，未扩修旧HUD。原首main无exit证据保留；最终纯812独立main150已真实wait退出1、无outertimeout、Lua/资源/缺图0，rawFAIL仅18spikes。17对Stop链完整返回含Flush/Rename、塔reset/Picker/Oath/Sidebar/Surface/两native.nvgDelete/main，GC/RNG不改；无syscall audit不称共享回退读取0，旧trace时限与不足150帧尝试完整保留。
+- 独立812最终候选3048路径／57白名单（19Lua+13资源+25新meta），2991非白名单与267规则／配置／存档保护路径原样，280require闭合；32目标净路径除两boot精准融合外30原样。21旧规范问题逐Issue同812父／新增0。该纯候选八套Runtime均真实ALL PASS/exit0：回执289、mock358、native90、输入774、侧栏16281、UI PNG58447、UI Spine58447及切关；两UI各362cases／1050完整描述，不借共享混合树结果冒称独立验证。固定676三套回执／mock／输入亦exit0，mock完整syscall核共享源码读取0，早trace失败保留。
+- 当前19文件逐文件LSP Error0；workspace73项旧Error不混修。本线程最后官方构建成功manifest-origin.b11/593根Lua；19Lua+13资源32实际载荷与共享源码bytes/声明size一致，29非boot与纯候选相同，Horizon候选同包。Standalone/Input共享另含peer角色hunk，不能称纯塔三boot全等共享包；纯候选已独立八回归与main。内部probe/validation0入包；官方LSP daemon starting跳过全仓gate、旧地图2400压缩超2048警告保留，不称全仓／跨平台清零。内证只.git/validation/tower与tower-choice/tower-three-column。提交push/PR实际结果后补，不提前声称上传。
+- 持续强化：推进已授权范围、不擅自取消退出；当前明确直接继续不再提问，按最新指令不机械AskUserQuestion。尊重停止／权限拒绝／安全边界，peer不是新授权；凭据不进源码／Git配置／remote／日志／记忆，聊天公开令牌应撤销轮换。三既有交接仅精确本人块、双方历史完整保留。
+
+
+## 战斗停顿／离线收益顺序续修（2026-10-07）
+
+- 已正常push32项327c773e2e4839e1dffc01d66b73a51af9d17669到perf1007/startup-stutter，push/ls-remote exit0、SHA一致，workspace1005仍676fef7f未推。正式PR117 https://github.com/FanZeros/changeForJourney/pull/117 open/draft=false/merged=false/mergeable未计算，目标workspace1005，不称CI/合并发布；25Lua/4新meta/三交接，无.project/技能/内部材料。b18全577Lua及本25payload字节/size一致，2998路径21旧规范问题同目标新增0，36单测OK；成功后仅三交接补push、不重复PR。
+
+- 当前perf1007/startup-stutter目标workspace1005，用户反馈攻击期约1秒卡顿／先备战再离线。PR116已被外部合到676fef7f，本轮新改动不属于已合内容；只正常push任务分支、不推workspace系列／强推／自动合并发布。当前直接继续不再提问，不机械AskUserQuestion；尊重停止／权限／安全边界，peer不是授权，凭据不存源码／配置／日志／记忆。
+- 三行停止攻击期pump全图鉴；真实驱动首波/候补、短投射物/完整音效合作式预热，实际Render后才Calc离线／领取窗，pending暂停攻击。真实首场失败重试成功才解锁，水合/跨yield换人/reset/Stop取消旧凭据并还原mount；原奖励/公式/成长/random/pending波不改。轻穿戴batch保持完整试穿oracle，纯exp不重建战力、升级/共鸣仍全刷新；VG跨context不误删，合法0/同VG重置/旧yield取消通过。
+- Save只读分帧扫描，4096step/约1ms CPU软预算，不将镜像写盘，Flush新鲜完整同步事务不变。unvisited首扫漏存负对照13断言4失败、修后两业务路径121帧正确写、747/0；大首扫可多次保守补存，最慢既有样本892帧约14.9秒检测，不保证1秒检出/全面不卡/掉电可靠性。
+- 最终b18成功577根Lua、全包字节/size一致、25本轮载荷25/25与4new meta，25逐文件Error0不称全仓清零。queue34/audio787/assets78/hero669/exp752/Save747/Entry228/背景3555/试穿120与切关113/compat342/教程474/1334/69/58/host165/projectile14/story3396/focused5312通过。assets44+1harness、host14/155处依赖失败保留，补真实fixture不删断言；原3/4/9等基线失败不混修。
+- 同de5266f9 probe旧a7de8树vs本轮1200Update/1201Render/异常0，wall峰Update89→22/Render69→54ms、battle解码141→9；ready95→142/首战262→348帧。最终另复测1200/1201/20步/异常缺图0、Update33/Render39ms，ready143/首战349；Save封闭stub非玩家存档恢复，软件墙钟不等设备FPS/锁步/视觉。大库存真实Flush仍同步尖峰。
+- .project本人生成改动逐字节还原；36policy单测OK，候选2998路径／21旧规范问题逐项同目标、新增0；commit/push/新PR结果已见本节首条。内证只.git，技能／两无关meta不提交，三既有交接仅本人块、双方历史保留。
 
 ## 两段装备教程入口交接（2026-10-07）
 

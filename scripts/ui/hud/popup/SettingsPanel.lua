@@ -7,11 +7,12 @@
 local cjson = cjson
 local DrawUtil = require("core.DrawUtil")
 local RedeemCodePanel = require("ui.hud.popup.RedeemCodePanel")
+local PerformancePanel = require("ui.dev.PerformancePanel")
 local GameBGM = require("systems.GameBGM")
 local I18n = require("core.I18n")
 
 local BF              = require("systems.ButtonFeedback")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local drawTextStroke    = DrawUtil.drawTextStroke
 local hitTest           = DrawUtil.hitTest
 
@@ -32,6 +33,9 @@ local state = {
     showDamageNumbers = true,
     showEffects = true,
     showSetIcons = true,  -- 装备格左下角套装徽记
+    showEquipmentPower = false,  -- 仅控制方形装备格内的战力显示
+    pauseBattleOnSidePanels = false,  -- 左操作页/右角色详情打开时暂停战斗（独立本地偏好）
+    autoDiamondExchange = {},  -- 各招募池/宝箱档位独立授权，只省略补购确认，不主动消费。
     -- 滑块拖拽
     draggingSlider = nil,  -- nil / "bgm" / "sfx"
 }
@@ -102,16 +106,13 @@ local TOGGLE = {
     TEXT_FONT = 28,
 }
 
--- 9. 兑换码按钮
+-- 9. 兑换码独占原来一行；性能诊断改为全局 F8 快捷键。
 local CODE_BTN = {
-    CX = 540, CY = 1660, W = 410, H = 100,
+    CX = 540, CY = 1660, W = 750, H = 100,
 }
 
--- 10. 兑换码文本
-local CODE_TXT = {
-    X = 540, Y = 1660, FONT = 40,
-    A = 179,  -- 纯黑 70%
-}
+-- 10. 入口文本
+local CODE_TXT = { FONT = 40 }
 
 local LANG_CHIP_W, LANG_CHIP_H, LANG_CHIP_GAP = 150, 44, 10
 local LANG_ROW_GAP = 10
@@ -120,13 +121,26 @@ local LANG_ROWS = math.ceil(#I18n.LANGS / LANG_PER_ROW)
 -- 三行从原语言条目向下排，首行不侵入特效开关的点击区。
 local LANG_EXTRA_H = (LANG_ROWS - 1) * (LANG_CHIP_H + LANG_ROW_GAP)
 local LANGUAGE_CY = ITEM5_CY + LANG_EXTRA_H * 0.5
+-- 战力与侧栏暂停各占一行90px热区、行距110；兑换码跟随下移，绘制/点击共用坐标。
+local EQUIPMENT_POWER_CY = ITEM5_CY + LANG_EXTRA_H + 82
+local SIDE_PANEL_PAUSE_CY = EQUIPMENT_POWER_CY + 110
+local REDEEM_CODE_CY = CODE_BTN.CY + LANG_EXTRA_H + 110
 -- 保持背景顶边，向下覆盖兑换码按钮及底部留白；绘制和命中共用尺寸。
 local PANEL_EXTRA_H = math.max(LANG_EXTRA_H,
-    CODE_BTN.CY + LANG_EXTRA_H + CODE_BTN.H * 0.5 + BG.IB - (BG.CY + BG.H * 0.5))
+    REDEEM_CODE_CY + CODE_BTN.H * 0.5 + BG.IB - (BG.CY + BG.H * 0.5))
+
+local SIDE_PANEL_PAUSE_LABELS = {
+    zh_CN = "侧栏打开时暂停战斗", zh_TW = "側欄開啟時暫停戰鬥",
+    en = "Pause battle with side panels", ja = "サイドパネルで戦闘を一時停止", ko = "사이드 패널에서 전투 일시 정지",
+}
 
 -- ======================== 本地设置持久化 ========================
 
 local SETTINGS_SAVE_FILE = "settings_volume.json"
+local AUTO_EXCHANGE_SCOPES = {
+    gacha_standard = true, gacha_stellar = true,
+    artifact_normal = true, artifact_advanced = true,
+}
 
 --- 保存设置到本地文件
 local function saveSettings()
@@ -139,6 +153,14 @@ local function saveSettings()
             showDamageNumbers = state.showDamageNumbers ~= false,
             showEffects = state.showEffects ~= false,
             showSetIcons = state.showSetIcons ~= false,
+            showEquipmentPower = state.showEquipmentPower == true,
+            pauseBattleOnSidePanels = state.pauseBattleOnSidePanels == true,
+            autoDiamondExchange = {
+                gacha_standard = state.autoDiamondExchange.gacha_standard == true,
+                gacha_stellar = state.autoDiamondExchange.gacha_stellar == true,
+                artifact_normal = state.autoDiamondExchange.artifact_normal == true,
+                artifact_advanced = state.autoDiamondExchange.artifact_advanced == true,
+            },
             language = I18n.get(),
         })
         if ok then
@@ -150,13 +172,17 @@ end
 
 --- 从本地文件加载设置
 local function loadSettings()
+    -- 缺字段旧档及无档均使用默认关闭，不沿用上一份设置的开启值。
+    state.showEquipmentPower = false
+    state.pauseBattleOnSidePanels = false
+    state.autoDiamondExchange = {}
     if not fileSystem:FileExists(SETTINGS_SAVE_FILE) then return end
     local file = File(SETTINGS_SAVE_FILE, FILE_READ)
     if not file:IsOpen() then return end
     local raw = file:ReadString()
     file:Close()
     local ok, data = pcall(cjson.decode, raw)
-    if ok and data then
+    if ok and type(data) == "table" then
         if type(data.bgmVolume) == "number" then
             state.bgmVolume = math.max(0, math.min(1, data.bgmVolume))
         end
@@ -173,6 +199,13 @@ local function loadSettings()
             state.showEffects = data.showEffects
         end
         if type(data.showSetIcons) == "boolean" then state.showSetIcons = data.showSetIcons end
+        state.showEquipmentPower = data.showEquipmentPower == true
+        state.pauseBattleOnSidePanels = data.pauseBattleOnSidePanels == true
+        if type(data.autoDiamondExchange) == "table" then
+            for scope in pairs(AUTO_EXCHANGE_SCOPES) do
+                state.autoDiamondExchange[scope] = data.autoDiamondExchange[scope] == true
+            end
+        end
         if type(data.language) == "string" then
             I18n.set(data.language)
         end
@@ -231,6 +264,8 @@ end
 --- 初始化（加载图片资源，仅调用一次）
 function SettingsPanel.init(vg)
     RedeemCodePanel.init(vg)
+    -- 共享 UI 上下文必须在初始化/用户事件创建，不能首度在 render 中改变顺序。
+    PerformancePanel.init()
 
     -- 加载本地保存的设置并应用（含静音标志）
     loadSettings()
@@ -275,6 +310,48 @@ function SettingsPanel.setSetIconsEnabled(enabled)
     state.showSetIcons = enabled == true
     saveSettings()
     print("[SettingsPanel] 套装角标显示：" .. tostring(state.showSetIcons))
+end
+
+function SettingsPanel.isEquipmentPowerEnabled()
+    return state.showEquipmentPower == true
+end
+
+function SettingsPanel.setEquipmentPowerEnabled(enabled)
+    state.showEquipmentPower = enabled == true
+    saveSettings()
+    print("[SettingsPanel] 装备格战力显示：" .. tostring(state.showEquipmentPower))
+end
+
+--- 左操作页或右角色详情打开时是否暂停战斗（与手动暂停、语言/音量独立）
+---@return boolean
+function SettingsPanel.isPauseBattleOnSidePanelsEnabled()
+    return state.pauseBattleOnSidePanels == true
+end
+
+---@param enabled boolean
+function SettingsPanel.setPauseBattleOnSidePanelsEnabled(enabled)
+    state.pauseBattleOnSidePanels = enabled == true
+    saveSettings()
+    print("[SettingsPanel] 侧栏打开时暂停战斗：" .. tostring(state.pauseBattleOnSidePanels))
+end
+
+--- 当前池/宝箱是否允许缺口自动兑换；未知范围永不默认授权。
+---@param scope string
+---@return boolean
+function SettingsPanel.isAutoDiamondExchangeEnabled(scope)
+    return AUTO_EXCHANGE_SCOPES[scope] == true and state.autoDiamondExchange[scope] == true
+end
+
+--- 仅持久化提示偏好，开启本身不购买、不开箱、不发送任何游戏动作。
+---@param scope string
+---@param enabled boolean
+function SettingsPanel.setAutoDiamondExchangeEnabled(scope, enabled)
+    if not AUTO_EXCHANGE_SCOPES[scope] then return end
+    local value = enabled == true
+    if SettingsPanel.isAutoDiamondExchangeEnabled(scope) == value then return end
+    state.autoDiamondExchange[scope] = value
+    saveSettings()
+    print("[SettingsPanel] 黑晶自动兑换 " .. scope .. "=" .. tostring(value))
 end
 
 function SettingsPanel.isEffectsEnabled()
@@ -396,6 +473,9 @@ end
 function SettingsPanel.handleInput(dx, dy)
     if not state.open or state.closing then return true end
 
+    -- 性能诊断由主循环独立绘制/转发指针；这里仅阻止旧式点击穿透。
+    if PerformancePanel.isOpen() then return true end
+
     -- RedeemCodePanel 优先拦截（最顶层）
     if RedeemCodePanel.isOpen() then
         RedeemCodePanel.handleInput(dx, dy)
@@ -443,12 +523,23 @@ function SettingsPanel.handleInput(dx, dy)
         return true
     end
 
+    -- 装备格战力开关：只改显示偏好，不修改装备评分或排序。
+    if hitToggle(dx, dy, EQUIPMENT_POWER_CY) then
+        SettingsPanel.setEquipmentPowerEnabled(not SettingsPanel.isEquipmentPowerEnabled())
+        return true
+    end
+
+    if hitToggle(dx, dy, SIDE_PANEL_PAUSE_CY) then
+        SettingsPanel.setPauseBattleOnSidePanelsEnabled(not SettingsPanel.isPauseBattleOnSidePanelsEnabled())
+        return true
+    end
+
     if hitLanguageChips(dx, dy, LANGUAGE_CY) then
         return true
     end
 
     -- 兑换码按钮
-    if hitTest(dx, dy, CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H, CODE_BTN.W, CODE_BTN.H) then
+    if hitTest(dx, dy, CODE_BTN.CX, REDEEM_CODE_CY, CODE_BTN.W, CODE_BTN.H) then
         BF.trigger("set_code")
         print("[SettingsPanel] 兑换码按钮被点击 → 打开兑换码面板")
         RedeemCodePanel.open()
@@ -461,6 +552,7 @@ end
 
 --- 拖拽开始
 function SettingsPanel.handleDragBegin(dx, dy)
+    if PerformancePanel.isOpen() then state.draggingSlider = nil; return true end
     if not state.open or state.closing then return false end
 
     -- 检查是否在滑块1区域
@@ -484,6 +576,7 @@ end
 
 --- 拖拽移动
 function SettingsPanel.handleDragMove(dx, dy)
+    if PerformancePanel.isOpen() then state.draggingSlider = nil; return true end
     if not state.draggingSlider then return false end
 
     if state.draggingSlider == "bgm" then
@@ -575,7 +668,8 @@ end
 ---@param itemCY number 条目中心 Y
 ---@param label string 条目标签
 ---@param enabled boolean 是否开启
-local function drawToggleItem(vg, itemCY, label, enabled)
+---@param fitLabel boolean|nil 将长标签限制在开关左侧，沿用当前字体与描边
+local function drawToggleItem(vg, itemCY, label, enabled, fitLabel)
     if ITEM1_BG.A > 0 then
         nvgBeginPath(vg)
         nvgRoundedRect(vg,
@@ -585,8 +679,16 @@ local function drawToggleItem(vg, itemCY, label, enabled)
         nvgFill(vg)
     end
 
+    local labelFont = ITEM1_TEXT.FONT
+    if fitLabel then
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, labelFont)
+        local available = TOGGLE.CX - TOGGLE.W * 0.5 - ITEM1_TEXT.X - 24 - ITEM1_TEXT.SW * 2
+        local measured = nvgTextBounds(vg, 0, 0, label)
+        if measured > available then labelFont = labelFont * available / measured end
+    end
     drawTextStroke(vg, ITEM1_TEXT.X, itemCY, label,
-        ITEM1_TEXT.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        labelFont, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         ITEM1_TEXT.FR, ITEM1_TEXT.FG, ITEM1_TEXT.FB, ITEM1_TEXT.SW,
         { strokeColor = { ITEM1_TEXT.SR, ITEM1_TEXT.SG, ITEM1_TEXT.SB } })
 
@@ -614,6 +716,24 @@ local function drawToggleItem(vg, itemCY, label, enabled)
     nvgStrokeWidth(vg, 4)
     nvgStroke(vg)
 
+end
+
+-- 两个入口共用布局常量。embedded 的 oy 只用于反馈的宿主坐标，绘制沿用外层平移。
+local function drawEntryButton(vg, key, rect, caption, oy)
+    local feedback = BF.begin(vg, key, rect.CX, REDEEM_CODE_CY + (oy or 0), rect.W, rect.H)
+    DarkIcon.drawNine(vg, "btn", rect.CX - rect.W * 0.5, REDEEM_CODE_CY - rect.H * 0.5,
+        rect.W, rect.H, { accent = "gold" })
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, CODE_TXT.FONT)
+    local measured = nvgTextBounds(vg, 0, 0, caption)
+    nvgFontSize(vg, math.min(CODE_TXT.FONT, CODE_TXT.FONT * (rect.W - 32) / math.max(1, measured)))
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
+    nvgText(vg, rect.CX, REDEEM_CODE_CY, caption, nil)
+    BF.finish(vg, feedback)
+end
+local function drawEntryButtons(vg, oy)
+    drawEntryButton(vg, "set_code", CODE_BTN, I18n.t("redeem_code"), oy)
 end
 
 -- ============================================================================
@@ -679,20 +799,12 @@ function SettingsPanel.draw(vg)
 
     -- ── 8.3 语言 ──
     drawLanguageItem(vg, LANGUAGE_CY)
+    drawToggleItem(vg, EQUIPMENT_POWER_CY, I18n.t("show_equipment_power"), SettingsPanel.isEquipmentPowerEnabled())
+    drawToggleItem(vg, SIDE_PANEL_PAUSE_CY, SIDE_PANEL_PAUSE_LABELS[I18n.get()] or SIDE_PANEL_PAUSE_LABELS.zh_CN,
+        SettingsPanel.isPauseBattleOnSidePanelsEnabled(), true)
 
-    -- ── 9. 兑换码按钮（暖金，不再用绿色贴图）──
-    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H, CODE_BTN.W, CODE_BTN.H)
-    DarkIcon.drawNine(vg, "btn",
-        CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY + LANG_EXTRA_H - CODE_BTN.H * 0.5,
-        CODE_BTN.W, CODE_BTN.H, { accent = "gold" })
-
-    -- ── 10. "兑换码" 文本 ──
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, CODE_TXT.FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-    nvgText(vg, CODE_TXT.X, CODE_TXT.Y + LANG_EXTRA_H, I18n.t("redeem_code"), nil)
-    BF.finish(vg, _bf1)
+    -- 兑换码 / 性能诊断并排，原行高度保持 100。
+    drawEntryButtons(vg, 0)
 
     nvgRestore(vg)
 
@@ -715,16 +827,10 @@ function SettingsPanel.drawEmbedded(vg, yOffset)
     drawToggleItem(vg, ITEM3_CY, I18n.t("damage_numbers"), state.showDamageNumbers ~= false)
     drawToggleItem(vg, ITEM4_CY, I18n.t("show_effects"), state.showEffects ~= false)
     drawLanguageItem(vg, LANGUAGE_CY)
-    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H + oy, CODE_BTN.W, CODE_BTN.H)
-    DarkIcon.drawNine(vg, "btn",
-        CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY + LANG_EXTRA_H - CODE_BTN.H * 0.5,
-        CODE_BTN.W, CODE_BTN.H, { accent = "gold" })
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, CODE_TXT.FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-    nvgText(vg, CODE_TXT.X, CODE_TXT.Y + LANG_EXTRA_H, I18n.t("redeem_code"), nil)
-    BF.finish(vg, _bf1)
+    drawToggleItem(vg, EQUIPMENT_POWER_CY, I18n.t("show_equipment_power"), SettingsPanel.isEquipmentPowerEnabled())
+    drawToggleItem(vg, SIDE_PANEL_PAUSE_CY, SIDE_PANEL_PAUSE_LABELS[I18n.get()] or SIDE_PANEL_PAUSE_LABELS.zh_CN,
+        SettingsPanel.isPauseBattleOnSidePanelsEnabled(), true)
+    drawEntryButtons(vg, oy)
     nvgRestore(vg)
     RedeemCodePanel.draw(vg)
 end
@@ -735,6 +841,7 @@ end
 ---@param yOffset number|nil
 ---@return boolean consumed
 function SettingsPanel.handleEmbeddedInput(dx, dy, yOffset)
+    if PerformancePanel.isOpen() then return true end
     if RedeemCodePanel.isOpen() then
         RedeemCodePanel.handleInput(dx, dy)
         return true
@@ -763,10 +870,18 @@ function SettingsPanel.handleEmbeddedInput(dx, dy, yOffset)
         toggleEffects()
         return true
     end
+    if hitToggle(dx, ly, EQUIPMENT_POWER_CY) then
+        SettingsPanel.setEquipmentPowerEnabled(not SettingsPanel.isEquipmentPowerEnabled())
+        return true
+    end
+    if hitToggle(dx, ly, SIDE_PANEL_PAUSE_CY) then
+        SettingsPanel.setPauseBattleOnSidePanelsEnabled(not SettingsPanel.isPauseBattleOnSidePanelsEnabled())
+        return true
+    end
     if hitLanguageChips(dx, ly, LANGUAGE_CY) then
         return true
     end
-    if hitTest(dx, ly, CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H, CODE_BTN.W, CODE_BTN.H) then
+    if hitTest(dx, ly, CODE_BTN.CX, REDEEM_CODE_CY, CODE_BTN.W, CODE_BTN.H) then
         BF.trigger("set_code")
         RedeemCodePanel.open()
         return true
@@ -779,6 +894,7 @@ end
 ---@param yOffset number|nil
 ---@return boolean
 function SettingsPanel.handleEmbeddedDragBegin(dx, dy, yOffset)
+    if PerformancePanel.isOpen() then state.draggingSlider = nil; return true end
     if RedeemCodePanel.isOpen() then return true end
     local oy = yOffset or EMBED_Y_OFFSET
     local ly = dy - oy

@@ -115,13 +115,14 @@ handlers[Protocol.ACTION_TYPES.UNEQUIP_ALL] = function(uid, params)
 end
 
 --- 一键装备最佳装备
-handlers[Protocol.ACTION_TYPES.EQUIP_ALL_BEST] = function(uid, params)
+handlers[Protocol.ACTION_TYPES.EQUIP_ALL_BEST] = function(uid, params, control)
     local ok, err, result = EquipmentService.EquipAllBest(
         uid,
-        params and params.heroId
+        params and params.heroId,
+        control
     )
     if not ok then
-        return { success = false, reason = err }
+        return { success = false, reason = err, heroId = params and params.heroId }
     end
     return {
         success  = true,
@@ -134,9 +135,11 @@ end
 handlers[Protocol.ACTION_TYPES.TOGGLE_EQUIP_LOCK] = function(uid, params)
     local ok, err, result = EquipmentService.ToggleEquipLock(uid, params and params.seq)
     if not ok then
-        return { success = false, reason = err }
+        return { success = false, reason = err, seq = params and params.seq,
+            lockRequestId = params and params.lockRequestId }
     end
-    return { success = true, seq = result.seq, locked = result.locked }
+    return { success = true, seq = result.seq, locked = result.locked,
+        lockRequestId = params and params.lockRequestId }
 end
 
 --- 设置自动分解条件

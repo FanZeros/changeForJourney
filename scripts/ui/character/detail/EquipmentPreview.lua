@@ -8,8 +8,10 @@ local AD = require("systems.AttributeDef")
 local Eq = require("systems.EquipmentSystem")
 local Sets = require("systems.EquipmentSetSystem")
 local Attrs = require("ui.character.detail.CharacterDetailAttrs")
+local AttributeView = require("ui.character.detail.CharacterAttributeView")
 local Dispatcher = require("runtime.ClientDispatcher")
 local PlayerStore = require("core.PlayerStore")
+local Snapshot = require("ui.character.detail.CharacterDetailSnapshot")
 
 local M = {}
 
@@ -23,9 +25,17 @@ local function deepCopy(value, seen)
     return copy
 end
 
-local function snapshot(options, key)
-    if options ~= nil then return deepCopy(options[key] or {}) end
-    return deepCopy(Dispatcher.get(key) or PlayerStore.Get(key) or {})
+local function snapshot(options, key, checkpoint)
+    local source = options ~= nil and (options[key] or {})
+        or (Dispatcher.get(key) or PlayerStore.Get(key) or {})
+    return Snapshot.copy(source, checkpoint)
+end
+
+local function collect(heroId, cfg, level, options, checkpoint)
+    if checkpoint then checkpoint() end
+    local result = Attrs.collectAttributes(heroId, cfg, level, options)
+    if checkpoint then checkpoint() end
+    return result
 end
 
 local function setSummary(eqData, heroId)
@@ -48,8 +58,8 @@ local function numericValue(data, key, row)
 end
 
 local function formatValue(key, value)
-    if key == AD.ATK_INTERVAL then return string.format("%.1fs", value) end
-    if MULT_KEYS[key] then return string.format("×%.2f", value) end
+    if key == AD.ATK_INTERVAL then return AttributeView.formatInterval(value) end
+    if MULT_KEYS[key] then return string.format("×%.1f", value) end
     if PCT_KEYS[key] then return string.format("%.1f%%", value) end
     if key == "_melissaStarGatePen" then return string.format("+%.1f", value) end
     return AD.formatAttrDisplayValue(key, value)
@@ -58,8 +68,8 @@ end
 local function deltaText(key, delta)
     local sign = delta < 0 and "-" or "+"
     local amount = math.abs(delta)
-    if key == AD.ATK_INTERVAL then return sign .. string.format("%.2fs", amount) end
-    if MULT_KEYS[key] then return sign .. string.format("%.2f", amount) end
+    if key == AD.ATK_INTERVAL then return sign .. AttributeView.formatInterval(amount) end
+    if MULT_KEYS[key] then return sign .. string.format("%.1f", amount) end
     if key == "_melissaStarGatePen" then return sign .. string.format("%.1f", amount) end
     local meta = AD.getMeta(key)
     if PCT_KEYS[key] or (meta and meta.dataType == AD.TYPE_PCT) then
@@ -67,7 +77,7 @@ local function deltaText(key, delta)
         return sign .. string.format("%.1f%%", amount)
     end
     if meta and meta.dataType == AD.TYPE_FLOAT then return sign .. string.format("%.1f", amount) end
-    return sign .. tostring(math.floor(amount + 0.5))
+    return sign .. AttributeView.formatNumber(amount)
 end
 
 local function mergeRows(current, preview)
@@ -121,9 +131,9 @@ end
 
 -- 装备加成独立重建：同一人物底板相减，两侧都不带神器。
 -- 保留职业/养成对装备的真实派生和乘区；不把人物固有值当成装备来源。
-local function collectBonusSource(heroId, heroCfg, level, heroes, equipment, talents)
-    local source = Attrs.collectAttributes(heroId, heroCfg, level,
-        { heroes = heroes, equipment = equipment, artifacts = {}, talents = talents })
+local function collectBonusSource(heroId, heroCfg, level, heroes, equipment, talents, checkpoint)
+    local source = collect(heroId, heroCfg, level,
+        { heroes = heroes, equipment = equipment, artifacts = {}, talents = talents }, checkpoint)
     -- 现有总属性页未列护盾减伤，装备模式仍须覆盖这个装备来源。
     local key = AD.ES_DMG_REDUCE
     local meta = AD.getMeta(key)
@@ -140,15 +150,7 @@ local function positiveBonus(key, value)
 end
 
 local function bonusText(key, value)
-    local formatted = deltaText(key, value)
-    if value ~= 0 and not formatted:find("[1-9]") then
-        local amount = string.format("%.6f", math.abs(value)):gsub("0+$", ""):gsub("%.$", "")
-        local meta = AD.getMeta(key)
-        local suffix = key == AD.ATK_INTERVAL and "s"
-            or (PCT_KEYS[key] or (meta and meta.dataType == AD.TYPE_PCT)) and "%" or ""
-        return (value < 0 and "-" or "+") .. amount .. suffix
-    end
-    return formatted
+    return deltaText(key, value)
 end
 
 local function bonusStats(source, baseline)
@@ -159,17 +161,17 @@ local function bonusStats(source, baseline)
     return stats
 end
 
-local function equipmentBonuses(heroId, heroCfg, level, heroes, equipment, previewEq, talents)
+local function equipmentBonuses(heroId, heroCfg, level, heroes, equipment, previewEq, talents, checkpoint)
     local function bareSource(eqData)
         local bareEq = deepCopy(eqData)
         bareEq.equipped = bareEq.equipped or {}
         bareEq.equipped[heroId] = nil
         bareEq.equipped[tostring(heroId)] = nil
-        return collectBonusSource(heroId, heroCfg, level, heroes, bareEq, talents)
+        return collectBonusSource(heroId, heroCfg, level, heroes, bareEq, talents, checkpoint)
     end
     local baseline = bareSource(equipment)
-    local current = collectBonusSource(heroId, heroCfg, level, heroes, equipment, talents)
-    local preview = previewEq and collectBonusSource(heroId, heroCfg, level, heroes, previewEq, talents) or nil
+    local current = collectBonusSource(heroId, heroCfg, level, heroes, equipment, talents, checkpoint)
+    local preview = previewEq and collectBonusSource(heroId, heroCfg, level, heroes, previewEq, talents, checkpoint) or nil
     -- 候选可来自同队其它角色；试穿会卸下原持有者装备，裸装底板也必须在试穿世界重建。
     local previewBaseline = previewEq and bareSource(previewEq) or baseline
     local currentDiff = mergeRows(baseline, current)
@@ -205,7 +207,7 @@ end
 ---@param level number
 ---@param seqOrNil? number|string
 ---@param targetSlotOrNil? string 默认候选装备自身槽位；副手双持需显式指定 offhand
----@param optionsOrNil? table 测试可显式提供 heroes/equipment/artifacts；includeEquipmentBonuses 按需启用装备净增益
+---@param optionsOrNil? table 显式heroes/equipment/artifacts/talents；includeEquipmentBonuses；checkpoint仅供私有协程；compactEquipment默认true
 ---@return table { current, preview, rows, equipmentBonuses, currentSets, previewSets, candidate, error }
 function M.build(heroId, level, seqOrNil, targetSlotOrNil, optionsOrNil)
     local result = {
@@ -216,10 +218,16 @@ function M.build(heroId, level, seqOrNil, targetSlotOrNil, optionsOrNil)
     local heroCfg = heroN and HC.get(heroN)
     if not heroN or not heroCfg then result.error = "英雄不存在"; return result end
     ---@cast heroN number
-    local heroes = snapshot(optionsOrNil, "heroes")
-    local equipment = snapshot(optionsOrNil, "equipment")
-    local artifacts = snapshot(optionsOrNil, "artifacts")
-    local talents = snapshot(optionsOrNil, "talents")
+    local checkpoint = optionsOrNil and optionsOrNil.checkpoint
+    local heroes = snapshot(optionsOrNil, "heroes", checkpoint)
+    local equipmentSource = optionsOrNil ~= nil and (optionsOrNil.equipment or {})
+        or (Dispatcher.get("equipment") or PlayerStore.Get("equipment") or {})
+    -- 明确可选compactEquipment；旧同步API也默认裁剪，false可用于完整同步oracle。
+    local equipment = optionsOrNil and optionsOrNil.compactEquipment == false
+        and snapshot(optionsOrNil, "equipment", checkpoint)
+        or Snapshot.compactEquipment(equipmentSource, seqOrNil, checkpoint)
+    local artifacts = snapshot(optionsOrNil, "artifacts", checkpoint)
+    local talents = snapshot(optionsOrNil, "talents", checkpoint)
     local heroLevel = tonumber(level) or Eq.getHeroLevel(heroes, heroN)
     -- 参数等级与属性构建/穿戴校验必须同源，仅写副本。
     heroes.roster = heroes.roster or {}
@@ -227,18 +235,18 @@ function M.build(heroId, level, seqOrNil, targetSlotOrNil, optionsOrNil)
     hd.level = heroLevel
     heroes.roster[heroN] = hd
     local options = { heroes = heroes, equipment = equipment, artifacts = artifacts, talents = talents }
-    result.current = Attrs.collectAttributes(heroN, heroCfg, heroLevel, options)
+    result.current = collect(heroN, heroCfg, heroLevel, options, checkpoint)
     result.currentSets = setSummary(equipment, heroN)
     result.rows = mergeRows(result.current, nil)
     local function finish(previewEq)
         if optionsOrNil and optionsOrNil.includeEquipmentBonuses then
-            result.equipmentBonuses = equipmentBonuses(heroN, heroCfg, heroLevel, heroes, equipment, previewEq, talents)
+            result.equipmentBonuses = equipmentBonuses(heroN, heroCfg, heroLevel, heroes, equipment, previewEq, talents, checkpoint)
         end
         return result
     end
     if seqOrNil == nil then return finish() end
 
-    local previewEq = deepCopy(equipment)
+    local previewEq = Snapshot.copy(equipment, checkpoint)
     local seq = tonumber(seqOrNil)
     local candidate = seq and Eq.getFromInventory(previewEq, seq)
     if not seq or not candidate then result.error = "装备不存在"; return finish() end
@@ -247,11 +255,11 @@ function M.build(heroId, level, seqOrNil, targetSlotOrNil, optionsOrNil)
     local slot = targetSlotOrNil or candidate.slot
     result.candidate = { seq = seq, slot = slot, name = candidate.name or "未知装备" }
     ---@cast heroN number
-    local ok, err = Eq.applyEquip(previewEq, seq, heroN, slot, heroes)
+    local ok, err = Eq.applyEquip(previewEq, seq, heroN, slot, heroes, true)
     if not ok then result.error = err or "无法穿戴"; return finish() end
 
-    result.preview = Attrs.collectAttributes(heroN, heroCfg, heroLevel,
-        { heroes = heroes, equipment = previewEq, artifacts = artifacts, talents = talents })
+    result.preview = collect(heroN, heroCfg, heroLevel,
+        { heroes = heroes, equipment = previewEq, artifacts = artifacts, talents = talents }, checkpoint)
     result.previewSets = setSummary(previewEq, heroN)
     result.rows = mergeRows(result.current, result.preview)
     return finish(previewEq)

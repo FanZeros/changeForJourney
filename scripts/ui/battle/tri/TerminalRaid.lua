@@ -6,6 +6,7 @@
 -- 单队失守后停止攻击，但退场视觉仍由驱动推进；全灭收尾不冻结死亡动画。
 -- ============================================================================
 local AD = require("systems.AttributeDef")
+local OffenseGuard = require("systems.BattleOffenseGuard")
 
 local TerminalRaid = {}
 TerminalRaid.FAILURE_HOLD_SEC = 1.0
@@ -51,15 +52,44 @@ function TerminalRaid.new(stageId, drivers)
         if not fighting then self:finish(false) end
     end
 
-    function raid:finish(won)
+    function raid:finish(won, reason)
         if self.finished then return end
+        OffenseGuard.reset(self)
+        self.failureReason = not won and reason or nil
         self.finished = true
         self.won = won
         self.finishElapsed = 0
         print(string.format("[TerminalRaid] %s stage=%d", won and "胜利" or "失败待退场", self.stageId))
     end
 
+    --- 只允许宿主在全部战线更新完后调用一次；单线失守不等于整体无进攻。
+    function raid:updateOffense(realDt, eligible)
+        if self.finished then OffenseGuard.reset(self) return false end
+        if self.hp <= 0 then self:finish(true) return false end
+        local lanes = {}
+        for row = 1, 3 do
+            local drv = drivers[row]
+            if drv and drv.terminalRaid == self and not self.defeated[row] and #drv.allies > 0 then
+                if drv._offenseEligible ~= true then eligible = false end
+                -- 后更新战线可能刚打空共享池，前线尚未补扫本线死亡钩子。
+                for _, unit in ipairs(drv.enemies) do
+                    if unit.hp <= 0 and not unit._terminalDeathVisual then eligible = false end
+                end
+                for _, unit in ipairs(drv.allies) do
+                    if unit.hp <= 0 and not unit._triDeathHandled then eligible = false end
+                end
+                lanes[#lanes + 1] = drv:getOffenseLane()
+            end
+        end
+        if OffenseGuard.update(self, realDt, lanes, eligible == true) then
+            self:finish(false, "no_offense")
+            return true
+        end
+        return false
+    end
+
     function raid:release()
+        OffenseGuard.reset(self)
         for enemy, original in pairs(self.originalDamage) do
             enemy.attrs.takeDamage = original.takeDamage
             enemy.attrs.heal = original.heal

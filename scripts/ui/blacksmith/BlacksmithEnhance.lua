@@ -7,7 +7,7 @@
 ---@diagnostic disable: undefined-global
 
 local DrawUtil          = require("core.DrawUtil")
-local DarkIcon          = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon          = require("core.DarkIcon")  -- 矢量九宫格
 local GameState         = require("core.GameState")
 local AffixConfig       = require("config.AffixConfig")
 local EquipmentConfig   = require("config.EquipmentConfig")
@@ -21,11 +21,16 @@ local BF                = require("systems.ButtonFeedback")
 local EquipmentSystem   = require("systems.EquipmentSystem")
 local I18n              = require("core.I18n")
 local EquipmentText     = require("core.I18nEquipmentText")
+local rowKeywords = require("ui.widget.KeywordText").new()
 
 local drawImageCentered = DrawUtil.drawImageCentered
 local hitTest           = DrawUtil.hitTest
 
 local M = {}
+
+function M.clearKeywords() rowKeywords:clear() end
+function M.handleKeywordInput(dx, dy) return rowKeywords:handleInput(dx, dy) end
+function M.drawKeywordsPopup(vg) rowKeywords:drawPopup(vg) end
 
 -- ======================== 门控状态（防止快速连点） ========================
 local pendingEnhance = false       -- 是否有强化请求在等待服务端响应
@@ -236,6 +241,7 @@ end
 
 --- 根据选中装备更新强化面板数据
 function M.updateEnhanceData(equip)
+    M.clearKeywords()
     -- 确定当前槽位的卷轴类型
     local equipSlot = state.selectedEquipSlot or "weapon"
     local scrollField = BlacksmithConfig.SLOT_SCROLL_MAP[equipSlot] or "weaponScroll"
@@ -274,16 +280,11 @@ function M.updateEnhanceData(equip)
         local meta = AD.META[key]
         local curVal = EquipmentSystem.effectiveBaseStatValue(equip, idx, curBoost, enhLv)
         local nextVal = EquipmentSystem.effectiveBaseStatValue(equip, idx, nextBoost, nextLv)
-        local precision = 2
-        local currentText = EquipmentSystem.formatBaseStatValue(key, curVal, precision)
-        local nextText = EquipmentSystem.formatBaseStatValue(key, nextVal, precision)
-        while nextVal ~= curVal and currentText == nextText and precision < 6 do
-            precision = precision + 1
-            currentText = EquipmentSystem.formatBaseStatValue(key, curVal, precision)
-            nextText = EquipmentSystem.formatBaseStatValue(key, nextVal, precision)
-        end
+        local currentText = EquipmentSystem.formatBaseStatValue(key, curVal)
+        local nextText = EquipmentSystem.formatBaseStatValue(key, nextVal)
         baseAttrs[#baseAttrs + 1] = {
             name = meta and meta.name or key,
+            key = key,
             curVal = currentText,
             nextVal = nextText,
             boosted = nextVal ~= curVal,
@@ -299,6 +300,7 @@ function M.updateEnhanceData(equip)
         local effVal = EquipmentSystem.effectiveAffixValue(equip, affix)
         affixes[#affixes + 1] = {
             name     = affix.name or affix.key,
+            key      = affix.key,
             curVal   = formatAffixValue(affix.key, effVal),
             nextVal  = formatAffixValue(affix.key, effVal),
             curGrade = gradeName,
@@ -336,8 +338,8 @@ end
 ---@param curGradeIcon number|nil 当前词缀等级图标句柄
 ---@param nextGradeIcon number|nil 提升后词缀等级图标句柄
 ---@param showArrow boolean|nil 是否显示提升箭头和提升后数值（默认 true）
----@param isCorrupt boolean|nil 魔化词条：用紫色圆标替代 D~S 品质图
-local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGradeIcon, showArrow, isCorrupt)
+---@param isCorrupt boolean|nil 腐化词条：名称与数值紫色，品级图标保持
+local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGradeIcon, showArrow, isCorrupt, attributeKey, clip)
     if showArrow == nil then showArrow = true end
     -- 魔化词条：名称与数值紫色（评级标不变）
     local textR, textG, textB = ATTR_TEXT_COLOR_R, ATTR_TEXT_COLOR_G, ATTR_TEXT_COLOR_B
@@ -360,7 +362,9 @@ local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGr
     end
     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(nameR, nameG, nameB, 255))
-    nvgText(vg, ATTR_NAME_X, rowY, displayName, nil)
+    rowKeywords:drawAttribute(vg, displayName, attributeKey, ATTR_NAME_X, rowY,
+        ATTR_NAME_X - 70, nameFont,
+        { right = true, clip = clip, keywordColor = isCorrupt and { nameR, nameG, nameB } or nil })
 
     -- 当前属性值背景框
     local curBgX = ATTR_CUR_BG_CX - ATTR_BG_W * 0.5
@@ -397,22 +401,11 @@ local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGr
         nvgText(vg, ATTR_NEXT_BG_CX, rowY, nextVal, nil)
     end
 
-    -- 词缀等级图标 / 魔化紫色圆标
-    if isCorrupt then
-        local r = AFFIX_GRADE_ICON_SIZE * 0.22
-        nvgBeginPath(vg)
-        nvgCircle(vg, AFFIX_GRADE_CUR_CX, rowY, r)
-        nvgFillColor(vg, nvgRGBA(0x9B, 0x4D, 0xFF, 255))
-        nvgFill(vg)
-        nvgBeginPath(vg)
-        nvgCircle(vg, AFFIX_GRADE_CUR_CX, rowY, r)
-        nvgStrokeWidth(vg, 2)
-        nvgStrokeColor(vg, nvgRGBA(0xE0, 0xB0, 0xFF, 220))
-        nvgStroke(vg)
-    elseif curGradeIcon and curGradeIcon >= 0 then
+    -- 腐化只改变名称与数值颜色，词缀仍显示真实品级图标。
+    if curGradeIcon and curGradeIcon >= 0 then
         drawImageCentered(vg, curGradeIcon, AFFIX_GRADE_CUR_CX, rowY, AFFIX_GRADE_ICON_SIZE, AFFIX_GRADE_ICON_SIZE, 1.0)
     end
-    if showArrow and nextGradeIcon and nextGradeIcon >= 0 and not isCorrupt then
+    if showArrow and nextGradeIcon and nextGradeIcon >= 0 then
         drawImageCentered(vg, nextGradeIcon, AFFIX_GRADE_NEXT_CX, rowY, AFFIX_GRADE_ICON_SIZE, AFFIX_GRADE_ICON_SIZE, 1.0)
     end
 end
@@ -467,6 +460,7 @@ end
 
 --- 绘制强化界面上半部分（等级 + 属性预览）
 function M.drawPanel(vg)
+    rowKeywords:beginFrame()
     local data = enhanceData
 
     -- 1. 动态标题："角色栏N>XX栏强化"
@@ -513,17 +507,19 @@ function M.drawPanel(vg)
     for _, attr in ipairs(data.baseAttrs) do
         -- 只有受强化加成的属性显示箭头和提升后数值
         local showArrow = attr.boosted and not data.isMaxLevel
-        drawAttrRow(vg, rowY, attr.name, attr.curVal, attr.nextVal, nil, nil, showArrow)
+        drawAttrRow(vg, rowY, attr.name, attr.curVal, attr.nextVal, nil, nil, showArrow, false, attr.key)
         rowY = rowY + ATTR_ROW_HEIGHT + ATTR_ROW_SPACING
     end
 
     -- 7-8. 随机词缀区域
     local affixY = math.max(AFFIX_FIRST_Y, rowY + 4)
+    local affixClip = { 80, affixY - 24, 920, math.max(0, 1695 - affixY + 24) }
     nvgSave(vg)
     nvgIntersectScissor(vg, 80, affixY - 24, 920, 1695 - affixY + 24)
     for _, affix in ipairs(data.affixes) do
         local curIcon = imgGrade[affix.curGrade] or -1
-        drawAttrRow(vg, affixY, affix.name, affix.curVal, affix.nextVal, curIcon, nil, false, affix.isCorrupt)
+        drawAttrRow(vg, affixY, affix.name, affix.curVal, affix.nextVal, curIcon, nil, false,
+            affix.isCorrupt, affix.key, affixClip)
         affixY = affixY + AFFIX_ROW_STEP
     end
     -- 里程碑将新增词条 → 占位行（》 ??? +?）替代原绿色小字提示
@@ -614,14 +610,14 @@ function M.drawPanelBottom(vg)
     local scrollCX = goldCX + ICON_SIZE + ICON_GAP
 
     -- 金币图标 + 数量
-    DarkIcon.drawQualityBg(vg, 2, goldCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_2
+    DarkIcon.drawQualityBg(vg, 2, goldCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)  -- 原 UI_icon_ZBBJ_2
     drawImageCentered(vg, imgGoldIcon, goldCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)
     drawResourceCount(vg, goldCX, data.ownedGold, data.costGold)
 
     -- 卷轴图标 + 数量
     local equipSlot = state.selectedEquipSlot or "weapon"
     local scrollImg = imgScrollIcon[equipSlot] or imgScrollIcon.weapon
-    DarkIcon.drawQualityBg(vg, 3, scrollCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)  -- [暗黑化 P2-A] 原卷轴品质底框 UI_icon_ZBBJ_3
+    DarkIcon.drawQualityBg(vg, 3, scrollCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)  -- 原卷轴品质底框 UI_icon_ZBBJ_3
     if scrollImg and scrollImg >= 0 then
         drawImageCentered(vg, scrollImg, scrollCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)
     end
@@ -637,7 +633,7 @@ function M.drawPanelBottom(vg)
     nvgText(vg, EB.ENH_BTN_CX, EB.ENH_BTN_CY, "升阶", nil)
     BF.finish(vg, didScale)
     local _TM = require("systems.TutorialManager")
-    -- [锻炉双页 0929] 锻炉页移中栏：热点面板从 "left" 改为 "center"
+    -- 锻炉页移中栏：热点面板从 "left" 改为 "center"
     if _TM.isActive() then _TM.registerHotspot("smith_btn_enhance", EB.ENH_BTN_CX, EB.ENH_BTN_CY, EB.ENH_BTN_W, EB.ENH_BTN_H, "center") end
 
     -- 一键强化按钮（右侧）
@@ -797,7 +793,7 @@ function M.drawConfirmDialog(vg)
     nvgTranslate(vg, -EMDLG.BG_CX, -EMDLG.BG_CY)
     nvgGlobalAlpha(vg, pAlpha)
 
-    -- 背景 [暗黑化 P1-B5] 矢量面板（原三层贴图回退已移除，矢量绘制无条件可用）
+    -- 背景 矢量面板（原三层贴图回退已移除，矢量绘制无条件可用）
     DarkIcon.drawNine(vg, "panel",
         EMDLG.BG_CX - EMDLG.BG_W * 0.5, EMDLG.BG_CY - EMDLG.BG_H * 0.5,
         EMDLG.BG_W, EMDLG.BG_H,
@@ -966,7 +962,7 @@ function M.drawConfirmDialog(vg)
     -- 确认按钮（九宫格黄色按钮，与 MarketPage BUY 按钮一致）
     local canConfirm = goldEnough and scrollEnough
     local _sc = BF.begin(vg, "bse_dlg_confirm", EMDLG.CONFIRM_CX, EMDLG.CONFIRM_CY, EMDLG.CONFIRM_W, EMDLG.CONFIRM_H)
-    -- 确认按钮 [暗黑化 P1-B3] 矢量金色按钮（原三层贴图回退已移除）
+    -- 确认按钮 矢量金色按钮（原三层贴图回退已移除）
     nvgGlobalAlpha(vg, canConfirm and 1.0 or 0.5)
     DarkIcon.drawNine(vg, "btn",
         EMDLG.CONFIRM_CX - EMDLG.CONFIRM_W * 0.5, EMDLG.CONFIRM_CY - EMDLG.CONFIRM_H * 0.5,
@@ -1096,6 +1092,7 @@ end
 
 --- 重置门控状态（打开铁匠铺/切换 Tab 时调用）
 function M.onOpen()
+    M.clearKeywords()
     pendingEnhance = false
     dlg.open    = false
     dlg.closing = false
@@ -1127,7 +1124,8 @@ end
 ---@param dy number 设计坐标 Y
 ---@return boolean consumed 是否消费了该事件
 function M.handleInput(dx, dy)
-    -- [锻炉双页 0929] 候选条已移除（选装备改为仓库拖拽），不再响应 handleCandidateClick
+    if rowKeywords:handleInput(dx, dy) then return true end
+    -- 候选条已移除（选装备改为仓库拖拽），不再响应 handleCandidateClick
     -- 强化按钮（升一级）
     if hitTest(dx, dy, EB.ENH_BTN_CX, EB.ENH_BTN_CY, EB.ENH_BTN_W, EB.ENH_BTN_H) then
         BF.trigger("bse_enhance")

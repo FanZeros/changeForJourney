@@ -7,7 +7,7 @@
 ---@diagnostic disable: undefined-global
 
 local DrawUtil         = require("core.DrawUtil")
-local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
+local DarkIcon         = require("core.DarkIcon")  -- 品质底框矢量绘制
 local GameState        = require("core.GameState")
 local PlayerStore      = require("core.PlayerStore")
 local AffixConfig      = require("config.AffixConfig")
@@ -16,7 +16,11 @@ local BlacksmithConfig = require("config.BlacksmithConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local AD               = require("systems.AttributeDef")
 local I18n             = require("core.I18n")
+local NumberUtil       = require("core.NumberUtil")
 local MaterialTip      = require("ui.blacksmith.RefineMaterialTip")
+local KeywordText      = require("ui.widget.KeywordText")
+---@type table<string, any>
+local rowKeywords = KeywordText.new()
 
 local drawImageCentered = DrawUtil.drawImageCentered
 local hitTest           = DrawUtil.hitTest
@@ -125,7 +129,7 @@ local function recalcRefineEssenceCost()
         equip.level or 1,
         equip.grip)
     local lockedCount = 0
-    if not (selectedExtraRes and (selectedExtraRes.key == "destroyStone" or selectedExtraRes.key == "corruptStone" or selectedExtraRes.key == "sacredStone")) then
+    if not isStoneKey(selectedExtraRes and selectedExtraRes.key) then
         lockedCount = getLockedCountForSeq(equip.seq)
     end
     local extraKey = selectedExtraRes and selectedExtraRes.key or nil
@@ -267,7 +271,23 @@ selectedExtraRes = nil  -- EXTRA_RES_OPTIONS[n] or nil
 --- 额外资源选择弹窗是否打开
 local extraResPopupOpen = false
 
+function M.clearKeywords()
+    rowKeywords:clear()
+end
+
+function M.handleKeywordInput(dx, dy)
+    -- 材料选择是更高层 modal，不能让被遮挡的右侧词条先消费点击。
+    if extraResPopupOpen then return M.handleInput(dx, dy) end
+    return rowKeywords:handleInput(dx, dy)
+end
+
+function M.drawKeywordsPopup(vg)
+    rowKeywords:drawPopup(vg)
+end
+
 function M.handleHover(dx, dy)
+    rowKeywords:setHover(dx, dy)
+    if rowKeywords:isOpen() then MaterialTip.clear(); return end
     MaterialTip.hover(dx, dy, XL, EXTRA_RES_OPTIONS, extraResPopupOpen)
 end
 
@@ -391,6 +411,7 @@ local function affixToDisplayRow(affix, equip, index, corruptMeta)
     local effVal = equip and EquipmentSystem.effectiveAffixValue(equip, affix) or affix.value
     local row = {
         name = affix.name or affix.key or "?",
+        key = affix.key,
         value = formatAffixValue(affix.key, effVal, affix.affixId),
         grade = qDef and qDef.name or "D",
         isCorrupt = isCorrupt,
@@ -467,7 +488,10 @@ local function applyRefineDisplayFromEquip(equip)
 end
 
 --- 根据选中装备更新洗练面板数据
-function M.updateRefineData(equip)
+---@param equip table|nil
+---@param preserveMaterial boolean|nil 仅同一工作台装备的数据推送保留材料；主动选择默认重置
+function M.updateRefineData(equip, preserveMaterial)
+    M.clearKeywords()
     MaterialTip.clear()
     if not equip then
         refineData.before       = {}
@@ -488,13 +512,13 @@ function M.updateRefineData(equip)
         return
     end
 
+    -- 必须在重算费用前决定材料；耗尽也保留原选择，由原材料不足路径拒绝，不能暗退精粹。
+    if not preserveMaterial then selectedExtraRes = nil end
     applyRefineDisplayFromEquip(equip)
     -- 重置洗练动画
     refineAnim.type = nil
     refineAnim.oldAfter = nil
     refineAnim.replaceSnapshot = nil
-    -- 重置额外资源选择
-    selectedExtraRes = nil
     extraResPopupOpen = false
 end
 
@@ -517,23 +541,10 @@ local function drawRefineAttrRows(vg, attrs, firstY, panelLeft, offsetX, alpha, 
     for i, attr in ipairs(attrs) do
         local rowY = firstY + (i - 1) * XL.ATTR_ROW_STEP
 
-        -- 品质图标 / 魔化紫色圆标
-        if attr.isCorrupt then
-            local r = XL.ATTR_ICON_SIZE * 0.22
-            nvgBeginPath(vg)
-            nvgCircle(vg, panelLeft + XL.ATTR_ICON_CX + offsetX, rowY, r)
-            nvgFillColor(vg, nvgRGBA(0x9B, 0x4D, 0xFF, a))
-            nvgFill(vg)
-            nvgBeginPath(vg)
-            nvgCircle(vg, panelLeft + XL.ATTR_ICON_CX + offsetX, rowY, r)
-            nvgStrokeWidth(vg, 2)
-            nvgStrokeColor(vg, nvgRGBA(0xE0, 0xB0, 0xFF, math.floor(a * 0.85)))
-            nvgStroke(vg)
-        else
-            local gradeIcon = imgGrade[attr.grade] or -1
-            if gradeIcon >= 0 then
-                drawImageCentered(vg, gradeIcon, panelLeft + XL.ATTR_ICON_CX + offsetX, rowY, XL.ATTR_ICON_SIZE, XL.ATTR_ICON_SIZE, a / 255)
-            end
+        -- 洗练前后均保留真实品级；腐化/弱化仅通过名称与数值颜色表达。
+        local gradeIcon = imgGrade[attr.grade] or -1
+        if gradeIcon >= 0 then
+            drawImageCentered(vg, gradeIcon, panelLeft + XL.ATTR_ICON_CX + offsetX, rowY, XL.ATTR_ICON_SIZE, XL.ATTR_ICON_SIZE, a / 255)
         end
 
         -- 属性名（左对齐，超长缩字号）
@@ -549,13 +560,17 @@ local function drawRefineAttrRows(vg, attrs, firstY, panelLeft, offsetX, alpha, 
         end
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         local nameRGB = attr.nameColor or { XL.ATTR_NAME_R, XL.ATTR_NAME_G, XL.ATTR_NAME_B }
-        nvgFillColor(vg, nvgRGBA(nameRGB[1], nameRGB[2], nameRGB[3], a))
-        nvgText(vg, panelLeft + XL.ATTR_NAME_X + offsetX, rowY, name, nil)
+        rowKeywords:drawAttribute(vg, name, attr.key, panelLeft + XL.ATTR_NAME_X + offsetX,
+            rowY, XL.ATTR_NAME_MAX_W, nameFont,
+            { keywordColor = attr.nameColor, alpha = a, interactive = a >= 128,
+              clip = { XL.FRAME_CX - XL.FRAME_W * 0.5, XL.FRAME_CY - XL.FRAME_H * 0.5,
+                       XL.FRAME_W, XL.FRAME_H } })
 
         -- 腐化标签已移除（2026-09-30）：魔化/弱化状态只通过名称与数值颜色表达
 
         -- 数值（右对齐）：腐化对比时数值行下移一行展示「旧 → 新」
         local valueText = tostring(attr.value or "")
+        nvgFontSize(vg, nameFont)
         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
         local valRGB = attr.valueColor or { XL.ATTR_VAL_R, XL.ATTR_VAL_G, XL.ATTR_VAL_B }
         nvgFillColor(vg, nvgRGBA(valRGB[1], valRGB[2], valRGB[3], a))
@@ -573,13 +588,10 @@ local function drawRefineAttrRows(vg, attrs, firstY, panelLeft, offsetX, alpha, 
     end
 end
 
---- 洗练前词缀行是否显示锁定按钮（点金石提品/腐化石魔化/神圣石净化不涉及锁词缀）
+--- 仅精粹洗练显示锁定按钮；石头不使用普通洗练的锁定状态。
 ---@return boolean
 local function shouldShowAffixLocks()
-    if selectedExtraRes and (selectedExtraRes.key == "destroyStone" or selectedExtraRes.key == "corruptStone" or selectedExtraRes.key == "sacredStone") then
-        return false
-    end
-    return true
+    return not isStoneKey(selectedExtraRes and selectedExtraRes.key)
 end
 
 --- 当前选中装备的锁定绘制参数
@@ -596,6 +608,7 @@ end
 
 --- 绘制洗练界面上半部分
 function M.drawPanel(vg)
+    rowKeywords:beginFrame()
     local data = refineData
 
     -- 计算动画进度
@@ -841,13 +854,7 @@ function M.drawPanel(vg)
 end
 
 --- 绘制资源数量 "owned/cost" 居中于指定 cx
---- 数字缩写：超过4位数转为 k 格式（如 12345 → "12.3k"）
-local function formatShortNum(n)
-    if n >= 10000 then
-        return string.format("%.1fk", n / 1000)
-    end
-    return tostring(n)
-end
+--- 大数值统一走公共 NumberUtil（k/M/B/T），不再使用局部只进 k 的写法。
 
 ---@param vg any
 ---@param cx number 居中 X
@@ -861,8 +868,8 @@ local function drawResCount(vg, cx, ownedVal, costVal)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 204))
     nvgFill(vg)
 
-    local ownedStr = formatShortNum(ownedVal)
-    local costStr  = formatShortNum(costVal)
+    local ownedStr = NumberUtil.format(ownedVal)
+    local costStr  = NumberUtil.format(costVal)
     local enough = ownedVal >= costVal
     local oR, oG, oB
     if enough then
@@ -917,7 +924,7 @@ local function drawExtraResPopup(vg)
             nvgFill(vg)
         end
 
-        -- 品质背景 + 图标（小尺寸）[暗黑化 P2-A]
+        -- 品质背景 + 图标（小尺寸）
         DarkIcon.drawQualityBg(vg, opt.quality, iconX, itemY, 56, 56, 1.0)
         local icon = imgExtraRes[opt.key]
         if icon and icon >= 0 then
@@ -946,7 +953,7 @@ local function drawExtraResPopup(vg)
         end
         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(180, 170, 150, 200))
-        nvgText(vg, popupLeft + popupW - 16, itemY, "x" .. ownedCount, nil)
+        nvgText(vg, popupLeft + popupW - 16, itemY, "x" .. NumberUtil.format(ownedCount), nil)
     end
 end
 
@@ -972,7 +979,7 @@ function M.drawPanelBottom(vg)
 
     -- 4b. 资源槽位：选中石头显示石头消耗；未选/选精粹显示精粹消耗
     if selectedExtraRes and selectedExtraRes.key ~= "essence" then
-        -- 已选择石头：显示品质背景 + 资源图标 [暗黑化 P2-A]
+        -- 已选择石头：显示品质背景 + 资源图标
         DarkIcon.drawQualityBg(vg, selectedExtraRes.quality, XL.EXTRA_ICON_CX, XL.EXTRA_ICON_CY, XL.EXTRA_ICON_SIZE, XL.EXTRA_ICON_SIZE, 1.0)
         local icon = imgExtraRes[selectedExtraRes.key]
         if icon and icon >= 0 then
@@ -1060,6 +1067,7 @@ function M.handleInput(dx, dy)
         return true
     end
 
+    if rowKeywords:handleInput(dx, dy) then return true end
     -- ===== 2. 洗练前词缀锁定（点金石路径不显示锁；左侧面板内坐标） =====
     if shouldShowAffixLocks() and state.selectedEquip and #refineData.before > 0 then
         local seq = state.selectedEquip.seq
@@ -1091,12 +1099,12 @@ function M.handleInput(dx, dy)
             local extraKey = selectedExtraRes and selectedExtraRes.key or nil
             local affixCount = #(state.selectedEquip.affixes or {})
             local lockedCount = getLockedCountForSeq(seq)
-            if extraKey ~= "destroyStone" and extraKey ~= "corruptStone" and extraKey ~= "sacredStone" and affixCount > 0 and lockedCount >= affixCount then
+            if not isStoneKey(extraKey) and affixCount > 0 and lockedCount >= affixCount then
                 showRefineToast("至少保留1条词缀未锁定")
             elseif GameState.getEssence() < refineData.costEssence then
                 showRefineToast("精粹不足，无法洗练")
             else
-                local lockedIndices = getLockedIndicesArray(seq)
+                local lockedIndices = not isStoneKey(extraKey) and getLockedIndicesArray(seq) or {}
                 print("[BlacksmithRefine] 洗练按钮点击 seq=" .. tostring(seq)
                     .. " extraRes=" .. tostring(extraKey)
                     .. " locked=" .. #lockedIndices)
@@ -1133,12 +1141,32 @@ end
 ---@param data table 服务端返回数据
 ---@return boolean 是否已处理
 function M.onActionResult(data)
+    M.clearKeywords()
     if data.success == false and data.reason then
         showRefineToast(data.reason)
         return true
     end
 
-    -- 洗练结果预览（缓存新词缀，等待"替换"确认）
+    -- 洗练石由规则层直接生效；次数取权威值，装备推送先到也不能再加一次。
+    if data.refinePreview and data.autoReplaced and data.refineCount ~= nil then
+        if state.pendingRefineSeq and tostring(state.pendingRefineSeq) == tostring(data.refineSeq) then
+            state.pendingRefineAffixes = nil
+            state.pendingRefineSeq = nil
+        end
+        if not state.selectedEquip or tostring(state.selectedEquip.seq) ~= tostring(data.refineSeq) then
+            return true
+        end
+        state.selectedEquip.affixes = data.refinePreview
+        state.selectedEquip.refineCount = BlacksmithConfig.clampRefineCount(data.refineCount)
+        M.updateRefineData(state.selectedEquip, true)
+        autoReplaceScheduled = false
+        qualityUpgradeInfo = nil
+        corruptResultInfo = nil
+        print("[BlacksmithRefine] 洗练石已自动替换 seq=" .. tostring(data.refineSeq))
+        return true
+    end
+
+    -- 普通洗练预览或其他石头即时结果
     if data.refinePreview then
         -- 点金石后期出口：品质不变，随机一条普通词缀品级 +1
         if data.autoReplaced and data.affixGradeUp and not data.upgradedQuality then
@@ -1205,6 +1233,7 @@ function M.onActionResult(data)
                     and EquipmentSystem.effectiveAffixValue(state.selectedEquip, affix) or affix.value
                 before[#before + 1] = {
                     name = affix.name or affix.key or "?",
+                    key = affix.key,
                     value = formatAffixValue(affix.key, effVal, affix.affixId),
                     grade = gradeName,
                 }
@@ -1269,6 +1298,7 @@ function M.onActionResult(data)
                     and EquipmentSystem.effectiveAffixValue(state.selectedEquip, affix) or affix.value
                 before[#before + 1] = {
                     name = affix.name or affix.key or "?",
+                    key = affix.key,
                     value = formatAffixValue(affix.key, effVal, affix.affixId),
                     grade = gradeName,
                 }
@@ -1358,7 +1388,7 @@ function M.onActionResult(data)
             return true
         end
 
-        -- 普通洗练/洗练石路径：展示新词缀预览，等待替换确认
+        -- 普通精粹洗练：展示新词缀预览，等待替换确认
         state.pendingRefineAffixes = data.refinePreview
         state.pendingRefineSeq = data.refineSeq
         -- 快照旧的 after 数据（用于滑出动画）
@@ -1373,6 +1403,7 @@ function M.onActionResult(data)
                 and EquipmentSystem.effectiveAffixValue(state.selectedEquip, affix) or affix.value
             after[#after + 1] = {
                 name = affix.name or affix.key or "?",
+                key = affix.key,
                 value = formatAffixValue(affix.key, effVal, affix.affixId),
                 grade = gradeName,
             }

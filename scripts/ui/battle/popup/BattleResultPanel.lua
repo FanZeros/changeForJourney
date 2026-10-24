@@ -24,12 +24,14 @@
 
 local NumberUtil   = require("core.NumberUtil")
 local DrawUtil     = require("core.DrawUtil")
-local DarkIcon     = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
+local DarkIcon     = require("core.DarkIcon")  -- 品质底框矢量绘制
 local ImageCache   = require("ui.widget.ImageCache")
 local ResourceDefs = require("config.ResourceDefs")
 local HeroFrame = require("ui.widget.HeroFrame")
-
-local drawTextStroke = DrawUtil.drawTextStroke
+local UI = require("urhox-libs/UI")
+local Surface = require("ui.widget.DesignWidgetSurface")
+local I18n = require("core.I18n")
+local HeroConfig = require("config.HeroConfig")
 
 local BRP = {}
 
@@ -108,7 +110,59 @@ local state = {
     rewards     = {},     -- { type, amount }[]
     -- 关闭回调
     onClose     = nil,
+    layout      = nil,
+    floor       = nil,
+    wave        = nil,
+    visualElapsed = 0,   -- 只供结算入场表现，不参与关卡/奖励/关闭时序。
+    rewardPage = 1,
 }
+
+local RESULT_REVEAL_TIME = 0.28
+local function resultAlpha()
+    local t = math.max(0, math.min(1, state.visualElapsed / RESULT_REVEAL_TIME))
+    return 0.82 + 0.18 * (1 - (1 - t) ^ 3)
+end
+
+-- 塔专用横向内容画布，与普通副本的竖版坐标完全隔离。
+local TOWER_W, TOWER_H = 1440, 760
+local C = {
+    background = { 16, 15, 18, 255 }, surface = { 26, 23, 25, 255 },
+    border = { 89, 69, 48, 255 }, text = { 231, 220, 200, 255 },
+    muted = { 149, 137, 122, 255 }, gold = { 201, 151, 59, 255 },
+    red = { 201, 91, 79, 255 },
+}
+---@type Panel?
+local towerRoot = nil
+local towerLanguage = ""
+-- 仅新增结算显示串；不改全局词典或业务数据，切语言后重建本面板。
+local towerText = {
+    en = { win = "Tower · Cleared", lose = "Tower · Defeat", floor = "Floor %d",
+        time = "Elapsed %d:%02d", stats = "Damage dealt",
+        rewards = "Rewards", emptyStats = "No hero statistics", emptyRewards = "No rewards",
+        close = "Click anywhere to close" },
+    zh_TW = { win = "通天塔 · 通關", lose = "通天塔 · 失敗", floor = "第%d層",
+        time = "總耗時 %d分%02d秒", stats = "輸出統計",
+        rewards = "獲得獎勵", emptyStats = "暫無角色統計", emptyRewards = "暫無獎勵",
+        close = "點擊任意處關閉" },
+    ja = { win = "天の塔 · クリア", lose = "天の塔 · 敗北", floor = "%d階",
+        time = "所要時間 %d分%02d秒", stats = "与ダメージ",
+        rewards = "獲得報酬", emptyStats = "キャラ統計なし", emptyRewards = "報酬なし",
+        close = "画面をタップして閉じる" },
+    ko = { win = "천공의 탑 · 클리어", lose = "천공의 탑 · 패배", floor = "%d층",
+        time = "소요 시간 %d분 %02d초", stats = "피해량 통계",
+        rewards = "획득 보상", emptyStats = "영웅 통계 없음", emptyRewards = "보상 없음",
+        close = "화면을 눌러 닫기" },
+    zh_CN = { win = "通天塔 · 通关", lose = "通天塔 · 失败", floor = "第%d层",
+        time = "总耗时 %d分%02d秒", stats = "输出统计",
+        rewards = "获得奖励", emptyStats = "暂无角色统计", emptyRewards = "暂无奖励",
+        close = "点击任意处关闭" },
+}
+
+local function destroyTowerRoot()
+    if towerRoot then towerRoot:Destroy() end
+    towerRoot = nil
+    towerLanguage = ""
+end
 
 -- ======================== 工具函数 ========================
 
@@ -165,25 +219,187 @@ local function drawBadge(vg, text, cx, cy, iconSize)
     nvgText(vg, bx, by, text, nil)
 end
 
+-- 塔面板沿用既有Surface初始化/子树渲染；自绘Widget只负责头像和资源图形。
+local ResultIcon = UI.Widget:Extend("TowerResultIcon")
+function ResultIcon:Init(props)
+    UI.Widget.Init(self, props)
+    self.hero = props.hero
+    self.reward = props.reward
+end
+function ResultIcon:Render(vg)
+    local l = self:GetAbsoluteLayout()
+    local size = math.min(l.w, l.h)
+    local cx, cy = l.x + l.w * 0.5, l.y + l.h * 0.5
+    local hero = self.hero
+    if hero then
+        HeroFrame.draw(vg, { cx = cx, cy = cy, size = size,
+            heroId = hero.heroId, iconHandle = getHeroIcon(hero.heroId),
+            quality = hero.quality, state = "owned" })
+        return
+    end
+    local item = self.reward
+    if not item then return end
+    local def = RESOURCE_DEFS[item.type]
+    DarkIcon.drawQualityBg(vg, item.quality or (def and def.quality) or 1, cx, cy, size, size, 1)
+    local img = -1
+    if item.iconPath then
+        img = resourceIconCache[item.iconPath]
+        if not img and cachedVg then
+            img = nvgCreateImage(cachedVg, item.iconPath, 0)
+            resourceIconCache[item.iconPath] = img
+        end
+        img = img or -1
+    else
+        img = getResourceIcon(item.type)
+    end
+    drawImageCentered(vg, img, cx, cy, size - 16, size - 16, 1)
+end
+
+local function towerLabel(caption, x, y, w, h, size, color, align)
+    -- 单行测字后缩字号，长英雄名/译文也完整保留，不用省略号或固定双行裁切。
+    local measured = UI.MeasureTextWidth(caption, UI.Theme.FontSize(size), "sans")
+    local fittedSize = measured > w - 4 and size * (w - 4) / measured or size
+    return UI.Label { text = caption, position = "absolute", left = x, top = y,
+        width = w, height = h, fontSize = fittedSize, fontColor = color or C.text,
+        fontFamily = "sans", fontWeight = "normal", textAlign = align or "left",
+        verticalAlign = "middle", whiteSpace = "nowrap", lineHeight = 1.1,
+        pointerEvents = "none" }
+end
+
+local function buildTowerRoot(language)
+    Surface.init()
+    local text = towerText[language] or towerText.zh_CN
+    local totalSecs = math.max(0, math.floor(state.elapsedSecs))
+    local floorText = state.floor and string.format(text.floor, state.floor) or ""
+    local stats = UI.Panel { position = "absolute", left = 28, top = 196,
+        width = 900, height = 432, backgroundColor = C.surface,
+        borderWidth = 1, borderColor = C.border, borderRadius = 4, pointerEvents = "none" }
+    -- 三列四行，最多12位全部呈现，不改变传入统计顺序或数值。
+    for i = 1, math.min(12, #state.heroStats) do
+        local hero = state.heroStats[i]
+        local conf = HeroConfig.HEROES[hero.heroId]
+        local name = I18n.lookup(hero.name or (conf and conf.name) or tostring(hero.heroId))
+        local cell = UI.Panel { position = "absolute", left = 12 + ((i - 1) % 3) * 292,
+            top = 12 + math.floor((i - 1) / 3) * 102, width = 280, height = 90,
+            backgroundColor = C.background, borderRadius = 4, pointerEvents = "none",
+            children = {
+                ResultIcon { position = "absolute", left = 8, top = 9,
+                    width = 72, height = 72, hero = hero, pointerEvents = "none" },
+                towerLabel(name, 92, 6, 180, 38, 19),
+                towerLabel(NumberUtil.format(hero.totalDamage or 0), 92, 44, 180, 38, 24, C.gold),
+            } }
+        stats:AddChild(cell)
+    end
+    if #state.heroStats == 0 then
+        stats:AddChild(towerLabel(text.emptyStats, 24, 180, 852, 50, 26, C.muted, "center"))
+    end
+    local rewards = UI.Panel { position = "absolute", left = 956, top = 196,
+        width = 456, height = 432, backgroundColor = C.surface,
+        borderWidth = 1, borderColor = C.border, borderRadius = 4, pointerEvents = "none" }
+    -- 每页最多八项，独立神器逐件保留，不随长局奖励数量压缩图标。
+    local count = #state.rewards
+    local pages = math.max(1, math.ceil(count / 8))
+    local columns = count > 4 and 2 or 1
+    local rows = math.max(1, math.ceil(math.min(8, count) / columns))
+    local rowHeight = math.min(94, (pages > 1 and 352 or 408) / rows)
+    local cellWidth = 432 / columns
+    local first = (state.rewardPage - 1) * 8 + 1
+    for index = first, math.min(count, first + 7) do
+        local i = index - first + 1
+        local item = state.rewards[index]
+        local def = RESOURCE_DEFS[item.type]
+        local name = I18n.lookup(item.name or (def and def.name) or tostring(item.type))
+        local iconSize = math.min(68, rowHeight - 12)
+        rewards:AddChild(UI.Panel { position = "absolute",
+            left = 12 + ((i - 1) % columns) * cellWidth,
+            top = 12 + math.floor((i - 1) / columns) * rowHeight,
+            width = cellWidth, height = rowHeight, pointerEvents = "none", children = {
+                ResultIcon { position = "absolute", left = 8, top = (rowHeight - iconSize) * 0.5,
+                    width = iconSize, height = iconSize, reward = item, pointerEvents = "none" },
+                towerLabel(name, iconSize + 24, 3, cellWidth - iconSize - 32, rowHeight * 0.5, 19),
+                towerLabel("×" .. NumberUtil.format(item.amount or 0), iconSize + 24, rowHeight * 0.5,
+                    cellWidth - iconSize - 32, rowHeight * 0.5 - 3, 23, C.gold),
+            } })
+    end
+    if pages > 1 then
+        rewards:AddChild(UI.Button { text = "<", position = "absolute", left = 12, top = 370,
+            width = 112, height = 48, disabled = state.rewardPage == 1, pointerEvents = "none" })
+        rewards:AddChild(towerLabel(state.rewardPage .. " / " .. pages, 132, 370, 192, 48, 24, C.gold, "center"))
+        rewards:AddChild(UI.Button { text = ">", position = "absolute", left = 332, top = 370,
+            width = 112, height = 48, disabled = state.rewardPage == pages, pointerEvents = "none" })
+    end
+    if count == 0 then
+        rewards:AddChild(towerLabel(text.emptyRewards, 16, 180, 424, 50, 25, C.muted, "center"))
+    end
+    towerRoot = UI.Panel { width = TOWER_W, height = TOWER_H,
+        backgroundColor = C.background, borderWidth = 2, borderColor = C.border,
+        borderRadius = 6, pointerEvents = "none", children = {
+            towerLabel(state.isWin and text.win or text.lose, 28, 24, 884, 66, 40,
+                state.isWin and C.gold or C.red),
+            towerLabel(floorText, 28, 94, 884, 38, 24, C.muted),
+            towerLabel(string.format(text.time, math.floor(totalSecs / 60), totalSecs % 60),
+                956, 34, 456, 54, 26, C.text, "right"),
+            towerLabel(text.stats, 28, 146, 900, 40, 26),
+            towerLabel(text.rewards, 956, 146, 456, 40, 26),
+            stats, rewards,
+            UI.Button { text = text.close, position = "absolute", left = 432, top = 666,
+                width = 576, height = 64, fontSize = 24, fontFamily = "sans", fontWeight = "normal",
+                textColor = C.text, backgroundColor = C.surface, borderWidth = 2,
+                borderColor = C.border, borderRadius = 4, pointerEvents = "none" },
+        } }
+    towerLanguage = language
+end
+
+local function drawTower(vg, width, height)
+    local language = I18n.get()
+    if not towerRoot or language ~= towerLanguage then
+        destroyTowerRoot()
+        buildTowerRoot(language)
+    end
+    local root = towerRoot
+    local scale = math.min(width / (TOWER_W + 64), height / (TOWER_H + 64))
+    -- 由宿主提供逻辑尺寸，不再次读取物理分辨率或重复应用DPR。
+    nvgSave(vg)
+    local ok, err = xpcall(function()
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, width, height)
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 180))
+        nvgFill(vg)
+        nvgTranslate(vg, (width - TOWER_W * scale) * 0.5, (height - TOWER_H * scale) * 0.5)
+        nvgScale(vg, scale, scale)
+        nvgGlobalAlpha(vg, resultAlpha())
+        if root then Surface.draw(root, vg, TOWER_W, TOWER_H) end
+    end, debug.traceback)
+    nvgRestore(vg)
+    if not ok then error(err, 0) end
+end
+
 -- ======================== Public API ========================
 
 --- 初始化（加载图片资源，仅调用一次）
 ---@param vg any NanoVG 上下文
 function BRP.init(vg)
+    destroyTowerRoot()
     cachedVg = vg
     print("[BattleResultPanel] init OK")
 end
 
---- 展示结算面板
----@param opts table { isWin, elapsedSecs, heroStats, rewards, onClose }
+--- 展示结算面板（layout='tower' 仅启用通天塔横向UI，普通入口不变）
+---@param opts table { isWin, elapsedSecs, heroStats, rewards, onClose, layout?, floor?, wave? }
 function BRP.show(opts)
     opts = opts or {}
+    destroyTowerRoot()
     state.open        = true
     state.isWin       = opts.isWin or false
     state.elapsedSecs = opts.elapsedSecs or 0
     state.heroStats   = opts.heroStats or {}
     state.rewards     = opts.rewards or {}
     state.onClose     = opts.onClose
+    state.layout      = opts.layout == "tower" and "tower" or nil
+    state.floor       = opts.floor
+    state.wave        = opts.wave
+    state.visualElapsed = 0
+    state.rewardPage = 1
     print("[BattleResultPanel] show: " .. (state.isWin and "WIN" or "LOSE")
         .. " heroes=" .. #state.heroStats
         .. " rewards=" .. #state.rewards)
@@ -191,6 +407,7 @@ end
 
 --- 关闭结算面板
 function BRP.close()
+    destroyTowerRoot()
     if not state.open then return end
     state.open = false
     local cb = state.onClose
@@ -199,23 +416,57 @@ function BRP.close()
     if cb then cb() end
 end
 
+--- 清档/宿主Stop专用：只丢弃本面板，不调用旧结算回调或删除共享图片句柄。
+function BRP.resetToDefault()
+    destroyTowerRoot()
+    state.open, state.isWin = false, false
+    state.onClose, state.layout, state.floor, state.wave = nil, nil, nil, nil
+    state.elapsedSecs, state.heroStats, state.rewards = 0, {}, {}
+    state.visualElapsed = 0
+end
+
 --- 是否打开
 ---@return boolean
 function BRP.isOpen()
     return state.open
 end
 
---- 更新（结算面板不再播旋转光效）
----@param _dt number
-function BRP.update(_dt)
+--- 更新：仅渐显结算内容，不移动按钮、不新增等待或旋转光效。
+---@param dt number
+function BRP.update(dt)
+    if not state.open then return end
+    if type(dt) ~= "number" or dt ~= dt or math.abs(dt) == math.huge then return end
+    state.visualElapsed = math.min(RESULT_REVEAL_TIME, state.visualElapsed + math.max(0, dt))
 end
 
 --- 处理点击（点击任意位置关闭）
 ---@param dx number 设计空间 X
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
-function BRP.handleInput(dx, dy)
+---@param width number|nil 宿主逻辑宽度，塔分页命中与绘制使用同一变换。
+---@param height number|nil
+function BRP.handleInput(dx, dy, width, height)
     if not state.open then return false end
+    if state.layout == "tower" and #state.rewards > 8 and width and height then
+        local scale = math.min(width / (TOWER_W + 64), height / (TOWER_H + 64))
+        if scale > 0 then
+            local x = (dx - (width - TOWER_W * scale) * 0.5) / scale
+            local y = (dy - (height - TOWER_H * scale) * 0.5) / scale
+            if x >= 956 and x <= 1412 and y >= 196 and y <= 628 then
+                local pages = math.ceil(#state.rewards / 8)
+                if y >= 566 and y <= 614 then
+                    local page = state.rewardPage
+                    if x >= 968 and x <= 1080 then page = math.max(1, page - 1)
+                    elseif x >= 1288 and x <= 1400 then page = math.min(pages, page + 1) end
+                    if page ~= state.rewardPage then
+                        state.rewardPage = page
+                        destroyTowerRoot()
+                    end
+                end
+                return true -- 翻页或点击奖励区不能误关长局摘要。
+            end
+        end
+    end
     BRP.close()
     return true
 end
@@ -225,6 +476,11 @@ end
 ---@param vg any NanoVG 上下文
 function BRP.draw(vg, width, height)
     if not state.open then return end
+    if state.layout == "tower" then
+        width, height = width or 1920, height or 1080
+        if width > 0 and height > 0 then drawTower(vg, width, height) end
+        return
+    end
 
     -- 横屏只拟合实际结算内容，不再缩放整张2400高竖版画布。
     if width and height then
@@ -246,6 +502,10 @@ function BRP.draw(vg, width, height)
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
         nvgFill(vg)
     end
+
+    -- 内容只渐显，不整体缩放/平移，点击和统计位置始终保持稳定。
+    nvgSave(vg)
+    nvgGlobalAlpha(vg, resultAlpha())
 
     -- === 3. 消耗时间（结算底板已移除） ===
     local totalSecs = math.floor(state.elapsedSecs)
@@ -323,7 +583,7 @@ function BRP.draw(vg, width, height)
         -- 品质背景框（优先使用 item.quality 覆盖）
         local def = RESOURCE_DEFS[item.type]
         local q = item.quality or (def and def.quality) or 1
-        DarkIcon.drawQualityBg(vg, q, cx, cy, REWARD_ICON_SIZE, REWARD_ICON_SIZE, 1.0)  -- [暗黑化 P2-A]
+        DarkIcon.drawQualityBg(vg, q, cx, cy, REWARD_ICON_SIZE, REWARD_ICON_SIZE, 1.0)  --
 
         -- 资源图标（优先使用 item.iconPath 覆盖）
         local resImg = -1
@@ -357,6 +617,7 @@ function BRP.draw(vg, width, height)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, HINT_CX, HINT_CY, "点击空白处关闭", nil)
+    nvgRestore(vg)
     if width and height then nvgRestore(vg) end
 end
 

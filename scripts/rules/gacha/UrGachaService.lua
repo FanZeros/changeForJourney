@@ -49,35 +49,7 @@ local function recordDrawStats(currency, poolId, count, ticketDraws, diamondDraw
     end
 end
 
-local function findItemInQuality(quality, heroId)
-    local group = UrGachaConfig.getPoolGroup(quality)
-    if not group or #group.items == 0 then return nil end
-    heroId = tonumber(heroId)
-    if not heroId then return nil end
-    for _, item in ipairs(group.items) do
-        if item.type == "hero" and item.heroId == heroId then
-            return item
-        end
-    end
-    return nil
-end
-
-local function rollTargetUp(quality, currency)
-    if quality == UrGachaConfig.QUALITY_UR and currency and currency.stellarTargetUpHeroId then
-        local targetItem = findItemInQuality(quality, currency.stellarTargetUpHeroId)
-        local targetRate = UrGachaConfig.TargetUp and UrGachaConfig.TargetUp.UR_TARGET_RATE or 50
-        if targetItem and math.random() * 100 <= targetRate then
-            print("[UrGachaService] 指定UP命中 heroId=" .. tostring(currency.stellarTargetUpHeroId))
-            return targetItem
-        end
-    end
-end
-
-local function rollItemInQuality(quality, currency)
-    local targetItem = rollTargetUp(quality, currency)
-    if targetItem then return targetItem end
-
-    -- UP 未命中后重新读取正常池；前一次查询或随机调用可能改变配置。
+local function rollItemInQuality(quality)
     local group = UrGachaConfig.getPoolGroup(quality)
     if not group or #group.items == 0 then return nil end
     local roll = math.random() * group.totalWeight
@@ -89,7 +61,28 @@ local function rollItemInQuality(quality, currency)
     return group.items[#group.items]
 end
 
-local function sampleStellarQuality(currency, Q)
+local function rollStellarQuality(currency)
+    local Q = UrGachaConfig
+    currency.urPityUR  = (currency.urPityUR  or 0) + 1
+    currency.urPitySSR = (currency.urPitySSR or 0) + 1
+    currency.urPitySR  = (currency.urPitySR  or 0) + 1
+
+    if currency.urPityUR >= Q.Pity.UR_THRESHOLD then
+        currency.urPityUR = 0
+        currency.urPitySSR = 0
+        currency.urPitySR = 0
+        return Q.QUALITY_UR
+    end
+    if currency.urPitySSR >= Q.Pity.SSR_THRESHOLD then
+        currency.urPitySSR = 0
+        currency.urPitySR = 0
+        return Q.QUALITY_SSR
+    end
+    if currency.urPitySR >= Q.Pity.SR_THRESHOLD then
+        currency.urPitySR = 0
+        return Q.QUALITY_SR
+    end
+
     local roll = math.random() * 100
     local cum = 0
     local tiers = {
@@ -115,31 +108,6 @@ local function sampleStellarQuality(currency, Q)
         end
     end
     return Q.QUALITY_R
-end
-
-local function rollStellarQuality(currency)
-    local Q = UrGachaConfig
-    currency.urPityUR  = (currency.urPityUR  or 0) + 1
-    currency.urPitySSR = (currency.urPitySSR or 0) + 1
-    currency.urPitySR  = (currency.urPitySR  or 0) + 1
-
-    if currency.urPityUR >= Q.Pity.UR_THRESHOLD then
-        currency.urPityUR = 0
-        currency.urPitySSR = 0
-        currency.urPitySR = 0
-        return Q.QUALITY_UR
-    end
-    if currency.urPitySSR >= Q.Pity.SSR_THRESHOLD then
-        currency.urPitySSR = 0
-        currency.urPitySR = 0
-        return Q.QUALITY_SSR
-    end
-    if currency.urPitySR >= Q.Pity.SR_THRESHOLD then
-        currency.urPitySR = 0
-        return Q.QUALITY_SR
-    end
-
-    return sampleStellarQuality(currency, Q)
 end
 
 local function grantHeroResult(uid, heroes, currency, poolItem, index, results)
@@ -197,28 +165,28 @@ local function grantHeroResult(uid, heroes, currency, poolItem, index, results)
     end
 end
 
--- 请求只校验模块/开放条件和次数；不向下游缓存配置表或公开方法。
-local function preparePull(uid, count)
+--- 星辰招募抽卡
+---@param uid number
+---@param count number|nil
+---@param payType string|nil "ticket"|"diamond"
+---@return boolean ok, string? err, table? result
+function UrGachaService.Pull(uid, count, payType)
     local heroes   = PDM.GetModule(uid, "heroes")
     local currency = PDM.GetModule(uid, "currency")
     local battle   = PDM.GetModule(uid, "battle")
     if not heroes or not currency then
-        return nil, "数据未加载"
+        return false, "数据未加载"
     end
 
     local unlocked, unlockReason = UrGachaConfig.checkPoolUnlocked(currency, heroes.roster, battle)
     if not unlocked then
-        return nil, unlockReason or "星辰招募尚未开放"
+        return false, unlockReason or "星辰招募尚未开放"
     end
 
     count = tonumber(count) or 1
     if count < 1 then count = 1 end
     if count > 10 then count = 10 end
 
-    return { heroes = heroes, currency = currency, count = count }
-end
-
-local function planPayment(currency, count, payType)
     payType = payType or "diamond"
     local ticketCost = (count == 10) and UrGachaConfig.Cost.TEN_TICKET or UrGachaConfig.Cost.SINGLE_TICKET
     local ticketsToUse = 0
@@ -226,7 +194,7 @@ local function planPayment(currency, count, payType)
 
     if payType == "ticket" then
         if (currency.stellarRecruitTicket or 0) < ticketCost then
-            return nil, "星辰招募券不足（需要 " .. ticketCost .. "）"
+            return false, "星辰招募券不足（需要 " .. ticketCost .. "）"
         end
         ticketsToUse = ticketCost
     else
@@ -236,20 +204,10 @@ local function planPayment(currency, count, payType)
         local shortfall = ticketCost - ticketsToUse
         diamondNeeded = shortfall * UrGachaConfig.Cost.SINGLE_DIAMOND
         if (currency.gems or 0) < diamondNeeded then
-            return nil, "黑晶不足（需要 " .. diamondNeeded .. "）"
+            return false, "黑晶不足（需要 " .. diamondNeeded .. "）"
         end
     end
 
-    return {
-        payType = payType, ticketCost = ticketCost,
-        ticketsToUse = ticketsToUse, diamondNeeded = diamondNeeded,
-    }
-end
-
--- 与旧路径一致：先券后钻；后续异常保留已经完成的扣费与交付。
-local function chargePull(currency, payment)
-    local ticketsToUse = payment.ticketsToUse
-    local diamondNeeded = payment.diamondNeeded
     if ticketsToUse > 0 then
         currency.stellarRecruitTicket = (currency.stellarRecruitTicket or 0) - ticketsToUse
     end
@@ -257,13 +215,10 @@ local function chargePull(currency, payment)
         currency.gems = currency.gems - diamondNeeded
     end
 
-end
-
-local function drawAndGrant(uid, heroes, currency, count)
     local results = {}
     for i = 1, count do
         local quality = rollStellarQuality(currency)
-        local poolItem = rollItemInQuality(quality, currency)
+        local poolItem = rollItemInQuality(quality)
         if poolItem and poolItem.type == "hero" then
             grantHeroResult(uid, heroes, currency, poolItem, i, results)
         else
@@ -275,14 +230,6 @@ local function drawAndGrant(uid, heroes, currency, count)
         end
     end
 
-    return results
-end
-
-local function publishPull(uid, currency, count, payment, results)
-    local ticketCost = payment.ticketCost
-    local ticketsToUse = payment.ticketsToUse
-    local diamondNeeded = payment.diamondNeeded
-    local payType = payment.payType
     recordDrawStats(currency, UrGachaConfig.POOL_ID, count, ticketsToUse, ticketCost - ticketsToUse, results)
 
     PDM.MarkDirty(uid, "currency")
@@ -312,50 +259,12 @@ local function publishPull(uid, currency, count, payment, results)
     }
 end
 
---- 星辰招募抽卡
----@param uid number
----@param count number|nil
----@param payType string|nil "ticket"|"diamond"
----@return boolean ok, string? err, table? result
-function UrGachaService.Pull(uid, count, payType)
-    local request, requestError = preparePull(uid, count)
-    if not request then return false, requestError end
-
-    local payment, paymentError = planPayment(request.currency, request.count, payType)
-    if not payment then return false, paymentError end
-
-    chargePull(request.currency, payment)
-    -- numeric for 保留小数上界；每次采样后立即交付，下一抽可见本批新英雄。
-    local results = drawAndGrant(uid, request.heroes, request.currency, request.count)
-    return publishPull(uid, request.currency, request.count, payment, results)
-end
-
---- 设置星辉指定UP角色
+--- 兼容旧接口：星辰招募已停用指定UP，统一按卡池权重抽取
 ---@param uid number
 ---@param heroId number
 ---@return boolean ok, string? err
 function UrGachaService.SetTargetUp(uid, heroId)
-    local currency = PDM.GetModule(uid, "currency")
-    if not currency then return false, "数据未加载" end
-
-    heroId = tonumber(heroId)
-    if not heroId then return false, "缺少角色ID" end
-
-    local hero = HeroConfig.HEROES[heroId]
-    if not hero then return false, "角色不存在" end
-    if hero.quality ~= (HeroConfig.QUALITY_UR or 4) then
-        return false, "只能指定UR角色"
-    end
-    if not findItemInQuality(UrGachaConfig.QUALITY_UR, heroId) then
-        return false, "该UR角色不在星辰卡池中"
-    end
-
-    currency.stellarTargetUpHeroId = heroId
-    PDM.MarkDirty(uid, "currency")
-
-    print("[UrGachaService] SetTargetUp uid=" .. tostring(uid)
-        .. " heroId=" .. tostring(heroId))
-    return true
+    return false, "指定UR功能已停用，星辰招募按卡池权重随机抽取"
 end
 
 return UrGachaService

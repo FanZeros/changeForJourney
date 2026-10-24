@@ -69,7 +69,7 @@ function Start()
                 end }),
                 ["rules.currency.CurrencyService"] = stub(), ["rules.hero.HeroService"] = stub(),
             }
-            local real = { ["core.GameState"] = true, ["runtime.ClientDispatcher"] = true,
+            local real = { ["core.PerformanceMonitor"] = true, ["core.GameState"] = true, ["runtime.ClientDispatcher"] = true,
                 ["boot.StandaloneSave"] = true, ["rules.offline.OfflineService"] = true }
             env.require = function(name)
                 if modules[name] then return modules[name] end
@@ -86,6 +86,11 @@ function Start()
             local stage, maxStage, ledger = 101, 101, {}
             local live = {}
             local resetCalls, titleCalls, pendingResets = 0, 0, 0
+            local openingCancels, powerResets = 0, 0
+            -- HEAD正式入口已有这些upvalue；源码段夹具需显式提供，不能删清档调用。
+            env.cancelOpening_ = function() openingCancels = openingCancels + 1 end
+            env.StandaloneRT = { entryPrepared = true, entryPreparing = true, entryRendered = true }
+            env.SpinePowerUpEffect = { resetSession = function() powerResets = powerResets + 1 end }
             local Scene = stub({ getStageId = function() return stage end,
                 getMaxStageId = function() return maxStage end,
                 getClearedStages = function() return ledger end,
@@ -136,6 +141,8 @@ function Start()
             env.ClientDispatcher, env.BattleTriPage = Dispatcher, Page
             for _, name in ipairs({ "TowerBattleScene", "DungeonBattleScene", "DungeonPage",
                 "ClientMsgHandler", "ScenarioDialogue" }) do env[name] = stub() end
+            env.LocalActionBridge = { cancelSweep = noop, cancelQuickEquip = noop }
+            env.SweepDialog = { close = noop }
             env.StandaloneBoot = { resetPendingBattleRewards = function() pendingResets = pendingResets + 1 end }
             env.DarkTitleScreen = { reopen = function() titleCalls = titleCalls + 1 end }
             env.LootBoxPage = { isVisible = function() return false end }
@@ -155,7 +162,7 @@ function Start()
             end
             return { env = env, dispatcher = Dispatcher, state = GS, save = Save, service = Service,
                 page = Page, scene = Scene, reset = Reset, disk = disk, fault = fault, seed = seed,
-                counts = function() return resetCalls, titleCalls, pendingResets, writes end }
+                counts = function() return resetCalls, titleCalls, pendingResets, writes, openingCancels, powerResets end }
         end
 
         runCase("稀疏终焉旧档", function()
@@ -232,7 +239,11 @@ function Start()
                 eq(state[field], 0, "清档重置残留字段 " .. field)
             end
             eq(state.level, 1, "清档重置账户等级")
-            local reset, title, pending, writes = f.counts()
+            local reset, title, pending, writes, opening, power = f.counts()
+            eq(opening, 1, "正式入口取消旧开场链一次")
+            eq(power, 1, "正式入口取消旧会话战力动画一次")
+            check(not f.env.StandaloneRT.entryPrepared and not f.env.StandaloneRT.entryPreparing
+                and not f.env.StandaloneRT.entryRendered, "正式入口清除三份入场准备镜像")
             eq(reset, 1, "清档丢旧三队驱动")
             eq(pending, 1, "清档丢Boot暂存奖励")
             eq(title, 1, "正式入口回标题一次")
@@ -261,8 +272,10 @@ function Start()
             eq(conflict.teamCurrentStageIds, nil, "onLoad删除迁移后的旧队表")
             for difficulty = 1, 14 do
                 local terminalId = difficulty * 1000 - 1
+                ---@type table
                 local data = { currentStageId = tostring(terminalId), maxStageId = tostring(terminalId),
                     teamStageIds = { terminalId, terminalId, terminalId }, clearedStages = {} }
+                ---@cast data table
                 Schema.Fields.battle.onLoad(data)
                 eq(data.currentStageId, terminalId, "onLoad实时终焉不退 " .. terminalId)
                 eq(data.teamStageIds["3"], terminalId, "onLoad实时三队终焉不退 " .. terminalId)
@@ -273,6 +286,7 @@ function Start()
             end
             local ahead = { currentStageId = 101, maxStageId = 1001,
                 teamStageIds = { 101, 2001, 1901 }, clearedStages = { ["905"] = true } }
+            ---@cast ahead table
             Schema.normalizeTeamStageIds(ahead, true)
             eq(ahead.teamStageIds["2"], 101, "越过共享上限的脏队位置被拒绝")
             eq(ahead.teamStageIds["3"], 101, "锁队位置被拒绝")

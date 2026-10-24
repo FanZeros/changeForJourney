@@ -4,11 +4,16 @@
 -- ============================================================================
 
 local ETS = require("systems.ExtraTalentSystem")
+local AC = require("config.AwakeningConfig")
 
 local M = {}
 
 function M.bind(deps)
     local hasAwaken = deps.hasAwaken
+    local hasAwakenStage = deps.hasAwakenStage or function(u, stage)
+        return AC.hasStage(u.awakeningNodes, stage)
+    end
+    local getState = deps.getState
     local talentLog = deps.talentLog
     local AD = deps.AD
     local SEM = deps.SEM
@@ -16,7 +21,19 @@ function M.bind(deps)
 
 local function tryAlexSilverFlash(attacker, s, target, isAlly, dealDmgFn, result)
     if not dealDmgFn or not target or target.hp <= 0 or not attacker.attrs or not result then return end
+    local battleRefs = getBattleRefs and getBattleRefs()
+    local battleToken = s.epicAttackBattleToken
+    local function currentBattle()
+        return (not getState or getState(attacker) == s)
+            and (not getBattleRefs or getBattleRefs() == battleRefs)
+            and s.epicAttackBattleToken == battleToken
+    end
+    if not currentBattle() then return end
 
+    local resonating = not attacker._etsDisabled and hasAwakenStage(attacker, 2) and tonumber(attacker.heroId) == 21
+    if resonating and s.epicNitroBattleToken ~= battleToken then
+        s.epicNitroBattleToken, s.epicNitroStacks = battleToken, 0
+    end
     local hitVal = attacker.attrs:get(AD.HIT_VALUE)
     local extraProc = math.min(20, math.floor(hitVal / 80) * 2)
     local baseProc = hasAwaken(attacker, 1) and 30 or 25
@@ -38,15 +55,29 @@ local function tryAlexSilverFlash(attacker, s, target, isAlly, dealDmgFn, result
         end
     end
 
+    -- 满五层后的下一次氮气开始受益，成长只读已提交击杀；不增加触发概率。
+    if resonating and (s.epicNitroStacks or 0) >= 5 then
+        local extra = ETS.getEpicGrowth(attacker)
+        local growthBonus = hasAwakenStage(attacker, 1)
+            and math.min(0.20, math.floor(extra.nitroKills / 40) * 0.05) or 0
+        bonusDmg = math.floor(bonusDmg * (1.20 + growthBonus) + 0.5)
+    end
+    local copiedCrit = result.isCrit
     if bonusDmg > 0 then
         -- 即时氮气/贯穿伤害会同步分发死亡，先写既有击杀条件。
         attacker._nitroKill = true
         dealDmgFn(target, bonusDmg, not isAlly, "氮气", { 200, 230, 255 }, {
+            sourceAttacker = attacker,
             silverFlashVfx = true,
             instantDamage = true,
+            statCategory = "magical",
+            atkType = AD.ATK_LIGHTNING,
+            isCrit = copiedCrit,
+            critEligible = false,
         })
+        if not currentBattle() or (attacker.hp or 0) <= 0 then return end
         -- 氮气贯穿：额外打一名其他存活敌人（对侧）
-        local bcs = getBattleRefs and getBattleRefs() or nil
+        local bcs = battleRefs
         local pierceList = bcs and (isAlly and bcs.bEnemies or bcs.bAllies) or nil
         if pierceList then
             local others = {}
@@ -60,13 +91,22 @@ local function tryAlexSilverFlash(attacker, s, target, isAlly, dealDmgFn, result
                 local pierceDmg = math.floor(bonusDmg * 0.60 + 0.5)
                 if pierceDmg > 0 then
                     dealDmgFn(pierceTgt, pierceDmg, not isAlly, "超车 ", { 180, 220, 255 }, {
+                        sourceAttacker = attacker,
                         instantDamage = true,
+                        statCategory = "magical",
+                        atkType = AD.ATK_LIGHTNING,
+                        isCrit = copiedCrit,
+                        critEligible = false,
                     })
+                    if not currentBattle() or (attacker.hp or 0) <= 0 then return end
                 end
             end
         end
     end
 
+    if resonating then
+        s.epicNitroStacks = math.min(5, (s.epicNitroStacks or 0) + 1)
+    end
     local paralyzeDur = hasAwaken(attacker, 4) and 0.5 or 0.3
     SEM.apply(target, SEM.FROZEN, paralyzeDur, attacker, {})
 

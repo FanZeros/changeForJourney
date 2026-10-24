@@ -2,7 +2,7 @@
 -- IdleSettleService - 在线挂机定时结算（Update handler 驱动）
 -- 职责: 每帧累加 idleAccumSec，满 60s 结算一次在线挂机收益
 -- 层级: server/offline  |  通过 PDM 读写，禁止直接网络 IO
--- 设计参考: docs/挂机收益统一方案-v2.md §9.3 / §9.4
+-- 设计参考: docs/changeForJourney-gameplay.md §5 挂机与离线收益
 -- ============================================================================
 
 local PDM           = require("rules.character.PlayerDataManager")

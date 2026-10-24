@@ -14,7 +14,7 @@ local ArtifactSchema      = require("shared.artifact.ArtifactSchema")
 local ArtifactDetailPanel = require("ui.character.hero.ArtifactDetailPanel")
 local ImageCache          = require("ui.widget.ImageCache")
 local ArtifactAssetUtil   = require("config.ArtifactAssetUtil")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -105,7 +105,7 @@ for c = 1, GRID.COLS do
 end
 
 -- 空格子背景：纯黑 10%
--- [B-方案] 原空格平涂常量已废弃（格子底改用 DarkIcon.drawNine "slot" 暗铁凹槽）
+-- 格子底使用 DarkIcon.drawNine "slot" 暗铁凹槽
 
 -- 滚动参数
 local SCROLL_FRICTION   = 0.90
@@ -324,12 +324,22 @@ local function canInstall(artifact, target)
     if target.subSlot > getUnlockedSubSlotCount() then
         return false, "远征等级达到" .. tostring(ArtifactSchema.getSubSlotUnlockLevel(target.subSlot)) .. "级解锁"
     end
-    local occupiedTeam = ArtifactSchema.findEquippedSlotAnyTeam(getArtifactData(), artifact.id)
-    if occupiedTeam and occupiedTeam ~= target.teamIdx then
-        return false, "神器已安装在队伍" .. tostring(occupiedTeam) .. "，请先卸下再安装到其他队伍"
+    local sourceTeam, sourceSlot, sourceSub = ArtifactSchema.findEquippedSlotAnyTeam(getArtifactData(), artifact.id)
+    if sourceTeam and sourceTeam > getUnlockedTeamCount() then
+        return false, ExpTable.getTeamUnlockText(sourceTeam) .. "队伍" .. sourceTeam
     end
-    if hasSameTypeInSlot(target.slot, artifact, target.subSlot, target.teamIdx) then
+    if sourceSub and sourceSub > getUnlockedSubSlotCount() then
+        return false, "远征等级达到" .. tostring(ArtifactSchema.getSubSlotUnlockLevel(sourceSub)) .. "级解锁"
+    end
+    local samePartySlot = sourceTeam == target.teamIdx and sourceSlot == target.slot
+    -- 同号位两格互换会移走旧来源，预检不能把它当作仍占用的相邻格。
+    if not samePartySlot and hasSameTypeInSlot(target.slot, artifact, target.subSlot, target.teamIdx) then
         return false, "同一槽位不能佩戴相同类型神器"
+    end
+    local displaced = getEquippedArtifact(target.slot, target.subSlot, target.teamIdx)
+    if sourceTeam and displaced and not samePartySlot
+        and hasSameTypeInSlot(sourceSlot, displaced, sourceSub, sourceTeam) then
+        return false, "来源槽位不能佩戴相同类型神器"
     end
     return true
 end
@@ -541,14 +551,14 @@ local function getEquipActionState(artifact, location, slot, subSlot, teamIdx)
         return {
             label = unchanged and "取下" or "位置已变",
             enabled = unchanged and not state.equipRequestPending,
-            hint = unchanged and ("队伍" .. team .. " · " .. SLOT_POS_NAME[currentSlot] .. " · 第" .. currentSub .. "格")
+            hint = unchanged and ("队伍" .. team .. " · " .. SLOT_POS_NAME[currentSlot or slot or 1] .. " · 第" .. currentSub .. "格")
                 or "装配位置已变，请重新打开详情",
         }
     end
     return {
         label = team and "已安装" or "安装",
         enabled = not team and not state.equipRequestPending,
-        hint = team and ("已安装在队伍" .. team .. "，请先卸下") or nil,
+        hint = team and "装配位置已变，请重新打开详情或拖动已装神器" or nil,
     }
 end
 
@@ -624,7 +634,6 @@ function M.init(vg)
     ArtifactAssetUtil.preloadIcons()
 
     -- 顶部背景图 UI_JTSQ_BJ 已按用户要求删除（drawBg 改纯色暗底）
-    -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
     img.lowerBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png", 0)
     img.mergeBtn  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     img.rerollBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
@@ -933,6 +942,10 @@ function M.drawContent(vg)
     end
     nvgText(vg, MERGE_BTN.CX, MERGE_BTN.CY, label, nil)
 
+end
+
+--- 详情独立于内容层，交给教堂在公共按钮与名称牌之后绘制。
+function M.drawOverlay(vg)
     ArtifactDetailPanel.draw(vg)
 end
 
@@ -1003,7 +1016,6 @@ function M.handleTabInput(dx, dy)
                         return true
                     end
                     local pendingArtifact = getPendingEquipArtifact()
-                    local occupiedTeam = pendingArtifact and ArtifactSchema.findEquippedSlotAnyTeam(getArtifactData(), pendingArtifact.id)
                     local equipped = getEquippedArtifact(i, subSlot, t)
                     local locked = subSlot > unlockedSubSlots
                     if locked and pendingArtifact then
@@ -1012,10 +1024,6 @@ function M.handleTabInput(dx, dy)
                     elseif locked and not equipped then
                         local unlockLevel = ArtifactSchema.getSubSlotUnlockLevel(subSlot)
                         showFloat("远征等级达到" .. tostring(unlockLevel) .. "级解锁", cx, cy - 70)
-                    elseif pendingArtifact and occupiedTeam and occupiedTeam ~= t then
-                        showFloat("神器已安装在队伍" .. tostring(occupiedTeam) .. "，请先卸下", cx, cy - 70)
-                    elseif pendingArtifact and hasSameTypeInSlot(i, pendingArtifact, subSlot, t) then
-                        showFloat("同一槽位不能佩戴相同类型神器", cx, cy - 70)
                     elseif pendingArtifact and Protocol then
                         installArtifact(pendingArtifact, hitSlot(dx, dy))
                     elseif pendingArtifact then
@@ -1039,7 +1047,7 @@ function M.handleTabInput(dx, dy)
                             state.selectedSlot = i
                             state.selectedSubSlot = subSlot
                         end
-                        showFloat("先在背包神器详情中点击安装", cx, cy - 70)
+                        showFloat("将背包神器拖到槽位安装", cx, cy - 70)
                     end
                     print(string.format("[ChurchArtifactPanel] slot click t%d %d:%d", t, i, subSlot))
                     return true

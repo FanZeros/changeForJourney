@@ -197,7 +197,7 @@ function M.bind(deps)
     })
 
     -- 弹窗（在裁剪区域外绘制，遮罩覆盖全屏）
-    -- 神器宝箱钥匙补购弹窗已迁移至教堂·神器宝箱页签
+    -- 神器宝箱钥匙补购弹窗在教堂·神器宝箱页签
     drawPurchaseDialog(vg)
 
     nvgRestore(vg)  -- 下半部分 end

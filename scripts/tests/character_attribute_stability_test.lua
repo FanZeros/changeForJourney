@@ -62,6 +62,178 @@ local function absent(data, keys)
     return true
 end
 
+local function readSource(path)
+    local file = assert(cache:GetFile(path), "missing source " .. path)
+    local lines = {}
+    while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+    file:Dispose()
+    return table.concat(lines, "\n")
+end
+local function copy(value)
+    if type(value) ~= "table" then return value end
+    local out = {}
+    for key, item in pairs(value) do out[key] = copy(item) end
+    return out
+end
+local function same(a, b)
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return a == b end
+    for key, value in pairs(a) do if not same(value, b[key]) then return false end end
+    for key in pairs(b) do if a[key] == nil then return false end end
+    return true
+end
+
+-- 私有 _ENV 装载真实属性模块：只替数据读取边界，不替数值/装备/神器公式，不写全局 HC。
+local function presentationCacheRegression()
+    local data = fixture(20)
+    data.talents = { litNodes = {} }
+    data.heroes.teams = { { slots = { 20, 2, 9, 21 } } }
+    for _, id in ipairs({ 20, 2, 9, 21, 1 }) do
+        data.heroes.roster[tostring(id)] = { level = 70, awakening = {}, extraTalent = {} }
+        data.equipment.equipped[tostring(id)] = {}
+    end
+    local sources, revisions = data, { heroes = 1, equipment = 1, artifacts = 1, talents = 1 }
+    local owned = data.heroes.roster
+    local litNodes, language = data.talents.litNodes, "zh_CN"
+    local builds, creates, inventoryScans = 0, 0, 0
+    local modules = {}
+    local env = setmetatable({}, { __index = _G })
+    env._G = env
+    local store = { Get = function(key) return sources[key] end,
+        GetRevision = function(key) return revisions[key] or 0 end }
+    local hero = setmetatable({
+        _getSavedLitNodes = function() return litNodes end,
+        createHero = function(id, level, adv, awakening, extra, opts)
+            creates = creates + 1
+            local fallback = owned[tostring(id)] or owned[id] or {}
+            local actualOptions = opts or { litNodes = litNodes or false, silent = true }
+            return HC.createHero(id, level, adv, awakening or fallback.awakening or {},
+                extra == nil and (fallback.extraTalent or {}) or extra, actualOptions)
+        end,
+    }, { __index = HC })
+    env.pairs = function(value)
+        if sources.equipment and value == sources.equipment.inventory then inventoryScans = inventoryScans + 1 end
+        return pairs(value)
+    end
+    env.require = function(name)
+        if name == "core.PlayerStore" then return store end
+        if name == "runtime.ClientDispatcher" then return { get = store.Get } end
+        if name == "core.I18n" then return { get = function() return language end } end
+        if name == "config.HeroConfig" then return hero end
+        if name == "ui.character.panel.CharacterPanel" then
+            return { getOwnedHero = function(id) return owned[tostring(id)] or owned[id] end }
+        end
+        if name == "systems.ArtifactBridge" or name == "ui.character.detail.CharacterDetailAttrs" then
+            if not modules[name] then
+                modules[name] = assert(load(readSource(name:gsub("%.", "/") .. ".lua"), "@cache-regression/" .. name, "t", env))()
+            end
+            return modules[name]
+        end
+        return require(name)
+    end
+    local actual = env.require("ui.character.detail.CharacterDetailAttrs")
+    local lastCollected = {}
+    local read = actual.createPresentationCache(function(...)
+        builds = builds + 1
+        lastCollected = actual.collectAttributes(...)
+        return lastCollected
+    end)
+    local function sample(id, level, options) return read(id or 20, assert(HC.get(id or 20)), level or 70, options) end
+    local function assertMatches(view, id, level, options, label)
+        local fresh = actual.collectAttributes(id or 20, assert(HC.get(id or 20)), level or 70, options)
+        local expected, order = {}, actual.displayOrderIndex()
+        for _, column in ipairs({ fresh.left, fresh.right }) do
+            for _, r in ipairs(column) do expected[#expected + 1] = r end
+        end
+        local indices = {}
+        for i, r in ipairs(expected) do indices[r] = i end
+        table.sort(expected, function(a, b)
+            local oa, ob = order[a.key] or 9999, order[b.key] or 9999
+            return oa < ob or (oa == ob and indices[a] < indices[b])
+        end)
+        check(same(view.rows, actual.filterDisplayRows(expected)) and same(view.stats, fresh.stats),
+            label .. " cached rows/six stats equal filtered actual formulas")
+        check(view.attrs == nil, label .. " presentation does not expose mutable attrs")
+    end
+    local first = sample()
+    check(builds == 1 and creates == 4, "four-member star-gate cold presentation builds exactly once/four actual heroes")
+    local initialCreates = creates
+    assertMatches(first, 20, 70, nil, "cold star-gate")
+    initialCreates = creates
+    -- 冷构建先隔离快照可复制背包；只测180暖帧依赖检查不得再次扫描整库存。
+    inventoryScans = 0
+    local stable = true
+    for _ = 1, 180 do if sample() ~= first then stable = false end end
+    check(stable, "180 warm presentation frames reuse host-private rows")
+    check(builds == 1 and creates == initialCreates, "180 stable frames create no heroes and perform no row rebuild")
+    check(inventoryScans == 0, "presentation dependency checks do not scan whole inventory")
+    local sourceRows = copy(lastCollected.left)
+    local independent = lastCollected.left[1].value
+    first.rows[1].value = "private render mutation"
+    check(same(lastCollected.left, sourceRows), "render cache cannot mutate collector return rows")
+    first.rows[1].value = independent
+    local otherHost = actual.createPresentationCache()
+    local other = otherHost(20, assert(HC.get(20)), 70)
+    check(other ~= first and other.rows ~= first.rows and other.rows[1] ~= first.rows[1], "independent host caches cannot share mutable presentation rows")
+
+    local function changed(label, change, id, level, options)
+        local before = builds
+        change()
+        local view = sample(id, level, options)
+        check(builds == before + 1, label .. " invalidates exactly once")
+        check(sample(id, level, options) == view and builds == before + 1, label .. " post-hydration stable next frame")
+        assertMatches(view, id, level, options, label)
+        return view
+    end
+    local beforeExp = builds
+    data.heroes.roster["20"].exp, data.heroes.roster["2"].exp = 100, 200
+    revisions.heroes = revisions.heroes + 1
+    check(sample() == first and builds == beforeExp, "same-reference own/team exp publish does not rebuild presentation")
+    data.heroes = copy(data.heroes)
+    data.heroes.roster["20"].shards = 999
+    revisions.heroes = revisions.heroes + 1
+    check(sample() == first and builds == beforeExp, "replacement roster with only exp/shards changes does not rebuild")
+    changed("same-reference own level", function() data.heroes.roster["20"].level = 71 end, 20, 71)
+    changed("same-reference teammate level", function() data.heroes.roster["2"].level = 72 end, 20, 71)
+    changed("teammate awakening", function() data.heroes.roster["2"].awakening[1] = true end, 20, 71)
+    changed("same-reference extra talent", function() data.heroes.roster["2"].extraTalent.burnKills = 2 end, 20, 71)
+    changed("same-reference advancement", function() data.heroes.roster["20"].advBranch = { first = 105 } end, 20, 71)
+    changed("worn old-item hydration", function()
+        put(data, 1, { { affixId = 25, value = 12.5 } })
+        data.equipment.equipped["20"].accessory = 1
+    end, 20, 71)
+    changed("worn affix nested patch", function() data.equipment.inventory["1"].affixes[1].value = 20 end, 20, 71)
+    local noChange = builds
+    put(data, 999, { { affixId = 25, value = 99 } })
+    check(builds == noChange and sample(20, 71) ~= nil and builds == noChange, "unworn inventory insertion is not a dependency")
+    changed("artifact same-reference value", function()
+        data.artifacts.bag = { { id = "test", artifactId = 12, value = 250 } }
+        data.artifacts.equippedByTeam = { { [1] = { "test" } } }
+    end, 20, 71)
+    local swapped = changed("artifact same-reference nested patch", function() data.artifacts.bag[1].value = 280 end, 20, 71)
+    check(row({ left = swapped.rows, right = {} }, "_artifactCritDmgMult") ~= nil,
+        "artifact fixture applies actual id12 multiplier rather than only invalidating a key")
+    changed("team reassignment", function() data.heroes.teams[1].slots = { 2, 20, 21, 9 } end, 20, 71)
+    changed("same-reference lit nodes", function() litNodes[#litNodes + 1] = 1 end, 20, 71)
+    changed("language", function() language = "ko" end, 20, 71)
+    changed("clear mirror with same Dispatcher content", function()
+        revisions.equipment, revisions.artifacts, revisions.talents = 2, 2, 2
+    end, 20, 71)
+    changed("missing own roster entry", function() data.heroes.roster["20"] = nil end, 20, 71)
+    local switched = changed("switch hero", function() end, 1, 70)
+    check(row({ left = switched.rows, right = {} }, "_melissaStarGateResonance") == nil, "switch hero does not leak star-gate rows")
+    changed("switch back hero", function() end, 20, 71)
+    local restored = copy(data)
+    changed("clear all sources", function() sources = {} end, 20, 71)
+    changed("restore after clear", function() sources = restored end, 20, 71)
+    changed("explicit empty snapshots never use live fallback", function() end, 20, 71, {})
+    local a = actual.collectAttributes(1, assert(HC.get(1)), 70, restored)
+    local b = actual.collectAttributes(1, assert(HC.get(1)), 70, restored)
+    a.left[1].value = "caller changed"; a.attrs.base[AD.MAX_HP] = -1
+    check(b.left[1].value ~= a.left[1].value and b.attrs.base[AD.MAX_HP] ~= -1,
+        "collectAttributes retains independent rows/attrs for public preview callers")
+end
+
 function Start()
     print("[character_attribute_stability_test] start")
     local ok, err = pcall(function()
@@ -126,6 +298,13 @@ function Start()
         check(row(healing.current, "_effCritRate").numericValue == 0
             and row(healing.current, "_effCritRate").value == "0.0%", "治疗暴击率0%常驻且保留原始0")
         check(row(healing.preview, "_effCritRate").numericValue == 11, "治疗暴击词条使同一行0→11%")
+        check(row(healing.current, "_effCritDmg").name == "暴击治疗", "治疗倍率使用暴击治疗名称")
+        local displayed = Attrs.filterDisplayRows(healing.rows)
+        local displayKeys = {}
+        for _, item in ipairs(displayed) do displayKeys[item.key] = true end
+        check(not displayKeys[AD.FINAL_HP_BONUS] and not displayKeys[AD.FINAL_SPI_BONUS]
+            and displayKeys[AD.MAX_HP] and displayKeys["_effCritDmg"], "总属性保留实际值、不重复展示最终乘区")
+        check(row(healing.current, AD.FINAL_HP_BONUS) ~= nil, "显示过滤不删除原始预览属性")
 
         -- 用装备减值使真实物理英雄暴击率/暴伤恰好为0，再更换为空属性装备。
         local physical = fixture(1)
@@ -148,6 +327,7 @@ function Start()
             if r.delta ~= nil and (type(r.currentValue) ~= "number" or type(r.previewValue) ~= "number") then comparable = false end
         end
         check(comparable, "预览数值行始终为number，不从格式文本反解析")
+        presentationCacheRegression()
     end)
     if not ok then check(false, "测试异常: " .. tostring(err)) end
     if failures == 0 then print("[character_attribute_stability_test] ALL PASS assertions=" .. assertions)

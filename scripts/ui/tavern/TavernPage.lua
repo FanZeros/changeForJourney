@@ -7,7 +7,6 @@ local GameConfig     = require("config.GameConfig")
 local GachaConfig    = require("config.GachaConfig")
 local UrGachaConfig  = require("config.UrGachaConfig")
 local GachaSystem    = require("systems.GachaSystem")
-local HeroConfig     = require("config.HeroConfig")
 local GameState      = require("core.GameState")
 local Protocol       = require("shared.Protocol")
 local DrawUtil       = require("core.DrawUtil")
@@ -21,10 +20,9 @@ local RecruitAnim       = require("ui.tavern.RecruitAnim")
 local RecruitOrders     = require("ui.tavern.TavernRecruitOrders")
 local TavernPopups      = require("ui.tavern.TavernPopups")
 local TavernShopPage    = require("ui.tavern.TavernShopPage")
-local TargetRecruitPanel = require("ui.tavern.TargetRecruitPanel")
 local BF                = require("systems.ButtonFeedback")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local I18n = require("core.I18n")
 local TavernPage = {}
 
@@ -91,10 +89,6 @@ local PITY_ICON_W, PITY_ICON_H   = 54, 54
 local PITY_TEXT_CX, PITY_TEXT_CY = 540, 1666
 local PITY_TEXT_SIZE = 42
 
--- 12b. 指定招募提示文本（保底背景条上方）
-local TARGET_TEXT_CX, TARGET_TEXT_CY = 540, 1572
-local TARGET_TEXT_SIZE = 38
-
 -- 13. 招募券资源背景栏
 local TICKET_BG_CX, TICKET_BG_CY = 429, 1785
 local TICKET_BG_W, TICKET_BG_H   = 170, 47
@@ -142,11 +136,6 @@ local BTN_TEXT_B = 102
 -- 20. 招募10次按钮
 local BTN_10_CX, BTN_10_CY = 766, 1902
 local BTN_10_W, BTN_10_H   = 410, 100
-
--- 20.5 指定招募按钮
-local BTN_TARGET_CX, BTN_TARGET_CY = 540, 2068
-local BTN_TARGET_W, BTN_TARGET_H   = 410, 100
-local BTN_TARGET_FONT = 40
 
 -- 21. 底部滑块（与教堂一致）
 local TAB_BG_CX, TAB_BG_CY = 540, 2308
@@ -196,8 +185,6 @@ local state = {
     -- 保底数据（从 GachaSystem 实时读取）
     pityRemain = GachaConfig.Pity.SSR_THRESHOLD,
     pityRank   = "史诗",
-    stellarTargetUpHeroId = nil,  -- 星辉指定UP角色ID（nil=未指定）
-    stellarTargetUpName   = nil,  -- 星辉指定UP角色名字（缓存）
     -- 资源数据（从 GameState 实时读取）
     ticketCount  = 0,
     diamondCount = 0,
@@ -223,10 +210,8 @@ local pools = RecruitOrders.createPools()
 local img = {
     -- 上半部分
     bgStandard      = -1,   -- UI_KCBJ_1.png
-    bgStellar       = -1,   -- UI_KCBJ_2.png
     nameBg    = -1,   -- UI_TJP_MC.png
     btnBack   = -1,   -- UI_AN_FH.png
-    upPortrait      = -1,   -- KCLH_{heroId}.png 当期 UP
     timerBg   = -1,   -- UI_YXTBBJ.png
     timerIcon = -1,   -- UI_icon_NZ.png
     -- 下半部分
@@ -254,12 +239,6 @@ local function loadImage(vg, primaryPath, altPath)
     end
     print("[TavernPage] WARNING: 图片加载失败 " .. tostring(primaryPath))
     return -1
-end
-
---- 重新加载当期 UP 立绘（轮换或指定 UP 后调用）
-local function reloadUpPortrait(vg, heroId)
-    if not vg then return end
-    img.upPortrait = loadImage(vg, UrGachaConfig.getUpPortraitPath(heroId))
 end
 
 local function getSelectedPool()
@@ -325,18 +304,6 @@ local function syncDisplayData()
         local serverSR  = currencyData.gachaPitySR or 0
         local serverSSR = currencyData.gachaPitySSR or 0
         GachaSystem.setPityCounts(serverSR, serverSSR)
-
-        local prevStellarTargetUpHeroId = state.stellarTargetUpHeroId
-        state.stellarTargetUpHeroId = currencyData.stellarTargetUpHeroId
-        if state.stellarTargetUpHeroId then
-            local heroCfg = HeroConfig.get(state.stellarTargetUpHeroId)
-            state.stellarTargetUpName = heroCfg and heroCfg.name or "未知"
-        else
-            state.stellarTargetUpName = nil
-        end
-        if prevStellarTargetUpHeroId ~= state.stellarTargetUpHeroId and vg_ then
-            reloadUpPortrait(vg_, state.stellarTargetUpHeroId)
-        end
     end
 
     state.pityRemain   = GachaSystem.getSSRPityRemain()
@@ -368,11 +335,9 @@ function TavernPage.init(vg)
     vg_ = vg
     -- 上半部分
     img.bgStandard      = loadImage(vg, "image/界面底板/酒馆抽卡/UI_KCBJ_1.png")
-    img.bgStellar       = loadImage(vg, UrGachaConfig.UI.bgPath)
     img.nameBg    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
     img.btnBack   = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
     RecruitOrders.init(vg, pools)
-    reloadUpPortrait(vg)
     img.timerBg   = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_YXTBBJ.png", 0)
     img.timerIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_NZ.png", 0)
     -- 下半部分
@@ -381,9 +346,7 @@ function TavernPage.init(vg)
     img.ticketIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_X.png", 0)
     img.ticketIconStellar = loadImage(vg, UrGachaConfig.UI.ticketIconPath, "image/货币道具/UI_icon_ZMQ2_X.png")
     img.diamondIcon = loadImage(vg, "image/货币道具/UI_icon_SJ_X.png")
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnLv       = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     img.slider      = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
     -- 初始化弹窗子模块（setContext 已在模块级别调用，此处只需 init 加载图片）
@@ -394,10 +357,6 @@ function TavernPage.init(vg)
 
     -- 初始化商店标签页
     TavernShopPage.init(vg)
-
-    -- 初始化指定招募面板
-    TargetRecruitPanel.init(vg)
-    img.btnTarget = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
 
     -- currency 推送到达后清除星辉保底 fallback，以服务端模块数据为准
     ClientDispatcher.subscribe("currency", function(data)
@@ -417,6 +376,8 @@ local pendingGachaPull = false
 local pendingGachaPullTime = 0       -- 发送时间戳
 ---@type number|nil
 local pendingGachaCount = nil
+---@type string|nil
+local pendingGachaPoolId = nil
 local GACHA_PULL_TIMEOUT   = 8       -- 超时秒数（缩短至8秒，更快恢复）
 
 local function notifyRecruitStarted(count)
@@ -426,7 +387,7 @@ end
 
 local function failPendingRecruit()
     local count = pendingGachaCount
-    pendingGachaPull, pendingGachaCount = false, nil
+    pendingGachaPull, pendingGachaCount, pendingGachaPoolId = false, nil, nil
     if count then
         require("systems.TutorialManager").notifyEvent(count == 10 and "gacha10_failed" or "gacha_failed")
     end
@@ -497,10 +458,6 @@ function TavernPage.prepareTutorial(vg)
         syncDisplayData()
         changed = true
     end
-    if TargetRecruitPanel.isOpen() then
-        TargetRecruitPanel.close()
-        changed = true
-    end
     if TavernPopups.isBlocking() then
         TavernPopups.resetAll()
         changed = true
@@ -515,6 +472,8 @@ function TavernPage.close()
     state.closing = true
     state.closeTime = time.elapsedTime
     TavernPopups.resetAll()
+    -- 结果页随酒馆离开收尾；不能留下不可见的招募忙碌状态。
+    if RecruitAnim.isPlaying() then RecruitAnim.close() end
     print("[TavernPage] 关闭酒馆（动画）")
 end
 
@@ -541,6 +500,7 @@ function TavernPage.forceClose()
     state.open = false
     state.closing = false
     TavernPopups.resetAll()
+    if RecruitAnim.isPlaying() then RecruitAnim.close() end
 end
 
 --- 返回打开/关闭动画进度 (0=完全关闭, 1=完全打开)
@@ -587,6 +547,7 @@ local function doRecruitDirect(count, forcePayType)
         pendingGachaPull = true
         pendingGachaPullTime = time.elapsedTime
         pendingGachaCount = count
+        pendingGachaPoolId = poolId
         -- 单机桥可同步回执，必须先进入等待步骤，再发送实际请求。
         notifyRecruitStarted(count)
         local handled = _sendAction(Protocol.ACTION_TYPES.GACHA_PULL,
@@ -651,15 +612,25 @@ TavernPopups.setContext({
 --- 执行招募（外部入口，含确认框检查）
 ---@param count number 1 或 10
 local function doRecruit(count)
-    -- 检查招募券是否足够，不足则弹确认框
-    if not TavernPopups.checkAndShowConfirm(count) then
-        return
-    end
-    -- 招募券足够，直接执行
-    doRecruitDirect(count)
+    if pendingGachaPull then return end
+    local canProceed, payType = TavernPopups.checkAndShowConfirm(count)
+    if not canProceed then return end
+    -- 自动兑换明确沿用规则层混合支付，已有券优先、黑晶只补本次缺口。
+    doRecruitDirect(count, payType)
 end
 
-RecruitAnim.setOnAgain(function(count)
+RecruitAnim.setOnAgain(function(count, poolId)
+    -- 继续抽取当前结果所属池；异步回执期间页面可能切池或重新打开。
+    if poolId then
+        for index, pool in ipairs(pools) do
+            if pool.id == poolId then
+                state.selectedPool = index
+                refreshPoolMeta()
+                syncDisplayData()
+                break
+            end
+        end
+    end
     doRecruit(count)
 end)
 
@@ -683,6 +654,7 @@ local function drawPityText(vg, cx, cy)
     local rank   = state.pityRank .. "级"
     local suffix = isStellarPoolSelected() and "星辰远征队员" or "远征队员"
 
+    ---@type { text: string, color: number[], w: number? }[]
     local segments = {
         { text = "接下来",   color = { 255, 255, 255 } },
         { text = remain,     color = { 0xFF, 0xEF, 0x67 } },
@@ -697,88 +669,21 @@ local function drawPityText(vg, cx, cy)
     nvgFontSize(vg, PITY_TEXT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
 
-    -- 先用缓存宽度计算总宽度以居中
+    -- 说明按钮左缘894；保底文案仅占左侧完整预算，长译文按实宽拟合。
     local totalW = 0
     for _, seg in ipairs(segments) do
-        local w = getCachedTextWidth(vg, seg.text, PITY_TEXT_SIZE)
-        seg.w = w
-        totalW = totalW + w
+        seg.text = I18n.lookup(seg.text)
+        seg.w = getCachedTextWidth(vg, seg.text, PITY_TEXT_SIZE)
+        totalW = totalW + seg.w
     end
-
-    -- 从居中起始位置绘制
-    local startX = cx - totalW * 0.5
-    local curX = startX
+    local left, right = 50, PITY_ICON_BG_CX - PITY_ICON_BG_W * 0.5 - 24
+    local factor = math.min(1, (right - left) / math.max(1, totalW))
+    nvgFontSize(vg, PITY_TEXT_SIZE * factor)
+    local curX = (left + right - totalW * factor) * 0.5
     for _, seg in ipairs(segments) do
         nvgFillColor(vg, nvgRGBA(seg.color[1], seg.color[2], seg.color[3], 255))
-        nvgText(vg, curX, cy, seg.text, nil)
-        curX = curX + seg.w
-    end
-end
-
---- 绘制指定招募 / 星辉指定UP提示文本（保底背景条上方，带描边增强可读性）
-local function drawTargetRecruitText(vg, cx, cy)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, TARGET_TEXT_SIZE)
-
-    local segments = nil
-    local emptyText = ""
-
-    if isStellarPoolSelected() then
-        if state.stellarTargetUpHeroId then
-            segments = {
-                { text = "UR抽中有", color = { 255, 255, 255 } },
-                { text = "50%", color = { 0xFF, 0xEF, 0x67 } },
-                { text = "概率为 ", color = { 255, 255, 255 } },
-                { text = state.stellarTargetUpName or "未知", color = { 0xFF, 0x88, 0x44 } },
-            }
-        else
-            emptyText = "当前未指定UP角色"
-        end
-    end
-
-    if segments then
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        local totalW = 0
-        for _, seg in ipairs(segments) do
-            local w = getCachedTextWidth(vg, seg.text, TARGET_TEXT_SIZE)
-            seg.w = w
-            totalW = totalW + w
-        end
-
-        -- 描边（黑色轮廓增强可读性）
-        local curX = cx - totalW * 0.5
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 200))
-        for _, seg in ipairs(segments) do
-            for ox = -1, 1 do
-                for oy = -1, 1 do
-                    if ox ~= 0 or oy ~= 0 then
-                        nvgText(vg, curX + ox, cy + oy, seg.text, nil)
-                    end
-                end
-            end
-            curX = curX + seg.w
-        end
-
-        -- 正文
-        curX = cx - totalW * 0.5
-        for _, seg in ipairs(segments) do
-            nvgFillColor(vg, nvgRGBA(seg.color[1], seg.color[2], seg.color[3], 255))
-            nvgText(vg, curX, cy, seg.text, nil)
-            curX = curX + seg.w
-        end
-    elseif emptyText ~= "" then
-        -- 未指定：带描边的灰色提示
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 180))
-        for ox = -1, 1 do
-            for oy = -1, 1 do
-                if ox ~= 0 or oy ~= 0 then
-                    nvgText(vg, cx + ox, cy + oy, emptyText, nil)
-                end
-            end
-        end
-        nvgFillColor(vg, nvgRGBA(200, 200, 200, 230))
-        nvgText(vg, cx, cy, emptyText, nil)
+        I18n.displayText(vg, curX, cy, seg.text, nil)
+        curX = curX + seg.w * factor
     end
 end
 
@@ -818,24 +723,10 @@ local function drawPageImpl(vg)
     nvgSave(vg)
     nvgTranslate(vg, upperOX, 0)
 
-    -- ============ 1. 酒馆背景图（随卡池切换） ============
+    -- ============ 1. 招募、星辰与商店共用酒馆背景 ============
     nvgSave(vg)
     nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
-    local bgImg = img.bgStandard
-    if isStellarPoolSelected() and img.bgStellar >= 0 then
-        bgImg = img.bgStellar
-    end
-    drawImageCentered(vg, bgImg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
-
-    -- ============ 1b. 星辉池当期 UP 立绘 ============
-    if isStellarPoolSelected() and img.upPortrait >= 0 then
-        local px = UrGachaConfig.UI.portraitCx
-        local py = UrGachaConfig.UI.portraitCy
-        local pw, ph = nvgImageSize(vg, img.upPortrait)
-        if pw > 0 and ph > 0 then
-            drawImageCentered(vg, img.upPortrait, px, py, pw, ph, 1.0)
-        end
-    end
+    drawImageCentered(vg, img.bgStandard, BG_CX, BG_CY, BG_W, BG_H, 1.0)
 
     nvgResetScissor(vg)
     nvgRestore(vg)
@@ -856,18 +747,21 @@ local function drawPageImpl(vg)
         -- ============ 6. 保底提示背景条 ============
         drawImageCentered(vg, img.pityBg, PITY_BG_CX, PITY_BG_CY, PITY_BG_W, PITY_BG_H, 1.0)
 
-        -- ============ 7. 保底提示图标背景（复用 timerBg） ============
+        -- ============ 7-8. 旧铜描边骨白说明入口，沿用原90x90反馈/点击区域 ============
         local _s2 = BF.begin(vg, "tavern_pity", PITY_ICON_BG_CX, PITY_ICON_BG_CY, PITY_ICON_BG_W, PITY_ICON_BG_H)
-        drawImageCentered(vg, img.timerBg, PITY_ICON_BG_CX, PITY_ICON_BG_CY, PITY_ICON_BG_W, PITY_ICON_BG_H, 1.0)
-
-        -- ============ 8. 保底提示图标 ============
-        drawImageCentered(vg, img.pityIcon, PITY_ICON_CX, PITY_ICON_CY, PITY_ICON_W, PITY_ICON_H, 1.0)
+        DarkIcon.drawNine(vg, "btn", PITY_ICON_BG_CX - PITY_ICON_BG_W * 0.5,
+            PITY_ICON_BG_CY - 32, PITY_ICON_BG_W, 64, { accent = { 155, 120, 76 } })
+        nvgFontFace(vg, "sans")
+        local infoText = I18n.lookup("说明")
+        nvgFontSize(vg, 28)
+        local infoW = I18n.displayBounds(vg, 0, 0, infoText)
+        if infoW > PITY_ICON_BG_W - 16 then nvgFontSize(vg, 28 * (PITY_ICON_BG_W - 16) / infoW) end
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
+        I18n.displayText(vg, PITY_ICON_BG_CX, PITY_ICON_BG_CY, infoText, nil)
         BF.finish(vg, _s2)
 
-        -- ============ 9a. 指定招募/星辉指定UP提示文本 ==========
-        drawTargetRecruitText(vg, TARGET_TEXT_CX, TARGET_TEXT_CY)
-
-        -- ============ 9b. 保底提示文本 ============
+        -- ============ 9. 保底提示文本 ============
         drawPityText(vg, PITY_TEXT_CX, PITY_TEXT_CY)
 
         -- ============ 10. 招募券资源背景栏 ============
@@ -995,17 +889,6 @@ local function drawPageImpl(vg)
         local _TM = require("systems.TutorialManager")
         if _TM.isActive() then _TM.registerHotspot("tavern_btn_gacha10", BTN_10_CX, BTN_10_CY, BTN_10_W, BTN_10_H, "left") end
 
-        -- 星辉池保留指定UP。常规池的指定招募已取消。
-        if isStellarPoolSelected() then
-            local _s6 = BF.begin(vg, "tavern_target", BTN_TARGET_CX, BTN_TARGET_CY, BTN_TARGET_W, BTN_TARGET_H)
-            DarkIcon.drawNine(vg, "btn", BTN_TARGET_CX - BTN_TARGET_W * 0.5, BTN_TARGET_CY - BTN_TARGET_H * 0.5, BTN_TARGET_W, BTN_TARGET_H, { accent = "gold" })
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, BTN_TARGET_FONT)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(244, 237, 224, 191))
-            nvgText(vg, BTN_TARGET_CX, BTN_TARGET_CY, "指定UP角色", nil)
-            BF.finish(vg, _s6)
-        end
     end -- state.tab ~= "shop"
 
     -- ============ 18. 返回按钮 ============
@@ -1079,9 +962,6 @@ local function drawPageImpl(vg)
 
     -- 弹窗绘制（最顶层覆盖：确认框、招募说明、历史招募、飘字）
     TavernPopups.drawAll(vg)
-
-    -- 指定招募面板（最顶层）
-    TargetRecruitPanel.draw(vg)
 end
 
 --- 处理输入（设计坐标）
@@ -1096,11 +976,6 @@ function TavernPage.handleInput(dx, dy)
             return false
         end
         return true
-    end
-
-    -- 指定招募面板优先处理输入
-    if TargetRecruitPanel.isOpen() then
-        return TargetRecruitPanel.handleInput(dx, dy)
     end
 
     -- 弹窗优先处理输入
@@ -1147,15 +1022,6 @@ function TavernPage.handleInput(dx, dy)
             BF.trigger("tavern_recruit10")
             print("[TavernPage] 点击: 招募10次")
             doRecruit(10)
-            return true
-        end
-
-        -- 星辉指定UP。常规池的指定招募已取消。
-        if isStellarPoolSelected()
-            and hitTest(dx, dy, BTN_TARGET_CX, BTN_TARGET_CY, BTN_TARGET_W, BTN_TARGET_H) then
-            BF.trigger("tavern_target")
-            print("[TavernPage] 点击: 指定UP角色")
-            TargetRecruitPanel.open("stellar")
             return true
         end
     end
@@ -1255,7 +1121,8 @@ function TavernPage.onActionResult(data)
     end
 
     local requestCount = pendingGachaCount
-    pendingGachaPull, pendingGachaCount = false, nil
+    local requestPoolId = pendingGachaPoolId
+    pendingGachaPull, pendingGachaCount, pendingGachaPoolId = false, nil, nil
     print("[TavernPage] pendingGachaPull released (action=" .. tostring(data.action) .. " success=" .. tostring(data.success) .. ")")
 
     if not data.success then
@@ -1272,8 +1139,9 @@ function TavernPage.onActionResult(data)
         return
     end
 
-    -- 记录历史
-    TavernPopups.recordHistory(data.gachaResults, data.poolId or getSelectedPoolId())
+    local resultPoolId = data.poolId or requestPoolId or getSelectedPoolId()
+    -- 记录历史，冻结本次请求池，不拿页面后来的选中池解释旧结果。
+    TavernPopups.recordHistory(data.gachaResults, resultPoolId)
 
     -- 同步保底计数
     if data.pity then
@@ -1297,12 +1165,20 @@ function TavernPage.onActionResult(data)
         require("systems.TutorialManager").onRecruitCompleted(data.gachaResults, requestCount)
     end
 
+    -- 页面在请求在途时可能被配装仓库替换，仍消费真实回执与教程目标，
+    -- 但不启动永远无法绘制/点击关闭的结果页。
+    if not state.open or state.closing then
+        require("ui.character.hero.HeroScenario").onRecruitResults(data.gachaResults)
+        print("[TavernPage] 酒馆已关闭，招募结果完成收尾")
+        return
+    end
+
     -- 播放招募动画
     RecruitAnim.start(data.gachaResults, function()
         syncDisplayData()
         print("[TavernPage] 招募动画结束（服务端模式）")
         require("ui.character.hero.HeroScenario").onRecruitResults(data.gachaResults)
-    end, nil, getSelectedPoolId())
+    end, requestCount, resultPoolId)
 end
 
 -- ======================== 拖拽/滚动支持 ========================
@@ -1358,15 +1234,11 @@ function TavernPage.refreshDisplay()
     syncDisplayData()
 end
 
---- 设置星辉指定UP显示状态（供 TargetRecruitPanel 确认后乐观更新）
+--- 兼容旧回调；指定UR已停用，不恢复目标或加载立绘。
 ---@param heroId number|nil
 ---@param heroName string|nil
 function TavernPage.setStellarTargetUp(heroId, heroName)
-    state.stellarTargetUpHeroId = heroId
-    state.stellarTargetUpName = heroName
-    if vg_ and heroId then
-        reloadUpPortrait(vg_, heroId)
-    end
+    return false
 end
 
 --- 设置资源数据（供外部调用）
@@ -1375,16 +1247,13 @@ function TavernPage.setResources(tickets, diamonds)
     state.diamondCount = diamonds or state.diamondCount
 end
 
---- 轮换星辉池 UP 角色（更新配置并刷新立绘）
----@param vg number|nil NanoVG 上下文；传入则立即重载 KCLH 图
+--- 兼容卡池元数据更新；不再加载指定角色立绘。
+---@param vg number|nil
 ---@param heroId number
 ---@param opts table|nil { name:string, endTime:number }
 function TavernPage.setStellarUpHero(vg, heroId, opts)
     UrGachaConfig.setUpHero(heroId, opts)
     refreshPoolMeta()
-    if vg then
-        reloadUpPortrait(vg)
-    end
     if state.open then
         syncDisplayData()
     end

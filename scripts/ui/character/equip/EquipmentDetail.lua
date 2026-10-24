@@ -18,7 +18,7 @@ local HC               = require("config.HeroConfig")
 local ImageCache       = require("ui.widget.ImageCache")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 local BF               = require("systems.ButtonFeedback")
-local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1-B5] 矢量九宫格
+local DarkIcon         = require("core.DarkIcon")  -- 矢量九宫格
 local ExpTable         = require("config.ExpTable")
 local GameState        = require("core.GameState")
 local TutorialManager  = require("systems.TutorialManager")
@@ -29,12 +29,20 @@ local BlacksmithConfig = require("config.BlacksmithConfig")
 local KeywordText      = require("ui.widget.KeywordText")
 
 local EquipmentDetail = {}
+local Snapshot = require("ui.character.detail.CharacterDetailSnapshot")
+---@type function|nil
+local preparedReader = nil
+
+--- 评分数据由详情Update准备；注入getter避免EquipmentDetail/CharacterDetail循环require。
+function EquipmentDetail.setPreparedReader(reader) preparedReader = reader end
 
 -- 套装词条关键词富文本（2件/4件/6件 三行各一实例；仅主面板交互，
 -- 绘制与输入同在 compact 0.92 变换坐标系，热区天然对齐，无需 setTransform）
 local setKw = {
     KeywordText.new(), KeywordText.new(), KeywordText.new(),
 }
+local affixKw = KeywordText.new()
+local keywordDismissGesture = false -- 按下时说明已打开：即使微抖动/重绘关泡，松手仍只消费说明。
 
 -- ======================== 设计分辨率 ========================
 
@@ -151,8 +159,30 @@ local function calcEquipPower(equip, heroId, slot)
     return EquipmentPower.score(equip, heroId, slot)
 end
 
+local function readPreparedScore(equip, heroId, slot)
+    if not equip or not heroId or not preparedReader then return false end
+    local seq = equip.seq
+    if seq == nil then
+        local data = PlayerStore.Get("equipment")
+        local inventory = data and data.inventory or {}
+        local selected = inventory[detState.equipSeq] or inventory[tonumber(detState.equipSeq)]
+        if selected == equip then seq = detState.equipSeq end
+    end
+    -- seq缺失也交由reader判定active，不能偷偷fallback冷ctx。
+    return preparedReader(seq, heroId, slot or detState.comparisonSlot or equip.slot, detState.owner)
+end
+
+local function renderEquipPower(equip, heroId, slot)
+    local handled, score = readPreparedScore(equip, heroId, slot)
+    if handled then return score ~= nil and score or "—" end
+    return calcEquipPower(equip, heroId, slot)
+end
+
 local function replacementGain(equip)
     if not equip or not detState.heroId then return 0 end
+    local handled, _, gain = readPreparedScore(equip, detState.heroId, detState.slot)
+    if handled then return gain end
+    -- 非联动宿主保留旧同步API与估值，不能把铁匠/独立背包永久降级为pending。
     local context = EquipmentPower.getContext(detState.heroId)
     local result = EquipmentPower.evaluate(context, detState.equipSeq, detState.slot or equip.slot)
     return result and result.valid and result.gain or 0
@@ -257,7 +287,7 @@ local REF_AFFIX_TITLE_X = 470
 local REF_AFFIX_TITLE_Y = 1206
 local REF_AFFIX_TITLE_FONT = 30
 
--- 随机属性行（与基础属性相同的背景+样式）
+-- 随机属性行：独立名称/数值配色，左侧保留词条稀有度徽章。
 local REF_AFFIX_TEXT_X  = 636   -- 左对齐（缩进，留出徽章空间）
 local REF_AFFIX_GAP_TOP = 15    -- 与"随机属性"标题下方间距
 local REF_AFFIX_GAP     = 15    -- 多条随机属性间距（含背景）
@@ -305,24 +335,35 @@ local COMPACT_ICON_CY = 168
 local COMPACT_ICON_SIZE = 132
 local COMPACT_STAT_Y0 = 248
 local COMPACT_CONTENT_BOTTOM_PAD = 24
+local COMPACT_AFFIX_TITLE_FONT = 26
+local COMPACT_AFFIX_GAP = 8
 
---- 小窗内容底部：按小窗自己的紧凑坐标计算，不再沿用大面板的旧坐标。
+--- 小窗随机标题、首行与内容底部共用计算，绘制/套装/按钮/命中范围不能各算一份。
 ---@param equip table|nil
----@return number
-local function compactContentBottom(equip)
-    -- [UI 0930] 稀有度下方新增 Lv 行（中心 +40，字号 28），底部随之下移
+---@return number titleY, number firstAffixY, number contentBottom
+local function compactAffixLayout(equip)
+    -- 稀有度下方 Lv 行（中心 +40，字号 28）的完整底部，无主属性时也不能被词条覆盖。
     local bottom = COMPACT_QUALITY_Y + 58
     local statCount = equip and equip.baseStats and #equip.baseStats or 0
     if statCount > 0 then
         bottom = COMPACT_STAT_Y0 + (statCount - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
             + REF_STAT_BG_H * 0.5
     end
+    local titleY = bottom + 16 + COMPACT_AFFIX_TITLE_FONT * 0.5
+    local firstAffixY = titleY + COMPACT_AFFIX_TITLE_FONT * 0.5 + 12 + REF_AFFIX_ROW_H * 0.5
     local affixCount = equip and equip.affixes and #equip.affixes or 0
     if affixCount > 0 then
-        bottom = bottom + 16 + REF_AFFIX_ROW_H * 0.5
-            + (affixCount - 1) * (REF_AFFIX_ROW_H + 8) + REF_AFFIX_ROW_H * 0.5
+        bottom = firstAffixY + (affixCount - 1) * (REF_AFFIX_ROW_H + COMPACT_AFFIX_GAP)
+            + REF_AFFIX_ROW_H * 0.5
     end
-    return bottom + COMPACT_CONTENT_BOTTOM_PAD
+    return titleY, firstAffixY, bottom + COMPACT_CONTENT_BOTTOM_PAD
+end
+
+--- 小窗内容底部：与随机属性实际绘制位置同源，不再遗漏随机标题高度。
+---@param equip table|nil
+---@return number
+local function compactContentBottom(equip)
+    return select(3, compactAffixLayout(equip))
 end
 
 local SET_TITLE_H = 42
@@ -347,7 +388,14 @@ local function compactSetLines(equip)
     if eqData and detState.heroId then
         local counts = EquipmentSetSystem.countSets(
             eqData, detState.heroId,
-            EquipmentSystem.getFromInventory,
+            function(data, seq)
+                local inventory = data and data.inventory or {}
+                local item = inventory[tostring(seq)] or inventory[seq]
+                if not item then return nil end
+                local isolated = Snapshot.copy(item)
+                if not isolated.type or not isolated.slot then EquipmentSystem.hydrate(isolated) end
+                return isolated
+            end,
             function(data, hid) return EquipmentSystem.getHeroSlots(data, hid) end)
         count = counts[setId] or 0
         local rows = EquipmentSetSystem.summarize(counts)
@@ -388,7 +436,7 @@ local function compactViewHeight(equip, withButtons)
 end
 
 local function compactCompareEquip()
-    if not detState.open or detState.slot == nil then return nil end
+    if not detState.open or not detState.heroId then return nil end
     if isClickedEquipEquipped() then return nil end
     return getComparisonEquip()
 end
@@ -468,7 +516,7 @@ end
 
 -- 绘制分区：共用活状态和 KeywordText；图片 getter 保证 init 之后的句柄可见。
 local panelDraw = EquipmentDetailDraw.create({
-    detState = detState, setKw = setKw,
+    detState = detState, setKw = setKw, affixKw = affixKw,
     qualityColor = QUALITY_COLOR, affixBadgeKey = AFFIX_BADGE_KEY,
     ---@return EquipmentDetailDrawImages
     getImages = function()
@@ -480,19 +528,22 @@ local panelDraw = EquipmentDetailDraw.create({
     end,
     drawImageCentered = drawImageCentered,
     drawTextStroke = drawTextStroke,
-    calcEquipPower = calcEquipPower,
+    calcEquipPower = renderEquipPower,
     getEquipIcon = getEquipIcon,
     getStatName = getStatName,
     formatStatValue = formatStatValue,
     layoutButtons = layoutButtons,
     clampDescScroll = clampDescScroll,
     compactViewHeight = compactViewHeight,
+    compactAffixLayout = compactAffixLayout,
     compactSetLines = compactSetLines,
     compactSetRowHeight = compactSetRowHeight,
     compactContentBottom = compactContentBottom,
     compactButtonRow = compactButtonRow,
     layout = {
         COMPACT_BG_W = COMPACT_BG_W,
+        COMPACT_AFFIX_TITLE_FONT = COMPACT_AFFIX_TITLE_FONT,
+        COMPACT_AFFIX_GAP = COMPACT_AFFIX_GAP,
         COMPACT_ICON_CY = COMPACT_ICON_CY,
         COMPACT_ICON_SIZE = COMPACT_ICON_SIZE,
         COMPACT_NAME_Y = COMPACT_NAME_Y,
@@ -572,6 +623,7 @@ end
 ---@param slot string 槽位
 ---@param heroId number 角色ID
 function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner, anchorX, anchorY)
+    keywordDismissGesture = false
     detState.open      = true
     detState.closing   = false
     detState.equipSeq  = tostring(seq)
@@ -584,11 +636,13 @@ function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner, anchorX, 
     detState.anchorY = tonumber(anchorY)
     detState.pinned = false
     detState.equippedView = false
+    detState.comparisonSlot = nil
     detState.descScrollY = 0
     detState.descScrollMax = 0
     detState.descDragging = false
     detState.lockHotspot = nil
     detState.layoutEquip = nil
+    affixKw:clear()
     for i = 1, 3 do setKw[i]:clear() end   -- 清上次装备的关键词状态
     print("[EquipmentDetail] open seq=" .. tostring(seq) .. " slot=" .. tostring(slot)
         .. " heroId=" .. tostring(heroId) .. " compact=" .. tostring(detState.compactCorner)
@@ -599,6 +653,11 @@ end
 function EquipmentDetail.openEquipped(seq, slot, heroId, anchorX, anchorY)
     EquipmentDetail.open(seq, slot, heroId, true, "character", anchorX, anchorY)
     detState.equippedView = true
+end
+
+--- 只读仓库候选的比较槽，独立于穿戴动作槽。
+function EquipmentDetail.setComparisonSlot(slot)
+    detState.comparisonSlot = slot
 end
 
 function EquipmentDetail.setAnchor(anchorX, anchorY)
@@ -623,6 +682,9 @@ function EquipmentDetail.dismissHover(owner)
 end
 
 function EquipmentDetail.close()
+    keywordDismissGesture = false
+    affixKw:clear()
+    for i = 1, 3 do setKw[i]:clear() end
     if detState.compactCorner then
         detState.open = false
         detState.closing = false
@@ -733,7 +795,14 @@ getComparisonEquip = function()
     local heroEquipped = EquipmentSystem.getHeroSlots(equipData, detState.heroId)
     if not heroEquipped then return nil, nil end
 
-    local slot = detState.slot
+    -- 仓库只读候选的动作槽为 nil，但比较仍按装备自然槽取当前穿戴项。
+    -- 比较槽不写入 detState.slot，不能让只读卡片出现穿戴/卸下按钮。
+    local candidate = equipData.inventory and (equipData.inventory[detState.equipSeq]
+        or equipData.inventory[tonumber(detState.equipSeq)])
+    local tpl = candidate and EquipmentConfig.ITEMS[candidate.templateId]
+    local slot = detState.slot or detState.comparisonSlot
+        or (candidate and candidate.slot) or (tpl and tpl.slot)
+    if not slot then return nil, nil end
 
     -- 直接获取该槽位的装备
     local curSeq = heroEquipped[slot]
@@ -763,6 +832,12 @@ end
 function EquipmentDetail.handleInput(dx, dy)
     if not detState.open then return false end
     if detState.closing then return true end
+    if keywordDismissGesture then
+        keywordDismissGesture = false
+        affixKw:closePopup()
+        for i = 1, 3 do setKw[i]:closePopup() end
+        return true
+    end
     if detState.compactCorner then
         local ox, oy = compactOffset()
         dx = (dx - ox) / COMPACT_SCALE
@@ -785,7 +860,8 @@ function EquipmentDetail.handleInput(dx, dy)
     local curEquip = getComparisonEquip()
     local hasCurrent = (not isEquipped) and (curEquip ~= nil)
 
-    -- 套装词条关键词（仅 compact 主面板交互；坐标已反变换到 compact 局部系，与热区对齐）
+    -- 气泡优先关闭，不能把这次点击变成穿戴/分解或关闭装备详情。
+    if affixKw:isOpen() then affixKw:closePopup(); return true end
     if detState.compactCorner then
         for i = 1, 3 do
             if setKw[i]:isOpen() then
@@ -793,10 +869,13 @@ function EquipmentDetail.handleInput(dx, dy)
                 return true
             end
         end
+    end
+    -- 大面板文字在滚动变换内；输入补回 scrollY，clip 防止隐藏词条吃按钮点击。
+    local keywordY = detState.compactCorner and dy or dy + detState.descScrollY
+    if affixKw:handleInput(dx, keywordY) then return true end
+    if detState.compactCorner then
         for i = 1, 3 do
-            if setKw[i]:handleInput(dx, dy) then
-                return true
-            end
+            if setKw[i]:handleInput(dx, dy) then return true end
         end
     end
 
@@ -823,9 +902,8 @@ function EquipmentDetail.handleInput(dx, dy)
                 seq = tonumber(detState.equipSeq),
             })
         end
-        newEquip.locked = (not newEquip.locked) or nil
-        print("[EquipmentDetail] 切换装备锁定 seq=" .. tostring(detState.equipSeq)
-            .. " locked=" .. tostring(newEquip.locked == true))
+        -- 由权威装备推送刷新；单机同步桥已改同一实例，不能再反转第二次。
+        print("[EquipmentDetail] 请求切换装备锁定 seq=" .. tostring(detState.equipSeq))
         return true
     end
 
@@ -945,10 +1023,8 @@ function EquipmentDetail.handleInput(dx, dy)
                 seq = tonumber(detState.equipSeq),
             })
         end
-        -- 乐观更新本地缓存，立即刷新锁图标
-        newEquip.locked = (not newEquip.locked) or nil
-        print("[EquipmentDetail] 切换装备锁定 seq=" .. tostring(detState.equipSeq)
-            .. " locked=" .. tostring(newEquip.locked == true))
+        -- 由权威装备推送刷新；单机同步桥已改同一实例，不能再反转第二次。
+        print("[EquipmentDetail] 请求切换装备锁定 seq=" .. tostring(detState.equipSeq))
         return true
     end
 
@@ -1067,21 +1143,18 @@ function EquipmentDetail.draw(vg)
     local backpackOnly = (detState.slot == nil)  -- 背包模式不显示穿戴按钮
 
     if compact then
+        affixKw:setPopupTransform(function(x, y) return x, y end)
         local compare = hasCurrent and curEquip or nil
         if compare then
             local side = (detState.owner == "character") and -1 or 1
             nvgSave(vg)
             nvgTranslate(vg, side * (COMPACT_BG_W + 16), 0)
-            drawCompactPanel(vg, compare, "当前", false)
+            drawCompactPanel(vg, compare, "", false, { equipped = true })
             nvgRestore(vg)
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 22)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-            nvgText(vg, REF_BG_CX + side * (COMPACT_BG_W + 16), 16, "当前装备", nil)
         end
-        drawCompactPanel(vg, newEquip, btnText)
-        -- 套装词条关键词解释气泡（compact 局部坐标系，与热区对齐）
+        drawCompactPanel(vg, newEquip, btnText, nil, { equipped = isEquipped })
+        -- 关键词解释气泡在内容之后、滚动裁剪之外绘制。
+        affixKw:drawPopup(vg)
         for i = 1, 3 do setKw[i]:drawPopup(vg) end
         nvgRestore(vg)
         return
@@ -1093,6 +1166,8 @@ function EquipmentDetail.draw(vg)
     drawEquipPanel(vg, newEquip, singleOffsetX,
         SINGLE_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H,
         (hasCurrent and powerDiff or nil), true, btnText, backpackOnly, true, showDecompose)
+    affixKw:setPopupTransform(function(x, y) return x, y - detState.descScrollY end)
+    affixKw:drawPopup(vg)
 
     nvgRestore(vg)
 end
@@ -1164,6 +1239,7 @@ end
 function EquipmentDetail.handleScroll(wheel, dx, dy)
     if not detState.open or detState.closing then return false end
     if dx ~= nil and not EquipmentDetail.containsPoint(dx, dy) then return false end
+    affixKw:closePopup()
     detState.descScrollY = detState.descScrollY - (wheel or 0) * 90
     clampDescScroll()
     return true
@@ -1171,12 +1247,16 @@ end
 
 function EquipmentDetail.handleDragBegin(dx, dy)
     if not detState.open or detState.closing then return false end
+    keywordDismissGesture = affixKw:isOpen()
+    if detState.compactCorner then
+        for i = 1, 3 do keywordDismissGesture = keywordDismissGesture or setKw[i]:isOpen() end
+    end
     local _, ly = dx, dy
     if detState.compactCorner then
         local ox, oy = compactOffset()
         ly = (dy - oy) / COMPACT_SCALE
     end
-    for i = 1, 3 do setKw[i]:closePopup() end   -- 拖拽时关关键词气泡
+    -- 每次指针按下都会到 Begin；点击说明/按钮须保留气泡到松手消费。
     detState.descDragging = true
     detState.descDragLastY = ly
     return true
@@ -1188,6 +1268,10 @@ function EquipmentDetail.handleDragMove(dx, dy)
     if detState.compactCorner then
         local ox, oy = compactOffset()
         ly = (dy - oy) / COMPACT_SCALE
+    end
+    if math.abs(detState.descDragLastY - ly) > 0.01 then
+        affixKw:closePopup()
+        for i = 1, 3 do setKw[i]:closePopup() end
     end
     detState.descScrollY = detState.descScrollY + (detState.descDragLastY - ly)
     detState.descDragLastY = ly

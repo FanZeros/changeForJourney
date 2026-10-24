@@ -32,7 +32,8 @@ AD.MAG_ARMOR        = "energyShield"    -- [兼容] 魔法护甲 → 能量护�
 AD.PHYS_RES         = "resistance"      -- [兼容] 物理抗性 → 伤害抗性
 AD.MAG_RES          = "resistance"      -- [兼容] 魔法抗性 → 伤害抗性
 AD.DODGE            = "dodge"           -- 闪避值
-AD.THREAT           = "threat"          -- 仇恨值
+AD.THREAT           = "threat"          -- 怨引值（100 点 = 1 倍）
+AD.THREAT_BASE      = 100
 AD.HP_REGEN         = "hpRegen"         -- 每秒回血
 AD.ATK_HEAL         = "atkHeal"         -- 攻击回血
 AD.PHYS_BLOCK_RATE  = "physBlockRate"   -- 物理格挡概率
@@ -94,7 +95,7 @@ AD.FINAL_DODGE_BONUS         = "finalDodgeBonus"        -- 最终闪避（%）
 AD.HEAL_AMOUNT    = "healAmount"    -- 治疗量
 AD.HEAL_BONUS     = "healBonus"     -- 治疗加成（%）
 AD.HEAL_CRIT_RATE = "healCritRate"  -- 治疗暴击率（%）
-AD.HEAL_CRIT_DMG  = "healCritDmg"   -- 治疗暴击加成（%）
+AD.HEAL_CRIT_DMG  = "healCritDmg"   -- 暴击治疗（%）
 
 -- ======================== 六围 Key 列表 ========================
 
@@ -155,7 +156,7 @@ AD.META = {
     [AD.RESISTANCE]       = { name = "伤害抗性",     valueModel = 0,    dataType = AD.TYPE_PCT,   default = 0 },
     [AD.ENERGY_SHIELD]    = { name = "护盾",     valueModel = 0.1,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.DODGE]            = { name = "闪避值",       valueModel = 1,    dataType = AD.TYPE_FLOAT, default = 0 },
-    [AD.THREAT]           = { name = "怨引值",       valueModel = 0.08, dataType = AD.TYPE_INT,   default = 1 },
+    [AD.THREAT]           = { name = "怨引值",       valueModel = 0.0008, dataType = AD.TYPE_INT, default = AD.THREAT_BASE },
     [AD.HP_REGEN]         = { name = "每秒回血",     valueModel = 0.3,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.ATK_HEAL]         = { name = "攻击回血",     valueModel = 0.45, dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.PHYS_BLOCK_RATE]  = { name = "物理格挡概率", valueModel = 50,   dataType = AD.TYPE_PCT,   default = 0,  cap = 100 },
@@ -212,7 +213,7 @@ AD.META = {
     [AD.HEAL_AMOUNT]    = { name = "治疗量",       valueModel = 0.5,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.HEAL_BONUS]     = { name = "治疗加成",     valueModel = 25,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.HEAL_CRIT_RATE] = { name = "治疗暴击率",   valueModel = 80,   dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.HEAL_CRIT_DMG]  = { name = "治疗暴击加成", valueModel = 15,   dataType = AD.TYPE_PCT,   default = 200 },
+    [AD.HEAL_CRIT_DMG]  = { name = "暴击治疗",     valueModel = 15,   dataType = AD.TYPE_PCT,   default = 200 },
 }
 
 -- ======================== 六围派生表 ========================
@@ -237,14 +238,14 @@ AD.DESC = {
     [AD.RESISTANCE]       = "通常只能通过护甲转化而来",
     [AD.ENERGY_SHIELD]    = "受伤时先扣除护盾，护盾扣完后才扣生命。回复速度跟体质：体质越高，受伤后等待越短，每秒回复越多。护盾上限随等级成长：额外获得最大生命8%的护盾，六围派生护盾每级再放大5%。",
     [AD.DODGE]            = "影响被命中概率，命中率=(命中值+150)/(闪避值+150)",
-    [AD.THREAT]           = "影响被敌方随机攻击的权重，仇恨值越高越容易被集火",
+    [AD.THREAT]           = "影响被敌方随机攻击的权重，怨引值越高越容易被集火",
     [AD.HP_REGEN]         = "每秒恢复的生命值，可被治疗属性增幅",
     [AD.ATK_HEAL]         = "每次攻击时回复的生命值，可被治疗属性增幅",
     [AD.PHYS_BLOCK_RATE]  = "有概率格挡物理伤害，格挡后只受到(1-格挡比例)的伤害，上限100%",
     [AD.PHYS_BLOCK_RATIO] = "物理格挡时减免的伤害比例，基础60%，上限80%",
     [AD.MAG_BLOCK_RATE]   = "有概率格挡魔法伤害，格挡后只受到(1-格挡比例)的伤害，上限100%",
     [AD.MAG_BLOCK_RATIO]  = "魔法格挡时减免的伤害比例，基础60%，上限80%",
-    [AD.ABNORMAL_RES]     = "减少受到的异常状态持续时间，上限80%",
+    [AD.ABNORMAL_RES]     = "减少受到的异常状态持续时间，实际减免最多80%，即持续时间最短为原来的20%。面板显示封顶前总值；括号内(+数值)为超出上限的未生效溢出量，不是额外加成。战术标记不受影响。",
     [AD.HP_BONUS]         = "百分比增加生命值上限",
     [AD.ARMOR_BONUS]      = "百分比增加护甲。",
     [AD.DODGE_BONUS]     = "百分比增加闪避值",

@@ -4,6 +4,7 @@
 -- ============================================================================
 
 local ETS = require("systems.ExtraTalentSystem")
+local AC = require("config.AwakeningConfig")
 
 local M = {}
 
@@ -18,6 +19,7 @@ function M.bind(deps)
     local SEM = deps.SEM
     local CF = deps.CF
     local BattleCombat = deps.BattleCombat
+    local getTAL_BCS = deps.getTAL_BCS
 
 local function getMelissaStarGateInterval(melissa)
     if hasAwaken(melissa, 3) then return 2.2 end
@@ -34,7 +36,9 @@ local function getMelissaStarGateDmgMult(melissa)
     elseif hasAwaken(melissa, 1) then
         base = 3.40
     end
-    return base + ETS.getStarGateDmgBonus(melissa)
+    local growth = ETS.getStarGateDmgBonus(melissa)
+    local evolved = not melissa._etsDisabled and AC.hasStage(melissa.awakeningNodes, 3)
+    return base + growth * (evolved and 2 or 1)
 end
 
 --- 摘星星星人 #20：星门数量；基础1个，觉醒6为2个
@@ -114,7 +118,8 @@ end
 ---@return number
 local function getMelissaStarMarkDamageScale(melissa, s)
     local marks = math.min(5, math.max(0, s and s.starGateStarMarks or 0))
-    return 1 + marks * 0.12
+    local evolved = not melissa._etsDisabled and AC.hasStage(melissa.awakeningNodes, 3)
+    return 1 + marks * (evolved and 0.24 or 0.12)
 end
 
 --- 摘星星星人 #20：计算星门元素类型
@@ -227,6 +232,7 @@ end
 ---@param s table
 local function summonMelissaStarGate(melissa, s)
     if not melissa or not s or s.heroId ~= 20 then return end
+    s.starGateBattleToken = {}
     s.starGateSummoned = melissa.hp > 0 or canMelissaStarGatePersistAfterDeath(melissa)
     s.starGateCount = getMelissaStarGateCount(melissa)
     s.starGateTimer = 0
@@ -307,6 +313,9 @@ end
 ---@param preferredTarget table|nil
 ---@param dmgScale number|nil
 ---@return boolean fired
+---@return number|nil damage
+---@return boolean|nil isCrit
+---@return number|nil atkType
 local function fireMelissaStarGate(melissa, isAlly, targetList, dealDmgFn, teamUnits, gateIndex, gateCount, preferredTarget, dmgScale)
     if not melissa or not isMelissaStarGateAttackSourceActive(melissa) or not melissa.attrs or not dealDmgFn or not targetList then return false end
     local alive = getAliveEnemies(targetList)
@@ -326,11 +335,12 @@ local function fireMelissaStarGate(melissa, isAlly, targetList, dealDmgFn, teamU
         starGateCount = gateCount or 1,
         starGateRadius = 118,
         statCategory = AD.getAtkCategory(atkType),
+        atkType = atkType,
         isCrit = isCrit,
         critEligible = true,
         useBasicProjectile = true,
     })
-    return true
+    return true, dmg, isCrit, atkType
 end
 
 --- 摘星星星人 #20：触发当前所有星门固定周期发射
@@ -348,23 +358,66 @@ local function triggerMelissaStarGates(melissa, isAlly, targetList, dealDmgFn, t
     if not s.starGateSummoned then
         summonMelissaStarGate(melissa, s)
     end
+    local battleRefs = getTAL_BCS and getTAL_BCS()
+    local battleToken = s.starGateBattleToken
+    local function currentBattle()
+        return getState(melissa) == s and s.starGateBattleToken == battleToken
+            and (getTAL_BCS and getTAL_BCS()) == battleRefs
+    end
     s.starGateCount = getMelissaStarGateCount(melissa)
     syncMelissaStarGateVisualState(melissa, s)
 
     local firedAny = false
+    local marks = math.min(5, math.max(0, s.starGateStarMarks or 0))
+    local collapse = not melissa._etsDisabled and AC.hasStage(melissa.awakeningNodes, 3) and marks >= 5
     local markScale = dmgScale or getMelissaStarMarkDamageScale(melissa, s)
+    local collapseTargets = {}
+    if collapse then
+        local seen = {}
+        for _, target in ipairs(targetList) do
+            if target and (target.hp or 0) > 0 and not seen[target] and #collapseTargets < 4 then
+                seen[target] = true
+                collapseTargets[#collapseTargets + 1] = target
+            end
+        end
+    end
+    local firstDamage, firstCrit, firstType = 0, false, AD.ATK_SHADOW
     for gateIndex = 1, s.starGateCount do
-        local okFire, firedOrErr = pcall(function()
+        if not currentBattle() then return firedAny end
+        local okFire, firedOrErr, damage, isCrit, atkType = pcall(function()
             return fireMelissaStarGate(melissa, isAlly, targetList, dealDmgFn, teamUnits, gateIndex, s.starGateCount, preferredTarget, markScale)
         end)
         if okFire then
+            if firedOrErr == true and not firedAny then
+                firstDamage, firstCrit, firstType = damage or 0, isCrit == true, atkType or AD.ATK_SHADOW
+            end
             firedAny = firedAny or firedOrErr == true
         else
             talentLog("[Talent] 摘星星星人 星门发射失败: " .. tostring(firedOrErr))
         end
+        if not currentBattle() then return firedAny end
     end
     if firedAny then
-        s.starGateStarMarks = 0
+        -- 复制首扇成功星门的发射伤害、元素和暴击，不重抽；目标快照不被伤害回调换表扰动。
+        if collapse then
+            local hitCount = 0
+            local damage = math.max(1, math.floor(firstDamage * 1.5 + 0.5))
+            for _, target in ipairs(collapseTargets) do
+                if not currentBattle() then return firedAny end
+                if (target.hp or 0) > 0 then
+                    hitCount = hitCount + 1
+                    dealDmgFn(target, damage, not isAlly, "星门坍缩", { 220, 180, 255 }, {
+                        sourceAttacker = melissa, instantDamage = true,
+                        statCategory = AD.getAtkCategory(firstType), atkType = firstType,
+                        isCrit = firstCrit, critEligible = false,
+                    })
+                end
+            end
+            talentLog("[Talent] 摘星星星人 满星痕坍缩，目标=" .. hitCount)
+        end
+        if not currentBattle() then return firedAny end
+        local resonate = not melissa._etsDisabled and AC.hasStage(melissa.awakeningNodes, 2)
+        s.starGateStarMarks = resonate and math.min(3, s.starGateCount) or 0
         s.starGateLastAttackComboCount = 0
         local selfMagDmg = (melissa.attrs and melissa.attrs:get(AD.MAG_DMG_BONUS)) or 0
         talentLog(string.format("[Talent] 摘星星星人 星门：基础%.0f 自身魔伤+%.1f%% 共鸣独立×%.2f 受伤×%.2f 神器额外×%.2f 最终%.0f(魔伤+%.1f%% 魔穿+%.1f %d人) 来源=%s",
@@ -405,6 +458,8 @@ local function updateMelissaStarGate(dt, melissa, s, isAlly, targetList, ctx, te
         syncMelissaStarGateVisualState(melissa, s)
     end
 
+    local battleRefs = getTAL_BCS and getTAL_BCS()
+    local battleToken = s.starGateBattleToken
     local interval = getMelissaStarGateEffectiveInterval(melissa, s)
     if interval <= 0 then interval = 1.0 end
     s.starGateTimer = (s.starGateTimer or 0) + dt
@@ -429,6 +484,8 @@ local function updateMelissaStarGate(dt, melissa, s, isAlly, targetList, ctx, te
         local okFire, firedOrErr = pcall(function()
             return triggerMelissaStarGates(melissa, isAlly, targetList, dealFn, teamUnits, nil, nil)
         end)
+        if getState(melissa) ~= s or s.starGateBattleToken ~= battleToken
+            or (getTAL_BCS and getTAL_BCS()) ~= battleRefs then return end
         if not okFire then
             talentLog("[Talent] 摘星星星人 星门 tick failed: " .. tostring(firedOrErr))
             s.starGateTimer = 0

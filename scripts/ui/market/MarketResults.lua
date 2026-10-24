@@ -14,7 +14,7 @@ function M.bind(deps)
     local SHOP_CONFIG_VERSION = deps.SHOP_CONFIG_VERSION
 
     local function onActionResult(data)
-        -- 神器宝箱抽取（ARTIFACT_DRAW）结果已迁移至教堂 ChurchResults
+        -- 神器宝箱抽取（ARTIFACT_DRAW）结果由教堂 ChurchResults 处理
         if data.action ~= Protocol.ACTION_TYPES.MARKET_BUY then return end
 
         if data.success then

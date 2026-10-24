@@ -1,5 +1,30 @@
 -- ============================================================================
 -- StandaloneRT - 单机入口共享运行时（Boot / Horizon 跨模块读写）
 -- ============================================================================
+---@class StandaloneRuntime
+---@field bootError string|nil
+---@field bootReady_ boolean|nil
+---@field bootRendered boolean|nil
+---@field entryError string|nil
+---@field entryPrepared boolean|nil
+---@field entryPreparing boolean|nil
+---@field entryRendered boolean|nil
+---@field entryStep string|nil
+---@field entryPercent number|nil
+---@field retryStartup function|nil
+---@field vg NVGContextWrapper|nil
+---@field logicalW number|nil
+---@field logicalH number|nil
+---@field windowW number|nil
+---@field windowH number|nil
+---@field dpr number|nil
+---@field frameOx number|nil
+---@field frameOy number|nil
+---@field frameScale number|nil
+---@field DESIGN_W number|nil
+---@field DESIGN_H number|nil
+---@field preload_ table|nil
+---@field DrawPreloadOverlay function|nil
+---@type StandaloneRuntime
 local RT = {}
 return RT

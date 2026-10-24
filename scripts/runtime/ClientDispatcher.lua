@@ -44,8 +44,15 @@ local function decode(jsonStr)
     return nil
 end
 
--- 每次通知才取当前订阅数组；循环上限固定，数组元素仍逐次读取。
--- 回调增删/reset 时既不快照列表，也不扩大 pcall 到迁移或全局通知。
+-- 分发按模块依次执行：先读档迁移、再写缓存、再通知。
+-- 迁移或订阅异常不阻止其余模块，也不扩大 pcall 到全局通知。
+local function acceptLoadedModule(name, data)
+    ModuleRegistry.applyOnLoad(name, data)
+    CharacterSchema.applyOnLoad(name, data)
+    moduleData[name] = data
+end
+
+-- 每次通知才取当前订阅数组；上限固定，回调增删/reset 时不快照列表。
 local function notifyModule(name, data, errorPrefix)
     local subs = subscribers[name]
     if not subs then return end
@@ -57,22 +64,14 @@ local function notifyModule(name, data, errorPrefix)
     end
 end
 
--- 接收态写入负责迁移再发布原对象；直接 set 仅迁移 table，消息路径不加类型门禁。
-local function acceptLoadedModule(name, data, fromMessage)
-    if fromMessage or type(data) == "table" then
-        ModuleRegistry.applyOnLoad(name, data)
-        CharacterSchema.applyOnLoad(name, data)
-    end
-    moduleData[name] = data
-end
-
---- 分发已收齐的数据到订阅者
----@param modules table
+--- 分发已收齐的数据到订阅者；回调重入时仍可见本模块已写入的缓存。
+---@param modules table { [moduleName] = data }
 local function dispatchModules(modules)
     for name, data in pairs(modules) do
-        acceptLoadedModule(name, data, true)
+        acceptLoadedModule(name, data)
         notifyModule(name, data, "[ClientDispatcher] subscriber error module=")
     end
+
     if onAnyUpdate then
         onAnyUpdate(modules)
     end
@@ -85,60 +84,6 @@ local function requestResend(batchId, missingModules)
     -- 单机没有可补包的远端连接，超时批次直接丢弃。
     print("[ClientDispatcher] standalone skip resend batch=" .. tostring(batchId)
         .. " missing=" .. tostring(missingModules and #missingModules or 0))
-end
-
--- 已收集消息的装配阶段不触碰 pending；回调重入时仍可见原批次。
-local function assembleBatch(batch)
-    -- 收齐：组装完整数据
-    local allModules = {}
-    -- 收集分片消息：{ [moduleName] = { totalParts=N, [partIndex]=chunkStr } }
-    local chunkCollector = {}
-
-    for _, m in ipairs(batch.received) do
-        if m.modules then
-            -- 正常的模块消息
-            for name, data in pairs(m.modules) do
-                allModules[name] = data
-            end
-        elseif m.chunk and m.moduleName then
-            -- 分片消息：单模块超限被 JSON 字符串分片
-            local modName = m.moduleName
-            if not chunkCollector[modName] then
-                chunkCollector[modName] = { totalParts = m.totalParts or 1 }
-            end
-            chunkCollector[modName][m.partIndex] = m.chunk
-        end
-    end
-
-    -- 重组分片模块
-    for modName, chunks in pairs(chunkCollector) do
-        local parts = {}
-        local complete = true
-        for i = 1, chunks.totalParts do
-            if chunks[i] then
-                parts[i] = chunks[i]
-            else
-                complete = false
-                print("[ClientDispatcher] missing chunk " .. i
-                    .. "/" .. chunks.totalParts .. " for module " .. modName)
-                break
-            end
-        end
-        if complete then
-            local fullJson = table.concat(parts)
-            local ok2, decoded = pcall(cjson.decode, fullJson)
-            if ok2 and type(decoded) == "table" then
-                for name, data in pairs(decoded) do
-                    allModules[name] = data
-                end
-            else
-                print("[ClientDispatcher] chunk reassembly decode error for "
-                    .. modName .. ": " .. tostring(decoded))
-            end
-        end
-    end
-
-    return allModules
 end
 
 -- ======================== 公开接口 ========================
@@ -163,10 +108,20 @@ function ClientDispatcher.getAll()
 end
 
 --- 直接写入模块并通知订阅者（避免 JSON 往返拆表）
+--- 只有已完成初始化的本地运行态推送可跳过读档迁移；导入/恢复仍走默认路径。
 ---@param moduleName string
 ---@param data table
-function ClientDispatcher.set(moduleName, data)
-    acceptLoadedModule(moduleName, data, false)
+---@param options? { normalized: boolean }
+function ClientDispatcher.set(moduleName, data, options)
+    if type(data) == "table" then
+        if not (options and options.normalized) then
+            ModuleRegistry.applyOnLoad(moduleName, data)
+            CharacterSchema.applyOnLoad(moduleName, data)
+        end
+        moduleData[moduleName] = data
+    else
+        moduleData[moduleName] = data
+    end
     notifyModule(moduleName, data, "[ClientDispatcher] set subscriber error module=")
     if onAnyUpdate then
         onAnyUpdate({ [moduleName] = data })
@@ -202,7 +157,14 @@ end
 function ClientDispatcher.notifySubscribers(moduleName)
     local data = moduleData[moduleName]
     if not data then return end
-    notifyModule(moduleName, data, "[ClientDispatcher] notifySubscribers error module=")
+    local subs = subscribers[moduleName]
+    if not subs then return end
+    for i = 1, #subs do
+        local ok, err = pcall(subs[i], data, moduleName)
+        if not ok then
+            print("[ClientDispatcher] notifySubscribers error module=" .. moduleName .. ": " .. tostring(err))
+        end
+    end
 end
 
 --- 发布单机已在运行态生效的进度：仍通知订阅者和全局UI，不走读档迁移。
@@ -275,7 +237,54 @@ function ClientDispatcher.handleStateUpdate(jsonStr)
 
     -- 检查是否收齐
     if #batch.received >= batch.totalCount then
-        local allModules = assembleBatch(batch)
+        -- 收齐：组装完整数据
+        local allModules = {}
+        -- 收集分片消息：{ [moduleName] = { totalParts=N, [partIndex]=chunkStr } }
+        local chunkCollector = {}
+
+        for _, m in ipairs(batch.received) do
+            if m.modules then
+                -- 正常的模块消息
+                for name, data in pairs(m.modules) do
+                    allModules[name] = data
+                end
+            elseif m.chunk and m.moduleName then
+                -- 分片消息：单模块超限被 JSON 字符串分片
+                local modName = m.moduleName
+                if not chunkCollector[modName] then
+                    chunkCollector[modName] = { totalParts = m.totalParts or 1 }
+                end
+                chunkCollector[modName][m.partIndex] = m.chunk
+            end
+        end
+
+        -- 重组分片模块
+        for modName, chunks in pairs(chunkCollector) do
+            local parts = {}
+            local complete = true
+            for i = 1, chunks.totalParts do
+                if chunks[i] then
+                    parts[i] = chunks[i]
+                else
+                    complete = false
+                    print("[ClientDispatcher] missing chunk " .. i
+                        .. "/" .. chunks.totalParts .. " for module " .. modName)
+                    break
+                end
+            end
+            if complete then
+                local fullJson = table.concat(parts)
+                local ok2, decoded = pcall(cjson.decode, fullJson)
+                if ok2 and type(decoded) == "table" then
+                    for name, data in pairs(decoded) do
+                        allModules[name] = data
+                    end
+                else
+                    print("[ClientDispatcher] chunk reassembly decode error for "
+                        .. modName .. ": " .. tostring(decoded))
+                end
+            end
+        end
 
         -- 诊断：批量重组完成
         local finalModNames = {}

@@ -1,0 +1,75 @@
+atlas.png
+size: 1024, 1024
+format: RGBA8888
+filter: Linear, Linear
+repeat: none
+blade
+  rotate: false
+  xy: 4, 4
+  size: 192, 192
+  orig: 192, 192
+  offset: 0, 0
+  index: -1
+tome
+  rotate: false
+  xy: 204, 4
+  size: 192, 192
+  orig: 192, 192
+  offset: 0, 0
+  index: -1
+blood
+  rotate: false
+  xy: 404, 4
+  size: 192, 192
+  orig: 192, 192
+  offset: 0, 0
+  index: -1
+eye
+  rotate: false
+  xy: 604, 4
+  size: 192, 192
+  orig: 192, 192
+  offset: 0, 0
+  index: -1
+shield
+  rotate: false
+  xy: 804, 4
+  size: 192, 192
+  orig: 192, 192
+  offset: 0, 0
+  index: -1
+chain
+  rotate: false
+  xy: 4, 204
+  size: 192, 192
+  orig: 192, 192
+  offset: 0, 0
+  index: -1
+bell
+  rotate: false
+  xy: 204, 204
+  size: 192, 192
+  orig: 192, 192
+  offset: 0, 0
+  index: -1
+seal_ring
+  rotate: false
+  xy: 404, 204
+  size: 256, 256
+  orig: 256, 256
+  offset: 0, 0
+  index: -1
+rift
+  rotate: false
+  xy: 668, 204
+  size: 64, 256
+  orig: 64, 256
+  offset: 0, 0
+  index: -1
+ember
+  rotate: false
+  xy: 740, 204
+  size: 32, 64
+  orig: 32, 64
+  offset: 0, 0
+  index: -1

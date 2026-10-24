@@ -4,6 +4,7 @@
 -- ============================================================================
 
 local ETS = require("systems.ExtraTalentSystem")
+local AC = require("config.AwakeningConfig")
 
 local M = {}
 
@@ -18,6 +19,7 @@ function M.bind(deps)
     local SEM = deps.SEM
     local CF = deps.CF
     local BattleCombat = deps.BattleCombat
+    local getTAL_BCS = deps.getTAL_BCS
 
 local function isFlyingSwordTalentDmg(prefix, projOpts)
     if prefix == "灵月飞剑" or prefix == "飞回" then return true end
@@ -114,6 +116,7 @@ local function tryYouyeSuperCrit(attacker, target, result, isAlly, dealDmgFn)
 
     dealDmgFn(target, extraDmg, not isAlly, "超暴击 ", { 255, 120, 255 }, {
         statCategory = result.category or "magical",
+        atkType = result.atkType,
         critEligible = false,
     })
     talentLog(string.format("[Talent] 内鬼 觉醒7: 超暴击 (率=%.1f%% 额外=%d)", superCritRate, extraDmg))
@@ -129,9 +132,18 @@ end
 ---@return boolean consumeWindow 是否消耗本轮间隔（无伤害的空窗仍消耗）
 local function fireLuoxingFlyingSwords(attacker, s, targetList, isAlly, dealDmgFn)
     if not attacker or attacker.hp <= 0 or not dealDmgFn or not targetList then return false, false end
+    local battleRefs = getTAL_BCS and getTAL_BCS()
+    local battleToken = s.flyingSwordBattleToken
+    local function currentBattle()
+        return getState(attacker) == s and s.flyingSwordBattleToken == battleToken
+            and (getTAL_BCS and getTAL_BCS()) == battleRefs
+    end
+    if not currentBattle() then return false, false end
 
     -- 每柄飞剑 = 窗口累计伤害 × 比例（默认50%；觉醒3：60%）
-    local swordDmgPct = 0.50 + ETS.getSwordCoeffBonus(attacker)
+    local grownCoeff = ETS.getSwordCoeffBonus(attacker)
+    local evolved = not attacker._etsDisabled and AC.hasStage(attacker.awakeningNodes, 3)
+    local swordDmgPct = 0.50 + grownCoeff * (evolved and 2 or 1)
     if hasAwaken(attacker, 3) then swordDmgPct = swordDmgPct + 0.10 end
 
     local accumulated = math.floor((s.flyingSwordDamage or 0) + (s.flyingSwordCarryover or 0) + 0.5)
@@ -158,17 +170,26 @@ local function fireLuoxingFlyingSwords(attacker, s, targetList, isAlly, dealDmgF
     if minSwords > maxSwords then minSwords, maxSwords = maxSwords, minSwords end
 
     local swordCount = math.random(minSwords, maxSwords)
+    -- 剑冢只读旧累计层，不消耗或翻倍存档；最多额外五柄。
+    if not attacker._etsDisabled and AC.hasStage(attacker.awakeningNodes, 2) and hasAwaken(attacker, 1) then
+        local growth = ETS.getOwned(16)
+        swordCount = swordCount + math.min(5, math.floor(growth.swordStacks / 40))
+    end
     swordCount = math.floor(swordCount + 0.5)
+    s.flyingSwordVolley = (s.flyingSwordVolley or 0) + 1
+    local swordRain = evolved and s.flyingSwordVolley % 3 == 0
     perSwordDmg = math.floor(perSwordDmg + 0.5)
     local flybackChance = hasAwaken(attacker, 7) and 0.50 or (hasAwaken(attacker, 4) and 0.25 or 0)
     local flybackExtraMult = hasAwaken(attacker, 7) and 1.5 or 1.0
     local recordChance = hasAwaken(attacker, 5) and 0.10 or 0
 
     local function addCarryover(amt)
+        if not currentBattle() then return end
         s.flyingSwordCarryover = (s.flyingSwordCarryover or 0) + amt
     end
 
     for i = 1, swordCount do
+        if not currentBattle() then return true, true end
         local st = alive[math.random(#alive)]
         if st and st.hp > 0 then
             local dmg = perSwordDmg
@@ -193,6 +214,18 @@ local function fireLuoxingFlyingSwords(attacker, s, targetList, isAlly, dealDmgF
             local okDmg, dmgErr = pcall(dealDmgFn, st, dmg, not isAlly, "灵月飞剑", { 180, 220, 255 }, projOpts)
             if not okDmg then
                 talentLog("[Talent] 万剑归宗 灵月飞剑 dealDmgFn failed: " .. tostring(dmgErr))
+            end
+            if not currentBattle() then return true, true end
+            if swordRain then
+                -- 同窗第二轮剑雨不回流窗口、不附带飞回或记录，杜绝自喂循环。
+                dealDmgFn(st, dmg, not isAlly, "剑冢剑雨", { 240, 220, 160 }, {
+                    flyingSwordIndex = i,
+                    flyingSwordCount = swordCount,
+                    threatScale = 0.1,
+                    critEligible = false,
+                    statCategory = "physical",
+                    atkType = AD.ATK_PIERCE,
+                })
             end
         end
     end

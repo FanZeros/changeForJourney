@@ -9,7 +9,7 @@ local HeroConfig        = require("config.HeroConfig")
 local HeroAssetUtil     = require("config.HeroAssetUtil")
 local CharacterPanel = require("ui.character.panel.CharacterPanel")
 local BF             = require("systems.ButtonFeedback")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local HeroFrame = require("ui.widget.HeroFrame")
 
 local drawTextStroke    = DrawUtil.drawTextStroke

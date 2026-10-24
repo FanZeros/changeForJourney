@@ -150,14 +150,14 @@ local function assertEmptyCannotPayAgain(box, bag)
 end
 
 local function testDeliveryBoundary()
-    eq(EquipmentSystem.MAX_INVENTORY, 200, "inventory capacity contract")
-    local bag, box = newBag(199), newLootbox()
-    eq(EquipmentSystem.isInventoryFull(bag), false, "199 is not full")
+    eq(EquipmentSystem.MAX_INVENTORY, 500, "inventory capacity contract")
+    local bag, box = newBag(499), newLootbox()
+    eq(EquipmentSystem.isInventoryFull(bag), false, "499 is not full")
     local direct = newEquip(80, 6, 11)
     local directSnapshot = copy(direct)
-    eq(LootBoxSystem.deliverEquipment(box, bag, direct), "inventory", "199th boundary destination")
-    eq(EquipmentSystem.getInventoryCount(bag), 200, "last free slot filled")
-    eq(EquipmentSystem.isInventoryFull(bag), true, "200 is full")
+    eq(LootBoxSystem.deliverEquipment(box, bag, direct), "inventory", "499th boundary destination")
+    eq(EquipmentSystem.getInventoryCount(bag), 500, "last free slot filled")
+    eq(EquipmentSystem.isInventoryFull(bag), true, "500 is full")
     eq(bag.inventory[tostring(direct.seq)], direct, "direct delivery stores actual instance")
     sameEquip(direct, directSnapshot, "direct delivery payload")
     countIs(box, 0, 0, "no overflow until full")
@@ -170,8 +170,8 @@ local function testDeliveryBoundary()
         eq(box.seeds[index].count, 1, "each full equipment counts once")
         sameEquip(box.seeds[index].equip, snapshot, "overflow payload " .. index)
     end
-    eq(EquipmentSystem.getInventoryCount(bag), 200, "multiple overflow never exceeds capacity")
-    eq(bag.nextSeq, 201, "overflow does not reserve or consume bag seq")
+    eq(EquipmentSystem.getInventoryCount(bag), 500, "multiple overflow never exceeds capacity")
+    eq(bag.nextSeq, 501, "overflow does not reserve or consume bag seq")
     countIs(box, 3, 3, "all overflow retained independently")
 
     local beforeBox, beforeBag = copy(box), copy(bag)
@@ -186,7 +186,7 @@ local function testDeliveryBoundary()
 end
 
 local function testPartialFullEquipmentClaims()
-    local bag, box = newBag(200), newLootbox()
+    local bag, box = newBag(500), newLootbox()
     local equips = { newEquip(90, 6, 15), newEquip(90, 6, 16), newEquip(90, 6, 17) }
     local snapshots = {}
     for index, equip in ipairs(equips) do
@@ -197,7 +197,7 @@ local function testPartialFullEquipmentClaims()
     local first, full = LootBoxSystem.claimAll(box, bag)
     eq(#first, 1, "one free slot claims exactly one complete instance")
     eq(full, true, "partial claimAll reports remaining capacity blockage")
-    eq(EquipmentSystem.getInventoryCount(bag), 200, "partial claim refills bag")
+    eq(EquipmentSystem.getInventoryCount(bag), 500, "partial claim refills bag")
     countIs(box, 2, 2, "two complete instances remain")
 
     local seen = {}
@@ -224,8 +224,8 @@ local function testPartialFullEquipmentClaims()
         sameEquip(equip, snapshots[index], "partial claim preserves all original fields")
         eq(bag.inventory[tostring(equip.seq)], equip, "new seq resolves claimed instance")
     end
-    eq(EquipmentSystem.getInventoryCount(bag), 200, "final bag respects cap")
-    eq(bag.nextSeq, 204, "exactly three new sequences consumed")
+    eq(EquipmentSystem.getInventoryCount(bag), 500, "final bag respects cap")
+    eq(bag.nextSeq, 504, "exactly three new sequences consumed")
     countIs(box, 0, 0, "complete instances fully drained")
     assertEmptyCannotPayAgain(box, bag)
 end
@@ -321,7 +321,7 @@ local function testPersistenceAndConsolidation()
 end
 
 local function testClaimOneAndIdleCapacity()
-    local box, bag = newLootbox(), newBag(200)
+    local box, bag = newLootbox(), newBag(500)
     local complete = newEquip(90, 6, 25)
     local snapshot = copy(complete)
     LootBoxSystem.addEquipment(box, complete)
@@ -332,7 +332,7 @@ local function testClaimOneAndIdleCapacity()
         local extracted = LootBoxSystem.claimOne(box, 1)
         eq(extracted, complete, "claimOne returns original complete instance")
         sameEquip(extracted, snapshot, "claimOne bypasses legacy-only levelCap")
-        eq(EquipmentSystem.getInventoryCount(bag), 200, "raw extraction does not modify bag")
+        eq(EquipmentSystem.getInventoryCount(bag), 500, "raw extraction does not modify bag")
         eq(LootBoxSystem.claimOne(box, 1), nil, "raw extraction cannot duplicate instance")
 
         spy.forbidden = false
@@ -386,9 +386,11 @@ local function testBeyond9999()
     assert(LootBoxSystem.addSeed(box, 2, 2, 10), "different quality accepted above cap")
     countIs(box, 10001, 3, "new quality equipment exceeds former total cap")
     local first, second = newEquip(80, 6, 31), newEquip(80, 6, 32)
+    -- 本case验证大批回收守恒；锁定保护由独立case验证，这两件明确解锁后才允许回收。
+    first.locked, second.locked = nil, nil
     local firstSnapshot, secondSnapshot = copy(first), copy(second)
     LootBoxSystem.addEquipment(box, first)
-    local bag = newBag(200)
+    local bag = newBag(500)
     eq(LootBoxSystem.deliverEquipment(box, bag, second), "lootbox", "overflow above 9999 retained")
     countIs(box, 10003, 5, "old group and all new equipment retained above former limit")
     sameEquip(box.seeds[4].equip, firstSnapshot, "explicit full instance above cap")
@@ -428,7 +430,14 @@ end
 local function testDecompositionAndInvalidIndexes()
     local box, bag = newLootbox(), newBag(0)
     for _ = 1, 3 do LootBoxSystem.addSeed(box, 1, 1, 1) end
-    LootBoxSystem.addEquipment(box, newEquip(10, 6, 35))
+    local protected = newEquip(10, 6, 35)
+    LootBoxSystem.addEquipment(box, protected)
+    local protectedSnapshot = copy(protected)
+    local deniedValue, deniedPieces = LootBoxSystem.decomposeOne(box, 4)
+    eq(deniedValue, 0, "locked complete instance cannot pay essence")
+    eq(deniedPieces, 0, "locked complete instance cannot be recycled")
+    same(protected, protectedSnapshot, "denied locked recycle preserves every field")
+    protected.locked = nil -- 原回收守恒场景在真实解锁后继续，不能删除原断言。
     for _ = 1, 2 do LootBoxSystem.addSeed(box, 2, 2, 5) end
     local before = copy(box)
     for _, index in ipairs({ 0, -1, 99 }) do
@@ -622,14 +631,14 @@ local function testExactQualityClaims()
         end)
     end
     -- 背包仅余一格时，也不能因逆序遍历先领走末尾的隐藏高品质。
-    local box, bag = qualityFixture(), newBag(199)
+    local box, bag = qualityFixture(), newBag(499)
     local hidden = hiddenEntries(box, 3)
     local hiddenSnapshot = copy(hidden)
     local claimed, full = LootBoxSystem.claimAll(box, bag, 3)
     eq(#claimed, 1, "one free slot only claims one matching quality")
     eq(claimed[1].quality, 3, "partial selection must not claim hidden quality")
     eq(full, true, "matching remainder blocked by capacity")
-    eq(EquipmentSystem.getInventoryCount(bag), 200, "filtered partial claim respects cap")
+    eq(EquipmentSystem.getInventoryCount(bag), 500, "filtered partial claim respects cap")
     local before = copy(box)
     eq(#LootBoxSystem.claimAll(box, bag, 3), 0, "full retry does not consume selection")
     same(box, before, "full filtered retry leaves every entry intact")
@@ -816,6 +825,7 @@ local function withBoot(bagCount, body)
     inject("systems.DropSystem", {
         rollKillDrop = function() return h.dropQuality end,
         rollScrollDrop = function() return "weaponScroll" end,
+        rollSweepTicket = function() return false end, -- 隔离新扫荡券随机分支，旧遗匣奖励断言保持确定性
         generateFirstClearEquips = function() return h.firstEquips end,
         generateFirstClearScrolls = function() return { scrolls = { weaponScroll = 3 } } end,
     })
@@ -883,6 +893,9 @@ local function withBoot(bagCount, body)
     -- 禁止昵称分支访问云端与账号接口。
     local oldCloud, oldLobby = rawget(_G, "clientCloud"), rawget(_G, "lobby")
     local oldNickname = rawget(_G, "GetUserNickname")
+    local oldSave = rawget(_G, "StandaloneSave")
+    -- 部分旧Boot奖励接线取全局保存模块；测试只受理请求，绝不调用真实磁盘。
+    rawset(_G, "StandaloneSave", { RequestSave = noop, Flush = function() return true end })
     local oldCap = LootBoxSystem.levelCap
     rawset(_G, "clientCloud", false)
     rawset(_G, "lobby", false)
@@ -900,6 +913,7 @@ local function withBoot(bagCount, body)
     rawset(_G, "clientCloud", oldCloud)
     rawset(_G, "lobby", oldLobby)
     rawset(_G, "GetUserNickname", oldNickname)
+    rawset(_G, "StandaloneSave", oldSave)
     for index = #patches, 1, -1 do
         local patch = patches[index]
         patch.target[patch.key] = patch.previous
@@ -981,9 +995,9 @@ local function testBootSuccess(bagCount)
         for _, generated in ipairs(h.generated) do
             assertBootEquipDelivered(h, generated.equip, generated.snapshot)
         end
-        local overflowCount = bagCount + 4 - 200
+        local overflowCount = bagCount + 4 - 500
         countIs(h.data.lootbox, overflowCount, overflowCount, "all FC overflow is complete equipment")
-        eq(EquipmentSystem.getInventoryCount(h.data.equipment), 200, "FC respects final bag capacity")
+        eq(EquipmentSystem.getInventoryCount(h.data.equipment), 500, "FC respects final bag capacity")
         local destinations = { inventory = 0, lootbox = 0 }
         for _, reward in ipairs(h.popups[1].rewards) do
             if reward.type == "equip" then
@@ -991,14 +1005,14 @@ local function testBootSuccess(bagCount)
                 destinations[reward.destination] = destinations[reward.destination] + 1
             end
         end
-        eq(destinations.inventory, 200 - bagCount, "popup identifies actual direct deliveries")
+        eq(destinations.inventory, 500 - bagCount, "popup identifies actual direct deliveries")
         eq(destinations.lootbox, overflowCount, "popup identifies actual overflow deliveries")
         assertStageEventsCannotRepay(h)
     end)
 end
 
 local function testBootFailure()
-    withBoot(200, function(h)
+    withBoot(500, function(h)
         drop(h, true, 3)
         h.fire("ui.battle.scene.BattleScene", "setOnAllDead")
         eq(#h.popups, 1, "failure shows retained drops once")
@@ -1010,7 +1024,7 @@ local function testBootFailure()
         eq(h.currency.Exp, 0, "failure cannot award first-clear experience")
         eq(h.currency.WeaponScroll, 3, "failure retains all kill scrolls")
         countIs(h.data.lootbox, 3, 3, "every failure overflow stored as complete instance")
-        eq(EquipmentSystem.getInventoryCount(h.data.equipment), 200, "failure bag stays capped")
+        eq(EquipmentSystem.getInventoryCount(h.data.equipment), 500, "failure bag stays capped")
         eq(#h.generated, 3, "failure materializes exactly three pending drops")
         for _, generated in ipairs(h.generated) do
             assertBootEquipDelivered(h, generated.equip, generated.snapshot)
@@ -1020,7 +1034,7 @@ local function testBootFailure()
 end
 
 local function testBootStageLoadedFallback()
-    withBoot(200, function(h)
+    withBoot(500, function(h)
         drop(h, true, 1)
         h.fire("ui.battle.scene.BattleScene", "setOnStageLoaded", 1, {})
         eq(#h.popups, 1, "leaving pending fight retains rewards")
@@ -1040,7 +1054,7 @@ local function testBootStageLoadedFallback()
 end
 
 local function testBootIdleAndClaimCallbacks()
-    withBoot(199, function(h)
+    withBoot(499, function(h)
         LootBoxSystem.levelCap = 7
         drop(h, false, 2)
         countIs(h.data.lootbox, 2, 2, "idle kills immediately become independent equipment")
@@ -1059,7 +1073,7 @@ local function testBootIdleAndClaimCallbacks()
         eq(#h.popups, 0, "idle kills do not show FC/battle reward popup")
         eq(#h.hints, 2, "idle still sends drop hints")
         eq(h.currency.WeaponScroll, 2, "idle scrolls delivered immediately")
-        eq(EquipmentSystem.getInventoryCount(h.data.equipment), 199, "idle does not use free bag slot")
+        eq(EquipmentSystem.getInventoryCount(h.data.equipment), 499, "idle does not use free bag slot")
         assertStageEventsCannotRepay(h)
 
         -- 入匣后改变后续掉落规则，现存装备的领取与回收都不能重算品质和等级。
@@ -1070,7 +1084,7 @@ local function testBootIdleAndClaimCallbacks()
             for _ = 1, 3 do assertSummary(h.data.lootbox) end
             local beforeToasts = #h.toasts
             h.fire("ui.loot.LootBox", "setOnClaimAll", 5)
-            eq(EquipmentSystem.getInventoryCount(h.data.equipment), 200, "Boot claim respects capacity")
+            eq(EquipmentSystem.getInventoryCount(h.data.equipment), 500, "Boot claim respects capacity")
             countIs(h.data.lootbox, 1, 1, "Boot partial claim retains complete idle equipment")
             -- 领取反馈为页内 toast（件数 + 背包满提示），不再弹 RewardPopup。
             eq(#h.toasts, beforeToasts + 2, "claim reports count and bag-full toasts")
@@ -1212,11 +1226,79 @@ local function testBootQualityCallbackForwarding()
     end)
 end
 
-function Start()
+-- 四维过滤必须穿过真实Boot回调到系统；容量截断按真实通用评分降序。
+local function testBootDetailFilterForwarding()
+    withBoot(499, function(h)
+        local Config = require("config.EquipmentConfig")
+        local function entry(id, quality, level)
+            return { equip = { templateId = id, quality = quality, level = level, baseStats = {} } }
+        end
+        local function fixture()
+            return { seeds = { entry("W5", 5, 1), entry("W1", 5, 2), entry("O1", 5, 3),
+                entry("W5", 1, 4), entry("W5", 5, 5), { count = 3 } } }
+        end
+        local quality, sets = { [5] = true }, { carapace = true }
+        local detail = { slotFilter = "weapon", typeFilter = Config.ITEMS.W5.type }
+        local realClaim, realRecycle = LootBoxSystem.claimAll, LootBoxSystem.decomposeAll
+        h.data.lootbox = fixture()
+        local original = h.data.lootbox.seeds
+        local hidden = { original[2], original[3], original[4], original[6] }
+        local hiddenSnapshot = copy(hidden)
+        local lastVisible, firstVisible = original[5].equip, original[1].equip
+        local power = require("systems.EquipmentPower")
+        local query = require("systems.EquipmentQuery")
+        local firstScore = power.genericScore(query.hydrateCopy(firstVisible))
+        local lastScore = power.genericScore(query.hydrateCopy(lastVisible))
+        local preferred = lastScore > firstScore and lastVisible or firstVisible
+        local retained = preferred == lastVisible and firstVisible or lastVisible
+        withPatchedField(LootBoxSystem, "claimAll", function(data, bag, q, s, d)
+            eq(q, quality, "Boot品质快照原样透传")
+            eq(s, sets, "Boot套装快照原样透传")
+            eq(d, detail, "Boot部位类型快照原样透传")
+            return realClaim(data, bag, q, s, d)
+        end, function()
+            h.fire("ui.loot.LootBox", "setOnClaimAll", quality, sets, detail)
+        end)
+        eq(EquipmentSystem.getInventoryCount(h.data.equipment), 500, "评分过滤领取仍受容量500限制")
+        eq(h.data.equipment.inventory[tostring(preferred.seq)], preferred, "容量最后一格按通用评分优选，同分来源顺序")
+        local retainedFound = false
+        for _, seed in ipairs(h.data.lootbox.seeds) do if seed.equip == retained then retainedFound = true end end
+        assert(retainedFound, "容量截断保留未选中可见装备，不假定其移动后的数组位置")
+        eq(#h.data.lootbox.seeds, 5, "仅一件可见装备被移除")
+        same(hidden, hiddenSnapshot, "满包领取不改所有隐藏装备及待整理")
+        for _, entry in ipairs(hidden) do
+            local found = false
+            for _, retained in ipairs(h.data.lootbox.seeds) do if retained == entry then found = true end end
+            assert(found, "隐藏条目仍保留原引用")
+        end
+        h.data.lootbox = fixture()
+        local beforeEssence = h.currency.Essence
+        hidden = { h.data.lootbox.seeds[2], h.data.lootbox.seeds[3], h.data.lootbox.seeds[4], h.data.lootbox.seeds[6] }
+        hiddenSnapshot = copy(hidden)
+        withPatchedField(LootBoxSystem, "decomposeAll", function(data, q, s, d)
+            eq(q, quality, "回收Boot旧第一参透传")
+            eq(s, sets, "回收Boot旧第二参透传")
+            eq(d, detail, "回收Boot追加第三参透传")
+            return realRecycle(data, q, s, d)
+        end, function()
+            h.fire("ui.loot.LootBox", "setOnDecomposeAll", quality, sets, detail)
+        end)
+        eq(h.currency.Essence, beforeEssence + essenceFor(5, 1, 1) + essenceFor(5, 5, 1), "回收只支付两件四维AND可见装备")
+        eq(#h.data.lootbox.seeds, 4, "四维过滤回收保留所有隐藏条目")
+        same(h.data.lootbox.seeds, hiddenSnapshot, "四维过滤回收不改隐藏装备或待整理")
+        -- 副手仅匹配真正副手，不借仓库双持把主手单手剑包含进来。
+        local box = fixture()
+        local _, pieces = realRecycle(box, 0, nil, { slotFilter = "offhand" })
+        eq(pieces, 1, "系统副手过滤不引入英雄双持")
+        eq(#box.seeds, 5, "系统副手过滤保留主手和待整理")
+    end)
+end
+
+local function runTests()
     assert(cjson and cjson.encode and cjson.decode, "UrhoXRuntime built-in cjson is required")
     math.randomseed(20260924)
     local tests = {
-        { "199/200 boundary, multiple overflow and full claims", testDeliveryBoundary },
+        { "499/500 boundary, multiple overflow and full claims", testDeliveryBoundary },
         { "one-slot partial complete-instance claims and no duplicate payouts", testPartialFullEquipmentClaims },
         { "JSON, Schema.onLoad, consolidation, summary and full payload fidelity", testPersistenceAndConsolidation },
         { "claimOne, eager idle equipment, capacity and no claim-time generation", testClaimOneAndIdleCapacity },
@@ -1227,13 +1309,14 @@ function Start()
         { "quality 0/all and 1..6 exact claims preserve hidden equipment", testExactQualityClaims },
         { "quality 0/all and 1..6 exact recycling preserves hidden equipment", testExactQualityDecomposition },
         { "real LootBox facade close/reopen and JSON onLoad never reroll", testReopenAndJsonNoReroll },
-        { "real Boot first-clear success at 199 items", function() testBootSuccess(199) end },
-        { "real Boot first-clear success at 200 items", function() testBootSuccess(200) end },
+        { "real Boot first-clear success at 499 items", function() testBootSuccess(499) end },
+        { "real Boot first-clear success at 500 items", function() testBootSuccess(500) end },
         { "real Boot failure keeps complete battle drops", testBootFailure },
         { "real Boot stageLoaded fallback and repeated-event idempotency", testBootStageLoadedFallback },
         { "real Boot idle equipment, claim/recycle callbacks and reward categories", testBootIdleAndClaimCallbacks },
         { "real Boot subscriber clamps only unrevealed legacy seeds", testBootSubscriberSeedOnlyClamp },
         { "real Boot forwards exact quality to claimAll/decomposeAll", testBootQualityCallbackForwarding },
+        { "real Boot four-dimensional filters preserve hidden entries and score capacity cutoff", testBootDetailFilterForwarding },
     }
     for index, test in ipairs(tests) do
         local savedCap = LootBoxSystem.levelCap
@@ -1244,4 +1327,11 @@ function Start()
         print(PREFIX .. "PASS " .. tostring(index) .. "/" .. tostring(#tests) .. " " .. test[1])
     end
     print(PREFIX .. "ALL PASSED (" .. tostring(#tests) .. " cases)")
+end
+
+-- 独立Runtime入口总会退出，失败日志与ALL PASSED标记分别供调用方校验。
+function Start()
+    local ok, err = pcall(runTests)
+    if not ok then log:Write(LOG_ERROR, PREFIX .. "[FAIL] " .. tostring(err)) end
+    engine:Exit()
 end

@@ -3,7 +3,7 @@
 -- 全窗口（逻辑分辨率坐标）绘制：终焉之门大门背景 + 透明 LOGO 叠加 + 余烬粒子 +
 -- 金饰角标 + "轻触屏幕继续" 脉冲。点击任意位置淡出进入游戏。
 --
--- 背景：竖屏 StartScreen（1080×2400 视频标题）已移除，横屏标题为唯一标题界面。
+-- 背景：横屏标题是唯一标题界面。
 --       本模块以横屏原生比例提供标题仪式感，素材全部取自本地 workspace。
 -- 素材：image/界面底板/标题与加载/UI_TITLE_BG_GATE.png（1920×1080 大门背景）
 --       image/界面底板/标题与加载/UI_LOGO_TM.png（1920×1080 透明 LOGO，与背景同构图对位）
@@ -16,6 +16,7 @@ local I18n = require("core.I18n")
 local DarkTitleScreen = {}
 
 -- ── 状态 ──
+---@type NVGContextWrapper?
 local vg_       = nil
 local isOpen_   = false
 local timer_    = 0      -- 打开以来的累计时间（驱动动画）
@@ -25,7 +26,9 @@ local langOpen_ = false  -- 左下语言弹出层
 local imgLogo_  = -1     -- image/界面底板/标题与加载/UI_LOGO_TM.png（1920×1080 透明画布）
 local imgGate_  = -1     -- image/界面底板/标题与加载/UI_TITLE_BG_GATE.png（1920×1080 大门背景）
 
-local FADE_TIME = 0.55   -- 淡出时长（秒）
+local FADE_TIME = 0.55   -- 沿用原切入时长，关闭后接既有序章/离线结算
+local REVEAL_TIME = 1.35
+local exitTime_ = 0
 local ready_    = true   -- 资源未就绪时锁点击，避免空背景进游戏
 
 -- 暗黑魔塔色板（与 DarkIcon/UI 暗黑化一致）
@@ -39,6 +42,7 @@ local C_GOLD      = { 216, 201, 163 }   -- 骨金（提示文字/角标）
 --- 初始化（加载 LOGO 与大门背景贴图，仅一次）
 ---@param vg NVGContextWrapper
 function DarkTitleScreen.init(vg)
+    if vg_ ~= vg then imgGate_, imgLogo_ = -1, -1 end
     vg_ = vg
     if imgLogo_ < 0 then
         imgLogo_ = nvgCreateImage(vg, "image/界面底板/标题与加载/UI_LOGO_TM.png", 0)
@@ -58,7 +62,9 @@ function DarkTitleScreen.open()
     timer_   = 0
     fadeOut_ = false
     fadeA_   = 1.0
+    exitTime_ = 0
     langOpen_ = false
+    DarkTitleScreen._langBtn, DarkTitleScreen._langHits = nil, {}
     print("[DarkTitleScreen] open")
 end
 
@@ -69,7 +75,9 @@ function DarkTitleScreen.reopen()
     timer_    = 0
     fadeOut_  = false
     fadeA_    = 1.0
+    exitTime_ = 0
     langOpen_ = false
+    DarkTitleScreen._langBtn, DarkTitleScreen._langHits = nil, {}
     ready_    = true
     print("[DarkTitleScreen] reopen")
 end
@@ -99,6 +107,7 @@ function DarkTitleScreen.handleTap()
         return
     end
     fadeOut_ = true
+    exitTime_ = 0
     langOpen_ = false
     print("[DarkTitleScreen] tap → fade out")
 end
@@ -106,9 +115,11 @@ end
 ---@param dt number
 function DarkTitleScreen.update(dt)
     if not isOpen_ then return end
+    dt = math.max(0, tonumber(dt) or 0)
     timer_ = timer_ + dt
     if fadeOut_ then
-        fadeA_ = fadeA_ - dt / FADE_TIME
+        exitTime_ = math.min(FADE_TIME, exitTime_ + dt)
+        fadeA_ = math.max(0, 1 - exitTime_ / FADE_TIME)
         if fadeA_ <= 0 then
             fadeA_   = 0
             isOpen_  = false
@@ -116,6 +127,67 @@ function DarkTitleScreen.update(dt)
             print("[DarkTitleScreen] closed")
         end
     end
+end
+
+local function smooth(value)
+    local p = math.max(0, math.min(1, value))
+    return p * p * (3 - 2 * p)
+end
+
+-- 程序化门缝光与余烬：不读图、不消耗游戏随机数，任意尺寸都在宿主帧内绘制。
+local function drawGateLight(vg, w, h, reveal, opening, alpha)
+    local cx, cy = w * 0.5, h * 0.55
+    local radius = math.min(w, h) * (0.32 + opening * 0.5)
+    nvgBeginPath(vg)
+    nvgCircle(vg, cx, cy, radius)
+    nvgFillPaint(vg, nvgRadialGradient(vg, cx, cy, 0, radius,
+        nvgRGBA(240,186,91,math.floor((35 + opening * 95) * reveal * alpha)), nvgRGBA(178,112,41,0)))
+    nvgFill(vg)
+    local seamW = math.max(1, math.min(w, h) * (0.0015 + opening * 0.016))
+    local seamH = h * (0.20 + 0.22 * reveal)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, cx - seamW * 0.5, cy - seamH * 0.5, seamW, seamH, seamW * 0.5)
+    nvgFillColor(vg, nvgRGBA(255,222,155,math.floor((32 + opening * 100) * reveal * alpha)))
+    nvgFill(vg)
+    for i = 1, 28 do
+        local phase = (timer_ * (0.035 + (i % 5) * 0.006) + i * 0.6180339) % 1
+        local x = w * (0.17 + ((i * 37) % 101) / 101 * 0.66)
+            + math.sin(timer_ * 0.45 + i * 2.3) * w * 0.009
+        local y = h * (0.98 - phase * 0.82)
+        local opacity = math.sin(phase * math.pi) * reveal * alpha
+        local r = math.max(0.7, math.min(w,h) * (0.0008 + (i % 3) * 0.0004))
+        nvgBeginPath(vg)
+        nvgCircle(vg, x, y, r)
+        nvgFillColor(vg, nvgRGBA(235,180,95,math.floor(opacity * 150)))
+        nvgFill(vg)
+    end
+end
+
+-- 复用已加载的大门作为稳定入场底，不重新打开标题或触发它的淡出动画。
+-- 全程不加载新资源、不修改存档/就绪状态。
+function DarkTitleScreen.drawLoading(vg, w, h, percent, failed, message)
+    nvgSave(vg)
+    nvgBeginPath(vg); nvgRect(vg, 0, 0, w, h)
+    if imgGate_ > 0 then
+        local dw = math.max(w, h * 16 / 9)
+        local dh = dw * 9 / 16
+        local paint = nvgImagePattern(vg, (w - dw) * 0.5, (h - dh) * 0.5, dw, dh, 0, imgGate_, 1)
+        ---@cast paint NVGpaint
+        nvgFillPaint(vg, paint)
+    else
+        nvgFillColor(vg, nvgRGBA(14, 14, 22, 255))
+    end
+    nvgFill(vg)
+    nvgBeginPath(vg); nvgRect(vg, 0, 0, w, h)
+    nvgFillColor(vg, nvgRGBA(6, 6, 10, 100)); nvgFill(vg)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, math.max(20, math.min(w * 0.024, 32)))
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 255))
+    local text = message or (failed and "进入准备失败，轻触重试"
+        or string.format("%s  %d%%", I18n.t("loading_res"), math.floor(percent or 0)))
+    nvgText(vg, w * 0.5, h * 0.78, text, nil)
+    nvgRestore(vg)
 end
 
 -- ============================================================================
@@ -129,6 +201,10 @@ function DarkTitleScreen.draw(vg, w, h)
     if not isOpen_ or w <= 0 or h <= 0 then return end
     local t = timer_
     local A = fadeA_   -- 全局透明度（淡出时揭示底层）
+    local reveal = smooth(t / REVEAL_TIME)
+    local opening = smooth(exitTime_ / FADE_TIME)
+    nvgSave(vg)
+    nvgIntersectScissor(vg, 0, 0, w, h)
 
     -- 1)+2) 大门背景 + 透明 LOGO（同一相对 cover 矩形，任意 DPR/空间尺度下严格对位）
     local imgAR = 16 / 9
@@ -141,12 +217,26 @@ function DarkTitleScreen.draw(vg, w, h)
     end
     local dx, dy = (w - dw) * 0.5, (h - dh) * 0.5
 
+    -- 初次进场从暗幕显现；点继续时背景略向两侧展开，LOGO不被拆开。
     if imgGate_ >= 0 then
-        local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, imgGate_, A)
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, w, h)
-        nvgFillPaint(vg, paint)
-        nvgFill(vg)
+        if opening > 0 then
+            local shift = w * 0.08 * opening
+            for half = 1, 2 do
+                local offset = half == 1 and -shift or shift
+                nvgSave(vg)
+                nvgIntersectScissor(vg, (half - 1) * w * 0.5, 0, w * 0.5, h)
+                nvgBeginPath(vg); nvgRect(vg, 0, 0, w, h)
+                nvgFillPaint(vg, nvgImagePattern(vg, dx + offset, dy, dw, dh, 0, imgGate_, A))
+                nvgFill(vg)
+                nvgRestore(vg)
+            end
+        else
+            local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, imgGate_, A)
+            nvgBeginPath(vg)
+            nvgRect(vg, 0, 0, w, h)
+            nvgFillPaint(vg, paint)
+            nvgFill(vg)
+        end
     else
         nvgBeginPath(vg)
         nvgRect(vg, 0, 0, w, h)
@@ -154,17 +244,33 @@ function DarkTitleScreen.draw(vg, w, h)
         nvgFill(vg)
     end
 
+    nvgBeginPath(vg); nvgRect(vg, 0, 0, w, h)
+    nvgFillColor(vg, nvgRGBA(6,6,10,math.floor((1 - reveal) * 245 * A)))
+    nvgFill(vg)
+    drawGateLight(vg, w, h, reveal, opening, A)
+
     if imgLogo_ >= 0 then
-        local la = (0.88 + 0.12 * (0.5 + 0.5 * math.sin(t * 1.4))) * A
-        -- [fix] LOGO 以屏幕中心缩放至 50%（原先与大门口共用全屏 cover 矩形，过大）
+        local la = (0.88 + 0.12 * (0.5 + 0.5 * math.sin(t * 1.4))) * A * reveal
+        -- LOGO 以屏幕中心缩放至 50%
         local LOGO_SCALE = 0.5
         local lw, lh = dw * LOGO_SCALE, dh * LOGO_SCALE
-        -- [fix] 标题上移 15% 屏高
+        -- 标题上移 15% 屏高
         local lx, ly = (w - lw) * 0.5, (h - lh) * 0.5 - h * 0.15
         local paint = nvgImagePattern(vg, lx, ly, lw, lh, 0, imgLogo_, la)
         nvgBeginPath(vg)
         nvgRect(vg, lx, ly, lw, lh)
         nvgFillPaint(vg, paint)
+        nvgFill(vg)
+    end
+    -- 轻微收拢暗边，突出中央大门，不覆盖底部语言/加载控件。
+    local edge = w * 0.16
+    for side = 1, 2 do
+        local x = side == 1 and 0 or w - edge
+        nvgBeginPath(vg); nvgRect(vg, x, 0, edge, h)
+        local from = side == 1 and x or x + edge
+        local to = side == 1 and x + edge or x
+        nvgFillPaint(vg, nvgLinearGradient(vg, from, 0, to, 0,
+            nvgRGBA(5,5,8,math.floor(140 * A)), nvgRGBA(5,5,8,0)))
         nvgFill(vg)
     end
 
@@ -267,6 +373,7 @@ function DarkTitleScreen.draw(vg, w, h)
             DarkTitleScreen._langHits[i] = { x = x0, y = ry, w = btnW, h = rowH, id = lang.id }
         end
     end
+    nvgRestore(vg)
 end
 
 --- 标题页语言按钮/弹出项：命中返回 true（吞掉继续）
@@ -274,6 +381,7 @@ end
 ---@param sy number 逻辑坐标 Y
 ---@return boolean
 function DarkTitleScreen.handleLanguageTap(sx, sy)
+    if not isOpen_ or fadeOut_ then return isOpen_ end
     if langOpen_ then
         local hits = DarkTitleScreen._langHits
         if hits then

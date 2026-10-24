@@ -11,9 +11,12 @@ local Preview = require("ui.character.detail.EquipmentPreview")
 
 function Start()
     local screenshotReview, equippedReview = false, false
+    local warehouseClassReview, warehouseTypeReview = false, false
     for _, arg in ipairs(GetArguments()) do
         if arg == "-forge-review" then screenshotReview = true end
         if arg == "-equipped-review" then equippedReview = true end
+        if arg == "-warehouse-class-review" then warehouseClassReview = true end
+        if arg == "-warehouse-type-review" then warehouseTypeReview = true end
     end
     local ok, err = pcall(function()
         Store.Init()
@@ -34,6 +37,37 @@ function Start()
         Backpack.init(vg)
         Detail.open(1, "equip")
         assert(Backpack.isOpen() and Backpack.isLeftMode(), "配装入口未自动开启左仓库")
+        if warehouseClassReview or warehouseTypeReview then
+            -- 冻结到开合动画结束；仅操作内存夹具和生产筛选，不发送穿戴动作。
+            local VP = require("core.Viewport")
+            time = { elapsedTime = time.elapsedTime + 2 }
+            Backpack.update(1)
+            if warehouseTypeReview then
+                Detail.handleEquipmentSlotTap(325, 598)
+                assert(Backpack.getEquipmentSlotFilter() == "weapon", "类型截图未建立主手筛选")
+                Backpack.handleInput(765, 444)
+            else
+                Backpack.handleInput(540, 534)
+                Backpack.handleInput(540, 738) -- all/seal/spoil：选中当前大狗嚼的职业。
+                Backpack.handleInput(540, 534)
+            end
+            SubscribeToEvent(vg, "NanoVGRender", function()
+                local dpr = graphics:GetDPR()
+                local logicalW, logicalH = graphics:GetWidth() / dpr, graphics:GetHeight() / dpr
+                local ox, oy, scale = VP.layout(logicalW, logicalH)
+                nvgBeginFrame(vg, logicalW, logicalH, dpr)
+                VP.begin(vg, VP.PANELS.left, ox, oy, scale)
+                Backpack.draw(vg)
+                VP.finish(vg)
+                VP.begin(vg, VP.PANELS.right, ox, oy, scale)
+                Detail.draw(vg)
+                VP.finish(vg)
+                nvgEndFrame(vg)
+            end)
+            assert(Dispatcher.get("equipment").equipped[1].weapon == 1,
+                "职业/类型截图不得修改穿戴映射")
+            return
+        end
         local Draw = require("ui.character.detail.CharacterDetailDraw")
         local slots = {}
         for _, slot in ipairs(Draw.DT_SLOTS) do slots[slot.slot] = slot end
@@ -195,9 +229,14 @@ function Start()
         time = runtimeClock
         Detail.clearEquipmentSlot()
         assert(Backpack.getEquipmentSlotFilter() == nil, "取消部位不同步")
-        ED.open(2, nil, nil, true, "backpack", 500, 900)
+        ED.open(2, nil, 1, true, "backpack", 500, 900)
+        ED.setComparisonSlot("weapon")
         ED.pin()
-        assert(ED.getSelection().seq == "2" and ED.getSelection().pinned, "钉住候选快照丢失")
+        assert(ED.getSelection().seq == "2" and ED.getSelection().pinned
+            and ED.getSelection().slot == nil, "只读比较槽不得变成穿戴动作槽")
+        nvgBeginFrame(vg, 1080, 2400, 1)
+        ED.draw(vg)
+        nvgEndFrame(vg)
         local data = Preview.build(1, 60, 2)
         assert(data.preview and not data.error, "真实模板试穿被拒绝")
         assert(Dispatcher.get("equipment").equipped[1].weapon == 1, "预览意外穿戴装备")
@@ -215,7 +254,9 @@ function Start()
         assert(EquipPanel.getAttributeMode() == "equipment", "标题首击未切换装备加成")
         assert(Backpack.getEquipmentSlotFilter() == preservedSlot, "切换标题意外取消副手筛选")
         assert(ED.getSelection().pinned and ED.getSelection().seq == "2", "切换标题丢失钉住候选")
-        local bonusOptions = { includeEquipmentBonuses = true }
+        local bonusOptions = { includeEquipmentBonuses = true,
+            heroes = Dispatcher.get("heroes"), equipment = Dispatcher.get("equipment"),
+            artifacts = Dispatcher.get("artifacts"), talents = Dispatcher.get("talents") or {} }
         local bonusData = Preview.build(1, 60, nil, nil, bonusOptions)
         assert(bonusData.equipmentBonuses and #bonusData.equipmentBonuses.rows > 0, "装备净增益未构建")
         nvgBeginFrame(vg, 1080, 2400, 1)
@@ -254,6 +295,59 @@ function Start()
         local Chrome = require("ui.town.TownPageChrome")
         local DrawUtil = require("core.DrawUtil")
         Forge.init(vg)
+        -- 配装详情保留时，手动关仓不应阻断下一次明确进入锻炉。
+        -- 分别覆盖关闭动画中、关闭已完成；普通 acquire 的抑制契约另由 link 专项保留。
+        for _, entryCase in ipairs({
+            { closeFinished = false, tutorial = false }, { closeFinished = true, tutorial = false },
+            { closeFinished = false, tutorial = true }, { closeFinished = true, tutorial = true },
+        }) do
+            Forge.forceClose()
+            Detail.forceClose()
+            Backpack.close()
+            time.elapsedTime = time.elapsedTime + 1
+            Backpack.update(1)
+            Detail.open(1, "equip")
+            time.elapsedTime = time.elapsedTime + 1
+            Backpack.update(1)
+            assert(Backpack.isOpen() and Detail.isEquipTab(), "锻炉联动夹具未建立配装仓库")
+            Backpack.close()
+            if entryCase.closeFinished then
+                time.elapsedTime = time.elapsedTime + 1
+                Backpack.update(1)
+                assert(not Backpack.isOpen(), "关仓动画结束夹具仍打开")
+            end
+            if entryCase.tutorial then
+                assert(Forge.prepareTutorial(vg), "教程首次恢复锻炉未执行")
+            else
+                Forge.open()
+            end
+            assert(Backpack.isOpen() and Backpack.isLeftMode(), "进入锻炉未恢复被配装抑制的左仓库")
+            assert(Detail.isEquipTab() and Detail.getHeroId() == 1, "打开锻炉不应强制关闭或切走右侧配装")
+            time.elapsedTime = time.elapsedTime + 1
+            Backpack.update(1)
+            assert(Backpack.isOpen() and Backpack.getAnimProgress() == 1,
+                "锻炉重新开仓仍被旧关闭动画清掉")
+            Forge.forceClose()
+            assert(Backpack.isOpen() and Detail.isEquipTab(), "锻炉释放不能误关详情仍持有的仓库")
+            Detail.forceClose()
+            time.elapsedTime = time.elapsedTime + 1
+            Backpack.update(1)
+            assert(not Backpack.isOpen(), "双持有者均释放后自动仓库未关闭")
+        end
+        -- 属性详情不申请仓库，但同样不能妨碍新进入锻炉。
+        Detail.open(1, "attr")
+        Forge.open()
+        assert(Backpack.isOpen() and Backpack.isLeftMode() and not Detail.isEquipTab()
+            and Detail.getHeroId() == 1, "属性详情打开时锻炉未正常开左仓库")
+        Detail.forceClose()
+        time.elapsedTime = time.elapsedTime + 1
+        Backpack.update(1)
+        assert(Backpack.isOpen(), "关闭属性详情不应释放锻炉仓库")
+        Forge.forceClose()
+        time.elapsedTime = time.elapsedTime + 1
+        Backpack.update(1)
+        -- 保留原手动仓库与锻炉双页绘制验证。
+        Backpack.open("left")
         Forge.open()
         time.elapsedTime = time.elapsedTime + 2
         local oldNamePlate, oldImage = Chrome.drawNamePlate, DrawUtil.drawImageCentered
@@ -303,6 +397,6 @@ function Start()
     end)
     if ok then print("[equipment_workspace_smoke_test] ALL PASS")
     else print("[equipment_workspace_smoke_test] FAIL: " .. tostring(err)) end
-    if (screenshotReview or equippedReview) and ok then return end
+    if (screenshotReview or equippedReview or warehouseClassReview or warehouseTypeReview) and ok then return end
     engine:Exit()
 end

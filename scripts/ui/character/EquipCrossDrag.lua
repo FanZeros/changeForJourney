@@ -73,7 +73,7 @@ local function rightDesign(sx, sy)
     return dx, dy
 end
 
---- [锻炉双页 0929] 中栏设计坐标（锻炉工作台所在面板）
+-- 中栏设计坐标（锻炉工作台所在面板）
 ---@param sx number
 ---@param sy number
 ---@return number|nil dx
@@ -89,7 +89,7 @@ local function centerDesign(sx, sy)
     return dx, dy
 end
 
---- [锻炉双页 0929] 拖拽是否落在锻炉工作台槽上（锻炉页打开时）
+-- 拖拽是否落在锻炉工作台槽上（锻炉页打开时）
 ---@return boolean overWorkbench 指针在锻炉工作台命中区
 ---@return boolean smithOpen 锻炉页是否打开
 local function overBlacksmithWorkbench(sx, sy)
@@ -236,7 +236,7 @@ local function reject(reason)
 end
 
 local function tryDrop()
-    -- [锻炉双页 0929] 锻炉工作台优先：拖到中栏锻炉工作台槽 → 放入工作台（强化/洗练）
+    -- 锻炉工作台优先：拖到中栏锻炉工作台槽 → 放入工作台（强化/洗练）
     local overWB, smithOpen = overBlacksmithWorkbench(session.sx, session.sy)
     if smithOpen and overWB then
         local BlacksmithPage = require("ui.blacksmith.BlacksmithPage")
@@ -249,7 +249,7 @@ local function tryDrop()
     local CharacterDetail = require("ui.character.detail.CharacterDetail")
     local heroId = CharacterDetail.getHeroId and CharacterDetail.getHeroId() or nil
     if not heroId then
-        -- [锻炉双页 0929] 锻炉开着但没投中工作台：给明确提示而不是"请先打开角色"
+        -- 锻炉开着但没投中工作台：给明确提示而不是"请先打开角色"
         if smithOpen then
             require("core.UiToast").show("拖到锻炉工作台或角色装备槽")
             print("[EquipCrossDrag] 锻炉打开但未命中工作台")
@@ -327,7 +327,7 @@ function EquipCrossDrag.draw(vg)
     nvgSave(vg)
     nvgResetScissor(vg)
 
-    -- [锻炉双页 0929] 锻炉工作台高亮：拖拽经过中栏工作台槽时画金色呼吸框
+    -- 锻炉工作台高亮：拖拽经过中栏工作台槽时画金色呼吸框
     local overWB, smithOpen = overBlacksmithWorkbench(session.sx, session.sy)
     if smithOpen then
         local note = Viewport.getNote("center")

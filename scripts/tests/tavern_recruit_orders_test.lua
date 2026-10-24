@@ -277,7 +277,8 @@ local function newContext(options)
         get = function(id) return { name = "测试角色" .. tostring(id) } end })
     mock("shared.Protocol", { ACTION_TYPES = { GACHA_PULL = "gacha_pull", TAVERN_SHOP_BUY = "tavern_shop_buy" } })
     mock("core.I18n", { t = function(text) return text == "tavern" and "酒馆" or text end,
-        get = function() return "zh_CN" end, lookup = function(text) return text end })
+        get = function() return "zh_CN" end, lookup = function(text) return text end,
+        displayBounds = env.nvgTextBounds, displayText = env.nvgText })
     mock("runtime.ClientDispatcher", {
         get = function(name) return ctx.memory[name] end,
         subscribe = function(name, callback) ctx.subscribers[name] = callback end,
@@ -314,6 +315,8 @@ local function newContext(options)
         showFloatText = function(text, x, y) ctx.messages[#ctx.messages + 1] = { text = text, x = x, y = y } end,
         formatGachaFailReason = tostring,
         drawAll = noop, update = noop, openInfo = noop,
+        drawAutoExchangeOption = denied("removed main-page AutoExchange draw"),
+        handleAutoExchangeInput = denied("removed main-page AutoExchange input"),
         handleInput = function() return true end,
         handleDragBegin = noop, handleDragMove = noop, handleDragEnd = noop, handleScroll = noop,
     })
@@ -328,11 +331,7 @@ local function newContext(options)
         isPendingBuy = function() return false end, onBuyResult = denied("unexpected shop purchase"),
         update = noop, handleDragBegin = noop, handleDragMove = noop, handleDragEnd = noop, handleScroll = noop,
     })
-    mock("ui.tavern.TargetRecruitPanel", { init = noop, draw = noop,
-        isOpen = function() return ctx.targetOpen end, close = function() ctx.targetOpen = false end,
-        open = function(pool) ctx.targetOpen = true; ctx.targetPool = pool end,
-        handleInput = function() return true end,
-    })
+    -- 不mock旧TargetRecruitPanel：未在SOURCE_FILES，任何require/初始化/绘制/处理都必须失败。
     mock("systems.ButtonFeedback", { begin = function(_, id, cx, cy, w, h)
             record("button", { id = id, cx = cx, cy = cy, w = w, h = h }); return false
         end, finish = noop, trigger = function(id) ctx.feedback = id end })
@@ -678,12 +677,11 @@ local function shopAndBlockingCases()
     ctx.popupBlocking, ctx.animPlaying = false, true
     ctx.click(275, 545)
     eq(ctx.page.getSelectedPoolId(), "stellar", "recruit animation blocks underlying poster")
-    ctx.animPlaying, ctx.targetOpen = false, true
+    ctx.animPlaying = false
     ctx.click(275, 545)
-    eq(ctx.page.getSelectedPoolId(), "stellar", "target modal blocks underlying poster")
-    ctx.targetOpen = false
+    eq(ctx.page.getSelectedPoolId(), "standard", "removed target modal cannot block normal poster selection")
     ctx.page.forceClose(); ctx.click(275, 545)
-    eq(ctx.page.getSelectedPoolId(), "stellar", "closed Page blocks underlying poster")
+    eq(ctx.page.getSelectedPoolId(), "standard", "closed Page blocks underlying poster")
     noRecruit(ctx, "blocking/closed posters")
 end
 local function refreshMetaCases()
@@ -704,6 +702,65 @@ local function refreshMetaCases()
     for _, order in ipairs(ORDERS) do oneImage(ctx, order) end
     noRecruit(ctx, "meta/up/currency/reopen refresh")
 end
+local function removedDecorationsCases()
+    local background = "image/界面底板/酒馆抽卡/UI_KCBJ_1.png"
+    for _, options in ipairs({ { stage = 7000 }, { stage = 7001 } }) do
+        local ctx = newContext(options)
+        -- 遗留同步字段存在也不许复活指定文本/立绘，兼容setter必须返回false且不影响绘制。
+        ctx.memory.currency.stellarTargetUpHeroId = 16
+        ctx.initialMemory = copy(ctx.memory)
+        if ctx.subscribers.currency then ctx.subscribers.currency(ctx.memory.currency) end
+        if ctx.page.setStellarTargetUp then
+            for _, value in ipairs({16,20,25,"16",false,{}}) do
+                eq(ctx.page.setStellarTargetUp(value), false, "compat target setter always rejects")
+            end
+            eq(ctx.page.setStellarTargetUp(nil), false, "compat nil target setter rejects")
+        end
+        for _, order in ipairs(ORDERS) do
+            ctx.click(order.cx, order.cy)
+            for _, tab in ipairs({ "recruit", "shop" }) do
+                ctx.click(tab == "shop" and 740 or 340, 2308); ctx.draw()
+                local backgrounds = calls(ctx, "image", background)
+                eq(#backgrounds, 1, "standard/stellar/shop all draw same UI_KCBJ_1 once")
+                near(backgrounds[1].cx, 540, "shared background center x")
+                near(backgrounds[1].cy, 1200, "shared background center y")
+                for _, image in ipairs(calls(ctx, "image")) do
+                    check(not image.path:find("KCLH_", 1, true), "never draw specified/current UP portrait")
+                    check(not image.path:find("UI_KCBJ_2", 1, true), "never draw old stellar background")
+                end
+                for _, text in ipairs(calls(ctx, "text")) do
+                    check(not text.text:find("永久", 1, true), "neither order renders permanent time label")
+                    check(not text.text:find("指定", 1, true) and not text.text:find("UR抽中有", 1, true),
+                        "no old target button or target-probability text")
+                end
+                for _, button in ipairs(calls(ctx, "button")) do eq(button.id == "tavern_target", false, "no target button feedback region") end
+                local before = copy(ctx.memory)
+                for _, area in ipairs({ { cx=540, cy=2180, w=820, h=56 }, { cx=540, cy=2068, w=410, h=100 } }) do
+                    for _, point in ipairs(boundaryPoints(area)) do ctx.click(point[1], point[2]) end
+                end
+                check(same(ctx.memory, before), "obsolete switch/target hotspot never modifies data")
+                noRecruit(ctx, "obsolete switch and target hotspots")
+            end
+            ctx.click(340, 2308)
+        end
+        for _, path in ipairs(ctx.loads) do
+            check(not path:find("KCLH_", 1, true), "Page init/refresh never even load target portrait")
+        end
+        ctx.page.prepareTutorial(ctx.vg)
+        local orders = ctx.env.require("ui.tavern.TavernRecruitOrders")
+        local pools = orders.createPools()
+        -- 旧数据即便携带任意timeText也不得渲染；不要求兼容字段必须删除。
+        pools[1].timeText, pools[2].timeText = "FORBIDDEN_TIME_STANDARD", "FORBIDDEN_TIME_STELLAR"
+        orders.refreshPoolMeta(pools); ctx.calls = {}; orders.draw(ctx.vg, pools, 1)
+        for _, text in ipairs(calls(ctx, "text")) do
+            check(not text.text:find("FORBIDDEN_TIME", 1, true) and not text.text:find("永久", 1, true),
+                "Orders ignores legacy timeText for both cards")
+        end
+        ctx.page.close(); ctx.page.forceClose()
+        noRecruit(ctx, "prepare/close never initialize or call removed target panel")
+    end
+end
+
 local function moduleFailureCases()
     for _, response in ipairs({ -1, false }) do
         local ctx = newContext({ stage = 7000, imageResponses = { [STANDARD] = response, [STELLAR] = response } })
@@ -820,6 +877,7 @@ function Start()
         { "unchanged-1-and-10-buttons-and-currency-action-spy", buttonAndCurrencyCases },
         { "shop-modal-animation-and-closed-no-poster-interaction", shopAndBlockingCases },
         { "refresh-meta-up-and-currency-never-revive-old-hotspot", refreshMetaCases },
+        { "shared-background-no-time-target-or-main-auto-hotspots", removedDecorationsCases },
         { "real-module-missing-images-handle0-and-empty-pools", moduleFailureCases },
         { "final-all-contexts-player-IO-and-global-isolation", finalSafetyCases },
     }

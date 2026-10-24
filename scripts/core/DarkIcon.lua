@@ -49,7 +49,7 @@ local QUALITY_TRIM = {
 }
 
 DarkIcon.QUALITY_NAMES = { "粗铁", "青铜", "秘银", "符文", "黄金", "血钻" }
-DarkIcon.QUALITY_TRIM  = QUALITY_TRIM  -- [暗黑化 P1-B5] 品质色表导出：plain 样式按品质传 accent 用
+DarkIcon.QUALITY_TRIM  = QUALITY_TRIM  -- 品质色表导出：plain 样式按品质传 accent 用
 
 --- 底部导航页签图标名（顺序与 BottomNav.tabs 一致）
 DarkIcon.NAV_NAMES = { "nav_hero", "nav_log", "nav_battle", "nav_town", "nav_dungeon" }
@@ -781,7 +781,7 @@ function DarkIcon.drawDarkScene(vg, img, cx, cy, w, h, alpha)
 end
 
 -- ============================================================================
--- 矢量九宫格面板体系（Track B · 替代贴图九宫格，见 docs/暗黑魔塔改造总体方案.md §4）
+-- 矢量九宫格面板体系（Track B · 替代贴图九宫格，见 docs/archive/暗黑魔塔改造总体方案.md §4）
 -- ============================================================================
 
 --- 语义色表
@@ -1499,7 +1499,7 @@ local TALENT_KIND_RULES = {
     { "秘纹", "staff" }, { "星", "staff" }, { "法核", "staff" }, { "魔导", "staff" },
     { "虚空", "staff" }, { "深渊", "staff" }, { "法阵", "staff" }, { "法环", "staff" },
     { "魔力", "staff" }, { "法盾", "staff" }, { "魔法", "staff" }, { "蚀", "staff" },
-    { "魔法帽", "staff" }, { "法帽", "staff" },  -- [fix] 法系"魔法帽"先于 helm 的"帽"命中，避免误画头盔
+    { "魔法帽", "staff" }, { "法帽", "staff" },  -- 法系"魔法帽"先于 helm 的"帽"命中，避免误画头盔
     { "帽", "helm" }, { "盔", "helm" }, { "假面", "helm" }, { "面具", "helm" }, { "骑士", "helm" },
     { "步", "wind" }, { "灵敏", "wind" }, { "灵巧", "wind" }, { "急速", "wind" },
     { "风", "wind" }, { "蝉翼", "wind" }, { "影", "wind" }, { "闪避", "wind" },

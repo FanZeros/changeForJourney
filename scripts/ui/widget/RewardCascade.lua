@@ -3,8 +3,8 @@
 -- ----------------------------------------------------------------------------
 -- 从 RewardPopup 抽出的「一件一件获得」动画原语，供任意奖励网格复用：
 --   · 时间轴：第 idx 件的出场时刻 / 进度 / 已完成判定 / 已出场件数
---   · 绘制：光柱+冲击环+射线+火花的爆发、上层扫光、出场前的预告框
---   · 变换：出场时的缩放回弹 + 轻微摇摆 + 上浮
+--   · 绘制：铜金辉光、短流星、金属薄扫、出场前的预告框
+--   · 变换：收敛的缩放回弹 + 轻微摇摆 + 落位
 --
 -- 【用法】
 --   local Cascade = require("ui.widget.RewardCascade")
@@ -168,171 +168,120 @@ end
 
 -- ======================== 绘制原语 ========================
 
---- 单件爆发：光柱 + 冲击环 + 射线 + 火花 + 中心闪白（画在图标下层）
----@param vg any
----@param cx number 中心 X
----@param cy number 中心 Y
----@param t number 单件进度 0~1
----@param size number 图标边长（用于缩放光效尺寸）
----@param r number 强调色 R
----@param g number 强调色 G
----@param b number 强调色 B
-function RewardCascade.burst(vg, cx, cy, t, size, r, g, b)
-    local glowR = size * (0.28 + t * 0.95)
-    local glowA = math.floor(150 * (1 - t) + 28)
-    local glowInner = nvgRGBA(r, g, b, glowA)
-    local glowOuter = nvgRGBA(r, g, b, 0)
-    ---@cast glowInner NVGcolor
-    ---@cast glowOuter NVGcolor
-    local glow = nvgRadialGradient(vg, cx, cy, 6, glowR, glowInner, glowOuter)
-    nvgBeginPath(vg)
-    nvgCircle(vg, cx, cy, glowR)
-    nvgFillPaint(vg, glow)
-    nvgFill(vg)
-
-    if t < 0.5 then
-        local bt = t / 0.5
-        local beamA = math.floor(230 * (1 - bt))
-        local beamH = 70 + bt * 150
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, cx - 5 - bt * 8, cy - beamH)
-        nvgLineTo(vg, cx + 5 + bt * 8, cy - beamH)
-        nvgLineTo(vg, cx + 26, cy + 6)
-        nvgLineTo(vg, cx - 26, cy + 6)
-        nvgClosePath(vg)
-        local beamInner = nvgRGBA(255, 248, 210, 0)
-        local beamOuter = nvgRGBA(255, 228, 120, beamA)
-        ---@cast beamInner NVGcolor
-        ---@cast beamOuter NVGcolor
-        local beam = nvgLinearGradient(vg, cx, cy - beamH, cx, cy, beamInner, beamOuter)
-        nvgFillPaint(vg, beam)
-        nvgFill(vg)
-    end
-
-    for i = 1, 2 do
-        local rt = (t - (i - 1) * 0.1) / 0.72
-        if rt > 0 and rt < 1 then
-            local radius = 16 + rt * (size * 0.62 + i * 22)
-            local a = math.floor(220 * (1 - rt) * (1 - rt))
-            nvgBeginPath(vg)
-            nvgCircle(vg, cx, cy, radius)
-            nvgStrokeWidth(vg, 2.2 + (1 - rt) * 5)
-            nvgStrokeColor(vg, nvgRGBA(255, 236, 168, a))
-            nvgStroke(vg)
-            nvgBeginPath(vg)
-            nvgCircle(vg, cx, cy, radius * 0.78)
-            nvgStrokeWidth(vg, 1.6)
-            nvgStrokeColor(vg, nvgRGBA(r, g, b, math.floor(a * 0.75)))
-            nvgStroke(vg)
-        end
-    end
-
-    if t < 0.72 then
-        local rt = t / 0.72
-        nvgSave(vg)
-        nvgTranslate(vg, cx, cy)
-        nvgRotate(vg, rt * 0.55)
-        for i = 1, 10 do
-            local ang = (i - 1) / 10 * math.pi * 2
-            local inner = 18
-            local len = 30 + rt * (58 + (i % 3) * 14)
-            local a = math.floor(170 * (1 - rt))
-            nvgBeginPath(vg)
-            nvgMoveTo(vg, math.cos(ang) * inner, math.sin(ang) * inner)
-            nvgLineTo(vg, math.cos(ang) * len, math.sin(ang) * len)
-            nvgStrokeWidth(vg, 1.4 + (1 - rt) * 2.4)
-            nvgStrokeColor(vg, nvgRGBA(255, 232, 150, a))
-            nvgStroke(vg)
-        end
-        nvgRestore(vg)
-    end
-
-    for i = 1, 14 do
-        local ang = (i - 1) / 14 * math.pi * 2 + 0.35
-        local dist = 8 + t * (62 + (i % 4) * 16)
-        local sx = cx + math.cos(ang) * dist
-        local sy = cy + math.sin(ang) * dist * 0.7 - (1 - t) * 28
-        local sa = math.floor(255 * (1 - t) * (1 - t * 0.25))
-        local tail = 16 * (1 - t)
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, sx, sy)
-        nvgLineTo(vg, sx - math.cos(ang) * tail, sy - math.sin(ang) * tail * 0.7)
-        nvgStrokeWidth(vg, 1.8)
-        nvgStrokeColor(vg, nvgRGBA(255, 248, 220, sa))
-        nvgStroke(vg)
-        nvgBeginPath(vg)
-        nvgCircle(vg, sx, sy, 1.6 + (1 - t) * 2.4)
-        nvgFillColor(vg, nvgRGBA(255, 255, 240, sa))
-        nvgFill(vg)
-    end
-
-    if t < 0.26 then
-        local fa = math.floor(210 * (1 - t / 0.26))
-        local fr = 18 + (t / 0.26) * 40
-        local flashInner = nvgRGBA(255, 255, 245, fa)
-        local flashOuter = nvgRGBA(255, 220, 120, 0)
-        ---@cast flashInner NVGcolor
-        ---@cast flashOuter NVGcolor
-        local flash = nvgRadialGradient(vg, cx, cy, 2, fr, flashInner, flashOuter)
-        nvgBeginPath(vg)
-        nvgCircle(vg, cx, cy, fr)
-        nvgFillPaint(vg, flash)
-        nvgFill(vg)
-    end
+local function finite(value)
+    return type(value) == "number" and value == value and math.abs(value) < math.huge
 end
 
---- 图标上层扫光
+local function valid(vg, cx, cy, t, size)
+    return vg ~= nil and finite(cx) and finite(cy) and finite(t) and finite(size) and size > 0
+end
+
+--- 铜金余辉与六枚短流星（图标下层）。纯时间采样，不保留粒子队列。
 ---@param vg any
 ---@param cx number
 ---@param cy number
----@param t number 单件进度 0~1
----@param size number 图标边长
-function RewardCascade.glint(vg, cx, cy, t, size)
-    if t < 0.18 or t > 0.82 then return end
-    local gt = (t - 0.18) / 0.64
-    local glide = -size * 0.55 + gt * size * 1.2
-    local a = math.floor(150 * math.sin(gt * math.pi))
+---@param t number 单件进度，首尾均无残留
+---@param size number
+---@param r number
+---@param g number
+---@param b number
+function RewardCascade.burst(vg, cx, cy, t, size, r, g, b)
+    if not valid(vg, cx, cy, t, size) or t <= 0 or t >= 1 then return end
+    if not finite(r) or not finite(g) or not finite(b) then return end
+    -- 品质色仍可辨认，压住白色核心，沿既有暗铁/旧铜色系。
+    local cr = math.floor(math.max(0, math.min(255, r)) * 0.45 + 201 * 0.55)
+    local cg = math.floor(math.max(0, math.min(255, g)) * 0.45 + 151 * 0.55)
+    local cb = math.floor(math.max(0, math.min(255, b)) * 0.45 + 59 * 0.55)
+    local envelope = math.sin(t * math.pi) * (1 - t)
+    local radius = size * (0.40 + 0.34 * RewardCascade.easeOutCubic(t))
     nvgSave(vg)
-    nvgTranslate(vg, cx, cy)
-    nvgRotate(vg, -0.55)
     nvgBeginPath(vg)
-    nvgRect(vg, glide - 10, -size * 0.55, 18, size * 1.1)
-    nvgFillColor(vg, nvgRGBA(255, 255, 245, a))
+    nvgCircle(vg, cx, cy, radius)
+    nvgFillPaint(vg, nvgRadialGradient(vg, cx, cy, size * 0.10, radius,
+        nvgRGBA(cr, cg, cb, math.floor(104 * envelope)), nvgRGBA(cr, cg, cb, 0)))
+    nvgFill(vg)
+
+    -- 一道薄落位环，不恢复旋转射线或粗大光柱。
+    nvgBeginPath(vg)
+    nvgCircle(vg, cx, cy, size * (0.36 + 0.28 * t))
+    nvgStrokeWidth(vg, 1.1)
+    nvgStrokeColor(vg, nvgRGBA(cr, cg, cb, math.floor(88 * envelope)))
+    nvgStroke(vg)
+    for i = 1, 6 do
+        local angle = i * 2.399963 + 0.25
+        local distance = size * (0.32 + t * (0.34 + (i % 3) * 0.05))
+        local x = cx + math.cos(angle) * distance
+        local y = cy + math.sin(angle) * distance * 0.7 - size * 0.08 * (1 - t)
+        local tail = size * 0.065 * (1 - t)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x - math.cos(angle) * tail, y - math.sin(angle) * tail * 0.7)
+        nvgLineTo(vg, x, y)
+        nvgStrokeWidth(vg, 1.2)
+        nvgStrokeColor(vg, nvgRGBA(215, 174, 100, math.floor(150 * envelope)))
+        nvgStroke(vg)
+    end
+    nvgRestore(vg)
+end
+
+--- 图标上层金属薄扫：仅在原扫光窗口内，裁剪到图标，避开外侧数量。
+---@param vg any
+---@param cx number
+---@param cy number
+---@param t number
+---@param size number
+function RewardCascade.glint(vg, cx, cy, t, size)
+    if not valid(vg, cx, cy, t, size) or t <= 0.18 or t >= 0.82 then return end
+    local gt = (t - 0.18) / 0.64
+    local glide = -size * 0.58 + gt * size * 1.16
+    local band = math.max(1, size * 0.035)
+    nvgSave(vg)
+    nvgIntersectScissor(vg, cx - size * 0.5, cy - size * 0.5, size, size)
+    nvgTranslate(vg, cx, cy)
+    nvgRotate(vg, -0.42)
+    nvgBeginPath(vg)
+    nvgRect(vg, glide - band * 0.5, -size * 0.65, band, size * 1.3)
+    nvgFillColor(vg, nvgRGBA(221, 185, 125, math.floor(88 * math.sin(gt * math.pi))))
     nvgFill(vg)
     nvgRestore(vg)
 end
 
---- 出场前的预告框（快到该件时闪一下金框）
+--- 出场前80ms预告框。lead沿现有调用契约为 elapsed-startAt（负数=尚未出场）。
 ---@param vg any
 ---@param cx number
 ---@param cy number
----@param lead number 距离出场还有多少秒（负数=已过出场时刻，不画）
----@param size number 图标边长
+---@param lead number
+---@param size number
 function RewardCascade.anticipate(vg, cx, cy, lead, size)
-    if lead <= -0.08 then return end
-    local a = math.floor(110 * ((lead + 0.08) / 0.08))
+    if not valid(vg, cx, cy, lead, size) or lead <= -0.08 or lead >= 0 then return end
+    local pulse = math.sin((lead + 0.08) / 0.08 * math.pi)
+    nvgSave(vg)
     nvgBeginPath(vg)
-    nvgRoundedRect(vg, cx - size * 0.42, cy - size * 0.42, size * 0.84, size * 0.84, 14)
-    nvgStrokeWidth(vg, 2)
-    nvgStrokeColor(vg, nvgRGBA(247, 220, 120, a))
+    nvgRoundedRect(vg, cx - size * 0.42, cy - size * 0.42, size * 0.84, size * 0.84,
+        math.min(8, size * 0.06))
+    nvgStrokeWidth(vg, 1.1)
+    nvgStrokeColor(vg, nvgRGBA(201, 151, 59, math.floor(72 * pulse)))
     nvgStroke(vg)
+    nvgRestore(vg)
 end
 
---- 施加出场变换（缩放回弹 + 摇摆 + 上浮）。调用方负责 nvgSave/nvgRestore。
+--- 收敛落位；大模式只调用此原语，也实际受益。调用方负责 Save/Restore。
+--- 数量随图标最小76%入场，不再缩至16%；0.22秒原结束时刻不变。
 ---@param vg any
 ---@param cx number
 ---@param cy number
----@param t number 单件进度 0~1
----@param alpha number 额外透明度 0~1
----@param lift number|nil 上浮距离（默认 -56）
+---@param t number
+---@param alpha number
+---@param lift number|nil 默认 -28，显式距离仍沿用调用值
 function RewardCascade.applyPop(vg, cx, cy, t, alpha, lift)
-    local appear = math.min(1, t / 0.16)
-    local pop = math.min(1, t / 0.68)
-    local iconScale = 0.16 + 0.84 * RewardCascade.easeOutBack(pop)
-    if iconScale < 0.04 then iconScale = 0.04 end
-    local wobble = math.sin(t * math.pi * 2.4) * (1 - math.min(1, t)) * 0.2
-    local liftDist = (1 - RewardCascade.easeOutCubic(math.min(1, t / 0.5))) * (lift or -56)
-    nvgGlobalAlpha(vg, alpha * appear)
+    if vg == nil or not finite(cx) or not finite(cy) or not finite(t) or not finite(alpha) then return end
+    if lift ~= nil and not finite(lift) then return end
+    local progress = math.max(0, math.min(1, t))
+    local appear = math.min(1, progress / 0.16)
+    local pop = math.min(1, progress / 0.68)
+    local iconScale = 0.76 + 0.24 * RewardCascade.easeOutBack(pop)
+    local wobble = math.sin(progress * math.pi * 2.4) * (1 - progress) * 0.035
+    local liftDist = (1 - RewardCascade.easeOutCubic(math.min(1, progress / 0.5))) * (lift or -28)
+    nvgGlobalAlpha(vg, math.max(0, math.min(1, alpha)) * appear)
     nvgTranslate(vg, cx, cy + liftDist)
     nvgRotate(vg, wobble)
     nvgScale(vg, iconScale, iconScale)

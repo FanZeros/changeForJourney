@@ -5,7 +5,7 @@
 -- ============================================================================
 
 local GameConfig       = require("config.GameConfig")
-local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
+local DarkIcon         = require("core.DarkIcon")  -- 品质底框矢量绘制
 local EquipmentConfig  = require("config.EquipmentConfig")
 local HeroConfig       = require("config.HeroConfig")
 local HeroAssetUtil    = require("config.HeroAssetUtil")
@@ -21,6 +21,7 @@ local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
 local ImageCache       = require("ui.widget.ImageCache")
 local BF               = require("systems.ButtonFeedback")
 local I18n             = require("core.I18n")
+local SettingsPanel    = require("ui.hud.popup.SettingsPanel")
 
 local EquipmentBag = {}
 
@@ -183,7 +184,7 @@ local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
     if img < 0 or alpha <= 0.01 then return end
     local x = cx - w * 0.5
     local y = cy - h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
+    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha) --[[@as NVGpaint]]
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
@@ -1094,7 +1095,7 @@ function EquipmentBag.draw(vg, opts)
                 local q = equip.quality or 1
                 local qColor = QUALITY_BORDER[q] or QUALITY_BORDER[1]
 
-                -- 品质背景框（铺满整个格子）[暗黑化 P2-A]（矢量绘制无条件可用，原贴图+fallback 已废弃）
+                -- 品质背景框（铺满整个格子） （矢量绘制无条件可用，原贴图+fallback 已废弃）
                 DarkIcon.drawQualityBg(vg, q, cx, cy, CELL_SIZE, CELL_SIZE, 1.0)
 
                 -- 装备图标
@@ -1102,7 +1103,7 @@ function EquipmentBag.draw(vg, opts)
                 if iconImg >= 0 then
                     local iconPadding = 12
                     local iconSize = CELL_SIZE - iconPadding * 2
-                    DarkIcon.drawIconDark(vg, iconImg, cx, cy, iconSize, iconSize, 1.0)  -- [暗黑化 P2-B]
+                    DarkIcon.drawIconDark(vg, iconImg, cx, cy, iconSize, iconSize, 1.0)  --
                 else
                     -- 无图标时回退为文字显示
                     nvgFontFace(vg, "sans")
@@ -1145,15 +1146,20 @@ function EquipmentBag.draw(vg, opts)
                 end
 
                 -- 单件贡献与等级分行，不占用 E/头像、锁及升阶角标。
-                do
-                    local powerText = "战力 " .. tostring(entry.power or 0)
-                    local powerFont = 26
+                if SettingsPanel.isEquipmentPowerEnabled() then
+                    local powerText = tostring(entry.power or 0)
+                    local powerFont, iconSize, gap = 26, 22, 4
                     nvgFontFace(vg, "sans")
                     nvgFontSize(vg, powerFont)
                     local textW = nvgTextBounds(vg, 0, 0, powerText) or 0
-                    local maxW = CELL_SIZE * 0.62
+                    local maxW = CELL_SIZE * 0.62 - iconSize - gap
                     if textW > maxW then powerFont = powerFont * maxW / textW end
-                    DrawUtil.drawTextStroke(vg, cx + CELL_SIZE * 0.45, cy + CELL_SIZE * 0.15,
+                    nvgFontSize(vg, powerFont)
+                    local fittedW = nvgTextBounds(vg, 0, 0, powerText) or 0
+                    local right, bottom = cx + CELL_SIZE * 0.45, cy + CELL_SIZE * 0.15
+                    DarkIcon.draw(vg, "power", right - fittedW - gap - iconSize * .5,
+                        bottom - iconSize * .5, iconSize, 1)
+                    DrawUtil.drawTextStroke(vg, right, bottom,
                         powerText, powerFont, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, 244, 237, 224, 3)
                 end
 

@@ -6,6 +6,7 @@
 -- ============================================================================
 
 local GameState      = require("core.GameState")
+local NumberUtil     = require("core.NumberUtil")
 local DrawUtil       = require("core.DrawUtil")
 local drawTextStroke = DrawUtil.drawTextStroke
 local Protocol       = require("shared.Protocol")
@@ -13,7 +14,7 @@ local BF             = require("systems.ButtonFeedback")
 local PlayerStore    = require("core.PlayerStore")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local TavernConfig     = require("config.TavernConfig")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 
 local TavernShopPage = {}
 
@@ -23,7 +24,7 @@ local DESIGN_W = 1080
 
 -- ======================== 商品配置 ========================
 -- 数据来源：建筑-酒馆招募.txt「酒馆商店」章节
--- 英雄 ID 对应：1=大狗嚼 2=黄桃龙 3=叮咚鸡 4=接化发掌门 5=叠甲怪 6=阿姨压
+-- 英雄 ID 对应：1=大狗嚼 2=黄桃龙 3=叮咚鸡 4=接化发掌门 5=叠甲怪 6=压一压
 --               7=信光机兵 8=愤怒的小雀 9=卡皮巴拉 10=铁憨憨 11=熬夜冠军 12=雪皇
 --               13=弹弹弹 14=内鬼 15=复活吧爱人 16=万剑归宗 20=摘星星星人
 
@@ -85,7 +86,7 @@ local SHOP_ITEMS = {
         costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
-        id = 7, name = "阿姨压-碎片", quality = 4,
+        id = 7, name = "压一压-碎片", quality = 4,
         limitCycle = "daily", limitCount = -1, price = 60,
         icon = "image/角色图标/UI_icon_hero_6.png",
         costIcon = "image/货币道具/UI_icon_JGB_X.png",
@@ -349,8 +350,6 @@ local DLG = {
 function TavernShopPage.init(vg)
     shopImg.pageBg    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png",    0)
     shopImg.buyBtn      = nvgCreateImage(vg, "image/界面底板/商店/UI_SD_AN.png",       0)
-    -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     shopImg.buyBtnYellow= nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png",    0)
     shopImg.btnMinus    = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png",     0)
     shopImg.btnPlus     = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png",      0)
@@ -502,7 +501,7 @@ local drawPurchaseDialog
 -- ======================== 绘制单个商品卡片 ========================
 
 local function drawShopCard(vg, idx, item, cx, cy)
-    -- [暗黑化 P1-B5] 矢量卡底 + 品质语义描边
+    -- 矢量卡底 + 品质语义描边
     local q = item.quality or 1
     DarkIcon.drawNine(vg, "plain",
         cx - L.CARD_W * 0.5, cy - L.CARD_H * 0.5,
@@ -569,7 +568,7 @@ local function drawShopCard(vg, idx, item, cx, cy)
         DarkIcon.drawNine(vg, "btn", cx - L.BTN_W * 0.5, btnCY - L.BTN_H * 0.5, L.BTN_W, L.BTN_H, { accent = "gold" })
 
         -- 消耗图标 + 价格居中
-        local priceStr = tostring(item.price)
+        local priceStr = NumberUtil.format(item.price)
         nvgFontFace(vg, "sans"); nvgFontSize(vg, L.BTN_FONT)
         local textW  = nvgTextBounds(vg, 0, 0, priceStr)
         local totalW = L.BTN_ICON_W + 4 + textW
@@ -778,7 +777,7 @@ drawPurchaseDialog = function(vg)
 
     -- 品质背景 + 商品图标
     local rewardImg = shopImg.itemIcons[item.id]
-    DarkIcon.drawQualityBg(vg, item.quality or 1, DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)  -- [暗黑化 P2-A]
+    DarkIcon.drawQualityBg(vg, item.quality or 1, DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)  --
     if rewardImg and rewardImg >= 0 then
         drawImageCentered(vg, rewardImg, DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)
     end
@@ -841,7 +840,7 @@ drawPurchaseDialog = function(vg)
 
     -- 消耗资源
     local totalCost = item.price * shopState.buyQuantity
-    local costStr   = "×" .. tostring(totalCost)
+    local costStr   = "×" .. NumberUtil.format(totalCost)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, DLG.COST_FONT)
     local costTextW  = nvgTextBounds(vg, 0, 0, costStr)
     local costTotalW = DLG.COST_ICON_SIZE + 4 + costTextW

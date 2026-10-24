@@ -10,6 +10,7 @@ local BattleLayout = require("core.BattleLayout")
 local DrawUtil = require("core.DrawUtil")
 local ETS = require("systems.ExtraTalentSystem")
 local HeroAssetUtil = require("config.HeroAssetUtil")
+local BattleFloatImpact = require("ui.battle.scene.BattleFloatImpact")
 
 local BattleDraw = {}
 
@@ -27,10 +28,6 @@ local TAG_SIZE = 64
 -- 血条
 local HP_BAR_W, HP_BAR_H = 168, 28
 local HP_BAR_PADDING = 4
-
--- 浮动文字
-local FLOAT_TOTAL_FRAMES = 20
-local FLOAT_MOVE_DIST    = 240
 
 -- 职业图标映射
 local CLASS_ICON_MAP = {
@@ -56,9 +53,15 @@ function BattleDraw.setContext(context)
 end
 
 local directCards = { hero = {}, monster = {} }
+---@type any
+local directCardVg = nil
 
 --- 分帧队列没完成时，按场上单位直接读本地卡面。
 local function cardImage(vg, unit)
+    if directCardVg ~= vg then
+        directCardVg = vg
+        directCards = { hero = {}, monster = {} }
+    end
     if unit.heroId then
         local cached = imgCtx.imgHeroCards and imgCtx.imgHeroCards[unit.heroId]
         if cached and cached >= 0 then return cached end
@@ -81,6 +84,11 @@ local function cardImage(vg, unit)
         return direct
     end
     return -1
+end
+
+--- 只预热指定在场/候补卡牌；三行宿主不在攻击期间消化全图鉴大图队列。
+function BattleDraw.preloadCards(vg, units)
+    for _, unit in ipairs(units) do cardImage(vg, unit) end
 end
 
 -- ======================== 工具绘制函数 ========================
@@ -272,7 +280,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                         local esX = fillX
                         nvgSave(vg)
                         nvgScissor(vg, esX, fillY, esClipW, fillH)
-                        -- [fix] 原 UI_ZD_HPT3.png 实为 KTX2 纹理误名 .png，NanoVG 无法解码，
+                        -- 原 UI_ZD_HPT3.png 实为 KTX2 纹理误名 .png，NanoVG 无法解码，
                         -- 改用程序化青色填充（与 +护盾数值同色系），不再依赖该贴图
                         nvgBeginPath(vg)
                         nvgRect(vg, esX, fillY, esClipW, fillH)
@@ -373,157 +381,17 @@ end
 
 -- ======================== 浮动文字渲染 ========================
 
-local function drawFloatIcon(vg, kind, x, y, s, a)
-    if not kind then return 0 end
-    local function ink(r, g, b)
-        nvgFillColor(vg, nvgRGBA(r, g, b, a))
-        nvgStrokeColor(vg, nvgRGBA(20, 12, 8, a))
-    end
-    local function blade()
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, x - s * 0.08, y - s * 0.46)
-        nvgLineTo(vg, x + s * 0.16, y - s * 0.22)
-        nvgLineTo(vg, x + s * 0.04, y + s * 0.08)
-        nvgLineTo(vg, x - s * 0.20, y - s * 0.16)
-        nvgClosePath(vg)
-        nvgFill(vg)
-        nvgStrokeWidth(vg, math.max(1.5, s * 0.06))
-        nvgStroke(vg)
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, x - s * 0.05, y + s * 0.06, s * 0.22, s * 0.07, s * 0.02)
-        nvgFill(vg)
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, x + s * 0.02, y + s * 0.12, s * 0.06, s * 0.22, s * 0.02)
-        nvgFill(vg)
-    end
-    if kind:find("phys", 1, true) then
-        ink(236, 232, 220)
-        blade()
-    elseif kind:find("magic", 1, true) then
-        ink(150, 220, 255)
-        nvgBeginPath(vg)
-        nvgCircle(vg, x, y + s * 0.04, s * 0.22)
-        nvgFill(vg)
-        nvgStrokeWidth(vg, math.max(1.5, s * 0.06))
-        nvgStroke(vg)
-        ink(230, 250, 255)
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, x, y - s * 0.42)
-        nvgLineTo(vg, x + s * 0.08, y - s * 0.08)
-        nvgLineTo(vg, x - s * 0.08, y - s * 0.08)
-        nvgClosePath(vg)
-        nvgFill(vg)
-    elseif kind:find("burn", 1, true) then
-        ink(255, 150, 40)
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, x, y + s * 0.38)
-        nvgQuadTo(vg, x + s * 0.42, y + s * 0.18, x + s * 0.12, y - s * 0.08)
-        nvgQuadTo(vg, x + s * 0.28, y - s * 0.34, x, y - s * 0.48)
-        nvgQuadTo(vg, x - s * 0.06, y - s * 0.16, x - s * 0.16, y - s * 0.02)
-        nvgQuadTo(vg, x - s * 0.42, y + s * 0.16, x, y + s * 0.38)
-        nvgClosePath(vg)
-        nvgFill(vg)
-        nvgStrokeWidth(vg, math.max(1.5, s * 0.05))
-        nvgStroke(vg)
-        ink(255, 230, 140)
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, x, y + s * 0.22)
-        nvgQuadTo(vg, x + s * 0.12, y, x, y - s * 0.18)
-        nvgQuadTo(vg, x - s * 0.10, y + s * 0.02, x, y + s * 0.22)
-        nvgClosePath(vg)
-        nvgFill(vg)
-    elseif kind:find("block", 1, true) or kind:find("shield", 1, true) then
-        ink(190, 198, 214)
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, x, y - s * 0.44)
-        nvgLineTo(vg, x + s * 0.32, y - s * 0.18)
-        nvgQuadTo(vg, x + s * 0.28, y + s * 0.28, x, y + s * 0.44)
-        nvgQuadTo(vg, x - s * 0.28, y + s * 0.28, x - s * 0.32, y - s * 0.18)
-        nvgClosePath(vg)
-        nvgFill(vg)
-        nvgStrokeWidth(vg, math.max(1.5, s * 0.06))
-        nvgStroke(vg)
-    elseif kind:find("heal", 1, true) then
-        ink(90, 230, 130)
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, x - s * 0.09, y - s * 0.32, s * 0.18, s * 0.64, s * 0.05)
-        nvgRoundedRect(vg, x - s * 0.32, y - s * 0.09, s * 0.64, s * 0.18, s * 0.05)
-        nvgFill(vg)
-        nvgStrokeWidth(vg, math.max(1.5, s * 0.05))
-        nvgStroke(vg)
-    end
-    if kind:find("crit", 1, true) then
-        ink(255, 80, 70)
-        nvgBeginPath(vg)
-        for i = 0, 7 do
-            local ang = i * math.pi / 4 - math.pi / 2
-            local rad = (i % 2 == 0) and s * 0.42 or s * 0.16
-            local px = x + math.cos(ang) * rad
-            local py = y + math.sin(ang) * rad
-            if i == 0 then nvgMoveTo(vg, px, py) else nvgLineTo(vg, px, py) end
-        end
-        nvgClosePath(vg)
-        nvgFill(vg)
-        nvgStrokeWidth(vg, math.max(1.5, s * 0.05))
-        nvgStroke(vg)
-    end
-    return s * 0.72
-end
-
 function BattleDraw.drawFloatingTexts(vg)
     local texts = combat.getFloatingTexts()
+    local slots = {}
+    local bounds = BattleLayout.MODE == "strip"
+        and { x = 0, y = 0, w = BattleLayout.STRIP_W, h = BattleLayout.STRIP_H } or nil
     for _, ft in ipairs(texts) do
-        local frame = (ft.timer / ft.duration) * FLOAT_TOTAL_FRAMES
-        local t = frame / FLOAT_TOTAL_FRAMES
-
-        local drawX = ft.x + ft.dirX * FLOAT_MOVE_DIST * t
-        local drawY = ft.y + ft.dirY * FLOAT_MOVE_DIST * t
-
-        local scale = 1.0 - 0.75 * t
-        local fontSize = math.max(1, math.floor(ft.fontSize * scale))
-
-        -- [首伤延迟修复] 淡入从 10 帧(0.33s)缩到 3 帧(0.1s)：
-        -- 原 frame=0 时 alpha=0 完全不可见，需 0.33s 才清晰，而受击闪烁是即时的，
-        -- 造成"第一个伤害数字比受击反馈慢半拍"的观感。3 帧淡入几乎立即清晰，仍保留柔和。
-        local alpha
-        if frame <= 3 then
-            alpha = math.floor(255 * (frame / 3))
-        elseif frame <= 15 then
-            alpha = 255
-        else
-            alpha = math.floor(255 * (1.0 - (frame - 15) / 5))
-        end
-        alpha = math.max(0, math.min(255, alpha))
-
-        if alpha > 0 then
-            nvgSave(vg)
-            nvgGlobalAlpha(vg, alpha / 255)
-            local textW = 0
-            if ft.text and ft.text ~= "" then
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, fontSize)
-                textW = nvgTextBounds(vg, 0, 0, ft.text) or fontSize
-            end
-            local iconSize = math.max(22, fontSize * 0.92)
-            local tr, tg, tb = ft.color[1], ft.color[2], ft.color[3]
-            local kind = ft.kind or ""
-            if kind:find("burn", 1, true) then tr, tg, tb = 255, 140, 40
-            elseif kind:find("magic", 1, true) then tr, tg, tb = 120, 220, 255
-            elseif kind:find("phys", 1, true) then tr, tg, tb = 255, 236, 170
-            elseif kind:find("heal", 1, true) then tr, tg, tb = 90, 235, 130
-            elseif kind:find("crit", 1, true) then tr, tg, tb = 255, 70, 70
-            end
-            local gap = 2
-            local iconW = ft.kind and iconSize * 0.72 or 0
-            local textX = drawX + (ft.kind and (iconW + gap) * 0.5 or 0)
-            drawTextStroke(vg, textX, drawY, ft.text,
-                fontSize, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                tr, tg, tb, 5)
-            if ft.kind then
-                drawFloatIcon(vg, ft.kind, textX - textW * 0.5 - gap - iconW * 0.5, drawY, iconSize, alpha)
-            end
-            nvgRestore(vg)
-        end
+        -- 同目标/同锚点展示分轨；只在本帧分组，不持有退场目标、不回收或改动原批次。
+        local key = ft.target or (tostring(ft.x) .. ":" .. tostring(ft.y))
+        local slot = (slots[key] or 0) + 1
+        slots[key] = slot
+        BattleFloatImpact.draw(vg, ft, slot, bounds)
     end
 end
 

@@ -44,7 +44,7 @@ function BottomNav.init(_vg)
     print("[BottomNav] init OK (state-only, HUD moved to TopBar)")
 end
 
---- 底栏已移除，无动画（保留接口兼容旧调用）
+--- 底栏无视觉，保留接口兼容调用
 function BottomNav.update(_dt)
 end
 
@@ -52,12 +52,12 @@ end
 function BottomNav.draw(_vg)
 end
 
---- 底栏已隐藏，保留空实现避免旧调用报错
+--- 底栏保留空实现，避免调用报错
 function BottomNav.handleInput(_designX, _designY)
     return nil
 end
 
---- 底栏已隐藏
+--- 底栏无视觉
 function BottomNav.hitTest(_designX, _designY)
     return false
 end

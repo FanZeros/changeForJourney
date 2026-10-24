@@ -12,6 +12,20 @@
 -- controller 负责日志与生命周期收尾，本模块不 print、不吞异常。
 local P = require("core.DarkIcon").Palette
 local M = {}
+-- 旧扩展完全缺绘图 API 时干净停用，不反复在 controller 中抛错；不改变已存在 API 的异常契约。
+---@type table<any, boolean>
+local available = setmetatable({}, {__mode="k"})
+local function hasDrawingAPI(vg)
+    if available[vg] ~= nil then return available[vg] end
+    local ready = true
+    for _, name in ipairs({"nvgSave", "nvgRestore", "nvgTranslate", "nvgScale", "nvgLineJoin", "nvgLineCap",
+        "nvgBeginPath", "nvgMoveTo", "nvgLineTo", "nvgClosePath", "nvgBezierTo", "nvgRGBA", "nvgFillColor",
+        "nvgFill", "nvgStrokeColor", "nvgStrokeWidth", "nvgStroke", "nvgLinearGradient", "nvgFillPaint"}) do
+        if type(_G[name]) ~= "function" then ready = false; break end
+    end
+    available[vg] = ready
+    return ready
+end
 
 ---@alias DarkCardEffectKind 'level'|'job'|'revive'
 
@@ -270,7 +284,7 @@ end
 function M.drawPower(vg, cx, cy, w, h, elapsed, duration, alpha)
     if not vg or not validBox(cx, cy, w, h) then return end
     local p, a = phase(elapsed, duration, alpha)
-    if a <= 0 then return end
+    if a <= 0 or not hasDrawingAPI(vg) then return end
     isolated(vg, function()
         begin(vg, cx, cy, w / 400, h / 100)
         local split = stage(p, .18, .45)
@@ -417,7 +431,7 @@ function M.drawCard(vg, kind, cx, cy, w, h, elapsed, duration, alpha)
     if kind ~= "level" and kind ~= "job" and kind ~= "revive" then return end
     if not vg or not validBox(cx, cy, w, h) then return end
     local p, a = phase(elapsed, duration, alpha)
-    if a <= 0 then return end
+    if a <= 0 or not hasDrawingAPI(vg) then return end
     isolated(vg, function()
         begin(vg, cx, cy, w / 200, h / 350)
         if kind == "level" then level(vg, p, a)
@@ -439,7 +453,7 @@ end
 function M.drawResult(vg, success, cx, cy, size, elapsed, duration, alpha)
     if type(success) ~= "boolean" or not vg or not validBox(cx, cy, size, size) then return end
     local p, a = phase(elapsed, duration, alpha)
-    if a <= 0 then return end
+    if a <= 0 or not hasDrawingAPI(vg) then return end
     isolated(vg, function()
         begin(vg, cx, cy, size / 200, size / 200)
         if success then

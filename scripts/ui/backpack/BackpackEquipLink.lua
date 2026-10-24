@@ -5,6 +5,7 @@ local DrawUtil = require("core.DrawUtil")
 local DarkIcon = require("core.DarkIcon")
 local SetFilterDialog = require("ui.widget.SetFilterDialog")
 local M = {}
+local lockSerial = 0
 local LEFT_PAGES = {
     "ui.loot.LootBoxPage", "ui.story.task.TaskPage", "ui.church.talent.TalentPage",
     "ui.church.ChurchPage", "ui.tavern.TavernPage", "ui.market.MarketPage",
@@ -36,6 +37,8 @@ function M.bind(deps)
     local click = nil
     ---@type {seq:number|string, hero:number, slot:string, time:number}|nil
     local pending = nil
+    ---@type {seq:number|string, id:number, time:number}|nil
+    local pendingLock = nil
     ---@type {x:number, y:number}|nil
     local dragPress = nil
     local api = {}
@@ -51,6 +54,10 @@ function M.bind(deps)
             pending = nil
             api.clearQuickClick()
             toast("穿戴请求超时，请重试")
+        end
+        if pendingLock and time.elapsedTime - pendingLock.time >= 3 then
+            pendingLock = nil
+            toast(require("core.I18nInventoryCuration").text("锁定请求超时，请重试"))
         end
     end
     local function getCharacterDetail()
@@ -115,6 +122,16 @@ function M.bind(deps)
 
     function api.onActionResult(data)
         expirePending()
+        if data and data.action == require("shared.Protocol").ACTION_TYPES.TOGGLE_EQUIP_LOCK then
+            if not pendingLock or data.lockRequestId ~= pendingLock.id
+                or tostring(data.seq) ~= tostring(pendingLock.seq) then return end
+            pendingLock = nil
+            api.clearQuickClick()
+            local text = data.success == true and (data.locked and "装备已锁定" or "装备已解锁")
+                or "锁定失败，请重试"
+            toast(require("core.I18nInventoryCuration").text(text))
+            return
+        end
         if not pending or not data or data.action ~= equipAction() then return end
         if tostring(data.seq) ~= tostring(pending.seq) or tonumber(data.heroId) ~= pending.hero
             or data.slot ~= pending.slot then return end
@@ -158,8 +175,10 @@ function M.bind(deps)
         local hero = tonumber(heroId)
         if filterSlot == normalized and filterHero == hero then return end
         local clearPinned = normalized ~= nil or filterHero ~= hero
+        if filterSlot ~= normalized and deps.clearTypeFilter then deps.clearTypeFilter() end
         filterSlot, filterHero = normalized, hero
-        state.scrollY, state.scrollVel, state.dragging = 0, 0, false
+        if not state.closing then state.scrollY = 0 end
+        state.scrollVel, state.dragging = 0, false
         -- 取消部位到全部、且仍是同一英雄时，钉住候选依然合法。
         api.clearCandidate(clearPinned)
     end
@@ -238,12 +257,63 @@ function M.bind(deps)
         return true
     end
 
-    -- 教程显式恢复与普通 acquire 分离：只有此入口可解除同会话手动关仓抑制。
+    -- 真正进入配装才恢复仓库：锻炉仍持有时，旧手动关闭抑制不能阻断新的配装入口。
+    -- 普通 acquire/每帧更新不走此入口，玩家在本次配装中主动关闭仍不会被强制弹回。
+    function api.enterEquipmentWarehouse(heroId, slot)
+        if owners.equipment then return api.acquireWarehouse("equipment", heroId, slot) end
+        suppressed = false
+        if state.closing then
+            state.open, state.closing = false, false
+        end
+        return api.acquireWarehouse("equipment", heroId, slot)
+    end
+
+    -- 显式新入锻炉与配装对称：旧配装关仓/左页让位的抑制不阻断新入口。
+    -- 已持有的锻炉仍走普通 acquire，不能因重复调用撤销本次手动关仓。
+    function api.enterBlacksmithWarehouse()
+        if owners.blacksmith then return api.acquireWarehouse("blacksmith") end
+        suppressed = false
+        if state.closing then
+            state.open, state.closing = false, false
+        end
+        return api.acquireWarehouse("blacksmith")
+    end
+
+    -- 与绘制/点击共用候选真源；仅缺失目标时定位，不重排或修改库存。
+    local function focusTutorialEquipment(slot)
+        if slot ~= "weapon" or not deps.getEquipList then return false end
+        local list = deps.getEquipList()
+        local firstIndex = nil ---@type integer|nil
+        for index, equip in ipairs(list) do
+            if equip.slot == "weapon" and equip.canWear == true then
+                local row = math.floor((index - 1) / GRID.COLS)
+                local top = GRID.FIRST_ROW_TOP + row * (GRID.CELL_SIZE + GRID.GAP) - state.scrollY
+                if top >= GRID.FIRST_ROW_TOP and top + GRID.CELL_SIZE <= GRID.CLIP_BOTTOM then
+                    return false
+                end
+                firstIndex = firstIndex or index
+            end
+        end
+        if not firstIndex then return false end
+        local row = math.floor((firstIndex - 1) / GRID.COLS)
+        local rows = math.ceil(math.max(#list, 35) / GRID.COLS)
+        local maxScroll = math.max(0, rows * (GRID.CELL_SIZE + GRID.GAP) - GRID.GAP
+            - (GRID.CLIP_BOTTOM - GRID.FIRST_ROW_TOP))
+        local scroll = math.min(maxScroll, row * (GRID.CELL_SIZE + GRID.GAP))
+        if scroll == state.scrollY and state.scrollVel == 0 and not state.dragging then return false end
+        state.scrollY, state.scrollVel, state.dragging = scroll, 0, false
+        dragPress = nil
+        api.clearCandidate(true)
+        return true
+    end
+
+    -- 教程可在同会话内显式恢复；普通 acquire 保持不自动重开契约。
     -- 重复 ensure 不重新 open、不重置滚动，也不持续关闭玩家刚钉住的候选。
     ---@param heroId number|string|nil
     ---@param slot string|nil
+    ---@param force? boolean 缺失热点时定位真实可穿候选，普通检查不改滚动。
     ---@return boolean changed
-    function api.ensureTutorialEquipment(heroId, slot)
+    function api.ensureTutorialEquipment(heroId, slot, force)
         local hero = tonumber(heroId)
         local normalized = SLOT_NAMES[slot] and slot or nil
         local changed = not tutorialPrepared or suppressed or not owners.equipment
@@ -256,7 +326,7 @@ function M.bind(deps)
             local page = getLeftPage(path, false)
             if page and page.isOpen and page.isOpen() then changed = true; break end
         end
-        if not changed then return false end
+        if not changed then return force == true and focusTutorialEquipment(normalized) end
 
         if not owners.equipment then
             if not next(owners) and state.open and not state.closing and manualHeld then
@@ -283,6 +353,7 @@ function M.bind(deps)
         api.clearCandidate(true)
         applyFilter(normalized, hero)
         tutorialPrepared = true
+        if force then focusTutorialEquipment(normalized) end
         return true
     end
 
@@ -398,8 +469,12 @@ function M.bind(deps)
     end
     function api.openCandidate(equip, cx, cy, pinned)
         -- 保留只读动作（slot=nil），角色上下文独立于「全部」部位筛选。
-        EquipmentDetail.open(equip.seq, nil, currentHero(), true, "backpack",
+        local heroId = currentHero()
+        EquipmentDetail.open(equip.seq, nil, heroId, true, "backpack",
             cx + GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5)
+        if EquipmentDetail.setComparisonSlot then
+            EquipmentDetail.setComparisonSlot(targetSlot(equip, heroId))
+        end
         if pinned and EquipmentDetail.pin then EquipmentDetail.pin() end
     end
     function api.handleEquipClick(dx, dy)
@@ -425,6 +500,31 @@ function M.bind(deps)
         end
         return true -- 只 consume 真实筛选网格格子，未命中仍留给原详情/筛选处理。
     end
+    function api.handleLockRightClick(dx, dy)
+        api.clearQuickClick()
+        expirePending()
+        if deps.itemDetState and deps.itemDetState.open then return false end
+        local equip = api.cellAt(dx, dy)
+        if not equip then return false end
+        if pendingLock then return true end
+        -- 只提交当前库存中的真实实例；遗匣条目和列表残影不能冒用序号。
+        local equipment = getEquipmentData()
+        local source = equipment and equipment.inventory
+            and (equipment.inventory[tostring(equip.seq)] or equipment.inventory[equip.seq])
+        if not source then return true end
+        lockSerial = lockSerial + 1
+        local request = { seq = equip.seq, id = lockSerial, time = time.elapsedTime }
+        pendingLock = request
+        local send = deps.sendAction or require("runtime.GameAction").sendAction
+        local handled = send(require("shared.Protocol").ACTION_TYPES.TOGGLE_EQUIP_LOCK,
+            { seq = equip.seq, lockRequestId = request.id })
+        -- 同步桥可在 send 返回前消费 pending；绝不在本地再次翻转 locked。
+        if handled == false and pendingLock == request then
+            pendingLock = nil
+            toast(require("core.I18nInventoryCuration").text("锁定请求未处理，请重试"))
+        end
+        return true
+    end
     function api.handleRightClick(dx, dy)
         api.clearQuickClick()
         expirePending()
@@ -437,6 +537,10 @@ function M.bind(deps)
     end
 
     function api.handleHover(dx, dy)
+        if state.open and SetFilterDialog.handleHover and SetFilterDialog.handleHover(dx, dy) then
+            api.clearCandidate(false)
+            return true
+        end
         if state.open and not state.closing and state.tab == "decompose" and not SetFilterDialog.isOpen() then
             deps.ensureDecomposeReady()
             deps.BlacksmithDecompose.handleHover(dx, dy)

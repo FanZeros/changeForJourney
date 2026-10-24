@@ -1,6 +1,6 @@
 -- ============================================================================
 -- BlacksmithPage - 铁匠铺（狱火锻炉）界面
--- [锻炉双页 0929] 重构：
+-- 重构：
 --   1. 分解 tab 已迁移到仓库（BackpackPanel"分解"tab，复用 BlacksmithDecompose）
 --   2. 打开锻炉时自动在左栏打开仓库，锻炉本体移到中栏（双页面并排）
 --   3. 强化/洗练共用一个"装备工作台槽"：从左侧仓库拖装备进来即选中，
@@ -11,7 +11,7 @@
 
 local GameConfig       = require("config.GameConfig")
 local GameState        = require("core.GameState")
-local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
+local DarkIcon         = require("core.DarkIcon")  -- 品质底框矢量绘制
 local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
 local ImageCache       = require("ui.widget.ImageCache")  -- 共享装备图标缓存（含组首图 fallback）
 local EquipmentConfig  = require("config.EquipmentConfig")
@@ -28,9 +28,10 @@ local HeroAssetUtil    = require("config.HeroAssetUtil")
 local HeroConfig       = require("config.HeroConfig")
 local HeroFrame        = require("ui.widget.HeroFrame")
 local I18n             = require("core.I18n")
+local NumberUtil       = require("core.NumberUtil")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 
--- 子模块（[锻炉双页 0929] BlacksmithDecompose 已迁至仓库分解 tab，不再由本页驱动）
+-- 子模块（BlacksmithDecompose 已迁至仓库分解 tab，不再由本页驱动）
 local BlacksmithEnhance   = require("ui.blacksmith.BlacksmithEnhance")
 local BlacksmithRefine    = require("ui.blacksmith.BlacksmithRefine")
 local BlacksmithEnhanceCache = require("ui.blacksmith.BlacksmithEnhanceCache")
@@ -71,7 +72,7 @@ local NAME_BG_CX, NAME_BG_CY = 540, 136
 local NAME_TEXT_CX, NAME_TEXT_CY = 540, 130
 local NAME_FONT_SIZE              = 50
 
--- 4. [锻炉双页 0929] 装备工作台槽（上半部分唯一槽位，强化/洗练共用）
+-- 4. 装备工作台槽（上半部分唯一槽位，强化/洗练共用）
 -- 从左侧仓库拖装备到此槽即选中；已选中时点击可查看装备详情
 -- 2026-09-30：相对竖屏页面右移/下移 2%（+21.6/+48），落入新背景熔炉门前平台
 local WORKBENCH_CX, WORKBENCH_CY = 562, 479
@@ -93,7 +94,7 @@ local LOWER_BG_CY = DESIGN_H - LOWER_BG_H * 0.5  -- 2400 - 835 = 1565
 local TAB_BG_CX, TAB_BG_CY = 540, 2308
 local TAB_BG_W, TAB_BG_H   = 810, 143
 
--- 10. 两个滑块按钮位置（[锻炉双页 0929] 分解 tab 已迁移到仓库）
+-- 10. 两个滑块按钮位置（分解 tab 已迁移到仓库）
 local TAB_ITEMS = {
     { name = "强化", cx = 340, cy = 2308 },
     { name = "洗练", cx = 740, cy = 2308 },
@@ -127,11 +128,11 @@ local state = {
     closing    = false,
     openTime   = 0,
     closeTime  = 0,
-    -- [锻炉双页 0929] 当前选中 Tab: "qianghua" | "xilian"（分解已迁至仓库）
+    -- 当前选中 Tab: "qianghua" | "xilian"（分解已迁至仓库）
     tab        = "qianghua",
     tabFrom    = "qianghua",
     tabSwitchTime = 0,
-    -- [锻炉双页 0929] 工作台装备（由仓库拖入或预选）
+    -- 工作台装备（由仓库拖入或预选）
     selectedPartySlot = 1,           -- 保留字段：BlacksmithEnhance 请求参数兼容（服务端优先 seq）
     selectedEquipSlot = "weapon",    -- 当前装备的部位 key（决定强化卷轴类型）
     selectedEquip = nil,
@@ -162,15 +163,9 @@ end
 
 -- ======================== 词缀值格式化 ========================
 
---- 大数值缩写（超过4位数用 K/M 等单位）
+--- 大数值缩写统一走公共 NumberUtil（k/M/B/T），与洗练、奖励等处保持一致。
 local function formatCompact(n)
-    if n >= 1000000 then
-        return string.format("%.1fM", n / 1000000)
-    elseif n >= 10000 then
-        return string.format("%.1fK", n / 1000)
-    else
-        return tostring(n)
-    end
+    return NumberUtil.format(n)
 end
 
 local function formatAffixValue(key, value, affixId)
@@ -244,7 +239,8 @@ local hitTest = DrawUtil.hitTest
 
 --- 应用工作台装备（同步强化/洗练子模块）
 ---@param equip table|nil
-local function applySelectedEquip(equip)
+---@param preserveMaterial boolean|nil 同 selectedSeq 的被动刷新才保留洗练材料
+local function applySelectedEquip(equip, preserveMaterial)
     if not equip then
         state.selectedEquip = nil
         state.selectedSeq = nil
@@ -258,7 +254,7 @@ local function applySelectedEquip(equip)
     state.selectedSeq = equip.seq
     state.selectedEquipSlot = equip.slot or "weapon"
     BlacksmithEnhance.updateEnhanceData(equip)
-    BlacksmithRefine.updateRefineData(equip)
+    BlacksmithRefine.updateRefineData(equip, preserveMaterial)
 end
 
 --- 按 seq 从背包/已穿戴中查找装备并放入工作台（EquipCrossDrag 拖放入口）
@@ -366,11 +362,19 @@ function BlacksmithPage.markEnhanceDirty()
     _enhanceCache.dirty = true
 end
 
---- 检查是否有任意出战槽位的装备满足强化条件（城镇建筑角标/BottomNav 用）
+--- 检查是否有任意背包装备满足强化条件（城镇建筑角标/BottomNav 用）
 ---@return boolean
 function BlacksmithPage.canEnhanceAny()
     if not _enhCache then bindEnhanceCache() end
     return _enhCache.canEnhanceAny()
+end
+
+--- 页签角标只跟随工作台装备，实时读取资源与升阶上限，不借用全背包缓存。
+---@return boolean
+function BlacksmithPage.canEnhanceSelected()
+    if not state.selectedEquip then return false end
+    if not _enhCache then bindEnhanceCache() end
+    return _enhCache.canEnhance(state.selectedEquip)
 end
 
 --- 查询装备当前被哪个英雄穿戴（遍历出战+后备阵容）
@@ -401,7 +405,7 @@ local function drawWorkbenchSlot(vg)
     local slotCX, slotCY, slotSize = WORKBENCH_CX, WORKBENCH_CY, WORKBENCH_SIZE
 
     if equip then
-        -- 品质底框 + 装备图标 [暗黑化 P2-A]
+        -- 品质底框 + 装备图标
         local qIdx = math.max(1, math.min(6, equip.quality or 1))
         DarkIcon.drawQualityBg(vg, qIdx, slotCX, slotCY, slotSize, slotSize, 1.0)
         local eqIcon = getEquipIconCached(equip.templateId)
@@ -638,7 +642,7 @@ function BlacksmithPage.init(vg)
     print("[BlacksmithPage] init OK")
 end
 
---- [锻炉双页 0929] 关闭其他左栏二级页（锻炉+仓库占据左/中栏前的清场）
+-- 关闭其他左栏二级页（锻炉+仓库占据左/中栏前的清场）
 local function closeOtherLeftPages()
     local pages = {
         require("ui.loot.LootBoxPage"),
@@ -659,10 +663,12 @@ local function closeOtherLeftPages()
     if TalentPage.resetHorizonLayout then TalentPage.resetHorizonLayout() end
 end
 
---- 打开铁匠铺（[锻炉双页 0929] 自动联动打开左栏仓库）
+-- 打开铁匠铺（自动联动打开左栏仓库）
 ---@param preSelectEquip table|nil 预选装备（从装备详情跳转时传入）
 ---@param initialTab string|nil 初始 tab："qianghua"|"xilian"，默认 "qianghua"
 function BlacksmithPage.open(preSelectEquip, initialTab)
+    BlacksmithEnhance.clearKeywords()
+    BlacksmithRefine.clearKeywords()
     BlacksmithRefine.clearHover()
     if not blacksmithInited_ and blacksmithVg_ then
         BlacksmithPage.init(blacksmithVg_)
@@ -702,7 +708,7 @@ function BlacksmithPage.open(preSelectEquip, initialTab)
     BlacksmithEnhance.onOpen()
 
     -- 仅打开边沿持有，已开的仓库不反复 open/reset；配装与锻炉可无缝交接。
-    require("ui.backpack.BackpackPanel").acquireWarehouse("blacksmith")
+    require("ui.backpack.BackpackPanel").acquireForBlacksmith()
 end
 
 --- 教程恢复强化页，只选择库存内模板有效且未满阶的装备，不发送强化/穿戴操作。
@@ -745,7 +751,7 @@ function BlacksmithPage.prepareTutorial(vg)
         _enhanceCache.dirty = true
         require("systems.GameSFX").playUIMove(1)
         BlacksmithEnhance.onOpen()
-        require("ui.backpack.BackpackPanel").acquireWarehouse("blacksmith")
+        require("ui.backpack.BackpackPanel").acquireForBlacksmith()
         changed = true
     end
     if opening or switching then
@@ -763,18 +769,24 @@ function BlacksmithPage.prepareTutorial(vg)
     return changed
 end
 
---- [锻炉双页 0929] 联动关闭自动打开的仓库
-local function closeAutoWarehouse()
-    require("ui.backpack.BackpackPanel").releaseWarehouse("blacksmith")
+-- 联动关闭自动打开的仓库
+local function closeAutoWarehouse(closeTogether)
+    local warehouse = require("ui.backpack.BackpackPanel")
+    -- 先冻结原画面并开始退场，再释放持有，避免手动仓库先恢复滚动/页签闪一下。
+    if closeTogether and warehouse.isOpen() and warehouse.isLeftMode() then warehouse.close() end
+    warehouse.releaseWarehouse("blacksmith")
 end
 
---- 关闭铁匠铺（启动关闭动画；动画完成后联动关闭仓库）
+--- 关闭铁匠铺（两页同一时刻启动关闭动画）
 function BlacksmithPage.close()
+    BlacksmithEnhance.clearKeywords()
+    BlacksmithRefine.clearKeywords()
     BlacksmithRefine.clearHover()
-    if state.closing then return end
+    if not state.open or state.closing then return end
     require("systems.StoryPlayer").onPlace("smith", "leave")
     state.closing = true
     state.closeTime = time.elapsedTime
+    closeAutoWarehouse(true)
     print("[BlacksmithPage] 关闭铁匠铺（动画）")
 end
 
@@ -796,6 +808,8 @@ end
 
 --- 强制关闭（跳过动画，用于安全恢复）
 function BlacksmithPage.forceClose()
+    BlacksmithEnhance.clearKeywords()
+    BlacksmithRefine.clearKeywords()
     BlacksmithRefine.clearHover()
     if not state.open then return end
     print("[BlacksmithPage] forceClose: 跳过动画强制关闭 (closing=" .. tostring(state.closing) .. ")")
@@ -817,7 +831,8 @@ function BlacksmithPage.onEquipmentDataUpdate(equipmentData)
                 state.selectedEquip = refreshed
                 BlacksmithRefine.refreshCostOnly()
             else
-                applySelectedEquip(refreshed)
+                -- 同 selectedSeq 的服务端刷新不是主动换件，保留玩家材料选择。
+                applySelectedEquip(refreshed, true)
             end
         else
             print("[BlacksmithPage] 工作台装备 seq=" .. tostring(state.selectedSeq) .. " 已不存在，清空")
@@ -940,7 +955,6 @@ local function bindPageDraw()
         setOnCloseCallback = function(v) onCloseCallback_ = v end,
         getOnOpenCallback = function() return onOpenCallback_ end,
         setOnOpenCallback = function(v) onOpenCallback_ = v end,
-        closeAutoWarehouse = closeAutoWarehouse,
         state = state,
     })
 end
@@ -948,6 +962,10 @@ end
 --- [水平滑入] 整页从左缘滑入/滑出（与锻炉右侧中缝返回条同步）；0=完全展开
 --- [双页方向 0930] openTime 附加错峰延迟：仓库(左栏)先滑入，锻炉随后从左滑入，
 --- 双页整体呈"从左到右依次出现"；关闭仍按 closeTime 立即滑出(向左)。
+function BlacksmithPage.isClosing()
+    return state.closing
+end
+
 function BlacksmithPage.getSeamAnim()
     return state.openTime + OPEN_STAGGER, state.closeTime, ANIM_DURATION, CLOSE_ANIM_DURATION
 end
@@ -962,6 +980,12 @@ function BlacksmithPage.draw(vg)
     end
     bindPageDraw()
     _pageDraw.drawPageImpl(vg)
+    -- 解释气泡在 tab 内容裁剪外；二级确认/装备详情仍为更上层。
+    if state.open and not state.closing and state.selectedEquip and ox == 0
+        and not EquipmentDetail.isOpen() and not BlacksmithEnhance.isDialogOpen() then
+        local keywordPanel = state.tab == "xilian" and BlacksmithRefine or BlacksmithEnhance
+        keywordPanel.drawKeywordsPopup(vg)
+    end
     if state.open and not state.closing and state.tab == "xilian" and state.selectedEquip
         and ox == 0 and materialHoverSource and not EquipmentDetail.isOpen() then
         local dx, dy = materialHoverSource()
@@ -984,7 +1008,7 @@ function BlacksmithPage.drawUnderlay(vg)
     end
 end
 
---- 设置分解标签红点（[锻炉双页 0929] 分解已迁至仓库，保留接口兼容旧调用，改为无操作）
+-- 设置分解标签红点（分解已迁至仓库，保留接口兼容旧调用，改为无操作）
 ---@param show boolean
 function BlacksmithPage.setDecomposeRedDot(show)
     -- no-op：红点改由 TownScene 仓库建筑呈现

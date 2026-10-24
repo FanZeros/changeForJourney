@@ -8,6 +8,7 @@ local AD  = require("systems.AttributeDef")
 local TM  = require("systems.ThreatManager")
 local SEM = require("systems.StatusEffectManager")
 local TAL = require("systems.TalentManager")
+local ETS = require("systems.ExtraTalentSystem")
 local PS  = require("ui.battle.combat.ProjectileSystem")
 local Diag = require("systems.BattleDiag")
 local BattleLayout = require("core.BattleLayout")
@@ -15,12 +16,12 @@ local RCH = require("systems.RelicConditionHandler")
 local ART = require("systems.ArtifactRuntime")
 local MAS = require("systems.MapAffixSystem")
 local DungeonBattle = require("ui.dungeon.DungeonBattle")
-local NumberUtil = require("core.NumberUtil")
 local BattleStats = require("systems.BattleStats")
 local GameSFX = require("systems.GameSFX")
 local BattleCombatFx = require("ui.battle.combat.BattleCombatFx")
 local BattleCombatAnim = require("ui.battle.combat.BattleCombatAnim")
 local BattleCombatCombo = require("ui.battle.combat.BattleCombatCombo")
+local BattleAttackChain = require("ui.battle.combat.BattleAttackChain")
 local ClassGateRuntime = require("systems.ClassGateRuntime")
 local EquipmentSetRuntime = require("systems.EquipmentSetRuntime")
 
@@ -33,8 +34,8 @@ local function newState(id)
     return {
         id = id or "?",
         floatingTexts   = {},
-        pendingFt       = {},  -- [伤害排队] 待显示伤害飘字队列
-        ftSpawnCd       = 0.0, -- [伤害排队] 出队倒计时
+        combatNumberIndex = {}, -- target引用 × channel × 实际属性的当前显示批次
+        ftSequence      = 0,   -- 确定性视觉方向，不消费战斗RNG
         cardAnims       = {},
         hitFlashes      = {},
         hpBuffers       = {},
@@ -42,6 +43,7 @@ local function newState(id)
         comboQueue      = {},
         unitDamageAccum = {},
         ctx             = {},
+        chainToken      = {}, -- 换波时使已发射弹射链失效。
     }
 end
 local defaultState = newState("default")
@@ -129,18 +131,28 @@ local function isAllyUnit(unit)
 end
 
 --- 从天赋投射物选项提取战斗统计元数据
-local function statMetaFromProjOpts(projOpts)
-    if not projOpts then return nil end
-    if projOpts.isDot or projOpts.statCategory or projOpts.isCrit or projOpts.critEligible ~= nil
-        or projOpts.threatScale or projOpts.isRicochet or projOpts.isNightSlash then
+local function statMetaFromProjOpts(projOpts, source, atkType)
+    projOpts = projOpts or {}
+    local actualSource = projOpts.sourceAttacker or source
+    local snapshotType = projOpts.atkType or atkType
+        or (actualSource and (actualSource.atkType or (actualSource.attrs and actualSource.attrs.atkType)))
+    if snapshotType or projOpts.floatKind or projOpts.isBlocked or projOpts.isDot
+        or projOpts.statCategory or projOpts.category or projOpts.isCrit or projOpts.critEligible ~= nil
+        or projOpts.threatScale or projOpts.isRicochet or projOpts.isNightSlash
+        or projOpts.noCounter or projOpts.noThreat then
         return {
             isDot = projOpts.isDot,
-            category = projOpts.statCategory,
+            category = projOpts.statCategory or projOpts.category,
             isCrit = projOpts.isCrit,
             critEligible = projOpts.critEligible,
             threatScale = projOpts.threatScale,
             isRicochet = projOpts.isRicochet,
             isNightSlash = projOpts.isNightSlash,
+            noCounter = projOpts.noCounter,
+            noThreat = projOpts.noThreat,
+            atkType = snapshotType,
+            floatKind = projOpts.floatKind,
+            isBlocked = projOpts.isBlocked,
         }
     end
     return nil
@@ -351,6 +363,13 @@ local function addFloatingText(text, cx, cy, color, isCrit, fontSize, deferred, 
 end
 BattleCombat.addFloatingText = addFloatingText
 
+--- 即时结构化数字：只合并视觉，amount仍为各次真实结算值。
+local function addCombatNumber(target, amount, cx, cy, meta)
+    return BattleCombatFx.addCombatNumber(BCS, target, amount, cx, cy, meta)
+end
+BattleCombat.addCombatNumber = addCombatNumber
+function BattleCombat.clearFloatingTexts() BattleCombatFx.resetFloatingTexts(BCS) end
+
 --- 设置受击后退（跟随设置「特效显示」开关）
 local function setRecoil(target, lungeDir)
     BattleCombatAnim.setRecoil(BCS, target, lungeDir)
@@ -375,8 +394,12 @@ local function resolveDamageStatCategory(source, statMeta)
     if statMeta and statMeta.category then
         return statMeta.category
     end
-    if source and source.atkType then
-        return AD.getAtkCategory(source.atkType)
+    local atkType = statMeta and statMeta.atkType
+    if atkType == nil and source then
+        atkType = source.atkType or (source.attrs and source.attrs.atkType)
+    end
+    if atkType ~= nil then
+        return AD.getAtkCategory(atkType)
     end
     return "physical"
 end
@@ -394,7 +417,8 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     damage = applyGlobalDmgMult(damage)
     damage = ClassGateRuntime.applyDebtTaken(target, damage)
     damage = ClassGateRuntime.absorbIncoming(target, damage)
-    damage = EquipmentSetRuntime.onIncoming(target, damage)
+    damage = EquipmentSetRuntime.onIncoming(target, damage, source)
+    damage = ETS.absorbBulwarkWard(target, damage)
     if damage <= 0 then return 0 end
     TAL.resetEnemyDeath(target)
     local hpBefore = target.hp
@@ -439,7 +463,7 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
             target._killedByNightSlash = true
         end
         if source and isTargetAlly == false then
-            DungeonBattle.onEnemyKill(source)
+            DungeonBattle.onEnemyKill(source, target)
         end
         if isTargetAlly == false then
             -- 死亡状态尚未被宿主清理时分发，冻结/标记击杀成长可读原状态。
@@ -463,7 +487,9 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
             )
         end
         -- 天赋/投射物伤害仇恨（如灵月飞剑 threatScale=0.1）
-        if statMeta and statMeta.threatScale then
+        if statMeta and statMeta.threatScale and not statMeta.noThreat
+            and not EquipmentSetRuntime.shouldSkipThreat(source)
+            and not RCH.shouldSkipThreat(source) then
             TM.onDamageDealt(source, actual, false, statMeta.threatScale)
         end
     end
@@ -477,17 +503,20 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     local showCrit = statMeta and statMeta.isCrit or false
     -- 伤害飘字配色：普通白色 / 暴击红色 / 护盾吸收灰色（完全吸收时不显示 -0）
     local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
+    local numberType = statMeta and statMeta.atkType
+        or (source and (source.atkType or (source.attrs and source.attrs.atkType)))
     if actual > 0 then
-        addFloatingText(NumberUtil.format(actual), tgtCX, tgtCY,
-            showCrit and { 255, 60, 60 } or { 255, 255, 255 }, showCrit, nil, true,
-            statMeta and statMeta.floatKind)
-        if shieldAbsorb > 0 then
-            addFloatingText(NumberUtil.format(shieldAbsorb), tgtCX, tgtCY,
-                { 168, 168, 168 }, false, nil, true)
-        end
-    elseif shieldAbsorb > 0 then
-        addFloatingText((prefix or "") .. NumberUtil.format(shieldAbsorb), tgtCX, tgtCY,
-            { 168, 168, 168 }, false, nil, true)
+        addCombatNumber(target, actual, tgtCX, tgtCY, {
+            channel = "damage", atkType = numberType, isCrit = showCrit,
+            isBlocked = statMeta and statMeta.isBlocked, isDot = statMeta and statMeta.isDot,
+            floatKind = statMeta and statMeta.floatKind,
+        })
+    end
+    if shieldAbsorb > 0 then
+        addCombatNumber(target, shieldAbsorb, tgtCX, tgtCY, {
+            channel = "shield", atkType = numberType, isCrit = showCrit,
+            isBlocked = statMeta and statMeta.isBlocked, isDot = statMeta and statMeta.isDot,
+        })
     end
     setHitFlash(target)
     if actual > 0 then
@@ -564,6 +593,9 @@ function BattleCombat.resolveTalentProjStart(attacker, projOpts, allyList, enemy
     allyList = allyList or BCS.ctx.getAllies()
     enemyList = enemyList or BCS.ctx.getEnemies()
 
+    if projOpts and type(projOpts.bounceFromX) == "number" and type(projOpts.bounceFromY) == "number" then
+        return projOpts.bounceFromX, projOpts.bounceFromY
+    end
     if projOpts and projOpts.bounceFromUnit then
         local from = projOpts.bounceFromUnit
         for li, u in ipairs(enemyList) do
@@ -631,7 +663,7 @@ end
 ---@param allyList table|nil
 ---@param enemyList table|nil
 function BattleCombat.dealTalentDamage(attacker, target, damage, isTargetAlly, prefix, color, projOpts, allyList, enemyList)
-    local meta = statMetaFromProjOpts(projOpts)
+    local meta = statMetaFromProjOpts(projOpts, attacker)
     local function applyDamage()
         return applyFlyingSwordDamageWithRetarget(attacker, target, damage, isTargetAlly, prefix, color, meta, projOpts, allyList, enemyList)
     end
@@ -661,8 +693,27 @@ end
 ---@param enemyList table|nil
 function BattleCombat.onTalentDealDamage(attacker, target, tgtCX, tgtCY, prefix, applyDamage, projOpts, allyList, enemyList)
     local BattleEffects = require("ui.battle.combat.BattleEffects")
+    local projectileStatMeta = statMetaFromProjOpts(projOpts, attacker)
     allyList = allyList or BCS.ctx.getAllies()
     enemyList = enemyList or BCS.ctx.getEnemies()
+    local hitState, hitToken = BCS, BCS.chainToken
+    local hitPS, hitProjectiles = PS.mountedState(), PS.mountedState().projectiles
+    local function validChain()
+        return not (projOpts and projOpts.chainProjectile) or
+            (BCS == hitState and hitState.chainToken == hitToken
+                and PS.mountedState() == hitPS and hitPS.projectiles == hitProjectiles
+                and (not projOpts.isCurrentChain or projOpts.isCurrentChain()))
+    end
+    local function liveChainTarget()
+        if not target or (target.hp or 0) <= 0 or not target.attrs or target.artifactUntargetable then return false end
+        local alliesNow = BCS.ctx.getAllies and BCS.ctx.getAllies() or allyList
+        local enemiesNow = BCS.ctx.getEnemies and BCS.ctx.getEnemies() or enemyList
+        ---@cast alliesNow table[]
+        ---@cast enemiesNow table[]
+        for _, unit in ipairs(alliesNow) do if unit == target then return true end end
+        for _, unit in ipairs(enemiesNow) do if unit == target then return true end end
+        return false
+    end
 
     if not attacker or not attacker.heroId then
         if applyDamage then applyDamage() end
@@ -704,7 +755,7 @@ function BattleCombat.onTalentDealDamage(attacker, target, tgtCX, tgtCY, prefix,
             onReturnHit = function()
                 local actual = applyFlyingSwordDamageWithRetarget(
                     attacker, target, flybackDmg, fb.isTargetAlly, "飞回", { 255, 200, 100 },
-                    statMetaFromProjOpts(projOpts), projOpts, allyList, enemyList)
+                    projectileStatMeta, projOpts, allyList, enemyList)
                 if actual > 0 and fb.recordChance and fb.recordChance > 0 and fb.addCarryover then
                     if math.random() < fb.recordChance then
                         fb.addCarryover(flybackDmg)
@@ -717,11 +768,14 @@ function BattleCombat.onTalentDealDamage(attacker, target, tgtCX, tgtCY, prefix,
     local function onProjectileHit()
         if projOpts and projOpts._hitResolved then return end
         if projOpts then projOpts._hitResolved = true end
-
-        if applyDamage then applyDamage() end
-        tryRecordOnHit()
+        if not validChain() then return end
+        -- 活目标全额吸盾也算命中；死亡/离场则不扣伤害，从上一命中点重选。
+        local didHit = not (projOpts and projOpts.chainProjectile) or liveChainTarget()
+        if didHit and applyDamage then applyDamage() end
+        if not validChain() then return end
+        if didHit then tryRecordOnHit() end
         if projOpts and projOpts.onProjectileLand then
-            projOpts.onProjectileLand()
+            projOpts.onProjectileLand(endX, endY, target, didHit)
         end
         return buildFlybackContinuation()
     end
@@ -739,6 +793,54 @@ function BattleCombat.onTalentDealDamage(attacker, target, tgtCX, tgtCY, prefix,
     else
         onProjectileHit()
     end
+end
+
+--- 从实时属性读取攻速；普通三行与塔使用同一入口，宿主专属倍率在外层叠加。
+function BattleCombat.getLiveAttackInterval(unit, fallback)
+    if unit and unit.attrs and unit.attrs.getActualInterval then
+        local interval = unit.attrs:getActualInterval()
+        if interval and interval >= 0.05 then return interval end
+    end
+    return fallback
+end
+
+--- 敌人退场后后排前移、后备从队尾入场；各战线独立保存补位冷却。
+function BattleCombat.reinforceEnemies(enemies, queue, dt, cooldown)
+    local remaining = math.max(0, (cooldown or 0) - dt)
+    for i = #enemies, 1, -1 do
+        local unit = enemies[i]
+        if unit.hp <= 0 then
+            if not unit.reviveTimer then
+                unit.reviveTimer = 0
+                unit.atkProgress = 0
+                TM.removeUnit(unit)
+                SEM.removeUnit(unit)
+                BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1, noTombstone = true })
+            end
+            unit.reviveTimer = unit.reviveTimer + dt
+            if unit.reviveTimer >= 1.0 and remaining <= 0 then
+                remaining = 0.4
+                for j = i, #enemies - 1 do
+                    local moved = enemies[j + 1]
+                    enemies[j] = moved
+                    BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = -1,
+                        advanceDist = BattleLayout.STRIP_PITCH })
+                end
+                if #queue > 0 then
+                    local newUnit = table.remove(queue, 1)
+                    newUnit.atkProgress = 0
+                    TAL.initUnit(newUnit)
+                    enemies[#enemies] = newUnit
+                    BattleCombat.setCardAnim(newUnit, { state = "reviving", timer = 0, lungeDir = -1 })
+                else
+                    table.remove(enemies)
+                end
+                BattleCombat.clearCardAnim(unit)
+                BattleCombat.clearHitFlash(unit)
+            end
+        end
+    end
+    return remaining
 end
 
 -- 单帧最多补发攻击次数。
@@ -911,15 +1013,8 @@ local function performAttack(attacker, targetList, isAlly)
             local candidates = {}
             for i, u in ipairs(pool) do
                 if u.hp > 0 and i ~= chosenIndex and not u.artifactUntargetable then
-                    local dynamicThreat = TM.getThreat(u)
-                    local staticThreat = 1
-                    if u.attrs then
-                        staticThreat = u.attrs:get(AD.THREAT)
-                        if staticThreat < 1 then staticThreat = 1 end
-                    end
-                    -- [前后排] 乘以位置受击权重: 额外目标同样偏向后排
-                    local weight = (dynamicThreat + staticThreat * TM.STATIC_THREAT_WEIGHT)
-                        * BattleLayout.hitWeight(i)
+                    -- 与主目标共用怨引归一化及站位乘算，避免多目标漏换单位。
+                    local weight = TM.getTargetWeight(u, i)
                     candidates[#candidates + 1] = { index = i, weight = weight }
                 end
             end
@@ -987,7 +1082,7 @@ local function performAttack(attacker, targetList, isAlly)
             syncUnitHp(attacker)
             if healActual > 0 then
                 local aCX, aCY = getCardPos(allyList, atkIdx or math.max(1, math.ceil(#allyList / 2)))
-                addFloatingText("+" .. NumberUtil.format(math.floor(healActual)), aCX, aCY, { 0, 255, 82 }, false)
+                addCombatNumber(attacker, healActual, aCX, aCY, { channel = "heal", atkType = AD.ATK_HOLY })
             end
         end
     end
@@ -997,7 +1092,36 @@ local function performAttack(attacker, targetList, isAlly)
 
     -- [单发穿透] 多目标攻击收集为一次穿透弹的命中事件（替代逐目标各丢一弹）
     local piercePack = nil
-    if atkTargets > 1 and not isHealer and not skipProjectile and BCS.ctx.onPierceAttack then
+    local chainPack = attacker.attackChain and not isHealer and not skipProjectile
+        and { events = {}, hitTargets = {} } or nil
+    local chainState, chainToken = BCS, BCS.chainToken
+    local chainPS, chainProjectiles = PS.mountedState(), PS.mountedState().projectiles
+    local attackerToken = attacker._talentBattleToken
+    local function isCurrentChain()
+        return BCS == chainState and chainState.chainToken == chainToken
+            and PS.mountedState() == chainPS and chainPS.projectiles == chainProjectiles
+            and attacker._talentBattleToken == attackerToken and (attacker.hp or 0) > 0
+    end
+    local function resolveChainTarget(target)
+        local liveTargets = isAlly and BCS.ctx.getEnemies() or BCS.ctx.getAllies()
+        local unit, index = resolveUnitInList(liveTargets, target, {
+            heroId = target.heroId, instanceId = target.instanceId,
+        })
+        local function valid(u)
+            return u and (u.hp or 0) > 0 and u.attrs
+                and not u.artifactUntargetable and not chainPack.hitTargets[u]
+        end
+        if not valid(unit) then
+            unit, index = nil, nil
+            for li, candidate in ipairs(liveTargets) do
+                if valid(candidate) then unit, index = candidate, li; break end
+            end
+        end
+        if not unit then return nil end
+        local x, y = getCardPos(liveTargets, index)
+        return unit, x, y, index, liveTargets
+    end
+    if atkTargets > 1 and not chainPack and not isHealer and not skipProjectile and BCS.ctx.onPierceAttack then
         piercePack = { events = {} }
     end
 
@@ -1160,11 +1284,14 @@ local function performAttack(attacker, targetList, isAlly)
                         end
                         syncUnitHp(curTgt)
                         -- 飘字只显示绿色 +数值（暴击放大），无需"治疗"说明
-                        local color = { 0, 255, 82 }
-                        addFloatingText("+" .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, result.isCrit)
+                        addCombatNumber(curTgt, actual, curTgtCX, curTgtCY, {
+                            channel = "heal", atkType = result.atkType, isCrit = result.isCrit,
+                        })
                         setHitFlash(curTgt)
                         if isAlly and actual > 0 then
-                            TM.onHealingDone(attacker, actual)
+                            if not EquipmentSetRuntime.shouldSkipThreat(attacker) then
+                                TM.onHealingDone(attacker, actual)
+                            end
                             BattleStats.recordHeal(attacker, actual, false)  -- 战斗统计：己方治疗输出
                         end
                         -- 治疗触发的伤害天赋（惩戒飞弹等）可复用初次攻击增伤词条
@@ -1174,7 +1301,7 @@ local function performAttack(attacker, targetList, isAlly)
                         end
                         -- 治疗也触发 onAfterAttack（天赋后续处理，支持投射物如惩戒飞弹）
                         TAL.onAfterAttack(attacker, curTgt, result, isAlly, targetList, function(tgt, dmg, isTgtAlly, pfx, clr, projOpts)
-                            local meta = statMetaFromProjOpts(projOpts)
+                            local meta = statMetaFromProjOpts(projOpts, attacker, result.atkType)
                             local function doTalentDamage()
                                 local sourceAttacker = (projOpts and projOpts.sourceAttacker) or attacker
                                 dealDamageToUnit(tgt, dmg, isTgtAlly, pfx or "", clr or {255, 238, 96}, sourceAttacker, meta)
@@ -1182,6 +1309,9 @@ local function performAttack(attacker, targetList, isAlly)
 
                             if BCS.ctx.onTalentDealDamage then
                                 local lookupList = (isAlly == isTgtAlly) and allyList or targetList
+                                if projOpts and projOpts.isRicochet and type(projOpts.epicBounceTargetList) == "table" then
+                                    lookupList = projOpts.epicBounceTargetList
+                                end
                                 for li, lu in ipairs(lookupList) do
                                     if lu == tgt then
                                         local tdCX, tdCY = getCardPos(lookupList, li)
@@ -1213,14 +1343,27 @@ local function performAttack(attacker, targetList, isAlly)
                     }
 
                     -- 将伤害应用包装成闭包，支持投射物延迟伤害
-                    local function applyHit()
+                    local function applyHit(chainTarget)
+                        if chainPack and not isCurrentChain() then return end
                         local liveTargetList
                         if isAlly then
                             liveTargetList = BCS.ctx.getEnemies and BCS.ctx.getEnemies() or targetList
                         else
                             liveTargetList = BCS.ctx.getAllies and BCS.ctx.getAllies() or targetList
                         end
-                        local resolved, resolvedIdx = resolveDamageTarget(liveTargetList, curTgt, tgtStableId, attacker, isAlly)
+                        local resolved, resolvedIdx
+                        if chainPack then
+                            -- 链弹只能结算实际飞向的对象；失效时交回发射器重选再飞。
+                            for li, unit in ipairs(liveTargetList) do
+                                if unit == chainTarget and (unit.hp or 0) > 0 and unit.attrs
+                                    and not unit.artifactUntargetable and not chainPack.hitTargets[unit] then
+                                    resolved, resolvedIdx = unit, li
+                                    break
+                                end
+                            end
+                        else
+                            resolved, resolvedIdx = resolveDamageTarget(liveTargetList, curTgt, tgtStableId, attacker, isAlly)
+                        end
                         if not resolved then
                             return
                         end
@@ -1230,6 +1373,9 @@ local function performAttack(attacker, targetList, isAlly)
                             Diag.onAttrsNil(curTgt, "applyHit")
                             return
                         end
+                        result.projectileHitTarget = curTgt
+                        result.projectileHitX, result.projectileHitY = curTgtCX, curTgtCY
+                        if chainPack then chainPack.hitTargets[curTgt] = true end
                         local semMult = SEM.getDamageTakenMult(curTgt)
                         local hpBefore = curTgt.hp
                         local hit = result.hits[1]
@@ -1295,10 +1441,11 @@ local function performAttack(attacker, targetList, isAlly)
                                 finalDmg = math.floor(finalDmg * affixMult + 0.5)
                             end
                         end
-                        -- 铁憨憨帝国铁壁：拦截队友伤害（takeDamage前）
                         local tgtIsAllyForAbsorb = not isAlly
                         if isHealer then tgtIsAllyForAbsorb = isAlly end
-                        finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, tgtIsAllyForAbsorb, syncUnitHp, result.category)
+                        -- 套装承伤修正先于死亡拦截，避免死后改变状态。
+                        finalDmg = EquipmentSetRuntime.onIncoming(curTgt, finalDmg, attacker)
+                        finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, tgtIsAllyForAbsorb, syncUnitHp, result.category, dealDamageToUnit, { allies = allies, enemies = enemies })
                         finalDmg = ART.onBeforeTakeDamage(curTgt, attacker, finalDmg, tgtIsAllyForAbsorb)
                         result.damageDealt = finalDmg
                         TAL.resetEnemyDeath(curTgt)
@@ -1321,38 +1468,25 @@ local function performAttack(attacker, targetList, isAlly)
                             end
                         end
 
-                        -- 飘字配色：普通白色 / 暴击红色（物理魔法不再分色，格挡由前缀表达）
-                        local kind = nil
-                        if hit.isCrit and hit.isBlocked then kind = "critblock"
-                        elseif hit.isCrit then kind = "crit"
-                        elseif hit.isBlocked then kind = "block" end
-                        if result.category == "magical" then
-                            kind = kind and (kind .. "magic") or "magic"
-                        elseif result.category == "physical" then
-                            kind = kind and (kind .. "phys") or "phys"
-                        end
+                        -- 铁壁6件只反射真实格挡量；减伤/护盾吸收均不计入反伤基数。
                         if hit.isBlocked then
-                            local blockedAmt = (hit.preBlockDamage or hit.rawDamage or takenForStats or 0) - (actual or 0)
-                            if blockedAmt < 0 then blockedAmt = takenForStats or 0 end
-                            EquipmentSetRuntime.onBlocked(curTgt, attacker, blockedAmt, dealDamageToUnit)
+                            local blockedAmt = hit.blockedDamage or 0
+                            EquipmentSetRuntime.onBlocked(curTgt, attacker, blockedAmt, dealDamageToUnit, isAlly)
                         end
 
                         -- 护盾吸收灰色飘字（完全吸收时不显示 -0）
                         local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
                         if actual > 0 then
-                            local numColor = { 255, 236, 170 }
-                            if kind and kind:find("magic", 1, true) then numColor = { 120, 220, 255 }
-                            elseif kind and kind:find("burn", 1, true) then numColor = { 255, 140, 40 }
-                            elseif hit.isCrit then numColor = { 255, 70, 70 } end
-                            addFloatingText(NumberUtil.format(actual), curTgtCX, curTgtCY,
-                                numColor, hit.isCrit, nil, true, kind)
-                            if shieldAbsorb > 0 then
-                                addFloatingText(NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
-                                    { 168, 168, 168 }, false, nil, true)
-                            end
-                        elseif shieldAbsorb > 0 then
-                            addFloatingText(NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
-                                { 168, 168, 168 }, false, nil, true, "shield")
+                            addCombatNumber(curTgt, actual, curTgtCX, curTgtCY, {
+                                channel = "damage", atkType = result.atkType,
+                                isCrit = hit.isCrit, isBlocked = hit.isBlocked,
+                            })
+                        end
+                        if shieldAbsorb > 0 then
+                            addCombatNumber(curTgt, shieldAbsorb, curTgtCX, curTgtCY, {
+                                channel = "shield", atkType = result.atkType,
+                                isCrit = hit.isCrit, isBlocked = hit.isBlocked,
+                            })
                         end
 
                         -- 暴击回调（供台词系统触发暴击台词�?
@@ -1374,13 +1508,16 @@ local function performAttack(attacker, targetList, isAlly)
                         setHitFlash(curTgt)
                         if actual > 0 then GameSFX.play("hit", BattleStats.mountedTeam()) end
 
-                        if isAlly and not RCH.shouldSkipThreat(attacker) then
+                        local skipThreat = EquipmentSetRuntime.shouldSkipThreat(attacker)
+                            or RCH.shouldSkipThreat(attacker)
+                        if isAlly and not skipThreat then
                             local includeBaseThreat = not baseThreatCounted
                             TM.onDamageDealt(attacker, result.totalDamage, includeBaseThreat)
                             if includeBaseThreat then baseThreatCounted = true end
                         end
-                        -- 条件词条：攻击后仇恨加成（每次攻击获得仇恨�?X%）�?PVP 双向触发
-                        RCH.onAfterAttack(attacker, result.totalDamage)
+                        if not skipThreat then
+                            RCH.onAfterAttack(attacker, result.totalDamage)
+                        end
                         -- 条件词条：终结机制（攻击低血量敌人有概率秒杀）�?PVP 双向触发
                         if curTgt.hp > 0 then
                             local executed = RCH.onAfterHit(attacker, curTgt)
@@ -1404,7 +1541,7 @@ local function performAttack(attacker, targetList, isAlly)
 
                         -- 通天塔击杀回调（斩杀狂潮/战意凝聚层数）
                         if curTgt.hp <= 0 and hpBefore > 0 then
-                            DungeonBattle.onEnemyKill(attacker)
+                            DungeonBattle.onEnemyKill(attacker, isAlly and curTgt or nil)
                             -- 地图词缀：复仇之誓 — 己方击杀怪物时，剩余怪物额外攻击一次
                             if isAlly and MAS.onEnemyKilled() then
                                 local allyList = isAlly and allies or enemies
@@ -1460,15 +1597,38 @@ local function performAttack(attacker, targetList, isAlly)
                         ART.onAfterAttack(attacker, curTgt, result)
                         TAL.onAfterAttack(attacker, curTgt, result, isAlly, targetList, function(tgt, dmg, isTgtAlly, pfx, clr, projOpts)
                             -- 封装实际伤害为回调，支持延迟（投射物到达后执行）
-                            local meta = statMetaFromProjOpts(projOpts)
+                            local meta = statMetaFromProjOpts(projOpts, attacker, result.atkType)
                             local function doTalentDamage()
                                 local sourceAttacker = (projOpts and projOpts.sourceAttacker) or attacker
                                 dealDamageToUnit(tgt, dmg, isTgtAlly, pfx or "", clr or {255, 238, 96}, sourceAttacker, meta)
                             end
 
-                            if BCS.ctx.onTalentDealDamage then
+                            if projOpts and projOpts.chainProjectile then
+                                if projOpts.isCurrentChain and not projOpts.isCurrentChain() then return end
+                                local lookupList = isTgtAlly and BCS.ctx.getAllies() or BCS.ctx.getEnemies()
+                                local li = findUnitIndex(lookupList, tgt)
+                                if li then
+                                    local tdCX, tdCY = getCardPos(lookupList, li)
+                                    local sourceAttacker = projOpts.sourceAttacker or attacker
+                                    if BCS.ctx.onTalentDealDamage then
+                                        BCS.ctx.onTalentDealDamage(sourceAttacker, tgt, tdCX, tdCY,
+                                            pfx, doTalentDamage, projOpts)
+                                    else
+                                        local didHit = (tgt.hp or 0) > 0 and tgt.attrs and not tgt.artifactUntargetable
+                                        if didHit then doTalentDamage() end
+                                        if projOpts.onProjectileLand then
+                                            projOpts.onProjectileLand(tdCX, tdCY, tgt, not not didHit)
+                                        end
+                                    end
+                                elseif projOpts.onProjectileLand then
+                                    projOpts.onProjectileLand(nil, nil, tgt, false)
+                                end
+                            elseif BCS.ctx.onTalentDealDamage then
                                 -- 查找目标位置
                                 local lookupList = (isAlly == isTgtAlly) and allyList or targetList
+                                if projOpts and projOpts.isRicochet and type(projOpts.epicBounceTargetList) == "table" then
+                                    lookupList = projOpts.epicBounceTargetList
+                                end
                                 for li, lu in ipairs(lookupList) do
                                     if lu == tgt then
                                         local tdCX, tdCY = getCardPos(lookupList, li)
@@ -1497,6 +1657,10 @@ local function performAttack(attacker, targetList, isAlly)
                     -- 通知 BattleScene：由场景决定立即/延迟伤害
                     if skipProjectile then
                         applyHit()  -- 攻击者不可寻址，跳过投射物动画直接生效
+                    elseif chainPack then
+                        chainPack.events[#chainPack.events + 1] = {
+                            target = curTgt, result = result, applyHit = applyHit,
+                        }
                     elseif piercePack then
                         -- [单发穿透] 只收集结算事件, 由一发穿透弹沿线依次触发
                         piercePack.events[#piercePack.events + 1] = {
@@ -1539,17 +1703,16 @@ local function performAttack(attacker, targetList, isAlly)
                 end
 
                 local tgtCX, tgtCY = getCardPos(targetList, curIndex)
-                -- 伤害飘字配色：普通白色 / 暴击红色
-                local ftColor = isCrit and { 255, 60, 60 } or { 255, 255, 255 }
-                addFloatingText(
-                    (isCrit and "暴击 " or "") .. NumberUtil.format(actualDmg),
-                    tgtCX, tgtCY, ftColor, isCrit
-                )
+                addCombatNumber(curTarget, actualDmg, tgtCX, tgtCY, {
+                    channel = "damage", isCrit = isCrit,
+                    atkType = attacker.atkType or (attacker.attrs and attacker.attrs.atkType) or AD.ATK_SLASH,
+                })
                 setRecoil(curTarget, isAlly and -1 or 1)
                 setHitFlash(curTarget)
                 if actualDmg > 0 then GameSFX.play("hit", BattleStats.mountedTeam()) end
 
-                if isAlly then
+                if isAlly and not EquipmentSetRuntime.shouldSkipThreat(attacker)
+                    and not RCH.shouldSkipThreat(attacker) then
                     local includeBaseThreat = not baseThreatCounted
                     TM.onDamageDealt(attacker, actualDmg, includeBaseThreat)
                     if includeBaseThreat then baseThreatCounted = true end
@@ -1558,6 +1721,22 @@ local function performAttack(attacker, targetList, isAlly)
         end -- curTarget alive check
     end -- target loop
 
+    if chainPack and #chainPack.events > 0 then
+        if Diag.logEnabled then
+            print("[BattleCombat] 闪电弹射启动 段数=" .. tostring(#chainPack.events))
+        end
+        BattleAttackChain.start(chainPack, attacker, atkCX, atkCY, {
+            isCurrent = isCurrentChain,
+            resolve = resolveChainTarget,
+            emit = function(source, target, sx, sy, tx, ty, result, onHit)
+                if BCS.ctx.onAttackHit then
+                    BCS.ctx.onAttackHit(source, target, sx, sy, tx, ty, result, onHit)
+                else
+                    onHit()
+                end
+            end,
+        })
+    end
     -- [单发穿透] 目标收集完毕 → 发射一发穿透弹（无收集/无宿主支持时各目标已走原路径）
     if piercePack and #piercePack.events > 0 then
         BCS.ctx.onPierceAttack(attacker, atkCX, atkCY, piercePack)
@@ -1575,6 +1754,7 @@ local _combo = BattleCombatCombo.bind({
     getCardPos = getCardPos,
     playAttackCardAnim = playAttackCardAnim,
     addFloatingText = addFloatingText,
+    addCombatNumber = addCombatNumber,
     setRecoil = setRecoil,
     setHitFlash = setHitFlash,
     applyGlobalDmgMult = applyGlobalDmgMult,
@@ -1632,7 +1812,7 @@ end
 -- ======================== 浮动文字更新 ========================
 
 function BattleCombat.updateFloatingTexts(dt)
-    BattleCombatFx.updateFloatingTexts(BCS, dt, addFloatingText)
+    BattleCombatFx.updateFloatingTexts(BCS, dt)
 end
 
 -- ======================== 受击闪烁更新 ========================
@@ -1672,13 +1852,12 @@ end
 -- ======================== 状态重�?========================
 
 function BattleCombat.reset()
-    BCS.floatingTexts = {}
-    BCS.pendingFt     = {}   -- [伤害排队] 清空待显示队列
-    BCS.ftSpawnCd     = 0
+    BattleCombatFx.resetFloatingTexts(BCS)
     BCS.cardAnims     = {}
     BCS.hitFlashes    = {}
     BCS.hpBuffers     = {}
     BCS.comboQueue    = {}
+    BCS.chainToken    = {}
     BCS.unitDamageAccum = {}
     BattleStats.reset()   -- 战斗统计随每波战斗清零（仅统计本次战斗）
 end

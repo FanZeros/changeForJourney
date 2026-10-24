@@ -5,6 +5,7 @@
 
 local TM  = require("systems.ThreatManager")
 local TAL = require("systems.TalentManager")
+local ETS = require("systems.ExtraTalentSystem")
 local SEM = require("systems.StatusEffectManager")
 local ART = require("systems.ArtifactRuntime")
 local BattleCombat = require("ui.battle.combat.BattleCombat")
@@ -12,8 +13,32 @@ local SpeechBubble = require("ui.widget.SpeechBubble")
 local StageBerserk = require("ui.battle.stage.StageBerserk")
 local Diag = require("systems.BattleDiag")
 local BattleLayout = require("core.BattleLayout")
+local BattleClock = require("ui.battle.combat.BattleClock")
 
 local M = {}
+
+-- 逐杀只记录原始回调与数据，战斗结束按原顺序发放，保留每次经验取整及归属。
+-- ETS作用域与战斗一致；弱键避免被丢弃战线遗留的奖励跨场提交。
+---@type table<table, table[]>
+local pendingRewards = setmetatable({}, { __mode = "k" })
+
+local function queueReward(callback, data)
+    local scope = ETS.mountedState()
+    local queue = pendingRewards[scope]
+    if not queue then queue = {}; pendingRewards[scope] = queue end
+    queue[#queue + 1] = { callback = callback, data = data }
+end
+
+function M.flushRewards()
+    local scope = ETS.mountedState()
+    local queue = pendingRewards[scope]
+    pendingRewards[scope] = nil -- 先消费再回调，升级刷新/重开重入不能重复发奖。
+    for _, reward in ipairs(queue or {}) do reward.callback(reward.data) end
+end
+
+function M.discardRewards()
+    pendingRewards[ETS.mountedState()] = nil
+end
 
 local REINFORCE_INTERVAL = 0.4
 
@@ -102,7 +127,7 @@ function M.process(ctx, logicDt)
                         heroIds[#heroIds + 1] = ally.heroId
                     end
                 end
-                ctx.onEnemyKillCallback({
+                queueReward(ctx.onEnemyKillCallback, {
                     expReward  = unit.expReward or 0,
                     goldReward = unit.goldReward or 0,
                     allyCount  = allyCount,
@@ -207,7 +232,7 @@ function M.process(ctx, logicDt)
 
                 unit.reviveTimer = 0       -- 标记已处理，防止重复调用
                 unit._fallenPending = true -- [阵亡紧凑] 退场完成后移至队尾
-                unit._fallenAt = time.elapsedTime
+                unit._fallenAt = BattleClock.now()
                 unit.atkProgress = 0
                 TM.removeUnit(unit)
                 SEM.removeUnit(unit)
@@ -222,7 +247,7 @@ function M.process(ctx, logicDt)
 
     -- [阵亡紧凑] 阵亡英雄退场动画完成后移至队尾，存活英雄前移填位（含卡住兜底）
     -- （单位对象保留：下一关 resetAllyUnit 全员重置复活）
-    require("ui.battle.scene.BattleAllyReset").compactFallen(allies, time.elapsedTime)
+    require("ui.battle.scene.BattleAllyReset").compactFallen(allies, BattleClock.now())
 
     -- 检查是否有存活单位
     local allyAlive  = getAliveUnits(allies)
@@ -230,6 +255,8 @@ function M.process(ctx, logicDt)
 
     -- 胜利条件：场上敌人全灭 + 队列为空
     if #enemyAlive == 0 and #enemyQueue == 0 then
+    ETS.flush() -- 当前BattleScene作用域内，末击死亡钩子已补扫，奖励/换关前统一提交。
+    M.flushRewards()
     ctx.settleWaveEfficiency()
     ctx.resetWaveTimers()
 
@@ -285,6 +312,8 @@ function M.process(ctx, logicDt)
     end
     -- 失败条件：己方全灭
     if #allyAlive == 0 then
+        ETS.flush() -- 战败不回滚实际触发的永久成长。
+        M.flushRewards()
         StageBerserk.exit()
     -- 战败也结算已有的效率数据（不完整波次仍有参考价值）
     ctx.settleWaveEfficiency()

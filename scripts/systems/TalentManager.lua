@@ -471,6 +471,7 @@ local getPrimaryAyane = _ayane.getPrimaryAyane
 local hasAnyAyaneMark = _ayane.hasAnyAyaneMark
 
 local _luoxing = TalentLuoxing.bind({
+    getTAL_BCS = function() return TAL_BCS end,
     hasAwaken = hasAwaken,
     getState = getState,
     ensureState = ensureState,
@@ -492,6 +493,7 @@ local tryYouyeSuperCrit = _luoxing.tryYouyeSuperCrit
 local fireLuoxingFlyingSwords = _luoxing.fireLuoxingFlyingSwords
 
 local _melissa = TalentMelissa.bind({
+    getTAL_BCS = function() return TAL_BCS end,
     hasAwaken = hasAwaken,
     getState = getState,
     ensureState = ensureState,
@@ -524,6 +526,8 @@ local triggerMelissaStarGates = _melissa.triggerMelissaStarGates
 local updateMelissaStarGate = _melissa.updateMelissaStarGate
 
 local _alex = TalentAlex.bind({
+    getState = getState,
+    hasAwakenStage = hasAwakenStage,
     hasAwaken = hasAwaken,
     talentLog = talentLog,
     AD = AD,
@@ -543,6 +547,9 @@ local findLivingElwyn = _elwyn.findLivingElwyn
 local tryElwynInvulnOnEsBreak = _elwyn.tryElwynInvulnOnEsBreak
 
 local _sera = TalentSera.bind({
+    getState = getState,
+    getBattleRefs = function() return TAL_BCS end,
+    hasAwakenStage = hasAwakenStage,
     hasAwaken = hasAwaken,
     talentLog = talentLog,
     AD = AD,
@@ -550,6 +557,9 @@ local _sera = TalentSera.bind({
 local tickSeraMachineGunCount = _sera.tickSeraMachineGunCount
 
 local _suhua = TalentSuhua.bind({
+    getState = getState,
+    getBattleRefs = function() return TAL_BCS end,
+    hasAwakenStage = hasAwakenStage,
     hasAwaken = hasAwaken,
     talentLog = talentLog,
     AD = AD,
@@ -558,6 +568,9 @@ local _suhua = TalentSuhua.bind({
 local runSuhuaNightSlash = _suhua.runSuhuaNightSlash
 
 local _rosa = TalentRosa.bind({
+    getState = getState,
+    getBattleRefs = function() return TAL_BCS end,
+    hasAwakenStage = hasAwakenStage,
     hasAwaken = hasAwaken,
     AD = AD,
 })
@@ -692,6 +705,7 @@ bindTalentDamageTaken()
 local _modDmg
 local function bindTalentModifyDamage()
     _modDmg = TalentModifyDamage.bind({
+        calcTalentFixedDamage = calcTalentFixedDamage,
         getState = getState,
         ensureState = ensureState,
         hasAdv = hasAdv,
@@ -784,7 +798,9 @@ bindTalentUpdate()
 
 --- 重置所有天赋状态（关卡切换时调用）
 function TAL.reset()
+    ClassGateRuntime.resetFusionBattle(TAL_BCS.bAllies, TAL_BCS.bEnemies)
     ETS.flush()
+    ETS.invalidateSupportBattle()
     state = {}
     TAL_BCS.bAllies  = {}
     TAL_BCS.bEnemies = {}
@@ -804,6 +820,7 @@ end
 ---@param allies table 己方单位列表
 ---@param enemies table 敌方单位列表
 function TAL.onBattleStart(allies, enemies)
+    ClassGateRuntime.resetFusionBattle(TAL_BCS.bAllies, TAL_BCS.bEnemies)
     TAL_BCS.bAllies  = allies
     TAL_BCS.bEnemies = enemies
     -- 先清双方本场套装残留，避免开战天赋把旧临时属性折算到新场。
@@ -819,6 +836,25 @@ function TAL.onBattleStart(allies, enemies)
     local function applyBattleStartTalents(units, opposingUnits)
         for _, unit in ipairs(units) do
             local s = ensureState(unit)
+            if unit.heroId == 11 or unit.heroId == 13 or unit.heroId == 21 or unit.heroId == 22 then
+                s.epicAttackBattleToken = {}
+            end
+            if unit.heroId == 21 then
+                s.epicNitroStacks = 0
+                s.epicNitroBattleToken = s.epicAttackBattleToken
+            end
+            if unit.heroId == 22 then
+                s.machineGunShotsLeft = 0
+                s.machineGunShotTimer = 0
+                s.machineGunInBurst = false
+                s.machineGunBurstShot = false
+                s.lastAttackWasBurst = false
+                if unit.attrs then
+                    unit.attrs:removeModifier("sera_burst_pen")
+                    unit.attrs:removeModifier("sera_burst_speed")
+                end
+            end
+            unit._talentBattleToken = {}
             if _fourNew and _fourNew.onBattleStart then
                 _fourNew.onBattleStart(unit, s)
             end
@@ -829,10 +865,9 @@ function TAL.onBattleStart(allies, enemies)
                 local hpBonus = 20
                 if hasAwaken(unit, 6) then hpBonus = 35
                 elseif hasAwaken(unit, 1) then hpBonus = 25 end
-                -- 仇恨倍率: 基础+0.5(1.5倍), 觉醒3→+1(2倍)
-                -- AD.THREAT 同时作为 selectTarget 静态权重(×10) 和 onDamageDone/onHealingDone 的仇恨生成倍率
-                local threatBonus = 0.5
-                if hasAwaken(unit, 3) then threatBonus = 1 end
+                -- 怨引以100为基准：+50为1.5倍，觉醒3的+100为2倍。
+                local threatBonus = AD.THREAT_BASE * 0.5
+                if hasAwaken(unit, 3) then threatBonus = AD.THREAT_BASE end
                 -- 觉醒3: 护甲+8
                 local armorBonus = hasAwaken(unit, 3) and 8 or 0
 
@@ -880,6 +915,8 @@ function TAL.onBattleStart(allies, enemies)
                 local interval = getLuoxingFlyingSwordInterval(unit)
                 resetLuoxingFlyingSwordWindow(s, interval)
                 s.flyingSwordCarryover = 0
+                s.flyingSwordVolley = 0
+                s.flyingSwordBattleToken = {}
             end
 
             -- #20 摘星星星人：战斗开始时召唤永久存在的星门
@@ -1071,7 +1108,7 @@ end
 function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
     return runAfterAttackWithDeaths(function()
         local r = _after.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
-        ClassGateRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, attackerAllies)
+        ClassGateRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, attackerAllies, targetList)
         EquipmentSetRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, targetList)
         if result and result.category ~= "healing" and result.totalDamage then
             EquipmentSetRuntime.addSwordWindowDamage(attacker, result.totalDamage)
@@ -1080,8 +1117,9 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
     end)
 end
 
-function TAL.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory)
-    return _modDmg.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory)
+function TAL.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory, dealDamageFn, battleLists)
+    local finalDamage = _modDmg.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory, dealDamageFn, battleLists)
+    return ClassGateRuntime.modifyFusionIncoming(target, finalDamage)
 end
 
 function TAL.onDamageTaken(unit, attacker, damage, isUnitAlly, performAttackFn, enemyList, result)
@@ -1094,6 +1132,10 @@ end
 ---@param syncHpFn function syncUnitHp(unit) 的引用
 ---@return boolean 是否阻止死亡（true=复活）
 function TAL.onAllyDeath(dyingUnit, allies, syncHpFn)
+    if (dyingUnit.hp or 0) <= 0 and ClassGateRuntime.tryFusionDeferDeath(dyingUnit) then
+        if syncHpFn then syncHpFn(dyingUnit) end
+        return true
+    end
     return _allyDeath.onAllyDeath(dyingUnit, allies, syncHpFn)
 end
 
@@ -1135,7 +1177,7 @@ function TAL.onEnemyDeath(deadEnemy, allies, enemies)
     -- _killedBy* 和 SEM 状态此时仍可见；由宿主随后负责清理。
     deadEnemy._talEnemyDeathReported = true
     local r = _enemyDeath.onEnemyDeath(deadEnemy, allies, enemies)
-    ClassGateRuntime.onEnemyDeath(deadEnemy, allies)
+    ClassGateRuntime.onEnemyDeath(deadEnemy, allies, enemies)
     EquipmentSetRuntime.onEnemyDeath(deadEnemy, allies, enemies)
     return r
 end
@@ -1182,4 +1224,44 @@ end
 function TAL.checkMarkTarget(allies, enemies)
     return _enemyDeath.checkMarkTarget(allies, enemies)
 end
+--- 对显式传入战线进行纯查询，不读取当前挂载的其他战线。
+--- 死亡单位仍检查残留队列与持续星门。
+---@param unit table
+---@param states table
+---@param refs table
+---@return boolean provenNone
+---@return string reason
+function TAL.inspectOffense(unit, states, refs)
+    if type(unit) ~= "table" or type(states) ~= "table" or type(refs) ~= "table" then
+        return false, "talent_missing_state"
+    end
+    ---@type table|nil
+    local s = states[unit]
+    if type(s) ~= "table" or tonumber(s.heroId) ~= tonumber(unit.heroId) then
+        return false, "talent_missing_unit_state"
+    end
+    for key, queue in pairs(s) do
+        if type(key) == "string" and key:lower():find("queue", 1, true) then
+            if type(queue) ~= "table" or next(queue) ~= nil then return false, "talent_pending_queue" end
+        end
+    end
+    for _, key in ipairs({ "machineGunShotsLeft", "flyingSwordDamage", "flyingSwordCarryover", "loadingBar", "blockAbsorbedDmg" }) do
+        if s[key] ~= nil and s[key] ~= 0 then return false, "talent_pending_damage" end
+    end
+    if unit._highPingPending ~= nil then return false, "talent_pending_ping" end
+    if tonumber(unit.heroId) == 20 and (unit.hp or 0) <= 0 then
+        if type(unit.awakeningNodes) ~= "table" then return false, "talent_gate_unknown_awakening" end
+        -- 与真实星门更新保持同一能力条件：实例共鸣或 ETS 的已拥有英雄回退。
+        -- updateMelissaStarGate 对可持续的死者会重新召门，因此当前未召门也有潜力。
+        local persistOk, canPersist = pcall(ETS.starGatePersist, unit)
+        if not persistOk then return false, "talent_gate_unknown_awakening" end
+        if hasAwaken(unit, 6) or canPersist then
+            return false, "talent_dead_star_gate"
+        elseif unit._starGatePersistsAfterDeath == true then
+            return false, "talent_gate_persist_flag"
+        end
+    end
+    return true, "talent_no_pending_offense"
+end
+
 return TAL

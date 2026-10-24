@@ -9,7 +9,7 @@ local Protocol = require("shared.Protocol")
 
 local RewardPopup     = require("ui.hud.popup.RewardPopup")
 local BF              = require("systems.ButtonFeedback")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon = require("core.DarkIcon")  -- 矢量九宫格
 local drawTextStroke    = DrawUtil.drawTextStroke
 local hitTest           = DrawUtil.hitTest
 

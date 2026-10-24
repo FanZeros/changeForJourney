@@ -58,7 +58,7 @@ local CONFIGS = {
         type = "melee", imgKey = "EF_ATK_5",
         imgW = 200, imgH = 200, duration = 0.45,
     },
-    -- 6: 闪电链 — 从角色拉伸到怪物（hitRatio=0.3 表示视觉到达时即触发伤害）
+    -- 6: 闪电链 — 细闪电连接目标，音符弹头保持原比例（hitRatio=0.3 时到达）
     [6] = {
         type = "lightning", imgKey = "EF_ATK_6",
         imgW = 200, imgH = 200, duration = 0.35,
@@ -687,7 +687,7 @@ local function updateAndDrawBezier(proj, vg, t)
     drawProjectileImage(vg, imgHandle, cx, cy, cfg.imgW, cfg.imgH, flyAngle, alpha)
 end
 
---- 闪电链（拉伸到目标）
+--- 闪电链：连接线独立延伸，弹头不随攻击距离拉伸。
 local function updateAndDrawLightning(proj, vg, t)
     local cfg = proj.cfg
 
@@ -696,7 +696,7 @@ local function updateAndDrawLightning(proj, vg, t)
     local dist = math.sqrt(dx * dx + dy * dy)
     local angle = math.atan(dy, dx)
 
-    -- 延伸进度：快速伸出
+    -- 延伸进度：快速伸出，保留原0.3到达和0.7后淡出时序。
     local extendT
     if t < 0.3 then
         extendT = t / 0.3
@@ -710,31 +710,36 @@ local function updateAndDrawLightning(proj, vg, t)
         alpha = 1.0 - (t - 0.7) / 0.3
     end
 
-    -- 当前延伸长度
     local curDist = dist * extendT
-    -- 闪电链中点
-    local midX = proj.startX + math.cos(angle) * curDist * 0.5
-    local midY = proj.startY + math.sin(angle) * curDist * 0.5
+    local headX = proj.startX + dx * extendT
+    local headY = proj.startY + dy * extendT
+    local scale = renderScale * PROJECTILE_VISUAL_SCALE
+    if curDist > 0 and alpha > 0 then
+        nvgSave(vg)
+        nvgTranslate(vg, proj.startX, proj.startY)
+        nvgRotate(vg, angle)
+        -- 最多24段，确定性折线不消费战斗RNG；两端始终落在真实连接点。
+        local segments = math.max(2, math.min(24, math.ceil(curDist / math.max(24 * scale, 1))))
+        local amplitude = math.min(14 * scale, curDist * 0.08)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, 0, 0)
+        for i = 1, segments - 1 do
+            local offset = (i % 2 == 0 and -1 or 1) * amplitude
+                * (0.7 + 0.3 * math.sin(t * 24 + i * 1.7))
+            nvgLineTo(vg, curDist * i / segments, offset)
+        end
+        nvgLineTo(vg, curDist, 0)
+        nvgStrokeWidth(vg, 7 * scale)
+        nvgStrokeColor(vg, nvgRGBA(64, 43, 20, math.floor(140 * alpha)))
+        nvgStroke(vg)
+        nvgStrokeWidth(vg, 2.5 * scale)
+        nvgStrokeColor(vg, nvgRGBA(255, 225, 95, math.floor(220 * alpha)))
+        nvgStroke(vg)
+        nvgRestore(vg)
+    end
 
-    -- 绘制拉伸的闪电图片
-    -- 保持闪电连接攻击者与目标，仅把链条厚度和最短贴图宽度减半。
-    local stretchW = math.max(cfg.imgW * PROJECTILE_VISUAL_SCALE, curDist)
-    local stretchH = cfg.imgH * PROJECTILE_VISUAL_SCALE
     local imgHandle = getImage(cfg.imgKey)
-    if not imgHandle or imgHandle <= 0 then return end
-
-    nvgSave(vg)
-    nvgTranslate(vg, midX, midY)
-    nvgRotate(vg, angle)
-    -- 用 nvgImagePattern 重复/拉伸图片
-    local paint = nvgImagePattern(vg, -stretchW * 0.5, -stretchH * 0.5,
-        stretchW, stretchH, 0, imgHandle, alpha)
-    ---@cast paint NVGpaint
-    nvgBeginPath(vg)
-    nvgRect(vg, -stretchW * 0.5, -stretchH * 0.5, stretchW, stretchH)
-    nvgFillPaint(vg, paint)
-    nvgFill(vg)
-    nvgRestore(vg)
+    drawProjectileImage(vg, imgHandle, headX, headY, cfg.imgW, cfg.imgH, angle, alpha)
 end
 
 --- 斩击特效（原地播放，夜华斩）

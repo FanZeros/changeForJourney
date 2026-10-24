@@ -14,8 +14,10 @@ function M.version(request)
         sources[key] = Dispatcher.get(key) or Store.Get(key) or EMPTY_SOURCE
     end
     request.sources = sources
-    -- heroes引用/revision、缓存invalidate不参与版本；exp持续通知不能饿死任务。
-    local parts = { request.viewKey, Snapshot.dependencies(sources, request.seq) }
+    -- 下部属性只依赖已穿/候选内容；库存其它物品掉落不能把它清空。
+    -- 整库评分仍额外遵守引用/revision契约，两种结果不共用提交栅栏。
+    request.panelKey = request.viewKey .. "\31" .. Snapshot.dependencies(sources, request.seq, request.heroId)
+    local parts = { request.panelKey }
     for _, key in ipairs({ "equipment", "artifacts", "talents" }) do
         parts[#parts + 1] = tostring(sources[key])
         parts[#parts + 1] = tostring(Store.GetRevision and Store.GetRevision(key) or 0)
@@ -28,6 +30,7 @@ function M.bind(deps)
     ---@type thread|nil
     local job = nil
     local jobKey, completedKey = nil, nil
+    local panelKey, preparedPanel = nil, nil
     local generation, steps, deadline = 0, 0, 0
     local committed = { pending = true, scores = {}, upgrades = {} }
     local api = {}
@@ -42,6 +45,7 @@ function M.bind(deps)
     function api.cancel()
         generation = generation + 1
         job, jobKey, completedKey = nil, nil, nil
+        panelKey, preparedPanel = nil, nil
         committed = { pending = true, scores = {}, upgrades = {} }
         deps.clear()
     end
@@ -53,19 +57,30 @@ function M.bind(deps)
         return committed
     end
     function api.update()
-        local start = os.clock()
         local request = capture()
         if not request.heroId then api.cancel(); return end
+        if panelKey ~= request.panelKey then
+            -- 只有最多已穿项+当前候选的小世界，不遍历库存；不可yield让持续养成饿死底板。
+            -- 完整比较在同一次Update内构建/终检/提交，Render仍禁止补算或借旧差值。
+            local panelGeneration = generation
+            local ok, panel = pcall(deps.prepare, request, function() end)
+            if not ok then
+                print("[CharacterDetail] panel prepare failed: " .. tostring(panel))
+                return
+            end
+            if panelGeneration ~= generation or request.panelKey ~= capture().panelKey then return end
+            deps.commit(panel, request)
+            preparedPanel, panelKey = panel, request.panelKey
+        end
         if completedKey == request.key then return end
         if not job or jobKey ~= request.key then
             generation = generation + 1
             local token = generation
             jobKey, completedKey = request.key, nil
             committed = { viewKey = request.viewKey, pending = true, scores = {}, upgrades = {} }
-            deps.clear()
+            local panel = preparedPanel
             job = coroutine.create(function()
-                -- 先构建小世界比较；即使全库箭头准备耗时，也不在Render做任何重建。
-                local panel = deps.prepare(request, checkpoint)
+                -- 完整库存只服务评分/箭头；慢任务重启或失败不再清空已提交的属性。
                 checkpoint()
                 local sources = request.sources
                 local context = #deps.slots > 0 and Power.buildContext(request.heroId, {
@@ -115,7 +130,8 @@ function M.bind(deps)
             end)
         end
         local running, key, token = job, jobKey, generation
-        steps, deadline = 0, start + (deps.budgetSeconds or 0.001)
+        -- 签名校验和原子属性刷新不消耗worker推进额度，避免大名册每轮都过早让出。
+        steps, deadline = 0, os.clock() + (deps.budgetSeconds or 0.001)
         local ok, result = coroutine.resume(running)
         if not ok then
             job, jobKey = nil, nil
@@ -125,7 +141,6 @@ function M.bind(deps)
             -- resume期间没有其他游戏更新；capture仍复核全部输入，原子发布同版本bundle。
             if token == generation and key == capture().key then
                 committed, completedKey = result, key
-                deps.commit(result.panel, request)
             end
         end
     end

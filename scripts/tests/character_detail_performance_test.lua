@@ -213,6 +213,12 @@ local function runTests()
     local before = copy(data)
     f.draw()
     check(#f.icons >= 1, "cold pending retains equipped slot artwork")
+    f.update()
+    check(not f.panel.getPrepared(1, {}).pending and d.getPreparedEquipment().pending,
+        "first Update publishes complete attributes before 500-item score worker finishes")
+    f.draw()
+    check(#f.latest.rows > 0 and (f.latest.current.str or 0) > 0 and f.latest.preview ~= nil,
+        "first Update renders nonzero radar, rows and current candidate while scores pending")
     local frames = f.finish(true)
     f.draw()
     check(frames > 1 and not d.getPreparedEquipment().pending, "continuous roster/team exp finishes private worker")
@@ -247,7 +253,8 @@ local function runTests()
         else data.heroes.roster[1].extraTalent.stacks = 250 end
         f.update()
         check(d.getPreparedEquipment().pending, "unnotified " .. field .. " hides old scores/arrows")
-        f.draw(); check(#f.icons >= 1 and f.latest.preview == nil, "growth pending retains basic slots, not old comparison")
+        f.draw(); check(#f.icons >= 1 and f.latest.preview ~= nil and not f.panel.getPrepared(1, {}).pending,
+            "growth Update refreshes current attributes and candidate without waiting for score worker")
         f.finish(true)
         if field == "extraTalent" then
             local grownContext = f.EP.buildContext(1, data)
@@ -277,12 +284,60 @@ local function runTests()
     f.draw()
     f.panel.toggleAttributeMode()
     f.finish(true)
-    -- 持续真实成长不可能承诺完成；必须诚实pending并保持操作可用。
+    -- 持续真实成长允许评分pending，但下部属性每次Update必须是完整当前值，不能永久空白。
     for _ = 1, 8 do
         data.heroes.roster[1].level = data.heroes.roster[1].level + 1
         f.update(); f.draw()
+        local currentOracle = Preview.build(1, data.heroes.roster[1].level, 3, nil, data)
+        local currentPanel = f.panel.getPrepared(1, {})
         check(d.getPreparedEquipment().pending and #f.icons >= 1, "continuous real growth remains usable pending")
+        check(not currentPanel.pending and #f.latest.rows > 0 and equal(currentPanel.rows, currentOracle.rows)
+            and equal(f.latest.current, currentOracle.current.stats) and f.latest.preview ~= nil,
+            "continuous real growth publishes latest complete rows/radar/comparison in same Update")
     end
+    -- 三队12人：别队持续真实成长不取消本队比较或整库评分。
+    local HC = f.env.require("config.HeroConfig")
+    local ids = { 1, 2, 20 }
+    for id = 3, 100 do
+        if id ~= 20 and HC.get(id) and #ids < 12 then
+            ids[#ids + 1] = id
+            data.heroes.roster[id] = { level = 80, awakening = {}, extraTalent = {} }
+            data.equipment.equipped[id] = { accessory = id + 10 }
+        end
+    end
+    check(#ids == 12, "three-team stress fixture has twelve real heroes")
+    for team = 1, 3 do
+        data.heroes.teams[team].slots = {}
+        for slot = 1, 4 do data.heroes.teams[team].slots[slot] = ids[(team - 1) * 4 + slot] end
+    end
+    f.update()
+    local stablePanel = f.panel.getPrepared(1, {})
+    local panelBuilds = f.counts.preview
+    local otherId = ids[5]
+    for frame = 1, 30000 do
+        data.heroes.roster[otherId].level = 80 + frame
+        f.notify("heroes")
+        f.update()
+        if not d.getPreparedEquipment().pending then break end
+    end
+    check(not d.getPreparedEquipment().pending and f.counts.preview == panelBuilds
+        and f.panel.getPrepared(1, {}) == stablePanel,
+        "continuous other-team level growth preserves ready panel and lets full score finish")
+    -- 目标队友成长仍属真实依赖，下部即刻新建，评分拒绝旧版本。
+    data.heroes.roster[2].level = 81
+    check(f.panel.getPrepared(1, {}).pending and d.getPreparedEquipment().pending,
+        "same-team growth invalidates panel and full score before Update")
+    f.update()
+    check(not f.panel.getPrepared(1, {}).pending and d.getPreparedEquipment().pending,
+        "same-team growth refreshes panel without waiting for full score")
+    panelBuilds = f.counts.preview
+    stablePanel = f.panel.getPrepared(1, {})
+    f.notify("equipment")
+    check(f.panel.getPrepared(1, {}) == stablePanel and d.getPreparedEquipment().pending,
+        "inventory-only revision does not clear unchanged current attributes")
+    f.update()
+    check(f.counts.preview == panelBuilds and f.panel.getPrepared(1, {}) == stablePanel,
+        "score restart does not rebuild or clear panel")
     local Draw = f.drawModule
     d.handleInput(Draw.BTN_UNEQUIP_CX, Draw.BTN_UNEQUIP_CY)
     check(#f.actions == 1, "pending does not disable real unequip action")
@@ -390,7 +445,79 @@ local function runTests()
     local built = Preview.build(1, data.heroes.roster[1].level, 5, nil, data)
     check(built.current ~= nil, "preview's internal attribute copies only see compact inventory")
     setmetatable(inventory, nil)
+    -- 星门+三队全六槽+候选+装备来源模式：量测原子小世界，不将软预算冒充硬上限。
+    for _, id in ipairs(ids) do
+        for index, slot in ipairs(f.EC.SLOTS) do
+            local wearableTypes = f.Eq.getWearableTypeSet(id, slot)
+            local tid
+            for _, candidateId in ipairs(f.EC.BY_SLOT[slot]) do
+                local template = f.EC.ITEMS[candidateId]
+                if template.grip ~= "twohand" and (not wearableTypes or wearableTypes[template.type]) then
+                    tid = candidateId
+                    break
+                end
+            end
+            local item = f.Eq.generate(assert(tid, "wearable stress template " .. slot), 20, 3)
+            local seq = 2000 + id * 10 + index
+            item.seq = seq
+            data.equipment.inventory[tostring(seq)] = item
+            data.equipment.equipped[id][slot] = seq
+        end
+    end
+    f.notify("equipment")
+    d.open(20, "equip")
+    f.select(3, 20, true, "backpack", "accessory")
+    f.panel.toggleAttributeMode()
+    local heavyBefore = copy(data)
+    local started = os.clock()
+    f.update()
+    local heavyMs = (os.clock() - started) * 1000
+    local heavyPanel = f.panel.getPrepared(20, {})
+    local heavyOptions = copy(data)
+    heavyOptions.includeEquipmentBonuses, heavyOptions.compactEquipment = true, false
+    local heavyOracle = Preview.build(20, data.heroes.roster[20].level, 3, nil, heavyOptions)
+    check(not heavyPanel.pending and equal(heavyPanel.rows, heavyOracle.rows)
+        and equal(heavyPanel.equipmentBonuses.rows, heavyOracle.equipmentBonuses.rows)
+        and equal(heavyPanel.equipmentBonuses.current.stats, heavyOracle.equipmentBonuses.current.stats),
+        "full worn three-team star gate equipment mode first Update equals full inventory oracle")
+    check(equal(heavyBefore, data), "atomic panel stress never mutates live sources")
+    f.draw()
+    f.panel.toggleAttributeMode()
+    -- 属性准备失败不阻断宿主，不提交失败版本；重试和cancel后可恢复。
+    local Preparation = f.env.require("ui.character.detail.CharacterDetailPreparation")
+    local shouldFail, commits, clears = true, 0, 0
+    local probe = Preparation.bind({ capture = function() return { heroId = 1, viewKey = "fault-probe" } end,
+        prepare = function()
+            if shouldFail then error("expected panel fault") end
+            return { rows = {}, current = { stats = {} } }
+        end,
+        commit = function() commits = commits + 1 end, clear = function() clears = clears + 1 end,
+        slots = {}, hasUpgrade = function() return false end })
+    local ok = pcall(probe.update)
+    check(ok and commits == 0 and probe.read("fault-probe").pending,
+        "panel exception is isolated without publishing a failed generation")
+    shouldFail = false
+    probe.update()
+    check(commits == 1, "valid retry commits panel after preparation failure")
+    probe.cancel()
+    check(clears == 1 and probe.read("fault-probe").pending, "cancel clears independent panel and scoring generation")
+    local reentrant = { cancel = function() end }
+    local staleCommits = 0
+    reentrant = Preparation.bind({ capture = function() return { heroId = 1, viewKey = "cancel-probe" } end,
+        prepare = function()
+            reentrant.cancel()
+            return { rows = {}, current = { stats = {} } }
+        end,
+        commit = function() staleCommits = staleCommits + 1 end, clear = function() end,
+        slots = {}, hasUpgrade = function() return false end })
+    reentrant.update()
+    check(staleCommits == 0 and reentrant.read("cancel-probe").pending,
+        "cancel during preparation prevents stale same-key panel commit")
     check(f.counts.io == 0, "no player File/FS access")
+    local inventoryCount = 0
+    for _ in pairs(data.equipment.inventory) do inventoryCount = inventoryCount + 1 end
+    print(string.format("%s PANEL_STRESS hero=20 teams=3 slots=72 inventory=%d firstUpdateMs=%.3f", TAG,
+        inventoryCount, heavyMs))
     print(string.format("%s METRICS coldFrames=%d build=%d score=%d gain=%d preview=%d drawColdBuild=%d updateMaxMs=%.3f updates=%d", TAG,
         frames, f.counts.build, f.counts.score, f.counts.gain, f.counts.preview,
         f.metrics.drawColdBuild, f.metrics.updateMaxMs, f.metrics.updates))

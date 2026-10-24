@@ -519,7 +519,9 @@ function M.bind(deps)
             if ally.attrs then
                 local curTotalES = (ally.attrs.energyShield or 0) + (ally.attrs.tempEnergyShield or 0)
                 if s.prevTotalES == nil then s.prevTotalES = curTotalES end
-                if s.prevTotalES > 0 and curTotalES <= 0 then
+                if s.pendingShieldBreak or (s.prevTotalES > 0 and curTotalES <= 0) then
+                    -- 命中后可能已经被星图回盾，仍消费真实破盾事件，不能只看当前盾值。
+                    s.pendingShieldBreak = nil
                     local elwyn, elwynState = findLivingElwyn(allies)
                     if elwyn and elwynState then
                         tryElwynInvulnOnEsBreak(ally, elwyn, elwynState)
@@ -581,9 +583,12 @@ function M.bind(deps)
     end
 
     local function onShieldBreak(unit)
-        if not unit or not hasStarNode(unit, 203) or not unit.attrs then return end
+        if not unit or not unit.attrs or unit.attrs:get(AD.HP) <= 0 then return end
         local s = ensureState(unit)
-        if not s or (s.wardBreakCd or 0) > 0 then return end
+        if not s then return end
+        -- 先记录破盾事实，供真布诗人等延后检查使用，不能被下面的即时回盾掩盖。
+        s.pendingShieldBreak = true
+        if not hasStarNode(unit, 203) or (s.wardBreakCd or 0) > 0 then return end
         local maxES = math.floor((unit.attrs.final[AD.ENERGY_SHIELD] or 0) + 0.5)
         if maxES <= 0 then return end
         local gain = math.max(1, math.floor(maxES * 0.15 + 0.5))

@@ -698,14 +698,28 @@ function M.runRefineMaterial()
         end)
         for _, name in ipairs({"nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgFillColor",
             "nvgBeginPath", "nvgRoundedRect", "nvgFill", "nvgStroke", "nvgStrokeWidth",
-            "nvgStrokeColor"}) do replace(_G, name, noop) end
+            "nvgStrokeColor", "nvgTextLetterSpacing", "nvgSave", "nvgRestore",
+            "nvgIntersectScissor", "nvgMoveTo", "nvgLineTo", "nvgClosePath"}) do
+            replace(_G, name, noop)
+        end
         for i, name in ipairs({"NVG_ALIGN_LEFT", "NVG_ALIGN_MIDDLE", "NVG_ALIGN_CENTER",
-            "NVG_ALIGN_RIGHT"}) do replace(_G, name, 2 ^ (i - 1)) end
+            "NVG_ALIGN_RIGHT", "NVG_ALIGN_TOP"}) do replace(_G, name, 2 ^ (i - 1)) end
+        replace(_G, "nvgCurrentTransform", function(_, matrix)
+            matrix[1], matrix[2], matrix[3], matrix[4], matrix[5], matrix[6] = 1, 0, 0, 1, 0, 0
+        end)
         replace(_G, "nvgRGBA", function() return 0 end)
         replace(_G, "nvgTextBounds", function(_, _, _, text) return #text * 10 end)
         local texts, materialImage = {}, -1
         replace(_G, "nvgText", function(_, x, y, text)
             texts[#texts + 1] = {x = x, y = y, text = text}
+        end)
+        -- 已安装的 I18n hook 可能缓存原生绘制；富文本只转接最终绘制/测量，布局与格式化仍真实。
+        local I18n = require("core.I18n")
+        replace(I18n, "displayText", function(context, x, y, text, endp)
+            return nvgText(context, x, y, text, endp)
+        end)
+        replace(I18n, "displayBounds", function(context, x, y, text, ...)
+            return nvgTextBounds(context, x, y, text, ...)
         end)
         local Draw = require("core.DrawUtil")
         replace(Draw, "drawImageCentered", function(_, image, x, y)
@@ -792,6 +806,122 @@ function M.runRefineMaterial()
             Page.onActionResult({success = true, refinePreview = affixes, refineSeq = seq})
             check(Refine.hasPreview(), "真实预览回执保留待替换")
             return affixes
+        end
+        -- 截图数值专项独立 fixture：不借材料用例的 a/b、锁或 pending 状态。
+        do
+            local savedTime, savedEssence = time.elapsedTime, owned.essence
+            local savedActions, savedNotices = #actions, #notices
+            local screenshot = ES.hydrate({seq = 98603, templateId = "W30", level = 114,
+                quality = 6, ascendLevel = 50, affixMult = 1.8,
+                affixes = {
+                    {key = "critRate", name = "暴击率", quality = 5, value = 78 / 1.8},
+                    {key = "minDmgBonus", name = "劣势伤害", quality = 5, value = 804.1 / 1.8},
+                    {key = "maxDmgBonus", name = "优势伤害", quality = 5, value = 667.403 / 1.8},
+                    {key = "str", name = "力量", quality = 5, value = 12.5},
+                }})
+            local original = copy(screenshot)
+            equipment.inventory[tostring(screenshot.seq)] = screenshot
+            Page.setSelectedEquip(screenshot)
+            check(screenshot.grip == "twohand" and screenshot.slot == "weapon",
+                "截图fixture由真实W30水合为双手主武器")
+            -- 独立常数 oracle，不调用 effective/配置曲线/生产格式化生成期望。
+            -- Ccrit=8: 8*78/(8+78)=7.255813953488 → 7.3%；旧暴率预算不变。
+            -- Cmin/max=40: 40*804.1/844.1=38.104489989338 → 38.1%；
+            -- 40*667.403/707.403=37.738205803481 → 37.7%。str仍为12.5*1.8=22.5。
+            local currentOracle = {"7.3%", "38.1%", "37.7%", "22.5"}
+            local function drawnRows(x, expected, label)
+                -- 真 Refine 四行中心：1432-(4-1)*68/2=1330；左右数值X=440/940。
+                for index, text in ipairs(expected) do
+                    local found, actual = 0, "<未绘制>"
+                    for _, call in ipairs(texts) do
+                        if call.x == x and call.y == 1330 + (index - 1) * 68 then
+                            found, actual = found + 1, call.text
+                        end
+                    end
+                    check(found == 1 and actual == text, label .. "第" .. index .. "行应为"
+                        .. text .. "，实际" .. actual)
+                end
+            end
+            local function drawCurrent(expected, label)
+                texts = {}
+                Refine.drawPanel(vg) -- 真实 Page 注入的 formatAffixValue → 最终 nvgText。
+                drawnRows(440, expected, label)
+            end
+            local function rawUnchanged(equip, snapshot, label)
+                check(equip.templateId == snapshot.templateId and equip.level == snapshot.level
+                    and equip.quality == snapshot.quality and equip.ascendLevel == snapshot.ascendLevel
+                    and equip.affixMult == snapshot.affixMult, label .. "实例等级/品质/升阶/倍率不改")
+                check(#equip.affixes == #snapshot.affixes, label .. "保留四条普通词缀")
+                for index, affix in ipairs(equip.affixes) do
+                    local raw = snapshot.affixes[index]
+                    check(affix.key == raw.key and affix.value == raw.value
+                        and affix.ascBonus == raw.ascBonus and affix.quality == raw.quality
+                        and not affix.isCorrupt, label .. "词缀raw/投入/普通品级不改 " .. index)
+                end
+            end
+            drawCurrent(currentOracle, "截图当前值")
+            rawUnchanged(screenshot, original, "当前绘制后")
+            check(not Refine.hasPreview(), "截图同seq推送前无活跃preview")
+            local previous = screenshot
+            screenshot = push(screenshot)
+            check(screenshot ~= previous and screenshot.seq == previous.seq and not Refine.hasPreview(),
+                "截图同seq推送替换真实实例引用，不走preview保留分支")
+            drawCurrent(currentOracle, "截图同seq推送当前值")
+            rawUnchanged(screenshot, original, "当前推送后")
+
+            owned.essence = 1000000000
+            local actionCount = #actions
+            check(Refine.handleInput(773, 2129), "截图普通精粹洗练输入被消费")
+            check(#actions == actionCount + 1
+                and actions[#actions].action == Protocol.ACTION_TYPES.REFINE_EQUIP
+                and actions[#actions].params.seq == screenshot.seq
+                and actions[#actions].params.extraResource == nil
+                and actions[#actions].params.lockedIndices == nil, "截图走无材料/无锁的普通洗练请求")
+            -- 重排避免误把当前左栏当成preview；加入固定投入，曲线前总值仍为同一oracle。
+            -- 例如暴率：(78/1.8-5)*1.8+9=78；不是先soft(raw)再乘倍率或soft两次。
+            local pending = {copy(original.affixes[3]), copy(original.affixes[1]),
+                copy(original.affixes[2]), copy(original.affixes[4])}
+            for index, affix in ipairs(pending) do
+                if index ~= 4 then affix.value, affix.ascBonus = affix.value - 5, 9 end
+            end
+            local pendingSnapshot = copy(screenshot)
+            pendingSnapshot.affixes = copy(pending)
+            local previewOracle = {"37.7%", "7.3%", "38.1%", "22.5"}
+            Page.onActionResult({success = true, refinePreview = pending, refineSeq = screenshot.seq})
+            check(Refine.hasPreview() and screenshot.affixes ~= pending, "普通preview不提前替换实例")
+            time.elapsedTime = time.elapsedTime + 1 -- 结束真实刷新动画后捕获最终静态绘制。
+            drawCurrent(currentOracle, "普通preview期间当前值")
+            drawnRows(940, previewOracle, "普通preview最终绘制")
+            rawUnchanged(screenshot, original, "普通preview期间")
+            rawUnchanged({templateId = screenshot.templateId, level = screenshot.level,
+                quality = screenshot.quality, ascendLevel = screenshot.ascendLevel,
+                affixMult = screenshot.affixMult, affixes = pending}, pendingSnapshot, "preview原始投入")
+            actionCount = #actions
+            check(Refine.handleInput(310, 2129), "截图普通preview替换输入被消费")
+            check(#actions == actionCount + 1
+                and actions[#actions].action == Protocol.ACTION_TYPES.REFINE_REPLACE
+                and actions[#actions].params.seq == screenshot.seq, "截图普通preview发送真实替换请求")
+            Page.onActionResult({success = true, refineReplaced = true})
+            check(screenshot.affixes == pending and not Refine.hasPreview(), "截图普通替换提交pending引用并清preview")
+            time.elapsedTime = time.elapsedTime + 1
+            drawCurrent(previewOracle, "普通replace后最终绘制")
+            rawUnchanged(screenshot, pendingSnapshot, "普通replace后")
+            screenshot = push(screenshot) -- 替换完成后才推送，不改变现存preview活跃时保留策略。
+            check(not Refine.hasPreview(), "截图replace后同seq推送无活跃preview")
+            drawCurrent(previewOracle, "普通replace后同seq推送最终绘制")
+            rawUnchanged(screenshot, pendingSnapshot, "普通replace后同seq推送")
+            rawUnchanged(previous, original, "被替换的旧实例也不写回soft值")
+
+            -- 旧材料/锁测试从原来的 a 和空记录起步，fixture不残留到后续case。
+            Page.setSelectedEquip(nil)
+            equipment.inventory[tostring(screenshot.seq)] = nil
+            Page.setSelectedEquip(a)
+            time.elapsedTime, owned.essence = savedTime, savedEssence
+            for index = #actions, savedActions + 1, -1 do actions[index] = nil end
+            for index = #notices, savedNotices + 1, -1 do notices[index] = nil end
+            texts, materialImage = {}, -1
+            check(not Refine.hasPreview() and #actions == savedActions and #notices == savedNotices,
+                "截图fixture清选件/pending/推送库存/时钟/货币/spy记录后继续原材料与锁用例")
         end
         owned.essence = 10000
         check(Refine.handleInput(476, 1432), "精粹路径锁定唯一词条")

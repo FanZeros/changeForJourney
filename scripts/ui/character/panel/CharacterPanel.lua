@@ -458,7 +458,7 @@ local function updateHeroesRefreshBaseline(layoutChanged)
             -- 比较冻结值可识别共享 advBranch 表原地写入，以及重置删除分支。
             for i = 1, MAX_SLOTS do
                 local oldSlot = previous and previous[i]
-                local slot = current[t][i]
+                local slot = current[t][i] ---@type table
                 if oldSlot and slot.heroId and oldSlot.heroId == slot.heroId
                     and not sameRefreshValue(oldSlot.advBranch, slot.advBranch) then
                     classTeams[t] = true
@@ -1093,6 +1093,10 @@ function CharacterPanel.getDeployedTeam(teamIdx)
                     unit._slotOrder = i
                     -- 装备可能增加 maxHp，recalc 不会自动抬升 HP，需重新满血
                     unit.attrs:fillHp()
+                    -- 仅新出战实例在装备/神器结算完毕后补盾；战中重算/补血不得刷盾。
+                    unit.attrs:fillEnergyShield()
+                    -- 开战天赋可能继续提高上限；宿主仅对新实例消费一次最终补盾。
+                    unit._needsInitialShieldFill = true
                     -- 重新同步 flat 字段
                     unit.maxHp      = unit.attrs.final[AD.MAX_HP]
                     unit.hp         = unit.attrs.final[AD.HP]

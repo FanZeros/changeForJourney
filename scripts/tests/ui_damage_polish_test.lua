@@ -22,6 +22,8 @@ local function fixture()
     function f.record(kind, data) data.kind = kind; f.calls[#f.calls + 1] = data end
     function f.clear() f.calls = {} end
     function f.load(name)
+        -- 引擎UI保持真实实现；私有源码加载器不能把目录模块误读为UI.lua。
+        if name:match("^urhox%-libs[./]") then return require(name) end
         if f.modules[name] then return f.modules[name] end
         if f.loaded[name] then return f.loaded[name] end
         local path = name:gsub("%.", "/") .. ".lua"
@@ -87,6 +89,8 @@ local function fixture()
     f.modules["systems.ButtonFeedback"] = { begin = function() return false end, finish = noop, trigger = noop }
     f.modules["core.GameState"] = {}
     f.modules["systems.TutorialManager"] = { isActive = function() return false end, isBuildingUnlocked = function() return true end }
+    f.modules["ui.hud.popup.SettingsPanel"] = { isSetIconsEnabled = function() return true end,
+        isDamageFlashEnabled = function() return true end, isDamageShakeEnabled = function() return true end }
     return f
 end
 local function textJoined(f)
@@ -206,7 +210,9 @@ local function equipmentCase(missing)
     f.modules["config.EquipmentConfig"] = config
     f.modules["config.EquipmentSetConfig"] = {get=function(id) return id=="TESTSET" and setDef or nil end,
         getSetIdForTemplate=function(tpl) return tpl and tpl.setId end }
-    f.modules["ui.hud.popup.SettingsPanel"] = {isSetIconsEnabled=function() return false end}
+    f.modules["ui.hud.popup.SettingsPanel"] = {isSetIconsEnabled=function() return true end}
+    local badgeCalls = 0
+    f.load("ui.widget.EquipmentSetIcon").drawBadge = function() badgeCalls = badgeCalls + 1 end
     f.modules["systems.EquipmentSystem"] = {getAscendLevel=function() return 0 end}
     f.modules["config.AffixConfig"], f.modules["config.BlacksmithConfig"], f.modules["core.I18nEquipmentText"] = {}, {}, {}
     local kw = {beginFrame=noop,draw=noop,drawAttribute=noop}
@@ -236,6 +242,7 @@ local function equipmentCase(missing)
         end,compactSetRowHeight=function() return 40 end,compactContentBottom=function() return 250 end,
         compactButtonRow=function() return 430,807,410,100 end })
     local function checkIcon(label)
+        eq(badgeCalls,0,label.." detail never draws duplicate equipment set badge even when preference enabled")
         local icon
         for _, call in ipairs(f.calls) do if call.kind=="image" and call.path=="image/套装图标/v3/SET_TESTSET.png" then icon=call end end
         if missing then
@@ -246,7 +253,7 @@ local function equipmentCase(missing)
             end
             check(fallback~=nil,label.." visible semantic fallback frame remains")
         else
-            check(icon~=nil,label.." shows semantic set icon with badge preference disabled")
+            check(icon~=nil,label.." shows semantic set icon independently of badge preference")
             near(icon.w,32,label.." icon width")
         end
         eq(#f.stack,0,label.." transforms balanced")

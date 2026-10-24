@@ -37,6 +37,69 @@ local function groupKey(slot, kind, grip)
     return table.concat(parts, "|")
 end
 
+-- 培养底材只计基础主/副属性：沿用属性价值权重，但不带随机词条或任何养成倍率。
+-- baseStats 已由只读水合确定性还原，包含模板/等级/品质/固定副抽取，不重骰。
+local function baseScore(view)
+    local stats = view.baseStats
+    -- 遗匣里的腐化保护件仍可能参与成品候选；不能借腐化倍率占用底材专额。
+    if view.corruptBaseMult ~= nil and view.corruptBaseMult ~= 1 then
+        local quality = EC.QUALITY[view.quality]
+        stats = Eq.recalcBaseStats(view.templateId, view.level, quality and quality.baseStrength or 1,
+            view.secondaryRoll)
+    end
+    return Power.genericScore({ templateId = view.templateId, baseStats = stats, affixes = {} })
+end
+
+local function stableLess(a, b)
+    if a.source ~= b.source then return a.source == "inventory" end
+    if a.source == "inventory" then return keyLess(a.key, b.key) end
+    return a.index < b.index
+end
+
+local function baseLess(a, b)
+    if a.baseScore ~= b.baseScore then return a.baseScore > b.baseScore end
+    if a.quality ~= b.quality then return a.quality > b.quality end
+    if a.level ~= b.level then return a.level > b.level end
+    -- 底材通道不以随机词条决胜，完全相同的底材先保原仓。
+    return stableLess(a, b)
+end
+
+local function readyLess(a, b)
+    if a.score ~= b.score then return a.score > b.score end
+    return baseLess(a, b)
+end
+
+-- 双通道只瓜分本组非原位保护名额，不改变部位/type/grip配额。
+-- N=1只选成品；N>=2给底材约1/4（向下取整、至少1），保证成品Top仍占多数。
+-- 两份Top独立选取，重叠按同一实例去重，空额全部回流成品，不额外扩张底材份额。
+local function selectRows(ranked, count)
+    table.sort(ranked, readyLess)
+    local reserved = count >= 2 and math.max(1, math.floor(count / 4)) or 0
+    local selected, channels = {}, {}
+    for index = 1, count - reserved do
+        local row = ranked[index]
+        selected[#selected + 1], channels[row] = row, "ready"
+    end
+    if reserved > 0 then
+        local bases = {}
+        for _, row in ipairs(ranked) do bases[#bases + 1] = row end
+        table.sort(bases, baseLess)
+        for index = 1, reserved do
+            local row = bases[index]
+            if not channels[row] then
+                selected[#selected + 1], channels[row] = row, "base"
+            end
+        end
+    end
+    for _, row in ipairs(ranked) do
+        if #selected >= count then break end
+        if not channels[row] then selected[#selected + 1], channels[row] = row, "ready" end
+    end
+    -- 搬入/分配新seq仍按成品分稳定排序，不因底材遍历顺序改变同组清单顺序。
+    table.sort(selected, readyLess)
+    return selected, channels
+end
+
 local function changedNumber(value, base)
     if value == nil then return false end
     local number = tonumber(value)
@@ -181,19 +244,22 @@ function M.plan(equipment, lootbox, options)
         if source == "inventory" and not row.seq then protect(row, "invalid") end
         local tpl = EC.ITEMS[equip.templateId] or EC.ITEMS[tostring(equip.templateId)]
         if not tpl then protect(row, "invalid"); return row end
-        local ok, view, score, setId = pcall(function()
+        local ok, view, score, setId, foundation = pcall(function()
             local hydrated = Query.hydrateCopy(equip)
-            return hydrated, Power.genericScore(hydrated), Query.getSetId(hydrated)
+            return hydrated, Power.genericScore(hydrated), Query.getSetId(hydrated), baseScore(hydrated)
         end)
         if not ok or type(view) ~= "table" or not SLOTS[view.slot]
             or type(view.type) ~= "string" or (view.grip ~= nil and type(view.grip) ~= "string")
-            or not finite(score) then
+            or not finite(score) or not finite(foundation) then
             protect(row, "invalid")
             return row
         end
         if setId and setId ~= "none" then protect(row, "set") end
         if corrupted(view) then protect(row, "corruption") end
         row.group, row.score = groupKey(view.slot, view.type, view.grip), score
+        row.baseScore = foundation
+        row.quality = finite(tonumber(view.quality)) and tonumber(view.quality) or 1
+        row.level = finite(tonumber(view.level)) and tonumber(view.level) or 1
         row.pool = groupFor(row.group, view)
         return row
     end
@@ -254,29 +320,21 @@ function M.plan(equipment, lootbox, options)
         local ranked = {}
         for _, row in ipairs(pool.removable) do ranked[#ranked + 1] = row end
         for _, row in ipairs(pool.candidates) do ranked[#ranked + 1] = row end
-        table.sort(ranked, function(a, b)
-            if a.score ~= b.score then return a.score > b.score end
-            -- 同分先保原件，再小seq；遗匣按原始index。保护原件不进入竞争池。
-            if a.source ~= b.source then return a.source == "inventory" end
-            if a.source == "inventory" then return keyLess(a.key, b.key) end
-            return a.index < b.index
-        end)
+        local count = pool.target - pool.protected
+        local chosen, channels = selectRows(ranked, count)
         local keep, selected = {}, 0
         local growth = math.max(0, pool.target - pool.inventory)
-        for index = 1, pool.target - pool.protected do
-            local row = ranked[index]
+        for _, row in ipairs(chosen) do
             if row.source == "inventory" then
                 keep[row.key] = true
             else
                 selected = selected + 1
                 plan.moveIn[#plan.moveIn + 1] = { index = row.index, group = row.group, score = row.score,
+                    baseScore = row.baseScore, channel = channels[row],
                     reason = selected <= growth and "fill" or "upgrade" }
             end
         end
-        table.sort(pool.removable, function(a, b)
-            if a.score ~= b.score then return a.score < b.score end
-            return keyLess(b.key, a.key)
-        end)
+        table.sort(pool.removable, function(a, b) return readyLess(b, a) end)
         local shrink = math.max(0, pool.inventory - pool.target)
         local removed = 0
         for _, row in ipairs(pool.removable) do
@@ -286,7 +344,7 @@ function M.plan(equipment, lootbox, options)
                     score = row.score, reason = removed <= shrink and "balance" or "upgrade" }
             end
         end
-        -- quota不变/扩张时，原件只会输给严格高分；收缩时多余原件安全转存遗匣。
+        -- 同组置换可来自成品或底材通道，不再声称每件都严格提高当前成品分。
         plan.groups[#plan.groups + 1] = { key = pool.key, slot = pool.slot, type = pool.type,
             grip = pool.grip, inventory = pool.target, protected = pool.protected,
             remaining = #pool.candidates - selected, target = pool.target }

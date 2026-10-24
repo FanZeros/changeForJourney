@@ -9,6 +9,7 @@ local AffixConfig     = require("config.AffixConfig")
 local BlacksmithConfig = require("config.BlacksmithConfig")
 local AD              = require("systems.AttributeDef")
 local SecondaryStats  = require("systems.EquipmentSecondaryStats")
+local StatGrowth      = require("systems.EquipmentStatGrowth")
 
 local EquipmentSystem = {}
 
@@ -528,54 +529,23 @@ end
 
 -- ======================== 槽位强化加成 ========================
 
---- 无角色过滤的静态价值：六围按完整派生表，百分比按每个百分点折算。
---- 不改既有计价/存档；只用于今后洗练更换属性时换算固定升阶投入。
----@param key string
----@return number
-local function ascendStatValue(key)
-    local isBaseStat = false
-    for _, baseKey in ipairs(AD.BASE_STATS) do
-        if key == baseKey then isBaseStat = true break end
-    end
-    if isBaseStat then
-        local derivatives = AD.DERIVATIVES[key]
-        if type(derivatives) ~= "table" or #derivatives == 0 then
-            error("洗练升阶加成缺少六围派生配置: " .. tostring(key))
-        end
-        local value = 0
-        for _, entry in ipairs(derivatives) do
-            local meta = AD.META[entry.attr]
-            if not meta or type(meta.valueModel) ~= "number" or meta.valueModel < 0
-                or meta.valueModel ~= meta.valueModel or meta.valueModel == math.huge
-                or type(entry.perPoint) ~= "number" or entry.perPoint < 0
-                or entry.perPoint ~= entry.perPoint or entry.perPoint == math.huge then
-                error("洗练升阶加成缺少有效派生价值: " .. tostring(key) .. "/" .. tostring(entry.attr))
-            end
-            local weight = meta.dataType == AD.TYPE_PCT and meta.valueModel / 100 or meta.valueModel
-            value = value + entry.perPoint * weight
-        end
-        return value
-    end
-    local meta = AD.META[key]
-    if not meta then return 0 end
-    -- 探索属性不计战斗战力，但洗练旧升阶投入仍须有正的换算价值。
-    local valueModel = meta.refineValueModel or meta.valueModel
-    if not valueModel or valueModel <= 0 then return 0 end
-    return meta.dataType == AD.TYPE_PCT and valueModel / 100 or valueModel
-end
+-- 装备等级补偿公共出口，签名与纯数值模块一致。
+EquipmentSystem.getFlatStatGrowthMultiplier = StatGrowth.getMultiplier
 
---- 洗练时按价值转移固定升阶加成，不修改旧词条或已有装备。
+--- 洗练时按等级补偿后的线性价值转移固定升阶加成，不修改旧词条或已有装备。
 --- 同属性保留原量；跨属性不取整，避免整数目标反复换算产生套利或丢失零头。
 ---@param oldAffix table|nil
 ---@param newAffix table|nil
+---@param equip table|nil 缺省按1级兼容旧调用；正式洗练必须传装备上下文
 ---@return number|nil
-function EquipmentSystem.convertAscBonusForRefine(oldAffix, newAffix)
+function EquipmentSystem.convertAscBonusForRefine(oldAffix, newAffix, equip)
     if not oldAffix or not newAffix or AffixConfig.isCorruptAffix(oldAffix)
         or AffixConfig.isCorruptAffix(newAffix) then return nil end
     local bonus = tonumber(oldAffix.ascBonus)
     if not bonus or bonus ~= bonus or bonus <= 0 or bonus == math.huge then return nil end
     if oldAffix.key == newAffix.key then return bonus end
-    local oldWeight, newWeight = ascendStatValue(oldAffix.key), ascendStatValue(newAffix.key)
+    local oldWeight = StatGrowth.refineUnitValue(equip, oldAffix.key)
+    local newWeight = StatGrowth.refineUnitValue(equip, newAffix.key)
     -- 正式普通词条全部具有正价值；缺失配置不能把原单位复制到新属性。
     if oldWeight <= 0 or newWeight <= 0 or oldWeight ~= oldWeight or newWeight ~= newWeight
         or oldWeight == math.huge or newWeight == math.huge then
@@ -638,6 +608,10 @@ function EquipmentSystem.getSecondaryAscendCount(equip, index, level)
     return math.floor((ascend - position) / count) + 1
 end
 
+-- 装备来源软预算公共出口；角色总属性不经过这里。
+EquipmentSystem.scaleCritRate = StatGrowth.scaleCritRate
+EquipmentSystem.scaleTypeBonus = StatGrowth.scaleTypeBonus
+
 --- 基础主/副词条统一生效值；升阶预览、属性管线与详情/战力共用。
 ---@param equip table
 ---@param index number
@@ -649,15 +623,20 @@ function EquipmentSystem.effectiveBaseStatValue(equip, index, mainBoost, level)
     if not stat then return 0 end
     local raw = tonumber(stat[2]) or 0
     if isIntrinsicStat(equip, index) then return raw end
+    local value = raw
     if index == 1 then
         local boost = mainBoost
         if boost == nil then
             boost = BlacksmithConfig.getEnhanceBoost(level or EquipmentSystem.getAscendLevel(equip))
         end
-        return raw * (1 + boost)
+        value = raw * (1 + boost)
+    else
+        local steps = EquipmentSystem.getSecondaryAscendCount(equip, index, level)
+        value = raw * (1 + steps * (BlacksmithConfig.ASCEND_SUB_STAT_RATIO or 0))
     end
-    local steps = EquipmentSystem.getSecondaryAscendCount(equip, index, level)
-    return raw * (1 + steps * (BlacksmithConfig.ASCEND_SUB_STAT_RATIO or 0))
+    local grown = value * EquipmentSystem.getFlatStatGrowthMultiplier(equip, stat[1])
+    local cappedCrit = EquipmentSystem.scaleCritRate(equip, stat[1], grown, "base")
+    return EquipmentSystem.scaleTypeBonus(equip, stat[1], cappedCrit, "base")
 end
 
 --- 装备主副属性默认显示一位小数；仅格式化，不改实际值。
@@ -683,17 +662,20 @@ function EquipmentSystem.getAffixMult(equip)
     return m
 end
 
---- 词条生效值：普通词条吃栏位倍率 + 升阶副属性加成（ascBonus，固定量不被倍率放大），
---- 魔化词条两者都不吃（与"魔化不吃品质增幅"同原则）。
+--- 词条生效值：普通词条先吃栏位倍率并加固定升阶投入，再统一应用固定数值等级补偿。
+--- ascBonus 不吃栏位倍率；魔化不吃栏位倍率、普通投入或固定数值补偿。
 ---@param equip table|nil
 ---@param affix table|nil
 ---@return number
 function EquipmentSystem.effectiveAffixValue(equip, affix)
-    if not affix or AffixConfig.isCorruptAffix(affix) then
-        return tonumber(affix and affix.value) or 0
+    if not affix then return 0 end
+    local value = tonumber(affix.value) or 0
+    if not AffixConfig.isCorruptAffix(affix) then
+        value = (value * EquipmentSystem.getAffixMult(equip) + (tonumber(affix.ascBonus) or 0))
+            * EquipmentSystem.getFlatStatGrowthMultiplier(equip, affix.key)
+        value = EquipmentSystem.scaleTypeBonus(equip, affix.key, value, "affix")
     end
-    local v = (tonumber(affix.value) or 0) * EquipmentSystem.getAffixMult(equip)
-    return v + (tonumber(affix.ascBonus) or 0)
+    return EquipmentSystem.scaleCritRate(equip, affix.key, value, "affix")
 end
 
 --- 通过 deployed 数组反查 heroId 所在的 partySlot 索引

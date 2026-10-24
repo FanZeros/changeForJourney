@@ -382,6 +382,11 @@ function BattleTriDriver.new(teamIdx, options)
             local Berserk = require("ui.battle.stage.StageBerserk")
             if self.firstClear then Berserk.enter(self.enemies, self.allies) else Berserk.exit() end
         end
+        -- 此处是新场构造边界：所有开战光环完成后再按最终上限补盾，不在补位/换波复用。
+        for _, u in ipairs(self.allies) do
+            if u.attrs and u.attrs:get(AD.HP) > 0 then u.attrs:fillEnergyShield() end
+            u._needsInitialShieldFill = nil
+        end
         local skipAllyEnter = self._skipAllyEnter == true
         self._skipAllyEnter = nil
         BattleCombat.playEnterAnims(self.enemies, -1)

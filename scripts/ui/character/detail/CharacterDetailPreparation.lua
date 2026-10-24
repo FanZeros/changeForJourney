@@ -51,11 +51,54 @@ function M.version(request, guard, refresh)
     return request
 end
 
+-- 可见评分只消费已穿项+当前候选，与全库升级箭头无关。
+-- 同一次Update无yield构建/评分/终检，持续本人或同队成长也能提交当前分。
+local function prepareScores(request, slots)
+    local sources = request.sources
+    local result = { viewKey = request.viewKey, pending = true, scoresPending = false,
+        scores = {}, scoresBySeq = {}, upgrades = {} }
+    if #slots == 0 then return result end
+    local context = Power.buildContext(request.heroId, {
+        heroes = sources.heroes,
+        equipment = Snapshot.compactEquipment(sources.equipment, request.seq),
+        artifacts = sources.artifacts, talents = sources.talents, cacheFixedTeammates = true,
+    })
+    if not context then return result end
+    result.power = math.floor(context.currentPower + 0.5)
+    local equipped = Eq.getHeroSlots(context.equipmentData, request.heroId) or {}
+    for _, slot in ipairs(slots) do
+        local seq = equipped[slot.slot]
+        local item = seq and Eq.getFromInventory(context.equipmentData, seq)
+        if item then
+            local score = Power.scoreInContext(context, item, slot.slot, seq)
+            result.scores[slot.slot] = score
+            result.scoresBySeq[tostring(seq) .. ":" .. slot.slot] = score
+            if slot.slot == "weapon" and item.grip == "twohand" then
+                result.scoresBySeq[tostring(seq) .. ":offhand"] = score
+            end
+        end
+    end
+    if request.seq then
+        local item = Eq.getFromInventory(context.equipmentData, request.seq)
+        local slot = request.slot or (item and item.slot)
+        if item then
+            local evaluation = Power.evaluate(context, request.seq, slot)
+            -- 等级/职业不合法也必须显示该角色可利用的词条价值，沿用scoreInContext口径；
+            -- 不能拿power=0占位冒充有效试穿，也不能给无效候选伪造净提升。
+            result.candidate = { seq = tostring(request.seq), slot = slot,
+                score = Power.scoreInContext(context, item, slot, request.seq),
+                gain = evaluation and evaluation.valid and evaluation.gain or nil }
+        end
+    end
+    return result
+end
+
 function M.bind(deps)
     ---@type thread|nil
     local job = nil
     local jobKey, completedKey = nil, nil
     local panelKey, preparedPanel = nil, nil
+    local scoresKey, preparedScores = nil, nil
     local generation, steps, deadline = 0, 0, 0
     local committed = { pending = true, scores = {}, upgrades = {} }
     local api = {}
@@ -72,6 +115,7 @@ function M.bind(deps)
         generation = generation + 1
         job, jobKey, completedKey = nil, nil, nil
         panelKey, preparedPanel = nil, nil
+        scoresKey, preparedScores = nil, nil
         guard = {}
         committed = { pending = true, scores = {}, upgrades = {} }
         deps.clear()
@@ -79,10 +123,14 @@ function M.bind(deps)
     function api.read(viewKey)
         -- 每次外部读取均复核内容，Update后同帧原地patch立即拒旧。
         local current = capture(false)
-        if committed.viewKey ~= viewKey or not current.key or completedKey ~= current.key then
-            return { pending = true, scores = {}, upgrades = {} }
+        if committed.viewKey == viewKey and current.key and completedKey == current.key then
+            return committed
         end
-        return committed
+        -- pending仍表示全库箭头尚未完成，不能挡住同版本已独立提交的可见评分。
+        if preparedScores and preparedScores.viewKey == viewKey and current.panelKey
+            and scoresKey == current.panelKey then return preparedScores end
+        return { pending = true, scoresPending = true, scores = {}, upgrades = {},
+            panel = current.viewKey == viewKey and current.panelKey == panelKey and preparedPanel or nil }
     end
     function api.update()
         local request = capture(true)
@@ -100,15 +148,26 @@ function M.bind(deps)
             deps.commit(panel, request)
             preparedPanel, panelKey = panel, request.panelKey
         end
+        if scoresKey ~= request.panelKey then
+            local scoreGeneration = generation
+            local ok, scores = pcall(prepareScores, request, deps.slots)
+            if not ok then
+                print("[CharacterDetail] visible score prepare failed: " .. tostring(scores))
+                return
+            end
+            if scoreGeneration ~= generation or request.panelKey ~= capture().panelKey then return end
+            scores.panel = preparedPanel
+            preparedScores, scoresKey = scores, request.panelKey
+        end
         if completedKey == request.key then return end
         if not job or jobKey ~= request.key then
             generation = generation + 1
             local token = generation
             jobKey, completedKey = request.key, nil
             committed = { viewKey = request.viewKey, pending = true, scores = {}, upgrades = {} }
-            local panel = preparedPanel
+            local visible = preparedScores
             job = coroutine.create(function()
-                -- 完整库存只服务评分/箭头；慢任务重启或失败不再清空已提交的属性。
+                -- 完整库存只服务升级箭头/可选预估，不再阻塞或重复计算可见装备分。
                 checkpoint()
                 local sources = request.sources
                 local context = #deps.slots > 0 and Power.buildContext(request.heroId, {
@@ -116,42 +175,19 @@ function M.bind(deps)
                     artifacts = sources.artifacts, talents = sources.talents,
                     checkpoint = checkpoint, cacheFixedTeammates = true,
                 })
-                local result = { viewKey = request.viewKey, pending = false, scores = {}, upgrades = {},
-                    scoresBySeq = {}, panel = panel, generation = token }
+                local result = { viewKey = request.viewKey, pending = false, scoresPending = false,
+                    scores = visible.scores, scoresBySeq = visible.scoresBySeq, candidate = visible.candidate,
+                    power = visible.power, upgrades = {}, panel = visible.panel, generation = token }
                 if context then
-                    result.power = math.floor(context.currentPower + 0.5)
                     if deps.estimate and request.estimateVisible then
                         checkpoint()
                         result.estimate = deps.estimate(request, context)
                         checkpoint()
                     end
-                    local slots = Eq.getHeroSlots(context.equipmentData, request.heroId) or {}
                     for _, slot in ipairs(deps.slots) do
                         checkpoint()
-                        local seq = slots[slot.slot]
-                        local item = seq and Eq.getFromInventory(context.equipmentData, seq)
-                        if item then
-                            local score = Power.scoreInContext(context, item, slot.slot, seq)
-                            result.scores[slot.slot] = score
-                            result.scoresBySeq[tostring(seq) .. ":" .. slot.slot] = score
-                            if slot.slot == "weapon" and item.grip == "twohand" then
-                                -- 副手是主武器占位，不执行一次非法副手试穿。
-                                result.scoresBySeq[tostring(seq) .. ":offhand"] = score
-                            end
-                        end
                         result.upgrades[slot.slot] = deps.hasUpgrade(request.heroId, slot.slot,
                             context.equipmentData, context, checkpoint)
-                    end
-                    if request.seq then
-                        checkpoint()
-                        local candidate = Eq.getFromInventory(context.equipmentData, request.seq)
-                        local targetSlot = request.slot or (candidate and candidate.slot)
-                        local evaluation = candidate and Power.evaluate(context, request.seq, targetSlot)
-                        if evaluation and evaluation.valid then
-                            result.candidate = { seq = tostring(request.seq), slot = targetSlot,
-                                score = math.floor(evaluation.power + 0.5), gain = evaluation.gain }
-                        end
-                        checkpoint()
                     end
                 end
                 return result

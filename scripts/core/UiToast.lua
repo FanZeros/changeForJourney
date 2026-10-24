@@ -7,6 +7,7 @@ local UiToast = {}
 
 local text_ = nil ---@type string|nil
 local until_ = 0
+local startedAt_ = 0
 local DURATION = 1.25
 
 ---@param text string
@@ -14,12 +15,14 @@ local DURATION = 1.25
 function UiToast.show(text, duration)
     if not text or text == "" then return end
     text_ = text
-    until_ = time.elapsedTime + (duration or DURATION)
+    startedAt_ = time.elapsedTime
+    until_ = startedAt_ + (duration or DURATION)
 end
 
 function UiToast.clear()
     text_ = nil
     until_ = 0
+    startedAt_ = 0
 end
 
 ---@param vg any
@@ -33,7 +36,7 @@ function UiToast.draw(vg, w, h)
         return
     end
     local alpha = 1.0
-    local elapsed = DURATION - remain
+    local elapsed = math.max(0, time.elapsedTime - startedAt_)
     if elapsed < 0.12 then
         alpha = elapsed / 0.12
     elseif remain < 0.25 then

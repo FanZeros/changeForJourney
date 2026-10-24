@@ -55,6 +55,13 @@ function M.startBattleTalents(allies, enemies)
     end
     TM.onBattleStart(allies, enemies)
     TAL.onBattleStart(allies, enemies)
+    -- 此入口也用于存量队伍重启天赋，只消费全新出战实例的单次补盾标记。
+    for _, u in ipairs(allies) do
+        if u._needsInitialShieldFill then
+            if u.attrs and u.attrs:isAlive() then u.attrs:fillEnergyShield() end
+            u._needsInitialShieldFill = nil
+        end
+    end
 end
 
 ---@class BattleCardLoadCtx

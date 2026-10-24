@@ -426,7 +426,7 @@ function Start()
             m.start(); rt.updateBefore(); f.section("主循环.Update", 4, 2); f.advance(60); rt.updateBefore(); m.mark(f.env.player)
             local text = m.getReport()
             eq(m.isEnabled(), false, "getReport stops collection")
-            check(text:find("性能诊断报告 v5 · 2026-10-24", 1, true), "第三轮构建明确标识v5日期")
+            check(text:find("性能诊断报告 v6 · 2026-10-24", 1, true), "详情性能修复构建明确标识v6日期")
             check(text:find("inclusive", 1, true) and text:find("CPU", 1, true) and text:find("GPU", 1, true), "report caveats readable")
             check(not text:find("PRIVATE_SENTINEL", 1, true), "report never serializes player/module payload")
             local s = reportData(text)
@@ -842,6 +842,7 @@ function Start()
                 { "ui.story.ScenarioDialogue", "剧情对话", { "update", "draw" } },
                 { "systems.TutorialManager", "新手引导", { "update", "draw" } },
                 { "ui.character.hero.HeroRosterPanel", "英雄名册", { "draw" } },
+                { "ui.character.detail.CharacterDetail", "角色详情", { "update", "draw" } },
             }
             local modules, originals = {}, {}
             for _, spec in ipairs(specs) do
@@ -853,7 +854,7 @@ function Start()
                 end
                 modules[spec[1]] = module
             end
-            eq(hooks.install(modules), 13, "all requested coarse exports installed")
+            eq(hooks.install(modules), 15, "all requested coarse exports installed")
             eq(hooks.install(), 0, "all coarse exports idempotent")
             f.monitor.start(); f.monitor.beginFrame("角色/三队战斗")
             local ref = {}
@@ -870,7 +871,7 @@ function Start()
             end
             f.frame(60)
             local snapshot = f.monitor.snapshot()
-            eq(#snapshot.sections, 13, "every coarse export reachable in actual Monitor")
+            eq(#snapshot.sections, 15, "every coarse export reachable in actual Monitor")
             for _, spec in ipairs(specs) do
                 for _, key in ipairs(spec[3]) do
                     eq(section(snapshot, spec[2] .. "." .. key).calls, 1, "one call per expanded export")

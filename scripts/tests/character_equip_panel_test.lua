@@ -78,6 +78,7 @@ function Start()
     local bonusRows = { { key = "equipBonus", name = "装备净增益", value = "+5.5", currentValue = 5.5,
         desc = "装备来源说明", delta = 2, deltaText = "+2.0" } }
     local bonuses = { rows = bonusRows, current = { stats = { str = 5.5 } }, preview = { stats = { str = 7.5 } } }
+    local language, requestedLanguage = "zh_CN", nil
     local buildCount, requestedSeq, requestedSlot, requestedBonuses = 0, nil, nil, false
     local latestResult = {}
     local summaries = {
@@ -91,6 +92,9 @@ function Start()
     local description = string.rep("完整套装效果不会截断，", 28)
     local heroes = { roster = { [1] = { level = 10 } } }
     local equipment = { inventory = { ["7"] = { enhanceLevel = 1 } }, equipped = {} }
+    -- 真实Preparation读取四个域；固定缺省域与revision，绝不回退到真实玩家存档。
+    local artifacts, talents = {}, { litNodes = {} }
+    local revisions = { heroes = 0, equipment = 0, artifacts = 0, talents = 0 }
     local actualAD = originalRequire("systems.AttributeDef")
     local AD = { META = {}, getDesc = actualAD.getDesc,
         formatAttrDisplayValue = function(key, value) return tostring(value) end }
@@ -113,8 +117,10 @@ function Start()
         ["core.PlayerStore"] = { Get = function(key)
             if key == "heroes" then return heroes end
             if key == "equipment" then return equipment end
+            if key == "artifacts" then return artifacts end
+            if key == "talents" then return talents end
             return nil
-        end },
+        end, GetRevision = function(key) return revisions[key] or 0 end },
         ["runtime.ClientDispatcher"] = { get = function() return nil end },
         ["config.HeroConfig"] = {},
         ["systems.EquipmentSystem"] = {},
@@ -123,7 +129,9 @@ function Start()
         ["ui.character.detail.EquipmentPreview"] = {
             build = function(heroId, level, seq, slot, options)
                 buildCount = buildCount + 1
-                requestedSeq, requestedSlot = seq, slot
+                -- 强制跨多轮Update：ready不能用buildCount已增加或“一帧应该够”代替。
+                for _ = 1, 130 do options.checkpoint() end
+                requestedSeq, requestedSlot, requestedLanguage = seq, slot, language
                 requestedBonuses = options and options.includeEquipmentBonuses == true
                 latestResult = { current = current, preview = seq and preview or nil, rows = rows,
                     equipmentBonuses = requestedBonuses and bonuses or nil,
@@ -154,7 +162,12 @@ function Start()
         "ui.character.equip.EquipmentBag", "config.EquipmentConfig", "ui.widget.HeroFrame",
         "ui.character.hero.AwakeningPanel", "systems.ButtonFeedback", "core.DarkIcon",
         "systems.ExtraTalentSystem", "systems.EquipmentPower", "core.I18n" }) do mods[name] = {} end
-    mods["core.I18n"] = { get = function() return "zh_CN" end, lookup = function(s) return s end, format = string.format }
+    mods["core.I18n"] = { get = function() return language end, lookup = function(s) return s end, format = string.format }
+    mods["systems.CombatPowerEstimate"] = { estimate = function() error("独立配装预览不应计算整库战力") end }
+    mods["config.AwakeningConfig"] = {}
+    mods["systems.EquipmentPower"] = {
+        buildContext = function() error("独立配装预览slots为空，不应启动第二个评分worker") end,
+    }
     mods["config.GameConfig"] = { Design = { WIDTH = 1080, HEIGHT = 2400 } }
     mods["ui.widget.KeywordText"] = { new = function() return {} end }
     local Draw = originalRequire("ui.character.detail.CharacterDetailDraw")
@@ -179,7 +192,27 @@ function Start()
         return call or error("绘图文本缺失：" .. value)
     end
     local function clearDraw() textCalls, paths, rects, scissorCalls, imageCalls = {}, {}, {}, {}, {} end
-    local function draw() clearDraw(); Panel.draw({}, 1, { equipSlot = requestedSlot }) end
+    -- Update与Render分开：只在prepare推进协程；pending和ready绘图都禁止偷偷补算。
+    local function prepare(heroId, detailState)
+        for frame = 1, 64 do
+            Panel.update(heroId, detailState)
+            if Panel.getPrepared(heroId, detailState).pending ~= true then return frame end
+        end
+        error("配装预览64轮Update后仍未ready：hero=" .. tostring(heroId))
+    end
+    local function renderOnly(heroId, detailState)
+        clearDraw()
+        local beforeBuild, beforeSort = buildCount, sortCount
+        Panel.draw({}, heroId, detailState)
+        check(buildCount == beforeBuild and sortCount == beforeSort,
+            "Render仅消费prepared数据，不构建预览或排序")
+    end
+    local function draw(heroId, detailState)
+        heroId = heroId or 1
+        detailState = detailState or { equipSlot = requestedSlot }
+        prepare(heroId, detailState)
+        renderOnly(heroId, detailState)
+    end
     local function near(a, b) return math.abs(a - b) < 0.000001 end
     local function sameColor(actual, r, g, b, a)
         return actual and actual[1] == r and actual[2] == g and actual[3] == b
@@ -834,6 +867,31 @@ function Start()
     }, 0)
     check(rendered("7.6%") and rendered("0.83s"), "百分比和攻击秒数保留API原显示格式")
 
+    do
+        Panel.reset(1, nil)
+        local beforeBuild, beforeSort = buildCount, sortCount
+        renderOnly(1, {})
+        check(buildCount == beforeBuild and rendered("属性准备中…") and not rendered("属性1"),
+            "冷Render只显示准备中，不在首次绘图同步构建")
+        Panel.update(1, {})
+        check(buildCount == beforeBuild + 1 and Panel.getPrepared(1, {}).pending == true
+            and sortCount == beforeSort, "首轮Update只启动分帧任务，不把半成品当ready或提前排序")
+        for _ = 1, 3 do renderOnly(1, {}) end
+        check(Panel.getPrepared(1, {}).pending == true and buildCount == beforeBuild + 1,
+            "反复Render不会推进暂停中的协程")
+        for _ = 1, 16 do
+            heroes.roster[1].exp = (heroes.roster[1].exp or 0) + 1
+            revisions.heroes = revisions.heroes + 1
+            Panel.markDirty()
+            Panel.update(1, {})
+            if Panel.getPrepared(1, {}).pending ~= true then break end
+        end
+        check(Panel.getPrepared(1, {}).pending ~= true and buildCount == beforeBuild + 1
+            and sortCount == beforeSort + 1,
+            "连续exp通知与markDirty不重启分帧任务，合理Update轮数内只提交一次")
+        renderOnly(1, {})
+        check(rendered("属性1") and not rendered("属性准备中…"), "ready后Render消费完整排序结果")
+    end
     Panel.reset(1, nil); draw()
     check(requestedSeq == nil and requestedSlot == nil, "无候选只请求current且nil槽不回退主手")
     check(rendered("当前已穿戴属性 · 选中或悬停装备以试穿") == nil,
@@ -856,8 +914,8 @@ function Start()
     check(#textCalls == 0, "离开属性区不遗留hover说明")
     time.elapsedTime = 20
     local previousBuilds = buildCount
-    draw(); check(buildCount == previousBuilds, "候选key相同0.2秒内命中缓存")
-    Panel.markDirty(); draw(); check(buildCount == previousBuilds + 1, "markDirty立即使缓存失效")
+    draw(); check(buildCount == previousBuilds, "候选和战斗语义相同命中prepared缓存")
+    Panel.markDirty(); draw(); check(buildCount == previousBuilds, "markDirty只是采样hint，无真实数据变化不重建")
     selection = { seq = 7, slot = "weapon", heroId = 1, owner = "backpack", pinned = true }
     requestedSlot = "offhand"; draw()
     check(requestedSeq == 7 and requestedSlot == "offhand", "显式副手保留weapon候选")
@@ -865,6 +923,20 @@ function Start()
     selection.owner = "smith"; draw(); check(requestedSeq == nil, "排除smith选中来源")
     selection.owner = "bag"; requestedSlot = nil; draw(); check(requestedSeq == 7 and requestedSlot == nil, "bag来源与自然槽nil支持")
     selection.owner = "character"; draw(); check(requestedSeq == 7, "character来源候选支持")
+    do
+        local beforeBuild = buildCount
+        language = "en_US"
+        check(Panel.getPrepared(1, {}).pending == true, "语言变化立即拒绝旧语言prepared结果")
+        renderOnly(1, {})
+        check(rendered("属性准备中…") and not rendered("属性1") and buildCount == beforeBuild,
+            "语言切换Render不沿用旧列表或同步重建")
+        draw()
+        check(requestedLanguage == "en_US" and buildCount == beforeBuild + 1 and rendered("属性1"),
+            "下一批Update完成新语言预览，无须等待旧缓存时间")
+        language = "zh_CN"; draw()
+        check(requestedLanguage == "zh_CN" and buildCount == beforeBuild + 2,
+            "切回语言及时重建一次")
+    end
     local stableBuilds = buildCount
     time.elapsedTime = 21; draw()
     check(buildCount == stableBuilds, "超0.2秒数据签名不变不重复深拷贝/预览")
@@ -966,6 +1038,7 @@ function Start()
     end
     bonuses.rows = equipmentRows
     equipment.inventory["8"] = { enhanceLevel = 1 }
+    equipment.equipped[1] = { weapon = 7 }
     heroes.roster[2] = { level = 1 }
     for _, mode in ipairs({ "character", "equipment" }) do
         if Panel.getAttributeMode() ~= mode then Panel.toggleAttributeMode() end
@@ -1019,11 +1092,13 @@ function Start()
         check(#textCalls == 0, mode .. "换候选清旧排序行tooltip")
         Panel.handleSideScroll(-1000, ax, ay); draw()
         local bottomY = requiredText(cachedRows[12].name).y
-        for _, reason in ipairs({ "markDirty", "selfLevel", "otherLevel", "enhance" }) do
+        for _, reason in ipairs({ "equippedEnhance", "selfLevel", "otherLevel", "candidateEnhance" }) do
             Panel.handleInput(ax, attrs.y + 1, 1, {})
             beforeBuild, beforeSort = buildCount, sortCount
-            if reason == "markDirty" then
+            if reason == "equippedEnhance" then
                 first.value = "同序数值更新" .. mode
+                -- 输出mock变化也必须伴随真实计算输入变化，不能靠markDirty强制重建。
+                equipment.inventory["7"].enhanceLevel = equipment.inventory["7"].enhanceLevel + 1
                 Panel.markDirty()
             elseif reason == "selfLevel" then
                 heroes.roster[1].level = heroes.roster[1].level + 1
@@ -1046,8 +1121,11 @@ function Start()
         Panel.handleDragBegin(ax, ay); Panel.handleDragMove(ax, ay - 5); Panel.handleDragEnd(ax, ay - 5)
         draw()
         check(near(requiredText(first.name).y, firstRowY - 10), mode .. "拖动结束首帧应用5px惯性")
+        local inertiaBuilds, inertiaSorts = buildCount, sortCount
         Panel.markDirty(); draw()
-        check(near(requiredText(first.name).y, firstRowY - 14.5), mode .. "markDirty同序刷新保留滚动及0.9衰减惯性")
+        check(near(requiredText(first.name).y, firstRowY - 14.5)
+            and buildCount == inertiaBuilds and sortCount == inertiaSorts,
+            mode .. "无数据变化markDirty不重建，仍保留滚动及0.9衰减惯性")
         heroes.roster[2].level = heroes.roster[2].level + 1
         time.elapsedTime = time.elapsedTime + 0.31; draw()
         check(near(requiredText(first.name).y, firstRowY - 18.55), mode .. "另一英雄level签名刷新仍保留惯性而非归顶")
@@ -1103,8 +1181,11 @@ function Start()
         local oldBonusStats = bonuses.current.stats
         bonuses.current.stats = { str = 5.5 }
         for i = 1, 10 do
+            equipment.inventory["7"].enhanceLevel = equipment.inventory["7"].enhanceLevel + 1
+            local beforeBuild = buildCount
             Panel.markDirty(); draw()
-            check(matchesVisual(expected), "Panel相同墙钟数据重建/新表不重开动画：" .. i)
+            check(buildCount == beforeBuild + 1 and matchesVisual(expected),
+                "Panel相同墙钟真实装备更新/新结果表不重开动画：" .. i)
         end
         bonuses.current.stats = oldBonusStats
         Panel.toggleAttributeMode(); draw()
@@ -1118,16 +1199,16 @@ function Start()
         current = { left = {}, right = {}, stats = { str = 2, agi = 28, vit = 9, spi = 13, luk = 4, int = 1 } }
         preview = { left = {}, right = {}, stats = { str = 5, agi = 26, vit = 9, spi = 13, luk = 4, int = 1 } }
         Panel.reset(2, nil) -- 与真实上层syncEquipmentWarehouse活动切英雄调用一致。
-        clearDraw(); Panel.draw({}, 2, { equipSlot = nil })
+        draw(2, { equipSlot = nil })
         expected = expectedTransition:sample(current.stats, preview.stats, false, "2|character", 40.48)
         check(matchesVisual(expected) and requiredText("28") and requiredText("-2"),
             "活动Panel.reset换英雄保留当前视觉起点，新英雄真实数字已更新")
         time.elapsedTime = 40.64
-        clearDraw(); Panel.draw({}, 2, { equipSlot = nil })
+        draw(2, { equipSlot = nil })
         expected = expectedTransition:sample(current.stats, preview.stats, false, "2|character", 40.64)
         check(matchesVisual(expected), "Panel英雄变更中点六轴完整过渡")
         time.elapsedTime = 40.80
-        clearDraw(); Panel.draw({}, 2, { equipSlot = nil })
+        draw(2, { equipSlot = nil })
         expected = expectedTransition:sample(current.stats, preview.stats, false, "2|character", 40.80)
         check(matchesVisual(expected), "Panel英雄变更0.32秒终点精准归一化")
         Panel.reset(nil, nil)

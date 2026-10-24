@@ -34,6 +34,7 @@ local function install()
         { "ui.battle.combat.BattleEffects", { "update", "draw" }, "战斗特效" },
         { "ui.battle.combat.ProjectileSystem", { "update", "draw" }, "弹道" },
         { "ui.character.panel.CharacterPanel", { "update", "updateBadges", "draw", "refreshPower", "getTotalPower", "addHeroesExp", "patchExtraTalent", "finishExtraTalentBatch" }, "角色面板" },
+        { "ui.character.detail.CharacterDetail", { "update", "draw" }, "角色详情" },
         { "ui.character.hero.HeroRosterPanel", { "draw" }, "英雄名册" },
         { "ui.story.ScenarioDialogue", { "update", "draw" }, "剧情对话" },
         { "ui.story.gate.IntroCutscene", { "update", "draw" }, "开场剧情" },
@@ -89,7 +90,8 @@ function M.installStandalone(refs)
     return M.install({
         ["ui.battle.tri.BattleTriPage"] = refs.BattleTriPage, ["ui.battle.scene.BattleScene"] = refs.BattleScene,
         ["ui.battle.combat.BattleEffects"] = refs.BattleEffects, ["ui.battle.combat.ProjectileSystem"] = refs.ProjectileSystem,
-        ["ui.character.panel.CharacterPanel"] = refs.CharacterPanel, ["ui.character.hero.HeroRosterPanel"] = refs.HeroRosterPanel,
+        ["ui.character.panel.CharacterPanel"] = refs.CharacterPanel, ["ui.character.detail.CharacterDetail"] = refs.CharacterDetail,
+        ["ui.character.hero.HeroRosterPanel"] = refs.HeroRosterPanel,
         ["ui.backpack.BackpackPanel"] = refs.BackpackPanel, ["ui.loot.LootBoxPage"] = refs.LootBoxPage,
         ["ui.church.ChurchPage"] = refs.ChurchPage, ["ui.church.talent.TalentPage"] = refs.TalentPage,
         ["ui.tavern.TavernPage"] = refs.TavernPage, ["ui.market.MarketPage"] = refs.MarketPage,

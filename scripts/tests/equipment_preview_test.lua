@@ -96,7 +96,9 @@ local function liveCallerRegression(data)
             return { getSelection = function() return selection end, dismissHover = function() end }
         end
         if name == "ui.character.detail.CharacterDetailEquip" or name == "ui.character.detail.EquipmentPreview"
-            or name == "ui.character.detail.CharacterDetailAttrs" then
+            or name == "ui.character.detail.CharacterDetailAttrs"
+            or name == "ui.character.detail.CharacterDetailPreparation"
+            or name == "ui.character.detail.CharacterDetailSnapshot" then
             if not modules[name] then
                 modules[name] = assert(load(readSource(name:gsub("%.", "/") .. ".lua"), "@live-caller/" .. name, "t", env))()
             end
@@ -111,9 +113,24 @@ local function liveCallerRegression(data)
     local panel = env.require("ui.character.detail.CharacterDetailEquip")
     local actualPreview = env.require("ui.character.detail.EquipmentPreview")
     local actualAttrs = env.require("ui.character.detail.CharacterDetailAttrs")
+    local builds, originalBuild = 0, actualPreview.build
+    actualPreview.build = function(...)
+        builds = builds + 1
+        return originalBuild(...)
+    end
+    local function drawPrepared()
+        for _ = 1, 20000 do
+            panel.update(1, {})
+            if not panel.getPrepared(1, {}).pending then break end
+        end
+        assert(not panel.getPrepared(1, {}).pending, "真实配装Update准备必须收敛")
+        local countBeforeRender = builds
+        panel.draw({}, 1, {})
+        check(builds == countBeforeRender, "真实配装Render只消费已准备预览，不同步重建")
+    end
     local before = copy(data)
     panel.reset(1)
-    panel.draw({}, 1, {})
+    drawPrepared()
     local detail = actualAttrs.collectAttributes(1, HC.get(1), 70)
     check(equal(latest, detail.stats), "真实配装调用方完整实时快照与无options属性页六围一致")
     -- 独立按实战既有注入顺序建立 oracle，不拿被测 collectAttributes 自身当完整养成证据。
@@ -136,7 +153,7 @@ local function liveCallerRegression(data)
     stats.unionSets = function(values) drawnSets = values; return {} end
     selection = { seq = 90, owner = "backpack", pinned = true }
     panel.markDirty()
-    panel.draw({}, 1, {})
+    drawPrepared()
     local expected = actualPreview.build(1, 70, 90, nil, data)
     check(expected.preview ~= nil and expected.error == nil and equal(latest, expected.current.stats),
         "真实调用方选中存在候选，当前属性保持真实装备与养成快照")
@@ -150,7 +167,7 @@ local function liveCallerRegression(data)
         and interval.value == row(current, AD.ATK_INTERVAL).value,
         "真实调用方攻速间隔文本及number均与属性页实际加成后结果一致")
     panel.toggleAttributeMode()
-    panel.draw({}, 1, {})
+    drawPrepared()
     local bonusOptions = copy(data)
     bonusOptions.includeEquipmentBonuses = true
     local bonusExpected = actualPreview.build(1, 70, 90, nil, bonusOptions)
@@ -158,10 +175,10 @@ local function liveCallerRegression(data)
         and equal(latest, bonusExpected.equipmentBonuses.current.stats) and #drawnRows > 0,
         "真实调用方装备净增益模式完整来源+flag生效，不因非nil options变空快照")
     panel.toggleAttributeMode()
-    panel.draw({}, 1, {})
+    drawPrepared()
     data.talents.litNodes[#data.talents.litNodes + 1] = 5
     clock.elapsedTime = clock.elapsedTime + 0.3
-    panel.draw({}, 1, {})
+    drawPrepared()
     local changed = actualPreview.build(1, 70, 90, nil, data)
     check(equal(drawnRows, actualAttrs.filterDisplayRows(changed.rows))
         and not equal(drawnRows, actualAttrs.filterDisplayRows(expected.rows)),

@@ -39,7 +39,12 @@ function Start()
     local Events = nativeRequire("config.GameEvents")
     local Draw = nativeRequire("ui.character.panel.CharacterPanelDraw2")
     local savedBuild, fullBuild, savedLit = EP.buildWornContext, EP.buildContext, HC._getSavedLitNodes()
+    local savedInvalidate = EP.invalidate
     local active = {}
+    EP.invalidate = function(...)
+        active.order[#active.order + 1] = "invalidate"
+        return savedInvalidate(...)
+    end
     local storage = 0
     local function denyIO() storage = storage + 1; error("growth power test forbids player IO") end
     rawset(_G, "File", denyIO)
@@ -51,11 +56,13 @@ function Start()
         return savedBuild(...)
     end
     local function fixture(forceFull)
-        local f = { data = {}, revisions = { equipment = 1, artifacts = 1, talents = 1 },
-            calls = 0, scored = {}, events = {}, progress = {}, invalidations = {}, dirty = 0,
+        local f = { data = {}, revisions = { heroes = 1, equipment = 1, artifacts = 1, talents = 1 },
+            calls = 0, scored = {}, events = {}, progress = {}, invalidations = {}, dirty = 0, order = {},
             context = {}, modules = {}, listeners = {}, storeListeners = {}, gamePower = 0 }
         local noop = function() end
-        local detail = { init = noop, setContext = noop, markPowerDirty = function() f.dirty = f.dirty + 1 end,
+        local detail = { init = noop, setContext = noop, markPowerDirty = function()
+            f.dirty = f.dirty + 1; f.order[#f.order + 1] = "dirty"
+        end,
             hasAwakeningUpgrade = function() return false end, hasAnyUpgradeForHero = function() return false end }
         local store = { Get = function(key) return f.data[key] end,
             GetRevision = function(key) return f.revisions[key] or 0 end,
@@ -69,12 +76,14 @@ function Start()
                 subscribe = function(key, fn) f.listeners[key] = fn end },
             ["core.PlayerStore"] = store,
             ["core.GameState"] = { getLevel = function() return 100 end, setPower = function(value)
+                f.order[#f.order + 1] = "gamePower"
                 if value ~= f.gamePower then
                     f.gamePower = value
                     f.events[#f.events + 1] = { event = Events.PLAYER_POWER_CHANGED, power = value }
                 end
             end },
             ["core.EventBus"] = { emit = function(event, payload)
+                f.order[#f.order + 1] = "event"
                 -- 同步订阅者直接读整套缓存，不能先发事件再补另两队。
                 local powers = {}
                 for t = 1, 3 do powers[t] = f.panel.getTotalPower(t) end
@@ -174,7 +183,7 @@ function Start()
             return on(f, function(panel)
                 local result = { roster = {}, slots = {}, totals = {}, events = copy(f.events),
                     progress = copy(f.progress), invalidations = copy(f.invalidations), dirty = f.dirty,
-                    lastTeams = panel.getLastHeroesRefreshTeams(), gamePower = f.gamePower }
+                    lastTeams = panel.getLastHeroesRefreshTeams(), gamePower = f.gamePower, order = copy(f.order) }
                 for i, entry in ipairs(f.context.getHeroRoster()) do
                     result.roster[i] = { id = entry.heroId, owned = entry.owned,
                         power = f.context.getRosterPowerCache()[i], mapped = panel.getRosterPower(entry.heroId) }
@@ -216,7 +225,9 @@ function Start()
             cases = cases + 1
             for _, f in ipairs({ optimized, oracle }) do
                 f.calls, f.scored = 0, {}
+                local started = os.clock()
                 on(f, action)
+                f.lastCPU = os.clock() - started
             end
             check(optimized.calls == expectedCalls,
                 label .. " calls expected=" .. expectedCalls .. " actual=" .. optimized.calls)
@@ -227,7 +238,8 @@ function Start()
             end
             check(same(observation(optimized), observation(oracle)), label .. "全名册/三队slot/总分/事件/战斗基线与全量oracle等价")
             if not deferred then assertFullValues(optimized, label) end
-            print(string.format("[GrowthPower] case=%s calls=%d fullCalls=%d", label, optimized.calls, oracle.calls))
+            print(string.format("[GrowthPower] case=%s calls=%d fullCalls=%d cpu=%.6f fullCPU=%.6f",
+                label, optimized.calls, oracle.calls, optimized.lastCPU, oracle.lastCPU))
         end
         local function patch(id, values, defer)
             return function(panel) panel.patchExtraTalent(id, values, defer) end
@@ -341,11 +353,202 @@ function Start()
         check(optimized.panel.getRosterPower(15) > teammateBefore,
             "真布护盾成长解锁同队治疗124：未直接patch的hero15正式战力真实变化")
         runCase("extra ack deduplicated", function(panel, f) panel.setHeroesData(f.data.heroes) end, 0, {})
+        runCase("exp replacement then extra remains local", function(panel, f)
+            f.data.heroes = copy(f.data.heroes)
+            f.data.heroes.roster["2"].exp = f.data.heroes.roster["2"].exp + 1
+            f.revisions.heroes = f.revisions.heroes + 1
+            panel.setHeroesData(f.data.heroes)
+            panel.patchExtraTalent(23, { shieldStacks = 2000001 })
+        end, 2, { 15, 23 })
+
+        -- 装备差分仍走真实Panel订阅；oracle剥除尝试差分参数，始终正式全量评分。
+        -- 装备revision用+7，模拟PlayerStore跨字段共享序列，不错误要求相邻整数。
+        local SuccessContext = nativeRequire("shared.SuccessNotificationContext")
+        local function equipmentNotify(f, cause)
+            local before, dirty = #f.events, f.dirty
+            f.revisions.equipment = f.revisions.equipment + 7
+            SuccessContext.withNotification(f.data.equipment, "equipment", cause, function()
+                f.storeListeners.equipment(f.data.equipment)
+            end)
+            local event = f.events[#f.events]
+            check(event.event == Events.TEAM_POWER_CHANGED and event.payload.cause == cause
+                and #f.events >= before + 1 and f.dirty == dirty + 1, "装备通知同步发布且原cause一次消费")
+            local order = f.order
+            check(order[#order - 3] == "invalidate" and order[#order - 2] == "gamePower"
+                and order[#order - 1] == "dirty" and order[#order] == "event", "装备通知原失效/同步/dirty/event顺序")
+            check(SuccessContext.takeCause(f.data.equipment, "equipment") == nil, "cause没有泄漏到后续通知")
+        end
+        local function equipCase(label, change, calls, ids)
+            runCase("equipment " .. label, function(panel, f)
+                if change then change(panel, f) end
+                equipmentNotify(f, label)
+            end, calls, ids)
+        end
+        runCase("equipment oracle baseline", function(panel, f)
+            f.data = copy(input)
+            f.revisions.heroes = f.revisions.heroes + 1
+            panel.setHeroesData(f.data.heroes)
+        end, ownedCount)
+        equipCase("unworn added", function(_, f)
+            f.data.equipment.inventory["900"] = { templateId = "C1", level = 70, quality = 3,
+                baseStats = { { AD.ENERGY_SHIELD, 120 } }, affixes = {} }
+        end, 0, {})
+        equipCase("bench equip", function(_, f)
+            f.data.equipment.equipped["2"] = { accessory = 900 }
+        end, 1, { 2 })
+        equipCase("same seq nested refine", function(_, f)
+            f.data.equipment.inventory["900"].baseStats[1][2] = 400
+        end, 1, { 2 })
+        equipCase("same seq ascend", function(_, f)
+            f.data.equipment.inventory["900"].ascendLevel = 2
+            f.data.equipment.inventory["900"].affixes[1] = { key = AD.MAG_PEN, value = 30, ascBonus = 4 }
+        end, 1, { 2 })
+        equipCase("bench to team2", function(_, f)
+            f.data.equipment.equipped["2"].accessory = nil
+            f.data.equipment.equipped["20"] = { accessory = 900 }
+        end, 4, { 2, 9, 20, 12 })
+        equipCase("cross team stolen seq", function(_, f)
+            f.data.equipment.equipped["20"].accessory = nil
+            f.data.equipment.equipped["15"] = { accessory = 900 }
+        end, 5, { 9, 20, 12, 15, 10 })
+        equipCase("cross team reverse", function(_, f)
+            f.data.equipment.equipped["15"].accessory = nil
+            f.data.equipment.equipped["12"].accessory = 900
+        end, 5, { 9, 20, 12, 15, 10 })
+        equipCase("same seq stargate input", function(_, f)
+            f.data.equipment.inventory["900"].baseStats[2] = { AD.MAG_DMG_BONUS, 500 }
+        end, 3, { 9, 20, 12 })
+        equipCase("delete worn item", function(_, f) f.data.equipment.inventory["900"] = nil end,
+            3, { 9, 20, 12 })
+        equipCase("missing worn unchanged", nil, 0, {})
+        equipCase("numeric fallback appears", function(_, f)
+            f.data.equipment.inventory[900] = { templateId = "C1", level = 70, quality = 3,
+                baseStats = { { AD.MAG_DMG_BONUS, 200 } }, affixes = {} }
+        end, 3, { 9, 20, 12 })
+        equipCase("string key priority", function(_, f)
+            f.data.equipment.inventory["900"] = { templateId = "C1", level = 70, quality = 3,
+                baseStats = { { AD.MAG_DMG_BONUS, 600 } }, affixes = {} }
+        end, 3, { 9, 20, 12 })
+        equipCase("shadowed numeric change", function(_, f)
+            f.data.equipment.inventory[900].baseStats[1][2] = 20000
+        end, 0, {})
+        equipCase("remove string reveals numeric", function(_, f) f.data.equipment.inventory["900"] = nil end,
+            3, { 9, 20, 12 })
+        equipCase("duplicate seq slots", function(_, f) f.data.equipment.equipped["12"].offhand = 900 end,
+            3, { 9, 20, 12 })
+        local twohandTemplate, onehandTemplate = "", ""
+        for id, template in pairs(EC.ITEMS) do
+            if template.slot == "weapon" and template.grip == "twohand" then twohandTemplate = id end
+            if template.slot == "weapon" and template.grip == "onehand" then onehandTemplate = id end
+        end
+        assert(twohandTemplate ~= "" and onehandTemplate ~= "", "missing real weapon grip templates")
+        local function checkGripAndOffhand(f, grip, contributes)
+            local options = { heroData = f.panel.getOwnedHero(12), heroes = f.data.heroes,
+                equipment = f.data.equipment, artifacts = f.data.artifacts, talents = f.data.talents }
+            local withOffhand = assert(fullBuild(12, options))
+            check(withOffhand.equipmentData.inventory["901"].grip == grip, "真实模板水合后握持=" .. grip)
+            options.equipment = copy(f.data.equipment)
+            options.equipment.equipped["12"].offhand = nil
+            local withoutOffhand = assert(fullBuild(12, options))
+            check((withOffhand.currentPower > withoutOffhand.currentPower) == contributes,
+                "真实副手贡献符合握持规则=" .. grip)
+        end
+        equipCase("twohand hides offhand", function(_, f)
+            f.data.equipment.inventory["901"] = { templateId = twohandTemplate, level = 70, quality = 3,
+                baseStats = { { AD.PHYS_ATK, 200 } }, affixes = {} }
+            f.data.equipment.equipped["12"].weapon = 901
+            -- 上一case同seq同时占饰品/副手；只留副手，避免去重掩盖真实握持分支。
+            f.data.equipment.equipped["12"].accessory = nil
+            checkGripAndOffhand(f, "twohand", false)
+        end, 3, { 9, 20, 12 })
+        equipCase("onehand restores offhand", function(_, f)
+            f.data.equipment.inventory["901"].templateId = onehandTemplate
+            checkGripAndOffhand(f, "onehand", true)
+        end, 3, { 9, 20, 12 })
+        equipCase("remove equipped hero mapping", function(_, f) f.data.equipment.equipped["12"] = nil end,
+            3, { 9, 20, 12 })
+        equipCase("unworn metadata only", function(_, f)
+            f.data.equipment.inventory["901"].locked = true
+            f.data.equipment.autoDecompose = { quality = 1 }
+        end, 0, {})
+        runCase("equipment no unworn inventory scan", function(_, f)
+            local inventory = f.data.equipment.inventory
+            setmetatable(inventory, { __pairs = function() error("equipment notification scanned full inventory") end })
+            local notified, message = pcall(equipmentNotify, f, "no inventory scan")
+            setmetatable(inventory, nil)
+            check(notified, "装备通知只读已穿引用，不扫描库存 " .. tostring(message))
+        end, 0, {})
+        equipCase("source replacement fallback", function(_, f) f.data.equipment = copy(f.data.equipment) end, ownedCount)
+        equipCase("source replacement next notification", nil, 0, {})
+        equipCase("unannounced owned combat fallback", function(panel)
+            panel.getOwnedHero(2).extraTalent.stacks = 991
+        end, ownedCount)
+        equipCase("unannounced source combat fallback", function(_, f)
+            f.data.heroes.roster["2"].level = 90
+        end, ownedCount)
+        equipCase("heroes source fallback", function(_, f) f.data.heroes = copy(f.data.heroes) end, ownedCount)
+        equipCase("heroes revision fallback", function(_, f) f.revisions.heroes = f.revisions.heroes + 1 end, ownedCount)
+        equipCase("artifact revision fallback", function(_, f)
+            f.revisions.artifacts = f.revisions.artifacts + 1
+            f.data.artifacts.bag[1].value = 25
+        end, ownedCount)
+        equipCase("talents revision fallback", function(_, f)
+            f.revisions.talents = f.revisions.talents + 1
+            f.data.talents.litNodes[#f.data.talents.litNodes + 1] = 125
+        end, ownedCount)
+        equipCase("formal formation fallback", function(_, f)
+            f.data.heroes.teams[2].slots = { 9, 12, 20, 0 }
+        end, ownedCount)
+        equipCase("deployed fallback", function(_, f) f.data.heroes.deployed = { 3, 1, 0, 0 } end, ownedCount)
+        equipCase("cold roster cache fallback", function(_, f) f.context.getRosterPowerCache()[1] = nil end, ownedCount)
+        equipCase("corrupt team cache fallback", function(_, f) f.context.getTeamPowerCaches()[2][1] = -1 end, ownedCount)
+        runCase("equipment revision not advanced fallback", function(_, f)
+            f.storeListeners.equipment(f.data.equipment)
+        end, ownedCount)
+        runCase("equipment unknown payload fallback", function(_, f)
+            f.revisions.equipment = f.revisions.equipment + 1
+            f.storeListeners.equipment({})
+        end, ownedCount)
+        runCase("equipment unknown revision fallback", function(_, f)
+            local getRevision = f.store.GetRevision
+            f.store.GetRevision = nil
+            f.storeListeners.equipment(f.data.equipment)
+            f.store.GetRevision = getRevision
+        end, ownedCount)
+        equipCase("after unknown revision fallback", nil, ownedCount)
+        runCase("equipment deferred growth fallback", function(panel, f)
+            panel.patchExtraTalent(12, { stacks = 400000 }, true)
+            equipmentNotify(f, "growth interleaved")
+        end, ownedCount)
+        runCase("equipment consumed batch finish fallback", function(panel) panel.finishExtraTalentBatch() end, ownedCount)
+        runCase("equipment restore shield fixture", function(panel, f)
+            f.data.heroes.teams[2].slots = { 9, 20, 12, 0 }
+            f.data.heroes.teams[3].slots = { 15, 23, 0, 0 }
+            f.data.heroes.roster["23"].extraTalent = { shieldStacks = 0 }
+            f.data.talents.litNodes = { 113, 124 }
+            for _, id in ipairs({ 15, 23 }) do
+                local seq = tostring(100 + id)
+                f.data.equipment.inventory[seq] = { templateId = "C1", level = 70, quality = 3,
+                    baseStats = { { AD.ENERGY_SHIELD, -1000000 } }, affixes = {} }
+                f.data.equipment.equipped[tostring(id)] = { accessory = seq }
+            end
+            panel.setHeroesData(f.data.heroes)
+        end, ownedCount)
+        local shieldTeammateBefore = optimized.panel.getRosterPower(15)
+        equipCase("124 real teammate shield", function(_, f)
+            f.data.equipment.inventory["123"].baseStats[1][2] = 1000000
+        end, 2, { 15, 23 })
+        check(optimized.panel.getRosterPower(15) > shieldTeammateBefore,
+            "装备护盾解锁真实124：未换装hero15的正式评分也随队友变化")
+        equipCase("last rite six piece removed", function(_, f)
+            f.data.equipment.equipped["9"][EC.SLOTS[1]] = nil
+        end, 3, { 9, 20, 12 })
+        runCase("equipment full caller stays full", function(panel) panel.refreshPower() end, ownedCount)
         runCase("reset session", function(panel) panel.resetSessionData() end, 0, {})
         runCase("cold rehydrate", function(panel, f) panel.setHeroesData(f.data.heroes) end, ownedCount)
         check(storage == 0, "全测试无玩家File/FS访问")
     end)
-    EP.buildWornContext, require = savedBuild, nativeRequire
+    EP.buildWornContext, EP.invalidate, require = savedBuild, savedInvalidate, nativeRequire
     rawset(_G, "File", savedFile)
     rawset(_G, "fileSystem", savedFS)
     HC.setDefaultLitNodes(savedLit)

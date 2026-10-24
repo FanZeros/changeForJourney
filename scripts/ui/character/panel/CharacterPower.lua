@@ -151,7 +151,7 @@ function M.bind(deps)
     ---@type table|nil
     local lastRefreshState = nil
     local COMBAT_FIELDS = { "level", "advBranch", "awakening", "extraTalent" }
-    local RESOURCE_KEYS = { "equipment", "artifacts", "talents" }
+    local RESOURCE_KEYS = { "heroes", "equipment", "artifacts", "talents" }
 
     local function copyPowerValue(value)
         if type(value) ~= "table" then return value end
@@ -168,8 +168,26 @@ function M.bind(deps)
         return true
     end
 
-    -- 冻结小规模战斗输入，不复制/扫描库存。只有明确 patch 的 extraTalent 可以不同；
-    -- 经验/金币不参与评分。无版本宿主、冷缓存、未声明变化和结构变化一律全量。
+    -- 只取已穿引用；不能调用 getFromInventory（会水合 live item）。查找优先级与其一致。
+    -- 保留完整槽表、缺失项及原始深值：同 seq 洗练/升阶、无效副手也不能漏判。
+    local function wornState(equipment)
+        if type(equipment) ~= "table" or type(equipment.equipped) ~= "table"
+            or type(equipment.inventory) ~= "table" then return nil end
+        local state = { equipped = copyPowerValue(equipment.equipped), items = {} }
+        for id, slots in pairs(state.equipped) do
+            if type(slots) ~= "table" then return nil end
+            local items = {}
+            for slot, seq in pairs(slots) do
+                if type(seq) ~= "number" and type(seq) ~= "string" then return nil end
+                items[slot] = copyPowerValue(equipment.inventory[tostring(seq)] or equipment.inventory[seq]) or false
+            end
+            state.items[id] = items
+        end
+        return state
+    end
+
+    -- 冻结小规模战斗输入，不复制/扫描库存。明确 patch 的 extraTalent 或已验证装备
+    -- 通知才允许差分；经验/金币不参与评分。冷缓存、未知来源和结构变化一律全量。
     local function refreshState()
         local heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes") or {}
         local state = { owned = {}, sources = {}, teams = {}, roster = {}, resources = {},
@@ -196,49 +214,68 @@ function M.bind(deps)
         end
         for _, key in ipairs(RESOURCE_KEYS) do
             state.resources[key] = { source = ClientDispatcher.get(key) or PlayerStore.Get(key),
+                storeSource = PlayerStore.Get(key), dispatcherSource = ClientDispatcher.get(key),
                 revision = PlayerStore.GetRevision and PlayerStore.GetRevision(key) }
         end
+        state.worn = wornState(state.resources.equipment.source)
         return state
     end
 
-    local function extraDependencyClosure(current)
+    local function safeRefreshInputs(current, extraTalentOnly, equipmentNotification)
         local previous = lastRefreshState
-        if not previous or not PlayerStore.GetRevision or not next(pendingExtraHeroes) then return nil end
+        if not previous or not PlayerStore.GetRevision then return false end
         for _, key in ipairs(RESOURCE_KEYS) do
             local a, b = previous.resources[key], current.resources[key]
-            if a.source ~= b.source or a.revision ~= b.revision then return nil end
+            if key == "equipment" and equipmentNotification then
+                -- GetRevision 使用全字段共享序列，合法连续装备通知可以相差 > 1。
+                -- 不靠 cause/request heroId：只信本次订阅传来的同源 Store/Dispatcher 数据。
+                if type(b.source) ~= "table" or equipmentNotification.data ~= b.source
+                    or a.source ~= b.source or a.storeSource ~= a.source or b.storeSource ~= b.source
+                    or (a.dispatcherSource and a.dispatcherSource ~= a.source)
+                    or (b.dispatcherSource and b.dispatcherSource ~= b.source)
+                    or type(a.revision) ~= "number" or type(b.revision) ~= "number"
+                    or a.revision <= 0 or b.revision <= a.revision then return false end
+            elseif (key ~= "heroes" or equipmentNotification)
+                and (a.source ~= b.source or a.revision ~= b.revision) then return false end
+            if equipmentNotification and (type(a.source) ~= "table"
+                or type(a.revision) ~= "number" or a.revision <= 0) then return false end
         end
+        if not equipmentNotification and not samePowerValue(previous.worn, current.worn) then return false end
         for _, key in ipairs({ "teams", "sourceTeams", "deployed", "roster" }) do
-            if not samePowerValue(previous[key], current[key]) then return nil end
+            if not samePowerValue(previous[key], current[key]) then return false end
         end
         for _, key in ipairs({ "owned", "sources" }) do
             for id, hero in pairs(current[key]) do
                 local old = previous[key][id]
-                if not old then return nil end
+                if not old then return false end
                 for _, field in ipairs(COMBAT_FIELDS) do
-                    if not (field == "extraTalent" and pendingExtraHeroes[tonumber(id) or id])
-                        and not samePowerValue(old[field], hero[field]) then return nil end
+                    if not (extraTalentOnly and field == "extraTalent" and pendingExtraHeroes[tonumber(id) or id])
+                        and not samePowerValue(old[field], hero[field]) then return false end
                 end
             end
-            for id in pairs(previous[key]) do if not current[key][id] then return nil end end
+            for id in pairs(previous[key]) do if not current[key][id] then return false end end
         end
         -- 保留未评分名册/槽缓存不能当作暖缓存；外部清缓存也必须回退。
         local rosterCache, teamCaches = get("rosterPowerCache") or {}, get("teamPowerCaches") or {}
         if not samePowerValue(previous.rosterPowers, rosterCache)
-            or not samePowerValue(previous.slotPowers, teamCaches) then return nil end
-        local affected = {}
-        for id in pairs(pendingExtraHeroes) do affected[id] = true end
-        -- 本地槽位与正式 buildWornContext 消费的 heroes 队表都纳入闭包。
-        -- 不按活动队猜测，也不假设成长仅影响本人（光环/星门会读队友属性）。
+            or not samePowerValue(previous.slotPowers, teamCaches) then return false end
+        return true
+    end
+
+    local function dependencyClosure(affected, previous, current)
+        -- 取 old/new 本地槽位与正式队表的联通闭包（当前门禁要求队表相等，仍显式保留两版）。
+        -- 不按活动队猜测，也不假设装备/成长只影响本人（光环/星门/124会读队友）。
         local rows = {}
-        for t = 1, TEAM_COUNT do
-            local ids = {}
-            for i, slot in ipairs(current.teams[t]) do
-                if slot.state == "occupied" then ids[i] = tonumber(slot.heroId) end
+        for _, state in ipairs({ previous, current }) do
+            for t = 1, TEAM_COUNT do
+                local ids = {}
+                for i, slot in ipairs(state.teams[t]) do
+                    if slot.state == "occupied" then ids[i] = tonumber(slot.heroId) end
+                end
+                rows[#rows + 1] = ids
+                local source = state.sourceTeams and (state.sourceTeams[t] or state.sourceTeams[tostring(t)])
+                rows[#rows + 1] = source and source.slots or (not state.sourceTeams and t == 1 and state.deployed) or {}
             end
-            rows[#rows + 1] = ids
-            local source = current.sourceTeams and (current.sourceTeams[t] or current.sourceTeams[tostring(t)])
-            rows[#rows + 1] = source and source.slots or (not current.sourceTeams and t == 1 and current.deployed) or {}
         end
         local changed = true
         while changed do
@@ -260,13 +297,41 @@ function M.bind(deps)
         return affected
     end
 
+    local function extraDependencyClosure(current)
+        if not next(pendingExtraHeroes) or not safeRefreshInputs(current, true) then return nil end
+        local affected = {}
+        for id in pairs(pendingExtraHeroes) do affected[id] = true end
+        return dependencyClosure(affected, lastRefreshState, current)
+    end
+
+    local function equipmentDependencyClosure(current, notification)
+        if not notification or next(pendingExtraHeroes)
+            or not safeRefreshInputs(current, false, notification) then return nil end
+        local previous = lastRefreshState
+        local old, new = previous.worn, current.worn
+        if not old or not new then return nil end
+        local affected = {}
+        for _, state in ipairs({ old, new }) do
+            for id in pairs(state.equipped) do
+                if not samePowerValue(old.equipped[id], new.equipped[id])
+                    or not samePowerValue(old.items[id], new.items[id]) then
+                    local heroId = tonumber(id)
+                    if not heroId or heroId <= 0 then return nil end
+                    affected[heroId] = true
+                end
+            end
+        end
+        return dependencyClosure(affected, previous, current)
+    end
+
     local function markExtraTalentDirty(heroId)
         pendingExtraHeroes[heroId] = true
     end
 
-    local function refreshPowerCache(cause, extraTalentOnly)
+    local function refreshPowerCache(cause, extraTalentOnly, equipmentNotification)
         local current = refreshState()
-        local affected = extraTalentOnly and extraDependencyClosure(current) or nil
+        local affected = extraTalentOnly and extraDependencyClosure(current)
+            or equipmentDependencyClosure(current, equipmentNotification)
         -- 全量入口同时消费待结算集合，避免其跨初始化/换队/全局通知泄漏。
         pendingExtraHeroes, lastRefreshState = {}, nil
         -- 此回调可早于评分订阅者；先失效，避免原地更新后红点仍用旧快照。

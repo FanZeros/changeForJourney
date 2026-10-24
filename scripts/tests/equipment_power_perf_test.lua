@@ -106,6 +106,10 @@ local function fixture(noRevisions)
     -- 仅加载允许修改的实际角标 hunk，不模拟UI/字体/输入或执行渲染代码。
     local detailSource = source("ui/character/detail/CharacterDetail.lua")
     local badge = assert(detailSource:match("%-%- ======================== 装备可提升判断 ========================(.-)\n%-%-%- 检查指定英雄的碎片"))
+    -- 仅隔离全局角标真实函数；配装详情准备任务由独立Update/Render专项覆盖。
+    local preparationStart = assert(badge:find("-- 配装评分与比较由同一个Update私有任务准备", 1, true))
+    local badgeResume = assert(badge:find("--- 检查指定英雄是否有任意槽位可提升", preparationStart, true))
+    badge = badge:sub(1, preparationStart - 1) .. badge:sub(badgeResume)
     local DT_SLOTS = {}
     for _, slot in ipairs(EC.SLOTS) do DT_SLOTS[#DT_SLOTS + 1] = { slot = slot } end
     local detailEnv = setmetatable({ CharacterDetail = {}, EquipmentPower = EP, EquipmentSystem = Eq,

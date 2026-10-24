@@ -577,7 +577,7 @@ function Standalone.Start()
     -- 6. Events；显式注册已持有表，不依赖package.loaded或为诊断额外加载业务。
     require("boot.PerformanceHooks").installStandalone({
         BattleTriPage = BattleTriPage, BattleScene = BattleScene, BattleEffects = BattleEffects, ProjectileSystem = ProjectileSystem,
-        CharacterPanel = CharacterPanel, HeroRosterPanel = HeroRosterPanel, BackpackPanel = BackpackPanel, LootBoxPage = LootBoxPage,
+        CharacterPanel = CharacterPanel, CharacterDetail = CharacterDetail, HeroRosterPanel = HeroRosterPanel, BackpackPanel = BackpackPanel, LootBoxPage = LootBoxPage,
         ChurchPage = ChurchPage, TalentPage = TalentPage, TavernPage = TavernPage, MarketPage = MarketPage,
         DungeonBattleScene = DungeonBattleScene, TowerBattleScene = TowerBattleScene, DungeonPage = DungeonPage, BlacksmithPage = BlacksmithPage,
         SweepDialog = SweepDialog, StageSelectDialog = StageSelectDialog, DamageStatsPanel = DamageStatsPanel, TownScene = TownScene,
@@ -1421,6 +1421,8 @@ function HandleUpdate(eventType, eventData)
         end
     end
     CharacterPanel.updateBadges()
+    -- 右栏详情在三队页也可打开，准备任务不能受 tab1 的惯性更新门禁限制。
+    if CharacterDetail.update then CharacterDetail.update(dt) end
     if tabIndex == 1 then
         CharacterPanel.update(dt)
     elseif tabIndex == 5 or (tabIndex == 3 and DungeonPage.isTowerChallengePending()) then

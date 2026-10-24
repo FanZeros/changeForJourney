@@ -364,12 +364,15 @@ function Start()
         check(close(row(ar, "_artifactCritDmgMult").currentValue, 2.5), "神器倍率特殊行提供 numericValue")
         check(close(row(ar, "_artifactExtraDamage").currentValue, 1.6), "神器额外伤害特殊行原始倍率正确")
         local crit = row(ar, "_effCritRate")
-        check(close(crit.delta, 130), "合并通用/物理暴击后计神器半率倍率")
+        local expectedCritDelta = (4 * 250 / (4 + 250) + 5 * 10 / (5 + 10)) * 0.5
+        check(close(crit.delta, expectedCritDelta), "装备暴率先按来源递减，合并通用/物暴后计神器半率")
         check(close(row(ar, "_effCritDmg").previewValue, row(ar, "_effCritDmg").currentValue),
             "普通英雄溢出暴击率不再转暴伤，神器暴伤倍率仍保留")
         local laoliu = copy(art)
         laoliu.heroes.roster = { ["18"] = { level = 70,
-            awakening = { [1] = true, [2] = true, [3] = true, _awk3Migrated = true }, extraTalent = {} } }
+            awakening = { [1] = true, [2] = true, [3] = true, _awk3Migrated = true },
+            -- 专属永久成长不属于装备软预算，仍用于验证半率后超百的觉醒转换。
+            extraTalent = { stacks = 1800 } } }
         laoliu.heroes.teams[2].slots = { 18 }
         laoliu.equipment.equipped = { ["18"] = {} }
         put(laoliu, 1, "C1", { { affixId = 19, value = 250 } }, {})

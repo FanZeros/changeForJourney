@@ -314,8 +314,9 @@ AD.DESC = {
 --   derivedLevelFactor : 六围派生护盾 × (1 + (等级-1) × 该因子)，给中前期一个
 --                        超线性成长台阶（在 HP 锚定主导前补足）。0.02 ≈ 每级 +2%。
 --
--- 注意：该成长层是「附加层」，叠加在原有 (base+derived+flat)×(1+esBonus)×(1+finalESBonus)
--- 之上，不再被 esBonus/finalESBonus 二次放大（保证「护盾 = HP 的 X%」精确可预测）。
+-- 注意：常规 esBonus 仍只放大常规层，避免六围自带加成把成长层重复放大。
+-- 完整护盾 = ((base+derived+flat)×(1+esBonus) + HP锚定 + 派生等级成长)
+--            ×(1+finalESBonus)。最终护盾只在末尾统一乘一次。
 -- 等级 1 且 hpRatio=0 时与旧公式完全一致（向后兼容）。
 -- 等级来源：createHero / createMonster 通过 cfg.unitLevel 写入 attrs.unitLevel。
 AD.SHIELD_SCALING = {
@@ -519,7 +520,7 @@ end
 ---@param armorType number 护甲类型 (1-5)
 ---@return number 倍率
 function AD.getTypeMult(atkType, armorType)
-    local row = AD.TYPE_MULT[atkType]
+    local row = AD.TYPE_MULT[atkType] --[[@as table<number, number>?]]
     if not row then return 1.0 end
     return row[armorType] or 1.0
 end

@@ -3,10 +3,9 @@ local PlayerStore = require("core.PlayerStore")
 local EquipmentPower = require("systems.EquipmentPower")
 local M = {}
 
-local combatFields = { "level", "advBranch", "awakening", "extraTalent" }
 local function sameValue(a, b)
-    if type(a) ~= type(b) then return false end
     if type(a) ~= "table" then return a == b end
+    if type(b) ~= "table" then return false end
     for key, value in pairs(a) do if not sameValue(value, b[key]) then return false end end
     for key in pairs(b) do if a[key] == nil then return false end end
     return true
@@ -25,38 +24,37 @@ local function slotId(heroes, team, slot)
     return tonumber(id)
 end
 
--- 冻结消费值，不按 heroes 引用/revision 跳过检查：无通知原地成长也必须同帧拒旧。
--- 相等时只比较，不再为每次 Render/指针读取排序、递归串化整个名册。
-local function sameHeroes(heroes, snapshot)
-    if not snapshot then return false end
+-- 每次读取都比较消费值：不能用 heroes 引用/revision/帧号跳过无通知 patch。
+-- 比较时不复制、不串化；只对实际变化的行冻结，持续成长不再深拷贝全名册。
+local function observeHeroes(heroes, snapshot)
+    local changed = false
     for team = 1, 3 do
         for slot = 1, 4 do
-            if slotId(heroes, team, slot) ~= snapshot.slots[(team - 1) * 4 + slot] then return false end
+            local index, id = (team - 1) * 4 + slot, slotId(heroes, team, slot)
+            if id ~= snapshot.slots[index] then
+                snapshot.slots[index], changed = id, true
+            end
         end
     end
-    local count = 0
-    for id, hero in pairs(heroes.roster or {}) do
-        count = count + 1
+    local roster = heroes.roster or {}
+    for id, hero in pairs(roster) do
         local old = snapshot.roster[id]
-        if not old then return false end
-        for _, field in ipairs(combatFields) do
-            if not sameValue(hero[field], old[field]) then return false end
+        if not old then old = {}; snapshot.roster[id] = old; changed = true end
+        if hero.level ~= old.level then old.level, changed = hero.level, true end
+        if not sameValue(hero.advBranch, old.advBranch) then
+            old.advBranch, changed = copyValue(hero.advBranch), true
+        end
+        if not sameValue(hero.awakening, old.awakening) then
+            old.awakening, changed = copyValue(hero.awakening), true
+        end
+        if not sameValue(hero.extraTalent, old.extraTalent) then
+            old.extraTalent, changed = copyValue(hero.extraTalent), true
         end
     end
-    return count == snapshot.count
-end
-local function freezeHeroes(heroes)
-    local snapshot = { slots = {}, roster = {}, count = 0 }
-    for team = 1, 3 do
-        for slot = 1, 4 do snapshot.slots[(team - 1) * 4 + slot] = slotId(heroes, team, slot) end
+    for id in pairs(snapshot.roster) do
+        if roster[id] == nil then snapshot.roster[id], changed = nil, true end
     end
-    for id, hero in pairs(heroes.roster or {}) do
-        local row = {}
-        for _, field in ipairs(combatFields) do row[field] = copyValue(hero[field]) end
-        snapshot.roster[id] = row
-        snapshot.count = snapshot.count + 1
-    end
-    return snapshot
+    return changed
 end
 
 function M.bind(deps)
@@ -70,51 +68,63 @@ function M.bind(deps)
     -- 一次不可抢占的装备评分/种子构建/排序可能超过预算；这是协作式软预算。
     local budget, maxSteps = deps.budgetSeconds or 0.001, deps.maxSteps or 64
     local api = {}
-    ---@type table|nil
-    local heroSnapshot = nil
+    local heroSnapshot = { slots = {}, roster = {} }
     local heroVersion = 0
     local function heroKey(heroes)
-        heroes = heroes or {}
-        if not sameHeroes(heroes, heroSnapshot) then
-            heroSnapshot = freezeHeroes(heroes)
-            heroVersion = heroVersion + 1
-        end
-        return tostring(heroVersion)
+        if observeHeroes(heroes or {}, heroSnapshot) then heroVersion = heroVersion + 1 end
+        return heroVersion
+    end
+    ---@type table|nil
+    local lastRequest = nil
+    local function revision(key)
+        return PlayerStore.GetRevision and PlayerStore.GetRevision(key) or 0
     end
     local function capture(synchronous)
-        -- capture 可复用不可变筛选快照；任务的 context/版本只写自己的请求外壳。
-        local request = {}
-        for key, value in pairs(deps.capture()) do request[key] = value end
-        request.equipment = PlayerStore.Get("equipment")
-        local parts = { request.filterKey, tostring(request.equipment),
-            tostring(PlayerStore.GetRevision and PlayerStore.GetRevision("equipment") or 0) }
-        -- 结构只依赖筛选/装备；战斗成长不能让真实库存从界面消失。
-        request.key = table.concat(parts, "|")
-        request.scoreKey, request.syncKey = request.key, request.key
-        if request.heroId ~= nil then
-            local heroes = PlayerStore.Get("heroes")
-            request.heroes = heroes
-            request.artifacts = PlayerStore.Get("artifacts")
-            request.talents = PlayerStore.Get("talents")
-            parts[#parts + 1] = heroKey(heroes)
-            for _, key in ipairs({ "artifacts", "talents" }) do
-                parts[#parts + 1] = tostring(request[key])
-                parts[#parts + 1] = tostring(PlayerStore.GetRevision and PlayerStore.GetRevision(key) or 0)
+        local filters = deps.capture()
+        local equipment, equipRevision = PlayerStore.Get("equipment"), revision("equipment")
+        local heroes, artifacts, talents, version = nil, nil, nil, nil
+        local artifactRevision, talentRevision = 0, 0
+        if filters.heroId ~= nil then
+            heroes = PlayerStore.Get("heroes")
+            version = heroKey(heroes) -- 每次比较实际字段，包括同帧原地嵌套增删。
+            artifacts, talents = PlayerStore.Get("artifacts"), PlayerStore.Get("talents")
+            artifactRevision, talentRevision = revision("artifacts"), revision("talents")
+        end
+        local previous = lastRequest
+        local structureSame = previous and previous.filterKey == filters.filterKey
+            and previous.equipment == equipment and previous.equipRevision == equipRevision
+        local request = previous
+        if not structureSame or previous.heroes ~= heroes or previous.heroVersion ~= version
+            or previous.artifacts ~= artifacts or previous.talents ~= talents
+            or previous.artifactRevision ~= artifactRevision or previous.talentRevision ~= talentRevision then
+            request = {}
+            for key, value in pairs(filters) do request[key] = value end
+            request.equipment, request.equipRevision = equipment, equipRevision
+            request.heroes, request.heroVersion = heroes, version
+            request.artifacts, request.talents = artifacts, talents
+            request.artifactRevision, request.talentRevision = artifactRevision, talentRevision
+            -- 只在依赖确实改变时生成key/请求外壳，不按帧缓存任何值检查。
+            request.key = structureSame and previous.key or table.concat({ filters.filterKey,
+                tostring(equipment), tostring(equipRevision) }, "|")
+            request.scoreKey = request.key
+            if filters.heroId ~= nil then
+                request.scoreKey = table.concat({ request.key, tostring(version), tostring(artifacts),
+                    tostring(artifactRevision), tostring(talents), tostring(talentRevision) }, "|")
             end
-            request.scoreKey = table.concat(parts, "|")
-            request.syncKey = request.scoreKey .. "|" .. tostring(heroes) .. "|"
-                .. tostring(PlayerStore.GetRevision and PlayerStore.GetRevision("heroes") or 0)
+            lastRequest = request
         end
         if synchronous then
-            -- 仅显式同步契约追踪全部源；manual的Update/Render/指针不读这些模块。
-            local syncParts = { request.syncKey }
+            -- 显式同步契约追踪全部源；manual的Update/Render/指针不读战斗模块。
+            local sync = {}
+            for key, value in pairs(request) do sync[key] = value end
+            local parts = { request.scoreKey }
             for _, key in ipairs({ "heroes", "artifacts", "talents" }) do
-                local source = PlayerStore.Get(key)
-                syncParts[#syncParts + 1] = tostring(source)
-                syncParts[#syncParts + 1] = tostring(PlayerStore.GetRevision and PlayerStore.GetRevision(key) or 0)
+                parts[#parts + 1] = tostring(PlayerStore.Get(key))
+                parts[#parts + 1] = tostring(revision(key))
             end
-            syncParts[#syncParts + 1] = heroKey(PlayerStore.Get("heroes"))
-            request.syncKey = table.concat(syncParts, "|")
+            parts[#parts + 1] = tostring(heroKey(PlayerStore.Get("heroes")))
+            sync.syncKey = table.concat(parts, "|")
+            return sync
         end
         return request
     end
@@ -192,14 +202,16 @@ function M.bind(deps)
         if committedKey == request.scoreKey then job, jobKey = nil, nil; return end
         if not job or jobKey ~= request.scoreKey then
             jobKey = request.scoreKey
+            local jobRequest = {}
+            for key, value in pairs(request) do jobRequest[key] = value end
             job = coroutine.create(function()
-                -- 私有快照只在对应战斗版本有效；取消评分不取消基础列表。
-                request.context = EquipmentPower.buildContext(request.heroId, {
-                    heroes = request.heroes, equipment = request.equipment,
-                    artifacts = request.artifacts, talents = request.talents, checkpoint = checkpoint,
+                -- context 仅写任务外壳，不能污染Render复用的只读依赖请求。
+                jobRequest.context = EquipmentPower.buildContext(jobRequest.heroId, {
+                    heroes = jobRequest.heroes, equipment = jobRequest.equipment,
+                    artifacts = jobRequest.artifacts, talents = jobRequest.talents, checkpoint = checkpoint,
                     cacheFixedTeammates = true,
                 })
-                return deps.build(request, checkpoint)
+                return deps.build(jobRequest, checkpoint)
             end)
         end
         local currentJob, currentKey = job, jobKey

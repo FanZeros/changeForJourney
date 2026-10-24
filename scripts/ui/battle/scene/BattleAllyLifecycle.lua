@@ -251,6 +251,12 @@ function M.bind(deps)
         end
         TM.onBattleStart(getAllies(), getEnemies())
         TAL.onBattleStart(getAllies(), getEnemies())
+        for _, u in ipairs(getAllies()) do
+            if u._needsInitialShieldFill then
+                if u.attrs and u.attrs:isAlive() then u.attrs:fillEnergyShield() end
+                u._needsInitialShieldFill = nil
+            end
+        end
         checkEnemiesCorruption("RESET_BATTLE_EXIT")
     end
 

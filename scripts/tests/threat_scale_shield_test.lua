@@ -42,6 +42,7 @@ end
 local ALLOWED = {
     ["systems.AttributeDef"] = true, ["systems.UnitAttributes"] = true,
     ["systems.EquipmentSystem"] = true, ["systems.EquipmentSecondaryStats"] = true,
+    ["systems.EquipmentStatGrowth"] = true,
     ["systems.ThreatManager"] = true, ["systems.CombatFormula"] = true,
     ["systems.BattleDiag"] = true, ["config.ClassConfig"] = true,
     ["config.EquipmentConfig"] = true, ["config.AffixConfig"] = true,
@@ -400,10 +401,13 @@ local function testRotationAndPersistence(f)
                 item.ascendLevel = row[1]
                 check(f.Eq.getSecondaryAscendCount(item, 2) == row[2]
                     and f.Eq.getSecondaryAscendCount(item, 3) == row[3], id .. "独立轮转oracle升阶" .. row[1])
-                -- 当前设计每次副属性提升5%；不从被测计数或BC配置反算期望。
-                check(near(f.Eq.effectiveBaseStatValue(item, 2), saved[2][2] * (1 + row[2] * 0.05))
-                    and near(f.Eq.effectiveBaseStatValue(item, 3), saved[3][2] * (1 + row[3] * 0.05)),
-                    id .. "旧副提升公式不变升阶" .. row[1])
+                -- 当前设计每次副属性提升5%；Lv81随机盾值另乘1+(2-1)*31/50=1.62。
+                -- 不从被测计数、倍率函数或BC配置反算期望，其他候选key不补偿。
+                check(near(f.Eq.effectiveBaseStatValue(item, 2), saved[2][2] * (1 + row[2] * 0.05)
+                        * (saved[2][1] == "energyShield" and 1.62 or 1))
+                    and near(f.Eq.effectiveBaseStatValue(item, 3), saved[3][2] * (1 + row[3] * 0.05)
+                        * (saved[3][1] == "energyShield" and 1.62 or 1)),
+                    id .. "副升阶后固定数值补偿一次升阶" .. row[1])
                 checkIntrinsic(f, item, id .. "/轮转" .. row[1])
             end
             item.ascendLevel = 100

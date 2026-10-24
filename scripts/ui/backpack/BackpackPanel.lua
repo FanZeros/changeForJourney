@@ -33,6 +33,12 @@ local BackpackFilters = require("ui.backpack.BackpackFilters")
 local HeroFrame        = require("ui.widget.HeroFrame")
 local Curation = require("ui.loot.InventoryCurationDialog")
 
+-- 拖拽入口由 BackpackFilters.attachInput 在模块返回前安装，声明其真实公开接口。
+---@class JourneyBackpackPanel
+---@field handleDragBegin fun(dx: number, dy: number): boolean
+---@field handleDragMove fun(dx: number, dy: number): boolean
+---@field handleDragEnd fun(dx: number, dy: number): boolean
+---@field handleScroll fun(wheel: number, dx?: number, dy?: number): boolean
 local Panel = {}
 
 --- [横屏] 宿主模式："left"=城镇仓库左栏；"window"=全窗模态；"inline"=旧内嵌布局

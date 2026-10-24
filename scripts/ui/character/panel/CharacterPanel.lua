@@ -110,11 +110,13 @@ local SCROLL_WHEEL_STEP = 80  -- 鼠标滚轮每格滚动像素
 local runtimeOnlyPowerCache = 0  -- 队1兼容值；各队展示读取逐队缓存
 ---@type table<number, number>
 local runtimeOnlyPowerCaches = { 0, 0, 0 }
+-- 神器详情战力仅计入队伍总分，不写入名册/角色槽位分数或 runtime 分项。
+---@type table<number, number>
+local artifactPowerCaches = { 0, 0, 0 }
 
 -- 缓存"可提升"角标状态（避免每帧全量扫描背包计算装备战力）
 -- upgradeBadgeCache[heroId] = boolean
 local upgradeBadgeCache = {}
-
 
 -- 拥有的英雄集合: ownedSet[heroId] = { level, exp, maxExp }
 -- 未拥有的英雄不在此表中
@@ -271,13 +273,15 @@ local function bindPower()
             elseif k == "teamSlots" then return teamSlots
             elseif k == "teams" then return teams
             elseif k == "teamPowerCaches" then return teamPowerCaches
+            elseif k == "artifactPowerCaches" then return artifactPowerCaches
             elseif k == "heroRoster" then return heroRoster
             elseif k == "rosterPowerCache" then return rosterPowerCache
             end
             return nil
         end,
         set = function(k, v)
-            if k == "runtimeOnlyPowerCache" then runtimeOnlyPowerCache = v
+            if k == "artifactPowerCaches" then artifactPowerCaches = v
+            elseif k == "runtimeOnlyPowerCache" then runtimeOnlyPowerCache = v
             elseif k == "runtimeOnlyPowerCaches" then
                 runtimeOnlyPowerCaches = v
                 -- Power仅此setter在名册/三队全部缓存完成后、GameState/完整事件发布前调用。
@@ -301,7 +305,7 @@ local function getHeroLevel(heroId)
     return ensurePower().getHeroLevel(heroId)
 end
 
---- [三队适配] teamIdx 透传：按该队伍的装配表计算神器加成战力（缺省 1）
+--- 角色分数完全排除神器；teamIdx/partySlot 仅保留接口兼容。
 local function calcHeroPower(heroId, partySlot, teamIdx)
     return ensurePower().calcHeroPower(heroId, partySlot, teamIdx)
 end
@@ -458,7 +462,7 @@ local function updateHeroesRefreshBaseline(layoutChanged)
             -- 比较冻结值可识别共享 advBranch 表原地写入，以及重置删除分支。
             for i = 1, MAX_SLOTS do
                 local oldSlot = previous and previous[i]
-                local slot = current[t][i]
+                local slot = current[t][i] ---@type table
                 if oldSlot and slot.heroId and oldSlot.heroId == slot.heroId
                     and not sameRefreshValue(oldSlot.advBranch, slot.advBranch) then
                     classTeams[t] = true
@@ -556,6 +560,7 @@ function CharacterPanel.init(vg)
     for t = 1, TEAM_COUNT do
         teams[t].slots = buildDefaultSlots(t)
         teamPowerCaches[t] = {}
+        artifactPowerCaches[t] = 0
     end
     activeTeamIdx = 1
     teamSlots = teams[1].slots
@@ -1093,6 +1098,10 @@ function CharacterPanel.getDeployedTeam(teamIdx)
                     unit._slotOrder = i
                     -- 装备可能增加 maxHp，recalc 不会自动抬升 HP，需重新满血
                     unit.attrs:fillHp()
+                    -- 仅新出战实例在装备/神器结算完毕后补盾；战中重算/补血不得刷盾。
+                    unit.attrs:fillEnergyShield()
+                    -- 开战天赋可能继续提高上限；宿主仅对新实例消费一次最终补盾。
+                    unit._needsInitialShieldFill = true
                     -- 重新同步 flat 字段
                     unit.maxHp      = unit.attrs.final[AD.MAX_HP]
                     unit.hp         = unit.attrs.final[AD.HP]
@@ -1170,7 +1179,7 @@ function CharacterPanel.getTotalPower(teamIdx)
     for i = 1, MAX_SLOTS do
         total = total + (cache[i] or 0)
     end
-    return total + (runtimeOnlyPowerCaches[teamIdx] or 0)
+    return total + (artifactPowerCaches[teamIdx] or 0)
 end
 
 --- 强制重新计算所有槽位战力缓存并刷新 TopBar（供外部模块触发，如槽位强化后）
@@ -1353,6 +1362,7 @@ local function bindHeroSync()
             elseif k == "activeTeamIdx" then activeTeamIdx = v
             elseif k == "runtimeOnlyPowerCache" then runtimeOnlyPowerCache = v
             elseif k == "runtimeOnlyPowerCaches" then runtimeOnlyPowerCaches = v
+            elseif k == "artifactPowerCaches" then artifactPowerCaches = v
             elseif k == "heroRoster" then heroRoster = v
             elseif k == "rosterPowerCache" then rosterPowerCache = v
             elseif k == "upgradeBadgeCache" then upgradeBadgeCache = v

@@ -227,8 +227,18 @@ local function testPersistenceAndAscend()
                 end
                 local expectedValue = index == 1 and row[2] * (1 + boost)
                     or row[2] * (1 + steps * BC.ASCEND_SUB_STAT_RATIO)
+                -- 本组装备固定Lv81：独立展开50→100线性补偿，raw与升阶预算不变。
+                local growth81 = { maxHp = 1.496, hpRegen = 1.496, atkHeal = 1.496,
+                    physAtk = 1.372, magAtk = 1.372, energyShield = 1.62 }
+                expectedValue = expectedValue * (growth81[row[1]] or 1)
+                local limits = { critRate = 8, physCritRate = 10, magCritRate = 10, healCritRate = 10 }
+                local limit = limits[row[1]]
+                if limit and expectedValue > 0 then
+                    if equip.slot == "weapon" and equip.grip == "twohand" then limit = limit * 2 end
+                    expectedValue = limit / (1 + limit / expectedValue)
+                end
                 check(near(Eq.effectiveBaseStatValue(equip, index), expectedValue)
-                    and entries[index].key == row[1] and near(entries[index].flat, expectedValue), id .. "升阶按保存顺序轮转")
+                    and entries[index].key == row[1] and near(entries[index].flat, expectedValue), id .. "升阶顺序与概率来源递减")
             end
             check(same(saved, equip.secondaryRoll), id .. "升阶不写入基值")
         end

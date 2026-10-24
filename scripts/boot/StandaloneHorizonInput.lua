@@ -15,6 +15,7 @@ local MarketPage        = require("ui.market.MarketPage")
 local DungeonBattleScene = require("ui.dungeon.DungeonBattleScene")
 local TowerBattleScene   = require("ui.tower.TowerBattleScene")
 local DungeonPage        = require("ui.dungeon.DungeonPage")
+---@type JourneyBackpackPanel
 local BackpackPanel      = require("ui.backpack.BackpackPanel")
 local LootBox           = require("ui.loot.LootBox")
 local LootBoxPage       = require("ui.loot.LootBoxPage")
@@ -109,7 +110,7 @@ function Input.bind(ctx)
         panel = BackpackPanel, RT = RT, width = logicalW, height = logicalH, dpr = dpr,
         DS = Viewport.DS, tri = BattleTriPage.isOpen, source = ctx.pointerSource,
         blocked = function()
-            return RewardPopup.isOpen() or OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen()
+            return RewardPopup.blocksPageInput() or OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen()
                 or PlayerInfoPanel.isOpen() or UpdateNoticePopup.isOpen() or DarkTitleScreen.isOpen()
                 or LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()
                 or CEPanel.isOpen() or TutorialManager.isActive() or StartScreen.isOpen()
@@ -136,7 +137,7 @@ function Input.bind(ctx)
     local towerPress = nil ---@type table?
     local function towerKey()
         return TowerBattleScene.getPresentationKey() .. ":" .. tostring(TaskPage.isOpen())
-            .. ":" .. tostring(RewardPopup.isOpen()) .. ":" .. tostring(PlayerInfoPanel.isOpen())
+            .. ":" .. tostring(RewardPopup.blocksPageInput()) .. ":" .. tostring(PlayerInfoPanel.isOpen())
             .. ":" .. tostring(OfflineRewardPanel.isOpen()) .. ":" .. tostring(LevelUpPopup.isOpen())
             .. ":" .. tostring(UpdateNoticePopup.isOpen()) .. ":" .. tostring(DarkTitleScreen.isOpen())
             .. ":" .. tostring(LetterIntro.isOpen()) .. ":" .. tostring(IntroCutscene.isActive())
@@ -161,7 +162,7 @@ function Input.bind(ctx)
         marqueeGesture.observe()
     end
     local function towerInputActive()
-        return TowerBattleScene.isActive() and not RewardPopup.isOpen() and not PlayerInfoPanel.isOpen()
+        return TowerBattleScene.isActive() and not RewardPopup.blocksPageInput() and not PlayerInfoPanel.isOpen()
             and not OfflineRewardPanel.isOpen() and not LevelUpPopup.isOpen()
             and not UpdateNoticePopup.isOpen() and not DarkTitleScreen.isOpen()
             and not LetterIntro.isOpen() and not IntroCutscene.isActive()
@@ -312,7 +313,7 @@ function Input.bind(ctx)
 
     local function artworkBlocked()
         return StartScreen.isOpen() or DarkTitleScreen.isOpen() or LetterIntro.isOpen()
-            or IntroCutscene.isActive() or ScenarioDialogue.isActive() or RewardPopup.isOpen()
+            or IntroCutscene.isActive() or ScenarioDialogue.isActive() or RewardPopup.blocksPageInput()
             or PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen() or OfflineRewardPanel.isOpen()
             or UpdateNoticePopup.isOpen() or CEPanel.isOpen() or TutorialManager.isActive()
             or StageSelectDialog.isOpen() or SweepDialog.isOpen() or DamageStatsPanel.isOpen()
@@ -540,7 +541,7 @@ function Input.bind(ctx)
             end
         end
         if button == MOUSEB_RIGHT then
-            if RewardPopup.isOpen() or OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() then return end
+            if RewardPopup.blocksPageInput() or OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() then return end
             local pid, dx, dy = HorizonResolveMouse()
             if input:GetKeyDown(KEY_LSHIFT) or input:GetKeyDown(KEY_RSHIFT) then
                 -- 修饰右键独立消费，不得在空格/遮挡/不支持的页面回落成穿戴或回收。
@@ -630,13 +631,13 @@ function Input.bind(ctx)
         if pid == 'modal' and HorizonPageModalActive() then
             return
         end
-        if pid == 'modal' and RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        if pid == 'modal' and RewardPopup.blocksPageInput() then
             RewardPopup.handleDragBegin(dx, dy)
             return
         end
         if pid == 'none' then return end
         -- 归属面板的奖励弹窗：其面板内按下先交给弹窗（拖拽滚动等）
-        if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+        if RewardPopup.blocksPageInput()
             and RewardPopup.currentPanel() == pid then
             RewardPopup.handleDragBegin(dx, dy)
             return
@@ -782,7 +783,7 @@ function Input.bind(ctx)
             return
         end
         -- 归属面板的奖励弹窗：其面板内拖拽交给弹窗滚动
-        if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+        if RewardPopup.blocksPageInput()
             and RewardPopup.currentPanel() == pid then
             RewardPopup.handleDragMove(dx, dy)
             return
@@ -1088,7 +1089,7 @@ function Input.bind(ctx)
         local wasLootPress = lootPress
         if button == MOUSEB_LEFT then
             -- 领奖若在拖拽途中出现，先撤销旧来源，再走弹窗Up；不能先尝试落队。
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            if RewardPopup.blocksPageInput() then
                 CharacterPanel.handleDragEnd(-1, -1)
             end
             -- 不论鼠标在哪一栏、是否有新覆盖层，都释放遗匣的拖拽状态。
@@ -1169,16 +1170,16 @@ function Input.bind(ctx)
         equipmentPressPanel = nil
         -- 配装部位属于纯 UI 操作，详情外第一击也可立即选槽/取消；
         -- 判定放在真跨栏拖拽已结算之后，绝不把拖放当成点击。
-        if isTap and not TutorialManager.isActive() and not RewardPopup.isOpen()
+        if isTap and not TutorialManager.isActive() and not RewardPopup.blocksPageInput()
             and (pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1)) then
             local detail = require("ui.character.detail.CharacterDetail")
             if detail.handleEquipmentSlotTap then detail.handleEquipmentSlotTap(dx, dy) end
         end
         if detailDismissPress then
-            if isTap and not RewardPopup.isOpen() and not TutorialManager.isActive()
+            if isTap and not RewardPopup.blocksPageInput() and not TutorialManager.isActive()
                 and (pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1)) then
                 CharacterDetail.handleNavigationTap(dx, dy)
-            elseif isTap and not RewardPopup.isOpen()
+            elseif isTap and not RewardPopup.blocksPageInput()
                 and (not TutorialManager.isActive() or TutorialManager.getCurrentHighlight() == "equip_item_gifted")
                 and pid == 'left' and BackpackPanel.isOpen() and BackpackPanel.isLeftMode()
                 and BackpackPanel.peekEquipAt(dx, dy) then
@@ -1188,7 +1189,7 @@ function Input.bind(ctx)
             end
             detailDismissPress = false
             isTap = false
-        elseif isTap and pid == 'left' and not RewardPopup.isOpen() and not TutorialManager.isActive()
+        elseif isTap and pid == 'left' and not RewardPopup.blocksPageInput() and not TutorialManager.isActive()
             and not LootBoxPage.isOpen() and not TaskPage.isOpen()
             and BackpackPanel.isOpen() and BackpackPanel.isLeftMode() and BackpackPanel.peekEquipAt(dx, dy) then
             -- 装备格单击/双击自管时间窗，不受通用0.12秒按钮防抖吞掉第二击。
@@ -1215,7 +1216,7 @@ function Input.bind(ctx)
         end
         -- 全局领奖 / 离线收益必须在中缝返回与左栏页面之前消费。
         if pid == 'modal' and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            if RewardPopup.blocksPageInput() then
                 RewardPopup.handleDragEnd(dx, dy)
                 if isTap then RewardPopup.handleInput(dx, dy) end
                 return
@@ -1252,7 +1253,7 @@ function Input.bind(ctx)
                 if isTap then DungeonPage.handleInput(dx, dy) end
                 return
             end
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            if RewardPopup.blocksPageInput() then
                 RewardPopup.handleDragEnd(dx, dy)
                 if isTap then RewardPopup.handleInput(dx, dy) end
                 return
@@ -1281,7 +1282,7 @@ function Input.bind(ctx)
         -- 左面板：功能页组点击链
         if pid == 'left' then
             -- 归属左栏的奖励弹窗：左栏内任意点击交给弹窗（可交互/关闭）
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+            if RewardPopup.blocksPageInput()
                 and RewardPopup.currentPanel() == 'left' then
                 RewardPopup.handleDragEnd(dx, dy)
                 if isTap then RewardPopup.handleInput(dx, dy) end
@@ -1347,7 +1348,7 @@ function Input.bind(ctx)
         -- 右面板：角色链
         if pid == 'right' then
             -- 归属右栏的奖励弹窗：右栏内任意点击交给弹窗（可交互/关闭）
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+            if RewardPopup.blocksPageInput()
                 and RewardPopup.currentPanel() == 'right' then
                 RewardPopup.handleDragEnd(dx, dy)
                 if isTap then RewardPopup.handleInput(dx, dy) end
@@ -1363,7 +1364,7 @@ function Input.bind(ctx)
             return
         end
         -- 中面板：主视图链
-        if pid == 'center' and RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+        if pid == 'center' and RewardPopup.blocksPageInput()
             and RewardPopup.currentPanel() == 'center' then
             RewardPopup.handleDragEnd(dx, dy)
             if isTap then RewardPopup.handleInput(dx, dy) end

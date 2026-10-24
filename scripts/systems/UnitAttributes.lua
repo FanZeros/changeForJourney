@@ -6,7 +6,7 @@
 
 local AD = require("systems.AttributeDef")
 
----@class UnitAttributes
+---@class JourneyUnitAttributes
 ---@field armorType number
 ---@field atkType number
 ---@field unitLevel number
@@ -15,36 +15,35 @@ local AD = require("systems.AttributeDef")
 ---@field flatMod table<string, number>
 ---@field pctMod table<string, number>
 ---@field final table<string, number>
----@field modifiers table
----@field _uncapped table<string, number>?
----@field atkCoeff number?
----@field dmgSpread number?
----@field critOverflowRatio number?
----@field _healFrac number?
----@field energyShield number?
----@field tempEnergyShield number?
----@field esRegenCooldown number?
----@field _forceFullHpOnRecalc boolean?
----@field artifactIgnoreArmor boolean?
----@field artifactCritRateMult number?
----@field artifactCritDmgMult number?
----@field artifactExtraDamageMult number?
----@field artifactBlockCap number?
----@field artifactChaosDamageMult number?
----@field artifactChaosDefenseDisabled boolean?
----@field artifactPowerBonus number?
----@field artifactNoHeal boolean?
----@field _setFour any
----@field _setSix any
----@field _setRows table[]?
+---@field modifiers table<string, table[]>
+---@field atkCoeff number|nil
+---@field dmgSpread number|nil
+---@field critOverflowRatio number|nil
+---@field artifactIgnoreArmor number|nil
+---@field artifactCritRateMult number|nil
+---@field artifactCritDmgMult number|nil
+---@field artifactExtraDamageMult number|nil
+---@field artifactBlockCap number|nil
+---@field artifactChaosDamageMult number|nil
+---@field artifactChaosDefenseDisabled boolean|nil
+---@field artifactPowerBonus number|nil
+---@field artifactNoHeal boolean|nil
+---@field _setFour string|nil
+---@field _setSix string|nil
+---@field _setRows table[]|nil
 local UnitAttributes = {}
 UnitAttributes.__index = UnitAttributes
 
--- 私有职责边界：不缓存 AD 配置，不替换公开 self 调用，不调整写入/遍历顺序。
--- 属性刷新依次执行：六围派生、最终乘区、特殊派生、运行时池恢复。
----@param self UnitAttributes
----@param cfg table
-local function initializeLayers(self, cfg)
+-- ======================== 构造 ========================
+
+--- 创建属性容器
+---@param cfg table 初始属性 { str=10, maxHp=500, physAtk=20, atkInterval=2.0, armorType=1, ... }
+---@return table UnitAttributes 实例
+function UnitAttributes.create(cfg)
+    cfg = cfg or {}
+
+    local self = setmetatable({}, UnitAttributes)
+
     -- 护甲类型（不是数值属性，单独存放）
     self.armorType = cfg.armorType or AD.ARMOR_LEATHER
 
@@ -79,276 +78,6 @@ local function initializeLayers(self, cfg)
             self.base[key] = val
         end
     end
-
-end
-
-local function collectModifierEntries(id, entries)
-    local safeEntries = {}
-    for _, e in ipairs(entries or {}) do
-        if e and e.key then
-            safeEntries[#safeEntries + 1] = e
-        else
-            print("[UnitAttributes] invalid modifier entry skipped id=" .. tostring(id)
-                .. " key=" .. tostring(e and e.key)
-                .. " flat=" .. tostring(e and e.flat)
-                .. " pct=" .. tostring(e and e.pct))
-        end
-    end
-    return safeEntries
-end
-
----@param self UnitAttributes
----@param copy UnitAttributes
-local function copySetRows(self, copy)
-    if self._setRows then
-        copy._setRows = {}
-        for i, row in ipairs(self._setRows) do
-            local clonedRow = {}
-            for key, value in pairs(row) do
-                if key == "color" and type(value) == "table" then
-                    local color = {}
-                    for j, component in ipairs(value) do color[j] = component end
-                    clonedRow.color = color
-                else
-                    clonedRow[key] = value
-                end
-            end
-            copy._setRows[i] = clonedRow
-        end
-    end
-
-end
-
----@param self UnitAttributes
-local function refreshDerived(self)
-    -- 1) 清空派生
-    for key in pairs(AD.META) do
-        self.derived[key] = 0
-    end
-
-    -- 2) 计算六围派生贡献
-    local finalBaseStatBonus = {}
-    local function calcPreDerivedValue(key)
-        local meta = AD.META[key]
-        if not meta then return 0 end
-        local raw = (self.base[key] or 0) + (self.flatMod[key] or 0)
-        local pctBonus = (self.pctMod[key] or 0) / 100
-        local val = raw * (1 + pctBonus)
-        if meta.dataType == AD.TYPE_INT then
-            val = math.floor(val + 0.5)
-        end
-        local cap = meta.cap
-        if cap and val > cap then
-            val = cap
-        end
-        return val
-    end
-    for _, baseStat in ipairs(AD.BASE_STATS) do
-        local bonusKey = AD.FINAL_BASE_STAT_BONUS and AD.FINAL_BASE_STAT_BONUS[baseStat]
-        finalBaseStatBonus[baseStat] = bonusKey and calcPreDerivedValue(bonusKey) or 0
-    end
-
-    for _, baseStat in ipairs(AD.BASE_STATS) do
-        local baseVal = (self.base[baseStat] or 0) + (self.flatMod[baseStat] or 0)
-        -- 六围本身也受百分比修改，魔化最终六围作为最终乘区再生效
-        local pctBonus = (self.pctMod[baseStat] or 0) / 100
-        local finalBonus = (finalBaseStatBonus[baseStat] or 0) / 100
-        local effectiveStat = baseVal * (1 + pctBonus) * (1 + finalBonus)
-
-        local derivList = AD.DERIVATIVES[baseStat]
-        if derivList then
-            for _, d in ipairs(derivList) do
-                self.derived[d.attr] = (self.derived[d.attr] or 0) + effectiveStat * d.perPoint
-            end
-        end
-    end
-
-    return finalBaseStatBonus
-end
-
----@param self UnitAttributes
----@param finalBaseStatBonus table
-local function refreshFinal(self, finalBaseStatBonus)
-    -- 3) 计算 final = (base + derived + flatMod) * (1 + pctMod/100)
-    --    六围本身: final = base + flatMod（已在上面用过，此处也写入 final）
-    self._uncapped = {}
-    local function setFinalValue(key, val)
-        local meta = AD.META[key]
-        if not meta then return end
-        if meta.dataType == AD.TYPE_INT then
-            val = math.floor(val + 0.5)
-        end
-        self._uncapped[key] = val
-        local cap = meta.cap
-        if cap and val > cap then
-            val = cap
-        end
-        self.final[key] = val
-    end
-    local function applyFinalBonus(targetKey, bonusKey)
-        if not targetKey or not bonusKey then return end
-        local bonus = self.final[bonusKey] or 0
-        if bonus == 0 then return end
-        setFinalValue(targetKey, (self.final[targetKey] or 0) * (1 + bonus / 100))
-    end
-    for key, meta in pairs(AD.META) do
-        local raw = (self.base[key] or 0) + (self.derived[key] or 0) + (self.flatMod[key] or 0)
-        local pctBonus = (self.pctMod[key] or 0) / 100
-        setFinalValue(key, raw * (1 + pctBonus))
-    end
-
-    -- 4) 攻击加成：物理/魔法攻击加成（%）作用于对应攻击力
-    local physAtkBonus = self.final[AD.PHYS_ATK_BONUS] or 0
-    if physAtkBonus ~= 0 then
-        self.final[AD.PHYS_ATK] = self.final[AD.PHYS_ATK] * (1 + physAtkBonus / 100)
-        self._uncapped[AD.PHYS_ATK] = self.final[AD.PHYS_ATK]
-    end
-    local magAtkBonus = self.final[AD.MAG_ATK_BONUS] or 0
-    if magAtkBonus ~= 0 then
-        self.final[AD.MAG_ATK] = self.final[AD.MAG_ATK] * (1 + magAtkBonus / 100)
-        self._uncapped[AD.MAG_ATK] = self.final[AD.MAG_ATK]
-    end
-
-    -- 4.5) 生命加成：百分比作用于生命值上限
-    local hpBonus = self.final[AD.HP_BONUS] or 0
-    if hpBonus ~= 0 then
-        self.final[AD.MAX_HP] = math.floor(self.final[AD.MAX_HP] * (1 + hpBonus / 100) + 0.5)
-        self._uncapped[AD.MAX_HP] = self.final[AD.MAX_HP]
-    end
-
-    -- 4.6) 闪避加成：百分比作用于闪避值
-    local dodgeBonus = self.final[AD.DODGE_BONUS] or 0
-    if dodgeBonus ~= 0 then
-        self.final[AD.DODGE] = self.final[AD.DODGE] * (1 + dodgeBonus / 100)
-        self._uncapped[AD.DODGE] = self.final[AD.DODGE]
-    end
-
-    -- 4.7) 护甲加成：百分比作用于护甲
-    local armorBonus = self.final[AD.ARMOR_BONUS] or 0
-    if armorBonus ~= 0 then
-        self.final[AD.ARMOR] = self.final[AD.ARMOR] * (1 + armorBonus / 100)
-        self._uncapped[AD.ARMOR] = self.final[AD.ARMOR]
-    end
-
-    -- 4.8) 能量护盾加成：百分比作用于能量护盾
-    local esBonus = self.final[AD.ES_BONUS] or 0
-    if esBonus ~= 0 then
-        self.final[AD.ENERGY_SHIELD] = (self.final[AD.ENERGY_SHIELD] or 0) * (1 + esBonus / 100)
-        self._uncapped[AD.ENERGY_SHIELD] = self.final[AD.ENERGY_SHIELD]
-    end
-
-    -- 4.9) 魔化最终属性：最后一层乘区，作用于已完成常规加成后的目标属性
-    if AD.FINAL_ATTR_BONUS then
-        for targetKey, bonusKey in pairs(AD.FINAL_ATTR_BONUS) do
-            applyFinalBonus(targetKey, bonusKey)
-        end
-    end
-    for baseStat, bonus in pairs(finalBaseStatBonus) do
-        if bonus ~= 0 then
-            setFinalValue(baseStat, (self.final[baseStat] or 0) * (1 + bonus / 100))
-        end
-    end
-
-end
-
----@param self UnitAttributes
-local function refreshSecondary(self)
-    -- 5) 特殊派生：护甲 → 伤害抗性（护甲不低于 0）
-    local armor = math.max(0, self.final[AD.ARMOR] or 0)
-    self.final[AD.RESISTANCE] = (0.01 * armor) / (0.01 * armor + 1) * 100
-    self._uncapped[AD.RESISTANCE] = self.final[AD.RESISTANCE]
-
-    -- 5.5) 护盾成长层（Shield Scaling）—— 详见 AttributeDef.SHIELD_SCALING 注释
-    --   问题：护盾三来源全是线性增长，而 HP/伤害随等级指数爆炸，中后期护盾占比塌到≈0。
-    --   修法：把护盾锚定到指数增长的 HP（hpRatio），并给派生护盾一个随等级放大的因子。
-    --   门控：仅对「本身已有护盾来源」的单位生效（preGrowthES > 0），不给无盾单位凭空加盾。
-    local ss = AD.SHIELD_SCALING
-    if ss and ss.enabled then
-        local preGrowthES = self.final[AD.ENERGY_SHIELD] or 0
-        if preGrowthES > 0 then
-            local maxHpFinal = self.final[AD.MAX_HP] or 0
-            local derivedES  = self.derived[AD.ENERGY_SHIELD] or 0
-            local lvl = self.unitLevel or 1
-            if lvl < 1 then lvl = 1 end
-            local levelFactor = 1 + (lvl - 1) * (ss.derivedLevelFactor or 0)
-            -- HP 锚定 + 派生等级放大；附加层不再被 esBonus/finalESBonus 二次放大
-            local extra = maxHpFinal * (ss.hpRatio or 0) + derivedES * (levelFactor - 1)
-            if extra > 0 then
-                local newES = preGrowthES + extra
-                self.final[AD.ENERGY_SHIELD] = newES
-                self._uncapped[AD.ENERGY_SHIELD] = newES
-            end
-        end
-    end
-
-end
-
----@param self UnitAttributes
-local function restoreRuntimePools(self, savedHp, savedESMax)
-    -- 6) 恢复战斗 HP（不让公式覆盖运行时血量）
-    --    savedHp 为 nil 仅在首次 create → recalc 时，此时 final[HP] 保持公式值（由 fillHp 初始化）
-    if self._forceFullHpOnRecalc then
-        self.final[AD.HP] = self.final[AD.MAX_HP]
-        self._forceFullHpOnRecalc = nil
-    elseif savedHp and savedHp > 0 then
-        -- 保留当前战斗 HP，但不超过新的 maxHP
-        self.final[AD.HP] = math.min(savedHp, self.final[AD.MAX_HP])
-    elseif savedHp and savedHp <= 0 then
-        -- 已死亡的单位保持死亡状态
-        self.final[AD.HP] = 0
-    end
-    -- savedHp == nil → 首次构造，保留公式算出的值（后续由 fillHp 设为满血）
-
-    -- 7) 初始化能量护盾
-    self:initEnergyShield(savedESMax)
-end
-
----@param self UnitAttributes
-local function absorbShieldDamage(self, amount)
-    -- 受伤重置护盾回复冷却。体质越高，冷却越短。
-    local maxES = self.final[AD.ENERGY_SHIELD] or 0
-    if maxES > 0 then
-        self.esRegenCooldown = self:getShieldRegenCooldown()
-    end
-    -- 能量护盾伤害减免：任一护盾存在时生效
-    local es = self.energyShield or 0
-    local tempEs = self.tempEnergyShield or 0
-    local totalShield = es + tempEs
-    if totalShield > 0 then
-        local esReduce = self.final[AD.ES_DMG_REDUCE] or 0
-        if esReduce > 0 then
-            amount = math.floor(amount * (1 - math.min(esReduce / 100, 0.80)))
-        end
-        -- 临时护盾在外层，优先吸收
-        tempEs = self.tempEnergyShield or 0
-        if tempEs > 0 then
-            local tempAbsorbed = math.min(tempEs, amount)
-            self.tempEnergyShield = tempEs - tempAbsorbed
-            amount = amount - tempAbsorbed
-        end
-        -- 常规能量护盾
-        es = self.energyShield or 0
-        if es > 0 and amount > 0 then
-            local absorbed = math.min(es, amount)
-            self.energyShield = es - absorbed
-            amount = amount - absorbed
-        end
-    end
-    return amount
-end
-
--- ======================== 构造 ========================
-
---- 创建属性容器
----@param cfg table 初始属性 { str=10, maxHp=500, physAtk=20, atkInterval=2.0, armorType=1, ... }
----@return UnitAttributes 实例
-function UnitAttributes.create(cfg)
-    cfg = cfg or {}
-
-    ---@type UnitAttributes
-    local self = setmetatable({}, UnitAttributes)
-
-    initializeLayers(self, cfg)
 
     -- 首次全量计算
     self:recalc()
@@ -425,7 +154,17 @@ end
 ---@param id string     修改器唯一 ID（如 "equip_sword_1"、"buff_rage"）
 ---@param entries table {{ key=AD.PHYS_ATK, flat=50 }, { key=AD.CRIT_RATE, pct=5 }, ...}
 function UnitAttributes:addModifier(id, entries)
-    local safeEntries = collectModifierEntries(id, entries)
+    local safeEntries = {}
+    for _, e in ipairs(entries or {}) do
+        if e and e.key then
+            safeEntries[#safeEntries + 1] = e
+        else
+            print("[UnitAttributes] invalid modifier entry skipped id=" .. tostring(id)
+                .. " key=" .. tostring(e and e.key)
+                .. " flat=" .. tostring(e and e.flat)
+                .. " pct=" .. tostring(e and e.pct))
+        end
+    end
     if #safeEntries == 0 then return end
     self.modifiers[id] = safeEntries
     self:_rebuildMods()
@@ -451,9 +190,8 @@ end
 
 --- 深拷贝当前 UnitAttributes 实例，生成一份独立副本
 --- 用于战斗快照隔离：克隆后修改不会影响原始实例
----@return UnitAttributes 独立副本
+---@return table UnitAttributes 独立副本
 function UnitAttributes:clone()
-    ---@type UnitAttributes
     local copy = setmetatable({}, UnitAttributes)
 
     -- 标量字段
@@ -478,7 +216,22 @@ function UnitAttributes:clone()
     copy.artifactNoHeal = self.artifactNoHeal
     copy._setFour = self._setFour
     copy._setSix = self._setSix
-    copySetRows(self, copy)
+    if self._setRows then
+        copy._setRows = {}
+        for i, row in ipairs(self._setRows) do
+            local clonedRow = {}
+            for key, value in pairs(row) do
+                if key == "color" and type(value) == "table" then
+                    local color = {}
+                    for j, component in ipairs(value) do color[j] = component end
+                    clonedRow.color = color
+                else
+                    clonedRow[key] = value
+                end
+            end
+            copy._setRows[i] = clonedRow
+        end
+    end
 
     -- 浅拷贝数值层表（key 为字符串常量，value 为数字）
     copy.base    = {}; for k, v in pairs(self.base)    do copy.base[k]    = v end
@@ -532,10 +285,174 @@ function UnitAttributes:recalc()
     local savedHp = self.final[AD.HP]
     local savedESMax = self.final[AD.ENERGY_SHIELD] or 0
 
-    local finalBaseStatBonus = refreshDerived(self)
-    refreshFinal(self, finalBaseStatBonus)
-    refreshSecondary(self)
-    restoreRuntimePools(self, savedHp, savedESMax)
+    -- 1) 清空派生
+    for key in pairs(AD.META) do
+        self.derived[key] = 0
+    end
+
+    -- 2) 计算六围派生贡献
+    local finalBaseStatBonus = {}
+    local function calcPreDerivedValue(key)
+        local meta = AD.META[key]
+        if not meta then return 0 end
+        local raw = (self.base[key] or 0) + (self.flatMod[key] or 0)
+        local pctBonus = (self.pctMod[key] or 0) / 100
+        local val = raw * (1 + pctBonus)
+        if meta.dataType == AD.TYPE_INT then
+            val = math.floor(val + 0.5)
+        end
+        local cap = meta.cap
+        if cap and val > cap then
+            val = cap
+        end
+        return val
+    end
+    for _, baseStat in ipairs(AD.BASE_STATS) do
+        local bonusKey = AD.FINAL_BASE_STAT_BONUS and AD.FINAL_BASE_STAT_BONUS[baseStat]
+        finalBaseStatBonus[baseStat] = bonusKey and calcPreDerivedValue(bonusKey) or 0
+    end
+
+    for _, baseStat in ipairs(AD.BASE_STATS) do
+        local baseVal = (self.base[baseStat] or 0) + (self.flatMod[baseStat] or 0)
+        -- 六围本身也受百分比修改，魔化最终六围作为最终乘区再生效
+        local pctBonus = (self.pctMod[baseStat] or 0) / 100
+        local finalBonus = (finalBaseStatBonus[baseStat] or 0) / 100
+        local effectiveStat = baseVal * (1 + pctBonus) * (1 + finalBonus)
+
+        local derivList = AD.DERIVATIVES[baseStat]
+        if derivList then
+            for _, d in ipairs(derivList) do
+                self.derived[d.attr] = (self.derived[d.attr] or 0) + effectiveStat * d.perPoint
+            end
+        end
+    end
+
+    -- 3) 计算 final = (base + derived + flatMod) * (1 + pctMod/100)
+    --    六围本身: final = base + flatMod（已在上面用过，此处也写入 final）
+    self._uncapped = {}
+    local function setFinalValue(key, val)
+        local meta = AD.META[key]
+        if not meta then return end
+        if meta.dataType == AD.TYPE_INT then
+            val = math.floor(val + 0.5)
+        end
+        self._uncapped[key] = val
+        local cap = meta.cap
+        if cap and val > cap then
+            val = cap
+        end
+        self.final[key] = val
+    end
+    local function applyFinalBonus(targetKey, bonusKey)
+        if not targetKey or not bonusKey then return end
+        local bonus = self.final[bonusKey] or 0
+        if bonus == 0 then return end
+        setFinalValue(targetKey, (self.final[targetKey] or 0) * (1 + bonus / 100))
+    end
+    for key, meta in pairs(AD.META) do
+        local raw = (self.base[key] or 0) + (self.derived[key] or 0) + (self.flatMod[key] or 0)
+        local pctBonus = (self.pctMod[key] or 0) / 100
+        setFinalValue(key, raw * (1 + pctBonus))
+    end
+
+    -- 4) 攻击加成：物理/魔法攻击加成（%）作用于对应攻击力
+    local physAtkBonus = self.final[AD.PHYS_ATK_BONUS] or 0
+    if physAtkBonus ~= 0 then
+        self.final[AD.PHYS_ATK] = self.final[AD.PHYS_ATK] * (1 + physAtkBonus / 100)
+        self._uncapped[AD.PHYS_ATK] = self.final[AD.PHYS_ATK]
+    end
+    local magAtkBonus = self.final[AD.MAG_ATK_BONUS] or 0
+    if magAtkBonus ~= 0 then
+        self.final[AD.MAG_ATK] = self.final[AD.MAG_ATK] * (1 + magAtkBonus / 100)
+        self._uncapped[AD.MAG_ATK] = self.final[AD.MAG_ATK]
+    end
+
+    -- 4.5) 生命加成：百分比作用于生命值上限
+    local hpBonus = self.final[AD.HP_BONUS] or 0
+    if hpBonus ~= 0 then
+        self.final[AD.MAX_HP] = math.floor(self.final[AD.MAX_HP] * (1 + hpBonus / 100) + 0.5)
+        self._uncapped[AD.MAX_HP] = self.final[AD.MAX_HP]
+    end
+
+    -- 4.6) 闪避加成：百分比作用于闪避值
+    local dodgeBonus = self.final[AD.DODGE_BONUS] or 0
+    if dodgeBonus ~= 0 then
+        self.final[AD.DODGE] = self.final[AD.DODGE] * (1 + dodgeBonus / 100)
+        self._uncapped[AD.DODGE] = self.final[AD.DODGE]
+    end
+
+    -- 4.7) 护甲加成：百分比作用于护甲
+    local armorBonus = self.final[AD.ARMOR_BONUS] or 0
+    if armorBonus ~= 0 then
+        self.final[AD.ARMOR] = self.final[AD.ARMOR] * (1 + armorBonus / 100)
+        self._uncapped[AD.ARMOR] = self.final[AD.ARMOR]
+    end
+
+    -- 4.8) 能量护盾加成：百分比作用于能量护盾
+    local esBonus = self.final[AD.ES_BONUS] or 0
+    if esBonus ~= 0 then
+        self.final[AD.ENERGY_SHIELD] = (self.final[AD.ENERGY_SHIELD] or 0) * (1 + esBonus / 100)
+        self._uncapped[AD.ENERGY_SHIELD] = self.final[AD.ENERGY_SHIELD]
+    end
+
+    -- 4.9) 魔化最终属性；最终护盾延后至成长层完成后，只乘一次完整护盾。
+    if AD.FINAL_ATTR_BONUS then
+        for targetKey, bonusKey in pairs(AD.FINAL_ATTR_BONUS) do
+            if targetKey ~= AD.ENERGY_SHIELD then
+                applyFinalBonus(targetKey, bonusKey)
+            end
+        end
+    end
+    for baseStat, bonus in pairs(finalBaseStatBonus) do
+        if bonus ~= 0 then
+            setFinalValue(baseStat, (self.final[baseStat] or 0) * (1 + bonus / 100))
+        end
+    end
+
+    -- 5) 特殊派生：护甲 → 伤害抗性（护甲不低于 0）
+    local armor = math.max(0, self.final[AD.ARMOR] or 0)
+    self.final[AD.RESISTANCE] = (0.01 * armor) / (0.01 * armor + 1) * 100
+    self._uncapped[AD.RESISTANCE] = self.final[AD.RESISTANCE]
+
+    -- 5.5) 护盾成长层：常规盾 + HP锚定 + 六围派生等级成长。
+    --   门控：成长前必须已有护盾来源，不给无盾单位凭空加盾。
+    --   常规 esBonus 保持只作用于常规层，最终护盾在三层合并后统一放大。
+    local ss = AD.SHIELD_SCALING
+    if ss and ss.enabled then
+        local preGrowthES = self.final[AD.ENERGY_SHIELD] or 0
+        if preGrowthES > 0 then
+            local maxHpFinal = self.final[AD.MAX_HP] or 0
+            local derivedES  = self.derived[AD.ENERGY_SHIELD] or 0
+            local lvl = self.unitLevel or 1
+            if lvl < 1 then lvl = 1 end
+            local levelFactor = 1 + (lvl - 1) * (ss.derivedLevelFactor or 0)
+            -- 成长层不再吃常规 esBonus；最终护盾在层合并后统一计算。
+            local extra = maxHpFinal * (ss.hpRatio or 0) + derivedES * (levelFactor - 1)
+            if extra > 0 then
+                local newES = preGrowthES + extra
+                self.final[AD.ENERGY_SHIELD] = newES
+                self._uncapped[AD.ENERGY_SHIELD] = newES
+            end
+        end
+    end
+    applyFinalBonus(AD.ENERGY_SHIELD, AD.FINAL_ENERGY_SHIELD_BONUS)
+
+    -- 6) 恢复战斗 HP（不让公式覆盖运行时血量）
+    --    savedHp 为 nil 仅在首次 create → recalc 时，此时 final[HP] 保持公式值（由 fillHp 初始化）
+    if self._forceFullHpOnRecalc then
+        self.final[AD.HP] = self.final[AD.MAX_HP]
+        self._forceFullHpOnRecalc = nil
+    elseif savedHp and savedHp > 0 then
+        -- 保留当前战斗 HP，但不超过新的 maxHP
+        self.final[AD.HP] = math.min(savedHp, self.final[AD.MAX_HP])
+    elseif savedHp and savedHp <= 0 then
+        -- 已死亡的单位保持死亡状态
+        self.final[AD.HP] = 0
+    end
+    -- savedHp == nil → 首次构造，保留公式算出的值（后续由 fillHp 设为满血）
+
+    -- 7) 初始化能量护盾
+    self:initEnergyShield(savedESMax)
 end
 
 -- ======================== 运行时操作 ========================
@@ -549,13 +466,48 @@ function UnitAttributes:fillHp()
     self._forceFullHpOnRecalc = true
 end
 
+--- 出战初始化：显式补满常规护盾，不改变临时盾或 HP。
+--- 不在 fillHp/recalc 中隐式调用，避免战斗治疗或属性刷新凭空补盾。
+function UnitAttributes:fillEnergyShield()
+    self.energyShield = math.max(0, self.final[AD.ENERGY_SHIELD] or 0)
+    self.esRegenCooldown = 0
+end
+
 --- 扣血（不低于 0）
 ---@param amount number 伤害量
 ---@return number 实际扣除量
 function UnitAttributes:takeDamage(amount, resistance)
     amount = math.max(0, math.floor(amount))
     if amount <= 0 then return 0 end
-    amount = absorbShieldDamage(self, amount)
+    -- 受伤重置护盾回复冷却。体质越高，冷却越短。
+    local maxES = self.final[AD.ENERGY_SHIELD] or 0
+    if maxES > 0 then
+        self.esRegenCooldown = self:getShieldRegenCooldown()
+    end
+    -- 能量护盾伤害减免：任一护盾存在时生效
+    local es = self.energyShield or 0
+    local tempEs = self.tempEnergyShield or 0
+    local totalShield = es + tempEs
+    if totalShield > 0 then
+        local esReduce = self.final[AD.ES_DMG_REDUCE] or 0
+        if esReduce > 0 then
+            amount = math.floor(amount * (1 - math.min(esReduce / 100, 0.80)))
+        end
+        -- 临时护盾在外层，优先吸收
+        tempEs = self.tempEnergyShield or 0
+        if tempEs > 0 then
+            local tempAbsorbed = math.min(tempEs, amount)
+            self.tempEnergyShield = tempEs - tempAbsorbed
+            amount = amount - tempAbsorbed
+        end
+        -- 常规能量护盾
+        es = self.energyShield or 0
+        if es > 0 and amount > 0 then
+            local absorbed = math.min(es, amount)
+            self.energyShield = es - absorbed
+            amount = amount - absorbed
+        end
+    end
     -- 护盾按原伤吸收。打穿护盾后剩下的部分才吃护甲抗性。
     local resist = tonumber(resistance) or 0
     if resist > 0 and amount > 0 then
@@ -574,7 +526,6 @@ end
 --- 80 体质及以上：受伤后立即回复，每秒回上限的 160%。
 ---@return number cooldown
 ---@return number ratePerSec  每秒回复的上限比例
----@return number flatPerSec 每秒固定回复量
 function UnitAttributes:getShieldRegenProfile()
     local vit = self:get(AD.VIT) or 0
     local t = vit / 40

@@ -108,8 +108,9 @@ end
 
 -- frozen必须是独立深副本；绝不以live表的引用相等跳过原地patch。
 local function sameValue(frozen, live, seen)
-    if type(frozen) ~= type(live) then return false end
+    -- 独立冻结表仍逐字段校验；叶子只需一次type检查，不为每个数值重复查类型。
     if type(frozen) ~= "table" then return frozen == live end
+    if type(live) ~= "table" then return false end
     if seen[frozen] then return seen[frozen] == live end
     seen[frozen] = live
     for key, value in pairs(frozen) do

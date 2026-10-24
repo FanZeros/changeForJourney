@@ -98,7 +98,7 @@ end
 --- 非行内奖励使用面板设计空间；外部覆盖层按本帧 note 重建同一变换。
 local function drawRewardInPanel(pid, outsideViewport)
     if not pid then return end
-    if not (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) then return end
+    if not RewardPopup.blocksPageInput() then return end
     if RewardPopup.currentPanel() ~= pid then return end
     if TowerBattleScene.isActive() and not outsideViewport then return end
     if pid == 'center' and (BattleTriPage.isOpen() or TowerBattleScene.isActive() or DungeonBattleScene.isOpen()) then
@@ -181,6 +181,8 @@ local function finishFrame(terminalMode)
     applyFrame()
     nvgResetScissor(vg())
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+    -- 所有模式共用穿透短提示；离线、更新与调试覆盖层保持上层优先级。
+    UiToast.draw(vg(), logicalW(), logicalH())
     drawOrphanRowReward()
     artifactOverlay.draw(vg())
     if not PlayerInfoPanel.isOpen() and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
@@ -194,7 +196,7 @@ local function finishFrame(terminalMode)
     end
     -- 满觉醒影画脱离右栏 viewport，在整个游戏窗口中央以完整比例显示。
     local artworkBlocked = StartScreen.isOpen() or DarkTitleScreen.isOpen() or LetterIntro.isOpen()
-        or IntroCutscene.isActive() or ScenarioDialogue.isActive() or RewardPopup.isOpen()
+        or IntroCutscene.isActive() or ScenarioDialogue.isActive() or RewardPopup.blocksPageInput()
         or PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen() or OfflineRewardPanel.isOpen()
         or UpdateNoticePopup.isOpen() or CEPanel.isOpen() or TutorialManager.isActive()
         or StageSelectDialog.isOpen() or SweepDialog.isOpen() or DamageStatsPanel.isOpen()
@@ -308,7 +310,7 @@ local function HorizonDrawPageModal(_unused_vg)
     if BottomNav.getSelectedIndex() ~= 5 then return end
     if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
     if PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen()
-        or OfflineRewardPanel.isOpen() or RewardPopup.isOpen() then return end
+        or OfflineRewardPanel.isOpen() or RewardPopup.blocksPageInput() then return end
     if not DungeonPage.isDetailOpen() then
         BottomNav.setSelectedIndex(3)
         BattleTriPage.open()
@@ -405,7 +407,7 @@ end
 local function HorizonDimSidePanels()
     local modalOpen =
         HeroRosterPanel.isVisible() or PlayerInfoPanel.isOpen() or
-        RewardPopup.isOpen() or
+        RewardPopup.blocksPageInput() or
         OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() or
         IntroCutscene.isActive()
     -- 战力浮层只是穿透提示，不压暗可继续点击、拖拽和滚动的侧栏。
@@ -433,7 +435,7 @@ local function seamInputBlocked(forDraw)
         or BottomNav.getSelectedIndex() == 5
         or (not forDraw and (PlayerInfoPanel.isOpen() or OfflineRewardPanel.isOpen()
             or LevelUpPopup.isOpen() or UpdateNoticePopup.isOpen()
-            or (RewardPopup.isOpen() and not RewardPopup.currentRowTag())
+            or RewardPopup.blocksPageInput()
             or SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
             or TerminalConfirmDialog.isOpen()))
 end
@@ -854,7 +856,7 @@ function HandleNanoVGRenderHorizon()
 
     if dungeonBattleOpen then
         DungeonBattleScene.draw(vg(), logicalW(), logicalH())
-        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() and not RewardPopup.currentPanel() then
+        if RewardPopup.blocksPageInput() and not RewardPopup.currentPanel() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
             nvgScissor(vg(), 0, 0, logicalW(), logicalH())
@@ -887,7 +889,7 @@ function HandleNanoVGRenderHorizon()
             TaskPage.draw(vg())
             Viewport.finish(vg())
         end
-        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        if RewardPopup.blocksPageInput() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
             nvgScissor(vg(), 0, 0, logicalW(), logicalH())
@@ -987,7 +989,7 @@ function HandleNanoVGRenderHorizon()
             nvgRestore(vg())
         end
         -- 离线收益与升级窗由 finishFrame 全窗绘制；奖励仍保留原归属路由。
-        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        if RewardPopup.blocksPageInput() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
             nvgScissor(vg(), 0, 0, logicalW(), logicalH())
@@ -1002,7 +1004,7 @@ function HandleNanoVGRenderHorizon()
         HorizonDrawPageModal(vg())
         -- [三面板] 三行模式：归属面板的奖励弹窗随触发面板绘制（左/中/右）；
         -- 非三行模式左/右已在各自视口内绘制、中栏由全局弹窗层绘制，此处不重复
-        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        if RewardPopup.blocksPageInput() then
             drawRewardInPanel(RewardPopup.currentPanel(), true)
         end
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
@@ -1052,7 +1054,6 @@ function HandleNanoVGRenderHorizon()
     end
     -- [LetterIntro] 开场覆盖必须在标题之后（非三行路径同样需要）
     HorizonDrawIntroOverlay()
-    UiToast.draw(vg(), logicalW(), logicalH())
     drawEquipDetailOverlay()
     -- 新手引导蒙层（装备详情浮层之上）
     HorizonDrawTutorialOverlay()

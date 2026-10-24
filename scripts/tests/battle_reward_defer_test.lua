@@ -286,6 +286,7 @@ function Start()
         end
         local function invisible()
             equal(Reward.isOpen(), false, "blocked/pending 不占据 isOpen 输入层")
+            equal(Reward.blocksPageInput(), false, "blocked/pending 不阻挡其它页面输入")
             equal(Reward.currentRowTag(), nil, "blocked/pending 无可见 rowTag")
             equal(Reward.currentPanel(), nil, "blocked/pending 无可见 panel")
             equal(Reward.hitPanel(540, 1000), false, "blocked/pending hitPanel 不可命中")
@@ -309,16 +310,81 @@ function Start()
             advance(0.16)
             Reward.update(0)
         end
-
+        run("row1-3 页面gate全生命周期透明，isOpen队列guard仍保留", function()
+            for row = 1, 3 do
+                fixture()
+                equal(type(Reward.blocksPageInput), "function", "真实Popup提供页面gate，不在测试补实现")
+                battle("页面透明行" .. row, rewardItems(12), { row = row })
+                advance(.18)
+                equal(Reward.isOpen(), true, "row显示及guard仍占奖励生命周期 " .. row)
+                equal(Reward.currentRowTag(), row, "显示真实row " .. row)
+                equal(Reward.blocksPageInput(), false, "row opening不阻挡页面 " .. row)
+                local elapsed = timelines[1]:elapsed()
+                flags.stats = true
+                equal(Reward.blocksPageInput(), false, "先查询页面gate也暂停row " .. row)
+                invisible()
+                advance(60)
+                flags.stats = false
+                equal(Reward.blocksPageInput(), false, "恢复row不阻挡页面 " .. row)
+                near(timelines[1]:elapsed(), elapsed, "页面gate恢复保留cascade进度 " .. row)
+                equal(Reward.currentRowTag(), row, "恢复原row " .. row)
+                Reward.close(); advance(.1)
+                equal(Reward.blocksPageInput(), false, "row closing不阻挡页面 " .. row)
+                advance(.16)
+                equal(Reward.currentRowTag(), nil, "关闭guard公开row已不可见 " .. row)
+                equal(Reward.isOpen(), true, "row关闭guard仍保护奖励队列 " .. row)
+                equal(Reward.blocksPageInput(), false, "raw rowTag让关闭guard不误判为模态 " .. row)
+                battle("guard后下一行", gold(1), { row = row, cascade = false })
+                equal(#timelines, 1, "不能用页面gate替代奖励队列isOpen " .. row)
+                Reward.update(0)
+                equal(#timelines, 1, "guard未结束不能pump下一批 " .. row)
+                advance(.16)
+                equal(#timelines, 2, "guard结束才pump下一批 " .. row)
+                equal(Reward.currentRowTag(), row, "guard后批次不丢失 " .. row)
+                equal(Reward.blocksPageInput(), false, "后续row仍透明 " .. row)
+            end
+        end)
+        run("nonrow主动小/大结果及关闭guard阻挡，guard结束释放", function()
+            for _, count in ipairs({ 2, 12 }) do
+                for _, panel in ipairs({ "left", "center", "right" }) do
+                    fixture()
+                    Reward.show("主动领奖gate", rewardItems(count), { panel = panel, cascade = false })
+                    equal(Reward.isLarge(), count > 10, "真实大小结果边界")
+                    equal(Reward.blocksPageInput(), true, "主动结果opening阻挡 " .. panel)
+                    advance(.5)
+                    equal(Reward.blocksPageInput(), true, "主动结果open阻挡 " .. panel)
+                    flags.stats = true
+                    equal(Reward.blocksPageInput(), true, "战斗遮挡不能释放主动结果gate")
+                    flags.stats = false
+                    Reward.close(); advance(.1)
+                    equal(Reward.blocksPageInput(), true, "主动结果closing仍阻挡")
+                    advance(.16)
+                    equal(Reward.currentRowTag(), nil, "nonrow关闭guard无row")
+                    equal(Reward.isOpen(), true, "nonrow关闭guard仍open")
+                    equal(Reward.blocksPageInput(), true, "nonrow关闭guard不得穿透")
+                    advance(.16)
+                    equal(Reward.isOpen(), false, "nonrow关闭guard结束")
+                    equal(Reward.blocksPageInput(), false, "nonrow guard结束页面解锁")
+                end
+            end
+        end)
         run("真实 blocker 所有中栏状态阻挡，关闭后恢复", function()
             fixture()
             equal(Blocker.isBlocked(), false, "空闲中栏不阻挡")
             for _, key in ipairs({ "sweep", "stats", "select", "terminal", "equipment", "forge", "dungeon",
                 "tower", "info", "offline", "level", "update", "start", "title", "letter", "intro", "story" }) do
+                fixture()
                 flags[key] = true
                 equal(Blocker.isBlocked(), true, "真实中栏 blocker " .. key)
+                battle("中栏覆盖延迟" .. key, gold(1), { cascade = false })
+                equal(Reward.hasPendingBattleRewards(), true, "中栏覆盖仍入原奖励队列 " .. key)
+                equal(#timelines, 0, "中栏覆盖不因新页面gate提前显示 " .. key)
+                equal(Reward.blocksPageInput(), false, "pending自身不阻挡覆盖页面 " .. key)
                 flags[key] = false
                 equal(Blocker.isBlocked(), false, "中栏关闭后 blocker 释放 " .. key)
+                Reward.update(0)
+                equal(Reward.currentRowTag(), 1, "中栏关闭后才显示row " .. key)
+                closeAndDrain()
             end
             flags.talent, flags.talentWidth = true, 1.5
             equal(Blocker.isBlocked(), true, "宽古树覆盖中栏")
@@ -1067,8 +1133,9 @@ function Start()
             local rewardProxy = {
                 currentRowTag = function() return Reward.currentRowTag() end,
                 isOpen = function() return Reward.isOpen() end,
+                blocksPageInput = function() return Reward.blocksPageInput() end,
                 isLarge = function() return Reward.isLarge() end,
-                handleLargeScroll = function() return false end,
+                handleLargeScroll = function(...) return Reward.handleLargeScroll(...) end,
                 currentPanel = function() return Reward.currentPanel() end,
             }
             for _, name in ipairs({ "drawRegion", "handleDragRegion", "handleScrollRegion", "handleInputRegion" }) do
@@ -1076,6 +1143,11 @@ function Start()
                     routed[#routed + 1] = { name = name, args = { ... } }
                     return Reward[name](...)
                 end
+            end
+            -- proxy只记录原region路由；页面gate及主动领奖输入均转发真实Popup，不能用常量stub掩盖穿透。
+            for _, name in ipairs({ "close", "hitPanel", "handleInput", "handleDragBegin", "handleDragMove",
+                "handleDragEnd", "handleScroll", "getPresentationVersion", "cancelDrag", "handleLargePointer" }) do
+                rewardProxy[name] = function(...) return Reward[name](...) end
             end
             local function closedPage()
                 return { isOpen = function() return false end, isActive = function() return false end,
@@ -1117,8 +1189,10 @@ function Start()
             routeMods["ui.battle.scene.BattleScene"] = { getStageId = function() return 1 end,
                 getClearedStages = function() return routeMods["runtime.ClientDispatcher"].get("battle").clearedStages or {} end,
                 pumpBattleCards = function() pumps = pumps + 1; error("routing禁止全图鉴pump") end }
-            -- 新增入场/挂载helper只用于零解锁空驱动的路由夹具；不替代本专项被测输入/绘制。
-            -- PR161暂停层在本零驱动路由夹具为空表现seam；原奖励输入/绘制断言不变。
+            -- 零解锁夹具只适配进攻守卫外围；reset与真实内存语义一致，严禁启动战斗判败。
+            routeMods["systems.BattleOffenseGuard"] = { GRACE_SEC = 5, REASON = "no_offense",
+                reset = function(owner) owner._noOffenseElapsed, owner._noOffenseLanes, owner._noOffenseReported = nil, nil, nil end,
+                update = function() error("零解锁routing禁止运行进攻守卫/战斗判败") end }
             routeMods["ui.battle.scene.BattlePauseOverlay"] = { init = noop, draw = noop }
             routeMods["ui.battle.combat.BattleCombatAnim"] = {}
             routeMods["systems.RelicConditionHandler"] = closedPage()
@@ -1234,7 +1308,8 @@ function Start()
             check(clientReads > 0, "真实Tri启动/绘制只查询spy状态")
 
             local pointer = { x = 0, y = 0 }
-            routeEnv.input = { GetMousePosition = function() return pointer end }
+            routeEnv.input = { GetMousePosition = function() return pointer end,
+                GetKeyDown = function() return false end }
             local horizonChunk = assert(load(horizonInputSource, "@boot.StandaloneHorizonInput", "t", routeEnv))
             local HorizonInput = horizonChunk()
             local frame = { scale = 1.0, ox = 0, oy = 0, dpr = 1 }
@@ -1314,6 +1389,100 @@ function Start()
                 equal(closed, 1, "跨栏/seam结束drag后3秒自动关闭，不悬挂")
             end
             equal(seamCloses, 0, "tri网格拖到seam松手不伪装成返回按钮点击")
+            -- 页面只是输入叶子spy；命中、hover/tap gate、关闭guard仍由真实Horizon/Wheel/Popup裁决。
+            local character = routeMods["ui.character.panel.CharacterPanel"]
+            local detail = routeMods["ui.character.detail.CharacterDetail"]
+            local backpack = routeMods["ui.backpack.BackpackPanel"]
+            local bag = routeMods["ui.character.equip.EquipmentBag"]
+            ---@type table<string, number>
+            local pageCalls = {}
+            local function countCall(key) pageCalls[key] = (pageCalls[key] or 0) + 1 end
+            local function hoverSpy(key)
+                return function(x, y)
+                    -- 离开事件不是hover成功；row guard被误判rp_out时只会收到(-1,-1)。
+                    if x >= 0 and y >= 0 then countCall(key) end
+                end
+            end
+            character.handleHover = hoverSpy("characterHover")
+            bag.handleHover = hoverSpy("bagHover")
+            backpack.handleHover = hoverSpy("backpackHover")
+            backpack.isOpen, backpack.isLeftMode = function() return true end, function() return true end
+            bag.isOpen = function() return true end
+            character.handleDragBegin, character.handleDragEnd, character.handleInput = noop, noop, noop
+            detail.handleEquipmentSlotTap = function() countCall("slotTap") end
+            backpack.peekEquipAt = function() return { seq = 7 } end
+            backpack.handleDragBegin, backpack.handleDragEnd = noop, noop
+            backpack.handleInput = function() countCall("backpackTap") end
+            backpack.handleMarqueeBegin = function() countCall("marqueeBegin"); return false end
+            backpack.handleRightClick = function() countCall("backpackRight") end
+            routeMods["ui.character.EquipCrossDrag"].arm = noop
+            local function buttonEvent(button) return { Button = { GetInt = function() return button end } } end
+            local function pageHover(x)
+                movePointer(x, 450); routeEnv.HandleMouseMoveHorizon("MouseMove", {})
+                routeEnv.HandleEquipmentHoverTickHorizon()
+            end
+            local function pageTap(x)
+                movePointer(x, 450)
+                routeEnv.HandleMouseButtonDownHorizon("MouseButtonDown", buttonEvent(MOUSEB_LEFT))
+                routeEnv.HandleMouseButtonUpHorizon("MouseButtonUp", buttonEvent(MOUSEB_LEFT))
+            end
+            local function pageInteractions()
+                pageHover(1700); pageTap(1700)
+                pageHover(200); pageTap(200)
+                movePointer(200, 450)
+                routeEnv.HandleMouseButtonDownHorizon("MouseButtonDown", buttonEvent(MOUSEB_RIGHT))
+                routeEnv.HandleMouseButtonUpHorizon("MouseButtonUp", buttonEvent(MOUSEB_RIGHT))
+            end
+            local function assertPagesReachable(label)
+                check((pageCalls.characterHover or 0) >= 2, label .. "角色hover移动/静止tick都继续")
+                check((pageCalls.backpackHover or 0) >= 2, label .. "仓库hover移动/静止tick都继续")
+                check((pageCalls.bagHover or 0) >= 2, label .. "装备袋hover移动/静止tick都继续")
+                equal(pageCalls.slotTap, 1, label .. "配装槽tap不被row拦截")
+                equal(pageCalls.backpackTap, 1, label .. "仓库装备格tap不被row拦截")
+                equal(pageCalls.marqueeBegin, 1, label .. "仓库右键框选入口不被row拦截")
+                equal(pageCalls.backpackRight, 1, label .. "仓库右键原业务保留")
+            end
+            for row = 1, 3 do
+                for _, phase in ipairs({ "open", "closing", "guard" }) do
+                    run("真实页面routing row" .. row .. "/" .. phase, function()
+                        fixture(); pageCalls = {}
+                        battle("嵌在其他页面的row", rewardItems(12), { row = row, cascade = false })
+                        advance(.5)
+                        if phase ~= "open" then Reward.close(); advance(phase == "guard" and .26 or .1) end
+                        equal(Reward.isOpen(), true, "row/guard保留奖励生命周期")
+                        equal(Reward.blocksPageInput(), false, "row/guard不是页面模态")
+                        if phase == "guard" then equal(Reward.currentRowTag(), nil, "guard不能依赖公开rowTag") end
+                        pageInteractions()
+                        assertPagesReachable("row" .. row .. "/" .. phase .. " ")
+                    end)
+                end
+            end
+            for _, count in ipairs({ 2, 12 }) do
+                for _, phase in ipairs({ "open", "guard" }) do
+                    run("真实页面routing nonrow" .. count .. "/" .. phase, function()
+                        fixture(); pageCalls = {}
+                        Reward.show("主动结果不得误穿透", rewardItems(count), { panel = "center", cascade = false })
+                        advance(.5)
+                        if phase == "guard" then Reward.close(); advance(.26) end
+                        equal(Reward.blocksPageInput(), true, "主动大小结果/guard保持页面gate")
+                        pageInteractions()
+                        for _, key in ipairs({ "characterHover", "backpackHover", "bagHover", "slotTap",
+                            "backpackTap", "marqueeBegin", "backpackRight" }) do
+                            equal(pageCalls[key] or 0, 0, "nonrow不得误穿透 " .. key)
+                        end
+                        if phase == "open" then
+                            Reward.close()
+                            -- 小结果外部点击已启动closing；大结果仍由真实RewardGesture持有。
+                            advance(.26)
+                            equal(Reward.blocksPageInput(), true, "关闭后保护期仍阻挡页面")
+                        end
+                        advance(.16)
+                        equal(Reward.blocksPageInput(), false, "保护期结束恢复页面")
+                        pageCalls = {}; pageInteractions()
+                        assertPagesReachable("nonrow guard结束 ")
+                    end)
+                end
+            end
         end)
         run("隔离边界：核心与公共奖励路由仅加载spy依赖", function()
             equal(sourceReads, 5, "只读 Popup/Queue/Preparation/Cascade/Blocker 五份实际核心源码")

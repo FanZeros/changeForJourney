@@ -34,7 +34,7 @@ function Wheel.bind(deps)
         if BottomNav.getSelectedIndex() ~= 5 then return false end
         if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return false end
         if PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen()
-            or OfflineRewardPanel.isOpen() or RewardPopup.isOpen() then
+            or OfflineRewardPanel.isOpen() or RewardPopup.blocksPageInput() then
             return false
         end
         return true
@@ -93,7 +93,7 @@ function Wheel.bind(deps)
         if RewardPopup.isLarge() then return 'rewardlarge', sx, sy end
         -- 全局奖励弹窗：归属面板时点击路由到该面板（面板内任意点击可交互/关闭，
         -- 面板外点击 rp_out 关闭）；无归属时所有点击都路由给它（任意点击可关闭）
-        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        if RewardPopup.blocksPageInput() then
             local rpanel = RewardPopup.currentPanel()
             if rpanel then
                 local pid2
@@ -212,7 +212,7 @@ function Wheel.bind(deps)
             local sy = mousePos.y / dpr()
             local csx, csy = toDesign(sx, sy)
             if CEPanel.handleWheel(csx, csy, wheel, logicalH()) then return end
-            if OfflineRewardOverlay.handleWheel(wheel) then return end
+            if OfflineRewardOverlay.handleWheel(wheel, csx, csy) then return end
             if LevelUpPopup.isOpen() or getLevelPress() then
                 cancelUnderlyingPress()
                 return
@@ -227,7 +227,7 @@ function Wheel.bind(deps)
             if TerminalConfirmDialog.isOpen() then return end
             if RewardPopup.handleLargeScroll(wheel, csx, csy, logicalW(), logicalH()) then return end
             -- 归属面板的奖励弹窗：指针在其面板内且命中面板时滚轮滚弹窗列表
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() and RewardPopup.currentPanel() then
+            if RewardPopup.blocksPageInput() and RewardPopup.currentPanel() then
                 local pid2
                 if BattleTriPage.isOpen() then
                     local ps = logicalH() / 1080
@@ -246,7 +246,7 @@ function Wheel.bind(deps)
                     end
                 end
             end
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            if RewardPopup.blocksPageInput() then
                 local pdx, pdy = playerInfoDesignCoords(csx, csy)
                 if RewardPopup.hitPanel(pdx, pdy) then
                     RewardPopup.handleScroll(wheel)

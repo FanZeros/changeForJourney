@@ -188,7 +188,7 @@ function M.draw(vg, width, height)
     local values = {p.moveInCount or 0, p.moveOutCount or 0, p.protectedCount or 0}
     for i = 1, 3 do metrics[i]:SetText(Text.text(countKeys[i], values[i])) end
     body:SetText(Text.text("仓库容量：%d 件", EquipmentSystem.MAX_INVENTORY) .. "\n"
-        .. Text.text("按部位平衡仓位，同类装备按通用评分优选，并非英雄最佳配装。") .. "\n"
+        .. Text.text("按部位平衡仓位。同类优先保留好成品，并预留少量高基础培养底材；不等于英雄最佳配装。") .. "\n"
         .. Text.text("整理全仓库与遗匣，忽略筛选与排序。已穿戴、锁定、套装、投入、腐化、待洗练及异常库存原位保护。") .. "\n"
         .. Text.text("只转存不分解，转存遗匣装备受保护，不参与回收。保护占满仓库时无法腾位。"))
     local busy = S.phase == "loading" or S.phase == "applying"

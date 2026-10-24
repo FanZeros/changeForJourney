@@ -232,10 +232,10 @@ end
 
 --- 应用当前音频状态到引擎（muted 仅静音音效 SFX，BGM 不受影响）
 local function applyVolumes()
+    applyBgmVolume(state.bgmVolume)
     if state.muted then
         audio:SetMasterGain("Effect", 0)
     else
-        applyBgmVolume(state.bgmVolume)
         applySfxVolume(state.sfxVolume)
     end
 end

@@ -202,9 +202,16 @@ local function blacksmithTests(Eq, EC, AD, AC)
                 local count = #equip.baseStats - 1
                 local position = index - 1
                 local steps = 6 < position and 0 or math.floor((6 - position) / count) + 1
-                check(near(Eq.effectiveBaseStatValue(equip, index),
-                    equip.baseStats[index][2] * (1 + steps * 0.05)),
-                    label .. " ascend follows persisted slot order " .. index)
+                local stat = equip.baseStats[index]
+                local expectedValue = stat[2] * (1 + steps * 0.05)
+                local limits = { critRate = 8, physCritRate = 10, magCritRate = 10, healCritRate = 10 }
+                local limit = limits[stat[1]]
+                if limit and expectedValue > 0 then
+                    if equip.slot == "weapon" and equip.grip == "twohand" then limit = limit * 2 end
+                    expectedValue = limit / (1 + limit / expectedValue)
+                end
+                check(near(Eq.effectiveBaseStatValue(equip, index), expectedValue),
+                    label .. " ascend follows persisted slot order and rate curve " .. index)
             end
             check(BS.RefineEquip(uid, equip.seq, "sacredStone") and equip.corruptCount == nil,
                 label .. " final cleanse restores unpenalized quality")
@@ -411,6 +418,12 @@ local function attributesAndPreviewTests(Eq, AD)
             local count, position = #equip.baseStats - 1, index - 1
             local steps = 7 < position and 0 or math.floor((7 - position) / count) + 1
             value = stat[2] * (1 + steps * 0.05)
+        end
+        local limits = { critRate = 8, physCritRate = 10, magCritRate = 10, healCritRate = 10 }
+        local limit = limits[stat[1]]
+        if limit and value > 0 then
+            if equip.slot == "weapon" and equip.grip == "twohand" then limit = limit * 2 end
+            value = limit / (1 + limit / value)
         end
         if stat[1] == AD.ATK_INTERVAL then value = -value end
         check(entries[index].key == stat[1] and near(entries[index].flat, value),

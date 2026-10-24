@@ -32,6 +32,8 @@ local TowerLayout      = require("ui.tower.TowerLayout")
 local TowerBuffSidebar = require("ui.tower.TowerBuffSidebar")
 local TowerText        = require("ui.tower.TowerPresentation")
 local BattleClock      = require("ui.battle.combat.BattleClock")
+local OffenseGuard     = require("systems.BattleOffenseGuard")
+local BattleAllyLifecycle = require("ui.battle.scene.BattleAllyLifecycle")
 
 local TowerTriBattle = {}
 
@@ -61,6 +63,9 @@ local BATTLE_LOSE   = "lose"
 ---@field beState table
 ---@field semState table
 ---@field regenAccum number
+---@field _offenseEligible boolean|nil
+---@field offenseLane table|nil
+---@field failureReason string|nil
 
 local state = {
     open = false,
@@ -138,7 +143,12 @@ local function settleGrowth(discardGrowth, onSettled)
     if not ok then error(err, 0) end
 end
 
+local function resetOffenseGuards()
+    for _, lane in pairs(state.lanes) do OffenseGuard.reset(lane) end
+end
+
 function TowerTriBattle.flushPendingGrowth()
+    resetOffenseGuards()
     settleGrowth(false)
 end
 
@@ -162,7 +172,18 @@ local function bindLaneContext(lane)
                     BattleEffects.spawn(armorType, tgtCX, tgtCY)
                 end
             end
-            local projOpts = result.category == "healing" and { target = target, forceBezier = true } or nil
+            local projOpts = result.category == "healing" and { target = target, forceBezier = true } or {}
+            projOpts.offenseKind = result.category == "healing" and "heal" or "damage"
+            projOpts.offenseSource = attacker
+            projOpts.offenseOrigin = "normal_attack"
+            for _, unit in ipairs(lane.allies) do
+                if unit == attacker then projOpts.offenseSide = "ally" break end
+            end
+            if not projOpts.offenseSide then
+                for _, unit in ipairs(lane.enemies) do
+                    if unit == attacker then projOpts.offenseSide = "enemy" break end
+                end
+            end
             if hasHeroEffect then
                 ProjectileSystem.spawn(attacker.heroId, atkCX, atkCY, tgtCX, tgtCY, hitCallback, projOpts)
             elseif hasMonsterEffect then
@@ -293,9 +314,11 @@ local function laneAlliesWiped(lane)
 end
 
 local function tickLane(lane, dt)
+    lane._offenseEligible = false
     mountLane(lane)
     bindLaneContext(lane)
     if lane.cleared or lane.wiped then
+        OffenseGuard.reset(lane)
         BattleCombat.updateCardAnims(dt)
         BattleCombat.updateFloatingTexts(dt)
         BattleCombat.updateHitFlashes(dt)
@@ -304,6 +327,15 @@ local function tickLane(lane, dt)
         return
     end
 
+    local offenseEligible = true
+    local aliveAtFrameStart = {}
+    for _, list in ipairs({ lane.allies, lane.enemies }) do
+        for _, unit in ipairs(list) do
+            aliveAtFrameStart[unit] = unit.hp > 0
+            local anim = lane.combatState.cardAnims[unit]
+            if anim and anim.state == "entering" then offenseEligible = false end
+        end
+    end
     tickTombstones(lane, dt)
 
     for _, unit in ipairs(lane.allies) do
@@ -473,6 +505,23 @@ local function tickLane(lane, dt)
     BattleCombat.updateCardAnims(dt)
     BattleCombat.updateFloatingTexts(dt)
     BattleCombat.updateHitFlashes(dt)
+    for _, list in ipairs({ lane.allies, lane.enemies }) do
+        for _, unit in ipairs(list) do
+            if aliveAtFrameStart[unit] == nil or (aliveAtFrameStart[unit] and unit.hp <= 0) then offenseEligible = false end
+            local anim = lane.combatState.cardAnims[unit]
+            if anim and anim.state == "entering" then offenseEligible = false end
+        end
+    end
+    for _, unit in ipairs(lane.allies) do
+        if unit.hp <= 0 and not unit._artifactDeathHandled then offenseEligible = false end
+    end
+    lane._offenseEligible = offenseEligible
+    -- 保持塔现有共享unit-keyed天赋表；只捕获引用，查询按lane.allies筛选。
+    lane.offenseLane = {
+        allies = lane.allies, enemies = lane.enemies, combatState = lane.combatState,
+        projectileState = lane.psState, semState = lane.semState,
+        talentStates = TAL.mountedUnitStates(), talentRefs = lane.talRefs, etsState = lane.etsState,
+    }
 end
 
 function TowerTriBattle.init(vg)
@@ -497,6 +546,8 @@ end
 
 ---@param opts table { teamAllies = { [1]=table[], [2]=table[], [3]=table[] }, data = table, onClose = function }
 function TowerTriBattle.open(opts)
+    resetOffenseGuards()
+    state.failureReason = nil
     settleGrowth(false) -- 重开/换波兜底，旧lane丢弃前先结清。
     if not state.open then state.hostExtraTalents = ETS.mountedState() end
     state.presentationVersion = state.presentationVersion + 1
@@ -584,6 +635,7 @@ function TowerTriBattle.open(opts)
 end
 
 function TowerTriBattle.close(discardGrowth)
+    resetOffenseGuards()
     settleGrowth(discardGrowth)
     if not state.open then return end
     state.open = false
@@ -621,14 +673,17 @@ end
 
 local function finishWin()
     if state.phase ~= BATTLE_ACTIVE then return end
+    resetOffenseGuards()
     state.phase = BATTLE_WIN
     state.resultTimer = 0
     settleGrowth(false, DungeonBattle.onVictory)
     print("[TowerTriBattle] 三军清波 floor=" .. tostring(state.floor) .. " wave=" .. tostring(state.wave))
 end
 
-local function finishLose()
+local function finishLose(reason)
     if state.phase ~= BATTLE_ACTIVE then return end
+    resetOffenseGuards()
+    state.failureReason = reason
     state.phase = BATTLE_LOSE
     state.resultTimer = 0
     settleGrowth(false, DungeonBattle.onDefeat)
@@ -723,6 +778,23 @@ function TowerTriBattle.update(dt, battlePaused)
     end
     if allCleared then
         finishWin()
+        return
+    end
+    -- 全部复活/清波先处理；只要任一尚未清波的线确证无进攻，沿原整层失败出口。
+    for t = 1, TEAM_COUNT do
+        local lane = state.lanes[t]
+        if not lane.cleared and not lane.wiped then
+            local offenseLane = lane.offenseLane or {}
+            offenseLane.extraOffenseKnown = BattleAllyLifecycle.isTowerOffenseRegistryKnown()
+            if OffenseGuard.update(lane, dt, { offenseLane }, lane._offenseEligible == true) then
+                lane.failureReason = "no_offense"
+                print("[TowerTriBattle] 无进攻能力持续5秒 lane=" .. tostring(t) .. " reason=no_offense")
+                finishLose("no_offense")
+                return
+            end
+        else
+            OffenseGuard.reset(lane)
+        end
     end
 end
 

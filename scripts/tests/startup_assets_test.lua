@@ -71,7 +71,8 @@ function Start()
         local real = { ["config.ExpTable"] = true, ["config.StageConfig"] = true,
             ["config.HeroAssetUtil"] = true, ["config.MonsterConfig"] = true,
             ["core.BattleLayout"] = true, ["config.AwakeningConfig"] = true,
-            ["ui.battle.combat.BattleCombatAnim"] = true, ["systems.AttributeDef"] = true }
+            ["ui.battle.combat.BattleCombatAnim"] = true, ["systems.AttributeDef"] = true,
+            ["systems.BattleOffenseGuard"] = true }
         local function environment(mocks, fields)
             local env = setmetatable(fields or {}, { __index = _G })
             env._G, env.time, env.File = env, clock, forbidden
@@ -394,6 +395,10 @@ function Start()
         titleEnv.nvgIntersectScissor, titleEnv.nvgLinearGradient = noop, function() return {} end
         title.open(); title.setReady(false)
         local boundary = environment({ ["ui.battle.stage.StageSelectDialog"] = { close = noop },
+            ["core.PerformanceMonitor"] = { stop = noop },
+            ["ui.dev.PerformancePanel"] = { close = noop },
+            ["boot.PerformanceHooks"] = { install = noop },
+            ["ui.battle.combat.BattleClock"] = { setPaused = noop },
             ["ui.fx.SpineCardEffect"] = { destroy = noop }, ["ui.fx.SpineResultEffect"] = { destroy = noop },
             ["ui.fx.DarkEffectSprites"] = { destroy = noop },
             -- Stop新接入的外围呈现/故事清理，只记录可调用性，不启动实际故事或塔场景。
@@ -411,11 +416,13 @@ function Start()
             ["ui.character.hero.AwakeningArtwork"] = { destroy = noop },
             ["rules.tower.TowerService"] = { ResetToDefault = noop } }, {
             LetterIntro = { reset = noop }, ScenarioDialogue = { reset = noop },
-            LocalActionBridge = { cancelQuickEquip = noop },
+            LocalActionBridge = { cancelQuickEquip = noop, cancelSweep = noop },
+            SweepDialog = { close = noop },
             CharacterPanel = { destroyPresentation = noop }, TowerBattleScene = { resetToDefault = noop },
             TowerBuffPick = { destroy = noop },
             StartupQueue = Queue, StandaloneRT = {}, DarkTitleScreen = title, vg = context,
             BattleTriPage = { setBattleReady = function(ready) triMocks.ready = ready end, flushPendingGrowth = noop },
+            BattleScene = { resetOffenseGuard = noop }, DungeonBattleScene = { resetOffenseGuard = noop },
             Standalone = {}, RewardPopup = { clearBattleRewards = noop }, StandaloneSave = { Flush = noop },
             SpinePowerUpEffect = { destroy = noop }, LevelUpPopup = { destroy = noop },
         })
@@ -435,7 +442,9 @@ function Start()
         assert(load(configCode, "@startup-real/Standalone.queue-config", "t", boundary))()
         local pump = assert(load(pumpCode .. "\nreturn pumpBootQueue_", "@startup-real/Standalone.pump", "t", boundary))()
         local renderedFrames, renderedAtFinish = 0, false
-        local renderEnv = environment({}, {
+        local renderEnv = environment({
+            ["runtime.LocalActionBridge"] = { isSweepPending = function() return false end },
+        }, {
             RT = boundary.StandaloneRT, DarkTitleScreen = title,
             vg = function() return boundary.vg end,
             bootReady_ = function() return boundary.StandaloneRT.bootReady_ == true end,

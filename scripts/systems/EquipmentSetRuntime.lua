@@ -429,4 +429,30 @@ function ESR.addSwordWindowDamage(unit, amount)
     end
 end
 
+-- 已审计神圣治疗不会进入攻击后伤害分支。
+-- 仍须保留无星周期伤害、格挡反伤和已积存门剑伤害池。
+local HEALER_SETS = {
+    carapace = true, faceless = true, riftcrystal = true, last_rite = true,
+    tidepress = true, nitros = true, swordgate = true, starless = true,
+    ironwall = true, emberscout = true, gambler = true, bonehunger = true,
+}
+
+---@param unit table
+---@return boolean provenNone
+---@return string reason
+function ESR.inspectHealerOffense(unit)
+    if type(unit) ~= "table" or type(unit.attrs) ~= "table" then return false, "set_missing_attrs" end
+    local f, s = four(unit), six(unit)
+    if (f ~= nil and not HEALER_SETS[f]) or (s ~= nil and not HEALER_SETS[s]) then
+        return false, "set_unknown"
+    end
+    if s ~= nil and s ~= f then return false, "set_inconsistent" end
+    if s == "ironwall" then return false, "set_reflect_potential" end
+    if s == "starless" then return false, "set_periodic_potential" end
+    if unit._setSwordDmgWin ~= nil and unit._setSwordDmgWin ~= 0 then
+        return false, "set_sword_pool"
+    end
+    return true, "set_healer_none"
+end
+
 return ESR

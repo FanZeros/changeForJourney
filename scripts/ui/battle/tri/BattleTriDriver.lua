@@ -30,6 +30,7 @@ local BattleStats       = require("systems.BattleStats")
 local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
 local DropSystem        = require("systems.DropSystem")
 local BattleClock       = require("ui.battle.combat.BattleClock")
+local OffenseGuard      = require("systems.BattleOffenseGuard")
 
 local BattleTriDriver = {}
 
@@ -179,7 +180,18 @@ function BattleTriDriver.new(teamIdx, options)
                     end
                 end
 
-                local projOpts = result.category == "healing" and { target = target, forceBezier = true } or nil
+                local projOpts = result.category == "healing" and { target = target, forceBezier = true } or {}
+                projOpts.offenseKind = result.category == "healing" and "heal" or "damage"
+                projOpts.offenseSource = attacker
+                projOpts.offenseOrigin = "normal_attack"
+                for _, unit in ipairs(drv.allies) do
+                    if unit == attacker then projOpts.offenseSide = "ally" break end
+                end
+                if not projOpts.offenseSide then
+                    for _, unit in ipairs(drv.enemies) do
+                        if unit == attacker then projOpts.offenseSide = "enemy" break end
+                    end
+                end
 
                 if hasHeroEffect then
                     ProjectileSystem.spawn(attacker.heroId, atkCX, atkCY, tgtCX, tgtCY, hitCallback, projOpts)
@@ -194,16 +206,21 @@ function BattleTriDriver.new(teamIdx, options)
     end
 
     --- 全灭退回上一关。第一关没有上一关，就在原地重开。
-    function drv:retreatStage()
+    function drv:retreatStage(reason)
+        OffenseGuard.reset(self)
+        self.failureReason = reason
+        local failedAllies, failedEnemies, failedStage = self.allies, self.enemies, self.stageId
         self:activate()
         ETS.flush() -- 胜败都提交本线已触发的永久成长，不能借用最近一线的挂载。
+        if reason == "no_offense" and (self.allies ~= failedAllies or self.enemies ~= failedEnemies
+            or self.stageId ~= failedStage or not self.active) then return end
         if self.terminalRaid then
             self.terminalRaid:onTeamDefeated(self.teamIdx)
             return
         end
         local prevId = SC.getPrevStageId(self.stageId) or self.stageId
-        print(string.format("[TriDriver] 队%d 全灭，从 %s 退回 %s",
-            self.teamIdx, tostring(self.stageId), tostring(prevId)))
+        print(string.format("[TriDriver] 队%d 失败 reason=%s，从 %s 退回 %s",
+            self.teamIdx, tostring(reason or "all_dead"), tostring(self.stageId), tostring(prevId)))
         if self.teamIdx == 1 then
             local BattleScene = require("ui.battle.scene.BattleScene")
             BattleScene.adoptStageProgress(prevId)
@@ -233,6 +250,9 @@ function BattleTriDriver.new(teamIdx, options)
 
     --- 开始/重开一场战斗
     function drv:start(stageId)
+        OffenseGuard.reset(self)
+        self.failureReason = nil
+        self._offenseEligible = false
         stageId = tonumber(stageId) or self.stageId or SC.NORMAL_FIRST_STAGE
         if not SC.getStage(stageId) then
             stageId = SC.NORMAL_FIRST_STAGE
@@ -654,10 +674,20 @@ function BattleTriDriver.new(teamIdx, options)
         require("ui.battle.scene.BattleAllyReset").compactFallen(self.allies, BattleClock.now())
     end
 
+    --- 只返回本线显式状态，终焉由Page在全部驱动更新后统一评估。
+    function drv:getOffenseLane()
+        return {
+            allies = self.allies, enemies = self.enemies, combatState = self.combatState,
+            projectileState = self.psState, semState = self.semState,
+            talentStates = self.talUnitStates, talentRefs = self.talRefs, etsState = self.etsState,
+        }
+    end
+
     --- 战斗 tick：逻辑时钟只用于伤害/状态，真实时钟用于入场/行军/掉落/视觉。
     --- 单参调用兼容实验室及旧宿主，绝不在驱动内部再次乘全局倍率。
     function drv:tick(realDt, logicDt)
-        if not self.active then return end
+        self._offenseEligible = false
+        if not self.active then OffenseGuard.reset(self) return end
         local dt = logicDt or realDt
         self._tickDt = dt
         self:tickRewards(realDt)
@@ -674,17 +704,29 @@ function BattleTriDriver.new(teamIdx, options)
             return
         end
         if #allies == 0 then
+            OffenseGuard.reset(self)
             self.marchTimer = 0
             self.marchNotice = false
             return
         end
         if (self.introTimer or 0) > 0 or (self.terminalRaid and self.terminalRaid._introPending) then
+            OffenseGuard.reset(self)
             self.introTimer = math.max(0, (self.introTimer or 0) - realDt)
             BattleCombat.updateCardAnims(realDt)
             BattleCombat.updateFloatingTexts(realDt)
             BattleCombat.updateHitFlashes(realDt)
             if self.introTimer <= 0 then self.marchNotice = false end
             return
+        end
+        -- 在视觉更新前采样入场和存活身份；大dt完成动画/新死亡不能倒算本帧。
+        local offenseEligible = (self.marchTimer or 0) <= 0
+        local aliveAtFrameStart = {}
+        for _, list in ipairs({ allies, enemies }) do
+            for _, unit in ipairs(list) do
+                aliveAtFrameStart[unit] = unit.hp > 0
+                local anim = self.combatState.cardAnims[unit]
+                if anim and anim.state == "entering" then offenseEligible = false end
+            end
         end
         if (self.marchTimer or 0) <= 0 then self.marchNotice = false end
         -- 入场/空队/行军/失守不消耗战斗时钟；倍率需在本帧攻击前更新。
@@ -785,6 +827,7 @@ function BattleTriDriver.new(teamIdx, options)
 
         -- 通关奖励只做展示，不挡住前进和下一关。
         if not self.terminalRaid and not hasAliveEnemy and #self.enemyQueue == 0 and #self.enemies == 0 then
+            OffenseGuard.reset(self)
             self:reportDefeatedEnemies()
             if self.battleLab then
                 self._clearReported = true
@@ -948,6 +991,30 @@ function BattleTriDriver.new(teamIdx, options)
         BattleCombat.updateCardAnims(realDt)
         BattleCombat.updateFloatingTexts(realDt)
         BattleCombat.updateHitFlashes(realDt)
+
+        for _, list in ipairs({ allies, enemies }) do
+            for _, unit in ipairs(list) do
+                if aliveAtFrameStart[unit] == nil or (aliveAtFrameStart[unit] and unit.hp <= 0) then offenseEligible = false end
+                local anim = self.combatState.cardAnims[unit]
+                if anim and anim.state == "entering" then offenseEligible = false end
+            end
+        end
+        for _, unit in ipairs(allies) do
+            if unit.hp <= 0 and not unit._triDeathHandled then offenseEligible = false end
+        end
+        self._offenseEligible = offenseEligible and self.active and not self.battleLab
+            and self.allies == allies and self.enemies == enemies
+        if not self.terminalRaid and OffenseGuard.update(self, realDt,
+            { self:getOffenseLane() }, self._offenseEligible) then
+            self.failureReason = "no_offense"
+            if not self._wipeReported then
+                self._wipeReported = true
+                if self.onAllDead then self.onAllDead(self.teamIdx, self.stageId, "no_offense") end
+            end
+            -- 同步回调可能换关/重开/接管终焉，旧帧不能再退掉新场。
+            if self.allies ~= allies or self.enemies ~= enemies or self.terminalRaid or not self.active then return end
+            self:retreatStage("no_offense")
+        end
     end
 
     --- 便捷: mount + tick

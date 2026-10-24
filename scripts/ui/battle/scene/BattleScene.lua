@@ -42,6 +42,8 @@ local BattleScenePhases = require("ui.battle.scene.BattleScenePhases")
 local BattleStageNavLogic = require("ui.battle.stage.BattleStageNavLogic")
 local BattleDataRestore = require("ui.battle.scene.BattleDataRestore")
 local BattleMountScope = require("ui.battle.scene.BattleMountScope")
+local OffenseGuard = require("systems.BattleOffenseGuard")
+local offenseOwner = {}
 
 local BattleScene = {}
 BattleScene.GameState = require("core.GameState")
@@ -439,6 +441,8 @@ end
 ---@param skipBattleStart? boolean 跳过 TAL/TM 战斗启动（调用方自行在 resetAllyUnit 后调用 startBattleTalents）
 ---@param deferEnter? boolean 三行兼容Scene加载不提前通知实际Driver进场
 local function loadStage(stageId, skipBattleStart, deferEnter)
+    OffenseGuard.reset(offenseOwner)
+    offenseOwner.failureReason = nil
     -- 任意实际切关/重开都取消旧行军，避免选关后预约再次跳关。
     victoryMarch = nil
     BattleMountScope.mountDefault()
@@ -890,7 +894,7 @@ end
 function BattleScene.update(dt)
     -- 同一帧只能有一个战斗宿主；三行打开时兼容Scene不再次推进/乘倍率。
     if require("ui.battle.tri.BattleTriPage").isOpen() then return end
-    if BattleScene.updateTriReincarnation(dt) then return end
+    if BattleScene.updateTriReincarnation(dt) then OffenseGuard.reset(offenseOwner) return end
     require("ui.battle.stage.StageEntryEvents").retry(1)
     pumpBattleCards()
     for _, list in ipairs({ enemies, enemyQueue }) do
@@ -933,6 +937,7 @@ function BattleScene.update(dt)
         BattleScene = BattleScene,
     }
     if BattleScenePhases.process(_phCtx, dt) then
+        if not isPaused then OffenseGuard.reset(offenseOwner) end
         defeatTimer = _phCtx.defeatTimer
         reincarnationTimer = _phCtx.reincarnationTimer
         searchingTimer = _phCtx.searchingTimer
@@ -967,6 +972,7 @@ function BattleScene.update(dt)
     -- 暂停已由 Phases 消费；胜利行军是停战后的真实时钟阶段，不能放在
     -- battleActive 守卫后，也不能再触发一次胜负/挂机寻怪/攻击逻辑。
     if victoryMarch then
+        OffenseGuard.reset(offenseOwner)
         BattleEffects.update(dt)
         updateCardAnims(dt)
         updateFloatingTexts(dt)
@@ -982,7 +988,8 @@ function BattleScene.update(dt)
         _navLogic.tickVictoryMarch(dt)
         return
     end
-    if not battleActive then return end
+    if not battleActive then OffenseGuard.reset(offenseOwner) return end
+    local offenseFrame = BattleAllyLifecycle.captureOffenseFrame(allies, enemies)
 
     -- 首通、重打与挂机共用真实时钟，不再经过可替换的旧倍率接口。
     local logicDt = dt
@@ -1067,7 +1074,7 @@ function BattleScene.update(dt)
         terminalDefeatPending = _casCtx.terminalDefeatPending
         defeatByTimeout = _casCtx.defeatByTimeout
     end
-    if _casConsumed then return end
+    if _casConsumed then OffenseGuard.reset(offenseOwner) return end
 
     -- ---- 攻击进度 / DOT HOT / 天赋计时 / 护盾回血（委托 BattleSceneTick） ----
     local _tickCtx = {
@@ -1090,6 +1097,27 @@ function BattleScene.update(dt)
     -- ---- 投射物 / 连击：与伤害时机绑定，必须跟随 logicDt ----
     ProjectileSystem.update(logicDt)
     updateComboQueue(logicDt)
+
+    -- 原复活/胜利已先处理；本帧新死亡交下帧Casualty，不伪造全灭或超时。
+    if BattleAllyLifecycle.updateOffense(offenseOwner, dt, offenseFrame, allies, enemies) then
+        require("systems.ExtraTalentSystem").flush()
+        if allies ~= offenseFrame.allies or enemies ~= offenseFrame.enemies
+            or currentStageId ~= stageIdBeforeCas or not battleActive then return end
+        BattleCasualty.flushRewards()
+        -- 结账通知可同步重建阵容/切关；旧场失败不能覆盖新场状态。
+        if allies ~= offenseFrame.allies or enemies ~= offenseFrame.enemies
+            or currentStageId ~= stageIdBeforeCas or not battleActive then return end
+        StageBerserk.exit()
+        settleWaveEfficiency()
+        offenseOwner.failureReason = "no_offense"
+        defeatTimer = 0
+        battleActive = false
+        defeatByTimeout = false
+        terminalDefeatPending = getStageConfig().isTerminalTemple(currentStageId)
+        print("[BattleScene] 无进攻能力持续5秒，失败 reason=no_offense")
+        if not terminalDefeatPending and onAllDeadCallback then onAllDeadCallback("no_offense") end
+        return
+    end
 
     -- ---- 纯视觉层：与战斗逻辑共用真实 dt ----
     BattleEffects.update(dt)
@@ -1131,10 +1159,12 @@ function BattleScene.setMapBackground(vg, path)
 end
 --- 设置敌方单位列表（DebugPanel 用）
 function BattleScene.setEnemies(list)
+    BattleScene.resetOffenseGuard()
     return getAllyLifecycle().setEnemies(list)
 end
 --- 设置己方单位列表（DebugPanel 用）
 function BattleScene.setAllies(list)
+    BattleScene.resetOffenseGuard()
     require("systems.ExtraTalentSystem").flush()
     BattleCasualty.flushRewards() -- 替换阵容前结清旧场，奖励沿用击杀时捕获的heroIds和回调。
     return getAllyLifecycle().setAllies(list)
@@ -1423,8 +1453,15 @@ function BattleScene.reloadStage(opts)
     if pendingReincarnation and pendingReincarnation.triTerminal then return end
     return getAllyLifecycle().reloadStage(opts)
 end
+--- Stop只清宽限，不触发退关、保存或奖励。
+function BattleScene.resetOffenseGuard()
+    OffenseGuard.reset(offenseOwner)
+    offenseOwner.failureReason = nil
+end
+
 --- 重置战斗场景到初始默认状态（清除存档后调用）
 function BattleScene.resetToDefault()
+    BattleScene.resetOffenseGuard()
     BattleCasualty.discardRewards()
     require("systems.ExtraTalentSystem").discard() -- TAL.reset仍会flush，清档必须先丢弃默认域待结算。
     BattleScene.cancelTriReincarnation()

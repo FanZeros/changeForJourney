@@ -1225,4 +1225,44 @@ end
 function TAL.checkMarkTarget(allies, enemies)
     return _enemyDeath.checkMarkTarget(allies, enemies)
 end
+--- 对显式传入战线进行纯查询，不读取当前挂载的其他战线。
+--- 死亡单位仍检查残留队列与持续星门。
+---@param unit table
+---@param states table
+---@param refs table
+---@return boolean provenNone
+---@return string reason
+function TAL.inspectOffense(unit, states, refs)
+    if type(unit) ~= "table" or type(states) ~= "table" or type(refs) ~= "table" then
+        return false, "talent_missing_state"
+    end
+    ---@type table|nil
+    local s = states[unit]
+    if type(s) ~= "table" or tonumber(s.heroId) ~= tonumber(unit.heroId) then
+        return false, "talent_missing_unit_state"
+    end
+    for key, queue in pairs(s) do
+        if type(key) == "string" and key:lower():find("queue", 1, true) then
+            if type(queue) ~= "table" or next(queue) ~= nil then return false, "talent_pending_queue" end
+        end
+    end
+    for _, key in ipairs({ "machineGunShotsLeft", "flyingSwordDamage", "flyingSwordCarryover", "loadingBar", "blockAbsorbedDmg" }) do
+        if s[key] ~= nil and s[key] ~= 0 then return false, "talent_pending_damage" end
+    end
+    if unit._highPingPending ~= nil then return false, "talent_pending_ping" end
+    if tonumber(unit.heroId) == 20 and (unit.hp or 0) <= 0 then
+        if type(unit.awakeningNodes) ~= "table" then return false, "talent_gate_unknown_awakening" end
+        -- 与真实星门更新保持同一能力条件：实例共鸣或 ETS 的已拥有英雄回退。
+        -- updateMelissaStarGate 对可持续的死者会重新召门，因此当前未召门也有潜力。
+        local persistOk, canPersist = pcall(ETS.starGatePersist, unit)
+        if not persistOk then return false, "talent_gate_unknown_awakening" end
+        if hasAwaken(unit, 6) or canPersist then
+            return false, "talent_dead_star_gate"
+        elseif unit._starGatePersistsAfterDeath == true then
+            return false, "talent_gate_persist_flag"
+        end
+    end
+    return true, "talent_no_pending_offense"
+end
+
 return TAL

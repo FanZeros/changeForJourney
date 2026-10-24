@@ -809,4 +809,40 @@ function CGR.update(dt, allies, enemies, ctx)
     end
 end
 
+-- 仅将司仪路径纳入纯治疗审计；其他职业即使当前为神圣类型，
+-- 仍可能储存伤害、改变攻击类型或创建延迟攻击。
+local DEFENSIVE_DEBT_ADV = {
+    gate_debt_defer = true, gate_111_defer2 = true, gate_112_confess = true,
+    gate_221_war = true, gate_222_blood = true, gate_223_pardon = true,
+    gate_230_fusion = true,
+    adv_111_inspire = true, adv_112_group_heal = true,
+    adv_221_war_ritual = true, adv_222_blood_ritual = true, adv_223_divine_blessing = true,
+    adv_101_holy_light = true, adv_201_advanced_holy = true,
+    adv_202_praise_blessing = true, adv_203_cross_shield = true,
+}
+
+---@param unit table
+---@return boolean provenNone
+---@return string reason
+function CGR.inspectHealerOffense(unit)
+    if type(unit) ~= "table" or CC.normalize(unit.classId) ~= CC.DEBT then
+        return false, "class_not_audited_debt"
+    end
+    if unit._echoQueue ~= nil and (type(unit._echoQueue) ~= "table" or next(unit._echoQueue) ~= nil) then
+        return false, "class_pending_echo"
+    end
+    if unit._punishReady ~= nil and unit._punishReady ~= 0 then return false, "class_pending_punish" end
+    if unit._gateStored ~= nil and unit._gateStored ~= 0 then return false, "class_stored_damage" end
+    if unit.advTalentIds ~= nil then
+        if type(unit.advTalentIds) ~= "table" then return false, "class_unknown_adv" end
+        for _, talentId in pairs(unit.advTalentIds) do
+            if talentId == "gate_224_punish" or talentId == "adv_224_divine_punishment" then
+                return false, "class_punishment_potential"
+            end
+            if not DEFENSIVE_DEBT_ADV[talentId] then return false, "class_unknown_adv" end
+        end
+    end
+    return true, "class_debt_none"
+end
+
 return CGR

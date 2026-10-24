@@ -670,16 +670,19 @@ local function singleSceneFixture()
     deps["ui.battle.stage.BattleStageFlow"] = { ensureBattleCards = function() return {} end,
         pumpBattleCards = function(queue) return queue end, startBattleTalents = flow.startBattleTalents }
     local lifecycle = compileModule("ui.battle.scene.BattleAllyLifecycle", env)
-    deps["ui.battle.scene.BattleAllyLifecycle"] = { getLiveAttackInterval = lifecycle.getLiveAttackInterval,
-        bind = function(bindDeps)
-            observed.get = bindDeps.get
-            local original = bindDeps.set
-            bindDeps.set = function(key, value)
-                if key == "firstClearTimeLeft" then observed.resets[#observed.resets + 1] = { value = value } end
-                original(key, value)
-            end
-            return lifecycle.bind(bindDeps)
-        end }
+    -- 保留真实Lifecycle全部出口，只有bind附加旧计时观测，不截断新增宿主API。
+    local lifecycleProxy = {} ---@type table
+    for key, value in pairs(lifecycle) do lifecycleProxy[key] = value end
+    deps["ui.battle.scene.BattleAllyLifecycle"] = lifecycleProxy
+    lifecycleProxy.bind = function(bindDeps)
+        observed.get = bindDeps.get
+        local original = bindDeps.set
+        bindDeps.set = function(key, value)
+            if key == "firstClearTimeLeft" then observed.resets[#observed.resets + 1] = { value = value } end
+            original(key, value)
+        end
+        return lifecycle.bind(bindDeps)
+    end
     local stageLoad = compileModule("ui.battle.stage.BattleStageLoad", env)
     deps["ui.battle.stage.BattleStageLoad"] = { load = function(ctx, id, skip)
         stageLoad.load(ctx, id, skip)

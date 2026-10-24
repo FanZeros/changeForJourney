@@ -10,6 +10,9 @@ local AD  = require("systems.AttributeDef")
 local TM  = require("systems.ThreatManager")
 local SEM = require("systems.StatusEffectManager")
 local TAL = require("systems.TalentManager")
+local ETS = require("systems.ExtraTalentSystem")
+local OffenseGuard = require("systems.BattleOffenseGuard")
+local BattleAllyLifecycle = require("ui.battle.scene.BattleAllyLifecycle")
 local MapAffixSystem    = require("systems.MapAffixSystem")
 local BossAffixSystem = require("systems.BossAffixSystem")
 local EnemySpawn = require("ui.battle.stage.BattleEnemySpawn")
@@ -204,6 +207,8 @@ local bgAnimTimer = 0
 local regenAccum = 0
 
 local function resetOpenFailureState()
+    OffenseGuard.reset(state)
+    state.failureReason = nil
     MapAffixSystem.reset(state.allies)
     state.open = false
     state.allies = {}
@@ -460,6 +465,8 @@ end
 --- 打开副本战斗
 ---@param opts table { allies, data, onClose }
 function DungeonScene.open(opts)
+    OffenseGuard.reset(state)
+    state.failureReason = nil
     if not dungeonBattleInited_ and dungeonBattleVg_ then
         DungeonScene.init(dungeonBattleVg_)
     end
@@ -580,7 +587,18 @@ function DungeonScene.open(opts)
                 end
             end
 
-            local projOpts = result.category == "healing" and { target = target, forceBezier = true } or nil
+            local projOpts = result.category == "healing" and { target = target, forceBezier = true } or {}
+            projOpts.offenseKind = result.category == "healing" and "heal" or "damage"
+            projOpts.offenseSource = attacker
+            projOpts.offenseOrigin = "normal_attack"
+            for _, unit in ipairs(state.allies) do
+                if unit == attacker then projOpts.offenseSide = "ally" break end
+            end
+            if not projOpts.offenseSide then
+                for _, unit in ipairs(state.enemies) do
+                    if unit == attacker then projOpts.offenseSide = "enemy" break end
+                end
+            end
 
             if hasHeroEffect then
                 ProjectileSystem.spawn(attacker.heroId, atkCX, atkCY, tgtCX, tgtCY, hitCallback, projOpts)
@@ -611,6 +629,7 @@ function DungeonScene.open(opts)
 end
 
 function DungeonScene.close(discardGrowth)
+    OffenseGuard.reset(state)
     local ETS = require("systems.ExtraTalentSystem")
     if discardGrowth then ETS.discard() else ETS.flush() end -- 已在DungeonScope内；清档不能提交。
     if DungeonBattle.isTrainingDummy() then DamageStatsPanel.close() end
@@ -640,6 +659,12 @@ function DungeonScene.forceClose(discardGrowth)
     state.resultTimer = 0
     state.resultPanelShown = false
     print("[DungeonBattleScene] forceClose (tower wave transition)")
+end
+
+--- Stop只取消本场宽限，不修改挑战和成长结算。
+function DungeonScene.resetOffenseGuard()
+    OffenseGuard.reset(state)
+    state.failureReason = nil
 end
 
 function DungeonScene.isOpen()
@@ -782,6 +807,7 @@ end
 ---@param battlePaused boolean|nil 侧栏暂停，确认/结算UI仍用真实dt
 function DungeonScene.update(dt, battlePaused)
     if not state.open then return end
+    if state.battleState ~= BATTLE_ACTIVE then OffenseGuard.reset(state) end
 
     -- 确认弹窗关闭动画
     if state.confirmClosing then
@@ -793,6 +819,17 @@ function DungeonScene.update(dt, battlePaused)
     end
 
     local freezeActiveBattle = battlePaused == true and state.battleState == BATTLE_ACTIVE
+    -- PS/动画在本宿主帧首更新，所以先冻结入场资格与存活身份。
+    local offenseEligible = state.battleState == BATTLE_ACTIVE and not DungeonBattle.isTrainingDummy()
+    local offenseCombat = BattleCombat.mountedState()
+    local aliveAtFrameStart = {}
+    for _, list in ipairs({ state.allies, state.enemies }) do
+        for _, unit in ipairs(list) do
+            aliveAtFrameStart[unit] = unit.hp > 0
+            local anim = offenseCombat.cardAnims[unit]
+            if anim and anim.state == "entering" then offenseEligible = false end
+        end
+    end
     if not freezeActiveBattle then
         -- 背景漂移及战斗卡牌/弹字都冻结，不让恢复首帧跳过退场或浮字。
         bgAnimTimer = bgAnimTimer + dt
@@ -1235,6 +1272,28 @@ function DungeonScene.update(dt, battlePaused)
                 end
             end
         end
+    end
+    for _, list in ipairs({ state.allies, state.enemies }) do
+        for _, unit in ipairs(list) do
+            if aliveAtFrameStart[unit] == nil or (aliveAtFrameStart[unit] and unit.hp <= 0) then offenseEligible = false end
+            local anim = offenseCombat.cardAnims[unit]
+            if anim and anim.state == "entering" then offenseEligible = false end
+        end
+    end
+    for _, unit in ipairs(state.allies) do
+        if unit.hp <= 0 and not unit._artifactDeathHandled then offenseEligible = false end
+    end
+    if OffenseGuard.update(state, dt, { {
+        allies = state.allies, enemies = state.enemies, combatState = offenseCombat,
+        projectileState = ProjectileSystem.mountedState(), semState = SEM.mountedState(),
+        talentStates = TAL.mountedUnitStates(), talentRefs = TAL.mountedState(), etsState = ETS.mountedState(),
+        extraOffenseKnown = not isTowerMode or BattleAllyLifecycle.isTowerOffenseRegistryKnown(),
+    } }, offenseEligible and state.battleState == BATTLE_ACTIVE) then
+        state.failureReason = "no_offense"
+        state.battleState = BATTLE_LOSE
+        state.resultTimer = 0
+        DungeonBattle.onDefeat()
+        print("[DungeonBattleScene] 无进攻能力持续5秒，失败 reason=no_offense")
     end
 end
 

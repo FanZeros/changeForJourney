@@ -1108,6 +1108,11 @@ function ProjectileSystem.spawnByKey(effectKey, startX, startY, endX, endY, onAr
         onArrive = onArrive,
         arrived  = false,
         target   = opts and opts.target or nil,
+        -- 提前判败只读取明确语义，不能凭贴图或轨迹把在途治疗猜成伤害（反之亦然）。
+        offenseKind = opts and opts.offenseKind or nil,
+        offenseSource = opts and opts.offenseSource or nil,
+        offenseSide = opts and opts.offenseSide or nil,
+        offenseOrigin = opts and opts.offenseOrigin or nil,
         chainProjectile = (opts and opts.chainProjectile) or cfg.chainProjectile or false,
     }
 
@@ -1167,6 +1172,11 @@ function ProjectileSystem.spawn(heroId, startX, startY, endX, endY, onArrive, op
         onArrive = onArrive,
         arrived  = false,
         target   = opts and opts.target or nil,
+        -- 提前判败只读取明确语义，不能凭贴图或轨迹把在途治疗猜成伤害（反之亦然）。
+        offenseKind = opts and opts.offenseKind or nil,
+        offenseSource = opts and opts.offenseSource or nil,
+        offenseSide = opts and opts.offenseSide or nil,
+        offenseOrigin = opts and opts.offenseOrigin or nil,
         chainProjectile = (opts and opts.chainProjectile) or cfg.chainProjectile or false,
     }
 
@@ -1233,6 +1243,11 @@ function ProjectileSystem.spawnSkill(heroId, startX, startY, endX, endY, onArriv
         onArrive = onArrive,
         arrived  = false,
         target   = opts and opts.target or nil,
+        -- 提前判败只读取明确语义，不能凭贴图或轨迹把在途治疗猜成伤害（反之亦然）。
+        offenseKind = opts and opts.offenseKind or nil,
+        offenseSource = opts and opts.offenseSource or nil,
+        offenseSide = opts and opts.offenseSide or nil,
+        offenseOrigin = opts and opts.offenseOrigin or nil,
         chainProjectile = (opts and opts.chainProjectile) or cfg.chainProjectile or false,
     }
 
@@ -1287,6 +1302,11 @@ function ProjectileSystem.spawnTalent(talentProjKey, startX, startY, endX, endY,
         onArrive = onArrive,
         arrived  = false,
         target   = opts and opts.target or nil,
+        -- 提前判败只读取明确语义，不能凭贴图或轨迹把在途治疗猜成伤害（反之亦然）。
+        offenseKind = opts and opts.offenseKind or nil,
+        offenseSource = opts and opts.offenseSource or nil,
+        offenseSide = opts and opts.offenseSide or nil,
+        offenseOrigin = opts and opts.offenseOrigin or nil,
         chainProjectile = (opts and opts.chainProjectile) or cfg.chainProjectile or false,
     }
 

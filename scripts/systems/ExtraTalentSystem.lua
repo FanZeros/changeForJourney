@@ -1255,4 +1255,62 @@ function ETS.drawOrbit(vg, unit, cx, cy)
     end
 end
 
+--- 战线纯查询：不挂载、不提交、不创建状态，也不借用其他战线成长。
+---@param laneState table
+---@return boolean provenNone
+---@return string reason
+function ETS.inspectLaneOffense(laneState)
+    if type(laneState) ~= "table" or type(laneState.iceStatues) ~= "table"
+        or type(laneState.pendingGrowth) ~= "table" then return false, "ets_missing_state" end
+    -- 雪皇死亡后，既有冰雕仍可能在下一次受击时碎裂造成伤害。
+    if next(laneState.iceStatues) ~= nil then return false, "ets_ice_statue" end
+    return true, "ets_lane_none"
+end
+
+--- 圣核读取与 onLoverDeathNuke 相同的已拥有英雄内存库存。
+--- 不将 getOwned 缺失时回退零值的行为当成“无圣核”的证据。
+---@param unit table
+---@param laneState table
+---@param allies table[]
+---@return boolean provenNone
+---@return string reason
+function ETS.inspectHealerOffense(unit, laneState, allies)
+    if type(unit) ~= "table" or type(laneState) ~= "table"
+        or type(laneState.pendingGrowth) ~= "table" then return false, "ets_missing_state" end
+    if unit._etsDisabled == true or tonumber(unit.heroId) ~= 15 then return true, "ets_healer_none" end
+    -- 真实核爆通过 hasNode 读取实例及已拥有英雄觉醒回退，查询必须保持同一语义。
+    local nodeOk, hasCore = pcall(ETS.hasNode, unit, 7)
+    if not nodeOk then return false, "ets_core_awakening_unknown" end
+    if not hasCore then return true, "ets_healer_none" end
+    local ok, CP = pcall(require, "ui.character.panel.CharacterPanel")
+    if not ok or type(CP) ~= "table" or type(CP.getOwnedHero) ~= "function" then
+        return false, "ets_core_inventory_unknown"
+    end
+    local readOk, owned = pcall(CP.getOwnedHero, 15)
+    if not readOk or type(owned) ~= "table" then return false, "ets_core_inventory_unknown" end
+    local extra = owned.extraTalent
+    if extra ~= nil and type(extra) ~= "table" then return false, "ets_core_inventory_unknown" end
+    local cards = extra and extra.issuedCards or 0
+    local pending = laneState.pendingGrowth[15]
+    if pending ~= nil and type(pending) ~= "table" then return false, "ets_core_growth_unknown" end
+    local pendingCards = pending and pending.issuedCards or 0
+    if type(cards) ~= "number" or type(pendingCards) ~= "number"
+        or cards ~= cards or pendingCards ~= pendingCards or cards < 0 or pendingCards < 0 then
+        return false, "ets_core_inventory_unknown"
+    end
+    if cards > 0 or pendingCards > 0 then return false, "ets_saint_core" end
+    -- 初醒允许未来正常复活发放圣核卡，因此保留其潜在伤害。
+    -- 不模拟复活概率，也不等到真实伤害发生后才判定。
+    local firstOk, hasFirst = pcall(ETS.hasNode, unit, 1)
+    if not firstOk then return false, "ets_core_awakening_unknown" end
+    if hasFirst then
+        for _, ally in ipairs(allies) do
+            if ally ~= unit and type(ally) == "table" and type(ally.hp) == "number" and ally.hp > 0 then
+                return false, "ets_future_core_card"
+            end
+        end
+    end
+    return true, "ets_healer_none"
+end
+
 return ETS

@@ -561,6 +561,7 @@ local function testVictoryMarchLifecycle()
         local marches, combatTicks, firstClears = 0, 0, 0
         ---@type table|nil
         local background
+        local combatState = { ctx = {}, cardAnims = {}, comboQueue = {} }
         local combat = setmetatable({
             getAliveUnits = function(list)
                 local alive = {}
@@ -569,7 +570,7 @@ local function testVictoryMarchLifecycle()
                 end
                 return alive
             end,
-            mountedState = function() return { ctx = {} } end,
+            mountedState = function() return combatState end,
         }, { __index = function() return noop end })
         local function stub(fields)
             return setmetatable(fields or {}, { __index = function() return noop end })
@@ -623,6 +624,9 @@ local function testVictoryMarchLifecycle()
             ["ui.battle.stage.BattleStageNavLogic"] = true,
             ["ui.battle.scene.BattleScenePhases"] = true,
             ["ui.battle.combat.BattleCasualty"] = true,
+            ["ui.battle.scene.BattleAllyLifecycle"] = true,
+            ["systems.BattleOffenseGuard"] = true,
+            ["systems.BattleOffenseCapabilities"] = true,
         }
         env.require = function(name)
             if mocks[name] then return mocks[name] end
@@ -636,6 +640,14 @@ local function testVictoryMarchLifecycle()
             loaded[name] = value
             return value
         end
+        -- 旧bind仅模拟装载入口；帧采样和无进攻判定必须委托同env中的真实Lifecycle。
+        local lifecycleProxy = mocks["ui.battle.scene.BattleAllyLifecycle"] ---@type table
+        mocks["ui.battle.scene.BattleAllyLifecycle"] = nil
+        local lifecycle = env.require("ui.battle.scene.BattleAllyLifecycle") ---@type table
+        for key, value in pairs(lifecycle) do
+            if key ~= "bind" then lifecycleProxy[key] = value end
+        end
+        mocks["ui.battle.scene.BattleAllyLifecycle"] = lifecycleProxy
         local realNav = env.require("ui.battle.stage.BattleStageNavLogic")
         mocks["ui.battle.stage.BattleStageNavLogic"] = { bind = function(deps)
             shared = deps

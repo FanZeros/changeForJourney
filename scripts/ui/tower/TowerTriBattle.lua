@@ -82,6 +82,7 @@ local state = {
     resultPanelShown = false,
     confirmOpen = false,
     onClose = nil,
+    onResult = nil,
     hostExtraTalents = ETS.mountedState(),
     logicalW = 1920,
     logicalH = 1080,
@@ -544,6 +545,7 @@ function TowerTriBattle.open(opts)
     state.resultPanelShown = false
     state.confirmOpen = false
     state.onClose = opts.onClose
+    state.onResult = opts.onResult
 
     local data = opts.data or {}
     state.floor = data.floor or 1
@@ -641,7 +643,7 @@ function TowerTriBattle.close(discardGrowth)
     SEM.mount(nil)
     BattleLayout.setMode("strip")
     local cb = state.onClose
-    state.onClose = nil
+    state.onClose, state.onResult = nil, nil
     if cb then cb() end
     print("[TowerTriBattle] close")
 end
@@ -694,8 +696,9 @@ function TowerTriBattle.update(dt, battlePaused)
         if state.phase == BATTLE_LOSE and state.resultTimer >= RESULT_DELAY and not state.resultPanelShown then
             if DungeonBattle.isResultReady() then
                 state.resultPanelShown = true
+                local lanes = state.lanes
                 local _, _, elapsedSecs = DungeonBattle.getResultState()
-                BattleResultPanel.show({
+                local result = {
                     layout = "tower",
                     floor = state.floor,
                     wave = state.wave,
@@ -704,9 +707,12 @@ function TowerTriBattle.update(dt, battlePaused)
                     heroStats = BattleStats.buildHeroDamageStats(state.allAllies, HeroConfig.HEROES),
                     rewards = {},
                     onClose = function()
-                        TowerTriBattle.close()
+                        if state.open and state.lanes == lanes then TowerTriBattle.close() end
                     end,
-                })
+                }
+                if state.onResult then state.onResult(result)
+                else BattleResultPanel.show(result) end
+                if not state.open or state.lanes ~= lanes then return end
             end
         end
         for t = 1, TEAM_COUNT do
@@ -918,7 +924,7 @@ function TowerTriBattle.handleClick(wx, wy, width, height)
     local layout = TowerLayout.compute(logicalW, logicalH)
 
     if BattleResultPanel.isOpen() then
-        BattleResultPanel.handleInput(wx, wy)
+        BattleResultPanel.handleInput(wx, wy, logicalW, logicalH)
         return true
     end
 

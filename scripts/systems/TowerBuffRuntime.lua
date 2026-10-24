@@ -17,8 +17,12 @@ local function applyIntervalMultiplier(unit, multiplier)
     local previous = intervalApplications[unit]
     local base = unit.atkInterval
     local attrInterval = unit.attrs and unit.attrs:getActualInterval() or nil
-    local recalculated = previous and attrInterval ~= previous.attrInterval and base == attrInterval
-    if previous and base == previous.output and not recalculated then
+    -- 属性重算可能只更新 attrs，未同步 unit；此时也不能继续使用旧倍率基准。
+    local recalculated = previous and attrInterval ~= previous.attrInterval
+        and (base == previous.output or base == attrInterval)
+    if recalculated then
+        base = attrInterval
+    elseif previous and base == previous.output then
         base = previous.base
     end
     local output = base * multiplier
@@ -73,10 +77,11 @@ end
 
 -- ======================== 应用 stat 类强化 ========================
 
---- 将所有已选 stat 强化应用到己方全体单位
----@param allies table[] 己方单位列表
----@param buffIds number[] 已选强化ID列表
-function TBR.applyStatBuffs(allies, buffIds)
+--- includeDead 仅用于新层准备：Tri.open 稍后负责复活，不能因此漏掉死者的新层属性。
+---@param allies table[]
+---@param buffIds number[]
+---@param includeDead boolean
+local function applyStatBuffs(allies, buffIds, includeDead)
     if not buffIds or #buffIds == 0 then return end
 
     for _, buffId in ipairs(buffIds) do
@@ -92,13 +97,14 @@ function TBR.applyStatBuffs(allies, buffIds)
             end
             if #entries > 0 then
                 for _, unit in ipairs(allies) do
-                    if unit.hp > 0 and unit.attrs then
+                    if unit.attrs and (includeDead or unit.hp > 0) then
                         if not buff.classReq or CC.normalize(unit.classId) == CC.normalize(buff.classReq) then
                             local oldHp = unit.hp
                             local oldMaxHp = unit.maxHp or unit.attrs:get(AD.MAX_HP)
                             unit.attrs:addModifier("tower_buff_" .. buffId, entries)
-                            if buff.stats.hpBonus then
-                                syncHpAfterMaxHpChange(unit, oldHp, oldMaxHp)
+                            syncHpAfterMaxHpChange(unit, oldHp, oldMaxHp)
+                            if includeDead then
+                                unit.atkInterval = unit.attrs:getActualInterval()
                             end
                         end
                     end
@@ -118,6 +124,13 @@ function TBR.applyStatBuffs(allies, buffIds)
             end
         end
     end
+end
+
+--- 兼容旧调用：仍只对存活队员应用 stat。
+---@param allies table[]
+---@param buffIds number[]
+function TBR.applyStatBuffs(allies, buffIds)
+    applyStatBuffs(allies, buffIds, false)
 end
 
 -- ======================== mechanic 运行时状态 ========================
@@ -152,6 +165,67 @@ function TBR.initMechanics(buffIds)
     print("[TowerBuffRuntime] initMechanics: " .. #M.buffIds .. " mechanic buffs active")
 end
 
+-- 只认本模块拥有的六族名称；不能 clearModifiers 或按含有 tower 的字符串粗删。
+---@param id any
+---@return boolean
+local function isTowerModifier(id)
+    return type(id) == "string" and (
+        id:match("^tower_buff_%d+$") ~= nil
+        or id:match("^tower_combo_double_") ~= nil
+        or id:match("^tower_warrior_bloodlust_") ~= nil
+        or id:match("^tower_ranger_support_") ~= nil
+        or id:match("^tower_priest_aura_hp_") ~= nil
+        or id == "tower_kill_hp_stack")
+end
+
+--- 新层入口（也可用于新局空 buff 清理）。不复活、不执行 mechanic 一次性效果。
+--- 调用顺序：prepareFloor → Tri.open（复活/满血后自行 applyMechanicInit）。
+---@param allies table[] 所有三队己方单位的扁平列表，包含死亡队员
+---@param buffIds number[]|nil 当前唯一有效强化列表；重复 ID 会去重
+function TBR.prepareFloor(allies, buffIds)
+    local ids, seen = {}, {}
+    for _, buffId in ipairs(buffIds or {}) do
+        if TowerConfig.BUFFS_BY_ID[buffId] and not seen[buffId] then
+            seen[buffId] = true
+            ids[#ids + 1] = buffId
+        end
+    end
+
+    M = nil -- 旧击杀叠层、禁疗、蓄力、免疫次数和计时器全部失效。
+    local removed, restored, dead = 0, 0, 0
+    for _, unit in ipairs(allies) do
+        if (unit.hp or 0) <= 0 then dead = dead + 1 end
+        if intervalApplications[unit] and unit.atkInterval then
+            applyIntervalMultiplier(unit, 1)
+            restored = restored + 1
+        end
+        intervalApplications[unit] = nil
+        if unit.attrs then
+            local oldHp = unit.hp
+            local oldMaxHp = unit.maxHp or unit.attrs:get(AD.MAX_HP)
+            -- 先收集再删除，避免遍历 modifiers 时重建属性容器导致漏删。
+            local modifierIds = {}
+            for id in pairs(unit.attrs.modifiers or {}) do
+                if isTowerModifier(id) then modifierIds[#modifierIds + 1] = id end
+            end
+            for _, id in ipairs(modifierIds) do
+                unit.attrs:removeModifier(id)
+                removed = removed + 1
+            end
+            syncHpAfterMaxHpChange(unit, oldHp, oldMaxHp)
+            -- removeModifier 会重算 attrs，却不会替运行时 unit 写回间隔。
+            if #modifierIds > 0 then
+                unit.atkInterval = unit.attrs:getActualInterval()
+            end
+        end
+    end
+
+    applyStatBuffs(allies, ids, true)
+    TBR.initMechanics(ids)
+    print(string.format("[TowerBuffRuntime] prepareFloor allies=%d buffs=%d removed=%d intervals=%d dead=%d; mechanic init deferred to Tri.open",
+        #allies, #ids, removed, restored, dead))
+end
+
 --- 应用 mechanic 类初始化效果（战斗开始/新波次时对单位做一次性修改）
 ---@param allies table[] 己方单位列表
 ---@param enemies table[] 敌方单位列表（用于统计坦数量等）
@@ -169,13 +243,15 @@ function TBR.applyMechanicInit(allies, enemies)
             mageIntervalMult = mageIntervalMult * (1 + ((buff.params or {}).intervalMult or 100) / 100)
         end
     end
+    -- 先完成属性型 mechanic（尤其#31），最后再叠20/28，避免漏算攻速或覆盖倍率。
+
+    -- 去掉上一层由#18生成的自身增量，再按当前暗契列表重建。
+    -- 不能把上层已翻倍的输出再次当作基础，否则一张卡会逐层额外增长。
     for _, unit in ipairs(allies) do
-        if unit.hp > 0 and unit.atkInterval then
-            local multiplier = intervalMult * (unit.classId == CC.MAGE and mageIntervalMult or 1)
-            applyIntervalMultiplier(unit, multiplier)
+        if unit.attrs then
+            unit.attrs:removeModifier("tower_combo_double_" .. (unit.heroId or 0))
         end
     end
-
     for _, buffId in ipairs(M.buffIds) do
         local buff = TowerConfig.BUFFS_BY_ID[buffId]
         if not buff then goto continue end
@@ -195,7 +271,7 @@ function TBR.applyMechanicInit(allies, enemies)
                 end
             end
 
-        -- #20 迅雷之势：在上方按基准统一应用，换波不重乘旧输出。
+        -- #20 迅雷之势：在末尾按基准统一应用，换波不重乘旧输出。
         elseif mid == "interval_reduce" then
 
         -- #24 守护誓约：骑士仇恨倍率+200%+初始仇恨2000（通过 ThreatManager 处理）
@@ -218,7 +294,7 @@ function TBR.applyMechanicInit(allies, enemies)
 
         -- #27 狂战之魂：战士每损5%→攻速+10%（动态，在 getAtkIntervalMult 中处理）
 
-        -- #28 蓄能爆裂：在上方统一应用法师间隔总倍率。
+        -- #28 蓄能爆裂：在末尾统一应用法师间隔总倍率。
         elseif mid == "mage_charge_burst" then
 
         -- #29 奥术聚能：法师蓄力初始化
@@ -242,9 +318,14 @@ function TBR.applyMechanicInit(allies, enemies)
                 local bonus = tankCount * perTank
                 for _, unit in ipairs(allies) do
                     if unit.hp > 0 and unit.classId == CC.RANGER and unit.attrs then
+                        local oldInterval = unit.attrs:getActualInterval()
                         unit.attrs:addModifier("tower_ranger_support_" .. (unit.heroId or 0), {
                             { key = AD.ATK_SPEED, flat = bonus }
                         })
+                        local newInterval = unit.attrs:getActualInterval()
+                        if newInterval ~= oldInterval then
+                            unit.atkInterval = newInterval
+                        end
                     end
                 end
             end
@@ -284,6 +365,13 @@ function TBR.applyMechanicInit(allies, enemies)
         end
 
         ::continue::
+    end
+
+    for _, unit in ipairs(allies) do
+        if unit.hp > 0 and unit.atkInterval then
+            local multiplier = intervalMult * (unit.classId == CC.MAGE and mageIntervalMult or 1)
+            applyIntervalMultiplier(unit, multiplier)
+        end
     end
 end
 

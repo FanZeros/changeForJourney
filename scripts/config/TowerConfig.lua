@@ -18,6 +18,8 @@ TowerConfig.DUNGEON_ID     = "babel_tower"
 TowerConfig.MAX_FLOOR      = 112
 TowerConfig.WAVES_PER_FLOOR = 1
 TowerConfig.CHECKPOINT_INTERVAL = 5
+TowerConfig.BUFF_DURATION_FLOORS = 10
+TowerConfig.CHOICE_DURATION_FLOORS = 3
 TowerConfig.ARTIFACT_DROP_RATE = 0.05
 TowerConfig.ARTIFACT_QUALITY_WEIGHTS = { 80, 18, 2 }
 TowerConfig.FIRST_EXP_MINUTES = 2
@@ -212,11 +214,19 @@ function TowerConfig.isCheckpointFloor(floor)
         and (level - 1) % TowerConfig.CHECKPOINT_INTERVAL == 0
 end
 
+--- 检查点收益预览范围；不是一局的结束条件。
+---@param startFloor number
+---@return integer
+function TowerConfig.getCheckpointEndFloor(startFloor)
+    return math.min(TowerConfig.MAX_FLOOR,
+        TowerConfig.getCheckpointFloor(startFloor) + TowerConfig.CHECKPOINT_INTERVAL - 1)
+end
+
+--- 从任一已解锁检查点连续登塔，直到失败、撤退或最高层。
 ---@param startFloor number
 ---@return integer
 function TowerConfig.getRunEndFloor(startFloor)
-    return math.min(TowerConfig.MAX_FLOOR,
-        TowerConfig.getCheckpointFloor(startFloor) + TowerConfig.CHECKPOINT_INTERVAL - 1)
+    return TowerConfig.MAX_FLOOR
 end
 
 --- 旧档 floor 表示下一未通层，数字/字符串首通键也能证明已通终层。

@@ -30,6 +30,9 @@ local state = {
     openedAt = 0,
     version = 0,
     floor = 1,
+    currentFloor = 1, -- 展示上下文，不覆盖 request.floor（待选身份的来源层）
+    leaseContext = false,
+    renewalById = {}, -- 已拥有的同名契印，仅用于按钮展示
     choices = {},     -- { {id, quality, name, desc}, ... } 最多3个
     onPick = nil,     -- function(buffId, requestId) 请求前锁 Scene，不代表选择成功
     request = {},    -- Service 签发 runId/selectionId/floor/wave
@@ -94,12 +97,49 @@ function Panel.open(floor, choices, onPick, request, onError)
     state.onError = onError
     state.request = {}
     for key, value in pairs(request or {}) do state.request[key] = value end
+    state.currentFloor = tonumber(state.request.currentFloor) or state.floor
+    state.leaseContext = state.request.currentFloor ~= nil or state.request.expiresFloor ~= nil
+        or state.request.renewalIds ~= nil
+    state.renewalById = {}
+    for _, id in ipairs(state.request.renewalIds or {}) do
+        state.renewalById[tostring(id)] = true
+    end
     state.pending = false
     state.pendingRequest = nil
     state.pendingTime = 0
     state.retryBuffId = nil
     for i = 1, 3 do kwCards[i]:clear() end   -- 清上次打开的关键词状态
     print("[TowerBuffPick] open floor=" .. state.floor .. " choices=" .. #state.choices)
+end
+
+--- 只刷新展示上下文：保留来源层、卡组、pendingRequest 与同卡重试身份。
+---@param currentFloor number 当前战斗层
+---@param buffLeases table[]|nil {id, effectiveFloor, expiresFloor}；nil 兼容旧调用
+function Panel.setContext(currentFloor, buffLeases)
+    if not state.open then return false end
+    local floor = tonumber(currentFloor) or state.currentFloor
+    local changed = floor ~= state.currentFloor
+    state.currentFloor = floor
+    if type(buffLeases) == "table" then
+        if not state.leaseContext then changed = true end
+        state.leaseContext = true
+        local renewalById = {}
+        for _, lease in ipairs(buffLeases) do
+            local expires = tonumber(lease.expiresFloor)
+            if lease.id ~= nil and (not expires or expires >= floor) then
+                renewalById[tostring(lease.id)] = true
+            end
+        end
+        for id in pairs(renewalById) do
+            if not state.renewalById[id] then changed = true end
+        end
+        for id in pairs(state.renewalById) do
+            if not renewalById[id] then changed = true end
+        end
+        state.renewalById = renewalById
+    end
+    if changed then state.version = state.version + 1 end
+    return true
 end
 
 function Panel.close()
@@ -110,6 +150,9 @@ function Panel.close()
     state.onPick = nil
     state.onError = nil
     state.request = {}
+    state.currentFloor = 1
+    state.leaseContext = false
+    state.renewalById = {}
     state.pending = false
     state.pendingRequest = nil
     state.pendingTime = 0

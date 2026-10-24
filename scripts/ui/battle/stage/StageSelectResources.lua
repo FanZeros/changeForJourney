@@ -128,7 +128,7 @@ function M.getRewardPreview(stageId, entry, dungeonData)
         local cleared = tower.cleared or {}
         local legacyCleared = math.max(0, math.min(TC.MAX_FLOOR, math.floor(tonumber(tower.floor) or 1) - 1))
         local startFloor = TC.getCheckpointFloor(stageId - TOWER_STAGE_BASE)
-        local endFloor = TC.getRunEndFloor(startFloor)
+        local endFloor = TC.getCheckpointEndFloor(startFloor)
         local firstAmount, firstExp, repeatExp = 0, 0, 0
         for floor = startFloor, endFloor do
             local floorData = TC.getFloor(floor)

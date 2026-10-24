@@ -1,7 +1,7 @@
 ---@diagnostic disable: param-type-mismatch
 -- ============================================================================
--- TowerService - 112 真实层；每层一波，五层一局，逐层事务结算。
--- 当局暗契/开奖/回执仅在内存；存档继续保留旧 floor/cleared 语义。
+-- TowerService - 112 真实层；每层一波，检查点重开，局内连续逐层事务结算。
+-- 当局身份/开奖/回执仅在内存；暗契随模块保存但不用于重启续局，旧 floor/cleared 语义不变。
 -- ============================================================================
 local PDM = require("rules.character.PlayerDataManager")
 local TowerConfig = require("config.TowerConfig")
@@ -33,6 +33,28 @@ local function copy(value)
     if type(value) ~= "table" then return value end
     local result = {}
     for key, item in pairs(value) do result[key] = copy(item) end
+    return result
+end
+
+local function leaseIds(leases)
+    local ids = {}
+    for _, lease in ipairs(leases) do ids[#ids + 1] = lease.id end
+    return ids
+end
+
+local function leasesAt(leases, floor)
+    local result = {}
+    for _, lease in ipairs(leases or {}) do
+        if lease.expiresFloor >= floor then result[#result + 1] = copy(lease) end
+    end
+    return result
+end
+
+local function choicesAt(choices, floor)
+    local result = {}
+    for _, choice in ipairs(choices or {}) do
+        if choice.expiresFloor >= floor then result[#result + 1] = copy(choice) end
+    end
     return result
 end
 
@@ -116,7 +138,7 @@ function TowerService.Challenge(uid, requestedFloor)
     local run = { id = tostring(uid) .. ":" .. runSerial, bt = bt, floor = floor,
         startFloor = floor, endFloor = TowerConfig.getRunEndFloor(floor), wave = 1,
         phase = "battle", selections = {}, waveResults = {}, floorResults = {},
-        requests = {}, pendingSelections = {} }
+        requests = {}, pendingSelections = {}, buffLeases = {}, buffRevision = 0 }
     runs[uid] = run
     setOfflineTowerSource(uid, floor)
     PDM.MarkDirty(uid, "dungeon")
@@ -126,7 +148,8 @@ function TowerService.Challenge(uid, requestedFloor)
         startFloor = run.startFloor, endFloor = run.endFloor,
         monsterLevel = floorCfg.monsterLevel, monsters = monsters,
         rageTime = TowerConfig.RAGE_TIME, superRageTime = TowerConfig.SUPER_RAGE_TIME,
-        buffs = copy(bt.buffs), battleBg = TowerConfig.BATTLE_BG }
+        buffs = copy(bt.buffs), buffLeases = {}, buffRevision = run.buffRevision,
+        battleBg = TowerConfig.BATTLE_BG }
 end
 
 --- WaveWin 只消费单波，不发奖、不提前开下一层。
@@ -277,7 +300,7 @@ local function buildFloorPlan(uid, run, floorCfg)
             plan.monsters = TowerConfig.generateWaveMonsters(1, floor + 1)
             plan.monsterLevel = assert(TowerConfig.getFloor(floor + 1)).monsterLevel
             plan.buffChoices = {}
-            for _, buff in ipairs(TowerConfig.rollBuffs(3, run.bt.buffs)) do
+            for _, buff in ipairs(TowerConfig.rollBuffs(3, leaseIds(leasesAt(run.buffLeases, floor + 1)))) do
                 plan.buffChoices[#plan.buffChoices + 1] = {
                     id = buff.id, quality = buff.quality, name = buff.name, desc = buff.desc }
             end
@@ -308,6 +331,13 @@ function TowerService.FloorWin(uid, floor, request)
     local plan = run.rewardPlan or buildFloorPlan(uid, run, floorCfg)
     if plan.error then run.phase = "floor_win"; return false, plan.error end
     local result = {}
+    local nextLeases = plan.continueRun and leasesAt(run.buffLeases, floor + 1) or {}
+    local nextChoices = plan.continueRun and choicesAt(run.pendingSelections, floor + 1) or {}
+    local choiceExpires = floor + TowerConfig.CHOICE_DURATION_FLOORS
+    if plan.continueRun and plan.selectionId and #plan.buffChoices > 0 then
+        nextChoices[#nextChoices + 1] = { id = plan.selectionId, floor = floor, wave = 1,
+            expiresFloor = choiceExpires, result = { nextFloor = floor + 1, buffChoices = copy(plan.buffChoices) } }
+    end
     local ok, err = DungeonService.CommitRewardTransaction(uid, function()
         local granted, grantErr, artifact = grantArtifact(uid, plan.artifact)
         if not granted then return false, grantErr end
@@ -319,7 +349,7 @@ function TowerService.FloorWin(uid, floor, request)
         bt.cleared[floor] = true
         -- 不删除其他历史键，也不因为重打倒退旧floor。
         bt.floor = math.max(tonumber(bt.floor) or 1, math.min(floor + 1, TowerConfig.MAX_FLOOR + 1))
-        if not plan.continueRun or run.abandoned then bt.buffs = {} end
+        bt.buffs = leaseIds(nextLeases)
         DungeonService.MarkRewardDirty(uid, "dungeon")
         local playerExp, heroExpTotal = grantTowerExp(uid, floorCfg.monsterLevel, plan.firstClear)
         local rewards = {}
@@ -332,7 +362,9 @@ function TowerService.FloorWin(uid, floor, request)
             continueRun = plan.continueRun and not run.abandoned,
             nextFloor = plan.continueRun and not run.abandoned and floor + 1 or bt.floor,
             progressFloor = bt.floor, startFloor = run.startFloor, endFloor = run.endFloor,
-            buffs = copy(bt.buffs), selectionId = plan.selectionId,
+            buffs = copy(bt.buffs), buffLeases = copy(nextLeases), buffRevision = run.buffRevision + 1,
+            pendingSelections = copy(nextChoices), choiceExpiresFloor = choiceExpires,
+            selectionId = plan.selectionId,
             buffChoices = copy(plan.buffChoices), monsters = copy(plan.monsters), monsterLevel = plan.monsterLevel }
         if result.continueRun then setOfflineTowerSource(uid, floor + 1)
         else DungeonService.ClearOfflineChallengeSources(uid, "tower") end
@@ -342,11 +374,9 @@ function TowerService.FloorWin(uid, floor, request)
         run.floorResults[floor] = copy(result)
         pendingRewards[uid].floors[floor] = nil
         run.rewardPlan = nil
+        run.buffLeases, run.buffRevision = copy(nextLeases), result.buffRevision
+        run.pendingSelections = copy(nextChoices)
         if result.continueRun then
-            if plan.selectionId and #plan.buffChoices > 0 then
-                run.pendingSelections[#run.pendingSelections + 1] = {
-                    id = plan.selectionId, floor = floor, wave = 1, result = copy(result) }
-            end
             run.floor, run.wave, run.phase = floor + 1, 1, "battle"
         else
             run.phase = "settled"
@@ -393,7 +423,7 @@ function TowerService.PickBuff(uid, buffId, request)
         result.requestId = requestId
         return true, nil, result
     end
-    if not pending or selectionId ~= pending.id
+    if not pending or pending.expiresFloor < run.floor or selectionId ~= pending.id
         or (request.wave ~= nil and request.wave ~= pending.wave)
         or (request.floor ~= nil and request.floor ~= pending.floor) then return false, "强化选择已过期" end
     local offered = false
@@ -401,14 +431,32 @@ function TowerService.PickBuff(uid, buffId, request)
         if choice.id == buffId then offered = true; break end
     end
     if not offered then return false, "强化不在本次选项中" end
-    bt.buffs[#bt.buffs + 1] = buffId
+    local renewed = false
+    local effectiveFloor = run.floor + 1
+    local expiresFloor = run.floor + TowerConfig.BUFF_DURATION_FLOORS
+    for _, lease in ipairs(run.buffLeases) do
+        if lease.id == buffId then
+            lease.expiresFloor = math.max(lease.expiresFloor, expiresFloor)
+            renewed = true
+            break
+        end
+    end
+    if not renewed then
+        run.buffLeases[#run.buffLeases + 1] = { id = buffId,
+            effectiveFloor = effectiveFloor, expiresFloor = expiresFloor }
+    end
+    bt.buffs = leaseIds(run.buffLeases)
+    run.buffRevision = run.buffRevision + 1
+    table.remove(run.pendingSelections, 1)
     local result = { success = true, runId = run.id, selectionId = selectionId,
         floor = pending.floor, wave = pending.wave, nextWave = 1,
         nextFloor = pending.result.nextFloor, buffId = buffId, buffName = buff.name,
+        effectiveFloor = effectiveFloor, expiresFloor = expiresFloor, renewed = renewed,
+        buffLeases = copy(run.buffLeases), buffRevision = run.buffRevision,
+        pendingSelections = copy(run.pendingSelections),
         totalBuffs = #bt.buffs, buffs = copy(bt.buffs) }
     run.selections[selectionId] = result
     if requestId then run.requests[requestId] = result end
-    table.remove(run.pendingSelections, 1)
     PDM.MarkDirty(uid, "dungeon")
     print(string.format("[TowerService] PickBuff run=%s sourceFloor=%d currentFloor=%d buff=%d",
         run.id, pending.floor, run.floor, buffId))

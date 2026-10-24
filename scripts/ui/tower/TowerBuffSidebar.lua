@@ -1,4 +1,4 @@
--- 塔三栏的新UI组件树。路线只读；强化按ID计次数，描述不自行合并百分比。
+-- 塔三栏的新UI组件树。路线只读；租期只作展示，旧ID快照仍按次数记录。
 local UI = require("urhox-libs/UI")
 local Surface = require("ui.widget.DesignWidgetSurface")
 local Layout = require("ui.tower.TowerLayout")
@@ -115,7 +115,7 @@ function Icon:Render(vg)
         l.y + l.h * 0.5, math.min(l.w, l.h), 1)
 end
 
--- 独立显示快照，不返回Config定义引用，兼容重复ID但不改正式排除已拥有规则。
+-- 独立显示快照，不返回Config定义引用，兼容旧重复ID；描述不自行叠加百分比。
 function Sidebar.aggregate(ids)
     local rows, byId = {}, {}
     for _, rawId in ipairs(ids or {}) do
@@ -132,6 +132,31 @@ function Sidebar.aggregate(ids)
         end
     end
     return rows
+end
+
+-- 租期快照优先；没有 leases 字段才走旧的重复ID计数展示，不推导/改写业务效果。
+local function buffRows(snapshot)
+    if type(snapshot.buffLeases) ~= "table" then return Sidebar.aggregate(snapshot.buffIds) end
+    local rows = {} ---@type table[]
+    for _, lease in ipairs(snapshot.buffLeases) do
+        local id = tonumber(lease.id)
+        if id and Config.BUFFS_BY_ID[id] then
+            rows[#rows + 1] = { id = id, count = 1,
+                effectiveFloor = tonumber(lease.effectiveFloor), expiresFloor = tonumber(lease.expiresFloor) }
+        end
+    end
+    return rows
+end
+
+local function buffKey(snapshot)
+    local ids = table.concat(snapshot.buffIds or {}, ",")
+    if type(snapshot.buffLeases) ~= "table" then return ids end
+    local parts = { ids, "leases", tostring(snapshot.floor) }
+    for _, lease in ipairs(snapshot.buffLeases) do
+        parts[#parts + 1] = tostring(lease.id) .. ":" .. tostring(lease.effectiveFloor)
+            .. ":" .. tostring(lease.expiresFloor)
+    end
+    return table.concat(parts, ";")
 end
 
 local function ensureRoots()
@@ -203,7 +228,7 @@ end
 
 local function rebuildBuffs(snapshot)
     if not buffContent then return end
-    local rows = Sidebar.aggregate(snapshot.buffIds)
+    local rows = buffRows(snapshot)
     local children = buffContent:GetChildren()
     for i = #children, 1, -1 do children[i]:Destroy() end
     if #rows == 0 then
@@ -214,7 +239,15 @@ local function rebuildBuffs(snapshot)
         local color = Presentation.rarityColor(def.quality)
         local name = label(Presentation.name(def), 20.8, C.text)
         name:SetStyle({ paddingRight = 2 })
-        local quality = label(Presentation.rarity(def.quality) .. "  ×" .. row.count, 16, color)
+        local qualityText = Presentation.rarity(def.quality) .. "  ×" .. row.count
+        if row.effectiveFloor and row.expiresFloor and snapshot.floor then
+            local remaining = math.max(0, row.expiresFloor - math.max(snapshot.floor, row.effectiveFloor) + 1)
+            qualityText = text("剩余%d层", remaining)
+            if snapshot.floor < row.effectiveFloor then
+                qualityText = text("下层生效") .. " · " .. qualityText
+            end
+        end
+        local quality = label(qualityText, 16, color)
         local desc = label(Presentation.description(def), 18.4, C.muted)
         local header = UI.Panel { width = "100%", flexDirection = "row", gap = 10,
             alignItems = "center", children = {
@@ -231,7 +264,8 @@ local function sync(snapshot, layout)
     ensureRoots()
     lastSnapshot = snapshot
     local language = require("core.I18n").get()
-    local key = table.concat(snapshot.buffIds or {}, ",")
+    local key = buffKey(snapshot)
+    local leaseContext = type(snapshot.buffLeases) == "table"
     local changedLanguage = language ~= lastLanguage
     if changedLanguage or key ~= lastBuffKey then
         rebuildBuffs(snapshot)
@@ -249,7 +283,7 @@ local function sync(snapshot, layout)
         if floorLabel then floorLabel:SetText(text("第%d层", snapshot.floor)) end
     end
     if changedLanguage then
-        if waveLabel then waveLabel:SetText(text("每层1波 · 每5层一组")) end
+        if waveLabel then waveLabel:SetText(text("每层1波 · 连续登塔")) end
         for _, marker in pairs(checkpointLabels) do marker:SetText(text("起点")) end
     end
     if snapshot.phase ~= lastPhase or changedLanguage then
@@ -266,19 +300,34 @@ local function sync(snapshot, layout)
     if pendingButton then
         local count = snapshot.pendingChoices or 0
         pendingButton:SetVisible(count > 0)
-        pendingButton:SetText(text("待选暗契 ×%d", count))
+        local expires = tonumber(snapshot.choiceExpiresFloor)
+        if expires and snapshot.floor then
+            -- 最早待选的最后可选层包含本层；该按钮不消费或清理待选机会。
+            local remaining = math.max(0, expires - snapshot.floor + 1)
+            pendingButton:SetText(text("待选 ×%d · 剩余%d层", count, remaining))
+            pendingButton:SetStyle({ autoFitText = true })
+        else
+            pendingButton:SetText(text("待选暗契 ×%d", count))
+            pendingButton:SetStyle({ autoFitText = false })
+        end
         pendingButton:SetDisabled(snapshot.phase ~= "battle" or snapshot.inputModal == true)
     end
     if changedLanguage then
         routeTitle:SetText(text("塔之路线"))
         routeNote:SetText(text("路线只读 · 标记为每五层起点"))
-        ruleNote:SetText(text("次数仅作记录，效果按原规则生效"))
         confirmTitle:SetText(text("确认撤退？"))
         confirmNote:SetText(text("本层进度将丢失"))
         confirmRetreat:SetText(text("撤退"))
         confirmCancel:SetText(text("取消"))
     end
-    if buffTitle then buffTitle:SetText(text("已获强化") .. "  " .. #(snapshot.buffIds or {})) end
+    if ruleNote then
+        ruleNote:SetText(text(leaseContext and "下层生效 · 持续10层；同名续期"
+            or "次数仅作记录，效果按原规则生效"))
+    end
+    if buffTitle then
+        local count = leaseContext and #snapshot.buffLeases or #(snapshot.buffIds or {})
+        buffTitle:SetText(text("已获强化") .. "  " .. count)
+    end
     if toggleButton then
         toggleButton:SetText(text(collapsed and "展开" or "收起"))
         toggleButton:SetDisabled(snapshot.inputModal == true)

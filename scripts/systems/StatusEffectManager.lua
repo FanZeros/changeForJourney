@@ -216,7 +216,7 @@ function SEM.getDamageTakenMult(unit)
 
     local arcaneMark = SEM_BCS.effects[unit][SEM.ARCANE_MARK]
     if arcaneMark then
-        mult = mult * (1.0 + (arcaneMark.data.mult or 0.08))
+        mult = mult * (1.0 + (arcaneMark.data.mult or 0.02))
     end
 
     -- 冰冻增伤（觉醒效果 Hero12 Node2: data.extraDmgMult）

@@ -129,7 +129,8 @@ function M.bind(deps)
         -- pending仍表示全库箭头尚未完成，不能挡住同版本已独立提交的可见评分。
         if preparedScores and preparedScores.viewKey == viewKey and current.panelKey
             and scoresKey == current.panelKey then return preparedScores end
-        return { pending = true, scoresPending = true, scores = {}, upgrades = {} }
+        return { pending = true, scoresPending = true, scores = {}, upgrades = {},
+            panel = current.viewKey == viewKey and current.panelKey == panelKey and preparedPanel or nil }
     end
     function api.update()
         local request = capture(true)

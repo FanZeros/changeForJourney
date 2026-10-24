@@ -202,11 +202,12 @@ function M.getPrepared(heroId, detailState)
         and panelState.data or EMPTY
 end
 
-function M.draw(vg, heroId, detailState)
+-- prepared只由同一次无yield上层绘制传入；独立draw/getPrepared仍每次严格复核。
+function M.draw(vg, heroId, detailState, prepared)
     local slot = detailState and detailState.equipSlot or nil
     if panelState.heroId ~= heroId then M.reset(heroId, slot) end
     if panelState.slot ~= slot then M.onSlotChanged(slot, heroId) end
-    local data = M.getPrepared(heroId, detailState)
+    local data = prepared and (prepared.panel or EMPTY) or M.getPrepared(heroId, detailState)
     for _, key in ipairs({ "attrs", "sets" }) do
         local state = panelState.scroll[key]
         if not panelState.dragging and math.abs(state.velocity) > SCROLL_MIN_VEL then

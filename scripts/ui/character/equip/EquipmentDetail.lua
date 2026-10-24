@@ -32,9 +32,13 @@ local EquipmentDetail = {}
 local Snapshot = require("ui.character.detail.CharacterDetailSnapshot")
 ---@type function|nil
 local preparedReader = nil
+---@type function|nil
+local preparedReaderFactory = nil
 
---- 评分数据由详情Update准备；注入getter避免EquipmentDetail/CharacterDetail循环require。
-function EquipmentDetail.setPreparedReader(reader) preparedReader = reader end
+--- getter为每次外部读取严格验证；factory仅为一次无yield绘制创建局部reader。
+function EquipmentDetail.setPreparedReader(reader, factory)
+    preparedReader, preparedReaderFactory = reader, factory
+end
 
 -- 套装词条关键词富文本（2件/4件/6件 三行各一实例；仅主面板交互，
 -- 绘制与输入同在 compact 0.92 变换坐标系，热区天然对齐，无需 setTransform）
@@ -159,8 +163,9 @@ local function calcEquipPower(equip, heroId, slot)
     return EquipmentPower.score(equip, heroId, slot)
 end
 
-local function readPreparedScore(equip, heroId, slot)
-    if not equip or not heroId or not preparedReader then return false end
+local function readPreparedScore(equip, heroId, slot, reader)
+    reader = reader or preparedReader
+    if not equip or not heroId or not reader then return false end
     local seq = equip.seq
     if seq == nil then
         local data = PlayerStore.Get("equipment")
@@ -179,18 +184,18 @@ local function readPreparedScore(equip, heroId, slot)
         end
     end
     -- seq缺失也交由reader判定active，不能偷偷fallback冷ctx。
-    return preparedReader(seq, heroId, slot or detState.comparisonSlot or equip.slot, detState.owner)
+    return reader(seq, heroId, slot or detState.comparisonSlot or equip.slot, detState.owner)
 end
 
-local function renderEquipPower(equip, heroId, slot)
-    local handled, score = readPreparedScore(equip, heroId, slot)
+local function renderEquipPower(equip, heroId, slot, reader)
+    local handled, score = readPreparedScore(equip, heroId, slot, reader)
     if handled then return score ~= nil and score or "—" end
     return calcEquipPower(equip, heroId, slot)
 end
 
-local function replacementGain(equip)
+local function replacementGain(equip, reader)
     if not equip or not detState.heroId then return 0 end
-    local handled, _, gain = readPreparedScore(equip, detState.heroId, detState.slot)
+    local handled, _, gain = readPreparedScore(equip, detState.heroId, detState.slot, reader)
     if handled then return gain end
     -- 非联动宿主保留旧同步API与估值，不能把铁匠/独立背包永久降级为pending。
     local context = EquipmentPower.getContext(detState.heroId)
@@ -1106,6 +1111,8 @@ function EquipmentDetail.draw(vg)
 
     slideOY = SLIDE_DIST * (1 - progress)
 
+    -- 两卡/差值只在此同步draw局部共用校验；不存detState/模块，异常或嵌套draw不泄漏。
+    local scoreReader = preparedReaderFactory and preparedReaderFactory(detState.heroId, detState.owner)
     -- 获取渲染数据：关闭动画期间使用快照，避免 server 推送导致面板内容跳变
     local newEquip, isEquipped, curEquip, hasCurrent, powerDiff, btnText
 
@@ -1131,7 +1138,7 @@ function EquipmentDetail.draw(vg)
         curEquip = getComparisonEquip()
         hasCurrent = (not isEquipped) and (curEquip ~= nil)
         btnText = isEquipped and I18n.t("unequip") or (hasCurrent and I18n.t("replace") or I18n.t("wear"))
-        powerDiff = replacementGain(newEquip)
+        powerDiff = replacementGain(newEquip, scoreReader)
     end
 
     if not newEquip then return end
@@ -1159,10 +1166,10 @@ function EquipmentDetail.draw(vg)
             local side = (detState.owner == "character") and -1 or 1
             nvgSave(vg)
             nvgTranslate(vg, side * (COMPACT_BG_W + 16), 0)
-            drawCompactPanel(vg, compare, "", false, { equipped = true })
+            drawCompactPanel(vg, compare, "", false, { equipped = true, reader = scoreReader })
             nvgRestore(vg)
         end
-        drawCompactPanel(vg, newEquip, btnText, nil, { equipped = isEquipped })
+        drawCompactPanel(vg, newEquip, btnText, nil, { equipped = isEquipped, reader = scoreReader })
         -- 关键词解释气泡在内容之后、滚动裁剪之外绘制。
         affixKw:drawPopup(vg)
         for i = 1, 3 do setKw[i]:drawPopup(vg) end
@@ -1175,7 +1182,7 @@ function EquipmentDetail.draw(vg)
     local showDecompose = (not isEquipped) and (not newEquip.locked)
     drawEquipPanel(vg, newEquip, singleOffsetX,
         SINGLE_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H,
-        (hasCurrent and powerDiff or nil), true, btnText, backpackOnly, true, showDecompose)
+        (hasCurrent and powerDiff or nil), true, btnText, backpackOnly, true, showDecompose, scoreReader)
     affixKw:setPopupTransform(function(x, y) return x, y - detState.descScrollY end)
     affixKw:drawPopup(vg)
 

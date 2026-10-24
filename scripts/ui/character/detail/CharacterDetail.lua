@@ -211,13 +211,16 @@ function CharacterDetail.getPreparedEquipment()
 end
 
 --- 浮窗只读评分桥；角色/候选/比较槽不同绝不借用其它窗口的结果。
-function CharacterDetail.getPreparedEquipScore(seq, heroId, slot, owner)
+local function preparedForOwner(heroId, owner)
     if not detailState.open or detailState.tab ~= "equip" then return false end
     if detailState.closing then return true end
     if tonumber(heroId) ~= tonumber(detailState.heroId)
         or (owner ~= "character" and owner ~= "backpack" and owner ~= "bag") then return true end
-    local result = CharacterDetail.getPreparedEquipment()
-    if result.scoresPending then return true end
+    return true, CharacterDetail.getPreparedEquipment()
+end
+
+local function scoreFromPrepared(result, seq, slot)
+    if not result or result.scoresPending then return true end
     local candidate = result.candidate
     if candidate and candidate.seq == tostring(seq) and (slot == nil or slot == candidate.slot) then
         return true, candidate.score, candidate.gain
@@ -227,6 +230,24 @@ function CharacterDetail.getPreparedEquipScore(seq, heroId, slot, owner)
         return true, scores[tostring(seq) .. ":" .. slot], 0
     end
     return true
+end
+
+--- 外部每次读取都严格复核，不能跨同帧原地patch复用结果。
+function CharacterDetail.getPreparedEquipScore(seq, heroId, slot, owner)
+    local handled, result = preparedForOwner(heroId, owner)
+    if not handled then return false end
+    return scoreFromPrepared(result, seq, slot)
+end
+
+--- 仅供一次无yield的EquipmentDetail.draw内部传递；不保存在模块/帧缓存中。
+--- 浮窗独立于角色页再次验证，角色绘制后发生patch也不能借用该页旧bundle。
+function CharacterDetail.createPreparedEquipScoreReader(heroId, owner)
+    local handled, result = preparedForOwner(heroId, owner)
+    return function(seq, readHeroId, slot, readOwner)
+        if not handled then return false end
+        if tonumber(readHeroId) ~= tonumber(heroId) or readOwner ~= owner then return true end
+        return scoreFromPrepared(result, seq, slot)
+    end
 end
 
 --- 每帧调用，即使角色列表当前不是活动页。协作式软预算，不抢占单次业务函数。
@@ -339,9 +360,10 @@ function CharacterDetail.setContext(ctx)
         imgExpBarFill     = ctx.imgExpBarFill,
     })
     -- 配装面板绘制函数注入 Draw 模块
-    Draw._drawEquipPanel = CharacterDetail._EquipPanel.draw --[[@as fun(vg: any, heroId: number, detailState: table)|nil]]
+    Draw._drawEquipPanel = CharacterDetail._EquipPanel.draw --[[@as fun(vg: any, heroId: number, detailState: table, prepared: table?)|nil]]
     if CharacterDetail._EquipDetail.setPreparedReader then
-        CharacterDetail._EquipDetail.setPreparedReader(CharacterDetail.getPreparedEquipScore)
+        CharacterDetail._EquipDetail.setPreparedReader(CharacterDetail.getPreparedEquipScore,
+            CharacterDetail.createPreparedEquipScoreReader)
     end
     -- 觉醒面板注入职业图标和数据获取
     AwakeningPanel.setClassIcons(ctx.imgClassIcons)

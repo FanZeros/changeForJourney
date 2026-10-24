@@ -260,7 +260,8 @@ function EquipmentDetailDraw.create(ctx)
     ---@param backpackOnly boolean|nil 背包模式隐藏穿戴按钮
     ---@param showLock boolean|nil 是否在名称右侧显示锁定图标（仅背包装备）
     ---@param showDecompose boolean|nil 是否显示「立即分解」按钮（仅未穿戴且未锁定装备）
-    local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDiff, showButton, btnText, backpackOnly, showLock, showDecompose)
+    ---@param reader function|nil 本次同步绘制局部已验证评分桥
+    local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDiff, showButton, btnText, backpackOnly, showLock, showDecompose, reader)
         if not equip then return end
         local images = ctx.getImages()
         local imgPowerIcon, imgArrowUp, imgArrowDown = images.powerIcon, images.arrowUp, images.arrowDown
@@ -278,7 +279,7 @@ function EquipmentDetailDraw.create(ctx)
             { accent = DarkIcon.QUALITY_TRIM[math.min(6, math.max(1, q))] })
 
         -- 战力组先实测，标题不能占用其图标/数值/箭头区域。
-        local equipPower = calcEquipPower(equip, detState.heroId, detState.slot)
+        local equipPower = calcEquipPower(equip, detState.heroId, detState.slot, reader)
         local powerStr = tostring(equipPower)
         local powerFont = REF_STAT_FONT
         local powerRight = bgX + bgW - 24
@@ -598,7 +599,7 @@ function EquipmentDetailDraw.create(ctx)
         local scoreHeroId = scoreContext and scoreContext.heroId or detState.heroId
         if scoreContext and scoreContext.generic then scoreHeroId = nil end
         local powerStr = tostring(calcEquipPower(equip, scoreHeroId,
-            scoreContext and scoreContext.slot or detState.slot))
+            scoreContext and scoreContext.slot or detState.slot, scoreContext and scoreContext.reader))
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 36)
         local powerW = I18n.displayBounds(vg, 0, 0, powerStr)

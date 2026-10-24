@@ -23,6 +23,13 @@ local EquipmentList = require("ui.backpack.BackpackEquipmentList")
 
 local M = {}
 
+-- 保留原16方向描边的全部采样和绘制顺序；不要逐格每帧重算三角函数。
+local strokeX, strokeY = {}, {}
+for index = 0, 15 do
+    local angle = index * (math.pi * 2 / 16)
+    strokeX[index + 1], strokeY[index + 1] = math.cos(angle), math.sin(angle)
+end
+
 function M.bind(deps)
     local GRID = deps.GRID
     local CELL_COL_CX = deps.CELL_COL_CX
@@ -282,10 +289,10 @@ function M.bind(deps)
         local roster = request.heroes and request.heroes.roster
         local hero = roster and (roster[request.heroId] or roster[tostring(request.heroId)])
         local branch = hero and hero.advBranch
-        local wearKey = table.concat({ tostring(request.key), tostring(hero and hero.level),
-            tostring(branch and branch.first), tostring(branch and branch.second), tostring(pending) }, "|")
         local cached = views[list]
-        if cached and cached.key == wearKey then return cached.list end
+        local level, first, second = hero and hero.level, branch and branch.first, branch and branch.second
+        if cached and cached.key == request.key and cached.level == level
+            and cached.first == first and cached.second == second and cached.pending == pending then return cached.list end
         local checker = EquipmentWearability.createChecker(request.equipment, request.heroId, request.heroes)
         local refreshed = {}
         for i, entry in ipairs(list) do
@@ -295,13 +302,46 @@ function M.bind(deps)
             if pending then item.power, item.upgrade, item.powerPending = nil, false, true end
             refreshed[i] = item
         end
-        views[list] = { key = wearKey, list = refreshed }
-        views[refreshed] = { key = wearKey, list = refreshed }
+        local record = { key = request.key, level = level, first = first, second = second,
+            pending = pending, list = refreshed }
+        views[list], views[refreshed] = record, record
         return refreshed
     end
     local lists = EquipmentList.bind({ capture = captureListRequest, build = buildEquipList,
         buildBasic = function(request) return buildEquipList(request, nil, true) end,
         refresh = refreshList, budgetSeconds = deps.listBudgetSeconds, maxSteps = deps.listMaxSteps })
+
+    -- 只缓存度量，不缓存图层/图片：每帧仍完整绘制，滚动/退场的scissor与变换不变。
+    -- NanoVG字形宽度依赖字体、矩阵、DPR；用真实字形探针覆盖frame pixelRatio/字体重载。
+    local textWidths, metricKey, matrix = {}, {}, {}
+    local widthCount, cacheMetrics = 0, false
+    local function prepareTextMetrics(vg)
+        cacheMetrics = false
+        if not nvgCurrentTransform or not nvgFindFont or not graphics then return end
+        local returned = nvgCurrentTransform(vg, matrix)
+        if type(returned) == "table" then matrix = returned end
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 40)
+        local probe = nvgTextBounds(vg, 0, 0, "Lv.0123456789")
+        local key = { vg, nvgFindFont(vg, "sans"), graphics:GetWidth(), graphics:GetHeight(), graphics:GetDPR(),
+            matrix[1], matrix[2], matrix[3], matrix[4], probe, nvgTextBounds }
+        local same = true
+        for i = 1, 11 do if key[i] ~= metricKey[i] then same = false; break end end
+        if not same then textWidths, widthCount, metricKey = {}, 0, key end
+        cacheMetrics = true
+    end
+    local function textWidth(vg, fontSize, text)
+        if not cacheMetrics then return nvgTextBounds(vg, 0, 0, text) or 0 end
+        if widthCount >= 256 then textWidths, widthCount = {}, 0 end
+        local bySize = textWidths[fontSize]
+        if not bySize then bySize = {}; textWidths[fontSize] = bySize end
+        local width = bySize[text]
+        if width == nil then
+            width = nvgTextBounds(vg, 0, 0, text) or 0
+            bySize[text], widthCount = width, widthCount + 1
+        end
+        return width
+    end
     local function drawEquipGrid(vg)
         local equipList = lists.present()
         local totalSlots = math.max(#equipList, 35)
@@ -316,8 +356,22 @@ function M.bind(deps)
         nvgSave(vg)
         nvgScissor(vg, 0, clipTop(), DESIGN_W, clipH())
         nvgTranslate(vg, 0, -state.scrollY)
+        prepareTextMetrics(vg)
+        local showPower = SettingsPanel.isEquipmentPowerEnabled()
+        local heroIcons = getImgHeroIcons()
+        local lockIcon = getImgLock()
+        local detail = package.loaded["ui.character.detail.CharacterDetail"]
+        local upIcon = detail and detail._imgIconUp or -1
 
-        for idx = 1, totalSlots do
+        -- 与原screenY边界完全一致，但深滚动直接从第一条可能可见的整行开始。
+        local stride, halfCell = GRID.CELL_SIZE + GRID.GAP, GRID.CELL_SIZE * 0.5
+        local firstRow = math.max(0, math.ceil((clipTop() - GRID.CELL_SIZE + state.scrollY
+            - GRID.FIRST_ROW_TOP - halfCell) / stride))
+        local lastRow = math.floor((GRID.CLIP_BOTTOM + GRID.CELL_SIZE + state.scrollY
+            - GRID.FIRST_ROW_TOP - halfCell) / stride)
+        local firstIndex = firstRow * GRID.COLS + 1
+        local lastIndex = math.min(totalSlots, (lastRow + 1) * GRID.COLS)
+        for idx = firstIndex, lastIndex do
             local col = ((idx - 1) % GRID.COLS) + 1
             local row = math.floor((idx - 1) / GRID.COLS)
             local cx = CELL_COL_CX[col]
@@ -357,8 +411,6 @@ function M.bind(deps)
 
                 -- 复用角色槽的升级图标；头像/锁仍占原左上角，不相互覆盖。
                 if equip.upgrade and not equip.equippedByHeroId and not equip.locked then
-                    local detail = package.loaded["ui.character.detail.CharacterDetail"]
-                    local upIcon = detail and detail._imgIconUp or -1
                     if upIcon >= 0 then
                         local upSize = 40
                         DrawUtil.drawImageCentered(vg, upIcon,
@@ -376,32 +428,30 @@ function M.bind(deps)
                     -- 固定预留左下角标位，显示开关不让等级移位或忽大忽小。
                     local badge = EquipmentSetIcon.badgeLayout(cx, cy, GRID.CELL_SIZE)
                     local availableW = lvlX - (badge.x + badge.size) - 8
-                    local textW = nvgTextBounds(vg, 0, 0, lvlText)
+                    local textW = textWidth(vg, lvl.fontSize, lvlText)
                     if textW > availableW then
                         nvgFontSize(vg, lvl.fontSize * availableW / textW)
                     end
                     nvgTextAlign(vg, lvl.align)
                     nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
-                    local sStep = math.pi * 2 / 16
-                    for si = 0, 15 do
-                        local sa = si * sStep
-                        nvgText(vg, lvlX + math.cos(sa) * 4, lvlY + math.sin(sa) * 4, lvlText, nil)
+                    for si = 1, 16 do
+                        nvgText(vg, lvlX + strokeX[si] * 4, lvlY + strokeY[si] * 4, lvlText, nil)
                     end
                     nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
                     nvgText(vg, lvlX, lvlY, lvlText, nil)
                 end
 
                 -- 单件贡献位于等级上方，保留右下等级及左下套装徽记占位。
-                if SettingsPanel.isEquipmentPowerEnabled() and equip.power ~= nil and not equip.powerPending then
+                if showPower and equip.power ~= nil and not equip.powerPending then
                     local powerText = tostring(equip.power)
                     local powerFont, iconSize, gap = 26, 22, 4
                     nvgFontFace(vg, "sans")
                     nvgFontSize(vg, powerFont)
-                    local textW = nvgTextBounds(vg, 0, 0, powerText) or 0
+                    local textW = textWidth(vg, powerFont, powerText)
                     local maxW = GRID.CELL_SIZE * 0.62 - iconSize - gap
                     if textW > maxW then powerFont = powerFont * maxW / textW end
                     nvgFontSize(vg, powerFont)
-                    local fittedW = nvgTextBounds(vg, 0, 0, powerText) or 0
+                    local fittedW = textWidth(vg, powerFont, powerText)
                     local right, bottom = cx + GRID.CELL_SIZE * 0.45, cy + GRID.CELL_SIZE * 0.15
                     DarkIcon.draw(vg, "power", right - fittedW - gap - iconSize * .5,
                         bottom - iconSize * .5, iconSize, 1)
@@ -418,18 +468,15 @@ function M.bind(deps)
                     nvgFontSize(vg, 36)
                     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
                     nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
-                    local sStep = math.pi * 2 / 16
-                    for si = 0, 15 do
-                        local sa = si * sStep
-                        nvgText(vg, enhX + math.cos(sa) * 3, enhY + math.sin(sa) * 3, enhText, nil)
+                    for si = 1, 16 do
+                        nvgText(vg, enhX + strokeX[si] * 3, enhY + strokeY[si] * 3, enhText, nil)
                     end
                     nvgFillColor(vg, nvgRGBA(0x00, 0xff, 0x60, 255))
                     nvgText(vg, enhX, enhY, enhText, nil)
                 end
 
                 if equip.equippedByHeroId then
-                    local imgHeroIcons = getImgHeroIcons()
-                    local ownerIcon = imgHeroIcons[equip.equippedByHeroId]
+                    local ownerIcon = heroIcons[equip.equippedByHeroId]
                     if ownerIcon and ownerIcon >= 0 then
                         local badgeSize = 66
                         local badgeX = cx - GRID.CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
@@ -449,7 +496,7 @@ function M.bind(deps)
 
                 -- [分解入仓 0929] 旧"批量分解模式"选中遮罩已移除（分解迁移到独立 tab）
 
-                if equip.locked and getImgLock() >= 0 then
+                if equip.locked and lockIcon >= 0 then
                     local hasSetBadge = equip.equippedByHeroId and EquipmentSetIcon.hasBadge(equip)
                     -- 三角标同存时缩小锁，放于头像与左下套装徽记之间。
                     local lockSize = hasSetBadge and 32 or 56
@@ -462,7 +509,7 @@ function M.bind(deps)
                     else
                         lockY = cy - GRID.CELL_SIZE * 0.5 + lockSize * 0.5 + 4
                     end
-                    DrawUtil.drawImageCentered(vg, getImgLock(), lockX, lockY, lockSize, lockSize, 1.0)
+                    DrawUtil.drawImageCentered(vg, lockIcon, lockX, lockY, lockSize, lockSize, 1.0)
                 end
 
                 -- 套装角标在数值/归属/锁之后，不可穿戴灰罩之前绘制。

@@ -12,6 +12,16 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-24，无进攻能力持续5秒判败，PR #190 已创建）
+
+- **已创建正式 PR #190**：https://github.com/FanZeros/changeForJourney/pull/190，head=`feat1024/no-offense-defeat@dd423df5`，base=`workspace1005@a187659f`，open／draft=false／merged=false，28文件 +2129/−33。创建前同源查重 open=0、远端SHA与本地一致；目标已由外部前进至含 PR187 性能修复。鉴权仅本次命令进程内 HTTPS extraheader 一次性使用，未写入 remote（仍为 SSH 干净 URL）／Git配置／源码／日志／记忆，已核零残留；**令牌在聊天中已暴露，应撤销轮换**。不推 workspace 系列、不强推、不自动合并或发布。
+- 用户选择“无进攻能力，等5秒”。从最新目标重建独立 `feat1024/no-offense-defeat`，不重复带入 PR188 音符内容；普通战斗按本队，终焉三队更新后整体一次，塔逐未清线并沿原整层失败出口；训练木桩与独立 battleLab 排除，不新增统一 300 秒超时。
+- 新 Guard／Capabilities 仅对明确审计无进攻潜力累计完整 5 秒，首观察建立 0 秒基线，暂停停表保宽限，入场／行军／换波／名册或状态身份变化／新死亡待处理／能力恢复或未知则重置。原复活、胜利及全灭优先；失败 reason=`no_offense`，不把存活治疗者 HP 写零。首版四奶 9／15／19／23 采用保守白名单，未知星图／机制宁可不早败，不宣称所有治疗配置必触发。
+- 显式八状态战线引用及 TAL refs 核对；普通投射物只加来源／阵营／语义 metadata，不改伤害／轨迹／RNG。反击、惩戒、铁壁六件反伤、周期伤害、DOT、己方未落地伤害、冰雕、死后持续星门及圣核均保守阻断；圣核与未召门死20 遵循正式账号觉醒回退。成长 flush 后立即检查旧场身份；Stop 清理宽限。
+- 最终官方 b112 成功，725 根 Lua 实际载荷逐字节一致，候选／内部 validation 0 入包；两 .project 已与本轮 before 逐字节恢复 2/2。修改文件逐文件诊断已核，ProjectileSystem 仍保留目标基线自带 10 条未改旧行 Error，不称全仓静态清零。
+- 最终构建后独立 Runtime 均 ALL PASS／actualexit0：能力 6 组 137、宿主 20 组 3701、治疗 184、终焉 7136、切关、弹射 188、轨迹、资源 46439、塔 19 组 4404。素材专项在目标基线上有 26 项闪电／拖尾绘制断言失败，已用 A/B（ProjectileSystem 完全回退目标版）复现同样 26 项，确认与本项无关；仅为目标基线已有的 `PerformanceMonitor/PerformancePanel/PerformanceHooks/BattleClock/LocalActionBridge/SweepDialog` 外围依赖补显式空实现，未降业务断言。塔专项需在 `/home/Maker/game4-validation/stage-regression` 隔离 cwd 且 `-tapcode_dir=/workspace` 运行。
+- 内证仅 `.git/validation/no-offense1024`；原上传／候选／技能／无关 meta 保持不混提交。未验证真实玩家档、GPU 像素、设备触控、完整实战与性能；headless 音频／shader 错误保留。
+
 ## 上次做了什么（2026-10-24，无进攻能力持续5秒判败，本地完成）
 
 - 用户选择“无进攻能力，等5秒”。独立本地 `feat1024/no-offense-defeat@30e539cb`，未fetch／融合新目标，不继承PR188外发授权；本轮仅本地实现、测试及官方构建，未暂存／提交／push／PR／合并发布，不读玩家档、不运行main、不清档。普通战斗按本队，终焉三队更新后整体一次，塔逐未清线并沿原整层失败出口；训练木桩与独立battleLab排除，不新增统一300秒超时。

@@ -31,56 +31,85 @@ local CharacterSchema  = require("shared.schemas.CharacterSchema")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 
 -- ============================================================================
--- 内部状态
+-- 内部协作：镜像与版本 / 订阅发布 / Schema 绑定 / 等待队列
 -- ============================================================================
 
---- 模块数据缓存（只读镜像）
---- cache_[fieldKey] = moduleData
-local cache_ = {}
+-- 各容器持有当前表；清理时替换表，不复制玩家数据或捕获过期镜像。
+local mirror = { data = {}, revisions = {}, revisionSeq = 0 }
+local subscriptions = { fields = {}, onAnyChange = nil }
+local binding = { registeredKeys = {}, callbacks = {}, inited = false }
+local waiters = { active = {}, idSeq = 0, onTimeout = nil }
 
--- 单调版本支持只读派生缓存：原地发布、切区和重新初始化也可被区分。
-local revisions_ = {}
-local revisionSeq_ = 0
 local function markRevision(fieldKey)
-    revisionSeq_ = revisionSeq_ + 1
-    revisions_[fieldKey] = revisionSeq_
+    mirror.revisionSeq = mirror.revisionSeq + 1
+    mirror.revisions[fieldKey] = mirror.revisionSeq
 end
 
-function PlayerStore.GetRevision(fieldKey)
-    return revisions_[fieldKey] or 0
+local function writeMirror(fieldKey, data)
+    mirror.data[fieldKey] = data
+    markRevision(fieldKey)
 end
 
 local function clearRevisions()
+    -- 仅使原有四类派生缓存失效；全局序列和其他字段的版本不重置。
     for _, key in ipairs({ "heroes", "equipment", "artifacts", "talents" }) do markRevision(key) end
 end
 
---- 变更订阅者
---- subscribers_[fieldKey] = { callback1, callback2, ... }
-local subscribers_ = {}
+local function resetWaiters()
+    waiters.active = {}
+    waiters.idSeq = 0
+end
 
---- 全局更新回调（任何已注册模块变化时触发）
---- onAnyChange_ = function(fieldKey, data) end
-local onAnyChange_ = nil
+local function notifyField(fieldKey, data)
+    -- 保持当前列表引用和 numeric-for 上界语义，回调中增删订阅不另做快照。
+    local subs = subscriptions.fields[fieldKey]
+    if subs then
+        for i = 1, #subs do
+            local ok, err = pcall(subs[i], data, fieldKey)
+            if not ok then
+                print("[PlayerStore] subscriber error field=" .. fieldKey
+                    .. ": " .. tostring(err))
+            end
+        end
+    end
+end
 
---- Schema 中注册的 fieldKey 集合（Init 时构建）
---- registeredKeys_[fieldKey] = true
-local registeredKeys_ = {}
+local function publishField(fieldKey, data)
+    writeMirror(fieldKey, data)
+    notifyField(fieldKey, data)
+    -- 字段回调可能替换/清空全局回调；此处现读，且仍不以 pcall 隔离。
+    if subscriptions.onAnyChange then
+        subscriptions.onAnyChange(fieldKey, data)
+    end
+end
 
---- 是否已初始化
-local inited_ = false
+local function bindSchemaFields()
+    local count = 0
+    for fieldKey, _def in pairs(CharacterSchema.Fields) do
+        binding.registeredKeys[fieldKey] = true
+        local callback = function(data, _moduleName)
+            publishField(fieldKey, data)
+        end
+        binding.callbacks[fieldKey] = callback
+        ClientDispatcher.subscribe(fieldKey, callback)
+        count = count + 1
+    end
+    return count
+end
 
---- ClientDispatcher 的回调引用（用于 Cleanup 时取消订阅）
---- dispatcherCallbacks_[fieldKey] = callback
-local dispatcherCallbacks_ = {}
+local function syncExistingMirror()
+    -- Init 前到达的数据只写镜像与版本，不触发字段/全局订阅。
+    for fieldKey in pairs(binding.registeredKeys) do
+        local existing = ClientDispatcher.get(fieldKey)
+        if existing then writeMirror(fieldKey, existing) end
+    end
+end
 
---- WaitForChange 内部状态（前置声明，确保 Cleanup 闭包能正确捕获）
-local activeWatchers_ = {}
-local watcherIdSeq_ = 0
-
---- 全局超时提示回调：当 WaitForChange 超时且调用者未提供 onTimeout 时触发
---- 用于统一向玩家展示"操作超时"提示（如 Toast、Loading 消失等）
---- @type fun(key: string, elapsed: number)|nil
-local onWaitTimeout_ = nil
+local function unbindSchemaFields()
+    for fieldKey, callback in pairs(binding.callbacks) do
+        ClientDispatcher.unsubscribe(fieldKey, callback)
+    end
+end
 
 -- ============================================================================
 -- 初始化 / 清理
@@ -89,80 +118,31 @@ local onWaitTimeout_ = nil
 --- 初始化 PlayerStore（Client.lua Start 时调用一次）
 --- 从 CharacterSchema.Fields 动态注册所有字段的 ClientDispatcher 订阅
 function PlayerStore.Init()
-    if inited_ then
+    if binding.inited then
         print("[PlayerStore] already initialized, skip")
         return
     end
 
-    -- 遍历 CharacterSchema.Fields，为每个字段订阅 ClientDispatcher
-    -- fieldKey 与 ClientDispatcher 的 moduleName 一致
-    -- （CharacterSchema 约定 fieldKey = ModuleRegistry.modules[i].name）
-    local count = 0
-    for fieldKey, _def in pairs(CharacterSchema.Fields) do
-        registeredKeys_[fieldKey] = true
-
-        -- 创建闭包回调
-        local callback = function(data, _moduleName)
-            cache_[fieldKey] = data
-            markRevision(fieldKey)
-
-            -- 通知该字段的订阅者
-            local subs = subscribers_[fieldKey]
-            if subs then
-                for i = 1, #subs do
-                    local ok, err = pcall(subs[i], data, fieldKey)
-                    if not ok then
-                        print("[PlayerStore] subscriber error field=" .. fieldKey
-                            .. ": " .. tostring(err))
-                    end
-                end
-            end
-
-            -- 全局变更回调
-            if onAnyChange_ then
-                onAnyChange_(fieldKey, data)
-            end
-        end
-
-        dispatcherCallbacks_[fieldKey] = callback
-        ClientDispatcher.subscribe(fieldKey, callback)
-        count = count + 1
-    end
-
-    -- 同步 ClientDispatcher 中已有的数据到缓存
-    -- （可能在 Init 之前就收到了部分数据）
-    for fieldKey in pairs(registeredKeys_) do
-        local existing = ClientDispatcher.get(fieldKey)
-        if existing then
-            cache_[fieldKey] = existing
-            markRevision(fieldKey)
-        end
-    end
-
-    inited_ = true
+    local count = bindSchemaFields()
+    syncExistingMirror()
+    binding.inited = true
     print("[PlayerStore] Init complete, " .. count .. " fields registered")
 end
 
 --- 清理 PlayerStore（断线/重置时调用）
 function PlayerStore.Cleanup()
     clearRevisions()
-    -- 取消 ClientDispatcher 订阅
-    for fieldKey, callback in pairs(dispatcherCallbacks_) do
-        ClientDispatcher.unsubscribe(fieldKey, callback)
-    end
+    unbindSchemaFields()
 
-    cache_ = {}
-    subscribers_ = {}
-    registeredKeys_ = {}
-    dispatcherCallbacks_ = {}
-    onAnyChange_ = nil
-    inited_ = false
+    mirror.data = {}
+    subscriptions.fields = {}
+    binding.registeredKeys = {}
+    binding.callbacks = {}
+    subscriptions.onAnyChange = nil
+    binding.inited = false
+    resetWaiters()
 
-    -- 清理 WaitForChange watchers
-    -- 等待器由主循环显式驱动，清理时只移除条目，不修改宿主的事件订阅。
-    activeWatchers_ = {}
-    watcherIdSeq_ = 0
-
+    -- 全局超时 hook 与 revision 序列仍保留；不修改宿主事件订阅。
     print("[PlayerStore] Cleanup complete")
 end
 
@@ -170,10 +150,13 @@ end
 --- 用于同一客户端会话内切区/返回选服，等待新区全量数据重新填充。
 function PlayerStore.ClearCache()
     clearRevisions()
-    cache_ = {}
-    activeWatchers_ = {}
-    watcherIdSeq_ = 0
+    mirror.data = {}
+    resetWaiters()
     print("[PlayerStore] cache cleared")
+end
+
+function PlayerStore.GetRevision(fieldKey)
+    return mirror.revisions[fieldKey] or 0
 end
 
 -- ============================================================================
@@ -185,7 +168,7 @@ end
 ---@param fieldKey string  CharacterSchema 中的字段名（= 模块名）
 ---@return table|nil
 function PlayerStore.Get(fieldKey)
-    return cache_[fieldKey]
+    return mirror.data[fieldKey]
 end
 
 --- 获取模块数据中的指定子字段
@@ -194,7 +177,7 @@ end
 ---@param subKey string
 ---@return any
 function PlayerStore.GetField(fieldKey, subKey)
-    local mod = cache_[fieldKey]
+    local mod = mirror.data[fieldKey]
     if mod then return mod[subKey] end
     return nil
 end
@@ -202,14 +185,14 @@ end
 --- 检查是否有数据（至少有一个模块已加载）
 ---@return boolean
 function PlayerStore.IsReady()
-    return inited_ and next(cache_) ~= nil
+    return binding.inited and next(mirror.data) ~= nil
 end
 
 --- 检查指定模块是否已加载
 ---@param fieldKey string
 ---@return boolean
 function PlayerStore.Has(fieldKey)
-    return cache_[fieldKey] ~= nil
+    return mirror.data[fieldKey] ~= nil
 end
 
 -- ============================================================================
@@ -220,17 +203,17 @@ end
 ---@param fieldKey string
 ---@param callback function(data: table, fieldKey: string)
 function PlayerStore.Subscribe(fieldKey, callback)
-    if not subscribers_[fieldKey] then
-        subscribers_[fieldKey] = {}
+    if not subscriptions.fields[fieldKey] then
+        subscriptions.fields[fieldKey] = {}
     end
-    table.insert(subscribers_[fieldKey], callback)
+    table.insert(subscriptions.fields[fieldKey], callback)
 end
 
 --- 取消订阅
 ---@param fieldKey string
 ---@param callback function
 function PlayerStore.Unsubscribe(fieldKey, callback)
-    local subs = subscribers_[fieldKey]
+    local subs = subscriptions.fields[fieldKey]
     if not subs then return end
     for i = #subs, 1, -1 do
         if subs[i] == callback then
@@ -243,7 +226,7 @@ end
 --- 设置全局变更回调（任何已注册模块变化时触发）
 ---@param callback function(fieldKey: string, data: table)|nil
 function PlayerStore.SetOnAnyChange(callback)
-    onAnyChange_ = callback
+    subscriptions.onAnyChange = callback
 end
 
 -- ============================================================================
@@ -253,62 +236,83 @@ end
 --   T0  服务端 SetStat → SendToClient(RESULT)
 --   T1  客户端收到 RESULT → 读 PlayerStore → 旧值（数据还没到）
 --   T2  数据到达 → PlayerStore 更新 → 没人再读了
--- WaitForChange 在 T0 快照旧引用，per-frame 检测 cache_ 引用变化，
+-- WaitForChange 在 T0 快照旧引用，per-frame 检测 mirror.data 引用变化，
 -- 变化即回调，超时兜底。
+
+-- 选项属于调用者，compare/timeout/回调每次使用时现读，不缓存配置值。
+local function watcherChanged(w, curRef)
+    if w.opts.compare then
+        -- compare 与原实现一样不隔离异常，elapsed 已在调用前推进。
+        return w.opts.compare(w.oldSnapshot, curRef)
+    end
+    return curRef ~= w.oldSnapshot
+end
+
+local function notifyWatcherChange(w, curRef)
+    if w.opts.onChange then
+        local ok, err = pcall(w.opts.onChange, curRef, w.oldSnapshot)
+        if not ok then
+            print("[PlayerStore] WaitForChange onChange error key="
+                .. w.key .. ": " .. tostring(err))
+        end
+    end
+end
+
+local function notifyWatcherTimeout(w)
+    if w.opts.onTimeout then
+        local ok, err = pcall(w.opts.onTimeout)
+        if not ok then
+            print("[PlayerStore] WaitForChange onTimeout error key="
+                .. w.key .. ": " .. tostring(err))
+        end
+    else
+        print("[PlayerStore][WARN] WaitForChange TIMEOUT key="
+            .. w.key .. " elapsed=" .. string.format("%.1f", w.elapsed) .. "s")
+        if waiters.onTimeout then
+            pcall(waiters.onTimeout, w.key, w.elapsed)
+        end
+        -- 超时 hook 可以清理镜像或修改 opts，兜底必须在 hook 后现读。
+        if w.opts.onChange then
+            local val = mirror.data[w.key]
+            pcall(w.opts.onChange, val, w.oldSnapshot)
+        end
+    end
+end
+
+local function advanceWaiters(dt)
+    if #waiters.active == 0 then return end
+
+    -- 固定倒序上界，但每轮读取当前容器；不替回调的取消/重入行为补保护。
+    for i = #waiters.active, 1, -1 do
+        local w = waiters.active[i]
+        w.elapsed = w.elapsed + dt
+        local curRef = mirror.data[w.key]
+        local changed = watcherChanged(w, curRef)
+
+        if changed then
+            table.remove(waiters.active, i)
+            notifyWatcherChange(w, curRef)
+        elseif w.elapsed >= w.opts.timeout then
+            table.remove(waiters.active, i)
+            notifyWatcherTimeout(w)
+        end
+    end
+end
+
+local function cancelWatcher(id)
+    for i = #waiters.active, 1, -1 do
+        if waiters.active[i].id == id then
+            table.remove(waiters.active, i)
+            break
+        end
+    end
+end
 
 --- 主 Update 每帧调用；全局 SubscribeToEvent 对同事件是替换，不可由等待器另行订阅。
 --- 超时使用原始帧时间，不受战斗暂停或变速影响。
 ---@param dt number
 function PlayerStore.Update(dt)
-    if #activeWatchers_ == 0 then return end
-
-    for i = #activeWatchers_, 1, -1 do
-        local w = activeWatchers_[i]
-        w.elapsed = w.elapsed + dt
-
-        -- 检测变化：cjson.decode 每次产生新 table，引用不同即数据已更新
-        local curRef = cache_[w.key]
-        local changed = false
-
-        if w.opts.compare then
-            -- 自定义比较（传入 decode 后的新旧值）
-            changed = w.opts.compare(w.oldSnapshot, curRef)
-        else
-            -- 默认：引用比较（table 换了引用 = 数据变了）
-            changed = (curRef ~= w.oldSnapshot)
-        end
-
-        if changed then
-            table.remove(activeWatchers_, i)
-            if w.opts.onChange then
-                local ok, err = pcall(w.opts.onChange, curRef, w.oldSnapshot)
-                if not ok then
-                    print("[PlayerStore] WaitForChange onChange error key="
-                        .. w.key .. ": " .. tostring(err))
-                end
-            end
-        elseif w.elapsed >= w.opts.timeout then
-            table.remove(activeWatchers_, i)
-            if w.opts.onTimeout then
-                local ok, err = pcall(w.opts.onTimeout)
-                if not ok then
-                    print("[PlayerStore] WaitForChange onTimeout error key="
-                        .. w.key .. ": " .. tostring(err))
-                end
-            else
-                -- 无 onTimeout 时：触发全局超时提示 + 用当前值兜底 onChange
-                print("[PlayerStore][WARN] WaitForChange TIMEOUT key="
-                    .. w.key .. " elapsed=" .. string.format("%.1f", w.elapsed) .. "s")
-                if onWaitTimeout_ then
-                    pcall(onWaitTimeout_, w.key, w.elapsed)
-                end
-                if w.opts.onChange then
-                    local val = cache_[w.key]
-                    pcall(w.opts.onChange, val, w.oldSnapshot)
-                end
-            end
-        end
-    end
+    advanceWaiters(dt)
 end
 
 --- 等待 PlayerStore 某个字段变化
@@ -325,30 +329,25 @@ function PlayerStore.WaitForChange(key, opts)
     opts = opts or {}
     opts.timeout = opts.timeout or 5.0
 
-    watcherIdSeq_ = watcherIdSeq_ + 1
-    local id = watcherIdSeq_
+    waiters.idSeq = waiters.idSeq + 1
+    local id = waiters.idSeq
 
     local watcher = {
         id          = id,
         key         = key,
-        oldSnapshot = cache_[key],   -- 快照当前引用
+        oldSnapshot = mirror.data[key],   -- 快照当前引用
         opts        = opts,
         elapsed     = 0,
     }
 
-    table.insert(activeWatchers_, watcher)
+    table.insert(waiters.active, watcher)
 
     -- 只登记等待项；Standalone.HandleUpdate 统一调用 Update，不抢占游戏事件回调。
 
     -- 返回取消函数（页面销毁时调用，防止回调泄漏）
     -- 仅移除自己的等待项，不改变主循环订阅。
     return function()
-        for i = #activeWatchers_, 1, -1 do
-            if activeWatchers_[i].id == id then
-                table.remove(activeWatchers_, i)
-                break
-            end
-        end
+        cancelWatcher(id)
     end
 end
 
@@ -361,7 +360,7 @@ end
 --- 适合用于向玩家展示轻提示（Toast / 飘字）告知"操作超时，请检查网络"。
 ---@param fn fun(key: string, elapsed: number)
 function PlayerStore.SetWaitTimeoutHook(fn)
-    onWaitTimeout_ = fn
+    waiters.onTimeout = fn
 end
 
 -- ============================================================================
@@ -372,7 +371,7 @@ end
 ---@return string[]
 function PlayerStore.GetRegisteredKeys()
     local keys = {}
-    for k in pairs(registeredKeys_) do
+    for k in pairs(binding.registeredKeys) do
         keys[#keys + 1] = k
     end
     table.sort(keys)
@@ -382,9 +381,9 @@ end
 --- 打印当前缓存状态（调试用）
 function PlayerStore.DumpState()
     print("[PlayerStore] === State Dump ===")
-    print("[PlayerStore] inited=" .. tostring(inited_))
+    print("[PlayerStore] inited=" .. tostring(binding.inited))
     local count = 0
-    for fieldKey, data in pairs(cache_) do
+    for fieldKey, data in pairs(mirror.data) do
         local size = 0
         if type(data) == "table" then
             local ok, json = pcall(cjson.encode, data)

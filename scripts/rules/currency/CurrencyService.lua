@@ -43,12 +43,17 @@ CurrencyService.ACTIVATION_KEYS = {
     privilegeCardOwned = true,
 }
 
---- 发放单个奖励到 currency 模块
----@param uid number
----@param reward table { type=string, amount=number, heroId=number|nil }
----@return boolean success
-function CurrencyService.GrantReward(uid, reward)
-    -- 兼容旧 GM 邮件：type="101" 等碎片编号
+-- 访问与发布只转发当前 PDM 方法；不缓存模块或方法，也不复制业务持有的表。
+local function getCurrency(uid)
+    return PDM.GetModule(uid, "currency")
+end
+
+local function publishCurrency(uid)
+    PDM.MarkDirty(uid, "currency")
+end
+
+-- 规范化仅兼容旧碎片编号，不把普通货币奖励改成扣款的整数规则。
+local function normalizeReward(reward)
     if reward.type ~= "shard" then
         local legacyHeroId = ResourceDefs.SHARD_ID_TO_HERO[tostring(reward.type)]
         if legacyHeroId then
@@ -56,33 +61,39 @@ function CurrencyService.GrantReward(uid, reward)
         end
     end
 
-    if reward.type == "shard" then
-        local heroId = tonumber(reward.heroId)
-        local amount = tonumber(reward.amount)
-        if not heroId or not amount or amount <= 0 then
-            print("[CurrencyService] invalid shard reward: heroId=" .. tostring(reward.heroId)
-                .. " amount=" .. tostring(reward.amount))
-            return false
-        end
-        local heroes = PDM.GetModule(uid, "heroes")
-        if not heroes then return false end
-        if not heroes.roster then heroes.roster = {} end
-        if not heroes.roster[heroId] then
-            heroes.roster[heroId] = { shards = 0, _shardMigrated = true }
-        end
-        heroes.roster[heroId].shards = (heroes.roster[heroId].shards or 0) + amount
-        PDM.MarkDirty(uid, "heroes")
-        print("[CurrencyService] GrantReward shard uid=" .. tostring(uid)
-            .. " heroId=" .. heroId .. " +" .. amount)
-        return true
-    end
+    return reward
+end
 
+-- 碎片独立写 heroes：先校验，再原位修改，通知完成后才输出成功日志。
+local function grantShard(uid, reward)
+    local heroId = tonumber(reward.heroId)
+    local amount = tonumber(reward.amount)
+    if not heroId or not amount or amount <= 0 then
+        print("[CurrencyService] invalid shard reward: heroId=" .. tostring(reward.heroId)
+            .. " amount=" .. tostring(reward.amount))
+        return false
+    end
+    local heroes = PDM.GetModule(uid, "heroes")
+    if not heroes then return false end
+    if not heroes.roster then heroes.roster = {} end
+    if not heroes.roster[heroId] then
+        heroes.roster[heroId] = { shards = 0, _shardMigrated = true }
+    end
+    heroes.roster[heroId].shards = (heroes.roster[heroId].shards or 0) + amount
+    PDM.MarkDirty(uid, "heroes")
+    print("[CurrencyService] GrantReward shard uid=" .. tostring(uid)
+        .. " heroId=" .. heroId .. " +" .. amount)
+    return true
+end
+
+-- 货币奖励按当前公开映射及激活表分流，查询顺序保持在访问 PDM 前后原位置。
+local function grantCurrency(uid, reward)
     local currencyKey = CurrencyService.REWARD_TO_CURRENCY[reward.type]
     if not currencyKey then
         print("[CurrencyService] unknown reward type: " .. tostring(reward.type))
         return false
     end
-    local currency = PDM.GetModule(uid, "currency")
+    local currency = getCurrency(uid)
     if not currency then return false end
     if CurrencyService.ACTIVATION_KEYS[currencyKey] then
         -- 激活型：直接设为 amount（1=激活）
@@ -91,8 +102,29 @@ function CurrencyService.GrantReward(uid, reward)
         -- 累加型：常规 += amount
         currency[currencyKey] = (currency[currencyKey] or 0) + reward.amount
     end
-    PDM.MarkDirty(uid, "currency")
+    publishCurrency(uid)
     return true
+end
+
+-- 扣款判断不写表。非正数返回原余额，正数才规范化余额；二者不能合并。
+local function prepareDeduction(currency, currencyField, amount)
+    amount = math.floor(tonumber(amount) or 0)
+    if amount <= 0 then return false, currency[currencyField] or 0 end
+    local balance = math.max(0, math.floor(tonumber(currency[currencyField]) or 0))
+    if balance < amount then return false, balance end
+    return true, balance, amount
+end
+
+--- 发放单个奖励到 currency 模块
+---@param uid number
+---@param reward table { type=string, amount=number, heroId=number|nil }
+---@return boolean success
+function CurrencyService.GrantReward(uid, reward)
+    reward = normalizeReward(reward)
+    if reward.type == "shard" then
+        return grantShard(uid, reward)
+    end
+    return grantCurrency(uid, reward)
 end
 
 --- 批量发放奖励
@@ -116,7 +148,7 @@ end
 ---@return boolean enough
 ---@return number balance 当前余额
 function CurrencyService.CheckBalance(uid, currencyField, amount)
-    local currency = PDM.GetModule(uid, "currency")
+    local currency = getCurrency(uid)
     if not currency then return false, 0 end
     local balance = currency[currencyField] or 0
     return balance >= amount, balance
@@ -129,14 +161,13 @@ end
 ---@return boolean success
 ---@return number newBalance
 function CurrencyService.Deduct(uid, currencyField, amount)
-    local currency = PDM.GetModule(uid, "currency")
+    local currency = getCurrency(uid)
     if not currency then return false, 0 end
-    amount = math.floor(tonumber(amount) or 0)
-    if amount <= 0 then return false, currency[currencyField] or 0 end
-    local balance = math.max(0, math.floor(tonumber(currency[currencyField]) or 0))
-    if balance < amount then return false, balance end
+    local allowed, balance, amount = prepareDeduction(currency, currencyField, amount)
+    if not allowed then return false, balance end
     currency[currencyField] = balance - amount
-    PDM.MarkDirty(uid, "currency")
+    publishCurrency(uid)
+    -- 发布可同步重入；返回通知后的同一张表，不能返回预计算余额或重新取模块。
     return true, currency[currencyField]
 end
 
@@ -146,10 +177,10 @@ end
 ---@param amount number
 ---@return number newBalance
 function CurrencyService.Add(uid, currencyField, amount)
-    local currency = PDM.GetModule(uid, "currency")
+    local currency = getCurrency(uid)
     if not currency then return 0 end
     currency[currencyField] = (currency[currencyField] or 0) + amount
-    PDM.MarkDirty(uid, "currency")
+    publishCurrency(uid)
     return currency[currencyField]
 end
 

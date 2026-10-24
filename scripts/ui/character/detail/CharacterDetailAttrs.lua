@@ -16,6 +16,7 @@ local EquipmentSetRuntime = require("systems.EquipmentSetRuntime")
 local UnitAttributes = require("systems.UnitAttributes")
 local AttributeView = require("ui.character.detail.CharacterAttributeView")
 local CF = require("systems.CombatFormula")
+local Snapshot = require("ui.character.detail.CharacterDetailSnapshot")
 
 local M = {}
 
@@ -359,7 +360,11 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         artifacts = ClientDispatcher.get("artifacts") or PlayerStore.Get("artifacts"),
         talents = ClientDispatcher.get("talents") or PlayerStore.Get("talents"),
     }
-    local runtimeOptions = deepCopy({ heroes = source.heroes or {}, equipment = source.equipment or {},
+    -- 属性链只读取已穿装备（包含本队套装/星门来源），不读取未穿库存。
+    -- 先点查裁剪再统一深拷：保留完整槽映射/数字键/共享引用，且每调用仍有独立容器。
+    -- referencesOnly 仅用于此处组装，随后 deepCopy；绝不把 live item 交给 hydrate。
+    local runtimeOptions = deepCopy({ heroes = source.heroes or {},
+        equipment = Snapshot.compactEquipment(source.equipment, nil, nil, true),
         artifacts = source.artifacts or {}, talents = source.talents or {} })
     local heroesData, eqData = runtimeOptions.heroes, runtimeOptions.equipment
     local hero = buildHeroAttrsForDetail(heroId, level, heroesData, eqData, runtimeOptions)

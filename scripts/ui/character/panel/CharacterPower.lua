@@ -84,12 +84,10 @@ function M.bind(deps)
         return nil, nil
     end
 
-    -- 正式战力与预估共用真实属性管线；槽位提示必须匹配英雄所属队。
+    -- 角色估值属性不含神器；神器详情分数仅在队伍分项中相加。
     ---@return table|nil hero 含 attrs/classId/awakening 的单位；失败返回 nil
     local function buildHeroAttrs(heroId, partySlot, teamIdx)
         heroId = tonumber(heroId) or heroId
-        local deployedSlot, deployedTeam = findHeroDeployPosition(heroId, teamIdx)
-        local matchesSlot = partySlot == nil or tonumber(partySlot) == deployedSlot
         local level = getHeroLevel(heroId)
         local ownedSet = get("ownedSet")
         local ownData = ownedSet[heroId]
@@ -99,10 +97,7 @@ function M.bind(deps)
         if not hero or not hero.attrs then return nil end
         local a = hero.attrs
 
-        applyEquippedItems(a, heroId, deployedSlot)
-        if deployedSlot and matchesSlot then
-            ArtifactBridge.applyToUnit(a, deployedSlot, nil, deployedTeam)
-        end
+        applyEquippedItems(a, heroId, partySlot)
 
         hero.awakening = awakening
         return hero
@@ -133,19 +128,14 @@ function M.bind(deps)
         return math.floor(context.currentPower + 0.5)
     end
 
-    -- 实战预估（分项计价原型）：与 calcHeroPower 走同一条真实存档管线
-    -- （装备/遗物/神器/觉醒），但按英雄伤害大类区别计价物攻/魔攻/治疗属性。
-    -- ⚠️ 原型口径，仅供并列参考展示，不替换官方战力，不含觉醒战力加成的
-    -- 分项拆分（觉醒/神器固定加成按官方原值并入，见下）。
+    -- 实战预估（分项计价原型）：装备/觉醒与角色自身成长计入，完全排除神器。
+    -- 仍按英雄伤害大类区别计价物攻/魔攻/治疗属性，仅供并列参考展示。
     local function calcHeroEstimate(heroId, partySlot, teamIdx)
         local hero = buildHeroAttrs(heroId, partySlot, teamIdx)
         if not hero then return 0 end
         local a = hero.attrs
         local base, _category = CPE.estimate(a, a.atkType)
-        -- 觉醒战力与神器加成沿用官方口径（原型不拆分其属性来源），保持与
-        -- calcHeroPower 的可比性：两者都叠加同一份觉醒/神器固定值。
         local extra = AwakeningConfig.calcTotalCombatPower(heroId, hero.awakening)
-            + (a.artifactPowerBonus or 0)
         return math.floor(base + extra + 0.5)
     end
 
@@ -237,8 +227,16 @@ function M.bind(deps)
                     or (b.dispatcherSource and b.dispatcherSource ~= b.source)
                     or type(a.revision) ~= "number" or type(b.revision) ~= "number"
                     or a.revision <= 0 or b.revision <= a.revision then return false end
-            elseif (key ~= "heroes" or equipmentNotification)
-                and (a.source ~= b.source or a.revision ~= b.revision) then return false end
+            elseif key == "heroes" and equipmentNotification then
+                -- Panel 的 heroes 订阅先于 Store：成长已评分后，同值回执才递增 revision。
+                -- 不以 revision 单独变化否决穿戴差分；源身份/镜像仍必须一致，且下方
+                -- 完整核对 owned/sources 战斗字段、编队、名册及已发布缓存的冻结深值。
+                if a.source ~= b.source or a.storeSource ~= a.source or b.storeSource ~= b.source
+                    or (a.dispatcherSource and a.dispatcherSource ~= a.source)
+                    or (b.dispatcherSource and b.dispatcherSource ~= b.source)
+                    or type(a.revision) ~= "number" or type(b.revision) ~= "number"
+                    or not (b.revision >= a.revision) or b.revision == math.huge then return false end
+            elseif key ~= "heroes" and (a.source ~= b.source or a.revision ~= b.revision) then return false end
             if equipmentNotification and (type(a.source) ~= "table"
                 or type(a.revision) ~= "number" or a.revision <= 0) then return false end
         end
@@ -379,33 +377,35 @@ function M.bind(deps)
         local teams = get("teams") or {}
         local ownedSet = get("ownedSet") or {}
         local teamPowerCaches = get("teamPowerCaches")
-        local runtimeOnlyPowerCaches = {}
-        -- 运行时节点已按各角色生效条件计入共享战力，不再按队伍人头重复加。
-        local runtimePerHero = 0
+        local runtimeOnlyPowerCaches, artifactPowerCaches = {}, {}
+        local artifacts = current.resources.artifacts.source
+        -- 运行时节点已按各角色生效条件计入共享战力，旧 runtime 分项保持 0。
+        -- 神器详情战力是独立队伍分项；每次刷新重读装配，不跨通知复用。
         for t = 1, TEAM_COUNT do
             local team = teams[t] or teams[tostring(t)]
             local slots = team and team.slots or {}
             local cache = teamPowerCaches[t]
-            local deployedCount = 0
             for i = 1, MAX_SLOTS do
                 local slot = slots[i]
                 local heroId = slot and tonumber(slot.heroId)
                 if slot and slot.state == "occupied" and heroId and ownedSet[heroId] then
                     if cache and (not affected or affected[heroId]) then cache[i] = powerForRefresh(heroId, i, t) end
-                    deployedCount = deployedCount + 1
                 elseif cache then
                     cache[i] = 0
                 end
             end
-            runtimeOnlyPowerCaches[t] = runtimePerHero * deployedCount
+            runtimeOnlyPowerCaches[t] = 0
+            artifactPowerCaches[t] = ArtifactBridge.getTeamPower(artifacts, slots, ownedSet, t)
         end
+        -- 独立分项先就绪，再由 runtime setter 完成名册索引重映射并发布。
+        set("artifactPowerCaches", artifactPowerCaches)
         set("runtimeOnlyPowerCaches", runtimeOnlyPowerCaches)
         set("runtimeOnlyPowerCache", runtimeOnlyPowerCaches[1] or 0)
 
         -- 全队缓存完成后一次发布快照；队2/3独立成长也会通知，不借活动队推测来源。
         local teamPowers = {}
         for t = 1, TEAM_COUNT do
-            local teamTotal = runtimeOnlyPowerCaches[t] or 0
+            local teamTotal = artifactPowerCaches[t] or 0
             local cache = teamPowerCaches[t] or {}
             for i = 1, MAX_SLOTS do teamTotal = teamTotal + (cache[i] or 0) end
             teamPowers[t] = teamTotal

@@ -114,7 +114,7 @@ function Start()
             getOwnedHero = function() return own end, getEffectiveLevel = function() return own.level end,
         })
         module("core.GameState", { getGold = function() return gold end })
-        module("systems.EquipmentPower", { getContext = function() return nil end })
+        module("ui.church.ClassChangePower", { get = function() return nil end, clear = noop })
         module("systems.ButtonFeedback", { begin = noop, finish = noop, trigger = noop })
         module("core.DarkIcon", { drawNine = function(_, _, x, y, w, h, opts)
             buttons[#buttons + 1] = { rect = recordRect(x, y, w, h), opts = opts, clip = state.clip }

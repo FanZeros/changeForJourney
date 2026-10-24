@@ -869,13 +869,15 @@ function Start()
                         "回灌仅保留本地严格true，不撤销确认事实 " .. sample.name .. "/" .. tostring(localValue))
                     -- 执行当前生产publishLive与CaptureBattleProgress，只借用内存存储。
                     -- live镜像不走onLoad；真正重登链路由持久化专项另行覆盖。
-                    local dispatchModules = upvalue(dispatcher.handleStateUpdate, "dispatchModules")
-                    setUpvalue(dispatchModules, "moduleData", modules)
+                    dispatcher.reset()
+                    restores[#restores + 1] = function() dispatcher.reset() end
+                    dispatcher.publishLive("battle", modules.battle)
                     local notifications, anyUpdates = 0, 0
-                    setUpvalue(dispatcher.notifySubscribers, "subscribers", {
-                        battle = { function() notifications = notifications + 1 end },
-                    })
-                    setUpvalue(dispatcher.publishLive, "onAnyUpdate", function(patch, options)
+                    dispatcher.subscribe("battle", function(data)
+                        modules.battle = data
+                        notifications = notifications + 1
+                    end)
+                    dispatcher.setOnAnyUpdate(function(patch, options)
                         anyUpdates = anyUpdates + 1
                         eq(patch.battle, modules.battle, "实时同步全局UI仍收到真实battle")
                         eq(options.live, true, "实时镜像标记不伪装读档")

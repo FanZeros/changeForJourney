@@ -469,7 +469,7 @@ function Start()
             ["ui.fx.SpineCardEffect"] = { destroy = noop }, ["ui.fx.SpineResultEffect"] = { destroy = noop },
             ["ui.fx.DarkEffectSprites"] = { destroy = noop },
             -- Stop新接入的外围呈现/故事清理，只记录可调用性，不启动实际故事或塔场景。
-            ["systems.StoryPlayer"] = { resetAll = noop }, ["ui.tavern.RecruitAnim"] = { destroy = noop },
+            ["systems.StoryPlayer"] = { resetAll = noop }, ["ui.tavern.RecruitAnim"] = { destroy = noop }, ["ui.church.ArtifactDrawAnim"] = { destroy = noop },
             ["ui.tower.TowerBuffSidebar"] = { destroy = noop },
             ["ui.battle.scene.BattlePauseOverlay"] = { destroy = noop },
             ["ui.loot.InventoryCurationDialog"] = { reset = noop },

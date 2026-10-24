@@ -179,7 +179,6 @@ local function DrawPreloadOverlay(vg, W, H)
         216, 201, 163, 2)
 end
 
-
 -- Design resolution (Mode A — 1080x2400 竖屏)
 local DESIGN_W = GameConfig.Design.WIDTH
 local DESIGN_H = GameConfig.Design.HEIGHT
@@ -575,9 +574,18 @@ function Standalone.Start()
 
     -- 5.1~5.3 接线延后到 bootWiring
 
-    -- 6. Events
+    -- 6. Events；显式注册已持有表，不依赖package.loaded或为诊断额外加载业务。
+    require("boot.PerformanceHooks").installStandalone({
+        BattleTriPage = BattleTriPage, BattleScene = BattleScene, BattleEffects = BattleEffects, ProjectileSystem = ProjectileSystem,
+        CharacterPanel = CharacterPanel, CharacterDetail = CharacterDetail, HeroRosterPanel = HeroRosterPanel, BackpackPanel = BackpackPanel, LootBoxPage = LootBoxPage,
+        ChurchPage = ChurchPage, TalentPage = TalentPage, TavernPage = TavernPage, MarketPage = MarketPage,
+        DungeonBattleScene = DungeonBattleScene, TowerBattleScene = TowerBattleScene, DungeonPage = DungeonPage, BlacksmithPage = BlacksmithPage,
+        SweepDialog = SweepDialog, StageSelectDialog = StageSelectDialog, DamageStatsPanel = DamageStatsPanel, TownScene = TownScene,
+        TopBar = TopBar, PlayerInfoPanel = PlayerInfoPanel, OfflineRewardPanel = OfflineRewardPanel, ScenarioDialogue = ScenarioDialogue,
+        IntroCutscene = IntroCutscene, LetterIntro = LetterIntro, DarkTitleScreen = DarkTitleScreen, TutorialManager = TutorialManager,
+        EquipmentSystem = EquipmentSystem, LocalActionBridge = LocalActionBridge, ClientDispatcher = ClientDispatcher, StandaloneSave = StandaloneSave,
+    })
     require("boot.PerformanceRuntime").installHandlers()
-    require("boot.PerformanceHooks").install()
     SubscribeToEvent("InputFocus", "HandlePerformanceFocus")
     SubscribeToEvent(vg, "NanoVGRender", "HandleNanoVGRender")
     SubscribeToEvent("Update", "HandleUpdate")
@@ -1413,6 +1421,8 @@ function HandleUpdate(eventType, eventData)
         end
     end
     CharacterPanel.updateBadges()
+    -- 右栏详情在三队页也可打开，准备任务不能受 tab1 的惯性更新门禁限制。
+    if CharacterDetail.update then CharacterDetail.update(dt) end
     if tabIndex == 1 then
         CharacterPanel.update(dt)
     elseif tabIndex == 5 or (tabIndex == 3 and DungeonPage.isTowerChallengePending()) then
@@ -1488,9 +1498,5 @@ function HandleMouseWheel(eventType, eventData)
     return HandleMouseWheelHorizon(eventType, eventData)
 end
 
-
-
-
 require("boot.StandaloneHorizon")
-
 return Standalone

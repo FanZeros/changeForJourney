@@ -148,11 +148,25 @@ local function newFixture(realUI, realSurface)
     f.mods["core.DarkIcon"]={drawNine=function() end}
     env.require=function(name)
         if f.mods[name] then return f.mods[name] end
-        assert(name=="ui.dev.PerformancePanel" or name=="ui.hud.popup.SettingsPanel","unexpected module "..name)
+        assert(name=="ui.dev.PerformancePanel" or name=="ui.hud.popup.SettingsPanel"
+            or name=="ui.dev.KeyboardShortcuts" or name=="boot.PerformanceRuntime", "unexpected module "..name)
         local value=assert(load(source(name),"@isolated:"..name,"t",env))()
         f.mods[name]=value; return value
     end
-    f.env=env; f.panel=env.require("ui.dev.PerformancePanel")
+    f.keys = {}
+    f.ctrl = false
+    f.env = env
+    env.input = { GetKeyPress = function(_, key) return f.keys[key] == true end,
+        GetQualifierDown = function() return f.ctrl end }
+    f.mods["core.UiToast"] = { show = function() end }
+    f.mods["ui.story.gate.DarkTitleScreenGate"] = { isOpen = function() return f.title == true end }
+    f.mods["ui.dev.GMConsolePanel"] = { isOpen = function() return f.typing == true end }
+    f.mods["ui.character.hero.AwakeningArtwork"] = { isOpen = function() return false end }
+    f.mods["boot.StandaloneRT"] = { entryRendered = true }
+    f.mods["boot.PerformanceHooks"] = { getModule = function() return nil end }
+    f.monitor.beginFrame = function() end
+    f.monitor.fail = function(stage) error("unexpected diagnostic failure: " .. stage) end
+    f.panel=env.require("ui.dev.PerformancePanel")
     function f:draw(width,height,vg)
         self.width,self.height=width or self.width or 1080,height or self.height or 2400
         self.rendering=true; self.panel.draw(vg or {},self.width,self.height); self.rendering=false
@@ -240,14 +254,37 @@ local function runTests()
     -- Settings不调用init，避免原有loadSettings触档；只加载隔离模块，模拟实际draw入口。
     local settings=f.env.require("ui.hud.popup.SettingsPanel")
     settings.open();f.env.time.elapsedTime=101;settings.draw({})
-    local code,perf=f.buttonDraws.set_code,f.buttonDraws.set_performance
-    check(code.x==340 and perf.x==740 and code.w==350 and perf.w==350 and perf.h==100,"standalone entry shared geometry")
-    settings.handleInput(perf.x,perf.y);check(p.isOpen() and f.codeOpens==0,"standalone performance no redeem")
-    p.close();settings.handleInput(code.x,code.y);check(f.codeOpens==1,"standalone redeem no performance")
-    settings.drawEmbedded({},40);code,perf=f.buttonDraws.set_code,f.buttonDraws.set_performance
-    check(perf.y==code.y and perf.x==740,"embedded row geometry")
-    settings.handleEmbeddedInput(perf.x,perf.y,40);check(p.isOpen() and f.codeOpens==1,"embedded performance no redeem")
-    p.close();settings.handleEmbeddedInput(code.x,code.y,40);check(f.codeOpens==2,"embedded redeem no performance")
+    local code=f.buttonDraws.set_code
+    check(code.x==540 and code.w==750 and code.h==100 and not f.buttonDraws.set_performance,
+        "独立设置仅保留居中兑换码，不再放诊断入口")
+    settings.handleInput(code.x,code.y);check(f.codeOpens==1 and not p.isOpen(),"兑换码不打开性能诊断")
+    settings.drawEmbedded({},40);code=f.buttonDraws.set_code
+    check(code.x==540 and not f.buttonDraws.set_performance,"角色栏嵌入设置不再放诊断入口")
+    settings.handleEmbeddedInput(code.x,code.y,40);check(f.codeOpens==2 and not p.isOpen(),"嵌入兑换码仍正常")
+
+    local keyboard=f.env.require("ui.dev.KeyboardShortcuts")
+    local runtime=f.env.require("boot.PerformanceRuntime")
+    local rt=f.mods["boot.StandaloneRT"]
+    local starts,stops=m.starts,m.stops
+    f.keys={[KEY_F8]=true};runtime.updateBefore(.01);keyboard.update()
+    check(p.isOpen() and m.starts==starts and m.stops==stops,"F8独立打开，不双切换、不开始或停止采集")
+    f.keys={};runtime.updateBefore(.01)
+    check(p.isOpen(),"长按没有新Press时不反复切换")
+    f.keys={[KEY_F8]=true};runtime.updateBefore(.01);keyboard.update()
+    check(not p.isOpen() and m.stops==stops,"再次F8关闭且保留采集状态")
+    f.typing=true;runtime.updateBefore(.01);check(not p.isOpen(),"输入期间F8不抢焦点")
+    f.typing=false;f.title=true;runtime.updateBefore(.01);check(not p.isOpen(),"标题屏不打开隐形诊断")
+    f.title=false;f.ctrl=true;runtime.updateBefore(.01);check(not p.isOpen(),"Ctrl修饰键不误开")
+    f.ctrl=false;rt.entryPreparing=true;runtime.updateBefore(.01);check(not p.isOpen(),"入场加载阶段不打开")
+    rt.entryPreparing=false;rt.entryRendered=false;runtime.updateBefore(.01);check(not p.isOpen(),"首个游戏画面呈现前不打开")
+    rt.entryRendered=true;runtime.updateBefore(.01)
+    check(p.isOpen(),"无需正常快捷键Update，业务早退前也可F8打开")
+    f.keys={[KEY_ESCAPE]=true};keyboard.update();check(not p.isOpen(),"Esc关闭诊断，不关闭底层页面")
+    m.start();f.keys={[KEY_F8]=true};runtime.updateBefore(.01);keyboard.update()
+    local activeStops=m.stops
+    runtime.updateBefore(.01);keyboard.update()
+    check(not p.isOpen() and m.enabled and m.stops==activeStops,"采集中F8关闭不停止采集")
+    f.keys={};m.stop()
     check(f.io==0,"no player archive or filesystem accessed")
 end
 ---@type NVGContextWrapper?

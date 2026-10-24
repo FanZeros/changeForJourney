@@ -49,12 +49,16 @@ function Start()
     local patchCalls = 0
     local batchCalls = 0
     local batchedPatchCalls = 0
+    local onPatch = function(heroId, extra, deferBatch) end
+    local onSend = function(payload) end
     local panelMock = {
         getOwnedHero = function(heroId) return owned[heroId] end,
         patchExtraTalent = function(heroId, extra, deferBatch)
             patchCalls = patchCalls + 1
             if deferBatch then batchedPatchCalls = batchedPatchCalls + 1 end
             owned[heroId].extraTalent = extra
+            if roster[heroId] then roster[heroId].extraTalent = extra end
+            onPatch(heroId, extra, deferBatch)
         end,
         finishExtraTalentBatch = function()
             batchCalls = batchCalls + 1
@@ -68,6 +72,7 @@ function Start()
     local actionMock = {
         sendAction = function(actionType, payload)
             sent[#sent + 1] = { actionType = actionType, payload = payload }
+            onSend(payload)
         end,
     }
     require = function(name)
@@ -585,6 +590,237 @@ function Start()
             hpCheck(u, 110, 120, "discard不会把已丢弃成长应用到旧战斗单位")
             ETS.mount(ETS.newState())
         end
+        -- 10) 所有机制dirty来源只即时patch一次；定时保存不重复触发全队评分。
+        do
+            ETS.mount(ETS.newState())
+            local u = makeUnit(4, { stacks = 100 }, 140)
+            enableMechanisms(u)
+            local beforePatch, beforeBatch, beforeSent = patchCalls, batchCalls, #sent
+            ETS.onBlock(u, 12)
+            check(patchCalls == beforePatch + 1 and owned[4].extraTalent.blockBank == 12,
+                "commit即刻更新机制库存，仅一次真实patch入口")
+            ETS.update(1.49)
+            check(#sent == beforeSent, "机制保存仍遵守1.5秒周期")
+            ETS.update(0.01)
+            check(patchCalls == beforePatch + 1 and batchCalls == beforeBatch and #sent == beforeSent + 1,
+                "commit dirty定时发送一次，不再patch或重复全队评分")
+            check(sent[#sent].payload.extraTalent.blockBank == 12
+                and sent[#sent].payload.extraTalent.stacks == 100,
+                "定时发送保留最新机制字段且不提前入账永久成长")
+            ETS.flush()
+            check(patchCalls == beforePatch + 2 and batchCalls == beforeBatch + 1
+                and #sent == beforeSent + 2 and owned[4].extraTalent.stacks == 101,
+                "真正成长仍一次patch/批评分/持久化，不受去重影响")
+            hpCheck(u, 141, 151, "去重不吞真正生命成长与新增上限回血")
+            ETS.update(100); ETS.flush()
+            check(patchCalls == beforePatch + 2 and #sent == beforeSent + 2,
+                "已消费dirty的后续update/flush不再保存")
+        end
+        do
+            ETS.mount(ETS.newState())
+            local lover = makeUnit(15, { tickets = { ["401"] = true } }, 90)
+            enableMechanisms(lover)
+            local dead = { heroId = 401, name = "周期票回归", hp = 0, maxHp = 80 }
+            local beforePatch, beforeSent = patchCalls, #sent
+            check(ETS.tryTicketRevive(dead, { lover }, function() end), "直接票消费成功")
+            ETS.update(2)
+            check(patchCalls == beforePatch + 1 and #sent == beforeSent + 1
+                and sent[#sent].payload.extraTalent.tickets["401"] == nil,
+                "tryTicketRevive直接dirty同样只patch一次，票消费正常持久化")
+        end
+        do
+            ETS.mount(ETS.newState())
+            local u = makeUnit(12, { stacks = 100, iceStatues = 1 }, 75)
+            enableMechanisms(u)
+            ETS.onBattleStart({ u }, {})
+            local beforePatch, beforeSent = patchCalls, #sent
+            check(ETS.absorbWithIceStatue(u, 37, {}) == 0, "周期冰雕消费挡伤不变")
+            ETS.update(2)
+            check(patchCalls == beforePatch + 1 and #sent == beforeSent + 1
+                and sent[#sent].payload.extraTalent.iceStatues == 0,
+                "absorbWithIceStatue dirty只即时patch一次，消费照常持久化")
+        end
+        -- 11) 最新owned而非dirty旧表决定发送；三条战线同英雄增量和dirty互不覆盖。
+        do
+            local states = { ETS.newState(), ETS.newState(), ETS.newState() }
+            local u = makeUnit(4, { stacks = 100 }, 140)
+            enableMechanisms(u)
+            local beforePatch, beforeSent = patchCalls, #sent
+            for index, state in ipairs(states) do
+                ETS.mount(state); ETS.onBlock(u, index)
+            end
+            for _, state in ipairs(states) do ETS.mount(state); ETS.update(2) end
+            check(patchCalls == beforePatch + 3 and #sent == beforeSent + 3,
+                "三战线三次真实库存变化仅三次patch与各自一次保存")
+            local current = true
+            for i = beforeSent + 1, #sent do
+                if sent[i].payload.extraTalent.blockBank ~= 6 or sent[i].payload.extraTalent.stacks ~= 100 then
+                    current = false
+                end
+            end
+            check(current, "三战线旧dirty都发送最新6库存，不回滚另一队已提交变化")
+            for _, state in ipairs(states) do ETS.mount(state); ETS.flush() end
+            check(owned[4].extraTalent.stacks == 103 and owned[4].extraTalent.blockBank == 6
+                and patchCalls == beforePatch + 6 and #sent == beforeSent + 6,
+                "三队永久增量各结算一次，库存不重复增加")
+            for _, state in ipairs(states) do
+                check(next(state.dirty) == nil and next(state.pendingGrowth) == nil,
+                    "各队消费自己的dirty和永久增量账本")
+            end
+        end
+        -- 12) 保存回调同步重入：先消费dirty、保留新变化、不得覆回旧镜像。
+        do
+            ETS.mount(ETS.newState())
+            local u = makeUnit(4, { stacks = 100 }, 140)
+            enableMechanisms(u)
+            ETS.onBlock(u, 1)
+            local state, beforePatch, beforeSent = ETS.mountedState(), patchCalls, #sent
+            onSend = function(payload)
+                onSend = function(value) end
+                ETS.onBlock(u, 2)
+            end
+            ETS.update(2)
+            check(#sent == beforeSent + 1 and patchCalls == beforePatch + 1
+                and owned[4].extraTalent.blockBank == 3 and roster[4].extraTalent.blockBank == 3,
+                "发送回调的新库存即时生效，旧发送快照不覆盖Dispatcher镜像")
+            check(state.dirty[4] and state.dirty[4].blockBank == 3,
+                "update不会清掉发送回调产生的新dirty")
+            ETS.update(2)
+            check(#sent == beforeSent + 2 and patchCalls == beforePatch + 1
+                and sent[#sent].payload.extraTalent.blockBank == 3,
+                "回调新dirty在下一周期保存一次且不重patch")
+            ETS.flush()
+            check(owned[4].extraTalent.stacks == 102, "回调两次格挡永久收益不丢失")
+        end
+        do
+            ETS.mount(ETS.newState())
+            local u = makeUnit(4, { stacks = 100 }, 140)
+            enableMechanisms(u)
+            ETS.onBlock(u, 1)
+            local beforePatch, beforeBatch, beforeSent = patchCalls, batchCalls, #sent
+            onSend = function(payload)
+                onSend = function(value) end
+                ETS.flush()
+            end
+            ETS.update(2)
+            check(#sent == beforeSent + 2 and patchCalls == beforePatch + 1
+                and batchCalls == beforeBatch + 1 and owned[4].extraTalent.stacks == 101,
+                "发送回调flush只保存外批机制与内批真正成长，不重复旧dirty")
+            check(roster[4].extraTalent.stacks == 101 and next(ETS.mountedState().dirty) == nil,
+                "外批返回不把已flush的新成长镜像回滚")
+            ETS.flush(); ETS.update(2)
+            check(#sent == beforeSent + 2 and patchCalls == beforePatch + 1,
+                "重入flush后的重复flush/update仍幂等")
+        end
+        do
+            local stateA, stateB = ETS.newState(), ETS.newState()
+            local a = makeUnit(4, { stacks = 100 }, 140)
+            local b = makeUnit(3, { stacks = 10 }, 80)
+            enableMechanisms(a); enableMechanisms(b)
+            b._preciseKill = true
+            ETS.mount(stateB); kill(b)
+            ETS.mount(stateA); ETS.onBlock(a, 1)
+            local beforePatch, beforeSent = patchCalls, #sent
+            onSend = function(payload)
+                onSend = function(value) end
+                ETS.mount(stateB)
+            end
+            ETS.update(2)
+            check(ETS.mountedState() == stateB and stateB.dirty[3] ~= nil
+                and next(stateA.dirty) == nil, "发送回调换队不清除新挂载队的dirty")
+            ETS.update(2)
+            check(#sent == beforeSent + 2 and patchCalls == beforePatch
+                and sent[#sent].payload.heroId == 3,
+                "切队后的另一队dirty照常保存且无额外patch")
+            ETS.discard(); ETS.mount(stateA); ETS.discard()
+        end
+        -- 正常换波仅替换support token，不应作废仍需持久化的同批已提交库存。
+        do
+            ETS.mount(ETS.newState())
+            local a = makeUnit(4, {}, 90)
+            local b = makeUnit(3, {}, 80)
+            enableMechanisms(a); enableMechanisms(b)
+            b._preciseKill = true
+            ETS.onBlock(a, 1); kill(b)
+            local beforePatch, beforeSent = patchCalls, #sent
+            onSend = function(payload)
+                onSend = function(value) end
+                ETS.onBattleStart({ a, b }, {})
+            end
+            ETS.update(2)
+            check(#sent == beforeSent + 2 and patchCalls == beforePatch,
+                "发送回调普通换波不吞余批库存保存，也不重patch")
+            ETS.flush()
+            check(owned[4].extraTalent.stacks == 1 and owned[3].extraTalent.stacks == 1,
+                "普通换波后待结算永久成长仍各提交一次")
+        end
+        -- 13) 清档/新epoch发生在回调中，停止旧批后续发送和镜像写入。
+        for _, useFlush in ipairs({ false, true }) do
+            ETS.mount(ETS.newState())
+            local a = makeUnit(4, {}, 90)
+            local b = makeUnit(3, {}, 80)
+            enableMechanisms(a); enableMechanisms(b)
+            b._preciseKill = true
+            ETS.onBlock(a, 1); kill(b)
+            local beforeSent = #sent
+            onSend = function(payload)
+                onSend = function(value) end
+                ETS.discard()
+                owned[3].extraTalent, owned[4].extraTalent = ETS.normalize({}), ETS.normalize({})
+                roster[3], roster[4] = {}, {}
+            end
+            if useFlush then ETS.flush() else ETS.update(2) end
+            check(#sent == beforeSent + 1 and roster[3].extraTalent == nil and roster[4].extraTalent == nil,
+                (useFlush and "flush" or "update") .. "发送回调清档停止旧epoch余批且不写新档镜像")
+            ETS.update(2); ETS.flush()
+            check(#sent == beforeSent + 1 and owned[3].extraTalent.stacks == 0
+                and owned[4].extraTalent.stacks == 0, "epoch变化后重复update/flush不提交旧收益")
+        end
+        do
+            ETS.mount(ETS.newState())
+            local u = makeUnit(4, {}, 90)
+            enableMechanisms(u)
+            local beforeSent = #sent
+            onPatch = function(heroId, extra, deferBatch)
+                onPatch = function(id, value, deferred) end
+                ETS.discard()
+                owned[4].extraTalent, roster[4] = ETS.normalize({}), {}
+            end
+            ETS.onBlock(u, 1)
+            ETS.update(2); ETS.flush()
+            check(#sent == beforeSent and next(ETS.mountedState().dirty) == nil
+                and next(ETS.mountedState().pendingGrowth) == nil,
+                "即时patch回调清档后commit不重新挂入旧dirty/成长")
+        end
+        do
+            ETS.mount(ETS.newState())
+            local u = makeUnit(10, {}, 90)
+            ETS.onShareFatal(u)
+            local beforeSent, beforeBatch = #sent, batchCalls
+            onPatch = function(heroId, extra, deferBatch)
+                onPatch = function(id, value, deferred) end
+                ETS.discard()
+                owned[10].extraTalent, roster[10] = ETS.normalize({}), {}
+            end
+            ETS.flush()
+            check(#sent == beforeSent and batchCalls == beforeBatch and u.maxHp == 100 and u.hp == 90,
+                "flush的patch回调清档后不应用旧单位成长、不批评分或发送旧档")
+        end
+        do
+            -- 无owned查询能力时仍保留原patch回退，不把所有dirty盲目标为已提交。
+            ETS.mount(ETS.newState())
+            makeUnit(4, {}, 90)
+            ETS.mountedState().dirty[4] = ETS.normalize({ blockBank = 7 })
+            local getOwnedHero = panelMock.getOwnedHero
+            panelMock.getOwnedHero = function(heroId) return nil end
+            local beforePatch, beforeSent = patchCalls, #sent
+            ETS.update(2)
+            panelMock.getOwnedHero = getOwnedHero
+            check(patchCalls == beforePatch + 1 and #sent == beforeSent + 1
+                and owned[4].extraTalent.blockBank == 7,
+                "缺失owned查询时旧dirty仍patch回退并发送，不吞未提交数据")
+        end
+        ETS.mount(ETS.newState())
         ETS.flush()
     end)
     -- 不论测试成功/异常，都恢复全局函数及共享模块的原挂载状态。

@@ -19,6 +19,7 @@ local HeroConfig      = require("config.HeroConfig")
 local CharacterPanel  = require("ui.character.panel.CharacterPanel")
 local HeroFrame = require("ui.widget.HeroFrame")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
+local EquipmentList = require("ui.backpack.BackpackEquipmentList")
 
 local M = {}
 
@@ -72,7 +73,7 @@ function M.bind(deps)
     end
 
     -- 列表与数量共用品质/部位/类型/职业规则；可穿戴状态只灰显，不改变候选数量。
-    local function matchesBaseFilter(equip, slotFilter, dualMode)
+    local function matchesBaseFilter(equip, slotFilter, dualMode, filters)
         local tpl = EquipmentConfig.ITEMS[equip.templateId]
         local naturalSlot, equipType, grip, level = EquipmentWearability.getFields(equip)
         local quality = equip.quality or (tpl and tpl.quality) or 1
@@ -80,8 +81,12 @@ function M.bind(deps)
         if slotFilter == "offhand" and dualMode and naturalSlot == "weapon" and grip == "onehand" then
             slotOk = true
         end
-        local typeOk = not decomposeState.typeFilter or equipType == decomposeState.typeFilter
-        return tpl ~= nil and qualityChecked(quality) and slotOk and typeOk and matchesClass(equip),
+        local typeFilter = decomposeState.typeFilter
+        if filters then typeFilter = filters.typeFilter end
+        local typeOk = not typeFilter or equipType == typeFilter
+        local qualityOk = filters and filters.qualities[quality] or (not filters and qualityChecked(quality))
+        local classOk = filters and filters.classChecker(equip) or (not filters and matchesClass(equip))
+        return tpl ~= nil and qualityOk and slotOk and typeOk and classOk,
             tpl, naturalSlot, equipType, grip, level, quality
     end
 
@@ -103,45 +108,38 @@ function M.bind(deps)
         return counts
     end
 
-    -- 绘制、点击、悬停共用列表；只在数据版本/筛选改变时重建，滚动不重复评分排序。
-    local cachedList = {}
-    local cachedSources = {}
-    local cachedKey = ""
-    local function listCacheKey(slotFilter, heroId, dualMode)
-        if not PlayerStore.GetRevision then return nil end
+    -- 冻结所有筛选输入；yield 期间的原地勾选不能改变半成品的语义。
+    local function captureListRequest()
+        local slotFilter, heroId, _, dualMode = filterContext()
+        local filters = { slotFilter = slotFilter, heroId = heroId, dualMode = dualMode,
+            typeFilter = decomposeState.typeFilter, classFilter = decomposeState.classFilter,
+            sortKey = decomposeState.sortKey, sortAscending = decomposeState.sortAscending == true,
+            qualities = {}, sets = {} }
+        local requestedClass = filters.classFilter
+        if requestedClass == "all" then requestedClass = nil end
+        filters.classChecker = EquipmentWearability.createClassChecker(requestedClass)
         local parts = { tostring(slotFilter), tostring(heroId), tostring(dualMode),
-            tostring(decomposeState.typeFilter), tostring(decomposeState.classFilter), tostring(decomposeState.sortKey),
-            tostring(decomposeState.sortAscending == true) }
-        for _, key in ipairs({ "equipment", "heroes", "artifacts", "talents" }) do
-            parts[#parts + 1] = tostring(PlayerStore.GetRevision(key))
-        end
+            tostring(filters.typeFilter), tostring(filters.classFilter), tostring(filters.sortKey),
+            tostring(filters.sortAscending) }
         for quality = 1, #EquipmentConfig.QUALITY do
-            parts[#parts + 1] = qualityChecked(quality) and "1" or "0"
+            filters.qualities[quality] = qualityChecked(quality)
+            parts[#parts + 1] = filters.qualities[quality] and "1" or "0"
         end
-        -- 筛选集合很小；冻结值而非引用，可识别弹窗对同一集合的原地勾选。
         local selected = {}
         for key, value in pairs(decomposeState.setFilter or {}) do
-            if value then selected[#selected + 1] = tostring(key) end
+            if value then filters.sets[key] = true; selected[#selected + 1] = tostring(key) end
         end
         table.sort(selected)
         parts[#parts + 1] = table.concat(selected, ",")
-        return table.concat(parts, "|")
+        filters.filterKey = table.concat(parts, "|")
+        return filters
     end
 
-    local function getEquipList()
-        local equipData = PlayerStore.Get("equipment")
-        if not equipData or not equipData.inventory then
-            cachedList, cachedSources, cachedKey = {}, {}, ""
-            return cachedList
-        end
-        local slotFilter, filterHeroId, _, dualMode = filterContext()
-        local key = listCacheKey(slotFilter, filterHeroId, dualMode)
-        local sources = { equipData, PlayerStore.Get("heroes"),
-            PlayerStore.Get("artifacts"), PlayerStore.Get("talents") }
-        if key and key == cachedKey and sources[1] == cachedSources[1]
-            and sources[2] == cachedSources[2] and sources[3] == cachedSources[3]
-            and sources[4] == cachedSources[4] then return cachedList end
-
+    local function buildEquipList(request, checkpoint, basicOnly)
+        local equipData = request.equipment
+        if not equipData or not equipData.inventory then return {} end
+        local slotFilter, filterHeroId, dualMode = request.slotFilter, request.heroId, request.dualMode
+        local function tick() if checkpoint then checkpoint() end end
         local equippedByHero = {}
         if equipData.equipped then
             for hid, heroSlots in pairs(equipData.equipped) do
@@ -154,13 +152,16 @@ function M.bind(deps)
         end
 
         local list = {}
-        -- 一次列表复用角色上下文；评分器缓存单件模拟，不逐帧逐件重建 HeroCombat。
-        local powerContext = filterHeroId ~= nil and EquipmentPower.getContext(filterHeroId) or nil
+        local powerContext = request.context
+        if not checkpoint and not basicOnly and filterHeroId ~= nil then powerContext = EquipmentPower.getContext(filterHeroId) end
         for seqStr, equip in pairs(equipData.inventory) do
             local matches, tpl, naturalSlot, equipType, grip, level, quality =
-                matchesBaseFilter(equip, slotFilter, dualMode)
-            -- 部位、品质与套装决定列表；不能穿的保留在同一绘制/点击/hover/peek真源内。
-            if matches and setChecked(equip.templateId) then
+                matchesBaseFilter(equip, slotFilter, dualMode, request)
+            local setId = EquipmentSetConfig.getSetIdForTemplate(tpl) or "none"
+            local setOk = not next(request.sets) or request.sets[setId] == true
+            -- 显式同步旧宿主仍可注入 setChecked；生产预算任务只消费冻结集合。
+            if not checkpoint and not basicOnly then setOk = setChecked(equip.templateId) end
+            if matches and setOk then
                 local preview = powerContext and EquipmentPower.evaluate(powerContext, seqStr, slotFilter)
                 -- 保留完整装备（词条/腐化/套装等），仅在列表副本附加显示字段，绝不改 inventory。
                 local entry = {}
@@ -173,14 +174,24 @@ function M.bind(deps)
                 entry.equippedByHeroId = equippedByHero[tostring(seqStr)] or nil
                 entry.canWear = filterHeroId == nil or (preview ~= nil and preview.valid == true)
                 entry.cannotEquipReason = not entry.canWear and (preview and preview.error or "角色数据未就绪") or nil
-                entry.power = EquipmentPower.score(equip, filterHeroId, slotFilter)
+                if basicOnly then
+                    -- 通用值只作临时排序，不能冒充角色贡献或提升。
+                    entry.power = EquipmentPower.genericScore(equip)
+                    entry.powerPending = filterHeroId ~= nil
+                elseif checkpoint then
+                    entry.power = filterHeroId == nil and EquipmentPower.genericScore(equip)
+                        or EquipmentPower.scoreInContext(powerContext, equip, slotFilter, seqStr)
+                else
+                    entry.power = EquipmentPower.score(equip, filterHeroId, slotFilter)
+                end
                 entry.upgrade = preview ~= nil and preview.valid == true and preview.gain > 1e-6
                 list[#list + 1] = entry
             end
+            tick()
         end
 
         -- 属性排序只水合显示副本；精简存档中的词条 key 同样可还原，库存原对象不变。
-        local sortKey = decomposeState.sortKey
+        local sortKey = request.sortKey
         local attributeSort = sortKey and AttributeDef.META[sortKey] ~= nil
         local function copyData(value)
             if type(value) ~= "table" then return value end
@@ -207,6 +218,7 @@ function M.bind(deps)
         end
         for _, entry in ipairs(list) do
             if attributeSort then entry.sortValue, entry.hasSortAttribute = attributeValue(entry) end
+            tick()
         end
         local function defaultOrder(a, b)
             if a.quality ~= b.quality then return a.quality > b.quality end
@@ -220,24 +232,55 @@ function M.bind(deps)
             if attributeSort then
                 if a.hasSortAttribute ~= b.hasSortAttribute then return a.hasSortAttribute end
                 if a.sortValue ~= b.sortValue then
-                    if decomposeState.sortAscending then return a.sortValue < b.sortValue end
+                    if request.sortAscending then return a.sortValue < b.sortValue end
                     return a.sortValue > b.sortValue
                 end
             elseif field and a[field] ~= b[field] then
-                if decomposeState.sortAscending then return a[field] < b[field] end
+                if request.sortAscending then return a[field] < b[field] end
                 return a[field] > b[field]
-            elseif (not sortKey or sortKey == "default") and decomposeState.sortAscending then
+            elseif (not sortKey or sortKey == "default") and request.sortAscending then
                 return defaultOrder(b, a)
             end
             return defaultOrder(a, b)
         end)
 
-        cachedList, cachedSources, cachedKey = list, sources, key or ""
+        tick() -- table.sort 不可让出；完整排序后再检查版本并原子提交。
+        if basicOnly and filterHeroId ~= nil then
+            for _, entry in ipairs(list) do entry.power = nil end
+        end
         return list
     end
 
+    -- 只读灰显与评分版本解耦。只有目标等级/双持分支改变才扫描列表，
+    -- 高频extraTalent/神器通知不重算generic、不排序；也绝不修改已呈现的列表引用。
+    local views = setmetatable({}, { __mode = "k" })
+    local function refreshList(list, request, pending)
+        if request.heroId == nil then return list end
+        local roster = request.heroes and request.heroes.roster
+        local hero = roster and (roster[request.heroId] or roster[tostring(request.heroId)])
+        local branch = hero and hero.advBranch
+        local wearKey = table.concat({ tostring(request.key), tostring(hero and hero.level),
+            tostring(branch and branch.first), tostring(branch and branch.second), tostring(pending) }, "|")
+        local cached = views[list]
+        if cached and cached.key == wearKey then return cached.list end
+        local checker = EquipmentWearability.createChecker(request.equipment, request.heroId, request.heroes)
+        local refreshed = {}
+        for i, entry in ipairs(list) do
+            local item = {}
+            for key, value in pairs(entry) do item[key] = value end
+            item.canWear, item.cannotEquipReason = checker(item.seq, request.slotFilter)
+            if pending then item.power, item.upgrade, item.powerPending = nil, false, true end
+            refreshed[i] = item
+        end
+        views[list] = { key = wearKey, list = refreshed }
+        views[refreshed] = { key = wearKey, list = refreshed }
+        return refreshed
+    end
+    local lists = EquipmentList.bind({ capture = captureListRequest, build = buildEquipList,
+        buildBasic = function(request) return buildEquipList(request, nil, true) end,
+        refresh = refreshList, budgetSeconds = deps.listBudgetSeconds, maxSteps = deps.listMaxSteps })
     local function drawEquipGrid(vg)
-        local equipList = getEquipList()
+        local equipList = lists.present()
         local totalSlots = math.max(#equipList, 35)
         state.scrollMax = calcScrollMax(totalSlots)
         clampScroll()
@@ -326,8 +369,8 @@ function M.bind(deps)
                 end
 
                 -- 单件贡献位于等级上方，保留右下等级及左下套装徽记占位。
-                if SettingsPanel.isEquipmentPowerEnabled() then
-                    local powerText = tostring(equip.power or 0)
+                if SettingsPanel.isEquipmentPowerEnabled() and equip.power ~= nil and not equip.powerPending then
+                    local powerText = tostring(equip.power)
                     local powerFont, iconSize, gap = 26, 22, 4
                     nvgFontFace(vg, "sans")
                     nvgFontSize(vg, powerFont)
@@ -510,7 +553,11 @@ function M.bind(deps)
     end
 
     return {
-        getEquipList = getEquipList,
+        getEquipList = lists.getEquipList,
+        getCommittedEquipList = lists.getCommittedList,
+        getPresentedEquipList = lists.getPresentedList,
+        update = lists.update,
+        cancel = lists.cancel,
         getSetCounts = getSetCounts,
         drawEquipGrid = drawEquipGrid,
         buildItemList = buildItemList,

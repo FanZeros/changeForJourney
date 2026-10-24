@@ -2,6 +2,7 @@
 local Monitor = require("core.PerformanceMonitor")
 local Panel = require("ui.dev.PerformancePanel")
 local RT = require("boot.StandaloneRT")
+local Hooks = require("boot.PerformanceHooks")
 local M = {}
 local foreground = true
 local installedHandlers = {}
@@ -13,7 +14,7 @@ local function install(name, factory)
     _G[name] = handler
 end
 local function opened(name, key)
-    local module = package.loaded[name]
+    local module = Hooks.getModule(name)
     return module and type(module[key]) == "function" and module[key]() or false
 end
 local function context()
@@ -22,7 +23,15 @@ local function context()
         { "ui.battle.stage.SweepDialog", "isOpen", "扫荡" },
         { "ui.hud.popup.PlayerInfoPanel", "isOpen", "玩家设置" },
         { "ui.hud.popup.OfflineRewardPanel", "isOpen", "离线奖励" },
-        { "ui.character.panel.CharacterPanel", "isOpen", "角色" },
+        { "ui.character.panel.CharacterPanel", "isDetailOpen", "角色" },
+        { "ui.character.hero.HeroRosterPanel", "isVisible", "英雄名册" },
+        { "ui.story.ScenarioDialogue", "isActive", "剧情对话" },
+        { "ui.story.gate.IntroCutscene", "isActive", "开场剧情" },
+        { "ui.story.gate.LetterIntro", "isOpen", "先祖来信" },
+        { "ui.story.gate.DarkTitleScreenGate", "isOpen", "标题" },
+        { "systems.TutorialManager", "isActive", "新手引导" },
+        { "ui.blacksmith.BlacksmithPage", "isOpen", "锻炉" },
+        { "ui.church.talent.TalentPage", "isOpen", "天赋" },
         { "ui.backpack.BackpackPanel", "isOpen", "仓库" },
         { "ui.loot.LootBoxPage", "isOpen", "遗匣" },
         { "ui.church.ChurchPage", "isOpen", "礼拜堂" },
@@ -50,6 +59,12 @@ function M.updateBefore(dt)
             Monitor.beginFrame(exclusion and "诊断面板/后台" or context(), exclusion)
         end)
         if not ok then Monitor.fail("帧采样") end
+    end
+    -- 独立诊断键先于扫荡等业务早退；只在游戏画面已就绪时开放，避免启动遮罩下的隐形模态。
+    if foreground and RT.entryRendered == true and not RT.entryPreparing then
+        if not pcall(function() require("ui.dev.KeyboardShortcuts").pollPerformanceHotkey() end) then
+            Monitor.fail("诊断快捷键")
+        end
     end
     -- 只保护诊断逻辑，原始Update仍在外层执行一次，业务错误照常传播。
     if not pcall(Panel.update, dt or 0) then Monitor.fail("诊断面板更新") end

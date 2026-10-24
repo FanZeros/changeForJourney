@@ -53,9 +53,9 @@ local function fixture(useDefaultToast)
         end,
         isOpen = function() return f.detail.open end,
         isPinned = function() return f.detail.pinned end,
-        open = function(seq, slot, hero, _, owner)
+        open = function(seq, slot, hero, readOnly, owner)
             f.opens = f.opens + 1
-            f.detail = { open = true, seq = seq, slot = slot, hero = hero, owner = owner }
+            f.detail = { open = true, seq = seq, slot = slot, hero = hero, owner = owner, readOnly = readOnly }
         end,
         pin = function() f.detail.pinned = true end,
         close = function() f.closes = f.closes + 1; f.detail.open = false end,
@@ -114,7 +114,8 @@ local function runClicks()
     local f = fixture()
     check(tap(f) and #f.sent == 0 and f.opens == 1 and f.detail.pinned,
         "single actual-cell tap pins candidate and never sends")
-    check(f.detail.slot == nil and f.detail.hero == nil, "candidate remains a read-only warehouse detail")
+    check(f.detail.slot == nil and f.detail.hero == f.current.hero and f.detail.readOnly == true
+        and f.detail.owner == "backpack", "candidate remains read-only warehouse detail with current hero comparison context")
     check(tap(f, 0.35) and #f.sent == 1 and f.opens == 1, "same seq/hero/slot double at 0.35s sends exactly once")
     check(f.sent[1].action == AT.EQUIP_ITEM and f.sent[1].seq == 11
         and f.sent[1].heroId == 1 and f.sent[1].slot == "weapon", "double uses authoritative action and natural main slot")

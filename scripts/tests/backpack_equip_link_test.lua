@@ -255,6 +255,9 @@ for _, key in ipairs({ "ui.widget.ImageCache", "ui.widget.HeroFrame", "ui.charac
     package.preload[key] = function() return stub end
 end
 local Store = require("core.PlayerStore")
+-- 本旧矩阵直接修改fixture而不走发布通知；用明确无revision旧宿主模式。
+-- 下方detailed/class缓存专项仍自行安装真实递增revision再恢复此模式。
+Store.GetRevision = nil
 local EC = require("config.EquipmentConfig")
 local ES = require("systems.EquipmentSystem")
 local HC = require("config.HeroConfig")
@@ -276,6 +279,14 @@ local grids = Grids.bind({ GRID = GRID, CELL_COL_CX = cells, DESIGN_W = 1080, Dr
     getImgHeroIcons = function() return drawingHeroIcons end, getImgLock = function() return drawingLock end,
     calcScrollMax = function() return 0 end, clampScroll = function() end,
 })
+-- 旧矩阵的每次显式查询代表一个新的已发布fixture状态；没有Dispatcher替它通知。
+-- 仅清评分cache，不给生产Render增加同步查询或绕过真实权威校验。
+local legacyGetEquipList = grids.getEquipList
+local LegacyPower = require("systems.EquipmentPower")
+grids.getEquipList = function()
+    LegacyPower.invalidate()
+    return legacyGetEquipList()
+end
 
 local function deepCopy(value)
     if type(value) ~= "table" then return value end
@@ -1265,6 +1276,12 @@ local function runFilter()
                 listComparisons = listComparisons + 1
                 if not structurallyExpected[equip.seq] or seen[equip.seq] or not result
                     or equip.canWear ~= result.ok or equip.cannotEquipReason ~= result.err then
+                    if allListsAgree then
+                        print("[backpack parity detail] hero=" .. tostring(c.hero) .. " template=" .. tostring(equip.templateId)
+                            .. " seq=" .. tostring(equip.seq) .. " target=" .. tostring(filterSlot)
+                            .. " actual=" .. tostring(equip.canWear) .. "/" .. tostring(equip.cannotEquipReason)
+                            .. " expected=" .. tostring(result and result.ok) .. "/" .. tostring(result and result.err))
+                    end
                     allListsAgree = false
                 end
                 seen[equip.seq] = true
@@ -1446,118 +1463,14 @@ local function runSetCounts()
 end
 
 local function runSourceParity()
-    context(1, "armor", nil)
-    setTemplate = "A31"
-    local list, before = grids.getEquipList(), deepCopy(fake)
-    local pointer = Link.bind({ state = gridState, GRID = GRID, CELL_COL_CX = cells,
-        EquipmentDetail = Detail, DrawUtil = Draw, getEquipList = grids.getEquipList })
-    local x, y = cells[1], GRID.FIRST_ROW_TOP + GRID.CELL_SIZE * 0.5
-    local cell = pointer.cellAt(x, y)
-    local peek = pointer.peekEquipAt(x, y)
-    check(#list == 1 and cell and peek and cell.seq == list[1].seq and peek.seq == list[1].seq,
-        "cellAt/peek share filtered grid list")
-    pointer.openCandidate(cell, x, y, true)
-    check(detailState.seq == list[1].seq and Detail.isPinned(), "click/open candidate resolves same filtered item")
-    Detail.close()
-    pointer.handleHover(x, y); clock.elapsedTime = clock.elapsedTime + 1; pointer.handleHover(x, y)
-    check(detailState.seq == list[1].seq and Detail.isOpen(), "hover resolves same filtered item")
-    Detail.close()
-    check(pointer.cellAt(cells[2], y) == nil and pointer.peekEquipAt(cells[2], y) == nil,
-        "structurally filtered-out cell has no click/peek target")
-
-    -- native nvgRGBA 保留：只在 fillColor stub 读取 NVGcolor，避免污染全工作区颜色类型。
-    local painted, events, masks = {}, {}, {}
-    local pathRect = {}
-    local greyFill = false
-    local function record(kind) events[#events + 1] = kind end
-    local iconCache = require("ui.widget.ImageCache")
-    iconCache.getEquipIcon = function(tid) painted[#painted + 1] = tid; record("icon"); return 1 end
-    local dark = require("core.DarkIcon")
-    dark.drawQualityBg = function() record("quality") end
-    dark.drawIconDark = function() record("iconDraw") end
-    Draw.drawImageCentered = function() record("lock") end
-    local heroFrame = require("ui.widget.HeroFrame")
-    heroFrame.draw = function() record("ownerBadge") end
-    package.preload["systems.TutorialManager"] = function() return { isActive = function() return false end } end
-    nvgSave, nvgRestore, nvgScissor, nvgTranslate = function() end, function() end, function() end, function() end
-    nvgBeginPath = function() pathRect = {} end
-    nvgRoundedRect = function(_, rx, ry, w, h, radius)
-        pathRect = { x = rx, y = ry, w = w, h = h, radius = radius }
-    end
-    ---@param color NVGcolor
-    nvgFillColor = function(_, color)
-        greyFill = math.abs(color.r * 255 - 38) < 0.01 and math.abs(color.g * 255 - 38) < 0.01
-            and math.abs(color.b * 255 - 38) < 0.01 and math.abs(color.a * 255 - 175) < 0.01
-    end
-    nvgFill = function()
-        if greyFill then record("greyMask"); masks[#masks + 1] = { rect = pathRect, eventIndex = #events } end
-    end
-    nvgStroke, nvgStrokeColor, nvgStrokeWidth = function() end, function() end, function() end
-    nvgFontFace, nvgFontSize, nvgTextAlign = function() end, function() end, function() end
-    nvgText = function() record("text") end
-    local function drawOnce()
-        painted, events, masks = {}, {}, {}
-        pathRect, greyFill = {}, false
-        grids.drawEquipGrid({})
-    end
-    drawOnce()
-    check(#painted == 1 and painted[1] == list[1].templateId and #masks == 0,
-        "wearable A31 draw matches click/hover/peek and has no grey overlay")
-    check(deepEqual(fake, before), "draw/click/hover/peek do not hydrate or change source")
-
-    setTemplate = "A55"
-    list = grids.getEquipList()
-    cell, peek = pointer.cellAt(x, y), pointer.peekEquipAt(x, y)
-    check(#list == 1 and cell and cell.canWear == false and peek and peek.seq == list[1].seq,
-        "unwearable A55 remains cellAt/peek target with grey flag")
-    pointer.openCandidate(cell, x, y, true)
-    check(detailState.seq == list[1].seq and Detail.isPinned(), "unwearable grey item can open and pin detail")
-    Detail.close()
-    pointer.handleHover(x, y); clock.elapsedTime = clock.elapsedTime + 1; pointer.handleHover(x, y)
-    check(detailState.seq == list[1].seq and Detail.isOpen(), "unwearable grey item can hover-open detail")
-    Detail.close()
-    local actualOk, actualErr = ES.applyEquip(equipProbe(fake, list[1].seq, 1), list[1].seq, 1, "armor", heroes)
-    check(actualOk == false and actualErr == list[1].cannotEquipReason,
-        "grey display never relaxes real applyEquip rejection")
-    check(deepEqual(fake, before), "unwearable click/hover/peek and applyEquip probe leave source unchanged")
-
-    -- 人为准备锁、提升角标、归属角标；只读路径仍不得回写此快照。
-    local greySeq = list[1].seq
-    fake.inventory[tostring(greySeq)].locked = true
-    fake.inventory[tostring(greySeq)].enhanceLevel = 5
-    fake.equipped[99].armor = greySeq
-    drawingHeroIcons, drawingLock = { [99] = 1 }, 1
-    before = deepCopy(fake)
-    drawOnce()
-    check(#painted == 1 and painted[1] == "A55" and #masks == 1,
-        "unwearable A55 draws exactly one RGBA(38,38,38,175) grey mask")
-    local mask = masks[1]
-    local rect = mask and mask.rect
-    check(rect and rect.x == x - GRID.CELL_SIZE * 0.5 and rect.y == GRID.FIRST_ROW_TOP
-        and rect.w == GRID.CELL_SIZE and rect.h == GRID.CELL_SIZE and rect.radius == GRID.CELL_RADIUS + 6,
-        "grey mask covers full cell with same rounded corners")
-    local positions = {}
-    for index, event in ipairs(events) do positions[event] = index end
-    if not positions.ownerBadge or not positions.lock then
-        print("[greyMask order] " .. table.concat(events, ","))
-    end
-    check(mask and positions.quality and positions.iconDraw and positions.text and positions.ownerBadge and positions.lock
-        and mask.eventIndex > positions.quality and mask.eventIndex > positions.iconDraw
-        and mask.eventIndex > positions.text and mask.eventIndex > positions.ownerBadge and mask.eventIndex > positions.lock,
-        "full-card grey mask is drawn after icon, level/enhance text, owner badge and lock")
-    check(deepEqual(fake, before), "grey draw never modifies nested equipment source")
-    filterHero = nil
-    drawOnce()
-    check(#painted == 1 and painted[1] == "A55" and hasWearability(greySeq, true) and #masks == 0,
-        "manual no-hero A55 draw has no grey mask, even with lock and owner badge")
-    filterHero, setTemplate = 1, "A31"
-    heroes.roster["1"].level = 84
-    drawOnce()
-    check(hasWearability(seqByTemplate.A31, false) and #masks == 1, "level-gated A31 draws grey before upgrade")
-    heroes.roster["1"].level = 85
-    drawOnce()
-    check(hasWearability(seqByTemplate.A31, true) and #masks == 0, "upgrade refresh removes A31 grey mask without reopening")
-    check(deepEqual(fake, before), "manual and upgrade redraws leave inventory unchanged")
+    require("tests.backpack_source_parity").run({ context = context, grids = grids, deepCopy = deepCopy,
+        fake = fake, Link = Link, gridState = gridState, GRID = GRID, cells = cells, Draw = Draw,
+        Detail = Detail, detailState = function() return detailState end, clock = clock, check = check,
+        deepEqual = deepEqual, ES = ES, heroes = heroes, seqByTemplate = seqByTemplate, equipProbe = equipProbe,
+        hasWearability = hasWearability, setFilter = function(value) setTemplate = value end,
+        setHero = function(value) filterHero = value end,
+        setDrawing = function(icons, lock) drawingHeroIcons, drawingLock = icons, lock end,
+    })
 end
 
 function Start()

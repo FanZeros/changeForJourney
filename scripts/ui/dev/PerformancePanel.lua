@@ -286,7 +286,7 @@ function Panel.init()
 end
 
 
--- 不在 Render 首次初始化 Surface：init 在 SettingsPanel.init 或 open 用户事件执行。
+-- 不在 Render 首次初始化 Surface：init 在宿主初始化或快捷键 open 执行。
 function Panel.open()
     Panel.init()
     if S.open then return end
@@ -338,7 +338,7 @@ local function resize(width, height)
     bodyWidth = math.max(12, w-padding*2-24)
     summaryWidth = bodyWidth
     local infoFont = math.max(10,18*unit)
-    local helpText = "开始采集 → 关闭本面板复现卡顿 → 返回生成报告。\n关闭不会停止采集；生成、复制、保存会先停止。"
+    local helpText = "F8 打开/关闭；Esc 关闭。\n开始采集 → 关闭本面板复现卡顿 → F8 返回生成报告。\n关闭不会停止采集；生成、复制、保存会先停止。"
     local helpLines = wrap(helpText, 28, infoFont, bodyWidth)
     local summaryLines = wrap(S.summaryText, 32, summaryFont, summaryWidth)
     local helpH = (#helpLines+0.5)*UI.Theme.FontSize(infoFont)*1.3

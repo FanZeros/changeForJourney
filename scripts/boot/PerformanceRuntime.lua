@@ -60,6 +60,12 @@ function M.updateBefore(dt)
         end)
         if not ok then Monitor.fail("帧采样") end
     end
+    -- 独立诊断键先于扫荡等业务早退；只在游戏画面已就绪时开放，避免启动遮罩下的隐形模态。
+    if foreground and RT.entryRendered == true and not RT.entryPreparing then
+        if not pcall(function() require("ui.dev.KeyboardShortcuts").pollPerformanceHotkey() end) then
+            Monitor.fail("诊断快捷键")
+        end
+    end
     -- 只保护诊断逻辑，原始Update仍在外层执行一次，业务错误照常传播。
     if not pcall(Panel.update, dt or 0) then Monitor.fail("诊断面板更新") end
 end

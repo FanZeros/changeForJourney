@@ -35,6 +35,7 @@ function M.bind(deps)
         -- 闭页仅停止展示；先按请求身份收尾，迟到/不匹配回执不得解锁或盖新提示。
         if data.action == ProtocolEarly.ACTION_TYPES.ARTIFACT_DRAW then
             ArtifactDrawPanel.onArtifactDrawResult()
+            if state.closing then return end -- 已到账回执不在退页途中重新开启表现。
         end
         if data.action == ProtocolEarly.ACTION_TYPES.ARTIFACT_EQUIP then
             if ArtifactPanel.onArtifactEquipResult(data.success, data) == false then return end
@@ -55,7 +56,9 @@ function M.bind(deps)
         if data.action == Protocol.ACTION_TYPES.ARTIFACT_DRAW then
             if data.success then
                 local rewards = ArtifactDrawPanel.onArtifactDrawSuccess(data)
-                setFloat("获得" .. tostring(#rewards) .. "件神器")
+                if not ArtifactDrawPanel.isAnimationPlaying() then
+                    setFloat("获得" .. tostring(#rewards) .. "件神器")
+                end
             else
                 setFloat(data.reason or "抽取失败")
             end

@@ -560,6 +560,7 @@ end
 
 --- 关闭教堂（启动关闭动画）
 function ChurchPage.close()
+    ArtifactDrawPanel.closeAnimation()
     ArtifactPanel.cancelPointer()
     require("ui.character.hero.ArtifactDetailPanel").closeImmediate()
     if not _life then bindChurchLifecycle() end
@@ -588,6 +589,7 @@ end
 
 --- 强制关闭（跳过动画，用于安全恢复 — 离开 tab4 时调用）
 function ChurchPage.forceClose()
+    ArtifactDrawPanel.closeAnimation()
     ArtifactPanel.cancelPointer()
     require("ui.character.hero.ArtifactDetailPanel").closeImmediate()
     if not _life then bindChurchLifecycle() end
@@ -698,7 +700,7 @@ function ChurchPage.handleDragEnd(dx, dy)
 end
 
 function ChurchPage.isArtifactInputActive()
-    return state.open and not state.closing and state.tab == "shenqi"
+    return state.open and not state.closing and not ArtifactDrawPanel.isAnimationPlaying() and state.tab == "shenqi"
         and (state.tabFrom == state.tab or time.elapsedTime - state.tabSwitchTime >= TAB.ANIM_DUR)
         and ChurchPage.getAnimProgress() >= 1
         and DrawUtil.seamSlideX(-1, state.openTime, state.closeTime,
@@ -802,6 +804,10 @@ end
 --- [水平滑入] 整页从屏幕边缘滑入/滑出(与中缝返回条同步);0=完全展开
 function ChurchPage.getSeamAnim()
     return state.openTime, state.closeTime, ANIM.OPEN_DUR, ANIM.CLOSE_DUR
+end
+
+function ChurchPage.update(dt)
+    ArtifactDrawPanel.updateAnimation(dt)
 end
 
 function ChurchPage.draw(vg)

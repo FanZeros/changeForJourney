@@ -15,6 +15,7 @@ local PlayerStore   = require("core.PlayerStore")
 local I18n          = require("core.I18n")
 local ArtifactDefs  = require("shared.artifact.ArtifactDefs")
 local RewardPopup   = require("ui.hud.popup.RewardPopup")
+local ArtifactDrawAnim = require("ui.church.ArtifactDrawAnim")
 local BF            = require("systems.ButtonFeedback")
 local SettingsPanel = require("ui.hud.popup.SettingsPanel")
 local AutoExchangeOption = require("ui.widget.AutoDiamondExchangeOption")
@@ -311,7 +312,10 @@ local function continueArtifactDraw(count, generation, chestType)
         or not ctx_.state.open or ctx_.state.closing then return end
     if count ~= 1 and count ~= 10 then return end
     print("[ChurchArtifactDrawPanel] 继续开箱 count=" .. count)
-    checkKeyAndDraw(count, chestType)
+    -- 与原奖励页一致，先让出结果模态，补购确认/不足提示才不会被结果遮住。
+    -- 不递增代际、不解除请求锁；同步成功回执可立即开启下一批动画。
+    ArtifactDrawAnim.close()
+    return checkKeyAndDraw(count, chestType)
 end
 
 -- ======================== 绘制 ========================
@@ -623,14 +627,24 @@ function M.onArtifactDrawSuccess(data)
         }
     end
     if #rewards > 0 then
-        RewardPopup.show(ArtifactDefs.getChest(chestType).name, rewards, {
-            panel = "left", cascade = true,
-            repeatDraw = {
-                getCost = function(count) return getRepeatCost(count, chestType) end,
-                onContinue = function(count) continueArtifactDraw(count, generation, chestType) end,
-            },
-        })
-        print("[ChurchArtifactDrawPanel] 宝箱获得动画: count=" .. #rewards .. ", panel=left")
+        state.keyConfirmVisible, state.keyConfirmClosing = false, false
+        if ctx_ and ctx_.state then ctx_.state.floatText = nil end
+        local repeatDraw = {
+            getCost = function(count) return getRepeatCost(count, chestType) end,
+            onContinue = function(count) continueArtifactDraw(count, generation, chestType) end,
+        }
+        local ok, playing = pcall(ArtifactDrawAnim.start, rewards, nil,
+            data.count or #rewards, chestType, repeatDraw)
+        if not ok or not playing then
+            -- 表现失败不重抽、不丢已到账结果；清理半启动或旧模态后降级展示。
+            pcall(ArtifactDrawAnim.close)
+            RewardPopup.show(ArtifactDefs.getChest(chestType).name, rewards, {
+                panel = "left", cascade = true, repeatDraw = repeatDraw,
+            })
+            print("[ChurchArtifactDrawPanel] 神器揭晓降级到奖励页：" .. tostring(playing))
+        else
+            print("[ChurchArtifactDrawPanel] 神器封印揭晓: count=" .. #rewards .. ", chest=" .. chestType)
+        end
     end
     return rewards
 end
@@ -643,6 +657,7 @@ end
 
 function M.init(vg)
     AutoExchangeOption.init()
+    ArtifactDrawAnim.init(vg)
     img.chestNormal       = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_SQBX_PT.png", 0)
     img.chestAdvanced     = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_SQBX_GJ.png", 0)
     img.collectionDrawBtn = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_AN.png", 0)
@@ -657,11 +672,35 @@ function M.init(vg)
     print("[ChurchArtifactDrawPanel] init OK")
 end
 
-function M.reset()
-    state.selectedChest = "normal"
-    state.keyConfirmVisible = false
-    state.keyConfirmClosing = false
+function M.isAnimationPlaying()
+    return ArtifactDrawAnim.isPlaying()
+end
+
+function M.drawAnimation(vg)
+    ArtifactDrawAnim.draw(vg)
+end
+
+function M.updateAnimation(dt)
+    ArtifactDrawAnim.update(dt)
+end
+
+function M.handleAnimationInput(dx, dy)
+    return ArtifactDrawAnim.handleInput(dx, dy)
+end
+
+function M.dismissAnimation()
+    return ArtifactDrawAnim.dismiss()
+end
+
+function M.closeAnimation()
     state.resultGeneration = state.resultGeneration + 1
+    state.keyConfirmVisible, state.keyConfirmClosing = false, false
+    ArtifactDrawAnim.close()
+end
+
+function M.reset()
+    M.closeAnimation()
+    state.selectedChest = "normal"
 end
 
 --- 钥匙补购弹窗是否可见（ChurchInput 用于模态优先路由）

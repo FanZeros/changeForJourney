@@ -21,6 +21,7 @@ local TavernPage = require("ui.tavern.TavernPage")
 local TavernPopups = require("ui.tavern.TavernPopups")
 local TargetRecruitPanel = require("ui.tavern.TargetRecruitPanel")
 local RecruitAnim = require("ui.tavern.RecruitAnim")
+local ArtifactDrawAnim = require("ui.church.ArtifactDrawAnim")
 
 ---@param ctx table
 function Gesture.bind(ctx)
@@ -96,6 +97,10 @@ function Gesture.bind(ctx)
                 if TavernPage.isRecruitBusy() or TavernPopups.isBlocking() then return true end
                 -- 指定UP面板：面板自身有关闭按钮，返回条不叠一层关闭
                 if TargetRecruitPanel.isOpen() then return true end
+            end
+            if (button.key or button.id) == "church" and ArtifactDrawAnim.isPlaying() then
+                ArtifactDrawAnim.dismiss()
+                return true
             end
             local now = time.elapsedTime
             if not ctx.getLastTap or now - ctx.getLastTap() >= ctx.tapInterval then

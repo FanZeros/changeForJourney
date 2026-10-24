@@ -649,6 +649,7 @@ function Standalone.Stop()
     require("ui.fx.SpineResultEffect").destroy()
     require("ui.fx.DarkEffectSprites").destroy()
     require("ui.tavern.RecruitAnim").destroy()
+    require("ui.church.ArtifactDrawAnim").destroy()
     LevelUpPopup.destroy()
     CharacterPanel.destroyPresentation()
     require("ui.character.hero.AwakeningArtwork").destroy()
@@ -1447,6 +1448,7 @@ function HandleUpdate(eventType, eventData)
     OfflineRewardPanel.update(dt)
     LevelUpPopup.update(dt)
     TavernPage.update(dt)
+    ChurchPage.update(dt)
     MarketPage.update(dt)
     PlayerInfoPanel.update(dt)
     local KeyboardShortcuts = require("ui.dev.KeyboardShortcuts")
@@ -1458,37 +1460,31 @@ function HandleMouseButtonDown(eventType, eventData)
     ---@diagnostic disable-next-line: undefined-global
     return HandleMouseButtonDownHorizon(eventType, eventData)
 end
-
 function HandleMouseMove(eventType, eventData)
     if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleMouseMoveHorizon(eventType, eventData)
 end
-
 function HandleMouseButtonUp(eventType, eventData)
     if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleMouseButtonUpHorizon(eventType, eventData)
 end
-
 function HandleTouchBegin(eventType, eventData)
     if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleTouchBeginHorizon(eventType, eventData)
 end
-
 function HandleTouchMove(eventType, eventData)
     if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleTouchMoveHorizon(eventType, eventData)
 end
-
 function HandleTouchEnd(eventType, eventData)
     if not bootReady_ then return end
     ---@diagnostic disable-next-line: undefined-global
     return HandleTouchEndHorizon(eventType, eventData)
 end
-
 function HandleScreenMode(eventType, eventData)
     RecalcLayout()
     print(string.format("[Standalone] ScreenMode window %.0fx%.0f dpr=%.2f frame 1920x1080 scale=%.3f", StandaloneRT.windowW or 0, StandaloneRT.windowH or 0, dpr, StandaloneRT.frameScale or 1))

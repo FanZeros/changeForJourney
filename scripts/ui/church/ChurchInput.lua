@@ -49,6 +49,10 @@ function M.bind(deps)
             return true
         end
 
+        if ArtifactDrawPanel.isAnimationPlaying and ArtifactDrawPanel.isAnimationPlaying() then
+            return ArtifactDrawPanel.handleAnimationInput(dx, dy)
+        end
+
         -- 转职确认/重置弹窗已随转职页迁到右侧栏角色详情
 
         -- 天赋详情/总览已独立到 TalentPage
@@ -121,6 +125,7 @@ function M.bind(deps)
     ---@return boolean consumed
     local function handleDragBegin(dx, dy)
         if not state.open or state.closing then return false end
+        if ArtifactDrawPanel.isAnimationPlaying and ArtifactDrawPanel.isAnimationPlaying() then return true end
 
         if isRosterVisible() and isInRosterScrollArea(dx, dy) then
             state.rosterDragging = true
@@ -137,6 +142,7 @@ function M.bind(deps)
     ---@return boolean consumed
     local function handleDragMove(dx, dy)
         if not state.open or state.closing then return false end
+        if ArtifactDrawPanel.isAnimationPlaying and ArtifactDrawPanel.isAnimationPlaying() then return true end
 
         if state.rosterDragging then
             local delta = state.rosterLastDragY - dy
@@ -154,6 +160,10 @@ function M.bind(deps)
     --- 拖拽结束
     local function handleDragEnd(dx, dy)
         if not state.open or state.closing then return end
+        if ArtifactDrawPanel.isAnimationPlaying and ArtifactDrawPanel.isAnimationPlaying() then
+            state.rosterDragging = false
+            return
+        end
         if state.rosterDragging then
             state.rosterDragging = false
             return
@@ -169,6 +179,7 @@ function M.bind(deps)
     ---@param msy number|nil 鼠标设计坐标Y
     local function handleScroll(wheel, msx, msy)
         if not state.open or state.closing then return end
+        if ArtifactDrawPanel.isAnimationPlaying and ArtifactDrawPanel.isAnimationPlaying() then return end
         if isRosterVisible() and (msx == nil or isInRosterScrollArea(msx, msy)) then
             state.rosterScrollY = state.rosterScrollY - wheel * 80
             state.rosterScrollVelocity = 0

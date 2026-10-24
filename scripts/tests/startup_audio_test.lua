@@ -1,9 +1,24 @@
 -- 启动音频懒加载回归：直接读取两份生产源码，在独立 env 中运行。
 -- 音频管理器在独立 env 中使用 Sound/Scene/SoundSource/cache/math.random 替身；
--- 末尾另用真实 cache 校验三首战斗 OGG 的解码信息，不创建音源或播放音频。
+-- 末尾另用真实 cache 校验三首战斗/四段神器 OGG 的解码信息，不创建音源或播放音频。
 -- 不加载主游戏或玩家档。用 Runtime headless 运行，Start 最终 engine:Exit()。
 local totals = { assertions = 0, failures = 0, cases = 0 }
 local TAG = "[startup_audio_test]"
+local ROOT = "/workspace/changeForJourney"
+for _, argument in ipairs(type(GetArguments) == "function" and GetArguments() or {}) do
+    local directory = argument:match("^%-tapcode_dir=(.+)$")
+    if directory then ROOT = directory:gsub("/+$", "") end
+end
+local SOURCE_PATHS = { ["systems/GameBGM.lua"] = true, ["systems/GameSFX.lua"] = true,
+    ["boot/StartupQueue.lua"] = true }
+local nativeCache = cache
+local sourceCache = {} ---@type table<string, string>
+local CUE_KEYS = { "artifact_draw_charge", "artifact_draw_reveal", "artifact_draw_legendary", "artifact_draw_settle" }
+local function shallowCopy(value)
+    local result = {}
+    for key, child in pairs(value) do result[key] = child end
+    return result
+end
 
 local function check(ok, label)
     totals.assertions = totals.assertions + 1
@@ -31,11 +46,19 @@ local function runCase(label, fn)
 end
 
 local function readSource(path)
-    local file = assert(cache:GetFile(path), "missing production source " .. path)
-    local lines = {}
-    while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+    assert(SOURCE_PATHS[path], "source read outside fixed Lua whitelist " .. tostring(path))
+    assert(ROOT:sub(1, 1) == "/" and not ROOT:find("..", 1, true), "unsafe -tapcode_dir")
+    if sourceCache[path] then return sourceCache[path] end
+    local file = assert(nativeCache:GetFile(path), "missing production source " .. ROOT .. "/scripts/" .. path)
+    local ok, text = pcall(function()
+        local lines = {}
+        while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+        return table.concat(lines, "\n")
+    end)
     file:Dispose()
-    return table.concat(lines, "\n")
+    assert(ok, text)
+    sourceCache[path] = text
+    return text
 end
 
 -- 参考候选直接取生产定义；不重写 play/start，不暴露/改写其私有状态。
@@ -59,7 +82,9 @@ local function newHarness(source, label, failures, lengths, startupQueue)
     }
     local env = {
         LOCAL = LOCAL, assert = assert, error = error, type = type, tonumber = tonumber, pcall = pcall,
-        tostring = tostring, pairs = pairs, ipairs = ipairs, table = table, string = string,
+        tostring = tostring, pairs = pairs, ipairs = ipairs, table = shallowCopy(table), string = shallowCopy(string),
+        setmetatable = setmetatable, getmetatable = getmetatable, select = select, next = next,
+        rawget = rawget, rawset = rawset,
         require = function(name)
             assert(name == "boot.StartupQueue", "only startup checkpoint dependency")
             return startupQueue or { checkpoint = function() end }
@@ -84,6 +109,7 @@ local function newHarness(source, label, failures, lengths, startupQueue)
             h.loads[#h.loads + 1] = path
             h.counts[path] = (h.counts[path] or 0) + 1
             h.timeline[#h.timeline + 1] = path
+            if h.failures[path] == "throw" then error("isolated Sound loader exception " .. path) end
             if h.failures[path] then return nil end
             if not h.sounds[path] then
                 h.sounds[path] = {
@@ -103,13 +129,19 @@ local function newHarness(source, label, failures, lengths, startupQueue)
                 local src = { playing = false, gain = 1, position = 0, stops = 0, seeks = {}, soundType = "" }
                 function src:IsPlaying() return self.playing end
                 function src:GetTimePosition() return self.position end
-                function src:Play(sound, frequency)
+                function src:Play(sound, ...)
                     assert(sound, "nil sound must not be played")
+                    local argc = select("#", ...)
+                    local frequency, gain = ...
+                    assert(argc >= 0 and argc <= 2, "audio Play only accepts sound/frequency/explicit gain")
                     self.frequency = frequency
+                    -- 两参Play沿用旧self.gain；三参Play采用指定gain（原生API会重置音源gain）。
+                    if argc == 2 then self.gain = gain end
                     self.playing = true
                     self.position = 0
                     self.sound = sound
-                    h.plays[#h.plays + 1] = { source = self, sound = sound, gain = self.gain }
+                    h.plays[#h.plays + 1] = { source = self, sound = sound, gain = self.gain,
+                        frequency = frequency, gainArg = gain, argc = argc + 1 }
                 end
                 function src:Seek(position)
                     self.position = position
@@ -128,6 +160,19 @@ local function newHarness(source, label, failures, lengths, startupQueue)
             return node
         end,
     }
+    env._G = env
+    h.forbidden = {}
+    local function denied(name)
+        return function()
+            h.forbidden[#h.forbidden + 1] = name
+            error("isolated audio forbids " .. name)
+        end
+    end
+    env.File, env.loadfile, env.dofile = denied("File"), denied("loadfile"), denied("dofile")
+    for _, name in ipairs({ "network", "clientCloud", "serverCloud", "fileSystem", "io", "os", "package", "engine", "sdk" }) do
+        env[name] = setmetatable({}, { __index = function(_, key) return denied(name .. "." .. tostring(key)) end })
+    end
+    setmetatable(env, { __index = function(_, key) return denied("global " .. tostring(key))() end })
     local manager = assert(load(source, "@production/" .. label, "t", env))()
     manager.init(h.scene)
     return manager, h
@@ -436,7 +481,7 @@ local function testSFX(source)
         m.play("hit"); eq(#h.loads, 0, "not started does not fetch")
         eq(#h.randoms, 0, "not started does not random")
         m.start()
-        eq(#h.loads, 0, "SFX start loads zero of 63 files")
+        eq(#h.loads, 0, "SFX start loads zero of 67 files")
         eq(#h.sources, 6, "original pool starts with six")
         eq(#h.plays, 0, "start plays nothing")
         for _, src in ipairs(h.sources) do eq(src.soundType, "Effect", "pool Effect channel") end
@@ -545,15 +590,26 @@ local function testSFX(source)
         eq(#h.loads, 3, "unmute after restart permits lazy load")
         m.stop()
     end)
-    runCase("SFX all 60 keys / 63 paths retain gain and random lists", function()
+    runCase("SFX all 64 keys / 67 paths preserve 60 random legacy keys", function()
         local m, h = newHarness(source, "GameSFX.lua")
-        local keys, pathCount = {}, 0
-        for key, def in pairs(defs) do keys[#keys + 1] = key; pathCount = pathCount + #def.paths end
+        local keys, pathCount, legacyCount, cueCount = {}, 0, 0, 0
+        local expectedCues = {}
+        for _, key in ipairs(CUE_KEYS) do expectedCues[key] = true end
+        for key, def in pairs(defs) do
+            keys[#keys + 1] = key; pathCount = pathCount + #def.paths
+            if def.deterministic == true then
+                cueCount = cueCount + 1
+                check(expectedCues[key], "only four artifact cues bypass RNG " .. key)
+                eq(#def.paths, 1, "artifact cue has one deterministic candidate " .. key)
+            else legacyCount = legacyCount + 1 end
+        end
         table.sort(keys)
-        eq(#keys, 60, "original definition count")
-        eq(pathCount, 63, "original path count")
+        eq(#keys, 64, "60 original + four cue definitions")
+        eq(pathCount, 67, "63 original + four cue paths")
+        eq(legacyCount, 60, "all original 60 keys remain nondeterministic")
+        eq(cueCount, 4, "exactly four deterministic keys")
         m.start()
-        local expectedLoads = 0
+        local expectedLoads, expectedRandoms = 0, 0
         for i, key in ipairs(keys) do
             local def = defs[key]
             local previousLoads = #h.loads
@@ -564,17 +620,29 @@ local function testSFX(source)
                 eq(h.loads[previousLoads + j], path, "ordered full candidate " .. key .. "#" .. j)
                 eq(h.sounds[path].looped, false, "nonlooping " .. key .. "#" .. j)
             end
-            eq(#h.randoms, i, "one random per valid play " .. key)
-            eq(h.randoms[i].high, #def.paths, "unchanged list size " .. key)
-            eq(h.randoms[i].loads, expectedLoads, "complete candidates precede random " .. key)
-            eq(h.plays[i].sound.path, def.paths[h.randoms[i].chosen], "ordered selection " .. key)
-            near(h.plays[i].gain, def.gain, "original gain " .. key)
+            if def.deterministic == true then
+                eq(#h.randoms, expectedRandoms, "cue consumes zero RNG " .. key)
+                eq(h.plays[i].sound.path, def.paths[1], "fixed cue candidate " .. key)
+                eq(h.plays[i].frequency, 0, "cue Play restores asset sample rate " .. key)
+                eq(h.plays[i].argc, 3, "cue uses explicit gain Play overload " .. key)
+                near(h.plays[i].gainArg, def.gain, "cue gain passed as third argument " .. key)
+            else
+                expectedRandoms = expectedRandoms + 1
+                eq(#h.randoms, expectedRandoms, "one random per legacy play " .. key)
+                eq(h.randoms[expectedRandoms].high, #def.paths, "unchanged list size " .. key)
+                eq(h.randoms[expectedRandoms].loads, expectedLoads, "complete candidates precede random " .. key)
+                eq(h.plays[i].sound.path, def.paths[h.randoms[expectedRandoms].chosen], "ordered selection " .. key)
+                eq(h.plays[i].argc, 1, "old sound-only Play remains unchanged " .. key)
+                eq(h.plays[i].frequency, nil, "old optional frequency remains absent " .. key)
+            end
+            near(h.plays[i].gain, def.gain, "defined gain " .. key)
         end
         for _, key in ipairs(keys) do m.play(key) end
-        eq(#h.loads, 63, "all candidate lists fetched only once")
-        eq(#h.randoms, 120, "two plays of each key consume 120 random calls")
+        eq(#h.loads, 67, "all candidate lists fetched only once")
+        eq(#h.randoms, 120, "only two plays of 60 legacy keys consume RNG")
         for _, path in ipairs(h.loads) do eq(h.counts[path], 1, "one fetch per lifecycle " .. path) end
         eq(#h.sources, 12, "pool caps at original twelve")
+        eq(#h.forbidden, 0, "all-key pass stays inside audio source sandbox")
         m.stop()
     end)
     runCase("SFX failed list + partial list + bounded hot logs", function()
@@ -654,6 +722,178 @@ local function testSFX(source)
     end)
 end
 
+local function testArtifactCues(source)
+    local defs = readDefinitions(source, "SFX_DEFS")
+    local gains = { 0.60, 0.65, 0.70, 0.55 }
+    runCase("artifact cue definitions / native-rate explicit-gain / no RNG", function()
+        local m, h = newHarness(source, "GameSFX.lua")
+        check(type(m.stopCue) == "function", "real manager exports stopCue")
+        for i, key in ipairs(CUE_KEYS) do
+            local def = assert(defs[key], "missing real deterministic cue " .. key)
+            eq(def.deterministic, true, "explicit deterministic metadata " .. key)
+            eq(#def.paths, 1, "one authored OGG per cue " .. key)
+            eq(def.paths[1], "audio/sfx/" .. key .. ".ogg", "fixed resource path " .. key)
+            near(def.gain, gains[i], "independent authored gain oracle " .. key)
+            m.play(key); m.stopCue(key)
+        end
+        eq(#h.loads + #h.plays + #h.randoms, 0, "unstarted cue/stopCue does no work")
+        m.setMasterGain(0.25); m.start()
+        for i, key in ipairs(CUE_KEYS) do
+            for _, src in ipairs(h.sources) do src.frequency, src.gain = 22050, 0.98 end
+            m.play(key)
+            local play = h.plays[#h.plays]
+            eq(play.source, h.sources[1], "stopped cue reuses first source " .. key)
+            eq(play.frequency, 0, "stale source frequency always restored " .. key)
+            eq(play.argc, 3, "three argument Play(sound,0,gain) " .. key)
+            near(play.gainArg, gains[i] * 0.25, "master applied once in Play argument " .. key)
+            near(play.gain, gains[i] * 0.25, "fake models native explicit-gain overload " .. key)
+            m.stopCue(key)
+            eq(play.source.playing, false, "stopCue stops owned source " .. key)
+            eq(play.source.stops, i, "one stop per active cue on reused first source " .. key)
+            m.stopCue(key); eq(play.source.stops, i, "repeated stopCue does not stop idle source " .. key)
+        end
+        eq(#h.loads, 4, "four cue assets lazy loaded once")
+        eq(#h.randoms, 0, "four cue plays never consume RNG")
+        local beforeStops = h.sources[1].stops
+        m.stopCue(nil); m.stopCue(false); m.stopCue({}); m.stopCue("unknown")
+        eq(h.sources[1].stops, beforeStops, "invalid/unknown cue never touches source")
+        m.stop()
+    end)
+    runCase("artifact prewarm and team mute keep deterministic lazy boundaries", function()
+        local m, h = newHarness(source, "GameSFX.lua")
+        for _, key in ipairs(CUE_KEYS) do m.preload(key); m.preload(key) end
+        eq(#h.loads, 4, "prestart preload caches four exact candidates")
+        eq(#h.plays + #h.sources + #h.randoms, 0, "cue prewarm creates no source/play/RNG")
+        m.start(); m.setTeamMuted(2, true)
+        for _, key in ipairs(CUE_KEYS) do m.play(key, "2") end
+        eq(#h.loads, 4, "muted preloaded cues no extra IO")
+        eq(#h.plays + #h.randoms, 0, "muted cues no play/RNG")
+        m.setTeamMuted(2, false)
+        for _, key in ipairs(CUE_KEYS) do m.play(key, 2) end
+        eq(#h.plays, 4, "unmuted complete cache plays each cue")
+        eq(#h.loads, 4, "unmuted plays reuse prewarmed assets")
+        m.stop(); m.start(); m.setTeamMuted(2, true)
+        for _, key in ipairs(CUE_KEYS) do m.play(key, 2) end
+        eq(#h.loads, 4, "muted cold lifecycle does not load cue")
+        m.setMasterGain(0); m.play(CUE_KEYS[1])
+        eq(#h.loads, 5, "global gain zero retains original silent-play loading semantics")
+        near(h.plays[5].gainArg, 0, "silent cue uses explicit zero gain")
+        eq(h.plays[5].frequency, 0, "silent cue retains asset sample rate")
+        eq(#h.randoms, 0, "mute/prewarm/silent cue never consumes RNG")
+        m.setMasterGain(0.5)
+        near(h.plays[5].source.gain, 0, "old SFX master-change only-next-play behavior retained")
+        m.play(CUE_KEYS[1]); near(h.plays[6].gainArg, 0.30, "next cue uses latest master exactly once")
+        m.stop()
+    end)
+    runCase("cue stopCue does not cancel unfinished prewarm but stop clears lifecycle", function()
+        local queue = { checkpoint = function() coroutine.yield("isolated checkpoint") end }
+        local m, h = newHarness(source, "GameSFX.lua", nil, nil, queue)
+        m.start()
+        local worker = coroutine.create(function() m.preload(CUE_KEYS[1]) end)
+        check(coroutine.resume(worker), "prewarm enters suspended loading token")
+        eq(#h.loads, 0, "suspended cue has not loaded its only path")
+        m.stopCue(CUE_KEYS[1]); m.play(CUE_KEYS[1])
+        eq(#h.loads + #h.plays + #h.randoms, 0, "stopCue neither publishes nor reloads incomplete cue")
+        check(coroutine.resume(worker), "stopCue leaves cooperative prewarm alive")
+        eq(coroutine.status(worker), "dead", "prewarm completed")
+        eq(#h.loads, 1, "completed cue publishes its one candidate")
+        m.play(CUE_KEYS[1]); eq(#h.plays, 1, "completed cue may subsequently play")
+        local stale = coroutine.create(function() m.preload(CUE_KEYS[2]) end)
+        check(coroutine.resume(stale), "second cue preload suspended")
+        m.stop(); m.start()
+        check(coroutine.resume(stale), "stale cue worker returns after stop")
+        eq(#h.loads, 1, "old-lifecycle worker does not fetch its pending path")
+        local fresh = coroutine.create(function() m.preload(CUE_KEYS[2]) end)
+        check(coroutine.resume(fresh), "fresh lifecycle can load same key")
+        check(coroutine.resume(fresh), "fresh key completes")
+        m.play(CUE_KEYS[2]); eq(#h.plays, 2, "fresh lifecycle publishes usable cue only")
+        eq(#h.randoms, 0, "all cooperative cue paths bypass RNG")
+        m.stop()
+    end)
+    runCase("stopCue only latest source ownership including concurrent instances", function()
+        local m, h = newHarness(source, "GameSFX.lua")
+        m.start(); m.play(CUE_KEYS[1]); m.play(CUE_KEYS[1]); m.play(CUE_KEYS[2]); m.play("click")
+        local first, second, other, legacy = h.sources[1], h.sources[2], h.sources[3], h.sources[4]
+        m.stopCue(CUE_KEYS[1])
+        eq(first.stops, 1, "first concurrent owner stopped")
+        eq(second.stops, 1, "second concurrent owner stopped")
+        check(other.playing and legacy.playing, "other cue and legacy key not stopped")
+        eq(other.stops + legacy.stops, 0, "foreign owner never receives Stop")
+        first.frequency = 16000; m.play(CUE_KEYS[3])
+        eq(h.plays[5].source, first, "idle source reused by different cue")
+        eq(first.frequency, 0, "reuse still restores new cue rate")
+        m.stopCue(CUE_KEYS[1])
+        eq(first.stops, 1, "old cue cannot stop reused different cue source")
+        check(first.playing, "new owner survives stale stopCue")
+        first.playing = false
+        m.stopCue(CUE_KEYS[3]); eq(first.stops, 1, "naturally finished owner only cleared, not Stop")
+        m.play("hit"); eq(h.plays[6].source, first, "legacy key reuses naturally idle cue source")
+        m.stopCue(CUE_KEYS[3]); check(first.playing, "stale cue cannot stop reused legacy key")
+        eq(first.stops, 1, "legacy reuse source receives no stale Stop")
+        eq(#h.randoms, 2, "only click and hit use legacy RNG")
+        m.stop()
+    end)
+    runCase("stopCue ownership survives full pool replacement and lifecycle reset", function()
+        local m, h = newHarness(source, "GameSFX.lua")
+        m.start()
+        for _ = 1, 12 do m.play(CUE_KEYS[1]) end
+        eq(#h.sources, 12, "cue expands original six only to original cap twelve")
+        local last = h.sources[12]
+        m.play(CUE_KEYS[2]); eq(h.plays[13].source, last, "full pool overwrites last source")
+        m.stopCue(CUE_KEYS[1])
+        for i = 1, 11 do eq(h.sources[i].stops, 1, "all still-owned full-pool instances stopped " .. i) end
+        eq(last.stops, 0, "replaced last source is not stopped by old owner")
+        check(last.playing, "new last-source cue stays playing")
+        for i = 1, 11 do h.sources[i].playing = true end
+        m.play("click"); eq(h.plays[14].source, last, "legacy full-pool overwrite also updates ownership")
+        m.stopCue(CUE_KEYS[2]); eq(last.stops, 0, "old cue cannot stop legacy-overwritten last source")
+        eq(last.sound.path, defs.click.paths[1], "legacy last-source sound still intact")
+        eq(#h.randoms, 1, "only legacy full-pool click consumes RNG")
+        m.stop(); m.start(); local before = #h.plays
+        m.stopCue(CUE_KEYS[1]); m.stopCue(CUE_KEYS[2])
+        for i = 13, 18 do eq(h.sources[i].stops, 0, "restart has no stale source owner " .. i) end
+        eq(#h.plays, before, "stopCue never triggers another play")
+        m.play(CUE_KEYS[4]); eq(h.plays[#h.plays].source, h.sources[13], "new lifecycle first source usable")
+        m.stopCue(CUE_KEYS[4]); eq(h.sources[13].stops, 1, "new lifecycle owns its source only")
+        m.stop()
+    end)
+    runCase("cue nil/throw loading latches safely; legacy exceptions still propagate", function()
+        for _, failure in ipairs({ true, "throw" }) do
+            for _, key in ipairs(CUE_KEYS) do
+                local path = defs[key].paths[1]
+                local m, h = newHarness(source, "GameSFX.lua", { [path] = failure })
+                m.start()
+                local success = pcall(function()
+                    for _ = 1, 40 do m.preload(key); m.play(key); m.stopCue(key) end
+                end)
+                check(success, "new cue loader failure never throws " .. key .. " " .. tostring(failure))
+                eq(h.counts[path], 1, "failed cue is latched once " .. key)
+                eq(#h.plays + #h.randoms, 0, "failed cue never plays or consumes RNG " .. key)
+                eq(countLogs(h, failure == "throw" and ("加载异常: " .. key) or ("加载失败: " .. path)), 1,
+                    "failed cue logs once " .. key)
+                h.failures[path] = nil; m.play(key)
+                eq(h.counts[path], 1, "repair does not poll same-lifecycle failed asset " .. key)
+                m.play(CUE_KEYS[key == CUE_KEYS[4] and 1 or 4])
+                eq(#h.plays, 1, "one failed cue does not block other cue")
+                m.stop(); m.start(); m.play(key)
+                eq(h.counts[path], 2, "fresh lifecycle retries cue " .. key)
+                eq(h.plays[#h.plays].sound.path, path, "fresh lifecycle cue recovered " .. key)
+                eq(#h.randoms, 0, "failure/recovery other cues remain zero RNG")
+                m.stop()
+            end
+        end
+        local old, h = newHarness(source, "GameSFX.lua", { [defs.click.paths[1]] = "throw" })
+        old.start()
+        eq(pcall(function() old.play("click") end), false, "old key loader exception is not silently swallowed")
+        eq(#h.randoms + #h.plays, 0, "throw occurs before legacy selection/play")
+        old.stop()
+        local absent, ah = newHarness(source, "GameSFX.lua")
+        absent.init(nil); absent.start(); absent.play(CUE_KEYS[1]); absent.stopCue(CUE_KEYS[1])
+        eq(#ah.sources + #ah.plays + #ah.randoms, 0, "no-scene cue never invents source or consumes RNG")
+        absent.stop()
+    end)
+end
+
 function Start()
     local globalRandom = math.random
     local globalCache = cache
@@ -663,6 +903,21 @@ function Start()
         testBGM(readSource("systems/GameBGM.lua"))
         testBattlePlaylist(readSource("systems/GameBGM.lua"))
         testSFX(readSource("systems/GameSFX.lua"))
+        testArtifactCues(readSource("systems/GameSFX.lua"))
+        runCase("artifact four OGG decode metadata without real source or playback", function()
+            local lengths = { 1.536, 0.720, 1.824, 0.624 }
+            for i, key in ipairs(CUE_KEYS) do
+                local path = "audio/sfx/" .. key .. ".ogg"
+                local sound = nativeCache:GetResource("Sound", path)
+                check(sound ~= nil, "real authored cue Sound exists " .. path)
+                if sound then
+                    check(math.abs(sound:GetLength() - lengths[i]) < 0.025, "authored cue duration " .. key)
+                    eq(sound:GetIntFrequency(), 48000, "authored cue native sample rate " .. key)
+                    check(sound:IsStereo(), "authored cue stereo channels " .. key)
+                    print(TAG .. " REAL_SOUND " .. ROOT .. "/assets/" .. path .. " seconds=" .. tostring(sound:GetLength()))
+                end
+            end
+        end)
         runCase("battle OGG assets load with real engine metadata", function()
             local paths = { "audio/bgm_battle.ogg", "audio/bgm_battle_march.ogg", "audio/bgm_battle_moon.ogg" }
             local expectedLengths = { 90.024, 202.260979, 157.140979 }
@@ -686,4 +941,5 @@ function Start()
     print(string.format("%s %s cases=%d assertions=%d failures=%d", TAG,
         totals.failures == 0 and "ALL PASS" or "FAIL", totals.cases, totals.assertions, totals.failures))
     engine:Exit()
+    if totals.failures > 0 then error(TAG .. " audio regression failures=" .. totals.failures, 0) end
 end

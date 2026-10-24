@@ -8,6 +8,7 @@ local StartupQueue = require("boot.StartupQueue")
 
 -- ── 音效定义 ──
 -- weight: 多个音效时的随机权重（等权留空即可）
+-- deterministic: 固定首个候选，不消费玩法 RNG；仅神器抽卡使用
 local SFX_DEFS = {
     -- 点击到空白处（未命中任何按钮）
     click        = { paths = { "audio/sfx/Click.ogg"      }, gain = 0.7 },
@@ -21,6 +22,12 @@ local SFX_DEFS = {
 
     -- 英雄升级
     level_up     = { paths = { "audio/sfx/LevelUP.ogg"    }, gain = 1.0 },
+
+    -- 神器抽卡四阶段：克制提示，固定候选，绝不消耗抽奖 / 战斗 RNG
+    artifact_draw_charge    = { paths = { "audio/sfx/artifact_draw_charge.ogg"    }, gain = 0.60, deterministic = true },
+    artifact_draw_reveal    = { paths = { "audio/sfx/artifact_draw_reveal.ogg"    }, gain = 0.65, deterministic = true },
+    artifact_draw_legendary = { paths = { "audio/sfx/artifact_draw_legendary.ogg" }, gain = 0.70, deterministic = true },
+    artifact_draw_settle    = { paths = { "audio/sfx/artifact_draw_settle.ogg"    }, gain = 0.55, deterministic = true },
 
     -- UI 通用点击（1=轻 … 4=重），外部按权重自行选择
     ui_click_1   = { paths = { "audio/sfx/UI_Click_1.ogg" }, gain = 0.6 },
@@ -111,7 +118,11 @@ local unknownKeys_ = {}
 
 -- 复用 SoundSource 池（避免每次 play 新建组件）
 local MAX_POOL     = 12
-local pool_        = {}    -- SoundSource[]
+---@type SoundSource[]
+local pool_        = {}
+-- 只追踪池中音源的最新播放归属；空闲 / 复用时清旧 key，stopCue 不误停其他音效
+---@type table<SoundSource, string>
+local sourceCues_  = {}
 
 -- ── 内部工具 ──
 
@@ -137,17 +148,24 @@ local function ensureSounds(key, def)
         end
     end)
     if pending[key] == token then pending[key] = nil end
-    if not ok then error(err, 0) end
+    if not ok then
+        -- 抽卡表现资源失败只静默降级；旧音效的异常传播契约保持不变。
+        if not def.deterministic then error(err, 0) end
+        if sounds_ ~= saved or loading_ ~= pending then return nil end
+        print("[GameSFX] 加载异常: " .. tostring(key) .. " " .. tostring(err))
+        list = {}  -- 本生命周期缓存失败，避免动画每帧重试 / 刷屏
+    end
     if sounds_ ~= saved or loading_ ~= pending then return nil end
     saved[key] = list
     return list
 end
 
 --- 从池中获取一个空闲的 SoundSource，若无则新建
----@return SoundSource
+---@return SoundSource?
 local function acquireSource()
     for _, src in ipairs(pool_) do
         if not src:IsPlaying() then
+            sourceCues_[src] = nil
             return src
         end
     end
@@ -158,8 +176,10 @@ local function acquireSource()
         table.insert(pool_, src)
         return src
     end
-    -- 池满时复用最后一个（音效打断可接受）
-    return pool_[#pool_]
+    -- 池满时复用最后一个（音效打断可接受），先清理被打断 cue 的归属
+    local src = pool_[#pool_]
+    if src then sourceCues_[src] = nil end
+    return src
 end
 
 -- ── 公开 API ──
@@ -228,11 +248,32 @@ function GameSFX.play(key, teamIdx)
     end
     local list = ensureSounds(key, def)
     if not list or #list == 0 then return end
-    -- 随机选一个
-    local snd = list[math.random(1, #list)]
+    -- 新抽卡 cue 固定首个候选；旧 key（即使仅一个候选）仍消费一次随机数
+    local snd = list[def.deterministic and 1 or math.random(1, #list)]
     local src = acquireSource()
-    src.gain = def.gain * masterGain_
-    src:Play(snd)
+    if not src then return end
+    sourceCues_[src] = nil
+    local gain = def.gain * masterGain_
+    if def.deterministic then
+        -- 池复用可能遗留另一素材的绝对 Hz；本次显式恢复当前素材频率。
+        src:Play(snd, 0, gain)
+    else
+        src.gain = gain
+        src:Play(snd)
+    end
+    sourceCues_[src] = key
+end
+
+--- 停止池中仍在播放指定 cue 的所有实例；空闲 / 已复用的音源不会误停。
+---@param key string
+function GameSFX.stopCue(key)
+    if type(key) ~= "string" then return end
+    for _, src in ipairs(pool_) do
+        if sourceCues_[src] == key then
+            sourceCues_[src] = nil
+            if src:IsPlaying() then src:Stop() end
+        end
+    end
 end
 
 --- 播放 UI 通用点击音（轻/中/重 由外部传 level 1~4，默认 2）
@@ -263,6 +304,7 @@ function GameSFX.getMasterGain()
 end
 
 function GameSFX.stop()
+    sourceCues_ = {}
     for _, src in ipairs(pool_) do
         src:Stop()
     end

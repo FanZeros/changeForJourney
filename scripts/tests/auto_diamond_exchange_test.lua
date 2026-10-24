@@ -7,6 +7,11 @@
 -- 两种review均复用内存fixture，用-screenshot-frame/-validate退出；不读取玩家档或发送业务动作。
 
 local TAG = "[auto_diamond_exchange_test] "
+local ROOT = "/workspace/changeForJourney"
+for _, argument in ipairs(type(GetArguments) == "function" and GetArguments() or {}) do
+    local directory = argument:match("^%-tapcode_dir=(.+)$")
+    if directory then ROOT = directory:gsub("/+$", "") end
+end
 local SCOPES = { "gacha_standard", "gacha_stellar", "artifact_normal", "artifact_advanced" }
 local SOURCES = {}
 for _, name in ipairs({
@@ -61,7 +66,8 @@ end
 local function source(name)
     local path = assert(SOURCES[name], "拒绝未列入白名单的源码：" .. tostring(name))
     if not sources[name] then
-        local file = assert(nativeCache:GetFile(path), "缺少真实生产源码：" .. path)
+        assert(ROOT:sub(1, 1) == "/" and not ROOT:find("..", 1, true), "非法-tapcode_dir源码根")
+        local file = assert(nativeCache:GetFile(path), "缺少真实生产源码：" .. ROOT .. "/scripts/" .. path)
         local ok, text = pcall(function()
             local lines = {}
             while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
@@ -89,6 +95,8 @@ local function fixture()
         messages = {}, now = 1800000000, clock = { elapsedTime = 100 }, sendMode = "pending",
         vg = {}, tx = 0, ty = 0, sx = 1, sy = 1, stack = {}, font = 24,
         memory = {}, host = { open = true, closing = false }, animPlaying = false, targetOpen = false,
+        artifactAnimPlaying = false, artifactAnimCalls = {}, rewardPopupCalls = {},
+        artifactAnimInit = 0, artifactAnimCloses = 0, artifactAnimDestroys = 0,
     } ---@type any
     fixtures[#fixtures + 1] = f
     local env = {} ---@type any
@@ -240,6 +248,29 @@ local function fixture()
         isPlaying = function() return f.animPlaying end, draw = noop, update = noop,
         handleInput = function() return true end, close = function() f.animPlaying = false end,
         start = function(_, _, count, poolId) f.animCount, f.animPool, f.animPlaying = count, poolId, true end })
+    -- 神器动画是显式spy：测试实际成功接线/冻结继续闭包，不模拟动画时序或替换业务。
+    mock("ui.church.ArtifactDrawAnim", {
+        init = function(vg) eq(vg, f.vg, "神器动画init收到宿主VG"); f.artifactAnimInit = f.artifactAnimInit + 1 end,
+        start = function(rewards, onClose, count, chestType, opts)
+            f.artifactAnimCalls[#f.artifactAnimCalls + 1] = { rewards = copy(rewards), original = rewards,
+                onClose = onClose, count = count, chestType = chestType, options = opts }
+            if f.artifactAnimThrow then error("内存动画启动失败") end
+            if f.artifactAnimReject or f.artifactAnimInit == 0 then return false end
+            f.repeatDraw = opts
+            f.artifactAnimPlaying = true
+            return true
+        end,
+        update = function(dt) f.artifactAnimUpdated = dt end,
+        draw = function(vg) eq(vg, f.vg, "动画draw透传宿主VG"); f.artifactAnimDraws = (f.artifactAnimDraws or 0) + 1 end,
+        handleInput = function(dx, dy)
+            f.artifactAnimInputPoint = { dx, dy }
+            f.artifactAnimInputs = (f.artifactAnimInputs or 0) + 1; return true
+        end,
+        dismiss = function() f.artifactAnimDismisses = (f.artifactAnimDismisses or 0) + 1; return f.artifactAnimPlaying end,
+        close = function() f.artifactAnimCloses = f.artifactAnimCloses + 1; f.artifactAnimPlaying = false end,
+        destroy = function() f.artifactAnimDestroys = f.artifactAnimDestroys + 1; f.artifactAnimPlaying = false end,
+        isPlaying = function() return f.artifactAnimPlaying end,
+    })
     mock("ui.tavern.TavernShopPage", { init = noop, resetScroll = noop, syncPurchasedFromStore = noop,
         drawContent = noop, update = noop, handleInput = function() return false end,
         isPendingBuy = function() return false end })
@@ -249,7 +280,10 @@ local function fixture()
     mock("systems.TutorialManager", { notifyEvent = function(name) f.events[#f.events + 1] = name end,
         isActive = function() return false end, onRecruitCompleted = noop })
     mock("ui.character.hero.HeroScenario", { onRecruitResults = noop })
-    mock("ui.hud.popup.RewardPopup", { show = function(_, _, options) f.repeatDraw = options.repeatDraw end })
+    mock("ui.hud.popup.RewardPopup", { show = function(title, rewards, options)
+        f.rewardPopupCalls[#f.rewardPopupCalls + 1] = { title = title, rewards = copy(rewards), options = options }
+        f.repeatDraw = options.repeatDraw
+    end })
     mock("ui.town.TownPageChrome", { easeOutCubic = function(t) return 1 - (1 - t) ^ 3 end,
         easeInCubic = function(t) return t ^ 3 end, drawNamePlate = noop, drawBack = noop,
         hitBack = function() return false end, drawTabBar = noop,
@@ -811,8 +845,17 @@ local function artifactEntrypointsAndGates()
             eq(#f.actions, 1, "宝箱pending不跨卡发送")
             eq(panel.isKeyConfirmVisible(), false, "pending不打开modal")
             f.insideSend = nil
-            panel.onArtifactDrawSuccess({ chestType = chest, artifacts = { { id = "内存1", artifactId = 1, quality = 1, value = 1 } } })
-            check(type(f.repeatDraw) == "table" and type(f.repeatDraw.onContinue) == "function", "真实成功处理注册原继续回调")
+            local success = { chestType = chest, artifacts = {} }
+            for i = 1, count do success.artifacts[i] = { id = "内存" .. i, artifactId = 1, quality = 1, value = i, valueRatio = 0.37 } end
+            local successSnapshot = copy(success)
+            panel.onArtifactDrawSuccess(success)
+            eq(#f.artifactAnimCalls, 1, "真实成功恰好交给神器动画一次")
+            eq(#f.rewardPopupCalls, 0, "正常动画与RewardPopup不能双重展示同一回执")
+            eq(f.artifactAnimInit, 1, "面板init接入动画init一次")
+            eq(f.artifactAnimCalls[1].count, count, "动画收到当前真实整批奖励张数")
+            eq(f.artifactAnimCalls[1].chestType, chest, "动画宝箱由实际回执冻结")
+            check(same(success, successSnapshot), "成功接线不修改实际回执")
+            check(type(f.repeatDraw) == "table" and type(f.repeatDraw.onContinue) == "function", "真实动画成功处理注册原继续回调")
             local repeatDraw = f.repeatDraw
             panel.handleTabInput(540, chest == "normal" and 1200 or 400)
             local before = #f.actions
@@ -821,11 +864,12 @@ local function artifactEntrypointsAndGates()
             f.release(); f.settings.setAutoDiamondExchangeEnabled(scope, false)
             before = #f.actions; repeatDraw.onContinue(count)
             check(panel.isKeyConfirmVisible(), "继续入口关闭偏好后恢复确认")
+            eq(panel.isAnimationPlaying(), false, "继续补购modal不能被旧动画遮挡")
             noActions(f, before, "宝箱继续关闭")
             panel.reset(); f.settings.setAutoDiamondExchangeEnabled(scope, true)
             repeatDraw.onContinue(count)
             noActions(f, before, "过期generation继续无效")
-            panel.onArtifactDrawSuccess({ chestType = chest, artifacts = { { id = "内存2", artifactId = 1, quality = 1 } } })
+            panel.onArtifactDrawSuccess({ chestType = chest, artifacts = { { id = "内存2", artifactId = 1, quality = 1, value = 1 } } })
             f.host.open = false; f.repeatDraw.onContinue(count)
             noActions(f, before, "宿主关闭不允许继续")
             f.host.open, f.host.closing = true, true; f.repeatDraw.onContinue(count)
@@ -864,6 +908,108 @@ local function artifactEntrypointsAndGates()
     panel.handleTabInput(320, 1800)
     check(panel.isKeyConfirmVisible(), "普通开启不授权高级")
     noActions(f, 0, "宝箱档位授权隔离")
+end
+
+local function artifactAnimationBridge()
+    for _, mode in ipairs({ "playing", "start_false", "start_throw", "not_initialized" }) do
+        local f = fixture()
+        local panel = mode == "not_initialized" and f.real("ui.church.ChurchArtifactDrawPanel") or f.artifact()
+        if mode == "not_initialized" then
+            f.panel = panel
+            panel.setContext({ state = f.host, getProtocol = function() return f.protocol end,
+                getClient = function() return { sendAction = f.send } end })
+        end
+        f.artifactAnimReject, f.artifactAnimThrow = mode == "start_false", mode == "start_throw"
+        f.resetMemory(0, 150, 4)
+        f.settings.setAutoDiamondExchangeEnabled("artifact_advanced", true)
+        local data = { chestType = "advanced", count = 1, artifacts = { { id = "receipt_exact_identity", artifactId = 2,
+            quality = 5, value = 73.8, valueRatio = 7182, threatClearValue = 63.4, threatClearRatio = 8933 } } }
+        local dataBefore, memoryBefore = copy(data), copy(f.memory)
+        f.host.floatText = "旧请求提示"
+        local rewards = panel.onArtifactDrawSuccess(data)
+        eq(#f.artifactAnimCalls, 1, "成功回执只尝试一次动画start " .. mode)
+        eq(#f.rewardPopupCalls, mode == "playing" and 0 or 1, "只有start失败/无init结果兜底同一展示 " .. mode)
+        eq(panel.isAnimationPlaying(), mode == "playing", "playing门面透传真实状态spy " .. mode)
+        eq(f.artifactAnimCloses, mode == "playing" and 0 or 1, "失败fallback先close残留表现 " .. mode)
+        eq(f.host.floatText, nil, "success清除旧开启提示 " .. mode)
+        eq(panel.isKeyConfirmVisible(), false, "success清除旧钥匙确认 " .. mode)
+        check(same(data, dataBefore) and same(f.memory, memoryBefore), "展示不修改原回执或内存币/背包 " .. mode)
+        eq(rewards[1].id, "receipt_exact_identity", "实际实例id不丢失 " .. mode)
+        eq(rewards[1].artifactId, 2, "实际类型id不丢失 " .. mode)
+        eq(rewards[1].quality, 5, "实际品质不升质 " .. mode)
+        eq(rewards[1].valueRatio, 7182, "实际ratio不重算 " .. mode)
+        eq(rewards[1].value, 73.8, "真实X字段不改 " .. mode)
+        eq(rewards[1].threatClearValue, 63.4, "真实Y字段不取缺省中点 " .. mode)
+        eq(rewards[1].threatClearRatio, 8933, "真实Y ratio不重算 " .. mode)
+        local opts = assert(f.repeatDraw)
+        local cost = opts.getCost(1)
+        eq(cost.parts[1].type, "golden_key", "原继续报价优先现有钥匙")
+        eq(cost.parts[1].amount, 4, "高级单抽实际四把现有钥匙")
+        eq(cost.parts[2].type, "diamond", "缺口仍黑晶")
+        eq(cost.parts[2].amount, 150, "缺口价保持150，不变全额750")
+        eq(cost.enough, true, "缺口恰好够继续")
+        panel.handleTabInput(540, 400) -- 宿主所选普通不改变本回执冻结的高级报价/继续。
+        cost = opts.getCost(10)
+        eq(cost.parts[1].amount, 4, "选中普通后高级十连仍使用已有4把")
+        eq(cost.parts[2].amount, 6900, "选中普通后继续仍冻结高级50把需求")
+        eq(cost.enough, false, "十连真实冻结报价不可降级普通")
+        panel.drawAnimation(f.vg); eq(f.artifactAnimDraws, 1, "面板drawAnimation透传一次")
+        panel.updateAnimation(0.125); eq(f.artifactAnimUpdated, 0.125, "面板updateAnimation透传dt")
+        check(panel.handleAnimationInput(222, 333), "面板handleAnimationInput透传消费")
+        check(same(f.artifactAnimInputPoint, {222,333}), "面板input维持设计坐标")
+        eq(panel.dismissAnimation(), mode == "playing", "dismissAnimation透传返回值")
+        local before = #f.actions
+        local closes = f.artifactAnimCloses
+        panel.closeAnimation()
+        eq(f.artifactAnimCloses, closes + 1, "closeAnimation只关闭自身动画一次")
+        opts.onContinue(1)
+        noActions(f, before, "显式closeAnimation使旧generation继续失效 " .. mode)
+        panel.onArtifactDrawSuccess(data)
+        local old = f.repeatDraw
+        panel.reset()
+        old.onContinue(1)
+        noActions(f, before, "reset使新generation继续也失效 " .. mode)
+        eq(panel.isAnimationPlaying(), false, "reset关闭动画")
+    end
+    local synchronous = fixture(); local syncPanel = synchronous.artifact()
+    synchronous.resetMemory(0, 7500, 0)
+    synchronous.settings.setAutoDiamondExchangeEnabled("artifact_advanced", true)
+    local oldReceipt = { chestType = "advanced", count = 10, artifacts = {} }
+    for i = 1, 10 do oldReceipt.artifacts[i] = { id = "old_sync_" .. i, artifactId = 1, quality = 1, value = 123.4 } end
+    syncPanel.onArtifactDrawSuccess(oldReceipt)
+    local current = synchronous.repeatDraw
+    synchronous.insideSend = function(action)
+        eq(action, synchronous.protocol.ACTION_TYPES.ARTIFACT_DRAW, "sync只使用原神器Action")
+        syncPanel.onArtifactDrawSuccess({ chestType = "advanced", count = 1,
+            artifacts = { { id = "next_sync_result", artifactId = 2, quality = 5, value = 73.8, threatClearValue = 63.4 } } })
+    end
+    current.onContinue(1)
+    oneAction(synchronous, 0, synchronous.protocol.ACTION_TYPES.ARTIFACT_DRAW, 1, "diamond", "advanced")
+    eq(#synchronous.artifactAnimCalls, 2, "同步成功回执直接开启下一批一次")
+    eq(synchronous.artifactAnimCalls[2].rewards[1].id, "next_sync_result", "下一批真正同步结果未被旧批覆盖")
+    eq(syncPanel.isAnimationPlaying(), true, "旧continue返回后新animation仍playing")
+    synchronous.insideSend = nil
+    current.onContinue(1)
+    noActions(synchronous, 1, "同步新成功generation使上一批继续失效")
+    synchronous.repeatDraw.onContinue(1)
+    oneAction(synchronous, 1, synchronous.protocol.ACTION_TYPES.ARTIFACT_DRAW, 1, "diamond", "advanced")
+    synchronous.release()
+    synchronous.settings.setAutoDiamondExchangeEnabled("artifact_advanced", false)
+    synchronous.repeatDraw.onContinue(1)
+    check(syncPanel.isKeyConfirmVisible(), "当前generation继续关闭动画但可恢复补购modal")
+    eq(syncPanel.isAnimationPlaying(), false, "当前generation补购modal不被动画覆盖")
+
+    local pending = fixture(); local panel = pending.artifact()
+    pending.resetMemory(0, 150, 0)
+    pending.settings.setAutoDiamondExchangeEnabled("artifact_normal", true)
+    panel.handleTabInput(320, 980)
+    oneAction(pending, 0, pending.protocol.ACTION_TYPES.ARTIFACT_DRAW, 1, "diamond", "normal")
+    panel.reset()
+    panel.handleTabInput(320, 980)
+    noActions(pending, 1, "动画reset不可清业务pending后重复发送")
+    panel.onArtifactDrawResult()
+    panel.handleTabInput(320, 980)
+    oneAction(pending, 1, pending.protocol.ACTION_TYPES.ARTIFACT_DRAW, 1, "diamond", "normal")
 end
 
 local function authoritativePayments()
@@ -1263,6 +1409,7 @@ function Start()
         { "旧目标不影响UR权重/同随机保底/设置拒绝无dirty", stellarLegacyTargetIgnored },
         { "宝箱confirm开关/单抽十连自动缺口支付", artifactConfirmAndAuto },
         { "宝箱原继续入口/pending/免费/已有钥匙/解锁", artifactEntrypointsAndGates },
+        { "神器动画单展示与fallback/实际X_Y/冻结费用/close代际/pending", artifactAnimationBridge },
         { "真实三规则服务混合扣费与权威余额变化拒绝", authoritativePayments },
         { "实际碎片/混合币/新整卡动画与历史不造额外结果", actualShardPresentation },
         { "真实合成觉醒Service和Handler透传旧库存币与消息展示闭环", overflowHandlerPresentation },

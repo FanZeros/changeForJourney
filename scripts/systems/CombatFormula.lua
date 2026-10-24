@@ -211,48 +211,11 @@ function CF.selectTarget(units)
     return alive[#alive].index
 end
 
--- ======================== 完整伤害计算 ========================
+-- ======================== 攻击计算阶段 ========================
+-- 按命中后的原顺序读取；各阶段只接收当时已有的值，不预读动态方法或属性。
+-- 护盾/生命结算仍由调用方执行，这里只交付原伤及对应抗性。
 
---- 计算一次攻击的完整伤害（单次命中）
---- comboHitIndex 用于连击增伤：0=普通攻击，1=第1次连击，2=第2次连击...
----@param attacker table UnitAttributes 实例
----@param defender table UnitAttributes 实例
----@param atkType number|nil 攻击类型（nil 则用 attacker.atkType）
----@param comboHitIndex number|nil 连击序号（0=普通，>=1=连击额外攻击），默认0
----@return table result { damage, isCrit, isBlocked, isHit, isMiss, category, comboCount, hits[] }
-function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
-    comboHitIndex = comboHitIndex or 0
-    atkType = atkType or attacker.atkType or AD.ATK_SLASH
-    local category = AD.getAtkCategory(atkType)
-    local armorType = defender.armorType or AD.ARMOR_LEATHER
-    local chaosMult = attacker.artifactChaosDamageMult
-
-    local result = {
-        category   = category,
-        atkType    = atkType,
-        isHit      = false,
-        isMiss     = false,
-        totalDamage = 0,
-        comboCount = 0,
-        hits       = {},   -- 每次命中的详细信息
-    }
-
-    -- 神圣（治疗）走治疗逻辑
-    if category == "healing" then
-        return CF.calcHealAttack(attacker, defender, atkType)
-    end
-
-    -- ---- 1. 命中判定 ----
-    local hitRate = CF.calcHitRate(
-        attacker:get(AD.HIT_VALUE),
-        defender:get(AD.DODGE)
-    )
-    if math.random() > hitRate then
-        result.isMiss = true
-        return result
-    end
-    result.isHit = true
-
+local function readAttackPower(attacker, category, chaosMult)
     -- ---- 2. 基础攻击力 ----
     local baseAtk
     if category == "physical" then
@@ -275,6 +238,10 @@ function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
         dmgBonusPct = dmgBonusPct + attacker:get(AD.MAG_DMG_BONUS)
     end
 
+    return baseAtk, dmgBonusPct
+end
+
+local function readCriticalProfile(attacker, defender, category)
     -- ---- 4. 暴击判定 ----
     local critRate = attacker:get(AD.CRIT_RATE)
     local critDmg  = attacker:get(AD.CRIT_DMG)
@@ -300,6 +267,10 @@ function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
     -- 全部修正之后封顶判定概率；暴伤转换需专属觉醒解锁。
     critRate, critDmg = CF.applyCritOverflow(critRate, critDmg, attacker)
 
+    return critRate, critDmg
+end
+
+local function readArmorProfile(attacker, defender, category, chaosMult)
     -- ---- 5. 穿透 → 有效护甲（抗性）+ 溢出穿透（独立乘区增伤）----
     -- 溢出穿透 = 穿透超出护甲的部分，按对称公式计算独立增伤倍率
     -- penBonus 有渐近上限：+100% 伤害（穿透→∞时），正常范围 +20%~+50%
@@ -331,6 +302,10 @@ function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
     end
     local penBonus = excessPen > 0 and (1 + (0.01 * excessPen) / (0.01 * excessPen + 1)) or 1.0
 
+    return resistance, penBonus
+end
+
+local function readBlockProfile(defender, category)
     -- ---- 6. 格挡 ----
     local blockRate, blockRatio
     if category == "physical" then
@@ -345,20 +320,12 @@ function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
         blockRate = math.min(blockRate, artifactBlockCap)
     end
 
-    -- ---- 7. 类型倍率 ----
-    local baseTypeMult = AD.getTypeMult(atkType, armorType)
-    local typeMult = getCGR().adjustTypeMult(attacker, defender, baseTypeMult)
-    local matchupMult = CF.getMatchupDamageMult(attacker, baseTypeMult)
-    result.matchup = baseTypeMult > 1 and "advantage" or (baseTypeMult < 1 and "disadvantage" or "neutral")
-    result.matchupDamageMult = matchupMult
+    return blockRate, blockRatio
+end
 
-    -- ---- 8. 连击次数（仅普通攻击时 roll，连击额外攻击不再触发连击） ----
-    local comboCount = 0
-    if comboHitIndex == 0 then
-        comboCount = CF.rollComboCount(attacker:get(AD.COMBO_RATE))
-    end
-    result.comboCount = comboCount
-
+-- 单击阶段保留波动 → 加成 → 连击 → 暴击 → 类型 → 穿透 → 最终伤害 → 格挡 → 取整。
+local function calculateHit(attacker, baseAtk, dmgBonusPct, critRate, critDmg,
+    matchupMult, comboHitIndex, chaosMult, typeMult, penBonus, blockRate, blockRatio)
     -- ---- 9. 计算单次伤害 ----
     local comboDmgUp = attacker:get(AD.COMBO_DMG_UP)
     local hit = {}
@@ -416,6 +383,73 @@ function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
     dmg = math.max(1, math.floor(dmg + 0.5))
     hit.damage = dmg
     hit.hitIndex = 1
+
+    return hit, dmg
+end
+
+-- ======================== 完整伤害计算 ========================
+
+--- 计算一次攻击的完整伤害（单次命中）
+--- comboHitIndex 用于连击增伤：0=普通攻击，1=第1次连击，2=第2次连击...
+---@param attacker table UnitAttributes 实例
+---@param defender table UnitAttributes 实例
+---@param atkType number|nil 攻击类型（nil 则用 attacker.atkType）
+---@param comboHitIndex number|nil 连击序号（0=普通，>=1=连击额外攻击），默认0
+---@return table result { damage, isCrit, isBlocked, isHit, isMiss, category, comboCount, hits[] }
+function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
+    comboHitIndex = comboHitIndex or 0
+    atkType = atkType or attacker.atkType or AD.ATK_SLASH
+    local category = AD.getAtkCategory(atkType)
+    local armorType = defender.armorType or AD.ARMOR_LEATHER
+    local chaosMult = attacker.artifactChaosDamageMult
+
+    local result = {
+        category   = category,
+        atkType    = atkType,
+        isHit      = false,
+        isMiss     = false,
+        totalDamage = 0,
+        comboCount = 0,
+        hits       = {},   -- 每次命中的详细信息
+    }
+
+    -- 神圣（治疗）走治疗逻辑
+    if category == "healing" then
+        return CF.calcHealAttack(attacker, defender, atkType)
+    end
+
+    -- ---- 1. 命中判定 ----
+    local hitRate = CF.calcHitRate(
+        attacker:get(AD.HIT_VALUE),
+        defender:get(AD.DODGE)
+    )
+    if math.random() > hitRate then
+        result.isMiss = true
+        return result
+    end
+    result.isHit = true
+
+    local baseAtk, dmgBonusPct = readAttackPower(attacker, category, chaosMult)
+    local critRate, critDmg = readCriticalProfile(attacker, defender, category)
+    local resistance, penBonus = readArmorProfile(attacker, defender, category, chaosMult)
+    local blockRate, blockRatio = readBlockProfile(defender, category)
+
+    -- ---- 7. 类型倍率 ----
+    local baseTypeMult = AD.getTypeMult(atkType, armorType)
+    local typeMult = getCGR().adjustTypeMult(attacker, defender, baseTypeMult)
+    local matchupMult = CF.getMatchupDamageMult(attacker, baseTypeMult)
+    result.matchup = baseTypeMult > 1 and "advantage" or (baseTypeMult < 1 and "disadvantage" or "neutral")
+    result.matchupDamageMult = matchupMult
+
+    -- ---- 8. 连击次数（仅普通攻击时 roll，连击额外攻击不再触发连击） ----
+    local comboCount = 0
+    if comboHitIndex == 0 then
+        comboCount = CF.rollComboCount(attacker:get(AD.COMBO_RATE))
+    end
+    result.comboCount = comboCount
+
+    local hit, dmg = calculateHit(attacker, baseAtk, dmgBonusPct, critRate, critDmg,
+        matchupMult, comboHitIndex, chaosMult, typeMult, penBonus, blockRate, blockRatio)
 
     result.hits[1] = hit
     result.totalDamage = dmg

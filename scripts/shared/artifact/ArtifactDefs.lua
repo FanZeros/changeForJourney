@@ -204,26 +204,47 @@ function ArtifactDefs.getRange(artifactId, quality)
     return def.ranges[tonumber(quality) or 1]
 end
 
-function ArtifactDefs.valueToRatio(artifactId, quality, value)
-    local range = ArtifactDefs.getRange(artifactId, quality)
-    value = tonumber(value) or 0
-    if not range then return 0 end
+-- 参数换算只处理已选定的区间；公开入口仍负责缺失值策略和读取时序。
+local function rangeBounds(range)
     local a, b = tonumber(range[1]) or 0, tonumber(range[2]) or 0
-    local lo, hi = math.min(a, b), math.max(a, b)
+    return math.min(a, b), math.max(a, b)
+end
+
+local function boundedRatio(ratio)
+    return math.max(0, math.min(10000, math.floor(tonumber(ratio) or 0)))
+end
+
+local function encodeRangeValue(range, value)
+    local lo, hi = rangeBounds(range)
     if hi <= lo then return 0 end
     local ratio = (value - lo) / (hi - lo)
     ratio = math.max(0, math.min(1, ratio))
     return math.floor(ratio * 10000 + 0.5)
 end
 
-function ArtifactDefs.ratioToValue(artifactId, quality, ratio)
-    local range = ArtifactDefs.getRange(artifactId, quality)
-    ratio = math.max(0, math.min(10000, math.floor(tonumber(ratio) or 0)))
-    if not range then return 0 end
-    local a, b = tonumber(range[1]) or 0, tonumber(range[2]) or 0
-    local lo, hi = math.min(a, b), math.max(a, b)
+local function decodeRangeRatio(range, ratio)
+    local lo, hi = rangeBounds(range)
     local value = lo + (hi - lo) * ratio / 10000
     return math.floor(value * 10 + 0.5) / 10
+end
+
+local function clampRangeValue(range, value)
+    local lo, hi = rangeBounds(range)
+    return math.max(lo, math.min(hi, value))
+end
+
+function ArtifactDefs.valueToRatio(artifactId, quality, value)
+    local range = ArtifactDefs.getRange(artifactId, quality)
+    value = tonumber(value) or 0
+    if not range then return 0 end
+    return encodeRangeValue(range, value)
+end
+
+function ArtifactDefs.ratioToValue(artifactId, quality, ratio)
+    local range = ArtifactDefs.getRange(artifactId, quality)
+    ratio = boundedRatio(ratio)
+    if not range then return 0 end
+    return decodeRangeRatio(range, ratio)
 end
 
 function ArtifactDefs.rollValueRatio()
@@ -239,23 +260,15 @@ function ArtifactDefs.threatClearValueToRatio(artifactId, quality, value)
     local range = def and def.threatClearRanges and def.threatClearRanges[tonumber(quality) or 1]
     value = tonumber(value) or 0
     if not range then return nil end
-    local a, b = tonumber(range[1]) or 0, tonumber(range[2]) or 0
-    local lo, hi = math.min(a, b), math.max(a, b)
-    if hi <= lo then return 0 end
-    local ratio = (value - lo) / (hi - lo)
-    ratio = math.max(0, math.min(1, ratio))
-    return math.floor(ratio * 10000 + 0.5)
+    return encodeRangeValue(range, value)
 end
 
 function ArtifactDefs.threatClearRatioToValue(artifactId, quality, ratio)
     local def = ArtifactDefs.get(artifactId)
     local range = def and def.threatClearRanges and def.threatClearRanges[tonumber(quality) or 1]
     if not range then return nil end
-    ratio = math.max(0, math.min(10000, math.floor(tonumber(ratio) or 0)))
-    local a, b = tonumber(range[1]) or 0, tonumber(range[2]) or 0
-    local lo, hi = math.min(a, b), math.max(a, b)
-    local value = lo + (hi - lo) * ratio / 10000
-    return math.floor(value * 10 + 0.5) / 10
+    ratio = boundedRatio(ratio)
+    return decodeRangeRatio(range, ratio)
 end
 
 function ArtifactDefs.rollThreatClearValueRatio(artifactId, quality)
@@ -273,9 +286,7 @@ function ArtifactDefs.clampValueToRange(artifactId, quality, value)
     local range = ArtifactDefs.getRange(artifactId, quality)
     value = tonumber(value) or 0
     if not range then return value end
-    local a, b = tonumber(range[1]) or 0, tonumber(range[2]) or 0
-    local lo, hi = math.min(a, b), math.max(a, b)
-    return math.max(lo, math.min(hi, value))
+    return clampRangeValue(range, value)
 end
 
 function ArtifactDefs.clampThreatClearValueToRange(artifactId, quality, value)
@@ -283,26 +294,23 @@ function ArtifactDefs.clampThreatClearValueToRange(artifactId, quality, value)
     local range = def and def.threatClearRanges and def.threatClearRanges[tonumber(quality) or 1]
     if not range then return nil end
     value = tonumber(value) or 0
-    local a, b = tonumber(range[1]) or 0, tonumber(range[2]) or 0
-    local lo, hi = math.min(a, b), math.max(a, b)
-    return math.max(lo, math.min(hi, value))
+    return clampRangeValue(range, value)
 end
 
-function ArtifactDefs.normalizeInstanceValue(artifact)
-    if not artifact then return nil end
-    local artifactId = tonumber(artifact.artifactId or artifact.id)
-    local quality = tonumber(artifact.quality) or 1
-
+-- 原地迁移分为主参数和附加参数两个阶段；失败时保留此前已经写入的字段。
+local function normalizeMainParameter(artifact, artifactId, quality)
     if artifact.valueRatio == nil and artifact.r ~= nil then
         artifact.valueRatio = artifact.r
     end
     if artifact.valueRatio == nil then
         artifact.valueRatio = ArtifactDefs.valueToRatio(artifactId, quality, artifact.value)
     else
-        artifact.valueRatio = math.max(0, math.min(10000, math.floor(tonumber(artifact.valueRatio) or 0)))
+        artifact.valueRatio = boundedRatio(artifact.valueRatio)
     end
     artifact.value = ArtifactDefs.ratioToValue(artifactId, quality, artifact.valueRatio)
+end
 
+local function normalizeThreatParameter(artifact, artifactId, quality)
     if artifact.threatClearRatio == nil and artifact.tr ~= nil then
         artifact.threatClearRatio = artifact.tr
     end
@@ -310,11 +318,19 @@ function ArtifactDefs.normalizeInstanceValue(artifact)
         artifact.threatClearRatio = ArtifactDefs.threatClearValueToRatio(artifactId, quality, artifact.threatClearValue)
     end
     if artifact.threatClearRatio ~= nil then
-        artifact.threatClearRatio = math.max(0, math.min(10000, math.floor(tonumber(artifact.threatClearRatio) or 0)))
+        artifact.threatClearRatio = boundedRatio(artifact.threatClearRatio)
         artifact.threatClearValue = ArtifactDefs.threatClearRatioToValue(artifactId, quality, artifact.threatClearRatio)
     elseif artifact.threatClearValue ~= nil then
         artifact.threatClearValue = ArtifactDefs.clampThreatClearValueToRange(artifactId, quality, artifact.threatClearValue) or artifact.threatClearValue
     end
+end
+
+function ArtifactDefs.normalizeInstanceValue(artifact)
+    if not artifact then return nil end
+    local artifactId = tonumber(artifact.artifactId or artifact.id)
+    local quality = tonumber(artifact.quality) or 1
+    normalizeMainParameter(artifact, artifactId, quality)
+    normalizeThreatParameter(artifact, artifactId, quality)
     return artifact
 end
 
@@ -373,6 +389,16 @@ local function getRangeRatio(artifactId, quality, value)
     return math.max(0, math.min(1, ((tonumber(value) or lo) - lo) / (hi - lo)))
 end
 
+-- 计价不复用存档万分比：缺失/退化区间按中值计价，负面机制另行折价。
+local function priceArtifact(artifactId, def, quality, value)
+    local base = ARTIFACT_POWER_BASE[quality] or quality * 120
+    local spread = ARTIFACT_POWER_SPREAD[quality] or 50
+    local ratio = getRangeRatio(artifactId, quality, value)
+    local factor = ARTIFACT_POWER_NEGATIVE_FACTOR[def and def.effectType or nil] or 1.0
+    local power = (base + spread * ratio) * factor
+    return math.max(0, math.floor(power + 0.5))
+end
+
 function ArtifactDefs.getPower(artifact)
     if not artifact then return 0 end
     local explicit = tonumber(artifact.power or artifact.strength or artifact.combatPower)
@@ -382,12 +408,7 @@ function ArtifactDefs.getPower(artifact)
     local def = ArtifactDefs.get(artifactId)
     local quality = math.max(1, math.min(tonumber(artifact.quality) or 1, 6))
     local value = tonumber(artifact.value) or 0
-    local base = ARTIFACT_POWER_BASE[quality] or quality * 120
-    local spread = ARTIFACT_POWER_SPREAD[quality] or 50
-    local ratio = getRangeRatio(artifactId, quality, value)
-    local factor = ARTIFACT_POWER_NEGATIVE_FACTOR[def and def.effectType or nil] or 1.0
-    local power = (base + spread * ratio) * factor
-    return math.max(0, math.floor(power + 0.5))
+    return priceArtifact(artifactId, def, quality, value)
 end
 
 function ArtifactDefs.getEffectText(artifact)
@@ -424,18 +445,9 @@ function ArtifactDefs.getEligibleIds(quality)
     return ids
 end
 
-function ArtifactDefs.rollArtifactIdExcept(quality, excludedIds)
-    local excluded = {}
-    for _, id in ipairs(excludedIds or {}) do
-        excluded[tonumber(id)] = true
-    end
-    local ids = {}
-    for _, id in ipairs(ArtifactDefs.getEligibleIds(quality)) do
-        if not excluded[tonumber(id)] then
-            ids[#ids + 1] = id
-        end
-    end
-    if #ids == 0 then return nil end
+-- 选池负责资格/排除/最少持有策略；抽样只消费一次无参 RNG。
+-- 两遍都现读公开定义，不能缓存权重（RNG 回调也可能替换定义表）。
+local function drawWeightedId(ids)
     local total = 0
     for _, id in ipairs(ids) do
         total = total + (ArtifactDefs.ARTIFACTS[id].weight or 100)
@@ -449,24 +461,15 @@ function ArtifactDefs.rollArtifactIdExcept(quality, excludedIds)
     return ids[#ids]
 end
 
---- 置换专用：优先产出背包中尚未拥有的类型，其次数量最少的类型
----@param quality number
----@param excludedIds number[] 被消耗的类型，不可重复产出
----@param typeCounts table<number, number>|nil 置换消耗后背包内各类型数量（artifactId -> count）
----@return number|nil
-function ArtifactDefs.rollArtifactIdForReroll(quality, excludedIds, typeCounts)
+local function excludedTypeSet(excludedIds)
     local excluded = {}
     for _, id in ipairs(excludedIds or {}) do
         excluded[tonumber(id)] = true
     end
-    local candidates = {}
-    for _, id in ipairs(ArtifactDefs.getEligibleIds(quality)) do
-        if not excluded[id] then
-            candidates[#candidates + 1] = id
-        end
-    end
-    if #candidates == 0 then return nil end
+    return excluded
+end
 
+local function leastOwnedTypes(candidates, typeCounts)
     typeCounts = typeCounts or {}
     local minCount = math.huge
     for _, id in ipairs(candidates) do
@@ -482,34 +485,44 @@ function ArtifactDefs.rollArtifactIdForReroll(quality, excludedIds, typeCounts)
             preferred[#preferred + 1] = id
         end
     end
+    return preferred
+end
 
-    local total = 0
-    for _, id in ipairs(preferred) do
-        total = total + (ArtifactDefs.ARTIFACTS[id].weight or 100)
+function ArtifactDefs.rollArtifactIdExcept(quality, excludedIds)
+    local excluded = excludedTypeSet(excludedIds)
+    local ids = {}
+    for _, id in ipairs(ArtifactDefs.getEligibleIds(quality)) do
+        if not excluded[tonumber(id)] then
+            ids[#ids + 1] = id
+        end
     end
-    local roll = math.random() * total
-    local acc = 0
-    for _, id in ipairs(preferred) do
-        acc = acc + (ArtifactDefs.ARTIFACTS[id].weight or 100)
-        if roll <= acc then return id end
+    if #ids == 0 then return nil end
+    return drawWeightedId(ids)
+end
+
+--- 置换专用：优先产出背包中尚未拥有的类型，其次数量最少的类型
+---@param quality number
+---@param excludedIds number[] 被消耗的类型，不可重复产出
+---@param typeCounts table<number, number>|nil 置换消耗后背包内各类型数量（artifactId -> count）
+---@return number|nil
+function ArtifactDefs.rollArtifactIdForReroll(quality, excludedIds, typeCounts)
+    local excluded = excludedTypeSet(excludedIds)
+    local candidates = {}
+    for _, id in ipairs(ArtifactDefs.getEligibleIds(quality)) do
+        if not excluded[id] then
+            candidates[#candidates + 1] = id
+        end
     end
-    return preferred[#preferred]
+    if #candidates == 0 then return nil end
+
+    local preferred = leastOwnedTypes(candidates, typeCounts)
+    return drawWeightedId(preferred)
 end
 
 function ArtifactDefs.rollArtifactId(quality)
     local ids = ArtifactDefs.getEligibleIds(quality)
     if #ids == 0 then return nil end
-    local total = 0
-    for _, id in ipairs(ids) do
-        total = total + (ArtifactDefs.ARTIFACTS[id].weight or 100)
-    end
-    local roll = math.random() * total
-    local acc = 0
-    for _, id in ipairs(ids) do
-        acc = acc + (ArtifactDefs.ARTIFACTS[id].weight or 100)
-        if roll <= acc then return id end
-    end
-    return ids[#ids]
+    return drawWeightedId(ids)
 end
 
 return ArtifactDefs

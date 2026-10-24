@@ -12,6 +12,16 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 2026-10-24 · 高相似运行管线兼容重构
+
+- Git已实证：提交`55bdbfe1`（32白名单），随后合入目标`8f216f00`为`c33d8a10`；两次正常push均exit0，ls-remote核对远端与本地`c33d8a10`一致。正式 **PR #202** https://github.com/FanZeros/changeForJourney/pull/202，head=`refactor1005/runtime-pipelines-20261024`、base=`workspace1005`，创建返回open/draft=false/merged=false，未称CI通过或已合并。未推workspace系列、不强推、不自动合并发布；凭据仅进程内askpass使用并已删除，未写入remote／Git配置／源码／日志／记忆。
+
+- 固定workspace1005@c850e5d3，独立refactor1005/runtime-pipelines-20261024。用户已授权正常push本任务分支及PR，不推workspace系列、不强推、不合并发布；凭据不持久化。目前未commit/push/PR，成功后另记。
+- 28生产模块实质重组，公开API、数值、RNG、通知及异常部分态保持。固定296/390文件、216配对：90%以上74到46，80%以上102到79，对称行文本44.9054%到43.0540%；文本指标非语义或原创性证明，仍46项高相似，不称全仓完成。
+- 官方b44成功553Lua，28源码/共享根/实际载荷字节一致，根index保持、scripts仅白名单变化。修改文件LSP无Error，构建守卫daemon starting跳过；旧压缩81派生错误保留。36规范单测OK；最终32白名单暂存、2977路径，20旧规范错误与固定基线逐项一致、警告0、新增0，diff --check退出0。
+- 最终组合切关、配装120、护盾、神器314、成长1697实际ALL PASS/exit0。离线1045失败中1044逐项同基线，新增仅旧测试查找私有moduleData异常，适配结果另记；不称通过。塔132断言88旧失败；BattleLab五局逐runs同而全报告两处浮点尾差，20局timeout不通过。
+- 最后仅将既有离线测试的dispatcher私有upvalue注入改为公开reset/publishLive/subscribe/setOnAnyUpdate，原断言保留；scene_display218/0，整套1044旧失败逐项同固定基线、新增0/harness0。随后官方b45成功，28生产+1测试载荷29/29字节一致；不把旧失败说成通过。
+- 三服务130差分、9负对照、38可达检查通过，四配置另有54独立与42父复核。验证材料工程外，不夹.project、玩家档、上传或他人修改，不改tempGame。持续推进，当前直接继续不再提问，尊重停止和权限边界；不冒称设备/性能/WASM验收。
 ## 上次做了什么（2026-10-24，离线来源左侧大字，PR #200 已创建）
 
 - **已正常push并创建正式PR #200**：https://github.com/FanZeros/changeForJourney/pull/200，功能提交 `75748a5f9333e33483019d39d9217ac6510b2c0c`，head=`fix1024/offline-source-readable`／base=`workspace1005@8f216f00`，创建时open／draft=false／merged=false，mergeable尚未计算，七文件 +592/−248。push实际exit0且远端SHA与本地一致，目标未被本会话推送；同源open查重0后创建，不自动合并发布。鉴权经标准credential接口进程内使用，未写remote／Git配置／源码／日志／记忆；本机既有store不等于磁盘无凭据。下文“成功后补记”为此前过程记录。

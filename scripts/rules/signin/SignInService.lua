@@ -84,6 +84,24 @@ local function grantReward(uid, reward)
     return CurrencyService.GrantReward(uid, reward)
 end
 
+-- claimed 是事实源；quota 冲突仅刷新保险层，不把既有放行语义改成拒绝。
+local function checkSignQuota(uid, quotaKey, action, claimedName, day)
+    local quotaOk, quotaErr = PDM.UseQuota(uid, quotaKey, 1)
+    if not quotaOk and quotaErr == "quota_exceeded" then
+        print("[SignIn] " .. action .. " quota_exceeded but " .. claimedName .. "[" .. day
+            .. "]=nil for uid=" .. tostring(uid) .. ", overriding quota (claimed is truth)")
+        PDM.RefreshQuota(uid, quotaKey, nil)
+    elseif not quotaOk then
+        return false, quotaErr
+    end
+    return true
+end
+
+local function publishClaim(uid, reward)
+    PDM.MarkDirty(uid, "signin")
+    grantReward(uid, reward)
+end
+
 -- ======================== 每周签到 ========================
 
 ---@param uid number
@@ -98,21 +116,14 @@ function SignInService.WeeklySign(uid)
     ensurePeriods(signin, openTime)
 
     local dayOfWeek = SignInConfig.getDayOfWeek(openTime)  -- 1-7（基于开服时间）
+    ---@cast dayOfWeek integer
 
     if signin.weeklyClaimed[dayOfWeek] then
         return false, "already_claimed"
     end
 
-    -- 限额校验（服务端防刷）
-    -- weeklyClaimed 是唯一事实源；quota 是二次保险（同 DailySign 逻辑）。
-    local quotaOk, quotaErr = PDM.UseQuota(uid, "weekly_signin", 1)
-    if not quotaOk and quotaErr == "quota_exceeded" then
-        print("[SignIn] WeeklySign quota_exceeded but weeklyClaimed[" .. dayOfWeek
-            .. "]=nil for uid=" .. tostring(uid) .. ", overriding quota (claimed is truth)")
-        PDM.RefreshQuota(uid, "weekly_signin", nil)
-    elseif not quotaOk then
-        return false, quotaErr
-    end
+    local quotaOk, quotaErr = checkSignQuota(uid, "weekly_signin", "WeeklySign", "weeklyClaimed", dayOfWeek)
+    if not quotaOk then return false, quotaErr end
 
     local reward = SignInConfig.WEEKLY_REWARDS[dayOfWeek]
     if not reward then
@@ -120,9 +131,7 @@ function SignInService.WeeklySign(uid)
     end
 
     signin.weeklyClaimed[dayOfWeek] = true
-    PDM.MarkDirty(uid, "signin")
-
-    grantReward(uid, reward)
+    publishClaim(uid, reward)
 
     return true, nil, { day = dayOfWeek, reward = reward }
 end
@@ -141,26 +150,14 @@ function SignInService.DailySign(uid)
     ensurePeriods(signin, openTime)
 
     local dayOfPeriod = SignInConfig.getDayOfServerPeriod(openTime)  -- 1-30，已保证不超 30
+    ---@cast dayOfPeriod integer
 
     if signin.dailyClaimed[dayOfPeriod] then
         return false, "already_claimed"
     end
 
-    -- 限额校验（服务端防刷）
-    -- dailyClaimed 是唯一事实源；quota 是二次保险。
-    -- 如果 quota 说超限但 dailyClaimed 没标记过，说明 quota 与业务状态不一致
-    -- （可能是上次 quota 消耗后 claimed 未持久化，或 quota 重置时间差异），
-    -- 此时信任 dailyClaimed，跳过 quota 限制并异步刷新 quota 缓存。
-    local quotaOk, quotaErr = PDM.UseQuota(uid, "daily_signin", 1)
-    if not quotaOk and quotaErr == "quota_exceeded" then
-        print("[SignIn] DailySign quota_exceeded but dailyClaimed[" .. dayOfPeriod
-            .. "]=nil for uid=" .. tostring(uid) .. ", overriding quota (claimed is truth)")
-        -- 异步刷新 quota 缓存，修正脏数据（不阻塞本次签到）
-        PDM.RefreshQuota(uid, "daily_signin", nil)
-        -- 不拦截，继续发放奖励
-    elseif not quotaOk then
-        return false, quotaErr
-    end
+    local quotaOk, quotaErr = checkSignQuota(uid, "daily_signin", "DailySign", "dailyClaimed", dayOfPeriod)
+    if not quotaOk then return false, quotaErr end
 
     local reward = SignInConfig.DAILY_REWARDS[dayOfPeriod]
     if not reward then
@@ -168,15 +165,51 @@ function SignInService.DailySign(uid)
     end
 
     signin.dailyClaimed[dayOfPeriod] = true
-    PDM.MarkDirty(uid, "signin")
-
-    grantReward(uid, reward)
+    publishClaim(uid, reward)
     local taskOk, TaskService = pcall(require, "rules.task.TaskService")
     if taskOk and TaskService then
         TaskService.UpdateProgress(uid, "signin", 1)
     end
 
     return true, nil, { day = dayOfPeriod, reward = reward }
+end
+
+-- 补签资格判定保留原来的提前 claimed 写入；扣费失败不回滚旧状态。
+local function prepareRetroClaim(signin, openTime, source, day)
+    local reward
+    if source == "weekly" then
+        if day < 1 or day > 7 then
+            return nil, "invalid_day"
+        end
+        if signin.weeklyClaimed[day] then
+            return nil, "already_claimed"
+        end
+        local dayOfWeek = SignInConfig.getDayOfWeek(openTime)
+        if day >= dayOfWeek then
+            return nil, "cannot_retro_future"
+        end
+        reward = SignInConfig.WEEKLY_REWARDS[day]
+        if not reward then return nil, "invalid_day" end
+        signin.weeklyClaimed[day] = true
+    elseif source == "daily" then
+        if day < 1 or day > 30 then
+            return nil, "invalid_day"
+        end
+        if signin.dailyClaimed[day] then
+            return nil, "already_claimed"
+        end
+        local curDay = SignInConfig.getDayOfServerPeriod(openTime)
+        if day >= curDay then
+            return nil, "cannot_retro_future"
+        end
+        reward = SignInConfig.DAILY_REWARDS[day]
+        if not reward then return nil, "invalid_day" end
+        signin.dailyClaimed[day] = true
+    else
+        return nil, "invalid_source"
+    end
+
+    return reward
 end
 
 -- ======================== 补签（消耗钻石） ========================
@@ -205,38 +238,8 @@ function SignInService.RetroSign(uid, source, day)
         return false, "not_enough_gems"
     end
 
-    local reward
-    if source == "weekly" then
-        if day < 1 or day > 7 then
-            return false, "invalid_day"
-        end
-        if signin.weeklyClaimed[day] then
-            return false, "already_claimed"
-        end
-        local dayOfWeek = SignInConfig.getDayOfWeek(openTime)
-        if day >= dayOfWeek then
-            return false, "cannot_retro_future"
-        end
-        reward = SignInConfig.WEEKLY_REWARDS[day]
-        if not reward then return false, "invalid_day" end
-        signin.weeklyClaimed[day] = true
-    elseif source == "daily" then
-        if day < 1 or day > 30 then
-            return false, "invalid_day"
-        end
-        if signin.dailyClaimed[day] then
-            return false, "already_claimed"
-        end
-        local curDay = SignInConfig.getDayOfServerPeriod(openTime)
-        if day >= curDay then
-            return false, "cannot_retro_future"
-        end
-        reward = SignInConfig.DAILY_REWARDS[day]
-        if not reward then return false, "invalid_day" end
-        signin.dailyClaimed[day] = true
-    else
-        return false, "invalid_source"
-    end
+    local reward, claimError = prepareRetroClaim(signin, openTime, source, day)
+    if not reward then return false, claimError end
 
     -- 扣除钻石（必须检查返回值，Deduct 可能因数据异常失败）
     local deducted, newBalance = CurrencyService.Deduct(uid, "gems", cost)

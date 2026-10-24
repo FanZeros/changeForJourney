@@ -608,6 +608,7 @@ function Standalone.Start()
 end
 
 function Standalone.Stop()
+    GameBGM.stop()
     require("core.PerformanceMonitor").stop()
     require("ui.dev.PerformancePanel").close()
     LocalActionBridge.cancelSweep("stop")
@@ -1094,6 +1095,8 @@ function HandleUpdate(eventType, eventData)
         LocalActionBridge.updateSweep()
         return
     end
+    -- 音频独立于页面和入场预热；每帧一次，开场早退也不冻结叙事淡变。
+    GameBGM.update(dt)
     -- UI/回执仍用真实时间；先冻结战斗绝对时钟，标题/开场提前返回也不补暂停时长。
     SidePanelBattlePause.refresh()
     -- 遮挡只冻结战力表现；在异步提交/Store回执前同步，不错过首次通知。
@@ -1262,7 +1265,7 @@ function HandleUpdate(eventType, eventData)
         end
     end
 
-    -- 开场介绍不让教程、后台战斗或旧剧情插入；最后一段结束后再结算离线收益。
+    -- 开场介绍不让教程、后台战斗或旧剧情插入；音乐淡变仍使用真实帧时间推进。
     if openingFlowActive_ then
         if LetterIntro.isOpen() then LetterIntro.update(dt)
         elseif ScenarioDialogue.isActive() then ScenarioDialogue.update(dt) end
@@ -1300,30 +1303,11 @@ function HandleUpdate(eventType, eventData)
         end
     end
 
-    -- ── BGM 轨道切换（优先级：城镇建筑 > 标签页）──
-    -- [LetterIntro] 开场链（信/过场/情景1）期间不自动切轨，轨道由开场链自控
+    -- 日常三栏保持主曲，仅主线终焉仪式改变叙事氛围，不跟随菜单/弹窗切歌。
     if not (LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()) then
-    do
-        local tabIndex = BottomNav.getSelectedIndex()
-        local bgmScene
-        -- 城镇建筑
-        if tabIndex == 4 and (BlacksmithPage.isOpen()
-            or ChurchPage.isOpen()
-            or TalentPage.isOpen()
-            or TavernPage.isOpen()
-            or MarketPage.isOpen()) then
-            bgmScene = "town_building"
-        -- 标签页
-        elseif tabIndex == 3 then bgmScene = BattleScene.isInTerminalTemple() and "samsara" or "battle"
-        elseif tabIndex == 4 then
-            bgmScene = "town"
-            require("systems.StoryPlayer").onPlace("town", "enter")
-        else bgmScene = "other"
-        end
-        GameBGM.setScene(bgmScene)
+        local terminal = BattleScene.isInTerminalTemple() or BattleTriPage.isTerminalRaidActive()
+        GameBGM.setScene(terminal and "samsara" or "battle")
     end
-    end -- [LetterIntro] 守卫闭合
-    GameBGM.update(dt)
 
     -- [LetterIntro] 先祖来信更新（信件期间独占，阻止其他 UI 更新）
     if LetterIntro.isOpen() then

@@ -1,7 +1,8 @@
--- 启动音频懒加载回归：直接读取两份生产源码，在独立 env 中运行。
--- 音频管理器在独立 env 中使用 Sound/Scene/SoundSource/cache/math.random 替身；
--- 末尾另用真实 cache 校验三首战斗 OGG 的解码信息，不创建音源或播放音频。
--- 不加载主游戏或玩家档。用 Runtime headless 运行，Start 最终 engine:Exit()。
+-- 启动音频懒加载回归：生产音频源码在独立 env 中运行。
+-- 音频管理器使用 Sound/Scene/SoundSource/cache/math.random 替身；
+-- SettingsPanel / Standalone 仅提取音频精确片段，不执行整个模块或玩家档。
+-- 末尾真实 cache 校验最终主曲和三首保留战斗 OGG，不创建真实音源。
+-- 仅由独立测试入口启动；Start 最终 engine:Exit()。
 local totals = { assertions = 0, failures = 0, cases = 0 }
 local TAG = "[startup_audio_test]"
 
@@ -54,7 +55,7 @@ end
 
 local function newHarness(source, label, failures, lengths, startupQueue)
     local h = {
-        loads = {}, counts = {}, sounds = {}, nodes = {}, sources = {}, plays = {}, randoms = {}, logs = {},
+        loads = {}, counts = {}, sounds = {}, nodes = {}, sources = {}, plays = {}, randoms = {}, seeds = {}, logs = {},
         failures = failures or {}, lengths = lengths or {}, timeline = {},
     }
     local env = {
@@ -77,6 +78,9 @@ local function newHarness(source, label, failures, lengths, startupQueue)
         h.randoms[#h.randoms + 1] = { low = low, high = high, chosen = chosen, loads = #h.loads }
         h.timeline[#h.timeline + 1] = "random"
         return chosen
+    end
+    isolatedMath.randomseed = function(...)
+        h.seeds[#h.seeds + 1] = { ... }
     end
     env.cache = {
         GetResource = function(_, kind, path)
@@ -133,299 +137,512 @@ local function newHarness(source, label, failures, lengths, startupQueue)
     return manager, h
 end
 
+local REGULAR_SCENES = { "battle", "other", "popup", "town", "town_building" }
+local INDEPENDENT_TRACKS = { "battle", "letter", "samsara" }
+-- 最新冻结需求：双通道对称 1.6s，不从生产常量推导以免错误时长自证。
+local FADE_SECONDS = 1.6
+
+local function assertNoRNG(h, label)
+    eq(#h.randoms, 0, label .. " no random")
+    eq(#h.seeds, 0, label .. " no randomseed")
+end
+
 local function testBGM(source)
     local defs = readDefinitions(source, "TRACKS")
-    runCase("BGM start only active track + idempotent", function()
+    runCase("BGM seven definitions expose three independent tracks without playlist", function()
+        local count = 0
+        for _ in pairs(defs) do count = count + 1 end
+        eq(count, 7, "public scene definition count remains seven")
+        for _, key in ipairs(REGULAR_SCENES) do
+            eq(defs[key].path, defs.battle.path, "regular alias same resource " .. key)
+            near(defs[key].gain, defs.battle.gain, "regular alias same gain " .. key)
+        end
+        check(defs.letter.path ~= defs.battle.path, "letter remains independent")
+        check(defs.samsara.path ~= defs.battle.path, "samsara remains independent")
+        check(defs.samsara.path ~= defs.letter.path, "narrative tracks remain distinct")
+        check(not source:find("BATTLE_TRACKS", 1, true), "obsolete battle candidate structure deleted")
+        check(not source:match("math%.random%s*%(") and not source:match("math%.randomseed%s*%("),
+            "production BGM contains no gameplay RNG call")
+    end)
+    runCase("BGM start loads only main track and remains idempotent", function()
         local m, h = newHarness(source, "GameBGM.lua")
         eq(#h.loads, 0, "init does not fetch sound")
+        m.update(10000)
+        eq(#h.sources, 0, "update before start creates nothing")
         m.start()
-        eq(#h.loads, 1, "start fetches one of seven tracks")
-        eq(h.loads[1], "audio/bgm_battle.ogg", "default active battle")
+        eq(#h.loads, 1, "start fetches only active main track")
+        eq(h.loads[1], defs.battle.path, "default active battle resource")
+        eq(m.getScene(), "battle", "default canonical scene")
         eq(#h.nodes, 1, "one BGM node")
         eq(#h.sources, 2, "two original channels")
-        eq(h.sources[1].soundType, "Music", "channel A Music")
-        eq(h.sources[2].soundType, "Music", "channel B Music")
+        for _, src in ipairs(h.sources) do eq(src.soundType, "Music", "BGM channel Music") end
         eq(#h.plays, 1, "start plays A once")
         eq(h.plays[1].source, h.sources[1], "initial channel A")
-        eq(h.plays[1].sound.looped, true, "BGM loops")
-        near(h.plays[1].gain, 0.50, "battle original gain")
+        eq(h.plays[1].sound.looped, true, "main BGM loops")
+        eq(h.sources[1].frequency, 0, "initial play explicitly restores sample rate")
+        near(h.plays[1].gain, defs.battle.gain, "main defined gain")
         near(h.sources[2].gain, 0, "inactive channel silent")
-        m.start(); m.setScene("battle"); m.setScene("unknown")
+        h.sources[1].position = 42.75
+        m.start(); m.setScene("battle", { fromStart = true }); m.setScene("unknown")
         eq(#h.loads, 1, "repeated start/same/unknown no fetch")
-        eq(#h.plays, 1, "no replay for same scene")
-        eq(#h.randoms, 0, "BGM consumes no random")
+        eq(#h.plays, 1, "same scene including fromStart does not replay")
+        near(h.sources[1].position, 42.75, "same key never resets playhead")
+        eq(#h.sources[1].seeks, 0, "same key never seeks")
+        assertNoRNG(h, "start/idempotence")
         m.stop()
     end)
-    runCase("BGM pre-start selection + restart current track", function()
+    runCase("BGM all regular aliases stay continuous across UI and pre-start selection", function()
+        for _, initial in ipairs(REGULAR_SCENES) do
+            local m, h = newHarness(source, "GameBGM.lua")
+            m.setScene(initial, { fromStart = true })
+            eq(m.getScene(), "battle", "pre-start canonical alias " .. initial)
+            eq(#h.loads, 0, "pre-start alias metadata only " .. initial)
+            m.start()
+            h.sources[1].position = 37.625
+            for round = 1, 3 do
+                for _, key in ipairs(REGULAR_SCENES) do
+                    m.setScene(key, { fromStart = round == 2 }); m.update(0.01)
+                    eq(m.getScene(), "battle", "UI alias canonical " .. initial .. "/" .. key)
+                    near(h.sources[1].position, 37.625, "UI alias never scrubs " .. key)
+                    near(h.sources[1].gain, defs.battle.gain, "UI alias never fades " .. key)
+                    eq(h.sources[1].playing, true, "UI alias stays audible " .. key)
+                end
+            end
+            eq(#h.loads, 1, "all regular UI transitions share one load " .. initial)
+            eq(#h.plays, 1, "all regular UI transitions share one Play " .. initial)
+            eq(#h.sources[1].seeks + #h.sources[2].seeks, 0, "UI aliases never Seek " .. initial)
+            eq(h.sources[1].stops + h.sources[2].stops, 0, "UI aliases never Stop " .. initial)
+            assertNoRNG(h, "regular aliases " .. initial)
+            m.stop()
+        end
+    end)
+    runCase("BGM narrative switches restore each track own departure seconds not percentages", function()
+        local m, h = newHarness(source, "GameBGM.lua", nil,
+            { [defs.battle.path] = 100, [defs.letter.path] = 200, [defs.samsara.path] = 80 })
+        m.start(); h.sources[1].position = 25.375
+        m.setScene("letter")
+        eq(#h.loads, 2, "first narrative lazy load")
+        near(h.sources[2].position, 0, "unvisited letter starts at zero not 25 percent of 200s")
+        eq(#h.sources[2].seeks, 0, "first narrative needs no Seek")
+        -- 离开后旧音源还会淡出；记录必须是离开时的快照，不是淡出后的游标。
+        h.sources[1].position = 26.875
+        m.update(FADE_SECONDS); h.sources[2].position = 61.125
+        m.setScene("samsara")
+        near(h.sources[1].position, 0, "unvisited samsara does not inherit letter progress")
+        eq(h.plays[3].sound.path, defs.samsara.path, "samsara distinct resource")
+        m.update(FADE_SECONDS); h.sources[1].position = 8.875
+        m.setScene("popup")
+        near(h.sources[2].position, 25.375, "regular alias returns to battle departure seconds")
+        eq(m.getScene(), "battle", "narrative return canonicalizes popup")
+        m.update(FADE_SECONDS); h.sources[2].position = 73.5
+        m.setScene("letter")
+        near(h.sources[1].position, 61.125, "letter resumes own seconds, not battle fraction")
+        m.update(FADE_SECONDS); h.sources[1].position = 64.25
+        m.setScene("samsara")
+        near(h.sources[2].position, 8.875, "samsara resumes its own independent seconds")
+        m.update(FADE_SECONDS); m.setScene("town_building")
+        near(h.sources[1].position, 73.5, "latest battle departure replaces prior snapshot")
+        eq(#h.loads, 3, "only three distinct resources loaded")
+        for _, key in ipairs(INDEPENDENT_TRACKS) do
+            eq(h.counts[defs[key].path], 1, "one load for independent track " .. key)
+        end
+        for _, play in ipairs(h.plays) do
+            eq(play.sound.looped, true, "all narrative and main tracks loop")
+            eq(play.source.frequency, 0, "reused source resets frequency")
+        end
+        assertNoRNG(h, "independent resumes")
+        m.stop()
+    end)
+    runCase("BGM explicit fromStart resets only a different track; current key is idempotent", function()
+        for i, target in ipairs(INDEPENDENT_TRACKS) do
+            local other = INDEPENDENT_TRACKS[i % #INDEPENDENT_TRACKS + 1]
+            local m, h = newHarness(source, "GameBGM.lua")
+            m.setScene(target); m.start(); h.sources[1].position = 17.25
+            m.setScene(other); m.update(FADE_SECONDS)
+            h.sources[2].position = 43.75
+            m.setScene(target, { fromStart = true })
+            near(h.sources[1].position, 0, "explicit changed target starts at zero " .. target)
+            m.update(FADE_SECONDS); h.sources[1].position = 9.5
+            local plays, loads, seeks = #h.plays, #h.loads, #h.sources[1].seeks
+            m.setScene(target, { fromStart = true }); m.update(0.8)
+            eq(#h.plays, plays, "same key fromStart no replay " .. target)
+            eq(#h.loads, loads, "same key fromStart no IO " .. target)
+            eq(#h.sources[1].seeks, seeks, "same key fromStart no Seek " .. target)
+            near(h.sources[1].position, 9.5, "same key fromStart keeps playhead " .. target)
+            m.setScene(other, { fromStart = true }); m.update(FADE_SECONDS)
+            near(h.sources[2].position, 0, "explicit changed other clears its old seconds " .. other)
+            m.setScene(target)
+            near(h.sources[1].position, 9.5, "later default resumes new post-restart seconds " .. target)
+            assertNoRNG(h, "fromStart " .. target)
+            m.stop()
+        end
+    end)
+    runCase("BGM resume bounds use target length and never modulo or percentage", function()
+        local samples = {
+            { length = 100, position = -2, expected = 0 },
+            { length = 100, position = 0, expected = 0 },
+            { length = 100, position = 99.75, expected = 99.75 },
+            { length = 100, position = 100, expected = 0 },
+            { length = 100, position = 107.5, expected = 0 },
+            { length = 0, position = 12, expected = 0 },
+            { length = -1, position = 12, expected = 0 },
+        }
+        for _, target in ipairs(INDEPENDENT_TRACKS) do
+            local other = target == "letter" and "battle" or "letter"
+            for _, sample in ipairs(samples) do
+                local m, h = newHarness(source, "GameBGM.lua", nil, { [defs[target].path] = sample.length })
+                m.setScene(target); m.start(); h.sources[1].position = sample.position
+                m.setScene(other); m.update(FADE_SECONDS)
+                h.sources[2].position = 55
+                m.setScene(target)
+                near(h.sources[1].position, sample.expected,
+                    "bounded resume " .. target .. " length=" .. sample.length .. " position=" .. sample.position)
+                eq(#h.sources[1].seeks, sample.expected > 0 and 1 or 0, "invalid/zero resume never seeks")
+                eq(#h.loads, 2, "bounds do not probe more candidates")
+                assertNoRNG(h, "resume bounds")
+                m.stop()
+            end
+        end
+    end)
+    runCase("BGM stopped source does not replace a valid saved departure", function()
+        local m, h = newHarness(source, "GameBGM.lua")
+        m.start(); h.sources[1].position = 19.75
+        m.setScene("letter"); m.update(FADE_SECONDS)
+        m.setScene("battle"); m.update(FADE_SECONDS)
+        h.sources[1].position = 99.9; h.sources[1].playing = false
+        m.setScene("letter"); m.update(FADE_SECONDS); m.setScene("battle")
+        near(h.sources[1].position, 19.75, "stopped mixer cursor cannot overwrite last playing departure")
+        m.stop()
+    end)
+    runCase("BGM symmetric 1.6 second fades and master volume preserve envelopes", function()
+        local m, h = newHarness(source, "GameBGM.lua")
+        m.setMasterGain(0.5); m.start(); m.setScene("letter")
+        near(h.plays[2].gain, 0, "incoming starts silent")
+        near(h.sources[1].gain, defs.battle.gain * 0.5, "old starts at current master")
+        m.update(0); m.update(-5)
+        near(h.sources[2].gain, 0, "nonpositive dt never advances incoming")
+        near(h.sources[1].gain, defs.battle.gain * 0.5, "negative dt never reverses fade")
+        m.update(0.8)
+        near(h.sources[1].gain, defs.battle.gain * 0.5 * 0.5, "half-time outgoing 50 percent")
+        near(h.sources[2].gain, defs.letter.gain * 0.5 * 0.5, "half-time incoming 50 percent")
+        m.setMasterGain(0)
+        near(h.sources[1].gain, 0, "mute old channel too")
+        near(h.sources[2].gain, 0, "mute new channel too")
+        m.setMasterGain(0.75)
+        near(h.sources[1].gain, defs.battle.gain * 0.5 * 0.75, "unmute keeps outgoing envelope")
+        near(h.sources[2].gain, defs.letter.gain * 0.5 * 0.75, "unmute keeps incoming envelope")
+        m.setScene("letter", { fromStart = true }); m.update(0.4)
+        near(h.sources[1].gain, defs.battle.gain * 0.25 * 0.75, "same key does not reset fading timer")
+        near(h.sources[2].gain, defs.letter.gain * 0.75 * 0.75, "incoming continues uninterrupted")
+        m.update(0.4)
+        near(h.sources[1].gain, 0, "old reaches zero at 1.6 seconds")
+        near(h.sources[2].gain, defs.letter.gain * 0.75, "new full at 1.6 seconds")
+        eq(h.sources[1].playing, false, "outgoing stopped at fade completion")
+        local stopped = h.sources[1].stops
+        m.update(10000)
+        eq(h.sources[1].stops, stopped, "completed envelope does not repeatedly stop")
+        eq(#h.plays, 2, "volume updates never replay")
+        m.setMasterGain(2); near(m.getMasterGain(), 1, "BGM high clamp")
+        near(h.sources[2].gain, defs.letter.gain, "high clamp applied live")
+        m.setMasterGain(-1); near(m.getMasterGain(), 0, "BGM low clamp")
+        near(h.sources[2].gain, 0, "low clamp applied live")
+        assertNoRNG(h, "volume fade")
+        m.stop()
+    end)
+    runCase("BGM rapid narrative changes reuse two sources without stale fades", function()
+        local m, h = newHarness(source, "GameBGM.lua")
+        m.start(); h.sources[1].position = 27.25
+        m.setScene("letter"); m.update(0.8); h.sources[2].position = 11.625
+        m.setMasterGain(0.4)
+        m.setScene("samsara")
+        eq(#h.sources, 2, "rapid second switch reuses original channels")
+        near(h.sources[1].gain, 0, "reused former outgoing source begins silent")
+        near(h.sources[1].position, 0, "new samsara does not inherit old battle/letter cursor")
+        m.update(0.8)
+        near(h.sources[2].gain, defs.letter.gain * 0.5 * 0.5 * 0.4,
+            "interrupted incoming fades out from actual envelope")
+        near(h.sources[1].gain, defs.samsara.gain * 0.5 * 0.4, "new incoming half envelope")
+        h.sources[1].position = 6.5
+        m.setScene("town")
+        near(h.sources[2].position, 27.25, "rapid alias return preserves original battle seconds")
+        near(h.sources[2].gain, 0, "rapid return also starts new fade silent")
+        m.update(FADE_SECONDS)
+        eq(h.sources[1].playing, false, "only final outgoing stopped")
+        eq(h.sources[2].playing, true, "latest battle source remains playing")
+        near(h.sources[2].gain, defs.battle.gain * 0.4, "latest main gain has no stale envelope")
+        m.setScene("letter"); near(h.sources[1].position, 11.625, "interrupted letter retains its own seconds")
+        m.update(FADE_SECONDS); m.setScene("samsara")
+        near(h.sources[2].position, 6.5, "interrupted samsara retains its own seconds")
+        m.update(FADE_SECONDS)
+        eq(#h.loads, 3, "rapid switching loads only three independent resources")
+        eq(#h.sources, 2, "rapid transitions never expand source pool")
+        assertNoRNG(h, "rapid transitions")
+        m.stop()
+    end)
+    runCase("BGM pre-start choice and stop restart reset resources positions and pending fades", function()
         local m, h = newHarness(source, "GameBGM.lua")
         m.setScene("letter", { fromStart = true }); m.setMasterGain(0.4)
-        eq(#h.loads, 0, "select before start is metadata only")
+        eq(#h.loads, 0, "pre-start narrative select no IO")
         eq(m.getScene(), "letter", "pre-start selection retained")
         m.start()
-        eq(#h.loads, 1, "letter start loads one")
-        eq(h.loads[1], defs.letter.path, "loads chosen letter not battle")
-        near(h.plays[1].gain, defs.letter.gain * 0.4, "pre-start master gain")
-        m.stop(); m.stop(); m.update(10)
+        eq(h.loads[1], defs.letter.path, "letter starts without loading main")
+        near(h.plays[1].gain, defs.letter.gain * 0.4, "pre-start master honored")
+        h.sources[1].position = 22.75
+        m.setScene("samsara"); m.update(0.8)
+        m.stop(); m.stop(); m.update(10000)
         eq(h.nodes[1].removed, true, "stop removes node")
-        eq(h.sources[1].playing, false, "A stopped")
-        eq(h.sources[2].playing, false, "B stopped")
-        eq(m.getScene(), "letter", "stop keeps selection")
-        near(m.getMasterGain(), 0.4, "stop keeps volume")
-        m.setScene("town")
-        eq(#h.loads, 1, "stopped select does not fetch")
+        for _, src in ipairs(h.sources) do eq(src.playing, false, "all stopped despite unfinished fade") end
+        eq(m.getScene(), "samsara", "stop preserves selected canonical scene")
+        near(m.getMasterGain(), 0.4, "stop preserves master")
+        eq(#h.loads, 2, "stopped update no IO")
+        eq(#h.plays, 2, "stopped update no replay")
         m.start()
-        eq(#h.loads, 2, "restart only selected track")
-        eq(h.loads[2], defs.town.path, "restart loads town")
         eq(#h.sources, 4, "restart creates two fresh channels")
-        eq(h.plays[2].source, h.sources[3], "restart starts fresh A")
-        near(h.plays[2].gain, defs.town.gain * 0.4, "restart keeps master gain")
+        eq(h.plays[3].source, h.sources[3], "fresh lifecycle channel A")
+        eq(h.loads[3], defs.samsara.path, "restart fetches selected only")
+        near(h.sources[3].gain, defs.samsara.gain * 0.4, "restart starts full envelope not stale fade")
+        near(h.sources[4].gain, 0, "restart inactive channel silent")
+        m.setScene("letter")
+        near(h.sources[4].position, 0, "stop clears saved letter seconds")
+        eq(h.counts[defs.letter.path], 2, "stop clears successful resource cache")
+        m.stop(); m.setScene("town_building")
+        eq(m.getScene(), "battle", "stopped alias selection canonical")
+        eq(#h.loads, 4, "stopped selection no IO")
+        m.start()
+        eq(h.loads[5], defs.battle.path, "restart follows stopped alias selection")
+        near(h.sources[5].position, 0, "new lifecycle never resurrects old cursor")
+        assertNoRNG(h, "lifecycle")
         m.stop()
     end)
-    runCase("BGM lazy switching + progress + dual fade", function()
-        local m, h = newHarness(source, "GameBGM.lua", nil,
-            { [defs.battle.path] = 100, [defs.town.path] = 200, [defs.other.path] = 80 })
-        m.start()
-        h.sources[1].position = 25
-        m.setScene("town")
-        eq(#h.loads, 2, "switch first loads only town")
-        eq(h.loads[2], defs.town.path, "different track lazy path")
-        eq(h.plays[2].source, h.sources[2], "switch uses B")
-        eq(h.plays[2].sound.looped, true, "lazy track loops")
-        near(h.sources[2].position, 50, "25 percent synced to 200s")
-        near(h.plays[2].gain, 0, "new track begins silent")
-        m.update(0.2)
-        near(h.sources[1].gain, 0.25, "old fades across 0.4 seconds")
-        near(h.sources[2].gain, 0.4 / 6, "new fades across 1.2 seconds")
-        m.update(1.0)
-        eq(h.sources[1].playing, false, "old stops after fade")
-        near(h.sources[2].gain, 0.4, "new reaches defined gain")
-        m.setScene("battle")
-        eq(#h.loads, 2, "cached return no resource fetch")
-        eq(h.plays[3].source, h.sources[1], "return alternates to A")
-        eq(h.plays[3].sound, h.plays[1].sound, "same cached Sound")
-        near(h.sources[1].position, 25, "return sync to old battle length")
-        m.update(1.2)
-        m.setScene("other", { fromStart = true })
-        eq(#h.loads, 3, "third distinct track lazy")
-        eq(h.sources[2].position, 0, "fromStart does not seek")
-        eq(#h.sources[2].seeks, 1, "only earlier town seek recorded")
-        m.update(1.2)
-        m.setMasterGain(0.5)
-        near(h.sources[2].gain, defs.other.gain * 0.5, "live master gain immediately applied")
-        m.setMasterGain(2); near(m.getMasterGain(), 1, "BGM high clamp")
-        m.setMasterGain(-1); near(h.sources[2].gain, 0, "BGM low clamp")
-        m.stop()
-    end)
-    runCase("BGM all definitions remain lazy and cached", function()
-        local m, h = newHarness(source, "GameBGM.lua")
-        m.start()
-        local keys = { "town", "town_building", "popup", "samsara", "letter", "other", "battle" }
-        for _, key in ipairs(keys) do
-            m.setScene(key); m.update(1.2)
-            eq(h.plays[#h.plays].sound.path, defs[key].path, "track path " .. key)
-            near(h.plays[#h.plays].source.gain, defs[key].gain, "track gain " .. key)
-            eq(h.plays[#h.plays].sound.looped, true, "track loops " .. key)
+    runCase("BGM missing narrative or main retains old audible track and latches only failed resource", function()
+        for i, bad in ipairs(INDEPENDENT_TRACKS) do
+            local good = INDEPENDENT_TRACKS[i % #INDEPENDENT_TRACKS + 1]
+            local third = INDEPENDENT_TRACKS[(i + 1) % #INDEPENDENT_TRACKS + 1]
+            local m, h = newHarness(source, "GameBGM.lua", { [defs[bad].path] = true })
+            m.setScene(good); m.start(); h.sources[1].position = 31.25
+            local badKeys = bad == "battle" and REGULAR_SCENES or { bad }
+            for _ = 1, 20 do
+                for _, key in ipairs(badKeys) do m.setScene(key, { fromStart = true }) end
+                m.update(10000)
+            end
+            eq(h.counts[defs[bad].path], 1, "failed target once per lifecycle " .. bad)
+            eq(#h.loads, 2, "failure never scans old battle candidates " .. bad)
+            eq(countLogs(h, "加载失败: " .. defs[bad].path), 1, "failed resource log once " .. bad)
+            eq(m.getScene(), good, "failed switch retains canonical old scene " .. bad)
+            eq(#h.plays, 1, "failed switch never replays either channel " .. bad)
+            eq(h.sources[1].playing, true, "old audible source retained " .. bad)
+            near(h.sources[1].gain, defs[good].gain, "failure never starts fade-out " .. bad)
+            near(h.sources[1].position, 31.25, "failure leaves old cursor intact " .. bad)
+            h.failures[defs[bad].path] = nil
+            m.setScene(bad)
+            eq(h.counts[defs[bad].path], 1, "no hot retry after asset appears " .. bad)
+            m.setScene(third); m.update(FADE_SECONDS)
+            eq(m.getScene(), third, "other independent target not blocked " .. bad)
+            m.stop(); m.setScene(bad); m.start()
+            eq(h.counts[defs[bad].path], 2, "stop clears failed resource latch " .. bad)
+            eq(h.plays[#h.plays].sound.path, defs[bad].path, "next lifecycle recovers failed target " .. bad)
+            near(h.plays[#h.plays].source.position, 0, "recovered lifecycle starts zero " .. bad)
+            assertNoRNG(h, "failure " .. bad)
+            m.stop()
         end
-        eq(#h.loads, 7, "all seven loaded only after visiting")
-        for _, info in pairs(defs) do eq(h.counts[info.path], 1, "one fetch " .. info.path) end
-        m.setScene("town"); m.update(1.2)
-        eq(#h.loads, 7, "all visited track reused")
-        m.stop(); m.start()
-        eq(#h.loads, 8, "new lifecycle fetches current track only")
-        eq(h.loads[8], defs.town.path, "stop clears previous sound cache")
+    end)
+    runCase("BGM missing initial main is silent not playlist fallback and can enter narrative", function()
+        local m, h = newHarness(source, "GameBGM.lua", { [defs.battle.path] = true })
+        m.start(); m.start()
+        for _, key in ipairs(REGULAR_SCENES) do m.setScene(key); m.update(10000) end
+        eq(#h.loads, 1, "initial failure tries only final main path, never old pool")
+        eq(#h.plays, 0, "nil initial resource never played")
+        near(h.sources[1].gain, 0, "failed initial channel silent")
+        near(h.sources[2].gain, 0, "unused channel silent")
+        eq(countLogs(h, "加载失败: " .. defs.battle.path), 1, "initial main failure logs once")
+        m.setScene("letter"); m.update(FADE_SECONDS)
+        eq(m.getScene(), "letter", "initial silence can recover to independent narrative")
+        near(h.sources[2].position, 0, "silence never supplies progress to letter")
+        m.setScene("popup")
+        eq(m.getScene(), "letter", "failed alias return keeps narrative")
+        eq(#h.loads, 2, "failed canonical main remains latched")
+        eq(h.sources[2].playing, true, "old narrative stays audible on failed main return")
+        assertNoRNG(h, "initial failure")
         m.stop()
     end)
-    runCase("BGM failures latch once and recover next lifecycle", function()
-        local m, h = newHarness(source, "GameBGM.lua", { [defs.town.path] = true })
-        m.start()
-        for _ = 1, 40 do m.setScene("town") end
-        eq(h.counts[defs.town.path], 1, "failed switch tried once")
-        eq(countLogs(h, "加载失败: " .. defs.town.path), 1, "failed switch log once")
-        eq(m.getScene(), "battle", "failure keeps previous active scene")
-        eq(#h.plays, 1, "failure never interrupts current source")
-        eq(h.sources[1].playing, true, "previous track still playing")
-        h.failures[defs.town.path] = nil
-        m.setScene("town")
-        eq(h.counts[defs.town.path], 1, "no hot recovery retry in same lifecycle")
-        m.setScene("other"); m.update(1.2)
-        eq(m.getScene(), "other", "other keys not blocked by failed track")
-        m.stop(); m.setScene("town"); m.start()
-        eq(h.counts[defs.town.path], 2, "stop clears failure latch")
-        eq(h.plays[#h.plays].sound.path, defs.town.path, "restart can recover missing track")
+    runCase("BGM failed target during fade does not reset successful envelope", function()
+        local m, h = newHarness(source, "GameBGM.lua", { [defs.samsara.path] = true })
+        m.start(); m.setScene("letter"); m.update(0.8)
+        m.setScene("samsara"); m.update(0.4)
+        eq(m.getScene(), "letter", "failure retains incoming letter")
+        near(h.sources[1].gain, defs.battle.gain * 0.25, "outgoing keeps original fade timer")
+        near(h.sources[2].gain, defs.letter.gain * 0.75, "incoming keeps original fade timer")
+        eq(#h.plays, 2, "failure during fade no replay")
+        m.update(0.4)
+        eq(h.sources[1].playing, false, "original fade completes after failed request")
+        near(h.sources[2].gain, defs.letter.gain, "successful incoming reaches full gain")
+        assertNoRNG(h, "failed during fade")
         m.stop()
-        local f, fh = newHarness(source, "GameBGM.lua", {
-            [defs.battle.path] = true,
-            ["audio/bgm_battle_march.ogg"] = true,
-            ["audio/bgm_battle_moon.ogg"] = true,
-        })
-        f.start(); f.start(); f.setScene("battle")
-        eq(#fh.loads, 3, "all initial battle candidates attempted only once")
-        eq(#fh.plays, 0, "initial missing track not played")
-        eq(countLogs(fh, "加载失败: " .. defs.battle.path), 1, "initial fail log once")
-        f.setScene("town"); f.update(1.2)
-        eq(f.getScene(), "town", "silent initial channel can switch successfully")
-        eq(fh.sources[2].position, 0, "no progress seek from missing initial sound")
-        f.stop()
-    end)
-    runCase("BGM progress guards + master envelope", function()
-        local m, h = newHarness(source, "GameBGM.lua", nil, { [defs.battle.path] = 0 })
-        m.start(); h.sources[1].position = 10; m.setScene("town")
-        eq(#h.sources[2].seeks, 0, "zero current length avoids division/seek")
-        m.update(1.2); h.sources[2].playing = false; m.setScene("other")
-        eq(#h.sources[1].seeks, 0, "nonplaying current source does not seek")
-        m.stop()
-        local v, vh = newHarness(source, "GameBGM.lua")
-        v.setMasterGain(0.5); v.start(); v.setScene("town"); v.update(0.2)
-        near(vh.sources[1].gain, 0.5 * 0.5 * 0.5, "fade-out applies master exactly once")
-        near(vh.sources[2].gain, 0.4 / 6 * 0.5, "fade-in honors master")
-        v.update(1.0); near(vh.sources[2].gain, 0.4 * 0.5, "final fade target honors master")
-        v.stop()
     end)
 end
 
-local function testBattlePlaylist(source)
-    local original = readDefinitions(source, "TRACKS").battle.path
-    local additions = readDefinitions(source, "BATTLE_TRACKS")
-    local march, moon = additions[1].path, additions[2].path
-    runCase("battle playlist cycles three tracks without scene change or RNG", function()
-        local m, h = newHarness(source, "GameBGM.lua")
-        m.start()
-        m.update(10000)
-        eq(#h.plays, 1, "large gameplay dt alone does not finish a sound")
-        h.sources[1].position = 99.59; m.update(0.01)
-        eq(#h.loads, 1, "next track not loaded before ending")
-        h.sources[1].position = 99.6; m.update(0.01)
-        eq(#h.plays, 2, "ending starts next track")
-        eq(h.plays[2].sound.path, march, "first addition follows original")
-        eq(h.sources[2].position, 0, "natural transition begins at start")
-        eq(h.sources[1].frequency, 0, "initial play restores sound sample rate")
-        eq(h.sources[2].frequency, 0, "reused channel restores sound sample rate")
-        eq(#h.sources[2].seeks, 0, "natural transition never percentage seeks")
-        eq(m.getScene(), "battle", "public scene remains battle")
-        for _ = 1, 100 do m.setScene("battle"); m.update(0.001) end
-        eq(#h.plays, 2, "per-frame same scene does not reset track or fade")
-        m.update(1.2)
-        for i = 1, 12 do
-            local active = h.plays[#h.plays].source
-            active.position = 99.8
-            m.update(0.01)
-            local expected = ({ moon, original, march })[(i - 1) % 3 + 1]
-            eq(h.plays[#h.plays].sound.path, expected, "stable full rotation " .. i)
-            m.update(1.2)
-            eq(h.plays[#h.plays - 1].source.playing, false, "outgoing channel stopped " .. i)
+local function testNoAutoAdvance(source)
+    runCase("BGM never auto advances at 90 percent ending wrap stopped or large dt", function()
+        local defs = readDefinitions(source, "TRACKS")
+        for _, key in ipairs(INDEPENDENT_TRACKS) do
+            for _, gain in ipairs({ 0, 1 }) do
+                local m, h = newHarness(source, "GameBGM.lua")
+                m.setScene(key); m.setMasterGain(gain); m.start()
+                local src = h.sources[1]
+                for _, position in ipairs({ 90, 99.59, 99.6, 99.99, 0.05, 100, 120, 0 }) do
+                    src.position = position
+                    for _, dt in ipairs({ 0, -1, 0.01, 0.8, 10000 }) do m.update(dt) end
+                    eq(#h.loads, 1, "no automatic next resource " .. key .. " at " .. position)
+                    eq(#h.plays, 1, "no automatic replay/advance " .. key .. " at " .. position)
+                    near(src.position, position, "manager never estimates cursor from dt")
+                    eq(m.getScene(), key, "no automatic scene change")
+                end
+                src.playing = false
+                for _ = 1, 10 do m.update(10000); m.setScene(key, { fromStart = true }) end
+                eq(#h.loads, 1, "stopped source never starts candidate search")
+                eq(#h.plays, 1, "stopped source never replayed by update or same key")
+                eq(src.playing, false, "external mixer stop remains stopped")
+                eq(#src.seeks, 0, "no auto Seek at ending/wrap/stopped")
+                near(src.gain, defs[key].gain * gain, "no playlist envelope or gain changes")
+                assertNoRNG(h, "ending/wrap/stopped " .. key)
+                m.stop(); m.update(10000)
+                eq(#h.plays, 1, "lifecycle stop cancels all update work")
+            end
         end
-        eq(#h.sources, 2, "playlist reuses only two sources")
-        eq(#h.loads, 3, "each battle file loaded once")
-        eq(#h.randoms, 0, "playlist never touches gameplay random")
-        m.stop()
     end)
-    runCase("battle playlist handles mixer wrap and stopped source", function()
+    runCase("BGM wrap during narrative fade never queues a later automatic transition", function()
         local m, h = newHarness(source, "GameBGM.lua")
-        m.start(); h.sources[1].position = 90; m.update(0.1)
-        h.sources[1].position = 0.1; m.update(0.1)
-        eq(h.plays[2].sound.path, march, "missed ending frame detected by real wrap")
-        m.update(1.2)
-        h.sources[2].playing = false; m.update(0.1)
-        eq(h.plays[3].sound.path, moon, "stopped active source advances once")
-        m.update(0.1)
-        eq(#h.plays, 3, "new source not skipped during fade")
+        m.setScene("letter"); m.start(); m.setScene("battle")
+        h.sources[2].position = 90; m.update(0.4)
+        h.sources[2].position = 0.05; m.update(0.4)
+        h.sources[2].playing = false; m.update(0.8); m.update(10000)
+        eq(#h.loads, 2, "fade wrap never loads old battle pool")
+        eq(#h.plays, 2, "no latched wrap/stopped advance after fade")
+        eq(m.getScene(), "battle", "fade wrap stays canonical main")
+        assertNoRNG(h, "fade wrap")
         m.stop()
     end)
-    runCase("battle playlist skips unavailable tracks and retains audible fallback", function()
-        local m, h = newHarness(source, "GameBGM.lua", { [march] = true })
-        m.start(); h.sources[1].position = 99.8; m.update(0.1)
-        eq(h.plays[2].sound.path, moon, "missing second track skipped")
-        eq(h.sources[1].playing, true, "old keeps playing during successful fade")
-        eq(countLogs(h, "加载失败: " .. march), 1, "missing track logged once")
-        m.update(1.2); h.sources[2].position = 99.8; m.update(0.1); m.update(1.2)
-        h.sources[1].position = 99.8; m.update(0.1)
-        eq(h.counts[march], 1, "missing candidate not retried on later rotations")
-        eq(h.plays[#h.plays].sound.path, moon, "two available files alternate")
-        m.stop()
-        local f, fh = newHarness(source, "GameBGM.lua", { [march] = true, [moon] = true })
-        f.start(); fh.sources[1].position = 99.8
-        for _ = 1, 20 do f.update(0.1) end
-        eq(#fh.plays, 1, "all additions missing never interrupts original")
-        eq(fh.sources[1].playing, true, "original loops as fallback")
-        eq(fh.counts[march], 1, "failed first addition bounded")
-        eq(fh.counts[moon], 1, "failed second addition bounded")
-        fh.sources[1].position = 0.1; f.update(0.1)
-        eq(#fh.plays, 1, "fallback wrap does not duplicate replay")
-        fh.failures[march] = nil
-        f.stop(); f.start(); fh.sources[3].position = 99.8; f.update(0.1)
-        eq(fh.plays[#fh.plays].sound.path, march, "restart clears failure latch")
-        f.stop()
+end
+
+-- 只提取明确的音频片段，缺失锚点即失败；绝不 load 整个 UI/Standalone 模块。
+local function exactFragment(source, first, after)
+    local a = assert(source:find(first, 1, true), "missing fragment start " .. first)
+    local b = assert(source:find(after, a + #first, true), "missing fragment end " .. after)
+    return source:sub(a, b - 1)
+end
+
+local function testProductionFragments(bgmSource)
+    runCase("SettingsPanel actual applyVolumes keeps BGM independent of SFX muted", function()
+        local source = readSource("ui/hud/popup/SettingsPanel.lua")
+        local fragment = exactFragment(source, "local function applyBgmVolume(vol)",
+            "-- ============================================================================")
+        local state = { muted = false, bgmVolume = 1, sfxVolume = 1 }
+        local calls = { bgm = {}, effect = {} }
+        local apply = assert(load(fragment .. "\nreturn applyVolumes", "@settings-fragment", "t", {
+            state = state,
+            GameBGM = { setMasterGain = function(v) calls.bgm[#calls.bgm + 1] = v end },
+            audio = { SetMasterGain = function(_, kind, v)
+                eq(kind, "Effect", "SFX mute touches only Effect not Music")
+                calls.effect[#calls.effect + 1] = v
+            end },
+        }))()
+        for _, muted in ipairs({ false, true }) do
+            for _, bgm in ipairs({ 0, 0.35, 1 }) do
+                for _, sfx in ipairs({ 0, 0.6, 1 }) do
+                    state.muted, state.bgmVolume, state.sfxVolume = muted, bgm, sfx
+                    local n = #calls.bgm
+                    apply()
+                    eq(#calls.bgm, n + 1, "BGM applied exactly once regardless of SFX mute")
+                    near(calls.bgm[#calls.bgm], bgm, "BGM independent slider including muted startup")
+                    near(calls.effect[#calls.effect], muted and 0 or sfx * 0.05, "unchanged SFX pack scaling")
+                end
+            end
+        end
     end)
-    runCase("battle playlist keeps scene boundaries and volume envelopes", function()
-        local m, h = newHarness(source, "GameBGM.lua")
-        m.start(); h.sources[1].position = 99.8; m.update(0.01)
-        m.update(0.2)
-        m.setMasterGain(0)
-        near(h.sources[1].gain, 0, "mute outgoing too")
-        near(h.sources[2].gain, 0, "mute incoming too")
-        m.setMasterGain(0.5)
-        near(h.sources[1].gain, 0.5 * 0.5 * 0.5, "unmute restores outgoing envelope")
-        near(h.sources[2].gain, 0.5 / 6 * 0.5, "unmute does not skip fade")
-        m.setScene("samsara", { fromStart = true }); m.update(1.2)
-        local plays = #h.plays
-        h.plays[plays].source.position = 99.8; m.update(200)
-        eq(#h.plays, plays, "terminal scene does not enter battle pool")
-        eq(m.getScene(), "samsara", "terminal scene retained")
-        m.setScene("battle", { fromStart = true }); m.update(1.2)
-        eq(h.plays[#h.plays].sound.path, march, "return retains current battle track")
-        m.setMasterGain(0)
-        h.plays[#h.plays].source.position = 99.8; m.update(0.1)
-        eq(h.plays[#h.plays].sound.path, moon, "mute still rotates playlist")
-        near(h.plays[#h.plays].source.gain, 0, "new muted track stays silent")
-        m.stop(); local stoppedPlays = #h.plays; m.update(1000)
-        eq(#h.plays, stoppedPlays, "stop cancels all playlist work")
-        m.start()
-        eq(h.plays[#h.plays].sound.path, moon, "restart retains current selection")
+    runCase("Standalone actual sweep guard and early BGM update cover all later early returns", function()
+        local source = readSource("boot/Standalone.lua")
+        local fragment = exactFragment(source, "function HandleUpdate(eventType, eventData)",
+            "    SidePanelBattlePause.refresh()")
+        local _, updates = source:gsub("GameBGM%.update%s*%(%s*dt%s*%)", "")
+        eq(updates, 1, "Standalone contains exactly one BGM update, no later duplicate")
+        local calls = { update = 0, sweep = 0, paused = 0 }
+        local pending = false
+        local env = {
+            GameBGM = { update = function(dt) calls.update = calls.update + 1; near(dt, 0.125, "real unscaled dt") end },
+            LocalActionBridge = {
+                isSweepPending = function() return pending end,
+                updateSweep = function() calls.sweep = calls.sweep + 1 end,
+            },
+            require = function(name)
+                eq(name, "ui.battle.combat.BattleClock", "prefix only dependency is sweep clock")
+                return { setPaused = function(v) eq(v, true, "sweep pauses clock"); calls.paused = calls.paused + 1 end }
+            end,
+        }
+        local update = assert(load(fragment .. "\nend\nreturn HandleUpdate", "@standalone-fragment", "t", env))()
+        local event = { TimeStep = { GetFloat = function() return 0.125 end } }
+        update("Update", event)
+        eq(calls.update, 1, "BGM advances before prewarm/opening/error return sites")
+        pending = true; update("Update", event)
+        eq(calls.update, 1, "sweep-exclusive frame does not advance audio")
+        eq(calls.sweep, 1, "sweep worker not starved")
+        eq(calls.paused, 1, "sweep guard runs before BGM")
+        pending = false; update("Update", event)
+        eq(calls.update, 2, "next regular frame resumes one audio update")
+    end)
+    runCase("Standalone actual narrative route ignores UI tabs and preserves narrative guards", function()
+        local source = readSource("boot/Standalone.lua")
+        local fragment = exactFragment(source,
+            "    if not (LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()) then",
+            "    -- [LetterIntro] 先祖来信更新")
+        check(not fragment:find("BottomNav", 1, true), "route has no tab dependency")
+        check(not fragment:find("GameBGM.update", 1, true), "route does not duplicate frame update")
+        local flags = { letter = false, intro = false, dialogue = false, terminal = false, raid = false }
+        local m, h = newHarness(bgmSource, "GameBGM.lua")
+        m.start(); h.sources[1].position = 33.75
+        local route = assert(load(fragment, "@standalone-fragment", "t", {
+            GameBGM = m,
+            LetterIntro = { isOpen = function() return flags.letter end },
+            IntroCutscene = { isActive = function() return flags.intro end },
+            ScenarioDialogue = { isActive = function() return flags.dialogue end },
+            BattleScene = { isInTerminalTemple = function() return flags.terminal end },
+            BattleTriPage = { isTerminalRaidActive = function() return flags.raid end },
+        }))
+        for _, key in ipairs(REGULAR_SCENES) do m.setScene(key); route() end
+        eq(#h.loads, 1, "ordinary UI route never loads another track")
+        eq(#h.plays, 1, "ordinary UI route never replays")
+        near(h.sources[1].position, 33.75, "ordinary UI route remains continuous")
+        for _, terminal in ipairs({ false, true }) do
+            for _, raid in ipairs({ false, true }) do
+                flags.terminal, flags.raid = terminal, raid
+                route(); m.update(FADE_SECONDS)
+                eq(m.getScene(), (terminal or raid) and "samsara" or "battle", "either terminal host controls narrative")
+            end
+        end
+        for _, guard in ipairs({ "letter", "intro", "dialogue" }) do
+            flags[guard] = true
+            m.setScene("letter"); m.update(FADE_SECONDS)
+            local plays, loads = #h.plays, #h.loads
+            route()
+            eq(m.getScene(), "letter", "narrative guard preserves letter " .. guard)
+            eq(#h.plays, plays, "narrative guard no replay " .. guard)
+            eq(#h.loads, loads, "narrative guard no load " .. guard)
+            flags[guard] = false
+        end
+        assertNoRNG(h, "actual UI route")
         m.stop()
     end)
-    runCase("battle wrap during scene fade is retained until fade completes", function()
-        local m, h = newHarness(source, "GameBGM.lua")
-        m.setScene("town"); m.start(); h.sources[1].position = 99
-        m.setScene("battle")
-        near(h.sources[2].position, 99, "legacy scene synchronization retained")
-        h.sources[2].position = 99.1; m.update(0.1)
-        h.sources[2].position = 0.05; m.update(0.1)
-        eq(#h.plays, 2, "wrap does not interrupt unfinished fade")
-        h.sources[2].position = 0.2; m.update(1.0)
-        eq(#h.plays, 3, "latched wrap advances after fade")
-        eq(h.plays[3].sound.path, march, "wrapped first battle advances to march")
-        eq(h.plays[3].source.position, 0, "latched transition also starts at zero")
-        m.stop()
-        local early, eh = newHarness(source, "GameBGM.lua")
-        early.setScene("town"); early.start(); eh.sources[1].position = 99.99
-        early.setScene("battle")
-        eh.sources[2].position = 0.01; early.update(0.1)
-        eq(#eh.plays, 2, "first-sample wrap waits for scene fade")
-        early.update(1.1)
-        eq(eh.plays[#eh.plays].sound.path, march, "seek provides baseline before first update")
-        early.stop()
-    end)
-    runCase("retained battle track missing on restart or scene return falls back", function()
-        local m, h = newHarness(source, "GameBGM.lua")
-        m.start(); h.sources[1].position = 99.8; m.update(0.1); m.update(1.2)
-        eq(h.plays[2].sound.path, march, "prepare retained march")
-        m.stop(); h.failures[march] = true; m.start()
-        eq(h.plays[3].sound.path, moon, "restart skips missing retained track")
-        eq(h.plays[3].source.playing, true, "fallback is playing not silent")
-        m.setScene("town"); m.update(1.2); m.stop()
-        h.failures[moon] = true; m.start(); m.setScene("battle", { fromStart = true })
-        eq(h.plays[#h.plays].sound.path, original, "scene return skips both missing additions")
-        eq(m.getScene(), "battle", "fallback retains public battle scene")
-        m.stop()
-    end)
-    runCase("short and unknown-length additions never storm transitions", function()
-        local m, h = newHarness(source, "GameBGM.lua", nil, { [march] = 0, [moon] = 0.5 })
-        m.start(); h.sources[1].position = 99.8
-        for _ = 1, 60 do m.update(1) end
-        eq(#h.plays, 1, "invalid durations preserve original")
-        eq(#h.loads, 3, "invalid candidates cached rather than polled")
-        eq(#h.randoms, 0, "duration failure does not use RNG")
-        m.stop()
+    runCase("Standalone Stop actual audio prefix releases pending fade", function()
+        local source = readSource("boot/Standalone.lua")
+        local fragment = exactFragment(source, "function Standalone.Stop()",
+            "    require(\"core.PerformanceMonitor\").stop()")
+        local m, h = newHarness(bgmSource, "GameBGM.lua")
+        m.start(); m.setScene("letter"); m.update(0.4)
+        local stop = assert(load(fragment .. "\nend\nreturn Standalone.Stop", "@standalone-fragment", "t",
+            { Standalone = {}, GameBGM = m }))()
+        stop(); m.update(10000)
+        eq(h.nodes[1].removed, true, "Standalone audio prefix removes audio node")
+        for _, src in ipairs(h.sources) do eq(src.playing, false, "Standalone audio stop releases both channels") end
+        eq(#h.plays, 2, "post-stop update never restarts sound")
     end)
 end
 
@@ -660,12 +877,16 @@ function Start()
     local loadedBGM = package.loaded["systems.GameBGM"]
     local loadedSFX = package.loaded["systems.GameSFX"]
     local ok, why = pcall(function()
-        testBGM(readSource("systems/GameBGM.lua"))
-        testBattlePlaylist(readSource("systems/GameBGM.lua"))
+        local bgmSource = readSource("systems/GameBGM.lua")
+        testBGM(bgmSource)
+        testNoAutoAdvance(bgmSource)
+        testProductionFragments(bgmSource)
         testSFX(readSource("systems/GameSFX.lua"))
-        runCase("battle OGG assets load with real engine metadata", function()
-            local paths = { "audio/bgm_battle.ogg", "audio/bgm_battle_march.ogg", "audio/bgm_battle_moon.ogg" }
-            local expectedLengths = { 90.024, 202.260979, 157.140979 }
+        runCase("final main and retained battle OGG assets decode with real engine metadata", function()
+            local defs = readDefinitions(bgmSource, "TRACKS")
+            eq(defs.battle.path, "audio/bgm_dark_embers.ogg", "frozen final main candidate")
+            local paths = { defs.battle.path, "audio/bgm_battle.ogg", "audio/bgm_battle_march.ogg", "audio/bgm_battle_moon.ogg" }
+            local expectedLengths = { 179.988979, 90.024, 202.260979, 157.140979 }
             for i, path in ipairs(paths) do
                 local sound = cache:GetResource("Sound", path)
                 check(sound ~= nil, "real Sound exists " .. path)

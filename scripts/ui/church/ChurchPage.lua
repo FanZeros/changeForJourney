@@ -191,6 +191,7 @@ function ChurchPage.open()
 end
 
 function ChurchPage.close()
+    ArtifactDrawPanel.closeAnimation()
     ArtifactPanel.cancelPointer()
     require("ui.character.hero.ArtifactDetailPanel").closeImmediate()
     if not _life then bindChurchLifecycle() end
@@ -215,6 +216,7 @@ function ChurchPage.isOpen()
 end
 
 function ChurchPage.forceClose()
+    ArtifactDrawPanel.closeAnimation()
     ArtifactPanel.cancelPointer()
     require("ui.character.hero.ArtifactDetailPanel").closeImmediate()
     if not _life then bindChurchLifecycle() end
@@ -258,7 +260,7 @@ function ChurchPage.handleDragEnd(dx, dy)
 end
 
 function ChurchPage.isArtifactInputActive()
-    return state.open and not state.closing and state.tab == "shenqi"
+    return state.open and not state.closing and not ArtifactDrawPanel.isAnimationPlaying() and state.tab == "shenqi"
         and (state.tabFrom == state.tab or time.elapsedTime - state.tabSwitchTime >= TAB.ANIM_DUR)
         and ChurchPage.getAnimProgress() >= 1
         and DrawUtil.seamSlideX(-1, state.openTime, state.closeTime,
@@ -321,6 +323,10 @@ end
 
 function ChurchPage.getSeamAnim()
     return state.openTime, state.closeTime, ANIM.OPEN_DUR, ANIM.CLOSE_DUR
+end
+
+function ChurchPage.update(dt)
+    ArtifactDrawPanel.updateAnimation(dt)
 end
 
 function ChurchPage.draw(vg)

@@ -14,6 +14,7 @@ local ResourceDefs = require("config.ResourceDefs")
 local GachaConfig = require("config.GachaConfig")
 local UrGachaConfig = require("config.UrGachaConfig")
 local GameState = require("core.GameState")
+local I18n = require("core.I18n")
 local HeroAssetUtil = require("config.HeroAssetUtil")
 local RepeatDrawButton = require("ui.widget.RepeatDrawButton")
 local Timeline = require("ui.tavern.RecruitTimeline")
@@ -221,6 +222,7 @@ end
 function RecruitAnim.start(results, onClose, count, poolId)
     local list = results or {}
     local ordered = {}
+    ---@type table<number, table>
     local buckets = { {}, {}, {} }
     for i = 1, #list do
         local item = list[i]
@@ -399,9 +401,47 @@ local function drawResourceCard(vg, cx, cy, item, alpha)
     nvgRestore(vg)
 end
 
---- 碎片类卡片（type="shard"）：图标+角标样式（与资源卡风格一致）
+-- 一抽仍只占一张卡；同次结算的碎片和溢出币都留在卡内，不另造奖励卡。
+local function drawReceiptText(vg, cx, cy, text, fontSize, maxWidth)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, fontSize)
+    local width = nvgTextBounds(vg, 0, 0, text)
+    local scaleX = width > 0 and math.min(1, (maxWidth - 6) / width) or 1
+    nvgSave(vg)
+    nvgTranslate(vg, cx, cy)
+    nvgScale(vg, scaleX, 1)
+    drawTextStroke(vg, 0, 0, text, fontSize, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        255, 200, 80, 3, { strokeColor = { 0, 0, 0 } })
+    nvgRestore(vg)
+end
+
+local function drawShardReceipt(vg, cx, cy, item, includeShards)
+    local shards = math.max(0, tonumber(item.shardGain) or tonumber(item.amount) or 0)
+    local coins = math.max(0, tonumber(item.tavernCoin) or 0)
+    local lines = {}
+    if includeShards and shards > 0 then
+        lines[#lines + 1] = I18n.lookup("→碎片×") .. tostring(shards)
+    end
+    if coins > 0 then lines[#lines + 1] = I18n.lookup("→酒馆币×") .. tostring(coins) end
+    if #lines == 0 then return end
+    local height = #lines * 32 + 8
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, cx - 90, cy + 10, 180, height, 8)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 160))
+    nvgFill(vg)
+    for i, text in ipairs(lines) do
+        drawReceiptText(vg, cx, cy + 30 + (i - 1) * 32, text, 26, 168)
+    end
+end
+
+--- 碎片类卡片（type="shard"）：图标+实际数量，溢出币与碎片同时展示。
 local function drawShardCard(vg, cx, cy, item, alpha)
     local heroId  = item.heroId
+    local shards = math.max(0, tonumber(item.shardGain) or tonumber(item.amount) or 0)
+    if shards == 0 and (tonumber(item.tavernCoin) or 0) > 0 then
+        drawResourceCard(vg, cx, cy, { resType = "tavern_coin", amount = item.tavernCoin }, alpha)
+        return
+    end
 
     -- 无底板：只显示图标与数量
 
@@ -419,7 +459,7 @@ local function drawShardCard(vg, cx, cy, item, alpha)
     local combinedAlpha = alpha * _fadeAlpha
     nvgSave(vg)
     nvgGlobalAlpha(vg, combinedAlpha)
-    local qtyText = "X" .. tostring(item.amount or 1)
+    local qtyText = "X" .. tostring(shards)
     drawTextStroke(vg,
         cx, iconCY + RES_ICON_BG_H * 0.5 + 30,
         qtyText,
@@ -430,10 +470,14 @@ local function drawShardCard(vg, cx, cy, item, alpha)
         { strokeColor = { 0, 0, 0 } }
     )
 
+    if (tonumber(item.tavernCoin) or 0) > 0 then
+        drawReceiptText(vg, cx, iconCY + RES_ICON_BG_H * 0.5 + 66,
+            I18n.lookup("→酒馆币×") .. tostring(item.tavernCoin), 26, CARD_W - 20)
+    end
     nvgRestore(vg)
 end
 
---- 重复英雄→碎片卡片（type="dupe_to_shard"）：英雄立绘 + "→碎片×10"
+--- 重复英雄：同卡显示实际碎片及超额归并的酒馆币。
 local function drawDupeToShardCard(vg, cx, cy, item, alpha)
     local heroId  = item.heroId
     local heroCfg = HC.get(heroId)
@@ -445,22 +489,7 @@ local function drawDupeToShardCard(vg, cx, cy, item, alpha)
     nvgSave(vg)
     nvgGlobalAlpha(vg, combinedAlpha)
 
-    -- "→碎片×N" 叠加条
-    local labelText = "→碎片×" .. tostring(item.shardGain or 10)
-    -- 半透明黑底条
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, cx - 90, cy + 10, 180, 40, 8)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 160))
-    nvgFill(vg)
-    drawTextStroke(vg,
-        cx, cy + 30,
-        labelText,
-        28,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 200, 80,
-        3,
-        { strokeColor = { 0, 0, 0 } }
-    )
+    drawShardReceipt(vg, cx, cy, item, true)
 
     -- 英雄名
     local heroName = heroCfg and heroCfg.name or ("英雄" .. heroId)
@@ -489,21 +518,7 @@ local function drawDecomposeCard(vg, cx, cy, item, alpha)
     nvgSave(vg)
     nvgGlobalAlpha(vg, combinedAlpha)
 
-    -- "→酒馆币×N" 叠加条
-    local labelText = "→酒馆币×" .. tostring(item.tavernCoin or 0)
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, cx - 90, cy + 10, 180, 40, 8)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 160))
-    nvgFill(vg)
-    drawTextStroke(vg,
-        cx, cy + 30,
-        labelText,
-        26,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 180, 60,
-        3,
-        { strokeColor = { 0, 0, 0 } }
-    )
+    drawShardReceipt(vg, cx, cy, item, false)
 
     -- 英雄名
     local heroName = heroCfg and heroCfg.name or ("英雄" .. heroId)
@@ -551,6 +566,8 @@ local function drawCharacterCard(vg, cx, cy, item, alpha)
             drawImageCentered(vg, classIconImg, cx, classIconCY, CLASS_ICON_W, CLASS_ICON_H, alpha)
         end
     end
+    -- 首次获得整卡也可能清理旧库存超额；到账币不能被新英雄展示吞掉。
+    drawShardReceipt(vg, cx, cy, item, false)
     nvgRestore(vg)
 end
 

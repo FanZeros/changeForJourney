@@ -177,6 +177,7 @@ end
 local function resetButtonCase()
     local f = fixture()
     f.modules["systems.EquipmentPower"] = {}
+    f.modules["ui.church.ClassChangePower"] = { get = function() return nil end, clear = noop }
     local actions = {}
     f.modules["runtime.GameAction"] = { sendAction = function(action, params)
         actions[#actions + 1] = { action = action, params = params }
@@ -263,9 +264,15 @@ local function artifactLayerCase()
     eq(#f.all("detail.draw"), 0, "真实神器 drawContent 不再绘制详情")
     panel.drawOverlay({})
     eq(#f.all("detail.draw"), 1, "真实神器 drawOverlay 恰好委托一次详情")
+    local animationPlaying = false
     f.modules["ui.church.ChurchArtifactDrawPanel"] = { drawBg = function() f.record("chest.bg") end,
         drawContent = function() f.record("chest.content") end,
-        drawKeyConfirmDialog = function() f.record("key.confirm") end }
+        drawKeyConfirmDialog = function() f.record("key.confirm") end,
+        isAnimationPlaying = function() return animationPlaying end,
+        drawAnimation = function()
+            f.record("draw.animation", { tx = f.matrix.tx, ty = f.matrix.ty,
+                sx = f.matrix.sx, sy = f.matrix.sy })
+        end }
     f.modules["ui.fx.SpineCardEffect"] = { draw = function() f.record("card.fx") end }
     -- 内容仍执行真实 Panel；记录边界不替换其 drawOverlay 或 drawContent 方法。
     local realPanel = { drawBg = function(vg) f.record("artifact.bg"); panel.drawBg(vg) end,
@@ -299,6 +306,15 @@ local function artifactLayerCase()
     check(f.at("detail.draw") < f.at("key.confirm") and f.at("key.confirm") < f.at("card.fx")
         and f.at("card.fx") < f.at("float"), "高优先级确认/特效/提示仍在详情上层")
     eq(#f.stack, 0, "教堂详情绘制后矩阵恢复")
+    animationPlaying = true
+    f.clear()
+    draw.drawPageImpl({})
+    eq(#f.all("draw.animation"), 1, "专属抽卡动画每帧只绘制一次")
+    check(f.at("draw.animation") > f.at("float"), "专属抽卡动画覆盖普通浮字")
+    near(f.all("draw.animation")[1].sx, 1, "抽卡动画不重复缩放")
+    near(f.all("draw.animation")[1].tx, 0, "抽卡动画沿用宿主变换")
+    eq(#f.stack, 0, "专属抽卡绘制不破坏矩阵栈")
+    animationPlaying = false
     -- 页签切换中只画双方内容，不让旧神器浮层盖住新宝箱页。
     state.tab, state.tabFrom, state.tabSwitchTime = "baoxiang", "shenqi", f.clock.elapsedTime - .175
     f.clear()
@@ -624,6 +640,7 @@ local function churchCleanupCase()
     end
     f.modules["ui.character.hero.ArtifactDetailPanel"] = { closeImmediate = function() count("detail.close") end }
     local artifactConsume, keyVisible = false, false
+    local animationPlaying, startAnimationOnSuccess = false, false
     f.modules["ui.church.ChurchArtifactPanel"] = {
         setContext = function(ctx) contexts.artifact = ctx end,
         init = function() count("artifact.init") end,
@@ -646,6 +663,21 @@ local function churchCleanupCase()
         isKeyConfirmVisible = function() return keyVisible end,
         handleTabInput = function() count("chest.input"); return true end,
         onArtifactDrawResult = function() count("draw.receipt") end,
+        isAnimationPlaying = function() return animationPlaying end,
+        closeAnimation = function() count("animation.close"); animationPlaying = false end,
+        updateAnimation = function(dt) count("animation.update"); near(dt, .125, "抽卡更新原样透传 dt") end,
+        handleAnimationInput = function(dx, dy)
+            count("animation.input")
+            eq(dx, 690, "抽卡输入原样透传 X")
+            eq(dy, 2288, "抽卡输入原样透传 Y")
+            return true
+        end,
+        drawAnimation = function() count("animation.draw") end,
+        onArtifactDrawSuccess = function()
+            count("draw.success")
+            animationPlaying = startAnimationOnSuccess
+            return { {}, {} }
+        end,
         drawBg = noop, drawContent = noop, drawKeyConfirmDialog = noop,
     }
     f.modules["ui.fx.SpineCardEffect"] = { draw = noop }
@@ -706,6 +738,22 @@ local function churchCleanupCase()
     page.handleScroll(1, 540, 1500)
     eq(counts["drag.end"], 1, "有效神器拖拽 end 保留")
     eq(counts.scroll, 1, "神器滚动保留")
+    animationPlaying = true
+    eq(page.isArtifactInputActive(), false, "抽卡动画阻止神器 hover 命中")
+    eq(page.handleInput(690, 2288), true, "抽卡动画先消费页签点击")
+    eq(state.tab, "shenqi", "动画期间不穿透切页")
+    eq(counts["animation.input"], 1, "动画输入只委托一次")
+    eq(page.handleDragBegin(252, 465), true, "动画消费拖拽 begin")
+    eq(page.handleDragMove(270, 470), true, "动画消费拖拽 move")
+    page.handleDragEnd(270, 470)
+    page.handleScroll(1, 540, 1500)
+    eq(counts["drag.begin"], 1, "动画不触发底层拖拽 begin")
+    eq(counts["drag.move"], 1, "动画不触发底层拖拽 move")
+    eq(counts["drag.end"], 1, "动画不触发底层拖拽 end")
+    eq(counts.scroll, 1, "动画不触发底层滚轮")
+    page.update(.125)
+    eq(counts["animation.update"], 1, "宿主保留抽卡动画 update 接线")
+    animationPlaying = false
     -- 公共命中加载真实 TownPageChrome，沿用生产设计坐标。
     eq(page.handleInput(690, 2288), true, "真实页签命中切到宝箱")
     eq(state.tab, "baoxiang", "宝箱页签仍可达")
@@ -742,6 +790,37 @@ local function churchCleanupCase()
     eq(counts["equip.receipt"], 1, "闭页神器装配请求仍收尾")
     check(page.hasAdvanceForHero(1) and page.hasAnyAdvance() and page.hasAnyChurchBadge(),
         "右侧转职与城镇角标公共 API 保留")
+    eq(counts["animation.close"], 1, "普通关闭停止专属抽卡动画")
+    local receiptBefore = counts["draw.receipt"]
+    page.onActionResult({ success = true, action = protocol.ACTION_TYPES.ARTIFACT_DRAW })
+    eq(counts["draw.receipt"], receiptBefore + 1, "闭页成功回执仍先收尾")
+    eq(counts["draw.success"], nil, "闭页成功回执不重开表现")
+    page.open()
+    f.clock.elapsedTime = 104
+    local originalFloat = "保留旧提示"
+    state.floatText, state.floatTextTime = originalFloat, f.clock.elapsedTime
+    startAnimationOnSuccess = true
+    page.onActionResult({ success = true, action = protocol.ACTION_TYPES.ARTIFACT_DRAW })
+    eq(counts["draw.success"], 1, "开页成功只委托一次抽卡表现")
+    eq(state.floatText, originalFloat, "专属动画不被获得浮字打断")
+    check(animationPlaying, "成功回执开启专属抽卡动画")
+    page.close()
+    eq(animationPlaying, false, "关闭实际停止专属动画")
+    eq(counts["animation.close"], 2, "新一轮关闭不漏停止")
+    receiptBefore = counts["draw.receipt"]
+    page.onActionResult({ success = true, action = protocol.ACTION_TYPES.ARTIFACT_DRAW })
+    eq(counts["draw.receipt"], receiptBefore + 1, "退页中回执仍先收尾")
+    eq(counts["draw.success"], 1, "退页中回执不重开抽卡动画")
+    eq(state.floatText, originalFloat, "退页中回执不覆盖已有提示")
+    page.forceClose()
+    eq(counts["animation.close"], 3, "强制关闭同样停止专属动画")
+    page.open()
+    startAnimationOnSuccess = false
+    page.onActionResult({ success = true, action = protocol.ACTION_TYPES.ARTIFACT_DRAW })
+    eq(state.floatText, "获得2件神器", "无专属动画时保留获得提示兜底")
+    page.onActionResult({ success = false, action = protocol.ACTION_TYPES.ARTIFACT_DRAW, reason = "测试失败" })
+    eq(state.floatText, "测试失败", "正常开页失败提示保留")
+    page.forceClose()
     eq(#f.stack, 0, "完整教堂壳绘制恢复矩阵")
 end
 

@@ -190,6 +190,8 @@ function M.bind(deps)
                     255, 80, 80, 6, { alpha = 1.0 - t })
             end
         end
+        -- 专属抽卡是教堂页内模态，使用同一设计变换并覆盖旧提示与页签。
+        if ArtifactDrawPanel.isAnimationPlaying() then ArtifactDrawPanel.drawAnimation(vg) end
     end
 
     return { drawPageImpl = drawPageImpl }

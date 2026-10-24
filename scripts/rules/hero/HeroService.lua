@@ -12,6 +12,8 @@ local UrGachaConfig   = require("config.UrGachaConfig")
 local TaskService     = require("rules.task.TaskService")
 local HeroResonance   = require("shared.heroes.HeroResonance")
 local TeamSlots       = require("shared.heroes.TeamSlots")
+local HeroShardPolicy = require("shared.heroes.HeroShardPolicy")
+local HeroShardService = require("rules.hero.HeroShardService")
 
 local HeroService = {}
 
@@ -327,38 +329,30 @@ function HeroService.GrantStarterTrio(uid)
 
     local starterIds = { 1, 2, 3 }
     local startLv = HeroService.GetNewHeroStartLevel(uid)
-    for i = 1, #starterIds do
-        local heroId = starterIds[i]
-        local existing = heroes.roster[heroId] or heroes.roster[tostring(heroId)]
-        if existing and existing.level then
-            heroes.roster[heroId] = existing
-            heroes.roster[tostring(heroId)] = nil
-            print("[HeroService] starter keep heroId=" .. tostring(heroId)
-                .. " lv=" .. tostring(existing.level))
-        else
-            local cfg = HeroConfig.get(heroId)
-            heroes.roster[heroId] = {
-                level = startLv,
-                exp = 0,
-                maxExp = ExpTable.getHeroExpForLevel(startLv) or 0,
-                classId = cfg and cfg.classId or 1,
-                dupeCount = 0,
-                shards = existing and existing.shards or 0,
-                awakening = { _awk3Migrated = true },
-                extraTalent = require("systems.ExtraTalentSystem").normalize(nil),
-                _shardMigrated = true,
-                _awk3Migrated = true,
-            }
-            heroes.roster[tostring(heroId)] = nil
-            print("[HeroService] starter grant heroId=" .. tostring(heroId)
-                .. " lv=" .. tostring(startLv))
+    local currency = PDM.GetModule(uid, "currency")
+    if not currency then return false, "数据未加载" end
+    local staged = HeroShardService.CopyHeroes(heroes)
+    local stagedCurrency = HeroShardService.CopyTable(currency)
+    local coinGained = 0
+    for _, heroId in ipairs(starterIds) do
+        local existing = staged.roster[heroId] or staged.roster[tostring(heroId)]
+        if not HeroShardPolicy.isOwned(existing) then
+            local plan, planErr = HeroShardService.PlanHeroFor(staged, stagedCurrency, heroId,
+                { startLevel = startLv })
+            if not plan then return false, planErr end
+            local applied, applyErr = HeroShardService.ApplyTo(staged, stagedCurrency, plan)
+            if not applied then return false, applyErr end
+            coinGained = coinGained + plan.tavernCoin
         end
     end
+    HeroShardService.CommitRoster(heroes, staged)
+    currency.tavernCoin = stagedCurrency.tavernCoin
 
     local TeamSlots = require("shared.heroes.TeamSlots")
     -- 开局就占满 4 个槽位：三人在前，第四格是空位。否则右侧栏没有可交换的空槽。
     TeamSlots.setTeam(heroes, 1, { starterIds[1], starterIds[2], starterIds[3], 0 })
     PDM.MarkDirty(uid, "heroes")
+    if coinGained > 0 then PDM.MarkDirty(uid, "currency") end
 
     local sessionData = PDM.GetModule(uid, "session")
     if sessionData then
@@ -419,43 +413,32 @@ function HeroService.SynthesizeHero(uid, heroId)
     local cfg = HeroConfig.get(heroId)
     if not cfg then return false, "无效的英雄 ID: " .. tostring(heroId) end
 
-    local roster = heroes.roster[heroId]
-
-    -- 已拥有（有 level 字段 = 已解锁）
-    if roster and roster.level then
-        return false, "已拥有该英雄，无需合成"
+    if heroes.roster[heroId] ~= nil and heroes.roster[tostring(heroId)] ~= nil then
+        return false, "英雄库存键重复"
     end
-
-    -- 检查碎片是否足够
+    local roster = heroes.roster[heroId] or heroes.roster[tostring(heroId)]
+    if HeroShardPolicy.isOwned(roster) then return false, "已拥有该英雄，无需合成" end
     local currentShards = roster and roster.shards or 0
+    if not HeroShardPolicy.isSafeInteger(currentShards, true) then return false, "碎片库存异常" end
     local cost = HeroConfig.SHARD_SYNTHESIZE_COST
     if currentShards < cost then
         return false, "碎片不足（需要 " .. cost .. " 个，当前 " .. currentShards .. " 个）"
     end
-
-    -- === 原子修改 ===
-    if not roster then
-        heroes.roster[heroId] = {
-            shards = currentShards,
-            _shardMigrated = true,
-        }
-        roster = heroes.roster[heroId]
-    end
-
-    roster.shards = currentShards - cost
-    local startLv = HeroService.GetNewHeroStartLevel(uid)
-    roster.level = startLv
-    roster.exp = 0
-    roster.maxExp = ExpTable.getHeroExpForLevel(startLv) or 0
-    roster.classId = cfg.classId or 1
-    roster.dupeCount = 0
-    if not roster.awakening then
-        roster.awakening = { _awk3Migrated = true }
-    end
-    roster._awk3Migrated = true
-    roster.extraTalent = require("systems.ExtraTalentSystem").normalize(roster.extraTalent)
-
-    PDM.MarkDirty(uid, "heroes")
+    -- 合成扣片后按拥有状态规划，历史超额同样转币；先校验币上限再动原库存。
+    local currency = PDM.GetModule(uid, "currency")
+    if not currency then return false, "数据未加载" end
+    local staged = HeroShardService.CopyHeroes(heroes)
+    local pending = HeroShardService.CopyTable(roster)
+    pending.shards = currentShards - cost
+    staged.roster[heroId], staged.roster[tostring(heroId)] = pending, nil
+    local plan, planErr = HeroShardService.PlanHeroFor(staged, currency, heroId,
+        { startLevel = HeroService.GetNewHeroStartLevel(uid) })
+    if not plan then return false, planErr end
+    plan.beforeShards = currentShards
+    local applied, applyErr = HeroShardService.ApplyTo(heroes, currency, plan)
+    if not applied then return false, applyErr end
+    roster = heroes.roster[heroId]
+    HeroShardService.MarkDirty(uid, plan)
 
     HeroService.ApplyResonanceSync(uid)
 
@@ -466,6 +449,8 @@ function HeroService.SynthesizeHero(uid, heroId)
     return true, nil, {
         heroId = heroId,
         remainingShards = roster.shards,
+        tavernCoin = plan.tavernCoin,
+        overflowShards = plan.overflowShards,
     }
 end
 
@@ -495,37 +480,23 @@ function HeroService.ConvertShardToCoin(uid, heroId)
         return false, "UR碎片不能转化为酒馆币"
     end
 
-    local roster = heroes.roster[heroId]
-    if not roster or not roster.level then
-        return false, "未拥有该英雄"
-    end
-
-    -- 检查是否满觉醒（3个觉醒节点全开启）
-    if not require("config.AwakeningConfig").isFullyAwakened(roster.awakening) then
-        return false, "该英雄未满觉醒"
-    end
-
-    -- 检查碎片数量
+    local roster = heroes.roster[heroId] or heroes.roster[tostring(heroId)]
+    if not HeroShardPolicy.isOwned(roster) then return false, "未拥有该英雄" end
+    local cap, capErr = HeroShardPolicy.capacity(heroId, roster)
+    if cap == nil then return false, capErr end
+    if cap ~= 0 then return false, "该英雄未满觉醒" end
     local currentShards = roster.shards or 0
-    if currentShards < 1 then
-        return false, "碎片不足"
-    end
+    if not HeroShardPolicy.isSafeInteger(currentShards, true) then return false, "碎片库存异常" end
+    if currentShards < 1 then return false, "碎片不足" end
 
-    -- 获取单片转化数量
-    local coinPerShard = getStardustValue(heroId)
-    if coinPerShard <= 0 then
-        return false, "未配置转化比例"
-    end
-
-    -- === 原子修改：一次性转化所有碎片 ===
-    local totalCoin = coinPerShard * currentShards
-    roster.shards = 0
-
+    local plan, planErr = HeroShardService.Plan(uid, heroId, 0, { allowZero = true })
+    if not plan then return false, planErr end
     local currency = PDM.GetModule(uid, "currency")
-    currency.tavernCoin = (currency.tavernCoin or 0) + totalCoin
-
-    PDM.MarkDirty(uid, "heroes")
-    PDM.MarkDirty(uid, "currency")
+    local applied, applyErr = HeroShardService.ApplyTo(heroes, currency, plan)
+    if not applied then return false, applyErr end
+    local totalCoin = plan.tavernCoin
+    local coinPerShard = getStardustValue(heroId)
+    HeroShardService.MarkDirty(uid, plan)
 
     print("[HeroService] CONVERT_SHARD_TO_COIN uid=" .. tostring(uid)
         .. " heroId=" .. tostring(heroId)
@@ -536,6 +507,8 @@ function HeroService.ConvertShardToCoin(uid, heroId)
         heroId = heroId,
         remainingShards = 0,
         coinGained = totalCoin,
+        tavernCoin = totalCoin,
+        overflowShards = plan.overflowShards,
         totalTavernCoin = currency.tavernCoin,
     }
 end
@@ -555,11 +528,11 @@ function HeroService.ConvertUrShard(uid, fromHeroId, toHeroId, amount)
 
     fromHeroId = tonumber(fromHeroId)
     toHeroId = tonumber(toHeroId)
-    amount = math.floor(tonumber(amount) or 0)
+    amount = tonumber(amount)
     if not fromHeroId then return false, "缺少来源英雄" end
     if not toHeroId then return false, "缺少目标英雄" end
     if fromHeroId == toHeroId then return false, "不能转化为相同碎片" end
-    if amount < 1 then return false, "转化数量无效" end
+    if not HeroShardPolicy.isSafeInteger(amount) then return false, "转化数量无效" end
 
     local fromCfg = HeroConfig.get(fromHeroId)
     if not fromCfg then return false, "来源英雄不存在" end
@@ -569,30 +542,30 @@ function HeroService.ConvertUrShard(uid, fromHeroId, toHeroId, amount)
     if not toCfg then return false, "目标英雄不存在" end
     if not isUrHero(toHeroId) then return false, "只能转化为UR碎片" end
 
-    local _today, usedCount = resetUrShardConvertDailyIfNeeded(heroes)
+    local today = getTodayDayId()
+    local usedCount = heroes.urShardConvertDayId == today and (heroes.urShardConvertCount or 0) or 0
+    if not HeroShardPolicy.isSafeInteger(usedCount, true) then return false, "转化次数数据异常" end
     local remain = UR_SHARD_CONVERT_DAILY_LIMIT - usedCount
-    if remain <= 0 then
-        return false, "今日UR碎片转化次数已用完"
-    end
-    if amount > remain then
-        return false, "今日最多还能转化" .. tostring(remain) .. "个"
-    end
+    if remain <= 0 then return false, "今日UR碎片转化次数已用完" end
+    if amount > remain then return false, "今日最多还能转化" .. tostring(remain) .. "个" end
 
-    local fromRoster = heroes.roster[fromHeroId]
-    local currentShards = fromRoster and math.floor(tonumber(fromRoster.shards) or 0) or 0
-    if currentShards < amount then
-        return false, "UR碎片不足"
-    end
-
-    local toRoster = heroes.roster[toHeroId]
-    if not toRoster then
-        toRoster = { shards = 0, _shardMigrated = true }
-        heroes.roster[toHeroId] = toRoster
-    end
-
+    local fromRoster = heroes.roster[fromHeroId] or heroes.roster[tostring(fromHeroId)]
+    local currentShards = fromRoster and fromRoster.shards or 0
+    if not HeroShardPolicy.isSafeInteger(currentShards, true) then return false, "UR碎片库存异常" end
+    if currentShards < amount then return false, "UR碎片不足" end
+    local toRoster = heroes.roster[toHeroId] or heroes.roster[tostring(toHeroId)]
+    local need, needErr = HeroShardPolicy.remaining(toHeroId, toRoster)
+    if need == nil then return false, needErr end
+    if amount > need then return false, "目标碎片需求不足，无需转化多余碎片" end
+    local plan, planErr = HeroShardService.Plan(uid, toHeroId, amount)
+    if not plan then return false, planErr end
+    local currency = PDM.GetModule(uid, "currency")
+    local applied, applyErr = HeroShardService.ApplyTo(heroes, currency, plan)
+    if not applied then return false, applyErr end
     fromRoster.shards = currentShards - amount
-    toRoster.shards = math.max(0, math.floor(tonumber(toRoster.shards) or 0)) + amount
+    heroes.urShardConvertDayId = today
     heroes.urShardConvertCount = usedCount + amount
+    toRoster = heroes.roster[toHeroId]
 
     PDM.MarkDirty(uid, "heroes")
 
@@ -607,6 +580,9 @@ function HeroService.ConvertUrShard(uid, fromHeroId, toHeroId, amount)
         fromHeroId = fromHeroId,
         toHeroId = toHeroId,
         amount = amount,
+        shardGain = amount,
+        tavernCoin = 0,
+        overflowShards = 0,
         remainingFromShards = fromRoster.shards,
         targetShards = toRoster.shards,
         dailyUsed = heroes.urShardConvertCount,

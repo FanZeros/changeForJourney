@@ -7,6 +7,7 @@ local UrGachaConfig  = require("config.UrGachaConfig")
 local GameState      = require("core.GameState")
 local HC             = require("config.HeroConfig")
 local DrawUtil       = require("core.DrawUtil")
+local I18n           = require("core.I18n")
 local drawTextStroke = DrawUtil.drawTextStroke
 local drawNineSlice  = DrawUtil.drawNineSlice
 local hitTest        = DrawUtil.hitTest
@@ -334,20 +335,19 @@ function M.recordHistory(results, poolId)
         if r.type == "hero" then
             local hero = HC.HEROES[r.heroId]
             name = hero and hero.name or ("英雄" .. tostring(r.heroId))
-        elseif r.type == "shard" then
+        elseif r.type == "shard" or r.type == "dupe_to_shard" or r.type == "decompose" then
             local hero = HC.HEROES[r.heroId]
             local heroName = hero and hero.name or ("英雄" .. tostring(r.heroId))
-            name = heroName .. "碎片×" .. tostring(r.amount or 1)
-        elseif r.type == "dupe_to_shard" then
-            local hero = HC.HEROES[r.heroId]
-            local heroName = hero and hero.name or ("英雄" .. tostring(r.heroId))
-            name = heroName .. "→碎片×" .. tostring(r.shardGain or 10)
-        elseif r.type == "decompose" then
-            local hero = HC.HEROES[r.heroId]
-            local heroName = hero and hero.name or ("英雄" .. tostring(r.heroId))
-            name = heroName .. "→酒馆币×" .. tostring(r.tavernCoin or 0)
+            local shards = math.max(0, tonumber(r.shardGain) or tonumber(r.amount) or 0)
+            name = heroName
+            if r.type ~= "decompose" and shards > 0 then
+                name = name .. I18n.lookup("→碎片×") .. tostring(shards)
+            end
         else
             name = RES_NAME_MAP[r.resType] or r.resType or "未知"
+        end
+        if (tonumber(r.tavernCoin) or 0) > 0 then
+            name = name .. I18n.lookup("→酒馆币×") .. tostring(r.tavernCoin)
         end
         local tagMap = isStellar and STELLAR_QUALITY_TAG or QUALITY_TAG
         local tag = tagMap[r.quality] or (isStellar and "R" or "N")

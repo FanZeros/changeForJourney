@@ -3,51 +3,60 @@ local PlayerStore = require("core.PlayerStore")
 local EquipmentPower = require("systems.EquipmentPower")
 local M = {}
 
-local function append(parts, value)
-    local kind = type(value)
-    if kind ~= "table" then
-        local text = tostring(value)
-        parts[#parts + 1] = kind .. #text .. ":" .. text
-        return
-    end
-    local keys = {}
-    for key in pairs(value) do keys[#keys + 1] = key end
-    table.sort(keys, function(a, b)
-        if type(a) ~= type(b) then return type(a) < type(b) end
-        return tostring(a) < tostring(b)
-    end)
-    parts[#parts + 1] = "{"
-    for _, key in ipairs(keys) do append(parts, key); append(parts, value[key]) end
-    parts[#parts + 1] = "}"
+local combatFields = { "level", "advBranch", "awakening", "extraTalent" }
+local function sameValue(a, b)
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return a == b end
+    for key, value in pairs(a) do if not sameValue(value, b[key]) then return false end end
+    for key in pairs(b) do if a[key] == nil then return false end end
+    return true
+end
+local function copyValue(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for key, child in pairs(value) do result[key] = copyValue(child) end
+    return result
+end
+local function slotId(heroes, team, slot)
+    local row = heroes.teams and (heroes.teams[team] or heroes.teams[tostring(team)])
+    local slots = heroes.teams and (row and row.slots or {}) or (team == 1 and heroes.deployed or {}) or {}
+    local id = slots[slot] or slots[tostring(slot)]
+    if type(id) == "table" then id = id.heroId end
+    return tonumber(id)
 end
 
--- 签名冻结值而非名册引用，原地patch（含无通知）也能发现真实成长。
-local function heroSignature(heroes)
-    local parts = {}
-    heroes = heroes or {}
+-- 冻结消费值，不按 heroes 引用/revision 跳过检查：无通知原地成长也必须同帧拒旧。
+-- 相等时只比较，不再为每次 Render/指针读取排序、递归串化整个名册。
+local function sameHeroes(heroes, snapshot)
+    if not snapshot then return false end
     for team = 1, 3 do
-        local row = heroes.teams and (heroes.teams[team] or heroes.teams[tostring(team)])
-        local slots = heroes.teams and (row and row.slots or {}) or (team == 1 and heroes.deployed or {}) or {}
         for slot = 1, 4 do
-            local id = slots[slot] or slots[tostring(slot)]
-            if type(id) == "table" then id = id.heroId end
-            append(parts, tonumber(id))
+            if slotId(heroes, team, slot) ~= snapshot.slots[(team - 1) * 4 + slot] then return false end
         end
     end
-    local ids = {}
-    for id in pairs(heroes.roster or {}) do ids[#ids + 1] = id end
-    table.sort(ids, function(a, b)
-        if type(a) ~= type(b) then return type(a) < type(b) end
-        return tostring(a) < tostring(b)
-    end)
-    for _, id in ipairs(ids) do
-        local hero = heroes.roster[id]
-        append(parts, id)
-        for _, field in ipairs({ "level", "advBranch", "awakening", "extraTalent" }) do
-            append(parts, hero[field])
+    local count = 0
+    for id, hero in pairs(heroes.roster or {}) do
+        count = count + 1
+        local old = snapshot.roster[id]
+        if not old then return false end
+        for _, field in ipairs(combatFields) do
+            if not sameValue(hero[field], old[field]) then return false end
         end
     end
-    return table.concat(parts, "|")
+    return count == snapshot.count
+end
+local function freezeHeroes(heroes)
+    local snapshot = { slots = {}, roster = {}, count = 0 }
+    for team = 1, 3 do
+        for slot = 1, 4 do snapshot.slots[(team - 1) * 4 + slot] = slotId(heroes, team, slot) end
+    end
+    for id, hero in pairs(heroes.roster or {}) do
+        local row = {}
+        for _, field in ipairs(combatFields) do row[field] = copyValue(hero[field]) end
+        snapshot.roster[id] = row
+        snapshot.count = snapshot.count + 1
+    end
+    return snapshot
 end
 
 function M.bind(deps)
@@ -61,8 +70,21 @@ function M.bind(deps)
     -- 一次不可抢占的装备评分/种子构建/排序可能超过预算；这是协作式软预算。
     local budget, maxSteps = deps.budgetSeconds or 0.001, deps.maxSteps or 64
     local api = {}
+    ---@type table|nil
+    local heroSnapshot = nil
+    local heroVersion = 0
+    local function heroKey(heroes)
+        heroes = heroes or {}
+        if not sameHeroes(heroes, heroSnapshot) then
+            heroSnapshot = freezeHeroes(heroes)
+            heroVersion = heroVersion + 1
+        end
+        return tostring(heroVersion)
+    end
     local function capture(synchronous)
-        local request = deps.capture()
+        -- capture 可复用不可变筛选快照；任务的 context/版本只写自己的请求外壳。
+        local request = {}
+        for key, value in pairs(deps.capture()) do request[key] = value end
         request.equipment = PlayerStore.Get("equipment")
         local parts = { request.filterKey, tostring(request.equipment),
             tostring(PlayerStore.GetRevision and PlayerStore.GetRevision("equipment") or 0) }
@@ -74,7 +96,7 @@ function M.bind(deps)
             request.heroes = heroes
             request.artifacts = PlayerStore.Get("artifacts")
             request.talents = PlayerStore.Get("talents")
-            parts[#parts + 1] = heroSignature(heroes)
+            parts[#parts + 1] = heroKey(heroes)
             for _, key in ipairs({ "artifacts", "talents" }) do
                 parts[#parts + 1] = tostring(request[key])
                 parts[#parts + 1] = tostring(PlayerStore.GetRevision and PlayerStore.GetRevision(key) or 0)
@@ -91,7 +113,7 @@ function M.bind(deps)
                 syncParts[#syncParts + 1] = tostring(source)
                 syncParts[#syncParts + 1] = tostring(PlayerStore.GetRevision and PlayerStore.GetRevision(key) or 0)
             end
-            syncParts[#syncParts + 1] = heroSignature(PlayerStore.Get("heroes"))
+            syncParts[#syncParts + 1] = heroKey(PlayerStore.Get("heroes"))
             request.syncKey = table.concat(syncParts, "|")
         end
         return request
@@ -116,16 +138,18 @@ function M.bind(deps)
         publish(request, list)
         return list
     end
-    function api.getCommittedList()
-        local request = capture()
+    local function committedFor(request)
         if committedKey == request.scoreKey then return committed end
         if basicKey == request.key then basic = view(basic, request, request.heroId ~= nil); return basic end
         return empty -- 新筛选/装备版本不可点击上个版本的残影。
     end
+    function api.getCommittedList()
+        return committedFor(capture())
+    end
     function api.present()
         if closingList then return closingList end
         local request = capture()
-        presented = api.getCommittedList()
+        presented = committedFor(request)
         presentedKey = request.key
         presentedScoreKey = committedKey == request.scoreKey and request.scoreKey or nil
         return presented

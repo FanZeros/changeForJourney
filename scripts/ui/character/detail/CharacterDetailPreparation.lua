@@ -7,22 +7,47 @@ local Snapshot = require("ui.character.detail.CharacterDetailSnapshot")
 local M = {}
 local EMPTY_SOURCE = {}
 
--- 仅小依赖校验，Render可调用，不复制/扫描完整库存或运行属性管线。
-function M.version(request)
-    local sources = {}
-    for _, key in ipairs({ "heroes", "equipment", "artifacts", "talents" }) do
-        sources[key] = Dispatcher.get(key) or Store.Get(key) or EMPTY_SOURCE
+-- 显式owner私有guard；不传guard仍执行原完整签名，无模块级/跨会话隐式缓存。
+-- refresh只允许Update调用；Render依赖不匹配时直接无key，不补建基线。
+function M.version(request, guard, refresh)
+    local heroes = Dispatcher.get("heroes") or Store.Get("heroes") or EMPTY_SOURCE
+    local equipment = Dispatcher.get("equipment") or Store.Get("equipment") or EMPTY_SOURCE
+    local artifacts = Dispatcher.get("artifacts") or Store.Get("artifacts") or EMPTY_SOURCE
+    local talents = Dispatcher.get("talents") or Store.Get("talents") or EMPTY_SOURCE
+    local eqRev = Store.GetRevision and Store.GetRevision("equipment") or 0
+    local artRev = Store.GetRevision and Store.GetRevision("artifacts") or 0
+    local talentRev = Store.GetRevision and Store.GetRevision("talents") or 0
+    local panelMatches = guard and guard.viewKey == request.viewKey
+        and Snapshot.matchesDependencies(guard.frozen, heroes, equipment, artifacts, talents, request.heroId)
+    if guard and not refresh then
+        request.panelKey, request.key = nil, nil
+        if panelMatches then
+            request.panelKey = guard.panelKey
+            if equipment == guard.equipment and artifacts == guard.artifacts and talents == guard.talents
+                and eqRev == guard.eqRev and artRev == guard.artRev and talentRev == guard.talentRev then
+                request.key = guard.key
+            end
+        end
+        return request
     end
+    local sources = { heroes = heroes, equipment = equipment, artifacts = artifacts, talents = talents }
     request.sources = sources
-    -- 下部属性只依赖已穿/候选内容；库存其它物品掉落不能把它清空。
-    -- 整库评分仍额外遵守引用/revision契约，两种结果不共用提交栅栏。
-    request.panelKey = request.viewKey .. "\31" .. Snapshot.dependencies(sources, request.seq, request.heroId)
-    local parts = { request.panelKey }
-    for _, key in ipairs({ "equipment", "artifacts", "talents" }) do
-        parts[#parts + 1] = tostring(sources[key])
-        parts[#parts + 1] = tostring(Store.GetRevision and Store.GetRevision(key) or 0)
+    request.panelKey = panelMatches and guard.panelKey
+        or request.viewKey .. "\31" .. Snapshot.dependencies(sources, request.seq, request.heroId)
+    if panelMatches and equipment == guard.equipment and artifacts == guard.artifacts and talents == guard.talents
+        and eqRev == guard.eqRev and artRev == guard.artRev and talentRev == guard.talentRev then
+        request.key = guard.key
+    else
+        request.key = table.concat({ request.panelKey, tostring(equipment), tostring(eqRev),
+            tostring(artifacts), tostring(artRev), tostring(talents), tostring(talentRev) }, "\31")
     end
-    request.key = table.concat(parts, "\31")
+    if guard then
+        if not panelMatches then guard.frozen = Snapshot.freezeDependencies(sources, request.seq, request.heroId) end
+        guard.viewKey, guard.panelKey, guard.key = request.viewKey, request.panelKey, request.key
+        guard.equipment, guard.artifacts, guard.talents = equipment, artifacts, talents
+        guard.eqRev, guard.artRev, guard.talentRev = eqRev, artRev, talentRev
+        request.guard = guard
+    end
     return request
 end
 
@@ -34,9 +59,10 @@ function M.bind(deps)
     local generation, steps, deadline = 0, 0, 0
     local committed = { pending = true, scores = {}, upgrades = {} }
     local api = {}
-    local function capture()
+    local guard = {}
+    local function capture(refresh)
         local request = deps.capture()
-        return M.version(request)
+        return M.version(request, guard, refresh)
     end
     local function checkpoint()
         steps = steps + 1
@@ -46,18 +72,20 @@ function M.bind(deps)
         generation = generation + 1
         job, jobKey, completedKey = nil, nil, nil
         panelKey, preparedPanel = nil, nil
+        guard = {}
         committed = { pending = true, scores = {}, upgrades = {} }
         deps.clear()
     end
     function api.read(viewKey)
-        -- 只读小依赖签名；Update之后同帧业务patch也不能显示旧比较/箭头。
-        if committed.viewKey ~= viewKey or completedKey ~= capture().key then
+        -- 每次外部读取均复核内容，Update后同帧原地patch立即拒旧。
+        local current = capture(false)
+        if committed.viewKey ~= viewKey or not current.key or completedKey ~= current.key then
             return { pending = true, scores = {}, upgrades = {} }
         end
         return committed
     end
     function api.update()
-        local request = capture()
+        local request = capture(true)
         if not request.heroId then api.cancel(); return end
         if panelKey ~= request.panelKey then
             -- 只有最多已穿项+当前候选的小世界，不遍历库存；不可yield让持续养成饿死底板。

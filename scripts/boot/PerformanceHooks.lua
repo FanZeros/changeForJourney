@@ -15,13 +15,39 @@ function M.getModule(name)
     local module = package and package.loaded and package.loaded[name]
     return type(module) == "table" and module or nil
 end
+-- 仅固定协议枚举可成为标签；不记录动作参数、英雄/装备ID或自定义模块名。
+local actionLabels = {
+    equip_item = "穿戴", unequip_item = "卸下", unequip_all = "一键卸下",
+    equip_all_best = "一键装备", toggle_equip_lock = "装备锁定",
+    enhance_equip = "强化", enhance_equip_max = "批量强化",
+    refine_equip = "洗练", refine_replace = "替换洗练", decompose_equip = "分解",
+    set_team = "编队", set_deployed = "编队", deploy_hero = "上阵", undeploy_hero = "下阵",
+    level_up_hero = "英雄升级", sync_extra_talent = "成长同步",
+    activate_talent = "激活天赋", reset_talents = "重置天赋", reset_single_talent = "重置单天赋",
+    advance_class = "转职", reset_class = "重置转职", activate_awakening = "觉醒",
+    PreviewInventoryCuration = "优选预览", ApplyInventoryCuration = "确认优选",
+    CancelInventoryCuration = "取消优选",
+}
+local moduleLabels = { heroes = "英雄", equipment = "装备", artifacts = "神器",
+    talents = "天赋", player = "玩家进度", currency = "货币", battle = "战斗进度",
+    lootbox = "遗匣", dungeon = "副本", task = "任务", slotEnhance = "栏位强化" }
+local function classifiedWrap(label, fn, labels)
+    local byName = {}
+    for key, value in pairs(labels) do byName[key] = Monitor.wrap(label .. "." .. value, fn) end
+    local other = Monitor.wrap(label .. ".其他", fn)
+    return function(name, ...)
+        if not Monitor.isEnabled() then return fn(name, ...) end
+        return (byName[name] or other)(name, ...)
+    end
+end
 local hooked = setmetatable({}, { __mode = "k" })
-local function hook(module, key, label)
+local function hook(module, key, label, labels)
     if type(module) ~= "table" or type(module[key]) ~= "function" then return false end
     local keys = hooked[module]
     if not keys then keys = {}; hooked[module] = keys end
     if keys[key] == module[key] then return false end
-    local wrapped = Monitor.wrap(label, module[key])
+    local original = module[key]
+    local wrapped = Monitor.wrap(label, labels and classifiedWrap(label, original, labels) or original)
     module[key] = wrapped
     keys[key] = wrapped
     return true
@@ -69,7 +95,9 @@ local function install()
         local module = M.getModule(spec[1])
         if type(module) == "table" then
             for _, key in ipairs(spec[2]) do
-                if hook(module, key, spec[3] .. "." .. key) then count = count + 1 end
+                local labels = spec[1] == "runtime.LocalActionBridge" and key == "dispatch" and actionLabels
+                    or spec[1] == "runtime.ClientDispatcher" and key == "set" and moduleLabels or nil
+                if hook(module, key, spec[3] .. "." .. key, labels) then count = count + 1 end
             end
         end
     end

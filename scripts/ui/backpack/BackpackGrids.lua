@@ -109,8 +109,30 @@ function M.bind(deps)
     end
 
     -- 冻结所有筛选输入；yield 期间的原地勾选不能改变半成品的语义。
+    ---@type table|nil
+    local capturedFilters = nil
+    local capturedSetCount = 0
     local function captureListRequest()
         local slotFilter, heroId, _, dualMode = filterContext()
+        local previous = capturedFilters
+        if previous and previous.slotFilter == slotFilter and previous.heroId == heroId
+            and previous.dualMode == dualMode and previous.typeFilter == decomposeState.typeFilter
+            and previous.classFilter == decomposeState.classFilter and previous.sortKey == decomposeState.sortKey
+            and previous.sortAscending == (decomposeState.sortAscending == true) then
+            local same = true
+            for quality = 1, #EquipmentConfig.QUALITY do
+                if previous.qualities[quality] ~= qualityChecked(quality) then same = false; break end
+            end
+            local count = 0
+            for key, value in pairs(decomposeState.setFilter or {}) do
+                if value then
+                    count = count + 1
+                    if not previous.sets[key] then same = false end
+                end
+            end
+            -- 比较值而非可变筛选table引用，Update后原地切换仍立刻拒绝旧呈现。
+            if same and count == capturedSetCount then return previous end
+        end
         local filters = { slotFilter = slotFilter, heroId = heroId, dualMode = dualMode,
             typeFilter = decomposeState.typeFilter, classFilter = decomposeState.classFilter,
             sortKey = decomposeState.sortKey, sortAscending = decomposeState.sortAscending == true,
@@ -132,6 +154,7 @@ function M.bind(deps)
         table.sort(selected)
         parts[#parts + 1] = table.concat(selected, ",")
         filters.filterKey = table.concat(parts, "|")
+        capturedFilters, capturedSetCount = filters, #selected
         return filters
     end
 

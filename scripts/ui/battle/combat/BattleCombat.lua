@@ -342,6 +342,14 @@ local function shuffleList(list)
     end
 end
 
+--- 同一次治疗出手的目标预留键：落地重选时避开本批其它尚未落地的目标。
+local function healClaimKey(unit)
+    if not unit then return nil end
+    if unit.instanceId ~= nil then return "i:" .. tostring(unit.instanceId) end
+    if unit.heroId ~= nil then return "h:" .. tostring(unit.heroId) end
+    return unit
+end
+
 --- 同步 attrs �?unit 表面字段（hp / maxHp�?
 local function syncUnitHp(unit)
     if unit.attrs then
@@ -1151,6 +1159,36 @@ local function performAttack(attacker, targetList, isAlly)
         end
     end
 
+    -- 同一次治疗出手的目标预留：多目标各发落地前互不抢同一人。
+    local healClaims = nil
+    if isHealer then healClaims = {} end
+    local function healClaimedByOther(unit, slotIndex)
+        if not healClaims then return false end
+        local key = healClaimKey(unit)
+        if key == nil then return false end
+        for idx, claimed in pairs(healClaims) do
+            if idx ~= slotIndex and healClaimKey(claimed) == key then return true end
+        end
+        return false
+    end
+    local function bestHealCandidate(liveAllyList, slotIndex)
+        local candidates = collectHealCandidates(liveAllyList)
+        for _, c in ipairs(candidates) do
+            if not healClaimedByOther(liveAllyList[c.index], slotIndex) then return c end
+        end
+        return nil
+    end
+    local function pickOverhealTarget(liveAllyList, slotIndex)
+        local alive = getHealableAliveUnits(liveAllyList)
+        local pool = {}
+        for _, entry in ipairs(alive) do
+            if not healClaimedByOther(entry.unit, slotIndex) then pool[#pool + 1] = entry end
+        end
+        if #pool == 0 then pool = alive end
+        if #pool == 0 then return nil end
+        return pool[math.random(#pool)].unit
+    end
+
     -- 对每个目标独立执行攻�?
     for ti, curIndex in ipairs(allTargetIndices) do
         local tgtList = isHealer and allyList or targetList
@@ -1211,27 +1249,40 @@ local function performAttack(attacker, targetList, isAlly)
                         if resolved then
                             curTgt = resolved
                             curTgtCX, curTgtCY = getCardPos(liveAllyList, resolvedIdx)
+                        else
+                            curTgt = nil
                         end
-                        -- 投射物飞行期间，目标可能已死亡、禁疗或被副本机制禁疗；落地时检查是否需要重选
-                        -- 注意：目标HP满但护盾不满时不重选（仍然治疗原目标，溢出无害）
-                        local tgtDead = not curTgt or (curTgt.hp or 0) <= 0
-                        local tgtBlocked = not tgtDead and ((DungeonBattle and DungeonBattle.isHealBlocked and DungeonBattle.isHealBlocked(curTgt)) or not ART.canHeal(curTgt))
-                        if tgtDead or tgtBlocked then
-                            local liveAllyList = isAlly and BCS.ctx.getAllies() or BCS.ctx.getEnemies()
-                            local retargetCandidates = collectHealCandidates(liveAllyList)
-                            if #retargetCandidates == 0 then
-                                -- 无需补血目标时仍对任意可治疗的活着友军治疗（溢出无害）
-                                local alive = getHealableAliveUnits(liveAllyList)
-                                if #alive == 0 then return end
-                                local fallback = alive[math.random(#alive)]
-                                curTgt = liveAllyList[fallback.index]
-                                curTgtCX, curTgtCY = getCardPos(liveAllyList, fallback.index)
-                            else
-                                local retarget = retargetCandidates[1]
-                                curTgt = liveAllyList[retarget.index]
-                                curTgtCX, curTgtCY = getCardPos(liveAllyList, retarget.index)
+                        if healClaims then healClaims[ti] = nil end
+                        -- 落地重评：飞行期间可能死亡、禁疗、被别的治疗补满，或另一队友掉得更低。
+                        -- 永远优先当前血比例最低的合法队友；全员满血时保留补盾/过疗行为。
+                        local tgtUsable = curTgt and isValidHealTarget(curTgt)
+                        local best = bestHealCandidate(liveAllyList, ti)
+                        if best then
+                            local bestUnit = liveAllyList[best.index]
+                            local preferBest = not tgtUsable
+                            if not preferBest then
+                                local curHp, curMaxHp = getUnitHpValues(curTgt)
+                                local curPct = curHp / math.max(1, curMaxHp)
+                                -- 原目标已满血/满盾，或另一队友血比例更低，则改投。
+                                preferBest = not isHealableUnit(curTgt) or best.pct < curPct - 1e-9
+                            end
+                            if preferBest then
+                                curTgt = bestUnit
+                                curTgtCX, curTgtCY = getCardPos(liveAllyList, best.index)
+                            end
+                        elseif not tgtUsable or healClaimedByOther(curTgt, ti) then
+                            -- 无未被占用的缺血目标：改为其他可治疗活体的过疗，保留原功德/转盾口径。
+                            local fallback = pickOverhealTarget(liveAllyList, ti)
+                            if fallback then
+                                curTgt = fallback
+                                for li, lu in ipairs(liveAllyList) do
+                                    if lu == curTgt then curTgtCX, curTgtCY = getCardPos(liveAllyList, li) break end
+                                end
+                            elseif not tgtUsable then
+                                return
                             end
                         end
+                        if healClaims then healClaims[ti] = curTgt end
                         if not curTgt.attrs then
                             Diag.onAttrsNil(curTgt, "applyHealHit")
                             return

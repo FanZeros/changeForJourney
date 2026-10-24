@@ -1074,32 +1074,32 @@ function M.bind(deps)
 
     -- ======== 星图 RUNTIME_ONLY 节点: onAfterAttack 触发 ========
 
-    -- 节点113 秘法印记: 造成魔法伤害时，15%概率使目标受伤+8%，持续5秒）
+    -- 节点113 秘法印记: 造成魔法伤害时，15%概率使目标受伤+2%，持续5秒）
     if hasStarNode(attacker, 113) then
         if attacker.dmgMainType == "魔法" and target.hp > 0 then
             if math.random() < 0.15 then
-                SEM.apply(target, SEM.ARCANE_MARK, 5.0, attacker, { mult = 0.08 })
-                talentLog("[Talent] 秘法印记: " .. (attacker.name or "?") .. " →" .. (target.name or "?") .. " 受伤+8% (5s)")
+                SEM.apply(target, SEM.ARCANE_MARK, 5.0, attacker, { mult = 0.02 })
+                talentLog("[Talent] 秘法印记: " .. (attacker.name or "?") .. " →" .. (target.name or "?") .. " 受伤+2% (5s)")
             end
         end
     end
 
-    -- 节点115 斩尽杀绝 暴击时额外伤害= 目标已损失HP% × 30%
+    -- 节点115 斩尽杀绝 暴击时额外伤害= 目标已损失HP% × 7.5%
     if hasStarNode(attacker, 115) then
         if result and result.isCrit and target.hp > 0 and dealDmgFn then
             local maxHp = target.maxHp or 1
             local lostPct = 1.0 - (target.hp / math.max(1, maxHp))
-            local bonusMult = lostPct * 0.30
+            local bonusMult = lostPct * 0.075
             local baseDmg = result.totalDamage or 0
             local bonusDmg = math.floor(baseDmg * bonusMult + 0.5)
             if bonusDmg > 0 then
                 dealDmgFn(target, bonusDmg, not isAlly, "斩杀 ", { 200, 50, 50 })
-                talentLog("[Talent] 斩尽杀绝 " .. (attacker.name or "?") .. " 暴击额外+" .. bonusDmg .. " (已损 " .. math.floor(lostPct * 100) .. "%×30%)")
+                talentLog("[Talent] 斩尽杀绝 " .. (attacker.name or "?") .. " 暴击额外+" .. bonusDmg .. " (已损 " .. math.floor(lostPct * 100) .. "%×7.5%)")
             end
         end
     end
 
-    -- 节点120 趁胜追击: 连续攻击同一目标，从第2击起每次+2%攻速，最多5层
+    -- 节点120 趁胜追击: 连续攻击同一目标，从第2击起每次+0.25%攻速，最多5层
     if hasStarNode(attacker, 120) and attacker.attrs and target and (not result or result.category ~= "healing") then
         local as = ensureState(attacker)
         if as then
@@ -1116,7 +1116,7 @@ function M.bind(deps)
             local stacksNow = as.pursuitStacks or 0
             if stacksNow > 0 then
                 attacker.attrs:addModifier("starmap_pursuit", {
-                    { key = AD.ATK_SPEED, flat = stacksNow * 2 },
+                    { key = AD.ATK_SPEED, flat = stacksNow * 0.25 },
                 })
             end
             talentLog("[Talent] 趁胜追击: " .. (attacker.name or "?") .. " 层数=" .. tostring(stacksNow))
@@ -1141,8 +1141,9 @@ function M.bind(deps)
 
     -- 终焉奥术 / 破击 / 狩猎
     if result and result.category ~= "healing" and target and target.hp > 0 and dealDmgFn then
+        -- 终焉奥术：20%概率追加魔法暴击伤害的4.5%。
         if hasStarNode(attacker, 204) and result.category == "magical" and result.isCrit and math.random() < 0.20 then
-            local bonus = math.floor((result.totalDamage or 0) * 0.18 + 0.5)
+            local bonus = math.floor((result.totalDamage or 0) * 0.045 + 0.5)
             if bonus > 0 then
                 dealDmgFn(target, bonus, not isAlly, "奥术 ", { 120, 180, 255 })
                 talentLog("[Talent] 终焉奥术: " .. (attacker.name or "?") .. " 追加" .. tostring(bonus))
@@ -1163,7 +1164,7 @@ function M.bind(deps)
             local maxHp = math.max(1, target.maxHp or target.attrs:get(AD.MAX_HP) or 1)
             local hpBefore = (target.hp or 0) + (result.actualDamage or 0)
             if hpBefore / maxHp < 0.35 then
-                local bonus = math.floor((result.totalDamage or 0) * 0.12 + 0.5)
+                local bonus = math.floor((result.totalDamage or 0) * 0.03 + 0.5)
                 if bonus > 0 then
                     dealDmgFn(target, bonus, not isAlly, "狩猎 ", { 255, 80, 60 })
                     talentLog("[Talent] 终焉狩猎: " .. (attacker.name or "?") .. " 追加" .. tostring(bonus))
@@ -1186,7 +1187,7 @@ function M.bind(deps)
         end
     end
 
-    -- 节点128 共鸣之歌: 攻击/治疗后15%概率全队伤害+5%，持续3秒
+    -- 节点128 共鸣之歌: 攻击/治疗后15%概率全队伤害+1.25%，持续3秒
     if hasStarNode(attacker, 128) and attackerAllies then
         if math.random() < 0.15 then
             for _, ally in ipairs(attackerAllies) do
@@ -1196,12 +1197,12 @@ function M.bind(deps)
                         as.resonanceTimer = 3.0
                         ally.attrs:removeModifier("starmap_resonance")
                         ally.attrs:addModifier("starmap_resonance", {
-                            { key = AD.DMG_BONUS, flat = 5 },
+                            { key = AD.DMG_BONUS, flat = 1.25 },
                         })
                     end
                 end
             end
-            talentLog("[Talent] 共鸣之歌: " .. (attacker.name or "?") .. " 触发全队伤害+5% (3s)")
+            talentLog("[Talent] 共鸣之歌: " .. (attacker.name or "?") .. " 触发全队伤害+1.25% (3s)")
         end
     end
 

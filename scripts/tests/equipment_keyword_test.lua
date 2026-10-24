@@ -38,7 +38,15 @@ function M.run()
         count = count + 1
         assert(value, label)
     end
+    local storageCalls = 0
+    local function denyStorage()
+        storageCalls = storageCalls + 1
+        error("equipment-keyword forbids player File/FS access")
+    end
     local ok, err = pcall(function()
+        replace(_G, "File", denyStorage)
+        replace(_G, "FileSystem", denyStorage)
+        replace(_G, "fileSystem", setmetatable({}, { __index = function() return denyStorage end }))
         local I18n = require("core.I18n")
         local Keyword = require("ui.widget.KeywordText")
         ---@cast Keyword {new: fun(opts?: table): table<string, any>}
@@ -381,6 +389,16 @@ function M.run()
             },
         }
         local sampleData = {inventory = {[tostring(sample.seq)] = sample}, equipped = {}}
+        -- 此样本故意保留旧存档name；绘制期望按独立规范oracle，而不是照抄实例旧串。
+        local detailNameOracle = { atkSpeed = "攻击速度", dropLuck = "幸运值", critRate = "暴击率", physPen = "物理穿透" }
+        for _, entry in ipairs(NAME_ORACLE) do detailNameOracle[entry.key] = entry.canonical end
+        local affixSnapshots = {}
+        for index, affix in ipairs(sample.affixes) do
+            affixSnapshots[index] = { ref = affix, key = affix.key, name = affix.name, value = affix.value,
+                quality = affix.quality, ascBonus = affix.ascBonus, isCorrupt = affix.isCorrupt }
+        end
+        check(sample.affixes[5].name == "最终运气" and detailNameOracle.finalLukBonus == "最终命数",
+            "配色夹具保留旧名最终运气，规范期望独立固定为最终命数")
         replace(Store, "Get", function(module) return module == "equipment" and sampleData or nil end)
         local function resetDetailSpy() texts, images, panels, rects, circles = {}, {}, {}, {}, {} end
         local function textCall(text, alignment)
@@ -409,9 +427,17 @@ function M.run()
             end
             for index, affix in ipairs(sample.affixes) do
                 local corrupt = AC.isCorruptAffix(affix)
-                local name = textCall(affix.name)
+                local canonical = assert(detailNameOracle[affix.key], "missing independent name oracle " .. affix.key)
+                local name = textCall(canonical)
                 local value = textCall(affixValue(affix), NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
                 check(colorIs(name, corrupt and {239, 121, 255} or {232, 200, 106}), label .. "随机名称金/腐化紫 " .. index)
+                check(affix.name == canonical or textCall(affix.name) == nil,
+                    label .. "旧实例名不回流到绘制 " .. index)
+                local savedAffix = affixSnapshots[index]
+                check(affix == savedAffix.ref and affix.name == savedAffix.name and affix.key == savedAffix.key
+                    and affix.value == savedAffix.value and affix.quality == savedAffix.quality
+                    and affix.ascBonus == savedAffix.ascBonus and affix.isCorrupt == savedAffix.isCorrupt,
+                    label .. "绘制不改旧词条引用/name/key/value/quality/投入/魔化标记 " .. index)
                 check(colorIs(value, corrupt and {226, 164, 243} or {114, 242, 245}),
                     label .. "随机数值浅青/腐化浅紫，倍率与旧升阶投入不丢 " .. index)
                 local key = ({"D", "C", "B", "A", "S"})[index]
@@ -604,10 +630,11 @@ function M.run()
         check(#kt.hotspots == 0 and not kt:isOpen(), "神器关闭清热区")
         Artifact.setOnEquip(nil)
         check(count > 1700, "防空通过：完整58×5语与真实UI场景")
+        check(storageCalls == 0, "完整默认专项File/FS封闭，无玩家档访问")
     end)
     for i = #restores, 1, -1 do restores[i]() end
-    assert(ok, tostring(err) .. " (" .. count .. " assertions)")
-    print("EQUIPMENT KEYWORD: ALL PASS (" .. count .. " assertions)")
+    assert(ok and storageCalls == 0, tostring(err) .. " (" .. count .. " assertions; FileFS=" .. storageCalls .. ")")
+    print("EQUIPMENT KEYWORD: ALL PASS (" .. count .. " assertions; FileFS=0)")
     return count
 end
 

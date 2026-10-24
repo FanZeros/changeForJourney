@@ -32,6 +32,10 @@ local AD = require("systems.AttributeDef")
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
 local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 
+---@class KeywordTextInstance
+---@field popup table|nil { key, name, desc, cx, topY }
+---@field hoverIdx integer|nil
+---@field hotspots table[] 当前显示帧热区 { x1,y1,x2,y2,name=原key,text=显示片段 }
 local KeywordText = {}
 KeywordText.__index = KeywordText
 
@@ -316,11 +320,6 @@ local function layoutText(vg, text, width, fontSize, opts)
 end
 
 -- ======================== 实例 ========================
-
----@class KeywordTextInstance
----@field popup table|nil { key, name, desc, cx, topY }
----@field hoverIdx integer|nil
----@field hotspots table[] 当前显示帧热区 { x1,y1,x2,y2,name=原key,text=显示片段 }
 
 --- 创建实例
 ---@param opts table|nil { textColor = {r,g,b}, popupMaxW = number }

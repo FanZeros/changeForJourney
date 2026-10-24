@@ -28,8 +28,11 @@ function M.bind(deps)
     function api.drawEquipGrid(vg) ensure().drawEquipGrid(vg) end
     function api.drawItemGrid(vg) ensure().drawItemGrid(vg) end
     function api.cancel() if grids then grids.cancel() end end
+    function api.freezeForClose() if grids then grids.freezeForClose() end end
     function api.update()
-        if deps.state.open and not deps.state.closing and deps.state.tab == "equip" then
+        if deps.state.open and deps.state.closing and deps.state.tab == "equip" then
+            api.freezeForClose()
+        elseif deps.state.open and deps.state.tab == "equip" then
             ensure().update()
         else
             api.cancel()

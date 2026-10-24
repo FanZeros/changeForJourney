@@ -770,19 +770,23 @@ function BlacksmithPage.prepareTutorial(vg)
 end
 
 -- 联动关闭自动打开的仓库
-local function closeAutoWarehouse()
-    require("ui.backpack.BackpackPanel").releaseWarehouse("blacksmith")
+local function closeAutoWarehouse(closeTogether)
+    local warehouse = require("ui.backpack.BackpackPanel")
+    -- 先冻结原画面并开始退场，再释放持有，避免手动仓库先恢复滚动/页签闪一下。
+    if closeTogether and warehouse.isOpen() and warehouse.isLeftMode() then warehouse.close() end
+    warehouse.releaseWarehouse("blacksmith")
 end
 
---- 关闭铁匠铺（启动关闭动画；动画完成后联动关闭仓库）
+--- 关闭铁匠铺（两页同一时刻启动关闭动画）
 function BlacksmithPage.close()
     BlacksmithEnhance.clearKeywords()
     BlacksmithRefine.clearKeywords()
     BlacksmithRefine.clearHover()
-    if state.closing then return end
+    if not state.open or state.closing then return end
     require("systems.StoryPlayer").onPlace("smith", "leave")
     state.closing = true
     state.closeTime = time.elapsedTime
+    closeAutoWarehouse(true)
     print("[BlacksmithPage] 关闭铁匠铺（动画）")
 end
 
@@ -951,7 +955,6 @@ local function bindPageDraw()
         setOnCloseCallback = function(v) onCloseCallback_ = v end,
         getOnOpenCallback = function() return onOpenCallback_ end,
         setOnOpenCallback = function(v) onOpenCallback_ = v end,
-        closeAutoWarehouse = closeAutoWarehouse,
         state = state,
     })
 end

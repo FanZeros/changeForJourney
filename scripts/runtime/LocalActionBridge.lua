@@ -487,8 +487,10 @@ local function quickEquipCurrent(job)
     if quickEquipJob_ ~= job or job.epoch ~= quickEquipEpoch_ then return false end
     local store = require("core.PlayerStore")
     for _, name in ipairs(QUICK_EQUIP_KEYS) do
-        if PDM.GetModule(LOCAL_UID, name) ~= job.sources[name]
-            or store.GetRevision(name) ~= job.revisions[name] then return false end
+        -- 在线经验推送/永久成长可连续发生；不能靠 heroes 的整模块版本饿死换装。
+        -- Service 始终私有快照搜索，最后无 yield 按最新英雄重新校验选定六槽。
+        if name ~= "heroes" and (PDM.GetModule(LOCAL_UID, name) ~= job.sources[name]
+            or store.GetRevision(name) ~= job.revisions[name]) then return false end
     end
     return true
 end

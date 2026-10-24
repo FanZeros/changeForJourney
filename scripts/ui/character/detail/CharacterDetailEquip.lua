@@ -137,7 +137,7 @@ function M.commit(result, request)
     clearTip()
     panelState.data = result
     panelState.cacheKey = request.viewKey
-    panelState.cacheDependency = request.key
+    panelState.cacheDependency = request.panelKey
     panelState.language = request.language
     panelState.dirty = false
 end
@@ -182,7 +182,7 @@ end
 --- 绘制配装下部。六槽与一键按钮继续由上层绘制。
 function M.getPrepared(heroId, detailState)
     local request = Preparation.version(M.capture(heroId, detailState and detailState.equipSlot))
-    return panelState.cacheKey == request.viewKey and panelState.cacheDependency == request.key
+    return panelState.cacheKey == request.viewKey and panelState.cacheDependency == request.panelKey
         and panelState.data or EMPTY
 end
 
@@ -191,7 +191,7 @@ function M.draw(vg, heroId, detailState)
     if panelState.heroId ~= heroId then M.reset(heroId, slot) end
     if panelState.slot ~= slot then M.onSlotChanged(slot, heroId) end
     local request = Preparation.version(M.capture(heroId, slot))
-    local data = panelState.cacheKey == request.viewKey and panelState.cacheDependency == request.key
+    local data = panelState.cacheKey == request.viewKey and panelState.cacheDependency == request.panelKey
         and panelState.data or EMPTY
     for _, key in ipairs({ "attrs", "sets" }) do
         local state = panelState.scroll[key]

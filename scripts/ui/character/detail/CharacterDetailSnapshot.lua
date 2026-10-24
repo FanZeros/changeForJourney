@@ -39,7 +39,7 @@ function M.signature(value)
     return table.concat(parts, "|")
 end
 
-function M.heroCombat(heroes)
+function M.heroCombat(heroes, heroId)
     heroes = heroes or {}
     local result = { teams = {}, roster = {} }
     for team = 1, 3 do
@@ -53,9 +53,24 @@ function M.heroCombat(heroes)
         end
         result.teams[team] = ids
     end
+    -- 数值管线只读取目标及其首个所属队；其它队升级不能取消本页评分。
+    -- 队结构仍完整保留，重复编队/跨队移位与神器位置变化会使签名失效。
+    local relevant = heroId and { [tonumber(heroId) or heroId] = true } or nil
+    if relevant then
+        for _, ids in ipairs(result.teams) do
+            local containsHero = false
+            for _, id in ipairs(ids) do if id == tonumber(heroId) then containsHero = true end end
+            if containsHero then
+                for _, id in ipairs(ids) do if id then relevant[id] = true end end
+                break
+            end
+        end
+    end
     for id, hero in pairs(heroes.roster or {}) do
-        result.roster[id] = { level = hero.level, advBranch = hero.advBranch,
-            awakening = hero.awakening, extraTalent = hero.extraTalent }
+        if not relevant or relevant[tonumber(id) or id] then
+            result.roster[id] = { level = hero.level, advBranch = hero.advBranch,
+                awakening = hero.awakening, extraTalent = hero.extraTalent }
+        end
     end
     return result
 end
@@ -84,8 +99,8 @@ function M.compactEquipment(equipment, candidate, checkpoint, referencesOnly)
 end
 
 -- 小规模内容依赖捕获支持已穿/候选洗练与养成原地patch；未穿全集遵循equipment版本契约。
-function M.dependencies(sources, candidate)
-    return M.signature({ heroes = M.heroCombat(sources.heroes),
+function M.dependencies(sources, candidate, heroId)
+    return M.signature({ heroes = M.heroCombat(sources.heroes, heroId),
         equipment = M.compactEquipment(sources.equipment, candidate, nil, true),
         artifacts = sources.artifacts, litNodes = sources.talents and sources.talents.litNodes })
 end

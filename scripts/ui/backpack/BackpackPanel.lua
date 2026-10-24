@@ -813,7 +813,7 @@ end
 
 -- 动画操作与持有操作分离：自动 release 不冒充玩家手动关闭。
 local function closePage()
-    gridHost.cancel()
+    gridHost.freezeForClose()
     Curation.cancelSource("backpack")
     BlacksmithDecompose.cancelMarquee()
     if not state.open or state.closing then return end
@@ -940,6 +940,7 @@ function Panel.update(dt)
         if elapsed >= ANIM_CLOSE_DUR then
             state.open = false
             state.closing = false
+            gridHost.cancel()
             applyLayout(false)  -- 恢复竖版原布局
             print("[BackpackPanel] closed (anim done)")
         end

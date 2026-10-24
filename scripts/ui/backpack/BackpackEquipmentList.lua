@@ -54,6 +54,8 @@ function M.bind(deps)
     local empty, basic, committed, syncList, presented = {}, {}, {}, {}, {}
     local basicKey, committedKey, syncKey, presentedKey = nil, nil, nil, nil
     local presentedScoreKey = nil
+    ---@type table|nil
+    local closingList = nil
     local job, jobKey = nil, nil
     local deadline, steps = 0, 0
     -- 一次不可抢占的装备评分/种子构建/排序可能超过预算；这是协作式软预算。
@@ -121,6 +123,7 @@ function M.bind(deps)
         return empty -- 新筛选/装备版本不可点击上个版本的残影。
     end
     function api.present()
+        if closingList then return closingList end
         local request = capture()
         presented = api.getCommittedList()
         presentedKey = request.key
@@ -128,6 +131,7 @@ function M.bind(deps)
         return presented
     end
     function api.getPresentedList()
+        if closingList then return empty end
         local request = capture()
         if presentedKey ~= request.key then return empty end
         -- basic→scored 的新排序必须等 Render 呈现；指针仍读上次实际画出的顺序。
@@ -136,7 +140,14 @@ function M.bind(deps)
         end
         return presented
     end
+    function api.freezeForClose()
+        -- 只保留最后实际呈现的只读列表用于退场，不再评分，也不允许它参与指针命中。
+        if not closingList then closingList = presented end
+        job, jobKey = nil, nil
+        presentedKey, presentedScoreKey = nil, nil
+    end
     function api.cancel()
+        closingList = nil
         job, jobKey = nil, nil
         basic, basicKey, committed, committedKey, syncList, syncKey = {}, nil, {}, nil, {}, nil
         presented, presentedKey, presentedScoreKey = {}, nil, nil

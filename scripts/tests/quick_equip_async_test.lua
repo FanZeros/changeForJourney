@@ -414,7 +414,7 @@ local function run()
         isolated(h)
     end)
 
-    for _, name in ipairs({ "equipment", "heroes", "artifacts", "talents" }) do
+    for _, name in ipairs({ "equipment", "artifacts", "talents" }) do
         for _, mode in ipairs({ "revision ABA", "in-place value", "module reference" }) do
             group("stale rejection " .. name .. " / " .. mode, function()
                 local h = newHarness(F, largeSpec(), true)
@@ -431,8 +431,6 @@ local function run()
                     check(h.Store.GetRevision(name) == revision, "reference replacement deliberately unnotified")
                 elseif name == "equipment" then
                     h.data.equipment.inventory["1"].ascendLevel = 7
-                elseif name == "heroes" then
-                    h.data.heroes.roster[1].level = 101
                 elseif name == "artifacts" then
                     h.data.artifacts.bag = { { id = 100, artifactId = 1, quality = 1 } }
                 else
@@ -579,17 +577,59 @@ local function run()
             h.data.heroes.roster[1].exp = 1
             h.Dispatcher.set("heroes", h.data.heroes, { normalized = true })
         end,
+        notifiedABA = function(h)
+            h.Dispatcher.set("heroes", h.data.heroes, { normalized = true })
+            h.Dispatcher.set("heroes", h.data.heroes, { normalized = true })
+        end,
+        reference = function(h)
+            h.data.heroes = F.copy(h.data.heroes)
+            h.Dispatcher.set("heroes", h.data.heroes, { normalized = true })
+        end,
     }
     for name, mutate in pairs(heroChanges) do
-        group("score-affecting heroes or notified pure exp is stale / " .. name, function()
-            local h = newHarness(F, largeSpec(), true)
+        group("latest legal positive loadout survives heroes update / " .. name, function()
+            local h = newHarness(F, { count = 24 }, true)
             start(h); pump(h, true)
             mutate(h)
-            local after = F.copy(h.data)
+            local after = F.copy(h.data.heroes)
             pump(h)
-            check(assertAck(h, false).reason == "quick_equip_stale", "hero guard retains exact path scope")
-            F.same(h.data, after)
-            check(#h.dirties == 0 and #h.notifications == 0, "stale never commits target slots")
+            local result = assertAck(h, true)
+            check(result.changes > 0, "latest legal positive loadout commits instead of starving")
+            F.same(h.data.heroes, after)
+            check(#h.dirties == 1 and #h.notifications == 1, "latest verification publishes target slots once")
+            isolated(h)
+        end)
+    end
+
+    for _, mode in ipairs({ "level gate", "dual mode", "removed owner", "zero gain", "negative gain" }) do
+        group("latest heroes rejects invalid or nonpositive selected loadout / " .. mode, function()
+            local spec = mode == "dual mode" and { count = 30, heroId = 8, dual = "same", varied = true,
+                templates = { "W1", "W61", "W13", "O1", "A1", "H1", "S1", "C1" } }
+                or { count = 12, varied = true }
+            local h = newHarness(F, spec, true)
+            start(h); pump(h, true)
+            if mode == "level gate" then h.data.heroes.roster[h.heroId].level = 1
+            elseif mode == "dual mode" then h.data.heroes.roster[h.heroId].advBranch = nil
+            elseif mode == "removed owner" then h.data.heroes.roster[h.heroId] = nil
+            else
+                -- 受控估值叶子使最终组合变成0/负收益；仍执行真实build/applyEquip/Bridge。
+                local EP = h.require("systems.EquipmentPower")
+                local evaluate = EP.evaluateLoadout
+                EP.evaluateLoadout = function(ctx, changes)
+                    local result = evaluate(ctx, changes)
+                    if changes.armor ~= nil and changes.helmet ~= nil and changes.shoes ~= nil then
+                        check(coroutine.isyieldable(), "verification runs inside owned worker")
+                        result.gain = mode == "zero gain" and 0 or -1
+                    end
+                    return result
+                end
+                h.data.heroes.roster[h.heroId].extraTalent = { stacks = 10 }
+            end
+            local before = F.copy(h.data)
+            pump(h)
+            check(assertAck(h, false).reason == "quick_equip_stale", "unsafe answer explicitly rejected")
+            F.same(h.data, before)
+            check(#h.dirties == 0 and #h.notifications == 0, "unsafe answer never writes/notifies")
             isolated(h)
         end)
     end
@@ -626,7 +666,7 @@ local function run()
                 end)
             end
             start(h, mode == "invalid" and 99999 or nil)
-            if mode == "stale" then h.Dispatcher.set("heroes", h.data.heroes, { normalized = true }) end
+            if mode == "stale" then h.Dispatcher.set("talents", h.data.talents, { normalized = true }) end
             pump(h)
             local success = mode ~= "stale" and mode ~= "invalid"
             local result = assertAck(h, success, mode == "invalid" and 99999 or nil)
@@ -722,7 +762,12 @@ local function run()
         for _, slice in ipairs({ text:sub(stopAt, stopEnd - 1), text:sub(resetAt, resetEnd - 1) }) do
             local h = newHarness(F, largeSpec(), true)
             local before = start(h)
-            local env = { Standalone = {}, LocalActionBridge = h.Bridge }
+            local env = { Standalone = {}, LocalActionBridge = h.Bridge,
+                SweepDialog = { close = noop }, require = function(name)
+                    check(name == "core.PerformanceMonitor" or name == "ui.dev.PerformancePanel"
+                        or name == "ui.battle.combat.BattleClock", "only lifecycle leaf seams")
+                    return { stop = noop, close = noop, setPaused = noop }
+                end }
             assert(load(slice .. "\nend", "@real-standalone-cancel-prefix", "t", env))()
             local fn = env.Standalone.Stop or env.Standalone.requestResetToStartScreen
             fn() -- 执行真实源前缀，不以字符串包含断言代替取消运行。
@@ -740,13 +785,14 @@ local function run()
         local env = { bootReady_ = false, SyncPowerPresentationHorizon = noop,
             SidePanelBattlePause = { refresh = function() order[#order + 1] = "pause" end },
             PlayerStore = { Update = function() order[#order + 1] = "store" end },
-            LocalActionBridge = { updateQuickEquip = function()
+            LocalActionBridge = { isSweepPending = function() return false end, updateQuickEquip = function()
                 order[#order + 1] = "pump"; h.Bridge.updateQuickEquip()
             end },
             SpinePowerUpEffect = { update = noop },
             require = function(name)
-                check(name == "ui.fx.SpineCardEffect" or name == "ui.fx.SpineResultEffect" or name == "ui.dev.CEPanel", "only declared host prefix seams")
-                return { update = noop, pollHotkey = noop }
+                check(name == "ui.fx.SpineCardEffect" or name == "ui.fx.SpineResultEffect"
+                    or name == "ui.dev.CEPanel" or name == "ui.dev.PerformancePanel", "only declared host prefix seams")
+                return { update = noop, pollHotkey = noop, isOpen = function() return false end }
             end,
             pumpBootQueue_ = noop, StartScreen = { isOpen = function() return false end },
             DarkTitleScreen = { isOpen = function() return false end },
@@ -759,6 +805,83 @@ local function run()
         h.Bridge.cancelQuickEquip()
         isolated(h)
     end)
+
+    for _, mode in ipairs({ "notified exp", "target growth", "other team growth", "heroes replacement", "drop" }) do
+        group("real host frame pump empty slots with continuous background / " .. mode, function()
+            local h = newHarness(F, { count = 12, heroId = 12,
+                templates = { "W25", "W31", "O13", "O19", "A49", "H49", "S49", "C7" },
+                edit = function(data)
+                    data.heroes.roster[12].awakening = { [1] = true }
+                    data.heroes.roster[12].extraTalent = { stacks = 0 }
+                    data.heroes.roster[15] = { level = 100, extraTalent = { stacks = 0 } }
+                    data.heroes.teams[2].slots = { 15, 0, 0, 0 }
+                end }, true)
+            local file = assert(nativeCache:GetFile("boot/Standalone.lua"))
+            local lines = {}
+            while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+            file:Dispose()
+            local source = table.concat(lines, "\n")
+            local a = assert(source:find("function HandleUpdate(eventType, eventData)", 1, true))
+            local b = assert(source:find("    if entryQueue_ then", a, true))
+            local frames, background, pumpCalls = 0, 0, 0
+            local expectedHeroes = F.copy(h.data.heroes)
+            local env = { bootReady_ = true, SyncPowerPresentationHorizon = noop,
+                SidePanelBattlePause = { refresh = noop }, PlayerStore = h.Store,
+                LocalActionBridge = { isSweepPending = function() return false end,
+                    updateQuickEquip = function()
+                        pumpCalls = pumpCalls + 1
+                        check(pumpCalls == frames, "real host resumes worker once per frame")
+                        h.Bridge.updateQuickEquip()
+                    end }, SpinePowerUpEffect = { update = noop }, pumpBootQueue_ = noop,
+                require = function(name)
+                    check(name == "ui.fx.SpineCardEffect" or name == "ui.fx.SpineResultEffect"
+                        or name == "ui.dev.PerformancePanel" or name == "ui.dev.CEPanel", "host leaf only")
+                    return { update = noop, pollHotkey = noop, isOpen = function() return false end }
+                end,
+                -- 真宿主prefix之后的战斗奖励输入边界；不运行Boot或玩家档。
+                background = function()
+                    background = background + 1
+                    local hero = h.data.heroes.roster[12]
+                    hero.exp, hero.maxExp = background, 10000 + background
+                    if mode == "target growth" then hero.extraTalent.stacks = background
+                    elseif mode == "other team growth" then h.data.heroes.roster[15].extraTalent.stacks = background
+                    elseif mode == "heroes replacement" then h.data.heroes = F.copy(h.data.heroes)
+                    elseif mode == "drop" and background == 1 then
+                        local item = F.item(h, "C1", 1, 1); item.seq = 99
+                        h.data.equipment.inventory["99"] = item
+                        h.Dispatcher.notifySubscribers("equipment")
+                    end
+                    h.Dispatcher.set("heroes", h.data.heroes, { normalized = true })
+                    h.data.battle.counter = background
+                    h.Dispatcher.publishLive("battle", h.data.battle)
+                    h.data.currency.gold = h.data.currency.gold + 1
+                    h.Dispatcher.set("currency", h.data.currency, { normalized = true })
+                    expectedHeroes = F.copy(h.data.heroes)
+                end }
+            assert(load(source:sub(a, b - 1) .. "\nbackground()\nend", "@real-quick-equip-host-frames", "t", env))()
+            check(next(h.data.equipment.equipped) == nil, "all target slots initially empty")
+            start(h)
+            repeat
+                frames = frames + 1
+                check(frames < 5000, "live task is bounded, not perpetual restart")
+                env.HandleUpdate("Update", { TimeStep = { GetFloat = function() return 1 / 60 end } })
+            until not h.Bridge.isQuickEquipPending()
+            check(background == frames and frames > 1, "background keeps advancing while actual task yields")
+            local result = assertAck(h, mode ~= "drop")
+            F.same(h.data.heroes, expectedHeroes)
+            if mode == "drop" then
+                check(result.reason == "quick_equip_stale" and #h.dirties == 0,
+                    "real added equipment rejects old candidate universe")
+            else
+                check(result.changes > 0 and #h.dirties == 1 and #h.notifications == 1,
+                    "empty slots actually filled once despite live heroes revisions/growth")
+                check(h.flushCalls == 0, "QuickEquip does not invent synchronous persistence")
+            end
+            check(#h.handlerCalls == 1, "continuous updates never restart or duplicate handler")
+            print(TAG .. " LIVE mode=" .. mode .. " frames=" .. frames .. " changes=" .. tostring(result.changes))
+            isolated(h)
+        end)
+    end
 
     group("real Bridge GM_RESET cancels before explicit non-destructive handler", function()
         local spec = largeSpec(); spec.testReset = true

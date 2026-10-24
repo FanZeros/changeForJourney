@@ -101,16 +101,21 @@ UrGachaConfig.Pool = {
 
 UrGachaConfig._poolByQuality = {}
 
+-- 索引只在加载期构建；条目保持 Pool 的对象别名，查询不隐式重建。
+local function indexPoolItem(item)
+    local q = item.quality
+    if not UrGachaConfig._poolByQuality[q] then
+        UrGachaConfig._poolByQuality[q] = { items = {}, totalWeight = 0 }
+    end
+    local group = UrGachaConfig._poolByQuality[q]
+    group.items[#group.items + 1] = item
+    group.totalWeight = group.totalWeight + item.weight
+end
+
 local function _buildPoolIndex()
     UrGachaConfig._poolByQuality = {}
     for _, item in ipairs(UrGachaConfig.Pool) do
-        local q = item.quality
-        if not UrGachaConfig._poolByQuality[q] then
-            UrGachaConfig._poolByQuality[q] = { items = {}, totalWeight = 0 }
-        end
-        local group = UrGachaConfig._poolByQuality[q]
-        group.items[#group.items + 1] = item
-        group.totalWeight = group.totalWeight + item.weight
+        indexPoolItem(item)
     end
 end
 
@@ -118,6 +123,28 @@ _buildPoolIndex()
 
 function UrGachaConfig.getPoolGroup(quality)
     return UrGachaConfig._poolByQuality[quality]
+end
+
+-- 碎片计价按来源优先级扫描，不建缓存：重复条目与外部换表仍即时可见。
+local function shardEntryPrice(pool, heroId)
+    for _, entry in ipairs(pool) do
+        if entry.heroId == heroId and entry.type == "shard" then
+            return entry.stardustValue or 0
+        end
+    end
+    return nil
+end
+
+local function wholeHeroShardPrice(pool, heroId, dupeShards)
+    for _, entry in ipairs(pool) do
+        if entry.heroId == heroId and entry.type == "hero" then
+            local full = entry.stardustValue or 0
+            if full > 0 then
+                return math.floor(full / dupeShards + 0.5)
+            end
+        end
+    end
+    return nil
 end
 
 --- 满觉醒单枚碎片分解为酒馆币（非整卡 stardustValue；整卡=10片时约为整卡值/10）
@@ -132,30 +159,15 @@ function UrGachaConfig.getShardStardustValue(heroId)
     end
 
     local GachaConfig = require("config.GachaConfig")
-    for _, entry in ipairs(GachaConfig.Pool) do
-        if entry.heroId == heroId and entry.type == "shard" then
-            return entry.stardustValue or 0
-        end
-    end
+    local shardPrice = shardEntryPrice(GachaConfig.Pool, heroId)
+    if shardPrice ~= nil then return shardPrice end
 
     -- 无碎片条目时：整卡满觉醒分解值 / 重复转化片数（默认 10 片）
     local dupeShards = HC.SHARD_DUPE_CONVERT or 10
-    for _, entry in ipairs(UrGachaConfig.Pool) do
-        if entry.heroId == heroId and entry.type == "hero" then
-            local full = entry.stardustValue or 0
-            if full > 0 then
-                return math.floor(full / dupeShards + 0.5)
-            end
-        end
-    end
-    for _, entry in ipairs(GachaConfig.Pool) do
-        if entry.heroId == heroId and entry.type == "hero" then
-            local full = entry.stardustValue or 0
-            if full > 0 then
-                return math.floor(full / dupeShards + 0.5)
-            end
-        end
-    end
+    local stellarPrice = wholeHeroShardPrice(UrGachaConfig.Pool, heroId, dupeShards)
+    if stellarPrice ~= nil then return stellarPrice end
+    local regularPrice = wholeHeroShardPrice(GachaConfig.Pool, heroId, dupeShards)
+    if regularPrice ~= nil then return regularPrice end
     return 0
 end
 
@@ -200,16 +212,26 @@ function UrGachaConfig.getUpPortraitPath(heroId)
     return string.format(UrGachaConfig.UI.portraitPattern, heroId)
 end
 
+-- UP 更新不替换状态表；依次写入，opts 读取异常不回滚已经生效的字段。
+local function applyUpOptions(opts)
+    if opts.name ~= nil then UrGachaConfig.UP.name = opts.name end
+    if opts.endTime ~= nil then UrGachaConfig.UP.endTime = opts.endTime end
+end
+
 function UrGachaConfig.setUpHero(heroId, opts)
     UrGachaConfig.UP.heroId = heroId
-    if opts then
-        if opts.name ~= nil then UrGachaConfig.UP.name = opts.name end
-        if opts.endTime ~= nil then UrGachaConfig.UP.endTime = opts.endTime end
-    end
+    if opts then applyUpOptions(opts) end
 end
 
 function UrGachaConfig.getTimeDisplayText()
     return "永久"
+end
+
+-- 解锁只查询战斗进度，与 UP、启用开关、货币和名册独立。
+local function reachedUnlockStage(battle)
+    battle = battle or {}
+    local maxStageId = tonumber(battle.maxStageId) or 0
+    return maxStageId >= UrGachaConfig.Unlock.HELL_FIRST_STAGE
 end
 
 --- 星辰池是否已解锁（进入地狱难度后开放）
@@ -219,9 +241,7 @@ end
 ---@return boolean
 ---@return string|nil reason
 function UrGachaConfig.checkPoolUnlocked(currency, roster, battle)
-    battle = battle or {}
-    local maxStageId = tonumber(battle.maxStageId) or 0
-    if maxStageId >= UrGachaConfig.Unlock.HELL_FIRST_STAGE then
+    if reachedUnlockStage(battle) then
         return true
     end
     return false, "进入地狱难度后开放"

@@ -41,7 +41,7 @@ function Gesture.bind(ctx)
             or DarkTitleScreen.isOpen() or LetterIntro.isOpen() or IntroCutscene.isActive()
             or ScenarioDialogue.isActive() or TutorialManager.isActive()
             or SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
-            or TerminalConfirmDialog.isOpen() or (RewardPopup.isOpen() and not RewardPopup.currentRowTag())
+            or TerminalConfirmDialog.isOpen() or RewardPopup.blocksPageInput()
             or ctx.pageModal() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive())
     end
     local api = {}

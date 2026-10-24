@@ -1,9 +1,10 @@
 -- 自动分解通知专项：基于 tavern_recruit_orders_test.lua 的白名单源码 load(env) 隔离脚手架。
--- 只读 cache:GetFile(SOURCE_FILES 中三条资源路径)；不 require main、不读取玩家档、不发动作。
+-- 只读 cache:GetFile(SOURCE_FILES 中四条资源路径)；不 require main、不读取玩家档、不发动作。
 -- Boot 仅提取真实订阅/基线与 addKillEquipment 片段执行，不是全 Boot 集成测试。
 -- 所有非白名单模块均为显式 mock；没有 _G/package.loaded/原生 require 回退。
 -- 契约：updateSeedData(data, {resetNotice=true}) 静默重建基线；默认首次有效通知也静默。
--- 无通知建立零基线；此后累计值的新增差额攒够 >=100 件才合并显示，忙时不得覆盖弹窗。
+-- 无通知建立零基线；此后累计值的新增差额攒够 >=100 件才合并为 3 秒 UiToast，忙时等待。
+-- 此入口不得开任何模态或改奖励单例；真实 UiToast.draw 只接末端 NanoVG spy，不拉 Horizon。
 -- 直接验证生产 API，不在 harness 内实现通知算法，不改写生产源码。
 -- 运行前须先通过官方 build 工具完成构建，由主线程统一执行；本文件不负责构建。
 -- 构建完成后，只运行该隔离入口（不要用 main，cwd 使用专用验证目录）：
@@ -16,6 +17,7 @@
 local TAG = "[auto_decompose_notice_test] "
 local SOURCE_FILES = {
     ["ui.loot.LootBox"] = "ui/loot/LootBox.lua",
+    ["core.UiToast"] = "core/UiToast.lua",
     ["config.BlacksmithConfig"] = "config/BlacksmithConfig.lua",
     ["boot.StandaloneBoot"] = "boot/StandaloneBoot.lua", -- 只允许 source() 提取片段，不允许 require 全模块。
 }
@@ -58,7 +60,7 @@ end
 local function source(name)
     local path = assert(SOURCE_FILES[name], "source denied: " .. tostring(name))
     assert(path == "ui/loot/LootBox.lua" or path == "config/BlacksmithConfig.lua"
-        or path == "boot/StandaloneBoot.lua", "source path denied")
+        or path == "core/UiToast.lua" or path == "boot/StandaloneBoot.lua", "source path denied")
     if not sources[name] then
         -- 唯一真实数据读取出口：固定资源根路径，不接受玩家路径，不构造 File、不读其它资源。
         local file = assert(nativeCache:GetFile(path), "source unavailable: " .. path)
@@ -80,7 +82,8 @@ local function newContext()
     local ctx = {
         deps = {}, forbidden = {}, expectedDenied = 0, requires = {},
         clock = { now = 2000000000, elapsedTime = 500 }, logs = {},
-        popups = {}, busy = false, active = false, onShow = false, showing = false,
+        toasts = {}, toastDraws = {}, busy = false, active = false, onShow = false, showing = false,
+        rewardShows = 0, pageDraws = 0, pageInputs = {},
         pageOpen = false, pageUpdates = {}, refreshes = {}, opens = {}, summaryCalls = {},
         summary = {}, events = {}, inputs = {}, loading = {},
         -- 仅用于验证隔离与 UI 不发奖；没有生产 Store/PDM/currency 实例。
@@ -118,7 +121,21 @@ local function newContext()
         "SubscribeToEvent", "SendEvent", "SendRemoteEvent", "GetUserId", "GetUserNickname" }) do
         env[key] = denied(key)
     end
-    env.NVG_ALIGN_CENTER, env.NVG_ALIGN_MIDDLE = 1, 2 -- 不运行绘图；只占位，绝不碰真实 NanoVG。
+    env.NVG_ALIGN_CENTER, env.NVG_ALIGN_MIDDLE = 1, 2 -- 仅私有 spy 占位，不碰真实 NanoVG。
+    -- 只模拟 UiToast.draw 的末端 API；不创建 context/字体、不订阅渲染、不拉 Horizon。
+    for _, key in ipairs({ "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgBeginPath",
+        "nvgRoundedRect", "nvgFill", "nvgStrokeColor", "nvgStrokeWidth", "nvgStroke" }) do
+        env[key] = function() end
+    end
+    env.nvgRGBA = function(r, g, b, a)
+        check(a >= 0 and a <= 255, "toast draw alpha remains within byte range")
+        return { r = r, g = g, b = b, a = a }
+    end
+    env.nvgFillColor = function(_, color) ctx.drawColor = color end
+    env.nvgTextBounds = function(_, _, _, text) return #text * 10 end
+    env.nvgText = function(_, x, y, text)
+        ctx.toastDraws[#ctx.toastDraws + 1] = { text = text, x = x, y = y, alpha = ctx.drawColor.a }
+    end
     local function mock(name, values)
         local module = sealed(name, values)
         ctx.deps[name] = module
@@ -135,6 +152,11 @@ local function newContext()
             ctx.opens[#ctx.opens + 1] = copy(summary)
         end,
         update = function(dt) ctx.pageUpdates[#ctx.pageUpdates + 1] = dt end,
+        draw = function() ctx.pageDraws = ctx.pageDraws + 1 end,
+        handleInput = function(dx, dy)
+            ctx.pageInputs[#ctx.pageInputs + 1] = { dx = dx, dy = dy }
+            return true
+        end,
     })
     mock("systems.LootBoxSystem", {
         revealLegacy = function(data)
@@ -148,24 +170,22 @@ local function newContext()
             return copy(ctx.summary)
         end,
     })
-    mock("ui.hud.popup.RewardPopup", {
+    -- RewardPopup 仅允许查询忙状态。show/其它模态依赖均 fail-closed，写单例字段也立即失败。
+    ctx.rewardPopup = mock("ui.hud.popup.RewardPopup", {
         isOpen = function()
             ctx.openProbes = (ctx.openProbes or 0) + 1
             return ctx.busy
         end,
-        show = function(title, items)
-            check(not ctx.busy, "show must never replace an already-open RewardPopup")
-            check(not ctx.showing, "show must not recursively replace an in-progress RewardPopup.show")
-            check(type(title) == "string", "show title is text")
-            check(type(items) == "table", "show items are a table")
-            local entry = { title = title, items = copy(items), originalItems = items }
-            ctx.popups[#ctx.popups + 1] = entry
-            ctx.active, ctx.showing = entry, true
-            -- 故意在 busy=true 之前回调：验证生产 pending 先取走且有 pump 重入保护。
-            if ctx.onShow then ctx.onShow(entry) end
-            ctx.showing, ctx.busy = false, true
+        show = function()
+            ctx.rewardShows = ctx.rewardShows + 1
+            return deny("RewardPopup.show (notice must never open a modal)")
         end,
     })
+    setmetatable(ctx.rewardPopup, {
+        __index = function(_, key) return deny("RewardPopup." .. tostring(key)) end,
+        __newindex = function(_, key) return deny("RewardPopup singleton write " .. tostring(key)) end,
+    })
+    local rewardIsOpen, rewardShow = ctx.rewardPopup.isOpen, ctx.rewardPopup.show
     env.require = function(name)
         ctx.requires[#ctx.requires + 1] = name
         if ctx.deps[name] ~= nil then return ctx.deps[name] end
@@ -186,14 +206,32 @@ local function newContext()
         __newindex = function(_, key) return deny("global write " .. tostring(key)) end,
     })
     ctx.bc = env.require("config.BlacksmithConfig")
+    ctx.toast = env.require("core.UiToast")
+    local toastShow = ctx.toast.show
+    ctx.toast.show = function(text, duration)
+        check(not ctx.busy, "toast must wait while RewardPopup.isOpen")
+        check(not ctx.showing, "toast show must not recursively replay/flush")
+        local active, busy = ctx.active, ctx.busy
+        local entry = { text = text, duration = duration }
+        ctx.toasts[#ctx.toasts + 1] = entry
+        ctx.showing = true
+        toastShow(text, duration) -- 真实 UiToast 接收原参数；spy 不拼装/修正通知文本或时长。
+        if ctx.onShow then ctx.onShow(entry) end -- 不伪造 modal busy，重入保护必须来自生产。
+        ctx.showing = false
+        eq(ctx.active, active, "toast never replaces reward singleton active payload")
+        eq(ctx.busy, busy, "toast never opens/closes a modal")
+    end
     ctx.loot = env.require("ui.loot.LootBox")
     check(type(ctx.loot.updateSeedData) == "function", "production exports updateSeedData")
     check(type(ctx.loot.update) == "function", "production exports update pump")
     function ctx.safe()
         eq(#ctx.forbidden, ctx.expectedDenied, "no unexpected IO/network/action/dependency/global access")
         check(same(ctx.account, ctx.initialAccount), "UI cannot award or change account/inventory")
-        for _, entry in ipairs(ctx.popups) do
-            check(same(entry.originalItems, entry.items), "previous popup payload is not later overwritten/reused")
+        eq(ctx.rewardShows, 0, "notice entry never calls RewardPopup.show or opens a reward modal")
+        eq(ctx.rewardPopup.isOpen, rewardIsOpen, "RewardPopup.isOpen singleton method unchanged")
+        eq(ctx.rewardPopup.show, rewardShow, "RewardPopup.show singleton method unchanged")
+        for key in pairs(ctx.rewardPopup) do
+            check(key == "isOpen" or key == "show", "notice cannot add reward singleton state")
         end
     end
     function ctx.push(data, options)
@@ -238,20 +276,25 @@ local function dataWith(seq, count, essence)
 end
 local function baseline(ctx, data, options)
     ctx.push(data or dataWith(0, 0, 0), options)
-    eq(#ctx.popups, 0, "baseline is silent, even if count exceeds threshold")
+    eq(#ctx.toasts, 0, "baseline is silent, even if count exceeds threshold")
 end
-local function noPopup(ctx, expected, message)
-    eq(#ctx.popups, expected or 0, message or "no new popup")
+local function noToast(ctx, expected, message)
+    eq(#ctx.toasts, expected or 0, message or "no new toast")
 end
-local function popup(ctx, index, count, essence)
+local function toast(ctx, index, count, essence)
     -- 统一显式跑帧：不依赖收包回调立即 show，允许结算回调先建立自己的奖励弹窗。
     ctx.tick(0)
-    eq(#ctx.popups, index, "exactly one popup per flush, no 100-item chunks/overwrites")
-    local entry = assert(ctx.popups[index], "expected popup missing")
-    eq(entry.title, "自动分解 " .. count .. " 件", "title contains pending delta count, not historical total")
-    eq(#entry.items, 1, "only one essence reward entry")
-    eq(entry.items[1].type, "essence", "reward resource type")
-    eq(entry.items[1].amount, essence, "reward is sum of per-item new essence, not cumulative/average")
+    eq(#ctx.toasts, index, "exactly one toast per flush, no 100-item chunks/overwrites")
+    local entry = assert(ctx.toasts[index], "expected toast missing")
+    local expected = "自动分解 " .. count .. " 件 · 获得精粹 " .. essence
+    eq(entry.text, expected, "toast contains exact pending count and summed essence, not historical total/average")
+    eq(entry.duration, 3.0, "notice explicitly requests a three-second toast")
+    local before = #ctx.toastDraws
+    ctx.toast.draw({}, 1920, 1080)
+    eq(#ctx.toastDraws, before + 1, "real UiToast.draw reaches terminal text spy")
+    eq(ctx.toastDraws[#ctx.toastDraws].text, expected, "real draw receives exact notice text unchanged")
+    eq(ctx.busy, false, "toast flush never opens a modal")
+    ctx.safe()
 end
 
 -- 确定性装备样本：覆盖 6 品质、不同等级、小数向下取整；不是 count * 最后一件收益。
@@ -345,7 +388,7 @@ local function recorderCases()
     eq(notice.marker, "must-survive", "recorder preserves unknown notice fields")
     check(same(data.seeds, previous.seeds) and same(data.settings, previous.settings), "recorder preserves original non-notice data")
     eq(notice.essence, 12345 + gain, "record not changed into per-batch/reset notice")
-    noPopup(ctx, 0, "recording alone does not open UI or grant account rewards")
+    noToast(ctx, 0, "recording alone does not open UI or grant account rewards")
     ctx.safe()
 end
 
@@ -354,14 +397,14 @@ local function bootstrapHistoryCases()
     local data, oldEssence = history(ctx)
     baseline(ctx, data, { resetNotice = true })
     ctx.tick(600)
-    noPopup(ctx, 0, "bootstrap history is never pending")
+    noToast(ctx, 0, "bootstrap history is never pending")
     local gain = append(ctx, data, 100)
     ctx.push(data) -- 原 table、原 notice 原地变化；生产必须保存数值基线而非 table 别名。
-    popup(ctx, 1, 100, gain)
+    toast(ctx, 1, 100, gain)
     eq(data.autoDecomposeNotice.count, 33957, "UI leaves historical + new cumulative count intact")
     eq(data.autoDecomposeNotice.essence, oldEssence + gain, "UI never clears cumulative original essence")
     ctx.close(); ctx.push(copy(data)); ctx.tick(1)
-    popup(ctx, 1, 100, gain)
+    toast(ctx, 1, 100, gain)
 end
 
 local function firstSnapshotCases()
@@ -370,13 +413,13 @@ local function firstSnapshotCases()
     baseline(ctx, copy(data)) -- 没有 bootstrap options 的首次有效 notice 仍只建基线。
     local gain = append(ctx, data, 100)
     ctx.push(copy(data), { resetNotice = false })
-    popup(ctx, 1, 100, gain)
+    toast(ctx, 1, 100, gain)
     local empty = newContext()
     baseline(empty, { seeds = {} }) -- 无 notice 已建立 0；下一次不是再次“首次静默”。
     local fresh = { seeds = {} }
     local freshGain = append(empty, fresh, 100)
     empty.push(copy(fresh))
-    popup(empty, 1, 100, freshGain)
+    toast(empty, 1, 100, freshGain)
 end
 
 local function thresholdCases()
@@ -386,17 +429,17 @@ local function thresholdCases()
         local gain = append(ctx, data, count)
         ctx.push(copy(data))
         if count < 100 then
-            noPopup(ctx, 0, "99 items below threshold")
+            noToast(ctx, 0, "99 items below threshold")
             ctx.tick(999999)
-            noPopup(ctx, 0, "elapsed time cannot flush less than 100")
+            noToast(ctx, 0, "elapsed time cannot flush less than 100")
             local extra = append(ctx, data, 3, count)
             ctx.push(copy(data))
-            popup(ctx, 1, 102, gain + extra)
+            toast(ctx, 1, 102, gain + extra)
         else
-            popup(ctx, 1, count, gain)
+            toast(ctx, 1, count, gain)
         end
         ctx.close(); ctx.push(copy(data)); ctx.tick(0)
-        eq(#ctx.popups, 1, "same seq after flush is never added twice")
+        eq(#ctx.toasts, 1, "same seq after flush is never added twice")
     end
 end
 
@@ -406,14 +449,14 @@ local function incrementalCases()
     for i = 1, 100 do
         total = total + append(ctx, data, 1, i - 1)
         ctx.push(copy(data)); ctx.tick(0)
-        if i < 100 then noPopup(ctx, 0, "single-item push " .. i .. " keeps pending silently") end
+        if i < 100 then noToast(ctx, 0, "single-item push " .. i .. " keeps pending silently") end
     end
-    popup(ctx, 1, 100, total)
+    toast(ctx, 1, 100, total)
     ctx.close()
     local extra = append(ctx, data, 99, 100)
-    ctx.push(copy(data)); noPopup(ctx, 1, "flush clears pending, next 99 do not show")
+    ctx.push(copy(data)); noToast(ctx, 1, "flush clears pending, next 99 do not show")
     local one = append(ctx, data, 1, 199)
-    ctx.push(copy(data)); popup(ctx, 2, 100, extra + one)
+    ctx.push(copy(data)); toast(ctx, 2, 100, extra + one)
 end
 
 local function monotonicCounterCases()
@@ -423,34 +466,34 @@ local function monotonicCounterCases()
     data.autoDecomposeNotice.seq = 701
     data.autoDecomposeNotice.count = 9099
     data.autoDecomposeNotice.essence = 605555
-    ctx.push(copy(data)); noPopup(ctx, 0, "delta count is not delta seq")
+    ctx.push(copy(data)); noToast(ctx, 0, "delta count is not delta seq")
     data.autoDecomposeNotice.seq = 999 -- seq 可跳跃，count/essence 不变仍单调，不应清 pending。
-    ctx.push(copy(data)); noPopup(ctx, 0, "seq-only progression adds zero and keeps existing pending")
+    ctx.push(copy(data)); noToast(ctx, 0, "seq-only progression adds zero and keeps existing pending")
     data.autoDecomposeNotice.seq = 1001
     data.autoDecomposeNotice.count = 9102
     data.autoDecomposeNotice.essence = 605678
-    ctx.push(copy(data)); popup(ctx, 1, 102, 5678)
+    ctx.push(copy(data)); toast(ctx, 1, 102, 5678)
     ctx.close()
     local unchanged = copy(data)
     unchanged.autoDecomposeNotice.quality = 6
     unchanged.autoDecomposeNotice.level = 60
     unchanged.autoDecomposeNotice.time = 1
     ctx.push(unchanged); ctx.tick(100)
-    popup(ctx, 1, 102, 5678)
+    toast(ctx, 1, 102, 5678)
 end
 
 local function consecutiveBatchCases()
     local ctx, data = newContext(), { seeds = {} }
     baseline(ctx)
     local a = append(ctx, data, 100)
-    ctx.push(copy(data)); popup(ctx, 1, 100, a)
+    ctx.push(copy(data)); toast(ctx, 1, 100, a)
     ctx.close()
     local b = append(ctx, data, 101, 100)
-    ctx.push(copy(data)); popup(ctx, 2, 101, b)
+    ctx.push(copy(data)); toast(ctx, 2, 101, b)
     eq(data.autoDecomposeNotice.count, 201, "two UI batches do not reset production cumulative record")
     ctx.close()
     for _ = 1, 3 do ctx.push(copy(data)); ctx.tick(0.016) end
-    popup(ctx, 2, 101, b)
+    toast(ctx, 2, 101, b)
 end
 
 local function busyMergeCases()
@@ -463,17 +506,17 @@ local function busyMergeCases()
         amount = amount + append(ctx, data, count, total)
         total = total + count
         ctx.push(copy(data)); ctx.tick(120)
-        noPopup(ctx, 0, "busy popup keeps all incoming notices queued, never replaces active")
+        noToast(ctx, 0, "busy popup keeps all incoming notices queued, never replaces active")
         eq(ctx.active, occupied, "busy popup identity untouched")
         eq(occupied.items[1].amount, 42, "busy popup rewards untouched")
     end
     check((ctx.openProbes or 0) > 0, "production consults RewardPopup.isOpen")
     eq(#ctx.pageUpdates, 4, "busy notice pump does not prevent page update")
     ctx.close(); ctx.tick(0)
-    popup(ctx, 1, 34060, amount)
+    toast(ctx, 1, 34060, amount)
     eq(ctx.pageUpdates[#ctx.pageUpdates], 0, "zero dt still forwarded to page update")
     ctx.close(); ctx.tick(1); ctx.push(copy(data)); ctx.tick(1)
-    popup(ctx, 1, total, amount)
+    toast(ctx, 1, total, amount)
 end
 
 local function pushPumpCases()
@@ -481,19 +524,19 @@ local function pushPumpCases()
     baseline(ctx)
     local amount = append(ctx, data, 100)
     ctx.push(copy(data))
-    noPopup(ctx, 0, "receipt only collects; same-frame settlement reward gets priority")
+    noToast(ctx, 0, "receipt only collects; same-frame settlement reward gets priority")
     -- 模拟首通/离线结算在通知回调返回后立即打开自己的奖励，而非真实调用奖励模块。
     local settlement = { title = "settlement", items = { { type = "gold", amount = 777 } } }
     ctx.busy, ctx.active = true, settlement
     ctx.tick(0)
-    noPopup(ctx, 0, "following frame cannot overwrite same-frame settlement popup")
+    noToast(ctx, 0, "following frame cannot overwrite same-frame settlement popup")
     eq(ctx.active, settlement, "settlement active popup preserved")
     ctx.push(copy(data)); ctx.tick(0)
-    noPopup(ctx, 0, "duplicate while settlement busy neither drops nor double counts pending")
+    noToast(ctx, 0, "duplicate while settlement busy neither drops nor double counts pending")
     ctx.close()
     ctx.push(copy(data))
-    noPopup(ctx, 0, "duplicate receipt still does not show inside settlement callback")
-    popup(ctx, 1, 100, amount)
+    noToast(ctx, 0, "duplicate receipt still does not show inside settlement callback")
+    toast(ctx, 1, 100, amount)
 end
 
 local function reentryCases()
@@ -506,9 +549,9 @@ local function reentryCases()
         ctx.tick(0)
     end
     ctx.push(copy(data))
-    popup(ctx, 1, 100, amount)
+    toast(ctx, 1, 100, amount)
     ctx.close(); ctx.tick(0)
-    popup(ctx, 1, 100, amount)
+    toast(ctx, 1, 100, amount)
 
     local nested, other = newContext(), { seeds = {} }
     baseline(nested)
@@ -521,11 +564,11 @@ local function reentryCases()
         nested.tick(0)
     end
     nested.push(copy(other))
-    popup(nested, 1, 100, first)
+    toast(nested, 1, 100, first)
     nested.close(); nested.tick(0)
-    popup(nested, 2, 101, second)
+    toast(nested, 2, 101, second)
     nested.close(); nested.tick(0)
-    popup(nested, 2, 101, second)
+    toast(nested, 2, 101, second)
 end
 
 local function explicitResetCases()
@@ -537,21 +580,21 @@ local function explicitResetCases()
         ctx.push(copy(data))
         ctx.close()
         ctx.push(copy(data), { resetNotice = true }) -- 同一 seq 的 bootstrap 也必须清 pending。
-        ctx.tick(0); noPopup(ctx, 0, "explicit reset discards old pending before idle pump")
+        ctx.tick(0); noToast(ctx, 0, "explicit reset discards old pending before idle pump")
         local a = append(ctx, data, 99)
         ctx.push(copy(data), { resetNotice = false })
-        noPopup(ctx, 0, "explicit false continues from reset baseline")
+        noToast(ctx, 0, "explicit false continues from reset baseline")
         local b = append(ctx, data, 1, 99)
-        ctx.push(copy(data)); popup(ctx, 1, 100, a + b)
+        ctx.push(copy(data)); toast(ctx, 1, 100, a + b)
     end
     local ctx, data = newContext(), { seeds = {} }
     baseline(ctx)
     ctx.busy = true; append(ctx, data, 100); ctx.push(data)
     local replacement = dataWith(33857, 33857, 2302276)
     ctx.close(); ctx.push(replacement, { resetNotice = true }); ctx.tick(0)
-    noPopup(ctx, 0, "different bootstrap history also clears already-ready pending")
+    noToast(ctx, 0, "different bootstrap history also clears already-ready pending")
     local amount = append(ctx, replacement, 100)
-    ctx.push(replacement); popup(ctx, 1, 100, amount)
+    ctx.push(replacement); toast(ctx, 1, 100, amount)
 end
 
 local function rollbackCases()
@@ -569,15 +612,15 @@ local function rollbackCases()
         local ctx = newContext()
         baseline(ctx, dataWith(500, 1000, 100000))
         ctx.busy = true
-        ctx.push(dataWith(601, 1101, 110000)); noPopup(ctx, 0, "queue old ready batch")
+        ctx.push(dataWith(601, 1101, 110000)); noToast(ctx, 0, "queue old ready batch")
         ctx.close()
         local data = { seeds = {}, autoDecomposeNotice = copy(replacement.value) }
         ctx.push(copy(data)); ctx.tick(0)
-        noPopup(ctx, 0, replacement.label .. " silently rebuilds baseline and clears old pending")
+        noToast(ctx, 0, replacement.label .. " silently rebuilds baseline and clears old pending")
         local amount = append(ctx, data, 99)
-        ctx.push(copy(data)); noPopup(ctx, 0, replacement.label .. " counts only new 99")
+        ctx.push(copy(data)); noToast(ctx, 0, replacement.label .. " counts only new 99")
         local one = append(ctx, data, 1, 99)
-        ctx.push(copy(data)); popup(ctx, 1, 100, amount + one)
+        ctx.push(copy(data)); toast(ctx, 1, 100, amount + one)
     end
 end
 
@@ -594,25 +637,25 @@ local function missingNoticeCases()
         ctx.push(dataWith(33957, 33957, 2310000))
         ctx.close()
         ctx.push(copy(replacement.value), replacement.reset and { resetNotice = true } or nil)
-        ctx.tick(0); noPopup(ctx, 0, replacement.label .. " clears old ready pending")
+        ctx.tick(0); noToast(ctx, 0, replacement.label .. " clears old ready pending")
         local cleared = { seeds = {} }
         local a = append(ctx, cleared, 99)
-        ctx.push(copy(cleared)); noPopup(ctx, 0, "clear/save-reset establishes zero, not stale history")
+        ctx.push(copy(cleared)); noToast(ctx, 0, "clear/save-reset establishes zero, not stale history")
         local b = append(ctx, cleared, 1, 99)
-        ctx.push(copy(cleared)); popup(ctx, 1, 100, a + b)
+        ctx.push(copy(cleared)); toast(ctx, 1, 100, a + b)
     end
 end
 
 local function restartCases()
     local old, data = newContext(), dataWith(33857, 33857, 2302276)
     baseline(old, copy(data), { resetNotice = true })
-    append(old, data, 99); old.push(copy(data)); noPopup(old, 0, "old process holds 99 pending")
+    append(old, data, 99); old.push(copy(data)); noToast(old, 0, "old process holds 99 pending")
     local restarted = newContext()
     baseline(restarted, copy(data))
-    restarted.tick(0); noPopup(restarted, 0, "restarted module never replays previous process pending/history")
+    restarted.tick(0); noToast(restarted, 0, "restarted module never replays previous process pending/history")
     local amount = append(restarted, data, 100)
-    restarted.push(copy(data)); popup(restarted, 1, 100, amount)
-    old.tick(0); noPopup(old, 0, "second module cannot modify first module pending")
+    restarted.push(copy(data)); toast(restarted, 1, 100, amount)
+    old.tick(0); noToast(old, 0, "second module cannot modify first module pending")
 end
 
 local function timeCases()
@@ -623,16 +666,16 @@ local function timeCases()
         if mode == "no-time" then data.autoDecomposeNotice.time = nil
         elseif mode == "future-time" then data.autoDecomposeNotice.time = ctx.clock.now + 86400
         else data.autoDecomposeNotice.time = ctx.clock.now - (mode == "expired-day" and 86400 or 10) end
-        ctx.push(copy(data)); noPopup(ctx, 0, mode .. " still waits for threshold")
+        ctx.push(copy(data)); noToast(ctx, 0, mode .. " still waits for threshold")
         local one = append(ctx, data, 1, 99)
         if mode == "no-time" then data.autoDecomposeNotice.time = nil
         else data.autoDecomposeNotice.time = ctx.clock.now - 86400 end
         ctx.busy = true; ctx.push(copy(data))
         ctx.clock.now = ctx.clock.now + 1000000
         ctx.clock.elapsedTime = ctx.clock.elapsedTime + 1000000
-        ctx.tick(1000000); noPopup(ctx, 0, mode .. " cannot replace busy reward")
+        ctx.tick(1000000); noToast(ctx, 0, mode .. " cannot replace busy reward")
         ctx.close(); ctx.tick(0)
-        popup(ctx, 1, 100, amount + one)
+        toast(ctx, 1, 100, amount + one)
     end
 end
 
@@ -649,21 +692,21 @@ local function numericStringCases()
     baseline(ctx, stringClone(), { resetNotice = true })
     local a = append(ctx, data, 99)
     local first = stringClone()
-    ctx.push(first); noPopup(ctx, 0, "numeric strings normalize without mutating input")
+    ctx.push(first); noToast(ctx, 0, "numeric strings normalize without mutating input")
     eq(type(first.autoDecomposeNotice.seq), "string", "string seq remains string in caller input")
-    ctx.push(copy(data)); noPopup(ctx, 0, "same values as numbers are duplicate, not reset/double count")
+    ctx.push(copy(data)); noToast(ctx, 0, "same values as numbers are duplicate, not reset/double count")
     local b = append(ctx, data, 3, 99)
-    ctx.push(stringClone()); popup(ctx, 1, 102, a + b)
+    ctx.push(stringClone()); toast(ctx, 1, 102, a + b)
     ctx.close(); ctx.push(copy(data)); ctx.tick(0)
-    popup(ctx, 1, 102, a + b)
+    toast(ctx, 1, 102, a + b)
     -- Lua 5.4 等值浮点也是有效整数值；显示必须规范成整数，不能出现“100.0 件”。
     local floating = newContext()
     baseline(floating, dataWith(0.0, 0.0, 0.0))
     local floatInput = dataWith(100.0, 100.0, 6800.0)
     floating.push(floatInput)
-    popup(floating, 1, 100, 6800)
+    toast(floating, 1, 100, 6800)
     floating.close(); floating.push(dataWith(100, 100, 6800)); floating.tick(0)
-    popup(floating, 1, 100, 6800)
+    toast(floating, 1, 100, 6800)
 end
 
 local function invalidCases()
@@ -698,14 +741,14 @@ local function invalidCases()
         ctx.busy = true; ctx.push(dataWith(601, 1101, 110000))
         ctx.close()
         ctx.push({ seeds = {}, autoDecomposeNotice = copy(sample.value) })
-        ctx.tick(0); noPopup(ctx, 0, sample.label .. " is silent reset, not an exception or queued old flush")
+        ctx.tick(0); noToast(ctx, 0, sample.label .. " is silent reset, not an exception or queued old flush")
         -- 显式零值快照检验恢复基线，不依赖非法数值被截断/钳制成某个正数。
-        ctx.push(dataWith(0, 0, 0)); noPopup(ctx, 0, sample.label .. " recovers to valid zero baseline")
+        ctx.push(dataWith(0, 0, 0)); noToast(ctx, 0, sample.label .. " recovers to valid zero baseline")
         local valid = { seeds = {} }
         local a = append(ctx, valid, 99)
-        ctx.push(copy(valid)); noPopup(ctx, 0, sample.label .. " old pending is discarded")
+        ctx.push(copy(valid)); noToast(ctx, 0, sample.label .. " old pending is discarded")
         local b = append(ctx, valid, 1, 99)
-        ctx.push(copy(valid)); popup(ctx, 1, 100, a + b)
+        ctx.push(copy(valid)); toast(ctx, 1, 100, a + b)
     end
 end
 
@@ -730,7 +773,7 @@ local function summaryCases()
     eq(ctx.events[1], "reveal", "summary refresh retains legacy reveal first")
     eq(ctx.events[2], "summary", "summary follows legacy reveal")
     local amount = append(ctx, data, 100)
-    ctx.push(data); popup(ctx, 1, 100, amount)
+    ctx.push(data); toast(ctx, 1, 100, amount)
     eq(ctx.loot.getCount(), 6, "notice flush does not affect seed count")
     check(same(ctx.refreshes[#ctx.refreshes], wanted), "notice flush does not replace/filter summary")
     local before = copy(data)
@@ -745,6 +788,58 @@ local function summaryCases()
     ctx.summary = {}
     ctx.close(); ctx.push({ seeds = {} }, { resetNotice = true })
     eq(ctx.loot.getCount(), 0, "save clear still clears seed count")
+    ctx.safe()
+end
+
+local function toastDrawCases()
+    local ctx = newContext()
+    baseline(ctx)
+    ctx.loot.openPage()
+    local started = ctx.clock.elapsedTime
+    local summary = copy(ctx.summary)
+    ctx.push(dataWith(100, 100, 6800))
+    toast(ctx, 1, 100, 6800)
+    local beforeData = copy(ctx.currentData)
+    -- 独立固定期望，不从 show spy 派生文本/时长；真实 draw，仅末端 NanoVG 是 spy。
+    -- 二进制可精确表示的时间点避免 floor(alpha*255) 在临界点浮点抖动。
+    for _, sample in ipairs({
+        { elapsed = 0, alpha = 0 }, { elapsed = 0.0625, alpha = 132 },
+        { elapsed = 0.125, alpha = 255 }, { elapsed = 1.5, alpha = 255 },
+        { elapsed = 2.75, alpha = 255 }, { elapsed = 2.875, alpha = 127 },
+        { elapsed = 2.9375, alpha = 63 },
+    }) do
+        ctx.clock.elapsedTime = started + sample.elapsed
+        local draws, opens, refreshes = #ctx.toastDraws, #ctx.opens, #ctx.refreshes
+        ctx.loot.drawPage({})
+        ctx.toast.draw({}, 1920, 1080)
+        eq(#ctx.toastDraws, draws + 1, "three-second toast draws at elapsed=" .. sample.elapsed)
+        local drawn = ctx.toastDraws[#ctx.toastDraws]
+        eq(drawn.text, "自动分解 100 件 · 获得精粹 6800", "real draw shows exact count and essence")
+        eq(drawn.alpha, sample.alpha, "custom duration fade-in/hold/fade-out alpha at " .. sample.elapsed)
+        eq(drawn.x, 960, "toast text remains horizontally centered")
+        eq(drawn.y, 1080 * 0.18, "toast retains existing top-screen placement")
+        check(ctx.loot.isPageOpen(), "toast draw leaves underlying page open")
+        eq(ctx.loot.handleInput(12, 34), true, "toast does not intercept page input forwarding")
+        eq(ctx.pageInputs[#ctx.pageInputs].dx, 12, "page input x remains unchanged")
+        eq(ctx.pageInputs[#ctx.pageInputs].dy, 34, "page input y remains unchanged")
+        eq(#ctx.opens, opens, "toast does not reopen/replace page")
+        eq(#ctx.refreshes, refreshes, "toast draw does not force page refresh")
+        ctx.tick(0)
+        noToast(ctx, 1, "drawing/updating toast does not replay notice")
+    end
+    for _, elapsed in ipairs({ 3, 3.5 }) do
+        ctx.clock.elapsedTime = started + elapsed
+        local draws = #ctx.toastDraws
+        ctx.toast.draw({}, 1920, 1080)
+        eq(#ctx.toastDraws, draws, "toast emits no text at/after exact three-second expiry")
+        ctx.push(copy(ctx.currentData)); ctx.tick(0)
+        noToast(ctx, 1, "expiry plus duplicate snapshot never replays toast")
+    end
+    eq(ctx.pageDraws, 7, "underlying page draws once on every toast-visible sample")
+    check(same(ctx.summary, summary), "real toast draw never changes page summary")
+    check(same(ctx.currentData, beforeData), "real toast lifetime never changes authoritative notice")
+    eq(ctx.active, false, "real toast lifetime never installs reward singleton payload")
+    eq(ctx.busy, false, "real toast lifetime stays non-modal")
     ctx.safe()
 end
 
@@ -833,7 +928,7 @@ local function bootFragmentCases()
         eq(trace[2], "get", "real Boot setup explicitly fetches restored snapshot after registration")
         eq(#ctx.summaryCalls, 1, "manual baseline really reaches LootBox without subscriber replay")
         eq(ctx.summaryCalls[1], memory.lootbox, "baseline uses pre-restored snapshot identity")
-        ctx.tick(0); noPopup(ctx, 0, "restored history or missing notice bootstrap is silent")
+        ctx.tick(0); noToast(ctx, 0, "restored history or missing notice bootstrap is silent")
         eq(wallet.essence, 1234, "bootstrap does not award historical essence")
         local function batch()
             local initial = wallet.essence
@@ -849,16 +944,16 @@ local function bootFragmentCases()
                 eq(memory.lootbox.autoDecomposeNotice.count, initialCount + i, "each real kill records cumulative count")
                 eq(memory.lootbox.autoDecomposeNotice.essence, initialNoticeEssence + sum,
                     "real kill notification keeps historical essence and adds only real item gains")
-                noPopup(ctx, 0, "kill receipt itself never shows or waits for the 100-item reward")
-                if i < 100 then ctx.tick(0); noPopup(ctx, 0, "first 99 are credited but notification remains below threshold") end
+                noToast(ctx, 0, "kill receipt itself never shows or waits for the 100-item reward")
+                if i < 100 then ctx.tick(0); noToast(ctx, 0, "first 99 are credited but notification remains below threshold") end
             end
             eq(wallet.gold, 7654, "selected kill-equipment fragment never changes gold")
             eq(wallet.writes, 100, "wallet credited once per item, not on UI display")
-            popup(ctx, 1, 100, sum)
+            toast(ctx, 1, 100, sum)
             eq(wallet.essence, initial + sum, "UI threshold display cannot credit wallet again")
             ctx.close()
             callbacks.lootbox(memory.lootbox, "lootbox")
-            ctx.tick(0); popup(ctx, 1, 100, sum)
+            ctx.tick(0); toast(ctx, 1, 100, sum)
             eq(wallet.essence, initial + sum, "same-table subscriber duplicate cannot re-award")
             return sum
         end
@@ -866,9 +961,9 @@ local function bootFragmentCases()
         -- 清档后再次执行真实注册/显式baseline片段，不运行全Boot/StandaloneSave生命周期。
         memory.lootbox = { seeds = {} }
         wallet.writes = 0
-        ctx.popups, ctx.active, ctx.busy = {}, false, false
+        ctx.toasts, ctx.active, ctx.busy = {}, false, false
         setup(); ctx.tick(0)
-        noPopup(ctx, 0, "clear boot wiring establishes fresh zero baseline")
+        noToast(ctx, 0, "clear boot wiring establishes fresh zero baseline")
         batch()
         ctx.safe()
     end
@@ -889,16 +984,17 @@ local function finalSafetyCases()
     eq(package.loaded, nativeLoaded, "global package.loaded identity untouched")
     for name, value in pairs(initialLoaded) do eq(nativeLoaded[name], value, "existing module untouched " .. name) end
     for name, value in pairs(nativeLoaded) do eq(initialLoaded[name], value, "no module escaped isolated loader " .. name) end
-    eq(#sourceReads, 3, "exactly three real source reads across every fresh env")
+    eq(#sourceReads, 4, "exactly four real source reads across every fresh env")
     local seen = {}
     for _, path in ipairs(sourceReads) do
         check(path == "ui/loot/LootBox.lua" or path == "config/BlacksmithConfig.lua"
-            or path == "boot/StandaloneBoot.lua", "cache read is exact allowlist source")
+            or path == "core/UiToast.lua" or path == "boot/StandaloneBoot.lua", "cache read is exact allowlist source")
         check(not seen[path], "source cache prevents repeated real reads")
         seen[path] = true
     end
     check(seen["ui/loot/LootBox.lua"] and seen["config/BlacksmithConfig.lua"]
-        and seen["boot/StandaloneBoot.lua"], "all tested implementations and Boot fragments are real production sources")
+        and seen["core/UiToast.lua"] and seen["boot/StandaloneBoot.lua"],
+        "all tested implementations, toast draw and Boot fragments are real production sources")
 end
 
 function Start()
@@ -923,6 +1019,7 @@ function Start()
             { "clone-numeric-strings-normalized-without-input-mutation", numericStringCases },
             { "invalid-nonnegative-integer-fields-reset-without-throw", invalidCases },
             { "seed-summary-count-refresh-page-update-preserved", summaryCases },
+            { "real-toast-draw-three-second-fades-expiry-and-page-unaffected", toastDrawCases },
             { "real-Boot-fragments-restore-baseline-kill-credit-and-clear", bootFragmentCases },
             { "final-all-contexts-source-reads-and-global-safety", finalSafetyCases },
         }

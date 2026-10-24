@@ -77,6 +77,7 @@ local PRIORITIES = {
 ---@field totalDuration number   总时长（fadeIn + hold + fadeOut）
 ---@field holdDuration number    保持时长
 ---@field priority number        优先级
+---@field dismissed boolean      已被其他单位抢占，等待快速淡出
 
 -- 当前活跃气泡列表
 ---@type BubbleEntry[]
@@ -119,56 +120,62 @@ local function dismissBubble(b)
     b.dismissed = true
 end
 
---- 触发台词气泡
----@param unit table       战斗单位（必须有 heroId 字段）
----@param triggerType string  "entry"|"crit"|"kill"|"death"|"victory"
-function SpeechBubble.trigger(unit, triggerType)
-    if not unit or not unit.heroId then return end
+--- 触发仲裁只负责台词、冷却、概率；不能先查活跃气泡而省掉台词随机选择。
+---@param unit table
+---@param triggerType string
+---@return string|nil text
+---@return number|nil priority
+local function arbitrateTrigger(unit, triggerType)
+    if not unit or not unit.heroId then return nil end
 
-    -- 查询台词
     local text = DC.get(unit.heroId, triggerType)
-    if not text then return end
+    if not text then return nil end
 
-    -- 检查冷却
     local unitCDs = cooldownTimers[unit]
     if unitCDs and unitCDs[triggerType] and unitCDs[triggerType] > 0 then
-        return
+        return nil
     end
 
-    -- 概率判断（冷却通过后再掷骰）
     local chance = TRIGGER_CHANCE[triggerType] or 1.0
     if chance < 1.0 and math.random() > chance then
-        return
+        return nil
     end
 
-    local priority = PRIORITIES[triggerType] or 0
+    return text, PRIORITIES[triggerType] or 0
+end
 
-    -- 查找该单位是否已有气泡
+--- 集合仲裁：同单位必须提高优先级；其他单位的旧条目保留至快速淡出结束。
+---@param unit table
+---@param priority number
+---@return boolean
+local function claimBubbleSlot(unit, priority)
     for i, b in ipairs(activeBubbles) do
         if b.unit == unit then
-            -- 已有气泡：高优先级才能打断
             if priority <= b.priority then
-                return
+                return false
             end
-            -- 打断旧气泡
             table.remove(activeBubbles, i)
             break
         end
     end
 
-    -- 全局独占：将所有其他角色的气泡快速淡出
     for _, b in ipairs(activeBubbles) do
         if not b.dismissed then
             dismissBubble(b)
         end
     end
+    return true
+end
 
-    -- 计算保持时长（按字数动态调整）
+---@param unit table
+---@param triggerType string
+---@param text string
+---@param priority number
+local function appendBubble(unit, triggerType, text, priority)
     local charCount = utf8.len(text) or #text
     local holdTime = math.max(HOLD_DURATION, charCount * HOLD_PER_CHAR)
     local totalTime = POP_DURATION + holdTime + FADE_OUT_DURATION
 
-    -- 创建气泡
     activeBubbles[#activeBubbles + 1] = {
         text          = text,
         unit          = unit,
@@ -179,8 +186,11 @@ function SpeechBubble.trigger(unit, triggerType)
         priority      = priority,
         dismissed     = false,
     }
+end
 
-    -- 设置冷却
+---@param unit table
+---@param triggerType string
+local function startCooldown(unit, triggerType)
     local cd = COOLDOWNS[triggerType] or 0
     if cd > 0 then
         if not cooldownTimers[unit] then
@@ -190,12 +200,22 @@ function SpeechBubble.trigger(unit, triggerType)
     end
 end
 
--- ======================== 更新 ========================
+--- 触发台词气泡。公开入口仅按旧顺序协调仲裁、抢占、创建及冷却提交。
+---@param unit table       战斗单位（必须有 heroId 字段）
+---@param triggerType string  "entry"|"crit"|"kill"|"death"|"victory"
+function SpeechBubble.trigger(unit, triggerType)
+    local text, priority = arbitrateTrigger(unit, triggerType)
+    if not text then return end
+    ---@cast priority number
+    if not claimBubbleSlot(unit, priority) then return end
+    appendBubble(unit, triggerType, text, priority)
+    startCooldown(unit, triggerType)
+end
 
---- 每帧更新
+-- ======================== 集合生命周期 ========================
+
 ---@param dt number
-function SpeechBubble.update(dt)
-    -- 更新冷却
+local function advanceCooldowns(dt)
     for unit, cds in pairs(cooldownTimers) do
         for ttype, remaining in pairs(cds) do
             cds[ttype] = remaining - dt
@@ -203,13 +223,14 @@ function SpeechBubble.update(dt)
                 cds[ttype] = nil
             end
         end
-        -- 清理空表
         if not next(cds) then
             cooldownTimers[unit] = nil
         end
     end
+end
 
-    -- 更新气泡计时器，移除已结束的
+---@param dt number
+local function advanceBubbles(dt)
     local i = 1
     while i <= #activeBubbles do
         local b = activeBubbles[i]
@@ -220,6 +241,13 @@ function SpeechBubble.update(dt)
             i = i + 1
         end
     end
+end
+
+--- 每帧更新；冷却与气泡各自收尾，不改变集合遍历和到期公式。
+---@param dt number
+function SpeechBubble.update(dt)
+    advanceCooldowns(dt)
+    advanceBubbles(dt)
 end
 
 -- ======================== 绘制 ========================
@@ -321,6 +349,159 @@ local function findUnitIndex(unit)
     return nil
 end
 
+---@class SpeechBubbleLayout
+---@field anchorX number
+---@field bx number
+---@field by number
+---@field bubbleW number
+---@field bubbleH number
+---@field lines string[]
+
+--- 每次绘制重新读取阵容、卡片偏移及字体宽度；布局结果只供本次绘制使用。
+---@param vg any
+---@param b BubbleEntry
+---@param allies table
+---@param floatY number
+---@return SpeechBubbleLayout|nil
+local function layoutBubble(vg, b, allies, floatY)
+    -- 找到单位的屏幕位置
+    local idx = findUnitIndex(b.unit)
+    if not idx then return nil end
+
+    local cx = getCardCX(allies, idx)
+    local baseCY = ALLY_CARD_CY
+    local animOff = getCardAnimOffsetY and getCardAnimOffsetY(b.unit) or 0
+    local chargeOff = getChargeOffsetY and getChargeOffsetY(b.unit, true) or 0
+    local cy = baseCY + animOff + chargeOff
+
+    -- 气泡锚点：卡片上方
+    local anchorX = cx
+    local anchorY = cy + BUBBLE_OFFSET_Y + floatY
+
+    -- 自动换行计算
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, BUBBLE_FONT_SIZE)
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+
+    local lines, maxLineW = wrapText(vg, b.text, BUBBLE_MAX_W - BUBBLE_PAD_H * 2)
+    local lineCount = #lines
+    if lineCount == 0 then return nil end
+
+    local textW = maxLineW
+    local textH = lineCount * BUBBLE_LINE_HEIGHT
+    local bubbleW = textW + BUBBLE_PAD_H * 2
+    local bubbleH = textH + BUBBLE_PAD_V * 2
+
+    -- 气泡矩形位置（居中于锚点 X，底部在锚点 Y）
+    local bx = anchorX - bubbleW * 0.5
+    local by = anchorY - bubbleH - BUBBLE_ARROW_H
+
+    -- 边界裁剪
+    if bx < 10 then bx = 10 end
+    if bx + bubbleW > 1070 then bx = 1070 - bubbleW end
+
+    return {
+        anchorX = anchorX,
+        bx = bx, by = by,
+        bubbleW = bubbleW, bubbleH = bubbleH,
+        lines = lines,
+    }
+end
+
+--- 绘图只消费已测量布局与动画值；保留字体设置在 Save 外的原顺序。
+---@param vg any
+---@param layout SpeechBubbleLayout
+---@param alpha number
+---@param scale number
+local function paintBubble(vg, layout, alpha, scale)
+    local anchorX = layout.anchorX
+    local bx, by = layout.bx, layout.by
+    local bubbleW, bubbleH = layout.bubbleW, layout.bubbleH
+    local lines = layout.lines
+    local fc = BUBBLE_FILL_CLR
+    local sc = BUBBLE_STROKE_CLR
+    local tc = BUBBLE_TEXT_CLR
+
+    -- 气泡视觉中心（用于缩放基点）
+    local bubbleCX = bx + bubbleW * 0.5
+    local bubbleCY = by + bubbleH * 0.5
+
+    nvgSave(vg)
+
+    -- 应用 easeOutBack 弹出缩放（以气泡中心为基点）
+    nvgTranslate(vg, bubbleCX, bubbleCY)
+    nvgScale(vg, scale, scale)
+    nvgTranslate(vg, -bubbleCX, -bubbleCY)
+
+    -- 1) 阴影（偏移的深色圆角矩形）
+    local so = BUBBLE_SHADOW_OFF
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, bx + so, by + so, bubbleW, bubbleH, BUBBLE_RADIUS)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(alpha * BUBBLE_SHADOW_ALPHA)))
+    nvgFill(vg)
+
+    -- 2) 主体（纯白圆角矩形）
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, bx, by, bubbleW, bubbleH, BUBBLE_RADIUS)
+    nvgFillColor(vg, nvgRGBA(fc[1], fc[2], fc[3], alpha))
+    nvgFill(vg)
+
+    -- 3) 主体描边（漫画风粗线条）
+    nvgStrokeWidth(vg, BUBBLE_STROKE_W)
+    nvgStrokeColor(vg, nvgRGBA(sc[1], sc[2], sc[3], alpha))
+    nvgStroke(vg)
+
+    -- 4) 尾巴三角形（指向角色）
+    local tailTipX = anchorX + BUBBLE_ARROW_OFF_X
+    -- 限制箭头不超出气泡边界
+    local tailMinX = bx + BUBBLE_RADIUS + BUBBLE_ARROW_W * 0.5
+    local tailMaxX = bx + bubbleW - BUBBLE_RADIUS - BUBBLE_ARROW_W * 0.5
+    if tailTipX < tailMinX then tailTipX = tailMinX end
+    if tailTipX > tailMaxX then tailTipX = tailMaxX end
+
+    local tailBaseY = by + bubbleH - 2  -- 尾巴从气泡底部稍微内缩开始
+    local tailTipY  = tailBaseY + BUBBLE_ARROW_H
+
+    -- 尾巴填充
+    nvgBeginPath(vg)
+    nvgMoveTo(vg, tailTipX - BUBBLE_ARROW_W * 0.5, tailBaseY)
+    nvgLineTo(vg, tailTipX, tailTipY)
+    nvgLineTo(vg, tailTipX + BUBBLE_ARROW_W * 0.5, tailBaseY)
+    nvgClosePath(vg)
+    nvgFillColor(vg, nvgRGBA(fc[1], fc[2], fc[3], alpha))
+    nvgFill(vg)
+
+    -- 尾巴描边（左右两条边，不画顶边避免和气泡主体重叠）
+    nvgBeginPath(vg)
+    nvgMoveTo(vg, tailTipX - BUBBLE_ARROW_W * 0.5, tailBaseY)
+    nvgLineTo(vg, tailTipX, tailTipY)
+    nvgLineTo(vg, tailTipX + BUBBLE_ARROW_W * 0.5, tailBaseY)
+    nvgStrokeWidth(vg, BUBBLE_STROKE_W)
+    nvgStrokeColor(vg, nvgRGBA(sc[1], sc[2], sc[3], alpha))
+    nvgStroke(vg)
+
+    -- 尾巴与主体接缝覆盖（用白色矩形盖住重叠区描边）
+    nvgBeginPath(vg)
+    nvgRect(vg, tailTipX - BUBBLE_ARROW_W * 0.5 + 2, tailBaseY - 3,
+            BUBBLE_ARROW_W - 4, 6)
+    nvgFillColor(vg, nvgRGBA(fc[1], fc[2], fc[3], alpha))
+    nvgFill(vg)
+
+    -- 5) 文字（深色）
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, BUBBLE_FONT_SIZE)
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+    nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], alpha))
+
+    for li, line in ipairs(lines) do
+        local tx = bx + BUBBLE_PAD_H
+        local ty = by + BUBBLE_PAD_V + (li - 1) * BUBBLE_LINE_HEIGHT
+        nvgText(vg, tx, ty, line)
+    end
+
+    nvgRestore(vg)
+end
+
 --- 绘制所有气泡（漫画风格）
 ---@param vg any NanoVG 上下文
 function SpeechBubble.draw(vg)
@@ -328,131 +509,14 @@ function SpeechBubble.draw(vg)
     if not getAllies or not getCardCX then return end
 
     local allies = getAllies()
-
-    local fc = BUBBLE_FILL_CLR
-    local sc = BUBBLE_STROKE_CLR
-    local tc = BUBBLE_TEXT_CLR
-
     for _, b in ipairs(activeBubbles) do
         local alpha, scale, floatY = calcBubbleAnim(b)
-        if alpha <= 0 then goto continue end
-
-        -- 找到单位的屏幕位置
-        local idx = findUnitIndex(b.unit)
-        if not idx then goto continue end
-
-        local cx = getCardCX(allies, idx)
-        local baseCY = ALLY_CARD_CY
-        local animOff = getCardAnimOffsetY and getCardAnimOffsetY(b.unit) or 0
-        local chargeOff = getChargeOffsetY and getChargeOffsetY(b.unit, true) or 0
-        local cy = baseCY + animOff + chargeOff
-
-        -- 气泡锚点：卡片上方
-        local anchorX = cx
-        local anchorY = cy + BUBBLE_OFFSET_Y + floatY
-
-        -- 自动换行计算
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, BUBBLE_FONT_SIZE)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-
-        local lines, maxLineW = wrapText(vg, b.text, BUBBLE_MAX_W - BUBBLE_PAD_H * 2)
-        local lineCount = #lines
-        if lineCount == 0 then goto continue end
-
-        local textW = maxLineW
-        local textH = lineCount * BUBBLE_LINE_HEIGHT
-        local bubbleW = textW + BUBBLE_PAD_H * 2
-        local bubbleH = textH + BUBBLE_PAD_V * 2
-
-        -- 气泡矩形位置（居中于锚点 X，底部在锚点 Y）
-        local bx = anchorX - bubbleW * 0.5
-        local by = anchorY - bubbleH - BUBBLE_ARROW_H
-
-        -- 边界裁剪
-        if bx < 10 then bx = 10 end
-        if bx + bubbleW > 1070 then bx = 1070 - bubbleW end
-
-        -- 气泡视觉中心（用于缩放基点）
-        local bubbleCX = bx + bubbleW * 0.5
-        local bubbleCY = by + bubbleH * 0.5
-
-        nvgSave(vg)
-
-        -- 应用 easeOutBack 弹出缩放（以气泡中心为基点）
-        nvgTranslate(vg, bubbleCX, bubbleCY)
-        nvgScale(vg, scale, scale)
-        nvgTranslate(vg, -bubbleCX, -bubbleCY)
-
-        -- 1) 阴影（偏移的深色圆角矩形）
-        local so = BUBBLE_SHADOW_OFF
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, bx + so, by + so, bubbleW, bubbleH, BUBBLE_RADIUS)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(alpha * BUBBLE_SHADOW_ALPHA)))
-        nvgFill(vg)
-
-        -- 2) 主体（纯白圆角矩形）
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, bx, by, bubbleW, bubbleH, BUBBLE_RADIUS)
-        nvgFillColor(vg, nvgRGBA(fc[1], fc[2], fc[3], alpha))
-        nvgFill(vg)
-
-        -- 3) 主体描边（漫画风粗线条）
-        nvgStrokeWidth(vg, BUBBLE_STROKE_W)
-        nvgStrokeColor(vg, nvgRGBA(sc[1], sc[2], sc[3], alpha))
-        nvgStroke(vg)
-
-        -- 4) 尾巴三角形（指向角色）
-        local tailTipX = anchorX + BUBBLE_ARROW_OFF_X
-        -- 限制箭头不超出气泡边界
-        local tailMinX = bx + BUBBLE_RADIUS + BUBBLE_ARROW_W * 0.5
-        local tailMaxX = bx + bubbleW - BUBBLE_RADIUS - BUBBLE_ARROW_W * 0.5
-        if tailTipX < tailMinX then tailTipX = tailMinX end
-        if tailTipX > tailMaxX then tailTipX = tailMaxX end
-
-        local tailBaseY = by + bubbleH - 2  -- 尾巴从气泡底部稍微内缩开始
-        local tailTipY  = tailBaseY + BUBBLE_ARROW_H
-
-        -- 尾巴填充
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, tailTipX - BUBBLE_ARROW_W * 0.5, tailBaseY)
-        nvgLineTo(vg, tailTipX, tailTipY)
-        nvgLineTo(vg, tailTipX + BUBBLE_ARROW_W * 0.5, tailBaseY)
-        nvgClosePath(vg)
-        nvgFillColor(vg, nvgRGBA(fc[1], fc[2], fc[3], alpha))
-        nvgFill(vg)
-
-        -- 尾巴描边（左右两条边，不画顶边避免和气泡主体重叠）
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, tailTipX - BUBBLE_ARROW_W * 0.5, tailBaseY)
-        nvgLineTo(vg, tailTipX, tailTipY)
-        nvgLineTo(vg, tailTipX + BUBBLE_ARROW_W * 0.5, tailBaseY)
-        nvgStrokeWidth(vg, BUBBLE_STROKE_W)
-        nvgStrokeColor(vg, nvgRGBA(sc[1], sc[2], sc[3], alpha))
-        nvgStroke(vg)
-
-        -- 尾巴与主体接缝覆盖（用白色矩形盖住重叠区描边）
-        nvgBeginPath(vg)
-        nvgRect(vg, tailTipX - BUBBLE_ARROW_W * 0.5 + 2, tailBaseY - 3,
-                BUBBLE_ARROW_W - 4, 6)
-        nvgFillColor(vg, nvgRGBA(fc[1], fc[2], fc[3], alpha))
-        nvgFill(vg)
-
-        -- 5) 文字（深色）
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, BUBBLE_FONT_SIZE)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-        nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], alpha))
-
-        for li, line in ipairs(lines) do
-            local tx = bx + BUBBLE_PAD_H
-            local ty = by + BUBBLE_PAD_V + (li - 1) * BUBBLE_LINE_HEIGHT
-            nvgText(vg, tx, ty, line)
+        if alpha > 0 then
+            local layout = layoutBubble(vg, b, allies, floatY)
+            if layout then
+                paintBubble(vg, layout, alpha, scale)
+            end
         end
-
-        nvgRestore(vg)
-
-        ::continue::
     end
 end
 

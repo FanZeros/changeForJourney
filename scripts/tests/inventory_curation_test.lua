@@ -793,7 +793,7 @@ local function balancedServiceTests()
         h:attach(modules); h:connectService()
         -- 唯一native委托在本case；Runtime由launcher以独立HOME运行。
         -- 正式保存逻辑仍传standalone文件名，但此封闭映射只操作专项文件，从不接触玩家档。
-        local validationDir = "/home/Maker/power-curation-validation-20261017/native-data/"
+        local validationDir = "/home/Maker/curation-dual-20261024/native-data/"
         local paths = { ["standalone_save.json"]=validationDir .. "inventory_curation_validation.json",
             ["standalone_save.pending.json"]=validationDir .. "inventory_curation_validation.pending.json" }
         local function path(name)
@@ -868,9 +868,172 @@ local function balancedServiceTests()
     end)
 end
 
+-- 双通道专项沿用同一隔离模块/内存存档脚手架；不生成装备、不读真实档。
+local function dualChannelTests()
+    local function ready(h, value)
+        local item = F.item(h, "W1", 10, 6)
+        item.affixes = { { affixId = 16, quality = 5, value = value or 1000 } }
+        return item
+    end
+    local function base(h, level, quality)
+        local item = F.item(h, "W1", level or 100, quality or 6)
+        item.affixes = { { affixId = 1, quality = 1, value = 0.01 } }
+        return item
+    end
+    local function constrained(h, count)
+        local bag = F.bag(h, 500)
+        for i = count + 1, 500 do bag.inventory[tostring(i)].locked = true end
+        return bag
+    end
+    local function put(bag, index, item)
+        item.seq = index
+        bag.inventory[tostring(index)] = item
+    end
+    run("dual channels preserve low-level finished Top and high-level poor-affix bases at one quarter", function()
+        local h = new()
+        local bag = constrained(h, 8)
+        for i = 1, 8 do put(bag, i, ready(h, 1000 + i * 100)) end
+        local box = F.box({ base(h, 100), base(h, 110), base(h, 120) })
+        check(h.Power.genericScore(h.Query.hydrateCopy(box.seeds[3].equip))
+            < h.Power.genericScore(h.Query.hydrateCopy(bag.inventory["1"])), "poor high-level seed really lower current score")
+        local before, aliases = F.copy({bag, box}), F.aliases({bag, box})
+        local p = plan(h, bag, box)
+        same(incoming(p), {3, 2}, "only best two bases admitted, not all higher-level seeds")
+        same(outgoing(p), {"1", "2"}, "six finished Top retained, not level-first")
+        for _, row in ipairs(p.moveIn) do eq(row.channel, "base", "incoming explicit internal base channel") end
+        eq(p.protectedCount, 492, "reserved protection not counted in competing eighth")
+        eq(p.counts.inventoryAfter, 500, "dual capacity500")
+        eq(p.counts.inventoryBefore+p.counts.lootboxBefore,p.counts.inventoryAfter+p.counts.lootboxAfter,"dual exact count conservation")
+        same(plan(h, bag, box), p, "dual repeated deterministic")
+        same({bag,box}, before, "dual all source fields unchanged")
+        F.assertAliases(aliases)
+        eq(h.randomCalls, 0, "dual no RNG")
+    end)
+    run("small competing quotas0/1/2/3/4 protect finished single and retain both from two", function()
+        local h = new()
+        for count = 0, 4 do
+            local bag = constrained(h, count)
+            for i = 1, count do put(bag, i, ready(h, 1000+i*100)) end
+            local p = plan(h, bag, F.box({base(h,100),base(h,110)}))
+            eq(p.moveInCount, count >= 2 and 1 or 0, "small quota base allowance " .. count)
+            eq(p.moveOutCount, p.moveInCount, "small quota exchange balance " .. count)
+            if count >= 2 then
+                eq(p.moveIn[1].index, 2, "small quota highest base")
+                eq(p.moveOut[1].key, "1", "best finished remains")
+            end
+        end
+        eq(h.randomCalls, 0, "small quotas no RNG")
+    end)
+    run("overlapping finished/base Top deduplicates and returns allowance to finished", function()
+        local h = new()
+        local bag = constrained(h, 8)
+        for i = 1, 8 do put(bag, i, ready(h, 1000+i*100)) end
+        local sharedTop = base(h,200)
+        sharedTop.affixes = { { affixId=16, quality=5, value=2000 } }
+        put(bag,8,sharedTop)
+        local box = F.box({base(h,100),base(h,110),base(h,120)})
+        local p = plan(h,bag,box)
+        same(incoming(p), {3}, "one overlapping Top consumes no duplicate slot, only one base-only enters")
+        same(outgoing(p), {"1"}, "overlap spare slot returns to seventh finished")
+        eq(p.counts.inventoryAfter,500,"no overlap hole")
+        eq(p.moveIn[1].channel,"base","distinct high base remains")
+        eq(h.randomCalls,0,"overlap no RNG")
+    end)
+    run("base ranking balances quality and foundation not absolute level and ignores random affixes", function()
+        local h = new()
+        local bag=constrained(h,2)
+        put(bag,1,ready(h,2000)); put(bag,2,ready(h,1900))
+        local highLevel=base(h,50,1)
+        local highQuality=base(h,40,6)
+        local box=F.box({highLevel,highQuality})
+        local p=plan(h,bag,box)
+        same(incoming(p),{2},"lower-level stronger-quality base wins foundation")
+        eq(p.moveIn[1].channel,"base","selected for foundation not current score")
+        local projected=p.moveIn[1].baseScore
+        highQuality.affixes={ {affixId=17,quality=5,value=1000} }
+        p=plan(h,bag,box)
+        same(incoming(p),{2},"changing random affix cannot change foundation ordering")
+        eq(p.moveIn[1].baseScore,projected,"base score independent of random value/key/quality")
+        local sameBase=base(h,40,6)
+        box=F.box({sameBase,highQuality})
+        p=plan(h,bag,box)
+        same(incoming(p),{1},"base tie uses stable source index, not superior random affix")
+        eq(h.randomCalls,0,"quality foundation no RNG")
+    end)
+    run("base projection excludes corruption and investment multipliers while original protections remain",function()
+        local h=new()
+        local normal=base(h,100)
+        local corrupted=F.copy(normal)
+        corrupted.corruptBaseMult=1.1; corrupted.corruptCount=1; corrupted.baseStats=nil
+        local invested=F.copy(normal)
+        invested.ascendLevel=100; invested.enhanceLevel=100; invested.affixMult=100
+        local bag=F.bag(h,0)
+        local box=F.box({normal,corrupted,invested})
+        local before=F.copy(box)
+        local p=plan(h,bag,box)
+        local scores={}
+        for _,row in ipairs(p.moveIn) do scores[row.index]=row.baseScore end
+        eq(scores[1],scores[2],"corruption never increases foundation")
+        eq(scores[1],scores[3],"ascension and slot investment never increase foundation")
+        check(p.reasons.corruption>=1 and p.reasons.investment>=1,"protected seed metadata retained")
+        same(box,before,"projection never strips source modifiers")
+        bag=constrained(h,0)
+        p=plan(h,bag,box)
+        eq(p.moveInCount,0,"full protected inventory cannot be displaced by either channel")
+        eq(p.moveOutCount,0,"full protection no evacuation")
+        eq(h.randomCalls,0,"projection exclusions no RNG")
+    end)
+    run("finished ties prefer higher foundation", function()
+        local h=new()
+        local bag=constrained(h,1)
+        put(bag,1,ready(h))
+        local nextBase=base(h,100)
+        local current=h.Power.genericScore(h.Query.hydrateCopy(bag.inventory["1"]))
+        local baseValue=h.Power.genericScore(h.Query.hydrateCopy(nextBase))
+        local AD=h.require("systems.AttributeDef")
+        local weight=AD.META.physAtk.valueModel
+        nextBase.affixes={{affixId=16,quality=5,value=(current-baseValue)/weight}}
+        -- 用小于一分的确定性微调落同一floor区间，避免浮点边界低一分。
+        nextBase.affixes[1].value=nextBase.affixes[1].value+0.1/weight
+        eq(h.Power.genericScore(h.Query.hydrateCopy(nextBase)),current,"actual equal finished score")
+        local p=plan(h,bag,F.box({nextBase}))
+        same(incoming(p),{1},"same finished score stronger foundation breaks tie")
+        eq(p.moveIn[1].channel,"ready","single allowance is still finished channel")
+        eq(h.randomCalls,0,"tie no RNG")
+    end)
+    for _, failure in ipairs({"false","nil","throw"}) do
+        run("dual channel service "..failure.." rollback then retry conserves both channels and is idempotent",function()
+            local h=new()
+            local modules=F.modules(h,500)
+            modules.equipment=constrained(h,4)
+            for i=1,4 do put(modules.equipment,i,ready(h,1000+i)) end
+            modules.lootbox=F.box({base(h,100),base(h,110)})
+            h:attach(modules); h:connectService(); modules=h.modules
+            local p=preview(h)
+            eq(p.moveInCount,1,"service actual base-only move")
+            local before,aliases=F.copy(modules),F.aliases(modules)
+            local objects,count=objectSet(modules)
+            h.failure=failure
+            eq(h.Service.ApplyInventoryCuration(1,p.token),false,"dual failed save refuses")
+            same(modules,before,"dual failed save all fields rolled back")
+            F.assertAliases(aliases)
+            eq(#h.notificationOrder,0,"dual failed save no notification")
+            h.failure=""
+            apply(h,p.token)
+            conserved(modules,objects,count)
+            eq(h.ES.getInventoryCount(modules.equipment),500,"dual successful retry capacity")
+            eq(h.flushCalls,2,"dual same-token retry persists once more")
+            local again=preview(h)
+            eq(again.changed,false,"dual channels second preview no churn")
+            eq(h.randomCalls,0,"dual preview/recompute/rollback/retry no RNG")
+        end)
+    end
+end
+
 local function main()
     planningTests()
     balancedPlanningTests()
+    dualChannelTests()
     serviceTests()
     balancedServiceTests()
     print(TAG .. " SUMMARY cases=" .. cases .. " assertions=" .. assertions .. " failures=" .. failures)

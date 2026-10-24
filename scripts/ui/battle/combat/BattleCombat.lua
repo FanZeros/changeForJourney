@@ -1454,6 +1454,10 @@ local function performAttack(attacker, targetList, isAlly)
                         local shieldAfter = (curTgt.attrs.energyShield or 0) + (curTgt.attrs.tempEnergyShield or 0)
                         local takenForStats = actual + math.max(0, shieldBefore - shieldAfter)
                         ART.checkShieldBreak(curTgt, shieldBefore)
+                        -- 与通用伤害一致：按总盾归零判断，先分发神器，再回复星图盾。
+                        if shieldBefore > 0 and shieldAfter <= 0 then
+                            TAL.onStarShieldBreak(curTgt)
+                        end
                         syncUnitHp(curTgt)
                         healAfterPrimaryHit(actual)
 

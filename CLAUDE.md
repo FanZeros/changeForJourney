@@ -12,6 +12,39 @@
 4. **分支纪律**：以当前任务授权为准。三传说觉醒联动基于本地 `702a70396b42557f316fa009b3e129b6cd0ea98c`，独立任务分支 `feat1011/legendary-awakening-synergy`；已授权提交／正常push／创建workspace1005 PR。**已正常push并创建 PR #148：https://github.com/FanZeros/changeForJourney/pull/148**，head=feat1011/legendary-awakening-synergy（c64364a4）／base=workspace1005（45067c3a），open/draft=false/merged=false，16文件 +1038/−40，未自动合并发布。推送使用沙箱 SSH deploy key（`~/.ssh/changeForJourney_ed25519`，走 ssh.github.com:443 + 本地代理）；PR 创建经用户即时提供的 PAT 调用 API，令牌仅进程内即时鉴权，未写入 remote／Git 配置／源码／日志／记忆，已核零残留。后续史诗仅觉醒Ⅱ本地开发／测试／构建，不做Ⅲ，不自动纳入传说PR或扩大发布授权。不混入其他会话改动、本地 `.project`／上传／验证材料。**绝不推送到任何 `workspace` 系列或原基线分支**，不强推、不自动合并或发布。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 2026-10-24 · 高相似运行管线兼容重构
+
+- Git已实证：提交`55bdbfe1`（32白名单），随后合入目标`8f216f00`为`c33d8a10`；两次正常push均exit0，ls-remote核对远端与本地`c33d8a10`一致。正式 **PR #202** https://github.com/FanZeros/changeForJourney/pull/202，head=`refactor1005/runtime-pipelines-20261024`、base=`workspace1005`，创建返回open/draft=false/merged=false，未称CI通过或已合并。未推workspace系列、不强推、不自动合并发布；凭据仅进程内askpass使用并已删除，未写入remote／Git配置／源码／日志／记忆。
+
+- 固定workspace1005@c850e5d3，独立refactor1005/runtime-pipelines-20261024。用户已授权正常push本任务分支及PR，不推workspace系列、不强推、不合并发布；凭据不持久化。目前未commit/push/PR，成功后另记。
+- 28生产模块实质重组，公开API、数值、RNG、通知及异常部分态保持。固定296/390文件、216配对：90%以上74到46，80%以上102到79，对称行文本44.9054%到43.0540%；文本指标非语义或原创性证明，仍46项高相似，不称全仓完成。
+- 官方b44成功553Lua，28源码/共享根/实际载荷字节一致，根index保持、scripts仅白名单变化。修改文件LSP无Error，构建守卫daemon starting跳过；旧压缩81派生错误保留。36规范单测OK；最终32白名单暂存、2977路径，20旧规范错误与固定基线逐项一致、警告0、新增0，diff --check退出0。
+- 最终组合切关、配装120、护盾、神器314、成长1697实际ALL PASS/exit0。离线1045失败中1044逐项同基线，新增仅旧测试查找私有moduleData异常，适配结果另记；不称通过。塔132断言88旧失败；BattleLab五局逐runs同而全报告两处浮点尾差，20局timeout不通过。
+- 最后仅将既有离线测试的dispatcher私有upvalue注入改为公开reset/publishLive/subscribe/setOnAnyUpdate，原断言保留；scene_display218/0，整套1044旧失败逐项同固定基线、新增0/harness0。随后官方b45成功，28生产+1测试载荷29/29字节一致；不把旧失败说成通过。
+- 三服务130差分、9负对照、38可达检查通过，四配置另有54独立与42父复核。验证材料工程外，不夹.project、玩家档、上传或他人修改，不改tempGame。持续推进，当前直接继续不再提问，尊重停止和权限边界；不冒称设备/性能/WASM验收。
+## 上次做了什么（2026-10-24，离线来源左侧大字，PR #200 已创建）
+
+- **已正常push并创建正式PR #200**：https://github.com/FanZeros/changeForJourney/pull/200，功能提交 `75748a5f9333e33483019d39d9217ac6510b2c0c`，head=`fix1024/offline-source-readable`／base=`workspace1005@8f216f00`，创建时open／draft=false／merged=false，mergeable尚未计算，七文件 +592/−248。push实际exit0且远端SHA与本地一致，目标未被本会话推送；同源open查重0后创建，不自动合并发布。鉴权经标准credential接口进程内使用，未写remote／Git配置／源码／日志／记忆；本机既有store不等于磁盘无凭据。下文“成功后补记”为此前过程记录。
+
+- 用户最新明确“pr”，授权本项七文件白名单提交、正常push独立 `fix1024/offline-source-readable` 并创建base=`workspace1005`的PR，不自动合并发布。已fetch并无冲突快进最新目标 `8f216f00`，音乐PR196及性能PR195均已由外部合入，不重复纳入新PR；原七项dirty逐字节保持、上游十个净路径与目标完全一致。
+- 融合后官方b128成功，1646项／738根Lua实际UUID-hash载荷逐字节及声明size一致，源码集合／最终冻结一致，候选／内证／临时入口0入包。五任务Lua逐文件severity1 Error0，不称全仓静态清零；两.project与PR构建前备份逐字节恢复2/2，不提交身份或临时ignore。
+- b128后六独立Runtime均业务通过／actualexit0／无timeout：布局19853、离线边界607、覆盖层5521、CE33组346712、切关及上游性能监测28组1028。规范36单测实际通过；实际提交／push／PR结果成功后补记，不预称已上传。鉴权仅标准credential接口进程内即时使用，不写remote／Git配置／源码／日志／记忆；持续推进且尊重停止／拒绝与安全边界，不推workspace系列／强推／自动合并发布，不混上传／技能／候选／本地配置／内证。
+
+## 上次做了什么（2026-10-24，离线来源左侧大字，本地完成）
+
+- 用户截图要求来源别再缩小并放左侧，随后明确“改下／继续”。独立本地 `fix1024/offline-source-readable@620cc6db`，仅本地实现、测试及官方构建；未提交／push／PR／合并发布，不继承音乐PR196外发授权，不读玩家档、不运行main、不清档。
+- 每队左480设计宽集中60号队名、56号来源和固定暂停说明，右侧四头像／118宽经验条保留；来源逐码点换行不缩字，极长名称左区独立滚动、行高封顶420，动态奖励高度与绘制／点击／拖动／滚动／领取共用布局。冻结teamSources、旧数据／source-only／塔暂停、原约5秒经验和奖励／领取规则保持。滚轮透传正确画布坐标；短来源整左行消费输入，避免误滚奖励。
+- 最终官方b127成功，1646项／738根Lua实际UUID-hash载荷逐字节及声明size一致、源码集合无缺失／额外、候选／内证／临时视觉入口0入包。五任务Lua逐文件severity1 Error0，不称全仓静态清零。两.project按本轮before恢复，不提交身份及临时ignore。
+- b127后五独立Runtime全部业务ALL PASS／actualexit0／无timeout：新布局12组19853断言／431draw／34987nativeBounds、离线边界607、覆盖层412组5521、CE一天33组346712及切关。保留原经验／玩家等级／cascade业务断言；新增五语、1–4／12人、乱序／旧数据、真实字体完整边界、长文全文滚动、输入隔离、动态奖励与失败重试，FileFS／RNG0。首轮84个英文队名字墨间距失败保留，生产队名上移8后原严格边界通过，不加epsilon或降断言。
+- 三张实际Read受控软件渲染图（1280×800中文／1590×987英文塔零预览／1920×1080长文）均ready、正常Stop、actualexit0、无脚本／资源Error；真头像与字体，仍非完整Boot、真实玩家档、设备触控或性能验收。前两轮视觉夹具缺UnitAttributes／TalentEffect明确依赖未ready，原日志保留、不计通过；临时入口及meta已归档移出scripts，截图仅内证 `.git/validation/offline-source1024`。headless环境shader错误及中间切关bootstrap启动失败保留，最终同入口通过。
+- 持续推进授权且尊重停止／权限与安全边界；按当前直接继续不机械问询，不推workspace系列／强推／自动合并发布，不混上传／技能／候选／本地配置／内证，凭据不持久化。
+## 上次做了什么（2026-10-24，装备固定数值成长与前轮属性修复）
+
+- 用户明确授权按方案调整固定数值、提交并正常推送当前任务分支；不推 workspace 系列、不强推、不自动合并或发布。当前分支 `balance1024/critical-rate-budget`，保留前轮暴率／星图预算及护盾、HOT、腐化单位换算修复，不纳入无关素材、本地配置、凭据或内部验证。
+- 固定生命／每秒回血／攻击回血在装备 Lv100／200 生效倍率为 1.8／2.8，双攻为 1.6／2.4，固定护盾为 2／3.5；1～50级不变、区间线性、200以上倍率封顶。主副升阶与普通词缀统一出口一次补偿，历史 ascBonus 同享；洗练两处均传装备上下文，按静态权重×补偿倍率转移旧投入，同属性原量、跨属性不取整。六围、百分比、固有及魔化排除；不改 raw、VM、生成 RNG 或存档协议。纯数值逻辑拆入 `EquipmentStatGrowth`，保留 EquipmentSystem 公开接口。
+- 最终官方 build64 成功，27份本轮及前轮改动 Lua 载荷与源码逐字节、声明 size 一致；隔离 Runtime 的源码快照未变。12项回归业务通过、实际 exit0／无超时：新固定值专项54355检查／6075换算组合／180生成存读组合、装备聚合70359、暴率7366、腐化预算6517、洗练7190、怨引10542、预览152、护盾137、持续效果447、真实盾生命周期245及升阶／原腐化回归。独立副本关闭新曲线的负对照8599失败，未回退项目源码。
+- 新生产模块及本轮专项逐文件 LSP 无 Error；旧聚合测试两条既有诊断未混修，不称全仓静态清零。前轮 integration 的 UI 隔离依赖缺口未解决，本轮未把它计入通过；不等于设备／GPU／完整实战平衡验收。验证材料仅 `/home/Maker/flat-growth-8jkrwl2u` 及独立负对照目录；未跑 main、未读玩家档。提交推送结果以最终实际 Git 返回为准。
+
 ## 上次做了什么（2026-10-24，战斗音乐三首曲池，PR #196 已创建）
 
 - **已正常push并创建正式PR #196**：https://github.com/FanZeros/changeForJourney/pull/196，功能提交 `96cb6d495dcb0100d2defcd6f7809e1ea1ba287a`，head=`feat1024/battle-bgm-playlist`／base=`workspace1005@629c2fc8`，创建时open／draft=false／merged=false，mergeable尚未计算。8文件 +371/−161，仅两生产／测试Lua、两OGG及meta、玩法文档与本交接；push实际exit0且ls-remote源SHA与本地一致，目标未被本会话推送。创建前同源open=0；Git push走既有SSH，PR API经标准credential接口读取既有store后仅进程内使用，本轮未写入令牌或修改认证配置；本机已有明文store，不能称磁盘无凭据，聊天暴露令牌应撤销轮换。规范36单测通过，3383候选路径23项旧问题与目标逐项一致、新增0。不自动合并发布。

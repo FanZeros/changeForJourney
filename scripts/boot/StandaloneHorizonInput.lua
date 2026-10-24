@@ -15,6 +15,7 @@ local MarketPage        = require("ui.market.MarketPage")
 local DungeonBattleScene = require("ui.dungeon.DungeonBattleScene")
 local TowerBattleScene   = require("ui.tower.TowerBattleScene")
 local DungeonPage        = require("ui.dungeon.DungeonPage")
+---@type JourneyBackpackPanel
 local BackpackPanel      = require("ui.backpack.BackpackPanel")
 local LootBox           = require("ui.loot.LootBox")
 local LootBoxPage       = require("ui.loot.LootBoxPage")
@@ -68,6 +69,10 @@ function Input.bind(ctx)
     local function pointerPosition()
         return touchPosition or input:GetMousePosition()
     end
+    local function pointerDesign()
+        local mp = pointerPosition()
+        return toDesign(mp.x / dpr(), mp.y / dpr())
+    end
     ctx.pointerSource = function() return touchPosition and touchPosition.id or "mouse" end
     ctx.getLastTap = function() return lastTapTime end
     ctx.setLastTap = function(t) lastTapTime = t end
@@ -109,7 +114,7 @@ function Input.bind(ctx)
         panel = BackpackPanel, RT = RT, width = logicalW, height = logicalH, dpr = dpr,
         DS = Viewport.DS, tri = BattleTriPage.isOpen, source = ctx.pointerSource,
         blocked = function()
-            return RewardPopup.isOpen() or OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen()
+            return RewardPopup.blocksPageInput() or OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen()
                 or PlayerInfoPanel.isOpen() or UpdateNoticePopup.isOpen() or DarkTitleScreen.isOpen()
                 or LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()
                 or CEPanel.isOpen() or TutorialManager.isActive() or StartScreen.isOpen()
@@ -136,7 +141,7 @@ function Input.bind(ctx)
     local towerPress = nil ---@type table?
     local function towerKey()
         return TowerBattleScene.getPresentationKey() .. ":" .. tostring(TaskPage.isOpen())
-            .. ":" .. tostring(RewardPopup.isOpen()) .. ":" .. tostring(PlayerInfoPanel.isOpen())
+            .. ":" .. tostring(RewardPopup.blocksPageInput()) .. ":" .. tostring(PlayerInfoPanel.isOpen())
             .. ":" .. tostring(OfflineRewardPanel.isOpen()) .. ":" .. tostring(LevelUpPopup.isOpen())
             .. ":" .. tostring(UpdateNoticePopup.isOpen()) .. ":" .. tostring(DarkTitleScreen.isOpen())
             .. ":" .. tostring(LetterIntro.isOpen()) .. ":" .. tostring(IntroCutscene.isActive())
@@ -161,7 +166,7 @@ function Input.bind(ctx)
         marqueeGesture.observe()
     end
     local function towerInputActive()
-        return TowerBattleScene.isActive() and not RewardPopup.isOpen() and not PlayerInfoPanel.isOpen()
+        return TowerBattleScene.isActive() and not RewardPopup.blocksPageInput() and not PlayerInfoPanel.isOpen()
             and not OfflineRewardPanel.isOpen() and not LevelUpPopup.isOpen()
             and not UpdateNoticePopup.isOpen() and not DarkTitleScreen.isOpen()
             and not LetterIntro.isOpen() and not IntroCutscene.isActive()
@@ -234,19 +239,8 @@ function Input.bind(ctx)
         terminalInput.down(sx, sy, button)
     end
 
-    local function offlineInputActive()
-        return OfflineRewardPanel.isOpen() and not UpdateNoticePopup.isOpen()
-            and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
-            and not IntroCutscene.isActive() and not ScenarioDialogue.isActive()
-    end
-
-    local function levelUpInputActive()
-        return LevelUpPopup.isOpen() and not LevelUpPopup.isPresentationBlocked()
-            and not OfflineRewardPanel.isOpen()
-            and not UpdateNoticePopup.isOpen() and not DarkTitleScreen.isOpen()
-            and not LetterIntro.isOpen() and not IntroCutscene.isActive()
-            and not ScenarioDialogue.isActive()
-    end
+    local offlineInputActive = horizonWheel.offlineInputActive
+    local levelUpInputActive = horizonWheel.levelUpInputActive
 
     -- 升级独占整次手势；出现时只取消下层按压，不把旧拖拽 Up 派成新按钮点击。
     -- Popup 自管进入/退出动画的 consume；这里不判断动画阶段、不复刻它的按钮布局。
@@ -310,14 +304,7 @@ function Input.bind(ctx)
     local tutorialStartX, tutorialStartY = 0, 0
     local tutorialEntryPress = nil ---@type any
 
-    local function artworkBlocked()
-        return StartScreen.isOpen() or DarkTitleScreen.isOpen() or LetterIntro.isOpen()
-            or IntroCutscene.isActive() or ScenarioDialogue.isActive() or RewardPopup.isOpen()
-            or PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen() or OfflineRewardPanel.isOpen()
-            or UpdateNoticePopup.isOpen() or CEPanel.isOpen() or TutorialManager.isActive()
-            or StageSelectDialog.isOpen() or SweepDialog.isOpen() or DamageStatsPanel.isOpen()
-            or TerminalConfirmDialog.isOpen() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive()
-    end
+    local artworkBlocked = horizonWheel.artworkBlocked
 
     local function curationFrameKey()
         return table.concat({logicalW(), logicalH(), RT.frameScale or 1,
@@ -400,8 +387,7 @@ function Input.bind(ctx)
         equipmentPressPanel = nil
         detailDismissPress = false  -- [浮选详情修复] 每次按下先复位，防早退路径残留误抑制下次 tap
         if vg() then
-            local mousePos = pointerPosition()
-            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local sx, sy = pointerDesign()
             if CEPanel.handleDown(sx, sy, logicalH()) then
                 artifactGesture.cancel()
                 levelPress, levelMoved = false, false
@@ -425,8 +411,7 @@ function Input.bind(ctx)
             return
         end
         if button == MOUSEB_LEFT and seamGesture then
-            local mp = pointerPosition()
-            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            local sx, sy = pointerDesign()
             if seamHitAt(sx, sy) and (not seamInputBlocked or not seamInputBlocked())
                 and not equipOverlayDesign(sx, sy) then
                 cancelUnderlyingPress()
@@ -435,8 +420,7 @@ function Input.bind(ctx)
             end
         end
         if tutorialInputActive() then
-            local mp = pointerPosition()
-            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            local sx, sy = pointerDesign()
             if button == MOUSEB_LEFT then
                 tutorialPress = true
                 tutorialStartX, tutorialStartY = sx, sy
@@ -465,8 +449,7 @@ function Input.bind(ctx)
             levelPress, levelMoved = false, false
             if offlineTouchId ~= nil then return end
             cancelUnderlyingPress()
-            local mousePos = pointerPosition()
-            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local sx, sy = pointerDesign()
             OfflineRewardOverlay.handleDown(sx, sy, button)
             return
         end
@@ -479,16 +462,14 @@ function Input.bind(ctx)
         end
         if rewardGesture.pointer("begin", button) then return end
         if TerminalConfirmDialog.isOpen() then
-            local mp = pointerPosition()
-            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            local sx, sy = pointerDesign()
             terminalDown(sx, sy, button)
             return
         end
         if TowerBattleScene.isActive() and towerInputActive() then
             cancelUnderlyingPress()
             if button ~= MOUSEB_LEFT then return end
-            local mp = pointerPosition()
-            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            local sx, sy = pointerDesign()
             local layout = TowerBattleScene.getLayout(logicalW(), logicalH())
             local panel = require("ui.tower.TowerLayout").panelAt(layout, sx, sy)
             towerPress = { key = towerKey(), w = logicalW(), h = logicalH(),
@@ -510,8 +491,7 @@ function Input.bind(ctx)
         end
         if button == MOUSEB_LEFT and not (DungeonBattleScene.isOpen() or HorizonPageModalActive()) then
             detailDismissPress = false
-            local mousePos = pointerPosition()
-            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local sx, sy = pointerDesign()
             local dx, dy, ED = equipOverlayDesign(sx, sy)
             if dx then
                 equipOverlayPress = true
@@ -540,13 +520,12 @@ function Input.bind(ctx)
             end
         end
         if button == MOUSEB_RIGHT then
-            if RewardPopup.isOpen() or OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() then return end
+            if RewardPopup.blocksPageInput() or OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() then return end
             local pid, dx, dy = HorizonResolveMouse()
             if input:GetKeyDown(KEY_LSHIFT) or input:GetKeyDown(KEY_RSHIFT) then
                 -- 修饰右键独立消费，不得在空格/遮挡/不支持的页面回落成穿戴或回收。
                 if DungeonBattleScene.isOpen() or HorizonPageModalActive() then return end
-                local mp = pointerPosition()
-                local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+                local sx, sy = pointerDesign()
                 if equipOverlayDesign(sx, sy) then return end
                 if pid == 'left' and not LootBoxPage.isOpen() and not TaskPage.isOpen()
                     and BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
@@ -572,8 +551,7 @@ function Input.bind(ctx)
                     return
                 end
                 if not TaskPage.isOpen() and BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
-                    local mp = pointerPosition()
-                    local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+                    local sx, sy = pointerDesign()
                     if marqueeGesture.begin(dx, dy, sx, sy) then return end
                     BackpackPanel.handleRightClick(dx, dy)
                 end
@@ -630,13 +608,13 @@ function Input.bind(ctx)
         if pid == 'modal' and HorizonPageModalActive() then
             return
         end
-        if pid == 'modal' and RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        if pid == 'modal' and RewardPopup.blocksPageInput() then
             RewardPopup.handleDragBegin(dx, dy)
             return
         end
         if pid == 'none' then return end
         -- 归属面板的奖励弹窗：其面板内按下先交给弹窗（拖拽滚动等）
-        if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+        if RewardPopup.blocksPageInput()
             and RewardPopup.currentPanel() == pid then
             RewardPopup.handleDragBegin(dx, dy)
             return
@@ -652,8 +630,7 @@ function Input.bind(ctx)
                 return
             end
             if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
-                local mousePos = pointerPosition()
-                local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+                local sx, sy = pointerDesign()
                 local peek = BackpackPanel.peekEquipAt(dx, dy)
                 if peek then
                     EquipCrossDrag.arm(peek, sx, sy, "backpack")
@@ -675,8 +652,7 @@ function Input.bind(ctx)
             -- [0930] 配装页装备（含角色六装备槽已装备）可跨栏拖到锻炉工作台/换槽
             local CharacterDetail = require("ui.character.detail.CharacterDetail")
             if CharacterDetail.isOpen() and CharacterDetail.isEquipTab and CharacterDetail.isEquipTab() then
-                local mousePos = pointerPosition()
-                local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+                local sx, sy = pointerDesign()
                 local EquipPanel = require("ui.character.detail.CharacterDetailEquip")
                 local peek = EquipPanel.peekSlotEquipAt(dx, dy) or EquipPanel.peekItemAt(dx, dy)
                 if peek then
@@ -688,26 +664,38 @@ function Input.bind(ctx)
         end
     end
 
+    local hover = horizonWheel.bindHover({
+        RT = RT, equipOverlayDesign = equipOverlayDesign, artifactGesture = artifactGesture,
+        observe = function()
+            rewardGesture.observe()
+            ctx.observeTowerPress()
+        end,
+        blocked = function()
+            return RewardPopup.isLarge() or marqueeGesture.hasPress()
+                or TowerBattleScene.isActive() or towerPress ~= nil
+                or OfflineRewardPanel.isOpen() or UpdateNoticePopup.isOpen() or LevelUpPopup.isOpen() or levelPress
+                or DarkTitleScreen.isOpen() or LetterIntro.isOpen() or IntroCutscene.isActive()
+                or ScenarioDialogue.isActive() or pressValid or equipOverlayPress or EquipCrossDrag.isArmed()
+        end,
+    })
+
     function HandleMouseMoveHorizon(eventType, eventData)
         if sweepBlocksInput() then return end
         if startupBlocksInput() then return end
         if curationPointer("move", MOUSEB_LEFT) then return end
         if artworkPointer("move", MOUSEB_LEFT) then return end
         if marqueeGesture.hasPress() then
-            local mp = pointerPosition()
-            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            local sx, sy = pointerDesign()
             marqueeGesture.move(sx, sy)
             return
         end
         if towerPress then
-            local mp = pointerPosition()
-            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            local sx, sy = pointerDesign()
             towerMove(sx, sy)
             return
         end
         if tutorialEntryPress then
-            local mp = pointerPosition()
-            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            local sx, sy = pointerDesign()
             if math.abs(sx - tutorialStartX) + math.abs(sy - tutorialStartY) >= TAP_THRESHOLD
                 or not TutorialManager.isDetailEntryPressValid(tutorialEntryPress)
                 or tutorialEntryPress.width ~= logicalW() or tutorialEntryPress.height ~= logicalH()
@@ -719,8 +707,7 @@ function Input.bind(ctx)
             return
         end
         if seamGesture.hasPress() then
-            local mp = pointerPosition()
-            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            local sx, sy = pointerDesign()
             seamGesture.move(sx, sy, seamInputBlocked and seamInputBlocked())
             return
         end
@@ -731,8 +718,7 @@ function Input.bind(ctx)
             levelPress, levelMoved = false, false
             if offlineTouchId ~= nil then return end
             cancelUnderlyingPress()
-            local mousePos = pointerPosition()
-            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local sx, sy = pointerDesign()
             OfflineRewardOverlay.handleMove(sx, sy)
             return
         end
@@ -750,7 +736,7 @@ function Input.bind(ctx)
             if not terminalInput or terminalInput.move(artifactX, artifactY) then return end
         end
         if artifactGesture.move(artifactX, artifactY) then return end
-        local pid, dx, dy = HorizonResolveMouse()
+        local pid, dx, dy = HorizonResolveMouse(artifactX, artifactY)
         if not pressValid then artifactGesture.hover(pid, artifactX, artifactY) end
         if lootPress then
             if pid == 'left' and pressValid then
@@ -762,8 +748,7 @@ function Input.bind(ctx)
             return
         end
         if EquipCrossDrag.isArmed() then
-            local mousePos = pointerPosition()
-            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local sx, sy = pointerDesign()
             if EquipCrossDrag.move(sx, sy) then
                 return
             end
@@ -782,7 +767,7 @@ function Input.bind(ctx)
             return
         end
         -- 归属面板的奖励弹窗：其面板内拖拽交给弹窗滚动
-        if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+        if RewardPopup.blocksPageInput()
             and RewardPopup.currentPanel() == pid then
             RewardPopup.handleDragMove(dx, dy)
             return
@@ -798,52 +783,14 @@ function Input.bind(ctx)
             return
         end
         if equipOverlayPress then
-            local mousePos = pointerPosition()
-            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local sx, sy = pointerDesign()
             local odx, ody, ED = equipOverlayDesign(sx, sy)
             if odx and ED then ED.handleDragMove(odx, ody) end
             return
         end
         if not pressValid then
-            -- 鼠标进浮选详情后保持候选，不让来源仓库的离开事件立即关闭它。
-            local mp = pointerPosition()
-            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
-            if equipOverlayDesign(sx, sy) then return end
-            if SweepDialog.isOpen() and pid == 'tri' then
-                BattleTriPage.handleDragMove(dx, dy)
-                return
-            end
-            if LootBoxPage.isOpen() then
-                if pid == 'left' then LootBoxPage.handleHover(dx, dy)
-                else LootBoxPage.handleHover(-1, -1) end
-            end
-            if pid == 'right'
-                or (pid == 'center' and BottomNav.getSelectedIndex() == 1 and not BlacksmithPage.isOpen()) then
-                if CharacterPanel.handleHover then CharacterPanel.handleHover(dx, dy) end
-            else
-                if CharacterPanel.handleHover then CharacterPanel.handleHover(-1, -1) end
-            end
-            if pid == 'left' then
-                if MarketPage.isOpen and MarketPage.isOpen() and MarketPage.handleHover then
-                    MarketPage.handleHover(dx, dy)
-                elseif MarketPage.handleHover then
-                    MarketPage.handleHover(-1, -1)
-                end
-                if BackpackPanel.isOpen and BackpackPanel.isOpen() and BackpackPanel.handleHover then
-                    BackpackPanel.handleHover(dx, dy)
-                elseif BackpackPanel.handleHover then
-                    BackpackPanel.handleHover(-1, -1)
-                end
-                if EquipmentBag.isOpen and EquipmentBag.isOpen() and EquipmentBag.handleHover then
-                    EquipmentBag.handleHover(dx, dy)
-                elseif EquipmentBag.handleHover then
-                    EquipmentBag.handleHover(-1, -1)
-                end
-            else
-                if MarketPage.handleHover then MarketPage.handleHover(-1, -1) end
-                if BackpackPanel.handleHover then BackpackPanel.handleHover(-1, -1) end
-                if EquipmentBag.handleHover then EquipmentBag.handleHover(-1, -1) end
-            end
+            local sx, sy = pointerDesign()
+            hover.move(pid, dx, dy, sx, sy)
             return
         end
         if pid == 'tri' then
@@ -867,47 +814,9 @@ function Input.bind(ctx)
         end
     end
 
-    -- 鼠标静止时也推进装备悬停计时（Standalone.HandleUpdate 每帧调用）。
-    -- 移到其他格子由命中检测立即收起旧说明。
+    -- 独立 Tick 保留每帧计时；MouseMove 不会被合并或推迟。
     function HandleEquipmentHoverTickHorizon()
-        Curation.observe()
-        if Curation.isOpen() or Curation.hasPress() then return end
-        AwakeningArtwork.observe(RT, artworkBlocked())
-        if AwakeningArtwork.isOpen() or AwakeningArtwork.hasPress() then return end
-        rewardGesture.observe()
-        ctx.observeTowerPress()
-        if RewardPopup.isLarge() or marqueeGesture.hasPress() then return end
-        if TowerBattleScene.isActive() or towerPress then return end
-        if OfflineRewardPanel.isOpen() or UpdateNoticePopup.isOpen() or LevelUpPopup.isOpen() or levelPress then return end
-        if DarkTitleScreen.isOpen() or LetterIntro.isOpen() or IntroCutscene.isActive()
-            or ScenarioDialogue.isActive() or pressValid or equipOverlayPress
-            or EquipCrossDrag.isArmed() then return end
-        local mp = pointerPosition()
-        local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
-        if equipOverlayDesign(sx, sy) then return end
-        local pid, dx, dy = HorizonResolveMouse()
-        artifactGesture.hover(pid, sx, sy)
-        if pid == 'right'
-            or (pid == 'center' and BottomNav.getSelectedIndex() == 1 and not BlacksmithPage.isOpen()) then
-            if CharacterPanel.handleHover then CharacterPanel.handleHover(dx, dy) end
-        elseif CharacterPanel.handleHover then
-            CharacterPanel.handleHover(-1, -1)
-        end
-        if pid == 'left' then
-            if MarketPage.isOpen and MarketPage.isOpen() and MarketPage.handleHover then
-                MarketPage.handleHover(dx, dy)
-            end
-            if BackpackPanel.isOpen and BackpackPanel.isOpen() and BackpackPanel.handleHover then
-                BackpackPanel.handleHover(dx, dy)
-            end
-            if EquipmentBag.isOpen and EquipmentBag.isOpen() and EquipmentBag.handleHover then
-                EquipmentBag.handleHover(dx, dy)
-            end
-        else
-            if MarketPage.handleHover then MarketPage.handleHover(-1, -1) end
-            if BackpackPanel.handleHover then BackpackPanel.handleHover(-1, -1) end
-            if EquipmentBag.handleHover then EquipmentBag.handleHover(-1, -1) end
-        end
+        hover.tick()
     end
 
     function HandleMouseButtonUpHorizon(eventType, eventData)
@@ -921,8 +830,7 @@ function Input.bind(ctx)
         if artworkPointer("up", eventData["Button"]:GetInt()) then return end
         if marqueeGesture.hasPress() then
             if eventData["Button"]:GetInt() == MOUSEB_RIGHT and ctx.pointerSource() == "mouse" then
-                local mp = pointerPosition()
-                local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+                local sx, sy = pointerDesign()
                 marqueeGesture.up(sx, sy)
             else
                 marqueeGesture.cancel()
@@ -931,8 +839,7 @@ function Input.bind(ctx)
         end
         if towerPress then
             if eventData["Button"]:GetInt() ~= MOUSEB_LEFT or towerPress.source ~= ctx.pointerSource() then return end
-            local mp = pointerPosition()
-            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            local sx, sy = pointerDesign()
             towerMove(sx, sy)
             local p = towerPress
             local isTap = validateTowerPress() and towerInputActive() and not p.moved
@@ -957,8 +864,7 @@ function Input.bind(ctx)
         seamGesture.cancelIfBlocked()
         if seamGesture.hasPress() then
             if eventData["Button"]:GetInt() ~= MOUSEB_LEFT then return end
-            local mp = pointerPosition()
-            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            local sx, sy = pointerDesign()
             seamGesture.up(sx, sy, seamInputBlocked and seamInputBlocked())
             pressValid = false
             return
@@ -977,8 +883,7 @@ function Input.bind(ctx)
         tutorialEntryPress = nil
         if tutorialPress then
             tutorialPress = false
-            local mp = pointerPosition()
-            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            local sx, sy = pointerDesign()
             local moved = math.abs(sx - tutorialStartX) + math.abs(sy - tutorialStartY)
             if eventData["Button"]:GetInt() == MOUSEB_LEFT and moved < TAP_THRESHOLD
                 and tutorialInputActive() and TutorialManager.handleScreenClick(sx, sy, tutorialBlockedPress) then
@@ -1004,8 +909,7 @@ function Input.bind(ctx)
             levelPress, levelMoved = false, false
             if offlineTouchId ~= nil then return end
             cancelUnderlyingPress()
-            local mousePos = pointerPosition()
-            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local sx, sy = pointerDesign()
             if vg() and CEPanel.handleUp(sx, sy, logicalH()) then
                 OfflineRewardOverlay.cancel()
                 return
@@ -1064,14 +968,12 @@ function Input.bind(ctx)
             return
         end
         if eventData["Button"]:GetInt() == MOUSEB_LEFT then
-            local mp = pointerPosition()
-            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            local sx, sy = pointerDesign()
             if artifactGesture.up(sx, sy) then pressValid = false return end
         end
         if equipOverlayPress then
             equipOverlayPress = false
-            local mousePos = pointerPosition()
-            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local sx, sy = pointerDesign()
             local dx, dy, ED = equipOverlayDesign(sx, sy)
             local detail = ED or require("ui.character.equip.EquipmentDetail")
             detail.handleDragEnd()
@@ -1088,15 +990,14 @@ function Input.bind(ctx)
         local wasLootPress = lootPress
         if button == MOUSEB_LEFT then
             -- 领奖若在拖拽途中出现，先撤销旧来源，再走弹窗Up；不能先尝试落队。
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            if RewardPopup.blocksPageInput() then
                 CharacterPanel.handleDragEnd(-1, -1)
             end
             -- 不论鼠标在哪一栏、是否有新覆盖层，都释放遗匣的拖拽状态。
             LootBox.handleDragEnd(0, 0)
             lootPress = false
             if EquipCrossDrag.isArmed() then
-                local mousePos = pointerPosition()
-                local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+                local sx, sy = pointerDesign()
                 local dragged = EquipCrossDrag.finish(sx, sy)
                 if dragged then
                     if BackpackPanel.haltScroll then BackpackPanel.haltScroll() end
@@ -1126,8 +1027,7 @@ function Input.bind(ctx)
         if not bootReady_() then return end
         -- [DarkTitleScreen] 标题期任意释放 = 点击继续
         if DarkTitleScreen.isOpen() then
-            local mousePos = pointerPosition()
-            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local sx, sy = pointerDesign()
             if DarkTitleScreen.handleLanguageTap(sx, sy) then
                 return
             end
@@ -1169,16 +1069,16 @@ function Input.bind(ctx)
         equipmentPressPanel = nil
         -- 配装部位属于纯 UI 操作，详情外第一击也可立即选槽/取消；
         -- 判定放在真跨栏拖拽已结算之后，绝不把拖放当成点击。
-        if isTap and not TutorialManager.isActive() and not RewardPopup.isOpen()
+        if isTap and not TutorialManager.isActive() and not RewardPopup.blocksPageInput()
             and (pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1)) then
             local detail = require("ui.character.detail.CharacterDetail")
             if detail.handleEquipmentSlotTap then detail.handleEquipmentSlotTap(dx, dy) end
         end
         if detailDismissPress then
-            if isTap and not RewardPopup.isOpen() and not TutorialManager.isActive()
+            if isTap and not RewardPopup.blocksPageInput() and not TutorialManager.isActive()
                 and (pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1)) then
                 CharacterDetail.handleNavigationTap(dx, dy)
-            elseif isTap and not RewardPopup.isOpen()
+            elseif isTap and not RewardPopup.blocksPageInput()
                 and (not TutorialManager.isActive() or TutorialManager.getCurrentHighlight() == "equip_item_gifted")
                 and pid == 'left' and BackpackPanel.isOpen() and BackpackPanel.isLeftMode()
                 and BackpackPanel.peekEquipAt(dx, dy) then
@@ -1188,7 +1088,7 @@ function Input.bind(ctx)
             end
             detailDismissPress = false
             isTap = false
-        elseif isTap and pid == 'left' and not RewardPopup.isOpen() and not TutorialManager.isActive()
+        elseif isTap and pid == 'left' and not RewardPopup.blocksPageInput() and not TutorialManager.isActive()
             and not LootBoxPage.isOpen() and not TaskPage.isOpen()
             and BackpackPanel.isOpen() and BackpackPanel.isLeftMode() and BackpackPanel.peekEquipAt(dx, dy) then
             -- 装备格单击/双击自管时间窗，不受通用0.12秒按钮防抖吞掉第二击。
@@ -1215,7 +1115,7 @@ function Input.bind(ctx)
         end
         -- 全局领奖 / 离线收益必须在中缝返回与左栏页面之前消费。
         if pid == 'modal' and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            if RewardPopup.blocksPageInput() then
                 RewardPopup.handleDragEnd(dx, dy)
                 if isTap then RewardPopup.handleInput(dx, dy) end
                 return
@@ -1252,7 +1152,7 @@ function Input.bind(ctx)
                 if isTap then DungeonPage.handleInput(dx, dy) end
                 return
             end
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            if RewardPopup.blocksPageInput() then
                 RewardPopup.handleDragEnd(dx, dy)
                 if isTap then RewardPopup.handleInput(dx, dy) end
                 return
@@ -1281,7 +1181,7 @@ function Input.bind(ctx)
         -- 左面板：功能页组点击链
         if pid == 'left' then
             -- 归属左栏的奖励弹窗：左栏内任意点击交给弹窗（可交互/关闭）
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+            if RewardPopup.blocksPageInput()
                 and RewardPopup.currentPanel() == 'left' then
                 RewardPopup.handleDragEnd(dx, dy)
                 if isTap then RewardPopup.handleInput(dx, dy) end
@@ -1347,7 +1247,7 @@ function Input.bind(ctx)
         -- 右面板：角色链
         if pid == 'right' then
             -- 归属右栏的奖励弹窗：右栏内任意点击交给弹窗（可交互/关闭）
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+            if RewardPopup.blocksPageInput()
                 and RewardPopup.currentPanel() == 'right' then
                 RewardPopup.handleDragEnd(dx, dy)
                 if isTap then RewardPopup.handleInput(dx, dy) end
@@ -1363,7 +1263,7 @@ function Input.bind(ctx)
             return
         end
         -- 中面板：主视图链
-        if pid == 'center' and RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+        if pid == 'center' and RewardPopup.blocksPageInput()
             and RewardPopup.currentPanel() == 'center' then
             RewardPopup.handleDragEnd(dx, dy)
             if isTap then RewardPopup.handleInput(dx, dy) end

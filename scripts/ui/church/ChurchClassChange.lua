@@ -17,7 +17,7 @@ local BF             = require("systems.ButtonFeedback")
 local DarkIcon       = require("core.DarkIcon")  -- 矢量九宫格
 local NumberUtil     = require("core.NumberUtil")
 local KeywordText    = require("ui.widget.KeywordText")
-local EquipmentPower = require("systems.EquipmentPower")
+local ClassChangePower = require("ui.church.ClassChangePower")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -224,8 +224,7 @@ end
 -- 不在界面重复维护一份旧职业文案。
 
 local function getBranchPower(branchId)
-    local ctx = heroId() and EquipmentPower.getContext(heroId())
-    return ctx and EquipmentPower.evaluateAdvancement(ctx, branchId) or nil
+    return ClassChangePower.get(heroId(), branchId)
 end
 
 --- 转职消耗金币
@@ -318,6 +317,7 @@ end
 ---@param id number|nil
 function M.setHero(id)
     if currentHeroId ~= id then
+        ClassChangePower.clear()
         pop.confirmPopup = false
         M.confirmKwText:clear()   -- 切角色清关键词状态
     end

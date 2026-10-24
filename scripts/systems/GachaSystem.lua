@@ -1,283 +1,173 @@
--- ============================================================================
--- GachaSystem.lua - 抽卡核心逻辑
--- 负责概率计算、保底机制、消耗扣除、结果发放
--- ============================================================================
+-- 抽卡协调器：费用、品质采样、保底推进与奖励交付分别处理。
+-- 配置在每次调用时读取，存档恢复仍只读写原有两个保底计数。
+local Config = require("config.GachaConfig")
+local State = require("core.GameState")
+require("core.EventBus")
+require("config.GameEvents")
+local Heroes = require("ui.character.panel.CharacterPanel")
 
-local GachaConfig    = require("config.GachaConfig")
-local GameState      = require("core.GameState")
-local EventBus       = require("core.EventBus")
-local GameEvents     = require("config.GameEvents")
-local CharacterPanel = require("ui.character.panel.CharacterPanel")
+local Gacha = {}
+local pity = { sinceSR = 0, sinceSSR = 0 }
 
-local GachaSystem = {}
-
--- ======================== 保底计数器 ========================
--- sinceSR: 距离上次出 SR 或更高品质的抽数
--- sinceSSR: 距离上次出 SSR 的抽数
-
-local pityState = {
-    sinceSR  = 0,
-    sinceSSR = 0,
+-- 使用方法名而非缓存函数，兼容 GameState 在启动时安装的访问器。
+local currencies = {
+    gold = { "getGold", "setGold" },
+    essence = { "getEssence", "setEssence" },
+    enhance_star = { "getEnhanceStone", "setEnhanceStone" },
+    degrade_protect = { "getDegradeStone", "setDegradeStone" },
+    break_protect = { "getDestroyStone", "setDestroyStone" },
+    sweep_ticket = { "getSweepTicket", "setSweepTicket" },
 }
 
--- ======================== 保底状态接口 ========================
-
---- 获取 SSR 保底剩余次数
----@return number
-function GachaSystem.getSSRPityRemain()
-    return GachaConfig.Pity.SSR_THRESHOLD - pityState.sinceSSR
+local function price(count, tender)
+    -- 保留十连价格缺失时退回单抽价的既有选择规则。
+    return (count == 10) and Config.Cost["TEN_" .. tender] or Config.Cost["SINGLE_" .. tender]
 end
 
---- 获取 SR 保底剩余次数
----@return number
-function GachaSystem.getSRPityRemain()
-    return GachaConfig.Pity.SR_THRESHOLD - pityState.sinceSR
+function Gacha.getSSRPityRemain()
+    return Config.Pity.SSR_THRESHOLD - pity.sinceSSR
 end
 
---- 获取原始保底计数
----@return number sinceSR, number sinceSSR
-function GachaSystem.getPityCounts()
-    return pityState.sinceSR, pityState.sinceSSR
+function Gacha.getSRPityRemain()
+    return Config.Pity.SR_THRESHOLD - pity.sinceSR
 end
 
---- 获取下一抽的实际 SSR 概率（含软保底加成）
----@return number effectiveSSR 百分比值（如 7.0 表示 7%）
-function GachaSystem.getEffectiveSSRRate()
-    local nextSSR   = pityState.sinceSSR + 1
-    local baseSSR   = GachaConfig.Probability[GachaConfig.QUALITY_SSR] or 1.0
-    local softStart = GachaConfig.Pity.SSR_SOFT_PITY_START or 60
-    local softRate  = GachaConfig.Pity.SSR_SOFT_PITY_RATE or 6.0
-    local bonus     = math.max(0, nextSSR - softStart) * softRate
-    return math.min(baseSSR + bonus, 100)
+function Gacha.getPityCounts()
+    return pity.sinceSR, pity.sinceSSR
 end
 
---- 设置保底计数（用于存档恢复）
----@param sinceSR number
----@param sinceSSR number
-function GachaSystem.setPityCounts(sinceSR, sinceSSR)
-    pityState.sinceSR  = sinceSR or 0
-    pityState.sinceSSR = sinceSSR or 0
+function Gacha.setPityCounts(sinceSR, sinceSSR)
+    pity.sinceSR, pity.sinceSSR = sinceSR or 0, sinceSSR or 0
 end
 
--- ======================== 消耗检查 ========================
+local function softSSR(nextCount)
+    local base = Config.Probability[Config.QUALITY_SSR] or 1.0
+    local start = Config.Pity.SSR_SOFT_PITY_START or 60
+    local step = Config.Pity.SSR_SOFT_PITY_RATE or 6.0
+    local extra = math.max(0, nextCount - start) * step
+    return math.min(base + extra, 100)
+end
 
---- 检查是否有足够资源进行抽卡
----@param count number 抽卡次数（1 或 10）
----@return boolean canPull
----@return string payType "ticket" | "diamond" | "none"
-function GachaSystem.canPull(count)
-    local ticketCost  = (count == 10) and GachaConfig.Cost.TEN_TICKET  or GachaConfig.Cost.SINGLE_TICKET
-    local diamondCost = (count == 10) and GachaConfig.Cost.TEN_DIAMOND or GachaConfig.Cost.SINGLE_DIAMOND
+function Gacha.getEffectiveSSRRate()
+    return softSSR(pity.sinceSSR + 1)
+end
 
-    local tickets  = GameState.getRecruitTicket()
-    local diamonds = GameState.getGems()
+function Gacha.canPull(count)
+    local ticketCost, diamondCost = price(count, "TICKET"), price(count, "DIAMOND")
+    local tickets, diamonds = State.getRecruitTicket(), State.getGems()
+    if tickets >= ticketCost then return true, "ticket" end
+    if diamonds >= diamondCost then return true, "diamond" end
+    return false, "none"
+end
 
-    if tickets >= ticketCost then
-        return true, "ticket"
-    elseif diamonds >= diamondCost then
-        return true, "diamond"
-    else
-        return false, "none"
+local function charge(count, tender)
+    if tender == "ticket" then
+        local cost = price(count, "TICKET")
+        State.setRecruitTicket(State.getRecruitTicket() - cost)
+    elseif tender == "diamond" then
+        local cost = price(count, "DIAMOND")
+        State.setGems(State.getGems() - cost)
     end
 end
 
---- 扣除抽卡消耗
----@param count number 1 或 10
----@param payType string "ticket" | "diamond"
-local function deductCost(count, payType)
-    if payType == "ticket" then
-        local cost = (count == 10) and GachaConfig.Cost.TEN_TICKET or GachaConfig.Cost.SINGLE_TICKET
-        GameState.setRecruitTicket(GameState.getRecruitTicket() - cost)
-    elseif payType == "diamond" then
-        local cost = (count == 10) and GachaConfig.Cost.TEN_DIAMOND or GachaConfig.Cost.SINGLE_DIAMOND
-        GameState.setGems(GameState.getGems() - cost)
-    end
-end
-
--- ======================== 概率抽取核心 ========================
-
---- 在同品质物品池中按权重随机选取一个物品
----@param quality number
----@return table|nil  卡池物品定义
-local function rollItemInQuality(quality)
-    local group = GachaConfig.getPoolGroup(quality)
-    if not group or #group.items == 0 then return nil end
-
-    local roll = math.random() * group.totalWeight
-    local cumulative = 0
-    for _, item in ipairs(group.items) do
-        cumulative = cumulative + item.weight
-        if roll <= cumulative then
-            return item
-        end
-    end
-    -- 兜底：返回最后一个
-    return group.items[#group.items]
-end
-
---- 决定单次抽卡的品质（含硬保底 + 软保底逻辑）
---- 软保底：第 SSR_SOFT_PITY_START 抽后，每多一抽 SSR 概率 +SSR_SOFT_PITY_RATE%
----@return number quality
-local function rollQuality()
-    -- 注意：客户端 pityState 在 pullOnce() 中更新，这里用 +1 模拟"本次抽取"
-    local nextSSR = pityState.sinceSSR + 1
-    local nextSR  = pityState.sinceSR + 1
-
-    -- 1. SSR 硬保底判断
-    if nextSSR >= GachaConfig.Pity.SSR_THRESHOLD then
-        return GachaConfig.QUALITY_SSR
-    end
-
-    -- 2. SR 保底判断
-    if nextSR >= GachaConfig.Pity.SR_THRESHOLD then
-        return GachaConfig.QUALITY_SR
-    end
-
-    -- 3. 计算动态 SSR 概率（软保底）
-    local baseSSR    = GachaConfig.Probability[GachaConfig.QUALITY_SSR] or 1.0
-    local softStart  = GachaConfig.Pity.SSR_SOFT_PITY_START or 60
-    local softRate   = GachaConfig.Pity.SSR_SOFT_PITY_RATE or 6.0
-    local bonusSSR   = math.max(0, nextSSR - softStart) * softRate
-    local effectiveSSR = math.min(baseSSR + bonusSSR, 100)
-
-    -- 重建概率表：SSR 提升的部分从 N 中扣除
-    local probSSR = effectiveSSR
-    local probSR  = GachaConfig.Probability[GachaConfig.QUALITY_SR] or 10.0
-    local probR   = GachaConfig.Probability[GachaConfig.QUALITY_R] or 18.0
-    local probN   = math.max(0, 100 - probSSR - probSR - probR)
-
+-- 硬保底不消耗品质随机数；普通抽取使用按 SSR、SR、R、N 累加的区间。
+-- 保留 <= 边界以及超额概率配置的原有优先级，不重新归一概率。
+local function sampleQuality()
+    local nextSSR, nextSR = pity.sinceSSR + 1, pity.sinceSR + 1
+    if nextSSR >= Config.Pity.SSR_THRESHOLD then return Config.QUALITY_SSR end
+    if nextSR >= Config.Pity.SR_THRESHOLD then return Config.QUALITY_SR end
+    local ssr = softSSR(nextSSR)
+    local sr = Config.Probability[Config.QUALITY_SR] or 10.0
+    local rare = Config.Probability[Config.QUALITY_R] or 18.0
+    local normal = math.max(0, 100 - ssr - sr - rare)
     local roll = math.random() * 100
-    local cumulative = 0
-    local probs = {
-        { q = GachaConfig.QUALITY_SSR, p = probSSR },
-        { q = GachaConfig.QUALITY_SR,  p = probSR },
-        { q = GachaConfig.QUALITY_R,   p = probR },
-        { q = GachaConfig.QUALITY_N,   p = probN },
-    }
-    for _, entry in ipairs(probs) do
-        cumulative = cumulative + entry.p
-        if roll <= cumulative then
-            return entry.q
-        end
-    end
-
-    return GachaConfig.QUALITY_N
+    -- 在采样后按原顺序读取四个品质，兼容配置的动态访问器。
+    local qSSR, qSR, qR, qN = Config.QUALITY_SSR, Config.QUALITY_SR, Config.QUALITY_R, Config.QUALITY_N
+    local edge = 0 + ssr
+    if roll <= edge then return qSSR end
+    edge = edge + sr
+    if roll <= edge then return qSR end
+    edge = edge + rare
+    if roll <= edge then return qR end
+    edge = edge + normal
+    if roll <= edge then return qN end
+    return Config.QUALITY_N
 end
 
---- 执行单次抽卡（更新保底计数）
----@return table result { type, quality, heroId?, resType?, amount? }
-local function pullOnce()
-    local quality = rollQuality()
-    local poolItem = rollItemInQuality(quality)
-
-    -- 更新保底计数
-    if quality >= GachaConfig.QUALITY_SSR then
-        pityState.sinceSSR = 0
-        pityState.sinceSR  = 0
-    elseif quality >= GachaConfig.QUALITY_SR then
-        pityState.sinceSSR = pityState.sinceSSR + 1
-        pityState.sinceSR  = 0
-    else
-        pityState.sinceSSR = pityState.sinceSSR + 1
-        pityState.sinceSR  = pityState.sinceSR + 1
+local function sampleItem(quality)
+    local pool = Config.getPoolGroup(quality)
+    if not pool or #pool.items == 0 then return nil end
+    local target, weight = math.random() * pool.totalWeight, 0
+    for _, entry in ipairs(pool.items) do
+        weight = weight + entry.weight
+        if target <= weight then return entry end
     end
+    return pool.items[#pool.items]
+end
 
-    if not poolItem then
-        -- 兜底：不应该发生
+local function advancePity(quality)
+    if quality >= Config.QUALITY_SSR then
+        pity.sinceSSR, pity.sinceSR = 0, 0
+    elseif quality >= Config.QUALITY_SR then
+        pity.sinceSSR, pity.sinceSR = pity.sinceSSR + 1, 0
+    else
+        pity.sinceSSR, pity.sinceSR = pity.sinceSSR + 1, pity.sinceSR + 1
+    end
+end
+
+local function draw()
+    local quality = sampleQuality()
+    local item = sampleItem(quality)
+    -- 空池也推进保底；奖励使用池条目的 quality，而非采样的品质。
+    advancePity(quality)
+    if not item then
         return { type = "resource", resType = "gold", amount = 200, quality = 0 }
     end
+    if item.type == "hero" then
+        return { type = "hero", heroId = item.heroId, quality = item.quality }
+    end
+    return { type = "resource", resType = item.resType, amount = item.amount, quality = item.quality }
+end
 
-    -- 构造结果（与 RecruitAnim 需要的格式一致）
-    if poolItem.type == "hero" then
-        return {
-            type    = "hero",
-            heroId  = poolItem.heroId,
-            quality = poolItem.quality,
-        }
-    else
-        return {
-            type    = "resource",
-            resType = poolItem.resType,
-            amount  = poolItem.amount,
-            quality = poolItem.quality,
-        }
+local function deliver(result)
+    if result.type == "resource" then
+        local accessor = currencies[result.resType]
+        if accessor then
+            local amount = result.amount or 1
+            State[accessor[2]](State[accessor[1]]() + amount)
+        end
+    elseif result.type == "hero" and result.heroId and Heroes.addHero then
+        result.isNew = Heroes.addHero(result.heroId, 1) == true
+        print("[GachaSystem] 解锁英雄: " .. tostring(result.heroId) .. " isNew=" .. tostring(result.isNew))
     end
 end
 
--- ======================== 发放奖励 ========================
-
---- 将抽卡结果的资源发放到 GameState
----@param results table[]
-local function grantRewards(results)
-    for _, r in ipairs(results) do
-        if r.type == "resource" then
-            local amount = r.amount or 1
-            if r.resType == "gold" then
-                GameState.setGold(GameState.getGold() + amount)
-            elseif r.resType == "essence" then
-                GameState.setEssence(GameState.getEssence() + amount)
-            elseif r.resType == "enhance_star" then
-                GameState.setEnhanceStone(GameState.getEnhanceStone() + amount)
-            elseif r.resType == "degrade_protect" then
-                GameState.setDegradeStone(GameState.getDegradeStone() + amount)
-            elseif r.resType == "break_protect" then
-                GameState.setDestroyStone(GameState.getDestroyStone() + amount)
-            elseif r.resType == "sweep_ticket" then
-                GameState.setSweepTicket(GameState.getSweepTicket() + amount)
-            end
-        end
-        -- hero 类型：standalone 模式直接解锁英雄
-        if r.type == "hero" and r.heroId then
-            if CharacterPanel.addHero then
-                local added = CharacterPanel.addHero(r.heroId, 1)
-                r.isNew = added == true
-                print("[GachaSystem] 解锁英雄: " .. tostring(r.heroId) .. " isNew=" .. tostring(r.isNew))
-            end
-        end
-    end
-end
-
--- ======================== 公开接口 ========================
-
---- 执行抽卡
----@param count number 1 或 10
----@param forcePayType? string 强制指定支付方式（"ticket"|"diamond"），跳过 canPull 检查
----@return table[]|nil results  抽卡结果列表（nil 表示资源不足）
----@return string|nil payType   支付方式
-function GachaSystem.pull(count, forcePayType)
-    local payType = forcePayType
-    if not payType then
-        local canDo
-        canDo, payType = GachaSystem.canPull(count)
-        if not canDo then
+---@param count number
+---@param forcePayType? string
+---@return table[]|nil, string|nil
+function Gacha.pull(count, forcePayType)
+    local tender = forcePayType
+    if not tender then
+        local accepted
+        accepted, tender = Gacha.canPull(count)
+        if not accepted then
             print("[GachaSystem] 资源不足，无法抽卡")
             return nil, nil
         end
     end
-
-    -- 扣除消耗
-    deductCost(count, payType)
-
-    -- 执行抽取
+    charge(count, tender)
     local results = {}
-    for i = 1, count do
-        results[i] = pullOnce()
-    end
-
-    -- 发放奖励
-    grantRewards(results)
-
-    -- 日志
-    local ssrCount, srCount = 0, 0
-    for _, r in ipairs(results) do
-        if r.quality == 3 then ssrCount = ssrCount + 1 end
-        if r.quality == 2 then srCount = srCount + 1 end
+    for index = 1, count do results[index] = draw() end
+    -- 整批抽取完成后才交付，避免交付通知影响后续抽取的状态。
+    for _, result in ipairs(results) do deliver(result) end
+    local ssr, sr = 0, 0
+    for _, result in ipairs(results) do
+        if result.quality == 3 then ssr = ssr + 1 end
+        if result.quality == 2 then sr = sr + 1 end
     end
     print(string.format("[GachaSystem] 抽卡 %d 次 (%s) → SSR:%d SR:%d | 保底 SR剩余:%d SSR剩余:%d",
-        count, payType, ssrCount, srCount,
-        GachaSystem.getSRPityRemain(), GachaSystem.getSSRPityRemain()))
-
-    return results, payType
+        count, tender, ssr, sr, Gacha.getSRPityRemain(), Gacha.getSSRPityRemain()))
+    return results, tender
 end
 
-return GachaSystem
+return Gacha

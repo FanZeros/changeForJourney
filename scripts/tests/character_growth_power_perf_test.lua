@@ -37,10 +37,27 @@ function Start()
     local ESC = nativeRequire("config.EquipmentSetConfig")
     local AD = nativeRequire("systems.AttributeDef")
     local Events = nativeRequire("config.GameEvents")
+    local ArtifactDefs = nativeRequire("shared.artifact.ArtifactDefs")
+    local ArtifactSchema = nativeRequire("shared.artifact.ArtifactSchema")
     local Draw = nativeRequire("ui.character.panel.CharacterPanelDraw2")
     local savedBuild, fullBuild, savedLit = EP.buildWornContext, EP.buildContext, HC._getSavedLitNodes()
     local savedInvalidate = EP.invalidate
-    local active = {}
+    local Eq = nativeRequire("systems.EquipmentSystem")
+    local ESR = nativeRequire("systems.EquipmentSetRuntime")
+    local savedCreate, savedApply, savedAura = HC.createHero, Eq.applyToUnit, ESR.applyTeamAura
+    local active = { order = {}, creates = 0, equips = 0, auras = 0 }
+    HC.createHero = function(...)
+        active.creates = active.creates + 1
+        return savedCreate(...)
+    end
+    Eq.applyToUnit = function(...)
+        active.equips = active.equips + 1
+        return savedApply(...)
+    end
+    ESR.applyTeamAura = function(...)
+        active.auras = active.auras + 1
+        return savedAura(...)
+    end
     EP.invalidate = function(...)
         active.order[#active.order + 1] = "invalidate"
         return savedInvalidate(...)
@@ -53,11 +70,46 @@ function Start()
         active.calls = active.calls + 1
         local id = select(1, ...)
         active.scored[id] = (active.scored[id] or 0) + 1
+        if active.noTeamReuse then
+            local id, options, batch = ...
+            local isolated = {}
+            for key, value in pairs(options or {}) do isolated[key] = value end
+            isolated.reuseTeamContext = false
+            return savedBuild(id, isolated, batch)
+        end
         return savedBuild(...)
+    end
+    -- 队伍新口径独立 oracle：不调用被测 Bridge helper，也不复用分项缓存。
+    local function artifactTeamPower(f, teamIdx, slots)
+        local total, counted = 0, {}
+        local data = f.data.artifacts or {}
+        for slot = 1, ArtifactSchema.SLOT_COUNT do
+            for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
+                local id = ArtifactSchema.getEquippedId(data, slot, subSlot, teamIdx)
+                local artifact
+                for _, item in ipairs(data.bag or {}) do
+                    if tostring(item.id) == tostring(id) then artifact = item; break end
+                end
+                local def = artifact and ArtifactDefs.get(artifact.artifactId)
+                if def and not counted[tostring(id)] then
+                    local target = slot
+                    if def.effectType == "left_phys_atk_bonus" then target = slot - 1 end
+                    if def.effectType == "right_mag_atk_bonus" then target = slot + 1 end
+                    local owner = slots[target]
+                    if target >= 1 and target <= ArtifactSchema.SLOT_COUNT
+                        and owner and owner.state == "occupied" and f.panel.getOwnedHero(owner.heroId) then
+                        counted[tostring(id)] = true
+                        total = total + ArtifactDefs.getPower(artifact)
+                    end
+                end
+            end
+        end
+        return total
     end
     local function fixture(forceFull)
         local f = { data = {}, revisions = { heroes = 1, equipment = 1, artifacts = 1, talents = 1 },
             calls = 0, scored = {}, events = {}, progress = {}, invalidations = {}, dirty = 0, order = {},
+            creates = 0, equips = 0, auras = 0, noTeamReuse = forceFull,
             context = {}, modules = {}, listeners = {}, storeListeners = {}, gamePower = 0 }
         local noop = function() end
         local detail = { init = noop, setContext = noop, markPowerDirty = function()
@@ -84,6 +136,10 @@ function Start()
             end },
             ["core.EventBus"] = { emit = function(event, payload)
                 f.order[#f.order + 1] = "event"
+                local order = f.order
+                check(order[#order - 3] == "invalidate" and order[#order - 2] == "gamePower"
+                    and order[#order - 1] == "dirty" and order[#order] == "event",
+                    "所有正式刷新保持invalidate/GameState/dirty/TEAM_POWER_CHANGED顺序")
                 -- 同步订阅者直接读整套缓存，不能先发事件再补另两队。
                 local powers = {}
                 for t = 1, 3 do powers[t] = f.panel.getTotalPower(t) end
@@ -116,12 +172,15 @@ function Start()
             local leaf = name:match("^ui%.character%.panel%.(.+)$")
             if leaf and isolated[leaf] then
                 local module = sourceModule(name, resolver)
-                if leaf == "CharacterPower" and forceFull then
+                if leaf == "CharacterPower" then
                     local bind = module.bind
                     module.bind = function(deps)
                         local power = bind(deps)
-                        local refresh = power.refreshPowerCache
-                        power.refreshPowerCache = function(cause) return refresh(cause) end
+                        f.power, f.powerGet = power, deps.get
+                        if forceFull then
+                            local refresh = power.refreshPowerCache
+                            power.refreshPowerCache = function(cause) return refresh(cause) end
+                        end
                         return power
                     end
                 end
@@ -210,7 +269,7 @@ function Start()
                 end
                 for t = 1, 3 do
                     local slots, powers = panel.getTeamSlotsData(t)
-                    local total = 0
+                    local total = artifactTeamPower(f, t, slots)
                     for i = 1, 4 do
                         local id = slots[i].state == "occupied" and slots[i].heroId
                         local value = expected[id] or 0
@@ -225,9 +284,11 @@ function Start()
             cases = cases + 1
             for _, f in ipairs({ optimized, oracle }) do
                 f.calls, f.scored = 0, {}
+                f.creates, f.equips, f.auras = 0, 0, 0
                 local started = os.clock()
                 on(f, action)
                 f.lastCPU = os.clock() - started
+                f.work = { creates = f.creates, equips = f.equips, auras = f.auras }
             end
             check(optimized.calls == expectedCalls,
                 label .. " calls expected=" .. expectedCalls .. " actual=" .. optimized.calls)
@@ -238,8 +299,10 @@ function Start()
             end
             check(same(observation(optimized), observation(oracle)), label .. "全名册/三队slot/总分/事件/战斗基线与全量oracle等价")
             if not deferred then assertFullValues(optimized, label) end
-            print(string.format("[GrowthPower] case=%s calls=%d fullCalls=%d cpu=%.6f fullCPU=%.6f",
-                label, optimized.calls, oracle.calls, optimized.lastCPU, oracle.lastCPU))
+            print(string.format("[GrowthPower] case=%s calls=%d fullCalls=%d cpu=%.6f fullCPU=%.6f creates=%d/%d equips=%d/%d auras=%d/%d",
+                label, optimized.calls, oracle.calls, optimized.lastCPU, oracle.lastCPU,
+                optimized.work.creates, oracle.work.creates, optimized.work.equips, oracle.work.equips,
+                optimized.work.auras, oracle.work.auras))
         end
         local function patch(id, values, defer)
             return function(panel) panel.patchExtraTalent(id, values, defer) end
@@ -254,8 +317,13 @@ function Start()
             "移走司仪真实光环消失，不是空fixture")
         local noArtifactOptions = copy(options)
         noArtifactOptions.artifacts = { bag = {}, equippedByTeam = {} }
-        check(fullBuild(15, options).currentPower > fullBuild(15, noArtifactOptions).currentPower,
-            "队3神器fixture真实非零，不借当前活动队1")
+        check(fullBuild(15, options).currentPower == fullBuild(15, noArtifactOptions).currentPower,
+            "队3神器完全排除角色评分，不借当前活动队1")
+        local combatOptions = copy(options)
+        combatOptions.includeArtifactEffects = true
+        check(fullBuild(15, combatOptions).hero.attrs.artifactPowerBonus > 0
+            and artifactTeamPower(optimized, 3, optimized.panel.getTeamSlotsData(3)) > 0,
+            "队3神器fixture真实战斗效果及独立详情分项仍非零")
         runCase("bench", patch(2, { stacks = 500 }), 1, { 2 })
         runCase("team2", patch(12, { stacks = 1000 }), 3, { 9, 20, 12 })
         local resonanceOptions = copy(options)
@@ -487,7 +555,37 @@ function Start()
             f.data.heroes.roster["2"].level = 90
         end, ownedCount)
         equipCase("heroes source fallback", function(_, f) f.data.heroes = copy(f.data.heroes) end, ownedCount)
-        equipCase("heroes revision fallback", function(_, f) f.revisions.heroes = f.revisions.heroes + 1 end, ownedCount)
+        equipCase("heroes same-value revision fast path", function(_, f)
+            f.revisions.heroes = f.revisions.heroes + 1
+        end, 0, {})
+        equipCase("heroes revision with real growth fallback", function(_, f)
+            f.revisions.heroes = f.revisions.heroes + 1
+            f.data.heroes.roster["12"].extraTalent.stacks = f.data.heroes.roster["12"].extraTalent.stacks + 1
+        end, ownedCount)
+        equipCase("heroes revision regression fallback", function(_, f)
+            f.revisions.heroes = f.revisions.heroes - 1
+        end, ownedCount)
+        runCase("equipment heroes Store mirror mismatch fallback", function(_, f)
+            local get = f.store.Get
+            local other = copy(f.data.heroes)
+            f.store.Get = function(key) return key == "heroes" and other or get(key) end
+            equipmentNotify(f, "Store mirror mismatch")
+            f.store.Get = get
+        end, ownedCount)
+        equipCase("heroes Store mirror restored fallback", nil, ownedCount)
+        runCase("equipment heroes unknown revision fallback", function(_, f)
+            local revision = f.revisions.heroes
+            f.revisions.heroes = 0 / 0
+            equipmentNotify(f, "unknown heroes revision")
+            f.revisions.heroes = revision
+        end, ownedCount)
+        equipCase("heroes unknown revision recovery fallback", nil, ownedCount)
+        equipCase("heroes recovered same-value revision fast path", function(_, f)
+            f.revisions.heroes = f.revisions.heroes + 3
+        end, 0, {})
+        equipCase("heroes same revision nested awakening fallback", function(_, f)
+            f.data.heroes.roster["12"].awakening[2] = false
+        end, ownedCount)
         equipCase("artifact revision fallback", function(_, f)
             f.revisions.artifacts = f.revisions.artifacts + 1
             f.data.artifacts.bag[1].value = 25
@@ -544,10 +642,177 @@ function Start()
             f.data.equipment.equipped["9"][EC.SLOTS[1]] = nil
         end, 3, { 9, 20, 12 })
         runCase("equipment full caller stays full", function(panel) panel.refreshPower() end, ownedCount)
+        -- 本轮团队复用的正式Panel矩阵：三队满员、乱序名册与本队光环/神器。
+        runCase("three full teams fixture", function(panel, f)
+            f.data = copy(input)
+            f.data.heroes.deployed = { 1, 3, 4, 5 }
+            f.data.heroes.teams = { { slots = { 1, 3, 4, 5 } },
+                { slots = { 9, 20, 12, 23 } }, { slots = { 15, 10, 18, 24 } } }
+            panel.setHeroesData(f.data.heroes)
+        end, ownedCount)
+        runCase("four member growth", patch(12, { stacks = 300001 }), 4, { 9, 20, 12, 23 })
+        check(optimized.work.creates == 4 and optimized.work.auras == 1,
+            "四人队一次refresh只创建4英雄/应用1次整队光环，不再16次创建")
+        runCase("three full teams global", function(panel) panel.refreshPower() end, ownedCount)
+        check(optimized.work.creates == ownedCount and oracle.work.creates == ownedCount + 36,
+            "三队满员全刷新24 vs 60真实HC.createHero，未编队仍独立创建")
+        check(optimized.work.equips < oracle.work.equips and optimized.work.auras < oracle.work.auras,
+            "真实装备应用/团队光环调用同时下降，不只是少算外层函数")
+        -- 同夹具/同强制全量入口CPU，观察不进入计时区；不以耗时阈值作易抖动断言。
+        for _, f in ipairs({ optimized, oracle }) do
+            f.benchmarkCreates, f.benchmarkCPU = 0, 0
+            on(f, function(panel)
+                local before = copy(f.data)
+                local start = os.clock()
+                f.creates, f.equips, f.auras = 0, 0, 0
+                for _ = 1, 8 do panel.refreshPower() end
+                f.benchmarkCPU, f.benchmarkCreates = os.clock() - start, f.creates
+                check(same(before, f.data), "连续正式refresh不写回玩家模块/养成/神器")
+            end)
+        end
+        check(same(observation(optimized), observation(oracle)), "连续全刷新同步事件/dirty/三队数值完全一致")
+        check(optimized.benchmarkCreates == ownedCount * 8 and oracle.benchmarkCreates == (ownedCount + 36) * 8,
+            "八次刷新均重新创建本轮种子，不跨通知缓存")
+        print(string.format("[GrowthPowerBenchmark] fullRefreshes=8 candidateCPU=%.6f baselineCPU=%.6f creates=%d/%d",
+            optimized.benchmarkCPU, oracle.benchmarkCPU, optimized.benchmarkCreates, oracle.benchmarkCreates))
+
+        -- 同完整buildContext逐目标对照：源队表并不等于Panel显示队表，不能从active/deployed猜。
+        local function contextCase(label, change)
+            cases = cases + 1
+            local data = copy(input)
+            data.heroes.teams[2].slots = { 9, 20, 12, 23 }
+            if change then change(data) end
+            local options = { heroes = data.heroes, equipment = data.equipment,
+                artifacts = data.artifacts, talents = data.talents, reuseTeamContext = true }
+            local before = copy(data)
+            local batch = EP.createWornBatch(options)
+            for _, id in ipairs({ 12, 9, 20, 23, 1, 3, 15, 10, 2, 18, 24 }) do
+                options.heroData = copy(data.heroes.roster[tostring(id)] or data.heroes.roster[id])
+                local ctx = assert(savedBuild(id, options, batch))
+                local full = assert(fullBuild(id, options))
+                check(ctx.currentPower == full.currentPower, label .. " raw power " .. id)
+                check(same(ctx.hero.attrs, full.hero.attrs), label .. " all attrs " .. id)
+                local members, fullMembers = {}, {}
+                for _, unit in ipairs(ctx.teamUnits) do
+                    members[#members + 1] = { id = unit.heroId, slot = unit.partySlot, team = unit.teamIdx,
+                        attrs = unit.attrs, awakening = unit.awakening, effects = unit.artifactEffects }
+                end
+                for _, unit in ipairs(full.teamUnits) do
+                    fullMembers[#fullMembers + 1] = { id = unit.heroId, slot = unit.partySlot, team = unit.teamIdx,
+                        attrs = unit.attrs, awakening = unit.awakening, effects = unit.artifactEffects }
+                end
+                check(same(members, fullMembers), label .. " exact team order/slot/artifact/aura " .. id)
+            end
+            check(same(before, data), label .. " no live writes")
+        end
+        contextCase("four full source")
+        contextCase("cross team duplicate ids", function(data)
+            data.heroes.teams[1].slots = { 12, 12, 0, 0 }
+            data.heroes.teams[3].slots = { 20, 9, 10, 15 }
+        end)
+        contextCase("source table string slots", function(data)
+            data.heroes.teams = { ["1"] = { slots = { ["2"] = "1", ["4"] = { heroId = "3" } } },
+                ["2"] = { slots = { ["1"] = "9", ["2"] = "20", ["4"] = "12" } } }
+        end)
+        contextCase("nondeployed formal source", function(data)
+            data.heroes.deployed = { 9, 20, 12, 23 }
+            data.heroes.teams[2].slots = { 0, 0, 0, 0 }
+        end)
+        contextCase("legacy deployed no teams", function(data)
+            data.heroes.teams = nil
+            data.heroes.deployed = { 9, 20, 12, 23 }
+        end)
+        contextCase("nil empty awakening and growth", function(data)
+            for _, id in ipairs({ 9, 20, 12, 23 }) do
+                data.heroes.roster[tostring(id)].awakening = nil
+                data.heroes.roster[tostring(id)].extraTalent = nil
+            end
+        end)
+        contextCase("growth gate closed", function(data)
+            for _, id in ipairs({ 9, 20, 12, 23 }) do data.heroes.roster[tostring(id)].awakening = {} end
+        end)
+        -- 正式bind入口的错槽/错队仍按旧口径禁用整批神器，不能与matches=true混用。
+        on(optimized, function(panel, f)
+            local batches, withoutArtifacts = {}, {}
+            for _, args in ipairs({ { 12, 3, 2 }, { 12, 2, 2 }, { 12, 3, 1 },
+                { 15, 1, 3 }, { 15, 1, 2 }, { 2, 1, 1 }, { 12, "3", "2" } }) do
+                local id, slot, team = table.unpack(args)
+                local deployedSlot, deployedTeam = panel.getHeroDeployPosition(id)
+                local matches = tonumber(slot) == deployedSlot and tonumber(team) == deployedTeam
+                local expected = assert(fullBuild(id, { heroData = panel.getOwnedHero(id),
+                    heroes = f.data.heroes, equipment = f.data.equipment,
+                    artifacts = matches and f.data.artifacts or withoutArtifacts, talents = f.data.talents }))
+                local batched = f.power.calcHeroPower(id, slot, team, batches)
+                check(batched == math.floor(expected.currentPower + 0.5)
+                    and batched == f.power.calcHeroPower(id, slot, team),
+                    "正式错槽/错队matches隔离 " .. table.concat(args, "/"))
+            end
+            check(batches[true] ~= nil and batches[false] ~= nil, "真实神器/错槽无神器批次独立")
+        end)
+        -- 复用窗口内Panel与正式source成长不一致，完整重建仍保留仅目标覆盖。
+        on(optimized, function(panel, f)
+            local own = panel.getOwnedHero(12)
+            local before = own.extraTalent
+            own.extraTalent = copy(before)
+            own.extraTalent.stacks = 900001
+            local batches = {}
+            for _, id in ipairs({ 12, 9, 12, 20, 23 }) do
+                local slot, team = panel.getHeroDeployPosition(id)
+                local full = assert(fullBuild(id, { heroData = panel.getOwnedHero(id), heroes = f.data.heroes,
+                    equipment = f.data.equipment, artifacts = f.data.artifacts, talents = f.data.talents }))
+                check(f.power.calcHeroPower(id, slot, team, batches) == math.floor(full.currentPower + 0.5),
+                    "Panel独立养成覆盖不污染队友source " .. id)
+            end
+            own.extraTalent = before
+        end)
+        -- 目标覆盖和队友source确有差异时必须fallback，不以凑4次为由合并。
+        local function overrideCase(label, field, value)
+            cases = cases + 1
+            local data = copy(input)
+            data.heroes.teams[2].slots = { 9, 20, 12, 23 }
+            local options = { heroes = data.heroes, equipment = data.equipment,
+                artifacts = data.artifacts, talents = data.talents, reuseTeamContext = true }
+            local batch = EP.createWornBatch(options)
+            for _, id in ipairs({ 12, 9, 12, 20 }) do
+                options.heroData = copy(data.heroes.roster[tostring(id)])
+                if id == 12 then options.heroData[field] = copy(value) end
+                local ctx = assert(savedBuild(id, options, batch))
+                local full = assert(fullBuild(id, options))
+                check(ctx.currentPower == full.currentPower and same(ctx.hero.attrs, full.hero.attrs),
+                    label .. " target override remains private " .. id)
+                check(same(ctx.heroesData, full.heroesData), label .. " exact source data " .. id)
+            end
+        end
+        overrideCase("different target level", "level", 101)
+        overrideCase("different target awakening", "awakening", {})
+        overrideCase("different target extra", "extraTalent", { stacks = 99000 })
+        overrideCase("unknown nonconsumed growth field", "extraTalent", { stacks = 10, issuedCards = 2, oldUnusedField = 200 })
+        overrideCase("normalized zero defaults", "extraTalent", { stacks = 10, issuedCards = 2, shieldStacks = 0 })
+        -- issuedCards是唯一normalize之外的直接评分读取：不能把2.25与2归成等价。
+        for _, cards in ipairs({ 2.25, -1, "2.25", "nan" }) do
+            cases = cases + 1
+            local data = copy(input)
+            data.heroes.teams[3].slots = { 15, 10, 18, 24 }
+            data.heroes.roster["15"].extraTalent.issuedCards = cards
+            local options = { heroes = data.heroes, equipment = data.equipment,
+                artifacts = data.artifacts, talents = data.talents, reuseTeamContext = true }
+            local batch = EP.createWornBatch(options)
+            options.heroData = copy(data.heroes.roster["15"])
+            options.heroData.extraTalent.issuedCards = 2
+            savedBuild(15, options, batch)
+            options.heroData = copy(data.heroes.roster["10"])
+            local ctx = assert(savedBuild(10, options, batch))
+            local full = assert(fullBuild(10, options))
+            check(ctx.currentPower == full.currentPower and same(ctx.teamUnits[1].attrs, full.teamUnits[1].attrs),
+                "raw issuedCards preserves teammate source " .. tostring(cards))
+            check(ctx.heroesData.roster["15"].extraTalent.issuedCards == cards,
+                "raw issuedCards source remains unchanged " .. tostring(cards))
+        end
         runCase("reset session", function(panel) panel.resetSessionData() end, 0, {})
         runCase("cold rehydrate", function(panel, f) panel.setHeroesData(f.data.heroes) end, ownedCount)
         check(storage == 0, "全测试无玩家File/FS访问")
     end)
+    HC.createHero, Eq.applyToUnit, ESR.applyTeamAura = savedCreate, savedApply, savedAura
     EP.buildWornContext, EP.invalidate, require = savedBuild, savedInvalidate, nativeRequire
     rawset(_G, "File", savedFile)
     rawset(_G, "fileSystem", savedFS)

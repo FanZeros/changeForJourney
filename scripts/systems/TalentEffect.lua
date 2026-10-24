@@ -182,56 +182,46 @@ end
 
 -- ======================== 效果字符串解析 ========================
 
+-- 段落分类只决定采集入口，不预解析/缓存外部 META 或职业方法。
+-- 职业段与普通段的前缀规则并不相同：职业段不剥离「但」。
+local function appendAtoms(entries, text, ordinary)
+    for _, atom in ipairs(splitByDelimiters(text, {"，", ",", " "})) do
+        local stripped = atom:gsub("^全体", ""):gsub("^远征队员", "")
+        if ordinary then stripped = stripped:gsub("^但", "") end
+        local entry = parseAtom(stripped)
+        if entry then entries[#entries + 1] = entry end
+    end
+end
+
+local function classBonus(text)
+    return text:match("^%[(.-)%]职业额外获得(.+)$")
+end
+
+local function collectSegment(entries, text, classId)
+    -- 运行时叙述优先于职业匹配；未知职业段也不能回退普通解析。
+    if isNarrativeText(text) or text:find("触发：", 1, true) then return end
+    local className, bonus = classBonus(text)
+    if className then
+        local required = CLASS_NAME_TO_ID[className]
+        if required and CC.normalize(classId) == required and bonus then
+            appendAtoms(entries, bonus, false)
+        end
+    else
+        appendAtoms(entries, text, true)
+    end
+end
+
 --- 解析单个节点的 effect 字符串
 ---@param effectStr string 效果描述
 ---@param classId string|nil 英雄职业 ID（用于职业限定效果）
 ---@return table[] entries 属性条目列表 { {key, flat/pct}, ... }
 function TE.parseEffect(effectStr, classId)
     if not effectStr or effectStr == "" then return {} end
-
     local entries = {}
-
-    -- 按 "；" 分段（大段落：全体加成 vs 职业/条件效果）
-    -- 注意：不能用 gmatch("[^；]+")，因为 Lua 按字节匹配会拆断 UTF-8 字符
-    local segments = splitByDelimiters(effectStr, {"；"})
-
-    for _, seg in ipairs(segments) do
-        local trimmed = seg:match("^%s*(.-)%s*$") or seg
-
-        -- 跳过运行时描述。终焉触发段以「触发：」开头，不能当成常驻属性解析
-        if isNarrativeText(trimmed) or trimmed:find("触发：", 1, true) then
-            goto continue_seg
-        end
-
-        -- 检测职业限定：[职业名]职业额外获得...
-        local className, bonus = trimmed:match("^%[(.-)%]职业额外获得(.+)$")
-        if className then
-            local classReq = CLASS_NAME_TO_ID[className]
-            if classReq and CC.normalize(classId) == classReq and bonus then
-                local bonusAtoms = splitByDelimiters(bonus, {"，", ",", " "})
-                for _, atom in ipairs(bonusAtoms) do
-                    local stripped = atom:gsub("^全体", ""):gsub("^远征队员", "")
-                    local entry = parseAtom(stripped)
-                    if entry then entries[#entries + 1] = entry end
-                end
-            end
-            goto continue_seg
-        end
-
-        -- 普通段落：按 "，"、英文逗号、空格分隔
-        local atoms = splitByDelimiters(trimmed, {"，", ",", " "})
-        for _, atom in ipairs(atoms) do
-            -- 去除常见前缀
-            local stripped = atom:gsub("^全体", ""):gsub("^远征队员", ""):gsub("^但", "")
-            local entry = parseAtom(stripped)
-            if entry then
-                entries[#entries + 1] = entry
-            end
-        end
-
-        ::continue_seg::
+    for _, segment in ipairs(splitByDelimiters(effectStr, {"；"})) do
+        local trimmed = segment:match("^%s*(.-)%s*$") or segment
+        collectSegment(entries, trimmed, classId)
     end
-
     return entries
 end
 
@@ -319,12 +309,10 @@ local function formatAggregatedStat(key, vals)
     return meta.name, string.format("%+.2f", flat)
 end
 
---- 构建已点亮天赋的效果总览（属性聚合 + 职业专属 + 特殊效果）
----@param litNodes table|nil 已点亮节点 ID 列表
----@return table { stats={label,text,sortKey}[], classBonuses={className,text}[], specials={name,text}[] }
-function TE.buildOverview(litNodes)
-    local TSM = require("ui.church.talent.TalentStarMap")
-    local statsAgg = {}
+-- 总览说明与属性采集是两个有序阶段，不能合并成一次节点扫描：
+-- getNode/parseEffect/collectEntries 可由宿主替换，重复节点的属性仍逐次叠加，
+-- 仅特殊说明按 name|text 去重；说明阶段的失败不能提前应用任何修改器。
+local function collectOverviewDetails(TSM, litNodes)
     local classBonuses = {}
     local specials = {}
     local seenSpecial = {}
@@ -349,7 +337,7 @@ function TE.buildOverview(litNodes)
                     local segments = splitByDelimiters(effectStr, {"；"})
                     for si, seg in ipairs(segments) do
                         local trimmed = seg:match("^%s*(.-)%s*$") or seg
-                        local className, bonus = trimmed:match("^%[(.-)%]职业额外获得(.+)$")
+                        local className, bonus = classBonus(trimmed)
                         if className and bonus then
                             classBonuses[#classBonuses + 1] = {
                                 className = className,
@@ -364,7 +352,12 @@ function TE.buildOverview(litNodes)
         end
     end
 
-    for _, entry in ipairs(TE.collectEntries(litNodes, nil)) do
+    return classBonuses, specials
+end
+
+local function aggregateEntries(entries)
+    local statsAgg = {}
+    for _, entry in ipairs(entries) do
         local key = entry.key
         if not statsAgg[key] then
             statsAgg[key] = { flat = 0, pct = 0 }
@@ -376,6 +369,10 @@ function TE.buildOverview(litNodes)
         end
     end
 
+    return statsAgg
+end
+
+local function formatStats(statsAgg)
     local stats = {}
     for key, vals in pairs(statsAgg) do
         local label, text = formatAggregatedStat(key, vals)
@@ -387,8 +384,18 @@ function TE.buildOverview(litNodes)
         return (a.sortKey or "") < (b.sortKey or "")
     end)
 
+    return stats
+end
+
+--- 构建已点亮天赋的效果总览（属性聚合 + 职业专属 + 特殊效果）
+---@param litNodes table|nil 已点亮节点 ID 列表
+---@return table { stats={label,text,sortKey}[], classBonuses={className,text}[], specials={name,text}[] }
+function TE.buildOverview(litNodes)
+    local TSM = require("ui.church.talent.TalentStarMap")
+    local classBonuses, specials = collectOverviewDetails(TSM, litNodes)
+    local statsAgg = aggregateEntries(TE.collectEntries(litNodes, nil))
     return {
-        stats = stats,
+        stats = formatStats(statsAgg),
         classBonuses = classBonuses,
         specials = specials,
     }

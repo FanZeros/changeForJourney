@@ -200,6 +200,9 @@ function RunCurationUiTest()
             check(footer.children[1].props.text==Text.text("取消"),"localized cancel "..lang)
             check(footer.children[2].props.text==Text.text("确认优选"),"localized confirm "..lang)
             check(captured.children[1]:GetText()==Text.text("优选预览"),"localized title "..lang)
+            local policy = "按部位平衡仓位。同类优先保留好成品，并预留少量高基础培养底材；不等于英雄最佳配装。"
+            check(captured.children[3]:GetText():find(Text.text(policy),1,true)~=nil,"dual-channel policy shown "..lang)
+            check(lang=="zh_CN" or Text.text(policy)~=policy,"dual-channel policy translated "..lang)
         end
         Lang.set("zh_CN");draw()
         local x,y=buttonPoint("confirm")

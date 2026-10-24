@@ -1107,7 +1107,8 @@ function M.draw(vg)
     elseif detailState.tab == "equip" then
         -- 配装面板绘制（由 CharacterDetailEquip 子模块负责）
         if M._drawEquipPanel then
-            M._drawEquipPanel(vg, heroId, detailState)
+            -- 顶部卡面/六槽与下部共用本次已严格校验的bundle，不重复全依赖深比对。
+            M._drawEquipPanel(vg, heroId, detailState, prepared)
         end
 
     else -- detailState.tab == "attr"

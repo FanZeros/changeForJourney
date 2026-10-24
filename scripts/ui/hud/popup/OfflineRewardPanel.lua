@@ -1,31 +1,4 @@
--- ============================================================================
--- OfflineRewardPanel - 离线收益弹窗
--- ============================================================================
---
--- 【使用说明】
---   local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
---
---   -- 初始化（仅一次）：
---   OfflineRewardPanel.init(vg)
---
---   -- 展示离线收益：
---   OfflineRewardPanel.show({
---       offlineSeconds  = 90000,       -- 实际离线秒数
---       maxSeconds      = 86400,       -- 满额时长（24小时），超出按 tailRatio 计
---       tailRatio       = 0.5,         -- 超出满额部分的收益比例
---       multiplier      = 1.0,         -- 收益倍率
---       adventureExp    = 12000,       -- 远征等级经验
---       adventurerExp   = 5600,        -- 远征队员经验（总合）
---       rewards = {                    -- 奖励物品列表
---           { type = "gold",    amount = 5000 },
---           { type = "diamond", amount = 20 },
---           { type = "equip",   templateId = "W3", quality = 3, level = 5 },
---       },
---       onClaim   = function() end,  -- 领取回调
---   })
---
---   -- 在渲染/更新/输入中调用对应方法
--- ============================================================================
+-- 离线收益弹窗：冻结来源与经验预览；收益和领取沿用原业务回调。
 
 
 local GameConfig        = require("config.GameConfig")
@@ -115,9 +88,15 @@ local HERO_ROW = {
     SLOTS   = 4,            -- 每队槽位数
     PAD_X   = 24,           -- 行内左右留白
     ICON    = 128,          -- 头像边长（原 64 放大一倍）
-    LV_FONT   = 26,
+    LV_FONT   = 32,
     BAR_H     = 12,
     BG_A      = 26,         -- 行底色透明度
+    INFO_W    = 480,        -- 左侧队名/来源，右侧独立排四个头像
+    INFO_PAD  = 24,
+    TEAM_FONT = 60,
+    SOURCE_FONT = 56,       -- 1280宽逻辑窗口稳定态约16.8px，不再压成脚注
+    LINE_H    = 92,
+    MAX_H     = 420,        -- 极长名称在左栏滚动，不能把领取按钮挤出屏幕
 }
 
 -- 16+17. 奖励内容区域（紧跟队员区，避免中间留大片空白）
@@ -257,6 +236,7 @@ local CASCADE_TAIL_BUDGET = 2.0  -- 第 20 件之后最多再排队 2 秒
 local CASCADE_POP_DUR  = 0.24  -- 单件弹出时长不变
 
 local cachedVg = nil
+local sourceDragTeam = 0
 
 -- ======================== 缓动函数 ========================
 
@@ -309,7 +289,7 @@ end
 
 --- 奖励逐件弹出时自动跟随：把最新出场的那行滚到裁剪区底部（显示最下方内容）。
 --- 玩家手动拖拽/滚轮后停止跟随。
-local function syncCascadeScroll()
+local function syncCascadeScroll(clipH)
     local cascade = state.cascade
     if not cascade or cascade.revealStart == 0 then return end
     if state.dragging or not state.followScroll then return end
@@ -322,7 +302,7 @@ local function syncCascadeScroll()
     local row = math.ceil(shown / COLS)
     local _, rawCY = getCellCenter(row, 1)
     local bottom = rawCY + ICON_SIZE * 0.5
-    state.scrollY = bottom - CLIP.BOTTOM
+    state.scrollY = bottom - (CLIP.TOP + clipH)
     clampScroll()
     state.scrollVel = 0
 end
@@ -350,26 +330,41 @@ local function sourceForTeam(teamIdx)
     return nil
 end
 
---- 有来源但无经验的队伍仍显示说明（例如通天塔暂停离线收益）。
-local function heroRowHeight(members, source)
-    if #members > 0 then return HERO_ROW.H end
-    return source and 48 or 0
+--- 来源先本地化再换行，保持结算快照，不读取当前战线。
+local function teamSourceName(source)
+    local entry = require("config.StageConfig").getStage(source.stageId)
+    if source.sourceKind == "tower" then
+        return I18n.format("通天塔 第%d层", (source.stageId or 400001) - 400000)
+    end
+    return I18n.lookup(source.sourceName or (entry and entry.name) or tostring(source.stageId))
 end
 
---- 绘制和输入共用队伍并集高度，来源专用行也纳入奖励区定位。
----@param groups table[]
----@return number
-local function heroBlockHeight(groups)
-    local height = 0
-    for t = 1, HERO_ROW.VISIBLE do
-        local rowH = heroRowHeight(groups[t], sourceForTeam(t))
-        if rowH > 0 then
-            if height > 0 then height = height + HERO_ROW.GAP end
-            height = height + rowH
+--- 每个码点只前进一次；测量失真时也不会进入缩字/回退死循环。
+local function wrapSource(vg, text, width)
+    local lines, line = {}, ""
+    if vg then
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, HERO_ROW.SOURCE_FONT)
+    end
+    local lineW = 0
+    for _, point in utf8.codes(text) do
+        local char = utf8.char(point)
+        local charW = vg and I18n.displayBounds(vg, 0, 0, char) or HERO_ROW.SOURCE_FONT
+        if char == "\n" then
+            lines[#lines + 1], line, lineW = line, "", 0
+        else
+            if line ~= "" and lineW + charW > width then
+                lines[#lines + 1], line, lineW = line, "", 0
+            end
+            line, lineW = line .. char, lineW + charW
         end
     end
-    return height
+    if line ~= "" then lines[#lines + 1] = line end
+    return lines
 end
+
+---@type table|nil
+local teamLayout = nil
 
 --- 按队伍把预览分成 1..3 行，每行最多 4 人。
 --- 没有 teamIdx 的旧数据按出现顺序每 4 人一队。
@@ -403,18 +398,60 @@ local function groupHeroPreview(preview)
     return groups
 end
 
---- 当前弹窗的动态布局：奖励区和按钮紧跟实际队员区，面板高度按内容算
---- 返回的 shift 是奖励网格相对静态裁剪区的上移量
----@return number shift, number panelH, number panelCY, number rewardCY, number claimCY
+--- 首次输入、绘制、切语言都使用同一份布局；无VG时用保守等宽估算。
+local function teamRows(vg)
+    local context = vg or cachedVg
+    local language = I18n.get()
+    if teamLayout and teamLayout.language == language and teamLayout.context == context then
+        return teamLayout
+    end
+    local oldScroll = teamLayout and teamLayout.scrolls or {}
+    local layout = { rows = {}, height = 0, language = language, context = context, scrolls = {} }
+    local groups = groupHeroPreview(state.heroExpPreview)
+    if context then nvgSave(context) end
+    for team = 1, HERO_ROW.VISIBLE do
+        local members, source = groups[team], sourceForTeam(team)
+        if #members > 0 or source then
+            local lines = source and wrapSource(context, teamSourceName(source),
+                HERO_ROW.INFO_W - HERO_ROW.INFO_PAD * 2 - 16) or {}
+            local status = source and source.paused and wrapSource(context, I18n.lookup("暂停离线收益"),
+                HERO_ROW.INFO_W - HERO_ROW.INFO_PAD * 2 - 16) or {}
+            local minHeight = #members > 0 and HERO_ROW.H or 100
+            local height = math.min(HERO_ROW.MAX_H, math.max(minHeight,
+                100 + (#lines + #status) * HERO_ROW.LINE_H))
+            local sourceH = math.max(0, height - 100 - #status * HERO_ROW.LINE_H)
+            local maxScroll = math.max(0, #lines * HERO_ROW.LINE_H - sourceH)
+            local scroll = math.min(maxScroll, oldScroll[team] or 0)
+            local row = { team = team, members = members, source = source, lines = lines,
+                status = status, top = HERO_ROW.TOP + layout.height, h = height,
+                sourceH = sourceH, maxScroll = maxScroll, scroll = scroll }
+            layout.rows[#layout.rows + 1] = row
+            layout.scrolls[team] = scroll
+            layout.height = layout.height + height + HERO_ROW.GAP
+        end
+    end
+    if context then nvgRestore(context) end
+    if #layout.rows > 0 then layout.height = layout.height - HERO_ROW.GAP end
+    teamLayout = layout
+    return layout
+end
+
+--- 奖励区可收至一行，面板始终留在2400设计高度内，输入复用同一计算。
+---@return number shift, number panelH, number panelCY, number rewardCY, number claimCY, number rewardH
 local function layoutNow()
-    local blockH = heroBlockHeight(groupHeroPreview(state.heroExpPreview))
+    local blockH = teamRows().height
     local rewardTop = HERO_ROW.TOP + blockH + 24
-    local rewardCY = rewardTop + REWARD_AREA.H * 0.5
-    local claimCY = rewardTop + REWARD_AREA.H + 30 + BTN_CLAIM.H * 0.5
+    local rewardH = math.min(REWARD_AREA.H, DESIGN_H - 40 - rewardTop - 180)
+    local rewardCY = rewardTop + rewardH * 0.5
+    local claimCY = rewardTop + rewardH + 30 + BTN_CLAIM.H * 0.5
     local panelBottom = claimCY + BTN_CLAIM.H * 0.5 + 50
     local panelH = panelBottom - PANEL_TOP
     local clipTop = rewardTop + REWARD_AREA.PAD
-    return CLIP.TOP - clipTop, panelH, PANEL_TOP + panelH * 0.5, rewardCY, claimCY
+    local totalRows = math.ceil(math.max(#state.rewards, 1) / COLS)
+    state.scrollMax = math.max(0, totalRows * ICON_SIZE + (totalRows - 1) * ROW_GAP
+        - (rewardH - REWARD_AREA.PAD * 2))
+    clampScroll()
+    return CLIP.TOP - clipTop, panelH, PANEL_TOP + panelH * 0.5, rewardCY, claimCY, rewardH
 end
 
 --- 队员头像懒加载
@@ -440,9 +477,10 @@ local function hitRewardCell(dx, dy)
     local cascade = state.cascade
     if not cascade or cascade.revealStart == 0 then return nil end
 
-    local saved = layoutNow()  -- 第一个返回值 = 奖励网格整体上移量
+    local saved, _, _, _, _, rewardH = layoutNow()
     local clipTop = CLIP.TOP - saved
-    if dx < CLIP.LEFT or dx > CLIP.RIGHT or dy < clipTop or dy > clipTop + CLIP.H then
+    local clipH = rewardH - REWARD_AREA.PAD * 2
+    if dx < CLIP.LEFT or dx > CLIP.RIGHT or dy < clipTop or dy > clipTop + clipH then
         return nil
     end
 
@@ -650,6 +688,8 @@ function Panel.show(data)
     state.adventurerExp  = data.adventurerExp or 0
     state.heroExpPreview = data.heroExpPreview or {}
     state.teamSources    = data.teamSources or {}
+    teamLayout = nil
+    sourceDragTeam = 0
     -- 只读玩家副本，领取口径为经验取整后沿正式曲线连续升级。
     -- 数字在 show 时冻结；绘制和切语言不重复预估，也不写回玩家模块。
     state.playerStartLevel, state.playerEndLevel = nil, nil
@@ -723,6 +763,8 @@ function Panel.close()
     if state.animPhase == "closing" then return end
     state.detailItem = nil
     state.detailIdx = 0
+    sourceDragTeam = 0
+    state.dragging, state.scrollVel = false, 0
     state.animPhase = "closing"
     state.animStart = time.elapsedTime
 end
@@ -738,6 +780,7 @@ end
 function Panel.refreshHeroPreview(preview)
     if not state.open or type(preview) ~= "table" or #preview == 0 then return end
     state.heroExpPreview = preview
+    teamLayout = nil
     resetHeroAnim()
 end
 
@@ -777,7 +820,8 @@ function Panel.update(dt)
                 end
             end
             -- 内容超出可视区时自动滚到最新一行（底部）
-            syncCascadeScroll()
+            local _, _, _, _, _, rewardH = layoutNow()
+            syncCascadeScroll(rewardH - REWARD_AREA.PAD * 2)
         end
     end
 
@@ -801,7 +845,8 @@ function Panel.draw(vg)
     local drawOk, drawErr = pcall(function()
 
     -- 空队不占高度：奖励区和领取按钮整体上移，面板高度跟着收
-    local saved, panelH, panelCY, rewardCY, claimCY = layoutNow()
+    if cachedVg ~= vg then cachedVg, teamLayout = vg, nil end
+    local saved, panelH, panelCY, rewardCY, claimCY, rewardH = layoutNow()
 
     -- 动画进度
     local animAlpha = 1.0
@@ -923,7 +968,7 @@ function Panel.draw(vg)
 
     -- 16. 奖励内容背景框
     DrawUtil.drawRoundedRectCentered(vg,
-        REWARD_AREA.CX, rewardCY, REWARD_AREA.W, REWARD_AREA.H, REWARD_AREA.R,
+        REWARD_AREA.CX, rewardCY, REWARD_AREA.W, rewardH, REWARD_AREA.R,
         0, 0, 0, 13)
 
     -- 17. 奖励物品网格（可滚动裁剪区域，跟随奖励框上移）
@@ -992,70 +1037,66 @@ function self_drawExpRow(vg, cfg, value, levels)
         cfg.VALUE_R, cfg.VALUE_G, cfg.VALUE_B, cfg.VALUE_SW)
 end
 
---- 完整来源在对应队经验区显示，按译文测量缩字而不截掉关卡名。
-local function drawTeamSource(vg, source, teamIdx, cy, textTop, textBottom)
-    local entry = require("config.StageConfig").getStage(source.stageId)
-    local name = source.sourceName or (entry and entry.name) or tostring(source.stageId)
-    local translatedName = I18n.lookup(name)
-    if source.sourceKind == "tower" then
-        translatedName = I18n.format("通天塔 第%d层", (source.stageId or 400001) - 400000)
-    end
-    local label = source.paused and I18n.format("小队%d · %s · 暂停离线收益", teamIdx, translatedName)
-        or I18n.format("小队%d · %s", teamIdx, translatedName)
+--- 队名和来源共用左栏；极长来源单独滚动，暂停说明固定在底部。
+local function drawTeamSource(vg, row)
+    local x = ROW_L + HERO_ROW.INFO_PAD
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 22)
-    local width = I18n.displayBounds(vg, 0, 0, label)
-    local font = width > ROW_W - 48 and 22 * (ROW_W - 48) / width or 22
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    -- 字体字墨上下缘不一定对称；保留位置，按实际测量缩号，留出行底空隙。
-    -- 有界迭代：测量边界若不随字号收敛也不能死循环，最多缩到明显小于原字号即止。
-    for _ = 1, 24 do
-        nvgFontSize(vg, font)
-        local bounds = {}
-        I18n.displayBounds(vg, CENTER_X, cy, label, nil, bounds)
-        local above = cy - (bounds[2] or cy)
-        local below = (bounds[4] or cy) - cy
-        local fit = math.min(1, above > 0 and (cy - textTop) / above or 1,
-            below > 0 and (textBottom - cy) / below or 1)
-        if fit >= 1 then break end
-        local nextFont = font * math.min(0.95, fit)
-        if not (nextFont > 0) or nextFont >= font then break end
-        font = nextFont
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+    nvgFontSize(vg, HERO_ROW.TEAM_FONT)
+    nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
+    I18n.displayText(vg, x, row.top, I18n.format("小队%d", row.team), nil)
+    nvgFontSize(vg, HERO_ROW.SOURCE_FONT)
+    local textTop = row.top + 88
+    if row.sourceH > 0 then
+        nvgSave(vg)
+        nvgIntersectScissor(vg, x - 4, textTop, HERO_ROW.INFO_W - HERO_ROW.INFO_PAD * 2,
+            row.sourceH)
+        nvgFillColor(vg, nvgRGBA(232, 220, 200, 255))
+        for index, line in ipairs(row.lines) do
+            local y = textTop + (index - 1) * HERO_ROW.LINE_H - row.scroll
+            if y + HERO_ROW.LINE_H > textTop and y < textTop + row.sourceH then
+                I18n.displayText(vg, x, y, line, nil)
+            end
+        end
+        nvgRestore(vg)
     end
-    nvgFillColor(vg, nvgRGBA(216, 201, 163, 255))
-    I18n.displayText(vg, CENTER_X, cy, label, nil)
+    nvgFillColor(vg, nvgRGBA(236, 183, 98, 255))
+    for index, line in ipairs(row.status) do
+        I18n.displayText(vg, x, textTop + row.sourceH + (index - 1) * HERO_ROW.LINE_H, line, nil)
+    end
+    if row.maxScroll > 0 then
+        local trackH = row.sourceH
+        local thumbH = math.max(20, trackH * trackH / (#row.lines * HERO_ROW.LINE_H))
+        local thumbY = textTop + row.scroll / row.maxScroll * (trackH - thumbH)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, ROW_L + HERO_ROW.INFO_W - 18, thumbY, 5, thumbH, 2)
+        nvgFillColor(vg, nvgRGBA(216, 201, 163, 190))
+        nvgFill(vg)
+    end
 end
 
 --- 绘制队员升级列表：一行一个队伍，队伍内头像横向均分
 function self_drawHeroExpList(vg)
     local preview = state.heroExpPreview
-    local groups = groupHeroPreview(preview)
-    local viewH = heroBlockHeight(groups)
+    local rows = teamRows(vg)
+    local viewH = rows.height
     if viewH <= 0 then return end
     local animDone = heroAnimDone()
-    local cellW = (ROW_W - HERO_ROW.PAD_X * 2) / HERO_ROW.SLOTS
+    local heroLeft = ROW_L + HERO_ROW.INFO_W
+    local heroCenter = (heroLeft + ROW_R) * 0.5
+    local cellW = (ROW_W - HERO_ROW.INFO_W - HERO_ROW.PAD_X * 2) / HERO_ROW.SLOTS
 
     nvgSave(vg)
     nvgScissor(vg, ROW_L, HERO_ROW.TOP, ROW_W, math.max(viewH, 1))
 
-    local top = HERO_ROW.TOP
-    for t = 1, HERO_ROW.VISIBLE do
-        local members = groups[t]
-        local source = sourceForTeam(t)
-        local rowH = heroRowHeight(members, source)
-        if rowH > 0 then
+    for _, row in ipairs(rows.rows) do
+        local members = row.members
+        local top, rowH = row.top, row.h
+        do
             local cy = top + rowH * 0.5
-
-            -- 行底 + 队伍名；来源专用行直接显示完整说明。
             DrawUtil.drawRoundedRectCentered(vg, CENTER_X, cy, ROW_W, rowH, 12,
                 0, 0, 0, HERO_ROW.BG_A)
-            if #members > 0 then
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, 20)
-                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(0xff, 0xd6, 0x66, 255))
-                I18n.displayText(vg, ROW_L + 14, top + 16, I18n.format("小队%d", t), nil)
-            end
+            drawTeamSource(vg, row)
 
             for s = 1, #members do
                 local item = members[s]
@@ -1070,8 +1111,8 @@ function self_drawHeroExpList(vg)
                 if a and a.capped then maxExp = 0 end
 
                 -- 按本队实际人数居中，避免人少时头像被拉到两边
-                local cellCX = CENTER_X + (s - (#members + 1) * 0.5) * cellW
-                local iconCY = top + 16 + HERO_ROW.ICON * 0.5
+                local cellCX = heroCenter + (s - (#members + 1) * 0.5) * cellW
+                local iconCY = top + (rowH - HERO_ROW.H) * 0.5 + 16 + HERO_ROW.ICON * 0.5
                 local iconCX = cellCX
 
                 -- [统一角色框] 头像（品质色描边，替代 ZBBJ 贴图底）
@@ -1134,11 +1175,6 @@ function self_drawHeroExpList(vg)
                 nvgFillColor(vg, nvgRGBA(lvR, lvG, lvB, 255))
                 nvgText(vg, cellCX, barCY + 22, lvText, nil)
             end
-            if source then
-                drawTeamSource(vg, source, t, #members > 0 and top + 206 or cy,
-                    #members > 0 and top + 193 or top + 2, top + rowH - 2)
-            end
-            top = top + rowH + HERO_ROW.GAP
         end
     end
 
@@ -1155,9 +1191,11 @@ function self_drawRewardGrid(vg, shiftY)
     local totalRows = math.ceil(#items / COLS)
     local cascade = state.cascade
     local clipTop = CLIP.TOP - shiftY
+    local _, _, _, _, _, rewardH = layoutNow()
+    local clipH = rewardH - REWARD_AREA.PAD * 2
 
     nvgSave(vg)
-    nvgScissor(vg, CLIP.LEFT, clipTop, CLIP.W, CLIP.H)
+    nvgScissor(vg, CLIP.LEFT, clipTop, CLIP.W, clipH)
 
     for row = 1, totalRows do
         for col = 1, COLS do
@@ -1170,7 +1208,7 @@ function self_drawRewardGrid(vg, shiftY)
 
             -- 跳过不可见
             if cy + ICON_SIZE * 0.5 < clipTop - 10 then goto continue end
-            if cy - ICON_SIZE * 0.5 > clipTop + CLIP.H + 10 then goto continue end
+            if cy - ICON_SIZE * 0.5 > clipTop + clipH + 10 then goto continue end
 
             -- 逐件弹出：未到出场时刻只画预告框，弹出中叠加爆发+变换
             -- revealStart 为 0 表示还没开始。此时 cascade:t 会按「从游戏启动算起」
@@ -1281,8 +1319,8 @@ function self_drawRewardGrid(vg, shiftY)
     -- 滚动条：内容超出可视区时右侧显示细条，提示可滚动
     if state.scrollMax > 8 then
         local trackTop = clipTop + 8
-        local trackH = CLIP.H - 16
-        local thumbH = math.max(36, trackH * (CLIP.H / (CLIP.H + state.scrollMax)))
+        local trackH = clipH - 16
+        local thumbH = math.max(36, trackH * (clipH / (clipH + state.scrollMax)))
         local travel = math.max(1, trackH - thumbH)
         local thumbY = trackTop + (state.scrollY / state.scrollMax) * travel
         nvgBeginPath(vg)
@@ -1349,20 +1387,42 @@ function Panel.handleInput(dx, dy)
     return true  -- 仍然消费事件阻止穿透
 end
 
+--- 左侧来源滚动与奖励拖动互斥，状态行和领取按钮不参与滚动。
+local function sourceRowAt(dx, dy)
+    if not dx or not dy or dx < ROW_L or dx >= ROW_L + HERO_ROW.INFO_W then return nil end
+    for _, row in ipairs(teamRows().rows) do
+        if dy >= row.top and dy < row.top + row.h then
+            return row
+        end
+    end
+    return nil
+end
+local function scrollSource(row, delta)
+    row.scroll = math.max(0, math.min(row.maxScroll, row.scroll + delta))
+    teamRows().scrolls[row.team] = row.scroll
+end
+
 --- 处理拖拽开始
 ---@param dx number
 ---@param dy number
----@return boolean
 function Panel.handleDragBegin(dx, dy)
     if not state.open then return false end
-    -- 奖励区域内开始拖拽（区域随空队上移）
-    local saved = layoutNow()
+    sourceDragTeam = 0
+    if state.detailItem then return true end
+    local row = sourceRowAt(dx, dy)
+    if row then
+        sourceDragTeam, state.dragLastY = row.team, dy
+        state.dragging, state.scrollVel = false, 0
+        return true
+    end
+    local saved, _, _, _, _, rewardH = layoutNow()
+    local clipTop = CLIP.TOP - saved
     if dx >= CLIP.LEFT and dx <= CLIP.RIGHT
-       and dy >= CLIP.TOP - saved and dy <= CLIP.BOTTOM - saved then
+       and dy >= clipTop and dy <= clipTop + rewardH - REWARD_AREA.PAD * 2 then
         state.dragging  = true
         state.dragLastY = dy
         state.scrollVel = 0
-        state.followScroll = false  -- 手动拖拽后不再自动跟随
+        state.followScroll = false
     end
     return true
 end
@@ -1373,6 +1433,13 @@ end
 ---@return boolean
 function Panel.handleDragMove(dx, dy)
     if not state.open then return false end
+    if sourceDragTeam > 0 then
+        for _, row in ipairs(teamRows().rows) do
+            if row.team == sourceDragTeam then scrollSource(row, state.dragLastY - dy) break end
+        end
+        state.dragLastY = dy
+        return true
+    end
     if state.dragging then
         local delta = state.dragLastY - dy
         state.scrollY = state.scrollY + delta
@@ -1388,6 +1455,7 @@ end
 ---@param dy number
 ---@return boolean
 function Panel.handleDragEnd(dx, dy)
+    sourceDragTeam = 0
     if not state.open then return false end
     if state.dragging then
         state.dragging = false
@@ -1397,8 +1465,11 @@ end
 
 --- 处理滚轮
 ---@param wheel number
-function Panel.handleScroll(wheel)
-    if not state.open then return end
+function Panel.handleScroll(wheel, dx, dy)
+    if not state.open or state.detailItem then return end
+    local row = sourceRowAt(dx, dy)
+    if row then scrollSource(row, -wheel * HERO_ROW.LINE_H) return end
+    layoutNow()
     state.scrollY = state.scrollY - wheel * 60
     state.followScroll = false  -- 手动滚轮后不再自动跟随
     clampScroll()

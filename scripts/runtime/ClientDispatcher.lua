@@ -44,28 +44,34 @@ local function decode(jsonStr)
     return nil
 end
 
---- 分发已收齐的数据到订阅者
+-- 分发按模块依次执行：先读档迁移、再写缓存、再通知。
+-- 迁移或订阅异常不阻止其余模块，也不扩大 pcall 到全局通知。
+local function acceptLoadedModule(name, data)
+    ModuleRegistry.applyOnLoad(name, data)
+    CharacterSchema.applyOnLoad(name, data)
+    moduleData[name] = data
+end
+
+-- 每次通知才取当前订阅数组；上限固定，回调增删/reset 时不快照列表。
+local function notifyModule(name, data, errorPrefix)
+    local subs = subscribers[name]
+    if not subs then return end
+    for i = 1, #subs do
+        local ok, err = pcall(subs[i], data, name)
+        if not ok then
+            print(errorPrefix .. name .. ": " .. tostring(err))
+        end
+    end
+end
+
+--- 分发已收齐的数据到订阅者；回调重入时仍可见本模块已写入的缓存。
 ---@param modules table { [moduleName] = data }
 local function dispatchModules(modules)
     for name, data in pairs(modules) do
-        -- cjson 反序列化后数字 key 变成字符串，需要与 Server 端一致地修正
-        ModuleRegistry.applyOnLoad(name, data)
-        CharacterSchema.applyOnLoad(name, data)
-        moduleData[name] = data
-
-        -- 通知该模块的订阅者
-        local subs = subscribers[name]
-        if subs then
-            for i = 1, #subs do
-                local ok, err = pcall(subs[i], data, name)
-                if not ok then
-                    print("[ClientDispatcher] subscriber error module=" .. name .. ": " .. tostring(err))
-                end
-            end
-        end
+        acceptLoadedModule(name, data)
+        notifyModule(name, data, "[ClientDispatcher] subscriber error module=")
     end
 
-    -- 全局回调
     if onAnyUpdate then
         onAnyUpdate(modules)
     end
@@ -107,21 +113,16 @@ end
 ---@param data table
 ---@param options? { normalized: boolean }
 function ClientDispatcher.set(moduleName, data, options)
-    if type(data) == "table" and not (options and options.normalized) then
-        ModuleRegistry.applyOnLoad(moduleName, data)
-        CharacterSchema.applyOnLoad(moduleName, data)
-    end
-    moduleData[moduleName] = data
-    local subs = subscribers[moduleName]
-    if subs then
-        for i = 1, #subs do
-            local ok, err = pcall(subs[i], data, moduleName)
-            if not ok then
-                print("[ClientDispatcher] set subscriber error module=" .. moduleName
-                    .. ": " .. tostring(err))
-            end
+    if type(data) == "table" then
+        if not (options and options.normalized) then
+            ModuleRegistry.applyOnLoad(moduleName, data)
+            CharacterSchema.applyOnLoad(moduleName, data)
         end
+        moduleData[moduleName] = data
+    else
+        moduleData[moduleName] = data
     end
+    notifyModule(moduleName, data, "[ClientDispatcher] set subscriber error module=")
     if onAnyUpdate then
         onAnyUpdate({ [moduleName] = data })
     end

@@ -85,6 +85,50 @@ local function prepareModulesForPush(allModulesData)
     return lean
 end
 
+-- 单模块封装只负责尺寸判断和分片；批次顺序仍由 splitMessages 决定。
+local function appendModuleMessages(messages, name, moduleData, batchId)
+    local moduleJson = encode({ [name] = moduleData })
+
+    if #moduleJson < Protocol.MSG_SAFE_SIZE then
+        -- 单模块未超限，作为一条消息
+        messages[#messages + 1] = {
+            modules = { [name] = moduleData },
+            batchId = batchId,
+        }
+    else
+        -- 单模块超限，需要分片（简化实现：以 JSON 字符串分片）
+        local chunks = {}
+        local chunkSize = Protocol.MSG_SAFE_SIZE - 1000  -- 留出头部空间
+        for i = 1, #moduleJson, chunkSize do
+            chunks[#chunks + 1] = moduleJson:sub(i, i + chunkSize - 1)
+        end
+        for ci, chunk in ipairs(chunks) do
+            messages[#messages + 1] = {
+                moduleName = name,
+                chunk = chunk,
+                partIndex = ci,
+                totalParts = #chunks,
+                batchId = batchId,
+            }
+        end
+    end
+end
+
+-- 发送时逐条读取当前 sink 和事件名，允许回调中替换 sink 或嵌套推送。
+local function deliverStateMessages(uid, messages)
+    for _, msg in ipairs(messages) do
+        sendToClient(uid, Protocol.RES_STATE_UPDATE, msg)
+    end
+end
+
+-- 全量推送替换缓存容器，但保留准备后每个模块的对象引用。
+local function replaceCachedModules(uid, modules)
+    cache[uid] = {}
+    for name, data in pairs(modules) do
+        cache[uid][name] = data
+    end
+end
+
 --- 按模块拆分数据，检查每条是否超过安全阈值
 --- 超过阈值的模块进一步分片
 ---@param allModulesData table { [moduleName] = moduleData }
@@ -111,31 +155,7 @@ local function splitMessages(allModulesData)
 
     for _, name in ipairs(moduleNames) do
         local moduleData = allModulesData[name]
-        local moduleJson = encode({ [name] = moduleData })
-
-        if #moduleJson < Protocol.MSG_SAFE_SIZE then
-            -- 单模块未超限，作为一条消息
-            messages[#messages + 1] = {
-                modules = { [name] = moduleData },
-                batchId = batchId,
-            }
-        else
-            -- 单模块超限，需要分片（简化实现：以 JSON 字符串分片）
-            local chunks = {}
-            local chunkSize = Protocol.MSG_SAFE_SIZE - 1000  -- 留出头部空间
-            for i = 1, #moduleJson, chunkSize do
-                chunks[#chunks + 1] = moduleJson:sub(i, i + chunkSize - 1)
-            end
-            for ci, chunk in ipairs(chunks) do
-                messages[#messages + 1] = {
-                    moduleName = name,
-                    chunk = chunk,
-                    partIndex = ci,
-                    totalParts = #chunks,
-                    batchId = batchId,
-                }
-            end
-        end
+        appendModuleMessages(messages, name, moduleData, batchId)
     end
 
     -- 为第一条消息标注总数
@@ -170,16 +190,11 @@ function ServerDispatcher.pushFullState(uid, allModulesData)
     local pushData = prepareModulesForPush(allModulesData)
 
     -- 更新缓存
-    cache[uid] = {}
-    for name, data in pairs(pushData) do
-        cache[uid][name] = data
-    end
+    replaceCachedModules(uid, pushData)
 
     -- 拆分并发送
     local messages = splitMessages(pushData)
-    for i, msg in ipairs(messages) do
-        sendToClient(uid, Protocol.RES_STATE_UPDATE, msg)
-    end
+    deliverStateMessages(uid, messages)
 
     print(string.format("%s pushFullState DONE uid=%s msgCount=%d elapsed=%.4fs clock=%.4f",
         TAG, tostring(uid), #messages, os.clock() - t0, os.clock()))
@@ -201,9 +216,7 @@ function ServerDispatcher.pushModule(uid, moduleName, moduleData)
     -- 检查大小，超限时走分片逻辑（与 pushFullState 一致）
     local singleModuleData = { [moduleName] = pushModuleData }
     local messages = splitMessages(singleModuleData)
-    for _, msg in ipairs(messages) do
-        sendToClient(uid, Protocol.RES_STATE_UPDATE, msg)
-    end
+    deliverStateMessages(uid, messages)
 
     if #messages > 1 then
         print("[ServerDispatcher] pushModule SPLIT uid=" .. tostring(uid)
@@ -268,9 +281,7 @@ function ServerDispatcher.resendFromCache(uid)
     end
 
     local messages = splitMessages(cached)
-    for _, msg in ipairs(messages) do
-        sendToClient(uid, Protocol.RES_STATE_UPDATE, msg)
-    end
+    deliverStateMessages(uid, messages)
 
     print("[ServerDispatcher] resendFromCache uid=" .. tostring(uid))
     return true

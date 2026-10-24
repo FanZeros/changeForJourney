@@ -377,6 +377,67 @@ function Start()
             check(s.stoppedReason:find("600", 1, true), "auto-stop reason")
             local before = g.wallReads; g.frame(1000); eq(g.wallReads, before, "auto-stop no further clocks")
         end)
+        run("section bookkeeping enumerates once instead of recounting every insertion", function()
+            local f = fixture(); local m = f.monitor
+            m.start(); m.beginFrame("角色")
+            local visited = 0
+            f.env.pairs = function(value)
+                local iter, state, key = pairs(value)
+                return function(t, k)
+                    local nextKey, item = iter(t, k)
+                    if nextKey ~= nil then visited = visited + 1 end
+                    return nextKey, item
+                end, state, key
+            end
+            for i = 1, 100 do f.section("固定段" .. i, 0, 0) end
+            eq(visited, 0, "new per-frame section registration never rescans accumulated sections")
+            f.frame(10)
+            eq(visited, 100, "commit visits each frame section once without global recount")
+            f.env.pairs = pairs
+            eq(#m.snapshot().sections, 100, "bookkeeping optimization retains every registered section")
+        end)
+        run("worst spikes survive recent rollover / bounded copies / exclusions and restart", function()
+            local f = fixture(); local m = f.monitor
+            m.start(); m.beginFrame("角色")
+            f.section("早期通关", 200, 100); f.frame(206)
+            for _ = 1, 100 do f.frame(55) end
+            local s = m.snapshot()
+            eq(#s.recentSlow, 80, "recent detail retains existing bound")
+            eq(s.recentSlow[1].frame, 22, "recent window evicts early spike")
+            eq(#s.worstSlow, 10, "worst detail separately bounded")
+            eq(s.worstSlow[1].frame, 1, "early worst frame is retained")
+            near(s.worstSlow[1].intervalMs, 406, "actual full early frame interval retained")
+            eq(s.worstSlow[1].top[1].name, "早期通关", "worst retains originating section details")
+            near(s.worstSlow[1].top[1].wallMs, 200, "inclusive section is not fabricated as whole interval")
+            near(s.worstSlow[2].intervalMs, 55, "remaining worst slots retain ordinary slow intervals")
+            check(s.worstSlow[2].frame >= 2 and s.worstSlow[2].frame <= 101,
+                "ordinary slow frame identity remains within sampled range")
+            s.worstSlow[1].top[1].name = "changed"
+            eq(m.snapshot().worstSlow[1].top[1].name, "早期通关", "worst snapshot is deeply detached")
+            f.section("后期尖峰", 450, 200); f.frame(50)
+            s = m.snapshot()
+            eq(s.worstSlow[1].frame, 102, "larger later interval inserts first")
+            near(s.worstSlow[1].intervalMs, 500, "later full interval retained")
+            eq(s.worstSlow[2].frame, 1, "earlier spike shifts but is not lost")
+            m.excludeCurrent("panel"); f.frame(10000)
+            eq(#m.snapshot().worstSlow, 10, "excluded long frame cannot enter worst")
+            near(m.snapshot().worstSlow[1].intervalMs, 500, "excluded interval never wins")
+            local report = m.getReport()
+            check(report:find("本轮最慢帧",1,true) ~= nil and report:find("406.0ms",1,true) ~= nil,
+                "text exposes early spike no longer in recent window")
+            eq(#reportData(report).worstSlow, 10, "JSON worst history serialized")
+            m.start(); m.beginFrame("仓库")
+            eq(#m.snapshot().worstSlow, 0, "new session clears worst history")
+            for i = 1, 193 do f.section("重启段" .. i, 0, 0) end
+            f.frame(60)
+            eq(#m.snapshot().sections, 192, "explicit section counters reset with session and frame")
+            m.start(); f.wallMs = 0; m.beginFrame("角色")
+            -- 125ms可被二进制秒精确表示，单独验证真正相等时的稳定先后。
+            for _ = 1, 12 do f.frame(125) end
+            local ties = m.snapshot().worstSlow
+            eq(#ties, 10, "equal spikes remain bounded")
+            for i = 1, 10 do eq(ties[i].frame, i, "exact equal spikes preserve earliest order " .. i) end
+        end)
         run("excluded panel-background frames never commit sections", function()
             local f = fixture(); local m = f.monitor
             m.start(); m.beginFrame("角色"); f.section("面板前污染", 1, 1)
@@ -426,18 +487,20 @@ function Start()
             m.start(); rt.updateBefore(); f.section("主循环.Update", 4, 2); f.advance(60); rt.updateBefore(); m.mark(f.env.player)
             local text = m.getReport()
             eq(m.isEnabled(), false, "getReport stops collection")
-            check(text:find("性能诊断报告 v7 · 2026-10-24", 1, true), "绘制减负及固定动作分类构建明确标识v7日期")
+            check(text:find("性能诊断报告 v8 · 2026-10-24", 1, true), "最慢帧保留与热路径优化构建明确标识v8日期")
             check(text:find("inclusive", 1, true) and text:find("CPU", 1, true) and text:find("GPU", 1, true), "report caveats readable")
             check(not text:find("PRIVATE_SENTINEL", 1, true), "report never serializes player/module payload")
             local s = reportData(text)
-            keysOnly(s, keySet("schemaVersion monitorVersion enabled stoppedReason elapsedSeconds frames fps frameMs percentileWindowFrames slowFrames luaMemoryKB resourceMemoryBytes batches primitives sections recentSlow marks excludedGaps excludedPanelFrames droppedSections limits timing"), "report root")
+            keysOnly(s, keySet("schemaVersion monitorVersion enabled stoppedReason elapsedSeconds frames fps frameMs percentileWindowFrames slowFrames luaMemoryKB resourceMemoryBytes batches primitives sections recentSlow worstSlow marks excludedGaps excludedPanelFrames droppedSections limits timing"), "report root")
             keysOnly(s.frameMs, keySet("p50 p95 p99 max"), "frame stats")
             keysOnly(s.slowFrames, keySet("over33 over50 over100"), "threshold stats")
-            keysOnly(s.limits, keySet("frames slowFrames marks sections seconds"), "limits")
+            keysOnly(s.limits, keySet("frames slowFrames worstFrames marks sections seconds"), "limits")
             keysOnly(s.timing, keySet("frame sections gpu memory"), "timing")
             keysOnly(s.sections[1], keySet("name calls totalCpuMs maxCpuMs totalWallMs maxWallMs"), "section")
             keysOnly(s.recentSlow[1], keySet("frame intervalMs context top"), "slow frame")
             keysOnly(s.recentSlow[1].top[1], keySet("name cpuMs wallMs calls"), "slow top")
+            keysOnly(s.worstSlow[1], keySet("frame intervalMs context top"), "worst frame privacy")
+            keysOnly(s.worstSlow[1].top[1], keySet("name cpuMs wallMs calls"), "worst top privacy")
             keysOnly(s.marks[1], keySet("frame atSeconds"), "report mark")
             eq(s.recentSlow[1].context, "角色", "runtime uses fixed context enum not payload")
             near(s.sections[1].totalWallMs, 4, "JSON real production numbers")

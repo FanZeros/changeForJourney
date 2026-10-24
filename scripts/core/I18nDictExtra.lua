@@ -48,6 +48,7 @@ add("用于酒馆普通远征招募，每次招募消耗1张。", "用於酒館�
 add("用于酒馆星辰招募，每次招募消耗1张。", "用於酒館星辰招募，每次招募消耗1張。", "Used for stellar tavern recruitment; 1 ticket per pull.", "酒場の星辰募集に使用。1回につき1枚消費。", "주점 성진 모집에 사용합니다. 1회에 1장을 소비합니다.")
 add("用于酒馆商店兑换英雄碎片等物品。", "用於酒館商店兌換英雄碎片等物品。", "Exchanged for hero shards and other items in the tavern shop.", "酒場ショップで英雄の欠片などと交換。", "주점 상점에서 영웅 조각 등과 교환합니다.")
 add("奥术材料，可在背包查看持有数量，当前没有消耗入口。", "奧術材料，可在背包查看持有數量，目前沒有消耗入口。", "An arcane material. View the amount in your bag; there is no current spending option.", "奥術素材。所持数は鞄で確認できます。現在は消費用途がありません。", "비전 재료입니다. 가방에서 보유량을 볼 수 있으며 현재 소비하는 곳은 없습니다.")
+add("暂停离线收益", "暫停離線收益", "Offline income paused", "オフライン報酬停止", "오프라인 수익 중지")
 add("小队%d · %s · 暂停离线收益", "小隊%d · %s · 暫停離線收益", "Squad %d · %s · Offline income paused", "小隊%d・%s・オフライン報酬停止", "소대%d · %s · 오프라인 수익 중지")
 add("通天塔 第%d层", "通天塔 第%d層", "Tower Floor %d", "通天塔・第%d層", "통천탑 %d층")
 add("普通神器宝箱", "普通神器寶箱", "Normal Artifact Chest", "通常神器宝箱", "일반 신기 보물상자")
